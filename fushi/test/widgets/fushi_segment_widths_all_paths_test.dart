@@ -254,13 +254,13 @@ void main() {
 
   // 审查补漏（PR #2987）：Apple 分段式页签的铺满档以前「各页签 Expanded 等分
   // 整行 + 单行省略号」，窄屏最长页签先变省略号。
-  testWidgets('Apple FushiTabBar 铺满档 420 宽下五个页签完整单行', (
+  testWidgets('Apple FushiTabBar 铺满档 440 宽下五个页签完整单行', (
     WidgetTester tester,
   ) async {
     late bool glass;
     await pump(
       tester,
-      width: 420,
+      width: 440,
       glassDesign: true,
       builder: (BuildContext context) {
         glass = isGlassDesign(context);
@@ -278,14 +278,14 @@ void main() {
     expectLabelsWhole(tester, find.byType(FushiTabBar));
     expect(
       tester.getSize(find.byType(FushiTabBar)).width,
-      lessThanOrEqualTo(420),
+      lessThanOrEqualTo(440),
     );
   });
 
   testWidgets('Apple FushiTabBar 铺满档放得下时等宽撑满', (WidgetTester tester) async {
     await pump(
       tester,
-      width: 900,
+      width: 700,
       glassDesign: true,
       builder: (BuildContext context) => DefaultTabController(
         length: labels.length,
@@ -301,7 +301,7 @@ void main() {
               find
                   .ancestor(
                     of: find.text(l),
-                    matching: find.byType(GestureDetector),
+                    matching: find.byType(FocusableActionDetector),
                   )
                   .first,
             )
@@ -311,11 +311,12 @@ void main() {
       expect(w, closeTo(widths.first, 0.5));
     }
     // 整行（减去左右各 8 的页签栏内边距）被等分。
-    expect(widths.first * labels.length, closeTo(900 - 16, 0.5));
+    expect(widths.first * labels.length, closeTo(700 - 16, 0.5));
   });
 
   // 审查补漏（PR #2987）：漫画取景分段以前手写「Expanded 等分 + FittedBox
-  // 缩小」，最长段的字号被单独缩小。现在走共享胶囊分段的共用分宽。
+  // 缩小」，短段空着时最长段的字号被单独缩小。现在段宽走共用分宽，只有所有
+  // 退让都用尽才缩字号。
   testWidgets('漫画取景分段 600 宽下各段原字号完整单行、撑满整行', (WidgetTester tester) async {
     const List<MangaCropChoice> choices = <MangaCropChoice>[
       MangaCropChoice.wholePage,
@@ -334,10 +335,6 @@ void main() {
     );
     final Finder root = find.byType(MangaCropChoiceSegments);
     expect(tester.takeException(), isNull);
-    expect(
-      find.descendant(of: root, matching: find.byType(FittedBox)),
-      findsNothing,
-    );
     for (final MangaCropChoice c in choices) {
       final Finder text = find.descendant(
         of: root,

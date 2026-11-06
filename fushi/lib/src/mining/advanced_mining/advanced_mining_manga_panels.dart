@@ -9,14 +9,19 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_geometry.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart'
-    show FushiPillSegmentedButton;
+    show
+        FushiPillSegmentedButton,
+        fushiPillSegmentSelectedFill,
+        fushiPillSegmentSelectedForeground;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -553,11 +558,14 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
   );
 }
 
-/// 手机全屏框选页底部的取景分段（交互稿 ④）：共享 M3E 胶囊分段撑满整行。
+/// 手机全屏框选页底部的取景分段（交互稿 ④）。
 ///
-/// 段宽只走共用分宽 `fushiSegmentWidths`（BUG-4127）：放得下时等宽，放不下时
-/// 按内容分宽 → 收段内边距 → 最宽段折成两行；任何一段都不出省略号，也不再像
-/// 旧的手写版本那样「各段等分 + FittedBox 单独缩小最长段的字号」。
+/// 外观（轨道色、选中 primary 胶囊、按压状态层与切换动画）与共享胶囊分段
+/// [FushiPillSegmentedButton] 同源，段宽也同走共用分宽 [FushiSegmentRow]
+/// （BUG-4127）：放得下时等宽撑满，放不下时按内容分宽、再把段内边距从 16 收到
+/// 6。和共享分段唯一的差别是**所有退让都用尽后**的处理：这里是固定高度的底部
+/// 操作条，标签不折行，被削窄的那段整体等比缩小（FittedBox scaleDown）；在这
+/// 之前每段都按自然宽排、不缩字号，短段不会空着大片留白而让长段缩小。
 class MangaCropChoiceSegments extends StatelessWidget {
   const MangaCropChoiceSegments({
     super.key,
@@ -565,6 +573,14 @@ class MangaCropChoiceSegments extends StatelessWidget {
     required this.selected,
     required this.onSelected,
   });
+
+  /// 段高与轨道内边距：与共享胶囊分段同一几何。
+  static const double segmentHeight = FushiPillSegmentedButton.segmentHeight;
+  static const double trackPadding = FushiPillSegmentedButton.trackPadding;
+
+  /// 段内左右留白：首选与共享分段同为 16，放不下时最多收到 [minLabelPadding]。
+  static const double labelPadding = FushiPillSegmentedButton.labelPadding;
+  static const double minLabelPadding = 6;
 
   final List<MangaCropChoice> choices;
   final MangaCropChoice selected;
@@ -574,22 +590,84 @@ class MangaCropChoiceSegments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ValueChanged<MangaCropChoice>? select = onSelected;
-    // 紧约束宽：胶囊分段的 [FushiSegmentRow] 在最小宽不够时撑满到最小宽。
-    return SizedBox(
-      width: double.infinity,
-      child: FushiPillSegmentedButton<MangaCropChoice>(
-        segments: <ButtonSegment<MangaCropChoice>>[
-          for (final MangaCropChoice choice in choices)
-            ButtonSegment<MangaCropChoice>(
-              value: choice,
-              label: Text(mangaCropChoiceLabel(choice)),
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final TextStyle base = (theme.textTheme.labelLarge ?? const TextStyle())
+        .copyWith(height: 1.2);
+    Widget segment(MangaCropChoice choice) {
+      final bool on = choice == selected;
+      final bool enabled = onSelected != null;
+      final Color fg = !enabled
+          ? cs.onSurface.withValues(alpha: 0.38)
+          : on
+          ? fushiPillSegmentSelectedForeground(cs, eink: eink)
+          : cs.onSurfaceVariant;
+      const ShapeBorder pill = StadiumBorder();
+      return Semantics(
+        button: true,
+        selected: on,
+        enabled: enabled,
+        inMutuallyExclusiveGroup: true,
+        child: Material(
+          type: MaterialType.transparency,
+          shape: pill,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            customBorder: pill,
+            onTap: enabled ? () => onSelected!(choice) : null,
+            child: AnimatedContainer(
+              duration: duration,
+              curve: FushiMotion.standard,
+              height: segmentHeight,
+              padding: const EdgeInsets.symmetric(horizontal: minLabelPadding),
+              alignment: Alignment.center,
+              decoration: ShapeDecoration(
+                color: fushiPillSegmentSelectedFill(
+                  cs,
+                  eink: eink,
+                ).withValues(alpha: on ? 1 : 0),
+                shape: pill,
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  mangaCropChoiceLabel(choice),
+                  maxLines: 1,
+                  softWrap: false,
+                  style: base.copyWith(
+                    color: fg,
+                    fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
             ),
-        ],
-        selected: <MangaCropChoice>{selected},
-        onSelectionChanged: select == null
-            ? null
-            : (Set<MangaCropChoice> next) => select(next.single),
+          ),
+        ),
+      );
+    }
+
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: FushiDesignTokens.of(context).surfaces.search,
+        shape: StadiumBorder(
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(trackPadding),
+        // 段自身只带最小内边距，首选内边距多出的部分作为 extras 交给共用分宽。
+        child: FushiSegmentRow(
+          fill: true,
+          extras: List<double>.filled(
+            choices.length,
+            2 * (labelPadding - minLabelPadding),
+          ),
+          children: <Widget>[
+            for (final MangaCropChoice choice in choices) segment(choice),
+          ],
+        ),
       ),
     );
   }
