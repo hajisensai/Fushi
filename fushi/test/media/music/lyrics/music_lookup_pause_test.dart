@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
 
-/// BUG-4129：桌面歌词点词查词不遵守「查词时暂停」。
+/// BUG-4159：桌面歌词点词查词不遵守「查词时暂停」。
 class _FakePlayback extends ChangeNotifier {
   bool playing = false;
   int playCalls = 0;
