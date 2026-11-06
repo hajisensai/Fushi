@@ -19,6 +19,7 @@ import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -51,6 +52,9 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/self_update/server_bundle_swap.dart';
+import 'package:fushi_server/src/self_update/server_release.dart';
+import 'package:fushi_server/src/self_update/server_self_updater.dart';
 import 'package:fushi_server/src/admin/admin_ops.dart';
 import 'package:fushi_server/src/agent_host.dart';
 import 'package:fushi_server/src/assistant_host.dart';
@@ -102,8 +106,15 @@ class HeadlessHost {
     required this.identity,
     bool Function()? p2pAvailable,
     ServerDictionaryHost? dictionaryHost,
+    HostSelfUpdater Function({
+      required Future<bool> Function() isAllowed,
+      required void Function() onInstalled,
+    })?
+    selfUpdaterFactory,
   }) : _config = config,
        _injectedDictionaryHost = dictionaryHost,
+       _selfUpdaterFactory =
+           selfUpdaterFactory ?? ServerSelfUpdater.forRunningBundle,
        _p2pAvailable =
            p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
@@ -116,6 +127,18 @@ class HeadlessHost {
 
   /// 原生 libfushi_p2p 是否可用（测试可注入）。
   final bool Function() _p2pAvailable;
+
+  /// 互联远程自更新的装配（测试可注入；生产按运行中的发布包建）。
+  final HostSelfUpdater Function({
+    required Future<bool> Function() isAllowed,
+    required void Function() onInstalled,
+  })
+  _selfUpdaterFactory;
+  final Completer<void> _selfUpdateInstalled = Completer<void>();
+
+  /// 远程更新已把新版换进安装目录：`serve` 等到它就停服，以 [kExitSelfUpdated]
+  /// 退出，由服务管理器拉起新版。
+  Future<void> get selfUpdateInstalled => _selfUpdateInstalled.future;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -206,6 +229,7 @@ class HeadlessHost {
   Future<void> start() async {
     if (_server != null) return;
     await paths.ensureLayout();
+    await _cleanupAfterSelfUpdate();
 
     SecurityContext? securityContext;
     if (config.tls) {
@@ -405,7 +429,17 @@ class HeadlessHost {
           // 服务端自己的临时目录。
           ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
             cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
-          ).export;
+          ).export
+          // 远程自更新：与 app 当 host 同一个端点。开关是配置 `remote_update`（默认关，
+          // 现读）；不是发布包时端点照挂、回 unsupported。
+          ..hostSelfUpdater = _selfUpdaterFactory(
+            isAllowed: () async => config.remoteUpdate,
+            onInstalled: () {
+              if (!_selfUpdateInstalled.isCompleted) {
+                _selfUpdateInstalled.complete();
+              }
+            },
+          );
     try {
       await server.start();
     } catch (_) {
@@ -434,6 +468,19 @@ class HeadlessHost {
       'listening on ${config.bind}:${server.port} '
           '(${securityContext != null ? 'https' : 'http'}, device=${config.deviceName})',
     );
+  }
+
+  /// 上一次远程更新换包留下的旧文件（`*.fushi-old`）此刻已无人占用，删掉。
+  Future<void> _cleanupAfterSelfUpdate() async {
+    final Directory? root = currentBundleRoot();
+    if (root == null) return;
+    final int left = await cleanupAfterServerUpdate(root);
+    if (left > 0) {
+      engineLog.logDiagnostic(
+        'ServerSelfUpdate',
+        'cleanup left $left stale file(s) under ${root.path}',
+      );
+    }
   }
 
   static bool _isLoopbackBind(String bind) =>

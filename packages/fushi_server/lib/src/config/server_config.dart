@@ -81,6 +81,7 @@ class ServerConfig {
     this.scanPrune = true,
     this.scanScrape = true,
     this.profileTransfer = false,
+    this.remoteUpdate = false,
     this.tmdbApiKey,
     this.ai,
   });
@@ -191,6 +192,12 @@ class ServerConfig {
   /// （BUG-988）。运行期现读，WebUI 改完即生效。
   final bool profileTransfer;
 
+  /// 允许已配对设备经互联 `/api/host/update` 让本机下载并安装新版服务端（与 app 的
+  /// 「允许已配对设备远程更新本机」同一条默认：关）。只在发布包里可用（见
+  /// `self_update/`）；装完进程以退出码 75 退出，由 systemd / 服务管理器拉起新版。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool remoteUpdate;
+
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
   final String? tmdbApiKey;
@@ -233,6 +240,7 @@ class ServerConfig {
     bool? scanPrune,
     bool? scanScrape,
     bool? profileTransfer,
+    bool? remoteUpdate,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
@@ -265,6 +273,7 @@ class ServerConfig {
     scanPrune: scanPrune ?? this.scanPrune,
     scanScrape: scanScrape ?? this.scanScrape,
     profileTransfer: profileTransfer ?? this.profileTransfer,
+    remoteUpdate: remoteUpdate ?? this.remoteUpdate,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
   );
@@ -333,6 +342,7 @@ class ServerConfig {
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
+      remoteUpdate: _bool(map['remote_update']) ?? base.remoteUpdate,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
     );
@@ -380,6 +390,7 @@ class ServerConfig {
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
+    b.writeln('remote_update: $remoteUpdate');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     }

@@ -1285,6 +1285,7 @@ class AdminApi {
     'scanPrune': ctx.config.scanPrune,
     'scanScrape': ctx.config.scanScrape,
     'profileTransfer': ctx.config.profileTransfer,
+    'remoteUpdate': ctx.config.remoteUpdate,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
     'ffmpeg': ctx.config.ffmpegPath,
@@ -1358,6 +1359,7 @@ class AdminApi {
       'scanPrune',
       'scanScrape',
       'profileTransfer',
+      'remoteUpdate',
     ]) {
       if (body[key] != null && body[key] is! bool) {
         throw FormatException('$key must be a boolean');
@@ -1409,6 +1411,7 @@ class AdminApi {
       scanPrune: body['scanPrune'] as bool?,
       scanScrape: body['scanScrape'] as bool?,
       profileTransfer: body['profileTransfer'] as bool?,
+      remoteUpdate: body['remoteUpdate'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty
           ? null
