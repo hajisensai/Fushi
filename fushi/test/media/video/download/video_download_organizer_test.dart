@@ -284,7 +284,7 @@ void main() {
   );
 
   group('multi-movie pack picks the feature matching the job title, not the '
-      'largest (BUG-4123)', () {
+      'largest (BUG-4195)', () {
     // 真实种子 [Airota&VCB-Studio] BOCCHI THE ROCK! Re：／Re：Re：：Re： 比 Re：Re：
     // 大，旧口径把 Re： 改名成任务标题「Re:Re:」，库里出现两部 Re:Re:。
     const String root =
