@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
@@ -394,16 +395,13 @@ void main() {
         of: layer.first,
         matching: find.byIcon(Icons.close),
       );
-      if (close.evaluate().isNotEmpty) {
-        final Offset c = tester.getCenter(close.first);
-        expect(await touch.touch(tester, c), isTrue);
-        await tester.pump(const Duration(seconds: 1));
-        final bool stillShown = visibleWebViews(tester).contains(popupEl);
-        debugPrint('[popup-touch] POPUP-CLOSE at $c stillShown=$stillShown');
-        expect(stillShown, isFalse, reason: '点浮层 × 必须关闭浮层');
-      } else {
-        debugPrint('[popup-touch] POPUP-CLOSE skipped: no close icon in layer');
-      }
+      expect(close, findsWidgets, reason: '浮层里必须有 × 关闭图标');
+      final Offset c = tester.getCenter(close.first);
+      expect(await touch.touch(tester, c), isTrue);
+      await tester.pump(const Duration(seconds: 1));
+      final bool stillShown = visibleWebViews(tester).contains(popupEl);
+      debugPrint('[popup-touch] POPUP-CLOSE at $c stillShown=$stillShown');
+      expect(stillShown, isFalse, reason: '点浮层 × 必须关闭浮层');
       debugPrint('[popup-touch] DONE pointers=${touch.events.length}');
     } finally {
       touch.dispose();

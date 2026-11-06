@@ -13,7 +13,11 @@
 # 绑定默认让 iOS 平台视图收不到任何真实触摸）。每次触摸后抓一张真屏到 $SHOTS。
 set -u
 export LANG=en_US.UTF-8
-UDID=${1:-4DDB6CD0-A321-4EA8-B8E5-4B043B5ABFDA}
+UDID=${1:-$(xcrun simctl list devices booted | grep -Eo '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' | head -1)}
+if [ -z "$UDID" ]; then
+  echo "没有指定模拟器 UDID，也没有已启动的模拟器：传 udid 参数，或先 xcrun simctl boot <udid>" >&2
+  exit 2
+fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FUSHI="$(cd "$HERE/../.." && pwd)"
 TAPPER_DIR="$HERE/ios_touch_tapper"

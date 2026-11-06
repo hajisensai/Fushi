@@ -1,6 +1,7 @@
 // Anki 包导入在较大规模上的耗时（手动跑；默认跳过）。
 //
-// FUSHI_SRS_IMPORT_BENCH=<笔记数> [FUSHI_SRS_IMPORT_BENCH_LOGS=<每张卡的 revlog 数>] //   dart test test/srs/apkg/srs_apkg_import_bench_test.dart
+// FUSHI_SRS_IMPORT_BENCH=<笔记数> [FUSHI_SRS_IMPORT_BENCH_LOGS=<每张卡的 revlog 数>]
+//   dart test test/srs/apkg/srs_apkg_import_bench_test.dart
 //
 // 库开在临时文件上、走 createInBackground（与 app 同一种连接：语句经后台 isolate 往返）。
 import 'dart:io';

@@ -215,7 +215,10 @@ mod tests {
     fn writer_uses_the_adaptive_cap_and_bulk_writes_keep_the_cache() {
         let dir = crate::store::sync2::tests::tempdir::new("mem-budget");
         let core = crate::store::SrsCore::open(&dir.0.join("srs.db")).unwrap();
-        let want = writer_cache_kib(available_bytes());
+        // 上限由核心在打开时按当时的可用内存算出；这里只认核心自己的值（不再单独读宿主内存），
+        // 并确认它落在 [MIN_KIB, MAX_KIB] 内。换算本身由纯函数测试覆盖。
+        let want = core.writer_cache_kib();
+        assert!((MIN_KIB..=MAX_KIB).contains(&want), "{want}");
         {
             let w = core.writer().unwrap();
             let n: i64 = w.query_row("PRAGMA cache_size", [], |r| r.get(0)).unwrap();
@@ -233,11 +236,11 @@ mod tests {
             )
             .unwrap();
         };
-        let big = 16 * 1024 * 1024;
         core.set_bulk_holds_cache(true);
         fill(&core);
+        // 上限最低 MIN_KIB（16 MB）> 收回线 8 MB，24 MB 的表必然把缓存撑过收回线，与宿主内存无关。
         assert!(
-            cache_used(&core.writer().unwrap()) > big,
+            cache_used(&core.writer().unwrap()) > super::super::IDLE_CACHE_BYTES,
             "bulk writes keep the cache"
         );
         core.set_bulk_holds_cache(false);

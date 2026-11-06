@@ -28,10 +28,15 @@ import 'package:integration_test/integration_test.dart';
 /// 用完必须 [dispose]（测试绑定会校验 `shouldPropagateDevicePointerEvents` 在
 /// 用例结束时已复位）。
 class IosRealTouchSession {
-  IosRealTouchSession._(this._binding, this._previousHitTest);
+  IosRealTouchSession._(
+    this._binding,
+    this._previousHitTest,
+    this._previousPropagate,
+  );
 
   final IntegrationTestWidgetsFlutterBinding _binding;
   final ui.HitTestCallback? _previousHitTest;
+  final bool _previousPropagate;
   final List<PointerEvent> _events = <PointerEvent>[];
   int _seq = 0;
 
@@ -43,6 +48,7 @@ class IosRealTouchSession {
     final IosRealTouchSession session = IosRealTouchSession._(
       binding,
       real.onHitTest,
+      binding.shouldPropagateDevicePointerEvents,
     );
     real.onHitTest = (ui.HitTestRequest request) {
       final HitTestResult result = HitTestResult();
@@ -106,7 +112,7 @@ class IosRealTouchSession {
   /// 收尾：还原 dispatcher 与绑定的原状态。
   void dispose() {
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_record);
-    _binding.shouldPropagateDevicePointerEvents = false;
+    _binding.shouldPropagateDevicePointerEvents = _previousPropagate;
     ui.PlatformDispatcher.instance.onHitTest = _previousHitTest;
   }
 }
