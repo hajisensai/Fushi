@@ -170,10 +170,10 @@ void main() {
   test('库里是旧版本的混合分隔符拼法（v145）：Rust 按统一拼法报「没变」不被误删；'
       '文件变了重新解析时沿用旧 uid，曲库仍是那几行', () async {
     final bool win = Platform.isWindows;
-    final String legacyA = win ? 'C:/m\a.flac' : '/m//a.flac';
-    final String legacyB = win ? 'C:/m\b.flac' : '/m/./b.flac';
-    final String canonA = win ? 'C:\m\a.flac' : '/m/a.flac';
-    final String canonB = win ? 'C:\m\b.flac' : '/m/b.flac';
+    final String legacyA = win ? r'C:/m\a.flac' : '/m//a.flac';
+    final String legacyB = win ? r'C:/m\b.flac' : '/m/./b.flac';
+    final String canonA = win ? r'C:\m\a.flac' : '/m/a.flac';
+    final String canonB = win ? r'C:\m\b.flac' : '/m/b.flac';
     final _ScriptedScanner first = _ScriptedScanner(<List<MusicScanRecord>>[
       <MusicScanRecord>[
         _track('legacyA', path: legacyA),

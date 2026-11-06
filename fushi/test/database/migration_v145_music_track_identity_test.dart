@@ -114,7 +114,7 @@ void main() {
       <Object?>[x.a, x.b, x.a],
     );
     raw.execute(
-      "INSERT INTO music_playlists (playlist_uid, name, created_at, updated_at) "
+      'INSERT INTO music_playlists (playlist_uid, name, created_at, updated_at) '
       "VALUES ('pl', 'L', 1, 1), ('pl2', 'M', 1, 1)",
     );
     raw.execute(
@@ -169,7 +169,7 @@ void main() {
         <String>['win'],
       );
       final QueryRow lyric = await db
-          .customSelect("SELECT track_uid, raw FROM music_lyrics")
+          .customSelect('SELECT track_uid, raw FROM music_lyrics')
           .getSingle();
       expect(lyric.read<String>('track_uid'), 'win');
       expect(
