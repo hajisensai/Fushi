@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///
 /// 根因修复：按指针类型消除这条特殊情况——粗指针（触屏，`@media (pointer: coarse)`）
 /// 禁用原生 user-select，长按拖选只留我们的查词高亮；细指针（鼠标，桌面）不受影响，
-/// 保住桌面 Ctrl+C 复制（caret.part.dart readerShouldHandleDesktopCopy）与右键导出
+/// 保住桌面 Ctrl+C 复制（caret.part.dart desktopShouldHandleCopyGesture）与右键导出
 /// （chrome.part.dart _showReaderTextContextMenu）所依赖的 window.getSelection() 原生选区。
 ///
 /// 复现只在真触屏 WebView 渲染时可见，widget 测试照不到 WebView 原生选区，故这里用
