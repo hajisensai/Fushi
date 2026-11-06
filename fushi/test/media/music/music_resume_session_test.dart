@@ -5,13 +5,14 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
-import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart'
+    show MediaPlayIntent;
 import 'package:fushi_core/fushi_core.dart';
 
 class _Backend implements MusicOutputBackend {

@@ -234,8 +234,8 @@ void main() {
     expect(withMusic.has(BackupCategory.music), isTrue);
     expect(
       withMusic.counts[BackupCategory.music],
-      6,
-      reason: '1 歌单 + 2 条目 + 1 歌词 + 2 播放',
+      8,
+      reason: '1 歌单 + 2 条目 + 1 歌词 + 2 播放 + 2 断点',
     );
   });
 }

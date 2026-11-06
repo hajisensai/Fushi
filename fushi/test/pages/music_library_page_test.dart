@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -332,8 +333,6 @@ void main() {
         },
       ),
     );
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-    await tester.pumpAndSettle();
     expect(find.text(t.music_track_remaining(time: '30:00')), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('music-track-resume-drama')),
@@ -347,8 +346,7 @@ void main() {
     expect(find.text('3:05'), findsNWidgets(2));
 
     // 清掉断点：列表跟着断点表的改动重读。
-    await tester.runAsync(() => app.musicSession.clearResumePoint('drama'));
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    unawaited(app.musicSession.clearResumePoint('drama'));
     await tester.pumpAndSettle();
     expect(find.text(t.music_track_remaining(time: '30:00')), findsNothing);
     expect(find.text('40:00'), findsOneWidget);
