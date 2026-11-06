@@ -14,11 +14,11 @@
     - (a) `native/fushi_fsrs/src/store/mod.rs:281` 给每个连接设 64 MB page cache 加 256 MB mmap。读池大小为核数的一半并有上下限（`read_pool.rs`），连接数乘上去会把移动端地址空间和 RSS 推高。
     - (b) 档案切换时，被退役的 store 在进行中的同步结束前仍持有原生 core，新旧两份 core 同时驻留。
     - (c) `_readBodyBounded` 的上限按字节算，但先拼 String，大响应会在 Dart 堆上占约两倍内存。
-- **[ ] ① 未修复**：根因证据不足，不应凭假设改 PRAGMA 或加上限来掩盖症状。下一步需要以下证据：
+- **[x] ① 已修复（Android 前台匀速涨到 Scudo OOM 这一族）**——根因与修法见文末「根因（2026-11-06）」。iOS 早期报告是否同源未验证。原先的证据清单：
   - ① CI 归档 iOS dSYM，使 `Runner+偏移` 可以符号化；
   - ② 在同步各阶段的面包屑里记录原生 core 实例数和连接数；
   - ③ 用大库（与用户量级相当的卡片数）在移动端模拟器上跑一次完整互联同步，并记录 RSS 曲线。
-- **[ ] ② 未加自动化测试**：根因确定之后再加。
+- **[x] ② 已加自动化测试**：`native/fushi_rwkv/tests/journal.rs` `a_huge_append_batch_never_holds_more_than_the_journal_cap`（一次 append 超过撤销日志容量的整批，途中峰值不超过上限 + 一行；变异实测：改回整批跑完才修剪，峰值 63 MB > 32 MB 红）；`packages/fushi_engine/test/srs/srs_rwkv_service_test.dart`「退回重放的行多于撤销日志种子：前面整块 replay、只把末尾几条 append」。
 - **备注**：
   - `n1i0ET11Ea` 日志里另外发现的 IPv6 回拼 bug 已经单独由 BUG-4070 修复。那个 bug 会让每轮同步失败，但不是内存耗尽的原因。
   - **2026-11-05 续报**（同一台 iPhone18,3 / iOS 27.2）：`n5OctGeoZv`、`203OplWhew`、`HGELrYwLzJ`、`-gRMoCHExn`、`qST-r751jz`，3.3.0-debug.23469 / 23480。签名同族：JavaScriptCore EXC_BREAKPOINT（`JavaScriptCore ← WebCore ← WebKit+15172248` 于 libdispatch 队列，即 WebKit 内容拦截规则编译）、`Runner+32094696` abort、liblangid / libswiftCore abort，Dart `Out of Memory` 于 `SrsCore._utf8 ← SrsCore.sync2`（media 阶段）与 `PlatformViewsService.initUiKitView` 编码创建参数；崩溃前面包屑 `srs_sync stage=downloading/uploading`、`srs_v1_migrate`，rss 0.7–2.0 GB（maxRss 2.17 GB）。**两个构建都早于 BUG-4013 修复**（PR #2834 合并点序号 23591），不能用来判 4013 是否覆盖本 bug，结论不变：等 ≥23591 的 iOS 报告。
@@ -57,3 +57,10 @@
   - **证据缺口 ⑦ 补上（取证，不是修复）**：采样再加 `tick=[A×3 B]`——同一趟走树里数各 widget 持有的**活跃且未静音的 ticker**（经 `SingleTickerProviderStateMixin` / `TickerProviderStateMixin` 的 `debugFillProperties` 取到 ticker 对象判 `isActive`）。下一份报告直接点名是谁在逐帧跑；frames 高而 tick 空 = 出帧不是 ticker 驱动（动图、视频纹理、平台视图、手动 scheduleFrame）。
   - **2026-11-05 `RZdXf9eW67`（同机，23878，首份带 `tick=`）**：停在 `HomePage>SrsDeckListPage`，6 个窗口每 30 s 2916–3606 帧（满 120 fps），**`tick=` 全程为空**；首个窗口有一轮 SRS 同步，之后 SRS 零活动、无 provider 重建（`marks` 空），malloc 383 → 732 → 1043 → 1530 → 2180 → 2620 MB 后 SIGABRT。同机另一进程停在 `HomeDashboardPage`（SRS 关）帧数 0–196、malloc 稳在约 110 MB。本地用 `srs_pages_test` 的装配单独挂 `SrsDeckListPage`（MD3 / Apple、411×914 与 1100×900），静止后 `hasScheduledFrame=false`——页面自身没有重绘循环，满帧出帧不是 ticker 驱动。
   - **证据缺口 ⑧ 补上（取证，不是修复）**：采样再加 `build=N who=[函数@文件:行×k; …]`——套住 `BuildOwner.onBuildScheduled`，数窗口里「因重建而要帧」的次数，并按 200 ms 节流抓调用栈记第一个应用栈帧。frames ≫ build = 出帧来自纹理 / 平台视图 / 纯重绘；who 直接点名逐帧 setState 的调用点。
+  - **证据缺口 ⑨ 补上（取证）**：`req= fcb= fvis= layers=`——要帧归因与 layer 普查（`fushi/lib/src/diagnostics/fushi_binding.dart` + `ui_activity_probe.dart`）。`#VJLEBHP4lz` 点名逐帧要帧的是后台任务按钮上的不定态进度环（`_RepeatingTicker.syncTicker`），但 Windows 离屏同款进度环 60 s 只涨 6 MB（`integration_test/progress_ring_native_leak_probe_itest.dart`），渲染不漏。
+  - **2026-11-06 排除渲染**：`fyqsAwZOjU`（23891）用户关掉系统动画，30 s 只 24 帧，malloc 仍 38 → 1627 MB；同日另一进程停在阅读器（每 30 s 1–400 帧）照样 553 → 3098 MB；那轮同步一开头就 `No reachable Fushi server address`，没进媒体阶段。所有漏的进程开头都有一次 RWKV 准备（`core:rwkv_replay` + `rwkv_log_tail`），没开 SRS 的进程 malloc 稳在约 108 MB。桌面跑 3 万卡 / 37.6 万条的 RWKV 全量回放只 +100 MB（`native/fushi_rwkv/examples/bench.rs`），全量回放本身不漏。
+  - **证据缺口 ⑩ 补上（取证）**：RWKV worker 每条命令记进 SRS 账本（`rwkv:<命令>`），阶段切换记 `marks=rwkv:<阶段>`；另加原生内存归因（各线程 CPU、匿名映射分组、malloc 越档 smaps dump，`fushi/lib/src/diagnostics/native_attribution_probe.dart`）。
+- **根因（2026-11-06，`42RdstXPpT`，23892）**：`marks=rwkv:preparing+1 rwkv:ready+1`（从快照恢复、就绪）之后 **`busy=[rwkv:append 21s → 51s → 81s → 111s → 141s]`**——一次 RWKV append 跑了两分多钟没结束，同期 malloc 487 → 894 → 1421 → 2142 → 2635 MB 后 Scudo OOM。
+  - `native/fushi_rwkv/src/lib.rs` `RwkvRuntime::append`：每追加一行记一条撤销记录（小模型每行约 55 KB），**整批跑完才按 `JOURNAL_MAX_BYTES`（32 MB）修剪**。一批几万行时撤销日志在途中涨到 GB 级。
+  - 一批会有几万行的来源：`packages/fushi_engine/lib/srs/srs_rwkv_service.dart` `_rebase`（退回重放）把分歧时刻之后的**全部**行一次交给 `append`。同步拉回另一台设备的评分插在已回放的历史中间时，分歧时刻可能很早，之后的整段历史都走逐行带撤销的 append（手机上逐行顺序算、几分钟）。进程在快照存下来之前就 OOM，下次启动从同一个旧快照恢复、同样的退回重放再来一遍，于是每次打开 SRS 都崩。
+  - 修复：① 原生 `append` 每追加一行就修剪（`trim_journal`），撤销日志任何时刻不超过上限加一行；② `_rebase` 与全量重建同一种拆法（`_replayRows`）：前面的整块 `replay`（原生成批并行、不记撤销），只把最后 `journalSeed`（500）条 `append`。
