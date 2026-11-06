@@ -270,6 +270,32 @@ void main() {
     expect(result.single.sentence, 'Hello world');
   });
 
+  // BUG-4127（反馈 vXYKPudf7U）：段落只有一行 sentence，拉丁文行界必须补空格，
+  // 否则「SO / LONG」粘成 SOLONG，下游取词与查词都认不出词界。
+  test('English multi-line paragraph joins lines with a word space', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: 'BEEN ',
+        secondWord: 'SO',
+        centerY: 0.3,
+        secondLineText: 'LONG',
+        secondLineCenterY: 0.7,
+      ),
+      language: 'en',
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
+    final GoogleLensParagraph paragraph = result.single;
+    expect(paragraph.sentence, 'BEEN SO LONG');
+    expect(
+      <String>[
+        for (final GoogleLensTextRegion r in paragraph.regions)
+          paragraph.sentence.substring(r.utf16Start, r.utf16End),
+      ],
+      <String>['B', 'E', 'E', 'N', 'S', 'O', 'L', 'O', 'N', 'G'],
+    );
+  });
+
   test('request carries the requested locale language on the wire', () {
     final Uint8List request = GoogleLensProtocol.makeRequest(
       imageData: Uint8List.fromList(<int>[9, 8, 7, 6]),

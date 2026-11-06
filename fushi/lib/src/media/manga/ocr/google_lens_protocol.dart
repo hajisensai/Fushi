@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:characters/characters.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:image/image.dart' as img;
 
@@ -410,13 +411,21 @@ class GoogleLensProtocol {
         }
         return a.geometry.rect.left.compareTo(b.geometry.rect.left);
       });
-      final String sentence = lines
-          .map((_RecognizedLine line) => line.text)
-          .join();
+      // 反馈 vXYKPudf7U：各行首尾相接，拉丁文行界补一个词间空格（[mangaOcrNeedsWordGap]）
+      // ——段落只有一行 `sentence`，行界一丢下游就再也认不出「SO / LONG」是两个词。
+      // 日文行界无缝，与旧行为逐字相同。
+      final StringBuffer sentenceBuffer = StringBuffer();
       final List<GoogleLensTextRegion> regions = <GoogleLensTextRegion>[];
       int utf16Base = 0;
+      String previousLineText = '';
       Rect? paragraphRect;
       for (final _RecognizedLine line in lines) {
+        if (mangaOcrNeedsWordGap(previousLineText, line.text)) {
+          sentenceBuffer.write(' ');
+          utf16Base += 1;
+        }
+        if (line.text.isNotEmpty) previousLineText = line.text;
+        sentenceBuffer.write(line.text);
         paragraphRect = paragraphRect == null
             ? line.geometry.rect
             : paragraphRect.expandToInclude(line.geometry.rect);
@@ -437,6 +446,7 @@ class GoogleLensProtocol {
       if (regions.isEmpty || paragraphRect == null) {
         continue;
       }
+      final String sentence = sentenceBuffer.toString();
       result.add(
         GoogleLensParagraph(
           sentence: sentence,

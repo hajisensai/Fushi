@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
@@ -253,48 +254,6 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
 }
 
 String _mangaBlockText(MokuroBlock block) => mangaJoinOcrText(block.lines);
-
-/// 空格分词脚本（拉丁 / 希腊 / 西里尔 / 亚美尼亚 / 希伯来 / 阿拉伯 / 格鲁吉亚）的字母或
-/// ASCII 数字。与 `native/fushidicts/fushidicts_src/scan/word_scan.cpp` 的
-/// `is_space_delimited_letter` 同一组脚本：引擎不在两个这类字母之间切词。
-final RegExp _mangaSpaceDelimitedWordChar = RegExp(
-  r'^[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}'
-  r'\p{Script=Armenian}\p{Script=Hebrew}\p{Script=Arabic}'
-  r'\p{Script=Georgian}0-9]',
-  unicode: true,
-);
-
-/// 拉丁文句内标点（逗号、句号、右引号 / 右括号……）后面紧接下一行的词时同样隔一个空格。
-final RegExp _mangaWordGapPunctuation = RegExp(r"""^[.,!?;:…'"’”)\]]$""");
-
-/// 反馈 vXYKPudf7U：OCR 文本 [before] 与 [after] 相接处（换行 / 相邻文本块）是否是一个
-/// 词间空格。OCR 的 `lines` 按行给、行尾不带空格；日文直接拼接无缝，拉丁文却是「行尾词 +
-/// 行首词」——不补空格就把 `SO` / `LONG` 粘成 `SOLONG`，引擎（[_mangaSpaceDelimitedWordChar]
-/// 那组脚本不在词中切）整串查不到。断字连字符（`LET-` / `TER`）不补。
-@visibleForTesting
-bool mangaOcrNeedsWordGap(String before, String after) {
-  if (before.isEmpty || after.isEmpty) return false;
-  final String last = before.characters.last;
-  final String first = after.characters.first;
-  if (!_mangaSpaceDelimitedWordChar.hasMatch(first)) return false;
-  return _mangaSpaceDelimitedWordChar.hasMatch(last) ||
-      _mangaWordGapPunctuation.hasMatch(last);
-}
-
-/// 把 OCR 文本片段（一个块的各行 / 一句话的各块）按阅读顺序拼成一句：拉丁文行界补词间
-/// 空格（[mangaOcrNeedsWordGap]），日文照旧无缝拼接。
-@visibleForTesting
-String mangaJoinOcrText(Iterable<String> parts) {
-  final StringBuffer buffer = StringBuffer();
-  String previous = '';
-  for (final String part in parts) {
-    if (part.isEmpty) continue;
-    if (mangaOcrNeedsWordGap(previous, part)) buffer.write(' ');
-    buffer.write(part);
-    previous = part;
-  }
-  return buffer.toString();
-}
 
 bool _mangaKanaOnly(String text) =>
     text.isNotEmpty &&

@@ -144,6 +144,72 @@ void main() {
     },
   );
 
+  // BUG-4127（反馈 vXYKPudf7U）：旧缓存按区域重拼句子时，区域不覆盖的词间空格不能丢，
+  // 换行处的拉丁文词界也要补回（旧缓存行与行直接相接：`SOLONG`）。
+  test('legacy English cache keeps word spaces when regrouped', () async {
+    final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+    final Directory directory = Directory(
+      p.join(
+        root.path,
+        kMangaOcrOutDirName,
+        kMangaOcrPagesCacheDirName,
+        googleLensEngineSignature('en'),
+      ),
+    );
+    const String original = 'BEEN SOLONG';
+    // 旧缓存的 Y 是翻转的：第一行存在下方（top 80），第二行存在上方（top 20）。
+    final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[
+      for (int i = 0; i < original.length; i++)
+        if (original[i] != ' ')
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTWH(
+              10.0 + (i < 7 ? i : i - 7) * 10,
+              i < 7 ? 80 : 20,
+              10,
+              10,
+            ),
+            utf16Start: i,
+            utf16End: i + 1,
+          ),
+    ];
+    await GoogleLensPageCache(directory).write(
+      0,
+      pages[0],
+      MokuroImage(
+        url: pages[0].relativeUrl,
+        size: const MokuroSize(101, 200),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: const MokuroRect.fromLTWH(10, 20, 80, 80),
+            isVertical: false,
+            fontSize: 10,
+            zIndex: 0,
+            lines: const <String>[original],
+            regions: regions,
+          ),
+        ],
+      ),
+    );
+    final File cacheFile = File(p.join(directory.path, '000000.json'));
+    final Map<String, dynamic> legacy =
+        jsonDecode(await cacheFile.readAsString()) as Map<String, dynamic>;
+    legacy.remove('geometry_version');
+    await cacheFile.writeAsString(jsonEncode(legacy), flush: true);
+
+    final MokuroBlock restored = (await GoogleLensPageCache(
+      directory,
+    ).read(0, pages[0]))!.blocks.single;
+    final String sentence = restored.lines.single;
+    expect(sentence, 'BEEN SO LONG');
+    expect(
+      <String>[
+        for (final MangaOcrTextRegion r in restored.regions!)
+          sentence.substring(r.utf16Start, r.utf16End),
+      ].join(),
+      'BEENSOLONG',
+    );
+  });
+
   test('source change invalidates only that Lens page', () async {
     await GoogleLensMangaOcrService(
           transport: _FakeTransport(makeGoogleLensFixture()),
