@@ -16,8 +16,8 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
+import 'package:fushi_audio/fushi_audio_core.dart' show decodeTextBytes;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -35,8 +35,8 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_work_identity.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_work_identity.dart';
 
 /// 一个待补字幕的视频。身份来自刮削，不是从文件名现猜的。
 class SubtitleBackfillTarget {
@@ -246,7 +246,7 @@ class VideoSubtitleBackfillService {
         continue;
       }
       lastRejection = rejection;
-      debugPrint(
+      fushiDebugPrint(
         '[subtitle-backfill] skipped "${candidate.fileName}" for '
         '${target.bookUid}: $rejection',
       );
@@ -272,7 +272,7 @@ class VideoSubtitleBackfillService {
           ordered = reordered;
         }
       } on Object catch (error) {
-        debugPrint(
+        fushiDebugPrint(
           '[subtitle-backfill] ai reorder failed for '
           '${target.bookUid}: $error',
         );
@@ -298,7 +298,7 @@ class VideoSubtitleBackfillService {
       );
       if (languageRejection != null) {
         lastRejection = languageRejection;
-        debugPrint(
+        fushiDebugPrint(
           '[subtitle-backfill] rejected "${candidate.fileName}" for '
           '${target.bookUid}: $languageRejection',
         );
@@ -310,7 +310,7 @@ class VideoSubtitleBackfillService {
       );
       if (check.rejected) {
         lastRejection = check.detail;
-        debugPrint(
+        fushiDebugPrint(
           '[subtitle-backfill] rejected "${candidate.fileName}" for '
           '${target.bookUid}: ${check.detail}',
         );

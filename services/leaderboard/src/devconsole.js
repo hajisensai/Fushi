@@ -10,12 +10,13 @@
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
 //   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
+//   GET  /dev/stats.json          同一份数据的 JSON（installStats），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
 // 业务一律复用 feedback.js 的函数，与 App 端开发者接口同一份逻辑。
 
-import { HttpError, hex, sha256 } from './util.js';
+import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
 import {
@@ -267,6 +268,24 @@ async function readForm(request, maxBytes = 32 * 1024) {
   return new URLSearchParams(text);
 }
 
+/** 登录页错误码 → 中文说明（未列出的原样显示错误码，便于排查）。 */
+const AUTH_ERROR_TEXT = {
+  rate_limited: '请求太频繁（同一网络每小时最多发 5 次验证码），请稍后再试。已发出的验证码 10 分钟内仍然有效。',
+  bad_email: '邮箱格式不对。',
+  bad_code: '验证码不对。',
+  code_expired: '验证码已过期，请重新发送。',
+  too_many_attempts: '尝试次数过多，请重新发送验证码（同一邮箱每天猜错 10 次后当天不能再登录）。',
+  email_not_configured: '服务端没有配置发信。',
+};
+
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+function authErrorText(code) {
+  return AUTH_ERROR_TEXT[code] || code;
+}
+
 function loginPage({ email = '', step = 'email', error = '' } = {}) {
   const err = error ? `<p class="err">${esc(error)}</p>` : '';
   const form = step === 'email'
@@ -277,10 +296,14 @@ function loginPage({ email = '', step = 'email', error = '' } = {}) {
 </form>`
     : `<form method="post" action="/dev/login">
 <input type="hidden" name="email" value="${esc(email)}">
-<p class="muted">如果该邮箱是已注册的 Fushi 账户，验证码已发出（10 分钟内有效）。</p>
+<p class="muted">如果该邮箱是已注册的 Fushi 账户，验证码已发出（10 分钟内有效）。邮件有时会迟到几分钟，也请看看垃圾邮件；有效期内重发收到的是同一个验证码，先到的那封就能用。</p>
 <label for="code">验证码</label>
 <input id="code" name="code" inputmode="numeric" pattern="\\d{6}" autocomplete="one-time-code" required>
 <button>登录</button>
+</form>
+<form method="post" action="/dev/code">
+<input type="hidden" name="email" value="${esc(email)}">
+<button class="link">重新发送</button>
 </form>`;
   return html(layout('登录', `<h1>登录</h1>
 <div class="card">
@@ -803,7 +826,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     try {
       await requestCode(env, ip, { email, purpose: 'login', lang: 'zh' }, now, ctx);
     } catch (e) {
-      if (e instanceof HttpError) return loginPage({ email, error: `发送失败：${e.code}` });
+      if (e instanceof HttpError) return loginPage({ email, error: `发送失败：${authErrorText(e.code)}` });
       throw e;
     }
     return loginPage({ email, step: 'code' });
@@ -815,7 +838,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     try {
       ids = await consumeCode(env, email, 'login', form.get('code') || '', now);
     } catch (e) {
-      if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${e.code}` });
+      if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${authErrorText(e.code)}` });
       throw e;
     }
     const acc = await resolveEmailAccount(env, ids, now);
@@ -834,12 +857,26 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   const dev = await sessionAccount(env, request, now);
   if (!dev) {
     if (method === 'GET' && path === '/dev') return loginPage();
-    if (method === 'GET') return redirect('/dev');
+    if (method === 'GET' && !path.endsWith('.json')) return redirect('/dev');
     throw new HttpError(401, 'dev_session_required');
   }
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
+  if (method === 'GET' && path === '/dev/stats.json') return json(await installStats(env, now));
+  if (method === 'GET' && path === '/dev/feedback.json') {
+    // 与 /dev 列表同一份数据（devList），给 Fushi Pulse 之类的本机面板用；status 缺省 = 未结案，all = 全部。
+    const status = url.searchParams.get('status') || 'active';
+    return json(await devList(env, {
+      status: status === 'all' ? null : status,
+      cursor: url.searchParams.get('cursor'),
+      limit: url.searchParams.get('limit') || 50,
+      q: (url.searchParams.get('q') || '').trim(),
+    }));
+  }
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\.json$/.exec(path))) {
+    return json(await devView(env, await feedbackById(env, m[1])));
+  }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {
     await refreshProjectStats(env, now, { force: true });

@@ -12,6 +12,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（用户添加的 BT 站 / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
 | 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
+| 跟随已配对设备登录 Fushi 账户 | `/api/interconnect/leaderboard-link`（POST，仅 TLS） | 标为「我的设备」的已配对设备在本机没有账户时，跟随服务端当前 Profile 的排行榜账户自动登录（服务端代绑对端公钥）。总闸 `leaderboard_link` 默认开，但配对从不自动标「我的设备」，要管理员手动标 |
 | WebUI / admin API | `http(s)://<host>:38780/` | 状态、配对 PIN、库根管理、上传、任务、下载、模型、设置、日志 |
 
 设计文档：[`docs/specs/2026-09-08-fushi-server-headless-design.md`](../../docs/specs/2026-09-08-fushi-server-headless-design.md)。
@@ -38,7 +39,7 @@ fushi_server/
 
 - Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。
 - `ffmpeg` / `ffprobe`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时在配置里写 `ffmpeg:` / `ffprobe:` 路径（直接生效，不需要环境变量；`FUSHI_FFMPEG` 仍认，配置优先）。
-- 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi._tcp`；没有也能手输地址配对）。
+- 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi-sync._tcp`；没有也能手输地址配对）。
 
 本机自己构建（任何平台，需 Dart SDK ≥ 3.8）：
 
@@ -93,12 +94,13 @@ lan_requires_pin: true        # 无头进程没有审批弹窗，PIN 是唯一�
 admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
 admin_token: "..."            # init 生成；忘了用 `fushi_server admin reset-token`
-subtitle_language: "ja"       # 扫描视频时 sidecar 字幕匹配语言
+subtitle_language: "ja"       # 扫描视频时 sidecar 字幕匹配语言；也是代下载配字幕 / 补字幕的显式字幕语言（硬过滤，留空 = 不限）
 metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海报语言由它派生；偏好表显式设过 video_metadata_locale 时以偏好为准；改了重启生效
 scan_scrape: true             # 扫描后自动补刮「从未识别过」的视频作品（见下文「视频刮削」）
 # tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
 scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
 profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
+leaderboard_link: true        # 允许「我的设备」跟随本机排行榜账户自动登录（见下文「跟随已配对设备登录」）；保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -114,7 +116,7 @@ qbittorrent:                  # engine=qbittorrent 或 auto 无内置库时用
   url: "http://127.0.0.1:8080"
   username: "admin"
   password: "..."
-ai:                           # 「AI 下视频」助手会话用的 AI 提供商（见下文）；整段省略 = 不用 AI、不发任何 AI 请求
+ai:                           # 「AI 下视频」助手会话、补字幕前候选重排等用的 AI 提供商（见下文）；整段省略 = 不用 AI、不发任何 AI 请求
   preset: "openai"            # openai / anthropic / gemini / deepseek / qwen / zhipu / … / custom（全部自填）
   api_key: "sk-..."
   # model: ""                 # 空 = 预设的起点模型
@@ -132,11 +134,15 @@ ai:                           # 「AI 下视频」助手会话用的 AI 提供�
 libraries:
   - id: "anime"
     path: "/srv/media/anime"
-    kind: "video"             # video | book | manga
+    kind: "video"             # video | book | manga | audiobook（music 暂不支持，见 docs/agent/server-parity-gaps.md）
     enabled: true
   - id: "manga"
     path: "/srv/media/manga"
-    kind: "manga"             # .mokuro 卷 + 纯页图目录（根有页图=一卷；否则每个含页图的直接子目录一卷）；cbz/cbr/pdf 暂不支持
+    kind: "manga"             # .mokuro 卷、单文件卷（cbz / zip / cbr / rar / cb7，rar 系需 7-Zip）与纯页图目录；PDF 暂不支持
+    enabled: true
+  - id: "audiobooks"
+    path: "/srv/media/audiobooks"
+    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝
     enabled: true
 ```
 
@@ -155,7 +161,7 @@ fushi_server init                      生成配置
 fushi_server serve [--scan] [--[no-]prune]   起服务（Ctrl-C / SIGTERM 优雅停）；--no-prune 对本进程所有扫描生效
 fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，随后同步补刮（不起服务）
 fushi_server status                    打印库/配对概况
-fushi_server pair ls | revoke <peerId> 已配对设备
+fushi_server pair ls | revoke <peerId> 已配对设备（ls 里标 `[我的设备]`；revoke 同时清掉标记）
 fushi_server admin reset-token         重生成 admin_token
 fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
@@ -170,7 +176,8 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 
 ```
 fushi_server ctl status | logs | p2p
-fushi_server ctl lib [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
+fushi_server ctl pairing [ls] | revoke <peerId> | owner <peerId> on|off   已配对设备 / 标记「我的设备」
+fushi_server ctl lib [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
 fushi_server ctl scan [--prune|--no-prune]
 fushi_server ctl dl [ls] | cancel|retry|rm <id> | subtitles <id>（该任务的字幕行：来源 / 语言 / 原文件名 / 落盘路径 / 错误）
 fushi_server ctl dl add --title t (<magnet> | --magnet m | --torrent <路径|URL>)
@@ -190,7 +197,7 @@ fushi_server ctl books|videos|audiobooks|dict|metadata [ls]   （books / videos 
 fushi_server ctl books progress <key> [--set '<json>']   videos position|playback <id> …
 fushi_server ctl videos rm <id>
 fushi_server ctl videos subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]
-fushi_server ctl videos subtitle backfill <id> [--lang ja]   立即补字幕（只在 app 当 host 时可用）
+fushi_server ctl videos subtitle backfill <id> [--lang ja]   立即补字幕（见下文「在线字幕来源」）
 fushi_server ctl scrape pending | sweep | ai-identify <id> | search <bookUid> -q 词
                   | identify <bookUid> --provider anidb|mal|tmdb --external-id <id>
 fushi_server ctl jobs submit asr <音频> -l ja -o out.srt   在运行中的服务上转录
@@ -253,8 +260,9 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 把视频旁全部 sidecar 字幕都挪走——自动补字幕把任何现存 sidecar 当「已有字幕」跳过，想重新补就得先清干净。
 先挪文件、全部挪成才清 DB：某个 sidecar 改名失败（Windows 上被播放器 / 编辑器占用）时已挪的改回原名、DB
 不动，接口回 **409** `{"error":"subtitle_sidecar_busy","path":…,"reason":…}`（ctl 退出码 75），关掉占用再试。
-`videos subtitle backfill` 用的是刮削后自动补字幕的同一个服务，身份取已落库的刮削结论（没刮过回
-`noIdentity`，先 `scrape identify`）；它只在 app 当 host 时有（无头服务端回 501）。
+`videos subtitle backfill` 用的是 app 刮削后自动补字幕的同一个引擎服务，身份取已落库的刮削结论（没刮过回
+`noIdentity`，先 `scrape identify`）；只补缺的——视频已有字幕源或目录里已有 sidecar 时回 `alreadyHasSubtitle`。
+服务端一家字幕来源都没配时回 `unavailable`（见「在线字幕来源」）。
 
 **数据目录互斥**：`serve` 与所有直接打开数据库的离线命令（`scan` / `status` / `import` /
 `audiobook` / `dict` …）启动时都要拿 `<data_dir>/fushi_server.lock` 的排他 OS 文件锁（进程退出
@@ -272,7 +280,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | 路由 | 说明 |
 |---|---|
 | `GET status` / `GET logs` | 运行状态、最近 500 行日志 |
-| `GET pairing` / `DELETE pairing/peers/<id>` | 待输入 PIN + 已配对列表 / 吊销 |
+| `GET pairing` / `DELETE pairing/peers/<id>` | 待输入 PIN + 已配对列表（每台带 `deviceKeyVerified` / `ownerDevice`，另有 `leaderboardLink` 开关状态）/ 吊销（同时清掉「我的设备」标记与设备钥匙指纹） |
+| `PUT pairing/peers/<id>/owner {owner}` | 标记 / 取消「我的设备」；配对时没证明设备钥匙的 peer 回 409 `device_key_unverified`，不存在的 peer 404 |
 | `GET|POST libraries` / `DELETE libraries/<id>` / `POST scan` | 库根管理（写回 yaml）/ 触发扫描（单飞） |
 | `GET jobs` / `DELETE jobs/<id>` | 互联任务（ASR 等） |
 | `GET|POST downloads` / `POST downloads/<id>/cancel|retry` / `DELETE downloads/<id>` | 代下载 |
@@ -319,8 +328,33 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 - 下载后端没起来（没内置引擎也没 qBittorrent）时报 `not_ready`。
 - WebUI「设置」页的 AI 几项改完**保存即生效**，不用重启；API key 与 qBittorrent 密码同口径：不回显、留空不改。
   admin API：`GET/PUT settings` 的 `ai` 对象（`preset` 置空即关；`apiKey` 只回 `apiKeySet`）。
-- 服务端那一家 AI 只指派给「AI 下载」：刮削的 AI 身份识别、补字幕重排等其它 AI 功能在服务端不装配。
-- 选了「配字幕」时服务端当前不会装字幕（服务端管线没接字幕源）；每系列字幕语言选择会记进偏好表备用。
+- 服务端那一家 AI 指派给「AI 下载」「视频字幕 AI 校对」「AI 助手」和补字幕前的候选重排（app 的「视频搜索辅助」），
+  打开 `library_organize` 时还有「AI 整理库」；刮削的 AI 身份识别等其它 AI 功能在服务端不装配。
+- 选了「配字幕」时由服务端下载管线按「在线字幕来源」装字幕；每系列字幕语言选择记进偏好表，字幕阶段按它排首选。
+
+### 在线字幕来源
+
+代下载的字幕阶段（`subtitlePolicy` = `bestEffort` / `required`）与 `videos subtitle backfill` 用同一份来源装配
+（`lib/src/server_subtitle_providers.dart`，`subs` 命令也用它）：OpenSubtitles / SubDL / Jimaku。
+
+- 凭据：环境变量 `FUSHI_OPENSUBTITLES_API_KEY`（+ `_USERNAME` / `_PASSWORD`）、`FUSHI_SUBDL_API_KEY`、
+  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键（经互联「服务账号」同步过来的那份）。
+- 无人值守路径只用**偏好开关开着且有 key** 的来源：偏好里关掉的来源，设了环境变量也不自动用
+  （环境变量只在 `subs` 命令里临时启用）。一家都没有时下载的字幕阶段跳过（`required` 的任务报 needsAttention），
+  补字幕回 `unavailable`。
+- 下载管线的来源在管线（重）建时读一次（启动 / 资源索引器保存后）；补字幕每次请求现读。
+- 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
+  （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
+- Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
+  整季压缩包按集号解包。AJATT 只在 app 里有。
+- 自动获取字幕（偏好 `video_subtitle_backfill_after_scrape`，与 app 同名，默认开；关了下面两条都不跑，
+  一家来源都没配时同样不跑）：
+  - 刮削后补字幕：下载导入的作品刮完后，给仍缺字幕的分集各补一条（与 app 一样只管下载来的文件；
+    库根扫描刮出来的作品不自动补，免得第一次扫大库就逐集打一遍字幕站，要补用 `videos subtitle backfill`）。
+  - 下载后缺字幕的定期重试：下载管线起着时，启动先看一轮、之后每 30 分钟看一眼；下载完成 14 天内、
+    字幕行还是 `unavailable` 的分集每 6 小时重找一次（连载番字幕常晚一两天上传），装上了任务字幕行标 `placed`。
+- 补字幕前的 AI 候选重排：配了 `ai:` 段时，下载候选之前交那一家排「先试哪几条」（每次补字幕最多一次请求，
+  失败按原序）；没有 `ai:` 段不发任何 AI 请求。
 
 ### 视频刮削
 
@@ -370,6 +404,28 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - 默认关：没开关的入站写就是隐形写入通道（与 app「允许已配对设备读写本机配置」同一默认）。
   WebUI「配对」页的「配置文件寄存」卡片可一键开关、指定分发、删除。
 
+### 跟随已配对设备登录（`leaderboard_link`）
+
+互联端点 `/api/interconnect/leaderboard-link` 与 app 当 host 时同一条（引擎
+`sync/interconnect_leaderboard_link.dart`）：手机等新设备本机没有 Fushi 账户时，自己生成设备钥匙，
+只把公钥 + 持有证明交给服务端；服务端用**自己的**设备钥匙签名调排行榜服务 `POST /v1/me/devices`，
+把这把公钥挂到同一账户，再把账户公开资料与服务地址回给对端。私钥、恢复码从不经互联传输。
+
+- 账户 = DB 当前激活 Profile 的本机排行榜账户（`leaderboard login / register / import` 建的那个，
+  `<data>/support/leaderboard/profile_<id>.json`）；每次请求现读，没有账户回 409 `no_account`。
+- 门：必须 TLS（明文下能力位 `leaderboardDeviceLinkV1` 不报、端点 403 `https_required`）；只认已配对
+  设备的 per-peer 令牌（共享 token 403）；总闸 `leaderboard_link` 关着 403 `disabled`；对端没被标为
+  「我的设备」403 `not_owner_device`。
+- **与 app 的区别：配对从不授予「我的设备」。** app 在配对审批弹窗里有「允许 · 这是我的设备」，
+  服务端没有审批按钮（PIN 只证明对方拿到了 PIN，借用服务端的朋友也拿得到），所以配对一律只落
+  「仅互联」，由管理员之后在 WebUI「配对 → 已配对设备」或 `ctl pairing owner <peerId> on` 手动标
+  ——与 app 在已配对设备列表里手动标记同一条路。代绑出去的钥匙在账户里是满权限，只标自己的设备。
+- 只有配对时证明过设备钥匙的设备能标（升级前配对的 / 旧版客户端要升级后重新配对）；重新配对会清掉
+  旧标记，吊销同时清掉标记与指纹。标记与指纹落 `preferences` 表（`interconnect_owner_device_peers` /
+  `interconnect_peer_device_keys`），与 app 同键同形、同一份实现。
+- 总闸默认开（与 app「允许已配对设备自动登录我的账户」同一默认）：真正的门是逐台的手动标记，
+  不标任何设备时这条端点对谁都是 403。
+
 ### 上传协议
 
 `PUT /api/admin/upload?library=<id>&path=Season1/ep01.mkv`，body 是一段字节，头
@@ -406,8 +462,8 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
 - 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
-  `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物已随包
-  这份 .so 与变形表；正式发布包（`release-server.yml`，ubuntu-22.04）**尚未**随包，需自行放进 `lib/`。
+  `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
+  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
 - 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
