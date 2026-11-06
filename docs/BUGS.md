@@ -33,16 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3736 条。点号进各自文件。
-> 共 3727 条。点号进各自文件。
+> 共 3737 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4127](bugs/BUG-4127-mihon-android-pref-save-returns-stale.md) | ✅ | ✅ | Android 上扩展源偏好点 SAVE 后 Token 丢失（偏好桥回传上一拍的旧值） |
-> 共 3729 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4177](bugs/BUG-4177-mihon-android-pref-save-returns-stale.md) | ✅ | ✅ | Android 上扩展源偏好点 SAVE 后 Token 丢失（偏好桥回传上一拍的旧值） |
 | [BUG-4176](bugs/BUG-4176-music-track-duplicated-by-path-spelling.md) | ✅ | ✅ | 同一个音频文件在曲库里出现两次（路径拼法随扫描根而变） |
 | [BUG-4175](bugs/BUG-4175-pure-audio-in-video-library.md) | ✅ | ✅ | 广播剧 CD 的 mp3/flac 出现在视频库：纯音频改归音乐库 |
 | [BUG-4174](bugs/BUG-4174-settings-segment-hidden-last-row.md) | ✅ | ✅ | 设置分段分组末行没有组尾圆角：空的「待发卡片」行以零尺寸混进组尾 |
