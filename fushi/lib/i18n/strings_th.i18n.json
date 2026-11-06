@@ -2974,6 +2974,7 @@
   "floating_ball_ocr_failed": "OCR หน้าจอไม่สำเร็จ",
   "floating_ball_ocr_language_pack_missing": "Windows ไม่มีตัวรู้จำข้อความสำหรับ $language เพิ่มภาษานั้น (พร้อมการรู้จำอักขระด้วยแสง) ได้ที่ การตั้งค่า → เวลาและภาษา → ภาษาและภูมิภาค",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "โมเดล OCR ของระบบยังไม่พร้อม",
   "floating_ball_ocr_notification": "กำลัง OCR หน้าจอ",
   "floating_ball_ocr_pick_hint": "แตะข้อความเพื่อค้นหา",

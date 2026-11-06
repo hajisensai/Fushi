@@ -2974,6 +2974,7 @@
   "floating_ball_ocr_failed": "截屏識字失敗",
   "floating_ball_ocr_language_pack_missing": "系統沒有安裝 $language 的文字辨識：到「設定 → 時間與語言 → 語言與地區」新增該語言（含光學字元辨識）",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "系統 OCR 模型尚未就緒",
   "floating_ball_ocr_notification": "正在截屏識字",
   "floating_ball_ocr_pick_hint": "點文字查詞",

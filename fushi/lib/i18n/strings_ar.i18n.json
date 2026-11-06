@@ -2974,6 +2974,7 @@
   "floating_ball_ocr_failed": "فشل OCR للشاشة",
   "floating_ball_ocr_language_pack_missing": "لا يحتوي Windows على أداة للتعرّف على النص بلغة $language. أضف هذه اللغة (مع التعرّف الضوئي على الحروف) من الإعدادات ← الوقت واللغة ← اللغة والمنطقة",
   "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
+  "floating_ball_ocr_model_missing": "Download the OCR model first: Settings → Models → OCR",
   "floating_ball_ocr_model_unavailable": "نموذج OCR الخاص بالنظام غير جاهز بعد",
   "floating_ball_ocr_notification": "OCR للشاشة قيد التنفيذ",
   "floating_ball_ocr_pick_hint": "اضغط على نص للبحث عنه",
