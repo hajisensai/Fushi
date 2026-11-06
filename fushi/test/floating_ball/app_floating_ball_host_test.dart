@@ -1097,9 +1097,7 @@ void main() {
       );
     }
 
-    testWidgets('应用外球截屏识字语言跟随默认内容语言，改了就重发给原生', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('应用外球截屏识字语言跟随默认内容语言，改了就重发给原生', (WidgetTester tester) async {
       mockNative(tester);
       addTearDown(
         () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -1977,7 +1975,9 @@ void main() {
           expect(called('stopScreenOcr'), isFalse);
         });
 
-        testWidgets('没装对应语言的识别器（默认日语）：冻结层提示去装语言，点任意处退出', (WidgetTester tester) async {
+        testWidgets('没装对应语言的识别器（默认日语）：冻结层提示去装语言，点任意处退出', (
+          WidgetTester tester,
+        ) async {
           mockCapture(tester, <String, Object?>{
             'png': png,
             'screen': <double>[0, 0, 1920, 1080],
@@ -2001,9 +2001,7 @@ void main() {
           expect(called('stopScreenOcr'), isTrue);
         });
 
-        testWidgets('默认内容语言是中文且没装中文识别器：提示里写的是中文', (
-          WidgetTester tester,
-        ) async {
+        testWidgets('默认内容语言是中文且没装中文识别器：提示里写的是中文', (WidgetTester tester) async {
           await prefs.setDefaultContentLanguage('zh-Hans');
           mockCapture(tester, <String, Object?>{
             'png': png,

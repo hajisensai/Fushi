@@ -1229,9 +1229,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final BuildContext? ctx = _navigatorContext;
       if (ctx == null) return;
       pendingSystemOcrSetup.value = false;
-      unawaited(
-        showSystemOcrSetupDialog(ctx, language: _ocrLanguage),
-      );
+      unawaited(showSystemOcrSetupDialog(ctx, language: _ocrLanguage));
     });
   }
 
