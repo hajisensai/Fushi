@@ -10,6 +10,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
     show kMusicSearchDebounce;
 import 'package:fushi/src/models/audio_controller.dart';
@@ -287,6 +288,70 @@ void main() {
       find.byKey(const ValueKey<String>('music_empty_add_folder')),
       findsOneWidget,
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('曲目列表：有没听完的断点的长曲目显示剩余时间 + 进度条；歌曲（< 8 分钟）不显示', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          MusicTracksCompanion.insert(
+            trackUid: 'drama',
+            path: '/m/drama.flac',
+            title: 'Drama 1',
+            durationMs: const Value<int?>(40 * 60000),
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
+        ],
+        albums: const <MusicAlbumsCompanion>[],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    await db.upsertMusicResumePoint('drama', positionMs: 600000, updatedAt: 1);
+    await db.upsertMusicResumePoint('t1', positionMs: 60000, updatedAt: 1);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(db);
+    await _pump(
+      tester,
+      app,
+      MusicTrackListPage(
+        title: 'Songs',
+        tracks: snap.tracks,
+        albums: <String, MusicAlbumRow>{
+          for (final MusicAlbumRow a in snap.albums) a.albumUid: a,
+        },
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(find.text(t.music_track_remaining(time: '30:00')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music-track-resume-drama')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-track-resume-t1')),
+      findsNothing,
+      reason: '默认只给长曲目续播：3 分钟的歌不显示断点',
+    );
+    expect(find.text('3:05'), findsNWidgets(2));
+
+    // 清掉断点：列表跟着断点表的改动重读。
+    await tester.runAsync(() => app.musicSession.clearResumePoint('drama'));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(find.text(t.music_track_remaining(time: '30:00')), findsNothing);
+    expect(find.text('40:00'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });

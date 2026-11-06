@@ -94,9 +94,18 @@ bool musicResumePointIsFinished({
       nearEndProgress: kAudioStartNearEndProgress,
     );
 
-/// 列表 / 详情显示用：这首有没有「没听完」的断点（与读取侧同一判据：会被续播的才算）。
-bool musicResumePointShown({
-  required int positionMs,
+/// 列表 / 详情显示的断点：点开这首会从哪接着放（与打开时同一判据：模式门 + 列表点开的
+/// 意图 + 片尾区）；null = 会从头放，不显示。
+Duration? musicResumeDisplayStart({
+  required MusicResumeMode mode,
+  required int? savedPositionMs,
   required int? durationMs,
-}) =>
-    !musicResumePointIsFinished(positionMs: positionMs, durationMs: durationMs);
+}) {
+  final Duration d = resolveMusicResumeStart(
+    mode: mode,
+    intent: EpisodeStartIntent.listSelect,
+    savedPositionMs: savedPositionMs,
+    durationMs: durationMs,
+  );
+  return d > Duration.zero ? d : null;
+}

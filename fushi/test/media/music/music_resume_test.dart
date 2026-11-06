@@ -119,8 +119,12 @@ void main() {
         reason: '$c',
       );
       expect(
-        musicResumePointShown(positionMs: c.$1, durationMs: c.$2),
-        !finished,
+        musicResumeDisplayStart(
+          mode: MusicResumeMode.all,
+          savedPositionMs: c.$1,
+          durationMs: c.$2,
+        ),
+        finished ? isNull : Duration(milliseconds: c.$1),
       );
     }
   });

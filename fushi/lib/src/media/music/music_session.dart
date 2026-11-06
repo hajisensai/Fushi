@@ -352,6 +352,9 @@ class MusicSession extends ChangeNotifier {
   /// 断点写入串行队列：同一首的写与随后的读（再打开时）按提交顺序落库。
   Future<void> _resumeWrites = Future<void>.value();
 
+  /// 断点表改过一次（写 / 删落库后）就加一：列表 / 详情据此重读「剩余时间」。
+  final ValueNotifier<int> resumePointsRevision = ValueNotifier<int>(0);
+
   /// 测试用：等已提交的断点写全部落库。
   @visibleForTesting
   Future<void> get resumeWritesIdle => _resumeWrites;
@@ -428,6 +431,7 @@ class MusicSession extends ChangeNotifier {
             updatedAt: now,
           );
         }
+        resumePointsRevision.value++;
       } on Object catch (e, st) {
         // 一笔写失败（库正在关）不能断掉后面的写：记日志，队列继续。
         ErrorLogService.instance.log('MusicSession.resumePoint', e, st);
@@ -486,7 +490,7 @@ class MusicSession extends ChangeNotifier {
     if (_resumeWritten?.uid == trackUid) _resumeWritten = null;
     await _resumeWrites;
     await _database()?.deleteMusicResumePoint(trackUid);
-    notifyListeners();
+    resumePointsRevision.value++;
   }
 
   void _publishMediaSession() {
@@ -553,6 +557,7 @@ class MusicSession extends ChangeNotifier {
     appleMusicFavorites?.removeListener(notifyListeners);
     appleMusicFavorites?.dispose();
     engine.removeListener(_onEngineChanged);
+    resumePointsRevision.dispose();
     queueFeeds.dispose();
     engine.dispose();
     super.dispose();

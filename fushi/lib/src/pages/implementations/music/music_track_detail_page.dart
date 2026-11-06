@@ -19,6 +19,8 @@ import 'package:fushi/src/media/people/person_entry_sections.dart'
     show MusicTrackPeopleSection;
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
@@ -244,6 +246,82 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
     );
   }
 
+  /// 有没听完的断点（「播放」会接着放）时平铺的两个动作：这一次从头放（断点留着，真放
+  /// 起来后被新位置覆盖）/ 清掉断点。断点表一改（[MusicSession.resumePointsRevision]）就重读。
+  List<Widget> _resumeActions(MusicTrackRow track, MusicAlbumRow? album) {
+    final MusicSession session = ref.read(appProvider).musicSession;
+    return <Widget>[
+      ValueListenableBuilder<int>(
+        valueListenable: session.resumePointsRevision,
+        builder: (BuildContext context, int revision, _) =>
+            FutureBuilder<MusicResumePointRow?>(
+              future: _db.getMusicResumePoint(track.trackUid),
+              builder:
+                  (
+                    BuildContext context,
+                    AsyncSnapshot<MusicResumePointRow?> snap,
+                  ) {
+                    final MusicResumePointRow? row = snap.data;
+                    final Duration? resume = row == null
+                        ? null
+                        : musicResumeDisplayStart(
+                            mode: ref.read(appProvider).isPreferencesReady
+                                ? ref.read(appProvider).musicResumeMode
+                                : MusicResumeMode.longTracks,
+                            savedPositionMs: row.positionMs,
+                            durationMs: track.durationMs ?? row.durationMs,
+                          );
+                    if (resume == null) return const SizedBox.shrink();
+                    final FushiDesignTokens tokens = FushiDesignTokens.of(
+                      context,
+                    );
+                    return FushiStaggeredEntrance(
+                      index: 0,
+                      child: Wrap(
+                        spacing: tokens.spacing.gap,
+                        runSpacing: tokens.spacing.gap,
+                        children: <Widget>[
+                          FushiPressScale(
+                            child: FushiFilledButton.tonalIcon(
+                              size: FushiButtonSize.m,
+                              key: const ValueKey<String>(
+                                'music_track_play_from_start',
+                              ),
+                              onPressed: () => unawaited(
+                                session.engine.playQueue(
+                                  <MusicPlayItem>[
+                                    musicPlayItemOf(track, album: album),
+                                  ],
+                                  context: MusicQueueContext.mixed,
+                                  resume: false,
+                                ),
+                              ),
+                              icon: const FushiIcon(FushiIcons.restart),
+                              label: Text(t.music_action_play_from_start),
+                            ),
+                          ),
+                          FushiPressScale(
+                            child: FushiFilledButton.tonalIcon(
+                              size: FushiButtonSize.m,
+                              key: const ValueKey<String>(
+                                'music_track_clear_resume_point',
+                              ),
+                              onPressed: () => unawaited(
+                                session.clearResumePoint(track.trackUid),
+                              ),
+                              icon: const FushiIcon(FushiIcons.close),
+                              label: Text(t.music_action_clear_resume_point),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+            ),
+      ),
+    ];
+  }
+
   Widget _body(
     BuildContext context,
     FushiDesignTokens tokens,
@@ -302,6 +380,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
                         label: Text(t.music_play_all),
                       ),
                     ),
+                    ..._resumeActions(track, album),
                     FushiPressScale(
                       child: FushiFilledButton.tonalIcon(
                         size: FushiButtonSize.m,
