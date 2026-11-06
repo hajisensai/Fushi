@@ -1966,69 +1966,9 @@ impl SrsCore {
                     stamped,
                     it["server"].as_i64(),
                 )?;
-                let body = match body {
-                    // 本机新写的派生日志记下此刻的生效配置（重放按它算，改配置不追溯；replay.rs 文件头）。外来、已盖戳
-                    // 的日志保留它原有的（旧日志没有 = 按作者结果照抄）。
-                    Body::Log(mut l) if !stamped && !matches!(l.intent, Intent::Absolute) => {
-                        if tree.is_none() {
-                            tree = Some(config::DeckTree::load(c, profile)?);
-                        }
-                        stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
-                        Body::Log(l)
-                    }
-                    other => {
-                        if !matches!(other, Body::Log(_)) {
-                            tree = None;
-                        }
-                        other
-                    }
-                };
+                let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
                 let before = t.marks.landed;
-                // 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除。
-                let bodies = match &body {
-                    Body::Edit(e)
-                        if e.kind == EntKind::Note && e.key == "tags" && e.legacy.is_none() =>
-                    {
-                        let note = e.entity.text();
-                        let cur = semantics::current_tags(c, profile, &note)?;
-                        let want: Vec<String> = match serde_json::from_str::<Value>(&e.value) {
-                            Ok(Value::Array(xs)) => xs
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .map(str::to_owned)
-                                .collect(),
-                            _ => Vec::new(),
-                        };
-                        let mut out: Vec<Body> = Vec::new();
-                        for tag in want.iter().filter(|x| !cur.contains(x)) {
-                            out.push(Body::TagAdd {
-                                note: e.entity.clone(),
-                                tag: tag.clone(),
-                            });
-                        }
-                        for tag in cur.iter().filter(|x| !want.contains(x)) {
-                            out.push(Body::TagRemove {
-                                note: e.entity.clone(),
-                                tag: tag.clone(),
-                            });
-                        }
-                        // 显示顺序跟作者这一刻的列表走（只是提示，集合本身由上面的添加 / 观察删除决定）。
-                        let mut seen = std::collections::BTreeSet::new();
-                        let order: Vec<String> = want
-                            .iter()
-                            .filter(|t| seen.insert((*t).clone()))
-                            .cloned()
-                            .collect();
-                        if order != cur || !out.is_empty() {
-                            out.push(Body::TagOrder {
-                                note: e.entity.clone(),
-                                tags: order,
-                            });
-                        }
-                        out
-                    }
-                    _ => vec![body],
-                };
+                let bodies = expand_tags(c, profile, body)?;
                 for b in &bodies {
                     let op =
                         append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
@@ -2476,4 +2416,75 @@ impl SrsCore {
             }))
         })
     }
+}
+
+/// 本机新写的派生日志记下此刻的生效配置（重放按它算，改配置不追溯；replay.rs 文件头）。外来、已盖戳的日志保留它
+/// 原有的（旧日志没有 = 按作者结果照抄）。[tree] 是这一批缓存的牌组树：落过非日志操作（可能改了配置 / 归属）就作废重读。
+fn stamp_local_config(
+    c: &Connection,
+    profile: &str,
+    body: Body,
+    stamped: bool,
+    tree: &mut Option<config::DeckTree>,
+) -> Result<Body, String> {
+    match body {
+        Body::Log(mut l) if !stamped && !matches!(l.intent, Intent::Absolute) => {
+            if tree.is_none() {
+                *tree = Some(config::DeckTree::load(c, profile)?);
+            }
+            stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
+            Ok(Body::Log(l))
+        }
+        other => {
+            if !matches!(other, Body::Log(_)) {
+                *tree = None;
+            }
+            Ok(other)
+        }
+    }
+}
+
+/// 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除（再加一条显示顺序）；其余操作原样一条。
+fn expand_tags(c: &Connection, profile: &str, body: Body) -> Result<Vec<Body>, String> {
+    let e = match &body {
+        Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" && e.legacy.is_none() => e,
+        _ => return Ok(vec![body]),
+    };
+    let note = e.entity.text();
+    let cur = semantics::current_tags(c, profile, &note)?;
+    let want: Vec<String> = match serde_json::from_str::<Value>(&e.value) {
+        Ok(Value::Array(xs)) => xs
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut out: Vec<Body> = Vec::new();
+    for tag in want.iter().filter(|x| !cur.contains(x)) {
+        out.push(Body::TagAdd {
+            note: e.entity.clone(),
+            tag: tag.clone(),
+        });
+    }
+    for tag in cur.iter().filter(|x| !want.contains(x)) {
+        out.push(Body::TagRemove {
+            note: e.entity.clone(),
+            tag: tag.clone(),
+        });
+    }
+    // 显示顺序跟作者这一刻的列表走（只是提示，集合本身由上面的添加 / 观察删除决定）。
+    let mut seen = std::collections::BTreeSet::new();
+    let order: Vec<String> = want
+        .iter()
+        .filter(|t| seen.insert((*t).clone()))
+        .cloned()
+        .collect();
+    if order != cur || !out.is_empty() {
+        out.push(Body::TagOrder {
+            note: e.entity.clone(),
+            tags: order,
+        });
+    }
+    Ok(out)
 }
