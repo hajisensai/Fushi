@@ -2317,6 +2317,7 @@
   "dictionary_font_size": "Sözlük yazı tipi boyutu",
   "dictionary_font_size_zoom_hint": "Ctrl + fare tekerleği açılır içeriği yakınlaştırır",
   "dictionary_pitch_source_count": "Vurgu · $count",
+  "dictionary_popup_no_results_term": "No results for “${term}”",
   "dictionary_section_frequency": "Sıklık Sözlükleri",
   "dictionary_section_kanji": "Kanji Sözlükleri",
   "dictionary_section_pitch": "Ton Sözlükleri",

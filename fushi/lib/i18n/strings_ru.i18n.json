@@ -2317,6 +2317,7 @@
   "dictionary_font_size": "Размер шрифта словаря",
   "dictionary_font_size_zoom_hint": "Ctrl + колёсико мыши масштабирует содержимое всплывающего окна",
   "dictionary_pitch_source_count": "Ударение · $count",
+  "dictionary_popup_no_results_term": "No results for “${term}”",
   "dictionary_section_frequency": "Словари частотности",
   "dictionary_section_kanji": "Словари кандзи",
   "dictionary_section_pitch": "Словари высоты тона",

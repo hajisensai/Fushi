@@ -2317,6 +2317,7 @@
   "dictionary_font_size": "Lettergrootte woordenboek",
   "dictionary_font_size_zoom_hint": "Ctrl + scrollwiel zoomt de popup-inhoud",
   "dictionary_pitch_source_count": "Toonhoogte · $count",
+  "dictionary_popup_no_results_term": "No results for “${term}”",
   "dictionary_section_frequency": "Frequentiewoordenboeken",
   "dictionary_section_kanji": "Kanjiwoordenboeken",
   "dictionary_section_pitch": "Toonhoogtewoordenboeken",
