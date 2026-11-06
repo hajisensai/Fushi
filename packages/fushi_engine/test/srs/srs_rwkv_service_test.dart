@@ -923,6 +923,53 @@ void main() {
       await service.close();
     });
 
+    test(
+      '一次对齐追加的新行多于撤销日志种子（同步拉回整段历史）：前面整块 replay、只把末尾几条 append，顺序与全量回放相同（BUG-4075）',
+      () async {
+        final _Fixture f = await _Fixture.create();
+        final List<String> cards = await f.cards(3);
+        await f.graduate(cards);
+        final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
+        final SrsRwkvService service = f.service(backend, journalSeed: 1);
+        f.store.rwkv = service;
+        await service.start();
+        await _settled(service);
+        final int appendedBefore = backend.appendedRows;
+        final int replayedBefore = backend.replayedRows;
+
+        // 不经本机作答的 onAnswered（像同步拉回的行）：三条新评分一次落进日志表，都严格晚于已回放的。
+        f.store.rwkv = null;
+        f.advance(kDay);
+        await f.store.answer(cards[0], 3);
+        f.advance(60000);
+        await f.store.answer(cards[1], 3);
+        f.advance(60000);
+        final SrsReviewLog last = await f.store.answer(cards[2], 3);
+        f.store.rwkv = service;
+
+        expect(await service.refresh(), isTrue);
+        expect(service.ready, isTrue);
+        expect(backend.resets, 1, reason: 'no full rebuild');
+        expect(backend.rewinds, 0, reason: 'appended, not rebased');
+        expect(
+          backend.appendedRows - appendedBefore,
+          1,
+          reason: 'only the last journalSeed rows go through the undo journal',
+        );
+        expect(backend.replayedRows - replayedBefore, 2);
+        expect(backend.replayedCards, await _fullReplayOrder(f));
+
+        // 末尾那条仍在撤销日志里：撤销最近一次作答照样就地撤回，不退回重放、不全量重建。
+        expect(await f.store.undo(cards[2], last.id), isTrue);
+        expect(await service.refresh(), isTrue);
+        expect(backend.unappends, 1);
+        expect(backend.rewinds, 0);
+        expect(backend.resets, 1);
+        expect(backend.replayedCards, await _fullReplayOrder(f));
+        await service.close();
+      },
+    );
+
     test('全量重建读历史途中用户还在答题：不重复回放、对齐时也不再触发第二次重建', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(3);

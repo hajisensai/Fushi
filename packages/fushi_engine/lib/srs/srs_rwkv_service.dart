@@ -682,13 +682,29 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   /// 把 [replay] 的行回放进 [backend]（已在 [_serial] 里，调用方已按 reset / restore 设好 [_journalFloor]）：
-  /// 前面的按 65,536 条一块 replay，最后 [journalSeed] 条 append 进撤销日志。
+  /// 见 [_replayThenAppend]。
   Future<void> _replayRows(
     SrsRwkvBackend backend,
     SrsRwkvReplay replay,
     void Function(int done, int total) onProgress,
+  ) => _replayThenAppend(
+    backend,
+    replay.rows,
+    replay.tags,
+    replay.ats,
+    onProgress,
+  );
+
+  /// 按时间顺序把 [rows]（[tags] / [ats] 与之一一对应）接到 [backend] 当前状态之后（已在 [_serial] 里）：
+  /// 前面的按 65,536 条一块 replay（原生侧成批并行，不进撤销日志，且清空已有撤销日志），最后
+  /// [journalSeed] 条 append 进撤销日志；整块 replay 过的行把 [_journalFloor] 推到它们的最后一条。
+  Future<void> _replayThenAppend(
+    SrsRwkvBackend backend,
+    RwkvRows rows,
+    List<int> tags,
+    List<int> ats,
+    void Function(int done, int total) onProgress,
   ) async {
-    final RwkvRows rows = replay.rows;
     final int split = max(0, rows.length - journalSeed);
     final Uint8List bytes = rows.bytes;
     onProgress(0, rows.length);
@@ -706,15 +722,15 @@ class SrsRwkvService implements SrsRwkvScheduling {
       );
       onProgress(end, rows.length);
     }
-    if (split > 0) _journalFloor = replay.ats[split - 1];
+    if (split > 0) _journalFloor = ats[split - 1];
     if (split < rows.length) {
       await _append(
         backend,
         RwkvRows.fromBytes(
           Uint8List.sublistView(bytes, split * kFrwkvReviewSize),
         ),
-        replay.tags.sublist(split),
-        replay.ats.sublist(split),
+        tags.sublist(split),
+        ats.sublist(split),
       );
       onProgress(rows.length, rows.length);
     }
@@ -1093,7 +1109,16 @@ class SrsRwkvService implements SrsRwkvScheduling {
         if (pendingTags.isEmpty) return;
         final RwkvRows batch = RwkvRows(pending.length);
         pending.forEach(batch.addRows);
-        await _append(backend, batch, pendingTags, pendingAts);
+        // 与退回重放同一种拆法（BUG-4075）：同步拉回的新行可能有几万条（都严格晚于已回放的、各是其卡末尾的
+        // 评分，所以走得到这里），整段逐行 append 手机上要算好几分钟。前面的整块 replay，只把最后
+        // [journalSeed] 条 append 进撤销日志——replay 会清空撤销日志，这之后撤更早作答的撤销照旧走退回重放。
+        await _replayThenAppend(
+          backend,
+          batch,
+          pendingTags,
+          pendingAts,
+          (int _, int _) {},
+        );
         // 先记下：后面的撤回失败时，退回重放要从不晚于这些行的时刻退。
         _lastAt = max(_lastAt ?? pendingAts.last, pendingAts.last);
         pending = <RwkvRows>[];
