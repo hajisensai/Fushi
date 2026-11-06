@@ -78,12 +78,15 @@ void main() {
     expect(source, contains('await addLocalFolder();'));
     expect(
       source,
-      contains("'video' => const <String>['sftp', 'webdav', 'alist']"),
-      reason: '视频网络 transport 必须收窄到可原地流播的 sftp + webdav + alist',
+      // 音乐网络来源与视频同一套可流播 transport（逐曲远程播放同样要按偏移读）。
+      contains(
+        "'video' || 'music' => const <String>['sftp', 'webdav', 'alist']",
+      ),
+      reason: '视频 / 音乐网络 transport 必须收窄到可原地流播的 sftp + webdav + alist',
     );
     expect(
       source,
-      isNot(contains(RegExp(r"'video' => const <String>\[[^\]]*'ftp'"))),
+      isNot(contains(RegExp(r"'video'[^=\n]*=> const <String>\[[^\]]*'ftp'"))),
       reason: 'ftp 不能按偏移读、拖不了进度条，不得进视频域',
     );
     expect(source, contains('onLibraryChanged?.call();'));
