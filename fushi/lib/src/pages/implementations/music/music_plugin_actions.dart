@@ -536,7 +536,7 @@ class _PluginCollectToggleState extends ConsumerState<_PluginCollectToggle> {
               _artist ? t.music_action_follow : t.music_action_collect,
             ),
           );
-    return Tooltip(
+    return FushiTooltip(
       message: on
           ? (_artist ? t.music_action_unfollow : t.music_action_uncollect)
           : (_artist ? t.music_action_follow : t.music_action_collect),

@@ -435,8 +435,9 @@ void main() {
     // Android 原生侧：模型还没由 Play 服务取下。
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       kSystemOcrChannel,
-      (MethodCall call) async =>
-          call.method == 'modelStatus' ? 'missing' : null,
+      (MethodCall call) async => call.method == 'modelStatus'
+          ? <String, Object?>{'status': 'missing'}
+          : null,
     );
     addTearDown(
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(

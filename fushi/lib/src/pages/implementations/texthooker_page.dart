@@ -86,6 +86,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -4703,7 +4704,7 @@ class GalResourceUnpairedLineTrackDialog extends StatelessWidget {
         ),
         FushiListItem(
           leading: FushiIcon(
-            notPaired ? Icons.music_off_outlined : Icons.hourglass_empty,
+            notPaired ? FushiIcons.volumeOff : FushiIcons.pending,
           ),
           title: Text(texthookerLineAudioSummary(line)),
           subtitle: notPaired ? Text(t.game_line_audio_not_paired_hint) : null,
