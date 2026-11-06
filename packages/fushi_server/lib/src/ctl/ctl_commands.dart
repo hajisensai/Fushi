@@ -8,7 +8,7 @@
 /// ```
 /// fushi_server ctl status
 /// fushi_server ctl logs
-/// fushi_server ctl pairing [ls] | pairing revoke <peerId>
+/// fushi_server ctl pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off
 /// fushi_server ctl libraries [ls] | libraries add <path> [--kind video|book|manga|audiobook] [--id x]
 ///                                 | libraries rm <id> [--purge]
 /// fushi_server ctl scan [--prune | --no-prune]
@@ -93,6 +93,11 @@ ArgParser _buildBaseCtlParser() => ArgParser()
     help: 'anki login：确认使用 AnkiWeb 的条款风险',
   )
   ..addFlag('discard-unsynced', negatable: false, help: 'anki logout：丢弃未同步的卡片')
+  ..addFlag(
+    'documents',
+    defaultsTo: true,
+    help: 'backup create：带上 documents/（--no-documents 只备份设置与状态）',
+  )
   ..addOption('lib', help: 'upload：目标库根 id')
   ..addOption('path', help: 'upload：库根下的相对目录（缺省放库根）')
   ..addFlag(
@@ -110,6 +115,7 @@ const Map<String, String> _aliases = <String, String>{
   'sub': 'subscriptions',
   'indexers': 'resource-indexers',
   'profile': 'profiles',
+  'backups': 'backup',
   'config': 'settings',
 };
 
@@ -124,6 +130,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   运行状态
   logs [-f|--follow]                       最近日志（-f 持续跟随）
   pairing [ls] | revoke <peerId>           已配对设备 / 待确认 PIN
+  pairing owner <peerId> on|off            标记 / 取消「我的设备」（可跟随本机排行榜账户自动登录）
   libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
   jobs [ls] | rm <id>                      通用任务（ASR 等）
@@ -140,6 +147,9 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
        login --user u [--endpoint e] [--accept-ankiweb]   密码从 stdin 或 FUSHI_ANKI_PASSWORD 读
        logout [--discard-unsynced]
   profiles [ls] | share|rm <id>
+  backup [ls] | create [--no-documents] | rm <name>
+                                           整机备份（落 <data>/backups/；下载走
+                                           GET /api/admin/backups/<name>）
   p2p                                      P2P 隧道状态
   upload <文件…> --lib <id> [--path <目录>] 分块断点续传到库根（传完记得 scan）
   raw <METHOD> </api/admin/...> ['<json>'] 直接调任意 admin 接口
@@ -592,8 +602,16 @@ _CtlRequest? _parseAction(
             'DELETE',
             '$_api/pairing/peers/${adminPathSegment(arg(0)!)}',
           );
+        case 'owner' when arg(0) != null && (arg(1) == 'on' || arg(1) == 'off'):
+          return _CtlRequest(
+            'PUT',
+            '$_api/pairing/peers/${adminPathSegment(arg(0)!)}/owner',
+            body: <String, Object?>{'owner': arg(1) == 'on'},
+          );
       }
-      return usage('pairing [ls] | pairing revoke <peerId>');
+      return usage(
+        'pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off',
+      );
 
     case 'libraries':
       switch (sub) {
@@ -805,6 +823,30 @@ _CtlRequest? _parseAction(
       }
       return usage('profiles [ls] | profiles share|rm <id>');
 
+    case 'backup':
+      switch (sub) {
+        case '' || 'ls':
+          return const _CtlRequest(
+            'GET',
+            '$_api/backups',
+            render: _renderBackups,
+          );
+        case 'create':
+          return _CtlRequest(
+            'POST',
+            '$_api/backups',
+            body: <String, Object?>{'documents': command['documents'] as bool},
+          );
+        case 'rm' when arg(0) != null:
+          return _CtlRequest(
+            'DELETE',
+            '$_api/backups/${adminPathSegment(arg(0)!)}',
+          );
+      }
+      return usage(
+        'backup [ls] | backup create [--no-documents] | backup rm <name>',
+      );
+
     case 'raw':
       final String method = sub.toUpperCase();
       final String? path = arg(0);
@@ -949,6 +991,22 @@ void _renderModels(Object? response, StringSink out) {
 }
 
 /// 渲染 `{<key>: [...]}` 形状的列表响应；其余字段（capability 之类）不展开，`--json` 可看全量。
+void _renderBackups(Object? response, StringSink out) {
+  if (response is! Map) return _renderGeneric(response, out);
+  if (response['running'] != null) out.writeln('进行中: ${response['running']}');
+  if (response['lastError'] != null) {
+    out.writeln('上次失败: ${response['lastError']}');
+  }
+  final Object? items = response['items'];
+  if (items is! List || items.isEmpty) {
+    out.writeln('（没有备份）');
+    return;
+  }
+  for (final Object? item in items) {
+    if (item is Map) out.writeln('${item['name']}  ${item['bytes']} 字节');
+  }
+}
+
 _Render _listRenderer(String key) => (Object? response, StringSink out) {
   if (response is Map && response['error'] != null) {
     out.writeln('! ${response['error']}');

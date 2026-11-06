@@ -9,6 +9,8 @@
 
 #include "clipboard_image_channel.h"
 #include "external_open_handoff.h"
+#include "floating_ball_channel.h"
+#include "global_lookup_channel.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -20,6 +22,11 @@ struct _MyApplication {
   // 经 `app.fushi/external_video` 的 `openExternalVideo` 推给 Dart——与 Windows
   // WM_COPYDATA 落到的是同一个 Dart 处理（`_handleExternalVideoChannel`）。
   FlMethodChannel* external_video_channel;
+  // Desktop system floating ball (`app.fushi.reader/floating_ball`).
+  FushiFloatingBall* floating_ball;
+  // App-external lookup card + PRIMARY selection (`app.fushi.reader/
+  // global_lookup`, `app.fushi.reader/foreground_selection`).
+  FushiGlobalLookup* global_lookup;
   // 主窗口（弱引用：窗口销毁时自动置空）。单实例下二次启动只前置它，不再开新窗。
   GtkWindow* window;
   // 首帧已出、窗口已显示过。之前不 present：present 一个还没画过的 FlView 就是
@@ -178,6 +185,8 @@ static void my_application_activate(GApplication* application) {
                             FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(
       self->external_video_channel, external_video_method_cb, self, nullptr);
+  self->floating_ball = fushi_floating_ball_new(messenger, window);
+  self->global_lookup = fushi_global_lookup_new(messenger);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -250,6 +259,8 @@ static void my_application_dispose(GObject* object) {
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->clipboard_image_channel);
   g_clear_object(&self->external_video_channel);
+  g_clear_pointer(&self->floating_ball, fushi_floating_ball_free);
+  g_clear_pointer(&self->global_lookup, fushi_global_lookup_free);
   g_clear_pointer(&self->pending_external_args, g_ptr_array_unref);
   if (self->window != nullptr) {
     g_object_remove_weak_pointer(G_OBJECT(self->window),

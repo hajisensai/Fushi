@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -286,6 +287,7 @@ bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
         lookupModuleEnabled: c.appModel.moduleVisibility.isEnabled(
           ModuleId.lookup,
         ),
+        globalLookupSupported: GlobalLookupController.isSupported,
       );
 }
 

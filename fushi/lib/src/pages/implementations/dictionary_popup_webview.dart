@@ -3932,7 +3932,6 @@ JSON.stringify((function(){
         // controller/document pair may mark the surface ready afterwards.
         _invalidatePopupDocument();
         final int generation = _documentGeneration;
-        debugPrint('[popup-perf] webview loadStop $url');
         // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
         // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
         // 300KB 内联 HTML/CSS/JS）的解析成本。
