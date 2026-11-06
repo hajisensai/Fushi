@@ -90,8 +90,9 @@ pub extern "C" fn ffm_free_bytes(ptr: *mut u8, len: usize) {
     }
 }
 
-/// 打开一个扫描游标：`root` 是 UTF-8 绝对路径。成功时写 `out_handle`（不透明指针，
-/// 用 [ffm_scan_close] 释放）。根不存在 / 不是目录返回 [status::NOT_FOUND]。
+/// 打开一个扫描游标：`root` 是 UTF-8 绝对路径——目录（来源扫描）或单个音频文件（单文件
+/// 导入，见 `scan::Scanner::open`）。成功时写 `out_handle`（不透明指针，用 [ffm_scan_close]
+/// 释放）。根不存在返回 [status::NOT_FOUND]。
 ///
 /// # Safety
 /// `root_ptr` 指向 `root_len` 字节；`out_handle` 可写。

@@ -76,15 +76,41 @@ fn file_stem(p: &Path) -> String {
 }
 
 impl Scanner {
+    /// `root` 是目录：按目录扫（[Scanner::expand_dir]）。`root` 是**单个文件**：只扫这一个
+    /// 文件——曲库的单文件导入（视频页拖入的纯音频、旧版按「无画面视频」入库的存量
+    /// 迁移，指名几首就只收这几首，不把同目录的别的文件一起拖进来）。目录封面照常取
+    /// 同目录的 `cover.*` 等；同目录的 `.cue` 不认（FLAC 内嵌 CUESHEET 仍照常拆）；不是
+    /// 曲库认的音频扩展名时产出空扫描，与目录里的非音频文件同样被忽略。
     pub fn open(root: &str, recursive: bool) -> Option<Self> {
         let root = PathBuf::from(root);
-        if !root.is_dir() {
+        let mut pending = VecDeque::new();
+        let dirs = if root.is_dir() {
+            vec![root]
+        } else if root.is_file() {
+            if tags::is_audio_extension(&ext_lower(&root)) {
+                let siblings: Vec<PathBuf> = root
+                    .parent()
+                    .and_then(|d| fs::read_dir(d).ok())
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.is_file())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                pending.push_back(Item::Audio {
+                    folder_cover: find_folder_cover(&siblings),
+                    path: root,
+                });
+            }
+            Vec::new()
+        } else {
             return None;
-        }
+        };
         Some(Self {
-            dirs: vec![root],
+            dirs,
             recursive,
-            pending: VecDeque::new(),
+            pending,
             ready: VecDeque::new(),
             known: KnownFiles::new(),
         })

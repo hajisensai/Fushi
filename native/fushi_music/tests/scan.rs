@@ -18,8 +18,12 @@ const ROOT: &str = "tests/fixtures/library";
 const GOLDEN: &str = "tests/fixtures/scan_golden.txt";
 
 fn scan_all(max: u32, known: Option<Vec<u8>>) -> Vec<(bool, Vec<Record>)> {
+    scan_root(ROOT, max, known)
+}
+
+fn scan_root(root: &str, max: u32, known: Option<Vec<u8>>) -> Vec<(bool, Vec<Record>)> {
     let mut handle = std::ptr::null_mut();
-    let rc = unsafe { ffm_scan_open(ROOT.as_ptr(), ROOT.len(), 1, &mut handle) };
+    let rc = unsafe { ffm_scan_open(root.as_ptr(), root.len(), 1, &mut handle) };
     assert_eq!(rc, status::OK);
     if let Some(k) = known {
         assert_eq!(
@@ -155,6 +159,34 @@ fn scan_matches_golden_vector() {
     for (album, uids) in &albums {
         assert_eq!(uids.len(), 1, "album {album} split into {uids:?}");
     }
+}
+
+#[test]
+fn single_file_root_scans_only_that_file() {
+    let whole = tracks(&scan_all(0, None));
+    // 与目录扫描同样的拼接方式（uid 含路径，分隔符要一致）。
+    let file = Path::new(ROOT).join("Album A").join("02 Second Song.mp3");
+    let only = tracks(&scan_root(file.to_str().unwrap(), 0, None));
+    assert_eq!(only.len(), 1, "a file root yields exactly that one track");
+    let from_dir = whole
+        .iter()
+        .find(|t| rel(&t.path) == "Album A/02 Second Song.mp3")
+        .expect("dir scan has the track");
+    // 同一文件经单文件导入与目录扫描得到同一条曲目（uid / 专辑 / 目录封面一致），
+    // 之后目录来源再扫到它只是更新同一行。
+    assert_eq!(line(&only[0]), line(from_dir));
+    assert_eq!(only[0].track_uid, from_dir.track_uid);
+    assert_eq!(only[0].album_uid, from_dir.album_uid);
+
+    // 不是曲库认的音频：空扫描，不报错。
+    let cover = Path::new(ROOT).join("Album A").join("cover.png");
+    let none = scan_root(cover.to_str().unwrap(), 0, None);
+    assert!(tracks(&none).is_empty());
+    assert!(
+        none.iter()
+            .flat_map(|(_, r)| r.iter())
+            .all(|r| !matches!(r, Record::Error { .. }))
+    );
 }
 
 #[test]
