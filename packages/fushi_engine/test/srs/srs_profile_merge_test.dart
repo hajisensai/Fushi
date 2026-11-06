@@ -585,6 +585,102 @@ void main() {
     );
   });
 
+  // BUG-4175：同一次复习经两条路径进到目标集合时，合并必须落成同一条（同 ID）。以前导入 revlog 只在「旧 ID 恰好按
+  // 旧卡片派生」时才按规则换 ID，否则按旧 ID 兜底；旧 profile 本身是更早一次并入的产物时，它的 revlog ID 早已是兜底
+  // ID，于是同一条 Anki 复习在目标里有了第二个 ID（实测一个用户 5849 条复习里 2191 条是这种重复，FSRS-7 优化的
+  // log loss 从 0.61 涨到 1.59）。原生日志同理：目标里已有原 ID，合并又按兜底 ID 加了一份。
+  test('同一次复习（Anki revlog / 原生日志）已在目标里或在旧 profile 里有多个 ID：合并后只剩一条', () async {
+    final _Device b = await _Device.open('host');
+    final String bOld = b.store.profileUid;
+    const String target = '01900000-0000-7000-8000-0000000000bb';
+    final SrsDbStore t = await SrsDbStore.open(
+      db: b.srs.db,
+      core: b.srs.core,
+      profileUid: target,
+      deviceId: b.deviceId,
+      engine: const SrsFakeEngine(),
+    );
+    const String guid = 'anki-guid-shared';
+    Future<String> cardWith(SrsDbStore s) async {
+      final String note = await s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(s.profileUid, 'Expression'): '雨',
+          srsLapisFieldId(s.profileUid, 'MainDefinition'): 'rain',
+        },
+        guid: guid,
+      );
+      return (await s.cardsOfNote(note)).single.id;
+    }
+
+    final String tCard = await cardWith(t);
+    final String bCard = await cardWith(b.store);
+    const int revlog = 1792403304283;
+    const int native = 1792572744194;
+    SrsLogEvent log(String id, String uid, String card, {required bool anki}) =>
+        SrsLogEvent(
+          SrsReviewLog(
+            id: id,
+            profileUid: uid,
+            cardId: card,
+            kind: SrsLogKind.review,
+            rating: 1,
+            hlc: anki ? Hlc(revlog, 0, 'anki') : Hlc(native, 0, 'phone#1'),
+            occurredAt: anki ? revlog : native,
+            timeSource: SrsTimeSource.wall,
+            origin: anki ? 'anki' : 'fushi',
+            reviewType: 'learn',
+            ankiRevlogId: anki ? revlog : null,
+          ),
+        );
+    final String ruleId = SrsIds.importedRevlog(tCard, revlog);
+    const String nativeId = '019a3a0b-0000-7000-8000-000000000001';
+    // 目标：按规则派生的 revlog ID + 原生日志的原 ID（另一台设备直接写 / 同步来的）。
+    await t.applyRemote(<SrsEvent>[
+      log(ruleId, target, tCard, anki: true),
+      log(nativeId, target, tCard, anki: false),
+    ]);
+    // 旧 profile：同一条 revlog 有两个都不按规则派生的 ID（更早并入的产物），同一条原生日志换了个 ID。
+    await b.store.applyRemote(<SrsEvent>[
+      log('01900000-0000-5000-8000-0000000000c1', bOld, bCard, anki: true),
+      log('01900000-0000-5000-8000-0000000000c2', bOld, bCard, anki: true),
+      log('01900000-0000-5000-8000-0000000000c3', bOld, bCard, anki: false),
+    ]);
+
+    Future<List<String>> logsOf(String card) async => <String>[
+      for (final QueryRow r
+          in await b.srs.db
+              .customSelect(
+                'SELECT srs_idt(id) AS id FROM srs_review_logs '
+                'WHERE profile_uid = ? AND card_id = ? ORDER BY id',
+                variables: <Variable<Object>>[
+                  Variable<String>(target, srsIdType),
+                  Variable<String>(card, srsIdType),
+                ],
+              )
+              .get())
+        r.read<String>('id'),
+    ];
+
+    Future<SrsProfileMergeResult> merge() => srsMergeProfileUid(
+      b.db,
+      b.srs.db,
+      core: b.srs.core,
+      profileId: b.profileId,
+      oldUid: bOld,
+      newUid: target,
+      deviceId: b.deviceId,
+    );
+    await merge();
+    expect(
+      await logsOf(tCard),
+      unorderedEquals(<String>[ruleId, nativeId]),
+      reason: 'one log per review, under the ids the target already has',
+    );
+    expect((await merge()).appliedEvents, 0);
+    expect(await logsOf(tCard), hasLength(2));
+  });
+
   // BUG-4011 端到端：目标 uid 的数据只在同步位置上（另一台设备 A 迁出 / 写入的），本机 B 切到这个 uid 并入。并入前
   // 先只拉不发一轮（[srsMergeProfileUid] 的 pullTarget），合并就看得到目标里已有的同一批修改记录，不再改名造第二份。
   for (final bool pullFirst in <bool>[true, false]) {
