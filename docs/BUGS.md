@@ -34,6 +34,12 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3736 条。点号进各自文件。
+> 共 3727 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4127](bugs/BUG-4127-mihon-android-pref-save-returns-stale.md) | ✅ | ✅ | Android 上扩展源偏好点 SAVE 后 Token 丢失（偏好桥回传上一拍的旧值） |
+> 共 3729 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|

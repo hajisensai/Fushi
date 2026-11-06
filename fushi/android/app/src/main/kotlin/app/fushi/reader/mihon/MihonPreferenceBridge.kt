@@ -11,13 +11,12 @@ import androidx.preference.PreferenceGroup
 import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
+import androidx.preference.TwoStatePreference
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.source.ConfigurableSource
 
 internal object MihonPreferenceBridge {
-    private const val CONTEXT_KEY = "__mangatan_bridge_context__"
-
     fun applyAndRead(
         app: Application,
         source: ConfigurableSource,
@@ -50,17 +49,43 @@ internal object MihonPreferenceBridge {
         shared: SharedPreferences,
         values: List<Map<String, Any?>>,
     ): List<Map<String, Any?>> {
-        val context = values.firstOrNull { item -> item["key"] == CONTEXT_KEY }
-        val changedKey = context?.get("changedPreferenceKey")?.toString()
+        val plan = MihonPreferencePlan.of(values)
+        // 快照先落 store，再建 screen：偏好对象挂进 screen 时读一次持久值（反馈 Njruv6JSaL，
+        // 旧顺序 setup 在前，回传的永远是上一拍的值）。
+        if (plan.snapshot.isNotEmpty()) {
+            val editor = shared.edit()
+            plan.snapshot.forEach { (key, value) -> put(editor, key, value) }
+            editor.commit()
+        }
+        val changed = plan.changed ?: return readScreen(app, sourceId, setup)
+        val screen = buildScreen(app, sourceId, setup)
+        screen.findPreference<Preference>(changed.first)?.let { preference ->
+            applyChange(preference, changed.second)
+        }
+        // 重新建一遍再读：listener 拒收时可能已自己规整并持久化（桌面 sidecar 同一假设），
+        // 读回的只认 store 里的真值。
+        return readScreen(app, sourceId, setup)
+    }
+
+    private fun buildScreen(
+        app: Application,
+        sourceId: Long,
+        setup: (PreferenceScreen) -> Unit,
+    ): PreferenceScreen {
         val manager = PreferenceManager(app).apply {
             sharedPreferencesName = "source_$sourceId"
         }
         val screen = manager.createPreferenceScreen(app)
         setup(screen)
-        values
-            .filterNot { item -> item["key"] == CONTEXT_KEY }
-            .forEach { item -> applyValue(shared, screen, item, item["key"] == changedKey) }
-        return flatten(screen).map { preference -> serialize(preference) }
+        return screen
+    }
+
+    private fun readScreen(
+        app: Application,
+        sourceId: Long,
+        setup: (PreferenceScreen) -> Unit,
+    ): List<Map<String, Any?>> = flatten(buildScreen(app, sourceId, setup)).map { preference ->
+        serialize(preference)
     }
 
     fun apply(
@@ -68,7 +93,7 @@ internal object MihonPreferenceBridge {
         source: ConfigurableSource,
         values: List<Map<String, Any?>>,
     ) {
-        applyAndRead(app, source, values)
+        writeSnapshot(source.getSourcePreferences(), values)
     }
 
     fun apply(
@@ -76,44 +101,41 @@ internal object MihonPreferenceBridge {
         source: ConfigurableAnimeSource,
         values: List<Map<String, Any?>>,
     ) {
-        applyAndRead(app, source, values)
+        writeSnapshot(source.getSourcePreferences(), values)
     }
 
-    private fun applyValue(
-        shared: SharedPreferences,
-        screen: PreferenceScreen,
-        item: Map<String, Any?>,
-        notify: Boolean,
-    ) {
-        val key = item["key"]?.toString().orEmpty()
-        if (key.isEmpty()) return
-        val preference = screen.findPreference<Preference>(key)
+    /** 非偏好请求（列表 / 搜索 / 取流…）只需要让源读到快照，不建偏好屏。 */
+    private fun writeSnapshot(shared: SharedPreferences, values: List<Map<String, Any?>>) {
+        val plan = MihonPreferencePlan.of(values)
+        if (plan.snapshot.isEmpty()) return
         val editor = shared.edit()
-        val value: Any? = when {
-            item["checkBoxPreference"] is Map<*, *> ->
-                (item["checkBoxPreference"] as Map<*, *>)["value"] as? Boolean
-            item["switchPreferenceCompat"] is Map<*, *> ->
-                (item["switchPreferenceCompat"] as Map<*, *>)["value"] as? Boolean
-            item["editTextPreference"] is Map<*, *> ->
-                (item["editTextPreference"] as Map<*, *>)["value"]?.toString()
-            item["listPreference"] is Map<*, *> -> {
-                val index = ((item["listPreference"] as Map<*, *>)["valueIndex"] as? Number)
-                    ?.toInt() ?: 0
-                (preference as? ListPreference)?.entryValues?.getOrNull(index)?.toString()
-            }
-            item["multiSelectListPreference"] is Map<*, *> ->
-                ((item["multiSelectListPreference"] as Map<*, *>)["values"] as? List<*>)
-                    ?.map { entry -> entry.toString() }
-                    ?.toSet()
-            else -> null
-        }
-        if (value == null || (notify && preference?.callChangeListener(value) == false)) return
+        plan.snapshot.forEach { (key, value) -> put(editor, key, value) }
+        editor.commit()
+    }
+
+    private fun put(editor: SharedPreferences.Editor, key: String, value: Any) {
         when (value) {
             is Boolean -> editor.putBoolean(key, value)
             is String -> editor.putString(key, value)
             is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
         }
-        editor.commit()
+    }
+
+    /**
+     * 用户在偏好屏上改了一项：先问 change listener，收下才经偏好对象自己的 setter 保存
+     * （setter 经 PreferenceManager 持久化，对象与 store 同步）。与桌面
+     * `MihonInvoker.applyPreferenceChange` 同一语义。
+     */
+    private fun applyChange(preference: Preference, value: Any) {
+        if (!preference.callChangeListener(value)) return
+        when (preference) {
+            is EditTextPreference -> (value as? String)?.let { preference.text = it }
+            is ListPreference -> (value as? String)?.let { preference.value = it }
+            is MultiSelectListPreference -> (value as? Set<*>)?.let { set ->
+                preference.values = set.filterIsInstance<String>().toSet()
+            }
+            is TwoStatePreference -> (value as? Boolean)?.let { preference.isChecked = it }
+        }
     }
 
     private fun flatten(group: PreferenceGroup): List<Preference> = buildList {
