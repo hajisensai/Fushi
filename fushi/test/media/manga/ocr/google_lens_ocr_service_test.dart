@@ -144,7 +144,7 @@ void main() {
     },
   );
 
-  // BUG-4127（反馈 vXYKPudf7U）：旧缓存按区域重拼句子时，区域不覆盖的词间空格不能丢，
+  // BUG-4179（反馈 vXYKPudf7U）：旧缓存按区域重拼句子时，区域不覆盖的词间空格不能丢，
   // 换行处的拉丁文词界也要补回（旧缓存行与行直接相接：`SOLONG`）。
   test('legacy English cache keeps word spaces when regrouped', () async {
     final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
