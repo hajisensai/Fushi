@@ -2016,6 +2016,15 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
 
   static const double _width = 232;
 
+  /// 子菜单与本行的水平间隙。
+  static const double _gap = 4;
+
+  /// 子菜单的内边距：首项与本行顶边对齐，所以整体上提这么多。
+  static const double _verticalPadding = 6;
+
+  /// 离屏幕边缘至少留这么多。
+  static const double _screenMargin = 8;
+
   @override
   void dispose() {
     _rowFocus.dispose();
@@ -2052,27 +2061,49 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  /// 子菜单相对本行的落点：右侧放不下就翻到左侧，下方放不下就改成底边对齐本行
+  /// 往上长。子菜单每项与本行是同一个 [_ContextMenuRow]，高度按本行实测高度推算。
+  ({bool flipLeft, bool flipUp}) _placement(BuildContext context) {
+    final RenderObject? object = context.findRenderObject();
+    if (_link.leaderSize == null || object is! RenderBox || !object.hasSize) {
+      return (flipLeft: false, flipUp: false);
+    }
+    final Size screen = MediaQuery.sizeOf(context);
+    final Rect row = object.localToGlobal(Offset.zero) & object.size;
+    final double height =
+        _verticalPadding * 2 + widget.actions.length * row.height;
+    return (
+      flipLeft: row.right + _gap + _width > screen.width - _screenMargin,
+      flipUp:
+          row.top - _verticalPadding + height > screen.height - _screenMargin &&
+          row.bottom + _verticalPadding - height >= _screenMargin,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool flip =
-        _link.leaderSize != null &&
-        (context.findRenderObject() as RenderBox?) != null &&
-        () {
-          final RenderBox box = context.findRenderObject()! as RenderBox;
-          final double right = box.localToGlobal(Offset(box.size.width, 0)).dx;
-          return right + _width > MediaQuery.sizeOf(context).width - 8;
-        }();
+    final ({bool flipLeft, bool flipUp}) placement = _placement(context);
+    final bool flip = placement.flipLeft;
+    final bool up = placement.flipUp;
+    // [CompositedTransformFollower] 把 followerAnchor 量在它**自己的**尺寸上。下面的
+    // [Align] 会撑满整个 Overlay，所以它的对齐必须与 followerAnchor 是同一个角：
+    // 否则翻到左侧时（followerAnchor = 右上角）锚的是整屏宽盒子的右边，子菜单被
+    // 推到屏幕左侧外面——游戏库最右一列的「设置」子菜单因此打不开（DnG4jZW57v）。
+    final Alignment corner = Alignment(flip ? 1 : -1, up ? 1 : -1);
     return OverlayPortal(
       controller: _portal,
       overlayChildBuilder: (BuildContext overlayContext) =>
           CompositedTransformFollower(
             link: _link,
             showWhenUnlinked: false,
-            targetAnchor: flip ? Alignment.topLeft : Alignment.topRight,
-            followerAnchor: flip ? Alignment.topRight : Alignment.topLeft,
-            offset: Offset(flip ? -4 : 4, -6),
+            targetAnchor: Alignment(flip ? -1 : 1, up ? 1 : -1),
+            followerAnchor: corner,
+            offset: Offset(
+              flip ? -_gap : _gap,
+              up ? _verticalPadding : -_verticalPadding,
+            ),
             child: Align(
-              alignment: AlignmentDirectional.topStart,
+              alignment: corner,
               child: MouseRegion(
                 onEnter: (_) {
                   _hoverMenu = true;
@@ -2145,7 +2176,7 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
     );
     final Widget body = FushiEntranceScope(
       child: Padding(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(_verticalPadding),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,

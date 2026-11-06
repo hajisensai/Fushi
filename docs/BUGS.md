@@ -34,6 +34,13 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3750 条。点号进各自文件。
+> 共 3728 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4128](bugs/BUG-4128-gal-attached-state-not-in-feedback-log.md) | ✅ | ✅ | attached 表面隐藏多久、为什么隐藏，反馈日志里查不到 |
+| [BUG-4127](bugs/BUG-4127-game-library-settings-submenu-offscreen.md) | ✅ | ✅ | 游戏库最右侧条目右键菜单里的「设置」子菜单打不开 |
+> 共 3727 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
