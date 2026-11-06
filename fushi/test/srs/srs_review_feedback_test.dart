@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart' show SrsCardAppearance;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
