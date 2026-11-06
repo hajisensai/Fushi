@@ -1,7 +1,7 @@
 import 'package:fushi/src/mining/galgame_repository.dart'
     show galgameEntryFromRow;
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show

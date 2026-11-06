@@ -40,9 +40,31 @@ import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_color.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 面板的呈现形态。
@@ -101,6 +123,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.bookmarks = const <Bookmark>[],
     this.resolveBookmarkPage,
     this.openBookmarks = false,
+    this.openPositionJump = false,
     this.onAddBookmark,
     this.onDeleteBookmark,
     this.onJumpToBookmark,
@@ -197,6 +220,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   /// 打开即落在「收藏」页的「书签」段（工具栏「书签」按钮）。
   final bool openBookmarks;
+
+  /// 打开即落在「搜索」页（「按字数跳转」段所在页；歌词模式的「进度跳转」键）。
+  /// 与 [autofocusSearch] 不同：不聚焦搜索框（不弹软键盘）。
+  final bool openPositionJump;
 
   /// 在当前页加书签并落库，返回带 id 的书签；拿不到位置时 null。为 null（书没有
   /// 稳定 uid）时整段书签不出现，「收藏」页只显示收藏句（旧形态）。
@@ -702,7 +729,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // 工具栏「书签」键直达「收藏」页（分段初值见 [_favoritesSegment]）。
     final int initial = widget.openBookmarks
         ? _navTabs.indexOf(_ReaderNavTab.favorites)
-        : widget.autofocusSearch
+        : widget.autofocusSearch || widget.openPositionJump
         ? _navTabs.indexOf(_ReaderNavTab.search)
         : 0;
     return _navTabController = TabController(

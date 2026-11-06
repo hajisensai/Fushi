@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';

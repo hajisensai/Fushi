@@ -55,6 +55,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamResolver, resolveMusicPluginStream;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -78,11 +79,28 @@ import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+    show
+        FushiTitleBarColorScope,
+        FushiTitleBarDragBandScope,
+        FushiWindowDragArea,
+        fushiTitleBarColorsOn;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 /// 一次 ± 按钮调整的偏移步长。
 const int kMusicLyricsOffsetStepMs = 100;
@@ -320,8 +338,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
+    _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     _clock.dispose();
     super.dispose();
@@ -851,7 +879,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       body: FushiAppUiScaleNeutralizer(
         child: Stack(
           children: <Widget>[
-            Positioned.fill(child: background),
+            // 空白背景按住拖动 = 拖动整个窗口（BUG-4115）；上面的封面 / 按钮 /
+            // 歌词列表照常先命中。
+            Positioned.fill(child: FushiWindowDragArea(child: background)),
             Positioned.fill(
               child: SafeArea(
                 child: LayoutBuilder(
@@ -1361,7 +1391,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     clock: MusicEngineClock(_engine),
     clockListenable: _engine,
     isPlaying: _engine.isPlaying,
-    onSeek: (Duration d) => unawaited(_engine.seek(d)),
+    // 电台（MusicKit 管队列）没有时长时不能拖。
+    onSeek: _engine.canSeek ? (Duration d) => unawaited(_engine.seek(d)) : null,
     strokeWidth: 4,
     barHeight: 20,
     debugLabel: 'music-lyrics-seek',
@@ -1419,7 +1450,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiIconButtonControl(
             iconSize: icon,
             tooltip: t.shortcut_action_music_previous_track,
-            onPressed: () => unawaited(engine.skipPrevious()),
+            onPressed: engine.canSkipPrevious
+                ? () => unawaited(engine.skipPrevious())
+                : null,
             icon: const FushiIcon(FushiIcons.skipPrevious),
           ),
         ),
@@ -2164,6 +2197,10 @@ class _TitleBarScope extends StatelessWidget {
   @override
   Widget build(BuildContext context) => FushiTitleBarColorScope(
     colors: fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface),
-    child: child,
+    // 顶栏（返回 / 动作组）常驻，版面经 SafeArea 把标题行那一条让给背景：标题行
+    // 是隐形拖动条——始终可拖窗口 / 双击最大化，窗口按钮指针进入才淡入
+    // （BUG-4115；不表态时只能靠窗口最顶边 8px 停留浮出，那 8px 在 Windows
+    // 窗口化时压着 resize 把手）。
+    child: FushiTitleBarDragBandScope(child: child),
   );
 }

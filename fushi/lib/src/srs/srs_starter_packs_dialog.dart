@@ -15,7 +15,19 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 清单 → 展示顺序：默认内容语言的包排前（没设置就按语言、名字）。
 List<SrsStarterPack> srsStarterPacksFor(String defaultContentLanguage) {
@@ -69,41 +81,39 @@ Future<void> openSrsStarterPacks(BuildContext context, WidgetRef ref) {
       title: Text(t.srs_starter_title),
       content: SizedBox(
         width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(t.srs_starter_body),
-              const SizedBox(height: 12),
-              if (packs.isEmpty)
-                Text(t.srs_starter_empty)
-              else
-                FushiEntranceScope(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      for (int i = 0; i < packs.length; i++)
-                        FushiStaggeredEntrance(
-                          key: ValueKey<String>(
-                            'srs-starter-entry-${packs[i].id}',
-                          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.srs_starter_body),
+            const SizedBox(height: 12),
+            if (packs.isEmpty)
+              Text(t.srs_starter_empty)
+            else
+              FushiEntranceScope(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (int i = 0; i < packs.length; i++)
+                      FushiStaggeredEntrance(
+                        key: ValueKey<String>(
+                          'srs-starter-entry-${packs[i].id}',
+                        ),
+                        index: i,
+                        child: FushiGroupedListItem(
                           index: i,
-                          child: FushiGroupedListItem(
-                            index: i,
-                            count: packs.length,
-                            child: SrsStarterPackRow(
-                              pack: packs[i],
-                              controller: controller,
-                            ),
+                          count: packs.length,
+                          child: SrsStarterPackRow(
+                            pack: packs[i],
+                            controller: controller,
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
       actions: <Widget>[

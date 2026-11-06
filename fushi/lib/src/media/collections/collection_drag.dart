@@ -18,7 +18,12 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
     show FushiFocusRoot;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// [addMediaRefToCollection] 的结果：三种结局各自对应一条不同的用户可见提示。
 enum CollectionAddOutcome {

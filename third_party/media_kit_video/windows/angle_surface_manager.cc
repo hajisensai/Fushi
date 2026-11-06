@@ -75,11 +75,54 @@ void ANGLESurfaceManager::Draw(std::function<void()> callback) {
   SwapBuffers();
   MakeCurrent(false);
   if (d3d_11_device_context_ != nullptr) {
-    d3d_11_device_context_->CopyResource(d3d_11_texture_2D_.Get(),
-                                         internal_d3d_11_texture_2D_.Get());
-    d3d_11_device_context_->Flush();
+    if (keyed_mutex_ != nullptr) {
+      // FUSHI FORK (BUG-3888, keyed mutex): Flutter's patched engine takes key
+      // 0 only for its own CopyResource out of this texture (it never samples
+      // it directly), so this wait is bounded by one copy call, never by a
+      // Flutter frame. WAIT_ABANDONED means the engine's device went away
+      // while holding the key; we own it now.
+      const HRESULT acquired = keyed_mutex_->AcquireSync(0, INFINITE);
+      if (acquired == S_OK ||
+          acquired == static_cast<HRESULT>(WAIT_ABANDONED)) {
+        d3d_11_device_context_->CopyResource(
+            d3d_11_texture_2D_.Get(), internal_d3d_11_texture_2D_.Get());
+        // ReleaseSync submits the copy before handing the key over.
+        keyed_mutex_->ReleaseSync(0);
+      } else {
+        std::cout << "media_kit: ANGLESurfaceManager: AcquireSync failed: 0x"
+                  << std::hex << static_cast<unsigned long>(acquired)
+                  << std::dec << std::endl;
+      }
+    } else {
+      d3d_11_device_context_->CopyResource(d3d_11_texture_2D_.Get(),
+                                           internal_d3d_11_texture_2D_.Get());
+      d3d_11_device_context_->Flush();
+    }
   }
   ::ReleaseMutex(mutex_);
+}
+
+// FUSHI FORK (BUG-3888, keyed mutex): Fushi's patched Flutter engine
+// (`ci/patches/flutter-engine/<version>/engine-d3d-keyed-mutex.patch`) exports
+// |FlutterDesktopGpuSurfaceSupportsKeyedMutex| and then copies a keyed-mutex
+// share handle under key 0 instead of sampling it. A stock engine has no such
+// export and would sample a keyed-mutex texture without the key, which D3D11
+// leaves undefined, so the texture only gets a keyed mutex when it is there.
+bool ANGLESurfaceManager::EngineSyncsKeyedMutexTextures() {
+  static const bool supported = []() {
+    HMODULE engine = ::GetModuleHandleW(L"flutter_windows.dll");
+    if (engine == nullptr) {
+      return false;
+    }
+    using SupportsKeyedMutex = bool (*)();
+    auto supports = reinterpret_cast<SupportsKeyedMutex>(::GetProcAddress(
+        engine, "FlutterDesktopGpuSurfaceSupportsKeyedMutex"));
+    const bool result = supports != nullptr && supports();
+    std::cout << "media_kit: ANGLESurfaceManager: engine keyed mutex textures: "
+              << (result ? "yes" : "no") << std::endl;
+    return result;
+  }();
+  return supported;
 }
 
 void ANGLESurfaceManager::MakeCurrent(bool value) {
@@ -179,6 +222,7 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
     internal_d3d_11_texture_2D_->Release();
     internal_d3d_11_texture_2D_ = nullptr;
   }
+  keyed_mutex_ = nullptr;
   if (d3d_11_texture_2D_) {
     d3d_11_texture_2D_->Release();
     d3d_11_texture_2D_ = nullptr;
@@ -314,7 +358,15 @@ bool ANGLESurfaceManager::CreateD3DTexture() {
   internal_d3d_11_texture_2D_->AddRef();
 
   // External.
-  hr = d3d_11_device_->CreateTexture2D(&d3d11_texture2D_desc, nullptr,
+  // FUSHI FORK (BUG-3888, keyed mutex): the texture Flutter reads carries a
+  // keyed mutex when the engine synchronizes on it (see
+  // |EngineSyncsKeyedMutexTextures|); |Draw| then writes it under key 0.
+  const bool keyed_mutex = EngineSyncsKeyedMutexTextures();
+  auto external_desc = d3d11_texture2D_desc;
+  if (keyed_mutex) {
+    external_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+  }
+  hr = d3d_11_device_->CreateTexture2D(&external_desc, nullptr,
                                        &d3d_11_texture_2D_);
   CHECK_HRESULT("ID3D11Device::CreateTexture2D");
   hr = d3d_11_texture_2D_.As(&resource);
@@ -322,6 +374,10 @@ bool ANGLESurfaceManager::CreateD3DTexture() {
   // Retrieve the shared |HANDLE| for interop.
   hr = resource->GetSharedHandle(&handle_);
   CHECK_HRESULT("IDXGIResource::GetSharedHandle");
+  if (keyed_mutex) {
+    hr = d3d_11_texture_2D_.As(&keyed_mutex_);
+    CHECK_HRESULT("ID3D11Texture2D::As(IDXGIKeyedMutex)");
+  }
   d3d_11_texture_2D_->AddRef();
 
   return true;

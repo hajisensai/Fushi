@@ -15,7 +15,7 @@ import 'package:media_kit_video/media_kit_video.dart'
     show defaultEnterNativeFullscreen, defaultExitNativeFullscreen;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'

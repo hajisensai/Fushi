@@ -11,7 +11,11 @@ import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 手势的界面名。

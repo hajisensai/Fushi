@@ -420,7 +420,7 @@ struct FushiWordView: View {
   }
 }
 
-// MARK: - 6 学习热力图（中）
+// MARK: - 6 学习热力图（中，近 16 周）
 
 struct FushiHeatmapWidget: Widget {
   var body: some WidgetConfiguration {
@@ -440,13 +440,27 @@ struct FushiHeatmapView: View {
     if let snapshot = entry.snapshot, let month = snapshot.month {
       HStack(spacing: 14) {
         VStack(alignment: .leading, spacing: 8) {
-          FushiWidgetTag(text: entry.label("recentDays", "Last 35 days"))
-          FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
+          // 16 周 × 7 天（Dart 给好固定阈值的档位）；旧快照没有 `heatmap` 时退回 35 天。
+          if let heatmap = snapshot.heatmap, !heatmap.levels.isEmpty {
+            FushiWidgetTag(text: entry.label("recentHeatmapDays", "Last 112 days"))
+            FushiHeatGrid(cells: heatmap.levels, firstWeekday: heatmap.firstWeekday)
+          } else {
+            FushiWidgetTag(text: entry.label("recentDays", "Last 35 days"))
+            FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
+          }
         }
+        // 右侧统计与网格同一口径：有 16 周热力图就用它的总时长 / 活跃天数，
+        // 旧快照（只有 35 天 `month`）才退回本月口径。
         VStack(alignment: .leading) {
-          stat(month.time, entry.label("thisMonth", "This month"))
-          Spacer()
-          stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
+          if let heatmap = snapshot.heatmap, !heatmap.levels.isEmpty {
+            stat(heatmap.time, entry.label("recentHeatmapDays", "Last 112 days"))
+            Spacer()
+            stat("\(heatmap.activeDays)", entry.label("activeDays", "Active days"))
+          } else {
+            stat(month.time, entry.label("thisMonth", "This month"))
+            Spacer()
+            stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
+          }
         }
         .frame(width: 76, alignment: .leading)
       }
@@ -464,7 +478,8 @@ struct FushiHeatmapView: View {
   }
 }
 
-/// 一列一周（周一在上），最旧 → 今天；首列按 `firstWeekday` 留空，对齐星期。
+/// 一列一周（周一在上），最旧 → 今天；首列按 `firstWeekday` 留空，对齐星期。最后一格是
+/// 今天：还没学时画虚线框（不是「没数据」，是「今天还空着」）。
 struct FushiHeatGrid: View {
   /// 每天 0…4 档。
   let cells: [Int]
@@ -492,7 +507,7 @@ struct FushiHeatGrid: View {
           VStack(spacing: gap) {
             ForEach(0..<7, id: \.self) { row in
               let index = column * 7 + row - lead
-              cell(index >= 0 && index < cells.count ? cells[index] : nil)
+              cell(index >= 0 && index < cells.count ? cells[index] : nil, isToday: index == cells.count - 1)
                 .frame(width: side, height: side)
             }
           }
@@ -502,9 +517,12 @@ struct FushiHeatGrid: View {
   }
 
   @ViewBuilder
-  private func cell(_ level: Int?) -> some View {
+  private func cell(_ level: Int?, isToday: Bool) -> some View {
     if let level {
-      if level == 0 {
+      if level == 0 && isToday {
+        RoundedRectangle(cornerRadius: 2.5)
+          .strokeBorder(FushiPalette.study.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [2, 1.5]))
+      } else if level == 0 {
         RoundedRectangle(cornerRadius: 2.5).fill(.quaternary)
       } else {
         RoundedRectangle(cornerRadius: 2.5)

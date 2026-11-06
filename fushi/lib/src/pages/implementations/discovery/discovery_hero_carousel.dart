@@ -32,7 +32,14 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 首屏 Hero 轮播。只有一页时不画任何切页控件，外观与单张横幅一致。
 class DiscoveryHeroCarousel extends StatefulWidget {

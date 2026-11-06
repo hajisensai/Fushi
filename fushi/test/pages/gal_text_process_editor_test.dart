@@ -14,7 +14,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/pages/implementations/gal_text_process_editor_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

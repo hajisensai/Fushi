@@ -43,7 +43,7 @@ import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
-import 'package:fushi/utils.dart' show ErrorLogService;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';

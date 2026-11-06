@@ -4,11 +4,12 @@
 // 内存库 + 确定性假排程内核；卡面经 srsCardFaceBuilderProvider 换成纯文本实现。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_views.dart';
@@ -329,7 +330,7 @@ void main() {
       await _addIn(tester, store, '飲む', deckId: jp);
       await _addIn(tester, store, '走る', deckId: n3);
 
-      // 宽屏：行尾「⋯」。
+      // 宽屏：右键牌组行（行尾不放「⋯」；右栏详情也有同名，按行取）。
       await _pump(
         tester,
         store: store,
@@ -340,12 +341,9 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byKey(ValueKey<String>('srs-deck-$jp')),
-          // 行尾「⋯」（Apple 版不挂 Tooltip，按组件类型找）。
-          matching: find.byWidgetPredicate(
-            (Widget w) =>
-                w.runtimeType.toString().startsWith('FushiPopupMenuButton'),
-          ),
+          matching: find.text('JP'),
         ),
+        buttons: kSecondaryButton,
       );
       await _settle(tester, rounds: 4);
       expect(find.text(t.srs_deck_browse_cards), findsOneWidget);

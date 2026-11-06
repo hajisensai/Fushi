@@ -18,7 +18,7 @@ import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class GoogleDriveError implements Exception {
   GoogleDriveError(this.message, {this.statusCode});

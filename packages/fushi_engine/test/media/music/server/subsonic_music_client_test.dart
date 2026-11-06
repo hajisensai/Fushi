@@ -509,6 +509,163 @@ void main() {
     });
   });
 
+  group('歌单', () {
+    Map<String, Object?> pl(String id, {String owner = 'alice'}) =>
+        <String, Object?>{
+          'id': id,
+          'name': 'List $id',
+          'comment': '  for $id ',
+          'owner': owner,
+          'public': true,
+          'songCount': 4,
+          'duration': 245,
+          'coverArt': 'pl-$id',
+        };
+
+    Future<http.Response> playlists(http.Request r) async => _json(
+      _ok(<String, Object?>{
+        'playlists': <String, Object?>{
+          'playlist': <Object?>[
+            pl('1'),
+            pl('2', owner: 'bob'),
+            pl('3'),
+            pl('4'),
+            pl('5'),
+          ],
+        },
+      }),
+    );
+
+    test('getPlaylists 映射字段：owner→curator、秒→毫秒、comment→description', () async {
+      final _Rig rig = _Rig(playlists);
+      final MusicServerPage<MusicServerPlaylist> page = await rig.client
+          .listPlaylists();
+      expect(rig.requests.single.path, '/navi/rest/getPlaylists');
+      expect(page.items, hasLength(5));
+      expect(page.total, 5);
+      expect(page.nextOffset, isNull);
+      final MusicServerPlaylist p = page.items.first;
+      expect(p.id, '1');
+      expect(p.title, 'List 1');
+      expect(p.description, 'for 1');
+      expect(p.curator, 'alice');
+      expect(p.trackCount, 4);
+      expect(p.durationMs, 245000);
+      expect(p.coverRef, 'pl-1');
+      expect(p.editable, isTrue);
+      expect(page.items[1].editable, isFalse, reason: '别人的歌单');
+    });
+
+    test('协议不分页：内存切片并正确给 nextOffset', () async {
+      final _Rig rig = _Rig(playlists);
+      final MusicServerPage<MusicServerPlaylist> a = await rig.client
+          .listPlaylists(limit: 2);
+      expect(a.items.map((MusicServerPlaylist p) => p.id), <String>['1', '2']);
+      expect(a.nextOffset, 2);
+      final MusicServerPage<MusicServerPlaylist> b = await rig.client
+          .listPlaylists(offset: 2, limit: 2);
+      expect(b.items.map((MusicServerPlaylist p) => p.id), <String>['3', '4']);
+      expect(b.nextOffset, 4);
+      final MusicServerPage<MusicServerPlaylist> c = await rig.client
+          .listPlaylists(offset: 4, limit: 2);
+      expect(c.items.map((MusicServerPlaylist p) => p.id), <String>['5']);
+      expect(c.nextOffset, isNull);
+      final MusicServerPage<MusicServerPlaylist> d = await rig.client
+          .listPlaylists(offset: 9, limit: 2);
+      expect(d.items, isEmpty);
+      expect(d.nextOffset, isNull);
+    });
+
+    test('没有歌单 / 单个歌单序列化成对象都能吃', () async {
+      final _Rig empty = _Rig(
+        (_) async =>
+            _json(_ok(<String, Object?>{'playlists': <String, Object?>{}})),
+      );
+      final MusicServerPage<MusicServerPlaylist> none = await empty.client
+          .listPlaylists();
+      expect(none.items, isEmpty);
+      expect(none.nextOffset, isNull);
+      expect(none.total, 0);
+
+      final _Rig single = _Rig(
+        (_) async => _json(
+          _ok(<String, Object?>{
+            'playlists': <String, Object?>{'playlist': pl('only')},
+          }),
+        ),
+      );
+      expect((await single.client.listPlaylists()).items.single.id, 'only');
+    });
+
+    test('apiKey 模式不知道用户名：歌单一律不可改', () async {
+      final _Rig rig = _Rig(
+        playlists,
+        config: SubsonicServerConfig(
+          id: 'k',
+          name: 'K',
+          serverUrl: Uri.parse('https://music.example.com'),
+          apiKey: 'KEY123',
+        ),
+      );
+      final MusicServerPage<MusicServerPlaylist> page = await rig.client
+          .listPlaylists();
+      expect(page.items.every((MusicServerPlaylist p) => !p.editable), isTrue);
+    });
+
+    test('getPlaylist 的 entry 保持歌单顺序、复用曲目解析、跳过目录 / 视频', () async {
+      final _Rig rig = _Rig(
+        (_) async => _json(
+          _ok(<String, Object?>{
+            'playlist': <String, Object?>{
+              'id': 'p1',
+              'name': 'Mix',
+              'entry': <Object?>[
+                <String, Object?>{
+                  'id': 's9',
+                  'title': 'Nine',
+                  'track': 9,
+                  'discNumber': 2,
+                  'suffix': 'FLAC',
+                  'duration': 61,
+                  'bitRate': 900,
+                  'albumId': 'al9',
+                  'coverArt': 'al-9',
+                },
+                <String, Object?>{'id': 'v1', 'title': 'Clip', 'isVideo': true},
+                <String, Object?>{'id': 'd1', 'title': 'Folder', 'isDir': true},
+                <String, Object?>{'id': 's1', 'title': 'One', 'track': 1},
+              ],
+            },
+          }),
+        ),
+      );
+      final List<MusicServerTrack> tracks = await rig.client.playlistTracks(
+        'p1',
+      );
+      final Uri u = rig.requests.single;
+      expect(u.path, '/navi/rest/getPlaylist');
+      expect(u.queryParameters['id'], 'p1');
+      expect(tracks.map((MusicServerTrack t) => t.id), <String>['s9', 's1']);
+      final MusicServerTrack t = tracks.first;
+      expect(t.codec, 'flac');
+      expect(t.durationMs, 61000);
+      expect(t.discNo, 2);
+      expect(t.coverRef, 'al-9');
+      expect(t.isLossless, isTrue);
+    });
+
+    test('空歌单返回空列表', () async {
+      final _Rig rig = _Rig(
+        (_) async => _json(
+          _ok(<String, Object?>{
+            'playlist': <String, Object?>{'id': 'p0', 'name': 'Empty'},
+          }),
+        ),
+      );
+      expect(await rig.client.playlistTracks('p0'), isEmpty);
+    });
+  });
+
   group('流与封面', () {
     const MusicServerTrack track = MusicServerTrack(
       id: 's1',

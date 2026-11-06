@@ -54,7 +54,15 @@ import 'package:fushi/src/utils/cover_image.dart'
     show AvifFileImage, isAvifPath;
 import 'package:fushi/src/utils/animated_avif_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 export 'package:fushi/src/srs/srs_fushi_card_plan.dart'
     show SrsFushiFrontKind, srsFushiBlockVisible, srsFushiFrontKind;

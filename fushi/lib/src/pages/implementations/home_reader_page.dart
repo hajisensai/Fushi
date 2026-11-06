@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/pages/base_tab_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
@@ -15,7 +17,7 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInsetPadding;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 书 tab「发现」视图覆盖的媒体域。
 const List<DiscoveryMediaKind> _bookDiscoveryKinds = <DiscoveryMediaKind>[

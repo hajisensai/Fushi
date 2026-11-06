@@ -40,7 +40,7 @@ void main() {
       'lib/src/utils/components/glass/fushi_glass_feedback.dart': 2,
       'lib/src/utils/components/glass/fushi_glass_overlays.dart': 2,
       'lib/src/utils/components/glass/fushi_glass_toggles.dart': 2,
-      'lib/src/utils/components/library_section_tabs.dart': 1,
+      'lib/src/pages/shared/library_section_tabs.dart': 1,
     },
     'Badge': <String, int>{
       'lib/src/utils/components/glass/fushi_glass_lists.dart': 2,

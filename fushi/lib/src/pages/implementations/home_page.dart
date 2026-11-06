@@ -74,6 +74,7 @@ import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.d
 import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_client_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -139,10 +140,40 @@ import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/manga/manga_library_page.dart';
+import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
+import 'package:fushi/src/pages/implementations/fushi_settings_page.dart';
+import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
+import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/home_reader_page.dart';
+import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/web_hub_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
     show FushiFocusController, FushiFocusRoot;
@@ -623,10 +654,8 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
     _startWebMineBackground();
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
-    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
-    // ——spec 2026-07-10 §7 后服务由 AppModel 持有 app 级监听，消费按
-    // resolveDesktopLookupConsumer 分区（mainTab 仍只归 HomeDictionaryPage），
-    // HomePage 根节点依旧不消费查词请求。
+    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService：
+    // pending 只归 HomeDictionaryPage 消费，HomePage 根节点不消费查词请求。
     appModelNoUpdate.homeDictionaryTabRequest.addListener(
       _onHomeDictionaryTabRequested,
     );
@@ -4093,7 +4122,18 @@ class _HomePageState extends BasePageState<HomePage>
       // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
       HomeTab.games =>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
-            ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
+            // 非 Windows 桌面另挂外部 texthooker 台词页（没有 hook，只看 WS 来的
+            // 台词）；手机端维持纯串流库。
+            ? (appModelNoUpdate.gamesOffersExternalTexthooker
+                  ? GameStreamClientPage(
+                      streamBuilder:
+                          (BuildContext context, Widget navigation) =>
+                              GameStreamLibraryPage(
+                                services: _gameStreamLibraryServices,
+                                navigation: navigation,
+                              ),
+                    )
+                  : GameStreamLibraryPage(services: _gameStreamLibraryServices))
             : const HomeGamePage(),
       HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),

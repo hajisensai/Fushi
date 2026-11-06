@@ -93,7 +93,21 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
@@ -3053,7 +3067,11 @@ String srsRatingLabel(int rating) => switch (rating) {
 /// 「已评：良好 · 3天后到期」，配色与那颗评分按钮同一套（[srsRatingColors]，MD3 / Apple
 /// 各自的色调），翻面 / 撤销时收起。进出场走 [FushiMotion]（淡入 + 由 0.9 放大到位），
 /// 减弱动态效果下直接到位；读屏经 liveRegion 播报。不吃指针，不挡卡面点按与手势。
-class SrsRatedFeedbackChip extends StatelessWidget {
+///
+/// 只闪一下（反馈 vKGS1y9-v2：原来一直挂到翻面才收，太久）：每次评分（新的
+/// [SrsRatedFeedback.serial]）出现后停留 [FushiNoticeDwell.flash] 自行收起；
+/// 时长归提示类别统一管，不在这里另写毫秒数。翻面 / 撤销仍立即收起。
+class SrsRatedFeedbackChip extends StatefulWidget {
   const SrsRatedFeedbackChip({
     super.key,
     required this.feedback,
@@ -3066,8 +3084,67 @@ class SrsRatedFeedbackChip extends StatelessWidget {
   final double bottomInset;
 
   @override
+  State<SrsRatedFeedbackChip> createState() => _SrsRatedFeedbackChipState();
+}
+
+class _SrsRatedFeedbackChipState extends State<SrsRatedFeedbackChip> {
+  /// 正在计时的那次评分；null = 当前没有提示在计时。
+  int? _armedSerial;
+
+  /// 已停留满、收起的那次评分（同一次评分重建时不再冒出来）。
+  int? _expiredSerial;
+
+  Timer? _dwell;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  @override
+  void didUpdateWidget(SrsRatedFeedbackChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _arm();
+  }
+
+  /// 按当前 [SrsRatedFeedbackChip.feedback] 对齐计时：没有提示就停表；换成新的
+  /// 一次评分就从头计 [FushiNoticeDwell.flash]。
+  void _arm() {
+    final SrsRatedFeedback? f = widget.feedback;
+    if (f == null) {
+      _dwell?.cancel();
+      _dwell = null;
+      _armedSerial = null;
+      return;
+    }
+    if (f.serial == _armedSerial || f.serial == _expiredSerial) return;
+    _dwell?.cancel();
+    _armedSerial = f.serial;
+    final int serial = f.serial;
+    _dwell = Timer(FushiNoticeDwell.flash, () {
+      if (!mounted) return;
+      setState(() {
+        _expiredSerial = serial;
+        _armedSerial = null;
+        _dwell = null;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _dwell?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final SrsRatedFeedback? f = feedback;
+    final SrsRatedFeedback? shown = widget.feedback;
+    final SrsRatedFeedback? f = shown == null || shown.serial == _expiredSerial
+        ? null
+        : shown;
+    final double bottomInset = widget.bottomInset;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return IgnorePointer(
       child: Align(

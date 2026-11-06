@@ -13,7 +13,12 @@ import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_p
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 对 [noteIds]（必须是同一个源笔记类型）走一遍「更改笔记类型」：
 /// 选目标类型 → 字段映射 → 卡片模板映射 → 确认 → 写入（经事件存储，可同步、可按冲突规则合并）。

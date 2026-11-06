@@ -15,7 +15,10 @@ import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/image_file_saver.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 
 /// 面板里可能出现的动作。
 enum ImageAction { save, share, copy }

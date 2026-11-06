@@ -1,0 +1,86 @@
+/// 浏览器扩展「抓图取词」（`POST /api/ocr/image`）：扩展把 canvas 渲染的阅读器
+/// （BookWalker 等，正文是 `<canvas>` 像素、页面里没有文本节点）截下来交给 app 识别，
+/// 回每个字在截图里的位置，扩展按指针命中字、走既有查词弹窗。
+///
+/// 不另起一套 OCR：识别会话就是视频暂停帧查词那一份（[GraphicSubtitleOcrSession]，
+/// 底下是漫画在线直读的页级识别 `prepareMangaStreamOcr`）——同一个引擎偏好、同一份
+/// 字级几何。差别只在「用户不在 app 里」：不弹任何询问框（Lens 只在本机已同意过
+/// 上传漫画页面时才用），不做大模型重读（一次请求只回一次结果，没有热替换的去处）。
+library;
+
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart';
+
+/// 扩展抓图识别端点。
+const String kExtensionOcrImagePath = '/api/ocr/image';
+
+/// 识别本身失败（不是引擎不可用）时 `/api/ocr/image` 回的 `error` 值。
+const String kExtensionOcrRecognizeFailed = 'failed';
+
+/// 一张截图解码后的字节上限。扩展侧已把长边压到 2048 px 以内（PNG 至多几 MB），
+/// 超过这个数只可能是坏请求，不往识别器里送。
+const int kExtensionOcrImageMaxBytes = 16 * 1024 * 1024;
+
+/// 识别一张截图（PNG / JPEG 字节）。引擎不可用时抛 [GraphicSubtitleOcrUnavailable]。
+typedef ExtensionImageOcr =
+    Future<GraphicSubtitleOcrFrame> Function(Uint8List image);
+
+/// 请求体里的 `image`（裸 base64 或 `data:image/...;base64,` 串）→ 字节；不是合法
+/// base64 / 空串返回 null。
+Uint8List? decodeExtensionOcrImage(Object? raw) {
+  if (raw is! String) return null;
+  String data = raw.trim();
+  if (data.startsWith('data:')) {
+    final int comma = data.indexOf(',');
+    if (comma < 0 || !data.substring(0, comma).endsWith(';base64')) return null;
+    data = data.substring(comma + 1);
+  }
+  if (data.isEmpty) return null;
+  try {
+    final Uint8List bytes = base64Decode(data);
+    return bytes.isEmpty ? null : bytes;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 识别结果 → 扩展消费的 JSON：
+///
+/// ```json
+/// {"width": 800, "height": 600,
+///  "blocks": [{"text": "吾輩は猫である", "chars": [{"i": 0, "x": 1, "y": 2, "w": 3, "h": 4}]}]}
+/// ```
+///
+/// `blocks` 一块一句（与漫画查词同一口径：块内各行直接拼接），`chars[].i` 是该字在
+/// `text` 里的字素下标，坐标是截图像素。[GraphicSubtitleOcrFrame.chars] 按块顺序
+/// 摊平，相邻同句、下标递增的字归同一块。
+Map<String, dynamic> extensionOcrFrameJson(GraphicSubtitleOcrFrame frame) {
+  final List<Map<String, dynamic>> blocks = <Map<String, dynamic>>[];
+  String? currentText;
+  int lastIndex = -1;
+  List<Map<String, dynamic>>? currentChars;
+  for (final GraphicSubtitleOcrChar c in frame.chars) {
+    if (currentChars == null ||
+        c.sentence != currentText ||
+        c.graphemeIndex <= lastIndex) {
+      currentChars = <Map<String, dynamic>>[];
+      currentText = c.sentence;
+      blocks.add(<String, dynamic>{'text': c.sentence, 'chars': currentChars});
+    }
+    lastIndex = c.graphemeIndex;
+    currentChars.add(<String, dynamic>{
+      'i': c.graphemeIndex,
+      'x': c.rect.left,
+      'y': c.rect.top,
+      'w': c.rect.width,
+      'h': c.rect.height,
+    });
+  }
+  return <String, dynamic>{
+    'width': frame.imageSize.width,
+    'height': frame.imageSize.height,
+    'blocks': blocks,
+  };
+}

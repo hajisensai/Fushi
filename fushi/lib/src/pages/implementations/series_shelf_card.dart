@@ -4,7 +4,12 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// TODO-616 A2 series folded card: one card stands for a whole series. Same
 /// slot aspect ratio as a normal book card so it mixes inline with loose books.

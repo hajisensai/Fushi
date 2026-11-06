@@ -70,6 +70,7 @@
 #include "../credential_database.h"
 #include "../flutter_inappwebview_linux_plugin_private.h"
 #include "../plugin_instance.h"
+#include "../utils/content_type.h"
 #include "../utils/flutter.h"
 #include "../utils/gl_context.h"
 #include "../utils/log.h"
@@ -8140,8 +8141,12 @@ void InAppWebView::OnCustomSchemeRequest(WebKitURISchemeRequest* request, gpoint
                                               response->data.size(), g_free);
 
       // Finish the request with the response data
+      // Fushi patch (BUG-4108): contentEncoding is the charset; WebKit only sees
+      // it as the media type's `charset=` parameter (utils/content_type.h).
+      const std::string mediaType =
+          contentTypeWithCharset(response->contentType, response->contentEncoding);
       webkit_uri_scheme_request_finish(request, stream, response->data.size(),
-                                       response->contentType.c_str());
+                                       mediaType.c_str());
 
       g_object_unref(stream);
     }

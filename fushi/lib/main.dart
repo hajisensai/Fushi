@@ -35,17 +35,19 @@ import 'package:fushi/src/utils/misc/stale_pointer_guard.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/collections_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/game_stream_companion_main.dart'
     as game_stream_companion_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
+import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi/src/srs/srs_mining.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
@@ -73,7 +75,24 @@ import 'package:fushi/src/utils/settled_theme.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_theme.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
+import 'package:fushi/src/utils/components/fushi_text_selection_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/debug_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
@@ -82,7 +101,10 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/diagnostics/storage_footprint_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
@@ -157,6 +179,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi/src/platform/desktop/linux_external_open_channel.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -187,6 +210,7 @@ import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 Color? _savedSplashColor;
 
@@ -671,6 +695,25 @@ void main([List<String> args = const <String>[]]) {
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
       ]);
+      // BUG-4075：周期内存采样写进会话标记（进程 RSS + SRS 原生内核计数），下次启动的
+      // 「上次未正常退出」带上崩前几分钟的内存曲线。
+      // 帧数 + 可见页面：停着不动时是否仍在逐帧重绘、停在哪一页（BUG-4075 证据缺口 ⑥）。
+      UiActivityProbe.install();
+      PreviousExitLog.startMemorySampling(
+        probes: const <MemoryProbe>[
+          processRssBreakdownProbe,
+          nativeHeapProbe,
+          processThreadCountProbe,
+          srsMemoryProbe,
+          srsOpLedgerProbe,
+          UiActivityProbe.probe,
+        ],
+      );
+      // 单次超过 3 s 或读回超过 32 MB 的 SRS 操作另记一条诊断日志（随反馈上传）。
+      SrsOpLedger.onHeavy = (String line) =>
+          ErrorLogService.instance.logDiagnostic('SrsOpLedger.heavy', line);
+      // 同一 bug：启动后在后台量一遍 App 数据根的目录 / 大文件分项，记进诊断日志随反馈上传。
+      scheduleStorageFootprintLog();
       // 闪退报告（crash_report.dart）：上次是崩溃 / 异常退出就记进待报，下次问用户要不要
       // 把日志发给开发者。debug 构建（停 `flutter run` 就是强杀）与集成测试根下不问不发——
       // 测试绝不能往线上反馈服务交东西。
@@ -1979,7 +2022,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         if (mounted) setState(() {});
         return null;
       }
-      DesktopLookupService.instance.triggerLookup(lookupWord);
+      appModel.queueExternalLookup(lookupWord);
       return null;
     }
     // 原生层（Windows WM_COPYDATA / Linux D-Bus）转交的是任意候选路径、不看扩展名：
@@ -2126,7 +2169,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         openTarget: _handleCtlOpen,
         lookupWord: (String word) async {
           await _focusMainWindowForCtl();
-          DesktopLookupService.instance.triggerLookup(word);
+          ref.read(appProvider).queueExternalLookup(word);
         },
         quitApp: _flushAndExitForWindowClose,
         routes: buildOpRoutes(appOpContext!),
@@ -2975,13 +3018,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     // BUG-1666：同上，冷启动带 `fushi://lookup?word=<词>` 深链时，初始化完成后
-    // 排队一次显式查词（消费侧按用户的剪贴板落点配置路由到主窗 tab / 面板 / 瞬态卡）。
+    // 排队一次显式查词并打开查词 tab（[AppModel.queueExternalLookup]）。
     if (!_lookupDeepLinkHandled && _pendingLookupDeepLinkWord != null) {
       _lookupDeepLinkHandled = true;
       final String word = _pendingLookupDeepLinkWord!;
       _pendingLookupDeepLinkWord = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        DesktopLookupService.instance.triggerLookup(word);
+        ref.read(appProvider).queueExternalLookup(word);
       });
     }
 

@@ -7,14 +7,23 @@ import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
 import 'package:fushi/src/profile/profile_view_model.dart'
     show invalidateAnkiStateAfterPrefsChange;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 class FloatingDictPage extends ConsumerStatefulWidget {
   const FloatingDictPage({
@@ -73,16 +82,18 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   /// 悬浮词典是同进程的另一个 engine、自有一份 AppModel 偏好缓存：常驻期间主 app
   /// 改了偏好（牌组 / Anki 后端 / Profile 等）它看不到。与 `:popup` 的热复用路径同
-  /// 一口径——单行读跨进程 prefs_version，变了才全量重载并丢掉 Anki 派生状态
-  /// （fiwDIpFep7）。DB 读失败不拦查词 / 制卡：记日志后带旧缓存继续（同 TODO-1336）。
+  /// 一口径（同一个 [AppModel.refreshForWarmDictionaryPopup]）——单行读跨进程
+  /// prefs_version，变了才全量重载、按主进程发布的作品会话重新镜像（反馈 kEFPY4cuKZ）并丢掉
+  /// Anki 派生状态（fiwDIpFep7）；词典元数据变了重载引擎。DB 读失败不拦查词 / 制卡：记日志
+  /// 后带旧缓存继续（同 TODO-1336）。
   Future<void> _syncPrefsChangedElsewhere() async {
     try {
-      if (await appModel.refreshPrefCacheIfChanged() && mounted) {
+      if (await appModel.refreshForWarmDictionaryPopup() && mounted) {
         invalidateAnkiStateAfterPrefsChange(ref);
       }
     } on Object catch (e, stack) {
       ErrorLogService.instance.log(
-        'FloatingDict.refreshPrefCacheIfChanged',
+        'FloatingDict.refreshForWarmDictionaryPopup',
         e,
         stack,
       );

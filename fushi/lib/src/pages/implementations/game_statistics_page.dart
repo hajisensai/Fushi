@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
@@ -21,7 +21,10 @@ import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 全游戏统计页。

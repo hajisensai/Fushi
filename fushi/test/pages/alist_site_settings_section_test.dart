@@ -19,7 +19,7 @@ import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';

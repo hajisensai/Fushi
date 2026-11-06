@@ -9,7 +9,7 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:integration_test/integration_test.dart';

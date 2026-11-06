@@ -9,7 +9,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 每个可锁字段在 UI 上的标签。genres / studios 复用作品详情页已有的词条标题。
@@ -75,39 +80,37 @@ class _VideoMetadataLockDialogState extends State<_VideoMetadataLockDialog> {
       title: Text(t.video_work_locked_fields),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                t.video_work_locked_fields_hint,
-                style: context.fushiType.bodyMedium.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              t.video_work_locked_fields_hint,
+              style: context.fushiType.bodyMedium.copyWith(
+                color: cs.onSurfaceVariant,
               ),
-              const SizedBox(height: 16),
-              // 分段卡片组（M3E：首尾大圆角、行间 2px；Apple：inset grouped）。
-              AdaptiveSettingsSection(
-                children: <Widget>[
-                  for (final VideoMetadataLockableField field
-                      in VideoMetadataLockableField.values)
-                    AdaptiveSettingsSwitchRow(
-                      key: ValueKey<String>('video-work-lock-${field.name}'),
-                      title: videoMetadataLockableFieldLabel(field),
-                      value: _selected.contains(field),
-                      onChanged: (bool value) => setState(() {
-                        if (value) {
-                          _selected.add(field);
-                        } else {
-                          _selected.remove(field);
-                        }
-                      }),
-                    ),
-                ],
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            // 分段卡片组（M3E：首尾大圆角、行间 2px；Apple：inset grouped）。
+            AdaptiveSettingsSection(
+              children: <Widget>[
+                for (final VideoMetadataLockableField field
+                    in VideoMetadataLockableField.values)
+                  AdaptiveSettingsSwitchRow(
+                    key: ValueKey<String>('video-work-lock-${field.name}'),
+                    title: videoMetadataLockableFieldLabel(field),
+                    value: _selected.contains(field),
+                    onChanged: (bool value) => setState(() {
+                      if (value) {
+                        _selected.add(field);
+                      } else {
+                        _selected.remove(field);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

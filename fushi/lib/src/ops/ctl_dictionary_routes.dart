@@ -16,7 +16,7 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
-import 'package:fushi/src/models/recommended_dictionary_installer.dart';
+import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/ops/ctl_dictionary_json.dart';
 import 'package:fushi/src/ops/ctl_dictionary_pack_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';

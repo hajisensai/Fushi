@@ -32,6 +32,7 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerAlbum,
         MusicServerArtist,
         MusicServerBrowser,
+        MusicServerPlaylist,
         MusicServerSearchResult,
         MusicServerTrack;
 import 'package:material_ui/material_ui.dart';
@@ -54,7 +55,21 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 来源过滤里「本地」的取值（`null` = 全部来源，其余为插件 id）。
 const String kMusicSearchLocalSource = '\u0000local';
@@ -239,7 +254,7 @@ class MusicSearchSourceChips extends StatelessWidget {
 typedef _Song = ({MusicPluginManifest? plugin, Object track});
 
 /// 一条服务器搜索结果：[item] 是 [MusicServerTrack] / [MusicServerAlbum] /
-/// [MusicServerArtist]，带上它来自哪台服务器（播放 / 跳转 / 来源标签要用）。
+/// [MusicServerArtist] / [MusicServerPlaylist]，带上它来自哪台服务器（播放 / 跳转 / 来源标签要用）。
 final class _ServerHit {
   const _ServerHit(this.browser, this.item);
 
@@ -247,7 +262,7 @@ final class _ServerHit {
   final Object item;
 }
 
-/// [type] 下一台服务器的搜索结果（包成 [_ServerHit]）；歌单服务器不参与，恒空。
+/// [type] 下一台服务器的搜索结果（包成 [_ServerHit]）。
 List<_ServerHit> _serverHitsOf(
   MusicServerBrowser browser,
   MusicServerSearchResult result,
@@ -257,7 +272,7 @@ List<_ServerHit> _serverHitsOf(
     MusicPluginSearchType.song => result.tracks,
     MusicPluginSearchType.album => result.albums,
     MusicPluginSearchType.artist => result.artists,
-    MusicPluginSearchType.playlist => const <Object>[],
+    MusicPluginSearchType.playlist => result.playlists,
   })
     _ServerHit(browser, o),
 ];
@@ -347,6 +362,10 @@ void _openServerHit(BuildContext context, _ServerHit hit) {
     MusicServerArtist a => MusicServerArtistPage(
       browser: hit.browser,
       artist: a,
+    ),
+    MusicServerPlaylist p => MusicServerPlaylistPage(
+      browser: hit.browser,
+      playlist: p,
     ),
     _ => null,
   };
@@ -646,6 +665,17 @@ Widget _entityCard(
         ),
         browser: browser,
         album: a,
+      );
+    case _ServerHit(
+      :final MusicServerBrowser browser,
+      item: MusicServerPlaylist pl,
+    ):
+      return MusicServerPlaylistCard(
+        key: ValueKey<String>(
+          'music-search-server-hit-playlist-${browser.serverId}-${pl.id}',
+        ),
+        browser: browser,
+        playlist: pl,
       );
     case _ServerHit(
       :final MusicServerBrowser browser,
@@ -1341,6 +1371,7 @@ String _bestTitleOf(Object item) => switch (item) {
   _ServerHit(item: MusicServerTrack s) => s.title,
   _ServerHit(item: MusicServerAlbum a) => a.title,
   _ServerHit(item: MusicServerArtist a) => a.name,
+  _ServerHit(item: MusicServerPlaylist p) => p.title,
   _ => '',
 };
 
@@ -1710,6 +1741,11 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
         browser.coverUri(a.coverRef)?.toString(),
       _ServerHit(
         :final MusicServerBrowser browser,
+        item: MusicServerPlaylist p,
+      ) =>
+        browser.coverUri(p.coverRef)?.toString(),
+      _ServerHit(
+        :final MusicServerBrowser browser,
         item: MusicServerArtist a,
       ) =>
         browser.coverUri(a.coverRef)?.toString(),
@@ -1731,7 +1767,8 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       MusicAlbumRow() ||
       MusicPluginAlbum() ||
       _ServerHit(item: MusicServerAlbum()) => t.music_section_albums,
-      MusicPluginPlaylist() => t.music_section_playlists,
+      MusicPluginPlaylist() ||
+      _ServerHit(item: MusicServerPlaylist()) => t.music_section_playlists,
       _ => t.music_section_songs,
     };
     final String detail = switch (item) {
@@ -1753,6 +1790,10 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       MusicPluginTrack p => p.artistText,
       _ServerHit(item: MusicServerTrack s) => s.artist ?? '',
       _ServerHit(item: MusicServerAlbum a) => a.artist ?? '',
+      _ServerHit(item: MusicServerPlaylist p) => <String>[
+        ?p.curator,
+        if (p.trackCount != null) t.music_tracks_count(count: p.trackCount!),
+      ].join(' · '),
       _ => '',
     };
     final int songIndex = songs.indexWhere(

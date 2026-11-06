@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 Widget _host(Widget child) => TranslationProvider(
   child: MaterialApp(

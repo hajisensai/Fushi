@@ -33,7 +33,7 @@ import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 一次 OCR 任务的全部输入。
 ///

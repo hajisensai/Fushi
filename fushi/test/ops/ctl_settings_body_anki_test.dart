@@ -7,7 +7,7 @@ import 'package:fushi/src/anki/ankiconnect_port_repair.dart'
 import 'package:fushi/src/ops/ctl_settings_body_anki.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 List<SettingsItem> _allItems() => <SettingsItem>[
@@ -147,6 +147,7 @@ void main() {
         'desktop_executable_detect',
         'desktop_launch',
         'srs_mining_target',
+        'srs_mining_background',
         'batch_mining',
         'queue_undelivered_mines',
         'pending_mine_landing',

@@ -112,6 +112,8 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
       'lib/src/pages/implementations/home_dictionary_page.dart',
       'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
+      // 复习首页（今日计划 + 牌组详情 + 热力图 / 预测）是 srs_deck_list_page 的 part。
+      'lib/src/pages/implementations/srs/srs_deck_home.dart',
       'lib/src/pages/implementations/music/music_library_page.dart',
       'lib/src/pages/implementations/home_game_page.dart',
       'lib/src/pages/implementations/home_dashboard_page.dart',

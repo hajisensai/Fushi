@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_subtitle_panel.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:material_ui/material_ui.dart';
 

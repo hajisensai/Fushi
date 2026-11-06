@@ -9,7 +9,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';

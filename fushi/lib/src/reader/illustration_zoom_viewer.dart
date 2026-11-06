@@ -14,7 +14,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 缩放看图的路由：非不透明、深色 scrim、点 scrim 关闭。[builder] 提供路由

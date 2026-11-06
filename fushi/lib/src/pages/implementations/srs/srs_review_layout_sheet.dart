@@ -16,7 +16,10 @@ import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 打开「复习选项」面板。[showDesignSkin]：当前卡不是 Fushi 卡片时为 true，面板里多一行
 /// 「卡面跟随设计系统」（它只作用于非 Fushi 卡片；Fushi 卡片本身就按设计系统画）。

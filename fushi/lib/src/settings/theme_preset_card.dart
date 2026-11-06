@@ -1,10 +1,12 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 
 /// 外观 › 主题 的色板网格卡（2026-10 M3E 预设精简）：种子色块 + primary /
 /// secondary / tertiary 三色条 + 名称。

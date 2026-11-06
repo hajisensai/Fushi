@@ -6,16 +6,19 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
-import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/utils/cover_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/cache_image_provider.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as path;
@@ -926,4 +929,19 @@ abstract class MediaSource {
 
   /// Aspect ratio of media items.
   double get aspectRatio;
+}
+
+/// [MediaItem] 按序列化标识回查 app 里注册的媒体类型 / 媒体源。依赖 [AppModel] 的
+/// 注册表，所以住在媒体源层而不是 `media_item.dart`（后者是纯数据模型）。
+extension MediaItemAppLookup on MediaItem {
+  /// Get the [MediaType] from a [MediaItem] from its serialised identifier.
+  MediaType getMediaType({required AppModel appModel}) {
+    return appModel.mediaTypes[mediaTypeIdentifier]!;
+  }
+
+  /// Get the [MediaSource] from a [MediaItem] from its serialised identifier.
+  MediaSource getMediaSource({required AppModel appModel}) {
+    MediaType mediaType = getMediaType(appModel: appModel);
+    return appModel.mediaSources[mediaType]![mediaSourceIdentifier]!;
+  }
 }

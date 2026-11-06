@@ -46,7 +46,9 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show VideoFushiPage, VideoFushiTestHooks;
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';

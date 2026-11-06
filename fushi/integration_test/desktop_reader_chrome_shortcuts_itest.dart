@@ -6,7 +6,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:window_manager/window_manager.dart';
 import 'helpers/observe_capture.dart';
 import 'helpers/focus_driver.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import 'helpers/library_fixture.dart';
 import 'support/test_app_launcher.dart';

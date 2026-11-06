@@ -493,6 +493,50 @@ pub extern "C" fn ffsrs_store_exec_batch(
     })
 }
 
+/// [ffsrs_store_diag_counts] 写出的项数。
+pub const DIAG_COUNT_LEN: usize = 8;
+
+/// 进程级内存诊断计数（不需要句柄，任意线程可调）：按序写 `out[0..min(n, DIAG_COUNT_LEN)]`，返回写了几项。
+/// `[句柄表里打开着的库, 还没释放的 SrsCore（含已关、在途调用还握着的）, 没结束的只读会话,
+///   各库只读连接池开着的连接总数, 本库内置 SQLite 的堆用量字节, 其高水位字节,
+///   打开着的库文件总字节, 它们的 `-wal` 总字节]`。
+/// 用途：移动端内存耗尽闪退（BUG-4075）的取证面包屑看「退役的库还驻留没有 / 连接与 SQLite 页缓存占多少」。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
+    if out.is_null() || n == 0 {
+        return 0;
+    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let (open, readers, cores) = {
+            let table = handles();
+            let readers: usize = table.values().map(|c| c.pooled_readers()).sum();
+            let cores: Vec<Arc<SrsCore>> = table.values().cloned().collect();
+            (table.len(), readers, cores)
+        };
+        // stat 在句柄表锁外做：慢盘上也不挡别的线程取句柄。
+        let (db, wal) = cores
+            .iter()
+            .map(|c| c.file_sizes())
+            .fold((0u64, 0u64), |(d, w), (a, b)| (d + a, w + b));
+        drop(cores);
+        let values: [i64; DIAG_COUNT_LEN] = [
+            open as i64,
+            super::live_cores() as i64,
+            sessions().len() as i64,
+            readers as i64,
+            unsafe { rusqlite::ffi::sqlite3_memory_used() },
+            unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) },
+            db as i64,
+            wal as i64,
+        ];
+        let k = n.min(DIAG_COUNT_LEN);
+        let dst = unsafe { std::slice::from_raw_parts_mut(out, k) };
+        dst.copy_from_slice(&values[..k]);
+        k
+    }))
+    .unwrap_or(0)
+}
+
 /// `*out` = Drift 事务外查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
 /// worker 数取它。
 #[no_mangle]
@@ -1785,6 +1829,47 @@ mod tests {
     /// 结构体还活着（只看引用计数，不碰内容）。
     fn alive(weak: &Weak<SrsCore>) -> bool {
         weak.strong_count() > 0
+    }
+
+    /// 内存诊断计数：空 / 零长度不写；按 n 截断、不越界；开着库时句柄、存活库、连接池与 SQLite 堆都有数，
+    /// 高水位不低于当前用量。别的测试并行开关库，只断言下界。
+    #[test]
+    fn diag_counts_report_open_cores_and_respect_the_buffer_length() {
+        assert_eq!(ffsrs_store_diag_counts(null_mut(), DIAG_COUNT_LEN), 0);
+        let mut one = [-7i64; 1];
+        assert_eq!(ffsrs_store_diag_counts(one.as_mut_ptr(), 0), 0);
+        assert_eq!(one, [-7]);
+
+        let p = temp("diag");
+        let h = open(&p);
+        let mut out = [-7i64; DIAG_COUNT_LEN + 2];
+        assert_eq!(
+            ffsrs_store_diag_counts(out.as_mut_ptr(), out.len()),
+            DIAG_COUNT_LEN
+        );
+        assert_eq!(
+            &out[DIAG_COUNT_LEN..],
+            &[-7, -7],
+            "must not write past the counts"
+        );
+        assert!(out[0] >= 1, "open handles {out:?}");
+        assert!(out[1] >= 1, "live cores {out:?}");
+        assert!(out[3] >= 1, "pooled readers {out:?}");
+        assert!(out[4] > 0, "sqlite memory used {out:?}");
+        assert!(out[5] >= out[4], "highwater below current use {out:?}");
+        assert!(out[6] > 0, "open db bytes {out:?}");
+        assert!(out[7] >= 0, "wal bytes {out:?}");
+
+        let mut two = [-7i64; 3];
+        assert_eq!(ffsrs_store_diag_counts(two.as_mut_ptr(), 2), 2);
+        assert_eq!(two[2], -7);
+
+        // 关掉之后在途调用还握着的那份照样算存活：退役的库驻留就是要看的东西。
+        let held = resolve(h).unwrap();
+        ffsrs_store_close(h);
+        assert!(super::super::live_cores() >= 1);
+        drop(held);
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
     /// 关库后经旧句柄的每个入口都报「已关闭」（不 UAF、不按路径把库重新打开）；重复关闭无操作；

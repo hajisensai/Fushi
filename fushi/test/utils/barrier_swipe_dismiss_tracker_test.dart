@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
 
 /// TODO-1052: [BarrierSwipeDismissTracker] is the single source of truth for the
 /// "horizontal drag over the full-screen dismiss barrier past a threshold closes

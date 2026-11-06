@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 3.3.0+1367
+version: 3.3.0+1368
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.47.0"
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 8ecd20618855210ac4c5ae19229560c39be18ee2
+      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 8ecd20618855210ac4c5ae19229560c39be18ee2
+      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
   archive: ^3.6.1
   async_zip: ^0.1.0
   audio_service: ^0.18.9
@@ -44,8 +44,8 @@ dependencies:
   # （tool/migrate_design_widgets.sh）。lib/ 下禁止再 import
   # package:flutter/material.dart / cupertino.dart（守卫
   # test/build/design_widgets_import_guard_test.dart）。
-  cupertino_ui: ^1.1.4
-  material_ui: ^1.8.0
+  cupertino_ui: ^1.1.6
+  material_ui: ^1.10.0
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0

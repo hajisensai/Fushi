@@ -36,7 +36,16 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveCurrentTocEntry;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// 「信息卡固定 + tab 内容独立滚动」形态所需的最小可用高度（dp）。
 ///

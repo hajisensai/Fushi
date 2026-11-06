@@ -6,8 +6,8 @@ import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_pla
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';

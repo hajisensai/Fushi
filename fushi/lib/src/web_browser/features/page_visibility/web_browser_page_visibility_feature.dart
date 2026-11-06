@@ -5,8 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/web_browser/features/play_in_fushi/play_in_fushi_feature.dart'
-    show kWebBrowserHoldMediaScript, kWebBrowserReleaseMediaScript;
+import 'package:fushi/src/web_browser/features/play_in_fushi/web_browser_media_hold_scripts.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
@@ -47,6 +46,33 @@ Future<void> webBrowserSetPageHidden(
 Future<void> _evaluate(InAppWebViewController controller, String source) =>
     controller.evaluateJavascript(source: source);
 
+/// 被播放页盖住时的按住：先把**此刻正在播**的 `<video>` / `<audio>` 记进
+/// `window.__fushiCoverResume`，再跑 [kWebBrowserHoldMediaScript]（暂停 + 拦之后的 play）。
+///
+/// 只记「按住前在播」的：已暂停的、盖住期间才想开播（被拦下）的都不记，露出时
+/// [kWebBrowserCoverReleaseMediaScript] 只把记下的续播——不是一律续播。重复跑幂等
+/// （按住后没有在播的了，记录只增不清）。
+const String kWebBrowserCoverHoldMediaScript =
+    '(function(){var r=window.__fushiCoverResume||[];'
+    'var vs=document.querySelectorAll("video,audio");'
+    'for(var i=0;i<vs.length;i++){var v=vs[i];'
+    'try{if(!v.paused&&!v.ended&&r.indexOf(v)<0)r.push(v);}catch(e){}}'
+    'window.__fushiCoverResume=r;})();'
+    '$kWebBrowserHoldMediaScript';
+
+/// 播放页退出、页面重新看得见：跑 [kWebBrowserReleaseMediaScript] 解除按住，再把
+/// [kWebBrowserCoverHoldMediaScript] 记下的媒体续播（还在文档里、仍是暂停态的才播；
+/// 站点自己已经续上的不重复播）。记录用完即清。
+///
+/// 与「用 Fushi 播放」交接共用同一个按住监听，但那边解除只跑
+/// [kWebBrowserReleaseMediaScript]：交接时页面媒体先被它暂停，这里记不到，回来也不续播。
+const String kWebBrowserCoverReleaseMediaScript =
+    '$kWebBrowserReleaseMediaScript'
+    '(function(){var r=window.__fushiCoverResume;window.__fushiCoverResume=null;'
+    'if(!r)return 0;var n=0;for(var i=0;i<r.length;i++){var v=r[i];'
+    'try{if(v.isConnected&&v.paused&&!v.ended){n++;var p=v.play();'
+    'if(p&&p.catch)p.catch(function(){});}}catch(e){}}return n;})();';
+
 /// 落到页面上的状态。
 enum _PageState {
   /// 看得见（WebView 建好时的默认）。
@@ -57,6 +83,10 @@ enum _PageState {
 
   /// 上次落地有一步失败，页面实际处于哪种状态说不准：下次同步无论目标是什么都重做。
   unknown,
+
+  /// 看不见期间整页换了文档：新文档要重新按住，但**不记**续播——此刻在播的是盖住期间
+  /// 才开播的（自动播的预告片），不是按住前在播的。
+  reloadedWhileHidden,
 }
 
 /// 浏览页被**播放页**盖住时，下面的网页别跟着播（BUG-4084）。
@@ -74,14 +104,17 @@ enum _PageState {
 ///   盖住期间手机断开 / 换控别的播放器 / 会话结束，那一页随即按规则隐藏。
 ///
 /// 变成看不见时两步，顺序固定：
-/// 1. 先跑 [kWebBrowserHoldMediaScript]：暂停在播的 `<video>` / `<audio>`，之后谁再开播
-///    立刻停——兜住页面隐藏后仍照常出声的站点（YouTube 等）；
+/// 1. 先跑 [kWebBrowserCoverHoldMediaScript]：记下此刻在播的媒体，暂停在播的
+///    `<video>` / `<audio>`，之后谁再开播立刻停——兜住页面隐藏后仍照常出声的站点
+///    （YouTube 等）；
 /// 2. 再告诉 WebView 它看不见了（[webBrowserSetPageHidden]），站点按标准的
 ///    `visibilitychange` 自己停，渲染 / 定时器也停。必须在 1 之后：Windows 挂起后页面不再
 ///    跑脚本。
 ///
-/// 重新看得见时倒过来：先恢复可见，再解除按住。与「用 Fushi 播放」交接时的按住
-/// （`PlayInFushiFeature`）共用同一对脚本；那边的按住只在浏览页回到最上面时解除，
+/// 重新看得见时倒过来：先恢复可见，再解除按住并把按住前在播的续播
+/// （[kWebBrowserCoverReleaseMediaScript]；用户 2026-11-05 拍板：播放页退出后原本在播的
+/// 标签页要接着播，原本没在播的不动）。与「用 Fushi 播放」交接时的按住
+/// （`PlayInFushiFeature`）共用同一个按住监听；那边的按住只在浏览页回到最上面时解除，
 /// 此时本功能也认为页面看得见，两边解除不冲突（脚本幂等）。
 ///
 /// 只管加载完过一次的页面（[onLoadStop] 起登记）：刚建好的 WebView 还在初始化，不在那时
@@ -136,9 +169,10 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
     Uri? url,
   ) {
     _controllers[tab.id] = controller;
-    // 看不见期间整页换了文档：新文档没有按住脚本，重新走一遍。看得见时照常同步
-    // （上次落地失败留下的「说不准」在这里补正）。
-    if (shouldHide(tab.id)) _applied[tab.id] = _PageState.unknown;
+    // 看不见期间整页换了文档：新文档没有按住脚本，重新走一遍（不记续播，见
+    // [_PageState.reloadedWhileHidden]）。看得见时照常同步（上次落地失败留下的「说不准」
+    // 在这里补正）。
+    if (shouldHide(tab.id)) _applied[tab.id] = _PageState.reloadedWhileHidden;
     return _sync(tab.id);
   }
 
@@ -199,12 +233,14 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
     if (controller == null) return;
     final bool hide = shouldHide(tabId);
     final _PageState target = hide ? _PageState.hidden : _PageState.visible;
-    if ((_applied[tabId] ?? _PageState.visible) == target) return;
+    final _PageState applied = _applied[tabId] ?? _PageState.visible;
+    if (applied == target) return;
     final bool ok;
     if (hide) {
-      final bool held = await _step(
-        () => _runScript(controller, kWebBrowserHoldMediaScript),
-      );
+      final String hold = applied == _PageState.reloadedWhileHidden
+          ? kWebBrowserHoldMediaScript
+          : kWebBrowserCoverHoldMediaScript;
+      final bool held = await _step(() => _runScript(controller, hold));
       final bool hidden = await _step(
         () => _setHidden(controller, hidden: true),
       );
@@ -214,14 +250,19 @@ class WebBrowserPageVisibilityFeature extends WebBrowserFeature {
         () => _setHidden(controller, hidden: false),
       );
       final bool released = await _step(
-        () => _runScript(controller, kWebBrowserReleaseMediaScript),
+        () => _runScript(controller, kWebBrowserCoverReleaseMediaScript),
       );
       ok = shown && released;
     }
     // 落地期间 WebView 被回收 / 标签页关了：记录已清，别再写回去。
     if (!identical(_controllers[tabId], controller)) return;
-    // 只有每一步都成功才记成目标状态；有一步失败就记「说不准」，下次同步重做。
-    _applied[tabId] = ok ? target : _PageState.unknown;
+    // 只有每一步都成功才记成目标状态；有一步失败就记「说不准」，下次同步重做。换了文档
+    // 后的重新按住失败仍记「换了文档」：重做时照样不记续播。
+    _applied[tabId] = ok
+        ? target
+        : hide && applied == _PageState.reloadedWhileHidden
+        ? _PageState.reloadedWhileHidden
+        : _PageState.unknown;
   }
 
   /// 单步失败（页面正在导航、平台没实现）不挡后面的步骤；返回这一步成没成功。

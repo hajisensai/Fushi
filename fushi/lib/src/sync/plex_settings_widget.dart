@@ -28,7 +28,16 @@ import 'package:fushi/src/sync/jellyfin_settings_widget.dart'
 import 'package:fushi/src/sync/plex_video_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/video/media_server/plex/plex_api.dart';
 import 'package:fushi_engine/media/video/media_server/plex/plex_tv_auth.dart';
 
@@ -457,7 +466,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
       context: context,
       builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.plex_sign_in_failed),
-        content: SingleChildScrollView(child: SelectableText(message)),
+        content: SelectableText(message),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),

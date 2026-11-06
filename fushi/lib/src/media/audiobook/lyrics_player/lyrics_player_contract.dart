@@ -151,6 +151,7 @@ class LyricsPlayerData {
     this.controlsStyle = LyricsControlsStyle.modern,
     this.compactControlsExpanded = false,
     this.jumpActions = const <FushiToolbarItem>[],
+    this.jumpMarks,
     LyricsControlLayout? wideControls,
     LyricsControlLayout? compactControls,
   }) : _wideControls = wideControls,
@@ -160,6 +161,13 @@ class LyricsPlayerData {
   /// 画在顶栏右侧动作区的**最前面**。空 = 不画（没跳转过 / 顶栏图标关了 / 自动
   /// 隐藏到时）。不占歌词矩形，出现 / 消失不改歌词 WebView 的位置。
   final List<FushiToolbarItem> jumpActions;
+
+  /// 阅读器跳转记录在**全书音频时间轴**上的落点（0–1，与 [LyricsPlayerClock]
+  /// 同一条轴）：返回点 / 前进点。各外观的进度条（含新版波浪线、窄屏细进度）用
+  /// 共享的 `FushiJumpProgressMarks` 画同款刻度（与视频进度条一致，只看不点）。
+  /// 只有音频点有时间；正文点不在这条轴上，不画。null = 不画（没跳转过 / 设置
+  /// 「进度条刻度」关了 / 时长未知）。
+  final ({List<double> back, List<double> forward})? jumpMarks;
 
   final LyricsControlLayout? _wideControls;
   final LyricsControlLayout? _compactControls;
@@ -211,9 +219,9 @@ class LyricsPlayerData {
   /// 已发出恢复、播放器还没真正起播的那一小段。这段暂停属于查词会话，不是用户暂停。
   final bool playbackHeldForLookup;
 
-  /// 「有效播放态」：实际在播，或只是被查词临时按住。覆盖层的自动隐藏 / 光标空闲隐藏
-  /// 按它判，查词前后布局冻结——不复位底栏、不缩歌词矩形、文字不重排挪位（反馈
-  /// awLXfD49Ep / M8YDOqJ5Bm）。
+  /// 「有效播放态」：实际在播，或只是被查词临时按住。覆盖层的光标空闲隐藏按它判：
+  /// 查词的临时暂停不算暂停，光标不因查词复现又消失（反馈 awLXfD49Ep / M8YDOqJ5Bm
+  /// 的同一判据）。
   bool get playbackActive => isPlaying || playbackHeldForLookup;
 
   /// 当前倍速。
@@ -293,7 +301,17 @@ class LyricsPlayerCallbacks {
     this.onSwapSides,
     this.onExitBook,
     this.onCompactControlsExpandedChanged,
+    this.onPositionJump,
+    this.onOpenJumpHistory,
   });
+
+  /// 进度跳转（按字数 / 百分比）：打开阅读器导航面板的同一段「按字数跳转」，
+  /// 歌词模式下落到目标字数所在的那句音频。null = 不显示该键。
+  final VoidCallback? onPositionJump;
+
+  /// 「跳转记录」面板。null = 还没有任何跳转记录：键照常摆出但置灰（布局里放了
+  /// 它就该看得见，不因历史为空忽隐忽现）。
+  final VoidCallback? onOpenJumpHistory;
 
   /// 新版窄屏播放卡展开 / 收起（写偏好 `lyrics_controls_expanded`）。null = 卡片
   /// 固定在当前状态（测试 / 未接偏好）。

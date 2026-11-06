@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 整页形态的标签选择器（深链 / 旧调用点兼容）。主体与 [showTagPicker] 的 sheet /
 /// 弹层是**同一个** [TagPickerPanel]：搜索、一键新建、已选 input chip、filter

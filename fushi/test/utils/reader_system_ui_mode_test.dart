@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 import '../helpers/source_guard.dart';
 

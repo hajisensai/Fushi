@@ -7,7 +7,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
-import 'package:fushi/utils.dart' show FushiIconButton;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';

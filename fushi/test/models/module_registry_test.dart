@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
-import 'package:fushi/src/settings/settings_destination.dart'
+import 'package:fushi/src/settings/settings_destination_id.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutScope;
 import 'package:fushi_core/fushi_core.dart' show MediaKind;
@@ -117,6 +117,23 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('hook 能力与外部 texthooker 台词页按平台元组取值', () {
+      for (final (bool windows, bool desktop, bool hook, bool lines)
+          in <(bool, bool, bool, bool)>[
+            (true, true, true, false), // Windows：捕获工作台本来就承载台词
+            (false, true, false, true), // Linux / macOS
+            (false, false, false, false), // Android / iOS
+          ]) {
+        final GamesModuleForm form = GamesModuleForm.on(isWindows: windows);
+        expect(form.supportsHookCapture, hook, reason: 'win=$windows');
+        expect(
+          form.offersExternalTexthooker(isDesktop: desktop),
+          lines,
+          reason: 'win=$windows desktop=$desktop',
+        );
+      }
     });
 
     test('games 的两种形态：Windows 本机库，其余平台都是串流接收端', () {

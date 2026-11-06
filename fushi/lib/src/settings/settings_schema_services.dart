@@ -19,6 +19,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_page_reset.dart'
     show settingsSectionModifiedSummary;
@@ -29,7 +30,8 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel, kJimakuLanguageCodes;

@@ -136,12 +136,38 @@ const BRIDGE_JS = `'use strict';
     };
   }
 
+  // 现在出声的这一首（电台换歌时 Dart 侧据此换掉显示的曲目）。直播电台的 nowPlayingItem 可能是
+  // 电台 / 节目本身：那时没有 songId / durationMs，只给标题与封面。
+  function nowPlayingInfo() {
+    const item = music && music.nowPlayingItem;
+    if (!item) return {};
+    const a = item.attributes || {};
+    const pp = item.playParams || a.playParams || {};
+    const kind = String(pp.kind || item.type || '');
+    const isSong = kind === 'song' || kind === 'songs';
+    const songId = isSong ? String(pp.catalogId || pp.id || item.id || '') : '';
+    const art = (a.artwork && a.artwork.url) || item.artworkURL || null;
+    const dur = Number(item.playbackDuration || a.durationInMillis || 0);
+    return {
+      songId: songId || null,
+      title: item.title || a.name || null,
+      artist: item.artistName || a.artistName || null,
+      album: item.albumName || a.albumName || null,
+      artworkUrl: art ? String(art) : null,
+      durationMs: isSong && dur > 0 ? Math.round(dur) : null,
+    };
+  }
+
   function wire(m) {
     const E = window.MusicKit.Events || {};
     const on = (name, fn) => { if (name) m.addEventListener(name, fn); };
     on(E.playbackStateDidChange || 'playbackStateDidChange', () => { muteMediaSession(); emit('state', snapshot()); });
     on(E.playbackTimeDidChange || 'playbackTimeDidChange', () => emit('time', snapshot()));
-    on(E.nowPlayingItemDidChange || 'nowPlayingItemDidChange', () => { muteMediaSession(); emit('item', snapshot()); });
+    on(E.nowPlayingItemDidChange || 'nowPlayingItemDidChange', () => {
+      muteMediaSession();
+      emit('item', snapshot());
+      if (music && music.nowPlayingItem) emit('nowPlaying', nowPlayingInfo());
+    });
     on(E.authorizationStatusDidChange || 'authorizationStatusDidChange', () => emit('auth', snapshot()));
     on(E.mediaPlaybackError || 'mediaPlaybackError', (e) => emit('error', errInfo(e)));
   }
@@ -198,6 +224,16 @@ const BRIDGE_JS = `'use strict';
       await m.play();
       return snapshot();
     }),
+    // 电台：Apple 不公开电台曲目列表，队列只能交给 MusicKit 自管、由它自己换歌；每换一首发
+    // nowPlaying 事件。autoplay === false 时只排好不出声。
+    playStation: api(async (stationId, autoplay) => {
+      await init();
+      const m = need();
+      await m.setQueue({ station: String(stationId), startPlaying: false });
+      if (autoplay !== false) await m.play();
+      return Object.assign(snapshot(), { nowPlaying: nowPlayingInfo() });
+    }),
+    skipToNext: api(async () => { await need().skipToNextItem(); return snapshot(); }),
     pause: api(async () => { need().pause(); return snapshot(); }),
     resume: api(async () => { await need().play(); return snapshot(); }),
     stop: api(async () => { need().stop(); return snapshot(); }),

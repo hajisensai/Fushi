@@ -2,7 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show kFushiFloatingTopBarOverflowHysteresis;
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 页头 / 顶栏动作的统一自适应收纳（[fushiResolveHeaderActions]）：

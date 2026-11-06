@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -131,6 +133,52 @@ void main() {
     addTearDown(upper.dispose);
     upper.attach(ModalRoute.of(upperContext));
     expect(upper.covered, isFalse);
+  });
+
+  // 登记者清单（与 [PlaybackRouteMarks] 文档同一份）：视频页、网页视频页、有声书播放页
+  // （歌词模式覆盖层）、音乐播放页、MV / 卡拉 OK 舞台。每个都要在
+  // didChangeDependencies 里登记、dispose 里撤。MV 舞台起 media_kit 播放器，不在单测里
+  // 起整页，只守源码；有声书 / 音乐播放页另有 widget 测试真起页面断言登记。
+  test('播放页登记者都按 attach(ModalRoute.of) / dispose 登记', () {
+    const List<String> registrants = <String>[
+      'lib/src/pages/implementations/video_fushi_page.dart',
+      'lib/src/pages/implementations/web_video_fushi_page.dart',
+      'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart',
+      'lib/src/pages/implementations/music/music_lyrics_page.dart',
+      'lib/src/pages/implementations/music/music_mv_page.dart',
+    ];
+    final String doc = File(
+      'lib/src/media/playback_route_marks.dart',
+    ).readAsStringSync();
+    for (final String path in registrants) {
+      final String src = File(path).readAsStringSync();
+      expect(
+        src,
+        contains(
+          'final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();',
+        ),
+        reason: path,
+      );
+      expect(
+        src,
+        contains('_playbackRouteMark.attach(ModalRoute.of(context));'),
+        reason: path,
+      );
+      expect(src, contains('_playbackRouteMark.dispose();'), reason: path);
+    }
+    for (final String name in <String>[
+      'VideoFushiPage',
+      'WebVideoFushiPage',
+      'ReaderLyricsPlayerOverlay',
+      'MusicLyricsPage',
+      'MusicKaraokeStagePage',
+    ]) {
+      expect(
+        doc,
+        contains('`$name`'),
+        reason: '登记者清单要写进 PlaybackRouteMarks 文档',
+      );
+    }
   });
 
   test('routesAbove：不在栈里的路由 → 空', () {

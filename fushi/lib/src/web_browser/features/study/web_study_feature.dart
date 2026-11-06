@@ -14,7 +14,7 @@ import 'package:fushi/src/web_browser/features/study/web_study_session.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
-import 'package:fushi/utils.dart' show ErrorLogService;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 生产时钟：一页一个 [StudyClock]（阅读面墙钟记账 + 阅读设置的空闲门）。
 ///

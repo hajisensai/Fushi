@@ -837,6 +837,8 @@ keep-open=yes
       );
       // 流缓存显式开启。
       expect(m['cache'], 'yes');
+      // 内存缓存：media_kit 的 cache-on-disk=yes 没有 cache-dir，开流必报错（BUG-4121）。
+      expect(m['cache-on-disk'], 'no');
       // 预读时长目标（受字节上限封顶）。
       expect(m['cache-secs'], '30');
       // 字节上限是缓存真实约束：128MiB（> media_kit 默认 32MiB）。
@@ -852,6 +854,7 @@ keep-open=yes
       // ImageCache 后贴着 jetsam 线走（Jellyfin/Emby iOS 闪退），移动端降档。
       final Map<String, String> m = buildNetworkCacheProperties(isMobile: true);
       expect(m['cache'], 'yes');
+      expect(m['cache-on-disk'], 'no');
       expect(m['cache-secs'], '20');
       expect(m['demuxer-max-bytes'], '${32 * 1024 * 1024}');
       expect(m['demuxer-max-back-bytes'], '${16 * 1024 * 1024}');
@@ -917,6 +920,7 @@ keep-open=yes
       // 全是网络缓存族属性。
       expect(m.keys.toSet(), <String>{
         'cache',
+        'cache-on-disk',
         'cache-secs',
         'demuxer-max-bytes',
         'demuxer-max-back-bytes',

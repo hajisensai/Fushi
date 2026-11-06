@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 同步与历史页「存储位置」的通道标题：位置 ID 不能原样露给用户（互联位置的 ID 是 host 设备 ID，
 /// 一长串 base64，用户截图里看着像乱码）。

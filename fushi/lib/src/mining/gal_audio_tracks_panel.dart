@@ -3,7 +3,12 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 /// 会话音轨面板（共享内容组件）：轨列表 + 逐轨试听 + 设为语音轨 + 排除 BGM/恢复。
 ///
@@ -53,7 +58,9 @@ class GalAudioTracksPanel extends StatelessWidget {
             GalTrackEmptyHint.generic =>
               state.audioTracks.isEmpty ? null : t.game_tracks_pcm_only_hint,
           };
+    // 按内容收高：对话框内容区（FushiAlertDialog 的滚动外壳）给有界高度时也不撑满。
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (backendHint != null)

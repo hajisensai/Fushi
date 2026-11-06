@@ -1,0 +1,8 @@
+name: barrel_imports
+description: 把 fushi/ 里对顶层 barrel 的 import 换成直接 import 用到的库（守卫 fushi/test/build/import_cycle_guard_test.dart）。
+publish_to: none
+environment:
+  sdk: ^3.9.0
+dependencies:
+  analyzer: ^14.7.0
+  path: ^1.9.0

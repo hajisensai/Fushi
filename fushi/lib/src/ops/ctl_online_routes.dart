@@ -68,7 +68,8 @@ import 'package:fushi/src/pages/implementations/interconnect_download_tasks_sect
         deleteCompletedInterconnectDownloadFiles;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
-import 'package:fushi/utils.dart' show createAppHttpClient, t;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// online 域控制通道路由（CLI 侧命令见 `packages/fushi_cli/lib/src/commands/online_commands.dart`）。
 ///

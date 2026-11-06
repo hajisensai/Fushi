@@ -22,7 +22,10 @@ fushi_root="$(cd "$here/../.." && pwd)"
 
 expand() {
   local src="$1" group="$2" out="$3"
-  sed "s|\$(FUSHI_APP_GROUP)|$group|g" "$src" > "$out"
+  # 先用 plutil 重新序列化（XML 注释被丢掉），再替换变量、查残留。源文件的注释里会写
+  # `$(TeamIdentifierPrefix)…` 这类说明文字，直接对原文 grep `$(` 会把注释当成没展开的
+  # 变量误判失败；只检查真正会签进去的值才对。
+  plutil -convert xml1 -o - "$src" | sed "s|\$(FUSHI_APP_GROUP)|$group|g" > "$out"
   if grep -q '\$(' "$out"; then
     echo "error: unexpanded build variable left in $out" >&2
     exit 1

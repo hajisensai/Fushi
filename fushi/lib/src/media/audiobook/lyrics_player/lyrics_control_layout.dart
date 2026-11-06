@@ -67,7 +67,14 @@ enum LyricsControlItem implements ControlItemSpec<LyricsControlSlot> {
   bookMode('bookMode'),
 
   /// 宽屏左右互换（窄屏单栏时不渲染）。
-  swapSides('swapSides');
+  swapSides('swapSides'),
+
+  /// 进度跳转：打开导航面板的「按字数跳转」（与正文同一面板；歌词模式下落到
+  /// 目标字数所在的那句音频）。出厂在「更多」。
+  positionJump('positionJump'),
+
+  /// 「跳转记录」面板（返回 / 前进的完整列表；还没有跳转时置灰）。出厂在「更多」。
+  jumpHistory('jumpHistory');
 
   const LyricsControlItem(this.storageValue);
 
@@ -114,7 +121,8 @@ class LyricsControlLayout {
   ) => LyricsControlLayout._(core);
 
   /// 宽屏出厂布局 = 布局化之前 MD3 宽屏的摆法（睡眠定时换成统计计时键）：播放卡
-  /// 工具条 倍速 / 计时 / 重播 / 遮罩 / Aa / 统计，右上角 书籍模式 / 左右互换。
+  /// 工具条 倍速 / 计时 / 重播 / 遮罩 / Aa / 统计，右上角 书籍模式 / 左右互换，
+  /// 「更多」里 进度跳转 / 跳转记录（存量布局 JSON 缺这两颗时按此回填）。
   static final LyricsControlLayout defaults = LyricsControlLayout._(
     ControlLayout<LyricsControlSlot, LyricsControlItem>.fromSlots(
       kLyricsControlScheme,
@@ -130,6 +138,10 @@ class LyricsControlLayout {
         LyricsControlSlot.top: <LyricsControlItem>[
           LyricsControlItem.bookMode,
           LyricsControlItem.swapSides,
+        ],
+        LyricsControlSlot.overflow: <LyricsControlItem>[
+          LyricsControlItem.positionJump,
+          LyricsControlItem.jumpHistory,
         ],
       },
     ),
@@ -151,6 +163,10 @@ class LyricsControlLayout {
           LyricsControlItem.speed,
           LyricsControlItem.studyTimer,
           LyricsControlItem.replayCue,
+        ],
+        LyricsControlSlot.overflow: <LyricsControlItem>[
+          LyricsControlItem.positionJump,
+          LyricsControlItem.jumpHistory,
         ],
       },
       removedItems: <LyricsControlItem>{

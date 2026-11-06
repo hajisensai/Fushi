@@ -14,7 +14,7 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// Narrow application-facing facade for the manga feature.
 ///

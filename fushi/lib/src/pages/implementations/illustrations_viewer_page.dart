@@ -20,7 +20,12 @@ import 'package:fushi/src/reader/reader_collection_volumes.dart'
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 书架端「查看插图」：装载这本书的结构 / 阅读位置 / 已揭开集，然后交给阅读器
 /// 内的同一份插图册 [ReaderGalleryPage]。此前书架端是另一套网格 + 翻页查看器

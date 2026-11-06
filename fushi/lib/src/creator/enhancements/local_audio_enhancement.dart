@@ -5,17 +5,25 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/audio_enhancement.dart';
+import 'package:fushi/src/creator/audio_export_field.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/fields/reading_field.dart';
+import 'package:fushi/src/creator/fields/term_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show kLocalAudioQueryBudget, resolveLookupAudioUrl;
 import 'package:fushi/src/utils/misc/system_tts.dart'
     show resolveSystemTtsLanguageTag;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// BUG-1005：把 [resolveLookupAudioUrl] 解析出的单词音频 ref 物化成本地 [File] 供 Anki 落
 /// 媒体。ref 可能是远端 `http(s)://` URL（forvo/jpod101/fushiRemote 等远程发音源）或本地

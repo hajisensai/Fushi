@@ -10,7 +10,6 @@ import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
@@ -29,8 +28,8 @@ import 'package:fushi/src/utils/misc/icon_seed_color.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/fushi_m3e_misc_themes.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
@@ -873,6 +872,51 @@ class ThemeNotifier extends ChangeNotifier {
   /// true = [ThemeNotifier.profileView] 建的只读视图。
   final bool _readOnlyView;
 
+  /// 反馈 kEFPY4cuKZ：随配置（Profile）走的主题键——打开带作品级配置的作品时按作品配置读写
+  /// （[WorkProfileScope]），离开作品读回全局。图标取色缓存与页面背景图片路径 / 取色缓存描述的
+  /// 是这台设备（后者已由 `ProfileKeys.isExcludedPref` 排除），不在其列。
+  static const Set<String> _profileThemePrefKeys = <String>{
+    'app_theme_key',
+    'brightness_mode',
+    'design_system',
+    'glass_material',
+    'pure_black_dark',
+    tintAppLogoPrefKey,
+    followAppIconPrefKey,
+    audioHighlightColorPrefKey,
+    customThemesPrefKey,
+    selectedCustomThemeIdPrefKey,
+    kPageBackdropPresetPrefKey,
+    kPageBackdropStrengthPrefKey,
+    kPageBackdropMotionPrefKey,
+    kPageBackdropImageBlurPrefKey,
+    kPageBackdropImageScrimPrefKey,
+    kPageBackdropFollowImageAccentPrefKey,
+    kPageBackdropAccentIndexPrefKey,
+    kPageBackdropModulePresetsPrefKey,
+  };
+
+  /// [key] 是否本类持有、随配置走的主题键（含旧的扁平自定义主题 `custom_theme_*`）。
+  static bool isProfileThemePrefKey(String key) =>
+      _profileThemePrefKeys.contains(key) || key.startsWith('custom_theme_');
+
+  /// 作品级配置会话是否接管 [key]（只读视图有自己那份配置的偏好，不叠会话）。
+  bool _workScoped(String key) =>
+      !_readOnlyView && WorkProfileScope.instance.overrides(key);
+
+  /// [key] 当前生效的原始编码值：作品会话接管时取会话里的那份，否则取本类缓存的 live 值。
+  String? _raw(String key) =>
+      _workScoped(key) ? WorkProfileScope.instance.scopedRaw(key) : _prefs[key];
+
+  /// 作品级配置会话装上 / 撤下：主题键的生效值换了一份，重推取色输入并重建主题。live 缓存
+  /// 本身不变（全局偏好从未被写过）。
+  void onWorkProfileScopeChanged() {
+    if (_readOnlyView) return;
+    _onAppIconPreferencesLoaded();
+    _onPageBackdropPreferencesLoaded();
+    notifyListeners();
+  }
+
   void _ensureWritable(String operation) {
     if (_readOnlyView) {
       throw UnsupportedError(
@@ -1693,7 +1737,7 @@ class ThemeNotifier extends ChangeNotifier {
   // (HBK-AUDIT-022). Defaults are returned without persisting; writes happen
   // only at explicit setter or load/refresh migration boundaries, never here.
   dynamic _get(String key, {dynamic defaultValue}) {
-    final raw = _prefs[key];
+    final raw = _raw(key);
     if (raw == null) return defaultValue;
     return PrefCodec.decode(raw, defaultValue);
   }
@@ -1701,6 +1745,11 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> _set(String key, dynamic value) async {
     _ensureWritable('_set');
     final String strVal = PrefCodec.encode(value);
+    if (_workScoped(key)) {
+      // 作品会话期间写进作品配置自己的快照（内存同步改），全局偏好与 live 缓存不动。
+      await WorkProfileScope.instance.write(key, strVal);
+      return;
+    }
     _publishPreferenceWrite(key, strVal, ++_preferenceWriteRevision);
     if (key == 'design_system') {
       _designSystemPreferenceRevision++;
@@ -2648,19 +2697,24 @@ class ThemeNotifier extends ChangeNotifier {
     final List<String> encoded = result.entries
         .map((CustomThemeEntry e) => jsonEncode(e.toJson()))
         .toList();
-    _prefs[customThemesPrefKey] = PrefCodec.encode(encoded);
-    _prefs[selectedCustomThemeIdPrefKey] = PrefCodec.encode(
-      result.selectedId ?? '',
-    );
+    final Map<String, String> migrated = <String, String>{
+      customThemesPrefKey: PrefCodec.encode(encoded),
+      selectedCustomThemeIdPrefKey: PrefCodec.encode(result.selectedId ?? ''),
+    };
+    // 迁移的输入是作品会话里那份配置的旧扁平键时，结果也写回那份配置（同步进会话内存，
+    // 同一次读就拿到迁移后的值），绝不落进 live 偏好。
+    if (_workScoped(customThemesPrefKey)) {
+      for (final MapEntry<String, String> e in migrated.entries) {
+        unawaited(WorkProfileScope.instance.write(e.key, e.value));
+      }
+      return;
+    }
+    _prefs.addAll(migrated);
     // 只读配置视图：迁移结果只留在本视图内存里，绝不写进 live 偏好（那是别的配置的值）。
     if (_readOnlyView) return;
-    unawaited(_db.setPref(customThemesPrefKey, PrefCodec.encode(encoded)));
-    unawaited(
-      _db.setPref(
-        selectedCustomThemeIdPrefKey,
-        PrefCodec.encode(result.selectedId ?? ''),
-      ),
-    );
+    for (final MapEntry<String, String> e in migrated.entries) {
+      unawaited(_db.setPref(e.key, e.value));
+    }
   }
 
   // ── Setters ───────────────────────────────────────────────────────
@@ -2684,11 +2738,22 @@ class ThemeNotifier extends ChangeNotifier {
     if (_get('brightness_mode', defaultValue: '').isEmpty) {
       writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
     }
-    if (_prefs['pure_black_dark'] == null) {
+    if (_raw('pure_black_dark') == null) {
       writes['pure_black_dark'] = PrefCodec.encode(pureBlackDark);
     }
     writes['app_theme_key'] = PrefCodec.encode(key);
     _ensureWritable('setAppThemeKey');
+    // 作品会话接管的主题键整批写进作品配置（同步进会话内存），其余照旧一批落 live。
+    final Map<String, String> scoped = <String, String>{
+      for (final MapEntry<String, String> e in writes.entries)
+        if (_workScoped(e.key)) e.key: e.value,
+    };
+    writes.removeWhere((String k, String _) => scoped.containsKey(k));
+    await Future.wait(<Future<void>>[
+      for (final MapEntry<String, String> e in scoped.entries)
+        WorkProfileScope.instance.write(e.key, e.value),
+    ]);
+    if (writes.isEmpty) return;
     final int revision = ++_preferenceWriteRevision;
     await _db.setPrefs(writes);
     for (final MapEntry<String, String> write in writes.entries) {
@@ -2782,11 +2847,6 @@ class ThemeNotifier extends ChangeNotifier {
         });
   }
 }
-
-final themeProvider = ChangeNotifierProvider<ThemeNotifier>((ref) {
-  final appModel = ref.watch(appProvider);
-  return appModel.themeNotifier;
-});
 
 /// 全局输入框主题（用户 2026-10-04：「所有输入框都很丑」的根因层）。
 ///

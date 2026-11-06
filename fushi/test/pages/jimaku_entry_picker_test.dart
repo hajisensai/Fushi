@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import '../helpers/glass_unwrap.dart';
 
 void main() {

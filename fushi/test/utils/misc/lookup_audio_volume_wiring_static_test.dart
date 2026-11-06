@@ -12,7 +12,7 @@ void main() {
       // Dart 交给 native/libmpv。自动发音走 autoReadWordUnified —— 优先驱动弹窗
       // <audio>，WebView 未就绪时回退 playLookupAudio（仍带 gain，Never break userspace）。
       final String playback = _read(
-        'lib/src/utils/misc/lookup_audio_playback.dart',
+        'lib/src/lookup/lookup_audio_playback.dart',
       );
       // Dart 兜底仍把配置音量传进播放器。
       expect(playback, contains('playAudioRef('));

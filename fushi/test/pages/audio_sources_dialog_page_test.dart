@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import '../helpers/glass_unwrap.dart';
 
 void main() {

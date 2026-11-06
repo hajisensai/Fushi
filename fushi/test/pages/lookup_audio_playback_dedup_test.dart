@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 装配。防止两份发音逻辑漂移（任一处改了另一处漏改）。
 void main() {
   final playback = File(
-    'lib/src/utils/misc/lookup_audio_playback.dart',
+    'lib/src/lookup/lookup_audio_playback.dart',
   ).readAsStringSync();
   final base = File('lib/src/pages/base_source_page.dart').readAsStringSync();
   final mixin = File(

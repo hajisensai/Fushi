@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
 
 import 'test_helpers.dart';
 

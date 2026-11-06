@@ -1,5 +1,5 @@
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 
 /// 用户自配服务器条目混进首页「继续」的门控（显式 opt-in），首页与桌面「接下来」
 /// 小组件共用同一份判定：
@@ -8,17 +8,21 @@ import 'package:fushi/src/models/module_id.dart';
 /// - Audiobookshelf 走「在首页『继续』中显示」（`audiobookshelf_show_in_home`，
 ///   默认关）。
 /// 各自还要所属模块开着（视频模块关着不问媒体服务器，书模块关着不问 ABS）。
+///
+/// [prefs] 传 null = 偏好尚未装载（`AppModel.isPreferencesReady` 为 false），两侧
+/// 一律关；调用方只在装载完成后才取 `prefsRepo`。
 ({bool mediaServers, bool audiobookshelf, String signature})
-serverContinueGates(AppModel appModel) {
-  final bool ready = appModel.isPreferencesReady;
-  final ModuleVisibility visibility = appModel.moduleVisibility;
+serverContinueGates({
+  required PreferencesRepository? prefs,
+  required ModuleVisibility visibility,
+}) {
   final bool media =
-      ready &&
-      appModel.prefsRepo.jellyfinShowInLibrary &&
+      prefs != null &&
+      prefs.jellyfinShowInLibrary &&
       visibility.isEnabled(ModuleId.video);
   final bool abs =
-      ready &&
-      appModel.prefsRepo.audiobookshelfShowInHome &&
+      prefs != null &&
+      prefs.audiobookshelfShowInHome &&
       visibility.isEnabled(ModuleId.books);
   return (mediaServers: media, audiobookshelf: abs, signature: '$media|$abs');
 }

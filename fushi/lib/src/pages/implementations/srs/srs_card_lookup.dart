@@ -26,8 +26,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 
-import 'package:fushi/media.dart' show ReaderFushiSource;
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart'
     show withFallbackMiningSentence;
@@ -43,7 +43,8 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart'
     show ReaderSelectionScripts;
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 卡面取词的交互设置（与阅读器同源）。
 typedef SrsCardLookupSettings = ({bool tap, bool hoverAuto});

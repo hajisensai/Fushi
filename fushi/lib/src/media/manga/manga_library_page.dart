@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/user_media_servers_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
 /// 顶层漫画库页：书架 / 发现 / 来源 / 扩展 / 导入。

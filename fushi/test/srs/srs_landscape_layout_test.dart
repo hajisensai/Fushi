@@ -6,7 +6,7 @@
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
@@ -18,7 +18,10 @@ import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dar
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';

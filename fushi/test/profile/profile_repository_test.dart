@@ -4,7 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/srs/srs_providers.dart'
+import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';

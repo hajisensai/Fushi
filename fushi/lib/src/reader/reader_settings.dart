@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/profile/work_profile_scope.dart';
@@ -14,7 +15,6 @@ import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
@@ -120,7 +120,7 @@ class ReaderSettings {
   /// 上下文里用。存在的理由是 [ReaderSettings] 的读取器全是同步 getter，但构造
   /// 出来的实例缓存是**空的**——没有这一步，`ReaderSettings(db).dictionaryFonts`
   /// 恒为空列表，和「用户什么都没配」不可区分（见
-  /// [ReaderFushiSource.resolveEffectiveReaderSettings] 的说明）。
+  /// `ReaderFushiSource.resolveEffectiveReaderSettings` 的说明）。
   ///
   /// 迁移（边距/字体目录）由主进程的初始化路径负责且幂等，旁路只读消费方不需要、
   /// 也不应该在只读路径上写盘。
@@ -203,6 +203,17 @@ class ReaderSettings {
       ErrorLogService.instance.log('ReaderSettings.write', e, stack);
       debugPrint('[ReaderSettings] write error: $e');
     }
+  }
+
+  /// 写一个本源键的原始串（字体目录 / 字体表这类已编码的 JSON）：作品级配置会话期间写进
+  /// 会话覆盖层（绑定配置的快照），否则写全局偏好。与 [_set] 同一判据，只是不再 toString。
+  Future<void> _writeRaw(String key, String raw) async {
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, raw);
+      return;
+    }
+    await _db.setPref(dbKey, raw);
   }
 
   /// 删掉一个本源键：作品级配置会话期间作品级键删在会话覆盖层（绑定配置的快照），
@@ -1032,18 +1043,13 @@ class ReaderSettings {
   }) async {
     _cacheFontCatalogState(state, syncLegacyKeys: syncLegacyKeys);
     try {
-      await _db.setPref(
-        '$_prefix$fontCatalogKey',
-        _cache[fontCatalogKey] as String,
-      );
-      await _db.setPref(
-        '$_prefix$fontTargetsKey',
-        _cache[fontTargetsKey] as String,
-      );
+      // 反馈 kEFPY4cuKZ：字体随作品级配置走，会话期间改字体写进作品配置的快照。
+      await _writeRaw(fontCatalogKey, _cache[fontCatalogKey] as String);
+      await _writeRaw(fontTargetsKey, _cache[fontTargetsKey] as String);
       if (!syncLegacyKeys) return;
       for (final String key in _fontTargetKeys) {
         if (!state.hasTarget(key)) continue;
-        await _db.setPref('$_prefix$key', _cache[key] as String);
+        await _writeRaw(key, _cache[key] as String);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log(
@@ -1098,7 +1104,7 @@ class ReaderSettings {
       );
       if (r.relocated > 0) {
         _cache[fontCatalogKey] = r.json;
-        await _db.setPref('$_prefix$fontCatalogKey', r.json);
+        await _writeRaw(fontCatalogKey, r.json);
         healed += r.relocated;
       }
     }
@@ -1113,7 +1119,7 @@ class ReaderSettings {
       );
       if (r.relocated > 0) {
         _cache[key] = r.json;
-        await _db.setPref('$_prefix$key', r.json);
+        await _writeRaw(key, r.json);
         healed += r.relocated;
       }
     }

@@ -3,7 +3,8 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 /// 牌组列表「立即同步」的提示：配置了但这轮失败，不能说成「还没有配置同步服务」
 /// （iOS 互联客户端曾因此被误导去找已经配好的设置）。

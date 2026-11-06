@@ -18,7 +18,10 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 
 /// 「浏览」模块里在线来源的三节（Mihon 的 Browse 形态：Sources / Extensions，

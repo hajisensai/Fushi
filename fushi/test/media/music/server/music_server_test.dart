@@ -101,6 +101,18 @@ class _FakeBrowser implements MusicServerBrowser {
       const <MusicServerAlbum>[];
 
   @override
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  }) async => const MusicServerPage<MusicServerPlaylist>(
+    items: <MusicServerPlaylist>[],
+  );
+
+  @override
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId) async =>
+      const <MusicServerTrack>[];
+
+  @override
   Future<MusicServerSearchResult> search(
     String query, {
     int limit = 30,
@@ -198,7 +210,8 @@ void main() {
 
       requests.clear();
       await mb.search('  night ');
-      expect(requests, hasLength(3));
+      // 专辑 / 曲目 / 歌单 / 艺人各一轮。
+      expect(requests, hasLength(4));
       expect(
         requests.map((http.Request r) => r.url.queryParameters['SearchTerm']),
         everyElement('night'),
@@ -225,6 +238,115 @@ void main() {
         mb.coverUri('a1').toString(),
         startsWith('http://nas:8096/Items/a1/Images/Primary?'),
       );
+    });
+    test('歌单：只要音频歌单、按服务器行数翻页、曲目保持歌单顺序', () async {
+      final List<http.Request> requests = <http.Request>[];
+      final MockClient client = MockClient((http.Request req) async {
+        requests.add(req);
+        final Map<String, String> q = req.url.queryParameters;
+        Object body = <String, Object?>{'Items': <Object?>[]};
+        if (req.url.path == '/Users/uid/Items' &&
+            q['IncludeItemTypes'] == 'Playlist') {
+          body = q['StartIndex'] == '0'
+              ? <String, Object?>{
+                  'Items': <Object?>[
+                    <String, Object?>{
+                      'Id': 'p1',
+                      'Name': 'Night Drive',
+                      'MediaType': 'Audio',
+                      'ChildCount': 3,
+                      'RunTimeTicks': 5400000000,
+                      'Overview': '<p>Late <b>night</b> &amp; rain</p>',
+                      'ImageTags': <String, Object?>{'Primary': 't'},
+                    },
+                    // 兼容层不认 MediaTypes 时混进来的视频歌单：解析侧滤掉。
+                    <String, Object?>{
+                      'Id': 'pv',
+                      'Name': 'Clips',
+                      'MediaType': 'Video',
+                    },
+                  ],
+                  'TotalRecordCount': 3,
+                }
+              : <String, Object?>{
+                  'Items': <Object?>[
+                    <String, Object?>{'Id': 'p3', 'Name': 'No Type'},
+                  ],
+                  'TotalRecordCount': 3,
+                };
+        } else if (req.url.path == '/Playlists/p1/Items') {
+          body = <String, Object?>{
+            'Items': <Object?>[
+              <String, Object?>{..._audio('t9', 9), 'Type': 'Audio'},
+              <String, Object?>{'Id': 'v1', 'Name': 'Clip', 'Type': 'Video'},
+              <String, Object?>{..._audio('t1', 1), 'Type': 'Audio'},
+              <String, Object?>{..._audio('t5', 5), 'Type': 'Audio'},
+            ],
+          };
+        }
+        return http.Response(jsonEncode(body), 200);
+      });
+      final JellyfinMusicClient mb = JellyfinMusicClient(
+        _config,
+        httpClient: client,
+      );
+
+      final MusicServerPage<MusicServerPlaylist> first = await mb.listPlaylists(
+        limit: 2,
+      );
+      final Map<String, String> q = requests.single.url.queryParameters;
+      expect(q['MediaTypes'], 'Audio');
+      expect(q['Recursive'], 'true');
+      expect(q['StartIndex'], '0');
+      expect(q['Limit'], '2');
+      expect(first.items.map((MusicServerPlaylist p) => p.id), <String>['p1']);
+      // 偏移认服务器行数（被滤掉的视频歌单也算一行）。
+      expect(first.nextOffset, 2);
+      expect(first.total, 3);
+      final MusicServerPlaylist p1 = first.items.single;
+      expect(p1.title, 'Night Drive');
+      expect(p1.description, 'Late night & rain');
+      expect(p1.trackCount, 3);
+      expect(p1.durationMs, 540000);
+      expect(p1.coverRef, 'p1');
+      expect(p1.editable, isFalse);
+
+      final MusicServerPage<MusicServerPlaylist> second = await mb
+          .listPlaylists(offset: 2, limit: 2);
+      expect(second.items.map((MusicServerPlaylist p) => p.id), <String>['p3']);
+      expect(second.items.single.coverRef, isNull);
+      expect(second.nextOffset, isNull);
+
+      requests.clear();
+      final List<MusicServerTrack> tracks = await mb.playlistTracks('p1');
+      expect(requests.single.url.queryParameters['UserId'], 'uid');
+      expect(tracks.map((MusicServerTrack t) => t.id), <String>[
+        't9',
+        't1',
+        't5',
+      ]);
+      expect(tracks.first.isLossless, isTrue);
+
+      expect(await mb.playlistTracks('empty'), isEmpty);
+    });
+
+    test('歌单为空：没有下一页', () async {
+      final JellyfinMusicClient mb = JellyfinMusicClient(
+        _config,
+        httpClient: MockClient(
+          (http.Request req) async => http.Response(
+            jsonEncode(<String, Object?>{
+              'Items': <Object?>[],
+              'TotalRecordCount': 0,
+            }),
+            200,
+          ),
+        ),
+      );
+      final MusicServerPage<MusicServerPlaylist> page = await mb
+          .listPlaylists();
+      expect(page.items, isEmpty);
+      expect(page.nextOffset, isNull);
     });
   });
 

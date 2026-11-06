@@ -47,7 +47,11 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart'
     show startDiscoveryItemDownload;
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 每个来源最多取几条结果进候选（热门源一次返回几十条，全收会把挑选池挤满）。
 const int kMediaAcquisitionPerSourceLimit = 8;

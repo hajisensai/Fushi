@@ -3,7 +3,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/updates/app_update_cli.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「发现新版本」对话框里的两次点按（下载 / 安装）在控制通道上的条目。
 ///

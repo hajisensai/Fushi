@@ -8,7 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 

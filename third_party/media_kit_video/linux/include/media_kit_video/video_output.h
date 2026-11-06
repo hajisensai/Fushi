@@ -98,6 +98,17 @@ EGLContext video_output_get_egl_context(VideoOutput* self);
 
 EGLSurface video_output_get_egl_surface(VideoOutput* self);
 
+/**
+ * Makes |previous_context| current again after mpv's isolated context was used.
+ * When nothing was current before (the GTK thread on X11), releases mpv's
+ * context from |own_display| instead of leaving it bound to the thread.
+ */
+void video_output_restore_egl_context(EGLDisplay own_display,
+                                      EGLDisplay previous_display,
+                                      EGLSurface previous_draw,
+                                      EGLSurface previous_read,
+                                      EGLContext previous_context);
+
 guint8* video_output_get_pixel_buffer(VideoOutput* self);
 
 gint64 video_output_get_width(VideoOutput* self);

@@ -6,7 +6,12 @@ import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:fushi/src/settings/settings_cli_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 桌面浮窗（galgame hook 台词浮窗 / 有声书悬浮字幕）共用的颜色设置行。
 ///

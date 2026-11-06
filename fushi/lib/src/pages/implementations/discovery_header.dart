@@ -14,7 +14,12 @@ import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 「全部来源」哨兵 id（`DropdownMenu` 泛型不便用 null）。真实来源 id 不得为空串。
 const String kDiscoveryAllSourcesId = '';

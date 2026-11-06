@@ -6,7 +6,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_browser/web_module_capabilities.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
 /// 内置过滤列表目录（Rust 给，进程内只取一次）。

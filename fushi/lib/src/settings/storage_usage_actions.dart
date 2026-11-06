@@ -20,7 +20,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 设置 →「存储」页的取数与删除原语集合：页面（`StorageUsageView`）与控制通道
 /// （`ctl_settings_body_storage.dart`）共用同一份接线，删除一律走各域既有路径

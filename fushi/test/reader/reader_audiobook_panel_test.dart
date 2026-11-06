@@ -4,7 +4,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 有声书侧板（2026-10 重设计）：正在播放卡 + 章节列表；章节页顶部是收听概览与
 /// 「对齐与转录」卡（资源操作）。2026-10-09 起不再有「设置」页签（播放设置并进

@@ -69,9 +69,14 @@ class Report {
     if (t.mvId !== undefined && !str(t.mvId)) this.warn(path, 'mvId must be a string — ignored');
     this.url(path, t.coverUrl, 'coverUrl');
   }
+  bool(path, v, field) {
+    if (v === undefined || v === null) return;
+    if (typeof v !== 'boolean') this.warn(path, `${field} must be a boolean (got ${JSON.stringify(v)}) — ignored`);
+  }
   album(path, a) {
     if (!isObj(a)) return this.warn(path, 'not an object — dropped');
     if (!this.idField(path, a.id, 'id') || !this.idField(path, a.title, 'title')) return;
+    this.bool(path, a.collected, 'collected');
     this.artists(`${path}.artists`, a.artists);
     this.num(path, a.year, 'year');
     this.num(path, a.trackCount, 'trackCount', { nonNegative: true });
@@ -81,6 +86,7 @@ class Report {
   artist(path, a) {
     if (!isObj(a)) return this.warn(path, 'not an object — dropped');
     if (!this.idField(path, a.id, 'id') || !this.idField(path, a.name, 'name')) return;
+    this.bool(path, a.collected, 'collected');
     if (a.aliases !== undefined && !Array.isArray(a.aliases)) this.warn(path, 'aliases must be an array of strings');
     if (a.intro !== undefined && !Array.isArray(a.intro)) this.warn(path, 'intro must be an array of { title?, text }');
     if (a.stats !== undefined) {
@@ -92,6 +98,8 @@ class Report {
   playlist(path, p) {
     if (!isObj(p)) return this.warn(path, 'not an object — dropped');
     if (!this.idField(path, p.id, 'id') || !this.idField(path, p.title, 'title')) return;
+    this.bool(path, p.editable, 'editable');
+    this.bool(path, p.collected, 'collected');
     this.num(path, p.trackCount, 'trackCount');
     this.num(path, p.playCount, 'playCount', { nonNegative: true });
     if (p.tags !== undefined && !Array.isArray(p.tags)) this.warn(path, 'tags must be an array of strings');
@@ -297,6 +305,40 @@ export function validateResult(method, args, value, policy) {
         if (!isObj(value) || !Array.isArray(value.ids)) r.error(p, 'list must return { ids: [...], playlist? } or null');
         else if (value.playlist !== undefined) r.playlist(`${p}.playlist`, value.playlist);
       }
+      break;
+    case 'playlistEdit':
+      if (args?.op === 'create') {
+        if (!obj(value)) break;
+        if (!isObj(value.playlist)) r.error(p, 'create must return { playlist: Playlist }');
+        else {
+          r.playlist(`${p}.playlist`, value.playlist);
+          if (value.playlist.editable !== true) r.warn(p, 'the new playlist should carry editable: true');
+        }
+      } else if (value !== null && value !== undefined) r.warn(p, `${args?.op} should return null — the value is ignored`);
+      break;
+    case 'radio':
+      if (args?.op === 'next') {
+        if (!obj(value)) break;
+        if (!Array.isArray(value.tracks)) {
+          r.error(p, 'next must return { tracks: Track[], title? } (empty tracks = no more)');
+          break;
+        }
+        if (value.tracks.length > 100) r.warn(p, 'only the first 100 tracks are used');
+        r.list(`${p}.tracks`, value.tracks.slice(0, 100), 'track');
+        if (value.title !== undefined && value.title !== null && typeof value.title !== 'string') r.warn(p, 'title must be a string — ignored');
+      } else if (value !== null && value !== undefined) r.warn(p, `${args?.op} should return null — the value is ignored`);
+      break;
+    case 'artistSimilar':
+      if (!obj(value)) break;
+      if (!Array.isArray(value.items)) {
+        r.error(p, 'missing "items" array');
+        break;
+      }
+      if (value.items.length > 50) r.warn(p, 'only the first 50 artists are used');
+      r.list(`${p}.items`, value.items.slice(0, 50), 'artist');
+      break;
+    case 'collect':
+      if (value !== null && value !== undefined) r.warn(p, 'set should return null — the value is ignored');
       break;
     case 'login':
       if (args?.op === 'methods') {

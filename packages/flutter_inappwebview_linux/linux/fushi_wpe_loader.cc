@@ -56,8 +56,14 @@ std::string ShimDirectory() {
 // Probe once in a throwaway child so that environment degrades to "web views
 // unavailable" with a reason instead. WebKit's own escape hatch env var skips
 // the probe because the sandbox is then not used at all.
+//
+// Inside a Flatpak WebKit never runs bwrap itself (it either asks the Flatpak
+// portal for a sub-sandbox or, as in our app.fushi.reader build, has its own
+// sandbox compiled out), and Flatpak always forbids nested user namespaces --
+// so the probe would wrongly disable every web view there.
 bool UserNamespacesUsable(std::string* reason) {
-  if (g_getenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS") != nullptr) {
+  if (g_getenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS") != nullptr ||
+      g_file_test("/.flatpak-info", G_FILE_TEST_EXISTS)) {
     return true;
   }
   const pid_t pid = fork();

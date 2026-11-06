@@ -37,6 +37,31 @@ static void init_egl_image_extensions() {
   }
 }
 
+// Flutter-side texture names live in Flutter's raster share group. On X11 the
+// GTK thread (where dispose runs) has no EGL context current, so a name freed
+// there is queued and deleted by the next populate on the raster thread.
+static GMutex orphaned_names_mutex;
+static GArray* orphaned_names = NULL;
+
+static void texture_gl_orphan_flutter_name(guint32 name) {
+  g_mutex_lock(&orphaned_names_mutex);
+  if (orphaned_names == NULL) {
+    orphaned_names = g_array_new(FALSE, FALSE, sizeof(guint32));
+  }
+  g_array_append_val(orphaned_names, name);
+  g_mutex_unlock(&orphaned_names_mutex);
+}
+
+// Must run with Flutter's raster context current.
+static void texture_gl_delete_orphaned_flutter_names() {
+  g_mutex_lock(&orphaned_names_mutex);
+  if (orphaned_names != NULL && orphaned_names->len > 0) {
+    glDeleteTextures(orphaned_names->len, (GLuint*)orphaned_names->data);
+    g_array_set_size(orphaned_names, 0);
+  }
+  g_mutex_unlock(&orphaned_names_mutex);
+}
+
 struct _TextureGL {
   FlTextureGL parent_instance;
   guint32 name;              // Flutter's texture name
@@ -70,9 +95,14 @@ static void texture_gl_dispose(GObject* object) {
   EGLSurface current_draw = eglGetCurrentSurface(EGL_DRAW);
   EGLSurface current_read = eglGetCurrentSurface(EGL_READ);
   
-  // Clean up Flutter's texture (in Flutter's context)
+  // Clean up Flutter's texture (in Flutter's share group). Wayland leaves
+  // Flutter's shared platform context current here; X11 leaves nothing.
   if (self->name != 0) {
-    glDeleteTextures(1, &self->name);
+    if (current_context != EGL_NO_CONTEXT) {
+      glDeleteTextures(1, &self->name);
+    } else {
+      texture_gl_orphan_flutter_name(self->name);
+    }
     self->name = 0;
   }
   
@@ -100,8 +130,10 @@ static void texture_gl_dispose(GObject* object) {
         self->fbo = 0;
       }
       
-      // Restore previous context
-      eglMakeCurrent(current_display, current_draw, current_read, current_context);
+      // Restore previous context (or release ours if none was current).
+      video_output_restore_egl_context(egl_display, current_display,
+                                       current_draw, current_read,
+                                       current_context);
     }
   }
   
@@ -131,7 +163,8 @@ gboolean texture_gl_populate_texture(FlTextureGL* texture,
                                      GError** error) {
   TextureGL* self = TEXTURE_GL(texture);
   VideoOutput* video_output = self->video_output;
-  
+  texture_gl_delete_orphaned_flutter_names();
+
   gint32 required_width = (guint32)video_output_get_width(video_output);
   gint32 required_height = (guint32)video_output_get_height(video_output);
   

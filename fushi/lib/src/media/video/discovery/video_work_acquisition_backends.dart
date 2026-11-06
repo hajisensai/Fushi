@@ -19,7 +19,8 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_sessio
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';

@@ -45,6 +45,7 @@ list(APPEND PLUGIN_SOURCES
   "utils/map.h"
   "utils/vector.h"
   "utils/string.h"
+  "utils/content_type.h"
   "utils/util.h"
   "utils/flutter.h"
   "utils/base64.cpp"

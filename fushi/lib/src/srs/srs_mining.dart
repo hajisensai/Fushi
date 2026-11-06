@@ -8,22 +8,32 @@
 /// - [SrsMiningAnkiRepository]：`ankiRepositoryProvider` 装饰链最外层。只有复习模块
 ///   开着且目标是「Fushi 复习」时才包这一层（见 anki_view_model.dart），模块关着时链上
 ///   根本没有它。
+///
+/// 「后台制卡」（[SrsMiningAnkiRepository] 的 `backgroundMining`，反馈 Rl00Di264R）：制卡请求
+/// 用待发队列同一套冻结 / 还原（[ForwardedMinePayloadBuilder] → [withMaterializedMiningContext]）
+/// 搬进进程级串行队列，入队即回 [MineOutcome.queued]，随后在后台依次写进复习；后台结果
+/// （失败 / 重复 / 音频缺失）经 [SrsBackgroundMineReporter] 交给装配处提示。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_new_card_positions.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
+import 'package:fushi/src/anki/forwarded_mine_codec.dart';
+import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 
@@ -595,6 +605,23 @@ class SrsMiner with AnkiNoteComposer {
     }
   }
 
+  /// 这张卡将落进的牌组全名（与 [mine] 同一套解析：「高级制卡」覆写 → 偏好 → 默认牌组）。
+  /// 后台制卡入队时给提示用；解析不出名字（载荷坏了 / 牌组树里没有）为空串。
+  Future<String> destinationDeckName(String rawPayloadJson) async {
+    String? requested;
+    _parse(
+      rawPayloadJson,
+      (AnkiMiningPayload p) => requested = p.overrides?.deckName,
+    );
+    final SrsResolvedMiningDestination target =
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: requested,
+        );
+    return target.deckName ?? '';
+  }
+
   Future<MineOutcome> mine({
     required AnkiSettings settings,
     required String rawPayloadJson,
@@ -857,6 +884,11 @@ typedef SrsMinerResolver = Future<SrsMiner?> Function();
 /// 打开一条 SRS 笔记的编辑页（导航器不可用时返回 false）。
 typedef SrsNoteOpener = Future<bool> Function(String noteId);
 
+/// 一张后台制卡写完（或没写成）后的结果：[expression] 是提示用的词条（取不到用句子），
+/// [outcome] 是那次写入的真实结果（成功 / 重复 / 失败）。
+typedef SrsBackgroundMineReporter =
+    void Function(String expression, MineOutcome outcome);
+
 /// `ankiRepositoryProvider` 装饰链里的 SRS 层（见文件头）。挖词目标 = Fushi 复习时
 /// 制卡链路上**会写卡或依赖 Anki 连接**的操作一律走复习，不再碰 Anki：
 ///
@@ -880,12 +912,49 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     required SrsMinerResolver miner,
     SrsNoteOpener? openNote,
     void Function()? onCardsAdded,
+    bool Function()? backgroundMining,
+    SrsBackgroundMineReporter? onBackgroundOutcome,
+    ForwardedMinePayloadBuilder? payloadBuilder,
   }) : _miner = miner,
        _openNote = openNote,
-       _onCardsAdded = onCardsAdded;
+       _onCardsAdded = onCardsAdded,
+       _backgroundMining = backgroundMining,
+       _onBackgroundOutcome = onBackgroundOutcome,
+       _payloadBuilder = payloadBuilder ?? ForwardedMinePayloadBuilder();
 
   final SrsMinerResolver _miner;
   final SrsNoteOpener? _openNote;
+
+  /// 「后台制卡」开关，每次制卡现读（改完立即生效，不必重建装饰链）。null = 恒同步
+  /// （互联主机替对端制卡、浏览器扩展：对端要的是确定的结果，不能回「已入队」）。
+  final bool Function()? _backgroundMining;
+
+  /// 后台写入的结果出口（装配处弹提示）。成功同样回调：音频缺失要提示。
+  final SrsBackgroundMineReporter? _onBackgroundOutcome;
+
+  /// 冻结请求：与待发队列 / 互联转发同一个打包器（媒体全读成字节）。
+  final ForwardedMinePayloadBuilder _payloadBuilder;
+
+  /// 后台写入队列：进程级（provider 重建会换掉仓库实例，已入队的卡不能跟着丢、
+  /// 也不能两条队列并发写同一个库），串行、永不毒化（[SerialJobQueue]）。
+  static SerialJobQueue _backgroundQueue = SerialJobQueue();
+
+  /// 测试用：直接拿到后台队列（在它前面插一个挂起的任务，验证「入队即返回」）。
+  @visibleForTesting
+  static SerialJobQueue get debugBackgroundQueue => _backgroundQueue;
+
+  /// 测试用：等已入队的后台写入全部结束。
+  @visibleForTesting
+  static Future<void> debugBackgroundIdle() => _backgroundQueue.enqueue<void>(
+    () async {},
+    buildFailure: (Object error, StackTrace stack) {},
+  );
+
+  /// 测试用：换一条新的后台队列（上一个用例挂住的任务不串到下一个）。
+  @visibleForTesting
+  static void debugResetBackgroundQueue() {
+    _backgroundQueue = SerialJobQueue();
+  }
 
   /// 制卡成功写进复习后调用（装配处递增 `srsRevisionProvider`，牌组列表与首页
   /// 复习条的计数随之重读）。
@@ -920,6 +989,17 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   }) async {
     final SrsMiner? miner = await _miner();
     if (miner == null) return MineOutcome.failure(_unavailable);
+    if (_backgroundMining?.call() ?? false) {
+      return _enqueueBackground(miner, rawPayloadJson, context);
+    }
+    return _mineNow(miner, rawPayloadJson, context);
+  }
+
+  Future<MineOutcome> _mineNow(
+    SrsMiner miner,
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) async {
     final MineOutcome outcome = await miner.mine(
       settings: await inner.loadSettings(),
       rawPayloadJson: rawPayloadJson,
@@ -927,6 +1007,75 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     );
     if (outcome.result == MineResult.success) _onCardsAdded?.call();
     return outcome;
+  }
+
+  /// 后台制卡：冻结 → 入队 → 立即回 [MineOutcome.queued]。
+  ///
+  /// 冻结必须在返回前完成（与待发队列同一条约束）：调用方在 [mineEntry] 返回后就清理
+  /// 临时封面 / 句子音频。冻结失败不假装入队，原样报失败。制卡器在入队这一刻取定：
+  /// 卡落进点「制卡」时那份配置的复习，排队期间切 Profile 不改道。
+  ///
+  /// 后台那一步与同步制卡是同一个 [SrsMiner.mine]（查重、落点解析、首字段为空拒建都在
+  /// 那里），只是结果改由 [_onBackgroundOutcome] 交出去——连续挖同一个词时第二张在
+  /// 后台被判重复，同样会被提示，而不是静默丢掉。
+  Future<MineOutcome> _enqueueBackground(
+    SrsMiner miner,
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) async {
+    final ForwardedMinePayload payload;
+    final String deckName;
+    try {
+      payload = await _payloadBuilder.build(
+        rawPayloadJson: rawPayloadJson,
+        context: context,
+      );
+      deckName = await miner.destinationDeckName(rawPayloadJson);
+    } catch (e, stack) {
+      return MineOutcome.failure(
+        'Fushi review: could not queue the card: $e',
+        error: e,
+        stackTrace: stack,
+      );
+    }
+    final String expression = _displayExpression(rawPayloadJson, context);
+    unawaited(
+      _backgroundQueue
+          .enqueue<MineOutcome>(
+            () => withMaterializedMiningContext<MineOutcome>(
+              payload,
+              (String raw, AnkiMiningContext ctx) => _mineNow(miner, raw, ctx),
+            ),
+            buildFailure: (Object e, StackTrace stack) => MineOutcome.failure(
+              'Fushi review: $e',
+              error: e,
+              stackTrace: stack,
+            ),
+          )
+          // 结果出口（提示）自身抛的异常不在这里吞：照常进 zone 的未处理错误（错误日志）。
+          .then(
+            (MineOutcome outcome) =>
+                _onBackgroundOutcome?.call(expression, outcome),
+          ),
+    );
+    return MineOutcome.queued(deckName: deckName);
+  }
+
+  /// 提示用的词条：取 fields 的 expression，取不到用句子（与待发队列列表同口径）。
+  static String _displayExpression(
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) {
+    try {
+      final Object? json = jsonDecode(rawPayloadJson);
+      if (json is Map) {
+        final String expression = (json['expression'] as String?)?.trim() ?? '';
+        if (expression.isNotEmpty) return expression;
+      }
+    } on FormatException {
+      // 载荷坏了：后台那一步会按「载荷解析失败」报出来，这里只取句子。
+    }
+    return context.sentence.trim();
   }
 
   @override
@@ -1239,6 +1388,13 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   @override
   bool get supportsDeckReposition => true;
+
+  /// 重排写的是本机复习库（[SrsDbStore]），没有「连着的那一端此刻能不能写」这回事：
+  /// 恒为 true。**必须与 [supportsDeckReposition] 成对覆盖**——基类
+  /// [DelegatingAnkiRepository] 把探测委派给 inner（Anki 后端），不覆盖就会拿
+  /// AnkiConnect / AnkiDroid 的能力来判复习，复习下重排被误判为不支持（BUG-4122）。
+  @override
+  Future<bool> probeDeckReposition() async => true;
 
   /// 复习出卡按牌组「新卡顺序」直接读卡上的词频名次，刚挖的卡立刻就在对的位置：不需要
   /// 制卡后改写新卡位置（那样每挖一个词都要同步一批位置修改记录）。

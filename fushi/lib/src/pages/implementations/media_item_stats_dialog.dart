@@ -26,7 +26,16 @@ import 'package:fushi/src/pages/implementations/stat_trends.dart'
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 一个库条目（或一个合集）在统计域里的身份。
 class MediaItemStatsTarget {
@@ -324,7 +333,16 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
             ),
         ],
       ),
-      content: SizedBox(width: 420, child: SingleChildScrollView(child: body)),
+      // 加载 / 空态是居中占位（Center 在有界高度下撑满）：放进 min 列里按自身高度
+      // 排，对话框不会在加载那一下拉到满高；超出视口由 FushiAlertDialog 的外壳滚。
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[body],
+        ),
+      ),
       actions: <Widget>[
         if (summary != null && summary.sessions.isNotEmpty)
           FushiTextButton(

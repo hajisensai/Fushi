@@ -5,8 +5,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
 MangaFushiPage _readerOf(Object page) =>

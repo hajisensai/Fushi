@@ -9,7 +9,9 @@ import 'package:flutter/services.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:path/path.dart' as p;
 
 /// 真应用集成测试的目录选择结果注入；release 构建恒忽略。

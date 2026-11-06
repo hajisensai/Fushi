@@ -36,9 +36,16 @@ import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
@@ -2922,43 +2929,41 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
       title: Text(t.video_metadata_identifier_words),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              t.video_metadata_identifier_words_syntax,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            FushiTextFieldControl(
+              key: const ValueKey<String>(
+                'video.library.metadata_identifier_words.field',
+              ),
+              controller: _controller,
+              minLines: 6,
+              maxLines: 12,
+              autofocus: true,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (String _) => setState(() {}),
+            ),
+            if (parsed.errors.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
               Text(
-                t.video_metadata_identifier_words_syntax,
-                style: Theme.of(context).textTheme.bodySmall,
+                '${t.video_metadata_identifier_words_invalid}: '
+                '${parsed.errors.length}',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-              const SizedBox(height: 12),
-              FushiTextFieldControl(
-                key: const ValueKey<String>(
-                  'video.library.metadata_identifier_words.field',
-                ),
-                controller: _controller,
-                minLines: 6,
-                maxLines: 12,
-                autofocus: true,
-                keyboardType: TextInputType.multiline,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (String _) => setState(() {}),
-              ),
-              if (parsed.errors.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Text(
-                  '${t.video_metadata_identifier_words_invalid}: '
-                  '${parsed.errors.length}',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                for (final String error in parsed.errors)
-                  Text(error, style: Theme.of(context).textTheme.bodySmall),
-              ],
+              for (final String error in parsed.errors)
+                Text(error, style: Theme.of(context).textTheme.bodySmall),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[

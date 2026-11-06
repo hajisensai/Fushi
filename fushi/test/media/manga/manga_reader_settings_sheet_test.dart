@@ -6,7 +6,7 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
   test('descriptor list gates device settings and preserves every mode', () {

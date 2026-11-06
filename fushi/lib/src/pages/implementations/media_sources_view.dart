@@ -28,7 +28,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
@@ -59,7 +59,26 @@ import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
@@ -1826,115 +1845,111 @@ class _VideoSourceScrapeSettingsDialogState
       title: Text(t.video_source_scrape_settings),
       content: SizedBox(
         width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              AdaptiveSettingsPickerRow<String>(
-                title: t.video_source_grouping_mode,
-                selected: _groupingMode,
-                options: <AdaptiveSettingsPickerOption<String>>[
-                  AdaptiveSettingsPickerOption<String>(
-                    value: 'series',
-                    label: t.video_source_grouping_series,
-                  ),
-                  AdaptiveSettingsPickerOption<String>(
-                    value: 'folder',
-                    label: t.video_source_grouping_folder,
-                  ),
-                ],
-                onChanged: (String value) =>
-                    setState(() => _groupingMode = value),
-                controlBelow: true,
-              ),
-              Text(
-                _groupingMode == 'folder'
-                    ? t.video_source_grouping_folder_hint
-                    : t.video_source_grouping_series_hint,
-              ),
-              Text(t.video_source_grouping_change_hint),
-              if (_groupingMode != 'folder') ...<Widget>[
-                AdaptiveSettingsPickerRow<String>(
-                  title: t.video_metadata_primary_provider,
-                  selected: _providerOverride,
-                  options: <AdaptiveSettingsPickerOption<String>>[
-                    AdaptiveSettingsPickerOption<String>(
-                      value: '',
-                      label: t.video_source_scrape_provider_follow_global,
-                    ),
-                    for (final VideoMetadataProviderKind kind
-                        in kSelectableVideoMetadataProviders)
-                      AdaptiveSettingsPickerOption<String>(
-                        value: kind.name,
-                        label: videoMetadataProviderLabel(kind),
-                      ),
-                  ],
-                  onChanged: (String value) =>
-                      setState(() => _providerOverride = value),
-                  controlBelow: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AdaptiveSettingsPickerRow<String>(
+              title: t.video_source_grouping_mode,
+              selected: _groupingMode,
+              options: <AdaptiveSettingsPickerOption<String>>[
+                AdaptiveSettingsPickerOption<String>(
+                  value: 'series',
+                  label: t.video_source_grouping_series,
                 ),
-                Text(t.video_metadata_primary_provider_hint),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: FushiTextFieldControl(
-                    controller: _metadataLocale,
-                    decoration: InputDecoration(
-                      labelText: t.video_source_scrape_metadata_locale,
-                      helperText: t.video_source_scrape_metadata_locale_hint,
-                      helperMaxLines: 3,
-                    ),
-                  ),
-                ),
-                AdaptiveSettingsSwitchRow(
-                  title: t.video_source_scrape_enabled_toggle,
-                  subtitle: t.video_source_scrape_enabled_toggle_hint,
-                  value: _enabled,
-                  onChanged: (bool value) => setState(() => _enabled = value),
-                ),
-                AdaptiveSettingsSwitchRow(
-                  title: t.video_source_scrape_auto_after_scan,
-                  subtitle: t.video_source_scrape_auto_after_scan_hint,
-                  value: _autoAfterScan,
-                  onChanged: (bool value) =>
-                      setState(() => _autoAfterScan = value),
-                ),
-                AdaptiveSettingsSwitchRow(
-                  title: t.video_source_scrape_write_nfo,
-                  value: _writeNfo,
-                  onChanged: (bool value) => setState(() => _writeNfo = value),
-                ),
-                AdaptiveSettingsSwitchRow(
-                  title: t.video_source_scrape_write_images,
-                  value: _writeImages,
-                  onChanged: (bool value) =>
-                      setState(() => _writeImages = value),
-                ),
-                AdaptiveSettingsPickerRow<String>(
-                  title: t.video_source_scrape_nfo_policy,
-                  selected: _nfoPolicy,
-                  options: _policyOptions(),
-                  onChanged: (String value) =>
-                      setState(() => _nfoPolicy = value),
-                  controlBelow: true,
-                ),
-                AdaptiveSettingsPickerRow<String>(
-                  title: t.video_source_scrape_image_policy,
-                  selected: _imagePolicy,
-                  options: _policyOptions(),
-                  onChanged: (String value) =>
-                      setState(() => _imagePolicy = value),
-                  controlBelow: true,
-                ),
-                AdaptiveSettingsSwitchRow(
-                  title: t.video_source_scrape_external_overwrite,
-                  subtitle: t.video_source_scrape_external_overwrite_hint,
-                  value: _allowExternalOverwrite,
-                  onChanged: (bool value) =>
-                      setState(() => _allowExternalOverwrite = value),
+                AdaptiveSettingsPickerOption<String>(
+                  value: 'folder',
+                  label: t.video_source_grouping_folder,
                 ),
               ],
+              onChanged: (String value) =>
+                  setState(() => _groupingMode = value),
+              controlBelow: true,
+            ),
+            Text(
+              _groupingMode == 'folder'
+                  ? t.video_source_grouping_folder_hint
+                  : t.video_source_grouping_series_hint,
+            ),
+            Text(t.video_source_grouping_change_hint),
+            if (_groupingMode != 'folder') ...<Widget>[
+              AdaptiveSettingsPickerRow<String>(
+                title: t.video_metadata_primary_provider,
+                selected: _providerOverride,
+                options: <AdaptiveSettingsPickerOption<String>>[
+                  AdaptiveSettingsPickerOption<String>(
+                    value: '',
+                    label: t.video_source_scrape_provider_follow_global,
+                  ),
+                  for (final VideoMetadataProviderKind kind
+                      in kSelectableVideoMetadataProviders)
+                    AdaptiveSettingsPickerOption<String>(
+                      value: kind.name,
+                      label: videoMetadataProviderLabel(kind),
+                    ),
+                ],
+                onChanged: (String value) =>
+                    setState(() => _providerOverride = value),
+                controlBelow: true,
+              ),
+              Text(t.video_metadata_primary_provider_hint),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: FushiTextFieldControl(
+                  controller: _metadataLocale,
+                  decoration: InputDecoration(
+                    labelText: t.video_source_scrape_metadata_locale,
+                    helperText: t.video_source_scrape_metadata_locale_hint,
+                    helperMaxLines: 3,
+                  ),
+                ),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_enabled_toggle,
+                subtitle: t.video_source_scrape_enabled_toggle_hint,
+                value: _enabled,
+                onChanged: (bool value) => setState(() => _enabled = value),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_auto_after_scan,
+                subtitle: t.video_source_scrape_auto_after_scan_hint,
+                value: _autoAfterScan,
+                onChanged: (bool value) =>
+                    setState(() => _autoAfterScan = value),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_write_nfo,
+                value: _writeNfo,
+                onChanged: (bool value) => setState(() => _writeNfo = value),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_write_images,
+                value: _writeImages,
+                onChanged: (bool value) => setState(() => _writeImages = value),
+              ),
+              AdaptiveSettingsPickerRow<String>(
+                title: t.video_source_scrape_nfo_policy,
+                selected: _nfoPolicy,
+                options: _policyOptions(),
+                onChanged: (String value) => setState(() => _nfoPolicy = value),
+                controlBelow: true,
+              ),
+              AdaptiveSettingsPickerRow<String>(
+                title: t.video_source_scrape_image_policy,
+                selected: _imagePolicy,
+                options: _policyOptions(),
+                onChanged: (String value) =>
+                    setState(() => _imagePolicy = value),
+                controlBelow: true,
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_external_overwrite,
+                subtitle: t.video_source_scrape_external_overwrite_hint,
+                value: _allowExternalOverwrite,
+                onChanged: (bool value) =>
+                    setState(() => _allowExternalOverwrite = value),
+              ),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[
@@ -2276,131 +2291,129 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
       title: Text(t.media_source_add_network),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // 走共享分段条而非裸 SegmentedButton：手机上对话框内容区只有
-              // ~230dp，裸控件把 4 段各钳到 1/4 宽，标签被逐字断行成竖排；
-              // FushiSegmentedStrip 装不下就横向滚动，段宽不小于标签。
-              FushiSegmentedStrip<String>(
-                segments: <ButtonSegment<String>>[
-                  for (final String tp in widget.transports)
-                    ButtonSegment<String>(
-                      value: tp,
-                      label: Text(switch (tp) {
-                        'sftp' => 'SFTP',
-                        'ftp' => 'FTP',
-                        'alist' => 'AList',
-                        _ => 'WebDAV',
-                      }),
-                    ),
-                ],
-                selected: _transport,
-                onChanged: _onTransportChanged,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            // 走共享分段条而非裸 SegmentedButton：手机上对话框内容区只有
+            // ~230dp，裸控件把 4 段各钳到 1/4 宽，标签被逐字断行成竖排；
+            // FushiSegmentedStrip 装不下就横向滚动，段宽不小于标签。
+            FushiSegmentedStrip<String>(
+              segments: <ButtonSegment<String>>[
+                for (final String tp in widget.transports)
+                  ButtonSegment<String>(
+                    value: tp,
+                    label: Text(switch (tp) {
+                      'sftp' => 'SFTP',
+                      'ftp' => 'FTP',
+                      'alist' => 'AList',
+                      _ => 'WebDAV',
+                    }),
+                  ),
+              ],
+              selected: _transport,
+              onChanged: _onTransportChanged,
+            ),
+            const SizedBox(height: 12),
+            // WebDAV：整库定位靠单个集合 URL（含 scheme/host/端口/路径），故不显示
+            // host/port/远端路径，只填 URL + 账号密码；SFTP/FTP 走 host/port/路径。
+            if (_isWebDav) ...<Widget>[
+              FushiTextField(
+                controller: _urlController,
+                labelText: t.sync_webdav_url,
+                hintText: 'https://dav.example.com/dav/books',
+                keyboardType: TextInputType.url,
               ),
               const SizedBox(height: 12),
-              // WebDAV：整库定位靠单个集合 URL（含 scheme/host/端口/路径），故不显示
-              // host/port/远端路径，只填 URL + 账号密码；SFTP/FTP 走 host/port/路径。
-              if (_isWebDav) ...<Widget>[
-                FushiTextField(
-                  controller: _urlController,
-                  labelText: t.sync_webdav_url,
-                  hintText: 'https://dav.example.com/dav/books',
-                  keyboardType: TextInputType.url,
-                ),
-                const SizedBox(height: 12),
-              ],
-              // AList / OpenList：站点根 + 站内目录；账号可空（游客）。
-              if (_isAList) ...<Widget>[
-                FushiTextField(
-                  controller: _urlController,
-                  labelText: t.media_source_alist_url,
-                  hintText: 'https://od.example.com',
-                  keyboardType: TextInputType.url,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  t.media_source_alist_account_hint,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (!_usesUrlField) ...<Widget>[
-                FushiTextField(
-                  controller: _hostController,
-                  labelText: t.sync_host,
-                  hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
-                  keyboardType: TextInputType.url,
-                ),
-                const SizedBox(height: 12),
-                FushiTextField(
-                  controller: _portController,
-                  labelText: t.sync_port,
-                  keyboardType: TextInputType.number,
-                  onChanged: (_) => _portTouched = true,
-                ),
-                const SizedBox(height: 12),
-              ],
+            ],
+            // AList / OpenList：站点根 + 站内目录；账号可空（游客）。
+            if (_isAList) ...<Widget>[
               FushiTextField(
-                controller: _userController,
-                labelText: t.sync_username,
+                controller: _urlController,
+                labelText: t.media_source_alist_url,
+                hintText: 'https://od.example.com',
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                t.media_source_alist_account_hint,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (!_usesUrlField) ...<Widget>[
+              FushiTextField(
+                controller: _hostController,
+                labelText: t.sync_host,
+                hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
+                keyboardType: TextInputType.url,
               ),
               const SizedBox(height: 12),
               FushiTextField(
-                controller: _passwordController,
-                labelText: t.sync_password,
-                obscureText: true,
+                controller: _portController,
+                labelText: t.sync_port,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => _portTouched = true,
               ),
-              if (_isSftp) ...<Widget>[
-                const SizedBox(height: 12),
-                FushiTextField(
-                  controller: _keyController,
-                  labelText: t.sync_private_key,
-                  hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
-                  maxLines: 4,
-                ),
-              ],
-              if (!_isSftp && !_usesUrlField) ...<Widget>[
-                const SizedBox(height: 4),
-                AdaptiveSettingsSwitchRow(
-                  title: t.sync_use_tls,
-                  value: _useTls,
-                  onChanged: (bool v) => setState(() => _useTls = v),
-                ),
-              ],
-              if (!_isWebDav) ...<Widget>[
-                const SizedBox(height: 12),
-                FushiTextField(
-                  controller: _pathController,
-                  labelText: _isAList
-                      ? t.media_source_alist_folder
-                      : t.media_source_network_remote_path,
-                  hintText: _isAList ? '/' : '/books',
-                ),
-              ],
+              const SizedBox(height: 12),
+            ],
+            FushiTextField(
+              controller: _userController,
+              labelText: t.sync_username,
+            ),
+            const SizedBox(height: 12),
+            FushiTextField(
+              controller: _passwordController,
+              labelText: t.sync_password,
+              obscureText: true,
+            ),
+            if (_isSftp) ...<Widget>[
               const SizedBox(height: 12),
               FushiTextField(
-                controller: _labelController,
-                labelText: t.media_source_network_label_optional,
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: _testing
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: FushiCircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : FushiFilledButton.tonal(
-                        onPressed: _testConnection,
-                        child: Text(t.sync_test_connection),
-                      ),
+                controller: _keyController,
+                labelText: t.sync_private_key,
+                hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
+                maxLines: 4,
               ),
             ],
-          ),
+            if (!_isSftp && !_usesUrlField) ...<Widget>[
+              const SizedBox(height: 4),
+              AdaptiveSettingsSwitchRow(
+                title: t.sync_use_tls,
+                value: _useTls,
+                onChanged: (bool v) => setState(() => _useTls = v),
+              ),
+            ],
+            if (!_isWebDav) ...<Widget>[
+              const SizedBox(height: 12),
+              FushiTextField(
+                controller: _pathController,
+                labelText: _isAList
+                    ? t.media_source_alist_folder
+                    : t.media_source_network_remote_path,
+                hintText: _isAList ? '/' : '/books',
+              ),
+            ],
+            const SizedBox(height: 12),
+            FushiTextField(
+              controller: _labelController,
+              labelText: t.media_source_network_label_optional,
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _testing
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : FushiFilledButton.tonal(
+                      onPressed: _testConnection,
+                      child: Text(t.sync_test_connection),
+                    ),
+            ),
+          ],
         ),
       ),
       actions: <Widget>[
