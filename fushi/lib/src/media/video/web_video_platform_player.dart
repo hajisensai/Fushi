@@ -182,7 +182,8 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   /// 的真实位置照常回灌（seek 没成，进度条回到实际位置才是对的）。
   void applySeekDone(WebVideoSeekDone done) {
     if (_disposed) return;
-    if (!done.ok) {
+    // superseded = 页面把连发的 seek 合并掉了这一次（只发最后一个目标），不是失败。
+    if (!done.ok && done.err != 'superseded') {
       ErrorLogService.instance.log(
         'web_video',
         'seek failed (id=${done.id}): ${done.err}',
