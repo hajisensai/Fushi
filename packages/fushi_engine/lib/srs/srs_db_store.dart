@@ -1014,6 +1014,80 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
+  /// 一组笔记里字段键以 [prefix] 开头（如「不是重复」的 `notDup/`）的那些键的生效值：
+  /// `笔记 ID → (键 → 值)`。与 [noteFieldKeyValues] 同理，只读这些键的修改记录、只把它们交给字段寄存器内核，
+  /// 不读笔记字段正文。没有这类键的笔记不出现在结果里。
+  ///
+  /// 条件是 `profile_uid = ? AND entity_kind = ? AND entity_id IN (…) AND field_key` 的前缀区间，正好落在
+  /// `idx_srs_field_edits_profile_register (profile_uid, entity_kind, entity_id, field_key)` 上：逐 ID 定位到
+  /// 这段键，读回的行数只等于真有的这类记录数，与笔记有多少字段、字段多长无关（BUG-4131）。
+  Future<Map<String, Map<String, Object?>>> noteFieldKeyPrefixValues(
+    Iterable<String> ids,
+    String prefix,
+  ) async {
+    if (prefix.isEmpty) {
+      throw ArgumentError.value(prefix, 'prefix', 'must not be empty');
+    }
+    // 前缀区间的上界：最后一个字符加一（`notDup/` → `notDup0`）。
+    final String upper =
+        prefix.substring(0, prefix.length - 1) +
+        String.fromCharCode(prefix.codeUnitAt(prefix.length - 1) + 1);
+    final Map<String, Map<String, Object?>> out =
+        <String, Map<String, Object?>>{};
+    final String kind = SrsEntityKind.note.wire;
+    int rowsRead = 0;
+    for (final List<String> chunk in _chunks(ids.toSet())) {
+      final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
+      for (final QueryRow q
+          in await db
+              .customSelect(
+                'SELECT f.entity_id AS e, '
+                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
+                'FROM srs_field_edits f '
+                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
+                'WHERE f.profile_uid = ? AND f.entity_kind = ? '
+                'AND f.entity_id IN (${_marks(chunk)}) '
+                'AND f.field_key >= ? AND f.field_key < ?',
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                  Variable<String>(kind),
+                  for (final String id in chunk)
+                    Variable<String>(id, srsIdType),
+                  Variable<String>(prefix),
+                  Variable<String>(upper),
+                ],
+                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+                  db.srsFieldEdits,
+                  db.srsEventLocal,
+                },
+              )
+              .get()) {
+        rowsRead++;
+        (byId[q.read<String>('e')] ??= <SrsEditItem>[]).add(
+          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
+        );
+      }
+      if (byId.isEmpty) continue;
+      final List<String> order = byId.keys.toList();
+      final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
+        for (final String id in order) byId[id]!,
+      ]);
+      for (int i = 0; i < order.length; i++) {
+        final SrsEntityEdits e = edits[i];
+        out[order[i]] = <String, Object?>{
+          for (final String key in e.keys)
+            if (key.startsWith(prefix)) key: e.value(key),
+        };
+      }
+    }
+    debugKeyPrefixRowsRead = rowsRead;
+    return out;
+  }
+
+  /// 最近一次 [noteFieldKeyPrefixValues] 从库里读回的修改记录条数（测试核对没把字段正文读回来）。
+  @visibleForTesting
+  int debugKeyPrefixRowsRead = 0;
+
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async =>
       srsEntityEditsOf(<List<SrsEditItem>>[await _editItems(kind, id)]).single;
 
