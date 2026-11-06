@@ -221,6 +221,33 @@ void main() {
       c.dispose();
     });
 
+    // BUG-4130：跨章过渡期间 reader 装完新章会重灌同一份整书 cue；旧码 setAllBookCues
+    // 把播放所在句清成 -1，歌词层退回冻结的正文跟随句（高亮往回跳一下）。
+    test('跨章过渡中重灌同一份整书 cue：播放所在句保住，不退回冻结的跟随句', () async {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0),
+        _cue(1000),
+        _cue(2000, section: 13),
+        _cue(3000, section: 13),
+        _cue(4000, section: 13),
+      ];
+      final AudiobookPlayerController c = await _playingController(
+        cues: cues,
+        allBook: true,
+      );
+      c.debugUpdateCueForPosition(2500);
+      c.debugUpdateCueForPosition(4200);
+      expect(c.chapterTransitionHeldForTesting, isTrue);
+      expect(c.lyricsCueAllBookIdx, 4);
+      expect(c.currentCue?.startMs, 2000, reason: '前提：正文跟随句冻结');
+
+      // reader 装完第 13 章：_injectAudiobookBridge 重灌章 cue + 整书 cue（新列表、同元素）。
+      c.setChapterCues(cues);
+      c.setAllBookCues(cues);
+      expect(c.lyricsCueAllBookIdx, 4, reason: '旧码：-1 → 退回跟随句 2');
+      c.dispose();
+    });
+
     test('不在跨章过渡中：歌词层与正文跟随句同源', () async {
       final AudiobookPlayerController c = await _playingController(
         allBook: true,

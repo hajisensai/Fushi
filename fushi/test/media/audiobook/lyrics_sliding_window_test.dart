@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/lyrics_cue_window_slide.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -211,5 +212,116 @@ void main() {
       doc,
       contains('if (index < 0 || index >= len) { _currentIdx = -1; return; }'),
     );
+  });
+  // BUG-4130（反馈 NSP86pcPHI）：歌词模式下正文跟着音频跨章，每装一章 reader 都重灌
+  // 整书 cue；旧码装章后无条件整页重载歌词文档，下一章的句子明明已在窗口里也重载。
+  group('跨章不重载歌词文档（BUG-4130）', () {
+    final List<AudioCue> all = <AudioCue>[for (int i = 0; i < 10; i++) _cue(i)];
+
+    test('重灌同一份整书 cue（新列表、同元素）：窗口仍是同一段', () {
+      final List<AudioCue> window = all.sublist(3, 8);
+      // setAllBookCues 每次 List.from：列表身份变、元素身份不变。
+      final List<AudioCue> reinjected = List<AudioCue>.from(all);
+      expect(identical(reinjected, all), isFalse);
+      expect(
+        lyricsWindowIsSliceOf<AudioCue>(
+          window: window,
+          offset: 3,
+          source: reinjected,
+        ),
+        isTrue,
+      );
+    });
+
+    test('整书 cue 元素换了（重新对齐 / SRT 重建）：判为失效 → 重载', () {
+      final List<AudioCue> window = all.sublist(3, 8);
+      final List<AudioCue> rebuilt = <AudioCue>[
+        for (int i = 0; i < 10; i++) _cue(i),
+      ];
+      expect(
+        lyricsWindowIsSliceOf<AudioCue>(
+          window: window,
+          offset: 3,
+          source: rebuilt,
+        ),
+        isFalse,
+      );
+      // 整书 cue 变短 / 偏移错位 / 空窗口同样失效。
+      expect(
+        lyricsWindowIsSliceOf<AudioCue>(
+          window: window,
+          offset: 3,
+          source: all.sublist(0, 6),
+        ),
+        isFalse,
+      );
+      expect(
+        lyricsWindowIsSliceOf<AudioCue>(window: window, offset: 2, source: all),
+        isFalse,
+      );
+      expect(
+        lyricsWindowIsSliceOf<AudioCue>(
+          window: const <AudioCue>[],
+          offset: 0,
+          source: all,
+        ),
+        isFalse,
+      );
+    });
+
+    test('装章重灌 cue 后不整页重载歌词，交给 _syncLyricsOverlayCue 按数据源判', () {
+      final String source = readReaderPageSource();
+      final String inject = _between(
+        source,
+        '  Future<void> _injectAudiobookBridge() async {',
+        '\n  }\n',
+      );
+      expect(inject, contains('setAllBookCues('));
+      expect(inject, contains('_onCueChanged();'));
+      expect(
+        inject,
+        isNot(contains('_loadLyricsPage')),
+        reason: '旧码：歌词模式下每装一章都 post-frame 整页重载歌词文档',
+      );
+
+      final String onCue = _between(
+        source,
+        '  void _onCueChanged() {',
+        '    final bool navigationReveal =',
+      );
+      expect(onCue, contains('_syncLyricsOverlayCue(controller'));
+
+      final String sync = _between(
+        source,
+        '  void _syncLyricsOverlayCue(',
+        '    final bool scroll =',
+      );
+      // 无整书 cue 的书：按章 cue 列表身份重载（跨章照常换章）。
+      final int chapterReload = sync.indexOf(
+        '!identical(controller.chapterCuesSnapshot, _lyricsCueList)',
+      );
+      // 整书 cue 窗口：元素身份校验失败才重载，且排在任何 setCue 下发之前。
+      final int sliceCheck = sync.indexOf('lyricsWindowIsSliceOf<AudioCue>(');
+      final int firstSetCue = sync.indexOf('overlaySyncScript(');
+      expect(chapterReload, isNonNegative);
+      expect(sliceCheck, greaterThan(chapterReload));
+      expect(firstSetCue, greaterThan(sliceCheck));
+      expect(
+        sync.substring(sliceCheck, firstSetCue),
+        contains('unawaited(_loadLyricsPage())'),
+      );
+      expect(
+        sync.substring(sliceCheck - 200, sliceCheck),
+        contains('_lyricsCueWindowUsesAllBookCues &&'),
+      );
+
+      // 滑动窗口与同步共用同一判据。
+      final String slideFn = _between(
+        source,
+        '  bool _slideLyricsWindow({required bool forward, required int anchor}) {',
+        '  /// 歌词 WebView 上的 fire-and-forget 求值',
+      );
+      expect(slideFn, contains('lyricsWindowIsSliceOf<AudioCue>('));
+    });
   });
 }
