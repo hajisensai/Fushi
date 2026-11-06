@@ -1900,11 +1900,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
-  /// 由本 State 子类持有的下面三个转发器统一承接（仅转发，零行为变化），供 caret
+  /// 由本 State 子类持有的下面几个转发器统一承接（仅转发，零行为变化），供 caret
   /// part 调用。
   DictionaryPopupWebViewState? get _caretTopPopupState => topPopupState;
 
   int get _caretTopVisiblePopupIndex => topVisiblePopupIndex;
+
+  List<DictionaryPopupWebViewState> get _caretVisiblePopupStatesTopDown =>
+      visiblePopupStatesTopDown;
 
   void _caretDismissTopPopup() => dismissTopPopup();
 

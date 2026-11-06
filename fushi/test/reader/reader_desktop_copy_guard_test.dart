@@ -76,6 +76,41 @@ void main() {
     );
   });
 
+  test('caret.part.dart：复制按可见层叠顺序分派（弹窗各层 → 歌词 / 正文），BUG-4130', () {
+    // macOS 上 Flutter 焦点从不跟随点击进入平台视图（AppKitView 只在引擎 onFocus 时
+    // requestFocus，macOS 引擎不发；BUG-3131），弹窗 / 歌词里拖选后的 ⌘C 也落在阅读器
+    // 的 _focusNode 上。复制若只读正文 _controller，弹窗 / 歌词里的选区永远复制不到，
+    // 正文残留旧选区时还会复制出错误文字。
+    final String src = caret.readAsStringSync();
+    final String body = methodBody(
+      src,
+      'Future<void> _copyNativeSelectionToClipboard(',
+    );
+    expect(
+      body,
+      contains('copyFromTopmostSurfaceWithSelection('),
+      reason: '取选区必须走自顶向下的层叠分派，不能只认一个 controller',
+    );
+    final int popups = body.indexOf('_caretVisiblePopupStatesTopDown');
+    final int forHost = body.indexOf('copyNativeSelectionForHost');
+    expect(popups, greaterThanOrEqualTo(0), reason: '可见弹窗各层必须进候选');
+    expect(forHost, greaterThan(popups), reason: '弹窗层经弹窗自己的复制入口取选区');
+    expect(
+      body,
+      contains('_lyricsOverlayShown'),
+      reason: '歌词覆盖层显示时阅读面是歌词 WebView（正文被盖住）',
+    );
+    expect(
+      statementAt(body, 'final InAppWebViewController? readingSurface'),
+      allOf(contains('_lyricsController'), contains('_controller')),
+    );
+    expect(
+      body.lastIndexOf('readingSurface'),
+      greaterThan(forHost),
+      reason: '阅读面排在所有弹窗层之后（弹窗盖在阅读面之上）',
+    );
+  });
+
   test(
     'reader_selection_scripts.dart：取 window.getSelection 而非 fushiSelection',
     () {

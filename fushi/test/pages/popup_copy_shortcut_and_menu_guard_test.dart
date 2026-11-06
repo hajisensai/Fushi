@@ -5,8 +5,10 @@
 // 真实选区也照不到真实剪贴板。能在最强可落地层锁住的，是「实现必须保持这几条不变式」：
 //   ① 右键菜单的选区必须在**右键那一刻**取快照，不能在 `await showMenu` 之后才读；
 //   ② 空选区不得**静默**早退（必须有反馈），成功复制必须有反馈；
-//   ③ 桌面弹窗必须挂复制键兼容层（Windows Ctrl+C、macOS ⌘C，BUG-4130），且判据复用
-//      与阅读器同一个纯谓词；这层不得被包进 Windows 专属分支。
+//   ③ 桌面弹窗必须挂复制键兼容层，且判据复用与阅读器同一个纯谓词；平台判定只在谓词里
+//      做一次。注意这层只在 Flutter 焦点进了弹窗子树时收得到键——macOS 上不会发生
+//      （BUG-3131），macOS 的 ⌘C 靠宿主经 `copyNativeSelectionForHost` 分派（BUG-4130，
+//      阅读器侧守卫在 test/reader/reader_desktop_copy_guard_test.dart）。
 // 纯谓词本身的真值表已由 test/shortcuts/reader_desktop_copy_test.dart 覆盖，此处不重复。
 import 'dart:io';
 
@@ -104,10 +106,10 @@ void main() {
       );
     });
 
-    test('复制拦截层不在 Windows 专属分支里（macOS 也要挂，BUG-4130）', () {
-      // 旧版把 Focus(onKeyEvent: _handleDesktopCopyKey) 写在 `if (isWindowsPlatform)` 分支
-      // 里，macOS 弹窗根本没有这层，⌘C 只能落到菜单 Edit > Copy → first responder
-      // FlutterView（BUG-2948），WKWebView 收不到 copy:。平台判定只许留在谓词里。
+    test('复制拦截层不按平台分支各写一份（平台判定只在谓词里）', () {
+      // 只守结构：平台事实只在 desktopShouldHandleCopyGesture 里判一次。它**不**证明
+      // macOS 上这层收得到 ⌘C——AppKitView 的 FocusNode 不进焦点链（BUG-3131），
+      // macOS 能复制靠宿主分派（下一组「宿主复制入口」+ 阅读器守卫）。
       final int guardedIdx = code.indexOf('final Widget guardedWebView = ');
       expect(
         guardedIdx,
@@ -159,6 +161,31 @@ void main() {
         reason: '非 KeyDown / 非命中一律 ignored，绝不吞键。',
       );
       expect(body.contains('KeyEventResult.handled'), isTrue);
+    });
+  });
+
+  group('BUG-4130 宿主复制入口（macOS 焦点不进弹窗子树）', () {
+    test('copyNativeSelectionForHost：同一来源取选区，空选区返回 false 且不提示', () {
+      final String body = methodBody(
+        code,
+        'Future<bool> copyNativeSelectionForHost(',
+      );
+      expect(
+        body.contains('_selectedTextAcrossFrames()'),
+        isTrue,
+        reason: '与 Ctrl+C / 右键同一来源（穿透同源 iframe 的原生选区）',
+      );
+      expect(
+        body.contains('_copySelectionToClipboard(text)'),
+        isTrue,
+        reason: '写剪贴板与成功提示收口在同一 helper',
+      );
+      expect(
+        body.contains('_showCopyToast(copied: false)'),
+        isFalse,
+        reason: '空选区由宿主继续问下一层，不能由某一层抢先给「没选中」提示',
+      );
+      expect(body.contains('return false'), isTrue);
     });
   });
 

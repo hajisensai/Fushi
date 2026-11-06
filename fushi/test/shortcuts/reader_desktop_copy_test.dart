@@ -128,4 +128,61 @@ void main() {
       }
     });
   });
+
+  // BUG-4130 审查补修：复制键落在阅读器上时，按可见层叠顺序（弹窗各层 → 阅读面）
+  // 找第一个有原生选区的面。每个面用一个「有选区就复制并返回 true」的假面模拟，
+  // reads 记录被读过的面，用来证明下层（尤其残留旧选区的正文）不会被抢先读。
+  group('copyFromTopmostSurfaceWithSelection（BUG-4130）', () {
+    Future<bool> Function() surface(
+      String name,
+      List<String> reads, {
+      required bool hasSelection,
+    }) => () async {
+      reads.add(name);
+      return hasSelection;
+    };
+
+    test('顶层弹窗有选区：复制它，正文残留的旧选区一次都不读', () async {
+      final List<String> reads = <String>[];
+      final bool copied =
+          await copyFromTopmostSurfaceWithSelection(<Future<bool> Function()>[
+            surface('popup', reads, hasSelection: true),
+            surface('body', reads, hasSelection: true),
+          ]);
+      expect(copied, isTrue);
+      expect(reads, <String>['popup']);
+    });
+
+    test('上层都没选区：自顶向下落到第一个有选区的面', () async {
+      final List<String> reads = <String>[];
+      final bool copied =
+          await copyFromTopmostSurfaceWithSelection(<Future<bool> Function()>[
+            surface('popup2', reads, hasSelection: false),
+            surface('popup1', reads, hasSelection: true),
+            surface('lyrics', reads, hasSelection: true),
+          ]);
+      expect(copied, isTrue);
+      expect(reads, <String>['popup2', 'popup1']);
+    });
+
+    test('全部为空：逐个问完、返回 false（调用方不写剪贴板）', () async {
+      final List<String> reads = <String>[];
+      final bool copied =
+          await copyFromTopmostSurfaceWithSelection(<Future<bool> Function()>[
+            surface('popup', reads, hasSelection: false),
+            surface('lyrics', reads, hasSelection: false),
+          ]);
+      expect(copied, isFalse);
+      expect(reads, <String>['popup', 'lyrics']);
+    });
+
+    test('没有任何候选面：返回 false', () async {
+      expect(
+        await copyFromTopmostSurfaceWithSelection(
+          const <Future<bool> Function()>[],
+        ),
+        isFalse,
+      );
+    });
+  });
 }

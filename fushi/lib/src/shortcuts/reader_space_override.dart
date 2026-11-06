@@ -173,6 +173,25 @@ bool desktopShouldHandleCopyGesture({
   return modifiers.length == 1 && modifiers.contains(primary);
 }
 
+/// 桌面复制键命中后「复制哪一个 WebView 的原生选区」（BUG-4130）。
+///
+/// 阅读器页同时挂着几个各自持有独立原生选区的 WebView：正文、有声书歌词覆盖层、
+/// 词典弹窗栈的每一层。复制键（macOS 上 Flutter 焦点从不跟随点击进入平台视图——
+/// `AppKitView` 只在引擎回调 `onFocus` 时抢焦点，macOS 引擎不发；见 BUG-3131）
+/// 一律落在阅读器的 `_focusNode` 上，由阅读器统一分派。判据是**可见层叠顺序**：
+/// [surfacesTopDown] 按自顶向下给出每个可见面的「有选区就复制并返回 true，空选区
+/// 返回 false」尝试，第一个复制成功的面胜出、后面的不再读。这样弹窗里拖选时不会被
+/// 正文残留的旧原生选区（Shift 悬停查词不清选区）抢走；歌词覆盖层显示时正文被盖住，
+/// 调用方不把正文放进候选。全部为空返回 false（调用方不覆盖剪贴板）。
+Future<bool> copyFromTopmostSurfaceWithSelection(
+  Iterable<Future<bool> Function()> surfacesTopDown,
+) async {
+  for (final Future<bool> Function() tryCopy in surfacesTopDown) {
+    if (await tryCopy()) return true;
+  }
+  return false;
+}
+
 /// TODO-1370：长按方向键连续切句。判断一个已解析出的阅读器/有声书快捷动作是否应随
 /// OS 键盘自动重复（[KeyRepeatEvent]）连续触发。
 ///

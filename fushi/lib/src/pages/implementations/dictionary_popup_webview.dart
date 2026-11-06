@@ -4060,14 +4060,18 @@ JSON.stringify((function(){
         child: webView,
       );
     }
-    // BUG-1451 键盘那一半 + BUG-4130：复制键到不了 WebView 的原生 copy——Windows 的
-    // WebView2 走合成模式，fork 只转发鼠标、**不转发键盘**；macOS 的 first responder
-    // 始终是 FlutterView（BUG-2948 真机取证），菜单 Edit > Copy 的 `copy:` 到不了
-    // WKWebView。但这一按键**一定**会到 Flutter（KeyEvent 沿焦点链向上冒泡），在这里
-    // 接住即可。是否接管全由平台谓词 [desktopShouldHandleCopyGesture] 决定，所以本层
-    // 不按平台包裹：其它平台谓词恒 false、原样冒泡。`canRequestFocus:false` +
-    // `skipTraversal`：只做拦截，不参与遍历、不抢焦点，与 BUG-1347 那层宿主键桥同范式、
-    // 互不干扰（它只转发宿主动作 token，不含复制键）。
+    // BUG-1451 键盘那一半：Windows 的 WebView2 走合成模式，fork 只转发鼠标、**不转发
+    // 键盘**，复制键到不了 WebView2 的原生 copy。Flutter 焦点在弹窗平台视图的 FocusNode
+    // 上时（它是本节点的后代），KeyEvent 沿焦点链冒泡到这里，就地接住。是否接管全由
+    // 平台谓词 [desktopShouldHandleCopyGesture] 决定，本层不按平台包裹。
+    //
+    // ⚠️ 本层只在 Flutter 焦点**进了弹窗子树**时才收得到按键。macOS 上这件事不发生：
+    // `AppKitView` 只在引擎回调 `onFocus` 时 requestFocus，macOS 引擎不发 viewFocused
+    // （BUG-3131 排除路径里的真机事实），焦点一直停在宿主（阅读器 `_focusNode`）上。
+    // 所以 macOS 的 ⌘C 由宿主分派：阅读器经 `visiblePopupStatesTopDown` 自顶向下调
+    // [copyNativeSelectionForHost]（BUG-4130），不靠这一层。
+    // `canRequestFocus:false` + `skipTraversal`：只做拦截，不参与遍历、不抢焦点，与
+    // BUG-1347 那层宿主键桥同范式、互不干扰（它只转发宿主动作 token，不含复制键）。
     final Widget guardedWebView = KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: Focus(
@@ -4106,6 +4110,18 @@ JSON.stringify((function(){
     }
     unawaited(_copyNativeSelectionToClipboard());
     return KeyEventResult.handled;
+  }
+
+  /// BUG-4130：宿主键盘路径的复制入口。Flutter 焦点不在弹窗子树里时（macOS 恒如此，
+  /// 见 [build] 里复制拦截层的注释），复制键落在宿主上，宿主按可见层叠顺序逐层调本
+  /// 方法：本层原生选区（穿透同源 iframe，与 [_handleDesktopCopyKey] 同一来源）非空就
+  /// 写剪贴板、给成功提示并返回 true；空选区返回 false 且**不提示**——空不代表失败，
+  /// 宿主还要接着问下一层，「没选中」的提示不该由某一层抢先给。
+  Future<bool> copyNativeSelectionForHost() async {
+    final String text = await _selectedTextAcrossFrames();
+    if (!mounted || text.isEmpty) return false;
+    await _copySelectionToClipboard(text);
+    return true;
   }
 
   /// Ctrl+C 落地：读原生选区 → 写系统剪贴板。空选区不覆盖剪贴板已有内容，但给出提示
