@@ -372,6 +372,29 @@ fn legacy_ctx_json(x: &Value) -> String {
     canonical(&strip_synthetic_ctx(ctx).unwrap_or_else(|| ctx.clone()))
 }
 
+/// srs.db v26（BUG-4218）：卡片历史选取改成同一事件的多 ID 副本只算一份、撤销任一份即整组撤销（history.rs
+/// `EventKey`）。重放（sync2/replay.rs）按选取结果推进状态、把派生日志的结果写回投影行的 `res`，副本带着生效配置
+/// 快照 `sc`（profile 合并照抄整条日志、只换 ID）时，旧规则让副本再推进一次、新规则不推进，后面每条派生日志的 `res`
+/// 都可能不同。存量库的这些行是旧规则算的，收段新建的库按新规则算，摘要（digest.rs，比的就是投影行原文）会对不上，
+/// 所以升级时把可能带副本的卡按新规则重放一遍，结果与新代码从操作重新投影逐位相同。
+///
+/// 只处理已启用同步 v2 的 profile（`sync2_self`；没启用的 profile 从不重放、结果就是作者原值）。候选按落库列粗筛：
+/// 同卡、同 kind（undo 不成组）、同发生时刻 / 评分 / 复习类型 / 来源的日志不止一条——`EventKey` 的这些分量都是列，
+/// HLC 与 ankiId 在 JSON 里不参与粗筛，所以候选是带副本的卡的超集；多出来的卡重放一遍也只是写回它本来就该有的值
+/// （重放是操作集合的纯函数）。摘要桶由 UPDATE 触发器随行增减。可重放：第二次重放写不出不同的行。返回改了投影行的卡。
+pub(crate) fn replay_event_copies(c: &Connection) -> Result<BTreeSet<String>, String> {
+    let cards: BTreeSet<String> = c
+        .prepare(
+            "SELECT DISTINCT srs_idt(card_id) AS card_id FROM (                SELECT card_id FROM srs_review_logs                WHERE kind <> 'undo' AND profile_uid IN (SELECT profile_uid FROM sync2_self)                GROUP BY profile_uid, card_id, kind, occurred_at, rating, review_type, origin HAVING COUNT(*) > 1)",
+        )
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    replay_cards(c, &cards)
+}
+
 /// srs.db v19：去掉存量因果上下文里的合成写入者（[is_synthetic_writer]）——`sync2_legacy.ctx` 与投影行
 /// `srs_field_edits` 的 `ctx`。确定性：只是对各设备逐位相同的投影套同一个函数，结果等于新代码从操作重新投影；
 /// 操作日志（`sync2_ops`，已上传的载荷）一个字节不动。摘要桶由 UPDATE 触发器随行增减（digest.rs）。可重放：

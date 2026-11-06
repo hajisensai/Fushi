@@ -556,7 +556,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 10（srs.db schema v25）：srs_notes_cache.source_key（出处寄存器的分组键，与浏览页出处视图同一个键；自定义学习
   /// 按作品出卡直接按它的索引查，见 store/study.rs `CustomStudy`）。老行这一列是 NULL，升级时内核只补这一列
   /// （caches.rs `backfill_source_keys`），不算缓存写入，不进变更日志。
-  static const int _kCacheRevision = 10;
+  /// 11（BUG-4218）：卡片历史选取把同一事件的多 ID 副本只算一份、撤销任一份即整组撤销（history.rs `EventKey`）。
+  /// srs_cards_cache 的卡片状态与 srs_stat_reviews 的有效复习投影都是本机按 `select` 从日志算出来的，存量库里带副本的
+  /// 卡（BUG-4217 修好前的 profile 合并写出）仍按旧规则重复计数、撤销一份不回退，要等这张卡再被改一次；哪些卡带副本
+  /// 要逐卡解析日志才知道，所以与修订号 2 / 7 同样整库重算全部笔记缓存与全部投影（同一 srs.db 打开时，Rust 侧 v26
+  /// 迁移已先按新规则重放了带副本的卡的日志投影行，这里读到的 `res` 已是新值）。
+  static const int _kCacheRevision = 11;
 
   /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
   /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
@@ -2675,6 +2680,10 @@ class SrsDbStore implements SrsSync2Host {
       // srs.db v25 加的出处分组键列（按作品出卡用）：整行重算已写好；这一步只补仍为 NULL 的老行。
       if (_cacheRevision < 10) {
         await _sync2(const <String, Object?>{'op': 'backfill_source_keys'});
+      }
+      // BUG-4218：选取规则变了（同一事件的副本只算一份），卡片状态与有效复习投影整库按新规则重算。
+      if (_cacheRevision < 11) {
+        await _refreshCaches(allNotes: true, allStats: true);
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();

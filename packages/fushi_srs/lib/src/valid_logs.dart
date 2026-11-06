@@ -119,11 +119,11 @@ class SrsCardHistory {
     ];
   }
 
-  /// 全部日志（含 undo、被撤销的、不认识的；同 ID 只留最后一条；同一事件的多 ID 副本只留 ID 最小的
-  /// 一条，见 history.rs `EventKey`），按 sortKey 升序。
+  /// 全部日志（含 undo、被撤销的、不认识的；同 ID 只留最后一条；同一事件的多 ID 副本每一份都在，ID 不是组里
+  /// 最小的那几份标 [srsHistoryDuplicate]、不算有效，见 history.rs `EventKey`），按 sortKey 升序。
   final List<SrsReviewLog> all;
 
-  /// 有效日志（kind 已知且不是 undo、没被撤销、不是被判等价的导入日志），按 sortKey 升序。
+  /// 有效日志（kind 已知且不是 undo、没被撤销、不是被判等价的导入日志、不是同一事件里非代表的副本），按 sortKey 升序。
   late final List<SrsReviewLog> effective;
 
   /// 被 undo 撤销的日志 ID（undo 的目标；目标不在本历史里也算；同一事件的副本被撤销时，[all] 里留下的那份也算）。

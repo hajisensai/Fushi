@@ -51,7 +51,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
-pub const ABI_VERSION: i32 = 4;
+/// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
+pub const ABI_VERSION: i32 = 5;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";

@@ -5,7 +5,7 @@
   - 撤销只按 ID（`select` 里 `revokes` 与 `l.id` 比对）：撤销其中一份，另一份成为最后一条有效日志，卡片状态不变，表现为「撤销没生效」。
 - **根因**：选取规则把「日志 ID」当成事件身份，而合并 / 旧版本会给同一事件写出多个 ID；事件日志只追加，写侧再怎么修也消不掉已落下的重复。
 - **[x] ① 已修复** — `native/fushi_fsrs/src/history.rs`：
-  - 新增事件内容身份 `EventKey` =（卡、kind、HLC physical / counter / writerId、发生时刻、来源、是否评分类、评分、ankiId）。`select` 在同 ID 去重之后按它成组（`event_groups`，≤ 32 条线性、否则哈希）；组里 ID 最小（UTF-16 序）的是代表，其余标新位 `STATUS_DUPLICATE = 32`、不算有效，但仍留在 `order` 里（`sync2/replay.rs` 要给每条派生日志按位置算一次投影行，投影行必须是操作集合的纯函数——初版把副本直接从 `order` 去掉，`all_replicas_converge` proptest 当场判红，种子已存进 `proptest-regressions/store/sync2/tests.txt`）。组里任何一份被 undo 撤销，整组每一份都标 `STATUS_REVOKED`。
+  - 新增事件内容身份 `EventKey` =（卡、kind、HLC physical / counter / writerId、发生时刻、来源、是否评分类、评分、ankiId）。`select` 在同 ID 去重之后按它成组（`event_groups`，≤ 32 条线性、否则哈希）；组里 ID 最小（UTF-16 序）的是代表，其余标新位 `STATUS_DUPLICATE = 32`、不算有效，但仍留在 `order` 里（`sync2/replay.rs` 要给每条派生日志按位置算一次投影行，投影行必须是操作集合的纯函数——初版把副本直接从 `order` 去掉，`all_replicas_converge` proptest 当场判红；那个样本靠所有设备共用写入者才造出副本，见「备注」，现由显式的 `Copy` 动作覆盖）。组里任何一份被 undo 撤销，整组每一份都标 `STATUS_REVOKED`。
   - undo 与不认识的 kind 不成组（undo 的效果只看 `revokes`，取并集即可）。
   - 等价导入规则不变，对代表与副本各自照算。
   - 一份历史可以是血统里几张卡的日志之和，卡必须进身份：`Log` 加 `card`；落库 JSON 读 `card` 键，瘦存从 `LogCols.card`（`store/slim.rs` `log_row` 的 card 列）补；整 profile 扫描（`store/projections.rs` `ScanLog::log`）借 `by_card` 的键，不加内存；列模式（`select_columns` / `ffsrs_history_select`）每条日志从 3 个串改为 4 个串（`COLUMN_STRINGS`，多 cardId），Dart `history_kernel.dart` 同步打包。
@@ -14,5 +14,10 @@
 - **[x] ② 已加自动化测试** —
   - `native/fushi_fsrs/src/history.rs` tests：`duplicate_event_copies_count_once`（状态 / 统计 / 投影只算一次）、`undoing_either_copy_revokes_the_event`（撤销任一份都回退到前一状态）、`restore_replay_copy_is_a_new_event`、`same_hlc_on_another_card_or_with_other_content_is_not_a_copy`（前身卡同 HLC、评分 / 时刻不同都不并）、`undo_logs_are_never_grouped`、`equivalent_import_rule_still_applies_to_copies`、`long_histories_group_copies_the_same_way`（哈希分支）、`column_mode_reads_card_and_groups_copies`（4 串列布局；旧 3 串布局判坏）。
   - `packages/fushi_srs/test/history/history_vectors_test.dart`：旧 Dart 实现生成的 1500 份固定向量里有 4 份随机造出的「副本」（1003 / 1053 / 1148 / 1439），期望按新规则逐份写明（被并掉的那份不再有效；1003 撤销的是另一份，整组撤销；1053 最后一条有效日志改为代表），其余 1496 份仍与旧实现逐条一致；列模式与落库形态两条入口互相对照。
-- **兼容**：不改写任何事件，只改读侧。旧版本客户端照旧只按 ID 去重，看到的就是修复前的重复（统计 / 优化器偏、撤销一份不生效）；新旧客户端只在「同一事件有多份副本」的卡上算出不同的状态 / 统计，卡片缓存是每台设备本地从日志算的，不经同步互相覆盖。列模式 FFI 布局变了（3 → 4 串），Dart 与原生库同仓同构建，必须一起升级（`prebuilt/` 需重编，`tool/native_libs.ps1` 按戳记会自动重编）。
-- **备注**：同步测试 `store/sync2/tests.rs` 的 `all_replicas_converge` 里所有设备共用写入者 `dart`、时钟各自从 T0 起，会造出「不同设备、同卡、同 HLC」的两条不同手动改期，新规则把它们当成同一事件的副本（只认 ID 最小那条）。真实设备写入者 ID 各不相同，不会出现；该测试只校验收敛，仍绿。未做 BUG-4217 审查里建议的「(b) 一次性追加确定性 undo 的修复迁移」（让旧客户端也收敛），需要另开。
+- **兼容 / 升级**：不改写任何事件（操作日志一个字节不动），但读侧规则变了，下面三处派生数据都要跟着处理：
+  - **列模式 FFI**：`ffsrs_history_select` 每条日志从 3 个串改为 4 个串（`offs` 从 `3n+1` 变 `4n+1`），新旧库与绑定混用会静默错位或越界读，所以 `ABI_VERSION`（`native/fushi_fsrs/src/lib.rs`）与 `kFushiFsrsAbiVersion`（`packages/fushi_srs/lib/src/ffi/fushi_fsrs_library.dart`）同时 4 → 5，加载时版本不配套即判库不可用。CI 冒烟的期望值从 `lib.rs` 读，不写死。
+  - **日志投影行参与跨设备摘要**：sync2 重放（`sync2/replay.rs`）按选取结果推进状态、把派生日志的结果写回 `srs_review_logs.json` 的 `res`，摘要（`store/sync2/digest.rs`）比的就是这些行原文。profile 合并写出的副本照抄整条日志（`srs_profile_merge.dart` 只换 ID / profile / card 引用，`sc` 配置快照原样保留），旧规则让带 `sc` 的副本再推进一次状态，新规则不推进；撤销其中一份也会改变后面派生日志的基础状态。所以同一操作集新旧规则算出的 `res` 会不同。处理：srs.db schema v26 迁移（`store/schema.rs` → `store/sync2/mod.rs` `replay_event_copies`）对已启用同步 v2 的 profile，把同卡、同 kind（非 undo）、同发生时刻 / 评分 / 复习类型 / 来源的日志多于一条的卡（带副本的卡的超集）按新规则重放、写回投影行，让升级的库与收段新建的库逐位相同；摘要前缀 `VV_PREFIX` 从 `3:` 换成 `4:`（BUG-3959 先例），新旧版本设备互不比较摘要，不误报「数据不一致」。旧版本客户端照旧只按 ID 去重（统计 / 优化器偏、撤销一份不生效），升级后才收敛。
+  - **本机缓存**：`srs_cards_cache` 的卡片状态与 `srs_stat_reviews` 的有效复习投影是本机按 `select` 算的，存量行要等卡再被改一次才重算。缓存修订号 `_kCacheRevision`（`packages/fushi_engine/lib/srs/srs_db_store.dart`）10 → 11，升级时整库重算全部笔记缓存与全部投影（同修订号 2 / 7 先例），在 Rust v26 迁移之后执行，读到的 `res` 已是新值。
+- **备注**：
+  - 同步性质测试 `store/sync2/tests.rs` 的 `all_replicas_converge` 原来所有设备共用写入者 `dart`、时钟各自从 T0 起，会造出「不同设备、同卡、同 HLC」的两次不同手动改期，被新规则当成同一事件的副本；现在每台设备一个写入者（`dart<设备号>`，对应真实的 `deviceId#incarnation`），另加 `Copy` 动作显式写同一事件的副本（之后的撤销撤这份副本），收敛性仍覆盖副本留在排序里、整组撤销的路径。初版因共用写入者才存下的那条回归种子已删。存量升级由 `v26_upgrade_replays_cards_with_event_copies` 锁住（带副本的卡按新规则重放、与新建设备投影 / 摘要逐位相同、没有副本的卡不在候选里、可重放）。
+  - 未做 BUG-4217 审查里建议的「(b) 一次性追加确定性 undo 的修复迁移」（让旧客户端也收敛），需要另开。
