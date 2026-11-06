@@ -23,6 +23,10 @@ enum VideoClipExportFailure {
   ffmpegUnavailable,
   ffmpegFailed,
   outputMissing,
+
+  /// 互联远端片段：没能从 host 取回片段原料（网络 / host 上这一集没有本地文件 /
+  /// host 端裁切失败）。本机导出器不产出此值，只有远端取料一步会报。
+  remoteSourceFailed,
 }
 
 class VideoClipExportResult {
