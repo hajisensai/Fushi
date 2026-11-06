@@ -382,7 +382,11 @@ fn instant_eligible(
     if decks.values().any(|q| q.min_reviews > 0) && !above.is_empty() {
         // 配额按参数归属牌组（设置所在的 own 祖先）记：随参数继承的子牌组共用设置，也共用这一份「每天最少」，
         // 不是每个子牌组各补一份（Anki 导入的牌组常有几十个继承同一预设的子牌组）。
-        let owner = |d: &str| ctx.tree.params_owner_id(d).unwrap_or(d).to_owned();
+        // 不在牌组树里的牌组按默认牌组算（`DeckTree::effective`），与 Dart `_minimumTopUp` 分组同一口径。
+        let owner = |d: &str| {
+            let e = ctx.tree.effective(d);
+            ctx.tree.params_owner_id(&e).unwrap_or(&e).to_owned()
+        };
         let mut remaining: HashMap<String, i64> = HashMap::new();
         for (d, q) in decks.iter().filter(|(_, q)| q.min_reviews > 0) {
             remaining.insert(owner(d), q.min_reviews);
