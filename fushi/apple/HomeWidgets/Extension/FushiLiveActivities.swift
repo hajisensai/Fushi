@@ -16,8 +16,10 @@ struct FushiPlaybackLiveActivity: Widget {
     } dynamicIsland: { context in
       let accent = FushiPlaybackStyle.accent(context.attributes.kind)
       return DynamicIsland {
+        // 展开态总高上限约 160pt：顶部一行（封面 44）+ 底部（原文一行 / 进度 / 紧凑控件）
+        // 要压在里面，否则系统直接把控件行截掉。锁屏视图空间充裕，保留两行原文与大按钮。
         DynamicIslandExpandedRegion(.leading) {
-          FushiActivityCover(path: context.attributes.cover, kind: context.attributes.kind, size: 48)
+          FushiActivityCover(path: context.attributes.cover, kind: context.attributes.kind, size: 44)
             .padding(.leading, 4)
         }
         DynamicIslandExpandedRegion(.trailing) {
@@ -34,17 +36,17 @@ struct FushiPlaybackLiveActivity: Widget {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          VStack(alignment: .leading, spacing: 8) {
-            FushiPlaybackLines(state: context.state, kind: context.attributes.kind, accent: accent)
+          VStack(alignment: .leading, spacing: 4) {
+            FushiPlaybackLines(state: context.state, kind: context.attributes.kind, accent: accent, compact: true)
             FushiPlaybackProgress(state: context.state, accent: accent)
             if context.attributes.kind == "audiobook" {
-              FushiPlaybackControls(context: context)
+              FushiPlaybackControls(context: context, compact: true)
             }
           }
           .padding(.horizontal, 4)
         }
       } compactLeading: {
-        FushiActivityCover(path: context.attributes.cover, kind: context.attributes.kind, size: 22)
+        FushiActivityCover(path: context.attributes.cover, kind: context.attributes.kind, size: 24)
       } compactTrailing: {
         if context.attributes.kind == "music" && !context.state.line.isEmpty {
           Text(context.state.line)
@@ -56,7 +58,7 @@ struct FushiPlaybackLiveActivity: Widget {
           FushiEqualizer(playing: context.state.isPlaying, tint: accent).frame(width: 18, height: 14)
         }
       } minimal: {
-        FushiActivityCover(path: context.attributes.cover, kind: context.attributes.kind, size: 22)
+        FushiActivityCover(path: context.attributes.cover, kind: context.attributes.kind, size: 24)
       }
       .keylineTint(accent)
     }
@@ -100,18 +102,20 @@ struct FushiPlaybackLines: View {
   let state: FushiPlaybackAttributes.ContentState
   let kind: String
   let accent: Color
+  /// 灵动岛展开态：原文压成一行、音乐不显示下一行。
+  var compact: Bool = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       if kind == "audiobook" {
         // 原文照搬音频对齐 cue 的文本：不加读音、不做任何改写。
         Text(state.line)
-          .font(.system(size: 16, weight: .semibold, design: .serif))
+          .font(.system(size: compact ? 15 : 16, weight: .semibold, design: .serif))
           .foregroundStyle(accent)
-          .lineLimit(2)
+          .lineLimit(compact ? 1 : 2)
       } else {
-        Text(state.line).font(.headline).lineLimit(1)
-        if let next = state.nextLine, !next.isEmpty {
+        Text(state.line).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(1)
+        if !compact, let next = state.nextLine, !next.isEmpty {
           Text(next).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
         }
       }
@@ -150,6 +154,11 @@ struct FushiPlaybackProgress: View {
 
 struct FushiPlaybackControls: View {
   let context: ActivityViewContext<FushiPlaybackAttributes>
+  /// 灵动岛展开态用矮一号的按钮（总高受限）。
+  var compact: Bool = false
+
+  private var playSide: CGFloat { compact ? 34 : 44 }
+  private var sideSide: CGFloat { compact ? 30 : 36 }
 
   var body: some View {
     HStack(spacing: 30) {
@@ -157,8 +166,8 @@ struct FushiPlaybackControls: View {
       control(.previous, "backward.end.fill", context.attributes.accessibilityPrevious)
       Button(intent: FushiPlaybackControlIntent(action: .toggle)) {
         Image(systemName: context.state.isPlaying ? "pause.fill" : "play.fill")
-          .font(.title3)
-          .frame(width: 44, height: 44)
+          .font(compact ? .body : .title3)
+          .frame(width: playSide, height: playSide)
           .background(Circle().fill(.white.opacity(0.16)))
       }
       .buttonStyle(.plain)
@@ -174,7 +183,7 @@ struct FushiPlaybackControls: View {
 
   private func control(_ action: FushiPlaybackAction, _ symbol: String, _ label: String) -> some View {
     Button(intent: FushiPlaybackControlIntent(action: action)) {
-      Image(systemName: symbol).font(.body).frame(width: 36, height: 36)
+      Image(systemName: symbol).font(compact ? .callout : .body).frame(width: sideSide, height: sideSide)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(label)
@@ -188,8 +197,10 @@ struct FushiActivityCover: View {
 
   var body: some View {
     Group {
-      if let image = FushiPlatformImage.load(path) {
-        image.resizable().aspectRatio(contentMode: .fill)
+      // 按显示尺寸降采样：Live Activity 的图不能大于所在呈现区域，原图塞进紧凑位只会
+      // 画成一块灰占位（展开态区域大才侥幸显示）。
+      if let image = FushiPlatformImage.load(path, maxPoint: size) {
+        Color.clear.overlay { image.resizable().aspectRatio(contentMode: .fill) }
       } else {
         ZStack {
           FushiPlaybackStyle.accent(kind).opacity(0.35)

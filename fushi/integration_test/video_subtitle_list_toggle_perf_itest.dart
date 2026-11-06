@@ -155,6 +155,20 @@ final bool _kLayers = _flag(
   const bool.fromEnvironment('SUBLIST_LAYERS'),
 );
 
+/// `SUBLIST_SLOW_MARKER=<文件>`：某轮最长 raster 帧或最长帧间隔超过 `SUBLIST_SLOW_MS`
+/// （默认 150）时立即往该文件追加一行（轮次、最慢帧的 vsync 时刻——与 ETW 同走
+/// QueryPerformanceCounter）。外部抓取脚本据此停掉环形缓冲的 ETW 会话，只留下含长帧的
+/// 那一段，不必整轮录几十 GB。
+final String _kSlowMarker = _knob(
+  'SUBLIST_SLOW_MARKER',
+  const String.fromEnvironment('SUBLIST_SLOW_MARKER'),
+);
+final int _kSlowMs =
+    int.tryParse(
+      _knob('SUBLIST_SLOW_MS', const String.fromEnvironment('SUBLIST_SLOW_MS')),
+    ) ??
+    150;
+
 Map<String, String> _seedPrefs() {
   if (_kSeedPrefsPath.isEmpty) return const <String, String>{};
   final Map<String, dynamic> raw =
@@ -300,6 +314,20 @@ class _FrameLog {
       'slowRaster=$slowRaster slowGaps=$slowGaps',
     );
     debugPrint('$_tag $label perFrame:$rows');
+    if (_kSlowMarker.isNotEmpty &&
+        (maxRaster ~/ 1000 >= _kSlowMs || maxGap ~/ 1000 >= _kSlowMs)) {
+      final FrameTiming slowest = f.reduce(
+        (FrameTiming a, FrameTiming b) =>
+            a.rasterDuration >= b.rasterDuration ? a : b,
+      );
+      File(_kSlowMarker).writeAsStringSync(
+        '$label maxRaster=${maxRaster ~/ 1000}ms maxGap=${maxGap ~/ 1000}ms '
+        'slowestRasterStartUs=${slowest.timestampInMicroseconds(FramePhase.rasterStart)} '
+        'slowestRasterFinishUs=${slowest.timestampInMicroseconds(FramePhase.rasterFinish)}\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    }
   }
 }
 

@@ -17,3 +17,4 @@ export 'webview_asset_loader.dart';
 export 'tracing_controller.dart' hide InternalTracingController;
 export 'process_global_config.dart' hide InternalProcessGlobalConfig;
 export 'webview_profile.dart';
+export 'webview_static_layer.dart';
