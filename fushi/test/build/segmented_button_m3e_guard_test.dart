@@ -77,7 +77,7 @@ void main() {
     },
   );
 
-  // BUG-4130（反馈 GaI5uPQEbF「还有好多这种地方，根本性修复」）：横排分段的段宽
+  // BUG-4205（反馈 GaI5uPQEbF「还有好多这种地方，根本性修复」）：横排分段的段宽
   // 只走 `fushiSegmentWidths` / `FushiSegmentRow` 一处。以前 MD3 连接式按钮组、
   // 墨水屏原生 SegmentedButton、Apple 退回形态、原生 CupertinoSlidingSegmentedControl
   // 各自「等宽取最宽段、放不下整体等比缩窄」，最长段先被截断。
@@ -187,13 +187,13 @@ void main() {
     );
   });
 
-  // BUG-4130 未收口的那条路径（PR #2987 审查）：MD3 的 FushiTabBar 页签（含分段
+  // BUG-4205 未收口的那条路径（PR #2987 审查）：MD3 的 FushiTabBar 页签（含分段
   // 胶囊 _FushiM3eSegmentedTabs）用框架 TabBar 的非滚动铺满档，框架
   // （material_ui 1.10.0 tabs.dart:2180）把每个页签包一层 Expanded 等分，不走
   // fushiSegmentWidths，最长页签仍会先显示不全。根治要把 MD3 页签换成自绘
   // （推翻「MD3 用框架 TabBar」），待拍板。在那之前把框架 TabBar 钉死在
   // FushiTabBar 这一处已知豁免：别处新写的框架 TabBar 一律判红；这里的个数
-  // 变了（换成自绘 / 删掉）就同步更新本条与 BUG-4130。
+  // 变了（换成自绘 / 删掉）就同步更新本条与 BUG-4205。
   test('framework TabBar (equal-split fill) stays confined to FushiTabBar', () {
     const String exemption =
         'lib/src/utils/components/glass/fushi_glass_bars.dart';
@@ -237,7 +237,7 @@ void main() {
       isEmpty,
       reason:
           'Use FushiTabBar; framework TabBar fill splits tabs equally '
-          '(BUG-4130):\n${offenders.join('\n')}',
+          '(BUG-4205):\n${offenders.join('\n')}',
     );
     expect(
       exempted,
@@ -245,7 +245,7 @@ void main() {
       reason:
           '$exemption: framework TabBar construction count changed; if MD3 '
           'tabs no longer use the framework TabBar, drop this exemption and '
-          'update BUG-4130',
+          'update BUG-4205',
     );
   });
 }

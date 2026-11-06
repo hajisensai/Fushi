@@ -419,7 +419,7 @@ void main() {
         ),
       );
 
-      // BUG-4130：不再是原生 CupertinoSlidingSegmentedControl（等宽、不走
+      // BUG-4205：不再是原生 CupertinoSlidingSegmentedControl（等宽、不走
       // fushiSegmentWidths），而是胶囊分段（SegmentedButton 子类）。
       expect(
         find.byWidgetPredicate(
