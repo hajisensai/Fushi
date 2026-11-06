@@ -4,12 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show parseCuesForFormat, throwIfAlignmentCancelled;
-import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 字幕书重新导入的进度回调（与 [AudiobookAlignmentProgress] 同形）。
@@ -236,71 +235,24 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
   );
 }
 
-/// 返回「正文由 cue 生成、因此换字幕时必须跟着重建」的那条 EpubBooks 行；
-/// 不该重建时返回 null。
-///
-/// 三道闸门，任何一道不过就只换 cue 不动正文：
-/// 1. [SrtBook.bookKey] 为空 = 没有配对正文（cue 解析不出来时首次导入就不生成
-///    EPUB），无正文可重建；
-/// 2. **uid 形态**：`srtbook_epub_<bookKey>` 是 EPUB 有声书的配对行
-///    （[epubBackedSrtBookUid]），那本书的正文是用户自己的 EPUB，用 cue 重新
-///    生成会**直接毁掉用户的书**——这是本文件最重要的一条负向判据；
-/// 3. EpubBooks 行不存在（孤儿字幕书）→ 无处可写。
-Future<EpubBookRow?> _rebuildableBodyRow(FushiDatabase db, SrtBook book) async {
-  final String bookKey = book.bookKey;
-  if (bookKey.isEmpty) return null;
-  if (book.uid == epubBackedSrtBookUid(bookKey)) return null;
-  return db.getEpubBook(bookKey);
-}
+/// 可按 cue 重建的正文行；判据（三道闸门）见引擎 [generatedSubtitleBodyRow]。
+Future<EpubBookRow?> _rebuildableBodyRow(FushiDatabase db, SrtBook book) =>
+    generatedSubtitleBodyRow(db, uid: book.uid, bookKey: book.bookKey);
 
-/// 用 [cues] 重新生成正文 EPUB 并就地替换 [row] 的解压树 + 章节元数据。
-/// 返回是否真的替换成功；失败只记日志并返回 false（旧正文已由原子替换回滚复位，
-/// 此时 cue 与正文不一致但书仍可读，比让整次导入炸掉好）。
+/// 生产实现：引擎 [rebuildGeneratedSubtitleBody]（与互联收包重建正文同一份）。
 Future<bool> _rebuildGeneratedBody({
   required FushiDatabase db,
   required EpubBookRow row,
   required SrtBook book,
   required List<AudioCue> cues,
-}) async {
-  String? epubPath;
-  try {
-    final Directory tmpDir = await getTemporaryDirectory();
-    epubPath = p.join(tmpDir.path, 'cues_to_epub_${book.uid}_rebuild.epub');
-    await CuesToEpub.convert(
-      title: book.title,
-      cues: cues,
-      outputPath: epubPath,
-      author: book.author,
-    );
-    final ({int chapterCount, String chaptersJson, String? coverPath}) parsed =
-        await EpubImporter.rebuildExtractedInPlace(
-          epubFilePath: epubPath,
-          extractDir: row.extractDir,
-        );
-    await db.updateEpubBookChapters(
-      row.bookKey,
-      chapterCount: parsed.chapterCount,
-      chaptersJson: parsed.chaptersJson,
-    );
-    debugPrint(
-      '[fushi-import] srt reimport: body rebuilt key=${row.bookKey} '
-      'chapters=${parsed.chapterCount} cues=${cues.length}',
-    );
-    return true;
-  } catch (e, stack) {
-    ErrorLogService.instance.log('SrtBookReimport.rebuildBody', e, stack);
-    debugPrint('[fushi-import] srt reimport: body rebuild failed: $e');
-    return false;
-  } finally {
-    try {
-      final String? tmpPath = epubPath;
-      if (tmpPath != null) {
-        final File tmp = File(tmpPath);
-        if (tmp.existsSync()) tmp.deleteSync();
-      }
-    } catch (_) {}
-  }
-}
+}) => rebuildGeneratedSubtitleBody(
+  db: db,
+  row: row,
+  uid: book.uid,
+  title: book.title,
+  author: book.author,
+  cues: cues,
+);
 
 /// 删掉持久目录里的旧字幕文件。只删**落在持久目录内**的（引用导入模式下
 /// `srtPath` 可能是用户原始文件，绝不能删用户的东西）。

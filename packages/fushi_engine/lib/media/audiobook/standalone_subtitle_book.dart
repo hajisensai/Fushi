@@ -15,6 +15,7 @@ import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:path/path.dart' as p;
 
 /// 导入进行到哪一步（调用方翻译成文案）。
@@ -92,20 +93,16 @@ Future<SrtBook> importStandaloneSubtitleBook({
   if (cues.isNotEmpty || subtitlePath == null) {
     try {
       report(0.3, StandaloneSubtitleBookStep.buildingEpub);
-      final Directory tmp = tempDir ?? await enginePaths.tempRootDirectory();
-      final String epubPath = p.join(tmp.path, 'cues_to_epub_$uid.epub');
-      await CuesToEpub.convert(
-        title: title,
-        cues: cues,
-        outputPath: epubPath,
-        author: author,
-      );
-      report(0.5, StandaloneSubtitleBookStep.importingEpub);
-      bookKey = await EpubImporter.importFromPath(
+      bookKey = await importGeneratedSubtitleBody(
         db: db,
-        filePath: epubPath,
-        fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
+        uid: uid,
+        title: title,
+        author: author,
+        cues: cues,
         policy: policy,
+        tempDir: tempDir,
+        onConverted: () =>
+            report(0.5, StandaloneSubtitleBookStep.importingEpub),
       );
       fushiDebugPrint(
         '[fushi-import] subtitleBook: EPUB import done, key=$bookKey',
@@ -239,6 +236,133 @@ Future<void> rollbackStandaloneSubtitleBook({
         e,
         stack,
       );
+    }
+  }
+}
+
+/// 字幕书的正文 EPUB 是否由 cue 生成（独立字幕书的正文）。
+///
+/// EPUB 有声书的配对行（uid 是 [epubBackedSrtBookUid] 形态）也有 bookKey，但那本书
+/// 的正文是用户自己的 EPUB：用 cue 重新生成会直接毁掉用户的书。所以「能不能按
+/// cue 重建 / 在另一台设备上按 cue 再生成正文」只认这里的判据。
+bool srtBookHasGeneratedBody({required String uid, required String bookKey}) =>
+    bookKey.isNotEmpty && uid != epubBackedSrtBookUid(bookKey);
+
+/// 独立字幕书（身份 = uid）：没有 Audiobooks 行的字幕书。正文要么由 cue 生成
+/// （bookKey 指向那本生成的 EPUB），要么没有（cue 为空的旧书，bookKey 为空）。
+///
+/// [audiobookKeys] 是本库全部 `Audiobooks.bookKey`。EPUB 有声书的配对行即使
+/// Audiobooks 行丢了也不算：它的正文是用户的书，不是字幕书。
+bool isStandaloneSubtitleBook({
+  required String uid,
+  required String bookKey,
+  required Set<String> audiobookKeys,
+}) {
+  if (bookKey.isEmpty) return true;
+  if (uid == epubBackedSrtBookUid(bookKey)) return false;
+  return !audiobookKeys.contains(bookKey);
+}
+
+/// 用 [cues] 生成独立字幕书的正文 EPUB 并入库，返回正文的 bookKey。
+///
+/// 本机导入（[importStandaloneSubtitleBook]）与互联收包（对端发来的独立字幕书包
+/// 不带正文，收端按同一份 cue 再生成）共用这一份。阅读器按**文本相等**把 cue 配回
+/// 正文，所以正文只能由与库里 cue 相同的那组 cue 生成。[onConverted] 在 EPUB 文件
+/// 写好、开始入库前回调一次（进度用）。
+Future<String> importGeneratedSubtitleBody({
+  required FushiDatabase db,
+  required String uid,
+  required String title,
+  String? author,
+  required List<AudioCue> cues,
+  required DuplicatePolicy policy,
+  Directory? tempDir,
+  void Function()? onConverted,
+}) async {
+  final Directory tmp = tempDir ?? await enginePaths.tempRootDirectory();
+  final File epub = File(p.join(tmp.path, 'cues_to_epub_$uid.epub'));
+  try {
+    await CuesToEpub.convert(
+      title: title,
+      cues: cues,
+      outputPath: epub.path,
+      author: author,
+    );
+    onConverted?.call();
+    return await EpubImporter.importFromPath(
+      db: db,
+      filePath: epub.path,
+      fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
+      policy: policy,
+    );
+  } finally {
+    // 入库时已解包进书目录，库里记的是 fileName，不引用这份临时文件。
+    try {
+      if (await epub.exists()) await epub.delete();
+    } on FileSystemException catch (e, stack) {
+      engineLog.log('importGeneratedSubtitleBody.cleanup', e, stack);
+    }
+  }
+}
+
+/// 字幕书可按 cue 重建的正文行；不该重建时返回 null。
+///
+/// 三道闸门：bookKey 为空（没有正文）、EPUB 有声书的配对行（正文是用户的书，见
+/// [srtBookHasGeneratedBody]）、EpubBooks 行不存在（孤儿字幕书，无处可写）。
+Future<EpubBookRow?> generatedSubtitleBodyRow(
+  FushiDatabase db, {
+  required String uid,
+  required String bookKey,
+}) async {
+  if (!srtBookHasGeneratedBody(uid: uid, bookKey: bookKey)) return null;
+  return db.getEpubBook(bookKey);
+}
+
+/// 用 [cues] 重新生成正文并就地替换 [row] 的解压树与章节元数据。返回是否替换成功；
+/// 失败只记日志并返回 false（旧正文已由原子替换回滚复位：cue 与正文暂时对不上，
+/// 但书仍可读，比让整次导入失败好）。
+Future<bool> rebuildGeneratedSubtitleBody({
+  required FushiDatabase db,
+  required EpubBookRow row,
+  required String uid,
+  required String title,
+  String? author,
+  required List<AudioCue> cues,
+}) async {
+  File? epub;
+  try {
+    final Directory tmp = await enginePaths.tempRootDirectory();
+    epub = File(p.join(tmp.path, 'cues_to_epub_${uid}_rebuild.epub'));
+    await CuesToEpub.convert(
+      title: title,
+      cues: cues,
+      outputPath: epub.path,
+      author: author,
+    );
+    final ({int chapterCount, String chaptersJson, String? coverPath}) parsed =
+        await EpubImporter.rebuildExtractedInPlace(
+          epubFilePath: epub.path,
+          extractDir: row.extractDir,
+        );
+    await db.updateEpubBookChapters(
+      row.bookKey,
+      chapterCount: parsed.chapterCount,
+      chaptersJson: parsed.chaptersJson,
+    );
+    fushiDebugPrint(
+      '[fushi-import] subtitle book body rebuilt key=${row.bookKey} '
+      'chapters=${parsed.chapterCount} cues=${cues.length}',
+    );
+    return true;
+  } catch (e, stack) {
+    engineLog.log('rebuildGeneratedSubtitleBody', e, stack);
+    return false;
+  } finally {
+    try {
+      final File? tmp = epub;
+      if (tmp != null && await tmp.exists()) await tmp.delete();
+    } on FileSystemException catch (e, stack) {
+      engineLog.log('rebuildGeneratedSubtitleBody.cleanup', e, stack);
     }
   }
 }
