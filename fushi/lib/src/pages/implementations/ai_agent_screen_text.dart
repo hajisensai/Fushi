@@ -26,7 +26,14 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart'
     show kSystemOcrModelUnavailableReason;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 附进上下文时用的键（模型在 `screenText` 下读到屏幕全文）。
 const String kAiAgentScreenTextKey = 'screenText';
@@ -77,8 +84,19 @@ AgentUiContext? aiAgentContextWithScreenText(
 
 /// 一场对话里「附上屏幕」的状态：截取中 / 已附上的文字与截图。
 class AiAgentScreenTextAttachment extends ChangeNotifier {
-  AiAgentScreenTextAttachment({AiAgentScreenCapture? capture})
-    : _capture = capture ?? captureScreenText;
+  /// [language] 每次截取时读一次（用户随时可能改默认内容语言），交给系统 OCR；
+  /// 只在没注入 [capture]（真截屏）时用到。
+  AiAgentScreenTextAttachment({
+    AiAgentScreenCapture? capture,
+    required String Function() language,
+  }) : _capture =
+           capture ??
+           (({bool keepImage = false, bool recognize = true}) =>
+               captureScreenText(
+                 keepImage: keepImage,
+                 recognize: recognize,
+                 language: language(),
+               ));
 
   final AiAgentScreenCapture _capture;
 

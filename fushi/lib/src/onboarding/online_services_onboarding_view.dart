@@ -7,7 +7,13 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 描述服务的用户侧准备工作，不持有账号或 API 密钥。

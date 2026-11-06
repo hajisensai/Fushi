@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/recommended_dictionary_installer.dart';
+import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/ops/ctl_dictionary_pack_routes.dart';
 import 'package:fushi/src/ops/ctl_dictionary_json.dart';

@@ -33,9 +33,14 @@ extension _VideoLookupMining on _VideoFushiPageState {
   /// 只是不套待发队列、也不随「制卡到已配对设备」改道）。每次遥控制卡取一份新仓库，
   /// 读的是当下的 Anki 设置；调度器防抖到期跑完一轮即空闲，不挂在页面上——遥控
   /// 打开收藏会替换页面，挂在页面上会把未到期的重排一起丢掉。
+  ///
+  /// 设置存储与 `ankiRepositoryProvider` 的本机链同一份（[WorkScopedAnkiSettingsStore]）：
+  /// 视频作品会话里遥控制的卡与普通制卡落同一个作品配置的牌组（反馈 kEFPY4cuKZ）。
   BaseAnkiRepository _localAutoRepositionAnkiRepository() {
     return withAnkiAutoReposition(
-      ref.read(platformServicesProvider).createAnkiRepository(),
+      ref
+          .read(platformServicesProvider)
+          .createAnkiRepository(settingsStore: WorkScopedAnkiSettingsStore()),
       showFailure: (String message) =>
           _showOsd(message, severity: ToastSeverity.error),
     ).repository;

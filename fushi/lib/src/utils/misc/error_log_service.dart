@@ -729,8 +729,15 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
       // 卡已经冻结进待发队列（媒体都拷走了），对用户而言「收下了」：清草稿、画 ✓、
       // 计入制卡统计与句子历史，与成功同待遇；toast 用蓝色说明它还没进 Anki。
       // 代价：补发时若被 Anki 判重复，统计会多算这一张——可接受。
+      // deckName 非空 = 进的是 Fushi 复习的后台写入队列（不是等着发往 Anki 的待发卡片），
+      // 稍后就写进这个牌组（见 MineOutcome.queued）。
+      final String? queuedDeck = outcome.deckName;
       return (
-        message: t.anki_pending_mine_queued,
+        message: queuedDeck == null
+            ? t.anki_pending_mine_queued
+            : t.srs_mining_background_queued(
+                deck: queuedDeck.isEmpty ? t.srs_mining_target_srs : queuedDeck,
+              ),
         success: true,
         record: !overwrite,
         status: MineToastStatus.queued,

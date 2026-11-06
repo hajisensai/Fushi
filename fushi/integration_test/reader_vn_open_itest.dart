@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 

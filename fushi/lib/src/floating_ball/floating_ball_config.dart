@@ -282,8 +282,9 @@ enum FloatingBallGlobalAction {
   /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
   /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
   ///
-  /// [globalLookupSupported]：这台桌面有没有全局查词覆盖窗（Linux 还没有）。
-  /// 「应用外查词」与「截屏识字」的结果都在那张卡上，没有它就不出现。
+  /// [globalLookupSupported]：这台桌面有没有全局查词覆盖窗（Linux 只在 X11 且
+  /// 带了 `fushi_lookup_card` 时有）。「应用外查词」与「截屏识字」的结果都在那张卡
+  /// 上，没有它就不出现。
   bool availableIn(
     FloatingBallScope scope, {
     required bool isAndroid,

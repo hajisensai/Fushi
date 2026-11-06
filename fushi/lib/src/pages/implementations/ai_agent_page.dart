@@ -33,6 +33,7 @@ import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dar
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show kAiAgentExecutorLocal, kAiAgentExecutorRemote;
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi/src/ocr/screen_text_capture.dart'
     show screenTextCaptureSupported;
 import 'package:fushi/src/ops/app_op_context.dart';
@@ -48,7 +49,22 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
@@ -675,7 +691,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   final Set<String> _undoing = <String>{};
 
   /// 「附上屏幕文字」（§6.4）：附上的文字只跟下一句走。
-  final AiAgentScreenTextAttachment _screenText = AiAgentScreenTextAttachment();
+  final AiAgentScreenTextAttachment _screenText = AiAgentScreenTextAttachment(
+    language: () =>
+        appOpContext?.appModel.prefsRepo.screenOcrLanguage ??
+        kScreenOcrFallbackLanguage,
+  );
 
   AiAgentConversationController get _controller => widget.controller;
 

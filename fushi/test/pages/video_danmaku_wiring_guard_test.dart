@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import '../helpers/video_quick_settings_harness.dart';
 import 'video_fushi_page_source_corpus.dart';
 

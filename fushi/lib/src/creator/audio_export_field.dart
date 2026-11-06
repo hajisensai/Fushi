@@ -2,11 +2,15 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/export_field_search.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart'
     show WordAudioUnavailable, reportWordAudioUnavailable;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// A special kind of field that has a special widget at the top of the creator.
 /// For example, the audio field has a media player that can be controlled

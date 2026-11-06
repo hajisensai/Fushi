@@ -14,7 +14,13 @@ import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 偏好键：上次导出 Anki 包时的选项（String，[SrsAnkiExportOptions.toJson] 的 JSON）。
 /// 与导入选项同理是普通偏好（随 Profile 快照 / 备份走），不进复习的事件存储。
@@ -87,63 +93,57 @@ class _SrsExportOptionsDialogState extends State<SrsExportOptionsDialog> {
       title: Text(t.srs_export_options_title),
       content: SizedBox(
         width: SrsExportOptionsDialog.contentWidth,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: Column(
-              key: const ValueKey<String>('srs-export-options'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
+        child: FushiEntranceScope(
+          child: Column(
+            key: const ValueKey<String>('srs-export-options'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              stagger(
+                AdaptiveSettingsSection(
+                  children: <Widget>[
+                    AdaptiveSettingsSwitchRow(
+                      key: const ValueKey<String>('srs-export-with-scheduling'),
+                      title: t.srs_export_with_scheduling,
+                      subtitle: t.srs_export_with_scheduling_desc,
+                      subtitleMaxLines: 3,
+                      value: o.withScheduling,
+                      onChanged: (bool v) =>
+                          _set(o.copyWith(withScheduling: v)),
+                    ),
+                    AdaptiveSettingsSwitchRow(
+                      key: const ValueKey<String>(
+                        'srs-export-with-deck-configs',
+                      ),
+                      title: t.srs_export_with_deck_configs,
+                      subtitle: t.srs_export_with_deck_configs_desc,
+                      subtitleMaxLines: 3,
+                      value: o.withDeckConfigs,
+                      onChanged: (bool v) =>
+                          _set(o.copyWith(withDeckConfigs: v)),
+                    ),
+                    AdaptiveSettingsSwitchRow(
+                      key: const ValueKey<String>('srs-export-anki-compatible'),
+                      title: t.srs_export_anki_compatible,
+                      subtitle: t.srs_export_anki_compatible_desc,
+                      subtitleMaxLines: 4,
+                      value: o.ankiCompatible,
+                      onChanged: (bool v) =>
+                          _set(o.copyWith(ankiCompatible: v)),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.usesFsrs7 && o.withDeckConfigs) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
                 stagger(
-                  AdaptiveSettingsSection(
-                    children: <Widget>[
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-export-with-scheduling',
-                        ),
-                        title: t.srs_export_with_scheduling,
-                        subtitle: t.srs_export_with_scheduling_desc,
-                        subtitleMaxLines: 3,
-                        value: o.withScheduling,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(withScheduling: v)),
-                      ),
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-export-with-deck-configs',
-                        ),
-                        title: t.srs_export_with_deck_configs,
-                        subtitle: t.srs_export_with_deck_configs_desc,
-                        subtitleMaxLines: 3,
-                        value: o.withDeckConfigs,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(withDeckConfigs: v)),
-                      ),
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-export-anki-compatible',
-                        ),
-                        title: t.srs_export_anki_compatible,
-                        subtitle: t.srs_export_anki_compatible_desc,
-                        subtitleMaxLines: 4,
-                        value: o.ankiCompatible,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(ankiCompatible: v)),
-                      ),
-                    ],
+                  FushiInlineNotice(
+                    key: const ValueKey<String>('srs-export-fsrs7-note'),
+                    message: t.srs_export_fsrs7_note,
                   ),
                 ),
-                if (widget.usesFsrs7 && o.withDeckConfigs) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  stagger(
-                    FushiInlineNotice(
-                      key: const ValueKey<String>('srs-export-fsrs7-note'),
-                      message: t.srs_export_fsrs7_note,
-                    ),
-                  ),
-                ],
               ],
-            ),
+            ],
           ),
         ),
       ),

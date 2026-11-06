@@ -44,7 +44,24 @@ import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
 ///
@@ -1165,13 +1182,10 @@ class _BookImportDialogState extends State<BookImportDialog>
         );
         String? tail;
         if (_epubPath != null && _hasSubtitles) {
-          debugPrint('[fushi-import] → _importEpubWithAlignment');
           tail = await _importEpubWithAlignment(title: title);
         } else if (_hasSubtitles) {
-          debugPrint('[fushi-import] → _importSubtitleBook');
           await _importSubtitleBook(title: title, author: authorText);
         } else {
-          debugPrint('[fushi-import] → _importEpubOnly');
           await _importEpubOnly(title: title);
         }
 

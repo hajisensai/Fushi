@@ -448,6 +448,10 @@ class DesktopScreenOcrCapture {
 
   static const String captureFailed = 'capture_failed';
 
+  /// 截图途中被作废（Linux 的 portal 截图是异步的：期间又点了一次、关了冻结层或
+  /// 关了球）。不是失败，宿主静默收场。
+  static const String cancelled = 'cancelled';
+
   final Uint8List? png;
   final Rect? screen;
   final String? error;

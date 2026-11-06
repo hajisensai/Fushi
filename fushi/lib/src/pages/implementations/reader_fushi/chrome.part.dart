@@ -2437,7 +2437,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     await _openReaderPanel(
       kind,
       initialSettingsTab: initialSettingsTab,
-      navOpensBookmarks: initialSubPage == _kReaderNavSubPageBookmarks,
+      navLanding: initialSubPage == _kReaderNavSubPageBookmarks
+          ? _ReaderNavLanding.bookmarks
+          : _ReaderNavLanding.contents,
     );
   }
 
@@ -2451,13 +2453,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// （它自己画实时秒表）——按当前种类实时增减 [_studyClockModalDepth] 的一层
   /// （[_syncPanelClockHold]），切换种类时跟着变。
   ///
-  /// [navOpensBookmarks]：导航面板直接落在「收藏」页的「书签」段（工具栏「书签」
-  /// 按钮）。只作用于本次会话里**第一次**构建的导航内容——用户随后在面板间切走再
-  /// 切回导航时按普通导航打开。面板已开着时只切种类，不改已建好的导航内容。
+  /// [navLanding]：导航面板直接落在哪一页（工具栏「书签」键 → 书签段；歌词模式
+  /// 「进度跳转」键 → 「按字数跳转」所在的搜索页）。只作用于本次会话里**第一次**
+  /// 构建的导航内容——用户随后在面板间切走再切回导航时按普通导航打开。面板已开着
+  /// 时只切种类，不改已建好的导航内容。
   Future<void> _openReaderPanel(
     String kind, {
     String? initialSettingsTab,
-    bool navOpensBookmarks = false,
+    _ReaderNavLanding navLanding = _ReaderNavLanding.contents,
   }) async {
     if (_settings == null || _controller == null || _book == null) return;
     final ValueNotifier<String>? live = _panelKind;
@@ -2500,7 +2503,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ? <Bookmark>[]
           : List<Bookmark>.of(await _bookmarksForBook());
       if (!mounted) return;
-      bool openBookmarksPending = navOpensBookmarks;
+      _ReaderNavLanding landingPending = navLanding;
       _panelKind = notifier;
       _syncPanelClockHold(kind);
       notifier.addListener(onKindChanged);
@@ -2534,10 +2537,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   favorites: favorites,
                   favRepo: favRepo,
                   bookmarks: bookmarks,
-                  openBookmarks: () {
-                    if (current != _kReaderPanelNavigation) return false;
-                    final bool pending = openBookmarksPending;
-                    openBookmarksPending = false;
+                  navLanding: () {
+                    if (current != _kReaderPanelNavigation) {
+                      return _ReaderNavLanding.contents;
+                    }
+                    final _ReaderNavLanding pending = landingPending;
+                    landingPending = _ReaderNavLanding.contents;
                     return pending;
                   },
                   initialSettingsTab: initialSettingsTab,
@@ -2610,14 +2615,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 某一类面板的内容（外壳 / 页头由各自的 [ReaderSideSheet] 画）。
   ///
-  /// [openBookmarks] 在构建导航内容时问一次「这次要不要直达书签段」（一次性旗，
-  /// 见 [_openReaderPanel] 的 navOpensBookmarks）。
+  /// [navLanding] 在构建导航内容时问一次「这次直达哪一页」（一次性，见
+  /// [_openReaderPanel] 的 navLanding）。
   Widget _buildReaderPanelContent(
     String kind, {
     required List<FavoriteSentence> favorites,
     required FavoriteSentenceRepository favRepo,
     required List<Bookmark> bookmarks,
-    required bool Function() openBookmarks,
+    required _ReaderNavLanding Function() navLanding,
     String? initialSettingsTab,
   }) {
     switch (kind) {
@@ -2628,7 +2633,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           favorites: favorites,
           favRepo: favRepo,
           bookmarks: bookmarks,
-          openBookmarks: openBookmarks(),
+          navLanding: navLanding(),
           presentation: ReaderQuickSettingsPresentation.sideSheetNavigation,
           initialSubPage: 'location',
         );
@@ -2728,7 +2733,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     required FavoriteSentenceRepository favRepo,
     required List<Bookmark> bookmarks,
     required ReaderQuickSettingsPresentation presentation,
-    bool openBookmarks = false,
+    _ReaderNavLanding navLanding = _ReaderNavLanding.contents,
     String? initialSubPage,
     String? initialSettingsTab,
   }) {
@@ -2837,14 +2842,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       charProgress: _progressCurrentChars != null && _progressTotalChars != null
           ? (_progressCurrentChars!, _progressTotalChars!)
           : null,
-      // BUG-2596：导航抽屉在歌词模式也开放（跳章走音频定位）。字数跳转 / 书内搜索
-      // 是正文文档上的定位，歌词页里没有目标——传 null 让面板按既有契约不渲染这两
-      // 段，而不是留一个会把歌词页换成正文章的入口。
-      onJumpToCharOffset: _lyricsMode
-          ? null
-          : (globalOffset) async {
-              _jumpToGlobalCharOffset(globalOffset);
-            },
+      // 字数跳转（进度跳转）在歌词模式同样开放：[_jumpToGlobalCharOffset] 在歌词
+      // 模式把目标字数换成那句音频定位（与 BUG-2596 的跳章同一语义），不碰正文
+      // 文档。书内搜索仍只在正文接（歌词模式的「搜索」页搜字幕 cue，见下）。
+      onJumpToCharOffset: (int globalOffset) =>
+          _jumpToGlobalCharOffset(globalOffset),
       epubBook: _book,
       chapterLabel: _currentChapterLabel(),
       onSearchJump: _lyricsMode ? null : _jumpToSearchResult,
@@ -2861,7 +2863,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 书签：书的稳定 uid 缺失时整段不接线（面板按回调为空不出书签段）。加 / 删
       // 同步写回会话列表 [bookmarks]（见 [_openReaderPanel]）。
       bookmarks: bookmarks,
-      openBookmarks: openBookmarks,
+      openBookmarks: navLanding == _ReaderNavLanding.bookmarks,
+      openPositionJump: navLanding == _ReaderNavLanding.positionJump,
       resolveBookmarkPage: _bookUid == null
           ? null
           : () async => (await _bookmarkPagePosition())?.range,
@@ -2915,8 +2918,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
       volumeSwitch: _tocVolumeSwitch(),
-      // 歌词模式的「搜索」页搜字幕（音频 cue）：正文搜索 / 字数跳转在歌词页里没有
-      // 目标（见上 onJumpToCharOffset），字幕才是歌词页上看得见的东西。
+      // 歌词模式的「搜索」页搜字幕（音频 cue）：正文搜索在歌词页里没有目标，字幕
+      // 才是歌词页上看得见的东西。
       lyricsCueSearch: _lyricsMode ? _lyricsCueSearch() : null,
       audioJumpMarks: () => _audioJumpMarks() ?? _kNoJumpMarks,
       bookJumpMarks: () => _bookJumpMarks() ?? _kNoJumpMarks,
@@ -3324,7 +3327,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final Color fg = _themeTextColor();
     final ReaderControlLayout layout = _controlLayout;
     return Positioned(
-      top: _stableTopInset,
+      top: _topChromeInset,
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
@@ -3387,7 +3390,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     ];
     return Positioned(
       key: const ValueKey<String>('fushi_floating_header'),
-      top: _stableTopInset + kReaderFloatingBarMargin,
+      top: _topChromeInset + kReaderFloatingBarMargin,
       left: viewPadding.left + kReaderFloatingBarMargin,
       right: viewPadding.right + kReaderFloatingBarMargin,
       child: RepaintBoundary(
@@ -3906,7 +3909,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           );
 
     return Positioned(
-      top: _stableTopInset,
+      top: _topChromeInset,
       left: 16,
       right: 16,
       child: Align(
@@ -4231,12 +4234,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
                       length: _cachedSelectionRange!.length,
                     )
                   : null);
-    debugPrint(
-      '[fushi-hl] toggleFavorite: '
-      'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
-      'cachedSentence=${_cachedSentenceRange != null} '
-      'cachedSelection=${_cachedSelectionRange != null}',
-    );
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
       appModel.database,
     );
@@ -4993,3 +4990,15 @@ const String _kReaderPanelStatistics = 'statistics';
 /// [_showAppearanceSheet] 的 initialSubPage：打开导航面板并直达「收藏」页的书签段
 /// （工具栏「书签」按钮，[ReaderControlItem.bookmarks]）。
 const String _kReaderNavSubPageBookmarks = 'bookmarks';
+
+/// 导航面板打开时直达的页（[_openReaderPanel] 的 navLanding）。
+enum _ReaderNavLanding {
+  /// 普通打开：落目录（没有目录时落第一页）。
+  contents,
+
+  /// 「收藏」页的书签段（工具栏「书签」键）。
+  bookmarks,
+
+  /// 「按字数跳转」所在的搜索页（歌词模式「进度跳转」键）。
+  positionJump,
+}

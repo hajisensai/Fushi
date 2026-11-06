@@ -8,7 +8,7 @@
 // 这类几何断言不能只 `findsOneWidget`——被裁的标签照样 find 得到。
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'lapis_style_editor_harness.dart';
 

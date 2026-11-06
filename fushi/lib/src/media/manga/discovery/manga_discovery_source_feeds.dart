@@ -12,7 +12,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// 一条可渲染的来源条目：标题 + 封面构建器 + 打开动作。
 class MangaDiscoverySourceItem {

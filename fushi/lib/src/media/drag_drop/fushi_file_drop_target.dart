@@ -7,7 +7,8 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// File drop callback. [globalPosition] uses Flutter global/view coordinates,
 /// matching rectangles produced by RenderBox.localToGlobal.
@@ -179,12 +180,8 @@ class _FushiFileDropTargetState extends State<FushiFileDropTarget> {
         );
         _setHovering(active);
       },
-      onDragUpdated: (DropEventDetails detail) {
-        widget._log(
-          'update active=${widget.enabled && dropSurfaceActive(context)} '
-          'local=${detail.localPosition} global=${detail.globalPosition}',
-        );
-      },
+      // 不挂 onDragUpdated：拖动中指针每动一下就触发一次，逐次打日志只会把反馈日志的
+      // 环形缓冲刷满。进入 / 离开 / 放下三个边沿已足够还原一次拖放走了哪条路径。
       onDragExited: (DropEventDetails detail) {
         widget._log(
           'exit active=${widget.enabled && dropSurfaceActive(context)} '

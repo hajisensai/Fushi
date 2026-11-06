@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 /// 2026-10 导航侧板 M3E 重做：目录层级（parent 链 / 旧 depth 口径）、当前章
 /// 高亮、搜索命中高亮、分段页签与 TabController 同步。

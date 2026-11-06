@@ -748,6 +748,8 @@ class AnotherPopupPart {
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
           'Card-face pitch accent badge digit scales with the card term size (0.42x, floor 9) and follows the user card text size; card content typography, not page chrome.',
+      'lib/src/pages/implementations/srs/srs_html_card_view.dart':
+          'Native HTML card face: every fontSize: is the computed CSS font-size of the note\'s own card HTML (times the card zoom), and the <details> marker is 0.7x its summary\'s computed size; card content typography, not page chrome (same class as srs_fushi_card_view).',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
@@ -1245,7 +1247,9 @@ class AnotherPopupPart {
           kSharedComponentImplementation,
       // settings kit（2026-10）：设置模块的共享设计积木（M3E 形状色块 / 胶囊
       // 搜索栏 / 浮动页头 + Apple 分支的 iOS 字号），同「共享原语本身」类。
-      'lib/src/settings/settings_kit.dart': kSharedComponentImplementation,
+      // 2026-11 拆环后积木本体在 settings_kit_core.dart，settings_kit.dart 只剩
+      // schema 装配、不再含被审 token。
+      'lib/src/settings/settings_kit_core.dart': kSharedComponentImplementation,
       'lib/src/utils/adaptive/adaptive_navigation.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_bottom_action_bar.dart':
@@ -1261,7 +1265,7 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_placeholder_message.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_tag.dart': kSharedComponentImplementation,
-      'lib/src/utils/components/library_section_tabs.dart':
+      'lib/src/pages/shared/library_section_tabs.dart':
           kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
@@ -1344,6 +1348,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/srs/srs_html_card_view.dart': <String>{
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{
@@ -1593,7 +1600,7 @@ class AnotherPopupPart {
         'BorderRadius.circular(',
         'fontSize:',
       },
-      'lib/src/settings/settings_kit.dart': <String>{'fontSize:'},
+      'lib/src/settings/settings_kit_core.dart': <String>{'fontSize:'},
       'lib/src/settings/settings_home_page.dart': <String>{'fontSize:'},
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
@@ -1643,9 +1650,7 @@ class AnotherPopupPart {
         'SwitchListTile(',
         'CheckboxListTile(',
       },
-      'lib/src/utils/components/library_section_tabs.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/pages/shared/library_section_tabs.dart': <String>{'fontSize:'},
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
     };
 

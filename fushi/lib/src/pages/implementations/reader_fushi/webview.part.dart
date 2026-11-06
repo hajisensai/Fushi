@@ -194,9 +194,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
             data: fileBytes,
           );
       final Uint8List data = fixed.data;
-      debugPrint(
-        '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
-      );
       final String mime = fixed.mime ?? fallbackMimeType(safeFontPath);
       return _ReaderResourceResponse(
         contentType: mime,
@@ -2209,6 +2206,7 @@ updateLive: function(patch) {
               'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
+        WebViewMenuDismissBridge.userScript,
       ]),
       initialSettings: InAppWebViewSettings(
         // BUG-468：Windows 上右键会同时弹两个菜单——Fushi 自定义的 Flutter 菜单
@@ -2267,6 +2265,8 @@ updateLive: function(patch) {
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        notifyPopupBodyWebViewChanged();
+        _bodyMenuDismiss.attach(controller);
         _openTrace.mark('webViewCreated');
         assert(() {
           // TODO-2603：调试钩子的生命周期属于**本页 State**，不属于单个 WebView

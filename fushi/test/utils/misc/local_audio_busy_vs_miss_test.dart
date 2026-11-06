@@ -304,7 +304,7 @@ void main() {
 
   group('BUG-1413 源码守卫：查询预算耗尽不得再被吞成同形 null', () {
     final String playbackSrc = File(
-      'lib/src/utils/misc/lookup_audio_playback.dart',
+      'lib/src/lookup/lookup_audio_playback.dart',
     ).readAsStringSync();
     final String dbSrc = File(
       'lib/src/utils/misc/local_audio_db.dart',

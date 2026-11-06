@@ -7,7 +7,7 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 /// 在线作品页「移出书架」的确认框：与书架长按删除**同一个**对话框（披露 + 「同步

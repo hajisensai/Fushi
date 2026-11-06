@@ -8,10 +8,12 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
-import 'package:fushi/src/storage/storage_usage_actions.dart';
+import 'package:fushi/src/settings/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
   late Directory tempRoot;

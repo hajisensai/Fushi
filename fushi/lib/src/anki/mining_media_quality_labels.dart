@@ -1,4 +1,5 @@
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 制卡图片 / GIF 清晰度各档的名字（下标 = 档位，低 → 高）。
 List<String> miningImageQualityTierNames() => <String>[

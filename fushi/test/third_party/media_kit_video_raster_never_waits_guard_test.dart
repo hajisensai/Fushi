@@ -92,6 +92,78 @@ void main() {
     );
   });
 
+  // The engine side of the keyed mutex (engine-d3d-keyed-mutex.patch): the
+  // raster thread copies the shared texture into an engine-owned one under key
+  // 0 and never samples it directly, never waits for the key, and only does
+  // D3D11 immediate-context calls once ANGLE's device is multithread protected.
+  group('engine keyed mutex patch', () {
+    String enginePatch() {
+      final Iterable<File> patches = Directory('../ci/patches/flutter-engine')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('engine-d3d-keyed-mutex.patch'));
+      expect(patches, hasLength(1), reason: 'one keyed mutex engine patch');
+      // Only the added lines: context lines are the stock engine.
+      return patches.single
+          .readAsLinesSync()
+          .where((String l) => l.startsWith('+') && !l.startsWith('+++'))
+          .join('\n');
+    }
+
+    test('acquires without waiting, copies, releases at once', () {
+      final String patch = enginePatch();
+      final int acquire = patch.indexOf('AcquireSync(0, 0)');
+      final int copy = patch.indexOf(
+        'CopyResource(private_texture_.Get(), shared_texture_.Get())',
+      );
+      final int release = patch.indexOf('ReleaseSync(0)');
+      expect(acquire, isNonNegative, reason: 'raster thread must never wait');
+      expect(copy, greaterThan(acquire));
+      expect(release, greaterThan(copy));
+      // WAIT_TIMEOUT is a success HRESULT: it must be told apart from S_OK.
+      expect(patch, contains('static_cast<HRESULT>(WAIT_TIMEOUT)'));
+    });
+
+    test('GL binds the engine-owned copy, not the keyed share handle', () {
+      final String patch = enginePatch();
+      expect(
+        patch,
+        contains('reinterpret_cast<EGLClientBuffer>(private_texture_.Get())'),
+      );
+      expect(patch, contains('EGL_D3D_TEXTURE_ANGLE'));
+      expect(patch, contains('D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX'));
+    });
+
+    test('ANGLE device is multithread protected before the copy is used', () {
+      final String patch = enginePatch();
+      expect(patch, contains('SetMultithreadProtected(TRUE)'));
+      expect(patch, contains('protected_device()'));
+    });
+
+    test('plugin turns the keyed mutex on only behind the engine export', () {
+      final String patch = enginePatch();
+      const String export = 'FlutterDesktopGpuSurfaceSupportsKeyedMutex';
+      expect(patch, contains('FLUTTER_EXPORT bool $export()'));
+      final String manager = code(managerSourcePath);
+      expect(manager, contains('GetProcAddress('));
+      expect(manager, contains('"$export"'));
+      // The keyed-mutex flag is only applied when the export says yes.
+      final String create = functionBody(manager, 'CreateD3DTexture');
+      final int gate = create.indexOf('EngineSyncsKeyedMutexTextures()');
+      final int flag = create.indexOf('D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX');
+      expect(gate, isNonNegative);
+      expect(flag, greaterThan(gate));
+      // Draw writes the shared texture under key 0.
+      final String draw = functionBody(manager, 'Draw');
+      final int acquire = draw.indexOf('keyed_mutex_->AcquireSync(0,');
+      final int copy = draw.indexOf('CopyResource(', acquire);
+      final int release = draw.indexOf('keyed_mutex_->ReleaseSync(0)');
+      expect(acquire, isNonNegative);
+      expect(copy, greaterThan(acquire));
+      expect(release, greaterThan(copy));
+    });
+  });
+
   test('Draw publishes the frame into the shared texture after glFinish', () {
     final String draw = functionBody(code(managerSourcePath), 'Draw');
     final int finish = draw.indexOf('SwapBuffers();');

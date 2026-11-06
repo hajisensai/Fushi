@@ -7,7 +7,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
@@ -183,6 +183,73 @@ void main() {
       isNull,
       reason: '远程图片原生画不了 → 整面 WebView',
     );
+  });
+
+  testWidgets('预览宿主：非 Fushi 卡两面原生画得全走原生 HTML 卡面，带脚本 / Fushi 类型走 WebView', (
+    WidgetTester tester,
+  ) async {
+    final List<SrsCardFace> webFaces = <SrsCardFace>[];
+    Future<void> show({
+      required String front,
+      bool fushiCard = false,
+      bool answer = false,
+    }) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith(
+              (Ref ref) => AppModel(testPlatformServices()),
+            ),
+            srsCardFaceBuilderProvider.overrideWithValue((
+              BuildContext context,
+              SrsCardFace face,
+            ) {
+              webFaces.add(face);
+              return SrsPlainCardFace(face: face);
+            }),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(
+                body: SrsStablePreviewFace(
+                  face: SrsCardFace(
+                    cardId: 'preview',
+                    showingAnswer: answer,
+                    bodyHtml: answer ? 'back' : front,
+                    css: '.card{text-align:center}',
+                    languageCode: 'ja',
+                    fushiCard: fushiCard,
+                    onBridgeKey: (_) {},
+                  ),
+                  sides: (question: front, answer: 'back'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    await show(front: '<b>図書館</b>');
+    expect(_key('srs-preview-html-face'), findsOneWidget);
+    expect(find.textContaining('図書館'), findsWidgets);
+    expect(webFaces, isEmpty);
+
+    await show(front: '<b>図書館</b>', answer: true);
+    expect(_key('srs-preview-html-face'), findsOneWidget);
+    expect(find.textContaining('back'), findsWidgets);
+    expect(webFaces, isEmpty);
+
+    await show(front: '図書館<script>void 0;</script>');
+    expect(_key('srs-preview-html-face'), findsNothing);
+    expect(webFaces, isNotEmpty, reason: '卡片脚本原生跑不了 → 整面 WebView');
+
+    webFaces.clear();
+    await show(front: '<b>図書館</b>', fushiCard: true);
+    expect(_key('srs-preview-html-face'), findsNothing);
+    expect(webFaces, isNotEmpty, reason: '改过模板的 Fushi 卡片要 WebView 注入外观设置');
+    await _unmount(tester);
   });
 
   for (final bool apple in <bool>[false, true]) {

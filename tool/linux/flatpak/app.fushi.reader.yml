@@ -17,6 +17,11 @@ finish-args:
   # it, so the backend is pinned as well.
   - --socket=x11
   - --env=GDK_BACKEND=x11
+  # Wayland too, but not for drawing (GDK_BACKEND stays x11): the selection
+  # lookup reads the compositor's primary selection through data control
+  # (linux/runner/wayland_selection.h), because KWin only copies a Wayland
+  # app's selection into X11 while an X11 window has focus.
+  - --socket=wayland
   - --socket=pulseaudio
   # GPU + gamepads (/dev/input).
   - --device=all

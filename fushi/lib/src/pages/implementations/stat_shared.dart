@@ -13,7 +13,26 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
@@ -1018,58 +1037,56 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
       // 内容可能变高：横屏/小窗下用滚动兜底，不再顶到溢出。
       content: SizedBox(
         width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              FushiTextFieldControl(
-                key: const ValueKey<String>('stat-goal-daily-field'),
-                controller: _daily,
-                keyboardType: TextInputType.number,
-                style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
-                    .copyWith(fontWeight: FontWeight.w700),
-                decoration: filled(label: t.stat_goal_daily),
-              ),
-              if (average > 0) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: FushiActionChipControl(
-                    key: const ValueKey<String>('stat-goal-average-chip'),
-                    avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
-                    label: Text(t.stat_goal_recent_average(n: average)),
-                    onPressed: () => _applyPreset(average),
-                  ),
-                ),
-              ],
-              SizedBox(height: tokens.spacing.card),
-              Text(
-                t.stat_goal_presets,
-                style: context.fushiType.titleSmallEmphasized,
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiTextFieldControl(
+              key: const ValueKey<String>('stat-goal-daily-field'),
+              controller: _daily,
+              keyboardType: TextInputType.number,
+              style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
+                  .copyWith(fontWeight: FontWeight.w700),
+              decoration: filled(label: t.stat_goal_daily),
+            ),
+            if (average > 0) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
-              FushiConnectedButtonGroup<int>(
-                key: const ValueKey<String>('stat-goal-presets'),
-                showSelectedIcon: false,
-                emptySelectionAllowed: true,
-                expandedInsets: EdgeInsets.zero,
-                segments: <ButtonSegment<int>>[
-                  for (final int preset in StatGoalEditDialog.presets)
-                    ButtonSegment<int>(
-                      value: preset,
-                      label: Text(formatStatCharsAxis(preset)),
-                    ),
-                ],
-                selected: StatGoalEditDialog.presets.contains(daily)
-                    ? <int>{daily}
-                    : const <int>{},
-                onSelectionChanged: (Set<int> picked) {
-                  if (picked.isNotEmpty) _applyPreset(picked.first);
-                },
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiActionChipControl(
+                  key: const ValueKey<String>('stat-goal-average-chip'),
+                  avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
+                  label: Text(t.stat_goal_recent_average(n: average)),
+                  onPressed: () => _applyPreset(average),
+                ),
               ),
             ],
-          ),
+            SizedBox(height: tokens.spacing.card),
+            Text(
+              t.stat_goal_presets,
+              style: context.fushiType.titleSmallEmphasized,
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            FushiConnectedButtonGroup<int>(
+              key: const ValueKey<String>('stat-goal-presets'),
+              showSelectedIcon: false,
+              emptySelectionAllowed: true,
+              expandedInsets: EdgeInsets.zero,
+              segments: <ButtonSegment<int>>[
+                for (final int preset in StatGoalEditDialog.presets)
+                  ButtonSegment<int>(
+                    value: preset,
+                    label: Text(formatStatCharsAxis(preset)),
+                  ),
+              ],
+              selected: StatGoalEditDialog.presets.contains(daily)
+                  ? <int>{daily}
+                  : const <int>{},
+              onSelectionChanged: (Set<int> picked) {
+                if (picked.isNotEmpty) _applyPreset(picked.first);
+              },
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

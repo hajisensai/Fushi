@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show domMouseButtonFromPointerButtons;
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
+import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart'
     show isTouchLikePointer, swipeDismissThreshold;
 
 /// BUG-1757：查词弹窗全屏 dismiss barrier 的**唯一**构造入口。

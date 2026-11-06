@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import WidgetKit
 
@@ -18,22 +19,33 @@ struct FushiWidgetEntry: TimelineEntry {
 }
 
 /// 所有小组件共用一份快照（与 Android Glance 同一份 JSON）。数据变化时 app 主动
-/// `reloadAllTimelines()`，这里不轮询；只让系统隔几小时再来要一次，读回 app 期间可能已经
-/// 写下的新快照。
+/// `reloadAllTimelines()`，这里不轮询。timeline 节点 = 现在 + 复习逐小时预排
+/// （`srs.timeline`）+ 下一个统计日边界（`rollover.at`）：不开 app，待复习数也会随卡片到期
+/// 上涨，今日 / 连续天数 / 热力图会在零点换日。预排用完（24 小时）再让系统来要一次。
 struct FushiSnapshotProvider: TimelineProvider {
   func placeholder(in context: Context) -> FushiWidgetEntry {
     FushiWidgetEntry(date: Date(), snapshot: FushiWidgetPreview.snapshot)
   }
 
   func getSnapshot(in context: Context, completion: @escaping (FushiWidgetEntry) -> Void) {
+    let now = Date()
     let snapshot = FushiWidgetSnapshot.load() ?? (context.isPreview ? FushiWidgetPreview.snapshot : nil)
-    completion(FushiWidgetEntry(date: Date(), snapshot: snapshot))
+    completion(FushiWidgetEntry(date: now, snapshot: snapshot?.resolved(at: now)))
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<FushiWidgetEntry>) -> Void) {
-    let now = Date()
-    let entry = FushiWidgetEntry(date: now, snapshot: FushiWidgetSnapshot.load())
-    completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(6 * 3600))))
+    completion(Self.timeline(snapshot: FushiWidgetSnapshot.load(), now: Date()))
+  }
+
+  /// 纯函数（离屏校验也用）：每个节点各自按该时刻 [FushiWidgetSnapshot.resolved(at:)]。
+  static func timeline(snapshot: FushiWidgetSnapshot?, now: Date) -> Timeline<FushiWidgetEntry> {
+    let horizon = now.addingTimeInterval(24 * 3600)
+    guard let snapshot else {
+      return Timeline(entries: [FushiWidgetEntry(date: now, snapshot: nil)], policy: .after(horizon))
+    }
+    let dates = [now] + snapshot.changeDates(after: now, until: horizon)
+    let entries = dates.map { FushiWidgetEntry(date: $0, snapshot: snapshot.resolved(at: $0)) }
+    return Timeline(entries: entries, policy: .after(horizon))
   }
 }
 
@@ -45,7 +57,8 @@ enum FushiWidgetPreview {
       day: "2026-01-01",
       generatedAt: now,
       shelf: [
-        .init(kind: "book", id: "preview", title: "Book", subtitle: "Author", progress: 0.63, position: "63%")
+        .init(kind: "book", id: "preview", title: "Book", subtitle: "Author", progress: 0.63, position: "63%"),
+        .init(kind: "game", id: "preview-game", title: "Game", subtitle: ""),
       ],
       today: .init(time: "42 min", chars: "8,400", streak: 17),
       month: .init(
@@ -55,7 +68,8 @@ enum FushiWidgetPreview {
       vocab: [.init(term: "言葉", definition: "word; language")],
       nowPlaying: .init(
         kind: "audiobook", title: "Audiobook", subtitle: "Author", positionMs: 30, durationMs: 100,
-        link: FushiLinks.open))
+        link: FushiLinks.open),
+      heatmap: .init(levels: (0..<112).map { ($0 * 7 + 3) % 5 }, firstWeekday: 1, time: "64 h", activeDays: 90))
   }
 }
 
@@ -89,14 +103,20 @@ struct FushiCoverImage: View {
   let path: String?
   let kind: String
   var cornerRadius: CGFloat = 8
+  /// 解码上限（点）：按显示尺寸降采样，避免整张原图进小组件的内存配额。
+  var maxPoint: CGFloat = 220
 
   var body: some View {
     Group {
-      if let image = FushiPlatformImage.load(path) {
-        image
-          .resizable()
-          .widgetAccentedRenderingModeIfAvailable()
-          .aspectRatio(contentMode: .fill)
+      if let image = FushiPlatformImage.load(path, maxPoint: maxPoint) {
+        // `.fill` 的图会按原图比例撑出父框；先用 Color.clear 吃下父级给的框，再把图铺在
+        // overlay 里，最后 clipShape 才能真的裁住（BUG：大号「继续」封面溢出盖满整个组件）。
+        Color.clear.overlay {
+          image
+            .resizable()
+            .widgetAccentedRenderingModeIfAvailable()
+            .aspectRatio(contentMode: .fill)
+        }
       } else {
         ZStack {
           LinearGradient(
@@ -169,15 +189,28 @@ struct FushiEmptyState: View {
 
 /// App Group 里的封面缩略图 → SwiftUI Image（iOS UIImage / macOS NSImage）。
 enum FushiPlatformImage {
-  static func load(_ path: String?) -> Image? {
-    guard let url = FushiAppGroup.resolve(path) else { return nil }
-    #if os(iOS)
-      guard let image = UIImage(contentsOfFile: url.path) else { return nil }
-      return Image(uiImage: image)
-    #else
-      guard let image = NSImage(contentsOf: url) else { return nil }
-      return Image(nsImage: image)
-    #endif
+  #if os(iOS)
+    static let scale: CGFloat = 3
+  #else
+    static let scale: CGFloat = 2
+  #endif
+
+  /// 按 `maxPoint`（长边，点）用 ImageIO 降采样解码；图的点尺寸 ≤ `maxPoint`。
+  /// Live Activity 要求图片不大于所在呈现区域，否则灵动岛紧凑位只画一块灰占位。
+  static func load(_ path: String?, maxPoint: CGFloat) -> Image? {
+    guard let url = FushiAppGroup.resolve(path),
+      let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+    else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(1, Int(maxPoint * scale)),
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+      return nil
+    }
+    return Image(decorative: cgImage, scale: scale)
   }
 }
 

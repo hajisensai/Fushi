@@ -7,9 +7,10 @@ import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiRichTooltip;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -27,7 +28,26 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show isAchromaticSeed, kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:material_color_utilities/material_color_utilities.dart' as mcu;
 
 /// 自定义主题编辑页里可改的颜色「角色」——按用户看得见的用途命名，不按 Material

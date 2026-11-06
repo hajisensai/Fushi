@@ -15,7 +15,10 @@ import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 
 /// 通用磁力推送的结果（调用方据此弹提示）。

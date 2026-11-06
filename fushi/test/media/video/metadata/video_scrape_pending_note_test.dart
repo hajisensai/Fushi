@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 
 /// BUG-2828：挂起原因标记的编解码与本地化。

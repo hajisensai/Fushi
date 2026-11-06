@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
-import 'package:fushi/utils.dart' show UpdateChecker;
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqlite3/sqlite3.dart' as sqlite;

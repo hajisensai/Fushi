@@ -36,6 +36,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart'
+    show srsFushiBlockLabel;
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
@@ -45,7 +47,20 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 class SrsNoteEditorPage extends ConsumerStatefulWidget {
@@ -233,15 +248,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     );
   }
 
-  static String _blockLabel(FushiCardBlock b) => switch (b) {
-    FushiCardBlock.term => t.srs_note_block_term,
-    FushiCardBlock.reading => t.srs_note_block_reading,
-    FushiCardBlock.picture => t.srs_note_block_picture,
-    FushiCardBlock.sentence => t.srs_note_block_sentence,
-    FushiCardBlock.definitions => t.srs_note_block_definitions,
-    FushiCardBlock.frequency => t.srs_note_block_frequency,
-    FushiCardBlock.source => t.srs_note_block_source,
-  };
+  static String _blockLabel(FushiCardBlock b) => srsFushiBlockLabel(b);
 
   /// 一列分组字段：组标题（有的话）+ 字段，组与组之间多空一点。
   List<Widget> _groupedFields(

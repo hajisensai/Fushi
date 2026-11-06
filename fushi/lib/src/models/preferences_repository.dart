@@ -45,7 +45,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
-import 'package:fushi/src/sync/hidden_remote_books.dart'
+import 'package:fushi/src/sync/hidden_remote_book.dart'
     show HiddenRemoteBook, decodeHiddenRemoteBooks, encodeHiddenRemoteBooks;
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
     show
@@ -131,6 +131,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
@@ -403,10 +404,37 @@ class PreferencesRepository extends ChangeNotifier
   /// 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，作品级键（阅读样式 / 悬浮字幕样式）
   /// 的读写改走 [WorkProfileScope] 的会话覆盖层，全局偏好不动。只读视图不参与。
   bool _workScoped(String key) =>
-      !_readOnly && WorkProfileScope.instance.overrides(key);
+      !_readOnly &&
+      _bypassWorkScope == 0 &&
+      WorkProfileScope.instance.overrides(key);
+
+  /// [withoutWorkScope] 嵌套深度；> 0 时读侧跳过作品会话覆盖层。
+  int _bypassWorkScope = 0;
+
+  /// 同步执行 [read]，期间作品级键读的是**全局**（激活配置）值，不叠本机作品会话。给替别的
+  /// 设备 / 浏览器扩展制卡的链路用（`hostMiningAnkiRepositoryProvider`）：主机此刻打开着哪本书
+  /// 与对端无关。[read] 必须是同步的（Dart 单线程，期间不会有别的读交错进来）。
+  T withoutWorkScope<T>(T Function() read) {
+    _bypassWorkScope++;
+    try {
+      return read();
+    } finally {
+      _bypassWorkScope--;
+    }
+  }
 
   /// 作品级配置会话装上 / 撤下后通知监听者重读（偏好值本身由 getter 动态解析）。
   void notifyWorkProfileScopeChanged() => notifyListeners();
+
+  /// 主进程发布的当前作品会话（见 [kWorkProfileSessionPrefKey]；空串 = 没有会话）。
+  String get workProfileSession =>
+      getPref(kWorkProfileSessionPrefKey, defaultValue: '') as String;
+
+  /// 主进程发布作品会话；与已存值相同就不写（不白白递增 `prefs_version` 让弹窗重载）。
+  Future<void> setWorkProfileSession(String value) async {
+    if (workProfileSession == value) return;
+    await setPref(kWorkProfileSessionPrefKey, value);
+  }
 
   Future<void> refreshFromDb() async {
     await loadFromDb();
@@ -661,6 +689,11 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('default_content_language', language);
     notifyListeners();
   }
+
+  /// 截屏识字（悬浮球 / 桌面冻结层 / 拍照 / 浏览器图片 / AI 读屏）送给系统 OCR
+  /// 的语言：跟随 [defaultContentLanguage]，没设时日语（[resolveScreenOcrLanguage]）。
+  String get screenOcrLanguage =>
+      resolveScreenOcrLanguage(defaultContentLanguage);
 
   // ── 库页排序方式（排序交互重设计 2026-07-12）──────────────────────────
 
@@ -4004,6 +4037,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsCardAppearance(String json) async {
     await setPref('srs_card_appearance', json);
+    notifyListeners();
+  }
+
+  // 挖词目标 = Fushi 复习时的「后台制卡」（反馈 Rl00Di264R）：开着时制卡请求冻结进后台
+  // 写入队列立即返回，不等截图之后的媒体存盘 / 单词音频下载 / 落库。默认关：关着时制卡
+  // 照旧同步返回笔记句柄（弹窗可立即覆写 / 撤销）。
+  bool get srsMiningBackground =>
+      getPref('srs_mining_background', defaultValue: false) as bool;
+
+  Future<void> setSrsMiningBackground({required bool value}) async {
+    await setPref('srs_mining_background', value);
     notifyListeners();
   }
 

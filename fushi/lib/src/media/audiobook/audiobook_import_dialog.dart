@@ -37,7 +37,21 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 有声书导入/移除对话框。
 ///
@@ -838,10 +852,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return;
     }
 
-    debugPrint(
-      '[fushi-audiobook] doImport bookKey.len=${widget.bookKey.length} '
-      'hash=${widget.bookKey.hashCode} key=${widget.bookKey}',
-    );
     setState(() => importing = true);
     reportProgress(0, '');
 
@@ -1262,7 +1272,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {
-    debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookKey}');
     final AppModel appModel = ProviderScope.containerOf(
       context,
       listen: false,
@@ -1290,7 +1299,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ? t.delete_local_files_audio_desc
           : null,
     );
-    debugPrint('AudiobookImportDialog: decision=$decision');
     if (decision == null) return;
 
     try {

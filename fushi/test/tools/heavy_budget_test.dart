@@ -283,4 +283,42 @@ void main() {
     expect(heavyCapHit(12250, 12288), isTrue);
     expect(heavyCapHit(9000, 12288), isFalse);
   });
+
+  // 2026-11-05：测试按 import 闭包与测试进程数预定，不再一律订 12 GB 上限。
+  test('testBookMb: small / large closure, extra testers, ceiling', () {
+    final int cap = heavyNeedFor(HeavyKind.test).capMb;
+    expect(testBookMb(closureFiles: null, testers: 1), cap);
+    expect(testBookMb(closureFiles: 1039, testers: 1), 4096);
+    expect(testBookMb(closureFiles: 8683, testers: 1), 6144);
+    expect(testBookMb(closureFiles: 8683, testers: 4), 6144 + 3 * 512);
+    expect(testBookMb(closureFiles: 8683, testers: 0), 6144);
+    expect(testBookMb(closureFiles: 8683, testers: 64), cap);
+    // dart test: one VM, no flutter_tools; whole-package runs included.
+    expect(
+      testBookMb(closureFiles: null, testers: 8, flutter: false),
+      kDartTestBookMb,
+    );
+    expect(kDartTestBookMb, greaterThan(765));
+    // The measured peaks (comment in heavy_budget.dart) stay under booking.
+    expect(testBookMb(closureFiles: 1039, testers: 1), greaterThan(3331));
+    expect(testBookMb(closureFiles: 2276, testers: 1), greaterThan(4832));
+    expect(testBookMb(closureFiles: 8683, testers: 4), greaterThan(5593));
+  });
+
+  test('testConcurrencyOf: --concurrency=N, --concurrency N, -jN, -j N', () {
+    expect(
+      testConcurrencyOf(<String>['flutter', 'test', '--concurrency=3']),
+      3,
+    );
+    expect(
+      testConcurrencyOf(<String>['flutter', 'test', '--concurrency', '2']),
+      2,
+    );
+    expect(testConcurrencyOf(<String>['flutter', 'test', '-j6']), 6);
+    expect(testConcurrencyOf(<String>['flutter', 'test', '-j', '5']), 5);
+    expect(
+      testConcurrencyOf(<String>['flutter', 'test', 'a_test.dart']),
+      isNull,
+    );
+  });
 }

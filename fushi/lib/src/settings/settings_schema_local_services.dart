@@ -1,20 +1,23 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
     show fushiApiPortInUseMessage;
 import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException;
 

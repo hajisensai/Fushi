@@ -24,9 +24,18 @@ import 'package:fushi/src/srs/srs_word_audio_backfill.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show resolveLookupAudioUrl;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 制卡同一条取音频路径（见文件头）装成 [SrsWordAudioFetcher]。
 SrsWordAudioFetcher srsMiningWordAudioFetcher(AppModel app, SrsMiner miner) =>
@@ -303,13 +312,11 @@ class SrsWordAudioBackfillDialog extends StatelessWidget {
             title: Text(t.srs_word_audio_backfill_title),
             content: SizedBox(
               width: contentWidth,
-              child: SingleChildScrollView(
-                child: FushiAnimatedSize(
-                  duration: fushiMotionDuration(context, FushiMotion.short),
-                  curve: FushiMotion.standard,
-                  alignment: Alignment.topCenter,
-                  child: _body(context),
-                ),
+              child: FushiAnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                alignment: Alignment.topCenter,
+                child: _body(context),
               ),
             ),
             actions: <Widget>[

@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import '../helpers/glass_unwrap.dart';
 
 /// TODO-1007/1008：点 ✓ 操作选择 + note viewer 的 widget 行为守卫。

@@ -3,7 +3,7 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 集级 UserVerified（Shoko）：集卡菜单「手动指定季集」→ 选季 / 集 → 写覆盖表 +

@@ -35,6 +35,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -46,6 +48,7 @@ import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
 /// 复习模块此刻是否可见（用户意愿 + 平台判据的唯一合成，见 [ModuleVisibility]）。
 final Provider<bool> srsModuleEnabledProvider = Provider<bool>(
@@ -64,6 +67,18 @@ final Provider<bool> srsMiningToReviewProvider = Provider<bool>(
   (Ref ref) =>
       ref.watch(srsModuleEnabledProvider) &&
       ref.watch(appProvider.select((AppModel app) => app.srsMiningTarget)) ==
+          SrsMiningTarget.srs,
+);
+
+/// 替别的设备制卡（互联转发 / 读写出处笔记 / 游戏串流接收端）此刻是否发往 Fushi 复习：与
+/// [srsMiningToReviewProvider] 同一判据，但挖词目标读激活配置的值、不叠本机作品会话
+/// （[AppModel.hostSrsMiningTarget]）。
+final Provider<bool> hostSrsMiningToReviewProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(srsModuleEnabledProvider) &&
+      ref.watch(
+            appProvider.select((AppModel app) => app.hostSrsMiningTarget),
+          ) ==
           SrsMiningTarget.srs,
 );
 
@@ -646,6 +661,7 @@ List<SrsDeckSummary> srsVisibleDecks(
 final FutureProvider<SrsDeckListData?>
 srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
   ref.watch(srsRevisionProvider);
+  SrsOpLedger.mark('deck_list');
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return null;
   final int revision = store.revision;
@@ -670,9 +686,6 @@ srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
   }
   return SrsDeckListData(store: store, decks: decks, revision: revision);
 });
-
-/// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
-const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';
 
 /// 是否显示旧 Lapis 迁移提醒（读写偏好 [kSrsLapisMigrationReminderPrefKey]）。
 final StateProvider<bool> srsLapisMigrationReminderProvider =
@@ -759,6 +772,7 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   Ref ref,
 ) async {
   ref.watch(srsRevisionProvider);
+  SrsOpLedger.mark('conflict_count');
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return 0;
   return _srsMemoByContent(_conflictCountMemo, store, () async {

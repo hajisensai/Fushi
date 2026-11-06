@@ -7,7 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -776,6 +776,8 @@ void main() {
       expect(repo.supportsMediaMaintenance, isFalse);
       expect(await repo.probeMediaMaintenance(), isFalse);
       expect(repo.supportsDeckReposition, isTrue);
+      // BUG-4122：探测必须跟静态位一起答「复习能重排」，不能委派给 inner（Anki 默认 false）。
+      expect(await repo.probeDeckReposition(), isTrue);
       expect(await repo.rendersSynchronizedClip(), isNull);
       expect(repo.canVerifyExistingCards, isTrue);
       expect(() => repo.createDeck('X'), throwsUnsupportedError);
@@ -846,6 +848,51 @@ void main() {
         expect(roles.expression, 'Expression');
         expect(roles.reading, 'ExpressionReading');
         expect(roles.rank, 'FreqSort');
+      });
+
+      test('内层是缺原生重排接口的 AnkiConnect：复习照常能重排，直连 Anki 才被挡（BUG-4122）', () async {
+        final _NoNativeRepositionAnki anki = _NoNativeRepositionAnki();
+        final SrsMiningAnkiRepository srs = repoFor(anki);
+        await mineRanked(srs, '雪', 'ゆき', 300);
+        await mineRanked(srs, '犬', 'いぬ', 200);
+
+        // 复习目标：重排写本机复习库，与内层 Anki 此刻的能力无关。
+        expect(await srs.probeDeckReposition(), isTrue);
+        final AnkiRepositionPlan? plan =
+            await AnkiDeckRepositionRunner(
+              srs,
+              snapshotDirectory: () async => snapshots,
+            ).plan(
+              deckName: await deckName(),
+              settings: const AnkiSettings(),
+              options: const AnkiRepositionRankOptions(
+                source: AnkiRepositionSource.field,
+              ),
+            );
+        expect(plan, isNotNull);
+        expect(plan!.total, 2);
+        expect(
+          plan.ordered.map((AnkiRepositionCard c) => c.expression),
+          <String>['犬', '雪'],
+        );
+        expect(anki.probes, 0, reason: '复习目标不该去问 Anki 后端的重排能力');
+
+        // 对照：同一个 Anki 后端直连 runner，探测为 false → 读卡前就抛。
+        await expectLater(
+          AnkiDeckRepositionRunner(
+            anki,
+            snapshotDirectory: () async => snapshots,
+          ).plan(
+            deckName: await deckName(),
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(
+              source: AnkiRepositionSource.field,
+            ),
+          ),
+          throwsA(isA<AnkiRepositionUnsupportedException>()),
+        );
+        expect(anki.probes, 1);
+        expect(anki.listed, 0, reason: '探测不到就不该读卡');
       });
 
       test('手动重排往返：计划 → 写回 → 出卡顺序按词频 → 撤销回到原顺序', () async {
@@ -1187,4 +1234,26 @@ class _TargetAppModel extends AppModel {
 
   @override
   SrsMiningTarget get srsMiningTarget => _target;
+}
+
+/// 后端类型支持重排、但连着的那一端缺原生接口（新版 AnkiConnect 无
+/// `scheduling.repositionNewCards`）：探测恒 false。
+class _NoNativeRepositionAnki extends _FakeAnki {
+  int probes = 0;
+  int listed = 0;
+
+  @override
+  bool get supportsDeckReposition => true;
+
+  @override
+  Future<bool> probeDeckReposition() async {
+    probes++;
+    return false;
+  }
+
+  @override
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    listed++;
+    return const <AnkiCardInfo>[];
+  }
 }

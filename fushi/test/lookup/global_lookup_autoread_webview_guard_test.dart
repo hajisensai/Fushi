@@ -102,7 +102,7 @@ void main() {
   group('BUG-1127 unified helper reports the real outcome', () {
     late String src;
     setUpAll(() {
-      src = read('lib/src/utils/misc/lookup_audio_playback.dart');
+      src = read('lib/src/lookup/lookup_audio_playback.dart');
     });
 
     test('autoReadWordUnified returns whether playback actually started', () {

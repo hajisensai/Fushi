@@ -7,15 +7,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
@@ -41,6 +42,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
+import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -380,7 +382,24 @@ void main() {
         apple,
       );
       expect(find.byKey(const ValueKey<String>('srs-empty')), findsOneWidget);
-      expect(find.text('Default'), findsOneWidget);
+      // 宽屏：左栏牌组树 + 右栏选中牌组详情，名字两边各有一份，按行取。
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('srs-deck-${store.defaultDeckId}')),
+          matching: find.text('Default'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey<String>('srs-home-detail-${store.defaultDeckId}')),
+        findsOneWidget,
+        reason: '宽屏右栏默认显示第一个顶层牌组',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-start')),
+        findsNothing,
+        reason: '没有卡：没有今日计划，也不给「开始复习」',
+      );
       // 排程内核可用：不出「内核不可用」横幅。
       expect(
         find.byKey(const ValueKey<String>('srs-engine-missing')),
@@ -405,6 +424,21 @@ void main() {
         findsOneWidget,
         reason: '一张新卡：新卡计数为 1',
       );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byKey(
+            ValueKey<String>('srs-deck-review-${store.defaultDeckId}'),
+          ),
+        ),
+        findsOneWidget,
+        reason: '有活的行尾有播放按钮',
+      );
+      expect(find.text(t.srs_home_today_left(n: 1)), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-start')),
+        findsOneWidget,
+      );
       // 顶栏动作：添加笔记 / 浏览 / 冲突 / 新建牌组 / 导入。
       expect(find.byKey(const ValueKey<String>('srs_add_note')), findsWidgets);
       await _unmount(tester);
@@ -426,7 +460,9 @@ void main() {
         store: store,
         apple: apple,
         page: const SrsDeckListPage(),
-        size: const Size(412, 915),
+        // 测的是 412 的手机宽度；高度放到首页头部（今日计划 + 开始复习）之下 7 行都在首屏、
+        // 都已构建（懒列表只建可见行）。
+        size: const Size(412, 1400),
       );
       expect(tester.takeException(), isNull, reason: '窄屏行不溢出');
       for (final String name in <String>[
@@ -451,7 +487,9 @@ void main() {
             w.key is ValueKey<String> &&
             (w.key! as ValueKey<String>).value.startsWith('srs-deck-') &&
             !(w.key! as ValueKey<String>).value.contains('toggle') &&
-            !(w.key! as ValueKey<String>).value.contains('indent'),
+            !(w.key! as ValueKey<String>).value.contains('indent') &&
+            !(w.key! as ValueKey<String>).value.contains('progress') &&
+            !(w.key! as ValueKey<String>).value.contains('review'),
       );
       expect(rows, findsNWidgets(7));
       for (final Element e in rows.evaluate()) {
@@ -484,6 +522,8 @@ void main() {
         store: store,
         apple: apple,
         page: const SrsDeckListPage(),
+        // 单栏（窄于双栏阈值 840、行宽于 480）：宽屏右栏详情会再画一份选中牌组的名字。
+        size: const Size(600, 900),
       );
       Future<List<String>> names() async => (await tester.runAsync(
         store.deckSummaries,
@@ -577,7 +617,9 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('[$ds] 牌组列表宽屏：三列计数与行尾「⋯」，行首不放图标', (WidgetTester tester) async {
+    testWidgets('[$ds] 牌组列表宽屏：行尾是三列计数 + 播放（不放「⋯」，右键出菜单），子牌组行首不放图标', (
+      WidgetTester tester,
+    ) async {
       final SrsDbStore store = await _openStore(tester);
       await tester.runAsync(
         () => store.ensureDeckPath('Spark::JP-Mining-Note::Vocabulary'),
@@ -594,10 +636,273 @@ void main() {
           (Widget w) =>
               w.runtimeType.toString().startsWith('FushiPopupMenuButton'),
         ),
+        findsNothing,
+        reason: '方案 D：行尾只有三色计数与播放按钮，菜单走右键 / 菜单键 / 右栏「选项」',
+      );
+      expect(
+        find.byType(SrsCountTriple),
         findsNWidgets(3),
-        reason: '宽屏每行保留行尾「⋯」（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
+        reason: '三行各一组计数（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
       );
       expect(find.byType(FushiListLeadingIcon), findsNothing);
+      await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
+      await _settle(tester);
+      expect(find.text(t.srs_deck_rename), findsOneWidget, reason: '右键行出牌组菜单');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets(
+      '[$ds] 复习首页（手机）：点行进牌组详情、返回键逐层回退、播放 / 「开始复习」/ 详情「复习这个牌组」直接复习、长按出菜单',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final (String spark, String jp, String vocab) = (await tester.runAsync(
+          () async {
+            final String vocab = await store.ensureDeckPath(
+              'Spark::JP::Vocabulary',
+            );
+            await store.ensureDeckPath('Spark::JP::Kanji');
+            final SrsDeckTree tree = await store.deckTree();
+            final String jp = tree.parentOf(vocab)!;
+            return (tree.parentOf(jp)!, jp, vocab);
+          },
+        ))!;
+        await _addLapis(tester, store, '食べる');
+        final String def = store.defaultDeckId;
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SrsDeckListPage(),
+          size: const Size(412, 915),
+        );
+        expect(tester.takeException(), isNull);
+        Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+        Finder detail(String id) =>
+            find.byKey(ValueKey<String>('srs-home-detail-$id'));
+        Future<void> tapRow(String id, String name) async {
+          await tester.tap(
+            find.descendant(of: row(id), matching: find.text(name)),
+          );
+          await _settle(tester);
+        }
+
+        Future<void> expectReviewOf(String deckId) async {
+          final Finder review = find.byType(SrsReviewPage);
+          expect(review, findsOneWidget);
+          expect(tester.widget<SrsReviewPage>(review).deckId, deckId);
+          Navigator.of(tester.element(review)).pop();
+          await _settle(tester);
+          expect(review, findsNothing);
+        }
+
+        // 根层：今日计划 + 整棵牌组树（没有单独的整理模式），没有详情。
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-today')),
+          findsOneWidget,
+        );
+        for (final String id in <String>[def, spark, jp, vocab]) {
+          expect(row(id), findsOneWidget);
+        }
+        expect(detail(spark), findsNothing);
+        expect(
+          find.byKey(const ValueKey<String>('srs_organize')),
+          findsNothing,
+        );
+
+        // 点行：进该牌组的详情页（面包屑 + 详情 + 子牌组清单），不开复习。
+        await tapRow(spark, 'Spark');
+        expect(find.byType(SrsReviewPage), findsNothing, reason: '点行不开复习');
+        expect(detail(spark), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-breadcrumb')),
+          findsOneWidget,
+        );
+        expect(row(jp), findsOneWidget, reason: '详情页下面是它的子牌组');
+        expect(row(spark), findsNothing);
+        expect(row(def), findsNothing);
+        await tapRow(jp, 'JP');
+        expect(detail(jp), findsOneWidget);
+        expect(row(vocab), findsOneWidget);
+        await tapRow(vocab, 'Vocabulary');
+        expect(detail(vocab), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-subdecks-header')),
+          findsNothing,
+          reason: '叶子牌组没有子牌组清单',
+        );
+
+        // 系统返回键：逐层回上一层，到根层才交给路由。
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(jp), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(spark), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(spark), findsNothing);
+        expect(row(spark), findsOneWidget);
+        expect(find.byType(SrsDeckListPage), findsOneWidget);
+
+        // 行尾播放：直接复习这个牌组。
+        await tester.tap(find.byKey(ValueKey<String>('srs-deck-review-$def')));
+        await _settle(tester);
+        await expectReviewOf(def);
+        expect(
+          find.byKey(ValueKey<String>('srs-deck-review-$spark')).hitTestable(),
+          findsNothing,
+          reason: '没活的行播放按钮只留位、不可点',
+        );
+
+        // 长按行（窄屏）：弹出牌组菜单。
+        await tester.longPress(
+          find.descendant(of: row(spark), matching: find.text('Spark')),
+        );
+        await _settle(tester);
+        expect(find.text(t.srs_deck_rename), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await _settle(tester);
+
+        // 今日计划「开始复习」：从第一个还有活的顶层牌组开始（这里是有一张新卡的默认牌组）。
+        await tester.tap(find.byKey(const ValueKey<String>('srs-home-start')));
+        await _settle(tester);
+        await expectReviewOf(def);
+
+        // 详情页「复习这个牌组」。
+        await tapRow(def, 'Default');
+        expect(detail(def), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs-home-detail-review')),
+        );
+        await _settle(tester);
+        await expectReviewOf(def);
+        expect(tester.takeException(), isNull);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets('[$ds] 复习首页（宽屏）：双栏，点行 = 选中（右栏换详情、不开复习），播放 = 复习，详情「浏览卡片」带牌组查询', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String jp = (await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP'),
+      ))!;
+      final String spark = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(jp)!,
+      ))!;
+      await _addLapis(tester, store, '食べる');
+      final String def = store.defaultDeckId;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 900),
+      );
+      // 首页统计（热力图 / 预测）要读整库复习日志，多给几轮真异步。
+      await _settle(tester, rounds: 40);
+      expect(tester.takeException(), isNull);
+      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+      Finder detail(String id) =>
+          find.byKey(ValueKey<String>('srs-home-detail-$id'));
+      expect(find.byKey(const ValueKey<String>('srs_organize')), findsNothing);
+      expect(detail(def), findsOneWidget, reason: '默认选中第一个有活的顶层牌组');
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-heatmap')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-forecast')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(of: row(spark), matching: find.text('Spark')),
+      );
+      await _settle(tester);
+      expect(find.byType(SrsReviewPage), findsNothing, reason: '宽屏点行 = 选中');
+      expect(detail(spark), findsOneWidget);
+      expect(detail(def), findsNothing);
+      expect(row(spark), findsOneWidget, reason: '树不随选中切换');
+      expect(row(jp), findsOneWidget);
+
+      await tester.tap(find.byKey(ValueKey<String>('srs-deck-review-$def')));
+      await _settle(tester);
+      final Finder review = find.byType(SrsReviewPage);
+      expect(tester.widget<SrsReviewPage>(review).deckId, def);
+      Navigator.of(tester.element(review)).pop();
+      await _settle(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-home-detail-browse')),
+      );
+      await _settle(tester);
+      final Finder browse = find.byType(SrsBrowsePage);
+      expect(browse, findsOneWidget);
+      expect(
+        tester.widget<SrsBrowsePage>(browse).initialQuery,
+        srsDeckQuery('Spark'),
+      );
+      Navigator.of(tester.element(browse)).pop();
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 复习首页：选中 / 进入的牌组被删后丢掉悬空 id，宽屏回落到仍存在的进入牌组', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String jp = (await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP'),
+      ))!;
+      final String kanji = (await tester.runAsync(
+        () => store.ensureDeckPath('Kanji'),
+      ))!;
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(412, 915),
+      );
+      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+      Finder detail(String id) =>
+          find.byKey(ValueKey<String>('srs-home-detail-$id'));
+
+      // 手机：进入 Spark（_focusId = Spark）。
+      final String spark = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(jp)!,
+      ))!;
+      await tester.tap(
+        find.descendant(of: row(spark), matching: find.text('Spark')),
+      );
+      await _settle(tester);
+      expect(detail(spark), findsOneWidget);
+
+      // 转成宽屏：没有「进入」层，右栏沿用进入的牌组；再点 Kanji 行选中它。
+      tester.view.physicalSize = const Size(1100, 900);
+      await _settle(tester, rounds: 40);
+      expect(detail(spark), findsOneWidget, reason: '宽屏右栏沿用手机进入的牌组');
+      await tester.tap(
+        find.descendant(of: row(kanji), matching: find.text('Kanji')),
+      );
+      await _settle(tester);
+      expect(detail(kanji), findsOneWidget);
+
+      // 选中的 Kanji 被删（别处 / 同步删掉）：选中 id 必须清掉，右栏回到仍存在的 Spark，
+      // 而不是让悬空的选中 id 盖过进入的牌组、掉到默认牌组。
+      await tester.runAsync(() => store.deleteDeck(kanji));
+      ProviderScope.containerOf(
+        tester.element(find.byType(SrsDeckListPage)),
+      ).read(srsRevisionProvider.notifier).state++;
+      await _settle(tester, rounds: 40);
+      expect(row(kanji), findsNothing);
+      expect(detail(spark), findsOneWidget, reason: '悬空选中 id 已丢弃');
+      expect(tester.takeException(), isNull);
       await _unmount(tester);
     });
 
@@ -1244,16 +1549,17 @@ void main() {
 
   testWidgets('牌组列表：手机宽度下多级子牌组的名字仍有宽度，行首不放图标', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
+    const List<String> names = <String>[
+      'Spark',
+      'JP-Mining-Long-Deck-Name',
+      'Vocabulary',
+      'Chapter Twelve',
+      'Kanji Drill',
+    ];
     final List<String> ids = (await tester.runAsync(() async {
       final List<String> out = <String>[];
       String? parent;
-      for (final String name in <String>[
-        'Spark',
-        'JP-Mining-Long-Deck-Name',
-        'Vocabulary',
-        'Chapter Twelve',
-        'Kanji Drill',
-      ]) {
+      for (final String name in names) {
         parent = await store.createDeck(name, parentId: parent);
         out.add(parent);
       }
@@ -1280,14 +1586,10 @@ void main() {
           SrsDeckIndentGuides.widthFor(depth),
         );
       }
+      // 按名字取：顶层行多了一个画首字的形状徽章，不能按「含字母的第一个 Text」找。
       final Finder name = find.descendant(
         of: row,
-        matching: find.byWidgetPredicate(
-          (Widget w) =>
-              w is Text &&
-              w.data != null &&
-              RegExp(r'[A-Za-z]').hasMatch(w.data!),
-        ),
+        matching: find.text(names[depth]),
       );
       expect(
         tester.getSize(name.first).width,
@@ -1436,7 +1738,8 @@ void main() {
         await store.createNote(
           noteTypeId: nt,
           fieldsById: <String, String>{
-            front: 'Q[sound:front.mp3]',
+            // 带卡片脚本 → 原生 HTML 卡面画不了，回退整面 WebView（本测试测的就是它）。
+            front: 'Q[sound:front.mp3]<script>void 0;</script>',
             back: 'A[sound:back.mp3]',
           },
         );

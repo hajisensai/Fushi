@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
-import 'package:fushi/src/settings/settings_destination.dart'
+import 'package:fushi/src/settings/settings_destination_id.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutScope;
 import 'package:fushi_core/fushi_core.dart' show MediaKind;

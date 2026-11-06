@@ -6,7 +6,9 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
 import 'package:fushi/src/reader/reader_panel_kit.dart'
     show ReaderBadgeShape, readerBadgeShapeBorder;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 视频内封章节（chapter）列表面板（TODO-424）。复用 [VideoTranslucentSidePanel]
 /// 的侧栏外壳，本 widget 只负责列出 [VideoPlayerController.chapters]：每行「序号 +

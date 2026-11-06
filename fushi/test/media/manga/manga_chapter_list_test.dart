@@ -5,7 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 章节列表被**两个**界面共用（作品页正文 + 阅读器里的章节弹层）。两处对
 /// 「已读怎么显示、当前章怎么高亮、排序默认哪个方向」的答案必须一致，所以这些

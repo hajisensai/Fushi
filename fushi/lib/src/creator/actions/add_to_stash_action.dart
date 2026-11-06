@@ -1,9 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/quick_action.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 
 /// An enhancement used as a shortcut for adding text items to the Stash.
 class AddToStashAction extends QuickAction {

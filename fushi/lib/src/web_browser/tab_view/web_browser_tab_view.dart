@@ -13,15 +13,14 @@ import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
-    show kFloatingBallOcrLanguage;
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart'
     show hostOwnsWebViewHoverLookup;
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
@@ -52,6 +51,7 @@ import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
 
 /// 一个标签页的网页视图：持有该标签页的 `InAppWebView` 与控制器生命周期，把页面
 /// 状态全部写进 [WebBrowserTab]（进度、地址、标题、图标、前进后退、失败、全屏）。
@@ -95,7 +95,7 @@ class WebBrowserTabView extends ConsumerStatefulWidget {
 }
 
 class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
-    implements SrsCardLookupSurface {
+    implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web-browser-tab',
     flushBeforeRebuild: () async => _detachController(),
@@ -125,6 +125,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   bool _environmentReady = false;
   WebViewEnvironment? _environment;
   InAppWebViewController? _controller;
+
+  /// 本标签页发起查词时，弹窗打开期间给它开静态硬件层（见 [PopupBodyStaticLayerGate]）。
+  @override
+  Object? get popupBodyWebViewId => _controller?.getViewId();
   PullToRefreshController? _pullToRefresh;
   late final WebBrowserDownloader _downloader;
   WebBrowserVisitRecorder? _recorder;
@@ -242,6 +246,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     }
   }
 
+  /// 本 WebView 上方的菜单点网页即关（[WebViewMenuDismissBridge]）。
+  final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
+
   @override
   void dispose() {
     _closed = true;
@@ -252,6 +259,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     // 插件的前后台 / 关闭回调只由标签控制器（WebBrowserTabsController）发：视图被
     // 回收（活 WebView 上限）或重建时也会 dispose，那不是「关闭」。
     _detachController();
+    _menuDismiss.detach();
     super.dispose();
   }
 
@@ -461,6 +469,8 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         source: kWebBrowserFullscreenScript,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       ),
+      // 链接 / 图片菜单盖在网页上方：macOS 点到网页也要能关（showFushiMenu 统一）。
+      WebViewMenuDismissBridge.userScript,
       // 桌面右键换成本 app 的链接 / 图片菜单；手机走原生长按命中（Android 的
       // 长按也会派发 contextmenu，装了会弹两次）。
       if (!_mobile)
@@ -997,7 +1007,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     try {
       result = await const MethodChannelSystemOcr().recognize(
         bytes,
-        language: kFloatingBallOcrLanguage,
+        language: _prefs.screenOcrLanguage,
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('WebBrowserTabView.ocr', error, stack);
@@ -1247,9 +1257,11 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
 
   void _onWebViewCreated(InAppWebViewController controller) {
     _adblock?.onWebViewCreated(controller);
+    _menuDismiss.attach(controller);
     _registerHandlers(controller);
     _windowConsumed = true;
     _controller = controller;
+    _lookup?.bodyWebViewChanged(this);
     _tab.attachController(controller);
     _tab.attachViewport(_viewportRectToGlobal);
     for (final WebBrowserFeature f in widget.host.features) {

@@ -9,6 +9,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpProgressMarks;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -488,6 +490,7 @@ class FushiWavySeekBar extends StatefulWidget {
     this.showTimes = true,
     this.debugLabel = 'fushi-wavy-seek',
     this.clockListenable,
+    this.jumpMarks,
   });
 
   final FushiPlaybackClock clock;
@@ -505,6 +508,12 @@ class FushiWavySeekBar extends StatefulWidget {
 
   /// [clock] 位置 / 时长变化时通知；null = 没有推送源，按上面的节奏轮询 [clock]。
   final Listenable? clockListenable;
+
+  /// 跳转记录的落点刻度（[FushiJumpProgressMarks]，与视频进度条同款：返回点
+  /// tertiary、前进点 secondary），比例按时间轴给（0 = 起点，不含 RTL 翻转，
+  /// 这里自己翻）。画在轨道可用区间（两端各缩半个线宽，与 thumb 同一换算）上，
+  /// 只看不点。null / 两边都空 = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
 
   @override
   State<FushiWavySeekBar> createState() => _FushiWavySeekBarState();
@@ -699,10 +708,16 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return _pendingSeek ?? _position;
   }
 
+  /// 点 / 拖的横坐标 → 比例。与画法（thumb / 已播填充）同一换算：轨道可用区间
+  /// 两端各缩半个线宽，点在画出来的 thumb / 刻度上就落在它代表的那一处。
   double _fractionAt(double dx, double width) {
     if (width <= 0) return 0;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    final double f = (dx / width).clamp(0.0, 1.0);
+    final double half = widget.strokeWidth / 2;
+    final double usable = width - widget.strokeWidth;
+    final double f = usable <= 0
+        ? (dx / width).clamp(0.0, 1.0)
+        : ((dx - half) / usable).clamp(0.0, 1.0);
     return rtl ? 1 - f : f;
   }
 
@@ -759,6 +774,34 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return KeyEventResult.ignored;
   }
 
+  /// 轨道上叠跳转落点刻度（[FushiWavySeekBar.jumpMarks]）。刻度比线高一截、
+  /// 竖直居中于命中带，不超出命中带。
+  Widget _withJumpMarks(Widget paint, double usable, double inset, bool rtl) {
+    final ({List<double> back, List<double> forward})? marks = widget.jumpMarks;
+    if (marks == null || (marks.back.isEmpty && marks.forward.isEmpty)) {
+      return paint;
+    }
+    List<double> place(List<double> fractions) =>
+        rtl ? <double>[for (final double f in fractions) 1 - f] : fractions;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        paint,
+        Positioned(
+          left: inset,
+          width: usable,
+          top: 0,
+          height: widget.barHeight,
+          child: FushiJumpProgressMarks(
+            back: place(marks.back),
+            forward: place(marks.forward),
+            tickHeight: math.min(widget.barHeight, widget.strokeWidth + 9),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -801,7 +844,8 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
             ),
           ),
         );
-        if (!seekable) return paint;
+        final Widget track = _withJumpMarks(paint, usable, half, rtl);
+        if (!seekable) return track;
         return Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
@@ -823,7 +867,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
               onHorizontalDragCancel: () => _endDrag(commit: false),
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
-                child: paint,
+                child: track,
               ),
             ),
             // 拖动时的时长气泡（M3 slider value indicator：inverseSurface 胶囊）。

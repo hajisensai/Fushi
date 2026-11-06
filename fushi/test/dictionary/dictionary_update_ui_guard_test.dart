@@ -223,7 +223,7 @@ void main() {
       reason: '词典管理页下载推荐词典必须走共享安装实现，不得另抄一份来源回填',
     );
     final String installer = File(
-      'lib/src/models/recommended_dictionary_installer.dart',
+      'lib/src/dictionary/recommended_dictionary_installer.dart',
     ).readAsStringSync();
     expect(
       installer.contains(

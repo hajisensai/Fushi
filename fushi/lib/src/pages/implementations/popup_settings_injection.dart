@@ -31,7 +31,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show lookupWordAudioPlaysNatively;
 import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/dictionary_language_css.dart';

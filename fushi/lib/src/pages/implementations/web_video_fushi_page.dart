@@ -15,7 +15,7 @@ import 'package:media_kit_video/media_kit_video.dart'
     show defaultEnterNativeFullscreen, defaultExitNativeFullscreen;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
@@ -66,6 +66,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
@@ -323,7 +324,8 @@ typedef WebVideoDebugSnapshot = ({
 });
 
 class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin
+    implements PopupBodyWebViewProvider {
   /// 缓存的 [AppModel]（浮层在 LayoutBuilder 回调里读，widget 失活后 `ref.read` 会抛）。
   late final AppModel _appModel = ref.read(appProvider);
 
@@ -372,6 +374,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   );
 
   InAppWebViewController? _web;
+
+  @override
+  Object? get popupBodyWebViewId => _web?.getViewId();
   VideoBookRow? _row;
   String? _failReason;
   WebViewEnvironment? _env;
@@ -559,6 +564,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void initState() {
     super.initState();
     attachLookupCounter(_popup);
+    _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
     _controller.addListener(_onControllerChanged);
     assert(() {
       WebVideoFushiPage.debugSnapshot = () => (
@@ -3308,6 +3314,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       onWebViewCreated: (InAppWebViewController controller) {
         _web = controller;
         _viewId = controller.platform.id;
+        _popup.bodyStaticLayer.bodyChanged();
         if (_isMiningHost && !_windowed && Platform.isWindows) {
           // 控制器建好 = 浏览器进程已在；站点还没加载完、还没自动播放。后台制卡页同样
           // 要预起：它没有交接档，但站点照样一加载就带声音自动播放。

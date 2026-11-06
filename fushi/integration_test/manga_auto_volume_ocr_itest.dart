@@ -17,13 +17,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
     show MangaOcrProgressBadge;
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;

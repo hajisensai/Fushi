@@ -507,6 +507,136 @@ class MusicPluginSource {
     });
   }
 
+  /// 新建歌单（`playlistEdit` 的 `op: 'create'`），可顺带放入 [trackIds]。返回新歌单，封面照常
+  /// 按网络授权核对。失败（含未登录）抛 [MusicPluginException]，消息给用户看。
+  Future<MusicPluginPlaylist> createPlaylist(
+    String name, {
+    String? description,
+    List<String> trackIds = const <String>[],
+  }) async {
+    final (
+      MusicPluginInstance inst,
+      Object? v,
+    ) = await _call(MusicPluginCapability.playlistEdit, <String, Object?>{
+      'op': 'create',
+      'name': name,
+      'description': ?description,
+      if (trackIds.isNotEmpty) 'trackIds': trackIds,
+    });
+    final Map<String, Object?> r = _object(v, 'playlistEdit');
+    final MusicPluginPlaylist? p = MusicPluginPlaylist.fromJson(r['playlist']);
+    if (p == null) {
+      throw MusicPluginException(
+        '插件 playlistEdit 返回值缺 playlist',
+        pluginId: pluginId,
+      );
+    }
+    return _withPlaylistCover(p, await _covers(inst, <String?>[p.coverUrl]));
+  }
+
+  /// 往歌单里加歌（`playlistEdit` 的 `op: 'add'`）。失败抛 [MusicPluginException]。
+  Future<void> addToPlaylist(String playlistId, List<String> trackIds) async {
+    await _call(MusicPluginCapability.playlistEdit, <String, Object?>{
+      'op': 'add',
+      'playlistId': playlistId,
+      'trackIds': trackIds,
+    });
+  }
+
+  /// 从歌单里删歌（`playlistEdit` 的 `op: 'remove'`）。失败抛 [MusicPluginException]。
+  Future<void> removeFromPlaylist(
+    String playlistId,
+    List<String> trackIds,
+  ) async {
+    await _call(MusicPluginCapability.playlistEdit, <String, Object?>{
+      'op': 'remove',
+      'playlistId': playlistId,
+      'trackIds': trackIds,
+    });
+  }
+
+  /// 删除歌单（`playlistEdit` 的 `op: 'delete'`）。失败抛 [MusicPluginException]。
+  Future<void> deletePlaylist(String playlistId) async {
+    await _call(MusicPluginCapability.playlistEdit, <String, Object?>{
+      'op': 'delete',
+      'playlistId': playlistId,
+    });
+  }
+
+  /// 电台的下一批（`radio` 的 `op: 'next'`）：无 [seedTrackId] 是个人电台，有则以它为种子；
+  /// [count] 只是建议值。曲目最多 [MusicPluginRadioBatch.maxTracks] 首、坏项丢弃，封面按网络
+  /// 授权核对；空批表示没有更多。
+  Future<MusicPluginRadioBatch> radioNext({
+    String? seedTrackId,
+    int? count,
+  }) async {
+    final (MusicPluginInstance inst, Object? v) = await _call(
+      MusicPluginCapability.radio,
+      <String, Object?>{
+        'op': 'next',
+        'seedTrackId': ?seedTrackId,
+        'count': ?count,
+      },
+    );
+    final MusicPluginRadioBatch? b = MusicPluginRadioBatch.fromJson(v);
+    if (b == null) {
+      throw MusicPluginException('插件 radio 返回值缺 tracks', pluginId: pluginId);
+    }
+    final String? Function(String?) cover = await _covers(
+      inst,
+      b.tracks.map((MusicPluginTrack t) => t.coverUrl),
+    );
+    return MusicPluginRadioBatch(
+      title: b.title,
+      tracks: _withTrackCovers(b.tracks, cover),
+    );
+  }
+
+  /// 不再推荐这首（`radio` 的 `op: 'trash'`）。失败（含未登录）抛 [MusicPluginException]。
+  Future<void> radioTrash(String trackId) async {
+    await _call(MusicPluginCapability.radio, <String, Object?>{
+      'op': 'trash',
+      'id': trackId,
+    });
+  }
+
+  /// 相似艺人（`artistSimilar`），最多 [maxSimilarArtists] 位，坏项丢弃，封面按网络授权核对。
+  Future<List<MusicPluginArtist>> similarArtists(String artistId) async {
+    final (MusicPluginInstance inst, Object? v) = await _call(
+      MusicPluginCapability.artistSimilar,
+      <String, Object?>{'id': artistId},
+    );
+    final Map<String, Object?> r = _pageObject(v, 'artistSimilar');
+    final List<MusicPluginArtist> artists = MusicPluginArtist.listFrom(
+      r['items'],
+    ).take(maxSimilarArtists).toList();
+    final String? Function(String?) cover = await _covers(
+      inst,
+      artists.map((MusicPluginArtist a) => a.coverUrl),
+    );
+    return <MusicPluginArtist>[
+      for (final MusicPluginArtist a in artists) a.withCover(cover(a.coverUrl)),
+    ];
+  }
+
+  /// 相似艺人上限（契约 §4：`artistSimilar`）。
+  static const int maxSimilarArtists = 50;
+
+  /// 收藏 / 取消收藏歌单、专辑，关注 / 取消关注艺人（`collect` 的 `op: 'set'`）。失败（含未登录）
+  /// 抛 [MusicPluginException]，消息给用户看。
+  Future<void> setCollected(
+    MusicPluginCollectType type,
+    String id, {
+    required bool on,
+  }) async {
+    await _call(MusicPluginCapability.collect, <String, Object?>{
+      'op': 'set',
+      'type': type.wire,
+      'id': id,
+      'on': on,
+    });
+  }
+
   /// 分页返回值：必须是带 items 数组的对象。
   Map<String, Object?> _pageObject(Object? v, String what) {
     final Map<String, Object?> r = _object(v, what);

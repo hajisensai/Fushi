@@ -4,7 +4,9 @@ import 'package:fushi/src/mining/galgame_repository.dart'
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_media_link_assistant.dart';

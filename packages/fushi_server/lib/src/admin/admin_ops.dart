@@ -17,6 +17,8 @@ library;
 import 'dart:convert';
 
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_server/src/config/server_config.dart'
+    show kServerLibraryRootKinds;
 import 'package:shelf/shelf.dart' as shelf;
 
 /// 进程内调 admin API 的入口（生产是 `AdminApi.handle`）。
@@ -362,7 +364,7 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
         OpParam.string(
           'kind',
           description: 'What the folder holds.',
-          enumValues: <String>['video', 'book'],
+          enumValues: kServerLibraryRootKinds,
         ),
         OpParam.string(
           'id',

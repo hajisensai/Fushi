@@ -61,6 +61,130 @@ void main() {
       expect(entry.text, contains('memoryPressure=1x'));
     });
 
+    test('内存采样只留最近 kSessionMemorySampleCount 次，随标记落盘、进未正常退出摘要（BUG-4075）', () {
+      final SessionMarker m = SessionMarker(markerFile(), pid: 21, version: 'v')
+        ..start(nowMs: 1);
+      m.recordLifecycle('resumed', nowMs: 2);
+      for (int i = 0; i < kSessionMemorySampleCount + 2; i++) {
+        m.recordMemorySample('s$i');
+      }
+
+      final PreviousSession? prev = SessionMarker(
+        markerFile(),
+        pid: 22,
+        version: 'v',
+      ).start(nowMs: 3);
+      expect(prev!.memorySamples, <String>[
+        for (int i = 2; i < kSessionMemorySampleCount + 2; i++) 's$i',
+      ]);
+      final ExitReportEntry entry = describeUncleanPreviousSession(prev)!;
+      expect(entry.text, contains('memory=[${prev.memorySamples.join('; ')}]'));
+
+      // 新会话从空环开始：上次的采样不串进这次。
+      final PreviousSession? third = SessionMarker(
+        markerFile(),
+        pid: 23,
+        version: 'v',
+      ).start(nowMs: 4);
+      expect(third!.memorySamples, isEmpty);
+      expect(
+        describeUncleanPreviousSession(third)!.text,
+        isNot(contains('memory=')),
+      );
+    });
+
+    test('旧版标记没有 memorySamples / 内容不合法时按空处理', () {
+      final PreviousSession? old = PreviousSession.tryParse(
+        jsonEncode(<String, Object?>{
+          'pid': 1,
+          'lifecycle': 'resumed',
+          'memorySamples': <Object?>[1, '', 'ok', null],
+        }),
+      );
+      expect(old!.memorySamples, <String>['ok']);
+      expect(
+        PreviousSession.tryParse(
+          jsonEncode(<String, Object?>{'pid': 1, 'memorySamples': 'x'}),
+        )!.memorySamples,
+        isEmpty,
+      );
+    });
+
+    test('采样文本：时刻、RSS、探针读数与触发原因；探针抛异常记 probe! 不中断', () {
+      final String line = describeMemorySample(
+        now: DateTime(2026, 11, 5, 9, 8, 7),
+        rssBytes: 1903 << 20,
+        maxRssBytes: 2070 << 20,
+        probes: <MemoryProbe>[
+          () => 'srs=1/2',
+          () => null,
+          () => throw StateError('boom'),
+        ],
+        trigger: 'pressure',
+      );
+      expect(line, '09:08:07 rss=1903MB max=2070MB srs=1/2 probe! (pressure)');
+      expect(
+        describeMemorySample(
+          now: DateTime(2026, 1, 1, 23, 59, 0),
+          rssBytes: 0,
+          maxRssBytes: 0,
+        ),
+        '23:59:00 rss=0MB max=0MB',
+      );
+    });
+
+    test('线程数探针：从 /proc/self/status 正文取 Threads 行', () {
+      expect(
+        parseProcStatusThreads('Name:\tapp\nThreads:\t95\nVmRSS:\t1 kB\n'),
+        'thr=95',
+      );
+      expect(parseProcStatusThreads('Name:\tapp\n'), isNull);
+      expect(parseProcStatusThreads(null), isNull);
+    });
+
+    test(
+      'RSS 分项探针：从 /proc/self/status 正文取 RssAnon / RssFile / RssShmem（BUG-4075）',
+      () {
+        expect(
+          parseProcStatusRssBreakdown(
+            'Name:\tapp\nVmRSS:\t3145728 kB\nRssAnon:\t2097152 kB\n'
+            'RssFile:\t1022976 kB\nRssShmem:\t25600 kB\nThreads:\t95\n',
+          ),
+          'anon=2048MB file=999MB shm=25MB',
+        );
+        // 缺的项不写。
+        expect(parseProcStatusRssBreakdown('RssAnon:\t1024 kB\n'), 'anon=1MB');
+        expect(parseProcStatusRssBreakdown('Name:\tapp\n'), isNull);
+        expect(parseProcStatusRssBreakdown(null), isNull);
+      },
+    );
+
+    test('startMemorySampling 立即采一次并写进本次会话标记；系统内存压力也采', () async {
+      await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+      );
+      addTearDown(PreviousExitLog.stopMemorySampling);
+      PreviousExitLog.startMemorySampling(
+        probes: <MemoryProbe>[() => 'probe=ok'],
+      );
+      PreviousExitLog.sampleMemory(trigger: 'pressure');
+
+      final PreviousSession? prev = PreviousSession.tryParse(
+        markerFile().readAsStringSync(),
+      );
+      expect(prev!.memorySamples, hasLength(2));
+      expect(
+        prev.memorySamples.first,
+        matches(RegExp(r'rss=\d+MB max=\d+MB probe=ok \(start\)$')),
+      );
+      expect(prev.memorySamples.last, endsWith('probe=ok (pressure)'));
+    });
+
     test('停在后台没了只算诊断；正常退出 / detached 不报', () {
       final SessionMarker a = SessionMarker(markerFile(), pid: 1, version: 'v')
         ..start(nowMs: 1);
@@ -718,6 +842,112 @@ void main() {
     expect(crash.text, contains('Flutter+1234'));
     expect(crash.text, contains('Runner+99'));
     expect(payload.existsSync(), isFalse);
+  });
+
+  group('BUG-4102：MetricKit 摘要', () {
+    // 一条深 [depth] 的单链调用树：头三帧是 abort 的系统帧，后面都是 Runner。
+    Map<String, Object?> chain(int depth) {
+      Map<String, Object?>? node;
+      for (int i = depth - 1; i >= 0; i--) {
+        final String bin = i < 3 ? 'libsystem_c.dylib' : 'Runner';
+        node = <String, Object?>{
+          'binaryName': bin,
+          'binaryUUID': bin == 'Runner'
+              ? 'AAAAAAAA-0000-0000-0000-000000000001'
+              : 'BBBBBBBB-0000-0000-0000-000000000002',
+          'offsetIntoBinaryTextSegment': 1000 + i,
+          if (node != null) 'subFrames': <Object?>[node],
+        };
+      }
+      return node!;
+    }
+
+    test('原生只留崩溃线程的调用树：深帧、镜像 UUID、丢掉的线程数都进摘要', () {
+      final String? s = summarizeMetricKitCrash(
+        jsonEncode(<String, Object?>{
+          'diagnosticMetaData': <String, Object?>{
+            'appVersion': '3.3.0',
+            'appBuildVersion': '23480',
+            'osVersion': 'iPhone OS 27.2 (24B119)',
+            'deviceType': 'iPhone18,3',
+            'exceptionType': 10,
+            'exceptionCode': 0,
+            'signal': 6,
+            'terminationReason': 'Namespace SIGNAL, Code 0x6',
+          },
+          'callStackTree': <String, Object?>{
+            'callStacksDropped': 41,
+            'callStacks': <Object?>[
+              <String, Object?>{
+                'threadAttributed': true,
+                'callStackRootFrames': <Object?>[chain(20)],
+              },
+            ],
+          },
+        }),
+      );
+      expect(s, isNotNull);
+      expect(s, contains('app=3.3.0(23480) os=iPhone OS 27.2 (24B119)'));
+      expect(s, contains('device=iPhone18,3'));
+      // 第 20 帧（旧上限 12 会截掉）。
+      expect(s, contains('Runner+1019'));
+      expect(s, contains('Runner=AAAAAAAA-0000-0000-0000-000000000001'));
+      expect(s, contains('libsystem_c.dylib=BBBBBBBB'));
+      expect(s, contains('other threads dropped: 41'));
+      // 没有 VM 区域信息时不写空的 `vm region:` 行。
+      expect(s, isNot(contains('vm region')));
+    });
+
+    test('只剩元数据时明说调用树被丢、带上机型 / 系统 / 构建号', () {
+      final String? s = summarizeMetricKitCrash(
+        jsonEncode(<String, Object?>{
+          'diagnosticMetaData': <String, Object?>{
+            'appVersion': '3.3.0',
+            'appBuildVersion': '23480',
+            'osVersion': 'iPhone OS 27.2 (24B119)',
+            'deviceType': 'iPhone18,3',
+            'exceptionType': 10,
+            'exceptionCode': 0,
+            'signal': 6,
+            'terminationReason': 'Namespace SIGNAL, Code 0x6',
+            'virtualMemoryRegionInfo': '',
+            'callStackTreeDropped': 912345,
+          },
+        }),
+      );
+      expect(s, contains('app=3.3.0(23480)'));
+      expect(s, isNot(contains('null')));
+      expect(s, contains('call stack tree dropped: 912345 bytes'));
+      expect(s, isNot(contains('vm region')));
+    });
+
+    test('原生的元数据兜底写全了 Dart 摘要读的每个键', () {
+      final String swift = File(
+        'ios/Runner/AppDelegate.swift',
+      ).readAsStringSync();
+      final int at = swift.indexOf('final class FushiCrashDiagnostics');
+      expect(at, isNonNegative);
+      final String body = swift.substring(at);
+      // 超限先只丢别的线程，再退到元数据。
+      final int slim = body.indexOf('attributedThreadOnly(data)');
+      final int meta = body.indexOf('"callStackTreeDropped"');
+      expect(slim, isNonNegative);
+      expect(meta, greaterThan(slim));
+      expect(body, contains(r'$0["threadAttributed"] as? Bool'));
+      for (final String key in <String>[
+        'appVersion',
+        'appBuildVersion',
+        'osVersion',
+        'deviceType',
+        'exceptionType',
+        'exceptionCode',
+        'signal',
+        'terminationReason',
+        'virtualMemoryRegionInfo',
+      ]) {
+        expect(body, contains('"$key":'), reason: '兜底元数据缺 $key');
+      }
+    });
   });
 
   test('折入后的摘要出现在反馈上传的日志文本里', () async {

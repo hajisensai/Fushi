@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/creator_field_values.dart';
+import 'package:fushi/src/creator/fields/term_field.dart';
 
 void main() {
   group('CreatorFieldValues', () {

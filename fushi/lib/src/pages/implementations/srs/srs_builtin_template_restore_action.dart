@@ -9,7 +9,10 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 先确认再把内置笔记类型 [noteTypeId] 的内置模板 / CSS 写回代码定义；写了就推进刷新信号、调 [onChanged]
 /// （页面重读），并给出可撤销的提示条（撤销后同样推进刷新信号、调 [onChanged]）。返回是否写了记录。

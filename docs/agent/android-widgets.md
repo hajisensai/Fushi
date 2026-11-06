@@ -67,8 +67,9 @@ All user-visible strings are already localized and formatted in Dart.
 
   "continue": { /* media */ } | null,
   "shelf": [ /* media, max 4 */ ],
-  // media = { "kind": "book|manga|video", "id", "title", "subtitle", "progress": 0..1,
-  //           "cover": "<abs path>|''", "position": "45%"|"", "lastActive": "2 h ago"|"" }
+  // media = { "kind": "book|manga|video|game", "id", "title", "subtitle", "progress": 0..1,
+  //           "cover": "<abs path>|''", "position": "45%"|"", "lastActive": "2 h ago"|"",
+  //           "link": "fushi://widget/..." }   // Dart-built tap target, see "One continue source"
 
   "today": {
     "time": "2h 15m", "chars": "12.3k", "goal": 0.4,  // legacy: chars goal fraction
@@ -114,7 +115,21 @@ All user-visible strings are already localized and formatted in Dart.
     "new": 20, "learn": 18, "review": 90,            // fushi only
     "reviewedToday": 52,                             // fushi only
     "dueTomorrow": 75,                               // fushi only
+    "timeline": [ { "at": 1793603600000, "due": 131 } ],  // fushi only: future change points only
     "ankiPackage": "com.ichi2.anki"                  // anki only: package to query / launch
+  },
+
+  "heatmap": {                      // last 112 stat days (16 weeks), oldest→today
+    "levels": [112 ints 0..4],      // widgetHeatLevel: 0 none, 1 <15m (or untimed activity),
+                                    // 2 <30m, 3 <60m, 4 ≥60m — fixed thresholds
+    "firstWeekday": 6, "time": "64h", "activeDays": 90
+  },
+
+  "rollover": {                     // null when no future boundary is known
+    "at": 1793640000000,            // next stat-day boundary (honours stats_day_reset_hour)
+    "day": "2026-11-03",
+    "today": {...}, "goals": [...], "week": {...}, "month": {...},
+    "streak": {...}, "heatmap": {...}   // same shapes as top level, computed for "day"
   },
 
   "vocab": [                        // up to 12, newest first, deterministic
@@ -147,6 +162,41 @@ All user-visible strings are already localized and formatted in Dart.
 
 `media.remaining` (every `continue` / `shelf` entry) is the pre-formatted "time to finish"
 ("≈2h 10m left", `widget_label_time_left`) or `""` when it cannot be estimated honestly.
+
+### Time-dependent fields (resolved natively, never recomputed)
+
+- `srs.timeline` (`buildWidgetSrsDueTimeline`): learning / relearning cards ripen at their exact
+  `dueAt` (merged per minute, per hour past 40 points); at the SRS day boundary (store's
+  `dayIndexOf`, binary-searched on the epoch-minute grid, i.e. the true boundary rounded up to
+  the whole minute and independent of the sample time) the reviews due on the next SRS day are
+  added. That increment is an approximation: it ignores the daily review limit (may
+  over-count) and the next day's new-card allowance / today's unfinished backlog (may
+  under-count); the next sample's `srs.due` is exact. Horizon 24 h. Only points after
+  `generatedAt` whose count differs are sent ("now" is `srs.due`), and every point is
+  minute-aligned, so snapshots sampled seconds apart sign the same and the publisher's
+  signature dedup still works. Native: the count shown at time
+  *t* is the last point with `at <= t`, else `srs.due`.
+- `rollover`: the day-dependent blocks (`today`, `goals`, `week`, `month`, `streak`, `heatmap`)
+  re-run by the same Dart builder for the next stat day — today zeroed, the streak kept when
+  today had activity and broken otherwise, arrays shifted by one. Native swaps them in once
+  `now >= rollover.at` (`day` too, so the word of the day rotates).
+- Apple: `FushiSnapshotProvider` emits one timeline entry for now, every `srs.timeline` point
+  and `rollover.at` inside 24 h, each `FushiWidgetSnapshot.resolved(at:)`; policy
+  `.after(24 h)`. Android: `WidgetStore.load` applies `resolveRollover` and `srsDueAt` on every
+  load (Glance re-renders on its update period / any new snapshot). Android has no 16-week
+  view; the `heatmap` field is still the same JSON.
+
+### One continue source
+
+`shelf` / `continue` is the only "continue" source for every widget (Android and Apple), mixed
+like Home > Continue by `recentAt`:
+
+| item | where it comes from | `link` |
+|---|---|---|
+| book / manga / video | local library (`isDashboardContinueBook`, `listForShelf`) | `continue?kind=&id=` |
+| game | `GalgameRepository`, `lastPlayedMs > 0` | `continue?kind=game&id=` → games tab only (no silent launch, BUG-1111) |
+| interconnect remote | `RemoteContinueFeed` (published by the dashboard after its fetch; no widget request) | `tab/books` / `tab/video` (same as the Home remote card) |
+| media server / ABS | the On deck items (`ServerContinueFeed`, same opt-in gates and covers) | `server?source=&server=&item=` |
 
 ## `labels` keys (stable contract)
 
@@ -427,7 +477,13 @@ deep-link grammar or label set:
 - `WidgetLink` has two Apple-driven actions: `camera_lookup` and
   `clipboard_lookup` (dictionary module gated).
 - Guard: `test/platform/home_widgets/apple_widget_contract_test.dart` reads the
-  Swift sources and checks decoded keys / labels / hard-coded links against Dart.
+  Swift sources and checks decoded keys / labels / hard-coded links against Dart,
+  that `rollover` carries the same block shapes Swift swaps in, and that both
+  native sides resolve `srs.timeline` / `rollover` / `link` at render time.
+- Views: reviews due (count follows `srs.timeline`), streak, continue (shelf,
+  incl. games / remote / server items), word of the day (rotates with `day`),
+  16-week heatmap (`heatmap`; old snapshots fall back to the 35-day `month`),
+  now playing, look up.
 - Live Activities (iOS) / the macOS menu-bar player are separate from the
   snapshot: `lib/src/platform/home_widgets/` (`LiveActivityController`, serial
   sync per activity kind) over `app.fushi.reader/home_widgets`.

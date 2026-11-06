@@ -62,6 +62,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rating_guide.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_edit_bar.dart';
@@ -77,7 +78,11 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_media.dart';
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
+import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
@@ -93,7 +98,21 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
@@ -518,6 +537,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               ?rendered.fushiCardDefinitions,
             ],
           );
+          // 原生 HTML 卡面的解析与判据（按内容记忆）同样提前算好。
+          _htmlCardOf(rendered, detail);
           SrsReviewPage.debugPhase?.call('prefetch:warm');
         }
         return _PrefetchedCard(
@@ -799,12 +820,23 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     SrsRenderedCard rendered, {
     bool layout = false,
   }) {
-    if (rendered.fushiCardDefinitions != null) {
+    if (_fushiNative(rendered)) {
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
         ref.read(srsCardAppearanceProvider),
+        front: rendered.fushiCardFront,
+        back: rendered.fushiCardBack,
       ).media;
       return (question: media.front, answer: media.back);
+    }
+    final SrsHtmlCard? html = _htmlCardOf(rendered);
+    if (html != null) {
+      // 原生 HTML 卡面：盒子树里看得见的发音键（与卡面画出来的同一份，两面都现成）。
+      final bool dark = Theme.of(context).brightness == Brightness.dark;
+      List<String> sounds(SrsHtmlCardFace f) => srsHtmlVisibleSounds(
+        f.layout(dark: dark, foreground: dark ? 0xFFFFFFFF : 0xFF000000),
+      );
+      return (question: sounds(html.question), answer: sounds(html.answer));
     }
     final bool current =
         _pageSoundsCard != null && _pageSoundsCard == _detail?.card.id;
@@ -832,7 +864,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   /// 这一面的可见发音页面报上来没有（原生卡面不靠上报，总是现成的）。
   bool _faceSoundsKnown(SrsRenderedCard rendered, {required bool answerSide}) {
-    if (rendered.fushiCardDefinitions != null) return true;
+    if (_nativeFace(rendered)) return true;
     if (_pageSoundsCard == null || _pageSoundsCard != _detail?.card.id) {
       return false;
     }
@@ -2155,14 +2187,42 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
-  /// 当前显示的是原生 Fushi 卡面（Flutter 滚动，能滚到浮动页头底下）。
+  /// 当前显示的是原生卡面（Flutter 滚动，能滚到浮动页头底下）。
   bool get _cardScrollsUnderHeader =>
       !_loading &&
       _error == null &&
       !_finished &&
       (_store?.canSchedule ?? false) &&
       _detail != null &&
-      _rendered?.fushiCardDefinitions != null;
+      _nativeFace(_rendered);
+
+  /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsNativeHtmlCardFor]，按内容记忆）；null =
+  /// 不是这类卡或画不全（整面 WebView）。[detail] 缺省为当前卡（预取时传那张卡的）。
+  SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered, [SrsCardDetail? detail]) {
+    if (rendered == null || _fushiNative(rendered)) return null;
+    return srsNativeHtmlCardFor(
+      fushiCard:
+          (detail ?? _detail)?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+      question: rendered.question,
+      answer: rendered.answer,
+      css: rendered.css,
+      languageCode: ref.read(appProvider).defaultContentLanguage,
+    );
+  }
+
+  /// 内置 Fushi 卡片走原生混合卡面：引擎认得出区块布局、自定义区块（字段 / HTML 区块）原生
+  /// 画得全（[srsFushiCardRenderedNative]，按内容记忆）。否则整面 WebView。
+  bool _fushiNative(SrsRenderedCard? rendered) =>
+      rendered != null &&
+      srsFushiCardRenderedNative(
+        rendered,
+        languageCode: ref.read(appProvider).defaultContentLanguage,
+      );
+
+  /// 卡面由 Flutter 原生画（Fushi 卡片混合渲染或原生 HTML 卡面）。
+  bool _nativeFace(SrsRenderedCard? rendered) =>
+      rendered != null &&
+      (_fushiNative(rendered) || _htmlCardOf(rendered) != null);
 
   Widget _buildBody(BuildContext context) {
     // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
@@ -2343,8 +2403,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       gestureArming: gestureArming,
       onEditSelection: inlineEdit ? _onEditSelection : null,
     );
-    // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
-    final Widget built = rendered?.fushiCardDefinitions != null
+    // 内置 Fushi 卡片（模板未改或只调了区块布局）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
+    // 认得的 HTML / CSS 子集里就整面原生（[srsHtmlCardOf]），否则整面 WebView。
+    final SrsHtmlCard? html = _htmlCardOf(rendered);
+    final Widget built = html != null
+        ? SrsHtmlCardView(
+            key: const ValueKey<String>('srs-html-card-view'),
+            face: face,
+            source: html.face(answerSide: _showingAnswer),
+            topInset: media.padding.top,
+            bottomInset: _bottomBarInset,
+            zoom: zoom,
+          )
+        : _fushiNative(rendered)
         ? MediaQuery(
             // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
             data: media.copyWith(
@@ -2355,6 +2426,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               face: face,
               fields: rendered!.fields,
               definitionsHtml: rendered.fushiCardDefinitions!,
+              front: rendered.fushiCardFront,
+              back: rendered.fushiCardBack,
               topInset: media.padding.top,
               bottomInset: _bottomBarInset,
             ),
@@ -2381,9 +2454,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final SrsCardGestureArming gestureArming = ref
         .watch(srsReviewGesturesProvider)
         .arming(_side, hideHardEasy: ref.watch(srsReviewHideHardEasyProvider));
-    // 原生 Fushi 卡面铺到底栏背后、把底栏高度当滚动内边距；整面 WebView 卡面滚不到底栏
-    // 下面，停在底栏上沿（与顶端让位浮动页头同一口径，见 [_cardScrollsUnderHeader]）。
-    final bool underBar = rendered?.fushiCardDefinitions != null;
+    // 原生卡面（Fushi 卡片 / 原生 HTML 卡面）铺到底栏背后、把底栏高度当滚动内边距；整面
+    // WebView 卡面滚不到底栏下面，停在底栏上沿（与顶端让位浮动页头同一口径，见
+    // [_cardScrollsUnderHeader]）。
+    final bool underBar = _nativeFace(rendered);
     final Widget cardFace = _cardFace(
       context,
       detail: detail,
@@ -3053,7 +3127,11 @@ String srsRatingLabel(int rating) => switch (rating) {
 /// 「已评：良好 · 3天后到期」，配色与那颗评分按钮同一套（[srsRatingColors]，MD3 / Apple
 /// 各自的色调），翻面 / 撤销时收起。进出场走 [FushiMotion]（淡入 + 由 0.9 放大到位），
 /// 减弱动态效果下直接到位；读屏经 liveRegion 播报。不吃指针，不挡卡面点按与手势。
-class SrsRatedFeedbackChip extends StatelessWidget {
+///
+/// 只闪一下（反馈 vKGS1y9-v2：原来一直挂到翻面才收，太久）：每次评分（新的
+/// [SrsRatedFeedback.serial]）出现后停留 [FushiNoticeDwell.flash] 自行收起；
+/// 时长归提示类别统一管，不在这里另写毫秒数。翻面 / 撤销仍立即收起。
+class SrsRatedFeedbackChip extends StatefulWidget {
   const SrsRatedFeedbackChip({
     super.key,
     required this.feedback,
@@ -3066,8 +3144,67 @@ class SrsRatedFeedbackChip extends StatelessWidget {
   final double bottomInset;
 
   @override
+  State<SrsRatedFeedbackChip> createState() => _SrsRatedFeedbackChipState();
+}
+
+class _SrsRatedFeedbackChipState extends State<SrsRatedFeedbackChip> {
+  /// 正在计时的那次评分；null = 当前没有提示在计时。
+  int? _armedSerial;
+
+  /// 已停留满、收起的那次评分（同一次评分重建时不再冒出来）。
+  int? _expiredSerial;
+
+  Timer? _dwell;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  @override
+  void didUpdateWidget(SrsRatedFeedbackChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _arm();
+  }
+
+  /// 按当前 [SrsRatedFeedbackChip.feedback] 对齐计时：没有提示就停表；换成新的
+  /// 一次评分就从头计 [FushiNoticeDwell.flash]。
+  void _arm() {
+    final SrsRatedFeedback? f = widget.feedback;
+    if (f == null) {
+      _dwell?.cancel();
+      _dwell = null;
+      _armedSerial = null;
+      return;
+    }
+    if (f.serial == _armedSerial || f.serial == _expiredSerial) return;
+    _dwell?.cancel();
+    _armedSerial = f.serial;
+    final int serial = f.serial;
+    _dwell = Timer(FushiNoticeDwell.flash, () {
+      if (!mounted) return;
+      setState(() {
+        _expiredSerial = serial;
+        _armedSerial = null;
+        _dwell = null;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _dwell?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final SrsRatedFeedback? f = feedback;
+    final SrsRatedFeedback? shown = widget.feedback;
+    final SrsRatedFeedback? f = shown == null || shown.serial == _expiredSerial
+        ? null
+        : shown;
+    final double bottomInset = widget.bottomInset;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return IgnorePointer(
       child: Align(

@@ -16,11 +16,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
@@ -35,7 +36,7 @@ import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/library_fixture.dart';

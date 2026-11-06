@@ -24,15 +24,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## 对外接口
 
-本模块是最终应用层，不对外暴露 library API。内部按 barrel file 组织导出：
-
-| Barrel 文件 | 职责 |
-|-------------|------|
-| `lib/creator.dart` | Anki 卡片创建器（fields / enhancements / actions） |
-| `lib/media.dart` | 媒体类型/源（reader / dictionary） |
-| `lib/models.dart` | 应用状态模型 |
-| `lib/pages.dart` | 所有页面 |
-| `lib/utils.dart` | 工具组件/国际化/自适应 UI |
+本模块是最终应用层，不对外暴露 library API。**一律直接 import 用到的库，不 import 顶层 barrel**（`lib/creator.dart` / `media.dart` / `models.dart` / `pages.dart` / `utils.dart`）：barrel 把几十个库捆成一个 import，`flutter test` 一个小测试也要编进整个 app（2026-11-05 量到 frontend_server 约 3 GB）。barrel 文件暂留给并发分支过渡，守卫 `fushi/test/build/import_cycle_guard_test.dart` 禁止引用；合并后报红就在仓库根跑 `tool/barrel_imports/bin/expand_barrel_imports.dart`（用法见文件头）机械换掉。
 
 ## 关键子系统
 
@@ -220,7 +212,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `lib/main.dart` -- 主入口
 - `lib/popup_main.dart` -- 弹窗词典入口
 - `lib/floating_dict_main.dart` -- 悬浮词典入口
-- `lib/creator.dart` / `lib/media.dart` / `lib/models.dart` / `lib/pages.dart` / `lib/utils.dart` -- barrel files
+- `lib/creator.dart` / `lib/media.dart` / `lib/models.dart` / `lib/pages.dart` / `lib/utils.dart` -- 旧 barrel，禁止 import（见上「对外接口」）
 - `lib/src/epub/` -- EPUB 处理（9 文件）
 - `lib/src/reader/` -- 阅读器 JS/CSS 注入封装（17 文件）
 - `lib/src/media/` -- 媒体子系统，下分 `audiobook/`（24 文件）/ `video/`（72 文件）/ `torrent/`（15 文件）/ `sources/` / `collections/` / `drag_drop/` 等

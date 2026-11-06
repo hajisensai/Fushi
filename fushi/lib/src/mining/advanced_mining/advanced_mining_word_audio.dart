@@ -1,6 +1,6 @@
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 /// 组装「高级制卡」的单词音频分区（两条开窗车道共用）。

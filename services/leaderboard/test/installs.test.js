@@ -661,6 +661,21 @@ describe('统计', () => {
     expect(page.data).toContain('2026-10-17');
     expect(page.data).toContain('未验证：今日 1');
   });
+
+  it('GET /dev/stats.json：开发者会话下返回与 /dev/stats 同一份 JSON；没有会话 → 401（不跳登录页）', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    await ping(env);
+    const anon = await call(env, 'GET', '/dev/stats.json', { now: NOW });
+    expect(anon.status).toBe(401);
+    expect(anon.data.error).toBe('dev_session_required');
+    const r = await devPage(env, '/dev/stats.json');
+    expect(r.status).toBe(200);
+    expect(r.data).toEqual(await installStats(env, NOW));
+    expect(r.data.dau).toBe(1);
+    expect(r.data.unverified.dau).toBe(1);
+    expect(r.data.daily[0].day).toBe('2026-10-17');
+  });
 });
 
 describe('反馈关联安装', () => {

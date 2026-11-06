@@ -420,10 +420,10 @@ packages:
     dependency: transitive
     description:
       name: cupertino_ui
-      sha256: a47c4e7c66fd7444a063a602597fceb238f705c3f6b1322bc0053d0a2638ee6e
+      sha256: "369e39a1c5c030a6212589c3da1809920b1c2cfade7b02aade7695bfa4b88c3a"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.4"
+    version: "1.1.6"
   dart_style:
     dependency: transitive
     description:
@@ -971,8 +971,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: "packages/asr_core"
-      ref: "8ecd20618855210ac4c5ae19229560c39be18ee2"
-      resolved-ref: "8ecd20618855210ac4c5ae19229560c39be18ee2"
+      ref: "680c0a182f236aabefa2ba726eaa2cc9e56c55dc"
+      resolved-ref: "680c0a182f236aabefa2ba726eaa2cc9e56c55dc"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -980,8 +980,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_onnx_ffi"
-      ref: "8ecd20618855210ac4c5ae19229560c39be18ee2"
-      resolved-ref: "8ecd20618855210ac4c5ae19229560c39be18ee2"
+      ref: "680c0a182f236aabefa2ba726eaa2cc9e56c55dc"
+      resolved-ref: "680c0a182f236aabefa2ba726eaa2cc9e56c55dc"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -989,8 +989,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_subtitles"
-      ref: "8ecd20618855210ac4c5ae19229560c39be18ee2"
-      resolved-ref: "8ecd20618855210ac4c5ae19229560c39be18ee2"
+      ref: "680c0a182f236aabefa2ba726eaa2cc9e56c55dc"
+      resolved-ref: "680c0a182f236aabefa2ba726eaa2cc9e56c55dc"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -1491,10 +1491,10 @@ packages:
     dependency: transitive
     description:
       name: material_ui
-      sha256: e4031746f96c8316864d9b92bce375f1320a36ed56e166307e1e1bda9d90b4ab
+      sha256: a30f5d0625b6b83770f53ca3f7aafd6fd9d147cb3853f54a70668541046fe5d6
       url: "https://pub.dev"
     source: hosted
-    version: "1.8.0"
+    version: "1.10.0"
   media_kit:
     dependency: transitive
     description:

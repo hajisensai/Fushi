@@ -41,7 +41,25 @@ import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/header_scroll_split.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -3462,70 +3480,68 @@ class _RelocateDialogState extends State<_RelocateDialog> {
       title: Text(t.anime_download_relocate),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // 为什么必须在 app 里改名，而不是去资源管理器 —— 说清楚，否则用户
-              // 改完再来问「怎么做种断了」。
-              Text(
-                t.anime_download_relocate_hint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 为什么必须在 app 里改名，而不是去资源管理器 —— 说清楚，否则用户
+            // 改完再来问「怎么做种断了」。
+            Text(
+              t.anime_download_relocate_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
               ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              t.anime_download_relocate_move_title,
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 6),
+            Text(widget.snapshot.savePath, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FushiFilledButton.tonalIcon(
+                onPressed: _pickDestination,
+                icon: const FushiIcon(FushiIcons.folderOpen, size: 18),
+                label: Text(t.anime_download_relocate_pick_folder),
+              ),
+            ),
+            if (widget.files.isNotEmpty) ...<Widget>[
+              const FushiDividerControl(height: 28),
               Text(
-                t.anime_download_relocate_move_title,
+                t.anime_download_relocate_rename_title,
                 style: theme.textTheme.titleSmall,
               ),
               const SizedBox(height: 6),
-              Text(widget.snapshot.savePath, style: theme.textTheme.bodySmall),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FushiFilledButton.tonalIcon(
-                  onPressed: _pickDestination,
-                  icon: const FushiIcon(FushiIcons.folderOpen, size: 18),
-                  label: Text(t.anime_download_relocate_pick_folder),
-                ),
-              ),
-              if (widget.files.isNotEmpty) ...<Widget>[
-                const FushiDividerControl(height: 28),
-                Text(
-                  t.anime_download_relocate_rename_title,
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(height: 6),
-                for (final TorrentFileEntry file in widget.files)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: FushiTextFieldControl(
-                            controller: _controllers[file.index],
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: FushiOutlinedFieldBorder(),
-                            ),
-                            onSubmitted: (_) => _submitRename(file),
+              for (final TorrentFileEntry file in widget.files)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: FushiTextFieldControl(
+                          controller: _controllers[file.index],
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            border: FushiOutlinedFieldBorder(),
                           ),
+                          onSubmitted: (_) => _submitRename(file),
                         ),
-                        const SizedBox(width: 8),
-                        FushiIconButton(
-                          tooltip: t.anime_download_relocate_rename_title,
-                          icon: FushiIcons.rename,
-                          size: 20,
-                          onTap: () => _submitRename(file),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      FushiIconButton(
+                        tooltip: t.anime_download_relocate_rename_title,
+                        icon: FushiIcons.rename,
+                        size: 20,
+                        onTap: () => _submitRename(file),
+                      ),
+                    ],
                   ),
-              ],
+                ),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[

@@ -13,7 +13,8 @@ import 'package:fushi/src/storage/books_directory.dart'
     show kLegacyBooksDirectoryName;
 import 'package:fushi/src/storage/export_directory.dart'
     show kLegacyExportDirectoryName;
-import 'package:fushi/src/sync/backup_service.dart' show isBackupArchiveName;
+import 'package:fushi/src/sync/backup_archive_name.dart'
+    show isBackupArchiveName;
 
 /// 存储占用扫描服务（设置 → 存储）。
 ///

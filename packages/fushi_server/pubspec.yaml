@@ -48,12 +48,14 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 8ecd20618855210ac4c5ae19229560c39be18ee2
+      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
   fushi_asr_onnx_ffi:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_onnx_ffi
-      ref: 8ecd20618855210ac4c5ae19229560c39be18ee2
+      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
+  # 服务端整机备份的 zip 读写（与 fushi_engine 同钉；条目内容走引擎 native_zip）。
+  archive: ^3.6.1
   args: ^2.4.0
   crypto: ^3.0.0
   drift: ">=2.33.0 <2.34.0"
@@ -65,7 +67,5 @@ dependencies:
   yaml: ^3.1.0
 
 dev_dependencies:
-  # 测试里现造最小 EPUB（书根扫描对账）；版本与 fushi_engine 同钉。
-  archive: ^3.6.1
   lints: ^2.0.0
   test: ^1.24.0

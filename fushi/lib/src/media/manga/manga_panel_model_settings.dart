@@ -4,7 +4,11 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
 
 class MangaPanelModelSettings extends StatefulWidget {

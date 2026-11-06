@@ -26,8 +26,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 
-import 'package:fushi/media.dart' show ReaderFushiSource;
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart'
     show withFallbackMiningSentence;
@@ -36,6 +36,7 @@ import 'package:fushi/src/media/video/subtitle_transcript_text.dart'
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
@@ -43,7 +44,8 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart'
     show ReaderSelectionScripts;
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 卡面取词的交互设置（与阅读器同源）。
 typedef SrsCardLookupSettings = ({bool tap, bool hoverAuto});
@@ -152,6 +154,23 @@ class SrsCardLookupController extends ChangeNotifier {
   void unregister(SrsCardLookupSurface surface) {
     _surfaces.remove(surface);
     if (identical(_origin, surface)) _origin = null;
+  }
+
+  /// [surface] 的正文 WebView 新建 / 重建（`onWebViewCreated`）。它正是本次查词的
+  /// 发起表面时，让弹窗栈把静态硬件层挪到新 WebView 上（见 [PopupBodyStaticLayerGate]）。
+  void bodyWebViewChanged(SrsCardLookupSurface surface) {
+    if (!identical(surface, _origin)) return;
+    _host?._popup.bodyStaticLayer.bodyChanged();
+  }
+
+  /// 本次查词发起表面的正文 WebView viewId：表面实现了 [PopupBodyWebViewProvider]
+  /// （复习卡面 / 浏览器标签页）才有，原生文字区 / 扩展浮窗为 null。
+  Object? _originBodyWebViewId() {
+    final SrsCardLookupSurface? origin = _origin;
+    if (origin case final PopupBodyWebViewProvider provider) {
+      return provider.popupBodyWebViewId;
+    }
+    return null;
   }
 
   /// 从某个表面发起一次顶层查词（换掉整栈）。宿主没挂上时 no-op。
@@ -368,6 +387,8 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     super.initState();
     widget.controller._host = this;
     attachLookupCounter(_popup);
+    _popup.bodyStaticLayer.resolveBody = () =>
+        widget.controller._originBodyWebViewId();
   }
 
   @override

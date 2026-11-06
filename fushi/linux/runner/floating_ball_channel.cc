@@ -4,17 +4,26 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "floating_ball_window.h"
+#include "screen_capture.h"
+#include "screen_ocr_overlay.h"
 
 struct _FushiFloatingBall {
   FlMethodChannel* channel = nullptr;
   std::unique_ptr<FloatingBallWindow> window;
+  std::unique_ptr<ScreenOcrOverlay> screen_ocr;
   GtkWindow* main_window = nullptr;
+  // Screen OCR captures finish asynchronously (portal): a finished capture
+  // checks that this object still lives and that it is still the latest one.
+  std::shared_ptr<bool> alive = std::make_shared<bool>(true);
+  uint64_t capture_generation = 0;
 };
 
 namespace {
@@ -193,6 +202,197 @@ void ShowProfileMenu(FushiFloatingBall* self, FlMethodCall* call,
       });
 }
 
+// ── screen OCR ──────────────────────────────────────────────────────────────
+
+std::optional<fushi::screen_ocr::RectD> RectDArg(FlValue* v) {
+  if (v == nullptr || fl_value_get_type(v) != FL_VALUE_TYPE_LIST ||
+      fl_value_get_length(v) != 4) {
+    return std::nullopt;
+  }
+  double edges[4];
+  for (size_t i = 0; i < 4; ++i) {
+    edges[i] = Number(fl_value_get_list_value(v, i));
+    if (!std::isfinite(edges[i])) return std::nullopt;
+  }
+  return fushi::screen_ocr::RectD{edges[0], edges[1], edges[2], edges[3]};
+}
+
+// The monitor whose physical rect (logical geometry x scale) holds |probe|;
+// none -> the monitor under the pointer.
+GdkMonitor* MonitorAtPhysical(fushi::screen_ocr::ProbePoint probe) {
+  GdkDisplay* display = gdk_display_get_default();
+  const int count = gdk_display_get_n_monitors(display);
+  for (int i = 0; i < count; ++i) {
+    GdkMonitor* monitor = gdk_display_get_monitor(display, i);
+    GdkRectangle g;
+    gdk_monitor_get_geometry(monitor, &g);
+    const int s = std::max(1, gdk_monitor_get_scale_factor(monitor));
+    if (probe.x >= g.x * s && probe.x < (g.x + g.width) * s &&
+        probe.y >= g.y * s && probe.y < (g.y + g.height) * s) {
+      return monitor;
+    }
+  }
+  return nullptr;
+}
+
+fushi::screen_ocr::ProbePoint PointerPhysical() {
+  GdkDisplay* display = gdk_display_get_default();
+  GdkSeat* seat = gdk_display_get_default_seat(display);
+  GdkDevice* pointer = seat != nullptr ? gdk_seat_get_pointer(seat) : nullptr;
+  int x = 0;
+  int y = 0;
+  if (pointer != nullptr) gdk_device_get_position(pointer, nullptr, &x, &y);
+  GdkMonitor* monitor = gdk_display_get_monitor_at_point(display, x, y);
+  const int s =
+      monitor != nullptr ? std::max(1, gdk_monitor_get_scale_factor(monitor))
+                         : 1;
+  return fushi::screen_ocr::ProbePoint{x * s, y * s};
+}
+
+FlValue* CaptureError(const std::string& error, const std::string& diagnostic) {
+  FlValue* map = fl_value_new_map();
+  fl_value_set_string_take(map, "error", fl_value_new_string(error.c_str()));
+  if (!diagnostic.empty()) {
+    fl_value_set_string_take(map, "diagnostic",
+                             fl_value_new_string(diagnostic.c_str()));
+  }
+  return map;
+}
+
+void StopScreenOcr(FushiFloatingBall* self) {
+  ++self->capture_generation;  // a capture still in flight is dropped
+  self->screen_ocr->Close();
+  self->window->RestoreAfterCapture();
+}
+
+// Dart: {anchor, labels, colors} -> {png, screen} | {error}. Answered when the
+// capture finishes (the portal is asynchronous).
+void StartScreenOcrCapture(FushiFloatingBall* self, FlMethodCall* call,
+                           FlValue* args) {
+  ScreenOcrOverlay::Style style;
+  if (FlValue* labels = Find(args, "labels"); labels != nullptr) {
+    style.recognizing = StringArg(labels, "recognizing", "");
+    style.hint = StringArg(labels, "hint", "");
+    style.close = StringArg(labels, "close", "");
+  }
+  if (FlValue* colors = Find(args, "colors"); colors != nullptr) {
+    style.primary = ArgbArg(colors, "primary", style.primary);
+    style.surface = ArgbArg(colors, "surface", style.surface);
+    style.on_surface = ArgbArg(colors, "onSurface", style.on_surface);
+  }
+  const fushi::screen_ocr::ProbePoint probe =
+      fushi::screen_ocr::MonitorProbePoint(RectDArg(Find(args, "anchor")),
+                                           PointerPhysical());
+  GdkMonitor* monitor = MonitorAtPhysical(probe);
+  if (monitor == nullptr) {
+    monitor = gdk_display_get_primary_monitor(gdk_display_get_default());
+  }
+  if (monitor == nullptr) {
+    g_autoptr(FlValue) reply = CaptureError("capture_failed", "no monitor");
+    RespondValue(call, reply);
+    return;
+  }
+
+  // A layer still open (the ball was tapped again) and the ball itself must
+  // not end up in the picture. The X round trip makes sure the X server has
+  // unmapped them before the capture is requested.
+  self->screen_ocr->Close();
+  self->window->HideForCapture();
+  gdk_display_sync(gdk_display_get_default());
+
+  const uint64_t generation = ++self->capture_generation;
+  std::weak_ptr<bool> alive = self->alive;
+  g_object_ref(call);
+  g_object_ref(monitor);
+  fushi::screen_capture::CaptureMonitor(
+      monitor, [self, call, monitor, style, generation, alive](
+                   fushi::screen_capture::MonitorCapture capture,
+                   const std::string& error) {
+        auto finish = [call, monitor](FlValue* reply) {
+          RespondValue(call, reply);
+          fl_value_unref(reply);
+          g_object_unref(call);
+          g_object_unref(monitor);
+        };
+        // Dropped captures answer "cancelled": Dart ends quietly instead of
+        // reporting a failure the user never saw.
+        if (alive.expired()) {
+          finish(CaptureError("cancelled", "runner closed"));
+          return;
+        }
+        if (generation != self->capture_generation) {
+          // stopScreenOcr / stopSystemBall or a newer capture came first.
+          finish(CaptureError("cancelled", "superseded"));
+          return;
+        }
+        if (!error.empty() || capture.pixbuf == nullptr) {
+          self->window->RestoreAfterCapture();
+          finish(CaptureError(error.empty() ? "capture_failed" : error,
+                              capture.diagnostic));
+          return;
+        }
+        // Freeze first (shows "recognizing"), then encode the PNG.
+        if (!self->screen_ocr->Show(monitor, capture.pixbuf, style)) {
+          self->window->RestoreAfterCapture();
+          finish(CaptureError("capture_failed", capture.diagnostic));
+          return;
+        }
+        gchar* buffer = nullptr;
+        gsize size = 0;
+        GError* encode_error = nullptr;
+        // Fast compression: the PNG only travels to Dart in memory.
+        if (!gdk_pixbuf_save_to_buffer(capture.pixbuf.get(), &buffer, &size,
+                                       "png", &encode_error, "compression",
+                                       "1", nullptr)) {
+          const std::string message = encode_error != nullptr
+                                          ? encode_error->message
+                                          : "png encode failed";
+          g_clear_error(&encode_error);
+          StopScreenOcr(self);
+          finish(CaptureError("capture_failed", message));
+          return;
+        }
+        FlValue* screen = fl_value_new_list();
+        fl_value_append_take(screen, fl_value_new_int(capture.screen.x));
+        fl_value_append_take(screen, fl_value_new_int(capture.screen.y));
+        fl_value_append_take(
+            screen, fl_value_new_int(capture.screen.x + capture.screen.width));
+        fl_value_append_take(
+            screen, fl_value_new_int(capture.screen.y + capture.screen.height));
+        FlValue* reply = fl_value_new_map();
+        fl_value_set_string_take(
+            reply, "png",
+            fl_value_new_uint8_list(reinterpret_cast<const uint8_t*>(buffer),
+                                    size));
+        g_free(buffer);
+        fl_value_set_string_take(reply, "screen", screen);
+        if (!capture.diagnostic.empty()) {
+          fl_value_set_string_take(
+              reply, "diagnostic",
+              fl_value_new_string(capture.diagnostic.c_str()));
+        }
+        finish(reply);
+      });
+}
+
+void UpdateScreenOcr(FushiFloatingBall* self, FlValue* args) {
+  std::vector<fushi::screen_ocr::RectD> lines;
+  if (FlValue* list = Find(args, "lines");
+      list != nullptr && fl_value_get_type(list) == FL_VALUE_TYPE_LIST) {
+    for (size_t i = 0; i < fl_value_get_length(list); ++i) {
+      if (auto rect = RectDArg(fl_value_get_list_value(list, i))) {
+        lines.push_back(*rect);
+      }
+    }
+  }
+  std::optional<std::string> message;
+  if (FlValue* v = Find(args, "message");
+      v != nullptr && fl_value_get_type(v) == FL_VALUE_TYPE_STRING) {
+    message = fl_value_get_string(v);
+  }
+  self->screen_ocr->Update(std::move(lines), std::move(message));
+}
+
 void MethodCallCb(FlMethodChannel*, FlMethodCall* call, gpointer user_data) {
   auto* self = static_cast<FushiFloatingBall*>(user_data);
   const std::string method = fl_method_call_get_name(call);
@@ -210,6 +410,10 @@ void MethodCallCb(FlMethodChannel*, FlMethodCall* call, gpointer user_data) {
     g_autoptr(FlValue) value = fl_value_new_bool(started);
     RespondValue(call, value);
   } else if (method == "stopSystemBall") {
+    // The freeze layer goes with the ball (as on Windows), and a capture still
+    // in flight is dropped. No callback.
+    ++self->capture_generation;
+    self->screen_ocr->Close();
     self->window->Stop();
     RespondValue(call, nullptr);
   } else if (method == "isSystemBallRunning") {
@@ -221,6 +425,14 @@ void MethodCallCb(FlMethodChannel*, FlMethodCall* call, gpointer user_data) {
     RespondValue(call, nullptr);
   } else if (method == "showProfileMenu") {
     ShowProfileMenu(self, call, args);
+  } else if (method == "startScreenOcrCapture") {
+    StartScreenOcrCapture(self, call, args);
+  } else if (method == "updateScreenOcrOverlay") {
+    UpdateScreenOcr(self, args);
+    RespondValue(call, nullptr);
+  } else if (method == "stopScreenOcr") {
+    StopScreenOcr(self);
+    RespondValue(call, nullptr);
   } else if (method == "takeSystemBallClosedByUser") {
     // Closing is pushed to Dart right away (the process is the app).
     g_autoptr(FlValue) value = fl_value_new_bool(false);
@@ -246,6 +458,7 @@ FushiFloatingBall* fushi_floating_ball_new(FlBinaryMessenger* messenger,
                               reinterpret_cast<gpointer*>(&self->main_window));
   }
   self->window = std::make_unique<FloatingBallWindow>();
+  self->screen_ocr = std::make_unique<ScreenOcrOverlay>();
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   self->channel = fl_method_channel_new(
       messenger, "app.fushi.reader/floating_ball", FL_METHOD_CODEC(codec));
@@ -275,6 +488,18 @@ FushiFloatingBall* fushi_floating_ball_new(FlBinaryMessenger* messenger,
     fl_value_set_string_take(map, "fraction", fl_value_new_float(fraction));
     Invoke(self, "systemBallPositionChanged", map);
   });
+  self->screen_ocr->SetTapCallback([self](int x, int y) {
+    g_autoptr(FlValue) map = fl_value_new_map();
+    fl_value_set_string_take(map, "x", fl_value_new_int(x));
+    fl_value_set_string_take(map, "y", fl_value_new_int(y));
+    Invoke(self, "screenOcrTap", map);
+  });
+  // The layer closed itself (Esc / right click / close button): the ball
+  // comes back, then Dart hears about it.
+  self->screen_ocr->SetDismissCallback([self]() {
+    self->window->RestoreAfterCapture();
+    Invoke(self, "screenOcrDismissed", nullptr);
+  });
   return self;
 }
 
@@ -285,6 +510,8 @@ void fushi_floating_ball_free(FushiFloatingBall* self) {
                                               nullptr);
     g_clear_object(&self->channel);
   }
+  self->alive.reset();
+  self->screen_ocr.reset();
   self->window.reset();
   if (self->main_window != nullptr) {
     g_object_remove_weak_pointer(G_OBJECT(self->main_window),

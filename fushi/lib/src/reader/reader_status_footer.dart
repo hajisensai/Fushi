@@ -7,7 +7,8 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/reader/reader_chrome_floating.dart'
     show kTopProgressFontSize;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 
 /// 各平台共用的阅读器底部状态行。
 ///
@@ -425,22 +426,38 @@ class ReaderStatusFooter extends StatefulWidget {
   State<ReaderStatusFooter> createState() => _ReaderStatusFooterState();
 }
 
-class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
+/// 状态行秒表的周期刷新（[ReaderStatusFooter] / [ReaderStatusInline] 共用）。
+///
+/// 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。计时器
+/// 只在所在子树看得见（[TickerMode] 开）时跑：被歌词覆盖层或别的路由盖住时停
+/// （BUG-4126）。恢复时 TickerMode 翻转让 [didChangeDependencies] 重跑、随后照常
+/// build，build 直接读 `sessionTotals()`，当帧就是现值。
+mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
   Timer? _ticker;
   String? _lastTracker;
 
+  Duration get trackerTick;
+  bool get trackerShown;
+  StudySessionTotals trackerTotals();
+
   @override
-  void initState() {
-    super.initState();
-    // 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。
-    _ticker = Timer.periodic(widget.tick, (_) {
-      if (!mounted) return;
-      // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
-      if (!widget.showTimer) return;
-      final String tracker = readerTrackerLabel(widget.sessionTotals());
-      if (tracker == _lastTracker) return;
-      setState(() => _lastTracker = tracker);
-    });
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (TickerMode.valuesOf(context).enabled) {
+      _ticker ??= Timer.periodic(trackerTick, (_) => _onTrackerTick());
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  void _onTrackerTick() {
+    if (!mounted) return;
+    // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
+    if (!trackerShown) return;
+    final String tracker = readerTrackerLabel(trackerTotals());
+    if (tracker == _lastTracker) return;
+    setState(() => _lastTracker = tracker);
   }
 
   @override
@@ -448,6 +465,18 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
     _ticker?.cancel();
     super.dispose();
   }
+}
+
+class _ReaderStatusFooterState extends State<ReaderStatusFooter>
+    with _TrackerTickRefresh<ReaderStatusFooter> {
+  @override
+  Duration get trackerTick => widget.tick;
+
+  @override
+  bool get trackerShown => widget.showTimer;
+
+  @override
+  StudySessionTotals trackerTotals() => widget.sessionTotals();
 
   /// 状态行里可点的一段（计时块 / 进度数字）。命中区**撑满整条行高**：裸文字 + 14px
   /// 图标的行盒只有十几 px 高，指针（尤其手指）要精确戳中那一行才有反应；撑满后整条
@@ -660,28 +689,16 @@ class ReaderStatusInline extends StatefulWidget {
   State<ReaderStatusInline> createState() => _ReaderStatusInlineState();
 }
 
-class _ReaderStatusInlineState extends State<ReaderStatusInline> {
-  Timer? _ticker;
-  String? _lastTracker;
+class _ReaderStatusInlineState extends State<ReaderStatusInline>
+    with _TrackerTickRefresh<ReaderStatusInline> {
+  @override
+  Duration get trackerTick => widget.tick;
 
   @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(widget.tick, (_) {
-      if (!mounted) return;
-      // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
-      if (!widget.showTimer) return;
-      final String tracker = readerTrackerLabel(widget.sessionTotals());
-      if (tracker == _lastTracker) return;
-      setState(() => _lastTracker = tracker);
-    });
-  }
+  bool get trackerShown => widget.showTimer;
 
   @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
+  StudySessionTotals trackerTotals() => widget.sessionTotals();
 
   @override
   Widget build(BuildContext context) {

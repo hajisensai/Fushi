@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';

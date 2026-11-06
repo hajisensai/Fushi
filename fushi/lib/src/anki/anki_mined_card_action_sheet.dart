@@ -5,8 +5,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/utils.dart'
-    show t, FushiLoadingView, FushiToast, ToastSeverity;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, FushiHeroTone;

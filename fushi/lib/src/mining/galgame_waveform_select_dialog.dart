@@ -9,7 +9,12 @@ import 'package:fushi/src/mining/galgame_audio_source.dart' show GalAudioSlice;
 import 'package:fushi/src/mining/galgame_waveform.dart'
     show kGalWaveformWindowMs, pcmToEnergyEnvelope;
 import 'package:fushi/src/mining/galgame_waveform_select.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 
 /// galgame 一键制卡（docs/specs/galgame-mining）波形选区对话框。

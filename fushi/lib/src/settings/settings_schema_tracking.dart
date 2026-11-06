@@ -3,7 +3,8 @@ import 'package:fushi/src/media/tracking/media_tracking_settings_body.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 SettingsDestination buildMediaTrackingDestination() {
   return SettingsDestination(

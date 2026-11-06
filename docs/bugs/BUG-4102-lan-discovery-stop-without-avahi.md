@@ -1,6 +1,0 @@
-## BUG-4102 · Linux 无 Avahi 时局域网发现停止抛空检查异常
-- **报告**：2026-11-03（Linux 冒烟：WSL Ubuntu 26.04 跑 Linux 包，打开互联设置后离开）
-- **真实性**：✅ 真 bug。`error_log.txt` 先记 `LanDiscovery.scan`：`org.freedesktop.Avahi was not provided by any .service files`（WSL / 精简安装没有 Avahi），离开页面时再记 `UncaughtZone: Null check operator used on a null value`，栈顶 `bonsoir_linux/src/actions/discovery/discovery.dart:130`（`stop()` 里的 `_serviceBrowser!`，该字段只由 `initialize()` 赋值）← `LanDiscoveryService.stopDiscovery` ← `dispose`。根因 `fushi/lib/src/sync/lan_discovery_service.dart` 的 `startDiscovery()`：**先**把新建的 discovery 挂到 `_discovery`、**再** `await initialize()`；initialize 抛错时这台未初始化的 browser 留在 `_discovery` 上，之后任何 stop / dispose 都去停它。同一形状还有一条：initialize 仍在进行时 dispose / 重启，也会去停一台未初始化的 browser。
-- **[x] ① 已修复** — discovery 只在 `initialize()` 成功后才发布到 `_discovery`；初始化期间放在单独的 `_initializing`，`stopDiscovery()` 只清空它，由启动方在 initialize 返回后发现自己被取代 / 已 dispose 再自己 `stop()`；initialize 失败则什么都不发布、原样抛给调用方（`LanDiscovery.scan` 照常记日志）。为测试加了 `discoveryFactory` 注入缝。`LanBroadcastService.start()` 本来就是成功后才发布，无需改。
-- **[x] ② 已加自动化测试** — `fushi/test/sync/lan_discovery_service_test.dart`：initialize 失败不发布、stop 不碰它；initialize 挂起时 dispose → 就绪后由启动方停掉且不 start；initialize 挂起时重启 → 只留新 browser。假 discovery 复刻 bonsoir_linux「未初始化即 stop 抛错」的契约。
-- **备注**：真机复测待补（有 Avahi 的 Linux 桌面与 Steam Deck 上确认正常发现不受影响）。

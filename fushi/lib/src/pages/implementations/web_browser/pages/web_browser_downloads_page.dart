@@ -10,7 +10,12 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_tab_view.dart'
     show openWebBrowserDownloadedFile;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
 /// 打开一个本地文件（默认交给 [openWebBrowserDownloadedFile]）。
 typedef WebBrowserFileOpener = Future<void> Function(String path);

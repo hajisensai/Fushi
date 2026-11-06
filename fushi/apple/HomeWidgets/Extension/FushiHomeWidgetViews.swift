@@ -270,19 +270,34 @@ struct FushiContinueView: View {
     [item.position, item.remaining].filter { !$0.isEmpty }.joined(separator: " · ")
   }
 
+  /// 视频封面是横版（16:9），书 / 漫画 / 游戏是竖版（2:3）：布局按主条目的种类分开排，
+  /// 封面不再被硬塞进同一个框里裁成碎片。
+  private func isLandscape(_ item: FushiWidgetSnapshot.Media) -> Bool { item.kind == "video" }
+
+  private func link(_ item: FushiWidgetSnapshot.Media) -> URL {
+    item.link.fushiURL ?? URL(string: FushiLinks.open)!
+  }
+
   private func medium(_ snapshot: FushiWidgetSnapshot) -> some View {
     let main = snapshot.shelf[0]
     let side = Array(snapshot.shelf.dropFirst().prefix(2))
     return HStack(spacing: 12) {
-      Link(destination: main.link.fushiURL ?? URL(string: FushiLinks.open)!) {
-        FushiCoverImage(path: main.cover, kind: main.kind)
-          .frame(width: 84)
+      Link(destination: link(main)) {
+        if isLandscape(main) {
+          FushiCoverImage(path: main.cover, kind: main.kind, cornerRadius: 10)
+            .frame(width: 112, height: 63)
+            .frame(maxHeight: .infinity)
+        } else {
+          FushiCoverImage(path: main.cover, kind: main.kind)
+            .aspectRatio(2 / 3, contentMode: .fit)
+        }
       }
       VStack(alignment: .leading, spacing: 3) {
         FushiWidgetTag(text: title)
-        Link(destination: main.link.fushiURL ?? URL(string: FushiLinks.open)!) {
+        Link(destination: link(main)) {
           VStack(alignment: .leading, spacing: 2) {
-            Text(snapshot.displayTitle(main)).font(.subheadline.weight(.bold)).lineLimit(1)
+            Text(snapshot.displayTitle(main)).font(.subheadline.weight(.bold))
+              .lineLimit(isLandscape(main) ? 2 : 1)
             Text(caption(main)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             if main.progress > 0 {
               FushiProgressBar(value: main.progress).padding(.top, 3)
@@ -292,10 +307,10 @@ struct FushiContinueView: View {
         Spacer(minLength: 4)
         HStack(spacing: 8) {
           ForEach(side, id: \.self) { item in
-            Link(destination: item.link.fushiURL ?? URL(string: FushiLinks.open)!) {
+            Link(destination: link(item)) {
               HStack(spacing: 6) {
-                FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 5)
-                  .frame(width: item.kind == "video" ? 44 : 24, height: 32)
+                FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 5, maxPoint: 64)
+                  .frame(width: isLandscape(item) ? 44 : 22, height: isLandscape(item) ? 26 : 32)
                 VStack(alignment: .leading, spacing: 0) {
                   Text(snapshot.displayTitle(item)).font(.system(size: 11, weight: .semibold)).lineLimit(1)
                   Text(detail(item).isEmpty ? item.subtitle : detail(item))
@@ -313,51 +328,133 @@ struct FushiContinueView: View {
   private func large(_ snapshot: FushiWidgetSnapshot) -> some View {
     let main = snapshot.shelf[0]
     let rest = Array(snapshot.shelf.dropFirst().prefix(3))
-    return VStack(alignment: .leading, spacing: 8) {
-      FushiWidgetTag(text: title)
-      Link(destination: main.link.fushiURL ?? URL(string: FushiLinks.open)!) {
-        ZStack(alignment: .bottomLeading) {
-          FushiCoverImage(path: main.cover, kind: main.kind, cornerRadius: 14)
-            .frame(maxWidth: .infinity)
-          LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-          HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 1) {
-              Text(snapshot.displayTitle(main)).font(.headline).foregroundStyle(.white).lineLimit(1)
-              Text(caption(main)).font(.caption).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
-            }
-            Spacer()
-            Image(systemName: "play.fill")
-              .font(.callout)
-              .foregroundStyle(FushiPalette.accent)
-              .frame(width: 36, height: 36)
-              .background(Circle().fill(.white.opacity(0.92)))
-          }
-          .padding(10)
+    return VStack(alignment: .leading, spacing: 12) {
+      Link(destination: link(main)) {
+        // 只有一个在读条目时主卡占满整块，不留半屏空白。
+        if isLandscape(main) {
+          landscapeHero(snapshot, main, height: rest.isEmpty ? 220 : 140)
+        } else {
+          portraitHero(snapshot, main, height: rest.isEmpty ? 230 : 150)
         }
-        // 高度钉在整个 ZStack 上：渐变层是贪婪的，只钉封面会把卡片撑高、封面浮在中间。
-        .frame(height: 128)
       }
-      if main.progress > 0 { FushiProgressBar(value: main.progress, height: 4) }
-      VStack(spacing: 7) {
-        ForEach(rest, id: \.self) { item in
-          Link(destination: item.link.fushiURL ?? URL(string: FushiLinks.open)!) {
-            HStack(spacing: 10) {
-              FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 5)
-                .frame(width: 30, height: 42)
-              VStack(alignment: .leading, spacing: 1) {
-                Text(snapshot.displayTitle(item)).font(.footnote.weight(.semibold)).lineLimit(1)
-                Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-              }
-              Spacer()
-              if !item.position.isEmpty {
-                Text(item.position).font(.caption).foregroundStyle(.secondary)
-              }
+      // 小屏机型（大号组件只有 ~311pt 高）放不下三行就少放一行，不让主卡被挤出顶部。
+      ViewThatFits(in: .vertical) {
+        ForEach((0...rest.count).reversed(), id: \.self) { count in
+          VStack(spacing: 8) {
+            ForEach(rest.prefix(count), id: \.self) { item in
+              Link(destination: link(item)) { row(snapshot, item) }
             }
           }
         }
       }
       Spacer(minLength: 0)
+    }
+  }
+
+  /// 书 / 漫画 / 游戏：竖版封面立在左边，右边标题、进度、继续按钮。
+  private func portraitHero(
+    _ snapshot: FushiWidgetSnapshot, _ main: FushiWidgetSnapshot.Media, height: CGFloat
+  ) -> some View {
+    HStack(alignment: .top, spacing: 14) {
+      FushiCoverImage(path: main.cover, kind: main.kind, cornerRadius: 10, maxPoint: height)
+        .frame(width: height * 2 / 3, height: height)
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+      VStack(alignment: .leading, spacing: 4) {
+        FushiWidgetTag(text: title)
+        Text(snapshot.displayTitle(main))
+          .font(.headline)
+          .lineLimit(height > 200 ? 4 : 2)
+          .padding(.top, 2)
+        if !main.subtitle.isEmpty {
+          Text(main.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        Spacer(minLength: 6)
+        progressBlock(main)
+        playPill
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .frame(height: height)
+  }
+
+  /// 视频：横版封面整幅铺开，标题压在底部渐变上。
+  private func landscapeHero(
+    _ snapshot: FushiWidgetSnapshot, _ main: FushiWidgetSnapshot.Media, height: CGFloat
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      FushiWidgetTag(text: title)
+      ZStack(alignment: .bottomLeading) {
+        FushiCoverImage(path: main.cover, kind: main.kind, cornerRadius: 14, maxPoint: 360)
+        LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        HStack(alignment: .bottom, spacing: 10) {
+          VStack(alignment: .leading, spacing: 1) {
+            Text(snapshot.displayTitle(main)).font(.headline).foregroundStyle(.white).lineLimit(2)
+            Text(caption(main)).font(.caption).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
+          }
+          Spacer(minLength: 0)
+          Image(systemName: "play.fill")
+            .font(.callout)
+            .foregroundStyle(FushiPalette.accent)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(.white.opacity(0.92)))
+        }
+        .padding(10)
+      }
+      // 高度钉在整个 ZStack 上：渐变层是贪婪的。
+      .frame(height: height)
+      if main.progress > 0 { FushiProgressBar(value: main.progress, height: 4) }
+    }
+  }
+
+  @ViewBuilder
+  private func progressBlock(_ item: FushiWidgetSnapshot.Media) -> some View {
+    if item.progress > 0 {
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .firstTextBaseline) {
+          Text(item.position).font(.subheadline.weight(.bold).monospacedDigit())
+            .foregroundStyle(FushiPalette.accent)
+          Spacer(minLength: 4)
+          Text(item.remaining).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
+        FushiProgressBar(value: item.progress, height: 4)
+      }
+    } else if !item.remaining.isEmpty {
+      Text(item.remaining).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+    }
+  }
+
+  private var playPill: some View {
+    Label(title, systemImage: "play.fill")
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(.white)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
+      .background(Capsule().fill(FushiPalette.accent))
+      .widgetAccentable()
+  }
+
+  /// 次要条目：缩略图按种类取比例（视频横、其余竖），统一放在同宽的槽里让标题对齐。
+  private func row(_ snapshot: FushiWidgetSnapshot, _ item: FushiWidgetSnapshot.Media) -> some View {
+    HStack(spacing: 10) {
+      FushiCoverImage(path: item.cover, kind: item.kind, cornerRadius: 5, maxPoint: 72)
+        .frame(width: isLandscape(item) ? 52 : 27, height: isLandscape(item) ? 30 : 40)
+        .frame(width: 52, height: 40)
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Text(snapshot.displayTitle(item)).font(.footnote.weight(.semibold)).lineLimit(1)
+          Spacer(minLength: 0)
+          if !item.position.isEmpty {
+            Text(item.position).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+          }
+        }
+        if !item.subtitle.isEmpty {
+          Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
+        if item.progress > 0 {
+          FushiProgressBar(value: item.progress, height: 3)
+        }
+      }
     }
   }
 }
@@ -420,7 +517,7 @@ struct FushiWordView: View {
   }
 }
 
-// MARK: - 6 学习热力图（中）
+// MARK: - 6 学习热力图（中，近 16 周）
 
 struct FushiHeatmapWidget: Widget {
   var body: some WidgetConfiguration {
@@ -440,13 +537,27 @@ struct FushiHeatmapView: View {
     if let snapshot = entry.snapshot, let month = snapshot.month {
       HStack(spacing: 14) {
         VStack(alignment: .leading, spacing: 8) {
-          FushiWidgetTag(text: entry.label("recentDays", "Last 35 days"))
-          FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
+          // 16 周 × 7 天（Dart 给好固定阈值的档位）；旧快照没有 `heatmap` 时退回 35 天。
+          if let heatmap = snapshot.heatmap, !heatmap.levels.isEmpty {
+            FushiWidgetTag(text: entry.label("recentHeatmapDays", "Last 112 days"))
+            FushiHeatGrid(cells: heatmap.levels, firstWeekday: heatmap.firstWeekday)
+          } else {
+            FushiWidgetTag(text: entry.label("recentDays", "Last 35 days"))
+            FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
+          }
         }
+        // 右侧统计与网格同一口径：有 16 周热力图就用它的总时长 / 活跃天数，
+        // 旧快照（只有 35 天 `month`）才退回本月口径。
         VStack(alignment: .leading) {
-          stat(month.time, entry.label("thisMonth", "This month"))
-          Spacer()
-          stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
+          if let heatmap = snapshot.heatmap, !heatmap.levels.isEmpty {
+            stat(heatmap.time, entry.label("recentHeatmapDays", "Last 112 days"))
+            Spacer()
+            stat("\(heatmap.activeDays)", entry.label("activeDays", "Active days"))
+          } else {
+            stat(month.time, entry.label("thisMonth", "This month"))
+            Spacer()
+            stat("\(month.activeDays)", entry.label("activeDays", "Active days"))
+          }
         }
         .frame(width: 76, alignment: .leading)
       }
@@ -464,7 +575,8 @@ struct FushiHeatmapView: View {
   }
 }
 
-/// 一列一周（周一在上），最旧 → 今天；首列按 `firstWeekday` 留空，对齐星期。
+/// 一列一周（周一在上），最旧 → 今天；首列按 `firstWeekday` 留空，对齐星期。最后一格是
+/// 今天：还没学时画虚线框（不是「没数据」，是「今天还空着」）。
 struct FushiHeatGrid: View {
   /// 每天 0…4 档。
   let cells: [Int]
@@ -492,7 +604,7 @@ struct FushiHeatGrid: View {
           VStack(spacing: gap) {
             ForEach(0..<7, id: \.self) { row in
               let index = column * 7 + row - lead
-              cell(index >= 0 && index < cells.count ? cells[index] : nil)
+              cell(index >= 0 && index < cells.count ? cells[index] : nil, isToday: index == cells.count - 1)
                 .frame(width: side, height: side)
             }
           }
@@ -502,9 +614,12 @@ struct FushiHeatGrid: View {
   }
 
   @ViewBuilder
-  private func cell(_ level: Int?) -> some View {
+  private func cell(_ level: Int?, isToday: Bool) -> some View {
     if let level {
-      if level == 0 {
+      if level == 0 && isToday {
+        RoundedRectangle(cornerRadius: 2.5)
+          .strokeBorder(FushiPalette.study.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [2, 1.5]))
+      } else if level == 0 {
         RoundedRectangle(cornerRadius: 2.5).fill(.quaternary)
       } else {
         RoundedRectangle(cornerRadius: 2.5)

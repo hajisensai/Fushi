@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart' hide buildFushiColorScheme;
+import 'package:fushi/src/models/app_model.dart' hide buildFushiColorScheme;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/settings/settings_actions.dart';

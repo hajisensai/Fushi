@@ -15,8 +15,28 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -84,6 +104,7 @@ import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/misc/dashboard_remote_continue_feed.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart';
@@ -1373,6 +1394,10 @@ class _HomeDashboardPageState
         }
       }
       if (!mounted) return;
+      // 桌面小组件「继续」读同一份结果（不另发互联请求、不另写一套过滤）。
+      RemoteContinueFeed.of(
+        appModel.database,
+      ).publish(continueCandidates, deviceName: deviceName);
       setState(() {
         _remoteContinue = continueCandidates;
         _appliedRemoteBooks = remoteBooks;
@@ -1392,7 +1417,10 @@ class _HomeDashboardPageState
   ///   默认关）。
   /// 各自还要所属模块开着（视频模块关着不问媒体服务器，书模块关着不问 ABS）。
   ({bool mediaServers, bool audiobookshelf, String signature})
-  _serverContinueGates(AppModel appModel) => serverContinueGates(appModel);
+  _serverContinueGates(AppModel appModel) => serverContinueGates(
+    prefs: appModel.isPreferencesReady ? appModel.prefsRepo : null,
+    visibility: appModel.moduleVisibility,
+  );
 
   /// 取用户自配服务器上进行中的条目，到达后 setState 混进「继续」。失败静默：
   /// 离线 / 令牌失效的服务器只是不贡献条目（各服务器独立吞错，互不拖累）。
@@ -1561,6 +1589,7 @@ class _HomeDashboardPageState
   /// 取图器），回到纯本地视图。没有远端状态时不动 UI。
   void _clearRemoteDashboardData() {
     if (!mounted) return;
+    RemoteContinueFeed.of(ref.read(appProvider).database).clear();
     final bool hasRemoteState =
         _remoteContinue.isNotEmpty ||
         _remoteDeviceName != null ||

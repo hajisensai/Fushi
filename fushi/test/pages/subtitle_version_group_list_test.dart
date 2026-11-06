@@ -8,7 +8,7 @@ import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import '../helpers/glass_unwrap.dart';
 
 class _FakeCandidate extends VideoSubtitleCandidate {

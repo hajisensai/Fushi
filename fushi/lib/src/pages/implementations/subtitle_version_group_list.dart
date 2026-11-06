@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
@@ -10,7 +10,12 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
 /// 字幕「版本卡」列表（参照 RSS-Subtitle-Manager 的版本选择器）：一张卡 =
 /// 一个来源合集下的一个变体（格式+语言+发布组），几十个集数文件折进卡内。

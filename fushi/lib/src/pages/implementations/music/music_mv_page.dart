@@ -43,6 +43,7 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
+import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
     show resolvePlatformHwdec;
 import 'package:fushi/src/models/app_model.dart';
@@ -52,7 +53,14 @@ import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock, formatFushiPlaybackTime;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -591,8 +599,18 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
     await _applySubDelay();
   }
 
+  /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
+  final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playbackRouteMark.attach(ModalRoute.of(context));
+  }
+
   @override
   void dispose() {
+    _playbackRouteMark.dispose();
     for (final StreamSubscription<Object?> s in _subs) {
       unawaited(s.cancel());
     }

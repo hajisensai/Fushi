@@ -25,6 +25,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -33,7 +35,17 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 自定义强调色的候选（色相环上均匀取，外加 Fushi 默认绿）。
@@ -480,20 +492,25 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     );
   }
 
-  /// 预览卡面：模板未改的 Fushi 卡片与复习页同样走原生混合渲染，否则整面 WebView。
+  /// 预览卡面：区块布局认得出的 Fushi 卡片与复习页同样走原生混合渲染，否则整面 WebView。
   Widget _faceView(
     BuildContext context,
     SrsCardFace face,
     SrsCardFaceBuilder faceBuilder, {
     required bool mine,
   }) {
+    // 我的卡：与复习页同一判据（区块布局认得出、自定义区块原生画得全）。
     final String? defs = mine
-        ? _mine!.fushiCardDefinitions
+        ? (srsFushiCardRenderedNative(_mine!, languageCode: face.languageCode)
+              ? _mine!.fushiCardDefinitions
+              : null)
         : (_sampleNative ? _sampleDefinitions : null);
     if (defs == null) return faceBuilder(context, face);
     return SrsFushiCardView(
       key: const ValueKey<String>('srs-card-preview-native'),
       face: face,
+      front: mine ? _mine!.fushiCardFront : null,
+      back: mine ? _mine!.fushiCardBack : null,
       fields: mine ? _mine!.fields : srsSampleCardFields(),
       definitionsHtml: defs,
     );

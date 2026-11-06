@@ -304,6 +304,17 @@ strip ios`）再签，TestFlight 照常上传、只是没有小组件，job 打�
 追加扩展自己的手动签名，并在 ExportOptions 里登记扩展的描述文件；缺任何一份就删掉这项并把扩展
 target 整个摘掉（`tool/apple/widgets_target.rb strip ios`）。
 
+扩展 target 在 `project.pbxproj` 里**不得在 target 级写签名设置**（`CODE_SIGN_STYLE` /
+`PROVISIONING_PROFILE_SPECIFIER` / `DEVELOPMENT_TEAM` / `CODE_SIGN_IDENTITY`），与 Runner 一样：
+target 级优先于 base configuration，写了 `CODE_SIGN_STYLE = Automatic` 就会盖掉 CI 追加到
+`FushiWidgets.xcconfig` 的 `Manual`，签名构建报「FushiWidgets is automatically signed, but
+provisioning profile … has been manually specified」（守卫 `apple_widgets_signing_guard_test.dart`）。
+
+**build_only 也签**：手动 dispatch 带 `build_only=true` 且 Apple 密钥齐全时，ios job 照常构建签名
+App Store IPA（signing 步骤的 `signed` 输出），只作为 run artifact 留着，**不传** TestFlight
+（`testflight` job 只认 `testflight` 输出）。发正式版前先跑一次 build_only，就能把描述文件 /
+扩展签名 / ExportOptions 这段链路验掉。
+
 **未签名侧载 IPA** 里带着扩展。侧载工具重签时会给扩展另起一个 App ID；免费账号每周只能建
 10 个，扩展会多占一个。没有 App Group 时，小组件只显示「打开 Fushi 一次」，不影响主 app。
 
@@ -316,7 +327,8 @@ target 整个摘掉（`tool/apple/widgets_target.rb strip ios`）。
 Mach-O 的重签都**不带 entitlements**，扩展会丢掉 `app-sandbox`，而 WidgetKit 不加载不在沙盒里的
 扩展。所以两条签名路径都要在签外层之前调用 `tool/apple/macos_widgets_sign.sh appex …`，带回
 沙盒与 App Group；外层 entitlements 由同一个脚本展开 `$(FUSHI_APP_GROUP)` 生成（codesign 不展开
-Xcode 变量）。运行时 app 和扩展各自读**自己签进去的** application-groups
+Xcode 变量）。脚本先用 `plutil -convert xml1` 重新序列化（丢掉 XML 注释）再替换、查残留 `$(`，
+所以 entitlements 注释里可以照常写 `$(TeamIdentifierPrefix)` 这类说明。运行时 app 和扩展各自读**自己签进去的** application-groups
 （`FushiAppGroup.identifier`），Info.plist 里的值只是 ad-hoc 构建的兜底。
 
 ## APNs 推送密钥（反馈回复推送）

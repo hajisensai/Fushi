@@ -46,7 +46,7 @@ void main() {
       expect(service.currentDevices, isEmpty);
     });
 
-    // BUG-4102：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
+    // BUG-4116：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
     // 没有 Avahi 守护进程（WSL / 精简安装）时 initialize 抛错，旧实现已把这台未初始化
     // 的 discovery 挂到 _discovery 上，之后 stop / dispose 就抛空检查异常（UncaughtZone）。
     test(
@@ -60,8 +60,8 @@ void main() {
             made.add(d);
             return d;
           },
-          // 默认值是 Platform.isLinux：不钉死的话 Linux CI 会走 BUG-4105 回退、
-          // 不抛错还去绑真实 UDP 5353。回退路径见下一条。
+          // 构造默认 `Platform.isLinux` 才开 mDNS 兜底（BUG-4119）；这条测的是
+          // 「无兜底」分支，钉死它，免得在 Linux CI 上转去兜底、真绑 UDP 5353。
           mdnsFallbackEnabled: false,
         );
         await expectLater(service.startDiscovery(), throwsA(isA<StateError>()));
@@ -72,13 +72,14 @@ void main() {
       },
     );
 
-    // BUG-4105 回退路径：initialize 失败改走内置 mDNS 客户端（注入假 transport，
-    // 不碰真实 socket），未初始化的 Avahi browser 依旧不能被 stop。
+    // 同一 BUG-4116 形状的 Linux 分支：initialize 失败后转去内置 mDNS 兜底，
+    // 失败的 Avahi browser 照样不能被 stop / dispose 碰到，兜底 socket 随
+    // dispose 关掉。transport 注入假的，不碰真实网络。
     test(
-      'initialize failure with the mDNS fallback browses without stopping it',
+      'initialize failure with the mDNS fallback never stops the dead browser',
       () async {
         final List<_FakeDiscovery> made = <_FakeDiscovery>[];
-        final _SilentMdnsTransport transport = _SilentMdnsTransport();
+        final _InertTransport transport = _InertTransport();
         final LanDiscoveryService service = LanDiscoveryService(
           deviceId: 'self',
           discoveryFactory: (String type) {
@@ -89,12 +90,13 @@ void main() {
           mdnsTransportFactory: () async => transport,
           mdnsFallbackEnabled: true,
         );
-        await service.startDiscovery(); // 回退成功：不抛
+        await service.startDiscovery(); // 兜底接管，不抛
         expect(service.usingMdnsFallback, isTrue);
         expect(service.hasActiveBrowser, isTrue);
-        expect(transport.queries, greaterThan(0), reason: '回退应发出 mDNS 查询');
+        expect(transport.queries, isNotEmpty, reason: '兜底必须真的发出查询');
         await service.stopDiscovery();
         expect(service.usingMdnsFallback, isFalse);
+        expect(service.hasActiveBrowser, isFalse);
         expect(transport.closed, isTrue);
         await service.dispose();
         expect(made.single.stopCalls, 0, reason: '未初始化的 browser 不能 stop');
@@ -449,18 +451,18 @@ class _FakeDiscovery implements BonsoirDiscovery {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// 不连任何网络的 [MdnsTransport]：只记账，收不到应答。
-class _SilentMdnsTransport implements MdnsTransport {
+/// An mDNS socket that records outgoing queries and never receives anything.
+class _InertTransport implements MdnsTransport {
+  final List<Uint8List> queries = <Uint8List>[];
   final StreamController<MdnsDatagram> _in =
       StreamController<MdnsDatagram>.broadcast();
-  int queries = 0;
   bool closed = false;
 
   @override
   Stream<MdnsDatagram> get datagrams => _in.stream;
 
   @override
-  void sendMulticast(Uint8List data) => queries++;
+  void sendMulticast(Uint8List data) => queries.add(data);
 
   @override
   void sendTo(Uint8List data, InternetAddress address, int port) {}

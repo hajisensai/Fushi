@@ -18,11 +18,12 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_settings.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「模型」一级设置分类（2026-10-13 用户拍板）：所有「模型」类配置的唯一的家。
 ///

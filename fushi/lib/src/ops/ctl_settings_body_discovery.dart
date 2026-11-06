@@ -8,7 +8,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 

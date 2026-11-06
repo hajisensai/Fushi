@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
 
 /// BUG-2770：Windows 触屏在查词覆盖窗（桌面全局查词 / galgame 游戏内卡片）上
 /// 横滑关闭。三段链路各钉一层：

@@ -4,7 +4,7 @@ import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/audio_sources_cli.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「管理音频来源」对话框（设置项 `lookup.audio_sources`）在控制通道上的条目：
 /// 来源列表的增删改 / 启停 / 排序、重置、本地库子来源。实现见 `audio_sources_cli.dart`。

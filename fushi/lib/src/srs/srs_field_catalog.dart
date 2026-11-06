@@ -13,7 +13,7 @@ import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_visual_template.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 字段内容的大类（决定图标、示例怎么画、自动布局放不放）。
 enum SrsFieldKind {

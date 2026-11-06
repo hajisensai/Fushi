@@ -7,7 +7,10 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_grid_v
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 import 'fake_media_server_browser.dart';
 

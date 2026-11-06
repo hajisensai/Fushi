@@ -3,14 +3,23 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/settled_theme.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 2026-10-09 用户「按钮的悬停 / 按下反馈与可点范围要和可见形状完全一致，全 app
 /// 统一，可以选满」：反馈页刷新键、词典管理返回键悬停只亮中间一枚更小的圆 /
@@ -254,6 +263,38 @@ void main() {
         );
       }
     });
+
+    testWidgets('M3E 分类图标统一 primary 实色（不按色调用发虚的 tertiary / secondary）', (
+      WidgetTester tester,
+    ) async {
+      final ColorScheme scheme = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF7E57C2),
+      );
+      late BuildContext captured;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(colorScheme: scheme),
+          home: Builder(
+            builder: (BuildContext context) {
+              captured = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      for (final SettingsDestinationId id in SettingsDestinationId.values) {
+        expect(
+          settingsToneGlyphColor(captured, settingsIconToneFor(id)),
+          scheme.primary,
+          reason: '$id 的字形色与宽屏导航行（primary）不一致',
+        );
+      }
+      expect(
+        settingsToneGlyphColor(captured, SettingsIconTone.red),
+        scheme.error,
+        reason: '破坏性行保留 error',
+      );
+    });
   });
 
   group('设置滑条拖动跟手', () {
@@ -467,7 +508,7 @@ void main() {
 
   test('设置详情 / 窄屏设置页：页头背后的遮罩实色盖满让位高度', () {
     final String kit = File(
-      'lib/src/settings/settings_kit.dart',
+      'lib/src/settings/settings_kit_core.dart',
     ).readAsStringSync();
     expect(kit, contains('solidHeight: inset(),'));
     final String home = File(

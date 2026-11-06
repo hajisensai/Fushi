@@ -42,11 +42,21 @@ class _FakeRepo extends BaseAnkiRepository {
   /// 非 null 时 listNewCards 直接抛它（模拟超时 / 连接失败）。
   Exception? listError;
 
+  /// 能力探测结论：false = 连着的 AnkiConnect 没有原生重排接口。
+  bool nativeReposition = true;
+
+  /// listNewCards 被调了几次（能力缺失时必须一次都不读）。
+  int listCalls = 0;
+
   @override
   bool get supportsDeckReposition => supported;
 
   @override
+  Future<bool> probeDeckReposition() async => supported && nativeReposition;
+
+  @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    listCalls++;
     if (listError != null) throw listError!;
     return cards[deckName] ?? const <AnkiCardInfo>[];
   }
@@ -215,6 +225,23 @@ void main() {
     r.scheduler.notifyMined('Mining');
     await r.scheduler.flushNow();
     expect(r.repo.writes, isEmpty);
+    r.scheduler.dispose();
+  });
+
+  // 用户拍板⑱：新版 AnkiConnect 禁止写 due，又没有原生 scheduling.repositionNewCards
+  // 时，自动重排静默跳过——不读卡、不写、不上报失败（设置页开关已置灰写明原因）。
+  test('AnkiConnect 没有原生重排接口：不读卡、不写、不上报失败', () async {
+    final List<Object> reports = <Object>[];
+    final r = build(
+      onFailure: (String deck, Object error, StackTrace? stack) =>
+          reports.add(error),
+    );
+    r.repo.nativeReposition = false;
+    r.scheduler.notifyMined('Mining');
+    await r.scheduler.flushNow();
+    expect(r.repo.listCalls, 0);
+    expect(r.repo.writes, isEmpty);
+    expect(reports, isEmpty);
     r.scheduler.dispose();
   });
 

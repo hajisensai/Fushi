@@ -20,7 +20,12 @@ import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import '../helpers/video_quick_settings_harness.dart';
@@ -1938,12 +1943,16 @@ void main() {
       await tester.ensureVisible(chip);
       await tester.pumpAndSettle();
       final Offset start = tester.getCenter(chip);
-      final Offset end = tester.getCenter(target);
       final TestGesture gesture = await tester.startGesture(start);
+      // 终点每步按目标**当前**位置重算：拖进面板滚动视口的边缘带时页面会自动滚
+      // （BUG-4129），目标跟着移动，开拖前算好的坐标会落空。
       for (int step = 1; step <= 8; step++) {
-        await gesture.moveTo(Offset.lerp(start, end, step / 8)!);
+        await gesture.moveTo(
+          Offset.lerp(start, tester.getCenter(target), step / 8)!,
+        );
         await tester.pump(const Duration(milliseconds: 40));
       }
+      await gesture.moveTo(tester.getCenter(target));
       await gesture.up();
       await tester.pumpAndSettle();
     }

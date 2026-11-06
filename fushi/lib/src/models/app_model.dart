@@ -55,16 +55,84 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart'
     show systemTtsDictionaryLanguages;
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/actions/add_to_stash_action.dart';
+import 'package:fushi/src/creator/actions/copy_to_clipboard_action.dart';
+import 'package:fushi/src/creator/actions/play_audio_action.dart';
+import 'package:fushi/src/creator/actions/share_action.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/enhancements/audio_recorder_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/camera_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/clear_field_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/crop_image_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/local_audio_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/open_stash_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/pick_audio_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/pick_image_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/pop_from_stash_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/save_tags_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/search_dictionary_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/sentence_picker_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/text_segmentation_enhancement.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/creator/fields/audio_field.dart';
+import 'package:fushi/src/creator/fields/audio_sentence_field.dart';
+import 'package:fushi/src/creator/fields/cloze_after_field.dart';
+import 'package:fushi/src/creator/fields/cloze_before_field.dart';
+import 'package:fushi/src/creator/fields/cloze_inside_field.dart';
+import 'package:fushi/src/creator/fields/collapsed_meaning_field.dart';
+import 'package:fushi/src/creator/fields/context_field.dart';
+import 'package:fushi/src/creator/fields/cue_sentence_field.dart';
+import 'package:fushi/src/creator/fields/expanded_meaning_field.dart';
+import 'package:fushi/src/creator/fields/frequency_field.dart';
+import 'package:fushi/src/creator/fields/furigana_field.dart';
+import 'package:fushi/src/creator/fields/hidden_meaning_field.dart';
+import 'package:fushi/src/creator/fields/image_field.dart';
+import 'package:fushi/src/creator/fields/meaning_field.dart';
+import 'package:fushi/src/creator/fields/notes_field.dart';
+import 'package:fushi/src/creator/fields/pitch_accent_field.dart';
+import 'package:fushi/src/creator/fields/reading_field.dart';
+import 'package:fushi/src/creator/fields/sentence_field.dart';
+import 'package:fushi/src/creator/fields/tags_field.dart';
+import 'package:fushi/src/creator/fields/term_field.dart';
+import 'package:fushi/src/creator/quick_action.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/models/content_language.dart'
     show resolveContentLanguage;
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_pdf_source.dart';
+import 'package:fushi/src/media/types/dictionary_media_type.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/example_sentences_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/open_stash_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/profile_management_page.dart';
+import 'package:fushi/src/pages/implementations/text_segmentation_dialog_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
+import 'package:fushi/src/utils/popup_theme_css.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
@@ -111,7 +179,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
-import 'package:fushi/src/models/browser_extension_font_catalog.dart';
+import 'package:fushi/src/sync/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -161,6 +229,10 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart'
+    show GoogleLensDisclosureScene, hasGoogleLensDisclosure;
+import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
+    show MangaStreamOcrSetup, prepareMangaStreamOcr;
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -246,10 +318,10 @@ import 'package:fushi_engine/media/video/download/video_download_subtitle_langua
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_work_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/download_subtitle_retry.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
@@ -333,6 +405,13 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart'
+    show appleMusicTokenSource;
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show AppleMusicCatalogClient;
+import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
+    show AppleMusicPersonalClient;
 import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart'
     show createAppleMusicBridge;
 import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dart'
@@ -377,7 +456,7 @@ import 'package:fushi/src/sync/interconnect_post_transport.dart'
     show kInterconnectConnectTimeout;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
@@ -417,6 +496,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
+import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -1794,6 +1874,9 @@ class AppModel with ChangeNotifier {
         setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
       );
   AppleMusicAccount? _appleMusicAccount;
+
+  /// 播放器「喜欢」用的 Apple Music 评分客户端（懒建，跨账号复用：token 每次现取）。
+  AppleMusicPersonalClient? _appleMusicRatingsClient;
   late final AnkiIntegration ankiIntegration = AnkiIntegration();
 
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
@@ -1926,6 +2009,23 @@ class AppModel with ChangeNotifier {
                   ErrorLogService.instance.log('MusicPluginFavorites', e, st),
             )
           : null,
+      // Apple Music 整曲的「喜欢」= Apple Music 评分（要已连接账号）；iOS 上同样可用。
+      appleMusicFavorites: AppleMusicFavorites(
+        available: () =>
+            isPreferencesReady &&
+            prefsRepo.musicAppleMusicEnabled &&
+            appleMusicAccount.canPlayFullTracks,
+        client: () => _appleMusicRatingsClient ??= AppleMusicPersonalClient(
+          credentials: appleMusicAccount.userCredentials,
+          catalog: AppleMusicCatalogClient(
+            tokens: appleMusicTokenSource,
+            fullTracks: true,
+          ),
+        ),
+        accountChanges: appleMusicAccount,
+        onError: (Object e, StackTrace st) =>
+            ErrorLogService.instance.log('AppleMusicFavorites', e, st),
+      ),
     );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
@@ -2759,7 +2859,7 @@ class AppModel with ChangeNotifier {
   /// 排队待查词，再请求打开查词 tab。
   ///
   /// 只排队不切 tab 时，词会一直挂在 [DesktopLookupService.pendingText] 上——唯一的
-  /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4103）。
+  /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4117）。
   /// 唤前台由调用方负责（深链由原生层前置主窗，ctl 先调 `_focusMainWindowForCtl`）。
   void queueExternalLookup(String text) {
     if (DesktopLookupService.instance.triggerLookup(text)) {
@@ -4414,6 +4514,13 @@ class AppModel with ChangeNotifier {
       _srsCardFontFamilies = await srsCardFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
+      // 反馈 kEFPY4cuKZ：作品会话只活在主进程内存里——上次进程被杀时发布的会话已经不存在，
+      // 先清掉，再把此后的会话变化发布给 `:popup` 进程 / 悬浮词典（[kWorkProfileSessionPrefKey]）。
+      _publishWorkProfileSession();
+      WorkProfileScope.instance.addListener(_publishWorkProfileSession);
+      WorkProfileScope.instance.writeRevision.addListener(
+        _publishWorkProfileSession,
+      );
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
@@ -4848,6 +4955,12 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
+      // 反馈 kEFPY4cuKZ：主进程正打开一部带作品级配置的作品时，本进程的查词 / 制卡 / 主题
+      // 按同一份作品配置生效（镜像进本 isolate 的 [WorkProfileScope]）。
+      _isDictionaryPopupProcess = true;
+      WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
+      await mirrorMainProcessWorkSession();
+
       debugPrint('[Fushi-popup] init: DONE');
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
@@ -4919,7 +5032,8 @@ class AppModel with ChangeNotifier {
   /// Android app 外查词（`:popup` 进程）热复用前的跨进程对账：常驻进程只在冷启动
   /// 装载一次状态，主进程之后的改动它都看不见。三件事：
   ///
-  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）。
+  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）；变过时顺带按主进程
+  ///    发布的作品会话重新镜像（[mirrorMainProcessWorkSession]）。
   /// 2. 词典元数据（顺序 / 启用 / 折叠 / 改名 / 增删）：住在 `dictionary_metadata`
   ///    表、不抬 `prefs_version`，以前只在冷启动读一次——主进程「词典管理」改完，
   ///    app 外查词要杀进程才生效（BUG-3662）。变了就照 [reloadDictionariesFromDb]
@@ -4930,6 +5044,8 @@ class AppModel with ChangeNotifier {
   /// （[invalidateAnkiStateAfterPrefsChange]）。
   Future<bool> refreshForWarmDictionaryPopup() async {
     final bool prefsChanged = await refreshPrefCacheIfChanged();
+    // 主进程发布的作品会话随 `prefs_version` 一起变：偏好变过才可能要换镜像。
+    if (prefsChanged) await mirrorMainProcessWorkSession();
     if (await dictRepo.reloadMetadataIfChangedInDb()) {
       await _rebuildDictPathsCacheAsync();
       dictRepo.clearDictionaryResultsCache();
@@ -6585,22 +6701,12 @@ class AppModel with ChangeNotifier {
     final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
     if (service == null || service.registry.providers.isEmpty) return;
     _downloadSubtitleRetryRunning = true;
-    // 一轮共用一个解析器（惰性：没有到期行就不扫）。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
     try {
       final DownloadSubtitleRetryReport report =
-          await retryUnavailableDownloadSubtitles(
+          await runDownloadSubtitleRetryRound(
             database: database,
-            // 内嵌轨选择不挡：这些分集本该由下载流水线装上 sidecar。
-            backfill: (String videoId) => backfillLibraryVideoSubtitle(
-              database: database,
-              service: service,
-              videoId: videoId,
-              confirmedIdentities: confirmedIdentities,
-              seriesLanguage: _seriesSubtitleLanguage,
-              embeddedSelectionBlocks: false,
-            ),
+            service: service,
+            seriesLanguage: _seriesSubtitleLanguage,
             now: DateTime.now(),
           );
       if (report.attempted > 0) {
@@ -7495,41 +7601,12 @@ class AppModel with ChangeNotifier {
     // 探一堆视频时长。
     if (service == null || service.registry.providers.isEmpty) return;
 
-    final Set<String> withSubtitle = <String>{
-      for (final VideoBookRow book in notice.work.members)
-        if (book.subtitleSource?.trim().isNotEmpty == true) book.bookUid,
-    };
-    final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
-      members: notice.work.members,
-      metadata: notice.metadata,
-      hasExistingSubtitle: withSubtitle.contains,
-      // 单文件作品没有合集，也就没有每系列记忆可查。
-      explicitLanguage: notice.work.collection == null
-          ? null
-          : _seriesSubtitleLanguage(
-              notice.work.collection!.name.trim().toLowerCase(),
-            ),
+    await backfillScrapedWorkSubtitles(
+      database: database,
+      service: service,
+      notice: notice,
+      seriesLanguage: _seriesSubtitleLanguage,
     );
-    // 整季共用一个解析器：下载文件行只扫一次，不是逐集全表扫描。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
-    for (final SubtitleBackfillTarget scraped in targets) {
-      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3926）。
-      final SubtitleBackfillTarget target = scraped.withMedia(
-        await withDownloadConfirmedIdentity(
-          confirmedIdentities,
-          videoPath: scraped.videoPath,
-          media: scraped.media,
-        ),
-      );
-      final SubtitleBackfillResult result = await service.backfill(target);
-      if (result.installed) {
-        debugPrint(
-          '[subtitle-backfill] installed ${result.language} for '
-          '${target.bookUid}: ${result.installedPath}',
-        );
-      }
-    }
   }
 
   /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务
@@ -9757,9 +9834,65 @@ class AppModel with ChangeNotifier {
     await ReaderFushiSource.instance.refreshPreferencesFromDb();
     await ReaderFushiSource.readerSettings?.refreshFromDb();
     prefsRepo.notifyWorkProfileScopeChanged();
+    // 主题键（[ThemeNotifier.isProfileThemePrefKey]）的生效值换了一份：重建主题。
+    themeNotifier.onWorkProfileScopeChanged();
+    // 弹窗进程不承载 App 界面字体 / 有声书悬浮字幕（那些只在主进程里装配）。
+    if (_isDictionaryPopupProcess) return;
+    // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
+    await refreshAppFont();
     if (audiobookSession.isActive && showFloatingLyric) {
       await audiobookSession.applyFloatingLyricStyle();
     }
+  }
+
+  /// 本实例跑在 Android `:popup` 进程 / 悬浮词典 engine（[initialiseForDictionaryPopup]）里。
+  bool _isDictionaryPopupProcess = false;
+
+  /// 主进程：最近一次发布的作品会话（[kWorkProfileSessionPrefKey] 的值）。
+  String? _publishedWorkSession;
+
+  /// 主进程：发布串行化（两次发布的写入不能乱序落库）。
+  Future<void> _workSessionPublish = Future<void>.value();
+
+  /// 主进程把当前生效的作品会话（配置 id + 会话内写入次数）写进共享偏好表，`:popup` 进程 /
+  /// 悬浮词典下一次查词时经 `prefs_version` 看到并镜像。值没变就不写。
+  void _publishWorkProfileSession() {
+    final String value = WorkProfileScope.instance.publishedSessionValue;
+    if (value == _publishedWorkSession) return;
+    _publishedWorkSession = value;
+    _workSessionPublish = _workSessionPublish
+        .then((_) => prefsRepo.setWorkProfileSession(value))
+        .catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('publishWorkProfileSession', e, stack);
+        });
+  }
+
+  /// 主进程最近一次发布的作品会话已落库时（测试 / 诊断用）。
+  @visibleForTesting
+  Future<void> get workProfileSessionPublished => _workSessionPublish;
+
+  /// 弹窗进程镜像主进程作品会话用的持有者。
+  final Object _mainProcessWorkSessionOwner = Object();
+
+  /// 弹窗进程：已镜像的发布值（null = 还没镜像过）。
+  String? _mirroredWorkSession;
+
+  /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
+  Future<void> mirrorMainProcessWorkSession() async {
+    final String published = prefsRepo.workProfileSession;
+    if (published == _mirroredWorkSession) return;
+    _mirroredWorkSession = published;
+    await WorkProfileScope.instance.mirrorPublishedSession(
+      owner: _mainProcessWorkSessionOwner,
+      published: published,
+      repository: ProfileRepository(
+        _database,
+        platformServices.createAnkiRepository(),
+      ),
+    );
+    await _workProfileScopeReload;
   }
 
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
@@ -10333,6 +10466,8 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_extensionImageOcr?.close());
+    _extensionImageOcr = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -10488,6 +10623,22 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
+  /// 不叠本机作品会话的挖词目标（激活配置的值）：替别的设备 / 浏览器扩展 / 游戏串流接收端
+  /// 制卡（`hostMiningAnkiRepositoryProvider`）用——主机此刻打开着哪本书与对端无关。
+  SrsMiningTarget get hostSrsMiningTarget {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return SrsMiningTarget.anki;
+    return SrsMiningTarget.fromWire(
+      prefs.withoutWorkScope(() => prefs.srsMiningTarget),
+    );
+  }
+
+  // 挖词目标 = Fushi 复习时的「后台制卡」（透传 prefsRepo）。可空读同上：装饰链每次制卡
+  // 现读它，prefs 未装配时按关（同步写入，现状）。
+  bool get srsMiningBackground => _prefsRepo?.srsMiningBackground ?? false;
+  Future<void> setSrsMiningBackground(bool value) =>
+      prefsRepo.setSrsMiningBackground(value: value);
+
   // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
   HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
       decodeHomeDashboardPanelModes(
@@ -10594,6 +10745,13 @@ class AppModel with ChangeNotifier {
     final PreferencesRepository? prefs = _prefsRepo;
     if (prefs == null) return const SrsMiningDestination();
     return srsMiningDestinationIn(prefs);
+  }
+
+  /// 不叠本机作品会话的复习制卡落点（激活配置的值），与 [hostSrsMiningTarget] 同一用途。
+  SrsMiningDestination get hostSrsMiningDestination {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return const SrsMiningDestination();
+    return prefs.withoutWorkScope(() => srsMiningDestinationIn(prefs));
   }
 
   Future<void> setSrsMiningDeckId(String id) =>
@@ -11506,7 +11664,46 @@ class AppModel with ChangeNotifier {
               repository: FavoriteSentenceRepository(database),
               request: request,
             ),
+        // canvas 渲染的网页阅读器（BookWalker 等）抓图取词：与漫画 / 视频暂停帧同一套 OCR。
+        imageOcr: (Uint8List image) =>
+            _ensureExtensionImageOcr().recognize(image),
       );
+
+  /// 浏览器扩展 / app 内浏览器抓图取词的识别会话（懒建，设置变了自动换会话；
+  /// [dispose] 时关掉，释放模型 isolate 与临时目录）。
+  ExtensionImageOcrService? _extensionImageOcr;
+
+  ExtensionImageOcrService _ensureExtensionImageOcr() =>
+      _extensionImageOcr ??= ExtensionImageOcrService(
+        prepare: _prepareExtensionImageOcr,
+        configKey: () =>
+            '$mangaOcrEnginePreference|$mangaOcrLocalModel|'
+            '$mangaOcrLensLanguage|$mangaOcrIgnoreFurigana',
+      );
+
+  /// 抓图取词的引擎解析：与漫画在线直读同一口径（引擎偏好 / 本机模型），但用户此刻
+  /// 在浏览器里、不在 app 里——不弹任何框：Lens 只在本机已同意过上传漫画页面时才用
+  /// （网页阅读器的内容就是漫画 / 书页），不做大模型重读。
+  ///
+  /// 引擎装配要一个能拿到 `ProviderContainer` 的 context（同
+  /// [_autoOcrDownloadedMangaChapter]）；app 还没起完时抛错，这次请求失败、下次重探。
+  Future<MangaStreamOcrSetup> _prepareExtensionImageOcr(String workDirPath) {
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null) {
+      throw StateError('No navigator context to assemble OCR engines');
+    }
+    return prepareMangaStreamOcr(
+      imageDirPath: workDirPath,
+      engines: MangaOcrWizardEngines.resolve(
+        context: context,
+        db: database,
+      ).withoutAiRefinement(),
+      preference: MangaOcrEnginePreferenceKey.fromKey(mangaOcrEnginePreference),
+      lensLanguage: mangaOcrLensLanguage,
+      confirmLensUpload: () =>
+          hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.mangaPages),
+    );
+  }
 
   FushiApiServerManager _ensureYomitanManager() {
     final FushiApiServerManager? existing = _yomitanServerManager;

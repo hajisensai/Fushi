@@ -207,17 +207,18 @@ void main() {
     fresh.dispose();
   });
 
-  test('作品级键只覆盖阅读样式 / 悬浮字幕样式，不含字体目录与窗口位置', () {
+  test('作品级键含阅读样式 / 字体 / 悬浮字幕样式，不含窗口位置', () {
     expect(WorkProfileScope.isWorkScopedPrefKey(readerFontKey), isTrue);
     expect(WorkProfileScope.isWorkScopedPrefKey(lyricFontKey), isTrue);
     expect(WorkProfileScope.isWorkScopedPrefKey(globalOnlyKey), isFalse);
+    // 字体随作品配置走（work_profile_full_scope_test 覆盖读写）。
     expect(
       WorkProfileScope.isWorkScopedPrefKey('src:reader_fushi:font_catalog'),
-      isFalse,
+      isTrue,
     );
     expect(
       WorkProfileScope.isWorkScopedPrefKey('src:reader_fushi:app_ui_fonts'),
-      isFalse,
+      isTrue,
     );
     expect(
       WorkProfileScope.isWorkScopedPrefKey(kFloatingLyricWindowRectPrefKey),
