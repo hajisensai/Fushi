@@ -8,6 +8,7 @@ import 'package:fushi/src/sync/background_tasks_indicator.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 Widget _host(Widget child) => TranslationProvider(
@@ -152,4 +153,50 @@ void main() {
     expect(opened, 1);
     expect(find.text('Scrape 3/9'), findsNothing);
   });
+
+  // 用户 2026-11-06 截图：任务行贴着弹层左右边缘、进度条画出圆角、末行压底边
+  // （FushiModalSheetFrame 的 body 默认零内边距，弹层没给）。宽窄两种窗口都钉。
+  for (final Size size in const <Size>[Size(1280, 800), Size(360, 760)]) {
+    testWidgets('明细弹层的任务行与弹层边缘留白（${size.width.toInt()} 宽）', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+      await tester.pumpWidget(
+        _host(
+          Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () => showBackgroundTasksSheet(
+                context: context,
+                listenable: syncBackgroundTasksListenable,
+                tasks: syncBackgroundTasks,
+              ),
+              child: const Text('show'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('show'));
+      await tester.pump(const Duration(seconds: 1));
+      // 在弹层自身坐标系里量：桌面对话框入场带缩放，屏幕坐标会把留白一起缩。
+      final RenderBox frame = tester.renderObject(
+        find.byType(FushiModalSheetFrame),
+      );
+      final RenderBox row = tester.renderObject(
+        find.byKey(const ValueKey<String>('background-task-srs')),
+      );
+      final Offset rowTopLeft = frame.globalToLocal(
+        row.localToGlobal(Offset.zero),
+      );
+      final Offset rowBottomRight = frame.globalToLocal(
+        row.localToGlobal(row.size.bottomRight(Offset.zero)),
+      );
+      expect(rowTopLeft.dx, greaterThanOrEqualTo(24));
+      expect(frame.size.width - rowBottomRight.dx, greaterThanOrEqualTo(24));
+      expect(frame.size.height - rowBottomRight.dy, greaterThanOrEqualTo(16));
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
