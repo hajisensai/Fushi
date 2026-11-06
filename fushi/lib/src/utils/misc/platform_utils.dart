@@ -341,6 +341,14 @@ const double kFushiSettingsWideThreshold = 560.0;
 /// 外观详情、左父菜单只留分类导航 + 动作，使两个 sheet 的左栏都能在此高度内放下。
 const double kFushiSettingsWideMinHeight = 440.0;
 
+/// 设置首页（[SettingsHomePage]）切成「左分类导航 + 右详情」双栏的最小可用宽度。
+///
+/// 全平台只按几何判定、不按平台分支：宽屏一律直接进一级双栏（与 Windows 同形），
+/// 窄于此值才走单列 + push 二级详情页。取 Material 3 medium 窗口档 600dp：旧值
+/// 720 让 11 寸平板竖屏（1600px ÷ 2.25 ≈ 711dp）差 9dp 掉回二级菜单。600 时左栏
+/// 定宽 240、右详情仍有 ≥360dp，手机竖屏（≤ 430dp）不受影响。
+const double kFushiSettingsHomeTwoPaneMinWidth = 600.0;
+
 /// 桌面宽窗下书籍 / 视频 / 阅读器快捷设置弹窗（[FushiDialogFrame]）的最大内容宽度。
 /// 全屏 push 的设置类页面（如 `BookCssEditorPage`）也用它约束正文宽度，与限宽弹窗
 /// 里的兄弟设置页保持同宽，消除各处重复出现的 `900` 魔法数。

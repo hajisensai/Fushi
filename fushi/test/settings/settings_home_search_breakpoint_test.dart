@@ -105,7 +105,7 @@ void main() {
                     body: Align(
                       alignment: Alignment.topLeft,
                       child: SizedBox(
-                        width: 680,
+                        width: 560,
                         child: SettingsHomePage(embedded: true),
                       ),
                     ),
@@ -117,7 +117,7 @@ void main() {
           await tester.pumpAndSettle();
           final Finder home = find.byType(SettingsHomePage);
           expect(MediaQuery.sizeOf(tester.element(home)).width, 900);
-          expect(tester.getSize(home).width, 680);
+          expect(tester.getSize(home).width, 560);
           expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
 
           await tester.enterText(find.byType(EditableText), t.eink_mode);
