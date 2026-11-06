@@ -10,7 +10,10 @@ void main() {
   String snippet(Enum block) => fushiCardItemSnippet(b(block));
 
   test('默认正面 / 背面认出默认布局，默认布局生成回默认模板', () {
-    expect(fushiCardBackLayoutOf(kFushiCardBackTemplate), kFushiCardDefaultBackItems);
+    expect(
+      fushiCardBackLayoutOf(kFushiCardBackTemplate),
+      kFushiCardDefaultBackItems,
+    );
     expect(
       fushiCardFrontLayoutOf(kFushiCardFrontTemplate),
       kFushiCardDefaultFrontItems,
@@ -193,9 +196,13 @@ void main() {
   });
 
   test('字段区块：字段名取自条件段，字段改名后仍认得', () {
-    final String t = fushiCardBackTemplateFor(<FushiCardItem>[
-      FushiCardFieldItem(field: 'Old', title: 'T'),
-    ]).replaceAll('{{#Old}}', '{{#New}}').replaceAll('{{Old}}', '{{New}}').replaceAll('{{/Old}}', '{{/New}}');
+    final String t =
+        fushiCardBackTemplateFor(<FushiCardItem>[
+              FushiCardFieldItem(field: 'Old', title: 'T'),
+            ])
+            .replaceAll('{{#Old}}', '{{#New}}')
+            .replaceAll('{{Old}}', '{{New}}')
+            .replaceAll('{{/Old}}', '{{/New}}');
     expect(fushiCardBackLayoutOf(t), <FushiCardItem>[
       FushiCardFieldItem(field: 'New', title: 'T'),
     ]);
@@ -205,15 +212,16 @@ void main() {
     final List<FushiCardItem> items = <FushiCardItem>[
       b(FushiCardBlock.reading, <String, String>{kFushiOptAudio: '0'}),
       b(FushiCardFrontBlock.frequency),
-      FushiCardFieldItem(field: 'X', style: FushiCardFieldStyle.small, title: 't'),
+      FushiCardFieldItem(
+        field: 'X',
+        style: FushiCardFieldStyle.small,
+        title: 't',
+      ),
       const FushiCardHtmlItem('<b>x</b>', wrapped: false),
     ];
-    expect(
-      <FushiCardItem?>[
-        for (final FushiCardItem i in items) FushiCardItem.fromJson(i.toJson()),
-      ],
-      items,
-    );
+    expect(<FushiCardItem?>[
+      for (final FushiCardItem i in items) FushiCardItem.fromJson(i.toJson()),
+    ], items);
     expect(FushiCardItem.fromJson(<String, Object?>{'t': 'zz'}), isNull);
   });
 
