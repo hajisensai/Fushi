@@ -311,3 +311,335 @@ bool decodeMusicScanBatchDone(Uint8List bytes) {
   if (bytes.length < 5) throw const MusicScanWireError('truncated batch head');
   return bytes[4] != 0;
 }
+
+typedef _RemoteOpenC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Void>>);
+typedef _RemoteOpenDart =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Void>>);
+typedef _RemoteFeedC =
+    Int32 Function(Pointer<Void>, Int64, Pointer<Uint8>, Size);
+typedef _RemoteFeedDart = int Function(Pointer<Void>, int, Pointer<Uint8>, int);
+
+class _RemoteBindings {
+  _RemoteBindings(FushiMusic lib) : _lib = lib {
+    try {
+      open = lib.library.lookupFunction<_RemoteOpenC, _RemoteOpenDart>(
+        'ffm_remote_scan_open',
+      );
+      setKnown = lib.library.lookupFunction<_SetKnownC, _SetKnownDart>(
+        'ffm_remote_scan_set_known',
+      );
+      step = lib.library.lookupFunction<_NextC, _NextDart>(
+        'ffm_remote_scan_step',
+      );
+      feed = lib.library.lookupFunction<_RemoteFeedC, _RemoteFeedDart>(
+        'ffm_remote_scan_feed',
+      );
+      close = lib.library.lookupFunction<_CloseC, _CloseDart>(
+        'ffm_remote_scan_close',
+      );
+    } on ArgumentError catch (e) {
+      throw lib.missingSymbols('remote scan', e);
+    }
+  }
+
+  final FushiMusic _lib;
+  late final _RemoteOpenDart open;
+  late final _SetKnownDart setKnown;
+  late final _NextDart step;
+  late final _RemoteFeedDart feed;
+  late final _CloseDart close;
+
+  static _RemoteBindings? _instance;
+  static _RemoteBindings get instance =>
+      _instance ??= _RemoteBindings(FushiMusic.instance);
+}
+
+/// 远程曲库扫描的同步会话（native/fushi_music `remote.rs`）：输入 Dart 列好的文件清单，
+/// [step] 要么交回一批记录、要么交回「当前文件缺这几段字节」，调用方取回后 [feed] 再
+/// [step]。**阻塞调用线程**（标签解析在 step 里）；UI isolate 一律用 [scanMusicListing]。
+final class MusicRemoteScanSession {
+  MusicRemoteScanSession._(this._b, this._handle);
+
+  factory MusicRemoteScanSession.open(
+    Uint8List listing, {
+    Map<String, ({int mtimeMs, int size})> known =
+        const <String, ({int mtimeMs, int size})>{},
+  }) {
+    final _RemoteBindings b = _RemoteBindings.instance;
+    return using((Arena arena) {
+      final Pointer<Pointer<Void>> out = arena<Pointer<Void>>();
+      final int rc = b.open(_copyIn(listing, arena), listing.length, out);
+      if (rc != FfmStatus.ok) {
+        throw StateError('ffm_remote_scan_open failed with status $rc');
+      }
+      final MusicRemoteScanSession session = MusicRemoteScanSession._(
+        b,
+        out.value,
+      );
+      if (known.isNotEmpty) {
+        final Uint8List knownBytes = encodeMusicKnownFiles(known);
+        final int krc = b.setKnown(
+          session._handle,
+          _copyIn(knownBytes, arena),
+          knownBytes.length,
+        );
+        if (krc != FfmStatus.ok) {
+          session.close();
+          throw StateError('ffm_remote_scan_set_known failed with status $krc');
+        }
+      }
+      return session;
+    });
+  }
+
+  final _RemoteBindings _b;
+  Pointer<Void> _handle;
+
+  Uint8List stepBytes({int maxRecords = 0}) {
+    if (_handle == nullptr) {
+      throw StateError('MusicRemoteScanSession is closed');
+    }
+    return using((Arena arena) {
+      final Pointer<Pointer<Uint8>> outPtr = arena<Pointer<Uint8>>();
+      final Pointer<Size> outLen = arena<Size>();
+      final int rc = _b.step(_handle, maxRecords, outPtr, outLen);
+      if (rc != FfmStatus.ok) {
+        throw StateError('ffm_remote_scan_step failed with status $rc');
+      }
+      final int len = outLen.value;
+      final Uint8List copy = Uint8List.fromList(
+        outPtr.value.asTypedListOutOfLine(len),
+      );
+      _b._lib.freeBytes(outPtr.value, len);
+      return copy;
+    });
+  }
+
+  MusicRemoteStep step({int maxRecords = 0}) =>
+      decodeMusicRemoteStep(stepBytes(maxRecords: maxRecords));
+
+  /// 喂当前 NEED 文件从 [offset] 起的字节（交回空 = 取不到，下一步该文件记错误跳过）。
+  void feed(int offset, Uint8List bytes) {
+    if (_handle == nullptr) {
+      throw StateError('MusicRemoteScanSession is closed');
+    }
+    using((Arena arena) {
+      final int rc = _b.feed(
+        _handle,
+        offset,
+        _copyIn(bytes, arena),
+        bytes.length,
+      );
+      if (rc != FfmStatus.ok) {
+        throw StateError('ffm_remote_scan_feed failed with status $rc');
+      }
+    });
+  }
+
+  void close() {
+    if (_handle == nullptr) return;
+    _b.close(_handle);
+    _handle = nullptr;
+  }
+}
+
+/// 远程扫描按区间取字节（真 app = 来源访问层的 HTTP Range / SFTP 偏移读）。交回的字节
+/// 可以比 [length] 短（到了文件尾）；取不到就抛——整次扫描以该异常结束，调用方不据此
+/// 对账删除（断网时不把整个来源的曲目当成「消失」软删）。
+typedef MusicRangeFetcher =
+    Future<Uint8List> Function(String path, int offset, int length);
+
+/// 在后台 isolate 里跑一整次远程扫描（标签解析不占 UI isolate），按批交回结果。原生库
+/// 缺失以 [FushiMusicUnavailableError] 结束；[fetch] 抛错以该错误结束。取消订阅即停扫。
+Stream<MusicScanBatch> scanMusicListing({
+  required String root,
+  required List<MusicListedFile> files,
+  required Map<String, Uint8List> cueBytes,
+  required MusicRangeFetcher fetch,
+  Map<String, ({int mtimeMs, int size})> known =
+      const <String, ({int mtimeMs, int size})>{},
+  int maxRecords = 0,
+}) {
+  late final StreamController<MusicScanBatch> controller;
+  ReceivePort? port;
+  ReceivePort? errors;
+  Isolate? isolate;
+  SendPort? control;
+  bool closed = false;
+
+  void finish() {
+    if (closed) return;
+    closed = true;
+    port?.close();
+    errors?.close();
+    controller.close();
+  }
+
+  Future<void> serveNeed(
+    String path,
+    List<int> offsets,
+    List<int> lengths,
+  ) async {
+    final List<int> outOffsets = <int>[];
+    final List<TransferableTypedData> datas = <TransferableTypedData>[];
+    try {
+      for (int i = 0; i < offsets.length; i++) {
+        final Uint8List data = await fetch(path, offsets[i], lengths[i]);
+        outOffsets.add(offsets[i]);
+        datas.add(TransferableTypedData.fromList(<TypedData>[data]));
+      }
+    } catch (e, st) {
+      if (closed) return;
+      controller.addError(e, st);
+      control?.send(false);
+      isolate?.kill(priority: Isolate.beforeNextEvent);
+      finish();
+      return;
+    }
+    if (closed) return;
+    control?.send(<Object>[outOffsets, datas]);
+  }
+
+  Future<void> start() async {
+    final ReceivePort rp = port = ReceivePort();
+    final ReceivePort errs = errors = ReceivePort();
+    rp.listen((Object? message) {
+      if (message is SendPort) {
+        control = message;
+        message.send(true);
+        return;
+      }
+      if (message is TransferableTypedData) {
+        final MusicScanBatch batch = decodeMusicScanBatch(
+          message.materialize().asUint8List(),
+        );
+        controller.add(batch);
+        if (batch.done) {
+          finish();
+        } else if (!controller.isPaused) {
+          control?.send(true);
+        }
+        return;
+      }
+      if (message is List && message.length == 4 && message[0] == 'need') {
+        unawaited(
+          serveNeed(
+            message[1] as String,
+            (message[2] as List<Object?>).cast<int>(),
+            (message[3] as List<Object?>).cast<int>(),
+          ),
+        );
+        return;
+      }
+      if (message is List && message.length == 2) {
+        final String kind = message[0] as String;
+        final String text = message[1] as String;
+        controller.addError(switch (kind) {
+          'unavailable' => FushiMusicUnavailableError(text),
+          _ => StateError(text),
+        });
+        finish();
+      }
+    });
+    errs.listen((Object? e) {
+      if (closed) return;
+      controller.addError(StateError('music remote scan isolate crashed: $e'));
+      finish();
+    });
+    isolate = await Isolate.spawn<_RemoteScanRequest>(
+      _remoteScanIsolateMain,
+      _RemoteScanRequest(
+        rp.sendPort,
+        TransferableTypedData.fromList(<TypedData>[
+          encodeMusicListing(root: root, files: files, cueBytes: cueBytes),
+        ]),
+        known,
+        maxRecords,
+      ),
+      onError: errs.sendPort,
+    );
+  }
+
+  controller = StreamController<MusicScanBatch>(
+    onListen: () => unawaited(start()),
+    onResume: () => control?.send(true),
+    onCancel: () {
+      control?.send(false);
+      closed = true;
+      port?.close();
+      errors?.close();
+      isolate?.kill(priority: Isolate.beforeNextEvent);
+    },
+  );
+  return controller.stream;
+}
+
+final class _RemoteScanRequest {
+  const _RemoteScanRequest(
+    this.reply,
+    this.listing,
+    this.known,
+    this.maxRecords,
+  );
+
+  final SendPort reply;
+  final TransferableTypedData listing;
+  final Map<String, ({int mtimeMs, int size})> known;
+  final int maxRecords;
+}
+
+Future<void> _remoteScanIsolateMain(_RemoteScanRequest req) async {
+  final ReceivePort control = ReceivePort();
+  MusicRemoteScanSession? session;
+  try {
+    session = MusicRemoteScanSession.open(
+      req.listing.materialize().asUint8List(),
+      known: req.known,
+    );
+  } on FushiMusicUnavailableError catch (e) {
+    req.reply.send(<String>['unavailable', e.toString()]);
+    control.close();
+    return;
+  } on Object catch (e) {
+    req.reply.send(<String>['error', e.toString()]);
+    control.close();
+    return;
+  }
+  req.reply.send(control.sendPort);
+  // 主 isolate 发 true = 往下走一步；发 [offsets, datas] = 喂完 NEED 的字节再走一步。
+  await for (final Object? msg in control) {
+    if (msg is List && msg.length == 2) {
+      final List<Object?> offsets = msg[0] as List<Object?>;
+      final List<Object?> datas = msg[1] as List<Object?>;
+      for (int i = 0; i < offsets.length; i++) {
+        session.feed(
+          offsets[i]! as int,
+          (datas[i]! as TransferableTypedData).materialize().asUint8List(),
+        );
+      }
+    } else if (msg != true) {
+      break;
+    }
+    final MusicRemoteStep step = session.step(maxRecords: req.maxRecords);
+    switch (step) {
+      case MusicRemoteNeed(:final String path, :final ranges):
+        req.reply.send(<Object>[
+          'need',
+          path,
+          <int>[for (final ({int offset, int length}) r in ranges) r.offset],
+          <int>[for (final ({int offset, int length}) r in ranges) r.length],
+        ]);
+      case MusicRemoteBatch(:final Uint8List bytes):
+        final bool done = decodeMusicScanBatchDone(bytes);
+        req.reply.send(TransferableTypedData.fromList(<TypedData>[bytes]));
+        if (done) {
+          session.close();
+          control.close();
+          return;
+        }
+    }
+  }
+  session.close();
+  control.close();
+}
