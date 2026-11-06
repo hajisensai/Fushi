@@ -273,14 +273,15 @@ void main() {
                 ),
               },
               'expect': <String, String>{
-                'bg': rgb(cs.surface),
+                // #slX_WVK_pe：卡面底透明，透出复习页背景 / 壁纸（模板的纸底也被抹掉）。
+                'bg': 'rgba(0, 0, 0, 0)',
                 'fg': rgb(cs.onSurface),
                 'muted': rgb(cs.onSurfaceVariant),
                 'surface': rgb(tokens.surface1(cs)),
                 'outline': rgb(cs.outlineVariant),
                 'link': rgb(cs.primary),
                 'radius': '${tokens.radius.round()}px',
-                'darkBg': rgb(dcs.surface),
+                'darkBg': 'rgba(0, 0, 0, 0)',
                 'darkFg': rgb(dcs.onSurface),
               },
             }),
