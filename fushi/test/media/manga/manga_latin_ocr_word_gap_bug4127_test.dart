@@ -19,6 +19,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 ///    [mangaOcrBoxesHtml] 输出。无 node 时 skip。
 /// ② 生成器级：拉丁文行界 / 词间补空白节点，日文不补；整句文本同一规则。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   MangaOcrTextRegion region(int index, int start, int end) =>
       MangaOcrTextRegion(
         rectangle: MokuroRect.fromLTWH(index * 10.0, 0, 10, 10),
@@ -185,7 +186,8 @@ void main() {
           'cases': <Map<String, Object>>[
             <String, Object>{'char': 4, 'expect': 'YOU'},
             <String, Object>{'char': 7, 'expect': 'BEEN'},
-            <String, Object>{'char': 11, 'expect': 'WELL'},
+            // 阅读器 scanDelimiters 不含 ASCII '?'；引擎 scan_candidates 会在 L 与 ? 之间再切出 WELL。
+            <String, Object>{'char': 11, 'expect': 'WELL?'},
           ],
         },
         <String, Object>{
