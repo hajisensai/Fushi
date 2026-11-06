@@ -314,7 +314,7 @@
 | [BUG-3848](bugs/BUG-3848-srs-apkg-reimport-after-delete.md) | ✅ | ✅ | 删牌组与笔记类型后重导 apkg：0 new / restored / updated 但浏览、复习、笔记类型页全为空 |
 | [BUG-3847](bugs/BUG-3847-srs-rate-next-card-frame-drops.md) | ✅ | ✅ | SRS 评分后下一张卡掉帧：评分叫醒被盖住的牌组列表 + 卡面无关重建 |
 | [BUG-3846](bugs/BUG-3846-desktop-drop-forbidden-after-video.md) | 🚧 | ✅ | Windows 看完视频后拖书进窗口显示禁止光标 |
-| [BUG-3845](bugs/BUG-3845-manga-epub-import-rejection-silent.md) | 🚧 | ✅ | 漫画导入 EPUB 失败且不留原因 |
+| [BUG-3845](bugs/BUG-3845-manga-epub-import-rejection-silent.md) | ✅ | ✅ | 漫画导入 EPUB 失败且不留原因 |
 | [BUG-3844](bugs/BUG-3844-epub-svg-cover-page.md) | ✅ | ✅ | EPUB 封面声明指向 XHTML / SVG 封面页时书架没有封面 |
 | [BUG-3843](bugs/BUG-3843-torrent-ratio-limit-lifetime.md) | ✅ | ✅ | BT 分享率上限只在做种阶段截停，下载中上传不受限 |
 | [BUG-3842](bugs/BUG-3842-video-loop-current-line-toggle.md) | ✅ | ✅ | 视频页没有「循环当前句」开关，精听只能反复按重播 |
