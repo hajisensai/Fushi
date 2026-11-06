@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 
 /// Linux desktop system ball: offered only in X11 sessions, and without the
-/// buttons whose result needs the global lookup card while Linux has none.
+/// buttons whose result needs the global lookup card (when the card helper is
+/// missing).
 void main() {
   group('linuxSessionIsX11', () {
     test('Plasma X11 session (Steam Deck desktop mode)', () {

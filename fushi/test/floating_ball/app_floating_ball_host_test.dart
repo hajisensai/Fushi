@@ -1983,6 +1983,22 @@ void main() {
           expect(called('stopScreenOcr'), isTrue);
         });
 
+        testWidgets('Linux 本机 OCR 模型没下载：冻结层提示去设置里下载', (WidgetTester tester) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrModelUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
+          expect(update['message'], t.floating_ball_ocr_model_missing);
+          expect(update['lines'], isEmpty);
+        });
+
         testWidgets('没识别到字：冻结层上直接说', (WidgetTester tester) async {
           mockCapture(tester, <String, Object?>{
             'png': png,
@@ -2170,7 +2186,10 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
       );
 
   @override
-  Future<SystemOcrPageResult> recognize(Uint8List png) async {
+  Future<SystemOcrPageResult> recognize(
+    Uint8List png, {
+    SystemOcrPlatform? engine,
+  }) async {
     log.add('recognize');
     return onRecognize(png);
   }

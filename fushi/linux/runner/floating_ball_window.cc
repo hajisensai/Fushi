@@ -1,5 +1,7 @@
 #include "floating_ball_window.h"
 
+#include "screen_capture.h"
+
 #include <pango/pangocairo.h>
 
 #include <algorithm>
@@ -158,6 +160,8 @@ GtkWidget* FloatingBallWindow::NewOverlayWindow(int width, int height) {
                                     GDK_BUTTON_RELEASE_MASK |
                                     GDK_POINTER_MOTION_MASK |
                                     GDK_LEAVE_NOTIFY_MASK);
+  // Screen OCR hides the ball and captures right away: no fade-out to catch.
+  fushi::screen_capture::SkipCloseAnimation(widget);
   return widget;
 }
 
