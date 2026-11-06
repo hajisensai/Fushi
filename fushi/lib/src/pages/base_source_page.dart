@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_word_audio.dart';
@@ -105,7 +106,8 @@ abstract class BaseSourcePage extends BasePage {
 /// collection of shared functions and variables. In large part, this was
 /// implemented to define shortcuts for common lengthy methods across UI code.
 abstract class BaseSourcePageState<T extends BaseSourcePage>
-    extends BasePageState<T> {
+    extends BasePageState<T>
+    implements PopupBodyWebViewProvider {
   /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
   /// （[AppModel.popupBottomDockedFor]）。`null` = 只听总开关。
   ModuleId? get popupDockModule => null;
@@ -113,9 +115,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
   bool get popupBottomDocked => appModel.popupBottomDockedFor(popupDockModule);
 
+  /// 本页正文 WebView 的 viewId（查词弹窗打开期间给它开静态硬件层，见
+  /// [PopupBodyStaticLayerGate]）。正文不是 WebView 的宿主（PDF / 歌词页）保持 null；
+  /// WebView 正文的子类覆写，并在 `onWebViewCreated` 调 [notifyPopupBodyWebViewChanged]。
+  @override
+  Object? get popupBodyWebViewId => null;
+
+  /// 正文 WebView 新建 / 重建 / 换了一个（如阅读器进出歌词模式）后调用（阅读器的
+  /// part 扩展里也调，故不标 @protected）。
+  void notifyPopupBodyWebViewChanged() => _popup.bodyStaticLayer.bodyChanged();
+
   @override
   void initState() {
     super.initState();
+    _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
 
     ExternalMediaNavigation.instance.register(
       this,

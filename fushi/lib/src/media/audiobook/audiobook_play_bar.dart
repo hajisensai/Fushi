@@ -515,10 +515,21 @@ class AudiobookMiniPlayer extends StatefulWidget {
 class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
   Timer? _ticker;
 
+  /// 所在子树的 [TickerMode]（被歌词覆盖层盖住 / 被别的路由盖住时为 false）。
+  bool _tickerModeEnabled = true;
+
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onController);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 依赖 TickerMode：它翻转时这里重跑、随后照常 build——恢复时这一帧就按控制器
+    // 现值画出进度，不等下一个 tick。
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     _syncTicker();
   }
 
@@ -545,14 +556,15 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
     setState(() {});
   }
 
-  /// 只在播放中跑周期刷新（暂停时进度不动，不常驻计时器）。
+  /// 只在播放中、且所在子树看得见（[TickerMode] 开）时跑周期刷新：暂停时进度不动，
+  /// 被盖住时刷了也没人看（BUG-4126），都不常驻计时器。
   void _syncTicker() {
-    final bool playing = widget.controller.isPlaying;
-    if (playing && _ticker == null) {
+    final bool run = widget.controller.isPlaying && _tickerModeEnabled;
+    if (run && _ticker == null) {
       _ticker = Timer.periodic(widget.tick, (_) {
         if (mounted) setState(() {});
       });
-    } else if (!playing) {
+    } else if (!run) {
       _ticker?.cancel();
       _ticker = null;
     }
