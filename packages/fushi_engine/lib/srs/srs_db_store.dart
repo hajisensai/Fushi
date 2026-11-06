@@ -3102,8 +3102,8 @@ class SrsDbStore implements SrsSync2Host {
             SrsFieldKeys.name: trimmed,
             if (parentId != null) SrsFieldKeys.deckParent: parentId,
             if (current.deletedAt != null) SrsFieldKeys.deleted: null,
-            // 新建牌组的 RWKV 排队设置初值：忽略每日复习上限开着（上游 RWKV 推荐）。只在牌组从没写过
-            // 这一项时写——复活的旧牌组保留原值；没有这个键的旧牌组读出为关（[SrsRwkvQueueSettings]）。
+            // 新建牌组的 RWKV 排队设置初值（[SrsRwkvQueueSettings.forNewDeck]：复习上限当停止点、每天
+            // 最少复习 40）。只在牌组从没写过这一项时写——复活的旧牌组保留原值。
             if (current[SrsFieldKeys.deckRwkvQueue] == null)
               SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck
                   .toValue(),
@@ -4351,7 +4351,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
   /// （[SrsStudyState.rwkvPending]），复习页等 RWKV 就绪再出。绝不退回按 FSRS-7 存下的到期日排队——那是另一种
   /// 排程，日志的 `alg` 会混进 FSRS-7，时钟出问题时还会把「回放失败 → 改按到期日」放大成整批重复出卡。
-  /// 没启用「每天最少复习数」时只交 R 不高于目标保留率的卡（其余的内核也只会丢掉）。
+  /// 只交 R 不高于目标保留率的卡，加上「每天最少复习数」补足可能用到的卡（[_minimumTopUp]）；其余的内核也只会丢掉。
   Future<Map<String, Object?>?> _instantInput(
     SrsDeckTree tree,
     List<String> decks,
@@ -4429,15 +4429,29 @@ class SrsDbStore implements SrsSync2Host {
     }
     rows.addAll(answered);
     final List<double> scores = <double>[...dayEnd, ...current];
-    final bool anyMinimum = queueOf.values.any(
-      (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
+    final int answeredFrom = dayEnd.length;
+    final Set<int> topUp = _minimumTopUp(
+      tree,
+      targets,
+      queueOf,
+      rows,
+      scores,
+      unansweredCount: answeredFrom,
     );
+    bool sent(int i) {
+      if (!scores[i].isFinite) return false;
+      if (scores[i] <= targets[rows[i].card.deckId]!) return true;
+      // 今天答过的卡还要过内核的同日间隔守卫，补足时被挡下的由后面的卡顶上，所以它们全交。
+      return i >= answeredFrom
+          ? queueOf[rows[i].card.deckId]!.minReviewsPerDay > 0
+          : topUp.contains(i);
+    }
+
     return <String, Object?>{
       'decks': deckInput,
       'cands': <Object?>[
         for (int i = 0; i < rows.length; i++)
-          if (scores[i].isFinite &&
-              (anyMinimum || scores[i] <= targets[rows[i].card.deckId]!))
+          if (sent(i))
             <Object?>[
               rows[i].card.id,
               rows[i].card.deckId,
@@ -4446,6 +4460,47 @@ class SrsDbStore implements SrsSync2Host {
             ],
       ],
     };
+  }
+
+  /// 「每天最少复习数」补足时内核可能用到的、今天还没答过且 R 高于目标的卡（[rows] / [scores] 的下标）：每个参数
+  /// 归属牌组（配额按它记，store/study.rs `instant_eligible`）只留 R 最低（同 R 按 id）的前 `minReviewsPerDay`
+  /// 张——内核补足时按同一顺序取、最多取这么多，其余的交过去也只会被丢掉。以前开了这一项就把 RWKV 牌组的全部
+  /// 复习卡都交给内核，新建牌组默认开（[SrsRwkvQueueSettings.forNewDeck]）后每次排队都要搬整表。
+  Set<int> _minimumTopUp(
+    SrsDeckTree tree,
+    Map<String, double> targets,
+    Map<String, SrsRwkvQueueSettings> queueOf,
+    List<_RwkvCandidate> rows,
+    List<double> scores, {
+    required int unansweredCount,
+  }) {
+    final Map<String, String> ownerOf = <String, String>{
+      for (final String d in targets.keys)
+        if (queueOf[d]!.minReviewsPerDay > 0)
+          d: tree
+              .paramsOwner(tree.effectiveDeckOf(d, fallback: defaultDeckId))
+              .id,
+    };
+    if (ownerOf.isEmpty) return const <int>{};
+    final Map<String, List<int>> above = <String, List<int>>{};
+    final Map<String, int> quota = <String, int>{};
+    for (int i = 0; i < unansweredCount; i++) {
+      final String deck = rows[i].card.deckId;
+      final String? owner = ownerOf[deck];
+      if (owner == null) continue;
+      if (!scores[i].isFinite || scores[i] <= targets[deck]!) continue;
+      (above[owner] ??= <int>[]).add(i);
+      quota[owner] = queueOf[deck]!.minReviewsPerDay;
+    }
+    final Set<int> out = <int>{};
+    for (final MapEntry<String, List<int>> e in above.entries) {
+      e.value.sort((int a, int b) {
+        final int byR = scores[a].compareTo(scores[b]);
+        return byR != 0 ? byR : rows[a].card.id.compareTo(rows[b].card.id);
+      });
+      out.addAll(e.value.take(quota[e.key]!));
+    }
+    return out;
   }
 
   /// RWKV-Instant 的候选复习卡（RWKV 牌组里此刻可出的复习卡）。按（纪元、今天、RWKV 牌组集）缓存，之后只按
