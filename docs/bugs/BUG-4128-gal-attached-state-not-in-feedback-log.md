@@ -1,4 +1,4 @@
-## BUG-4125 · attached 表面隐藏多久、为什么隐藏，反馈日志里查不到
+## BUG-4128 · attached 表面隐藏多久、为什么隐藏，反馈日志里查不到
 - **报告**：2026-11-06（应用内反馈 Ny1bK1hFeJ，GitHub issue #2948，Windows 3.3.0-debug.23880，ZATO / Ren'Py 独占全屏，150% DPI：BUG-4046 之后仍是「制卡后点下一个词不弹查词卡」；报告人用 500 ms 窗口采样记下 attached 表面从 12:39:46 隐藏到 12:40:13 才重新出现，并推断查词卡 placement 跳屏外、主窗前台锁。报告人还指出 `error_log.txt` 里没有任何 `gal-shield` / `gal-click` 行，出问题时无法从日志定位）
 - **真实性**：报告的三条判断逐条沿代码验：
   1. **「查词卡打开期间 attached 表面一直隐藏」——设计行为，不是挂起**。attached 点词打开的桌面查词卡带游戏 HWND 做「点卡外吞点击」，显示时 `ArmLowLevelMouseHookAndWait`（`fushi/windows/runner/global_lookup_window.cpp:1465`）拿走进程内唯一的 `WH_MOUSE_LL`；attached 表面每 500 ms 的 `SyncToTarget` 在 `SetVisible(true)` 里 `ArmLowLevelMouseHookForAttachedGlyph` 失败，按设计隐藏并报 `suspended/mouseHookBusy`（`attached_text_surface_window.cpp` `SyncToTarget` 末段），此时 Shift 悬浮查词仍可用（`HoverLookupGeometryAvailable`）。所以 27.6 s 里 12:39:46→12:40:02 是卡片在屏上的时间。

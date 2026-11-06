@@ -1,4 +1,4 @@
-## BUG-4124 · 游戏库最右侧条目右键菜单里的「设置」子菜单打不开
+## BUG-4127 · 游戏库最右侧条目右键菜单里的「设置」子菜单打不开
 - **报告**：2026-11-06（应用内反馈 DnG4jZW57v，Windows 3.3.0-debug.23855，2560x1400@1.0：游戏库靠右边的游戏，右键菜单里「设置」点了 / 悬停都不出子菜单；左边几列正常。附录屏与日志）
 - **真实性**：✅ 真 bug。录屏逐帧：中间列的条目「设置」子菜单在右侧正常展开（内容语言 / 窗口超分 / 日语区域）；最右列「永不落幕的前奏诗」的菜单贴着屏幕右缘，悬停「设置 >」后屏上什么都没有。根因在条目右键菜单的子菜单行 `fushi/lib/src/pages/implementations/media_item_dialog_page.dart` `_ContextSubmenuRowState.build`（改前 `:2072` / `:2075`）：右侧放不下时翻到左侧，把 `CompositedTransformFollower.followerAnchor` 设成右上角；但 follower 的子节点是 `Align(alignment: AlignmentDirectional.topStart)`，`Align` 在 Overlay 里会撑满整屏，于是 followerAnchor 量的是**整屏宽盒子**的右上角——子菜单（贴在盒子左上）被推到「设置」行左边整整一个屏宽之外，完全离屏。子菜单项其实建出来了，只是不在屏上。全部用这个菜单的地方（书架 / 视频 / 游戏等条目右键）贴右缘时都会这样，游戏库最右列只是最常碰到。
 - **[x] ① 已修复** — `Align` 的对齐改成与 followerAnchor 同一个角（`Alignment(flip ? 1 : -1, up ? 1 : -1)`），翻左时子菜单右缘贴「设置」行左边。顺带补上竖直方向：下方放不下（按本行实测行高 × 项数推算子菜单高度）而上方放得下时，改成底边对齐本行往上长，贴屏幕右下角打开时子菜单也不出屏。RTL 下原来的 `AlignmentDirectional.topStart` 同样会和非翻转的 followerAnchor 错位，一并改成与 anchor 同角的非方向性 `Alignment`。
