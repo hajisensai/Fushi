@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       autoconf automake libtool bison binutils patchelf \
       libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev \
       libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev \
+      libwebkit2gtk-4.1-dev libjson-glib-dev libx11-dev libxi-dev wayland-protocols \
       mpv ffmpeg pulseaudio-utils espeak-ng \
       xvfb xauth dbus dbus-x11 mesa-utils libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
