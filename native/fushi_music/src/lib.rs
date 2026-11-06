@@ -17,6 +17,7 @@ pub mod cd;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
+pub mod legacy_text;
 pub mod lyrics;
 #[cfg(feature = "plugin")]
 pub mod plugin;

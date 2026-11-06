@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show GestureSettings;
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -519,6 +520,70 @@ void main() {
     expect(mined.single.durationMs, 4000);
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // #358s4Ae_fn（Android 荣耀 369x820@3.25）：「进度条只能拖、点按不跳转」。窄屏播放页
+  // 的真实布局 + Android 设备手势参数（系统 touch slop 8dp，比 Flutter 默认 18 小：
+  // 横向拖动识别器在手指抖 8dp 时就会赢过点按）下，点按和带抖动的点按都必须提交 seek。
+  Future<Rect> pumpPhone(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(369 * 3.25, 820 * 3.25);
+    tester.view.devicePixelRatio = 3.25;
+    tester.view.gestureSettings = const GestureSettings(
+      physicalTouchSlop: 8 * 3.25,
+    );
+    addTearDown(tester.view.reset);
+    await pumpPage(tester);
+    backend.controller.add(
+      const MusicBackendPosition(Duration(seconds: 5), Duration(seconds: 60)),
+    );
+    await tester.pump();
+    final Finder seek = find.byKey(const ValueKey<String>('music_lyrics_seek'));
+    expect(seek, findsOneWidget);
+    return tester.getRect(
+      find.descendant(of: seek, matching: find.byType(GestureDetector)).first,
+    );
+  }
+
+  List<int> seeks() => <int>[
+    for (final String e in backend.log)
+      if (e.startsWith('seek:')) int.parse(e.substring(5)),
+  ];
+
+  testWidgets('窄屏播放页：点按进度条提交 seek（Android 手势参数）', (WidgetTester tester) async {
+    final Rect bar = await pumpPhone(tester);
+    await tester.tapAt(bar.center);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(seeks(), hasLength(1));
+    expect(seeks().single, closeTo(30000, 1500));
+
+    // 长一点的按压（超过 kPressTimeout，onTapDown 先于抬起触发）同样提交。
+    final TestGesture press = await tester.startGesture(
+      Offset(bar.left + bar.width * 0.75, bar.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await press.up();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(seeks(), hasLength(2));
+    expect(seeks().last, closeTo(45000, 1500));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('窄屏播放页：带手指抖动（越过 8dp 横向 slop）的点按也提交 seek', (
+    WidgetTester tester,
+  ) async {
+    final Rect bar = await pumpPhone(tester);
+    final Offset start = Offset(bar.left + bar.width * 0.25, bar.center.dy);
+    final TestGesture g = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 16));
+    await g.moveBy(const Offset(10, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    await g.up();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(seeks(), hasLength(1));
+    expect(seeks().single, closeTo(15000 + 10 / bar.width * 60000, 1500));
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
