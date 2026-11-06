@@ -3477,6 +3477,8 @@
   "game_line_audio_matched": "Âm thanh sẵn sàng",
   "game_line_audio_missing": "Không có âm thanh",
   "game_line_audio_no_voice": "Không có giọng nói",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "Đoạn ghi quá dài",
   "game_line_audio_overlong_hint": "Dài hơn nhiều so với một dòng; có thể chứa BGM hoặc âm thanh hỗn hợp khác",
   "game_line_audio_pending": "Đang khớp",

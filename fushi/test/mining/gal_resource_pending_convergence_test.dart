@@ -128,7 +128,7 @@ void main() {
     );
     first = service.entries.first;
     expect(first.audioStatus, TexthookerLineAudioStatus.missing);
-    expect(first.fallbackReason, 'game_resource_not_paired');
+    expect(first.fallbackReason, kGalResourceNotPairedReason);
     expect(first.audioBackend, isNull);
     expect(
       service.entries.last.audioStatus,

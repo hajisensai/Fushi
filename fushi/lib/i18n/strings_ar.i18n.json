@@ -3477,6 +3477,8 @@
   "game_line_audio_matched": "الصوت جاهز",
   "game_line_audio_missing": "لا يوجد صوت",
   "game_line_audio_no_voice": "لا يوجد صوت",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "مقطع طويل جداً",
   "game_line_audio_overlong_hint": "أطول بكثير من سطر واحد؛ قد يحتوي على موسيقى خلفية أو صوت مختلط آخر",
   "game_line_audio_pending": "جارٍ المطابقة",

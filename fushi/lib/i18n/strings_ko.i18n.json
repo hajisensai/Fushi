@@ -3477,6 +3477,8 @@
   "game_line_audio_matched": "오디오 준비됨",
   "game_line_audio_missing": "오디오 없음",
   "game_line_audio_no_voice": "음성 없음",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "너무 긴 클립",
   "game_line_audio_overlong_hint": "한 줄보다 훨씬 길며, BGM이나 다른 혼합 오디오가 포함될 수 있습니다",
   "game_line_audio_pending": "매칭 중",

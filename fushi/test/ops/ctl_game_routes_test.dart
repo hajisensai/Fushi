@@ -1421,6 +1421,48 @@ void main() {
       );
     });
 
+    // BUG-4127 审查：「来自游戏资源直提」只描述真配上原件的行；还在匹配 / 没配上
+    // 但留着 backend 字样的行（折叠进来的旧事件、旧写法）不能被说成有资源原件。
+    test('BUG-4127 逐句音轨 note 只给已配上原件的行', () async {
+      final _FakeHost host = engineHost(
+        lines: <TexthookerLineEntry>[
+          _line(
+            'l1',
+            'a',
+            audio: TexthookerLineAudioStatus.missing,
+            backend: 'game_resource',
+          ),
+          _line(
+            'l2',
+            'b',
+            audio: TexthookerLineAudioStatus.pending,
+            backend: 'game_resource',
+          ),
+          _line(
+            'l3',
+            'c',
+            audio: TexthookerLineAudioStatus.matched,
+            backend: 'game_resource',
+            resourceId: '50000_fushi_textseq42_sgre-voicebody-1-2-3-4.xwma',
+          ),
+        ],
+      );
+      for (final String id in <String>['l1', 'l2']) {
+        final Map<String, Object?> out = await call(
+          host,
+          'GET',
+          '/api/admin/game/lines/$id/tracks',
+        );
+        expect(out.containsKey('note'), isFalse, reason: id);
+      }
+      final Map<String, Object?> matched = await call(
+        host,
+        'GET',
+        '/api/admin/game/lines/l3/tracks',
+      );
+      expect(matched['note'], '这句语音来自游戏资源直提，PCM 轨与它无关');
+    });
+
     test('补录：start → finish；并发 / 错行 409', () async {
       final _FakeHost host = engineHost(
         lines: <TexthookerLineEntry>[_line('l1', 'x'), _line('l2', 'y')],

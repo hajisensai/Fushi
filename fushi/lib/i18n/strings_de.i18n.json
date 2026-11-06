@@ -3477,6 +3477,8 @@
   "game_line_audio_matched": "Audio bereit",
   "game_line_audio_missing": "Kein Audio",
   "game_line_audio_no_voice": "Keine Stimme",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "Überlanger Clip",
   "game_line_audio_overlong_hint": "Viel länger als eine einzelne Zeile; kann BGM oder andere gemischte Audioinhalte enthalten",
   "game_line_audio_pending": "Zuordnung",

@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -639,7 +640,7 @@ void main() {
       backend: 'game_resource',
     );
     TexthookerLineEntry row = service.entries.single;
-    expect(texthookerLineHasResourceAudio(row), isFalse);
+    expect(row.hasResourceAudio, isFalse);
     expect(texthookerLineAudioSummary(row), 'Matching');
 
     service.updateLineAudio(
@@ -648,7 +649,7 @@ void main() {
       backend: 'game_resource',
     );
     row = service.entries.single;
-    expect(texthookerLineHasResourceAudio(row), isFalse);
+    expect(row.hasResourceAudio, isFalse);
     expect(texthookerLineAudioSummary(row), isNot('game_resource'));
 
     service.updateLineAudio(
@@ -658,7 +659,7 @@ void main() {
       resourceId: '50000_fushi_textseq42_sgre-voicebody-1-2-3-4.xwma',
     );
     row = service.entries.single;
-    expect(texthookerLineHasResourceAudio(row), isTrue);
+    expect(row.hasResourceAudio, isTrue);
     expect(texthookerLineAudioSummary(row), 'game_resource');
   });
 
@@ -690,6 +691,33 @@ void main() {
     expect(find.text('game_resource'), findsNothing);
     // 没有音频的行不给行内试听键。
     expect(find.byTooltip("Play this line's audio"), findsNothing);
+  });
+
+  // BUG-4127 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
+  // 「无原件」标，不是红色「未匹配 / 无音频」故障标。
+  testWidgets('BUG-4127 resource-not-paired line shows a neutral tag', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+      '配音のない地の文',
+    )!;
+    TexthookerService.instance.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.missing,
+      fallbackReason: kGalResourceNotPairedReason,
+    );
+    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    await tester.pump();
+
+    final Finder chip = find.text('No original voice');
+    expect(chip, findsWidgets);
+    expect(find.text('No audio'), findsNothing);
+    final FushiTag tag = tester.widget<FushiTag>(
+      find.ancestor(of: chip.first, matching: find.byType(FushiTag)).first,
+    );
+    expect(tag.tone, FushiTagTone.neutral);
   });
 
   testWidgets('empty workbench offers the next step instead of a dead end', (

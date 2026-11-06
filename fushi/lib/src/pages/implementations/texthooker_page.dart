@@ -272,7 +272,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
-    if (texthookerLineHasResourceAudio(line)) {
+    if (line.hasResourceAudio) {
       // BUG-4127：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
       // 行没有任何资源字节，弹这个带播放键的窗口只会让用户点了没声音。
       // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
@@ -4477,6 +4477,14 @@ class _LineAudioChip extends StatelessWidget {
     }
     // 「已按干净源策略抑制」绝不能和「无配音」共用灰标：前者是「没证据」，后者是
     // 「有证据判定没配音」。混成一句会让用户以为游戏这句本来就没语音。
+    // 资源模式越过配对容差仍没有原件：中性「无原件」+ 悬停说明，不是红色故障。
+    if (status == TexthookerLineAudioStatus.missing &&
+        fallbackReason == kGalResourceNotPairedReason) {
+      return FushiTooltip(
+        message: t.game_line_audio_not_paired_hint,
+        child: _chip(t.game_line_audio_not_paired, FushiTagTone.neutral),
+      );
+    }
     if (status == TexthookerLineAudioStatus.missing &&
         fallbackReason == kGalCleanSourceSuppressedReason) {
       return FushiTooltip(

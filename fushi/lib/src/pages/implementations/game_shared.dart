@@ -130,14 +130,6 @@ String texthookerLineAudioStatusLabel(TexthookerLineAudioStatus status) =>
       TexthookerLineAudioStatus.unavailable => t.game_line_audio_unavailable,
     };
 
-/// 这行的音频是否是**已配上的**游戏资源原件（BUG-4127）：backend 是 game_resource
-/// 且状态是已配对 / 已编码。只看 backend 会把还在等资源的行当成有原件，弹出一个
-/// 点了没声音的播放键。
-bool texthookerLineHasResourceAudio(TexthookerLineEntry line) =>
-    line.audioBackend == 'game_resource' &&
-    (line.audioStatus == TexthookerLineAudioStatus.matched ||
-        line.audioStatus == TexthookerLineAudioStatus.encoded);
-
 /// 行音频摘要（「本句音轨」面板、选中句条共用，BUG-4127）：有音频时报来源
 /// （backend），没有音频时报状态（匹配中 / 未匹配 / 不可用）。「匹配中」的行即使
 /// 留着 backend 字样（折叠进来的旧事件），也没有任何可播放的字节。
