@@ -165,9 +165,28 @@ fushi_server pair ls | revoke <peerId> 已配对设备（ls 里标 `[我的设�
 fushi_server admin reset-token         重生成 admin_token
 fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
+fushi_server backup create -o <file> [--no-documents]   整机备份（服务停着时；在跑时用 ctl backup create）
+fushi_server backup restore <file> --yes [--no-config]  从备份还原（须先停服）
 ```
 
 所有子命令接受 `--config <path>`（默认当前目录 `fushi_server.yaml`）和 `--verbose`。
+
+### 备份与还原
+
+备份的是这台服务端自己（换机 / 重装 / 回滚用），一个 zip：数据库的一致快照（`VACUUM INTO`，
+serve 在跑也安全）、配置文件、数据目录里其余文件（互联身份与 TLS 证书、配对、词典、任务、寄存的
+配置方案……）。不进包：`tmp/`、`logs/`、`backups/`、锁文件。`documents/`（书 / 封面 / 有声书 /
+下载）默认带上，`--no-documents` 只留设置与状态——还原后库里的条目会指向缺失文件，要重新扫描 /
+下载。**备份里有 `admin_token`、qBittorrent 密码、AI key 等凭据，要当密钥保管。**
+
+- 服务停着：`fushi_server backup create -o /backup/fushi.zip`。
+- 服务在跑：`fushi_server ctl backup create [--no-documents]` 在后台生成到 `<data>/backups/`，
+  `ctl backup ls` 看进度，下载走 `GET /api/admin/backups/<name>`（admin_token 鉴权），
+  `ctl backup rm <name>` 删除。
+- 还原（先停服）：`fushi_server backup restore fushi.zip --yes`。当前数据目录的内容整体挪到
+  `<data_dir>.pre-restore-<时间>/`、配置存成 `<配置>.pre-restore-<时间>`，都不删除；包里配置的
+  `data_dir` 换成本机这份。`--no-config` 只还原数据。比本版本新的数据库 schema 拒绝还原（先升级）。
+  中途失败会把原数据挪回去。
 
 ### `ctl`：操作正在运行的 serve
 

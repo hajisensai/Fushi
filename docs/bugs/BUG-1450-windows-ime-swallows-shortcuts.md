@@ -11,3 +11,4 @@
   - Dart：`hibiki/test/platform/windows_ime_guard_test.dart`——冷启动即解除、点击 `SelectableText` 不得恢复、`SelectableText ↔ TextField` 切焦只按真实输入能力翻转、文本框拿焦必须恢复（否则中日文全打不了，比原 bug 更糟）、失焦再解除、同状态焦点 churn 不重复打通道、非 Windows 空转。
   - native：`hibiki/windows/runner/tests/ime_association_guard_test.cpp`，由 `CMakeLists.txt` 的 `hibiki_windows_ime_association_gate` 在每次 Windows runner 构建时编译执行（沿用 BUG-1239 的构建门模式）——首次 disable 必须落地、重复请求合并、re-enable 必须落地、首次 enable 也要落地（热重启后窗口可能已解除）、平台调用失败不得记账。变异「去掉去重」实测转红。以项目真实编译选项 `/W4 /WX` 零警告通过。
 - **备注**：真 Windows IME / 设备验收尚未执行。需覆盖：① 中文拼音激活时视频页/阅读器的空格与字母快捷键；② 点击可选文本后快捷键仍可用；③ 点进搜索框/笔记框/Anki 字段后能否立刻输入中文与日文；④ 输入完离开文本框后快捷键是否恢复。
+- **真机验收（2026-11-05）**：微软拼音中文态与 MS-IME 平假名态下，首页 / 视频页的空格、字母、Ctrl+数字、PageDown、Esc 全部以真实 VK 到达并命中绑定（无守卫对照组全部 `VK_PROCESSKEY`）；证据表见 [BUG-430](BUG-430-win-ime-shortcut-fallback.md)。`ime_association_guard_test.cpp` 补了真 HWND 的 `ImmGetContext` 契约用例。未验：阅读器 WebView2 持 OS 焦点时（那条走 Chromium 自己的 IME 管理）、点进文本框打中日文再离开（守卫逻辑有单测，未真机按键）。

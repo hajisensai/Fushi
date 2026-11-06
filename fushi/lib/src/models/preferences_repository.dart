@@ -131,6 +131,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
@@ -688,6 +689,11 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('default_content_language', language);
     notifyListeners();
   }
+
+  /// 截屏识字（悬浮球 / 桌面冻结层 / 拍照 / 浏览器图片 / AI 读屏）送给系统 OCR
+  /// 的语言：跟随 [defaultContentLanguage]，没设时日语（[resolveScreenOcrLanguage]）。
+  String get screenOcrLanguage =>
+      resolveScreenOcrLanguage(defaultContentLanguage);
 
   // ── 库页排序方式（排序交互重设计 2026-07-12）──────────────────────────
 

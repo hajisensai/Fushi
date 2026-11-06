@@ -37,6 +37,7 @@ import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
+import 'package:fushi_server/src/admin/admin_backups.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
@@ -113,11 +114,18 @@ class AdminApi {
     }
   }
 
+  /// 整机备份端点（`/api/admin/backups*`，见 admin_backups.dart）。
+  late final AdminBackups backups = AdminBackups(ctx);
+
   Future<shelf.Response> _route(
     String method,
     String path,
     shelf.Request request,
   ) async {
+    if (path.startsWith(kAdminBackupsPath)) {
+      final shelf.Response? r = await backups.route(method, path, request);
+      if (r != null) return r;
+    }
     switch ((method, path)) {
       case ('GET', '/api/admin/status'):
         return _status();
