@@ -491,12 +491,10 @@ class MusicSession extends ChangeNotifier {
     final MusicPlayItem? item = engine.startedItem;
     if (item != null && !engine.resolving && !engine.restoringResume) {
       final int? durationMs = _durationMsOf(item, engine.duration);
-      if (_resumeTracked(item, durationMs)) {
-        _queueResumeWrite(
-          item.trackUid,
-          engine.position.inMilliseconds,
-          durationMs,
-        );
+      final int ms = engine.position.inMilliseconds;
+      // 这次打开还没放过的 0 不写（见 [_startedProgressed]）：「从头播放」后马上进后台不删断点。
+      if (_resumeTracked(item, durationMs) && (ms > 0 || _startedProgressed)) {
+        _queueResumeWrite(item.trackUid, ms, durationMs);
       }
     }
     await _resumeWrites;

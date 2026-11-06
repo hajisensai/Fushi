@@ -239,6 +239,8 @@ void main() {
     await session.engine.pause();
     backend.position(0);
     expect(await saved('a'), 1200000, reason: '打开期的 0 不是「回到开头」');
+    await session.flushResumePoint();
+    expect(await saved('a'), 1200000, reason: '进后台写穿也不拿打开期的 0 删断点');
     // 点错了，退回去：列表点开仍从断点接着放（换下时的 0 也不冲掉断点）。
     await session.engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
     expect(backend.opened.last, ('a', const Duration(minutes: 20)));
