@@ -102,6 +102,19 @@ class MediaServerBookSpec {
   }
 }
 
+/// 一部入库的媒体服务器作品：服务器 + 作品 id（剧 id / 电影自身 id）。
+typedef MediaServerLibraryWork = ({String serverId, String workId});
+
+/// [row] 若是媒体服务器入库行，返回它所属的作品；否则 null。纯函数，不读库。
+MediaServerLibraryWork? mediaServerWorkOfRow(VideoBookRow row) {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  if (spec == null) return null;
+  return (serverId: spec.serverId, workId: spec.workId ?? spec.itemId);
+}
+
 /// 一部作品在媒体库里的状态：已入库的叶子 id（有 `media-server://` 行的）。
 @immutable
 class MediaServerWorkLibraryStatus {
@@ -219,11 +232,20 @@ class MediaServerVideoLibrary {
   Future<int> removeFromLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
-  ) async {
+  ) => removeWorks(<MediaServerLibraryWork>{
+    (serverId: browser.serverId, workId: work.id),
+  });
+
+  /// 按作品身份移出（库页菜单用：不联网、不需要服务器在线）。一次删掉这些作品的
+  /// 全部 `media-server://` 行；被删空的剧名合集随之删除（见
+  /// `FushiDatabase.deleteVideoBooks`）。返回删掉的行数。
+  Future<int> removeWorks(Set<MediaServerLibraryWork> works) async {
+    if (works.isEmpty) return 0;
     final List<String> uids = <String>[
-      for (final ({VideoBookRow row, MediaServerBookSpec spec}) entry
-          in await _rowsOfWork(browser.serverId, work.id))
-        entry.row.bookUid,
+      for (final VideoBookRow row in await database.allVideoBooks())
+        if (mediaServerWorkOfRow(row) case final MediaServerLibraryWork work
+            when works.contains(work))
+          row.bookUid,
     ];
     if (uids.isEmpty) return 0;
     return repository.deleteVideoBooksAndReclaimAssets(uids);

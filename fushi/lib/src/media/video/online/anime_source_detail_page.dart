@@ -663,7 +663,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         if (_canRemoveFromLibrary)
           MediaDetailSecondaryButton(
             buttonKey: const ValueKey<String>('anime_source_library_remove'),
-            icon: FushiIcons.libraryAdd,
+            icon: FushiIcons.remove,
             label: t.video_online_library_remove,
             selected: true,
             busy: _libraryBusy,

@@ -878,8 +878,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
           buttonKey: const ValueKey<String>(
             'media-server-detail-library-remove',
           ),
-          icon: FushiIcons.libraryAdd,
+          // 「−」：与「加入」的「+」成对，一眼看出这部已在库里、点了是移出。
+          icon: FushiIcons.remove,
           label: t.video_online_library_remove,
+          selected: true,
           busy: _libraryBusy,
           onPressed: () => unawaited(_removeFromLibrary()),
         ),

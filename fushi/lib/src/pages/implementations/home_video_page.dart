@@ -78,6 +78,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
     show DiscShareFile;
 import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/remote_video_subtitle_refetch.dart';
@@ -4431,6 +4433,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 unawaited(_rescrapeVideo(book));
               },
             ),
+          // 从媒体服务器加入的作品：移出整部作品（电影 = 自身，剧 = 全部集），与
+          // 服务器详情页的「移出媒体库」同一动作。
+          if (mediaServerWorkOfRow(book) case final MediaServerLibraryWork work)
+            DialogListAction(
+              label: t.video_online_library_remove,
+              icon: FushiIcons.remove,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(
+                  _removeMediaServerWorks(<MediaServerLibraryWork>{work}),
+                );
+              },
+            ),
         ],
         dangerActions: <DialogDangerAction>[
           DialogDangerAction(
@@ -4443,6 +4458,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
       ),
     );
+  }
+
+  /// 库页「移出媒体库」（卡片 / 合集菜单）：删这些媒体服务器作品的入库行，与服务器
+  /// 详情页的「移出」同一实现（[MediaServerVideoLibrary.removeWorks]），不联网。
+  /// 已下载到本机的集是普通本地视频，不跟着移出。
+  Future<void> _removeMediaServerWorks(
+    Set<MediaServerLibraryWork> works,
+  ) async {
+    final int removed;
+    try {
+      removed = await MediaServerVideoLibrary(
+        database: appModelNoUpdate.database,
+        repository: widget.repo,
+      ).removeWorks(works);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'HomeVideoPage.removeMediaServerWorks',
+        error,
+        stack,
+      );
+      if (!mounted) return;
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
+    _refresh();
+    if (removed > 0) FushiToast.show(msg: t.video_online_library_removed);
   }
 
   /// [book] 若是从当前远端来源（互联 host / 媒体服务器）下载来的，返回服务端清单里
@@ -9350,6 +9394,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       memberUidOrder,
       library,
     );
+    // 「移出媒体库」：合集里有从媒体服务器加入的作品（剧名合集）时才出。
+    final Set<MediaServerLibraryWork> serverWorks = <MediaServerLibraryWork>{
+      for (final VideoBookRow b in library)
+        if (memberUids.contains(b.bookUid)) ?mediaServerWorkOfRow(b),
+    };
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
@@ -9510,6 +9559,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               onPressed: () => unawaited(_scrapeCollectionForHost(collection)),
             ),
         ],
+        if (serverWorks.isNotEmpty)
+          DialogListAction(
+            label: t.video_online_library_remove,
+            icon: FushiIcons.remove,
+            onPressed: () => unawaited(_removeMediaServerWorks(serverWorks)),
+          ),
       ],
     );
   }

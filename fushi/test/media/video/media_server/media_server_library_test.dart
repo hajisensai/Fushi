@@ -240,6 +240,56 @@ void main() {
     expect(hits, isEmpty);
   });
 
+  test('library home remove: rows map back to their work and removeWorks '
+      'deletes only that work (no server needed), dropping the emptied series '
+      'collection', () async {
+    const MediaServerItem movie = MediaServerItem(
+      id: 'm1',
+      name: 'A Movie',
+      type: MediaServerItemType.movie,
+    );
+    expect(await library.addToLibrary(browser, series), 3);
+    expect(await library.addToLibrary(browser, movie), 1);
+
+    final MediaServerLibraryWork episodeWork = mediaServerWorkOfRow(
+      (await repository.getByBookUid('e3'))!,
+    )!;
+    expect(episodeWork, (serverId: browser.serverId, workId: 'show'));
+    expect(mediaServerWorkOfRow((await repository.getByBookUid('m1'))!), (
+      serverId: browser.serverId,
+      workId: 'm1',
+    ));
+
+    expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 3);
+    for (final String uid in <String>['e1', 'e2', 'e3']) {
+      expect(await repository.getByBookUid(uid), isNull);
+    }
+    expect(
+      await database.getMediaCollectionByNaturalKey('The Show', 'playlist'),
+      isNull,
+      reason: '剧名合集被删空后随之删除，库页不留空卡',
+    );
+    expect(await repository.getByBookUid('m1'), isNotNull);
+    expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 0);
+  });
+
+  test('mediaServerWorkOfRow ignores rows that are not media-server rows', () {
+    final VideoBookRow local = VideoBookRow(
+      bookUid: 'local',
+      title: 'Local',
+      videoPath: 'C:/videos/a.mkv',
+      currentEpisode: 0,
+      lastPositionMs: 0,
+      delayMs: 0,
+      importedAt: 0,
+      streamSpecJson: MediaServerBookSpec(
+        serverId: 'srv',
+        info: browser.toRemoteVideoInfo(_episode('e1', 1, 1)),
+      ).encode(),
+    );
+    expect(mediaServerWorkOfRow(local), isNull);
+  });
+
   test('movie is one row keyed by itself and is not a series work', () async {
     const MediaServerItem movie = MediaServerItem(
       id: 'm1',
