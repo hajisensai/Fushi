@@ -7,7 +7,6 @@ import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
-import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
