@@ -243,10 +243,10 @@ void main() {
       expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
     });
 
-    test('spine 直接是 SVG 文档（image/svg+xml）：判不成漫画时日志写明原因', () {
-      // 已知限制（未修）：EpubParser 只收 HTML 类 spine 项，SVG 内容文档作 spine
-      // 的书解析即抛「no readable chapters」。OjZ-K53WBY 没有样本，不能确认是
-      // 这一形态；先保证否决理由进诊断日志，下一份反馈能定位。
+    test('spine 直接是 SVG 文档（image/svg+xml）→ 认成漫画并按 spine 序取页', () async {
+      // BUG-3845：EPUB 3 允许 SVG 内容文档直接作 spine 项。修复前 EpubParser
+      // 只收 HTML 类 spine 项，这类书整本 0 章、探测即抛「no readable
+      // chapters」，漫画单文件 / 整个文件夹导入都判成「不是漫画」。
       final String path = _writeEpub(
         root,
         name: 'svgspine.epub',
@@ -255,15 +255,17 @@ void main() {
     <item id="p-002" href="image/p-002.svg" media-type="image/svg+xml"/>
     <item id="i-001" href="image/i-001.jpg" media-type="image/jpeg"/>
     <item id="i-002" href="image/i-002.jpg" media-type="image/jpeg"/>''',
-        spine: '<itemref idref="p-001"/><itemref idref="p-002"/>',
+        // 故意让 spine 序与文件名序相反：页序必须跟 spine 走。
+        spine: '<itemref idref="p-002"/><itemref idref="p-001"/>',
         files: <String, List<int>>{
           'item/image/p-001.svg': utf8.encode(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<svg $_svgNs viewBox="0 0 20 40"><image width="20" height="40" '
             'xlink:href="i-001.jpg"/></svg>',
           ),
           'item/image/p-002.svg': utf8.encode(
-            '<svg $_svgNs viewBox="0 0 20 40"><image width="20" height="40" '
-            'xlink:href="i-002.jpg"/></svg>',
+            '<svg $_svgNs viewBox="0 0 30 40"><image width="30" height="40" '
+            'href="i-002.jpg"/></svg>',
           ),
           'item/image/i-001.jpg': _png(20),
           'item/image/i-002.jpg': _png(30),
@@ -273,11 +275,49 @@ void main() {
       final EngineLogSink previous = engineLog;
       engineLog = _CapturingSink(logged);
       addTearDown(() => engineLog = previous);
-      expect(MangaArchiveImporter.looksLikeImageArchive(path), isFalse);
-      expect(
-        logged.single,
-        allOf(contains('svgspine.epub'), contains('no readable chapters')),
+      expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+      expect(logged, isEmpty);
+
+      final EpubBook book = EpubParser.parseSyncFromPath(
+        path,
+        extract.path,
+        includeSvgSpineDocuments: true,
       );
+      final Directory staging = Directory.systemTemp.createTempSync(
+        'epub_svg_pages_',
+      );
+      addTearDown(() => staging.deleteSync(recursive: true));
+      await MangaArchiveImporter.copyEpubPages(book, staging);
+      final List<File> pages = staging.listSync().whereType<File>().toList()
+        ..sort((File a, File b) => a.path.compareTo(b.path));
+      expect(pages.map((File f) => p.basename(f.path)), <String>[
+        'page_000000.jpg',
+        'page_000001.jpg',
+      ]);
+      expect(pages[0].readAsBytesSync(), _png(30), reason: 'spine 第一页是 p-002');
+      expect(pages[1].readAsBytesSync(), _png(20));
+    });
+
+    test('书籍口径（默认）仍不收 SVG spine 项：阅读器只渲染 HTML 章节', () {
+      final String path = _writeEpub(
+        root,
+        manifest: '''
+    <item id="p-001" href="xhtml/p-001.xhtml" media-type="application/xhtml+xml"/>
+    <item id="s-001" href="image/s-001.svg" media-type="image/svg+xml"/>
+    <item id="i-001" href="image/i-001.jpg" media-type="image/jpeg"/>''',
+        spine: '<itemref idref="s-001"/><itemref idref="p-001"/>',
+        files: <String, List<int>>{
+          'item/xhtml/p-001.xhtml': utf8.encode(_svgPage('../image/i-001.jpg')),
+          'item/image/s-001.svg': utf8.encode(
+            '<svg $_svgNs><image xlink:href="i-001.jpg"/></svg>',
+          ),
+          'item/image/i-001.jpg': _png(20),
+        },
+      );
+      final EpubBook book = EpubParser.parseSyncFromPath(path, extract.path);
+      expect(book.chapters.map((EpubChapter c) => c.href), <String>[
+        'item/xhtml/p-001.xhtml',
+      ]);
     });
 
     test('含文字页的 EPUB：日志写明是哪一章有文字', () {
