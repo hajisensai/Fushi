@@ -225,7 +225,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// BUG-3777 R1：播放器此刻所在句（整书下标），每个播放 tick 按真实位置更新，
   /// **不受**跨章守卫 [_chapterTransition] 冻结（显式 seek / 首次激活载入窗口这两类
   /// 音频瞬态照样挡在外面）。-1 = 自上次跨章开始以来还没有可信的 tick，或
-  /// [setAllBookCues] 换列表时播放句不在新列表里（在的话按身份映射过去，BUG-4130）。
+  /// [setAllBookCues] 换列表时播放句不在新列表里（在的话按身份映射过去，BUG-4163）。
   ///
   /// 与 [_currentCue] 分开：后者是「正文跟随句」，跨章期间必须冻结（正文还没换到
   /// 新章，推进它会重复请求跨章）；而歌词层是整书列表，不依赖正文挂载哪一章。后台
@@ -1432,7 +1432,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (id != null) idMap[id] = i;
     }
     _allBookCueIdToIndex = idMap;
-    // 播放所在句按身份映射进新列表（BUG-4130）。reader 每装一章都重灌同一份整书
+    // 播放所在句按身份映射进新列表（BUG-4163）。reader 每装一章都重灌同一份整书
     // cue，跨章过渡期间（[_chapterTransition] 仍竖着）装章正好落在这里：旧码直接置
     // -1，[lyricsCueAllBookIdx] 退回冻结的正文跟随句，歌词高亮往回跳一下、下一个
     // tick 再跳回来。播放句仍在新列表里就保住它；不在（整书 cue 真换了）才等下一个
