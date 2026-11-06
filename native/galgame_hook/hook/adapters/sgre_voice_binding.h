@@ -46,6 +46,16 @@ constexpr uint64_t kSgreVoiceLeadMs = 500;
 // to it. Equals the host's event-ID tolerance
 // (kGalVoiceResourcePairingWindowMs) so a bound resource is never refused.
 constexpr uint64_t kSgreVoiceLagMs = 1500;
+// How far a voice may start after its page was published and still be that
+// page's voice. With instant text (or a page whose first frame is already
+// complete) the first glyph, the publication and the voice start coincide;
+// the voice is submitted on the XAudio thread while the page is published
+// from the draw callback, and GetTickCount64 steps in ~16 ms, so the voice
+// tick can land a few ticks after the publication tick. Not measured on a real
+// session yet; far below the time needed to read a line and advance to the
+// next one, so the next line's voice (the case the exclusion guards) still
+// starts outside it.
+constexpr uint64_t kSgreVoicePublishRaceMs = 100;
 // Upper bound for waiting until the owning page is fully revealed (slowest
 // typewriter on a long line). Afterwards the resource is written unmarked.
 constexpr uint64_t kSgreVoiceRevealDeadlineMs = 60000;
@@ -135,11 +145,13 @@ class SgreScenarioPageTracker {
 // Binds a voice that started playing at [voice_tick] to the scenario page
 // that owns it. A page can own the voice only when
 //   first_glyph - kSgreVoiceLeadMs <= voice_tick <= first_glyph + kSgreVoiceLagMs
-// and, once published, voice_tick <= published_tick: a page whose line had
-// already been fully revealed before the voice started is not that voice's
-// page (BUG-4130 review: otherwise the next line's voice, when its text fades
-// in later than the lead, was handed to the line still on screen and the host
-// took it as an exact event-ID hit on the wrong card). Of the candidates the
+// and, once published, voice_tick <= published_tick + kSgreVoicePublishRaceMs:
+// a page whose line had already been fully revealed before the voice started
+// is not that voice's page (BUG-4130 review: otherwise the next line's voice,
+// when its text fades in later than the lead, was handed to the line still on
+// screen and the host took it as an exact event-ID hit on the wrong card). The
+// race allowance keeps an instantly revealed page (publication tick == first
+// glyph tick) owning the voice that starts with it. Of the candidates the
 // earliest page owns the voice: at most one page was being typed when the
 // voice started, and a page that only began afterwards (within the lead) owns
 // it only when none was.
@@ -169,7 +181,8 @@ inline VoiceResourcePairDecision ResolveSgreVoicePage(
         page.first_glyph_tick <= voice_tick + kSgreVoiceLeadMs &&
         voice_tick <= page.first_glyph_tick + kSgreVoiceLagMs;
     const bool revealed_before_voice =
-        page.text_seq != 0 && page.published_tick < voice_tick;
+        page.text_seq != 0 &&
+        page.published_tick + kSgreVoicePublishRaceMs < voice_tick;
     if (in_window && !revealed_before_voice &&
         (owner == nullptr || page.id < owner->id)) {
       owner = &page;
