@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source guard for BUG-4180 (feedback 5Sj-bzv_rm): the vendored
 /// `flutter_inappwebview_android` draws its own floating context menu (the

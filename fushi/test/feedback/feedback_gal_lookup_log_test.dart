@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/feedback/feedback_gal_lookup_log.dart';
 
 /// 反馈 Ny1bK1hFeJ：游戏内查词 / attached 表面的状态行只写进 hibiki_glookup.log，
