@@ -3,10 +3,57 @@
 // membership, XWMA reconstruction, naming and lifecycle stay in this profile.
 #include "sgre_profile.h"
 #include "sgre_voice_archive.h"
+#include "sgre_voice_binding.h"
 
 #include "sgre_lookup.inc"
 
 fushi_voice_hook::SgreVoiceArchiveView g_sgre_voice_archive;
+
+// A reconstructed voice resource waiting for its scenario page to be
+// published (BUG-4127). Touched only on the HookWorker: the XAudio
+// compressed-resource dispatch and SgreAdapter::ProcessPendingEvents both run
+// there.
+struct SgrePendingVoice {
+  std::vector<uint8_t> resource;
+  uint64_t voice_tick = 0;
+  wchar_t storage_name[128] = {};
+};
+constexpr size_t kSgrePendingVoiceSlots = 8;
+std::vector<SgrePendingVoice> g_sgre_pending_voices;
+
+// Writes [voice] once its owner is decided. Returns false while it must keep
+// waiting. A matched page names the file with that page's text-lane seq; an
+// expired/unselected binding keeps the legacy unmarked name so the host's
+// ordinary unmarked contract applies.
+bool TryPublishSgreVoice(SgrePendingVoice* voice, bool force_unmarked) {
+  uint64_t text_event_id = 0;
+  if (!force_unmarked) {
+    fushi_voice_hook::SgreScenarioPage
+        pages[fushi_voice_hook::kSgrePageHistorySlots] = {};
+    size_t page_count = 0;
+    const bool lane_observed = SnapshotSgreScenarioPages(
+        pages, fushi_voice_hook::kSgrePageHistorySlots, &page_count);
+    const fushi_voice_hook::VoiceResourcePairDecision decision =
+        fushi_voice_hook::ResolveSgreVoicePage(voice->voice_tick,
+                                              GetTickCount64(), lane_observed,
+                                              pages, page_count);
+    if (decision.state == fushi_voice_hook::VoiceResourcePairState::kWait) {
+      return false;
+    }
+    if (decision.state ==
+        fushi_voice_hook::VoiceResourcePairState::kMatched) {
+      text_event_id = decision.text_event_id;
+    }
+  }
+  const bool published = WriteVoiceOggAt(
+      voice->resource.data(), static_cast<uint32_t>(voice->resource.size()),
+      voice->storage_name, voice->voice_tick, text_event_id);
+  if (published) {
+    SetXAudioDiagnostic(
+        fushi_voice_hook::kXAudioDiagGameResourcePublished);
+  }
+  return true;
+}
 
 bool HandleSgreCompressedResource(
     const fushi_voice_hook::XAudioCompressedResourceSubmission& submission) {
@@ -32,21 +79,40 @@ bool HandleSgreCompressedResource(
       resource.size() > std::numeric_limits<uint32_t>::max()) {
     return false;
   }
-  wchar_t storage_name[128] = {};
-  swprintf_s(storage_name, L"sgre-voicebody-%llu-%p-%llu-%llu.xwma",
+  SgrePendingVoice voice;
+  voice.resource = std::move(resource);
+  voice.voice_tick = submission.playback_timestamp_ms;
+  swprintf_s(voice.storage_name, L"sgre-voicebody-%llu-%p-%llu-%llu.xwma",
              static_cast<unsigned long long>(archive_parts.body_offset),
              reinterpret_cast<void*>(submission.source.source),
              static_cast<unsigned long long>(submission.source.generation),
              static_cast<unsigned long long>(
                  submission.source.queue_generation));
-  const bool published = WriteVoiceOggAt(
-      resource.data(), static_cast<uint32_t>(resource.size()), storage_name,
-      submission.playback_timestamp_ms);
-  if (published) {
-    SetXAudioDiagnostic(
-        fushi_voice_hook::kXAudioDiagGameResourcePublished);
+  // Bind to the owning scenario page now if its line is already published,
+  // otherwise hold it until the page is revealed (BUG-4127). The queue is
+  // bounded: when full the oldest entry is written unmarked, never dropped.
+  if (TryPublishSgreVoice(&voice, /*force_unmarked=*/false)) return true;
+  if (g_sgre_pending_voices.size() >= kSgrePendingVoiceSlots) {
+    TryPublishSgreVoice(&g_sgre_pending_voices.front(),
+                        /*force_unmarked=*/true);
+    g_sgre_pending_voices.erase(g_sgre_pending_voices.begin());
   }
-  return published;
+  g_sgre_pending_voices.push_back(std::move(voice));
+  return true;
+}
+
+// HookWorker tick: retries every held voice until its page is published or
+// the binding expires (then it is written unmarked).
+void ProcessSgrePendingVoices() {
+  for (size_t i = 0; i < g_sgre_pending_voices.size();) {
+    if (TryPublishSgreVoice(&g_sgre_pending_voices[i],
+                            /*force_unmarked=*/false)) {
+      g_sgre_pending_voices.erase(g_sgre_pending_voices.begin() +
+                                  static_cast<std::ptrdiff_t>(i));
+    } else {
+      ++i;
+    }
+  }
 }
 
 // Family membership has two independent proofs. The optional voice archive
@@ -228,6 +294,9 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
   void ProcessPendingEvents() {
+    // Held voices do not depend on the lookup anchors: without an exact lane
+    // they resolve as unselected and are written unmarked.
+    if (audio_installed_) ProcessSgrePendingVoices();
     if (!probe() || !g_sgre_anchors_resolved) return;
     // Retry independently from the scenario lookup sensor.  The UI renderer
     // has its own optional ABI and must not inherit TextDraw's runtime gate.
@@ -258,6 +327,7 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
     ShutdownSgreDirectInputShield();
     if (audio_installed_) {
       UnregisterXAudioCompressedResourceHandler(&HandleSgreCompressedResource);
+      g_sgre_pending_voices.clear();
       fushi_voice_hook::CloseSgreVoiceArchive(&g_sgre_voice_archive);
       audio_installed_ = false;
     }
