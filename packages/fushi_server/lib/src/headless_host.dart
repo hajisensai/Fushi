@@ -244,7 +244,6 @@ class HeadlessHost {
   Future<void> start() async {
     if (_server != null) return;
     await paths.ensureLayout();
-    await _cleanupAfterSelfUpdate();
 
     SecurityContext? securityContext;
     if (config.tls) {
@@ -477,6 +476,9 @@ class HeadlessHost {
       rethrow;
     }
     _server = server;
+    // 新版已经起来（端口绑上了）才删上次换包留下的旧文件：启动失败时 `*.fushi-old`
+    // 还在，能手动换回旧版（README「远程更新」）。
+    await _cleanupAfterSelfUpdate();
     // P2P 挂不上只留痕（[_serializeP2p] 吞错并记 lastError）：server 已经起来了，
     // 这里抛出去会让它没有拥有者（泄漏一个在跑的 server，审查问题 12）。
     await _attachP2p(server);
