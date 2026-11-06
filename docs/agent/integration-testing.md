@@ -68,7 +68,8 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 #   setTimeout），位置 / 进度 / 账本在 Mac runner 上照常落地；若某测试仍卡 pending，
 #   给它加 WebView 探针（见 audiobook_resume_align_itest）打 raf/hidden 再判。
 # iOS 模拟器里「平台视图（WKWebView）能不能收到真实触摸」：
-#   TEST=integration_test/ios_popup_real_touch_itest.dart #     bash integration_test/support/run_sim_touch_itest.sh <udid>     # Mac，fushi/ 下
+#   TEST=integration_test/ios_popup_real_touch_itest.dart \
+#     bash integration_test/support/run_sim_touch_itest.sh <udid>     # Mac，fushi/ 下
 #   XCUITest 投真实触摸；测试侧必须先 IosRealTouchSession.start(binding)——集成测试绑定的
 #   TestPlatformDispatcher 吞掉 onHitTest，不装它 WKWebView 一次触摸都收不到（BUG-1692 iOS 节）。
 ```
