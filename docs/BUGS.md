@@ -34,6 +34,12 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3737 条。点号进各自文件。
+> 共 3727 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4127](bugs/BUG-4127-srs-profile-conflict-candidate-info.md) | ✅ | ✅ | 复习同步冲突弹窗候选只有名字和 uid，看不出该选哪份 |
+> 共 3729 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
