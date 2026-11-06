@@ -409,18 +409,17 @@ class ServerDictionaryHost {
   }
 }
 
-/// 「这次服务端查词要不要简繁互查」的唯一判据（纯函数，便于单测）：请求方算好结论发来
-/// （[requested] 非 null）就照办；没发（浏览器扩展 / 旧客户端）时，服务端开关
-/// [serverToggle] 打开、且请求方声明的 [language] 是中文才开。服务端没有「当前查词语言」，
-/// 语言未知一律不开。
+/// 「这次服务端查词要不要简繁互查」的唯一判据（纯函数，便于单测）：开关取请求方发来的
+/// [requested]（没发 = 浏览器扩展 / 旧客户端，取服务端开关 [serverToggle]，默认关），
+/// 开着且请求方声明的 [language] 是中文才开。服务端没有「当前查词语言」，语言未知一律不开。
 bool serverLookupUsesChineseScriptVariants({
   required bool? requested,
   required String? language,
   required bool serverToggle,
-}) {
-  if (requested != null) return requested;
-  return serverToggle && language != null && isChineseLanguageTag(language);
-}
+}) =>
+    (requested ?? serverToggle) &&
+    language != null &&
+    isChineseLanguageTag(language);
 
 /// 互联查词 service：查词走 [ServerDictionaryHost]，单词音频服务端不提供
 /// （服务端不做查词发音，见 README；`/api/lookup/audio` 恒回「未命中」）。

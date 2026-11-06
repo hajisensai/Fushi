@@ -120,8 +120,8 @@ class FushiRemoteLookupClient {
   /// [language]：本端这次查词的语言（BCP-47）。带上后 host 按它而不是 host 自己正在读
   /// 的内容决定是否开简体 → 繁體回落；null / 空串不发该字段（旧 host 本就忽略它）。
   ///
-  /// [chineseScriptVariants]：本端按自己的开关与语言算好的「要不要简繁互查」。非 null 才发
-  /// `zhScriptVariants` 字段，host 照办；旧 host 忽略它，按旧行为（中文语言即互查）。
+  /// [chineseScriptVariants]：本端用户的简繁互查开关。非 null 才发 `zhScriptVariants`
+  /// 字段，host 用它代替自己的开关；旧 host 忽略它，按旧行为（中文语言即互查）。
   ///
   /// [rubySpans]：原文自带振假名（以 [term] 为坐标系）。非空才发 `ruby` 字段，host 让引擎
   /// 把读音吻合的同长度候选排前面；空时请求体与旧版逐字相同（旧 host 本就忽略该字段）。

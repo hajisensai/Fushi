@@ -1799,12 +1799,6 @@ class AppModel with ChangeNotifier {
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
 
-  /// 当前查词是否按中文处理（引擎额外试简体 ↔ 繁體双向变体，见 `FushiDicts.lookup` 的
-  /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
-  /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
-  /// 语言未知时看启用的词典里有没有中文词典（[lookupUsesChineseScriptVariants]）。
-  bool get lookupChineseSimpToTrad => lookupChineseSimpToTradFor(null);
-
   /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
   /// 查词来源语言 [currentLookupLanguage] → 全局默认内容语言；全空为 null（语言未知）。
   /// 本机发给对端的查词也带这个值（[_searchRemoteDictionary]），对端据此判是否中文。
@@ -1828,20 +1822,22 @@ class AppModel with ChangeNotifier {
   /// [filters]：按哪份词典过滤快照判「有没有中文词典」；null = App 当前生效的词典
   /// （浏览器扩展所选非激活配置传它的 `lookupFilters`，与查词用的过滤同一份）。
   ///
-  /// [requestedScriptVariants]：对端请求里自带的结论（`zhScriptVariants`）。非 null 时
-  /// 直接照办——对端按它自己的开关与语言算过了；null（本机查词 / 浏览器扩展 / 旧客户端）
-  /// 才按 [prefs]（缺省本机生效偏好）的开关判。
+  /// [requestedScriptVariants]：对端请求里带的**对端用户的开关**（`zhScriptVariants`），
+  /// 非 null 时代替本机开关；null（本机查词 / 浏览器扩展 / 旧客户端）用 [prefs]（缺省
+  /// 本机生效偏好）的开关。语言 / 词典判据一律在本机跑。
   bool lookupChineseSimpToTradFor(
     String? requested, {
     PreferencesRepository? prefs,
     DictionaryLookupFilters? filters,
     bool? requestedScriptVariants,
   }) {
-    if (requestedScriptVariants != null) return requestedScriptVariants;
     final DictionaryLookupFilters? effectiveFilters =
         filters ?? (_dictionaryRepoReady ? dictRepo.lookupFilters : null);
     return lookupUsesChineseScriptVariants(
-      enabled: (prefs ?? _prefsRepo)?.lookupChineseScriptVariants ?? false,
+      enabled:
+          requestedScriptVariants ??
+          (prefs ?? _prefsRepo)?.lookupChineseScriptVariants ??
+          false,
       lookupLanguage: effectiveLookupLanguage(
         requested: requested,
         prefs: prefs,
@@ -2888,13 +2884,6 @@ class AppModel with ChangeNotifier {
       _prefsRepo?.lookupChineseScriptVariants ?? false;
   Future<void> setLookupChineseScriptVariants(bool value) =>
       prefsRepo.setLookupChineseScriptVariants(value);
-
-  /// 设置页要不要露出 [lookupChineseScriptVariants] 开关：和中文沾边（默认内容语言是
-  /// 中文，或启用的词典里有中文词典）、或者开关本来就开着（免得开了却找不到关的地方）。
-  bool get lookupChineseScriptVariantsRelevant =>
-      lookupChineseScriptVariants ||
-      isChineseLanguageTag(defaultContentLanguage) ||
-      (_dictionaryRepoReady && dictRepo.lookupFilters.hasChineseTermDictionary);
 
   /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
   /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
@@ -9287,12 +9276,10 @@ class AppModel with ChangeNotifier {
             wildcards: searchWithWildcards,
             maximumTerms: maximumTerms,
             language: effectiveLookupLanguage(requested: lookupLanguage),
-            // 本机按自己的开关算好的简繁互查结论，对端照办（不再按对端自己的开关判）。
-            chineseScriptVariants: lookupChineseSimpToTradFor(
-              lookupLanguage,
-              prefs: profileView?.prefs,
-              filters: profileView?.lookupFilters,
-            ),
+            // 本机用户的简繁互查开关（不是最终结论）：对端用它代替自己的开关，语言未知时
+            // 看对端的词典——瘦客户端本机可能一本中文词典都没有。
+            chineseScriptVariants:
+                (profileView?.prefs ?? prefsRepo).lookupChineseScriptVariants,
             // 原文振假名（已对齐到清洗后的 searchTerm）；空时不发字段。
             rubySpans: rubySpans,
           );
@@ -13450,7 +13437,7 @@ class _AppModelRemoteLookupService
   );
 
   /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
-  /// [chineseScriptVariants]：请求方算好的简繁互查结论；null = 按本机开关判。
+  /// [chineseScriptVariants]：请求方用户的简繁互查开关；null = 用本机开关。
   /// [rubySpans]：请求方原文自带的振假名（以 [term] 为坐标系）；对齐与 ruby 缓存键由
   /// [AppModel._searchDictionaryInLanguage] 负责。
   Future<DictionarySearchResult?> _searchDictionary({

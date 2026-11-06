@@ -145,8 +145,8 @@ void main() {
     });
   });
 
-  group('请求方的简繁互查结论（zhScriptVariants）原样交给 host', () {
-    test('带语言 + 结论 ⇒ InLanguage 收到两者', () async {
+  group('请求方的简繁互查开关（zhScriptVariants）原样交给 host', () {
+    test('带语言 + 开关 ⇒ InLanguage 收到两者', () async {
       final _LanguageLookup lookup = _LanguageLookup();
       await buildRemoteDictionaryLookupResponse(<String, dynamic>{
         'term': '之間',
@@ -158,7 +158,7 @@ void main() {
       expect(lookup.scriptVariants, <bool?>[false]);
     });
 
-    test('只带结论不带语言 ⇒ 仍走 InLanguage（language 为 null），popup 同理', () async {
+    test('只带开关不带语言 ⇒ 仍走 InLanguage（language 为 null），popup 同理', () async {
       final _LanguageLookup lookup = _LanguageLookup();
       await buildRemoteDictionaryLookupResponse(<String, dynamic>{
         'term': '之間',
@@ -174,7 +174,7 @@ void main() {
       expect(lookup.scriptVariants, <bool?>[true, true]);
     });
 
-    test('只带语言（浏览器扩展 / 旧客户端）⇒ 结论为 null，由 host 自判', () async {
+    test('只带语言（浏览器扩展 / 旧客户端）⇒ 开关为 null，host 用自己的开关', () async {
       final _LanguageLookup lookup = _LanguageLookup();
       await buildRemoteDictionaryLookupResponse(<String, dynamic>{
         'term': '之間',
@@ -317,7 +317,7 @@ void main() {
       return body!;
     }
 
-    test('简繁互查结论非 null 才发 zhScriptVariants', () async {
+    test('简繁互查开关非 null 才发 zhScriptVariants', () async {
       expect(
         (await sentBody(
           'zh',

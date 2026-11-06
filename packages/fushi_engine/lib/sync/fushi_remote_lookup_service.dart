@@ -68,7 +68,7 @@ abstract class FushiRemotePopupLookupService {
 /// [searchRemoteDictionaryPopupForRequest] 一处。
 abstract class FushiRemoteLanguageLookupService {
   /// [language] 为请求方声明的 BCP-47 语言标签（已裁掉空白；null = 没声明）。
-  /// [chineseScriptVariants] 为请求方算好的「要不要简繁互查」（null = 没声明，host 自判）。
+  /// [chineseScriptVariants] 为请求方用户的简繁互查开关（null = 没声明，host 用自己的开关）。
   /// 两者至少一个非 null 才会分派到这里。
   Future<DictionarySearchResult?> searchDictionaryInLanguage({
     required String term,
@@ -146,9 +146,10 @@ String? remoteLookupLanguageOf(Map<String, dynamic> body) {
 const String kLookupChineseScriptVariantsPrefKey =
     'lookup_chinese_script_variants';
 
-/// 查词请求体里「请求方是否要简繁互查」的字段名（可选 bool）。请求方按**自己的**开关与
-/// 查词语言算好结论再发；host 有这个字段就照办，没有（浏览器扩展 / 旧客户端）才按
-/// host 自己的开关 + 请求方语言判。
+/// 查词请求体里「请求方用户的简繁互查开关」的字段名（可选 bool）。只发开关、不发最终
+/// 结论：「语言未知时看有没有中文词典」要看 host 的词典（瘦客户端本机可能一本都没有）。
+/// host 用它代替自己的开关，语言 / 词典的判据照旧在 host 上跑；没有这个字段（浏览器
+/// 扩展 / 旧客户端）就用 host 自己的开关。
 const String kRemoteLookupChineseScriptVariantsField = 'zhScriptVariants';
 
 /// 从请求体取 [kRemoteLookupChineseScriptVariantsField]：非 bool 当没给（null）。

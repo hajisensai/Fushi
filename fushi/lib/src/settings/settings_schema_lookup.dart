@@ -213,14 +213,12 @@ SettingsDestination buildLookupDestination() {
             },
           ),
           // 中文查词简体 ↔ 繁體双向互查（查 这个 也出 這個 的词条）。开发者要求默认关：只查
-          // 原文字形。只在和中文沾边时露出（默认内容语言是中文 / 启用了中文词典 / 已经开着）。
+          // 原文字形。始终显示：瘦客户端本机没有中文词典也要能开（开关随远端查词发给 host）。
           SettingsSwitchItem(
             id: 'lookup.chinese_script_variants',
             title: t.lookup_chinese_script_variants,
             subtitle: t.lookup_chinese_script_variants_hint,
             icon: FushiIcons.language,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.lookupChineseScriptVariantsRelevant,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.lookupChineseScriptVariants,
             onChanged: (SettingsContext settingsContext, bool value) async {
