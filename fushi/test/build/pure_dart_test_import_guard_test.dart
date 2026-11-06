@@ -25,6 +25,37 @@ final RegExp _flutterTestOnly = RegExp(
 );
 
 void main() {
+  // 判据自校验（合成语料）：健康仓库里判据对真实文件零命中，扫真实文件问不出
+  // 「判据坏没坏」，只能逐分支喂必然命中 / 必然不命中的片段。
+  test('_flutterTestOnly 判据逐分支自校验', () {
+    const List<String> flutterOnly = <String>[
+      "testWidgets('x', (t) async {});",
+      'Future<void> f(WidgetTester tester) async {}',
+      'TestWidgetsFlutterBinding.ensureInitialized();',
+      'expect(x, findsOneWidget);',
+      'expect(x, findsNothing);',
+      "await expectLater(f, matchesGoldenFile('a.png'));",
+      'TestDefaultBinaryMessengerBinding.instance;',
+      "find.text('a');",
+      'expect(f, throwsAssertionError);',
+      'expect(f, throwsFlutterError);',
+      'expect(e, isAssertionError);',
+    ];
+    for (final String snippet in flutterOnly) {
+      expect(_flutterTestOnly.hasMatch(snippet), isTrue, reason: snippet);
+    }
+    const List<String> pureDart = <String>[
+      "test('x', () { expect(1, 1); });",
+      "group('g', () {});",
+      'expect(f, throwsA(isA<AssertionError>()));',
+      'final Object x = refind.text;',
+      'testWidgetsHelper();',
+    ];
+    for (final String snippet in pureDart) {
+      expect(_flutterTestOnly.hasMatch(snippet), isFalse, reason: snippet);
+    }
+  });
+
   test('闭包不碰 dart:ui 的测试用 package:test，不用 flutter_test', () {
     final TestClosureWalker walker = TestClosureWalker.open(
       Directory.current.path,
