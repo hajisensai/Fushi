@@ -229,6 +229,9 @@ typedef _NewLog = ({
   String? revokes,
 });
 
+/// [SrsRwkvService.journalSeed] 的缺省值（与原生撤销日志容量——约 600 条、32 MB——同量级）。
+const int kSrsRwkvJournalSeed = 500;
+
 /// [SrsRwkvService.requeryAfter] 的缺省值。
 const Duration kSrsRwkvRequeryAfter = Duration(minutes: 30);
 
@@ -239,6 +242,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     required this.snapshotDir,
     this.threads = 0,
     this.requeryAfter = kSrsRwkvRequeryAfter,
+    this.journalSeed = kSrsRwkvJournalSeed,
     Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
   }) : _open = openBackend ?? _openWorker,
@@ -255,6 +259,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
 
   /// 距上次整表重查满这么久，下一次排队前整表重查（见文件头）。
   final Duration requeryAfter;
+
+  /// 整块回放（全量重建 / 检查点 / 退回重放）时最后这么多条 append 进撤销日志，其余整块 replay。
+  final int journalSeed;
   final Future<SrsRwkvBackend> Function(File weights) _open;
   final void Function(String message) _log;
 
@@ -674,19 +681,15 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _stateChangesSinceRequery = 0;
   }
 
-  /// 撤销日志的种子：全量回放 / 从检查点重来时，最后这么多条 append 进撤销日志（其余整块 replay，快），
-  /// 之后晚到的评分落在这一段里就能就地退回重放（[_rebase]）。与原生日志容量（约 600 条）同量级。
-  static const int _journalSeed = 500;
-
   /// 把 [replay] 的行回放进 [backend]（已在 [_serial] 里，调用方已按 reset / restore 设好 [_journalFloor]）：
-  /// 前面的按 65,536 条一块 replay，最后 [_journalSeed] 条 append 进撤销日志。
+  /// 前面的按 65,536 条一块 replay，最后 [journalSeed] 条 append 进撤销日志。
   Future<void> _replayRows(
     SrsRwkvBackend backend,
     SrsRwkvReplay replay,
     void Function(int done, int total) onProgress,
   ) async {
     final RwkvRows rows = replay.rows;
-    final int split = max(0, rows.length - _journalSeed);
+    final int split = max(0, rows.length - journalSeed);
     final Uint8List bytes = rows.bytes;
     onProgress(0, rows.length);
     const int block = 65536;
@@ -800,7 +803,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
         rewound = n;
       }
       if (replay.rows.length > 0) {
-        await _append(backend, replay.rows, replay.tags, replay.ats);
+        // 与全量回放同一种拆法（BUG-4075）：分歧时刻之后可能有几万行（同步拉回另一台设备的整段历史），
+        // 前面的整块 replay（原生侧成批并行），只把最后 [journalSeed] 条 append 进撤销日志。以前整段
+        // 逐行 append：每行一条撤销记录，手机上一批跑好几分钟，撤销日志在途中涨到 GB 级 OOM。
+        await _replayRows(backend, replay, (int _, int _) {});
       }
       _replayed = now;
       _lastAt = replay.lastAt;

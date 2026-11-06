@@ -84,7 +84,7 @@
 | [BUG-4078](bugs/BUG-4078-lyrics-overlay-menu-duplicate-seek.md) | ✅ | ✅ | 歌词覆盖层 ⋯ 菜单的 -10s / +10s 与播放器上的 ±10 键重复 |
 | [BUG-4077](bugs/BUG-4077-android-startup-scudo-oom-loop-pre-23152.md) | ✅ | ✅ | Android 启动约 6 s 内 Scudo OOM 中止并反复重启（23152 之前的版本） |
 | [BUG-4076](bugs/BUG-4076-desktop-unexpected-exit-no-evidence.md) | 🚧 | 🚧 | 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS） |
-| [BUG-4075](bugs/BUG-4075-mobile-srs-sync-memory-exhaustion.md) | 🚧 | 🚧 | iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory） |
+| [BUG-4075](bugs/BUG-4075-mobile-srs-sync-memory-exhaustion.md) | ✅ | ✅ | iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory） |
 | [BUG-4074](bugs/BUG-4074-windows-update-handoff-false-crash-pre-22838.md) | ✅ | ✅ | Windows 应用内更新交接被误报「停在前台时没了」（22838 之前的版本） |
 | [BUG-4073](bugs/BUG-4073-windows-uia-hittest-av.md) | 🚧 | 🚧 | Windows flutter_windows.dll+0x133cb 访问冲突：UIA HitTestSync 打到失步的 AX 节点 |
 | [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | ✅ | ✅ | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |

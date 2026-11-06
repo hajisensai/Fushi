@@ -41,6 +41,10 @@ class _FakeBackend implements SrsRwkvBackend {
   int restores = 0;
   int queries = 0;
   int appends = 0;
+
+  /// 经 [append] 进撤销日志的行数 / 经 [replay] 整块回放的行数。
+  int appendedRows = 0;
+  int replayedRows = 0;
   int unappends = 0;
   int rewinds = 0;
   final List<String> snapshotPaths = <String>[];
@@ -60,6 +64,7 @@ class _FakeBackend implements SrsRwkvBackend {
   @override
   Future<bool> append(RwkvRows rows, List<int> tags, List<int> ats) async {
     appends++;
+    appendedRows += rows.length;
     for (int i = 0; i < rows.length; i++) {
       if (journal.isNotEmpty && ats[i] < journal.last.$3) {
         throw StateError('append out of time order');
@@ -172,6 +177,7 @@ class _FakeBackend implements SrsRwkvBackend {
   @override
   Future<void> replay(RwkvRows rows) async {
     journal.clear();
+    replayedRows += rows.length;
     for (int i = 0; i < rows.length; i++) {
       replayedCards.add(rows.cardIdAt(i));
       scores.remove(rows.cardIdAt(i));
@@ -345,13 +351,17 @@ class _Fixture {
     return models;
   }
 
-  SrsRwkvService service(_FakeBackend backend, {bool ready = true}) =>
-      SrsRwkvService(
-        store: store,
-        models: models(ready: ready),
-        snapshotDir: Directory('${dir.path}/state'),
-        openBackend: (File weights) async => backend,
-      );
+  SrsRwkvService service(
+    _FakeBackend backend, {
+    bool ready = true,
+    int journalSeed = kSrsRwkvJournalSeed,
+  }) => SrsRwkvService(
+    store: store,
+    models: models(ready: ready),
+    snapshotDir: Directory('${dir.path}/state'),
+    openBackend: (File weights) async => backend,
+    journalSeed: journalSeed,
+  );
 
   /// 默认牌组的「每答几题刷新 RWKV 分数」（牌组设置）。
   Future<void> setRefreshEvery(int n) => store.editFields(
@@ -662,6 +672,43 @@ void main() {
         expect(service.ready, isTrue);
         expect(backend.resets, 1);
         expect(backend.rewinds, 2);
+        expect(backend.replayedCards, await _fullReplayOrder(f));
+        await service.close();
+      },
+    );
+
+    test(
+      '退回重放的行多于撤销日志种子：前面整块 replay、只把末尾几条 append，顺序与全量回放相同（BUG-4075）',
+      () async {
+        final _Fixture f = await _Fixture.create();
+        final List<String> cards = await f.cards(3);
+        await f.graduate(cards);
+        final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
+        final SrsRwkvService service = f.service(backend, journalSeed: 1);
+        f.store.rwkv = service;
+        await service.start();
+        await _settled(service);
+        f.advance(kDay);
+        await f.store.answer(cards[0], 3);
+        expect(await service.refresh(), isTrue);
+        f.advance(60000);
+        await f.store.answer(cards[2], 3);
+        expect(await service.refresh(), isTrue);
+        final int appendedBefore = backend.appendedRows;
+        final int replayedBefore = backend.replayedRows;
+
+        // 插在已回放的那两条之前：分歧时刻之后有 3 行（新插的 + 原来那两条）。
+        f.advance(-6 * 60 * 1000);
+        await f.store.answer(cards[1], 3);
+        expect(await service.refresh(), isTrue);
+        expect(service.ready, isTrue);
+        expect(backend.resets, 1, reason: 'no full rebuild');
+        expect(
+          backend.appendedRows - appendedBefore,
+          1,
+          reason: 'only the last journalSeed rows go through the undo journal',
+        );
+        expect(backend.replayedRows - replayedBefore, 2);
         expect(backend.replayedCards, await _fullReplayOrder(f));
         await service.close();
       },

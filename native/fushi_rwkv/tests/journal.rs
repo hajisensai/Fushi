@@ -324,6 +324,36 @@ fn rewind_from_then_append_in_time_order_equals_the_full_replay() {
     }
 }
 
+/// BUG-4075：一次 append 很多行（同步后退回重放，几万行）时，撤销日志在**这一批的途中**就要按上限
+/// 修剪。以前整批跑完才修剪，峰值 = 行数 × 每行撤销记录（约 55 KB），移动端 Scudo OOM。
+#[test]
+fn a_huge_append_batch_never_holds_more_than_the_journal_cap() {
+    let model = small_model();
+    let (reviews, _) = history();
+    let n = reviews.len();
+    let mut journaled = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    journaled
+        .append(&reviews, &(0..n as u64).collect::<Vec<_>>(), &ats(10, n))
+        .unwrap();
+    // 这一批确实超过了上限（否则本测试什么都没测）。
+    assert!(
+        journaled.journal_len() < n,
+        "batch of {n} rows must overflow the journal cap"
+    );
+    let per_row = JOURNAL_MAX_BYTES / journaled.journal_len();
+    assert!(
+        journaled.journal_peak_bytes() <= JOURNAL_MAX_BYTES + 2 * per_row,
+        "peak {} > cap {} + one row",
+        journaled.journal_peak_bytes(),
+        JOURNAL_MAX_BYTES
+    );
+    // 途中修剪不改状态：与一次 replay 逐字节相同；丢掉的最早条目之前退不到。
+    let mut replayed = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    replayed.replay(&reviews, false).unwrap();
+    assert_eq!(journaled.snapshot().unwrap(), replayed.snapshot().unwrap());
+    assert_eq!(journaled.rewind_from(10, i64::MIN).unwrap(), None);
+}
+
 #[test]
 fn a_journal_started_from_reset_rewinds_all_the_way_to_empty() {
     let model = small_model();
