@@ -3167,6 +3167,33 @@ abstract interface class VideoDiscShareHost {
   Future<List<({String id, String path})>> videoTitlesOnDisc(String discRoot);
 }
 
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
+const String kVideoClipExportCapability = 'videoClipExport';
+
+/// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
+/// 视频的片段导出）。
+///
+/// 分工：host 只裁**无字幕**的原料段（本地文件、不经网络 / TLS，与 `clipaudio` 同一
+/// 理由——移动端 client ffmpeg 打不开 host 自签 https / token 流）；字幕烧录留在
+/// client，用它屏幕上正在显示的那份 cue（含 ASS 样式、用户调轴与字幕外观），与本机
+/// 导出共用同一个导出器。与 [VideoDiscShareHost] 同范式：server 用 `is` 探测，不实现
+/// → `/api/library/videos/<id>/clipvideo` 404、能力位 [kVideoClipExportCapability]
+/// 为 false，client 提示「对端版本过低」而不发请求。
+abstract interface class VideoClipExportHost {
+  /// 把视频 [id] 第 [episodeIndex] 集的 `[startMs, endMs)` 逐帧精确裁成无字幕 mp4，
+  /// 返回落在**独立临时目录**里的文件（调用方传完负责删该目录）。视频未知 / 没有
+  /// 本地媒体文件 / 区间非法 / ffmpeg 失败 → null。[audioStreamIndex] /
+  /// [audioStreamCount] 选 client 当前在听的音轨（越界回退默认轨）。
+  Future<File?> clipVideoSegment(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+  });
+}
+
 /// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
 /// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
 ///

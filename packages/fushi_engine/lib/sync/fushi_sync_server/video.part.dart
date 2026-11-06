@@ -664,6 +664,53 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       }
     }
 
+    // GET /api/library/videos/<id>/clipvideo?startMs=&endMs=&episode=&audioStreamIndex=
+    //     &audioStreamCount= — 反馈 6nBmSBj_2W：host 端本地逐帧精确裁出无字幕片段原料并
+    // 回传，字幕由 client 用屏幕上那份 cue 烧录（见 [VideoClipExportHost]）。需 Basic 鉴权
+    // （clipvideo 不在 /stream 豁免名单）。host 不实现该能力 → 404（能力位同时为 false）。
+    final String? clipVideoId = _extractVideoId(reqPath, 'clipvideo');
+    if (clipVideoId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      if (svc is! VideoClipExportHost) {
+        return shelf.Response.notFound('Clip export unsupported');
+      }
+      final VideoClipExportHost clipHost = svc as VideoClipExportHost;
+      final int? startMs = int.tryParse(
+        request.url.queryParameters['startMs'] ?? '',
+      );
+      final int? endMs = int.tryParse(
+        request.url.queryParameters['endMs'] ?? '',
+      );
+      if (startMs == null || endMs == null || startMs < 0 || endMs <= startMs) {
+        return shelf.Response(400, body: 'Invalid clip range');
+      }
+      final File? clip = await clipHost.clipVideoSegment(
+        clipVideoId,
+        startMs: startMs,
+        endMs: endMs,
+        episodeIndex: _episodeIndexFromRequest(request),
+        audioStreamIndex: int.tryParse(
+          request.url.queryParameters['audioStreamIndex'] ?? '',
+        ),
+        audioStreamCount: int.tryParse(
+          request.url.queryParameters['audioStreamCount'] ?? '',
+        ),
+      );
+      if (clip == null) {
+        return shelf.Response.notFound('Clip unavailable');
+      }
+      // 片段可能有几十上百 MB：流式回传（不像 clipaudio 那样整段读进内存），传完或
+      // 连接中断时连临时目录一并清（clipVideoSegment 建的 temp 目录）。
+      final int length = await clip.length();
+      return shelf.Response.ok(
+        _streamThenDeleteDir(clip),
+        headers: <String, String>{
+          'Content-Type': 'video/mp4',
+          'Content-Length': '$length',
+        },
+      );
+    }
+
     // PUT /api/library/videos/<id> — client→host 上传本地视频文件并注册进 host 视频库
     // （syncVideoFiles 开关驱动的 live push）。走到此处的 PUT 必是「裸 id 无 suffix」：
     // 所有带 suffix 的端点（cover/streamurl/stream/subtitle/position）已在上方消化（非

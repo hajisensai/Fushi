@@ -79,6 +79,8 @@ import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
+import 'package:fushi_engine/media/video/video_clip_exporter.dart'
+    show exportVideoClipSourceSegmentViaFfmpeg;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -146,6 +148,7 @@ abstract class _LocalLibraryHostBase
         VideoPlaybackSyncHost,
         VideoDanmakuKeyHost,
         VideoDiscShareHost,
+        VideoClipExportHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
         VideoSubtitleDefaultHost,
