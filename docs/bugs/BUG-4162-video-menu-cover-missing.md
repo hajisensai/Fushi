@@ -1,4 +1,4 @@
-## BUG-4130 · 视频库首页行卡右键菜单头部不显示刮削海报、标题是原始文件名
+## BUG-4162 · 视频库首页行卡右键菜单头部不显示刮削海报、标题是原始文件名
 - **报告**：2026-10-29（用户：开发者本人，应用内反馈 Lf32nO2gRK，Windows 3.1.0-debug.22058）
 - **真实性**：✅ 真 bug。首页「最近添加」行卡 `_buildRecentlyAddedCard`（`fushi/lib/src/pages/implementations/home_video_page.dart` 原 6532 行）与继续观看 hero `_continueEntryHero`（原 6400 行）画的是 `_bookPosterProvider(book)`（刮削作品海报优先、自身封面兜底）和 `_metadataWorkByBook[uid]?.title ?? book.title`；而它们打开的 `_showVideoMenu`（原 4223 行）另走一条判据：`cover: _buildCover(book)`（原 10720 行，只看 `book.coverPath`，为空 / 未探测到即 `ShelfCoverPlaceholder`）、`coverBackdrop: _coverBackdropFor(book.coverPath)`、`title: book.title`。于是没有自身封面但有刮削海报的条目，菜单头部（`media_item_dialog_page.dart` `_ContextMenuPanel._buildHeader`）只剩胶片占位，标题是原始文件名。
 - **[x] ① 已修复** — b5174c6821：`_showVideoMenu(book, cover:, title:)` 由每个调用卡片传入它自己正在画的图源与标题（首页行卡 / hero 传刮削海报 + 作品名；墙卡传 `coverOverride ?? _localCoverProvider` + 本卡标题；列表行传自身封面 + 原始标题），菜单头部用 `_menuCoverFor(cover)` 画同一个 provider，`coverBackdrop` 与原盘入口启动动画封面同源；删除只认 coverPath 的 `_coverBackdropFor`。

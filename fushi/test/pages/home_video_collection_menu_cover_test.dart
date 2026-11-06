@@ -28,7 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4130 / PR #2984 审查：视频首页同一行里的合集卡、远端卡，长按 / 右键菜单
+/// BUG-4162 / PR #2984 审查：视频首页同一行里的合集卡、远端卡，长按 / 右键菜单
 /// 头部必须与卡片同源（取图链、标题），且封面存在性还在异步探测时打开菜单，落定
 /// 后菜单要自己重取——菜单是独立路由，page 的重建到不了它。
 void main() {
