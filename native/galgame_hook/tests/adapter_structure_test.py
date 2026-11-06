@@ -769,7 +769,7 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertLess(gate, publish_text)
         self.assertEqual(capture.count("PublishSgreExactText("), 1)
 
-        # BUG-4130 — 每一帧（含打字前缀）都要先记场景页，发布时的文本时间戳是该页
+        # BUG-4206 — 每一帧（含打字前缀）都要先记场景页，发布时的文本时间戳是该页
         # 首个字形出现的时刻，不是整句显示完的时刻；语音按页绑定 textseq 靠的就是它。
         observe = capture.index("ObserveSgreScenarioPage(snapshot)")
         self.assertLess(observe, gate)
@@ -782,7 +782,7 @@ class AdapterStructureTest(unittest.TestCase):
             publish_fn,
         )
 
-        # BUG-4130 — 资源语音必须按场景页绑定 textseq 再落盘，等待由 HookWorker
+        # BUG-4206 — 资源语音必须按场景页绑定 textseq 再落盘，等待由 HookWorker
         # 每轮推进、有界收束；绕过绑定直接按播放时刻写无标记文件就回到了这条 bug。
         adapter = (
             ROOT / "hook" / "adapters" / "sgre_adapter.inc"
@@ -797,7 +797,7 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertIn("ResolveSgreVoicePage(", try_publish)
         self.assertIn("voice->voice_tick, text_event_id);", try_publish)
-        # BUG-4130 审查 — 等页的语音不能被丢：队列满淘汰最旧一条、adapter 收尾都按
+        # BUG-4206 审查 — 等页的语音不能被丢：队列满淘汰最旧一条、adapter 收尾都按
         # 当下已知的页做最终裁决再落盘（所属页已发布仍带 textseq），不直接 clear。
         self.assertIn("/*final_pass=*/true);", handle)
         shutdown = self._member_body(adapter, "void shutdown() override")

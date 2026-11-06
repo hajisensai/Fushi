@@ -8,7 +8,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
-/// BUG-4130（反馈 3drXfc4GFk，STEINS;GATE RE:BOOT）：资源通道就绪、但这句还没配上
+/// BUG-4206（反馈 3drXfc4GFk，STEINS;GATE RE:BOOT）：资源通道就绪、但这句还没配上
 /// 原件时，行状态是「匹配中」——
 ///  ① 不得被标成 backend=game_resource（UI 会据此弹出点了没声的资源弹窗）；
 ///  ② 必须有终态：播放已经走过这句的配对容差后收束成 missing，而不是永远「匹配中」；
@@ -85,7 +85,7 @@ void main() {
     expect(
       first.audioBackend,
       isNull,
-      reason: '还没配上原件的行不是 game_resource（BUG-4130）',
+      reason: '还没配上原件的行不是 game_resource（BUG-4206）',
     );
     expect(first.audioResourceId, isNull);
 

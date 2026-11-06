@@ -10,7 +10,7 @@
 fushi_voice_hook::SgreVoiceArchiveView g_sgre_voice_archive;
 
 // A reconstructed voice resource waiting for its scenario page to be
-// published (BUG-4130). Touched only on the HookWorker: the XAudio
+// published (BUG-4206). Touched only on the HookWorker: the XAudio
 // compressed-resource dispatch and SgreAdapter::ProcessPendingEvents both run
 // there.
 struct SgrePendingVoice {
@@ -98,7 +98,7 @@ bool HandleSgreCompressedResource(
              static_cast<unsigned long long>(
                  submission.source.queue_generation));
   // Bind to the owning scenario page now if its line is already published,
-  // otherwise hold it until the page is revealed (BUG-4130). The queue is
+  // otherwise hold it until the page is revealed (BUG-4206). The queue is
   // bounded: when full the oldest entry is decided now (final pass) and
   // written, never dropped.
   if (TryPublishSgreVoice(&voice, /*final_pass=*/false)) return true;
@@ -338,7 +338,7 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
     if (audio_installed_) {
       UnregisterXAudioCompressedResourceHandler(&HandleSgreCompressedResource);
       // Runs on the HookWorker like every other touch of the queue; held
-      // voices are written, not discarded (BUG-4130 review).
+      // voices are written, not discarded (BUG-4206 review).
       FlushSgrePendingVoices();
       fushi_voice_hook::CloseSgreVoiceArchive(&g_sgre_voice_archive);
       audio_installed_ = false;

@@ -206,7 +206,7 @@ const String kGalOverlongSliceSuspectReason = 'slice_overlong_suspect';
 /// 说成没配音，资源模式的**真漏抓**也会被这句话盖过去。
 const String kGalCleanSourceSuppressedReason = 'clean_source_suppressed';
 
-/// 资源模式下这句越过了配对容差仍没有原件落盘（BUG-4130 审查）。
+/// 资源模式下这句越过了配对容差仍没有原件落盘（BUG-4206 审查）。
 ///
 /// 只说「没找到这句的游戏资源」，**不是**「这句没配音」：资源通道活着时多半就是
 /// 旁白无配音，但也可能是漏抓 / 引擎绑定没命中，没有 [kGalLineNoVoiceReason] 那种
@@ -452,7 +452,7 @@ class TexthookerLineEntry {
     TexthookerLineAudioStatus.unavailable => false,
   };
 
-  /// 这行的音频是否是**已配上的**游戏资源原件（BUG-4130）：backend 是
+  /// 这行的音频是否是**已配上的**游戏资源原件（BUG-4206）：backend 是
   /// game_resource 且状态是已配对 / 已编码。只看 backend 会把还在等资源、或没配上
   /// 的行当成有原件（折叠进来的旧事件也可能留着 backend 字样）。UI 的资源弹窗与
   /// 操作目录的「来自游戏资源直提」描述共用这一个判据。

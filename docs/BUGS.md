@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3767 条。点号进各自文件。
+> 共 3768 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4206](bugs/BUG-4206-sgre-voice-pending-unpaired.md) | ✅ | ✅ | 命运石之门（SGRE）制卡音频一直「匹配中」，未配上的行仍显示 game_resource 与播放键 |
 | [BUG-4205](bugs/BUG-4205-segmented-equal-width-remaining-paths.md) | ✅ | ✅ | 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段（MD3 框架 TabBar 页签未修，反馈未收口） |
 | [BUG-4204](bugs/BUG-4204-mac-reader-cmd-c-copy.md) | ✅ | ✅ | macOS 小说阅读器选中正文后 ⌘C 无法复制 |
 | [BUG-4203](bugs/BUG-4203-music-lyrics-lrclib-romaji-for-japanese.md) | ✅ | ✅ | 音乐歌词：日文歌拿到 LRCLIB 罗马音版（不检查歌词书写系统） |
@@ -75,15 +76,9 @@
 | [BUG-4132](bugs/BUG-4132-manga-rtl-slider-readout-direction.md) | ✅ | ✅ | 漫画右开本底部进度栏当前页 / 总页数与已读高亮方向反了 |
 | [BUG-4131](bugs/BUG-4131-video-auto-resume-replays-completed.md) | ✅ | ✅ | 视频播完等下一集倒计时期间，自动续播路径把当前视频从头重播 |
 | [BUG-4130](bugs/BUG-4130-video-jump-back-double-button.md) | ✅ | ✅ | 视频顶栏「返回」跳转按钮在圆胶囊里叠出方块，像两颗按钮 |
-> 共 3731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4130](bugs/BUG-4130-sgre-voice-pending-unpaired.md) | ✅ | ✅ | 命运石之门（SGRE）制卡音频一直「匹配中」，未配上的行仍显示 game_resource 与播放键 |
 | [BUG-4129](bugs/BUG-4129-side-panel-drag-autoscroll-shrinkwrap-ancestor.md) | ✅ | ✅ | side-panel-drag-autoscroll-shrinkwrap-ancestor |
 | [BUG-4128](bugs/BUG-4128-asr-video-model-variant-flips-on-gpu-budget.md) | 🚧 | 🚧 | asr-video-model-variant-flips-on-gpu-budget |
 | [BUG-4127](bugs/BUG-4127-webview-windows-unknown-display-null-check.md) | 🚧 | 🚧 | Windows WebView build 读 FlutterView.display 空断言（视图 displayId 不在引擎显示器表里） |
-| [BUG-4127](bugs/BUG-4127-video-settings-tab-switch-entrance-replay.md) | ✅ | ✅ | video-settings-tab-switch-entrance-replay |
 | [BUG-4126](bugs/BUG-4126-android-lyrics-mode-heat.md) | ✅ | ✅ | Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成 |
 | [BUG-4125](bugs/BUG-4125-video-home-continue-adaptive-cover.md) | ✅ | ✅ | 视频首页「继续观看」竖图被垫模糊塞进 16:9，大卡旁窄卡标题被挤没 |
 | [BUG-4124](bugs/BUG-4124-ios-island-clipped-and-large-widget-overflow.md) | ✅ | ✅ | ios-island-clipped-and-large-widget-overflow |

@@ -2607,7 +2607,7 @@ struct TextLaneWrite {
   const char* hook_name = nullptr;
   const wchar_t* hook_code = nullptr;
   // 0 = 用写入时刻。精确文本源若能证明「这一行开始出现在屏幕上」早于发布时刻（SGRE
-  // 打字机：整句显示完才发布，但语音与首个字形同时开始，BUG-4130），可以填首字形
+  // 打字机：整句显示完才发布，但语音与首个字形同时开始，BUG-4206），可以填首字形
   // 时刻；必须与 GetTickCount64 同一时钟，且不得晚于写入时刻。
   uint64_t timestamp_ms = 0;
 };

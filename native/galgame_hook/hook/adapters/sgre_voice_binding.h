@@ -1,6 +1,6 @@
 #pragma once
 
-// SGRE scenario-page identity and voice-to-text binding (BUG-4130).
+// SGRE scenario-page identity and voice-to-text binding (BUG-4206).
 //
 // The SGRE scenario renderer lays a whole line out up front and then types it
 // by raising the visible-glyph counter; the exact text lane publishes the line
@@ -147,7 +147,7 @@ class SgreScenarioPageTracker {
 //   first_glyph - kSgreVoiceLeadMs <= voice_tick <= first_glyph + kSgreVoiceLagMs
 // and, once published, voice_tick <= published_tick + kSgreVoicePublishRaceMs:
 // a page whose line had already been fully revealed before the voice started
-// is not that voice's page (BUG-4130 review: otherwise the next line's voice,
+// is not that voice's page (BUG-4206 review: otherwise the next line's voice,
 // when its text fades in later than the lead, was handed to the line still on
 // screen and the host took it as an exact event-ID hit on the wrong card). The
 // race allowance keeps an instantly revealed page (publication tick == first

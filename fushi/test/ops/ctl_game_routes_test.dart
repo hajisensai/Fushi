@@ -1422,9 +1422,9 @@ void main() {
       );
     });
 
-    // BUG-4130 审查：「来自游戏资源直提」只描述真配上原件的行；还在匹配 / 没配上
+    // BUG-4206 审查：「来自游戏资源直提」只描述真配上原件的行；还在匹配 / 没配上
     // 但留着 backend 字样的行（折叠进来的旧事件、旧写法）不能被说成有资源原件。
-    test('BUG-4130 逐句音轨 note 只给已配上原件的行', () async {
+    test('BUG-4206 逐句音轨 note 只给已配上原件的行', () async {
       final _FakeHost host = engineHost(
         lines: <TexthookerLineEntry>[
           _line(
@@ -1464,9 +1464,9 @@ void main() {
       expect(matched['note'], '这句语音来自游戏资源直提，PCM 轨与它无关');
     });
 
-    // BUG-4130 审查：资源模式下还没配上原件的行，PCM 轨同样与它无关——note 必须说清，
+    // BUG-4206 审查：资源模式下还没配上原件的行，PCM 轨同样与它无关——note 必须说清，
     // 不能让调用方把残留 PCM 轨当成这句的可选来源。
-    test('BUG-4130 资源模式下未配上原件的行 note 说明 PCM 轨无关', () async {
+    test('BUG-4206 资源模式下未配上原件的行 note 说明 PCM 轨无关', () async {
       final _FakeHost host = engineHost(
         backend: GalHookAudioBackend.gameResource,
         lines: <TexthookerLineEntry>[
