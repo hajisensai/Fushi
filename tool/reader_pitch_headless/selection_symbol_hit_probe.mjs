@@ -1,4 +1,4 @@
-// BUG-4127 probe: where does a tap on a non-lookup symbol (arrow / gaiji
+// BUG-4181 probe: where does a tap on a non-lookup symbol (arrow / gaiji
 // <img> / svg / pseudo-element / rt) inside a vertical-rl column land in the
 // production hit-test chain?
 //
