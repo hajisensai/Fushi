@@ -1227,6 +1227,10 @@ class SourceLibraryScanner {
                           ? p.dirname(item.discRootPath)
                           : item.discRootPath,
                   ],
+                  videoFilePaths: <String>[
+                    for (final ScanVideoItem item in plan.videos)
+                      item.videoPath,
+                  ],
                 );
             if (music.errors.isNotEmpty) {
               final String note =

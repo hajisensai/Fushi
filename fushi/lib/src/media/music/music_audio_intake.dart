@@ -147,16 +147,20 @@ class MusicAudioIntake {
 
   /// 视频来源（本地，根 [videoRoot]）扫描时扫到的纯音频 [audioPaths] 交给音乐库。
   /// [videoMediaDirs] 是本次被视频库认领的媒体所在目录（视频 / 播放列表文件的父目录、
-  /// 原盘根），用来判「与视频同目录」与「往上爬的边界」。
+  /// 原盘根），用来判「与视频同目录」与「往上爬的边界」；[videoFilePaths] 是其中的视频
+  /// 文件本身，用来认子目录里的外挂音轨（`Show/Audio/ep01.jpn.mka`，见
+  /// `music_audio_roots.dart` 规则 2b）。
   Future<MusicAudioIntakeResult> adoptVideoSourceAudio({
     required String videoRoot,
     required List<String> audioPaths,
     required Iterable<String> videoMediaDirs,
+    Iterable<String> videoFilePaths = const <String>[],
   }) => _serial(
     () => _adopt(
       videoRoot: videoRoot,
       audioPaths: audioPaths,
       videoMediaDirs: videoMediaDirs.toList(),
+      videoFilePaths: videoFilePaths.toList(),
     ),
   );
 
@@ -164,6 +168,7 @@ class MusicAudioIntake {
     required String videoRoot,
     required List<String> audioPaths,
     required List<String> videoMediaDirs,
+    required List<String> videoFilePaths,
   }) async {
     final List<String> audio = <String>[
       for (final String a in audioPaths)
@@ -174,6 +179,7 @@ class MusicAudioIntake {
       videoRoot: videoRoot,
       audioPaths: audio,
       videoMediaDirs: videoMediaDirs,
+      videoFilePaths: videoFilePaths,
       musicSources: <MusicSourceRoot>[
         for (final SourceLibraryRow s in await _localMusicSources())
           (rootPath: s.rootPath, recursive: s.recursive),
@@ -189,7 +195,10 @@ class MusicAudioIntake {
     }
     return MusicAudioIntakeResult(
       registeredRoots: plan.roots,
-      skippedPaths: plan.besideVideoAudioPaths,
+      skippedPaths: <String>[
+        ...plan.besideVideoAudioPaths,
+        ...plan.videoTrackAudioPaths,
+      ],
       errors: errors,
     );
   }

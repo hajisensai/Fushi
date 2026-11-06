@@ -118,6 +118,13 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
               !isNetworkOnlyVideoPath(other.videoPath))
             p.dirname(other.videoPath),
       },
+      videoFilePaths: <String>[
+        for (final VideoBookRow other in all)
+          if (other.sourceId == e.key &&
+              !isAudioOnlyMediaPath(other.videoPath) &&
+              !isNetworkOnlyVideoPath(other.videoPath))
+            other.videoPath,
+      ],
     );
     errors.addAll(r.errors);
   }
