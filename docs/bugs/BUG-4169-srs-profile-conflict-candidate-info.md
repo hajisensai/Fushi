@@ -1,4 +1,4 @@
-## BUG-4127 · 复习同步冲突弹窗候选只有名字和 uid，看不出该选哪份
+## BUG-4169 · 复习同步冲突弹窗候选只有名字和 uid，看不出该选哪份
 - **报告**：2026-10-29（应用内反馈 dOv8AdJ6yV，shishamo，墨水屏安卓 + 电脑：「复习冲突我看不出冲突了啥不知道怎么对比」；截图里唯一候选是「Default · 01a13df1」）
 - **真实性**：✅ 真缺陷（信息缺失）。`fushi/lib/src/pages/implementations/srs/srs_sync_settings.dart:138` `srsProfileCandidateSubtitle` 只拼「更新于 …」+ uid 前 8 位；而「更新于」取的是后端给说明文件的 `modifiedAt`，互联 / 部分后端不给，于是只剩 uid。说明文件 `profile.json`（`packages/fushi_engine/lib/srs/srs_profile_link.dart` `srsPublishProfileInfo`）只写 `name` / `hasNotes`，没有任何能认出是哪台设备、有多少数据的东西；弹窗也不显示本机这一份有多少笔记，用户无从对比。
 - **[x] ① 已修复** —
