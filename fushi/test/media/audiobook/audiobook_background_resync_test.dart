@@ -221,7 +221,7 @@ void main() {
       c.dispose();
     });
 
-    // BUG-4127：跨章过渡期间 reader 装完新章会重灌同一份整书 cue；旧码 setAllBookCues
+    // BUG-4130：跨章过渡期间 reader 装完新章会重灌同一份整书 cue；旧码 setAllBookCues
     // 把播放所在句清成 -1，歌词层退回冻结的正文跟随句（高亮往回跳一下）。
     test('跨章过渡中重灌同一份整书 cue：播放所在句保住，不退回冻结的跟随句', () async {
       final List<AudioCue> cues = <AudioCue>[
