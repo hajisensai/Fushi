@@ -214,11 +214,12 @@ class MusicLyricsCandidate {
 String musicLyricsTimelineText(LyricTimeline t) =>
     t.lines.map((LyricLine l) => l.text).join('\n');
 
-/// LRCLIB 解析结果；[deferToPlugins] = 歌词书写系统与曲目对不上又没挑到原文版，
-/// 排在歌词插件之后，插件都没有才用它。
-typedef _LrclibOutcome = ({
+/// 一个在线来源（LRCLIB / 歌词插件）的解析结果；[scriptMismatch] = 歌词书写系统与曲目
+/// 元数据对不上（罗马音 / 翻译版）又没挑到原文版：只当兜底，所有在线来源都没有对得上的
+/// 才用它（LRCLIB 的兜底先于插件的兜底，与来源顺序一致）。
+typedef _OnlineOutcome = ({
   MusicLyricsResolution resolution,
-  bool deferToPlugins,
+  bool scriptMismatch,
 });
 
 typedef _Sidecar = ({LyricTimeline timeline, Uint8List raw, String label});
@@ -543,31 +544,35 @@ class MusicLyricsService {
 
     // ④ LRCLIB（固定第一）→ ⑤ 已启用的歌词插件按用户排序，第一个命中的胜出。
     // LRCLIB 联网失败不挡后面的插件：记下异常，插件也没结果时再抛给调用方。
-    // LRCLIB 只拿到书写系统对不上的版本（罗马音 / 翻译）时排到插件之后。
+    // 书写系统对不上的版本（罗马音 / 翻译）只当兜底：LRCLIB 与插件都没有对得上的才用，
+    // 兜底之间仍是 LRCLIB 在前。
     Object? lrclibError;
     StackTrace? lrclibStack;
     MusicLyricsResolution? lrclibFallback;
     try {
-      final _LrclibOutcome? viaLrclib = await _resolveLrclib(
+      final _OnlineOutcome? viaLrclib = await _resolveLrclib(
         db,
         track,
         rowOf(MusicLyricsSource.lrclib),
       );
       if (viaLrclib != null) {
-        if (!viaLrclib.deferToPlugins) return viaLrclib.resolution;
+        if (!viaLrclib.scriptMismatch) return viaLrclib.resolution;
         lrclibFallback = viaLrclib.resolution;
       }
     } on Exception catch (e, st) {
       lrclibError = e;
       lrclibStack = st;
     }
-    final MusicLyricsResolution? viaPlugins = await _resolvePluginProviders(
+    final _OnlineOutcome? viaPlugins = await _resolvePluginProviders(
       db,
       track,
       rowOf,
     );
-    if (viaPlugins != null) return viaPlugins;
+    if (viaPlugins != null && !viaPlugins.scriptMismatch) {
+      return viaPlugins.resolution;
+    }
     if (lrclibFallback != null) return lrclibFallback;
+    if (viaPlugins != null) return viaPlugins.resolution;
     if (lrclibError != null) {
       Error.throwWithStackTrace(lrclibError, lrclibStack!);
     }
@@ -579,11 +584,13 @@ class MusicLyricsService {
   /// 精确匹配（`/api/get`）或缓存里的歌词书写系统与曲目元数据明显对不上（[expectedLyricsScript]
   /// 期望日文，正文却几乎全是拉丁字母：罗马音 / 翻译版）时不直接采用：按 [lyricsQueries] 走
   /// `/api/search`，挑同名、同录音时长且书写系统对得上的那条（[_searchLrclibInScript]）。
-  /// 挑不到仍留着这条，但标 `deferToPlugins`，让带原文的歌词插件先上。
+  /// 挑不到仍留着这条，但标 `scriptMismatch`，让歌词插件里书写系统对得上的先上。
   ///
-  /// 缓存里这种行每 [kLrclibNegativeCacheTtl] 重挑一次：改版前落库的罗马音行（更新时间早于
-  /// TTL）第一次解析就重挑；重挑换行时保留用户调过的偏移。
-  Future<_LrclibOutcome?> _resolveLrclib(
+  /// 缓存里这种行每 [kLrclibNegativeCacheTtl] 重挑一次，按行的 `updated_at` 计：改版前落库的
+  /// 罗马音行只有更新时间已早于 TTL 的才会第一次解析就重挑；TTL 内落库的旧行要等到期
+  /// （表里没有「是否搜过原文版」的标记，与「刚搜过没有」分不开），期间排在插件之后兜底。
+  /// 重挑换行时保留用户调过的偏移。
+  Future<_OnlineOutcome?> _resolveLrclib(
     FushiDatabase db,
     MusicLyricsTrackRef track,
     MusicLyricRow? cached,
@@ -605,12 +612,12 @@ class MusicLyricsService {
           expected,
           musicLyricsTimelineText(kept.timeline),
         )) {
-          return (resolution: kept, deferToPlugins: false);
+          return (resolution: kept, scriptMismatch: false);
         }
         if (!canQuery ||
             _now() - cached.updatedAt <
                 kLrclibNegativeCacheTtl.inMilliseconds) {
-          return (resolution: kept, deferToPlugins: true);
+          return (resolution: kept, scriptMismatch: true);
         }
         final ({String raw, String format})? alt;
         try {
@@ -618,7 +625,7 @@ class MusicLyricsService {
         } on Exception {
           // 重挑联网失败：已有缓存照常顶上（与 resolve「在线失败时本地结果照常返回」一致），
           // 不刷新更新时间，下次解析再挑。
-          return (resolution: kept, deferToPlugins: true);
+          return (resolution: kept, scriptMismatch: true);
         }
         if (alt == null) {
           // 搜过了没有原文版：刷新更新时间，TTL 内不再重挑。
@@ -628,11 +635,11 @@ class MusicLyricsService {
                     r.source.equals(MusicLyricsSource.lrclib),
               ))
               .write(MusicLyricsCompanion(updatedAt: Value<int>(_now())));
-          return (resolution: kept, deferToPlugins: true);
+          return (resolution: kept, scriptMismatch: true);
         }
         return (
           resolution: await _storeLrclib(db, track, alt, cached.offsetMs),
-          deferToPlugins: false,
+          scriptMismatch: false,
         );
       }
       if (_now() - cached.updatedAt < kLrclibNegativeCacheTtl.inMilliseconds) {
@@ -661,7 +668,7 @@ class MusicLyricsService {
     if (!lyricsScriptMismatches(expected, best.raw)) {
       return (
         resolution: await _storeLrclib(db, track, best, offsetMs),
-        deferToPlugins: false,
+        scriptMismatch: false,
       );
     }
     final ({String raw, String format})? alt;
@@ -680,18 +687,18 @@ class MusicLyricsService {
           timeline: t,
           source: MusicLyricsSource.lrclib,
         ),
-        deferToPlugins: true,
+        scriptMismatch: true,
       );
     }
     if (alt != null) {
       return (
         resolution: await _storeLrclib(db, track, alt, offsetMs),
-        deferToPlugins: false,
+        scriptMismatch: false,
       );
     }
     return (
       resolution: await _storeLrclib(db, track, best, offsetMs),
-      deferToPlugins: true,
+      scriptMismatch: true,
     );
   }
 
@@ -778,12 +785,14 @@ class MusicLyricsService {
   }
 
   /// 歌词插件来源：按用户排序逐个「缓存（含负缓存）→ lyricsSearch → 评分挑 → lyricsFetch」，
-  /// 第一个拿到歌词的胜出。插件报错只跳过它（不写负缓存），不影响后面的插件。
+  /// 第一个拿到书写系统对得上（[lyricsScriptMismatches]）的歌词的胜出。插件报错只跳过它
+  /// （不写负缓存），不影响后面的插件。拿到的歌词对不上（罗马音 / 只有翻译）照常落库，
+  /// 但只记作兜底继续问下一个插件；全都对不上时返回第一个兜底（`scriptMismatch` = true）。
   ///
   /// 缓存键是 [MusicLyricsSource.lyricsPlugin]，与平台曲目自带歌词（③'，
   /// [MusicLyricsSource.plugin]）分开；缓存命中走 [_timelineOf]，与 ③' 同一条新鲜度判断
   /// （原始各轨按当前解析器重新合并）。
-  Future<MusicLyricsResolution?> _resolvePluginProviders(
+  Future<_OnlineOutcome?> _resolvePluginProviders(
     FushiDatabase db,
     MusicLyricsTrackRef track,
     MusicLyricRow? Function(String source) rowOf,
@@ -792,16 +801,30 @@ class MusicLyricsService {
     final MusicPluginLyricsSearcher? search = _pluginSearch;
     final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
     if (listProviders == null || search == null || fetch == null) return null;
+    final LyricsScript? expected = expectedLyricsScript(
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+    );
+    MusicLyricsResolution? fallback;
     final List<String> ids = await listProviders();
     for (final String id in ids) {
       final String source = MusicLyricsSource.lyricsPlugin(id);
       final MusicLyricRow? prev = rowOf(source);
       if (prev != null) {
         if (prev.format != kMusicLyricsNoneFormat) {
-          return MusicLyricsResolution(
+          final MusicLyricsResolution cachedHit = MusicLyricsResolution(
             timeline: await _timelineOf(db, prev, track.durationMs),
             source: source,
           );
+          if (!lyricsScriptMismatches(
+            expected,
+            musicLyricsTimelineText(cachedHit.timeline),
+          )) {
+            return (resolution: cachedHit, scriptMismatch: false);
+          }
+          fallback ??= cachedHit;
+          continue;
         }
         if (_now() - prev.updatedAt <
             kPluginLyricsNegativeCacheTtl.inMilliseconds) {
@@ -837,17 +860,23 @@ class MusicLyricsService {
           raw: built.raw,
           timeline: t,
         );
-        return MusicLyricsResolution(
+        final MusicLyricsResolution fetched = MusicLyricsResolution(
           timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
           source: source,
         );
+        if (!lyricsScriptMismatches(expected, musicLyricsTimelineText(t))) {
+          return (resolution: fetched, scriptMismatch: false);
+        }
+        fallback ??= fetched;
       } on MusicPluginException {
         continue;
       } on LyricsParseException {
         continue;
       }
     }
-    return null;
+    return fallback == null
+        ? null
+        : (resolution: fallback, scriptMismatch: true);
   }
 
   Future<MusicPluginLyrics?> _searchAndFetch(

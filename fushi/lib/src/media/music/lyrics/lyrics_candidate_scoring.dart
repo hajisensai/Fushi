@@ -41,7 +41,11 @@ enum LyricsScript {
   latin,
 }
 
-/// 一段文字里各文字的字符数（标点、数字、空白、LRC 时间戳都不计）。
+/// 一段文字里各文字的「音节级单位」数（标点、数字、空白、LRC 时间戳都不计）。
+///
+/// 假名 / 汉字 / 谚文一个字就是一个音节，按字计；拉丁字母按**词**计（连续的拉丁字母
+/// 算一个，词内撇号不断词）——按字母计会让夹英文的原文版被高估成拉丁字母：一行日文
+/// （约 9 字）配两行英文（约 46 个字母、9 个词）按字母只有 9/55，按词是 9/18。
 class LyricsScriptProfile {
   const LyricsScriptProfile({
     required this.kana,
@@ -55,7 +59,7 @@ class LyricsScriptProfile {
   final int hangul;
   final int latin;
 
-  /// 计入统计的字母总数。
+  /// 计入统计的单位总数（假名 / 汉字 / 谚文按字，拉丁字母按词）。
   int get letters => kana + han + hangul + latin;
 
   double _ratio(int n) => letters == 0 ? 0 : n / letters;
@@ -78,19 +82,23 @@ class LyricsScriptProfile {
   }
 }
 
-/// 判书写系统至少要这么多个字母（太短的文本不下结论）。
+/// 判书写系统至少要这么多个单位（[LyricsScriptProfile.letters]；太短的文本不下结论）。
 const int kLyricsScriptMinLetters = 8;
 
 /// [lyricsScriptFit] 低于它即「明显不是这种文字」（例如期望日文却几乎全是拉丁字母）。
 const double kLyricsScriptMismatchFit = 0.2;
 
-/// 统计 [text] 里各文字的字符数。
+/// 统计 [text] 里各文字的单位数（见 [LyricsScriptProfile]：拉丁字母按词）。
 LyricsScriptProfile lyricsScriptProfile(String text) {
   int kana = 0;
   int han = 0;
   int hangul = 0;
   int latin = 0;
+  bool inLatinWord = false;
   for (final int r in text.runes) {
+    // 词内撇号（don't / rock'n'roll）不断词。
+    if (inLatinWord && (r == 0x27 || r == 0x2019)) continue;
+    bool isLatin = false;
     if ((r >= 0x3041 && r <= 0x309F) ||
         (r >= 0x30A1 && r <= 0x30FA) ||
         (r >= 0x30FD && r <= 0x30FF) ||
@@ -113,8 +121,10 @@ LyricsScriptProfile lyricsScriptProfile(String text) {
         (r >= 0x1E00 && r <= 0x1EFF) ||
         (r >= 0xFF21 && r <= 0xFF3A) ||
         (r >= 0xFF41 && r <= 0xFF5A)) {
-      latin++;
+      isLatin = true;
     }
+    if (isLatin && !inLatinWord) latin++;
+    inLatinWord = isLatin;
   }
   return LyricsScriptProfile(
     kana: kana,

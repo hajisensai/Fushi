@@ -67,6 +67,10 @@ class _FakePlugin {
   List<MusicPluginLyricsCandidate> candidates = <MusicPluginLyricsCandidate>[];
   MusicPluginLyrics? lyrics;
 
+  /// 按插件 id 给不同歌词（没登记的 id 回 [lyrics]）。
+  Map<String, MusicPluginLyrics> lyricsById = <String, MusicPluginLyrics>{};
+  final List<String> fetched = <String>[];
+
   Future<List<MusicPluginLyricsCandidate>> search(
     String id,
     String title, {
@@ -76,8 +80,25 @@ class _FakePlugin {
     String? query,
   }) async => candidates;
 
-  Future<MusicPluginLyrics?> fetch(String id, Object ref) async => lyrics;
+  Future<MusicPluginLyrics?> fetch(String id, Object ref) async {
+    fetched.add(id);
+    return lyricsById[id] ?? lyrics;
+  }
 }
+
+MusicPluginLyrics _pluginLyrics(String text) => MusicPluginLyrics(
+  original: MusicPluginLyricText(format: 'lrc', text: '[00:01.00]$text'),
+);
+
+const MusicPluginLyricsCandidate _pluginHit = MusicPluginLyricsCandidate(
+  title: 'うさぎとかめ',
+  artist: '平沢唯',
+  durationMs: 165000,
+  ref: <String, Object?>{'id': 'x'},
+);
+
+const String _romajiLine = 'Moshi moshi kame yo kame-san yo sekai no uchi ni';
+const String _chineseLine = '世界之中没有比你走得更慢的';
 
 void main() {
   late FushiDatabase db;
@@ -85,7 +106,10 @@ void main() {
   late _FakePlugin plugin;
   late int now;
 
-  MusicLyricsService service({bool withPlugin = false}) => MusicLyricsService(
+  MusicLyricsService service({
+    bool withPlugin = false,
+    List<String> providers = const <String>['p'],
+  }) => MusicLyricsService(
     database: () => db,
     lrclib: LrclibClient(transport: lrclib.call),
     onlineEnabled: () => true,
@@ -94,7 +118,7 @@ void main() {
     now: () => now,
     pluginSearch: withPlugin ? plugin.search : null,
     pluginFetch: withPlugin ? plugin.fetch : null,
-    providers: withPlugin ? () async => <String>['p'] : null,
+    providers: withPlugin ? () async => providers : null,
   );
 
   const MusicLyricsTrackRef track = MusicLyricsTrackRef(
@@ -119,9 +143,9 @@ void main() {
   tearDown(() => db.close());
 
   group('书写系统判定（纯函数）', () {
-    test('按字符所属文字计数，标点 / 数字 / LRC 时间戳不计', () {
+    test('假名 / 汉字按字、拉丁字母按词计数，标点 / 数字 / LRC 时间戳不计', () {
       final LyricsScriptProfile p = lyricsScriptProfile(
-        '[00:01.00] もしもし亀よ ABC、123',
+        "[00:01.00] もしもし亀よ ABC、123 don't stop",
       );
       expect((p.kana, p.han, p.hangul, p.latin), (5, 1, 0, 3));
       expect(lyricsScriptProfile(_romaji).dominant, LyricsScript.latin);
@@ -163,6 +187,28 @@ void main() {
       );
       expect(lyricsScriptMismatches(null, _romaji), isFalse);
       expect(lyricsScriptMismatches(LyricsScript.kana, 'La la'), isFalse);
+    });
+
+    test('原文本身夹大量英文的日文 / 中文歌不算对不上（拉丁字母不按字母数高估）', () {
+      // 审查给的例子：1 行日文（9 字）配 2 行英文（46 个字母、9 个词），按字母只有 9/55。
+      const String jaEn =
+          'もしもしかめよかめさん\n'
+          'Running through the night with you\n'
+          'Never gonna let you go tonight';
+      expect(lyricsScriptMismatches(LyricsScript.kana, jaEn), isFalse);
+      const String zhEn =
+          '我们一起走过的路\n'
+          'Baby I just wanna hold you tight\n'
+          'Every single day and every night';
+      expect(lyricsScriptMismatches(LyricsScript.han, zhEn), isFalse);
+      // 整首罗马音只夹一行假名标题，仍是罗马音版。
+      expect(
+        lyricsScriptMismatches(
+          LyricsScript.kana,
+          'うさぎとかめ\n$_romaji\n$_romaji\n$_romaji',
+        ),
+        isTrue,
+      );
     });
 
     test('pickBestLyricsCandidate：同名同艺人时书写系统对得上的胜出，可要求必须对得上', () {
@@ -289,6 +335,53 @@ void main() {
     expect(lrclib.calls.length, calls, reason: '缓存行 TTL 内不重挑');
   });
 
+  test('插件拿到的也是罗马音 / 只有中文翻译：照样只当兜底，下一个插件有原文就用它', () async {
+    lrclib.search = <Map<String, Object?>>[_record(8, _romaji)];
+    plugin.candidates = <MusicPluginLyricsCandidate>[_pluginHit];
+    plugin.lyricsById = <String, MusicPluginLyrics>{
+      'romaji': _pluginLyrics(_romajiLine),
+      'zh': _pluginLyrics(_chineseLine),
+      'ja': _pluginLyrics('もしもしかめよ かめさんよ'),
+    };
+    final MusicLyricsResolution r = (await service(
+      withPlugin: true,
+      providers: <String>['romaji', 'zh', 'ja'],
+    ).resolve(track))!;
+    expect(r.source, MusicLyricsSource.lyricsPlugin('ja'));
+    expect(text(r), 'もしもしかめよ かめさんよ');
+    expect(plugin.fetched, <String>['romaji', 'zh', 'ja']);
+    // 第二次全走缓存：对不上的插件缓存行同样跳过，不会挡住后面的原文版。
+    plugin.fetched.clear();
+    final MusicLyricsResolution again = (await service(
+      withPlugin: true,
+      providers: <String>['romaji', 'zh', 'ja'],
+    ).resolve(track))!;
+    expect(again.source, MusicLyricsSource.lyricsPlugin('ja'));
+    expect(plugin.fetched, isEmpty);
+  });
+
+  test('LRCLIB 与插件都只有对不上的版本：按来源顺序兜底（LRCLIB 在前）', () async {
+    lrclib.search = <Map<String, Object?>>[_record(8, _romaji)];
+    plugin.candidates = <MusicPluginLyricsCandidate>[_pluginHit];
+    plugin.lyrics = _pluginLyrics(_chineseLine);
+    final MusicLyricsResolution r = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(r.source, MusicLyricsSource.lrclib);
+    expect(text(r), _romaji);
+  });
+
+  test('LRCLIB 没有、插件只有对不上的版本：仍用插件那份（不丢歌词）', () async {
+    lrclib.get = null;
+    plugin.candidates = <MusicPluginLyricsCandidate>[_pluginHit];
+    plugin.lyrics = _pluginLyrics(_chineseLine);
+    final MusicLyricsResolution r = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(r.source, MusicLyricsSource.lyricsPlugin('p'));
+    expect(text(r), _chineseLine);
+  });
+
   test('搜索联网失败：这次先用罗马音（不落库），下次重查', () async {
     lrclib.searchStatus = 503;
     final MusicLyricsResolution r = (await service().resolve(track))!;
@@ -320,6 +413,28 @@ void main() {
     final int calls = lrclib.calls.length;
     await service().resolve(track);
     expect(lrclib.calls.length, calls, reason: '换成原文后直接读缓存');
+  });
+
+  test('TTL 内落库的旧罗马音行：到期前不重挑（排在插件之后兜底），到期后重挑', () async {
+    await db
+        .into(db.musicLyrics)
+        .insert(
+          MusicLyricsCompanion.insert(
+            trackUid: track.trackUid,
+            source: MusicLyricsSource.lrclib,
+            format: 'txt',
+            raw: utf8.encode(_romaji),
+            updatedAt: now - const Duration(days: 1).inMilliseconds,
+          ),
+        );
+    lrclib.search = <Map<String, Object?>>[_record(3, _japanese)];
+    final MusicLyricsResolution r = (await service().resolve(track))!;
+    expect(text(r), _romaji);
+    expect(lrclib.calls, isEmpty, reason: 'TTL 内不联网重挑');
+    now += kLrclibNegativeCacheTtl.inMilliseconds;
+    final MusicLyricsResolution later = (await service().resolve(track))!;
+    expect(text(later), _japanese);
+    expect(lrclib.searches, isNotEmpty);
   });
 
   test('在线搜索候选：原文版排前，候选标出书写系统', () async {
