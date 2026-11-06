@@ -1,4 +1,4 @@
-## BUG-4130 · 网易云艺人简介 <h> 标记原样画出、摘要只露信息框键名
+## BUG-4210 · 网易云艺人简介 <h> 标记原样画出、摘要只露信息框键名
 - **报告**：2026-11-06（用户：截图反馈，网易云插件外文艺人 Polyphia 的艺人页）——简介里 `<h>History </h>` 这种标记原样画在正文里；头部三行摘要只露出「Origin / Plano, Texas, US / Genres」这些信息框键名。
 - **真实性**：✅ 真 bug。插件原样转交平台文本（网易云外文艺人简介是从百科搬来的，段落标题写成 `<h>…</h>`，夹 `<br>` / `&amp;`），页面直接当纯文本画：
   - 艺人页头部摘要 `fushi/lib/src/pages/implementations/music/music_plugin_detail_pages.dart:825-832`（develop fd09429392）`Text(bio, maxLines: 3)`——原文整段、截前三行，正好是信息框；
