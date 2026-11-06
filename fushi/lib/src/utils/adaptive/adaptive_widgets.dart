@@ -729,8 +729,11 @@ class _GlassSheetBody extends StatelessWidget {
 /// [adaptiveSegmentedButton] 在当前上下文里是否渲染 MD3 胶囊分段
 /// （[FushiPillSegmentedButton]）。分段条估宽（`SegmentedStripMetrics.of`）按同一
 /// 判据选几何，两处不得各写一份分支条件。
-bool adaptiveSegmentedUsesPill(BuildContext context) =>
-    !isGlassDesign(context) && !isCupertinoPlatform(context);
+///
+/// 非 Apple 设计一律胶囊分段——包括 Cupertino 设计系统但 Apple 设计不生效
+/// （墨水屏）的情况：那里以前是原生 `CupertinoSlidingSegmentedControl`，各段
+/// 等宽、不走 `fushiSegmentWidths`，最长段先被截断（BUG-4130）。
+bool adaptiveSegmentedUsesPill(BuildContext context) => !isGlassDesign(context);
 
 Widget adaptiveSegmentedButton<T extends Object>({
   required BuildContext context,
@@ -759,21 +762,9 @@ Widget adaptiveSegmentedButton<T extends Object>({
       },
     );
   }
-  if (isCupertinoPlatform(context)) {
-    final T groupValue = selected.first;
-    return CupertinoSlidingSegmentedControl<T>(
-      groupValue: groupValue,
-      onValueChanged: (v) {
-        if (v != null) onSelectionChanged({v});
-      },
-      children: {
-        for (final seg in segments)
-          seg.value: seg.label ?? seg.icon ?? Text('$seg'),
-      },
-    );
-  }
   // Material（M3E）：胶囊轨道 + 选中胶囊，与浏览页二级页签同一形态
   // （2026-10-09 用户「深色模式三图标分段与浏览页胶囊页签风格不一致」）。
+  // 墨水屏（含 Cupertino 设计系统下）也走这里：胶囊分段自带墨水屏配色。
   assert(adaptiveSegmentedUsesPill(context));
   return FushiPillSegmentedButton<T>(
     segments: segments,

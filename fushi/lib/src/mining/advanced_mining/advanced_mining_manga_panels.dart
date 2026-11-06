@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -559,11 +560,12 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
 
 /// 手机全屏框选页底部的取景分段（交互稿 ④）。
 ///
-/// 不直接用 [FushiPillSegmentedButton]：它的段按最宽一段等宽、左右各留 16 内边距，
-/// 文字放不下就省略号——四段中文在 390 宽已截成「文字周…」，英文在 360 宽更紧。
-/// 这里轨道撑满整行、段内边距收到 6，标签放不下时整体等比缩小（FittedBox
-/// scaleDown），任何一段都不出现省略号。外观（轨道色、选中 primary 胶囊、按压
-/// 状态层与切换动画）与共享分段同源。
+/// 外观（轨道色、选中 primary 胶囊、按压状态层与切换动画）与共享胶囊分段
+/// [FushiPillSegmentedButton] 同源，段宽也同走共用分宽 [FushiSegmentRow]
+/// （BUG-4130）：放得下时等宽撑满，放不下时按内容分宽、再把段内边距从 16 收到
+/// 6。和共享分段唯一的差别是**所有退让都用尽后**的处理：这里是固定高度的底部
+/// 操作条，标签不折行，被削窄的那段整体等比缩小（FittedBox scaleDown）；在这
+/// 之前每段都按自然宽排、不缩字号，短段不会空着大片留白而让长段缩小。
 class MangaCropChoiceSegments extends StatelessWidget {
   const MangaCropChoiceSegments({
     super.key,
@@ -576,8 +578,9 @@ class MangaCropChoiceSegments extends StatelessWidget {
   static const double segmentHeight = FushiPillSegmentedButton.segmentHeight;
   static const double trackPadding = FushiPillSegmentedButton.trackPadding;
 
-  /// 段内左右留白（共享分段是 16）。
-  static const double labelPadding = 6;
+  /// 段内左右留白：首选与共享分段同为 16，放不下时最多收到 [minLabelPadding]。
+  static const double labelPadding = FushiPillSegmentedButton.labelPadding;
+  static const double minLabelPadding = 6;
 
   final List<MangaCropChoice> choices;
   final MangaCropChoice selected;
@@ -618,7 +621,7 @@ class MangaCropChoiceSegments extends StatelessWidget {
               duration: duration,
               curve: FushiMotion.standard,
               height: segmentHeight,
-              padding: const EdgeInsets.symmetric(horizontal: labelPadding),
+              padding: const EdgeInsets.symmetric(horizontal: minLabelPadding),
               alignment: Alignment.center,
               decoration: ShapeDecoration(
                 color: fushiPillSegmentSelectedFill(
@@ -654,10 +657,15 @@ class MangaCropChoiceSegments extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(trackPadding),
-        child: Row(
+        // 段自身只带最小内边距，首选内边距多出的部分作为 extras 交给共用分宽。
+        child: FushiSegmentRow(
+          fill: true,
+          extras: List<double>.filled(
+            choices.length,
+            2 * (labelPadding - minLabelPadding),
+          ),
           children: <Widget>[
-            for (final MangaCropChoice choice in choices)
-              Expanded(child: segment(choice)),
+            for (final MangaCropChoice choice in choices) segment(choice),
           ],
         ),
       ),
