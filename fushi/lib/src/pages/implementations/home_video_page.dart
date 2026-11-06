@@ -262,6 +262,14 @@ typedef _CardDownloadMeta = ({
   bool failed,
 });
 
+/// 合集封面卡取到的图源（见 `_collectionCoverSource`）：[errorIcon] 是解码失败时的
+/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画。
+typedef _CollectionCoverSource = ({
+  ImageProvider image,
+  IconData errorIcon,
+  RemoteVideoInfo? remoteMember,
+});
+
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -4234,6 +4242,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
+  /// 菜单里的动作要把封面交给只取一次快照、不会再重建的去处（原盘启动动画）时用：
+  /// 封面还在探测时不传永远停在加载态的 [kPendingCoverImage]，按「没有封面」走。
+  ImageProvider? _settledMenuCover(ImageProvider? cover) =>
+      cover is PendingCoverImage ? null : cover;
+
   /// 长按视频卡：打开与书架书籍一致的封面背景动作面板。播放仍由卡片点击负责。
   ///
   /// [cover] / [title] 由打开菜单的那张卡传入、必须是它自己正在画的图源与标题
@@ -4294,9 +4307,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   context: context,
                   repo: widget.repo,
                   discs: discs,
-                  // 启动动画只取这一刻的快照、不会再重建：封面还在探测时不传
-                  // 永远停在加载态的 [kPendingCoverImage]，按「没有封面」走。
-                  cover: cover is PendingCoverImage ? null : cover,
+                  cover: _settledMenuCover(cover),
                 ),
               );
             },
@@ -6106,7 +6117,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 item.target,
                 playlistCollectionId: item.collection.id,
               ),
-              onLongPress: () => _showCollectionContextMenu(item.collection),
+              onLongPress: () => _showCollectionContextMenu(
+                item.collection,
+                cover: () => _collectionPosterProvider(
+                  item.collection,
+                  item.members,
+                  item.target,
+                ),
+                title: _workTitle(item.collection),
+              ),
               tags: _collectionTagChips(item.collection.id),
               secondaryText: t.video_home_subscription_unwatched_episode(
                 n: item.episodeNumber,
@@ -6195,7 +6214,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             title: _workTitle(collection),
             cardWidth: cardWidth,
             onTap: () => _openCollectionDetail(collection),
-            onLongPress: () => _showCollectionContextMenu(collection),
+            onLongPress: () => _showCollectionContextMenu(
+              collection,
+              cover: () =>
+                  _collectionPosterProvider(collection, members, latest),
+              title: _workTitle(collection),
+            ),
             tags: _collectionTagChips(cid),
             secondaryText: episodeNumber == null
                 ? t.video_playlist_episodes(count: allMembers.length)
@@ -6540,7 +6564,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       progress:
           _slotPositionFraction(target) ?? completedCount / members.length,
       onPlay: () => _openSlot(target, playlistCollectionId: collection.id),
-      onLongPress: () => _showCollectionContextMenu(collection),
+      // 菜单头部与 hero 的竖版海报（[poster]）同源。
+      onLongPress: () => _showCollectionContextMenu(
+        collection,
+        cover: () => _collectionPosterProvider(collection, members, target),
+        title: _workTitle(collection),
+      ),
       cloud: target.local == null,
     );
   }
@@ -7588,6 +7617,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
     final bool landscape = orientation == VideoCardOrientation.landscape;
+    // 菜单头部与本卡同源：封面走 [_buildCollectionCover] 的同一条取图链，标题同副行。
+    void openMenu() => _showCollectionContextMenu(
+      collection,
+      cover: () => _collectionCoverSource(group)?.image,
+      title: _workTitle(collection),
+    );
     final FushiCard card = shelfCoverCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
       focusId: FushiFocusId('home-video-collection-${collection.id}'),
@@ -7607,12 +7642,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       },
       // 未进入选择态时，触屏与桌面长按都保留合集上下文菜单；只有显式进入选择态
       // 后才禁用菜单，让整卡点击/扫选负责勾选。
-      onLongPress: _selectionMode
-          ? null
-          : () => _showCollectionContextMenu(collection),
-      onSecondaryTap: _selectionMode
-          ? null
-          : () => _showCollectionContextMenu(collection),
+      onLongPress: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? null : openMenu,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -7737,14 +7768,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     CollectionGroup<_VideoSlot> group, {
     bool landscapeSlot = false,
   }) {
+    final _CollectionCoverSource? source = _collectionCoverSource(group);
+    if (source == null) return ShelfCoverPlaceholder(icon: FushiIcons.video);
+    final RemoteVideoInfo? remoteMember = source.remoteMember;
+    if (remoteMember != null) {
+      return _buildRemoteVideoCover(
+        remoteMember,
+        poster: true,
+        landscapeSlot: landscapeSlot,
+      );
+    }
+    // 朝向自适应槽位：不合槽封面由 [PortraitCoverImage] 用「模糊同图垫底 +
+    // contain 前景」填充；本地封面解码上限与旧 cacheWidth 同源（resizedFileImage
+    // 默认 720）。
+    return PortraitCoverImage(
+      image: source.image,
+      landscapeSlot: landscapeSlot,
+      errorBuilder: (BuildContext _) =>
+          ShelfCoverPlaceholder(icon: source.errorIcon),
+    );
+  }
+
+  /// 合集封面卡的取图链（[_buildCollectionCover] 画它、合集菜单头部也取它，两处
+  /// 同源，见 BUG-4130）：合集自有封面 → 刮削作品海报 → 媒体服务器剧海报（优先于
+  /// 任何单集截图）→ 首个有本地封面的成员 → 首个有封面的远端成员。某一级还在探测
+  /// 时停在 [kPendingCoverImage]。都没有为 null。
+  _CollectionCoverSource? _collectionCoverSource(
+    CollectionGroup<_VideoSlot> group,
+  ) {
     final ImageProvider? own = _collectionOwnCover(group.collection);
     if (own != null) {
-      return PortraitCoverImage(
-        image: own,
-        landscapeSlot: landscapeSlot,
-        errorBuilder: (BuildContext _) =>
-            ShelfCoverPlaceholder(icon: FushiIcons.video),
-      );
+      return (image: own, errorIcon: FushiIcons.video, remoteMember: null);
     }
     final int? collectionId = group.collection?.id;
     if (collectionId != null) {
@@ -7752,25 +7806,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         collectionId,
       );
       if (canonical != null) {
-        return PortraitCoverImage(
+        return (
           image: canonical,
-          landscapeSlot: landscapeSlot,
-          errorBuilder: (BuildContext _) =>
-              ShelfCoverPlaceholder(icon: FushiIcons.video),
+          errorIcon: FushiIcons.video,
+          remoteMember: null,
         );
       }
     }
-    // 媒体服务器的剧海报优先于任何单集截图（本地成员抽帧 / 远端首集）。
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final RemoteVideoInfo? remote = it.payload.remote;
       if (remote == null) continue;
       final ImageProvider? poster = _remoteSeriesCoverProvider(remote);
       if (poster != null) {
-        return PortraitCoverImage(
+        return (
           image: poster,
-          landscapeSlot: landscapeSlot,
-          errorBuilder: (BuildContext _) =>
-              ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+          errorIcon: Icons.movie_outlined,
+          remoteMember: null,
         );
       }
     }
@@ -7779,14 +7830,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       if (local == null) continue;
       final ImageProvider? cover = _localFileCover(local.coverPath);
       if (cover != null) {
-        // 朝向自适应槽位：不合槽封面由 [PortraitCoverImage] 用「模糊同图垫底 +
-        // contain 前景」填充；解码上限与旧 cacheWidth 同源（resizedFileImage 默认 720）。
-        return PortraitCoverImage(
-          image: cover,
-          landscapeSlot: landscapeSlot,
-          errorBuilder: (BuildContext _) =>
-              ShelfCoverPlaceholder(icon: FushiIcons.video),
-        );
+        return (image: cover, errorIcon: FushiIcons.video, remoteMember: null);
       }
     }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
@@ -7794,15 +7838,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       if (remote == null) continue;
       // 「有没有可用封面」与渲染用同一条判据（[_remoteCoverProvider]：记忆化的
       // 文件存在性 → 钉扎 URL），不在这里再裸 existsSync 一遍。
-      if (_remoteCoverProvider(remote) != null) {
-        return _buildRemoteVideoCover(
-          remote,
-          poster: true,
-          landscapeSlot: landscapeSlot,
+      final ImageProvider? cover = _remoteCoverProvider(remote);
+      if (cover != null) {
+        return (
+          image: cover,
+          errorIcon: FushiIcons.video,
+          remoteMember: remote,
         );
       }
     }
-    return ShelfCoverPlaceholder(icon: FushiIcons.video);
+    return null;
   }
 
   /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」；否则 →
@@ -8658,107 +8703,118 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 远端删除只在对端此刻在线、可达时可用（反馈 R8duEiqRuy，与远端书卡同规则）。
       builder: (BuildContext dialogContext) => RemoteDeleteAvailabilityBuilder(
         probe: deleter?.probeHostReachability,
+        // 封面跟 [_coverExistsRevision] 重取：远端封面缓存文件的存在性还在异步探测
+        // 时 [_remoteCoverProvider] 给的是 [kPendingCoverImage]；菜单是独立路由，
+        // page 的重建到不了它，不订阅的话头部就永远停在加载态（同 [_showVideoMenu]）。
         builder: (BuildContext _, String? deleteDisabledReason) =>
-            MediaItemDialogFrame(
-              cover: _buildRemoteVideoCover(video),
-              coverBackdrop: _remoteCoverProvider(video),
-              coverMaterial: ShelfCoverMaterial.glossyPoster,
-              title: video.title,
-              showLaunchAction: false,
-              quickActions: <DialogQuickAction>[
-                if (cloudStream != null)
-                  DialogQuickAction(
-                    label: t.remote_video_stream_play,
-                    icon: Icons.play_circle_outline,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      unawaited(_openRemote(video, streamClient: cloudStream));
-                    },
-                  ),
-                if (task == null)
-                  DialogQuickAction(
-                    label: t.remote_video_download,
-                    icon: Icons.download_outlined,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      _downloadRemote(video);
-                    },
-                  ),
-                if (task != null && downloads.canPause(task.id))
-                  DialogQuickAction(
-                    label: t.download_task_pause,
-                    icon: Icons.pause_outlined,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      downloads.pause(task.id);
-                    },
-                  ),
-                if (task != null && downloads.canRestart(task.id))
-                  DialogQuickAction(
-                    label: t.download_task_resume,
-                    icon: Icons.play_arrow_outlined,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      unawaited(downloads.resume(task.id));
-                    },
-                  ),
-                if (task != null && downloads.canCancel(task.id))
-                  DialogQuickAction(
-                    label: t.interconnect_download_cancel,
-                    icon: Icons.close,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      unawaited(downloads.cancel(task.id));
-                    },
-                  ),
-                if (task != null)
-                  DialogQuickAction(
-                    label: t.interconnect_download_tasks_title,
-                    icon: Icons.download_for_offline_outlined,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      unawaited(openInterconnectDownloadTasksPage(context));
-                    },
-                  ),
-                DialogQuickAction(
-                  label: t.remote_video_info,
-                  icon: Icons.info_outline,
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    _showRemoteVideoInfo(video);
-                  },
-                ),
-                // 媒体服务器（Jellyfin / Emby）条目：手动标记已看 / 未看并同步到服务器。
-                if (_remoteVideoSource is RemoteVideoPlayedMark)
-                  DialogQuickAction(
-                    label: video.completedAt != null
-                        ? t.video_mark_unwatched
-                        : t.video_mark_watched,
-                    icon: video.completedAt != null
-                        ? FushiIcons.visibilityOff
-                        : FushiIcons.check,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      unawaited(
-                        _markWatched(
-                          watched: video.completedAt == null,
-                          remoteIds: <String>[video.id],
+            ValueListenableBuilder<int>(
+              valueListenable: _coverExistsRevision,
+              builder: (BuildContext _, int __, Widget? ___) =>
+                  MediaItemDialogFrame(
+                    cover: _buildRemoteVideoCover(video),
+                    coverBackdrop: _remoteCoverProvider(video),
+                    coverMaterial: ShelfCoverMaterial.glossyPoster,
+                    title: video.title,
+                    showLaunchAction: false,
+                    quickActions: <DialogQuickAction>[
+                      if (cloudStream != null)
+                        DialogQuickAction(
+                          label: t.remote_video_stream_play,
+                          icon: Icons.play_circle_outline,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            unawaited(
+                              _openRemote(video, streamClient: cloudStream),
+                            );
+                          },
                         ),
-                      );
-                    },
+                      if (task == null)
+                        DialogQuickAction(
+                          label: t.remote_video_download,
+                          icon: Icons.download_outlined,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _downloadRemote(video);
+                          },
+                        ),
+                      if (task != null && downloads.canPause(task.id))
+                        DialogQuickAction(
+                          label: t.download_task_pause,
+                          icon: Icons.pause_outlined,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            downloads.pause(task.id);
+                          },
+                        ),
+                      if (task != null && downloads.canRestart(task.id))
+                        DialogQuickAction(
+                          label: t.download_task_resume,
+                          icon: Icons.play_arrow_outlined,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            unawaited(downloads.resume(task.id));
+                          },
+                        ),
+                      if (task != null && downloads.canCancel(task.id))
+                        DialogQuickAction(
+                          label: t.interconnect_download_cancel,
+                          icon: Icons.close,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            unawaited(downloads.cancel(task.id));
+                          },
+                        ),
+                      if (task != null)
+                        DialogQuickAction(
+                          label: t.interconnect_download_tasks_title,
+                          icon: Icons.download_for_offline_outlined,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            unawaited(
+                              openInterconnectDownloadTasksPage(context),
+                            );
+                          },
+                        ),
+                      DialogQuickAction(
+                        label: t.remote_video_info,
+                        icon: Icons.info_outline,
+                        onPressed: () {
+                          Navigator.pop(dialogContext);
+                          _showRemoteVideoInfo(video);
+                        },
+                      ),
+                      // 媒体服务器（Jellyfin / Emby）条目：手动标记已看 / 未看并同步到服务器。
+                      if (_remoteVideoSource is RemoteVideoPlayedMark)
+                        DialogQuickAction(
+                          label: video.completedAt != null
+                              ? t.video_mark_unwatched
+                              : t.video_mark_watched,
+                          icon: video.completedAt != null
+                              ? FushiIcons.visibilityOff
+                              : FushiIcons.check,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            unawaited(
+                              _markWatched(
+                                watched: video.completedAt == null,
+                                remoteIds: <String>[video.id],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                    dangerActions: <DialogDangerAction>[
+                      if (deleter != null)
+                        DialogDangerAction(
+                          label: t.dialog_delete,
+                          disabledReason: deleteDisabledReason,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _confirmDeleteRemoteVideo(video, deleter);
+                          },
+                        ),
+                    ],
                   ),
-              ],
-              dangerActions: <DialogDangerAction>[
-                if (deleter != null)
-                  DialogDangerAction(
-                    label: t.dialog_delete,
-                    disabledReason: deleteDisabledReason,
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      _confirmDeleteRemoteVideo(video, deleter);
-                    },
-                  ),
-              ],
             ),
       ),
     );
@@ -9407,7 +9463,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 合集封面卡长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
-  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) async {
+  ///
+  /// [cover] / [title] 由打开菜单的那张卡传入，必须是它自己正在画的取图链与标题
+  /// （BUG-4130：首页行卡 / 合集封面卡画的是含远端剧海报、远端成员封面的整条链和
+  /// 刮削作品名，菜单此前另走一条只认本地成员的判据、标题固定合集名，纯远端合集
+  /// 卡上有海报、菜单头部却空着）。没有卡可跟的入口（「管理合集」页）传 null，
+  /// 退回 [_collectionMenuCoverImage] 与合集名。
+  ///
+  /// 取图是函数、菜单订阅 [_coverExistsRevision]：封面存在性在网络盘冷目录上要
+  /// 异步探测好几秒，打开那一刻拿到的可能是 [kPendingCoverImage]；菜单是独立路由，
+  /// page 的重建到不了它，探测落定后必须自己重取，否则头部永远停在加载态。
+  Future<void> _showCollectionContextMenu(
+    MediaCollectionRow collection, {
+    ImageProvider? Function()? cover,
+    String? title,
+  }) async {
     // 右键锚点只在同步派发期间可读：先取下来，下面 await 取成员后仍弹在指针处。
     final Offset? anchor = activeContextMenuAnchor;
     final VideoBookRepository repo = widget.repo;
@@ -9436,18 +9506,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       for (final VideoBookRow b in library)
         if (memberUids.contains(b.bookUid)) b,
     ]);
-    final ImageProvider? coverImage = _collectionMenuCoverImage(
-      collection,
-      memberUidOrder,
-      library,
-    );
+    final ImageProvider? Function() coverOf =
+        cover ??
+        () => _collectionMenuCoverImage(collection, memberUidOrder, library);
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       anchor: anchor,
       db: db,
       collection: collection,
-      coverImage: coverImage,
+      resolveCoverImage: coverOf,
+      coverRefresh: _coverExistsRevision,
+      title: title,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
       leadingListActions: <DialogListAction>[
         if (discs.isNotEmpty)
@@ -9460,7 +9530,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 repo: repo,
                 discs: discs,
                 collectionId: collection.id,
-                cover: coverImage,
+                cover: _settledMenuCover(coverOf()),
               ),
             ),
           ),
