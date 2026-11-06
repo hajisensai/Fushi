@@ -431,6 +431,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
+import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show defaultVideoSubtitleJobsRoot;
@@ -3455,6 +3456,10 @@ class AppModel with ChangeNotifier {
       final VideoAudioMigrationReport report =
           await migrateAudioOnlyVideoBooksToMusic(
             _database,
+            intake: MusicAudioIntake(
+              _database,
+              fileExists: (String path) => File(path).existsSync(),
+            ),
             fileExists: (String path) => File(path).existsSync(),
             // 带走旧视频管线生成过 / 用户选过的字幕（音乐库「生成日语字幕」同一份歌词库）。
             lyrics: musicLyrics,

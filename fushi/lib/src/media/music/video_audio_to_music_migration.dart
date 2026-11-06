@@ -57,7 +57,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/music_audio_intake.dart';
+import 'package:fushi/src/media/music/music_audio_intake_port.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/source_library/source_library_transports.dart';
 
@@ -123,13 +123,14 @@ bool isLegacyRemoteAudioOnlyVideoBook(VideoBookRow row) {
       lower.startsWith('http://');
 }
 
-/// 见文件头。[fileExists] 默认真文件系统；[intake] / [repository] 测试注入。
+/// 见文件头。[intake] 是音乐库交接（真 app = `MusicAudioIntake`，由 AppModel 注入；
+/// 迁移不直接依赖它，免得被拖进 AppModel 的 import 大环）；[repository] 测试注入。
 /// [lyrics] 是字幕的落点，[subtitleJobsRoot] 是视频字幕任务目录根（认本管线产物），
 /// [importedSubtitlesDir] 是视频库导入字幕副本目录（`VideoStorage.subtitlesDir`，删行会
 /// 回收里面的文件）。三者必给：少了任何一个就会在删行时悄悄丢掉字幕。
 Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   FushiDatabase db, {
-  MusicAudioIntake? intake,
+  required MusicAudioIntakePort intake,
   VideoBookRepository? repository,
   required bool Function(String path) fileExists,
   required MusicLyricsService lyrics,
@@ -149,8 +150,7 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   if (rows.isEmpty && remoteRows.isEmpty) {
     return VideoAudioMigrationReport.none;
   }
-  final MusicAudioIntake hand =
-      intake ?? MusicAudioIntake(db, fileExists: fileExists);
+  final MusicAudioIntakePort hand = intake;
   final List<String> errors = <String>[];
 
   // 1. 属于本地视频来源的行：按来源登记常驻音乐来源。

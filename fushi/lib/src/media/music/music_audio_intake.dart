@@ -31,11 +31,14 @@ import 'package:path/path.dart' as p;
 
 import 'package:drift/drift.dart' show Value;
 
+import 'package:fushi/src/media/music/music_audio_intake_port.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+
+export 'package:fushi/src/media/music/music_audio_intake_port.dart';
 
 /// 登记一个常驻音乐来源并扫描（真 app = [addLocalFolderAsSource]，记下 owner 视频来源
 /// [ownerSourceId]）。返回扫描错误摘要。
@@ -68,47 +71,7 @@ typedef MusicSourceRescanner =
 /// 撤掉一组自动登记的音乐来源（真 app = [retireMusicSources]）。
 typedef MusicSourceRetirer = Future<void> Function(Set<int> sourceIds);
 
-/// 一次交接的结果。
-class MusicAudioIntakeResult {
-  const MusicAudioIntakeResult({
-    this.registeredRoots = const <PlannedMusicRoot>[],
-    this.retiredSourceIds = const <int, OwnedMusicRootRetireReason>{},
-    this.updatedSourceIds = const <int>[],
-    this.importedFiles = const <String>[],
-    this.rescannedSourceIds = const <int>[],
-    this.skippedPaths = const <String>[],
-    this.errors = const <String>[],
-  });
-
-  /// 新登记的常驻音乐来源（「仅此一次」交接时是一次性导入的目录）。
-  final List<PlannedMusicRoot> registeredRoots;
-
-  /// 对账时撤掉的自动来源（id → 原因）。
-  final Map<int, OwnedMusicRootRetireReason> retiredSourceIds;
-
-  /// 对账时改了「含子文件夹」并重扫的自动来源。
-  final List<int> updatedSourceIds;
-
-  /// 逐个「仅此一次」导入的文件。
-  final List<String> importedFiles;
-
-  /// 因为覆盖了交来的文件而重扫的音乐来源。
-  final List<int> rescannedSourceIds;
-
-  /// 没收的（不是本地纯音频、与视频同目录）。
-  final List<String> skippedPaths;
-
-  /// 扫描错误摘要（每个来源 / 文件一条）。
-  final List<String> errors;
-
-  /// 交来的文件里有多少被送进了音乐库的扫描。
-  bool get handedOver =>
-      registeredRoots.isNotEmpty ||
-      importedFiles.isNotEmpty ||
-      rescannedSourceIds.isNotEmpty;
-}
-
-class MusicAudioIntake {
+class MusicAudioIntake implements MusicAudioIntakePort {
   MusicAudioIntake(
     this._db, {
     MusicSourceRegistrar? registerSource,
@@ -276,6 +239,7 @@ class MusicAudioIntake {
   ///   （[ownedMusicRootsToRetire]，只凭正面证据）。存量迁移只交来几个文件，不对账。
   /// - [oneShot]：owner 是「导入文件夹（仅此一次）」的临时行，扫完就删：规划出的根改为
   ///   「仅此一次」导入，不登记常驻来源（否则留下 owner 已不存在的孤儿来源）。
+  @override
   Future<MusicAudioIntakeResult> adoptVideoSourceAudio({
     required SourceLibraryRow owner,
     required List<String> audioPaths,
@@ -401,6 +365,7 @@ class MusicAudioIntake {
   /// [rescanCoveringSources]：已被同一台服务器上现有音乐来源覆盖的音频，顺手重扫覆盖它的
   /// 来源（每个来源一次）。视频扫描不需要（音乐来源自己的重扫会对账）；旧版存量迁移需要
   /// ——它只在文件已是在库曲目之后才删视频行，覆盖来源可能还没扫到这个文件。
+  @override
   Future<MusicAudioIntakeResult> adoptRemoteVideoSourceAudio({
     required SourceLibraryRow videoSource,
     required String scanRoot,
@@ -508,6 +473,7 @@ class MusicAudioIntake {
   /// 已被本地音乐来源覆盖（根 = 所在目录，或递归来源包含它）的，重扫覆盖它的来源——
   /// 文件可能是来源上次扫描之后才放进去的；同一个来源只扫一次。其余逐个「仅此一次」
   /// 导入。不是本地纯音频 / 文件不存在的，原样放进 [MusicAudioIntakeResult.skippedPaths]。
+  @override
   Future<MusicAudioIntakeResult> importAudioFiles(Iterable<String> paths) =>
       _serial(() => _importFiles(paths.toList()));
 
@@ -554,16 +520,6 @@ class MusicAudioIntake {
       errors: errors,
     );
   }
-}
-
-/// 网络来源 [source] 的根在库内命名空间里的写法（与它扫出的条目 / 视频行路径同一口径）：
-/// SFTP 换成 `sftp://主机:端口/远端路径` 稳定地址，WebDAV / AList 的根本身就是地址。
-String remoteSourceNamespacedRoot(SourceLibraryRow source) {
-  if (source.transport != 'sftp') return source.rootPath;
-  return sftpSourceUrlOf(
-    source.rootPath,
-    sftpSourceUrlRootForConfig(decodeSourceConfig(source.configJson)),
-  );
 }
 
 /// 两个网络来源的连接参数指向同一台服务器、同一个账号（AList 看站点根，其余看主机 /
