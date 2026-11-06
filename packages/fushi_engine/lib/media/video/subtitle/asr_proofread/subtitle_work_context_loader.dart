@@ -167,6 +167,7 @@ class SubtitleWorkContextLoader {
       workKey: workKey,
       title: _nonEmpty(work?.title) ?? fallbackTitle,
       originalTitle: originalTitle,
+      originalLanguage: _nonEmpty(work?.originalLanguage),
       kanjiTitle: await _anidbKanjiTitle(videoPaths),
       characters: work == null
           ? const <SubtitleWorkCharacter>[]

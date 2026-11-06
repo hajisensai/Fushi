@@ -21,6 +21,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_complete
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_prompts_zh.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:path/path.dart' as p;
 
@@ -52,23 +54,38 @@ const String kSubtitleProofreadEvidenceRules = '''補足規則(既存字幕):
 11. 「主(既存字幕から補完)」の行は ASR が拾えなかった台詞を既存字幕から補ったもの。前後の文脈と矛盾しなければそのまま残す(直す場合も本文だけを書き、この印は書かない)。''';
 
 /// 一行的证据在提示词里的写法：同语言 `同言語字幕[<来源>]`，他言語 `他言語字幕(<语言>)`。
+/// 普通话用 `同语言字幕[…]` / `他语言字幕(…)`（[SubtitleProofreadLabelsZh]）。
 List<String> formatProofreadEvidenceLines(
   SubtitleEvidenceIndex evidence,
-  SubtitleDraftCue cue,
-) => <String>[
-  for (final SubtitleEvidenceMatch m in evidence.matchesFor(
-    cue.startMs,
-    cue.endMs,
-  ))
-    sameSubtitleLanguage(m.track.language, evidence.targetLanguage)
-        ? '    同言語字幕[${m.track.kind == SubtitleEvidenceKind.ocr ? 'OCR' : '字幕'}]: ${m.text}'
-        : '    他言語字幕(${m.track.language}): ${m.text}',
-];
+  SubtitleDraftCue cue, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
+  final bool zh = language == VideoSubtitleLanguage.mandarin;
+  final String same = zh ? SubtitleProofreadLabelsZh.sameLanguage : '同言語字幕';
+  final String other = zh ? SubtitleProofreadLabelsZh.otherLanguage : '他言語字幕';
+  final String text = zh ? SubtitleProofreadLabelsZh.evidenceText : '字幕';
+  return <String>[
+    for (final SubtitleEvidenceMatch m in evidence.matchesFor(
+      cue.startMs,
+      cue.endMs,
+    ))
+      sameSubtitleLanguage(m.track.language, evidence.targetLanguage)
+          ? '    $same[${m.track.kind == SubtitleEvidenceKind.ocr ? 'OCR' : text}]: ${m.text}'
+          : '    $other(${m.track.language}): ${m.text}',
+  ];
+}
 
-/// 专名表在 S3 提示词里的写法（同 `llm_fix.py --series-glossary`）。
-String formatGlossaryForProofread(SubtitleGlossary glossary) => <String>[
+/// 专名表在 S3 提示词里的写法（同 `llm_fix.py --series-glossary`）。普通话的表不填
+/// 读音，不写空括号，误写标签用 `误`。
+String formatGlossaryForProofread(
+  SubtitleGlossary glossary, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) => <String>[
   for (final SubtitleGlossaryEntry e in glossary.entries)
-    '${e.ja}(${e.reading}) ${e.kind} 誤: ${e.misrecognitions.join('、')}',
+    language == VideoSubtitleLanguage.mandarin
+        ? '${e.ja}${e.reading.trim().isEmpty ? '' : '(${e.reading})'} ${e.kind} '
+              '${SubtitleProofreadLabelsZh.misrecognition}: ${e.misrecognitions.join('、')}'
+        : '${e.ja}(${e.reading}) ${e.kind} 誤: ${e.misrecognitions.join('、')}',
 ].join('\n');
 
 /// `mm:ss.ss`（同 `llm_fix.py` 的 `fmt_t`）。
@@ -110,9 +127,13 @@ class SubtitleProofreader {
     this.contextLines = 3,
     this.concurrency = 4,
     this.maxAttempts = 3,
+    this.language = VideoSubtitleLanguage.japanese,
   }) : assert(batchSize > 0 && concurrency > 0 && maxAttempts > 0);
 
   final AiTextCompleter completer;
+
+  /// 校对语言：选提示词（日语原文 / [kSubtitleProofreadRulesZh]）。
+  final VideoSubtitleLanguage language;
   final int batchSize;
   final int contextLines;
 
@@ -134,7 +155,10 @@ class SubtitleProofreader {
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
     void Function(int doneBatches, int totalBatches)? onProgress,
   }) async {
-    final String glossaryText = formatGlossaryForProofread(glossary);
+    final String glossaryText = formatGlossaryForProofread(
+      glossary,
+      language: language,
+    );
     final SubtitleEvidenceIndex? usable = evidence == null || evidence.isEmpty
         ? null
         : evidence;
@@ -237,6 +261,7 @@ class SubtitleProofreader {
         title: title,
         glossaryText: glossaryText,
         withEvidence: evidence != null,
+        language: language,
       ),
       body: () => buildProofreadBatchBody(
         cues: cues,
@@ -245,6 +270,7 @@ class SubtitleProofreader {
         contextLines: contextLines,
         only: next == lo ? null : <int>{for (int i = next; i < hi; i++) i},
         evidence: evidence,
+        language: language,
       ),
       absorb: (List<String> lines) {
         final int from = next;
@@ -315,13 +341,19 @@ String buildProofreadBatchPrompt({
   required String title,
   required String glossaryText,
   int contextLines = 3,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) => joinAiTextPrompt(
-  buildProofreadStablePrefix(title: title, glossaryText: glossaryText),
+  buildProofreadStablePrefix(
+    title: title,
+    glossaryText: glossaryText,
+    language: language,
+  ),
   buildProofreadBatchBody(
     cues: cues,
     lo: lo,
     hi: hi,
     contextLines: contextLines,
+    language: language,
   ),
 );
 
@@ -330,16 +362,19 @@ String buildProofreadStablePrefix({
   required String title,
   required String glossaryText,
   bool withEvidence = false,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) {
+  final bool zh = language == VideoSubtitleLanguage.mandarin;
   final List<String> lines = <String>[
-    kSubtitleProofreadRules,
-    if (withEvidence) kSubtitleProofreadEvidenceRules,
+    zh ? kSubtitleProofreadRulesZh : kSubtitleProofreadRules,
+    if (withEvidence)
+      zh ? kSubtitleProofreadEvidenceRulesZh : kSubtitleProofreadEvidenceRules,
     '',
-    '作品名: $title',
+    '${zh ? SubtitleProofreadLabelsZh.workTitle : '作品名'}: $title',
   ];
   if (glossaryText.isNotEmpty) {
     lines
-      ..add('固有名詞表:')
+      ..add(zh ? SubtitleProofreadLabelsZh.glossary : '固有名詞表:')
       ..add(glossaryText);
   }
   return lines.join('\n');
@@ -354,34 +389,46 @@ String buildProofreadBatchBody({
   int contextLines = 3,
   Set<int>? only,
   SubtitleEvidenceIndex? evidence,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) {
-  final List<String> lines = <String>['\n参考(直前の行、修正不要):'];
+  final bool zh = language == VideoSubtitleLanguage.mandarin;
+  final List<String> lines = <String>[
+    zh ? SubtitleProofreadLabelsZh.before : '\n参考(直前の行、修正不要):',
+  ];
   for (int i = lo - contextLines < 0 ? 0 : lo - contextLines; i < lo; i++) {
     lines.add('  [${formatProofreadTime(cues[i].startMs)}] ${cues[i].text}');
   }
-  lines.add('\n対象:');
+  lines.add(zh ? SubtitleProofreadLabelsZh.target : '\n対象:');
+  final String readOnly = zh ? SubtitleProofreadLabelsZh.readOnly : '参考';
+  final String main = zh ? SubtitleProofreadLabelsZh.main : '主';
+  final String mainFromEvidence = zh
+      ? SubtitleProofreadLabelsZh.mainFromEvidence
+      : '主(既存字幕から補完)';
+  final String candidate = zh ? SubtitleProofreadLabelsZh.candidate : '候補';
   for (int i = lo; i < hi; i++) {
     final SubtitleDraftCue c = cues[i];
     if (only != null && !only.contains(i)) {
       // 补问剩下的 id 时，已答过的行留在原位当只读上下文。
-      lines.add('  参考 [${formatProofreadTime(c.startMs)}] ${c.text}');
+      lines.add('  $readOnly [${formatProofreadTime(c.startMs)}] ${c.text}');
       continue;
     }
     lines.add(
       'id=$i [${formatProofreadTime(c.startMs)}-'
       '${formatProofreadTime(c.endMs)}] '
-      '${c.origin != null && !c.origin!.startsWith('lyrics:') ? '主(既存字幕から補完)' : '主'}: '
+      '${c.origin != null && !c.origin!.startsWith('lyrics:') ? mainFromEvidence : main}: '
       '${c.text}',
     );
     for (int k = 0; k < c.alternatives.length; k++) {
       if (c.alternatives[k].trim().isEmpty) continue;
-      lines.add('    候補(${k + 1}): ${c.alternatives[k]}');
+      lines.add('    $candidate(${k + 1}): ${c.alternatives[k]}');
     }
     if (evidence != null) {
-      lines.addAll(formatProofreadEvidenceLines(evidence, c));
+      lines.addAll(
+        formatProofreadEvidenceLines(evidence, c, language: language),
+      );
     }
   }
-  lines.add('\n参考(直後の行、修正不要):');
+  lines.add(zh ? SubtitleProofreadLabelsZh.after : '\n参考(直後の行、修正不要):');
   final int end = hi + contextLines > cues.length
       ? cues.length
       : hi + contextLines;

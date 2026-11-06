@@ -10,6 +10,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_prompts_zh.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 
 /// 短于这个时长（5 分钟）的视频才做整段判定（同 `SHORT_S = 300`）。
@@ -42,10 +44,16 @@ const String kSubtitleClipPrompt =
 
 /// [kSubtitleClipPrompt] 里 `{clips}` 之前的部分（规则 + 作品名），拆在 `{clips}`
 /// 前的空行的第一个换行上：`joinAiTextPrompt(前缀, 片段)` 与整段替换逐字相同。
-String buildClipClassifyStablePrefix(String title) {
+String buildClipClassifyStablePrefix(
+  String title, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
   const String marker = '\n{clips}';
-  return kSubtitleClipPrompt
-      .substring(0, kSubtitleClipPrompt.indexOf(marker))
+  final String prompt = language == VideoSubtitleLanguage.mandarin
+      ? kSubtitleClipPromptZh
+      : kSubtitleClipPrompt;
+  return prompt
+      .substring(0, prompt.indexOf(marker))
       .replaceAll('{title}', title);
 }
 
@@ -59,10 +67,17 @@ class SubtitleClipClassification {
 }
 
 class SubtitleClipClassifier {
-  SubtitleClipClassifier({required this.completer, this.maxAttempts = 3});
+  SubtitleClipClassifier({
+    required this.completer,
+    this.maxAttempts = 3,
+    this.language = VideoSubtitleLanguage.japanese,
+  });
 
   final AiTextCompleter completer;
   final int maxAttempts;
+
+  /// 选提示词（日语原文 / [kSubtitleClipPromptZh]）。
+  final VideoSubtitleLanguage language;
 
   /// [clips]：clip id → 该段（校对后）的字幕文本行。缓存 [cacheFile]
   /// （`clip_kinds.json`，`{"kinds": {id: kind}, "usage": {...}}`）里已有的 id 不再问；
@@ -87,7 +102,7 @@ class SubtitleClipClassifier {
     final Map<String, SubtitleClipKind> parsed = <String, SubtitleClipKind>{};
     await runAiLineExchange(
       completer: completer,
-      stablePrefix: buildClipClassifyStablePrefix(title),
+      stablePrefix: buildClipClassifyStablePrefix(title, language: language),
       body: () => <String>[
         for (final String id in todo)
           if (!parsed.containsKey(id)) 'id=$id\n${clips[id]!.join('\n')}',
