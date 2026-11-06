@@ -33,17 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3758 条。点号进各自文件。
-> 共 3727 条。点号进各自文件。
+> 共 3759 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4128](bugs/BUG-4128-interconnect-standalone-subtitle-book-plain.md) | ✅ | ✅ | 互联：独立字幕书（字幕 + 音频、无 EPUB）在对端只显示成一本没有音频的普通书 |
-| [BUG-4127](bugs/BUG-4127-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
-> 共 3729 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4197](bugs/BUG-4197-interconnect-standalone-subtitle-book-plain.md) | ✅ | ✅ | 互联：独立字幕书（字幕 + 音频、无 EPUB）在对端只显示成一本没有音频的普通书 |
 | [BUG-4196](bugs/BUG-4196-music-desktop-lyric-fixed-two-lines.md) | ✅ | ✅ | Music desktop lyric always shows two lines; ignores Sentences shown |
 | [BUG-4195](bugs/BUG-4195-movie-pack-main-by-title.md) | ✅ | ✅ | movie-pack-main-by-title |
 | [BUG-4194](bugs/BUG-4194-video-secondary-forced-anchor-overlaps-pos.md) | ✅ | ✅ | 副字幕被强制置顶后与同轨顶部定位字幕叠字、控制条显隐时一个动一个不动 |

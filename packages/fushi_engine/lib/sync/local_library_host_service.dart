@@ -520,7 +520,7 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
     };
   }
 
-  /// 独立字幕书由 cue 生成的正文 EPUB 的 bookKey（BUG-4128）。[listBooks] 给这些
+  /// 独立字幕书由 cue 生成的正文 EPUB 的 bookKey（BUG-4197）。[listBooks] 给这些
   /// 书标 `subtitleBookBody`：那本字幕书走有声书清单（按 uid），正文由收端按 cue
   /// 再生成，不是一本单独可下的书。
   Future<Set<String>> _standaloneSubtitleBodyKeys() async {

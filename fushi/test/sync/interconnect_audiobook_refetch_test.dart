@@ -506,7 +506,7 @@ void main() {
 
       expect(await soloCueTexts(), <String>['一行目。', '二行目。', '三行目。']);
       final SrtBookRow after = (await clientDb.getSrtBookByUid(_soloUid))!;
-      // BUG-4128：bookKey 指向按 cue 生成的正文（沿用同一本），仍无 Audiobooks 行。
+      // BUG-4197：bookKey 指向按 cue 生成的正文（沿用同一本），仍无 Audiobooks 行。
       expect(after.bookKey, isNotEmpty);
       expect(after.bookKey, before.bookKey, reason: '只更新字幕沿用同一本正文');
       expect(
@@ -557,7 +557,7 @@ void main() {
         contains('_remoteSrtRefetchFor(book.uid) != null'),
         reason: '纯字幕书详情（_srtExtraActions）没按对端候选给入口',
       );
-      // BUG-4128：收下来的独立字幕书 bookKey 指向收端再生成的正文、不再为空；
+      // BUG-4197：收下来的独立字幕书 bookKey 指向收端再生成的正文、不再为空；
       // 入口只按「对端按 uid 列着这本」（上一条断言）给，不能再按 bookKey 为空藏掉。
       expect(books, isNot(contains('if (bookKey.isEmpty &&')));
       expect(
