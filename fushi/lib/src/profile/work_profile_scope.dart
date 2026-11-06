@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
-    show kReaderSourcePersistedKey;
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
     show kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart'

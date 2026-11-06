@@ -4,7 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:material_ui/material_ui.dart';
 
 Widget _host(ThemeData theme, Widget child) => MaterialApp(

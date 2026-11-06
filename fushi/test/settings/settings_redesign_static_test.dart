@@ -47,8 +47,10 @@ void main() {
       'AppModel appModel',
       'WidgetRef ref',
     ],
-    'lib/src/settings/settings_destination.dart': <String>[
+    'lib/src/settings/settings_destination_id.dart': <String>[
       'enum SettingsDestinationId',
+    ],
+    'lib/src/settings/settings_destination.dart': <String>[
       'sealed class SettingsItem',
       'class SettingsSwitchItem',
       'class SettingsSegmentedItem',
@@ -296,7 +298,11 @@ void main() {
     );
     final String schemaSource = readSettingsSchemaCombined();
     final String syncSource = maskComments(readSyncSettingsSchemaSource());
-    final String combined = '$destinationSource\n$schemaSource\n$syncSource';
+    final String destinationIdSource = readNormalizedSource(
+      'lib/src/settings/settings_destination_id.dart',
+    );
+    final String combined =
+        '$destinationSource\n$destinationIdSource\n$schemaSource\n$syncSource';
 
     for (final String token in <String>[
       'SettingsDestinationId.appearance',

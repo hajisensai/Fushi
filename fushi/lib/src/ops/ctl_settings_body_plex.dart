@@ -3,7 +3,7 @@ import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/plex_settings_widget.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// Plex 配置页「用 Plex 账号登录」（plex.tv PIN 授权）在控制通道上的条目。服务器
 /// 列表本身是 schema 行 `services.media_server.plex` 的 cliList；这里只补 PIN 流程。

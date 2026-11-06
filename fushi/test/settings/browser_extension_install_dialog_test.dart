@@ -9,7 +9,7 @@ import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/web_hub_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 浏览器扩展半自动安装引导（分步图文）的 widget 测试。
 ///

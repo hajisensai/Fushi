@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_path_rebase.dart';
 
 void main() {
   group('rebasePath', () {

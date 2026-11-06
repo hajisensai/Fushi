@@ -11,7 +11,7 @@ import 'package:fushi_engine/srs/srs_edit_history.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart' show ErrorLogService;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一台设备在同步里的状态（内核 `state`）。
 enum SrsDeviceState {

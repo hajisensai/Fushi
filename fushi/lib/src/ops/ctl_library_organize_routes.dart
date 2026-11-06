@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/collections/library_organize/library_organize
 
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// AI 整理库的控制通道路由（spec `docs/specs/2026-10-20-ai-library-organize-design.md`
 /// §10.1）：CLI `library organize` / `organize-history` / `organize-undo`

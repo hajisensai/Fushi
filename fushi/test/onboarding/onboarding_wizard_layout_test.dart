@@ -7,7 +7,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart' show FushiPageScaffold;
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 桌面自绘标题行（`FushiDesktopTitleBar`）的高度：它以 MediaQuery 顶部 padding

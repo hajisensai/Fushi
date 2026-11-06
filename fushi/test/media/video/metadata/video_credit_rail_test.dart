@@ -10,7 +10,7 @@ import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 VideoMetadataCreditSummary _credit({
   required String kind,

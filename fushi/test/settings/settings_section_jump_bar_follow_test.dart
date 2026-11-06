@@ -5,7 +5,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 
 const List<(String, String)> _sections = <(String, String)>[
   ('hdr', 'HDR'),

@@ -1,6 +1,0 @@
-## BUG-4102 · WebDAV 同步根 PROPFIND href 含裸日文字符时 Uri.decodeFull 抛 Illegal percent encoding
-- **报告**：2026-11-05（用户：应用内反馈 N9pbmAMEHZ，Windows，3.3.0-debug.23471）
-- **真实性**：✅ 真 bug。点同步提示「1 失败」，对比差异报 `prune root spill (list root): Invalid argument(s): Illegal percent encoding in URI`；删掉一本带假名的日文书后恢复。根因 `fushi/lib/src/sync/webdav_ops.dart:524` 的 `WebDavOps.decodedDavHref`（旧实现直接 `Uri.decodeFull(rawHref)`）及 `parsePropfindResponse` 无 displayname 时的回退（`webdav_ops.dart:489`）`Uri.decodeFull(cleaned.split('/').last)`：Dart 的 `Uri.decodeFull` 只要串里同时出现非 ASCII 字符（`codeUnit > 0x7F`）就走慢路径并抛 `ArgumentError('Illegal percent encoding in URI')`（实测 `Uri.decodeFull('/dav/日本語/')` 即抛）。用户的 WebDAV 服务端把 href 里的日文原样吐出（未百分号编码），于是整份根目录 PROPFIND 回包解析失败。英文书文件夹名里的 `%3A` 是 ttu sanitize 对冒号的正常编码，不是成因。
-- **[x] ① 已修复** — `decodedDavHref` / 新增 `readableDavSegment` 改为单趟宽松解码 `_lenientDavDecode`：只解合法 `%XX` 串（按 UTF-8，解不出保留原转义），裸字符（含非 ASCII）原样保留、不成对的 `%` 当字面 `%`，`%` `#` `?` 照旧重新转义，href 原样当 URL 用仍命中服务端那条资源。
-- **[x] ② 已加自动化测试** — `fushi/test/sync/webdav_raw_href_decode_test.dart`：纯函数用例 + 本地真 HTTP 假 WebDAV 服务端回裸日文 href，断言列根不抛、书名正确、用回包 href 继续 PROPFIND 命中服务端真实目录。
-- **备注**：服务端若连 `%` 也不编码（整串裸 href），字面 `%3A` 与 `:` 的转义天然有歧义，这里按 RFC（href 是 URI）解；真机复测本轮未做。

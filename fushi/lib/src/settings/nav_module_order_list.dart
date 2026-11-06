@@ -6,7 +6,12 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 /// 设置 → 外观 → 功能模块 里「有底栏 tab 的模块」那一块：每行一个开关，整块可
 /// 拖动排序（鼠标按下即拖、触屏长按拖）。拖拽只吃指针，所以每行另有「上移 /

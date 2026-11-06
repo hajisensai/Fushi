@@ -5,8 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/web_browser/features/play_in_fushi/play_in_fushi_feature.dart'
-    show kWebBrowserHoldMediaScript, kWebBrowserReleaseMediaScript;
+import 'package:fushi/src/web_browser/features/play_in_fushi/web_browser_media_hold_scripts.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 

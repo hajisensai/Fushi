@@ -6836,7 +6836,7 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
 // 按整宽参与换行 → 摘类……压缩宽 + gap + 按钮组恰好等于行宽，翻不翻只看整数取整。
 // 不是滚动容器的词头（理论上不该出现）不判定，宁可不铺满也不振荡。
 //
-// 读写分两拍、写挪到下一帧（BUG-4102，反馈 3op205DyWN）：
+// 读写分两拍、写挪到下一帧（BUG-4106，反馈 3op205DyWN）：
 //   · ResizeObserver 回调里**同步**挂 / 摘类会改被观察的 .entry-header 自身尺寸（叠放与否
 //     改它的高）。它正是本轮投递里最浅的目标，规范规定这种变化只能留到下一帧，浏览器于是
 //     每次都抛「ResizeObserver loop completed with undelivered notifications」：弹窗宽度

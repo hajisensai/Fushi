@@ -20,10 +20,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 歌词模式「新版」播放控件（`LyricsControlsStyle.modern`）里与设计系统无关的部分：
 // 宽屏几何（浮岛 / 进度线 / 时间行 / 歌词矩形）、字号档位、右岛测宽收进 ⋯、读数、
-// 每秒轮询、窄屏可收起播放卡的几何与展开 / 收起交互、进场动效、底栏自动隐藏的
-// 淡入淡出。MD3（`Md3ModernLyricsPlayerDesign`）与 Apple
-// （`AppleModernLyricsPlayerDesign`）两套外观只各自画按钮 / 底色 / 字色，几何与
-// 交互出自这里同一份，歌词矩形与覆盖层的自动隐藏判据才不会两边各算一套。
+// 每秒轮询、窄屏可收起播放卡的几何与展开 / 收起交互、进场动效、底栏压暗。MD3
+// （`Md3ModernLyricsPlayerDesign`）与 Apple（`AppleModernLyricsPlayerDesign`）两套
+// 外观只各自画按钮 / 底色 / 字色，几何与交互出自这里同一份，歌词矩形不会两边各算
+// 一套。宽屏底栏常驻（用户 2026-11-04「底部控制栏做成常驻不要收起」）。
 
 /// 宽屏底栏的播放键边长（左右岛高度至少这么高）。
 const double kLyricsModernWidePlaySize = 64;
@@ -46,10 +46,6 @@ const double kLyricsModernSpeedTileWidth = 76;
 const double kLyricsModernWideMargin = 24;
 const double kLyricsModernIslandGap = 16;
 const double kLyricsModernSeekBand = 24;
-
-/// 宽屏底栏自动隐藏后，歌词区底边离窗口底边的距离：贴底细进度线所在的带子，
-/// 也是隐藏后唯一的唤出区（正文上的指针活动不唤出），所以给到 24 便于移过去。
-const double kLyricsModernImmersiveBottom = 24;
 
 /// 右岛动作收进 ⋯ 的优先级（高 → 低）：放不下时从末尾起收。显示顺序仍按用户的
 /// 按钮布局（[LyricsControlLayout]）。
@@ -129,7 +125,7 @@ class LyricsModernWideText {
 }
 
 /// 新版宽屏几何：浮岛 / 进度线 / 时间行 / 歌词矩形出自同一份计算（两套设计系统
-/// 与覆盖层的自动隐藏判据共用）。
+/// 共用）。
 @immutable
 class LyricsModernWideGeometry {
   const LyricsModernWideGeometry._({
@@ -212,17 +208,6 @@ class LyricsModernWideGeometry {
   final double timeTop;
   final Rect lyrics;
 
-  /// 底栏隐藏后的歌词矩形：底边一直伸到贴底细进度线上方。
-  Rect immersiveLyrics(Size size, EdgeInsets padding) => Rect.fromLTRB(
-    lyrics.left,
-    lyrics.top,
-    lyrics.right,
-    math.max(
-      lyrics.bottom,
-      size.height - padding.bottom - kLyricsModernImmersiveBottom,
-    ),
-  );
-
   /// 插图弹出卡的最大框：320×460（1920 宽及以上 400×560），高度不超过可用空间。
   Size popupSize(Size page, EdgeInsets padding) {
     final bool big = page.width >= 1900;
@@ -234,63 +219,24 @@ class LyricsModernWideGeometry {
   }
 }
 
-/// 宽屏底栏件的显隐：隐藏时淡出（`FushiMotion.medium`）且不吃指针（第一下点击
-/// 只唤出底栏，不误触看不见的钮）。
-class LyricsModernChromeFade extends StatelessWidget {
-  const LyricsModernChromeFade({
-    required this.hidden,
-    required this.child,
-    this.ignorePointer = true,
-    super.key,
-  });
-
-  /// 底栏已自动隐藏。
-  final bool hidden;
-  final Widget child;
-
-  /// false = 只淡、不拦指针（本身就不吃指针的装饰层）。
-  final bool ignorePointer;
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget faded = AnimatedOpacity(
-      opacity: hidden ? 0 : 1,
-      duration: fushiMotionDuration(context, FushiMotion.medium),
-      curve: FushiMotion.standard,
-      child: child,
-    );
-    if (!ignorePointer) return faded;
-    return IgnorePointer(ignoring: hidden, child: faded);
-  }
-}
-
-/// 无底板底栏下面的一层渐隐压暗（保证按钮 / 文字在背景上可读）。随底栏一起淡出，
-/// 不吃指针。
+/// 无底板底栏下面的一层渐隐压暗（保证按钮 / 文字在背景上可读）。不吃指针。
 class LyricsModernBottomScrim extends StatelessWidget {
   const LyricsModernBottomScrim({
-    required this.hidden,
     this.color = const Color(0x38000000),
     super.key,
   });
-
-  final bool hidden;
 
   /// 底端压暗色（顶端渐隐到全透明）。
   final Color color;
 
   @override
   Widget build(BuildContext context) => IgnorePointer(
-    child: AnimatedOpacity(
-      opacity: hidden ? 0 : 1,
-      duration: fushiMotionDuration(context, FushiMotion.medium),
-      curve: FushiMotion.standard,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[color.withValues(alpha: 0), color],
-          ),
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[color.withValues(alpha: 0), color],
         ),
       ),
     ),

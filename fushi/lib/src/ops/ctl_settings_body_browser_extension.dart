@@ -6,7 +6,7 @@ import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 桌面「浏览器扩展」页（`BrowserExtensionPage`，安装助手）在控制通道上的条目。

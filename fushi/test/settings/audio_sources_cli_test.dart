@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/src/settings/audio_sources_cli.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';

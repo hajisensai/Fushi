@@ -8,7 +8,7 @@ import 'package:fushi/src/media/manga/manga_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/user_media_servers_view.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 
 /// 书 / 漫画「媒体服务器」页签：只在配了可用服务器时出现（随配置变化出现 /

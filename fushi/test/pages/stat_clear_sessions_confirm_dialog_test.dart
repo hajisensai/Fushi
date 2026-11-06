@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import '../helpers/glass_unwrap.dart';
 
 /// 「清除全部会话记录」的防呆确认（用户 2026-09-10：「再加个清除所有会话记录并且

@@ -58,8 +58,9 @@ let timers=new Map(), nextId=1;
 function setTimeout(fn,ms){ const id=nextId++; timers.set(id,{fn,ms}); return id; }
 function clearTimeout(id){ timers.delete(id); }
 function runTimers(){ const t=[...timers.values()]; timers.clear(); t.forEach(x=>x.fn()); }
-var _animId=0, _currentIdx=2, _cues=[], _lySw=null;
+var _currentIdx=2, _cues=[], _lySw=null;
 function scrollToCenter(){}
+function _lyShiftFreeze(){}
 function _lySweepProgressNow(){ return 0; }
 function _lySweepRelayout(){}
 function _lySweepClearCue(){}

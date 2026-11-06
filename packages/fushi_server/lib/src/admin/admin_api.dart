@@ -561,8 +561,8 @@ class AdminApi {
     final String path = (body['path'] ?? '').toString().trim();
     if (path.isEmpty) throw const FormatException('path required');
     final String kind = (body['kind'] ?? 'video').toString();
-    if (kind != 'video' && kind != 'book') {
-      throw const FormatException('kind must be video or book');
+    if (!kServerLibraryRootKinds.contains(kind)) {
+      throw FormatException(unsupportedLibraryKindMessage(kind));
     }
     final String id = (body['id'] ?? '').toString().trim().isEmpty
         ? 'lib${DateTime.now().millisecondsSinceEpoch}'
@@ -639,6 +639,23 @@ class AdminApi {
 
   /// 按库根 kind 分派的 force 对账（见 [_removeLibrary]）。
   Future<LibraryPruneReport> _purgeRoot(LibraryRootConfig library) async {
+    if (library.kind == kAudiobookSourceMediaKind) {
+      final SourceLibraryRow? source =
+          await LibraryScanner.findLocalSourceByMediaKind(
+            ctx.db,
+            library.path,
+            kAudiobookSourceMediaKind,
+          );
+      if (source == null) {
+        return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
+      }
+      return LibraryScanner.pruneAudiobookSource(
+        db: ctx.db,
+        source: source,
+        root: Directory(library.path),
+        force: true,
+      );
+    }
     final SourceLibraryKind? kind = SourceLibraryKind.tryParse(library.kind);
     switch (kind) {
       case SourceLibraryKind.video:
@@ -671,7 +688,7 @@ class AdminApi {
       case SourceLibraryKind.music:
       case null:
         throw FormatException(
-          'library "${library.id}" has unsupported kind=${library.kind}',
+          'library "${library.id}": ${unsupportedLibraryKindMessage(library.kind)}',
         );
     }
   }

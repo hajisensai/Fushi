@@ -5,7 +5,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 自定义主题编辑页（`CustomThemePage`，「外观 › 主题」长按色卡进入，正文是自绘
 /// 编辑器）在控制通道上的条目。

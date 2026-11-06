@@ -21,7 +21,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一个预置包当前所处的阶段。
 enum SrsStarterPackPhase { idle, downloading, importing, failed }

@@ -6,6 +6,7 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.d
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_adblock.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser_extension.dart';
@@ -14,7 +15,8 @@ import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 Future<void> _openDataPage(SettingsContext c, WebBrowserDataPage page) =>
     openWebBrowserDataPage(

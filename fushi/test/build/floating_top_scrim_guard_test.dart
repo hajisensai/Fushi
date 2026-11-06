@@ -213,7 +213,7 @@ void main() {
         // Narrow settings owns its header without the embedded page shell.
         'lib/src/settings/settings_home_page.dart',
         // The shared detail shell owns one scrim above its scrolling body.
-        'lib/src/settings/settings_kit.dart',
+        'lib/src/settings/settings_kit_core.dart',
       };
       final List<String> offenders = <String>[];
       for (final FileSystemEntity entity in Directory(
@@ -319,7 +319,7 @@ void main() {
       ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String path = entity.path.replaceAll(r'\', '/');
-        if (path.endsWith('/settings/settings_kit.dart')) continue;
+        if (path.endsWith('/settings/settings_kit_core.dart')) continue;
         final String source = entity.readAsStringSync();
         final int calls = 'SettingsKitScaffold('.allMatches(source).length;
         if (calls == 0) continue;

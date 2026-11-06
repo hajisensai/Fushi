@@ -22,10 +22,9 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAnkiSettingsPrefKey,
         kLibraryManualOrderPrefKeyPrefix,
         kSectionTabOrderPrefKeyPrefix,
+        kSrsLapisMigrationReminderPrefKey,
         kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/srs/srs_providers.dart'
-    show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
 class ProfileKeys {

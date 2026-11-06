@@ -1,4 +1,5 @@
-import 'package:fushi/media.dart' show MediaItem, ReaderFushiSource;
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show ShelfReadStatus, classifyShelfReadStatus;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'

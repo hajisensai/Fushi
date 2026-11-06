@@ -5,7 +5,7 @@
 library;
 
 import 'package:fushi/src/srs/srs_sync_progress.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 一轮复习同步此刻的一行描述，如「同步复习数据 (123/2048)」。
 String srsSyncProgressLine(SrsSyncProgress p) {

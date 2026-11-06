@@ -14,7 +14,11 @@ import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
 import 'package:fushi/src/srs/srs_field_catalog.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 
 /// 制卡映射（Yomitan 写法的 `{expression} {reading}`）→ 一句人话；空 = 制卡不自动填。
 String srsMiningSlotText(String slot) => slot.trim().isEmpty

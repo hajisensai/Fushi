@@ -1,7 +1,14 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_pdf_source.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/history_reader_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 
 /// A source for the [ReaderMediaType], which handles primarily text-based
 /// media.

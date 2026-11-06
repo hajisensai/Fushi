@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/sync/extension_image_ocr.dart';
+import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_messages.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';

@@ -10,7 +10,6 @@ import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
@@ -29,7 +28,6 @@ import 'package:fushi/src/utils/misc/icon_seed_color.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/fushi_m3e_misc_themes.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
@@ -2849,11 +2847,6 @@ class ThemeNotifier extends ChangeNotifier {
         });
   }
 }
-
-final themeProvider = ChangeNotifierProvider<ThemeNotifier>((ref) {
-  final appModel = ref.watch(appProvider);
-  return appModel.themeNotifier;
-});
 
 /// 全局输入框主题（用户 2026-10-04：「所有输入框都很丑」的根因层）。
 ///

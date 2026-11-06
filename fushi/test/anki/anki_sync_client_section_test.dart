@@ -7,7 +7,7 @@ import 'package:fushi/src/anki/sync_client/anki_sync_client_section.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart';

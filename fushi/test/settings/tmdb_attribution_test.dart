@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// TODO-2525：TMDB 署名 = **合约义务**（Terms of Use 第 3 节），署名文字 + 官方标识
 /// 缺一不可，且标识不得改色 / 改比例 / 翻转 / 旋转 / 裁剪。

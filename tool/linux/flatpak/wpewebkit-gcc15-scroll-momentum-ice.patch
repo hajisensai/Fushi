@@ -1,0 +1,17 @@
+GCC 15.2 (GNOME 49 SDK) hits an internal compiler error in expand_debug_locations
+(cfgexpand.cc:6042) on this function at -O3 -g. Turning off variable-tracking
+assignments for just this function avoids it; the rest of WebKit keeps the flags.
+
+--- a/Source/WebCore/platform/ScrollAnimationMomentum.cpp
++++ b/Source/WebCore/platform/ScrollAnimationMomentum.cpp
+@@ -93,6 +93,10 @@
+     ScrollAnimation::stop();
+ }
+ 
++#if COMPILER(GCC)
++// GCC 15.2 ICEs in expand_debug_locations on this function at -O3 -g.
++__attribute__((optimize("no-var-tracking-assignments")))
++#endif
+ void ScrollAnimationMomentum::serviceAnimation(MonotonicTime currentTime)
+ {
+     if (!m_momentumCalculator) {

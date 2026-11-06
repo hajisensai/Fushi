@@ -89,7 +89,11 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarFab, FushiToolbarItem;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope, FushiTitleBarColors, fushiTitleBarColorsOn;
+    show
+        FushiTitleBarColorScope,
+        FushiTitleBarColors,
+        FushiTitleBarRevealScope,
+        fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
@@ -149,8 +153,20 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
-import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/manga/reader/manga_jump_point.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
@@ -6698,7 +6714,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return WindowFullscreenHost(
       child: FushiTitleBarColorScope(
         colors: _desktopTitleBarColors(context),
-        child: page,
+        // 顶栏（固定 / 悬浮唤出）画着时沉浸标题行跟着浮出：唤出工具栏即可拖窗口 /
+        // 点窗口按钮（BUG-4115，与视频页控制条、EPUB 阅读器同一套）；栏收起时
+        // 标题行照旧隐去，页图顶端照常点。判据与顶栏的 [MangaChromeReveal] 同源。
+        child: FushiTitleBarRevealScope(
+          revealed: mangaChromeBarPainted(
+            floating: _chromeFloating,
+            chromeVisible: _chromeVisible,
+            transientVisible: _chrome.transientVisible,
+            contentReady: _chromeActionsEnabled,
+          ),
+          child: page,
+        ),
       ),
     );
   }

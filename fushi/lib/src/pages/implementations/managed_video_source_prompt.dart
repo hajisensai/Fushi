@@ -1,7 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「后端没问题、只是还没有受管视频来源」的统一出口（发现页 / 详情页版）。
 ///

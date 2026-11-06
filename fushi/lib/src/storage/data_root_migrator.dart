@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi_engine/media/media_pref_keys.dart' show dbSourcePrefKey;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show SubtitleSource;
 import 'package:fushi/src/models/local_audio_manager.dart'
@@ -16,7 +16,7 @@ import 'package:fushi/src/profile/profile_keys.dart' show ProfileKeys;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/path_rebase_coverage.dart';
 import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart';
-import 'package:fushi/src/sync/backup_service.dart'
+import 'package:fushi/src/sync/backup_path_rebase.dart'
     show
         joinPrefTag,
         normalizeAudioSourceConfigsJson,

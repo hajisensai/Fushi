@@ -7,7 +7,16 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// 「查看更新日志」页（TODO-1310）：应用内在线拉取本仓库的 app 版本 GitHub releases
 /// （[isAppVersionRelease]：只挂资产的 `vendored-binaries` / `flutter-engine-*` 等不算），

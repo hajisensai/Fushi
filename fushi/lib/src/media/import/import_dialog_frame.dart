@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 各导入对话框逐字相同的外框脚手架（FushiDialogFrame 560/0.86 +
 /// FushiModalSheetFrame 同 padding + Wrap footer，空 actions 时无 footer）。

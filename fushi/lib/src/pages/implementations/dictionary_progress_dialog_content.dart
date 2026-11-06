@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 class DictionaryProgressDialogContent extends StatelessWidget {
   const DictionaryProgressDialogContent({

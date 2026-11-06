@@ -15,7 +15,12 @@ import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 验证码重发冷却（服务端另有按 IP / 邮箱的限流）。
 const int kLeaderboardCodeCooldownSeconds = 60;

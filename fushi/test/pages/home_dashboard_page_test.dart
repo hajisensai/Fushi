@@ -13,8 +13,9 @@ import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion;
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/media_cover_source.dart'
     show mediaCoverFallbackIcon;
 import 'package:fushi/src/anki/anki_view_model.dart';

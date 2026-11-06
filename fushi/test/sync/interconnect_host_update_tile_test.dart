@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_host_update_tile.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart'
     show kHostUpdateErrorCancelled;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:material_ui/material_ui.dart';
 

@@ -20,8 +20,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart' show FushiAdjustableSegmented;
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:fushi/src/startup/observe_blank_detector.dart';

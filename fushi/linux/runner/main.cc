@@ -1,7 +1,30 @@
+#include <langinfo.h>
+
+#include <clocale>
+
 #include "external_open_handoff.h"
 #include "my_application.h"
 
 namespace {
+
+bool IsCLocaleName(const gchar* name) {
+  return g_strcmp0(name, "C") == 0 || g_strcmp0(name, "POSIX") == 0;
+}
+
+// Steam 游戏模式（gamescope 会话）以 LC_ALL=C 启动非 Steam 游戏：既遮住会话语言
+// (LANG)，又让字符集变成纯 ASCII。Flatpak 里 WebKit 把整份环境（含 flatpak 自设、带
+// 📦 的 PS1）当参数交给 flatpak-spawn，ASCII 下转码失败 → Web 进程起不来 → app abort。
+// 所以：LC_ALL=C/POSIX 时去掉它回到会话语言；最终仍是 ASCII（没设语言 / 语言包缺失）
+// 就用同语义的 C.UTF-8。必须在 GTK / 任何子进程之前跑。
+void EnsureUtf8Locale() {
+  if (IsCLocaleName(g_getenv("LC_ALL"))) g_unsetenv("LC_ALL");
+  const char* locale = setlocale(LC_ALL, "");
+  if (locale == nullptr ||
+      g_strcmp0(nl_langinfo(CODESET), "ANSI_X3.4-1968") == 0) {
+    g_setenv("LC_ALL", "C.UTF-8", TRUE);
+    setlocale(LC_ALL, "");
+  }
+}
 
 // 等旧实例让出单实例 D-Bus 名的上界（数据迁移重启与「首实例正在退出」共用）。
 // 下限由 Dart 侧退出看门狗推出：main.dart 的 `_exitWatchdogTimeout` = 退出链各串行
@@ -25,6 +48,7 @@ int RunApplication(int argc, char** argv,
 }  // namespace
 
 int main(int argc, char** argv) {
+  EnsureUtf8Locale();
   // 数据迁移自动重启：先等旧实例让出单实例名，再注册（见该函数注释）。
   fushi_wait_for_previous_instance_exit(argc, argv, APPLICATION_ID,
                                         kPreviousInstanceWaitMs);

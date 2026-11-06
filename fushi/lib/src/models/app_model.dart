@@ -55,16 +55,84 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart'
     show systemTtsDictionaryLanguages;
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/actions/add_to_stash_action.dart';
+import 'package:fushi/src/creator/actions/copy_to_clipboard_action.dart';
+import 'package:fushi/src/creator/actions/play_audio_action.dart';
+import 'package:fushi/src/creator/actions/share_action.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/enhancements/audio_recorder_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/camera_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/clear_field_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/crop_image_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/local_audio_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/open_stash_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/pick_audio_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/pick_image_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/pop_from_stash_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/save_tags_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/search_dictionary_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/sentence_picker_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/text_segmentation_enhancement.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/creator/fields/audio_field.dart';
+import 'package:fushi/src/creator/fields/audio_sentence_field.dart';
+import 'package:fushi/src/creator/fields/cloze_after_field.dart';
+import 'package:fushi/src/creator/fields/cloze_before_field.dart';
+import 'package:fushi/src/creator/fields/cloze_inside_field.dart';
+import 'package:fushi/src/creator/fields/collapsed_meaning_field.dart';
+import 'package:fushi/src/creator/fields/context_field.dart';
+import 'package:fushi/src/creator/fields/cue_sentence_field.dart';
+import 'package:fushi/src/creator/fields/expanded_meaning_field.dart';
+import 'package:fushi/src/creator/fields/frequency_field.dart';
+import 'package:fushi/src/creator/fields/furigana_field.dart';
+import 'package:fushi/src/creator/fields/hidden_meaning_field.dart';
+import 'package:fushi/src/creator/fields/image_field.dart';
+import 'package:fushi/src/creator/fields/meaning_field.dart';
+import 'package:fushi/src/creator/fields/notes_field.dart';
+import 'package:fushi/src/creator/fields/pitch_accent_field.dart';
+import 'package:fushi/src/creator/fields/reading_field.dart';
+import 'package:fushi/src/creator/fields/sentence_field.dart';
+import 'package:fushi/src/creator/fields/tags_field.dart';
+import 'package:fushi/src/creator/fields/term_field.dart';
+import 'package:fushi/src/creator/quick_action.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/models/content_language.dart'
     show resolveContentLanguage;
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_pdf_source.dart';
+import 'package:fushi/src/media/types/dictionary_media_type.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/example_sentences_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/open_stash_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/profile_management_page.dart';
+import 'package:fushi/src/pages/implementations/text_segmentation_dialog_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
+import 'package:fushi/src/utils/popup_theme_css.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
@@ -111,7 +179,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
-import 'package:fushi/src/models/browser_extension_font_catalog.dart';
+import 'package:fushi/src/sync/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -250,10 +318,10 @@ import 'package:fushi_engine/media/video/download/video_download_subtitle_langua
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_work_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/download_subtitle_retry.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
@@ -388,7 +456,7 @@ import 'package:fushi/src/sync/interconnect_post_transport.dart'
     show kInterconnectConnectTimeout;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
@@ -428,7 +496,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
-import 'package:fushi/src/sync/extension_image_ocr.dart';
+import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -2785,6 +2853,18 @@ class AppModel with ChangeNotifier {
       seq: homeDictionaryTabRequest.value.seq + 1,
       focusSearch: focusSearch,
     );
+  }
+
+  /// app 外来的显式查词（`fushi://lookup` 深链、`fushi_cli lookup`）的统一出口：
+  /// 排队待查词，再请求打开查词 tab。
+  ///
+  /// 只排队不切 tab 时，词会一直挂在 [DesktopLookupService.pendingText] 上——唯一的
+  /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4117）。
+  /// 唤前台由调用方负责（深链由原生层前置主窗，ctl 先调 `_focusMainWindowForCtl`）。
+  void queueExternalLookup(String text) {
+    if (DesktopLookupService.instance.triggerLookup(text)) {
+      requestHomeDictionaryTab();
+    }
   }
 
   /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
@@ -6621,22 +6701,12 @@ class AppModel with ChangeNotifier {
     final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
     if (service == null || service.registry.providers.isEmpty) return;
     _downloadSubtitleRetryRunning = true;
-    // 一轮共用一个解析器（惰性：没有到期行就不扫）。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
     try {
       final DownloadSubtitleRetryReport report =
-          await retryUnavailableDownloadSubtitles(
+          await runDownloadSubtitleRetryRound(
             database: database,
-            // 内嵌轨选择不挡：这些分集本该由下载流水线装上 sidecar。
-            backfill: (String videoId) => backfillLibraryVideoSubtitle(
-              database: database,
-              service: service,
-              videoId: videoId,
-              confirmedIdentities: confirmedIdentities,
-              seriesLanguage: _seriesSubtitleLanguage,
-              embeddedSelectionBlocks: false,
-            ),
+            service: service,
+            seriesLanguage: _seriesSubtitleLanguage,
             now: DateTime.now(),
           );
       if (report.attempted > 0) {
@@ -7531,41 +7601,12 @@ class AppModel with ChangeNotifier {
     // 探一堆视频时长。
     if (service == null || service.registry.providers.isEmpty) return;
 
-    final Set<String> withSubtitle = <String>{
-      for (final VideoBookRow book in notice.work.members)
-        if (book.subtitleSource?.trim().isNotEmpty == true) book.bookUid,
-    };
-    final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
-      members: notice.work.members,
-      metadata: notice.metadata,
-      hasExistingSubtitle: withSubtitle.contains,
-      // 单文件作品没有合集，也就没有每系列记忆可查。
-      explicitLanguage: notice.work.collection == null
-          ? null
-          : _seriesSubtitleLanguage(
-              notice.work.collection!.name.trim().toLowerCase(),
-            ),
+    await backfillScrapedWorkSubtitles(
+      database: database,
+      service: service,
+      notice: notice,
+      seriesLanguage: _seriesSubtitleLanguage,
     );
-    // 整季共用一个解析器：下载文件行只扫一次，不是逐集全表扫描。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
-    for (final SubtitleBackfillTarget scraped in targets) {
-      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3926）。
-      final SubtitleBackfillTarget target = scraped.withMedia(
-        await withDownloadConfirmedIdentity(
-          confirmedIdentities,
-          videoPath: scraped.videoPath,
-          media: scraped.media,
-        ),
-      );
-      final SubtitleBackfillResult result = await service.backfill(target);
-      if (result.installed) {
-        debugPrint(
-          '[subtitle-backfill] installed ${result.language} for '
-          '${target.bookUid}: ${result.installedPath}',
-        );
-      }
-    }
   }
 
   /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务
@@ -10236,6 +10277,10 @@ class AppModel with ChangeNotifier {
   /// 取自 [PlatformServices]，理由同上。
   GamesModuleForm get gamesModuleForm =>
       GamesModuleForm.on(isWindows: platformServices.isWindows);
+
+  /// games 模块是否要挂外部 texthooker 台词页（非 Windows 桌面）。
+  bool get gamesOffersExternalTexthooker => gamesModuleForm
+      .offersExternalTexthooker(isDesktop: platformServices.isDesktop);
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;

@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// host 配对审批的「允许 · 这是我的设备」/「仅互联」：选择只写进**本会话**的
 /// [FushiPairOwnerDeviceGrant]（server 在 confirm 时结合设备钥匙验签结论落成

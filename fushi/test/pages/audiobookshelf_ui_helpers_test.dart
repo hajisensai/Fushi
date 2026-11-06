@@ -7,7 +7,7 @@ import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.d
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';
 import 'package:fushi_engine/media/external_provider.dart';

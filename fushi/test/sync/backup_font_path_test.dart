@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_path_rebase.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'temp_dir_cleanup.dart';
 

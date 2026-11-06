@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fushi
+Comment=Read, watch and mine Japanese
+Exec=fushi %U
+Icon=app.fushi.reader
+Terminal=false
+Categories=Education;Languages;
+MimeType=x-scheme-handler/fushi;application/epub+zip;
+StartupWMClass=app.fushi.reader

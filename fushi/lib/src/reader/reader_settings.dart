@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/profile/work_profile_scope.dart';
@@ -14,7 +15,6 @@ import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
@@ -120,7 +120,7 @@ class ReaderSettings {
   /// 上下文里用。存在的理由是 [ReaderSettings] 的读取器全是同步 getter，但构造
   /// 出来的实例缓存是**空的**——没有这一步，`ReaderSettings(db).dictionaryFonts`
   /// 恒为空列表，和「用户什么都没配」不可区分（见
-  /// [ReaderFushiSource.resolveEffectiveReaderSettings] 的说明）。
+  /// `ReaderFushiSource.resolveEffectiveReaderSettings` 的说明）。
   ///
   /// 迁移（边距/字体目录）由主进程的初始化路径负责且幂等，旁路只读消费方不需要、
   /// 也不应该在只读路径上写盘。
@@ -773,15 +773,15 @@ class ReaderSettings {
       _set<int>('wheel_page_turn_interval', v);
 
   // ── 翻页动画（只在翻页 / paginated 模式生效）────────────────────────
-  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认淡入淡出。
+  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认卷页。
 
   static const String pageTurnAnimationKey = 'page_turn_animation';
   static const String pageTurnAnimationSpeedKey = 'page_turn_animation_speed';
   static const String pageTurnFollowDragKey = 'page_turn_follow_drag';
 
-  /// 小说阅读器翻页效果的出厂默认（用户拍板：淡入淡出）。
+  /// 小说阅读器翻页效果的出厂默认（用户 2026-11-06 拍板：卷页，原为淡入淡出）。
   static const PageTurnAnimation defaultPageTurnAnimation =
-      PageTurnAnimation.fade;
+      PageTurnAnimation.curl;
   static const PageTurnAnimationSpeed defaultPageTurnAnimationSpeed =
       PageTurnAnimationSpeed.normal;
   static const bool defaultPageTurnFollowDrag = true;

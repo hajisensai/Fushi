@@ -14,7 +14,7 @@
 library;
 
 import 'package:fushi/src/media/links/media_link_entries.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/people/person_identity.dart';
 import 'package:fushi_engine/media/people/vndb_voice_cast.dart';

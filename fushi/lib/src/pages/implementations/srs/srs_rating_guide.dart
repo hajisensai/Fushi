@@ -17,7 +17,13 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
 import 'package:fushi/src/srs/srs_providers.dart' show srsRunLogged;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 
 /// 偏好：评分说明是否已被关掉（缺省 = 没关，第一次复习时显示）。
 const String kSrsRatingGuideDismissedPrefKey = 'srs_rating_guide_dismissed';

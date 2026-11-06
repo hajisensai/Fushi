@@ -21,7 +21,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsKitScaffold;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsKitScaffold;
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;

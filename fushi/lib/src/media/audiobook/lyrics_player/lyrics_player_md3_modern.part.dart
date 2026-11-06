@@ -135,24 +135,11 @@ class _ModernNarrowGeometry extends LyricsModernCardGeometry {
 
 /// 新版 MD3 歌词播放器外观（经典见 [Md3LyricsPlayerDesign]）。
 class Md3ModernLyricsPlayerDesign extends LyricsPlayerDesign {
-  const Md3ModernLyricsPlayerDesign({
-    required this.compactExpanded,
-    this.wideChromeHidden = false,
-    this.wideLyricsExpanded = false,
-  });
+  const Md3ModernLyricsPlayerDesign({required this.compactExpanded});
 
   /// 窄屏播放卡展开（目标态）。歌词矩形直接按目标态算：WebView 不随卡片高度逐帧
   /// 改尺寸（平台视图逐帧 resize 既费又会让歌词重锚抖动），卡片自己做高度动画。
   final bool compactExpanded;
-
-  /// 宽屏底栏（三浮岛 + 时间 + 进度线）已自动隐藏：淡出、不吃指针，只留一根
-  /// 贴底细进度线。窄屏忽略。
-  final bool wideChromeHidden;
-
-  /// 宽屏歌词矩形伸到底（[LyricsModernWideGeometry.immersiveLyrics]）。与
-  /// [wideChromeHidden] 分开：外壳等底栏淡出完再一次性改矩形（WebView 只 resize
-  /// 一次，不逐帧）；显示时两者同时复位，底栏淡入前歌词已让位。
-  final bool wideLyricsExpanded;
 
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
@@ -162,7 +149,7 @@ class Md3ModernLyricsPlayerDesign extends LyricsPlayerDesign {
         size,
         padding,
       );
-      return wideLyricsExpanded ? g.immersiveLyrics(size, padding) : g.lyrics;
+      return g.lyrics;
     }
     final _ModernNarrowGeometry geometry = _ModernNarrowGeometry.of(
       context,
@@ -205,7 +192,6 @@ class Md3ModernLyricsPlayerDesign extends LyricsPlayerDesign {
         size: size,
         padding: padding,
         geometry: LyricsModernWideGeometry.of(context, size, padding),
-        hidden: wideChromeHidden,
       );
     }
     final _ModernNarrowGeometry geometry = _ModernNarrowGeometry.of(
@@ -551,6 +537,7 @@ class _ModernMiniContent extends StatelessWidget {
             debugLabel: 'lyrics-mini-seek',
             clock: data.clock,
             isPlaying: data.isPlaying,
+            jumpMarks: data.jumpMarks,
             onSeek: null,
             strokeWidth: 3,
             barHeight: _kModernMiniWaveHeight,
@@ -660,6 +647,7 @@ class _ModernFullContent extends StatelessWidget {
                               debugLabel: 'lyrics-md3-seek',
                               clock: data.clock,
                               isPlaying: data.isPlaying,
+                              jumpMarks: data.jumpMarks,
                               onSeek: callbacks.onSeek,
                               strokeWidth: 5,
                               barHeight: geometry.fullSeekHeight,
@@ -714,7 +702,6 @@ class _ModernWideChrome extends StatelessWidget {
     required this.size,
     required this.padding,
     required this.geometry,
-    required this.hidden,
   });
 
   final LyricsPlayerData data;
@@ -722,9 +709,6 @@ class _ModernWideChrome extends StatelessWidget {
   final Size size;
   final EdgeInsets padding;
   final LyricsModernWideGeometry geometry;
-
-  /// 底栏已自动隐藏（见 [Md3ModernLyricsPlayerDesign.wideChromeHidden]）。
-  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
@@ -744,10 +728,6 @@ class _ModernWideChrome extends StatelessWidget {
         centerLeft - kLyricsModernIslandGap - g.left,
       ),
     );
-    final Duration fade = fushiMotionDuration(context, FushiMotion.medium);
-    // 底栏件：隐藏时淡出且不吃指针（第一下点击只唤出底栏，不误触看不见的钮）。
-    Widget chrome(Widget child) =>
-        LyricsModernChromeFade(hidden: hidden, child: child);
     final double rightBudget = math.max(
       0,
       g.right - centerRight - kLyricsModernIslandGap,
@@ -757,13 +737,13 @@ class _ModernWideChrome extends StatelessWidget {
       clipBehavior: Clip.none,
       children: <Widget>[
         // 底栏没有胶囊底板（与音乐播放器同款，用户 2026-11-03）：底下一层渐隐压暗，
-        // 保证按钮 / 文字在流体背景上可读。随底栏一起淡出，不吃指针。
+        // 保证按钮 / 文字在流体背景上可读。不吃指针。
         Positioned(
           left: 0,
           right: 0,
           top: g.timeTop - 32,
           bottom: 0,
-          child: LyricsModernBottomScrim(hidden: hidden),
+          child: const LyricsModernBottomScrim(),
         ),
         // 插图弹出卡：从左岛缩略图上方弹出，贴左（竖排书盖住的是还没读到的左侧几列）。
         Positioned(
@@ -790,92 +770,47 @@ class _ModernWideChrome extends StatelessWidget {
           right: size.width - g.right,
           top: g.timeTop,
           height: g.seekBand.top - g.timeTop,
-          child: chrome(
-            IgnorePointer(
-              child: LyricsClockSecondsBuilder(
-                clock: data.clock,
-                builder:
-                    (BuildContext context, Duration position, Duration total) =>
-                        Row(
-                          children: <Widget>[
-                            Text(
-                              formatLyricsPlayerTime(position),
-                              style: timeStyle,
-                            ),
-                            // 阅读速度 · 阅读进度 · 阅读时间：居中放在进度线上方，
-                            // 不另占底栏一行。
-                            Expanded(
-                              child: Center(
-                                child: LyricsModernStatsLine(
-                                  clock: data.clock,
-                                  style: timeStyle,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              lyricsRemainingText(position, total),
-                              style: timeStyle,
-                            ),
-                          ],
+          child: IgnorePointer(
+            child: LyricsClockSecondsBuilder(
+              clock: data.clock,
+              builder:
+                  (
+                    BuildContext context,
+                    Duration position,
+                    Duration total,
+                  ) => Row(
+                    children: <Widget>[
+                      Text(formatLyricsPlayerTime(position), style: timeStyle),
+                      // 阅读速度 · 阅读进度 · 阅读时间：居中放在进度线上方，
+                      // 不另占底栏一行。
+                      Expanded(
+                        child: Center(
+                          child: LyricsModernStatsLine(
+                            clock: data.clock,
+                            style: timeStyle,
+                          ),
                         ),
-              ),
+                      ),
+                      Text(
+                        lyricsRemainingText(position, total),
+                        style: timeStyle,
+                      ),
+                    ],
+                  ),
             ),
           ),
         ),
         Positioned.fromRect(
           rect: g.seekBand,
-          child: chrome(
-            FushiWavySeekBar(
-              debugLabel: 'lyrics-md3-seek',
-              clock: data.clock,
-              // 隐藏时收平：看不见的波浪不该继续逐帧跑。
-              isPlaying: data.isPlaying && !hidden,
-              onSeek: callbacks.onSeek,
-              strokeWidth: 5,
-              barHeight: g.seekBand.height,
-              showTimes: false,
-            ),
-          ),
-        ),
-        // 底栏隐藏时贴底的细进度线（只看不点：点哪儿都先唤出底栏）。
-        Positioned(
-          left: g.left,
-          right: size.width - g.right,
-          bottom: padding.bottom + (kLyricsModernImmersiveBottom - 3) / 2,
-          height: 3,
-          child: IgnorePointer(
-            child: AnimatedOpacity(
-              opacity: hidden ? 1 : 0,
-              duration: fade,
-              curve: FushiMotion.standard,
-              child: LyricsClockSecondsBuilder(
-                clock: data.clock,
-                builder:
-                    (
-                      BuildContext context,
-                      Duration position,
-                      Duration total,
-                    ) => ClipRRect(
-                      key: const ValueKey<String>(
-                        'lyrics_modern_immersive_progress',
-                      ),
-                      borderRadius: const BorderRadius.all(Radius.circular(2)),
-                      // 3dp 的收起态提示条：平直静止（不跑波浪），只是指示进度。
-                      child: FushiLinearProgressIndicator(
-                        wavy: false,
-                        value: total.inSeconds > 0
-                            ? (position.inSeconds / total.inSeconds).clamp(
-                                0.0,
-                                1.0,
-                              )
-                            : 0,
-                        minHeight: 3,
-                        color: cs.primary,
-                        backgroundColor: cs.onSurface.withValues(alpha: 0.12),
-                      ),
-                    ),
-              ),
-            ),
+          child: FushiWavySeekBar(
+            debugLabel: 'lyrics-md3-seek',
+            clock: data.clock,
+            isPlaying: data.isPlaying,
+            jumpMarks: data.jumpMarks,
+            onSeek: callbacks.onSeek,
+            strokeWidth: 5,
+            barHeight: g.seekBand.height,
+            showTimes: false,
           ),
         ),
         if (leftWidth >= g.islandHeight)
@@ -884,13 +819,11 @@ class _ModernWideChrome extends StatelessWidget {
             top: g.islandTop,
             width: leftWidth,
             height: g.islandHeight,
-            child: chrome(
-              LyricsSpringEntrance(
-                child: _ModernInfoIsland(
-                  data: data,
-                  callbacks: callbacks,
-                  text: g.text,
-                ),
+            child: LyricsSpringEntrance(
+              child: _ModernInfoIsland(
+                data: data,
+                callbacks: callbacks,
+                text: g.text,
               ),
             ),
           ),
@@ -899,19 +832,13 @@ class _ModernWideChrome extends StatelessWidget {
           top: g.islandTop,
           width: centerWidth,
           height: g.islandHeight,
-          child: chrome(
-            LyricsSpringEntrance(
-              delay: 0.08,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: _modernTransportButtons(
-                    data,
-                    callbacks,
-                    plain: true,
-                  ),
-                ),
+          child: LyricsSpringEntrance(
+            delay: 0.08,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: _modernTransportButtons(data, callbacks, plain: true),
               ),
             ),
           ),
@@ -920,14 +847,12 @@ class _ModernWideChrome extends StatelessWidget {
           right: size.width - g.right,
           top: g.islandTop,
           height: g.islandHeight,
-          child: chrome(
-            LyricsSpringEntrance(
-              delay: 0.16,
-              child: _ModernActionIsland(
-                data: data,
-                callbacks: callbacks,
-                budget: rightBudget,
-              ),
+          child: LyricsSpringEntrance(
+            delay: 0.16,
+            child: _ModernActionIsland(
+              data: data,
+              callbacks: callbacks,
+              budget: rightBudget,
             ),
           ),
         ),

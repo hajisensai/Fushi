@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
-/// BUG-4102 guard（原 TODO-550）：WGC 帧上报委托必须是 AGILE 委托。
+/// BUG-4114 guard（原 TODO-550）：WGC 帧上报委托必须是 AGILE 委托。
 ///
 /// 取帧线程（MTA）把上报任务 `TryEnqueue` 到平台线程的 DispatcherQueue；跨线程
 /// 投递的 `IDispatcherQueueHandler` 必须 agile（聚合 FtmBase），否则投递被拒、
@@ -22,7 +22,7 @@ String _read(List<String> candidates, String name) {
 String _stripLineComments(String src) => maskComments(src);
 
 void main() {
-  test('BUG-4102: WGC frame delivery delegate is an AGILE delegate', () {
+  test('BUG-4114: WGC frame delivery delegate is an AGILE delegate', () {
     final String rawSrc = _read(<String>[
       'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',

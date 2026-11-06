@@ -8,7 +8,7 @@ library;
 import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/models/module_id.dart' show ModuleVisibility;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_corpus/fushi_corpus.dart';
 
 String _groupLabel(CorpusSourceKind kind) => switch (kind) {

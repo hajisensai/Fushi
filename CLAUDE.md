@@ -91,6 +91,7 @@
 | 各模块语言与职责 | [module-index.md](docs/agent/module-index.md) |
 | 有声书 / ASR 装配 | [asr-assembly.md](docs/agent/asr-assembly.md) |
 | 无头引擎 / 服务端 / 媒体服务器 / 互联 / galgame 制卡 | [subsystem-map.md](docs/agent/subsystem-map.md) |
+| `fushi_server` 相对 app 当 host 的能力缺口（未接的 host 钩子、音乐库刻意延后等） | [server-parity-gaps.md](docs/agent/server-parity-gaps.md) |
 | material_ui 升级 | [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md) |
 | 拍板原文（起因、日期、例外、实测数据） | [rules-detail.md](docs/agent/rules-detail.md) |
 | `fushi/` 主应用模块说明 | [fushi-app-module.md](docs/agent/fushi-app-module.md) |

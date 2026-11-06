@@ -18,6 +18,7 @@ import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart'
     show SettingsDetailPage;
 import 'package:fushi/src/settings/settings_schema_downloads.dart'
@@ -25,7 +26,8 @@ import 'package:fushi/src/settings/settings_schema_downloads.dart'
 import 'package:fushi/src/settings/settings_search.dart'
     show SettingsSearchReveal;
 import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
     show subtitleLanguageNativeName;
 

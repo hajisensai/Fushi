@@ -8141,7 +8141,7 @@ void InAppWebView::OnCustomSchemeRequest(WebKitURISchemeRequest* request, gpoint
                                               response->data.size(), g_free);
 
       // Finish the request with the response data
-      // Fushi patch (BUG-4102): contentEncoding is the charset; WebKit only sees
+      // Fushi patch (BUG-4108): contentEncoding is the charset; WebKit only sees
       // it as the media type's `charset=` parameter (utils/content_type.h).
       const std::string mediaType =
           contentTypeWithCharset(response->contentType, response->contentEncoding);

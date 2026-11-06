@@ -2,7 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 统一合集 UI v2 Phase E：合集命名/重命名对话框（原 series_detail_page 的
 /// `showSeriesNameDialog`，随死掉的 SeriesDetailPage 整页删除迁居至此）。

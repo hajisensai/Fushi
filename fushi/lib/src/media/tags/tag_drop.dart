@@ -9,7 +9,8 @@ library;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// [addTagToTarget] 的结果：三种结局各自对应一条不同的用户可见提示。
 enum TagAddOutcome {

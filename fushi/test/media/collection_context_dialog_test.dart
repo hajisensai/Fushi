@@ -9,7 +9,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogListAction, MediaItemDialogFrame;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 三库页统一合集上下文菜单的**行为**守卫（破坏性分支优先）。
 ///

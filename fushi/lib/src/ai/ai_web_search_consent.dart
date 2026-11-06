@@ -2,7 +2,10 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 正在弹的那一次询问：几个面板同时要问时共用这一次，不连弹两个框。
 Future<void>? _pendingDecision;

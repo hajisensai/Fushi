@@ -13,7 +13,7 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteHandler, ExtensionVideoFavoriteRequest;
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
-import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart'
+import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart'
     show GraphicSubtitleOcrFrame, GraphicSubtitleOcrUnavailable;
 import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/extension_image_ocr.dart';

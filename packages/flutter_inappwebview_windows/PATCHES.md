@@ -116,7 +116,7 @@ verified at runtime on this machine.
 - Tests: `test/texture_capacity_test.dart` (policy), source guard
   `fushi/test/build/webview_texture_capacity_guard_test.dart`.
 
-## WGC frames pulled on a compositor-clocked worker thread (BUG-4102, 2026-11-05)
+## WGC frames pulled on a compositor-clocked worker thread (BUG-4108, 2026-11-05)
 
 - `texture_bridge.cc`: frames used to be pulled by a `DispatcherQueueTimer` on
   the platform thread (merged with the Dart UI thread), with a single-buffer
@@ -146,7 +146,7 @@ verified at runtime on this machine.
   `wgc_pump_tick_agile_guard_test.dart`, `wgc_pump_interval_guard_test.dart`,
   `wgc_capture_logging_guard_test.dart`, `inappwebview_windows_native_guards_test.dart`.
 
-## `contentEncoding` is the charset (BUG-4102, 2026-11-05)
+## `contentEncoding` is the charset (BUG-4108, 2026-11-05)
 
 - `windows/utils/content_type.h` `contentTypeWithCharset`, used by
   `types/web_resource_response.cpp` and `types/custom_scheme_response.cpp`.

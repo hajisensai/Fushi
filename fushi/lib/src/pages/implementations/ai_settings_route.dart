@@ -1,9 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 推一页独立的「设置 › 模型 › LLM」（提供商 + 功能指派），返回即回到原入口。
 /// LLM 页已不是一级分类，所以直接给构造闭包而不是按 id 在一级分类里找。

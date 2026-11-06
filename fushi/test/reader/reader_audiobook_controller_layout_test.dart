@@ -7,7 +7,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 Future<void> _pumpPanel(
   WidgetTester tester,

@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart' show FushiDesignTokens;
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 内嵌封面字节的进程内缓存（按音频路径）。取封面要读整个文件头里的图片块，放后台
 /// isolate；同一张专辑的封面在网格 / 专辑页 / 播放条里会被要很多次，缓存最近 64 张。

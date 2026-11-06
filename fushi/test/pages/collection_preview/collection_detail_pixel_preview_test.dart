@@ -33,7 +33,7 @@ import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteCollectionMembership, RemoteVideoInfo;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 const String _fontFamily = 'PreviewCJK';

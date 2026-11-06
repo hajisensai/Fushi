@@ -12,6 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 
 export 'package:fushi_engine/sync/game_stream/game_stream_library.dart'
     show
@@ -489,32 +490,6 @@ class GameStreamPointerMapper {
     final double y = (localPosition.dy / videoSize.height).clamp(0.0, 1.0);
     return Offset(x, y);
   }
-}
-
-enum GameStreamVirtualButton {
-  up,
-  down,
-  left,
-  right,
-  confirm,
-  cancel,
-  menu,
-  shoulderLeft,
-  shoulderRight,
-}
-
-extension GameStreamVirtualButtonWire on GameStreamVirtualButton {
-  String get wireName => switch (this) {
-    GameStreamVirtualButton.up => 'dpad_up',
-    GameStreamVirtualButton.down => 'dpad_down',
-    GameStreamVirtualButton.left => 'dpad_left',
-    GameStreamVirtualButton.right => 'dpad_right',
-    GameStreamVirtualButton.confirm => 'confirm',
-    GameStreamVirtualButton.cancel => 'cancel',
-    GameStreamVirtualButton.menu => 'menu',
-    GameStreamVirtualButton.shoulderLeft => 'shoulder_left',
-    GameStreamVirtualButton.shoulderRight => 'shoulder_right',
-  };
 }
 
 typedef GameStreamInputSender =

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4102 guard（取代 BUG-3352 的定时器间隔守卫）：WGC 取帧节拍不能挂在
+/// BUG-4114 guard（取代 BUG-3352 的定时器间隔守卫）：WGC 取帧节拍不能挂在
 /// UI 线程定时器上。
 ///
 /// 旧实现用 `DispatcherQueueTimer` 在平台线程上每格取一次帧：系统计时器按
@@ -22,7 +22,7 @@ String _read(List<String> candidates, String name) {
 }
 
 void main() {
-  test('BUG-4102: WGC frame worker is paced by the compositor clock', () {
+  test('BUG-4114: WGC frame worker is paced by the compositor clock', () {
     final String src = maskComments(
       _read(<String>[
         'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
@@ -75,7 +75,7 @@ void main() {
     );
   });
 
-  test('BUG-4102: capture session lifts the WGC ~60 Hz delivery throttle', () {
+  test('BUG-4114: capture session lifts the WGC ~60 Hz delivery throttle', () {
     // 144 Hz 屏实测：不设 MinUpdateInterval 时 WGC 交帧恒为 20.83 ms（每 3 个
     // 刷新周期一帧，48 帧/秒），设 1 ms 后 130～144 帧/秒。必须在 StartCapture
     // 之前设，且接口 IID 与系统 Windows.Graphics.winmd 一致。
