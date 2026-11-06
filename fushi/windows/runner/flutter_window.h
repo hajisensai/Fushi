@@ -72,11 +72,6 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       system_theme_channel_;
 
-  // BUG-1239: forwards an unmodified IME-owned physical Space press before
-  // Flutter turns VK_PROCESSKEY into a KeyEvent with physical/logical key 0.
-  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
-      windows_ime_space_channel_;
-
   // BUG-1450: Dart tells us whether anything editable holds focus; while
   // nothing does we detach the window's IME context so a CJK IME stops eating
   // every shortcut key. See ime_association_guard.h.

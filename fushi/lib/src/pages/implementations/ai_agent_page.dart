@@ -33,6 +33,7 @@ import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dar
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show kAiAgentExecutorLocal, kAiAgentExecutorRemote;
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi/src/ocr/screen_text_capture.dart'
     show screenTextCaptureSupported;
 import 'package:fushi/src/ops/app_op_context.dart';
@@ -690,7 +691,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   final Set<String> _undoing = <String>{};
 
   /// 「附上屏幕文字」（§6.4）：附上的文字只跟下一句走。
-  final AiAgentScreenTextAttachment _screenText = AiAgentScreenTextAttachment();
+  final AiAgentScreenTextAttachment _screenText = AiAgentScreenTextAttachment(
+    language: () =>
+        appOpContext?.appModel.prefsRepo.screenOcrLanguage ??
+        kScreenOcrFallbackLanguage,
+  );
 
   AiAgentConversationController get _controller => widget.controller;
 

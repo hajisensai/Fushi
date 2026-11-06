@@ -24,8 +24,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart'
     show captureFeedbackScreenshot;
-import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
-    show kFloatingBallOcrLanguage;
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -99,6 +97,9 @@ typedef ScreenTextCapture = Future<ScreenTextCaptureResult> Function();
 /// [keepImage]：连截图一起带回（发给视觉模型）。[recognize] 为 false 时不跑
 /// OCR（本平台没有系统 OCR），文字一栏按 [ScreenTextCaptureStatus.unavailable]。
 ///
+/// [language] 送给系统 OCR，由调用方按 `PreferencesRepository.screenOcrLanguage`
+/// 给（跟随默认内容语言）。
+///
 /// [capture] / [ocr] / [shrink] 是测试缝，默认分别是 [captureFeedbackScreenshot]、
 /// [MethodChannelSystemOcr] 与 [shrinkScreenImage]。
 Future<ScreenTextCaptureResult> captureScreenText({
@@ -107,7 +108,7 @@ Future<ScreenTextCaptureResult> captureScreenText({
   Future<Uint8List?> Function()? capture,
   SystemOcrPlatform? ocr,
   Future<Uint8List> Function(Uint8List png)? shrink,
-  String language = kFloatingBallOcrLanguage,
+  required String language,
   int maxChars = kScreenTextMaxChars,
 }) async {
   final Uint8List? png;

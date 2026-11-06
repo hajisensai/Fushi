@@ -26,14 +26,14 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel, jimakuLanguageRank;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';

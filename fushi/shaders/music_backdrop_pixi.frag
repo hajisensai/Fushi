@@ -1,80 +1,95 @@
 // 歌词页「Pixi」流体背景：四层旋转封面在全分辨率逐像素合成。
 //
-// 封面先缩成边长十几像素的小贴图，这里用 B 样条双三次取样（4 次双线性取样
-// 拼出来，C2 连续）放大——等价一次超大模糊、且没有双线性放大那种方格折痕。
-// 四层的几何与转速见 music_lyrics_backdrop.dart 的 `_paintPixi` 注释。
+// 观感对齐 QPlayer 的 pixi 背景（本文件自写，只对齐算法思路与观感参数）：
+// - 取样坐标先过一道「S 形弯曲」：画布上下两条边各有一个大半径鼓包（一个靠右上、
+//   一个靠左下），四层旋转方块被拉成几道斜向的长色带，而不是一团团圆斑；
+// - 封面贴图是 32px 小图、直接双线性取样：色块边界保持清楚，不再额外糊；
+// - 四层方块边缘按短边 11.5% 羽化；每首歌的四个初始角度与弯曲方向随机（uAngles /
+//   uBend，由 Dart 侧按歌定），换歌后形态不同；
+// - 调色：饱和 ×2.2 → 色度封顶（荧光封面不至于顶成纯原色）→ 整体压暗 → 提对比
+//   → 亮度封顶（浅色封面也不会把白字洗掉）。主题压暗在 Dart 侧对 pixi 不再叠加。
+//
+// 四层几何与转速见 music_lyrics_backdrop.dart 的 `_paintPixi` 注释。
 #version 460 core
 #include <flutter/runtime_effect.glsl>
 
 uniform vec2 uSize;
 uniform float uTime;
 uniform vec2 uTexSize;
+uniform vec4 uAngles;
+uniform float uBend;
 uniform sampler2D uTex;
 
 out vec4 fragColor;
 
-vec4 bspline(float v) {
-  vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
-  vec4 s = n * n * n;
-  float x = s.x;
-  float y = s.y - 4.0 * s.x;
-  float z = s.z - 4.0 * s.y + 6.0 * s.x;
-  float w = 6.0 - x - y - z;
-  return vec4(x, y, z, w) * (1.0 / 6.0);
+// 以 center 为心、半径 radius 的鼓包：圈内的点按距离比例非线性往外推。
+vec2 swell(vec2 p, vec2 center, float radius) {
+  vec2 d = p - center;
+  float r = length(d);
+  if (r > 0.0001 && r < radius) {
+    float k = r / radius;
+    d *= mix(1.0, smoothstep(0.0, 1.0 / k, k), 0.75);
+  }
+  return center + d;
 }
 
-vec3 sampleSmooth(vec2 uv) {
-  vec2 tc = uv * uTexSize - 0.5;
-  vec2 f = fract(tc);
-  tc -= f;
-  vec4 xc = bspline(f.x);
-  vec4 yc = bspline(f.y);
-  vec4 c = tc.xxyy + vec2(-0.5, 1.5).xyxy;
-  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
-  vec4 o = (c + vec4(xc.yw, yc.yw) / s) / uTexSize.xxyy;
-  o = clamp(o, 0.0, 1.0);
-  vec3 s0 = texture(uTex, o.xz).rgb;
-  vec3 s1 = texture(uTex, o.yz).rgb;
-  vec3 s2 = texture(uTex, o.xw).rgb;
-  vec3 s3 = texture(uTex, o.yw).rgb;
-  float sx = s.x / (s.x + s.y);
-  float sy = s.z / (s.z + s.w);
-  return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);
+vec2 bendCoord(vec2 p) {
+  float radius = (uSize.x + uSize.y) * 0.5;
+  float lower = uBend > 0.0 ? 0.25 : 0.75;
+  p = swell(p, vec2((1.0 - lower) * uSize.x, 0.0), radius);
+  return swell(p, vec2(lower * uSize.x, uSize.y), radius);
 }
 
-// 一层：中心 c、边长 side、旋转 rot（与画布 rotate 同向）；返回颜色 + 羽化 alpha。
-vec4 layer(vec2 p, vec2 c, float side, float rot, float feather) {
+// 一层：中心 c、边长 side、旋转 rot；返回颜色 + 羽化 alpha。
+vec4 layer(vec2 p, vec2 c, float side, float rot, float featherPx) {
   float cs = cos(rot);
   float sn = sin(rot);
   vec2 d = p - c;
   vec2 local = vec2(cs * d.x + sn * d.y, -sn * d.x + cs * d.y) / side + 0.5;
-  vec2 e = abs(local - 0.5);
-  float a = 1.0 - smoothstep(0.5 - feather, 0.5, max(e.x, e.y));
-  return vec4(sampleSmooth(clamp(local, 0.0, 1.0)), a);
+  float inside = 0.5 - max(abs(local.x - 0.5), abs(local.y - 0.5));
+  float f = featherPx / side;
+  float a = smoothstep(-f, f, inside);
+  vec2 uv = clamp(local, 0.5 / uTexSize, 1.0 - 0.5 / uTexSize);
+  return vec4(texture(uTex, uv).rgb, a);
+}
+
+vec3 grade(vec3 rgb) {
+  float y = dot(rgb, vec3(0.3, 0.59, 0.11));
+  rgb = vec3(y) + (rgb - vec3(y)) * 2.2;
+  y = dot(rgb, vec3(0.3, 0.59, 0.11));
+  vec3 chroma = rgb - vec3(y);
+  float amount = max(max(abs(chroma.r), abs(chroma.g)), abs(chroma.b));
+  float limit = 0.28;
+  if (amount > limit) chroma *= limit / amount;
+  rgb = clamp(vec3(y) + chroma, 0.0, 1.0);
+  rgb = clamp(rgb * 0.6 * 1.3 - 0.15, 0.0, 1.0);
+  float y2 = dot(rgb, vec3(0.3, 0.59, 0.11));
+  float lumaLimit = 0.42;
+  if (y2 > lumaLimit) rgb *= lumaLimit / y2;
+  return rgb;
 }
 
 void main() {
-  vec2 p = FlutterFragCoord().xy;
+  vec2 p = bendCoord(FlutterFragCoord().xy);
   float w = uSize.x;
   float h = uSize.y;
   float m = max(w, h);
   float t = uTime;
-  float orbit = cos(t * 0.045);
+  float feather = min(w, h) * 0.115;
 
-  vec3 col = layer(p, vec2(w * 0.5, h * 0.5), m * 1.41421356, 0.06 * t, 0.0).rgb;
-  vec4 l2 = layer(p, vec2(w / 2.5, h / 2.5), m * 0.8, -0.12 * t, 0.35);
+  vec3 col = layer(p, uSize * 0.5, m * 1.41421356, uAngles.x + 0.06 * t, feather).rgb;
+  vec4 l2 = layer(p, uSize / 2.5, m * 0.8, uAngles.y - 0.12 * t, feather);
   col = mix(col, l2.rgb, l2.a);
-  vec4 l3 = layer(p, vec2(w * 0.5 + w * 0.25 * orbit, h * 0.5 + w * 0.25 * orbit), m * 0.5, 0.06 * t, 0.4);
+  float travel = cos(t * 0.045) * w * 0.25;
+  vec4 l3 = layer(p, uSize * 0.5 + vec2(travel), m * 0.5, uAngles.z + 0.06 * t, feather);
   col = mix(col, l3.rgb, l3.a);
-  vec4 l4 = layer(p, vec2(w * 0.5 + w / 40.0, h * 0.5 + w / 40.0), m * 0.25, -0.08 * t, 0.45);
+  float drift = w * 0.025 + cos(t * 0.27);
+  vec4 l4 = layer(p, uSize * 0.5 + vec2(drift), m * 0.25, uAngles.w - 0.08 * t, feather);
   col = mix(col, l4.rgb, l4.a);
 
-  // 饱和度 ×1.5、对比度 ×1.2（围绕中灰）。
-  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(vec3(luma), col, 1.5);
-  col = (col - 0.5) * 1.2 + 0.5;
+  col = grade(col);
   // 抖动：大片缓变渐变在 8 位下会出色带。
-  float n = fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+  float n = fract(sin(dot(FlutterFragCoord().xy, vec2(12.9898, 78.233))) * 43758.5453);
   col += (n - 0.5) / 255.0;
   fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
