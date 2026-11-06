@@ -241,6 +241,20 @@ bool _constantTimeEquals(Uint8List a, Uint8List b) {
   return result == 0;
 }
 
+/// 把 [file] 的字节流式交给响应体，流结束（传完 / 对端断开取消订阅）后删它所在的
+/// 临时目录。用 `async*` 的 `finally`：订阅被取消时同样执行。
+Stream<List<int>> _streamThenDeleteDir(File file) async* {
+  try {
+    yield* file.openRead();
+  } finally {
+    try {
+      await file.parent.delete(recursive: true);
+    } catch (_) {
+      // best-effort：临时目录清理失败不影响已发出的响应。
+    }
+  }
+}
+
 String? _extractVideoId(String reqPath, String suffix) {
   const String prefix = '/api/library/videos/';
   final String fullSuffix = '/$suffix';

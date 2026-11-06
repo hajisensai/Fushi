@@ -546,6 +546,43 @@ mixin _LocalLibraryHostVideos
     return File(result);
   }
 
+  /// 反馈 6nBmSBj_2W：host 端替 client 裁片段原料（见 [VideoClipExportHost]）。用
+  /// [resolveVideoFile] 反查本地文件后逐帧精确重编码裁出无字幕 mp4（本地路径、不经
+  /// 网络 / TLS）。裁到独立临时目录，调用方传完删该目录；失败清理并返回 null。
+  @override
+  Future<File?> clipVideoSegment(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+  }) async {
+    if (startMs < 0 || endMs <= startMs) return null;
+    final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (file == null) return null;
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'fushi_clip_video',
+    );
+    final String? result = await exportVideoClipSourceSegmentViaFfmpeg(
+      inputPath: file.path,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: p.join(tmp.path, 'clip.mp4'),
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+    );
+    if (result == null) {
+      try {
+        await tmp.delete(recursive: true);
+      } catch (_) {
+        // best-effort：裁切已失败，临时目录清理失败不影响返回 null。
+      }
+      return null;
+    }
+    return File(result);
+  }
+
   /// 读 host 端 [id] 视频的播放断点（TODO-653 / TODO-816 断点②）。
   ///
   /// 真相源是 `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>`

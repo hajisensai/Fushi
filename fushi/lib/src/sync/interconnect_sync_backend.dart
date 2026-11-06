@@ -194,6 +194,15 @@ class RemoteVideoMetadataUnsupported implements Exception {
   String toString() => 'RemoteVideoMetadataUnsupported';
 }
 
+/// 对端 host 没有片段原料端点（`clipvideo`，老版本）；UI 据此提示「对端版本过低，
+/// 不支持片段导出」，不当成导出失败。
+class RemoteVideoClipUnsupported implements Exception {
+  const RemoteVideoClipUnsupported();
+
+  @override
+  String toString() => 'RemoteVideoClipUnsupported';
+}
+
 /// [InterconnectSyncBackend.putRemoteVideoSubtitleAsDefault] 的结果。
 enum RemoteSubtitleDefaultUpload {
   /// host 已按新语义落盘并设为这一集的默认字幕（旧 sidecar 已备份让位）。
@@ -3003,6 +3012,72 @@ class InterconnectSyncBackend extends SyncBackend
     };
     final Uri uri = Uri.parse(
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/clipaudio',
+    ).replace(queryParameters: query);
+    await downloadContentFile(
+      fileId: uri.toString(),
+      destination: dest,
+      onProgress: syncTransferFractionOnly(onProgress),
+    );
+  }
+
+  String? _clipExportCapabilityScope;
+  bool? _clipExportCapability;
+
+  /// host 的 `/api/capabilities` 是否声明 `liveLibrary.videoClipExport`（反馈
+  /// 6nBmSBj_2W）。同一 host 基址只探一次；探测失败（网络）抛错、不入缓存。
+  Future<bool> hostSupportsVideoClipExport() async {
+    await _ensureResolved();
+    final String scope = _apiBase;
+    final bool? cached = _clipExportCapability;
+    if (cached != null && _clipExportCapabilityScope == scope) return cached;
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/capabilities',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    bool supported = false;
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+    } else {
+      _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
+      final Object? decoded = jsonDecode(await _readBodyBounded(res));
+      final Object? live = decoded is Map ? decoded['liveLibrary'] : null;
+      supported = live is Map && live[kVideoClipExportCapability] == true;
+    }
+    _clipExportCapabilityScope = scope;
+    _clipExportCapability = supported;
+    return supported;
+  }
+
+  /// 反馈 6nBmSBj_2W：请 host 在其**本地**把视频 [id] 的 `[startMs,endMs)` 逐帧精确
+  /// 裁成无字幕 mp4，经已鉴权 / 钉扎的 [downloadContentFile] 通道落到 [dest]。字幕由
+  /// 调用方拿屏幕上那份 cue 在本机烧录（见 `VideoClipExportHost`）。
+  ///
+  /// 先看能力位：老 host 没有 `clipvideo` 端点 → 抛 [RemoteVideoClipUnsupported]，
+  /// 调用方据此提示「对端版本过低」；不先探就请求的话，老 host 的 404 与「这一集在
+  /// host 上没有本地文件」的 404 分不开。
+  Future<void> getRemoteVideoClip(
+    String id,
+    File dest, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    void Function(double progress)? onProgress,
+  }) async {
+    if (!await hostSupportsVideoClipExport()) {
+      throw const RemoteVideoClipUnsupported();
+    }
+    final Map<String, String> query = <String, String>{
+      'startMs': '$startMs',
+      'endMs': '$endMs',
+      if (episodeIndex > 0) 'episode': '$episodeIndex',
+      if (audioStreamIndex != null) 'audioStreamIndex': '$audioStreamIndex',
+      if (audioStreamCount != null) 'audioStreamCount': '$audioStreamCount',
+    };
+    final Uri uri = Uri.parse(
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/clipvideo',
     ).replace(queryParameters: query);
     await downloadContentFile(
       fileId: uri.toString(),
