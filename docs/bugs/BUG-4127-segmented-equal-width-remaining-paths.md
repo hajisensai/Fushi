@@ -5,7 +5,7 @@
   - 墨水屏 `FushiSegmentedButton` 退回原生 `SegmentedButton`（`fushi_glass_toggles.dart:3842`），原生等宽（400 宽下「播完本曲」只剩 26px）。
   - `adaptiveSegmentedButton` 在 Cupertino 设计系统但非 Apple 设计（墨水屏）下走原生 `CupertinoSlidingSegmentedControl`（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart:764`），等宽、未开 proportionalWidth。
   - Apple 退回形态 `_buildButtonRow`（`fushi_glass_toggles.dart:3961`，多选 / 允许空选 / 竖排 / 富文本段）：撑满时 `Expanded` 等分（400 宽「播完本曲」省略号），不撑满时按自然宽 `Flex` 直接横向溢出 50px。
-- **[x] ① 已修复** — 12656220ff（+ 后续高度约束修正提交）：
+- **[x] ① 已修复** — 12656220ff、bbc2fa99a7（段只钉宽不给上界高度）：
   - 胶囊分段的私有 `_RenderPillSegmentRow` 提升为共用的 `FushiSegmentRow` / `RenderFushiSegmentRow`（`fushi_segment_widths.dart`，支持段间缝、撑满、紧约束、RTL、固有尺寸、同高），胶囊分段、连接式按钮组、Apple 退回形态横排都经它排布，分宽全部来自 `fushiSegmentWidths`。
   - 连接式按钮组：对勾槽作为 `extras`（`extrasInIntrinsic`），段内容改为 `_CheckSlotRow`——宽度不够时先对称收两槽（对勾裁在槽内），文字保持单行自然宽，槽收完才压文字折行。`_FushiSqueezeRow` 删掉 `equalExtents`，只剩标准按钮组的按压挤压。
   - 墨水屏不再退回原生 `SegmentedButton`，统一走连接式按钮组（主题 `segmentedButtonTheme` 的反色填充照用，组给每段补 `outline` 描边表达段边界）。
