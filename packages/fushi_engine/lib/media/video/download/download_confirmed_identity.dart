@@ -15,6 +15,8 @@ import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.d
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show kManualVideoDownloadResourceProvider;
+import 'package:fushi_engine/media/video/download/video_download_organizer.dart'
+    show mainMovieFeatureIndex;
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
@@ -137,18 +139,24 @@ VideoMetadataLookup? _manualAniDbLookup(VideoDownloadJobRow job) {
   );
 }
 
-/// movie 形态 job 的主片行：最大 `sizeBytes`（与组织器抬正片的判据一致；
-/// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
+/// movie 形态 job 的主片行：与整理器抬正片**同一个判据**
+/// （[mainMovieFeatureIndex]：先按任务标题 [title] 在并列正片里找唯一匹配，
+/// 找不出取最大 `sizeBytes`，平手取先出现的行）。按种子内原始路径比对，
+/// 与整理器看到的文件名一致。旧行没记体积时按 0 参与比较。
 VideoDownloadJobFileRow? mainMovieDownloadFile(
-  List<VideoDownloadJobFileRow> files,
-) {
-  VideoDownloadJobFileRow? main;
-  for (final VideoDownloadJobFileRow file in files) {
-    if (main == null || (file.sizeBytes ?? 0) > (main.sizeBytes ?? 0)) {
-      main = file;
-    }
-  }
-  return main;
+  List<VideoDownloadJobFileRow> files, {
+  required String title,
+}) {
+  final int? index = mainMovieFeatureIndex(
+    title: title,
+    featurePaths: files
+        .map((VideoDownloadJobFileRow file) => file.originalRelativePath)
+        .toList(growable: false),
+    sizes: files
+        .map((VideoDownloadJobFileRow file) => file.sizeBytes ?? 0)
+        .toList(growable: false),
+  );
+  return index == null ? null : files[index];
 }
 
 /// 任务下到库里的视频文件（规范化路径）。
@@ -211,6 +219,7 @@ VideoSourceScrapeWork? downloadJobWork(
                 row.kind == 'video' && row.finalAbsolutePath != null,
           )
           .toList(),
+      title: job.title,
     );
     if (movieMain == null) return null;
     final String mainPath = normalizeVideoPath(movieMain.finalAbsolutePath!);
