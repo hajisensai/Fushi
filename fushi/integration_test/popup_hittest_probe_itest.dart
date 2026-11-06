@@ -26,7 +26,7 @@ import 'test_helpers.dart';
 /// 嵌套查词浮层虽是同一个 [DictionaryPopupWebView] 组件，但真机实测二者**结论不
 /// 通用**——结果区收得到指针、浮层收不到。浮层挂在根 Overlay 且外面多套了
 /// Visibility / 入场淡入 / 滑关 Listener，命中链不同。浮层侧的守卫需另写，别拿本
-/// 用例的绿当成「浮层也能点」。
+/// 用例的绿当成「浮层也能点」。iOS 浮层侧见 `ios_popup_real_touch_itest.dart`（真触摸）。
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
