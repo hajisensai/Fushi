@@ -458,4 +458,45 @@ void main() {
       );
     });
   });
+
+  // 视频播放页：.ape / .mka / .ac3 只在纯音频表（不在有声书表），拖到正在播放的视频上
+  // 要和拖 .mp3 一样提示「不支持音频」，不能落到「只支持字幕」。
+  group('decidePlaybackDropIntent — video playback page', () {
+    PlaybackDropIntent decide(List<String> paths, {bool subtitle = false}) =>
+        decidePlaybackDropIntent(
+          files: classifyDroppedFiles(paths),
+          hasImportableSubtitle: subtitle,
+        );
+
+    test('.ape / .mka / .ac3 -> unsupportedAudio (same as .mp3)', () {
+      for (final String path in <String>[
+        '/x/01.ape',
+        '/x/02.mka',
+        '/x/03.ac3',
+        '/x/04.DSF',
+        '/x/05.mp3',
+      ]) {
+        expect(
+          decide(<String>[path]),
+          PlaybackDropIntent.unsupportedAudio,
+          reason: path,
+        );
+      }
+    });
+    test('importable subtitle wins', () {
+      expect(
+        decide(<String>['/x/a.srt', '/x/01.ape'], subtitle: true),
+        PlaybackDropIntent.importSubtitle,
+      );
+    });
+    test('audio together with a video is not "audio unsupported"', () {
+      expect(
+        decide(<String>['/x/ep.mkv', '/x/01.ape']),
+        PlaybackDropIntent.unsupportedSurface,
+      );
+    });
+    test('unknown file -> ignore', () {
+      expect(decide(<String>['/x/a.xyz']), PlaybackDropIntent.ignore);
+    });
+  });
 }
