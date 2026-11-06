@@ -365,9 +365,7 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     stop.future,
     host.selfUpdateInstalled.then((_) => selfUpdated = true),
   ]);
-  stdout.writeln(
-    selfUpdated ? '已装好新版服务端，正在停止以便服务管理器重启…' : '正在停止…',
-  );
+  stdout.writeln(selfUpdated ? '已装好新版服务端，正在停止以便服务管理器重启…' : '正在停止…');
   await sigint.cancel();
   await sigterm?.cancel();
   await admin?.stop();

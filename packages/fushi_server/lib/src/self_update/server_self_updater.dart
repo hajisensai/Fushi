@@ -17,6 +17,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/utils/net/app_http.dart'
+    show createAppHttpIoClient;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -260,13 +262,18 @@ const Map<String, String> _githubHeaders = <String, String>{
 
 /// GitHub REST 取 JSON；非 200 抛出。
 Future<Object?> fetchGitHubJson(Uri url) async {
-  final http.Response r = await http
-      .get(url, headers: _githubHeaders)
-      .timeout(const Duration(seconds: 30));
-  if (r.statusCode != 200) {
-    throw HttpException('GitHub ${r.statusCode}', uri: url);
+  final http.Client client = createAppHttpIoClient();
+  try {
+    final http.Response r = await client
+        .get(url, headers: _githubHeaders)
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode != 200) {
+      throw HttpException('GitHub ${r.statusCode}', uri: url);
+    }
+    return jsonDecode(r.body);
+  } finally {
+    client.close();
   }
-  return jsonDecode(r.body);
 }
 
 /// 流式下载到 [into]，按 [expectedSize]（或 Content-Length）报进度。
@@ -276,7 +283,7 @@ Future<void> downloadServerPackage(
   required void Function(double progress) onProgress,
   int? expectedSize,
 }) async {
-  final http.Client client = http.Client();
+  final http.Client client = createAppHttpIoClient();
   try {
     final http.Request req = http.Request('GET', url)
       ..headers['User-Agent'] = 'fushi_server';
