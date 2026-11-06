@@ -27,7 +27,21 @@ String _methodBody(String source, String signature) {
   if (start < 0) {
     throw StateError('missing method signature: $signature');
   }
-  final int bodyStart = source.indexOf('{', start);
+  // 方法体从参数表之后开始：具名参数的 `{...}` 不能当成方法体。
+  final int parenStart = source.indexOf('(', start);
+  int parenDepth = 0;
+  int parenEnd = -1;
+  for (int i = parenStart; parenStart >= 0 && i < source.length; i++) {
+    if (source[i] == '(') parenDepth++;
+    if (source[i] == ')') {
+      parenDepth--;
+      if (parenDepth == 0) {
+        parenEnd = i;
+        break;
+      }
+    }
+  }
+  final int bodyStart = parenEnd < 0 ? -1 : source.indexOf('{', parenEnd);
   if (bodyStart < 0) {
     throw StateError('missing method body: $signature');
   }
@@ -54,7 +68,11 @@ void main() {
     test('视频卡 onLongPress 走菜单，不再等于打开播放页', () {
       // TODO-063 起选择态禁用卡片长按，让祖先扫选接管；未进入选择态时所有平台
       // 都必须继续走 _showVideoMenu。
-      expect(src.contains('_showVideoMenu(book)'), isTrue, reason: '长按必须弹菜单');
+      expect(
+        RegExp(r'_showVideoMenu\(\s*book\b').hasMatch(src),
+        isTrue,
+        reason: '长按必须弹菜单',
+      );
       // 旧 bug：onLongPress 与 onTap 一样调 _open。
       expect(
         src.contains('onLongPress: () => _open(book)'),
@@ -66,12 +84,16 @@ void main() {
     test('选择态长按禁用、点击改切换勾选（批量选择，TODO-063）', () {
       // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
       final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
+      // 菜单头部的封面 / 标题跟打开它的卡同源（#2984），卡片先收成 openMenu 再挂上。
       expect(
-        flat.contains(
-          'onLongPress: _selectionMode ? null : () => _showVideoMenu(book)',
-        ),
+        flat.contains('onLongPress: _selectionMode ? null : openMenu'),
         isTrue,
         reason: '未进选择态时触屏/桌面长按都弹菜单，选择态才禁用',
+      );
+      expect(
+        RegExp(r'void openMenu\(\) => _showVideoMenu\(\s*book,').hasMatch(src),
+        isTrue,
+        reason: 'openMenu 就是弹这张卡的菜单',
       );
       expect(
         flat.contains('touchLongPressSelects'),
@@ -112,10 +134,7 @@ void main() {
     });
 
     test('长按面板复用封面背景 frame，不再用 bottom sheet', () {
-      final String menuBody = _methodBody(
-        src,
-        'void _showVideoMenu(VideoBookRow book)',
-      );
+      final String menuBody = _methodBody(src, 'void _showVideoMenu(');
 
       expect(
         menuBody.contains('showModalBottomSheet'),
@@ -133,10 +152,7 @@ void main() {
     });
 
     test('长按面板含五项管理动作且不含播放动作', () {
-      final String menuBody = _methodBody(
-        src,
-        'void _showVideoMenu(VideoBookRow book)',
-      );
+      final String menuBody = _methodBody(src, 'void _showVideoMenu(');
 
       expect(menuBody.contains('_editTags(book)'), isTrue);
       expect(menuBody.contains('_renameVideo(book)'), isTrue);
@@ -152,10 +168,7 @@ void main() {
     });
 
     test('字幕动作文案不展示格式限定词，但 picker 仍保留白名单', () {
-      final String menuBody = _methodBody(
-        src,
-        'void _showVideoMenu(VideoBookRow book)',
-      );
+      final String menuBody = _methodBody(src, 'void _showVideoMenu(');
       final String pickerBody = _methodBody(
         src,
         'Future<void> _pickSubtitle(VideoBookRow book)',
