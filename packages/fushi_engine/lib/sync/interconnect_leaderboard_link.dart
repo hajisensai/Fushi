@@ -8,7 +8,7 @@
 // 门（与 Profile 传输同一套，见 fushi_sync_server/leaderboard_link.part.dart）：
 //   1. 必须 HTTPS：明文局域网上配对令牌可被嗅探，嗅到的人就能把**自己的**钥匙挂进账户；
 //   2. 只认已配对设备的 per-peer 令牌（共享 token 一律拒）；
-//   3. host 没装配本能力 → 404（旧版 / 无头服务端），`/api/capabilities` 不声明
+//   3. host 没装配本能力 → 404（旧版），`/api/capabilities` 不声明
 //      [kInterconnectLeaderboardLinkCapability]；
 //   4. host 用户关了「允许已配对设备自动登录我的账户」（总闸）→ 403 `disabled`；
 //   5. 发起的 peer 没被 host 标记为「我的设备」→ 403 `not_owner_device`。配对常常只是
@@ -16,7 +16,13 @@
 //      host 主人在配对审批时选了「这是我的设备」、或之后在已配对设备列表里手动标记的 peer；
 //      升级前就配对过的 peer 一律不算（不追溯授权）。
 
+import 'dart:async';
+import 'dart:io';
+
+import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
+import 'package:http/http.dart' as http;
 
 /// 端点路径（host / client 共用）。
 const String kInterconnectLeaderboardLinkPath =
@@ -94,7 +100,65 @@ class InterconnectLeaderboardLinkResult {
   };
 }
 
-/// host 侧能力（app 装配；引擎纯 Dart，不认识排行榜服务的 Flutter 侧状态）。
+/// host 侧代绑的公共收尾（app 与无头服务端共用）：跑 [link]（用本机账户调服务端
+/// `POST /v1/me/devices`，本机没有账户时返回 null），把结果 / 失败翻成端点的应答。
+///
+/// - null → 409 [InterconnectLeaderboardLinkError.noAccount]；
+/// - 服务端 404（旧版 Worker 对未知写路由回 404）→ 502 `server_unsupported`；
+/// - 服务端 5xx / 超时 / 网络错误 → 502 `server_unavailable`；
+/// - 服务端其余 4xx（`too_many_devices` / `key_taken` / `stale_time` / `rate_limited` …）→
+///   409 + 服务端错误码透传。
+///
+/// 其余异常原样抛出（不是可预期的失败，由端点外层记日志回 500）。
+Future<InterconnectLeaderboardLinkResult> runInterconnectLeaderboardLink(
+  Future<({LeaderboardSelf self, String? serverUrl})?> Function() link,
+) async {
+  final ({LeaderboardSelf self, String? serverUrl})? linked;
+  try {
+    linked = await link();
+  } on LeaderboardApiException catch (e) {
+    if (e.status == 404) {
+      throw const InterconnectLeaderboardLinkException(
+        502,
+        InterconnectLeaderboardLinkError.serverUnsupported,
+      );
+    }
+    if (e.status >= 500) {
+      throw const InterconnectLeaderboardLinkException(
+        502,
+        InterconnectLeaderboardLinkError.serverUnavailable,
+      );
+    }
+    throw InterconnectLeaderboardLinkException(409, e.code);
+  } on TimeoutException {
+    throw const InterconnectLeaderboardLinkException(
+      502,
+      InterconnectLeaderboardLinkError.serverUnavailable,
+    );
+  } on SocketException {
+    throw const InterconnectLeaderboardLinkException(
+      502,
+      InterconnectLeaderboardLinkError.serverUnavailable,
+    );
+  } on http.ClientException {
+    throw const InterconnectLeaderboardLinkException(
+      502,
+      InterconnectLeaderboardLinkError.serverUnavailable,
+    );
+  }
+  if (linked == null) {
+    throw const InterconnectLeaderboardLinkException(
+      409,
+      InterconnectLeaderboardLinkError.noAccount,
+    );
+  }
+  return InterconnectLeaderboardLinkResult(
+    account: linked.self.toJson(),
+    serverUrl: linked.serverUrl,
+  );
+}
+
+/// host 侧能力（app / 无头服务端各自装配；引擎纯 Dart，不认识排行榜服务的 Flutter 侧状态）。
 abstract interface class InterconnectLeaderboardLinkHost {
   /// 「允许已配对设备自动登录我的账户」开关（总闸，默认开）。
   Future<bool> isInterconnectLeaderboardLinkEnabled();

@@ -748,6 +748,8 @@ class AnotherPopupPart {
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
           'Card-face pitch accent badge digit scales with the card term size (0.42x, floor 9) and follows the user card text size; card content typography, not page chrome.',
+      'lib/src/pages/implementations/srs/srs_html_card_view.dart':
+          'Native HTML card face: every fontSize: is the computed CSS font-size of the note\'s own card HTML (times the card zoom), and the <details> marker is 0.7x its summary\'s computed size; card content typography, not page chrome (same class as srs_fushi_card_view).',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
@@ -1346,6 +1348,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/srs/srs_html_card_view.dart': <String>{
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{

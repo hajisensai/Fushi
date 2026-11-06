@@ -19,6 +19,7 @@ import 'package:fushi_server/src/cli.dart';
 import 'package:fushi_server/src/commands/subs_commands.dart';
 import 'package:fushi_server/src/commands/video_cli_support.dart';
 import 'package:fushi_server/src/server_runtime.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -44,6 +45,34 @@ class _FakeCandidate extends VideoSubtitleCandidate {
         providerPriority: 100,
         releaseName: 'Group',
       );
+}
+
+/// 只有 id 的假来源（测装配门控：装了哪几家，不搜不下）。
+class _IdOnlyProvider implements VideoSubtitleProvider {
+  _IdOnlyProvider(this.id);
+
+  @override
+  final String id;
+
+  @override
+  int get priority => 100;
+
+  @override
+  bool get allowsFreeProbeDownload => false;
+
+  @override
+  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
+    VideoSubtitleSearchRequest request,
+  ) async => ProviderBatchResult<VideoSubtitleCandidate>.success(
+    const <VideoSubtitleCandidate>[],
+  );
+
+  @override
+  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) =>
+      throw UnimplementedError();
+
+  @override
+  void close() {}
 }
 
 /// 记录请求、按 remoteId 回字节的假来源（冒用 jimaku 的 id，好过凭据门）。
@@ -200,6 +229,92 @@ void main() {
         ).openSubtitles.effectiveApiKey,
         'k1',
       );
+    });
+  });
+
+  group('无人值守的来源装配（下载 / 补字幕）', () {
+    List<String> ids(_MapPrefs prefs, Map<String, String> env) {
+      final registry = buildServerSubtitleRegistry(
+        prefs,
+        environment: env,
+        providerFactory: (String id, SubsCredentials _) => _IdOnlyProvider(id),
+      );
+      try {
+        return <String>[
+          for (final VideoSubtitleProvider p in registry.providers) p.id,
+        ];
+      } finally {
+        registry.close();
+      }
+    }
+
+    test('有 key 且开着的来源才装（key 可来自偏好或环境变量）', () {
+      expect(
+        ids(
+          _MapPrefs(<String, Object?>{
+            kJimakuApiKeyPref: 'jk',
+            kOpenSubtitlesConfigPref: jsonEncode(<String, Object?>{
+              'apiKey': 'k1',
+            }),
+          }),
+          const <String, String>{kSubdlApiKeyEnv: 'sd'},
+        ),
+        <String>['opensubtitles', 'subdl', 'jimaku'],
+      );
+      // SubDL / Jimaku 没有内置密钥：什么都没配就不装。OpenSubtitles 是否在取决于
+      // 构建里的内置应用密钥（入库占位为空，发布构建注入）。
+      expect(
+        ids(_MapPrefs(), const <String, String>{}),
+        isNot(contains('subdl')),
+      );
+      expect(
+        ids(_MapPrefs(), const <String, String>{}),
+        isNot(contains('jimaku')),
+      );
+    });
+
+    test('偏好里关掉的来源不装，环境变量只补 key、推翻不了关闭', () {
+      final _MapPrefs prefs = _MapPrefs(<String, Object?>{
+        kOpenSubtitlesConfigPref: jsonEncode(<String, Object?>{
+          'apiKey': 'k1',
+          'enabled': false,
+        }),
+        kSubdlEnabledPref: false,
+        kJimakuEnabledPref: false,
+      });
+      const Map<String, String> env = <String, String>{
+        kOpenSubtitlesApiKeyEnv: 'os',
+        kSubdlApiKeyEnv: 'sd',
+        kJimakuApiKeyEnv: 'jk',
+      };
+      expect(ids(prefs, env), isEmpty);
+      // 命令行口径不变：人在场点名，环境变量仍可临时启用。
+      final SubsCredentials cli = resolveSubsCredentials(prefs, env);
+      expect(cli.unavailableReason('opensubtitles'), isNull);
+      expect(cli.unavailableReason('subdl'), isNull);
+      expect(cli.unavailableReason('jimaku'), isNull);
+    });
+
+    test('每系列字幕语言记忆与默认内容语言按 app 同名偏好读', () {
+      final _MapPrefs prefs = _MapPrefs(<String, Object?>{
+        kSeriesSubtitleLanguagesPref: jsonEncode(<String, String>{
+          'show name': 'zh',
+        }),
+        kDefaultContentLanguagePref: 'ja',
+      });
+      expect(serverSeriesSubtitleLanguage(prefs, 'show name'), 'zh');
+      expect(serverSeriesSubtitleLanguage(prefs, 'other'), isNull);
+      expect(
+        serverSeriesSubtitleLanguage(
+          _MapPrefs(<String, Object?>{kSeriesSubtitleLanguagesPref: '{bad'}),
+          'x',
+        ),
+        isNull,
+      );
+      expect(serverDefaultContentLanguage(prefs), 'ja');
+      expect(serverDefaultContentLanguage(_MapPrefs()), isNull);
+      expect(serverPreferredSubtitleLanguages(' ja '), <String>['ja']);
+      expect(serverPreferredSubtitleLanguages(''), isEmpty);
     });
   });
 

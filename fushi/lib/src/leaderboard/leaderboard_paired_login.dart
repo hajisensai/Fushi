@@ -10,17 +10,13 @@
 //
 // 私钥、恢复码绝不经互联传输：请求里只有公钥 + 持有证明，应答里只有账户公开资料与服务地址。
 
-import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -55,60 +51,11 @@ class AppLeaderboardLinkHost implements InterconnectLeaderboardLinkHost {
   @override
   Future<InterconnectLeaderboardLinkResult> linkLeaderboardDevice(
     LeaderboardDeviceLinkRequest request,
-  ) async {
+  ) => runInterconnectLeaderboardLink(() async {
     final LeaderboardService? service = _service();
-    if (service == null) {
-      throw const InterconnectLeaderboardLinkException(
-        409,
-        InterconnectLeaderboardLinkError.noAccount,
-      );
-    }
-    final ({LeaderboardSelf self, String? serverUrl})? linked;
-    try {
-      linked = await service.linkPairedDevice(request);
-    } on LeaderboardApiException catch (e) {
-      // 旧版服务端没有 POST /v1/me/devices（Worker 对未知写路由回 404）。
-      if (e.status == 404) {
-        throw const InterconnectLeaderboardLinkException(
-          502,
-          InterconnectLeaderboardLinkError.serverUnsupported,
-        );
-      }
-      if (e.status >= 500) {
-        throw const InterconnectLeaderboardLinkException(
-          502,
-          InterconnectLeaderboardLinkError.serverUnavailable,
-        );
-      }
-      // too_many_devices / key_taken / stale_time / rate_limited …：透传服务端错误码。
-      throw InterconnectLeaderboardLinkException(409, e.code);
-    } on TimeoutException {
-      throw const InterconnectLeaderboardLinkException(
-        502,
-        InterconnectLeaderboardLinkError.serverUnavailable,
-      );
-    } on SocketException {
-      throw const InterconnectLeaderboardLinkException(
-        502,
-        InterconnectLeaderboardLinkError.serverUnavailable,
-      );
-    } on http.ClientException {
-      throw const InterconnectLeaderboardLinkException(
-        502,
-        InterconnectLeaderboardLinkError.serverUnavailable,
-      );
-    }
-    if (linked == null) {
-      throw const InterconnectLeaderboardLinkException(
-        409,
-        InterconnectLeaderboardLinkError.noAccount,
-      );
-    }
-    return InterconnectLeaderboardLinkResult(
-      account: linked.self.toJson(),
-      serverUrl: linked.serverUrl,
-    );
-  }
+    if (service == null) return null;
+    return service.linkPairedDevice(request);
+  });
 }
 
 /// 自动登录成功：[peerName] 是配对记录里的对端设备名（可能为 null），[self] 是落档的账户。
