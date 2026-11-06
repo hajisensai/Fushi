@@ -6,13 +6,20 @@
 // [scheduleFrameCallback] / [scheduleFrame]，这里是唯一能在 release 包里把它们点名的位置。
 //
 // 只记账、不改行为：两个覆写都原样调 super。
+//
+// 另挂 [AxTreeDesyncSentinel]（BUG-4073）：桌面端逐帧复核发往引擎 AXTree 的语义更新，
+// 让引擎失步的帧记进错误日志（引擎自己的报错只进 stderr）。只诊断、不改下发内容。
+// 一个进程只能有一个 binding，所以要帧归因与语义哨兵都收在这一个类里。
+
+import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
+import 'package:fushi/src/utils/misc/semantics_ax_tree_contract.dart';
 
-/// [WidgetsFlutterBinding] + 要帧归因。仍是 [WidgetsFlutterBinding] 子类（`is WidgetsFlutterBinding`
+/// [WidgetsFlutterBinding] + 要帧归因 + AXTree 失步哨兵。仍是 [WidgetsFlutterBinding] 子类（`is WidgetsFlutterBinding`
 /// 的判断不变）。
 class FushiWidgetsFlutterBinding extends WidgetsFlutterBinding {
   /// 还没有 binding 时建一个本类；已有（integration_test / flutter_test 先建了自己的 binding 再调
@@ -61,4 +68,8 @@ class FushiWidgetsFlutterBinding extends WidgetsFlutterBinding {
     }
     super.scheduleFrame();
   }
+
+  @override
+  ui.SemanticsUpdateBuilder createSemanticsUpdateBuilder() =>
+      AxTreeDesyncSentinel.wrap(super.createSemanticsUpdateBuilder());
 }
