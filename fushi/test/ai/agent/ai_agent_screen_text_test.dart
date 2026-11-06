@@ -18,6 +18,9 @@ class _FakeOcr implements SystemOcrPlatform {
   final List<String> lines;
   final Exception? error;
 
+  /// 最近一次识别收到的语言。
+  String? lastLanguage;
+
   @override
   Future<bool> isAvailable() async => true;
 
@@ -27,6 +30,7 @@ class _FakeOcr implements SystemOcrPlatform {
     required String language,
     List<Rect> tiles = const <Rect>[],
   }) async {
+    lastLanguage = language;
     final Exception? e = error;
     if (e != null) throw e;
     return SystemOcrPageResult(
@@ -52,6 +56,7 @@ void main() {
   group('captureScreenText（截屏 → OCR → 全文）', () {
     test('按行拼成全文，去掉空行', () async {
       final ScreenTextCaptureResult result = await captureScreenText(
+        language: 'ja',
         capture: () async => _png,
         ocr: _FakeOcr(lines: <String>[' 第一行 ', '', '第二行']),
       );
@@ -59,8 +64,19 @@ void main() {
       expect(result.text, '第一行\n第二行');
     });
 
+    test('把调用方给的语言原样交给系统 OCR（截屏识字跟随默认内容语言）', () async {
+      final _FakeOcr ocr = _FakeOcr(lines: <String>['你好']);
+      await captureScreenText(
+        language: 'zh-Hans',
+        capture: () async => _png,
+        ocr: ocr,
+      );
+      expect(ocr.lastLanguage, 'zh-Hans');
+    });
+
     test('超长截到上限', () async {
       final ScreenTextCaptureResult result = await captureScreenText(
+        language: 'ja',
         capture: () async => _png,
         ocr: _FakeOcr(lines: <String>['あ' * 5000]),
       );
@@ -81,6 +97,7 @@ void main() {
     test('截不到图 = failed；没识别出字 = empty', () async {
       expect(
         (await captureScreenText(
+          language: 'ja',
           capture: () async => null,
           ocr: _FakeOcr(lines: <String>['x']),
         )).status,
@@ -88,6 +105,7 @@ void main() {
       );
       expect(
         (await captureScreenText(
+          language: 'ja',
           capture: () async => _png,
           ocr: _FakeOcr(),
         )).status,
@@ -97,6 +115,7 @@ void main() {
 
     test('要图：截图缩过后随结果带回；不要图不带', () async {
       final ScreenTextCaptureResult withImage = await captureScreenText(
+        language: 'ja',
         keepImage: true,
         capture: () async => _png,
         shrink: (Uint8List png) async => Uint8List.fromList(<int>[9]),
@@ -106,6 +125,7 @@ void main() {
       expect(withImage.image, <int>[9]);
 
       final ScreenTextCaptureResult without = await captureScreenText(
+        language: 'ja',
         capture: () async => _png,
         ocr: _FakeOcr(lines: <String>['字']),
       );
@@ -114,6 +134,7 @@ void main() {
 
     test('本平台没有系统 OCR：不识字，只带回截图', () async {
       final ScreenTextCaptureResult result = await captureScreenText(
+        language: 'ja',
         keepImage: true,
         recognize: false,
         capture: () async => _png,
@@ -126,6 +147,7 @@ void main() {
 
     test('OCR 没认出字时截图照样带回', () async {
       final ScreenTextCaptureResult result = await captureScreenText(
+        language: 'ja',
         keepImage: true,
         capture: () async => _png,
         shrink: (Uint8List png) async => png,
@@ -137,6 +159,7 @@ void main() {
 
     test('系统 OCR 不可用时带原因（模型没就绪要带用户去配模型）', () async {
       final ScreenTextCaptureResult result = await captureScreenText(
+        language: 'ja',
         capture: () async => _png,
         ocr: _FakeOcr(
           error: const SystemOcrUnavailableException(
@@ -190,6 +213,7 @@ void main() {
     ) async {
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
+            language: () => 'ja',
             capture: ({bool keepImage = false, bool recognize = true}) async =>
                 const ScreenTextCaptureResult(
                   ScreenTextCaptureStatus.ok,
@@ -227,6 +251,7 @@ void main() {
       bool? offstageDuringCapture;
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
+            language: () => 'ja',
             capture: ({bool keepImage = false, bool recognize = true}) async {
               offstageDuringCapture = panelRoute?.offstage;
               return const ScreenTextCaptureResult(
@@ -276,6 +301,7 @@ void main() {
       bool? askedForImage;
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
+            language: () => 'ja',
             capture: ({bool keepImage = false, bool recognize = true}) async {
               askedForImage = keepImage;
               return ScreenTextCaptureResult(
@@ -326,6 +352,7 @@ void main() {
     testWidgets('模型不能收图：只附文字，截图不留', (WidgetTester tester) async {
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
+            language: () => 'ja',
             capture: ({bool keepImage = false, bool recognize = true}) async =>
                 ScreenTextCaptureResult(
                   ScreenTextCaptureStatus.ok,
@@ -346,6 +373,7 @@ void main() {
     testWidgets('点文字 chip 能手改：改了就用改后的，清空等于不附', (WidgetTester tester) async {
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
+            language: () => 'ja',
             capture: ({bool keepImage = false, bool recognize = true}) async =>
                 const ScreenTextCaptureResult(
                   ScreenTextCaptureStatus.ok,

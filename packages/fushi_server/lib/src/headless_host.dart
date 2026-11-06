@@ -20,6 +20,7 @@ import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -61,6 +62,7 @@ import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -420,6 +422,8 @@ class HeadlessHost {
           // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
           ..hostId = identity.deviceId
           ..publicUrlsProvider = (() async => config.publicUrls)
+          // 「我的设备」跟随本机 Fushi 账户自动登录（见 leaderboard_link_host.dart）。
+          ..leaderboardLinkHost = buildLeaderboardLinkHost()
           // 图形字幕（PGS / VobSub / DVB）整轨回传：与 app 当 host 同一份引擎实现（抽轨走
           // 引擎 ffmpeg 后端解析——配置里的 ffmpeg 路径 / `FUSHI_FFMPEG` / PATH），缓存落
           // 服务端自己的临时目录。
@@ -685,6 +689,9 @@ class HeadlessHost {
         lastSeenIp: Value<String?>(registration.remoteAddress),
       ),
     );
+    // 设备钥匙指纹与「我的设备」按本次会话显式重写（与 app 同一份实现）。无头审批不授予
+    // 「我的设备」，所以这里只会清掉旧标记、记下指纹，供管理员之后手动标记。
+    await InterconnectOwnerDeviceStore(db).recordPairing(registration);
     _server?.invalidatePeerTokenCache();
     engineLog.logDiagnostic(
       'HeadlessHost',
@@ -711,6 +718,15 @@ class HeadlessHost {
     String videoId, {
     String? language,
   }) => subtitleBackfill.backfillVideo(videoId, language: language);
+
+  /// 「跟随已配对设备自动登录」的 host 侧装配（[start] 用；测试也直接拿它挂到自建的 TLS
+  /// [FushiSyncServer] 上）。总闸现读 [config]，账户每次请求现读激活 Profile 的账户文件。
+  ServerLeaderboardLinkHost buildLeaderboardLinkHost() =>
+      ServerLeaderboardLinkHost(
+        db: db,
+        supportRoot: paths.support,
+        enabled: () => config.leaderboardLink,
+      );
 
   /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
   Future<String?> _resolveVideoPath(String videoId) async {

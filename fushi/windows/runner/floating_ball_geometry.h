@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <vector>
 
 namespace fushi::floating_ball {
 
@@ -286,6 +288,159 @@ inline int ProgressDurationMs(int full_ms, double from, double to) {
 }
 
 inline double Lerp(double a, double b, double t) { return a + (b - a) * t; }
+
+// ── 平台无关的状态与布局（Windows / Linux runner 共用）────────────────────────
+
+constexpr char kActionOpenApp[] = "open_app";
+constexpr char kActionClose[] = "close";
+
+// 按钮自上而下：关闭、（没被关掉的）打开 Fushi 在最上（离球最远，防误触），用户勾选的
+// 动作在下、去重，末颗紧贴球顶——与应用内「列表末颗离球最近」同序。
+inline std::vector<std::string> ButtonIds(
+    bool show_open_app, const std::vector<std::string>& actions) {
+  std::vector<std::string> ids;
+  ids.emplace_back(kActionClose);
+  if (show_open_app) ids.emplace_back(kActionOpenApp);
+  for (const std::string& id : actions) {
+    if (id != kActionClose && id != kActionOpenApp &&
+        std::find(ids.begin(), ids.end(), id) == ids.end()) {
+      ids.push_back(id);
+    }
+  }
+  return ids;
+}
+
+// 展开 / 收起进度动画：线性，中途反向按剩余路程缩短。
+struct ProgressAnimation {
+  bool active = false;
+  double from = 0;
+  double to = 0;
+  double start_ms = 0;
+  double duration_ms = 1;
+
+  void Start(double current, double target, int full_ms, double now_ms) {
+    active = true;
+    from = current;
+    to = target;
+    start_ms = now_ms;
+    duration_ms = ProgressDurationMs(full_ms, current, target);
+  }
+
+  // 当前进度；到终点时 active 置 false 并返回 to。
+  double Sample(double now_ms) {
+    const double f = std::clamp((now_ms - start_ms) / duration_ms, 0.0, 1.0);
+    if (f >= 1.0) {
+      active = false;
+      return to;
+    }
+    return Lerp(from, to, f);
+  }
+};
+
+// 拖动松手后吸附到收起位：kSnapMs、easeOutCubic。
+struct SnapAnimation {
+  bool active = false;
+  double from_left = 0;
+  double from_top = 0;
+  double to_left = 0;
+  double to_top = 0;
+  double start_ms = 0;
+
+  void Start(double left, double top, double target_left, double target_top,
+             double now_ms) {
+    active = true;
+    from_left = left;
+    from_top = top;
+    to_left = target_left;
+    to_top = target_top;
+    start_ms = now_ms;
+  }
+
+  // 写出当前球左上角；到终点时 active 置 false。
+  void Sample(double now_ms, double* left, double* top) {
+    const double f =
+        std::clamp((now_ms - start_ms) / static_cast<double>(kSnapMs), 0.0, 1.0);
+    const double e = EaseOutCubic(f);
+    *left = Lerp(from_left, to_left, e);
+    *top = Lerp(from_top, to_top, e);
+    if (f >= 1.0) active = false;
+  }
+};
+
+// 拖动中的球左上角：横向夹在左右两个收起位之间，纵向夹在活动范围里。
+// |as_left| / |as_right| = 同一视口按左 / 右停靠的几何。
+inline Offset ClampDrag(const Geometry& as_left, const Geometry& as_right,
+                        double left, double top) {
+  return Offset{std::clamp(left, as_left.CollapsedBallLeft(),
+                           std::max(as_left.CollapsedBallLeft(),
+                                    as_right.CollapsedBallLeft())),
+                std::clamp(top, as_left.MinTop(), as_left.MaxTop())};
+}
+
+// 按钮窗：按**最终几何**一次算好的包围盒（屏幕整数像素）与窗内的展开态球心、
+// 各按钮落点。包围盒容得下每颗按钮从球心飞到落点、再按 easeOutBack 冲过头的整段
+// 轨迹（圆心随 k 线性，两个端点 k=0 / k=峰值 的并集就够），外加阴影边与标签胶囊。
+struct MenuLayout {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  double ball_cx = 0;
+  double ball_cy = 0;
+  std::vector<Offset> centers;
+};
+
+// |label_widths| 与按钮一一对应（屏幕像素），空 = 不显示标签。|peak| =
+// EaseOutBackPeak()（调用方缓存）。
+inline MenuLayout LayoutMenu(const Geometry& g, double scale, double peak,
+                             const std::vector<double>& label_widths) {
+  const double ball_cx = g.ExpandedBallLeft() + g.ball() / 2;
+  const double ball_cy = g.ExpandedBallTop() + g.ball() / 2;
+  const double reach_radius = g.button() / 2 * ButtonScale(peak) +
+                              kMenuShadowPadDip * scale + 2.0 * scale;
+  double min_x = ball_cx - reach_radius;
+  double max_x = ball_cx + reach_radius;
+  double min_y = ball_cy - reach_radius;
+  double max_y = ball_cy + reach_radius;
+  // 标签胶囊贴在按钮朝屏幕中央的一侧（左停靠在右、右停靠在左），随按钮圆心走。
+  const double label_near = g.button() / 2 + kLabelGapDip * scale;
+  const double label_pad = kMenuShadowPadDip * scale;
+  const double label_half_h = kLabelHeightDip * scale / 2 + label_pad;
+  auto include_label = [&](size_t index, double cx, double cy) {
+    if (index >= label_widths.size()) return;
+    const double w = label_widths[index];
+    const double a = g.dock_left() ? cx + label_near : cx - label_near - w;
+    min_x = std::min(min_x, a - label_pad);
+    max_x = std::max(max_x, a + w + label_pad);
+    min_y = std::min(min_y, cy - label_half_h);
+    max_y = std::max(max_y, cy + label_half_h);
+  };
+  std::vector<Offset> offsets;
+  for (int i = 0; i < g.action_count(); ++i) {
+    const Offset off = g.ButtonOffset(i);
+    offsets.push_back(off);
+    const double far_x = ball_cx + off.dx * peak;
+    const double far_y = ball_cy + off.dy * peak;
+    min_x = std::min(min_x, far_x - reach_radius);
+    max_x = std::max(max_x, far_x + reach_radius);
+    min_y = std::min(min_y, far_y - reach_radius);
+    max_y = std::max(max_y, far_y + reach_radius);
+    include_label(static_cast<size_t>(i), ball_cx, ball_cy);
+    include_label(static_cast<size_t>(i), far_x, far_y);
+  }
+  MenuLayout layout;
+  layout.x = static_cast<int>(std::floor(min_x));
+  layout.y = static_cast<int>(std::floor(min_y));
+  layout.width = static_cast<int>(std::ceil(max_x)) - layout.x;
+  layout.height = static_cast<int>(std::ceil(max_y)) - layout.y;
+  layout.ball_cx = ball_cx - layout.x;
+  layout.ball_cy = ball_cy - layout.y;
+  for (const Offset& off : offsets) {
+    layout.centers.push_back(
+        Offset{layout.ball_cx + off.dx, layout.ball_cy + off.dy});
+  }
+  return layout;
+}
 
 }  // namespace fushi::floating_ball
 

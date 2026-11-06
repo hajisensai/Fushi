@@ -31,6 +31,10 @@ const Map<String, String> kAllowedRawHtmlParseFiles = <String, String>{
       '制卡释义 HTML（popup.js 导出的 `.yomitan-glossary` 片段，BUG-3224）不是 EPUB '
       '章节 XHTML：只用解析结果做 CSS 选择器命中判断，最终输出仍是原字符串，'
       '且 fushi_anki 不依赖 fushi_engine（无法调 parseChapterHtml）。',
+  'lib/src/srs/srs_html_card.dart':
+      'Anki 卡面 HTML（渲染器给出的问题 / 答案面）不是 EPUB 章节 XHTML：WebView 卡面按 '
+      '`text/html` 加载（srs_card_face.dart 的 loadData），原生卡面要与它逐元素同一棵 DOM，'
+      '就必须走同一个 HTML5 解析；改走 parseChapterHtml 的 XHTML 归一化反而与 WebView 分叉。',
 };
 
 const String _kSelfPath = 'test/tools/epub_chapter_parse_entry_guard_test.dart';

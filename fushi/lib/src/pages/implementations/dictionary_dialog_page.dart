@@ -1023,9 +1023,6 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     final ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
     final ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
 
     if (!mounted) return;
     showAppDialog(
@@ -1639,9 +1636,6 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
     ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
 
     final ({Directory? cleanupDir, Directory directory})? pickedDirectory;
     try {
