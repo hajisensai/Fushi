@@ -65,7 +65,7 @@ SystemOcrSetupPhase systemOcrSetupPhaseFor(SystemOcrModelStatus status) =>
         SystemOcrSetupPhase.playServicesUnavailable,
     };
 
-/// 弹窗里给反馈人截图用的诊断行：原始码 + 本机 / 需要的 Play 服务版本（BUG-4130）。
+/// 弹窗里给反馈人截图用的诊断行：原始码 + 本机 / 需要的 Play 服务版本（BUG-4199）。
 String systemOcrPlayServicesDiagnosticsText(
   SystemOcrPlayServicesDiagnostics diagnostics,
 ) {

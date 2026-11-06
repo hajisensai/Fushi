@@ -80,7 +80,7 @@ public final class SystemOcrChannel {
      *
      * <p>Play 服务有问题时只报 {@link #STATUS_PLAY_SERVICES_PROBLEM} 加**原始**
      * {@link ConnectionResult} 码与版本号，按码细分成哪种状态由 Dart 侧一个纯函数决定
-     * （BUG-4130）：以前在这里用 isUserResolvableError 二分成「可修 / 不可修」两个状态，
+     * （BUG-4199）：以前在这里用 isUserResolvableError 二分成「可修 / 不可修」两个状态，
      * 原始码丢了，用户 Play 服务已是最新也只能看到「缺失、被停用或版本过旧」。
      */
     private static final String STATUS_READY = "ready";
@@ -191,7 +191,7 @@ public final class SystemOcrChannel {
      * 无从谈起下载，必须先把这件事告诉用户。
      *
      * <p>原样回传 {@link ConnectionResult} 码、本机 Play 服务 APK 的版本，以及本库要求的
-     * 最低版本 {@link GoogleApiAvailability#GOOGLE_PLAY_SERVICES_VERSION_CODE}（BUG-4130）：
+     * 最低版本 {@link GoogleApiAvailability#GOOGLE_PLAY_SERVICES_VERSION_CODE}（BUG-4199）：
      * 报「版本过旧」而 Play 商店说已是最新时，只有两个版本号摆出来才看得懂是哪一边的事。
      */
     @Nullable
