@@ -102,6 +102,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/native_attribution_probe.dart';
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
@@ -709,8 +710,14 @@ void main([List<String> args = const <String>[]]) {
           srsMemoryProbe,
           srsOpLedgerProbe,
           UiActivityProbe.probe,
+          // 原生内存归因（BUG-4075 证据缺口 ⑩）：各线程 CPU、匿名映射分组、malloc 越档详细 dump。
+          threadCpuProbe,
+          nativeMapsProbe,
+          nativeAttributionDumpProbe,
         ],
       );
+      nativeAttributionSink = (String text) => ErrorLogService.instance
+          .logDiagnostic('NativeAttribution.dump', text);
       // 单次超过 3 s 或读回超过 32 MB 的 SRS 操作另记一条诊断日志（随反馈上传）。
       SrsOpLedger.onHeavy = (String line) =>
           ErrorLogService.instance.logDiagnostic('SrsOpLedger.heavy', line);
