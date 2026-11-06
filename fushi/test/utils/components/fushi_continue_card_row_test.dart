@@ -2,12 +2,14 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/cover_provider_epoch.dart';
 
 /// 「继续」封面取色并列卡（[FushiContinueCardRow]）：配色来自封面种子色、墨水屏 /
 /// Apple 退回中性卡面、State 跟条目走、系统字号放大不溢出、网格模式占格。
@@ -274,6 +276,127 @@ void main() {
         ),
         1,
       );
+    });
+  });
+
+  // 用户 2026-11-05 反馈「视频ui优化」（平板横屏）：视频首页大卡旁只排得下一张
+  // 取色卡时卡窄而高，16:9 剧照按卡高撑到 168，信息列只剩几十像素、标题被截成
+  // 三个字。卡放不下「封面 | 信息列」时改成上图下文。
+  group('取色卡封面与信息列自适应', () {
+    FushiContinueEntry still(String id) => FushiContinueEntry(
+      key: ValueKey<String>('card-$id'),
+      title: 'Still $id',
+      cover: ColoredBox(
+        key: ValueKey<String>('cover-$id'),
+        color: const Color(0xFF808080),
+      ),
+      coverAspectRatio: 16 / 9,
+      progress: 0.5,
+      onOpen: () {},
+    );
+
+    Future<void> pumpFill(
+      WidgetTester tester, {
+      required double width,
+      double? fitHeight,
+    }) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: FushiContinueCardRow.fill(
+                  entries: <FushiContinueEntry>[still('a')],
+                  gap: 12,
+                  fitHeight: fitHeight,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('窄而高（大卡旁只放得下一张）：封面在上、标题在下且不被挤窄', (WidgetTester tester) async {
+      // 高度只够排一行（平板横屏大卡约 275 高）：两行时每张卡太矮，按设计走
+      // 「缩封面、左右排」。
+      await pumpFill(tester, width: 360, fitHeight: 280);
+      final Rect cover = tester.getRect(
+        find.byKey(const ValueKey<String>('cover-a')),
+      );
+      final Rect title = tester.getRect(find.text('Still a'));
+      expect(title.top, greaterThanOrEqualTo(cover.bottom));
+      expect(cover.width / cover.height, closeTo(16 / 9, 0.01));
+      expect(
+        tester.getRect(find.byKey(const ValueKey<String>('card-a'))).width -
+            cover.width,
+        lessThan(80),
+        reason: '封面铺满卡宽',
+      );
+    });
+
+    testWidgets('宽卡仍是「封面 | 信息列」，信息列不窄于下限', (WidgetTester tester) async {
+      await pumpFill(tester, width: 900, fitHeight: 320);
+      final Rect cover = tester.getRect(
+        find.byKey(const ValueKey<String>('cover-a')),
+      );
+      final Rect title = tester.getRect(find.text('Still a'));
+      expect(title.left, greaterThan(cover.right));
+    });
+
+    testWidgets('窄而矮（手机单行）：左右排，封面缩到信息列放得下', (WidgetTester tester) async {
+      await pumpFill(tester, width: 340);
+      final Rect cover = tester.getRect(
+        find.byKey(const ValueKey<String>('cover-a')),
+      );
+      final Rect card = tester.getRect(
+        find.byKey(const ValueKey<String>('card-a')),
+      );
+      expect(
+        card.right - cover.right,
+        greaterThanOrEqualTo(FushiContinueCardRow.minInfoWidth),
+      );
+      expect(cover.width / cover.height, closeTo(16 / 9, 0.01));
+    });
+  });
+
+  // 视频首页「继续观看」的取图链末端会回落到竖版海报（在线源只有竖图），方向
+  // 交给解码后的实测宽高比：解码前按可能的 16:9 留宽，探测过就按实测。
+  group('layoutAspectRatio', () {
+    FushiContinueEntry probed(ImageProvider image) => FushiContinueEntry(
+      key: const ValueKey<String>('p'),
+      title: 'p',
+      cover: const SizedBox(),
+      orientationImage: image,
+      onOpen: () {},
+    );
+
+    test('方向未探测时按 16:9 留宽', () {
+      expect(
+        probed(img('unprobed-layout')).layoutAspectRatio,
+        closeTo(16 / 9, 1e-9),
+      );
+    });
+
+    test('探测为竖图时按竖封面比例留宽', () {
+      final ImageProvider image = img('portrait-layout');
+      CoverProbeMemo.rememberAspect(
+        image,
+        0.7,
+        epoch: CoverProviderEpoch.of(image),
+      );
+      addTearDown(() => CoverProbeMemo.evict(image));
+      expect(probed(image).layoutAspectRatio, closeTo(2 / 3, 1e-9));
+    });
+
+    test('没有探测图的条目就是自己的 coverAspectRatio', () {
+      expect(entry('x').layoutAspectRatio, closeTo(2 / 3, 1e-9));
     });
   });
 }

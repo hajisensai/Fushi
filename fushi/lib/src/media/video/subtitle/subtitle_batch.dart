@@ -15,7 +15,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
     show subtitleVersionKeyOf;
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart'
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart'
     show SubtitleContentLanguage, coarseLanguageCode;
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart'
     show probeUnlabeledVersionLanguages;

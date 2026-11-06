@@ -6,7 +6,10 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
@@ -35,7 +38,10 @@ void main() {
   const String hash = '0123456789abcdef0123456789abcdef01234567';
   const String magnet = 'magnet:?xt=urn:btih:$hash&dn=novel';
 
-  Future<ServerDownloadHost> build(List<(String, List<int>)> files) async {
+  Future<ServerDownloadHost> build(
+    List<(String, List<int>)> files, {
+    VideoSubtitleRegistry Function()? subtitleRegistryFactory,
+  }) async {
     saveRoot = Directory(p.join(tmp.path, 'torrent_save'))
       ..createSync(recursive: true);
     final List<TorrentFileEntry> entries = <TorrentFileEntry>[];
@@ -87,6 +93,10 @@ void main() {
       ),
       backendOverride: backend,
       pollInterval: const Duration(milliseconds: 20),
+      // 默认不装任何字幕来源：测试不联网。
+      subtitleRegistryFactory:
+          subtitleRegistryFactory ??
+          () => VideoSubtitleRegistry(const <VideoSubtitleProvider>[]),
     );
     await built.start();
     return built;
@@ -161,6 +171,36 @@ void main() {
       throwsA(isA<ArgumentError>()),
     );
     expect(await db.getVideoDownloadJobs(), isEmpty, reason: '被拒的域不能留下任务行');
+  });
+
+  test('字幕来源随管线起停：启动装上、重载换新并关旧、停机关闭；一家没配时为空', () async {
+    final List<_ClosingSubtitleProvider> built = <_ClosingSubtitleProvider>[];
+    host = await build(
+      <(String, List<int>)>[('Novel/book.txt', 'x'.codeUnits)],
+      subtitleRegistryFactory: () {
+        final _ClosingSubtitleProvider provider = _ClosingSubtitleProvider();
+        built.add(provider);
+        return VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]);
+      },
+    );
+    expect(host.subtitleProviderIds, <String>['fake-subs']);
+    expect(built, hasLength(1));
+
+    await host.reloadResourceIndexers();
+    expect(built, hasLength(2), reason: '重建管线按当前偏好重读字幕来源');
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 10));
+    while (!built.first.closed && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(built.first.closed, isTrue, reason: '旧管线停下后关旧 registry');
+    expect(built.last.closed, isFalse);
+
+    await host.stop();
+    expect(built.last.closed, isTrue);
+    host = await build(<(String, List<int>)>[
+      ('Novel/book.txt', 'x'.codeUnits),
+    ]);
+    expect(host.subtitleProviderIds, isEmpty);
   });
 
   test('小说（txt）：入队 → 下载完成 → 转 EPUB 落进服务端书库', () async {
@@ -312,4 +352,32 @@ class _CompletedTorrentBackend implements TorrentBackend {
 
   @override
   void close() {}
+}
+
+/// 只记关闭的假字幕来源（测 registry 生命周期，不搜不下）。
+class _ClosingSubtitleProvider implements VideoSubtitleProvider {
+  bool closed = false;
+
+  @override
+  String get id => 'fake-subs';
+
+  @override
+  int get priority => 100;
+
+  @override
+  bool get allowsFreeProbeDownload => false;
+
+  @override
+  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
+    VideoSubtitleSearchRequest request,
+  ) async => ProviderBatchResult<VideoSubtitleCandidate>.success(
+    const <VideoSubtitleCandidate>[],
+  );
+
+  @override
+  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) =>
+      throw UnimplementedError();
+
+  @override
+  void close() => closed = true;
 }

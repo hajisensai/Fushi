@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/scan_scale.dart';
 
 /// 无头服务端的编译门在源码层的镜像：`packages/fushi_engine` 与 `packages/fushi_server`
-/// 会被 `dart compile exe` 成不含 Flutter 的单文件，闭包里任何 `package:flutter/…`
+/// 会被 `dart build cli` 打成不含 Flutter 的 CLI bundle，闭包里任何 `package:flutter/…`
 /// （含 foundation.dart，它传递 import `dart:ui`）、`dart:ui`、method-channel 插件、
 /// 或者反向 import app（`package:fushi/…`）都会让服务端编不过——但那要等 CI 的
 /// Linux job 才炸。这里在 `flutter test` 层先拦：
