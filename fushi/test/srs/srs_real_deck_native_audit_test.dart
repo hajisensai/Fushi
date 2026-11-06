@@ -7,7 +7,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
@@ -25,6 +24,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:test/test.dart';
 
 class _Bucket {
   int total = 0;
