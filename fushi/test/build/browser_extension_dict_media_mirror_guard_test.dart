@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1215 guard: dictionary media (gaiji / pitch-accent SVG) rewrite for the
 /// browser extension. A real browser has no image:// scheme handler, so the

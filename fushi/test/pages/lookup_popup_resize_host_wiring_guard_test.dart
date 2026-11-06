@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码级 guard（补 Phase B code review 的 MEDIUM 发现）。
 ///

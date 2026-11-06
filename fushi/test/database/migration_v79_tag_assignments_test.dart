@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v79 迁移（五张标签映射表合一，2026-08 数据层重构·用户拍板）：

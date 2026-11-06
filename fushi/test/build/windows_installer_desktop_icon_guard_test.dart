@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1014 回归守卫：Windows 安装器不得在更新时无条件重写桌面快捷方式。
 ///

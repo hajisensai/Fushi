@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v84（BUG-1502）：`preferences` 加 `updated_at`，让「是内容的偏好行」——书改名的

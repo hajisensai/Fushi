@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 
 /// 启动参数：用户输入的一整行 → argv token。规则必须与 Windows `CommandLineToArgvW`

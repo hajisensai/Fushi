@@ -1,6 +1,6 @@
 import 'dart:isolate';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
 /// TODO-723: builds an [EpubBook] whose chapters carry the given inline XHTML

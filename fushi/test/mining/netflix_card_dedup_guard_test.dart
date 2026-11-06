@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1270 guard：Netflix 沉浸制卡的三个用户报障，锁在两份扩展镜像里防回归。
 ///

@@ -3,7 +3,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 

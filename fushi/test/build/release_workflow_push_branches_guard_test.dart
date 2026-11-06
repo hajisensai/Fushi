@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：两条发布 workflow 的 `push:` 分支清单必须**完全一致**。
 ///

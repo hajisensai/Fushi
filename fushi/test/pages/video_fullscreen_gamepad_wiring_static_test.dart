@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-697（TODO-1378）：视频全屏路由内手柄只有 B 可用、A/D-pad 静默 no-op 的
 /// **页面接线**源码守卫。

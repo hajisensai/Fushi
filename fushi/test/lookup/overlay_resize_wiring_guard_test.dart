@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Phase C（弹窗尺寸精细化 2026-07-13）源码级 guard。
 ///

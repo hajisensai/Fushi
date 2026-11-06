@@ -4,7 +4,7 @@
 // TimeoutException / ClientException / FormatException，于是限流、5xx、鉴权失败
 // 被一律压成 unknown 并丢掉状态码——UI 只能把「被限流，等一会儿再搜」统一显示成
 // 「来源暂不可用」。MAL 走 Jikan 公共接口、1 秒一发且不重试，429 是常态。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_metadata_discovery_provider.dart';

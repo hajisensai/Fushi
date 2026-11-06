@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 同一个 git 依赖仓库，全仓的 `ref:` 必须**逐字一致**。
 ///

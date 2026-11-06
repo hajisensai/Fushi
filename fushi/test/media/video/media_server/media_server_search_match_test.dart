@@ -4,7 +4,7 @@
 // 兼容层按字模糊。把关只坚持「每个词都出现在标题或原名里」这一条对前两家无损
 // 的下限；这里逐条钉住三家各自的命中形态都能过、模糊命中过不了。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';

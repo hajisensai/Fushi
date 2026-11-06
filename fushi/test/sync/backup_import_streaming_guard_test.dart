@@ -10,7 +10,7 @@
 // 态画红色错误图标。本文件用源码扫描锁住这些接线。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'backup_service_source_corpus.dart';
 

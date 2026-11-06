@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 
 /// galgame 游戏库（首页「游戏」tab）纯函数守卫：名称推导 / 新条目默认 / JSON 编解码

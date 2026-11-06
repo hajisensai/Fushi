@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source guard: 「从本机 mpv 导入」支持手动指定 mpv 配置/着色器目录再搜索（用户诉求），
 /// 并把所选目录持久化（appModel.videoMpvShaderDir）下次优先。锁调用点接线（FilePicker

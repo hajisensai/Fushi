@@ -4,7 +4,7 @@
 // 服务端解析成 [ClipCropFraction]，在 ffmpeg 抽动图/静帧的滤镜链最前面插一段 crop。
 // 这里钉住：payload 解析（容错：坏输入 → null，不让整张卡 400）、crop 滤镜串形状（偶数
 // 宽高）、两条 ffmpeg 参数构造里 crop 必须排在 scale/fps 之前（先裁后缩）。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';

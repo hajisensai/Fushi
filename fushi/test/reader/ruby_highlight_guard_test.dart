@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-110 回归守卫（源码扫描；`::highlight` 在真 WebView 内的 ruby 渲染 headless
 /// 不可跑，故守结构契约）。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 反馈 TnKWBi4C-9：释义（弹窗 WebView）里点词，嵌套查词要带上被点处那一句：
 /// `assets/popup/selection.js` 的 `selectFromPosition` 产出 `selection.sentence`，

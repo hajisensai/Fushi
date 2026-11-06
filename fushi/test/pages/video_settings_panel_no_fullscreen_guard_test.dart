@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：侧栏打开时点面板不触发全屏/暂停（BUG-246 / TODO-275）。
 ///

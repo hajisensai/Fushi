@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // The page requires the native media_kit surface. These guards cover its
 // orchestration; ASR conversion and subtitle parsing have separate unit tests.

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
 import 'package:fushi/src/utils/misc/dashboard_remote_continue_feed.dart';

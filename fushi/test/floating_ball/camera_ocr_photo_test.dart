@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:image/image.dart' as img;
 

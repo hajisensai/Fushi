@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 
 /// 两个纯聚合器的契约。这些断言是「卡顿结论」的地基：速率算错、把读不到当成 0、

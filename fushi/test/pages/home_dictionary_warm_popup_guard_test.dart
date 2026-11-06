@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-931 source guard: HomeDictionaryPage（首页查词）必须像 reader（base_source_page）/
 /// video 一样 seed 一个**常驻隐藏热槽**并按词复用，而不是每次查词都 replaceStack 销毁+冷建

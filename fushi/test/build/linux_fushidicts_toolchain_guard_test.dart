@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   // 2026-09-30：Linux app 不再在 CI 构建，fushidicts 的 gcc-14 ctest 从

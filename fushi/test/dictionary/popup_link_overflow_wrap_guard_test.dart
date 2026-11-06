@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（BUG-860）：查词弹窗里的超链接 `<a>` 必须能对无空格长 URL 断行，
 /// 否则 linkify 的裸链接 / 结构化内容 href（如

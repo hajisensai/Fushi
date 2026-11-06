@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-446 守卫：添加本地音频数据库失败时，不再用裸 `catch (_)` 吞掉真因，
 // 而是把完整异常记进 ErrorLogService、把异常摘要带进可见反馈；并修掉

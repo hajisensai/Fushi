@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/ai/ai_video_acquisition_preferences.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 

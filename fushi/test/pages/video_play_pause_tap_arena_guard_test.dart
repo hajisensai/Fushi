@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-374 源码守卫（vendored media_kit 补丁）：桌面控制条的「点画面播放/暂停」
 /// （`playAndPauseOnTap`）必须把 `playOrPause()` 执行在 **`onTap`**（手势竞技场裁决后、

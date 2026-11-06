@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-896 守卫：AnkiDroid「在 Anki 中打开这张卡片」必须走 Card Browser 深链，
 /// 不能再用永远无 activity 处理的 note ContentProvider URI 的 ACTION_VIEW。

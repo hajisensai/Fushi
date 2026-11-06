@@ -10,7 +10,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 经 `.dart_tool/package_config.json` 解析 [package] 包里的一个文件（pub cache
 /// 目录名带版本号，只有 package_config 知道真值）。

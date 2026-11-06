@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG — 覆盖窗 HWND 死亡自愈契约（源码扫描守卫）。
 ///

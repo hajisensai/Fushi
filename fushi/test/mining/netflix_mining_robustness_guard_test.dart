@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// V16 审查标的：Netflix/YouTube 批量制卡录制健壮性 4 修守卫。源码扫描（不依赖真机/真浏览器），
 /// 守住修复不被回退。两份扩展镜像（随 app 打包的 `assets/` 与真源 `tools/`）都守。

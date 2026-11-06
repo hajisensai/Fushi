@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-897 源码守卫：防止后续重构把「load 前本地存在性校验」删掉，回归无限转圈。
 ///

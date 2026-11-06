@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3485：Android 原生层的两条焦点契约（Java 侧无单测宿主，只能源码守卫）。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
 /// 桌面 ffmpeg 可执行解析优先级：FUSHI_FFMPEG 覆盖 > 程序旁捆绑 ffmpeg > 系统 PATH。

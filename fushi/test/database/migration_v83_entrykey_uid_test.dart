@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v83 迁移（P3 Stage 2）定向测试：shelf_entries / media_collection_items 的

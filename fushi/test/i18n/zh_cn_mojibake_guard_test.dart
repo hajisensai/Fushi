@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 /// 守卫 `strings_zh-CN.i18n.json` 不再出现 GBK→Latin-1 mojibake（BUG-234 / TODO-289）。

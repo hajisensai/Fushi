@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// 最小选流候选（TODO-1159）：pickPlaybackVideoStream 只依赖 height/codec/throttled，

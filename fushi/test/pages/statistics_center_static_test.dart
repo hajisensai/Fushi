@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 阶段 2（统计中心大一统）结构守卫：
 ///  * 三域 tab 必须以 embedded 模式复用现有统计页（不嵌套 FushiPageScaffold，

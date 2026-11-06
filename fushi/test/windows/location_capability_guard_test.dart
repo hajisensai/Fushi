@@ -24,7 +24,7 @@
 // C++ 与 pubspec 在 Dart 测试里跑不了，所以在源码层锁定。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// vendored 的 permission_handler_windows 插件源码（相对 `fushi/` 的测试 cwd）。
 const String _vendoredPluginPath =

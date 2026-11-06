@@ -1,7 +1,7 @@
 // TODO-2487 放送日历：缓存签名/编解码纯函数 + 进程内缓存命中口径。缓存身份 =
 // 周窗口 + 过滤集（绑定合集/订阅的 id 升序），任一变化即未命中；TTL 判定的
 // now 由调用方注入，测试不依赖真实时钟。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';

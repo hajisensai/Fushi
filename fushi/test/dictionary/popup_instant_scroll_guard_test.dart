@@ -17,7 +17,7 @@
 // flutter test cwd 是 fushi 包根。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   const List<String> popupCopies = <String>[

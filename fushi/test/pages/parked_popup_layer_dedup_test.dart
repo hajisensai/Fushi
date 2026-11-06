@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：弹窗层的 BUG-135 parking（隐藏热槽停屏外 `screen.width + 8`）+ Visibility
 /// (maintainState/Animation/Size) 几何只有一份（[parkedPopupLayer] in

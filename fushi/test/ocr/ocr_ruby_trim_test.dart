@@ -2,7 +2,7 @@
 // 认错。行检测器把紧贴正文的振假名和正文检成同一条列框，[dropOcrRubyLines] 删
 // 不到它，CTC 把注音当正文读。「OCR 忽略振假名」开时逐列识别前用墨迹投影把列框
 // 两侧的注音带裁掉（trimOcrRubyBands）。只忽略来源自带的注音，不生成任何读音。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-210 / TODO-146 守卫（源码扫描，沿用 reader_init_page_width_guard_static_test.dart
 /// 范式）。

@@ -1,7 +1,7 @@
 /// [GalgameMetadataDraft] / [SourceCandidate] 的容错解析测试：脏 JSON 一律降级，不崩。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 

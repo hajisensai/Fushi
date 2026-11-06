@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show AudiobookAlignmentStep;
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';

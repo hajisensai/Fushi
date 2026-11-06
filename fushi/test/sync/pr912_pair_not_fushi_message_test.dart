@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1741 收尾（PR#912 审查）：`sync_pair_not_fushi` 的后半句是一句**承诺**
 /// （"The address was saved." / 「已保存该地址」），只有手动输入 IP 那条路径成立

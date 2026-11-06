@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// [mergeCollectionOrder] 纯规则测试（BUG-1194 根因修复的地基）。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-751 — on the TRANSLUCENT external lookup surfaces (clipboard panel +
 /// transient global-lookup window, both `<html class="global-lookup">`), the

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';

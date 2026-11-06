@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：两条发布 workflow 的 concurrency 组名必须**各自带上 workflow 名**，
 /// 且都是 `cancel-in-progress: false`。

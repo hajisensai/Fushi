@@ -1,7 +1,7 @@
 // KavitaOpenBooks：阅读器持有登记 + 关书推送完成信号（系列页等它再重取，替代固定延时轮询）。
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 
 void main() {

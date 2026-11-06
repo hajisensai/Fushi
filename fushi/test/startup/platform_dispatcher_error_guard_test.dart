@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-607 P0-1/①：main.dart 必须装 PlatformDispatcher.onError，并让致命级错误
 /// （FlutterError / UncaughtZone / PlatformDispatcher）走同步 flush 落盘。

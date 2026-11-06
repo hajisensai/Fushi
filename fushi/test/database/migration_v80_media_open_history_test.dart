@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v80 迁移（media_items → media_open_history）：19 列旧最近打开表收敛为

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-031 / TODO-291 阶段2）：有声书音量持久化是「load 读 + 改写 persist」
 /// 两段接线，任一段被回归删掉都会让音量重新变成「不保存」。TODO-291 阶段2 把控制器创建 +

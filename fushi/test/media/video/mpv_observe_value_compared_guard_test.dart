@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（BUG-3315）：app 代码订阅 libmpv 属性一律走比值订阅
 /// `observePropertyChanges`，不得直接调用无格式的 `observeProperty`。

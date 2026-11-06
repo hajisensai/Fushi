@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_scripts.dart';
 
 /// 标签页图标脚本：标签栏用 Flutter `Image` 解码，不认 SVG。jiten.moe 同时声明

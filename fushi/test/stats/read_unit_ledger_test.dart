@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 
 /// 「入账额 = 会话翻过的并集 ∩ [0, 当前位置)」的行为契约（用户 2026-09-06 两次裁定：

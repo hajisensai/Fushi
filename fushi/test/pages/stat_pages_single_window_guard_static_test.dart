@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2219：统计页 / 首页在一轮加载里只许用**一个** `StatWindow`。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-706 (TODO-1392): the lookup popup rendered BLANK on every surface
 /// (reader / video / home / app-external + the browser extension) after PR#12

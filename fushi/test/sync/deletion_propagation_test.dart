@@ -1,7 +1,7 @@
 /// 删除传播纯决策核心 + 墓碑标记编解码测试。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 void main() {

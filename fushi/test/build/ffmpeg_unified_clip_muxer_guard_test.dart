@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 
 /// Containers the clip / mining / audiobook pipelines emit must be muxable by

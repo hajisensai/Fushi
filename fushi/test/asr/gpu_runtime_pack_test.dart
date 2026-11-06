@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart';
 import 'package:path/path.dart' as p;
 

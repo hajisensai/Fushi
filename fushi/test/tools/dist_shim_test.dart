@@ -6,7 +6,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 const String _shim = 'tool/dist_test/worker_shim.sh';
 const String _runA = '20261025-120000-aaaa';

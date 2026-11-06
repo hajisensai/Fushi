@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2456：词典正文里的链接（惯用句 / 交叉引用）带振假名时，点击发出的查询词
 /// 必须是**基字**，不能混入 `<rt>` 读音。

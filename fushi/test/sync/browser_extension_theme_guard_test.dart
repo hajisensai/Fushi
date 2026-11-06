@@ -13,7 +13,7 @@
 // 本测在源码层守住这两端契约，防止任一端被回退后重新分裂。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('BUG-688 browser-extension popup theme single-source guard', () {

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-536 守卫（board-1117）：查词弹窗 WebView 在 Flutter 手势竞技场里挂了一个
 /// [LongPressGestureRecognizer]（5deeb754d 加），作用是让「长按」把手势让给 WebView 的

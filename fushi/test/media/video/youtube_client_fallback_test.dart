@@ -9,7 +9,7 @@
 //
 // 这里不做网络断言（CI 无外网，且 YouTube 的 client 行为本就会漂），只锁住三件**本地可判定**
 // 且一旦回退就会重现该 bug 的事实。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';

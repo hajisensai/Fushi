@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'reader_history_source_corpus.dart';
 
 /// 守卫：阅读器页面的统一 launch source 必须用 FushiAppUiScaleNeutralizer 包裹；

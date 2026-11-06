@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-209 / TODO-398 source guard: Windows WGC structured native logging +
 /// minidump install contract. Host cannot run WGC (Windows-only API), so we use

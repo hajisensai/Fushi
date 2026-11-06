@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-916 源码守卫（vendored media_kit 补丁，移动版 material.dart）：
 /// 「显示控制条」必须走 `GestureDetector.onTap`（手势竞技场裁决后才触发），

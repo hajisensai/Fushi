@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// TODO-1045：M4B/M4A 容器 tag 自动填充导入对话框的纯函数层测试。

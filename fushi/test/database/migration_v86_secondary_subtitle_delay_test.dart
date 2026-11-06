@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v86（TODO-2837 主副字幕分开调轴）：`video_books` 加 `secondary_delay_ms`、

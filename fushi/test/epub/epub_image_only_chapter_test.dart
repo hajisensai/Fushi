@@ -10,7 +10,7 @@
 //      can merge;
 //   2) a real prose chapter (any paragraph past the small text threshold) is
 //      NEVER recognised, so the merge pass can never silently drop its body.
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
 EpubBook _book(String html) {

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-047 子项 A 守卫：FavoriteSentence 新增 source / dateKey 字段的契约 ——

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1307 源码守卫：YouTube 首帧被「字幕解析(~19s) + 重复 videos.get 取被丢弃的 title
 /// (~9s)」串行阻塞 ~28s。修复拆两段——① 快解析 gate（只 getManifest 取流即起播，跳过

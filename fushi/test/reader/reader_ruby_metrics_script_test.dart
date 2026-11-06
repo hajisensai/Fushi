@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2779：iOS 换 Klee One 这类 ascent/descent 大的字体后，振假名离本列远、贴上一列。
 ///

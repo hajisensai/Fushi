@@ -3,7 +3,7 @@
 // 这里钉住的是**轨的呈现**，不是 cue 解析（cue 侧另有 youtube_source_resolver_test.dart）。
 // 用例数据取自真实抓包：androidVr innertube player response 对 `dQw4w9WgXcQ` 返回 6 条轨，
 // `name.simpleText` **全部缺失**，故 [YoutubeCaptionTrack.languageName] 一律是语言码兜底值。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// 实测轨表（languageName 全部退化成 languageCode，= `t.languageName ?? t.languageCode` 的结果）。

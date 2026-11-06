@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/sync/google_drive_sync_space.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/sync/sync_obfuscator.dart';
 
 /// 在临时目录里写 [data] 到 `in`，跑 [op]（`in` → `out`），返回 `out` 的字节。

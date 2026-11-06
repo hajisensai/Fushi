@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-013 演进（全平台自动更新 Phase 1）：更新分区不再仅 Android。
 /// 不变量：分区按 platformSupportsUpdateCheck()（恒真）可见；自动安装开关按

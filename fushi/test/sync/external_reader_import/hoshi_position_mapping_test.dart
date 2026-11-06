@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_position_mapping.dart';
 

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1592 接线守卫：字幕命中项带出的 cue **必须**一路走到查词/制卡锚点。
 ///
