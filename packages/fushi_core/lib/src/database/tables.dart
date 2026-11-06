@@ -998,6 +998,30 @@ class MediaSources extends Table {
 
   /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
   IntColumn get createdAt => integer()();
+
+  /// 自动登记它的视频来源（schema v145，反馈 QAondMh4M5）：视频来源扫到的纯音频目录由
+  /// 音乐库登记成音乐来源时记下归属（`music_audio_intake.dart`）。NULL = 用户手动添加。
+  /// 删除 owner 时由 `removeSourceLibrary` 先连带移除它自动添加的音乐来源；外键
+  /// setNull 只是兜底（owner 行被别的路径删掉时，自动来源退化成手动来源，不连坐删曲目）。
+  IntColumn get autoOwnerSourceId => integer().nullable().references(
+    MediaSources,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
+}
+
+/// 用户在音乐来源页单独删掉的自动来源（schema v145）：之后再扫 owner 视频来源时不再把
+/// 这个目录登记回来。用户手动重新添加同一目录即解除（行被删）。owner 删除时随外键
+/// cascade 清掉。[rootPath] 是 `normalizeSourceRootPath` 归一后的音乐来源根。
+@DataClassName('MusicAutoSourceDismissalRow')
+class MusicAutoSourceDismissals extends Table {
+  IntColumn get ownerSourceId =>
+      integer().references(MediaSources, #id, onDelete: KeyAction.cascade)();
+  TextColumn get rootPath => text()();
+  IntColumn get dismissedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{ownerSourceId, rootPath};
 }
 
 // ── series ───────────────────────────────────

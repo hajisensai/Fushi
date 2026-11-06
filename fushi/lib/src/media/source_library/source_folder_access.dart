@@ -242,6 +242,18 @@ class SourceFolderAccess {
 
   Future<String?> _activate(FushiDatabase db, MediaSourceRow source) async {
     final String? bookmark = sourceBookmarkFromConfig(source.configJson);
+    final int? owner = source.autoOwnerSourceId;
+    if (bookmark == null && owner != null) {
+      // 视频来源自动登记的音乐来源（v145，反馈 QAondMh4M5）没有自己的书签：根恒在
+      // owner 视频来源根之下，借 owner 的安全作用域访问（不单独记 _active，释放跟着
+      // owner 走——移除 owner 时 removeSourceLibrary 先撤掉它的自动来源再 release
+      // owner）。owner 自己读不了时如实报 owner 的原因。
+      final MediaSourceRow? ownerRow = await db.getMediaSourceById(owner);
+      if (ownerRow != null &&
+          isPathUnderSourceFolder(source.rootPath, ownerRow.rootPath)) {
+        return ensureSourceAccess(db, ownerRow);
+      }
+    }
     if (bookmark == null) {
       // 修复之前在 iOS 上加的来源（只有路径、没有授权）：重新添加同一文件夹即可补上
       // 书签（来源页撞同根时会把新书签写回这一行）。

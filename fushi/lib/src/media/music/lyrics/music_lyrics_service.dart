@@ -245,6 +245,20 @@ List<String> _listDirFiles(String dir) {
   }
 }
 
+/// [audioPath] 旁的 [path] 是不是本机字幕管线（视频库「生成日语字幕」的旧产物，
+/// `<主名>.ja.srt`）写的。生产接 `isDefaultVideoSubtitlePipelineOutput`。
+typedef MusicGeneratedSidecarCheck =
+    Future<bool> Function(String audioPath, String path);
+
+/// 一首要写手动指定的曲目（[MusicLyricsService.chooseFileForTracks]）：CUE 虚拟曲目带
+/// 区间（`[cueStartMs, cueEndMs)`，end 为 null = 到文件尾），普通曲目两者都为 null。
+typedef MusicLyricsFileTrack = ({
+  String trackUid,
+  int? cueStartMs,
+  int? cueEndMs,
+  int? durationMs,
+});
+
 class MusicLyricsService {
   MusicLyricsService({
     required FushiDatabase? Function() database,
@@ -260,7 +274,9 @@ class MusicLyricsService {
     MusicPluginLyricsSearcher? pluginSearch,
     MusicPluginLyricsRefFetcher? pluginFetch,
     MusicLyricsProviderIds? providers,
+    MusicGeneratedSidecarCheck? isGeneratedSidecar,
   }) : _database = database,
+       _isGeneratedSidecar = isGeneratedSidecar,
        _pluginLyrics = pluginLyrics,
        _pluginSearch = pluginSearch,
        _pluginFetch = pluginFetch,
@@ -290,6 +306,7 @@ class MusicLyricsService {
   final MusicPluginLyricsSearcher? _pluginSearch;
   final MusicPluginLyricsRefFetcher? _pluginFetch;
   final MusicLyricsProviderIds? _providers;
+  final MusicGeneratedSidecarCheck? _isGeneratedSidecar;
 
   final StreamController<String> _generated =
       StreamController<String>.broadcast();
@@ -431,9 +448,28 @@ class MusicLyricsService {
     final ({String pluginId, String trackId})? plugin =
         parseMusicPluginTrackPath(track.path);
 
-    // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。
+    // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。本机字幕
+    // 管线以前写在音频旁的 `<主名>.ja.srt` 已有对应的 `asr` 行（存量迁移转过来、或在音乐库
+    // 重新生成过）时不当 sidecar：它是生成字幕那一档的旧副本，否则重新生成之后仍显示
+    // 旧稿（sidecar 档位高于 asr）。
     if (track.readsLocalLyrics) {
-      final _Sidecar? side = await _readSidecars(track);
+      final bool skipGenerated = _hasGenerated(rowOf(MusicLyricsSource.asr));
+      final _Sidecar? side = await _readSidecars(
+        track,
+        skipGenerated: skipGenerated,
+      );
+      if (side == null &&
+          skipGenerated &&
+          rowOf(MusicLyricsSource.sidecar) != null) {
+        // 以前把那份旧产物当 sidecar 缓存过：删掉，语料对账（[preferredMusicLyricRow]，
+        // sidecar 档位高于 asr）才会跟着改用生成字幕，搜到的与显示的是同一份。
+        await (db.delete(db.musicLyrics)..where(
+              ($MusicLyricsTable r) =>
+                  r.trackUid.equals(track.trackUid) &
+                  r.source.equals(MusicLyricsSource.sidecar),
+            ))
+            .go();
+      }
       if (side != null) {
         final MusicLyricRow? prev = rowOf(MusicLyricsSource.sidecar);
         await _upsert(
@@ -773,10 +809,34 @@ class MusicLyricsService {
     return lyrics?.original == null ? null : lyrics;
   }
 
-  Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {
+  static bool _hasGenerated(MusicLyricRow? row) =>
+      row != null && row.format != kMusicLyricsNoneFormat;
+
+  /// [skipGenerated]：本机字幕管线写的旁置文件（[MusicGeneratedSidecarCheck]）不算
+  /// sidecar（这首已有 `asr` 行时由调用方置位）。
+  Future<_Sidecar?> _readSidecars(
+    MusicLyricsTrackRef track, {
+    bool skipGenerated = false,
+  }) async {
     final String dir = File(track.path).parent.path;
     final List<String> siblings = _listDir(dir);
-    final LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
+    LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
+    final MusicGeneratedSidecarCheck? generated = _isGeneratedSidecar;
+    if (skipGenerated && generated != null) {
+      final Set<String> own = <String>{};
+      for (final LyricSidecarFile f in <LyricSidecarFile>[
+        if (set.primary != null) set.primary!,
+        ...set.translations,
+      ]) {
+        if (await generated(track.path, f.path)) own.add(f.path);
+      }
+      if (own.isNotEmpty) {
+        set = pickLyricSidecars(track.path, <String>[
+          for (final String s in siblings)
+            if (!own.contains(s)) s,
+        ]);
+      }
+    }
     final LyricSidecarFile? primary =
         set.primary ?? await _ultraStarByHeader(track.path, siblings);
     if (primary == null) return null;
@@ -1008,16 +1068,28 @@ class MusicLyricsService {
   Future<Set<String>> tracksWithGenerated(List<String> trackUids) async {
     final FushiDatabase? db = _database();
     if (db == null || trackUids.isEmpty) return const <String>{};
-    final List<MusicLyricRow> rows =
-        await (db.select(db.musicLyrics)..where(
-              ($MusicLyricsTable l) =>
-                  l.trackUid.isIn(trackUids) &
-                  l.source.equals(MusicLyricsSource.asr) &
-                  l.format.equals(kMusicLyricsNoneFormat).not(),
-            ))
-            .get();
-    return <String>{for (final MusicLyricRow r in rows) r.trackUid};
+    // 按块查：整个来源批量时曲目数没有上限，一条 IN 会撞 SQLite 变量上限。
+    final Set<String> out = <String>{};
+    for (int i = 0; i < trackUids.length; i += _kInChunk) {
+      final List<String> chunk = trackUids.sublist(
+        i,
+        i + _kInChunk > trackUids.length ? trackUids.length : i + _kInChunk,
+      );
+      final List<MusicLyricRow> rows =
+          await (db.select(db.musicLyrics)..where(
+                ($MusicLyricsTable l) =>
+                    l.trackUid.isIn(chunk) &
+                    l.source.equals(MusicLyricsSource.asr) &
+                    l.format.equals(kMusicLyricsNoneFormat).not(),
+              ))
+              .get();
+      out.addAll(<String>[for (final MusicLyricRow r in rows) r.trackUid]);
+    }
+    return out;
   }
+
+  /// [tracksWithGenerated] 每条 IN 的 uid 数（远低于 SQLite 变量上限，同仓库其余分块口径）。
+  static const int _kInChunk = 500;
 
   /// 这首有没有用户手动指定的歌词（`is_user_edited`）。
   Future<bool> hasUserChoice(String trackUid) async {
@@ -1026,41 +1098,83 @@ class MusicLyricsService {
     return (await _rows(db, trackUid)).any((MusicLyricRow r) => r.isUserEdited);
   }
 
-  /// 把一个字幕 / 歌词文件设成这首的手动指定（`user` 行，走 [choose] 同一写法）：存量
-  /// 迁移带走旧视频行上用户选过、又不在音频旁（sidecar 规则认不到）的字幕。读不了 /
-  /// 解析不了返回 false（调用方决定要不要重试）。
-  Future<bool> chooseFile(
-    String trackUid,
-    String path, {
-    int? durationMs,
-  }) async {
+  /// 把一份整文件的字幕 / 歌词文件 [path] 设成这个文件下各曲目 [tracks] 的手动指定
+  /// （`user` 行，走 [choose] 同一写法）：存量迁移带走旧视频行上用户选过、又不在音频旁
+  /// （sidecar 规则认不到）的字幕——不搬的话删视频行会把 app 目录里的导入副本一起回收
+  /// （BUG-4127）。CUE 虚拟曲目按区间截取并平移成曲内时间（整批一次后台 isolate），普通
+  /// 曲目整份。已有手动指定的曲目不覆盖（用户在音乐库里选过的优先）。
+  ///
+  /// 返回写了的曲目；读不了 / 解析不了 / 一行都没有返回 null（调用方决定要不要保留源行）。
+  /// 数据库未就绪抛 [StateError]（不能当成「写成了」让调用方删源行）。
+  Future<List<String>?> chooseFileForTracks(
+    String path,
+    List<MusicLyricsFileTrack> tracks,
+  ) async {
+    final FushiDatabase? db = _database();
+    if (db == null) throw StateError('music lyrics: database not ready');
     final Uint8List raw;
     try {
       raw = await File(path).readAsBytes();
     } on FileSystemException {
-      return false;
+      return null;
     }
     final String name = File(path).uri.pathSegments.last;
     final int dot = name.lastIndexOf('.');
     final String ext = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+    final bool whole = tracks.length == 1 && tracks.single.cueStartMs == null;
     final LyricTimeline t;
     try {
-      t = await _parse(raw, ext, durationMs);
+      t = await _parse(raw, ext, whole ? tracks.single.durationMs : null);
     } on LyricsParseException {
-      return false;
+      return null;
     }
-    if (t.lines.isEmpty) return false;
-    await choose(
-      trackUid,
-      MusicLyricsCandidate(
-        source: MusicLyricsSource.user,
-        label: name,
-        format: t.format,
-        raw: raw,
-        timeline: t,
-      ),
-    );
-    return true;
+    if (t.lines.isEmpty) return null;
+    final List<MusicLyricsFileTrack> pending = <MusicLyricsFileTrack>[
+      for (final MusicLyricsFileTrack tr in tracks)
+        if (!await hasUserChoice(tr.trackUid)) tr,
+    ];
+    final List<MusicLyricsFileTrack> cue = <MusicLyricsFileTrack>[
+      for (final MusicLyricsFileTrack tr in pending)
+        if (tr.cueStartMs != null) tr,
+    ];
+    final List<({LyricTimeline timeline, Uint8List ttml})> cut = cue.isEmpty
+        ? const <({LyricTimeline timeline, Uint8List ttml})>[]
+        : await FushiLyricsAsync.sliceAll(t, <({int startMs, int? endMs})>[
+            for (final MusicLyricsFileTrack tr in cue)
+              (startMs: tr.cueStartMs!, endMs: tr.cueEndMs),
+          ]);
+    final List<String> wrote = <String>[];
+    int at = 0;
+    for (final MusicLyricsFileTrack tr in pending) {
+      if (tr.cueStartMs == null) {
+        await choose(
+          tr.trackUid,
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.user,
+            label: name,
+            format: t.format,
+            raw: raw,
+            timeline: t,
+          ),
+        );
+      } else {
+        final ({LyricTimeline timeline, Uint8List ttml}) c = cut[at++];
+        // 这一曲的区间里一行都没有：不写空的手动指定（会把这首钉成「没有歌词」）。
+        if (c.timeline.lines.isEmpty) continue;
+        await choose(
+          tr.trackUid,
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.user,
+            label: name,
+            format: 'ttml',
+            raw: c.ttml,
+            timeline: c.timeline,
+          ),
+        );
+      }
+      wrote.add(tr.trackUid);
+    }
+    return wrote;
   }
 
   /// 撤销手动指定，回到自动优先级。

@@ -14,7 +14,7 @@
   - 音频 CD 抓轨改为「仅此一次」导入音乐库（不递归）；`DataRootMigrator._rebaseMusicTracks` 改写数据根内的曲目路径（抓轨目录在 `<documents>/audio_cd/`，以前靠 `video_books.video_path` 的改写）。
   - 音乐来源扫描的光盘登记跟随来源的「含子文件夹」：不递归的来源只认根本身（`registerDiscsUnder(recursive:)`），否则子目录里的番剧 BD 原盘会被登记成音乐专辑。
   - 服务端视频根不再收纯音频（服务端暂无音乐库）。
-  - 存量迁移 `migrateAudioOnlyVideoBooksToMusic`（`fushi/lib/src/media/music/video_audio_to_music_migration.dart`，`AppModel` 启动后台跑）：本地纯音频单文件行先交接入库，确认已是在库曲目后才从视频库删（`deleteVideoBooksAndReclaimAssets`，keepLocalOnly）；观看记录转成一条音乐播放记录；`study_segments` 不动。按数据幂等，搬不动的行留在视频库下次再试。DB 列名 / 持久化名一律不改。
+  - 存量迁移 `migrateAudioOnlyVideoBooksToMusic`（`fushi/lib/src/media/music/video_audio_to_music_migration.dart`，`AppModel` 启动后台跑）：本地纯音频单文件行先交接入库，确认已是在库曲目后才从视频库删（`deleteVideoBooksAndReclaimAssets`，keepLocalOnly）；观看记录转成一条音乐播放记录；`study_segments` 不动。行上挂的主字幕（视频库里给音频生成的 ASR 转写存在 app 的 `video_subtitles/`，删行会被回收）先经 `MusicLyricsService.adoptSubtitleFile` 定为该曲手动指定歌词，搬不过去的行不删；原始音频文件以 `keepLocalFiles` 进删除护栏（否则 iOS 选择器副本会被回收，曲目失联）。按数据幂等，搬不动的行留在视频库下次再试。DB 列名 / 持久化名一律不改。
 - **[x] ② 已加自动化测试** —
   - `packages/fushi_engine/test/media/music/music_audio_roots_test.dart`（BD 整包合并、无视频的来源、外挂音轨不收、子目录有视频不递归、已覆盖、非递归覆盖、不包住已有来源、Windows 大小写）；
   - `fushi/test/media/music/music_audio_intake_test.dart`（登记 / 跳过覆盖、错误上报、覆盖来源重扫一次、仅此一次导入、非递归来源只覆盖本层）；

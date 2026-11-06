@@ -941,10 +941,14 @@ class SourceLibraryScanner {
   /// [restoreDissolvedGroups]：用户显式「恢复自动分组」时为 true——本轮扫描不再
   /// 尊重解散合集留下的墓碑（BUG-1739 的防复活门），把散开的视频按规则重新归组。
   /// 普通重扫 / 定时扫描一律 false，用户的解散照常保持。
+  ///
+  /// [oneShot]：[source] 是「导入文件夹（仅此一次）」的临时行（扫完即删）。视频来源里的
+  /// 纯音频此时改为「仅此一次」导入音乐库，不登记挂在这个临时行上的常驻音乐来源。
   Future<SourceScanSummary> scan(
     SourceLibraryRow source, {
     SourceFileSystem? fs,
     bool restoreDissolvedGroups = false,
+    bool oneShot = false,
   }) {
     if (source.mediaKind != SourceLibraryKind.video.dbValue) {
       return _scanUnlocked(source, fs: fs);
@@ -966,6 +970,7 @@ class SourceLibraryScanner {
       source,
       fs: fs,
       restoreDissolvedGroups: restoreDissolvedGroups,
+      oneShot: oneShot,
     ).whenComplete(lease.release);
   }
 
@@ -1012,6 +1017,7 @@ class SourceLibraryScanner {
     SourceLibraryRow source, {
     SourceFileSystem? fs,
     bool restoreDissolvedGroups = false,
+    bool oneShot = false,
   }) async {
     // iOS：本地来源在沙盒外，不先激活书签 `dart:io` 一个文件都列不出（BUG-3697）。
     // 激活失败（没存书签 / 解析失败 / 文件夹被挪走）是**整次扫描**读不了，写明原因
@@ -1209,10 +1215,15 @@ class SourceLibraryScanner {
           }
           // 纯音频交给音乐库（反馈 QAondMh4M5）。音乐来源只支持本地目录，网络来源里
           // 的纯音频两边都不收。登记失败（根不可读等）记进本来源的部分失败，视频照常。
-          if (files.isLocal && plan.pureAudioPaths.isNotEmpty) {
+          // 本地来源每次扫完都要交接——哪怕这次一个纯音频都没有：最后一个音频目录被删、
+          // 或里面放进了视频时，正是要撤掉以前自动登记的音乐来源的时候。只有扫描完整
+          // 成功（没有部分失败）才对账撤销；部分失败时只登记、不撤。
+          if (files.isLocal) {
             final MusicAudioIntakeResult music = await _musicIntake
                 .adoptVideoSourceAudio(
-                  videoRoot: source.rootPath,
+                  owner: source,
+                  reconcile: partialError == null,
+                  oneShot: oneShot,
                   audioPaths: plan.pureAudioPaths,
                   videoMediaDirs: <String>[
                     for (final ScanVideoItem item in plan.videos)

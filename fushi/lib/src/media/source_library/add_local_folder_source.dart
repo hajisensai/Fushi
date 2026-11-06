@@ -19,7 +19,8 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 /// 返回值：
 /// - [AddLocalFolderOutcome.added]：新来源行已插入并扫描完成，[rootPath] 是归一化后
 ///   的路径。
-/// - [AddLocalFolderOutcome.duplicate]：同 transport+路径的来源已存在，未做任何写入。
+/// - [AddLocalFolderOutcome.duplicate]：同 transport+路径的来源已存在（[sourceId] 是那一
+///   行），没有新插入；手动添加撞上自动来源时只把它转成手动来源。
 ///
 /// [mediaKind] 取 `SourceLibraryKind` 的字符串值（`book` / `video` / `manga` /
 /// `music`）——由**当前打开的页面**决定，不从文件内容猜；唯一例外是视频来源里扫到的
@@ -30,7 +31,13 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 ///
 /// [bookmark]：iOS 安全作用域书签（BUG-3697）。现有调用方（拖放落点、桌面控制通道）
 /// 都只在桌面 / 安卓可达（desktop_drop 没有 iOS 实现），恒传 null；若将来在 iOS 上
-/// 不带书签调用，扫描会如实报「未保存访问授权」而不是静默扫出 0 个。
+/// 不带书签调用，扫描会如实报「未保存访问授权」而不是静默扫出 0 个。音乐库自动登记的
+/// 来源（[autoOwnerSourceId] 非空）不带书签：iOS 上扫描时借 owner 视频来源的访问授权
+/// （`SourceFolderAccess`，自动来源根恒在 owner 根之下）。
+///
+/// [autoOwnerSourceId]：音乐库收视频来源里的纯音频时，记下是哪个视频来源登记的（v145，
+/// 删视频来源时连带移除）。null = 用户手动添加：撞上同根的**自动**来源时把它转成手动
+/// 来源（之后删视频来源它也留着），并解除所有视频来源对这个目录的「不再登记」。
 Future<AddLocalFolderResult> addLocalFolderAsSource({
   required FushiDatabase db,
   required String mediaKind,
@@ -38,18 +45,23 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
   String videoGroupingMode = 'series',
   String? bookmark,
   bool recursive = true,
+  int? autoOwnerSourceId,
 }) async {
   final String norm = normalizeSourceRootPath(path, transport: 'local');
   final List<MediaSourceRow> existing = await db.getMediaSourcesByKind(
     mediaKind,
   );
-  final bool duplicate = existing.any(
-    (MediaSourceRow r) => r.transport == 'local' && r.rootPath == norm,
-  );
-  if (duplicate) {
+  final MediaSourceRow? duplicate = existing
+      .where((MediaSourceRow r) => sameLocalSourceRoot(r, norm))
+      .firstOrNull;
+  if (autoOwnerSourceId == null) {
+    await claimLocalSourceRootAsManual(db, mediaKind, norm, duplicate);
+  }
+  if (duplicate != null) {
     return AddLocalFolderResult(
       outcome: AddLocalFolderOutcome.duplicate,
       rootPath: norm,
+      sourceId: duplicate.id,
     );
   }
   final int sortOrder = _nextSortOrder(existing);
@@ -64,6 +76,7 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
       videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      autoOwnerSourceId: Value(autoOwnerSourceId),
     ),
   );
   // 插入后立刻扫描：不扫的话来源列表里是一条 0 媒体的空行，用户以为没生效。
@@ -76,6 +89,28 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
     rootPath: norm,
     sourceId: newId,
   );
+}
+
+/// 两份「添加本地文件夹」（这里与来源页 `MediaSourcesViewState.addLocalFolder`）共用的
+/// 去重判据：同 transport（本地）+ 同归一化根。
+bool sameLocalSourceRoot(MediaSourceRow row, String normalizedRoot) =>
+    row.transport == 'local' && row.rootPath == normalizedRoot;
+
+/// 用户**手动**添加本地目录 [normalizedRoot]（v145，反馈 QAondMh4M5）：撞上的同根来源
+/// [duplicate] 是视频来源自动登记的音乐来源时转成手动来源（以后删视频来源也留着）；
+/// 并解除所有视频来源对这个目录的「不再登记」（用户明确要它）。两份「添加本地文件夹」
+/// 都调这一个函数。只对音乐来源有意义，其余种类是空操作。
+Future<void> claimLocalSourceRootAsManual(
+  FushiDatabase db,
+  String mediaKind,
+  String normalizedRoot,
+  MediaSourceRow? duplicate,
+) async {
+  if (mediaKind != SourceLibraryKind.music.dbValue) return;
+  if (duplicate != null && duplicate.autoOwnerSourceId != null) {
+    await db.setMediaSourceAutoOwner(duplicate.id, null);
+  }
+  await db.clearMusicAutoSourceDismissalsForRoot(normalizedRoot);
 }
 
 int _nextSortOrder(List<MediaSourceRow> existing) => existing.isEmpty
@@ -133,7 +168,7 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
     final SourceLibraryRow? temp = await db.getMediaSourceById(tempId);
     if (temp == null) return null;
     onScanning?.call(tempId);
-    return await SourceLibraryScanner(db).scan(temp);
+    return await SourceLibraryScanner(db).scan(temp, oneShot: true);
   } finally {
     await SourceFolderAccess.instance.release(tempId);
     await db.deleteMediaSource(tempId);
@@ -154,6 +189,6 @@ class AddLocalFolderResult {
   /// 归一化后的扫描根路径（提示语要显示它，而不是用户拖进来的原始串）。
   final String rootPath;
 
-  /// 仅 [AddLocalFolderOutcome.added] 时非空。
+  /// [AddLocalFolderOutcome.added]：新行；[AddLocalFolderOutcome.duplicate]：已有的那一行。
   final int? sourceId;
 }
