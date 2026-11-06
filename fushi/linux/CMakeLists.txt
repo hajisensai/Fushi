@@ -82,6 +82,19 @@ include(flutter/generated_plugins.cmake)
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
 add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")
 
+# === Global lookup card helper (linux/lookup_card) ===
+# Its own process: WebKitGTK cannot share one with the WPE WebKit the in-app web
+# views use. Optional like WPE: without these libraries there is simply no
+# app-external lookup card (Dart checks that the helper exists).
+pkg_check_modules(LOOKUP_CARD QUIET IMPORTED_TARGET
+  webkit2gtk-4.1 json-glib-1.0 x11 xi)
+if(LOOKUP_CARD_FOUND)
+  add_subdirectory("lookup_card")
+else()
+  message(WARNING "fushi_lookup_card not built: needs webkit2gtk-4.1, "
+    "json-glib-1.0, x11 and xi (no app-external lookup card)")
+endif()
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
@@ -115,6 +128,11 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
 endforeach(bundled_library)
 
 # Install the fushidicts shared library into the bundle lib dir.
+if(TARGET fushi_lookup_card)
+  install(TARGETS fushi_lookup_card RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+endif()
+
 install(TARGETS fushidicts_ffi LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 

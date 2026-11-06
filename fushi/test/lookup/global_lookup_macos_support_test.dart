@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -51,16 +52,23 @@ void main() {
     });
   });
 
-  test('isSupported covers Windows and macOS (Linux still has no overlay)', () {
+  test('isSupported covers Windows, macOS and Linux X11 with the card '
+      'helper', () {
     // Source guard: the gate is what unlocks start(), the settings switches and
-    // the shortcut registration on macOS.
+    // the shortcut registration on macOS (and on Linux, see
+    // linux_global_lookup_card_guard_static_test).
     final String src = File(
       'lib/src/lookup/global_lookup_controller.dart',
     ).readAsStringSync();
-    expect(src, contains('(Platform.isWindows || Platform.isMacOS)'));
+    expect(
+      src,
+      contains(
+        '(Platform.isWindows || Platform.isMacOS || linuxLookupCardAvailableHere)',
+      ),
+    );
     expect(
       GlobalLookupController.isSupported,
-      Platform.isWindows || Platform.isMacOS,
+      Platform.isWindows || Platform.isMacOS || linuxLookupCardAvailableHere,
     );
   });
 }
