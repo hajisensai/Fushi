@@ -728,54 +728,56 @@ void main() {
       },
     );
 
-    test(
-      'video source: an album folder of audio tracks imports as videos',
-      () async {
-        final FushiDatabase db = _memDb();
-        addTearDown(db.close);
-        final VideoBookRepository repo = VideoBookRepository(db);
+    test('video source of only an album folder: no video rows, the source root '
+        'becomes one music source (QAondMh4M5)', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
 
-        final Directory album = Directory(p.join(tmp.path, 'OST Vol.1 (2010)'))
-          ..createSync();
-        File(
-          p.join(album.path, '01 - One more tea.flac'),
-        ).writeAsStringSync('fake-flac');
-        File(
-          p.join(album.path, '02 - Tostada.flac'),
-        ).writeAsStringSync('fake-flac');
-        File(p.join(album.path, 'cover.jpg')).writeAsStringSync('not-a-video');
+      final Directory album = Directory(p.join(tmp.path, 'OST Vol.1 (2010)'))
+        ..createSync();
+      File(
+        p.join(album.path, '01 - One more tea.flac'),
+      ).writeAsStringSync('fake-flac');
+      File(
+        p.join(album.path, '02 - Tostada.flac'),
+      ).writeAsStringSync('fake-flac');
+      File(p.join(album.path, 'cover.jpg')).writeAsStringSync('not-a-video');
 
-        final int sid = await db.insertMediaSource(
-          MediaSourcesCompanion.insert(
-            label: 'Music',
-            mediaKind: 'video',
-            rootPath: tmp.path,
-            createdAt: 1000,
-          ),
-        );
-        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Music',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      final List<({String rootPath, bool recursive})> registered =
+          <({String rootPath, bool recursive})>[];
 
-        final SourceScanSummary summary = await SourceLibraryScanner(
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+        musicAudioIntake: MusicAudioIntake(
           db,
-        ).scan(source);
+          registerSource:
+              ({required String rootPath, required bool recursive}) async {
+                registered.add((rootPath: rootPath, recursive: recursive));
+                return null;
+              },
+        ),
+      ).scan(source);
 
-        final List<VideoBookRow> videos = await repo.listAll();
-        expect(
-          videos.map((VideoBookRow v) => p.basename(v.videoPath)).toSet(),
-          <String>{'01 - One more tea.flac', '02 - Tostada.flac'},
-        );
-        expect(videos.every((VideoBookRow v) => v.sourceId == sid), isTrue);
-        expect(summary.succeeded, isTrue);
-        expect(
-          summary.discoveredPaths,
-          contains(p.join(album.path, '01 - One more tea.flac')),
-        );
-        expect(
-          summary.discoveredPaths,
-          isNot(contains(p.join(album.path, 'cover.jpg'))),
-        );
-      },
-    );
+      expect(await repo.listAll(), isEmpty);
+      expect(summary.succeeded, isTrue);
+      expect(
+        summary.discoveredPaths,
+        isNot(contains(p.join(album.path, '01 - One more tea.flac'))),
+      );
+      expect(registered, <({String rootPath, bool recursive})>[
+        (rootPath: p.normalize(tmp.path), recursive: true),
+      ]);
+    });
 
     test(
       'maintenance lease blocks the real video scanner before any IO',
