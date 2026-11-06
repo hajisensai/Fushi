@@ -1,10 +1,10 @@
 /// 服务端的 AI 提供商配置（配置文件 `ai:` 段 + WebUI / admin API）。
 ///
 /// app 的 AI 配置是**设备本地**的（提供商清单 + 功能指派存进不出设备的偏好键）；
-/// 服务端是另一台设备，所以它有自己的一份，而且**只有一家**：无头服务端上用 AI 的
-/// 只有「AI 下视频」助手会话（手机把下载执行设备设成服务端时，整场对话在这里跑），
-/// 配一家就等于把它指派给这个功能。放在 yaml 而不是 `preferences` 表：API key 与
-/// qBittorrent 密码、TMDB key 同一处、同一套「不回显」纪律，也不会被同步带出去。
+/// 服务端是另一台设备，所以它有自己的一份，而且**只有一家**：配一家就等于把它指派给
+/// 服务端装配了的 AI 功能（见 [ServerAiSettings.aiFeatureAssignments]）。放在 yaml 而
+/// 不是 `preferences` 表：API key 与 qBittorrent 密码、TMDB key 同一处、同一套
+/// 「不回显」纪律，也不会被同步带出去。
 ///
 /// ```yaml
 /// ai:
@@ -286,9 +286,10 @@ class ServerAiSettings implements AiSettingsSource {
   }
 
   /// 那一家只指派给「AI 下载」「视频字幕 AI 校对」「AI 助手」（远端会话，工具集是
-  /// 服务端自己描述的 admin 操作，见 `agent_host.dart`），以及打开了
-  /// `library_organize` 时的「AI 整理库」：服务端没有刮削 AI 识别 / 补字幕重排等其它
-  /// AI 功能的装配，不设默认提供商，免得以后新接一个功能时被静默带上。
+  /// 服务端自己描述的 admin 操作，见 `agent_host.dart`）、「视频搜索辅助」（补字幕前
+  /// 重排候选，`server_subtitle_backfill.dart`；app 里它跟随默认提供商），以及打开了
+  /// `library_organize` 时的「AI 整理库」：服务端没有刮削 AI 识别等其它 AI 功能的
+  /// 装配，不设默认提供商，免得以后新接一个功能时被静默带上。
   @override
   AiFeatureAssignments get aiFeatureAssignments {
     final ServerAiConfig? config = _config();
@@ -298,6 +299,7 @@ class ServerAiSettings implements AiSettingsSource {
         AiFeature.acquire: kServerAiProviderId,
         AiFeature.subtitleProofread: kServerAiProviderId,
         AiFeature.agent: kServerAiProviderId,
+        AiFeature.videoSearch: kServerAiProviderId,
         if (config!.libraryOrganize)
           AiFeature.libraryOrganize: kServerAiProviderId,
       },

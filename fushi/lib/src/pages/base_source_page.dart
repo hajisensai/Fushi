@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_word_audio.dart';
@@ -105,7 +106,8 @@ abstract class BaseSourcePage extends BasePage {
 /// collection of shared functions and variables. In large part, this was
 /// implemented to define shortcuts for common lengthy methods across UI code.
 abstract class BaseSourcePageState<T extends BaseSourcePage>
-    extends BasePageState<T> {
+    extends BasePageState<T>
+    implements PopupBodyWebViewProvider {
   /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
   /// （[AppModel.popupBottomDockedFor]）。`null` = 只听总开关。
   ModuleId? get popupDockModule => null;
@@ -113,9 +115,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
   bool get popupBottomDocked => appModel.popupBottomDockedFor(popupDockModule);
 
+  /// 本页正文 WebView 的 viewId（查词弹窗打开期间给它开静态硬件层，见
+  /// [PopupBodyStaticLayerGate]）。正文不是 WebView 的宿主（PDF / 歌词页）保持 null；
+  /// WebView 正文的子类覆写，并在 `onWebViewCreated` 调 [notifyPopupBodyWebViewChanged]。
+  @override
+  Object? get popupBodyWebViewId => null;
+
+  /// 正文 WebView 新建 / 重建 / 换了一个（如阅读器进出歌词模式）后调用（阅读器的
+  /// part 扩展里也调，故不标 @protected）。
+  void notifyPopupBodyWebViewChanged() => _popup.bodyStaticLayer.bodyChanged();
+
   @override
   void initState() {
     super.initState();
+    _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
 
     ExternalMediaNavigation.instance.register(
       this,
@@ -910,98 +923,103 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Widget buildDictionary() {
     // 覆盖主题（阅读器纸色亮暗）下重挂一层玻璃作用域：库组件的默认玻璃变体
     // 跟随弹窗主题的亮暗，而不是 app 根上的那份。结构恒定（MD3 也挂）。
-    return Theme(
-      data: appModel.overrideDictionaryTheme ?? theme,
-      child: FushiGlassScope(
-        child: AnimatedBuilder(
-          animation: _popupListenable,
-          builder: (context, _) {
-            final stack = _popup.entries;
-            final searching = _isSearchingNotifier.value;
-            if (stack.isEmpty && !searching) return const SizedBox.shrink();
-            final hasVisiblePopup = _hasVisiblePopup(stack);
-            final visibleTopIndex = _lastVisiblePopupIndex(stack);
-
-            final showLoadingPlaceholder =
-                searching && !hasVisiblePopup && _pendingSelectionRect != null;
-
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                final screen = Size(
-                  constraints.maxWidth,
-                  constraints.maxHeight,
-                );
-                return Stack(
-                  key: _popupCoordinateSpaceKey,
-                  // BUG-135: 隐藏热槽停到屏幕右外侧（_buildPopupLayer），Clip.none 让它
-                  // 在屏外照常预热、又不裁掉（默认 hardEdge 会裁，原生 WebView 失温）。
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (hasVisiblePopup || searching)
-                      Positioned.fill(
-                        // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**的
-                        // 真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
-                        // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
-                        // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
-                        // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
-                        // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
-                        // TODO-1027：tap 带全局坐标转发给 [onDismissBarrierTap]
-                        // （阅读器覆写为「命中词→换新查词」，默认表面仍清整栈）。
-                        child: LookupDismissBarrier(
-                          onTapDismiss: onDismissBarrierTap,
-                          // TODO-716：水平拖过阈关一层（逐层，与光标 B/Esc 同语义）。
-                          onSwipeDismiss: dismissTopPopup,
-                          swipeEnabled:
-                              ReaderFushiSource.instance.enableSwipeToClose,
-                          // BUG-2770：触摸半边未设置时所有平台默认开。
-                          touchSwipeEnabled: ReaderFushiSource
-                              .instance
-                              .enableTouchSwipeToClose,
-                          sensitivity: ReaderFushiSource
-                              .instance
-                              .dismissSwipeSensitivity,
-                          onPointerHover: onDismissBarrierHover,
-                          onPointerSignal: onDismissBarrierPointerSignal,
-                          // 弹窗可见时唯一还能接到指针的地方（barrier 命中行为
-                          // opaque，页面根 Listener 收不到）——见该钩子的文档。
-                          onNonPrimaryButtonDown:
-                              onDismissBarrierNonPrimaryButton,
-                          scrollDismissAxis: dismissBarrierScrollAxis,
-                          onScrollDismiss: onDismissBarrierScrollDrag,
-                        ),
-                      ),
-                    if (showLoadingPlaceholder)
-                      _buildLoadingPlaceholder(screen),
-                    for (int i = 0; i < stack.length; i++)
-                      _buildPopupLayer(
-                        stack,
-                        i,
-                        screen,
-                        isTop: i == visibleTopIndex,
-                      ),
-                    // BUG-2039 ③：停驻的嵌套 realm 屏外挂着，下一次嵌套直接接管热
-                    // WebView。本页没混入 DictionaryPageMixin，所以直接调共享原语，
-                    // 不再把循环体内联抄一遍。
-                    ...parkedRealmPopupLayers(
-                      parkedRealms: _popup.parkedRealms,
-                      screen: screen,
-                      isDark:
-                          (appModel.overrideDictionaryTheme ?? theme)
-                              .brightness ==
-                          Brightness.dark,
-                      overrideFillColor: appModel.overrideDictionaryColor,
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
+    //
+    // 没有覆盖主题时取**插入点**的环境主题，而不是本 State 的 [theme]：页面可能在
+    // 自己的 build 里再套一层主题（音乐歌词页按封面取色），State.context 在那层
+    // 之上，拿它会把弹窗打回应用主题色。
+    return Builder(
+      builder: (BuildContext ambient) => Theme(
+        data: appModel.overrideDictionaryTheme ?? Theme.of(ambient),
+        child: _buildDictionaryLayers(),
       ),
     );
   }
 
-  Widget _buildLoadingPlaceholder(Size screen) {
+  /// [buildDictionary] 主题层之下的弹窗栈；层内一律从 builder 的 context 读主题。
+  Widget _buildDictionaryLayers() {
+    return FushiGlassScope(
+      child: AnimatedBuilder(
+        animation: _popupListenable,
+        builder: (context, _) {
+          final stack = _popup.entries;
+          final searching = _isSearchingNotifier.value;
+          if (stack.isEmpty && !searching) return const SizedBox.shrink();
+          final hasVisiblePopup = _hasVisiblePopup(stack);
+          final visibleTopIndex = _lastVisiblePopupIndex(stack);
+
+          final showLoadingPlaceholder =
+              searching && !hasVisiblePopup && _pendingSelectionRect != null;
+
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final ThemeData popupTheme = Theme.of(context);
+              final screen = Size(constraints.maxWidth, constraints.maxHeight);
+              return Stack(
+                key: _popupCoordinateSpaceKey,
+                // BUG-135: 隐藏热槽停到屏幕右外侧（_buildPopupLayer），Clip.none 让它
+                // 在屏外照常预热、又不裁掉（默认 hardEdge 会裁，原生 WebView 失温）。
+                clipBehavior: Clip.none,
+                children: [
+                  if (hasVisiblePopup || searching)
+                    Positioned.fill(
+                      // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**的
+                      // 真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
+                      // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
+                      // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
+                      // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
+                      // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
+                      // TODO-1027：tap 带全局坐标转发给 [onDismissBarrierTap]
+                      // （阅读器覆写为「命中词→换新查词」，默认表面仍清整栈）。
+                      child: LookupDismissBarrier(
+                        onTapDismiss: onDismissBarrierTap,
+                        // TODO-716：水平拖过阈关一层（逐层，与光标 B/Esc 同语义）。
+                        onSwipeDismiss: dismissTopPopup,
+                        swipeEnabled:
+                            ReaderFushiSource.instance.enableSwipeToClose,
+                        // BUG-2770：触摸半边未设置时所有平台默认开。
+                        touchSwipeEnabled:
+                            ReaderFushiSource.instance.enableTouchSwipeToClose,
+                        sensitivity:
+                            ReaderFushiSource.instance.dismissSwipeSensitivity,
+                        onPointerHover: onDismissBarrierHover,
+                        onPointerSignal: onDismissBarrierPointerSignal,
+                        // 弹窗可见时唯一还能接到指针的地方（barrier 命中行为
+                        // opaque，页面根 Listener 收不到）——见该钩子的文档。
+                        onNonPrimaryButtonDown:
+                            onDismissBarrierNonPrimaryButton,
+                        scrollDismissAxis: dismissBarrierScrollAxis,
+                        onScrollDismiss: onDismissBarrierScrollDrag,
+                      ),
+                    ),
+                  if (showLoadingPlaceholder)
+                    _buildLoadingPlaceholder(screen, popupTheme),
+                  for (int i = 0; i < stack.length; i++)
+                    _buildPopupLayer(
+                      stack,
+                      i,
+                      screen,
+                      popupTheme,
+                      isTop: i == visibleTopIndex,
+                    ),
+                  // BUG-2039 ③：停驻的嵌套 realm 屏外挂着，下一次嵌套直接接管热
+                  // WebView。本页没混入 DictionaryPageMixin，所以直接调共享原语，
+                  // 不再把循环体内联抄一遍。
+                  ...parkedRealmPopupLayers(
+                    parkedRealms: _popup.parkedRealms,
+                    screen: screen,
+                    isDark: popupTheme.brightness == Brightness.dark,
+                    overrideFillColor: appModel.overrideDictionaryColor,
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoadingPlaceholder(Size screen, ThemeData popupTheme) {
     // 加载占位只在「顶层」搜索期出现（嵌套搜索时父弹窗仍 visible，hasVisiblePopup
     // 为真，不显示占位），故按 index 0 取竖排避让。
     final pos = _calculatePopupPosition(
@@ -1009,7 +1027,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen,
       verticalWriting: _layerVerticalWriting(0),
     );
-    final effectiveCs = (appModel.overrideDictionaryTheme ?? theme).colorScheme;
+    final ColorScheme effectiveCs = popupTheme.colorScheme;
     final fillColor = appModel.overrideDictionaryColor ?? effectiveCs.surface;
 
     return Positioned(
@@ -1032,7 +1050,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Widget _buildPopupLayer(
     List<DictionaryPopupEntry> stack,
     int index,
-    Size screen, {
+    Size screen,
+    ThemeData popupTheme, {
     required bool isTop,
   }) {
     final item = stack[index];
@@ -1066,9 +1085,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _topPopupSelectionRect = item.selectionRect;
       _topPopupAnchoredRect = pos;
     }
-    final isDark =
-        (appModel.overrideDictionaryTheme ?? theme).brightness ==
-        Brightness.dark;
+    final bool isDark = popupTheme.brightness == Brightness.dark;
     // 「制卡」模块（[ModuleId.cardCreation]）总闸：本处是阅读器 / 漫画 / 视频 /
     // texthooker 四个媒体页共用的**唯一** Anki 装配点，关掉即四个表面同时失去制卡。
     // 快照只取一次——[AppModel.moduleVisibility] 每读一次都重新合成一个 Set，

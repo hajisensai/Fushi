@@ -533,8 +533,9 @@ class FushiSyncServer {
   String? hostId;
 
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
-  /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
-  /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
+  /// 服务本体是引擎的 `VideoSubtitleBackfillService`（media/video/subtitle/），app 与
+  /// 无头服务端各自装配字幕来源后注入。null（单测 / 旧调用方）时该端点回 501，
+  /// 能力位 `videoSubtitleBackfill=false`。
   VideoSubtitleBackfillRunner? videoSubtitleBackfill;
 
   /// 图形字幕整轨回传（`GET /api/library/videos/<id>/graphicsubtitle`）用的抽取实现。

@@ -33,7 +33,7 @@
 /// 匹配和时长校验管。
 library;
 
-import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi_core/fushi_core.dart' show foldMediaTitle;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -56,7 +56,7 @@ class SubtitleReleaseName {
     this.namesEpisode = false,
   });
 
-  /// 归一后的标题（[normalizeMediaSearchText]）；读不出标题为空串。
+  /// 归一后的标题（[foldMediaTitle]）；读不出标题为空串。
   final String title;
 
   /// 标题之后独立出现的年份（`Title.2021.WEBRip`）。
@@ -104,7 +104,7 @@ SubtitleReleaseName parseSubtitleReleaseName(String fileName) {
     title.add(token);
   }
   return SubtitleReleaseName(
-    title: normalizeMediaSearchText(title.join(' ')),
+    title: foldMediaTitle(title.join(' ')),
     year: year,
     namesEpisode: episode,
   );
@@ -220,7 +220,7 @@ int? _imdbNumber(String? raw) => int.tryParse(
 /// 「映画ドラえもん X」与「ドラえもん X」是同一部片的两种写法，两侧对称处理。
 Set<String> _titleForms(Iterable<String?> titles) => <String>{
   for (final String? title in titles)
-    if (title != null) ..._forms(normalizeMediaSearchText(title)),
+    if (title != null) ..._forms(foldMediaTitle(title)),
 };
 
 /// 发布名的比较形态：「标题」与「标题 + 年份」（`のび太の恐竜.2006` 的年份可能是

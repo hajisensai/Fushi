@@ -2268,6 +2268,7 @@ updateLive: function(patch) {
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        notifyPopupBodyWebViewChanged();
         _bodyMenuDismiss.attach(controller);
         _openTrace.mark('webViewCreated');
         assert(() {

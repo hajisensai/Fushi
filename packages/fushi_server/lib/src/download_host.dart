@@ -36,6 +36,8 @@ import 'package:fushi_engine/media/video/download/video_download_subscription_au
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
@@ -48,6 +50,7 @@ import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
@@ -61,7 +64,12 @@ class ServerDownloadHost implements HostDownloadHost {
     required this.scrape,
     this.backendOverride,
     this.pollInterval = const Duration(seconds: 5),
-  });
+    String Function()? subtitleLanguage,
+    VideoSubtitleRegistry Function()? subtitleRegistryFactory,
+  }) : _subtitleLanguage = subtitleLanguage ?? (() => config.subtitleLanguage),
+       _subtitleRegistryFactory =
+           subtitleRegistryFactory ??
+           (() => buildServerSubtitleRegistry(prefs));
 
   final ServerConfig config;
   final ServerPaths paths;
@@ -78,6 +86,14 @@ class ServerDownloadHost implements HostDownloadHost {
 
   /// 管线轮询间隔（测试缩短；生产 5 秒，与 app 同）。
   final Duration pollInterval;
+
+  /// 配置里的字幕语言（`subtitle_language`，现读：WebUI 改完下一次重建管线生效）。
+  final String Function() _subtitleLanguage;
+
+  /// 字幕阶段的 registry（生产 = [buildServerSubtitleRegistry]：只装偏好开着且有
+  /// key 的来源）。测试缝：注入不联网的假来源。
+  final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
+  VideoSubtitleRegistry? _subtitleRegistry;
 
   VideoDownloadPipelineService? _pipeline;
   VideoResourceRegistry? _registry;
@@ -194,15 +210,37 @@ class ServerDownloadHost implements HostDownloadHost {
       'ServerDownloadHost',
       'pipeline started (backend=$_resolvedBackend'
           '${_resolvedBackend == ServerConfig.torrentEngineQbittorrent ? ' ${config.qbittorrentUrl}' : ''}, '
-          'root ${downloadRoot.path})',
+          'root ${downloadRoot.path}, '
+          'subtitles ${subtitleProviderIds.isEmpty ? 'none' : subtitleProviderIds.join('+')})',
     );
   }
 
+  /// 正在跑的管线字幕阶段装了哪些来源（没起管线 / 一家没配时为空）。
+  List<String> get subtitleProviderIds => <String>[
+    for (final VideoSubtitleProvider provider
+        in _subtitleRegistry?.providers ?? const <VideoSubtitleProvider>[])
+      provider.id,
+  ];
+
   void _startPipeline(VideoResourceRegistry registry) {
     _registry = registry;
+    // 字幕来源与资源索引器同起停：每次（重）建管线按当前偏好 / 环境重读一份。
+    // 一家都没配时传 null——管线按「本机没配字幕」处理（best-effort 直接入库，
+    // required 的任务如实报 needsAttention），而不是拿空 registry 白搜一轮。
+    final VideoSubtitleRegistry subtitles = _subtitleRegistryFactory();
+    _subtitleRegistry = subtitles;
     final VideoDownloadPipelineService pipeline = VideoDownloadPipelineService(
       database: db,
       resourceRegistry: registry,
+      subtitleRegistry: subtitles.providers.isEmpty ? null : subtitles,
+      preferredSubtitleLanguages: serverPreferredSubtitleLanguages(
+        _subtitleLanguage(),
+      ),
+      defaultContentLanguage: serverDefaultContentLanguage(prefs),
+      // 按作品的字幕语言：读每系列记忆（app 写、经互联同步过来的同一个偏好键）。
+      subtitleLanguageResolver: serverDownloadSubtitleLanguageResolver(prefs),
+      // 按内嵌字幕轨对时间轴（开关每次现读，默认开）。
+      subtitleAligner: serverSubtitleAligner(prefs),
       backendResolver: _resolveBackend,
       scrapeCoordinator: scrape.coordinator,
       manualTorrentDirectory: Directory(
@@ -258,6 +296,7 @@ class ServerDownloadHost implements HostDownloadHost {
     final VideoDownloadPipelineService? oldPipeline = _pipeline;
     final VideoDownloadSubscriptionService? oldSubscriptions =
         _subscriptionService;
+    final VideoSubtitleRegistry? oldSubtitles = _subtitleRegistry;
     if (oldPipeline == null) {
       // 后端没起来：没有管线在用 registry，只换订阅面（能力位 providers 跟着新配置）。
       _registry = null;
@@ -273,9 +312,13 @@ class ServerDownloadHost implements HostDownloadHost {
     _pipeline = null;
     await oldPipeline.dispose(drainTimeout: const Duration(seconds: 5));
     _startPipeline(_buildRegistry());
-    if (oldRegistry != null) {
-      unawaited(oldPipeline.stop().whenComplete(oldRegistry.close));
-    }
+    // 旧字幕 registry 同理：在飞的字幕阶段还拿着它。
+    unawaited(
+      oldPipeline.stop().whenComplete(() {
+        oldRegistry?.close();
+        oldSubtitles?.close();
+      }),
+    );
     engineLog.logDiagnostic(
       'ServerDownloadHost',
       'resource indexers reloaded: ${availableResourceProviderIds.join(', ')}',
@@ -418,6 +461,8 @@ class ServerDownloadHost implements HostDownloadHost {
     }
     _registry?.close();
     _registry = null;
+    _subtitleRegistry?.close();
+    _subtitleRegistry = null;
     _backend?.close();
     _backend = null;
     final EmbeddedTorrentHostClient? embedded = await _embedded.take();
