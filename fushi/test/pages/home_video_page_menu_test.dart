@@ -21,6 +21,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart'
+    show PendingCoverImage;
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
@@ -502,6 +504,64 @@ void main() {
     );
     // 远程封面的磁盘缓存管理器排了 10 秒清理定时器；走完它，免得测试结束时还挂着。
     await tester.pump(const Duration(seconds: 11));
+  });
+
+  // PR #2984 审查：菜单头部的图源若在打开那一刻定死，封面还在异步探测（BUG-3756，
+  // 网络盘冷目录可达数秒）时拿到的是永不出帧的 kPendingCoverImage；菜单是独立路由，
+  // page 的重建到不了它，头部就永远只剩空衬底。探测落定后菜单必须自己重取图源。
+  testWidgets('封面探测未落定时打开菜单，落定后菜单头部跟着换（不停在加载态）', (WidgetTester tester) async {
+    // 不存在的路径：落定 = 「没有封面」→ 胶片占位。不真读图片文件，免得测试收尾
+    // 时还挂着文件句柄。
+    final String missingCover = p.join(externalVideoDir.path, 'no-cover.jpg');
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/1'),
+        title: const Value<String>('My Episode'),
+        videoPath: const Value<String>('/abs/ep1.mp4'),
+        coverPath: Value<String>(missingCover),
+      ),
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    expect(
+      tester.widget<MediaItemDialogFrame>(menu).coverBackdrop,
+      isA<PendingCoverImage>(),
+      reason: '前提：fakeAsync 下 File.exists 未回话，打开菜单时封面仍在探测',
+    );
+    expect(
+      find.descendant(of: menu, matching: find.byType(ShelfCoverPlaceholder)),
+      findsNothing,
+      reason: '前提：探测中头部画的是加载态，不是占位',
+    );
+
+    // 让真实 IO 回话（File.exists 的续体排在 fakeAsync 里，runAsync 后 pump 才跑）。
+    for (
+      int i = 0;
+      i < 200 &&
+          tester.widget<MediaItemDialogFrame>(menu).coverBackdrop
+              is PendingCoverImage;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+
+    expect(
+      tester.widget<MediaItemDialogFrame>(menu).coverBackdrop,
+      isNull,
+      reason: '探测落定（文件不在）后菜单垫底图必须重取为「没有封面」',
+    );
+    expect(
+      find.descendant(of: menu, matching: find.byType(ShelfCoverPlaceholder)),
+      findsOneWidget,
+      reason: '探测落定后菜单头部换成胶片占位，不能永远停在空白加载态',
+    );
   });
 
   testWidgets('触屏未进选择态长按视频卡弹管理菜单，不进入多选', (WidgetTester tester) async {
