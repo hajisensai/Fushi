@@ -35,6 +35,7 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerPlaylist,
         MusicServerSearchResult,
         MusicServerTrack;
+import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/media_search_text.dart';
@@ -50,6 +51,8 @@ import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart'
+    show ReaderQuoteCard, readerHighlightSpans;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1394,9 +1397,18 @@ class MusicSearchOverview extends ConsumerStatefulWidget {
     required this.onSeeAll,
     this.servers = const <MusicServerBrowser>[],
     this.serverSearch,
+    this.searchLyrics,
+    this.onLyricHit,
   });
 
   final String query;
+
+  /// 曲库歌词 / 生成字幕的全文命中（Rust 语料索引，查询词分词后整句须全含）；null = 不搜
+  /// （来源过滤排除了本地）。与插件结果互不等待，单独一段「歌词命中」。
+  final Future<List<CorpusHit>> Function(String query)? searchLyrics;
+
+  /// 点一条歌词命中：从那一行开播（[CorpusHit.key] = 曲目 uid，[CorpusHit.pos] = 毫秒）。
+  final Future<void> Function(CorpusHit hit)? onLyricHit;
 
   /// 声明 `search` 能力的插件（已按来源过滤）；各类型按插件的 `searchTypes` 再筛。
   final List<MusicPluginManifest> sources;
@@ -1434,6 +1446,10 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
   Timer? _debounce;
   bool _armed = false;
 
+  /// 歌词命中；null = 还没取 / 在途。查询词变了就作废（[_lyricGeneration]）。
+  List<CorpusHit>? _lyricHits;
+  int _lyricGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -1448,6 +1464,8 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       _best = <String, MusicPluginSearchBest>{};
       _serverResults = <String, _ServerOverviewResult>{};
       _inFlight.clear();
+      _lyricHits = null;
+      _lyricGeneration++;
       _schedule();
     } else if (_armed) {
       // 来源过滤放宽后补取新出现的插件（已取过的保留）。
@@ -1468,7 +1486,60 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       if (!mounted) return;
       setState(() => _armed = true);
       _fetchMissing();
+      unawaited(_fetchLyrics());
     });
+  }
+
+  Future<void> _fetchLyrics() async {
+    final Future<List<CorpusHit>> Function(String)? search =
+        widget.searchLyrics;
+    final int generation = ++_lyricGeneration;
+    if (search == null) {
+      setState(() => _lyricHits = const <CorpusHit>[]);
+      return;
+    }
+    List<CorpusHit> hits;
+    try {
+      hits = await search(widget.query.trim());
+    } on Object catch (e, st) {
+      // 歌词命中只是附加一段：失败按「没有」处理，不打断综合结果。
+      ErrorLogService.instance.log('MusicSearchOverview.searchLyrics', e, st);
+      hits = const <CorpusHit>[];
+    }
+    if (!mounted || generation != _lyricGeneration) return;
+    setState(() => _lyricHits = hits);
+  }
+
+  String _clockOf(int ms) {
+    final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+    return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  Widget _lyricHitCard(CorpusHit hit, int i) {
+    final ({int start, int length})? h = hit.highlights.firstOrNull;
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: FushiDesignTokens.of(context).spacing.gap,
+      ),
+      child: ReaderQuoteCard(
+        key: ValueKey<String>('music-search-lyric-hit-$i'),
+        overline: '${hit.title} · ${_clockOf(hit.pos)}',
+        quote: Text.rich(
+          readerHighlightSpans(
+            context,
+            text: hit.text,
+            start: h?.start ?? 0,
+            end: h == null ? 0 : h.start + h.length,
+          ),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        focusIdPrefix: 'music-search-lyric-hit',
+        onTap: widget.onLyricHit == null
+            ? null
+            : () => unawaited(widget.onLyricHit!(hit)),
+      ),
+    );
   }
 
   bool _supports(MusicPluginManifest m, MusicPluginSearchType type) =>
@@ -1923,7 +1994,10 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
               MapEntry<MusicServerBrowser, Object>(s, e),
         ];
     final bool pending = _pending;
+    final List<CorpusHit> lyricHits = _lyricHits ?? const <CorpusHit>[];
     if (!pending &&
+        _lyricHits != null &&
+        lyricHits.isEmpty &&
         songs.isEmpty &&
         albums.isEmpty &&
         artists.isEmpty &&
@@ -2016,6 +2090,24 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
             );
           },
         ),
+      // 歌词命中：曲库歌词 / 生成字幕里含查询词的行，点了从那一行开播。
+      if (lyricHits.isNotEmpty) ...<Widget>[
+        Padding(
+          key: const ValueKey<String>('music-search-lyric-hits'),
+          padding: EdgeInsets.only(
+            top: tokens.spacing.section,
+            bottom: tokens.spacing.gap,
+          ),
+          child: Text(
+            t.music_search_lyrics_hits,
+            style: context.fushiType.titleLarge.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        for (int i = 0; i < lyricHits.length; i++)
+          _lyricHitCard(lyricHits[i], i),
+      ],
       if (albums.isNotEmpty) ...<Widget>[
         _sectionHeader(t.music_section_albums, MusicPluginSearchType.album),
         _carousel(MusicPluginSearchType.album, albums),

@@ -55,6 +55,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
@@ -509,6 +510,24 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           label: t.video_scrape_diagnostic_export,
           icon: FushiIcons.backup,
           onTap: busy ? null : () => _exportVideoScrapeDiagnostics(row),
+        ),
+      // 音乐本地来源：整个来源批量生成日语字幕（已有生成字幕的曲目跳过）。
+      if (widget.mediaKind == 'music' &&
+          isLocal &&
+          musicSubtitleGenerationSupported())
+        _SourceRowMenuAction(
+          key: ValueKey<String>('music_source_generate_subtitles_${row.id}'),
+          label: t.music_subtitle_generate_source,
+          icon: FushiIcons.subtitles,
+          onTap: busy
+              ? null
+              : () => unawaited(
+                  openMusicSubtitleGenerateSheet(
+                    context: context,
+                    appModel: _appModel,
+                    resolve: (targets) => targets.forSource(row.id, row.label),
+                  ),
+                ),
         ),
       _SourceRowMenuAction(
         label: t.media_source_open_folder,

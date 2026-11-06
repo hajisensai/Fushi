@@ -69,6 +69,7 @@ import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
@@ -93,6 +94,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -331,10 +333,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     return _themed = rethemeFushiWithScheme(base, scheme);
   }
 
+  /// 生成字幕写进当前这首（任务常在页面打开期间或之后才结束）：重新解析显示它。
+  StreamSubscription<String>? _generatedSub;
+
   @override
   void initState() {
     super.initState();
     _engine.addListener(_onEngine);
+    _generatedSub = _service.generatedUpdates.listen((String uid) {
+      final MusicPlayItem? item = _engine.current;
+      if (!mounted || item == null || uid != item.trackUid) return;
+      unawaited(_load(item));
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
   }
 
@@ -351,6 +361,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   void dispose() {
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
+    unawaited(_generatedSub?.cancel());
     _clock.dispose();
     super.dispose();
   }
@@ -837,6 +848,33 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     if (mounted) await _load(item);
   }
 
+  /// 当前曲目能不能出「生成日语字幕」（本机有转录能力、是本机文件）。
+  bool get _canGenerateSubtitles {
+    final MusicPlayItem? item = _engine.current;
+    return item != null && musicSubtitleGenerationAvailable(item.path);
+  }
+
+  Future<void> _generateSubtitles() async {
+    final MusicPlayItem? item = _engine.current;
+    if (item == null) return;
+    await openMusicSubtitleGenerateSheet(
+      context: _themedContext,
+      appModel: appModelNoUpdate,
+      resolve: (t) => t.forTrack(item.trackUid),
+    );
+  }
+
+  /// 曲内搜索：在当前歌词 / 字幕行里找，点结果跳到那一行。
+  Future<void> _searchInTrack() async {
+    final LyricTimeline? timeline = _lyrics?.timeline;
+    if (timeline == null || timeline.lines.isEmpty) return;
+    await showMusicLyricsSearchSheet(
+      context: _themedContext,
+      timeline: timeline,
+      onJump: (int ms) => _engine.seek(Duration(milliseconds: ms < 0 ? 0 : ms)),
+    );
+  }
+
   Future<void> _exportTtml() async {
     final MusicPlayItem? item = _engine.current;
     final MusicLyricsResolution? r = _lyrics;
@@ -1263,6 +1301,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               selected: appModel.musicDesktopLyrics,
               onPressed: () => unawaited(_toggleDesktopLyrics()),
             ),
+          if ((_lyrics?.timeline.lines.isNotEmpty ?? false) &&
+              (_lyrics?.timeline.isSynced ?? false))
+            FushiToolbarItem(
+              key: const ValueKey<String>('music_lyrics_search'),
+              icon: FushiIcons.search,
+              label: t.music_lyrics_search_in_track,
+              onPressed: () => unawaited(_searchInTrack()),
+            ),
           FushiToolbarItem(
             key: const ValueKey<String>('music_lyrics_more'),
             icon: FushiIcons.moreHoriz,
@@ -1675,6 +1721,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           icon: const FushiIcon(FushiIcons.search),
           label: Text(t.music_lyrics_search_online),
         ),
+        // 广播剧 CD 等没有歌词的本机曲目：最直接的入口是就地生成字幕。
+        if (_canGenerateSubtitles)
+          FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('music_lyrics_generate'),
+              onPressed: () => unawaited(_generateSubtitles()),
+              icon: const FushiIcon(FushiIcons.subtitles),
+              label: Text(t.music_subtitle_generate),
+            ),
+          ),
       ],
     );
   }
@@ -1739,6 +1795,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_signal_path_title,
             icon: FushiIcons.highQuality,
           ),
+        if (_canGenerateSubtitles)
+          FushiChoiceOption<int>(
+            value: 5,
+            label: t.music_subtitle_generate,
+            icon: FushiIcons.subtitles,
+          ),
       ],
     );
     switch (choice) {
@@ -1754,6 +1816,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         if (mounted) {
           await showMusicSignalPathPanel(_themedContext, appModelNoUpdate);
         }
+      case 5:
+        if (mounted) await _generateSubtitles();
       default:
     }
   }

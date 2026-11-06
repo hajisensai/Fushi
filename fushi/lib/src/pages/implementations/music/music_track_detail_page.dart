@@ -20,6 +20,9 @@ import 'package:fushi/src/media/people/person_entry_sections.dart'
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
+    show MusicSubtitleTargets;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
@@ -319,6 +322,25 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
                         ),
                       ),
                     ),
+                    if (musicSubtitleGenerationAvailable(track.path))
+                      FushiPressScale(
+                        child: FushiFilledButton.tonalIcon(
+                          size: FushiButtonSize.m,
+                          key: const ValueKey<String>(
+                            'music_track_generate_subtitles',
+                          ),
+                          onPressed: () => unawaited(
+                            openMusicSubtitleGenerateSheet(
+                              context: context,
+                              appModel: ref.read(appProvider),
+                              resolve: (MusicSubtitleTargets targets) =>
+                                  targets.forTrack(track.trackUid),
+                            ),
+                          ),
+                          icon: const FushiIcon(FushiIcons.subtitles),
+                          label: Text(t.music_subtitle_generate),
+                        ),
+                      ),
                   ],
                 ),
               ],
