@@ -804,11 +804,15 @@ void main() {
       debugLatestSystemBallSync = null;
       target = _RecordingActionTarget();
       debugDesktopSystemBallPlatformOverride = true;
+      // 「应用外查词」「截屏识字」要全局查词覆盖窗；不钉住的话 Linux CI 上
+      // isSupported 为 false，这两项被隐藏（本机 Windows 恒真，所以本地绿）。
+      GlobalLookupController.platformOverride = true;
       desktopSystemBallActionTarget = target;
     });
 
     tearDown(() {
       debugDesktopSystemBallPlatformOverride = null;
+      GlobalLookupController.platformOverride = null;
       desktopSystemBallActionTarget = const DesktopSystemBallActionTarget();
       FloatingBallChannel.debugResetHandler();
     });
