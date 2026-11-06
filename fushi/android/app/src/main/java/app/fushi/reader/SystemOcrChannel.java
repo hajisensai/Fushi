@@ -213,8 +213,9 @@ public final class SystemOcrChannel {
                     ? info.getLongVersionCode()
                     : (long) info.versionCode;
             installedName = info.versionName;
-        } catch (PackageManager.NameNotFoundException notInstalled) {
-            // 本机没装 Play 服务 APK：版本如实留空（Dart 侧显示「未知」），这本身就是答案。
+        } catch (PackageManager.NameNotFoundException notFound) {
+            // 包管理器查不到 com.google.android.gms（没装，或对本 app 不可见）：版本留空，
+            // Dart 侧诊断行显示「查不到」——只陈述查询结果，不替它断言「未安装」。
         }
         problem.put(KEY_INSTALLED_VERSION_CODE, installedCode);
         problem.put(KEY_INSTALLED_VERSION_NAME, installedName);

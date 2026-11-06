@@ -182,10 +182,11 @@ class SystemOcrPlayServicesDiagnostics {
   /// 本库要求的最低 Play 服务版本（`GOOGLE_PLAY_SERVICES_VERSION_CODE`）。
   final int requiredVersionCode;
 
-  /// 本机 Play 服务 APK 的 versionCode；没装时为 null。
+  /// 本机 Play 服务 APK 的 versionCode；包管理器查不到该包时为 null。
   final int? installedVersionCode;
 
-  /// 本机 Play 服务 APK 的 versionName（商店页上显示的那个）；没装时为 null。
+  /// 本机 Play 服务 APK 的 versionName（商店页上显示的那个）；查不到该包或
+  /// 包没有 versionName 时为 null。
   final String? installedVersionName;
 
   @override

@@ -461,7 +461,7 @@ void main() {
       expect(message(t.ocr_system_model_play_services_missing), findsOneWidget);
       expect(
         diagnosticsText(tester),
-        contains(t.ocr_system_model_play_services_version_unknown),
+        contains(t.ocr_system_model_play_services_version_not_found),
       );
       expectOnlyActions(<String>{'system_ocr_setup_install_play_services'});
 

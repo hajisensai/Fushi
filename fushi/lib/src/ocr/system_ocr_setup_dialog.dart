@@ -75,7 +75,7 @@ String systemOcrPlayServicesDiagnosticsText(
     (final String n, final int c) => '$n ($c)',
     (final String n, null) => n,
     (null, final int c) => '$c',
-    (null, null) => t.ocr_system_model_play_services_version_unknown,
+    (null, null) => t.ocr_system_model_play_services_version_not_found,
   };
   return t.ocr_system_model_play_services_diagnostics(
     code: '${diagnostics.connectionResult}',
