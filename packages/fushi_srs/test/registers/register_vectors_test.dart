@@ -111,6 +111,27 @@ Object? _withEmptySteps(Object? view, Map<String, Object?> vector) {
   return (value: values.last);
 }
 
+/// 向量生成之后改了的语义：内置默认牌组没写过 `rwkvQueue`（或生效值为 null）时按推荐值读出（2026-11-06，
+/// PR #2933；registers.rs `deck_view`，值 = [SrsRwkvQueueSettings.forNewDeck]，与新建牌组写进去的同一份）。
+Object? _withBuiltinDefaultRwkvQueue(
+  Object? view,
+  Map<String, Object?> vector,
+) {
+  if (view is! Map || vector['kind'] != 'deck') return view;
+  final Map<String, Object?> v = view.cast<String, Object?>();
+  if (v['builtinKey'] != 'default') return v;
+  final ({Object? value})? w = _winnerValue(vector, 'rwkvQueue');
+  final bool unset =
+      !_hasReg(vector, 'rwkvQueue') || (w != null && w.value == null);
+  if (!unset) return v;
+  return <String, Object?>{
+    for (final MapEntry<String, Object?> e in v.entries)
+      e.key: e.key == 'rwkvQueue'
+          ? SrsRwkvQueueSettings.forNewDeck.toValue()
+          : e.value,
+  };
+}
+
 /// 向量里有没有寄存器 [key]（有生效记录）。
 bool _hasReg(Map<String, Object?> vector, String key) =>
     (_map(vector['expect'])['regs']! as List<Object?>).any((Object? r) {
@@ -458,7 +479,10 @@ void main() {
       if (v['kind'] == 'edits') continue;
       expect(got['deletedAt'], e['deletedAt']);
       expect(got['concurrent'], e['concurrent']);
-      final Object? before = _withEmptySteps(_withLaterDefaults(e['view']), v);
+      final Object? before = _withBuiltinDefaultRwkvQueue(
+        _withEmptySteps(_withLaterDefaults(e['view']), v),
+        v,
+      );
       final Object? want = _withNullMapEntriesUnset(before, v);
       if (jsonEncode(want) != jsonEncode(before)) unsetAdjusted++;
       expect(jsonEncode(got['view']), jsonEncode(want), reason: jsonEncode(v));

@@ -158,6 +158,13 @@ void main() {
       4,
     );
     final String r = await s.ensureDeckPath('Root::R');
+    // 这里测「按 R 合格」的计数，不测每天最少复习数：新建牌组默认的最少 40 会把 R 高于目标的卡补进来。
+    await s.editField(
+      SrsEntityKind.deck,
+      (await s.deckTree()).paramsOwner(r).id,
+      SrsFieldKeys.deckRwkvQueue,
+      const SrsRwkvQueueSettings().toValue(),
+    );
     final List<String> cards = <String>[];
     for (int i = 0; i < 7; i++) {
       t += 1000;

@@ -155,17 +155,23 @@ impl DeckTree {
 
     /// 最近一个 own 祖先（顶层恒为 own）。
     pub fn params_owner(&self, id: &str) -> Option<&DeckNode> {
-        let mut cur = Some(id.to_owned());
+        self.params_owner_id(id).and_then(|o| self.decks.get(o))
+    }
+
+    /// [Self::params_owner] 的牌组 id。
+    pub fn params_owner_id<'a>(&'a self, id: &'a str) -> Option<&'a str> {
+        let mut cur = id;
         let mut guard = 0;
-        while let Some(c) = cur {
-            let d = self.decks.get(&c)?;
-            if d.own || d.parent.is_none() || guard > 64 {
-                return Some(d);
+        loop {
+            let d = self.decks.get(cur)?;
+            match d.parent.as_deref() {
+                Some(p) if !d.own && guard <= 64 => {
+                    guard += 1;
+                    cur = p;
+                }
+                _ => return Some(self.decks.get_key_value(cur)?.0.as_str()),
             }
-            guard += 1;
-            cur = d.parent.clone();
         }
-        None
     }
 
     /// 子树（含自己）。
@@ -193,7 +199,7 @@ impl DeckTree {
     }
 
     /// 牌组按 RWKV 排程，且（参数归属的 own 祖先上）开了「忽略每日复习上限」（`SrsRwkvQueueSettings.ignoreReviewLimit`：
-    /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的旧牌组照旧按每日复习上限截断，新建牌组建时写上 true）。
+    /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的牌组与新建牌组都按每日复习上限截断）。
     pub fn ignores_review_limit(&self, deck: &str) -> bool {
         let id = self.effective(deck);
         let Some(owner) = self.params_owner(&id) else {

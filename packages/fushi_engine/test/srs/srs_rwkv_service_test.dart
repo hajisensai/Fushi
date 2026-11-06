@@ -257,7 +257,7 @@ class _Fixture {
   final Directory dir;
   final List<int> clock;
 
-  static Future<_Fixture> create() async {
+  static Future<_Fixture> create({bool builtinDefaults = false}) async {
     final List<int> clock = <int>[
       DateTime.utc(2026, 3, 1, 12).millisecondsSinceEpoch,
     ];
@@ -274,6 +274,17 @@ class _Fixture {
         bootId: 'b',
       ),
     );
+    // 这些用例测的是「按 R 合格」的排队规则：默认牌组没改过时带推荐的每天最少复习 40（会把 R 高于目标的卡补进
+    // 来），这里显式关掉；测最少复习数的用例自己再写。
+    if (!builtinDefaults) {
+      await store.editFields(
+        SrsEntityKind.deck,
+        store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+        },
+      );
+    }
     return _Fixture._(
       store,
       Directory.systemTemp.createTempSync('srs_rwkv'),
@@ -1506,6 +1517,24 @@ void main() {
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
     });
 
+    test('内置默认牌组没改过 RWKV 排队设置：按推荐值（与新建牌组同一份），R 都高于目标也补足最少复习数', () async {
+      final _Fixture fresh = await _Fixture.create(builtinDefaults: true);
+      final List<String> ids = await fresh.cards(3);
+      await fresh.graduate(ids);
+      final _FakeBackend b = _FakeBackend()..defaultR = 0.95;
+      final SrsRwkvService s = fresh.service(b);
+      fresh.store.rwkv = s;
+      await s.start();
+      await _settled(s);
+      expect(
+        (await fresh.store.deckTree())[fresh.store.defaultDeckId]!.rwkvQueue,
+        SrsRwkvQueueSettings.forNewDeck,
+      );
+      fresh.advance(kDay);
+      expect(await fresh.reviewCount(), 3, reason: '最少 40：R 全高于目标的 3 张都补进来');
+      await s.close();
+    });
+
     test('每天最少复习数：R 都高于目标时按 R 升序补足，今天复习过的算进去', () async {
       f.advance(kDay);
       backend
@@ -1532,52 +1561,99 @@ void main() {
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[2]);
     });
 
-    test('忽略每日复习上限：没写过这一项的旧牌组按每日复习上限截断；开了按 R 合格的卡全部计入；新建牌组缺省开', () async {
+    test('每天最少复习数：随参数继承的子牌组共用设置所在牌组的一份配额，不是每个子牌组各补一份', () async {
       f.advance(kDay);
-      for (int i = 0; i < 4; i++) {
-        backend.setR(cards[i], 0.3);
+      final String a = await f.store.createDeck(
+        'A',
+        parentId: f.store.defaultDeckId,
+      );
+      final String b = await f.store.createDeck(
+        'B',
+        parentId: f.store.defaultDeckId,
+      );
+      for (final String d in <String>[a, b]) {
+        await f.store.editFields(SrsEntityKind.deck, d, <String, Object?>{
+          SrsFieldKeys.deckParamsMode: 'inherit',
+        });
+      }
+      for (int i = 0; i < 8; i++) {
+        await f.store.editFields(
+          SrsEntityKind.card,
+          cards[i],
+          <String, Object?>{SrsFieldKeys.cardDeck: i < 4 ? a : b},
+        );
+        backend.setR(cards[i], 0.9 - i * 0.005);
       }
       await f.store.editFields(
         SrsEntityKind.deck,
         f.store.defaultDeckId,
         <String, Object?>{
-          SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 2},
-        },
-      );
-      // 内置默认牌组从没写过 rwkvQueue（= 加这项设置之前就有的牌组）：用户的上限照旧生效。
-      expect(
-        (await f.store.deckTree())[f.store.defaultDeckId]!
-            .rwkvQueue
-            .ignoreReviewLimit,
-        isFalse,
-      );
-      expect(await f.reviewCount(), 2);
-      await f.store.editFields(
-        SrsEntityKind.deck,
-        f.store.defaultDeckId,
-        <String, Object?>{
           SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
-            ignoreReviewLimit: true,
+            minReviewsPerDay: 3,
           ).toValue(),
         },
       );
-      expect(await f.reviewCount(), 4, reason: '计数在 Rust 内核里按牌组寄存器算');
-      expect(await f.store.nextCard(f.store.defaultDeckId), isNotNull);
-      await f.store.editFields(
-        SrsEntityKind.deck,
-        f.store.defaultDeckId,
-        <String, Object?>{
-          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
-        },
-      );
+      // 以前按卡所在牌组各补 3 张 = 6 张；配额记在参数归属牌组（默认牌组）上，整棵树一共 3 张，取 R 最低的 3 张。
+      expect(await f.reviewCount(), 3);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[7]);
+      // 在 A 里答一张：共用的配额也少一张。
+      await f.store.answer(cards[0], 3);
+      await service.refresh();
+      f.advance(1000);
       expect(await f.reviewCount(), 2);
-      // 新建的牌组建时写上「忽略每日复习上限」。
-      final String fresh = await f.store.createDeck('New RWKV deck');
-      expect(
-        (await f.store.deckTree())[fresh]!.rwkvQueue,
-        SrsRwkvQueueSettings.forNewDeck,
-      );
     });
+
+    test(
+      '忽略每日复习上限：没写过这一项的旧牌组按每日复习上限截断；开了按 R 合格的卡全部计入；新建牌组写推荐值（不忽略上限）',
+      () async {
+        f.advance(kDay);
+        for (int i = 0; i < 4; i++) {
+          backend.setR(cards[i], 0.3);
+        }
+        await f.store.editFields(
+          SrsEntityKind.deck,
+          f.store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 2},
+          },
+        );
+        // 默认牌组的 rwkvQueue 没开忽略上限：用户的上限照旧生效。
+        expect(
+          (await f.store.deckTree())[f.store.defaultDeckId]!
+              .rwkvQueue
+              .ignoreReviewLimit,
+          isFalse,
+        );
+        expect(await f.reviewCount(), 2);
+        await f.store.editFields(
+          SrsEntityKind.deck,
+          f.store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
+              ignoreReviewLimit: true,
+            ).toValue(),
+          },
+        );
+        expect(await f.reviewCount(), 4, reason: '计数在 Rust 内核里按牌组寄存器算');
+        expect(await f.store.nextCard(f.store.defaultDeckId), isNotNull);
+        await f.store.editFields(
+          SrsEntityKind.deck,
+          f.store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+          },
+        );
+        expect(await f.reviewCount(), 2);
+        // 新建的牌组建时写上推荐值：复习上限是停止点、每天最少复习 40。
+        final String fresh = await f.store.createDeck('New RWKV deck');
+        final SrsDeckView freshDeck = (await f.store.deckTree())[fresh]!;
+        expect(freshDeck.rwkvQueue, SrsRwkvQueueSettings.forNewDeck);
+        expect(freshDeck.rwkvQueue.ignoreReviewLimit, isFalse);
+        expect(freshDeck.rwkvQueue.minReviewsPerDay, 40);
+        expect(freshDeck.newPerDay, 20);
+        expect(freshDeck.reviewsPerDay, 200);
+      },
+    );
 
     test('新卡计划：按复习量多出（increased）与关掉调整都在内核计数里生效', () async {
       final String id = f.store.defaultDeckId;

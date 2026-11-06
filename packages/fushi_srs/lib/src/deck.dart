@@ -79,14 +79,19 @@ class SrsRwkvQueueSettings {
     this.ignoreReviewLimit = false,
   });
 
-  /// 新建牌组写进去的初值（`SrsDbStore.createDeck` / Anki 导入新建的牌组）：忽略每日复习上限开着，
-  /// 其余同缺省。
+  /// 新建牌组写进去的初值（`SrsDbStore.createDeck` / Anki 导入新建的牌组）：按 RWKV 的推荐用法，每日复习
+  /// 上限是当天的停止点（不忽略上限——RWKV 不排程，R 低的卡可以一直出），每天最少复习数取默认复习上限
+  /// （200）的 [recommendedMinReviews]，其余同缺省。
   static const SrsRwkvQueueSettings forNewDeck = SrsRwkvQueueSettings(
-    ignoreReviewLimit: true,
+    minReviewsPerDay: 40,
   );
 
-  /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
-  /// 的复习卡里按回忆率从低到高补足。0 = 不启用。
+  /// 每天最少复习数的参考值：每日复习上限的 1/5（上限 200 → 40）。
+  static int recommendedMinReviews(int reviewsPerDay) => reviewsPerDay ~/ 5;
+
+  /// 每天最少复习数：今天在共用这套设置（同一个参数归属牌组，`SrsDeckTree.paramsOwner`）的牌组里复习过的卡
+  /// 不到这个数时，从回忆率高于目标保留率（本不该出）的复习卡里按回忆率从低到高补足。随参数继承的子牌组共用
+  /// 一份配额，不是每个子牌组各补一份。0 = 不启用。
   final int minReviewsPerDay;
 
   /// 同日重复：今天答过的卡，之后这组牌组里别的卡至少要有这么多次作答才再出。
@@ -105,8 +110,7 @@ class SrsRwkvQueueSettings {
   /// 不按 [SrsDeckView.reviewsPerDay] 截断；只对 RWKV 牌组生效（规则在 Rust 排队内核
   /// native/fushi_fsrs/src/store/study.rs，读 `DeckTree::ignores_review_limit`）。
   ///
-  /// 只有值里明确写了 `ignoreLimit: true` 才算开：加这项设置之前建的牌组没有这个键，读出为关，
-  /// 用户自己设的每日复习上限照旧生效；新建牌组建时写上 [forNewDeck]（上游 RWKV 的推荐设置）。
+  /// 只有值里明确写了 `ignoreLimit: true` 才算开；新建牌组（[forNewDeck]）默认关。
   final bool ignoreReviewLimit;
 
   static const int maxMinReviewsPerDay = 9999;
@@ -395,6 +399,10 @@ class SrsDeckView {
     this.collapsed = false,
     this.position,
   });
+
+  /// 每日复习上限的参考下限：每日新卡数的 10 倍（同 Anki 牌组选项的提示）。低于它时，新卡带来的复习
+  /// 会被上限截掉、越积越多。
+  static int recommendedReviewsPerDay(int newPerDay) => newPerDay * 10;
 
   static const List<double> defaultLearnSteps = <double>[1, 10];
   static const List<double> defaultRelearnSteps = <double>[10];
