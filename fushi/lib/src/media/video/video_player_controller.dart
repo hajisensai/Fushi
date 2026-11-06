@@ -4553,7 +4553,12 @@ class VideoPlayerController extends ChangeNotifier
     _rearmSubtitleEndPauseIfNeeded(effectiveMs);
     if (_shouldHoldAtSubtitleEnd(idx, effectiveMs)) {
       final AudioCue cue = _cues[_currentCueIndex];
-      _pauseAndSeekForSubtitleEnd(cue, _currentCueIndex);
+      _pauseAndSeekForSubtitleEnd(
+        cue,
+        _currentCueIndex,
+        overshootMs: effectiveMs - cue.endMs,
+        landedInGap: idx < 0,
+      );
       return;
     }
     // Ix4j5SKUth：循环当前句——武装的那句被自然播过句尾就回到它的句首（一次性「播完
@@ -5956,11 +5961,28 @@ class VideoPlayerController extends ChangeNotifier
     return player.state.playing;
   }
 
-  void _pauseAndSeekForSubtitleEnd(AudioCue cue, int cueIndex) {
+  /// 句尾暂停：先停，再精确 seek 回句尾。
+  ///
+  /// 网页后端（[isWebBackend]，Netflix 等 DRM 站点）每次 seek 都是一次完整的站点播放器重定位；
+  /// 每句都「暂停 + 暂停态小距离回拉」是正常网页客户端不会有的操作节奏，Netflix 上与断流相关。
+  /// 所以网页后端在停点仍落在句间空白（[landedInGap]，画面上不会提前显示下一句）且越界量在
+  /// 落点容差内（[kWebVideoSeekLandingTolerance]，回拉本身也就精确到这个量级）时只暂停不回拉；
+  /// 已经进了下一句才回拉。本地播放器行为不变。
+  void _pauseAndSeekForSubtitleEnd(
+    AudioCue cue,
+    int cueIndex, {
+    required int overshootMs,
+    required bool landedInGap,
+  }) {
     _lastSubtitleEndPauseCueIndex = cueIndex;
     _consumeOneShotHold(cueIndex);
+    final bool skipSeekBack =
+        _webBackend &&
+        landedInGap &&
+        overshootMs <= kWebVideoSeekLandingTolerance.inMilliseconds;
     unawaited(() async {
       await _runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause);
+      if (skipSeekBack) return;
       final Future<void> Function(int positionMs) seekToEnd =
           _subtitleEndHoldSeekOverride ?? seekMs;
       await _runSubtitleEndHold(

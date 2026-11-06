@@ -55,7 +55,12 @@ function loadBridge(opts) {
     },
     getTimedTextTrack: () => player.track,
     getCurrentTime: () => player.time,
-    seek: (ms) => { player.seeks.push(ms); if (!opts.seekNeverLands) player.time = ms; },
+    seek: (ms) => {
+      player.seeks.push(ms);
+      if (opts.seekNeverLands) return;
+      if (opts.timers) opts.timers.push(() => { player.time = ms; });
+      else player.time = ms;
+    },
   };
   const trailerPlayer = {
     getTimedTextTrack: () => ({ bcp47: 'en', trackId: 'T:trailer' }),
@@ -115,7 +120,8 @@ function loadBridge(opts) {
     TextEncoder,
     Uint8Array,
     Math,
-    setTimeout: (fn) => { fn(); return 0; },
+    // opts.timers：给数组就改成排队（测试手动 flush），用于让「重定位落地」晚于后续消息。
+    setTimeout: opts.timers ? (fn) => { opts.timers.push(fn); return 0; } : (fn) => { fn(); return 0; },
     setInterval: (fn) => { intervals.push(fn); return 0; },
     Date: opts.Date || Date,
     // BUG-1728：记录 fetch 第二参（init）供「不带 credentials」断言；mock 响应带 ok/status
@@ -421,6 +427,33 @@ test('seek 4 s 没落地：回执 ok:false err:timeout（不再假装成功）',
   assert.strictEqual(done[0].ok, false);
   assert.strictEqual(done[0].err, 'timeout');
   assert.strictEqual(done[0].id, 9);
+});
+
+test('连发 seek 合并：在途时只留最后一个目标，落地后再发一次；每个 id 都有回执', () => {
+  const timers = [];
+  const h = loadBridge({ timers });
+  for (const [ms, id] of [[10000, 1], [15000, 2], [20000, 3], [25000, 4]]) sendSeek(h, ms, id);
+  assert.deepStrictEqual(h.player.seeks, [10000], '在途期间不叠发 player.seek');
+  while (timers.length) timers.shift()();
+  assert.deepStrictEqual(h.player.seeks, [10000, 25000], '落地后只补发最后一个目标');
+  const done = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'seekDone').map((p) => p.msg);
+  assert.strictEqual(done.length, 4);
+  const last = done.find((d) => d.id === 4);
+  assert.strictEqual(last.ok, true);
+  for (const id of [1, 2, 3]) assert.strictEqual(done.find((d) => d.id === id).err, 'superseded');
+});
+
+test('排队目标已在刚落地的位置附近：不再发第二次 seek，直接回 ok', () => {
+  const timers = [];
+  const h = loadBridge({ timers });
+  sendSeek(h, 10000, 1);
+  sendSeek(h, 10100, 2);
+  while (timers.length) timers.shift()();
+  assert.deepStrictEqual(h.player.seeks, [10000]);
+  const done = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'seekDone').map((p) => p.msg);
+  const second = done.find((d) => d.id === 2);
+  assert.strictEqual(second.ok, true);
+  assert.strictEqual(second.err, '');
 });
 
 test('window.fushiNetflixPlayer 暴露同一个正片会话判据（glue 共用）', () => {

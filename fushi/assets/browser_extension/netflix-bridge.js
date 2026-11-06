@@ -501,22 +501,51 @@
   // 4s 不到位也放行，绝不卡死批量）。
   // done(ok, err)：逼近目标 → ok；4 s 没到位 → ok=false（'timeout'），调用方据此记日志、放弃
   // 「跳转在途」状态，不再把旧位置当成 seek 的结果死等。
-  // 新 seek 到来时旧 seek 的轮询立即作废（回 superseded），不叠出成片 80 ms 轮询各等 4 s。
-  var nfSeekGen = 0;
+  //
+  // 合并连发：同一时刻最多一次 player.seek 在途。在途期间新到的请求只覆盖「待发目标」（被覆盖的
+  // 那条回 superseded）；在途那次落地或超时后才把最后一个待发目标发出去。按住方向键、拖进度条、
+  // 连点上下句时 Netflix 只看到「一次重定位落地 → 下一次」的节奏，而不是每 30 ms 一次叠在一起
+  // 的重定位（正常网页客户端不会这样发，叠发的重定位与 Netflix 断流相关）。最终落点仍是最后一次
+  // 请求；待发目标与刚落地的位置已在落点精度内时不再发，直接回 ok。
+  var NF_SEEK_LANDED_MS = 300;
+  var nfSeekInFlight = false;
+  var nfSeekQueued = null; // { ms, done }
   function nfSeek(ms, done) {
+    if (!nfPlayer()) throw new Error('no watch player session');
+    if (nfSeekInFlight) {
+      if (nfSeekQueued) nfSeekQueued.done(false, 'superseded');
+      nfSeekQueued = { ms: ms, done: done };
+      return;
+    }
+    nfSeekStart(ms, done);
+  }
+  function nfSeekLanded(player, ms) {
+    var cur = null;
+    try { cur = player.getCurrentTime(); } catch (_) { cur = null; }
+    return cur != null && Math.abs(cur - ms) < NF_SEEK_LANDED_MS;
+  }
+  function nfSeekStart(ms, done) {
     var player = nfPlayer();
-    if (!player) throw new Error('no watch player session');
-    var gen = ++nfSeekGen;
-    player.seek(ms);
+    if (!player) { done(false, 'no watch player session'); return; }
+    nfSeekInFlight = true;
+    try { player.seek(ms); }
+    catch (x) { nfSeekInFlight = false; done(false, String(x)); nfSeekDrain(null); return; }
     var deadline = Date.now() + 4000;
     (function poll() {
-      if (gen !== nfSeekGen) { done(false, 'superseded'); return; }
-      var cur = null;
-      try { cur = player.getCurrentTime(); } catch (_) { cur = null; }
-      if (cur != null && Math.abs(cur - ms) < 300) { done(true, ''); return; } // 已逼近目标：真重定位完成
-      if (Date.now() > deadline) { done(false, 'timeout'); return; } // 超时兜底：不卡死批量
-      setTimeout(poll, 80);
+      var landed = nfSeekLanded(player, ms); // 已逼近目标：真重定位完成
+      if (!landed && Date.now() <= deadline) { setTimeout(poll, 80); return; }
+      nfSeekInFlight = false;
+      // 有更新的目标在排队：这一次的结果已没人要（回 superseded），接着发最后那一个。
+      if (nfSeekQueued) { done(false, 'superseded'); nfSeekDrain(landed ? player : null); return; }
+      done(landed, landed ? '' : 'timeout'); // 超时兜底：不卡死批量
     })();
+  }
+  function nfSeekDrain(landedPlayer) {
+    var next = nfSeekQueued;
+    nfSeekQueued = null;
+    if (!next) return;
+    if (landedPlayer && nfSeekLanded(landedPlayer, next.ms)) { next.done(true, ''); return; }
+    nfSeekStart(next.ms, next.done);
   }
 
   window.addEventListener('message', function (e) {

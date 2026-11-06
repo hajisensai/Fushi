@@ -52,6 +52,48 @@ void main() {
       expect(c.debugOneShotHoldCueIndex, isNull, reason: '停下即消耗');
     });
 
+    test('网页后端：停在句间空白且越界量在落点容差内只暂停、不回拉 seek（Netflix 少一次重定位）', () async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetWebBackendForTesting(true);
+      c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 3000, 4000)]);
+
+      final List<String> actions = <String>[];
+      c.debugSetSubtitleEndHoldHooksForTesting(
+        isPlaying: () => true,
+        onPause: () async => actions.add('pause'),
+        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
+        onPlay: () async => actions.add('play'),
+      );
+
+      await c.replayCue(c.cues[0]);
+      c.debugUpdateCueForPosition(500);
+      c.debugUpdateCueForPosition(1250);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['play', 'pause'], reason: '空白里越界 250ms：只停不回拉');
+    });
+
+    test('网页后端：停点已进下一句仍回拉到句尾（不提前露出下一句）', () async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetWebBackendForTesting(true);
+      c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
+
+      final List<String> actions = <String>[];
+      c.debugSetSubtitleEndHoldHooksForTesting(
+        isPlaying: () => true,
+        onPause: () async => actions.add('pause'),
+        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
+        onPlay: () async => actions.add('play'),
+      );
+
+      await c.replayCue(c.cues[0]);
+      c.debugUpdateCueForPosition(900);
+      c.debugUpdateCueForPosition(1125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['play', 'pause', 'seek:1000']);
+    });
+
     test('句尾落进 gap 也停（gap 路径）', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
