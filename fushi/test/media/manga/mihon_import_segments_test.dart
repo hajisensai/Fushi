@@ -13,7 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 在线来源面（2026-09-27 起住在「浏览」模块）的两块共享部件：

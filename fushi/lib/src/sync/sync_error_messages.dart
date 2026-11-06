@@ -1,5 +1,5 @@
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         kLegacySchemaBridgeAppVersion,

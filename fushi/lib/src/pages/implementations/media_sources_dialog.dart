@@ -8,7 +8,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 管理网络/本地来源库的对话框：按 mediaKind（'video' | 'book' | 'manga' | 'music'）过滤。
 class MediaSourcesDialog extends ConsumerStatefulWidget {

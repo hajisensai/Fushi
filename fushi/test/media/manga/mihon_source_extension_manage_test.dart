@@ -13,7 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 来源页 / 扩展页的扩展管理（2026-10-09 用户需求 + BUG-3099）：

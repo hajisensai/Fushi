@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 最多记几个最近打开的设置一级分类。

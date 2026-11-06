@@ -17,7 +17,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 class RemoteDownloadTasksSection extends ConsumerStatefulWidget {

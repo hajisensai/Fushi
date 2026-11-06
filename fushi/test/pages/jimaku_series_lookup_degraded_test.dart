@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// BUG-1782：AniList 系列解析降级时，结果区必须**如实告知**结果可能横跨同系列多季。
 ///

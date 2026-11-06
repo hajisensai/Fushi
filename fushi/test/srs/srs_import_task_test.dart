@@ -18,7 +18,7 @@ import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
@@ -538,8 +538,11 @@ void main() {
       final Finder row = find.byKey(ValueKey<String>('srs-deck-$deck'));
       expect(row, findsOneWidget);
 
-      // 右键行：两套设计系统都弹同一份牌组菜单。
-      await tester.tap(find.text('Old'), buttons: kSecondaryButton);
+      // 右键行：两套设计系统都弹同一份牌组菜单（宽屏右栏详情也有同名，按行取）。
+      await tester.tap(
+        find.descendant(of: row, matching: find.text('Old')),
+        buttons: kSecondaryButton,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();
@@ -633,7 +636,14 @@ void main() {
         ),
       );
       await _settle(tester);
-      expect(find.text('Default'), findsOneWidget);
+      // 宽屏右栏详情也画选中牌组的名字：按行取。
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('srs-deck-${store.defaultDeckId}')),
+          matching: find.text('Default'),
+        ),
+        findsOneWidget,
+      );
 
       final String id = (await tester.runAsync(
         () => store.createDeck('Kanji'),
@@ -647,7 +657,13 @@ void main() {
         findsOneWidget,
         reason: '新牌组随牌组行重读出现，不等冲突数',
       );
-      expect(find.text('Kanji'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('srs-deck-$id')),
+          matching: find.text('Kanji'),
+        ),
+        findsOneWidget,
+      );
 
       expect(
         find.byKey(const ValueKey<String>('srs-import-tasks')),
@@ -842,7 +858,13 @@ void main() {
       final int revisionBefore = container.read(srsRevisionProvider);
       expect(find.byKey(ValueKey<String>('srs-deck-$deck')), findsOneWidget);
 
-      await tester.tap(find.text('Old'), buttons: kSecondaryButton);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('srs-deck-$deck')),
+          matching: find.text('Old'),
+        ),
+        buttons: kSecondaryButton,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();

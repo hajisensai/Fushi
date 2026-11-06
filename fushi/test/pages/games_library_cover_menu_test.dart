@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -16,7 +16,8 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show MediaItemDialogFrame;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 import '../helpers/test_platform_services.dart';
 

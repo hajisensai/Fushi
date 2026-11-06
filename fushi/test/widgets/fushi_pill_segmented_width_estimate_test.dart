@@ -1,7 +1,8 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 审查遗留：MD3 分段（[FushiPillSegmentedButton]）实际每段 = 文案 + 2×16（纯图标

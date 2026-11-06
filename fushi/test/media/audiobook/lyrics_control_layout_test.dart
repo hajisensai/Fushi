@@ -79,7 +79,10 @@ void main() {
         fallback: LyricsControlLayout.compactDefaults,
       );
       expect(decoded, custom);
+      // 出厂「更多」里已有进度跳转 / 跳转记录，挪进来的重播排在其后。
       expect(decoded.itemsIn(LyricsControlSlot.overflow), <LyricsControlItem>[
+        LyricsControlItem.positionJump,
+        LyricsControlItem.jumpHistory,
         LyricsControlItem.replayCue,
       ]);
       expect(decoded.core.removedItems, contains(LyricsControlItem.statistics));
@@ -115,6 +118,23 @@ void main() {
         LyricsControlItem.speed,
         LyricsControlItem.mask,
       ]);
+      // 进度跳转 / 跳转记录是后加的两颗：存量布局按出厂位置回填进「更多」。
+      expect(partial.itemsIn(LyricsControlSlot.overflow), <LyricsControlItem>[
+        LyricsControlItem.positionJump,
+        LyricsControlItem.jumpHistory,
+      ]);
+    });
+
+    test('进度跳转 / 跳转记录出厂在「更多」（宽 / 窄都是）', () {
+      for (final LyricsControlLayout layout in <LyricsControlLayout>[
+        LyricsControlLayout.defaults,
+        LyricsControlLayout.compactDefaults,
+      ]) {
+        expect(layout.itemsIn(LyricsControlSlot.overflow), <LyricsControlItem>[
+          LyricsControlItem.positionJump,
+          LyricsControlItem.jumpHistory,
+        ]);
+      }
     });
   });
 
@@ -293,6 +313,114 @@ void main() {
         expect(find.byKey(timerKey), findsOneWidget);
         await tester.tap(find.byKey(timerKey));
         expect(toggles, 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
+  }
+  // 「进度跳转」「跳转记录」两颗新按钮：六种外观（MD3 / Apple × 经典 / 新版）在宽 /
+  // 窄屏都能摆出、点得动；还没有跳转记录时「跳转记录」置灰而不是消失。
+  final Map<String, LyricsPlayerDesign> allDesigns =
+      <String, LyricsPlayerDesign>{
+        'md3 classic': const Md3LyricsPlayerDesign(),
+        'apple classic': const AppleLyricsPlayerDesign(),
+        'md3 modern': const Md3ModernLyricsPlayerDesign(compactExpanded: false),
+        'apple modern': const AppleModernLyricsPlayerDesign(
+          compactExpanded: false,
+        ),
+      };
+  LyricsControlLayout jumpOnTop(LyricsControlLayout base) {
+    LyricsControlLayout out = base;
+    for (final LyricsControlItem item in <LyricsControlItem>[
+      LyricsControlItem.mask,
+      LyricsControlItem.typography,
+      LyricsControlItem.statistics,
+      LyricsControlItem.replayCue,
+      LyricsControlItem.studyTimer,
+    ]) {
+      out = _moved(out, item, LyricsControlSlot.hidden);
+    }
+    out = _moved(out, LyricsControlItem.positionJump, LyricsControlSlot.top);
+    return _moved(out, LyricsControlItem.jumpHistory, LyricsControlSlot.top);
+  }
+
+  for (final MapEntry<String, LyricsPlayerDesign> d in allDesigns.entries) {
+    for (final MapEntry<String, Size> s in sizes.entries) {
+      testWidgets('${d.key} ${s.key}：进度跳转 / 跳转记录键可摆出、可点，'
+          '无记录时置灰', (WidgetTester tester) async {
+        int jumps = 0;
+        int panels = 0;
+        Future<void> pump({required bool hasHistory}) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = s.value;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (BuildContext context) => d.value.buildChrome(
+                    context,
+                    LyricsPlayerData(
+                      title: '四つ子ぐらし',
+                      cover: null,
+                      isPlaying: false,
+                      speed: 1,
+                      lyricsMasked: false,
+                      clock: _FakeClock(),
+                      wideControls: jumpOnTop(LyricsControlLayout.defaults),
+                      compactControls: jumpOnTop(
+                        LyricsControlLayout.compactDefaults,
+                      ),
+                    ),
+                    LyricsPlayerCallbacks(
+                      onClose: () {},
+                      onPlayPause: () {},
+                      onPreviousCue: () {},
+                      onNextCue: () {},
+                      onSeek: (_) {},
+                      onToggleMask: () {},
+                      onOpenStatistics: () {},
+                      onSpeedChanged: (_) {},
+                      onMore: (_) {},
+                      onTapBackground: () {},
+                      onPositionJump: () => jumps++,
+                      onOpenJumpHistory: hasHistory ? () => panels++ : null,
+                    ),
+                    size: s.value,
+                    padding: EdgeInsets.zero,
+                    lyricsRect: d.value.lyricsRect(
+                      context,
+                      s.value,
+                      EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump(const Duration(seconds: 1));
+        }
+
+        const ValueKey<String> jumpKey = ValueKey<String>(
+          'lyrics_position_jump_button',
+        );
+        const ValueKey<String> historyKey = ValueKey<String>(
+          'lyrics_jump_history_button',
+        );
+        await pump(hasHistory: false);
+        expect(find.byKey(jumpKey), findsOneWidget);
+        expect(find.byKey(historyKey), findsOneWidget, reason: '无记录也摆出');
+        await tester.tap(find.byKey(jumpKey));
+        await tester.pump();
+        expect(jumps, 1);
+        await tester.tap(find.byKey(historyKey));
+        await tester.pump();
+        expect(panels, 0, reason: '无记录时置灰、点了不动');
+
+        await pump(hasHistory: true);
+        await tester.tap(find.byKey(historyKey));
+        await tester.pump();
+        expect(panels, 1);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       });

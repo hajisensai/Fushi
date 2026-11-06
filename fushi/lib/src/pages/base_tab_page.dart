@@ -1,7 +1,11 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/pages/base_module_tab_page.dart';
+import 'package:fushi/src/pages/implementations/media_source_picker_dialog_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// A template for a single media type's tab body content in the main menu.
 ///

@@ -9,7 +9,8 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_home_v
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
 import 'package:fushi/src/sync/remote_cover_cache.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 import 'fake_media_server_browser.dart';
 

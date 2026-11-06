@@ -8,7 +8,9 @@ library;
 
 import 'package:fushi_core/fushi_core.dart'
     show LocalFileDeleteFailure, LocalFileDeleteReport;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 逐条记日志，并在有失败时弹一条 warning toast。没有失败就什么都不做（成功是
 /// 默认预期，不额外打扰）。[source] 是 ErrorLog 里的来源标签。

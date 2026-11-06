@@ -12,7 +12,10 @@ import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import '../../integration_test/helpers/focus_driver.dart';
 

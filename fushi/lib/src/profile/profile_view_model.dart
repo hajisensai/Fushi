@@ -12,7 +12,6 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
-import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 
@@ -269,7 +268,8 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   ///
   /// 解析绑定（book 级 > 语言级 > 媒体类型级，见 [ProfileRepository.resolveBoundProfileId]），
   /// 命中且不是激活配置时，把那份配置作为**会话作用域的覆盖层**装进 [WorkProfileScope]：
-  /// 阅读样式、有声书悬浮字幕样式、查词词典按它生效，App 的激活配置与全局偏好一概不动。
+  /// 阅读样式与字体、有声书悬浮字幕样式、主题、视频字幕样式、Anki 牌组 / 复习制卡目标、查词
+  /// 词典按它生效（清单见 [WorkProfileSession]），App 的激活配置与全局偏好一概不动。
   /// 没命中（或命中的就是激活配置）时撤掉 [owner] 之前的那层。离开作品调
   /// [leaveWorkSession]；没有页面生命周期的会话传 [endWhen]（每次 `listenable` 通知时问
   /// `ended`，为 true 即离开）。
@@ -287,32 +287,16 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     ({Listenable listenable, bool Function() ended})? endWhen,
   }) async {
     final WorkProfileScope scope = WorkProfileScope.instance;
-    scope.begin(owner);
-    WorkProfileSession? session;
-    try {
-      final int? boundId = await _repo.resolveBoundProfileId(
+    final bool installed = await scope.enterProfile(
+      owner: owner,
+      repository: _repo,
+      resolveProfileId: () => _repo.resolveBoundProfileId(
         bookUid: bookUid,
         languageTag: languageTag,
         mediaType: mediaType,
-      );
-      if (boundId != null && boundId != await _repo.getActiveProfileId()) {
-        final ProfileSettingsView? view = await _repo.loadSettingsView(boundId);
-        if (view != null) {
-          final ProfileRepository repo = _repo;
-          session = WorkProfileSession(
-            owner: owner,
-            view: view,
-            writer: repo.writeWorkScopedPref,
-          );
-        }
-      }
-    } catch (e, st) {
-      debugPrint(
-        '[profile] work session "${mediaType.dbValue}" binding failed '
-        '(non-fatal): $e\n$st',
-      );
-    }
-    if (!scope.install(owner, session)) return;
+      ),
+    );
+    if (!installed) return;
     if (endWhen != null) {
       scope.leaveWhen(owner, endWhen.listenable, endWhen.ended);
     }
@@ -574,7 +558,10 @@ final fushiDatabaseProvider = Provider<FushiDatabase>((ref) {
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   final db = ref.watch(fushiDatabaseProvider);
-  final ankiRepo = ref.watch(ankiRepositoryProvider);
+  // 裸本机仓库（默认 = live Anki 设置存储）：快照 / 应用配置读写的是**激活配置**的 live
+  // 设置，绝不能经制卡链（[ankiRepositoryProvider] 读的是叠了作品会话的存储）——否则在书里
+  // 切配置会把作品配置的牌组快照进激活配置。
+  final ankiRepo = ref.watch(platformServicesProvider).createAnkiRepository();
   return ProfileRepository(
     db,
     ankiRepo,
@@ -622,14 +609,17 @@ final profileViewModelProvider =
         await ReaderFushiSource.readerSettings?.refreshFromDb();
       }
 
-      // 先取好：游戏会话的进入在启动之后才发起，那时本 provider 可能已因切配置重建。
-      final AppModel workScopeApp = ref.read(appProvider);
+      // 游戏会话的进入在启动之后才发起，那时本 provider 可能已因切配置重建、本 ref 已失效，
+      // 所以经容器（比单个 provider 活得长）去取 App。取值仍是用到时才取：构建视图模型
+      // 不顺带建 AppModel——只看配置列表的宿主（查词弹窗顶栏的制卡目标按钮等）不依赖它。
+      final ProviderContainer container = ref.container;
       return ProfileViewModel(
         repo,
         onApplied,
         profileDraftCoordinator,
         deletionCascade: srsProfileCleanupFor(ref),
-        onWorkScopeSettled: () => workScopeApp.workProfileScopeSettled,
+        onWorkScopeSettled: () =>
+            container.read(appProvider).workProfileScopeSettled,
       );
     });
 

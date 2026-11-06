@@ -12,7 +12,10 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 让用户为某个游戏挑一档。返回 null = 用户取消（**不写任何东西**，保持原档）。
 Future<GalJapaneseLocaleMode?> pickGalJapaneseLocaleMode(
@@ -56,34 +59,32 @@ class GalJapaneseLocaleModeDialog extends StatelessWidget {
       title: Text('${t.game_japanese_locale} · $gameName'),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  t.game_japanese_locale_hint,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                t.game_japanese_locale_hint,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              for (final GalJapaneseLocaleMode mode
-                  in GalJapaneseLocaleMode.values)
-                FushiRadioListTile<GalJapaneseLocaleMode>(
-                  key: ValueKey<String>(
-                    'gal-japanese-locale-mode-'
-                    '${galJapaneseLocaleModeToKey(mode)}',
-                  ),
-                  value: mode,
-                  groupValue: current,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(modeLabel(mode)),
-                  onChanged: (GalJapaneseLocaleMode? picked) =>
-                      Navigator.of(context).pop(picked),
+            ),
+            for (final GalJapaneseLocaleMode mode
+                in GalJapaneseLocaleMode.values)
+              FushiRadioListTile<GalJapaneseLocaleMode>(
+                key: ValueKey<String>(
+                  'gal-japanese-locale-mode-'
+                  '${galJapaneseLocaleModeToKey(mode)}',
                 ),
-            ],
-          ),
+                value: mode,
+                groupValue: current,
+                contentPadding: EdgeInsets.zero,
+                title: Text(modeLabel(mode)),
+                onChanged: (GalJapaneseLocaleMode? picked) =>
+                    Navigator.of(context).pop(picked),
+              ),
+          ],
         ),
       ),
     );

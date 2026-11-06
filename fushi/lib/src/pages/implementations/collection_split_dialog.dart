@@ -1,6 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「按季拆分合集」预览弹窗（TODO-2489）：每季一节（新合集名可编辑 + 成员清单）
 /// + 「保留原合集」勾选。返回 null = 取消。
@@ -189,41 +195,39 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
       title: Text(t.collection_split_by_season),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              for (int i = 0; i < _groups.length; i++) ...<Widget>[
-                if (i > 0) const SizedBox(height: 16),
-                FushiTextFieldControl(
-                  key: ValueKey<String>('collection-split-name-$i'),
-                  controller: _groups[i].controller,
-                  decoration: const InputDecoration(isDense: true),
-                  onChanged: (String _) => setState(() {}),
-                ),
-                const SizedBox(height: 6),
-                _memberList(_groups[i], cs),
-              ],
-              const SizedBox(height: 8),
-              _moveBar(cs),
-              const SizedBox(height: 8),
-              // 共享 MD3 行 + 裸 Checkbox 为 leading，整行 onTap 翻转——等价旧
-              // CheckboxListTile 的取值/回调/标题，但走设计令牌的行高与内边距。
-              FushiListItem(
-                key: const ValueKey<String>('collection-split-keep-original'),
-                density: FushiListDensity.compact,
-                padding: EdgeInsets.zero,
-                onTap: () => setState(() => _keepOriginal = !_keepOriginal),
-                leading: FushiCheckbox(
-                  value: _keepOriginal,
-                  onChanged: (bool? value) =>
-                      setState(() => _keepOriginal = value ?? true),
-                ),
-                title: Text(t.collection_split_keep_original),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (int i = 0; i < _groups.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(height: 16),
+              FushiTextFieldControl(
+                key: ValueKey<String>('collection-split-name-$i'),
+                controller: _groups[i].controller,
+                decoration: const InputDecoration(isDense: true),
+                onChanged: (String _) => setState(() {}),
               ),
+              const SizedBox(height: 6),
+              _memberList(_groups[i], cs),
             ],
-          ),
+            const SizedBox(height: 8),
+            _moveBar(cs),
+            const SizedBox(height: 8),
+            // 共享 MD3 行 + 裸 Checkbox 为 leading，整行 onTap 翻转——等价旧
+            // CheckboxListTile 的取值/回调/标题，但走设计令牌的行高与内边距。
+            FushiListItem(
+              key: const ValueKey<String>('collection-split-keep-original'),
+              density: FushiListDensity.compact,
+              padding: EdgeInsets.zero,
+              onTap: () => setState(() => _keepOriginal = !_keepOriginal),
+              leading: FushiCheckbox(
+                value: _keepOriginal,
+                onChanged: (bool? value) =>
+                    setState(() => _keepOriginal = value ?? true),
+              ),
+              title: Text(t.collection_split_keep_original),
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

@@ -84,3 +84,42 @@
     - `FlutterCompositorPresentLayers` 445ms 没有子事件，紧挨着的前一帧 `ScopedFrame::Raster` 才 20ms。
   - **结论（推断，未证实）**：这三段 CPU 阻塞都发生在 Flutter 自己那台 ANGLE D3D11 设备的调用里，发生的时候 Flutter 的 CPU 侧没有任何东西在忙。符合这种特征的只有两种可能：一是共享纹理在两台设备之间的隐式同步（legacy `D3D11_RESOURCE_MISC_SHARED` 资源由 OS 隐式串行化，写方是 media_kit 设备上的 `CopyResource`）；二是 Flutter 设备的 GPU 队列被反压（`Present` 卡在帧延迟队列上，draw 卡在命令缓冲区满）。修复前，`CopyResource` 是在 raster 线程上、Flutter 采样之前一刻才提交给 media_kit 设备（旧 `Read()`）。这条写和紧接着的读之间，正好是隐式同步最容易让读方等上的位置。#2841 把拷贝挪到 `Draw()` 末尾之后，f8 的 7549 帧里没有出现一次 ≥50ms 的 encode / present / paint。不过修复前这类帧本身就很稀（c1+p8 共 12392 帧里 encode 3 次、present 6 次）。假设修复前后每帧发生率相同，用条件二项检验算「全部落在修复前那组」的概率：encode 一项 (12392/19941)^3≈0.24，present 一项 ^6≈0.06，都不显著，**不能据此宣称已消除**。引擎层到底卡在哪个 GL 调用上，还要靠给引擎插桩（在 `ExternalTextureD3d` 采样和 `RenderPassGLES` 每个 draw 前后打 trace）或者 PIX / GPUView 抓 GPU 队列才能定下来。本机引擎源码树在，但要重编引擎，本轮没做。
   - **[ ] 仍未关**：第二类长帧未定位，keyed mutex 留待引擎补丁立项。需要用户装 #2841 之后的包在真机复测（视频诊断日志里的 `subtitle list open/close` 与每秒帧窗口）。
+
+### 续 · 2026-11-05（keyed mutex 引擎补丁落地）
+- **根因位置**：`ci/patches/flutter-engine/3.47.6/` 打完前三份补丁后的 `engine/src/flutter/shell/platform/windows/external_texture_d3d.cc` `CreateOrUpdateTexture` 第 89–119 行：share handle 只 `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)` + `eglBindTexImage` 一次，之后 raster 线程一直直接采样 media_kit 设备写的 legacy `D3D11_RESOURCE_MISC_SHARED` 纹理，两台设备之间只有 OS 的隐式同步（第二类长帧的头号嫌疑，见上一节），也没有防覆写的同步。
+- **[x] ① 修复（引擎 + 插件两端）**：
+  - 新引擎补丁 `ci/patches/flutter-engine/3.47.6/engine-d3d-keyed-mutex.patch`（叠在前三份之上，`tool/flutter_engine/build_patched_engine.ps1` 已接上）：`ExternalTextureD3d` 在 ANGLE 设备上打开 share handle，带 `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` 时不绑共享纹理，GL 只绑引擎自有副本；每次 resolve `AcquireSync(0, 0)` → `CopyResource` → 立刻 `ReleaseSync(0)`，取不到就沿用上一份副本，raster 线程从不等锁，锁也不跨 ANGLE 的 draw。`egl::Manager` 构造时给 ANGLE 设备开 `SetMultithreadProtected(TRUE)`（这些 D3D11 调用在 ANGLE 的锁外）。新导出 `FlutterDesktopGpuSurfaceSupportsKeyedMutex()`。
+  - 插件 `third_party/media_kit_video/windows/angle_surface_manager.cc`：`GetProcAddress` 查到上面的导出才给 Flutter 读的那块纹理加 keyed mutex，`Draw()` 的 `CopyResource` 包进 `AcquireSync(0, INFINITE)` / `ReleaseSync(0)`（引擎只在一次拷贝调用内持锁，等待有上界）；原版引擎下行为不变。
+  - 产物：按三种模式重编 `flutter_windows.dll`，patchVersion `hdr-output-3`（见该目录 `README.md`「当前产物」与 `artifacts.json`）。
+- **[x] ② 自动化测试**：`fushi/test/third_party/media_kit_video_raster_never_waits_guard_test.dart` 新增 `engine keyed mutex patch` 组（引擎不等锁、先拷后放、GL 绑副本而非 share handle、设备 multithread 保护、插件只在引擎导出存在时开 keyed mutex 且 `Draw` 在锁内拷贝）；`fushi/test/build/compositor_hdr_engine_guard_test.dart` 把第四份补丁纳入存在 / LF / 打补丁顺序检查。
+- **[ ] 未验证**：第二类长帧（`EncodeCommandsInReactor` / `FlutterCompositorPresentLayers` 上百毫秒阻塞）是否随之消失没有实测（本轮不做真机 / 实验室复测）；推断依据见上一节。需要用户装含本补丁引擎的包后在真机复测（视频诊断日志里的 `subtitle list open/close` 与每秒帧窗口）。代价：每个新视频帧在 Flutter 设备上多一次整帧 GPU 拷贝。
+
+### 续 · 2026-11-05（第二类长帧：profile 实测未复现；ETW 采样定位到 ANGLE 每帧重建 MSAA 解析纹理，需引擎 / ANGLE 改动，本轮不改代码）
+- **复现尝试（未复现）**：本机 RTX 4070 Ti，profile 构建，hdr-output-2 补丁引擎，窗口 2864×1791@2x，Anime4K 六遍着色器，边播放边开关（`video_subtitle_list_toggle_perf_itest.dart`，`SUBLIST_PLAY=true`）。共约 130 次开关：当前代码 hi10（H.264 High10 软解）10+10 轮、HEVC 10bit（`hwdec=nvdec-copy`，p010）30 轮；#2841 之前的旧插件 DLL 30 轮。**最大 raster 111ms，没有一次出现 359–568ms 级的 `EncodeCommandsInReactor` / `PresentLayers`**。在 ETW CPU 调度数据里，raster 线程 ≥30ms 的等待全是消息循环空闲，没有任何一次阻塞在 D3D / GL 调用里。系统性现象：收起动画 raster 30–58ms，展开约 10ms。
+- **方法**：`wpr` 内存环形缓冲 + perf itest 新增的慢帧标记旋钮（`SUBLIST_SLOW_MARKER` / `SUBLIST_SLOW_MS`：一轮里 maxRaster 或 maxGap 达到阈值时，往标记文件追加一行，写明轮次和最慢帧的 rasterStart / rasterFinish 时刻；外部脚本看到这行就 `wpr -stop`）；用 TraceProcessor 按 PID 只取本 worktree 的 fushi.exe（用户安装版同时在跑，不过滤会混进去）；`flutter_windows.dll` 帧用 dbghelp 加 pdb 离线符号化。
+- **ETW 符号化结论（收起 4 轮，补丁引擎）**：raster 线程**每帧**都在 ANGLE 里新建 D3D11 纹理，主要有两条栈：
+  - `ResourceManager11::allocate<ID3D11Texture2D>` ← `Renderer11::resolveMultisampledTexture` ← `GL_BlitFramebuffer` ← `impeller::…EncodeCommandsInReactor`（Impeller 离屏 MSAA 目标的 blit 解析）；
+  - 同上 ← `flutter::CompositorOpenGL::Present`（合成器整窗 4x MSAA backing store 的 blit 解析）；
+  - 另有 `GL_RenderbufferStorageMultisample` ← `TextureGLES::InitializeContentsIfNecessary`（每帧新建 MSAA 目标），以及 glyph atlas BlitPass 的解析。
+  - 合计占 raster 线程样本约 5–7%，其中解析约 4.3%，整段时间都有，不只是动画期间。
+- **机制（读源码推断）**：ANGLE（`84027ac`）`Renderer11::resolveMultisampledTexture` 只缓存一张解析纹理 `mCachedResolveTexture`，按宽、高、格式命中。Impeller 离屏层解析和合成器整窗解析尺寸不同，交替进行，每次都打不中，于是每帧 `CreateTexture2D`。这是 359–568ms 长帧的**候选机制**：同一个 `EncodeCommandsInReactor` / `Present` 里，一次分配被驱动或 VidMm（显存紧张、换页）卡住，就会出现「没有子事件的长段」。
+  - **未坐实**：本机 GPU ETW 的 DxgKrnl `AdapterAllocation` 事件在 37 秒里只有零星几次整窗级分配（例如启动时的 2864×1791、5708×3458），没有逐帧的整窗分配。NVIDIA 用户态驱动在自己的堆里子分配，所以每帧的 `CreateTexture2D` 只是 CPU 开销，没有变成内核显存分配。用户机器的 GPU / 驱动如果不这样子分配，或者显存吃紧，同一条路径才可能变成长阻塞。这需要知道用户的 GPU 型号，并在真机上抓 ETW 才能确认。
+- **A/B（同条件、收起 4 轮）**：
+
+  | 变体 | allocate<Texture2D> 占比 | resolve 占比 | 收起 maxRaster（ms） |
+  |---|---|---|---|
+  | 补丁引擎 + 现状（列表边缘 `ShaderMask` 渐隐） | 5.3% | 4.3% | 28 / 25 / 39 / 21 |
+  | 补丁引擎 + 去掉 ShaderMask（改前景渐变） | 6.7% | 4.5% | 19 / 18 / 14 / 21 |
+  | 原版 3.47.6 引擎 + 去掉 ShaderMask | 6.3% | 4.1% | 15 / 48 / 20 / 19 |
+
+  - 原版引擎同样每帧重建，所以**不是 HDR 补丁引入的回归**。
+  - 去掉列表的 ShaderMask 离屏层，分配占比没有可测改善：解析主要来自合成器整窗那一次，以及 Impeller 自己的 MSAA 目标。所以这个 app 层改动**没有提交**，不凑数。
+- **app / 插件层没有根因修法**：`compositor_opengl.cc` 的 4x MSAA backing store 和 Present 时的 blit 解析是写死的，app 层无开关；ANGLE 的解析缓存在引擎随附的 ANGLE 里。需要的引擎侧改动，任选其一：
+  - ① ANGLE `Renderer11::resolveMultisampledTexture` 的解析缓存改为按（宽、高、格式）多槽，或者按 framebuffer 缓存；
+  - ② `CompositorOpenGL` 在 ANGLE 支持 `EXT_multisampled_render_to_texture` 时走隐式 MSAA，不用离屏 renderbuffer 加 `glBlitFramebuffer`，或者直接画到单采样 backing store；
+  - ③ Impeller GLES 复用离屏 MSAA 目标（不要每帧 `RenderbufferStorageMultisample`），解析改走隐式 MSAA。
+  - 按用户拍板，本轮不动引擎。
+- **旁证**：`heavy.dart --cap-mb=3000` 的作业对象内存封顶下，app 在 `render_pass_gles.cc(314)` 报 `GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT` FATAL，说明 MSAA 目标分配失败时直接致命，和「分配是脆弱点」一致；放宽到 9000MB 就正常。
+- **[ ] 仍未关**：
+  - 需要用户真机复测：GPU 型号与显存占用、开关时的视频诊断日志。最好用本 itest 的慢帧标记加 `wpr -start GPU -start CPU` 环形抓一次，确认长帧是不是落在 `resolveMultisampledTexture` / `CreateTexture2D` 上。
+  - 确认以后再按上面 ①–③ 立引擎补丁项。

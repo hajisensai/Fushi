@@ -43,7 +43,7 @@ import 'package:fushi/src/reader/popup_swipe_close_script.dart'
     show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
+import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart'
     show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';

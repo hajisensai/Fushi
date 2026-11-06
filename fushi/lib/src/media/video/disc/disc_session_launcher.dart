@@ -9,7 +9,10 @@ import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 import 'package:fushi_engine/media/video/video_book_repository.dart'
     show VideoBookRepository;

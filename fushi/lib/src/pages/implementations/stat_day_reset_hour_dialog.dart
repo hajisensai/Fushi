@@ -5,7 +5,13 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 统计设置弹窗（2026-10-09 统计中心精简，PDF「第一行的四个按钮扔进设置」）：
 /// 页头只剩一颗设置按钮，原先平铺的「重置时刻」与「清空统计」收进这里。
@@ -58,70 +64,68 @@ class _StatSettingsDialogState extends State<StatSettingsDialog> {
       icon: const FushiIcon(FushiIcons.settings),
       title: Text(t.stat_center_settings),
       contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
-      content: SingleChildScrollView(
-        child: SizedBox(
-          width: 480,
-          child: FushiEntranceScope(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (profile != null)
-                  FushiStaggeredEntrance(
-                    index: 0,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        tokens.spacing.card,
-                        0,
-                        tokens.spacing.card,
-                        tokens.spacing.gap,
-                      ),
-                      child: Text(
-                        t.stat_center_profile_scope(name: profile),
-                        style: tokens.type.metadata.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+      content: SizedBox(
+        width: 480,
+        child: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (profile != null)
+                FushiStaggeredEntrance(
+                  index: 0,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.card,
+                      0,
+                      tokens.spacing.card,
+                      tokens.spacing.gap,
+                    ),
+                    child: Text(
+                      t.stat_center_profile_scope(name: profile),
+                      style: tokens.type.metadata.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
-                  ),
-                FushiStaggeredEntrance(
-                  index: 1,
-                  child: AdaptiveSettingsStepperRow(
-                    title: t.stat_center_day_reset_hour,
-                    subtitle: t.stat_center_day_reset_hour_hint,
-                    icon: FushiIcons.schedule,
-                    showIcon: true,
-                    value: _hour.toDouble(),
-                    step: 1,
-                    min: PreferencesRepository.statDayResetHourMin.toDouble(),
-                    max: PreferencesRepository.statDayResetHourMax.toDouble(),
-                    format: StatSettingsDialog.formatHour,
-                    onChanged: _onHourChanged,
                   ),
                 ),
-                if (settings != null)
-                  FushiStaggeredEntrance(
-                    index: 2,
-                    child: FushiListItem(
-                      key: const ValueKey<String>('stat-settings-clear-all'),
-                      leading: FushiIcon(
-                        FushiIcons.deleteSweep,
-                        color: scheme.error,
-                      ),
-                      title: Text(
-                        t.stat_clear_all,
-                        style: TextStyle(color: scheme.error),
-                      ),
-                      onTap: settings.enabled
-                          ? () {
-                              Navigator.of(context).pop();
-                              settings.onClearAll();
-                            }
-                          : null,
+              FushiStaggeredEntrance(
+                index: 1,
+                child: AdaptiveSettingsStepperRow(
+                  title: t.stat_center_day_reset_hour,
+                  subtitle: t.stat_center_day_reset_hour_hint,
+                  icon: FushiIcons.schedule,
+                  showIcon: true,
+                  value: _hour.toDouble(),
+                  step: 1,
+                  min: PreferencesRepository.statDayResetHourMin.toDouble(),
+                  max: PreferencesRepository.statDayResetHourMax.toDouble(),
+                  format: StatSettingsDialog.formatHour,
+                  onChanged: _onHourChanged,
+                ),
+              ),
+              if (settings != null)
+                FushiStaggeredEntrance(
+                  index: 2,
+                  child: FushiListItem(
+                    key: const ValueKey<String>('stat-settings-clear-all'),
+                    leading: FushiIcon(
+                      FushiIcons.deleteSweep,
+                      color: scheme.error,
                     ),
+                    title: Text(
+                      t.stat_clear_all,
+                      style: TextStyle(color: scheme.error),
+                    ),
+                    onTap: settings.enabled
+                        ? () {
+                            Navigator.of(context).pop();
+                            settings.onClearAll();
+                          }
+                        : null,
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),

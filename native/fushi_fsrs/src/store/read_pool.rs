@@ -83,7 +83,7 @@ struct Idle {
 struct State {
     /// 空闲连接，最近放回的在尾。
     idle: Vec<Idle>,
-    /// 开着的连接数（空闲 + 借出）。
+    /// 开着的连接数（空闲 + 借出）：内存诊断计数，测试也看上限、回收与关闭。
     live: usize,
     closed: bool,
 }
@@ -152,6 +152,11 @@ impl ReadPool {
         self.cap
     }
 
+    /// 开着的连接数（空闲 + 借出）。
+    pub(crate) fn live(&self) -> usize {
+        self.state().live
+    }
+
     fn state(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -211,12 +216,6 @@ impl ReadPool {
         while st.live > 0 {
             st = self.returned.wait(st).unwrap_or_else(|e| e.into_inner());
         }
-    }
-
-    /// 开着的连接数（空闲 + 借出；测试看上限、回收与关闭）。
-    #[cfg(test)]
-    pub(crate) fn live(&self) -> usize {
-        self.state().live
     }
 }
 

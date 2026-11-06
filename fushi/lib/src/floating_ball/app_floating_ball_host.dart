@@ -22,7 +22,7 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
@@ -56,7 +56,16 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文

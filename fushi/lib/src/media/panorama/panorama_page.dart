@@ -18,7 +18,12 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 打开一部作品（由首页按各域既有路径实现）。
 typedef PanoramaOpenWork = Future<void> Function(PanoramaWork work);

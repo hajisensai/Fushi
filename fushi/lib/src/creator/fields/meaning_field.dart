@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:collection/collection.dart';
 
 /// Used to return a formatted text from multiple dictionary entries.

@@ -8,7 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';

@@ -4,11 +4,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';

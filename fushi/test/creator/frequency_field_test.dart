@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/fields/frequency_field.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 DictionaryEntry _entry({String extra = '', double popularity = 0}) {

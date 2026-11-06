@@ -12,7 +12,12 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
     show OnlineMangaSiblingSource, OnlineMangaSourceLanguageScope;
 import 'package:fushi/src/media/online/online_source_error_text.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 
 /// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
 enum _ChapterDownloadState {

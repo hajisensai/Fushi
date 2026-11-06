@@ -17,7 +17,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// small: one service type, IPv4 only (FushiSyncServer binds IPv4), no name
 /// probing / conflict resolution and no known-answer suppression.
 ///
-/// Compatibility layer for an external limit (BUG-4105): only reached on Linux
+/// Compatibility layer for an external limit (BUG-4119): only reached on Linux
 /// after bonsoir's Avahi initialise fails (`mdnsFallbackEnabled`), never on the
 /// other platforms. Remove it once LAN discovery moves into the Rust core with
 /// its own mDNS stack, or once bonsoir_linux works without Avahi.

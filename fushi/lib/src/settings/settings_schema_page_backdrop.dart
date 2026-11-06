@@ -10,6 +10,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomeTab, homeNavItemFor;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'

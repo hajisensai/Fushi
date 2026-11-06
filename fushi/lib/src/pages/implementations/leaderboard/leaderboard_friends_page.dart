@@ -14,7 +14,17 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 final RegExp _friendCodeShape = RegExp(r'^[A-Za-z0-9_-]{1,32}$');
 

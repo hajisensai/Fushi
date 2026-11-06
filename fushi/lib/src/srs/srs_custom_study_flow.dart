@@ -10,7 +10,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/srs/srs_custom_study_dialog.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 对 [deck] 走一遍自定义学习；[openReview] 打开复习页（[custom] 为 null = 普通复习）。
 Future<void> srsRunCustomStudy(

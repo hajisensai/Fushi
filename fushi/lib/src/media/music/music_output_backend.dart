@@ -217,6 +217,7 @@ class MusicBackendCapabilities {
   const MusicBackendCapabilities({
     required this.signalPath,
     required this.abLoop,
+    this.externalQueue = false,
   });
 
   /// libmpv 链路：一切照旧。
@@ -231,14 +232,21 @@ class MusicBackendCapabilities {
   /// 能在音频时间轴上做 A-B 循环（[MusicOutputBackend.setAbLoop]）。
   final bool abLoop;
 
+  /// 后端自管队列（Apple Music 电台：曲目列表只有 MusicKit 知道、由它自己换歌）。这一项在
+  /// Fushi 队列里只占一格，后端每换一首就发 [MusicBackendNowPlayingChanged]、由引擎就地换掉
+  /// 当前项。该能力下引擎的「下一首」委托给后端（[MusicExternalQueueBackend.skipToNext]），
+  /// 「上一首」/ 随机 / 预排下一首都不适用；没有时长（直播）时不能 seek。
+  final bool externalQueue;
+
   @override
   bool operator ==(Object other) =>
       other is MusicBackendCapabilities &&
       other.signalPath == signalPath &&
-      other.abLoop == abLoop;
+      other.abLoop == abLoop &&
+      other.externalQueue == externalQueue;
 
   @override
-  int get hashCode => Object.hash(signalPath, abLoop);
+  int get hashCode => Object.hash(signalPath, abLoop, externalQueue);
 }
 
 /// 后端上报的事件。
@@ -267,6 +275,17 @@ final class MusicBackendAdvanced extends MusicBackendEvent {
 
   /// 现在出声的曲目；null = 后端不知道（引擎按队列顺序推进一首）。
   final String? trackUid;
+}
+
+/// 自管队列的后端（[MusicBackendCapabilities.externalQueue]）换到了下一首（自然换歌或
+/// [MusicExternalQueueBackend.skipToNext]）：[item] 是现在出声的这首（自己的 `trackUid`、
+/// 显示元数据与时长）。引擎用它就地替换队列里的当前项（不动 index）、刷新位置 / 时长，并在
+/// 身份变了时按「开始播一首新曲」通知（播放历史 / 媒体会话 / 歌词）。同一身份只是元数据变了
+/// （直播电台换节目）时只刷新显示。
+final class MusicBackendNowPlayingChanged extends MusicBackendEvent {
+  const MusicBackendNowPlayingChanged(this.item);
+
+  final MusicPlayItem item;
 }
 
 /// 当前曲目播完且后面没有排好的下一首。
@@ -392,6 +411,15 @@ abstract interface class MusicOutputBackend {
 
   /// 可选的输出设备。
   Future<List<MusicAudioDevice>> listAudioDevices();
+}
+
+/// 自管队列的后端（[MusicBackendCapabilities.externalQueue]）额外提供的控制。可选接口：
+/// 不自管队列的后端不必实现；引擎按 `backend is MusicExternalQueueBackend` 判断。
+abstract interface class MusicExternalQueueBackend
+    implements MusicOutputBackend {
+  /// 让后端自己的队列换到下一首。当前曲不是自管队列的（或后端没有在放的）时什么都不做。
+  /// 换成后由后端发 [MusicBackendNowPlayingChanged]。
+  Future<void> skipToNext();
 }
 
 /// 播放项上的一个歌手引用：[id] 是来源侧（插件）的歌手 id，没有就只按名字找。

@@ -1,4 +1,4 @@
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/enhancement.dart';
 
 /// An entity for enhancements that specificallly generate images.
 abstract class ImageEnhancement extends Enhancement {

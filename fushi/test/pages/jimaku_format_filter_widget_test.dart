@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「获取字幕（Jimaku）」对话框的**类型筛选**（用户：「支持筛选类型，也就是 ass 的」）。
 ///

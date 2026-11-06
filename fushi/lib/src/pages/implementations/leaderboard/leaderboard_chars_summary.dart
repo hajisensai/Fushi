@@ -13,7 +13,11 @@ import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi/src/leaderboard/leaderboard_reference_works.dart';
 import 'package:fushi/src/leaderboard/leaderboard_reference_works_data.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 /// 换算量：一位小数，整数时不带 `.0`（82.5 / 3）。
 String leaderboardEquivalentAmount(double amount) =>

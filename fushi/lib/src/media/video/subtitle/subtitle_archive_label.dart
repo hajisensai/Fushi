@@ -1,4 +1,4 @@
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 

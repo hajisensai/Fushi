@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_prompt.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import '../helpers/glass_unwrap.dart';
 
 void main() {

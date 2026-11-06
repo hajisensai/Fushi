@@ -2,9 +2,15 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/pages/base_history_page.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// A default page for a [ReaderMediaSource]'s tab body content when selected

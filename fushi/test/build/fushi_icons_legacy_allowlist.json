@@ -207,7 +207,7 @@
  "lib/src/utils/components/glass/fushi_glass_chips.dart": 1,
  "lib/src/utils/components/glass/fushi_glass_inputs.dart": 3,
  "lib/src/utils/components/glass/fushi_glass_overlays.dart": 5,
- "lib/src/utils/components/library_section_tabs.dart": 1,
+ "lib/src/pages/shared/library_section_tabs.dart": 1,
  "lib/src/utils/components/settings_shared.dart": 5,
  "lib/src/utils/components/shelf_card_widgets.dart": 1,
  "lib/src/utils/components/stat_contribution_heatmap.dart": 2

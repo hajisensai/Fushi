@@ -6,7 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show kDictKanjiPartSettingKeys, kanjiPartSettingsIn;
 import 'package:fushi_engine/profile/profile_document.dart';
-import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/models/dictionary_repository.dart';
@@ -14,10 +15,9 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
-import 'package:fushi/src/sync/backup_service.dart'
+import 'package:fushi/src/sync/backup_path_rebase.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
@@ -378,6 +378,48 @@ class ProfileRepository {
     }
   }
 
+  /// 作品级配置会话期间对 Anki 制卡设置的写入：[ankiMap]（[ProfileKeys.ankiSettingsToMap] 形，
+  /// 配置拥有的那几个字段）落到 [profileId] 自己的设置上。与 [writeWorkScopedPref] 同一判据：
+  /// [profileId] 此刻就是激活配置时叠到 live Anki 设置上，否则整组替换它快照里的 Anki 行。
+  Future<void> writeWorkScopedAnkiSettings(
+    int profileId,
+    Map<String, String> ankiMap,
+  ) async {
+    if (profileId == await getActiveProfileId()) {
+      final AnkiSettings current = await _ankiRepo.loadSettings();
+      await _ankiRepo.saveSettings(
+        ProfileKeys.mapToAnkiSettings(ankiMap, current),
+      );
+      return;
+    }
+    for (final MapEntry<String, String> entry in ankiMap.entries) {
+      await _db.upsertProfileSetting(
+        ProfileSettingsCompanion.insert(
+          profileId: profileId,
+          category: ProfileKeys.categoryAnki,
+          key: entry.key,
+          value: entry.value,
+        ),
+      );
+    }
+  }
+
+  /// 作品级配置会话读 [profileId] 此刻拥有的 Anki 字段（[ProfileKeys.ankiSettingsToMap] 形）；
+  /// 空 = 它的快照里没有 Anki 字段。每次现读持久层：Android 弹窗进程与主进程各有一份会话，
+  /// 任一边写进绑定配置的改动另一边下次读就看得到，读改写不会拿旧内存值覆盖对方的改动。
+  /// 与 [writeWorkScopedAnkiSettings] 同一判据：[profileId] 此刻就是激活配置时读 live。
+  Future<Map<String, String>> readWorkScopedAnkiSettings(int profileId) async {
+    if (profileId == await getActiveProfileId()) {
+      return ProfileKeys.ankiSettingsToMap(await _ankiRepo.loadSettings());
+    }
+    return <String, String>{
+      for (final ProfileSettingRow row in await _db.getProfileSettings(
+        profileId,
+      ))
+        if (row.category == ProfileKeys.categoryAnki) row.key: row.value,
+    };
+  }
+
   /// 解析该打开哪个 Profile：**book > language > mediaType > active**。
   ///
   /// 语言排在 book 之下、mediaType 之上：book 级是用户对单个条目的明确指令，压过
@@ -704,6 +746,7 @@ class ProfileRepository {
       prefs: PreferencesRepository.readOnlySnapshot(_db, prefs),
       ankiSettings: anki,
       dictionaries: DictionaryRepository.dictionariesFromRows(rows),
+      ankiSnapshot: snapshot.ankiMap,
     );
   }
 

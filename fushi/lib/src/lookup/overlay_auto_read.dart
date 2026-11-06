@@ -13,7 +13,7 @@ import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 

@@ -14,6 +14,7 @@ library;
 
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_library_client.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
@@ -74,6 +75,85 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
     }
   }
   return out;
+}
+
+/// 一个 Apple Music 来源连带的另外几份能力：catalog（播放 / 榜单 / 电台）、资料库（歌单读写）、
+/// 个人数据（推荐 / 最近 / 评分 / 加入资料库）。未登录或没有订阅时只有 [catalog]（试听）。
+class AppleMusicLinkedSources {
+  AppleMusicLinkedSources({
+    required this.catalog,
+    this.library,
+    this.personal,
+    this.ownsCatalog = false,
+    this.ownsLibrary = false,
+  });
+
+  /// 这两份是不是本对象新建的（[close] 只关自己建的，调用方传进来的浏览器归调用方）。
+  final bool ownsCatalog;
+  final bool ownsLibrary;
+
+  final AppleMusicCatalogClient catalog;
+  final AppleMusicLibraryClient? library;
+  final AppleMusicPersonalClient? personal;
+
+  /// 能整曲播放（已登录且订阅有效）：电台、评分、资料库写操作都只在这时可用。
+  bool get signedIn => personal != null;
+
+  /// 一首曲目在 catalog 里的 id（评分 / 加入资料库 / 加歌单 / 起电台都按它）。资料库曲目经
+  /// [AppleMusicLibraryClient.catalogIdOf] 换算，没换算过回 null。
+  String? catalogSongIdOf(MusicServerBrowser browser, MusicServerTrack track) =>
+      switch (browser) {
+        AppleMusicCatalogClient() => track.id,
+        AppleMusicLibraryClient() => browser.catalogIdOf(track.id),
+        _ => null,
+      };
+
+  void close() {
+    if (ownsCatalog) catalog.close();
+    if (ownsLibrary) library?.close();
+    personal?.close();
+  }
+}
+
+/// 给一个 Apple Music 浏览器配齐关联来源（非 Apple Music 来源回 null）。[browser] 本身是
+/// catalog / 资料库时原样复用，免得同一页里出现两份「列出过的曲目」登记表。
+AppleMusicLinkedSources? appleMusicLinkedSourcesFor(
+  AppModel app,
+  MusicServerBrowser browser,
+) {
+  if (browser.kind != MusicServerKind.appleMusic || !app.isPreferencesReady) {
+    return null;
+  }
+  final AppleMusicAccount account = app.appleMusicAccount;
+  final bool full = account.canPlayFullTracks;
+  final AppleMusicCatalogClient catalog = switch (browser) {
+    AppleMusicCatalogClient() => browser,
+    _ => AppleMusicCatalogClient(
+      tokens: appleMusicTokenSource,
+      storefront:
+          account.state.storefront ?? app.prefsRepo.musicAppleMusicStorefront,
+      fullTracks: full,
+    ),
+  };
+  final bool ownsCatalog = !identical(catalog, browser);
+  if (!full) {
+    return AppleMusicLinkedSources(catalog: catalog, ownsCatalog: ownsCatalog);
+  }
+  return AppleMusicLinkedSources(
+    catalog: catalog,
+    ownsCatalog: ownsCatalog,
+    ownsLibrary: browser is! AppleMusicLibraryClient,
+    library: browser is AppleMusicLibraryClient
+        ? browser
+        : AppleMusicLibraryClient(
+            credentials: account.userCredentials,
+            displayName: t.music_apple_music_library_name,
+          ),
+    personal: AppleMusicPersonalClient(
+      credentials: account.userCredentials,
+      catalog: catalog,
+    ),
+  );
 }
 
 /// 这类来源能不能混排进本地曲库（Apple Music 只有热门榜、没有「整库」，不混）。

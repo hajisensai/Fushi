@@ -8,7 +8,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
-import 'package:fushi/src/sync/backup_service.dart' show isBackupArchiveName;
+import 'package:fushi/src/sync/backup_archive_name.dart'
+    show isBackupArchiveName;
 
 void main() {
   late Directory tempRoot;

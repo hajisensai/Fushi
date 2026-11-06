@@ -24,7 +24,7 @@ import 'package:fushi/src/ops/ctl_online_routes.dart'
     show startCtlNovelDownloadTask;
 import 'package:fushi/src/ops/ctl_online_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/utils.dart' show createAppHttpClient;
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 「AI 下载」会话路由（CLI 侧命令见 `packages/fushi_cli/lib/src/commands/ai_download_commands.dart`）。
 ///

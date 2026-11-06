@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:gap/gap.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_marquee.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// Used for various dialogs, such as the dictionary, profiles and enhancements
 /// menus. Used for listing, selecting and reordering items.

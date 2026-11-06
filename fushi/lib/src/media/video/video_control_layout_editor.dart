@@ -11,7 +11,9 @@ import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 /// 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。从旧
 /// `VideoQuickSettingsSheet._buildControlDragEditor` 系列方法原样抽出为独立控件

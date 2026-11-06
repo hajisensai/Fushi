@@ -5,7 +5,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 // 搜索状态机、候选投影（[JimakuCandidate]）、纯函数与列表 widget 全在
 // subtitle_search_panel.dart；本文件只剩对话框外壳。存量调用方/测试仍从这里 import。

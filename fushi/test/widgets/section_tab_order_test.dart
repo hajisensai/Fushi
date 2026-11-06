@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
-import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_tab_order.dart';
 
 // 反馈 ndQ5eXLcqp：库页顶部页签可自定义顺序。组件层统一实现：存的是页签 id，

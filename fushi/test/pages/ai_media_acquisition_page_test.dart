@@ -5,7 +5,8 @@ import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
 import 'package:fushi/src/media/acquisition/media_acquisition_backends.dart';
 import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/pages/implementations/ai_media_acquisition_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 class _FakeBackend implements MediaAcquisitionBackend {
   final List<String> searched = <String>[];

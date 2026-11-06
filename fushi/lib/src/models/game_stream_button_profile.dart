@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:fushi/src/sync/game_stream_client.dart'
+import 'package:fushi/src/sync/game_stream_virtual_button.dart'
     show GameStreamVirtualButton;
 
 /// A physical controller button on the receiving device (a handheld such as

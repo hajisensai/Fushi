@@ -12,7 +12,8 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/people/person_detail_page.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/people/person_identity.dart';
 
 /// 一条人物关系在卡片上该显示的图：先人物照（本地落地 > 远端 URL），声优没有

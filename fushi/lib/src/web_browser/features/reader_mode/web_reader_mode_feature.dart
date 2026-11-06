@@ -13,7 +13,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/features/reader_mode/web_reader_mode_document.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 一个标签页的阅读模式状态。
 class _ReaderModeState {

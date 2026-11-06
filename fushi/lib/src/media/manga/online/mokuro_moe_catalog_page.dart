@@ -4,7 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 漫画库页三视图里的「浏览」视图：mokuro.moe 在线目录。
 ///

@@ -75,9 +75,9 @@ const Set<String> _bannedLifecycleEvents = <String>{
 };
 
 const List<String> _requiredClosureEvents = <String>[
-  'pump-stop-start',
-  'pump-remove-tick-done',
-  'pump-stop-done',
+  'worker-stop-start',
+  'worker-stop-joined',
+  'worker-stop-done',
   'session-close-done',
   'pool-close-done',
   'retire-register-done',
@@ -147,7 +147,7 @@ void main() {
   /// 断言：
   ///   1. texture_bridge.h 声明跨 TU 的 SetProcessExiting/IsProcessExiting。
   ///   2. texture_bridge.cc 定义 std::atomic<bool> g_process_exiting，且
-  ///      PumpFrameLocked 的帧上报回调 frame_available_() 之前存在退出态短路
+  ///      DeliverFrameLocked 的帧上报回调 frame_available_() 之前存在退出态短路
   ///      早返回。
   ///   3. in_app_webview_manager.cpp 的 prepareForProcessExit 入口在
   ///      webViews.clear() 之前调 SetProcessExiting()（早返回闸门必须在任何
@@ -198,12 +198,12 @@ void main() {
           reason: 'IsProcessExiting must be defined in texture_bridge.cc',
         );
 
-        // 3) 帧上报短路：PumpFrameLocked 内 IsProcessExiting() 早返回必须在
+        // 3) 帧上报短路：DeliverFrameLocked 内 IsProcessExiting() 早返回必须在
         //    frame_available_() 之前（退出态一律不再向引擎推帧），且既有
         //    frame_available_() 调用未被删除（不回退）。
         final String pumpBody = _body(
           bridge,
-          'void TextureBridge::PumpFrameLocked(',
+          'void TextureBridge::DeliverFrameLocked(',
           'bool TextureBridge::ShouldDropFrame()',
         );
         final int exitGate = pumpBody.indexOf('if (IsProcessExiting())');
@@ -211,7 +211,8 @@ void main() {
         expect(
           exitGate,
           greaterThanOrEqualTo(0),
-          reason: 'PumpFrameLocked must short-circuit when process is exiting',
+          reason:
+              'DeliverFrameLocked must short-circuit when process is exiting',
         );
         expect(
           frameReport,
@@ -341,7 +342,7 @@ void main() {
   });
 
   /// TODO-506 WGC capture lifecycle log 守卫：attribution 事件可见性 +
-  /// timer-pump retire 排序（StopPumpLocked 先于 finalize、无 FrameArrived
+  /// 取帧线程 retire 排序（StopFrameWorkerLocked 先于 finalize、无 FrameArrived
   /// handler-stack 路径残留）+ 行为型日志校验器夹具（拒绝旧事件驱动负样本、
   /// 接受 per-pool 成功闭包序列）。
   group('WGC capture lifecycle log (TODO-506)', () {
@@ -356,10 +357,10 @@ void main() {
           'frame-first-success',
           'frame-needs-update',
           'frame-noop',
-          'pump-start',
-          'pump-stop-start',
-          'pump-remove-tick-done',
-          'pump-stop-done',
+          'worker-start',
+          'worker-stop-start',
+          'worker-stop-joined',
+          'worker-stop-done',
           'recreate-skip-fits',
         ]) {
           expect(
@@ -412,14 +413,14 @@ void main() {
         );
 
         final String frameBody = src.substring(
-          src.indexOf('void TextureBridge::PumpFrameLocked('),
+          src.indexOf('void TextureBridge::DeliverFrameLocked('),
           src.indexOf('bool TextureBridge::ShouldDropFrame()'),
         );
         expect(
           frameBody.contains('FrameHandlerDetail'),
           isTrue,
           reason:
-              'PumpFrameLocked must use the shared frame attribution detail builder',
+              'DeliverFrameLocked must use the shared frame attribution detail builder',
         );
         for (final String field in <String>[
           'GenerationDetail',
@@ -431,14 +432,14 @@ void main() {
           expect(
             src.contains(field),
             isTrue,
-            reason: 'PumpFrameLocked low-frequency logs must include $field',
+            reason: 'DeliverFrameLocked low-frequency logs must include $field',
           );
         }
       },
     );
 
     test(
-      'timer-pump WGC retire removes Tick before closing capture resources',
+      'WGC retire joins the frame worker before closing capture resources',
       () {
         final String src = _readTextureBridgeSource();
         final String retireBody = _methodBody(
@@ -448,15 +449,16 @@ void main() {
         );
 
         expect(
-          retireBody.contains('StopPumpLocked(lifetime, reason)'),
+          retireBody.contains('StopFrameWorkerLocked(lifetime, reason)'),
           isTrue,
-          reason: 'retire must stop/remove the timer pump before finalizing',
+          reason:
+              'retire must stop and join the frame worker before finalizing',
         );
         expect(
           retireBody.contains('TryEnqueue'),
           isFalse,
           reason:
-              'FrameArrived handler-stack defer is not part of the default timer pump path',
+              'FrameArrived handler-stack defer is not part of the frame worker path',
         );
         expect(
           src.contains('add_FrameArrived'),
@@ -471,7 +473,8 @@ void main() {
         expect(
           src.contains('defer_enqueue=0'),
           isFalse,
-          reason: 'timer pump path must not use handler-stack enqueue fallback',
+          reason:
+              'frame worker path must not use handler-stack enqueue fallback',
         );
       },
     );
@@ -497,9 +500,9 @@ void main() {
       const String successLog = '''
 2026-06-17T11:00:00.000Z tid=42 evt=create-pool pool=0xABC generation=9
 2026-06-17T11:00:00.100Z tid=42 evt=retire pool=0xABC reason=recreate
-2026-06-17T11:00:00.101Z tid=42 evt=pump-stop-start pool=0xABC generation=9
-2026-06-17T11:00:00.102Z tid=42 evt=pump-remove-tick-done pool=0xABC generation=9 hr=0x00000000
-2026-06-17T11:00:00.103Z tid=42 evt=pump-stop-done pool=0xABC generation=9
+2026-06-17T11:00:00.101Z tid=42 evt=worker-stop-start pool=0xABC generation=9 reason=recreate
+2026-06-17T11:00:00.102Z tid=42 evt=worker-stop-joined pool=0xABC generation=9
+2026-06-17T11:00:00.103Z tid=42 evt=worker-stop-done pool=0xABC generation=9
 2026-06-17T11:00:00.104Z tid=42 evt=session-close-done pool=0xABC generation=9 hr=0x00000000
 2026-06-17T11:00:00.105Z tid=42 evt=pool-close-done pool=0xABC generation=9 hr=0x00000000
 2026-06-17T11:00:00.106Z tid=42 evt=retire-register-done pool=0xABC generation=9

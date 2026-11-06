@@ -10,8 +10,9 @@ library;
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/discovery_download_inline_status.dart';
@@ -27,7 +28,20 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
@@ -35,6 +49,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subti
     show AudiobookshelfSubtitleMatch;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 class AudiobookshelfItemDetailPage extends ConsumerStatefulWidget {
   const AudiobookshelfItemDetailPage({

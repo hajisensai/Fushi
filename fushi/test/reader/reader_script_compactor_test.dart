@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';

@@ -26,14 +26,14 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel, jimakuLanguageRank;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
@@ -49,7 +49,19 @@ import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart'
         describeSubtitleFailure,
         kSubtitleNoticeBannerKey,
         primarySubtitleFailure;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 

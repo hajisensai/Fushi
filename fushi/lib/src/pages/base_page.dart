@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 
 /// A page template which assumes use of [BasePageState] by which all pages

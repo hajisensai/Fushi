@@ -166,7 +166,32 @@ import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -5657,12 +5682,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         onLongPress: onLongPress,
       );
     }
+    // 「剧照」取图链的末端会回落到封面 / 远端海报（在线源、未刮削的远端条目
+    // 只有竖图）：方向不能按来源猜，交给解码后的真实宽高比定（与首页 dashboard
+    // 同一套 [FushiContinueEntry.orientationImage]）——横图是剧照叠层卡，竖图
+    // 是封面皮，不再把竖图垫模糊底塞进 16:9（用户 2026-11-05「左边空了一大块，
+    // 应该改成自适应」）。
+    if (still == null) {
+      return FushiContinueEntry(
+        key: hero.cardKey,
+        focusId: hero.focusId,
+        cover: _buildHomeHeroImage(null),
+        coverAspectRatio: 16 / 9,
+        title: hero.title,
+        eyebrow: subtitle,
+        metaIcon: hero.cloud ? FushiIcons.cloud : null,
+        subtitle: hero.subtitle,
+        progress: hero.progress,
+        onOpen: onOpen,
+        onLongPress: onLongPress,
+      );
+    }
     return FushiContinueEntry(
       key: hero.cardKey,
       focusId: hero.focusId,
-      cover: _buildHomeHeroImage(still),
+      cover: _buildHomePosterImage(still),
+      landscapeCover: _buildHomeHeroImage(still),
+      orientationImage: still,
       colorSource: still,
-      coverAspectRatio: 16 / 9,
+      material: ShelfCoverMaterial.glossyPoster,
       title: hero.title,
       eyebrow: subtitle,
       metaIcon: hero.cloud ? FushiIcons.cloud : null,

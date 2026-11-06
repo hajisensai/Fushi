@@ -222,6 +222,9 @@ void main() {
       'lib/src/web_browser/tab_view/web_browser_downloader.dart',
       // 有声书存储的平台默认解析器（AppModel 会注入 AppPaths 解析器覆盖它）。
       'lib/src/media/audiobook/audiobook_storage_platform.dart',
+      // 存储分项统计：iOS 取 Documents 的上一层（沙盒容器根）只遍历、量大小，
+      // 不在那里写任何文件；结果经 ErrorLogService 记进诊断日志（BUG-4075）。
+      'lib/src/diagnostics/storage_footprint_log.dart',
     };
     final RegExp call = RegExp(r'\bgetApplicationDocumentsDirectory\b');
     final List<String> offenders = <String>[];

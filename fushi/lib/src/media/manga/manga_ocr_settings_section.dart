@@ -27,7 +27,22 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// [MangaOcrSettingsSection] 的版式：设置页（M3E 分组：识别引擎选择行、性能、
 /// 大模型增强、本地模型状态卡、外部工具）或阅读器设置侧板（引擎单选卡片组平铺）。
@@ -430,32 +445,30 @@ class _MangaOcrSettingsSectionState
         final ThemeData dialogTheme = Theme.of(ctx);
         return FushiAlertDialog(
           title: Text(t.manga_ocr_import_title),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(t.manga_ocr_import_intro),
-                const SizedBox(height: 12),
-                for (final MangaOcrModelFile model in _localModel.manifest)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
-                      style: dialogTheme.textTheme.bodySmall,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FushiTextButton.icon(
-                    onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const FushiIcon(FushiIcons.link, size: 18),
-                    label: Text(t.manga_ocr_import_copy_urls),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.manga_ocr_import_intro),
+              const SizedBox(height: 12),
+              for (final MangaOcrModelFile model in _localModel.manifest)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
+                    style: dialogTheme.textTheme.bodySmall,
                   ),
                 ),
-              ],
-            ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FushiTextButton.icon(
+                  onPressed: () => unawaited(_copyModelUrls()),
+                  icon: const FushiIcon(FushiIcons.link, size: 18),
+                  label: Text(t.manga_ocr_import_copy_urls),
+                ),
+              ),
+            ],
           ),
           actions: <Widget>[
             FushiTextButton(

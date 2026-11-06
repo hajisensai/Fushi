@@ -12,8 +12,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart'
     show guardLnReaderConnections;
-import 'package:fushi/src/media/video/video_player_controller.dart'
-    show VideoChapter;
+import 'package:fushi/src/media/video/video_chapter.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/webview/untrusted_page_urls.dart';
 import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;

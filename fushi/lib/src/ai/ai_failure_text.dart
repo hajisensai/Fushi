@@ -1,7 +1,7 @@
 /// AI 调用失败短码 → 界面文案的唯一映射。
 library;
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 把 `AiChatFailure.message` 的脱敏短码映射成界面文案。
 ///

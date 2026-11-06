@@ -20,7 +20,9 @@ import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_landing.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// 更新下载任务在 [SettingsCliTaskRegistry] 里的种类名。
 const String kAppUpdateDownloadTaskKind = 'update-download';

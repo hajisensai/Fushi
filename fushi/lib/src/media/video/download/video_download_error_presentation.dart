@@ -1,4 +1,4 @@
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// Coarse, user-facing category for a persisted download job error.
 ///

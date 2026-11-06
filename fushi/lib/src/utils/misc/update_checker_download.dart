@@ -1314,7 +1314,7 @@ Future<UpdateDownloadResponse> _openHttpDownload(
 }
 
 /// 更新包下载 / 清理目录 `<根>/updates`。清理会删其中非临时文件，根必须只属于 Fushi
-/// （BUG-4104：非 Windows 曾用共享临时根，Linux 上即 `/tmp`）。
+/// （BUG-4118：非 Windows 曾用共享临时根，Linux 上即 `/tmp`）。
 Future<Directory> _updatesDirectoryForCurrentPlatform() async {
   final Directory root = Platform.isWindows
       ? await getApplicationSupportDirectory()

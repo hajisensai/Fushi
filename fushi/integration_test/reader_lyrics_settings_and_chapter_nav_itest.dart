@@ -13,7 +13,8 @@ import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
-import 'package:fushi/utils.dart' show AdaptiveSettingsStepperRow, t;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show
         AudioCue,

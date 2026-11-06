@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 

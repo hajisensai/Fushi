@@ -930,310 +930,307 @@ class _GalAttachedCalibrationDialogState
       title: Text(t.game_lookup_attached_calibration_title),
       content: SizedBox(
         width: 620,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // M3E 状态卡：校准状态是这张对话框的「现在在哪一步」，铺饱和色块
-              // （失败 / 文本已变 = error，其余 secondary），色块随状态切换。
-              FushiCard(
-                tone: statusFailed
-                    ? FushiCardTone.error
-                    : FushiCardTone.secondary,
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(
-                      statusFailed ? FushiIcons.warning : FushiIcons.settings,
-                      size: 20,
-                      color: statusForeground,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          _calibrationStatusText(),
-                          key: const ValueKey<String>(
-                            'game-attached-calibration-status',
-                          ),
-                          style: context.fushiType.bodyMediumEmphasized
-                              .copyWith(color: statusForeground),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // M3E 状态卡：校准状态是这张对话框的「现在在哪一步」，铺饱和色块
+            // （失败 / 文本已变 = error，其余 secondary），色块随状态切换。
+            FushiCard(
+              tone: statusFailed
+                  ? FushiCardTone.error
+                  : FushiCardTone.secondary,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Row(
+                children: <Widget>[
+                  FushiIcon(
+                    statusFailed ? FushiIcons.warning : FushiIcons.settings,
+                    size: 20,
+                    color: statusForeground,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _calibrationStatusText(),
+                        key: const ValueKey<String>(
+                          'game-attached-calibration-status',
+                        ),
+                        style: context.fushiType.bodyMediumEmphasized.copyWith(
+                          color: statusForeground,
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              t.game_lookup_attached_preview,
+              style: context.fushiType.labelLargeEmphasized,
+            ),
+            const SizedBox(height: 6),
+            FushiCard(
+              padding: EdgeInsets.all(tokens.spacing.rowVertical),
+              child: SelectableText(widget.previewText),
+            ),
+            const SizedBox(height: 16),
+            if (_layout.cellGrid != null) ...[
+              Text(t.game_lookup_samples_auto_grid),
+              Text(t.game_lookup_samples_auto_success),
+            ] else ...[
               Text(
-                t.game_lookup_attached_preview,
-                style: context.fushiType.labelLargeEmphasized,
+                t.game_lookup_attached_body_rect,
+                style: context.fushiType.titleSmallEmphasized,
               ),
-              const SizedBox(height: 6),
-              FushiCard(
-                padding: EdgeInsets.all(tokens.spacing.rowVertical),
-                child: SelectableText(widget.previewText),
+              Text(t.game_lookup_attached_calibration_region_help),
+              _RatioSlider(
+                label: t.game_lookup_attached_left,
+                value: _rect.left,
+                min: 0,
+                max: 1 - _rect.width,
+                onChanged: (double value) => _setRect(
+                  GalLookupNormalizedRectV1(
+                    left: value,
+                    top: _rect.top,
+                    width: _rect.width,
+                    height: _rect.height,
+                  ),
+                ),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              _RatioSlider(
+                label: t.game_lookup_attached_top,
+                value: _rect.top,
+                min: 0,
+                max: 1 - _rect.height,
+                onChanged: (double value) => _setRect(
+                  GalLookupNormalizedRectV1(
+                    left: _rect.left,
+                    top: value,
+                    width: _rect.width,
+                    height: _rect.height,
+                  ),
+                ),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              _RatioSlider(
+                label: t.game_lookup_attached_width,
+                value: _rect.width,
+                min: 0.02,
+                max: 1 - _rect.left,
+                onChanged: (double value) => _setRect(
+                  GalLookupNormalizedRectV1(
+                    left: _rect.left,
+                    top: _rect.top,
+                    width: value,
+                    height: _rect.height,
+                  ),
+                ),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              _RatioSlider(
+                label: t.game_lookup_attached_height,
+                value: _rect.height,
+                min: 0.02,
+                max: 1 - _rect.top,
+                onChanged: (double value) => _setRect(
+                  GalLookupNormalizedRectV1(
+                    left: _rect.left,
+                    top: _rect.top,
+                    width: _rect.width,
+                    height: value,
+                  ),
+                ),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              const SizedBox(height: 8),
+              FushiTextFormFieldControl(
+                key: const ValueKey<String>(
+                  'game-attached-calibration-font-family',
+                ),
+                controller: _fontController,
+                decoration: InputDecoration(
+                  labelText: t.game_lookup_attached_font_family,
+                  border: const OutlineInputBorder(),
+                ),
+                onFieldSubmitted: (String value) {
+                  _setLayout(_copyLayout(fontFamily: value.trim()));
+                  _queueDraftPush();
+                },
+              ),
+              const SizedBox(height: 8),
+              _RatioSlider(
+                label: t.game_lookup_attached_font_size,
+                value: _layout.fontSizePerClientHeight,
+                min: 0.01,
+                max: 0.12,
+                fractionDigits: 3,
+                onChanged: (double value) =>
+                    _setLayout(_copyLayout(fontSizePerClientHeight: value)),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              _RatioSlider(
+                label: t.game_lookup_attached_letter_spacing,
+                value: _layout.letterSpacingPerClientHeight.clamp(-0.02, 0.05),
+                min: -0.02,
+                max: 0.05,
+                fractionDigits: 3,
+                onChanged: (double value) =>
+                    _setLayout(_copyLayout(letterSpacing: value)),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              _RatioSlider(
+                label: t.game_lookup_attached_line_height,
+                value: _layout.lineHeight.clamp(0.5, 2.5),
+                min: 0.5,
+                max: 2.5,
+                fractionDigits: 2,
+                onChanged: (double value) =>
+                    _setLayout(_copyLayout(lineHeight: value)),
+                onChangeEnd: (_) => _queueDraftPush(),
+              ),
+              const SizedBox(height: 10),
+              // 对齐方式是三选一的小枚举：M3E 连接式按钮组（Apple 分段控件）
+              // 一眼看全，比下拉少一次点开。值域与旧下拉一致（left / center /
+              // right、top / center / bottom）。
+              Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                children: <Widget>[
+                  _AlignSegments(
+                    key: const ValueKey<String>(
+                      'game-attached-calibration-text-align',
+                    ),
+                    label: t.game_lookup_attached_text_align,
+                    value: _layout.textAlign,
+                    options: <(String, String)>[
+                      ('left', t.game_lookup_attached_align_left),
+                      ('center', t.game_lookup_attached_align_center),
+                      ('right', t.game_lookup_attached_align_right),
+                    ],
+                    onChanged: (String value) {
+                      _setLayout(_copyLayout(textAlign: value));
+                      _queueDraftPush();
+                    },
+                  ),
+                  _AlignSegments(
+                    key: const ValueKey<String>(
+                      'game-attached-calibration-vertical-align',
+                    ),
+                    label: t.game_lookup_attached_vertical_align,
+                    value: _layout.verticalAlign,
+                    options: <(String, String)>[
+                      ('top', t.game_lookup_attached_align_top),
+                      ('center', t.game_lookup_attached_align_center),
+                      ('bottom', t.game_lookup_attached_align_bottom),
+                    ],
+                    onChanged: (String value) {
+                      _setLayout(_copyLayout(verticalAlign: value));
+                      _queueDraftPush();
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
-              if (_layout.cellGrid != null) ...[
-                Text(t.game_lookup_samples_auto_grid),
-                Text(t.game_lookup_samples_auto_success),
-              ] else ...[
-                Text(
-                  t.game_lookup_attached_body_rect,
-                  style: context.fushiType.titleSmallEmphasized,
-                ),
-                Text(t.game_lookup_attached_calibration_region_help),
-                _RatioSlider(
-                  label: t.game_lookup_attached_left,
-                  value: _rect.left,
-                  min: 0,
-                  max: 1 - _rect.width,
-                  onChanged: (double value) => _setRect(
-                    GalLookupNormalizedRectV1(
-                      left: value,
-                      top: _rect.top,
-                      width: _rect.width,
-                      height: _rect.height,
-                    ),
-                  ),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                _RatioSlider(
-                  label: t.game_lookup_attached_top,
-                  value: _rect.top,
-                  min: 0,
-                  max: 1 - _rect.height,
-                  onChanged: (double value) => _setRect(
-                    GalLookupNormalizedRectV1(
-                      left: _rect.left,
-                      top: value,
-                      width: _rect.width,
-                      height: _rect.height,
-                    ),
-                  ),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                _RatioSlider(
-                  label: t.game_lookup_attached_width,
-                  value: _rect.width,
-                  min: 0.02,
-                  max: 1 - _rect.left,
-                  onChanged: (double value) => _setRect(
-                    GalLookupNormalizedRectV1(
-                      left: _rect.left,
-                      top: _rect.top,
-                      width: value,
-                      height: _rect.height,
-                    ),
-                  ),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                _RatioSlider(
-                  label: t.game_lookup_attached_height,
-                  value: _rect.height,
-                  min: 0.02,
-                  max: 1 - _rect.top,
-                  onChanged: (double value) => _setRect(
-                    GalLookupNormalizedRectV1(
-                      left: _rect.left,
-                      top: _rect.top,
-                      width: _rect.width,
-                      height: value,
-                    ),
-                  ),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                const SizedBox(height: 8),
-                FushiTextFormFieldControl(
-                  key: const ValueKey<String>(
-                    'game-attached-calibration-font-family',
-                  ),
-                  controller: _fontController,
-                  decoration: InputDecoration(
-                    labelText: t.game_lookup_attached_font_family,
-                    border: const OutlineInputBorder(),
-                  ),
-                  onFieldSubmitted: (String value) {
-                    _setLayout(_copyLayout(fontFamily: value.trim()));
-                    _queueDraftPush();
-                  },
-                ),
-                const SizedBox(height: 8),
-                _RatioSlider(
-                  label: t.game_lookup_attached_font_size,
-                  value: _layout.fontSizePerClientHeight,
-                  min: 0.01,
-                  max: 0.12,
-                  fractionDigits: 3,
-                  onChanged: (double value) =>
-                      _setLayout(_copyLayout(fontSizePerClientHeight: value)),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                _RatioSlider(
-                  label: t.game_lookup_attached_letter_spacing,
-                  value: _layout.letterSpacingPerClientHeight.clamp(
-                    -0.02,
-                    0.05,
-                  ),
-                  min: -0.02,
-                  max: 0.05,
-                  fractionDigits: 3,
-                  onChanged: (double value) =>
-                      _setLayout(_copyLayout(letterSpacing: value)),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                _RatioSlider(
-                  label: t.game_lookup_attached_line_height,
-                  value: _layout.lineHeight.clamp(0.5, 2.5),
-                  min: 0.5,
-                  max: 2.5,
-                  fractionDigits: 2,
-                  onChanged: (double value) =>
-                      _setLayout(_copyLayout(lineHeight: value)),
-                  onChangeEnd: (_) => _queueDraftPush(),
-                ),
-                const SizedBox(height: 10),
-                // 对齐方式是三选一的小枚举：M3E 连接式按钮组（Apple 分段控件）
-                // 一眼看全，比下拉少一次点开。值域与旧下拉一致（left / center /
-                // right、top / center / bottom）。
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 12,
-                  children: <Widget>[
-                    _AlignSegments(
-                      key: const ValueKey<String>(
-                        'game-attached-calibration-text-align',
-                      ),
-                      label: t.game_lookup_attached_text_align,
-                      value: _layout.textAlign,
-                      options: <(String, String)>[
-                        ('left', t.game_lookup_attached_align_left),
-                        ('center', t.game_lookup_attached_align_center),
-                        ('right', t.game_lookup_attached_align_right),
-                      ],
-                      onChanged: (String value) {
-                        _setLayout(_copyLayout(textAlign: value));
-                        _queueDraftPush();
-                      },
-                    ),
-                    _AlignSegments(
-                      key: const ValueKey<String>(
-                        'game-attached-calibration-vertical-align',
-                      ),
-                      label: t.game_lookup_attached_vertical_align,
-                      value: _layout.verticalAlign,
-                      options: <(String, String)>[
-                        ('top', t.game_lookup_attached_align_top),
-                        ('center', t.game_lookup_attached_align_center),
-                        ('bottom', t.game_lookup_attached_align_bottom),
-                      ],
-                      onChanged: (String value) {
-                        _setLayout(_copyLayout(verticalAlign: value));
-                        _queueDraftPush();
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (_previewCurrent &&
-                  widget.controller.calibrationStatus ==
-                      GalAttachedCalibrationStatus.ready) ...<Widget>[
-                Text(t.game_lookup_attached_probes_hint),
-                const SizedBox(height: 8),
-              ],
-              FushiGroupedListItem(
-                index: 0,
-                count: 3,
-                selected: _startConfirmed && _startObserved,
-                child: FushiListItem(
-                  key: const ValueKey<String>(
-                    'game-attached-calibration-probe-start',
-                  ),
-                  density: FushiListDensity.compact,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap,
-                    vertical: tokens.spacing.gap / 2,
-                  ),
-                  leading: FushiCheckbox(
-                    value: _startConfirmed,
-                    onChanged: _startObserved ? _setStartConfirmed : null,
-                  ),
-                  onTap: _startObserved
-                      ? () => _setStartConfirmed(!_startConfirmed)
-                      : null,
-                  title: Text(
-                    '${t.game_lookup_attached_probe_start}: '
-                    '${widget.probePlan.startText}'
-                    '${_startObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
-                  ),
-                ),
-              ),
-              FushiGroupedListItem(
-                index: 1,
-                count: 3,
-                selected: _middleConfirmed && _middleObserved,
-                child: FushiListItem(
-                  key: const ValueKey<String>(
-                    'game-attached-calibration-probe-middle',
-                  ),
-                  density: FushiListDensity.compact,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap,
-                    vertical: tokens.spacing.gap / 2,
-                  ),
-                  leading: FushiCheckbox(
-                    value: _middleConfirmed,
-                    onChanged: _middleObserved ? _setMiddleConfirmed : null,
-                  ),
-                  onTap: _middleObserved
-                      ? () => _setMiddleConfirmed(!_middleConfirmed)
-                      : null,
-                  title: Text(
-                    '${t.game_lookup_attached_probe_middle}: '
-                    '${widget.probePlan.middleText}'
-                    '${_middleObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
-                  ),
-                ),
-              ),
-              FushiGroupedListItem(
-                index: 2,
-                count: 3,
-                selected: _endConfirmed && _endObserved,
-                child: FushiListItem(
-                  key: const ValueKey<String>(
-                    'game-attached-calibration-probe-end',
-                  ),
-                  density: FushiListDensity.compact,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap,
-                    vertical: tokens.spacing.gap / 2,
-                  ),
-                  leading: FushiCheckbox(
-                    value: _endConfirmed,
-                    onChanged: _endObserved ? _setEndConfirmed : null,
-                  ),
-                  onTap: _endObserved
-                      ? () => _setEndConfirmed(!_endConfirmed)
-                      : null,
-                  title: Text(
-                    '${t.game_lookup_attached_probe_end}: '
-                    '${widget.probePlan.endText}'
-                    '${_endObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
-                  ),
-                ),
-              ),
-              if (_error != null)
-                Text(
-                  _error!,
-                  style: TextStyle(
-                    color: fushiStatusColor(context, FushiStatusTone.error),
-                  ),
-                ),
             ],
-          ),
+            if (_previewCurrent &&
+                widget.controller.calibrationStatus ==
+                    GalAttachedCalibrationStatus.ready) ...<Widget>[
+              Text(t.game_lookup_attached_probes_hint),
+              const SizedBox(height: 8),
+            ],
+            FushiGroupedListItem(
+              index: 0,
+              count: 3,
+              selected: _startConfirmed && _startObserved,
+              child: FushiListItem(
+                key: const ValueKey<String>(
+                  'game-attached-calibration-probe-start',
+                ),
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.gap,
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                leading: FushiCheckbox(
+                  value: _startConfirmed,
+                  onChanged: _startObserved ? _setStartConfirmed : null,
+                ),
+                onTap: _startObserved
+                    ? () => _setStartConfirmed(!_startConfirmed)
+                    : null,
+                title: Text(
+                  '${t.game_lookup_attached_probe_start}: '
+                  '${widget.probePlan.startText}'
+                  '${_startObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
+                ),
+              ),
+            ),
+            FushiGroupedListItem(
+              index: 1,
+              count: 3,
+              selected: _middleConfirmed && _middleObserved,
+              child: FushiListItem(
+                key: const ValueKey<String>(
+                  'game-attached-calibration-probe-middle',
+                ),
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.gap,
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                leading: FushiCheckbox(
+                  value: _middleConfirmed,
+                  onChanged: _middleObserved ? _setMiddleConfirmed : null,
+                ),
+                onTap: _middleObserved
+                    ? () => _setMiddleConfirmed(!_middleConfirmed)
+                    : null,
+                title: Text(
+                  '${t.game_lookup_attached_probe_middle}: '
+                  '${widget.probePlan.middleText}'
+                  '${_middleObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
+                ),
+              ),
+            ),
+            FushiGroupedListItem(
+              index: 2,
+              count: 3,
+              selected: _endConfirmed && _endObserved,
+              child: FushiListItem(
+                key: const ValueKey<String>(
+                  'game-attached-calibration-probe-end',
+                ),
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.gap,
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                leading: FushiCheckbox(
+                  value: _endConfirmed,
+                  onChanged: _endObserved ? _setEndConfirmed : null,
+                ),
+                onTap: _endObserved
+                    ? () => _setEndConfirmed(!_endConfirmed)
+                    : null,
+                title: Text(
+                  '${t.game_lookup_attached_probe_end}: '
+                  '${widget.probePlan.endText}'
+                  '${_endObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
+                ),
+              ),
+            ),
+            if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(
+                  color: fushiStatusColor(context, FushiStatusTone.error),
+                ),
+              ),
+          ],
         ),
       ),
       actions: <Widget>[

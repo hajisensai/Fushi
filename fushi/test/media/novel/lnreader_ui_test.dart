@@ -14,7 +14,8 @@ import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 import 'fake_lnreader_runtime.dart';
 

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';

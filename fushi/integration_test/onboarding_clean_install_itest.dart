@@ -6,7 +6,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart'
     show OnboardingWizardPage;
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel;

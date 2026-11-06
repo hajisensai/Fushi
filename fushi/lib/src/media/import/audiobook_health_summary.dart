@@ -1,4 +1,4 @@
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 把 [AudiobookHealth] 压成一段 toast 尾巴；notApplicable/unrun/running 返回

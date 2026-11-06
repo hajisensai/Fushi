@@ -8,13 +8,13 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

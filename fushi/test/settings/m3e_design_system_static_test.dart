@@ -1245,7 +1245,9 @@ class AnotherPopupPart {
           kSharedComponentImplementation,
       // settings kit（2026-10）：设置模块的共享设计积木（M3E 形状色块 / 胶囊
       // 搜索栏 / 浮动页头 + Apple 分支的 iOS 字号），同「共享原语本身」类。
-      'lib/src/settings/settings_kit.dart': kSharedComponentImplementation,
+      // 2026-11 拆环后积木本体在 settings_kit_core.dart，settings_kit.dart 只剩
+      // schema 装配、不再含被审 token。
+      'lib/src/settings/settings_kit_core.dart': kSharedComponentImplementation,
       'lib/src/utils/adaptive/adaptive_navigation.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_bottom_action_bar.dart':
@@ -1261,7 +1263,7 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_placeholder_message.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_tag.dart': kSharedComponentImplementation,
-      'lib/src/utils/components/library_section_tabs.dart':
+      'lib/src/pages/shared/library_section_tabs.dart':
           kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
@@ -1593,7 +1595,7 @@ class AnotherPopupPart {
         'BorderRadius.circular(',
         'fontSize:',
       },
-      'lib/src/settings/settings_kit.dart': <String>{'fontSize:'},
+      'lib/src/settings/settings_kit_core.dart': <String>{'fontSize:'},
       'lib/src/settings/settings_home_page.dart': <String>{'fontSize:'},
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
@@ -1643,9 +1645,7 @@ class AnotherPopupPart {
         'SwitchListTile(',
         'CheckboxListTile(',
       },
-      'lib/src/utils/components/library_section_tabs.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/pages/shared/library_section_tabs.dart': <String>{'fontSize:'},
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
     };
 

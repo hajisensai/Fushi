@@ -1,7 +1,7 @@
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// Jellyfin / Emby 配置页里的两个全局偏好开关在控制通道上的条目
 /// （服务器列表本身走 `services.media_server.jellyfin` 的 `cliList`）。

@@ -19,12 +19,15 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart'
     show resolveVideoFavoriteOpenTarget;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark, SentenceSourceKind;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_corpus/fushi_corpus.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 语料来源 → 制卡来源（两个域各自的枚举；语料没有漫画 / 有声书 / 歌词模式）。
 SentenceSourceKind sentenceSourceKindOfCorpus(CorpusSourceKind kind) =>

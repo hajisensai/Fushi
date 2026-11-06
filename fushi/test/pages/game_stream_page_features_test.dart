@@ -7,6 +7,7 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 Future<(List<GameStreamInputEvent>, Rect)> _pumpMousePage(

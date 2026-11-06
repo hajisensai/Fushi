@@ -15,11 +15,18 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsProfileConflict;
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_list_tile.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 复习数据随之同步的设置分类（按模块可见性过滤：同步模块关掉时一个也没有）。
@@ -153,33 +160,30 @@ Future<SrsProfileConflictChoice?> showSrsProfileConflictDialog(
   builder: (BuildContext dialogContext) => FushiAlertDialog(
     icon: const FushiDialogHeroIcon(icon: FushiIcons.cloudSync),
     title: Text(t.srs_sync_profile_conflict_title),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(t.srs_sync_profile_conflict_body),
-          const SizedBox(height: 8),
-          Text(
-            conflict.localHasNotes
-                ? t.srs_sync_profile_conflict_merge_hint
-                : t.srs_sync_profile_conflict_adopt_hint,
-            style: Theme.of(dialogContext).textTheme.bodySmall,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(t.srs_sync_profile_conflict_body),
+        const SizedBox(height: 8),
+        Text(
+          conflict.localHasNotes
+              ? t.srs_sync_profile_conflict_merge_hint
+              : t.srs_sync_profile_conflict_adopt_hint,
+          style: Theme.of(dialogContext).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        for (final SrsRemoteProfile c in conflict.candidates)
+          FushiListTile(
+            key: ValueKey<String>('srs-profile-conflict-${c.uid}'),
+            title: c.displayName,
+            subtitle: srsProfileCandidateSubtitle(c),
+            icon: FushiIcons.cloudSync,
+            selected: false,
+            onTap: () =>
+                Navigator.of(dialogContext).pop(SrsProfileConflictAdopt(c.uid)),
           ),
-          const SizedBox(height: 8),
-          for (final SrsRemoteProfile c in conflict.candidates)
-            FushiListTile(
-              key: ValueKey<String>('srs-profile-conflict-${c.uid}'),
-              title: c.displayName,
-              subtitle: srsProfileCandidateSubtitle(c),
-              icon: FushiIcons.cloudSync,
-              selected: false,
-              onTap: () => Navigator.of(
-                dialogContext,
-              ).pop(SrsProfileConflictAdopt(c.uid)),
-            ),
-        ],
-      ),
+      ],
     ),
     actions: <Widget>[
       FushiDialogAction(

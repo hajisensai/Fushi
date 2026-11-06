@@ -11,7 +11,7 @@ import 'package:fushi/src/media/discovery/discovery_server_probes.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 
 void main() {

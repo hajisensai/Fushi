@@ -223,6 +223,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
       // 重复应用是幂等的：__fushiApplyHighlights 会先清空再重建 range map。
       _applyChapterHighlights();
+      // BUG-4103：带句子区间的跳转（卡片来源回跳 / 收藏页 / 制卡历史）给落点句画
+      // 「你跳到了这里」标记。与收藏高亮同处、同时机：每次本章恢复落定（首开、换样式
+      // 重分页、宽变重导）都重画，DOM 重建不会把标记丢掉；离开该章即作废（见
+      // [_beginNavigation]）。
+      _applyJumpTargetMark();
       // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
       // (__fushiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
       // 的元素，__fushiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
@@ -482,6 +487,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (chapter != _currentChapter) {
       _chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;
     }
+    // BUG-4103：落点标记只属于跳转目标那一章；导航去别的章就作废（同章重恢复保留）。
+    if (_jumpTargetSpan?.chapter != chapter) _jumpTargetSpan = null;
     _currentChapter = chapter;
     _initialProgress = progress;
     _initialCharOffset = charOffset;
@@ -805,6 +812,53 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     await _toggleLyricsMode();
     if (!mounted || _lyricsMode) return;
     await _navigateToChapter(index, manual: true);
+  }
+
+  /// 歌词模式的「进度跳转」（按字数 / 百分比，导航面板同一段 UI）。歌词文档是全书
+  /// cue 的连续列表，没有正文视口可滚——与 [_jumpToChapterInLyricsMode] 同一语义：
+  /// 把音频定位到目标字数所在的那句（[_audioCueNearCharOffset]；对齐家族没有章内
+  /// 字符区间时退到该章首句），跳转记录由音频侧经 `jumpSource` 记。该章一句 cue
+  /// 都没有 → 歌词里不存在这一处，退出歌词模式后按正文字数跳转。
+  Future<void> _jumpToGlobalCharOffsetInLyricsMode(
+    int globalOffset, {
+    required JumpSource source,
+  }) async {
+    final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
+      _chapterCumulativeChars,
+      _chapterCharCounts,
+      globalOffset,
+    );
+    final int chapterLen =
+        target.chapter >= 0 && target.chapter < _chapterCharCounts.length
+        ? _chapterCharCounts[target.chapter]
+        : 0;
+    final int inChapter = (target.progress * chapterLen).round();
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final AudioCue? cue =
+        _audioCueNearCharOffset(target.chapter, inChapter) ??
+        _firstCueOfSection(target.chapter);
+    if (ctrl != null && cue != null) {
+      await ctrl.skipToCue(cue, jumpSource: source);
+      return;
+    }
+    await _toggleLyricsMode();
+    if (!mounted || _lyricsMode) return;
+    await _jumpToGlobalCharOffset(globalOffset, source: source);
+  }
+
+  /// 章 [section] 里离章内**学习单位**偏移 [studyOffset]（阅读进度字数口径）最近的
+  /// 句子 cue。cue 片段是音频 matchable 坐标，逐句经 [_studyRangeForAudioFragment]
+  /// 换成学习区间再比（单点在 [audioCueNearStudyOffset]）。只认带章内字符区间的
+  /// `fushi-cue://` 家族（[SubtitleRematchCodec]），其余家族返回 null。
+  AudioCue? _audioCueNearCharOffset(int section, int studyOffset) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    return audioCueNearStudyOffset(
+      ctrl.sentenceAudioCuesForSection(section),
+      section: section,
+      studyOffset: studyOffset,
+      studyRangeOf: _studyRangeForAudioFragment,
+    );
   }
 
   /// 某章在全书 cue 里的首句；该章没有 cue → null。三种 cue 家族各走各的精确
@@ -1783,6 +1837,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     JumpSource source = JumpSource.positionJump,
   }) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
+    if (_lyricsMode) {
+      await _jumpToGlobalCharOffsetInLyricsMode(globalOffset, source: source);
+      return;
+    }
     await _recordTextJumpDeparture(source: source);
 
     // 进度条拖动是跳转不是阅读：不播种（旧标量水位要在此播种）。跨章走

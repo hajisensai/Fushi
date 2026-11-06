@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_settings.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:material_ui/material_ui.dart';

@@ -19,7 +19,7 @@ import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_term_status_bridge.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show SrsExtensionApi;
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 
 export 'package:fushi/src/srs/srs_navigation.dart' show srsInheritProviderScope;

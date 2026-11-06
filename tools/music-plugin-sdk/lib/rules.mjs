@@ -24,6 +24,10 @@ export const KNOWN_CAPABILITIES = [
   'like',
   'lyricsSearch',
   'lyricsFetch',
+  'playlistEdit',
+  'radio',
+  'artistSimilar',
+  'collect',
 ];
 
 export const KNOWN_PERMISSIONS = ['network', 'storage', 'credentials', 'webAuth', 'insecureHttp'];
@@ -189,6 +193,10 @@ export function validateManifest(m) {
   if (has('artistMvs') && !has('mvStream')) fail('"artistMvs" needs "mvStream"');
   if (has('searchBest') && !has('search')) fail('"searchBest" needs "search"');
   if (has('like') && !has('account')) fail('"like" needs "login" + "account"');
+  if (has('playlistEdit') && !(has('account') && has('playlist'))) fail('"playlistEdit" needs "login" + "account" and "playlist"');
+  if (has('radio') && !has('stream')) fail('"radio" needs "stream"');
+  if (has('artistSimilar') && !has('artist')) fail('"artistSimilar" needs "artist"');
+  if (has('collect') && !has('account')) fail('"collect" needs "login" + "account"');
   if (has('lyricsSearch') !== has('lyricsFetch')) fail('"lyricsSearch" and "lyricsFetch" must be declared together');
   if (domains.length > 32) fail('network.domains has more than 32 entries');
   for (const d of domains) {

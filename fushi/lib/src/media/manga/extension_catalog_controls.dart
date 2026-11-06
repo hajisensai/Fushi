@@ -5,7 +5,14 @@ import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 扩展目录（漫画 / 视频的 Mihon 扩展、小说的 LNReader 插件）共用的「下载量
 /// 排行」与批量动作控件。
@@ -287,15 +294,13 @@ Future<void> showExtensionBulkReport(
   context: context,
   builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
     title: Text(title),
-    content: SingleChildScrollView(
-      child: SelectableText(
-        <String>[
-          summary,
-          ...failures.entries.map(
-            (MapEntry<String, String> entry) => '${entry.key}: ${entry.value}',
-          ),
-        ].join('\n'),
-      ),
+    content: SelectableText(
+      <String>[
+        summary,
+        ...failures.entries.map(
+          (MapEntry<String, String> entry) => '${entry.key}: ${entry.value}',
+        ),
+      ].join('\n'),
     ),
     actions: <Widget>[
       adaptiveDialogAction(

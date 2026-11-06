@@ -9,7 +9,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 用户反馈（漫画 →「导入」tab 截图）：扩展列表里每个扩展下面铺着几十行

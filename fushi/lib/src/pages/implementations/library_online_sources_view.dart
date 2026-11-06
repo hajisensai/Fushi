@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 库页的「来源」/「扩展」子标签：本库内容域的在线来源面。
 ///

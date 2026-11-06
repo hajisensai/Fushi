@@ -20,7 +20,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 后端分段里「关闭」的取值。
 const String kAiWebSearchOff = '';

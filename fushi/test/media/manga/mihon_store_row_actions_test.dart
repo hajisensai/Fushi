@@ -10,7 +10,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1805：仓库请求成功但目录为空时，页面上只剩一张干净的卡片配零插件，

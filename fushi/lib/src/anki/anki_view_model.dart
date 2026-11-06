@@ -19,13 +19,17 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 class AnkiUiState {
   const AnkiUiState({
@@ -33,6 +37,7 @@ class AnkiUiState {
     this.isFetching = false,
     this.errorMessage,
     this.mediaMaintenanceAvailable,
+    this.deckRepositionAvailable,
     this.settingsLoaded = false,
   });
   final AnkiSettings settings;
@@ -42,6 +47,11 @@ class AnkiUiState {
   /// 媒体去重此刻真能不能用；null = 还没探测出结论（没探过 / 后端不可达）。
   /// 设置页用它做区块门控，未知时回落到后端静态能力。
   final bool? mediaMaintenanceAvailable;
+
+  /// 新卡重排此刻真能不能用（[BaseAnkiRepository.probeDeckReposition]）；null =
+  /// 还没探测出结论（没探过 / 后端不可达）。只有明确 false 才置灰入口——未知时
+  /// 入口照常可点，真跑时 runner 会当场再探一次。
+  final bool? deckRepositionAvailable;
 
   /// [settings] 是否已从仓库装载过一次。视图模型构造时 state 是空的
   /// [AnkiSettings]，真值由异步的 `_loadSettings` 填进来；空列表在装载前后语义不同
@@ -61,6 +71,8 @@ class AnkiUiState {
     bool clearError = false,
     bool? mediaMaintenanceAvailable,
     bool clearMediaMaintenanceAvailable = false,
+    bool? deckRepositionAvailable,
+    bool clearDeckRepositionAvailable = false,
     bool? settingsLoaded,
   }) => AnkiUiState(
     settings: settings ?? this.settings,
@@ -69,6 +81,9 @@ class AnkiUiState {
     mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
         ? null
         : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
+    deckRepositionAvailable: clearDeckRepositionAvailable
+        ? null
+        : (deckRepositionAvailable ?? this.deckRepositionAvailable),
     settingsLoaded: settingsLoaded ?? this.settingsLoaded,
   );
 }
@@ -515,6 +530,45 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
   bool get supportsAutoReposition => _repository.supportsAutoReposition;
 
+  /// 后端类型支持重排、但探测明确说此刻不能（新版 AnkiConnect 没有原生
+  /// `scheduling.repositionNewCards`）。UI 据此置灰入口并给出版本提示。
+  bool get deckRepositionBlockedByBackend =>
+      _repository.supportsDeckReposition &&
+      state.deckRepositionAvailable == false;
+
+  /// 「按词频重排新卡」入口此刻可用：后端类型支持，且探测没有明确说不能。
+  bool get canRepositionDeck =>
+      _repository.supportsDeckReposition && !deckRepositionBlockedByBackend;
+
+  /// 「制卡后自动重排」开关此刻可用（同 [canRepositionDeck] 的探测判据）。
+  bool get canAutoReposition =>
+      _repository.supportsAutoReposition && !deckRepositionBlockedByBackend;
+
+  Future<void>? _deckRepositionProbe;
+
+  /// 探测新卡重排此刻真能不能用，结论落进 [AnkiUiState.deckRepositionAvailable]。
+  ///
+  /// 与 [probeMediaMaintenance] 同一套语义：后端不可达时保持「未知」，不记成
+  /// 「不支持」。同一时刻多行同时要结论（重排行 + 自动重排开关）只发一次探测。
+  Future<void> probeDeckReposition() => _deckRepositionProbe ??=
+      _probeDeckReposition().whenComplete(() => _deckRepositionProbe = null);
+
+  Future<void> _probeDeckReposition() async {
+    if (!_repository.supportsDeckReposition) {
+      state = state.copyWith(deckRepositionAvailable: false);
+      return;
+    }
+    try {
+      final bool available = await _repository.probeDeckReposition();
+      if (!mounted) return;
+      state = state.copyWith(deckRepositionAvailable: available);
+    } catch (e, stack) {
+      debugPrint('AnkiViewModel.probeDeckReposition: $e\n$stack');
+      if (!mounted) return;
+      state = state.copyWith(clearDeckRepositionAvailable: true);
+    }
+  }
+
   /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
   AnkiDeckRepositionRunner get deckRepositionRunner => AnkiDeckRepositionRunner(
     _repository,
@@ -683,9 +737,12 @@ class LapisSetupResult {
 /// 本地仓库——设置页据此照常配置本地 Anki（供开关关闭时使用）。零调用点改动：查词/阅读器/
 /// 视频所有制卡入口都读本 provider，故一处切换即全量改道。
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
+  // 反馈 kEFPY4cuKZ：本机制卡的牌组 / 笔记类型 / 字段映射跟着打开作品的作品级配置走
+  // （[WorkScopedAnkiSettingsStore]）。替对端 / 浏览器扩展制卡（[hostMiningAnkiRepositoryProvider]
+  // 等）走自己的设置来源，不叠本机作品会话。
   final BaseAnkiRepository local = ref
       .watch(platformServicesProvider)
-      .createAnkiRepository();
+      .createAnkiRepository(settingsStore: WorkScopedAnkiSettingsStore());
   final bool mineToServer = ref.watch(
     appProvider.select((AppModel m) => m.mineToServerEnabled),
   );
@@ -693,6 +750,8 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     return _withSrsMining(
       ref,
       _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      followWorkSession: true,
+      background: true,
     );
   }
   final AppModel appModel = ref.read(appProvider);
@@ -709,6 +768,8 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   return _withSrsMining(
     ref,
     _withPendingQueue(ref, _withAutoReposition(ref, remote)),
+    followWorkSession: true,
+    background: true,
   );
 });
 
@@ -716,10 +777,15 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
 /// 不套待发队列 / 制卡到主机（对端有自己的队列，主机再排一次会让「送没送到」不确定），
 /// 但必须遵守本机的挖词目标——主机已迁到 Fushi 复习时，替对端制的卡也落复习，
 /// 再经复习同步回到各设备；否则会继续写进主机已弃用的 Anki。
+///
+/// 整条链读**激活配置**的设置、不叠主机本机的作品会话（反馈 kEFPY4cuKZ）：Anki 侧是裸 live
+/// 存储，复习侧的挖词目标 / 落点 / 复习副本同样按激活配置（`followWorkSession: false`）——
+/// 主机此刻打开着哪本书与对端无关，两侧必须读同一份配置。
 final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
   (Ref ref) => _withSrsMining(
     ref,
     ref.watch(platformServicesProvider).createAnkiRepository(),
+    followWorkSession: false,
   ),
 );
 
@@ -733,17 +799,73 @@ final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
 /// = 按词频」，见 `SrsDbStore.nextCard`），刚挖的卡立刻就在对的位置，不需要事后改写新卡位置——
 /// 那样每挖一个词都会产生要同步的位置修改记录，而且各设备用各自的词典现查，排出来的顺序未必一致。
 /// 里层那份（绑 Anki）只看得到经待发队列补发给 Anki 的卡，复习制卡不经过它。
-BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
-  if (!ref.watch(srsMiningToReviewProvider)) return repo;
+///
+/// [followWorkSession]：true = 本机制卡链，挖词目标 / 落点 / 复习副本跟着本机作品会话走；
+/// false = 替对端制卡链，一律按激活配置（[hostSrsMiningToReviewProvider]）。
+///
+/// [background]：本机制卡链路（[ankiRepositoryProvider]）接上「后台制卡」开关（反馈
+/// Rl00Di264R，每次制卡现读 [AppModel.srsMiningBackground]）。替别的设备制卡的
+/// [hostMiningAnkiRepositoryProvider] 不接：对端要确定的结果，不能回「已入队」。
+BaseAnkiRepository _withSrsMining(
+  Ref ref,
+  BaseAnkiRepository repo, {
+  required bool followWorkSession,
+  bool background = false,
+}) {
+  final bool toReview = followWorkSession
+      ? ref.watch(srsMiningToReviewProvider)
+      : ref.watch(hostSrsMiningToReviewProvider);
+  if (!toReview) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
+  final AppModel appModel = ref.read(appProvider);
   return SrsMiningAnkiRepository(
     inner: repo,
-    miner: () => _readSrsMiner(ref),
+    miner: () => _readSrsMiner(ref, followWorkSession: followWorkSession),
     onCardsAdded: () => revision.state++,
-    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
-    openNote: (String noteId) async =>
-        await SrsAppHost.current?.openNote(noteId) ?? false,
+    backgroundMining: background ? () => appModel.srsMiningBackground : null,
+    onBackgroundOutcome: background ? showSrsBackgroundMineOutcome : null,
+    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。作品会话期间
+    // 卡在作品配置的复习副本里，编辑页套那份副本打开。
+    openNote: (String noteId) =>
+        _openSrsNote(ref, noteId, followWorkSession: followWorkSession),
+  );
+}
+
+Future<bool> _openSrsNote(
+  Ref ref,
+  String noteId, {
+  required bool followWorkSession,
+}) async {
+  if (followWorkSession && WorkProfileScope.instance.active != null) {
+    final AppModel app = ref.read(appProvider);
+    final Future<bool> Function(SrsMiner, String)? open =
+        app.srsProfileNoteOpener;
+    final SrsMiner? miner = await _readSrsMiner(ref, followWorkSession: true);
+    return open != null && miner != null && await open(miner, noteId);
+  }
+  return await SrsAppHost.current?.openNote(noteId) ?? false;
+}
+
+/// 后台制卡（[SrsMiningAnkiRepository] 的后台队列）写完一张后的提示：入队时已经提示过
+/// 「已加入后台制卡」，成功且无音频警告时不再打扰；失败 / 重复 / 音频缺失必须让用户看见
+/// （失败原因经 [describeMineOutcome] 同时进错误日志）。
+void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
+  final described = describeMineOutcome(outcome);
+  if (outcome.result == MineResult.success &&
+      described.status != MineToastStatus.addedWithWarning) {
+    return;
+  }
+  FushiToast.showMine(
+    msg: described.success
+        ? described.message
+        : t.srs_mining_background_failed(
+            word: expression,
+            reason: described.message,
+          ),
+    status: described.success || outcome.result == MineResult.duplicate
+        ? described.status
+        : MineToastStatus.failed,
   );
 }
 
@@ -776,16 +898,40 @@ String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
 }
 
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
-Future<SrsMiner?> _readSrsMiner(Ref ref) async {
+/// [followWorkSession] 见 [_withSrsMining]。
+Future<SrsMiner?> _readSrsMiner(
+  Ref ref, {
+  required bool followWorkSession,
+}) async {
   try {
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
+    // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
+    // 绑定的就是激活配置时没有会话，走下面的激活副本。
+    final WorkProfileSession? session = followWorkSession
+        ? WorkProfileScope.instance.active
+        : null;
+    if (session != null) {
+      final AppModel app = ref.read(appProvider);
+      return await ref
+          .read(srsProfileStoresProvider)
+          .minerFor(
+            profileUid: await app.database.profileUidOf(session.profileId),
+            destination: app.srsMiningDestination,
+            fallbackRolloverHour: () => app.statDayResetHour,
+          );
+    }
     final SrsDbStore? store = await ref.read(srsStoreProvider.future);
     final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
     if (store == null || media == null) return null;
-    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
+    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。替对端制卡读激活
+    // 配置的落点（不叠本机作品会话）。
+    final AppModel app = ref.read(appProvider);
     return SrsMiner(
       store: store,
       media: media,
-      destination: ref.read(appProvider).srsMiningDestination,
+      destination: followWorkSession
+          ? app.srsMiningDestination
+          : app.hostSrsMiningDestination,
     );
   } catch (e, stack) {
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
@@ -869,6 +1015,13 @@ AnkiAutoRepositionWiring withAnkiAutoReposition(
 
 final ankiViewModelProvider = StateNotifierProvider<AnkiViewModel, AnkiUiState>(
   (ref) {
+    // 反馈 kEFPY4cuKZ：作品级配置会话装上 / 撤下后 Anki 设置的生效值换了一份（见
+    // [WorkScopedAnkiSettingsStore]），丢掉缓存的设置快照重读。
+    void onWorkScopeChanged() => ref.invalidateSelf();
+    WorkProfileScope.instance.addListener(onWorkScopeChanged);
+    ref.onDispose(
+      () => WorkProfileScope.instance.removeListener(onWorkScopeChanged),
+    );
     return AnkiViewModel(ref.watch(ankiRepositoryProvider));
   },
 );

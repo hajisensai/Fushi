@@ -36,7 +36,15 @@ import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 /// 纯函数：两条迷你条谁显示。音乐有活动会话、且（音乐持有媒体会话或有声书没有会话）
 /// 时显示音乐条；有声书条在音乐持有会话时让位。
@@ -217,7 +225,9 @@ Widget musicTransportGroup(MusicSession session, {required double playSize}) {
       FushiIconButtonControl.filledTonal(
         size: ButtonSizeVariant.small,
         tooltip: t.shortcut_action_music_previous_track,
-        onPressed: () => unawaited(engine.skipPrevious()),
+        onPressed: engine.canSkipPrevious
+            ? () => unawaited(engine.skipPrevious())
+            : null,
         icon: const FushiIcon(FushiIcons.skipPrevious),
       ),
       FushiExpressivePlayButton(
@@ -826,7 +836,8 @@ Widget musicPlayModeButton(
     iconSize: iconSize,
     isSelected: on,
     tooltip: tip,
-    onPressed: () => unawaited(cycle()),
+    // 电台由 MusicKit 排队，随机 / 循环无意义。
+    onPressed: engine.canShuffleOrRepeat ? () => unawaited(cycle()) : null,
     icon: AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.short),
       child: FushiIcon(glyph, key: ValueKey<IconData>(glyph)),

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_client_section.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart';
 

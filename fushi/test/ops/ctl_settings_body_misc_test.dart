@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/browser_extension_setup.dart';

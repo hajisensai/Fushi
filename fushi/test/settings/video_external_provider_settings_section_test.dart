@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import '../helpers/glass_unwrap.dart';
 
