@@ -1437,7 +1437,13 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// TODO-1007/1008：点 ✓（卡已存在）弹操作选择（覆写/新增重复卡/查看·在 Anki 中打开），
   /// 命中多张让用户选。透传给 [DictionaryPopupWebView]。null 时回退旧两态行为。
-  final Future<MinePopupResult> Function(Map<String, String> fields)?
+  ///
+  /// `openChooser`：用户用的是「管理」手势（右键 / 长按 ✓），宿主必须弹选择单；单击时
+  /// 为 false，「允许重复」开着就直接新增（`ankiMinedTapMinesNewDirectly`）。
+  final Future<MinePopupResult> Function(
+    Map<String, String> fields, {
+    bool openChooser,
+  })?
   onMinedCardAction;
 
   /// BUG-3492：卡还在后台写入时的覆盖请求（排队、落地后自动覆盖），透传给

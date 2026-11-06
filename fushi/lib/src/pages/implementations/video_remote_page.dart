@@ -1600,8 +1600,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   ) async => const MinePopupResult();
 
   @override
-  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async =>
-      const MinePopupResult();
+  Future<MinePopupResult> onMinedCardAction(
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) async => const MinePopupResult();
 
   /// BUG-3492：卡在电脑那边制，手机既查不了那边的重、也不做远程覆盖（所有者
   /// 2026-10-17 拍板）——只如实说一声。

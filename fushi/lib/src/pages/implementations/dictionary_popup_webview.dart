@@ -517,7 +517,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 同一份），宿主据其 expression/reading 反查全部命中卡并据用户选择执行。返回执行后
   /// 的 [MinePopupResult]（驱动 popup.js 刷新 ✓/+ 与第三态）。null 时 popup 回退到旧的
   /// 「重验 + 静默」两态行为（Never break userspace）。
-  final Future<MinePopupResult> Function(Map<String, String> fields)?
+  ///
+  /// `openChooser`：用户用的是「管理」手势（右键 / 长按 ✓），宿主必须弹选择单；单击时
+  /// 为 false，「允许重复」开着就直接新增（`ankiMinedTapMinesNewDirectly`）。
+  final Future<MinePopupResult> Function(
+    Map<String, String> fields, {
+    bool openChooser,
+  })?
   onMinedCardAction;
 
   /// BUG-3492：这个词刚交给后台写入（弹窗显示「已加入」），卡还没进 Anki 时用户又要
@@ -3333,8 +3339,16 @@ JSON.stringify((function(){
                 // 对话框在整条链路落地时关，这正是这条路该有的样子：用户本来就在
                 // 上面那张模态单里忙着。
                 _markConfirmMineHostEntered();
+                // 第二个参数是 popup.js 的手势意图（右键 / 长按 = 管理，必须弹选择单）。
+                final bool openChooser =
+                    args.length > 1 &&
+                    args[1] is Map &&
+                    (args[1] as Map)['openChooser'] == true;
                 return await _runMineBridge(
-                  () => widget.onMinedCardAction!(fields),
+                  () => widget.onMinedCardAction!(
+                    fields,
+                    openChooser: openChooser,
+                  ),
                 );
               }
             } catch (e, stack) {

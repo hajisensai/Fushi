@@ -17,6 +17,7 @@ import 'dart:io' show Directory;
 import 'package:fushi/src/corpus/library_sentences_bridge.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
+import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -724,19 +725,34 @@ Future<void> _handleSrsOpenCardBridge(
 /// 显示已制卡但现在查不到」(deleted elsewhere) — popup.js then falls through to a
 /// plain re-mine, mirroring the in-app `matches.isEmpty -> mineNew()` branch.
 /// Always resolves so the ✓ button never freezes.
+///
+/// 反馈 E0sdqm4h-F / PR #2980 审查：单击 ✓（请求不带 `openChooser: true`）且
+/// [ankiMinedTapMinesNewDirectly]（「允许重复」开着）时**不反查**，回
+/// `{mineNew: true}`——popup.js 据此不弹页内面板、直接再制一张，与 app 内
+/// `runAnkiMinedCardAction` 同一判据。右键 / 长按（`openChooser: true`）照旧列命中卡。
 Future<void> _handleFindMinedMatchesBridge(
   AppModel? model,
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
 ) async {
   final int? id = _bridgeIdOf(message);
-  List<Map<String, Object?>> reply = const <Map<String, Object?>>[];
+  Object reply = const <Map<String, Object?>>[];
   try {
     final Map<Object?, Object?> data = _firstMapArg(message);
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
+    final bool openChooser = data['openChooser'] == true;
     if (model != null && expression.isNotEmpty) {
       final BaseAnkiRepository repo = model.miningAnkiRepository;
+      if (!openChooser && await ankiMinedTapMinesNewDirectly(repo)) {
+        glog('mined-matches: allowDupes on -> mineNew (id=$id)');
+        if (id != null) {
+          unawaited(
+            resolveBridge(id, const <String, Object?>{'mineNew': true}),
+          );
+        }
+        return;
+      }
       final List<MinedNoteRef> matches = await repo.findMatchingNotes(
         expression,
         reading,
@@ -751,7 +767,10 @@ Future<void> _handleFindMinedMatchesBridge(
     reply = const <Map<String, Object?>>[];
   }
   if (id != null) {
-    glog('mined-matches: findMinedMatches -> ${reply.length} hit(s) (id=$id)');
+    glog(
+      'mined-matches: findMinedMatches -> '
+      '${reply is List ? reply.length : 0} hit(s) (id=$id)',
+    );
     unawaited(resolveBridge(id, reply));
   }
 }
