@@ -426,64 +426,18 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // 记 URL 不记下标：弹窗是个 async gap，期间后台地址学习可能往列表里插条目，
     // 下标会指向另一行（审查问题 9）。关窗后按 URL 重新定位。
     final String? editingUrl = index != null ? _urls[index].url : null;
-    final TextEditingController controller = TextEditingController(
-      text: editingUrl ?? '',
-    );
     final String? result = await showAppDialog<String>(
       context: context,
-      builder: (BuildContext ctx) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return FushiDialogFrame(
-          maxWidth: 420,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: FushiModalSheetFrame(
-            title: 'URL',
-            leadingIcon: FushiIcons.link,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: FushiTextField(
-              controller: controller,
-              labelText: 'URL',
-              hintText: 'http://192.168.1.100:38765',
-              keyboardType: TextInputType.url,
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                  child: Text(t.dialog_ok),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (BuildContext _) => _InterconnectTextPromptDialog(
+        title: 'URL',
+        leadingIcon: FushiIcons.link,
+        initialText: editingUrl ?? '',
+        labelText: 'URL',
+        hintText: 'http://192.168.1.100:38765',
+        keyboardType: TextInputType.url,
+        confirmLabel: t.dialog_ok,
+      ),
     );
-    controller.dispose();
     // BUG-1562：弹窗是个 async gap，期间宿主 section 可能被门控藏掉（关互联总开关
     // → interconnectActive 变 false → 本 widget dispose）。下面就要 setState，
     // 没有这道守卫就是 dispose 后 setState 崩溃。同文件 [_load]/[_reloadFromStore]
@@ -2629,74 +2583,151 @@ Future<bool> confirmInterconnectPairIdentity(
 }
 
 /// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
-Future<String?> promptInterconnectPairPin(BuildContext context) async {
-  final TextEditingController pinController = TextEditingController();
-  final String? pin = await showAppDialog<String>(
+Future<String?> promptInterconnectPairPin(BuildContext context) {
+  return showAppDialog<String>(
     context: context,
-    builder: (BuildContext ctx) {
-      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-      return FushiDialogFrame(
-        maxWidth: 420,
-        insetPadding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.card,
-          vertical: tokens.spacing.card,
-        ),
-        scrollable: false,
-        child: FushiModalSheetFrame(
-          title: t.sync_pair_enter_pin_title,
-          leadingIcon: FushiIcons.key,
-          scrollable: true,
-          bodyPadding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            0,
-            tokens.spacing.card,
-            tokens.spacing.gap,
-          ),
-          footerPadding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            tokens.spacing.gap,
-            tokens.spacing.card,
-            tokens.spacing.card,
-          ),
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(t.sync_pair_enter_pin_body),
-              SizedBox(height: tokens.spacing.gap),
-              // M3E 大号等宽数字输入：PIN 逐位对照 host 屏幕。
-              FushiTextField(
-                controller: pinController,
-                labelText: t.sync_pair_enter_pin_title,
-                keyboardType: TextInputType.number,
-                size: FushiInputSize.large,
-                style: ctx.fushiType.headlineSmallEmphasized.tabular.copyWith(
-                  letterSpacing: 6,
-                ),
-              ),
-            ],
-          ),
-          footer: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: tokens.spacing.gap,
-            children: <Widget>[
-              adaptiveDialogAction(
-                context: ctx,
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: ctx,
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(ctx, pinController.text.trim()),
-                child: Text(t.sync_pair_continue),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
+    builder: (BuildContext _) => _InterconnectTextPromptDialog(
+      title: t.sync_pair_enter_pin_title,
+      leadingIcon: FushiIcons.key,
+      message: t.sync_pair_enter_pin_body,
+      labelText: t.sync_pair_enter_pin_title,
+      keyboardType: TextInputType.number,
+      // M3E 大号等宽数字输入：PIN 逐位对照 host 屏幕。
+      fieldSize: FushiInputSize.large,
+      fieldStyle: (BuildContext c) => c
+          .fushiType
+          .headlineSmallEmphasized
+          .tabular
+          .copyWith(letterSpacing: 6),
+      confirmLabel: t.sync_pair_continue,
+    ),
   );
-  pinController.dispose();
-  return pin;
+}
+
+/// 互联的单行输入弹窗（手输地址 / PIN / 粘贴配对链接）。
+///
+/// BUG-4219：输入框控制器归弹窗自己的 State 持有，路由真正移除时才释放。此前调用方
+/// 在 `await showAppDialog` 返回后立刻 `dispose()`，而弹窗此刻还在播关闭动画、输入框
+/// 仍在重建，撞上「控制器已释放」异常并拖垮元素树，配对一成功就红屏
+/// （`_dependents.isEmpty`）。
+class _InterconnectTextPromptDialog extends StatefulWidget {
+  const _InterconnectTextPromptDialog({
+    required this.title,
+    required this.leadingIcon,
+    required this.confirmLabel,
+    this.message,
+    this.initialText = '',
+    this.labelText,
+    this.hintText,
+    this.keyboardType = TextInputType.text,
+    this.autofocus = false,
+    this.fieldSize,
+    this.fieldStyle,
+    this.trim = true,
+    this.maxWidth = 420,
+  });
+
+  final String title;
+  final IconData leadingIcon;
+  final String confirmLabel;
+  final String? message;
+  final String initialText;
+  final String? labelText;
+  final String? hintText;
+  final TextInputType keyboardType;
+  final bool autofocus;
+  final FushiInputSize? fieldSize;
+  final TextStyle Function(BuildContext context)? fieldStyle;
+
+  /// 确认时是否去掉首尾空白（粘贴配对链接保留原文交给解析器）。
+  final bool trim;
+  final double maxWidth;
+
+  @override
+  State<_InterconnectTextPromptDialog> createState() =>
+      _InterconnectTextPromptDialogState();
+}
+
+class _InterconnectTextPromptDialogState
+    extends State<_InterconnectTextPromptDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget field = FushiTextField(
+      controller: _controller,
+      labelText: widget.labelText,
+      hintText: widget.hintText,
+      keyboardType: widget.keyboardType,
+      autofocus: widget.autofocus,
+      size: widget.fieldSize,
+      style: widget.fieldStyle?.call(context),
+    );
+    final String? message = widget.message;
+    return FushiDialogFrame(
+      maxWidth: widget.maxWidth,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
+      scrollable: false,
+      child: FushiModalSheetFrame(
+        title: widget.title,
+        leadingIcon: widget.leadingIcon,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: message == null
+            ? field
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(message),
+                  SizedBox(height: tokens.spacing.gap),
+                  field,
+                ],
+              ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(
+                context,
+                widget.trim ? _controller.text.trim() : _controller.text,
+              ),
+              child: Text(widget.confirmLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

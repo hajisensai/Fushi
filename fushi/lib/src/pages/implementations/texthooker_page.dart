@@ -1328,62 +1328,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       return;
     }
-    final TextEditingController codeController = TextEditingController();
-    final TextEditingController labelController = TextEditingController(
-      text: executable.split(RegExp(r'[/\\]')).last,
-    );
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => FushiDialogFrame(
-        maxWidth: 480,
-        child: FushiModalSheetFrame(
-          title: t.game_hook_code_paste_title,
-          scrollable: true,
-          body: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.game_hook_code_paste_body),
-                const SizedBox(height: 12),
-                FushiTextFieldControl(
-                  controller: codeController,
-                  autofocus: true,
-                  maxLines: 2,
-                  minLines: 1,
-                  decoration: InputDecoration(
-                    labelText: 'Hook Code',
-                    hintText: t.game_hook_code_paste_hint,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FushiTextFieldControl(
-                  controller: labelController,
-                  decoration: InputDecoration(
-                    labelText: t.game_hook_code_label,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
+    final ({String code, String label})? pasted =
+        await showAppDialog<({String code, String label})>(
+          context: context,
+          builder: (BuildContext _) => _HookCodePasteDialog(
+            initialLabel: executable.split(RegExp(r'[/\\]')).last,
           ),
-          footer: Align(
-            alignment: Alignment.centerRight,
-            child: FushiFilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t.dialog_save),
-            ),
-          ),
-        ),
-      ),
-    );
-    final String code = normalizeGalHookCode(codeController.text);
-    final String label = labelController.text.trim();
-    codeController.dispose();
-    labelController.dispose();
-    if (confirmed != true || !mounted) return;
+        );
+    if (pasted == null || !mounted) return;
+    final String code = normalizeGalHookCode(pasted.code);
+    final String label = pasted.label.trim();
     if (code.isEmpty) {
       FushiToast.show(
         msg: t.game_hook_code_paste_invalid,
@@ -4711,6 +4665,84 @@ class GalResourceUnpairedLineTrackDialog extends StatelessWidget {
           subtitleMaxLines: 4,
         ),
       ],
+    );
+  }
+}
+
+/// 粘贴 Hook Code 弹窗。返回 null = 取消；否则返回原文（规范化由调用方做）。
+///
+/// BUG-4219：两个输入框的控制器归本 State 持有、路由移除时才释放；调用方在
+/// `await showAppDialog` 返回后立刻释放会撞上关窗动画里输入框的重建。
+class _HookCodePasteDialog extends StatefulWidget {
+  const _HookCodePasteDialog({required this.initialLabel});
+
+  final String initialLabel;
+
+  @override
+  State<_HookCodePasteDialog> createState() => _HookCodePasteDialogState();
+}
+
+class _HookCodePasteDialogState extends State<_HookCodePasteDialog> {
+  final TextEditingController _codeController = TextEditingController();
+  late final TextEditingController _labelController = TextEditingController(
+    text: widget.initialLabel,
+  );
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _labelController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiDialogFrame(
+      maxWidth: 480,
+      child: FushiModalSheetFrame(
+        title: t.game_hook_code_paste_title,
+        scrollable: true,
+        body: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.game_hook_code_paste_body),
+              const SizedBox(height: 12),
+              FushiTextFieldControl(
+                controller: _codeController,
+                autofocus: true,
+                maxLines: 2,
+                minLines: 1,
+                decoration: InputDecoration(
+                  labelText: 'Hook Code',
+                  hintText: t.game_hook_code_paste_hint,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FushiTextFieldControl(
+                controller: _labelController,
+                decoration: InputDecoration(
+                  labelText: t.game_hook_code_label,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: FushiFilledButton(
+            onPressed: () => Navigator.pop(context, (
+              code: _codeController.text,
+              label: _labelController.text,
+            )),
+            child: Text(t.dialog_save),
+          ),
+        ),
+      ),
     );
   }
 }
