@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
@@ -50,27 +51,33 @@ class _FakeFfmpeg implements FfmpegBackend {
 void main() {
   test('多音轨挑 jpn / ja 标签那条（全局流序号），否则第一条；没有音轨为 null', () {
     expect(
-      pickJapaneseAudioStream(const <AudioTrackFacts>[
+      pickVideoSubtitleAudioStream(const <AudioTrackFacts>[
         AudioTrackFacts(index: 1, language: 'eng'),
         AudioTrackFacts(index: 2, language: 'jpn'),
-      ]),
+      ], VideoSubtitleLanguage.japanese),
       2,
     );
     expect(
-      pickJapaneseAudioStream(const <AudioTrackFacts>[
+      pickVideoSubtitleAudioStream(const <AudioTrackFacts>[
         AudioTrackFacts(index: 3, language: 'eng'),
         AudioTrackFacts(index: 4, language: 'JA'),
-      ]),
+      ], VideoSubtitleLanguage.japanese),
       4,
     );
     expect(
-      pickJapaneseAudioStream(const <AudioTrackFacts>[
+      pickVideoSubtitleAudioStream(const <AudioTrackFacts>[
         AudioTrackFacts(index: 5),
         AudioTrackFacts(index: 6, language: 'eng'),
-      ]),
+      ], VideoSubtitleLanguage.japanese),
       5,
     );
-    expect(pickJapaneseAudioStream(const <AudioTrackFacts>[]), isNull);
+    expect(
+      pickVideoSubtitleAudioStream(
+        const <AudioTrackFacts>[],
+        VideoSubtitleLanguage.japanese,
+      ),
+      isNull,
+    );
   });
 
   test('抽音轨参数同基准 extract_audio（16 kHz 单声道 s16 + aresample）', () {

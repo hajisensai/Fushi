@@ -135,23 +135,6 @@ class FloatingBallWindow {
     bool tuck_right = true;
   };
 
-  struct ProgressAnimation {
-    bool active = false;
-    double from = 0;
-    double to = 0;
-    double start_ms = 0;
-    double duration_ms = 1;
-  };
-
-  struct SnapAnimation {
-    bool active = false;
-    double from_left = 0;
-    double from_top = 0;
-    double to_left = 0;
-    double to_top = 0;
-    double start_ms = 0;
-  };
-
   struct CachedBitmap {
     UINT px = 0;
     Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
@@ -258,8 +241,8 @@ class FloatingBallWindow {
 
   double progress_ = 0;
   bool expand_target_ = false;
-  ProgressAnimation progress_anim_;
-  SnapAnimation snap_anim_;
+  fushi::floating_ball::ProgressAnimation progress_anim_;
+  fushi::floating_ball::SnapAnimation snap_anim_;
   bool timer_running_ = false;
 
   // 球上的指针手势。

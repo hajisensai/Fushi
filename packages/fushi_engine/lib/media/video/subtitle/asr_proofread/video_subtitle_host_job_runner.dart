@@ -1,4 +1,4 @@
-/// `kind = video_subtitle`：在 host 上跑视频日语字幕管线（识别 → 专名表 → AI 校对 →
+/// `kind = video_subtitle`：在 host 上跑视频字幕管线（日语 / 普通话）（识别 → 专名表 → AI 校对 →
 /// 写法统一 → 歌曲判定 → 拆分 → 导出；spec `2026-10-19-video-asr-llm-subtitle-pipeline`
 /// 第 5 节）。app 当 host 与无头 fushi_server 共用这一个 runner，两边只注入装配。
 ///
@@ -13,7 +13,8 @@
 ///   退回不校对。
 /// - `segmenter`：`auto` / `moss` / `window`（默认 auto）；`mossBackend`：`auto` /
 ///   `cuda` / `vulkan` / `cpu`（默认 auto）；`regenerateGlossary`（bool）；
-///   `suffix`（默认 `ja`）。
+///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]）；
+///   `suffix`（默认取 `language`）。
 ///
 /// 进度：`ctx.onProgress(总进度, '<阶段>: <消息>')`，阶段名即 [VideoSubtitleStage]。
 /// 取消：[HostJobSubtitleCancelToken]。AI 请求失败（额度 / 网络 / 回复反复不合格）
@@ -46,6 +47,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisionin
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
@@ -66,6 +68,7 @@ typedef VideoSubtitleRecognizerResolver =
     Future<VideoSubtitleRecognizerChoice> Function(
       VideoSubtitleSegmenterMode mode,
       MossBackendPreference mossBackend,
+      VideoSubtitleLanguage language,
     );
 
 /// 任务以「暂停」结束（AI 请求失败、专名表校验没过）：缓存保留，处理后重新提交
@@ -101,8 +104,9 @@ class VideoSubtitleJobParams {
     this.segmenter = VideoSubtitleSegmenterMode.auto,
     this.mossBackend = MossBackendPreference.auto,
     this.regenerateGlossary = false,
-    this.suffix = 'ja',
-  });
+    this.language = VideoSubtitleLanguage.japanese,
+    String? suffix,
+  }) : _suffix = suffix;
 
   /// 参数表 → 结构；不合法抛 [FormatException]（→ 400）。
   factory VideoSubtitleJobParams.parse(Map<String, Object?> params) {
@@ -148,7 +152,15 @@ class VideoSubtitleJobParams {
         '$kVideoSubtitleJobKind: give videoId or collectionId, not both',
       );
     }
-    final String suffix = text('suffix') ?? 'ja';
+    final String? languageText = text('language');
+    final VideoSubtitleLanguage language = languageText == null
+        ? VideoSubtitleLanguage.japanese
+        : VideoSubtitleLanguage.fromTag(languageText) ??
+              (throw FormatException(
+                '$kVideoSubtitleJobKind: language must be one of '
+                '${VideoSubtitleLanguage.values.map((VideoSubtitleLanguage l) => l.tag).join('|')}',
+              ));
+    final String suffix = text('suffix') ?? language.tag;
     if (!RegExp(r'^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$').hasMatch(suffix)) {
       throw FormatException('$kVideoSubtitleJobKind: bad suffix "$suffix"');
     }
@@ -169,6 +181,7 @@ class VideoSubtitleJobParams {
         MossBackendPreference.auto,
       ),
       regenerateGlossary: flag('regenerateGlossary', false),
+      language: language,
       suffix: suffix,
     );
   }
@@ -181,7 +194,11 @@ class VideoSubtitleJobParams {
   final VideoSubtitleSegmenterMode segmenter;
   final MossBackendPreference mossBackend;
   final bool regenerateGlossary;
-  final String suffix;
+  final VideoSubtitleLanguage language;
+  final String? _suffix;
+
+  /// 输出后缀；没给时取 [language] 的标签。
+  String get suffix => _suffix ?? language.tag;
 }
 
 /// 管线阶段在任务总进度里占的区间（识别最重）。
@@ -397,7 +414,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       ctx.onProgress(0, 'recognize: choosing recognizer');
       final VideoSubtitleRecognizerChoice choice;
       try {
-        choice = await resolveRecognizer(params.segmenter, params.mossBackend);
+        choice = await resolveRecognizer(
+          params.segmenter,
+          params.mossBackend,
+          params.language,
+        );
       } on VideoSubtitleRecognizeFailure catch (e) {
         throw StateError(e.message);
       }
@@ -405,6 +426,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         recognizer: choice.recognizer,
         jobsRoot: pipelineJobsRoot,
         ai: ai,
+        language: params.language,
         subtitleSuffix: params.suffix,
         // 上传的视频在任务输入目录里：字幕直接写进产物目录；库视频写在视频旁。
         exportDir: target.uploaded ? ctx.outputsDir : null,

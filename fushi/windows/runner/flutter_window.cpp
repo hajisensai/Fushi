@@ -36,7 +36,6 @@
 #include "game_client_extent.h"
 #include "game_stream_input.h"
 #include "global_mouse_trigger.h"
-#include "ime_space_dispatch.h"
 #include "low_level_mouse_hook.h"
 #include "system_font_list.h"
 #include "system_transparency_channel.h"
@@ -773,12 +772,6 @@ bool FlutterWindow::OnCreate() {
   system_theme_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "app.fushi/system_theme",
-          &flutter::StandardMethodCodec::GetInstance());
-
-  windows_ime_space_channel_ =
-      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(),
-          "app.fushi/windows_ime_space",
           &flutter::StandardMethodCodec::GetInstance());
 
   RegisterImeGuardChannel();
@@ -5010,28 +5003,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     hdr_output_channel_->InvokeMethod(
         "onDisplayChanged", std::make_unique<flutter::EncodableValue>());
   }
-  // BUG-1239: inspect VK_PROCESSKEY before Flutter handles the message. The
-  // engine deliberately reports IME-owned keys as physical=0/logical=0, so
-  // checking after HandleTopLevelWindowProc can no longer identify Space.
-  // Notify Dart without consuming the Win32 message; Flutter/IME processing
-  // continues unchanged.
-  if (windows_ime_space_channel_) {
-    const ImeSpaceModifierState modifiers{
-        GetKeyState(VK_CONTROL) < 0, GetKeyState(VK_SHIFT) < 0,
-        GetKeyState(VK_MENU) < 0,    GetKeyState(VK_LWIN) < 0,
-        GetKeyState(VK_RWIN) < 0};
-    DispatchInitialUnmodifiedImeSpaceDown(
-        message, wparam, lparam, modifiers,
-        [](void* context) {
-          auto* channel = static_cast<
-              flutter::MethodChannel<flutter::EncodableValue>*>(context);
-          channel->InvokeMethod(
-              "onImeSpaceDown",
-              std::make_unique<flutter::EncodableValue>());
-        },
-        windows_ime_space_channel_.get());
-  }
-
   // Snap Layouts hit testing for the app-drawn maximize button (before the
   // plugins: window_manager answers WM_NCHITTEST on its own otherwise).
   if (std::optional<LRESULT> snap =

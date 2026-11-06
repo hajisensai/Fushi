@@ -121,6 +121,29 @@ void main() {
       expect(season.query, <String, String>{'collectionId': '4'});
     });
 
+    test('--language 选表：进 query / body；不给不带（服务端缺省日语）', () {
+      final CtlRequestSpec zh = _build('subtitle-glossary', <String>[
+        'b1',
+        '--language',
+        'zh',
+      ]);
+      expect(zh.query, <String, String>{'bookUid': 'b1', 'language': 'zh'});
+      final File file = File('${tmp.path}/g.json')
+        ..writeAsStringSync('[{"ja": "林晓明"}]');
+      final CtlRequestSpec put = _build('subtitle-glossary', <String>[
+        'b1',
+        '--language',
+        'zh',
+        '--set',
+        file.path,
+      ]);
+      expect(put.body!['language'], 'zh');
+      expect(
+        () => _build('subtitle-glossary', <String>['b1', '--language', 'yue']),
+        throwsA(anything),
+      );
+    });
+
     test('--set：读文件（数组或带 entries 的对象）→ PUT', () {
       final File arrayFile = File(p.join(tmp.path, 'a.json'))
         ..writeAsStringSync(

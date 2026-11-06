@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
@@ -54,6 +55,7 @@ void main() {
         ({
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
+          VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
         }) async => VideoSubtitleRecognizerChoice(recognizer: recognizer),
     completerFactory: (AiProviderConfig _) =>
         (completer: FakeAiCompleter(answerAll), close: () {}),

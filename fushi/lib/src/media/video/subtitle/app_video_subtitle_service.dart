@@ -1,4 +1,4 @@
-/// app 层「生成日语字幕」的唯一编排（spec `2026-10-19-video-asr-llm-subtitle-pipeline`
+/// app 层「生成字幕」（日语 / 普通话，[VideoSubtitleLanguage]）的唯一编排（spec `2026-10-19-video-asr-llm-subtitle-pipeline`
 /// 第 2、3、5、6 节 app 部分）。
 ///
 /// 视频页面板、合集页「整季生成」、专名表编辑页与桌面 CLI（`fushi_cli video
@@ -11,7 +11,7 @@
 ///   查进度 / 取消；
 /// - 失败语义照管线：AI 请求失败 = 暂停（缓存保留，[start] 同一目标即续）、专名表
 ///   校验不过 = 把候选表交给用户改、取消 = 已落盘的阶段保留；
-/// - 产物登记：导出的 `<视频名>.ja.srt` / `.ja.asr.srt` 在该条目**还没有字幕选择**时
+/// - 产物登记：导出的 `<视频名>.<语言>.srt` / `.<语言>.asr.srt` 在该条目**还没有字幕选择**时
 ///   写进 `video_books.subtitleSource`（用户自己选过的字幕 / 显式关闭不覆盖）。播放页
 ///   当前那集由页面自己切过去。视频已有别的 ASS 字幕（外挂或内嵌）时管线另出一份
 ///   套了它样式 / 位置的 `.ja.ass`，登记的是这份。
@@ -50,6 +50,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.d
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
@@ -76,6 +77,7 @@ typedef AppVideoSubtitleRecognizerResolver =
     Future<VideoSubtitleRecognizerChoice> Function({
       required VideoSubtitleSegmenterMode mode,
       MossBackendPreference mossBackend,
+      VideoSubtitleLanguage language,
     });
 
 /// 按提供商建 AI 出口（生产实现 [AiChatTextCompleter]）。返回的 `close` 在任务结束
@@ -87,6 +89,13 @@ typedef AppVideoSubtitleCompleterFactory =
 
 /// 读视频时长（毫秒；读不出 null）。
 typedef AppVideoSubtitleDurationProbe = Future<int?> Function(String videoPath);
+
+/// 读视频的音轨（语言标签猜字幕语言用；读不出返回空表）。
+typedef AppVideoSubtitleAudioTrackProbe =
+    Future<List<AudioTrackFacts>> Function(String videoPath);
+
+Future<List<AudioTrackFacts>> _defaultAudioTrackProbe(String videoPath) async =>
+    (await probeVideoFacts(videoPath)).audioTracks;
 
 /// 服务从设置里要的两样东西（生产实现读 `PreferencesRepository`，测试注入 fake）。
 abstract interface class AppVideoSubtitleSettings {
@@ -133,6 +142,7 @@ class AppVideoSubtitleEpisode {
     required this.title,
     this.registersSubtitleSource = true,
     this.replacesSubtitleSelection = false,
+    this.contentLanguage,
   });
 
   /// 视频库条目（`video_books.book_uid`）；音乐目标为 null（曲目归属由
@@ -142,6 +152,10 @@ class AppVideoSubtitleEpisode {
   /// 要转写的本地媒体文件（视频或音频；字段名沿用视频时代）。
   final String videoPath;
   final String title;
+
+  /// 用户给这一集设的内容语言（`VideoBooks.language`；没设 null）。只用来给字幕
+  /// 语言定初值（[resolveVideoSubtitleLanguage]）。
+  final String? contentLanguage;
 
   /// 导出后能否把字幕登记到这一行的 `subtitleSource`：播放列表里的子集共用一行，
   /// 那一行的字幕选择不属于其中某一集，不登记。
@@ -211,8 +225,8 @@ class AppVideoSubtitleTarget {
   final bool? _wholeSeason;
   final String? _key;
 
-  /// 批量（整季 / 整张专辑 / 整个来源）：已有导出字幕的集由管线直接跳过，并做跨集
-  /// 一致性。显式给了就用给的；视频默认按「是不是合集目标」。
+  /// 批量（整季 / 整张专辑 / 整个来源）：已有导出字幕（`<媒体名>.<语言>.srt`）的集由
+  /// 管线直接跳过，并做跨集一致性。显式给了就用给的；视频默认按「是不是合集目标」。
   bool get wholeSeason => _wholeSeason ?? collectionId != null;
 
   /// 进程内去重键（同一目标只能有一个任务）。
@@ -383,6 +397,7 @@ class AppVideoSubtitleOptions {
     this.segmenter = VideoSubtitleSegmenterMode.auto,
     this.mossBackend = MossBackendPreference.auto,
     this.regenerateGlossary = false,
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
   final bool proofread;
@@ -390,10 +405,14 @@ class AppVideoSubtitleOptions {
   final MossBackendPreference mossBackend;
   final bool regenerateGlossary;
 
+  /// 字幕语言（识别模型、AI 提示词、导出后缀 `<视频名>.<tag>.srt`）。
+  final VideoSubtitleLanguage language;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'proofread': proofread,
     'segmenter': segmenter.name,
     'mossBackend': mossBackend.name,
+    'language': language.tag,
     if (regenerateGlossary) 'regenerateGlossary': true,
   };
 }
@@ -654,7 +673,12 @@ Future<Directory> defaultVideoSubtitleJobsRoot() async =>
 Future<VideoSubtitleRecognizerChoice> _defaultResolver({
   required VideoSubtitleSegmenterMode mode,
   MossBackendPreference mossBackend = MossBackendPreference.auto,
-}) => resolveAppVideoSubtitleRecognizer(mode: mode, mossBackend: mossBackend);
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) => resolveAppVideoSubtitleRecognizer(
+  mode: mode,
+  mossBackend: mossBackend,
+  language: language,
+);
 
 /// app 层视频字幕服务。
 class AppVideoSubtitleService {
@@ -665,6 +689,7 @@ class AppVideoSubtitleService {
     AppVideoSubtitleCompleterFactory? completerFactory,
     Future<Directory> Function()? jobsRoot,
     AppVideoSubtitleDurationProbe? probeDurationMs,
+    AppVideoSubtitleAudioTrackProbe? probeAudioTracks,
     SubtitleGlossaryStore? glossaryStore,
     this.mossPort = const AppVideoSubtitleMossPort(),
     this.asrModelPort = const AppVideoSubtitleAsrModelPort(),
@@ -680,6 +705,7 @@ class AppVideoSubtitleService {
        _completerFactory = completerFactory ?? _defaultCompleter,
        _jobsRoot = jobsRoot ?? defaultVideoSubtitleJobsRoot,
        _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
+       _probeAudioTracks = probeAudioTracks ?? _defaultAudioTrackProbe,
        glossaryStore = glossaryStore ?? SubtitleGlossaryDriftStore(database),
        _jobRegistry = jobRegistry ?? videoRemoteJobs,
        _webKnowledge =
@@ -714,6 +740,7 @@ class AppVideoSubtitleService {
   final AppVideoSubtitleCompleterFactory _completerFactory;
   final Future<Directory> Function() _jobsRoot;
   final AppVideoSubtitleDurationProbe _probeDurationMs;
+  final AppVideoSubtitleAudioTrackProbe _probeAudioTracks;
   final VideoRemoteJobRegistry _jobRegistry;
   final WebKnowledgeClient Function(List<WebKnowledgeSite> sites) _webKnowledge;
 
@@ -795,6 +822,7 @@ class AppVideoSubtitleService {
           videoPath: videoPath,
           title: row.title,
           registersSubtitleSource: false,
+          contentLanguage: row.language,
         ),
       );
     }
@@ -895,6 +923,7 @@ class AppVideoSubtitleService {
           title: playlist ? p.basenameWithoutExtension(path) : row.title,
           registersSubtitleSource: p.equals(path, row.videoPath) && !playlist,
           replacesSubtitleSelection: replaceSelection,
+          contentLanguage: row.language,
         ),
       );
     }
@@ -910,6 +939,38 @@ class AppVideoSubtitleService {
     ),
     title: title,
   );
+
+  // ── 字幕语言 ────────────────────────────────────────────────────────────
+
+  /// 面板语言选择的初值与来由（[resolveVideoSubtitleLanguage]：各集内容语言 →
+  /// 第一集的明确音轨标签 → 刮削原语言 → 日语）。内容语言已能定时不探测音轨；
+  /// 探测失败只当没有音轨标签。
+  Future<VideoSubtitleLanguageGuess> guessLanguage(
+    AppVideoSubtitleTarget target,
+  ) async {
+    final List<String?> contentLanguages = <String?>[
+      for (final AppVideoSubtitleEpisode e in target.episodes)
+        e.contentLanguage,
+    ];
+    List<AudioTrackFacts> tracks = const <AudioTrackFacts>[];
+    if (videoSubtitleLanguageForContent(contentLanguages) == null &&
+        target.episodes.isNotEmpty) {
+      try {
+        tracks = await _probeAudioTracks(target.episodes.first.videoPath);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'video.subtitleLanguageGuess',
+          error,
+          stack,
+        );
+      }
+    }
+    return resolveVideoSubtitleLanguage(
+      contentLanguages: contentLanguages,
+      audioTracks: tracks,
+      originalLanguage: target.work.originalLanguage,
+    );
+  }
 
   // ── 识别模型 / MOSS ─────────────────────────────────────────────────────
 
@@ -939,8 +1000,11 @@ class AppVideoSubtitleService {
 
   // ── 专名表 ──────────────────────────────────────────────────────────────
 
-  Future<SubtitleGlossary?> loadGlossary(SubtitleWorkContext work) =>
-      glossaryStore.load(work.workKey);
+  /// [language] 的专名表（普通话与日语各一张，见 [VideoSubtitleLanguage.glossaryKey]）。
+  Future<SubtitleGlossary?> loadGlossary(
+    SubtitleWorkContext work, {
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => glossaryStore.load(language.glossaryKey(work.workKey));
 
   /// 保存用户编辑后的表。与 [previous] 不同（新增 / 改过）的条目标 `userEdited`，
   /// 重新生成时原样保留；`userEditedAt` 记本次时刻。
@@ -951,6 +1015,7 @@ class AppVideoSubtitleService {
     SubtitleWorkContext work,
     List<SubtitleGlossaryEntry> entries, {
     SubtitleGlossary? previous,
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   }) async {
     final Map<String, SubtitleGlossaryEntry> before =
         <String, SubtitleGlossaryEntry>{
@@ -980,7 +1045,7 @@ class AppVideoSubtitleService {
       generatedAt: previous?.generatedAt,
       userEditedAt: _nowMs(),
     );
-    await glossaryStore.save(work.workKey, saved);
+    await glossaryStore.save(language.glossaryKey(work.workKey), saved);
     return saved;
   }
 
@@ -998,6 +1063,7 @@ class AppVideoSubtitleService {
   Future<SubtitleGlossary> regenerateGlossary(
     AppVideoSubtitleTarget target, {
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   }) async {
     final AiProviderConfig? provider = _settings.proofreadProvider;
     if (provider == null) {
@@ -1009,11 +1075,12 @@ class AppVideoSubtitleService {
         _completerFactory(provider);
     final List<WebKnowledgeSite> sites = _settings.webKnowledgeSites;
     final WebKnowledgeClient? web = sites.isEmpty ? null : _webKnowledge(sites);
+    final String glossaryKey = language.glossaryKey(target.work.workKey);
     try {
       final Directory root = await _jobsRoot();
       final List<List<String>> texts = <List<String>>[
         for (final AppVideoSubtitleEpisode e in target.episodes)
-          if (_cachedDrafts(root, e.videoPath)
+          if (_cachedDrafts(root, e.videoPath, language)
               case final List<SubtitleDraftCue> drafts)
             <String>[for (final SubtitleDraftCue c in drafts) c.text],
       ];
@@ -1021,14 +1088,15 @@ class AppVideoSubtitleService {
           await SubtitleGlossaryBuilder(
             completer: ai.completer,
             webKnowledge: web,
+            language: language,
           ).build(
             context: target.work,
             episodeTexts: texts,
-            existing: await glossaryStore.load(target.work.workKey),
+            existing: await glossaryStore.load(glossaryKey),
             force: true,
             cancel: cancel,
           );
-      await glossaryStore.save(target.work.workKey, built.glossary);
+      await glossaryStore.save(glossaryKey, built.glossary);
       return built.glossary;
     } finally {
       ai.close();
@@ -1044,6 +1112,7 @@ class AppVideoSubtitleService {
   Future<AppVideoSubtitleCostEstimate> estimateCost(
     AppVideoSubtitleTarget target, {
     Map<String, int> knownDurationsMs = const <String, int>{},
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   }) async {
     final Directory root = await _jobsRoot();
     final List<List<SubtitleDraftCue>> lists = <List<SubtitleDraftCue>>[];
@@ -1052,18 +1121,22 @@ class AppVideoSubtitleService {
     for (final AppVideoSubtitleEpisode e in target.episodes) {
       // 视频旁的字幕在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。
       if (target.wholeSeason &&
-          await File(subtitlePathFor(target, e.videoPath)).exists()) {
+          await File(subtitlePathFor(target, e.videoPath, language)).exists()) {
         continue;
       }
       final Directory dir = Directory(
-        p.join(root.path, videoSubtitleJobId(e.videoPath)),
+        p.join(root.path, videoSubtitleJobIdFor(e.videoPath, language)),
       );
       if (File(
         p.join(dir.path, VideoSubtitleJobFiles.finalCues),
       ).existsSync()) {
         continue;
       }
-      final List<SubtitleDraftCue>? drafts = _cachedDrafts(root, e.videoPath);
+      final List<SubtitleDraftCue>? drafts = _cachedDrafts(
+        root,
+        e.videoPath,
+        language,
+      );
       if (drafts != null) {
         lists.add(drafts);
         continue;
@@ -1088,7 +1161,7 @@ class AppVideoSubtitleService {
       ]);
     }
     final SubtitleGlossary? glossary = await glossaryStore.load(
-      target.work.workKey,
+      language.glossaryKey(target.work.workKey),
     );
     return AppVideoSubtitleCostEstimate(
       basis: lists.isEmpty
@@ -1100,37 +1173,46 @@ class AppVideoSubtitleService {
       unknownDurationEpisodes: unknown,
       cost: estimateSubtitleProofreadCost(
         episodes: lists,
-        title: target.work.japaneseTitle,
+        title: language.workTitle(target.work),
         glossary: glossary == null || glossary.isEmpty ? null : glossary,
+        language: language,
       ),
     );
   }
 
-  /// 一集的目标字幕路径（`<导出目录>/<媒体名>.ja.srt`，导出目录见
+  /// 一集的目标字幕路径（`<导出目录>/<媒体名>.<语言>.srt`，导出目录见
   /// [AppSubtitleOutputSink.exportDirFor]）：与管线 `subtitlePathFor` 同一口径。
-  String subtitlePathFor(AppVideoSubtitleTarget target, String mediaPath) =>
-      p.join(
-        _sinkOf(target).exportDirFor(mediaPath)?.path ?? p.dirname(mediaPath),
-        '${p.basenameWithoutExtension(mediaPath)}.ja.srt',
-      );
-
-  /// 批量目标里已有导出字幕、管线会跳过的集（面板显示「跳过 N 集」）。非批量目标
-  /// 返回空集。存在性一律 async 判（字幕可能在网络盘上，BUG-3756）。
-  Future<Set<String>> existingSubtitleEpisodes(
+  String subtitlePathFor(
     AppVideoSubtitleTarget target,
-  ) async {
+    String mediaPath, [
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  ]) => p.join(
+    _sinkOf(target).exportDirFor(mediaPath)?.path ?? p.dirname(mediaPath),
+    '${p.basenameWithoutExtension(mediaPath)}.${language.tag}.srt',
+  );
+
+  /// 批量目标里已有 [language] 导出字幕、管线会跳过的集（面板显示「跳过 N 集」）。非
+  /// 批量目标返回空集。存在性一律 async 判（字幕可能在网络盘上，BUG-3756）。
+  Future<Set<String>> existingSubtitleEpisodes(
+    AppVideoSubtitleTarget target, {
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async {
     if (!target.wholeSeason) return const <String>{};
     return <String>{
       for (final AppVideoSubtitleEpisode e in target.episodes)
-        if (await File(subtitlePathFor(target, e.videoPath)).exists())
+        if (await File(subtitlePathFor(target, e.videoPath, language)).exists())
           e.videoPath,
     };
   }
 
   /// 任务目录里任一识别器的字幕稿（先按 `state.json` 记的识别器，再按文件名找）。
-  List<SubtitleDraftCue>? _cachedDrafts(Directory root, String videoPath) {
+  List<SubtitleDraftCue>? _cachedDrafts(
+    Directory root,
+    String videoPath,
+    VideoSubtitleLanguage language,
+  ) {
     final Directory dir = Directory(
-      p.join(root.path, videoSubtitleJobId(videoPath)),
+      p.join(root.path, videoSubtitleJobIdFor(videoPath, language)),
     );
     if (!dir.existsSync()) return null;
     final List<File> files = <File>[
@@ -1163,14 +1245,15 @@ class AppVideoSubtitleService {
   /// 原识别器（以免重新识别）跑一次。一集都没校对过抛
   /// [AppVideoSubtitleStartProblem.nothingToRerun]。
   Future<AppVideoSubtitleJob> startConsistencyRerun(
-    AppVideoSubtitleTarget target,
-  ) async {
+    AppVideoSubtitleTarget target, {
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async {
     final Directory root = await _jobsRoot();
     final bool anyProofread = target.episodes.any(
       (AppVideoSubtitleEpisode e) => Directory(
         p.join(
           root.path,
-          videoSubtitleJobId(e.videoPath),
+          videoSubtitleJobIdFor(e.videoPath, language),
           VideoSubtitleJobFiles.proofreadDir,
         ),
       ).existsSync(),
@@ -1182,7 +1265,7 @@ class AppVideoSubtitleService {
     }
     return _launch(
       target,
-      const AppVideoSubtitleOptions(proofread: true),
+      AppVideoSubtitleOptions(proofread: true, language: language),
       consistencyOnly: true,
     );
   }
@@ -1238,13 +1321,14 @@ class AppVideoSubtitleService {
       final Directory root = await _jobsRoot();
       final AppVideoSubtitleTarget target = job.target;
       List<String> videoPaths = target.videoPaths;
+      final VideoSubtitleLanguage language = job.options.language;
       VideoSubtitleSegmenterMode mode = job.options.segmenter;
       if (job.consistencyOnly) {
         final List<String> rerun = <String>[];
         String? recognizerId;
         for (final String video in videoPaths) {
           final Directory dir = Directory(
-            p.join(root.path, videoSubtitleJobId(video)),
+            p.join(root.path, videoSubtitleJobIdFor(video, language)),
           );
           final bool proofread = Directory(
             p.join(dir.path, VideoSubtitleJobFiles.proofreadDir),
@@ -1269,6 +1353,7 @@ class AppVideoSubtitleService {
       final VideoSubtitleRecognizerChoice choice = await _resolveRecognizer(
         mode: mode,
         mossBackend: job.options.mossBackend,
+        language: language,
       );
       final String? mossReason = choice.mossUnavailableReason;
       job
@@ -1305,6 +1390,7 @@ class AppVideoSubtitleService {
         styleReference: sink.usesStyleReference
             ? loadSubtitleStyleReference
             : null,
+        language: language,
         ai: aiConfig,
         probeDurationMs: _probeDurationMs,
         evidence: _evidenceSource == null
