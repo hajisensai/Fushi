@@ -9,6 +9,8 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_history_page.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
+import 'package:fushi/src/pages/implementations/ai_mcp_servers_page.dart'
+    show openAiMcpServersPage;
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
@@ -360,6 +362,21 @@ SettingsDestination buildAiDestination() {
               c.context,
               () => issueAiMcpToken(c.appModel.prefsRepo),
             ),
+          ),
+          // 反方向：AI 助手当 MCP 客户端，调用户接入的外部 MCP server（spec
+          // docs/specs/2026-11-05-ai-mcp-client-design.md）。各平台都有（网络地址型
+          // server）；本地程序型只在桌面，由页面自己判断。配置只能在这页亲手改。
+          SettingsActionItem(
+            id: 'ai.mcp_servers',
+            title: t.ai_mcp_client_title,
+            subtitle: t.ai_mcp_client_summary,
+            icon: FushiIcons.hub,
+            cli: const SettingsCliAction.unsupported(
+              'MCP 服务器只在设置页里由用户亲手配置：本地程序型 server 会在本机执行命令，'
+              '不能由控制通道或 AI 自己添加',
+            ),
+            onTap: (SettingsContext c) =>
+                openAiMcpServersPage(c.context, c.appModel.prefsRepo),
           ),
         ],
       ),

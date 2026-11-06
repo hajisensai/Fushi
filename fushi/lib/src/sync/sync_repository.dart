@@ -2030,6 +2030,9 @@ class SyncRepository {
     // 漂过去会让另一台设备静默对外开放、或让旧令牌在新设备上生效。
     'ai_mcp_enabled',
     'ai_mcp_token_sha256',
+    // AI 助手接入的外部 MCP server：请求头里可能有 token，本地程序的命令与路径只对
+    // 这台机器成立；漂到别的设备既泄凭据又会去拉起一个不存在的程序。
+    'ai_mcp_client_servers',
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',

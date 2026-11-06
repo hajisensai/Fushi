@@ -103,6 +103,9 @@ abstract final class PrefRedactionPolicy {
     'ai_providers',
     // 同形：联网搜索配置 JSON 里的 Brave API key。
     'ai_web_search',
+    // 同形：外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+    // 也在 deviceLocalPrefKeys 中。
+    'ai_mcp_client_servers',
     // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
     // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'discovery_opds_servers',

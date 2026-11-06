@@ -11,11 +11,15 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_toolbox.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
 import 'package:fushi/src/ai/agent/ai_agent_session_archive.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
+import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/ops/op_routes.dart';
@@ -130,6 +134,7 @@ class AiAgentController extends ChangeNotifier
     OpInvoker? invoker,
     DateTime Function()? clock,
     AgentLiveSessions? live,
+    McpClientToolbox? mcpToolbox,
   }) => AiAgentController._(
     database: database,
     settings: settings,
@@ -137,7 +142,9 @@ class AiAgentController extends ChangeNotifier
     llmFactory: llmFactory,
     clock: clock,
     live: live ?? AgentLiveSessions(),
-  ).._invoker = invoker;
+  )
+    .._invoker = invoker
+    .._mcp = mcpToolbox;
 
   final FushiDatabase database;
   final AiSettingsSource settings;
@@ -151,6 +158,8 @@ class AiAgentController extends ChangeNotifier
 
   OpInvoker? _invoker;
   AiAgentToolbox? _toolbox;
+  McpClientToolbox? _mcp;
+  ComposedAgentToolbox? _sessionToolbox;
   AgentSession? _session;
   AiChatClient? _client;
   StreamSubscription<void>? _changes;
@@ -234,6 +243,24 @@ class AiAgentController extends ChangeNotifier
     clock: _clock,
   )..onTaskFinished = _onTaskFinished;
 
+  /// 用户接入的外部 MCP server 的工具箱（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`）。每轮对话前 [send] 先
+  /// `prepare()`，按设置增量连接 / 断开。
+  McpClientToolbox get mcpToolbox =>
+      _mcp ??= buildAiMcpClientToolbox(_mcpServers);
+
+  /// 设置里的 MCP server 清单。只有真实偏好库才有（测试替身的 [settings] 没有）。
+  List<McpServerConfig> _mcpServers() => switch (settings) {
+    final PreferencesRepository prefs => prefs.aiMcpClientServers,
+    _ => const <McpServerConfig>[],
+  };
+
+  /// 交给会话的工具箱：操作目录 + 外部 MCP 工具。
+  AgentToolbox get _agentToolbox => _sessionToolbox ??= ComposedAgentToolbox(
+    toolbox,
+    <AgentToolbox>[mcpToolbox],
+  );
+
   /// 长任务结束（spec §6.1）：还是当前这场对话就报告并自动续一轮；对话已换掉的
   /// 只在操作记录里留着（下次恢复那场对话时条目仍显示为进行中）。
   void _onTaskFinished(
@@ -271,7 +298,7 @@ class AiAgentController extends ChangeNotifier
     final AgentSession session = AgentSession(
       id: _newSessionId(),
       llm: _llm(provider),
-      toolbox: toolbox,
+      toolbox: _agentToolbox,
       host: host,
       clock: _clock,
     );
@@ -290,6 +317,9 @@ class AiAgentController extends ChangeNotifier
     final AgentSession session = ensureSession(scene: context?.scene ?? _scene);
     _sessionProfileUid ??= await database.resolveActiveProfileUid();
     unawaited(_pruneOnce());
+    // MCP 工具按需加载，工具箱接口是同步的：本轮的 search / describe 读这次 prepare
+    // 的结果。连不上的 server 只记状态，不挡对话。
+    await mcpToolbox.prepare();
     try {
       await session.send(text, context: context, images: images);
     } finally {
@@ -341,7 +371,7 @@ class AiAgentController extends ChangeNotifier
       AgentSession.fromJson(
         Map<String, Object?>.from(json),
         llm: _llm(provider),
-        toolbox: toolbox,
+        toolbox: _agentToolbox,
         host: host,
         clock: _clock,
       ),
@@ -505,6 +535,7 @@ class AiAgentController extends ChangeNotifier
     _detach();
     _sessionsRevision.dispose();
     _toolbox?.dispose();
+    unawaited(_mcp?.close());
     _client?.close();
     super.dispose();
   }

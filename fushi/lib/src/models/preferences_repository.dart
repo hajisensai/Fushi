@@ -15,6 +15,7 @@ import 'package:fushi_engine/profile/profile_document.dart'
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
 import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:fushi_engine/ai/web_knowledge.dart'
     show
@@ -6411,6 +6412,32 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiMcpEnabled(bool value) async {
     await setPref('ai_mcp_enabled', value);
+    notifyListeners();
+  }
+
+  /// AI 助手接入的外部 MCP server（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`；设备本地，请求头 / 环境变量值
+  /// base64）。逐条容错在 [decodeMcpServerConfigs] 里；整串坏掉记日志并当空列表。
+  List<McpServerConfig> get aiMcpClientServers {
+    final String raw =
+        getPref('ai_mcp_client_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <McpServerConfig>[];
+    try {
+      return decodeMcpServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiMcpClientServers.decode',
+        error,
+        stack,
+      );
+      return const <McpServerConfig>[];
+    }
+  }
+
+  Future<void> setAiMcpClientServers(
+    Iterable<McpServerConfig> servers,
+  ) async {
+    await setPref('ai_mcp_client_servers', encodeMcpServerConfigs(servers));
     notifyListeners();
   }
 

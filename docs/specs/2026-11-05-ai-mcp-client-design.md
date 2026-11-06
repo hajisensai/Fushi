@@ -91,8 +91,14 @@ packages/fushi_engine/lib/ai/mcp_client/      纯 Dart（不碰 Flutter / 插件
 fushi/lib/src/ai/mcp_client/                  app 侧装配
   ai_mcp_client_presets.dart  MangaBaka 预设
   ai_mcp_client_runtime.dart  传输工厂（HTTP 走 createAppHttpIoClient；stdio 只在桌面）
+  ai_mcp_client_form.dart     编辑页多行文本 ↔ 请求头 / 参数 / 环境变量
+fushi/lib/src/pages/implementations/
   ai_mcp_servers_page.dart    设置页（列表 / 添加 / 编辑 / 测试连接）
 ```
+
+改动的既有文件只有：`agent_tool.dart`（加 `AgentPromptNoteProvider` 接口）、`agent_session.dart`
+（system prompt 附说明段）、`ai_agent_controller.dart`（换组合工具箱、`send` 前 `prepare`）、
+`settings_schema_ai.dart`（一条入口）、偏好键四处登记、i18n。
 
 - **为什么是 Dart 不是 Rust**：架构硬规则说「新**计算型**子系统」放 Rust。MCP 客户端是纯 I/O
   协议胶水（HTTP / 子进程 + JSON-RPC），没有计算；现有 MCP server 与 AI 调用层都在 Dart，
@@ -153,7 +159,12 @@ fushi/lib/src/ai/mcp_client/                  app 侧装配
   错误）；stdio 分帧（注入流）；工具箱（id 往返、搜索排序、describe、确认标记、结果截断、说明段）；
   组合工具箱路由；`AgentSession` 集成（说明段进 system prompt、非只读工具出确认卡）。
 - app：偏好键登记守卫、设置页 widget 测试。
-- 手动：MangaBaka 真实端点（§2.1 的探测即手动验证记录）。
+- 手动（2026-11-06）：引擎 `McpClientToolbox` + `McpHttpTransport` 直连真实端点
+  `https://api.mangabaka.org/mcp`：协商为无状态 `2026-07-28`、列出 18 个工具、`ops.search`
+  式检索「mangabaka series search」首位是 `series_search`、`describe` 风险为 read 且无需确认、
+  真实调用 `series_search {q: "yotsuba"}` 返回「Yotsuba&!」。
+- 未验：真实 app 里配本地模型（Unsloth / LM Studio）走完整对话。本地小模型能否按说明段
+  主动 `ops__search` 取决于模型能力；JSON 降级协议同样带说明段。
 
 ## 9. 待所有者拍板
 
