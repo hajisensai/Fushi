@@ -111,8 +111,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // music_lyrics_service_test 咬住。
   'music/Online lyrics (LRCLIB)':
       'test/media/music/lyrics/music_lyrics_service_test.dart',
-  // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup），harness
-  // 设置页没有歌词页；判据由 music_lyrics_page_logic_test 咬住。
+  // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup）与桌面歌词
+  // 点词（MusicLookupPause，music_lookup_pause_test，BUG-4123），harness 设置页两者
+  // 都没有；判据由 music_lyrics_page_logic_test 咬住。
   // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
   'music/VGMdb lookup':
       'test/media/music/metadata/music_scrape_service_test.dart',
