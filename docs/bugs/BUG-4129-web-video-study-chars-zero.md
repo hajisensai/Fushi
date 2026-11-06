@@ -1,4 +1,4 @@
-## BUG-4125 · 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0
+## BUG-4129 · 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0
 - **报告**：2026-11-05（用户：应用内反馈 jk4rTLHPZ_，Android 平板；条目 `web:yt-<id>` 1h32m、chars 0，视频页播同一视频有字数）
 - **真实性**：✅ 真 bug，属于「已经有字幕、只是没入账」。网页视频的观看时长默认只在 **Fushi 自己在出字幕**时才计（`tools/browser-extension/study-tracker.js` 字幕门，读 `subtitle-panel.js` 的 `fushiSubtitleStudyState().showing`），也就是说计时的那段时间页面上一定有 Fushi 的字幕轨。但样本契约只有位置：`study-tracker.js:108` `sampleOf` 不带当前句，app 侧 `fushi/lib/src/media/video/browser_video_study_bridge.dart:94/113` 的 `RemoteVideoPlaybackSource` 写死「cue 恒空（字幕字数不计）」，`currentCueIndex => -1`，`VideoWatchTracker` 的字数通道从来进不去。
 - **[x] ① 已修复** — 面板新增 `fushiSubtitleStudyCue(posMs)`（与 `showing` 同判据，句已在视频轴）；`study-tracker.js` 每条样本带 `cue: {index, startMs, endMs, text}`（用户藏了字幕 / ended / 句间空隙为 null）；`BrowserVideoSample` 解析 `cue`（坏 cue 整条丢弃，单句 > 1000 字拒收），`RemoteVideoPlaybackSource` 把它当当前句交给 `VideoWatchTracker`，走与视频页同一道停留门、同一 `countStudyChars` 口径、记到同一段。

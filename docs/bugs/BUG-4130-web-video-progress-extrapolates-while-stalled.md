@@ -1,4 +1,4 @@
-## BUG-4126 · 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走
+## BUG-4130 · 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走
 - **报告**：2026-11-04（用户：开发者自报，应用内反馈 Ia-GMxq2dQ / sSLXGfcQWH，Windows，Netflix）
 - **真实性**：✅ 部分真 bug（进度条假走）。`fushi/lib/src/media/video/web_video_platform_player.dart:185` `_extrapolatedPosition()` 只看 `state.playing`，不看页面上报的 `buffering`（glue 的 `buf` = `<video>.seeking || readyState < 3`），也没有外推上限。seek 在途时上报不回灌（为了不把 Netflix 慢落地的进度条拽回去），外推成了唯一位置来源：站点卡在缓冲 / 黑屏时进度条照走，直到 4 s seek 超时或用户暂停才跳回跳转点——与反馈描述一致（日志里有 `seek failed (id=…): timeout`）。
 - **[x] ① 已修复** — 页面报缓冲时外推冻结，进出缓冲都从当前显示位置重新起算；离最近一次权威位置最多外推 `kWebVideoMaxExtrapolation`（1 s，上报周期约 250 ms），上报停了 / seek 迟迟不落地时进度条不再凭空前进。

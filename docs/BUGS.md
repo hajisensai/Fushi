@@ -33,14 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3726 条。点号进各自文件。
+> 共 3730 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4126](bugs/BUG-4126-web-video-progress-extrapolates-while-stalled.md) | ✅ | ✅ | 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走 |
-| [BUG-4125](bugs/BUG-4125-web-video-study-chars-zero.md) | ✅ | ✅ | 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0 |
-| [BUG-4124](bugs/BUG-4124-web-page-flip-comic-not-detected.md) | ✅ | ✅ | 内置浏览器把 canvas / 跨页翻页式漫画试读页认不成漫画 |
-| [BUG-4123](bugs/BUG-4123-interconnect-host-update-lan-only.md) | ✅ | ✅ | 互联主机版本卡写「只能在局域网内让主机更新」，异地已配对设备被信任区门拒 |
+| [BUG-4130](bugs/BUG-4130-web-video-progress-extrapolates-while-stalled.md) | ✅ | ✅ | 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走 |
+| [BUG-4129](bugs/BUG-4129-web-video-study-chars-zero.md) | ✅ | ✅ | 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0 |
+| [BUG-4128](bugs/BUG-4128-web-page-flip-comic-not-detected.md) | ✅ | ✅ | 内置浏览器把 canvas / 跨页翻页式漫画试读页认不成漫画 |
+| [BUG-4127](bugs/BUG-4127-interconnect-host-update-lan-only.md) | ✅ | ✅ | 互联主机版本卡写「只能在局域网内让主机更新」，异地已配对设备被信任区门拒 |
 | [BUG-4126](bugs/BUG-4126-android-lyrics-mode-heat.md) | ✅ | ✅ | Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成 |
 | [BUG-4125](bugs/BUG-4125-video-home-continue-adaptive-cover.md) | ✅ | ✅ | 视频首页「继续观看」竖图被垫模糊塞进 16:9，大卡旁窄卡标题被挤没 |
 | [BUG-4124](bugs/BUG-4124-ios-island-clipped-and-large-widget-overflow.md) | ✅ | ✅ | ios-island-clipped-and-large-widget-overflow |
