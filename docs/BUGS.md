@@ -34,6 +34,13 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3733 条。点号进各自文件。
+> 共 3727 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4127](bugs/BUG-4127-gal-two-line-only-second-lookup.md) | 🚧 | 🚧 | 外部窗口挖矿两行台词只有第二行能查（金色ラブリッチェ） |
+| [BUG-4127](bugs/BUG-4127-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
+> 共 3729 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -141,7 +148,7 @@
 | [BUG-4032](bugs/BUG-4032-srs-anki-template-audio-dom-contract.md) | ✅ | ✅ | eggrolls 卡组复习时不播单词音频（卡面外壳不满足 Anki reviewer 的 DOM 契约） |
 | [BUG-4031](bugs/BUG-4031-srs-review-no-rating-feedback.md) | ✅ | ✅ | SRS 评分后没有任何结果提示 |
 | [BUG-4030](bugs/BUG-4030-srs-review-undo-lost-on-reentry.md) | ✅ | ✅ | SRS 退出再进复习页后无法撤销上一次评分 |
-| [BUG-4029](bugs/BUG-4029-gal-subtitle-drops-leading-quote.md) | 🚧 | 🚧 | 游戏抓取文本进字幕窗后丢句首「、偶尔先重复上一句三遍 |
+| [BUG-4029](bugs/BUG-4029-gal-subtitle-drops-leading-quote.md) | ✅ | ✅ | 游戏抓取文本进字幕窗后丢句首「、偶尔先重复上一句三遍 |
 | [BUG-4028](bugs/BUG-4028-windows-update-new-instance-locks-dll.md) | ✅ | ✅ | Windows 应用内更新：安装期间新启动的 Fushi 占用 DLL 致整包回滚 |
 | [BUG-4027](bugs/BUG-4027-lyrics-modern-wide-missing-stats.md) | ✅ | ✅ | 歌词模式新版宽屏缺阅读速度 / 已读字数 / 阅读时长 |
 | [BUG-4026](bugs/BUG-4026-lyrics-esc-exits-book.md) | ✅ | ✅ | 歌词模式按 Esc 先回阅读器、要再按一次才回书架 |

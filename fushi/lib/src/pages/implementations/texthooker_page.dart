@@ -127,15 +127,22 @@ String _selectedThreadPreview(
   return '';
 }
 
-/// 文本处理编辑器的样例行：所选线程的 native 预览行。
+/// 文本处理编辑器的样例行。
 ///
-/// 刻意**不以已发布台词（`latestText`）为首选**——那已经是管线处理**之后**的结果，拿它当
-/// 样例等于把管线套两遍，预览会和真实入库文本对不上。native 预览行不受线程选择门控、也不
-/// 经管线，是这里唯一的原文来源；它拿不到时才回落已发布台词。
+/// 首选 [processInput]：产出**当前字幕**那一行的管线输入原文
+/// （`GalHookSessionController.selectedLineProcessInput`）。选定线程的 native 预览槽只是
+/// 该线程自己最近一次 Output，而字幕吃的还可能是同 hook 面兄弟线程的行、或渐进折叠后
+/// 留下的更长旧快照——拿预览槽当样例，预览「正常」而字幕是另一份输入的结果（BUG-4029）。
+///
+/// 还没有经管线入库的字幕行时才回落 native 预览行，再回落已发布台词。刻意**不以已发布
+/// 台词（`latestText`）为首选**——那已经是管线处理**之后**的结果，拿它当样例等于把管线
+/// 套两遍。
 String _selectedThreadSample(
   List<TexthookerTextThread> threads,
-  String? selectedKey,
-) {
+  String? selectedKey, {
+  String? processInput,
+}) {
+  if (processInput != null && processInput.isNotEmpty) return processInput;
   if (selectedKey == null) return '';
   for (final TexthookerTextThread thread in threads) {
     if (thread.key == selectedKey) {
@@ -2787,6 +2794,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           latestSample: () => _selectedThreadSample(
             _session.textThreads,
             selectedTextThreadKey,
+            processInput: _session.selectedLineProcessInput,
           ),
           resolveAiProvider: _resolveTextProcessAiProvider,
           aiEnabled: isAiModuleEnabled(_appModel.moduleVisibility),

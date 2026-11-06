@@ -4,6 +4,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
@@ -367,6 +368,120 @@ void main() {
     );
     expect(result.workbench, isNot(contains('メニュー用スレッドの文字')));
     expect(result.overlay, isNot(contains('メニュー用スレッドの文字')));
+  });
+
+  // ── 规则过滤页预览样本 = 字幕的真实输入（BUG-4029）──────────────────────────
+  //
+  // 预览旧样本是选定线程 native 预览槽里的最近一次 Output。字幕吃的却是消费期放行的
+  // 全部行（含同 hook 面的兄弟线程）再经渐进折叠——两条路径同一管线、不同输入，于是
+  // 「规则页结果正常、字幕丢句首「 / 先重复上一句再出新句」。这里钉死：样本过管线后
+  // 必须逐字等于字幕当前行。
+  Future<
+    ({
+      String subtitle,
+      String? processInput,
+      String? selectedPreview,
+      GalTextProcessPipeline pipeline,
+    })
+  >
+  runSample(List<GalHookedLine> lines) async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _LaneEngine engine = _LaneEngine(lines: lines);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 25, pid: 559, title: 'quote game'),
+    );
+    for (int i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await controller.selectTextThread(5, threadKey: lines.first.textThreadKey);
+    for (int i = 0; i < 60; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final String subtitle = controller.selectedSessionLines.last.text;
+    final String? processInput = controller.selectedLineProcessInput;
+    String? selectedPreview;
+    for (final TexthookerTextThread thread in controller.textThreads) {
+      if (thread.nativeThreadId == 5) selectedPreview = thread.previewText;
+    }
+    final GalTextProcessPipeline pipeline = controller.textProcessPipeline;
+    await controller.close();
+    endpoints.dispose();
+    return (
+      subtitle: subtitle,
+      processInput: processInput,
+      selectedPreview: selectedPreview,
+      pipeline: pipeline,
+    );
+  }
+
+  const String kQuoted = '「それこそ純朴そうな小娘の面倒を見てやったりもしたのに」';
+  const String kNext = '「アンタだってその１人なんだよ。わかってんのかい？」';
+
+  test('同 hook 面兄弟线程送来缺句首「的一行：预览样本取字幕的那份输入', () async {
+    final result = await runSample(const <GalHookedLine>[
+      GalHookedLine(
+        seq: 1,
+        timestampMs: 1000,
+        text: kQuoted,
+        threadId: 5,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+      GalHookedLine(
+        seq: 2,
+        timestampMs: 1010,
+        text: 'それこそ純朴そうな小娘の面倒を見てやったりもしたのに」',
+        threadId: 6,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+    ]);
+    // 症状一：字幕丢了句首「，而选定线程的预览槽仍是带「的那句。
+    expect(result.subtitle, isNot(startsWith('「')));
+    expect(result.selectedPreview, kQuoted);
+    expect(
+      result.pipeline.apply(result.selectedPreview!),
+      isNot(result.subtitle),
+      reason: '旧样本（预览槽）与字幕不是同一输入——这正是「规则页正常、字幕不对」',
+    );
+    expect(result.processInput, isNotNull);
+    expect(result.pipeline.apply(result.processInput!), result.subtitle);
+  });
+
+  test('累积快照被渐进折叠留在字幕上：预览样本取那份更长的旧快照', () async {
+    const String accumulated =
+        'れこそ純朴そうな小娘の面倒を見てやったりもしたのに」'
+        '$kQuoted$kQuoted$kNext';
+    final result = await runSample(const <GalHookedLine>[
+      GalHookedLine(
+        seq: 1,
+        timestampMs: 1000,
+        text: accumulated,
+        threadId: 5,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+      GalHookedLine(
+        seq: 2,
+        timestampMs: 1010,
+        text: kNext,
+        threadId: 5,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+    ]);
+    // 症状二：新句是旧快照的后缀，被折叠进去，字幕先重复上一句再出新句。
+    expect(result.subtitle, accumulated);
+    expect(result.selectedPreview, kNext);
+    expect(result.pipeline.apply(result.selectedPreview!), isNot(accumulated));
+    expect(result.processInput, accumulated);
+    expect(result.pipeline.apply(result.processInput!), result.subtitle);
   });
 }
 
