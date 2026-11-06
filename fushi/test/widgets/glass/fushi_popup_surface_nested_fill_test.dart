@@ -27,6 +27,7 @@ void main() {
     // Hybrid Composition、查词面板恒不透明（fushiPopupBackdropSampleable）。
     TargetPlatform? platform = TargetPlatform.windows,
     FushiGlassMaterial? material,
+    bool eink = false,
   }) {
     final ThemeData data = buildFushiThemeData(
       scheme: ColorScheme.fromSeed(
@@ -38,6 +39,7 @@ void main() {
           material ??
           (glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off),
       glassDesign: glass,
+      eink: eink,
     );
     return platform == null ? data : data.copyWith(platform: platform);
   }
@@ -254,25 +256,52 @@ void main() {
       TargetPlatform.iOS,
       TargetPlatform.macOS,
     ]) {
-      for (final ({String label, bool glass, bool reduce, bool highContrast}) c
-          in <({String label, bool glass, bool reduce, bool highContrast})>[
+      for (final ({
+            String label,
+            bool glass,
+            bool reduce,
+            bool highContrast,
+            bool eink,
+          })
+          c
+          in <
+            ({
+              String label,
+              bool glass,
+              bool reduce,
+              bool highContrast,
+              bool eink,
+            })
+          >[
             (
               label: 'Apple 材质档 off',
               glass: true,
               reduce: false,
               highContrast: false,
+              eink: false,
             ),
             (
               label: 'MD3 系统降低透明度',
               glass: false,
               reduce: true,
               highContrast: false,
+              eink: false,
             ),
             (
               label: 'Apple 高对比度',
               glass: true,
               reduce: false,
               highContrast: true,
+              eink: false,
+            ),
+            // 墨水屏恒走 MD3 分支（isGlassDesignTheme 在墨水屏下为 false），选
+            // Apple 设计系统也一样。
+            (
+              label: '墨水屏',
+              glass: false,
+              reduce: false,
+              highContrast: false,
+              eink: true,
             ),
           ]) {
         testWidgets('${platform.name} ${c.label}：实底是原生视图，不是 Flutter 面板', (
@@ -288,6 +317,7 @@ void main() {
                 material: c.glass && !c.highContrast
                     ? FushiGlassMaterial.off
                     : null,
+                eink: c.eink,
               ),
               const FushiPopupSurface(
                 borderOnForeground: false,
@@ -357,15 +387,31 @@ void main() {
       TargetPlatform.iOS,
       TargetPlatform.macOS,
     ]) {
-      for (final ({String label, bool glass, FushiGlassMaterial? material}) c
-          in <({String label, bool glass, FushiGlassMaterial? material})>[
-            (label: 'Apple 系统材质', glass: true, material: null),
+      for (final ({
+            String label,
+            bool glass,
+            FushiGlassMaterial? material,
+            bool eink,
+          })
+          c
+          in <
+            ({
+              String label,
+              bool glass,
+              FushiGlassMaterial? material,
+              bool eink,
+            })
+          >[
+            (label: 'Apple 系统材质', glass: true, material: null, eink: false),
             (
               label: 'Apple 原生实底',
               glass: true,
               material: FushiGlassMaterial.off,
+              eink: false,
             ),
-            (label: 'MD3 系统材质', glass: false, material: null),
+            (label: 'MD3 系统材质', glass: false, material: null, eink: false),
+            (label: 'MD3 墨水屏原生实底', glass: false, material: null, eink: true),
+            (label: '墨水屏选 Apple 设计系统', glass: true, material: null, eink: true),
           ]) {
         testWidgets('${platform.name} ${c.label}：原生背衬是 surface 里第一个绘制的东西', (
           WidgetTester tester,
@@ -377,6 +423,7 @@ void main() {
                 brightness: Brightness.dark,
                 platform: platform,
                 material: c.material,
+                eink: c.eink,
               ),
               const FushiPopupSurface(
                 borderOnForeground: false,
@@ -407,9 +454,17 @@ void main() {
                 .skip(backdropAt)
                 .whereType<RenderCustomPaint>()
                 .any((RenderCustomPaint p) => p.painter != null),
-            isTrue,
-            reason: '外侧投影仍要画（排在原生背衬之后）',
+            !c.eink,
+            reason: c.eink ? '墨水屏不画投影' : '外侧投影仍要画（排在原生背衬之后）',
           );
+          if (c.eink) {
+            final FushiNativeMaterialBackdrop b = tester
+                .widget<FushiNativeMaterialBackdrop>(
+                  inSurface(FushiNativeMaterialBackdrop),
+                );
+            expect(b.solidColor, isNotNull, reason: '墨水屏实底由原生视图画');
+            expect(b.solidColor!.a, 1.0);
+          }
         });
       }
     }

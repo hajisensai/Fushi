@@ -6763,9 +6763,23 @@ class FushiPopupSurface extends StatelessWidget {
     // 结构恒定：两种情况都挂在同一个 Stack 槽位里，切换时 WebView 不会被拆出重挂；
     // 纯 Flutter 浮层（foreground 描边）不受影响。
     final bool md3Glass = !borderOnForeground && !eink && !standaloneWindow;
+    // iOS / macOS 墨水屏：实底同样不能由 Flutter `Material` 画——嵌套层的 Flutter
+    // 底色紧跟在父层查词 WebView（圆角裁剪）之后绘制，压在正文上的部分整块透明
+    // （反馈 hQpYQyWJNQ，见 [fushiNativePopupBackdropHostAvailable]）。改由背衬槽画
+    // 原生实色面板（墨水屏下系统材质不可用，[_ApplePopupGlassBackdrop._buildGlass]
+    // 自然落到 solidColor），颜色与墨水屏原卡面一致、不带主色淡染。
+    final bool einkNativePanel =
+        !borderOnForeground &&
+        eink &&
+        !standaloneWindow &&
+        fushiGlassOverPlatformView(context) &&
+        fushiNativePopupBackdropHostAvailable(Theme.of(context));
+    final bool backdropPanel = md3Glass || einkNativePanel;
     final Widget md3 = Material(
-      color: md3Glass ? Colors.transparent : (color ?? tokens.surfaces.card),
-      elevation: md3Glass ? 0 : (eink || elevation > 0 ? elevation : 2),
+      color: backdropPanel
+          ? Colors.transparent
+          : (color ?? tokens.surfaces.card),
+      elevation: backdropPanel ? 0 : (eink || elevation > 0 ? elevation : 2),
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: _outerRadius(tokens),
@@ -6780,13 +6794,15 @@ class FushiPopupSurface extends StatelessWidget {
     if (borderOnForeground) return md3;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return _ApplePopupGlassBackdrop(
-      enabled: md3Glass && !_panelSuppressed,
+      enabled: backdropPanel && !_panelSuppressed,
       md3: true,
       borderRadius: _outerRadius(tokens),
-      panelColor: Color.alphaBlend(
-        scheme.primary.withValues(alpha: 0.05),
-        (color ?? scheme.surfaceContainer).withValues(alpha: 1),
-      ),
+      panelColor: einkNativePanel
+          ? (color ?? tokens.surfaces.card).withValues(alpha: 1)
+          : Color.alphaBlend(
+              scheme.primary.withValues(alpha: 0.05),
+              (color ?? scheme.surfaceContainer).withValues(alpha: 1),
+            ),
       child: md3,
     );
   }
@@ -6992,15 +7008,17 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
           tint: tint,
           solidColor: solidColor,
         ),
-        IgnorePointer(
-          child: CustomPaint(
-            painter: _PopupOuterShadowPainter(
-              borderRadius: borderRadius,
-              continuousCorners: !md3,
-              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
+        // 墨水屏不画投影（灰阶抖动），与 MD3 墨水屏卡面不带 elevation 同口径。
+        if (!isEinkTheme(context))
+          IgnorePointer(
+            child: CustomPaint(
+              painter: _PopupOuterShadowPainter(
+                borderRadius: borderRadius,
+                continuousCorners: !md3,
+                color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
