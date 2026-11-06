@@ -33,16 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3767 条。点号进各自文件。
-> 共 3727 条。点号进各自文件。
+> 共 3768 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4127](bugs/BUG-4127-mihon-android-pref-save-returns-stale.md) | ✅ | ✅ | Android 上扩展源偏好点 SAVE 后 Token 丢失（偏好桥回传上一拍的旧值） |
-> 共 3729 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4168](bugs/BUG-4168-mihon-android-pref-save-returns-stale.md) | ✅ | ✅ | Android 上扩展源偏好点 SAVE 后 Token 丢失（偏好桥回传上一拍的旧值） |
 | [BUG-4167](bugs/BUG-4167-sgre-voice-pending-unpaired.md) | ✅ | ✅ | 命运石之门（SGRE）制卡音频一直「匹配中」，未配上的行仍显示 game_resource 与播放键 |
 | [BUG-4166](bugs/BUG-4166-segmented-equal-width-remaining-paths.md) | ✅ | ✅ | 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段（MD3 框架 TabBar 页签未修，反馈未收口） |
 | [BUG-4165](bugs/BUG-4165-mac-reader-cmd-c-copy.md) | ✅ | ✅ | macOS 小说阅读器选中正文后 ⌘C 无法复制 |
