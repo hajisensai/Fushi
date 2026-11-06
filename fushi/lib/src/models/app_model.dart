@@ -2016,6 +2016,7 @@ class AppModel with ChangeNotifier {
     final MusicSession session = MusicSession(
       engine: engine,
       audio: audioCtrl,
+      hasSystemMediaSession: platformServices.hasSystemMediaSession,
       audiobook: audiobookSession,
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,

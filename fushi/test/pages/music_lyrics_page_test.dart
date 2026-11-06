@@ -150,6 +150,7 @@ class _LyricsAppModel extends AppModel {
   late final MusicSession _session = MusicSession(
     engine: _engine,
     audio: audioCtrl,
+    hasSystemMediaSession: platformServices.hasSystemMediaSession,
     audiobook: audiobookSession,
     database: () => db,
     showMediaNotification: () => false,
@@ -301,6 +302,17 @@ void main() {
     // 暂停态：歌词视图不挂逐帧 Ticker，pumpAndSettle 能停下来。
     await app.musicSession.engine.pause();
   });
+
+  // 系统媒体会话判据来自平台服务（假服务 = 没有）：setUp 里已经放过一首，也不该去起
+  // audio_service——macOS 宿主上它会连带调 path_provider、在测试绑定里抛
+  // MissingPluginException。宿主平台无关：判据只看注入的平台服务。
+  test(
+    'playing music under fake platform services never starts audio_service',
+    () {
+      expect(app.platformServices.hasSystemMediaSession, isFalse);
+      expect(app.audioCtrl.audioHandler, isNull);
+    },
+  );
 
   final bool Function() asrGate = musicSubtitleAsrSupported;
 

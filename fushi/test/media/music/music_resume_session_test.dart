@@ -92,13 +92,13 @@ void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
-    MusicSession.hasSystemMediaSession = false;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     backend = _Backend();
     mode = MusicResumeMode.longTracks;
     session = MusicSession(
       engine: MusicPlayerEngine(backendFactory: () => backend),
       audio: AudioController(),
+      hasSystemMediaSession: false,
       audiobook: AudiobookSession(
         audioHandler: () => null,
         showFloatingLyric: () => false,

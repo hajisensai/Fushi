@@ -173,6 +173,7 @@ class _AppModel extends AppModel {
   late final MusicSession _session = MusicSession(
     engine: MusicPlayerEngine(backendFactory: () => backend),
     audio: audioCtrl,
+    hasSystemMediaSession: platformServices.hasSystemMediaSession,
     audiobook: audiobookSession,
     database: () => db,
     showMediaNotification: () => false,

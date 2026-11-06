@@ -62,7 +62,9 @@ class MusicSession extends ChangeNotifier {
     this.favorites,
     this.appleMusicFavorites,
     MusicResumeMode Function()? resumeMode,
+    required bool hasSystemMediaSession,
   }) : _audio = audio,
+       _hasSystemMediaSession = hasSystemMediaSession,
        _audiobook = audiobook,
        _database = database,
        _showMediaNotification = showMediaNotification,
@@ -124,10 +126,8 @@ class MusicSession extends ChangeNotifier {
   late final MusicQueueFeedRunner queueFeeds = MusicQueueFeedRunner(engine);
 
   /// audio_service 只在 Android / iOS / macOS 有平台实现（系统媒体会话 + 通知 / 锁屏
-  /// 控制）；其余平台不为音乐单独起它。测试可覆盖。
-  @visibleForTesting
-  static bool hasSystemMediaSession =
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+  /// 控制）；其余平台不为音乐单独起它。生产取 [PlatformServices.hasSystemMediaSession]。
+  final bool _hasSystemMediaSession;
   final AudiobookSession _audiobook;
   final FushiDatabase? Function() _database;
   final bool Function() _showMediaNotification;
@@ -266,7 +266,7 @@ class MusicSession extends ChangeNotifier {
     // null，_publishMediaSession 直接返回——没有锁屏 / 通知控制，桌面小组件的原生按钮也
     // 连不上会话。这里起跑同一份记忆化初始化，就绪后补发一次当前状态。只在 audio_service
     // 有平台实现（系统媒体会话）的平台上起。
-    if (hasSystemMediaSession) {
+    if (_hasSystemMediaSession) {
       unawaited(_audio.initialiseHandler().then((_) => _publishMediaSession()));
     }
     final controller = _audiobook.controller;
