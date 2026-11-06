@@ -16,6 +16,7 @@ import 'package:fushi/src/srs/srs_fushi_card_items.dart'
     show srsHtmlFragmentProbe;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveSegmentedButton;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -357,7 +358,7 @@ class _SrsFushiBlockLayoutPanelState extends State<SrsFushiBlockLayoutPanel> {
             ],
           ),
         ),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: FushiMotion.enter,
           alignment: Alignment.topCenter,
