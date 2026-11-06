@@ -102,12 +102,16 @@ void main() {
       db,
       fileExists: (String path) => !path.contains('Gone'),
       registerSource:
-          ({required String rootPath, required bool recursive}) async {
+          ({
+            required String rootPath,
+            required bool recursive,
+            required int ownerSourceId,
+          }) async {
             registered.add((rootPath: rootPath, recursive: recursive));
             await track(ost, durationMs: 9000);
             return null;
           },
-      importFile: (String path) async {
+      importFile: (String path, {bool recursive = false}) async {
         imported.add(path);
         // 曲库不认 .m4b：扫描不出曲目，行必须留在视频库。
         if (path == drama) await track(drama);
@@ -174,9 +178,13 @@ void main() {
       intake: MusicAudioIntake(
         db,
         registerSource:
-            ({required String rootPath, required bool recursive}) async =>
-                fail('no audio'),
-        importFile: (String path) async => fail('no audio'),
+            ({
+              required String rootPath,
+              required bool recursive,
+              required int ownerSourceId,
+            }) async => fail('no audio'),
+        importFile: (String path, {bool recursive = false}) async =>
+            fail('no audio'),
       ),
       fileExists: (_) => true,
     );
@@ -210,7 +218,8 @@ void main() {
           await track(song);
           return null;
         },
-        importFile: (String path) async => fail('covered, not imported once'),
+        importFile: (String path, {bool recursive = false}) async =>
+            fail('covered, not imported once'),
       ),
       fileExists: (_) => true,
     );

@@ -302,6 +302,37 @@ void main() {
   });
 
   group('lifetime holding bookkeeping', () {
+    test('a music source auto-registered by a video source (v145) borrows '
+        "the owner's grant instead of failing with no bookmark", () async {
+      final MediaSourceRow owner = await _insertLocal(
+        db,
+        root: root,
+        bookmark: 'path:$root',
+        mediaKind: 'video',
+      );
+      final int autoId = await db.insertMediaSource(
+        MediaSourcesCompanion(
+          label: const Value('Drama'),
+          mediaKind: const Value('music'),
+          transport: const Value('local'),
+          rootPath: Value('$root/Drama'),
+          createdAt: const Value(1),
+          autoOwnerSourceId: Value(owner.id),
+        ),
+      );
+      final MediaSourceRow auto = (await db.getMediaSourceById(autoId))!;
+      final SourceFolderAccess folderAccess = access(ios: true);
+
+      expect(await folderAccess.ensureSourceAccess(db, auto), isNull);
+      expect(bookmarks.startCount, 1);
+      expect(folderAccess.isActive(owner.id), isTrue);
+      // 释放跟着 owner 走：释放自动来源不停 owner 的访问。
+      await folderAccess.release(autoId);
+      expect(bookmarks.stopped, isEmpty);
+      await folderAccess.release(owner.id);
+      expect(bookmarks.stopped, <String>[root]);
+    });
+
     test('concurrent activations start once; release stops once', () async {
       final MediaSourceRow row = await _insertLocal(
         db,

@@ -147,6 +147,10 @@ enum OwnedMusicRootRetireReason {
   /// 目录里直接出现了视频（规则 2：再收会把视频当曲目收进去）。
   besideVideo,
 
+  /// 递归来源的子树里出现了视频（规则 3：递归扫会把子树里的视频 / 原盘收进去）。
+  /// 规划仍要这个根时已先改成不递归，走不到这里。
+  videoInSubtree,
+
   /// 已被别的音乐来源覆盖（用户后来加了上层手动来源，或同一视频来源新登记的上层来源）。
   covered,
 }
@@ -191,6 +195,9 @@ Map<int, OwnedMusicRootRetireReason> ownedMusicRootsToRetire({
       out[s.id] = OwnedMusicRootRetireReason.missing;
     } else if (videoDirs.contains(key(dir))) {
       out[s.id] = OwnedMusicRootRetireReason.besideVideo;
+    } else if (s.recursive &&
+        videoMediaDirs.any((String v) => ctx.isWithin(dir, ctx.normalize(v)))) {
+      out[s.id] = OwnedMusicRootRetireReason.videoInSubtree;
     } else if (covers.any(
       (({String rootPath, bool recursive, int? id}) c) =>
           c.id != s.id &&
