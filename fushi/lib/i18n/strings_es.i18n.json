@@ -3368,6 +3368,8 @@
   "game_filter_with_audio": "Con audio",
   "game_focus_continue": "Continuar",
   "game_follow_live": "Seguir en vivo",
+  "game_google_lens_disclosure_body": "When a paired device such as Fushi Lens on Steam Deck reads the screen, the captured game frame is sent to Google. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
+  "game_google_lens_disclosure_title": "Send game screenshots to Google Lens?",
   "game_health": "Estado de salud",
   "game_health_anki": "Salida a Anki",
   "game_health_audio": "Fuente de audio",
