@@ -1460,13 +1460,7 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
       query,
       kind: CorpusSourceKind.music,
     );
-    final Set<String> live = <String>{
-      for (final MusicTrackRow t in snapshot.tracks) t.trackUid,
-    };
-    return <CorpusHit>[
-      for (final CorpusHit h in hits)
-        if (live.contains(h.key)) h,
-    ];
+    return musicLyricHitsInLibrary(hits, snapshot.tracks);
   }
 
   Future<void> _openLyricHit(CorpusHit hit) async {

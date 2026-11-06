@@ -1384,6 +1384,21 @@ typedef _ServerOverviewResult = ({
   Object? error,
 });
 
+/// 歌词命中只留仍在曲库里的曲目（[CorpusHit.key] = 曲目 uid）：语料对账是异步的，刚删的
+/// 曲目可能还在索引里。
+List<CorpusHit> musicLyricHitsInLibrary(
+  List<CorpusHit> hits,
+  Iterable<MusicTrackRow> tracks,
+) {
+  final Set<String> live = <String>{
+    for (final MusicTrackRow t in tracks) t.trackUid,
+  };
+  return <CorpusHit>[
+    for (final CorpusHit h in hits)
+      if (live.contains(h.key)) h,
+  ];
+}
+
 /// 推荐页签上有搜索词时的综合结果（设计稿「示意 1」）：左「最佳匹配」、右「歌曲」前 5，下面
 /// 「专辑」「艺人」「歌单」各一行横滑。段标题右侧「全部」调 [onSeeAll] 切页签（保留搜索词）。
 /// 各插件第一页并行取（每种类型 [kMusicSearchOverviewPageSize] 条）。
