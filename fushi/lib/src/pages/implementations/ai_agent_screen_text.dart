@@ -84,8 +84,19 @@ AgentUiContext? aiAgentContextWithScreenText(
 
 /// 一场对话里「附上屏幕」的状态：截取中 / 已附上的文字与截图。
 class AiAgentScreenTextAttachment extends ChangeNotifier {
-  AiAgentScreenTextAttachment({AiAgentScreenCapture? capture})
-    : _capture = capture ?? captureScreenText;
+  /// [language] 每次截取时读一次（用户随时可能改默认内容语言），交给系统 OCR；
+  /// 只在没注入 [capture]（真截屏）时用到。
+  AiAgentScreenTextAttachment({
+    AiAgentScreenCapture? capture,
+    required String Function() language,
+  }) : _capture =
+           capture ??
+           (({bool keepImage = false, bool recognize = true}) =>
+               captureScreenText(
+                 keepImage: keepImage,
+                 recognize: recognize,
+                 language: language(),
+               ));
 
   final AiAgentScreenCapture _capture;
 
