@@ -1854,7 +1854,7 @@ class SegmentedStripMetrics {
   /// 整条轨道在各段之外多占的宽（左右内边距合计）。
   final double trackExtra;
 
-  /// Material [SegmentedButton] 系（Apple 设计系统 / Cupertino 下的分段）。
+  /// Material [SegmentedButton] 系（Apple 设计系统下的分段）。
   static const SegmentedStripMetrics material = SegmentedStripMetrics(
     labelChrome: _kSegmentHorizontalChrome,
     iconOnlyCell: _kSegmentIconOnlyWidth + _kSegmentHorizontalChrome,

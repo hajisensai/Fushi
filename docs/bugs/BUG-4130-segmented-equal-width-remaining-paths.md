@@ -1,0 +1,21 @@
+## BUG-4130 · 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段（MD3 框架 TabBar 页签未修，反馈未收口）
+- **报告**：2026-11-06（用户 App 内反馈 GaI5uPQEbF 的未收口部分：「播完...显示不全，还有好多这种地方，根本性修复」；BUG-3905 / PR #2694 只修了两条路径）
+- **真实性**：✅ 真 bug（widget 测试在基线 4c4c7505a3 上 7 条红）。PR #2694 抽出的 `fushiSegmentWidths`（`fushi/lib/src/utils/components/fushi_segment_widths.dart:22`）只接到 MD3 胶囊分段与 `FushiAppleSegmentedControl`，其余横排分段各写一份「等宽取最宽段、放不下整体等比缩窄」：
+  - MD3 `FushiSegmentedButton` → `FushiConnectedButtonGroup`：`fushi/lib/src/utils/components/glass/fushi_expressive.dart:1244-1248` `_FushiSqueezeRow(equalExtents: true)`，`_widths` 在 `:776` 取最宽段等宽、`:789` 按 `target / content` 全体缩窄（实测 620 宽下「15 分钟」被压到 62.4 < 70 折行；400 宽下每段文字只剩 18px）。连接式段两侧还各留 26px 对勾槽，缩窄时先压的是文字而不是槽。
+  - 墨水屏 `FushiSegmentedButton` 退回原生 `SegmentedButton`（`fushi_glass_toggles.dart:3842`），原生等宽（400 宽下「播完本曲」只剩 26px）。
+  - `adaptiveSegmentedButton` 在 Cupertino 设计系统但非 Apple 设计（墨水屏）下走原生 `CupertinoSlidingSegmentedControl`（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart:764`），等宽、未开 proportionalWidth。
+  - Apple 退回形态 `_buildButtonRow`（`fushi_glass_toggles.dart:3961`，多选 / 允许空选 / 竖排 / 富文本段）：撑满时 `Expanded` 等分（400 宽「播完本曲」省略号），不撑满时按自然宽 `Flex` 直接横向溢出 50px。
+- **[x] ① 已修复** — 12656220ff、bbc2fa99a7（段只钉宽不给上界高度）：
+  - 胶囊分段的私有 `_RenderPillSegmentRow` 提升为共用的 `FushiSegmentRow` / `RenderFushiSegmentRow`（`fushi_segment_widths.dart`，支持段间缝、撑满、紧约束、RTL、固有尺寸、同高），胶囊分段、连接式按钮组、Apple 退回形态横排都经它排布，分宽全部来自 `fushiSegmentWidths`。
+  - 连接式按钮组：对勾槽作为 `extras`（`extrasInIntrinsic`），段内容改为 `_CheckSlotRow`——宽度不够时先对称收两槽（对勾裁在槽内），文字保持单行自然宽，槽收完才压文字折行。`_FushiSqueezeRow` 删掉 `equalExtents`，只剩标准按钮组的按压挤压。
+  - 墨水屏不再退回原生 `SegmentedButton`，统一走连接式按钮组（主题 `segmentedButtonTheme` 的反色填充照用，组给每段补 `outline` 描边表达段边界）。
+  - `adaptiveSegmentedButton` 非 Apple 设计一律胶囊分段（`adaptiveSegmentedUsesPill` = `!isGlassDesign`，分段条估宽同一判据），删掉 `CupertinoSlidingSegmentedControl` 分支。
+  - Apple 退回形态横排：段内边距 12 → 最小 6 作为 `extras`，走 `FushiSegmentRow`（竖排仍 `Flex`）。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/fushi_segment_widths_all_paths_test.dart`（MD3 连接式 620 / 400、墨水屏 620 / 400、Apple 退回形态撑满 / 宽松宿主、Cupertino + 墨水屏的 `adaptiveSegmentedButton`，用睡眠定时五段文案断言每段不省略、宽 ≥ 单行自然宽、单行高；外加连接式放得下等宽、撑满等分；改前 7 红、改后全绿）；守卫 `fushi/test/build/segmented_button_m3e_guard_test.dart`「segment widths come from the single shared allocator」：lib/src 禁止 `Cupertino(Sliding)SegmentedControl`、禁止 `List<double>.filled(…widest` / `equalExtents` 这类另起的等宽缩窄实现，并要求三处分段实现都接 `FushiSegmentRow` / `fushiSegmentWidths`；原生 `SegmentedButton` 豁免收窄到胶囊分段子类一处。
+- **[x] 审查补漏（PR #2987）** — 3fee8eef25、b1e8fa4405：
+  - 漫画取景分段 `MangaCropChoiceSegments`（`fushi/lib/src/mining/advanced_mining/advanced_mining_manga_panels.dart`）原为 `Row` + `Expanded` 等分 + 每段 `FittedBox` 缩小，短段空着时最长段字号被单独缩小；改为 `FushiSegmentRow(fill: true)`，段内边距 16 → 最小 6 作为 `extras`，只有所有退让用尽才由 `FittedBox` 缩字号（固定高底栏不折行）。
+  - Apple 分段式页签 `_FushiGlassTabBar` 铺满档（`fushi/lib/src/utils/components/glass/fushi_glass_bars.dart`）原为 `Expanded` 等分 + 单行省略号；改为 `FushiSegmentRow(fill: true)`，默认页签内边距 12 → 最小 4 作为 `extras`。
+  - 守卫新增：循环生成的 `Expanded(child: segment…/tab…(` 等分行、使用胶囊分段选中色却不接 `FushiSegmentRow` 的自绘分段，都判红（守卫内置样例自检；对改前代码实测报出这两处）。测试新增 Apple 页签铺满 440 宽完整单行 / 放得下等宽撑满、漫画取景分段 600 宽原字号单行撑满（对改前代码实测 2 红）。
+  - **未修**：MD3 `FushiTabBar` 分段页签（`_FushiM3eSegmentedTabs` 与 `track: false` 的分段形态）用框架 `TabBar` 的非滚动铺满档，框架在 `material_ui` 1.10.0 `tabs.dart:2180-2181` 把每个页签包 `Expanded` 等分，`TabBar` 不提供按内容分宽的入口；要根治只能把 MD3 分段页签从框架 `TabBar` 换成自绘（会丢掉框架自带的焦点 / 横滑跟手 / elastic 指示器，并推翻 `fushi_glass_bars.dart` 里「MD3 用框架 TabBar」的既定设计与 `fushi_glass_overlays_test.dart`「MD3 is the Material TabBar」），属方案取舍，留待拍板。
+  - **因此反馈 GaI5uPQEbF 不能据本 PR 结单**：Android 默认 MD3 设计下 `FushiTabBar` 的非滚动页签（种子详情四页签、galgame 详情三页签、视频刮削对话框三页签等未自行判宽的调用点）最长页签仍会先显示不全；`library_section_tabs` 自己先判「等分放得下」才用铺满档，不受影响。守卫 `segmented_button_m3e_guard_test.dart`「framework TabBar (equal-split fill) stays confined to FushiTabBar」把框架 `TabBar` 钉死在 `fushi_glass_bars.dart` 这一处已知豁免（4 处构造），别处新写判红，换成自绘后须同步删豁免。
+- **备注**：未真机 / 模拟器截图复测，布局几何由 widget 测试验证。墨水屏分段观感从原生描边分段换成连接式按钮组 + outline 描边（反色选中不变），未在墨水屏设备上目测。
