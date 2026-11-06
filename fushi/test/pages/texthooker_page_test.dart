@@ -9,6 +9,7 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -624,6 +625,72 @@ void main() {
       }
     });
   }
+
+  // BUG-4127（反馈 3drXfc4GFk）：还在「匹配中」的行没有任何资源字节。即使它带着
+  // backend=game_resource（修复前的待配对写法 / 折叠进来的旧事件），「本句音轨」面板
+  // 也必须报状态「Matching」，不能报 game_resource；资源弹窗（带播放键）只给真配上
+  // 原件的行。
+  test('BUG-4127 only a paired game resource counts as resource audio', () {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry line = service.appendLine('配対待ち')!;
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.pending,
+      backend: 'game_resource',
+    );
+    TexthookerLineEntry row = service.entries.single;
+    expect(texthookerLineHasResourceAudio(row), isFalse);
+    expect(texthookerLineAudioSummary(row), 'Matching');
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.missing,
+      backend: 'game_resource',
+    );
+    row = service.entries.single;
+    expect(texthookerLineHasResourceAudio(row), isFalse);
+    expect(texthookerLineAudioSummary(row), isNot('game_resource'));
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'game_resource',
+      resourceId: '50000_fushi_textseq42_sgre-voicebody-1-2-3-4.xwma',
+    );
+    row = service.entries.single;
+    expect(texthookerLineHasResourceAudio(row), isTrue);
+    expect(texthookerLineAudioSummary(row), 'game_resource');
+  });
+
+  testWidgets('BUG-4127 pending line panel shows Matching, not game_resource', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+      'まだ配対されていない台詞',
+    )!;
+    TexthookerService.instance.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.pending,
+      backend: 'game_resource',
+    );
+    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    await tester.pump();
+    await _selectFirstLine(tester);
+
+    final Finder pane = find.byKey(
+      const ValueKey<String>('game-line-detail-pane'),
+    );
+    expect(pane, findsOneWidget);
+    expect(
+      find.descendant(of: pane, matching: find.text('Matching')),
+      findsWidgets,
+    );
+    expect(find.text('game_resource'), findsNothing);
+    // 没有音频的行不给行内试听键。
+    expect(find.byTooltip("Play this line's audio"), findsNothing);
+  });
 
   testWidgets('empty workbench offers the next step instead of a dead end', (
     WidgetTester tester,

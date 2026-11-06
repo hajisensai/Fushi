@@ -272,7 +272,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
-    if (line.audioBackend == 'game_resource') {
+    if (texthookerLineHasResourceAudio(line)) {
+      // BUG-4127：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
+      // 行没有任何资源字节，弹这个带播放键的窗口只会让用户点了没声音。
       // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
       // -1.0、"这句时刻没有声音"）。列 PCM 轨只会被读成「音频没抓到」，所以这里
       // 只展示本句真正的资源音频并给试听；文案与右侧面板
@@ -3668,9 +3670,8 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     const SizedBox(height: 10),
                     _MetadataRow(
                       label: t.game_health_audio,
-                      value:
-                          line.audioBackend ??
-                          texthookerLineAudioStatusLabel(line.audioStatus),
+                      // BUG-4127：匹配中 / 未匹配的行报状态，不报 backend。
+                      value: texthookerLineAudioSummary(line),
                     ),
                     if (line.audioDurationMs != null)
                       _MetadataRow(
@@ -3819,8 +3820,7 @@ class _SelectedLineBar extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    line.audioBackend ??
-                        texthookerLineAudioStatusLabel(line.audioStatus),
+                    texthookerLineAudioSummary(line),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -4293,13 +4293,16 @@ class _TexthookerLine extends ConsumerWidget {
             colors: colors,
             onCharTap: onCharTap,
           ),
-          if (line.audioBackend != null ||
+          // BUG-4127：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
+          // 不报来源（否则一句还没配上的台词会顶着 game_resource 字样）。
+          if ((line.hasAudio && line.audioBackend != null) ||
               line.audioResourceId != null ||
               line.fallbackReason != null) ...<Widget>[
             const SizedBox(height: 6),
             Text(
               <String>[
-                if (line.audioBackend != null) line.audioBackend!,
+                if (line.hasAudio && line.audioBackend != null)
+                  line.audioBackend!,
                 if (line.audioResourceId != null) line.audioResourceId!,
                 if (line.audioDurationMs != null)
                   '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',

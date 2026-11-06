@@ -5735,10 +5735,14 @@ class GalHookSessionController extends ChangeNotifier {
             eventOwnedOnly: line.eventOwnedVoice,
           );
           _trimCache(_pendingResourceMatches);
+          // BUG-4127：还没配上的行不是 game_resource——backend 只在真的拿到资源
+          // （有 resourceId）时才写。以前这里先写了 backend，UI 就凭它弹出带播放键的
+          // 资源弹窗、面板显示 game_resource，点了却没有声音。折叠进来的行若还带着
+          // 上一条事件的 resourceId，也一并清掉：那个资源属于旧事件。
           _textService.updateLineAudio(
             entry.id,
             status: TexthookerLineAudioStatus.pending,
-            backend: 'game_resource',
+            clearResourceId: true,
           );
         }
         // BUG-1063：台词已进缓冲、UI 已被通知；余下的语音抓取（PCM 拷贝、loopback
@@ -6394,6 +6398,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {
     if (!engine.rawVoiceReady || _pendingResourceMatches.isEmpty) return;
+    // 本会话见过的最新一句的 hook 时刻（与资源 tick 同一 GetTickCount64 时钟）。
+    final int newestLineTs = _lineTimestampCache.values.fold<int>(
+      0,
+      (int newest, int ts) => ts > newest ? ts : newest,
+    );
     final List<String> matched = <String>[];
     for (final MapEntry<
           String,
@@ -6422,7 +6431,23 @@ class GalHookSessionController extends ChangeNotifier {
               pending.value.timestampMs,
               textEventId: pending.value.textEventId,
             );
-      if (resourceId == null) continue;
+      if (resourceId == null) {
+        // BUG-4127：「匹配中」必须有终态。后面已经有一句开始的时刻超出本句的配对
+        // 容差（带标资源 ±[kGalVoicePairingWindowMs]，无标记窗更窄），说明播放已经
+        // 走过了这句的配对范围，再等也只是一直显示「匹配中」（无配音的旁白句在资源
+        // 模式下尤其如此）。只把行状态收束成 missing，不撤出待匹配集合：资源晚落盘
+        // 时下一轮仍会把它升格成 matched，制卡路径也照旧按时间戳去找原件。
+        if (row?.audioStatus == TexthookerLineAudioStatus.pending &&
+            newestLineTs - pending.value.timestampMs >
+                kGalVoicePairingWindowMs) {
+          _textService.updateLineAudio(
+            pending.key,
+            status: TexthookerLineAudioStatus.missing,
+            fallbackReason: 'game_resource_not_paired',
+          );
+        }
+        continue;
+      }
       _textService.updateLineAudio(
         pending.key,
         status: TexthookerLineAudioStatus.matched,
