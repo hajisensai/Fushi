@@ -170,6 +170,7 @@ class _LyricsAppModel extends AppModel {
     service: _lyrics,
     desktop: _NoDesktop(),
     desktopEnabled: () => false,
+    desktopSpan: () => (before: 0, after: 1),
     mediaSessionEnabled: () => false,
     sessionOwnerChanged: audioCtrl.sessionOwner,
     musicOwnsSession: () => true,
