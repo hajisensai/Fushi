@@ -499,9 +499,12 @@ abstract final class MangaArchiveImporter {
           epubExtraction = await Directory.systemTemp.createTemp(
             'fushi_manga_epub_',
           );
+          // BUG-3845：SVG 内容文档作 spine 的固定版式漫画也要收成页（与
+          // [_looksLikeImageEpub] 同一解析口径，判得成就导得进）。
           final EpubBook book = EpubParser.parseSyncFromPath(
             archivePath,
             epubExtraction.path,
+            includeSvgSpineDocuments: true,
           );
           final String? rejection = _pureImageEpubRejection(book);
           if (rejection != null) {
@@ -883,9 +886,12 @@ abstract final class MangaArchiveImporter {
       extraction = Directory.systemTemp.createTempSync(
         'fushi_manga_epub_probe_',
       );
+      // BUG-3845：spine 直接是 SVG 内容文档（每页 `<svg><image>`）的漫画，默认
+      // 书籍口径会把每项都跳过、整本 0 章；漫画只取页图，SVG 项照收。
       final EpubBook book = EpubParser.parseSyncFromPath(
         archivePath,
         extraction.path,
+        includeSvgSpineDocuments: true,
       );
       final String? rejection = _pureImageEpubRejection(book);
       if (rejection != null) _logEpubRejection(archivePath, rejection);
