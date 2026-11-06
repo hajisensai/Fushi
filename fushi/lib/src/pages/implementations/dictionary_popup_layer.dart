@@ -477,6 +477,15 @@ class _LookupOwnerRouteProbeState extends State<LookupOwnerRouteProbe> {
   Widget build(BuildContext context) => widget.child;
 }
 
+/// 反馈 vXYKPudf7U：查词浮层空态标题。知道查的是哪个词就写进去（「没有找到「BEENSO」的
+/// 结果」一眼暴露取词出错），查询词为空（纯符号被清洗掉）退回通用文案。
+String dictionaryPopupNoResultsMessage(String? searchTerm) {
+  final String term = searchTerm?.trim() ?? '';
+  return term.isEmpty
+      ? t.no_search_results
+      : t.dictionary_popup_no_results_term(term: term);
+}
+
 /// 查词浮层的整屏 dismiss barrier（点浮层外面关栈）这一帧要不要挂。
 ///
 /// 三个走**根 Overlay** 的表面（视频页 / 首页词典页 / texthooker）各写一份这条件，
@@ -2255,11 +2264,13 @@ class DictionaryPopupLayer extends StatelessWidget {
     // （[FushiPlaceholderMessage] 同一实现，带弹入动效）。宿主把空结果层收成
     // `kLookupPopupEmptyHeight`（见 DictionaryPopupEntry.layoutAutoFitHeight），不再
     // 是一整块最大高度的空面板。
+    // 反馈 vXYKPudf7U：空态写明查的是哪个词——取词结果和读者以为点中的词对不上
+    // （漫画 OCR 粘词、点到词中间）时，一眼能看出问题在取词而不在词典。
     return Center(
       child: SingleChildScrollView(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
-          message: t.no_search_results,
+          message: dictionaryPopupNoResultsMessage(result?.searchTerm),
           detail: t.settings_search_empty_hint,
         ),
       ),

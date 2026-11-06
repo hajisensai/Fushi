@@ -234,13 +234,16 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
     indices.sort(
       (int a, int b) => _compareMangaBlockReadingOrder(blocks[a], blocks[b]),
     );
-    final String sentence = indices
-        .where((int index) => !rubyBlocks.contains(index))
-        .map((int index) => _mangaBlockText(blocks[index]))
-        .join();
+    final String sentence = mangaJoinOcrText(
+      indices
+          .where((int index) => !rubyBlocks.contains(index))
+          .map((int index) => _mangaBlockText(blocks[index])),
+    );
     final String fallback = sentence.isNotEmpty
         ? sentence
-        : indices.map((int index) => _mangaBlockText(blocks[index])).join();
+        : mangaJoinOcrText(
+            indices.map((int index) => _mangaBlockText(blocks[index])),
+          );
     for (final int index in indices) {
       result[index] = (group: groupIndex, sentence: fallback);
     }
@@ -249,7 +252,49 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
   return result.cast<({int group, String sentence})>();
 }
 
-String _mangaBlockText(MokuroBlock block) => block.lines.join();
+String _mangaBlockText(MokuroBlock block) => mangaJoinOcrText(block.lines);
+
+/// 空格分词脚本（拉丁 / 希腊 / 西里尔 / 亚美尼亚 / 希伯来 / 阿拉伯 / 格鲁吉亚）的字母或
+/// ASCII 数字。与 `native/fushidicts/fushidicts_src/scan/word_scan.cpp` 的
+/// `is_space_delimited_letter` 同一组脚本：引擎不在两个这类字母之间切词。
+final RegExp _mangaSpaceDelimitedWordChar = RegExp(
+  r'^[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}'
+  r'\p{Script=Armenian}\p{Script=Hebrew}\p{Script=Arabic}'
+  r'\p{Script=Georgian}0-9]',
+  unicode: true,
+);
+
+/// 拉丁文句内标点（逗号、句号、右引号 / 右括号……）后面紧接下一行的词时同样隔一个空格。
+final RegExp _mangaWordGapPunctuation = RegExp(r"""^[.,!?;:…'"’”)\]]$""");
+
+/// 反馈 vXYKPudf7U：OCR 文本 [before] 与 [after] 相接处（换行 / 相邻文本块）是否是一个
+/// 词间空格。OCR 的 `lines` 按行给、行尾不带空格；日文直接拼接无缝，拉丁文却是「行尾词 +
+/// 行首词」——不补空格就把 `SO` / `LONG` 粘成 `SOLONG`，引擎（[_mangaSpaceDelimitedWordChar]
+/// 那组脚本不在词中切）整串查不到。断字连字符（`LET-` / `TER`）不补。
+@visibleForTesting
+bool mangaOcrNeedsWordGap(String before, String after) {
+  if (before.isEmpty || after.isEmpty) return false;
+  final String last = before.characters.last;
+  final String first = after.characters.first;
+  if (!_mangaSpaceDelimitedWordChar.hasMatch(first)) return false;
+  return _mangaSpaceDelimitedWordChar.hasMatch(last) ||
+      _mangaWordGapPunctuation.hasMatch(last);
+}
+
+/// 把 OCR 文本片段（一个块的各行 / 一句话的各块）按阅读顺序拼成一句：拉丁文行界补词间
+/// 空格（[mangaOcrNeedsWordGap]），日文照旧无缝拼接。
+@visibleForTesting
+String mangaJoinOcrText(Iterable<String> parts) {
+  final StringBuffer buffer = StringBuffer();
+  String previous = '';
+  for (final String part in parts) {
+    if (part.isEmpty) continue;
+    if (mangaOcrNeedsWordGap(previous, part)) buffer.write(' ');
+    buffer.write(part);
+    previous = part;
+  }
+  return buffer.toString();
+}
 
 bool _mangaKanaOnly(String text) =>
     text.isNotEmpty &&
@@ -588,9 +633,34 @@ String _mangaCharacterRegionsHtml({
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
+  // 各行在 [sentence] 里的分界（UTF-16）：行与行直接拼接，行尾不带空格。
+  final List<int> lineBreaks = <int>[];
+  int lineEnd = 0;
+  for (int i = 0; i < block.lines.length - 1; i++) {
+    lineEnd += block.lines[i].length;
+    lineBreaks.add(lineEnd);
+  }
+  int? previousEnd;
   // [regions] comes from [mangaEffectiveTextRegions]: every range is already
   // known to lie inside the sentence, so nothing is filtered here.
   for (final MangaOcrTextRegion region in regions) {
+    // 反馈 vXYKPudf7U：区域只覆盖可见字，词间空格与换行不在任何区域里——原样逐字输出
+    // 会让 DOM 正文成为 `BEENSOLONGSINCE…`，取词一路扫过词界，拉丁文整串查不到。
+    // 两个区域之间夹着空白或拉丁文行界时，补一个纯空白文本节点：阅读器取词脚本把它
+    // 当词界（BUG-3453 的 hasSkippedWhitespaceBetween），且它在两个绝对定位的字格之间
+    // 按 CSS 空白折叠不占版面、不成命中区。
+    final int? gapStart = previousEnd;
+    if (gapStart != null &&
+        region.utf16Start >= gapStart &&
+        _mangaRegionsHaveWordGap(
+          sentence,
+          gapStart,
+          region.utf16Start,
+          lineBreaks,
+        )) {
+      buffer.write(' ');
+    }
+    previousEnd = region.utf16End;
     final MokuroRect r = region.rectangle;
     final double leftPct = ((r.left - parent.left) / parentWidth) * 100;
     final double topPct = ((r.top - parent.top) / parentHeight) * 100;
@@ -615,6 +685,32 @@ String _mangaCharacterRegionsHtml({
     );
   }
   return buffer.toString();
+}
+
+final RegExp _mangaWhitespace = RegExp(r'\s');
+
+/// [sentence] 里相邻两个字格区域之间（`[start, end)`）是否有词界：夹着空白，或跨过一个
+/// 拉丁文行界（[mangaOcrNeedsWordGap]）。
+bool _mangaRegionsHaveWordGap(
+  String sentence,
+  int start,
+  int end,
+  List<int> lineBreaks,
+) {
+  if (_mangaWhitespace.hasMatch(sentence.substring(start, end))) {
+    return true;
+  }
+  for (final int lineBreak in lineBreaks) {
+    if (lineBreak >= start &&
+        lineBreak <= end &&
+        mangaOcrNeedsWordGap(
+          sentence.substring(0, lineBreak),
+          sentence.substring(lineBreak),
+        )) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// 一整页：底图 `<img pointer-events:none>` + 上层 OCR 框。
