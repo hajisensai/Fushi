@@ -1135,12 +1135,13 @@ class LibraryScanner {
     return report;
   }
 
-  /// 视频根收录的文件：视频容器 + 纯音频（无画面的视频，见
-  /// [kVideoLibraryMediaExtensions]）。与对账枚举 `enumerateLocalVideoPaths`
-  /// 同一张表，否则收进来的音频会在下一次对账被当成「磁盘上已不存在」修剪掉。
+  /// 视频根收录的文件：只收视频容器（[kVideoExtensions]）。纯音频不进视频库
+  /// （反馈 QAondMh4M5，判据见 [isAudioOnlyMediaPath] 文档）；服务端暂无音乐库
+  /// （`server_config.dart`），视频根里的纯音频不入库。与对账枚举
+  /// `enumerateLocalVideoPaths` 同一张表。
   static bool _isVideo(String path) {
     final String ext = p.extension(path).toLowerCase();
-    return kVideoLibraryMediaExtensions.contains(ext);
+    return kVideoExtensions.contains(ext);
   }
 }
 

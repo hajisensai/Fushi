@@ -65,6 +65,12 @@ const Set<String> kVideoExtensions = <String>{
 /// 与 [kVideoExtensions] 两两不相交：`.mp4` 虽然也可能只装音轨，但它首先是视频
 /// 容器，归视频。= `AudiobookStorage.audioExtensions` 去掉 `.mp4`（守卫测试钉死
 /// 同步；本文件零依赖，不能直接引用那张表）。
+///
+/// **纯音频不进视频库**（用户 2026-11-06 拍板，反馈 QAondMh4M5：广播剧 CD 的
+/// mp3 / flac 出现在视频库）：视频库的入库与对账（来源扫描、拖放、服务端扫描 /
+/// 对账枚举）只认 [kVideoExtensions]；视频来源里扫到的纯音频交给音乐库
+/// （`fushi/lib/src/media/music/music_audio_intake.dart`）。「是不是纯音频」全仓
+/// 只经 [isAudioOnlyMediaPath] 判，各入口不另抄一份。
 const Set<String> kAudioExtensions = <String>{
   '.mp3',
   '.m4a',
@@ -79,17 +85,6 @@ const Set<String> kAudioExtensions = <String>{
   '.eac3',
   '.aiff',
   '.aif',
-};
-
-/// 视频库能收录的本地媒体文件扩展名 = [kVideoExtensions] ∪ [kAudioExtensions]。
-///
-/// 纯音频按「没有画面、没有字幕的视频」进视频库：同一个播放器（libmpv）、同一套
-/// 进度 / 合集 / 字幕挂载 / ASR 转录。只用于**入库与库对账**（来源扫描、拖放、
-/// 服务端扫描 / 修剪）；torrent 选片、刮削剥扩展名等「这是一集视频」的判据仍用
-/// [kVideoExtensions]，不因此把 OST 曲目当成剧集。
-const Set<String> kVideoLibraryMediaExtensions = <String>{
-  ...kVideoExtensions,
-  ...kAudioExtensions,
 };
 
 /// 纯函数：[path] 是否是纯音频文件（按扩展名，大小写不敏感，不碰文件系统）。

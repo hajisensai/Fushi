@@ -52,9 +52,10 @@ Future<Set<String>> enumerateLocalVideoPaths(
     followLinks: false,
   )) {
     if (e is! File) continue;
-    // 与服务端视频根扫描收录同一张表（视频 + 纯音频）：少一个格式，该格式的
-    // 在库行就会被当成「磁盘上已不存在」修剪掉。
-    if (!kVideoLibraryMediaExtensions.contains(
+    // 与服务端视频根扫描收录同一张表（[kVideoExtensions]；纯音频不进视频库，
+    // 归音乐库）。旧版按「无画面视频」收进来的音频行不在枚举里，但
+    // [selectStaleVideoRows] 还要文件真不存在才判失效，文件在就不会被修剪。
+    if (!kVideoExtensions.contains(
       p.extension(e.path).toLowerCase(),
     )) {
       continue;

@@ -1,4 +1,5 @@
-// 纯音频按「无画面的视频」进视频库：封面兜底（同目录专辑封面）与库对账枚举。
+// 纯音频的封面兜底（同目录专辑封面，旧版存量音频行与网络音频流仍用）与库对账枚举
+// （纯音频不进视频库，反馈 QAondMh4M5）。
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/external_video.dart'
@@ -65,19 +66,16 @@ void main() {
   });
 
   test(
-    'library reconcile enumerates audio tracks (else they get pruned)',
+    'library reconcile enumerates only videos: audio is not video library media',
     () async {
-      final File track = writeTrack('01.flac');
+      writeTrack('01.flac');
       final File mkv = File(p.join(tmp.path, 'ep01.mkv'))
         ..writeAsStringSync('x');
       File(p.join(tmp.path, 'cover.jpg')).writeAsStringSync('x');
 
       final Set<String> found = await enumerateLocalVideoPaths(tmp);
 
-      expect(found, <String>{
-        normalizeVideoPath(track.path),
-        normalizeVideoPath(mkv.path),
-      });
+      expect(found, <String>{normalizeVideoPath(mkv.path)});
     },
   );
 }
