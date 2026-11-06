@@ -639,6 +639,52 @@ void main() {
       );
     }
 
+    test(
+      'video source rescan with no audio left still reconciles: the music '
+      'source it registered for a deleted folder is retired (v145)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        Directory(p.join(tmp.path, 'Show')).createSync();
+        File(p.join(tmp.path, 'Show', 'ep01.mp4')).writeAsStringSync('fake');
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Vids',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        // 以前扫到的广播剧目录（已被用户删掉）自动登记的音乐来源。
+        final int auto = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Drama CD',
+            mediaKind: 'music',
+            rootPath: normalizeSourceRootPath(
+              p.join(tmp.path, 'Drama CD'),
+              transport: 'local',
+            ),
+            createdAt: 1000,
+            autoOwnerSourceId: Value<int?>(sid),
+          ),
+        );
+        final List<Set<int>> retired = <Set<int>>[];
+
+        final SourceScanSummary summary = await SourceLibraryScanner(
+          db,
+          musicAudioIntake: MusicAudioIntake(
+            db,
+            retireSources: (Set<int> ids) async => retired.add(ids),
+          ),
+        ).scan((await db.getMediaSourceById(sid))!);
+
+        expect(summary.error, isNull);
+        expect(retired, <Set<int>>[
+          <int>{auto},
+        ]);
+      },
+    );
+
     test('video source: pure audio goes to the music library, not the video '
         'library (QAondMh4M5)', () async {
       final FushiDatabase db = _memDb();
@@ -669,7 +715,11 @@ void main() {
         musicAudioIntake: MusicAudioIntake(
           db,
           registerSource:
-              ({required String rootPath, required bool recursive}) async {
+              ({
+                required String rootPath,
+                required bool recursive,
+                required int ownerSourceId,
+              }) async {
                 registered.add((rootPath: rootPath, recursive: recursive));
                 return null;
               },
@@ -777,7 +827,11 @@ void main() {
         musicAudioIntake: MusicAudioIntake(
           db,
           registerSource:
-              ({required String rootPath, required bool recursive}) async {
+              ({
+                required String rootPath,
+                required bool recursive,
+                required int ownerSourceId,
+              }) async {
                 registered.add((rootPath: rootPath, recursive: recursive));
                 return null;
               },

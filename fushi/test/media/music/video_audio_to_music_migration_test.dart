@@ -28,6 +28,7 @@ void main() {
     int? lastPlayedAt,
     int lastPositionMs = 0,
     DateTime? completedAt,
+    String? subtitleSource,
   }) => repo.saveVideoBook(
     VideoBooksCompanion(
       bookUid: Value<String>(uid),
@@ -38,8 +39,12 @@ void main() {
       lastPlayedAt: Value<int?>(lastPlayedAt),
       lastPositionMs: Value<int>(lastPositionMs),
       completedAt: Value<DateTime?>(completedAt),
+      subtitleSource: Value<String?>(subtitleSource),
     ),
   );
+
+  Future<void> noSubtitle(MusicTrackRow t, String path) async =>
+      fail('no subtitle expected: $path');
 
   /// 音乐扫描替身：把路径写成在库曲目（Rust 拼法：正斜杠根 + 平台分隔符）。
   Future<void> track(String path, {int? durationMs}) => db
@@ -125,12 +130,16 @@ void main() {
       db,
       fileExists: (String path) => !path.contains('Gone'),
       registerSource:
-          ({required String rootPath, required bool recursive}) async {
+          ({
+            required String rootPath,
+            required bool recursive,
+            required int ownerSourceId,
+          }) async {
             registered.add((rootPath: rootPath, recursive: recursive));
             await track(ost, durationMs: 9000);
             return null;
           },
-      importFile: (String path) async {
+      importFile: (String path, {bool recursive = false}) async {
         imported.add(path);
         // 坏文件：扫描不出曲目，行必须留在视频库。
         if (path == drama) await track(drama);
@@ -144,6 +153,7 @@ void main() {
           db,
           intake: intake,
           fileExists: (String path) => !path.contains('Gone'),
+          adoptSubtitle: noSubtitle,
         );
 
     expect(registered, <({String rootPath, bool recursive})>[
@@ -183,6 +193,7 @@ void main() {
           db,
           intake: intake,
           fileExists: (String path) => !path.contains('Gone'),
+          adoptSubtitle: noSubtitle,
         );
     expect(second.candidates, 1);
     expect(second.migrated, 0);
@@ -197,11 +208,16 @@ void main() {
       intake: MusicAudioIntake(
         db,
         registerSource:
-            ({required String rootPath, required bool recursive}) async =>
-                fail('no audio'),
-        importFile: (String path) async => fail('no audio'),
+            ({
+              required String rootPath,
+              required bool recursive,
+              required int ownerSourceId,
+            }) async => fail('no audio'),
+        importFile: (String path, {bool recursive = false}) async =>
+            fail('no audio'),
       ),
       fileExists: (_) => true,
+      adoptSubtitle: noSubtitle,
     );
     expect(r.candidates, 0);
     expect(await videoUids(), <String>['v/ep01']);
@@ -233,9 +249,11 @@ void main() {
           await track(song);
           return null;
         },
-        importFile: (String path) async => fail('covered, not imported once'),
+        importFile: (String path, {bool recursive = false}) async =>
+            fail('covered, not imported once'),
       ),
       fileExists: (_) => true,
+      adoptSubtitle: noSubtitle,
     );
     expect(rescanned, <int>[mid]);
     expect(r.migrated, 1);
@@ -259,7 +277,7 @@ void main() {
     final MusicAudioIntake intake = MusicAudioIntake(
       db,
       fileExists: (_) => true,
-      importFile: (String path) async {
+      importFile: (String path, {bool recursive = false}) async {
         if (path == book || path == done) {
           final String tag = p.basenameWithoutExtension(path);
           await segment(
@@ -288,6 +306,7 @@ void main() {
       db,
       intake: intake,
       fileExists: (_) => true,
+      adoptSubtitle: noSubtitle,
     );
     expect(r.migrated, 3);
     expect(await videoUids(), isEmpty);
@@ -310,6 +329,75 @@ void main() {
         ('done-3', 10000, true),
       ],
     );
+  });
+
+  test('attached subtitle (ASR transcript) is carried to the music lyrics '
+      'before the row is deleted; a subtitle that cannot be carried keeps '
+      'the row', () async {
+    final String a = at(<String>['Drama', 'a.mp3']);
+    final String b = at(<String>['Drama', 'b.mp3']);
+    final String subA = at(<String>['app', 'video_subtitles', 'speech-a.srt']);
+    final String subB = at(<String>['app', 'video_subtitles', 'speech-b.srt']);
+    await video('v/a', a, subtitleSource: subA);
+    await video('v/b', b, subtitleSource: subB);
+    final List<(String, String)> adopted = <(String, String)>[];
+    Future<void> adopt(MusicTrackRow t, String path) async {
+      if (path == subB) throw StateError('parse failed');
+      adopted.add((t.path, path));
+    }
+
+    final MusicAudioIntake intake = MusicAudioIntake(
+      db,
+      fileExists: (_) => true,
+      importFile: (String path, {bool recursive = false}) async {
+        await track(path);
+        return null;
+      },
+    );
+    final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
+      db,
+      intake: intake,
+      fileExists: (_) => true,
+      adoptSubtitle: adopt,
+    );
+    expect(adopted.map(((String, String) e) => e.$2), <String>[subA]);
+    expect(r.migrated, 1);
+    expect(r.errors.single, contains(subB));
+    expect(await videoUids(), <String>['v/b']);
+  });
+
+  test('a subtitle on a file split into chapters goes to the first chapter '
+      '(its timeline starts at the file head)', () async {
+    final String book = at(<String>['Books', 'novel.m4b']);
+    final String sub = at(<String>['app', 'video_subtitles', 'novel.srt']);
+    await video('v/book', book, subtitleSource: sub, lastPositionMs: 75000);
+    final List<String> adoptedUids = <String>[];
+    final MusicAudioIntake intake = MusicAudioIntake(
+      db,
+      fileExists: (_) => true,
+      importFile: (String path, {bool recursive = false}) async {
+        // 故意倒序落库：挂哪一首不能依赖插入顺序。
+        await segment(path, 'novel-2', startMs: 60000, durationMs: 30000);
+        await segment(
+          path,
+          'novel-1',
+          startMs: 0,
+          endMs: 60000,
+          durationMs: 60000,
+        );
+        return null;
+      },
+    );
+    final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
+      db,
+      intake: intake,
+      fileExists: (_) => true,
+      adoptSubtitle: (MusicTrackRow t, String path) async =>
+          adoptedUids.add(t.trackUid),
+    );
+    expect(r.migrated, 1);
+    expect(adoptedUids, <String>['novel-1']);
+    expect(await videoUids(), isEmpty);
   });
 
   group('pickMigratedTrack', () {

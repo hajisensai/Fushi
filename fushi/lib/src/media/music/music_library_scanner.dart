@@ -209,10 +209,14 @@ class MusicLibraryScanner {
               in known)
             k.path: (mtimeMs: k.mtimeAt, size: k.size),
         };
+    // Rust 把「没变」的文件按它的统一拼法报回来，库里存的可能是旧版本的混合分隔符
+    // 写法：按路径键（[musicTrackPathKey]）对，不按原文对，否则没变的曲目全被当成消失。
     final Map<String, List<String>> uidsByPath = <String, List<String>>{};
     for (final ({String path, int mtimeAt, int size, String trackUid}) k
         in known) {
-      uidsByPath.putIfAbsent(k.path, () => <String>[]).add(k.trackUid);
+      uidsByPath
+          .putIfAbsent(musicTrackPathKey(k.path), () => <String>[])
+          .add(k.trackUid);
     }
 
     final Set<String> seen = <String>{};
@@ -230,19 +234,24 @@ class MusicLibraryScanner {
         switch (r) {
           case MusicScannedTrack():
             tracks.add(r);
-            seen.add(r.trackUid);
           case MusicScanUnchanged(:final String path):
             unchanged++;
-            seen.addAll(uidsByPath[path] ?? const <String>[]);
+            seen.addAll(
+              uidsByPath[musicTrackPathKey(path)] ?? const <String>[],
+            );
           case MusicScanError():
             errors.add(r);
         }
       }
       if (tracks.isNotEmpty) {
         parsed += tracks.length;
-        await _db.writeMusicScanBatch(
+        // 库里已有同一个文件的沿用旧 uid（见 writeMusicScanBatch）：记实际落库的 uid。
+        final Map<String, String> remapped = await _db.writeMusicScanBatch(
           musicScanBatchWriteOf(tracks, sourceId: sourceId, now: now),
         );
+        for (final MusicScannedTrack t in tracks) {
+          seen.add(remapped[t.trackUid] ?? t.trackUid);
+        }
       }
     }
     final int removed = await _db.softDeleteMissingMusicTracks(

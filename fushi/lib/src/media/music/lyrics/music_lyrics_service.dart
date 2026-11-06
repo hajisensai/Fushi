@@ -938,6 +938,41 @@ class MusicLyricsService {
     );
   }
 
+  /// 把一份字幕 / 歌词文件 [path] 定为这首的手动指定（与 [choose] 同一条写入口）：旧版视频库
+  /// 里纯音频行挂着的字幕（多半是 ASR 转写）随行搬进音乐库时用（BUG-4127）——不搬的话删
+  /// 视频行会把 app 目录里的字幕副本一起回收，转写结果就永久丢了。
+  ///
+  /// 这首已有手动指定时不覆盖（用户在音乐库里选过的优先）。数据库未就绪抛 [StateError]，
+  /// 读不到抛 [FileSystemException]，解析失败抛 [LyricsParseException]：调用方据此不删源行。
+  Future<void> adoptSubtitleFile({
+    required String trackUid,
+    required String path,
+    int? durationMs,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null) {
+      throw StateError('music lyrics: database not ready');
+    }
+    for (final MusicLyricRow row in await _rows(db, trackUid)) {
+      if (row.source == MusicLyricsSource.user) return;
+    }
+    final Uint8List raw = await File(path).readAsBytes();
+    final String name = File(path).uri.pathSegments.last;
+    final int dot = name.lastIndexOf('.');
+    final String hint = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+    final LyricTimeline t = await _parse(raw, hint, durationMs);
+    await choose(
+      trackUid,
+      MusicLyricsCandidate(
+        source: MusicLyricsSource.user,
+        label: name,
+        format: hint,
+        raw: raw,
+        timeline: t,
+      ),
+    );
+  }
+
   /// 撤销手动指定，回到自动优先级。
   Future<void> clearUserEdit(String trackUid) async {
     final FushiDatabase? db = _database();

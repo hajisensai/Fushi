@@ -118,7 +118,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 144);
+      expect(probe.select('PRAGMA user_version').first.values.first, 145);
       expect(hasColumn(probe, 'video_download_jobs', 'identity_json'), isTrue);
       expect(
         hasColumn(probe, 'video_download_subscriptions', 'identity_json'),

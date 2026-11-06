@@ -167,6 +167,48 @@ void main() {
     );
   });
 
+  test('库里是旧版本的混合分隔符拼法（v145）：Rust 按统一拼法报「没变」不被误删；'
+      '文件变了重新解析时沿用旧 uid，曲库仍是那几行', () async {
+    final bool win = Platform.isWindows;
+    final String legacyA = win ? r'C:/m\a.flac' : '/m//a.flac';
+    final String legacyB = win ? r'C:/m\b.flac' : '/m/./b.flac';
+    final String canonA = win ? r'C:\m\a.flac' : '/m/a.flac';
+    final String canonB = win ? r'C:\m\b.flac' : '/m/b.flac';
+    final _ScriptedScanner first = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        _track('legacyA', path: legacyA),
+        _track('legacyB', path: legacyB),
+      ],
+    ]);
+    await MusicLibraryScanner(
+      db,
+      scanner: first.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+
+    final _ScriptedScanner second = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        MusicScanUnchanged(canonA),
+        // b 变了（mtime），Rust 按新拼法算出新 uid；音频指纹没变。
+        _track('freshB', path: canonB),
+      ],
+    ]);
+    final MusicScanSummary s = await MusicLibraryScanner(
+      db,
+      scanner: second.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    expect(s.removedTrackCount, 0);
+    expect(s.trackCount, 2);
+    final List<MusicTrackRow> rows = await db.listMusicTracks();
+    expect(rows.map((MusicTrackRow t) => t.trackUid).toSet(), <String>{
+      'legacyA',
+      'legacyB',
+    });
+    expect(
+      rows.firstWhere((MusicTrackRow t) => t.trackUid == 'legacyB').path,
+      canonB,
+    );
+  });
+
   test('真原生库扫样本库入库：CUE 拆轨 + 专辑聚合（硬依赖，缺库判红）', () async {
     final MusicScanSummary s = await MusicLibraryScanner(
       db,
