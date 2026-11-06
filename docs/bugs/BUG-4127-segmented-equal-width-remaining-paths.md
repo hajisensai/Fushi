@@ -1,0 +1,15 @@
+## BUG-4127 · 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段
+- **报告**：2026-11-06（用户 App 内反馈 GaI5uPQEbF 的未收口部分：「播完...显示不全，还有好多这种地方，根本性修复」；BUG-3905 / PR #2694 只修了两条路径）
+- **真实性**：✅ 真 bug（widget 测试在基线 4c4c7505a3 上 7 条红）。PR #2694 抽出的 `fushiSegmentWidths`（`fushi/lib/src/utils/components/fushi_segment_widths.dart:22`）只接到 MD3 胶囊分段与 `FushiAppleSegmentedControl`，其余横排分段各写一份「等宽取最宽段、放不下整体等比缩窄」：
+  - MD3 `FushiSegmentedButton` → `FushiConnectedButtonGroup`：`fushi/lib/src/utils/components/glass/fushi_expressive.dart:1244-1248` `_FushiSqueezeRow(equalExtents: true)`，`_widths` 在 `:776` 取最宽段等宽、`:789` 按 `target / content` 全体缩窄（实测 620 宽下「15 分钟」被压到 62.4 < 70 折行；400 宽下每段文字只剩 18px）。连接式段两侧还各留 26px 对勾槽，缩窄时先压的是文字而不是槽。
+  - 墨水屏 `FushiSegmentedButton` 退回原生 `SegmentedButton`（`fushi_glass_toggles.dart:3842`），原生等宽（400 宽下「播完本曲」只剩 26px）。
+  - `adaptiveSegmentedButton` 在 Cupertino 设计系统但非 Apple 设计（墨水屏）下走原生 `CupertinoSlidingSegmentedControl`（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart:764`），等宽、未开 proportionalWidth。
+  - Apple 退回形态 `_buildButtonRow`（`fushi_glass_toggles.dart:3961`，多选 / 允许空选 / 竖排 / 富文本段）：撑满时 `Expanded` 等分（400 宽「播完本曲」省略号），不撑满时按自然宽 `Flex` 直接横向溢出 50px。
+- **[x] ① 已修复** — 12656220ff（+ 后续高度约束修正提交）：
+  - 胶囊分段的私有 `_RenderPillSegmentRow` 提升为共用的 `FushiSegmentRow` / `RenderFushiSegmentRow`（`fushi_segment_widths.dart`，支持段间缝、撑满、紧约束、RTL、固有尺寸、同高），胶囊分段、连接式按钮组、Apple 退回形态横排都经它排布，分宽全部来自 `fushiSegmentWidths`。
+  - 连接式按钮组：对勾槽作为 `extras`（`extrasInIntrinsic`），段内容改为 `_CheckSlotRow`——宽度不够时先对称收两槽（对勾裁在槽内），文字保持单行自然宽，槽收完才压文字折行。`_FushiSqueezeRow` 删掉 `equalExtents`，只剩标准按钮组的按压挤压。
+  - 墨水屏不再退回原生 `SegmentedButton`，统一走连接式按钮组（主题 `segmentedButtonTheme` 的反色填充照用，组给每段补 `outline` 描边表达段边界）。
+  - `adaptiveSegmentedButton` 非 Apple 设计一律胶囊分段（`adaptiveSegmentedUsesPill` = `!isGlassDesign`，分段条估宽同一判据），删掉 `CupertinoSlidingSegmentedControl` 分支。
+  - Apple 退回形态横排：段内边距 12 → 最小 6 作为 `extras`，走 `FushiSegmentRow`（竖排仍 `Flex`）。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/fushi_segment_widths_all_paths_test.dart`（MD3 连接式 620 / 400、墨水屏 620 / 400、Apple 退回形态撑满 / 宽松宿主、Cupertino + 墨水屏的 `adaptiveSegmentedButton`，用睡眠定时五段文案断言每段不省略、宽 ≥ 单行自然宽、单行高；外加连接式放得下等宽、撑满等分；改前 7 红、改后全绿）；守卫 `fushi/test/build/segmented_button_m3e_guard_test.dart`「segment widths come from the single shared allocator」：lib/src 禁止 `Cupertino(Sliding)SegmentedControl`、禁止 `List<double>.filled(…widest` / `equalExtents` 这类另起的等宽缩窄实现，并要求三处分段实现都接 `FushiSegmentRow` / `fushiSegmentWidths`；原生 `SegmentedButton` 豁免收窄到胶囊分段子类一处。
+- **备注**：未真机 / 模拟器截图复测，布局几何由 widget 测试验证。墨水屏分段观感从原生描边分段换成连接式按钮组 + outline 描边（反色选中不变），未在墨水屏设备上目测。

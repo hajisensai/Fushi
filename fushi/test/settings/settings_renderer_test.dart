@@ -422,15 +422,18 @@ void main() {
     expect(find.byIcon(Icons.tune_outlined), findsNothing);
     expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
     expect(find.byIcon(Icons.toggle_on_outlined), findsNothing);
+    // BUG-4127：Cupertino 设计系统但 Apple 设计不生效时，分段不再是原生
+    // CupertinoSlidingSegmentedControl（等宽、不走 fushiSegmentWidths，最长段先
+    // 被截断），而是胶囊分段（SegmentedButton 子类）。
     expect(
       find.byWidgetPredicate(
         (Widget widget) => widget is CupertinoSlidingSegmentedControl,
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
-      findsNothing,
+      findsOneWidget,
     );
     expect(find.byType(CupertinoSlider), findsOneWidget);
     expect(find.text('Stepper'), findsOneWidget);

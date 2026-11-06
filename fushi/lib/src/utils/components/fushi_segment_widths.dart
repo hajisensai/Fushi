@@ -298,12 +298,10 @@ class RenderFushiSegmentRow extends RenderBox
   double? computeDistanceToActualBaseline(TextBaseline baseline) =>
       defaultComputeDistanceToHighestActualBaseline(baseline);
 
-  BoxConstraints _segmentConstraints(double width, BoxConstraints row) =>
-      BoxConstraints(
-        minWidth: width,
-        maxWidth: width,
-        maxHeight: row.maxHeight,
-      );
+  /// 段只钉宽、高度不限（段按内容取高；第二遍再钉成行高）。给上界高度会让
+  /// 带 alignment 的段（胶囊分段的 AnimatedContainer）撑满宿主高度。
+  BoxConstraints _segmentConstraints(double width) =>
+      BoxConstraints.tightFor(width: width);
 
   @override
   Size computeDryLayout(covariant BoxConstraints constraints) {
@@ -314,9 +312,7 @@ class RenderFushiSegmentRow extends RenderBox
     for (int i = 0; i < segments.length; i++) {
       h = math.max(
         h,
-        segments[i]
-            .getDryLayout(_segmentConstraints(widths[i], constraints))
-            .height,
+        segments[i].getDryLayout(_segmentConstraints(widths[i])).height,
       );
     }
     return constraints.constrain(
@@ -334,10 +330,7 @@ class RenderFushiSegmentRow extends RenderBox
     final List<double> widths = _widthsForConstraints(segments, constraints);
     double height = 0;
     for (int i = 0; i < segments.length; i++) {
-      segments[i].layout(
-        _segmentConstraints(widths[i], constraints),
-        parentUsesSize: true,
-      );
+      segments[i].layout(_segmentConstraints(widths[i]), parentUsesSize: true);
       height = math.max(height, segments[i].size.height);
     }
     height = constraints.constrainHeight(height);
