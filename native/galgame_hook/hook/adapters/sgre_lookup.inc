@@ -1500,8 +1500,10 @@ uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
       g_sgre_last_text_seq = published;
       // Only a fresh publication owns the page. A new page that repeats the
       // previous line is deduplicated and stays unpublished, so a voice
-      // started on it is never named after the earlier line's seq.
-      g_sgre_scenario_pages.MarkPublished(published);
+      // started on it is never named after the earlier line's seq. The
+      // publication tick bounds which voices the page may own: one that
+      // starts after the line was fully revealed belongs to a later page.
+      g_sgre_scenario_pages.MarkPublished(published, GetTickCount64());
     }
   }
   const uint64_t text_seq = g_sgre_last_text_seq;

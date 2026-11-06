@@ -14,9 +14,18 @@
 //  - a page starts at its first visible glyph; that tick is the line's text
 //    timestamp (when the line began to appear, the same moment the voice
 //    starts), not the reveal-complete tick;
-//  - a voice resource is bound to the page that was on screen when it started
-//    playing and is named with that page's text-lane seq
-//    (`fushi_textseq<seq>`), so the host takes its exact event-ID layer.
+//  - a voice resource is bound to the page that was being typed when it
+//    started playing (or that began within kSgreVoiceLeadMs after it) and is
+//    named with that page's text-lane seq (`fushi_textseq<seq>`), so the host
+//    takes its exact event-ID layer.
+//
+// Because the text timestamp is the first-glyph tick, the host's unmarked
+// window ([T-330, T-130]) no longer describes SGRE: an unbound resource keeps
+// the legacy unmarked name but is, in practice, not paired by the host. Every
+// case the old window paired (voice 130-330 ms before the reveal-complete
+// tick) is a voice that started while its page was being typed, which the
+// binding below covers as long as it started within kSgreVoiceLagMs of the
+// first glyph; the binding, not the unmarked name, is the pairing path.
 //
 // Everything here is pure and IO-free; the draw callback and the HookWorker
 // call into it under the text-lane writer lock.
@@ -33,8 +42,8 @@ namespace fushi_voice_hook {
 // first glyph (script voice command runs first). Not measured on a real
 // session yet; kept well inside the host's marked-resource tolerance.
 constexpr uint64_t kSgreVoiceLeadMs = 500;
-// A voice that starts more than this long after its page began is not the
-// page's line voice. Equals the host's event-ID tolerance
+// A voice that starts more than this long after its page began is not bound
+// to it. Equals the host's event-ID tolerance
 // (kGalVoiceResourcePairingWindowMs) so a bound resource is never refused.
 constexpr uint64_t kSgreVoiceLagMs = 1500;
 // Upper bound for waiting until the owning page is fully revealed (slowest
@@ -47,6 +56,7 @@ struct SgreScenarioPage {
   uint64_t id = 0;                // 0 = empty slot
   uint64_t first_glyph_tick = 0;  // tick of the first frame with glyphs
   uint64_t text_seq = 0;          // text-lane seq once published, else 0
+  uint64_t published_tick = 0;    // tick the line was published (reveal done)
 };
 
 // Tracks which scenario page the renderer is currently typing. A page is one
@@ -81,10 +91,11 @@ class SgreScenarioPageTracker {
     units_ = 0;
   }
 
-  // The current page was published to the text lane as [text_seq].
-  void MarkPublished(uint64_t text_seq) {
+  // The current page was published to the text lane as [text_seq] at [tick].
+  void MarkPublished(uint64_t text_seq, uint64_t tick) {
     if (!open_ || text_seq == 0) return;
     history_[head_].text_seq = text_seq;
+    history_[head_].published_tick = tick;
   }
 
   bool open() const { return open_; }
@@ -108,7 +119,7 @@ class SgreScenarioPageTracker {
 
   void BeginPage(uint64_t tick) {
     head_ = (head_ + 1) % kSgrePageHistorySlots;
-    history_[head_] = SgreScenarioPage{++next_id_, tick, 0};
+    history_[head_] = SgreScenarioPage{++next_id_, tick, 0, 0};
     open_ = true;
     units_ = 0;
   }
@@ -122,33 +133,45 @@ class SgreScenarioPageTracker {
 };
 
 // Binds a voice that started playing at [voice_tick] to the scenario page
-// that owns it: the latest page whose first glyph appeared no later than
-// kSgreVoiceLeadMs after the voice and no earlier than kSgreVoiceLagMs before
-// it.
+// that owns it. A page can own the voice only when
+//   first_glyph - kSgreVoiceLeadMs <= voice_tick <= first_glyph + kSgreVoiceLagMs
+// and, once published, voice_tick <= published_tick: a page whose line had
+// already been fully revealed before the voice started is not that voice's
+// page (BUG-4127 review: otherwise the next line's voice, when its text fades
+// in later than the lead, was handed to the line still on screen and the host
+// took it as an exact event-ID hit on the wrong card). Of the candidates the
+// earliest page owns the voice: at most one page was being typed when the
+// voice started, and a page that only began afterwards (within the lead) owns
+// it only when none was.
 //  - kUnselected: the exact text lane never produced a page (text comes from
 //    elsewhere); the resource is written unmarked right away.
 //  - kWait: a page may still begin within the lead, or the owning page is
 //    still typing.
 //  - kMatched: the owning page is published; text_event_id is its seq.
 //  - kExpired: no owning page, the owner was replaced before being published,
-//    or the reveal deadline passed. The resource is written unmarked and the
-//    host's ordinary unmarked contract applies.
+//    or the reveal deadline passed. The resource keeps the unmarked name (see
+//    the header comment: the host does not pair it).
+// [final_pass] decides with what is known now and never waits (queue eviction
+// and adapter shutdown: no later page can be observed for this voice).
 inline VoiceResourcePairDecision ResolveSgreVoicePage(
     uint64_t voice_tick, uint64_t now_ms, bool lane_observed,
-    const SgreScenarioPage* pages, size_t page_count) {
+    const SgreScenarioPage* pages, size_t page_count,
+    bool final_pass = false) {
   if (!lane_observed) return {VoiceResourcePairState::kUnselected, 0};
-  if (now_ms < voice_tick + kSgreVoiceLeadMs) {
+  if (!final_pass && now_ms < voice_tick + kSgreVoiceLeadMs) {
     return {VoiceResourcePairState::kWait, 0};
   }
   const SgreScenarioPage* owner = nullptr;
-  bool superseded = false;
   for (size_t i = 0; i < page_count; ++i) {
     const SgreScenarioPage& page = pages[i];
     if (page.id == 0) continue;
     const bool in_window =
         page.first_glyph_tick <= voice_tick + kSgreVoiceLeadMs &&
-        page.first_glyph_tick + kSgreVoiceLagMs >= voice_tick;
-    if (in_window && (owner == nullptr || page.id > owner->id)) {
+        voice_tick <= page.first_glyph_tick + kSgreVoiceLagMs;
+    const bool revealed_before_voice =
+        page.text_seq != 0 && page.published_tick < voice_tick;
+    if (in_window && !revealed_before_voice &&
+        (owner == nullptr || page.id < owner->id)) {
       owner = &page;
     }
   }
@@ -156,10 +179,12 @@ inline VoiceResourcePairDecision ResolveSgreVoicePage(
   if (owner->text_seq != 0) {
     return {VoiceResourcePairState::kMatched, owner->text_seq};
   }
+  bool superseded = false;
   for (size_t i = 0; i < page_count; ++i) {
     if (pages[i].id > owner->id) superseded = true;
   }
-  if (superseded || now_ms >= voice_tick + kSgreVoiceRevealDeadlineMs) {
+  if (final_pass || superseded ||
+      now_ms >= voice_tick + kSgreVoiceRevealDeadlineMs) {
     return {VoiceResourcePairState::kExpired, 0};
   }
   return {VoiceResourcePairState::kWait, 0};

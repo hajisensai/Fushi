@@ -23,28 +23,27 @@ std::vector<SgrePendingVoice> g_sgre_pending_voices;
 
 // Writes [voice] once its owner is decided. Returns false while it must keep
 // waiting. A matched page names the file with that page's text-lane seq; an
-// expired/unselected binding keeps the legacy unmarked name so the host's
-// ordinary unmarked contract applies.
-bool TryPublishSgreVoice(SgrePendingVoice* voice, bool force_unmarked) {
-  uint64_t text_event_id = 0;
-  if (!force_unmarked) {
-    fushi_voice_hook::SgreScenarioPage
-        pages[fushi_voice_hook::kSgrePageHistorySlots] = {};
-    size_t page_count = 0;
-    const bool lane_observed = SnapshotSgreScenarioPages(
-        pages, fushi_voice_hook::kSgrePageHistorySlots, &page_count);
-    const fushi_voice_hook::VoiceResourcePairDecision decision =
-        fushi_voice_hook::ResolveSgreVoicePage(voice->voice_tick,
-                                              GetTickCount64(), lane_observed,
-                                              pages, page_count);
-    if (decision.state == fushi_voice_hook::VoiceResourcePairState::kWait) {
-      return false;
-    }
-    if (decision.state ==
-        fushi_voice_hook::VoiceResourcePairState::kMatched) {
-      text_event_id = decision.text_event_id;
-    }
+// expired/unselected binding keeps the legacy unmarked name (which the host
+// does not pair for SGRE, see sgre_voice_binding.h). [final_pass] decides with
+// the pages observed so far and never waits: used when the queue evicts its
+// oldest entry and on adapter shutdown, so a held voice is always written.
+bool TryPublishSgreVoice(SgrePendingVoice* voice, bool final_pass) {
+  fushi_voice_hook::SgreScenarioPage
+      pages[fushi_voice_hook::kSgrePageHistorySlots] = {};
+  size_t page_count = 0;
+  const bool lane_observed = SnapshotSgreScenarioPages(
+      pages, fushi_voice_hook::kSgrePageHistorySlots, &page_count);
+  const fushi_voice_hook::VoiceResourcePairDecision decision =
+      fushi_voice_hook::ResolveSgreVoicePage(voice->voice_tick,
+                                            GetTickCount64(), lane_observed,
+                                            pages, page_count, final_pass);
+  if (decision.state == fushi_voice_hook::VoiceResourcePairState::kWait) {
+    return false;
   }
+  const uint64_t text_event_id =
+      decision.state == fushi_voice_hook::VoiceResourcePairState::kMatched
+          ? decision.text_event_id
+          : 0;
   const bool published = WriteVoiceOggAt(
       voice->resource.data(), static_cast<uint32_t>(voice->resource.size()),
       voice->storage_name, voice->voice_tick, text_event_id);
@@ -53,6 +52,16 @@ bool TryPublishSgreVoice(SgrePendingVoice* voice, bool force_unmarked) {
         fushi_voice_hook::kXAudioDiagGameResourcePublished);
   }
   return true;
+}
+
+// Writes every held voice with what is known now (adapter shutdown). Nothing
+// held is dropped: a voice whose page was already published is still named
+// with that page's seq.
+void FlushSgrePendingVoices() {
+  for (SgrePendingVoice& voice : g_sgre_pending_voices) {
+    TryPublishSgreVoice(&voice, /*final_pass=*/true);
+  }
+  g_sgre_pending_voices.clear();
 }
 
 bool HandleSgreCompressedResource(
@@ -90,11 +99,12 @@ bool HandleSgreCompressedResource(
                  submission.source.queue_generation));
   // Bind to the owning scenario page now if its line is already published,
   // otherwise hold it until the page is revealed (BUG-4127). The queue is
-  // bounded: when full the oldest entry is written unmarked, never dropped.
-  if (TryPublishSgreVoice(&voice, /*force_unmarked=*/false)) return true;
+  // bounded: when full the oldest entry is decided now (final pass) and
+  // written, never dropped.
+  if (TryPublishSgreVoice(&voice, /*final_pass=*/false)) return true;
   if (g_sgre_pending_voices.size() >= kSgrePendingVoiceSlots) {
     TryPublishSgreVoice(&g_sgre_pending_voices.front(),
-                        /*force_unmarked=*/true);
+                        /*final_pass=*/true);
     g_sgre_pending_voices.erase(g_sgre_pending_voices.begin());
   }
   g_sgre_pending_voices.push_back(std::move(voice));
@@ -102,11 +112,11 @@ bool HandleSgreCompressedResource(
 }
 
 // HookWorker tick: retries every held voice until its page is published or
-// the binding expires (then it is written unmarked).
+// the binding expires (then it is written with the unmarked name).
 void ProcessSgrePendingVoices() {
   for (size_t i = 0; i < g_sgre_pending_voices.size();) {
     if (TryPublishSgreVoice(&g_sgre_pending_voices[i],
-                            /*force_unmarked=*/false)) {
+                            /*final_pass=*/false)) {
       g_sgre_pending_voices.erase(g_sgre_pending_voices.begin() +
                                   static_cast<std::ptrdiff_t>(i));
     } else {
@@ -295,7 +305,7 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
 
   void ProcessPendingEvents() {
     // Held voices do not depend on the lookup anchors: without an exact lane
-    // they resolve as unselected and are written unmarked.
+    // they resolve as unselected and are written with the unmarked name.
     if (audio_installed_) ProcessSgrePendingVoices();
     if (!probe() || !g_sgre_anchors_resolved) return;
     // Retry independently from the scenario lookup sensor.  The UI renderer
@@ -327,7 +337,9 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
     ShutdownSgreDirectInputShield();
     if (audio_installed_) {
       UnregisterXAudioCompressedResourceHandler(&HandleSgreCompressedResource);
-      g_sgre_pending_voices.clear();
+      // Runs on the HookWorker like every other touch of the queue; held
+      // voices are written, not discarded (BUG-4127 review).
+      FlushSgrePendingVoices();
       fushi_voice_hook::CloseSgreVoiceArchive(&g_sgre_voice_archive);
       audio_installed_ = false;
     }
