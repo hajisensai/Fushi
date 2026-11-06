@@ -773,15 +773,15 @@ class ReaderSettings {
       _set<int>('wheel_page_turn_interval', v);
 
   // ── 翻页动画（只在翻页 / paginated 模式生效）────────────────────────
-  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认淡入淡出。
+  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认卷页。
 
   static const String pageTurnAnimationKey = 'page_turn_animation';
   static const String pageTurnAnimationSpeedKey = 'page_turn_animation_speed';
   static const String pageTurnFollowDragKey = 'page_turn_follow_drag';
 
-  /// 小说阅读器翻页效果的出厂默认（用户拍板：淡入淡出）。
+  /// 小说阅读器翻页效果的出厂默认（用户 2026-11-06 拍板：卷页，原为淡入淡出）。
   static const PageTurnAnimation defaultPageTurnAnimation =
-      PageTurnAnimation.fade;
+      PageTurnAnimation.curl;
   static const PageTurnAnimationSpeed defaultPageTurnAnimationSpeed =
       PageTurnAnimationSpeed.normal;
   static const bool defaultPageTurnFollowDrag = true;
