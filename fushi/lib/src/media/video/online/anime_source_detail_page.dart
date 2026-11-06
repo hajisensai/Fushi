@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
@@ -403,6 +404,27 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     _reloadResumeIndex();
   }
 
+  /// 本源能不能在 app 里登录（运行时接受浏览器登录态、baseUrl 解析得出 host）。
+  bool get _loginAvailable =>
+      mihonLoginTarget(
+        runtime: widget.manager.runtime,
+        baseUrl: widget.sourceContext.source.baseUrl,
+      ) !=
+      null;
+
+  /// 菜单「登录」：与漫画作品页同一个登录页；登完立刻从源重取剧集。
+  Future<void> _login() async {
+    final bool saved = await openMihonWebLogin(
+      context,
+      runtime: widget.manager.runtime,
+      sourceName: widget.sourceContext.source.name,
+      baseUrl: widget.sourceContext.source.baseUrl,
+    );
+    if (!mounted || !saved) return;
+    FushiToast.show(msg: t.mihon_source_login_saved);
+    await _load();
+  }
+
   /// 「在网站打开」：源站网页地址（扩展的 `getAnimeUrl`，兜底 baseUrl + url）交给
   /// 系统浏览器。打不开浏览器不算本页错误，只提示。
   Future<void> _openWebsite() async {
@@ -684,6 +706,15 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           label: t.mihon_source_website_open,
           onSelected: () => unawaited(_openWebsite()),
         ),
+        // 源站要登录才给剧集 / 片源时的常驻入口（与漫画作品页同一口径）。
+        if (_loginAvailable)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('anime_source_login'),
+            icon: FushiIcons.login,
+            label: t.mihon_source_login,
+            enabled: !_loading,
+            onSelected: () => unawaited(_login()),
+          ),
         MediaDetailMenuItem(
           key: const ValueKey<String>('anime_source_refresh'),
           icon: FushiIcons.refresh,
@@ -705,10 +736,23 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                     severity: FushiNoticeSeverity.error,
                     message: '$error',
                   ),
-                MihonCloudflareAction(
-                  runtime: widget.manager.runtime,
-                  error: error,
-                  onVerified: _load,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    MihonCloudflareAction(
+                      runtime: widget.manager.runtime,
+                      error: error,
+                      onVerified: _load,
+                    ),
+                    // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
+                    MihonLoginAction(
+                      runtime: widget.manager.runtime,
+                      sourceName: widget.sourceContext.source.name,
+                      baseUrl: widget.sourceContext.source.baseUrl,
+                      onLoggedIn: _load,
+                    ),
+                  ],
                 ),
               ],
             ),

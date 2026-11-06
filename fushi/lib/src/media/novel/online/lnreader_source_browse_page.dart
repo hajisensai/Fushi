@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
+import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
@@ -193,10 +194,23 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
     BuildContext context, {
     required Object? error,
     required Future<void> Function() onVerified,
-  }) => LnReaderCloudflareAction(
-    cloudflare: manager.cloudflare,
-    pluginId: plugin.id,
-    onVerified: () => unawaited(onVerified()),
+  }) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: <Widget>[
+      LnReaderCloudflareAction(
+        cloudflare: manager.cloudflare,
+        pluginId: plugin.id,
+        onVerified: () => unawaited(onVerified()),
+      ),
+      // 真出错了才给登录（空结果不算：搜不到东西不该提示去登录）。
+      if (error != null)
+        LnReaderLoginAction(
+          manager: manager,
+          plugin: plugin,
+          onLoggedIn: onVerified,
+        ),
+    ],
   );
 }
 

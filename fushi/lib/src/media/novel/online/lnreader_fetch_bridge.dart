@@ -107,7 +107,10 @@ class LnReaderFetchBridge {
     this.isBlockedHost = isLnReaderBlockedHost,
     this.isBlockedAddress = isLnReaderBlockedAddress,
     this.cloudflare,
-  }) : _clientFactory = clientFactory;
+  }) : _clientFactory = clientFactory {
+    // 与 [cloudflare] 同生同灭（AppModel 里一起建），不需要退订。
+    cloudflare?.addSiteSessionListener(forgetSiteCookies);
+  }
 
   /// Cloudflare 放行 cookie 与待解挑战；null 时不带持久 cookie、不记挑战
   /// （单测 / 无 UI 场景）。见 [LnReaderCloudflare]。
@@ -376,6 +379,20 @@ class LnReaderFetchBridge {
     return merged.entries
         .map((MapEntry<String, String> e) => '${e.key}=${e.value}')
         .join('; ');
+  }
+
+  /// 丢掉进程内记下的、属于 [siteHost] 同一站点（本域、子域或父域）的 cookie。
+  ///
+  /// 用户在登录页登完后由 [LnReaderCloudflare.siteSessionReplaced] 触发：持久 jar
+  /// 里已是新会话，进程内那份是登录前的匿名会话，同名项会把新会话盖掉。
+  void forgetSiteCookies(String siteHost) {
+    final String site = siteHost.toLowerCase();
+    _cookies.removeWhere(
+      (String domain, Map<String, String> _) =>
+          domain == site ||
+          domain.endsWith('.$site') ||
+          site.endsWith('.$domain'),
+    );
   }
 
   void close() {

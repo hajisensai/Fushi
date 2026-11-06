@@ -188,6 +188,41 @@ void main() {
     expect(cookie, isNot(contains('stale')));
   });
 
+  test('app 内登录换掉整站会话后，登录前的进程内会话 cookie 不再盖过它', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    // 登录前：站点下发匿名会话，桥在进程内记下。
+    await fetch.perform(<String, Object?>{
+      'url': '$base/login',
+      'method': 'GET',
+    });
+    // 用户在登录页登完：jar 里整站换成登录会话，再通知桥。
+    await cloudflare.jar.replaceForSite('127.0.0.1', const <MangaCookie>[
+      MangaCookie(name: 'session', value: 'signed-in', domain: '127.0.0.1'),
+    ]);
+    cloudflare.siteSessionReplaced('127.0.0.1');
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+    });
+    expect(seenHeaders.last.value('cookie'), 'session=signed-in');
+  });
+
+  test('只丢登录站点的进程内 cookie，别的站不受影响', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{
+      'url': '$base/login',
+      'method': 'GET',
+    });
+    cloudflare.siteSessionReplaced('example.com');
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+    });
+    expect(seenHeaders.last.value('cookie'), 'session=abc');
+  });
+
   test('不合 RFC 的 Set-Cookie 不拖垮请求，能解析的照样回带', () async {
     final LnReaderFetchBridge fetch = bridge();
     final Map<String, Object?> result = await fetch.perform(<String, Object?>{

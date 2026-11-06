@@ -6,6 +6,7 @@ import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/online/installed_online_source_row.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -392,6 +393,20 @@ class _LnReaderInstalledSourcesSectionState
               : () => unawaited(_moveWithinGroup(plugin, group, 1)),
         ),
       ],
+      // 能在 app 里登录的源（有 jar、site 解析得出 host）才给「登录」，与漫画 /
+      // 视频源列表同一位置。
+      if (lnReaderLoginTarget(
+            cloudflare: manager.cloudflare,
+            site: plugin.site,
+          ) !=
+          null)
+        OnlineSourceMenuAction(
+          label: t.mihon_source_login,
+          icon: FushiIcons.login,
+          onTap: () => unawaited(
+            loginToLnReaderSource(context, manager: manager, plugin: plugin),
+          ),
+        ),
       OnlineSourceMenuAction(
         label: t.mihon_source_clear_data,
         icon: FushiIcons.deleteSweep,
