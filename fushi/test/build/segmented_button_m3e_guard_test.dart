@@ -77,7 +77,7 @@ void main() {
     },
   );
 
-  // BUG-4127（反馈 GaI5uPQEbF「还有好多这种地方，根本性修复」）：横排分段的段宽
+  // BUG-4130（反馈 GaI5uPQEbF「还有好多这种地方，根本性修复」）：横排分段的段宽
   // 只走 `fushiSegmentWidths` / `FushiSegmentRow` 一处。以前 MD3 连接式按钮组、
   // 墨水屏原生 SegmentedButton、Apple 退回形态、原生 CupertinoSlidingSegmentedControl
   // 各自「等宽取最宽段、放不下整体等比缩窄」，最长段先被截断。

@@ -1,4 +1,4 @@
-## BUG-4127 · 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段
+## BUG-4130 · 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段
 - **报告**：2026-11-06（用户 App 内反馈 GaI5uPQEbF 的未收口部分：「播完...显示不全，还有好多这种地方，根本性修复」；BUG-3905 / PR #2694 只修了两条路径）
 - **真实性**：✅ 真 bug（widget 测试在基线 4c4c7505a3 上 7 条红）。PR #2694 抽出的 `fushiSegmentWidths`（`fushi/lib/src/utils/components/fushi_segment_widths.dart:22`）只接到 MD3 胶囊分段与 `FushiAppleSegmentedControl`，其余横排分段各写一份「等宽取最宽段、放不下整体等比缩窄」：
   - MD3 `FushiSegmentedButton` → `FushiConnectedButtonGroup`：`fushi/lib/src/utils/components/glass/fushi_expressive.dart:1244-1248` `_FushiSqueezeRow(equalExtents: true)`，`_widths` 在 `:776` 取最宽段等宽、`:789` 按 `target / content` 全体缩窄（实测 620 宽下「15 分钟」被压到 62.4 < 70 折行；400 宽下每段文字只剩 18px）。连接式段两侧还各留 26px 对勾槽，缩窄时先压的是文字而不是槽。

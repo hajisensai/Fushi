@@ -589,7 +589,7 @@ class _FushiPressMorphState extends State<FushiPressMorph>
 // ---------------------------------------------------------------------------
 // 挤压排布：一排子项，按下的那个按比例变宽，宽度从相邻项匀出（总宽不变，
 // 组的外框不抖）。只给标准按钮组用；分段（连接式按钮组）的段宽走
-// [FushiSegmentRow] / [fushiSegmentWidths]，不在这里另写一份等宽逻辑（BUG-4127）。
+// [FushiSegmentRow] / [fushiSegmentWidths]，不在这里另写一份等宽逻辑（BUG-4130）。
 // ---------------------------------------------------------------------------
 
 class _FushiSqueezeParentData extends ContainerBoxParentData<RenderBox> {}
@@ -891,7 +891,7 @@ const double _kConnectedCheckPadding = 4;
 /// 「最宽标签 + 两侧对勾槽」预留，对勾在文字左侧的槽里淡入，**文字在按压与
 /// 选中切换前后都原地不动**（用户 2026-10-06：字体库「日文 / 中文 / 西文」点完
 /// 文字左右跳）；放不下时按内容分宽 → 收对勾槽 → 只压最宽段折行，不再整体等比
-/// 缩窄把最长段先截断（反馈 GaI5uPQEbF / BUG-4127）。连接式组不做标准按钮组那种
+/// 缩窄把最长段先截断（反馈 GaI5uPQEbF / BUG-4130）。连接式组不做标准按钮组那种
 /// 按下变宽：文字居中，按下的段一变宽，它和邻段的文字中心都跟着挪；按压反馈只靠
 /// 状态层。调用方 style 的颜色 / 字体 / 内边距 / 密度照用，shape 与 side 由组决定
 /// （与 SegmentedButton 一样不下发到段；墨水屏下组给每段补 outline 描边）。

@@ -562,7 +562,7 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
 ///
 /// 外观（轨道色、选中 primary 胶囊、按压状态层与切换动画）与共享胶囊分段
 /// [FushiPillSegmentedButton] 同源，段宽也同走共用分宽 [FushiSegmentRow]
-/// （BUG-4127）：放得下时等宽撑满，放不下时按内容分宽、再把段内边距从 16 收到
+/// （BUG-4130）：放得下时等宽撑满，放不下时按内容分宽、再把段内边距从 16 收到
 /// 6。和共享分段唯一的差别是**所有退让都用尽后**的处理：这里是固定高度的底部
 /// 操作条，标签不折行，被削窄的那段整体等比缩小（FittedBox scaleDown）；在这
 /// 之前每段都按自然宽排、不缩字号，短段不会空着大片留白而让长段缩小。
