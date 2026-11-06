@@ -298,6 +298,26 @@ void main() {
       expect(tr.step(_state(positionMs: 600200), at(500)), isNull);
     });
 
+    test('seek 落地后轨还没对齐、续播漂出容差：不再补 seek 把用户拉回去', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      expect(
+        tr.step(_state(positionMs: 10000, text: 'en'), at(0))?.seekMs,
+        600000,
+      );
+      // 落地（轨还是 en，没报回来）。
+      expect(
+        tr.step(_state(positionMs: 600100, text: 'en'), at(500))?.seekMs,
+        isNull,
+      );
+      // 站点自动续播 5 s：位置早已超出 1.5 s 容差，但 seek 已对齐过，不再补。
+      final WebMineRestorePlan? later = tr.step(
+        _state(positionMs: 605000, text: 'en'),
+        at(5000),
+      );
+      expect(later?.seekMs, isNull);
+      expect(later?.selectTextTrack, 'ja', reason: '轨照常补发一次');
+    });
+
     test('轨与位置同一拍下发（不再一项一项每秒排队）', () {
       final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
       final WebMineRestorePlan? p = tr.step(

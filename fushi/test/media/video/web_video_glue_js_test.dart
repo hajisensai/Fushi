@@ -183,6 +183,21 @@ out({ res, calls: h.player.calls, time: h.player.time,
     );
   }, skip: !hasNode);
 
+  test('播放器 API 时间已到位但 <video> 还在 seeking：不放出排队的 seek，安定后才发', () async {
+    final Object? r = await run('''
+h.video.seeking = true;
+fw.seek(10000, 1); fw.seek(20000, 2);
+for (let i = 0; i < 5 && h.timers.length; i++) h.timers.shift()();
+const before = h.player.calls.slice();
+h.video.seeking = false;
+h.flush();
+out({ before, after: h.player.calls });
+''', setup: asyncSeekSetup);
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['before'], <String>['seek:10000']);
+    expect(m['after'], <String>['seek:10000', 'seek:20000']);
+  }, skip: !hasNode);
+
   test('排队目标与刚落地的位置在落点精度内：不再发第二次 seek', () async {
     final Object? r = await run('''
 fw.seek(10000, 1); fw.seek(10100, 2);

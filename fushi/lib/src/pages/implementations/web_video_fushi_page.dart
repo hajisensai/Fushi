@@ -841,6 +841,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final bool fullscreenChanged = state.fullscreen != _fullscreen;
     _state = state;
     if (videoChanged) {
+      _dropSeekTarget(); // 上一个视频的跳转目标对这一个没有意义
       _videoKey = state.videoKey;
       _activeTrackKey = null;
       _pinnedTrackKey = null;
@@ -921,6 +922,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'web_video',
         'evaluateJavascript failed: $e',
       );
+      return null;
     }
   }
 
@@ -929,18 +931,42 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   //
   // 每次 seek 带序号：glue / bridge 在途时把连发的 seek 合并成「落地后补发最后一个」，
   // [_seekTargetMs] 记住最后一次的目标，回执（或没发出去）才清掉。连按 ←/→ 时相对跳转以它为
-  // 基准，而不是以还没追上的轮询位置为基准对同一落点反复 seek。
+  // 基准，而不是以还没追上的轮询位置为基准对同一落点反复 seek。回执可能永远不来（在途时整页
+  // 重载 / 换集，页面里的轮询随文档一起没了），所以目标只在 [_kSeekTargetLifetime] 内、且仍是
+  // 同一个视频时作数（[_relativeSeekBaseMs]），换视频时直接作废。
   Future<void> _seekMs(int ms) async {
     _remoteControlRevision++;
     final int id = ++_seekSeq;
     _seekTargetMs = ms;
+    _seekTargetAt = DateTime.now();
     final Object? result = await _js('window.__fushiWebVideo.seek($ms, $id)');
     if (!mounted || id != _seekSeq) return;
-    if (result != 'bridge' && result != 'direct') _seekTargetMs = null;
+    if (result != 'bridge' && result != 'direct') _dropSeekTarget();
   }
 
   int _seekSeq = 0;
   int? _seekTargetMs;
+  DateTime? _seekTargetAt;
+
+  /// bridge 单次 seek 最长 4 s 超时，再留一次排队补发的余量。
+  static const Duration _kSeekTargetLifetime = Duration(seconds: 9);
+
+  void _dropSeekTarget() {
+    _seekTargetMs = null;
+    _seekTargetAt = null;
+  }
+
+  int _relativeSeekBaseMs() {
+    final int? target = _seekTargetMs;
+    final DateTime? at = _seekTargetAt;
+    if (target != null &&
+        at != null &&
+        DateTime.now().difference(at) <= _kSeekTargetLifetime) {
+      return target;
+    }
+    _dropSeekTarget();
+    return _state?.positionMs ?? 0;
+  }
 
   void _onSeekDone(WebVideoSeekDone? done) {
     if (done == null) return;
@@ -950,7 +976,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'seek failed (id=${done.id}): ${done.err}',
       );
     }
-    if (done.id == null || done.id == _seekSeq) _seekTargetMs = null;
+    if (done.id == null || done.id == _seekSeq) _dropSeekTarget();
   }
 
   Future<void> _play() {
@@ -979,7 +1005,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _js('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');
 
   Future<void> _seekRelative(int deltaMs) {
-    final int pos = _seekTargetMs ?? _state?.positionMs ?? 0;
+    final int pos = _relativeSeekBaseMs();
     return _seekMs((pos + deltaMs).clamp(0, 1 << 31));
   }
 

@@ -133,6 +133,10 @@ class WebMineRestoreTracker {
   final Map<String, ({int count, DateTime at})> _sent =
       <String, ({int count, DateTime at})>{};
 
+  /// 已经观察到对齐过的项：之后不再为它出动作。否则 seek 落地后站点自动续播、轨又迟迟没报回
+  /// 来时，位置漂出容差会再触发一次 seek，把用户拉回去。
+  final Set<String> _settled = <String>{};
+
   /// 这一拍要下发的动作；返回 null = 这轮恢复结束（已对齐 / 过期 / 剩下的动作都用完次数），
   /// 调用方丢掉本对象。
   WebMineRestorePlan? step(WebVideoPlaybackState state, DateTime now) {
@@ -151,9 +155,18 @@ class WebMineRestoreTracker {
         seekMs: null,
       );
     }
+    // seek：位置已知且在容差内即对齐；轨：发过之后计划里不再有它即对齐（没发过时计划为空
+    // 可能只是轨清单还没加载，不算）。
+    if (plan.seekMs == null && state.positionMs != null) _settled.add('seek');
+    if (plan.selectTextTrack == null && _sent.containsKey('text')) {
+      _settled.add('text');
+    }
+    if (plan.selectAudioTrack == null && _sent.containsKey('audio')) {
+      _settled.add('audio');
+    }
     bool exhausted = true;
     bool allow(String key, Object? value) {
-      if (value == null) return false;
+      if (value == null || _settled.contains(key)) return false;
       final ({int count, DateTime at})? prev = _sent[key];
       if (prev != null && prev.count >= kWebMineRestoreMaxAttempts) {
         return false;
