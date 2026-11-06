@@ -3481,6 +3481,8 @@
   "game_line_audio_matched": "音声準備完了",
   "game_line_audio_missing": "音声なし",
   "game_line_audio_no_voice": "音声なし",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "長すぎるクリップ",
   "game_line_audio_overlong_hint": "1行分よりはるかに長い音声です。BGMや他の混合音声が含まれている可能性があります",
   "game_line_audio_pending": "マッチング中",

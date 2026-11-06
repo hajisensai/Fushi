@@ -3481,6 +3481,8 @@
   "game_line_audio_matched": "เสียงพร้อม",
   "game_line_audio_missing": "ไม่มีเสียง",
   "game_line_audio_no_voice": "ไม่มีเสียงพูด",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "คลิปยาวเกินไป",
   "game_line_audio_overlong_hint": "ยาวกว่าบรรทัดเดียวมาก; อาจมี BGM หรือเสียงอื่นผสม",
   "game_line_audio_pending": "กำลังจับคู่",

@@ -3481,6 +3481,8 @@
   "game_line_audio_matched": "Аудио готово",
   "game_line_audio_missing": "Нет аудио",
   "game_line_audio_no_voice": "Нет голоса",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "Слишком длинный фрагмент",
   "game_line_audio_overlong_hint": "Намного длиннее одной строки; может содержать BGM или другое смешанное аудио",
   "game_line_audio_pending": "Сопоставление",

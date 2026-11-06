@@ -3481,6 +3481,8 @@
   "game_line_audio_matched": "Audio siap",
   "game_line_audio_missing": "Tidak ada audio",
   "game_line_audio_no_voice": "Tidak ada suara",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "Klip terlalu panjang",
   "game_line_audio_overlong_hint": "Jauh lebih panjang dari satu baris; mungkin mengandung BGM atau audio campuran lainnya",
   "game_line_audio_pending": "Mencocokkan",

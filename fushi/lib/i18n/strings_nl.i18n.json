@@ -3481,6 +3481,8 @@
   "game_line_audio_matched": "Audio gereed",
   "game_line_audio_missing": "Geen audio",
   "game_line_audio_no_voice": "Geen spraak",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "Te lang",
   "game_line_audio_overlong_hint": "Veel langer dan een enkele regel; kan BGM of andere gemixte audio bevatten",
   "game_line_audio_pending": "Koppelen",

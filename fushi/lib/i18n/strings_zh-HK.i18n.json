@@ -3481,6 +3481,8 @@
   "game_line_audio_matched": "音頻就緒",
   "game_line_audio_missing": "無音頻",
   "game_line_audio_no_voice": "無配音",
+  "game_line_audio_not_paired": "No original voice",
+  "game_line_audio_not_paired_hint": "No game voice resource was found for this line within the pairing window. The line may have no voice, or the resource may not have been captured.",
   "game_line_audio_overlong": "超長片段",
   "game_line_audio_overlong_hint": "遠超單句時長，可能混入 BGM 或其它混音",
   "game_line_audio_pending": "匹配中",

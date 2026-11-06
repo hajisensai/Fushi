@@ -295,6 +295,30 @@ typedef GalCaptureMemorySave =
 bool galTrackSelectionAffectsCapture(GalHookAudioBackend backend) =>
     backend == GalHookAudioBackend.enginePcm;
 
+/// 「本句音轨」对话框该展示什么（BUG-4130 审查，纯函数可单测）。
+///
+/// - [resourceAudio]：这行真配上了游戏资源原件（[TexthookerLineEntry.hasResourceAudio]），
+///   展示原件并给试听；
+/// - [resourceUnpaired]：会话在资源模式，这行却还没有原件（匹配中 / 无原件 / 其它
+///   来源）。资源模式下 PCM 轨与这句无关（[GalTrackEmptyHint.resourceMode]），列出来
+///   只会被读成「音频没抓到」；用户选了 PCM 轨还会把这行算成用户裁决、撤出待匹配
+///   集合，之后资源晚落盘也不再升格。所以只说明资源模式与这句的当前状态，不给播放键
+///   也不列轨；
+/// - [pcmTracks]：引擎 PCM 等其它后端，列会话音轨供逐句改选（BUG-1102）。
+enum GalLineTrackView { resourceAudio, resourceUnpaired, pcmTracks }
+
+/// 按这行的音频与会话音频后端决定「本句音轨」对话框的形态。
+GalLineTrackView galLineTrackViewFor(
+  TexthookerLineEntry line,
+  GalHookAudioBackend backend,
+) {
+  if (line.hasResourceAudio) return GalLineTrackView.resourceAudio;
+  if (backend == GalHookAudioBackend.gameResource) {
+    return GalLineTrackView.resourceUnpaired;
+  }
+  return GalLineTrackView.pcmTracks;
+}
+
 /// 按音频后端返回音轨空态解释分支。
 GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
     switch (backend) {
@@ -3955,7 +3979,8 @@ class GalHookSessionController extends ChangeNotifier {
         _textService.updateLineAudio(
           lineId,
           status: TexthookerLineAudioStatus.missing,
-          backend: 'game_resource',
+          // BUG-4130 审查：没配上原件就没有 game_resource 来源，backend 只在真拿到
+          // 资源时才写（操作目录 / UI 都按它描述「来自游戏资源直提」）。
           fallbackReason: 'paired_voice_not_found_fallback_disabled',
         );
         _record(
@@ -5778,10 +5803,14 @@ class GalHookSessionController extends ChangeNotifier {
             eventOwnedOnly: line.eventOwnedVoice,
           );
           _trimCache(_pendingResourceMatches);
+          // BUG-4130：还没配上的行不是 game_resource——backend 只在真的拿到资源
+          // （有 resourceId）时才写。以前这里先写了 backend，UI 就凭它弹出带播放键的
+          // 资源弹窗、面板显示 game_resource，点了却没有声音。折叠进来的行若还带着
+          // 上一条事件的 resourceId，也一并清掉：那个资源属于旧事件。
           _textService.updateLineAudio(
             entry.id,
             status: TexthookerLineAudioStatus.pending,
-            backend: 'game_resource',
+            clearResourceId: true,
           );
         }
         // BUG-1063：台词已进缓冲、UI 已被通知；余下的语音抓取（PCM 拷贝、loopback
@@ -6437,6 +6466,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {
     if (!engine.rawVoiceReady || _pendingResourceMatches.isEmpty) return;
+    // 本会话见过的最新一句的 hook 时刻（与资源 tick 同一 GetTickCount64 时钟）。
+    final int newestLineTs = _lineTimestampCache.values.fold<int>(
+      0,
+      (int newest, int ts) => ts > newest ? ts : newest,
+    );
     final List<String> matched = <String>[];
     for (final MapEntry<
           String,
@@ -6465,7 +6499,23 @@ class GalHookSessionController extends ChangeNotifier {
               pending.value.timestampMs,
               textEventId: pending.value.textEventId,
             );
-      if (resourceId == null) continue;
+      if (resourceId == null) {
+        // BUG-4130：「匹配中」必须有终态。后面已经有一句开始的时刻超出本句的配对
+        // 容差（带标资源 ±[kGalVoicePairingWindowMs]，无标记窗更窄），说明播放已经
+        // 走过了这句的配对范围，再等也只是一直显示「匹配中」（无配音的旁白句在资源
+        // 模式下尤其如此）。只把行状态收束成 missing，不撤出待匹配集合：资源晚落盘
+        // 时下一轮仍会把它升格成 matched，制卡路径也照旧按时间戳去找原件。
+        if (row?.audioStatus == TexthookerLineAudioStatus.pending &&
+            newestLineTs - pending.value.timestampMs >
+                kGalVoicePairingWindowMs) {
+          _textService.updateLineAudio(
+            pending.key,
+            status: TexthookerLineAudioStatus.missing,
+            fallbackReason: kGalResourceNotPairedReason,
+          );
+        }
+        continue;
+      }
       _textService.updateLineAudio(
         pending.key,
         status: TexthookerLineAudioStatus.matched,
