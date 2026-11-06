@@ -162,8 +162,10 @@ void main() {
         intake = MusicAudioIntake(
           db,
           registerSource: dbRegistrar(<PlannedMusicRoot>[]),
-          dirExists: (String d) =>
-              dirs.any((String x) => p.equals(x, d) || p.isWithin(d, x)),
+          dirExists: (String d) => dirs.any(
+            (String x) =>
+                p.equals(x, d) || p.isWithin(x, d) || p.isWithin(d, x),
+          ),
           retireSources: (Set<int> ids) async {
             if (ids.isNotEmpty) retired.add(ids);
           },
@@ -214,6 +216,13 @@ void main() {
         expect(retired, <Set<int>>[
           <int>{id},
         ]);
+        // 视频旁的 Drama 撤掉，下层 Disc1 另行登记（不随 Drama 一起撤）。
+        expect(
+          (await db.listAutoMusicSourcesOf(
+            owner.id,
+          )).map((SourceLibraryRow s) => s.rootPath),
+          contains(norm(at(<String>['Anime', 'Drama', 'Disc1']))),
+        );
       });
 
       test('the user added a covering music source: retired', () async {
@@ -300,7 +309,10 @@ void main() {
         audioPaths: <String>[
           at(<String>['Anime', 'Drama', 'Disc1', '01.mp3']),
         ],
-        videoMediaDirs: const <String>[],
+        // 视频根下另有视频：规划停在 Drama，不把整个视频根当音乐来源。
+        videoMediaDirs: <String>[
+          at(<String>['Anime', 'Show']),
+        ],
         oneShot: true,
         reconcile: true,
       );
