@@ -33,16 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3755 条。点号进各自文件。
-> 共 3723 条。点号进各自文件。
+> 共 3756 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4123](bugs/BUG-4123-movie-pack-main-by-title.md) | ✅ | ✅ | movie-pack-main-by-title |
-> 共 3726 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4156](bugs/BUG-4156-movie-pack-main-by-title.md) | ✅ | ✅ | movie-pack-main-by-title |
 | [BUG-4155](bugs/BUG-4155-video-secondary-forced-anchor-overlaps-pos.md) | ✅ | ✅ | 副字幕被强制置顶后与同轨顶部定位字幕叠字、控制条显隐时一个动一个不动 |
 | [BUG-4154](bugs/BUG-4154-background-tasks-sheet-edge-and-srs-stats-narrow.md) | ✅ | ✅ | 后台任务弹层行贴边 / 复习页窄屏统计卡并排挤压 |
 | [BUG-4153](bugs/BUG-4153-ios-manga-solo-title-shelf.md) | ✅ | ✅ | ios-manga-solo-title-shelf |
