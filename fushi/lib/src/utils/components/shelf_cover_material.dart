@@ -5,6 +5,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/baked_surface.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -139,6 +140,15 @@ List<BoxShadow> shelfMaterialShadows({
   ];
 }
 
+/// [shelfMaterialShadows] 画出封面外框的最大范围（抬升态：模糊 24 → σ≈14.4，
+/// 3σ≈43；偏移 (0, 14)，内缩 6）。烘焙纹理按它外扩，投影才不会被裁掉。
+const EdgeInsets kShelfMaterialShadowExtent = EdgeInsets.fromLTRB(
+  40,
+  32,
+  40,
+  56,
+);
+
 /// 柔光扫过一次的时长：取动效 token（墨水屏 / 系统减弱动态效果下归零）。
 Duration shelfSheenDuration(BuildContext context) =>
     fushiMotionDuration(context, FushiMotion.long * 3);
@@ -260,36 +270,53 @@ class ShelfMaterialSurface extends StatelessWidget {
       );
     }
 
+    final Widget staticBody = material == ShelfCoverMaterial.gameCase
+        ? Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              body,
+              IgnorePointer(child: _GlossLayer(material: material)),
+            ],
+          )
+        : body;
     final bool raised = lifted && !compact;
-    return AnimatedContainer(
+    final bool shadowed = !compact && !flat;
+    final Widget shadowedBody = AnimatedContainer(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.standard,
       decoration: BoxDecoration(
         borderRadius: radius,
-        boxShadow: compact || flat
-            ? const <BoxShadow>[]
-            : shelfMaterialShadows(dark: dark, lifted: raised),
+        boxShadow: shadowed
+            ? shelfMaterialShadows(dark: dark, lifted: raised)
+            : const <BoxShadow>[],
       ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          body,
-          if (material == ShelfCoverMaterial.gameCase)
-            IgnorePointer(child: _GlossLayer(material: material)),
-          // 扫光与镜面高光各自只在**真正在画**时才压圆角裁切：静止时它们什么都
-          // 不画，外包一层 ClipRRect 却要每帧每本都裁一次（网格 × 叠层本数）。
-          if (!compact)
-            IgnorePointer(
-              child: ShelfCoverSheen(
-                active: raised,
-                glint: pressGlint,
-                clipRadius: radius,
-              ),
+      child: staticBody,
+    );
+
+    // 投影 + 静态部分（底色 / 封面 / 压暗 / 光泽 / 内描边 / overlay）烘焙成一张
+    // 纹理：悬停动效连续出帧时，每帧不必把几十张面的模糊投影 + 圆角裁切 + 多层
+    // 渐变再画一遍（见 [BakedSurface]）。抬升时投影在动画，这一层自动回到实时
+    // 绘制、落定后再烘焙；扫光与镜面高光随悬停 / 倾斜每帧变化，留在外面实时画。
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        BakedSurface(
+          overflow: shadowed ? kShelfMaterialShadowExtent : EdgeInsets.zero,
+          child: shadowedBody,
+        ),
+        // 扫光与镜面高光各自只在**真正在画**时才压圆角裁切：静止时它们什么都
+        // 不画，外包一层 ClipRRect 却要每帧每本都裁一次（网格 × 叠层本数）。
+        if (!compact)
+          IgnorePointer(
+            child: ShelfCoverSheen(
+              active: raised,
+              glint: pressGlint,
+              clipRadius: radius,
             ),
-          // 3D 倾斜时跟着指针走的镜面高光（只画最前那本）。
-          if (!compact && pressGlint) FushiTiltGlare(clipRadius: radius),
-        ],
-      ),
+          ),
+        // 3D 倾斜时跟着指针走的镜面高光（只画最前那本）。
+        if (!compact && pressGlint) FushiTiltGlare(clipRadius: radius),
+      ],
     );
   }
 }

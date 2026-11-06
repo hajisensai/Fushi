@@ -9,9 +9,21 @@
 
 - **版本不符直接失败**。目录名必须等于 SDK 的 `frameworkVersion`（与 `fushi/.fvmrc` 同钉）。
   静默跳过框架补丁就等于把它修的崩溃放回来，所以升 Flutter 时必须回移或删掉这里的补丁。
-- **幂等**。已打过就打印 `Already applied`；上下文对不上（`-F 0`，不容 fuzz）就失败，绝不半打。
-- 只改补丁里点名的文件；打之前把它们的 CRLF 规范成 LF（Windows 的 SDK checkout 是 CRLF）。
+- **SDK 收敛到「HEAD + 当前 checkout 的补丁集」（2026-11-05）**：一份 SDK 被同机所有
+  worktree、dist_test worker 的所有槽位共用，而不同分支的补丁集不同（比如某分支在 0001 之上
+  又加 0002 / 0003）。以前脚本只会「已打就跳过、没打就打」，SDK 被别的分支多打了补丁后，
+  0001 正反都打不上，其它分支的 bootstrap / worker prepare 全部失败（Mac worker 就这样停过）。
+  现在 SDK 是 git checkout 时，先把 `packages/` 下被改过的文件还原到 SDK 的 HEAD，再按顺序打本
+  目录的补丁（`-F 0`，不容 fuzz，打不上就失败，绝不半打）。`bin/cache/fushi-sdk-patches.stamp`
+  记下补丁集与打完后 `git diff` 的校验和，SDK 已经是目标状态时什么都不改（另一个 checkout
+  可能正在用这些文件编译）。同一 SDK 的打补丁过程用 `bin/cache/fushi-sdk-patches.lock` 串行化。
+  SDK 不是 git checkout 时退回旧做法（逐个判断已打 / 打上）。
+- **仍然存在的限制**：同一台机器上两个 checkout 用不同补丁集**同时**跑测试时，后 prepare 的那个会
+  改掉先跑的那个正在用的 SDK。只有碰 semantics 的测试受影响；补丁集分歧只在改 SDK 补丁的分支合入
+  前短暂存在。
+- 打之前把补丁点名的文件的 CRLF 规范成 LF（Windows 的 SDK checkout 是 CRLF）。
 - 打补丁会**改本机全局 SDK**，同机所有项目都会用上；这里只放上游已合入的修复的回移。
+  对 SDK `packages/` 的手工改动会在下一次 apply-patches 时被还原。
 
 ## 3.47.6
 
