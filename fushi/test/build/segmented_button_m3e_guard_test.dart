@@ -186,4 +186,66 @@ void main() {
       reason: 'FushiAppleSegmentedControl must allocate via fushiSegmentWidths',
     );
   });
+
+  // BUG-4130 未收口的那条路径（PR #2987 审查）：MD3 的 FushiTabBar 页签（含分段
+  // 胶囊 _FushiM3eSegmentedTabs）用框架 TabBar 的非滚动铺满档，框架
+  // （material_ui 1.10.0 tabs.dart:2180）把每个页签包一层 Expanded 等分，不走
+  // fushiSegmentWidths，最长页签仍会先显示不全。根治要把 MD3 页签换成自绘
+  // （推翻「MD3 用框架 TabBar」），待拍板。在那之前把框架 TabBar 钉死在
+  // FushiTabBar 这一处已知豁免：别处新写的框架 TabBar 一律判红；这里的个数
+  // 变了（换成自绘 / 删掉）就同步更新本条与 BUG-4130。
+  test('framework TabBar (equal-split fill) stays confined to FushiTabBar', () {
+    const String exemption =
+        'lib/src/utils/components/glass/fushi_glass_bars.dart';
+    const int exemptionCount = 4;
+    final RegExp frameworkTabBar = RegExp(
+      r'(?<![A-Za-z0-9_.])TabBar(?:\.secondary)?\(',
+    );
+    expect(frameworkTabBar.hasMatch('return TabBar('), isTrue);
+    expect(frameworkTabBar.hasMatch('=> TabBar.secondary('), isTrue);
+    expect(frameworkTabBar.hasMatch('FushiTabBar('), isFalse);
+    expect(frameworkTabBar.hasMatch('FushiTabBar.secondary('), isFalse);
+    final List<File> files =
+        Directory('lib/src')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((File f) => f.path.endsWith('.dart'))
+            .toList(growable: false)
+          ..sort((File a, File b) => a.path.compareTo(b.path));
+    expectScanScale(
+      files.length,
+      what: 'lib/src 下的 .dart',
+      atLeast: 750,
+      measured: 930,
+    );
+    final List<String> offenders = <String>[];
+    int exempted = 0;
+    for (final File file in files) {
+      final String path = file.path.replaceAll(r'\', '/');
+      final int hits = frameworkTabBar
+          .allMatches(maskComments(file.readAsStringSync()))
+          .length;
+      if (hits == 0) continue;
+      if (path == exemption) {
+        exempted = hits;
+      } else {
+        offenders.add('$path: $hits framework TabBar construction(s)');
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'Use FushiTabBar; framework TabBar fill splits tabs equally '
+          '(BUG-4130):\n${offenders.join('\n')}',
+    );
+    expect(
+      exempted,
+      exemptionCount,
+      reason:
+          '$exemption: framework TabBar construction count changed; if MD3 '
+          'tabs no longer use the framework TabBar, drop this exemption and '
+          'update BUG-4130',
+    );
+  });
 }

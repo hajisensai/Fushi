@@ -1,4 +1,4 @@
-## BUG-4130 · 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段
+## BUG-4130 · 分段控件段宽分配没有只走一处：连接式按钮组 / 墨水屏 / Cupertino / Apple 退回形态仍等宽等比缩窄截断最长段（MD3 框架 TabBar 页签未修，反馈未收口）
 - **报告**：2026-11-06（用户 App 内反馈 GaI5uPQEbF 的未收口部分：「播完...显示不全，还有好多这种地方，根本性修复」；BUG-3905 / PR #2694 只修了两条路径）
 - **真实性**：✅ 真 bug（widget 测试在基线 4c4c7505a3 上 7 条红）。PR #2694 抽出的 `fushiSegmentWidths`（`fushi/lib/src/utils/components/fushi_segment_widths.dart:22`）只接到 MD3 胶囊分段与 `FushiAppleSegmentedControl`，其余横排分段各写一份「等宽取最宽段、放不下整体等比缩窄」：
   - MD3 `FushiSegmentedButton` → `FushiConnectedButtonGroup`：`fushi/lib/src/utils/components/glass/fushi_expressive.dart:1244-1248` `_FushiSqueezeRow(equalExtents: true)`，`_widths` 在 `:776` 取最宽段等宽、`:789` 按 `target / content` 全体缩窄（实测 620 宽下「15 分钟」被压到 62.4 < 70 折行；400 宽下每段文字只剩 18px）。连接式段两侧还各留 26px 对勾槽，缩窄时先压的是文字而不是槽。
@@ -16,5 +16,6 @@
   - 漫画取景分段 `MangaCropChoiceSegments`（`fushi/lib/src/mining/advanced_mining/advanced_mining_manga_panels.dart`）原为 `Row` + `Expanded` 等分 + 每段 `FittedBox` 缩小，短段空着时最长段字号被单独缩小；改为 `FushiSegmentRow(fill: true)`，段内边距 16 → 最小 6 作为 `extras`，只有所有退让用尽才由 `FittedBox` 缩字号（固定高底栏不折行）。
   - Apple 分段式页签 `_FushiGlassTabBar` 铺满档（`fushi/lib/src/utils/components/glass/fushi_glass_bars.dart`）原为 `Expanded` 等分 + 单行省略号；改为 `FushiSegmentRow(fill: true)`，默认页签内边距 12 → 最小 4 作为 `extras`。
   - 守卫新增：循环生成的 `Expanded(child: segment…/tab…(` 等分行、使用胶囊分段选中色却不接 `FushiSegmentRow` 的自绘分段，都判红（守卫内置样例自检；对改前代码实测报出这两处）。测试新增 Apple 页签铺满 440 宽完整单行 / 放得下等宽撑满、漫画取景分段 600 宽原字号单行撑满（对改前代码实测 2 红）。
-  - **未修**：MD3 `FushiTabBar` 分段页签（`_FushiM3eSegmentedTabs` 与 `track: false` 的分段形态）用框架 `TabBar` 的非滚动铺满档，框架在 `material_ui` `tabs.dart:2161` 把每个页签包 `Expanded` 等分，`TabBar` 不提供按内容分宽的入口；要根治只能把 MD3 分段页签从框架 `TabBar` 换成自绘（会丢掉框架自带的焦点 / 横滑跟手 / elastic 指示器，并推翻 `fushi_glass_bars.dart` 里「MD3 用框架 TabBar」的既定设计与 `fushi_glass_overlays_test.dart`「MD3 is the Material TabBar」），属方案取舍，留待拍板。
+  - **未修**：MD3 `FushiTabBar` 分段页签（`_FushiM3eSegmentedTabs` 与 `track: false` 的分段形态）用框架 `TabBar` 的非滚动铺满档，框架在 `material_ui` 1.10.0 `tabs.dart:2180-2181` 把每个页签包 `Expanded` 等分，`TabBar` 不提供按内容分宽的入口；要根治只能把 MD3 分段页签从框架 `TabBar` 换成自绘（会丢掉框架自带的焦点 / 横滑跟手 / elastic 指示器，并推翻 `fushi_glass_bars.dart` 里「MD3 用框架 TabBar」的既定设计与 `fushi_glass_overlays_test.dart`「MD3 is the Material TabBar」），属方案取舍，留待拍板。
+  - **因此反馈 GaI5uPQEbF 不能据本 PR 结单**：Android 默认 MD3 设计下 `FushiTabBar` 的非滚动页签（种子详情四页签、galgame 详情三页签、视频刮削对话框三页签等未自行判宽的调用点）最长页签仍会先显示不全；`library_section_tabs` 自己先判「等分放得下」才用铺满档，不受影响。守卫 `segmented_button_m3e_guard_test.dart`「framework TabBar (equal-split fill) stays confined to FushiTabBar」把框架 `TabBar` 钉死在 `fushi_glass_bars.dart` 这一处已知豁免（4 处构造），别处新写判红，换成自绘后须同步删豁免。
 - **备注**：未真机 / 模拟器截图复测，布局几何由 widget 测试验证。墨水屏分段观感从原生描边分段换成连接式按钮组 + outline 描边（反色选中不变），未在墨水屏设备上目测。
