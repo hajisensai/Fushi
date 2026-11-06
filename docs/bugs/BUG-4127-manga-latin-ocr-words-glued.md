@@ -1,6 +1,6 @@
 ## BUG-4127 · 英文漫画 OCR 点词查不到：叠加层丢掉词间空格与换行，取词把整行粘成一个词
-- **报告**：2026-11-06（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
-- **备注**：
+- **报告**：2026-11-06（用户：应用内反馈 vXYKPudf7U，Windows 3.2.0-debug.22671；本地模型与 Google Lens OCR 都一样）
+- **真实性**：✅ 真 bug。不是浮层的结果显示 / 过滤问题，是查询串本身错了。漫画叠加层按字格逐字输出 `<span class="ocr-char">`（`fushi/lib/src/media/manga/manga_overlay_html.dart` `_mangaCharacterRegionsHtml`，修复前 586–616 行）：OCR 区域只覆盖可见字（`mangaTextRegionsMatchSentence` / `_mangaGeometryTextRegions` 454 行跳过空白），各行 `block.lines.join()` 直接拼接，DOM 正文于是是 `BEENSOLONGSINCE…`。阅读器取词（`reader_selection_scripts.dart` `selectFromPosition`）一路扫过词界，查询串成了 `BEENSOLONGSINCE`；引擎 `native/fushidicts/fushidicts_src/scan/word_scan.cpp` `scan_candidates` 不在两个拉丁字母之间切，整串只有一个候选 → 空结果。只有后面紧跟标点的词（`WELL?` / `PHEW…` / `IT'` / 从词中间点出的 `ELL`）查得到，这就是查词历史里那几条的来历。查词页手输 `BEEN WELL` 有空格，所以能查到。日文不受影响（本就无空格）。整句（`data-manga-sentence`，制卡句子）也被拼成 `SOLONG`。
+- **[x] ① 已修复** — 两个字格之间夹着空白或拉丁文行界（`mangaOcrNeedsWordGap`：行尾是空格分词脚本字母 / 句内标点、行首是这类字母；断字连字符不算）时补一个纯空白文本节点，阅读器取词按 BUG-3453 的 `hasSkippedWhitespaceBetween` 规则当词界；整句文本改走 `mangaJoinOcrText`，拉丁文行界 / 块界补空格、日文无缝。顺带：查词浮层空态写明查询词（`dictionaryPopupNoResultsMessage`，i18n `dictionary_popup_no_results_term`）。提交 56c85bedaa。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_latin_ocr_word_gap_bug4127_test.dart`（+ `.js`）：用 node 真执行阅读器取词脚本，DOM 序列取自真实 `mangaOcrBoxesHtml` 输出（Lens 区域 / 行几何回退 / 日文），加生成器与整句断言、空态文案断言。变异实测：去掉补空白节点后点 BEEN 得到 `BEENSOLONGSINCE`，测试红。
+- **备注**：本地 OCR 模型若对英文直接输出无空格文本（行内词间本就没有空格），行内粘连只能在 OCR 端解决，本修复只能补回行界；未做设备肉眼复测（真机验证已取消）。拉丁文点词现在只查单词，不再跨词查短语（与 BUG-3453 有声书 cue 缝同一取舍）。
