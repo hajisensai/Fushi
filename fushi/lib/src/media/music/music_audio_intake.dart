@@ -173,7 +173,7 @@ class MusicAudioIntake {
     );
     final SourceLibraryRow? fresh = await _db.getMediaSourceById(id);
     if (fresh == null) return null;
-    return (await SourceLibraryScanner(_db).scan(fresh)).error;
+    return _rescan(fresh);
   }
 
   Future<String?> _register({

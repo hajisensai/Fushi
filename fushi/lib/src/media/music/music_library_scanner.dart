@@ -297,7 +297,7 @@ class MusicLibraryScanner {
     final Map<String, String> coverCache = <String, String>{};
     Directory? coverDir;
     Future<String> cacheCover(String remotePath, Uint8List data) async {
-      coverDir ??= await _coverDirectory();
+      coverDir ??= await (await _coverDirectory()).create(recursive: true);
       final File f = File(
         p.join(coverDir!.path, musicRemoteCoverFileName(remotePath, data)),
       );
