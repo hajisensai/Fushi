@@ -291,10 +291,12 @@
   // hash or a message is not a frame of ours.
   const FRAME_ID = /^[0-9a-f]{16}$/;
 
-  // Same-origin URL of a captured frame. Callers pass ids checked against
-  // FRAME_ID; encoding keeps any other value inside frame/ regardless.
+  // URL of a captured frame, relative to this page (web/lens.html -> ../frame/).
+  // Kept relative instead of built from location.href so the page's own address
+  // never flows into the <img> src. Callers pass FRAME_ID-checked ids; encoding
+  // keeps any other value inside frame/ regardless.
   function frameUrl(frameId) {
-    return new URL(`frame/${encodeURIComponent(frameId)}.jpg`, ROOT).href; // NOSONAR: S5696 id is FRAME_ID-checked hex, URL is same-origin frame/
+    return `../frame/${encodeURIComponent(frameId)}.jpg`;
   }
 
   window.addEventListener('message', (event) => {
