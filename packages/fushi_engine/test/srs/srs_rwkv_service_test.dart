@@ -10,6 +10,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
@@ -575,6 +576,23 @@ void main() {
         expect(jsonDecode(await snapshot.readAsString()), hasLength(2));
       } finally {
         await again.close();
+      }
+    });
+
+    test('阶段切换记进重活账本（BUG-4075 取证：采样窗口看得出是否卡在准备中 / 反复重建）', () async {
+      final _Fixture f = await _Fixture.create();
+      await f.graduate(await f.cards(2));
+      final SrsRwkvService service = f.service(_FakeBackend());
+      SrsOpLedger.reset();
+      try {
+        await service.start();
+        await _settled(service);
+        final String summary = SrsOpLedger.takeSummary() ?? '';
+        expect(summary, contains('rwkv:preparing+1'));
+        expect(summary, contains('rwkv:ready+1'));
+      } finally {
+        SrsOpLedger.reset();
+        await service.close();
       }
     });
 
