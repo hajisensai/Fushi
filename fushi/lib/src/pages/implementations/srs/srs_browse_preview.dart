@@ -21,6 +21,11 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
+import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
+    show SrsHtmlCardView, srsNativeHtmlCardFor;
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardRenderedNative;
+import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -182,16 +187,41 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
         },
         onSourceLink: _openSource,
       );
-      // 与复习页同一判据（[SrsRenderedCard.fushiCardDefinitions]）：内置 Fushi 卡片（模板未改、
+      // 与复习页同一判据（[SrsRenderedCard.fushiCardDefinitions]）：内置 Fushi 卡片（只调了区块布局、
       // 媒体原生画得全）走原生 + 释义 WebView 的混合卡面，其余整面 WebView。以前预览一律整面
       // WebView，Fushi 卡片在浏览预览里与复习时长得不一样（satv-DI70B）。
-      final String? definitions = rendered.fushiCardDefinitions;
+      // 非 Fushi 卡片两面都在原生认得的子集里时同复习页走原生 HTML 卡面（[srsNativeHtmlCardFor]）。
+      // 自定义区块（字段 / HTML 区块）原生画不了时同样整面 WebView（[srsFushiCardRenderedNative]）。
+      final String? definitions =
+          srsFushiCardRenderedNative(
+            rendered,
+            languageCode: cardFace.languageCode,
+          )
+          ? rendered.fushiCardDefinitions
+          : null;
+      final SrsHtmlCard? html = definitions != null
+          ? null
+          : srsNativeHtmlCardFor(
+              fushiCard: cardFace.fushiCard,
+              question: rendered.question,
+              answer: rendered.answer,
+              css: rendered.css,
+              languageCode: cardFace.languageCode,
+            );
       face = definitions != null
           ? SrsFushiCardView(
               key: const ValueKey<String>('srs-browse-preview-native'),
               face: cardFace,
               fields: rendered.fields,
               definitionsHtml: definitions,
+              front: rendered.fushiCardFront,
+              back: rendered.fushiCardBack,
+            )
+          : html != null
+          ? SrsHtmlCardView(
+              key: const ValueKey<String>('srs-browse-preview-html'),
+              face: cardFace,
+              source: html.face(answerSide: widget.showAnswer),
             )
           : ref.watch(srsCardFaceBuilderProvider)(context, cardFace);
     }

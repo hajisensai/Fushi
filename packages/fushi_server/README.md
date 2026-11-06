@@ -13,6 +13,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（用户添加的 BT 站 / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
 | 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
+| 跟随已配对设备登录 Fushi 账户 | `/api/interconnect/leaderboard-link`（POST，仅 TLS） | 标为「我的设备」的已配对设备在本机没有账户时，跟随服务端当前 Profile 的排行榜账户自动登录（服务端代绑对端公钥）。总闸 `leaderboard_link` 默认开，但配对从不自动标「我的设备」，要管理员手动标 |
 | WebUI / admin API | `http(s)://<host>:38780/` | 状态、配对 PIN、库根管理、上传、任务、下载、模型、设置、日志 |
 
 设计文档：[`docs/specs/2026-09-08-fushi-server-headless-design.md`](../../docs/specs/2026-09-08-fushi-server-headless-design.md)。
@@ -100,6 +101,7 @@ scan_scrape: true             # 扫描后自动补刮「从未识别过」的视
 # tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
 scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
 profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
+leaderboard_link: true        # 允许「我的设备」跟随本机排行榜账户自动登录（见下文「跟随已配对设备登录」）；保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -160,13 +162,32 @@ fushi_server init                      生成配置
 fushi_server serve [--scan] [--[no-]prune]   起服务（Ctrl-C / SIGTERM 优雅停）；--no-prune 对本进程所有扫描生效
 fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，随后同步补刮（不起服务）
 fushi_server status                    打印库/配对概况
-fushi_server pair ls | revoke <peerId> 已配对设备
+fushi_server pair ls | revoke <peerId> 已配对设备（ls 里标 `[我的设备]`；revoke 同时清掉标记）
 fushi_server admin reset-token         重生成 admin_token
 fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
+fushi_server backup create -o <file> [--no-documents]   整机备份（服务停着时；在跑时用 ctl backup create）
+fushi_server backup restore <file> --yes [--no-config]  从备份还原（须先停服）
 ```
 
 所有子命令接受 `--config <path>`（默认当前目录 `fushi_server.yaml`）和 `--verbose`。
+
+### 备份与还原
+
+备份的是这台服务端自己（换机 / 重装 / 回滚用），一个 zip：数据库的一致快照（`VACUUM INTO`，
+serve 在跑也安全）、配置文件、数据目录里其余文件（互联身份与 TLS 证书、配对、词典、任务、寄存的
+配置方案……）。不进包：`tmp/`、`logs/`、`backups/`、锁文件。`documents/`（书 / 封面 / 有声书 /
+下载）默认带上，`--no-documents` 只留设置与状态——还原后库里的条目会指向缺失文件，要重新扫描 /
+下载。**备份里有 `admin_token`、qBittorrent 密码、AI key 等凭据，要当密钥保管。**
+
+- 服务停着：`fushi_server backup create -o /backup/fushi.zip`。
+- 服务在跑：`fushi_server ctl backup create [--no-documents]` 在后台生成到 `<data>/backups/`，
+  `ctl backup ls` 看进度，下载走 `GET /api/admin/backups/<name>`（admin_token 鉴权），
+  `ctl backup rm <name>` 删除。
+- 还原（先停服）：`fushi_server backup restore fushi.zip --yes`。当前数据目录的内容整体挪到
+  `<data_dir>.pre-restore-<时间>/`、配置存成 `<配置>.pre-restore-<时间>`，都不删除；包里配置的
+  `data_dir` 换成本机这份。`--no-config` 只还原数据。比本版本新的数据库 schema 拒绝还原（先升级）。
+  中途失败会把原数据挪回去。
 
 ### `ctl`：操作正在运行的 serve
 
@@ -175,6 +196,7 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 
 ```
 fushi_server ctl status | logs | p2p
+fushi_server ctl pairing [ls] | revoke <peerId> | owner <peerId> on|off   已配对设备 / 标记「我的设备」
 fushi_server ctl lib [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
 fushi_server ctl scan [--prune|--no-prune]
 fushi_server ctl dl [ls] | cancel|retry|rm <id> | subtitles <id>（该任务的字幕行：来源 / 语言 / 原文件名 / 落盘路径 / 错误）
@@ -278,7 +300,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | 路由 | 说明 |
 |---|---|
 | `GET status` / `GET logs` | 运行状态、最近 500 行日志 |
-| `GET pairing` / `DELETE pairing/peers/<id>` | 待输入 PIN + 已配对列表 / 吊销 |
+| `GET pairing` / `DELETE pairing/peers/<id>` | 待输入 PIN + 已配对列表（每台带 `deviceKeyVerified` / `ownerDevice`，另有 `leaderboardLink` 开关状态）/ 吊销（同时清掉「我的设备」标记与设备钥匙指纹） |
+| `PUT pairing/peers/<id>/owner {owner}` | 标记 / 取消「我的设备」；配对时没证明设备钥匙的 peer 回 409 `device_key_unverified`，不存在的 peer 404 |
 | `GET|POST libraries` / `DELETE libraries/<id>` / `POST scan` | 库根管理（写回 yaml）/ 触发扫描（单飞） |
 | `GET jobs` / `DELETE jobs/<id>` | 互联任务（ASR 等） |
 | `GET|POST downloads` / `POST downloads/<id>/cancel|retry` / `DELETE downloads/<id>` | 代下载 |
@@ -400,6 +423,28 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - 不从服务端自己的偏好生成配置，所以这条通道带不出服务端任何凭据；寄存物的凭据已由发送端剔除。
 - 默认关：没开关的入站写就是隐形写入通道（与 app「允许已配对设备读写本机配置」同一默认）。
   WebUI「配对」页的「配置文件寄存」卡片可一键开关、指定分发、删除。
+
+### 跟随已配对设备登录（`leaderboard_link`）
+
+互联端点 `/api/interconnect/leaderboard-link` 与 app 当 host 时同一条（引擎
+`sync/interconnect_leaderboard_link.dart`）：手机等新设备本机没有 Fushi 账户时，自己生成设备钥匙，
+只把公钥 + 持有证明交给服务端；服务端用**自己的**设备钥匙签名调排行榜服务 `POST /v1/me/devices`，
+把这把公钥挂到同一账户，再把账户公开资料与服务地址回给对端。私钥、恢复码从不经互联传输。
+
+- 账户 = DB 当前激活 Profile 的本机排行榜账户（`leaderboard login / register / import` 建的那个，
+  `<data>/support/leaderboard/profile_<id>.json`）；每次请求现读，没有账户回 409 `no_account`。
+- 门：必须 TLS（明文下能力位 `leaderboardDeviceLinkV1` 不报、端点 403 `https_required`）；只认已配对
+  设备的 per-peer 令牌（共享 token 403）；总闸 `leaderboard_link` 关着 403 `disabled`；对端没被标为
+  「我的设备」403 `not_owner_device`。
+- **与 app 的区别：配对从不授予「我的设备」。** app 在配对审批弹窗里有「允许 · 这是我的设备」，
+  服务端没有审批按钮（PIN 只证明对方拿到了 PIN，借用服务端的朋友也拿得到），所以配对一律只落
+  「仅互联」，由管理员之后在 WebUI「配对 → 已配对设备」或 `ctl pairing owner <peerId> on` 手动标
+  ——与 app 在已配对设备列表里手动标记同一条路。代绑出去的钥匙在账户里是满权限，只标自己的设备。
+- 只有配对时证明过设备钥匙的设备能标（升级前配对的 / 旧版客户端要升级后重新配对）；重新配对会清掉
+  旧标记，吊销同时清掉标记与指纹。标记与指纹落 `preferences` 表（`interconnect_owner_device_peers` /
+  `interconnect_peer_device_keys`），与 app 同键同形、同一份实现。
+- 总闸默认开（与 app「允许已配对设备自动登录我的账户」同一默认）：真正的门是逐台的手动标记，
+  不标任何设备时这条端点对谁都是 403。
 
 ### 上传协议
 

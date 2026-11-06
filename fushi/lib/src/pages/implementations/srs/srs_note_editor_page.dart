@@ -36,6 +36,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart'
+    show srsFushiBlockLabel;
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
@@ -246,15 +248,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     );
   }
 
-  static String _blockLabel(FushiCardBlock b) => switch (b) {
-    FushiCardBlock.term => t.srs_note_block_term,
-    FushiCardBlock.reading => t.srs_note_block_reading,
-    FushiCardBlock.picture => t.srs_note_block_picture,
-    FushiCardBlock.sentence => t.srs_note_block_sentence,
-    FushiCardBlock.definitions => t.srs_note_block_definitions,
-    FushiCardBlock.frequency => t.srs_note_block_frequency,
-    FushiCardBlock.source => t.srs_note_block_source,
-  };
+  static String _blockLabel(FushiCardBlock b) => srsFushiBlockLabel(b);
 
   /// 一列分组字段：组标题（有的话）+ 字段，组与组之间多空一点。
   List<Widget> _groupedFields(
