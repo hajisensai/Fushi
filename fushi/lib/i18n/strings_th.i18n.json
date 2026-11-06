@@ -10098,6 +10098,7 @@
   "video_online_library_add": "เพิ่มในคลังวิดีโอ",
   "video_online_library_added": "เพิ่ม $n ตอนในคลังวิดีโอแล้ว",
   "video_online_library_remove": "นำออกจากคลังวิดีโอ",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "นำออกจากคลังวิดีโอแล้ว",
   "video_online_mining_mode": "การสร้างการ์ดจากวิดีโอออนไลน์",
   "video_online_mining_mode_background": "ในเบื้องหลัง",

@@ -262,6 +262,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 本合集**有序**成员槽（本地行 + 只在对端的远端占位）——本页唯一的成员真相源。
   List<CollectionEpisodeSlot> _slots = const <CollectionEpisodeSlot>[];
   bool _libraryRemoveBusy = false;
+  List<CollectionEpisodeSlot>? _mediaServerWorksSlots;
+  Set<MediaServerLibraryWork> _mediaServerWorksCache =
+      const <MediaServerLibraryWork>{};
   bool _loading = true;
 
   /// 成员里的**本地行**子集，保持落盘序。写本地库的管理动作（批量字幕 / 改集名 /
@@ -2209,22 +2212,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           buttonKey: const ValueKey<String>('collection-hero-library-remove'),
           icon: FushiIcons.remove,
           label: t.video_online_library_remove,
+          selected: true,
           busy: _libraryRemoveBusy,
           onPressed: () => unawaited(_removeMediaServerWorks()),
         ),
     ];
   }
 
-  /// 本合集里从媒体服务器加入的作品（剧名合集里的入库集）。
-  Set<MediaServerLibraryWork> get _mediaServerWorks => <MediaServerLibraryWork>{
-    for (final VideoBookRow row in _members) ?mediaServerWorkOfRow(row),
-  };
+  /// 本合集里从媒体服务器加入的作品（剧名合集里的入库集）。按 [_slots] 实例
+  /// 记忆：每次 build 都要问，而判据要逐行解析规格 JSON。
+  Set<MediaServerLibraryWork> get _mediaServerWorks {
+    if (!identical(_mediaServerWorksSlots, _slots)) {
+      _mediaServerWorksSlots = _slots;
+      _mediaServerWorksCache = <MediaServerLibraryWork>{
+        for (final VideoBookRow row in _members) ?mediaServerWorkOfRow(row),
+      };
+    }
+    return _mediaServerWorksCache;
+  }
 
   /// 移出这些作品的入库行；已下载到本机的集不动。合集被删空就退出详情页。
+  /// 失败也重读：批删可能删掉了一部分。
   Future<void> _removeMediaServerWorks() async {
     if (_libraryRemoveBusy) return;
     setState(() => _libraryRemoveBusy = true);
-    final int removed;
+    int removed = 0;
+    Object? failure;
     try {
       removed = await MediaServerVideoLibrary(
         database: widget.database,
@@ -2235,15 +2248,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         error,
         stack,
       );
-      if (!mounted) return;
-      setState(() => _libraryRemoveBusy = false);
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      return;
+      failure = error;
     }
     if (!mounted) return;
     setState(() => _libraryRemoveBusy = false);
     widget.onChanged();
-    if (removed > 0) FushiToast.show(msg: t.video_online_library_removed);
+    if (failure != null) {
+      FushiToast.show(msg: '$failure', severity: ToastSeverity.error);
+    } else if (removed > 0) {
+      FushiToast.show(msg: t.video_online_library_removed);
+    }
     final bool emptied =
         await widget.database.getMediaCollectionById(widget.collection.id) ==
         null;

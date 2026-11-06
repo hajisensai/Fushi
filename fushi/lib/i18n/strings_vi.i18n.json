@@ -10098,6 +10098,7 @@
   "video_online_library_add": "Thêm vào thư viện video",
   "video_online_library_added": "Đã thêm $n tập vào thư viện video",
   "video_online_library_remove": "Xóa khỏi thư viện video",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Đã xóa khỏi thư viện video",
   "video_online_mining_mode": "Tạo thẻ từ video trực tuyến",
   "video_online_mining_mode_background": "Trong nền",

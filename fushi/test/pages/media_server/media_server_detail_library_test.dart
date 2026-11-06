@@ -154,4 +154,47 @@ void main() {
     expect((await tester.runAsync(database.allVideoBooks))!, isEmpty);
     expect(removeButton(), findsNothing);
   });
+  testWidgets('removing the work elsewhere (library home menu) flips the open '
+      'detail page back to add without reopening it', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final MediaServerVideoLibrary library = MediaServerVideoLibrary(
+      database: database,
+    );
+    await tester.runAsync(() => library.addToLibrary(browser, series));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MediaServerDetailView(
+              session: MediaServerSession(
+                browser: browser,
+                play: (BuildContext _, MediaServerPlayRequest _) {},
+                library: library,
+              ),
+              item: series,
+            ),
+          ),
+        ),
+      ),
+    );
+    await settleUntil(tester, () => removeButton().evaluate().isNotEmpty);
+    expect(addButton(), findsNothing);
+
+    // 库页菜单走的是按作品身份移出，不经过本页。
+    final int removed = (await tester.runAsync(
+      () => library.removeWorks(<MediaServerLibraryWork>{
+        (serverId: browser.serverId, workId: series.id),
+      }),
+    ))!;
+    expect(removed, 2);
+    await settleUntil(tester, () => addButton().evaluate().isNotEmpty);
+    expect(removeButton(), findsNothing);
+    expect(find.text(t.video_discovery_in_library), findsNothing);
+  });
 }

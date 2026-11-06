@@ -17,7 +17,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show TableUpdate, TableUpdateQuery, UpdateKind, Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
@@ -140,13 +141,33 @@ class MediaServerVideoLibrary {
     MediaServerBrowser browser,
     MediaServerItem work,
   ) async {
+    final MediaServerLibraryWork target = (
+      serverId: browser.serverId,
+      workId: work.id,
+    );
     final Set<String> online = <String>{
-      for (final ({VideoBookRow row, MediaServerBookSpec spec}) entry
-          in await _rowsOfWork(browser.serverId, work.id))
-        entry.row.bookUid,
+      for (final VideoBookRow row in await database.allVideoBooks())
+        if (mediaServerWorkOfRow(row) == target) row.bookUid,
     };
     return MediaServerWorkLibraryStatus(online);
   }
+
+  /// 入库行增删的信号（任何入口：服务器详情页、库页菜单、后台新集探针）。只听
+  /// insert / delete——在库与否只随行的增删变，播放进度等 update 不触发。
+  Stream<void> get membershipChanges => database
+      .tableUpdates(
+        TableUpdateQuery.allOf(<TableUpdateQuery>[
+          TableUpdateQuery.onTable(
+            database.videoBooks,
+            limitUpdateKind: UpdateKind.insert,
+          ),
+          TableUpdateQuery.onTable(
+            database.videoBooks,
+            limitUpdateKind: UpdateKind.delete,
+          ),
+        ]),
+      )
+      .map((Set<TableUpdate> _) {});
 
   /// 加入媒体库：电影一行；剧把**全部季**的集逐页取回各落一行，归进剧名合集。
   /// 已在库的集跳过（再点一次只补新集，不动已看 / 已下载的行）。返回新加的条数。
@@ -249,21 +270,6 @@ class MediaServerVideoLibrary {
     ];
     if (uids.isEmpty) return 0;
     return repository.deleteVideoBooksAndReclaimAssets(uids);
-  }
-
-  Future<List<({VideoBookRow row, MediaServerBookSpec spec})>> _rowsOfWork(
-    String serverId,
-    String workId,
-  ) async {
-    return <({VideoBookRow row, MediaServerBookSpec spec})>[
-      for (final VideoBookRow row in await database.allVideoBooks())
-        if (isMediaServerVideoPath(row.videoPath))
-          if (MediaServerBookSpec.tryParse(row.streamSpecJson)
-              case final MediaServerBookSpec spec
-              when spec.serverId == serverId &&
-                  (spec.workId ?? spec.itemId) == workId)
-            (row: row, spec: spec),
-    ];
   }
 
   /// 电影 = 自身；剧 = 整部剧的集（不带 SeasonId，按季集号升序，逐页取完）。

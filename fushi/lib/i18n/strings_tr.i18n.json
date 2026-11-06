@@ -10098,6 +10098,7 @@
   "video_online_library_add": "Video kitaplığına ekle",
   "video_online_library_added": "$n bölüm video kitaplığına eklendi",
   "video_online_library_remove": "Video kitaplığından kaldır",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Video kitaplığından kaldırıldı",
   "video_online_mining_mode": "Çevrimiçi video kart oluşturma",
   "video_online_mining_mode_background": "Arka planda",

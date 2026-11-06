@@ -10098,6 +10098,7 @@
   "video_online_library_add": "Adicionar à biblioteca de vídeos",
   "video_online_library_added": "$n episódios adicionados à biblioteca de vídeos",
   "video_online_library_remove": "Remover da biblioteca de vídeos",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Removido da biblioteca de vídeos",
   "video_online_mining_mode": "Mineração de vídeo online",
   "video_online_mining_mode_background": "Em segundo plano",

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -272,6 +273,31 @@ void main() {
     expect(await repository.getByBookUid('m1'), isNotNull);
     expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 0);
   });
+
+  test(
+    'membershipChanges fires on add and remove, not on progress writes',
+    () async {
+      int signals = 0;
+      final StreamSubscription<void> sub = library.membershipChanges.listen(
+        (_) => signals++,
+      );
+      addTearDown(sub.cancel);
+      Future<void> flush() => Future<void>.delayed(Duration.zero);
+
+      expect(await library.addToLibrary(browser, series), 3);
+      await flush();
+      expect(signals, greaterThan(0), reason: '加入要通知压在栈里的详情页');
+
+      signals = 0;
+      await repository.updatePosition('e1', 42000);
+      await flush();
+      expect(signals, 0, reason: '播放进度写入不改变在库与否，不该触发全表重读');
+
+      expect(await library.removeFromLibrary(browser, series), 3);
+      await flush();
+      expect(signals, greaterThan(0), reason: '移出要通知压在栈里的详情页');
+    },
+  );
 
   test('mediaServerWorkOfRow ignores rows that are not media-server rows', () {
     final VideoBookRow local = VideoBookRow(

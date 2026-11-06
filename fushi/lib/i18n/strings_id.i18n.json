@@ -10098,6 +10098,7 @@
   "video_online_library_add": "Tambahkan ke pustaka video",
   "video_online_library_added": "$n episode ditambahkan ke pustaka video",
   "video_online_library_remove": "Hapus dari pustaka video",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Dihapus dari pustaka video",
   "video_online_mining_mode": "Mining video online",
   "video_online_mining_mode_background": "Di latar belakang",

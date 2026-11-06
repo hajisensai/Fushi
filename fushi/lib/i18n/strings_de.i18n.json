@@ -10098,6 +10098,7 @@
   "video_online_library_add": "Zur Videobibliothek hinzufügen",
   "video_online_library_added": "$n Folgen zur Videobibliothek hinzugefügt",
   "video_online_library_remove": "Aus der Videobibliothek entfernen",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Aus der Videobibliothek entfernt",
   "video_online_mining_mode": "Mining von Online-Videos",
   "video_online_mining_mode_background": "Im Hintergrund",

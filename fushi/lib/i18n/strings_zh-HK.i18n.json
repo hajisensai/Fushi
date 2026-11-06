@@ -10098,6 +10098,7 @@
   "video_online_library_add": "加入媒體庫",
   "video_online_library_added": "已把 $n 集加入媒體庫",
   "video_online_library_remove": "移出媒體庫",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "已移出媒體庫",
   "video_online_mining_mode": "線上影片製卡",
   "video_online_mining_mode_background": "背景製卡",

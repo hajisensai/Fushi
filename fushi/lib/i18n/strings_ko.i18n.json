@@ -10098,6 +10098,7 @@
   "video_online_library_add": "비디오 라이브러리에 추가",
   "video_online_library_added": "에피소드 $n개를 비디오 라이브러리에 추가했습니다",
   "video_online_library_remove": "비디오 라이브러리에서 제거",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "비디오 라이브러리에서 제거했습니다",
   "video_online_mining_mode": "온라인 비디오 마이닝",
   "video_online_mining_mode_background": "백그라운드에서",

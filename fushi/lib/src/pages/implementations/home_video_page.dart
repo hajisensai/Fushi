@@ -4434,11 +4434,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               },
             ),
           // 从媒体服务器加入的作品：移出整部作品（电影 = 自身，剧 = 全部集），与
-          // 服务器详情页的「移出媒体库」同一动作。
+          // 服务器详情页的「移出媒体库」同一动作。集卡上文案写明是整部剧。
           if (mediaServerWorkOfRow(book) case final MediaServerLibraryWork work)
             DialogListAction(
-              label: t.video_online_library_remove,
-              icon: FushiIcons.remove,
+              label: work.workId == book.bookUid
+                  ? t.video_online_library_remove
+                  : t.video_online_library_remove_series,
+              icon: FushiIcons.removeCircle,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(
@@ -4462,11 +4464,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 库页「移出媒体库」（卡片 / 合集菜单）：删这些媒体服务器作品的入库行，与服务器
   /// 详情页的「移出」同一实现（[MediaServerVideoLibrary.removeWorks]），不联网。
-  /// 已下载到本机的集是普通本地视频，不跟着移出。
+  /// 已下载到本机的集是普通本地视频，不跟着移出。失败也刷新：批删可能删掉了一部分。
   Future<void> _removeMediaServerWorks(
     Set<MediaServerLibraryWork> works,
   ) async {
-    final int removed;
+    int removed = 0;
+    Object? failure;
     try {
       removed = await MediaServerVideoLibrary(
         database: appModelNoUpdate.database,
@@ -4478,15 +4481,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         error,
         stack,
       );
-      if (!mounted) return;
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      return;
+      failure = error;
     }
     if (!mounted) return;
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     _refresh();
-    if (removed > 0) FushiToast.show(msg: t.video_online_library_removed);
+    if (failure != null) {
+      FushiToast.show(msg: '$failure', severity: ToastSeverity.error);
+    } else if (removed > 0) {
+      FushiToast.show(msg: t.video_online_library_removed);
+    }
   }
 
   /// [book] 若是从当前远端来源（互联 host / 媒体服务器）下载来的，返回服务端清单里
@@ -9562,7 +9567,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         if (serverWorks.isNotEmpty)
           DialogListAction(
             label: t.video_online_library_remove,
-            icon: FushiIcons.remove,
+            icon: FushiIcons.removeCircle,
             onPressed: () => unawaited(_removeMediaServerWorks(serverWorks)),
           ),
       ],

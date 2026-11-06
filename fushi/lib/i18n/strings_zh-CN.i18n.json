@@ -10098,6 +10098,7 @@
   "video_online_library_add": "加入媒体库",
   "video_online_library_added": "已把 $n 集加入媒体库",
   "video_online_library_remove": "移出媒体库",
+  "video_online_library_remove_series": "把整部剧移出媒体库",
   "video_online_library_removed": "已移出媒体库",
   "video_online_mining_mode": "在线视频制卡",
   "video_online_mining_mode_background": "后台制卡",
