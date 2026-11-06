@@ -15,7 +15,7 @@ void main() {
       "<System><Provider Name='Application Error' "
       "Guid='{a0e9b465-b939-57d7-b27d-95d8e925ff57}'/><EventID>1000</EventID>"
       "<Level>2</Level><TimeCreated SystemTime='2026-11-06T04:17:25.3765898Z'/>"
-      "<Channel>Application</Channel></System><EventData>"
+      '<Channel>Application</Channel></System><EventData>'
       "<Data Name='AppName'>fushi.exe</Data>"
       "<Data Name='AppVersion'>3.3.0.23880</Data>"
       "<Data Name='ModuleName'>flutter_windows.dll</Data>"
