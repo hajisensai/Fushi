@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3722 条。点号进各自文件。
+> 共 3726 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4130](bugs/BUG-4130-subtitle-book-vertical-halfwidth-bang.md) | ✅ | ✅ | 转录 / 字幕合成书竖排时半角「!」「?」横躺 |
+| [BUG-4129](bugs/BUG-4129-apple-music-init-timeout-misreported-drm.md) | ✅ | ✅ | Apple Music 登录 init 超时一律报「系统 DRM 服务没有响应」 |
+| [BUG-4128](bugs/BUG-4128-wavy-seek-tap-cancelled-by-drag.md) | ✅ | ✅ | 波浪进度条点按不跳转（按住超过 100ms 的点按被横向拖动的 cancel 清掉） |
+| [BUG-4127](bugs/BUG-4127-music-id3-legacy-encoding-mojibake.md) | ✅ | ✅ | 音乐库 / 有声书导入：ID3 Latin-1 帧里的日文旧编码显示成乱码 |
 | [BUG-4122](bugs/BUG-4122-srs-reposition-probe-delegated.md) | ✅ | ✅ | Fushi 复习下按词频重排新卡报 AnkiRepositionUnsupportedException：探测委派给了 Anki 后端 |
 | [BUG-4121](bugs/BUG-4121-mpv-cache-on-disk-without-cache-dir.md) | ✅ | ✅ | 每次开网络流 mpv 报 "Failed to create file cache" |
 | [BUG-4120](bugs/BUG-4120-linux-x11-video-software-rendering.md) | ✅ | ✅ | Linux X11（Steam 游戏模式）视频走 mpv 软件渲染、卡顿 |
