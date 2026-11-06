@@ -27,6 +27,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:shelf/shelf.dart' as shelf;
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -306,10 +307,24 @@ class ScreenOcrHost {
   Timer? _idleTimer;
   bool _disposed = false;
 
+  /// 正在用常驻会话识别的请求数：大于 0 时空闲计时不得关会话（关了会把在跑的
+  /// 识别一起拒掉），归零时才开始计空闲。
+  int _inFlight = 0;
+
   /// capabilities 用：选了外部引擎，或本平台能跑、模型已下载、服务支持文字图会话。
+  ///
+  /// 探测本身失败（模型目录解析不了、目录不可读等）按「不可用」报，并记日志：
+  /// 这是 `/api/capabilities` 里一个可选能力位，它的探测异常不能把整份能力协商
+  /// 打成 500（所有对端都会因此连不上），与 `mangaOcr` 能力位同一语义。真正发帧
+  /// 时 [handle] 仍按原样把异常抛给 server。
   Future<bool> isAvailable() async {
     if (_externalEngine?.call() != null) return true;
-    return _localAvailable();
+    try {
+      return await _localAvailable();
+    } on Object catch (e, st) {
+      engineLog.log('ScreenOcrHost.isAvailable', e, st);
+      return false;
+    }
   }
 
   Future<bool> _localAvailable() async {
@@ -320,6 +335,8 @@ class ScreenOcrHost {
   }
 
   Future<MangaOcrTextImageSession> _textSession() async {
+    // server 已停：不再新建常驻会话（否则停机后还会留下一个没人关的 ORT 会话）。
+    if (_disposed) throw StateError('Screen OCR stopped');
     final Future<MangaOcrPageSession> session = _session ??= () async {
       final MangaOcrService service = _service;
       if (service is! MangaOcrPageService) {
@@ -346,6 +363,8 @@ class ScreenOcrHost {
 
   void _armIdleTimer() {
     _idleTimer?.cancel();
+    _idleTimer = null;
+    if (_inFlight > 0) return;
     _idleTimer = Timer(idleTimeout, () => unawaited(_closeSession()));
   }
 
@@ -403,15 +422,20 @@ class ScreenOcrHost {
         lines: screenOcrLinesFromMokuro(page, dx: dx, dy: dy),
       );
     }
-    final MangaOcrTextImageSession session = await _textSession();
+    // 先占位再拿会话：拿会话 / 识别期间空闲计时不会把这个会话关掉。
+    _inFlight++;
+    _idleTimer?.cancel();
+    _idleTimer = null;
     final OcrRecognition result;
     try {
+      final MangaOcrTextImageSession session = await _textSession();
       result = await session.recognizeTextImage(
         frame.rgba,
         width: frame.width,
         height: frame.height,
       );
     } finally {
+      _inFlight--;
       _armIdleTimer();
     }
     final List<ScreenOcrLine> lines = screenOcrLines(
@@ -472,7 +496,9 @@ class ScreenOcrHost {
       if (blocked != null) {
         return _jsonError(403, <String, String>{'reason': blocked});
       }
-    } else if (!await _localAvailable()) {
+    } else if (_session == null && !await _localAvailable()) {
+      // 会话已开着 = 模型早已就绪；只在要新建会话时查模型（modelStatus 会递归量
+      // 模型目录占用，不该每帧都扫一遍磁盘）。
       return shelf.Response(503, body: 'OCR models are not ready on this host');
     }
     ScreenOcrRegion? region;

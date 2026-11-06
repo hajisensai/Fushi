@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -18,6 +19,9 @@ class _FakeSession implements MangaOcrPageSession, MangaOcrTextImageSession {
   final List<(int, int)> sizes = <(int, int)>[];
   bool closed = false;
 
+  /// 非 null 时识别挂在它上面，测试手动放行（模拟一次很慢的识别）。
+  Completer<void>? gate;
+
   @override
   Future<OcrRecognition> recognizeTextImage(
     Uint8List rgba, {
@@ -26,6 +30,9 @@ class _FakeSession implements MangaOcrPageSession, MangaOcrTextImageSession {
   }) async {
     expect(rgba.length, width * height * 4);
     sizes.add((width, height));
+    final Completer<void>? pending = gate;
+    if (pending != null) await pending.future;
+    if (closed) throw StateError('session closed while recognizing');
     return result;
   }
 
@@ -45,11 +52,22 @@ class _FakeService implements MangaOcrService, MangaOcrPageService {
   final List<_FakeSession> sessions = <_FakeSession>[];
   final List<bool> textImagesOnlyFlags = <bool>[];
 
+  /// 非 null 时 [modelStatus] 抛它（模型目录解析不了等）。
+  Object? statusError;
+  int statusCalls = 0;
+
   @override
   bool get isSupportedPlatform => true;
 
   @override
-  Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
+  Future<MangaOcrModelStatus> modelStatus() async {
+    statusCalls++;
+    final Object? error = statusError;
+    if (error != null) throw error;
+    return _status();
+  }
+
+  MangaOcrModelStatus _status() => MangaOcrModelStatus(
     detectorReady: ready,
     recognizerReady: ready,
     diskBytes: 0,
@@ -473,6 +491,65 @@ void main() {
       expect(await host.isAvailable(), isTrue);
       expect((await host.handle(_post(_png(8, 8)))).statusCode, 200);
     });
+
+    test(
+      'a failing model probe reports unavailable instead of throwing',
+      () async {
+        final _FakeService service = _FakeService(_twoLines)
+          ..statusError = StateError('enginePaths not installed');
+        final ScreenOcrHost host = ScreenOcrHost(
+          service: service,
+          workDir: work,
+        );
+        addTearDown(host.dispose);
+
+        // capabilities 探测：报不可用，不把异常抛进 /api/capabilities。
+        expect(await host.isAvailable(), isFalse);
+        // 真发帧时异常照旧上抛，由 server 记录并回 500。
+        await expectLater(host.handle(_post(_png(8, 8))), throwsStateError);
+        expect(service.sessions, isEmpty);
+      },
+    );
+
+    test('checks models only when it has to open a session', () async {
+      final _FakeService service = _FakeService(_twoLines);
+      final ScreenOcrHost host = ScreenOcrHost(service: service, workDir: work);
+      addTearDown(host.dispose);
+
+      for (int i = 0; i < 3; i++) {
+        expect((await host.handle(_post(_png(8, 8)))).statusCode, 200);
+      }
+      expect(service.statusCalls, 1);
+      expect(service.sessions, hasLength(1));
+    });
+
+    test(
+      'idle timeout never closes a session that is still recognizing',
+      () async {
+        final _FakeService service = _FakeService(_twoLines);
+        final ScreenOcrHost host = ScreenOcrHost(
+          service: service,
+          workDir: work,
+          idleTimeout: const Duration(milliseconds: 20),
+        );
+        addTearDown(host.dispose);
+
+        expect((await host.handle(_post(_png(8, 8)))).statusCode, 200);
+        final _FakeSession session = service.sessions.single;
+        final Completer<void> gate = Completer<void>();
+        session.gate = gate;
+        final Future<shelf.Response> slow = host.handle(_post(_png(8, 8)));
+        // 远超空闲时长：第一次请求留下的计时若还在，就会在这里把会话关掉。
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(session.closed, isFalse);
+        gate.complete();
+        expect((await slow).statusCode, 200);
+        expect(service.sessions, hasLength(1));
+        // 最后一个请求结束后才开始计空闲。
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(session.closed, isTrue);
+      },
+    );
 
     test('closes the session when idle and on dispose', () async {
       final _FakeService service = _FakeService(_twoLines);
