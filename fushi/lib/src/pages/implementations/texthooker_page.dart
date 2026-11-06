@@ -272,7 +272,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
-    if (line.hasResourceAudio) {
+    final GalLineTrackView view = galLineTrackViewFor(
+      line,
+      _session.state.audioBackend,
+    );
+    if (view == GalLineTrackView.resourceUnpaired) {
+      // BUG-4130 审查：资源模式下还没有原件的行（匹配中 / 无原件）。PCM 轨与它无关，
+      // 也没有可试听的字节：只说明资源模式与这句当前状态，不给播放键、不列轨。
+      await showAppDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) =>
+            GalResourceUnpairedLineTrackDialog(line: line),
+      );
+      return;
+    }
+    if (view == GalLineTrackView.resourceAudio) {
       // BUG-4130：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
       // 行没有任何资源字节，弹这个带播放键的窗口只会让用户点了没声音。
       // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
@@ -4653,3 +4667,41 @@ class _CharSpan extends StatelessWidget {
 
 /// 列表头「特殊码」菜单的动作。
 enum _HookCodeAction { paste, save, import, export }
+
+/// 资源模式下尚未配上原件的行的「本句音轨」对话框（BUG-4130 审查）。
+///
+/// 这句没有任何资源字节，PCM 轨又与资源模式无关：只说明资源模式（与右侧面板
+/// [GalTrackEmptyHint.resourceMode] 同一句）和这句当前状态（匹配中 / 无原件 …），
+/// 不给试听键、不列 PCM 轨。
+class GalResourceUnpairedLineTrackDialog extends StatelessWidget {
+  const GalResourceUnpairedLineTrackDialog({required this.line, super.key});
+
+  final TexthookerLineEntry line;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool notPaired =
+        line.audioStatus == TexthookerLineAudioStatus.missing &&
+        line.fallbackReason == kGalResourceNotPairedReason;
+    return FushiSimpleDialog(
+      title: Text(t.game_line_track_dialog_title),
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+          child: Text(
+            t.game_tracks_resource_mode_hint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        FushiListItem(
+          leading: FushiIcon(
+            notPaired ? Icons.music_off_outlined : Icons.hourglass_empty,
+          ),
+          title: Text(texthookerLineAudioSummary(line)),
+          subtitle: notPaired ? Text(t.game_line_audio_not_paired_hint) : null,
+          subtitleMaxLines: 4,
+        ),
+      ],
+    );
+  }
+}

@@ -14,3 +14,7 @@
   - 文本时间戳改为首字形后，宿主无标记窗 `[T-330, T-130]` 对 SGRE 实际不再命中：未绑定的资源虽保留无标记旧名，结局是 missing。已推演旧窗口能配上的情形（语音早于整句显示完 130~330 ms）都是「本页打字期间开播」，由绑定覆盖；唯一例外是语音晚于本页首字形 >1.5 s（宿主事件 ID 容差上限）。engine-support 如实写明，删去「按宿主原有无标记契约处理」的说法。
   - 制卡路径找不到原件且禁用兜底时不再写 `backend='game_resource'`；操作目录逐句音轨的「来自游戏资源直提」note 改用 `TexthookerLineEntry.hasResourceAudio`（matched / encoded 才算），与 UI 同一判据。
   - pending 收束作用于所有资源模式引擎（有意：资源模式下 pending 本来没有终态）；收束理由改为语义化常量 `kGalResourceNotPairedReason`，UI 给中性「无原件」标 + 悬停说明（可能无配音、也可能漏抓），不再落进红色「无音频」。TTS 仍把它当 unvoiced（与 PCM 模式 missing 一致）。
+- **审查追修二（PR #2991）**：
+  - 「本句音轨」：资源模式下还没有原件（匹配中 / 无原件）的行此前会落进 PCM 轨列表（PCM 轨与资源模式无关；选了还会经 `setLineVoiceTrack` 把这行算成用户裁决、撤出待匹配集合，资源晚落盘不再升格）。新增纯函数 `galLineTrackViewFor(line, backend)`（`resourceAudio` / `resourceUnpaired` / `pcmTracks`），UI 对 `resourceUnpaired` 弹 `GalResourceUnpairedLineTrackDialog`：资源模式说明 + 这句当前状态，不给试听键、不列轨；操作目录 `lines/<id>/tracks` 用同一判据给出「资源模式：这句还没配上原件，PCM 轨与它无关」note。面板 / 选中句条对 `game_resource_not_paired` 报「无原件」，与行内标签一致。
+  - native：语音晚于本页发布几毫秒（瞬显文字时首字形 = 发布 = 开播，XAudio 线程与 draw 回调竞态 + GetTickCount64 约 16 ms 粒度）不再被当成「整句显示完才开播」排除：排除条件改为 `published_tick + kSgreVoicePublishRaceMs(100) < voice_tick`。测试 `TestScenarioPageInstantRevealVoiceRace`（退回严格比较后断言失败，已变异实测）。
+  - 测试 `TestScenarioPageVoiceOwnership` 的宽字符字面量被吞成 `L"042"` 等 ASCII，改回 `L"\x3042"` 等；新增 `TestScenarioPageReplacedInPlace` 覆盖等长 / 更长但前缀不延伸的原地换页（去掉 memcmp 判据后断言失败，已变异实测）。

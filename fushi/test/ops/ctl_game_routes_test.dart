@@ -1152,13 +1152,14 @@ void main() {
       List<TexthookerLineEntry> lines = const <TexthookerLineEntry>[],
       bool engine = true,
       String? selected = 't1',
+      GalHookAudioBackend backend = GalHookAudioBackend.enginePcm,
     }) => _FakeHost()
       ..snap = GameCtlSessionSnapshot(
-        state: const GalHookSessionState(
+        state: GalHookSessionState(
           phase: GalHookSessionPhase.running,
           gamePid: 1,
-          audioBackend: GalHookAudioBackend.enginePcm,
-          audioTracks: <GalAudioTrack>[_track],
+          audioBackend: backend,
+          audioTracks: const <GalAudioTrack>[_track],
         ),
         hasEngineSource: engine,
         selectedThreadKey: selected,
@@ -1461,6 +1462,31 @@ void main() {
         '/api/admin/game/lines/l3/tracks',
       );
       expect(matched['note'], '这句语音来自游戏资源直提，PCM 轨与它无关');
+    });
+
+    // BUG-4130 审查：资源模式下还没配上原件的行，PCM 轨同样与它无关——note 必须说清，
+    // 不能让调用方把残留 PCM 轨当成这句的可选来源。
+    test('BUG-4130 资源模式下未配上原件的行 note 说明 PCM 轨无关', () async {
+      final _FakeHost host = engineHost(
+        backend: GalHookAudioBackend.gameResource,
+        lines: <TexthookerLineEntry>[
+          _line('l1', 'a', audio: TexthookerLineAudioStatus.pending),
+          _line('l2', 'b', audio: TexthookerLineAudioStatus.missing),
+        ],
+      );
+      for (final String id in <String>['l1', 'l2']) {
+        final Map<String, Object?> out = await call(
+          host,
+          'GET',
+          '/api/admin/game/lines/$id/tracks',
+        );
+        expect(
+          out['note'],
+          allOf(contains('资源模式'), contains('PCM 轨与它无关')),
+          reason: id,
+        );
+        expect(out['note'], isNot(contains('直提')), reason: id);
+      }
     });
 
     test('补录：start → finish；并发 / 错行 409', () async {

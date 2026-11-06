@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -695,6 +696,115 @@ void main() {
 
   // BUG-4130 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
   // 「无原件」标，不是红色「未匹配 / 无音频」故障标。
+  // BUG-4130 审查：资源模式下「匹配中 / 无原件」的行点「本句音轨」不能落进 PCM 轨
+  // 列表（PCM 轨与资源模式无关，选了还会把这行算成用户裁决、资源晚到不再升格），
+  // 也不能给播放键；只有真配上原件的行走资源弹窗，非资源模式才列 PCM 轨。
+  test('BUG-4130 line track view follows resource pairing and backend', () {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry line = service.appendLine('資源モード')!;
+    TexthookerLineEntry row() => service.entries.single;
+
+    service.updateLineAudio(line.id, status: TexthookerLineAudioStatus.pending);
+    expect(
+      galLineTrackViewFor(row(), GalHookAudioBackend.gameResource),
+      GalLineTrackView.resourceUnpaired,
+    );
+    expect(
+      galLineTrackViewFor(row(), GalHookAudioBackend.enginePcm),
+      GalLineTrackView.pcmTracks,
+    );
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.missing,
+      fallbackReason: kGalResourceNotPairedReason,
+    );
+    expect(
+      galLineTrackViewFor(row(), GalHookAudioBackend.gameResource),
+      GalLineTrackView.resourceUnpaired,
+    );
+    // 面板 / 选中句条与行内标签同一句「无原件」，不是红色「未匹配」。
+    expect(texthookerLineAudioSummary(row()), 'No original voice');
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'game_resource',
+      resourceId: '50000_fushi_textseq42_sgre-voicebody-1-2-3-4.xwma',
+    );
+    for (final GalHookAudioBackend backend in GalHookAudioBackend.values) {
+      expect(
+        galLineTrackViewFor(row(), backend),
+        GalLineTrackView.resourceAudio,
+        reason: backend.name,
+      );
+    }
+  });
+
+  for (final ({
+        String label,
+        TexthookerLineAudioStatus status,
+        String? reason,
+        String summary,
+      })
+      c
+      in <
+        ({
+          String label,
+          TexthookerLineAudioStatus status,
+          String? reason,
+          String summary,
+        })
+      >[
+        (
+          label: 'pending',
+          status: TexthookerLineAudioStatus.pending,
+          reason: null,
+          summary: 'Matching',
+        ),
+        (
+          label: 'not paired',
+          status: TexthookerLineAudioStatus.missing,
+          reason: kGalResourceNotPairedReason,
+          summary: 'No original voice',
+        ),
+      ]) {
+    testWidgets(
+      'BUG-4130 unpaired resource-mode line track dialog (${c.label}) has no '
+      'play key and no PCM tracks',
+      (WidgetTester tester) async {
+        final TexthookerService service = TexthookerService.test();
+        final TexthookerLineEntry line = service.appendLine('配音待ち')!;
+        service.updateLineAudio(
+          line.id,
+          status: c.status,
+          fallbackReason: c.reason,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: GalResourceUnpairedLineTrackDialog(
+                line: service.entries.single,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text(t.game_line_track_dialog_title), findsOneWidget);
+        expect(find.text(t.game_tracks_resource_mode_hint), findsOneWidget);
+        expect(find.text(c.summary), findsOneWidget);
+        expect(
+          find.text(t.game_line_audio_not_paired_hint),
+          c.reason == null ? findsNothing : findsOneWidget,
+        );
+        expect(find.byIcon(Icons.play_circle_outline), findsNothing);
+        expect(find.byIcon(Icons.graphic_eq), findsNothing);
+        expect(find.byType(FushiIconButton), findsNothing);
+      },
+    );
+  }
+
   testWidgets('BUG-4130 resource-not-paired line shows a neutral tag', (
     WidgetTester tester,
   ) async {

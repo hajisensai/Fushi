@@ -295,6 +295,30 @@ typedef GalCaptureMemorySave =
 bool galTrackSelectionAffectsCapture(GalHookAudioBackend backend) =>
     backend == GalHookAudioBackend.enginePcm;
 
+/// 「本句音轨」对话框该展示什么（BUG-4130 审查，纯函数可单测）。
+///
+/// - [resourceAudio]：这行真配上了游戏资源原件（[TexthookerLineEntry.hasResourceAudio]），
+///   展示原件并给试听；
+/// - [resourceUnpaired]：会话在资源模式，这行却还没有原件（匹配中 / 无原件 / 其它
+///   来源）。资源模式下 PCM 轨与这句无关（[GalTrackEmptyHint.resourceMode]），列出来
+///   只会被读成「音频没抓到」；用户选了 PCM 轨还会把这行算成用户裁决、撤出待匹配
+///   集合，之后资源晚落盘也不再升格。所以只说明资源模式与这句的当前状态，不给播放键
+///   也不列轨；
+/// - [pcmTracks]：引擎 PCM 等其它后端，列会话音轨供逐句改选（BUG-1102）。
+enum GalLineTrackView { resourceAudio, resourceUnpaired, pcmTracks }
+
+/// 按这行的音频与会话音频后端决定「本句音轨」对话框的形态。
+GalLineTrackView galLineTrackViewFor(
+  TexthookerLineEntry line,
+  GalHookAudioBackend backend,
+) {
+  if (line.hasResourceAudio) return GalLineTrackView.resourceAudio;
+  if (backend == GalHookAudioBackend.gameResource) {
+    return GalLineTrackView.resourceUnpaired;
+  }
+  return GalLineTrackView.pcmTracks;
+}
+
 /// 按音频后端返回音轨空态解释分支。
 GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
     switch (backend) {
