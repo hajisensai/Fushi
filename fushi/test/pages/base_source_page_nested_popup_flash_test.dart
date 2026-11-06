@@ -405,7 +405,11 @@ void main() {
           'A completed empty lookup has no WebView content to wait for; '
           'waiting exposes the warm WebView shell as a blank white body.',
     );
-    expect(find.text(t.no_search_results), findsOneWidget);
+    // 空态写明查的是哪个词（反馈 vXYKPudf7U）。
+    expect(
+      find.text(dictionaryPopupNoResultsMessage('missing')),
+      findsOneWidget,
+    );
   });
 
   // ── TODO-058 fail-safe：popupRendered 永不发也不卡死 ──────────────────────
