@@ -20,7 +20,10 @@ import 'package:fushi_core/fushi_core.dart';
 ///  * `title`：字符串，可空串（缺省当空串；空串时展示用 [mediaKey] 兜底）；
 ///  * `positionMs`：整数 ≥ 0；`durationMs`：整数或 null（直播 Infinity 时扩展发 null）；
 ///  * `playing`：bool；`speed`：数字 > 0（缺省 1.0）；
-///  * `ended`：bool（缺省 false；true = 页面卸载 / 换视频，立刻停表）。
+///  * `ended`：bool（缺省 false；true = 页面卸载 / 换视频，立刻停表）；
+///  * `cue`：null 或 `{index, startMs, endMs, text}`——此刻 Fushi 在页面上出的那一句
+///    （视频轴，已套用户的时轴偏移）。缺省 / null = 没有在出字幕，不计字（反馈
+///    jk4rTLHPZ_：此前契约里没有这一项，网页视频的字幕字数恒为 0）。
 class BrowserVideoSample {
   const BrowserVideoSample({
     required this.mediaKey,
@@ -30,6 +33,7 @@ class BrowserVideoSample {
     required this.playing,
     required this.speed,
     required this.ended,
+    this.cue,
   });
 
   final String mediaKey;
@@ -39,6 +43,9 @@ class BrowserVideoSample {
   final bool playing;
   final double speed;
   final bool ended;
+
+  /// 此刻正在出的字幕句；null = 没有。
+  final BrowserVideoCue? cue;
 
   /// 统计里的显示标题：扩展拿不到页面标题时用 [mediaKey] 兜底，不落空串。
   String get displayTitle => title.isEmpty ? mediaKey : title;
@@ -68,6 +75,12 @@ class BrowserVideoSample {
     }
     final Object? rawEnded = body['ended'];
     if (rawEnded != null && rawEnded is! bool) return null;
+    final Object? rawCue = body['cue'];
+    BrowserVideoCue? cue;
+    if (rawCue != null) {
+      cue = BrowserVideoCue.tryParse(rawCue);
+      if (cue == null) return null;
+    }
     return BrowserVideoSample(
       mediaKey: key,
       title: (title as String?) ?? '',
@@ -76,6 +89,7 @@ class BrowserVideoSample {
       playing: playing,
       speed: speed,
       ended: rawEnded == true,
+      cue: cue,
     );
   }
 
@@ -90,10 +104,59 @@ class BrowserVideoSample {
   }
 }
 
+/// 样本里「此刻正在出的那一句」（[BrowserVideoSample.cue]）。
+@immutable
+class BrowserVideoCue {
+  const BrowserVideoCue({
+    required this.index,
+    required this.startMs,
+    required this.endMs,
+    required this.text,
+  });
+
+  /// 页面活动字幕轨里的句序。
+  final int index;
+  final int startMs;
+  final int endMs;
+  final String text;
+
+  /// 一句字幕最多多长：再长就不是一句字幕（坏轨 / 恶意页面），整条样本按不合契约丢弃。
+  static const int maxTextLength = 1000;
+
+  static BrowserVideoCue? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final int? index = BrowserVideoSample._integerOf(raw['index']);
+    final int? start = BrowserVideoSample._integerOf(raw['startMs']);
+    final int? end = BrowserVideoSample._integerOf(raw['endMs']);
+    final Object? text = raw['text'];
+    if (index == null || index < 0) return null;
+    if (start == null || end == null || start < 0 || end < start) return null;
+    if (text is! String || text.length > maxTextLength) return null;
+    return BrowserVideoCue(
+      index: index,
+      startMs: start,
+      endMs: end,
+      text: text,
+    );
+  }
+
+  /// 给 [VideoWatchTracker] 用的 [AudioCue]（只填停留门读的起止与文本）。
+  AudioCue toAudioCue() => AudioCue()
+    ..bookKey = ''
+    ..chapterHref = ''
+    ..sentenceIndex = index
+    ..textFragmentId = ''
+    ..text = text
+    ..startMs = startMs
+    ..endMs = endMs
+    ..audioFileIndex = 0;
+}
+
 /// 由扩展样本驱动的只读播放源：[VideoWatchTracker] 经 [VideoPlaybackSource] 接口
-/// 采位置 / 播放态 / 倍速；网页视频没有 app 侧字幕轨，cue 恒空（字幕字数不计）。
-/// 每条样本 [apply] 后通知一次 = tracker 的一个采样点（与生产 controller 的
-/// play / pause / seek 通知同构）。
+/// 采位置 / 播放态 / 倍速 / 当前句。当前句就是样本里页面正在出的那一句
+/// （[BrowserVideoSample.cue]，已在视频轴上，所以 [subtitleDelayMs] 恒 0），字幕字数
+/// 与视频页同一道停留门。每条样本 [apply] 后通知一次 = tracker 的一个采样点（与生产
+/// controller 的 play / pause / seek / 换句通知同构）。
 class RemoteVideoPlaybackSource extends ChangeNotifier
     implements VideoPlaybackSource {
   RemoteVideoPlaybackSource({DateTime Function()? now})
@@ -105,17 +168,19 @@ class RemoteVideoPlaybackSource extends ChangeNotifier
   int? _durationMs;
   double _speed = 1.0;
   DateTime? _appliedAt;
+  int _cueIndex = -1;
+  AudioCue? _cue;
 
   @override
   bool get isPlaying => _isPlaying;
 
   @override
-  int get currentCueIndex => -1;
+  int get currentCueIndex => _cueIndex;
 
   @override
-  AudioCue? get currentCue => null;
+  AudioCue? get currentCue => _cue;
 
-  /// 网页视频没有 app 侧字幕轨，也就没有调轴。
+  /// 样本里的句已在视频轴上（页面套过用户的时轴偏移）。
   @override
   int get subtitleDelayMs => 0;
 
@@ -153,6 +218,9 @@ class RemoteVideoPlaybackSource extends ChangeNotifier
     _durationMs = sample.durationMs;
     _speed = sample.speed;
     _appliedAt = _now();
+    final BrowserVideoCue? cue = sample.cue;
+    _cueIndex = cue?.index ?? -1;
+    _cue = cue?.toAudioCue();
     notifyListeners();
   }
 }

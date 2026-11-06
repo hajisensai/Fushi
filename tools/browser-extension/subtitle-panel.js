@@ -1488,6 +1488,20 @@
     };
   };
 
+  // 学习统计的字幕字数（反馈 jk4rTLHPZ_）：study-tracker.js 每条样本带上 [posMs] 这一刻
+  // Fushi 正在出的那一句（st.cues 已套过时轴偏移，是视频轴），app 侧 VideoWatchTracker
+  // 按与视频页同一道停留门计字。判据与 fushiSubtitleStudyState.showing 相同：只有 Fushi
+  // 自己在出字幕时才给；落在句间空隙 / 没有活动轨返回 null。
+  window.fushiSubtitleStudyCue = function (posMs) {
+    var lang = st.enabled ? st.activeLang : null;
+    if (!lang || lang === LIVE_LANG || !st.cues || !st.cues.length) return null;
+    if (typeof posMs !== 'number' || !isFinite(posMs)) return null;
+    var idx = cueIndexAt(st.cues, posMs);
+    if (idx < 0) return null;
+    var c = st.cues[idx];
+    return { index: idx, startMs: c.startMs, endMs: c.endMs, text: String(c.text || '') };
+  };
+
   window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
     refreshHeadless();
