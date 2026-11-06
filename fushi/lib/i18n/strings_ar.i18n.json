@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "الحد الأقصى لأعمدة القاموس (ملء تلقائي)",
   "popup_dictionary_max_columns_hint": "ملء تلقائي لهذا العدد من أعمدة القاموس لكل صف؛ الشاشات الأضيق تستخدم عدداً أقل",
-  "popup_dismiss_animation": "حركة إغلاق النافذة المنبثقة",
-  "popup_dismiss_animation_hint": "تشغيل حركة انزلاق عند إغلاق نافذة البحث بالسحب. عطّلها للإغلاق الفوري (معطّلة دائمًا في وضع الحبر الإلكتروني).",
   "popup_font_size_decrease": "تصغير نص القاموس",
   "popup_font_size_increase": "تكبير نص القاموس",
   "popup_history_back": "رجوع",

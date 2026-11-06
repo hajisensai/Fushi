@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Maks sözlük sütunu (otomatik doldurma)",
   "popup_dictionary_max_columns_hint": "Satır başına en fazla bu kadar sözlük sütunu otomatik doldurulur; dar ekranlarda daha az kullanılır",
-  "popup_dismiss_animation": "Açılır pencere kapanma animasyonu",
-  "popup_dismiss_animation_hint": "Arama açılır penceresi kaydırarak kapatıldığında bir kayarak çıkış animasyonu oynat. Anında kapatmak için kapatın (e-ink modunda her zaman kapalı).",
   "popup_font_size_decrease": "Sözlük metnini küçült",
   "popup_font_size_increase": "Sözlük metnini büyüt",
   "popup_history_back": "Geri",

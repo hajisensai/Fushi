@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "จำนวนคอลัมน์พจนานุกรมสูงสุด (เติมอัตโนมัติ)",
   "popup_dictionary_max_columns_hint": "เติมคอลัมน์พจนานุกรมอัตโนมัติสูงสุดตามจำนวนนี้ต่อแถว หน้าจอแคบจะใช้น้อยกว่า",
-  "popup_dismiss_animation": "แอนิเมชันปิดป๊อปอัป",
-  "popup_dismiss_animation_hint": "เล่นแอนิเมชันเลื่อนออกเมื่อปิดป๊อปอัปค้นหาด้วยการปัด ปิดเพื่อให้ปิดทันที (ปิดเสมอในโหมด e-ink)",
   "popup_font_size_decrease": "ลดขนาดตัวอักษรพจนานุกรม",
   "popup_font_size_increase": "เพิ่มขนาดตัวอักษรพจนานุกรม",
   "popup_history_back": "ย้อนกลับ",

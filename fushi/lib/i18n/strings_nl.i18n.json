@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Max. woordenboekkolommen (automatisch vullen)",
   "popup_dictionary_max_columns_hint": "Vult automatisch tot dit aantal woordenboekkolommen per rij; smallere schermen gebruiken er minder",
-  "popup_dismiss_animation": "Sluitanimatie van popup",
-  "popup_dismiss_animation_hint": "Speel een uitschuifanimatie af wanneer een opzoekpopup door te vegen wordt gesloten. Zet uit om direct te sluiten (altijd uit in e-inkmodus).",
   "popup_font_size_decrease": "Kleinere woordenboektekst",
   "popup_font_size_increase": "Grotere woordenboektekst",
   "popup_history_back": "Terug",

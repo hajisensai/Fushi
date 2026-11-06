@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "恢复此句",
   "popup_dictionary_max_columns": "词典最多列数（自动填充）",
   "popup_dictionary_max_columns_hint": "每行自动填充词典，最多不超过此列数；窄屏会自动减少",
-  "popup_dismiss_animation": "弹窗关闭动画",
-  "popup_dismiss_animation_hint": "滑动关闭查词弹窗时播放滑出动画。关掉则瞬间关闭（墨水屏模式下始终关闭）",
   "popup_font_size_decrease": "缩小查词字号",
   "popup_font_size_increase": "放大查词字号",
   "popup_history_back": "后退",

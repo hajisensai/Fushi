@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Макс. столбцов словаря (автозаполнение)",
   "popup_dictionary_max_columns_hint": "Автоматически заполняет до указанного числа столбцов словаря в строке; на узких экранах используется меньше",
-  "popup_dismiss_animation": "Анимация закрытия всплывающего окна",
-  "popup_dismiss_animation_hint": "Воспроизводить анимацию уезжания, когда окно поиска закрывается смахиванием. Отключите, чтобы закрывать мгновенно (в режиме e-ink всегда выключено).",
   "popup_font_size_decrease": "Уменьшить текст словаря",
   "popup_font_size_increase": "Увеличить текст словаря",
   "popup_history_back": "Назад",

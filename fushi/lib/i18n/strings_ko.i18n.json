@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "최대 사전 열 수 (자동 채움)",
   "popup_dictionary_max_columns_hint": "행당 이 수까지 사전 열을 자동 채웁니다. 좁은 화면에서는 더 적게 표시됩니다",
-  "popup_dismiss_animation": "팝업 닫기 애니메이션",
-  "popup_dismiss_animation_hint": "검색 팝업을 스와이프해 닫을 때 밀려나가는 애니메이션을 재생합니다. 끄면 즉시 닫힙니다(E-ink 모드에서는 항상 꺼짐).",
   "popup_font_size_decrease": "사전 텍스트 축소",
   "popup_font_size_increase": "사전 텍스트 확대",
   "popup_history_back": "뒤로",

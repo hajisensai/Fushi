@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Máximo de columnas de diccionario (auto-fill)",
   "popup_dictionary_max_columns_hint": "Llena automáticamente hasta este número de columnas de diccionario por fila; pantallas más angostas usan menos",
-  "popup_dismiss_animation": "Animación de cierre de la ventana",
-  "popup_dismiss_animation_hint": "Reproduce una animación de deslizamiento al cerrar una ventana de consulta deslizándola. Desactívala para cerrar al instante (siempre desactivada en modo e-ink).",
   "popup_font_size_decrease": "Texto de diccionario más pequeño",
   "popup_font_size_increase": "Texto de diccionario más grande",
   "popup_history_back": "Atrás",

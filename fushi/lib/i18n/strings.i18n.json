@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Max dictionary columns (auto-fill)",
   "popup_dictionary_max_columns_hint": "Auto-fills up to this many dictionary columns per row; narrower screens use fewer",
-  "popup_dismiss_animation": "Popup close animation",
-  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode).",
   "popup_font_size_decrease": "Smaller dictionary text",
   "popup_font_size_increase": "Larger dictionary text",
   "popup_history_back": "Back",

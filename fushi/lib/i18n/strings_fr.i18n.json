@@ -6681,8 +6681,6 @@
   "popup_ctx_sentence_restore": "Restore this sentence",
   "popup_dictionary_max_columns": "Colonnes max du dictionnaire (remplissage auto)",
   "popup_dictionary_max_columns_hint": "Remplit automatiquement jusqu'à ce nombre de colonnes par ligne ; les écrans plus étroits en utilisent moins",
-  "popup_dismiss_animation": "Animation de fermeture de la fenêtre",
-  "popup_dismiss_animation_hint": "Joue une animation de glissement quand une fenêtre de recherche est fermée d'un balayage. Désactivez pour fermer instantanément (toujours désactivé en mode e-ink).",
   "popup_font_size_decrease": "Réduire le texte du dictionnaire",
   "popup_font_size_increase": "Agrandir le texte du dictionnaire",
   "popup_history_back": "Retour",
