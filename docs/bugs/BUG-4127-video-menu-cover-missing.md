@@ -1,0 +1,6 @@
+## BUG-4127 · 视频库首页行卡右键菜单头部不显示刮削海报、标题是原始文件名
+- **报告**：2026-10-29（用户：开发者本人，应用内反馈 Lf32nO2gRK，Windows 3.1.0-debug.22058）
+- **真实性**：✅ 真 bug。首页「最近添加」行卡 `_buildRecentlyAddedCard`（`fushi/lib/src/pages/implementations/home_video_page.dart` 原 6532 行）与继续观看 hero `_continueEntryHero`（原 6400 行）画的是 `_bookPosterProvider(book)`（刮削作品海报优先、自身封面兜底）和 `_metadataWorkByBook[uid]?.title ?? book.title`；而它们打开的 `_showVideoMenu`（原 4223 行）另走一条判据：`cover: _buildCover(book)`（原 10720 行，只看 `book.coverPath`，为空 / 未探测到即 `ShelfCoverPlaceholder`）、`coverBackdrop: _coverBackdropFor(book.coverPath)`、`title: book.title`。于是没有自身封面但有刮削海报的条目，菜单头部（`media_item_dialog_page.dart` `_ContextMenuPanel._buildHeader`）只剩胶片占位，标题是原始文件名。
+- **[x] ① 已修复** — b5174c6821：`_showVideoMenu(book, cover:, title:)` 由每个调用卡片传入它自己正在画的图源与标题（首页行卡 / hero 传刮削海报 + 作品名；墙卡传 `coverOverride ?? _localCoverProvider` + 本卡标题；列表行传自身封面 + 原始标题），菜单头部用 `_menuCoverFor(cover)` 画同一个 provider，`coverBackdrop` 与原盘入口启动动画封面同源；删除只认 coverPath 的 `_coverBackdropFor`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_video_page_menu_test.dart`「最近添加卡的菜单头部用卡上同一张刮削海报与作品名」：coverPath 为空 + 刮削 poster 远程图，长按首页最近添加卡，断言菜单标题为作品名、垫底图与头部 Image 都是该海报 URL、头部无 `ShelfCoverPlaceholder`。改前红（标题为原始文件名），改后绿。
+- **备注**：反馈后半「横屏显示在这个位置也有问题」不在本条：develop 5115df841c 已按指针对角定位，截图行为符合该设计，反馈人未答复期望位置，定不了是不是 bug。未做 Windows 真机复测。
