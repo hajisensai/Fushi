@@ -534,35 +534,34 @@ Future<_MergePlan> _plan(
     for (final SrsReviewLog l in logs) l.cardId,
   ]);
 
-  // 7. 复习日志：导入的 revlog = UUIDv5(cardId, anki-revlog/<id>)、导入锚点 = UUIDv5(cardId, anki-anchor/<时刻>)；
-  //    原生日志（UUIDv7）与还原不出来的走兜底。
+  // 7. 复习日志（BUG-4175）。一条复习的新 ID 只能取决于「这是哪一次复习」，不能取决于它在旧 profile 里碰巧叫什么：
+  //    同一次复习可能经两条路径进到目标集合（两台设备各自导入过同一份 Anki、旧 profile 本身是更早一次并入的结果、
+  //    目标里早就有原生日志的原 ID），只要两条路径算出的 ID 不同，同步按 ID 认身份，就会把一次复习落成两条，
+  //    间隔 0 天的同评分重复样本直接把 FSRS 优化的 log loss 从 0.6 推到 1.6。所以：
+  //    a. 导入的 revlog 一律 UUIDv5(新卡片, anki-revlog/<id>)、导入锚点一律 UUIDv5(新卡片, anki-anchor/<时刻>)——这就是
+  //       它们的身份，不再先验证旧 ID 是否按同一规则派生（以前验证不过就走按旧 ID 的兜底，换一条来路就换一个 ID）；
+  //    b. 剩下的（原生日志）走兜底；
+  //    c. 目标里已有同一条复习（映射后的卡片 + 种类 + 评分 + 发生时刻 + HLC 都相同）但 ID 与 a / b 算出的不同 → 沿用目标
+  //       里的 ID（与修改记录的 [_Writers.alias] 同一思路，BUG-4011），见本步末尾。
   final List<SrsReviewLog> anki = <SrsReviewLog>[
     for (final SrsReviewLog l in logs)
       if (l.ankiRevlogId != null) l,
   ];
-  final List<String> oldRevlogs = SrsIds.importedRevlogsOf(<(String, int)>[
-    for (final SrsReviewLog l in anki) (l.cardId, l.ankiRevlogId!),
-  ]);
   final List<String> newRevlogs = SrsIds.importedRevlogsOf(<(String, int)>[
     for (final SrsReviewLog l in anki) (ids[l.cardId]!, l.ankiRevlogId!),
   ]);
   for (int i = 0; i < anki.length; i++) {
-    if (oldRevlogs[i] == anki[i].id) ids.exactly(anki[i].id, newRevlogs[i]);
+    ids.exactly(anki[i].id, newRevlogs[i]);
   }
   final List<SrsReviewLog> anchors = <SrsReviewLog>[
     for (final SrsReviewLog l in logs)
       if (l.kind == SrsLogKind.importAnchor && !ids.has(l.id)) l,
   ];
-  final List<String> oldAnchors = SrsIds.importAnchorsOf(<(String, int)>[
-    for (final SrsReviewLog l in anchors) (l.cardId, l.occurredAt),
-  ]);
   final List<String> newAnchors = SrsIds.importAnchorsOf(<(String, int)>[
     for (final SrsReviewLog l in anchors) (ids[l.cardId]!, l.occurredAt),
   ]);
   for (int i = 0; i < anchors.length; i++) {
-    if (oldAnchors[i] == anchors[i].id) {
-      ids.exactly(anchors[i].id, newAnchors[i]);
-    }
+    ids.exactly(anchors[i].id, newAnchors[i]);
   }
   ids.fallbackAll(<String>[
     for (final SrsReviewLog l in logs) ...<String>[
@@ -571,6 +570,11 @@ Future<_MergePlan> _plan(
     ],
     for (final SrsUnknownEvent u in unknown) u.id,
   ]);
+  final Map<String, String> targetLogs = await _logIdsByIdentity(db, newUid);
+  for (final SrsReviewLog l in logs) {
+    final String? existing = targetLogs[_logIdentity(ids[l.cardId]!, l)];
+    if (existing != null) ids.alias(l.id, existing);
+  }
 
   // 8. 修改记录的写入者一一改名（合成的标签行写入者带笔记 ID，按 ID 映射改写）；目标集合里已经有同一批修改记录的
   //    写入者沿用目标里的名字（[_Writers.alias]）。
@@ -614,6 +618,7 @@ Future<_MergePlan> _plan(
     structure.add(SrsEditEvent(n));
   }
   final List<SrsEvent> tail = <SrsEvent>[];
+  final Set<String> seenLogs = <String>{};
   for (final SrsReviewLog l in logs) {
     final Map<String, Object?> j = (ids.deep(l.toJson())! as Map)
         .cast<String, Object?>();
@@ -623,7 +628,8 @@ Future<_MergePlan> _plan(
     if (l.revokesId != null) j['revokes'] = ids[l.revokesId!];
     final SrsReviewLog n = SrsReviewLog.fromJson(j);
     track(l.id, n.id);
-    tail.add(SrsLogEvent(n));
+    // 旧 profile 里本来就重复的复习（同一次复习两个 ID）映射到同一个新 ID：只并一份。
+    if (seenLogs.add(n.id)) tail.add(SrsLogEvent(n));
   }
   for (final SrsUnknownEvent u in unknown) {
     final Map<String, Object?> raw = (ids.deep(u.raw)! as Map)
@@ -646,6 +652,35 @@ Future<_MergePlan> _plan(
   );
 }
 
+/// 一条复习日志的身份（不含它自己的 ID）：卡片、种类、评分、发生时刻与 HLC。Anki 导入的 revlog 的 HLC 物理部分
+/// 就是 revlog id、写入者是 `anki`，两台设备各自导入同一份 Anki 得到的是同一个身份。
+String _logIdentity(String cardId, SrsReviewLog l) =>
+    '${cardId.toLowerCase()}|${l.kind}|${l.rating}|${l.occurredAt}|'
+    '${l.hlc.physical}:${l.hlc.counter}:${l.hlc.writerId}';
+
+/// [profileUid] 名下已有复习日志的 身份 → ID。
+Future<Map<String, String>> _logIdsByIdentity(
+  SrsDatabase db,
+  String profileUid,
+) async {
+  final Map<String, String> out = <String, String>{};
+  for (final QueryRow r
+      in await db
+          .customSelect(
+            'SELECT json FROM srs_review_logs WHERE profile_uid = ?',
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid, srsIdType),
+            ],
+          )
+          .get()) {
+    final SrsReviewLog l = SrsReviewLog.fromJson(
+      (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
+    );
+    out.putIfAbsent(_logIdentity(l.cardId, l), () => l.id);
+  }
+  return out;
+}
+
 /// 旧 ID → 新 ID。
 class _IdMap {
   _IdMap(this.oldUid, this.newUid) {
@@ -659,6 +694,9 @@ class _IdMap {
   int exact = 0;
   int fallback = 0;
 
+  /// 被 [alias] 改到目标里已有 ID 的条数（同一次复习目标里已经有，只是 ID 与规则 / 兜底算出的不同）。
+  int aliased = 0;
+
   bool has(String id) => _m.containsKey(id.toLowerCase());
 
   String? operator [](String id) => _m[id.toLowerCase()];
@@ -668,6 +706,14 @@ class _IdMap {
     if (_m.containsKey(k)) return;
     _m[k] = newId;
     exact++;
+  }
+
+  /// [oldId] 改映射到 [newId]（目标里已有的同一条记录），与原映射相同时不算。
+  void alias(String oldId, String newId) {
+    final String k = oldId.toLowerCase();
+    if (_m[k]?.toLowerCase() == newId.toLowerCase()) return;
+    _m[k] = newId;
+    aliased++;
   }
 
   /// 还没有映射的 [oldIds] 一律走确定性兜底（一次 FFI）。
