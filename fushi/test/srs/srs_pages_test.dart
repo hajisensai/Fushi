@@ -697,6 +697,23 @@ void main() {
           expect(review, findsNothing);
         }
 
+        // 树下两张统计卡在窄屏一律上下排（用户 2026-11-06：412 宽并排时热力图只剩
+        // 三个月、到期图挤掉一半星期）。
+        await _settle(tester);
+        final Rect heat = tester.getRect(
+          find.byKey(
+            const ValueKey<String>('srs-home-heatmap'),
+            skipOffstage: false,
+          ),
+        );
+        final Rect forecast = tester.getRect(
+          find.byKey(
+            const ValueKey<String>('srs-home-forecast'),
+            skipOffstage: false,
+          ),
+        );
+        expect(forecast.top, greaterThanOrEqualTo(heat.bottom));
+        expect(forecast.width, moreOrLessEquals(heat.width));
         // 根层：今日计划 + 整棵牌组树（没有单独的整理模式），没有详情。
         expect(
           find.byKey(const ValueKey<String>('srs-home-today')),
