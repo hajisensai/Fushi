@@ -79,6 +79,10 @@ void main() {
     double topInset = 0,
     SrsMediaStore? store,
     List<FushiCardBlock> blocks = FushiCardBlock.values,
+    List<FushiCardItem>? back,
+    List<FushiCardItem>? front,
+    bool defsScroll = false,
+    bool thenFront = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -94,9 +98,11 @@ void main() {
           SrsCardFace face,
         ) {
           faces.add(face);
+          final Widget text = Text('defs:${face.layout.name}');
           return SizedBox(
             key: const ValueKey<String>('defs-webview'),
-            child: Text('defs:${face.layout.name}'),
+            // 真实释义 WebView 自带语义节点；这里用可滚动（滚动语义节点）模拟。
+            child: defsScroll ? SingleChildScrollView(child: text) : text,
           );
         }),
       ],
@@ -125,7 +131,13 @@ void main() {
               ),
               fields: fields ?? _fields(),
               definitionsHtml: '<div class="fc-defs-only">defs</div>',
-              blocks: blocks,
+              back:
+                  back ??
+                  <FushiCardItem>[
+                    for (final FushiCardBlock b in blocks)
+                      FushiCardBlockItem(b),
+                  ],
+              front: front,
               topInset: topInset,
             ),
           ),
@@ -135,6 +147,11 @@ void main() {
     await tester.pumpWidget(host(answer));
     await tester.pump(const Duration(milliseconds: 800));
     expect(tester.takeException(), isNull);
+    if (thenFront) {
+      await tester.pumpWidget(host(false));
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(tester.takeException(), isNull);
+    }
     return faces;
   }
 
@@ -155,6 +172,22 @@ void main() {
       find.byKey(const ValueKey<String>('srs-fushi-front-term')),
       findsOne,
     );
+  });
+
+  testWidgets('背面 → 正面：释义子树挪回预热位，语义树不炸、读屏读不到预热中的释义', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    await pump(tester, answer: true, defsScroll: true, thenFront: true);
+    expect(find.byKey(const ValueKey<String>('srs-fushi-front')), findsOne);
+    // 释义子树保活（同一个元素挪过来），但不在屏上、也不在语义树里。
+    expect(
+      find.byKey(const ValueKey<String>('defs-webview'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey<String>('defs-webview')), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('^defs:')), findsNothing);
+    semantics.dispose();
   });
 
   testWidgets('Windows：日文内容走日文字体链（不交给引擎回落到微软雅黑）', (WidgetTester tester) async {
@@ -278,6 +311,155 @@ void main() {
         }
       });
     }
+
+    for (final Size size in <Size>[
+      const Size(390, 844),
+      const Size(1200, 800),
+    ]) {
+      final String layout = size.width < 700 ? '窄屏' : '宽屏';
+      testWidgets('[$ds] $layout 区块选项与自定义区块：按选项画、字段 / HTML 区块原生画在布局位置', (
+        WidgetTester tester,
+      ) async {
+        final Map<String, String> fields = _fields(<String, String>{
+          'TermAudio': '[sound:w.mp3]',
+          'SentenceAudio': '[sound:s.mp3]',
+          'Frequency': '<ul><li>JPDB: 1840</li></ul>',
+          'MiscInfo': '<b>备注内容</b>',
+        });
+        await pump(
+          tester,
+          answer: true,
+          apple: apple,
+          size: size,
+          fields: fields,
+          appearance: const SrsCardAppearance(aggregateFrequency: false),
+          back: <FushiCardItem>[
+            FushiCardBlockItem(FushiCardBlock.term),
+            FushiCardBlockItem(
+              FushiCardBlock.reading,
+              options: <String, String>{kFushiOptAudio: '0'},
+            ),
+            FushiCardFieldItem(
+              field: 'MiscInfo',
+              style: FushiCardFieldStyle.quote,
+              title: '我的备注',
+            ),
+            FushiCardBlockItem(
+              FushiCardBlock.sentence,
+              options: <String, String>{
+                kFushiOptTranslation: '0',
+                kFushiOptAudio: '0',
+              },
+            ),
+            FushiCardBlockItem(FushiCardBlock.definitions),
+            const FushiCardHtmlItem('<p>自定义 <i>HTML</i> 区块</p>'),
+            FushiCardBlockItem(
+              FushiCardBlock.frequency,
+              options: <String, String>{kFushiOptLabel: '频度'},
+            ),
+          ],
+        );
+        // 读音区块关了发音键、例句区块关了翻译与发音键。
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-word-audio')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-sentence-audio')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-translation')),
+          findsNothing,
+        );
+        // 词频标签改过文字。
+        expect(find.text('频度'), findsOneWidget);
+        // 字段区块：标题 + 原生画的字段内容；HTML 区块原生画。
+        final Finder field = find.byKey(
+          const ValueKey<String>('srs-fushi-back-item-2'),
+        );
+        final Finder html = find.byKey(
+          const ValueKey<String>('srs-fushi-back-item-5'),
+        );
+        expect(field, findsOneWidget);
+        expect(html, findsOneWidget);
+        expect(
+          find.descendant(of: field, matching: find.text('我的备注')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: field,
+            matching: find.textContaining('备注内容', findRichText: true),
+          ),
+          findsWidgets,
+        );
+        expect(
+          find.descendant(
+            of: html,
+            matching: find.textContaining('自定义', findRichText: true),
+          ),
+          findsWidgets,
+        );
+        // 布局顺序：字段区块在读音之后、例句之前；HTML 区块在释义之后（窄屏）/ 左栏例句之后。
+        final double reading = tester
+            .getTopLeft(
+              find.byKey(const ValueKey<String>('srs-fushi-reading-row')),
+            )
+            .dy;
+        final double fieldY = tester.getTopLeft(field).dy;
+        final double sentence = tester
+            .getTopLeft(
+              find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+            )
+            .dy;
+        final double htmlY = tester.getTopLeft(html).dy;
+        final double freq = tester
+            .getTopLeft(
+              find.byKey(const ValueKey<String>('srs-fushi-frequency')),
+            )
+            .dy;
+        expect(fieldY, greaterThan(reading));
+        expect(sentence, greaterThan(fieldY));
+        expect(htmlY, greaterThan(sentence));
+        expect(freq, greaterThan(htmlY));
+      });
+    }
+
+    testWidgets('[$ds] 正面区块布局：调序、题面关音调、加 HTML 区块', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: false,
+        apple: apple,
+        fields: _fields(<String, String>{'Hint': '想想看'}),
+        appearance: const SrsCardAppearance(frontReading: true),
+        front: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardFrontBlock.hint),
+          const FushiCardHtmlItem('<p>反向提示</p>'),
+          FushiCardBlockItem(
+            FushiCardFrontBlock.prompt,
+            options: <String, String>{kFushiOptPitch: '0'},
+          ),
+        ],
+      );
+      final Finder term = find.byKey(
+        const ValueKey<String>('srs-fushi-front-term'),
+      );
+      expect(term, findsOneWidget);
+      // 题面关了音调：正面不画音调图（外观开着「正面显示读音」也不画）。
+      expect(
+        find.descendant(of: term, matching: find.byType(SrsPitchGraph)),
+        findsNothing,
+      );
+      final double hint = tester.getTopLeft(find.text('想想看')).dy;
+      final Finder html = find.byKey(
+        const ValueKey<String>('srs-fushi-front-item-1'),
+      );
+      expect(html, findsOneWidget);
+      final double htmlY = tester.getTopLeft(html).dy;
+      expect(htmlY, greaterThan(hint));
+      expect(tester.getTopLeft(term).dy, greaterThan(htmlY));
+    });
 
     testWidgets('[$ds] 卡面原生样式取自当前设计系统的卡面令牌', (WidgetTester tester) async {
       await pump(tester, answer: true, apple: apple);

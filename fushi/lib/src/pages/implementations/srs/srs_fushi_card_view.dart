@@ -20,11 +20,25 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
-import 'package:flutter/rendering.dart' show RenderProxyBox, SelectedContent;
+import 'package:flutter/rendering.dart'
+    show RenderObjectVisitor, RenderOffstage, RenderProxyBox, SelectedContent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
-import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardBlock;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show
+        FushiCardBlock,
+        FushiCardBlockItem,
+        FushiCardFieldItem,
+        FushiCardFieldStyle,
+        FushiCardFrontBlock,
+        FushiCardHtmlItem,
+        FushiCardItem,
+        kFushiOptAudio,
+        kFushiOptFreq,
+        kFushiOptLabel,
+        kFushiOptPitch,
+        kFushiOptTranslation;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:material_ui/material_ui.dart';
 
@@ -37,6 +51,10 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_defs_scroll_window.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
+    show SrsHtmlFragmentView;
+import 'package:fushi/src/srs/srs_fushi_card_items.dart';
+import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCardFace;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
@@ -225,7 +243,8 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
     required this.face,
     required this.fields,
     required this.definitionsHtml,
-    this.blocks = FushiCardBlock.values,
+    this.front,
+    this.back,
     this.topInset = 0,
     this.bottomInset,
   });
@@ -239,9 +258,11 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
   /// 只含释义区的背面 HTML（引擎渲染）。
   final String definitionsHtml;
 
-  /// 背面区块布局：自上而下的区块顺序，删掉的区块不在里面（`SrsRenderedCard.fushiCardBlocks`，
-  /// 由模板认出，见 `fushiCardBackLayoutOf`）。
-  final List<FushiCardBlock> blocks;
+  /// 正面 / 背面区块布局：自上而下的布局项，删掉的区块不在里面（`SrsRenderedCard.fushiCardFront`
+  /// / `fushiCardBack`，由模板认出，见 `fushiCardLayoutOf`；HTML 区块已按字段展开）。null =
+  /// 默认布局。
+  final List<FushiCardItem>? front;
+  final List<FushiCardItem>? back;
 
   /// 卡面顶端被浮动页头盖住的高度（状态栏 + 页头）。卡面铺到页头底下，这段只作滚动
   /// 内边距：开头的内容从页头下沿开始，往下翻时滚进页头底下，页头收起后不留空带。
@@ -278,7 +299,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     skipTraversal: true,
   );
 
-  /// 释义 WebView 的子树：正面时在 Offstage 里预建 / 保活（GlobalKey 换父不重建平台
+  /// 释义 WebView 的子树：正面时在预热位（[SrsWarmOffstage]）里预建 / 保活（GlobalKey 换父不重建平台
   /// 视图），翻面只是换父，不用现起 WebView。
   final GlobalKey _defsKey = GlobalKey(debugLabel: 'srs-fushi-defs');
 
@@ -318,7 +339,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       srsFushiCardPlan(
         widget.fields,
         ref.read(srsCardAppearanceProvider),
-        blocks: widget.blocks,
+        front: widget.front,
+        back: widget.back,
       ).media.companionSentence,
     );
   }
@@ -413,7 +435,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   @override
   Widget build(BuildContext context) {
     final SrsCardAppearance a = ref.watch(srsCardAppearanceProvider);
-    _plan = srsFushiCardPlan(widget.fields, a, blocks: widget.blocks);
+    _plan = srsFushiCardPlan(
+      widget.fields,
+      a,
+      front: widget.front,
+      back: widget.back,
+    );
     final List<String> families = ref.watch(srsCardFontFamiliesProvider);
     final ThemeData base = Theme.of(context);
     final ColorScheme scheme = srsCardColorScheme(a, base.colorScheme);
@@ -499,40 +526,50 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   Widget _buildFront(BuildContext context, _SrsCardStyle s, BoxConstraints c) {
     final Map<String, String> f = widget.fields;
     final SrsFushiFrontKind kind = srsFushiFrontKind(f);
+    // 按正面区块布局自上而下（默认：词频角标 → 题面 → 提示）。
     final List<Widget> blocks = <Widget>[
-      if (s.appearance.frontFrequency && srsFieldFilled(f['FrequencyRank']))
-        _Chip(text: srsPlainText(f['FrequencyRank']!), style: s),
-      ...switch (kind) {
-        SrsFushiFrontKind.word => <Widget>[_frontTerm(s, c)],
-        SrsFushiFrontKind.sentence => <Widget>[_frontSentence(s, c)],
-        SrsFushiFrontKind.wordAndSentence => <Widget>[
-          _frontTerm(s, c),
-          _frontSentence(s, c, context: true),
-        ],
-        SrsFushiFrontKind.click => <Widget>[_frontClick(s, c)],
-        SrsFushiFrontKind.audio => <Widget>[
-          _frontSentence(s, c, masked: true),
-          _AudioButton(
-            key: const ValueKey<String>('srs-fushi-front-audio'),
-            name: _plan.media.front.firstOrNull ?? '',
-            large: true,
-            style: s,
-            onPlay: (String name) => _playNames(<String>[name]),
-          ),
-        ],
-      },
-      if (srsFieldFilled(f['Hint']))
-        srsLookupText(
-          text: srsPlainText(f['Hint']!),
-          child: Text(
-            srsPlainText(f['Hint']!),
-            textAlign: TextAlign.center,
-            style: s.text(
-              s.tokens.bodySecondary,
-              color: s.scheme.onSurfaceVariant,
+      for (int i = 0; i < _plan.front.length; i++)
+        ...switch (_plan.front[i]) {
+          FushiCardBlockItem(block: FushiCardFrontBlock.frequency) => <Widget>[
+            _Chip(text: srsPlainText(f['FrequencyRank']!), style: s),
+          ],
+          FushiCardBlockItem(block: FushiCardFrontBlock.prompt) =>
+            switch (kind) {
+              SrsFushiFrontKind.word => <Widget>[_frontTerm(s, c)],
+              SrsFushiFrontKind.sentence => <Widget>[_frontSentence(s, c)],
+              SrsFushiFrontKind.wordAndSentence => <Widget>[
+                _frontTerm(s, c),
+                _frontSentence(s, c, context: true),
+              ],
+              SrsFushiFrontKind.click => <Widget>[_frontClick(s, c)],
+              SrsFushiFrontKind.audio => <Widget>[
+                _frontSentence(s, c, masked: true),
+                _AudioButton(
+                  key: const ValueKey<String>('srs-fushi-front-audio'),
+                  name: _plan.media.front.firstOrNull ?? '',
+                  large: true,
+                  style: s,
+                  onPlay: (String name) => _playNames(<String>[name]),
+                ),
+              ],
+            },
+          FushiCardBlockItem(block: FushiCardFrontBlock.hint) => <Widget>[
+            srsLookupText(
+              text: srsPlainText(f['Hint']!),
+              child: Text(
+                srsPlainText(f['Hint']!),
+                textAlign: TextAlign.center,
+                style: s.text(
+                  s.tokens.bodySecondary,
+                  color: s.scheme.onSurfaceVariant,
+                ),
+              ),
             ),
-          ),
-        ),
+          ],
+          final FushiCardItem x => <Widget>[
+            ?_customBlock(s, x, i, front: true),
+          ],
+        },
     ];
     return Center(
       child: SingleChildScrollView(
@@ -588,7 +625,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           textAlign: TextAlign.center,
           lookup: true,
         ),
-        if (s.appearance.frontReading)
+        if (s.appearance.frontReading &&
+            (_plan.itemOf(FushiCardFrontBlock.prompt)?.flag(kFushiOptPitch) ??
+                true))
           ..._pitchRow(
             s,
             center: true,
@@ -690,6 +729,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     bool center = false,
     double? scale,
     bool badge = false,
+    bool graph = true,
   }) {
     final Map<String, String> f = widget.fields;
     final String kana = srsFieldFilled(f['TermFurigana'])
@@ -708,7 +748,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 一个读音有几种声调就画几张图（没有可解析的声调时只显示读音本身）；key 各不相同，
     // 同一个 Wrap 里重复 key 会直接抛错。每张图放不下一行时整体等比缩小（长假名 /
     // 窄屏不溢出），几张图并排放不下由外层 Wrap 折行。
-    final List<int?> graphs = positions.isEmpty
+    // 读音区块关了音调（区块选项）：只显示读音本身，与模板去掉音调标签后脚本不画图同义。
+    final List<int?> graphs = positions.isEmpty || !graph
         ? const <int?>[null]
         : positions;
     final List<Widget> out = <Widget>[
@@ -744,6 +785,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   Widget _readingRow(_SrsCardStyle s) {
     final Map<String, String> f = widget.fields;
+    final FushiCardBlockItem? opts = _plan.itemOf(FushiCardBlock.reading);
     return Wrap(
       key: const ValueKey<String>('srs-fushi-reading-row'),
       spacing: 8,
@@ -751,9 +793,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
         // 声调核序号是每张图右上角的小角标（不再与词频同一个大标签，多声调时一一对应）。
-        ..._pitchRow(s, badge: true),
-        // 平均词频（聚合）：关了「显示词频」不出；下方明细区在时不重复。
+        ..._pitchRow(s, badge: true, graph: opts?.flag(kFushiOptPitch) ?? true),
+        // 平均词频（聚合）：关了「显示词频」或读音区块的词频角标不出；下方明细区在时不重复。
         if (s.appearance.showFrequency &&
+            (opts?.flag(kFushiOptFreq) ?? true) &&
             srsFieldFilled(f['FrequencyRank']) &&
             !_plan.shows(FushiCardBlock.frequency))
           _Chip(
@@ -915,7 +958,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
     // 例句发音键：片段自带例句声音时它控制片段（画面上从头播、有声），否则播例句音频
     // （画面上的动图 / 静音片段从头陪播），两者不再各出一路声音（#7 / #10）。
-    final List<String> audio = _plan.media.sentenceUnit;
+    // 例句区块关了发音键（区块选项）：不画键（片段仍在图片区里，点它照样播）。
+    final FushiCardBlockItem? opts = _plan.itemOf(FushiCardBlock.sentence);
+    final List<String> audio = opts?.flag(kFushiOptAudio) ?? true
+        ? _plan.media.sentenceUnit
+        : const <String>[];
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby;
@@ -988,6 +1035,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                 else
                   text,
                 if (s.appearance.showTranslation &&
+                    (opts?.flag(kFushiOptTranslation) ?? true) &&
                     srsFieldFilled(f['SentenceTranslation']))
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -1076,10 +1124,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     if (!_plan.shows(block)) return null;
     final Map<String, String> f = widget.fields;
     final SrsCardLabels labels = srsCardLabels();
+    // 区块布局里改过标签文字的用自己的（导出到 Anki 一样）。
+    final String custom = _plan.itemOf(block)?.text(kFushiOptLabel) ?? '';
     return switch (block) {
       FushiCardBlock.frequency => _MetaRow(
         key: const ValueKey<String>('srs-fushi-frequency'),
-        label: labels.frequency,
+        label: custom.isEmpty ? labels.frequency : custom,
         style: s,
         // 明细按词典合并（同一词典的多个值合成一项，与查词弹窗分组一致）。
         child: Wrap(
@@ -1093,7 +1143,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       ),
       FushiCardBlock.source => _MetaRow(
         key: const ValueKey<String>('srs-fushi-source'),
-        label: labels.source,
+        label: custom.isEmpty ? labels.source : custom,
         style: s,
         child: _sourceText(s, f['Source']!),
       ),
@@ -1101,46 +1151,143 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     };
   }
 
-  /// 背面除释义区以外的区块，按区块布局顺序分成释义区之前 / 之后两段（释义区不在布局里或
+  /// 背面除释义区以外的布局项，按区块布局顺序分成释义区之前 / 之后两段（释义区不在布局里或
   /// 不可见时全在 before）。词条与读音相邻（词条在上）时合成一个标题区，否则各自成块。
   /// [wrap] 给每块套版式相关的外边距（[first] = 整个背面的第一块）。
   ({List<Widget> before, List<Widget> after}) _backBlocks(
     _SrsCardStyle s,
     BoxConstraints c, {
-    required Widget Function(FushiCardBlock block, Widget child, bool first)
-    wrap,
+    required Widget Function(FushiCardItem item, Widget child, bool first) wrap,
   }) {
-    final List<FushiCardBlock> order = _plan.order;
+    final List<FushiCardItem> order = _plan.back;
+    bool isBlock(int i, FushiCardBlock b) =>
+        i >= 0 &&
+        i < order.length &&
+        order[i] is FushiCardBlockItem &&
+        (order[i] as FushiCardBlockItem).block == b;
     final List<Widget> before = <Widget>[];
     final List<Widget> after = <Widget>[];
     bool pastDefs = false;
     bool first = true;
     for (int i = 0; i < order.length; i++) {
-      final FushiCardBlock b = order[i];
-      if (b == FushiCardBlock.definitions) {
+      final FushiCardItem x = order[i];
+      if (isBlock(i, FushiCardBlock.definitions)) {
         pastDefs = true;
         first = false;
         continue;
       }
-      final Widget? w = switch (b) {
-        FushiCardBlock.term =>
-          i + 1 < order.length && order[i + 1] == FushiCardBlock.reading
+      final Widget? w = switch (x) {
+        FushiCardBlockItem(block: FushiCardBlock.term) =>
+          isBlock(i + 1, FushiCardBlock.reading)
               ? _header(s, c)
               : _header(s, c, reading: false),
-        FushiCardBlock.reading =>
-          i > 0 && order[i - 1] == FushiCardBlock.term
+        FushiCardBlockItem(block: FushiCardBlock.reading) =>
+          isBlock(i - 1, FushiCardBlock.term)
               ? null
               : _header(s, c, term: false),
-        FushiCardBlock.picture => _picture(s),
-        FushiCardBlock.sentence => _sentence(s),
-        FushiCardBlock.frequency || FushiCardBlock.source => _metaRow(s, b),
-        FushiCardBlock.definitions => null,
+        FushiCardBlockItem(block: FushiCardBlock.picture) => _picture(s),
+        FushiCardBlockItem(block: FushiCardBlock.sentence) => _sentence(s),
+        FushiCardBlockItem(block: FushiCardBlock.frequency) => _metaRow(
+          s,
+          FushiCardBlock.frequency,
+        ),
+        FushiCardBlockItem(block: FushiCardBlock.source) => _metaRow(
+          s,
+          FushiCardBlock.source,
+        ),
+        _ => _customBlock(s, x, i, front: false),
       };
       if (w == null) continue;
-      (pastDefs ? after : before).add(wrap(b, w, first));
+      (pastDefs ? after : before).add(wrap(x, w, first));
       first = false;
     }
     return (before: before, after: after);
+  }
+
+  /// 卡面上的一段 HTML（字段区块 / HTML 区块）：原生 HTML 渲染器画（能不能画由
+  /// [srsFushiCardItemsNative] 事先判过，画不了的卡整张走 WebView，不会到这里）。
+  Widget? _htmlFragment(String html, String key) {
+    if (html.trim().isEmpty) return null;
+    final SrsHtmlCardFace? face = srsHtmlFragmentProbe(
+      html,
+      languageCode: widget.face.languageCode,
+    ).face;
+    if (face == null) return null;
+    return SrsHtmlFragmentView(
+      key: ValueKey<String>(key),
+      source: face,
+      cardKey: '${widget.face.cardId}-${widget.face.showingAnswer}-$key',
+      onPlay: (String name) => _playNames(<String>[name]),
+      onSourceLink: widget.face.onSourceLink,
+    );
+  }
+
+  /// 自定义区块：字段区块（标题 + 按样式画字段）、HTML 区块。[index] 是它在这一面布局里的
+  /// 位置（同一面可以有好几个自定义区块，key 各不相同）。
+  Widget? _customBlock(
+    _SrsCardStyle s,
+    FushiCardItem item,
+    int index, {
+    required bool front,
+  }) {
+    final String side = front ? 'front' : 'back';
+    final String key = 'srs-fushi-$side-item-$index';
+    switch (item) {
+      case FushiCardHtmlItem(:final String html):
+        final Widget? w = _htmlFragment(html, '$key-html');
+        if (w == null) return null;
+        return KeyedSubtree(key: ValueKey<String>(key), child: w);
+      case FushiCardFieldItem(
+        :final String field,
+        :final FushiCardFieldStyle style,
+        :final String title,
+      ):
+        final String value = widget.fields[field] ?? '';
+        final Widget? body = switch (style) {
+          FushiCardFieldStyle.tag => Align(
+            alignment: front
+                ? Alignment.center
+                : AlignmentDirectional.centerStart,
+            child: _Chip(text: srsPlainText(value), style: s),
+          ),
+          _ => _htmlFragment(
+            srsFushiItemHtml(item, widget.fields) ?? '',
+            '$key-body',
+          ),
+        };
+        if (body == null) return null;
+        final Widget content = Column(
+          crossAxisAlignment: front
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (title.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  title,
+                  style: s.text(s.tokens.caption, color: s.muted, ui: true),
+                ),
+              ),
+            body,
+          ],
+        );
+        return KeyedSubtree(
+          key: ValueKey<String>(key),
+          child: switch (style) {
+            FushiCardFieldStyle.quote => FushiCard(
+              padding: EdgeInsets.all(s.pad),
+              pressScale: false,
+              color: s.tokens.surface1(s.scheme),
+              child: SizedBox(width: double.infinity, child: content),
+            ),
+            _ => content,
+          },
+        );
+      case FushiCardBlockItem():
+        return null;
+    }
   }
 
   /// 来源：制卡时写进 MiscInfo 的 `fushi://source?...` 链接可点，跳回书 / 漫画 / 视频的
@@ -1267,7 +1414,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  /// 正面：原生卡面；释义 WebView 在 Offstage 里预先建好并预载这张卡的释义——
+  /// 正面：原生卡面；释义 WebView 在预热位（[SrsWarmOffstage]）里预先建好并预载这张卡的释义——
   /// WebView2 起一个控件要几百毫秒，等翻面才建会让背面的释义区明显晚出。
   Widget _frontWithWarmDefs(
     BuildContext context,
@@ -1281,7 +1428,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return Stack(
       children: <Widget>[
         Positioned.fill(child: front),
-        Offstage(
+        SrsWarmOffstage(
           // 预热中的释义不在屏上：不登记为取词表面（坐标与正面重叠，会被误查）。
           child: SrsCardLookupScope(
             controller: null,
@@ -1312,10 +1459,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final ({List<Widget> before, List<Widget> after}) parts = _backBlocks(
       s,
       c,
-      wrap: (FushiCardBlock b, Widget w, bool first) => Padding(
+      wrap: (FushiCardItem b, Widget w, bool first) => Padding(
         // 标题区自带水平内边距（与宽版式左栏网格对齐），这里再缩进一个卡片内边距。
         padding: EdgeInsets.fromLTRB(s.pad, first ? s.pad : 0, s.pad, 0),
-        child: b == FushiCardBlock.picture
+        child: b is FushiCardBlockItem && b.block == FushiCardBlock.picture
             // 放松外层 stretch 的紧约束：铺满时按栏宽定高，怪比例靠左按原比例显示。
             ? Align(alignment: AlignmentDirectional.centerStart, child: w)
             : w,
@@ -1393,7 +1540,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final ({List<Widget> before, List<Widget> after}) parts = _backBlocks(
       s,
       c,
-      wrap: (FushiCardBlock b, Widget w, bool first) => w,
+      wrap: (FushiCardItem b, Widget w, bool first) => w,
     );
     final List<Widget> left = <Widget>[...parts.before, ...parts.after];
     // 宽窗铺满：左栏按比例跟着窗口长（不再 460 封顶），释义栏吃剩下的——桌面最大化时
@@ -1700,6 +1847,49 @@ class SrsRubyText extends StatelessWidget {
 
 /// 不对外报告基线的包装：Column 取「第一个有基线的孩子」作自己的基线，注音行包上它
 /// 后，注音段的基线就是下面基字的基线。
+/// 不上屏的预热位（释义 WebView 正面预建 / 保活）：与 [Offstage] 一样不画、不接命中，
+/// 但语义遍历照常进入子树、语义裁剪为空——子树的语义节点在这一帧被重新挂到本位、再因
+/// 不可见被剔除，读屏读不到。
+///
+/// 为什么不用 [Offstage]：释义子树由 GlobalKey 从背面（语义可见）挪进来时（预览切回正面、
+/// 复习换下一张），[RenderOffstage] 不遍历子树语义，挪过来的语义节点仍指着背面那棵已卸下
+/// 的父节点；Flutter 3.47 的 flushSemantics 照这条过期父链算几何，触发
+/// `computeChildGeometry` 的「父不是祖先」断言（无障碍开启时每次背面 → 正面都炸）。
+class SrsWarmOffstage extends SingleChildRenderObjectWidget {
+  const SrsWarmOffstage({super.key, required super.child});
+
+  @override
+  SingleChildRenderObjectElement createElement() => _WarmOffstageElement(this);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderWarmOffstage();
+}
+
+/// 与 [Offstage] 的 element 一致：调试 / 测试遍历「在屏上的子树」时跳过预热位。
+class _WarmOffstageElement extends SingleChildRenderObjectElement {
+  _WarmOffstageElement(super.widget);
+
+  @override
+  void debugVisitOnstageChildren(ElementVisitor visitor) {}
+}
+
+class _RenderWarmOffstage extends RenderOffstage {
+  _RenderWarmOffstage() : super(offstage: true);
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    final RenderBox? c = child;
+    if (c != null) visitor(c);
+  }
+
+  @override
+  Rect? describeSemanticsClip(RenderObject? child) => Rect.zero;
+
+  @override
+  Rect? describeApproximatePaintClip(RenderObject child) => Rect.zero;
+}
+
 class SrsNoBaseline extends SingleChildRenderObjectWidget {
   const SrsNoBaseline({super.key, required super.child});
 
