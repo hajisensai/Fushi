@@ -206,7 +206,7 @@ public class InAppWebViewClient extends WebViewClient {
     if (webView.javaScriptBridgeInterface != null) {
       webView.javaScriptBridgeInterface.fushiResetBridgeLock();
     }
-    // Fushi patch (BUG-4127, see PATCHES.md): the selection the floating context menu belongs to
+    // Fushi patch (BUG-4180, see PATCHES.md): the selection the floating context menu belongs to
     // went away with the old document, which fires no selectionchange, so close it here.
     if (webView.floatingContextMenu != null) {
       webView.hideContextMenu();

@@ -80,7 +80,7 @@ public class PluginScriptsUtil {
           null
   );
 
-  // Fushi patch (BUG-4127, see PATCHES.md): close the plugin's floating context menu when the
+  // Fushi patch (BUG-4180, see PATCHES.md): close the plugin's floating context menu when the
   // text selection ends. The menu is a native view the plugin draws itself after finishing the
   // system ActionMode, so WebView's own "selection cleared -> finish ActionMode" no longer reaches
   // it; upstream only closes it on a touch tap, a menu-item click, an in-page keydown (texture mode

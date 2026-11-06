@@ -1,4 +1,4 @@
-## BUG-4127 · Android 查词弹窗 search/copy 浮动菜单选区结束后不关，盖住制卡按钮
+## BUG-4180 · Android 查词弹窗 search/copy 浮动菜单选区结束后不关，盖住制卡按钮
 - **报告**：2026-11-06（应用内反馈 5Sj-bzv_rm：Android TV / 盒子 Hisense HITV205N，Android 11，3.0.1-debug.20797）
 - **真实性**：✅ 真 bug（代码路径确认，无 TV 设备未实机复现）。
   - 弹窗带自定义 `ContextMenu` 项（`fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:2708` 的「查词」，BUG-1237 后 Android 隐藏系统默认项、复制由 Dart 补），于是 fork 的 `startActionMode`（`third_party/flutter_inappwebview_android/.../in_app_webview/InAppWebView.java:1589/1598`）即使在 Hybrid Composition 下也走 `rebuildActionMode`（`:1604`）：`finish()` 系统 ActionMode，自己 inflate 一个 `floatingContextMenu` 子 View（`:1636`）。系统「选区清空 → finish ActionMode」从此够不到这个菜单。

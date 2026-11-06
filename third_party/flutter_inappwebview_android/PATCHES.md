@@ -138,7 +138,7 @@ per-view channel therefore gets `fushiSetStaticLayer({enabled})`, handled by
 (`lib/src/webview_static_layer.dart`). Fushi turns it on for the page under the
 popup while the popup stack is non-empty and off when it empties.
 
-## Floating context menu closes when the selection ends (BUG-4127)
+## Floating context menu closes when the selection ends (BUG-4180)
 
 When the page has custom `ContextMenu` items (the dictionary popup's search /
 copy), `rebuildActionMode` finishes the system ActionMode and draws its own
