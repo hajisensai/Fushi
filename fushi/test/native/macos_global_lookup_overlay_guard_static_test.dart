@@ -293,11 +293,11 @@ void main() {
     });
 
     test('Dart macOS capture runs inside the clipboard gate', () {
-      expect(dart, contains('if (Platform.isMacOS) {'));
+      expect(dart, contains('if (Platform.isMacOS || Platform.isLinux) {'));
       expect(
         dart,
         contains(
-          '_runClipboardExclusive<String>(\n        _captureForegroundSelectionMac,',
+          '_runClipboardExclusive<String>(\n        _captureForegroundSelectionNative,',
         ),
       );
     });

@@ -290,6 +290,71 @@ void main() {
       );
       expect(lapis.fushiCardDefinitions, isNull);
 
+      expect(fushi.fushiCardBack, kFushiCardDefaultBackItems);
+      expect(fushi.fushiCardFront, kFushiCardDefaultFrontItems);
+
+      // 调了背面区块布局（图片挪到释义后面、删掉来源、关掉读音行的音调、释义默认展开、加字段
+      // 区块与 HTML 区块）、正面加了 HTML 区块：仍走原生，按新布局画，HTML 区块已按字段展开。
+      final SrsNoteTypeView fushiType = (await a.noteType(
+        a.fushiCardNoteTypeId,
+      ))!;
+      final List<FushiCardItem> layout = <FushiCardItem>[
+        FushiCardBlockItem(FushiCardBlock.term),
+        FushiCardBlockItem(
+          FushiCardBlock.reading,
+          options: <String, String>{kFushiOptPitch: '0'},
+        ),
+        FushiCardBlockItem(FushiCardBlock.sentence),
+        FushiCardFieldItem(field: 'MainDefinition', title: '主释义'),
+        FushiCardBlockItem(
+          FushiCardBlock.definitions,
+          options: <String, String>{kFushiOptExpand: '1'},
+        ),
+        FushiCardBlockItem(FushiCardBlock.picture),
+        const FushiCardHtmlItem('<p>词：{{Term}}</p>'),
+        FushiCardBlockItem(FushiCardBlock.frequency),
+      ];
+      final List<FushiCardItem> front = <FushiCardItem>[
+        const FushiCardHtmlItem('<b>{{Term}}</b>'),
+        ...kFushiCardDefaultFrontItems,
+      ];
+      final Map<String, String> ids = <String, String>{
+        for (final SrsFieldDef f in fushiType.fields) f.name: f.id,
+      };
+      await a.updateTemplate(
+        a.fushiCardNoteTypeId,
+        fushiType.templates.single.id,
+        front: templateNamesToIds(
+          fushiCardTemplateFor(FushiCardSide.front, front),
+          ids,
+        ),
+        back: templateNamesToIds(fushiCardBackTemplateFor(layout), ids),
+      );
+      final SrsRenderedCard moved = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(moved.fushiCardDefinitions, contains('to commute'));
+      expect(moved.fushiCardDefinitions, contains('data-fc-opt-expand="1"'));
+      expect(moved.fushiCardBack, <FushiCardItem>[
+        ...layout.take(6),
+        const FushiCardHtmlItem('<p>词：通う</p>'),
+        layout.last,
+      ]);
+      expect(moved.fushiCardFront.first, const FushiCardHtmlItem('<b>通う</b>'));
+
+      // 正面骨架改了（不在任何区块里）：整面 WebView。
+      await a.updateTemplate(
+        a.fushiCardNoteTypeId,
+        fushiType.templates.single.id,
+        front: templateNamesToIds('<p>x</p>$kFushiCardFrontTemplate', ids),
+      );
+      final SrsRenderedCard skeleton = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(skeleton.fushiCardDefinitions, isNull);
+
       // 用户改过 Fushi 卡片的样式：回到整面 WebView（不再原生渲染）。
       await a.setCss(
         a.fushiCardNoteTypeId,
