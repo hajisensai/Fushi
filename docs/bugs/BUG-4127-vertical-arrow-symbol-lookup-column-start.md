@@ -2,7 +2,7 @@
 - **报告**：2026-10-28（反馈 B6v1fGHuVB，开发者本人在 QQ 群报，Windows 桌面，reader_fushi 竖排 EPUB《安達としまむら3》：点「顔の上が↓で、」这一列下部的「↓」符号本身，查词弹窗查出这一列开头的「顔」，「顔」被高亮。期望：点符号查不到词就不查，或按最近的可查字命中，绝不跳到列首）
 - **真实性**：❌ 未复现（沿真实 JS 命中链在真 Chrome 里逐种构造 DOM 实测，没有一种「点符号本身」会落到列首；缺原书 XHTML，定不了「↓」的真实结构）。
 - **[ ] ① 未修复** — 复现不了，不改代码。
-- **[ ] ② 未加自动化测试** — 留了可复用探针 `tool/reader_pitch_headless/selection_symbol_hit_probe.mjs`，拿到原书 DOM 后直接喂给它。
+- **[ ] ② 未加自动化测试** — 留了可复用探针 `tool/reader_pitch_headless/selection_symbol_hit_probe.mjs`，拿到原书 DOM 后贴进去即可定位。
 - **备注**：
 
 ### 查过的命中链（`fushi/lib/src/reader/reader_selection_scripts.dart`）
@@ -36,6 +36,6 @@
 - 点这一列普通文字是否正常（区分「符号特有」与「整列 ruby 吸附」）。
 - 反馈机器人把截图里的红色标注箭头也可能读成了正文「↓」，需原书确认正文里到底有没有这个符号。
 
-拿到后：`node tool/reader_pitch_headless/selection_symbol_hit_probe.mjs page.html`（被点元素标 `id="t"`），
+拿到后把那段标记贴进 `selection_symbol_hit_probe.mjs` 的 `variants`（被点元素标 `id="t"`；探针刻意不收路径参数），跑 `node tool/reader_pitch_headless/selection_symbol_hit_probe.mjs`，
 看 `selectionStart` 是否为「顔」、经过的是哪一层，再按根因修并把该 DOM 写成回归测试，三种 view mode
 （paginated / continuous / vn 共用同一份 `fushiSelection`）各跑一遍。
