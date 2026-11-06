@@ -32,11 +32,12 @@ import FlutterMacOS
 ///
 /// `solid`（ARGB，不透明）：不挂系统材质，只画一块同圆角的实色面板（反馈 hQpYQyWJNQ）。
 /// 透明度不被允许（材质档 off / 降低透明度 / 高对比度）时查词面板要画实底，但这块
-/// 实底**不能由 Flutter 画**：iOS 引擎只把「画在第 N 个平台视图之后」的 Flutter 内容
-/// 合成进与第 N 个平台视图相交的 overlay，其余部分落进最底层的 Flutter 画布、被更早的
-/// 平台视图（阅读器 WKWebView）整块盖住——嵌套查词层的 Flutter 实底画在父层 WebView
-/// 之后，于是只在与父层重叠处可见，压在正文上的部分整块透明。实底本身是平台视图时
-/// 它就是排在父层 WebView 之上的原生层，不受这条合成规则影响。
+/// 实底**不能由 Flutter 画**：父层查词 WebView 带圆角裁剪（非矩形 mutator），iOS 引擎
+/// 把紧跟在它之后绘制的 Flutter 内容的 overlay 裁成它的圆角形状，形状外的部分只画进
+/// 所有平台视图之下的底层画布（`preserve_underlay`），被阅读器 WKWebView 整块盖住——
+/// 嵌套查词层的 Flutter 实底于是只在与父层重叠处可见，压在正文上的部分整块透明。
+/// 实底本身是平台视图（无非矩形裁剪）时它就是排在父层 WebView 之上的原生层，本层在它
+/// 之后绘制的 Flutter 内容照常合成。详见 Dart 侧 `fushiNativePopupBackdropHostAvailable`。
 enum FushiNativeMaterial {
   static let viewType = "app.fushi/native_material"
 

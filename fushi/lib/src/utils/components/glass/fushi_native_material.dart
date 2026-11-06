@@ -50,11 +50,22 @@ bool fushiNativePopupMaterialAvailable({
 ///
 /// 与「能不能真模糊」（[fushiNativePopupMaterialAvailable]）分开：透明度不被允许时
 /// 面板改画实底，但这块实底在这两端也必须是原生视图（[FushiNativeMaterialBackdrop]
-/// 的 `solidColor`），不能由 Flutter 画。iOS 引擎只把「画在第 N 个平台视图之后」的
-/// Flutter 内容合成进与第 N 个平台视图相交的 overlay，其余部分落进最底层的 Flutter
-/// 画布，被更早的平台视图（阅读器 WKWebView）整块盖住：嵌套查词层的 Flutter 实底画在
-/// 父层 WebView 之后，只在与父层重叠处可见，压在正文上的部分整块透明（反馈
-/// hQpYQyWJNQ；iOS 26.5 模拟器上用最小复现实测）。
+/// 的 `solidColor`），不能由 Flutter 画（反馈 hQpYQyWJNQ；iOS 26.5 模拟器上用最小
+/// 复现实测）。
+///
+/// iOS 合成规则（Flutter 3.47.6 engine）：查词 WebView 被 [FushiPopupSurface] 的圆角
+/// `Clip.antiAlias`（以及描边内缩的 `ClipRRect`）裁剪，平台视图带上非矩形裁剪
+/// mutator（kClipRRect），`FlutterPlatformViewsController.mm` 的
+/// `HasNonRectClipForUnderlayCutout` 为真。于是**紧跟在这个 WebView 之后**绘制的那段
+/// Flutter 内容：overlay 层被 `ApplyNonRectClipToOverlayCanvas` 裁成 WebView 的圆角
+/// 形状；`view_slicer.cc` 的 `preserve_underlay` 分支又不在底层画布上挖掉它，这段内容
+/// 在形状外的部分只画进**所有平台视图之下**的底层画布，被阅读器 WKWebView 整块盖住。
+/// 判据是「前一个平台视图带非矩形裁剪」，不是「与哪个视图相不相交」（`SliceViews`
+/// 会拿每段内容和它之前的所有平台视图求交）。
+///
+/// 所以嵌套层在父层 WebView 之后、自己的原生背衬之前**不许画任何 Flutter 内容**：
+/// 原生背衬没有非矩形裁剪，排在它之后的本层内容（外侧投影、描边、顶栏）照常合成。
+/// `_ApplePopupGlassBackdrop._buildNativeMaterial` 因此把原生背衬排在 Stack 第一个。
 bool fushiNativePopupBackdropHostAvailable(ThemeData theme) {
   final TargetPlatform platform = theme.platform;
   if (platform != TargetPlatform.iOS && platform != TargetPlatform.macOS) {

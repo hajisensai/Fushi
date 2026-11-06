@@ -6864,9 +6864,9 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final Color opaque = panelColor.withValues(alpha: 1);
     // iOS / macOS：背衬一律是原生平台视图——能真模糊就是系统材质，透明度不被允许
-    // 就是原生实色面板。实底不能由 Flutter 画：嵌套层的 Flutter 实底画在父层 WebView
-    // 之后，iOS 引擎只在与父层重叠处合成它，压在正文上的部分整块透明（反馈
-    // hQpYQyWJNQ，见 [fushiNativePopupBackdropHostAvailable]）。
+    // 就是原生实色面板。实底不能由 Flutter 画：嵌套层的 Flutter 实底紧跟在父层查词
+    // WebView（带圆角裁剪）之后绘制，iOS 引擎把这段内容裁成父层的圆角形状，压在正文
+    // 上的部分整块透明（反馈 hQpYQyWJNQ，见 [fushiNativePopupBackdropHostAvailable]）。
     if (fushiGlassOverPlatformView(context) &&
         fushiNativePopupBackdropHostAvailable(Theme.of(context))) {
       return _buildNativeMaterial(
@@ -6955,9 +6955,11 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
   ///
   /// - MD3：材质上叠一层面板色（主色 5% 淡染的 surfaceContainer）低 alpha 色层，
   ///   面板仍读作 MD3 的配色；Apple：纯系统材质，只有用户手动指定的词典底色才淡染。
-  /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]）：画进形状内会被材质
-  ///   采样、把模糊整块压暗。它画在原生视图之前（同一 Stack 的更低层），不会给
-  ///   平台视图挖 hit-test 忽略区（BUG-1692）。
+  /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]），画在原生视图**之后**：
+  ///   原生背衬必须是本层第一个绘制的东西（iOS 合成规则，见
+  ///   [fushiNativePopupBackdropHostAvailable]）。它不碰形状内侧，不会压暗面板；它
+  ///   只盖在原生背衬（本身不接收事件）与更早的平台视图上，不给本层 WebView 挖
+  ///   macOS hit-test 忽略区（BUG-1692）。
   /// - [solidColor] 非 null（透明度不被允许）：原生侧不挂材质，画这块不透明实色面板。
   Widget _buildNativeMaterial(
     BuildContext context, {
@@ -6979,14 +6981,10 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
       fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: <Widget>[
-        IgnorePointer(
-          child: CustomPaint(
-            painter: _PopupOuterShadowPainter(
-              borderRadius: borderRadius,
-              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
-            ),
-          ),
-        ),
+        // 原生背衬必须是本层**第一个**绘制的东西（反馈 hQpYQyWJNQ，见
+        // [fushiNativePopupBackdropHostAvailable]）：嵌套层排在它前面的 Flutter 内容
+        // 会落进父层查词 WebView 之后的那段合成切片，被裁成父层的圆角形状，压在正文上
+        // 的部分整块不显示。
         FushiNativeMaterialBackdrop(
           dark: dark,
           borderRadius: borderRadius.topLeft.x,
@@ -6994,20 +6992,32 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
           tint: tint,
           solidColor: solidColor,
         ),
+        IgnorePointer(
+          child: CustomPaint(
+            painter: _PopupOuterShadowPainter(
+              borderRadius: borderRadius,
+              continuousCorners: !md3,
+              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
-/// 只画在圆角矩形**外侧**的柔和投影（内侧裁掉）：原生材质会采样它背后的一切，
-/// 画进形状内的阴影会被模糊进面板、把材质整体压暗。
+/// 只画在面板形状**外侧**的柔和投影（内侧裁掉）：它画在原生背衬**之上**（见
+/// [_ApplePopupGlassBackdrop._buildNativeMaterial]），内侧必须一个像素都不碰，否则
+/// 会压暗面板。挖掉的形状与原生背衬同形（Apple 连续曲率圆角 = superellipse）。
 class _PopupOuterShadowPainter extends CustomPainter {
   const _PopupOuterShadowPainter({
     required this.borderRadius,
+    required this.continuousCorners,
     required this.color,
   });
 
   final BorderRadius borderRadius;
+  final bool continuousCorners;
   final Color color;
 
   static const double _blurSigma = 12;
@@ -7015,15 +7025,15 @@ class _PopupOuterShadowPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final RRect shape = borderRadius.toRRect(Offset.zero & size);
-    final Rect bounds = (Offset.zero & size).inflate(_blurSigma * 3 + _offsetY);
+    final Rect rect = Offset.zero & size;
+    final RRect shape = borderRadius.toRRect(rect);
+    final Path panel = continuousCorners
+        ? (Path()..addRSuperellipse(borderRadius.toRSuperellipse(rect)))
+        : (Path()..addRRect(shape));
+    final Rect bounds = rect.inflate(_blurSigma * 3 + _offsetY);
     canvas.save();
     canvas.clipPath(
-      Path.combine(
-        PathOperation.difference,
-        Path()..addRect(bounds),
-        Path()..addRRect(shape),
-      ),
+      Path.combine(PathOperation.difference, Path()..addRect(bounds), panel),
     );
     canvas.drawRRect(
       shape.shift(const Offset(0, _offsetY)),
@@ -7036,7 +7046,9 @@ class _PopupOuterShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_PopupOuterShadowPainter oldDelegate) =>
-      oldDelegate.borderRadius != borderRadius || oldDelegate.color != color;
+      oldDelegate.borderRadius != borderRadius ||
+      oldDelegate.continuousCorners != continuousCorners ||
+      oldDelegate.color != color;
 }
 
 class FushiCompactSearchRow extends StatelessWidget {

@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -336,6 +337,140 @@ void main() {
         isNull,
       );
     });
+
+    // 反馈 hQpYQyWJNQ 的合成规则（见 fushiNativePopupBackdropHostAvailable）：父层
+    // 查词 WebView 带圆角裁剪，紧跟它之后绘制的 Flutter 内容在 iOS 上被裁成父层形状，
+    // 压在正文上的部分不显示。嵌套层因此必须**先**画原生背衬：surface 里任何会出像素
+    // 的 Flutter 绘制（外侧投影、描边、实底……）都只能排在原生背衬之后。
+    bool paintsPixels(RenderObject o) {
+      if (o is RenderCustomPaint) {
+        return o.painter != null || o.foregroundPainter != null;
+      }
+      if (o is RenderDecoratedBox || o is RenderParagraph || o is RenderImage) {
+        return true;
+      }
+      if (o is RenderPhysicalShape) return o.color.a > 0 || o.elevation > 0;
+      if (o is RenderPhysicalModel) return o.color.a > 0 || o.elevation > 0;
+      return o.runtimeType.toString() == '_RenderColoredBox';
+    }
+
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+    ]) {
+      for (final ({String label, bool glass, FushiGlassMaterial? material}) c
+          in <({String label, bool glass, FushiGlassMaterial? material})>[
+            (label: 'Apple 系统材质', glass: true, material: null),
+            (
+              label: 'Apple 原生实底',
+              glass: true,
+              material: FushiGlassMaterial.off,
+            ),
+            (label: 'MD3 系统材质', glass: false, material: null),
+          ]) {
+        testWidgets('${platform.name} ${c.label}：原生背衬是 surface 里第一个绘制的东西', (
+          WidgetTester tester,
+        ) async {
+          await tester.pumpWidget(
+            host(
+              theme(
+                glass: c.glass,
+                brightness: Brightness.dark,
+                platform: platform,
+                material: c.material,
+              ),
+              const FushiPopupSurface(
+                borderOnForeground: false,
+                child: SizedBox.expand(),
+              ),
+            ),
+          );
+          tester.takeException();
+          final RenderObject backdropRender = tester.renderObject(
+            inSurface(FushiNativeMaterialBackdrop),
+          );
+          final List<RenderObject> paintOrder = <RenderObject>[];
+          void visit(RenderObject o) {
+            paintOrder.add(o);
+            o.visitChildren(visit);
+          }
+
+          visit(tester.renderObject(find.byType(FushiPopupSurface)));
+          final int backdropAt = paintOrder.indexOf(backdropRender);
+          expect(backdropAt, isNonNegative);
+          expect(
+            paintOrder.take(backdropAt).where(paintsPixels).toList(),
+            isEmpty,
+            reason: '排在原生背衬之前的 Flutter 绘制在嵌套层上压在正文上的部分会消失',
+          );
+          expect(
+            paintOrder
+                .skip(backdropAt)
+                .whereType<RenderCustomPaint>()
+                .any((RenderCustomPaint p) => p.painter != null),
+            isTrue,
+            reason: '外侧投影仍要画（排在原生背衬之后）',
+          );
+        });
+      }
+    }
+
+    // 投影挪到原生背衬之上后，形状内侧一个像素都不能碰（否则压暗面板），形状外侧照画。
+    for (final bool glass in <bool>[true, false]) {
+      testWidgets('外侧投影只画在面板形状外（${glass ? 'Apple' : 'MD3'}）', (
+        WidgetTester tester,
+      ) async {
+        // 原生背衬的平台视图创建要能成功：失败的异常会在 runAsync 里异步抛出。
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform_views,
+          (MethodCall call) async => null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform_views,
+            null,
+          ),
+        );
+        final GlobalKey boundaryKey = GlobalKey();
+        await tester.pumpWidget(
+          host(
+            theme(
+              glass: glass,
+              brightness: Brightness.dark,
+              platform: TargetPlatform.iOS,
+            ),
+            RepaintBoundary(
+              key: boundaryKey,
+              child: const Padding(
+                padding: EdgeInsets.all(40),
+                child: FushiPopupSurface(
+                  borderOnForeground: false,
+                  showBorder: false,
+                  child: SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        );
+        final RenderRepaintBoundary boundary = tester
+            .renderObject<RenderRepaintBoundary>(find.byKey(boundaryKey));
+        final (ByteData, int)? captured = await tester.runAsync(() async {
+          final ui.Image image = await boundary.toImage();
+          final ByteData? data = await image.toByteData(
+            format: ui.ImageByteFormat.rawRgba,
+          );
+          final int w = image.width;
+          image.dispose();
+          return (data!, w);
+        });
+        final (ByteData data, int w) = captured!;
+        int alphaAt(int x, int y) => data.getUint8((y * w + x) * 4 + 3);
+        // host 给 240×180，内缩 40 后面板是 160×100，位于 (40,40)-(200,140)。
+        expect(alphaAt(120, 90), 0, reason: '面板正中不该有投影');
+        expect(alphaAt(120, 138), 0, reason: '面板底边内侧不该有投影');
+        expect(alphaAt(120, 146), greaterThan(0), reason: '面板下方要有外侧投影');
+      });
+    }
   });
 
   // BUG-3225：app 外查词窗（popup_dictionary_page）的整卡由外层 standaloneWindow
