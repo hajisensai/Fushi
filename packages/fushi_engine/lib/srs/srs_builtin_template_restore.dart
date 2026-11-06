@@ -2,7 +2,7 @@
 ///
 /// 内置类型的模板正文 / CSS 被改过（自己改的、回滚笔记带回的旧版、别的设备同步来的）之后，这几项由修改记录决定、
 /// 不再跟随代码。Fushi 卡片的原生卡面判据要求正面、背面、CSS 与代码定义逐字一致
-/// （srs_fushi_card_native_media.dart 的 `srsFushiCardNativeDefinitions`）：有一处不一致就退回整面 WebView，
+/// （srs_fushi_card_native_media.dart 的 `srsFushiCardNative`）：有一处不一致就退回整面 WebView（背面只调区块布局除外），
 /// 外观页的原生选项全部不生效。这里给出一条命令把它们写回代码定义。
 ///
 /// 写法与别的笔记类型编辑相同：经 [SrsDbStore.writeEdits] 写成修改记录（随同步发布、按项合并）。恢复前的值作为

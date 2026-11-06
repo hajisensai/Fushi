@@ -113,13 +113,17 @@ abstract final class SelectionCapture {
   static Future<String?> captureForegroundSelection({
     bool Function()? stillWanted,
   }) async {
-    if (Platform.isMacOS) {
+    if (Platform.isMacOS || Platform.isLinux) {
       // macOS: the Runner does the whole transaction natively
       // (SelectionCaptureMac.swift: AX selected text → synthetic ⌘C + pasteboard
       // restore → current pasteboard when Accessibility is not granted). Same
       // serial gate as the Windows path: the pasteboard is one global resource.
+      // Linux: the runner reads the primary selection (the highlighted text of
+      // whatever app owns it): the compositor's through ext-data-control-v1 on
+      // a Wayland desktop, else X11 PRIMARY. No copy is injected and the
+      // clipboard is never touched (linux/runner/global_lookup_channel.cc).
       return _runClipboardExclusive<String>(
-        _captureForegroundSelectionMac,
+        _captureForegroundSelectionNative,
         stillWanted: stillWanted,
       );
     }
@@ -243,21 +247,21 @@ abstract final class SelectionCapture {
     }
   }
 
-  /// macOS body of [captureForegroundSelection] (runs inside the clipboard
-  /// gate). Never throws: any native error resolves to null.
-  static Future<String?> _captureForegroundSelectionMac() async {
+  /// macOS / Linux body of [captureForegroundSelection] (runs inside the
+  /// clipboard gate). Never throws: any native error resolves to null.
+  static Future<String?> _captureForegroundSelectionNative() async {
     try {
       final Map<Object?, Object?>? reply = await _foregroundSelectionChannel
           .invokeMapMethod<Object?, Object?>('captureSelection');
       final String text = reply?['text']?.toString() ?? '';
       // 隐私：只记方法/授权/长度，绝不记正文。
       glog(
-        'capture(mac): method=${reply?['method']} '
+        'capture(native): method=${reply?['method']} '
         'trusted=${reply?['trusted']} len=${text.length}',
       );
       return text.isEmpty ? null : text;
     } catch (e) {
-      glog('capture(mac): EXCEPTION ${e.runtimeType}');
+      glog('capture(native): EXCEPTION ${e.runtimeType}');
       return null;
     }
   }
