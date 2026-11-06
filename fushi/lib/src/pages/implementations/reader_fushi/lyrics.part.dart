@@ -1500,8 +1500,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // 停放中创建完成（进入后立刻退出 / 停放时 renderer 死亡换代）也记下：实例
         // 复用（BUG-3913），下次进入由 _toggleLyricsMode 装载文档。
         _lyricsWebViewController = controller;
-        _lyricsMenuDismiss.attach(controller);
         notifyPopupBodyWebViewChanged();
+        _lyricsMenuDismiss.attach(controller);
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
           callback: (List<dynamic> args) async {
