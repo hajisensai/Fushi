@@ -1,0 +1,6 @@
+## BUG-4130 · 网页视频（Netflix）跳转后站点卡住，进度条仍按外推往前走
+- **报告**：2026-11-04（用户：开发者自报，应用内反馈 Ia-GMxq2dQ / sSLXGfcQWH，Windows，Netflix）
+- **真实性**：✅ 部分真 bug（进度条假走）。`fushi/lib/src/media/video/web_video_platform_player.dart:185` `_extrapolatedPosition()` 只看 `state.playing`，不看页面上报的 `buffering`（glue 的 `buf` = `<video>.seeking || readyState < 3`），也没有外推上限。seek 在途时上报不回灌（为了不把 Netflix 慢落地的进度条拽回去），外推成了唯一位置来源：站点卡在缓冲 / 黑屏时进度条照走，直到 4 s seek 超时或用户暂停才跳回跳转点——与反馈描述一致（日志里有 `seek failed (id=…): timeout`）。
+- **[x] ① 已修复** — 页面报缓冲时外推冻结，进出缓冲都从当前显示位置重新起算；离最近一次权威位置最多外推 `kWebVideoMaxExtrapolation`（1 s，上报周期约 250 ms），上报停了 / seek 迟迟不落地时进度条不再凭空前进。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/web_video_platform_player_test.dart`：seek 在途 + 缓冲时停在目标、出缓冲从冻结处接着走；非 seek 期间缓冲冻结；上报停了外推到顶即停、新上报照常跟随。
+- **备注**：「黑屏只有声音」与「多次跳转后越来越卡」**未修、未定位**。代码里查过的部分：Dart `seek` 不加监听；非 Netflix 的 glue seek 用一次性 `seeked` 监听，触发即摘；Netflix 走 `netflix-bridge.js` `nfSeek`，新 seek 让旧轮询回 `superseded`（2026-11-04 日志里确有 superseded，说明作废在生效），没有找到按 seek 累积的监听器 / 定时器 / 会话。2026-11-01 日志里 id 2–15 共 14 条 `timeout` 落在同一微秒，按单实例 bridge 的代际作废逻辑本该是 superseded，说明当时要么页面主线程 / Dart 侧消息长时间堵住后一次性投递，要么 bridge 被注入了不止一份——现有日志区分不了。要定位还缺：每次 seek 前后页面里 `netflix-bridge` 实例数、`<video>` 元素数与 `readyState` / `networkState` / `videoWidth`、Netflix 播放器会话数、WebView2 进程内存，以及黑屏时 `video.getVideoPlaybackQuality()` 的丢帧数；需要真实 Netflix（PlayReady DRM）环境复现。
