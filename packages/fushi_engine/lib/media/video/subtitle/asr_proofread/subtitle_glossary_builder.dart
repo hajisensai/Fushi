@@ -26,6 +26,8 @@ import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_prompts_zh.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:path/path.dart' as p;
 
@@ -126,6 +128,9 @@ final RegExp _kKanjiFamilyKanaGiven = RegExp(
   unicode: true,
 );
 
+/// 3~4 个汉字的中文全名（`林晓明`、`欧阳娜娜`）：台词里多叫名不叫姓，拆出最后两个字。
+final RegExp _kHanFullName = RegExp(r'^\p{Script=Han}{3,4}$', unicode: true);
+
 /// 外文名的分隔：`ロイド・フォージャー`、`Loid Forger`。
 final RegExp _kNameSeparators = RegExp(r'[・･\s　=＝]+');
 
@@ -158,7 +163,12 @@ const Set<String> _kHonorificParts = <String>{
 /// 全名时：《お兄ちゃんはおしまい！》（`緒山みはり` `穂月かえで` …）22 个人名只
 /// 「听到」2 个；《SPY×FAMILY》（`ヨル・フォージャー` …）21 个听到 3 个，都被判成
 /// 别的作品。拆两种：外文名按 `・` / 空白分段；「汉字姓 + 假名名」按文字种类的交界分。
-List<String> _personNameForms(SubtitleGlossaryEntry e) {
+///
+/// 普通话（[language]）另拆中文全名的名（[_kHanFullName]，取最后两个字）。
+List<String> _personNameForms(
+  SubtitleGlossaryEntry e, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
   final String rd = e.reading.replaceAll(_kReadingNoise, '');
   final List<String> parts = <String>[];
   final List<String> segments = e.ja
@@ -168,6 +178,11 @@ List<String> _personNameForms(SubtitleGlossaryEntry e) {
   if (segments.length > 1) parts.addAll(segments);
   final RegExpMatch? split = _kKanjiFamilyKanaGiven.firstMatch(e.ja);
   if (split != null) parts.addAll(<String>[split.group(1)!, split.group(2)!]);
+  if (language == VideoSubtitleLanguage.mandarin &&
+      _kHanFullName.hasMatch(e.ja)) {
+    final List<int> runes = e.ja.runes.toList();
+    parts.add(String.fromCharCodes(runes.sublist(runes.length - 2)));
+  }
   return <String>[
     e.ja,
     rd,
@@ -187,13 +202,14 @@ String _kata(String s) => String.fromCharCodes(<int>[
 /// 同 `series_glossary.py` 的 `coverage`。
 ({List<String> hit, List<String> miss}) subtitleGlossaryCoverage(
   List<SubtitleGlossaryEntry> entries,
-  String spoken,
-) {
+  String spoken, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
   final List<String> hit = <String>[];
   final List<String> miss = <String>[];
   for (final SubtitleGlossaryEntry e in entries) {
     if (!e.isPersonName) continue;
-    final List<String> forms = _personNameForms(e);
+    final List<String> forms = _personNameForms(e, language: language);
     final bool heard = forms.any(
       (String f) => f.runes.length >= 2 && spoken.contains(f),
     );
@@ -249,7 +265,7 @@ List<String> subtitleGlossaryFrequentKatakanaMatches(
 /// 身份校验（无刮削路径的硬判据，有刮削时只用来出警告）：人名覆盖率
 /// （[subtitleGlossaryCoveragePasses]，同基准）或高频片假名词交集
 /// （[subtitleGlossaryFrequentKatakanaMatches] ≥ [kSubtitleGlossaryKatakanaMinMatches]）
-/// 任一成立即通过。
+/// 任一成立即通过。普通话没有片假名，第二条路自然对不上，只看人名覆盖率。
 ///
 /// 曾试过「听到 ≥3 个人名且合计被叫到 ≥10 次」作第二条路，跨作品矩阵里被证伪：
 /// 拿 5 集 K-ON 的识别稿去校验别的作品的表，高木さん / 魔女の旅々 / おにまい / 薬屋
@@ -257,9 +273,12 @@ List<String> subtitleGlossaryFrequentKatakanaMatches(
 /// 稿子一长就累计出几十次。所以第二证据改看片假名高频词。
 bool subtitleGlossaryIdentityPasses(
   List<SubtitleGlossaryEntry> entries,
-  String spoken,
-) =>
-    subtitleGlossaryCoveragePasses(subtitleGlossaryCoverage(entries, spoken)) ||
+  String spoken, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) =>
+    subtitleGlossaryCoveragePasses(
+      subtitleGlossaryCoverage(entries, spoken, language: language),
+    ) ||
     subtitleGlossaryFrequentKatakanaMatches(entries, spoken).length >=
         kSubtitleGlossaryKatakanaMinMatches;
 
@@ -271,8 +290,16 @@ bool subtitleGlossaryCoveragePasses(({List<String> hit, List<String> miss}) c) {
       c.hit.length >= kSubtitleGlossaryCoverageThreshold * total;
 }
 
-/// 矛盾校验：同 `series_glossary.py` 的 `conflicts`（问题描述是给模型看的日文）。
-List<String> subtitleGlossaryConflicts(List<SubtitleGlossaryEntry> entries) {
+/// 矛盾校验：同 `series_glossary.py` 的 `conflicts`（问题描述是给模型看的日文；
+/// 普通话是中文，注记按 [kSubtitleGlossaryUnverifiedKindZh]）。
+List<String> subtitleGlossaryConflicts(
+  List<SubtitleGlossaryEntry> entries, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
+  final bool zh = language == VideoSubtitleLanguage.mandarin;
+  final RegExp unverified = zh
+      ? kSubtitleGlossaryUnverifiedKindZh
+      : _kUnverifiedKind;
   final Set<String> canon = <String>{
     for (final SubtitleGlossaryEntry e in entries) e.ja,
   };
@@ -280,10 +307,14 @@ List<String> subtitleGlossaryConflicts(List<SubtitleGlossaryEntry> entries) {
   for (final SubtitleGlossaryEntry e in entries) {
     for (final String m in e.misrecognitions) {
       if (canon.contains(m) && m != e.ja) {
-        out.add('「$m」は正式表記の項目でもあるが、「${e.ja}」の誤表記にも入っている');
+        out.add(
+          zh
+              ? '「$m」${SubtitleGlossarySourceLabelsZh.conflictBoth}「${e.ja}」'
+              : '「$m」は正式表記の項目でもあるが、「${e.ja}」の誤表記にも入っている',
+        );
       }
     }
-    if (_kUnverifiedKind.hasMatch(e.kind)) {
+    if (unverified.hasMatch(e.kind)) {
       out.add('「${e.ja}」: ${e.kind}');
     }
   }
@@ -346,16 +377,28 @@ String subtitleGlossaryFingerprint(
 /// 资料段（刮削数据 + 百科页），S0 生成与重做共用。
 String buildSubtitleGlossarySources(
   SubtitleWorkContext context,
-  List<WebKnowledgePage> pages,
-) {
+  List<WebKnowledgePage> pages, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
+  final bool zh = language == VideoSubtitleLanguage.mandarin;
   final List<String> lines = <String>[];
   if (context.hasScrapedData) {
-    lines.add('作品の公式データ(確定情報。作品の特定と表記の根拠にしてよい):');
+    lines.add(
+      zh
+          ? SubtitleGlossarySourceLabelsZh.official
+          : '作品の公式データ(確定情報。作品の特定と表記の根拠にしてよい):',
+    );
     if (context.originalTitle?.isNotEmpty ?? false) {
-      lines.add('- 日本語タイトル: ${context.originalTitle}');
+      lines.add(
+        '${zh ? SubtitleGlossarySourceLabelsZh.originalTitle : '- 日本語タイトル'}: '
+        '${context.originalTitle}',
+      );
     }
     if (context.kanjiTitle?.isNotEmpty ?? false) {
-      lines.add('- 漢字タイトル: ${context.kanjiTitle}');
+      lines.add(
+        '${zh ? SubtitleGlossarySourceLabelsZh.kanjiTitle : '- 漢字タイトル'}: '
+        '${context.kanjiTitle}',
+      );
     }
     final List<SubtitleWorkCharacter> named = <SubtitleWorkCharacter>[
       for (final SubtitleWorkCharacter c in context.characters)
@@ -368,20 +411,30 @@ String buildSubtitleGlossarySources(
     String cv(SubtitleWorkCharacter c) =>
         c.voiceActor == null ? '' : ' / CV: ${c.voiceActor}';
     if (named.isNotEmpty) {
-      lines.add('- 登場人物(公式の日本語表記。表の人名はこの表記に合わせること):');
+      lines.add(
+        zh
+            ? SubtitleGlossarySourceLabelsZh.namedCharacters
+            : '- 登場人物(公式の日本語表記。表の人名はこの表記に合わせること):',
+      );
       for (final SubtitleWorkCharacter c in named) {
         lines.add('  ${c.originalName!.trim()} (${c.name}${cv(c)})');
       }
     }
     if (romaji.isNotEmpty) {
-      lines.add('- 登場人物(ローマ字表記のみ。日本語表記は資料で確認すること):');
+      lines.add(
+        zh
+            ? SubtitleGlossarySourceLabelsZh.romajiCharacters
+            : '- 登場人物(ローマ字表記のみ。日本語表記は資料で確認すること):',
+      );
       for (final SubtitleWorkCharacter c in romaji) {
         lines.add('  ${c.name}${cv(c)}');
       }
     }
   }
   if (pages.isNotEmpty) {
-    lines.add('参考資料(百科事典等の抜粋):');
+    lines.add(
+      zh ? SubtitleGlossarySourceLabelsZh.references : '参考資料(百科事典等の抜粋):',
+    );
     for (final WebKnowledgePage page in pages) {
       lines
         ..add('【${page.site.label}: ${page.title}】')
@@ -389,7 +442,11 @@ String buildSubtitleGlossarySources(
     }
   }
   if (lines.isEmpty) {
-    lines.add('(公式データ・参考資料なし。作品の公式表記を確かに知っている項目だけ含めること)');
+    lines.add(
+      zh
+          ? SubtitleGlossarySourceLabelsZh.none
+          : '(公式データ・参考資料なし。作品の公式表記を確かに知っている項目だけ含めること)',
+    );
   }
   return lines.join('\n');
 }
@@ -486,10 +543,16 @@ class SubtitleGlossaryBuilder {
     required this.completer,
     this.webKnowledge,
     this.maxParseAttempts = 3,
+    this.language = VideoSubtitleLanguage.japanese,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
 
   final AiTextCompleter completer;
+
+  /// 选提示词、作品名（[VideoSubtitleLanguage.workTitle]）与校验规则。
+  final VideoSubtitleLanguage language;
+
+  bool get _zh => language == VideoSubtitleLanguage.mandarin;
 
   /// 百科页来源；null / 没启用站点 = 只用刮削数据。
   final WebKnowledgeClient? webKnowledge;
@@ -529,28 +592,37 @@ class SubtitleGlossaryBuilder {
     }
 
     throwIfSubtitleCancelled(cancel);
+    final String title = language.workTitle(context);
     final List<WebKnowledgePage> pages = web == null || !web.isEnabled
         ? const <WebKnowledgePage>[]
-        : await web.search(context.japaneseTitle);
-    final String sources = buildSubtitleGlossarySources(context, pages);
+        : await web.search(title);
+    final String sources = buildSubtitleGlossarySources(
+      context,
+      pages,
+      language: language,
+    );
+    final String promptTemplate = _zh
+        ? kSubtitleGlossaryPromptZh
+        : kSubtitleGlossaryPrompt;
+    final String recheckTemplate = _zh
+        ? kSubtitleGlossaryRecheckZh
+        : kSubtitleGlossaryRecheck;
     final String spoken = <String>[
       for (final List<String> ep in episodeTexts) ...ep,
     ].join('\n');
     final String identity = spoken.isEmpty
         ? ''
-        : kSubtitleGlossaryIdentity.replaceAll(
-            '{lines}',
-            subtitleGlossaryIdentitySample(episodeTexts).join('\n'),
-          );
+        : (_zh ? kSubtitleGlossaryIdentityZh : kSubtitleGlossaryIdentity)
+              .replaceAll(
+                '{lines}',
+                subtitleGlossaryIdentitySample(episodeTexts).join('\n'),
+              );
     // 生成 / 身份重做共用同一个前缀（规则 + 资料），只换本批的身份段。
-    final String generatePrefix =
-        _templateHead(kSubtitleGlossaryPrompt, '\n{identity}')
-            .replaceAll('{title}', context.japaneseTitle)
-            .replaceAll('{sources}', sources);
-    final String generateTail = _templateTail(
-      kSubtitleGlossaryPrompt,
+    final String generatePrefix = _templateHead(
+      promptTemplate,
       '\n{identity}',
-    );
+    ).replaceAll('{title}', title).replaceAll('{sources}', sources);
+    final String generateTail = _templateTail(promptTemplate, '\n{identity}');
     _Prompt prompt(String extraIdentity) => (
       prefix: generatePrefix,
       body: generateTail.replaceAll('{identity}', identity + extraIdentity),
@@ -569,25 +641,37 @@ class SubtitleGlossaryBuilder {
     // 这几集里这些人没被叫到，降为警告（[SubtitleGlossaryBuildResult.identityUnverified]），
     // 不重做、不抛错——拿「是别的作品」的反馈去重做，只会把对的表改坏。
     bool identityUnverified = false;
+    ({List<String> hit, List<String> miss}) cover() =>
+        subtitleGlossaryCoverage(items, spoken, language: language);
+    bool identityPasses() =>
+        subtitleGlossaryIdentityPasses(items, spoken, language: language);
     if (spoken.isNotEmpty && context.hasScrapedData) {
-      coverage = subtitleGlossaryCoverage(items, spoken);
-      identityUnverified = !subtitleGlossaryIdentityPasses(items, spoken);
+      coverage = cover();
+      identityUnverified = !identityPasses();
     } else if (spoken.isNotEmpty) {
       bool passed = false;
       for (int round = 0; round < 2; round++) {
-        coverage = subtitleGlossaryCoverage(items, spoken);
-        if (subtitleGlossaryIdentityPasses(items, spoken)) {
+        coverage = cover();
+        if (identityPasses()) {
           passed = true;
           break;
         }
-        final String feedback = kSubtitleGlossaryWrongWork
-            .replaceAll('{miss}', coverage.miss.take(20).join('、'))
-            .replaceAll('{heard}', mostCommonKatakana(spoken, 40).join('、'));
+        final String feedback = _zh
+            ? kSubtitleGlossaryWrongWorkZh.replaceAll(
+                '{miss}',
+                coverage.miss.take(20).join('、'),
+              )
+            : kSubtitleGlossaryWrongWork
+                  .replaceAll('{miss}', coverage.miss.take(20).join('、'))
+                  .replaceAll(
+                    '{heard}',
+                    mostCommonKatakana(spoken, 40).join('、'),
+                  );
         items = await _ask(prompt(feedback), usage, cancel);
       }
       if (!passed) {
-        coverage = subtitleGlossaryCoverage(items, spoken);
-        if (!subtitleGlossaryIdentityPasses(items, spoken)) {
+        coverage = cover();
+        if (!identityPasses()) {
           throw SubtitleGlossaryValidationFailure(
             problem: SubtitleGlossaryProblem.wrongWork,
             candidate: items,
@@ -601,14 +685,18 @@ class SubtitleGlossaryBuilder {
 
     // 矛盾校验：不过就带问题清单重做，最多两次；仍有矛盾即失败。
     for (int round = 0; round < 2; round++) {
-      final List<String> bad = subtitleGlossaryConflicts(items);
+      final List<String> bad = subtitleGlossaryConflicts(
+        items,
+        language: language,
+      );
       if (bad.isEmpty) break;
       items = await _ask(
         (
-          prefix: _templateHead(kSubtitleGlossaryRecheck, '\n矛盾:')
-              .replaceAll('{title}', context.japaneseTitle)
-              .replaceAll('{sources}', sources),
-          body: _templateTail(kSubtitleGlossaryRecheck, '\n矛盾:')
+          prefix: _templateHead(
+            recheckTemplate,
+            '\n矛盾:',
+          ).replaceAll('{title}', title).replaceAll('{sources}', sources),
+          body: _templateTail(recheckTemplate, '\n矛盾:')
               .replaceAll('{issues}', bad.join('\n'))
               .replaceAll('{table}', formatSubtitleGlossaryLines(items)),
         ),
@@ -616,7 +704,10 @@ class SubtitleGlossaryBuilder {
         cancel,
       );
     }
-    final List<String> left = subtitleGlossaryConflicts(items);
+    final List<String> left = subtitleGlossaryConflicts(
+      items,
+      language: language,
+    );
     if (left.isNotEmpty) {
       throw SubtitleGlossaryValidationFailure(
         problem: SubtitleGlossaryProblem.conflicts,
@@ -625,7 +716,7 @@ class SubtitleGlossaryBuilder {
         usage: usage,
       );
     }
-    if (spoken.isNotEmpty) coverage = subtitleGlossaryCoverage(items, spoken);
+    if (spoken.isNotEmpty) coverage = cover();
 
     return SubtitleGlossaryBuildResult(
       glossary: mergeSubtitleGlossary(
@@ -662,7 +753,7 @@ class SubtitleGlossaryBuilder {
       body: () => all.isEmpty
           ? prompt.body
           : '${prompt.body}\n\n'
-                '${kSubtitleGlossaryContinue.replaceAll('{done}', all.map((SubtitleGlossaryEntry e) => e.ja).join('、'))}',
+                '${(_zh ? kSubtitleGlossaryContinueZh : kSubtitleGlossaryContinue).replaceAll('{done}', all.map((SubtitleGlossaryEntry e) => e.ja).join('、'))}',
       absorb: (List<String> lines) {
         int added = 0;
         for (final String line in lines) {

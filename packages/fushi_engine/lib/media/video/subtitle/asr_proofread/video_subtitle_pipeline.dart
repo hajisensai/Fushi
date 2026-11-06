@@ -1,4 +1,4 @@
-/// 视频日语字幕管线的编排（spec `2026-10-19-video-asr-llm-subtitle-pipeline` 第 3、5 节；
+/// 视频字幕管线的编排（日语 / 普通话，见 [VideoSubtitleLanguage]）（spec `2026-10-19-video-asr-llm-subtitle-pipeline` 第 3、5 节；
 /// 整体顺序移植自基准 `subtitle_series.py`，导出规则移植自 `export_final.py`）。
 ///
 /// 单集与整季同一入口 [VideoSubtitlePipeline.run]（整季 = 多个视频共享一个作品
@@ -13,7 +13,7 @@
 /// AI 关闭（[VideoSubtitlePipeline.ai] 为 null）时跳过 S0/S3/S4/歌曲判定，只做
 /// 识别 + 拆分 + 导出。
 ///
-/// 任务目录 `<jobsRoot>/<videoSubtitleJobId(视频)>/` 里落各阶段产物：
+/// 任务目录 `<jobsRoot>/<videoSubtitleJobIdFor(视频, 语言)>/` 里落各阶段产物：
 /// `drafts.<识别器 id>.json`、`proofread/<批>.json`、`consistency.json`、
 /// `final.json`、`state.json`；**已落盘的阶段视为完成**，续跑直接复用。AI 请求
 /// 失败抛 [SubtitleAiRequestFailure]，缓存保留，重跑即续。
@@ -41,6 +41,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidenc
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_proofreader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
@@ -227,7 +228,8 @@ class VideoSubtitleAiConfig {
 Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
     Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
 
-/// 任务目录名：`sha1(视频文件名 + '|' + 字节数)`（文件不存在按 0 字节）。
+/// 日语任务目录名：`sha1(视频文件名 + '|' + 字节数)`（文件不存在按 0 字节）。其它
+/// 语言用 [videoSubtitleJobIdFor]。
 String videoSubtitleJobId(String videoPath) {
   final int bytes = hasLocalMediaFileSync(videoPath)
       ? File(videoPath).lengthSync()
@@ -236,6 +238,13 @@ String videoSubtitleJobId(String videoPath) {
       .convert(utf8.encode('${p.basename(videoPath)}|$bytes'))
       .toString();
 }
+
+/// [language] 的任务目录名：日语就是 [videoSubtitleJobId]（已有缓存照用），其它语言
+/// 加 `.<语言>`（[VideoSubtitleLanguage.jobId]）。
+String videoSubtitleJobIdFor(
+  String videoPath,
+  VideoSubtitleLanguage language,
+) => language.jobId(videoSubtitleJobId(videoPath));
 
 /// 各阶段产物的文件名。
 abstract final class VideoSubtitleJobFiles {
@@ -302,24 +311,30 @@ class VideoSubtitlePipeline {
     required this.jobsRoot,
     this.ai,
     this.displaySplitter = splitSubtitleDraftCuesForDisplay,
-    this.subtitleSuffix = 'ja',
+    this.language = VideoSubtitleLanguage.japanese,
+    String? subtitleSuffix,
     this.exportDir,
     this.styleReference = loadSubtitleStyleReference,
     this.evidence = const SubtitleEvidenceCollector(),
     this.lyricsFinder,
     Future<int?> Function(String videoPath)? probeDurationMs,
     DateTime Function()? clock,
-  }) : _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
+  }) : subtitleSuffix = subtitleSuffix ?? language.tag,
+       _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
        _clock = clock ?? DateTime.now;
 
+  /// [recognizer] 必须是按同一语言建的（`resolveVideoSubtitleRecognizer(language:)`）。
   final VideoSubtitleRecognizer recognizer;
+
+  /// 字幕语言：任务目录与专名表键怎么隔开、各 AI 阶段用哪套提示词、证据的目标语言。
+  final VideoSubtitleLanguage language;
 
   /// 任务目录的根（调用方给，如 `<数据根>/asr_jobs/video_subtitles`）。
   final Directory jobsRoot;
   final VideoSubtitleAiConfig? ai;
   final SubtitleDisplaySplitter? displaySplitter;
 
-  /// 输出文件后缀：`<视频名>.<后缀>.srt`。
+  /// 输出文件后缀：`<视频名>.<后缀>.srt`；默认 [VideoSubtitleLanguage.tag]。
   final String subtitleSuffix;
 
   /// 字幕写到哪个目录；null = 视频旁（播放页的 sidecar 探测直接加载）。给了就全部
@@ -363,8 +378,9 @@ class VideoSubtitlePipeline {
   String asrStyledSubtitlePathFor(String videoPath) =>
       p.setExtension(asrSubtitlePathFor(videoPath), '.ass');
 
-  Directory jobDirFor(String videoPath) =>
-      Directory(p.join(jobsRoot.path, videoSubtitleJobId(videoPath)));
+  Directory jobDirFor(String videoPath) => Directory(
+    p.join(jobsRoot.path, videoSubtitleJobIdFor(videoPath, language)),
+  );
 
   /// [path] 是不是本管线的产物（不能当证据 / 样式参考读回来，否则上次的识别错误会被
   /// 当成人工字幕自我强化）：
@@ -583,13 +599,15 @@ class VideoSubtitlePipeline {
         ...episodes.where((_Episode e) => !e.isShort),
         ...episodes.where((_Episode e) => e.isShort),
       ];
+      final String glossaryKey = language.glossaryKey(work.workKey);
       final SubtitleGlossary? existing = await aiConfig.glossaryStore.load(
-        work.workKey,
+        glossaryKey,
       );
       final SubtitleGlossaryBuildResult built =
           await SubtitleGlossaryBuilder(
             completer: completer!,
             webKnowledge: aiConfig.webKnowledge,
+            language: language,
             clock: _clock,
           ).build(
             context: work,
@@ -606,10 +624,12 @@ class VideoSubtitlePipeline {
       glossaryRegenerated = built.regenerated;
       glossaryBuild = built;
       if (built.regenerated) {
-        await aiConfig.glossaryStore.save(work.workKey, built.glossary);
+        await aiConfig.glossaryStore.save(glossaryKey, built.glossary);
       }
       report(VideoSubtitleStage.glossary, 1, 'glossary ready');
     }
+
+    final String workTitle = language.workTitle(work);
 
     // 3. 每集 S3 → S4（AI 关闭时识别稿原样往下走）。
     for (int k = 0; k < pending.length; k++) {
@@ -623,9 +643,10 @@ class VideoSubtitlePipeline {
           await SubtitleProofreader(
             completer: completer!,
             concurrency: aiConfig.proofreadConcurrency,
+            language: language,
           ).proofread(
             cues: e.drafts,
-            title: work.japaneseTitle,
+            title: workTitle,
             glossary: glossary,
             cacheDir: Directory(
               p.join(e.dir.path, VideoSubtitleJobFiles.proofreadDir),
@@ -650,9 +671,12 @@ class VideoSubtitlePipeline {
         index: e.index,
       );
       final SubtitleConsistencyResult consistent =
-          await SubtitleConsistencyPass(completer: completer).run(
+          await SubtitleConsistencyPass(
+            completer: completer,
+            language: language,
+          ).run(
             cues: proofread.cues,
-            title: work.japaneseTitle,
+            title: workTitle,
             glossary: glossary,
             cacheFile: File(
               p.join(e.dir.path, VideoSubtitleJobFiles.consistency),
@@ -674,7 +698,10 @@ class VideoSubtitlePipeline {
       report(VideoSubtitleStage.songCheck, 0, 'classifying short clips');
       await jobsRoot.create(recursive: true);
       final SubtitleClipClassification classified =
-          await SubtitleClipClassifier(completer: completer!).classify(
+          await SubtitleClipClassifier(
+            completer: completer!,
+            language: language,
+          ).classify(
             clips: <String, List<String>>{
               for (final _Episode e in shorts)
                 e.jobId: <String>[
@@ -683,7 +710,7 @@ class VideoSubtitlePipeline {
                     c.text,
                 ],
             },
-            title: work.japaneseTitle,
+            title: workTitle,
             cacheFile: File(
               p.join(jobsRoot.path, VideoSubtitleJobFiles.clipKinds),
             ),
@@ -712,9 +739,13 @@ class VideoSubtitlePipeline {
           index: e.index,
         );
         final SubtitleLyricsPassResult lyrics =
-            await SubtitleLyricsPass(completer: completer!, finder: finder).run(
+            await SubtitleLyricsPass(
+              completer: completer!,
+              finder: finder,
+              language: language,
+            ).run(
               cues: e.workingCues ?? e.drafts,
-              workTitle: work.japaneseTitle,
+              workTitle: workTitle,
               cacheFile: File(p.join(e.dir.path, VideoSubtitleJobFiles.lyrics)),
               evidence: e.evidence,
               allSung: kinds[e.jobId] == SubtitleClipKind.song,
@@ -888,8 +919,8 @@ class VideoSubtitlePipeline {
     );
   }
 
-  /// 目标语言：字幕后缀的第一段（`ja` / `ja.ai` → `ja`）。
-  String get _targetLanguage => subtitleSuffix.split('.').first;
+  /// 证据的目标语言（[VideoSubtitleLanguage.tag]；自定义后缀不影响它）。
+  String get _targetLanguage => language.tag;
 
   bool get _lyricsEnabled => ai != null && lyricsFinder != null;
 
@@ -1212,10 +1243,11 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   SubtitleGlossary? glossary,
   int assumedGlossaryEntries = 40,
   int batchSize = 30,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) {
   final String glossaryText = glossary == null
       ? List<String>.filled(assumedGlossaryEntries, '人' * 40).join('\n')
-      : formatGlossaryForProofread(glossary);
+      : formatGlossaryForProofread(glossary, language: language);
   int batches = 0;
   int promptChars = 0;
   int replyChars = 0;
@@ -1231,6 +1263,7 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
         hi: hi,
         title: title,
         glossaryText: glossaryText,
+        language: language,
       ).runes.length;
       for (int i = lo; i < hi; i++) {
         replyChars += '$i'.length + 8 + cues[i].text.runes.length;
