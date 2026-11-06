@@ -172,6 +172,10 @@ Future<File> createServerBackup({
       hasConfig: hasConfig,
     );
     await output.parent.create(recursive: true);
+    // 包里有 admin_token、TLS 私钥、配对令牌、排行榜恢复码：先建空文件收紧到属主
+    // 读写再写内容（打开已存在文件写入不改权限，rename 也保留），不留可读窗口。
+    await partial.writeAsBytes(const <int>[], flush: true);
+    await restrictServerBackupPath(partial.path, '600');
     await _writeZip(
       outputPath: partial.path,
       manifestJson: jsonEncode(manifest.toJson()),
@@ -302,9 +306,29 @@ Future<ServerRestoreResult> restoreServerBackup({
   if (staging.existsSync() || previous.existsSync()) {
     throw ServerBackupException('目标已存在：${staging.path} / ${previous.path}');
   }
-  String? configText;
   try {
-    configText = await _extractInIsolate(backup.path, staging.path);
+    // 暂存目录先建好并收紧：解出来的凭据文件在恢复权限前不对其他用户可见。
+    await staging.create(recursive: true);
+    await restrictServerBackupPath(staging.path, '700');
+    final _ExtractedBackup extracted = await _extractInIsolate(
+      backup.path,
+      staging.path,
+    );
+    await _restoreOwnerOnlyModes(extracted.ownerOnlyModes);
+    // 配置在动数据目录之前解析：包里配置坏了要在「什么都没改」时就拒绝，
+    // 不能换完数据才发现配置写不回去。
+    final String? configText = extracted.config;
+    ServerConfig? restored;
+    if (configFile != null && configText != null) {
+      try {
+        restored = ServerConfig.parse(
+          configText,
+          configDir: configFile.parent.path,
+        ).copyWith(dataDir: dataDir);
+      } on FormatException catch (e) {
+        throw ServerBackupException('包里的配置文件无效：${e.message}');
+      }
+    }
     final List<String> moved = <String>[];
     final List<String> placed = <String>[];
     await data.create(recursive: true);
@@ -334,11 +358,7 @@ Future<ServerRestoreResult> restoreServerBackup({
       throw ServerBackupException('还原失败，已恢复原数据：$e');
     }
     File? previousConfig;
-    if (configFile != null && configText != null) {
-      final ServerConfig restored = ServerConfig.parse(
-        configText,
-        configDir: configFile.parent.path,
-      ).copyWith(dataDir: dataDir);
+    if (configFile != null && restored != null) {
       if (configFile.existsSync()) {
         previousConfig = await configFile.copy(
           '${configFile.path}.pre-restore-$stamp',
@@ -359,19 +379,35 @@ Future<ServerRestoreResult> restoreServerBackup({
 FileSystemEntity _entity(String path) =>
     FileSystemEntity.isDirectorySync(path) ? Directory(path) : File(path);
 
-/// 后台 isolate 解包。只传字符串：闭包别捕获调用方的局部变量（同 app 的 BUG-1929）。
-Future<String?> _extractInIsolate(String backupPath, String stagingPath) =>
-    Isolate.run(() => _extractBackup(backupPath, stagingPath));
+/// 解包结果：包里的配置文本（没有为 null）+ 备份时只给属主读写的文件（解出路径 →
+/// 权限位）。
+class _ExtractedBackup {
+  const _ExtractedBackup(this.config, this.ownerOnlyModes);
 
-/// 把包里 `data/` 下的条目解到 [stagingPath]，返回包里的配置文本（没有为 null）。
-/// 越界条目（zip-slip）直接判坏包。
-String? _extractBackup(String backupPath, String stagingPath) {
+  final String? config;
+  final Map<String, int> ownerOnlyModes;
+}
+
+/// 后台 isolate 解包。只传字符串：闭包别捕获调用方的局部变量（同 app 的 BUG-1929）。
+Future<_ExtractedBackup> _extractInIsolate(
+  String backupPath,
+  String stagingPath,
+) => Isolate.run(() => _extractBackup(backupPath, stagingPath));
+
+/// 把包里 `data/` 下的条目解到 [stagingPath]。越界条目（zip-slip）直接判坏包。
+///
+/// 条目带着备份时的 unix 权限位（[addFileStored] 写进 zip）。解出的文件一律按 umask
+/// 落盘，所以把「组 / 其他用户无任何权限」的那批（TLS 私钥、配对令牌、排行榜账户、
+/// 媒体服务器凭据……都按 0600 落盘）记下来，由调用方恢复——否则还原一次凭据就变成
+/// 其他用户可读。
+_ExtractedBackup _extractBackup(String backupPath, String stagingPath) {
   Directory(stagingPath).createSync(recursive: true);
   final InputFileStream input = InputFileStream(backupPath);
   try {
     final Archive archive = ZipDecoder().decodeBuffer(input);
     String? config;
     bool sawDb = false;
+    final Map<String, int> ownerOnly = <String, int>{};
     for (final ArchiveFile f in archive.files) {
       if (f.name == _configEntry) {
         config = utf8.decode(f.content as List<int>);
@@ -385,14 +421,67 @@ String? _extractBackup(String backupPath, String stagingPath) {
       if (target == null) {
         throw ServerBackupException('包里有越界路径：${f.name}');
       }
-      if (rel == 'support/$fushiDatabaseFileName') sawDb = true;
+      final bool isDb = rel == 'support/$fushiDatabaseFileName';
       Directory(p.dirname(target)).createSync(recursive: true);
       extractZipEntryToFile(f, target);
+      if (isDb) {
+        _checkSqliteHeader(target);
+        sawDb = true;
+      }
+      final int perm = f.mode & 0x1FF;
+      if (perm != 0 && (perm & 0x3F) == 0) ownerOnly[target] = perm;
     }
     if (!sawDb) throw const ServerBackupException('包里没有数据库');
-    return config;
+    return _ExtractedBackup(config, ownerOnly);
   } finally {
     input.closeSync();
+  }
+}
+
+/// SQLite 3 数据库文件头（16 字节，含结尾的 NUL）。
+const String _sqliteHeader = 'SQLite format 3\u0000';
+
+/// 包里的数据库不是 SQLite 文件就判坏包：换进数据目录之前拒绝，而不是换完才在
+/// 下次启动时打不开库。
+void _checkSqliteHeader(String path) {
+  final RandomAccessFile raf = File(path).openSync();
+  try {
+    final List<int> head = raf.readSync(_sqliteHeader.length);
+    if (String.fromCharCodes(head) != _sqliteHeader) {
+      throw const ServerBackupException('包里的数据库不是有效的 SQLite 文件');
+    }
+  } finally {
+    raf.closeSync();
+  }
+}
+
+/// POSIX 上把 [path] 设成 [mode]（八进制串，如 `600` / `700`）。备份包与暂存目录装着
+/// 全部凭据，chmod 失败就报错，不留一份其他用户可读的副本（与 `sync_commands.dart`
+/// 落 token 同一条纪律）。Windows 没有 chmod，靠用户目录 ACL。
+Future<void> restrictServerBackupPath(String path, String mode) async {
+  if (Platform.isWindows) return;
+  final ProcessResult r = await Process.run('chmod', <String>[mode, path]);
+  if (r.exitCode != 0) {
+    throw ServerBackupException('chmod $mode 失败（${r.stderr}）：$path');
+  }
+}
+
+/// 按 [modes]（路径 → 权限位）恢复属主专用文件的权限，同一权限位合成一次 chmod。
+Future<void> _restoreOwnerOnlyModes(Map<String, int> modes) async {
+  if (Platform.isWindows || modes.isEmpty) return;
+  final Map<int, List<String>> byMode = <int, List<String>>{};
+  for (final MapEntry<String, int> e in modes.entries) {
+    (byMode[e.value] ??= <String>[]).add(e.key);
+  }
+  for (final MapEntry<int, List<String>> e in byMode.entries) {
+    final String mode = e.key.toRadixString(8);
+    final ProcessResult r = await Process.run('chmod', <String>[
+      mode,
+      ...e.value,
+    ]);
+    if (r.exitCode != 0) {
+      throw ServerBackupException('chmod $mode 失败（${r.stderr}）');
+    }
   }
 }
 

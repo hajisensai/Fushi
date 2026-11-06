@@ -259,6 +259,108 @@ void main() {
         isEmpty,
       );
     });
+
+    test('包里数据库不是 SQLite / 配置无效 → 换数据之前拒绝，数据与配置都不动', () async {
+      final File out = File(p.join(h.tmp.path, 'b.zip'));
+      expect(
+        await h.run(module, <String>['backup', 'create', '-o', out.path]),
+        0,
+      );
+      await setPref('keep');
+      final String config = h.configFile.readAsStringSync();
+
+      final File garbageDb = _craftZip(
+        p.join(h.tmp.path, 'garbage.zip'),
+        <String, String>{
+          'manifest.json': _manifest(),
+          'data/support/fushi.db': 'not a database',
+        },
+      );
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'restore',
+          garbageDb.path,
+          '--yes',
+        ]),
+        65,
+      );
+      expect(h.err.toString(), contains('SQLite'));
+
+      final File badConfig = _craftZip(
+        p.join(h.tmp.path, 'bad_config.zip'),
+        <String, String>{
+          'manifest.json': _manifest(),
+          'data/support/fushi.db': 'SQLite format 3\u0000rest',
+          // libraries[0] 没有 path：ServerConfig.parse 抛 FormatException。
+          'config/fushi_server.yaml': 'libraries:\n  - kind: video\n',
+        },
+      );
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'restore',
+          badConfig.path,
+          '--yes',
+        ]),
+        65,
+      );
+      expect(h.err.toString(), contains('配置'));
+
+      expect(await getPref(), 'keep');
+      expect(h.configFile.readAsStringSync(), config);
+      expect(
+        h.tmp.listSync().where(
+          (FileSystemEntity e) =>
+              p.basename(e.path).contains('pre-restore') ||
+              p.basename(e.path).contains('.restore-'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('凭据权限：备份包 0600，属主专用文件还原后仍是 0600', () async {
+      final File out = File(p.join(h.tmp.path, 'b.zip'));
+      expect(
+        await h.run(module, <String>['backup', 'create', '-o', out.path]),
+        0,
+      );
+      await out.delete();
+      final String secret = data('support/interconnect_client/peers.json');
+      _write(secret, '{"token":"t"}');
+      expect((await Process.run('chmod', <String>['600', secret])).exitCode, 0);
+      _write(data('support/dictionaries/d.txt'), 'dict');
+
+      expect(
+        await h.run(module, <String>['backup', 'create', '-o', out.path]),
+        0,
+        reason: h.err.toString(),
+      );
+      expect(out.statSync().mode & 0x1FF, 0x180, reason: '备份包只给属主读写');
+
+      File(secret).deleteSync();
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'restore',
+          out.path,
+          '--yes',
+          '--json',
+        ]),
+        0,
+        reason: h.err.toString(),
+      );
+      expect(File(secret).readAsStringSync(), '{"token":"t"}');
+      expect(File(secret).statSync().mode & 0x1FF, 0x180);
+      // 普通文件不被收紧（还是按 umask）。
+      expect(
+        File(data('support/dictionaries/d.txt')).statSync().mode & 0x3F,
+        isNot(0),
+      );
+      await Directory(
+        h.json()['previousData']! as String,
+      ).delete(recursive: true);
+    }, testOn: '!windows');
   });
 
   group('admin API /api/admin/backups', () {

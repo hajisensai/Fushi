@@ -131,6 +131,9 @@ class AdminBackups {
 
   Future<void> _run(String name, {required bool includeDocuments}) async {
     try {
+      // 备份目录只给属主：里面每份包都含全部凭据。
+      await _dir.create(recursive: true);
+      await restrictServerBackupPath(_dir.path, '700');
       await createServerBackup(
         db: ctx.db,
         dataDir: ctx.config.dataDir,
