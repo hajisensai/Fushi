@@ -63,9 +63,11 @@ function page() {
     flutter_inappwebview: { callHandler: (name, v) => calls.push([name, v]) },
     addEventListener() {},
   };
-  window.ResizeObserver = function () { this.observe = () => {}; };
+  const ResizeObserver = function () { this.observe = () => {}; };
+  window.ResizeObserver = ResizeObserver;
   const getComputedStyle = (el) => ({ overflowY: el.style.overflowY || 'visible' });
-  new Function('window', 'document', 'getComputedStyle', src)(window, document, getComputedStyle);
+  new Function('window', 'document', 'getComputedStyle', 'ResizeObserver', src)(
+    window, document, getComputedStyle, ResizeObserver);
   const scroll = (target) => (docListeners.scroll || []).forEach((fn) => fn({ target }));
   const offsets = () => calls.filter((c) => c[0] === 'onSrsPageOffset');
   return { calls, root, document, window, scroll, offsets };
