@@ -4074,13 +4074,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final bool widthChanged = repaginate.width;
     final bool heightChanged = repaginate.height;
     if (!widthChanged && !heightChanged) return;
-    // BUG-111: 诊断——窗口/缩放 settle 或 resize 后，把真实视口与已分页基线比对。
-    // 若 content-ready 后这里报 widthChanged，说明初始分页宽度偏窄、正在自动重排铺满。
-    debugPrint(
-      '[ReaderFushi] _syncPageSize w=$w h=$h '
-      'paginated=$_paginatedWidth x $_paginatedHeight '
-      'widthChanged=$widthChanged heightChanged=$heightChanged',
-    );
     _lastSyncedWidth = w;
     _lastSyncedHeight = h;
 
@@ -4877,16 +4870,6 @@ $liveConfigJs
     final List<FavoriteSentence> chapterFavs =
         await _favoriteSentencesForSection(_currentChapter);
     if (!mounted || _controller == null) return;
-    final int withOffsets = chapterFavs
-        .where((s) => s.normCharOffset != null)
-        .length;
-    final int total =
-        _favoriteSentencesForBookCache?.length ?? chapterFavs.length;
-    debugPrint(
-      '[fushi-hl] chapter=$_currentChapter '
-      'total=$total chapterFavs=${chapterFavs.length} '
-      'withOffsets=$withOffsets',
-    );
     if (chapterFavs.isNotEmpty) {
       await HighlightBridge.applyHighlights(
         _controller!,

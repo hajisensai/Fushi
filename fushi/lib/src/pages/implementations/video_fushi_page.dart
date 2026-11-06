@@ -7850,10 +7850,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   void _popNestedPopupAt(int index) {
-    debugPrint(
-      '[video-lookup] dismiss popup index=$index '
-      'visibleTop=$_topVisiblePopupIndex',
-    );
     // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
     // survives for the next lookup (BUG-094): closing index 0 hides the warm
     // slot + drops children; closing a child drops from there up.

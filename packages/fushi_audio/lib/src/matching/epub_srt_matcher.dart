@@ -413,10 +413,19 @@ class EpubSrtMatcher {
       'totalNormLen=$totalLen cues=${cues.length} startCursor=${raw.startCursor} '
       'window=$window threshold=$similarityThreshold',
     );
-    for (final (int ci, int from, int to, int support) in raw.recoveries) {
+    if (raw.recoveries.isNotEmpty) {
+      // 每次匹配只打一条汇总：恢复处数 + 前几条样例，不逐处刷屏。
+      final String samples = raw.recoveries
+          .take(_kLogSampleCount)
+          .map(
+            ((int, int, int, int) r) =>
+                'cursor=${r.$2}->${r.$3} support=${r.$4} '
+                'cue="${_clip(cues[r.$1].text, 24)}"',
+          )
+          .join('; ');
       fushiDebugPrint(
-        '[sentenceAudioHighlight] matcher.recover cursor=$from -> $to '
-        'support=$support cue="${_clip(cues[ci].text, 24)}"',
+        '[sentenceAudioHighlight] matcher.recover '
+        'count=${raw.recoveries.length} samples: $samples',
       );
     }
     int hitIndex = 0;
@@ -450,6 +459,9 @@ class EpubSrtMatcher {
       'finalCursor=${raw.finalCursor}/$totalLen',
     );
   }
+
+  /// 汇总日志里附带的样例条数。
+  static const int _kLogSampleCount = 3;
 
   static String _clip(String s, int n) {
     final String r = s.replaceAll('\n', '\\n').replaceAll('\r', '\\r');
