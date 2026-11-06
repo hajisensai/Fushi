@@ -244,7 +244,7 @@ extension _VideoJumpBack on _VideoFushiPageState {
   /// 顶栏右上角动作区最前面的「↶ / ↷」按钮胶囊（不画时零尺寸）。按钮定义取共用件
   /// [jumpHistoryToolbarItems]（tooltip / 长按 / key 三页同源），经
   /// [FushiToolbarButton.iconBuilder] 套上控制条统一的 [_chromeIconButton]
-  /// （secondary tonal 强调，插入时弹簧缩放 + 淡入）。
+  /// （中性档，插入时弹簧缩放 + 淡入）。
   Widget _videoJumpHistoryTopBarGroup(
     BuildContext from, {
     required bool desktop,
@@ -280,13 +280,13 @@ extension _VideoJumpBack on _VideoFushiPageState {
       foreground: palette.foreground,
       selectedContainer: palette.selectedContainer,
       selectedForeground: palette.selectedForeground,
+      // 中性档（透明底）：本组自己就是一枚浮动胶囊，按钮再上 secondary tonal 会在
+      // 圆胶囊里叠出一块 M3E「开」态方圆角色块，看着像两颗按钮叠在一起
+      // （#ekVmlGuze5）；tonal 档是开关类按钮的「开」态，返回 / 前进不是开关。
       iconBuilder: (BuildContext _, FushiToolbarItem it, Color _) =>
           _chromeIconButton(
             icon: it.icon,
             desktop: desktop,
-            tone: _m3eChrome
-                ? VideoM3eButtonTone.secondary
-                : VideoM3eButtonTone.neutral,
             onPressed: () => it.onPressed?.call(),
           ),
     );
