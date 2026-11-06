@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "新下載會整理到此本地影片來源中。",
   "video_download_target_source_none": "選擇本地影片來源",
   "video_download_target_source_title": "預設資料夾",
+  "video_drop_audio_music_failed": "The Music library could not import the audio: $error",
+  "video_drop_audio_sent_to_music": "Sent $count audio file(s) to the Music library",
   "video_drop_audio_unsupported": "請把字幕檔案拖到目前的影片上。音訊檔案不能在此關聯。",
   "video_drop_subtitle_only": "請把字幕檔案拖到目前的影片上。",
   "video_episode_list": "選集",

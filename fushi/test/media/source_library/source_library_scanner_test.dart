@@ -28,6 +28,7 @@ import 'package:fushi_engine/media/source_library/book_library_prune.dart'
     show BookSourceIndex;
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -213,29 +214,27 @@ void main() {
       expect(byVideo['/lib/clip.mkv'], isNull);
     });
 
-    test(
-      'video source: audio tracks plan as videos (no picture, no subtitle)',
-      () {
-        final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
-          _file('/music/album/01 - One more tea.flac'),
-          _file('/music/album/02 - Tostada.MP3'),
-          _file('/music/album/02 - Tostada.lrc'),
-          _file('/music/album/cover.jpg'),
-          _file('/music/album/export-report.txt'),
-        ], includeAudioAsVideo: true);
+    test('video source: pure audio is collected for the music library, '
+        'never planned as a video (QAondMh4M5)', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/v/Drama CD/01 - Track.flac'),
+        _file('/v/Drama CD/02 - Track.MP3'),
+        _file('/v/Drama CD/02 - Track.lrc'),
+        _file('/v/Drama CD/cover.jpg'),
+        _file('/v/Show/ep01.mkv'),
+        _file('/v/Show/ep01.mp4'),
+      ], collectPureAudio: true);
 
-        expect(plan.videos.map((ScanVideoItem v) => v.videoPath), <String>[
-          '/music/album/01 - One more tea.flac',
-          '/music/album/02 - Tostada.MP3',
-        ]);
-        // 视频字幕白名单不含 lrc：lrc 不挂到音频条目上（与视频一致）。
-        expect(
-          plan.videos.every((ScanVideoItem v) => v.subtitlePath == null),
-          isTrue,
-        );
-        expect(plan.books, isEmpty);
-      },
-    );
+      expect(plan.videos.map((ScanVideoItem v) => v.videoPath), <String>[
+        '/v/Show/ep01.mkv',
+        '/v/Show/ep01.mp4',
+      ]);
+      expect(plan.pureAudioPaths, <String>[
+        '/v/Drama CD/01 - Track.flac',
+        '/v/Drama CD/02 - Track.MP3',
+      ]);
+      expect(plan.books, isEmpty);
+    });
 
     test('book source keeps audio as EPUB sidecar only, never as videos', () {
       final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
@@ -245,10 +244,11 @@ void main() {
         _file('/lib/ost.flac'),
       ]);
 
+      expect(plan.videos, isEmpty);
       expect(
-        plan.videos,
+        plan.pureAudioPaths,
         isEmpty,
-        reason: 'includeAudioAsVideo defaults off: book sources unchanged',
+        reason: 'collectPureAudio defaults off: book sources unchanged',
       );
       expect(plan.books.single.audioPaths, <String>['/lib/book.mp3']);
     });
@@ -622,6 +622,54 @@ void main() {
         },
       );
     }
+
+    test('video source: pure audio goes to the music library, not the video '
+        'library (QAondMh4M5)', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      Directory(p.join(tmp.path, 'Show')).createSync();
+      Directory(
+        p.join(tmp.path, 'Drama CD', 'Disc 1'),
+      ).createSync(recursive: true);
+      File(p.join(tmp.path, 'Show', 'ep01.mp4')).writeAsStringSync('fake');
+      File(p.join(tmp.path, 'Show', 'ep01.flac')).writeAsStringSync('fake');
+      File(
+        p.join(tmp.path, 'Drama CD', 'Disc 1', '01.flac'),
+      ).writeAsStringSync('fake');
+      File(p.join(tmp.path, 'Drama CD', '02.mp3')).writeAsStringSync('fake');
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Vids',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
+      final List<({String rootPath, bool recursive})> registered =
+          <({String rootPath, bool recursive})>[];
+
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+        musicAudioIntake: MusicAudioIntake(
+          db,
+          registerSource:
+              ({required String rootPath, required bool recursive}) async {
+                registered.add((rootPath: rootPath, recursive: recursive));
+                return null;
+              },
+        ),
+      ).scan((await db.getMediaSourceById(sid))!);
+
+      expect(summary.error, isNull);
+      final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
+      expect(videos.map((VideoBookRow v) => v.videoPath), <String>[
+        p.join(tmp.path, 'Show', 'ep01.mp4'),
+      ], reason: 'no audio file becomes a video row');
+      // 广播剧目录整棵登记成一个递归音乐来源；与视频同目录的 ep01.flac（外挂音轨）不收。
+      expect(registered, <({String rootPath, bool recursive})>[
+        (rootPath: p.join(tmp.path, 'Drama CD'), recursive: true),
+      ]);
+    });
 
     test(
       'video source: inserts videos with sourceId + cues + scan result',

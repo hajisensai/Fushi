@@ -296,7 +296,7 @@ void main() {
     });
   });
 
-  group('audio in the video library (media_extensions.dart)', () {
+  group('pure audio criterion (media_extensions.dart)', () {
     test('kAudioExtensions = AudiobookStorage.audioExtensions minus .mp4', () {
       // media_extensions.dart 零依赖、不能引用 fushi_audio，只能靠守卫钉同步。
       // `.mp4` 首先是视频容器，归 kVideoExtensions。
@@ -306,15 +306,12 @@ void main() {
       );
     });
 
-    test('audio and video sets are disjoint; library set is their union', () {
+    test('audio and video sets are disjoint (pure audio is never video '
+        'library media, QAondMh4M5)', () {
       expect(kAudioExtensions.intersection(kVideoExtensions), isEmpty);
       expect(
         kAudioExtensions.intersection(kPlaylistManifestExtensions),
         isEmpty,
-      );
-      expect(
-        kVideoLibraryMediaExtensions,
-        equals(<String>{...kVideoExtensions, ...kAudioExtensions}),
       );
     });
 

@@ -55,9 +55,7 @@ Future<Set<String>> enumerateLocalVideoPaths(
     // 与服务端视频根扫描收录同一张表（[kVideoExtensions]；纯音频不进视频库，
     // 归音乐库）。旧版按「无画面视频」收进来的音频行不在枚举里，但
     // [selectStaleVideoRows] 还要文件真不存在才判失效，文件在就不会被修剪。
-    if (!kVideoExtensions.contains(
-      p.extension(e.path).toLowerCase(),
-    )) {
+    if (!kVideoExtensions.contains(p.extension(e.path).toLowerCase())) {
       continue;
     }
     out.add(normalizeVideoPath(e.path));

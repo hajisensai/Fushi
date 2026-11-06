@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "Новые загрузки размещаются в этом локальном источнике видео.",
   "video_download_target_source_none": "Выберите локальный источник видео",
   "video_download_target_source_title": "Папка по умолчанию",
+  "video_drop_audio_music_failed": "The Music library could not import the audio: $error",
+  "video_drop_audio_sent_to_music": "Sent $count audio file(s) to the Music library",
   "video_drop_audio_unsupported": "Перетащите файлы субтитров на текущее видео. Аудиофайлы здесь подключить нельзя.",
   "video_drop_subtitle_only": "Перетащите файлы субтитров на текущее видео.",
   "video_episode_list": "Серии",

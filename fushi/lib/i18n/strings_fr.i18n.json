@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "Les nouveaux téléchargements sont organisés dans cette source vidéo locale.",
   "video_download_target_source_none": "Choisir une source vidéo locale",
   "video_download_target_source_title": "Dossier par défaut",
+  "video_drop_audio_music_failed": "The Music library could not import the audio: $error",
+  "video_drop_audio_sent_to_music": "Sent $count audio file(s) to the Music library",
   "video_drop_audio_unsupported": "Déposez les fichiers de sous-titres sur la vidéo en cours. Les fichiers audio ne peuvent pas être joints ici.",
   "video_drop_subtitle_only": "Déposez les fichiers de sous-titres sur la vidéo en cours.",
   "video_episode_list": "Épisodes",

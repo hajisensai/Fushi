@@ -1977,6 +1977,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           FushiSnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
       case DropIntent.attachToVideoCard:
+      // 只由 video 表面产出（书架上的音频是有声书素材），列在此处仅为穷尽 switch。
+      case DropIntent.importAudioToMusic:
       case DropIntent.ignore:
         break;
     }

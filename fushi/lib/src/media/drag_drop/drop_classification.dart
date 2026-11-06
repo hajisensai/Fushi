@@ -1,4 +1,6 @@
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForFile;
 import 'package:path/path.dart' as p;
@@ -237,14 +239,13 @@ class DroppedFiles {
         blurayDiscs.contains(p.dirname(normalized));
   }
 
-  /// 视频库能收录的媒体：全部视频 + 不是视频的纯音频（`.mp4` 两类都在，只算一次）。
+  /// 拖入的纯音频（[isAudioOnlyMediaPath]；`.mp4` 首先是视频，不算）。
   ///
-  /// 纯音频在视频页按「无画面的视频」入库（专辑曲目等）；书架表面仍把音频当有声书
-  /// 素材（挂到书卡），不走这里。
-  List<String> get videoLibraryMedia => <String>[
-    ...videos,
+  /// 视频页拖入时交给音乐库（`MusicAudioIntake.importAudioFiles`，反馈
+  /// QAondMh4M5），不进视频库；书架表面仍把音频当有声书素材（挂到书卡），不走这里。
+  List<String> get pureAudios => <String>[
     for (final String audio in audios)
-      if (!videos.contains(audio)) audio,
+      if (isAudioOnlyMediaPath(audio)) audio,
   ];
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。

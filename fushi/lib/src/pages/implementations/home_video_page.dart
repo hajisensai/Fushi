@@ -38,6 +38,7 @@ import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.d
     show classifyLocalVideoExtra;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
+import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
@@ -2871,10 +2872,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         // 其余文件被静默丢弃（用户报「手动拖多个影片进去只会导入第一个」）。
         // VideoImportDialog 结构上是单条目的（每条视频各有标题/字幕/元数据要确认），
         // 所以这里排成队列逐个预填，而不是硬塞一个批量模式进对话框。
-        // 纯音频按无画面的视频一并排队（[DroppedFiles.videoLibraryMedia]）。
-        unawaited(
-          _openVideoImportQueue(files.videoLibraryMedia, files.subtitles),
-        );
+        // 同批拖入的纯音频不进视频库，交给音乐库（反馈 QAondMh4M5）。
+        unawaited(_openVideoImportQueue(files.videos, files.subtitles));
+        if (files.pureAudios.isNotEmpty) {
+          unawaited(_sendDroppedAudioToMusic(files.pureAudios));
+        }
+      case DropIntent.importAudioToMusic:
+        unawaited(_sendDroppedAudioToMusic(files.pureAudios));
       case DropIntent.addFolderAsSource:
         unawaited(_addDroppedFoldersAsSources(files.videoSourceFolders));
       case DropIntent.importNewPlaylist:
@@ -2976,6 +2980,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           ? t.drag_drop_folder_source_added
           : t.drag_drop_folder_source_exists,
       severity: added > 0 ? ToastSeverity.success : ToastSeverity.warning,
+    );
+  }
+
+  /// 拖入的纯音频交给音乐库（反馈 QAondMh4M5：纯音频不进视频库）。已被音乐来源覆盖的
+  /// 重扫那个来源，其余逐个「仅此一次」导入，入库仍走音乐模块自己的扫描。
+  Future<void> _sendDroppedAudioToMusic(List<String> audios) async {
+    final MusicAudioIntakeResult r = await MusicAudioIntake(
+      appModel.database,
+    ).importAudioFiles(audios);
+    if (!mounted) return;
+    if (r.errors.isNotEmpty) {
+      FushiToast.show(
+        msg: t.video_drop_audio_music_failed(error: r.errors.first),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    if (!r.handedOver) return;
+    FushiToast.show(
+      msg: t.video_drop_audio_sent_to_music(count: audios.length),
+      severity: ToastSeverity.success,
     );
   }
 

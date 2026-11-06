@@ -372,9 +372,15 @@ class MusicDiscImportService {
 
   /// 音乐来源扫描后顺带登记目录树里的盘（已登记的只刷新路径）。返回登记失败的盘
   /// （路径 → 原因），不抛：一张坏盘不连坐整次扫描。
-  Future<Map<String, String>> registerDiscsUnder(String root) async {
+  Future<Map<String, String>> registerDiscsUnder(
+    String root, {
+    bool recursive = true,
+  }) async {
     final Map<String, String> failures = <String, String>{};
-    for (final String disc in await findMusicDiscRootsInBackground(root)) {
+    for (final String disc in await findMusicDiscRootsInBackground(
+      root,
+      recursive: recursive,
+    )) {
       try {
         await registerDisc(disc);
       } on MusicDiscUnreadableException {

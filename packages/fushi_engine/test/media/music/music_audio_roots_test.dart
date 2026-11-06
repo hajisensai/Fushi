@@ -102,9 +102,7 @@ void main() {
       audio: <String>['/v/a/x/01.flac'],
       music: <MusicSourceRoot>[(rootPath: '/v/a/y', recursive: true)],
     );
-    expect(r.roots, <PlannedMusicRoot>[
-      (rootPath: '/v/a/x', recursive: true),
-    ]);
+    expect(r.roots, <PlannedMusicRoot>[(rootPath: '/v/a/x', recursive: true)]);
   });
 
   test('Windows paths compare case-insensitively', () {

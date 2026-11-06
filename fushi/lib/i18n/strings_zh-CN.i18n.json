@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "新下载会整理到此本地视频来源中。",
   "video_download_target_source_none": "选择本地视频来源",
   "video_download_target_source_title": "默认文件夹",
+  "video_drop_audio_music_failed": "音乐库没能导入这些音频：$error",
+  "video_drop_audio_sent_to_music": "已把 $count 个音频文件交给音乐库",
   "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。",
   "video_drop_subtitle_only": "请把字幕文件拖到当前视频上。",
   "video_episode_list": "选集",

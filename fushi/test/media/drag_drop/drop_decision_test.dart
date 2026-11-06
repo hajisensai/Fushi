@@ -195,9 +195,9 @@ void main() {
         DropIntent.needCardTarget,
       );
     });
-    // 纯音频 = 无画面的视频：视频页上拖专辑曲目即新建视频条目（此前回「不支持」）。
+    // 反馈 QAondMh4M5：纯音频不进视频库，视频页上拖入的纯音频交给音乐库。
     test(
-      'audio-only on video surface -> importNewVideo (on or off a card)',
+      'audio-only on video surface -> importAudioToMusic (on or off a card)',
       () {
         for (final bool cardHit in <bool>[true, false]) {
           expect(
@@ -206,21 +206,41 @@ void main() {
               files: _files(audios: ['/a.flac']),
               cardHit: cardHit,
             ),
-            DropIntent.importNewVideo,
+            DropIntent.importAudioToMusic,
             reason: 'cardHit=$cardHit',
           );
         }
       },
     );
-    test('audio + subtitle on video surface -> importNewVideo', () {
+    test('audio + subtitle on video surface -> importAudioToMusic', () {
       expect(
         decideDropIntent(
           surface: DropSurface.video,
           files: _files(audios: ['/a.mp3'], subtitles: ['/a.srt']),
           cardHit: true,
         ),
+        DropIntent.importAudioToMusic,
+      );
+    });
+    test('video + audio on video surface -> importNewVideo (audio split off '
+        'by pureAudios)', () {
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/x/ep.mp4',
+        '/x/01.flac',
+        '/x/a.srt',
+        '/x/02.MP3',
+      ]);
+      expect(
+        decideDropIntent(
+          surface: DropSurface.video,
+          files: files,
+          cardHit: false,
+        ),
         DropIntent.importNewVideo,
       );
+      expect(files.videos, <String>['/x/ep.mp4']);
+      // .mp4 也在 audios 里（书卡挂音频用），但它首先是视频，不算纯音频。
+      expect(files.pureAudios, <String>['/x/01.flac', '/x/02.MP3']);
     });
     test('audio-only on books surface still means audiobook material', () {
       expect(
@@ -231,19 +251,6 @@ void main() {
         ),
         DropIntent.needCardTarget,
       );
-    });
-    test('videoLibraryMedia = videos + non-video audio, mp4 counted once', () {
-      final DroppedFiles files = classifyDroppedFiles(<String>[
-        '/x/ep.mp4',
-        '/x/01.flac',
-        '/x/a.srt',
-        '/x/02.MP3',
-      ]);
-      expect(files.videoLibraryMedia, <String>[
-        '/x/ep.mp4',
-        '/x/01.flac',
-        '/x/02.MP3',
-      ]);
     });
     test('Blu-ray disc fragment (index.bdmv) -> addFolderAsSource', () {
       // 回归：拖 `.bdmv` 进视频页此前落 unknown → 静默无反应。

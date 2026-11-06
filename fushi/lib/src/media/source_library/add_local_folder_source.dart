@@ -21,8 +21,12 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 ///   的路径。
 /// - [AddLocalFolderOutcome.duplicate]：同 transport+路径的来源已存在，未做任何写入。
 ///
-/// [mediaKind] 取 `SourceLibraryKind` 的字符串值（`book` / `video` / `manga`）——
-/// 由**当前打开的页面**决定，不从文件内容猜。
+/// [mediaKind] 取 `SourceLibraryKind` 的字符串值（`book` / `video` / `manga` /
+/// `music`）——由**当前打开的页面**决定，不从文件内容猜；唯一例外是视频来源里扫到的
+/// 纯音频交给音乐库（`music_audio_intake.dart`，反馈 QAondMh4M5），那里登记 `music`。
+///
+/// [recursive]：来源行的「含子文件夹」。拖放 / 来源页默认递归；音乐库收视频来源里的
+/// 纯音频时，目录的子树里有视频就只收这一层（见 `music_audio_roots.dart`）。
 ///
 /// [bookmark]：iOS 安全作用域书签（BUG-3697）。现有调用方（拖放落点、桌面控制通道）
 /// 都只在桌面 / 安卓可达（desktop_drop 没有 iOS 实现），恒传 null；若将来在 iOS 上
@@ -33,6 +37,7 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
   required String path,
   String videoGroupingMode = 'series',
   String? bookmark,
+  bool recursive = true,
 }) async {
   final String norm = normalizeSourceRootPath(path, transport: 'local');
   final List<MediaSourceRow> existing = await db.getMediaSourcesByKind(
@@ -55,7 +60,7 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
       transport: const Value('local'),
       rootPath: Value(norm),
       configJson: sourceConfigValueForBookmark(bookmark),
-      recursive: const Value(true),
+      recursive: Value(recursive),
       videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
@@ -88,6 +93,10 @@ int _nextSortOrder(List<MediaSourceRow> existing) => existing.isEmpty
 /// 内，而 `MediaSources.rootPath` 的契约是「数据根之外的外部目录，迁移不改写」，所以它
 /// 只能走这里、不能登记成常驻来源。
 ///
+/// 音乐库的单文件导入也走这里：[mediaKind] = `music` 时 [path] 可以是**单个音频文件**
+/// （Rust 扫描器接受文件根，只收这一个文件；`music_audio_intake.dart`）。曲目行不挂
+/// 来源外键，临时行删掉后曲目照常留在曲库。
+///
 /// [onScanning] 在临时行插入后、扫描开始前回调其 id（来源页用它点亮忙态）。scanner
 /// 意外抛出时异常照常上抛，临时行仍会被删除。
 ///
@@ -100,6 +109,7 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
   required String path,
   String videoGroupingMode = 'series',
   String? bookmark,
+  bool recursive = true,
   void Function(int sourceId)? onScanning,
 }) async {
   final String norm = normalizeSourceRootPath(path, transport: 'local');
@@ -113,7 +123,7 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
       transport: const Value('local'),
       rootPath: Value(norm),
       configJson: sourceConfigValueForBookmark(bookmark),
-      recursive: const Value(true),
+      recursive: Value(recursive),
       videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),

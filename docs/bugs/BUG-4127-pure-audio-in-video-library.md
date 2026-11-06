@@ -1,0 +1,30 @@
+## BUG-4127 · 广播剧 CD 的 mp3/flac 出现在视频库：纯音频改归音乐库
+- **报告**：2026-11-06（反馈 QAondMh4M5：广播剧 CD 的 mp3 / flac 出现在视频库。用户拍板原话：「纯音频文件按『没有画面的视频』入库 改掉吧，现在有专门的音乐了，可以放到音乐那边了」）
+- **真实性**：✅ 按设计如此，现改设计。提交 `1e1a711a32`（PR #1850）让纯音频按「无画面视频」进视频库，入口共用一张表 `kVideoLibraryMediaExtensions = kVideoExtensions ∪ kAudioExtensions`（`packages/fushi_engine/lib/media/media_extensions.dart`）：
+  - 来源扫描 `planScanFromFileList(includeAudioAsVideo: kind == video)`（`fushi/lib/src/media/source_library/source_library_scanner.dart`）把音频放进 `ScanPlan.videos`；
+  - 视频页拖放 `DroppedFiles.videoLibraryMedia`（`drop_classification.dart`）→ `DropIntent.importNewVideo`（`drop_decision.dart`）；
+  - 服务端视频根 `LibraryScanner._isVideo` 与对账枚举 `enumerateLocalVideoPaths`（`video_library_prune.dart`）；
+  - 音频 CD 抓轨后 `importLocalFolderOnceAt(mediaKind: video)`（`audio_cd_import.dart`）；来源页「支持格式」chip。
+  - 文件夹监视 / 定时重扫都经 `SourceLibraryScanner.scan`，同一处。
+- **[x] ① 已修复** —
+  - 判据一处：纯音频只经 `isAudioOnlyMediaPath` 判；删掉 `kVideoLibraryMediaExtensions`、`includeAudioAsVideo`、`videoLibraryMedia`，视频库入库 / 对账只认 `kVideoExtensions`。
+  - 视频来源扫描：纯音频收进 `ScanPlan.pureAudioPaths`（不再成视频行），收尾交给 `MusicAudioIntake.adoptVideoSourceAudio`（`fushi/lib/src/media/music/music_audio_intake.dart`）。登记哪些音乐来源由纯函数 `planMusicRootsForVideoSourceAudio`（`packages/fushi_engine/lib/media/music/music_audio_roots.dart`）算：已被音乐来源覆盖的目录不重复登记；与视频同目录的音频（外挂音轨）不收；子树里有视频的目录登记成不递归来源；其余往上爬到「再往上就碰到视频 / 已有音乐来源」的最高层登记成递归来源（BD 整包 `Show/CDs/<14 张专辑>` → 一个 `Show/CDs` 来源）。入库本身是音乐模块原有路径（`addLocalFolderAsSource(mediaKind: music)` → `SourceLibraryScanner._scanMusicSource` → `MusicLibraryScanner` → Rust）。网络视频来源里的纯音频两边都不收（音乐来源只支持本地）。
+  - 视频页拖放：新意图 `DropIntent.importAudioToMusic`；与视频同批拖入时视频照常导入、纯音频交 `MusicAudioIntake.importAudioFiles`（已被音乐来源覆盖的重扫该来源，否则逐个「仅此一次」导入）。
+  - Rust `native/fushi_music/src/scan.rs`：`Scanner::open` 接受单个音频文件作根（只收这一个文件；路径按「扫父目录」的拼法重拼，track uid 与登记在父目录上的来源一致）。
+  - 音频 CD 抓轨改为「仅此一次」导入音乐库（不递归）；`DataRootMigrator._rebaseMusicTracks` 改写数据根内的曲目路径（抓轨目录在 `<documents>/audio_cd/`，以前靠 `video_books.video_path` 的改写）。
+  - 音乐来源扫描的光盘登记跟随来源的「含子文件夹」：不递归的来源只认根本身（`registerDiscsUnder(recursive:)`），否则子目录里的番剧 BD 原盘会被登记成音乐专辑。
+  - 服务端视频根不再收纯音频（服务端暂无音乐库）。
+  - 存量迁移 `migrateAudioOnlyVideoBooksToMusic`（`fushi/lib/src/media/music/video_audio_to_music_migration.dart`，`AppModel` 启动后台跑）：本地纯音频单文件行先交接入库，确认已是在库曲目后才从视频库删（`deleteVideoBooksAndReclaimAssets`，keepLocalOnly）；观看记录转成一条音乐播放记录；`study_segments` 不动。按数据幂等，搬不动的行留在视频库下次再试。DB 列名 / 持久化名一律不改。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_engine/test/media/music/music_audio_roots_test.dart`（BD 整包合并、无视频的来源、外挂音轨不收、子目录有视频不递归、已覆盖、非递归覆盖、不包住已有来源、Windows 大小写）；
+  - `fushi/test/media/music/music_audio_intake_test.dart`（登记 / 跳过覆盖、错误上报、覆盖来源重扫一次、仅此一次导入、非递归来源只覆盖本层）；
+  - `fushi/test/media/music/video_audio_to_music_migration_test.dart`（来源行 / 手动行搬走、视频 / 网络音频 / 文件缺失 / 曲库不认的格式留下、播放记录、二次运行幂等、覆盖目录重扫）；
+  - `fushi/test/media/source_library/source_library_scanner_test.dart`（plan：纯音频不成视频行；真目录扫描：只建视频行、广播剧目录登记一个递归音乐来源、外挂音轨不收）；
+  - `fushi/test/media/drag_drop/drop_decision_test.dart`、`drop_classification_test.dart`（新意图、`pureAudios` 不含 `.mp4`、音视频表不相交）；
+  - `packages/fushi_engine/test/media/video/audio_in_video_library_test.dart`（对账枚举不再收音频）；
+  - `native/fushi_music/tests/scan.rs::single_file_root_scans_only_that_file`（单文件根只出一首、与目录扫描同 uid、非音频空扫描）。
+- **备注**：
+  - 未在真机上跑原始路径（拖广播剧 CD 文件夹进视频页 → 音乐库出现专辑）；逻辑层由上面的真目录扫描测试覆盖。
+  - 迁移后这些条目只在音乐库：音乐库没有 ASR 字幕生成、没有逐曲断点续播；需要转写的广播剧可作为有声书导入书架（有声书有 ASR）。旧行上的标签、视频合集归属随行删除。
+  - 留在视频库的旧行：网络流（URL / 媒体服务器）的纯音频、曲库扫描不认的格式（`.m4b` / `.ac3` / `.eac3`）；服务端已入库的音频行（服务端无音乐库）。播放器的封面背景 / 音频专辑成辑等代码保留给这些行。
+  - 视频页按 URL 导入的音频流仍进视频库（音乐库不收远端 URL）。

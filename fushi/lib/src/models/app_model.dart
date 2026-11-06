@@ -424,6 +424,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
+import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
@@ -3375,6 +3376,39 @@ class AppModel with ChangeNotifier {
   /// 本进程是否已经跑过一轮 [_migrateDictionaryRedirectFlags]。
   bool _redirectFlagsMigrated = false;
 
+  /// 见 [migrateAudioOnlyVideoBooksToMusic]。失败（原生库缺失、视频库正在清理刮削
+  /// 资料）只记错误日志：数据原样保留，下次启动按同一判据重来。
+  Future<void> _migrateAudioOnlyVideosToMusic() async {
+    try {
+      final VideoAudioMigrationReport report =
+          await migrateAudioOnlyVideoBooksToMusic(
+            _database,
+            fileExists: (String path) => File(path).existsSync(),
+          );
+      if (report.candidates == 0) return;
+      debugPrint(
+        '[Fushi] audio-only videos -> music: migrated ${report.migrated}/'
+        '${report.candidates}, play events ${report.playEventsWritten}',
+      );
+      if (report.errors.isNotEmpty) {
+        ErrorLogService.instance.log(
+          'AppModel.migrateAudioOnlyVideosToMusic',
+          StateError(
+            '${report.leftInVideoLibrary} audio item(s) left in the video '
+            'library; first scan error: ${report.errors.first}',
+          ),
+          StackTrace.current,
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.migrateAudioOnlyVideosToMusic',
+        e,
+        stack,
+      );
+    }
+  }
+
   /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。
   ///
   /// 装载只读这份标记、不扫描（扫描是整本、单本最多约 1 s）；缺标记的旧词典在查词时
@@ -4570,6 +4604,9 @@ class AppModel with ChangeNotifier {
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
       unawaited(deleteRemovedMangaOcrModelDirs());
+      // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
+      // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
+      unawaited(_migrateAudioOnlyVideosToMusic());
 
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。

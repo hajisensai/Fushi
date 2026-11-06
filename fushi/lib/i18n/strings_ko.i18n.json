@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "새 다운로드는 이 로컬 동영상 소스에 정리됩니다.",
   "video_download_target_source_none": "로컬 동영상 소스 선택",
   "video_download_target_source_title": "기본 폴더",
+  "video_drop_audio_music_failed": "The Music library could not import the audio: $error",
+  "video_drop_audio_sent_to_music": "Sent $count audio file(s) to the Music library",
   "video_drop_audio_unsupported": "현재 비디오 위에 자막 파일을 놓으세요. 오디오 파일은 여기에 연결할 수 없습니다.",
   "video_drop_subtitle_only": "현재 비디오 위에 자막 파일을 놓으세요.",
   "video_episode_list": "에피소드",

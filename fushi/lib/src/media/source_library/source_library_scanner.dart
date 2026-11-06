@@ -38,6 +38,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicScanRootError;
 
@@ -530,6 +531,7 @@ class ScanPlan {
     this.mangaFolders = const <ScanMangaFolderItem>[],
     this.blurayDiscs = const <ScanBlurayDiscItem>[],
     this.dvdDiscs = const <ScanDvdDiscItem>[],
+    this.pureAudioPaths = const <String>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -555,6 +557,11 @@ class ScanPlan {
 
   /// Pending DVDs (local video sources only).
   final List<ScanDvdDiscItem> dvdDiscs;
+
+  /// 视频来源里的纯音频文件（[isAudioOnlyMediaPath]）：**不进视频库**，扫描收尾时交给
+  /// 音乐库（[MusicAudioIntake.adoptVideoSourceAudio]，反馈 QAondMh4M5）。只在
+  /// `collectPureAudio` 开时收集（视频来源）；书籍来源里的音频是 EPUB 的有声书 sidecar。
+  final List<String> pureAudioPaths;
 }
 
 /// 一次来源扫描的可核对摘要。
@@ -617,9 +624,10 @@ List<SourceFileEntry> excludeSourceIncomingEntries(
 /// - EPUB (ext in [kScanBookExtensions]) -> [ScanPlan.epubPaths].
 /// - Video (ext in [kVideoExtensions]) -> [ScanPlan.videos], associating the
 ///   same-stem subtitle found by [selectSidecarNames] within the same directory.
-/// - Audio (ext in [kAudioExtensions]) -> [ScanPlan.videos] too, but only when
-///   [includeAudioAsVideo] (video sources): an album track is a video without a
-///   picture. Book sources keep audio as EPUB sidecars only.
+/// - Pure audio ([isAudioOnlyMediaPath]) -> [ScanPlan.pureAudioPaths], only when
+///   [collectPureAudio] (video sources). Never a video: pure audio belongs to the
+///   music library (feedback QAondMh4M5). Book sources keep audio as EPUB
+///   sidecars only.
 /// - Subtitles are not inserted on their own; they only attach to a video.
 ///
 /// Sidecar association is scoped to the same directory: [files] are bucketed by
@@ -631,7 +639,7 @@ ScanPlan planScanFromFileList(
   p.Context? mangaPathContext,
   bool detectBlurayDiscs = false,
   bool detectDvdDiscs = false,
-  bool includeAudioAsVideo = false,
+  bool collectPureAudio = false,
 }) {
   // 蓝光盘先认：认出来之后，盘的 `BDMV` 树整个从散装视频里摘掉。不摘的话用户会同时
   // 拿到「正片」和一屏叫 `00001`~`00042` 的 m2ts 碎片（正片常被切成好几段，另有菜
@@ -681,6 +689,7 @@ ScanPlan planScanFromFileList(
   final List<ScanVideoItem> videos = <ScanVideoItem>[];
   final List<ScanPlaylistItem> playlists = <ScanPlaylistItem>[];
   final List<ScanMangaItem> mangas = <ScanMangaItem>[];
+  final List<String> pureAudio = <String>[];
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
@@ -734,11 +743,13 @@ ScanPlan planScanFromFileList(
     // `.strm` 流指针按普通视频入库（videoPath = `.strm` 自身）：标题取文件名、
     // 照常参与分组 / 刮削 / 同名字幕关联；指向的流地址在起播时现读
     // （stream_video_launch.dart 的 resolveStrmStreamTarget）。
-    // 纯音频（专辑曲目等）只在视频来源里按「无画面的视频」收录；书籍来源里同目录
-    // 音频是 EPUB 的有声书 sidecar（上面的 book 分支），绝不能再单独入库。
-    if (kVideoExtensions.contains('.$ext') ||
-        ext == kStrmExtension ||
-        (includeAudioAsVideo && kAudioExtensions.contains('.$ext'))) {
+    // 纯音频（专辑曲目 / 广播剧 CD 等）不是视频：视频来源里收集起来交给音乐库；
+    // 书籍来源里同目录音频是 EPUB 的有声书 sidecar（上面的 book 分支），绝不单独入库。
+    if (collectPureAudio && isAudioOnlyMediaPath(e.path)) {
+      pureAudio.add(e.path);
+      continue;
+    }
+    if (kVideoExtensions.contains('.$ext') || ext == kStrmExtension) {
       final String dir = p.dirname(e.path);
       final List<String> siblings = namesByDir[dir] ?? const <String>[];
       final ({String? subtitle, List<String> audio}) sel = selectSidecarNames(
@@ -806,6 +817,7 @@ ScanPlan planScanFromFileList(
       for (final String image in discImages..sort())
         ScanDvdDiscItem(discRootPath: image),
     ],
+    pureAudioPaths: pureAudio,
   );
 }
 
@@ -845,11 +857,18 @@ class SourceLibraryScanner {
     this._db, {
     MangaSevenZipExtractor? mangaSevenZipExtractor,
     SourceFolderAccess? folderAccess,
+    MusicAudioIntake? musicAudioIntake,
   }) : _videoRepo = VideoBookRepository(_db),
        _mangaSevenZipExtractor = mangaSevenZipExtractor,
-       _folderAccess = folderAccess ?? SourceFolderAccess.instance;
+       _folderAccess = folderAccess ?? SourceFolderAccess.instance,
+       _musicIntakeOverride = musicAudioIntake;
 
   final FushiDatabase _db;
+
+  /// 视频来源里的纯音频交给音乐库（测试注入替身）。
+  final MusicAudioIntake? _musicIntakeOverride;
+  late final MusicAudioIntake _musicIntake =
+      _musicIntakeOverride ?? MusicAudioIntake(_db);
 
   /// iOS 本地来源的安全作用域访问（BUG-3697）；测试注入 fake。
   final SourceFolderAccess _folderAccess;
@@ -1082,7 +1101,7 @@ class SourceLibraryScanner {
         mangaPathContext: files.isLocal ? null : p.url,
         detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
         detectDvdDiscs: files.isLocal && kind == SourceLibraryKind.video,
-        includeAudioAsVideo: kind == SourceLibraryKind.video,
+        collectPureAudio: kind == SourceLibraryKind.video,
       );
       discoveredPaths = <String>[
         for (final ScanBookItem item in plan.books) item.bookPath,
@@ -1187,6 +1206,36 @@ class SourceLibraryScanner {
           }
           if (source.videoGroupingMode != 'folder') {
             await VideoSourceMetadataIndexer(_db).index(source);
+          }
+          // 纯音频交给音乐库（反馈 QAondMh4M5）。音乐来源只支持本地目录，网络来源里
+          // 的纯音频两边都不收。登记失败（根不可读等）记进本来源的部分失败，视频照常。
+          if (files.isLocal && plan.pureAudioPaths.isNotEmpty) {
+            final MusicAudioIntakeResult music = await _musicIntake
+                .adoptVideoSourceAudio(
+                  videoRoot: source.rootPath,
+                  audioPaths: plan.pureAudioPaths,
+                  videoMediaDirs: <String>[
+                    for (final ScanVideoItem item in plan.videos)
+                      p.dirname(item.videoPath),
+                    for (final ScanPlaylistItem item in plan.playlists)
+                      p.dirname(item.playlistPath),
+                    for (final ScanBlurayDiscItem item in plan.blurayDiscs)
+                      item.discRootPath,
+                    // DVD 盘根是目录；`.iso` 镜像是文件，算它所在目录。
+                    for (final ScanDvdDiscItem item in plan.dvdDiscs)
+                      p.extension(item.discRootPath).toLowerCase() == '.iso'
+                          ? p.dirname(item.discRootPath)
+                          : item.discRootPath,
+                  ],
+                );
+            if (music.errors.isNotEmpty) {
+              final String note =
+                  'Music library could not scan ${music.errors.length} '
+                  'audio folder(s). First: ${music.errors.first}';
+              partialError = partialError == null
+                  ? note
+                  : '$partialError; $note';
+            }
           }
         case SourceLibraryKind.manga:
           final _MangaVolumeTally manga = await _importManga(

@@ -1063,6 +1063,7 @@ class DataRootMigrator {
       await _rebaseAnidbFileIdentities(db, docs);
       await _rebaseGalgames(db, docs);
       await _rebaseMusicAlbums(db, docs);
+      await _rebaseMusicTracks(db, docs);
       await _rebaseMediaCollections(db, docs);
       await _rebaseCollectionScrapeMeta(db, docs);
       await _rebaseCollectionRelations(db, docs);
@@ -1263,6 +1264,25 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE music_albums SET cover_path = ? WHERE album_uid = ?',
         <Object?>[newCover, a.albumUid],
+      );
+    }
+  }
+
+  /// music_tracks：path。曲目几乎都在用户自己的曲库目录（外部路径、**绝不**改写）；
+  /// 落在数据根内的只有音频 CD 抓轨（`<documents>/audio_cd/`，登记在搬移白名单里）——
+  /// 它们以前按「无画面视频」进 video_books、由 [_rebaseVideoBooks] 改写，纯音频改归
+  /// 音乐库（反馈 QAondMh4M5）后改由这里改写，否则换数据根后抓好的 CD 全部失联。
+  /// `track_uid` 是身份不是位置，不跟着改（歌单 / 歌词 / 播放记录都挂在它上面）。
+  static Future<void> _rebaseMusicTracks(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MusicTrackRow t in await db.select(db.musicTracks).get()) {
+      final String newPath = docs.rebase(t.path);
+      if (newPath == t.path) continue;
+      await db.customStatement(
+        'UPDATE music_tracks SET path = ? WHERE track_uid = ?',
+        <Object?>[newPath, t.trackUid],
       );
     }
   }

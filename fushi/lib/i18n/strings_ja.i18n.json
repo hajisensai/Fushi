@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "新しいダウンロードはこのローカル動画ソースに整理されます。",
   "video_download_target_source_none": "ローカル動画ソースを選択",
   "video_download_target_source_title": "デフォルトのフォルダー",
+  "video_drop_audio_music_failed": "The Music library could not import the audio: $error",
+  "video_drop_audio_sent_to_music": "Sent $count audio file(s) to the Music library",
   "video_drop_audio_unsupported": "字幕ファイルを現在の動画の上にドロップしてください。音声ファイルはここで関連付けできません。",
   "video_drop_subtitle_only": "字幕ファイルを現在の動画の上にドロップしてください。",
   "video_episode_list": "エピソード",

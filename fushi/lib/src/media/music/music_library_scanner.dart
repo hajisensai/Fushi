@@ -175,7 +175,11 @@ Stream<MusicScanBatch> _nativeScanner(
 
 /// 来源扫描顺带登记目录树里的光盘（演唱会 / MV 合集 DVD·BD，音乐方案 §9.2）：返回登记
 /// 失败的盘（路径 → 原因）。
-typedef MusicDiscRegistrar = Future<Map<String, String>> Function(String root);
+///
+/// [recursive] 与来源行一致：不递归的来源只认根本身是不是盘，不下钻子目录（音乐库收视频
+/// 来源里的纯音频时登记的单层来源，子目录里常是番剧 BD 原盘，不能被当成音乐专辑）。
+typedef MusicDiscRegistrar =
+    Future<Map<String, String>> Function(String root, {bool recursive});
 
 class MusicLibraryScanner {
   MusicLibraryScanner(
@@ -249,6 +253,7 @@ class MusicLibraryScanner {
     // 盘不是音频文件，Rust 扫描不认；登记成专辑（章节由用户在专辑页导入）。
     for (final MapEntry<String, String> f in (await _discRegistrar(
       rootPath,
+      recursive: recursive,
     )).entries) {
       errors.add(MusicScanError(f.key, f.value));
     }

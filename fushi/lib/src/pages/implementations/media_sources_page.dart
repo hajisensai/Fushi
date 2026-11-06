@@ -15,8 +15,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
         kDragPlaylistExtensions,
         kDragSubtitleExtensions;
 import 'package:fushi/src/media/import/quick_import_section.dart';
-import 'package:fushi_engine/media/media_extensions.dart'
-    show kVideoLibraryMediaExtensions;
+import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -239,10 +238,10 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
       kDragSubtitleExtensions,
       kDragAudioExtensions,
     ]),
-    // 视频库收录的视频 + 纯音频、M3U 播放列表，以及网络地址。
+    // 视频库收录的视频（纯音频归音乐库，反馈 QAondMh4M5）、M3U 播放列表，以及网络地址。
     'video' => <String>[
       ...importFormatLabels(<Iterable<String>>[
-        kVideoLibraryMediaExtensions,
+        kVideoExtensions,
         kDragPlaylistExtensions,
       ]),
       'HTTP',

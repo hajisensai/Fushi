@@ -9875,6 +9875,8 @@
   "video_download_target_source_hint": "Các bản tải xuống mới được sắp xếp vào nguồn video cục bộ này.",
   "video_download_target_source_none": "Chọn nguồn video cục bộ",
   "video_download_target_source_title": "Thư mục mặc định",
+  "video_drop_audio_music_failed": "The Music library could not import the audio: $error",
+  "video_drop_audio_sent_to_music": "Sent $count audio file(s) to the Music library",
   "video_drop_audio_unsupported": "Hãy thả tệp phụ đề lên video hiện tại. Tệp âm thanh không thể gắn ở đây.",
   "video_drop_subtitle_only": "Hãy thả tệp phụ đề lên video hiện tại.",
   "video_episode_list": "Danh sách tập",
