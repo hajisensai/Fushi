@@ -5971,9 +5971,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 只有音频的有声书下载完成后是否自动转录入库（默认开）。
+  /// 只有音频的有声书下载完成后是否自动转录入库（默认关：正常流程是先有
+  /// EPUB 再配有声书一起转录，下载时没有正文就自动转录会产出质量差的字幕书）。
   bool get audiobookAutoTranscribe =>
-      getPref('audiobook_auto_transcribe', defaultValue: true) as bool;
+      getPref('audiobook_auto_transcribe', defaultValue: false) as bool;
 
   Future<void> setAudiobookAutoTranscribe({required bool value}) async {
     await setPref('audiobook_auto_transcribe', value);
