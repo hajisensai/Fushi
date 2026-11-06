@@ -550,6 +550,7 @@ class RemoteBookInfo {
     this.coverUrl,
     this.coverPath,
     this.hasAudiobook = false,
+    this.isSubtitleBookBody = false,
     this.tags = const <String>[],
     this.tagsAddedAt = const <String, int>{},
     this.tagTombstones = const <String, int>{},
@@ -655,6 +656,13 @@ class RemoteBookInfo {
   /// 渲染类型徽章（耳机 / 书本），与本地书卡 `_getAudiobookInfo` 同源（TODO-655a）。
   final bool hasAudiobook;
 
+  /// 这本 EPUB 是 host 上某本独立字幕书由 cue 生成的正文（BUG-4123），不是一本
+  /// 单独的书。那本字幕书经有声书清单按 uid 下发，收端按同一份 cue 再生成正文，所以
+  /// 书架 / 首页不该再把它当一本普通书展示（否则同一本书出两张卡，还能被当成没有
+  /// 音频的普通书下载）。同步对账（推送 / 比对）仍要看到它：清单里没有它时，本机
+  /// 那份生成的正文会被当成「host 缺这本」推回去。旧 host 不下发 → false。
+  final bool isSubtitleBookBody;
+
   /// 该书在 host 端的标签名列表（TODO-1165）。标签是每设备本地数据，只传
   /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
   final List<String> tags;
@@ -692,6 +700,7 @@ class RemoteBookInfo {
     if (hasDisplayCover) 'hasCover': true,
     if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
     if (hasAudiobook) 'hasAudiobook': true,
+    if (isSubtitleBookBody) 'subtitleBookBody': true,
     if (tags.isNotEmpty) 'tags': tags,
     if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
     if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
@@ -719,6 +728,7 @@ class RemoteBookInfo {
     String? coverUrl,
     String? coverPath,
     bool? hasAudiobook,
+    bool? isSubtitleBookBody,
     List<String>? tags,
     Map<String, int>? tagsAddedAt,
     Map<String, int>? tagTombstones,
@@ -744,6 +754,7 @@ class RemoteBookInfo {
     coverUrl: coverUrl ?? this.coverUrl,
     coverPath: coverPath ?? this.coverPath,
     hasAudiobook: hasAudiobook ?? this.hasAudiobook,
+    isSubtitleBookBody: isSubtitleBookBody ?? this.isSubtitleBookBody,
     tags: tags ?? this.tags,
     tagsAddedAt: tagsAddedAt ?? this.tagsAddedAt,
     tagTombstones: tagTombstones ?? this.tagTombstones,
@@ -783,6 +794,7 @@ class RemoteBookInfo {
       coverUrl: coverUrl,
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
+      isSubtitleBookBody: json['subtitleBookBody'] == true,
       tags: _jsonStringList(json['tags']),
       tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
       tagTombstones: _jsonNameIntMap(json['tagTombstones']),

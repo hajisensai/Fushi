@@ -8,13 +8,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_storage_platform.dart';
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
+import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
-import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
+import 'package:fushi_audio/fushi_audio.dart'
+    show AudiobookStorage, SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/engine_storage_sandbox.dart';
 
 // ── 辅助 ──────────────────────────────────────────────────────────────────────
 
@@ -277,15 +283,68 @@ void main() {
     late FushiDatabase db;
     late Directory temp;
 
+    // 收端按 cue 再生成正文要真跑 EPUB 导入（BUG-4123）。
+    useEngineStorageSandbox();
+
     setUp(() async {
       db = _memDb();
       temp = await Directory.systemTemp.createTemp('fushi-standalone-svc-');
+      // 本机导入字幕书时的有声书持久目录。
+      AudiobookStorage.documentsRootResolver = () async => temp;
     });
 
     tearDown(() async {
       await db.close();
+      AudiobookStorage.documentsRootResolver = null;
       await temp.delete(recursive: true);
     });
+
+    /// 走真实本机导入（[importStandaloneSubtitleBook]）造一本独立字幕书：字幕 +
+    /// 音频、没有 EPUB，正文由 cue 生成。返回落库的 SrtBooks 行。
+    Future<SrtBookRow> importSubtitleBook(
+      FushiDatabase into,
+      String title,
+      List<String> lines,
+    ) async {
+      final Directory src = Directory(p.join(temp.path, 'src_$title'))
+        ..createSync(recursive: true);
+      final File audio = File(p.join(src.path, '01.mp3'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final StringBuffer srt = StringBuffer();
+      for (int i = 0; i < lines.length; i++) {
+        srt
+          ..writeln(i + 1)
+          ..writeln('00:00:0$i,000 --> 00:00:0$i,900')
+          ..writeln(lines[i])
+          ..writeln();
+      }
+      final File subs = File(p.join(src.path, '$title.srt'))
+        ..writeAsStringSync(srt.toString());
+      final SrtBook book = await importStandaloneSubtitleBook(
+        db: into,
+        repo: SrtBookRepository(into),
+        title: title,
+        subtitlePath: subs.path,
+        audioPaths: <String>[audio.path],
+        copyAudio: false,
+        policy: const DuplicatePolicy.suffix(),
+      );
+      return (await into.getSrtBookByUid(book.uid))!;
+    }
+
+    /// 正文解压树里所有 xhtml 的文本拼在一起（断言正文就是由这组 cue 生成的）。
+    Future<String> bodyText(FushiDatabase from, String bookKey) async {
+      final EpubBookRow row = (await from.getEpubBook(bookKey))!;
+      final StringBuffer out = StringBuffer();
+      await for (final FileSystemEntity e in Directory(
+        row.extractDir,
+      ).list(recursive: true)) {
+        if (e is File && e.path.endsWith('.xhtml')) {
+          out.write(await e.readAsString());
+        }
+      }
+      return out.toString();
+    }
 
     Future<void> insertStandalone(String uid, String title) async {
       final Directory audioDir = Directory(p.join(temp.path, uid));
@@ -365,8 +424,162 @@ void main() {
       final SrtBookRow srt = (await targetDb.getSrtBookByUid(
         'srt-standalone-2',
       ))!;
-      expect(srt.bookKey, '');
+      // BUG-4123：bookKey 为空的字幕书阅读器打不开（「正文未就绪」）。收端给它
+      // 生成正文（这本没有 cue → 只有标题的正文，与本机导入无字幕书同一行为）。
+      expect(srt.bookKey, isNotEmpty);
+      expect(await targetDb.getEpubBook(srt.bookKey), isNotNull);
       expect(srt.title, 'Standalone2');
+    });
+
+    // ── BUG-4123：带生成正文的独立字幕书 ─────────────────────────────────────
+
+    test('BUG-4123 host 把带生成正文的独立字幕书按 uid 列进有声书清单，正文标成字幕书正文', () async {
+      final SrtBookRow book = await importSubtitleBook(db, 'SubBook', <String>[
+        'こんにちは。',
+        'さようなら。',
+      ]);
+      expect(book.bookKey, isNotEmpty, reason: '本机导入会生成正文');
+
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteAudiobookInfo> audiobooks = await svc.listAudiobooks();
+      final RemoteAudiobookInfo listed = audiobooks.singleWhere(
+        (RemoteAudiobookInfo a) => a.uid == book.uid,
+      );
+      expect(listed.isStandaloneSrt, isTrue);
+      expect(listed.identity, book.uid);
+
+      final RemoteBookInfo body = (await svc.listBooks()).singleWhere(
+        (RemoteBookInfo b) => b.bookKey == book.bookKey,
+      );
+      expect(body.isSubtitleBookBody, isTrue);
+      expect(body.hasAudiobook, isFalse);
+      // 线上形态：只在为真时下发，旧 client 忽略。
+      expect(body.toJson()['subtitleBookBody'], isTrue);
+      expect(RemoteBookInfo.fromJson(body.toJson()).isSubtitleBookBody, isTrue);
+    });
+
+    test('BUG-4123 EPUB 有声书的配对行缺了 Audiobooks 行也不当独立字幕书', () async {
+      const String bookKey = 'UserNovel';
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: epubBackedSrtBookUid(bookKey),
+          title: 'UserNovel',
+          srtPath: p.join(temp.path, 'x.srt'),
+          importedAt: 1,
+          bookKey: const Value(bookKey),
+        ),
+      );
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      expect(
+        (await svc.listAudiobooks()).map((RemoteAudiobookInfo a) => a.uid),
+        isNot(contains(epubBackedSrtBookUid(bookKey))),
+      );
+      expect(
+        isStandaloneSubtitleBook(
+          uid: epubBackedSrtBookUid(bookKey),
+          bookKey: bookKey,
+          audiobookKeys: const <String>{},
+        ),
+        isFalse,
+      );
+      expect(
+        srtBookHasGeneratedBody(
+          uid: epubBackedSrtBookUid(bookKey),
+          bookKey: bookKey,
+        ),
+        isFalse,
+      );
+    });
+
+    test('BUG-4123 收端按包里的 cue 再生成正文；重新下载沿用同一本正文不另生', () async {
+      final SrtBookRow hostBook = await importSubtitleBook(
+        db,
+        'RoundTrip',
+        <String>['一行目です。', '二行目です。'],
+      );
+      final LocalLibraryHostService host = _buildSvc(db: db);
+
+      final FushiDatabase client = _memDb();
+      addTearDown(client.close);
+      final Directory clientAudio = Directory(p.join(temp.path, 'client_ab'));
+      final SyncAssetPackageService clientPackages = SyncAssetPackageService(
+        db: client,
+      );
+
+      Future<void> download() async {
+        final File pkg = await host.exportAudiobook(hostBook.uid);
+        try {
+          await clientPackages.importAudioDatabasePackage(
+            packageFile: pkg,
+            audioDatabaseRoot: clientAudio,
+            bookKeyOverride: hostBook.uid,
+          );
+        } finally {
+          await pkg.parent.delete(recursive: true);
+        }
+      }
+
+      await download();
+      final SrtBookRow got = (await client.getSrtBookByUid(hostBook.uid))!;
+      expect(got.bookKey, isNotEmpty, reason: '打得开 = 有正文');
+      expect(await client.getAllAudiobooks(), isEmpty, reason: '身份仍是 uid');
+      final String text = await bodyText(client, got.bookKey);
+      expect(text, contains('一行目です。'));
+      expect(text, contains('二行目です。'));
+      expect(await client.getAllEpubBooks(), hasLength(1));
+
+      await download();
+      final SrtBookRow again = (await client.getSrtBookByUid(hostBook.uid))!;
+      expect(again.bookKey, got.bookKey);
+      expect(await client.getAllEpubBooks(), hasLength(1), reason: '不另生一本');
+    });
+
+    test('BUG-4123 只更新字幕：换了 cue 收端按新 cue 重建正文', () async {
+      final SrtBookRow hostBook = await importSubtitleBook(
+        db,
+        'Refresh',
+        <String>['古い一行目。'],
+      );
+      final LocalLibraryHostService host = _buildSvc(db: db);
+      final FushiDatabase client = _memDb();
+      addTearDown(client.close);
+      final Directory clientAudio = Directory(p.join(temp.path, 'client_ab'));
+      final SyncAssetPackageService clientPackages = SyncAssetPackageService(
+        db: client,
+      );
+      final File pkg = await host.exportAudiobook(hostBook.uid);
+      await clientPackages.importAudioDatabasePackage(
+        packageFile: pkg,
+        audioDatabaseRoot: clientAudio,
+      );
+      await pkg.parent.delete(recursive: true);
+      final String clientKey = (await client.getSrtBookByUid(
+        hostBook.uid,
+      ))!.bookKey;
+
+      // host 换字幕（cue 文本变了）后，client 只拉字幕侧。
+      await db.replaceCuesForBook(hostBook.uid, <AudioCuesCompanion>[
+        AudioCuesCompanion.insert(
+          bookKey: hostBook.uid,
+          chapterHref: '',
+          sentenceIndex: 0,
+          textFragmentId: '',
+          cueText: '新しい一行目。',
+          startMs: 0,
+          endMs: 900,
+          audioFileIndex: 0,
+        ),
+      ]);
+      final File subs = await host.exportAudiobookSubtitles(hostBook.uid);
+      await clientPackages.importAudioSubtitlePackage(
+        packageFile: subs,
+        audioDatabaseRoot: clientAudio,
+      );
+      await subs.parent.delete(recursive: true);
+
+      final String text = await bodyText(client, clientKey);
+      expect(text, contains('新しい一行目。'));
+      expect(text, isNot(contains('古い一行目。')));
     });
   });
 

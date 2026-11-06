@@ -10,6 +10,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/engine_storage_sandbox.dart';
+
 /// BUG-2551：有声书资产包「一个音频都没有」不得静默落库，对端也不得因此卡死在
 /// 「有行没音频」的吸收态里。
 ///
@@ -127,6 +129,8 @@ Future<void> _seedFolderModeBookWithoutAudio(
 
 void main() {
   group('零音频有声书包 (BUG-2551)', () {
+    useEngineStorageSandbox();
+
     test('导出：音频根解析不出任何音频时，单独下发 unresolvedAudioRoots', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'fushi-zero-audio-export-',
@@ -364,6 +368,8 @@ void main() {
   });
 
   group('导入写库原子性 (BUG-2551)', () {
+    useEngineStorageSandbox();
+
     test('cue 段中途抛 → 已写下的 Audiobooks / SrtBooks 行一并回滚', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'fushi-import-atomic-',

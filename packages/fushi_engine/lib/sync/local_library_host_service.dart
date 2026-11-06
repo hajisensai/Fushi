@@ -18,6 +18,8 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
+    show isStandaloneSubtitleBook, srtBookHasGeneratedBody;
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
@@ -512,6 +514,25 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
     return <String>{
       for (final AudiobookRow r in await _db.getAllAudiobooks())
         if (srtBookKeys.contains(r.bookKey)) r.bookKey,
+    };
+  }
+
+  /// 独立字幕书由 cue 生成的正文 EPUB 的 bookKey（BUG-4123）。[listBooks] 给这些
+  /// 书标 `subtitleBookBody`：那本字幕书走有声书清单（按 uid），正文由收端按 cue
+  /// 再生成，不是一本单独可下的书。
+  Future<Set<String>> _standaloneSubtitleBodyKeys() async {
+    final Set<String> audiobookKeys = <String>{
+      for (final AudiobookRow r in await _db.getAllAudiobooks()) r.bookKey,
+    };
+    return <String>{
+      for (final SrtBookRow s in await _db.getAllSrtBooks())
+        if (srtBookHasGeneratedBody(uid: s.uid, bookKey: s.bookKey) &&
+            isStandaloneSubtitleBook(
+              uid: s.uid,
+              bookKey: s.bookKey,
+              audiobookKeys: audiobookKeys,
+            ))
+          s.bookKey,
     };
   }
 }

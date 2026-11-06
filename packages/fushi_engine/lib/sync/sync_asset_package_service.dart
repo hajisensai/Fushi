@@ -4,6 +4,13 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
+    show
+        generatedSubtitleBodyRow,
+        importGeneratedSubtitleBody,
+        rebuildGeneratedSubtitleBody;
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -526,9 +533,14 @@ class SyncAssetPackageService {
     });
   }
 
-  /// 导入纯 SRT（standalone）有声书包：无 Audiobooks 行，身份=uid，bookKey 恒空。
+  /// 导入纯 SRT（standalone）有声书包：无 Audiobooks 行，身份=uid。
   /// 与 srt-backed 分支的差异：不 upsert Audiobooks 行（否则造孤儿脏行）、持久目录
   /// 与 cue 命名空间均用 uid、音频/字幕/封面全取自 srtBook 段（无 audiobook 段）。
+  ///
+  /// BUG-4123：包里没有正文 EPUB（发端的正文是导入时由 cue 生成的），而阅读器打开
+  /// 字幕书必须有正文（bookKey 为空 = 「正文未就绪」打不开）。所以收端按包里同一份
+  /// cue 用同一个生成器再生成正文（[importGeneratedSubtitleBody]）；重新下载时本机
+  /// 已有正文就按新 cue 就地重建（[rebuildGeneratedSubtitleBody]），不另生一本。
   Future<void> _importStandaloneSrtPackage({
     required File packageFile,
     required Directory audioDatabaseRoot,
@@ -585,62 +597,136 @@ class SyncAssetPackageService {
     final List<String> playableAudioPaths =
         await AudiobookStorage.transcodePersistedAiff(audioPaths);
 
+    // BUG-4123：正文。本机已有这本字幕书生成的正文（重新下载）→ 沿用并在写库后按
+    // 新 cue 重建；否则在写库前生成一本（生成失败整次导入失败，库里不留打不开的
+    // 壳行），写库失败再把刚生成的撤掉。EPUB 有声书的配对行不会走到这里（它有
+    // audiobook 段），generatedSubtitleBodyRow 的判据也挡住了它。
+    final String title = _stringValue(srtBook, 'title');
+    final String? author = _nullableString(srtBook, 'author');
+    final List<AudioCue> bodyCues = <AudioCue>[
+      for (final Object? raw in cues) _audioCueFromManifest(uid, raw),
+    ];
+    final SrtBookRow? priorSrt = await _db.getSrtBookByUid(uid);
+    final EpubBookRow? priorBody = priorSrt == null
+        ? null
+        : await generatedSubtitleBodyRow(
+            _db,
+            uid: uid,
+            bookKey: priorSrt.bookKey,
+          );
+    final String? createdBodyKey = priorBody != null
+        ? null
+        : await importGeneratedSubtitleBody(
+            db: _db,
+            uid: uid,
+            title: title,
+            author: author,
+            cues: bodyCues,
+            policy: const DuplicatePolicy.suffix(),
+          );
+    final String bodyKey = priorBody?.bookKey ?? createdBodyKey!;
+
     // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
     // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
-    await _db.transaction(() async {
-      // BUG-3098：同 uid 已在本机（重新下载）→ 带 id 原位更新，不撞 UNIQUE(uid)。
-      final SrtBookRow? existingSrt = await _db.getSrtBookByUid(uid);
-      await _db.upsertSrtBook(
-        SrtBooksCompanion.insert(
-          id: existingSrt == null
-              ? const Value.absent()
-              : Value(existingSrt.id),
-          uid: uid,
-          title: _stringValue(srtBook, 'title'),
-          author: Value(_nullableString(srtBook, 'author')),
-          audioRoot: Value(targetDir.path),
-          audioPathsJson: Value(jsonEncode(playableAudioPaths)),
-          srtPath: srtPath,
-          coverPath: Value(coverPath),
-          importedAt: _intValue(srtBook, 'importedAt'),
-          bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
-        ),
-      );
+    try {
+      await _db.transaction(() async {
+        // BUG-3098：同 uid 已在本机（重新下载）→ 带 id 原位更新，不撞 UNIQUE(uid)。
+        final SrtBookRow? existingSrt = await _db.getSrtBookByUid(uid);
+        await _db.upsertSrtBook(
+          SrtBooksCompanion.insert(
+            id: existingSrt == null
+                ? const Value.absent()
+                : Value(existingSrt.id),
+            uid: uid,
+            title: title,
+            author: Value(author),
+            audioRoot: Value(targetDir.path),
+            audioPathsJson: Value(jsonEncode(playableAudioPaths)),
+            srtPath: srtPath,
+            coverPath: Value(coverPath),
+            importedAt: _intValue(srtBook, 'importedAt'),
+            // 身份仍是 uid（没有 Audiobooks 行）；bookKey 指向本机的正文。
+            bookKey: Value(bodyKey),
+          ),
+        );
 
-      // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
-      final Object? rawSrtTags = srtBook['tags'];
-      final List<String> srtTagNames = rawSrtTags is List
-          ? <String>[
-              for (final Object? t in rawSrtTags)
-                if (t != null && t.toString().isNotEmpty) t.toString(),
-            ]
-          : const <String>[];
-      if (srtTagNames.isNotEmpty) {
-        for (final String name in srtTagNames) {
-          if (name.isEmpty) continue;
-          final int tagId = await _db.getOrCreateTagByName(name);
-          await _db.addTagToSrtBook(uid, tagId);
+        // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
+        final Object? rawSrtTags = srtBook['tags'];
+        final List<String> srtTagNames = rawSrtTags is List
+            ? <String>[
+                for (final Object? t in rawSrtTags)
+                  if (t != null && t.toString().isNotEmpty) t.toString(),
+              ]
+            : const <String>[];
+        if (srtTagNames.isNotEmpty) {
+          for (final String name in srtTagNames) {
+            if (name.isEmpty) continue;
+            final int tagId = await _db.getOrCreateTagByName(name);
+            await _db.addTagToSrtBook(uid, tagId);
+          }
         }
-      }
 
-      // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
-      await _db.replaceCuesForBook(
-        uid,
-        cues.map((Object? raw) {
-          final Map<String, Object?> cue = _typedMap(raw);
-          return AudioCuesCompanion.insert(
-            bookKey: uid,
-            chapterHref: _stringValue(cue, 'chapterHref'),
-            sentenceIndex: _intValue(cue, 'sentenceIndex'),
-            textFragmentId: _stringValue(cue, 'textFragmentId'),
-            cueText: _stringValue(cue, 'cueText'),
-            startMs: _intValue(cue, 'startMs'),
-            endMs: _intValue(cue, 'endMs'),
-            audioFileIndex: _intValue(cue, 'audioFileIndex'),
-          );
-        }).toList(),
+        // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
+        await _db.replaceCuesForBook(
+          uid,
+          cues.map((Object? raw) {
+            final Map<String, Object?> cue = _typedMap(raw);
+            return AudioCuesCompanion.insert(
+              bookKey: uid,
+              chapterHref: _stringValue(cue, 'chapterHref'),
+              sentenceIndex: _intValue(cue, 'sentenceIndex'),
+              textFragmentId: _stringValue(cue, 'textFragmentId'),
+              cueText: _stringValue(cue, 'cueText'),
+              startMs: _intValue(cue, 'startMs'),
+              endMs: _intValue(cue, 'endMs'),
+              audioFileIndex: _intValue(cue, 'audioFileIndex'),
+            );
+          }).toList(),
+        );
+      });
+    } catch (_) {
+      if (createdBodyKey != null) await _deleteGeneratedBody(createdBodyKey);
+      rethrow;
+    }
+    if (priorBody != null) {
+      await rebuildGeneratedSubtitleBody(
+        db: _db,
+        row: priorBody,
+        uid: uid,
+        title: title,
+        author: author,
+        cues: bodyCues,
       );
-    });
+    }
+  }
+
+  /// 包里的一条 cue（manifest 形态）→ 正文生成器要的 [AudioCue]（cue 命名空间 [uid]）。
+  static AudioCue _audioCueFromManifest(String uid, Object? raw) {
+    final Map<String, Object?> cue = _typedMap(raw);
+    return AudioCue()
+      ..bookKey = uid
+      ..chapterHref = _stringValue(cue, 'chapterHref')
+      ..sentenceIndex = _intValue(cue, 'sentenceIndex')
+      ..textFragmentId = _stringValue(cue, 'textFragmentId')
+      ..text = _stringValue(cue, 'cueText')
+      ..startMs = _intValue(cue, 'startMs')
+      ..endMs = _intValue(cue, 'endMs')
+      ..audioFileIndex = _intValue(cue, 'audioFileIndex');
+  }
+
+  /// 撤掉一本刚生成、还没被任何 SrtBooks 行引用的正文（行 + 解包目录）。失败只留痕：
+  /// 调用方正在把原始错误往上抛，清理失败不能盖掉它。
+  Future<void> _deleteGeneratedBody(String bookKey) async {
+    try {
+      final EpubBookRow? row = await _db.getEpubBook(bookKey);
+      await _db.deleteEpubBook(bookKey);
+      if (row != null && row.extractDir.isNotEmpty) {
+        final Directory dir = Directory(row.extractDir);
+        if (await dir.exists()) await dir.delete(recursive: true);
+      }
+    } catch (e, stack) {
+      engineLog.log('SyncAssetPackageService.deleteGeneratedBody', e, stack);
+    }
   }
 
   /// BUG-3098：本机与包对应的那一行 SrtBooks——先按包里的 [uid]，再按 [bookKey]
@@ -832,6 +918,26 @@ class SyncAssetPackageService {
             .write(SrtBooksCompanion(srtPath: Value(srtPath)));
         await _replaceCuesKeepingPosition(uid, cueRows(uid));
       });
+      // BUG-4123：阅读器按文本相等把 cue 配回正文，换了 cue 就得按新 cue 重建正文
+      // （与本机「重新导入字幕」同一个实现）；没有生成的正文（旧书）就不动。
+      final EpubBookRow? body = await generatedSubtitleBodyRow(
+        _db,
+        uid: uid,
+        bookKey: local.bookKey,
+      );
+      if (body != null) {
+        await rebuildGeneratedSubtitleBody(
+          db: _db,
+          row: body,
+          uid: uid,
+          title: local.title,
+          author: local.author,
+          cues: <AudioCue>[
+            for (final Object? raw in _listValue(manifest, 'cues'))
+              _audioCueFromManifest(uid, raw),
+          ],
+        );
+      }
       return;
     }
 

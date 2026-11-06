@@ -9,6 +9,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/engine_storage_sandbox.dart';
+
 /// BUG-3312 延伸：桌面「引用原文件」导入的 AIFF 有声书，经同步包 / 互联下载到
 /// 另一端时，AIFF 原样进包。Android 的有声书播放器（ExoPlayer）不认 AIFF，所以
 /// 接收端 [SyncAssetPackageService.importAudioDatabasePackage] 在落库前把 AIFF 转成
@@ -17,6 +19,8 @@ FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
+  useEngineStorageSandbox();
+
   late Directory temp;
   late FushiDatabase sourceDb;
   late FushiDatabase targetDb;
