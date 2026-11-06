@@ -28,6 +28,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
+import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
+    show SrsHtmlCardView, srsNativeHtmlCardFor;
+import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview, srsRenderTemplatePreview;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -139,17 +142,21 @@ srsNotePreviewNativeFushiCard({
 /// 预览就一直在「空白一秒」。翻面 / 换卡由 [SrsWebCardFace] 原地换内容。
 ///
 /// [native] 非 null 时走与复习页同一个原生混合渲染（内置 Fushi 卡片、模板未改），不建
-/// 整面 WebView。[face] 为 null（还没有任何能渲染的内容）时只画 [overlay]。
+/// 整面 WebView；否则给了 [sides]（这张卡渲染出的正反两面）且两面都在原生认得的子集里时，
+/// 与复习页同一判据（[srsNativeHtmlCardFor]）走原生 HTML 卡面。[face] 为 null（还没有任何
+/// 能渲染的内容）时只画 [overlay]。
 class SrsStablePreviewFace extends ConsumerWidget {
   const SrsStablePreviewFace({
     super.key,
     required this.face,
     this.native,
+    this.sides,
     this.overlay,
   });
 
   final SrsCardFace? face;
   final ({Map<String, String> fieldsByName, String definitionsHtml})? native;
+  final ({String question, String answer})? sides;
   final Widget? overlay;
 
   @override
@@ -157,6 +164,16 @@ class SrsStablePreviewFace extends ConsumerWidget {
     final SrsCardFace? face = this.face;
     final ({Map<String, String> fieldsByName, String definitionsHtml})? native =
         this.native;
+    final ({String question, String answer})? sides = this.sides;
+    final SrsHtmlCard? html = face == null || native != null || sides == null
+        ? null
+        : srsNativeHtmlCardFor(
+            fushiCard: face.fushiCard,
+            question: sides.question,
+            answer: sides.answer,
+            css: face.css,
+            languageCode: face.languageCode,
+          );
     final Widget base = face == null
         ? const SizedBox.expand()
         : native != null
@@ -165,6 +182,12 @@ class SrsStablePreviewFace extends ConsumerWidget {
             face: face,
             fields: native.fieldsByName,
             definitionsHtml: native.definitionsHtml,
+          )
+        : html != null
+        ? SrsHtmlCardView(
+            key: const ValueKey<String>('srs-preview-html-face'),
+            face: face,
+            source: html.face(answerSide: face.showingAnswer),
           )
         : KeyedSubtree(
             key: const ValueKey<String>('srs-preview-web-face'),
@@ -460,6 +483,9 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
               autoplayMedia: false,
             ),
       native: _shownNative,
+      sides: shown == null
+          ? null
+          : (question: shown.question, answer: shown.answer),
       overlay: overlay,
     );
   }

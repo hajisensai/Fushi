@@ -128,6 +128,14 @@ Future<void> _submitTextDialog(WidgetTester tester, String text) async {
   await _settle(tester);
 }
 
+/// 模板 / 笔记预览里的原生 HTML 卡面（Basic 等非 Fushi 卡片两面原生画得全时）。
+final Finder _htmlPreview = find.byKey(
+  const ValueKey<String>('srs-preview-html-face'),
+);
+
+Finder _inHtmlPreview(String text) =>
+    find.descendant(of: _htmlPreview, matching: find.textContaining(text));
+
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
@@ -300,16 +308,15 @@ void main() {
           initialTab: SrsTemplateEditorTab.front,
         ),
       );
-      final Finder face = find.byKey(
-        const ValueKey<String>('srs-face-question'),
-      );
-      expect(face, findsOneWidget);
-      expect((tester.widget(face) as Text).data, '猫');
+      // Basic 卡两面都在原生认得的子集里：预览与复习页同样走原生 HTML 卡面。
+      expect(_htmlPreview, findsOneWidget);
+      expect(_inHtmlPreview('猫'), findsWidgets);
       expect(find.text('{{Front}}'), findsOneWidget, reason: '编辑器按字段名显示');
 
       await tester.enterText(find.byType(EditableText).first, '{{Back}}');
       await _settle(tester);
-      expect((tester.widget(face) as Text).data, 'cat', reason: '实时预览');
+      expect(_inHtmlPreview('cat'), findsWidgets, reason: '实时预览');
+      expect(_inHtmlPreview('猫'), findsNothing);
       await tester.tap(
         find.byKey(const ValueKey<String>('srs_template_save')).first,
       );
@@ -381,25 +388,19 @@ void main() {
         find.byKey(const ValueKey<String>('srs-visual-block-b1')),
         findsOneWidget,
       );
-      final Finder question = find.byKey(
-        const ValueKey<String>('srs-face-question'),
-      );
-      expect((tester.widget(question) as Text).data, '猫', reason: '正面放词条');
+      expect(_inHtmlPreview('猫'), findsWidgets, reason: '正面放词条');
 
       // 换到背面：重复正面 + 分隔线 + 其余字段（未知字段带字段名小标题）。
       await tester.tap(find.text(t.srs_note_types_side_back).first);
       await _settle(tester);
-      final Finder answer = find.byKey(
-        const ValueKey<String>('srs-face-answer'),
-      );
-      expect((tester.widget(answer) as Text).data, contains('cat'));
+      expect(_inHtmlPreview('cat'), findsWidgets);
       final Finder del = find.byKey(
         const ValueKey<String>('srs-visual-delete-b3'),
       );
       await tester.ensureVisible(del);
       await tester.tap(del);
       await _settle(tester);
-      expect((tester.widget(answer) as Text).data, isNot(contains('cat')));
+      expect(_inHtmlPreview('cat'), findsNothing);
 
       await tester.tap(
         find.byKey(const ValueKey<String>('srs_template_save')).first,
@@ -533,7 +534,8 @@ void main() {
           noteTypeId: nt,
           fieldsById: <String, String>{
             v.fields[0].id: '猫',
-            v.fields[1].id: 'cat',
+            // 带卡片脚本 → 原生 HTML 卡面画不了，预览走整面 WebView（本测试测的就是它不被拆）。
+            v.fields[1].id: 'cat<script>void 0;</script>',
           },
         ),
       );

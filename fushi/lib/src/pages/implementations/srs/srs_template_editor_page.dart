@@ -963,6 +963,9 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                       onBridgeKey: (_) {},
                     ),
               native: _shownNative,
+              sides: shown == null
+                  ? null
+                  : (question: shown.question, answer: shown.answer),
               overlay: card == null
                   ? Center(
                       child: FushiPlaceholderMessage(

@@ -49,6 +49,30 @@ import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
+/// 一张卡能否走原生 HTML 卡面的统一判据（复习页、浏览预览、笔记 / 模板编辑预览共用，
+/// 保证预览与复习时长得一样）。null = 走整面 WebView。
+///
+/// 内置 Fushi 卡片类型（[fushiCard]）一律不走这里：模板未改的走原生混合卡面
+/// （[SrsFushiCardView]），改过的仍要 WebView 外壳注入外观设置（`--fushi-srs-*` 变量、类名、
+/// 字体），原生 HTML 卡面不认这些。
+SrsHtmlCard? srsNativeHtmlCardFor({
+  required bool fushiCard,
+  required String question,
+  required String answer,
+  required String css,
+  required String? languageCode,
+}) {
+  if (fushiCard) return null;
+  return srsHtmlCardOf(
+    question: question,
+    answer: answer,
+    css: css,
+    languageCode: languageCode == null || languageCode.isEmpty
+        ? null
+        : languageCode,
+  );
+}
+
 /// 原生画一面非 Fushi 卡片。
 class SrsHtmlCardView extends ConsumerStatefulWidget {
   const SrsHtmlCardView({

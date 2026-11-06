@@ -535,7 +535,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             ],
           );
           // 原生 HTML 卡面的解析与判据（按内容记忆）同样提前算好。
-          _htmlCardOf(rendered);
+          _htmlCardOf(rendered, detail);
           SrsReviewPage.debugPhase?.call('prefetch:warm');
         }
         return _PrefetchedCard(
@@ -2191,16 +2191,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _detail != null &&
       _nativeFace(_rendered);
 
-  /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsHtmlCardOf]，按内容记忆）；null = 不是这类卡
-  /// 或画不全（整面 WebView）。
-  SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered) {
+  /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsNativeHtmlCardFor]，按内容记忆）；null =
+  /// 不是这类卡或画不全（整面 WebView）。[detail] 缺省为当前卡（预取时传那张卡的）。
+  SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered, [SrsCardDetail? detail]) {
     if (rendered == null || rendered.fushiCardDefinitions != null) return null;
-    final String language = ref.read(appProvider).defaultContentLanguage;
-    return srsHtmlCardOf(
+    return srsNativeHtmlCardFor(
+      fushiCard:
+          (detail ?? _detail)?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
       question: rendered.question,
       answer: rendered.answer,
       css: rendered.css,
-      languageCode: language.isEmpty ? null : language,
+      languageCode: ref.read(appProvider).defaultContentLanguage,
     );
   }
 
