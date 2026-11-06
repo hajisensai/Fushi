@@ -2141,16 +2141,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 手动序，拖动从用户眼前的顺序开始。
   void _startReorder() {
     if (!mounted) return;
-    if (_sortMode != ShelfSortMode.manual) {
-      _setManualOrder(_sortedUnitKeys);
-    }
-    setState(() {
-      _reordering = true;
-      _sortMode = ShelfSortMode.manual;
-    });
+    _adoptManualSort();
+    setState(() => _reordering = true);
+  }
+
+  /// 排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成手动序（排序模式
+  /// 与桌面直拖共用：拖动从用户眼前的顺序开始）。
+  void _adoptManualSort() {
+    if (_sortMode == ShelfSortMode.manual) return;
+    _setManualOrder(_sortedUnitKeys);
+    setState(() => _sortMode = ShelfSortMode.manual);
     unawaited(
       ref.read(appProvider).prefsRepo.setVideoSortModeName(_sortMode.name),
     );
+  }
+
+  /// 桌面常态网格能否直拖重排（[LibraryDragReorderScope]）：与合集详情页
+  /// `canReorder` 同一口径——多选 / 搜索 / 筛选下不直拖（只剩拖进合集）。
+  bool get _videoDragReorderable => !_selectionMode && !_hasAnyClearableFilter;
+
+  /// 桌面常态网格的一次直拖：任何排序下都可拖，拖一次即把当前显示顺序连同这次
+  /// 移动存为手动序（与合集详情页同一语义）。
+  void _onVideoDragReorder(List<String> visible, int from, int to) {
+    _adoptManualSort();
+    _onVideoReorder(visible, from, to);
   }
 
   void _endReorder() => setState(() => _reordering = false);
@@ -6762,6 +6776,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         cells,
         EdgeInsets.all(tokens.spacing.card),
         cardLayout,
+        dragReorderKeys: unitKeys,
       ),
     ];
   }
@@ -7025,6 +7040,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
         EdgeInsets.all(tokens.spacing.card),
         cardLayout,
+        // 只有本地视频参与手动序（远端占位恒在其后，不可拖排）。
+        dragReorderKeys: _sortedUnitKeys,
       ),
     ];
   }
@@ -9253,30 +9270,55 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   Widget _buildVideoWallSliver(
     List<_VideoWallEntry> cells,
     EdgeInsetsGeometry padding,
-    ({int columns, double cardWidth}) cardLayout,
-  ) {
+    ({int columns, double cardWidth}) cardLayout, {
+    List<String>? dragReorderKeys,
+  }) {
     final double coverHeight = videoCoverHeightForPortraitWidth(
       cardLayout.cardWidth,
     );
     final double cellHeight = coverHeight + _videoCardTextBlock(context);
     return SliverPadding(
       padding: padding,
-      sliver: SliverGrid.builder(
-        itemCount: cells.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cardLayout.columns,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: cardLayout.cardWidth / cellHeight,
+      sliver: _wrapVideoDragReorder(
+        dragReorderKeys,
+        SliverGrid.builder(
+          itemCount: cells.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cardLayout.columns,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: cardLayout.cardWidth / cellHeight,
+          ),
+          itemBuilder: (BuildContext context, int index) =>
+              FushiStaggeredEntrance(
+                index: index,
+                child: _videoDragReorderCell(
+                  dragReorderKeys,
+                  index,
+                  cells[index].build(VideoCardOrientation.portrait),
+                ),
+              ),
         ),
-        itemBuilder: (BuildContext context, int index) =>
-            FushiStaggeredEntrance(
-              index: index,
-              child: cells[index].build(VideoCardOrientation.portrait),
-            ),
       ),
     );
   }
+
+  /// 桌面直拖重排（[LibraryDragReorderScope]）包在常态网格外：卡与卡之间 = 重排，
+  /// 合集卡正中 = 放进合集。[keys] 为 null（骨架）时原样返回。
+  Widget _wrapVideoDragReorder(List<String>? keys, Widget grid) {
+    if (keys == null) return grid;
+    return LibraryDragReorderScope(
+      enabled: _videoDragReorderable,
+      onReorder: (int from, int to) => _onVideoDragReorder(keys, from, to),
+      child: grid,
+    );
+  }
+
+  /// 前 `keys.length` 格是可重排单元（其后是远端占位），包 [LibraryReorderCell]。
+  Widget _videoDragReorderCell(List<String>? keys, int index, Widget card) =>
+      keys != null && index < keys.length
+      ? LibraryReorderCell(index: index, child: card)
+      : card;
 
   /// “全部视频”固定 16:9 等宽网格。
   ///
@@ -9287,25 +9329,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   Widget _buildAllVideoGridSliver(
     List<_VideoWallEntry> cells,
     EdgeInsetsGeometry padding,
-    ({int columns, double cardWidth}) cardLayout,
-  ) {
+    ({int columns, double cardWidth}) cardLayout, {
+    List<String>? dragReorderKeys,
+  }) {
     final double coverHeight = cardLayout.cardWidth / kVideoLandscapeCardAspect;
     final double cellHeight = coverHeight + _videoCardTextBlock(context);
     return SliverPadding(
       padding: padding,
-      sliver: SliverGrid.builder(
-        itemCount: cells.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cardLayout.columns,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: cardLayout.cardWidth / cellHeight,
+      sliver: _wrapVideoDragReorder(
+        dragReorderKeys,
+        SliverGrid.builder(
+          itemCount: cells.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cardLayout.columns,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: cardLayout.cardWidth / cellHeight,
+          ),
+          itemBuilder: (BuildContext context, int index) =>
+              FushiStaggeredEntrance(
+                index: index,
+                child: _videoDragReorderCell(
+                  dragReorderKeys,
+                  index,
+                  cells[index].build(VideoCardOrientation.landscape),
+                ),
+              ),
         ),
-        itemBuilder: (BuildContext context, int index) =>
-            FushiStaggeredEntrance(
-              index: index,
-              child: cells[index].build(VideoCardOrientation.landscape),
-            ),
       ),
     );
   }
@@ -9458,6 +9508,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           return <DialogListAction>[
             DialogListAction(
               label: t.collection_mark_all_watched,
+              group: DialogActionGroup.progress,
               icon: FushiIcons.check,
               onPressed: () => unawaited(
                 _markWatched(
@@ -9469,6 +9520,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ),
             DialogListAction(
               label: t.collection_mark_all_unwatched,
+              group: DialogActionGroup.progress,
               icon: FushiIcons.visibilityOff,
               onPressed: () => unawaited(
                 _markWatched(
