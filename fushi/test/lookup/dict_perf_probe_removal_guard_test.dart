@@ -22,6 +22,10 @@ void main() {
       'lib/src/pages/implementations/dictionary_page_mixin.dart';
   const String popupPagePath =
       'lib/src/pages/implementations/popup_dictionary_page.dart';
+  const String popupWebviewPath =
+      'lib/src/pages/implementations/dictionary_popup_webview.dart';
+  const String videoPagePath =
+      'lib/src/pages/implementations/video_fushi_page.dart';
   const String lookupFavoritePath =
       'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart';
   const String lookupAudioPath = 'lib/src/lookup/lookup_audio_playback.dart';
@@ -35,6 +39,8 @@ void main() {
     baseSourcePagePath: <String>['[dict-perf]', '[hibiki-autoread]'],
     mixinPath: <String>['[dict-perf]'],
     popupPagePath: <String>['[popup-perf]'],
+    popupWebviewPath: <String>['[popup-perf]'],
+    videoPagePath: <String>['[video-lookup]'],
     lookupFavoritePath: <String>['[video-lookup]'],
     lookupAudioPath: <String>['[hibiki-autoread]'],
     fushidictsPath: <String>['[dict-perf]'],
