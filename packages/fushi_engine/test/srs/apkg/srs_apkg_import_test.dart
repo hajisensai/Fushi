@@ -966,7 +966,10 @@ void main() {
                 ..packedFloats(2, <double>[15])
                 ..packedFloats(6, fsrs6Params)
                 ..varint(9, 30)
-                ..float(37, 0.9))
+                ..float(37, 0.9)
+                // rwkvReviewEnabled：RWKV 预设的步长照搬（开着「使用 RWKV」时非 RWKV 预设的步长不带过来，
+                // 见 ① ⑥），这样新格式的步长解析（字段 1 / 2）仍有断言。
+                ..varint(67, 1))
               .toBytes(),
         ],
       );
@@ -1058,6 +1061,7 @@ void main() {
     expect(row.deckId, core.id);
     expect(core.ownParams, isTrue);
     expect(core.learnSteps, <double>[2, 20]);
+    expect(core.relearnSteps, <double>[15]);
     expect(core.newPerDay, 30);
     expect(core.algorithmWire, SrsAlgorithm.rwkv.wire);
     expect(core.desiredRetention, closeTo(0.9, 1e-6));

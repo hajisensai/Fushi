@@ -2446,25 +2446,24 @@ void main() {
       },
     );
 
-    testWidgets('牌组设置页：从 FSRS 切到 RWKV 时，没设过的每天最少复习数预填复习上限的 1/5', (
+    testWidgets('牌组设置页：从 FSRS 切到 RWKV 时，每天最少复习数还是 0 就预填复习上限的 1/5', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
       await tester.runAsync(
-        () => store.editFields(
-          SrsEntityKind.deck,
-          store.defaultDeckId,
-          <String, Object?>{
-            SrsFieldKeys.deckAlgorithm: <String, Object?>{
-              'alg': SrsAlgorithm.fsrs7.wire,
-              'auto': false,
-            },
-            SrsFieldKeys.deckLimits: <String, Object?>{
-              'new': 10,
-              'review': 150,
-            },
+        () => store.editFields(SrsEntityKind.deck, store.defaultDeckId, <
+          String,
+          Object?
+        >{
+          // 内置默认牌组没写过 rwkvQueue 时按推荐值读出（最少复习 40，registers.rs `deck_view`），不走预填；
+          // 这里写成本 PR 之前的牌组那样最少复习数为 0 的值。
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+          SrsFieldKeys.deckAlgorithm: <String, Object?>{
+            'alg': SrsAlgorithm.fsrs7.wire,
+            'auto': false,
           },
-        ),
+          SrsFieldKeys.deckLimits: <String, Object?>{'new': 10, 'review': 150},
+        }),
       );
       await _pumpPage(
         tester,
