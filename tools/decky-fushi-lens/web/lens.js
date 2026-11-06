@@ -22,7 +22,7 @@
   const popupFrame = document.getElementById('popup');
 
   const state = {
-    frameId: null,
+    frameId: '', // '' = no frame yet
     width: 0,
     height: 0,
     lines: [],
@@ -291,6 +291,12 @@
   // hash or a message is not a frame of ours.
   const FRAME_ID = /^[0-9a-f]{16}$/;
 
+  // Same-origin URL of a captured frame. Callers pass ids checked against
+  // FRAME_ID; encoding keeps any other value inside frame/ regardless.
+  function frameUrl(frameId) {
+    return new URL(`frame/${encodeURIComponent(frameId)}.jpg`, ROOT).href; // NOSONAR: S5696 id is FRAME_ID-checked hex, URL is same-origin frame/
+  }
+
   window.addEventListener('message', (event) => {
     const msg = event.data;
     if (event.source === popupFrame.contentWindow && event.origin === location.origin) {
@@ -374,7 +380,7 @@
 
   async function frameBase64() {
     if (state.screenshot) return state.screenshot;
-    const blob = await (await fetch(new URL(`frame/${state.frameId}.jpg`, ROOT))).blob();
+    const blob = await (await fetch(frameUrl(state.frameId))).blob();
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
@@ -698,7 +704,7 @@
     state.matchLength = 0;
     state.screenshot = null;
     draw();
-    frameImg.src = new URL(`frame/${frameId}.jpg`, ROOT).href;
+    frameImg.src = frameUrl(frameId);
     showStatus('Reading text…', true);
     const started = performance.now();
     try { await frameImg.decode(); } catch (_) { /* size comes from the OCR reply */ }

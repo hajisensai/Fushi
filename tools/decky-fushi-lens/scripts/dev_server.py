@@ -39,8 +39,9 @@ def main(argv: list) -> int:
         return 0
     frames = []
     for path in argv[1:]:
-        # The developer names the screenshots to replay on their own machine.
-        with open(path, "rb") as f:  # NOSONAR: S8707 dev tool, the path is the developer's own CLI argument
+        # The developer names the screenshots to replay on their own machine
+        # (S8707: a dev tool's own CLI argument, not remote input).
+        with open(path, "rb") as f:  # NOSONAR
             data = f.read()
         # Frames stand in for the gamescope capture, which is always JPEG.
         if not data.startswith(b"\xff\xd8"):

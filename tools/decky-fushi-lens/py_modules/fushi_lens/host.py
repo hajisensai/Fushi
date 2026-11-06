@@ -110,15 +110,15 @@ class HostClient:
         parts = urlsplit(self.base_url)
         if parts.scheme == "http":
             return http.client.HTTPConnection(parts.hostname, parts.port, timeout=timeout), ""
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         # Self-signed host certificate: chain validation is replaced by the
         # fingerprint check in `request` (pinning), exactly like the Dart client
         # (`fushi_pinning_http.dart`). The host cert carries no usable SAN for the
         # LAN address (`fushi_tls_identity.dart`: identity is the pinned
         # fingerprint), so CA / hostname checks cannot apply; `request` refuses any
-        # certificate whose SHA-256 differs from the pinned one.
-        context.check_hostname = False  # NOSONAR: S5527 identity is the pinned fingerprint checked in request()
-        context.verify_mode = ssl.CERT_NONE  # NOSONAR: S4830 self-signed host, pinned fingerprint replaces chain validation
+        # certificate whose SHA-256 differs from the pinned one (S5527 / S4830).
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR
+        context.check_hostname = False  # NOSONAR
+        context.verify_mode = ssl.CERT_NONE  # NOSONAR
         return (
             http.client.HTTPSConnection(parts.hostname, parts.port, timeout=timeout, context=context),
             "https",

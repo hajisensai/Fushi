@@ -121,7 +121,8 @@ class Plugin:
 
     # ── frontend API ──────────────────────────────────────────────────
 
-    async def status(self) -> Dict[str, Any]:  # NOSONAR: S7503 Decky Loader awaits every frontend-callable method
+    # Decky Loader awaits every frontend-callable method, so it must stay a coroutine (S7503).
+    async def status(self) -> Dict[str, Any]:  # NOSONAR
         status = self.service.status()
         status["button"] = self.paddles.button if self.paddles else DEFAULT_BUTTON
         status["buttonError"] = self.paddles.error if self.paddles else None
@@ -151,7 +152,8 @@ class Plugin:
         except Exception as e:  # noqa: BLE001
             return _error(e)
 
-    async def set_lens_open(self, is_open: bool) -> Dict[str, Any]:  # NOSONAR: S7503 Decky Loader awaits every frontend-callable method
+    # Decky Loader awaits every frontend-callable method, so it must stay a coroutine (S7503).
+    async def set_lens_open(self, is_open: bool) -> Dict[str, Any]:  # NOSONAR
         self.lens_open = bool(is_open)
         return {"ok": True}
 
