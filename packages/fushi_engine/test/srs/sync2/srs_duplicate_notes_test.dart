@@ -110,7 +110,7 @@ void main() {
     expect(await a.duplicateNoteGroups(), isEmpty);
   });
 
-  test('找重复组只读「不是重复」记录，不把组里笔记的字段正文读回来（BUG-4131）', () async {
+  test('找重复组只读「不是重复」记录，不把组里笔记的字段正文读回来（BUG-4187）', () async {
     final SrsDbStore a = await device('A');
     // 几组重复笔记，每条都带字段修改记录；只有一组标了「不是重复」。
     for (final String w in <String>['雪', '雨', '風', '空', '海']) {

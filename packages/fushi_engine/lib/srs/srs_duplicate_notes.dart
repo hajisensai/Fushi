@@ -144,7 +144,7 @@ extension SrsDuplicateNotes on SrsDbStore {
   ///
   /// 只读 `notDup/` 这一类键的修改记录（[SrsDbStore.noteFieldKeyPrefixValues]）。以前对组里每条笔记
   /// 走 [SrsDbStore.entityEditsMany]，把全部修改记录（含字段正文）读回来只为找这一类键：两台设备各导入过
-  /// 同一个包的库上几乎每条笔记都成组，打开冲突页读回 22 万条、400+ MB，进程被系统杀掉（BUG-4131）。
+  /// 同一个包的库上几乎每条笔记都成组，打开冲突页读回 22 万条、400+ MB，进程被系统杀掉（BUG-4187）。
   Future<Map<String, Set<String>>> _dismissedPairs(List<String> ids) async {
     const String prefix = 'notDup/';
     final Map<String, Set<String>> out = <String, Set<String>>{};
