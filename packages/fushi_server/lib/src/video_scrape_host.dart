@@ -39,6 +39,7 @@ class ServerVideoScrape {
     VideoSourceScrapeCoordinator Function(VideoSourceScrapeGlobalConfig config)?
     coordinatorFactory,
     VideoScrapeSweepLedger? ledger,
+    Future<void> Function(VideoScrapedWorkNotice notice)? onWorkScraped,
   }) : _config = config {
     final ServerConfig snapshot = config();
     final VideoSourceScrapeGlobalConfig scrapeConfig =
@@ -60,6 +61,8 @@ class ServerVideoScrape {
             // 与 app 生产装配一致：打开离线标题索引（AniDB 标题包 + Fribb 映射）。
             // 服务端没有 AI 配置，歧义候选留在待确认队列里（客户端可经互联手动指定）。
             enableOfflineTitleIndex: true,
+            // 刮完一个作品的下游钩子（[HeadlessHost] 接补字幕）。
+            onWorkScraped: onWorkScraped,
           );
     this.coordinator = coordinator;
     final VideoSourceScrapeTaskController controller =

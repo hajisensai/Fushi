@@ -10,6 +10,11 @@ routes = [
   { pattern = "rank.fushi.moe", custom_domain = true },
 ]
 
+# Workers Logs：发验证码在后台、对外永远 202，失败 / 被按邮箱限流丢弃 / 耗时只能从日志看（src/email.js 的
+# 「email code」行，不含邮箱）。Free 计划每天含 20 万条，超了只丢日志、不计费。
+[observability]
+enabled = true
+
 # 部署前：
 #   wrangler d1 create fushi-leaderboard            → 把 database_id 填到下面
 #   wrangler d1 migrations apply fushi-leaderboard --remote

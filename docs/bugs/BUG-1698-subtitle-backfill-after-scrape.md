@@ -11,5 +11,5 @@
   - `AppModel._backfillSubtitlesForScrapedWork` 消费它，三道自然闸门（偏好关 / 没配任何来源 / 已有字幕）任一不满足就静默跳过；逐条串行不并发（一次刮削可能带来整季十几集，并发打同一个字幕站是滥用）。
   - **发现性**：设置 → 视频 → 字幕新增开关 `video.subtitle.backfill_after_scrape`（默认开），放在 Jimaku / OpenSubtitles 配置**正上方**——设置页有搜索（`settings_search.dart`），给能力一个名字它才第一次可被搜到，且配置项同屏可见。
   - 任务行文案跟上新行为：`subtitleUnavailable` 不再一律说「未匹配到」，还排得上 backoff 重试的说「字幕：还没上传，稍后自动重试」（判据是 `AnimeDownloadPlan.subtitleRetryPossible`，UI 不重算 backoff 算术）。
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/scraped_subtitle_targets_test.dart`（11 条）：外部 id 全量透传、originalTitle 必带、非数字 id 不炸、AniList id 决定 anime 档、季集号取文件名不取顺序、已有字幕标记、多集认不出集号不生成目标、单文件作品例外、runtime 逐集取并回落作品级、空输入不生成半截目标。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/video/subtitle/scraped_subtitle_targets_test.dart`（原 `fushi/test/media/video/`，2026-10-28 随服务搬进引擎）（11 条）：外部 id 全量透传、originalTitle 必带、非数字 id 不炸、AniList id 决定 anime 档、季集号取文件名不取顺序、已有字幕标记、多集认不出集号不生成目标、单文件作品例外、runtime 逐集取并回落作品级、空输入不生成半截目标。
 - **备注**：播放页的「自动获取字幕」入口本来就有（`subtitle.part.dart:136`），所以发现性的缺口不在播放页而在**设置页没有这个能力的名字**。另：播放页目前只接 Jimaku，OpenSubtitles 在播放页仍无入口——留作后续。

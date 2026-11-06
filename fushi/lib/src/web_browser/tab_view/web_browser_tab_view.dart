@@ -14,14 +14,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/floating_ball/app_floating_ball_host.dart'
-    show kFloatingBallOcrLanguage;
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart'
     show hostOwnsWebViewHoverLookup;
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
@@ -96,7 +95,7 @@ class WebBrowserTabView extends ConsumerStatefulWidget {
 }
 
 class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
-    implements SrsCardLookupSurface {
+    implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web-browser-tab',
     flushBeforeRebuild: () async => _detachController(),
@@ -126,6 +125,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   bool _environmentReady = false;
   WebViewEnvironment? _environment;
   InAppWebViewController? _controller;
+
+  /// 本标签页发起查词时，弹窗打开期间给它开静态硬件层（见 [PopupBodyStaticLayerGate]）。
+  @override
+  Object? get popupBodyWebViewId => _controller?.getViewId();
   PullToRefreshController? _pullToRefresh;
   late final WebBrowserDownloader _downloader;
   WebBrowserVisitRecorder? _recorder;
@@ -1004,7 +1007,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     try {
       result = await const MethodChannelSystemOcr().recognize(
         bytes,
-        language: kFloatingBallOcrLanguage,
+        language: _prefs.screenOcrLanguage,
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('WebBrowserTabView.ocr', error, stack);
@@ -1258,6 +1261,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _registerHandlers(controller);
     _windowConsumed = true;
     _controller = controller;
+    _lookup?.bodyWebViewChanged(this);
     _tab.attachController(controller);
     _tab.attachViewport(_viewportRectToGlobal);
     for (final WebBrowserFeature f in widget.host.features) {
