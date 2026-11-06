@@ -291,6 +291,13 @@ class MusicLyricsService {
   final MusicPluginLyricsRefFetcher? _pluginFetch;
   final MusicLyricsProviderIds? _providers;
 
+  final StreamController<String> _generated =
+      StreamController<String>.broadcast();
+
+  /// [saveGenerated] 写完一首就发它的 trackUid：歌词页 / 桌面歌词正显示这首时重载
+  /// （生成任务常在页面关掉之后才结束）。
+  Stream<String> get generatedUpdates => _generated.stream;
+
   Future<List<MusicLyricRow>> _rows(FushiDatabase db, String trackUid) =>
       (db.select(
         db.musicLyrics,
@@ -993,6 +1000,7 @@ class MusicLyricsService {
       raw: raw,
       timeline: timeline.copyWith(source: MusicLyricsSource.asr, offsetMs: 0),
     );
+    _generated.add(trackUid);
   }
 
   /// 撤销手动指定，回到自动优先级。

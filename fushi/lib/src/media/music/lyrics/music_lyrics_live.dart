@@ -130,7 +130,13 @@ class MusicLyricsLive extends ChangeNotifier {
        _onDesktopReleased = onDesktopReleased {
     _engine.addListener(_onEngine);
     _ownerChanged.addListener(_onEngine);
+    _generatedSub = _service.generatedUpdates.listen((String uid) {
+      if (uid == _uid) unawaited(reload());
+    });
   }
+
+  /// 生成字幕写进当前曲目时重新解析（[MusicLyricsService.generatedUpdates]）。
+  late final StreamSubscription<String> _generatedSub;
 
   final MusicPlayerEngine _engine;
   final MusicLyricsService _service;
@@ -348,6 +354,7 @@ class MusicLyricsLive extends ChangeNotifier {
   void dispose() {
     _engine.removeListener(_onEngine);
     _ownerChanged.removeListener(_onEngine);
+    unawaited(_generatedSub.cancel());
     _stopSyllableTimer();
     _clock?.dispose();
     if (_desktopShown) unawaited(_desktop.hide());
