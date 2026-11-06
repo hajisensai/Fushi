@@ -69,7 +69,11 @@ class _FakePlugin {
 
   /// 按插件 id 给不同歌词（没登记的 id 回 [lyrics]）。
   Map<String, MusicPluginLyrics> lyricsById = <String, MusicPluginLyrics>{};
+
+  /// 按候选 ref 的 `id` 给不同歌词（优先于 [lyricsById]）。
+  Map<String, MusicPluginLyrics> lyricsByRef = <String, MusicPluginLyrics>{};
   final List<String> fetched = <String>[];
+  final List<String> fetchedRefs = <String>[];
 
   Future<List<MusicPluginLyricsCandidate>> search(
     String id,
@@ -82,7 +86,9 @@ class _FakePlugin {
 
   Future<MusicPluginLyrics?> fetch(String id, Object ref) async {
     fetched.add(id);
-    return lyricsById[id] ?? lyrics;
+    final String refId = '${(ref as Map<String, Object?>)['id']}';
+    fetchedRefs.add(refId);
+    return lyricsByRef[refId] ?? lyricsById[id] ?? lyrics;
   }
 }
 
@@ -99,6 +105,25 @@ const MusicPluginLyricsCandidate _pluginHit = MusicPluginLyricsCandidate(
 
 const String _romajiLine = 'Moshi moshi kame yo kame-san yo sekai no uchi ni';
 const String _chineseLine = '世界之中没有比你走得更慢的';
+
+const String _english =
+    "I don't wanna be a lazy girl\n"
+    'Just let me sleep a little more\n'
+    "You say I'm lazy but I'm not\n"
+    "Don't say lazy, don't say lazy";
+const String _chineseTranslation =
+    '我不想做个懒惰的女孩\n'
+    '就让我再多睡一会儿\n'
+    '你说我懒但我不是';
+
+const LyricsScriptExpectation _ja = LyricsScriptExpectation(
+  LyricsScript.kana,
+  fromTitle: true,
+);
+const LyricsScriptExpectation _zh = LyricsScriptExpectation(
+  LyricsScript.han,
+  fromTitle: true,
+);
 
 void main() {
   late FushiDatabase db;
@@ -154,39 +179,83 @@ void main() {
     });
 
     test('元数据有假名才期望日文；全拉丁字母不推断（英文歌不误伤）', () {
-      expect(
-        expectedLyricsScript(title: 'うさぎとかめ', artist: '平沢唯'),
-        LyricsScript.kana,
-      );
-      expect(
-        expectedLyricsScript(title: '千本桜', artist: '黒うさP'),
-        LyricsScript.kana,
-      );
-      expect(
-        expectedLyricsScript(title: '光阴之外', artist: '小时姑娘'),
-        LyricsScript.han,
-      );
+      expect(expectedLyricsScript(title: 'うさぎとかめ', artist: '平沢唯'), _ja);
+      expect(expectedLyricsScript(title: '千本桜', artist: '黒うさP'), _ja);
+      expect(expectedLyricsScript(title: '光阴之外', artist: '小时姑娘'), _zh);
       expect(
         expectedLyricsScript(title: 'Yesterday', artist: 'The Beatles'),
         isNull,
       );
     });
 
-    test('期望日文时罗马音 / 中文翻译算对不上，夹英文副歌的原文不算', () {
-      expect(lyricsScriptMismatches(LyricsScript.kana, _romaji), isTrue);
-      expect(
-        lyricsScriptMismatches(LyricsScript.kana, '世界之中没有比你走得更慢的'),
-        isTrue,
+    test('标题是拉丁字母、只有艺人 / 专辑带汉字假名：弱推断，英文正文不算对不上', () {
+      // 审查：『桜高軽音部 - Don't say "lazy"』、中文歌手的英文歌，原文就是英文。
+      final LyricsScriptExpectation? lazy = expectedLyricsScript(
+        title: 'Don\'t say "lazy"',
+        artist: '桜高軽音部',
+        album: 'けいおん! ED',
       );
       expect(
+        lazy,
+        const LyricsScriptExpectation(LyricsScript.kana, fromTitle: false),
+      );
+      expect(lyricsScriptMismatches(lazy, _english), isFalse);
+      final LyricsScriptExpectation? zhSinger = expectedLyricsScript(
+        title: 'Lonely Night',
+        artist: '周杰伦',
+      );
+      expect(
+        zhSinger,
+        const LyricsScriptExpectation(LyricsScript.han, fromTitle: false),
+      );
+      expect(lyricsScriptMismatches(zhSinger, _english), isFalse);
+      // 标题里的汉字只在括注里时同样算拉丁字母标题。
+      expect(
+        expectedLyricsScript(
+          title: 'Lonely Night (周杰伦版)',
+          artist: 'X',
+        )!.fromTitle,
+        isFalse,
+      );
+      // 弱推断仍认得罗马音 / 拼音（米津玄師『Lemon』拿到罗马音版）。
+      expect(lyricsScriptMismatches(zhSinger, _romaji), isTrue);
+      expect(lyricsScriptMismatches(lazy, _romaji), isTrue);
+      // 强推断（标题本身是日文）英文翻译照样算对不上。
+      expect(lyricsScriptMismatches(_ja, _english), isTrue);
+    });
+
+    test('lyricsLooksRomanized：罗马音 / 拼音是，英文不是', () {
+      expect(lyricsLooksRomanized(_romaji), isTrue);
+      expect(
+        lyricsLooksRomanized(
+          'Yume naraba dore hodo yokatta deshou\n'
+          'Imada ni anata no koto wo yume ni miru',
+        ),
+        isTrue,
+      );
+      expect(lyricsLooksRomanized(_english), isFalse);
+      expect(
+        lyricsLooksRomanized(
+          'Yesterday all my troubles seemed so far away\n'
+          'Now it looks as though they are here to stay',
+        ),
+        isFalse,
+      );
+      expect(lyricsLooksRomanized('Moshi moshi'), isFalse, reason: '词太少不下结论');
+    });
+
+    test('期望日文时罗马音 / 中文翻译算对不上，夹英文副歌的原文不算', () {
+      expect(lyricsScriptMismatches(_ja, _romaji), isTrue);
+      expect(lyricsScriptMismatches(_ja, '世界之中没有比你走得更慢的'), isTrue);
+      expect(
         lyricsScriptMismatches(
-          LyricsScript.kana,
+          _ja,
           "$_japanese\nOh yeah baby tonight\nDon't stop the music",
         ),
         isFalse,
       );
       expect(lyricsScriptMismatches(null, _romaji), isFalse);
-      expect(lyricsScriptMismatches(LyricsScript.kana, 'La la'), isFalse);
+      expect(lyricsScriptMismatches(_ja, 'La la'), isFalse);
     });
 
     test('原文本身夹大量英文的日文 / 中文歌不算对不上（拉丁字母不按字母数高估）', () {
@@ -195,18 +264,15 @@ void main() {
           'もしもしかめよかめさん\n'
           'Running through the night with you\n'
           'Never gonna let you go tonight';
-      expect(lyricsScriptMismatches(LyricsScript.kana, jaEn), isFalse);
+      expect(lyricsScriptMismatches(_ja, jaEn), isFalse);
       const String zhEn =
           '我们一起走过的路\n'
           'Baby I just wanna hold you tight\n'
           'Every single day and every night';
-      expect(lyricsScriptMismatches(LyricsScript.han, zhEn), isFalse);
+      expect(lyricsScriptMismatches(_zh, zhEn), isFalse);
       // 整首罗马音只夹一行假名标题，仍是罗马音版。
       expect(
-        lyricsScriptMismatches(
-          LyricsScript.kana,
-          'うさぎとかめ\n$_romaji\n$_romaji\n$_romaji',
-        ),
+        lyricsScriptMismatches(_ja, 'うさぎとかめ\n$_romaji\n$_romaji\n$_romaji'),
         isTrue,
       );
     });
@@ -447,5 +513,108 @@ void main() {
       LyricsScript.kana,
       LyricsScript.latin,
     ]);
+  });
+
+  test('拉丁字母标题 + 汉字艺人的英文歌：英文精确命中照常采用，不换成翻译版', () async {
+    const MusicLyricsTrackRef lazyTrack = MusicLyricsTrackRef(
+      trackUid: 'uid-lazy',
+      path: '/nonexistent/lazy.flac',
+      title: 'Don\'t say "lazy"',
+      artist: '桜高軽音部',
+      album: 'TVアニメ「けいおん!」ED',
+      durationMs: 165000,
+    );
+    lrclib.get = _record(
+      30,
+      _english,
+      track: 'Don\'t say "lazy"',
+      artist: '桜高軽音部',
+    );
+    lrclib.search = <Map<String, Object?>>[
+      _record(
+        31,
+        _chineseTranslation,
+        track: 'Don\'t say "lazy"',
+        artist: '桜高軽音部',
+      ),
+    ];
+    final MusicLyricsResolution r = (await service().resolve(lazyTrack))!;
+    expect(r.source, MusicLyricsSource.lrclib);
+    expect(text(r), _english);
+    expect(lrclib.searches, isEmpty, reason: '英文原文不算对不上，不去搜翻译版');
+  });
+
+  test('插件同名候选里先给罗马音：同一插件接着取下一条，挑到原文版', () async {
+    lrclib.get = null;
+    plugin.candidates = <MusicPluginLyricsCandidate>[
+      const MusicPluginLyricsCandidate(
+        title: 'うさぎとかめ',
+        artist: '平沢唯',
+        durationMs: 165000,
+        ref: <String, Object?>{'id': 'romaji'},
+      ),
+      const MusicPluginLyricsCandidate(
+        title: 'うさぎとかめ',
+        artist: '平沢唯',
+        durationMs: 165000,
+        ref: <String, Object?>{'id': 'ja'},
+      ),
+    ];
+    plugin.lyricsByRef = <String, MusicPluginLyrics>{
+      'romaji': _pluginLyrics(_romajiLine),
+      'ja': _pluginLyrics('もしもしかめよ かめさんよ'),
+    };
+    final MusicLyricsResolution r = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(r.source, MusicLyricsSource.lyricsPlugin('p'));
+    expect(text(r), 'もしもしかめよ かめさんよ');
+    expect(plugin.fetchedRefs, <String>['romaji', 'ja']);
+  });
+
+  test('插件缓存的罗马音行：TTL 内兜底，到期后重挑换成原文版并保留偏移', () async {
+    lrclib.get = null;
+    plugin.candidates = <MusicPluginLyricsCandidate>[_pluginHit];
+    plugin.lyrics = _pluginLyrics(_romajiLine);
+    final MusicLyricsResolution first = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(text(first), _romajiLine);
+    await (db.update(db.musicLyrics)..where(
+          ($MusicLyricsTable r) =>
+              r.source.equals(MusicLyricsSource.lyricsPlugin('p')),
+        ))
+        .write(const MusicLyricsCompanion(offsetMs: Value<int>(250)));
+    // 插件那边换成了原文版。
+    plugin.lyrics = _pluginLyrics('もしもしかめよ かめさんよ');
+    plugin.fetched.clear();
+    final MusicLyricsResolution within = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(text(within), _romajiLine, reason: 'TTL 内不重挑');
+    expect(plugin.fetched, isEmpty);
+    now += kPluginLyricsNegativeCacheTtl.inMilliseconds + 1;
+    final MusicLyricsResolution after = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(text(after), 'もしもしかめよ かめさんよ');
+    expect(after.timeline.offsetMs, 250);
+  });
+
+  test('插件缓存的罗马音行重挑仍是罗马音：旧行兜底，TTL 内不再重挑', () async {
+    lrclib.get = null;
+    plugin.candidates = <MusicPluginLyricsCandidate>[_pluginHit];
+    plugin.lyrics = _pluginLyrics(_romajiLine);
+    await service(withPlugin: true).resolve(track);
+    now += kPluginLyricsNegativeCacheTtl.inMilliseconds + 1;
+    plugin.fetched.clear();
+    final MusicLyricsResolution again = (await service(
+      withPlugin: true,
+    ).resolve(track))!;
+    expect(text(again), _romajiLine);
+    expect(plugin.fetched, <String>['p']);
+    plugin.fetched.clear();
+    await service(withPlugin: true).resolve(track);
+    expect(plugin.fetched, isEmpty);
   });
 }

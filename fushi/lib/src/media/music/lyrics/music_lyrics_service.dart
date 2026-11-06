@@ -30,6 +30,10 @@ const Duration kLrclibNegativeCacheTtl = Duration(days: 7);
 /// 插件说「这首没有歌词」后多久再问（平台常在发行后补歌词，比 LRCLIB 短）。
 const Duration kPluginLyricsNegativeCacheTtl = Duration(days: 1);
 
+/// 歌词插件里书写系统对不上时，同一插件最多再取几条同名候选找原文版（含第一条；
+/// 插件候选不带正文，只能逐条取来看）。
+const int kPluginLyricsScriptProbeLimit = 3;
+
 /// 向在线音源插件要一首歌的歌词（app 装配：`MusicPluginManager.source(id).lyrics`）。
 typedef MusicPluginLyricsFetcher =
     Future<MusicPluginLyrics?> Function(String pluginId, String trackId);
@@ -219,6 +223,14 @@ String musicLyricsTimelineText(LyricTimeline t) =>
 /// 才用它（LRCLIB 的兜底先于插件的兜底，与来源顺序一致）。
 typedef _OnlineOutcome = ({
   MusicLyricsResolution resolution,
+  bool scriptMismatch,
+});
+
+/// 歌词插件取到并解析好的一份歌词；[scriptMismatch] 同 [_OnlineOutcome]。
+typedef _PluginFetched = ({
+  Uint8List raw,
+  String format,
+  LyricTimeline timeline,
   bool scriptMismatch,
 });
 
@@ -595,7 +607,7 @@ class MusicLyricsService {
     MusicLyricsTrackRef track,
     MusicLyricRow? cached,
   ) async {
-    final LyricsScript? expected = expectedLyricsScript(
+    final LyricsScriptExpectation? expected = expectedLyricsScript(
       title: track.title,
       artist: track.artist,
       album: track.album,
@@ -621,7 +633,7 @@ class MusicLyricsService {
         }
         final ({String raw, String format})? alt;
         try {
-          alt = await _searchLrclibInScript(track, expected!);
+          alt = await _searchLrclibInScript(track, expected!.script);
         } on Exception {
           // 重挑联网失败：已有缓存照常顶上（与 resolve「在线失败时本地结果照常返回」一致），
           // 不刷新更新时间，下次解析再挑。
@@ -673,7 +685,7 @@ class MusicLyricsService {
     }
     final ({String raw, String format})? alt;
     try {
-      alt = await _searchLrclibInScript(track, expected!);
+      alt = await _searchLrclibInScript(track, expected!.script);
     } on Exception {
       // 精确命中已到手、只是搜不了原文版：这次先用它（排在插件之后），不落库，下次解析重查。
       final Uint8List raw = utf8.encode(best.raw);
@@ -789,6 +801,10 @@ class MusicLyricsService {
   /// （不写负缓存），不影响后面的插件。拿到的歌词对不上（罗马音 / 只有翻译）照常落库，
   /// 但只记作兜底继续问下一个插件；全都对不上时返回第一个兜底（`scriptMismatch` = true）。
   ///
+  /// 缓存里对不上的行与 LRCLIB 一样按 `updated_at` 每 [kPluginLyricsNegativeCacheTtl] 重挑
+  /// 一次（[_searchAndFetch] 会在同一插件的同名候选里接着找原文版）：挑到对得上的就换掉
+  /// 并保留用户偏移；还是对不上或没结果只刷新更新时间，旧行照常兜底；插件报错不刷新。
+  ///
   /// 缓存键是 [MusicLyricsSource.lyricsPlugin]，与平台曲目自带歌词（③'，
   /// [MusicLyricsSource.plugin]）分开；缓存命中走 [_timelineOf]，与 ③' 同一条新鲜度判断
   /// （原始各轨按当前解析器重新合并）。
@@ -801,7 +817,7 @@ class MusicLyricsService {
     final MusicPluginLyricsSearcher? search = _pluginSearch;
     final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
     if (listProviders == null || search == null || fetch == null) return null;
-    final LyricsScript? expected = expectedLyricsScript(
+    final LyricsScriptExpectation? expected = expectedLyricsScript(
       title: track.title,
       artist: track.artist,
       album: track.album,
@@ -811,7 +827,12 @@ class MusicLyricsService {
     for (final String id in ids) {
       final String source = MusicLyricsSource.lyricsPlugin(id);
       final MusicLyricRow? prev = rowOf(source);
+      // 缓存里有歌词但书写系统对不上、且已到重挑时间：带着它去重挑，挑不到原文版仍用它兜底。
+      MusicLyricsResolution? kept;
       if (prev != null) {
+        final bool fresh =
+            _now() - prev.updatedAt <
+            kPluginLyricsNegativeCacheTtl.inMilliseconds;
         if (prev.format != kMusicLyricsNoneFormat) {
           final MusicLyricsResolution cachedHit = MusicLyricsResolution(
             timeline: await _timelineOf(db, prev, track.durationMs),
@@ -823,23 +844,30 @@ class MusicLyricsService {
           )) {
             return (resolution: cachedHit, scriptMismatch: false);
           }
-          fallback ??= cachedHit;
-          continue;
-        }
-        if (_now() - prev.updatedAt <
-            kPluginLyricsNegativeCacheTtl.inMilliseconds) {
+          if (fresh || !_onlineEnabled()) {
+            fallback ??= cachedHit;
+            continue;
+          }
+          kept = cachedHit;
+        } else if (fresh) {
           continue;
         }
       }
       if (!_onlineEnabled()) continue;
       try {
-        final MusicPluginLyrics? got = await _searchAndFetch(
+        final _PluginFetched? got = await _searchAndFetch(
           id,
           track,
           search,
           fetch,
+          expected,
         );
         if (got == null) {
+          if (kept != null) {
+            await _touch(db, track.trackUid, source);
+            fallback ??= kept;
+            continue;
+          }
           await _upsert(
             db,
             trackUid: track.trackUid,
@@ -849,28 +877,33 @@ class MusicLyricsService {
           );
           continue;
         }
-        final ({Uint8List raw, String format, LyricTimeline timeline}) built =
-            await buildMusicPluginLyrics(got, track.durationMs, _parse);
-        final LyricTimeline t = built.timeline.copyWith(source: source);
+        final LyricTimeline t = got.timeline.copyWith(source: source);
+        final bool mismatch = got.scriptMismatch;
+        if (kept != null && mismatch) {
+          // 重挑还是对不上：旧行照用，TTL 内不再重挑。
+          await _touch(db, track.trackUid, source);
+          fallback ??= kept;
+          continue;
+        }
         await _upsert(
           db,
           trackUid: track.trackUid,
           source: source,
-          format: built.format,
-          raw: built.raw,
+          format: got.format,
+          raw: got.raw,
           timeline: t,
         );
         final MusicLyricsResolution fetched = MusicLyricsResolution(
           timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
           source: source,
         );
-        if (!lyricsScriptMismatches(expected, musicLyricsTimelineText(t))) {
-          return (resolution: fetched, scriptMismatch: false);
-        }
+        if (!mismatch) return (resolution: fetched, scriptMismatch: false);
         fallback ??= fetched;
       } on MusicPluginException {
+        if (kept != null) fallback ??= kept;
         continue;
       } on LyricsParseException {
+        if (kept != null) fallback ??= kept;
         continue;
       }
     }
@@ -879,11 +912,27 @@ class MusicLyricsService {
         : (resolution: fallback, scriptMismatch: true);
   }
 
-  Future<MusicPluginLyrics?> _searchAndFetch(
+  /// 只刷新一行的更新时间（重挑过但没换掉：TTL 内不再重挑）。
+  Future<void> _touch(FushiDatabase db, String trackUid, String source) =>
+      (db.update(db.musicLyrics)..where(
+            ($MusicLyricsTable r) =>
+                r.trackUid.equals(trackUid) & r.source.equals(source),
+          ))
+          .write(MusicLyricsCompanion(updatedAt: Value<int>(_now())));
+
+  /// 在一个歌词插件里搜候选、评分、取歌词并解析。
+  ///
+  /// 插件候选不带正文，同名的原文版与罗马音 / 翻译版靠评分分不开：[expected] 已知时按
+  /// [rankLyricsCandidates] 的名次逐条取，解析后书写系统对得上的就用它；最多取
+  /// [kPluginLyricsScriptProbeLimit] 条，都对不上返回取到的第一条（`scriptMismatch` =
+  /// true，调用方当兜底）。[expected] 为 null 时只取第一名。某条解析失败跳过它；一条都没
+  /// 解析成而有解析失败时抛出那个 [LyricsParseException]（与只取一条时一样不写负缓存）。
+  Future<_PluginFetched?> _searchAndFetch(
     String pluginId,
     MusicLyricsTrackRef track,
     MusicPluginLyricsSearcher search,
     MusicPluginLyricsRefFetcher fetch,
+    LyricsScriptExpectation? expected,
   ) async {
     final Map<String, MusicPluginLyricsCandidate> byKey =
         <String, MusicPluginLyricsCandidate>{};
@@ -917,18 +966,47 @@ class MusicLyricsService {
         return out;
       },
     );
-    final LyricsCandidate? best = pickBestLyricsCandidate(
+    final List<LyricsCandidate> ranked = rankLyricsCandidates(
       all,
       title: track.title,
       artist: track.artist,
       durationMs: track.durationMs,
     );
-    if (best == null) return null;
-    final MusicPluginLyrics? lyrics = await fetch(
-      pluginId,
-      byKey[best.ref['k']]!.ref,
-    );
-    return lyrics?.original == null ? null : lyrics;
+    _PluginFetched? first;
+    LyricsParseException? parseError;
+    StackTrace? parseStack;
+    final int probes = expected == null ? 1 : kPluginLyricsScriptProbeLimit;
+    for (final LyricsCandidate c in ranked.take(probes)) {
+      final MusicPluginLyrics? lyrics = await fetch(
+        pluginId,
+        byKey[c.ref['k']]!.ref,
+      );
+      if (lyrics?.original == null) continue;
+      final ({Uint8List raw, String format, LyricTimeline timeline}) built;
+      try {
+        built = await buildMusicPluginLyrics(lyrics!, track.durationMs, _parse);
+      } on LyricsParseException catch (e, st) {
+        parseError ??= e;
+        parseStack ??= st;
+        continue;
+      }
+      final bool mismatch = lyricsScriptMismatches(
+        expected,
+        musicLyricsTimelineText(built.timeline),
+      );
+      final _PluginFetched got = (
+        raw: built.raw,
+        format: built.format,
+        timeline: built.timeline,
+        scriptMismatch: mismatch,
+      );
+      if (!mismatch) return got;
+      first ??= got;
+    }
+    if (first == null && parseError != null) {
+      Error.throwWithStackTrace(parseError, parseStack!);
+    }
+    return first;
   }
 
   Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {
@@ -1091,7 +1169,7 @@ class MusicLyricsService {
       durationMs: track.durationMs,
     );
     // 书写系统与曲目元数据对得上的（原文版）排前，组内保持 LRCLIB 排序（有时间的在前、时长近的在前）。
-    final LyricsScript? expected = expectedLyricsScript(
+    final LyricsScriptExpectation? expected = expectedLyricsScript(
       title: track.title,
       artist: track.artist,
       album: track.album,
