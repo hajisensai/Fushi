@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3747 条。点号进各自文件。
+> 共 3749 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4149](bugs/BUG-4149-srs-design-skin-covers-wallpaper.md) | ✅ | ✅ | 复习卡面「跟随设计系统」铺不透明底色盖住壁纸，与 Fushi 卡片不一致 |
+| [BUG-4148](bugs/BUG-4148-srs-conflicts-confirm-all-greyed.md) | ✅ | ✅ | 同步冲突页只有重复笔记时右上角「全部确认」是一颗灰掉点不动的按钮 |
 | [BUG-4147](bugs/BUG-4147-subtitle-book-vertical-halfwidth-bang.md) | ✅ | ✅ | 转录 / 字幕合成书竖排时半角「!」「?」横躺 |
 | [BUG-4146](bugs/BUG-4146-apple-music-init-timeout-misreported-drm.md) | ✅ | ✅ | Apple Music 登录 init 超时一律报「系统 DRM 服务没有响应」 |
 | [BUG-4145](bugs/BUG-4145-wavy-seek-tap-cancelled-by-drag.md) | ✅ | ✅ | 波浪进度条点按不跳转（按住超过 100ms 的点按被横向拖动的 cancel 清掉） |
@@ -54,8 +56,6 @@
 | [BUG-4133](bugs/BUG-4133-settings-segment-hidden-last-row.md) | ✅ | ✅ | 设置分段分组末行没有组尾圆角：空的「待发卡片」行以零尺寸混进组尾 |
 | [BUG-4132](bugs/BUG-4132-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
 | [BUG-4131](bugs/BUG-4131-video-settings-tab-switch-entrance-replay.md) | ✅ | ✅ | video-settings-tab-switch-entrance-replay |
-| [BUG-4128](bugs/BUG-4128-srs-design-skin-covers-wallpaper.md) | ✅ | ✅ | 复习卡面「跟随设计系统」铺不透明底色盖住壁纸，与 Fushi 卡片不一致 |
-| [BUG-4127](bugs/BUG-4127-srs-conflicts-confirm-all-greyed.md) | ✅ | ✅ | 同步冲突页只有重复笔记时右上角「全部确认」是一颗灰掉点不动的按钮 |
 | [BUG-4130](bugs/BUG-4130-video-jump-back-double-button.md) | ✅ | ✅ | 视频顶栏「返回」跳转按钮在圆胶囊里叠出方块，像两颗按钮 |
 | [BUG-4129](bugs/BUG-4129-side-panel-drag-autoscroll-shrinkwrap-ancestor.md) | ✅ | ✅ | side-panel-drag-autoscroll-shrinkwrap-ancestor |
 | [BUG-4128](bugs/BUG-4128-asr-video-model-variant-flips-on-gpu-budget.md) | 🚧 | 🚧 | asr-video-model-variant-flips-on-gpu-budget |
