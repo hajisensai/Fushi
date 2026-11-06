@@ -4069,7 +4069,7 @@ JSON.stringify((function(){
     // `AppKitView` 只在引擎回调 `onFocus` 时 requestFocus，macOS 引擎不发 viewFocused
     // （BUG-3131 排除路径里的真机事实），焦点一直停在宿主（阅读器 `_focusNode`）上。
     // 所以 macOS 的 ⌘C 由宿主分派：阅读器经 `visiblePopupStatesTopDown` 自顶向下调
-    // [copyNativeSelectionForHost]（BUG-4130），不靠这一层。
+    // [copyNativeSelectionForHost]（BUG-4204），不靠这一层。
     // `canRequestFocus:false` + `skipTraversal`：只做拦截，不参与遍历、不抢焦点，与
     // BUG-1347 那层宿主键桥同范式、互不干扰（它只转发宿主动作 token，不含复制键）。
     final Widget guardedWebView = KeyedSubtree(
@@ -4089,7 +4089,7 @@ JSON.stringify((function(){
     );
   }
 
-  /// 桌面弹窗内的「复制选中文字」兼容层（BUG-1451 Windows Ctrl+C、BUG-4130 macOS ⌘C，
+  /// 桌面弹窗内的「复制选中文字」兼容层（BUG-1451 Windows Ctrl+C、BUG-4204 macOS ⌘C，
   /// 与 BUG-402 同根）。
   ///
   /// 判据复用阅读器正文那条**同一个纯谓词** [desktopShouldHandleCopyGesture]（Windows
@@ -4112,7 +4112,7 @@ JSON.stringify((function(){
     return KeyEventResult.handled;
   }
 
-  /// BUG-4130：宿主键盘路径的复制入口。Flutter 焦点不在弹窗子树里时（macOS 恒如此，
+  /// BUG-4204：宿主键盘路径的复制入口。Flutter 焦点不在弹窗子树里时（macOS 恒如此，
   /// 见 [build] 里复制拦截层的注释），复制键落在宿主上，宿主按可见层叠顺序逐层调本
   /// 方法：本层原生选区（穿透同源 iframe，与 [_handleDesktopCopyKey] 同一来源）非空就
   /// 写剪贴板、给成功提示并返回 true；空选区返回 false 且**不提示**——空不代表失败，

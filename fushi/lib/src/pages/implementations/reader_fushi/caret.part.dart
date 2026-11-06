@@ -171,7 +171,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
 
     final Set<ModifierKey> modifiers = _activeModifiers();
 
-    // BUG-402 / BUG-4130：桌面阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
+    // BUG-402 / BUG-4204：桌面阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
     // 转发鼠标不转发键盘，Ctrl+C 到不了 WebView2；macOS 上点正文后 first responder
     // 通常仍是 FlutterView（BUG-2948 真机取证；DOM 获焦时例外，那时 ⌘C 不进 Flutter、
     // 原生 copy 自己可用），菜单 Edit > Copy 的 `copy:` 到不了 WKWebView。
@@ -181,7 +181,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
     //
     // 这里不只管正文：macOS 上 Flutter 焦点从不跟随点击进入平台视图（BUG-3131），
     // 在词典弹窗 / 歌词覆盖层里拖选后按 ⌘C，按键同样落在本节点。取哪一面的选区由
-    // _copyNativeSelectionToClipboard 按可见层叠顺序决定（BUG-4130）。
+    // _copyNativeSelectionToClipboard 按可见层叠顺序决定（BUG-4204）。
     if (desktopShouldHandleCopyGesture(
       key: event.logicalKey,
       modifiers: modifiers,
@@ -389,7 +389,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
     return KeyEventResult.handled;
   }
 
-  /// BUG-402 / BUG-4130：桌面复制键落地——按**可见层叠顺序**找第一个有原生选区的
+  /// BUG-402 / BUG-4204：桌面复制键落地——按**可见层叠顺序**找第一个有原生选区的
   /// WebView，把它的选区写系统剪贴板（[copyFromTopmostSurfaceWithSelection]）。
   ///
   /// 候选自顶向下：可见词典弹窗各层（最上层在前，弹窗自己负责穿透 iframe 取选区与

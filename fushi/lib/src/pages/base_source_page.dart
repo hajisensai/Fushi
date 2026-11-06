@@ -1615,7 +1615,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   int get topVisiblePopupIndex => _lastVisiblePopupIndex(_popup.entries);
 
-  /// BUG-4130：所有可见弹窗层的 WebView state，**自顶向下**（最上层在前）。宿主的
+  /// BUG-4204：所有可见弹窗层的 WebView state，**自顶向下**（最上层在前）。宿主的
   /// 桌面复制键按这个顺序找原生选区——弹窗层盖在正文之上，用户在弹窗里拖选时正文
   /// 那份原生选区是被盖住的旧选区，不能先取。未挂载完的层（currentState 为 null）跳过。
   @protected
