@@ -1,6 +1,6 @@
 // BUG-2906：系统 OCR 报「模型未就绪」时不能只丢一句提示——要带用户去配置
 // （查状态 / 请 Play 服务立即下载 / 修 Play 服务）。
-// BUG-4127：Play 服务的问题按原始 ConnectionResult 码分开说，给对应出路，并把
+// BUG-4130：Play 服务的问题按原始 ConnectionResult 码分开说，给对应出路，并把
 // 原始码与版本号显示出来；不再把所有异常合成「缺失、被停用或版本过旧」一句。
 import 'dart:async';
 
@@ -81,7 +81,7 @@ SystemOcrModelReport _problem(int code) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('ConnectionResult 原始码 → 状态（BUG-4127）', () {
+  group('ConnectionResult 原始码 → 状态（BUG-4130）', () {
     test('可区分的码各自独立成一个状态', () {
       const Map<int, SystemOcrModelStatus> expected =
           <int, SystemOcrModelStatus>{
