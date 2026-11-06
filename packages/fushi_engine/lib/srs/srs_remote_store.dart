@@ -15,11 +15,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show
-        FushiCardBlock,
-        FushiCardBlockItem,
-        FushiCardItem,
-        kFushiCardDefaultFrontItems;
+    show FushiCardItem, kFushiCardDefaultBackItems, kFushiCardDefaultFrontItems;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -359,7 +355,7 @@ abstract final class SrsRemoteWire {
       isEmpty: m['empty'] == true,
       fields: (m['fields']! as Map).cast<String, String>(),
       fushiCardDefinitions: m['defs'] as String?,
-      // 旧对端不发布局：正面默认、背面按 blocks（更旧的连 blocks 也没有：默认顺序）。
+      // 旧对端不发布局（它只在模板与代码定义逐字一致时才给 defs，即默认布局）：两面都按默认。
       // 认不得的布局项跳过。
       fushiCardFront: m['front'] is List
           ? <FushiCardItem>[
@@ -372,15 +368,7 @@ abstract final class SrsRemoteWire {
               for (final Object? x in m['back']! as List)
                 ?FushiCardItem.fromJson(x),
             ]
-          : <FushiCardItem>[
-              for (final Object? n
-                  in m['blocks'] is List
-                      ? m['blocks']! as List
-                      : FushiCardBlock.values.map((FushiCardBlock b) => b.name))
-                if (FushiCardBlock.values.asNameMap()[n]
-                    case final FushiCardBlock b)
-                  FushiCardBlockItem(b),
-            ],
+          : kFushiCardDefaultBackItems,
     );
   }
 
