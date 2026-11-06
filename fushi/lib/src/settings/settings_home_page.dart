@@ -166,7 +166,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     final bool md3 = !glass && !isCupertinoPlatform(context);
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool wide = constraints.maxWidth >= 720;
+        final bool wide =
+            constraints.maxWidth >= kFushiSettingsHomeTwoPaneMinWidth;
         _wide = wide;
         // MD3：Android 16「设置」。宽屏左导航右详情（页头外壳同旧），窄屏是自带
         // 折叠大标题顶栏的单列（不再套外壳页头，见 _buildMd3NarrowLayout）。
@@ -483,8 +484,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     // 同取 `gap`、离图标侧栏 `page`、与右侧分组卡之间留一个 `page`（右侧正文自带
     // 的左内边距，见 MaterialSettingsRenderer.detailHorizontalInsets）。这样左右
     // 都是「卡片浮在页面底上」，窗格边界由卡片自己表达，不需要线。
+    // 这条（隐藏 Cupertino 设计系统的）分支刻意不传 supportingWidth：左栏随宽度取
+    // supportingPaneWidthForLayout（280~360），600 宽时右详情 320（见
+    // kFushiSettingsHomeTwoPaneMinWidth 文档）。
     return MaterialSupportingPaneLayout(
-      minSplitWidth: 720,
+      minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
       showDivider: false,
       supporting: Padding(
@@ -617,7 +621,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     final bool searching = _searchQuery.trim().isNotEmpty;
     return MaterialSupportingPaneLayout(
-      minSplitWidth: 720,
+      minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
       supportingWidth: GlassSettingsRenderer.sidebarWidth,
       showDivider: false,
@@ -742,7 +746,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       showDetailHeader: true,
     );
     return MaterialSupportingPaneLayout(
-      minSplitWidth: 720,
+      minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
       supportingWidth: MaterialSettingsRenderer.navPaneWidth,
       showDivider: false,
