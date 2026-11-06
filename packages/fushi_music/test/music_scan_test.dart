@@ -66,6 +66,7 @@ void main() {
       'Formats/layer2.mp2',
       'Formats/sample.ac3',
       'Formats/sample.eac3',
+      'Formats/sample44k.ac3',
       'Formats/tta.tta',
       'Formats/wavpack.wv',
     ]);
@@ -120,7 +121,11 @@ void main() {
     expect(tracks[13].channels, 6);
     expect(tracks[13].durationMs, 1024);
     expect(tracks[14].codec, 'eac3');
-    expect(tracks[16].codec, 'wavpack');
+    // 44.1 kHz AC-3：帧长 69 / 70 字交替，帧长算错会整个文件被拒。
+    expect(tracks[15].codec, 'ac3');
+    expect(tracks[15].sampleRate, 44100);
+    expect(tracks[15].durationMs, 1010);
+    expect(tracks[17].codec, 'wavpack');
     expect(
       tracks.map((MusicScannedTrack t) => t.trackUid).toSet(),
       hasLength(tracks.length),
@@ -173,7 +178,7 @@ void main() {
       maxRecords: 4,
     ).toList();
     expect(batches.last.done, isTrue);
-    expect(tracksOf(batches), hasLength(17));
+    expect(tracksOf(batches), hasLength(18));
   });
 
   test('根不存在：流以 MusicScanRootError 结束', () async {

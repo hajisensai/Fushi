@@ -90,12 +90,15 @@ fn parse_frame(h: &[u8]) -> Option<Frame> {
         }
         let kbps = AC3_BITRATES[(frmsizecod >> 1) as usize];
         let sample_rate = [48_000u32, 44_100, 32_000][fscod as usize];
-        // 帧长（16 bit 字）：48k = 2·kbps，32k = 3·kbps，44.1k = floor(320·kbps/441) 再按
-        // frmsizecod 的奇偶补一个字（A/52 表 5.18）。
+        // 帧长（16 bit 字）= 1536 样本的时长 × 码率 / 16：
+        //   1536 / fs × kbps·1000 / 16 = 96_000·kbps / fs
+        // 48k = 2·kbps、32k = 3·kbps 整除；44.1k = 96_000/44_100 = 320/147，取整后由
+        // frmsizecod 的奇数位补一个字（A/52 表 5.18：32 kbps 69 / 70 字，192 kbps
+        // 417 / 418 字，640 kbps 1393 / 1394 字）。
         let words = match fscod {
             0 => 2 * kbps,
             2 => 3 * kbps,
-            _ => 320 * kbps / 441 + (frmsizecod & 1),
+            _ => 320 * kbps / 147 + (frmsizecod & 1),
         };
         let mut b = Bits {
             data: h,
@@ -178,6 +181,70 @@ fn id3v2_len(h: &[u8]) -> u64 {
     10 + syncsafe + footer
 }
 
+/// E-AC-3 逐帧数时的顺序读游标：开头 seek 一次，之后只做 [`SeqHeaders::CHUNK`] 大小的
+/// 顺序读，从缓冲区里取每帧的 8 字节帧头。
+///
+/// 不能每帧 `seek(Start(pos))` 再读 8 字节：std `BufReader` 每次绝对 seek 都会丢弃缓冲、
+/// 下一次读重新填 8 KiB，2 小时 640 kbps 的 5.1 码流约 22.5 万帧，就是 22.5 万次 seek +
+/// read 系统调用、读入约 3 倍文件大小，NAS / SMB 来源首次扫描会明显变慢。这里每个字节
+/// 只读一次，系统调用数 ≈ 文件大小 / CHUNK。
+struct SeqHeaders<'a, R> {
+    r: &'a mut R,
+    buf: Vec<u8>,
+    /// `buf[0]` 在文件里的偏移。
+    base: u64,
+    eof: bool,
+}
+
+impl<'a, R: Read + Seek> SeqHeaders<'a, R> {
+    const CHUNK: usize = 256 * 1024;
+
+    fn new(r: &'a mut R, start: u64) -> std::io::Result<Self> {
+        r.seek(SeekFrom::Start(start))?;
+        Ok(Self {
+            r,
+            buf: Vec::with_capacity(Self::CHUNK + 8),
+            base: start,
+            eof: false,
+        })
+    }
+
+    /// 文件偏移 `pos` 处的 8 字节。`pos` 只能单调不减（且不小于起点）；不足 8 字节
+    /// （到文件尾）返回 `Ok(None)`。
+    fn header(&mut self, pos: u64) -> std::io::Result<Option<[u8; 8]>> {
+        debug_assert!(pos >= self.base);
+        loop {
+            let idx = usize::try_from(pos - self.base).unwrap_or(usize::MAX);
+            if let Some(h) = self.buf.get(idx..idx.saturating_add(8)) {
+                let mut out = [0u8; 8];
+                out.copy_from_slice(h);
+                return Ok(Some(out));
+            }
+            // 缓冲里不够：丢掉 pos 之前已走过的字节，再顺序读一块。只在补块时搬移，
+            // 不是每帧一次。
+            let consumed = idx.min(self.buf.len());
+            self.buf.drain(..consumed);
+            self.base += consumed as u64;
+            if self.eof {
+                return Ok(None);
+            }
+            let old = self.buf.len();
+            self.buf.resize(old + Self::CHUNK, 0);
+            let n = loop {
+                match self.r.read(&mut self.buf[old..]) {
+                    Ok(n) => break n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                }
+            };
+            self.buf.truncate(old + n);
+            if n == 0 {
+                self.eof = true;
+            }
+        }
+    }
+}
+
 fn read_at<R: Read + Seek>(r: &mut R, pos: u64, buf: &mut [u8]) -> Option<usize> {
     r.seek(SeekFrom::Start(pos)).ok()?;
     let mut n = 0;
@@ -226,10 +293,11 @@ pub fn probe<R: Read + Seek>(r: &mut R, len: u64) -> Option<Ac3Info> {
             let mut pos = start;
             let mut samples: u64 = 0;
             let mut main: Option<Frame> = None;
+            let mut frames = SeqHeaders::new(r, start).ok()?;
             while pos + 8 <= len {
-                if read_at(r, pos, &mut h)? < 8 {
+                let Some(h) = frames.header(pos).ok()? else {
                     break;
-                }
+                };
                 // 截断 / 坏帧：到此为止，按已数到的完整帧算。
                 let Some(f) = parse_frame(&h).filter(|f| f.kind == Ac3Kind::Eac3) else {
                     break;
@@ -326,14 +394,94 @@ mod tests {
         assert_eq!(info.channels, 2);
     }
 
+    /// 一个 44.1 kHz AC-3 帧，帧长 `words` 由调用方按 A/52 表 5.18 给（不从实现的公式推）。
+    fn ac3_44k_frame(frmsizecod: u8, words: usize) -> Vec<u8> {
+        let mut f = ac3_frame(frmsizecod, 2, false);
+        f.resize(words * 2, 0);
+        f[4] = (1 << 6) | frmsizecod;
+        f
+    }
+
     #[test]
-    fn ac3_44k_frame_size_uses_odd_padding_word() {
-        // 44.1 kHz、frmsizecod 21（192 kbps，奇数补一个字）：320·192/441 = 139 + 1 = 140 字。
-        let mut h = ac3_frame(21, 2, false);
-        h[4] = (1 << 6) | 21;
-        let f = parse_frame(&h).unwrap();
-        assert_eq!(f.size, 280);
-        assert_eq!(f.sample_rate, 44_100);
+    fn ac3_44k_frame_size_matches_a52_table() {
+        // A/52 表 5.18 的 44.1 kHz 一栏（偶 / 奇 frmsizecod），全部 19 档码率。
+        const WORDS_44K: [u32; 19] = [
+            69, 87, 104, 121, 139, 174, 208, 243, 278, 348, 417, 487, 557, 696, 835, 975, 1114,
+            1253, 1393,
+        ];
+        for (i, &words) in WORDS_44K.iter().enumerate() {
+            for odd in 0..2u8 {
+                let code = (i as u8) * 2 + odd;
+                let f = parse_frame(&ac3_44k_frame(code, 8)).unwrap();
+                assert_eq!(f.size, (words + odd as u32) as u64 * 2, "frmsizecod {code}");
+                assert_eq!(f.sample_rate, 44_100);
+            }
+        }
+    }
+
+    #[test]
+    fn ac3_44k_stream_with_padding_frames_probes() {
+        // 32 kbps：69 字的帧与补字的 70 字帧交替（编码器按 44.1k 的余数插补字帧）。
+        // probe 按帧长找第二帧的同步字，帧长算错就整个文件被拒（两库都进不去）。
+        let mut data = Vec::new();
+        for i in 0..40 {
+            data.extend(if i % 2 == 0 {
+                ac3_44k_frame(0, 69)
+            } else {
+                ac3_44k_frame(1, 70)
+            });
+        }
+        let info = probe(&mut Cursor::new(&data), data.len() as u64).unwrap();
+        assert_eq!(info.kind, Ac3Kind::Ac3);
+        assert_eq!(info.sample_rate, 44_100);
+        assert_eq!(info.bitrate_kbps, 32);
+        // 20·(138 + 140) = 5560 字节 × 8 / 32 kbps = 1390 ms（40 帧 × 1536 / 44.1k ≈ 1393 ms）。
+        assert_eq!(info.duration_ms, 1390);
+    }
+
+    /// 统计 seek 次数与读入字节数的读者。
+    struct Counting<R> {
+        inner: R,
+        seeks: usize,
+        bytes_read: u64,
+    }
+
+    impl<R: Read> Read for Counting<R> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.inner.read(buf)?;
+            self.bytes_read += n as u64;
+            Ok(n)
+        }
+    }
+
+    impl<R: Seek> Seek for Counting<R> {
+        fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+            self.seeks += 1;
+            self.inner.seek(pos)
+        }
+    }
+
+    #[test]
+    fn eac3_frame_walk_reads_sequentially() {
+        // 5000 帧 ≈ 2.5 MB：逐帧数时长不能每帧 seek 一次（BufReader 每次绝对 seek 都丢
+        // 缓冲重填），整段只该顺序读一遍。
+        let data = eac3_frame(0, 0, 512, 2, false).repeat(5000);
+        let mut r = Counting {
+            inner: Cursor::new(&data),
+            seeks: 0,
+            bytes_read: 0,
+        };
+        let info = probe(&mut r, data.len() as u64).unwrap();
+        assert_eq!(info.duration_ms, 5000 * 32);
+        // probe 头部：读文件头 + 第一帧 + 第二帧 3 次，逐帧扫描起点 1 次。
+        assert!(r.seeks <= 4, "seeks = {}", r.seeks);
+        // 每个字节只读一次（加上帧头探测的几十字节）。
+        assert!(
+            r.bytes_read <= data.len() as u64 + 64,
+            "bytes_read = {} for {} byte file",
+            r.bytes_read,
+            data.len()
+        );
     }
 
     #[test]

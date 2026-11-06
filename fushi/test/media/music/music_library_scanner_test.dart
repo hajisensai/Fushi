@@ -172,7 +172,7 @@ void main() {
       db,
     ).scanSource(sourceId: 7, rootPath: _fixtureRoot());
     expect(s.errors, isEmpty);
-    expect(s.trackCount, 17);
+    expect(s.trackCount, 18);
     final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(db);
     final MusicAlbumRow cueAlbum = snap.albums.firstWhere(
       (MusicAlbumRow a) => a.title == 'キュー盤',
@@ -196,7 +196,7 @@ void main() {
     ).scanSource(sourceId: 7, rootPath: _fixtureRoot());
     expect(again.parsedTrackCount, 0);
     expect(again.removedTrackCount, 0);
-    expect(again.trackCount, 17);
+    expect(again.trackCount, 18);
   });
 
   test('格式徽章', () {

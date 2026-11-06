@@ -90,6 +90,8 @@ rm -f "$chapmeta"
 # 裸 AC-3（5.1，192k）/ E-AC-3（立体声）基本流：编码器只收 32 / 44.1 / 48 kHz。
 ff -f lavfi -i "sine=frequency=500:sample_rate=48000:duration=1" -ac 6 -c:a ac3 -b:a 192k   "$lib/Formats/sample.ac3"
 ff -f lavfi -i "sine=frequency=600:sample_rate=48000:duration=1" -ac 2 -c:a eac3 -b:a 96k   "$lib/Formats/sample.eac3"
+# 44.1 kHz AC-3：帧长不整除，69 / 70 字（补字帧）交替，钉住 A/52 表 5.18 那一栏。
+ff -f lavfi -i "sine=frequency=550:sample_rate=44100:duration=1" -ac 2 -c:a ac3 -b:a 32k   "$lib/Formats/sample44k.ac3"
 # MPEG-1/2 Layer II。
 ff -f lavfi -i "sine=frequency=700:sample_rate=16000:duration=1" -ac 1 -c:a mp2 -b:a 32k   "$lib/Formats/layer2.mp2"
 # 非音频与隐藏文件：扫描器必须忽略。
