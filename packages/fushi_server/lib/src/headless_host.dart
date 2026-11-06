@@ -22,6 +22,9 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show VideoSubtitleBackfillReport;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -63,6 +66,8 @@ import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_backfill.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
@@ -102,8 +107,12 @@ class HeadlessHost {
     required this.identity,
     bool Function()? p2pAvailable,
     ServerDictionaryHost? dictionaryHost,
+    VideoSubtitleRegistry Function()? subtitleRegistryFactory,
   }) : _config = config,
        _injectedDictionaryHost = dictionaryHost,
+       _subtitleRegistryFactory =
+           subtitleRegistryFactory ??
+           (() => buildServerSubtitleRegistry(prefs)),
        _p2pAvailable =
            p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
@@ -116,6 +125,10 @@ class HeadlessHost {
 
   /// 原生 libfushi_p2p 是否可用（测试可注入）。
   final bool Function() _p2pAvailable;
+
+  /// 在线字幕来源（下载管线字幕阶段 + 单视频补字幕）。生产 =
+  /// [buildServerSubtitleRegistry]：只装偏好开着且有 key 的来源；测试注入假来源。
+  final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -278,6 +291,8 @@ class HeadlessHost {
       db: db,
       prefs: prefs,
       config: () => config,
+      // 刮完下载来的作品 → 给仍缺字幕的分集补字幕（与 app 下载管线同一个钩子）。
+      onWorkScraped: subtitleBackfill.onWorkScraped,
     );
     _videoScrape = videoScrape;
 
@@ -289,9 +304,14 @@ class HeadlessHost {
       prefs: prefs,
       identity: identity,
       scrape: videoScrape,
+      // 字幕语言现读配置（WebUI 改完，下一次重建管线生效）。
+      subtitleLanguage: () => config.subtitleLanguage,
+      subtitleRegistryFactory: _subtitleRegistryFactory,
     );
     await downloads.start();
     _downloads = downloads;
+    // 下载那一刻没搜到字幕的分集，过几小时再找（与 app 同：随下载管线起）。
+    if (downloads.configured) subtitleBackfill.startRetryLoop();
 
     // AI 助手存档（远端会话 + 操作记录）按保留期清：服务端常驻，起来清一次、之后定时清。
     final ServerAgentHistoryPruner agentHistoryPruner =
@@ -405,7 +425,10 @@ class HeadlessHost {
           // 服务端自己的临时目录。
           ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
             cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
-          ).export;
+          ).export
+          // 「立即给这个视频补字幕」：与 app 当 host 同一个引擎服务（身份取已落库的刮削
+          // 结论，只补缺的，不覆盖已有字幕）。
+          ..videoSubtitleBackfill = backfillVideoSubtitle;
     try {
       await server.start();
     } catch (_) {
@@ -598,6 +621,7 @@ class HeadlessHost {
   /// 停下载管线（含订阅检查，等在途的一轮落地）再关刮削：正常停机与启动半途失败
   /// 共用。
   Future<void> _stopPipelines() async {
+    await subtitleBackfill.stop();
     _agentHistoryPruner?.stop();
     _agentHistoryPruner = null;
     final ServerDownloadHost? downloads = _downloads;
@@ -669,6 +693,21 @@ class HeadlessHost {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     return peers.map((FushiPairedPeerRow r) => r.token).toSet();
   }
+
+  /// 补字幕（单视频 / 刮削后 / 下载后缺字幕重试）的装配，见 server_subtitle_backfill.dart。
+  late final ServerSubtitleBackfill subtitleBackfill = ServerSubtitleBackfill(
+    db: db,
+    prefs: prefs,
+    config: () => config,
+    registryFactory: _subtitleRegistryFactory,
+  );
+
+  /// 给库里一个视频补一条字幕（互联 `POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// 视频不存在返回 null（路由 404）；一家字幕来源都没配时回 `unavailable`。
+  Future<VideoSubtitleBackfillReport?> backfillVideoSubtitle(
+    String videoId, {
+    String? language,
+  }) => subtitleBackfill.backfillVideo(videoId, language: language);
 
   /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
   Future<String?> _resolveVideoPath(String videoId) async {

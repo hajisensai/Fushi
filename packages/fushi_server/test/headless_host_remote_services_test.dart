@@ -15,6 +15,7 @@ import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
@@ -36,6 +37,7 @@ void main() {
   late ServerConfig hostConfig;
   late ServerPaths hostPaths;
   late ServerIdentity hostIdentity;
+  late ServerPrefs hostPrefs;
 
   setUp(() async {
     client = HttpClient();
@@ -52,6 +54,7 @@ void main() {
     hostConfig = config;
     hostPaths = paths;
     hostIdentity = identity;
+    hostPrefs = prefs;
     if (haveLib) {
       // 导入在 host 起来之前做（模拟「已推送过词典的服务端重启」），先指定原生库。
       FushiDicts.nativeLibraryPath = libPath;
@@ -153,6 +156,82 @@ void main() {
         ? '设置了 FUSHI_ANKI_SYNC，helper 可能可用'
         : false,
   );
+
+  group('补字幕（POST /api/library/videos/<id>/subtitle/backfill）', () {
+    Future<void> addVideo(String uid) async {
+      final File video = File(p.join(tmp.path, 'videos', '$uid.mkv'))
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(4096, 0));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: uid,
+          videoPath: video.path,
+        ),
+      );
+    }
+
+    test('服务端接了补字幕：capabilities 报 true，不再 501', () async {
+      final Map<String, dynamic> caps = await json(
+        await send('GET', '/api/capabilities'),
+      );
+      expect(
+        (caps['liveLibrary'] as Map<String, dynamic>)['videoSubtitleBackfill'],
+        isTrue,
+      );
+      final HttpClientResponse missing = await send(
+        'POST',
+        '/api/library/videos/nope/subtitle/backfill',
+      );
+      expect(missing.statusCode, 404);
+      await missing.drain<void>();
+    });
+
+    test('没刮削过的视频不猜身份：回 noIdentity（不联网）', () async {
+      // 生产来源装配，配一家（入库占位里的内置应用密钥是空的）；身份不足在搜索之前就挡下。
+      await hostPrefs.setPref(
+        kOpenSubtitlesConfigPref,
+        jsonEncode(<String, Object?>{'apiKey': 'k1'}),
+      );
+      await addVideo('vid-unscraped');
+      final HttpClientResponse res = await send(
+        'POST',
+        '/api/library/videos/vid-unscraped/subtitle/backfill',
+        <String, String>{'language': 'ja'},
+      );
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> body = await json(res);
+      expect(body['outcome'], 'noIdentity');
+      expect(body['installed'], isFalse);
+    });
+
+    test('偏好里三家都关了：回 unavailable，环境变量也推翻不了', () async {
+      await addVideo('vid-off');
+      await hostPrefs.setPref(
+        kOpenSubtitlesConfigPref,
+        jsonEncode(<String, Object?>{'apiKey': '', 'enabled': false}),
+      );
+      await hostPrefs.setPref(kSubdlEnabledPref, false);
+      await hostPrefs.setPref(kJimakuEnabledPref, false);
+      final HttpClientResponse res = await send(
+        'POST',
+        '/api/library/videos/vid-off/subtitle/backfill',
+      );
+      expect(res.statusCode, 200);
+      expect((await json(res))['outcome'], 'unavailable');
+    });
+
+    test('非法语言标签 400', () async {
+      await addVideo('vid-lang');
+      final HttpClientResponse res = await send(
+        'POST',
+        '/api/library/videos/vid-lang/subtitle/backfill',
+        <String, String>{'language': 'not a tag!'},
+      );
+      expect(res.statusCode, 400);
+      await res.drain<void>();
+    });
+  });
 
   test('查词：capabilities 与路由随词典引擎可用性一致', () async {
     final Map<String, dynamic> caps = await json(

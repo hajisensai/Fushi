@@ -675,6 +675,15 @@ public class WebViewChannelDelegate extends ChannelDelegateImpl {
           webView.clearFormData();
         }
         result.success(true);
+        break;
+      case fushiSetStaticLayer:
+        {
+          Boolean enabled = (Boolean) call.argument("enabled");
+          boolean applied = webView != null
+                  && webView.setStaticLayer(enabled != null && enabled);
+          result.success(applied);
+        }
+        break;
     }
   }
 
