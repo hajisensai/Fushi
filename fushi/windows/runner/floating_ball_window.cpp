@@ -42,8 +42,8 @@ constexpr double kMenuMinHitOpacity = 0.05;
 // global_lookup_window 的 kShowContextMenuMessage）。
 constexpr UINT kShowProfileMenuMessage = WM_APP + 0x71;
 
-constexpr char kActionOpenApp[] = "open_app";
-constexpr char kActionClose[] = "close";
+using fb::kActionClose;
+using fb::kActionOpenApp;
 
 double NowMs() {
   static const double frequency = [] {
@@ -163,18 +163,7 @@ void FloatingBallWindow::DiscardDeviceResources() {
 void FloatingBallWindow::ClearBitmapCache() { bitmaps_.clear(); }
 
 std::vector<std::string> FloatingBallWindow::ButtonIds() const {
-  // 固定的关闭 / （没被关掉的）打开 Fushi 在最上（离球最远，防误触），用户勾选的
-  // 动作在下、末颗紧贴球顶——与应用内「列表末颗离球最近」同序。
-  std::vector<std::string> ids;
-  ids.emplace_back(kActionClose);
-  if (config_.show_open_app) ids.emplace_back(kActionOpenApp);
-  for (const std::string& id : config_.actions) {
-    if (id != kActionClose && id != kActionOpenApp &&
-        std::find(ids.begin(), ids.end(), id) == ids.end()) {
-      ids.push_back(id);
-    }
-  }
-  return ids;
+  return fb::ButtonIds(config_.show_open_app, config_.actions);
 }
 
 std::wstring FloatingBallWindow::LabelFor(const std::string& id) const {
@@ -567,12 +556,7 @@ void FloatingBallWindow::AnimateProgress(double target, int full_ms) {
     if (target <= 0.0) DestroyMenuWindow();
     return;
   }
-  progress_anim_.active = true;
-  progress_anim_.from = progress_;
-  progress_anim_.to = target;
-  progress_anim_.start_ms = NowMs();
-  progress_anim_.duration_ms =
-      fb::ProgressDurationMs(full_ms, progress_, target);
+  progress_anim_.Start(progress_, target, full_ms, NowMs());
   EnsureAnimationTimer();
 }
 
@@ -611,38 +595,18 @@ void FloatingBallWindow::EnsureAnimationTimer() {
 
 void FloatingBallWindow::OnAnimationTick() {
   const double now = NowMs();
-  bool more = false;
   if (progress_anim_.active) {
-    const double f = std::clamp(
-        (now - progress_anim_.start_ms) / progress_anim_.duration_ms, 0.0, 1.0);
-    const double target = progress_anim_.to;
-    if (f >= 1.0) {
-      progress_anim_.active = false;
-      SetProgress(target);
-      // 收起动画结束才拆按钮窗（Android 同）。
-      if (target <= 0.0) {
-        DestroyMenuWindow();
-      }
-    } else {
-      SetProgress(fb::Lerp(progress_anim_.from, target, f));
-      more = true;
+    SetProgress(progress_anim_.Sample(now));
+    // 收起动画结束才拆按钮窗（Android 同）。
+    if (!progress_anim_.active && progress_anim_.to <= 0.0) {
+      DestroyMenuWindow();
     }
   }
   if (snap_anim_.active) {
-    const double f = std::clamp(
-        (now - snap_anim_.start_ms) / static_cast<double>(fb::kSnapMs), 0.0,
-        1.0);
-    const double e = fb::EaseOutCubic(f);
-    ball_left_ = fb::Lerp(snap_anim_.from_left, snap_anim_.to_left, e);
-    ball_top_ = fb::Lerp(snap_anim_.from_top, snap_anim_.to_top, e);
+    snap_anim_.Sample(now, &ball_left_, &ball_top_);
     RenderBall();
-    if (f >= 1.0) {
-      snap_anim_.active = false;
-    } else {
-      more = true;
-    }
   }
-  if (!more && timer_running_) {
+  if (!progress_anim_.active && !snap_anim_.active && timer_running_) {
     if (ball_hwnd_ != nullptr) {
       KillTimer(ball_hwnd_, kAnimationTimerId);
     }
@@ -662,55 +626,14 @@ void FloatingBallWindow::EnsureMenuWindow() {
   const fb::Geometry g = CurrentGeometry();
   menu_ids_ = ButtonIds();
   menu_scale_ = scale_;
-  const double ball_cx = g.ExpandedBallLeft() + g.ball() / 2;
-  const double ball_cy = g.ExpandedBallTop() + g.ball() / 2;
-  const double peak = EaseOutBackPeakCached();
-  const double reach_radius = g.button() / 2 * fb::ButtonScale(peak) +
-                              fb::kMenuShadowPadDip * menu_scale_ +
-                              2.0 * menu_scale_;
-  double min_x = ball_cx - reach_radius;
-  double max_x = ball_cx + reach_radius;
-  double min_y = ball_cy - reach_radius;
-  double max_y = ball_cy + reach_radius;
-  std::vector<fb::Offset> offsets;
   PrepareMenuLabels(g);
-  // 标签胶囊贴在按钮朝屏幕中央的一侧（左停靠在右、右停靠在左），随按钮圆心走：
-  // 两个端点各把胶囊（含阴影边）并进包围盒。
-  const double label_near = g.button() / 2 + fb::kLabelGapDip * menu_scale_;
-  const double label_pad = fb::kMenuShadowPadDip * menu_scale_;
-  const double label_half_h = fb::kLabelHeightDip * menu_scale_ / 2 + label_pad;
-  auto include_label = [&](size_t index, double cx, double cy) {
-    if (index >= menu_label_widths_.size()) return;
-    const double w = menu_label_widths_[index];
-    const double a = dock_left_ ? cx + label_near : cx - label_near - w;
-    min_x = std::min(min_x, a - label_pad);
-    max_x = std::max(max_x, a + w + label_pad);
-    min_y = std::min(min_y, cy - label_half_h);
-    max_y = std::max(max_y, cy + label_half_h);
-  };
-  for (size_t i = 0; i < menu_ids_.size(); ++i) {
-    const fb::Offset off = g.ButtonOffset(static_cast<int>(i));
-    offsets.push_back(off);
-    const double far_x = ball_cx + off.dx * peak;
-    const double far_y = ball_cy + off.dy * peak;
-    min_x = std::min(min_x, far_x - reach_radius);
-    max_x = std::max(max_x, far_x + reach_radius);
-    min_y = std::min(min_y, far_y - reach_radius);
-    max_y = std::max(max_y, far_y + reach_radius);
-    include_label(i, ball_cx, ball_cy);
-    include_label(i, far_x, far_y);
-  }
-  menu_origin_ = POINT{static_cast<LONG>(std::floor(min_x)),
-                       static_cast<LONG>(std::floor(min_y))};
-  menu_size_ = SIZE{static_cast<LONG>(std::ceil(max_x)) - menu_origin_.x,
-                    static_cast<LONG>(std::ceil(max_y)) - menu_origin_.y};
-  menu_ball_cx_ = ball_cx - menu_origin_.x;
-  menu_ball_cy_ = ball_cy - menu_origin_.y;
-  menu_centers_.clear();
-  for (const fb::Offset& off : offsets) {
-    menu_centers_.push_back(
-        fb::Offset{menu_ball_cx_ + off.dx, menu_ball_cy_ + off.dy});
-  }
+  const fb::MenuLayout layout = fb::LayoutMenu(
+      g, menu_scale_, EaseOutBackPeakCached(), menu_label_widths_);
+  menu_origin_ = POINT{layout.x, layout.y};
+  menu_size_ = SIZE{layout.width, layout.height};
+  menu_ball_cx_ = layout.ball_cx;
+  menu_ball_cy_ = layout.ball_cy;
+  menu_centers_ = layout.centers;
   hovered_ = -1;
   pressed_ = -1;
   tracking_leave_ = false;
@@ -996,12 +919,9 @@ void FloatingBallWindow::DragTo(POINT cursor) {
   scale_ = screen.scale;
   const fb::Geometry as_left = GeometryFor(screen, true, fraction_);
   const fb::Geometry as_right = GeometryFor(screen, false, fraction_);
-  left = std::clamp(left, as_left.CollapsedBallLeft(),
-                    std::max(as_left.CollapsedBallLeft(),
-                             as_right.CollapsedBallLeft()));
-  top = std::clamp(top, as_left.MinTop(), as_left.MaxTop());
-  ball_left_ = left;
-  ball_top_ = top;
+  const fb::Offset clamped = fb::ClampDrag(as_left, as_right, left, top);
+  ball_left_ = clamped.dx;
+  ball_top_ = clamped.dy;
   RenderBall();
 }
 
@@ -1013,16 +933,13 @@ void FloatingBallWindow::EndDrag() {
   dock_left_ = g.DockLeftForBallLeft(ball_left_);
   fraction_ = g.FractionForTop(ball_top_);
   const fb::Geometry settled = CurrentGeometry();
-  snap_anim_.active = config_.animate;
-  snap_anim_.from_left = ball_left_;
-  snap_anim_.from_top = ball_top_;
-  snap_anim_.to_left = settled.CollapsedBallLeft();
-  snap_anim_.to_top = settled.BallTop();
-  snap_anim_.start_ms = NowMs();
-  if (!config_.animate) {
+  if (config_.animate) {
+    snap_anim_.Start(ball_left_, ball_top_, settled.CollapsedBallLeft(),
+                     settled.BallTop(), NowMs());
+  } else {
     CancelAnimations();
-    ball_left_ = snap_anim_.to_left;
-    ball_top_ = snap_anim_.to_top;
+    ball_left_ = settled.CollapsedBallLeft();
+    ball_top_ = settled.BallTop();
   }
   RenderBall();
   if (config_.animate) EnsureAnimationTimer();

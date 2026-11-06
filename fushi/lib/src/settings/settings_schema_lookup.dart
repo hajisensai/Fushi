@@ -1172,7 +1172,7 @@ SettingsDestination buildLookupDestination() {
           ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
-          // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
+          // 排除。默认关（用户要求，2026-07）。Windows / macOS 有，X11 没有（canBlockCapture）。
           // 写穿 pref（存储键沿用历史名 clipboard_panel_block_capture）后经
           // GlobalLookupController.applyBlockCapture 即时重应用到覆盖窗；native 侧
           // 记值并在窗口重建后自动重加，不新起并行机制。
@@ -1182,7 +1182,7 @@ SettingsDestination buildLookupDestination() {
             subtitle: t.lookup_block_capture_hint,
             icon: Icons.shield_outlined,
             visible: (SettingsContext settingsContext) =>
-                GlobalLookupController.isSupported,
+                GlobalLookupController.canBlockCapture,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.lookupBlockCapture,
             onChanged: (SettingsContext settingsContext, bool value) async {
