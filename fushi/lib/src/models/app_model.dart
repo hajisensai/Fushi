@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
@@ -12903,6 +12904,7 @@ class _AppModelRemoteLookupService
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService,
         FushiRemoteMiningService,
+        FushiRemoteDuplicatePolicyService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
   const _AppModelRemoteLookupService(this._appModel, [this._view]);
@@ -13086,6 +13088,18 @@ class _AppModelRemoteLookupService
     // 按视图处理、挖词目标 = Fushi 复习时查的是那份配置的复习（[AppModel.hostMiningRepositoryForView]）。
     final BaseAnkiRepository repo = _miningRepository;
     return repo.isDuplicate(expression, reading);
+  }
+
+  /// 反馈 E0sdqm4h-F：与 app 内点 ✓ 同一判据（[ankiMinedTapMinesNewDirectly]），按视图读
+  /// 那份配置的设置。读不到时回 false（扩展照旧弹「新增为重复卡 / 取消」）。
+  @override
+  Future<bool> allowsDuplicates() async {
+    try {
+      return await ankiMinedTapMinesNewDirectly(_miningRepository);
+    } catch (e, st) {
+      ErrorLogService.instance.log('RemoteMining.allowsDuplicates', e, st);
+      return false;
+    }
   }
 
   @override

@@ -5329,10 +5329,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   Future<MinePopupResult> onMinedCardActionFromPopup(
-    Map<String, String> fields,
-  ) => _sourceReviewSession != null
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) => _sourceReviewSession != null
       ? onMineFromPopup(fields)
-      : super.onMinedCardActionFromPopup(fields);
+      : super.onMinedCardActionFromPopup(fields, openChooser: openChooser);
 
   @override
   Future<MinePopupResult> onUpdateFromPopup(

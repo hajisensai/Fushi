@@ -8141,10 +8141,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _onQueueOverwriteImpl(fields);
 
   @override
-  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) =>
-      _sourceReviewSession != null
+  Future<MinePopupResult> onMinedCardAction(
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) => _sourceReviewSession != null
       ? onMineEntry(fields)
-      : super.onMinedCardAction(fields);
+      : super.onMinedCardAction(fields, openChooser: openChooser);
 
   Future<MineOutcome> _mineSourceReview(
     SourceReviewSession session, {

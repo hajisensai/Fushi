@@ -737,6 +737,7 @@
   "anki_mined_delete_failed": "Couldn't delete the card. Please try again.",
   "anki_mined_delete_in_ankimobile_hint": "Fushi can't delete cards in AnkiMobile. Delete it in AnkiMobile, then tap “I deleted it in Anki”.",
   "anki_mined_forget_done": "تم مسح سجل الاستخراج",
+  "anki_mined_manage_hint": "Right-click or long-press: overwrite or view the existing cards",
   "anki_mined_multiple_matches": "$count بطاقة مطابقة",
   "anki_mined_unverified_subtitle": "لا يستطيع Fushi قراءة مجموعة AnkiMobile لديك، لذا تأتي علامة الاستخراج من سجل هذا الجهاز نفسه — ولا يمكنه معرفة ما إذا كانت البطاقة لا تزال في Anki.",
   "anki_mined_unverified_title": "بطاقة معلَّمة كمستخرجة",

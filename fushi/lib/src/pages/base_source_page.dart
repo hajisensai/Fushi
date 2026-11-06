@@ -1831,8 +1831,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 新增重复卡 / 查看·在 Anki 中打开），复用可被 reader 覆写的 [onMineFromPopup] /
   /// [onUpdateFromPopup] 执行。
   Future<MinePopupResult> onMinedCardActionFromPopup(
-    Map<String, String> fields,
-  ) async {
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) async {
     if (SourceReviewScope.read(context) != null) {
       return onMineFromPopup(fields);
     }
@@ -1868,6 +1869,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       },
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
+      openChooser: openChooser,
     );
     if (minedNew?.queued ?? false) return minedNew!;
     if (!r.ankiConnect && failed != null) return failed!;

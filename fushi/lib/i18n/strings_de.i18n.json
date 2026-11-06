@@ -737,6 +737,7 @@
   "anki_mined_delete_failed": "Couldn't delete the card. Please try again.",
   "anki_mined_delete_in_ankimobile_hint": "Fushi can't delete cards in AnkiMobile. Delete it in AnkiMobile, then tap “I deleted it in Anki”.",
   "anki_mined_forget_done": "Mining-Eintrag gelöscht",
+  "anki_mined_manage_hint": "Right-click or long-press: overwrite or view the existing cards",
   "anki_mined_multiple_matches": "$count übereinstimmende Karten",
   "anki_mined_unverified_subtitle": "Fushi kann deine AnkiMobile-Sammlung nicht lesen, daher stammt die Markierung aus dem eigenen Eintrag dieses Geräts – es kann nicht feststellen, ob die Karte noch in Anki ist.",
   "anki_mined_unverified_title": "Karte als erstellt markiert",

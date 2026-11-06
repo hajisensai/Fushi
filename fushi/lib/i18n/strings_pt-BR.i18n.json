@@ -737,6 +737,7 @@
   "anki_mined_delete_failed": "Couldn't delete the card. Please try again.",
   "anki_mined_delete_in_ankimobile_hint": "Fushi can't delete cards in AnkiMobile. Delete it in AnkiMobile, then tap “I deleted it in Anki”.",
   "anki_mined_forget_done": "Registro de mineração apagado",
+  "anki_mined_manage_hint": "Right-click or long-press: overwrite or view the existing cards",
   "anki_mined_multiple_matches": "$count cartões correspondentes",
   "anki_mined_unverified_subtitle": "O Fushi não consegue ler sua coleção do AnkiMobile, então a marca de minerado vem do registro deste dispositivo — não dá para saber se o cartão ainda está no Anki.",
   "anki_mined_unverified_title": "Cartão marcado como minerado",

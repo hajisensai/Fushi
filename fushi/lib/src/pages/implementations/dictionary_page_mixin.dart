@@ -789,7 +789,10 @@ mixin DictionaryPageMixin {
   /// 词条 [fields] 的 expression/reading 反查 Anki 全部命中卡，弹操作选择让用户选
   /// （覆写哪张 / 新增重复卡 / 查看·在 Anki 中打开），复用 [onMineEntry]/[onUpdateEntry]
   /// 执行，返回 [MinePopupResult] 刷新 ✓。与 reader 车道（base_source_page）对称。
-  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async {
+  Future<MinePopupResult> onMinedCardAction(
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) async {
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
@@ -819,6 +822,7 @@ mixin DictionaryPageMixin {
       },
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
+      openChooser: openChooser,
     );
     if (minedNew?.queued ?? false) return minedNew!;
     if (!r.ankiConnect && failed != null) return failed!;
@@ -1369,9 +1373,12 @@ mixin DictionaryPageMixin {
               popupResourceSource == null,
           onDuplicateCheck: checkDuplicate,
           onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-          onMinedCardAction: (Map<String, String> fields) => onMinedCardAction(
-            miningFieldsForLayer(index, controller, fields),
-          ),
+          onMinedCardAction:
+              (Map<String, String> fields, {bool openChooser = false}) =>
+                  onMinedCardAction(
+                    miningFieldsForLayer(index, controller, fields),
+                    openChooser: openChooser,
+                  ),
           onQueueOverwrite: (Map<String, String> fields) =>
               onQueueOverwrite(miningFieldsForLayer(index, controller, fields)),
           onOpenInAnki: onOpenInAnki,

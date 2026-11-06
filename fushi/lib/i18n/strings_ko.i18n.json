@@ -737,6 +737,7 @@
   "anki_mined_delete_failed": "Couldn't delete the card. Please try again.",
   "anki_mined_delete_in_ankimobile_hint": "Fushi can't delete cards in AnkiMobile. Delete it in AnkiMobile, then tap “I deleted it in Anki”.",
   "anki_mined_forget_done": "마이닝 기록을 지웠습니다",
+  "anki_mined_manage_hint": "Right-click or long-press: overwrite or view the existing cards",
   "anki_mined_multiple_matches": "일치하는 카드 $count개",
   "anki_mined_unverified_subtitle": "Fushi는 AnkiMobile 컬렉션을 읽을 수 없으므로 마이닝 표시는 이 기기 자체의 기록에서 가져옵니다. 카드가 아직 Anki에 있는지는 알 수 없습니다.",
   "anki_mined_unverified_title": "마이닝된 카드로 표시됨",

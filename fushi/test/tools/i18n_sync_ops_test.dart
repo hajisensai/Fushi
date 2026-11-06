@@ -238,6 +238,48 @@ void main() {
       expect(result.json['beta_renamed'], 'B');
     });
 
+    // PR #2980 审查：改错的源文案曾只能 --remove + --add，16 种语言的译文一并退成英文。
+    // --set 只改指定语言那一份，键位不动，其余语言逐字不变。
+    test('--set 只改 locale 对上的那份文件、原位改值，其余文件不动', () {
+      final I18nApplyResult hit = run(<String>[
+        '--set',
+        'beta',
+        'test',
+        'B2',
+      ], table());
+      expect(hit.json.keys.toList(), <String>['alpha', 'beta', 'gamma']);
+      expect(hit.json['beta'], 'B2');
+      expect(hit.changed, isTrue);
+
+      final I18nCommand command = parseI18nCommand(<String>[
+        '--set',
+        'beta',
+        'ja',
+        'B2',
+      ]);
+      final I18nApplyResult miss = applyI18nOps(
+        json: table(),
+        ops: command.ops,
+        isZhCn: false,
+        label: 'lib/i18n/strings_test.i18n.json',
+      );
+      expect(miss.changed, isFalse, reason: 'locale 不符的文件一字不改');
+      expect(miss.json, table());
+    });
+
+    test('--set 不存在的 key → 抛 I18nOpError（不偷偷新增）', () {
+      expect(
+        () => run(<String>['--set', 'nope', 'test', 'X'], table()),
+        throwsA(isA<I18nOpError>()),
+      );
+    });
+
+    test('i18nLocaleOfPath：基准文件是 en，其余取文件名后缀', () {
+      expect(i18nLocaleOfPath('lib/i18n/strings.i18n.json'), 'en');
+      expect(i18nLocaleOfPath(r'lib\i18n\strings_zh-CN.i18n.json'), 'zh-CN');
+      expect(i18nLocaleOfPath('strings_pt-BR.i18n.json'), 'pt-BR');
+    });
+
     test('--rename 到字典序别处的名字 → 挪到新名字的有序位置（不破坏全排序）', () {
       final I18nApplyResult result = run(<String>[
         '--rename',

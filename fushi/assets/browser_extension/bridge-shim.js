@@ -182,6 +182,27 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      case 'findMinedMatches':
+        // 扩展列不出命中卡（服务端没有反查笔记的端点）→ 回 null，popup.js 用 duplicateCheck
+        // 再核、照旧问「新增为重复卡 / 取消」（反馈 _3tWQR6J2G）。唯一例外（反馈 E0sdqm4h-F）：
+        // 单击 ✓（没带 openChooser）且 app 开着「允许重复」（/api/duplicate 的
+        // allowDuplicates 位）→ 回 {mineNew:true}，与 app 内同一判据：直接再制一张，不弹框。
+        // 右键 / 长按 ✓（openChooser:true）永远照旧问。任何失败都回 null（照旧问，不误制）。
+        return (async function () {
+          var q = args[0] || {};
+          if (q.openChooser === true) return null;
+          try {
+            var resp = await chrome.runtime.sendMessage({
+              type: 'duplicate',
+              expression: q.expression || '',
+              reading: q.reading || '',
+            });
+            if (resp && resp.ok && resp.data && resp.data.allowDuplicates === true) {
+              return { mineNew: true };
+            }
+          } catch (_) { /* 照旧问 */ }
+          return null;
+        })();
       case 'srsTermStatus':
         return fushiSrsTermStatus(args[0]);
       case 'srsTermStatusBatch':
