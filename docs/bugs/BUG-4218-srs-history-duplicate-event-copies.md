@@ -1,0 +1,18 @@
+## BUG-4218 · SRS 历史把同一事件的多 ID 副本算成多次复习、撤销一份不生效
+- **报告**：2026-11-06（审查 PR #3004 / BUG-4217 时发现：BUG-4217 修好前合并 profile 写出的重复事件已同步进用户的事件日志，只追加、删不掉）
+- **真实性**：✅ 真 bug，代码路径核实。BUG-4217 的合并把同一次复习写成两个 ID（Anki 导入：规则 ID + 兜底 ID；原生：原 UUIDv7 + 兜底 v5），两份内容逐字相同、HLC 相同（合并只改 ID，`srs_profile_merge.dart` 第 7 步 HLC 原样保留）。读侧 `native/fushi_fsrs/src/history.rs` `select` 只按 ID 去重，内容去重只有「Anki 导入 vs 原生评分 ±1 秒」一条（`import_equivalent`），两份都算有效：
+  - 统计 / FSRS 优化器训练集 / RWKV / 记忆状态输入都经同一个 `select`（`projection.rs` `effective_by`、`store/projections.rs` 整 profile 扫描），间隔 0 天的同评分重复样本把 log loss 从约 0.6 拉到 1.6（BUG-4217 用户数据：5849 条评分里 2191 条是重复）；
+  - 撤销只按 ID（`select` 里 `revokes` 与 `l.id` 比对）：撤销其中一份，另一份成为最后一条有效日志，卡片状态不变，表现为「撤销没生效」。
+- **根因**：选取规则把「日志 ID」当成事件身份，而合并 / 旧版本会给同一事件写出多个 ID；事件日志只追加，写侧再怎么修也消不掉已落下的重复。
+- **[x] ① 已修复** — `native/fushi_fsrs/src/history.rs`：
+  - 新增事件内容身份 `EventKey` =（卡、kind、HLC physical / counter / writerId、发生时刻、来源、是否评分类、评分、ankiId）。`select` 在同 ID 去重之后按它成组（`event_groups`，≤ 32 条线性、否则哈希）；组里 ID 最小（UTF-16 序）的是代表，其余标新位 `STATUS_DUPLICATE = 32`、不算有效，但仍留在 `order` 里（`sync2/replay.rs` 要给每条派生日志按位置算一次投影行，投影行必须是操作集合的纯函数——初版把副本直接从 `order` 去掉，`all_replicas_converge` proptest 当场判红，种子已存进 `proptest-regressions/store/sync2/tests.txt`）。组里任何一份被 undo 撤销，整组每一份都标 `STATUS_REVOKED`。
+  - undo 与不认识的 kind 不成组（undo 的效果只看 `revokes`，取并集即可）。
+  - 等价导入规则不变，对代表与副本各自照算。
+  - 一份历史可以是血统里几张卡的日志之和，卡必须进身份：`Log` 加 `card`；落库 JSON 读 `card` 键，瘦存从 `LogCols.card`（`store/slim.rs` `log_row` 的 card 列）补；整 profile 扫描（`store/projections.rs` `ScanLog::log`）借 `by_card` 的键，不加内存；列模式（`select_columns` / `ffsrs_history_select`）每条日志从 3 个串改为 4 个串（`COLUMN_STRINGS`，多 cardId），Dart `history_kernel.dart` 同步打包。
+  - Dart 视图 `valid_logs.dart`：`revoked` 额外收进带 `STATUS_REVOKED` 的日志 ID（撤销的是被并掉那份时，代表也算被撤销，`restore_plan.dart` `_planReplayTail` 判「尾巴全被撤销」才对得上）。规则只在 Rust 写一份，Dart 不镜像。
+  - 依据（逐条核过）：原生日志 HLC 每条都由 `ctx.clock.tick` 单独取（`card_ops.dart:149/309`、`restore_plan.dart` `_restoreEvent` / `_replayOf`），同写入者内唯一；Anki 导入 HLC 由来源派生：revlog `(revlogId, 0, anki)`、锚点 `(T, 1, anki)`（`anki_import_rules.dart`）；合并 / 跨 profile 导入原样保留 HLC；恢复备份的重放副本取新 HLC，不与原日志成组。身份里另带发生时刻 / 评分等内容字段，只用来再收紧。
+- **[x] ② 已加自动化测试** —
+  - `native/fushi_fsrs/src/history.rs` tests：`duplicate_event_copies_count_once`（状态 / 统计 / 投影只算一次）、`undoing_either_copy_revokes_the_event`（撤销任一份都回退到前一状态）、`restore_replay_copy_is_a_new_event`、`same_hlc_on_another_card_or_with_other_content_is_not_a_copy`（前身卡同 HLC、评分 / 时刻不同都不并）、`undo_logs_are_never_grouped`、`equivalent_import_rule_still_applies_to_copies`、`long_histories_group_copies_the_same_way`（哈希分支）、`column_mode_reads_card_and_groups_copies`（4 串列布局；旧 3 串布局判坏）。
+  - `packages/fushi_srs/test/history/history_vectors_test.dart`：旧 Dart 实现生成的 1500 份固定向量里有 4 份随机造出的「副本」（1003 / 1053 / 1148 / 1439），期望按新规则逐份写明（被并掉的那份不再有效；1003 撤销的是另一份，整组撤销；1053 最后一条有效日志改为代表），其余 1496 份仍与旧实现逐条一致；列模式与落库形态两条入口互相对照。
+- **兼容**：不改写任何事件，只改读侧。旧版本客户端照旧只按 ID 去重，看到的就是修复前的重复（统计 / 优化器偏、撤销一份不生效）；新旧客户端只在「同一事件有多份副本」的卡上算出不同的状态 / 统计，卡片缓存是每台设备本地从日志算的，不经同步互相覆盖。列模式 FFI 布局变了（3 → 4 串），Dart 与原生库同仓同构建，必须一起升级（`prebuilt/` 需重编，`tool/native_libs.ps1` 按戳记会自动重编）。
+- **备注**：同步测试 `store/sync2/tests.rs` 的 `all_replicas_converge` 里所有设备共用写入者 `dart`、时钟各自从 T0 起，会造出「不同设备、同卡、同 HLC」的两条不同手动改期，新规则把它们当成同一事件的副本（只认 ID 最小那条）。真实设备写入者 ID 各不相同，不会出现；该测试只校验收敛，仍绿。未做 BUG-4217 审查里建议的「(b) 一次性追加确定性 undo 的修复迁移」（让旧客户端也收敛），需要另开。
