@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-616 阶段 C 守卫：视频封面必须完整显示（不裁切）。
 ///

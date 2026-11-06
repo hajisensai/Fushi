@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3431：有声书播放跟读期间，阅读位置只能有一个所有者——当前句
 /// （`_syncPositionFromCurrentCue`）。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // TODO-270 D: tri-state mine button — "overwrite the latest mined card".
 //

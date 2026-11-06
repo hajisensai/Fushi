@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2447：macOS 上在查词弹窗里展开/折叠词典分组之后，宿主页面的快捷键整条失效。
 ///

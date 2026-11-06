@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-377 source-scan guard: Android cleartext-HTTP must stay allowed for
 /// LAN paired-device sync, while the app's own public endpoints stay https-only.

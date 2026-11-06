@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：首页必须挂一个定时轮询把 app-open 全量同步周期性重跑，让「手机 / 电脑一直
 /// 开着、另一端改了数据」这种没有任何事件触发的场景也能自动拉到远端改动（此前同步纯事件

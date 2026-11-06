@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 释义（弹窗 WebView）里点词，嵌套查词要带上被点文本的来源振假名：
 /// `assets/popup/selection.js` 的 `selectFromPosition` 产出 `selection.rubyReadings`，

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1981：Hook 台词浮窗的 HWND 被外部 WM_CLOSE / teardown 销毁后，旧
 /// `FloatingLyricWindow` 对象仍跨 gal 会话复用。契约与姊妹窗

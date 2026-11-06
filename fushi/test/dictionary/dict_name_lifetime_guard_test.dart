@@ -19,7 +19,7 @@
 // also exists at native/fushidicts/tests/dict_name_lifetime_test.cpp.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('add_dict copies index.title while index_buf is still in scope', () {

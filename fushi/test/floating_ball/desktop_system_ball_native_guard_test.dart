@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 桌面应用外悬浮球（BUG-2793 合并后审查）：Windows runner 没有能驱动窗口过程的
 /// 单测装置，这里按源码钉住三条修法——任何一条退回，对应的症状就会回来。

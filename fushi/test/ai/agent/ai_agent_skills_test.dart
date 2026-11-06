@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/ai/agent/ai_agent_skills.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 

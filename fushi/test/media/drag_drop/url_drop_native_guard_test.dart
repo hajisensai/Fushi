@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1306 原生守卫：URL 拖放的原生抽取（Windows CFSTR_INETURLW / macOS public.url /
 /// Linux text/uri-list 里的 http(s)）无 headless 测试——要真 OS 拖放 + CI Build Desktop

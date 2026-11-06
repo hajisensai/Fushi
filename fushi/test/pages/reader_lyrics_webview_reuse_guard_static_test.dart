@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3913 源码守卫：阅读器整页存活期间复用同一个歌词 WebView。
 ///

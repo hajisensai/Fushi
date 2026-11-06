@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1045 + BUG-1047 guard: keep the browser-extension connection lifecycle fixes wired.
 ///

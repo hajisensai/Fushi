@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('阅读器注册并在 dispose 清理 debugCaptureWebView 钩子', () {

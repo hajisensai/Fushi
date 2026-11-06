@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi_core/fushi_core.dart';
 

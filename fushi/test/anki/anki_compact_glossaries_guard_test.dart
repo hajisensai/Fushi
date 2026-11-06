@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// issue #1432 源码守卫：制卡「紧凑释义」开关只在 Dart 侧落地。
 ///

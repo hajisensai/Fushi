@@ -11,7 +11,7 @@
 //      项的 ReaderPlacement / visible 门（单测层没有真 WebView，接线只能钉存在性）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   const List<String> popupCopies = <String>[

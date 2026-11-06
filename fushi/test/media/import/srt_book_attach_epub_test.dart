@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/import/srt_book_attach_epub.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';

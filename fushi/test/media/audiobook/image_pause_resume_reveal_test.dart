@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-007 gap2 续播守卫：图片暂停结束恢复播放后，必须把视口从插图拉回当前 cue
 /// （插图后那句），否则 reveal 停在插图上、audio-follow 对不上当前句。

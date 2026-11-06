@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：正式版发布后自动把 `main` 同步成 `develop` 的那一步（2026-09-08 用户要求）。
 ///

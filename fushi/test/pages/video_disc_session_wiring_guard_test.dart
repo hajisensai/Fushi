@@ -3,7 +3,7 @@
 // 判据本身由 test/media/video/disc/disc_session_controls_test.dart 覆盖，这里钉接线。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _read(String path) => File(path).readAsStringSync();
 

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-913 收藏夹导出修复的源码守卫：
 /// ① 收藏词 ☆ 按钮已复活并接 favoriteEntry 桥（FavoriteWords 写入入口不得再丢）。

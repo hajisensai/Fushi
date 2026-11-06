@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-736 接线守卫（源码扫描）：锁住 B-1（样式重锚两阶段编排）/ B-3（settle 尾沿去抖）
 /// 这两层确实**被接进真实路径**，且 _refreshProgress 的落库门控是「无条件落库」——

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-612 source guard for the keyboard-visual surface on the shortcut
 /// settings page. The full page mounts a state wired to the live AppModel, so it

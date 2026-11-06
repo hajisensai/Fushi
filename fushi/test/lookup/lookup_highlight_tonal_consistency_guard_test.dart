@@ -6,7 +6,7 @@
 // tonalHighlight。任一侧漂移，同一个窗口里就又是两种颜色。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _read(String path) => File(path).readAsStringSync();
 

@@ -5,7 +5,7 @@
 //    一次、按 infohash 合并；
 // ② registry 交出逐源回执：每个源发了哪些词、各几条、失败原因，成功 0 条也在；
 // ③ Nyaa HTML 一行坏只跳过该行，不再整页失败。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

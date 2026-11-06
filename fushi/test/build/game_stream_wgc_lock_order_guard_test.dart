@@ -12,7 +12,7 @@
 //      带着设备锁来拿 frame_mutex_）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 取类内（两格缩进）方法体：从签名到第一个两格缩进的闭合花括号。
 String methodBody(String source, String signature) {

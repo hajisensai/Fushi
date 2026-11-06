@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码扫描守卫（BUG-345）：视频片段导出 / 桌面音频裁剪两条 ffmpeg 路径里，任何
 /// `-map 0:a:<expr>` 的字符串插值都必须带尾随 `?`，让越界音轨映射降级回退默认轨，

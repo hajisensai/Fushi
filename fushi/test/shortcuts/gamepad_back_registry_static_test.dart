@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-700 T1 source-scan guard: 全局「返回」必须经快捷键注册表 (globalBack) 解析，
 /// 不得再有任何把手柄 B 硬编码成 maybePop / FushiPopIntent 的旁路。删硬绑后 B 才能

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_audio/fushi_audio.dart';

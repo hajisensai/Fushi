@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-553 源码守卫：字幕盒的 tap 命中必须**按字符矩形门控竞技场**，不得回退到无条件
 /// 收下所有 tap 的整片 GestureDetector。

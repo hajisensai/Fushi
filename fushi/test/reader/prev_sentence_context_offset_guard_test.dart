@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-934 源码守卫：制卡「前加一句」走 JS `getSurroundingSentences` 往前逐句采集，
 /// 必须以 `before.offset`（当前句首前一个字符，即前一句末尾分隔符）直接取前一句。

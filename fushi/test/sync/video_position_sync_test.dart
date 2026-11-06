@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
 /// TODO-653 视频/有声书播放进度跨设备同步——冲突解决纯函数守卫。

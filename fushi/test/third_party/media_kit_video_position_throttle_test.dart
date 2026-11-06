@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 // The quantize helper lives in the vendored media_kit_video controls. Importing
 // the src file directly exercises the real code (it lives under the package
 // `lib/`, so it is reachable even though it is not re-exported).

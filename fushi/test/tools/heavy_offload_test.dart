@@ -1,7 +1,7 @@
 // Which heavy commands tool/heavy.dart hands to the other machines
 // (tool/test_flow/heavy_offload.dart).
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import '../../tool/test_flow/heavy_offload.dart';
 

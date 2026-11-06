@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：书籍导入对话框问载体身份必须**走记忆**，不得裸调分类函数。
 ///

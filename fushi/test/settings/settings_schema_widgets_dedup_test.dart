@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：schema section/item/footer 的渲染 widget 只有一份
 /// （[settings_schema_widgets.dart]），material / cupertino 两个渲染器都复用它，

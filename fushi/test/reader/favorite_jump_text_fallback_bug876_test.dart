@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-876：书内「点收藏有时跳不过去」。根因：收藏的 `normCharOffset` 可能缺失（写入端
 /// `sentenceRange?.offset` 依赖 JS getNormalizedOffset，跨 ruby / 复杂节点选区可能返 null →

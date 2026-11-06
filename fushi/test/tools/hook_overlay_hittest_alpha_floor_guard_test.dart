@@ -9,7 +9,7 @@
 //   ③ 钳制结果（body_bg）真的被用于背景刷子，而不是钳完扔掉。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String src = File(

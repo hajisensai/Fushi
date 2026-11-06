@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：锁定「视频 tab 的标签栏与书架完全一致」——两页共用同一组件
 /// [FushiTagFilterBar]（内联 chip 点选筛选 + 长按拖拽重排 + 末尾管理齿轮），

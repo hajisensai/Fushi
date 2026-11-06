@@ -2,7 +2,7 @@
 // app 与服务端两处装配都恒为 cleanSpeech，视频转写走不到 Parakeet 滑窗。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';

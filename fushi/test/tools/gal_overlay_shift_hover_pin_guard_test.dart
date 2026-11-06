@@ -10,7 +10,7 @@
 // 避免注释里的同名词把守卫变成假绿。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

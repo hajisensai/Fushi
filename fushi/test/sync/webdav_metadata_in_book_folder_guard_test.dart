@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-142 诊断守卫：用户疑「坚果云同步把数据内容跑到文件外面去了 / 进度和书是
 /// 分开的」。沿真实代码路径核实——这**不是 bug**：进度/统计/有声书位置/封面本就

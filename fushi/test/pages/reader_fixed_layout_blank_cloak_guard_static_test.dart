@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1017 源码守卫：固定版式 SVG 竖排 EPUB 打开一片空白。
 ///

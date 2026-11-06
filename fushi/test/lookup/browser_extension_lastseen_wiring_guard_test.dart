@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 扩展连接探活（last-seen）接线守卫（源码扫描）：安装页的「验证插件已正常启用」连接检测
 /// 依赖一条链路——扩展打本机 server 任一端点 → server 回调 onExtensionSeen → app 记录

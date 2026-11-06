@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// SourceLibraryKind(来源库 mediaKind 值域)冻结守卫:dbValue 是

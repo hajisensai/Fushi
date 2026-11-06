@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-911 守卫：fail-open 的 catch 静默吞异常致线上不可诊断。
 ///

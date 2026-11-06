@@ -1,7 +1,7 @@
 // 服务器字幕的推荐规则（流式建书自动挂上 / 下载单集随附 / 选择框排序共用）：
 // 书与单集的归属判据、同主干内按学习语言与格式挑、所有有声书字幕格式都认、
 // 挑不准时返回 null 交给用户。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 import 'package:fushi/src/web_browser/data/web_browser_site_settings.dart';

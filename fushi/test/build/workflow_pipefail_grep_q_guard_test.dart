@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（BUG-2804）：workflow 里不得把一个变量 `printf` 进 `grep -q`。
 ///

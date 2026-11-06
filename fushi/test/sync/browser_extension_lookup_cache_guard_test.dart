@@ -5,7 +5,7 @@
 // 已统一 clearDictionaryResultsCache，因此扩展专用本机 HTTP 查询应保持 useCache:true。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test(

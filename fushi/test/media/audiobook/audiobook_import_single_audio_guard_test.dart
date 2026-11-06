@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（TODO-1031）：有声书「导入音频」入口不得再有「选目录 → 扫整目录全部音频
 /// 一股脑塞进同一本书」的行为。

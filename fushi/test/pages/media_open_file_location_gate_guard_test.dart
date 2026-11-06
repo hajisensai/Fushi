@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 视频库 / 游戏库「打开文件位置」的门控接线守卫（书架那条在
 /// `reader_shelf_open_file_location_guard_test.dart`，三条同一形状）。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3663 source-scan guard：Android app 外查词（PROCESS_TEXT / 悬浮字幕点字 /
 /// 截屏识字）跑在 `:popup` 进程的副 FlutterEngine（`PopupEngineHolder` →

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Pins two fixes found on a real dual-screen device (AYN Thor) that widget
 /// tests cannot reach: both only fail on Android with real WebViews.

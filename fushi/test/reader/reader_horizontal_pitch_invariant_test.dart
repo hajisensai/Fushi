@@ -3,7 +3,7 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-753 横排亚像素 pageStep 守卫（双保险：源码 + 真实 headless 几何）。
 ///

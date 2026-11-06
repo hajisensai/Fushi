@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：阅读器/有声书（base_source_page）弹窗层与加载占位层必须带稳定 key。
 ///

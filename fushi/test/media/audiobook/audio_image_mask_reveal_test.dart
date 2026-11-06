@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-682 / TODO-1367 回归守卫（源码扫描）：有声书音频跟随读过某张图时，必须真正
 /// 去掉该图的防剧透模糊遮罩（`blurred` 类），且揭开要持久（章节重载 / 布局切换不再

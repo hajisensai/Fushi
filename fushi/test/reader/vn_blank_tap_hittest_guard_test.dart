@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-748：VN 居中竖排布局下「点击空白翻页」永不触发。_fushiVnTapIsBlank 靠
 // caretPositionFromPoint/caretRangeFromPoint，它们把任意点（含空白边距）clamp 到

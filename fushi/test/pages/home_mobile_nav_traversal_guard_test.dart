@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-713 守卫：首页移动端布局（[_HomePageState._buildMobileLayout]）的
 /// body 与 bottomNavigationBar 必须各自被 [FocusTraversalGroup] 隔离。

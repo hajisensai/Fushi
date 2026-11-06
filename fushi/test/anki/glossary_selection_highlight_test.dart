@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 选中制卡高亮：制卡时在查词弹窗里选中的释义段，必须在导出的卡片释义里被
 /// `<mark class="fushi-selection">` 标在同一位置上。

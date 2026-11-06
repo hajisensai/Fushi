@@ -3,7 +3,7 @@
 // 请求函数没有歧义时一个请求都不发。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

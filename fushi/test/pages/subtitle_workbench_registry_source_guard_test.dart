@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3000 守卫：字幕工作台的字幕来源不得绑在下载管线的生命周期上。
 ///

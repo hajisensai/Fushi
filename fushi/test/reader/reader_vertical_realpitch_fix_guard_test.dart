@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-792 竖排「文字整体往下 / 逐列斜置 + 翻页累积漂移」根因修复守卫（容器高度对齐纯 V）。
 ///

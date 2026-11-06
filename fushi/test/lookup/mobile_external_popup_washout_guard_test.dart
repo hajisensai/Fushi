@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1065 guard -- the app-OUTSIDE / floating-subtitle popup (popup_main
 /// host) must render with a TRANSPARENT `<html>` documentElement.

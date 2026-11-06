@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// AppModel 审计加固源码守卫（BUG-911 / BUG-913 / BUG-914）。
 ///

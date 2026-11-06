@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1898：四字熟語等**紧邻**的两个带注音基字，振假名互相重叠糊成一团
 /// （用户 2026-08-28 报「明鏡国語辞典 第三版 四字词语带振假名重叠」）。

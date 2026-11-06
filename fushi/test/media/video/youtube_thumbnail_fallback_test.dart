@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// TODO-1314（C7）：多分辨率缩略图候选回退的守卫。

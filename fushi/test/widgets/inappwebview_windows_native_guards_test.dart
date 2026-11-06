@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// flutter_inappwebview_windows fork native 源码合并守卫
 /// （inappwebview-windows-native），合并自：

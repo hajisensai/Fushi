@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：workflow 的路径过滤 / `hashFiles()` 必须指向**真实存在**的路径。
 ///

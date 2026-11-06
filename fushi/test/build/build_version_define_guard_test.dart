@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1836 守卫：**每一条**发布构建都必须把 build-name 同时注入 Dart。
 ///

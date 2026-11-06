@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 
 /// loopback HTTP fake（照 `manga_ocr_model_downloader_test.dart` 的

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-825：连续/滚动模式有声书逐句高亮跟随滚动，恢复平滑动画且不再「滚动结束闪一下屏幕」。
 ///

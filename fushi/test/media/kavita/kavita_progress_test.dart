@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_sync.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';

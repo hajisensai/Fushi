@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guards for BUG-214: the Android floating lyric/subtitle strip
 /// lookup regressed in 0.5.0 (commit 0248a0260, "rewrite PopupDict from Java to

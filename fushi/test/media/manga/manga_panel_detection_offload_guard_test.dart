@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 
 /// 分镜检测的两条资源不变式（PR #1591 审查）。

@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v85（BUG-1542）：`video_books` 加 `last_played_at`，给「有进度」这个事实补上

@@ -3,7 +3,7 @@
 // 且按发布序号命名，取证时按报告里的构建号找。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String desktop = File(

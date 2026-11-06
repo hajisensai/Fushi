@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/people/person_identity.dart';
 
 /// 人物身份图（作品图谱 L5）：只按可靠外部 id 合并，名字相同只作建议。

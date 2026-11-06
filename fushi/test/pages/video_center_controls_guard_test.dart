@@ -3,7 +3,7 @@
 // +10s；移动端只在暂停时画一个无底板的小播放图标，不再有 96dp 大圆块 + ±10s。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String source = File(

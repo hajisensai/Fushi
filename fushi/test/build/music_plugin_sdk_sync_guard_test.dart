@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 第三方插件开发包 `tools/music-plugin-sdk/` 的本地运行器必须与宿主同规则：前奏脚本是逐字节副本，
 /// 能力 / 权限 / 搜索类型 / HTTP 方法 / 媒体请求头 / App scheme 清单与宿主一致。宿主改了规则而

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 一个「UI 动作门面」：页面按钮背后的操作集中在 [className] 上，页面与桌面控制通道
 /// 都只调它。

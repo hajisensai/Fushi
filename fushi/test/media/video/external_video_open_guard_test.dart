@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guards for TODO-903: video opened via the OS "open with"
 /// (file association / drag-onto-exe / CLI argv) must (1) carry a shelf cover,

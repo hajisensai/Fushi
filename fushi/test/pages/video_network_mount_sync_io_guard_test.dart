@@ -12,7 +12,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 final RegExp _syncFileApi = RegExp(
   r'\b(existsSync|statSync|lengthSync|listSync|lastModifiedSync|'

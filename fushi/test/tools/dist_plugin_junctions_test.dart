@@ -7,7 +7,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// cmd's view of [path]: what CMake, a native program, would see.
 Future<bool> _cmdSees(String path) async {

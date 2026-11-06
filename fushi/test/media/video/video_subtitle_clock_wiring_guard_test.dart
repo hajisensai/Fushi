@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3313 守卫：视频页里「按时间解析 / 绘制字幕」的调用点必须读字幕时钟
 /// （`subtitleClockMs`），不许读原始 `positionMs`。

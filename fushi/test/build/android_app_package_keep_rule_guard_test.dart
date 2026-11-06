@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// The Android application identity lives in exactly one place
 /// (`android/app/build.gradle`). Everything that has to name the app package —

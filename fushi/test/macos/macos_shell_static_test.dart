@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guard for the macOS-native (macos_ui) shell wiring (Approach B:
 /// the MacosWindow + Sidebar live at the app root in main.dart's builder; here

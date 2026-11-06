@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1361 guards: three Netflix browser-extension fixes, asserted in BOTH
 /// extension mirrors (bundled assets/ + real source tools/). Byte-identity of

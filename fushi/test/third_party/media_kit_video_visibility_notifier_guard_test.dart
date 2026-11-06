@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../helpers/workspace_pubspec.dart';
 
 /// TODO-364 source-scan guard: the vendored `media_kit_video` controls must keep

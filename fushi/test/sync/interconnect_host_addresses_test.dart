@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 
 /// host 地址集的分类与组装（docs/specs/2026-09-28-interconnect-remote-reach.md §1）。

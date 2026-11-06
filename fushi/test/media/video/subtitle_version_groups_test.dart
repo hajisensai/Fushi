@@ -1,6 +1,6 @@
 // B1 字幕搜索重做：两级版本聚类纯函数。分组键 = 来源合集 × (格式+语言+发布组
 // +CC+机翻)；卡内按集号升序；组间排序 语言→机翻殿后→最新→下载量。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';

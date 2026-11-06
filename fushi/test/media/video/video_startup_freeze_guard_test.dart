@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-772 源码守卫：快速进出视频 → Windows 启动冻死在 loading 的**减触发面**修复。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1078 源码守卫：桌面 Windows 阅读器裸 Space 在 WebView2 抢走 OS 键盘焦点后，
 /// 不再被 Chromium 默认 scrollByPage 吞掉，而是走「JS 捕获 → callHandler → Dart 解析」

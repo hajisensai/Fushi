@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（按用户「照抄 Niratan 词典方框排列」决策）：查词弹窗里多本词典的方框
 /// (`.glossary-group`) 按 Niratan Features/Popup/popup.js 的 masonry「最短列打包」排列

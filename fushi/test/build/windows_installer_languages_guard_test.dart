@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 /// issue #2716 回归守卫：Windows 安装器必须跟随系统界面语言，覆盖 app 的全部界面语言。

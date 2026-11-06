@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1702 守卫：Android release 的 R8 规则必须完整保住「宿主提供给 Mihon 扩展的
 /// ABI 面」。

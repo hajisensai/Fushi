@@ -1,7 +1,7 @@
 // TODO-2487 放送日历：周窗口/时区纯函数单测。放送时刻是 AniList 的 epoch 秒，
 // 展示按设备本地时区——测试用「本地时间 → epoch 秒」构造输入，不依赖测试机
 // 所在时区，三端 CI 均可跑。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';

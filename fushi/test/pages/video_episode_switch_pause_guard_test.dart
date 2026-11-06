@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-823 守卫：本地换集前必须先 pause 旧 controller，杜绝过渡期双音轨。
 ///
