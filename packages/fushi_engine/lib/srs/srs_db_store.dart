@@ -5053,6 +5053,20 @@ class SrsDbStore implements SrsSync2Host {
     return any != null;
   }
 
+  /// 本 profile 的用户笔记数（铁律 E：内置行不算）。profile 冲突时给用户对比本机与候选（反馈 dOv8AdJ6yV）。
+  Future<int> userNoteCount() async {
+    final Expression<int> n = db.srsEntities.id.count();
+    final TypedResult row =
+        await (db.selectOnly(db.srsEntities)
+              ..addColumns(<Expression<Object>>[n])
+              ..where(
+                db.srsEntities.profileUid.equals(profileUid) &
+                    db.srsEntities.kind.equals(SrsEntityKind.note.wire),
+              ))
+            .getSingle();
+    return row.read(n) ?? 0;
+  }
+
   // ------------------------------------------------------------------ SrsSyncReplica
 
   /// 并入一批外来、已盖过戳的事件（备份合并、旧格式 `.fushisrs` 备份导入）：保留原 dot / 因果上下文 / HLC
