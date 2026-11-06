@@ -1,8 +1,8 @@
 // B1 字幕搜索重做：正文语言检测纯函数。文件名标签常错（上传者复制模板/打包
 // 改名），正文是权威——阈值与 RSS-Subtitle-Manager 对齐，逐条规则单测。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 
 String _srt(List<String> lines) {
   final StringBuffer sb = StringBuffer();
