@@ -46,6 +46,9 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart'
+    show appleMusicTrackMenu;
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
@@ -403,6 +406,10 @@ class _SongTile extends ConsumerWidget {
     final bool playable;
     final Widget leading;
     VoidCallback? onLongPress;
+    MusicItemMenu? menu;
+    // 行尾「⋯」只给在线曲目（喜欢 / 加歌单等在触屏上只有这一个入口）。本地曲目的菜单
+    // 只是「播放 / 曲目详情」，点按与长按已经各管一项，只接右键，与本地曲目列表一致。
+    bool menuButton = true;
     switch (track) {
       case MusicTrackRow r:
         final String badge = musicFormatBadge(
@@ -422,6 +429,8 @@ class _SongTile extends ConsumerWidget {
         playable = true;
         leading = const FushiListLeadingIcon(FushiIcons.music);
         onLongPress = () => openMusicTrackDetail(context, r.trackUid);
+        menu = musicLocalTrackMenu(context, r, onPlay: onTap);
+        menuButton = false;
       case MusicPluginTrack p:
         id = '${song.plugin?.id}-${p.id}';
         title = p.title;
@@ -437,6 +446,9 @@ class _SongTile extends ConsumerWidget {
           size: 48,
           compact: true,
         );
+        if (song.plugin case final MusicPluginManifest m) {
+          menu = musicPluginTrackMenu(context, ref, m, p);
+        }
       case _ServerHit(
         :final MusicServerBrowser browser,
         item: MusicServerTrack s,
@@ -449,6 +461,7 @@ class _SongTile extends ConsumerWidget {
           bitrateKbps: s.bitrateKbps,
         );
         id = 'server-${browser.serverId}-${s.id}';
+        menu = appleMusicTrackMenu(context, browser, s);
         title = s.title;
         subtitle = <String>[
           s.artist ?? t.music_artist_unknown,
@@ -471,29 +484,37 @@ class _SongTile extends ConsumerWidget {
     final String? source = sourceLabel;
     return Opacity(
       opacity: playable ? 1 : 0.5,
-      child: FushiPressScale(
-        child: FushiGroupedListItem(
-          key: ValueKey<String>('music-search-song-$id'),
-          index: index,
-          count: count,
-          onTap: playable ? onTap : null,
-          onLongPress: onLongPress,
-          child: FushiListItem(
-            leading: leading,
-            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: subtitle.isEmpty
-                ? null
-                : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: FushiDesignTokens.of(context).spacing.gap,
-              children: <Widget>[
-                if (source != null) _SourceTag(label: source),
-                Text(
-                  formatMusicDuration(durationMs),
-                  style: context.fushiType.bodySmall,
-                ),
-              ],
+      child: musicWithContextMenu(
+        menu,
+        FushiPressScale(
+          child: FushiGroupedListItem(
+            key: ValueKey<String>('music-search-song-$id'),
+            index: index,
+            count: count,
+            onTap: playable ? onTap : null,
+            onLongPress: onLongPress,
+            child: FushiListItem(
+              leading: leading,
+              title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: subtitle.isEmpty
+                  ? null
+                  : Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: FushiDesignTokens.of(context).spacing.gap,
+                children: <Widget>[
+                  if (source != null) _SourceTag(label: source),
+                  Text(
+                    formatMusicDuration(durationMs),
+                    style: context.fushiType.bodySmall,
+                  ),
+                  if (menuButton) ?menu?.button(),
+                ],
+              ),
             ),
           ),
         ),
@@ -628,6 +649,7 @@ class _ArtistCard extends StatelessWidget {
 /// 一个网格 / 横滑条目的卡片。[plugin] 为空 = 本地条目。
 Widget _entityCard(
   BuildContext context,
+  WidgetRef ref,
   MusicPluginManifest? plugin,
   Object item,
   MusicSearchLocalActions local,
@@ -695,7 +717,7 @@ Widget _entityCard(
   }
   final MusicPluginManifest? m = plugin;
   if (m == null) return const SizedBox.shrink();
-  return switch (item) {
+  final Widget card = switch (item) {
     MusicPluginAlbum a => _CoverCard(
       key: ValueKey<String>('music-search-album-${m.id}-${a.id}'),
       title: a.title,
@@ -724,6 +746,10 @@ Widget _entityCard(
     ),
     _ => const SizedBox.shrink(),
   };
+  return musicWithContextMenu(
+    musicPluginEntityMenu(context, ref, m, item),
+    card,
+  );
 }
 
 /// 网格列数：与曲库专辑网格同一公式（[musicAlbumGridDelegate]），宽度不扣页边。
@@ -1180,6 +1206,7 @@ class _MusicSearchResultsViewState
                   child: c < items.length
                       ? _entityCard(
                           context,
+                          ref,
                           plugin,
                           items[c],
                           widget.localActions,
@@ -1810,6 +1837,7 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
                 width: _cardWidth,
                 child: _entityCard(
                   context,
+                  ref,
                   items[i].plugin,
                   items[i].item,
                   widget.localActions,

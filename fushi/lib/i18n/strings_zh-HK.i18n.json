@@ -5611,6 +5611,7 @@
   "music_action_love": "Love",
   "music_action_more": "More",
   "music_action_new_playlist": "New playlist",
+  "music_action_open": "打開",
   "music_action_play_from_start": "Play from beginning",
   "music_action_playlist_created": "Created “${name}”",
   "music_action_playlist_deleted": "Deleted “${name}”",

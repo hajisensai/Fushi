@@ -2,7 +2,7 @@ part of 'music_plugin_pages.dart';
 
 // 在线插件的「更多」动作（菜单外观与选歌单流程在 music_track_actions.dart，与 Apple Music 共用）：
 // 曲目：喜欢 / 不喜欢（不再推荐）/ 加入歌单（含新建）/ 从当前歌单移除 / 以这首起电台 /
-// 去艺人 / 去专辑；专辑 / 歌单：收藏 / 取消收藏、删除自己的歌单；艺人：关注 / 取消关注；
+// 去艺人 / 去专辑。专辑 / 歌单的收藏、删除自己的歌单与艺人的关注平铺在头部按钮行；
 // 「我的歌单」新建歌单；推荐页的个人电台。每项只在插件声明了对应能力时出现
 // （docs/specs/2026-10-28-music-plugins.md §4）。
 
@@ -137,9 +137,10 @@ Widget? _pluginRadioButton(
 // 曲目菜单
 // -------------------------------------------------------------------------
 
-/// 插件曲目的「更多」按钮；一项动作都没有时回 null（行尾不留空位）。[inPlaylist] 是这首所在的
-/// 歌单页（自己的歌单时多出「从这个歌单移除」，移除后调 [onChanged] 重拉）。
-Widget? musicPluginTrackMenuButton(
+/// 插件曲目的菜单（行尾「更多」+ 整行右键）；一项动作都没有时回 null（行尾不留空位）。
+/// [inPlaylist] 是这首所在的歌单页（自己的歌单时多出「从这个歌单移除」，移除后调
+/// [onChanged] 重拉）。
+MusicItemMenu? musicPluginTrackMenu(
   BuildContext context,
   WidgetRef ref,
   MusicPluginManifest manifest,
@@ -147,28 +148,22 @@ Widget? musicPluginTrackMenuButton(
   MusicPluginPlaylist? inPlaylist,
   VoidCallback? onChanged,
 }) {
-  final List<MusicMenuAction> actions = _pluginTrackActions(
+  List<MusicMenuAction> actions() => _pluginTrackActions(
     ref,
     manifest,
     track,
     inPlaylist: inPlaylist,
     onChanged: onChanged,
   );
-  if (actions.isEmpty) return null;
-  return musicMoreButton(
-    key: ValueKey<String>('music-plugin-track-menu-${track.id}'),
-    onTap: () => unawaited(
+  if (actions().isEmpty) return null;
+  return MusicItemMenu(
+    buttonKey: ValueKey<String>('music-plugin-track-menu-${track.id}'),
+    open: (MusicMenuAnchor? anchor) => unawaited(
       showMusicActionMenu(
         context,
-        title: track.title,
+        anchor: anchor,
         // 菜单打开时重算：喜欢状态可能刚在别处变过。
-        actions: _pluginTrackActions(
-          ref,
-          manifest,
-          track,
-          inPlaylist: inPlaylist,
-          onChanged: onChanged,
-        ),
+        actions: actions(),
         errorText: (Object e) => _pluginActionError(manifest, e),
       ),
     ),
@@ -292,50 +287,284 @@ List<MusicMenuAction> _pluginTrackActions(
 // 专辑 / 歌单 / 艺人
 // -------------------------------------------------------------------------
 
-/// 收藏 / 取消收藏（`collect`）。[collected] 未知（null）时两项都给。
-List<MusicMenuAction> _collectActions(
+/// 一个插件条目的收藏 / 关注键。
+typedef _PluginCollectKey = ({
+  String pluginId,
+  MusicPluginCollectType type,
+  String id,
+});
+
+/// 本次运行里用户改过的插件收藏 / 关注状态（写给插件成功之后记一笔）。
+///
+/// 列表行、卡片、详情页手里的 `collected` 都是加载那一刻的快照，改过之后不会自己变。
+/// 所以收藏状态只有这一处可写：卡片右键菜单与详情页头部的切换按钮都先查这里、
+/// 查不到才用快照——同一条目在哪个入口改，别的入口（包括下次右键）都跟着变。
+final StateProvider<Map<_PluginCollectKey, bool>> _pluginCollectedProvider =
+    StateProvider<Map<_PluginCollectKey, bool>>(
+      (Ref ref) => const <_PluginCollectKey, bool>{},
+    );
+
+/// [id] 当前的收藏状态：本次运行改过的为准，否则用条目快照 [snapshot]（null = 未知）。
+bool? _pluginCollectedOf(
+  Map<_PluginCollectKey, bool> overrides,
+  MusicPluginManifest manifest,
+  MusicPluginCollectType type,
+  String id,
+  bool? snapshot,
+) => overrides[(pluginId: manifest.id, type: type, id: id)] ?? snapshot;
+
+/// 收藏 / 取消收藏（艺人 = 关注 / 取消关注）：写给插件，成功后记进
+/// [_pluginCollectedProvider] 并提示。失败照常抛给调用方提示。
+Future<void> _setPluginCollected(
   WidgetRef ref,
   MusicPluginManifest manifest,
   MusicPluginCollectType type,
   String id, {
-  required bool? collected,
-  required ValueChanged<bool> onCollected,
-}) {
-  if (!manifest.can(MusicPluginCapability.collect)) {
-    return const <MusicMenuAction>[];
-  }
+  required bool on,
+}) async {
+  // await 之后调用方控件可能已卸载：先取好控制器。
+  final StateController<Map<_PluginCollectKey, bool>> overrides = ref.read(
+    _pluginCollectedProvider.notifier,
+  );
+  await _sourceOf(ref, manifest.id).setCollected(type, id, on: on);
+  overrides.state = <_PluginCollectKey, bool>{
+    ...overrides.state,
+    (pluginId: manifest.id, type: type, id: id): on,
+  };
   final bool artist = type == MusicPluginCollectType.artist;
-  Future<void> set(bool on) async {
-    await _sourceOf(ref, manifest.id).setCollected(type, id, on: on);
-    FushiToast.show(
-      msg: artist
-          ? (on ? t.music_action_followed : t.music_action_unfollowed)
-          : (on ? t.music_action_collected : t.music_action_uncollected),
-      severity: ToastSeverity.success,
+  FushiToast.show(
+    msg: artist
+        ? (on ? t.music_action_followed : t.music_action_unfollowed)
+        : (on ? t.music_action_collected : t.music_action_uncollected),
+    severity: ToastSeverity.success,
+  );
+}
+
+/// 插件专辑 / 歌单 / 艺人卡片（列表行、横滑卡、网格卡）的右键菜单：打开、收藏 / 关注、
+/// 去艺人。[item] 不是这三类时回 null。收藏状态以本次运行里改过的为准
+/// （[_pluginCollectedProvider]），没改过用条目自带的 `collected`；未知时两项都给
+/// （插件的收藏是幂等写）。
+MusicItemMenu? musicPluginEntityMenu(
+  BuildContext context,
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  Object item,
+) {
+  final (
+    String id,
+    MusicPluginCollectType type,
+    bool? snapshot,
+    Widget page,
+  ) = switch (item) {
+    MusicPluginAlbum a => (
+      a.id,
+      MusicPluginCollectType.album,
+      a.collected,
+      MusicPluginCollectionPage.album(manifest: manifest, album: a),
+    ),
+    MusicPluginPlaylist p => (
+      p.id,
+      MusicPluginCollectType.playlist,
+      p.collected,
+      MusicPluginCollectionPage.playlist(manifest: manifest, playlist: p),
+    ),
+    MusicPluginArtist a => (
+      a.id,
+      MusicPluginCollectType.artist,
+      a.collected,
+      MusicPluginArtistPage(manifest: manifest, artist: a),
+    ),
+    _ => ('', MusicPluginCollectType.album, null, const SizedBox.shrink()),
+  };
+  if (id.isEmpty) return null;
+  final bool artist = type == MusicPluginCollectType.artist;
+  // 自己建的歌单不出「收藏」（与歌单页按钮行一致）。
+  final bool own =
+      item is MusicPluginPlaylist &&
+      item.editable &&
+      manifest.can(MusicPluginCapability.playlistEdit);
+  final bool canCollect = !own && manifest.can(MusicPluginCapability.collect);
+  Future<void> setCollected(bool on) =>
+      _setPluginCollected(ref, manifest, type, id, on: on);
+
+  final MusicPluginArtistRef? albumArtist = item is MusicPluginAlbum
+      ? item.artists.where((MusicPluginArtistRef a) => a.id != null).firstOrNull
+      : null;
+  // 收藏状态在弹出那一刻读（本次运行改过的为准），不冻结在卡片构建时。
+  List<MusicMenuAction> actions() {
+    final bool? collected = _pluginCollectedOf(
+      ref.read(_pluginCollectedProvider),
+      manifest,
+      type,
+      id,
+      snapshot,
     );
-    onCollected(on);
+    return <MusicMenuAction>[
+      MusicMenuAction(
+        id: 'open',
+        label: t.music_action_open,
+        icon: FushiIcons.openInNew,
+        run: (BuildContext c) => _push(c, page),
+      ),
+      if (canCollect && collected != true)
+        MusicMenuAction(
+          id: 'collect',
+          label: artist ? t.music_action_follow : t.music_action_collect,
+          icon: artist ? FushiIcons.personAdd : FushiIcons.libraryAdd,
+          run: (_) => setCollected(true),
+        ),
+      if (canCollect && collected != false)
+        MusicMenuAction(
+          id: 'uncollect',
+          label: artist ? t.music_action_unfollow : t.music_action_uncollect,
+          icon: artist ? FushiIcons.personRemove : FushiIcons.close,
+          run: (_) => setCollected(false),
+        ),
+      if (albumArtist != null && manifest.can(MusicPluginCapability.artist))
+        MusicMenuAction(
+          id: 'artist',
+          label: t.music_action_go_to_artist,
+          subtitle: albumArtist.name,
+          icon: FushiIcons.person,
+          run: (BuildContext c) => _push(
+            c,
+            MusicPluginArtistPage(
+              manifest: manifest,
+              artist: MusicPluginArtist(
+                id: albumArtist.id!,
+                name: albumArtist.name,
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
-  return <MusicMenuAction>[
-    if (collected != true)
-      MusicMenuAction(
-        id: 'collect',
-        label: artist ? t.music_action_follow : t.music_action_collect,
-        icon: artist ? FushiIcons.person : FushiIcons.libraryAdd,
-        run: (_) => set(true),
+  return MusicItemMenu(
+    buttonKey: ValueKey<String>('music-plugin-entity-menu-${type.name}-$id'),
+    open: (MusicMenuAnchor? anchor) => unawaited(
+      showMusicActionMenu(
+        context,
+        anchor: anchor,
+        errorText: (Object e) => _pluginActionError(manifest, e),
+        actions: actions(),
       ),
-    if (collected != false)
-      MusicMenuAction(
-        id: 'uncollect',
-        label: artist ? t.music_action_unfollow : t.music_action_uncollect,
-        icon: FushiIcons.close,
-        run: (_) => set(false),
-      ),
+    ),
+  );
+}
+
+/// 专辑 / 歌单 / 艺人头部按钮行里平铺的「收藏 / 关注」切换按钮（`collect`）。
+///
+/// 收藏是这类页面的主动作，直接摆在按钮行里，不收进「更多」（用户 2026-11-06）。
+/// 未收藏 = 描边「收藏 / 关注」，已收藏 = 色调「已收藏 / 已关注」、再点取消。
+/// 状态以本次运行里改过的为准（[_pluginCollectedProvider]，卡片右键改的也算），
+/// 没改过用页面加载时的 [collected]；未知（null）按未收藏显示：再收藏一次是幂等的。
+class _PluginCollectToggle extends ConsumerStatefulWidget {
+  const _PluginCollectToggle({
+    super.key,
+    required this.manifest,
+    required this.type,
+    required this.id,
+    required this.collected,
+  });
+
+  final MusicPluginManifest manifest;
+  final MusicPluginCollectType type;
+  final String id;
+
+  /// 页面加载时插件给的状态快照。
+  final bool? collected;
+
+  @override
+  ConsumerState<_PluginCollectToggle> createState() =>
+      _PluginCollectToggleState();
+}
+
+class _PluginCollectToggleState extends ConsumerState<_PluginCollectToggle> {
+  bool _busy = false;
+
+  bool get _artist => widget.type == MusicPluginCollectType.artist;
+
+  Future<void> _set(bool on) async {
+    setState(() => _busy = true);
+    try {
+      await _setPluginCollected(
+        ref,
+        widget.manifest,
+        widget.type,
+        widget.id,
+        on: on,
+      );
+    } on Object catch (e) {
+      FushiToast.show(
+        msg: _pluginActionError(widget.manifest, e),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool on =
+        _pluginCollectedOf(
+          ref.watch(_pluginCollectedProvider),
+          widget.manifest,
+          widget.type,
+          widget.id,
+          widget.collected,
+        ) ??
+        false;
+    final VoidCallback? onPressed = _busy ? null : () => unawaited(_set(!on));
+    final Widget button = on
+        ? FushiFilledButton.tonalIcon(
+            onPressed: onPressed,
+            icon: FushiIcon(
+              _artist ? FushiIcons.personCheck : FushiIcons.check,
+            ),
+            label: Text(
+              _artist ? t.music_action_followed : t.music_action_collected,
+            ),
+          )
+        : FushiOutlinedButton.icon(
+            onPressed: onPressed,
+            icon: FushiIcon(
+              _artist ? FushiIcons.personAdd : FushiIcons.libraryAdd,
+            ),
+            label: Text(
+              _artist ? t.music_action_follow : t.music_action_collect,
+            ),
+          );
+    return Tooltip(
+      message: on
+          ? (_artist ? t.music_action_unfollow : t.music_action_uncollect)
+          : (_artist ? t.music_action_follow : t.music_action_collect),
+      child: FushiPressScale(child: button),
+    );
+  }
+}
+
+/// 艺人页按钮行里的「关注」切换；插件没有 `collect` 时为空。
+List<Widget> _pluginFollowActions(
+  MusicPluginManifest manifest,
+  String artistId, {
+  required bool? followed,
+}) {
+  if (!manifest.can(MusicPluginCapability.collect)) return const <Widget>[];
+  return <Widget>[
+    _PluginCollectToggle(
+      key: const ValueKey<String>('music-plugin-artist-follow'),
+      manifest: manifest,
+      type: MusicPluginCollectType.artist,
+      id: artistId,
+      collected: followed,
+    ),
   ];
 }
 
-/// 专辑 / 歌单页按钮行里的「更多」：收藏 / 取消收藏；自己的歌单可删除（删完退出页面）。
-/// 没有可做的动作时回空列表。
+/// 专辑 / 歌单页按钮行里平铺的动作：别人的专辑 / 歌单给「收藏」切换；自己的歌单给「删除歌单」
+/// （删完退出页面）。没有可做的动作时回空列表。
 List<Widget> _pluginCollectionActions(
   BuildContext context,
   WidgetRef ref,
@@ -343,67 +572,67 @@ List<Widget> _pluginCollectionActions(
   MusicPluginAlbum? album,
   MusicPluginPlaylist? playlist,
   required bool? collected,
-  required ValueChanged<bool> onCollected,
 }) {
   final bool own =
       playlist != null &&
       playlist.editable &&
       manifest.can(MusicPluginCapability.playlistEdit);
-  final MusicPluginCollectType type = album != null
-      ? MusicPluginCollectType.album
-      : MusicPluginCollectType.playlist;
-  final String id = album?.id ?? playlist!.id;
-  List<MusicMenuAction> actions() => <MusicMenuAction>[
-    // 自己建的歌单不需要「收藏」。
-    if (!own)
-      ..._collectActions(
-        ref,
-        manifest,
-        type,
-        id,
-        collected: collected,
-        onCollected: onCollected,
-      ),
-    if (own)
-      MusicMenuAction(
-        id: 'deletePlaylist',
-        label: t.music_action_delete_playlist,
-        icon: FushiIcons.delete,
-        run: (BuildContext c) async {
-          final bool ok = await showFushiConfirmDialog(
-            context: c,
-            title: t.music_action_delete_playlist,
-            message: t.music_action_delete_playlist_confirm(
-              name: playlist.title,
-            ),
-            icon: FushiIcons.delete,
-            destructive: true,
-          );
-          if (!ok) return;
-          await _sourceOf(ref, manifest.id).deletePlaylist(playlist.id);
-          FushiToast.show(
-            msg: t.music_action_playlist_deleted(name: playlist.title),
-            severity: ToastSeverity.success,
-          );
-          if (c.mounted) Navigator.of(c).maybePop();
-        },
-      ),
-  ];
-  if (actions().isEmpty) return const <Widget>[];
-  return <Widget>[
-    musicMoreButton(
-      key: const ValueKey<String>('music-plugin-collection-more'),
-      onTap: () => unawaited(
-        showMusicActionMenu(
-          context,
-          title: album?.title ?? playlist!.title,
-          icon: FushiIcons.moreHoriz,
-          actions: actions(),
-          errorText: (Object e) => _pluginActionError(manifest, e),
+  if (own) {
+    return <Widget>[
+      FushiPressScale(
+        child: FushiOutlinedButton.icon(
+          key: const ValueKey<String>('music-plugin-playlist-delete'),
+          onPressed: () =>
+              unawaited(_deleteOwnPlaylist(context, ref, manifest, playlist)),
+          icon: const FushiIcon(FushiIcons.delete),
+          label: Text(t.music_action_delete_playlist),
         ),
       ),
+    ];
+  }
+  // 自己建的歌单不需要「收藏」。
+  if (!manifest.can(MusicPluginCapability.collect)) return const <Widget>[];
+  return <Widget>[
+    _PluginCollectToggle(
+      key: const ValueKey<String>('music-plugin-collection-collect'),
+      manifest: manifest,
+      type: album != null
+          ? MusicPluginCollectType.album
+          : MusicPluginCollectType.playlist,
+      id: album?.id ?? playlist!.id,
+      collected: collected,
     ),
   ];
+}
+
+Future<void> _deleteOwnPlaylist(
+  BuildContext context,
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  MusicPluginPlaylist playlist,
+) async {
+  final bool ok = await showFushiConfirmDialog(
+    context: context,
+    title: t.music_action_delete_playlist,
+    message: t.music_action_delete_playlist_confirm(name: playlist.title),
+    icon: FushiIcons.delete,
+    destructive: true,
+  );
+  if (!ok) return;
+  try {
+    await _sourceOf(ref, manifest.id).deletePlaylist(playlist.id);
+  } on Object catch (e) {
+    FushiToast.show(
+      msg: _pluginActionError(manifest, e),
+      severity: ToastSeverity.error,
+    );
+    return;
+  }
+  FushiToast.show(
+    msg: t.music_action_playlist_deleted(name: playlist.title),
+    severity: ToastSeverity.success,
+  );
+  if (context.mounted) Navigator.of(context).maybePop();
 }
 
 /// 「我的歌单」顶部的「新建歌单」；插件没有 `playlistEdit` 回 null。
