@@ -628,11 +628,11 @@ void main() {
     });
   }
 
-  // BUG-4130（反馈 3drXfc4GFk）：还在「匹配中」的行没有任何资源字节。即使它带着
+  // BUG-4167（反馈 3drXfc4GFk）：还在「匹配中」的行没有任何资源字节。即使它带着
   // backend=game_resource（修复前的待配对写法 / 折叠进来的旧事件），「本句音轨」面板
   // 也必须报状态「Matching」，不能报 game_resource；资源弹窗（带播放键）只给真配上
   // 原件的行。
-  test('BUG-4130 only a paired game resource counts as resource audio', () {
+  test('BUG-4167 only a paired game resource counts as resource audio', () {
     final TexthookerService service = TexthookerService.test();
     final TexthookerLineEntry line = service.appendLine('配対待ち')!;
     service.updateLineAudio(
@@ -664,7 +664,7 @@ void main() {
     expect(texthookerLineAudioSummary(row), 'game_resource');
   });
 
-  testWidgets('BUG-4130 pending line panel shows Matching, not game_resource', (
+  testWidgets('BUG-4167 pending line panel shows Matching, not game_resource', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 850));
@@ -694,12 +694,12 @@ void main() {
     expect(find.byTooltip("Play this line's audio"), findsNothing);
   });
 
-  // BUG-4130 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
+  // BUG-4167 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
   // 「无原件」标，不是红色「未匹配 / 无音频」故障标。
-  // BUG-4130 审查：资源模式下「匹配中 / 无原件」的行点「本句音轨」不能落进 PCM 轨
+  // BUG-4167 审查：资源模式下「匹配中 / 无原件」的行点「本句音轨」不能落进 PCM 轨
   // 列表（PCM 轨与资源模式无关，选了还会把这行算成用户裁决、资源晚到不再升格），
   // 也不能给播放键；只有真配上原件的行走资源弹窗，非资源模式才列 PCM 轨。
-  test('BUG-4130 line track view follows resource pairing and backend', () {
+  test('BUG-4167 line track view follows resource pairing and backend', () {
     final TexthookerService service = TexthookerService.test();
     final TexthookerLineEntry line = service.appendLine('資源モード')!;
     TexthookerLineEntry row() => service.entries.single;
@@ -770,7 +770,7 @@ void main() {
         ),
       ]) {
     testWidgets(
-      'BUG-4130 unpaired resource-mode line track dialog (${c.label}) has no '
+      'BUG-4167 unpaired resource-mode line track dialog (${c.label}) has no '
       'play key and no PCM tracks',
       (WidgetTester tester) async {
         final TexthookerService service = TexthookerService.test();
@@ -805,7 +805,7 @@ void main() {
     );
   }
 
-  testWidgets('BUG-4130 resource-not-paired line shows a neutral tag', (
+  testWidgets('BUG-4167 resource-not-paired line shows a neutral tag', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 850));

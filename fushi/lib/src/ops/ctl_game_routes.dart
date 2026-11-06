@@ -1515,7 +1515,7 @@ class _GameCtl {
             excluded: snap.state.excludedAudioSourcePtrs.contains(t.sourcePtr),
           ),
       ],
-      // BUG-4130 审查：只有真配上原件（matched / encoded）的行才说「来自游戏资源
+      // BUG-4167 审查：只有真配上原件（matched / encoded）的行才说「来自游戏资源
       // 直提」；资源模式下还在匹配 / 没配上的行没有任何资源字节，但 PCM 轨同样与它
       // 无关，选了会把这句算成用户裁决、资源晚到也不再升格。判据与 UI 同一个。
       ...switch (galLineTrackViewFor(line, snap.state.audioBackend)) {

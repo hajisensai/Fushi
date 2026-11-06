@@ -546,7 +546,7 @@ void TestGameStreamRemoteKeys() {
          deferred == 8);
 }
 
-// BUG-4130 — SGRE publishes a line only once the typewriter has revealed it,
+// BUG-4167 — SGRE publishes a line only once the typewriter has revealed it,
 // while its voice starts with the page. The page start (first glyph) is the
 // text timestamp, and a voice is named after the page it played on.
 void TestScenarioPageVoiceBinding() {
@@ -631,7 +631,7 @@ void TestScenarioPageVoiceBinding() {
   assert(decision.state == VoiceResourcePairState::kUnselected);
 }
 
-// BUG-4130 review — a page whose line was fully revealed before a voice
+// BUG-4167 review — a page whose line was fully revealed before a voice
 // started never owns that voice, so the next line's voice (its text fading in
 // later than the lead) is not handed to the line still on screen; a voice that
 // started while a page was being typed (every case the host's old
@@ -705,7 +705,7 @@ void TestScenarioPageVoiceOwnership() {
          decision.text_event_id == 53);
 }
 
-// BUG-4130 review — page boundaries the tracker must see without the help of
+// BUG-4167 review — page boundaries the tracker must see without the help of
 // a shorter prefix or an empty surface: the visible text is replaced by a
 // different line of the same or greater length (no EndPage in between).
 void TestScenarioPageReplacedInPlace() {
@@ -727,7 +727,7 @@ void TestScenarioPageReplacedInPlace() {
   assert(typing.id == longer.id && typing.first_glyph_tick == 3000);
 }
 
-// BUG-4130 review — instant text: the page's first frame is already complete,
+// BUG-4167 review — instant text: the page's first frame is already complete,
 // so first glyph, publication and voice start coincide. The voice is
 // submitted on the XAudio thread and may land a few ticks after the page was
 // published from the draw callback; it still belongs to that page. A voice

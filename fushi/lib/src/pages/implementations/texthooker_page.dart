@@ -284,7 +284,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _session.state.audioBackend,
     );
     if (view == GalLineTrackView.resourceUnpaired) {
-      // BUG-4130 审查：资源模式下还没有原件的行（匹配中 / 无原件）。PCM 轨与它无关，
+      // BUG-4167 审查：资源模式下还没有原件的行（匹配中 / 无原件）。PCM 轨与它无关，
       // 也没有可试听的字节：只说明资源模式与这句当前状态，不给播放键、不列轨。
       await showAppDialog<void>(
         context: context,
@@ -294,7 +294,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return;
     }
     if (view == GalLineTrackView.resourceAudio) {
-      // BUG-4130：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
+      // BUG-4167：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
       // 行没有任何资源字节，弹这个带播放键的窗口只会让用户点了没声音。
       // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
       // -1.0、"这句时刻没有声音"）。列 PCM 轨只会被读成「音频没抓到」，所以这里
@@ -3692,7 +3692,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     const SizedBox(height: 10),
                     _MetadataRow(
                       label: t.game_health_audio,
-                      // BUG-4130：匹配中 / 未匹配的行报状态，不报 backend。
+                      // BUG-4167：匹配中 / 未匹配的行报状态，不报 backend。
                       value: texthookerLineAudioSummary(line),
                     ),
                     if (line.audioDurationMs != null)
@@ -4315,7 +4315,7 @@ class _TexthookerLine extends ConsumerWidget {
             colors: colors,
             onCharTap: onCharTap,
           ),
-          // BUG-4130：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
+          // BUG-4167：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
           // 不报来源（否则一句还没配上的台词会顶着 game_resource 字样）。
           if ((line.hasAudio && line.audioBackend != null) ||
               line.audioResourceId != null ||
@@ -4676,7 +4676,7 @@ class _CharSpan extends StatelessWidget {
 /// 列表头「特殊码」菜单的动作。
 enum _HookCodeAction { paste, save, import, export }
 
-/// 资源模式下尚未配上原件的行的「本句音轨」对话框（BUG-4130 审查）。
+/// 资源模式下尚未配上原件的行的「本句音轨」对话框（BUG-4167 审查）。
 ///
 /// 这句没有任何资源字节，PCM 轨又与资源模式无关：只说明资源模式（与右侧面板
 /// [GalTrackEmptyHint.resourceMode] 同一句）和这句当前状态（匹配中 / 无原件 …），

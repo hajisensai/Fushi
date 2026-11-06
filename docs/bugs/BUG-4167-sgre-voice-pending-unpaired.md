@@ -1,4 +1,4 @@
-## BUG-4130 · 命运石之门（SGRE）制卡音频一直「匹配中」，未配上的行仍显示 game_resource 与播放键
+## BUG-4167 · 命运石之门（SGRE）制卡音频一直「匹配中」，未配上的行仍显示 game_resource 与播放键
 - **报告**：2026-11-06（应用内反馈 3drXfc4GFk，Windows 3.0.1-debug.21889，STEINS;GATE RE:BOOT）
 - **真实性**：✅ 真 bug，两处根因（沿 origin/develop 4c4c7505a3 代码路径确认）：
   1. 配对契约：SGRE 精确文本通道只在打字机把整句显示完之后才发布（`native/galgame_hook/hook/adapters/sgre_lookup.inc` `CaptureSgreLookupDrawState` 的 `IsSgreScenarioLineFullyRevealed` 门），文本时间戳是写入时刻（`include/voice_hook_ipc.h` `WriteTextLaneEvent` 的 `GetTickCount64()`）；语音随页开播，资源名 `sgre-voicebody-*.xwma` 不带事件 ID（`hook/adapters/sgre_adapter.inc` `HandleSgreCompressedResource`）。宿主只能走无标记窗 `[T-330, T-130]`（`fushi/lib/src/mining/galgame_audio_source.dart` `pickPairedVoiceOggs`），打字越慢差得越远，补配路径（`_refreshPendingResourceMatches` / `_waitForPairedResourceAudio`）用的是同一时间戳同一窗口，永远配不上。
