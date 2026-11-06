@@ -1,4 +1,6 @@
 // 反馈 QAondMh4M5：旧版按「无画面视频」入库的纯音频搬到音乐库（幂等、先入库后删行）。
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -261,5 +263,181 @@ void main() {
     expect(r.migrated, 1);
     expect(r.errors.single, contains(subB));
     expect(await videoUids(), <String>['v/b']);
+  });
+
+  group('network video sources (SFTP / WebDAV / AList)', () {
+    Future<int> source(
+      String kind,
+      String transport,
+      String rootPath, {
+      Map<String, Object?> config = const <String, Object?>{},
+    }) => db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: rootPath,
+        mediaKind: kind,
+        transport: Value<String>(transport),
+        rootPath: rootPath,
+        configJson: Value<String?>(jsonEncode(config)),
+        createdAt: 1,
+      ),
+    );
+
+    /// 远程音乐扫描替身：条目地址原样落库（网络来源曲目带 sourceId）。
+    Future<void> remoteTrack(String url, int sourceId, {int? durationMs}) => db
+        .into(db.musicTracks)
+        .insert(
+          MusicTracksCompanion.insert(
+            trackUid: 'uid:$url',
+            path: url,
+            title: p.url.basenameWithoutExtension(url),
+            sourceId: Value<int?>(sourceId),
+            durationMs: Value<int?>(durationMs),
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
+        );
+
+    test('SFTP rows register a same-server music source; deleted only once '
+        'the exact sftp:// address is a live track; play history carried; '
+        'audio beside a video stays', () async {
+      const String ns = 'sftp://nas:22';
+      final int vid = await source(
+        'video',
+        'sftp',
+        '/srv/v',
+        config: <String, Object?>{'host': 'nas', 'port': 22, 'username': 'u'},
+      );
+      await video(
+        'v/drama',
+        '$ns/srv/v/Drama CD/Disc 1/01.flac',
+        sourceId: vid,
+        lastPlayedAt: 5000,
+        lastPositionMs: 1234,
+      );
+      // 大小写不同的地址不是同一个文件：不能拿它当已入库。
+      await video('v/case', '$ns/srv/v/Drama CD/Disc 1/02.flac', sourceId: vid);
+      await video('v/ep', '$ns/srv/v/Show/ep01.mkv', sourceId: vid);
+      await video('v/beside', '$ns/srv/v/Show/ep01.flac', sourceId: vid);
+      final List<({String rootPath, bool recursive})> registered =
+          <({String rootPath, bool recursive})>[];
+      final VideoAudioMigrationReport r =
+          await migrateAudioOnlyVideoBooksToMusic(
+            db,
+            intake: MusicAudioIntake(
+              db,
+              fileExists: (_) => fail('remote rows never touch the local disk'),
+              registerRemoteSource:
+                  ({
+                    required SourceLibraryRow videoSource,
+                    required String rootPath,
+                    required bool recursive,
+                  }) async {
+                    expect(videoSource.id, vid);
+                    registered.add((rootPath: rootPath, recursive: recursive));
+                    final int mid = await source(
+                      'music',
+                      'sftp',
+                      rootPath,
+                      config: <String, Object?>{
+                        'host': 'nas',
+                        'port': 22,
+                        'username': 'u',
+                      },
+                    );
+                    await remoteTrack('$ns/srv/v/Drama CD/Disc 1/01.flac', mid);
+                    await remoteTrack('$ns/srv/v/Drama CD/Disc 1/02.FLAC', mid);
+                    return null;
+                  },
+              importFile: (String path) async =>
+                  fail('no one-off remote import'),
+            ),
+            fileExists: (_) => false,
+            adoptSubtitle: noSubtitle,
+          );
+      expect(registered, <({String rootPath, bool recursive})>[
+        (rootPath: '/srv/v/Drama CD', recursive: true),
+      ]);
+      expect(r.candidates, 3);
+      expect(r.migrated, 1);
+      expect(r.playEventsWritten, 1);
+      expect(await videoUids(), <String>['v/beside', 'v/case', 'v/ep']);
+      final MusicPlayEventRow ev =
+          (await db.select(db.musicPlayEvents).get()).single;
+      expect(ev.trackUid, 'uid:$ns/srv/v/Drama CD/Disc 1/01.flac');
+      expect(ev.startedAt, 5000);
+      expect(ev.listenedMs, 1234);
+    });
+
+    test('WebDAV rows already covered by a same-server music source rescan '
+        'that source, then move', () async {
+      const String v = 'https://dav.test/v';
+      final int vid = await source(
+        'video',
+        'webdav',
+        v,
+        config: <String, Object?>{'username': 'u'},
+      );
+      final int mid = await source(
+        'music',
+        'webdav',
+        '$v/Music',
+        config: <String, Object?>{'username': 'u'},
+      );
+      await video('v/song', '$v/Music/A/01.mp3', sourceId: vid);
+      final List<int> rescanned = <int>[];
+      final VideoAudioMigrationReport r =
+          await migrateAudioOnlyVideoBooksToMusic(
+            db,
+            intake: MusicAudioIntake(
+              db,
+              rescanSource: (SourceLibraryRow s) async {
+                rescanned.add(s.id);
+                await remoteTrack('$v/Music/A/01.mp3', mid);
+                return null;
+              },
+              registerRemoteSource:
+                  ({
+                    required SourceLibraryRow videoSource,
+                    required String rootPath,
+                    required bool recursive,
+                  }) async => fail('covered, nothing registered'),
+            ),
+            fileExists: (_) => false,
+            adoptSubtitle: noSubtitle,
+          );
+      expect(rescanned, <int>[mid]);
+      expect(r.migrated, 1);
+      expect(await videoUids(), isEmpty);
+    });
+
+    test('a failed remote scan keeps the rows (retried next launch)', () async {
+      const String v = 'https://dav.test/v';
+      final int vid = await source(
+        'video',
+        'webdav',
+        v,
+        config: <String, Object?>{'username': 'u'},
+      );
+      await video('v/song', '$v/OST/01.mp3', sourceId: vid);
+      final VideoAudioMigrationReport r =
+          await migrateAudioOnlyVideoBooksToMusic(
+            db,
+            intake: MusicAudioIntake(
+              db,
+              registerRemoteSource:
+                  ({
+                    required SourceLibraryRow videoSource,
+                    required String rootPath,
+                    required bool recursive,
+                  }) async => 'connection refused',
+            ),
+            fileExists: (_) => false,
+            adoptSubtitle: noSubtitle,
+          );
+      expect(r.migrated, 0);
+      expect(r.errors.single, contains('connection refused'));
+      expect(await videoUids(), <String>['v/song']);
+    });
   });
 }

@@ -846,16 +846,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               1;
   }
 
-  /// 添加来源：让用户选本地文件夹或网络来源（三域全开放；视频网络仅 WebDAV/AList）。
+  /// 添加来源：让用户选本地文件夹或网络来源（各域可选的传输见 [_networkTransports]）。
   ///
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
     if (isBusy) return;
-    // 本域没有网络传输（音乐）：不弹二选一，直接选本地文件夹。
-    if (_networkTransports.isEmpty) {
-      await addLocalFolder();
-      return;
-    }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
       builder: (BuildContext ctx) => FushiSimpleDialog(

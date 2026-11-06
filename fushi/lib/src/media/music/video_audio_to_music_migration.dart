@@ -39,6 +39,8 @@ import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show kStreamableVideoSourceTransports;
 
 /// 把视频行挂的字幕文件 [subtitlePath] 定为曲目 [track] 的歌词；失败抛出（调用方据此
 /// 保留源行）。生产接 `MusicLyricsService.adoptSubtitleFile`。
@@ -85,6 +87,20 @@ bool isLegacyAudioOnlyVideoBook(VideoBookRow row) =>
     !isNetworkOnlyVideoPath(row.videoPath) &&
     p.isAbsolute(row.videoPath);
 
+/// 纯函数：这一行是不是要搬的旧版网络来源纯音频（反馈 QAondMh4M5）——属于某个来源、
+/// 路径是网络来源条目地址（`sftp://` 稳定地址 / WebDAV·AList 的 http(s) 地址）的纯音频
+/// 单文件。番剧源 / 媒体服务器 / 手动贴的 URL 没有 sourceId，不在此列：音乐库没有对应的
+/// 网络来源可以收它们。
+bool isLegacyRemoteAudioOnlyVideoBook(VideoBookRow row) {
+  if (row.sourceId == null) return false;
+  if (!isAudioOnlyMediaPath(row.videoPath)) return false;
+  if ((row.playlistJson ?? '').trim().isNotEmpty) return false;
+  final String lower = row.videoPath.toLowerCase();
+  return lower.startsWith('sftp://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('http://');
+}
+
 /// 见文件头。[fileExists] 默认真文件系统；[intake] / [repository] 测试注入。
 Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   FushiDatabase db, {
@@ -99,7 +115,13 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     for (final VideoBookRow r in all)
       if (isLegacyAudioOnlyVideoBook(r) && fileExists(r.videoPath)) r,
   ];
-  if (rows.isEmpty) return VideoAudioMigrationReport.none;
+  final List<VideoBookRow> remoteRows = <VideoBookRow>[
+    for (final VideoBookRow r in all)
+      if (isLegacyRemoteAudioOnlyVideoBook(r)) r,
+  ];
+  if (rows.isEmpty && remoteRows.isEmpty) {
+    return VideoAudioMigrationReport.none;
+  }
   final MusicAudioIntake hand =
       intake ?? MusicAudioIntake(db, fileExists: fileExists);
   final List<String> errors = <String>[];
@@ -133,6 +155,37 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     errors.addAll(r.errors);
   }
 
+  // 1b. 网络视频来源（SFTP / WebDAV / AList）的行：登记同一台服务器上的网络音乐来源并
+  // 扫描；已被同服务器音乐来源覆盖的，重扫覆盖它的来源。条目地址与视频行同一命名空间。
+  // 与视频同目录的（外挂音轨）不收、留在视频库；连不上的下次启动再试。
+  final Map<int, List<VideoBookRow>> remoteBySource =
+      <int, List<VideoBookRow>>{};
+  for (final VideoBookRow r in remoteRows) {
+    remoteBySource.putIfAbsent(r.sourceId!, () => <VideoBookRow>[]).add(r);
+  }
+  for (final MapEntry<int, List<VideoBookRow>> e in remoteBySource.entries) {
+    final SourceLibraryRow? source = await db.getMediaSourceById(e.key);
+    if (source == null ||
+        !kStreamableVideoSourceTransports.contains(source.transport) ||
+        source.mediaKind != SourceLibraryKind.video.dbValue) {
+      continue;
+    }
+    final MusicAudioIntakeResult r = await hand.adoptRemoteVideoSourceAudio(
+      videoSource: source,
+      scanRoot: remoteSourceNamespacedRoot(source),
+      audioPaths: <String>[
+        for (final VideoBookRow row in e.value) row.videoPath,
+      ],
+      videoMediaDirs: <String>{
+        for (final VideoBookRow other in all)
+          if (other.sourceId == e.key && !isAudioOnlyMediaPath(other.videoPath))
+            p.url.dirname(other.videoPath),
+      },
+      rescanCoveringSources: true,
+    );
+    errors.addAll(r.errors);
+  }
+
   // 2. 还不是在库曲目的：逐个交接（覆盖它的来源重扫 / 仅此一次导入）。
   Map<String, MusicTrackRow> live = await _liveTracksByPath(db);
   final List<String> pending = <String>[
@@ -144,11 +197,19 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
     errors.addAll(r.errors);
     live = await _liveTracksByPath(db);
   }
+  // 网络来源曲目按地址**原样**比（不 canonicalize：URL 区分大小写，`p.canonicalize`
+  // 在 Windows 上还会把 `/` 换成 `\`）。
+  final Map<String, MusicTrackRow> remoteLive = remoteRows.isEmpty
+      ? const <String, MusicTrackRow>{}
+      : await _liveTracksByPath(db, key: (String path) => path);
+  MusicTrackRow? trackOf(VideoBookRow r) => isLegacyRemoteAudioOnlyVideoBook(r)
+      ? remoteLive[r.videoPath]
+      : live[_key(r.videoPath)];
 
   // 3. 已在曲库的行：搬字幕（搬不过去的行留下）、记播放记录，再从视频库删除。
   final List<VideoBookRow> done = <VideoBookRow>[];
-  for (final VideoBookRow r in rows) {
-    final MusicTrackRow? track = live[_key(r.videoPath)];
+  for (final VideoBookRow r in <VideoBookRow>[...rows, ...remoteRows]) {
+    final MusicTrackRow? track = trackOf(r);
     if (track == null) continue;
     final String subtitle = (r.subtitleSource ?? '').trim();
     if (subtitle.isNotEmpty && p.isAbsolute(subtitle) && fileExists(subtitle)) {
@@ -163,18 +224,21 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
   }
   int events = 0;
   for (final VideoBookRow r in done) {
-    if (await _carryOverPlay(db, r, live[_key(r.videoPath)]!)) events++;
+    if (await _carryOverPlay(db, r, trackOf(r)!)) events++;
   }
   if (done.isNotEmpty) {
     await repo.deleteVideoBooksAndReclaimAssets(
       <String>[for (final VideoBookRow r in done) r.bookUid],
       scope: DeleteScope.keepLocalOnly,
       compactDatabase: false,
-      keepLocalFiles: <String>[for (final VideoBookRow r in done) r.videoPath],
+      keepLocalFiles: <String>[
+        for (final VideoBookRow r in done)
+          if (!isLegacyRemoteAudioOnlyVideoBook(r)) r.videoPath,
+      ],
     );
   }
   return VideoAudioMigrationReport(
-    candidates: rows.length,
+    candidates: rows.length + remoteRows.length,
     migrated: done.length,
     playEventsWritten: events,
     errors: errors,
@@ -186,12 +250,15 @@ Future<VideoAudioMigrationReport> migrateAudioOnlyVideoBooksToMusic(
 String _key(String path) => p.canonicalize(path);
 
 /// 在库曲目按路径（[_key]）索引。CUE 拆出的虚拟曲目共用一个路径，取起点最早的一首。
-Future<Map<String, MusicTrackRow>> _liveTracksByPath(FushiDatabase db) async {
+Future<Map<String, MusicTrackRow>> _liveTracksByPath(
+  FushiDatabase db, {
+  String Function(String path) key = _key,
+}) async {
   final Map<String, MusicTrackRow> out = <String, MusicTrackRow>{};
   for (final MusicTrackRow t in await (db.select(
     db.musicTracks,
   )..where(($MusicTracksTable t) => t.deletedAt.isNull())).get()) {
-    final String k = _key(t.path);
+    final String k = key(t.path);
     final MusicTrackRow? prev = out[k];
     if (prev == null || (t.cueStartMs ?? 0) < (prev.cueStartMs ?? 0)) {
       out[k] = t;

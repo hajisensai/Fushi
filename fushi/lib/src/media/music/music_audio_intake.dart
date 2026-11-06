@@ -271,17 +271,23 @@ class MusicAudioIntake {
 
   /// 网络视频来源 [videoSource] 扫描时扫到的纯音频交给音乐库。[scanRoot] / [audioPaths] /
   /// [videoMediaDirs] 都是库内命名空间的地址（SFTP 为 `sftp://…`，与视频行同一口径）。
+  ///
+  /// [rescanCoveringSources]：已被同一台服务器上现有音乐来源覆盖的音频，顺手重扫覆盖它的
+  /// 来源（每个来源一次）。视频扫描不需要（音乐来源自己的重扫会对账）；旧版存量迁移需要
+  /// ——它只在文件已是在库曲目之后才删视频行，覆盖来源可能还没扫到这个文件。
   Future<MusicAudioIntakeResult> adoptRemoteVideoSourceAudio({
     required SourceLibraryRow videoSource,
     required String scanRoot,
     required List<String> audioPaths,
     required Iterable<String> videoMediaDirs,
+    bool rescanCoveringSources = false,
   }) => _serial(
     () => _adoptRemote(
       videoSource: videoSource,
       scanRoot: scanRoot,
       audioPaths: audioPaths,
       videoMediaDirs: videoMediaDirs.toList(),
+      rescanCoveringSources: rescanCoveringSources,
     ),
   );
 
@@ -290,6 +296,7 @@ class MusicAudioIntake {
     required String scanRoot,
     required List<String> audioPaths,
     required List<String> videoMediaDirs,
+    required bool rescanCoveringSources,
   }) async {
     final List<String> audio = <String>[
       for (final String a in audioPaths)
@@ -305,13 +312,17 @@ class MusicAudioIntake {
     String native(String namespacedRoot) => sftpRoot == null
         ? namespacedRoot
         : (sftpRemotePathOf(namespacedRoot, sftpRoot) ?? namespacedRoot);
-    final List<MusicSourceRoot> sameServer = <MusicSourceRoot>[
+    final List<SourceLibraryRow> sameServerSources = <SourceLibraryRow>[
       for (final SourceLibraryRow s in await _db.getMediaSourcesByKind(
         SourceLibraryKind.music.dbValue,
       ))
         if (s.transport == videoSource.transport &&
             sameRemoteServer(decodeSourceConfig(s.configJson), cfg))
-          (rootPath: namespaced(s.rootPath), recursive: s.recursive),
+          s,
+    ];
+    final List<MusicSourceRoot> sameServer = <MusicSourceRoot>[
+      for (final SourceLibraryRow s in sameServerSources)
+        (rootPath: namespaced(s.rootPath), recursive: s.recursive),
     ];
     final MusicAudioRootPlan plan = planMusicRootsForVideoSourceAudio(
       videoRoot: scanRoot,
@@ -329,8 +340,27 @@ class MusicAudioIntake {
       );
       if (error != null) errors.add('${root.rootPath}: $error');
     }
+    final Map<int, SourceLibraryRow> toRescan = <int, SourceLibraryRow>{};
+    if (rescanCoveringSources) {
+      for (final String path in plan.coveredAudioPaths) {
+        final String dir = p.url.dirname(path);
+        for (final SourceLibraryRow s in sameServerSources) {
+          final String root = namespaced(s.rootPath);
+          if (p.url.equals(root, dir) ||
+              (s.recursive && p.url.isWithin(root, dir))) {
+            toRescan[s.id] = s;
+            break;
+          }
+        }
+      }
+    }
+    for (final SourceLibraryRow s in toRescan.values) {
+      final String? error = await _rescan(s);
+      if (error != null) errors.add('${s.rootPath}: $error');
+    }
     return MusicAudioIntakeResult(
       registeredRoots: plan.roots,
+      rescannedSourceIds: toRescan.keys.toList(),
       skippedPaths: plan.besideVideoAudioPaths,
       errors: errors,
     );
@@ -387,6 +417,16 @@ class MusicAudioIntake {
       errors: errors,
     );
   }
+}
+
+/// 网络来源 [source] 的根在库内命名空间里的写法（与它扫出的条目 / 视频行路径同一口径）：
+/// SFTP 换成 `sftp://主机:端口/远端路径` 稳定地址，WebDAV / AList 的根本身就是地址。
+String remoteSourceNamespacedRoot(SourceLibraryRow source) {
+  if (source.transport != 'sftp') return source.rootPath;
+  return sftpSourceUrlOf(
+    source.rootPath,
+    sftpSourceUrlRootForConfig(decodeSourceConfig(source.configJson)),
+  );
 }
 
 /// 两个网络来源的连接参数指向同一台服务器、同一个账号（AList 看站点根，其余看主机 /
