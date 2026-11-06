@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -46,7 +47,8 @@ void main() {
           await tester.pump(const Duration(seconds: 2));
           final Finder home = find.byType(SettingsHomePage);
           expect(home, findsOneWidget);
-          final bool wide = tester.getSize(home).width >= 720;
+          final bool wide =
+              tester.getSize(home).width >= kFushiSettingsHomeTwoPaneMinWidth;
           final String layout = wide ? 'wide' : 'narrow';
           debugPrint(
             '[settings-organization] exercised=$layout width=${tester.getSize(home).width}; alternate viewport requires a separate device run',

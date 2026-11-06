@@ -484,6 +484,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     // 同取 `gap`、离图标侧栏 `page`、与右侧分组卡之间留一个 `page`（右侧正文自带
     // 的左内边距，见 MaterialSettingsRenderer.detailHorizontalInsets）。这样左右
     // 都是「卡片浮在页面底上」，窗格边界由卡片自己表达，不需要线。
+    // 这条（隐藏 Cupertino 设计系统的）分支刻意不传 supportingWidth：左栏随宽度取
+    // supportingPaneWidthForLayout（280~360），600 宽时右详情 320（见
+    // kFushiSettingsHomeTwoPaneMinWidth 文档）。
     return MaterialSupportingPaneLayout(
       minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
