@@ -316,6 +316,9 @@ const String kSrsContentHeightHandler = 'onSrsContentHeight';
 const String kSrsWheelHandler = 'onSrsWheel';
 const String kSrsZoomWheelHandler = 'onSrsZoomWheel';
 
+/// 页面 → 宿主：跟内容等高的页面出现了自己的滚动偏移（取证用，见 [srsCardMetricsScript]）。
+const String kSrsPageOffsetHandler = 'onSrsPageOffset';
+
 /// 上报内容高度（ResizeObserver 盯 body；换卡 / 展开收起 / 图片加载都会触发）与
 /// 不可滚动时转交滚轮。幂等：外壳重放时不重复挂。
 @visibleForTesting
@@ -343,6 +346,33 @@ String srsCardMetricsScript({
     window.addEventListener('load', report);
     document.addEventListener('fushi-srs-theme', report);
     report();
+    // 取证（ARhuDLRX-_ / mCu20adBXg）：跟内容等高、由外层滚动的页面不该有自己的滚动偏移
+    // （窗口态由宿主钉位置，除外）。一旦出现就把现场交给宿主记诊断，每页只报一次。
+    var probed = false;
+    var probe = function(e){
+      if (probed) return;
+      var r = document.documentElement;
+      if (getComputedStyle(r).overflowY === 'hidden') return;
+      var el = document.scrollingElement || r;
+      var t = e && e.target && e.target.nodeType === 1 && e.target !== el &&
+        e.target !== r && e.target !== document.body ? e.target : null;
+      var vv = window.visualViewport;
+      var inner = t ? t.scrollTop : 0;
+      var vvTop = vv ? vv.offsetTop : 0;
+      if (window.scrollY < 1 && inner < 1 && Math.abs(vvTop) < 1) return;
+      probed = true;
+      call('$kSrsPageOffsetHandler', JSON.stringify({
+        scrollY: window.scrollY,
+        scrollHeight: el.scrollHeight,
+        innerHeight: window.innerHeight,
+        body: Math.ceil(document.body.getBoundingClientRect().height),
+        reported: last,
+        inner: t ? String(t.className || t.tagName) + '@' + Math.round(inner) : null,
+        vv: vv ? [vv.offsetTop, vv.pageTop, vv.height, vv.scale] : null
+      }));
+    };
+    document.addEventListener('scroll', probe, {capture: true, passive: true});
+    if (window.visualViewport) window.visualViewport.addEventListener('scroll', probe);
   }
   if ($wheel) {
     window.addEventListener('wheel', function(e){
@@ -2551,6 +2581,21 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
               final Object? h = arguments.isEmpty ? null : arguments.first;
               if (h is num && mounted) {
                 widget.face.onContentHeight?.call(h.toDouble());
+              }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsPageOffsetHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? info = arguments.isEmpty ? null : arguments.first;
+              if (info is String && mounted) {
+                final Size? size = context.size;
+                ErrorLogService.instance.logDiagnostic(
+                  'SrsWebCardFace.pageOffset',
+                  '${widget.face.cardId}: $info '
+                      'view=${size?.width.round()}x${size?.height.round()}',
+                );
               }
               return null;
             },
