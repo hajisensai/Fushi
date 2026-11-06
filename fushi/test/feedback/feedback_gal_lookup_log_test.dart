@@ -56,9 +56,9 @@ void main() {
 
     test('reads only the tail and drops the cut first line', () {
       final File file = File('${dir.path}/hibiki_glookup.log');
-      final String early = '2026-11-06T00:00:00  gal-click: early\n';
+      const String early = '2026-11-06T00:00:00  gal-click: early\n';
       final String filler = '${'x' * 200}\n';
-      final String late = '2026-11-06T00:00:09  gal-shield: late\n';
+      const String late = '2026-11-06T00:00:09  gal-shield: late\n';
       file.writeAsBytesSync(utf8.encode('$early$filler$late'));
       final List<String> lines = readGalLookupDiagnosticLines(
         file: file,
