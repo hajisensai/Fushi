@@ -580,8 +580,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
 
   @override
   Widget build(BuildContext context) {
-    final Size display = View.of(context).display.size;
-    _display = (width: display.width.round(), height: display.height.round());
+    // View.of 建立依赖：换显示器 / 改 DPI 时重建，刷新上限（见 [largestDisplayCapacity]）。
+    _display = largestDisplayCapacity(<({double width, double height})>[
+      for (final Display d in View.of(context).platformDispatcher.displays)
+        (width: d.size.width, height: d.size.height),
+    ]);
     return Focus(
       autofocus: true,
       focusNode: _focusNode,
@@ -784,7 +787,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     );
   }
 
-  /// 当前窗口所在显示器的物理像素尺寸，喂 [nextTextureCapacity] 的增长上限。每次
+  /// 已知显示器里最大的物理像素尺寸，喂 [nextTextureCapacity] 的增长上限。每次
   /// build 刷新（View 依赖变化 = 换显示器 / 改 DPI 都会触发 rebuild）。
   TextureCapacity _display = (width: 0, height: 0);
 

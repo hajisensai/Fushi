@@ -6,6 +6,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamRejection, kGameStreamWireVersion;
+import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart'
+    show
+        kInterconnectLeaderboardLinkCapability,
+        kInterconnectLeaderboardLinkPath;
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -118,6 +122,22 @@ void main() {
       Map<String, dynamic>.from(
         jsonDecode(await utf8.decodeStream(res)) as Map,
       );
+
+  test('排行榜代登录：明文 host 不声明能力位，端点 403 https_required', () async {
+    // host 装配了能力（TLS 下的成功路径见 leaderboard_link_test.dart），但明文局域网上
+    // 配对令牌可被嗅探：能力位不报，端点一律拒。
+    final Map<String, dynamic> caps = await json(
+      await send('GET', '/api/capabilities'),
+    );
+    expect(caps.containsKey(kInterconnectLeaderboardLinkCapability), isFalse);
+    final HttpClientResponse res = await send(
+      'POST',
+      kInterconnectLeaderboardLinkPath,
+      <String, Object?>{},
+    );
+    expect(res.statusCode, 403);
+    expect((await json(res))['error'], 'https_required');
+  });
 
   test('游戏串流：路由回 game_stream_off，capabilities 报 gameStream: false', () async {
     final HttpClientResponse res = await send(
