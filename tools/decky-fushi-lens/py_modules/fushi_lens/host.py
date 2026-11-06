@@ -25,7 +25,7 @@ import secrets
 import ssl
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 # The host holds pairing requests open until its user approves the device, so
 # pairing calls wait as long as Fushi's own client does (fushi_pair_v2_client.dart).
@@ -112,9 +112,13 @@ class HostClient:
             return http.client.HTTPConnection(parts.hostname, parts.port, timeout=timeout), ""
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         # Self-signed host certificate: chain validation is replaced by the
-        # fingerprint check in `request` (pinning), exactly like the Dart client.
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        # fingerprint check in `request` (pinning), exactly like the Dart client
+        # (`fushi_pinning_http.dart`). The host cert carries no usable SAN for the
+        # LAN address (`fushi_tls_identity.dart`: identity is the pinned
+        # fingerprint), so CA / hostname checks cannot apply; `request` refuses any
+        # certificate whose SHA-256 differs from the pinned one.
+        context.check_hostname = False  # NOSONAR: S5527 identity is the pinned fingerprint checked in request()
+        context.verify_mode = ssl.CERT_NONE  # NOSONAR: S4830 self-signed host, pinned fingerprint replaces chain validation
         return (
             http.client.HTTPSConnection(parts.hostname, parts.port, timeout=timeout, context=context),
             "https",
@@ -231,7 +235,7 @@ class HostClient:
         return res.json()
 
     def screen_ocr(self, image: bytes, content_type: str, region: Optional[str] = None) -> Dict[str, Any]:
-        path = "/api/ocr/screen" + (f"?region={region}" if region else "")
+        path = "/api/ocr/screen" + (f"?{urlencode({'region': region}, safe=',')}" if region else "")
         res = self.request("POST", path, image, {"Content-Type": content_type})
         if res.status != 200:
             # 403 / 502 carry {"reason"}: lens_consent (approve Google Lens on the host),

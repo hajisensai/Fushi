@@ -239,7 +239,9 @@ function Panel() {
     setStatus(s);
   };
   useEffect(() => {
-    refresh();
+    // The backend may still be starting (or failed to load): say so instead of
+    // sitting on "Loading…" with an unhandled rejection.
+    refresh().catch((e: unknown) => setMessage(`Fushi Lens backend is not answering: ${String(e)}`));
   }, []);
 
   const run = async (fn: () => Promise<Result>, done?: string) => {
@@ -254,7 +256,7 @@ function Panel() {
     }
   };
 
-  if (!status) return <PanelSection>Loading…</PanelSection>;
+  if (!status) return <PanelSection>{message ?? "Loading…"}</PanelSection>;
   const app = currentApp();
   const appRegion = app.id !== "0" ? status.regions?.[app.id] : undefined;
   return (

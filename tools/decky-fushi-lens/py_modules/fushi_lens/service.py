@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import secrets
 import threading
 import uuid
@@ -51,6 +52,22 @@ FORWARD_GET = {"lookup/audio/file", "media/dictionary"}
 
 MAX_FRAMES = 12
 MAX_BODY_BYTES = 32 * 1024 * 1024
+
+# Frame ids are minted by `LensService.capture` (secrets.token_hex(8)).
+FRAME_ID = re.compile(r"[0-9a-f]{16}")
+# A reading area: "x,y,w,h", whole non-negative frame pixels (ASCII digits only).
+REGION = re.compile(r"(\d+),(\d+),(\d+),(\d+)", re.ASCII)
+MIN_REGION_SIDE = 8
+
+
+def valid_region(region: Any) -> bool:
+    """"x,y,w,h" with whole, non-negative numbers and a usable size."""
+    if not isinstance(region, str):
+        return False
+    match = REGION.fullmatch(region)
+    if match is None:
+        return False
+    return int(match.group(3)) >= MIN_REGION_SIDE and int(match.group(4)) >= MIN_REGION_SIDE
 
 
 def jpeg_size(data: bytes) -> Tuple[int, int]:
@@ -86,9 +103,13 @@ class ConfigStore:
     def save(self, data: Dict[str, Any]) -> None:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        # The file holds the device token: create it owner-only from the start
+        # (chmod after writing would leave it readable under the umask meanwhile).
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1)
-        os.chmod(tmp, 0o600)
         os.replace(tmp, self.path)
 
 
@@ -177,10 +198,14 @@ class LensService:
         return {"frameId": frame_id, "width": width, "height": height}
 
     def frame(self, frame_id: str) -> Optional[bytes]:
+        if not FRAME_ID.fullmatch(frame_id):
+            return None
         with self._lock:
             return self._frames.get(frame_id)
 
     def ocr(self, frame_id: str, region: Optional[str] = None) -> Dict[str, Any]:
+        if region is not None and not valid_region(region):
+            raise ValueError("region must be x,y,w,h")
         data = self.frame(frame_id)
         if data is None:
             raise HostError("no_frame")
@@ -271,7 +296,11 @@ def _make_handler(service: LensService):
             return parts.path[len(prefix) :], parts.query
 
         def _body(self) -> Optional[bytes]:
-            length = int(self.headers.get("Content-Length") or 0)
+            """The request body; None when Content-Length is malformed or too large."""
+            raw = self.headers.get("Content-Length") or "0"
+            if not raw.isascii() or not raw.isdigit():
+                return None
+            length = int(raw)
             if length > MAX_BODY_BYTES:
                 return None
             return self.rfile.read(length) if length else b""
@@ -320,19 +349,23 @@ def _make_handler(service: LensService):
             rel, query = route
             body = self._body()
             if body is None:
-                self._send(413, b"too large", "text/plain")
+                self._send(413, b"bad or too large body", "text/plain")
                 return
             try:
                 if rel == "capture":
                     self._json(200, service.capture())
                 elif rel == "ocr":
                     req = json.loads(body.decode("utf-8") or "{}")
+                    if not isinstance(req, dict):
+                        raise ValueError("body must be a JSON object")
                     self._json(200, service.ocr(str(req.get("frameId", "")), req.get("region")))
                 elif rel.startswith("api/") and rel[4:] in FORWARD_POST:
                     res = service.forward("POST", rel[4:], query, body, self.headers.get("Content-Type"))
                     self._send(res.status, res.body, res.headers.get("content-type", "application/json"))
                 else:
                     self._send(404, b"not found", "text/plain")
+            except ValueError as e:  # bad JSON / region: the page sent a malformed request
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(e)})
             except Exception as e:  # noqa: BLE001 - request boundary
                 self._error(e)
 

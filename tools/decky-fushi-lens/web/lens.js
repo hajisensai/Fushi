@@ -60,12 +60,19 @@
 
   // ── helpers ──────────────────────────────────────────────────────────
 
+  // Never rejects: a backend that is gone (plugin reloading) comes back as
+  // {ok: false, status: 0} and the caller shows errorText() for it.
   async function postJson(path, payload) {
-    const res = await fetch(new URL(path, ROOT), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload || {}),
-    });
+    let res;
+    try {
+      res = await fetch(new URL(path, ROOT), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {}),
+      });
+    } catch (_) {
+      return { ok: false, status: 0, data: { error: 'backend' } };
+    }
     let data = null;
     try { data = await res.json(); } catch (_) { /* non-JSON error body */ }
     return { ok: res.ok, status: res.status, data };
@@ -88,6 +95,7 @@
     if (reason === 'lens_consent') return 'Allow Google Lens in Fushi on your PC, then try again.';
     if (reason === 'engine_failed') return "Google Lens failed. Check your PC's internet connection.";
     if (reason === 'tls') return 'Fushi\'s certificate changed. Pair again.';
+    if (reason === 'backend') return 'Fushi Lens is not running. Reload the plugin.';
     return 'Something went wrong' + (res && res.status ? ` (${res.status})` : '') + '.';
   }
 
@@ -173,8 +181,7 @@
       return Math.min(text.length - 1, i + (cp > 0xffff ? 2 : 1));
     }
     if (i <= 0) return 0;
-    const prev = text.charCodeAt(i - 1);
-    return i - ((prev >= 0xdc00 && prev <= 0xdfff && i >= 2) ? 2 : 1);
+    return i - (i >= 2 && text.codePointAt(i - 2) > 0xffff ? 2 : 1);
   }
 
   // ── drawing ──────────────────────────────────────────────────────────
@@ -270,13 +277,23 @@
   // that hosts this iframe, so its messages come from Steam's UI origin rather
   // than from window.parent.
   const STEAM_UI_ORIGIN = 'https://steamloopback.host';
+  // The window hosting this iframe (Big Picture); its origin is known exactly,
+  // so messages to it name it instead of '*'.
+  const PARENT_ORIGIN = (location.ancestorOrigins && location.ancestorOrigins[0]) || STEAM_UI_ORIGIN;
   function fromSteam(event) {
-    return event.source === window.parent || event.origin === STEAM_UI_ORIGIN;
+    return event.origin === STEAM_UI_ORIGIN || (event.source === window.parent && event.origin === PARENT_ORIGIN);
   }
+  function postToParent(message) {
+    if (window.parent !== window) window.parent.postMessage(message, PARENT_ORIGIN);
+  }
+
+  // Frame ids are minted by the backend (16 hex chars); anything else from the
+  // hash or a message is not a frame of ours.
+  const FRAME_ID = /^[0-9a-f]{16}$/;
 
   window.addEventListener('message', (event) => {
     const msg = event.data;
-    if (event.source === popupFrame.contentWindow) {
+    if (event.source === popupFrame.contentWindow && event.origin === location.origin) {
       if (!msg || msg.__fushiPopupFrame !== true || msg.type !== 'ready') return;
       // Same origin: give the popup the media base through the backend proxy.
       // The token is a placeholder; the backend authenticates for real.
@@ -296,9 +313,9 @@
       // Tell the frontend the press was handled: without this answer it closes the
       // Lens on B by itself (so a broken page can never trap the player).
       // Same window as `exit`: the frontend listens on the window hosting this iframe.
-      if (window.parent !== window) window.parent.postMessage({ fushiLens: 'ack', button: msg.button }, '*');
+      postToParent({ fushiLens: 'ack', button: msg.button });
     }
-    if (msg.fushiLens === 'frame') loadFrame(String(msg.frameId || ''));
+    if (msg.fushiLens === 'frame') void loadFrame(String(msg.frameId || ''));
   });
 
   function onPopupMessage(msg) {
@@ -361,7 +378,7 @@
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
+      reader.onerror = () => reject(new Error('could not read the frame', { cause: reader.error }));
       reader.readAsDataURL(blob);
     });
     state.screenshot = dataUrl.slice(dataUrl.indexOf(',') + 1);
@@ -489,7 +506,7 @@
 
   function exit() {
     closePopup();
-    if (window.parent !== window) window.parent.postMessage({ fushiLens: 'exit' }, '*');
+    postToParent({ fushiLens: 'exit' });
   }
 
   function onButton(button) {
@@ -501,7 +518,7 @@
       case 'RIGHT': moveCursor(1); break;
       case 'LB': moveLine(-1); if (state.popupOpen) lookupSoon(); break;
       case 'RB': moveLine(1); if (state.popupOpen) lookupSoon(); break;
-      case 'A': if (state.popupOpen) closePopup(); else lookup(); break;
+      case 'A': if (state.popupOpen) closePopup(); else void lookup(); break;
       case 'X': if (state.popupOpen) sendPopup({ type: 'mine', entryIndex: 0 }); break;
       case 'B': if (state.popupOpen) closePopup(); else exit(); break;
       case 'Y': enterAreaMode(); break;
@@ -545,11 +562,9 @@
   function saveArea(area) {
     const region = area && parseRegion(regionText(area));
     state.region = region;
-    if (window.parent !== window) {
-      window.parent.postMessage({ fushiLens: 'region', region: region ? regionText(region) : null }, '*');
-    }
+    postToParent({ fushiLens: 'region', region: region ? regionText(region) : null });
     leaveAreaMode(region ? 'Reading area saved for this game' : 'Reading the whole screen');
-    if (state.frameId) loadFrame(state.frameId);
+    if (state.frameId) void loadFrame(state.frameId);
   }
 
   function onAreaButton(button) {
@@ -668,17 +683,20 @@
     state.cursor = hit.cursor;
     state.matchLength = 0;
     draw();
-    lookup();
+    void lookup();
   });
 
   // ── frame + OCR ──────────────────────────────────────────────────────
 
   async function loadFrame(frameId) {
-    if (!frameId) return;
+    if (!FRAME_ID.test(frameId)) return;
     closePopup();
-    Object.assign(state, {
-      frameId, lines: [], line: 0, cursor: 0, matchLength: 0, screenshot: null,
-    });
+    state.frameId = frameId;
+    state.lines = [];
+    state.line = 0;
+    state.cursor = 0;
+    state.matchLength = 0;
+    state.screenshot = null;
     draw();
     frameImg.src = new URL(`frame/${frameId}.jpg`, ROOT).href;
     showStatus('Reading text…', true);
@@ -717,13 +735,13 @@
       if (!r.ok) { showStatus(errorText(r), true); return; }
       frameId = r.data.frameId;
     }
-    if (frameId) loadFrame(frameId);
+    if (frameId) await loadFrame(frameId);
   }
   window.addEventListener('hashchange', () => {
     const id = new URLSearchParams(location.hash.slice(1)).get('frame');
-    if (id && id !== state.frameId) loadFrame(id);
+    if (id && id !== state.frameId) void loadFrame(id);
   });
 
   window.__fushiLens = { onButton, loadFrame, state, hitTest };
-  start();
+  void start();
 })();

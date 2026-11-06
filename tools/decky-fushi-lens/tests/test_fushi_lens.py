@@ -232,6 +232,41 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(fake.calls[-1][1], "/api/media/dictionary?dictionary=d&path=a.png")
         self.assertEqual(len(fake.calls), 2)
 
+    def test_ocr_validates_the_request_before_reaching_the_host(self):
+        fake = FakeHost({"/api/ocr/screen": (200, {"lines": []})})
+        self.svc._host = fake
+        frame = json.loads(self.fetch("capture", b"{}")[1])["frameId"]
+        for bad in (b"[1]", b"not json", json.dumps({"frameId": frame, "region": "1,2,3,4&x=y"}).encode(),
+                    json.dumps({"frameId": frame, "region": "²,0,100,100"}).encode(),
+                    json.dumps({"frameId": frame, "region": 7}).encode()):
+            status, body = self.fetch("ocr", bad)
+            self.assertEqual((status, json.loads(body)["error"]), (400, "bad_request"), bad)
+        self.assertEqual(fake.calls, [])
+        status, _ = self.fetch("ocr", json.dumps({"frameId": frame, "region": "0,0,640,400"}).encode())
+        self.assertEqual(status, 200)
+        self.assertEqual(fake.calls[-1][1], "/api/ocr/screen?region=0,0,640,400")
+        # Only ids the backend minted name a frame.
+        self.assertEqual(self.fetch("ocr", json.dumps({"frameId": "../x"}).encode())[0], 502)
+        self.assertIsNone(self.svc.frame("../x"))
+
+    def test_malformed_content_length_is_rejected(self):
+        import http.client
+
+        port = int(self.base.split(":")[2].split("/")[0])
+        path = self.base[self.base.index("/s/"):] + "capture"
+        for value in ("-1", "abc", "²"):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.putrequest("POST", path)
+            conn.putheader("Content-Length", value)
+            conn.endheaders()
+            self.assertEqual(conn.getresponse().status, 413, value)
+            conn.close()
+
+    @unittest.skipUnless(os.name == "posix", "file modes are POSIX only")
+    def test_pairing_file_is_owner_only(self):
+        self.config.save({"token": "t"})
+        self.assertEqual(os.stat(self.config.path).st_mode & 0o777, 0o600)
+
     def test_pairing_is_persisted_and_restored(self):
         pending = FakeHost({"/api/pair/v2/confirm": (200, {"token": "t9"})})
         pending.token = None

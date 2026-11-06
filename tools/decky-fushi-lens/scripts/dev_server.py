@@ -39,8 +39,14 @@ def main(argv: list) -> int:
         return 0
     frames = []
     for path in argv[1:]:
-        with open(path, "rb") as f:
-            frames.append(f.read())
+        # The developer names the screenshots to replay on their own machine.
+        with open(path, "rb") as f:  # NOSONAR: S8707 dev tool, the path is the developer's own CLI argument
+            data = f.read()
+        # Frames stand in for the gamescope capture, which is always JPEG.
+        if not data.startswith(b"\xff\xd8"):
+            print(f"{path}: not a JPEG (captures are JPEG)", file=sys.stderr)
+            return 2
+        frames.append(data)
     cycle = itertools.cycle(frames)
     service = LensService(config, os.path.join(PLUGIN, "web"), capture=lambda: next(cycle))
     port = int(os.environ.get("FUSHI_LENS_PORT", "0"))
