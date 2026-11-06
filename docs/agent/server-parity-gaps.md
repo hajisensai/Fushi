@@ -79,16 +79,15 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 - **Subtitles (what is still app-only)**: downloads source subtitles and
   `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider
   assembly in `packages/fushi_server/lib/src/server_subtitle_providers.dart`; the backfill
-  service lives in `packages/fushi_engine/lib/media/video/subtitle/`). Still missing:
-  - backfill after a scrape (the app's `onWorkScraped` → `_backfillSubtitlesForScrapedWork`);
-    the server scrape coordinator has no `onWorkScraped` hook wired;
-  - the periodic retry of downloads that finished without a subtitle
-    (`fushi/lib/src/media/video/subtitle/download_subtitle_retry.dart`, app-only timer);
-  - AI reordering of candidates (`aiSubtitleBackfillReorder`): the server's `ai:` section
-    is only assigned to the video-acquire assistant;
-  - the app's Jimaku provider (search by AniList id) and AJATT: both live in `fushi/`
-    (`jimaku_subtitle_provider.dart`, `ajatt_*`). The server's Jimaku provider searches
-    by title + episode only.
+  wiring in `packages/fushi_server/lib/src/server_subtitle_backfill.dart`; the backfill
+  service lives in `packages/fushi_engine/lib/media/video/subtitle/`). Done on the server
+  (2026-11-05, same engine code as the app): backfill after a scrape (`onWorkScraped` on
+  the shared coordinator, limited to downloaded files like the app), the periodic retry of
+  downloads that finished without a subtitle (`download_subtitle_retry.dart`, now in the
+  engine), AI reordering of candidates (the `ai:` provider is also assigned to
+  `AiFeature.videoSearch`), and the app's Jimaku provider (search by AniList / TMDB id,
+  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Still missing:
+  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only;
   - the download pipeline reads subtitle providers when the pipeline is (re)built (start,
     or after resource indexers are saved). A key pushed later over interconnect needs one
     of those, or a restart. Backfill reads them per request.

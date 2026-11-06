@@ -318,9 +318,9 @@ import 'package:fushi_engine/media/video/download/video_download_subtitle_langua
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi_engine/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_work_subtitle_backfill.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
+import 'package:fushi_engine/media/video/subtitle/download_subtitle_retry.dart';
 import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
@@ -6701,22 +6701,12 @@ class AppModel with ChangeNotifier {
     final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
     if (service == null || service.registry.providers.isEmpty) return;
     _downloadSubtitleRetryRunning = true;
-    // 一轮共用一个解析器（惰性：没有到期行就不扫）。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
     try {
       final DownloadSubtitleRetryReport report =
-          await retryUnavailableDownloadSubtitles(
+          await runDownloadSubtitleRetryRound(
             database: database,
-            // 内嵌轨选择不挡：这些分集本该由下载流水线装上 sidecar。
-            backfill: (String videoId) => backfillLibraryVideoSubtitle(
-              database: database,
-              service: service,
-              videoId: videoId,
-              confirmedIdentities: confirmedIdentities,
-              seriesLanguage: _seriesSubtitleLanguage,
-              embeddedSelectionBlocks: false,
-            ),
+            service: service,
+            seriesLanguage: _seriesSubtitleLanguage,
             now: DateTime.now(),
           );
       if (report.attempted > 0) {
@@ -7611,41 +7601,12 @@ class AppModel with ChangeNotifier {
     // 探一堆视频时长。
     if (service == null || service.registry.providers.isEmpty) return;
 
-    final Set<String> withSubtitle = <String>{
-      for (final VideoBookRow book in notice.work.members)
-        if (book.subtitleSource?.trim().isNotEmpty == true) book.bookUid,
-    };
-    final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
-      members: notice.work.members,
-      metadata: notice.metadata,
-      hasExistingSubtitle: withSubtitle.contains,
-      // 单文件作品没有合集，也就没有每系列记忆可查。
-      explicitLanguage: notice.work.collection == null
-          ? null
-          : _seriesSubtitleLanguage(
-              notice.work.collection!.name.trim().toLowerCase(),
-            ),
+    await backfillScrapedWorkSubtitles(
+      database: database,
+      service: service,
+      notice: notice,
+      seriesLanguage: _seriesSubtitleLanguage,
     );
-    // 整季共用一个解析器：下载文件行只扫一次，不是逐集全表扫描。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
-    for (final SubtitleBackfillTarget scraped in targets) {
-      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3926）。
-      final SubtitleBackfillTarget target = scraped.withMedia(
-        await withDownloadConfirmedIdentity(
-          confirmedIdentities,
-          videoPath: scraped.videoPath,
-          media: scraped.media,
-        ),
-      );
-      final SubtitleBackfillResult result = await service.backfill(target);
-      if (result.installed) {
-        debugPrint(
-          '[subtitle-backfill] installed ${result.language} for '
-          '${target.bookUid}: ${result.installedPath}',
-        );
-      }
-    }
   }
 
   /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务

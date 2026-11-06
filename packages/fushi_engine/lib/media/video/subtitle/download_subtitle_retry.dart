@@ -9,6 +9,9 @@
 /// 这里按退避间隔把窗口内的 `unavailable` 行重新交给「给库里这一个视频补字幕」
 /// （[backfillLibraryVideoSubtitle]，身份取已落库的刮削结论），装上了把行标成
 /// `placed`，确定不必再找的标 `skipped`，其余只刷新尝试时刻与原因等下一轮。
+///
+/// app（`AppModel`）与无头服务端（`ServerSubtitleBackfill`）共用这一份，各自只管
+/// 定时器的起停与进场闸门。
 library;
 
 import 'dart:async';
@@ -19,8 +22,12 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
+    show DownloadConfirmedIdentityResolver;
 import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart'
-    show subtitleSourceBlocksBackfill;
+    show backfillLibraryVideoSubtitle, subtitleSourceBlocksBackfill;
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart'
+    show VideoSubtitleBackfillService;
 
 /// 下载完成后多久之内还值得回头找字幕。超过这个窗口仍没有，多半是真没人做。
 const Duration kDownloadSubtitleRetryWindow = Duration(days: 14);
@@ -67,6 +74,33 @@ class DownloadSubtitleRetryReport {
   /// 视频离库（见 [retryUnavailableDownloadSubtitles]），只记原因、等下一轮，
   /// 超出 [kDownloadSubtitleRetryWindow] 后自然不再被查出来。
   final int unmatched;
+}
+
+/// 生产装配的一轮（app 与无头服务端共用）：一轮共用一个下载确认身份解析器，
+/// 每行交 [backfillLibraryVideoSubtitle]，内嵌轨选择不挡（这些分集本该由下载
+/// 流水线装上 sidecar）。进场闸门（偏好开关、有没有配字幕来源、上一轮跑完没有）
+/// 由调用方判。
+Future<DownloadSubtitleRetryReport> runDownloadSubtitleRetryRound({
+  required FushiDatabase database,
+  required VideoSubtitleBackfillService service,
+  required String? Function(String seriesKey) seriesLanguage,
+  required DateTime now,
+}) {
+  // 惰性：没有到期行就不扫下载文件表。
+  final DownloadConfirmedIdentityResolver confirmedIdentities =
+      DownloadConfirmedIdentityResolver(database);
+  return retryUnavailableDownloadSubtitles(
+    database: database,
+    backfill: (String videoId) => backfillLibraryVideoSubtitle(
+      database: database,
+      service: service,
+      videoId: videoId,
+      confirmedIdentities: confirmedIdentities,
+      seriesLanguage: seriesLanguage,
+      embeddedSelectionBlocks: false,
+    ),
+    now: now,
+  );
 }
 
 /// 跑一轮重试。[backfill] 按库内视频 id 补字幕，视频不存在返回 null；生产装配是

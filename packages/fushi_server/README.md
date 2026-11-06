@@ -114,7 +114,7 @@ qbittorrent:                  # engine=qbittorrent 或 auto 无内置库时用
   url: "http://127.0.0.1:8080"
   username: "admin"
   password: "..."
-ai:                           # 「AI 下视频」助手会话用的 AI 提供商（见下文）；整段省略 = 不用 AI、不发任何 AI 请求
+ai:                           # 「AI 下视频」助手会话、补字幕前候选重排等用的 AI 提供商（见下文）；整段省略 = 不用 AI、不发任何 AI 请求
   preset: "openai"            # openai / anthropic / gemini / deepseek / qwen / zhipu / … / custom（全部自填）
   api_key: "sk-..."
   # model: ""                 # 空 = 预设的起点模型
@@ -324,7 +324,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 - 下载后端没起来（没内置引擎也没 qBittorrent）时报 `not_ready`。
 - WebUI「设置」页的 AI 几项改完**保存即生效**，不用重启；API key 与 qBittorrent 密码同口径：不回显、留空不改。
   admin API：`GET/PUT settings` 的 `ai` 对象（`preset` 置空即关；`apiKey` 只回 `apiKeySet`）。
-- 服务端那一家 AI 只指派给「AI 下载」：刮削的 AI 身份识别、补字幕重排等其它 AI 功能在服务端不装配。
+- 服务端那一家 AI 指派给「AI 下载」「视频字幕 AI 校对」「AI 助手」和补字幕前的候选重排（app 的「视频搜索辅助」），
+  打开 `library_organize` 时还有「AI 整理库」；刮削的 AI 身份识别等其它 AI 功能在服务端不装配。
 - 选了「配字幕」时由服务端下载管线按「在线字幕来源」装字幕；每系列字幕语言选择记进偏好表，字幕阶段按它排首选。
 
 ### 在线字幕来源
@@ -340,8 +341,16 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 - 下载管线的来源在管线（重）建时读一次（启动 / 资源索引器保存后）；补字幕每次请求现读。
 - 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
   （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
-- Jimaku 在服务端只按标题 + 集号搜（没有 app 那份按 AniList id 直查的 provider）；AJATT 只在 app 里有。
-- 不做：刮削完成后自动给整部作品补字幕、下载后缺字幕的定期重试、补字幕前的 AI 候选重排——这些仍只在 app 当 host 时有。
+- Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
+  整季压缩包按集号解包。AJATT 只在 app 里有。
+- 自动获取字幕（偏好 `video_subtitle_backfill_after_scrape`，与 app 同名，默认开；关了下面两条都不跑，
+  一家来源都没配时同样不跑）：
+  - 刮削后补字幕：下载导入的作品刮完后，给仍缺字幕的分集各补一条（与 app 一样只管下载来的文件；
+    库根扫描刮出来的作品不自动补，免得第一次扫大库就逐集打一遍字幕站，要补用 `videos subtitle backfill`）。
+  - 下载后缺字幕的定期重试：下载管线起着时，启动先看一轮、之后每 30 分钟看一眼；下载完成 14 天内、
+    字幕行还是 `unavailable` 的分集每 6 小时重找一次（连载番字幕常晚一两天上传），装上了任务字幕行标 `placed`。
+- 补字幕前的 AI 候选重排：配了 `ai:` 段时，下载候选之前交那一家排「先试哪几条」（每次补字幕最多一次请求，
+  失败按原序）；没有 `ai:` 段不发任何 AI 请求。
 
 ### 视频刮削
 

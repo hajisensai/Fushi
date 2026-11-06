@@ -17,14 +17,13 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
-import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subdl_client.dart';
@@ -233,11 +232,14 @@ VideoSubtitleProvider createSubsProvider(
     case kSubdlSubtitleProviderId:
       return SubdlClient(apiKey: credentials.subdlApiKey);
     case 'jimaku':
-      return JimakuCliSubtitleProvider(
-        JimakuClient(
+      // 与 app 同一个 provider：AniList id / TMDB 关联键直查，标题只是回退词；
+      // 整季压缩包按集号解包。
+      return JimakuVideoSubtitleProvider(
+        client: JimakuClient(
           apiKey: credentials.jimakuApiKey,
           client: createAppHttpIoClient(),
         ),
+        closesClient: true,
       );
   }
   throw ArgumentError.value(providerId, 'providerId', '未知字幕来源');
@@ -307,139 +309,3 @@ AutomaticSubtitleAligner serverSubtitleAligner(PrefStore prefs) =>
         defaultValue: true,
       ),
     );
-
-/// 服务端用的 Jimaku provider：按标题搜条目 → 列文件 → 只留文本字幕。
-///
-/// app 侧同职责的 `JimakuVideoSubtitleProvider` 住在 `fushi/`（无头端 import 不到）；
-/// 这里只实现「按标题 + 集号」子集，没有 AniList / TMDB 关联键。下载与 app 走同一个
-/// `JimakuClient.downloadFile`。
-class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
-  JimakuCliSubtitleProvider(this._client, {this.priority = 100});
-
-  final JimakuClient _client;
-
-  @override
-  final int priority;
-
-  @override
-  String get id => 'jimaku';
-
-  @override
-  bool get allowsFreeProbeDownload => true;
-
-  @override
-  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
-    VideoSubtitleSearchRequest request,
-  ) async {
-    final List<String> titles = jimakuQueryVariants(<String>[
-      request.effectiveQuery,
-      ...request.alternateTitles,
-    ]);
-    try {
-      final List<JimakuEntry> found = await _client.searchEntries(
-        queryFallbacks: titles,
-        throwOnError: true,
-        animeFilter: switch (request.anime) {
-          true => JimakuAnimeFilter.anime,
-          false => JimakuAnimeFilter.liveAction,
-          null => JimakuAnimeFilter.either,
-        },
-      );
-      // 与 app 侧 provider 同一条配额约束：只列与标题最像的几个条目。
-      final List<JimakuEntry> entries = pickJimakuEntriesForTitles(
-        found,
-        titles,
-      );
-      final List<VideoSubtitleCandidate> out = <VideoSubtitleCandidate>[];
-      for (final JimakuEntry entry in entries) {
-        final List<JimakuFile> files = await _client.listFiles(
-          entry.id,
-          episode: entry.flags.movie ? null : request.effectiveEpisode,
-          throwOnError: true,
-        );
-        for (final JimakuFile file in files) {
-          if (!file.isTextSubtitle) continue;
-          final String language = detectSubtitleLanguage(file.name) ?? '';
-          if (request.languages.isNotEmpty &&
-              !request.languages.contains(language)) {
-            continue;
-          }
-          out.add(
-            _JimakuCliCandidate(
-              entry: entry,
-              file: file,
-              language: language,
-              providerPriority: priority,
-            ),
-          );
-        }
-      }
-      return ProviderBatchResult<VideoSubtitleCandidate>.success(out);
-    } on Object catch (error) {
-      return ProviderBatchResult<VideoSubtitleCandidate>.failure(
-        ExternalProviderFailure.fromException(
-          providerId: id,
-          operation: 'search',
-          error: error,
-        ),
-      );
-    }
-  }
-
-  @override
-  Future<VideoSubtitleDownload> download(
-    VideoSubtitleCandidate candidate,
-  ) async {
-    if (candidate is! _JimakuCliCandidate) {
-      throw const ExternalProviderFailure(
-        providerId: 'jimaku',
-        operation: 'download',
-        kind: ExternalProviderFailureKind.unsupported,
-        message: 'candidate belongs to another provider',
-      );
-    }
-    final Uint8List? bytes = await _client.downloadFile(
-      candidate.file.url,
-      throwOnError: true,
-    );
-    if (bytes == null || bytes.isEmpty) {
-      throw const ExternalProviderFailure(
-        providerId: 'jimaku',
-        operation: 'download',
-        kind: ExternalProviderFailureKind.unavailable,
-        message: 'subtitle download failed',
-        retryable: true,
-      );
-    }
-    return VideoSubtitleDownload(
-      bytes: bytes,
-      fileName: candidate.file.name,
-      language: candidate.language,
-    );
-  }
-
-  @override
-  void close() => _client.close();
-}
-
-class _JimakuCliCandidate extends VideoSubtitleCandidate {
-  _JimakuCliCandidate({
-    required this.entry,
-    required this.file,
-    required super.language,
-    required super.providerPriority,
-  }) : super(
-         providerId: 'jimaku',
-         remoteId: '${entry.id}:${file.name}',
-         fileName: file.name,
-         releaseName: entry.name,
-         episode: file.episode,
-         fileSize: file.size,
-         uploadedAtMs: file.lastModifiedMs,
-         collectionId: '${entry.id}',
-         collectionLabel: entry.name,
-       );
-
-  final JimakuEntry entry;
-  final JimakuFile file;
-}
