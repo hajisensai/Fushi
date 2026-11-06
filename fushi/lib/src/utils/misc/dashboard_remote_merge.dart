@@ -95,7 +95,7 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
     // 内容树的行）不进「继续」：书架远端列表早已按 hasContent 过滤，这里漏了 →
     // 点卡片只会切到书架 tab，而书架上根本没有这张卡（死路卡）。
     if (!b.hasContent) continue;
-    // BUG-4128：独立字幕书的正文不是单独的书（字幕书本身走有声书清单），书架不展示它，
+    // BUG-4158：独立字幕书的正文不是单独的书（字幕书本身走有声书清单），书架不展示它，
     // 这里出卡同样是死路卡。
     if (b.isSubtitleBookBody) continue;
     final RemoteCollectionMembership? membership = b.collection;

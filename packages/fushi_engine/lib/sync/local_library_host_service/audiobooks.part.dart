@@ -73,7 +73,7 @@ mixin _LocalLibraryHostAudiobooks
       );
       emittedUids.add(srt.uid);
     }
-    // 独立字幕书（standalone）：不落 Audiobooks 行，身份 = uid。BUG-4128：判据是
+    // 独立字幕书（standalone）：不落 Audiobooks 行，身份 = uid。BUG-4158：判据是
     // 「没有 Audiobooks 行」，不是「bookKey 为空」——字幕书导入时由 cue 生成正文
     // EPUB，bookKey 指向那本正文，旧判据把它们整条漏掉（对端只看到一本没有音频的
     // 普通书）。EPUB 有声书的配对行（正文是用户的书）不算，见 isStandaloneSubtitleBook。

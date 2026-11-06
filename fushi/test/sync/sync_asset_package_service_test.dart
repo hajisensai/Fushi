@@ -559,7 +559,7 @@ void main() {
         final SrtBookRow srt = (await targetDb.getSrtBookByUid(
           'srt-standalone-1',
         ))!;
-        // BUG-4128：bookKey 指向收端按 cue 生成的正文，忽略 override。
+        // BUG-4158：bookKey 指向收端按 cue 生成的正文，忽略 override。
         expect(srt.bookKey, isNotEmpty);
         expect(srt.bookKey, isNot('should-be-ignored'));
         expect(await targetDb.getEpubBook(srt.bookKey), isNotNull);

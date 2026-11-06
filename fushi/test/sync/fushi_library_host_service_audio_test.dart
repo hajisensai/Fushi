@@ -283,7 +283,7 @@ void main() {
     late FushiDatabase db;
     late Directory temp;
 
-    // 收端按 cue 再生成正文要真跑 EPUB 导入（BUG-4128）。
+    // 收端按 cue 再生成正文要真跑 EPUB 导入（BUG-4158）。
     useEngineStorageSandbox();
 
     setUp(() async {
@@ -424,16 +424,16 @@ void main() {
       final SrtBookRow srt = (await targetDb.getSrtBookByUid(
         'srt-standalone-2',
       ))!;
-      // BUG-4128：bookKey 为空的字幕书阅读器打不开（「正文未就绪」）。收端给它
+      // BUG-4158：bookKey 为空的字幕书阅读器打不开（「正文未就绪」）。收端给它
       // 生成正文（这本没有 cue → 只有标题的正文，与本机导入无字幕书同一行为）。
       expect(srt.bookKey, isNotEmpty);
       expect(await targetDb.getEpubBook(srt.bookKey), isNotNull);
       expect(srt.title, 'Standalone2');
     });
 
-    // ── BUG-4128：带生成正文的独立字幕书 ─────────────────────────────────────
+    // ── BUG-4158：带生成正文的独立字幕书 ─────────────────────────────────────
 
-    test('BUG-4128 host 把带生成正文的独立字幕书按 uid 列进有声书清单，正文标成字幕书正文', () async {
+    test('BUG-4158 host 把带生成正文的独立字幕书按 uid 列进有声书清单，正文标成字幕书正文', () async {
       final SrtBookRow book = await importSubtitleBook(db, 'SubBook', <String>[
         'こんにちは。',
         'さようなら。',
@@ -458,7 +458,7 @@ void main() {
       expect(RemoteBookInfo.fromJson(body.toJson()).isSubtitleBookBody, isTrue);
     });
 
-    test('BUG-4128 EPUB 有声书的配对行缺了 Audiobooks 行也不当独立字幕书', () async {
+    test('BUG-4158 EPUB 有声书的配对行缺了 Audiobooks 行也不当独立字幕书', () async {
       const String bookKey = 'UserNovel';
       await db.upsertSrtBook(
         SrtBooksCompanion.insert(
@@ -491,7 +491,7 @@ void main() {
       );
     });
 
-    test('BUG-4128 收端按包里的 cue 再生成正文；重新下载沿用同一本正文不另生', () async {
+    test('BUG-4158 收端按包里的 cue 再生成正文；重新下载沿用同一本正文不另生', () async {
       final SrtBookRow hostBook = await importSubtitleBook(
         db,
         'RoundTrip',
@@ -534,7 +534,7 @@ void main() {
       expect(await client.getAllEpubBooks(), hasLength(1), reason: '不另生一本');
     });
 
-    test('BUG-4128 只更新字幕：换了 cue 收端按新 cue 重建正文', () async {
+    test('BUG-4158 只更新字幕：换了 cue 收端按新 cue 重建正文', () async {
       final SrtBookRow hostBook = await importSubtitleBook(
         db,
         'Refresh',

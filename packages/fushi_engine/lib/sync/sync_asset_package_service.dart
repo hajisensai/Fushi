@@ -537,7 +537,7 @@ class SyncAssetPackageService {
   /// 与 srt-backed 分支的差异：不 upsert Audiobooks 行（否则造孤儿脏行）、持久目录
   /// 与 cue 命名空间均用 uid、音频/字幕/封面全取自 srtBook 段（无 audiobook 段）。
   ///
-  /// BUG-4128：包里没有正文 EPUB（发端的正文是导入时由 cue 生成的），而阅读器打开
+  /// BUG-4158：包里没有正文 EPUB（发端的正文是导入时由 cue 生成的），而阅读器打开
   /// 字幕书必须有正文（bookKey 为空 = 「正文未就绪」打不开）。所以收端按包里同一份
   /// cue 用同一个生成器再生成正文（[importGeneratedSubtitleBody]）；重新下载时本机
   /// 已有正文就按新 cue 就地重建（[rebuildGeneratedSubtitleBody]），不另生一本。
@@ -597,7 +597,7 @@ class SyncAssetPackageService {
     final List<String> playableAudioPaths =
         await AudiobookStorage.transcodePersistedAiff(audioPaths);
 
-    // BUG-4128：正文。本机已有这本字幕书生成的正文（重新下载）→ 沿用并在写库后按
+    // BUG-4158：正文。本机已有这本字幕书生成的正文（重新下载）→ 沿用并在写库后按
     // 新 cue 重建；否则在写库前生成一本（生成失败整次导入失败，库里不留打不开的
     // 壳行），写库失败再把刚生成的撤掉。EPUB 有声书的配对行不会走到这里（它有
     // audiobook 段），generatedSubtitleBodyRow 的判据也挡住了它。
@@ -918,7 +918,7 @@ class SyncAssetPackageService {
             .write(SrtBooksCompanion(srtPath: Value(srtPath)));
         await _replaceCuesKeepingPosition(uid, cueRows(uid));
       });
-      // BUG-4128：阅读器按文本相等把 cue 配回正文，换了 cue 就得按新 cue 重建正文
+      // BUG-4158：阅读器按文本相等把 cue 配回正文，换了 cue 就得按新 cue 重建正文
       // （与本机「重新导入字幕」同一个实现）；没有生成的正文（旧书）就不动。
       final EpubBookRow? body = await generatedSubtitleBodyRow(
         _db,
