@@ -29,6 +29,13 @@ String _fixtureLibrary() {
   throw StateError('fixture library not found from ${Directory.current.path}');
 }
 
+/// Rust golden（`tests/fixtures/scan_golden.txt`，本地扫描同一棵树的逐首输出）的曲目数：
+/// 远程扫描与本地同一份解析，条数应一致。不写死，fixture 增减格式（M4B 章节、AC-3…）
+/// 不用改这里。
+int _goldenTrackCount() => File(
+  p.join(p.dirname(_fixtureLibrary()), 'scan_golden.txt'),
+).readAsLinesSync().where((String l) => l.trim().isNotEmpty).length;
+
 /// 把本地 fixture 目录摊成远程来源：条目地址 `$_root/<相对路径>`（正斜杠、解码态，与
 /// WebDAV 真实实现给出的形状一致），字节按区间从本地文件读。
 class _FixtureRemoteFs implements SourceFileSystem, SourceByteReader {
@@ -155,8 +162,9 @@ void main() {
     final MusicScanSummary summary = await scan();
     expect(summary.errors, isEmpty);
     final List<MusicTrackRow> tracks = await db.listMusicTracks();
-    // 与 Rust golden 同 11 首（隐藏文件跳过、Shift_JIS CUE 拆 3 首、内嵌 CUESHEET 拆 2 首）。
-    expect(tracks, hasLength(11));
+    // 与 Rust golden 同样多（隐藏文件跳过、Shift_JIS CUE 拆 3 首、内嵌 CUESHEET 拆 2 首、
+    // M4B 按章节拆）。
+    expect(tracks, hasLength(_goldenTrackCount()));
     expect(
       tracks.every((MusicTrackRow t) => t.path.startsWith('$_root/')),
       isTrue,
@@ -188,13 +196,13 @@ void main() {
     fs.rangeReads = 0;
     final MusicScanSummary again = await scan();
     expect(again.parsedTrackCount, 0);
-    expect(again.trackCount, 11);
+    expect(again.trackCount, _goldenTrackCount());
     expect(fs.rangeReads, 0);
 
     fs.files.remove('$_root/Album A/02 Second Song.mp3');
     final MusicScanSummary third = await scan();
     expect(third.removedTrackCount, 1);
-    expect(await db.listMusicTracks(), hasLength(10));
+    expect(await db.listMusicTracks(), hasLength(_goldenTrackCount() - 1));
   });
 
   test(
@@ -207,7 +215,7 @@ void main() {
       }
       fs.failRanges = true;
       await expectLater(scan(), throwsA(isA<SocketException>()));
-      expect(await db.listMusicTracks(), hasLength(11));
+      expect(await db.listMusicTracks(), hasLength(_goldenTrackCount()));
     },
   );
 
@@ -221,7 +229,7 @@ void main() {
       summary = await SourceLibraryScanner(db).scan(source, fs: fs);
     });
     expect(summary.error, isNull);
-    expect(summary.importedMediaCount, 11);
+    expect(summary.importedMediaCount, _goldenTrackCount());
 
     final int ftpId = await db.insertMediaSource(
       MediaSourcesCompanion.insert(
