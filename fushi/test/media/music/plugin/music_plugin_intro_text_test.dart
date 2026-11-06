@@ -50,15 +50,52 @@ void main() {
     expect(parseMusicIntro('  \n <br> \n '), isEmpty);
   });
 
-  test('头部摘要跳过信息框短行，取第一行正文', () {
+  test('头部摘要跳过信息框的键 / 值，取第一行正文', () {
     expect(
       musicIntroSummary(_netease),
       'Polyphia is an American rock band based in Plano, Texas, formed in 2010.',
     );
   });
 
-  test('头部摘要：没有长行退回第一段；没有正文回 null', () {
+  test('头部摘要：整篇没有句子退回第一段；没有正文回 null', () {
     expect(musicIntroSummary('短简介\n第二行'), '短简介\n第二行');
     expect(musicIntroSummary('<h>只有标题</h>'), isNull);
+  });
+
+  test('头部摘要：中文短句就是正文，不因为短被跳过', () {
+    // 旧判据（行长 ≥ 40 字）会跳过这句，取到后面那条长英文行。
+    expect(
+      musicIntroSummary(
+        '一支来自东京的乐队。\n\n'
+        'This band was formed in Tokyo in 2010 and has released five albums.',
+      ),
+      '一支来自东京的乐队。',
+    );
+    // 中文信息框（键 / 值都不是句子）照样跳过，取第一句正文。
+    expect(
+      musicIntroSummary('出生地\n台湾新北\n代表作\n七里香\n周杰伦，华语流行乐男歌手。'),
+      '周杰伦，华语流行乐男歌手。',
+    );
+    // 缩写结尾的值不算句子。
+    expect(
+      musicIntroSummary('Origin\nPlano, Texas, U.S.\nA band from Texas.'),
+      'A band from Texas.',
+    );
+  });
+
+  test('实体只解一次：&amp;lt; 是字面的 &lt;，不会被二次解成 <', () {
+    expect(
+      parseMusicIntro('a &amp;lt;b&amp;gt; &amp;amp; c').single.text,
+      'a &lt;b&gt; &amp; c',
+    );
+    expect(
+      parseMusicIntro('&lt;tag&gt; &quot;x&quot; &#39;y&#39;').single.text,
+      '<tag> "x" \'y\'',
+    );
+  });
+
+  test('纯文本：段与段之间的空行保留（专辑 / 歌单简介不再挤成一坨）', () {
+    expect(musicIntroPlainText('第一段。\n\n第二段。\n同段第二行'), '第一段。\n\n第二段。\n同段第二行');
+    expect(musicIntroPlainText('前言<h>History</h>正文'), '前言\n\nHistory\n\n正文');
   });
 }

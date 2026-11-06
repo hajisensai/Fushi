@@ -287,9 +287,63 @@ List<MusicMenuAction> _pluginTrackActions(
 // 专辑 / 歌单 / 艺人
 // -------------------------------------------------------------------------
 
+/// 一个插件条目的收藏 / 关注键。
+typedef _PluginCollectKey = ({
+  String pluginId,
+  MusicPluginCollectType type,
+  String id,
+});
+
+/// 本次运行里用户改过的插件收藏 / 关注状态（写给插件成功之后记一笔）。
+///
+/// 列表行、卡片、详情页手里的 `collected` 都是加载那一刻的快照，改过之后不会自己变。
+/// 所以收藏状态只有这一处可写：卡片右键菜单与详情页头部的切换按钮都先查这里、
+/// 查不到才用快照——同一条目在哪个入口改，别的入口（包括下次右键）都跟着变。
+final StateProvider<Map<_PluginCollectKey, bool>> _pluginCollectedProvider =
+    StateProvider<Map<_PluginCollectKey, bool>>(
+      (Ref ref) => const <_PluginCollectKey, bool>{},
+    );
+
+/// [id] 当前的收藏状态：本次运行改过的为准，否则用条目快照 [snapshot]（null = 未知）。
+bool? _pluginCollectedOf(
+  Map<_PluginCollectKey, bool> overrides,
+  MusicPluginManifest manifest,
+  MusicPluginCollectType type,
+  String id,
+  bool? snapshot,
+) => overrides[(pluginId: manifest.id, type: type, id: id)] ?? snapshot;
+
+/// 收藏 / 取消收藏（艺人 = 关注 / 取消关注）：写给插件，成功后记进
+/// [_pluginCollectedProvider] 并提示。失败照常抛给调用方提示。
+Future<void> _setPluginCollected(
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  MusicPluginCollectType type,
+  String id, {
+  required bool on,
+}) async {
+  // await 之后调用方控件可能已卸载：先取好控制器。
+  final StateController<Map<_PluginCollectKey, bool>> overrides = ref.read(
+    _pluginCollectedProvider.notifier,
+  );
+  await _sourceOf(ref, manifest.id).setCollected(type, id, on: on);
+  overrides.state = <_PluginCollectKey, bool>{
+    ...overrides.state,
+    (pluginId: manifest.id, type: type, id: id): on,
+  };
+  final bool artist = type == MusicPluginCollectType.artist;
+  FushiToast.show(
+    msg: artist
+        ? (on ? t.music_action_followed : t.music_action_unfollowed)
+        : (on ? t.music_action_collected : t.music_action_uncollected),
+    severity: ToastSeverity.success,
+  );
+}
+
 /// 插件专辑 / 歌单 / 艺人卡片（列表行、横滑卡、网格卡）的右键菜单：打开、收藏 / 关注、
-/// 去艺人。[item] 不是这三类时回 null。收藏状态以条目自带的 `collected` 为准，未知时
-/// 两项都给（插件的收藏是幂等写）。
+/// 去艺人。[item] 不是这三类时回 null。收藏状态以本次运行里改过的为准
+/// （[_pluginCollectedProvider]），没改过用条目自带的 `collected`；未知时两项都给
+/// （插件的收藏是幂等写）。
 MusicItemMenu? musicPluginEntityMenu(
   BuildContext context,
   WidgetRef ref,
@@ -299,7 +353,7 @@ MusicItemMenu? musicPluginEntityMenu(
   final (
     String id,
     MusicPluginCollectType type,
-    bool? collected,
+    bool? snapshot,
     Widget page,
   ) = switch (item) {
     MusicPluginAlbum a => (
@@ -330,19 +384,62 @@ MusicItemMenu? musicPluginEntityMenu(
       item.editable &&
       manifest.can(MusicPluginCapability.playlistEdit);
   final bool canCollect = !own && manifest.can(MusicPluginCapability.collect);
-  Future<void> setCollected(bool on) async {
-    await _sourceOf(ref, manifest.id).setCollected(type, id, on: on);
-    FushiToast.show(
-      msg: artist
-          ? (on ? t.music_action_followed : t.music_action_unfollowed)
-          : (on ? t.music_action_collected : t.music_action_uncollected),
-      severity: ToastSeverity.success,
-    );
-  }
+  Future<void> setCollected(bool on) =>
+      _setPluginCollected(ref, manifest, type, id, on: on);
 
   final MusicPluginArtistRef? albumArtist = item is MusicPluginAlbum
       ? item.artists.where((MusicPluginArtistRef a) => a.id != null).firstOrNull
       : null;
+  // 收藏状态在弹出那一刻读（本次运行改过的为准），不冻结在卡片构建时。
+  List<MusicMenuAction> actions() {
+    final bool? collected = _pluginCollectedOf(
+      ref.read(_pluginCollectedProvider),
+      manifest,
+      type,
+      id,
+      snapshot,
+    );
+    return <MusicMenuAction>[
+      MusicMenuAction(
+        id: 'open',
+        label: t.music_action_open,
+        icon: FushiIcons.openInNew,
+        run: (BuildContext c) => _push(c, page),
+      ),
+      if (canCollect && collected != true)
+        MusicMenuAction(
+          id: 'collect',
+          label: artist ? t.music_action_follow : t.music_action_collect,
+          icon: artist ? FushiIcons.personAdd : FushiIcons.libraryAdd,
+          run: (_) => setCollected(true),
+        ),
+      if (canCollect && collected != false)
+        MusicMenuAction(
+          id: 'uncollect',
+          label: artist ? t.music_action_unfollow : t.music_action_uncollect,
+          icon: artist ? FushiIcons.personRemove : FushiIcons.close,
+          run: (_) => setCollected(false),
+        ),
+      if (albumArtist != null && manifest.can(MusicPluginCapability.artist))
+        MusicMenuAction(
+          id: 'artist',
+          label: t.music_action_go_to_artist,
+          subtitle: albumArtist.name,
+          icon: FushiIcons.person,
+          run: (BuildContext c) => _push(
+            c,
+            MusicPluginArtistPage(
+              manifest: manifest,
+              artist: MusicPluginArtist(
+                id: albumArtist.id!,
+                name: albumArtist.name,
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
   return MusicItemMenu(
     buttonKey: ValueKey<String>('music-plugin-entity-menu-${type.name}-$id'),
     open: (MusicMenuAnchor? anchor) => unawaited(
@@ -350,47 +447,7 @@ MusicItemMenu? musicPluginEntityMenu(
         context,
         anchor: anchor,
         errorText: (Object e) => _pluginActionError(manifest, e),
-        actions: <MusicMenuAction>[
-          MusicMenuAction(
-            id: 'open',
-            label: t.music_action_open,
-            icon: FushiIcons.openInNew,
-            run: (BuildContext c) => _push(c, page),
-          ),
-          if (canCollect && collected != true)
-            MusicMenuAction(
-              id: 'collect',
-              label: artist ? t.music_action_follow : t.music_action_collect,
-              icon: artist ? FushiIcons.personAdd : FushiIcons.libraryAdd,
-              run: (_) => setCollected(true),
-            ),
-          if (canCollect && collected != false)
-            MusicMenuAction(
-              id: 'uncollect',
-              label: artist
-                  ? t.music_action_unfollow
-                  : t.music_action_uncollect,
-              icon: artist ? FushiIcons.personRemove : FushiIcons.close,
-              run: (_) => setCollected(false),
-            ),
-          if (albumArtist != null && manifest.can(MusicPluginCapability.artist))
-            MusicMenuAction(
-              id: 'artist',
-              label: t.music_action_go_to_artist,
-              subtitle: albumArtist.name,
-              icon: FushiIcons.person,
-              run: (BuildContext c) => _push(
-                c,
-                MusicPluginArtistPage(
-                  manifest: manifest,
-                  artist: MusicPluginArtist(
-                    id: albumArtist.id!,
-                    name: albumArtist.name,
-                  ),
-                ),
-              ),
-            ),
-        ],
+        actions: actions(),
       ),
     ),
   );
@@ -400,7 +457,8 @@ MusicItemMenu? musicPluginEntityMenu(
 ///
 /// 收藏是这类页面的主动作，直接摆在按钮行里，不收进「更多」（用户 2026-11-06）。
 /// 未收藏 = 描边「收藏 / 关注」，已收藏 = 色调「已收藏 / 已关注」、再点取消。
-/// [collected] 未知（null）按未收藏显示：再收藏一次是幂等的。
+/// 状态以本次运行里改过的为准（[_pluginCollectedProvider]，卡片右键改的也算），
+/// 没改过用页面加载时的 [collected]；未知（null）按未收藏显示：再收藏一次是幂等的。
 class _PluginCollectToggle extends ConsumerStatefulWidget {
   const _PluginCollectToggle({
     super.key,
@@ -408,14 +466,14 @@ class _PluginCollectToggle extends ConsumerStatefulWidget {
     required this.type,
     required this.id,
     required this.collected,
-    required this.onCollected,
   });
 
   final MusicPluginManifest manifest;
   final MusicPluginCollectType type;
   final String id;
+
+  /// 页面加载时插件给的状态快照。
   final bool? collected;
-  final ValueChanged<bool> onCollected;
 
   @override
   ConsumerState<_PluginCollectToggle> createState() =>
@@ -430,17 +488,13 @@ class _PluginCollectToggleState extends ConsumerState<_PluginCollectToggle> {
   Future<void> _set(bool on) async {
     setState(() => _busy = true);
     try {
-      await _sourceOf(
+      await _setPluginCollected(
         ref,
-        widget.manifest.id,
-      ).setCollected(widget.type, widget.id, on: on);
-      FushiToast.show(
-        msg: _artist
-            ? (on ? t.music_action_followed : t.music_action_unfollowed)
-            : (on ? t.music_action_collected : t.music_action_uncollected),
-        severity: ToastSeverity.success,
+        widget.manifest,
+        widget.type,
+        widget.id,
+        on: on,
       );
-      widget.onCollected(on);
     } on Object catch (e) {
       FushiToast.show(
         msg: _pluginActionError(widget.manifest, e),
@@ -453,7 +507,15 @@ class _PluginCollectToggleState extends ConsumerState<_PluginCollectToggle> {
 
   @override
   Widget build(BuildContext context) {
-    final bool on = widget.collected ?? false;
+    final bool on =
+        _pluginCollectedOf(
+          ref.watch(_pluginCollectedProvider),
+          widget.manifest,
+          widget.type,
+          widget.id,
+          widget.collected,
+        ) ??
+        false;
     final VoidCallback? onPressed = _busy ? null : () => unawaited(_set(!on));
     final Widget button = on
         ? FushiFilledButton.tonalIcon(
@@ -488,7 +550,6 @@ List<Widget> _pluginFollowActions(
   MusicPluginManifest manifest,
   String artistId, {
   required bool? followed,
-  required ValueChanged<bool> onFollowed,
 }) {
   if (!manifest.can(MusicPluginCapability.collect)) return const <Widget>[];
   return <Widget>[
@@ -498,7 +559,6 @@ List<Widget> _pluginFollowActions(
       type: MusicPluginCollectType.artist,
       id: artistId,
       collected: followed,
-      onCollected: onFollowed,
     ),
   ];
 }
@@ -512,7 +572,6 @@ List<Widget> _pluginCollectionActions(
   MusicPluginAlbum? album,
   MusicPluginPlaylist? playlist,
   required bool? collected,
-  required ValueChanged<bool> onCollected,
 }) {
   final bool own =
       playlist != null &&
@@ -542,7 +601,6 @@ List<Widget> _pluginCollectionActions(
           : MusicPluginCollectType.playlist,
       id: album?.id ?? playlist!.id,
       collected: collected,
-      onCollected: onCollected,
     ),
   ];
 }

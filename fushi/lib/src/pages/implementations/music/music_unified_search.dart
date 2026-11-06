@@ -404,6 +404,9 @@ class _SongTile extends ConsumerWidget {
     final Widget leading;
     VoidCallback? onLongPress;
     MusicItemMenu? menu;
+    // 行尾「⋯」只给在线曲目（喜欢 / 加歌单等在触屏上只有这一个入口）。本地曲目的菜单
+    // 只是「播放 / 曲目详情」，点按与长按已经各管一项，只接右键，与本地曲目列表一致。
+    bool menuButton = true;
     switch (track) {
       case MusicTrackRow r:
         final String badge = musicFormatBadge(
@@ -424,6 +427,7 @@ class _SongTile extends ConsumerWidget {
         leading = const FushiListLeadingIcon(FushiIcons.music);
         onLongPress = () => openMusicTrackDetail(context, r.trackUid);
         menu = musicLocalTrackMenu(context, r, onPlay: onTap);
+        menuButton = false;
       case MusicPluginTrack p:
         id = '${song.plugin?.id}-${p.id}';
         title = p.title;
@@ -505,7 +509,7 @@ class _SongTile extends ConsumerWidget {
                     formatMusicDuration(durationMs),
                     style: context.fushiType.bodySmall,
                   ),
-                  ?menu?.button(),
+                  if (menuButton) ?menu?.button(),
                 ],
               ),
             ),

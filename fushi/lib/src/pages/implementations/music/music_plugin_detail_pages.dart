@@ -112,10 +112,6 @@ List<Widget> _introBlocks(BuildContext context, String raw) => <Widget>[
     },
 ];
 
-/// 简介的纯文本（去标记，小标题自成一行）：给收起态的长文本用。
-String _introPlain(String raw) =>
-    parseMusicIntro(raw).map((MusicIntroBlock b) => b.text).join('\n');
-
 /// 可展开的长文本（专辑 / 歌单简介）：超过 [maxLines] 才出「展开 / 收起」。
 class _ExpandableText extends StatefulWidget {
   const _ExpandableText(this.text, {super.key});
@@ -352,9 +348,6 @@ class _MusicPluginCollectionPageState
     );
   }
 
-  /// 收藏状态：用户在本页收藏 / 取消后以它为准（插件给的是打开时的状态）。
-  bool? _collectedOverride;
-
   /// 加歌 / 移除后重拉曲目（保留旧列表，不闪加载态）。
   void _reloadTracks() {
     if (!mounted) return;
@@ -506,13 +499,7 @@ class _MusicPluginCollectionPageState
                         widget.manifest,
                         album: album,
                         playlist: playlist,
-                        collected:
-                            _collectedOverride ??
-                            album?.collected ??
-                            playlist?.collected,
-                        onCollected: (bool on) {
-                          if (mounted) setState(() => _collectedOverride = on);
-                        },
+                        collected: album?.collected ?? playlist?.collected,
                       ),
                     ],
                   ),
@@ -523,7 +510,7 @@ class _MusicPluginCollectionPageState
         ),
         if (description != null)
           _ExpandableText(
-            _introPlain(description),
+            musicIntroPlainText(description),
             key: const ValueKey<String>('music-plugin-collection-description'),
           ),
       ],
@@ -690,9 +677,6 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
 
   /// 相似艺人（`artistSimilar`）；null = 没取到 / 没有该能力。
   List<MusicPluginArtist>? _similar;
-
-  /// 关注状态：用户在本页关注 / 取消后以它为准。
-  bool? _followedOverride;
 
   Future<void> _loadSimilar(_ArtistData d) async {
     if (!_can(MusicPluginCapability.artistSimilar)) return;
@@ -898,10 +882,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
   List<Widget> _followAction(MusicPluginArtist a) => _pluginFollowActions(
     widget.manifest,
     widget.artist.id,
-    followed: _followedOverride ?? a.collected,
-    onFollowed: (bool on) {
-      if (mounted) setState(() => _followedOverride = on);
-    },
+    followed: a.collected,
   );
 
   /// 分页列表尾部：加载中 / 出错重试 / 空。

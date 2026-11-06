@@ -34,29 +34,33 @@ final RegExp _lineBreak = RegExp(
 );
 final RegExp _anyTag = RegExp(r'</?[a-zA-Z][^>]*>');
 final RegExp _blankLines = RegExp(r'\n[ \t　]*\n+');
-final RegExp _spaces = RegExp(r'[ \t ]+');
+final RegExp _spaces = RegExp(r'[ \t ]+');
 
+/// 认得的实体名 → 字符。
 const Map<String, String> _entities = <String, String>{
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&apos;': "'",
-  '&nbsp;': ' ',
+  'amp': '&',
+  'lt': '<',
+  'gt': '>',
+  'quot': '"',
+  '#39': "'",
+  'apos': "'",
+  'nbsp': ' ',
 };
 
+/// [_entities] 里的实体。一次扫描解码：解出来的字符不再参与匹配，所以 `&amp;lt;`
+/// 是字面的 `&lt;`，不会被二次解成 `<`。
+final RegExp _entity = RegExp(r'&(amp|lt|gt|quot|#39|apos|nbsp);');
+
 /// 去掉标签、解码常见实体、规整空白，保留换行。
-String _plain(String s) {
-  String out = s.replaceAll(_lineBreak, '\n').replaceAll(_anyTag, '');
-  _entities.forEach((String k, String v) => out = out.replaceAll(k, v));
-  return out
-      .replaceAll('\r\n', '\n')
-      .replaceAll('\r', '\n')
-      .split('\n')
-      .map((String line) => line.replaceAll(_spaces, ' ').trim())
-      .join('\n');
-}
+String _plain(String s) => s
+    .replaceAll(_lineBreak, '\n')
+    .replaceAll(_anyTag, '')
+    .replaceAllMapped(_entity, (Match m) => _entities[m.group(1)]!)
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
+    .split('\n')
+    .map((String line) => line.replaceAll(_spaces, ' ').trim())
+    .join('\n');
 
 /// 把 [paragraphText] 按空行切成正文块（空块丢掉）。
 Iterable<MusicIntroParagraph> _paragraphs(String paragraphText) sync* {
@@ -80,14 +84,23 @@ List<MusicIntroBlock> parseMusicIntro(String raw) {
   return out;
 }
 
-/// 头部摘要至少要有这么长的一行才算「正文」（字符数，中日文同样计）。
-const int kMusicIntroSummaryMinLine = 40;
+/// 简介的纯文本（去标记）：块与块之间空一行，段落边界照原样保留、小标题自成一段。
+/// 给不分块排版的地方用（专辑 / 歌单简介的可展开长文本）。
+String musicIntroPlainText(String raw) =>
+    parseMusicIntro(raw).map((MusicIntroBlock b) => b.text).join('\n\n');
 
-/// 头部三行摘要：取第一段里第一行像样的正文。
+/// 一行以句末标点收尾（后面可再跟右引号 / 右括号）= 这行是句子，不是信息框里的键或值。
+/// 拉丁句号前是「字母.字母」（`U.S.`、`D.C.`）时算缩写，不算句末。
+final RegExp _sentenceEnd = RegExp(
+  '(?:[。！？!?…]|(?<![A-Za-z]\\.[A-Za-z])\\.)["\'”’」』）)\\]]*\$',
+);
+
+/// 头部三行摘要：取第一句正文所在的那一行。
 ///
 /// 百科式简介开头是一张信息框（「Origin / Plano, Texas, US / Genres / …」逐行排），
-/// 截前三行只会露出这些键名。所以跳过短行，取第一条不短于
-/// [kMusicIntroSummaryMinLine] 的行；整段都没有长行时退回第一段原文。没有正文回 null。
+/// 截前三行只会露出这些键名。信息框的键与值都不是句子、不以句末标点收尾，正文是句子：
+/// 所以取第一条以句末标点收尾的行——与行长无关，中文短句同样认。整篇都没有句子时退回
+/// 第一段原文。没有正文回 null。
 String? musicIntroSummary(String raw) {
   final List<String> paragraphs = <String>[
     for (final MusicIntroBlock b in parseMusicIntro(raw))
@@ -96,7 +109,7 @@ String? musicIntroSummary(String raw) {
   if (paragraphs.isEmpty) return null;
   for (final String p in paragraphs) {
     for (final String line in p.split('\n')) {
-      if (line.runes.length >= kMusicIntroSummaryMinLine) return line;
+      if (_sentenceEnd.hasMatch(line)) return line;
     }
   }
   return paragraphs.first;
