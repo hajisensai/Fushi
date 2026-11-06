@@ -335,10 +335,12 @@ Future<({int wrote, bool keepRow})> _carryOverSubtitles(
   final String? selected = row.subtitleSource?.trim().isEmpty ?? true
       ? null
       : row.subtitleSource!.trim();
+  // 网络来源的行（条目地址）旁边没有本地文件可找：只认行上选着的那份。
+  final bool localAudio = !isLegacyRemoteAudioOnlyVideoBook(row);
   final List<String> ownCandidates = <String>[
     if (selected != null) srtOf(selected),
-    p.join(dir, '$stem.ja.srt'),
-    p.join(dir, '$stem.ja.asr.srt'),
+    if (localAudio) p.join(dir, '$stem.ja.srt'),
+    if (localAudio) p.join(dir, '$stem.ja.asr.srt'),
   ];
   String? generated;
   for (final String c in ownCandidates) {
