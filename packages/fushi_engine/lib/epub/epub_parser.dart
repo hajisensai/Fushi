@@ -50,12 +50,21 @@ class EpubParser {
 
   /// Read file from [filePath] and parse — for isolate use to avoid
   /// serializing large byte arrays across the isolate boundary.
-  static EpubBook parseSyncFromPath(String filePath, String extractDir) {
+  ///
+  /// [includeSvgSpineDocuments]：见 [parseFromExtracted]。
+  static EpubBook parseSyncFromPath(
+    String filePath,
+    String extractDir, {
+    bool includeSvgSpineDocuments = false,
+  }) {
     final Uint8List bytes = File(filePath).readAsBytesSync();
     // HBK-AUDIT-106: see parseSync — CRC verification on extraction.
     final Archive archive = _decodeVerified(bytes);
     _extractArchive(archive, extractDir);
-    return parseFromExtracted(extractDir);
+    return parseFromExtracted(
+      extractDir,
+      includeSvgSpineDocuments: includeSvgSpineDocuments,
+    );
   }
 
   /// 只读 OPF 元数据里的 `dc:language`，不解压、不解析 spine——给「导入前就要知道
@@ -139,7 +148,17 @@ class EpubParser {
   }
 
   /// Parse an already-extracted EPUB directory.
-  static EpubBook parseFromExtracted(String extractDir) {
+  ///
+  /// [includeSvgSpineDocuments]（BUG-3845 / OjZ-K53WBY）：EPUB 3 允许 spine 项直接
+  /// 是 SVG 内容文档（`image/svg+xml`），固定版式漫画有的就是每页一个
+  /// `<svg><image xlink:href="p-001.jpg"/></svg>`。默认（书籍 / 阅读器路径）仍只收
+  /// HTML 类 spine 项——阅读器只按 HTML 注入分页脚本，且把 SVG 项插进 chapters 会
+  /// 移位存量书 chaptersJson 里的章号。漫画导入只从章节里取页图、不渲染章节，传
+  /// true 把 SVG 项也收成章节，否则这类书整本 0 章、抛「no readable chapters」。
+  static EpubBook parseFromExtracted(
+    String extractDir, {
+    bool includeSvgSpineDocuments = false,
+  }) {
     final File? containerFile = _findContainerXml(extractDir);
     if (containerFile == null) {
       throw const FormatException(
@@ -171,6 +190,7 @@ class EpubParser {
       manifest,
       opfDir,
       extractDir,
+      includeSvgSpineDocuments: includeSvgSpineDocuments,
     );
     if (chapters.isEmpty) {
       throw const FormatException('EPUB spine contains no readable chapters');
@@ -553,8 +573,9 @@ class EpubParser {
     XmlDocument opf,
     Map<String, _ManifestItem> manifest,
     String opfDir,
-    String extractDir,
-  ) {
+    String extractDir, {
+    required bool includeSvgSpineDocuments,
+  }) {
     final List<EpubChapter> chapters = <EpubChapter>[];
     // HBK-AUDIT-103: spineIndex must reflect the itemref's true position in the
     // spine. The ordinal is derived from the itemref's index in the document
@@ -577,7 +598,8 @@ class EpubParser {
         continue;
       }
       // BUG-1203：与阅读器资源拦截器共用同一个谓词（epub_book.dart），不再各留副本。
-      if (!isHtmlMediaType(item.mediaType)) {
+      if (!isHtmlMediaType(item.mediaType) &&
+          !(includeSvgSpineDocuments && _isSvgMediaType(item.mediaType))) {
         continue;
       }
 
@@ -640,6 +662,9 @@ class EpubParser {
     }
     return chapters;
   }
+
+  static bool _isSvgMediaType(String mediaType) =>
+      mediaType.trim().toLowerCase() == 'image/svg+xml';
 
   // ── Metadata ───────────────────────────────────────────────────────────────
 
