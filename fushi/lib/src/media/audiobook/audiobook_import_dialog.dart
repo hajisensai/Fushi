@@ -852,10 +852,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return;
     }
 
-    debugPrint(
-      '[fushi-audiobook] doImport bookKey.len=${widget.bookKey.length} '
-      'hash=${widget.bookKey.hashCode} key=${widget.bookKey}',
-    );
     setState(() => importing = true);
     reportProgress(0, '');
 
@@ -1276,7 +1272,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {
-    debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookKey}');
     final AppModel appModel = ProviderScope.containerOf(
       context,
       listen: false,
@@ -1304,7 +1299,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ? t.delete_local_files_audio_desc
           : null,
     );
-    debugPrint('AudiobookImportDialog: decision=$decision');
     if (decision == null) return;
 
     try {

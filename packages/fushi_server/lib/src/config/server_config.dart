@@ -104,6 +104,7 @@ class ServerConfig {
     this.scanPrune = true,
     this.scanScrape = true,
     this.profileTransfer = false,
+    this.leaderboardLink = true,
     this.tmdbApiKey,
     this.ai,
   });
@@ -214,6 +215,13 @@ class ServerConfig {
   /// （BUG-988）。运行期现读，WebUI 改完即生效。
   final bool profileTransfer;
 
+  /// 允许被标记为「我的设备」的已配对设备跟随本机（当前激活 Profile）的 Fushi 排行榜账户
+  /// 自动登录（`/api/interconnect/leaderboard-link`，只在 TLS 下可达）。默认开：与 app 的
+  /// 「允许已配对设备自动登录我的账户」同一默认（所有者 2026-10-16 拍板）——真正的门是逐台
+  /// 的「我的设备」标记，无头配对从不自动授予，只能由管理员在 WebUI / `ctl pairing owner` 里手动标。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool leaderboardLink;
+
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
   final String? tmdbApiKey;
@@ -229,6 +237,7 @@ class ServerConfig {
   final ServerAiConfig? ai;
 
   ServerConfig copyWith({
+    String? dataDir,
     int? port,
     String? bind,
     bool? tls,
@@ -256,11 +265,12 @@ class ServerConfig {
     bool? scanPrune,
     bool? scanScrape,
     bool? profileTransfer,
+    bool? leaderboardLink,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
   }) => ServerConfig(
-    dataDir: dataDir,
+    dataDir: dataDir ?? this.dataDir,
     port: port ?? this.port,
     bind: bind ?? this.bind,
     tls: tls ?? this.tls,
@@ -288,6 +298,7 @@ class ServerConfig {
     scanPrune: scanPrune ?? this.scanPrune,
     scanScrape: scanScrape ?? this.scanScrape,
     profileTransfer: profileTransfer ?? this.profileTransfer,
+    leaderboardLink: leaderboardLink ?? this.leaderboardLink,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
   );
@@ -356,6 +367,7 @@ class ServerConfig {
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
+      leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
     );
@@ -403,6 +415,7 @@ class ServerConfig {
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
+    b.writeln('leaderboard_link: $leaderboardLink');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     }

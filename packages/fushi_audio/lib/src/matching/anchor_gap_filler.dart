@@ -219,7 +219,8 @@ class AnchorGapFiller {
       fushiDebugPrint(
         '[sentenceAudioHighlight] gapFill skipped runs: '
         'oversize=${stats.oversizeRuns} budget=${stats.budgetSkippedRuns} '
-        'of ${stats.runs} (work=${stats.work}/$maxTotalWork)',
+        'of ${stats.runs} (work=${stats.work}/$maxTotalWork) '
+        'samples: ${c.stats.skipSamples.join('; ')}',
       );
     }
     return MatchResult(
@@ -293,18 +294,18 @@ class AnchorGapFiller {
     c.stats.runs++;
     if (regionLen > maxRegionChars) {
       c.stats.oversizeRuns++;
-      fushiDebugPrint(
-        '[sentenceAudioHighlight] gapFill.skip cues=[$left..$right] '
-        'region=$regionLen > maxRegionChars=$maxRegionChars',
+      c.stats.noteSkip(
+        'cues=[$left..$right] region=$regionLen > '
+        'maxRegionChars=$maxRegionChars',
       );
       return false;
     }
     final int work = regionLen * count;
     if (c.stats.work + work > maxTotalWork) {
       c.stats.budgetSkippedRuns++;
-      fushiDebugPrint(
-        '[sentenceAudioHighlight] gapFill.skip cues=[$left..$right] '
-        'work=${c.stats.work}+$work > maxTotalWork=$maxTotalWork',
+      c.stats.noteSkip(
+        'cues=[$left..$right] work=${c.stats.work}+$work > '
+        'maxTotalWork=$maxTotalWork',
       );
       return false;
     }
@@ -916,6 +917,15 @@ class _Stats {
   int oversizeRuns = 0;
   int budgetSkippedRuns = 0;
   int work = 0;
+
+  /// 被跳过的串的前几条描述，只进汇总日志（不逐处打印）。
+  final List<String> skipSamples = <String>[];
+
+  static const int _maxSkipSamples = 3;
+
+  void noteSkip(String description) {
+    if (skipSamples.length < _maxSkipSamples) skipSamples.add(description);
+  }
 
   GapFillStats snapshot({required bool invariantViolated}) => GapFillStats(
     runs: runs,
