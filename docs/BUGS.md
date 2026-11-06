@@ -33,19 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3773 条。点号进各自文件。
-> 共 3730 条。点号进各自文件。
+> 共 3777 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4130](bugs/BUG-4130-subtitle-book-vertical-halfwidth-bang.md) | ✅ | ✅ | 转录 / 字幕合成书竖排时半角「!」「?」横躺 |
-| [BUG-4129](bugs/BUG-4129-apple-music-init-timeout-misreported-drm.md) | ✅ | ✅ | Apple Music 登录 init 超时一律报「系统 DRM 服务没有响应」 |
-| [BUG-4128](bugs/BUG-4128-wavy-seek-tap-cancelled-by-drag.md) | ✅ | ✅ | 波浪进度条点按不跳转（按住超过 100ms 的点按被横向拖动的 cancel 清掉） |
-| [BUG-4127](bugs/BUG-4127-music-id3-legacy-encoding-mojibake.md) | ✅ | ✅ | 音乐库 / 有声书导入：ID3 Latin-1 帧里的日文旧编码显示成乱码 |
-> 共 3727 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4215](bugs/BUG-4215-subtitle-book-vertical-halfwidth-bang.md) | ✅ | ✅ | 转录 / 字幕合成书竖排时半角「!」「?」横躺 |
+| [BUG-4214](bugs/BUG-4214-apple-music-init-timeout-misreported-drm.md) | ✅ | ✅ | Apple Music 登录 init 超时一律报「系统 DRM 服务没有响应」 |
+| [BUG-4213](bugs/BUG-4213-wavy-seek-tap-cancelled-by-drag.md) | ✅ | ✅ | 波浪进度条点按不跳转（按住超过 100ms 的点按被横向拖动的 cancel 清掉） |
+| [BUG-4212](bugs/BUG-4212-music-id3-legacy-encoding-mojibake.md) | ✅ | ✅ | 音乐库 / 有声书导入：ID3 Latin-1 帧里的日文旧编码显示成乱码 |
 | [BUG-4211](bugs/BUG-4211-music-recommend-liked-spacing.md) | ✅ | 🚧 | 音乐推荐页「我喜欢的音乐」贴着筛选条、底下多 8dp；歌单页签按钮 / 段头层级不齐 |
 | [BUG-4210](bugs/BUG-4210-music-plugin-intro-markup-raw.md) | ✅ | ✅ | 网易云艺人简介 <h> 标记原样画出、摘要只露信息框键名 |
 | [BUG-4209](bugs/BUG-4209-lookup-result-mined-card-action-unwired.md) | ✅ | ✅ | 查词页结果区点 ✓ / ☆ / ↗ 静默无反应，没句子的旧卡覆写不了 |
