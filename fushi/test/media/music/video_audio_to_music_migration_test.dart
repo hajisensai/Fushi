@@ -56,6 +56,29 @@ void main() {
         ),
       );
 
+  /// 一个文件拆出的一段（M4B 章节 / CUE 虚拟曲目）。
+  Future<void> segment(
+    String path,
+    String uid, {
+    required int startMs,
+    int? endMs,
+    required int durationMs,
+  }) => db
+      .into(db.musicTracks)
+      .insert(
+        MusicTracksCompanion.insert(
+          trackUid: uid,
+          path: normalizeSourceRootPath(path, transport: 'local'),
+          title: uid,
+          cueStartMs: Value<int?>(startMs),
+          cueEndMs: Value<int?>(endMs),
+          durationMs: Value<int?>(durationMs),
+          fileMtimeAt: 1,
+          fileSize: 1,
+          addedAt: 1,
+        ),
+      );
+
   Future<List<String>> videoUids() async =>
       <String>[for (final VideoBookRow r in await repo.listAll()) r.bookUid]
         ..sort();
@@ -109,7 +132,7 @@ void main() {
           },
       importFile: (String path) async {
         imported.add(path);
-        // 曲库不认 .m4b：扫描不出曲目，行必须留在视频库。
+        // 坏文件：扫描不出曲目，行必须留在视频库。
         if (path == drama) await track(drama);
         return null;
       },
@@ -153,7 +176,7 @@ void main() {
       <(int, int, bool)>[(5000, 9000, true), (7000, 3000, false)],
     );
 
-    // 第二次：搬过的行已删，只剩搬不动的 .m4b 再试一次，播放记录不重复。
+    // 第二次：搬过的行已删，只剩搬不动的坏文件再试一次，播放记录不重复。
     imported.clear();
     final VideoAudioMigrationReport second =
         await migrateAudioOnlyVideoBooksToMusic(
@@ -217,5 +240,136 @@ void main() {
     expect(rescanned, <int>[mid]);
     expect(r.migrated, 1);
     expect(await videoUids(), isEmpty);
+  });
+
+  test('m4b split into chapters: the play event lands on the chapter holding '
+      'the breakpoint; ac3 rows move too', () async {
+    final String book = at(<String>['Books', 'novel.m4b']);
+    final String surround = at(<String>['Books', 'drama.ac3']);
+    final String done = at(<String>['Books', 'done.m4b']);
+    await video('v/book', book, lastPlayedAt: 100, lastPositionMs: 75000);
+    await video('v/ac3', surround, lastPlayedAt: 200, lastPositionMs: 4000);
+    await video(
+      'v/done',
+      done,
+      lastPlayedAt: 300,
+      lastPositionMs: 0,
+      completedAt: DateTime.fromMillisecondsSinceEpoch(400),
+    );
+    final MusicAudioIntake intake = MusicAudioIntake(
+      db,
+      fileExists: (_) => true,
+      importFile: (String path) async {
+        if (path == book || path == done) {
+          final String tag = p.basenameWithoutExtension(path);
+          await segment(
+            path,
+            '$tag-1',
+            startMs: 0,
+            endMs: 60000,
+            durationMs: 60000,
+          );
+          await segment(
+            path,
+            '$tag-2',
+            startMs: 60000,
+            endMs: 90000,
+            durationMs: 30000,
+          );
+          await segment(path, '$tag-3', startMs: 90000, durationMs: 10000);
+        } else {
+          await track(path, durationMs: 8000);
+        }
+        return null;
+      },
+      rescanSource: (SourceLibraryRow s) async => fail('nothing covered'),
+    );
+    final VideoAudioMigrationReport r = await migrateAudioOnlyVideoBooksToMusic(
+      db,
+      intake: intake,
+      fileExists: (_) => true,
+    );
+    expect(r.migrated, 3);
+    expect(await videoUids(), isEmpty);
+    final List<MusicPlayEventRow> events =
+        await (db.select(db.musicPlayEvents)
+              ..orderBy(<OrderingTerm Function($MusicPlayEventsTable)>[
+                ($MusicPlayEventsTable e) =>
+                    OrderingTerm(expression: e.startedAt),
+              ]))
+            .get();
+    expect(
+      events
+          .map((MusicPlayEventRow e) => (e.trackUid, e.listenedMs, e.completed))
+          .toList(),
+      <(String, int, bool)>[
+        // 75 s 落在第 2 章（60–90 s），章内听了 15 s。
+        ('novel-2', 15000, false),
+        ('uid:${p.canonicalize(surround)}', 4000, false),
+        // 看完：最后一章、整章时长。
+        ('done-3', 10000, true),
+      ],
+    );
+  });
+
+  group('pickMigratedTrack', () {
+    MusicTrackRow seg(String uid, int? start, int? duration) => MusicTrackRow(
+      trackUid: uid,
+      path: '/a.m4b',
+      cueStartMs: start,
+      durationMs: duration,
+      title: uid,
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    final List<MusicTrackRow> book = <MusicTrackRow>[
+      seg('c1', 0, 1000),
+      seg('c2', 1000, 2000),
+      seg('c3', 3000, null),
+    ];
+
+    test('breakpoint at a chapter boundary belongs to the later chapter', () {
+      final MigratedTrack t = pickMigratedTrack(
+        book,
+        positionMs: 1000,
+        completed: false,
+      );
+      expect((t.track.trackUid, t.listenedMs), ('c2', 0));
+    });
+    test('no breakpoint: first chapter, nothing listened', () {
+      final MigratedTrack t = pickMigratedTrack(
+        book,
+        positionMs: 0,
+        completed: false,
+      );
+      expect((t.track.trackUid, t.listenedMs), ('c1', 0));
+    });
+    test('breakpoint past the end clamps to the last known length', () {
+      final MigratedTrack t = pickMigratedTrack(
+        <MusicTrackRow>[seg('c1', 0, 1000), seg('c2', 1000, 500)],
+        positionMs: 9000,
+        completed: false,
+      );
+      expect((t.track.trackUid, t.listenedMs), ('c2', 500));
+    });
+    test('completed with unknown last length falls back to the breakpoint', () {
+      final MigratedTrack t = pickMigratedTrack(
+        book,
+        positionMs: 3500,
+        completed: true,
+      );
+      expect((t.track.trackUid, t.listenedMs), ('c3', 500));
+    });
+    test('a whole-file track (no cue start) is the only candidate', () {
+      final MigratedTrack t = pickMigratedTrack(
+        <MusicTrackRow>[seg('x', null, 4000)],
+        positionMs: 2500,
+        completed: false,
+      );
+      expect((t.track.trackUid, t.listenedMs), ('x', 2500));
+    });
   });
 }

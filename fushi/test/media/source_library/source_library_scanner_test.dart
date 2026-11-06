@@ -236,6 +236,22 @@ void main() {
       expect(plan.books, isEmpty);
     });
 
+    test('video source: every format the music scanner reads is handed to '
+        'music, including m4b / ac3 / ape / dsf (was dropped from both '
+        'libraries)', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/v/Books/novel.m4b'),
+        _file('/v/Drama/surround.ac3'),
+        _file('/v/Drama/plus.ec3'),
+        _file('/v/Hi-Res/01.ape'),
+        _file('/v/Hi-Res/02.dsf'),
+        _file('/v/Hi-Res/03.tta'),
+        _file('/v/Radio/news.mp2'),
+      ], collectPureAudio: true);
+      expect(plan.videos, isEmpty);
+      expect(plan.pureAudioPaths, hasLength(7));
+    });
+
     test('book source keeps audio as EPUB sidecar only, never as videos', () {
       final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
         _file('/lib/book.epub'),
