@@ -259,6 +259,9 @@ class FloatingBallWindow {
   GtkWidget* profile_menu_ = nullptr;
   ProfileMenuCallback profile_menu_done_;
   std::optional<int64_t> profile_menu_selected_;
+  // Idle that finishes the menu after it deactivates; removed on teardown so
+  // it never runs on a destroyed window.
+  guint profile_menu_idle_ = 0;
 
   ActionCallback on_action_;
   ClosedCallback on_closed_;
