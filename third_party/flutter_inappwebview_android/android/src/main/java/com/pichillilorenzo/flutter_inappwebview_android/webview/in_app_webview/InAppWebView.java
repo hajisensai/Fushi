@@ -604,7 +604,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     if (!customSettings.useHybridComposition) {
       userContentController.addPluginScript(PluginScriptsUtil.CHECK_GLOBAL_KEY_DOWN_EVENT_TO_HIDE_CONTEXT_MENU_JS_PLUGIN_SCRIPT);
     }
-    // Fushi patch (BUG-4127, see PATCHES.md): in every composition mode the floating context
+    // Fushi patch (BUG-4135, see PATCHES.md): in every composition mode the floating context
     // menu closes when the page's text selection ends. Hybrid composition has no other
     // selection-driven close path (the poll task and the keydown script above are texture-only).
     userContentController.addPluginScript(PluginScriptsUtil.FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT);
