@@ -213,9 +213,9 @@ void main() {
       contains('if (index < 0 || index >= len) { _currentIdx = -1; return; }'),
     );
   });
-  // BUG-4130（反馈 NSP86pcPHI）：歌词模式下正文跟着音频跨章，每装一章 reader 都重灌
+  // BUG-4202（反馈 NSP86pcPHI）：歌词模式下正文跟着音频跨章，每装一章 reader 都重灌
   // 整书 cue；旧码装章后无条件整页重载歌词文档，下一章的句子明明已在窗口里也重载。
-  group('跨章不重载歌词文档（BUG-4130）', () {
+  group('跨章不重载歌词文档（BUG-4202）', () {
     final List<AudioCue> all = <AudioCue>[for (int i = 0; i < 10; i++) _cue(i)];
 
     test('重灌同一份整书 cue（新列表、同元素）：窗口仍是同一段', () {

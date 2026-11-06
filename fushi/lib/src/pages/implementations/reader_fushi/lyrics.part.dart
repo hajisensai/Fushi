@@ -1107,7 +1107,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     }
     // 整书 cue 窗口：已装的那段必须仍是控制器**当前**整书 cue 的同一段（元素身份）。
     // reader 每装一章都重灌整书 cue（`_injectAudiobookBridge`），歌词模式下正文跟着
-    // 音频跨章——元素没换 → 窗口照常用，跨章不重载（BUG-4130，旧码装章后无条件整页
+    // 音频跨章——元素没换 → 窗口照常用，跨章不重载（BUG-4202，旧码装章后无条件整页
     // 重载）；元素换了（重新对齐 / SRT 重建）→ 窗口下标已对不上，先重载，不下发错位
     // 的 setCue。
     if (_lyricsCueWindowUsesAllBookCues &&
