@@ -6,7 +6,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart'
-    show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
+    show
+        BoxHitTestEntry,
+        BoxHitTestResult,
+        ContainerBoxParentData,
+        ContainerRenderObjectMixin,
+        MatrixUtils,
+        PaintingContext,
+        PipelineOwner,
+        RenderBox,
+        RenderBoxContainerDefaultsMixin,
+        RenderObject,
+        RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:fushi/src/models/content_font_chain.dart';
 
@@ -1497,19 +1508,31 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           return const SizedBox.shrink();
         }
 
-        // 副字幕层放画面顶部（翻译参考，不夺主字幕位置）；主字幕层按 markup 锚点 / pos。
-        // 二者几何不重叠。单层时直接返回该层（无 Stack 包裹），保持历史单字幕盒几何。
-        final List<Widget> layers = <Widget>[
-          if (secondaryCues.isNotEmpty)
-            _buildSubtitleLayer(context, secondaryCues, isSecondary: true),
-          if (mainCues.isNotEmpty)
-            _buildSubtitleLayer(context, mainCues, isSecondary: false),
-        ];
-        if (layers.length == 1) return layers.single;
-        return Stack(
-          children: <Widget>[
-            for (final Widget layer in layers) Positioned.fill(child: layer),
-          ],
+        // 两层的各位置组摊平进**同一个**碰撞布局容器（[_CueCollisionStack]）：副字幕
+        // 锚点组（含被强制置顶 / 置底的）在那里让开定位字幕与主字幕，绘制顺序照旧
+        // （副层在下、主层在上，层内按 Layer z 序）。
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final Size container = constraints.biggest;
+            return _CueCollisionStack(
+              children: <Widget>[
+                if (secondaryCues.isNotEmpty)
+                  ..._buildSubtitleLayer(
+                    context,
+                    secondaryCues,
+                    isSecondary: true,
+                    container: container,
+                  ),
+                if (mainCues.isNotEmpty)
+                  ..._buildSubtitleLayer(
+                    context,
+                    mainCues,
+                    isSecondary: false,
+                    container: container,
+                  ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1532,10 +1555,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 副字幕也可经 [secondaryBlurEnabled]（模糊，独立 reveal）/ [secondaryHidden]（隐藏，
   /// [Opacity] 为 0：布局照常、不绘制）遮蔽，与主字幕对称——两种遮蔽都保留几何，
   /// 悬停 / 点击即可临时显形。
-  Widget _buildSubtitleLayer(
+  List<Widget> _buildSubtitleLayer(
     BuildContext context,
     List<AudioCue> cues, {
     required bool isSecondary,
+    required Size container,
   }) {
     // 遮蔽只在「用户没在看」时生效（暂停 / 查词时清晰，BUG-199 / BUG-2198 / BUG-2235）：
     // 模糊与隐藏共用**同一条**门——该层开着遮蔽、当前未显形、且用户没在看。历史上隐藏单独绕过
@@ -1576,102 +1600,94 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         (isSecondary ? widget.secondaryHidden : widget.subtitleHidden) &&
         obscureActive;
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final Size container = constraints.biggest;
-        // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
-        // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
-        _lastLayoutHeight = container.height;
-        _lastLayoutWidth = container.width;
-        // BUG-820：字号/描边/边距的缩放基准是 fit:contain 后**视频内容矩形**（与 \pos
-        // 定位的 [mapPosFractionToContainer] 同一几何），不是容器——窗口比≠视频比
-        // （letterbox/pillarbox）时容器高大于视频显示高，按容器缩放整体偏大、与 mpv
-        // 不齐。首帧未解出（分辨率未知）为 null，_assFontScale 回退容器（历史行为）。
-        final int? videoW = widget.controller.videoWidth;
-        final int? videoH = widget.controller.videoHeight;
-        final Size? videoContent = (videoW != null && videoH != null)
-            ? fitVideoContentSize(videoW, videoH, container)
+    // TODO-1246：记录显示区高度，供 _styleForGrapheme 缩放 ASS 绝对字号 / 阴影。
+    // 本 builder 早于层内字符 Builder 回调求值，故同帧写入即可被读到。
+    _lastLayoutHeight = container.height;
+    _lastLayoutWidth = container.width;
+    // BUG-820：字号/描边/边距的缩放基准是 fit:contain 后**视频内容矩形**（与 \pos
+    // 定位的 [mapPosFractionToContainer] 同一几何），不是容器——窗口比≠视频比
+    // （letterbox/pillarbox）时容器高大于视频显示高，按容器缩放整体偏大、与 mpv
+    // 不齐。首帧未解出（分辨率未知）为 null，_assFontScale 回退容器（历史行为）。
+    final int? videoW = widget.controller.videoWidth;
+    final int? videoH = widget.controller.videoHeight;
+    final Size? videoContent = (videoW != null && videoH != null)
+        ? fitVideoContentSize(videoW, videoH, container)
+        : null;
+    _lastVideoContentHeight = videoContent?.height;
+    _lastVideoContentWidth = videoContent?.width;
+
+    // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
+    // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
+    // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
+    // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
+    //
+    // respectAssStyle 关 = **纯字幕模式**（asbplayer 语义，BUG-915）：不但样式统一，
+    // 位置/层/边距也统一——全部 cue 折进**一个**底部组（副字幕仍置顶），并按文本去重
+    // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
+    // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
+    // z 序（libass）：先按 ASS `Layer` 升序、同层按事件序——后画的盖先画的。招牌
+    // （Layer 0 白底遮罩 + 手写字）必须垫在 Layer 1 对白之下，而不是按活跃集发现
+    // 顺序谁靠后谁在上。
+    final List<(String, List<AudioCue>)> groups = sortCueGroupsForPaint(
+      widget.respectAssStyle
+          ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
+          : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))],
+    );
+    // BUG-3691：同一句被拆成多层同文本事件时，查词高亮只由一层认领（按绘制顺序，
+    // 规则见 [resolveLookupHighlightOwners]）。本 builder 早于层内字符 Builder 求值，
+    // 同帧写入即被 [_buildCueBox] 的 charWidget 读到。
+    final Set<AudioCue> owners = resolveLookupHighlightOwners(
+      highlight: widget.lookupHighlight,
+      cuesInPaintOrder: <AudioCue>[
+        for (final (String _, List<AudioCue> group) in groups) ...group,
+      ],
+      clipKeyOf: (AudioCue cue) {
+        final SubtitleClip? clip = widget.respectAssStyle
+            ? cue.markup?.clip
             : null;
-        _lastVideoContentHeight = videoContent?.height;
-        _lastVideoContentWidth = videoContent?.width;
-
-        // 按 \pos / \an / MarginV 分组：主、副字幕都按各自位置分组（TODO-1341 后续）——同位置
-        // 的 cue 归一堆叠、不同位置各自成组独立定位。副字幕不再被无条件塞进一个顶部盒：带显式
-        // 位置（\pos 或 \an，即 ASS 副字幕）的组遵自带位置；纯 SRT 副字幕（anchor / pos 皆空）
-        // 无位置信息才在 [_positionCueGroup] 里回退置顶（翻译参考，避让主字幕底部）。
-        //
-        // respectAssStyle 关 = **纯字幕模式**（asbplayer 语义，BUG-915）：不但样式统一，
-        // 位置/层/边距也统一——全部 cue 折进**一个**底部组（副字幕仍置顶），并按文本去重
-        // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
-        // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
-        // z 序（libass）：先按 ASS `Layer` 升序、同层按事件序——后画的盖先画的。招牌
-        // （Layer 0 白底遮罩 + 手写字）必须垫在 Layer 1 对白之下，而不是按活跃集发现
-        // 顺序谁靠后谁在上。
-        final List<(String, List<AudioCue>)> groups = sortCueGroupsForPaint(
-          widget.respectAssStyle
-              ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
-              : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))],
-        );
-        // BUG-3691：同一句被拆成多层同文本事件时，查词高亮只由一层认领（按绘制顺序，
-        // 规则见 [resolveLookupHighlightOwners]）。本 builder 早于层内字符 Builder 求值，
-        // 同帧写入即被 [_buildCueBox] 的 charWidget 读到。
-        final Set<AudioCue> owners = resolveLookupHighlightOwners(
-          highlight: widget.lookupHighlight,
-          cuesInPaintOrder: <AudioCue>[
-            for (final (String _, List<AudioCue> group) in groups) ...group,
-          ],
-          clipKeyOf: (AudioCue cue) {
-            final SubtitleClip? clip = widget.respectAssStyle
-                ? cue.markup?.clip
-                : null;
-            return clip == null ? null : clipGroupFingerprint(clip);
-          },
-        );
-        if (isSecondary) {
-          _lookupHighlightOwnersSecondary = owners;
-        } else {
-          _lookupHighlightOwnersMain = owners;
-        }
-
-        final List<(String, Widget)> positioned = <(String, Widget)>[
-          for (final (String key, List<AudioCue> group) in groups)
-            (
-              '${isSecondary ? 's' : 'm'}|$key',
-              _clipGroup(
-                group,
-                videoW,
-                videoH,
-                _positionCueGroup(
-                  context,
-                  // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
-                  // （TODO-1372）。
-                  '${isSecondary ? 's' : 'm'}|$key',
-                  group,
-                  isSecondary: isSecondary,
-                  blurred: blurred,
-                  hidden: hidden,
-                  container: container,
-                ),
-              ),
-            ),
-        ];
-
-        // 单组：直接返回该定位盒（历史单字幕盒几何像素级不变）。多组：Stack 叠放，各组用
-        // Positioned.fill 填满同一层边界、按各自锚点定位互不重叠（TODO-1341）。
-        // Positioned 按**分组键**挂 key：分组顺序=活跃集发现顺序（cue 文件序号），歌词/
-        // 招牌与对白的序号在文件里交错时，每次换句两组在本列表里对调；无 key 时 Flutter
-        // 按 Stack 位置复用 element——底部组的 [AnimatedPadding] 被喂成顶部组的 padding
-        // 目标（b:75→0 / t:0→15），把两组的 padding 差值**动画播出来**＝每句对白入场从
-        // 底边滑升一次（用户报「字幕跳」，与 BUG-800 同类病但高一层：组间 element 复用）。
-        if (positioned.length == 1) return positioned.single.$2;
-        return Stack(
-          children: <Widget>[
-            for (final (String key, Widget w) in positioned)
-              Positioned.fill(key: ValueKey<String>(key), child: w),
-          ],
-        );
+        return clip == null ? null : clipGroupFingerprint(clip);
       },
     );
+    if (isSecondary) {
+      _lookupHighlightOwnersSecondary = owners;
+    } else {
+      _lookupHighlightOwnersMain = owners;
+    }
+
+    final List<(String, Widget)> positioned = <(String, Widget)>[
+      for (final (String key, List<AudioCue> group) in groups)
+        (
+          '${isSecondary ? 's' : 'm'}|$key',
+          _clipGroup(
+            group,
+            videoW,
+            videoH,
+            _positionCueGroup(
+              context,
+              // 槽位状态键带主/副层前缀：两层各自分组，同形键不得跨层串槽位状态
+              // （TODO-1372）。
+              '${isSecondary ? 's' : 'm'}|$key',
+              group,
+              isSecondary: isSecondary,
+              blurred: blurred,
+              hidden: hidden,
+              container: container,
+            ),
+          ),
+        ),
+    ];
+
+    // 各组填满整个 overlay、按各自锚点定位（TODO-1341），由 [_CueCollisionStack]
+    // 叠放。按**分组键**挂 key：分组顺序=活跃集发现顺序（cue 文件序号），歌词/
+    // 招牌与对白的序号在文件里交错时，每次换句两组在本列表里对调；无 key 时 Flutter
+    // 按位置复用 element——底部组的 [AnimatedPadding] 被喂成顶部组的 padding
+    // 目标（b:75→0 / t:0→15），把两组的 padding 差值**动画播出来**＝每句对白入场从
+    // 底边滑升一次（用户报「字幕跳」，与 BUG-800 同类病但高一层：组间 element 复用）。
+    // 键带 `s|` / `m|` 层前缀，两层摊平进同一容器后仍互不相撞。
+    return <Widget>[
+      for (final (String key, Widget w) in positioned)
+        KeyedSubtree(key: ValueKey<String>(key), child: w),
+    ];
   }
 
   /// ASS `\clip`/`\iclip` 真裁剪：组内所有 cue 共享同一裁剪（多层卡拉 OK 每层各自成组
@@ -2150,7 +2166,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       alignment: _alignFor(anchor),
       child: _anchoredPadded(
         anchor,
-        content,
+        // 探针在 padding 之内：碰撞判定量的是字幕盒本身，不含边距 / 避让 padding。
+        _CueCollisionProbe(
+          role: isSecondary
+              ? _CueCollisionRole.secondaryAnchored
+              : _CueCollisionRole.mainAnchored,
+          direction: switch (anchor?.vertical ?? SubtitleVAlign.bottom) {
+            SubtitleVAlign.top => _CueYieldDirection.down,
+            SubtitleVAlign.bottom => _CueYieldDirection.up,
+            SubtitleVAlign.middle => _CueYieldDirection.none,
+          },
+          cues: cues,
+          child: content,
+        ),
         scaledMarginV,
         scaledMarginL,
         scaledMarginR,
@@ -3977,7 +4005,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         anchorFx: _hFrac(anchor.horizontal),
         anchorFy: _vFrac(anchor.vertical),
       ),
-      child: content,
+      // 定位盒是碰撞的**障碍物**：自己逐像素落在作者位，副字幕锚点组让开它
+      // （[_CueCollisionStack]）。
+      child: _CueCollisionProbe(
+        role: _CueCollisionRole.positioned,
+        direction: _CueYieldDirection.none,
+        cues: const <AudioCue>[],
+        child: content,
+      ),
     );
   }
 
@@ -4124,6 +4159,289 @@ class _AbsoluteCueLayoutDelegate extends SingleChildLayoutDelegate {
   @override
   bool shouldRelayout(_AbsoluteCueLayoutDelegate old) =>
       pos != old.pos || anchorFx != old.anchorFx || anchorFy != old.anchorFy;
+}
+
+/// 字幕盒在碰撞布局里的身份（[_CueCollisionStack]）。
+enum _CueCollisionRole {
+  /// `\pos` / `\move` / 帧锚 `\clip` 定位盒：逐像素落在作者位，是障碍物，自己不让。
+  positioned,
+
+  /// 主字幕锚点组：与 libass 同构、不让任何东西，但它占的位置副字幕要让开。
+  mainAnchored,
+
+  /// 副字幕锚点组（含被强制置顶 / 置底的）：让开定位盒与主字幕。
+  secondaryAnchored,
+}
+
+/// 锚点组让位的方向：顶锚往下让、底锚往上让，中锚没有「远离锚边」的方向，不让。
+enum _CueYieldDirection { down, up, none }
+
+/// 副字幕锚点组的**让位**解析（纯函数，几何真相源）。
+///
+/// 根因（用户报：英文作副字幕时顶部字幕互相压字）：副字幕的对白行（字幕组样式常是
+/// `\an2` / `\an3` 底部）被「副字幕对侧置顶」规则拽到顶部，而同一轨的罗马音 / 招牌是
+/// `\pos` 定位行、留在作者位——两者被硬叠在一起；控制条一出现，强制置顶的那行又按
+/// 顶栏避让单独下移，于是「一个动一个不动」。强制锚定是 Fushi 自己加的排版（libass
+/// 里副字幕根本不存在），它就必须为自己挪动的行负责：摆放时让开已在屏的盒子。
+///
+/// [box] 是未让位时的字幕盒（容器坐标）；[obstacles] 是要让开的盒；[down] 为真往下让
+/// （顶锚），否则往上让（底锚）。让位线只由障碍物决定：往下让时盒顶 = max(原盒顶,
+/// 让位线)，往上让时盒底 = min(原盒底, 让位线)——控制条避让抬高原盒顶时两者取下限而非
+/// 叠加，不会把字幕多推一段。
+///
+/// 让位最多让到 [limit]（往下让：盒顶不越过它；往上让：盒底不越过它，调用方传画面
+/// 中线）：要越线才躲得开的障碍物（全屏底板、占半屏的招牌）不躲，照常重叠——越过中线
+/// 就跑到对侧字幕的地盘了。
+///
+/// [stickyEdge] 是本组上一帧的让位线：同一批 cue 在屏期间让位线只增不减（往上让时只减
+/// 不增），障碍物先走一步也不会让字幕弹回去——libass「事件在屏期间位置不变」的同义。
+/// 返回本帧位移与新的让位线（null = 没让）。
+@visibleForTesting
+({double dy, double? edge}) resolveCueYieldOffset({
+  required Rect box,
+  required List<Rect> obstacles,
+  required bool down,
+  required double limit,
+  double? stickyEdge,
+}) {
+  double? edge = stickyEdge;
+  bool hits(Rect o, Rect r) =>
+      !o.isEmpty &&
+      o.left < r.right &&
+      o.right > r.left &&
+      o.top < r.bottom &&
+      o.bottom > r.top;
+  Rect placed() {
+    if (down) {
+      final double top = edge == null ? box.top : math.max(box.top, edge);
+      return Rect.fromLTWH(box.left, top, box.width, box.height);
+    }
+    final double bottom = edge == null
+        ? box.bottom
+        : math.min(box.bottom, edge);
+    return Rect.fromLTWH(box.left, bottom - box.height, box.width, box.height);
+  }
+
+  // 每轮至少越过一个障碍物，轮数上限 = 障碍物数（链式相邻的障碍物逐个越过）。
+  for (int round = 0; round <= obstacles.length; round++) {
+    final Rect r = placed();
+    bool moved = false;
+    for (final Rect o in obstacles) {
+      if (!hits(o, r)) continue;
+      if (down) {
+        if (o.bottom > limit) continue;
+        if (edge == null || o.bottom > edge) {
+          edge = o.bottom;
+          moved = true;
+        }
+      } else {
+        if (o.top < limit) continue;
+        if (edge == null || o.top < edge) {
+          edge = o.top;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  final Rect r = placed();
+  return (dy: down ? r.top - box.top : r.bottom - box.bottom, edge: edge);
+}
+
+/// 字幕层的碰撞布局容器：两层（主 / 副）的各位置组都是填满 overlay 的子节点，按
+/// 子节点顺序绘制（= 原先的 z 序）。布局完后读各组里的 [_CueCollisionProbe]，把
+/// 副字幕锚点组整组平移去让开定位盒与主字幕（规则见 [resolveCueYieldOffset]）。
+///
+/// 主字幕与定位盒的位置一律不动（libass 同构，历史几何不变）；只有副字幕锚点组会
+/// 被平移。平移写在子节点的 parentData 偏移里，绘制与命中测试（查词点字）同一几何。
+class _CueCollisionStack extends MultiChildRenderObjectWidget {
+  const _CueCollisionStack({required super.children});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCueCollisionStack();
+}
+
+class _CueStackParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderCueCollisionStack extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _CueStackParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _CueStackParentData> {
+  /// 挂在本容器子树里的探针（探针 attach / detach 时自行登记 / 注销）。
+  final Set<_RenderCueCollisionProbe> _probes = <_RenderCueCollisionProbe>{};
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _CueStackParentData) {
+      child.parentData = _CueStackParentData();
+    }
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
+    // 松约束 + parentUsesSize：子节点不成为重布局边界，组内任何几何变化（\move 逐帧、
+    // 控制条避让动画、换句）都会冒泡到这里重算让位。
+    final BoxConstraints inner = BoxConstraints.loose(size);
+    RenderBox? child = firstChild;
+    while (child != null) {
+      final _CueStackParentData pd = child.parentData! as _CueStackParentData;
+      pd.offset = Offset.zero;
+      child.layout(inner, parentUsesSize: true);
+      child = pd.nextSibling;
+    }
+    _resolveCollisions();
+  }
+
+  void _resolveCollisions() {
+    final List<Rect> fixed = <Rect>[];
+    final List<_RenderCueCollisionProbe> yielding =
+        <_RenderCueCollisionProbe>[];
+    for (final _RenderCueCollisionProbe probe in _probes) {
+      if (probe.laidOutSize == null) continue;
+      switch (probe.role) {
+        case _CueCollisionRole.positioned:
+        case _CueCollisionRole.mainAnchored:
+          fixed.add(_rectOf(probe));
+        case _CueCollisionRole.secondaryAnchored:
+          if (probe.direction != _CueYieldDirection.none) yielding.add(probe);
+      }
+    }
+    for (final _RenderCueCollisionProbe probe in yielding) {
+      final RenderBox? child = _directChildOf(probe);
+      if (child == null) continue;
+      final bool down = probe.direction == _CueYieldDirection.down;
+      final ({double dy, double? edge}) r = resolveCueYieldOffset(
+        box: _rectOf(probe),
+        obstacles: fixed,
+        down: down,
+        limit: size.height / 2,
+        stickyEdge: probe.stickyEdge,
+      );
+      probe.stickyEdge = r.edge;
+      (child.parentData! as _CueStackParentData).offset = Offset(0, r.dy);
+    }
+  }
+
+  // 探针不是本容器的直接子节点，按框架约定不能读它的 size：用它布局时自己记下的尺寸。
+  Rect _rectOf(_RenderCueCollisionProbe probe) => MatrixUtils.transformRect(
+    probe.getTransformTo(this),
+    Offset.zero & probe.laidOutSize!,
+  );
+
+  RenderBox? _directChildOf(RenderObject node) {
+    RenderObject? cur = node;
+    while (cur != null && cur.parent != this) {
+      cur = cur.parent;
+    }
+    return cur is RenderBox ? cur : null;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
+/// 给 [_CueCollisionStack] 标出一个字幕盒（不改布局 / 绘制）：[role] 决定它是障碍物还是
+/// 要让位的副字幕锚点组，[cues] 是该组当前的 cue（换了一批 = 新事件，让位线重置）。
+class _CueCollisionProbe extends SingleChildRenderObjectWidget {
+  const _CueCollisionProbe({
+    required this.role,
+    required this.direction,
+    required this.cues,
+    required super.child,
+  });
+
+  final _CueCollisionRole role;
+  final _CueYieldDirection direction;
+  final List<AudioCue> cues;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCueCollisionProbe(role: role, direction: direction, cues: cues);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCueCollisionProbe renderObject,
+  ) {
+    renderObject.update(role: role, direction: direction, cues: cues);
+  }
+}
+
+class _RenderCueCollisionProbe extends RenderProxyBox {
+  _RenderCueCollisionProbe({
+    required _CueCollisionRole role,
+    required _CueYieldDirection direction,
+    required List<AudioCue> cues,
+  }) : _role = role,
+       _direction = direction,
+       _cues = cues;
+
+  _CueCollisionRole _role;
+  _CueYieldDirection _direction;
+  List<AudioCue> _cues;
+  _RenderCueCollisionStack? _stack;
+
+  /// 本组上一帧的让位线（[resolveCueYieldOffset]）；换了一批 cue 即清空。
+  double? stickyEdge;
+
+  /// 最近一次布局的尺寸，给祖先 [_RenderCueCollisionStack] 读（它不是父节点，不能读
+  /// [size]）。每次布局都经过这里，所以与 [size] 同步。
+  Size? laidOutSize;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    laidOutSize = size;
+  }
+
+  _CueCollisionRole get role => _role;
+  _CueYieldDirection get direction => _direction;
+
+  void update({
+    required _CueCollisionRole role,
+    required _CueYieldDirection direction,
+    required List<AudioCue> cues,
+  }) {
+    final bool sameCues =
+        cues.length == _cues.length &&
+        Iterable<int>.generate(
+          cues.length,
+        ).every((int i) => identical(cues[i], _cues[i]));
+    if (!sameCues) stickyEdge = null;
+    final bool changed = role != _role || direction != _direction || !sameCues;
+    _role = role;
+    _direction = direction;
+    _cues = cues;
+    if (changed) _stack?.markNeedsLayout();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    RenderObject? p = parent;
+    while (p != null && p is! _RenderCueCollisionStack) {
+      p = p.parent;
+    }
+    _stack = p as _RenderCueCollisionStack?;
+    _stack?._probes.add(this);
+  }
+
+  @override
+  void detach() {
+    _stack?._probes.remove(this);
+    _stack = null;
+    super.detach();
+  }
 }
 
 /// GDI 全名尾部**字重后缀** → [FontWeight]；不是字重后缀返回 null。纯函数可单测。
