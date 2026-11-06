@@ -12,6 +12,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
@@ -1619,7 +1620,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   ) async => AnkiOpenWordOutcome.failed;
 
   @override
-  Future<bool> onFavoriteEntry(Map<String, String> fields) async => false;
+  Future<bool> onFavoriteEntry(
+    Map<String, String> fields, {
+    FavoriteLookupContext? lookupContext,
+  }) async => false;
 
   @override
   Future<bool> onFavoriteCheck(String expression, String reading) async =>
