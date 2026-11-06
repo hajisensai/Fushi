@@ -1777,6 +1777,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
+  /// 查词弹窗下的正文：歌词模式时是盖在书上的歌词 WebView，否则是书页 WebView。
+  @override
+  Object? get popupBodyWebViewId => _lyricsMode
+      ? _lyricsWebViewController?.getViewId()
+      : _controller?.getViewId();
+
   /// 订阅中的 app 主题通知器（dispose 时按同一实例退订）。
   ThemeNotifier? _observedThemeNotifier;
 
@@ -4366,20 +4372,31 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         key: _pageStackKey,
                         fit: StackFit.expand,
                         children: <Widget>[
-                          Positioned.fill(child: _buildBody()),
+                          // 歌词覆盖层在场时被它整屏盖住的阅读器层：会动的每一层都经
+                          // [_coveredByLyricsOverlay] 统一停 Ticker（判据只在那里写一次）。
+                          _coveredByLyricsOverlay(
+                            'body',
+                            Positioned.fill(child: _buildBody()),
+                          ),
                           if (_pageCurlEnabled)
-                            Positioned.fill(
-                              child: _buildPageCurlOverlay(bgColor),
+                            _coveredByLyricsOverlay(
+                              'page_curl',
+                              Positioned.fill(
+                                child: _buildPageCurlOverlay(bgColor),
+                              ),
                             ),
                           if (!_readerContentReady ||
                               _chapterTransitionSnapshot != null ||
                               _chapterFadeInPending)
-                            Positioned.fill(
-                              child:
-                                  _chapterFadeInPending &&
-                                      _chapterTransitionSnapshot == null
-                                  ? _buildChapterFadeInOverlay(bgColor)
-                                  : _buildChapterTransitionOverlay(bgColor),
+                            _coveredByLyricsOverlay(
+                              'chapter_transition',
+                              Positioned.fill(
+                                child:
+                                    _chapterFadeInPending &&
+                                        _chapterTransitionSnapshot == null
+                                    ? _buildChapterFadeInOverlay(bgColor)
+                                    : _buildChapterTransitionOverlay(bgColor),
+                              ),
                             ),
                           if (_readerContentReady)
                             const SizedBox.shrink(
@@ -4462,16 +4479,31 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           // 见 BUG-1744）。macOS 改用自绘 MD3 顶栏后，窗口抓手由
                           // [FushiDesktopTitleBar] 的 DragToMoveArea 提供、交通灯也已
                           // 隐藏，阅读器再挂一条只会在顶栏下面多压一条不透明带。
-                          _buildTopProgressBar(),
+                          _coveredByLyricsOverlay(
+                            'top_progress',
+                            _buildTopProgressBar(),
+                          ),
                           // 桌面端顶边悬停热区（收起时才存在）+ 顶部工具栏（ッツ 形态）：与底栏
                           // 同一显隐状态机，排在词典弹层之前。
-                          _buildDesktopHeader(),
+                          _coveredByLyricsOverlay(
+                            'desktop_header',
+                            _buildDesktopHeader(),
+                          ),
                           // 底部状态行 / 悬浮态收起后的屏底细进度线：排在词典弹层 /
                           // 底栏之前，让它们盖在其上。
-                          _buildProgressEdgeLine(),
-                          _buildStatusFooter(),
+                          _coveredByLyricsOverlay(
+                            'progress_edge',
+                            _buildProgressEdgeLine(),
+                          ),
+                          _coveredByLyricsOverlay(
+                            'status_footer',
+                            _buildStatusFooter(),
+                          ),
                           // 悬浮球的阅读器场景按钮（零尺寸登记器，球画在根上）。
-                          _buildReaderFloatingBallScene(),
+                          _coveredByLyricsOverlay(
+                            'floating_ball',
+                            _buildReaderFloatingBallScene(),
+                          ),
                           // 歌词覆盖层（盖住正文与顶栏 / 状态行；查词弹层仍在它之上）。
                           // 正文 WebView 不卸载，照常跟随音频、照常记统计。
                           _buildLyricsOverlay(),
@@ -4501,7 +4533,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           // the Positioned (see _buildAudiobookBar / _buildSettingsBar) so
                           // it never detaches the Positioned's StackParentData (which would
                           // drop the bar to the Stack's top-start alignment).
-                          _buildBottomChrome(),
+                          // 它排在歌词覆盖层之上（要盖住查词弹层），覆盖层在场时却不画（见
+                          // [_buildBottomChrome]）、被覆盖层盖住，同属阅读器层。[TickerMode] 不是
+                          // RenderObject，Positioned 仍是 Stack 的直接 RenderObject 孩子。
+                          _coveredByLyricsOverlay(
+                            'bottom_chrome',
+                            _buildBottomChrome(),
+                          ),
                           // BUG-2230 同口径（网页流媒体页 / 漫画页早已如此）：**出口不是
                           // 内容的一部分，不随内容存亡**。本页的返回箭头挂在顶栏上，而
                           // 顶栏的可见条件含 `_hasEverLoaded`——它只在 WebView 首屏渲染

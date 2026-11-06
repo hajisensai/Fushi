@@ -34,11 +34,13 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 
 /// 每系列字幕语言记忆的偏好键（与 app `PreferencesRepository.jimakuPreferredLanguages`
-/// 同一个键、同一种 JSON map 形状；服务端管线当前没接字幕 registry，先记下不丢）。
-const String kServerSeriesSubtitleLanguagesPref = 'jimaku_pref_langs';
+/// 同一个键、同一种 JSON map 形状）。下载管线字幕阶段按它排首选（见
+/// `server_subtitle_providers.dart` 的 [serverDownloadSubtitleLanguageResolver]）。
+const String kServerSeriesSubtitleLanguagesPref = kSeriesSubtitleLanguagesPref;
 
 /// 服务端会话要用的下载面。生产是 [ServerDownloadHost]，测试注入假管线。
 abstract interface class ServerAssistantDownloads {

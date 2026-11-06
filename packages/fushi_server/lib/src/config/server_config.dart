@@ -11,6 +11,22 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+/// 服务端扫描根支持的 kind：`fushi_server.yaml` 的 `libraries[].kind`、admin API 新增
+/// 库根与 WebUI 选择框共用这一份，与 `LibraryScanner.scanAll` 的分派一一对应。
+/// `music` 刻意不在内（所有者 2026-10-28 决定延后），见 `docs/agent/server-parity-gaps.md`。
+const List<String> kServerLibraryRootKinds = <String>[
+  'video',
+  'book',
+  'manga',
+  'audiobook',
+];
+
+/// [kind] 不是服务端支持的扫描根种类时的说明（含可选值；`music` 额外指向缺口文档）。
+String unsupportedLibraryKindMessage(String kind) => kind == 'music'
+    ? 'kind "music" is not supported by fushi_server yet (music libraries are deferred; '
+          'see docs/agent/server-parity-gaps.md); supported: ${kServerLibraryRootKinds.join(' / ')}'
+    : 'unsupported kind "$kind"; supported: ${kServerLibraryRootKinds.join(' / ')}';
+
 /// 一条扫描根：服务端库的来源目录。
 class LibraryRootConfig {
   const LibraryRootConfig({
@@ -28,10 +44,16 @@ class LibraryRootConfig {
     if (path == null || path.trim().isEmpty) {
       throw FormatException('libraries[$index].path 不能为空');
     }
+    final String kind = raw['kind']?.toString() ?? 'video';
+    if (!kServerLibraryRootKinds.contains(kind)) {
+      throw FormatException(
+        'libraries[$index].kind: ${unsupportedLibraryKindMessage(kind)}',
+      );
+    }
     return LibraryRootConfig(
       id: raw['id']?.toString() ?? 'lib$index',
       path: path,
-      kind: raw['kind']?.toString() ?? 'video',
+      kind: kind,
       enabled: raw['enabled'] != false,
     );
   }
@@ -39,7 +61,8 @@ class LibraryRootConfig {
   final String id;
   final String path;
 
-  /// `video` | `book`（epub）| `manga`（页图目录）。
+  /// [kServerLibraryRootKinds] 之一：`video` | `book`（epub）| `manga`（mokuro 卷 / 单文件卷 /
+  /// 页图目录）| `audiobook`（含音频的目录，可带 EPUB / 字幕）。
   final String kind;
   final bool enabled;
 

@@ -92,17 +92,17 @@ class FushiContinueCardRow extends StatelessWidget {
   static const double _maxCoverHeight = 168;
 
   /// 封面右边信息列至少留这么宽（两行标题 + 进度条读得下）。
-  static const double _minInfoWidth = 180;
+  static const double minInfoWidth = 180;
 
   double get _widestAspect => entries.fold<double>(
     0,
     (double m, FushiContinueEntry e) =>
-        m > e.coverAspectRatio ? m : e.coverAspectRatio,
+        m > e.layoutAspectRatio ? m : e.layoutAspectRatio,
   );
 
   /// 一张卡至少多宽：封面 + 内边距 + 信息列下限。
   double _minCardWidth(double cover, double pad) =>
-      cover * _widestAspect + pad * 3 + _minInfoWidth;
+      cover * _widestAspect + pad * 3 + minInfoWidth;
 
   /// 网格模式下每张卡占几格：至少两格（不足两列时一格），放不下最小卡宽就一直
   /// 扩，最多占满整行——封面越宽（横版剧照）占得越多，保证信息列不被挤窄。
@@ -219,10 +219,14 @@ class FushiContinueCardRow extends StatelessWidget {
                   child: SizedBox(
                     width: cardWidth,
                     height: cardHeight,
-                    child: _TintedContinueCard(
+                    child: FushiContinueOrientedEntry(
                       entry: entry,
-                      padding: pad,
-                      coverHeight: cover,
+                      builder: (FushiContinueEntry e) => _TintedContinueCard(
+                        entry: e,
+                        padding: pad,
+                        coverHeight: cover,
+                        cardSize: Size(cardWidth, cardHeight),
+                      ),
                     ),
                   ),
                 ),
@@ -334,11 +338,16 @@ class _TintedContinueCard extends StatelessWidget {
     required this.entry,
     required this.padding,
     required this.coverHeight,
+    required this.cardSize,
   });
 
   final FushiContinueEntry entry;
   final double padding;
   final double coverHeight;
+
+  /// 卡的外框尺寸（行已算定）：卡内排法按它减内边距判，不读卡内约束——
+  /// [FushiCard] 不把高度约束透给内容。
+  final Size cardSize;
 
   String _percent(BuildContext context, double progress) {
     final String? label = entry.progressLabel;
@@ -380,8 +389,6 @@ class _TintedContinueCard extends StatelessWidget {
     if (material != null) {
       cover = ShelfCoverMaterialScope(material: material, child: cover);
     }
-    final double coverWidth = coverHeight * entry.coverAspectRatio;
-
     final List<String> meta = <String>[
       if (entry.subtitle case final String sub when sub.isNotEmpty) sub,
       ...entry.metaLines,
@@ -407,69 +414,97 @@ class _TintedContinueCard extends StatelessWidget {
       );
     }
 
-    final Widget body = Row(
+    final Widget info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        SizedBox(width: coverWidth, height: coverHeight, child: cover),
-        SizedBox(width: padding),
+        ShelfTitleOverflowTooltip(
+          title: entry.title,
+          style: styles.title,
+          maxLines: 2,
+          child: Text(
+            entry.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: styles.title,
+          ),
+        ),
+        // 角标与元信息行：剩余高度放得下几行画几行，放不下的整行不画
+        // （系统字号放大时不溢出、也不露半行）。
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: _WholeLinesColumn(
             children: <Widget>[
-              ShelfTitleOverflowTooltip(
-                title: entry.title,
-                style: styles.title,
-                maxLines: 2,
-                child: Text(
-                  entry.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: styles.title,
-                ),
-              ),
-              // 角标与元信息行：剩余高度放得下几行画几行，放不下的整行不画
-              // （系统字号放大时不溢出、也不露半行）。
-              Expanded(
-                child: _WholeLinesColumn(
-                  children: <Widget>[
-                    if (badge != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: badge,
-                      ),
-                    for (int i = 0; i < meta.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: metaLine(i),
-                      ),
-                  ],
-                ),
-              ),
-              if (progress != null)
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: FushiLinearProgressIndicator(
-                        key: entry.progressKey,
-                        value: progress,
-                        minHeight: 6,
-                        borderRadius: const BorderRadius.all(
-                          Radius.circular(3),
-                        ),
-                        color: accent,
-                        backgroundColor: accent.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    SizedBox(width: tokens.spacing.gap * 1.5),
-                    Text(
-                      _percent(context, progress),
-                      style: styles.progress.copyWith(color: accent),
-                    ),
-                  ],
+              if (badge != null)
+                Padding(padding: const EdgeInsets.only(top: 4), child: badge),
+              for (int i = 0; i < meta.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: metaLine(i),
                 ),
             ],
           ),
         ),
+        if (progress != null)
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: FushiLinearProgressIndicator(
+                  key: entry.progressKey,
+                  value: progress,
+                  minHeight: 6,
+                  borderRadius: const BorderRadius.all(Radius.circular(3)),
+                  color: accent,
+                  backgroundColor: accent.withValues(alpha: 0.18),
+                ),
+              ),
+              SizedBox(width: tokens.spacing.gap * 1.5),
+              Text(
+                _percent(context, progress),
+                style: styles.progress.copyWith(color: accent),
+              ),
+            ],
+          ),
       ],
+    );
+
+    final double infoMin = styles.minInfoHeight(
+      MediaQuery.textScalerOf(context),
+      Directionality.of(context),
+    );
+    final Size inner = Size(
+      math.max(0, cardSize.width - padding * 2),
+      math.max(0, cardSize.height - padding * 2),
+    );
+    final _CardGeometry g = _CardGeometry.resolve(
+      innerWidth: inner.width,
+      innerHeight: inner.height,
+      coverHeight: coverHeight,
+      aspect: entry.coverAspectRatio,
+      gap: padding,
+      infoMinHeight: infoMin,
+    );
+    final Widget coverBox = SizedBox(
+      width: g.coverSize.width,
+      height: g.coverSize.height,
+      child: cover,
+    );
+    final Widget body = SizedBox.fromSize(
+      size: inner,
+      child: g.stacked
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                coverBox,
+                SizedBox(height: padding * 0.75),
+                Expanded(child: info),
+              ],
+            )
+          : Row(
+              children: <Widget>[
+                coverBox,
+                SizedBox(width: padding),
+                Expanded(child: info),
+              ],
+            ),
     );
 
     Widget card = FushiHoverLift(
@@ -499,6 +534,58 @@ class _TintedContinueCard extends StatelessWidget {
     }
     return card;
   }
+}
+
+/// 一张取色卡内封面与信息列怎么排（[FushiContinueCardRow.minInfoWidth] 是信息列
+/// 下限）：
+/// - 放得下就是「封面 | 信息列」，封面按给定高 [coverHeight]；
+/// - 卡太窄（宽屏大卡旁只排得下一张、或横版剧照太宽）而卡又够高：改成「封面在上、
+///   信息在下」，封面铺满卡宽（高不够时按高缩）——平板横屏大卡旁那张窄高卡
+///   （用户反馈「视频ui优化」截图：16:9 剧照把标题挤成三个字）；
+/// - 既窄又矮：仍左右排，封面按比例缩到信息列放得下。
+@immutable
+class _CardGeometry {
+  const _CardGeometry({required this.stacked, required this.coverSize});
+
+  factory _CardGeometry.resolve({
+    required double innerWidth,
+    required double innerHeight,
+    required double coverHeight,
+    required double aspect,
+    required double gap,
+    required double infoMinHeight,
+  }) {
+    const double minInfo = FushiContinueCardRow.minInfoWidth;
+    final double sideCoverWidth = coverHeight * aspect;
+    if (!innerWidth.isFinite || innerWidth - sideCoverWidth - gap >= minInfo) {
+      return _CardGeometry(
+        stacked: false,
+        coverSize: Size(sideCoverWidth, coverHeight),
+      );
+    }
+    final double room = innerHeight - gap * 0.75 - infoMinHeight;
+    final double stackedHeight = math.min(innerWidth / aspect, room);
+    if (stackedHeight >= _minStackedCoverHeight) {
+      return _CardGeometry(
+        stacked: true,
+        coverSize: Size(stackedHeight * aspect, stackedHeight),
+      );
+    }
+    final double h = math.max(
+      _minCoverHeight,
+      math.min(coverHeight, (innerWidth - gap - minInfo) / aspect),
+    );
+    return _CardGeometry(stacked: false, coverSize: Size(h * aspect, h));
+  }
+
+  /// 上下排时封面至少这么高，再矮不如左右排。
+  static const double _minStackedCoverHeight = 96;
+
+  /// 左右排时封面缩到的下限。
+  static const double _minCoverHeight = 48;
+
+  final bool stacked;
+  final Size coverSize;
 }
 
 /// 竖排子项，只画完整放得下的那些（从上往下，第一个放不下的及其后都不画、不

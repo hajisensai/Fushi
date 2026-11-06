@@ -30,7 +30,8 @@ const List<String> _wholeFiles = <String>[
   'lib/src/media/video/video_danmaku_source.dart',
   'lib/src/media/video/cover_backfill_ledger.dart',
   'lib/src/media/video/subtitle/video_subtitle_generate_sheet.dart',
-  'lib/src/media/video/subtitle/video_subtitle_backfill.dart',
+  // 补字幕服务已搬进引擎（服务端同一份），仍跑在 app 的 UI isolate。
+  '../packages/fushi_engine/lib/media/video/subtitle/video_subtitle_backfill.dart',
   'lib/src/media/async_file_existence_cache.dart',
 ];
 

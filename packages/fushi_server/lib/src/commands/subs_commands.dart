@@ -15,12 +15,8 @@
 ///   `subtitle_alignment_backup.dart` 登记原稿，`subs restore` 由此找回；
 /// - 自检：`subtitle_timing_check.dart`（ffprobe 探视频时长）。
 ///
-/// 凭据只从环境变量或偏好表读，不进 argv：环境变量（显式意图，优先）
-/// `FUSHI_OPENSUBTITLES_API_KEY` / `FUSHI_OPENSUBTITLES_USERNAME` /
-/// `FUSHI_OPENSUBTITLES_PASSWORD`、`FUSHI_SUBDL_API_KEY`、`FUSHI_JIMAKU_API_KEY`；
-/// 其次是与 app 同名的偏好键（`video_subtitle_opensubtitles_config` /
-/// `video_subtitle_subdl_api_key` / `jimaku_api_key` 及其 `*_enabled`），它们在
-/// 互联的「服务账号」共享清单里（`InterconnectServiceConfigSnapshot`）。
+/// 凭据只从环境变量或偏好表读，不进 argv。来源装配、凭据解析与门控住在
+/// `server_subtitle_providers.dart`（下载管线与补字幕共用同一份）。
 library;
 
 import 'dart:convert';
@@ -30,44 +26,20 @@ import 'dart:typed_data';
 import 'package:args/args.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
-import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
-import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
-import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
-import 'package:fushi_engine/media/video/subtitle/subdl_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
-import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/video_cli_support.dart';
 import 'package:fushi_server/src/server_runtime.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:path/path.dart' as p;
-
-/// 支持的字幕来源 id（与引擎 provider 的 `id` 一致）。
-const List<String> kSubsProviderIds = <String>[
-  'opensubtitles',
-  kSubdlSubtitleProviderId,
-  'jimaku',
-];
-
-const String kOpenSubtitlesApiKeyEnv = 'FUSHI_OPENSUBTITLES_API_KEY';
-const String kOpenSubtitlesUsernameEnv = 'FUSHI_OPENSUBTITLES_USERNAME';
-const String kOpenSubtitlesPasswordEnv = 'FUSHI_OPENSUBTITLES_PASSWORD';
-const String kSubdlApiKeyEnv = 'FUSHI_SUBDL_API_KEY';
-const String kJimakuApiKeyEnv = 'FUSHI_JIMAKU_API_KEY';
-
-/// 与 app `PreferencesRepository` 同名的偏好键。
-const String kOpenSubtitlesConfigPref = 'video_subtitle_opensubtitles_config';
-const String kSubdlApiKeyPref = 'video_subtitle_subdl_api_key';
-const String kSubdlEnabledPref = 'video_subtitle_subdl_enabled';
-const String kJimakuApiKeyPref = 'jimaku_api_key';
-const String kJimakuEnabledPref = 'jimaku_enabled';
 
 const String _usage = '''
 subs（外挂字幕；凭据只读环境变量 / 偏好表，见 subs_commands.dart 文件头）:
@@ -145,11 +117,7 @@ class SubsDeps {
   });
 
   /// 按来源 id 与凭据造一个 provider。
-  final VideoSubtitleProvider Function(
-    String providerId,
-    SubsCredentials credentials,
-  )
-  providerFactory;
+  final SubsProviderFactory providerFactory;
 
   /// 读凭据用的环境变量（null = 进程环境）。
   final Map<String, String>? environment;
@@ -189,276 +157,6 @@ Future<String?> ffmpegUnavailableReason({required bool probe}) async {
   } on ProcessException catch (e) {
     return '找不到 $tool（${describeFfmpegProcessException(e)}）；装 ffmpeg 或在配置文件里填 ffmpeg / ffprobe 路径';
   }
-}
-
-/// 三家来源的凭据（环境变量优先，其次偏好表）。
-class SubsCredentials {
-  const SubsCredentials({
-    required this.openSubtitles,
-    required this.subdlApiKey,
-    required this.subdlEnabled,
-    required this.jimakuApiKey,
-    required this.jimakuEnabled,
-  });
-
-  final OpenSubtitlesConfig openSubtitles;
-  final String subdlApiKey;
-  final bool subdlEnabled;
-  final String jimakuApiKey;
-  final bool jimakuEnabled;
-
-  /// [providerId] 能不能用；不能用时返回给用户的配置提示，能用返回 null。
-  String? unavailableReason(String providerId) {
-    switch (providerId) {
-      case 'opensubtitles':
-        if (!openSubtitles.enabled) {
-          return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
-        }
-        if (openSubtitles.effectiveApiKey.isEmpty) {
-          return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或从已配好的 Fushi 经互联同步';
-        }
-        return null;
-      case kSubdlSubtitleProviderId:
-        if (subdlApiKey.isEmpty) {
-          return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
-        }
-        if (!subdlEnabled) return 'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）';
-        return null;
-      case 'jimaku':
-        if (jimakuApiKey.isEmpty) {
-          return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
-        }
-        if (!jimakuEnabled) return 'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）';
-        return null;
-    }
-    return '未知字幕来源 $providerId';
-  }
-}
-
-String _env(Map<String, String> env, String name) => (env[name] ?? '').trim();
-
-/// 读凭据：环境变量是显式意图，给了就视为启用；否则按偏好表（与 app 同一判据）。
-SubsCredentials resolveSubsCredentials(
-  PrefStore prefs,
-  Map<String, String> env,
-) {
-  OpenSubtitlesConfig openSubtitles = _openSubtitlesFromPrefs(prefs);
-  final String osKey = _env(env, kOpenSubtitlesApiKeyEnv);
-  final String osUser = _env(env, kOpenSubtitlesUsernameEnv);
-  final String osPassword = env[kOpenSubtitlesPasswordEnv] ?? '';
-  if (osKey.isNotEmpty || osUser.isNotEmpty) {
-    openSubtitles = OpenSubtitlesConfig(
-      apiKey: osKey.isNotEmpty ? osKey : openSubtitles.apiKey,
-      username: osUser.isNotEmpty ? osUser : openSubtitles.username,
-      password: osPassword.isNotEmpty ? osPassword : openSubtitles.password,
-      userAgent: openSubtitles.userAgent,
-      baseUrl: openSubtitles.baseUrl,
-      priority: openSubtitles.priority,
-      allowInsecureHttp: openSubtitles.allowInsecureHttp,
-    );
-  }
-  final String subdlEnv = _env(env, kSubdlApiKeyEnv);
-  final String jimakuEnv = _env(env, kJimakuApiKeyEnv);
-  return SubsCredentials(
-    openSubtitles: openSubtitles,
-    subdlApiKey: subdlEnv.isNotEmpty
-        ? subdlEnv
-        : _prefString(prefs, kSubdlApiKeyPref),
-    subdlEnabled:
-        subdlEnv.isNotEmpty ||
-        _prefBool(prefs, kSubdlEnabledPref, defaultValue: true),
-    jimakuApiKey: jimakuEnv.isNotEmpty
-        ? jimakuEnv
-        : _prefString(prefs, kJimakuApiKeyPref),
-    jimakuEnabled:
-        jimakuEnv.isNotEmpty ||
-        _prefBool(prefs, kJimakuEnabledPref, defaultValue: true),
-  );
-}
-
-String _prefString(PrefStore prefs, String key) {
-  final Object? value = prefs.getPref(key, defaultValue: '');
-  return value is String ? value.trim() : '';
-}
-
-bool _prefBool(PrefStore prefs, String key, {required bool defaultValue}) {
-  final Object? value = prefs.getPref(key, defaultValue: defaultValue);
-  return value is bool ? value : defaultValue;
-}
-
-/// 与 app `PreferencesRepository.videoSubtitleOpenSubtitlesConfig` 同一解码口径：
-/// 没配置过 / 解不开 = [OpenSubtitlesConfig.unconfigured]。
-OpenSubtitlesConfig _openSubtitlesFromPrefs(PrefStore prefs) {
-  final String raw = _prefString(prefs, kOpenSubtitlesConfigPref);
-  if (raw.isEmpty) return OpenSubtitlesConfig.unconfigured();
-  try {
-    final Object? decoded = jsonDecode(raw);
-    if (decoded is! Map) return OpenSubtitlesConfig.unconfigured();
-    return OpenSubtitlesConfig.fromJson(<String, Object?>{
-      for (final MapEntry<Object?, Object?> e in decoded.entries)
-        e.key.toString(): e.value,
-    });
-  } on Object catch (e) {
-    stderr.writeln('偏好 $kOpenSubtitlesConfigPref 解不开，按未配置处理：$e');
-    return OpenSubtitlesConfig.unconfigured();
-  }
-}
-
-/// 生产的 provider 装配（出站一律经 `createAppHttpIoClient`，跟随全应用代理）。
-VideoSubtitleProvider createSubsProvider(
-  String providerId,
-  SubsCredentials credentials,
-) {
-  switch (providerId) {
-    case 'opensubtitles':
-      return OpenSubtitlesClient(config: credentials.openSubtitles);
-    case kSubdlSubtitleProviderId:
-      return SubdlClient(apiKey: credentials.subdlApiKey);
-    case 'jimaku':
-      return JimakuCliSubtitleProvider(
-        JimakuClient(
-          apiKey: credentials.jimakuApiKey,
-          client: createAppHttpIoClient(),
-        ),
-      );
-  }
-  throw ArgumentError.value(providerId, 'providerId', '未知字幕来源');
-}
-
-/// 命令行用的 Jimaku provider：按标题搜条目 → 列文件 → 只留文本字幕。
-///
-/// app 侧同职责的 `JimakuVideoSubtitleProvider` 住在 `fushi/`（无头端 import 不到）；
-/// 这里只实现命令行需要的「按标题 + 集号」子集，没有 AniList / TMDB 关联键（命令行
-/// 的输入只有文件名）。下载与 app 走同一个 `JimakuClient.downloadFile`。
-class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
-  JimakuCliSubtitleProvider(this._client, {this.priority = 100});
-
-  final JimakuClient _client;
-
-  @override
-  final int priority;
-
-  @override
-  String get id => 'jimaku';
-
-  @override
-  bool get allowsFreeProbeDownload => true;
-
-  @override
-  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
-    VideoSubtitleSearchRequest request,
-  ) async {
-    final List<String> titles = jimakuQueryVariants(<String>[
-      request.effectiveQuery,
-      ...request.alternateTitles,
-    ]);
-    try {
-      final List<JimakuEntry> found = await _client.searchEntries(
-        queryFallbacks: titles,
-        throwOnError: true,
-        animeFilter: switch (request.anime) {
-          true => JimakuAnimeFilter.anime,
-          false => JimakuAnimeFilter.liveAction,
-          null => JimakuAnimeFilter.either,
-        },
-      );
-      // 与 app 侧 provider 同一条配额约束：只列与标题最像的几个条目。
-      final List<JimakuEntry> entries = pickJimakuEntriesForTitles(
-        found,
-        titles,
-      );
-      final List<VideoSubtitleCandidate> out = <VideoSubtitleCandidate>[];
-      for (final JimakuEntry entry in entries) {
-        final List<JimakuFile> files = await _client.listFiles(
-          entry.id,
-          episode: entry.flags.movie ? null : request.effectiveEpisode,
-          throwOnError: true,
-        );
-        for (final JimakuFile file in files) {
-          if (!file.isTextSubtitle) continue;
-          final String language = detectSubtitleLanguage(file.name) ?? '';
-          if (request.languages.isNotEmpty &&
-              !request.languages.contains(language)) {
-            continue;
-          }
-          out.add(
-            _JimakuCliCandidate(
-              entry: entry,
-              file: file,
-              language: language,
-              providerPriority: priority,
-            ),
-          );
-        }
-      }
-      return ProviderBatchResult<VideoSubtitleCandidate>.success(out);
-    } on Object catch (error) {
-      return ProviderBatchResult<VideoSubtitleCandidate>.failure(
-        ExternalProviderFailure.fromException(
-          providerId: id,
-          operation: 'search',
-          error: error,
-        ),
-      );
-    }
-  }
-
-  @override
-  Future<VideoSubtitleDownload> download(
-    VideoSubtitleCandidate candidate,
-  ) async {
-    if (candidate is! _JimakuCliCandidate) {
-      throw const ExternalProviderFailure(
-        providerId: 'jimaku',
-        operation: 'download',
-        kind: ExternalProviderFailureKind.unsupported,
-        message: 'candidate belongs to another provider',
-      );
-    }
-    final Uint8List? bytes = await _client.downloadFile(
-      candidate.file.url,
-      throwOnError: true,
-    );
-    if (bytes == null || bytes.isEmpty) {
-      throw const ExternalProviderFailure(
-        providerId: 'jimaku',
-        operation: 'download',
-        kind: ExternalProviderFailureKind.unavailable,
-        message: 'subtitle download failed',
-        retryable: true,
-      );
-    }
-    return VideoSubtitleDownload(
-      bytes: bytes,
-      fileName: candidate.file.name,
-      language: candidate.language,
-    );
-  }
-
-  @override
-  void close() => _client.close();
-}
-
-class _JimakuCliCandidate extends VideoSubtitleCandidate {
-  _JimakuCliCandidate({
-    required this.entry,
-    required this.file,
-    required super.language,
-    required super.providerPriority,
-  }) : super(
-         providerId: 'jimaku',
-         remoteId: '${entry.id}:${file.name}',
-         fileName: file.name,
-         releaseName: entry.name,
-         episode: file.episode,
-         fileSize: file.size,
-         uploadedAtMs: file.lastModifiedMs,
-         collectionId: '${entry.id}',
-         collectionLabel: entry.name,
-       );
-
-  final JimakuEntry entry;
-  final JimakuFile file;
 }
 
 /// 分发 `subs` 的子命令。

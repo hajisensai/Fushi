@@ -498,6 +498,33 @@ describe('网页处理台', () => {
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('发送验证码');
   });
 
+  it('GET /dev/feedback.json 与 /dev/f/:id.json：开发者会话下返回列表 / 详情 JSON；没有会话 → 401', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const a = (await submit(env, { title: '阅读器白屏' })).data;
+    const b = (await submit(env, { title: '视频卡顿' })).data;
+    await withTicket(env, 'POST', `/v1/feedback/${b.id}/close`, b.ticket);
+    const anon = await page(env, 'GET', '/dev/feedback.json');
+    expect(anon.status).toBe(401);
+    expect(anon.data.error).toBe('dev_session_required');
+    expect((await page(env, 'GET', `/dev/f/${a.id}.json`)).status).toBe(401);
+
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+    const active = await page(env, 'GET', '/dev/feedback.json', { cookie });
+    expect(active.status).toBe(200);
+    expect(active.data.items.map((f) => f.id)).toEqual([a.id]);
+    const all = await page(env, 'GET', '/dev/feedback.json?status=all', { cookie });
+    expect(all.data.items.map((f) => f.id).sort()).toEqual([a.id, b.id].sort());
+    const hit = await page(env, 'GET', `/dev/feedback.json?status=all&q=${encodeURIComponent('视频')}`, { cookie });
+    expect(hit.data.items.map((f) => f.id)).toEqual([b.id]);
+
+    const detail = await page(env, 'GET', `/dev/f/${a.id}.json`, { cookie });
+    expect(detail.status).toBe(200);
+    expect(detail.data).toMatchObject({ id: a.id, title: '阅读器白屏', status: 'open' });
+    expect(detail.data.messages).toEqual([]);
+    expect((await page(env, 'GET', '/dev/f/ZZZZZZZZZZ.json', { cookie })).status).toBe(404);
+  });
+
   it('列表有搜索框，q 过滤并在分页 / 状态标签里保留；时间线标出「反馈人标记完成」', async () => {
     const env = makeEnv();
     const dev = await makeDev(env);
