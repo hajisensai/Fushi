@@ -8,6 +8,15 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show
+        fushiCardBackLayoutOf,
+        fushiCardFrontLayoutOf,
+        kFushiCardBackTemplate,
+        kFushiCardFrontTemplate,
+        templateIdsToNames,
+        templateNamesToIds;
+import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -46,6 +55,34 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 enum _ItemAction { rename, moveUp, moveDown, delete }
+
+/// 新加模板的正面 / 背面（fieldId 引用形式）。与 Anki 一样从第一个模板复制正文，再按需修改；
+/// 内置 Fushi 卡片类型的第一个模板若已改到区块布局认不出（复习时是网页卡面），新模板改从
+/// 默认区块布局起步——反向卡等另加的模板同样能在模板编辑页的区块布局里调，复习时走原生卡面。
+({String front, String back}) srsNewTemplateBody(SrsNoteTypeView type) {
+  final SrsTemplateDef? first = type.templates.firstOrNull;
+  final ({String front, String back}) copy = (
+    front: first?.front ?? '',
+    back: first?.back ?? '',
+  );
+  if (type.builtinKey != kSrsBuiltinFushiCardKey) return copy;
+  final Map<String, String> idToName = <String, String>{
+    for (final SrsFieldDef f in type.fields) f.id: f.name,
+  };
+  if (first != null &&
+      fushiCardFrontLayoutOf(templateIdsToNames(first.front, idToName)) !=
+          null &&
+      fushiCardBackLayoutOf(templateIdsToNames(first.back, idToName)) != null) {
+    return copy;
+  }
+  final Map<String, String> nameToId = <String, String>{
+    for (final SrsFieldDef f in type.fields) f.name: f.id,
+  };
+  return (
+    front: templateNamesToIds(kFushiCardFrontTemplate, nameToId),
+    back: templateNamesToIds(kFushiCardBackTemplate, nameToId),
+  );
+}
 
 class SrsNoteTypeEditorPage extends ConsumerStatefulWidget {
   const SrsNoteTypeEditorPage({super.key, required this.noteTypeId});
@@ -366,14 +403,13 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     );
     final SrsDbStore? store = _store;
     if (name == null || store == null) return;
-    // 与 Anki 一样，新模板从第一个模板复制正文，再按需修改。
-    final SrsTemplateDef? first = type.templates.firstOrNull;
+    final ({String front, String back}) body = srsNewTemplateBody(type);
     try {
       final String id = await store.addTemplate(
         type.id,
         name: name,
-        front: first?.front ?? '',
-        back: first?.back ?? '',
+        front: body.front,
+        back: body.back,
       );
       if (!mounted) return;
       bumpSrsRevision(ref);

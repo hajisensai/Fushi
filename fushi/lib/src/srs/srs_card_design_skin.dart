@@ -37,7 +37,6 @@ const String kSrsDesignSkinMeasuringClass = 'fushi-ds-measuring';
 
 /// 覆盖层的字体链：Apple = 系统字体（SF）在前；MD3 = 界面字体链（与 Fushi 卡片模板默认的
 /// `--fc-font-ui` 同一份）。日文 / 中文按卡面 `lang` 换对应字形的回落链。
-@visibleForTesting
 String srsCardDesignSkinFont({required bool apple}) => apple
     ? '-apple-system, "SF Pro Text", system-ui, "Segoe UI", $kSrsCardDefaultFontJa'
     : kSrsCardDefaultFontUi;

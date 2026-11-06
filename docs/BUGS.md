@@ -39,6 +39,11 @@
 |---|:--:|:--:|---|
 | [BUG-4128](bugs/BUG-4128-srs-design-skin-covers-wallpaper.md) | ✅ | ✅ | 复习卡面「跟随设计系统」铺不透明底色盖住壁纸，与 Fushi 卡片不一致 |
 | [BUG-4127](bugs/BUG-4127-srs-conflicts-confirm-all-greyed.md) | ✅ | ✅ | 同步冲突页只有重复笔记时右上角「全部确认」是一颗灰掉点不动的按钮 |
+> 共 3727 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4127](bugs/BUG-4127-webview-windows-unknown-display-null-check.md) | 🚧 | 🚧 | Windows WebView build 读 FlutterView.display 空断言（视图 displayId 不在引擎显示器表里） |
 | [BUG-4126](bugs/BUG-4126-android-lyrics-mode-heat.md) | ✅ | ✅ | Android 有声书歌词模式发热：被歌词覆盖层盖住的阅读器层仍按 vsync 请帧，每帧拖着 Hybrid Composition 全屏 overlay 合成 |
 | [BUG-4125](bugs/BUG-4125-video-home-continue-adaptive-cover.md) | ✅ | ✅ | 视频首页「继续观看」竖图被垫模糊塞进 16:9，大卡旁窄卡标题被挤没 |
 | [BUG-4124](bugs/BUG-4124-ios-island-clipped-and-large-widget-overflow.md) | ✅ | ✅ | ios-island-clipped-and-large-widget-overflow |
@@ -2848,7 +2853,7 @@
 | [BUG-939](bugs/BUG-939-subtitle-menu-reenumerate.md) | ✅ | ✅ | 字幕轨菜单每次打开都重跑ffprobe显加载条+已有字幕先消失 |
 | [BUG-938](bugs/BUG-938-collections-sync-trigger-gap.md) | ✅ | ✅ | 合集经常没同步：合集维度只搭载低频全量 sweep，日常关书/切后台路径从不推送合集 |
 | [BUG-937](bugs/BUG-937-interconnect-video-cover-n2.md) | ✅ | ✅ | 互联视频浏览极慢：封面端点每张封面重跑整份 listVideos 清单（O(N²)） |
-| [BUG-936](bugs/BUG-936-video-ime-space-playpause.md) | 🚧 | 🚧 | 日文IME激活时视频页空格无法播放暂停（BUG-853 修复真机仍失效） |
+| [BUG-936](bugs/BUG-936-video-ime-space-playpause.md) | ✅ | ✅ | 日文IME激活时视频页空格无法播放暂停（BUG-853 修复真机仍失效） |
 | [BUG-935](bugs/BUG-935-stats-chars-wan-unit.md) | ✅ | ✅ | 阅读统计字符数汇总缺万单位 |
 | [BUG-934](bugs/BUG-934-prev-sentence-dup.md) | ✅ | ✅ | 前加一句制卡把当前句重复采集两遍 |
 | [BUG-933](bugs/BUG-933-mining-ui-jank-isolate.md) | ✅ | ✅ | 制卡媒体处理阻塞UI线程未响应 |
@@ -2930,7 +2935,7 @@
 | [BUG-856](bugs/BUG-856-mobile-swipe-insensitive-lookup.md) | ✅ | ✅ | 手机滑动翻页迟钝且短滑误触查词 |
 | [BUG-855](bugs/BUG-855-ass-fontsize-em-vs-cell.md) | ✅ | ✅ | ASS Fontsize 被当 em 用，字号比 mpv 整体大一截 |
 | [BUG-854](bugs/BUG-854-selection-menu-favorite.md) | ✅ | ✅ | 移动端选区菜单缺少收藏项 |
-| [BUG-853](bugs/BUG-853-video-ime-space-pause.md) | 🚧 | 🚧 | 日语输入法激活时视频页按空格无法暂停 |
+| [BUG-853](bugs/BUG-853-video-ime-space-pause.md) | ✅ | ✅ | 日语输入法激活时视频页按空格无法暂停 |
 | [BUG-852](bugs/BUG-852-lyrics-blur-exposes-context.md) | ✅ | ✅ | 歌词模式模糊只盖当前句，前后文暴露 |
 | [BUG-851](bugs/BUG-851-dict-dark-usage-tag-washed.md) | ✅ | ✅ | ダークモードで辞書の使い方タグがライト背景のまま浮く |
 | [BUG-850](bugs/BUG-850-dict-ruby-hspacing-overlap.md) | ✅ | ✅ | 辞書例文の逐字ルビが横方向に重なる |
@@ -3349,7 +3354,7 @@
 | [BUG-433](bugs/BUG-433-ass-millisecond-timecode.md) | ✅ | ✅ | 外挂ASS毫秒精度时间码加载失败误报不支持 |
 | [BUG-432](bugs/BUG-432-disabled-dict-still-in-mining.md) | ✅ | ✅ | 禁用词典制卡时仍附带该词典释义 |
 | [BUG-431](bugs/BUG-431-subtitle-track-uaf.md) | ✅ | ✅ | selectSubtitleTrack libmpv UAF (回退/关字幕闪退) |
-| [BUG-430](bugs/BUG-430-win-ime-shortcut-fallback.md) | 🚧 | 🚧 | Windows IME 激活时全表面快捷键失效 |
+| [BUG-430](bugs/BUG-430-win-ime-shortcut-fallback.md) | ✅ | ✅ | Windows IME 激活时全表面快捷键失效 |
 | [BUG-429](bugs/BUG-429-video-dismiss-guard-stale.md) | 🚧 | 🚧 | video _onDismissBarrierTap 守卫期望 _topVisiblePopupIndex 但 TODO-834 已改回 _popNestedPopupAt(0) |
 | [BUG-428](bugs/BUG-428-shortcut-key-capture-focus.md) | ✅ | ✅ | 快捷键录制单键经常没反应 (TODO-838) |
 | [BUG-427](bugs/BUG-427-install-permission-retry.md) | ✅ | ✅ | Android install permission granted then cannot resume/retry install |
