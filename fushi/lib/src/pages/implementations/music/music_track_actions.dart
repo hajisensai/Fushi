@@ -18,6 +18,9 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ContextMenuTrigger, activeContextMenuAnchor;
 
 /// 菜单里的一项。[run] 在菜单关掉后执行；抛错由 [showMusicActionMenu] 统一提示。
 class MusicMenuAction {
@@ -37,27 +40,77 @@ class MusicMenuAction {
   final Future<void> Function(BuildContext context) run;
 }
 
-/// 弹出动作菜单，执行选中的一项。[errorText] 把异常转成给用户看的一句话（各来源的错误
-/// 文案不同：Apple Music 请求失败 / 插件报的原话）。
+/// 菜单锚点（global 坐标系的矩形）：「更多」按钮给按钮自己的矩形，右键给按下处的点。
+typedef MusicMenuAnchor = Rect;
+
+/// [context] 所在控件的 global 矩形；拿不到（还没布局）时回 null。
+MusicMenuAnchor? musicMenuAnchorOf(BuildContext context) {
+  final RenderObject? box = context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
+/// 右键派发期间的按下点（[activeContextMenuAnchor]）当锚点；不在右键派发里回 null。
+MusicMenuAnchor? musicContextMenuAnchor() => switch (activeContextMenuAnchor) {
+  final Offset p => Rect.fromPoints(p, p),
+  null => null,
+};
+
+/// 在 [anchor] 处弹下拉菜单（右键 = 指针处，「更多」= 按钮下方），执行选中的一项。
+/// [anchor] 为 null 时依次取右键按下点、[context] 自身的矩形。[errorText] 把异常转成
+/// 给用户看的一句话（各来源的错误文案不同：Apple Music 请求失败 / 插件报的原话）。
+///
+/// 先 await 再弹的调用方要在第一个 await 之前取好 [anchor]（右键坐标只在同步派发期间可读）。
 Future<void> showMusicActionMenu(
   BuildContext context, {
-  required String title,
   required List<MusicMenuAction> actions,
   required String Function(Object error) errorText,
-  IconData icon = FushiIcons.music,
+  MusicMenuAnchor? anchor,
 }) async {
   if (actions.isEmpty) return;
-  final MusicMenuAction? picked = await showFushiChoiceDialog<MusicMenuAction>(
+  final MusicMenuAnchor? at =
+      anchor ?? musicContextMenuAnchor() ?? musicMenuAnchorOf(context);
+  final RenderObject? overlay = Overlay.of(context).context.findRenderObject();
+  if (at == null || overlay is! RenderBox) return;
+  // 全局 UI 缩放下 Overlay 与屏幕坐标不同尺度：经 globalToLocal 换算（BUG-781 同族）。
+  final Rect local = Rect.fromPoints(
+    overlay.globalToLocal(at.topLeft),
+    overlay.globalToLocal(at.bottomRight),
+  );
+  final TextStyle? sub = Theme.of(context).textTheme.bodySmall?.copyWith(
+    color: Theme.of(context).colorScheme.onSurfaceVariant,
+  );
+  final MusicMenuAction? picked = await showFushiMenu<MusicMenuAction>(
     context: context,
-    title: title,
-    icon: icon,
-    options: <FushiChoiceOption<MusicMenuAction>>[
+    position: RelativeRect.fromRect(local, Offset.zero & overlay.size),
+    items: <PopupMenuEntry<MusicMenuAction>>[
       for (final MusicMenuAction a in actions)
-        FushiChoiceOption<MusicMenuAction>(
+        PopupMenuItem<MusicMenuAction>(
+          key: ValueKey<String>('music-menu-action-${a.id}'),
           value: a,
-          label: a.label,
-          subtitle: a.subtitle,
-          icon: a.icon,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiIcon(a.icon, size: 20),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(a.label),
+                    if (a.subtitle case final String s)
+                      Text(
+                        s,
+                        style: sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
     ],
   );
@@ -69,15 +122,43 @@ Future<void> showMusicActionMenu(
   }
 }
 
-/// 行尾 / 按钮行里的「更多」按钮。
-Widget musicMoreButton({required Key key, required VoidCallback onTap}) =>
-    FushiIconButton(
-      key: key,
-      icon: FushiIcons.moreHoriz,
-      tooltip: t.music_action_more,
-      padTouchTarget: true,
-      onTap: onTap,
-    );
+/// 行尾 / 按钮行里的「更多」按钮：[onTap] 收到按钮自己的矩形，菜单从按钮处展开。
+Widget musicMoreButton({
+  required Key key,
+  required ValueChanged<MusicMenuAnchor?> onTap,
+}) => Builder(
+  builder: (BuildContext buttonContext) => FushiIconButton(
+    key: key,
+    icon: FushiIcons.moreHoriz,
+    tooltip: t.music_action_more,
+    padTouchTarget: true,
+    onTap: () => onTap(musicMenuAnchorOf(buttonContext)),
+  ),
+);
+
+/// 一项条目（曲目 / 专辑 / 歌单 / 艺人）的动作菜单：行尾「更多」按钮与整行右键弹的是同一份。
+class MusicItemMenu {
+  const MusicItemMenu({required this.buttonKey, required this.open});
+
+  /// 「更多」按钮的 key（测试按它点）。
+  final Key buttonKey;
+
+  /// 在锚点处弹菜单；null 锚点 = 取右键按下点 / 调用方自身矩形。
+  final ValueChanged<MusicMenuAnchor?> open;
+
+  /// 行尾「更多」按钮：菜单从按钮处展开。
+  Widget button() => musicMoreButton(key: buttonKey, onTap: open);
+
+  /// 把 [child] 包成右键（绑定表里的「上下文菜单」键）也弹这份菜单。
+  Widget contextMenu({required Widget child}) => ContextMenuTrigger(
+    onInvoke: (Offset p) => open(Rect.fromPoints(p, p)),
+    child: child,
+  );
+}
+
+/// 有菜单就包右键，没有原样返回。
+Widget musicWithContextMenu(MusicItemMenu? menu, Widget child) =>
+    menu == null ? child : menu.contextMenu(child: child);
 
 /// 加歌时可选的一个歌单。
 class MusicPlaylistTarget {
@@ -188,7 +269,8 @@ Widget musicCreatePlaylistButton(
 }) => FushiPressScale(
   child: FushiFilledButton.tonalIcon(
     key: key,
-    size: FushiButtonSize.m,
+    // 段头里的次要动作：与同行的刷新图标、推荐页「私人电台」同为 S 号。
+    size: FushiButtonSize.s,
     onPressed: () async {
       try {
         final MusicPlaylistTarget? p = await musicCreatePlaylist(

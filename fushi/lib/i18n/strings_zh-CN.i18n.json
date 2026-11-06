@@ -5600,6 +5600,7 @@
   "music_action_love": "喜欢",
   "music_action_more": "更多",
   "music_action_new_playlist": "新建歌单",
+  "music_action_open": "打开",
   "music_action_playlist_created": "已新建「${name}」",
   "music_action_playlist_deleted": "已删除「${name}」",
   "music_action_playlist_name": "歌单名称",

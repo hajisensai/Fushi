@@ -11,6 +11,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -43,6 +44,37 @@ void openMusicTrackDetail(BuildContext context, String trackUid) {
     ),
   );
 }
+
+/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情。
+MusicItemMenu musicLocalTrackMenu(
+  BuildContext context,
+  MusicTrackRow track, {
+  required VoidCallback onPlay,
+}) => MusicItemMenu(
+  buttonKey: ValueKey<String>('music-track-menu-${track.trackUid}'),
+  open: (MusicMenuAnchor? anchor) => unawaited(
+    showMusicActionMenu(
+      context,
+      anchor: anchor,
+      errorText: (Object e) => t.music_play_failed(error: '$e'),
+      actions: <MusicMenuAction>[
+        MusicMenuAction(
+          id: 'play',
+          label: t.music_play_all,
+          icon: FushiIcons.play,
+          run: (_) async => onPlay(),
+        ),
+        MusicMenuAction(
+          id: 'detail',
+          label: t.music_track_detail,
+          icon: FushiIcons.info,
+          run: (BuildContext c) async =>
+              openMusicTrackDetail(c, track.trackUid),
+        ),
+      ],
+    ),
+  ),
+);
 
 /// 曲目列表（歌曲分区 / 艺人 / 专辑碟内）：点一首 = 以该列表为队列从这首开始播；
 /// 长按 / 行尾「详情」= 曲目详情页。
@@ -102,55 +134,58 @@ class MusicTrackList extends ConsumerWidget {
             bitDepth: track.bitDepth,
             bitrateKbps: track.bitrate,
           );
-          return FushiPressScale(
-            child: FushiGroupedListItem(
-              key: ValueKey<String>('music-track-${track.trackUid}'),
-              index: i,
-              count: tracks.length,
-              onTap: () => unawaited(
-                engine.playQueue(_items(), startIndex: i, context: context),
-              ),
-              onLongPress: () => openMusicTrackDetail(c, track.trackUid),
-              child: FushiListItem(
-                leading: showTrackNumbers
-                    ? SizedBox(
-                        width: 28,
-                        child: Text(
-                          track.trackNo?.toString() ?? '',
-                          textAlign: TextAlign.end,
-                          style: c.fushiType.bodySmall,
-                        ),
-                      )
-                    : const FushiListLeadingIcon(FushiIcons.music),
-                title: Text(
-                  track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  <String>[
-                    track.artistCredit ?? t.music_artist_unknown,
-                    if (badge.isNotEmpty) badge,
-                  ].join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      formatMusicDuration(track.durationMs),
-                      style: c.fushiType.bodySmall,
-                    ),
-                    FushiIconButton(
-                      key: ValueKey<String>(
-                        'music-track-detail-${track.trackUid}',
+          void play() => unawaited(
+            engine.playQueue(_items(), startIndex: i, context: context),
+          );
+          return musicLocalTrackMenu(c, track, onPlay: play).contextMenu(
+            child: FushiPressScale(
+              child: FushiGroupedListItem(
+                key: ValueKey<String>('music-track-${track.trackUid}'),
+                index: i,
+                count: tracks.length,
+                onTap: play,
+                onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+                child: FushiListItem(
+                  leading: showTrackNumbers
+                      ? SizedBox(
+                          width: 28,
+                          child: Text(
+                            track.trackNo?.toString() ?? '',
+                            textAlign: TextAlign.end,
+                            style: c.fushiType.bodySmall,
+                          ),
+                        )
+                      : const FushiListLeadingIcon(FushiIcons.music),
+                  title: Text(
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    <String>[
+                      track.artistCredit ?? t.music_artist_unknown,
+                      if (badge.isNotEmpty) badge,
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        formatMusicDuration(track.durationMs),
+                        style: c.fushiType.bodySmall,
                       ),
-                      icon: FushiIcons.info,
-                      tooltip: t.music_track_detail,
-                      onTap: () => openMusicTrackDetail(c, track.trackUid),
-                    ),
-                  ],
+                      FushiIconButton(
+                        key: ValueKey<String>(
+                          'music-track-detail-${track.trackUid}',
+                        ),
+                        icon: FushiIcons.info,
+                        tooltip: t.music_track_detail,
+                        onTap: () => openMusicTrackDetail(c, track.trackUid),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

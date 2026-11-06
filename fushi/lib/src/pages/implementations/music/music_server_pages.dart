@@ -23,6 +23,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
@@ -1095,46 +1096,49 @@ class MusicServerTrackTile extends StatelessWidget {
       if (track.artist != null && track.artist != hideArtist) track.artist!,
       if (showAlbum && track.album != null) track.album!,
     ].join(' · ');
-    final Widget? menu = appleMusicTrackMenuButton(context, browser, track);
-    return FushiPressScale(
-      child: FushiGroupedListItem(
-        index: index,
-        count: tracks.length,
-        onTap: () => onPlay(index),
-        child: FushiListItem(
-          leading: switch (leading) {
-            MusicServerTrackLeading.icon => const FushiListLeadingIcon(
-              FushiIcons.music,
-            ),
-            MusicServerTrackLeading.trackNo ||
-            MusicServerTrackLeading.position => SizedBox(
-              width: 28,
-              child: Text(
-                leading == MusicServerTrackLeading.position
-                    ? '${index + 1}'
-                    : track.trackNo?.toString() ?? '',
-                textAlign: TextAlign.end,
-                style: context.fushiType.bodySmall,
+    final MusicItemMenu? menu = appleMusicTrackMenu(context, browser, track);
+    return musicWithContextMenu(
+      menu,
+      FushiPressScale(
+        child: FushiGroupedListItem(
+          index: index,
+          count: tracks.length,
+          onTap: () => onPlay(index),
+          child: FushiListItem(
+            leading: switch (leading) {
+              MusicServerTrackLeading.icon => const FushiListLeadingIcon(
+                FushiIcons.music,
               ),
-            ),
-          },
-          title: Text(
-            track.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: subtitle.isEmpty
-              ? null
-              : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                formatMusicDuration(track.durationMs),
-                style: context.fushiType.bodySmall,
+              MusicServerTrackLeading.trackNo ||
+              MusicServerTrackLeading.position => SizedBox(
+                width: 28,
+                child: Text(
+                  leading == MusicServerTrackLeading.position
+                      ? '${index + 1}'
+                      : track.trackNo?.toString() ?? '',
+                  textAlign: TextAlign.end,
+                  style: context.fushiType.bodySmall,
+                ),
               ),
-              ?menu,
-            ],
+            },
+            title: Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: subtitle.isEmpty
+                ? null
+                : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  formatMusicDuration(track.durationMs),
+                  style: context.fushiType.bodySmall,
+                ),
+                ?menu?.button(),
+              ],
+            ),
           ),
         ),
       ),

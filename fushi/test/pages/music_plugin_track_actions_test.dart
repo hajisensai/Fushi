@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -354,33 +356,70 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('歌单「更多」：未收藏只给「收藏」，收藏后改成只给「取消收藏」', (WidgetTester tester) async {
+  testWidgets('曲目整行右键弹同一份菜单（下拉，不是居中面板）', (WidgetTester tester) async {
     await pumpPlaylist(tester, _other);
-    final Finder more = find.byKey(
-      const ValueKey<String>('music-plugin-collection-more'),
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-plugin-track-2')),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
     );
-    await tester.tap(more);
     await tester.pumpAndSettle();
-    expect(find.text(t.music_action_uncollect), findsNothing);
-    await tester.tap(find.text(t.music_action_collect));
+    expect(
+      find.byKey(const ValueKey<String>('music-menu-action-dislike')),
+      findsOneWidget,
+    );
+    expect(find.byType(Dialog), findsNothing, reason: '菜单是锚定下拉，不是对话框');
+    await tester.tap(find.text(t.music_action_dislike));
     await tester.pumpAndSettle();
-    expect(app.manager.log, contains('collect:playlist:$_other:true'));
-
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(find.text(t.music_action_collect), findsNothing);
-    expect(find.text(t.music_action_uncollect), findsOneWidget);
+    expect(app.manager.log, contains('trash:2'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('自己的歌单「更多」：只有删除（不出收藏）', (WidgetTester tester) async {
-    await pumpPlaylist(tester, _mine);
-    await tester.tap(
+  testWidgets('歌单「收藏」平铺在按钮行：点一下收藏，再点取消', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _other);
+    expect(
       find.byKey(const ValueKey<String>('music-plugin-collection-more')),
+      findsNothing,
+      reason: '收藏不再收进「更多」',
     );
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('music-plugin-collection-collect'),
+    );
+    expect(
+      find.descendant(of: toggle, matching: find.text(t.music_action_collect)),
+      findsOneWidget,
+    );
+    await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(find.text(t.music_action_delete_playlist), findsOneWidget);
-    expect(find.text(t.music_action_collect), findsNothing);
+    expect(app.manager.log, contains('collect:playlist:$_other:true'));
+    expect(
+      find.descendant(
+        of: toggle,
+        matching: find.text(t.music_action_collected),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(app.manager.log, contains('collect:playlist:$_other:false'));
+    expect(
+      find.descendant(of: toggle, matching: find.text(t.music_action_collect)),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('自己的歌单：按钮行给「删除歌单」，不出收藏', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _mine);
+    expect(
+      find.byKey(const ValueKey<String>('music-plugin-playlist-delete')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-plugin-collection-collect')),
+      findsNothing,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

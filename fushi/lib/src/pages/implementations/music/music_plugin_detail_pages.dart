@@ -98,6 +98,24 @@ Future<void> _openPluginMv(
   );
 }
 
+/// 插件简介正文：`<h>` 小标题画成分组标题，正文可选中（[parseMusicIntro]）。
+List<Widget> _introBlocks(BuildContext context, String raw) => <Widget>[
+  for (final MusicIntroBlock b in parseMusicIntro(raw))
+    switch (b) {
+      MusicIntroHeading() => FushiSectionTitle.group(b.text),
+      MusicIntroParagraph() => Padding(
+        padding: EdgeInsets.only(
+          bottom: FushiDesignTokens.of(context).spacing.gap,
+        ),
+        child: SelectableText(b.text, style: context.fushiType.bodyMedium),
+      ),
+    },
+];
+
+/// 简介的纯文本（去标记，小标题自成一行）：给收起态的长文本用。
+String _introPlain(String raw) =>
+    parseMusicIntro(raw).map((MusicIntroBlock b) => b.text).join('\n');
+
 /// 可展开的长文本（专辑 / 歌单简介）：超过 [maxLines] 才出「展开 / 收起」。
 class _ExpandableText extends StatefulWidget {
   const _ExpandableText(this.text, {super.key});
@@ -379,7 +397,7 @@ class _MusicPluginCollectionPageState
               widget.manifest,
               tracks[group.value[j]],
             ),
-            menu: musicPluginTrackMenuButton(
+            menu: musicPluginTrackMenu(
               context,
               ref,
               widget.manifest,
@@ -505,7 +523,7 @@ class _MusicPluginCollectionPageState
         ),
         if (description != null)
           _ExpandableText(
-            description,
+            _introPlain(description),
             key: const ValueKey<String>('music-plugin-collection-description'),
           ),
       ],
@@ -774,6 +792,10 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
     final MusicPluginArtist a = d.artist;
     const double avatar = 144;
     final String stats = musicPluginArtistStatsText(context, a.stats);
+    final String? bioSummary = switch (a.description) {
+      final String d => musicIntroSummary(d),
+      null => null,
+    };
     final TextStyle muted = context.fushiType.bodyMedium.copyWith(
       color: Theme.of(context).colorScheme.onSurfaceVariant,
     );
@@ -821,8 +843,8 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
                 ].join(' · '),
                 style: context.fushiType.bodyMedium,
               ),
-              // 简介摘要：三行截断，点一下跳到「详情」页签看全文。
-              if (a.description case final String bio)
+              // 简介摘要：第一行正文（跳过百科信息框）三行截断，点一下跳到「详情」页签看全文。
+              if (bioSummary case final String bio)
                 FushiPressScale(
                   child: InkWell(
                     key: const ValueKey<String>('music-plugin-artist-bio'),
@@ -860,11 +882,11 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
                           label: Text(t.music_shuffle_play),
                         ),
                       ),
-                      ..._followAction(context, a),
+                      ..._followAction(a),
                     ],
                   ),
                 ),
-              if (d.tracks.isEmpty) ..._followAction(context, a),
+              if (d.tracks.isEmpty) ..._followAction(a),
             ],
           ),
         ),
@@ -872,34 +894,15 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
     );
   }
 
-  /// 关注 / 取消关注（`collect`）的「更多」按钮；插件不支持时为空。
-  List<Widget> _followAction(BuildContext context, MusicPluginArtist a) {
-    List<MusicMenuAction> actions() => _collectActions(
-      ref,
-      widget.manifest,
-      MusicPluginCollectType.artist,
-      widget.artist.id,
-      collected: _followedOverride ?? a.collected,
-      onCollected: (bool on) {
-        if (mounted) setState(() => _followedOverride = on);
-      },
-    );
-    if (actions().isEmpty) return const <Widget>[];
-    return <Widget>[
-      musicMoreButton(
-        key: const ValueKey<String>('music-plugin-artist-more'),
-        onTap: () => unawaited(
-          showMusicActionMenu(
-            context,
-            title: a.name,
-            icon: FushiIcons.person,
-            actions: actions(),
-            errorText: (Object e) => _pluginActionError(widget.manifest, e),
-          ),
-        ),
-      ),
-    ];
-  }
+  /// 「关注」切换按钮；插件不支持时为空。
+  List<Widget> _followAction(MusicPluginArtist a) => _pluginFollowActions(
+    widget.manifest,
+    widget.artist.id,
+    followed: _followedOverride ?? a.collected,
+    onFollowed: (bool on) {
+      if (mounted) setState(() => _followedOverride = on);
+    },
+  );
 
   /// 分页列表尾部：加载中 / 出错重试 / 空。
   Widget _feedFooter(_ArtistTab tab, _PagedFeed<Object> feed) {
@@ -957,11 +960,11 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
   List<Widget> _detailChildren(MusicPluginArtist a) => <Widget>[
     if (a.description case final String desc) ...<Widget>[
       FushiSectionTitle(t.music_plugin_artist_bio),
-      SelectableText(desc, style: context.fushiType.bodyMedium),
+      ..._introBlocks(context, desc),
     ],
     for (final MusicPluginIntroSection s in a.intro) ...<Widget>[
       if (s.title case final String title) FushiSectionTitle(title),
-      SelectableText(s.text, style: context.fushiType.bodyMedium),
+      ..._introBlocks(context, s.text),
     ],
     if (!a.hasDetails)
       FushiPlaceholderMessage(
@@ -993,7 +996,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
                     widget.manifest,
                     d.tracks[i],
                   ),
-                  menu: musicPluginTrackMenuButton(
+                  menu: musicPluginTrackMenu(
                     context,
                     ref,
                     widget.manifest,
@@ -1182,7 +1185,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
 }
 
 /// 艺人页专辑网格的一张卡（专辑材质，悬停不放大）。
-class _PluginAlbumCard extends StatelessWidget {
+class _PluginAlbumCard extends ConsumerWidget {
   const _PluginAlbumCard({
     super.key,
     required this.manifest,
@@ -1193,7 +1196,12 @@ class _PluginAlbumCard extends StatelessWidget {
   final MusicPluginAlbum album;
 
   @override
-  Widget build(BuildContext context) => FushiHoverLift(
+  Widget build(BuildContext context, WidgetRef ref) => musicWithContextMenu(
+    musicPluginEntityMenu(context, ref, manifest, album),
+    _card(context),
+  );
+
+  Widget _card(BuildContext context) => FushiHoverLift(
     scale: kMusicHoverLiftScale,
     builder: (BuildContext context, bool _) => shelfCoverCard(
       onTap: () => unawaited(

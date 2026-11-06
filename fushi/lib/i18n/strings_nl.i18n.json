@@ -5600,6 +5600,7 @@
   "music_action_love": "Love",
   "music_action_more": "More",
   "music_action_new_playlist": "New playlist",
+  "music_action_open": "Open",
   "music_action_playlist_created": "Created “${name}”",
   "music_action_playlist_deleted": "Deleted “${name}”",
   "music_action_playlist_name": "Playlist name",
