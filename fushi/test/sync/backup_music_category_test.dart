@@ -21,6 +21,7 @@ Future<void> _seedUserData(
   required String lyricText,
   required int lyricAt,
   required List<int> playStarts,
+  Map<String, int> resumeAt = const <String, int>{},
 }) async {
   await db
       .into(db.musicPlaylists)
@@ -55,6 +56,14 @@ Future<void> _seedUserData(
           updatedAt: lyricAt,
         ),
       );
+  // 逐曲断点（v145）：trackUid → updated_at，位置取 updated_at × 10 便于认出是哪边的。
+  for (final MapEntry<String, int> r in resumeAt.entries) {
+    await db.upsertMusicResumePoint(
+      r.key,
+      positionMs: r.value * 10,
+      updatedAt: r.value,
+    );
+  }
   for (final int s in playStarts) {
     await db.startMusicPlayEvent(
       trackUid: 't1',
@@ -84,6 +93,7 @@ Future<String> _backupWithMusic(
     lyricText: 'backup lyric',
     lyricAt: 50,
     playStarts: <int>[10, 20],
+    resumeAt: <String, int>{'r1': 200, 'r2': 50},
   );
   await src.writeMusicScanBatch(
     MusicScanBatchWrite(
@@ -154,6 +164,7 @@ void main() {
       lyricText: 'local lyric',
       lyricAt: 90,
       playStarts: <int>[20],
+      resumeAt: <String, int>{'r1': 100, 'r2': 90, 'r3': 5},
     );
     await seed.close();
 
@@ -195,6 +206,10 @@ void main() {
     expect(merged.read<String>('title'), 'T1');
     expect(merged.read<String>('source_kind'), 'plugin_playlist');
     expect(merged.read<String>('source_id'), 'np/10');
+    // 断点按 updated_at 取较新：r1 备份新（200 > 100），r2 本机新（90 > 50），r3 只在本机。
+    expect((await cur.getMusicResumePoint('r1'))?.positionMs, 2000);
+    expect((await cur.getMusicResumePoint('r2'))?.positionMs, 900);
+    expect((await cur.getMusicResumePoint('r3'))?.positionMs, 50);
     expect(await _count(cur, 'music_tracks'), 0, reason: '曲库目录是设备本地，不随备份来');
   });
 

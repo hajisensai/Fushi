@@ -865,6 +865,7 @@ void _requireOneVideoMetadataOwner({
     MusicPlaylists,
     MusicPlaylistEntries,
     MusicPlayEvents,
+    MusicResumePoints,
     VideoThemeSongSpans,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
@@ -918,7 +919,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 144;
+  int get schemaVersion => 145;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2893,6 +2894,14 @@ class FushiDatabase extends _$FushiDatabase
         }
         if (await _tableExists('ai_agent_sessions')) {
           await _ensureAiAgentSessionOriginIndex();
+        }
+      }
+      if (from < 145) {
+        // v145：music_resume_points——音乐逐曲断点续播（反馈 QAondMh4M5：广播剧 CD
+        // 迁进音乐库后不能丢续播）。纯新增、无回填（视频库带过来的断点由 app 侧迁移
+        // video_audio_to_music_migration.dart 写）；幂等守卫同 v143。
+        if (!await _tableExists('music_resume_points')) {
+          await m.createTable(musicResumePoints);
         }
       }
     },

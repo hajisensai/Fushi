@@ -541,13 +541,14 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 /// v92 added `study_segments` (the ONLY study-time fact table the statistics
 /// pages read from since then) and its identity tombstones; both were missing
 /// here, so an "exclude statistics" export still leaked every study segment.
-/// 「音乐」类别的五张用户数据表（子表在前，删除顺序）。曲库目录表不在其中（设备本地）。
+/// 「音乐」类别的六张用户数据表（子表在前，删除顺序）。曲库目录表不在其中（设备本地）。
 const List<String> musicUserTables = <String>[
   'music_playlist_entries',
   'music_playlists',
   'music_lyrics',
   'music_videos',
   'music_play_events',
+  'music_resume_points',
 ];
 
 const List<String> _statisticsTables = <String>[

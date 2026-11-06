@@ -249,6 +249,28 @@ class MusicPlaylistEntries extends Table {
   IntColumn get addedAt => integer()();
 }
 
+/// 逐曲断点续播（v145，反馈 QAondMh4M5）：每首曲目上次停在哪，一首一行。
+///
+/// 与 [MusicPlayEvents] 同一身份（`trackUid`：路径 + 起点 + 音频属性派生，改标签不换；
+/// CUE 虚拟曲目各自一行，[positionMs] 相对本曲起点）。读的时候才按阈值判定从哪开始
+/// （`music_resume.dart`）；听完 / 回到开头的直接删行，不留「位置 0」行。
+@DataClassName('MusicResumePointRow')
+class MusicResumePoints extends Table {
+  TextColumn get trackUid => text()();
+
+  /// 上次停在哪（毫秒，相对曲目起点）。
+  IntColumn get positionMs => integer()();
+
+  /// 写入时已知的曲长（毫秒）；在线 / 服务器曲目可能不知道。
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 写入时刻（epoch 毫秒）：备份合并按它取较新的一方。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{trackUid};
+}
+
 /// 最近播放流（history 唯一含义）：一次播放一行。
 @DataClassName('MusicPlayEventRow')
 class MusicPlayEvents extends Table {

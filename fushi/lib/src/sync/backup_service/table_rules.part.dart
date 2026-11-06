@@ -329,6 +329,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_play_events': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,
   }),
+  // 逐曲断点续播（v145）：与播放流同一类别、同一身份（trackUid）。
+  'music_resume_points': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
 
   // ── 私人使用痕迹 ──
   'search_history_items': BackupTableRule.alwaysStripped(),

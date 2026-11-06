@@ -569,6 +569,54 @@ mixin _FushiDbMusic on _$FushiDatabase {
         ),
       );
 
+  /// 一首曲目的断点（v145）；没有为 null。
+  Future<MusicResumePointRow?> getMusicResumePoint(String trackUid) =>
+      (select(musicResumePoints)
+            ..where(($MusicResumePointsTable t) => t.trackUid.equals(trackUid)))
+          .getSingleOrNull();
+
+  /// 一批曲目的断点（列表显示进度用）。按块查询，不受 SQLite 变量个数上限限制。
+  Future<Map<String, MusicResumePointRow>> listMusicResumePoints(
+    Iterable<String> trackUids,
+  ) async {
+    final List<String> uids = trackUids.toSet().toList();
+    final Map<String, MusicResumePointRow> out =
+        <String, MusicResumePointRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      for (final MusicResumePointRow r in await (select(
+        musicResumePoints,
+      )..where(($MusicResumePointsTable t) => t.trackUid.isIn(part))).get()) {
+        out[r.trackUid] = r;
+      }
+    }
+    return out;
+  }
+
+  /// 写一首曲目的断点（有则覆盖）。
+  Future<void> upsertMusicResumePoint(
+    String trackUid, {
+    required int positionMs,
+    int? durationMs,
+    required int updatedAt,
+  }) => into(musicResumePoints).insertOnConflictUpdate(
+    MusicResumePointsCompanion.insert(
+      trackUid: trackUid,
+      positionMs: positionMs,
+      durationMs: Value<int?>(durationMs),
+      updatedAt: updatedAt,
+    ),
+  );
+
+  /// 删一首曲目的断点（听完 / 回到开头 / 用户清除）。
+  Future<void> deleteMusicResumePoint(String trackUid) => (delete(
+    musicResumePoints,
+  )..where(($MusicResumePointsTable t) => t.trackUid.equals(trackUid))).go();
+
   /// 最近播放的曲库曲目（按最近一次开始时刻去重），最多 [limit] 首。
   ///
   /// 只算曲库里还在（未软删）的曲目，且过滤在 SQL 里做：在线插件 / 服务器曲目的播放事件

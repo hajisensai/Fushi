@@ -2015,6 +2015,22 @@ class BackupMergeEngine {
         'WHERE t.track_uid = s.track_uid AND t.started_at = s.started_at)',
       );
     }
+    if (await _srcTableExists('music_resume_points')) {
+      // 逐曲断点（v145）：同一首两边都有时按 updated_at 取较新的一方。删除不同步（听完
+      // 就删行、没有墓碑）：本机已听完删掉的，合并一份更旧的备份会让旧断点回来——只是
+      // 下次打开从那里接着放，可接受。
+      await _db.customStatement(
+        'INSERT INTO music_resume_points '
+        '(track_uid, position_ms, duration_ms, updated_at) '
+        'SELECT s.track_uid, s.position_ms, s.duration_ms, s.updated_at '
+        'FROM $_srcAlias.music_resume_points AS s WHERE true '
+        'ON CONFLICT (track_uid) DO UPDATE SET '
+        'position_ms = excluded.position_ms, '
+        'duration_ms = excluded.duration_ms, '
+        'updated_at = excluded.updated_at '
+        'WHERE excluded.updated_at > music_resume_points.updated_at',
+      );
+    }
   }
 
   Future<void> _mergeBookCustomCss() async {

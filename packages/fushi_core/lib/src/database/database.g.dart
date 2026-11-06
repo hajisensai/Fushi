@@ -69347,6 +69347,338 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
   }
 }
 
+class $MusicResumePointsTable extends MusicResumePoints
+    with TableInfo<$MusicResumePointsTable, MusicResumePointRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicResumePointsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _positionMsMeta = const VerificationMeta(
+    'positionMs',
+  );
+  @override
+  late final GeneratedColumn<int> positionMs = GeneratedColumn<int>(
+    'position_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    positionMs,
+    durationMs,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_resume_points';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicResumePointRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('position_ms')) {
+      context.handle(
+        _positionMsMeta,
+        positionMs.isAcceptableOrUnknown(data['position_ms']!, _positionMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_positionMsMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid};
+  @override
+  MusicResumePointRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicResumePointRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      positionMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position_ms'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicResumePointsTable createAlias(String alias) {
+    return $MusicResumePointsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicResumePointRow extends DataClass
+    implements Insertable<MusicResumePointRow> {
+  final String trackUid;
+
+  /// 上次停在哪（毫秒，相对曲目起点）。
+  final int positionMs;
+
+  /// 写入时已知的曲长（毫秒）；在线 / 服务器曲目可能不知道。
+  final int? durationMs;
+
+  /// 写入时刻（epoch 毫秒）：备份合并按它取较新的一方。
+  final int updatedAt;
+  const MusicResumePointRow({
+    required this.trackUid,
+    required this.positionMs,
+    this.durationMs,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['position_ms'] = Variable<int>(positionMs);
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MusicResumePointsCompanion toCompanion(bool nullToAbsent) {
+    return MusicResumePointsCompanion(
+      trackUid: Value(trackUid),
+      positionMs: Value(positionMs),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MusicResumePointRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicResumePointRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      positionMs: serializer.fromJson<int>(json['positionMs']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'positionMs': serializer.toJson<int>(positionMs),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MusicResumePointRow copyWith({
+    String? trackUid,
+    int? positionMs,
+    Value<int?> durationMs = const Value.absent(),
+    int? updatedAt,
+  }) => MusicResumePointRow(
+    trackUid: trackUid ?? this.trackUid,
+    positionMs: positionMs ?? this.positionMs,
+    durationMs: durationMs.present ? durationMs.value : this.durationMs,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  MusicResumePointRow copyWithCompanion(MusicResumePointsCompanion data) {
+    return MusicResumePointRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      positionMs: data.positionMs.present
+          ? data.positionMs.value
+          : this.positionMs,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicResumePointRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('positionMs: $positionMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(trackUid, positionMs, durationMs, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicResumePointRow &&
+          other.trackUid == this.trackUid &&
+          other.positionMs == this.positionMs &&
+          other.durationMs == this.durationMs &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MusicResumePointsCompanion extends UpdateCompanion<MusicResumePointRow> {
+  final Value<String> trackUid;
+  final Value<int> positionMs;
+  final Value<int?> durationMs;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const MusicResumePointsCompanion({
+    this.trackUid = const Value.absent(),
+    this.positionMs = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicResumePointsCompanion.insert({
+    required String trackUid,
+    required int positionMs,
+    this.durationMs = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       positionMs = Value(positionMs),
+       updatedAt = Value(updatedAt);
+  static Insertable<MusicResumePointRow> custom({
+    Expression<String>? trackUid,
+    Expression<int>? positionMs,
+    Expression<int>? durationMs,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (positionMs != null) 'position_ms': positionMs,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicResumePointsCompanion copyWith({
+    Value<String>? trackUid,
+    Value<int>? positionMs,
+    Value<int?>? durationMs,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicResumePointsCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      positionMs: positionMs ?? this.positionMs,
+      durationMs: durationMs ?? this.durationMs,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (positionMs.present) {
+      map['position_ms'] = Variable<int>(positionMs.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicResumePointsCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('positionMs: $positionMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $VideoThemeSongSpansTable extends VideoThemeSongSpans
     with TableInfo<$VideoThemeSongSpansTable, VideoThemeSongSpanRow> {
   @override
@@ -76465,6 +76797,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $MusicPlayEventsTable musicPlayEvents = $MusicPlayEventsTable(
     this,
   );
+  late final $MusicResumePointsTable musicResumePoints =
+      $MusicResumePointsTable(this);
   late final $VideoThemeSongSpansTable videoThemeSongSpans =
       $VideoThemeSongSpansTable(this);
   late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
@@ -76604,6 +76938,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlaylists,
     musicPlaylistEntries,
     musicPlayEvents,
+    musicResumePoints,
     videoThemeSongSpans,
     musicScrapeMeta,
     musicMetadataRawSnapshots,
@@ -124266,6 +124601,204 @@ typedef $$MusicPlayEventsTableProcessedTableManager =
       MusicPlayEventRow,
       PrefetchHooks Function()
     >;
+typedef $$MusicResumePointsTableCreateCompanionBuilder =
+    MusicResumePointsCompanion Function({
+      required String trackUid,
+      required int positionMs,
+      Value<int?> durationMs,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicResumePointsTableUpdateCompanionBuilder =
+    MusicResumePointsCompanion Function({
+      Value<String> trackUid,
+      Value<int> positionMs,
+      Value<int?> durationMs,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicResumePointsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicResumePointsTable> {
+  $$MusicResumePointsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicResumePointsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicResumePointsTable> {
+  $$MusicResumePointsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicResumePointsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicResumePointsTable> {
+  $$MusicResumePointsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MusicResumePointsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicResumePointsTable,
+          MusicResumePointRow,
+          $$MusicResumePointsTableFilterComposer,
+          $$MusicResumePointsTableOrderingComposer,
+          $$MusicResumePointsTableAnnotationComposer,
+          $$MusicResumePointsTableCreateCompanionBuilder,
+          $$MusicResumePointsTableUpdateCompanionBuilder,
+          (
+            MusicResumePointRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicResumePointsTable,
+              MusicResumePointRow
+            >,
+          ),
+          MusicResumePointRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicResumePointsTableTableManager(
+    _$FushiDatabase db,
+    $MusicResumePointsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicResumePointsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicResumePointsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MusicResumePointsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<int> positionMs = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicResumePointsCompanion(
+                trackUid: trackUid,
+                positionMs: positionMs,
+                durationMs: durationMs,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required int positionMs,
+                Value<int?> durationMs = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicResumePointsCompanion.insert(
+                trackUid: trackUid,
+                positionMs: positionMs,
+                durationMs: durationMs,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicResumePointsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicResumePointsTable,
+      MusicResumePointRow,
+      $$MusicResumePointsTableFilterComposer,
+      $$MusicResumePointsTableOrderingComposer,
+      $$MusicResumePointsTableAnnotationComposer,
+      $$MusicResumePointsTableCreateCompanionBuilder,
+      $$MusicResumePointsTableUpdateCompanionBuilder,
+      (
+        MusicResumePointRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicResumePointsTable,
+          MusicResumePointRow
+        >,
+      ),
+      MusicResumePointRow,
+      PrefetchHooks Function()
+    >;
 typedef $$VideoThemeSongSpansTableCreateCompanionBuilder =
     VideoThemeSongSpansCompanion Function({
       required String bookUid,
@@ -128065,6 +128598,8 @@ class $FushiDatabaseManager {
       $$MusicPlaylistEntriesTableTableManager(_db, _db.musicPlaylistEntries);
   $$MusicPlayEventsTableTableManager get musicPlayEvents =>
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
+  $$MusicResumePointsTableTableManager get musicResumePoints =>
+      $$MusicResumePointsTableTableManager(_db, _db.musicResumePoints);
   $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
       $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
   $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>
