@@ -7815,7 +7815,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 合集封面卡的取图链（[_buildCollectionCover] 画它、合集菜单头部也取它，两处
-  /// 同源，见 BUG-4130）：合集自有封面 → 刮削作品海报 → 媒体服务器剧海报（优先于
+  /// 同源，见 BUG-4201）：合集自有封面 → 刮削作品海报 → 媒体服务器剧海报（优先于
   /// 任何单集截图）→ 首个有本地封面的成员 → 首个有封面的远端成员。某一级还在探测
   /// 时停在 [kPendingCoverImage]。都没有为 null。
   _CollectionCoverSource? _collectionCoverSource(
@@ -9490,7 +9490,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// `onDeleteMembersMedia` 同一删除纪律）。
   ///
   /// [cover] / [title] 由打开菜单的那张卡传入，必须是它自己正在画的取图链与标题
-  /// （BUG-4130：首页行卡 / 合集封面卡画的是含远端剧海报、远端成员封面的整条链和
+  /// （BUG-4201：首页行卡 / 合集封面卡画的是含远端剧海报、远端成员封面的整条链和
   /// 刮削作品名，菜单此前另走一条只认本地成员的判据、标题固定合集名，纯远端合集
   /// 卡上有海报、菜单头部却空着）。没有卡可跟的入口（「管理合集」页）传 null，
   /// 退回 [_collectionMenuCoverImage] 与合集名。
