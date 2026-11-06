@@ -80,7 +80,7 @@ class VideoAudioMigrationReport {
 }
 
 /// 纯函数：这一行是不是要搬的旧版「无画面视频」——本地纯音频单文件（多集合集行的
-/// `videoPath` 只是其中一集，不在此列；网络流没有本地文件，音乐库收不了）。
+/// `videoPath` 只是其中一集，不在此列；网络来源的行见 [isLegacyRemoteAudioOnlyVideoBook]）。
 bool isLegacyAudioOnlyVideoBook(VideoBookRow row) =>
     isAudioOnlyMediaPath(row.videoPath) &&
     (row.playlistJson ?? '').trim().isEmpty &&
