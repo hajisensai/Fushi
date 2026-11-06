@@ -155,6 +155,13 @@ class GlobalLookupController {
   // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
   // fired for the between-lookups reset (that hide passes notify=false).
   void Function()? onHidden;
+  // 与 [onHidden] 同一时机（desktop 路由被用户真正关掉），但可挂多个、互不顶替：
+  // [onHidden] 是单槽，视频页会接管再归还；常驻订阅方（音乐桌面歌词查词暂停）走这里。
+  final List<VoidCallback> _hiddenListeners = <VoidCallback>[];
+  void addHiddenListener(VoidCallback listener) =>
+      _hiddenListeners.add(listener);
+  void removeHiddenListener(VoidCallback listener) =>
+      _hiddenListeners.remove(listener);
   void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //
@@ -1810,6 +1817,11 @@ class GlobalLookupController {
       onRoutedHidden?.call(route);
       if (route.source == 'desktop') {
         onHidden?.call();
+        for (final VoidCallback listener in List<VoidCallback>.of(
+          _hiddenListeners,
+        )) {
+          listener();
+        }
       }
     } finally {
       // A genuine dismissal ends this immutable lookup. Retiring it here makes

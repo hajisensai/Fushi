@@ -200,6 +200,7 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
 export 'package:fushi/src/lookup/lookup_edge_punctuation.dart'
     show leadingPunctuationStripUnits;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -403,6 +404,7 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
+import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
@@ -2050,6 +2052,18 @@ class AppModel with ChangeNotifier {
             ErrorLogService.instance.log('AppleMusicFavorites', e, st),
       ),
     );
+    // 桌面歌词点词查词遵守「查词时暂停」（与歌词页同一个设置）；关卡后续播。
+    final MusicLookupPause lookupPause = MusicLookupPause(
+      playback: engine,
+      isPlaying: () => engine.isPlaying,
+      play: engine.play,
+      pause: engine.pause,
+      settingEnabled: () => isDatabaseReady && prefsRepo.musicLyricsLookupPause,
+    );
+    GlobalLookupController.instance.addHiddenListener(lookupPause.lookupClosed);
+    FloatingLyricLookupNotifier.instance.lookupClosed.addListener(
+      lookupPause.lookupClosed,
+    );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
       service: musicLyrics,
@@ -2067,8 +2081,13 @@ class AppModel with ChangeNotifier {
               index: index,
               wordRect: wordRect,
             )) {
+              // 全局查词卡确实弹出来了才暂停：关卡回调（onHidden）只对弹出过的卡触发。
+              lookupPause.lookupStarted();
               return;
             }
+            // requestLookup 对空白文本直接忽略、不会弹卡，也就不会有关卡回调来续播。
+            if (text.trim().isEmpty) return;
+            lookupPause.lookupStarted();
             FloatingLyricLookupNotifier.instance.requestLookup(
               text,
               index,
