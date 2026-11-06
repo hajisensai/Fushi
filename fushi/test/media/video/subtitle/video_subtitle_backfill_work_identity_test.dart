@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
