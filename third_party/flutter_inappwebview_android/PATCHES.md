@@ -137,3 +137,30 @@ per-view channel therefore gets `fushiSetStaticLayer({enabled})`, handled by
 `AndroidWebViewStaticLayer.set(viewId, enabled: ...)`
 (`lib/src/webview_static_layer.dart`). Fushi turns it on for the page under the
 popup while the popup stack is non-empty and off when it empties.
+
+## Floating context menu closes when the selection ends (BUG-4127)
+
+When the page has custom `ContextMenu` items (the dictionary popup's search /
+copy), `rebuildActionMode` finishes the system ActionMode and draws its own
+`floatingContextMenu` view. From then on WebView's own "selection cleared ->
+finish ActionMode" no longer reaches the menu, and upstream's close paths are a
+touch tap (`gestureDetector`), a menu-item click, and two texture-mode-only
+paths (`checkContextMenuShouldBeClosedTask` poll, the in-page keydown script).
+Under Hybrid Composition with no touch screen (Android TV, D-pad) none of them
+fire: the menu stays on the WebView for its whole life and, because the popup
+WebView is a reused warm slot, it covers the popup's buttons on every later
+lookup until the app is restarted (feedback 5Sj-bzv_rm).
+
+- `PluginScriptsUtil.FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT`
+  (installed in every composition mode) listens to `selectionchange` in the top
+  document and in each same-origin child frame's document; when neither the
+  top document nor any reachable same-origin descendant has a non-empty
+  selection and no editable element is focused, it calls the token-aware
+  `_fushiHideContextMenuCall()` (native side is a no-op without a menu).
+- `onPageStarted` (both clients) closes the menu: the old document's selection
+  is gone and fires no `selectionchange`.
+
+Known limit: a selection inside an opaque-origin (sandboxed) iframe is not
+visible to the top frame, so the top document's own selection ending can still
+close that frame's menu, as upstream's texture-mode poll already did.
+Guard: `fushi/test/build/inappwebview_android_context_menu_close_guard_test.dart`.
