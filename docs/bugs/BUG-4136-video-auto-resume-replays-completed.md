@@ -1,4 +1,4 @@
-## BUG-4131 · 视频播完等下一集倒计时期间，自动续播路径把当前视频从头重播
+## BUG-4136 · 视频播完等下一集倒计时期间，自动续播路径把当前视频从头重播
 - **报告**：2026-11-01（反馈 ji9GSMzD4E，Windows，3.2.0-debug.22820：「未开单视频循环，视频播完、等待下一视频播放的 5s 内，会自动重播当前视频」）
 - **真实性**：✅ 机制已沿代码坐实；用户这次具体是哪条自动续播路径触发的，日志没有证据（见备注）。
   - media_kit 1.2.6 `Player.play()`（`lib/src/player/native/player/real.dart:382`）在 `state.completed` 为真时先 `seek(0)` 再取消暂停，「播完再按播放」就是重看。网页后端（`web_video_platform_player.dart`）同理：HTML `<video>` 在 ended 态调 `play()` 也从头播。
