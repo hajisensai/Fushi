@@ -304,6 +304,7 @@ class VideoSubtitlePipeline {
     this.displaySplitter = splitSubtitleDraftCuesForDisplay,
     this.subtitleSuffix = 'ja',
     this.exportDir,
+    this.exportDirFor,
     this.styleReference = loadSubtitleStyleReference,
     this.evidence = const SubtitleEvidenceCollector(),
     this.lyricsFinder,
@@ -326,6 +327,16 @@ class VideoSubtitlePipeline {
   /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
   final Directory? exportDir;
 
+  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 媒体旁）。
+  /// 音乐库用它把每个音频的字幕放进应用自有的独立目录：曲库里大量同名 `01.flac`
+  /// 写进同一个 [exportDir] 会互相判成「已有同名字幕（非本管线）」。
+  final Directory? Function(String mediaPath)? exportDirFor;
+
+  String _exportDirOf(String mediaPath) =>
+      exportDirFor?.call(mediaPath)?.path ??
+      exportDir?.path ??
+      p.dirname(mediaPath);
+
   /// 样式参考（同一视频已有的 ASS，通常是别的语言）：找得到参考时，SRT 之外再按
   /// 参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。生产默认
   /// [loadSubtitleStyleReference]，app 本机、host 任务、服务端 `subgen` 都走这一处；
@@ -343,15 +354,15 @@ class VideoSubtitlePipeline {
   final Future<int?> Function(String videoPath) _probeDurationMs;
   final DateTime Function() _clock;
 
-  /// 目标字幕路径 `<目录>/<视频名>.<后缀>.srt`（目录见 [exportDir]）。
+  /// 目标字幕路径 `<目录>/<视频名>.<后缀>.srt`（目录见 [exportDirFor] / [exportDir]）。
   String subtitlePathFor(String videoPath) => p.join(
-    exportDir?.path ?? p.dirname(videoPath),
+    _exportDirOf(videoPath),
     '${p.basenameWithoutExtension(videoPath)}.$subtitleSuffix.srt',
   );
 
   /// 同名字幕已存在时的退路 `<视频名>.<后缀>.asr.srt`。
   String asrSubtitlePathFor(String videoPath) => p.join(
-    exportDir?.path ?? p.dirname(videoPath),
+    _exportDirOf(videoPath),
     '${p.basenameWithoutExtension(videoPath)}.$subtitleSuffix.asr.srt',
   );
 
