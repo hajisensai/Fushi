@@ -156,9 +156,14 @@ Future<File> extractVideoSubtitleAudio({
   return out;
 }
 
-/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（`mixedAudio`：
-/// 日语 Parakeet、普通话 X-ASR zipformer，均为 15 s/3 s 滑窗）跑 plan → start → run →
+/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（`mixedAudio`）跑
+/// plan → start → run →
 /// 读回 `transcript.srt` 与 `transcript.tokens.jsonl`。
+///
+/// 切段由上游按模型架构决定（`buildAsrSegmenter`）：日语 Parakeet（NeMo CTC）是
+/// 15 s/3 s 滑窗；普通话 X-ASR zipformer 不是 NeMo CTC，上游在 `mixedAudio` 下给它的是
+/// Silero VAD 切段，不是滑窗（BGM 下 VAD 漏对白的已知短板在上游，要改去
+/// `hajisensai/fushi-subtitles`）。
 ///
 /// 转录任务目录由上游服务管（按音频文件名 + 字节数 + 模型包派生），中途暂停 /
 /// 进程重启后再调同一音频即从断点续。
