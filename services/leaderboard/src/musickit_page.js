@@ -74,6 +74,10 @@ const BRIDGE_JS = `'use strict';
   /** @type {any} */
   let music = null;
   let configuring = null;
+  // init 走到哪一段（'musickit_js' 加载 MusicKit JS → 'token' 向本服务取开发者 token →
+  // 'configure' MusicKit.configure（拉 DRM / Widevine）→ 'ready'）。Dart 侧 init 超时时读它，
+  // 按真实卡住的那一段报错，而不是一律说 DRM（D69n21etZ1）。
+  let initStage = 'idle';
 
   // ---- 发事件给宿主：InAppWebView（callHandler）/ WebView2（chrome.webview）/ 普通浏览器（CustomEvent） ----
   function emit(type, detail) {
@@ -92,8 +96,26 @@ const BRIDGE_JS = `'use strict';
 
   function errInfo(e) {
     if (!e) return { name: 'Error', message: 'unknown' };
-    return { name: String(e.name || e.errorCode || 'Error'), message: String(e.message || e.description || e) };
+    const info = { name: String(e.name || e.errorCode || 'Error'), message: String(e.message || e.description || e) };
+    if (e.fushiStage) info.stage = String(e.fushiStage);
+    return info;
   }
+
+  /** 给 init 某一段抛出的错误标上段名（MusicKit 的错误对象可能不可写，那就包一层）。 */
+  function tagStage(e, stage) {
+    if (e instanceof Error) {
+      try {
+        e.fushiStage = stage;
+        if (e.fushiStage === stage) return e;
+      } catch (_) {}
+    }
+    const wrapped = new Error(String((e && (e.message || e.description)) || e));
+    wrapped.name = String((e && (e.name || e.errorCode)) || 'Error');
+    wrapped.fushiStage = stage;
+    return wrapped;
+  }
+
+  const TOKEN_TIMEOUT_MS = 15000;
 
   function waitForMusicKit() {
     if (window.MusicKit) return Promise.resolve();
@@ -104,7 +126,18 @@ const BRIDGE_JS = `'use strict';
   }
 
   async function fetchToken() {
-    const r = await fetch('/v1/musickit/token', { cache: 'no-store', credentials: 'omit' });
+    // 连不上本服务时 fetch 可能挂到浏览器自己的超时（分钟级），先于 Dart 侧 init 总超时如实报
+    // token 段失败。
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const t = ctl ? setTimeout(() => ctl.abort(), TOKEN_TIMEOUT_MS) : null;
+    let r;
+    try {
+      r = await fetch('/v1/musickit/token', { cache: 'no-store', credentials: 'omit', signal: ctl ? ctl.signal : undefined });
+    } catch (e) {
+      throw new Error(ctl && ctl.signal.aborted ? 'token_timeout' : 'token_network: ' + String((e && e.message) || e));
+    } finally {
+      if (t) clearTimeout(t);
+    }
     if (!r.ok) throw new Error('token_http_' + r.status);
     const j = await r.json();
     if (!j || typeof j.token !== 'string') throw new Error('token_bad_response');
@@ -179,14 +212,18 @@ const BRIDGE_JS = `'use strict';
     if (music) return snapshot();
     if (!configuring) {
       configuring = (async () => {
+        initStage = 'musickit_js';
         await waitForMusicKit();
+        initStage = 'token';
         const developerToken = await fetchToken();
+        initStage = 'configure';
         const m = await window.MusicKit.configure({ developerToken, app: { name: 'Fushi', build: String(VERSION) } });
         wire(m);
         music = m;
+        initStage = 'ready';
         muteMediaSession();
         return snapshot();
-      })().catch((e) => { configuring = null; throw e; });
+      })().catch((e) => { configuring = null; throw tagStage(e, initStage); });
     }
     return configuring;
   }
@@ -213,6 +250,8 @@ const BRIDGE_JS = `'use strict';
   window.fushiMusicKit = Object.freeze({
     version: VERSION,
     init: api(init),
+    /** init 当前 / 最后停在哪一段（见 initStage）。同步返回，不经 api 包装。 */
+    initStage: () => initStage,
     authorize: api(async () => { await init(); await need().authorize(); return snapshot(); }),
     unauthorize: api(async () => { await init(); await need().unauthorize(); return snapshot(); }),
     // 单曲队列：Fushi 自己的队列是唯一真相，这里一次只放一首（方案 §3.3）。
