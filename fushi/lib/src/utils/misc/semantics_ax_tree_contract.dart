@@ -348,11 +348,20 @@ class FushiWidgetsBinding extends WidgetsFlutterBinding {
 
   static bool _created = false;
 
-  /// 与 [WidgetsFlutterBinding.ensureInitialized] 相同，但首次创建的是本类。
+  /// 与 [WidgetsFlutterBinding.ensureInitialized] 相同：进程里还没有 binding 时创建
+  /// 本类，已有就原样返回。
   ///
-  /// 必须是进程里第一个被创建的 binding（主入口第一步）。
+  /// 集成测试（`IntegrationTestWidgetsFlutterBinding`）与 widget 测试在调用
+  /// `app.main()` 之前就建好了自己的 binding。一个进程只能有一个 binding，再构造
+  /// 第二个会在 [BindingBase] 构造函数里断言失败（「Binding is already
+  /// initialized」），主入口整段中止、永远不 `runApp`。这时沿用已有的 binding，
+  /// 哨兵不装（测试里另有逐帧契约断言）。
+  ///
+  /// 「已有 binding」用 [BindingBase.debugBindingType] 判：它只在 debug 构建记录
+  /// 类型，release / profile 恒为 null。那两种构建里没有任何代码先于主入口建
+  /// binding（测试只跑 debug），照常创建本类。
   static WidgetsBinding ensureInitialized() {
-    if (!_created) {
+    if (!_created && BindingBase.debugBindingType() == null) {
       _created = true;
       FushiWidgetsBinding._();
     }
