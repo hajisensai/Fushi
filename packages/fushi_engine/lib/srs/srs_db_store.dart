@@ -1028,7 +1028,7 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 条件是 `profile_uid = ? AND entity_kind = ? AND entity_id IN (…) AND field_key` 的前缀区间，正好落在
   /// `idx_srs_field_edits_profile_register (profile_uid, entity_kind, entity_id, field_key)` 上：逐 ID 定位到
-  /// 这段键，读回的行数只等于真有的这类记录数，与笔记有多少字段、字段多长无关（BUG-4131）。
+  /// 这段键，读回的行数只等于真有的这类记录数，与笔记有多少字段、字段多长无关（BUG-4143）。
   Future<Map<String, Map<String, Object?>>> noteFieldKeyPrefixValues(
     Iterable<String> ids,
     String prefix,
