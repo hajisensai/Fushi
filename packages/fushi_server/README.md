@@ -468,6 +468,9 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 数据在 `<data>/support/anki_sync/`（本地牌组集合 + 未同步日志 + 账号凭据）与
   `<data>/support/pending_mine_queue/`。同步成功才出日志；服务器要求整库**上传**时 Fushi
   不做，停在「被拦」，等你在官方 Anki 里同步一次。
+- 登录后每 10 分钟自动同步一次（另外开机时、落完卡后各一次），所以在桌面 Anki / AnkiDroid
+  里加的卡，最迟 10 分钟后互联查词的查重就看得见；急的话 WebUI 或 `ctl anki sync` 手动同步。
+  被同步服务器限流时自动同步推迟到冷却结束。
 - 同一时刻只有一台设备负责落地（最后打开开关的那台）。关掉时立刻撤认领。
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
