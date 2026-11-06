@@ -37,6 +37,8 @@ import 'package:fushi_engine/sync/interconnect_p2p.dart'
         kInterconnectP2pEnabledPref,
         kInterconnectP2pRelayUrlsPref,
         kInterconnectP2pSecretPref;
+import 'package:fushi_engine/sync/ai_relay_routes.dart'
+    show kInterconnectAiRelayEnabledPref;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
@@ -1913,6 +1915,8 @@ class SyncRepository {
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,
+    // 「当 host 时让不让已配对设备用本机的 AI 额度」同理是这台机器主人的决定。
+    kInterconnectAiRelayEnabledPref,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能

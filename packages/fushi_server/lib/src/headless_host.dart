@@ -435,7 +435,10 @@ class HeadlessHost {
           ).export
           // 「立即给这个视频补字幕」：与 app 当 host 同一个引擎服务（身份取已落库的刮削
           // 结论，只补缺的，不覆盖已有字幕）。
-          ..videoSubtitleBackfill = backfillVideoSubtitle;
+          ..videoSubtitleBackfill = backfillVideoSubtitle
+          // 「互联主机」AI 提供商：已配对设备用本服务端 `ai:` 段配的提供商（key 不出本机）；
+          // 开关是 preferences 表里的 interconnect_ai_relay_enabled（缺省开）。
+          ..aiRelaySettings = (() => ServerAiSettings(() => config.ai));
     try {
       await server.start();
     } catch (_) {
