@@ -110,7 +110,7 @@ abstract interface class SystemOcrPlatform {
 /// 只有 Android 会出现「未就绪」：ML Kit 模型由 Google Play 服务保管，安装时的
 /// 顺手下载不保证真取到。其它平台的系统 OCR 是系统组件，恒 [ready]。
 ///
-/// Play 服务的问题按 `ConnectionResult` 码分开（BUG-4130，见
+/// Play 服务的问题按 `ConnectionResult` 码分开（BUG-4160，见
 /// [systemOcrStatusForConnectionResult]）：以前合成「可修 / 不可修」两档，Play 服务
 /// 已是最新的用户也只能看到「缺失、被停用或版本过旧」、被带去一个说「已是最新」的
 /// 商店页。
@@ -150,7 +150,7 @@ abstract final class PlayServicesConnectionResult {
 }
 
 /// `isGooglePlayServicesAvailable` 的原始码 → 状态。整个仓库只在这里做这一步映射
-/// （BUG-4130）：原生侧只回传原始码，不再自己二分。
+/// （BUG-4160）：原生侧只回传原始码，不再自己二分。
 SystemOcrModelStatus systemOcrStatusForConnectionResult(int code) =>
     switch (code) {
       PlayServicesConnectionResult.serviceMissing =>
