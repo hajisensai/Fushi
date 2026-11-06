@@ -9,7 +9,7 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
-import 'package:fushi/src/media/music/music_session.dart';
+import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
@@ -74,51 +74,43 @@ class MusicTrackList extends ConsumerStatefulWidget {
 }
 
 class _MusicTrackListState extends ConsumerState<MusicTrackList> {
-  /// 这一列曲目的断点（一次按块查齐，不逐行查）。
-  Map<String, MusicResumePointRow> _resume =
-      const <String, MusicResumePointRow>{};
-  MusicResumeMode _mode = MusicResumeMode.longTracks;
-  int _loadGen = 0;
-  late final MusicSession _session = ref.read(appProvider).musicSession;
+  /// 这一列曲目的断点：挂上时按块查齐，之后只吃这一列里那几首的改动。
+  late final MusicResumePointsWatch _resume;
 
   List<MusicTrackRow> get tracks => widget.tracks;
+
+  static Iterable<String> _uids(List<MusicTrackRow> tracks) =>
+      tracks.map((MusicTrackRow t) => t.trackUid);
 
   @override
   void initState() {
     super.initState();
-    _session.resumePointsRevision.addListener(_reloadResume);
-    _reloadResume();
+    _resume =
+        ref
+            .read(appProvider)
+            .musicSession
+            .watchResumePoints(_uids(widget.tracks))
+          ..addListener(_onResumeChanged);
   }
 
   @override
   void didUpdateWidget(MusicTrackList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.tracks, widget.tracks)) _reloadResume();
+    if (!identical(oldWidget.tracks, widget.tracks)) {
+      _resume.watch(_uids(widget.tracks));
+    }
   }
 
   @override
   void dispose() {
-    _session.resumePointsRevision.removeListener(_reloadResume);
+    _resume
+      ..removeListener(_onResumeChanged)
+      ..dispose();
     super.dispose();
   }
 
-  void _reloadResume() => unawaited(_loadResume());
-
-  Future<void> _loadResume() async {
-    final AppModel app = ref.read(appProvider);
-    if (!app.isDatabaseReady) return;
-    final int gen = ++_loadGen;
-    final Map<String, MusicResumePointRow> rows = await app.database
-        .listMusicResumePoints(<String>[
-          for (final MusicTrackRow t in widget.tracks) t.trackUid,
-        ]);
-    if (!mounted || gen != _loadGen) return;
-    setState(() {
-      _resume = rows;
-      _mode = app.isPreferencesReady
-          ? app.musicResumeMode
-          : MusicResumeMode.longTracks;
-    });
+  void _onResumeChanged() {
+    if (mounted) setState(() {});
   }
 
   List<MusicPlayItem> _items() => <MusicPlayItem>[
@@ -129,24 +121,14 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       ),
   ];
 
-  /// 点开会从哪接着放；null = 从头（不显示进度）。
-  Duration? _resumeOf(MusicTrackRow track) {
-    final MusicResumePointRow? row = _resume[track.trackUid];
-    if (row == null) return null;
-    return musicResumeDisplayStart(
-      mode: _mode,
-      savedPositionMs: row.positionMs,
-      durationMs: track.durationMs ?? row.durationMs,
-    );
-  }
-
   @override
   Widget build(BuildContext buildContext) {
+    final MusicResumeMode mode = watchMusicResumeMode(ref);
     final bool shrinkWrap = widget.shrinkWrap;
     final bool showTrackNumbers = widget.showTrackNumbers;
     final MusicQueueContext context = widget.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(buildContext);
-    final MusicPlayerEngine engine = _session.engine;
+    final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
@@ -173,7 +155,11 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
             bitDepth: track.bitDepth,
             bitrateKbps: track.bitrate,
           );
-          final Duration? resume = _resumeOf(track);
+          final Duration? resume = musicTrackResumeOf(
+            track,
+            _resume[track.trackUid],
+            mode,
+          );
           final int? durationMs = track.durationMs;
           final Text subtitle = Text(
             <String>[
@@ -208,33 +194,12 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: resume == null || durationMs == null
-                    ? subtitle
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          subtitle,
-                          const SizedBox(height: 4),
-                          _MusicResumeBar(
-                            key: ValueKey<String>(
-                              'music-track-resume-${track.trackUid}',
-                            ),
-                            fraction: resume.inMilliseconds / durationMs,
-                          ),
-                        ],
-                      ),
+                subtitle: musicTrackSubtitleWithResume(track, subtitle, resume),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
-                      resume == null || durationMs == null
-                          ? formatMusicDuration(durationMs)
-                          : t.music_track_remaining(
-                              time: formatMusicDuration(
-                                durationMs - resume.inMilliseconds,
-                              ),
-                            ),
+                      musicTrackTimeLabel(durationMs, resume),
                       style: c.fushiType.bodySmall,
                     ),
                     FushiIconButton(
@@ -254,6 +219,56 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       ),
     );
   }
+}
+
+/// 当前的断点续播模式（设置 `music_resume_mode`）；设置里切档时调用方跟着重建。
+MusicResumeMode watchMusicResumeMode(WidgetRef ref) => ref.watch(
+  appProvider.select(
+    (AppModel a) =>
+        a.isPreferencesReady ? a.musicResumeMode : MusicResumeMode.longTracks,
+  ),
+);
+
+/// [track] 点开会从哪接着放（与打开时同一判据）；null = 从头（不显示进度）。
+Duration? musicTrackResumeOf(
+  MusicTrackRow track,
+  MusicResumePointRow? row,
+  MusicResumeMode mode,
+) => row == null
+    ? null
+    : musicResumeDisplayStart(
+        mode: mode,
+        savedPositionMs: row.positionMs,
+        durationMs: track.durationMs ?? row.durationMs,
+      );
+
+/// 行尾时间：有断点显示「剩余 m:ss」，否则曲长。
+String musicTrackTimeLabel(int? durationMs, Duration? resume) =>
+    resume == null || durationMs == null
+    ? formatMusicDuration(durationMs)
+    : t.music_track_remaining(
+        time: formatMusicDuration(durationMs - resume.inMilliseconds),
+      );
+
+/// 有断点的行：副标题下加一条细进度条（key `music-track-resume-<uid>`）。
+Widget? musicTrackSubtitleWithResume(
+  MusicTrackRow track,
+  Widget? subtitle,
+  Duration? resume,
+) {
+  final int? durationMs = track.durationMs;
+  if (resume == null || durationMs == null) return subtitle;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      if (subtitle != null) ...<Widget>[subtitle, const SizedBox(height: 4)],
+      _MusicResumeBar(
+        key: ValueKey<String>('music-track-resume-${track.trackUid}'),
+        fraction: resume.inMilliseconds / durationMs,
+      ),
+    ],
+  );
 }
 
 /// 断点进度条（细、平直；值变化时按动效时长补间，减弱动态效果下瞬间到位）。

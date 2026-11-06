@@ -19,12 +19,14 @@ import 'package:fushi/src/media/people/person_entry_sections.dart'
     show MusicTrackPeopleSection;
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
-import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
+    show musicTrackResumeOf, watchMusicResumeMode;
 import 'package:fushi/src/pages/implementations/music/music_track_scrape_sections.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -246,81 +248,15 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
     );
   }
 
-  /// 有没听完的断点（「播放」会接着放）时平铺的两个动作：这一次从头放（断点留着，真放
-  /// 起来后被新位置覆盖）/ 清掉断点。断点表一改（[MusicSession.resumePointsRevision]）就重读。
-  List<Widget> _resumeActions(MusicTrackRow track, MusicAlbumRow? album) {
-    final MusicSession session = ref.read(appProvider).musicSession;
-    return <Widget>[
-      ValueListenableBuilder<int>(
-        valueListenable: session.resumePointsRevision,
-        builder: (BuildContext context, int revision, _) =>
-            FutureBuilder<MusicResumePointRow?>(
-              future: _db.getMusicResumePoint(track.trackUid),
-              builder:
-                  (
-                    BuildContext context,
-                    AsyncSnapshot<MusicResumePointRow?> snap,
-                  ) {
-                    final MusicResumePointRow? row = snap.data;
-                    final Duration? resume = row == null
-                        ? null
-                        : musicResumeDisplayStart(
-                            mode: ref.read(appProvider).isPreferencesReady
-                                ? ref.read(appProvider).musicResumeMode
-                                : MusicResumeMode.longTracks,
-                            savedPositionMs: row.positionMs,
-                            durationMs: track.durationMs ?? row.durationMs,
-                          );
-                    if (resume == null) return const SizedBox.shrink();
-                    final FushiDesignTokens tokens = FushiDesignTokens.of(
-                      context,
-                    );
-                    return FushiStaggeredEntrance(
-                      index: 0,
-                      child: Wrap(
-                        spacing: tokens.spacing.gap,
-                        runSpacing: tokens.spacing.gap,
-                        children: <Widget>[
-                          FushiPressScale(
-                            child: FushiFilledButton.tonalIcon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_track_play_from_start',
-                              ),
-                              onPressed: () => unawaited(
-                                session.engine.playQueue(
-                                  <MusicPlayItem>[
-                                    musicPlayItemOf(track, album: album),
-                                  ],
-                                  context: MusicQueueContext.mixed,
-                                  resume: false,
-                                ),
-                              ),
-                              icon: const FushiIcon(FushiIcons.restart),
-                              label: Text(t.music_action_play_from_start),
-                            ),
-                          ),
-                          FushiPressScale(
-                            child: FushiFilledButton.tonalIcon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_track_clear_resume_point',
-                              ),
-                              onPressed: () => unawaited(
-                                session.clearResumePoint(track.trackUid),
-                              ),
-                              icon: const FushiIcon(FushiIcons.close),
-                              label: Text(t.music_action_clear_resume_point),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-            ),
-      ),
-    ];
-  }
+  /// 有没听完的断点（「播放」会接着放）时平铺的两个动作，见 [_TrackResumeActions]。
+  List<Widget> _resumeActions(MusicTrackRow track, MusicAlbumRow? album) =>
+      <Widget>[
+        _TrackResumeActions(
+          key: ValueKey<String>('music-track-resume-actions-${track.trackUid}'),
+          track: track,
+          album: album,
+        ),
+      ];
 
   Widget _body(
     BuildContext context,
@@ -628,6 +564,103 @@ class _EpisodeChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 有没听完的断点（「播放」会接着放）时平铺的两个动作：这一次从头放（断点留着，真放
+/// 起来后被新位置覆盖）/ 清掉断点。只看这一首的断点改动（[MusicResumePointsWatch]），
+/// 设置里切续播模式时跟着重建。
+class _TrackResumeActions extends ConsumerStatefulWidget {
+  const _TrackResumeActions({
+    super.key,
+    required this.track,
+    required this.album,
+  });
+
+  final MusicTrackRow track;
+  final MusicAlbumRow? album;
+
+  @override
+  ConsumerState<_TrackResumeActions> createState() =>
+      _TrackResumeActionsState();
+}
+
+class _TrackResumeActionsState extends ConsumerState<_TrackResumeActions> {
+  late final MusicSession session = ref.read(appProvider).musicSession;
+  late final MusicResumePointsWatch _resume;
+
+  @override
+  void initState() {
+    super.initState();
+    _resume = session.watchResumePoints(<String>[widget.track.trackUid])
+      ..addListener(_onResumeChanged);
+  }
+
+  @override
+  void didUpdateWidget(_TrackResumeActions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.track.trackUid != widget.track.trackUid) {
+      _resume.watch(<String>[widget.track.trackUid]);
+    }
+  }
+
+  @override
+  void dispose() {
+    _resume
+      ..removeListener(_onResumeChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onResumeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final MusicTrackRow track = widget.track;
+    final MusicAlbumRow? album = widget.album;
+    final Duration? resume = musicTrackResumeOf(
+      track,
+      _resume[track.trackUid],
+      watchMusicResumeMode(ref),
+    );
+    if (resume == null) return const SizedBox.shrink();
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              size: FushiButtonSize.m,
+              key: const ValueKey<String>('music_track_play_from_start'),
+              onPressed: () => unawaited(
+                session.engine.playQueue(
+                  <MusicPlayItem>[musicPlayItemOf(track, album: album)],
+                  context: MusicQueueContext.mixed,
+                  resume: false,
+                ),
+              ),
+              icon: const FushiIcon(FushiIcons.restart),
+              label: Text(t.music_action_play_from_start),
+            ),
+          ),
+          FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              size: FushiButtonSize.m,
+              key: const ValueKey<String>('music_track_clear_resume_point'),
+              onPressed: () =>
+                  unawaited(session.clearResumePoint(track.trackUid)),
+              icon: const FushiIcon(FushiIcons.close),
+              label: Text(t.music_action_clear_resume_point),
+            ),
+          ),
+        ],
       ),
     );
   }

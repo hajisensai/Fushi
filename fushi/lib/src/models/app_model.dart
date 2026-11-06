@@ -851,6 +851,12 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// Test seam：注入已 `loadFromDb` 的偏好仓库（只接了数据库的页面测试要读 / 改偏好时用）。
+  @visibleForTesting
+  void wirePreferencesForTesting(PreferencesRepository prefsRepo) {
+    _prefsRepo = prefsRepo;
+  }
+
   /// Test seam：注入插件管理器（音乐页一初始化就读插件列表；只接了数据库、没有
   /// 数据目录的测试用它给一个临时目录下的空管理器）。
   @visibleForTesting

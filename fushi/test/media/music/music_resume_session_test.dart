@@ -8,6 +8,7 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/audio_controller.dart';
@@ -210,5 +211,78 @@ void main() {
     await db.upsertMusicResumePoint('a', positionMs: 300000, updatedAt: 1);
     await session.clearResumePoint('a');
     expect(await db.getMusicResumePoint('a'), isNull);
+  });
+
+  test('交叉淡入 / 无缝推进换下的一首按听完删行（淡入起点离曲尾还有 12 s 也一样）', () async {
+    mode = MusicResumeMode.all;
+    await session.engine.playQueue(<MusicPlayItem>[
+      _item('a', minutes: 9),
+      _item('b', minutes: 9),
+    ]);
+    backend.position(100);
+    expect(await saved('a'), 100000);
+    // 12 s 交叉淡入：淡入开始（528 s / 540 s）时后端就报推进。
+    backend.position(528);
+    backend.controller.add(const MusicBackendAdvanced('b'));
+    expect(await saved('a'), isNull, reason: '自然推进 = 听完，不留「停在最后 12 s」的断点');
+    expect(session.engine.current?.trackUid, 'b');
+  });
+
+  test('「从头播放」打开、还没放：不删旧断点；放起来后才被新位置覆盖', () async {
+    await session.engine.playQueue(<MusicPlayItem>[_item('a')]);
+    backend.position(20 * 60);
+    expect(await saved('a'), 1200000);
+    // 在播 a 时点 a 的「从头播放」：先结算换下的 20:00，再从 0 打开。
+    await session.engine.playQueue(<MusicPlayItem>[_item('a')], resume: false);
+    expect(backend.opened.last, ('a', Duration.zero));
+    backend.position(0);
+    await session.engine.pause();
+    backend.position(0);
+    expect(await saved('a'), 1200000, reason: '打开期的 0 不是「回到开头」');
+    // 点错了，退回去：列表点开仍从断点接着放（换下时的 0 也不冲掉断点）。
+    await session.engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
+    expect(backend.opened.last, ('a', const Duration(minutes: 20)));
+  });
+
+  test('「从头播放」后真放起来：新位置覆盖断点；放过后拖回开头才删行', () async {
+    await db.upsertMusicResumePoint('a', positionMs: 1200000, updatedAt: 1);
+    await session.engine.playQueue(<MusicPlayItem>[_item('a')], resume: false);
+    backend.position(0);
+    backend.position(3);
+    expect(await saved('a'), 3000);
+    await session.engine.pause();
+    await session.engine.seek(Duration.zero);
+    expect(await saved('a'), isNull);
+  });
+
+  test('断点改动按曲目发：只看这几首的视图只收到它们的改动', () async {
+    await db.upsertMusicResumePoint('x', positionMs: 500000, updatedAt: 1);
+    final MusicResumePointsWatch watch = session.watchResumePoints(<String>[
+      'a',
+      'x',
+    ]);
+    addTearDown(watch.dispose);
+    await watch.loaded;
+    expect(watch['x']?.positionMs, 500000);
+    int notified = 0;
+    watch.addListener(() => notified++);
+
+    await session.engine.playQueue(<MusicPlayItem>[_item('b'), _item('a')]);
+    backend.position(70);
+    await session.resumeWritesIdle;
+    await Future<void>.delayed(Duration.zero);
+    expect(notified, 0, reason: 'b 不在这组里：不通知、不重查');
+
+    await session.engine.skipNext();
+    backend.position(80);
+    await session.resumeWritesIdle;
+    await Future<void>.delayed(Duration.zero);
+    expect(watch['a']?.positionMs, 80000);
+    expect(notified, 1);
+
+    await session.clearResumePoint('x');
+    await Future<void>.delayed(Duration.zero);
+    expect(watch['x'], isNull);
+    expect(notified, 2);
   });
 }

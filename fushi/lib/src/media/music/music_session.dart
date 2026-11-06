@@ -16,6 +16,7 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_queue_feed.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
@@ -285,6 +286,7 @@ class MusicSession extends ChangeNotifier {
   }
 
   void _onTrackStarted(MusicPlayItem item) {
+    _startedProgressed = false;
     // 引擎此时已把位置清零给新曲：上一首播到哪要读它清零前存下的值（同步读，免得被后续
     // 位置推送覆盖）。
     unawaited(_rotatePlayEvent(item, listened: engine.listenedBeforeStart));
@@ -352,8 +354,23 @@ class MusicSession extends ChangeNotifier {
   /// 断点写入串行队列：同一首的写与随后的读（再打开时）按提交顺序落库。
   Future<void> _resumeWrites = Future<void>.value();
 
-  /// 断点表改过一次（写 / 删落库后）就加一：列表 / 详情据此重读「剩余时间」。
-  final ValueNotifier<int> resumePointsRevision = ValueNotifier<int>(0);
+  /// 断点表的逐笔改动（写 / 删落库后发）：列表 / 详情（[MusicResumePointsWatch]）只更新
+  /// 改动的那一首，不整列重查。
+  final StreamController<MusicResumePointChange> _resumeChanges =
+      StreamController<MusicResumePointChange>.broadcast();
+  Stream<MusicResumePointChange> get resumePointChanges =>
+      _resumeChanges.stream;
+
+  /// 看 [trackUids] 断点的增量视图（调用方 [MusicResumePointsWatch.dispose]）。
+  MusicResumePointsWatch watchResumePoints(Iterable<String> trackUids) =>
+      MusicResumePointsWatch(
+        changes: _resumeChanges.stream,
+        load: (List<String> uids) async {
+          final FushiDatabase? db = _database();
+          if (db == null) return const <String, MusicResumePointRow>{};
+          return db.listMusicResumePoints(uids);
+        },
+      )..watch(trackUids);
 
   /// 测试用：等已提交的断点写全部落库。
   @visibleForTesting
@@ -361,6 +378,11 @@ class MusicSession extends ChangeNotifier {
 
   /// 最近一次提交写入的（trackUid, 位置毫秒），节流用。
   ({String uid, int ms})? _resumeWritten;
+
+  /// 当前开播这一首在这次打开里真的放到过曲内（位置 > 0）。之前的 0 是「打开了、还没
+  /// 放」（「从头播放」/「上一首」/ 自动连播）：不拿它删旧断点——断点留着，真放起来后被
+  /// 新位置覆盖。放过之后回到 0（拖回开头）才按位置删。
+  bool _startedProgressed = false;
 
   /// [item] 的断点记不记：后端能从曲内起播（Apple Music 不能）、不是自管队列（电台）、
   /// 续播模式对这首曲长开着。
@@ -384,10 +406,12 @@ class MusicSession extends ChangeNotifier {
     final int? durationMs = _durationMsOf(item, engine.duration);
     if (!_resumeTracked(item, durationMs)) return;
     final int ms = engine.position.inMilliseconds;
+    if (ms > 0) {
+      _startedProgressed = true;
+    } else if (!_startedProgressed) {
+      return;
+    }
     final ({String uid, int ms})? last = _resumeWritten;
-    // 刚打开、还一点没放（从头放的打开，如「从头播放」/「上一首」）：不急着删旧断点，
-    // 真放起来后被新位置覆盖；换下 / 退出时的结算照常按位置写。
-    if (ms == 0 && last?.uid != item.trackUid) return;
     final Duration step = engine.isPlaying
         ? kMusicResumeWriteStep
         : kMusicResumeIdleWriteStep;
@@ -399,30 +423,46 @@ class MusicSession extends ChangeNotifier {
     _queueResumeWrite(item.trackUid, ms, durationMs);
   }
 
-  /// 一首被换下：按它换下前的位置结算（不节流）。恢复没落地时不写（库里还是原断点）。
+  /// 一首被换下：按它换下前的位置结算（不节流）。恢复没落地时不写（库里还是原断点）；
+  /// 这次打开还没放过（位置 0）不写（见 [_startedProgressed]）；后端自然推进换下的按
+  /// 听完删行（交叉淡入推进时的位置停在淡入起点，见 [MusicTrackLeave.completed]）。
   void _onTrackLeft(MusicTrackLeave leave) {
+    final bool progressed = _startedProgressed;
+    _startedProgressed = false;
     if (leave.restoring) return;
     final int? durationMs = _durationMsOf(leave.item, leave.duration);
     if (!_resumeTracked(leave.item, durationMs)) return;
+    final int ms = leave.position.inMilliseconds;
+    if (!leave.completed && ms <= 0 && !progressed) return;
     _queueResumeWrite(
       leave.item.trackUid,
-      leave.position.inMilliseconds,
+      ms,
       durationMs,
+      finished: leave.completed,
     );
   }
 
-  void _queueResumeWrite(String uid, int positionMs, int? durationMs) {
+  /// [finished] = 不看位置、按听完删行。
+  void _queueResumeWrite(
+    String uid,
+    int positionMs,
+    int? durationMs, {
+    bool finished = false,
+  }) {
     _resumeWritten = (uid: uid, ms: positionMs);
     final int now = DateTime.now().millisecondsSinceEpoch;
     _resumeWrites = _resumeWrites.then((_) async {
       final FushiDatabase? db = _database();
       if (db == null) return;
       try {
-        if (musicResumePointIsFinished(
-          positionMs: positionMs,
-          durationMs: durationMs,
-        )) {
+        final MusicResumePointRow? row;
+        if (finished ||
+            musicResumePointIsFinished(
+              positionMs: positionMs,
+              durationMs: durationMs,
+            )) {
           await db.deleteMusicResumePoint(uid);
+          row = null;
         } else {
           await db.upsertMusicResumePoint(
             uid,
@@ -430,8 +470,14 @@ class MusicSession extends ChangeNotifier {
             durationMs: durationMs,
             updatedAt: now,
           );
+          row = MusicResumePointRow(
+            trackUid: uid,
+            positionMs: positionMs,
+            durationMs: durationMs,
+            updatedAt: now,
+          );
         }
-        resumePointsRevision.value++;
+        _emitResumeChange(MusicResumePointChange(uid, row));
       } on Object catch (e, st) {
         // 一笔写失败（库正在关）不能断掉后面的写：记日志，队列继续。
         ErrorLogService.instance.log('MusicSession.resumePoint', e, st);
@@ -490,7 +536,11 @@ class MusicSession extends ChangeNotifier {
     if (_resumeWritten?.uid == trackUid) _resumeWritten = null;
     await _resumeWrites;
     await _database()?.deleteMusicResumePoint(trackUid);
-    resumePointsRevision.value++;
+    _emitResumeChange(MusicResumePointChange(trackUid, null));
+  }
+
+  void _emitResumeChange(MusicResumePointChange change) {
+    if (!_resumeChanges.isClosed) _resumeChanges.add(change);
   }
 
   void _publishMediaSession() {
@@ -557,7 +607,7 @@ class MusicSession extends ChangeNotifier {
     appleMusicFavorites?.removeListener(notifyListeners);
     appleMusicFavorites?.dispose();
     engine.removeListener(_onEngineChanged);
-    resumePointsRevision.dispose();
+    unawaited(_resumeChanges.close());
     queueFeeds.dispose();
     engine.dispose();
     super.dispose();

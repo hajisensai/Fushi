@@ -238,6 +238,7 @@ class MusicTrackLeave {
     required this.position,
     required this.duration,
     required this.restoring,
+    this.completed = false,
   });
 
   final MusicPlayItem item;
@@ -250,6 +251,11 @@ class MusicTrackLeave {
 
   /// 换下时断点恢复还没落地（[position] 是过渡值，不能当断点写）。
   final bool restoring;
+
+  /// 这首是播到头被后端自然推进换下的（无缝 / 交叉淡入，[MusicBackendAdvanced]）：按听完
+  /// 结算。交叉淡入在淡入**开始**时就推进，[position] 停在曲尾前一个淡入长度（最长
+  /// 12 s），不能拿它判听没听完。
+  final bool completed;
 }
 
 /// 构造输出后端的工厂（真 app 给 libmpv，测试给替身）。
@@ -315,7 +321,8 @@ class MusicPlayerEngine extends ChangeNotifier {
   Duration? _resumeTarget;
 
   /// 位置清零（换曲 / 停止 / 重开）：清零前先存下已开播那首播到哪，并报 [onTrackLeft]。
-  void _zeroPosition() {
+  /// [completed] = 后端自然推进到下一首（见 [MusicTrackLeave.completed]）。
+  void _zeroPosition({bool completed = false}) {
     if (_announced) {
       _listenedBeforeStart = _position;
       _announced = false;
@@ -327,6 +334,7 @@ class MusicPlayerEngine extends ChangeNotifier {
             position: _position,
             duration: _duration,
             restoring: _resumeTarget != null,
+            completed: completed,
           ),
         );
       }
@@ -1052,7 +1060,7 @@ class MusicPlayerEngine extends ChangeNotifier {
         _dropAbLoopForTrackChange();
         _needsReopen = false;
         _lastError = null;
-        _zeroPosition();
+        _zeroPosition(completed: true);
         _duration = item?.durationMs == null
             ? null
             : Duration(milliseconds: item!.durationMs!);

@@ -104,7 +104,9 @@ Future<bool> playMusicOriginClip({
       : await db.getMusicAlbum(albumUid);
   final MusicPlayerEngine engine = app.musicSession.engine;
   final MusicPlayItem item = musicPlayItemOf(track, album: album);
-  await engine.playQueue(<MusicPlayItem>[item]);
+  // 定点播放：不读断点、不下发续播起点（否则 mpv 的 file-local `start` 可能晚于下面的
+  // seek 落地，把出处盖成上次听到的位置）。
+  await engine.playQueue(<MusicPlayItem>[item], resume: false);
   await engine.seek(Duration(milliseconds: positionMs < 0 ? 0 : positionMs));
   return true;
 }
