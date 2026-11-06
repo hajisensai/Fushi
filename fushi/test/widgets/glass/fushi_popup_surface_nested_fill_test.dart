@@ -453,7 +453,12 @@ void main() {
             paintOrder
                 .skip(backdropAt)
                 .whereType<RenderCustomPaint>()
-                .any((RenderCustomPaint p) => p.painter != null),
+                // 只认外侧投影本身（Material 的描边也是 CustomPaint）。
+                .any(
+                  (RenderCustomPaint p) =>
+                      p.painter.runtimeType.toString() ==
+                      '_PopupOuterShadowPainter',
+                ),
             !c.eink,
             reason: c.eink ? '墨水屏不画投影' : '外侧投影仍要画（排在原生背衬之后）',
           );
