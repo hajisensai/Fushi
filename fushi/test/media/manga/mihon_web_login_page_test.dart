@@ -39,9 +39,10 @@ void main() {
   /// 挂起页面并返回 pop 结果（null = 还没 pop）。
   Future<bool?> pumpLogin(
     WidgetTester tester, {
-    required MihonCookieJar? store,
+    required MangaCookieJar? store,
     required Future<List<Cookie>> Function(WebUri url) cookieReader,
     Uri? baseUrl,
+    bool browserImportAvailable = true,
     Future<void> Function(Uri url)? openExternal,
     Future<bool> Function(BrowserSiteCookie cookie)? cookieWriter,
   }) async {
@@ -61,6 +62,7 @@ void main() {
                     environmentFactory: () async => null,
                     openExternal: openExternal,
                     cookieWriter: cookieWriter,
+                    browserImportAvailable: browserImportAvailable,
                     webViewBuilder: (_) =>
                         const SizedBox(key: ValueKey<String>('stub-webview')),
                   ),
@@ -180,6 +182,29 @@ void main() {
       'session=abc',
     );
     expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
+  });
+
+  testWidgets('普通 MangaCookieJar（小说源的 jar）同样按整站导出并关页', (
+    WidgetTester tester,
+  ) async {
+    final MangaCookieJar store = MangaCookieJar(
+      File('${directory.path}/novel-cookies.json'),
+    );
+    await pumpLogin(
+      tester,
+      store: store,
+      baseUrl: Uri.parse('https://syosetu.com'),
+      cookieReader: (WebUri url) async => <Cookie>[
+        browserCookie('ses', value: 'signed-in', domain: '.syosetu.com'),
+        browserCookie('tracker', domain: '.ads.example'),
+      ],
+    );
+    await tapDone(tester);
+    expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
+    final List<MangaCookie> saved = store.cookiesForSite('syosetu.com');
+    expect(saved.map((MangaCookie c) => '${c.name}=${c.value}'), <String>[
+      'ses=signed-in',
+    ]);
   });
 
   testWidgets('子域 cookie 保留真实域，并随整站一起交给运行时', (WidgetTester tester) async {
@@ -522,6 +547,21 @@ void main() {
       expect(readWebView, isFalse, reason: '会话已从浏览器来，不再导出 WebView');
       expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
       expect(BrowserCookieImportGate.pending, isNull, reason: '关页即撤登记');
+    });
+
+    testWidgets('持有 jar 但平台没有浏览器扩展（移动端小说源）：没有导入按钮', (
+      WidgetTester tester,
+    ) async {
+      await pumpLogin(
+        tester,
+        store: MangaCookieJar(File('${directory.path}/novel-cookies.json')),
+        cookieReader: (WebUri url) async => const <Cookie>[],
+        browserImportAvailable: false,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+        findsNothing,
+      );
     });
 
     testWidgets('jar 为 null（Android）没有导入按钮', (WidgetTester tester) async {

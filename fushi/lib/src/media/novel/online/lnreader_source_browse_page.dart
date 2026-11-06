@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
+import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
@@ -193,10 +194,30 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
     BuildContext context, {
     required Object? error,
     required Future<void> Function() onVerified,
-  }) => LnReaderCloudflareAction(
-    cloudflare: manager.cloudflare,
-    pluginId: plugin.id,
-    onVerified: () => unawaited(onVerified()),
+  }) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+    children: <Widget>[
+      if (LnReaderCloudflareAction.shows(manager.cloudflare, plugin.id))
+        LnReaderCloudflareAction(
+          cloudflare: manager.cloudflare,
+          pluginId: plugin.id,
+          onVerified: () => unawaited(onVerified()),
+        ),
+      // 出错与空结果都给登录（[verifyOnEmpty] 同理）：LNReader 插件撞上要登录的
+      // 站点时多半不抛错、只回空列表，区分不出「真没有」还是「没登录看不到」。
+      if (lnReaderLoginTarget(
+            cloudflare: manager.cloudflare,
+            site: plugin.site,
+          ) !=
+          null)
+        LnReaderLoginAction(
+          manager: manager,
+          plugin: plugin,
+          onLoggedIn: onVerified,
+        ),
+    ],
   );
 }
 
