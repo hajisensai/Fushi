@@ -1374,6 +1374,8 @@ class AdminApi {
     'profileTransfer': ctx.config.profileTransfer,
     'remoteUpdate': ctx.config.remoteUpdate,
     'leaderboardLink': ctx.config.leaderboardLink,
+    // 简繁互查：只管没自带开关的请求方（浏览器扩展 / 旧客户端）；保存即生效。
+    'lookupChineseScriptVariants': ctx.config.lookupChineseScriptVariants,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
     'ffmpeg': ctx.config.ffmpegPath,
@@ -1449,6 +1451,7 @@ class AdminApi {
       'profileTransfer',
       'remoteUpdate',
       'leaderboardLink',
+      'lookupChineseScriptVariants',
     ]) {
       if (body[key] != null && body[key] is! bool) {
         throw FormatException('$key must be a boolean');
@@ -1502,6 +1505,7 @@ class AdminApi {
       profileTransfer: body['profileTransfer'] as bool?,
       remoteUpdate: body['remoteUpdate'] as bool?,
       leaderboardLink: body['leaderboardLink'] as bool?,
+      lookupChineseScriptVariants: body['lookupChineseScriptVariants'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty
           ? null

@@ -107,6 +107,7 @@ class ServerConfig {
     this.profileTransfer = false,
     this.remoteUpdate = false,
     this.leaderboardLink = true,
+    this.lookupChineseScriptVariants = false,
     this.tmdbApiKey,
     this.ai,
     this.srs = const ServerSrsConfig(),
@@ -232,6 +233,13 @@ class ServerConfig {
   /// 运行期现读，WebUI 改完即生效。
   final bool leaderboardLink;
 
+  /// 中文查词时简体 ↔ 繁體双向互查（yaml `lookup_chinese_script_variants`）。与 app 的
+  /// 「设置 › 查词 › 简繁互查」（偏好 `lookup_chinese_script_variants`）同一默认：关。
+  /// 只管**没声明开关的请求方**（浏览器扩展 / 旧客户端）；新版 app 每次查词自带请求方
+  /// 自己的开关（`zhScriptVariants`），以请求方为准，见 `serverLookupUsesChineseScriptVariants`。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool lookupChineseScriptVariants;
+
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
   final String? tmdbApiKey;
@@ -283,6 +291,7 @@ class ServerConfig {
     bool? profileTransfer,
     bool? remoteUpdate,
     bool? leaderboardLink,
+    bool? lookupChineseScriptVariants,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
@@ -319,6 +328,8 @@ class ServerConfig {
     profileTransfer: profileTransfer ?? this.profileTransfer,
     remoteUpdate: remoteUpdate ?? this.remoteUpdate,
     leaderboardLink: leaderboardLink ?? this.leaderboardLink,
+    lookupChineseScriptVariants:
+        lookupChineseScriptVariants ?? this.lookupChineseScriptVariants,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
     srs: srs ?? this.srs,
@@ -391,6 +402,9 @@ class ServerConfig {
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
       remoteUpdate: _bool(map['remote_update']) ?? base.remoteUpdate,
       leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
+      lookupChineseScriptVariants:
+          _bool(map['lookup_chinese_script_variants']) ??
+          base.lookupChineseScriptVariants,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
       srs: ServerSrsConfig.fromYaml(map['srs']),
@@ -442,6 +456,7 @@ class ServerConfig {
     b.writeln('profile_transfer: $profileTransfer');
     b.writeln('remote_update: $remoteUpdate');
     b.writeln('leaderboard_link: $leaderboardLink');
+    b.writeln('lookup_chinese_script_variants: $lookupChineseScriptVariants');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     }

@@ -29,6 +29,14 @@ graphic-subtitle export, `videoSubtitleBackfill`, `hostSelfUpdater` (`ServerSelf
 release bundles with `release.json` on Linux / Windows x64; dev builds answer `platform_unsupported`), OCR, jobs, downloads, subscriptions,
 assistant, lookup, history, mining, dictionary media/styles and prefs.
 
+Host-side settings that the app keeps in `preferences` live in `fushi_server.yaml` on the
+server when nothing on the server can write that preference. Example: the Chinese
+Simplified/Traditional lookup toggle. The app reads the `lookup_chinese_script_variants`
+preference; the server reads `lookup_chinese_script_variants` in the yaml
+(`ServerConfig.lookupChineseScriptVariants`, off by default, editable in the WebUI). It only
+applies to requests that don't send `zhScriptVariants` themselves (the browser extension and
+older apps).
+
 ## Music libraries: deliberately deferred
 
 Music was left out of the server's first library-kinds pass (2026-10-28) because of its
