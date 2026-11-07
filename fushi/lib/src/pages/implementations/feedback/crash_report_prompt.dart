@@ -280,7 +280,7 @@ Future<void> offerCrashReportAfterStartup({
   final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(ctx);
   if (messenger == null) return;
   final Color fg = Theme.of(ctx).colorScheme.onInverseSurface;
-  // 提示条 15 秒自己收起、或用户没理它就关了 app：下次启动不再重问这批（BUG-4226）。
+  // 提示条 15 秒自己收起、或用户没理它就关了 app：下次启动不再重问这批（BUG-4227）。
   reporter.markOfferShown(offer);
   messenger.showSnackBar(
     FushiSnackBar(

@@ -242,7 +242,7 @@ class CrashReportState {
   /// [CrashOccurrence.identity]（[CrashReporter.markOfferShown]）。提示条 15 秒自己收起、
   /// 或用户没理它就关了 app（典型是开机即自动更新）时，这批不能留到下次启动再问：
   /// 提示说的是「上次意外退出了」，下次启动的「上次」已经是一次正常退出（更新交接、
-  /// 关窗），重问就成了每次更新后都弹的误报（反馈 dCYn9_hix-，BUG-4226）。下次接上状态
+  /// 关窗），重问就成了每次更新后都弹的误报（反馈 dCYn9_hix-，BUG-4227）。下次接上状态
   /// 文件时（[CrashReporter.attach]）按没理会处理、作废这几次。
   final List<String> asked;
 
