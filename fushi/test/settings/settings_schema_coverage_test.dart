@@ -623,6 +623,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 沉浸锁定 + 字幕遮蔽中点画面显示当前句：生效点在播放页点画面抬起（要真播放器与
   // 沉浸锁），harness 无适用探针。判据纯函数与 overlay 显形句柄由专项测试咬住，页面
   // 接线由源码守卫咬住。
+  // 字幕遮布（开关 / 外观 / 强度）：写 prefsRepo 的 JSON 偏好，生效点在播放页画面上的
+  // VideoSubtitleMaskLayer（要真播放器的画面尺寸），harness 无适用探针；由专项 widget
+  // 测试咬住「关 = 不画、模糊 / 纯色按外观出层、位置按画面内容区（含黑边）映射」。
+  'video/Subtitle mask':
+      'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
+  'video/Mask look':
+      'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  'video/Mask strength':
+      'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':
       'test/media/video/video_immersive_tap_reveal_test.dart'
       '（判据四条件 + 句柄显示 / 遮回 / 换句遮回）；页面接线见 '

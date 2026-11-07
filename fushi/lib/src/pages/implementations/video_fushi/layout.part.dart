@@ -495,6 +495,17 @@ extension _VideoLayout on _VideoFushiPageState {
                     onLongPressEnd: _handleVideoLongPressEnd,
                     child: Stack(
                       children: <Widget>[
+                        // 字幕遮布（盖住烧进画面的硬字幕）：画面之上、控制条与 Fushi
+                        // 字幕之下——不糊按钮，Fushi 字幕仍压在遮布上可读可查词。
+                        // IgnorePointer；关闭时零尺寸。
+                        Positioned.fill(
+                          child: VideoSubtitleMaskLayer(
+                            controller: controller,
+                            fit: videoFitModeToBoxFit(_videoFitMode),
+                            config: appModel.videoSubtitleMask,
+                            draftRect: _subtitleMaskDraft,
+                          ),
+                        ),
                         // Apple（iOS / macOS 26）：控制条背后的很淡的顶 / 底暗化 + 底栏液态
                         // 玻璃胶囊。必须排在 media_kit 控制条**之前**（画在按钮 / 进度条
                         // 下面、画面上面）；外层 padding 与控制条同源（BUG-1783），显隐跟
@@ -814,6 +825,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         _buildSubtitleDragAdjustBanner(),
                         // 浮条调轴（反馈 JsICLVdq0i）：画面顶部的紧凑调轴浮条。非模式态零尺寸。
                         _buildSubtitleDelayBar(),
+                        // 字幕遮布编辑框 + 顶部横幅（非编辑态零尺寸）。
+                        ..._buildSubtitleMaskEditOverlays(controller),
                         _buildLevelHudOverlay(),
                         _buildVideoSideActionRail(controller),
                         _buildVideoSidePanelOverlay(controller),
@@ -1328,6 +1341,112 @@ extension _VideoLayout on _VideoFushiPageState {
         ),
       ),
     );
+  }
+
+  // ── 字幕遮布编辑 ─────────────────────────────────────────────────────────
+
+  /// 进入「调整字幕遮布」模式（设置面板入口）：关设置侧栏（面板盖着画面没法拖），
+  /// 打开编辑框。开关是关的也照样显示遮布，方便先摆好再开。
+  void _enterSubtitleMaskEdit() {
+    _hideVideoSidePanel();
+    _subtitleMaskDraft.value = appModel.videoSubtitleMask.rect;
+    _rebuild(() => _subtitleMaskEditing = true);
+  }
+
+  void _exitSubtitleMaskEdit() {
+    _subtitleMaskDraft.value = null;
+    _rebuild(() => _subtitleMaskEditing = false);
+  }
+
+  void _commitSubtitleMaskRect(Rect rect) {
+    unawaited(
+      appModel.setVideoSubtitleMask(
+        appModel.videoSubtitleMask.copyWith(rect: rect),
+      ),
+    );
+  }
+
+  /// 编辑框（全画面层，只有框和四角吃指针）+ 顶部横幅（提示 / 重置 / 完成）。
+  List<Widget> _buildSubtitleMaskEditOverlays(
+    VideoPlayerController controller,
+  ) {
+    if (!_subtitleMaskEditing) return const <Widget>[];
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final TextStyle? labelStyle = Theme.of(
+      context,
+    ).textTheme.labelLarge?.copyWith(color: cs.onSurface);
+    return <Widget>[
+      Positioned.fill(
+        child: Theme(
+          data: Theme.of(context).copyWith(colorScheme: cs),
+          child: VideoSubtitleMaskEditLayer(
+            controller: controller,
+            fit: videoFitModeToBoxFit(_videoFitMode),
+            config: appModel.videoSubtitleMask,
+            draftRect: _subtitleMaskDraft,
+            onCommit: _commitSubtitleMaskRect,
+          ),
+        ),
+      ),
+      SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: FushiStaggeredEntrance(
+              index: 0,
+              child: Material(
+                color: cs.surfaceContainer.withValues(
+                  alpha: kVideoOverlaySolidAlpha,
+                ),
+                borderRadius: FushiBorderRadius.dialog,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      FushiIcon(
+                        Icons.texture_outlined,
+                        size: 18,
+                        color: cs.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          t.video_subtitle_mask_edit_hint,
+                          style: labelStyle,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      FushiTextButton(
+                        key: const Key('video-subtitle-mask-reset'),
+                        onPressed: () {
+                          _subtitleMaskDraft.value =
+                              VideoSubtitleMaskConfig.kDefaultRect;
+                          _commitSubtitleMaskRect(
+                            VideoSubtitleMaskConfig.kDefaultRect,
+                          );
+                        },
+                        child: Text(t.video_subtitle_mask_reset),
+                      ),
+                      const SizedBox(width: 4),
+                      FushiFilledButton(
+                        key: const Key('video-subtitle-mask-done'),
+                        onPressed: _exitSubtitleMaskEdit,
+                        child: Text(t.dialog_done),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// 拖拽松手回调（[VideoSubtitleOverlay.onDragAdjustEnd]）：把落点解析出的锚定边 +

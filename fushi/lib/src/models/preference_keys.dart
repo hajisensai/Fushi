@@ -975,6 +975,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
+  // string（JSON，默认空 = 关）：字幕遮布（盖住烧进画面的硬字幕），见
+  // VideoSubtitleMaskConfig：开关 + 画面比例矩形 + 外观 + 强度。
+  'video_subtitle_mask',
   // string（默认 auto）：生成日语字幕的 MOSS 后端 auto/cuda/vulkan/cpu；设备本地。
   'video_subtitle_moss_backend',
   'video_subtitle_obscure_hide',

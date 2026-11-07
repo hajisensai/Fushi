@@ -44,10 +44,10 @@
   var RETIRED_KEYS = ['extensionMaterial', 'appGlassMirror'];
   var STYLE_ID = 'fushi-theme-palette';
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
-  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
+  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-mask, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
   var VALID = { auto: true, light: true, dark: true };
   // 页内宿主 id（与 IN_PAGE_HOSTS 同一份清单）：设置变化时按 id 重盖 data-style。
-  var IN_PAGE_HOST_IDS = ['fushi-drawer', 'fushi-subtitle-overlay', 'fushi-subtitle-drop-hint', 'fushi-queue-chip',
+  var IN_PAGE_HOST_IDS = ['fushi-drawer', 'fushi-subtitle-overlay', 'fushi-subtitle-mask', 'fushi-subtitle-drop-hint', 'fushi-queue-chip',
     'fushi-toast', 'fushi-player-btn', 'fushi-player-controls', 'fushi-ctx-modal-host'];
   var VALID_STYLE = { glass: true, m3e: true };
   var DEFAULT_STYLE = 'm3e';
