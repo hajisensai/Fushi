@@ -14,7 +14,7 @@
   - 规则 ID 只给自身身份证明是那次导入的日志：revlog 要 origin = anki、`hlc == srsImportedRevlogHlc(ankiRevlogId)`、无 `replayOf`；锚点要 `importAnchor`、origin = anki、`hlc == srsImportAnchorHlc(occurredAt)`、无 `replayOf`（`:599` 起）。
   - 其余日志（原生日志、undo、重放副本）与 undo 的目标、不认识的事件一律按旧 ID 兜底 `uuidV5(profile-merge/<newUid>/<旧 ID>)`（第 7 步 b），与合并前的方案相同，见上「撤回」。
   - **undo 的目标还没同步到就暂缓整个并入**（第 7 步 d，`srs_profile_merge.dart:674` 起）：某条 undo 的 `revokesId` 既不是旧 profile 里的日志、按兜底算出的 ID 也不在目标 uid 下（`_presentIn` 看投影与 `sync2_log_meta`）时，在任何落库之前抛 `SrsProfileMergeDeferred`（`StateError` 子类，带 oldUid / newUid / 缺的旧 ID，`:152`）。并入标记照旧留着，`_resumePendingMerges` 单独接住它（`srs_profile_link.dart:711`）：`where` 标成 `deferred (not a failure)`，同一批缺口每个进程只记一次（`_deferredLogged`），按当前（旧）uid 继续同步——这正是把 R 送进旧 profile 的途径，下一轮重跑就按 R 的内容给出与 X 相同的 `revokes`。兜底 ID 已在目标里（别的设备按兜底并过 R，例如 R 是原生日志、并入前先拉了目标）时不暂缓，`revokes` 正指向那条。
-  - 取舍：R 永远不来（所在的段已被清掉、或 undo 撤销的是本集合之外的日志）时并入一直暂缓，这台设备一直留在旧 uid 上同步——不丢数据、同步不停，但两个 profile 的复习数据不互通，且只在错误日志里有一条暂缓记录、没有 UI 提示。宁可不并也不写出各设备分歧的 undo（分歧一旦落进同步集合就改不回来）。用户在冲突弹窗里主动选择合并（`SrsDbProfileLinker.adopt` → `_switchUid`）遇到暂缓时异常照常抛给调用方，标记已写，之后的 link 轮次按上面的方式重试。
+  - 取舍：R 永远不来（所在的段已被清掉、或 undo 撤销的是本集合之外的日志）时并入一直暂缓，这台设备一直留在旧 uid 上同步——不丢数据、同步不停，但两个 profile 的复习数据不互通。宁可不并也不写出各设备分歧的 undo（分歧一旦落进同步集合就改不回来）。暂缓状态由 linker 持有（`SrsDbProfileLinker.deferredMerge`：并入标记还在 + 本进程最近一次跑它是暂缓），经 `SrsSyncScheduler.deferredProfileMerge` 在同步状态页（Sync & history）显示「profile 合并暂缓中」与缺几条撤销目标，合并做完（标记删掉）后自动消失；暂缓期间 `link` 不再重判冲突、不算已关联，每轮重跑续做。用户在冲突弹窗里主动选择合并（`SrsDbProfileLinker.adopt` → `_switchUid`）遇到暂缓时不抛：返回 `SrsProfileAdoptDeferred`（store 不变、标记已写、主库仍是旧 uid——不是就按失败抛），调度器清掉冲突与判定缓存、照跑那一轮同步，弹窗处给「合并已排队」的非错误提示；其它异常照旧按失败提示。
   - 目标沿用保留（同一身份 → 目标 ID），`_logIdsByIdentity` 加 `ORDER BY id`，同身份多条时确定取最小 ID（`:738`）；沿用条数经 `SrsProfileMergeResult.aliasedIds` 暴露。
   - 第 9 步：两条旧日志映射到同一新 ID 时，身份（卡片 + 种类 + 评分 + 发生时刻 + HLC + 映射后的 revokes）相同才只并一份，否则抛 `StateError`——在第一次落库前中止，旧 profile 不删（`:697` 起）。
   - 写入者改名从**最初的写入者**派生：新名字 `merged-uuidV5(profile-merge/<newUid>/writer/<最初>)~<最初>`，下一次合并剥出 `<最初>` 再算（`_mergedWriterOrigin` / `_mergedWriterNames`，`:912` 起）；同一旧 profile 里两个写入者剥出同一个最初写入者、或剥完名字等于自己时不剥；最后断言改名一一对应，否则 `StateError`（`:945`）。
@@ -27,6 +27,7 @@
   - 「undo 的目标（原生日志）还没同步到：并入暂缓、什么都不写；目标到了再并，两台设备的 undo 逐字段相同」「undo 撤销的 Anki 导入 revlog 还没同步到：并入暂缓；到了以后两台设备的 undo 都撤销规则 ID」：暂缓时 profiles.uid、旧 uid 行数不变、目标下没有日志、标记仍在；把 R 送进旧 profile 后重跑成功，两台设备的 undo `toJson()` 相同，导入那份撤销的是 `importedRevlog(新卡片, revlog)`、有效历史为空。去掉暂缓（变异）后这两条与下面 link 那条红。
   - 「undo 的目标不在旧 profile 里、但已按兜底 ID 在目标里：不暂缓」：并入前经真实只拉不发收到另一台设备并好的 R。
   - 「并入暂缓经 link：不抛、同步照跑、只记一次；目标日志到了下一轮做完并入」。
+  - 「主动并入遇暂缓：adopt 返回暂缓不抛、标记已写、状态可查且 link 不再重判；目标到了做完并入、状态消失」（引擎层）；`srs_sync_scheduler_test`「冲突弹窗选定后并入暂缓：…」锁调度器清冲突、每轮重跑 link、暂缓状态可查；`srs_history_page_test`「profile 合并暂缓中：…」MD3 / Apple 各一遍锁状态行出现与同步后消失。
   - 链式 vs 直接用例加一步：只把链式那份 r2（不带 undo）收进直接那台，r2 不在有效历史里、`revoked` 含链式那份 ID。
   - 「两条不同的旧日志映射到同一个新 ID」「两个旧写入者会改成同一个名字」：各自抛 `StateError`，profiles.uid 与旧 uid 的行不变。
   - 「并入在计划阶段失败：link 不再每轮抛出，记错后按当前 uid 继续同步，标记留着重试」：连跑两次 link 都不抛、各记一次错，之后的同步轮次成功，标记仍在。
