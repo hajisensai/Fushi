@@ -32,6 +32,11 @@ class MiningDraftSentence {
   final AudioPlaybackRange? audioRange;
 
   /// 用户手改后的文本；null = 没改过，用 [sentence]。
+  ///
+  /// 空串 `''` 是合法的手改值，意为**只去掉这句的文字、保留它的音频**：
+  /// [joinMinedSentences] 丢弃空句，故卡片文本里没有这一句；而
+  /// [MiningSentenceDraft.composeAudioRange] 只按 [removed] 过滤，这句的音频区间
+  /// 照旧参与合并。与 [removed]（文字和音频都去掉）是两种不同的操作。
   final String? editedSentence;
 
   /// 用户在对话框里把这句从卡片里移除了（仍占着上下文的一个位置，可恢复）。
@@ -39,6 +44,7 @@ class MiningDraftSentence {
   /// 用来剔掉夹在中间的旁白/语气词：「−」按钮只能从两端减句，中间那句没别的办法
   /// 拿掉。被移除的句子**既不进卡片文本，也不参与音频区间合并**——它不再是这张卡的
   /// 一部分（夹在中间时合并区间首尾不变，音频照旧连续；在两端时区间随之收窄）。
+  /// 只想去掉文字、保留音频时用 `editedSentence == ''`，不用它。
   final bool removed;
 
   /// 参与合成/预览的实际文本（改过用改后的，没改用原句）。
@@ -192,12 +198,17 @@ class MiningSentenceDraft {
 
   /// 用户在「选择句子上下文」对话框里手改某一句的文本。
   ///
-  /// 要从卡片里拿掉一整句走 [setSentenceRemoved]，不走这里。
+  /// 要从卡片里拿掉一整句（文字 + 音频）走 [setSentenceRemoved]，不走这里。
   ///
   /// [slot] 指明改的是前文 / 当前句 / 后文；[index] 是该方向列表里的下标
-  /// （[SentenceContextSlot.current] 忽略 index）。[text] 与原句相同（trim 后）或为
-  /// 空白时**还原**成原句而不是写入空句——清空输入框更可能是改到一半，不该静默
-  /// 等于删句；删句有显式的 [setSentenceRemoved]。
+  /// （[SentenceContextSlot.current] 忽略 index）。
+  ///
+  /// - 前文 / 后文：[text] 与原句相同（trim 后）时**还原**；为空白时写入空串
+  ///   `''`——**只去掉这句的文字，音频区间保留**（见
+  ///   [MiningDraftSentence.editedSentence]）。用户清空某句是想「字幕不要、声音
+  ///   要」；把清空当成删句会让最外侧那句的音频一起消失（反馈 _RLnsVq_QZ）。
+  /// - 当前句：空白仍等于还原。当前句的音频恒在区间里，它的文字承载查词高亮与
+  ///   填空，不允许清空。
   ///
   /// 返回是否落地（false = 下标越界，草稿未变）。**只改文本，不动音频区间**。
   bool editSentence({
@@ -215,10 +226,11 @@ class MiningSentenceDraft {
     if (index < 0 || index >= list.length) return false;
     final MiningDraftSentence entry = list[index];
     final String key = entry.sentence.trim();
-    final bool restore = trimmed.isEmpty || trimmed == key;
+    final bool restore = trimmed == key;
     if (restore) {
       _contextEdits.remove(key);
     } else {
+      // trimmed 为空 = 只清文字、保留音频（空串照常入表，加减句后跟着那一句走）。
       _contextEdits[key] = trimmed;
     }
     final List<MiningDraftSentence> updated = List<MiningDraftSentence>.of(
@@ -277,10 +289,14 @@ class MiningSentenceDraft {
 /// 返回结构（字段名与 popup.js 的 `sentenceContextPreview` 消费方约定一致）：
 /// ```
 /// { 'prev': [句...], 'current': '当前句', 'currentOffset': int?, 'next': [句...],
-///   'prevRemoved': [bool...], 'nextRemoved': [bool...], 'total': int }
+///   'prevRemoved': [bool...], 'nextRemoved': [bool...],
+///   'prevOriginal': [句...], 'nextOriginal': [句...], 'total': int }
 /// ```
 /// `prev`/`next` 仍列出被移除的句子（对话框要画成删除线、给「恢复」入口），
-/// `prevRemoved`/`nextRemoved` 与之逐位对应；`total` 只数会进卡片的句子。
+/// `prevRemoved`/`nextRemoved` 与之逐位对应；`total` 只数会进卡片的句子（清空了
+/// 文字的句子音频仍在卡上，照样计数）。`prev`/`next` 吐的是生效文本（手改过用
+/// 改后的，清空文字为 `''`），`prevOriginal`/`nextOriginal` 逐位给出宿主原句，
+/// 供对话框的「恢复原文」入口用。
 /// 只认 `prev`/`next`/`total` 的旧消费方不受影响。
 /// [currentOffset] 只是给 JS 定位高亮起点用（词的实际表现形由弹窗侧持有），失配时
 /// 弹窗回退到首次出现匹配——与卡片渲染 `_sentenceValue` 同一容错策略。纯函数、可单测。
@@ -311,6 +327,12 @@ Map<String, Object?> buildSentenceContextPreview({
     ],
     'nextRemoved': <bool>[
       for (final MiningDraftSentence e in draft.nextSentences) e.removed,
+    ],
+    'prevOriginal': <String>[
+      for (final MiningDraftSentence e in draft.prevSentences) e.sentence,
+    ],
+    'nextOriginal': <String>[
+      for (final MiningDraftSentence e in draft.nextSentences) e.sentence,
     ],
     'total': draft.keptLength,
   };

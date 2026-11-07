@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
@@ -345,10 +346,21 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
       context,
       FushiCardTone.primary,
     )?.onContainer;
+    // 前文 / 后文清空了文字（只去字幕、保留这句音频）：显示占位说明，否则卡片正文
+    // 是空的，用户看不出这句还占着音频。
+    final bool textCleared = !current && !removed && text.trim().isEmpty;
     final Widget body = editingThis
         ? _SentenceEditor(controller: c)
         : current
         ? _highlightedCurrent(context)
+        : textCleared
+        ? Text(
+            t.popup_ctx_sentence_text_cleared,
+            style: context.fushiType.bodyMedium.copyWith(
+              fontStyle: FontStyle.italic,
+              color: scheme.onSurfaceVariant,
+            ),
+          )
         : Text(
             text,
             style: removed
@@ -364,12 +376,14 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
       // 已移除的句子不给编辑——先恢复再改，免得改了一句看不见效果的文本。
       if (c.sentenceSection?.editSentence != null && !removed && !editingThis)
         _iconAction(
+          context,
           tooltip: t.popup_ctx_edit_start,
           icon: FushiIcons.edit,
           onPressed: c.locked ? null : () => c.startEdit(slot, index, text),
         ),
       if (!current && !editingThis && removed)
         _iconAction(
+          context,
           tooltip: t.popup_ctx_sentence_restore,
           icon: FushiIcons.undo,
           onPressed: c.locked
@@ -378,6 +392,7 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
         )
       else if (!current && !editingThis && c.canDismiss(slot, index))
         _iconAction(
+          context,
           tooltip: t.popup_ctx_sentence_remove,
           icon: FushiIcons.close,
           onPressed: c.locked
@@ -426,18 +441,33 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
     );
   }
 
-  /// 句子卡右侧的小图标按钮。取 M3E 图标按钮 XS 档（32）：默认 48 的命中框会把
-  /// 每张卡都顶高一截，矮窗里几张卡就把句子挤出屏。
-  Widget _iconAction({
+  /// 句子卡右侧的小图标按钮：视觉取 M3E 图标按钮 XS 档（32），命中区补足到 48
+  /// （命中区 ≥48dp 硬规则；× 是删整句的唯一入口，点不中就只能去清空文字）。
+  ///
+  /// 两套设计的命中区参数不同，分开传：
+  /// * MD3：`tapTargetSize: padded` 只扩命中区、不改视觉；不能传 `constraints`——
+  ///   那会让尺寸档退回主题 density、并被折成 minimumSize 把视觉也撑到 48。
+  /// * Apple 玻璃：只读 `constraints.minWidth` 定按钮边长，不认 `tapTargetSize`。
+  Widget _iconAction(
+    BuildContext context, {
     required String tooltip,
     required IconData icon,
     required VoidCallback? onPressed,
-  }) => FushiIconButtonControl(
-    tooltip: tooltip,
-    size: ButtonSizeVariant.xSmall,
-    onPressed: onPressed,
-    icon: FushiIcon(icon, size: 18),
-  );
+  }) {
+    final bool glass = isGlassDesign(context);
+    return FushiIconButtonControl(
+      tooltip: tooltip,
+      size: ButtonSizeVariant.xSmall,
+      style: glass
+          ? null
+          : const ButtonStyle(tapTargetSize: MaterialTapTargetSize.padded),
+      constraints: glass
+          ? const BoxConstraints.tightFor(width: 48, height: 48)
+          : null,
+      onPressed: onPressed,
+      icon: FushiIcon(icon, size: 18),
+    );
+  }
 
   /// 当前句里把查到的词高亮：offset 命中优先（offset 处正好是 matched），失配回退
   /// indexOf，再失配整句无高亮——与旧 popup.js `buildHighlightedCurrentText` 同容错。
@@ -486,52 +516,87 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
   }
 }
 
-/// 编辑态的卡内容：多行输入框 + 「放弃修改 / 确认修改」。确认按钮独立于底部主按钮：
-/// 用户要的是「先确认这一句改完了」，改完还能继续加减句子、再改别的句子。
+/// 编辑态的卡内容：多行输入框 + 「（恢复原文）/ 放弃修改 / 确认修改」。确认按钮独立
+/// 于底部主按钮：用户要的是「先确认这一句改完了」，改完还能继续加减句子、再改别的句子。
+///
+/// 控制器只在状态变化时 notify，打字不会触发重建；清空提示与「恢复原文」都取决于
+/// 输入框当前内容，故用 [ValueListenableBuilder] 直接监听输入框。
 class _SentenceEditor extends StatelessWidget {
   const _SentenceEditor({required this.controller});
 
   final AdvancedMiningController controller;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    mainAxisSize: MainAxisSize.min,
-    children: <Widget>[
-      FushiTextFieldControl(
-        controller: controller.editController,
-        autofocus: true,
-        minLines: 2,
-        maxLines: null,
-        keyboardType: TextInputType.multiline,
-        textInputAction: TextInputAction.newline,
-        style: context.fushiType.bodyMedium,
-        decoration: const InputDecoration(
-          border: FushiOutlinedFieldBorder(),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        ),
-      ),
-      const SizedBox(height: 8),
-      Wrap(
-        alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 8,
-        children: <Widget>[
-          FushiTextButton(
-            onPressed: controller.busy ? null : controller.cancelEdit,
-            child: Text(t.popup_ctx_edit_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: controller.busy
-                ? null
-                : () => unawaited(controller.commitEdit()),
-            child: Text(t.popup_ctx_edit_confirm),
-          ),
-        ],
-      ),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final TextEditingController edit = controller.editController!;
+    final SentenceContextSlot? slot = controller.editSlot;
+    final bool contextSlot =
+        slot != null && slot != SentenceContextSlot.current;
+    final String? original = slot == null
+        ? null
+        : controller.originalOf(slot, controller.editIndex);
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: edit,
+      builder: (BuildContext context, TextEditingValue value, Widget? _) {
+        final bool empty = value.text.trim().isEmpty;
+        final bool showRestore =
+            original != null && original.trim() != value.text.trim();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiTextFieldControl(
+              controller: edit,
+              autofocus: true,
+              minLines: 2,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: context.fushiType.bodyMedium,
+              decoration: InputDecoration(
+                border: const FushiOutlinedFieldBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                // 正要清空前文 / 后文时提示：清空只去文字、音频保留，删整句走 ×。
+                helperText: contextSlot && empty
+                    ? t.popup_ctx_edit_clear_keeps_audio_hint
+                    : null,
+                helperMaxLines: 3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                if (showRestore)
+                  FushiTextButton(
+                    onPressed: controller.busy
+                        ? null
+                        : controller.restoreEditToOriginal,
+                    child: Text(t.popup_ctx_edit_restore_original),
+                  ),
+                FushiTextButton(
+                  onPressed: controller.busy ? null : controller.cancelEdit,
+                  child: Text(t.popup_ctx_edit_cancel),
+                ),
+                FushiFilledButton(
+                  onPressed: controller.busy
+                      ? null
+                      : () => unawaited(controller.commitEdit()),
+                  child: Text(t.popup_ctx_edit_confirm),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 /// 列表两端的「加前一句 / 加后一句」：虚线描边胶囊（交互稿 ①），表达「这里还能再接

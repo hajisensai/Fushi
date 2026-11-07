@@ -246,6 +246,56 @@ void main() {
       expect(c.buildOverrides().isEmpty, isTrue);
     });
 
+    // 反馈 _RLnsVq_QZ：清空前文 / 后文 = 只去文字、保留音频，不再转成移除。
+    test('清空前文确认 = 写入空文本（不移除），并重新描述音频区间', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      c.startEdit(SentenceContextSlot.prev, 0, c.prev[0]);
+      c.editController!.text = '';
+      final int describedBefore = host.describeCalls.length;
+      await c.commitEdit();
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(host.editCalls, <List<Object>>[
+        <Object>[SentenceContextSlot.prev, 0, ''],
+      ]);
+      expect(host.removeCalls, isEmpty);
+      expect(c.prev, <String>['']);
+      expect(c.prevRemoved, <bool>[false]);
+      expect(host.describeCalls.length, greaterThan(describedBefore));
+    });
+
+    test('「恢复原文」把宿主原句写回输入框（不自动提交）', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      host.edits['next0'] = '';
+      await c.refreshSentences();
+      expect(c.originalOf(SentenceContextSlot.next, 0), 'あと0。');
+      c.startEdit(SentenceContextSlot.next, 0, c.next[0]);
+      expect(c.editController!.text, '');
+      c.restoreEditToOriginal();
+      expect(c.editController!.text, 'あと0。');
+      expect(c.editController!.selection.baseOffset, 'あと0。'.length);
+      expect(c.editing, isTrue);
+      expect(host.editCalls, isEmpty);
+    });
+
+    test('旧宿主不给原句：originalOf 返回 null；当前句与越界也是 null', () async {
+      host.sendOriginals = false;
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      expect(c.originalOf(SentenceContextSlot.prev, 0), isNull);
+      host.sendOriginals = true;
+      await c.refreshSentences();
+      expect(c.originalOf(SentenceContextSlot.prev, 0), 'まえ0。');
+      expect(c.originalOf(SentenceContextSlot.current, 0), isNull);
+      expect(c.originalOf(SentenceContextSlot.prev, 5), isNull);
+    });
+
     test('加到封顶：宿主不再给更多句时禁用「加一句」', () async {
       final FakeAdvancedMiningHost capped = FakeAdvancedMiningHost(maxPrev: 1);
       final AdvancedMiningController c = await loaded(

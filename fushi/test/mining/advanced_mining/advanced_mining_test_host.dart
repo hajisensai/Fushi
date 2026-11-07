@@ -95,6 +95,9 @@ class FakeAdvancedMiningHost {
   final List<int> suggestionLoads = <int>[];
   StreamController<int>? downloadController;
 
+  /// false 模拟旧宿主：预览里不带 `prevOriginal` / `nextOriginal`。
+  bool sendOriginals = true;
+
   Map<String, Object?> preview() {
     final List<String> prev = <String>[
       for (int i = 0; i < prevCount; i++) edits['prev$i'] ?? 'まえ$i。',
@@ -120,6 +123,10 @@ class FakeAdvancedMiningHost {
       'nextRemoved': <bool>[
         for (int i = 0; i < nextCount; i++) nextRemoved[i] ?? false,
       ],
+      if (sendOriginals) ...<String, Object?>{
+        'prevOriginal': <String>[for (int i = 0; i < prevCount; i++) 'まえ$i。'],
+        'nextOriginal': <String>[for (int i = 0; i < nextCount; i++) 'あと$i。'],
+      },
       'total': prev.length + next.length - removed,
     };
   }

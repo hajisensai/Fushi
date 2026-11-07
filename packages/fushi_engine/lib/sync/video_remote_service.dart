@@ -195,13 +195,18 @@ const String videoRemoteActionUnsupported = 'action_unsupported';
 
 /// Actions of the `lookupContext` operation. Every action answers with the
 /// draft preview (`{prev, current, currentOffset, next, prevRemoved,
-/// nextRemoved, total}`, the same map the desktop dialog renders); the audio
-/// actions add `played`.
+/// nextRemoved, prevOriginal, nextOriginal, total}`, the same map the desktop
+/// dialog renders); the audio actions add `played`. `prev` / `next` carry the
+/// effective text (`''` = text cleared, audio kept); `prevOriginal` /
+/// `nextOriginal` carry the untouched source rows index-aligned with them
+/// (absent from older desktops).
 ///
 /// * `preview` — read only.
 /// * `set` — `{prev: int, next: int}`: replace the context with the N rows
 ///   before / after the looked-up row on its own subtitle track.
 /// * `edit` — `{slot: 'prev'|'current'|'next', index: int, text: String}`.
+///   An empty `text` on `prev` / `next` clears that row's text but keeps its
+///   audio; on `current` it restores the original.
 /// * `remove` — `{slot: 'prev'|'next', index: int, removed: bool}`.
 /// * `clear` — drop the context and every edit.
 /// * `previewAudio` / `stopAudio` — play / stop the span the card would get,
