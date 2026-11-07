@@ -1216,8 +1216,8 @@ class InterconnectSyncBackend extends SyncBackend
   /// [WebDavOps.checkStatus] 抛。响应里的 `nonce` 是下一次 [triggerRemoteHostUpdate]
   /// 要带的一次性票据。[refresh] = 让 host 先（节流地）去更新源查一次。
   ///
-  /// 与配置搬运不同，这里不要求 https：只读版本号不敏感，触发另有 nonce + 局域网
-  /// 信任区 + host 开关几道门（明文会话上的 token 本就在同一信任级别）。
+  /// 与配置搬运不同，这里不要求 https：只读版本号不敏感，触发另有一次性 nonce +
+  /// host 开关几道门（明文会话上的 token 本就在同一信任级别；不按来源网络区分）。
   Future<HostUpdateStatus?> getRemoteHostUpdateStatus({
     required SyncRepository repo,
     bool refresh = false,

@@ -695,11 +695,16 @@ String buildSearchCacheKey({
 ///   语言未知时查词集合里的中文词典就是「这次可能是中文」的唯一可读证据；App 里
 ///   不存在「学习语言 / Profile 目标语言」这一设置（`targetLanguage` 已于 2026-07-26
 ///   删除，Profile 的语言绑定是「内容语言 → 打开哪个 Profile」的反向映射）。
+///
+/// * 用户开关 [enabled]（`lookup_chinese_script_variants`，默认关）关着时一律 false：
+///   开发者要求默认只查原文字形，简繁互查由用户自己打开。
 @visibleForTesting
 bool lookupUsesChineseScriptVariants({
+  required bool enabled,
   required String? lookupLanguage,
   required DictionaryLookupFilters filters,
 }) {
+  if (!enabled) return false;
   if (lookupLanguage != null && lookupLanguage.trim().isNotEmpty) {
     return isChineseLanguageTag(lookupLanguage);
   }
@@ -1818,12 +1823,6 @@ class AppModel with ChangeNotifier {
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
 
-  /// 当前查词是否按中文处理（引擎额外试简体 ↔ 繁體双向变体，见 `FushiDicts.lookup` 的
-  /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
-  /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
-  /// 语言未知时看启用的词典里有没有中文词典（[lookupUsesChineseScriptVariants]）。
-  bool get lookupChineseSimpToTrad => lookupChineseSimpToTradFor(null);
-
   /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
   /// 查词来源语言 [currentLookupLanguage] → 全局默认内容语言；全空为 null（语言未知）。
   /// 本机发给对端的查词也带这个值（[_searchRemoteDictionary]），对端据此判是否中文。
@@ -1846,14 +1845,23 @@ class AppModel with ChangeNotifier {
   ///
   /// [filters]：按哪份词典过滤快照判「有没有中文词典」；null = App 当前生效的词典
   /// （浏览器扩展所选非激活配置传它的 `lookupFilters`，与查词用的过滤同一份）。
+  ///
+  /// [requestedScriptVariants]：对端请求里带的**对端用户的开关**（`zhScriptVariants`），
+  /// 非 null 时代替本机开关；null（本机查词 / 浏览器扩展 / 旧客户端）用 [prefs]（缺省
+  /// 本机生效偏好）的开关。语言 / 词典判据一律在本机跑。
   bool lookupChineseSimpToTradFor(
     String? requested, {
     PreferencesRepository? prefs,
     DictionaryLookupFilters? filters,
+    bool? requestedScriptVariants,
   }) {
     final DictionaryLookupFilters? effectiveFilters =
         filters ?? (_dictionaryRepoReady ? dictRepo.lookupFilters : null);
     return lookupUsesChineseScriptVariants(
+      enabled:
+          requestedScriptVariants ??
+          (prefs ?? _prefsRepo)?.lookupChineseScriptVariants ??
+          false,
       lookupLanguage: effectiveLookupLanguage(
         requested: requested,
         prefs: prefs,
@@ -2943,6 +2951,13 @@ class AppModel with ChangeNotifier {
       requestHomeDictionaryTab();
     }
   }
+
+  /// 中文查词是否简体 ↔ 繁體双向互查（见 [PreferencesRepository.lookupChineseScriptVariants]）。
+  /// 偏好未装好时按默认值（关）。
+  bool get lookupChineseScriptVariants =>
+      _prefsRepo?.lookupChineseScriptVariants ?? false;
+  Future<void> setLookupChineseScriptVariants(bool value) =>
+      prefsRepo.setLookupChineseScriptVariants(value);
 
   /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
   /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
@@ -9149,6 +9164,7 @@ class AppModel with ChangeNotifier {
     bool useCache = true,
     bool allowRemoteLookup = true,
     String? lookupLanguage,
+    bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
   }) async {
@@ -9182,6 +9198,7 @@ class AppModel with ChangeNotifier {
             maximumTerms: effectiveMaxTerms,
             lookupLanguage: lookupLanguage,
             rubySpans: rubySpans,
+            profileView: profileView,
           )
         : null;
     final Future<_LocalDictionaryLookup> local = _searchLocalDictionary(
@@ -9189,6 +9206,7 @@ class AppModel with ChangeNotifier {
       effectiveMaxTerms: effectiveMaxTerms,
       useCache: useCache,
       lookupLanguage: lookupLanguage,
+      requestedScriptVariants: requestedScriptVariants,
       rubySpans: rubySpans,
       profileView: profileView,
     );
@@ -9217,6 +9235,7 @@ class AppModel with ChangeNotifier {
             maximumTerms: effectiveMaxTerms,
             lookupLanguage: lookupLanguage,
             rubySpans: rubySpans,
+            profileView: profileView,
           );
       if (remoteResult != null) {
         return remoteResult;
@@ -9248,6 +9267,7 @@ class AppModel with ChangeNotifier {
     required int effectiveMaxTerms,
     required bool useCache,
     String? lookupLanguage,
+    bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
   }) async {
@@ -9257,6 +9277,7 @@ class AppModel with ChangeNotifier {
       lookupLanguage,
       prefs: profileView?.prefs,
       filters: profileView?.lookupFilters,
+      requestedScriptVariants: requestedScriptVariants,
     );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
@@ -9350,6 +9371,7 @@ class AppModel with ChangeNotifier {
     required int maximumTerms,
     String? lookupLanguage,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    ProfileSettingsView? profileView,
   }) async {
     if (!remoteLookupEnabled) return null;
     // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
@@ -9375,6 +9397,10 @@ class AppModel with ChangeNotifier {
             wildcards: searchWithWildcards,
             maximumTerms: maximumTerms,
             language: effectiveLookupLanguage(requested: lookupLanguage),
+            // 本机用户的简繁互查开关（不是最终结论）：对端用它代替自己的开关，语言未知时
+            // 看对端的词典——瘦客户端本机可能一本中文词典都没有。
+            chineseScriptVariants:
+                (profileView?.prefs ?? prefsRepo).lookupChineseScriptVariants,
             // 原文振假名（已对齐到清洗后的 searchTerm）；空时不发字段。
             rubySpans: rubySpans,
           );
@@ -13549,12 +13575,14 @@ class _AppModelRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
   }) => _searchDictionary(
     term: term,
     wildcards: wildcards,
     maximumTerms: maximumTerms,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
   );
 
   @override
@@ -13564,15 +13592,18 @@ class _AppModelRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
   }) => _searchDictionary(
     term: term,
     wildcards: wildcards,
     maximumTerms: maximumTerms,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
   );
 
   /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
+  /// [chineseScriptVariants]：请求方用户的简繁互查开关；null = 用本机开关。
   /// [rubySpans]：请求方原文自带的振假名（以 [term] 为坐标系）；对齐与 ruby 缓存键由
   /// [AppModel._searchDictionaryInLanguage] 负责。
   Future<DictionarySearchResult?> _searchDictionary({
@@ -13580,6 +13611,7 @@ class _AppModelRemoteLookupService
     required bool wildcards,
     required int maximumTerms,
     String? language,
+    bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
@@ -13597,6 +13629,7 @@ class _AppModelRemoteLookupService
           useCache: true,
           allowRemoteLookup: false,
           lookupLanguage: language,
+          requestedScriptVariants: chineseScriptVariants,
           rubySpans: rubySpans,
           profileView: _view,
         );
@@ -13645,7 +13678,8 @@ class _AppModelRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) => _searchDictionaryPopup(
     term: term,
@@ -13653,6 +13687,7 @@ class _AppModelRemoteLookupService
     maximumTerms: maximumTerms,
     timing: timing,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
   );
 
   @override
@@ -13662,6 +13697,7 @@ class _AppModelRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) => _searchDictionaryPopup(
     term: term,
@@ -13669,16 +13705,18 @@ class _AppModelRemoteLookupService
     maximumTerms: maximumTerms,
     timing: timing,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
   );
 
-  /// [language] / [rubySpans] 同 [_searchDictionary]。
+  /// [language] / [chineseScriptVariants] / [rubySpans] 同 [_searchDictionary]。
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
     required bool wildcards,
     required int maximumTerms,
     RemoteDictionaryPopupTiming? timing,
     String? language,
+    bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     timing?.reset();
@@ -13719,6 +13757,7 @@ class _AppModelRemoteLookupService
         language,
         prefs: view?.prefs,
         filters: view?.lookupFilters,
+        requestedScriptVariants: chineseScriptVariants,
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变）。

@@ -50,7 +50,7 @@ final RegExp _inlineMediaTag = RegExp(
   caseSensitive: false,
 );
 final RegExp _srcAttr = RegExp(
-  r'''\ssrc\s*=\s*(["'])([^"']*)\1''',
+  r'''\ssrc\s*=\s*(?:(["'])([^"']*)\1|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 final RegExp _classAttr = RegExp(
@@ -70,7 +70,7 @@ List<String> srsCardMediaNames(String html) {
       if (_srcAttr.firstMatch(m.group(2)!) case final Match src)
         (
           m.start,
-          _htmlUnescape(src.group(2)!.trim()),
+          _htmlUnescape((src.group(2) ?? src.group(3)!).trim()),
           m.group(1)!.toLowerCase() == 'video'
               ? 'video'
               : (_classAttr.firstMatch(m.group(2)!)?.group(2) ?? '').contains(

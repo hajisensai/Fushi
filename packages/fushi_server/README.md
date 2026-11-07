@@ -447,7 +447,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 ### 远程更新（`remote_update`）
 
 已配对的手机 / 桌面可以在「互联」里看到服务端版本并让它自己更新，端点与 app 当 host 时同一条
-（`/api/host/update`：只认已配对设备的专属 token、只收局域网、一次性 nonce、开关默认关）。
+（`/api/host/update`：只认已配对设备的专属 token、一次性 nonce、开关默认关；不按来源网络区分——
+局域网、组网、公网、P2P 隧道进来的已配对设备权限相同）。同一时刻只跑一轮更新，重复触发回 `busy`。
 
 - **只对发布包可用**：包根目录的 `release.json`（`release-server.yml` 打包时写入版本、发布序号、
   通道）是版本身份；本机 `dart run` / 自己 `dart build cli` 出的 bundle 没有它，端点回
@@ -457,7 +458,10 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - **安装**：本平台包下载到安装目录里的 `.fushi_update/`，核对 GitHub 给资产算的 SHA-256（没有
   校验值或对不上一律不装），系统 `tar` 解包（Windows 用自带的 `System32\tar.exe`），然后逐个文件
   换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
-  覆盖），新文件再改名到位；中途失败整体还原。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
+  覆盖），新文件再改名到位；中途失败整体还原。动文件前先写换包日志 `.fushi_update_journal.json`，
+换完才删：换到一半进程被杀 / 断电，下次启动按日志逆序还原（若正在跑的已是没换完的新版可执行文件，
+还原后以退出码 75 退出让服务管理器拉起旧版）。下载正文 60 秒没有新数据即判失败、清掉暂存，可以
+再触发。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
 - **重启**：换完进程以**退出码 75** 退出，由 systemd（`Restart=on-failure`）/ 服务管理器拉起新版；
   新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
@@ -506,6 +510,9 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 数据在 `<data>/support/anki_sync/`（本地牌组集合 + 未同步日志 + 账号凭据）与
   `<data>/support/pending_mine_queue/`。同步成功才出日志；服务器要求整库**上传**时 Fushi
   不做，停在「被拦」，等你在官方 Anki 里同步一次。
+- 登录后每 10 分钟自动同步一次（另外开机时、落完卡后各一次），所以在桌面 Anki / AnkiDroid
+  里加的卡，最迟 10 分钟后互联查词的查重就看得见；急的话 WebUI 或 `ctl anki sync` 手动同步。
+  被同步服务器限流时自动同步推迟到冷却结束。
 - 同一时刻只有一台设备负责落地（最后打开开关的那台）。关掉时立刻撤认领。
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
@@ -541,7 +548,9 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
   `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
-  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表。
+  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表；
+  Windows 发布包随包 MSVC 编的 `lib/fushidicts_ffi.dll` 与同一份变形表（自编：`cmake -S native/fushidicts -B <短路径>
+  -G "Visual Studio 17 2022" -A x64` 后 `cmake --build <短路径> --config Release --target fushidicts_ffi`）。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
 - 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：

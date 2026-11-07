@@ -15,6 +15,8 @@ import 'package:fushi_engine/sync/remote_mining_target.dart'
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
@@ -1747,6 +1749,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setLookupPageEscapeMinimizesWindow(bool value) async {
     await setPref('lookup_page_escape_minimizes_window', value);
+    notifyListeners();
+  }
+
+  /// 中文查词时是否简体 ↔ 繁體双向互查（键 [kLookupChineseScriptVariantsPrefKey]）。默认
+  /// OFF：只查原文字形；打开后查 这个 也会出按 這個 建索引的词条（反之亦然）。只在查词
+  /// 按中文处理时生效，判据见 `lookupUsesChineseScriptVariants`。
+  bool get lookupChineseScriptVariants =>
+      getPref(kLookupChineseScriptVariantsPrefKey, defaultValue: false) as bool;
+
+  Future<void> setLookupChineseScriptVariants(bool value) async {
+    await setPref(kLookupChineseScriptVariantsPrefKey, value);
     notifyListeners();
   }
 
