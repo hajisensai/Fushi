@@ -658,7 +658,10 @@ double? estimateMangaChapterRowOffset(
   final int lastIndex = list.indexOf(last);
   final double firstOffset = list.childScrollOffset(first) ?? 0;
   final double lastEnd =
-      (list.childScrollOffset(last) ?? 0) + list.paintExtentOf(last);
+      (list.childScrollOffset(last) ?? 0) +
+      (list.constraints.axis == Axis.vertical
+          ? last.size.height
+          : last.size.width);
   final double average = (lastEnd - firstOffset) / (lastIndex - firstIndex + 1);
   final double local = index < firstIndex
       ? firstOffset - (firstIndex - index) * average
