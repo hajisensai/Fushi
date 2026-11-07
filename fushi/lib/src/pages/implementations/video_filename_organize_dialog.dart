@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -244,7 +245,7 @@ class _VideoFilenameItemTile extends StatelessWidget {
                 ),
               ),
               if (item.isSeeding)
-                Tooltip(
+                FushiTooltip(
                   message: t.video_filename_organize_seeding,
                   child: Semantics(
                     label: t.video_filename_organize_seeding,
