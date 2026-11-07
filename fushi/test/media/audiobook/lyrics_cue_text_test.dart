@@ -465,6 +465,28 @@ void main() {
       expect(inline.textForCue(_cue(2, 4)), '「…………」誰だ。');
     });
 
+    // 缝里除整段符号外还夹着 1 个模糊命中漏掉的字：门槛只滤这个字所在的段落，
+    // 两侧都不认领的「…………」仍灰显（此前整条缝按 1 字被一起丢掉）。
+    test('symbol-only paragraph survives a stray missed char in the gap', () {
+      // 归一化：前だね(0-3) 誰だ(3-5)；prev 只认领「前だ」，漏了词尾「ね」。
+      final LyricsCueTextResolver tail = LyricsCueTextResolver(
+        _book(<String>['<p>前だね。</p><p>「…………」</p><p>誰だ。</p>']),
+      );
+      expect(tail.textForCue(_cue(0, 2)), '前だ');
+      expect(tail.skippedTextBetween(_cue(0, 2), _cue(3, 5))?.text, '「…………」');
+      expect(tail.textForCue(_cue(3, 5)), '誰だ。');
+      // 漏掉的字在 next 的段首。
+      final LyricsCueTextResolver head = LyricsCueTextResolver(
+        _book(<String>['<p>前だ。</p><p>「…………」</p><p>ね誰だ。</p>']),
+      );
+      expect(head.skippedTextBetween(_cue(0, 2), _cue(3, 5))?.text, '「…………」');
+      // 没有整段符号时，1 个漏掉的字仍被滤掉（跨段也一样）。
+      final LyricsCueTextResolver plain = LyricsCueTextResolver(
+        _book(<String>['<p>前だね。</p><p>誰だ。</p>']),
+      );
+      expect(plain.skippedTextBetween(_cue(0, 2), _cue(3, 5)), isNull);
+    });
+
     test('symbol-only paragraph becomes a .ly-gap row in lyrics HTML', () {
       final EpubBook book = _book(<String>[
         '<p>前だ。</p><p>「…………」</p><p>誰だ。</p>',
