@@ -68,6 +68,9 @@ class _SrsPairedHosts extends ChangeNotifier {
   List<_PairedHost> hosts = const <_PairedHost>[];
   bool _disposed = false;
 
+  /// 正在按本机配置对账（读本地库，还没开始重读各主机的牌组）：组头照样标「刷新中」。
+  bool reconciling = false;
+
   /// 正在跑的一轮对账（同一时刻只跑一轮：页面重进 / 点刷新撞上时等同一轮）。
   Future<void>? _syncing;
 
@@ -108,8 +111,14 @@ class _SrsPairedHosts extends ChangeNotifier {
   }
 
   Future<void> _sync({required bool reprobeKnown}) async {
-    final List<InterconnectHostTarget> configured = await connector
-        .configured();
+    final List<InterconnectHostTarget> configured;
+    reconciling = true;
+    _notify();
+    try {
+      configured = await connector.configured();
+    } finally {
+      reconciling = false;
+    }
     if (_disposed) return;
 
     // 第一步（纯本地）：配置里没有了 / 凭据变了的主机立刻移除并作废会话，配置门控关闭时清空。
@@ -500,13 +509,14 @@ class _SrsPairedDeviceHeader extends StatelessWidget {
     String? error,
   ) {
     final DateTime? at = host.updatedAt;
+    final bool loading = host.loading || paired.reconciling;
     if (totals == null || at == null) {
-      return host.loading ? t.srs_home_paired_connecting : error ?? '';
+      return loading ? t.srs_home_paired_connecting : error ?? '';
     }
     return <String>[
       t.srs_home_deck_cards(n: totals.cards),
       _srsPairedUpdatedText(context, at),
-      if (host.loading) t.srs_home_paired_refreshing,
+      if (loading) t.srs_home_paired_refreshing,
       ?error,
     ].join(' · ');
   }
