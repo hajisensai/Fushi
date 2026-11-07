@@ -4174,7 +4174,7 @@ jobs:
         uses: actions/deploy-pages@v4
       - name: Upload Linux Flatpak to the release
         if: steps.flatpak_repo.outputs.publish == 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ github.event_name == 'release' && steps.channel.outputs.tag || steps.channel.outputs.publish_tag }}
           files: |
