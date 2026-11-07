@@ -1,0 +1,12 @@
+## BUG-4220 · 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉）
+- **报告**：2026-11-07（用户：手机一段时间不用后打开 Fushi 白屏，然后提示加载超时）
+- **真实性**：✅ 真 bug。OnePlus CPH2747（Android 16，3.3.0-debug.24478）经无线 adb 自然复现两次，日志全程在案。
+  - 链路：进程在后台被系统回收 → WorkManager 周期任务（反馈新回复检查，`fushi/lib/src/feedback/feedback_reply_background.dart`）拉起进程，workmanager 的 `BackgroundWorker` 用 `FlutterEngine(applicationContext)` 建后台引擎 W 并自动注册全部插件 → W 上的 audio_service 插件 `onAttachedToEngine` 里 `connect()` 绑定 `AudioService`，`AudioService.onCreate` 新建主引擎 A 跑 `main()`（停在无界面 gate）→ 任务结束销毁 W。实测时间线：14:45:42.557 W 建、.733 A 建、.844 A 停在 gate、.847 W 销毁；14:47:31 打开界面，A 放行后 `main()` 抛 `MissingPluginException(No implementation found for method initLogs on channel flutter_logs)`。
+  - 根因：flutter_logs 2.1.11 `android/src/main/kotlin/com/flutter/logs/plogs/flutter_logs/FlutterLogsPlugin.kt:28-31` 把 `channel` / `event_channel` 存在 `companion object`（进程级静态）。A 附着时覆盖了静态 channel，W 销毁时 `onDetachedFromEngine`（同文件 :345-348）`channel?.setMethodCallHandler(null)` 清掉的是 **A 的** handler。
+  - 后果：`fushi/lib/main.dart:741` `await FlutterLogs.initLogs(...)` 抛异常冒到 zone，`appModel.initialise()`（main.dart:794）永不调用；加载页先白屏（首帧延迟），20s 后看门狗显「启动耗时超出预期」。点 Retry 走 `retryInitialise()` 直接跑 init，所以一点就好（现场证据：Retry 时 `_initInFlight` 为 null，即 main 从未调用 initialise）。
+- **[x] ① 已修复** — 升级 flutter_logs 2.1.11 → 2.2.8（`fushi/pubspec.yaml`；2.2.7 起 channel 改为插件实例字段，2.2.8 另修 Android `logThis` 等不回复）。顺带更正 `fushi/lib/src/startup/headless_launch_gate.dart` 里把 initLogs 的 MissingPlugin 归因于「无界面引擎」的旧注释。
+- **[x] ② 已加自动化测试** — `fushi/test/platform/flutter_logs_engine_scoped_channel_test.dart`：解析到的 flutter_logs 包里 Android 插件的 channel 不得在 companion object、必须是实例字段；并钉住 main() 在 initialise() 前调 initLogs 这一前提。对 2.1.11 源码按同一判据会红。
+- **备注**：
+  - 全量扫了解析到的所有 Android 插件，channel 存进程级静态的只有 flutter_logs；flutter_webrtc 只有静态 `eventSink`（channel 是实例字段），不影响启动。
+  - 遗留结构问题（未在本条修）：WorkManager 后台引擎会自动注册 audio_service，每次后台任务都顺带拉起一整个主引擎（停在 gate）常驻；后台引擎销毁时 audio_service 的静态 `audioHandlerInterface` 也随之销毁，要等 Dart 侧 `configure` 时才纠正。
+  - 设备复测缺口：复现机是用户日常机，装着在用的 debug 通道包，规则不允许覆盖安装；待修复进 debug 通道后按「杀进程 → 等 WorkManager 自然触发（约 15 分钟）→ 打开」复测原始失败路径。
