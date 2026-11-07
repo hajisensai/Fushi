@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Idle timeout",
-  "reading_stats_idle_timeout_hint": "Stop counting study time after this many minutes without turning a page, scrolling, looking up a word or playing video. Applies to novels, PDFs, manga and video; video always counts while it plays.",
+  "reading_stats_idle_timeout_hint": "Stop counting study time after this many minutes without turning a page, scrolling or playing video. Applies to novels, PDFs, manga and video; video always counts while it plays.",
   "record": "Record",
   "refresh": "Refresh",
   "rematch_adjust_window": "Adjust search window and re-match",

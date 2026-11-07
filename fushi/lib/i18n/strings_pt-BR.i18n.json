@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Tempo de inatividade",
-  "reading_stats_idle_timeout_hint": "Parar de contar o tempo de estudo após esses minutos sem virar página, rolar, pesquisar uma palavra ou reproduzir vídeo. Vale para romances, PDFs, mangás e vídeos; o vídeo sempre conta enquanto estiver reproduzindo.",
+  "reading_stats_idle_timeout_hint": "Parar de contar o tempo de estudo após esses minutos sem virar página, rolar ou reproduzir vídeo. Vale para romances, PDFs, mangás e vídeos; o vídeo sempre conta enquanto estiver reproduzindo.",
   "record": "Gravar",
   "refresh": "Atualizar",
   "rematch_adjust_window": "Ajustar janela de busca e corresponder novamente",

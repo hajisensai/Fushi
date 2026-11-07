@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Boşta kalma süresi",
-  "reading_stats_idle_timeout_hint": "Sayfa çevirme, kaydırma, sözcük arama veya video oynatma olmadan bu kadar dakika geçince çalışma süresini saymayı durdur. Roman, PDF, manga ve video için geçerlidir; video oynatılırken her zaman sayılır.",
+  "reading_stats_idle_timeout_hint": "Sayfa çevirme, kaydırma veya video oynatma olmadan bu kadar dakika geçince çalışma süresini saymayı durdur. Roman, PDF, manga ve video için geçerlidir; video oynatılırken her zaman sayılır.",
   "record": "Kaydet",
   "refresh": "Yenile",
   "rematch_adjust_window": "Arama penceresini ayarla ve yeniden eşleştir",

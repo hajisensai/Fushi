@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "유휴 판정 시간",
-  "reading_stats_idle_timeout_hint": "페이지 넘김·스크롤·단어 검색·동영상 재생이 이 시간(분) 동안 없으면 학습 시간 집계를 멈춥니다. 소설·PDF·만화·동영상에 적용되며, 동영상은 재생 중이면 항상 집계합니다.",
+  "reading_stats_idle_timeout_hint": "페이지 넘김·스크롤·동영상 재생이 이 시간(분) 동안 없으면 학습 시간 집계를 멈춥니다. 소설·PDF·만화·동영상에 적용되며, 동영상은 재생 중이면 항상 집계합니다.",
   "record": "녹음",
   "refresh": "새로고침",
   "rematch_adjust_window": "검색 창을 조정하고 다시 매칭",

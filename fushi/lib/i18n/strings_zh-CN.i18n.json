@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "打开即开始",
   "reading_stats_clock_start_on_page_turn": "翻页后开始",
   "reading_stats_idle_timeout": "空闲判定时长",
-  "reading_stats_idle_timeout_hint": "这么久没有翻页、滚动、查词或播放视频就停止计入学习时长。对小说、PDF、漫画、视频都生效；视频播放中始终计时。",
+  "reading_stats_idle_timeout_hint": "这么久没有翻页、滚动或播放视频就停止计入学习时长。对小说、PDF、漫画、视频都生效；视频播放中始终计时。",
   "record": "录制",
   "refresh": "刷新",
   "rematch_adjust_window": "调整搜索窗口重新匹配",

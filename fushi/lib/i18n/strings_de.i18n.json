@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Inaktivitäts-Timeout",
-  "reading_stats_idle_timeout_hint": "Lernzeit nach so vielen Minuten ohne Umblättern, Scrollen, Wortsuche oder Videowiedergabe nicht mehr zählen. Gilt für Romane, PDFs, Manga und Video; Video zählt immer, solange es läuft.",
+  "reading_stats_idle_timeout_hint": "Lernzeit nach so vielen Minuten ohne Umblättern, Scrollen oder Videowiedergabe nicht mehr zählen. Gilt für Romane, PDFs, Manga und Video; Video zählt immer, solange es läuft.",
   "record": "Aufnehmen",
   "refresh": "Aktualisieren",
   "rematch_adjust_window": "Suchfenster anpassen und neu abgleichen",

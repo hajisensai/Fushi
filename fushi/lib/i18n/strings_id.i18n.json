@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Batas waktu idle",
-  "reading_stats_idle_timeout_hint": "Berhenti menghitung waktu belajar setelah sekian menit tanpa membalik halaman, menggulir, mencari kata, atau memutar video. Berlaku untuk novel, PDF, manga, dan video; video selalu dihitung selama diputar.",
+  "reading_stats_idle_timeout_hint": "Berhenti menghitung waktu belajar setelah sekian menit tanpa membalik halaman, menggulir, atau memutar video. Berlaku untuk novel, PDF, manga, dan video; video selalu dihitung selama diputar.",
   "record": "Rekam",
   "refresh": "Segarkan",
   "rematch_adjust_window": "Sesuaikan jendela pencarian dan cocokkan ulang",

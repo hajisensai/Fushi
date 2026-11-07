@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "เวลาพักการอ่าน",
-  "reading_stats_idle_timeout_hint": "หยุดนับเวลาเรียนเมื่อไม่มีการพลิกหน้า เลื่อน ค้นหาคำ หรือเล่นวิดีโอนานเท่านี้นาที ใช้กับนิยาย PDF มังงะ และวิดีโอ วิดีโอจะนับเสมอขณะเล่น",
+  "reading_stats_idle_timeout_hint": "หยุดนับเวลาเรียนเมื่อไม่มีการพลิกหน้า เลื่อน หรือเล่นวิดีโอนานเท่านี้นาที ใช้กับนิยาย PDF มังงะ และวิดีโอ วิดีโอจะนับเสมอขณะเล่น",
   "record": "บันทึกเสียง",
   "refresh": "รีเฟรช",
   "rematch_adjust_window": "ปรับหน้าต่างค้นหาและจับคู่ใหม่",

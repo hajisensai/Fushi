@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "アイドル判定時間",
-  "reading_stats_idle_timeout_hint": "ページめくり・スクロール・辞書引き・動画再生がこの分数ないと学習時間の計測を止めます。小説・PDF・漫画・動画が対象で、動画は再生中なら常に計測します。",
+  "reading_stats_idle_timeout_hint": "ページめくり・スクロール・動画再生がこの分数ないと学習時間の計測を止めます。小説・PDF・漫画・動画が対象で、動画は再生中なら常に計測します。",
   "record": "録音",
   "refresh": "更新",
   "rematch_adjust_window": "検索ウィンドウを調整して再マッチング",

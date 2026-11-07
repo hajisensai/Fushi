@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "閒置判定時長",
-  "reading_stats_idle_timeout_hint": "這麼久沒有翻頁、捲動、查詞或播放影片就停止計入學習時長。對小說、PDF、漫畫、影片都生效；影片播放中始終計時。",
+  "reading_stats_idle_timeout_hint": "這麼久沒有翻頁、捲動或播放影片就停止計入學習時長。對小說、PDF、漫畫、影片都生效；影片播放中始終計時。",
   "record": "錄製",
   "refresh": "重新整理",
   "rematch_adjust_window": "調整搜尋視窗重新比對",

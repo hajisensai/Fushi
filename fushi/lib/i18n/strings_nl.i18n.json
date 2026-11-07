@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Inactiviteitstime-out",
-  "reading_stats_idle_timeout_hint": "Stop met het tellen van studietijd na dit aantal minuten zonder bladeren, scrollen, een woord opzoeken of video afspelen. Geldt voor romans, pdf's, manga en video; video telt altijd zolang het afspeelt.",
+  "reading_stats_idle_timeout_hint": "Stop met het tellen van studietijd na dit aantal minuten zonder bladeren, scrollen of video afspelen. Geldt voor romans, pdf's, manga en video; video telt altijd zolang het afspeelt.",
   "record": "Opnemen",
   "refresh": "Vernieuwen",
   "rematch_adjust_window": "Zoekvenster aanpassen en opnieuw matchen",

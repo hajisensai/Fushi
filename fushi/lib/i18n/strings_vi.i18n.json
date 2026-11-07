@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "Thời gian không hoạt động",
-  "reading_stats_idle_timeout_hint": "Ngừng tính thời gian học sau số phút này nếu không lật trang, cuộn, tra từ hoặc phát video. Áp dụng cho tiểu thuyết, PDF, manga và video; video luôn được tính khi đang phát.",
+  "reading_stats_idle_timeout_hint": "Ngừng tính thời gian học sau số phút này nếu không lật trang, cuộn hoặc phát video. Áp dụng cho tiểu thuyết, PDF, manga và video; video luôn được tính khi đang phát.",
   "record": "Ghi âm",
   "refresh": "Làm mới",
   "rematch_adjust_window": "Điều chỉnh cửa sổ tìm kiếm và khớp lại",

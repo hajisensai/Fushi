@@ -7092,7 +7092,7 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "reading_stats_idle_timeout": "مهلة الخمول",
-  "reading_stats_idle_timeout_hint": "إيقاف احتساب وقت الدراسة بعد هذا العدد من الدقائق دون تقليب صفحة أو تمرير أو بحث عن كلمة أو تشغيل فيديو. ينطبق على الروايات وملفات PDF والمانغا والفيديو؛ يُحتسب الفيديو دائمًا أثناء التشغيل.",
+  "reading_stats_idle_timeout_hint": "إيقاف احتساب وقت الدراسة بعد هذا العدد من الدقائق دون تقليب صفحة أو تمرير أو تشغيل فيديو. ينطبق على الروايات وملفات PDF والمانغا والفيديو؛ يُحتسب الفيديو دائمًا أثناء التشغيل.",
   "record": "تسجيل",
   "refresh": "تحديث",
   "rematch_adjust_window": "ضبط نافذة البحث وإعادة المطابقة",
