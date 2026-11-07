@@ -158,6 +158,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
+    this.onOrganizeFilenames,
     this.collectionAiSettings,
     this.aiClientFactory,
     this.discMenuProbe,
@@ -235,6 +236,10 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 临时文件（取消 / 失败返回 null，失败提示由回调自己给）。由库页注入——候选
   /// 搜索要刮削 controller，详情页不自造。null = 菜单项不渲染。
   final Future<File?> Function(String workTitle)? onPickOnlineCover;
+
+  /// 单集菜单的「整理文件名」（反馈 ZDYNkAP3Ln）：由库页注入同一条实现（预览、
+  /// 做种联动、撤销都在那边）。null = 菜单项不渲染。
+  final Future<void> Function(List<String> bookUids)? onOrganizeFilenames;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -1617,6 +1622,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           remote: widget.remote,
           collectionAiSettings: widget.collectionAiSettings,
           aiClientFactory: widget.aiClientFactory,
+          onOrganizeFilenames: widget.onOrganizeFilenames,
           onOpenEpisode: (VideoBookRow episode) {
             Navigator.push<void>(
               context,
@@ -2898,6 +2904,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     onPressed: () =>
                         pick(_EpisodeMenuAction.clearWatchProgress),
                   ),
+                // 「整理文件名」（ZDYNkAP3Ln）：与库页单个视频同一条动作；门只挡本机
+                // 没有文件的集，未刮削 / 已是规范名由计划判出、给明确提示。
+                if (hasLocalFiles && widget.onOrganizeFilenames != null)
+                  DialogListAction(
+                    label: t.video_filename_organize_action,
+                    icon: FushiIcons.rename,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.organizeFilenames),
+                  ),
                 // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
                 // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
                 if (episode.local != null && _canonicalWork?.mediaType == 'tv')
@@ -2975,6 +2990,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _pinEpisodeBinding(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
+      case _EpisodeMenuAction.organizeFilenames:
+        await widget.onOrganizeFilenames?.call(<String>[local!.bookUid]);
+        if (mounted) await _reload();
       case null:
         break;
     }
@@ -3657,6 +3675,7 @@ enum _EpisodeMenuAction {
   clearWatchProgress,
   pinEpisode,
   removeFromCollection,
+  organizeFilenames,
 }
 
 enum _CollectionManageAction {
