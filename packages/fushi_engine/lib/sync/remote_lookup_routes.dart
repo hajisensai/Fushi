@@ -5,6 +5,7 @@ import 'package:fushi_anki/fushi_anki_core.dart' show AnkiOpenWordOutcome;
 
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 /// 单词音频短命 token：`/api/lookup/audio` 存字节、返回免鉴权的
@@ -139,11 +140,18 @@ shelf.Response jsonResponse(Object body) => jsonRawResponse(jsonEncode(body));
 /// `/api/extension/status`（扩展侧上报扩展版本）、互联独有的 `/api/anki/media/dedup/*`
 /// 与 `/api/media/dictionary`。
 class RemoteLookupRoutes {
-  RemoteLookupRoutes({required this.audioTokens, this.lookup, this.mining});
+  RemoteLookupRoutes({
+    required this.audioTokens,
+    this.lookup,
+    FushiRemoteMiningService? mining,
+  }) : _mining = mining;
 
   final RemoteAudioTokenStore audioTokens;
   final FushiRemoteLookupService? lookup;
-  final FushiRemoteMiningService? mining;
+  final FushiRemoteMiningService? _mining;
+
+  /// 此刻可用的制卡 service（见 [activeRemoteMiningService]）；不可用时各制卡路由当没接线。
+  FushiRemoteMiningService? get mining => activeRemoteMiningService(_mining);
 
   /// 单词音频①：查到字节就签发 token，返回免鉴权的取字节 URL；未命中返回
   /// `{url:null}`（弹窗降级为 ✕）。
@@ -299,6 +307,14 @@ class RemoteLookupRoutes {
 
   /// 「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的
   /// Anki 配置落卡。rawPayloadJson 缺失/类型错 → 400；未注入挖词 service → 404。
+  /// `GET /api/mine/targets`（§4.8）：主机能让手机挑的落点。主机不支持挑 → 404（客户端据此只显示「主机默认」）。
+  Future<shelf.Response> handleMiningTargets(shelf.Request request) async {
+    if (mining case final FushiRemoteMiningTargetService targeted) {
+      return jsonResponse(await targeted.miningTargets());
+    }
+    return shelf.Response.notFound('Mining targets unavailable');
+  }
+
   Future<shelf.Response> handleMineForward(shelf.Request request) async {
     final FushiRemoteMiningService? svc = mining;
     if (svc == null) return shelf.Response.notFound('Mining off');

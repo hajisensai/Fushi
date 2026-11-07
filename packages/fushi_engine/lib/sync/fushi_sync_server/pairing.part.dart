@@ -521,7 +521,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'dictionary': _remoteLookupService != null,
         'history': _historyService != null,
       },
-      'mining': _miningService != null,
+      'mining': activeRemoteMiningService(_miningService) != null,
       'gameStream': _gameStreamService != null,
       // 远程更新 host（反馈 Pp8XPyve0N）：client 据此决定是否显示「主机版本」行。
       'hostUpdate': hostSelfUpdater != null,

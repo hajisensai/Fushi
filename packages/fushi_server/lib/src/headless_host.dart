@@ -438,14 +438,15 @@ class HeadlessHost {
             dictionaryStylesProvider: dictionaries.available
                 ? dictionaries.styles
                 : null,
-            // 互联制卡（/api/mine、/api/mine/forward、/api/duplicate、/api/anki/*）：落到
-            // 本机 Anki 同步客户端库，需要随包的 fushi-anki-sync。
-            miningService: anki.available
-                ? ServerRemoteMiningService.forLanding(
-                    anki,
-                    dictionaries: dictionaries,
-                  )
-                : null,
+            // 互联制卡（/api/mine、/api/mine/forward、/api/duplicate、/api/mine/targets、/api/anki/*）：
+            // 落到本机 Anki 同步客户端库（需要随包的 fushi-anki-sync）或服务端复习库（`srs:` 段选的
+            // profile），手机可挑落点；两样都没配时回 notConfigured。
+            miningService: ServerRemoteMiningService.forHost(
+              landing: anki,
+              srs: srs,
+              srsConfig: () => config.srs,
+              dictionaries: dictionaries,
+            ),
             // 游戏串流需要 Windows 桌面 app 与正在跑的游戏，服务端恒不提供：不注入，
             // 路由回 501 unsupported、capabilities 报 `gameStream: false`。
             gameStreamService: null,
