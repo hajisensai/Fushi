@@ -159,12 +159,16 @@ class _RecordingLinker implements SrsProfileLinker {
   final List<String> linkedUids = <String>[];
   final List<String> adopted = <String>[];
 
+  /// 非 null：[adopt] 按暂缓返回它，[deferredMerge] 报它；link 期间像真实 linker 一样不再重判、不算已关联。
+  SrsDeferredProfileMerge? deferred;
+
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
     SrsDbStore store,
   ) async {
     linkedUids.add(store.profileUid);
+    if (deferred != null) return SrsProfileLinkOutcome(store);
     if (conflictFor.contains(store.profileUid)) {
       return SrsProfileLinkOutcome(
         store,
@@ -178,14 +182,21 @@ class _RecordingLinker implements SrsProfileLinker {
   }
 
   @override
-  Future<SrsDbStore> adopt(
+  Future<SrsProfileAdoptResult> adopt(
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
   }) async {
     adopted.add('${store.profileUid}->$uid');
-    return store;
+    final SrsDeferredProfileMerge? d = deferred;
+    return d == null
+        ? SrsProfileAdopted(store)
+        : SrsProfileAdoptDeferred(store, d);
   }
+
+  @override
+  Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store) async =>
+      deferred;
 
   @override
   Future<void> publish(
@@ -499,6 +510,53 @@ void main() {
     active = other;
     await expectLater(s.adoptProfile(conflict, 'remote-uid'), throwsStateError);
     expect(linker.adopted, isEmpty, reason: '冲突属于别的 profile：不许把当前 profile 并进去');
+  });
+
+  test('冲突弹窗选定后并入暂缓：不抛、回调暂缓结果、冲突清掉、之后每轮照样跑 link 续做；暂缓状态经调度器可查、做完消失', () async {
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () {},
+      onNotice: (SrsSyncNotice _) {},
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    final SrsProfileConflict conflict = s.profileConflict!;
+    expect(await s.deferredProfileMerge(), isNull);
+    expect(linker.linkedUids, hasLength(1));
+
+    const SrsDeferredProfileMerge d = SrsDeferredProfileMerge(
+      profileId: 1,
+      oldUid: kSrsTestProfile,
+      newUid: 'remote-uid',
+      missingRevoked: <String>['missing-log'],
+    );
+    linker.deferred = d;
+    final List<SrsProfileAdoptResult> results = <SrsProfileAdoptResult>[];
+    await s.adoptProfile(conflict, 'remote-uid', onAdopted: results.add);
+    expect(linker.adopted, <String>['$kSrsTestProfile->remote-uid']);
+    expect(results.single, isA<SrsProfileAdoptDeferred>());
+    expect((results.single as SrsProfileAdoptDeferred).deferred, same(d));
+    expect(s.profileConflict, isNull, reason: '用户已选定：冲突不再待处理');
+    expect(await s.deferredProfileMerge(), same(d));
+    expect(
+      linker.linkedUids,
+      hasLength(2),
+      reason: '选定后那一轮立即同步重跑 link（不复用冲突判定）',
+    );
+    await s.syncWithBackend(dir);
+    expect(linker.linkedUids, hasLength(3), reason: '暂缓不算已关联：每轮都重跑 link 续做并入');
+
+    linker.deferred = null;
+    expect(await s.deferredProfileMerge(), isNull, reason: '并入做完：暂缓状态消失');
   });
 
   test('加密路径经调度器：注入的 runner / 媒体 runner 拿到本机密钥与封装，开加密生效后位置上没有明文', () async {

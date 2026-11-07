@@ -425,7 +425,8 @@ bool serverLookupUsesChineseScriptVariants({
 /// （服务端不做查词发音，见 README；`/api/lookup/audio` 恒回「未命中」）。
 ///
 /// 简繁互查按 [serverLookupUsesChineseScriptVariants] 判；[scriptVariantsEnabled] 读服务端
-/// 偏好 [kLookupChineseScriptVariantsPrefKey]（默认关），不给 = 恒关。
+/// 配置 `lookup_chinese_script_variants`（`ServerConfig.lookupChineseScriptVariants`，默认关，
+/// WebUI「设置」页可改），不给 = 恒关。
 class ServerRemoteLookupService
     implements
         FushiRemoteLookupService,

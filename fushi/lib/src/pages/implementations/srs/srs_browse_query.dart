@@ -185,7 +185,17 @@ List<SrsBrowseChip> srsBrowseCommitDraft(
 // ---------------------------------------------------------------- 补全
 
 /// 补全候选的种类（UI 据此选图标 / 说明文字）。
-enum SrsBrowseSuggestionKind { deck, tag, noteType, state, property, syntax }
+enum SrsBrowseSuggestionKind {
+  deck,
+  tag,
+  noteType,
+
+  /// 卡片类型（模板名，`card:`）。
+  cardType,
+  state,
+  property,
+  syntax,
+}
 
 /// 一条补全候选：选中后追加 [chip]。
 class SrsBrowseSuggestion {
@@ -229,14 +239,16 @@ const List<String> kSrsBrowseCommonProperties = <String>[
   'flag:1',
 ];
 
-/// 输入框草稿 [draft] 的补全：牌组 / 标签 / 笔记类型按包含匹配（不区分大小写），状态 / 常用属性按前缀，
-/// 最后一条恒是「写成语法」（草稿原样拆成积木）。`deck:` / `tag:` / `note:` / `is:` 前缀只在那一类里找。
-/// 草稿为空时不出补全。
+/// 输入框草稿 [draft] 的补全：牌组 / 标签 / 笔记类型 / 卡片类型按包含匹配（不区分大小写），状态 / 常用属性按前缀，
+/// 最后一条恒是「写成语法」（草稿原样拆成积木）。`deck:` / `tag:` / `note:` / `card:` / `is:` 前缀只在那一类里找。
+/// [cardTypes] 是可按 `card:` 筛的模板名（浏览页只给有多个卡片类型的笔记类型的模板，见
+/// [srsBrowseCardTypeNames]）。草稿为空时不出补全。
 List<SrsBrowseSuggestion> srsBrowseSuggestions(
   String draft, {
   required List<String> decks,
   required List<String> tags,
   required List<String> noteTypes,
+  List<String> cardTypes = const <String>[],
   int perKind = 5,
 }) {
   final String text = draft.trim();
@@ -271,6 +283,15 @@ List<SrsBrowseSuggestion> srsBrowseSuggestions(
             srsBrowseLiteral(n),
           ]),
           n,
+        ),
+    if (only('card'))
+      for (final String c in match(cardTypes))
+        SrsBrowseSuggestion(
+          SrsBrowseSuggestionKind.cardType,
+          SrsBrowseChip(SrsBrowseChipKind.property, <String>[
+            'card:${_quoteValue(srsBrowseLiteral(c))}',
+          ]),
+          c,
         ),
     if (only('is'))
       for (final String s
@@ -311,6 +332,21 @@ List<SrsBrowseSuggestion> srsBrowseSuggestions(
     );
   }
   return out;
+}
+
+/// 补全里可按 `card:` 筛的卡片类型名：有两个及以上模板的笔记类型的模板名（去重不区分大小写，按笔记类型、
+/// 模板顺序）。只有一个模板的笔记类型每条笔记一张卡，按卡片类型筛没有意义，不列。[templatesByNoteType] 每项是
+/// 一个笔记类型的现有模板名（按模板顺序）。
+List<String> srsBrowseCardTypeNames(
+  Iterable<List<String>> templatesByNoteType,
+) {
+  final Set<String> seen = <String>{};
+  return <String>[
+    for (final List<String> names in templatesByNoteType)
+      if (names.length > 1)
+        for (final String n in names)
+          if (n.isNotEmpty && seen.add(n.toLowerCase())) n,
+  ];
 }
 
 // ---------------------------------------------------------------- 内部

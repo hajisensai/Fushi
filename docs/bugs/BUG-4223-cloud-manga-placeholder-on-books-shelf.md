@@ -4,6 +4,6 @@
 - **[x] ① 已修复** — 清单按与下载同一判据（`pickRemoteBookContentEntry`）推断内容格式：新增 `cloudBookContentKindOf`（`fushi/lib/src/sync/cloud_book_content_names.dart`），探针 `_remoteFolderContentKind` 返回 `CloudBookContentKind?`；`.manga.zip` → `format=manga` + `hasMangaContent=true`、`hasContent=false`，`.epub` → `format=epub` + `hasContent=true`，与互联 host 的分键契约（`hasContent` 只表 EPUB 内容树）一致。提交见 git log（`Feedback: ecNgkRQcTk`）。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/cloud_remote_book_client_test.dart`「BUG-4223: a `.manga.zip` folder is listed as manga content, not EPUB」（原「`.manga.zip` has content」断言 `hasContent=true`，正是把漫画送进书籍书架的旧契约，已改）；`fushi/test/pages/reader_remote_cloud_manga_test.dart`（真实 `CloudRemoteBookClient` + 真实书架页 + 真实导入器，只替换网络）：书籍书架不收云盘漫画包、漫画书架渲染它、从漫画书架下载导入成 `format=manga` 并让位。回退修复实测 4 条红，修复后绿。
 - **备注**：
-  - 旧版本把漫画包也传成 `<title>.epub`：只看文件名与 EPUB 无从区分，仍会出现在书籍书架（下载导入按内容嗅探照样落成漫画）。要分清只能在上传端补元数据或改名，属另议。
+  - 旧版本把漫画包也传成 `<title>.epub`：只看文件名与 EPUB 无从区分。后续修复（分支 `fix/cloud-manga-upload-naming`）：上传端本来就以 `.manga.zip` 上传新漫画（af0e4559b2）；对远端只有旧名包的漫画，持有它的设备在补缺路径 `SyncManager._exportContentIfMissing` 补写格式标记 sidecar `manga_content.json`（`kCloudLegacyMangaMarkerAssetName`），`cloudBookContentKindOf` 见到「`.epub` + 标记」即归漫画。不改名 / 不删旧包 / 不重传整包：旧客户端只按 `<title>.epub` 找内容，SyncBackend 也没有区间读接口，列举阶段无法嗅探包内容。云端旧包若已没有任何设备在本地持有，仍留在书籍书架（下载照样落成漫画）。测试：`cloud_manga_content_sync_test.dart`「旧名 `<title>.epub` 漫画包的格式标记」组、`cloud_remote_book_client_test.dart`「ecNgkRQcTk: a legacy ...」。
   - 同条反馈里的「书架下载卡 100% 打不开、对比页下载正常」沿代码路径未复现，单列 BUG-4225。
   - 未在真机（macOS + OneDrive）复测。

@@ -293,6 +293,111 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 编辑页：加卡片模板先确认会给 N 条笔记各生成一张卡；删卡片模板确认给出卡数', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      for (final String w in <String>['one', 'two']) {
+        await _db(
+          tester,
+          () => store.createNote(
+            noteTypeId: nt,
+            fieldsById: <String, String>{
+              v.fields[0].id: w,
+              v.fields[1].id: 'back',
+            },
+          ),
+        );
+      }
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      final String confirm = t.srs_note_types_template_add_confirm(
+        name: 'Card 2',
+        n: 2,
+      );
+
+      // 取消：不加模板。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-add-template')),
+      );
+      await _settle(tester);
+      await _submitTextDialog(tester, 'Card 2');
+      expect(find.text(confirm), findsOneWidget);
+      await tester.tap(find.text(t.cancel).last);
+      await _settle(tester);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.templates,
+        hasLength(1),
+      );
+
+      // 确认：加上，两条笔记各多一张卡。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-add-template')),
+      );
+      await _settle(tester);
+      await _submitTextDialog(tester, 'Card 2');
+      expect(find.text(confirm), findsOneWidget);
+      await tester.tap(find.text(t.srs_note_types_template_add).last);
+      await _settle(tester);
+      final SrsNoteTypeView after = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!;
+      expect(after.templates.map((SrsTemplateDef x) => x.name), <String>[
+        'Card 1',
+        'Card 2',
+      ]);
+      expect(
+        await _db(
+          tester,
+          () => store.visibleCardsOfTemplate(after.templates.last.id),
+        ),
+        2,
+      );
+      await _unmount(tester);
+
+      // 删 Card 2：确认框给出会删掉的卡数。
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('srs-note-type-template-Card 2'),
+          ),
+          matching: find.byWidgetPredicate((Widget w) => w is PopupMenuButton),
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.text(t.srs_note_types_template_delete).last);
+      await _settle(tester);
+      expect(
+        find.text(
+          t.srs_note_types_template_delete_confirm(name: 'Card 2', n: 2),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.srs_note_types_template_delete).last);
+      await _settle(tester);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.templates,
+        hasLength(1),
+      );
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 模板编辑器：预览用真实笔记；改正面保存写库；未知字段报错不保存', (
       WidgetTester tester,
     ) async {
