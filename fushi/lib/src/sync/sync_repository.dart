@@ -878,7 +878,7 @@ class SyncRepository {
 
   /// host 侧：是否允许已配对设备远程更新本机 app（`/api/host/update`）。
   ///
-  /// 端点另有已配对 peer token + 局域网信任区 + 一次性 nonce 几道门；本开关是
+  /// 端点另有已配对 peer token + 一次性 nonce 几道门（不按来源网络区分）；本开关是
   /// **用户意图**那一道，默认关。
   Future<bool> isInterconnectRemoteUpdateEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectRemoteUpdate, false);

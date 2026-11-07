@@ -263,7 +263,7 @@ void main() {
   });
 
   testWidgets(
-    'sub-pixel move or rotation drops the bake; whole-pixel move keeps it',
+    'sub-pixel move drops the bake; whole-pixel move or rotation keeps it',
     (WidgetTester tester) async {
       final ValueNotifier<Matrix4> transform = ValueNotifier<Matrix4>(
         Matrix4.identity(),
@@ -297,16 +297,78 @@ void main() {
       await settleBake(tester);
       expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '停稳后重新烘焙');
 
-      // 旋转（悬停 3D 倾斜同类）：不可能 1:1 贴图。
-      // 帧末才看得到新变换，所以变换出现的那一帧还贴纹理，下一帧起实时绘制。
-      transform.value = Matrix4.rotationZ(0.05);
-      await tester.pump();
+      // 旋转（扇形后层常驻旋转 / 悬停 3D 倾斜同类，BUG-4222）：不可能 1:1 贴图，
+      // 但内容没变、放大倍数没超过纹理分辨率，就一直贴纹理，不回实时栅格化。
+      final double dpr = tester.view.devicePixelRatio;
       for (int i = 0; i < 4; i++) {
+        transform.value = Matrix4.rotationZ(0.05 * (i + 1));
         await tester.pump();
-        expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '旋转中第 $i 帧');
+        expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '旋转中第 $i 帧');
       }
+
+      // 旋转 + 放大超过纹理分辨率：回实时绘制，停稳后按更高分辨率重烘（不把
+      // 小纹理放大糊掉）。
+      transform.value = Matrix4.rotationZ(0.05)..scaleByDouble(1.1, 1.1, 1, 1);
+      await tester.pump();
+      await tester.pump();
+      expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '放大超过纹理分辨率');
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '放大后重烘');
+      expect(
+        surfaceOf(tester).debugBakedPixelRatio,
+        greaterThanOrEqualTo(dpr * 1.1),
+      );
+
+      // 回到轴对齐：重采样纹理不能 1:1，回实时绘制后重烘一张 1:1 的。
+      transform.value = Matrix4.identity();
+      await tester.pump();
+      await tester.pump();
+      expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '回轴对齐先实时画');
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue);
+      expect(surfaceOf(tester).debugBakedPixelRatio, dpr, reason: '1:1 纹理');
     },
   );
+
+  testWidgets('rotated surface bakes and looks like live rendering', (
+    WidgetTester tester,
+  ) async {
+    Widget rotated({required GlobalKey key, required Widget child}) => host(
+      captureKey: key,
+      child: Transform.rotate(angle: -0.11, child: child),
+    );
+    final GlobalKey live = GlobalKey();
+    await tester.pumpWidget(rotated(key: live, child: content(Colors.teal)));
+    final Uint8List expected = await capture(tester, live);
+
+    final GlobalKey baked = GlobalKey();
+    await tester.pumpWidget(
+      rotated(
+        key: baked,
+        child: BakedSurface(child: content(Colors.teal)),
+      ),
+    );
+    expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '首帧实时绘制');
+    await settleBake(tester);
+    expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '旋转中照样烘焙');
+    final Uint8List actual = await capture(tester, baked);
+    // 重采样纹理不是逐字节一致：斜边抗锯齿与双线性各差一点，但整体不能走样。
+    expect(actual.length, expected.length);
+    int total = 0;
+    int far = 0;
+    for (int i = 0; i < actual.length; i++) {
+      final int d = (actual[i] - expected[i]).abs();
+      total += d;
+      if (d > 48) far++;
+    }
+    final double mean = total / actual.length;
+    expect(mean, lessThan(1.5), reason: '平均通道差 $mean');
+    expect(
+      far / actual.length,
+      lessThan(0.01),
+      reason: '差异大的通道占比 ${far / actual.length}（只允许斜边几像素）',
+    );
+  });
 
   testWidgets('nested repaint boundary is never baked', (
     WidgetTester tester,

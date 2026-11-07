@@ -20,14 +20,22 @@ checking parity. Hooks the server leaves null today:
 | Hook | Effect on the server | Status |
 |---|---|---|
 | `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | No remote review (`/api/srs/remote/*` 404), no host-side SRS sync | Gap. Needs an SRS store on the server first (see "SRS on the server"). Size L, needs a spec. |
-| `hostSelfUpdater` | `/api/host/update` 404, `hostUpdate=false` | Gap. Implement `HostSelfUpdater` (`fushi_engine/lib/sync/host_update/host_update_protocol.dart`) by fetching the `hajisensai/fushi-server` release asset for the running OS, unpacking it next to `bin/`, and exiting for the service manager to restart. The app version is `fushi/lib/src/updates/host_self_update_service.dart`. Size M. |
 | `leaderboardLinkHost` | Paired devices can't sign in to the Fushi account through the server | Gap. The server already stores per-profile accounts in the app's file format (`leaderboard_store.dart`); this needs an `InterconnectLeaderboardLinkHost` adapter on top. Size S/M. |
 | `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
 | `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
 
 The other hooks are wired on both sides: pairing, peer tokens, `hostId`, public URLs, P2P,
-graphic-subtitle export, `videoSubtitleBackfill`, OCR, jobs, downloads, subscriptions,
+graphic-subtitle export, `videoSubtitleBackfill`, `hostSelfUpdater` (`ServerSelfUpdater`:
+release bundles with `release.json` on Linux / Windows x64; dev builds answer `platform_unsupported`), OCR, jobs, downloads, subscriptions,
 assistant, lookup, history, mining, dictionary media/styles and prefs.
+
+Host-side settings that the app keeps in `preferences` live in `fushi_server.yaml` on the
+server when nothing on the server can write that preference. Example: the Chinese
+Simplified/Traditional lookup toggle. The app reads the `lookup_chinese_script_variants`
+preference; the server reads `lookup_chinese_script_variants` in the yaml
+(`ServerConfig.lookupChineseScriptVariants`, off by default, editable in the WebUI). It only
+applies to requests that don't send `zhScriptVariants` themselves (the browser extension and
+older apps).
 
 ## Music libraries: deliberately deferred
 
