@@ -19,6 +19,8 @@ import 'dart:convert';
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/subtitle_text_override_keys.dart';
+
 /// 内嵌字幕轨哨兵前缀（`embedded:<n>`）——不是路径，绝不能当路径重写。
 const String kEmbeddedSubtitlePrefix = 'embedded:';
 
@@ -55,9 +57,30 @@ class MovedMediaFiles {
           if (isRemappableMediaPath(move.key) &&
               isRemappableMediaPath(move.value))
             _key(move.key): p.normalize(move.value.trim()),
+      },
+      _originals = <String, String>{
+        for (final MapEntry<String, String> move in moves.entries)
+          if (isRemappableMediaPath(move.key) &&
+              isRemappableMediaPath(move.value))
+            _key(move.key): p.normalize(move.key.trim()),
       };
 
   final Map<String, String> _byKey;
+
+  /// 规范化键 → 调用方给的旧路径原样（保留大小写）：按文件名派生的键
+  /// （字幕覆盖层 `file:<文件名>`）必须用原始文件名，不能用 canonicalize 后的小写。
+  final Map<String, String> _originals;
+
+  /// 全部「旧路径 → 新路径」（旧路径保留原始大小写，均已 normalize）。
+  Iterable<(String, String)> get moves sync* {
+    for (final MapEntry<String, String> entry in _byKey.entries) {
+      yield (_originals[entry.key]!, entry.value);
+    }
+  }
+
+  /// [a] 与 [b] 是否同一目录（与 [newPathFor] 同一套比较口径）。
+  static bool sameDirectory(String a, String b) =>
+      _key(p.dirname(a.trim())) == _key(p.dirname(b.trim()));
 
   bool get isEmpty => _byKey.isEmpty;
 
@@ -139,6 +162,81 @@ String? remapPlaylistJson(String? playlistJson, MovedMediaFiles moved) {
     });
   }
   return changed ? jsonEncode(next) : null;
+}
+
+/// 字幕文本覆盖层（`video_subtitle_text_overrides`）在 [moved] 下要换的源键：
+/// 返回 `videoKey → {旧 sourceKey → 新 sourceKey}`，只含真变了的键。
+///
+/// 外挂字幕的源键只取文件名（`file:<文件名>`，见
+/// [subtitleTextOverrideSourceKey]），所以**改名**会让播放时算出的键变掉，
+/// 旧行全部对不上、手改的字幕静默失效；只搬目录不改名的移动键不变，不出现在结果里。
+///
+/// 范围按「这一集」限定：视频键 `bookUid`（第 0 集 / 单视频）与 `bookUid#<n>`
+/// （播放列表第 n 集）各自只认 ① 与该集视频**同目录**被搬走的文件（播放器自动挂
+/// 的 sidecar 字幕都在视频旁边，同目录内文件名唯一，不会歧义）；② 本行
+/// `subtitleSource` / `secondarySubtitleSource` 指着的被搬走文件（用户从别处挑的
+/// 字幕）。①优先于②。视频路径一律取**旧**值（[moved] 之前的库值）。
+Map<String, Map<String, String>> remapSubtitleOverrideSourceKeys({
+  required String bookUid,
+  required String? videoPath,
+  required String? playlistJson,
+  required String? subtitleSource,
+  required String? secondarySubtitleSource,
+  required MovedMediaFiles moved,
+}) {
+  final Map<String, Map<String, String>> result =
+      <String, Map<String, String>>{};
+  if (moved.isEmpty) return result;
+  // 集下标 → 这一集视频的（旧）路径；第 0 集 videoPath 与 playlist[0] 共用视频键。
+  final Map<int, List<String>> episodeVideos = <int, List<String>>{
+    0: <String>[if (isRemappableMediaPath(videoPath)) videoPath!],
+  };
+  if (playlistJson != null && playlistJson.trim().isNotEmpty) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(playlistJson);
+    } on FormatException {
+      decoded = null;
+    }
+    if (decoded is List<Object?>) {
+      for (int i = 0; i < decoded.length; i++) {
+        final Object? entry = decoded[i];
+        final Object? path = entry is Map<String, Object?>
+            ? entry['path']
+            : null;
+        if (path is String && isRemappableMediaPath(path)) {
+          (episodeVideos[i] ??= <String>[]).add(path);
+        }
+      }
+    }
+  }
+  final Set<String> pickedSources = <String>{
+    for (final String? source in <String?>[
+      subtitleSource,
+      secondarySubtitleSource,
+    ])
+      if (moved.newPathFor(source) != null) p.canonicalize(source!.trim()),
+  };
+  for (final MapEntry<int, List<String>> episode in episodeVideos.entries) {
+    final String videoKey = subtitleTextOverrideVideoKey(bookUid, episode.key);
+    final Map<String, String> picked = <String, String>{};
+    final Map<String, String> sameDir = <String, String>{};
+    for (final (String oldPath, String newPath) in moved.moves) {
+      final String from = subtitleTextOverrideSourceKey(oldPath);
+      final String to = subtitleTextOverrideSourceKey(newPath);
+      if (from == to) continue;
+      if (episode.value.any(
+        (String video) => MovedMediaFiles.sameDirectory(video, oldPath),
+      )) {
+        sameDir[from] = to;
+      } else if (pickedSources.contains(p.canonicalize(oldPath))) {
+        picked[from] = to;
+      }
+    }
+    final Map<String, String> keys = <String, String>{...picked, ...sameDir};
+    if (keys.isNotEmpty) result[videoKey] = keys;
+  }
+  return result;
 }
 
 /// 下载后端里一个文件的改名回执（种子 [infoHash] 的第 [fileIndex] 个文件，新的

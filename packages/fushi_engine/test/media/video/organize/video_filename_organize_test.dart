@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart';
+import 'package:fushi_engine/media/video/subtitle_text_override_keys.dart';
 import 'package:fushi_engine/media/video/video_path_migration.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
@@ -218,6 +219,48 @@ void main() {
           MovedMediaFiles(<String, String>{a: '$a.new'}),
         ),
         isNull,
+      );
+    });
+
+    test('字幕覆盖层源键：只换改了名的 file:<文件名>，按集与目录限定', () {
+      final String root = Directory.systemTemp.path;
+      final String d1 = p.join(root, 's1');
+      final String d2 = p.join(root, 's2');
+      final MovedMediaFiles moved = MovedMediaFiles(<String, String>{
+        p.join(d1, 'ep01.mkv'): p.join(d1, 'Show - S01E01.mkv'),
+        p.join(d1, 'ep01.ja.srt'): p.join(d1, 'Show - S01E01.ja.srt'),
+        p.join(d2, 'ep02.ja.srt'): p.join(d2, 'Show - S01E02.ja.srt'),
+        // 只搬目录、不改名：键不变，不出现在结果里。
+        p.join(d2, 'same.ja.srt'): p.join(root, 'other', 'same.ja.srt'),
+      });
+      final Map<String, Map<String, String>> keys =
+          remapSubtitleOverrideSourceKeys(
+            bookUid: 'video/show',
+            videoPath: p.join(d1, 'ep01.mkv'),
+            playlistJson: jsonEncode(<Object?>[
+              <String, Object?>{'path': p.join(d1, 'ep01.mkv')},
+              <String, Object?>{'path': p.join(d2, 'ep02.mkv')},
+            ]),
+            subtitleSource: p.join(d1, 'ep01.ja.srt'),
+            secondarySubtitleSource: 'embedded:1',
+            moved: moved,
+          );
+      expect(keys, <String, Map<String, String>>{
+        'video/show': <String, String>{
+          'file:ep01.mkv': 'file:Show - S01E01.mkv',
+          'file:ep01.ja.srt': 'file:Show - S01E01.ja.srt',
+        },
+        // 第 2 集：同目录的 ep02 字幕 + 本行显式选中的 ep01 字幕（同一个文件，
+        // 在这一集下挑过它的改动也该跟着走）。
+        'video/show#1': <String, String>{
+          'file:ep01.ja.srt': 'file:Show - S01E01.ja.srt',
+          'file:ep02.ja.srt': 'file:Show - S01E02.ja.srt',
+        },
+      });
+      // 与播放器同一套编码。
+      expect(
+        subtitleTextOverrideSourceKey(p.join(d1, 'ep01.ja.srt')),
+        'file:ep01.ja.srt',
       );
     });
   });
@@ -526,6 +569,119 @@ void main() {
       expect(
         p.basename(plan.items.single.moves.single.move.to),
         'Show： Again？ (2019) - S02E03.mkv',
+      );
+    });
+
+    test('刮削图片（封面 / 附加图 / 元数据图）与手改字幕跟着改名走', () async {
+      final String stem = p.basenameWithoutExtension(video);
+      final String newStem = p.basenameWithoutExtension(newVideo());
+      final String poster = p.join(dir, '$stem-poster.jpg');
+      final String fanart = p.join(dir, '$stem-fanart.jpg');
+      File(poster).writeAsStringSync('poster');
+      File(fanart).writeAsStringSync('fanart');
+      // 共享目录电影：封面就是视频旁的 <stem>-poster.jpg（刮削经
+      // updateVideoBookCover 写入）。
+      await db.updateVideoBookCover('video/re', poster);
+      final int workId =
+          (await db.select(db.videoMetadataWorks).get()).single.id;
+      await db
+          .into(db.mediaImages)
+          .insert(
+            MediaImagesCompanion.insert(
+              bookUid: const Value<String?>('video/re'),
+              kind: 'backdrop',
+              path: fanart,
+            ),
+          );
+      await db
+          .into(db.videoMetadataImages)
+          .insert(
+            VideoMetadataImagesCompanion.insert(
+              workId: Value<int?>(workId),
+              provider: 'tmdb',
+              kind: 'cover',
+              remoteUrl: 'https://image.example/poster.jpg',
+              localPath: Value<String?>(poster),
+              updatedAt: 1,
+            ),
+          );
+      // 用户先在播放器里手改了一条外挂字幕。
+      final String oldKey = subtitleTextOverrideSourceKey(subtitle);
+      await db
+          .into(db.videoSubtitleTextOverrides)
+          .insert(
+            VideoSubtitleTextOverridesCompanion.insert(
+              videoKey: subtitleTextOverrideVideoKey('video/re', 0),
+              sourceKey: oldKey,
+              startMs: 1000,
+              originalText: '原文',
+              editedText: '改后',
+              updatedAt: 1,
+            ),
+          );
+      // 别的视频的同名源键不受影响。
+      await db
+          .into(db.videoSubtitleTextOverrides)
+          .insert(
+            VideoSubtitleTextOverridesCompanion.insert(
+              videoKey: 'video/other',
+              sourceKey: oldKey,
+              startMs: 1000,
+              originalText: '原文',
+              editedText: '别人的',
+              updatedAt: 1,
+            ),
+          );
+
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      final VideoFilenameOrganizeResult result = await service.apply(
+        await service.plan(<String>['video/re']),
+      );
+      expect(result.renamedCount, 1);
+      final String newPoster = p.normalize(p.join(dir, '$newStem-poster.jpg'));
+      final String newFanart = p.normalize(p.join(dir, '$newStem-fanart.jpg'));
+      expect(File(newPoster).existsSync(), isTrue);
+      expect((await book('video/re')).coverPath, newPoster);
+      expect((await db.select(db.mediaImages).get()).single.path, newFanart);
+      expect(
+        (await db.select(db.videoMetadataImages).get()).single.localPath,
+        newPoster,
+      );
+      // 播放器按新字幕路径算出的键仍命中那条改动。
+      final List<VideoSubtitleTextOverrideRow> mine = await db
+          .getVideoSubtitleTextOverrides(
+            videoKey: 'video/re',
+            sourceKey: subtitleTextOverrideSourceKey(
+              (await book('video/re')).subtitleSource,
+            ),
+          );
+      expect(mine.single.editedText, '改后');
+      expect(
+        subtitleTextOverrideSourceKey((await book('video/re')).subtitleSource),
+        isNot(oldKey),
+      );
+      final List<VideoSubtitleTextOverrideRow> other = await db
+          .getVideoSubtitleTextOverrides(
+            videoKey: 'video/other',
+            sourceKey: oldKey,
+          );
+      expect(other.single.editedText, '别人的');
+
+      // 撤销：全部回到旧路径 / 旧键。
+      await service.apply(result.undoPlan!);
+      expect((await book('video/re')).coverPath, p.normalize(poster));
+      expect(
+        (await db.select(db.videoMetadataImages).get()).single.localPath,
+        p.normalize(poster),
+      );
+      expect(
+        (await db.getVideoSubtitleTextOverrides(
+          videoKey: 'video/re',
+          sourceKey: oldKey,
+        )).single.editedText,
+        '改后',
       );
     });
 

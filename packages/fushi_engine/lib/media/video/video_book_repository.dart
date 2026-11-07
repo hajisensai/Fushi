@@ -760,7 +760,15 @@ class VideoBookRepository {
   /// 下载改名 / 移动（[applyDownloadRelocation]）与视频库「整理文件名」
   /// （反馈 ZDYNkAP3Ln）共用这一处，路径列只在这里枚举一次：
   /// - `video_books`：`videoPath` / 两条字幕源 / `playlistJson` 各集 `path`
-  ///   （各集进度在同一 JSON 里，只换 `path` 键）；
+  ///   （各集进度在同一 JSON 里，只换 `path` 键）/ `cover_path`（共享目录电影
+  ///   的封面就是刮削写在视频旁的 `<stem>-poster.jpg`）；
+  /// - 刮削图片的本地落点：`media_collections.cover_path`、`media_images.path`
+  ///   （分集缩略图 `<stem>.jpg` 作 titleCard）、`video_metadata_images.local_path`
+  ///   （之后的刮削经 existingLocalPaths 沿用）——不跟的话封面 / 缩略图指向不存在
+  ///   的文件，而 sidecar 所有权记录已换成新路径，重刮也不会再把封面改回来；
+  /// - `video_subtitle_text_overrides.source_key`：外挂字幕的源键只取文件名
+  ///   （`file:<文件名>`），字幕一改名旧键就对不上，用户手改的字幕会静默失效
+  ///   （范围见 [remapSubtitleOverrideSourceKeys]）；
   /// - `video_download_job_files.final_absolute_path`、
   ///   `video_download_job_subtitles.final_path`（下载补抓的字幕落点）；
   /// - `video_file_specs.file_path`（探测缓存，主键）、
@@ -788,6 +796,12 @@ class VideoBookRepository {
     final Map<String, String> pendingSpecs = <String, String>{};
     final Map<String, String> pendingAnidb = <String, String>{};
     final Map<int, String> pendingArtifacts = <int, String>{};
+    final Map<String, String> pendingBookCovers = <String, String>{};
+    final Map<int, String> pendingCollectionCovers = <int, String>{};
+    final Map<int, String> pendingMediaImages = <int, String>{};
+    final Map<int, String> pendingMetadataImages = <int, String>{};
+    final Map<String, Map<String, String>> pendingOverrideKeys =
+        <String, Map<String, String>>{};
     if (!moved.isEmpty) {
       for (final VideoBookRow row in await _db.allVideoBooks()) {
         final VideoPathRemap remap = remapVideoBookPaths(
@@ -799,6 +813,33 @@ class VideoBookRepository {
         if (!remap.isEmpty) pending[row.bookUid] = remap;
         final String? playlist = remapPlaylistJson(row.playlistJson, moved);
         if (playlist != null) pendingPlaylists[row.bookUid] = playlist;
+        final String? cover = moved.newPathFor(row.coverPath);
+        if (cover != null) pendingBookCovers[row.bookUid] = cover;
+        pendingOverrideKeys.addAll(
+          remapSubtitleOverrideSourceKeys(
+            bookUid: row.bookUid,
+            videoPath: row.videoPath,
+            playlistJson: row.playlistJson,
+            subtitleSource: row.subtitleSource,
+            secondarySubtitleSource: row.secondarySubtitleSource,
+            moved: moved,
+          ),
+        );
+      }
+      for (final MediaCollectionRow collection
+          in await _db.select(_db.mediaCollections).get()) {
+        final String? remapped = moved.newPathFor(collection.coverPath);
+        if (remapped != null) pendingCollectionCovers[collection.id] = remapped;
+      }
+      for (final MediaImageRow image
+          in await _db.select(_db.mediaImages).get()) {
+        final String? remapped = moved.newPathFor(image.path);
+        if (remapped != null) pendingMediaImages[image.id] = remapped;
+      }
+      for (final VideoMetadataImageRow image
+          in await _db.select(_db.videoMetadataImages).get()) {
+        final String? remapped = moved.newPathFor(image.localPath);
+        if (remapped != null) pendingMetadataImages[image.id] = remapped;
       }
       for (final VideoDownloadJobFileRow file
           in await _db.select(_db.videoDownloadJobFiles).get()) {
@@ -852,7 +893,16 @@ class VideoBookRepository {
     final Set<String> touchedBooks = <String>{
       ...pending.keys,
       ...pendingPlaylists.keys,
+      ...pendingBookCovers.keys,
     };
+    // 覆盖层行先读齐再整批换键（删旧 + 写新）：同一批里若有 a→b、b→a 这类互换，
+    // 逐条 UPDATE 会把两组行并成一组。
+    final List<VideoSubtitleTextOverrideRow> overrideRows =
+        pendingOverrideKeys.isEmpty
+        ? const <VideoSubtitleTextOverrideRow>[]
+        : await (_db.select(
+            _db.videoSubtitleTextOverrides,
+          )..where((tbl) => tbl.videoKey.isIn(pendingOverrideKeys.keys))).get();
     await _db.transaction(() async {
       for (final MapEntry<int, String> entry in pendingJobFiles.entries) {
         await (_db.update(
@@ -943,9 +993,52 @@ class VideoBookRepository {
           ),
         );
       }
+      for (final MapEntry<int, String> entry
+          in pendingCollectionCovers.entries) {
+        await (_db.update(
+          _db.mediaCollections,
+        )..where((tbl) => tbl.id.equals(entry.key))).write(
+          MediaCollectionsCompanion(coverPath: Value<String?>(entry.value)),
+        );
+      }
+      for (final MapEntry<int, String> entry in pendingMediaImages.entries) {
+        await (_db.update(_db.mediaImages)
+              ..where((tbl) => tbl.id.equals(entry.key)))
+            .write(MediaImagesCompanion(path: Value<String>(entry.value)));
+      }
+      for (final MapEntry<int, String> entry in pendingMetadataImages.entries) {
+        await (_db.update(
+          _db.videoMetadataImages,
+        )..where((tbl) => tbl.id.equals(entry.key))).write(
+          VideoMetadataImagesCompanion(localPath: Value<String?>(entry.value)),
+        );
+      }
+      final List<VideoSubtitleTextOverrideRow> rekeyed =
+          <VideoSubtitleTextOverrideRow>[];
+      for (final VideoSubtitleTextOverrideRow row in overrideRows) {
+        final String? newKey =
+            pendingOverrideKeys[row.videoKey]?[row.sourceKey];
+        if (newKey == null) continue;
+        await (_db.delete(_db.videoSubtitleTextOverrides)..where(
+              (tbl) =>
+                  tbl.videoKey.equals(row.videoKey) &
+                  tbl.sourceKey.equals(row.sourceKey) &
+                  tbl.startMs.equals(row.startMs) &
+                  tbl.originalText.equals(row.originalText),
+            ))
+            .go();
+        rekeyed.add(row.copyWith(sourceKey: newKey));
+      }
+      for (final VideoSubtitleTextOverrideRow row in rekeyed) {
+        // 目标键上残留的旧行（描述的是已不存在的同名旧文件）让位给迁过来的改动。
+        await _db
+            .into(_db.videoSubtitleTextOverrides)
+            .insertOnConflictUpdate(row);
+      }
       for (final String bookUid in touchedBooks) {
         final VideoPathRemap remap = pending[bookUid] ?? const VideoPathRemap();
         final String? playlist = pendingPlaylists[bookUid];
+        final String? cover = pendingBookCovers[bookUid];
         await (_db.update(
           _db.videoBooks,
         )..where((tbl) => tbl.bookUid.equals(bookUid))).write(
@@ -962,6 +1055,9 @@ class VideoBookRepository {
             playlistJson: playlist == null
                 ? const Value.absent()
                 : Value<String?>(playlist),
+            coverPath: cover == null
+                ? const Value.absent()
+                : Value<String?>(cover),
           ),
         );
       }
