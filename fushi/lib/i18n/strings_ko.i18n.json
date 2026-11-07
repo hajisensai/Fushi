@@ -8208,7 +8208,6 @@
   "srs_home_streak": "$n일 연속",
   "srs_home_streak_longest": "$n일 연속 · 최장 $m일",
   "srs_home_subdecks_header": "하위 덱",
-  "srs_home_today_left": "오늘 $n장 남음",
   "srs_import": "가져오기",
   "srs_import_background_started": "Importing in the background. You can keep using Fushi.",
   "srs_import_colpkg_note": "This is a whole-collection package. Anki would replace its entire collection with it; Fushi merges it instead and never deletes or replaces the cards you already have.",

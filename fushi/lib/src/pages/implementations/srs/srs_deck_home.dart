@@ -479,8 +479,9 @@ class _SrsTodayPlan extends StatelessWidget {
       color: onCard.withValues(alpha: 0.78),
     );
 
-    final String title = remaining > 0
-        ? t.srs_home_today_left(n: remaining)
+    // 还有卡要复习时不出大标题：剩余张数图例里已分项列出，再写一遍「今天还剩 N 张」是重复信息。
+    final String? title = remaining > 0
+        ? null
         : pending
         ? t.srs_home_meta_pending
         : t.srs_home_all_done;
@@ -494,29 +495,30 @@ class _SrsTodayPlan extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       spacing: tokens.spacing.gap / 4,
       children: <Widget>[
-        Row(
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            if (allDone)
-              FushiIcon(
-                FushiIcons.check,
-                size: 28,
-                color: apple ? appleColorsOf(context).accent : onCard,
-              ),
-            Flexible(
-              child: Text(
-                title,
-                key: const ValueKey<String>('srs-home-today-title'),
-                style: context.fushiType.headlineSmallEmphasized.copyWith(
-                  color: onCard,
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
+        if (title != null)
+          Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              if (allDone)
+                FushiIcon(
+                  FushiIcons.check,
+                  size: 28,
+                  color: apple ? appleColorsOf(context).accent : onCard,
+                ),
+              Flexible(
+                child: Text(
+                  title,
+                  key: const ValueKey<String>('srs-home-today-title'),
+                  style: context.fushiType.headlineSmallEmphasized.copyWith(
+                    color: onCard,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         if (facts.isNotEmpty) Text(facts.join(' · '), style: sub),
       ],
     );
