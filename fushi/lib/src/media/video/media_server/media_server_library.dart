@@ -17,7 +17,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show TableUpdate, TableUpdateQuery, UpdateKind, Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
@@ -102,6 +103,19 @@ class MediaServerBookSpec {
   }
 }
 
+/// 一部入库的媒体服务器作品：服务器 + 作品 id（剧 id / 电影自身 id）。
+typedef MediaServerLibraryWork = ({String serverId, String workId});
+
+/// [row] 若是媒体服务器入库行，返回它所属的作品；否则 null。纯函数，不读库。
+MediaServerLibraryWork? mediaServerWorkOfRow(VideoBookRow row) {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  if (spec == null) return null;
+  return (serverId: spec.serverId, workId: spec.workId ?? spec.itemId);
+}
+
 /// 一部作品在媒体库里的状态：已入库的叶子 id（有 `media-server://` 行的）。
 @immutable
 class MediaServerWorkLibraryStatus {
@@ -127,13 +141,33 @@ class MediaServerVideoLibrary {
     MediaServerBrowser browser,
     MediaServerItem work,
   ) async {
+    final MediaServerLibraryWork target = (
+      serverId: browser.serverId,
+      workId: work.id,
+    );
     final Set<String> online = <String>{
-      for (final ({VideoBookRow row, MediaServerBookSpec spec}) entry
-          in await _rowsOfWork(browser.serverId, work.id))
-        entry.row.bookUid,
+      for (final VideoBookRow row in await database.allVideoBooks())
+        if (mediaServerWorkOfRow(row) == target) row.bookUid,
     };
     return MediaServerWorkLibraryStatus(online);
   }
+
+  /// 入库行增删的信号（任何入口：服务器详情页、库页菜单、后台新集探针）。只听
+  /// insert / delete——在库与否只随行的增删变，播放进度等 update 不触发。
+  Stream<void> get membershipChanges => database
+      .tableUpdates(
+        TableUpdateQuery.allOf(<TableUpdateQuery>[
+          TableUpdateQuery.onTable(
+            database.videoBooks,
+            limitUpdateKind: UpdateKind.insert,
+          ),
+          TableUpdateQuery.onTable(
+            database.videoBooks,
+            limitUpdateKind: UpdateKind.delete,
+          ),
+        ]),
+      )
+      .map((Set<TableUpdate> _) {});
 
   /// 加入媒体库：电影一行；剧把**全部季**的集逐页取回各落一行，归进剧名合集。
   /// 已在库的集跳过（再点一次只补新集，不动已看 / 已下载的行）。返回新加的条数。
@@ -219,29 +253,33 @@ class MediaServerVideoLibrary {
   Future<int> removeFromLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
-  ) async {
+  ) => removeWorks(<MediaServerLibraryWork>{
+    (serverId: browser.serverId, workId: work.id),
+  });
+
+  /// 按作品身份移出（库页菜单用：不联网、不需要服务器在线）。一次删掉这些作品的
+  /// 全部 `media-server://` 行；被删空的剧名合集随之删除（见
+  /// `FushiDatabase.deleteVideoBooks`）。返回删掉的行数。
+  ///
+  /// [afterDeleteBeforeReclaim] 透传给
+  /// [VideoBookRepository.deleteVideoBooksAndReclaimAssets]：库页在这里让卡片先
+  /// 卸载，再回收封面等 app 资产（与库页单删 / 批删同一顺序）。
+  Future<int> removeWorks(
+    Set<MediaServerLibraryWork> works, {
+    Future<void> Function()? afterDeleteBeforeReclaim,
+  }) async {
+    if (works.isEmpty) return 0;
     final List<String> uids = <String>[
-      for (final ({VideoBookRow row, MediaServerBookSpec spec}) entry
-          in await _rowsOfWork(browser.serverId, work.id))
-        entry.row.bookUid,
+      for (final VideoBookRow row in await database.allVideoBooks())
+        if (mediaServerWorkOfRow(row) case final MediaServerLibraryWork work
+            when works.contains(work))
+          row.bookUid,
     ];
     if (uids.isEmpty) return 0;
-    return repository.deleteVideoBooksAndReclaimAssets(uids);
-  }
-
-  Future<List<({VideoBookRow row, MediaServerBookSpec spec})>> _rowsOfWork(
-    String serverId,
-    String workId,
-  ) async {
-    return <({VideoBookRow row, MediaServerBookSpec spec})>[
-      for (final VideoBookRow row in await database.allVideoBooks())
-        if (isMediaServerVideoPath(row.videoPath))
-          if (MediaServerBookSpec.tryParse(row.streamSpecJson)
-              case final MediaServerBookSpec spec
-              when spec.serverId == serverId &&
-                  (spec.workId ?? spec.itemId) == workId)
-            (row: row, spec: spec),
-    ];
+    return repository.deleteVideoBooksAndReclaimAssets(
+      uids,
+      afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+    );
   }
 
   /// 电影 = 自身；剧 = 整部剧的集（不带 SeasonId，按季集号升序，逐页取完）。
