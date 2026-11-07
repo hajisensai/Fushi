@@ -620,6 +620,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           noteTypes: <String>[
             for (final SrsNoteTypeView n in _noteTypes) n.name,
           ],
+          cardTypes: srsBrowseCardTypeNames(<List<String>>[
+            for (final SrsNoteTypeView n in _noteTypes)
+              <String>[for (final SrsTemplateDef p in n.templates) p.name],
+          ]),
         );
 
   List<SrsBrowseChipOption> _optionsFor(SrsBrowseChipKind kind) =>

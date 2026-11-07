@@ -19,6 +19,7 @@ import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
     show showMusicSourcesDialog;
@@ -94,6 +95,18 @@ final class _AppleMusicOffSource extends MusicOnlineSource {
   String get name => 'Apple Music';
 }
 
+/// 「来源」页里 YouTube 内置音源关着时的占位行（同 [_AppleMusicOffSource]：这一行的开关就是
+/// 启用开关）。合规门没过（iOS）时不出这一行。
+final class _YoutubeOffSource extends MusicOnlineSource {
+  const _YoutubeOffSource();
+
+  @override
+  String get key => kYoutubeMusicSourceKey;
+
+  @override
+  String get name => 'YouTube';
+}
+
 enum _SourcesTab { music, lyrics }
 
 class MusicSourcesPage extends ConsumerStatefulWidget {
@@ -124,6 +137,12 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     final List<MusicOnlineSource> sources = await loadMusicOnlineSources(_app);
     if (!sources.any((MusicOnlineSource s) => s.key == kAppleMusicSourceKey)) {
       sources.add(const _AppleMusicOffSource());
+    }
+    if (isYoutubeMusicSourceAvailable &&
+        !sources.any(
+          (MusicOnlineSource s) => s.key == kYoutubeMusicSourceKey,
+        )) {
+      sources.add(const _YoutubeOffSource());
     }
     final List<MusicOrderedSource> rows = orderMusicOnlineSources(
       sources,
@@ -168,15 +187,24 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
       await _load();
       return;
     }
+    if (row.source.key == kYoutubeMusicSourceKey) {
+      // 同上：YouTube 内置音源的开关就是启用开关。
+      await _app.prefsRepo.setMusicYoutubeEnabled(on);
+      if (!mounted) return;
+      await _load();
+      return;
+    }
     await _commit(<MusicOrderedSource>[
       for (final MusicOrderedSource r in rows)
         identical(r, row) ? (source: r.source, enabled: on) : r,
     ]);
   }
 
-  bool _isOn(MusicOrderedSource row) => row.source.key == kAppleMusicSourceKey
-      ? _app.prefsRepo.musicAppleMusicEnabled
-      : row.enabled;
+  bool _isOn(MusicOrderedSource row) => switch (row.source.key) {
+    kAppleMusicSourceKey => _app.prefsRepo.musicAppleMusicEnabled,
+    kYoutubeMusicSourceKey => _app.prefsRepo.musicYoutubeEnabled,
+    _ => row.enabled,
+  };
 
   Future<void> _setStorefront(String sf) async {
     await _app.prefsRepo.setMusicAppleMusicStorefront(sf);
@@ -260,15 +288,18 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
       switch (browser.kind) {
         MusicServerKind.jellyfin => 'Jellyfin / Emby',
         MusicServerKind.subsonic => 'OpenSubsonic',
-        MusicServerKind.appleMusic => musicServerSubtitle(browser),
+        MusicServerKind.appleMusic ||
+        MusicServerKind.youtube => musicServerSubtitle(browser),
       },
     _AppleMusicOffSource() => t.music_server_apple_music_subtitle,
+    _YoutubeOffSource() => t.music_server_youtube_subtitle,
     _ => t.music_sources_plugin_subtitle,
   };
 
   IconData _iconOf(MusicOnlineSource s) => switch (s) {
     MusicPluginOnlineSource() => FushiIcons.browserExtension,
     _ when s.key == kAppleMusicSourceKey => FushiIcons.globe,
+    _ when s.key == kYoutubeMusicSourceKey => FushiIcons.globe,
     _ => FushiIcons.server,
   };
 
