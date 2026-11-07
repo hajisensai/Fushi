@@ -25,7 +25,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart'
     show srsSoundPlayerProvider;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
