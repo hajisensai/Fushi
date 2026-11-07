@@ -74,6 +74,8 @@ void main() {
     work = await Directory.systemTemp.createTemp('orch_video_');
   });
   tearDown(() async {
+    // 混淆后端的槽位锁句柄不关，Windows 上删不掉 work。
+    await ObfuscatingSyncBackend.debugReleaseSlots();
     if (work.existsSync()) await work.delete(recursive: true);
   });
 
@@ -375,6 +377,7 @@ void main() {
         final FakeAssetStore store = FakeAssetStore();
         final SyncBackend backend = ObfuscatingSyncBackend(
           FakeSyncBackend(store),
+          tempRoot: Directory('${work.path}/obf_root'),
         );
         final Directory tmp = Directory('${work.path}/tmp')..createSync();
         final FushiDatabase db = _memDb();
