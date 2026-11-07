@@ -10227,6 +10227,8 @@
   "video_online_library_add": "Añadir a la videoteca",
   "video_online_library_added": "Se añadieron $n episodios a la videoteca",
   "video_online_library_remove": "Quitar de la videoteca",
+  "video_online_library_remove_confirm": "Watch progress, attached subtitles and tags of these episodes are cleared. Watch statistics, files on the media server and episodes downloaded to this device are not affected.",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Quitado de la videoteca",
   "video_online_mining_mode": "Creación de tarjetas con vídeo en línea",
   "video_online_mining_mode_background": "En segundo plano",
