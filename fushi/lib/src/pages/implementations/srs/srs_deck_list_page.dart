@@ -24,6 +24,8 @@ import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart'
+    show SrsRemoteStoreError;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -78,6 +80,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
@@ -146,10 +149,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   /// 首次 v2 同步的确认每次启动最多主动问一次（「稍后」之后点「立即同步」还会再问）。
   static bool _askedFirstSync = false;
 
-  /// 首页「已配对设备」分区的主机与连接（见 srs_deck_home_paired.dart）。
-  late final _SrsPairedHosts _paired = _SrsPairedHosts(
-    connector: ref.read(srsRemoteHostConnectorProvider),
-  );
+  /// 首页「已配对设备」分区的主机、会话与牌组摘要缓存（见 srs_deck_home_paired.dart）。app 级持有，
+  /// 页面关掉再开不重新探测 / 握手。
+  late final _SrsPairedHosts _paired = ref.read(_srsPairedHostsProvider);
 
   /// 分区有没有主机：变了才重建页面（分区自己听 [_paired] 的细节变化）。
   bool _hasPaired = false;
@@ -159,22 +161,19 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (has != _hasPaired && mounted) setState(() => _hasPaired = has);
   }
 
-  void _probePaired() =>
-      srsRunLogged('SrsPairedHosts.probe', () => _paired.probe());
-
   @override
   void dispose() {
-    _paired
-      ..removeListener(_onPairedChanged)
-      ..dispose();
+    // 只摘监听：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完照样落进缓存。
+    _paired.removeListener(_onPairedChanged);
     super.dispose();
   }
 
   @override
   void initState() {
     super.initState();
+    _hasPaired = _paired.hosts.isNotEmpty;
     _paired.addListener(_onPairedChanged);
-    _probePaired();
+    srsRunLogged('SrsPairedHosts.refresh', _paired.refresh);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_askedFirstSync || !mounted) return;
       _askedFirstSync = true;
@@ -456,7 +455,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 
   Future<void> _syncNow() async {
     // 「立即同步」顺手重新找一遍已配对设备、刷新它们的牌组计数。
-    _probePaired();
+    srsRunLogged('SrsPairedHosts.probe', _paired.probe);
     if (!await _confirmFirstSync(sync: false) || !mounted) return;
     await openSrsSyncNow(
       ref.read(srsAppRuntimeProvider)?.syncNow,
