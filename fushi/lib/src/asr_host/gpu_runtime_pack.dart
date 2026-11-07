@@ -31,6 +31,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
+import 'package:fushi_engine/utils/archive/zip_central_directory.dart';
 import 'package:path/path.dart' as p;
 
 const String _kMarker = '.complete';
@@ -510,88 +511,25 @@ class _RemoteZip {
   final Uri _url;
   int? _length;
 
-  /// 读整份中央目录（支持 zip64）：zip 路径 → 条目。
+  /// 读整份中央目录（支持 zip64）：zip 路径 → 条目。解析与云盘内容嗅探共用
+  /// [readZipCentralDirectory]。
   Future<Map<String, _ZipEntry>> centralDirectory() async {
     final int length = await _contentLength();
-    // EOCD 22 字节 + 最长 65535 字节注释；再多留 20 字节给 zip64 locator。
-    final int tailLen = length < 65557 + 20 ? length : 65557 + 20;
-    final Uint8List tail = await _read(length - tailLen, tailLen);
-    final ByteData t = ByteData.sublistView(tail);
-    int eocd = -1;
-    for (int i = tail.length - 22; i >= 0; i--) {
-      if (t.getUint32(i, Endian.little) == 0x06054b50) {
-        eocd = i;
-        break;
-      }
+    final List<ZipCentralDirectoryEntry> entries;
+    try {
+      entries = await readZipCentralDirectory(length: length, read: _read);
+    } on ZipCentralDirectoryException catch (e) {
+      throw GpuRuntimeCorruptException('zip 中央目录损坏：${e.message}');
     }
-    if (eocd < 0) throw const GpuRuntimeCorruptException('找不到 zip 目录结尾');
-    int count = t.getUint16(eocd + 10, Endian.little);
-    int cdSize = t.getUint32(eocd + 12, Endian.little);
-    int cdOffset = t.getUint32(eocd + 16, Endian.little);
-    if (count == 0xFFFF || cdSize == 0xFFFFFFFF || cdOffset == 0xFFFFFFFF) {
-      final int locator = eocd - 20;
-      if (locator < 0 || t.getUint32(locator, Endian.little) != 0x07064b50) {
-        throw const GpuRuntimeCorruptException('zip64 目录定位器缺失');
-      }
-      final int z64Offset = t.getUint64(locator + 8, Endian.little);
-      final ByteData z = ByteData.sublistView(await _read(z64Offset, 56));
-      if (z.getUint32(0, Endian.little) != 0x06064b50) {
-        throw const GpuRuntimeCorruptException('zip64 目录结尾损坏');
-      }
-      count = z.getUint64(32, Endian.little);
-      cdSize = z.getUint64(40, Endian.little);
-      cdOffset = z.getUint64(48, Endian.little);
-    }
-    final Uint8List cd = await _read(cdOffset, cdSize);
-    final ByteData c = ByteData.sublistView(cd);
-    final Map<String, _ZipEntry> entries = <String, _ZipEntry>{};
-    int pos = 0;
-    for (int i = 0; i < count; i++) {
-      if (pos + 46 > cd.length ||
-          c.getUint32(pos, Endian.little) != 0x02014b50) {
-        throw const GpuRuntimeCorruptException('zip 中央目录损坏');
-      }
-      final int method = c.getUint16(pos + 10, Endian.little);
-      int compressed = c.getUint32(pos + 20, Endian.little);
-      int size = c.getUint32(pos + 24, Endian.little);
-      final int nameLen = c.getUint16(pos + 28, Endian.little);
-      final int extraLen = c.getUint16(pos + 30, Endian.little);
-      final int commentLen = c.getUint16(pos + 32, Endian.little);
-      int offset = c.getUint32(pos + 42, Endian.little);
-      final String name = String.fromCharCodes(
-        cd.sublist(pos + 46, pos + 46 + nameLen),
-      );
-      // zip64 扩展字段：只有为 0xFFFFFFFF 的字段按 size/compressed/offset 顺序出现。
-      int extra = pos + 46 + nameLen;
-      final int extraEnd = extra + extraLen;
-      while (extra + 4 <= extraEnd) {
-        final int id = c.getUint16(extra, Endian.little);
-        final int len = c.getUint16(extra + 2, Endian.little);
-        if (id == 0x0001) {
-          int f = extra + 4;
-          if (size == 0xFFFFFFFF) {
-            size = c.getUint64(f, Endian.little);
-            f += 8;
-          }
-          if (compressed == 0xFFFFFFFF) {
-            compressed = c.getUint64(f, Endian.little);
-            f += 8;
-          }
-          if (offset == 0xFFFFFFFF) {
-            offset = c.getUint64(f, Endian.little);
-          }
-        }
-        extra += 4 + len;
-      }
-      entries[name] = _ZipEntry(
-        method: method,
-        compressedSize: compressed,
-        size: size,
-        localHeaderOffset: offset,
-      );
-      pos = extraEnd + commentLen;
-    }
-    return entries;
+    return <String, _ZipEntry>{
+      for (final ZipCentralDirectoryEntry e in entries)
+        e.name: _ZipEntry(
+          method: e.method,
+          compressedSize: e.compressedSize,
+          size: e.size,
+          localHeaderOffset: e.localHeaderOffset,
+        ),
+    };
   }
 
   /// 把 [entry] 的压缩数据落到 [target]（已有部分从断点续传），逐块回报已收字节。

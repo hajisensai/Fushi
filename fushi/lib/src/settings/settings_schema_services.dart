@@ -12,9 +12,12 @@ import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart
 import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_server_settings_section.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart'
+    show kMusicServerBitrateChoices;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -559,6 +562,16 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
+          // 音乐的服务器曲库（OpenSubsonic 增删、Jellyfin 家族与 OpenSubsonic 的混排开关、
+          // Apple Music、串流音质）：和上面几项一样是用户自填地址的服务器凭据，与它们同
+          // 一节、同一种行（PR #3039 遗留，反馈 983broef-P）。曲库页「来源 › 添加 ›
+          // 服务器」推的也是同一个 [buildMusicServersDestination]，两处不各写一份。
+          SettingsNavigationItem(
+            id: 'services.music_servers',
+            title: t.music_servers_title,
+            subtitleBuilder: musicServersSettingsStatus,
+            child: buildMusicServersDestination,
+          ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
             title: 'Dandanplay',
@@ -700,6 +713,69 @@ SettingsNavigationItem buildOpenServicesItem(String id) {
     },
   );
 }
+
+/// 「在线服务 › 媒体服务器 › 服务器曲库」行的状态：只读本地偏好（与 OPDS / Kavita /
+/// Audiobookshelf 行同一种同步判据）。加过 OpenSubsonic、打开了 Apple Music，或已把
+/// 任一台服务器（含 Jellyfin 家族）混排进曲库，都算已配置。
+String musicServersSettingsStatus(SettingsContext c) {
+  final bool configured =
+      c.appModel.prefsRepo.musicSubsonicServers.isNotEmpty ||
+      c.appModel.prefsRepo.musicAppleMusicEnabled ||
+      c.appModel.prefsRepo.musicServerLibraryMix.isNotEmpty;
+  return configured
+      ? t.settings_service_configured
+      : t.settings_service_not_configured;
+}
+
+/// 服务器曲库子页：设置 › 在线服务 › 媒体服务器的那一行，与曲库页「来源 › 添加 ›
+/// 服务器」共用这一棵树（同壳、同正文、同串流音质行），不在模块页另拼一份。
+///
+/// 串流音质 `services.music_servers.bitrate` 是声明式行（设置搜索、控制通道、页级
+/// 「恢复默认」都认得）；偏好键 `musicServerMaxBitrate` 不变，只是编辑面搬家。
+SettingsDestination buildMusicServersDestination() => SettingsDestination(
+  id: SettingsDestinationId.services,
+  title: t.music_servers_title,
+  icon: FushiIcons.cloud,
+  body: (SettingsContext c) => MusicServerSettingsBody(appModel: c.appModel),
+  bodySearchEntries: <SettingsBodySearchEntry>[
+    SettingsBodySearchEntry(
+      id: 'services.music_servers.add_subsonic',
+      title: t.music_server_add_subsonic,
+      subtitle: 'OpenSubsonic · Subsonic · Navidrome',
+    ),
+    SettingsBodySearchEntry(
+      id: 'services.music_servers.apple_music',
+      title: t.music_apple_music_enable,
+      subtitle: t.music_apple_music_enable_hint,
+    ),
+  ],
+  sections: <SettingsSection>[
+    SettingsSection(
+      id: 'services.music_servers.playback',
+      items: <SettingsItem>[
+        SettingsSegmentedItem<int>(
+          id: 'services.music_servers.bitrate',
+          title: t.music_server_bitrate_title,
+          subtitle: t.music_server_bitrate_hint,
+          icon: FushiIcons.highQuality,
+          defaultValue: 0,
+          options: <SettingsSegmentOption<int>>[
+            SettingsSegmentOption<int>(
+              value: 0,
+              label: t.music_server_bitrate_original,
+            ),
+            for (final int kbps in kMusicServerBitrateChoices)
+              SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
+          ],
+          selected: (SettingsContext c) =>
+              c.appModel.prefsRepo.musicServerMaxBitrate,
+          onChanged: (SettingsContext c, int v) =>
+              c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
+        ),
+      ],
+    ),
+  ],
+);
 
 /// Reads saved authentication locally; a saved token is configuration, not proof
 /// of a currently reachable server. Network validation remains in its real page.

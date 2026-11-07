@@ -461,6 +461,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （反馈 zNuGKLIhmT：阅读时挡住正文）。
   'mine_notice_success',
   'mine_to_server',
+  // JSON `{<hostId>: {kind?, profile?, deck?}}`：「制卡到已配对设备」每台主机的「保存到」
+  // （缺省 = 主机默认，docs/specs/2026-11-05-server-srs-design.md §4.8）。设备本地。
+  'mine_to_server_targets',
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',

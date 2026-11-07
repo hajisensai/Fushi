@@ -19,7 +19,7 @@ checking parity. Hooks the server leaves null today:
 
 | Hook | Effect on the server | Status |
 |---|---|---|
-| `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | No remote review (`/api/srs/remote/*` 404), no host-side SRS sync | Gap. Needs an SRS store on the server first (see "SRS on the server"). Size L, needs a spec. |
+| `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | Remote review, host-side SRS sync, AnkiConnect and mining into review | Wired (`server_srs.dart`, spec `docs/specs/2026-11-05-server-srs-design.md`). Off until the admin picks which synced profiles to serve. See "SRS follow-ups" below. |
 | `leaderboardLinkHost` | Paired devices can't sign in to the Fushi account through the server | Gap. The server already stores per-profile accounts in the app's file format (`leaderboard_store.dart`); this needs an `InterconnectLeaderboardLinkHost` adapter on top. Size S/M. |
 | `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
 | `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
@@ -69,14 +69,17 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 
 ## Other known gaps
 
-- **SRS on the server**: there is no SRS store or profile wiring yet, so there is no
-  AnkiConnect layer on the server (`TODO(srs-ankiconnect)` at the top of
-  `packages/fushi_server/lib/src/host_bindings.dart`). The same missing store keeps
-  `srsRemoteStoreProvider` / `onClientWrite` / `onClientUpload` null (table above). With
-  a store, both would reuse the engine pieces the app uses: `SrsRemoteStoreService`
-  (`fushi_engine/lib/srs/srs_remote_store.dart`) and `SrsAnkiConnectHandler`.
-- **Backup**: there is no `backup` CLI command or admin endpoint. App backups
-  (`createBackup` / `restoreBackup`) live in `fushi/lib/src/sync/backup_*`.
+- **SRS follow-ups**:
+  - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
+    would need the passphrase on the server.
+  - The desktop host doesn't answer `POST /api/mine/targets` yet and ignores `target`, so the
+    phone's "Save to" only offers "<host> default" against it.
+  - AnkiConnect `getProfiles` reports one profile per key.
+  - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
+    already lives in the engine; the server's collections pick up parameters optimized on
+    other devices through the normal sync.
+  - The server op catalog (`admin_ops.dart`) has no SRS entries. The AnkiConnect keys are
+    credentials, the same reason the AnkiWeb settings are left out.
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
   live in `fushi/lib/src/sync/`, not in the engine. The server only has read-only Plex
   browsing (`media-server plex`). It cannot register a media server as a library source.

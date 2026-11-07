@@ -21,7 +21,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_core/fushi_core.dart';
