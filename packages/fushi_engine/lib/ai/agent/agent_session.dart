@@ -391,6 +391,13 @@ Tools are listed as name(args): summary; "?" marks an optional arg. If you are u
 Available tools:
 ''';
 
+/// 基础 system prompt + 工具箱的说明段（[AgentPromptNoteProvider]，例如接了哪些外部
+/// MCP server）。没有说明段时与基础 prompt 逐字相同。
+String agentSystemPrompt(String? toolboxNote) {
+  final String note = toolboxNote?.trim() ?? '';
+  return note.isEmpty ? _kSystemPrompt : '$_kSystemPrompt\n$note\n';
+}
+
 /// 降级协议（无原生 tool calling）的系统提示。
 ///
 /// 分两层（反馈 GewyVIt5oo）：元工具（`ops__search` / `ops__describe` /
@@ -398,8 +405,11 @@ Available tools:
 /// 签名 + 截短摘要——完整 schema 在 `ops__describe` 的结果里，已经进了对话历史。
 /// 旧实现每轮把每条工具的完整 JSON Schema 全文写进系统提示，十几条就上万字，
 /// 上下文 4k 的本地模型（LM Studio 默认值）第一轮就超长。
-String buildAgentJsonSystemPrompt(List<AgentToolSpec> tools) {
-  final StringBuffer prompt = StringBuffer(_kSystemPrompt)
+String buildAgentJsonSystemPrompt(
+  List<AgentToolSpec> tools, {
+  String? toolboxNote,
+}) {
+  final StringBuffer prompt = StringBuffer(agentSystemPrompt(toolboxNote))
     ..writeln()
     ..writeln(_kJsonProtocol);
   for (final AgentToolSpec t in tools) {
@@ -663,19 +673,23 @@ class AgentSession {
     while (true) {
       if (_cancelled) return _stop(AgentStopCode.cancelled);
       final List<AgentToolSpec> tools = _currentTools();
+      final String? note = _toolboxNote();
       final AiChatTurn turn;
       try {
         turn = _llm.supportsTools
             ? await _llm.chat(
                 <AiChatMessage>[
-                  const AiChatMessage.system(_kSystemPrompt, cacheable: true),
+                  AiChatMessage.system(
+                    agentSystemPrompt(note),
+                    cacheable: true,
+                  ),
                   ..._history,
                 ],
                 <AiChatToolSpec>[
                   for (final AgentToolSpec t in tools) _wireSpec(t),
                 ],
               )
-            : await _jsonTurn(tools);
+            : await _jsonTurn(tools, note);
       } on AiChatFailure catch (failure) {
         return _stop(AgentStopCode.llmError, failure.message);
       }
@@ -767,9 +781,11 @@ class AgentSession {
   }
 
   /// 降级协议：把工具清单写进 system，让模型只回一个 JSON 动作。
-  Future<AiChatTurn> _jsonTurn(List<AgentToolSpec> tools) async {
+  Future<AiChatTurn> _jsonTurn(List<AgentToolSpec> tools, String? note) async {
     final AiChatTurn raw = await _llm.chat(<AiChatMessage>[
-      AiChatMessage.system(buildAgentJsonSystemPrompt(tools)),
+      AiChatMessage.system(
+        buildAgentJsonSystemPrompt(tools, toolboxNote: note),
+      ),
       ..._history,
     ], const <AiChatToolSpec>[]);
     final Map<String, Object?>? action = decodeAiJsonObject(raw.text);
@@ -1103,6 +1119,11 @@ class AgentSession {
     }
     return tools.values.toList(growable: false);
   }
+
+  String? _toolboxNote() => switch (_toolbox) {
+    final AgentPromptNoteProvider provider => provider.promptNote(),
+    _ => null,
+  };
 
   AgentToolSpec? _lookup(String name) {
     for (final AgentToolSpec t in _toolbox.residentTools()) {
