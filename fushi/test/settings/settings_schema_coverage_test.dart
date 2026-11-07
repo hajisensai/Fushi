@@ -122,15 +122,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/metadata/music_scrape_service_test.dart',
   // 开关值由 loadMusicServerBrowsers 读：开 = 来源清单里加 AppleMusicCatalogClient（带设置的
   // storefront），关 = 不加、不发请求。
-  'music/Apple Music catalog': 'test/media/music/server/music_server_test.dart',
+  // （服务器曲库 2026-11-07 起住 设置 › 在线服务 › 媒体服务器，所以记在 services 名下。）
+  'services/Apple Music catalog':
+      'test/media/music/server/music_server_test.dart',
   // storefront 同一条测试咬住：开着时 catalog 客户端用的就是设置里的区域。
-  'music/Storefront': 'test/media/music/server/music_server_test.dart',
+  'services/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。
-  'music/Server streaming quality':
+  'services/Server streaming quality':
       'test/media/music/server/music_server_test.dart',
   // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
   // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
