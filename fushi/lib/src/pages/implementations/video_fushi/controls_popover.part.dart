@@ -316,6 +316,8 @@ extension _VideoControlsPopover on _VideoFushiPageState {
   void _hideControlPopover() {
     _controlPopoverHideTimer?.cancel();
     _controlPopoverPinned = false;
+    // 按住时被关（Esc / 门控收起控制条）：浮层卸载后收不到抬起，这里收尾放开按住。
+    _setControlPopoverPressed(false);
     _activeControlPopoverLink = null;
     _activeControlPopoverPlacement = null;
     _activeControlPopoverSourceSlot = null;
@@ -334,7 +336,20 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     });
   }
 
+  /// 浮层里按住 / 松开（BUG-4226）：按住期间按住控制条（[_controlsHeld]），拖音量 /
+  /// 倍速滑条时不被自动隐藏收走；松开后 fork 按一次 hover 重新倒计时。
+  void _setControlPopoverPressed(bool pressed) {
+    if (!mounted || _controlsHoldPopoverPress == pressed) return;
+    _controlsHoldPopoverPress = pressed;
+    _syncControlsHold();
+  }
+
   Widget _controlPopoverHoverKeepAlive({required Widget child}) {
+    // 按住续命两端都要（移动端拖滑条同样没有 tap 去重排隐藏计时）；hover 续命只桌面。
+    child = VideoControlPopoverPressHold(
+      onPressedChanged: _setControlPopoverPressed,
+      child: child,
+    );
     if (!_isDesktopVideoControls) return child;
     return MouseRegion(
       opaque: false,

@@ -1663,10 +1663,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
   ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
   /// - [_controlsHoldJumpPanel]：「跳转记录」面板开着——面板期间控制条保持显示
-  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）。
+  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）；
+  /// - [_controlsHoldPopoverPress]：音量 / 倍速轻浮层里有指针按着（拖滑条，BUG-4226）
+  ///   ——拖动发的是 move 不是 hover，没有任何东西续命，控制条到点淡出、浮层随之关掉。
   final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
   bool _controlsHoldMenuOpen = false;
   bool _controlsHoldJumpPanel = false;
+  bool _controlsHoldPopoverPress = false;
 
   static const double _volumeStep = 5.0;
 
@@ -9293,7 +9296,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
   void _syncControlsHold() {
-    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPanel;
+    _controlsHeld.value =
+        _controlsHoldMenuOpen ||
+        _controlsHoldJumpPanel ||
+        _controlsHoldPopoverPress;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
