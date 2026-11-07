@@ -23,11 +23,24 @@ import 'package:test/test.dart';
 ///   'isInterconnectSyncStatsEnabled' —— 也不得在消费方重抄分通道三元式
 void main() {
   group('PR#914 ② per-book 统计分通道（源码守卫）', () {
-    test('退出书同步（_runAutoSync）按通道解析统计开关', () {
+    test('退出书同步（syncExitedBookOnChannel）按通道解析统计开关', () {
+      // 反馈 kM-Gb_Xnu-：逐通道的单本同步从 _runAutoSync 抽成
+      // syncExitedBookOnChannel。互联通道在里面直接走 live 进度、不再写 per-book
+      // 统计文件（host 从不读回）；云通道的门控断言跟着落到这个函数上。
       final String body = _functionSource(
         _readSource('lib/src/sync/sync_auto_trigger.dart'),
+        'Future<SyncConflict?> syncExitedBookOnChannel({',
         'Future<void> _runAutoSync({',
-        "    'Auto-sync failed for \$mediaIdentifier',",
+      );
+      final String interconnectBranch = _functionSource(
+        body,
+        'if (backend is InterconnectSyncBackend) {',
+        'final ChannelSyncFlags flags',
+      );
+      expect(
+        interconnectBranch,
+        isNot(contains('SyncManager')),
+        reason: '互联退出书不得再经文件箱（SyncManager）写 per-book 统计 / 进度',
       );
 
       expect(

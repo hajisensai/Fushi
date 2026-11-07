@@ -14,6 +14,8 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
+    show isYoutubeMusicTrackPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -38,11 +40,12 @@ abstract interface class MusicRemoteMediaResolver {
 /// 全局装配点：AppModel 启动时装上（持有数据库）；没装时远程曲目按原路径交给 mpv。
 MusicRemoteMediaResolver? musicRemoteMediaResolver;
 
-/// 曲目是否需要起播时联网取流：插件曲目，或带 sourceId 的 `sftp://` / http(s) 曲目
-/// （网络音乐来源的条目地址）。服务器曲库曲目没有 sourceId，不算。
+/// 曲目是否需要起播时联网取流：插件曲目、YouTube 内置音源曲目，或带 sourceId 的 `sftp://` /
+/// http(s) 曲目（网络音乐来源的条目地址）。服务器曲库曲目没有 sourceId，不算。
 bool musicItemResolvesStream(MusicPlayItem? item) {
   if (item == null) return false;
   if (isMusicPluginPath(item.path)) return true;
+  if (isYoutubeMusicTrackPath(item.path)) return true;
   return isMusicRemoteSourceTrack(sourceId: item.sourceId, path: item.path);
 }
 
