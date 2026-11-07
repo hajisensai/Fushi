@@ -152,6 +152,7 @@ class LyricsPlayerData {
     this.compactControlsExpanded = false,
     this.jumpActions = const <FushiToolbarItem>[],
     this.jumpMarks,
+    this.verticalText = false,
     LyricsControlLayout? wideControls,
     LyricsControlLayout? compactControls,
   }) : _wideControls = wideControls,
@@ -168,6 +169,11 @@ class LyricsPlayerData {
   /// 只有音频点有时间；正文点不在这条轴上，不画。null = 不画（没跳转过 / 设置
   /// 「进度条刻度」关了 / 时长未知）。
   final ({List<double> back, List<double> forward})? jumpMarks;
+
+  /// 歌词正文竖排（vertical-rl，右起左排）。覆盖层据此告诉制卡结果小卡正文行流
+  /// 方向（`FushiToast.anchorMineToCorner` 的 `textFlow`）：竖排首列在右，小卡落
+  /// 左上角，不压正在读的那几列。
+  final bool verticalText;
 
   final LyricsControlLayout? _wideControls;
   final LyricsControlLayout? _compactControls;

@@ -20,7 +20,7 @@ import 'package:fushi_engine/mining/sentence_audio_source.dart'
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';

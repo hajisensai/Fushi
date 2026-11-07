@@ -9,9 +9,9 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 ///   旧版本把漫画包也上传成 `<title>.epub`，读取方仍认旧名；下载后一律按内容嗅探
 ///   （`isMangaPackage`）分流，扩展名只决定「这是不是书内容资产」。
 /// - 旧名漫画包的格式标记 [kCloudLegacyMangaMarkerAssetName]：本地持有这本漫画的设备
-///   发现远端只有旧名 `<title>.epub` 时补写这个小 sidecar，远端清单据此把旧包归漫画
-///   （列举阶段只有文件名，云盘后端没有按字节区间读的接口，无法不整包下载就嗅探内容）。
-///   旧包本身不改名、不删：还没升级的客户端只按 `<title>.epub` 找内容。
+///   发现远端只有旧名 `<title>.epub` 时补写这个小 sidecar，远端清单据此把旧包归漫画。
+///   旧包本身不改名、不删：还没升级的客户端只按 `<title>.epub` 找内容。没有设备补标记
+///   的旧包，能做区间读的后端由远端清单读 zip 中央目录判型（`CloudLegacyMangaSniffer`）。
 ///
 /// 两个后缀都不以 `progress_` / `statistics_` / `audioBook_` 开头的前缀起始（那几个是
 /// 三件套的前缀判据，按文件名**开头**匹配），资产名的开头是书名，与旧 `.epub` 同形。
@@ -67,8 +67,9 @@ enum CloudBookContentKind { epub, manga }
 /// → null。
 ///
 /// 旧版本把漫画包也传成 `<title>.epub` 且还没有设备补写标记时，单看文件名与 EPUB 无从
-/// 区分，如实归 [CloudBookContentKind.epub]；下载导入仍按内容嗅探（`isMangaPackage`）
-/// 落成漫画，不受影响。
+/// 区分，如实归 [CloudBookContentKind.epub]；远端清单再按内容判一次
+/// （`CloudLegacyMangaSniffer`，仅能区间读的后端），下载导入仍按内容嗅探
+/// （`isMangaPackage`）落成漫画。
 CloudBookContentKind? cloudBookContentKindOf(Iterable<String> fileNames) {
   final List<String> names = fileNames.toList(growable: false);
   final String? picked = pickRemoteBookContentEntry<String>(
