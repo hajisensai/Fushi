@@ -994,7 +994,8 @@ void main() {
         ),
         contains(
           'if(isYoutubeMusicSourceAvailable&&'
-          '!sources.any((MusicOnlineSources)=>s.key==kYoutubeMusicSourceKey))',
+          '!sources.any((MusicOnlineSources)=>s.key==kYoutubeMusicSourceKey,))'
+          '{sources.add(const_YoutubeOffSource());',
         ),
         reason: '「来源」页的 YouTube 占位开关行只在门后出现。',
       );
