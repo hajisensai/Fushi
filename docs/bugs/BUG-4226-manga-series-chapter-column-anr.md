@@ -1,4 +1,4 @@
-## BUG-4221 · 作品页章节表一次建全上千行致主线程 ANR
+## BUG-4226 · 作品页章节表一次建全上千行致主线程 ANR
 - **报告**：2026-11-07（崩溃报告 `#x2m35Gfrjh`：SSH Telecom Flex 3，Android 15，3.3.0，ANR x2「Input dispatching timed out, Waited 5000ms for MotionEvent」）
 - **真实性**：✅ 结构性根因已定位（ANR 现场 Dart 帧无法符号化，见备注，下面是证据链）。
   - 崩前内存采样（pid 26936）：`page=[HomePage>MangaLibraryPage>ReaderFushiHistoryPage>MangaSeriesPage]` 45 s 窗口主线程（`pp.fushi.reader`，Flutter 3.29+ UI 与平台线程合一）CPU 27.1 s；下一窗口停在 `MangaSeriesPage` 15 s 里主线程 13.1 s、`build=3`——不是重建风暴，是**每次布局 / 绘制本身就重**。
