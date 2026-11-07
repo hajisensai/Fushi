@@ -519,16 +519,33 @@ class HeadlessHost {
     );
   }
 
-  /// 上一次远程更新换包留下的旧文件（`*.fushi-old`）此刻已无人占用，删掉。
+  /// 上一次远程更新的收尾：换到一半被杀的按换包日志还原；换包留下的旧文件
+  /// （`*.fushi-old`）此刻已无人占用，删掉。只对发布包做（`dart run` / `dart test`
+  /// 时可执行文件是 SDK 的 dart，上一级是 SDK 根，不是安装目录）。
   Future<void> _cleanupAfterSelfUpdate() async {
-    final Directory? root = currentBundleRoot();
+    final Directory? root = currentReleaseBundleRoot();
     if (root == null) return;
-    final int left = await cleanupAfterServerUpdate(root);
-    if (left > 0) {
+    final ServerUpdateCleanup r = await cleanupAfterServerUpdate(root);
+    if (r.rolledBack) {
       engineLog.logDiagnostic(
         'ServerSelfUpdate',
-        'cleanup left $left stale file(s) under ${root.path}',
+        'previous update was interrupted mid-swap; restored ${root.path}',
       );
+    }
+    if (r.failed > 0) {
+      engineLog.logDiagnostic(
+        'ServerSelfUpdate',
+        'cleanup left ${r.failed} item(s) under ${root.path}',
+      );
+    }
+    if (r.restartRequired && !_selfUpdateInstalled.isCompleted) {
+      // 正在跑的是没换完的新版可执行文件，盘上已还原成旧版：让 serve 以 75 退出，
+      // 由服务管理器拉起旧版。
+      engineLog.logDiagnostic(
+        'ServerSelfUpdate',
+        'running executable was rolled back; exiting for restart',
+      );
+      _selfUpdateInstalled.complete();
     }
   }
 
