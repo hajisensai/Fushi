@@ -10233,6 +10233,8 @@
   "video_online_library_add": "إضافة إلى مكتبة الفيديو",
   "video_online_library_added": "تمت إضافة $n حلقة إلى مكتبة الفيديو",
   "video_online_library_remove": "إزالة من مكتبة الفيديو",
+  "video_online_library_remove_confirm": "Watch progress, attached subtitles and tags of these episodes are cleared. Watch statistics, files on the media server and episodes downloaded to this device are not affected.",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "تمت الإزالة من مكتبة الفيديو",
   "video_online_mining_mode": "استخراج الفيديو عبر الإنترنت",
   "video_online_mining_mode_background": "في الخلفية",

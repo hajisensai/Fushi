@@ -10233,6 +10233,8 @@
   "video_online_library_add": "動画ライブラリに追加",
   "video_online_library_added": "$n 話を動画ライブラリに追加しました",
   "video_online_library_remove": "動画ライブラリから削除",
+  "video_online_library_remove_confirm": "Watch progress, attached subtitles and tags of these episodes are cleared. Watch statistics, files on the media server and episodes downloaded to this device are not affected.",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "動画ライブラリから削除しました",
   "video_online_mining_mode": "オンライン動画のカード作成",
   "video_online_mining_mode_background": "バックグラウンドで作成",

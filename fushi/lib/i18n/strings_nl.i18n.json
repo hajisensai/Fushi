@@ -10233,6 +10233,8 @@
   "video_online_library_add": "Toevoegen aan videobibliotheek",
   "video_online_library_added": "$n afleveringen toegevoegd aan de videobibliotheek",
   "video_online_library_remove": "Verwijderen uit videobibliotheek",
+  "video_online_library_remove_confirm": "Watch progress, attached subtitles and tags of these episodes are cleared. Watch statistics, files on the media server and episodes downloaded to this device are not affected.",
+  "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Verwijderd uit de videobibliotheek",
   "video_online_mining_mode": "Mining van onlinevideo",
   "video_online_mining_mode_background": "Op de achtergrond",
