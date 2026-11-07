@@ -8,6 +8,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -488,7 +489,7 @@ class _BackgroundTaskRowState extends State<_BackgroundTaskRow> {
     final ThemeData theme = Theme.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
     final String label = t.sync_task_errors_count(count: task.errors.length);
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: motion.spatialDefault.curve,
       alignment: Alignment.topCenter,

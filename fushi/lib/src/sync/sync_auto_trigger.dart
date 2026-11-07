@@ -73,8 +73,11 @@ SyncTaskHandle _beginSyncActivity(SyncActivity activity) =>
 
 /// 登记一轮同步结束：先公布结局，再把它移出任务表（监听「在飞」翻转的人读到的结局
 /// 已经是这一轮的）。
-void _endSyncActivity(SyncTaskHandle task, SyncRunOutcome outcome) {
-  _publishSyncOutcome(outcome);
+///
+/// [outcome] 为 null 只用于「本次整体并进了在飞的那一轮」：结局由那一轮公布，本次
+/// 只把自己的任务移出任务表。结束任务仍只在这一处。
+void _endSyncActivity(SyncTaskHandle task, SyncRunOutcome? outcome) {
+  if (outcome != null) _publishSyncOutcome(outcome);
   task.finish();
 }
 
@@ -1764,18 +1767,16 @@ Future<void> _runAutoSync({
       name: 'SyncAutoTrigger',
     );
   } finally {
-    if (merged) {
-      task.finish();
-    } else {
-      _endSyncActivity(
-        task,
-        SyncRunOutcome(
-          kind: SyncActivityKind.singleBook,
-          reason: reason,
-          channelsRun: channelsRun,
-          finishedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
+    _endSyncActivity(
+      task,
+      merged
+          ? null
+          : SyncRunOutcome(
+              kind: SyncActivityKind.singleBook,
+              reason: reason,
+              channelsRun: channelsRun,
+              finishedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+    );
   }
 }
