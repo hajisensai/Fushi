@@ -451,11 +451,12 @@ final String kSeamlessChaptersInstallJs =
     // 安装之后才定义，所以在启动时包。
     if (typeof window.fushiProgressDetails === 'function' && !window.fushiProgressDetails.__fushiSeamless) {
       var origDetails = window.fushiProgressDetails;
-      window.fushiProgressDetails = function() {
+      var gatedDetails = function seamlessGatedProgressDetails() {
         if (S.awaitingAck()) return null;
         return origDetails.apply(this, arguments);
       };
-      window.fushiProgressDetails.__fushiSeamless = true;
+      gatedDetails.__fushiSeamless = true;
+      window.fushiProgressDetails = gatedDetails;
     }
     var entry = ORDER[posOf(S.activeChapter)];
     if (!entry) { S._starting = false; return; }

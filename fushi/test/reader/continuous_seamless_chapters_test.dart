@@ -261,7 +261,7 @@ void main() {
       final String syncPart = body.substring(0, firstAwaitAfterValid);
       for (final String needle in <String>[
         '_readLedger.leave();',
-        '_restoreExpectedGeneration = ++_navigateGeneration;',
+        'final int generation = _advanceNavigationGeneration();',
         '_currentChapter = to;',
         '_audiobookController?.noteManualReaderNavigation();',
       ]) {

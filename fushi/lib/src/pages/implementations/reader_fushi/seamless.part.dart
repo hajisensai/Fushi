@@ -93,8 +93,7 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     // 与 [_beginNavigation] 同一个采样点：离开那章的当前单元在离开这一刻结算。
     _readLedger.leave();
     _audiobookController?.noteManualReaderNavigation();
-    _restoreExpectedGeneration = ++_navigateGeneration;
-    final int generation = _navigateGeneration;
+    final int generation = _advanceNavigationGeneration();
     _chapterAdvanceDirection = to > from ? 1 : -1;
     if (_jumpTargetSpan?.chapter != to) _jumpTargetSpan = null;
     _preciseLocateQueue.clear();
