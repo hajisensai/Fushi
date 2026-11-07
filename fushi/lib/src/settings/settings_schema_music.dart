@@ -29,12 +29,14 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 「音乐」一级设置分类（音乐模块，docs/specs/2026-10-23-music-module-design.md §11.1）：
-/// 曲库入口 + 播放（无缝 / ReplayGain）。与 music 顶层 tab 同一个模块门。
+/// 与 music 顶层 tab 同一个模块门。
+///
+/// 每个分区都有标题（与视频 / 有声书等分类一致；反馈 983broef-P：前三组无标题，
+/// 第一个有标题的「识别」要滚下去才看到）。不放「打开曲库」这种跳页捷径——它不是
+/// 设置，其他媒体分类也没有，进曲库走底栏 / 侧栏的音乐 tab 这一个主入口。
 ///
 /// 音乐来源（文件夹）的管理是库页共用的来源管理对话框（[MediaSourcesDialog]，
-/// 曲库页顶栏同一个入口）；这里只是又一条路进同一间屋子，不另做一份。「曲库」那行
-/// 只是跳到音乐页，副标题照实说，不再写成「来源」（用户 2026-10-30：点了直接跳页、
-/// 文案却像能管理来源）。
+/// 曲库页顶栏同一个入口）；这里只是又一条路进同一间屋子，不另做一份。
 SettingsDestination buildMusicDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.music,
@@ -48,17 +50,8 @@ SettingsDestination buildMusicDestination() {
     ),
     sections: <SettingsSection>[
       SettingsSection(
+        title: t.music_library_section,
         items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.library',
-            title: t.music_open_library,
-            subtitle: t.music_open_library_hint,
-            icon: FushiIcons.music,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) {
-              homeShellTabNotifier.value = HomeTab.music;
-            },
-          ),
           SettingsNavigationItem(
             id: 'music.sources',
             title: t.music_sources_manage,
@@ -70,6 +63,7 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
       SettingsSection(
+        title: t.music_playback_section,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.gapless',
@@ -204,6 +198,7 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
       SettingsSection(
+        title: t.music_output_section,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.exclusive',
