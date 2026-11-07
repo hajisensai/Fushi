@@ -973,15 +973,23 @@ void main() {
         ),
       );
       expect(gate, isNot(contains('Platform.isIOS')));
-      // 设置 › 音乐 › 插件音源：整节 visible 走门（分类正文 / 主从详情 / 搜索索引三条路径共用）。
+      // 设置 › 音乐：不再挂插件管理（来源管理只在曲库「来源」页，与其他媒体一致），
+      // 歌词来源那行（含插件歌词来源）仍整行 visible 走门（分类正文 / 主从详情 / 搜索
+      // 索引三条路径共用）。
+      final String musicSettings = compactCode(
+        read('lib/src/settings/settings_schema_music.dart'),
+      );
+      expect(musicSettings, isNot(contains('MusicPluginSettingsBody')));
       expect(
-        compactCode(read('lib/src/settings/settings_schema_music.dart')),
+        musicSettings,
         contains(
-          'title:t.music_plugins_title,visible:(_)=>isMusicPluginSourcesAvailable,',
+          "id:'music.lyrics_providers',title:t.music_lyrics_providers_title,"
+          'subtitle:t.music_lyrics_providers_hint,icon:FushiIcons.lyrics,'
+          'showIcon:true,visible:(_)=>isMusicPluginSourcesAvailable,',
         ),
       );
-      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（旧的服务器清单页已删，
-      // 插件管理入口只剩这里与设置页）。
+      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（插件管理的设置入口
+      // 已撤，入口只剩这里与服务器曲库页）。
       expect(
         compactCode(
           read('lib/src/pages/implementations/music/music_sources_page.dart'),
