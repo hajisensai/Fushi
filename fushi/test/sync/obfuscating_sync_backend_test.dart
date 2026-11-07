@@ -8,6 +8,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_obfuscator.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:path/path.dart' as p;
 
@@ -221,7 +222,10 @@ Future<void> main(List<String> args) async {
     lockFile.path,
   ]);
   addTearDown(() async {
-    child.kill();
+    // 关 stdin 让子进程自己正常退出：Windows 上 `dart x.dart` 的真正 VM 可能是
+    // dartdev 拉起的孙进程，只 kill 外层会留下仍握着锁文件的孙进程。stdin 是继承的，
+    // 关掉后孙进程的 drain 结束、自行退出。
+    await child.stdin.close();
     await child.exitCode;
     if (scriptDir.existsSync()) await scriptDir.delete(recursive: true);
   });
@@ -519,6 +523,13 @@ void main() {
         // 根下不是槽位的东西不碰。
         mk('keep_me/blob');
 
+        int sweepErrors() => ErrorLogService.instance.entries
+            .where(
+              (ErrorLogEntry e) =>
+                  e.source == 'ObfuscatingSyncBackend.sweepDeadSlots',
+            )
+            .length;
+        final int sweepErrorsBefore = sweepErrors();
         final inner = _PathRecordingBackend();
         final backend = ObfuscatingSyncBackend(inner, tempRoot: root);
         final Directory srcDir = Directory.systemTemp.createTempSync(
@@ -546,6 +557,9 @@ void main() {
           isTrue,
           reason: '活进程正在用的临时文件不许删',
         );
+        // Windows 上删一个被别的进程开着的锁文件会因共享冲突失败、被记日志后跳过，
+        // 所以「活槽位还在」单看目录在不在不够：清理压根不许去删它。
+        expect(sweepErrors(), sweepErrorsBefore, reason: '不许尝试删活进程的槽位');
         expect(top, isNot(contains('p_2_dead')));
         expect(top, isNot(contains('p_3_nolock')));
         expect(top, contains('p_${pid}_sibling'));
