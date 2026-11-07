@@ -202,11 +202,17 @@ impl DeckTree {
     /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的牌组与新建牌组都按每日复习上限截断）。
     pub fn ignores_review_limit(&self, deck: &str) -> bool {
         let id = self.effective(deck);
-        let Some(owner) = self.params_owner(&id) else {
-            return false;
-        };
-        Self::owner_uses_rwkv(owner)
-            && owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
+        self.uses_rwkv(&id)
+            && self.params_owner(&id).is_some_and(|owner| {
+                owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
+            })
+    }
+
+    /// 牌组按 RWKV 排程（参数归属的 own 祖先 `alg` 缺省 / 为 `"rwkv"`）。不能拿 [Self::config] 的 `alg` 判：
+    /// `MemAlg::of_wire` 把 `"rwkv"` 当 FSRS-7。
+    pub fn uses_rwkv(&self, deck: &str) -> bool {
+        let id = self.effective(deck);
+        self.params_owner(&id).is_some_and(Self::owner_uses_rwkv)
     }
 
     /// 某牌组复习时实际用的排程配置（`SrsDeckTree.schedulingConfig`）。
