@@ -43,6 +43,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
     show
         SrsPreviewNativeFushiCard,
@@ -211,6 +212,14 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     for (final SrsFieldDef f in _type?.fields ?? const <SrsFieldDef>[])
       f.name: f.id,
   };
+
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
+  }
 
   Future<void> _load() async {
     try {
@@ -701,16 +710,10 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     }
     final SrsNoteTypeView? type = _type;
     if (_error != null || type == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: _error == null ? null : '$_error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: _error,
+        retryKey: const ValueKey<String>('srs-template-editor-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

@@ -711,6 +711,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_card_appearance',
   // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
   'srs_goal_daily_reviews',
+  // String（JSON）：复习首页「已配对设备」的落盘缓存——每台主机上次读到的牌组摘要（远程复习线格式）、
+  // 读到的时刻与能力探测时刻（kSrsHomePairedCachePrefKey，srs_remote_review_page.dart）。设备本地，不含凭据。
+  'srs_home_paired_cache',
   'srs_import_anki_options',
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。

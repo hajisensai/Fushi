@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show Directory;
 import 'dart:math' as math;
 
@@ -24,6 +25,8 @@ import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart'
+    show SrsRemoteStoreError, SrsRemoteWire, SrsRemoteWireError;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -33,6 +36,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
@@ -51,6 +55,12 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_remote_store_client.dart'
+    show SrsRemoteBadResponse, SrsRemoteDeckSnapshot;
+import 'package:fushi/src/sync/interconnect_host_client.dart'
+    show InterconnectHostError;
+import 'package:fushi/src/sync/video_remote_targets.dart'
+    show InterconnectHostTarget;
 import 'package:fushi/src/srs/srs_starter_packs_dialog.dart';
 import 'package:fushi/src/srs/srs_word_audio_backfill_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -74,7 +84,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
-import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_custom_study_flow.dart';
@@ -84,6 +94,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 
 part 'srs_deck_home.dart';
+part 'srs_deck_home_paired.dart';
 
 /// 行内菜单动作。
 enum _DeckAction {
@@ -141,9 +152,31 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   /// 首次 v2 同步的确认每次启动最多主动问一次（「稍后」之后点「立即同步」还会再问）。
   static bool _askedFirstSync = false;
 
+  /// 首页「已配对设备」分区的主机、会话与牌组摘要缓存（见 srs_deck_home_paired.dart）。app 级持有，
+  /// 页面关掉再开不重新探测 / 握手。
+  late final _SrsPairedHosts _paired = ref.read(_srsPairedHostsProvider);
+
+  /// 分区有没有主机：变了才重建页面（分区自己听 [_paired] 的细节变化）。
+  bool _hasPaired = false;
+
+  void _onPairedChanged() {
+    final bool has = _paired.hosts.isNotEmpty;
+    if (has != _hasPaired && mounted) setState(() => _hasPaired = has);
+  }
+
+  @override
+  void dispose() {
+    // 只摘监听：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完照样落进缓存。
+    _paired.removeListener(_onPairedChanged);
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    _hasPaired = _paired.hosts.isNotEmpty;
+    _paired.addListener(_onPairedChanged);
+    srsRunLogged('SrsPairedHosts.refresh', _paired.refresh);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_askedFirstSync || !mounted) return;
       _askedFirstSync = true;
@@ -424,6 +457,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   }
 
   Future<void> _syncNow() async {
+    // 「立即同步」顺手重新找一遍已配对设备、刷新它们的牌组计数。
+    srsRunLogged('SrsPairedHosts.probe', _paired.probe);
     if (!await _confirmFirstSync(sync: false) || !mounted) return;
     await openSrsSyncNow(
       ref.read(srsAppRuntimeProvider)?.syncNow,
@@ -532,17 +567,6 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       icon: FushiIcons.ankiCard,
       label: t.srs_note_types_title,
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
-    ),
-    // 远程复习：不下载卡组，直接在已配对设备（互联主机）的复习库上刷，功能与本机复习一致
-    // （docs/specs/2026-11-01-srs-remote-review-design.md）。
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_remote_review'),
-      icon: FushiIcons.devices,
-      label: t.srs_remote_review_title,
-      onPressed: () => srsRunLogged(
-        'SrsDeckList.remoteReview',
-        () => _push<void>((_) => const SrsRemoteReviewEntryPage()),
-      ),
     ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_timeline'),
@@ -778,22 +802,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     required SrsDeckSummary? focus,
   }) {
     if (data.hasError && !data.hasValue) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: srsLoadErrorDetail(data.error),
-            action: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('srs-load-retry'),
-              onPressed: () => ref.invalidate(srsStoreProvider),
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(t.retry),
-            ),
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: data.error,
+        retryKey: const ValueKey<String>('srs-load-retry'),
+        onRetry: () => ref.invalidate(srsStoreProvider),
       );
     }
     final SrsDeckListData? list = data.valueOrNull;
@@ -830,6 +842,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     ]);
     return _SrsHomeView(
       data: list,
+      paired: _hasPaired ? _paired : null,
       wide: wide,
       focus: focus,
       selectedId: _selectedId ?? _focusId,
@@ -867,6 +880,33 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           ),
     );
   }
+}
+
+/// 任一祖先（在 [rootId] 以下）收起 → [d] 隐藏（Anki：收起时隐藏全部后代）。本机树与已配对设备的树共用。
+bool _srsDeckHiddenByCollapse(
+  SrsDeckSummary d,
+  Map<String, SrsDeckSummary> byId, {
+  required String? rootId,
+  required bool Function(SrsDeckSummary deck) collapsed,
+}) {
+  String? p = d.parentId;
+  int guard = 0;
+  while (p != null && p != rootId && guard++ < 64) {
+    final SrsDeckSummary? parent = byId[p];
+    if (parent == null) return false;
+    if (collapsed(parent)) return true;
+    p = parent.parentId;
+  }
+  return false;
+}
+
+/// 顶层牌组的序号（徽章形状按它轮换）。
+Map<String, int> _srsDeckRootIndex(List<SrsDeckSummary> decks) {
+  final Map<String, int> rootIndex = <String, int>{};
+  for (final SrsDeckSummary d in decks) {
+    if (d.parentId == null) rootIndex[d.deck.id] = rootIndex.length;
+  }
+  return rootIndex;
 }
 
 /// 首页的牌组树：缩进、折叠、拖放改父级 / 排序、行菜单、删除进度。
@@ -1027,21 +1067,14 @@ class _DeckListState extends State<_DeckList> {
       for (final SrsDeckSummary d in decks)
         if (d.parentId != null) d.parentId!,
     };
-    // 任一祖先（在 [rootId] 以下）收起 → 本行隐藏（Anki：收起时隐藏全部后代）。
-    bool hidden(SrsDeckSummary d) {
-      String? p = d.parentId;
-      int guard = 0;
-      while (p != null && p != rootId && guard++ < 64) {
-        final SrsDeckSummary? parent = byId[p];
-        if (parent == null) return false;
-        if (_collapsed(parent)) return true;
-        p = parent.parentId;
-      }
-      return false;
-    }
-
     final List<bool> visible = <bool>[
-      for (final SrsDeckSummary d in decks) !hidden(d),
+      for (final SrsDeckSummary d in decks)
+        !_srsDeckHiddenByCollapse(
+          d,
+          byId,
+          rootId: rootId,
+          collapsed: _collapsed,
+        ),
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     // 删除中的牌组连同它的子牌组一起显示删除中（子牌组随父牌组一并删除）。
@@ -1069,11 +1102,7 @@ class _DeckListState extends State<_DeckList> {
         if (p != null) doneToday[p] = (doneToday[p] ?? 0) + own;
       }
     }
-    // 顶层牌组的序号：徽章形状轮换。
-    final Map<String, int> rootIndex = <String, int>{};
-    for (final SrsDeckSummary d in all) {
-      if (d.parentId == null) rootIndex[d.deck.id] = rootIndex.length;
-    }
+    final Map<String, int> rootIndex = _srsDeckRootIndex(all);
 
     final List<Widget> items = <Widget>[...widget.header];
     final int firstDeckItem = items.length;
@@ -1199,9 +1228,13 @@ class _DeckRow extends StatelessWidget {
     required this.onAction,
     required this.canMoveUp,
     required this.canMoveDown,
+    this.remote = false,
   });
 
   final SrsDeckSummary deck;
+
+  /// 已配对设备上的牌组（首页「已配对设备」分区）：菜单只有远程可做的几项（见 [_deckMenuItems]）。
+  final bool remote;
 
   /// 在这棵树里的层级（手机详情页的子牌组清单从 0 算起）。
   final int depth;
@@ -1391,6 +1424,7 @@ class _DeckRow extends StatelessWidget {
         isDefault: isDefault,
         canMoveUp: canMoveUp,
         canMoveDown: canMoveDown,
+        remote: remote,
         onAction: onAction,
         at: at,
       );
@@ -1979,16 +2013,4 @@ class SrsDeckIndentGuides extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 复习库打不开时占位页的说明：升级格式空间不够（[SrsUpgradeNoSpaceException]）给出可读的「还要腾出多少」，别的错误
-/// 照原文。
-String srsLoadErrorDetail(Object? error) {
-  if (error is SrsUpgradeNoSpaceException) {
-    final int short = error.neededBytes - error.freeBytes;
-    return t.srs_storage_upgrade_no_space(
-      size: FushiByteFormat.bytes(short > 0 ? short : error.neededBytes),
-    );
-  }
-  return '$error';
 }
