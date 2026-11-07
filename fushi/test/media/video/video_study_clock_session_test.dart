@@ -89,8 +89,9 @@ void main() {
     final GlobalLookupController lookup = GlobalLookupController.instance;
     final GlobalLookupRoute route = lookup.debugActivateDesktopRoute();
     addTearDown(() {
-      if (lookup.desktopLookupInFlight)
+      if (lookup.desktopLookupInFlight) {
         lookup.debugDispatchOverlayHidden(route);
+      }
     });
     expect(lookup.desktopLookupInFlight, isTrue);
     session.gate.sync();
