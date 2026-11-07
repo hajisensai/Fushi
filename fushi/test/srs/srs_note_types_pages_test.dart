@@ -39,6 +39,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -330,6 +331,8 @@ void main() {
         find.byKey(const ValueKey<String>('srs-note-type-add-template')),
       );
       await _settle(tester);
+      await tester.tap(find.text(t.srs_template_preset_reverse));
+      await _settle(tester);
       await _submitTextDialog(tester, 'Card 2');
       expect(find.text(confirm), findsOneWidget);
       await tester.tap(find.text(t.cancel).last);
@@ -343,6 +346,8 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('srs-note-type-add-template')),
       );
+      await _settle(tester);
+      await tester.tap(find.text(t.srs_template_preset_reverse));
       await _settle(tester);
       await _submitTextDialog(tester, 'Card 2');
       expect(find.text(confirm), findsOneWidget);
@@ -394,6 +399,287 @@ void main() {
       expect(
         (await _db(tester, () => store.noteType(nt)))!.templates,
         hasLength(1),
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 加卡片模板先选考什么：反向按字段映射、不照抄 Card 1；缺音频字段的听力不可选；空白不出卡不用确认', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            v.fields[0].id: '猫',
+            v.fields[1].id: 'cat',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-add-template')),
+      );
+      await _settle(tester);
+      expect(find.text(t.srs_template_preset_title), findsOneWidget);
+      expect(
+        find.text(t.srs_template_preset_listening_missing),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.srs_template_preset_reverse));
+      await _settle(tester);
+      expect(
+        find.text(t.srs_template_preset_reverse_name),
+        findsOneWidget,
+        reason: '模板名默认取预设名',
+      );
+      await _submitTextDialog(tester, t.srs_template_preset_reverse_name);
+      await tester.tap(find.text(t.srs_note_types_template_add).last);
+      await _settle(tester);
+      final SrsNoteTypeView after = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!;
+      expect(after.templates, hasLength(2));
+      final SrsTemplateDef added = after.templates.last;
+      expect(added.name, t.srs_template_preset_reverse_name);
+      expect(srsDuplicateFrontGroups(after), isEmpty, reason: '不再照抄 Card 1');
+      final Map<String, String> names = <String, String>{
+        for (final SrsFieldDef f in after.fields) f.id: f.name,
+      };
+      expect(templateIdsToNames(added.front, names), contains('{{Back}}'));
+      expect(
+        templateIdsToNames(added.front, names),
+        isNot(contains('{{Front}}')),
+      );
+      await _unmount(tester);
+
+      // 空白：一张卡都不出，不弹「会生成 N 张卡」的确认。
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-add-template')),
+      );
+      await _settle(tester);
+      expect(
+        find.text(
+          t.srs_template_preset_exists(
+            name: t.srs_template_preset_reverse_name,
+          ),
+        ),
+        findsOneWidget,
+        reason: '已有同正面的模板：反向预设不可再选',
+      );
+      await tester.tap(find.text(t.srs_template_preset_blank));
+      await _settle(tester);
+      await _submitTextDialog(tester, 'Card 3');
+      final SrsNoteTypeView blank = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!;
+      expect(blank.templates, hasLength(3));
+      expect(
+        await _db(
+          tester,
+          () => store.visibleCardsOfTemplate(blank.templates.last.id),
+        ),
+        0,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 重复模板：类型页提示、模板编辑器警告、编辑页标「重复」并一键删除，复习记录并入保留卡', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      final String card1 = v.templates.single.id;
+      // 用户案例：第二个模板照抄第一个。
+      final String card2 = await _db(
+        tester,
+        () => store.addTemplate(
+          nt,
+          name: 'Card 2',
+          front: v.templates.single.front,
+          back: v.templates.single.back,
+        ),
+      );
+      final List<String> notes = <String>[
+        for (final String w in <String>['one', 'two'])
+          await _db(
+            tester,
+            () => store.createNote(
+              noteTypeId: nt,
+              fieldsById: <String, String>{
+                v.fields[0].id: w,
+                v.fields[1].id: 'back',
+              },
+            ),
+          ),
+      ];
+      // 只复习过 Card 2 那张。
+      await _db(
+        tester,
+        () => store.answer(SrsIds.card(notes.first, card2, 0), 3),
+      );
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsNoteTypesPage(),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-types-duplicates')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.srs_note_types_duplicate_list_banner(n: 1)),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(noteTypeId: nt, templateId: card2),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-template-duplicate-warning')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.srs_template_duplicate_warning(name: 'Card 1')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('srs-note-type-template-duplicate-Card 2'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('srs-note-type-duplicates-fix-$card1')),
+      );
+      await _settle(tester);
+      expect(
+        find.text(
+          t.srs_note_types_duplicate_fix_confirm(
+            keep: 'Card 1',
+            drop: t.srs_note_types_template_quoted(name: 'Card 2'),
+            n: 2,
+            linked: 1,
+            both: 0,
+          ),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.srs_note_types_duplicate_fix).last);
+      await _settle(tester);
+      final SrsNoteTypeView after = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!;
+      expect(after.templates.map((SrsTemplateDef x) => x.id), <String>[card1]);
+      expect(
+        (await _db(
+          tester,
+          () => store.cardRow(SrsIds.card(notes.first, card1, 0)),
+        ))!.reps,
+        1,
+        reason: 'Card 2 那张的复习记录并入同一笔记的 Card 1',
+      );
+      expect(
+        await _db(
+          tester,
+          () => store.cardRow(SrsIds.card(notes.first, card2, 0)),
+        ),
+        isNull,
+      );
+      expect(
+        find.byKey(ValueKey<String>('srs-note-type-duplicates-fix-$card1')),
+        findsNothing,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 模板编辑器：把正面改成与别的模板相同时警告，保存要二次确认', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basicReversed, 'R'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      final String card2 = v.templates[1].id;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: nt,
+          templateId: card2,
+          initialTab: SrsTemplateEditorTab.front,
+        ),
+      );
+      final Finder warning = find.byKey(
+        const ValueKey<String>('srs-template-duplicate-warning'),
+      );
+      expect(warning, findsNothing);
+      await tester.enterText(find.byType(EditableText).first, '{{Front}}');
+      await _settle(tester);
+      expect(warning, findsOneWidget);
+      Future<void> save() async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_template_save')).first,
+        );
+        await _settle(tester);
+      }
+
+      await save();
+      expect(find.text(t.srs_template_duplicate_save_title), findsOneWidget);
+      await tester.tap(find.text(t.cancel).last);
+      await _settle(tester);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.templates[1].front,
+        '{{fld:${v.fields[1].id}}}',
+        reason: '取消 = 不存',
+      );
+      await save();
+      await tester.tap(find.text(t.srs_template_duplicate_save_anyway).last);
+      await _settle(tester);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.templates[1].front,
+        '{{fld:${v.fields[0].id}}}',
       );
       await _unmount(tester);
     });

@@ -52,6 +52,7 @@ import 'package:fushi/src/sync/hidden_remote_books.dart'
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/sync/mine_to_server_target_picker.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
@@ -1004,6 +1005,44 @@ SettingsDestination buildInterconnectDestination() {
             onChanged: (SettingsContext ctx, bool value) =>
                 ctx.appModel.setMineToServer(value),
           ),
+          // §4.8（所有者 2026-11-06）：手机选卡落到主机的哪里——主机默认（只带本机当前 profile，由主机
+          // 自己的设置决定）/ 主机的某份复习 profile 与牌组 / 主机的 Anki 牌组。按主机存在本机。
+          SettingsActionItem(
+            id: 'interconnect.mine_to_server_target',
+            title: t.anki_mine_to_server_target,
+            icon: FushiIcons.ankiCard,
+            visible: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
+            subtitleBuilder: (SettingsContext ctx) =>
+                mineToServerTargetSubtitle(_mineTargetAccess(ctx.appModel)),
+            onTap: (SettingsContext ctx) async {
+              await pickMineToServerTarget(
+                ctx.context,
+                _mineTargetAccess(ctx.appModel),
+              );
+              ctx.refresh();
+            },
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam('kind', help: 'default | review | anki'),
+                SettingsCliParam(
+                  'profile',
+                  required: false,
+                  help: 'Review profile uid on the paired device (kind=review)',
+                ),
+                SettingsCliParam(
+                  'deck',
+                  required: false,
+                  help:
+                      'Deck name on the paired device (omit = its default deck)',
+                ),
+              ],
+              run: (SettingsContext ctx, Map<String, String> args) =>
+                  setMineToServerTargetFromCli(
+                    _mineTargetAccess(ctx.appModel),
+                    args,
+                  ),
+            ),
+          ),
           SettingsCustomItem(
             id: 'interconnect.backup_backend',
             icon: FushiIcons.backup,
@@ -1623,3 +1662,12 @@ class _SyncSettingsState {
     }
   }
 }
+
+/// 「保存到」用到的 AppModel 能力（选择器不直接 import AppModel，见 [MineToServerTargetAccess]）。
+MineToServerTargetAccess _mineTargetAccess(AppModel appModel) =>
+    MineToServerTargetAccess(
+      targets: () => appModel.mineToServerTargets,
+      labels: () => appModel.mineToServerTargetLabels,
+      askHost: () => appModel.createRemoteMiningClient().miningTargets(),
+      save: appModel.setMineToServerTarget,
+    );
