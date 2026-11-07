@@ -506,10 +506,16 @@ pub(crate) fn revoke_copies_of_revoked_events(c: &Connection, now: i64) -> Resul
             continue;
         }
         let mut applied = applied_vv(c, profile)?;
-        let mut t = Touched::default();
+        // 与本机批量写入（[SrsCore::sync2_apply_local]）同样：依赖向量行在一批里复用，批内记住「没有删除」。
+        let mut t = Touched {
+            log_no_delete: Some(Default::default()),
+            ..Touched::default()
+        };
+        let mut deps_row: Option<(Vec<u8>, i64)> = None;
         for (_, b) in bodies {
-            let op = append_local(c, &mut local, &mut applied, &Body::Log(b), now)?;
-            project(c, profile, &op, now, true, &mut t)?;
+            let b = Body::Log(b);
+            let op = append_local_cached(c, &mut local, &mut applied, &b, now, &mut deps_row)?;
+            project_body(c, profile, &op, b, now, true, &mut t)?;
             written += 1;
         }
         local.save(c)?;
@@ -2479,6 +2485,8 @@ mod tests_causal;
 #[cfg(test)]
 mod tests_channel;
 #[cfg(test)]
+mod tests_copy_migration_bench;
+#[cfg(test)]
 mod tests_dedup;
 #[cfg(test)]
 mod tests_delivery_window;
@@ -2492,8 +2500,6 @@ mod tests_footprint;
 mod tests_head_gap;
 #[cfg(test)]
 mod tests_migrate_dedup;
-#[cfg(test)]
-mod tests_copy_migration_bench;
 #[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
