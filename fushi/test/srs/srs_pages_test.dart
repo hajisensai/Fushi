@@ -2785,11 +2785,12 @@ void main() {
         apple: false,
         page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
       );
-      Future<Finder> reveal(String key) async {
+      // 每日新卡上限在新卡计划之上：往回找时向上滚（delta < 0）。
+      Future<Finder> reveal(String key, {double delta = 200}) async {
         final Finder field = find.byKey(ValueKey<String>(key));
         await tester.scrollUntilVisible(
           field,
-          200,
+          delta,
           scrollable: find.byType(Scrollable).first,
         );
         await Scrollable.ensureVisible(tester.element(field), alignment: 0.5);
@@ -2813,7 +2814,7 @@ void main() {
       expect(find.text(t.srs_settings_new_load_rwkv_note), findsOneWidget);
 
       // 改别的字段（每日新卡上限）保存：新卡计划寄存器保持原值，不被改写成「关」。
-      final Finder limit = await reveal('srs-settings-new');
+      final Finder limit = await reveal('srs-settings-new', delta: -200);
       await tester.enterText(
         find.descendant(of: limit, matching: find.byType(EditableText)),
         '7',
