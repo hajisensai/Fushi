@@ -2606,7 +2606,7 @@ Future<String?> promptInterconnectPairPin(BuildContext context) {
 
 /// 互联的单行输入弹窗（手输地址 / PIN / 粘贴配对链接）。
 ///
-/// BUG-4220：输入框控制器归弹窗自己的 State 持有，路由真正移除时才释放。此前调用方
+/// BUG-4221：输入框控制器归弹窗自己的 State 持有，路由真正移除时才释放。此前调用方
 /// 在 `await showAppDialog` 返回后立刻 `dispose()`，而弹窗此刻还在播关闭动画、输入框
 /// 仍在重建，撞上「控制器已释放」异常并拖垮元素树，配对一成功就红屏
 /// （`_dependents.isEmpty`）。

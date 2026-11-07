@@ -1,4 +1,4 @@
-## BUG-4220 · 配对后红屏：弹窗关闭动画期间输入框控制器已被释放
+## BUG-4221 · 配对后红屏：弹窗关闭动画期间输入框控制器已被释放
 - **报告**：2026-11-06（用户：samutw；服务端 Anki 路径真机检查时在模拟器上撞到）
 - **真实性**：✅ 真 bug。当前 develop（`efeb28a7dd`）debug 包在 Android 模拟器上复现：互联手输地址配对，PIN 弹窗点「继续」即整屏红（`framework.dart:6281 '_dependents.isEmpty'`）。应用错误日志里的**第一条**是 `A TextEditingController was used after being disposed`（`_AnimatedState.didUpdateWidget` 给已释放的控制器加监听），手输地址弹窗点 OK 时也出现一次。根因：调用方自建控制器交给弹窗，`await showAppDialog` 一返回就 `dispose()`，而弹窗此刻还在播关闭动画、输入框仍在重建；构建期异常拖垮元素树，随后 InheritedElement 失活时仍有依赖者 → 红屏。
   - `fushi/lib/src/sync/sync_settings_schema/interconnect.part.dart:486`（手输地址）、`:2700`（PIN）
