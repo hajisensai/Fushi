@@ -47,9 +47,6 @@ const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 
-/// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
-const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
-
 /// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
 /// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
 /// 设备本地：同意的是这台设备上配的那个后端。
@@ -383,8 +380,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 要求默认关：只查原文字形。随 Profile 走；服务端读同名键。常量在 fushi_engine
   // `kLookupChineseScriptVariantsPrefKey`。
   'lookup_chinese_script_variants',
-  // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
-  // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
+  // bool（默认 true）：已删除的查词弹窗「我库里的例句」开关（2026-11-07 按反馈 4S2_J80DfK
+  // 移除整个功能，书 / 视频 / 游戏语料文档启动时清掉）。存量键冻结、不再读写；留在这里只为
+  // 键名不被别的功能复用。
   'lookup_library_sentences',
   // bool（默认 true = 原行为）：进入查词页（导航点「查词」）以及清空查询后自动
   // 聚焦搜索框、弹出软键盘（反馈 cczhbM7ZOI）。关掉后只有用户点搜索框才弹。

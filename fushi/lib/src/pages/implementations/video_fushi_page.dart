@@ -1,4 +1,3 @@
-import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -6004,14 +6003,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.onPlaybackError = _handlePlaybackError;
     // 反馈 s3sOy3sD1J：分离音轨被拒（YouTube 403）→ 回退到自带音轨的流或明确提示无声。
     controller.onExternalAudioTrackFailed = _handleExternalAudioTrackFailed;
-    // 「我库里的例句」：每次换上一份字幕就把这一集喂进本机语料库（内容没变时是空操作；
-    // 只认本地库里的视频，网页 / 远端条目在服务里跳过）。
     controller.onCuesReplaced = (List<AudioCue> cues) {
-      LibraryCorpusService.instance.feedVideoCues(
-        bookUid: _activeBookUid,
-        episodeIndex: _currentEpisode,
-        cues: cues,
-      );
       // 换上了一份新字幕（换集 / 重载 / 换源）：按此刻的「视频 + 字幕源」重读手改
       // 覆盖。字幕源指针常在 setCues 之后才写，那次写入会再触发一次，序号只认最后一次。
       unawaited(_reloadSubtitleTextOverrides());

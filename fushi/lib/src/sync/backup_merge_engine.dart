@@ -228,7 +228,7 @@ class BackupMergeEngine {
       await _buildGameIdMap();
       if (_wants('games')) {
         await _insertMissingGalgames();
-        // v134：游戏台词跟着游戏走（唯一持久副本，「我库里的例句」由它派生）。
+        // v134：游戏台词跟着游戏走（唯一持久副本；派生它的「我库里的例句」已下架，存量照旧随备份）。
         await _mergeGalgameTextLines();
       }
       // Media collections (unified-collections Phase 5) have no dialog toggle:
