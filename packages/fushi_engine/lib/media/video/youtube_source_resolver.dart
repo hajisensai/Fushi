@@ -312,7 +312,7 @@ Future<List<YoutubeSearchHit>> searchYoutubeVideos(
 
 final HtmlUnescape _unescape = HtmlUnescape();
 
-/// timedtext 一个 cue 的显示文本：剥内嵌标签后**解两层实体**（BUG-4123）。YouTube 的 timedtext XML
+/// timedtext 一个 cue 的显示文本：剥内嵌标签后**解两层实体**（BUG-4220）。YouTube 的 timedtext XML
 /// 是双重转义的——字幕原文先被 HTML 转义成 `We&#39;re`，写进 XML 时 `&` 再被转义一次，文件里
 /// 是 `We&amp;#39;re`（2026-11-06 实测 dQw4w9WgXcQ / jNQXAC9IVRw 的 en 轨，ja / de 轨原文里没有
 /// 要转义的字符所以看不出来）。第一层是 XML 本身的转义，第二层才是字幕文本的 HTML 转义，与
