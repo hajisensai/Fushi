@@ -6,11 +6,13 @@
 /// 主机的 [SrsRemoteStore]，媒体换成按名字从主机补拉的缓存（[SrsRemoteMediaStore]）。所以功能与在本机复习一致。
 library;
 
+export 'package:fushi/src/pages/implementations/srs/srs_load_error.dart'
+    show srsRemoteReviewErrorText;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
@@ -19,18 +21,6 @@ import 'package:fushi/src/srs/srs_remote_store_client.dart';
 import 'package:fushi/src/sync/interconnect_host_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
-
-/// 远程复习失败的提示文案（主机的机读码 / 连接层的码）。
-String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
-  InterconnectHostError.unreachableCode ||
-  InterconnectHostError.certificateMismatchCode =>
-    t.srs_remote_review_error_unreachable,
-  SrsRemoteStoreError.profileChanged =>
-    t.srs_remote_review_error_profile_changed,
-  SrsRemoteStoreError.unavailable => t.srs_remote_review_error_unavailable,
-  SrsRemoteStoreError.stale => t.srs_remote_review_card_changed,
-  _ => t.srs_remote_review_error_other(code: e.message),
-};
 
 /// 连上一台主机后的远程复习会话：转发到主机的库 + 按名字补拉的媒体缓存。
 class SrsRemoteSession {

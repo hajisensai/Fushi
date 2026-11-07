@@ -35,6 +35,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
@@ -81,7 +82,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_custom_study_flow.dart';
@@ -799,22 +799,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     required SrsDeckSummary? focus,
   }) {
     if (data.hasError && !data.hasValue) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: srsLoadErrorDetail(data.error),
-            action: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('srs-load-retry'),
-              onPressed: () => ref.invalidate(srsStoreProvider),
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(t.retry),
-            ),
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: data.error,
+        retryKey: const ValueKey<String>('srs-load-retry'),
+        onRetry: () => ref.invalidate(srsStoreProvider),
       );
     }
     final SrsDeckListData? list = data.valueOrNull;
@@ -2022,16 +2010,4 @@ class SrsDeckIndentGuides extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 复习库打不开时占位页的说明：升级格式空间不够（[SrsUpgradeNoSpaceException]）给出可读的「还要腾出多少」，别的错误
-/// 照原文。
-String srsLoadErrorDetail(Object? error) {
-  if (error is SrsUpgradeNoSpaceException) {
-    final int short = error.neededBytes - error.freeBytes;
-    return t.srs_storage_upgrade_no_space(
-      size: FushiByteFormat.bytes(short > 0 ? short : error.neededBytes),
-    );
-  }
-  return '$error';
 }

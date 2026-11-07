@@ -45,15 +45,13 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_query_bar.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_saved_views.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_views.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
-    show srsLoadErrorDetail;
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -67,7 +65,6 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
@@ -2109,23 +2106,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     }
     final Object? loadError = _loadError;
     if (loadError != null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            key: const ValueKey<String>('srs-browse-load-error'),
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: srsLoadErrorDetail(loadError),
-            action: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('srs-browse-load-retry'),
-              onPressed: _retryLoad,
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(t.retry),
-            ),
-          ),
-        ),
+      return SrsLoadErrorView(
+        key: const ValueKey<String>('srs-browse-load-error'),
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-browse-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final SrsBrowseResult? result = _result;
