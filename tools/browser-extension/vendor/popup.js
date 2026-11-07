@@ -2709,12 +2709,20 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
 }
 
 // https://github.com/yomidevs/yomitan/blob/c0abb9e98a15aeb6b6f8f6e2d91fe5e54240b54a/ext/js/data/anki-note-data-creator.js#L177-L221
-function getFrequencyHarmonicRank(frequencies) {
+//
+// One number per dictionary, in display order: the first frequency of the first
+// group of each dictionary (later groups of the same dictionary are ignored), its
+// displayValue's leading digits when they parse to > 0, else its numeric value
+// when > 0, else the dictionary contributes nothing. This is the single source for
+// BOTH the harmonic rank ({frequency-harmonic-rank}) and Yomitan's per-dictionary
+// {single-frequency-number-<dict>} (BUG-4226: per-dict frequency could not
+// be mapped), so the two can never disagree about which number a dictionary gave.
+function collectFrequencyNumbers(frequencies) {
+    const numbers = [];
     if (!frequencies || frequencies.length === 0) {
-        return DEFAULT_HARMONIC_RANK;
+        return numbers;
     }
-    
-    const values = [];
+
     const seenDictionaries = new Set();
     frequencies.forEach(freqGroup => {
         const dictionary = freqGroup?.dictionary;
@@ -2724,36 +2732,73 @@ function getFrequencyHarmonicRank(frequencies) {
         if (dictionary) {
             seenDictionaries.add(dictionary);
         }
-        
+
         const firstFreq = freqGroup?.frequencies?.[0];
         if (!firstFreq) {
             return;
         }
-        
+
         const displayValue = firstFreq.displayValue;
         if (displayValue != null) {
             const match = String(displayValue).match(/^\d+/);
             if (match) {
                 const parsed = Number.parseInt(match[0], 10);
                 if (parsed > 0) {
-                    values.push(parsed);
+                    numbers.push({ dictionary, value: parsed });
                     return;
                 }
             }
         }
-        
+
         const val = firstFreq.value;
         if (val && val > 0) {
-            values.push(val);
+            numbers.push({ dictionary, value: val });
         }
     });
-    
+    return numbers;
+}
+
+function getFrequencyHarmonicRank(frequencies) {
+    const values = collectFrequencyNumbers(frequencies).map(n => n.value);
+
     if (values.length === 0) {
         return DEFAULT_HARMONIC_RANK;
     }
-    
+
     const sumOfReciprocals = values.reduce((sum, val) => sum + (1 / val), 0);
     return String(Math.floor(values.length / sumOfReciprocals));
+}
+
+// Yomitan {single-frequency-number-<dict>}: dictionary name -> that dictionary's
+// number (as a string, like freqHarmonicRank). Dictionaries without a usable
+// number are absent, so the Dart renderer yields '' for them (same as Yomitan,
+// whose partial renders nothing when the dictionary has no frequency).
+function constructSingleFrequencyNumbers(frequencies) {
+    const result = {};
+    collectFrequencyNumbers(frequencies).forEach(({ dictionary, value }) => {
+        if (dictionary) {
+            result[dictionary] = String(value);
+        }
+    });
+    return result;
+}
+
+// Yomitan {single-frequency-<dict>}: the {frequencies} list restricted to one
+// dictionary, rendered by the same constructFrequencyHtml so the markup matches.
+function constructSingleFrequenciesHtml(frequencies) {
+    const result = {};
+    if (!frequencies || frequencies.length === 0) {
+        return result;
+    }
+    frequencies.forEach(freqGroup => {
+        const dictionary = freqGroup?.dictionary;
+        if (!dictionary || dictionary in result || !freqGroup?.frequencies?.length) {
+            return;
+        }
+        result[dictionary] = constructFrequencyHtml(
+            frequencies.filter(group => group?.dictionary === dictionary));
+    });
+    return result;
 }
 
 // Builds the Anki field payload for a popup entry. Shared by mineEntry (create)
@@ -2768,6 +2813,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossary = constructGlossaryHtml(idx);
     const freqHarmonicRank = getFrequencyHarmonicRank(frequencies);
     const frequenciesHtml = constructFrequencyHtml(frequencies);
+    const singleFrequencyNumbers = constructSingleFrequencyNumbers(frequencies);
+    const singleFrequenciesHtml = constructSingleFrequenciesHtml(frequencies);
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
@@ -2838,6 +2885,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         furiganaPlain,
         frequenciesHtml,
         freqHarmonicRank,
+        singleFrequencyNumbers: JSON.stringify(singleFrequencyNumbers),
+        singleFrequenciesHtml: JSON.stringify(singleFrequenciesHtml),
         glossary,
         glossaryFirst,
         singleGlossaries: JSON.stringify(singleGlossaries),

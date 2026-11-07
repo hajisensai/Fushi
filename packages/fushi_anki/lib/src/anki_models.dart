@@ -715,6 +715,8 @@ class AnkiMiningPayload {
     this.furiganaPlain = '',
     this.frequenciesHtml = '',
     this.freqHarmonicRank = '',
+    this.singleFrequencyNumbers = const {},
+    this.singleFrequenciesHtml = const {},
     this.glossary = '',
     this.glossaryFirst = '',
     this.singleGlossaries = const {},
@@ -769,18 +771,31 @@ class AnkiMiningPayload {
     return false;
   }
 
-  factory AnkiMiningPayload.fromJson(Map<String, dynamic> json) {
-    var singleGlossaries = <String, String>{};
-    final sgRaw = json['singleGlossaries'];
-    if (sgRaw is String && sgRaw.isNotEmpty) {
+  /// 「词典名 → 字符串」的逐词典字段（`singleGlossaries` / `singleFrequencyNumbers` /
+  /// `singleFrequenciesHtml`）在两条 wire 上的形态：WebView 桥上是 popup.js
+  /// `JSON.stringify` 出来的字符串，保类型 JSON 线上是原生 Map。缺失 / 空串给空 Map。
+  static Map<String, String> _stringMapFromPayloadWire(
+    Map<String, dynamic> json,
+    String key,
+  ) {
+    final Object? raw = json[key];
+    if (raw is String && raw.isNotEmpty) {
       try {
-        singleGlossaries = Map<String, String>.from(jsonDecode(sgRaw) as Map);
+        return Map<String, String>.from(jsonDecode(raw) as Map);
       } catch (e, stack) {
-        fushiDebugPrint('AnkiMiningPayload.singleGlossaries: $e\n$stack');
+        fushiDebugPrint('AnkiMiningPayload.$key: $e\n$stack');
       }
-    } else if (sgRaw is Map) {
-      singleGlossaries = Map<String, String>.from(sgRaw);
+    } else if (raw is Map) {
+      return Map<String, String>.from(raw);
     }
+    return <String, String>{};
+  }
+
+  factory AnkiMiningPayload.fromJson(Map<String, dynamic> json) {
+    final Map<String, String> singleGlossaries = _stringMapFromPayloadWire(
+      json,
+      'singleGlossaries',
+    );
 
     var dictionaryMedia = <DictionaryMedia>[];
     final dmRaw = json['dictionaryMedia'];
@@ -805,6 +820,14 @@ class AnkiMiningPayload {
       furiganaPlain: json['furiganaPlain'] as String? ?? '',
       frequenciesHtml: json['frequenciesHtml'] as String? ?? '',
       freqHarmonicRank: json['freqHarmonicRank'] as String? ?? '',
+      singleFrequencyNumbers: _stringMapFromPayloadWire(
+        json,
+        'singleFrequencyNumbers',
+      ),
+      singleFrequenciesHtml: _stringMapFromPayloadWire(
+        json,
+        'singleFrequenciesHtml',
+      ),
       glossary: json['glossary'] as String? ?? '',
       glossaryFirst: json['glossaryFirst'] as String? ?? '',
       singleGlossaries: singleGlossaries,
@@ -829,6 +852,15 @@ class AnkiMiningPayload {
   final String furiganaPlain;
   final String frequenciesHtml;
   final String freqHarmonicRank;
+
+  /// 词典名 → 该词典的频率数（popup.js `constructSingleFrequencyNumbers`，与
+  /// [freqHarmonicRank] 同一份逐词典取数）。供 Yomitan 的
+  /// `{single-frequency-number-<词典>}` 使用（BUG-4226）；没有可用数值的词典不在表里。
+  final Map<String, String> singleFrequencyNumbers;
+
+  /// 词典名 → 只含该词典的 `{frequencies}` 列表 HTML（popup.js
+  /// `constructSingleFrequenciesHtml`）。供 Yomitan 的 `{single-frequency-<词典>}`。
+  final Map<String, String> singleFrequenciesHtml;
   final String glossary;
   final String glossaryFirst;
   final Map<String, String> singleGlossaries;
@@ -1065,6 +1097,11 @@ class AnkiHandlebarRenderer {
   static final _handlebarRegex = RegExp(r'\{[^}]*\}');
   static const _singleGlossaryPrefix = '{single-glossary-';
 
+  /// Yomitan 逐词典频率标记（BUG-4226）。`-number-` 版必须先于短前缀判断：
+  /// `{single-frequency-number-x}` 同样以 `{single-frequency-` 开头。
+  static const _singleFrequencyNumberPrefix = '{single-frequency-number-';
+  static const _singleFrequencyPrefix = '{single-frequency-';
+
   /// `{glossary-first-<n>}`：前 n 本词典的释义（`{glossary-first}` 的多本版）。
   static final RegExp _glossaryFirstNPattern = RegExp(
     r'^\{glossary-first-(\d+)\}$',
@@ -1097,6 +1134,24 @@ class AnkiHandlebarRenderer {
         handlebar.length - 1,
       );
       return _singleGlossaryForDictionary(payload, dictionary);
+    }
+    if (handlebar.startsWith(_singleFrequencyNumberPrefix)) {
+      return _valueForDictionary(
+        payload.singleFrequencyNumbers,
+        handlebar.substring(
+          _singleFrequencyNumberPrefix.length,
+          handlebar.length - 1,
+        ),
+      );
+    }
+    if (handlebar.startsWith(_singleFrequencyPrefix)) {
+      return _valueForDictionary(
+        payload.singleFrequenciesHtml,
+        handlebar.substring(
+          _singleFrequencyPrefix.length,
+          handlebar.length - 1,
+        ),
+      );
     }
     final RegExpMatch? firstN = _glossaryFirstNPattern.firstMatch(handlebar);
     if (firstN != null) {
@@ -1259,24 +1314,54 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     String dictionary,
   ) {
-    final String? key = _singleGlossaryKeyForDictionary(payload, dictionary);
-    return key == null ? '' : payload.singleGlossaries[key]!;
+    return _valueForDictionary(payload.singleGlossaries, dictionary);
   }
 
-  /// [dictionary] 在 [AnkiMiningPayload.singleGlossaries] 里对应的键：先精确命中，
-  /// 再按去掉 `[n]` 后缀的归一化名命中；查不到返回 null。
   static String? _singleGlossaryKeyForDictionary(
     AnkiMiningPayload payload,
     String dictionary,
+  ) => _dictionaryKeyIn(payload.singleGlossaries.keys, dictionary);
+
+  /// 逐词典表 [byDictionary] 里 [dictionary] 对应的值；查不到给空串。
+  static String _valueForDictionary(
+    Map<String, String> byDictionary,
+    String dictionary,
   ) {
+    final String? key = _dictionaryKeyIn(byDictionary.keys, dictionary);
+    return key == null ? '' : byDictionary[key]!;
+  }
+
+  /// 模板里写的 [dictionary] 在逐词典表键 [keys]（词典真名）里对应的键，依次：
+  /// 1. 精确命中；
+  /// 2. 去掉 `[n]` 后缀的归一化名命中；
+  /// 3. Yomitan 的 kebab 名命中——Yomitan 生成的逐词典标记一律是
+  ///    `getKebabCase(词典名)`（`anki-template-util.js`），用户从 Yomitan 抄来的
+  ///    `{single-frequency-number-jiten}` 写的是 `jiten` 而不是词典真名 `Jiten`。
+  /// 查不到返回 null。
+  static String? _dictionaryKeyIn(Iterable<String> keys, String dictionary) {
     if (dictionary.isEmpty) return null;
-    if (payload.singleGlossaries.containsKey(dictionary)) return dictionary;
-    final normalized = _normalizeDictionaryName(dictionary);
-    for (final String key in payload.singleGlossaries.keys) {
+    if (keys.contains(dictionary)) return dictionary;
+    final String normalized = _normalizeDictionaryName(dictionary);
+    for (final String key in keys) {
       if (_normalizeDictionaryName(key) == normalized) return key;
+    }
+    final String kebab = yomitanKebabCase(dictionary);
+    if (kebab.isEmpty) return null;
+    for (final String key in keys) {
+      if (yomitanKebabCase(key) == kebab) return key;
     }
     return null;
   }
+
+  /// Yomitan `getKebabCase`（`ext/js/data/anki-template-util.js`）的逐字移植：
+  /// 空白 / 下划线 / 全角空格 → `-`，去掉字母数字与 `-` 以外的字符，合并连续 `-`，
+  /// 去首尾 `-`，转小写。
+  static String yomitanKebabCase(String name) => name
+      .replaceAll(RegExp(r'[\s_\u3000]'), '-')
+      .replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '')
+      .replaceAll(RegExp(r'--+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '')
+      .toLowerCase();
 
   /// `{glossary-first-<n>}`：前 [count] 本词典的释义，按弹窗里的词典顺序拼接。
   ///
@@ -1361,9 +1446,18 @@ class AnkiHandlebarOptions {
     '{sentence-audio}',
   ];
 
-  static List<String> forTermDictionaries(List<String> dictionaryNames) => [
+  /// [frequencyDictionaryNames]：频率词典名，各出一个 Yomitan 同名的
+  /// `{single-frequency-number-<名>}`（BUG-4226，Yomitan 下拉框里也只列这一个；
+  /// `{single-frequency-<名>}` 渲染器同样认，只是不占候选位）。
+  static List<String> forTermDictionaries(
+    List<String> dictionaryNames, {
+    List<String> frequencyDictionaryNames = const <String>[],
+  }) => [
     ...coreOptions,
     ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
+    ...frequencyDictionaryNames.toSet().map(
+      (name) => '{single-frequency-number-$name}',
+    ),
   ];
 
   /// 旧别名（历史命名）：语义与新键完全等价、渲染同一个值，保留只为兼容老配置与
@@ -1387,13 +1481,18 @@ class AnkiHandlebarOptions {
   static List<String> optionsForField({
     required List<String> dictionaryNames,
     required String currentValue,
-  }) => forTermDictionaries(dictionaryNames)
-      .where(
-        (String option) =>
-            !deprecatedAliases.contains(option) ||
-            currentValue.contains(option),
-      )
-      .toList();
+    List<String> frequencyDictionaryNames = const <String>[],
+  }) =>
+      forTermDictionaries(
+            dictionaryNames,
+            frequencyDictionaryNames: frequencyDictionaryNames,
+          )
+          .where(
+            (String option) =>
+                !deprecatedAliases.contains(option) ||
+                currentValue.contains(option),
+          )
+          .toList();
 
   /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
   /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
