@@ -1102,6 +1102,9 @@ class FushiSyncServer {
         reqPath.startsWith('/api/library/dictionaries/')) {
       return _handleLibraryDictionaries(request, method, reqPath);
     }
+    if (reqPath == kBookProgressBatchPath) {
+      return _handleLibraryBookProgressBatch(method);
+    }
     if (reqPath == '/api/library/books' ||
         reqPath.startsWith('/api/library/books/')) {
       return _handleLibraryBooks(request, method, reqPath);
