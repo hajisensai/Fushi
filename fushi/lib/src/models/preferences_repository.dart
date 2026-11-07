@@ -106,6 +106,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
     show normalizeAdvancedMiningAudioNudgeStepMs;
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
+import 'package:fushi/src/media/video/video_subtitle_mask.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -2099,6 +2100,18 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoSubtitleObscureReveal(bool value) async {
     await setPref('video_subtitle_obscure_reveal', value);
+    notifyListeners();
+  }
+
+  /// 字幕遮布（盖住烧进画面的硬字幕，见 [VideoSubtitleMaskConfig]）。低频设置，
+  /// setter 照常广播：播放页遮布层与设置面板回显无条件同步。
+  VideoSubtitleMaskConfig get videoSubtitleMask =>
+      VideoSubtitleMaskConfig.fromJson(
+        getPref('video_subtitle_mask', defaultValue: '') as String?,
+      );
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) async {
+    await setPref('video_subtitle_mask', value.toJson());
     notifyListeners();
   }
 

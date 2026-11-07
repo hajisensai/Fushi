@@ -362,6 +362,8 @@ import 'package:fushi/src/media/video/subtitle_text_override.dart';
 import 'package:fushi/src/media/video/video_jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
@@ -3463,6 +3465,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [VideoSubtitleOverlay.dragAdjustEnabled]），松手经 [_handleSubtitleDragAdjustEnd]
   /// 写回 [_subtitleStyle] 并持久化。
   bool _subtitleDragAdjustActive = false;
+
+  /// 「调整字幕遮布」模式：设置面板入口进入、顶部横幅「完成」退出。编辑层挂在
+  /// chrome 层（[VideoSubtitleMaskEditLayer]），拖动中的矩形经
+  /// [_subtitleMaskDraft] 让画面上的遮布实时跟随，松手落偏好。
+  bool _subtitleMaskEditing = false;
+  final ValueNotifier<Rect?> _subtitleMaskDraft = ValueNotifier<Rect?>(null);
 
   /// 「浮条调轴」模式（反馈 JsICLVdq0i）：设置面板收起、画面顶部挂一条只含调轴
   /// 控件的紧凑浮条，字幕区域整片让出来看实时效果。见 layout.part 的
@@ -6777,6 +6785,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void dispose() {
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
+    _subtitleMaskDraft.dispose();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
@@ -11942,6 +11951,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onEnterSubtitleDragAdjust: _enterSubtitleDragAdjust,
       // 浮条调轴：关设置侧栏 + 画面顶部挂调轴浮条（见 layout.part）。
       onEnterSubtitleDelayBar: _enterSubtitleDelayBar,
+      // 字幕遮布：关设置侧栏 + 画面上挂可拖动 / 缩放的遮布框（见 layout.part）。
+      onEnterSubtitleMaskEdit: _enterSubtitleMaskEdit,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
       onSecondarySubtitleObscureRevealChanged:

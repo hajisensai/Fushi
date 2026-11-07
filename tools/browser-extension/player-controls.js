@@ -94,6 +94,10 @@
     items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title'), icon: 'layers' });
     items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title'), icon: 'format_color_fill' });
     items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title'), icon: 'visibility_off' });
+    // 字幕遮布（subtitle-mask.js，状态与执行端都在那里；这里只读与转发）：盖住画面里的硬字幕，
+    // 与 Fushi 字幕覆盖层无关（覆盖层关着也能遮），所以不随总开关置灰。
+    items.push({ id: 'mask', kind: 'switch', on: !!s.maskOn, label: tr('opt_subtitleMask_title'), icon: 'layers' });
+    items.push({ id: 'maskEdit', kind: 'action', label: tr('pc_mask_edit'), icon: 'tune' });
     // 沉浸统计开关（用户群 10-09：只能去扩展设置里开关很麻烦）。与设置页「网页视频计入学习时长」
     // 同一个键 studyTrackVideo（缺省开），这里只是就近入口。
     items.push({ id: 'study', kind: 'switch', on: s.study !== false, label: tr('opt_studyTrackVideo_title'), icon: 'hourglass_empty' });
@@ -556,6 +560,7 @@
       hasTrack: hasTrack(),
       externalTrack: hasExternalTrack(),
       study: st.prefs.studyTrackVideo !== false,
+      maskOn: maskOn(),
       trackLabel: activeTrackLabel(),
       offsetMs: trackInfo().offsetMs,
     }, favoriteState()));
@@ -634,6 +639,7 @@
       else if (item.id === 'style') showPage('style');
       else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
+      else if (item.id === 'maskEdit') editMask();
       else if (item.id === 'settings') openOptions();
     }
     a.addEventListener('click', go);
@@ -1013,10 +1019,32 @@
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
     if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
+    if (id === 'mask') {
+      var sm = subtitleMask();
+      if (sm) { sm.setEnabled(!sm.state().enabled); renderMain(); }
+      return;
+    }
     if (id === 'favVideo') {
       var vf = videoFavorite();
       if (vf) Promise.resolve(vf.toggleVideo()).then(rerenderIfOpen, rerenderIfOpen);
     }
+  }
+
+  // ── 字幕遮布：状态与执行端都在 subtitle-mask.js（window.fushiSubtitleMask），这里只读与转发 ──
+  function subtitleMask() {
+    var sm = window.fushiSubtitleMask;
+    return sm && typeof sm.state === 'function' && typeof sm.setEnabled === 'function' ? sm : null;
+  }
+  function maskOn() {
+    var sm = subtitleMask();
+    try { return !!(sm && sm.state().enabled); } catch (_) { return false; }
+  }
+  // 「调整遮布」：关菜单（菜单压在画面上会挡住要摆的遮布）再进编辑模式。
+  function editMask() {
+    var sm = subtitleMask();
+    if (!sm || typeof sm.edit !== 'function') return;
+    closeMenu();
+    sm.edit();
   }
 
   // ── 收藏（反馈 KGC1ifR1a3）：状态与执行端都在 video-favorite.js，这里只读与转发 ──
@@ -1086,6 +1114,8 @@
   var PREF_KEYS = [
     SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
     'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle', 'studyTrackVideo',
+    // 字幕遮布的值归 subtitle-mask.js；这里订阅它只为菜单开着时重绘开关态。
+    'subtitleMask',
   ];
 
   function adoptStored(stored) {

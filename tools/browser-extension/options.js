@@ -55,6 +55,7 @@ const settingDefaults = Object.freeze({
   videoShortcutReplayCue: true,
   videoShortcutTogglePanel: true,
   videoShortcutToggleSubtitleHide: true,
+  videoShortcutToggleSubtitleMask: true,
   videoShortcutOffsetMinus: true,
   videoShortcutOffsetPlus: true,
   videoShortcutOffsetReset: true,
@@ -94,6 +95,7 @@ const toggleIds = Object.freeze({
   videoShortcutReplayCue: 'videoShortcutReplayCue',
   videoShortcutTogglePanel: 'videoShortcutTogglePanel',
   videoShortcutToggleSubtitleHide: 'videoShortcutToggleSubtitleHide',
+  videoShortcutToggleSubtitleMask: 'videoShortcutToggleSubtitleMask',
   videoShortcutOffsetMinus: 'videoShortcutOffsetMinus',
   videoShortcutOffsetPlus: 'videoShortcutOffsetPlus',
   videoShortcutOffsetReset: 'videoShortcutOffsetReset',
@@ -474,6 +476,91 @@ on('resetSubtitleOverlayPosition', 'click', async () => {
   await chrome.storage.local.remove('subtitleOverlayPosition');
   toast(tr('opt_toast_overlay_position_reset'));
 });
+
+// ── 字幕遮布（subtitle-mask.js）：一个对象 subtitleMask 存开关 / 外观 / 强度 / 位置，整份等于默认就删键。
+// 纯函数（normalize / writeOf / LIMITS）全部借 subtitle-mask.js，这里不重复任何默认值或上下限。
+// 位置只能在视频上调（播放器 Fushi 菜单「调整遮布」或快捷键），这里只给「重置位置」。
+const MASK = self.FUSHI_SUBTITLE_MASK || null;
+let subtitleMaskCurrent = MASK ? MASK.normalize(null) : null;
+let subtitleMaskWriteTimer = null;
+
+function fillSubtitleMaskInputs(raw) {
+  if (!MASK) return;
+  subtitleMaskCurrent = MASK.normalize(raw);
+  const s = subtitleMaskCurrent;
+  const enabled = $('subtitleMaskEnabled');
+  if (enabled) enabled.checked = s.enabled;
+  const appearance = $('subtitleMaskAppearance');
+  if (appearance && document.activeElement !== appearance) appearance.value = s.appearance;
+  const strength = $('subtitleMaskStrength');
+  if (strength) {
+    const field = s.appearance === 'solid' ? 'opacity' : 'blur';
+    const lim = MASK.LIMITS[field];
+    strength.min = String(lim[0]);
+    strength.max = String(lim[1]);
+    if (document.activeElement !== strength) strength.value = String(s[field]);
+    const out = document.querySelector('output[for="subtitleMaskStrength"]');
+    if (out) out.dataset.unit = field === 'opacity' ? '%' : 'px';
+    formatRangeOutput('subtitleMaskStrength', strength.value);
+  }
+  const strengthTitle = $('subtitleMaskStrengthTitle');
+  if (strengthTitle) {
+    strengthTitle.textContent = tr(s.appearance === 'solid' ? 'opt_subtitleMaskOpacity_title' : 'opt_subtitleMaskBlur_title');
+  }
+}
+
+function writeSubtitleMask(patch, immediate) {
+  if (!MASK) return;
+  subtitleMaskCurrent = MASK.normalize(Object.assign({}, subtitleMaskCurrent, patch));
+  if (subtitleMaskWriteTimer) clearTimeout(subtitleMaskWriteTimer);
+  const commit = () => {
+    subtitleMaskWriteTimer = null;
+    const w = MASK.writeOf(subtitleMaskCurrent);
+    if (w.remove) chrome.storage.local.remove(w.remove);
+    else chrome.storage.local.set({ [w.set]: w.value });
+  };
+  // 滑杆拖动期间去抖（与字幕外观同一条纪律），离散控件立即落盘。
+  if (immediate) commit();
+  else subtitleMaskWriteTimer = setTimeout(commit, 120);
+}
+
+async function loadSubtitleMask() {
+  if (!MASK) return;
+  let got = null;
+  try { got = await chrome.storage.local.get(MASK.KEY); } catch (_) { got = null; }
+  fillSubtitleMaskInputs(got ? got[MASK.KEY] : null);
+  on('subtitleMaskEnabled', 'change', (e) => {
+    writeSubtitleMask({ enabled: e.target.checked === true }, true);
+    toast(tr('opt_toast_updated', { name: tr('opt_subtitleMask_title') }));
+  });
+  on('subtitleMaskAppearance', 'change', (e) => {
+    writeSubtitleMask({ appearance: e.target.value }, true);
+    fillSubtitleMaskInputs(subtitleMaskCurrent);
+  });
+  const strength = $('subtitleMaskStrength');
+  if (strength) {
+    const field = () => (subtitleMaskCurrent && subtitleMaskCurrent.appearance === 'solid' ? 'opacity' : 'blur');
+    strength.addEventListener('input', () => {
+      formatRangeOutput('subtitleMaskStrength', strength.value);
+      writeSubtitleMask({ [field()]: Number(strength.value) }, false);
+    });
+    strength.addEventListener('change', () => {
+      writeSubtitleMask({ [field()]: Number(strength.value) }, true);
+      strength.value = String(subtitleMaskCurrent[field()]);
+    });
+  }
+  on('resetSubtitleMaskPosition', 'click', () => {
+    writeSubtitleMask(MASK.rectOf(MASK.resetRect(subtitleMaskCurrent)), true);
+    toast(tr('opt_toast_mask_position_reset'));
+  });
+}
+
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !MASK || !changes || !changes[MASK.KEY]) return;
+    fillSubtitleMaskInputs(changes[MASK.KEY].newValue);
+  });
+} catch (_) { /* 测试壳没有 onChanged：只少热同步，其余绑定照常 */ }
 
 on('showToken', 'click', () => {
   const token = $('token');
@@ -1228,6 +1315,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadPalette();
 loadSubtitleStyle();
+loadSubtitleMask();
 
 // ── 节导航：左侧（窄屏为顶部横条）链接随滚动高亮当前节（aria-current="true"）。
 // 只是锚点 + 视觉提示，键盘 Tab 到链接回车即跳；没有 IntersectionObserver 的环境（vm 测试）跳过。

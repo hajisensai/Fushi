@@ -17,6 +17,8 @@ import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_settings_cli.dart';
 import 'package:fushi/src/media/video/video_settings_cli_ops.dart'
     show videoSubtitlePositionForCli;
+import 'package:fushi/src/media/video/video_subtitle_mask.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/subtitle_style_preview.dart';
@@ -1316,6 +1318,145 @@ SettingsDestination buildVideoDestination() {
               settingsContext.refresh();
             },
             defaultValue: true,
+          ),
+          // 字幕遮布（用户 2026-11-07）：一块自己摆放的矩形盖住烧进画面的硬字幕（典型是
+          // 内嵌中文字幕），挂在画面之上、Fushi 字幕之下。全局一份；位置在播放器里
+          // 拖动 / 缩放（「调整位置」入口），这里管开关、外观与强度。
+          SettingsSwitchItem(
+            id: 'video.subtitle.mask_enabled',
+            title: t.video_setting_subtitle_mask,
+            subtitle: t.video_setting_subtitle_mask_hint,
+            icon: Icons.texture_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 151,
+              section: t.video_setting_subtitle_mask,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleMask.enabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              final AppModel m = settingsContext.appModel;
+              await m.setVideoSubtitleMask(
+                m.videoSubtitleMask.copyWith(enabled: value),
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+          SettingsSegmentedItem<VideoSubtitleMaskStyle>(
+            id: 'video.subtitle.mask_style',
+            title: t.video_setting_subtitle_mask_style,
+            icon: Icons.blur_on_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 152,
+              section: t.video_setting_subtitle_mask,
+            ),
+            options: <SettingsSegmentOption<VideoSubtitleMaskStyle>>[
+              SettingsSegmentOption<VideoSubtitleMaskStyle>(
+                value: VideoSubtitleMaskStyle.blur,
+                label: t.video_setting_subtitle_mask_style_blur,
+              ),
+              SettingsSegmentOption<VideoSubtitleMaskStyle>(
+                value: VideoSubtitleMaskStyle.solid,
+                label: t.video_setting_subtitle_mask_style_solid,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleMask.style,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleMaskStyle style,
+                ) async {
+                  final AppModel m = settingsContext.appModel;
+                  await m.setVideoSubtitleMask(
+                    m.videoSubtitleMask.copyWith(style: style),
+                  );
+                  settingsContext.refresh();
+                },
+            defaultValue: VideoSubtitleMaskStyle.blur,
+          ),
+          SettingsSliderItem(
+            id: 'video.subtitle.mask_strength',
+            title: t.video_setting_subtitle_mask_strength,
+            icon: Icons.opacity_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 153,
+              section: t.video_setting_subtitle_mask,
+            ),
+            min: 0.1,
+            max: 1,
+            divisions: 18,
+            label: (double v) => '${(v * 100).round()}%',
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel
+                .videoSubtitleMask
+                .strength
+                .clamp(0.1, 1.0),
+            onChanged: (SettingsContext settingsContext, double v) async {
+              final AppModel m = settingsContext.appModel;
+              await m.setVideoSubtitleMask(
+                m.videoSubtitleMask.copyWith(strength: v),
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'video.subtitle.mask_adjust',
+            title: t.video_setting_subtitle_mask_adjust,
+            subtitle: t.video_subtitle_mask_edit_hint,
+            icon: Icons.open_with_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 154,
+              section: t.video_setting_subtitle_mask,
+            ),
+            visible: (SettingsContext c) =>
+                videoQuickSettingsHostOf(c)?.onEnterSubtitleMaskEdit != null,
+            // 控制通道：直接给画面比例矩形（0..1，越界自动钳回画面内）。
+            cli: SettingsCliAction(
+              offPageRunnable: true,
+              params: const <SettingsCliParam>[
+                SettingsCliParam('left', help: '遮布左缘，画面宽度比例 0…1'),
+                SettingsCliParam('top', help: '遮布上缘，画面高度比例 0…1'),
+                SettingsCliParam('width', help: '遮布宽度，画面宽度比例 0.03…1'),
+                SettingsCliParam('height', help: '遮布高度，画面高度比例 0.03…1'),
+              ],
+              run: (SettingsContext c, Map<String, String> args) async {
+                double arg(String k) {
+                  final double? v = double.tryParse(args[k] ?? '');
+                  if (v == null || !v.isFinite) {
+                    throw FormatException('$k 必须是 0…1 的数');
+                  }
+                  return v;
+                }
+
+                final AppModel m = c.appModel;
+                final VideoSubtitleMaskConfig next = m.videoSubtitleMask
+                    .copyWith(
+                      rect: Rect.fromLTWH(
+                        arg('left'),
+                        arg('top'),
+                        arg('width'),
+                        arg('height'),
+                      ),
+                    );
+                await m.setVideoSubtitleMask(next);
+                final Rect r = next.rect;
+                return <String, double>{
+                  'left': r.left,
+                  'top': r.top,
+                  'width': r.width,
+                  'height': r.height,
+                };
+              },
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              videoQuickSettingsHostOf(
+                settingsContext,
+              )?.onEnterSubtitleMaskEdit?.call();
+            },
           ),
           // 暂停 OCR 点字查词的范围：以前只在图形字幕时识别，2026-10-13 用户要求扩大到
           // 所有视频（硬字幕 / 画面文字）。每次暂停都跑整帧识别，所以可以收窄或关掉。
