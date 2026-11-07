@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
+import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -231,11 +232,15 @@ class _ActiveSession {
     required this.mediaKey,
     required this.tracker,
     required this.source,
+    required this.claim,
   });
 
   final String mediaKey;
   final VideoWatchTracker tracker;
   final RemoteVideoPlaybackSource source;
+
+  /// 本会话在视频跨面入账仲裁里的登记（时钟 `isActive` 读它），会话结束即释放。
+  final VideoStudyAccrualClaim claim;
   Timer? idle;
 }
 
@@ -257,18 +262,25 @@ class _ActiveSession {
 /// （默认 20s），之后停表；再播放开新会话。代价：标签页被直接关掉又没发出 `ended` 时，
 /// 最后 ≤ [idleTimeout] 的空档也被计入。网页视频没有库条目：完成标记 no-op、不报
 /// 单集完成。
+///
+/// 与 app 内视频同时在播：时长只一边入账，裁决归 [VideoStudyAccrualArbiter]（本 app
+/// 持有焦点且 app 内视频在计时 → app 内入账、这里不入账；否则这里入账）。字幕字数
+/// 两边照常各自计。
 class BrowserVideoStudyBridge {
   BrowserVideoStudyBridge({
     required FushiDatabase Function() database,
     DateTime Function()? now,
     this.idleTimeout = const Duration(seconds: 20),
+    VideoStudyAccrualArbiter? arbiter,
   }) : _database = database,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _arbiter = arbiter ?? VideoStudyAccrualArbiter.instance;
 
   /// 延迟取库：注入点在 [AppModel] 建 server manager 时，那时 `database` 已开；
   /// 仍用闭包而不是直接持有实例，避免把 late getter 的求值时机提前到构造期。
   final FushiDatabase Function() _database;
   final DateTime Function() _now;
+  final VideoStudyAccrualArbiter _arbiter;
 
   /// 这么久没有新样本就当页面已关 / 扩展断连，停表释放。扩展播放中每 ~1s 一条，
   /// 20s 足够宽（网络抖动 / 标签页被节流）又不至于把关掉的页面挂着不封段。
@@ -324,6 +336,12 @@ class BrowserVideoStudyBridge {
     final RemoteVideoPlaybackSource source = RemoteVideoPlaybackSource(
       now: _now,
     );
+    // settle 在 tracker 建好后才有对象可结算；登记先于时钟，时钟的 isActive 读它。
+    VideoWatchTracker? created;
+    final VideoStudyAccrualClaim claim = _arbiter.claim(
+      surface: VideoStudySurface.browser,
+      settle: () => created?.clock.flushNow(),
+    );
     final VideoWatchTracker tracker = VideoWatchTracker(
       bookUid: key,
       clock: StudyClock(
@@ -333,6 +351,8 @@ class BrowserVideoStudyBridge {
         title: sample.displayTitle,
         // 不设空闲门：会话本身由 [idleTimeout] 收口（无新样本即停表），播放中的
         // 样本也经 tracker 的采样 touch；再叠一道 10 分钟门没有意义。
+        // 与 app 内视频同时播放时只一边入账时长（[VideoStudyAccrualArbiter]）。
+        isActive: () => claim.timeAllowed,
         now: _now,
         onWriteError: (Object e, StackTrace st) => ErrorLogService.instance.log(
           'StudyClock.write(browser-video)',
@@ -344,6 +364,7 @@ class BrowserVideoStudyBridge {
       saveCoverage: (String json) =>
           db.setPref(videoWatchCoveragePrefKey(key), json),
     );
+    created = tracker;
     debugOnTrackerCreated?.call(tracker);
     tracker
       ..attach(source)
@@ -351,10 +372,12 @@ class BrowserVideoStudyBridge {
     // tracker.start() 只起采样；浏览器桥没有页面遮挡 / 生命周期可言（扩展只在页面
     // 播放时发样本），会话存活即计时。
     tracker.clock.start();
+    claim.update(running: true);
     final _ActiveSession session = _ActiveSession(
       mediaKey: key,
       tracker: tracker,
       source: source,
+      claim: claim,
     );
     _active = session;
     studyDiag('browser-video', 'start $key title=${sample.displayTitle}');
@@ -366,6 +389,8 @@ class BrowserVideoStudyBridge {
     session.idle?.cancel();
     session.idle = null;
     studyDiag('browser-video', 'stop ${session.mediaKey} ($reason)');
+    // 先离场再停表：stop 的最后一窗仍按离场前的结论结算（release 只重算别的面）。
+    session.claim.release();
     _stopChain = _stopChain.then((_) async {
       try {
         await session.tracker.stop();

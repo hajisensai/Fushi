@@ -1160,8 +1160,8 @@ SettingsDestination buildReadingDestination() {
           // 悬浮球不在这里：唯一入口是 设置 → 悬浮球（阅读器场景的按钮在那里勾选）。
         ],
       ),
-      // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
-      // 下次打开书生效（时钟在建书时读一次）。
+      // v92 统计域：学习空闲门。小说 / PDF / 漫画 / 视频共用（2026-11-07 起视频
+      // 也走墙钟 + 空闲门，播放中由采集器喂门、始终计时）；运行中的时钟随设置刷新。
       SettingsSection(
         id: 'reading.section.statistics',
         presentation: SettingsSectionPresentation.alwaysExpanded,

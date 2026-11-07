@@ -39,17 +39,12 @@ const String _bridge = 'lib/src/media/video/browser_video_study_bridge.dart';
 
 void main() {
   group('videoStudyClockLocallyCovered（页内遮挡判据）', () {
-    bool covered({
-      bool panel = false,
-      bool stats = false,
-      bool episodes = false,
-      bool edit = false,
-    }) => videoStudyClockLocallyCovered(
-      sidePanelOpen: panel,
-      statisticsPanelOpen: stats,
-      episodeListVisible: episodes,
-      controlEditMode: edit,
-    );
+    bool covered({bool panel = false, bool stats = false, bool edit = false}) =>
+        videoStudyClockLocallyCovered(
+          sidePanelOpen: panel,
+          statisticsPanelOpen: stats,
+          controlEditMode: edit,
+        );
 
     test('什么都没开：不算遮挡', () {
       expect(covered(), isFalse);
@@ -63,10 +58,9 @@ void main() {
       expect(covered(panel: true, stats: true), isFalse);
     });
 
-    test('剧集列表 / 控件布局编辑：停', () {
-      expect(covered(episodes: true), isTrue);
+    test('控件布局编辑：停（剧集列表把画面挤开、不盖视频，不再是判据输入）', () {
       expect(covered(edit: true), isTrue);
-      expect(covered(panel: true, stats: true, episodes: true), isTrue);
+      expect(covered(panel: true, stats: true, edit: true), isTrue);
     });
   });
 
@@ -126,7 +120,6 @@ void main() {
       );
       for (final String notifier in <String>[
         '_videoSidePanel',
-        '_episodeListVisible',
         '_videoControlEditMode',
       ]) {
         expect(
@@ -135,6 +128,21 @@ void main() {
           reason: '$notifier 开关要喂计时门',
         );
       }
+      // 剧集列表与字幕列表一样只把画面挤开（所有者 2026-11-07 拍板不停表）。
+      expect(
+        src.contains(
+          '_episodeListVisible.addListener(_syncStudyClockLocalCover)',
+        ),
+        isFalse,
+      );
+      // 查词窗关掉要让门按真实失焦重判；跨面仲裁随页面释放。
+      expect(
+        src,
+        contains(
+          'GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);',
+        ),
+      );
+      expect(src, contains('_studyAccrualClaim.release();'));
       // 门只在 tracker 采样期间起表：采样停了（离开前 / 进后台）就没人喂空闲门。
       expect(src, contains('if (tracker == null || !tracker.isSampling)'));
     });
@@ -162,10 +170,23 @@ void main() {
         stats,
         contains('StatisticsCenterPage(initialTab: StatsCenterTab.video)'),
       );
-      // 统计身份与时钟 mediaKey 同一个键。
+      // 统计身份与时钟 mediaKey、查词 / 制卡计数同一个键（_studyStatsIdentity）。
       expect(
         stats,
-        contains('_watchTracker?.bookUid ?? _watchStatsIdentity.\$1'),
+        contains('final String key = _studyStatsIdentity.bookKey;'),
+      );
+      final String page = _read(_videoPage);
+      expect(
+        page,
+        contains('bookKey: _watchStatsIdentity.\$1'),
+        reason: '_studyStatsIdentity 取观看统计身份的 uid',
+      );
+      expect(
+        page,
+        contains(
+          '({String? bookKey, String? title})? get lookupBookIdentity =>\n'
+          '      _studyStatsIdentity;',
+        ),
       );
     });
 

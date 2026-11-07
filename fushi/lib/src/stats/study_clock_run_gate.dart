@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 
 /// 漫画 / PDF / 视频学习计时「此刻可跑」的唯一判据。
@@ -18,6 +20,10 @@ import 'package:fushi/src/stats/study_cover_tracker.dart';
 ///   它们不是路由，[StudyCoverTracker] 看不见，由页面显式喂；
 /// - [unfocused] + [playing]：窗口失焦（`inactive`）。阅读面失焦即停；视频面失焦时
 ///   **仍在播放**就照常计（用户拍板：切走仍在播照常计时），停着则停表。
+/// - [focusInOwnWindow]：焦点在**本 app 自己的**独立顶层窗口里（桌面查词窗
+///   `GlobalLookupController`：WebView2 / NSPanel / GTK 原生窗，不是 Flutter 视图，
+///   拿走焦点时主窗照样报 `inactive`）。查词是学习的一部分（「暂停查词也算时间」），
+///   这种失焦不算失焦。
 bool studyClockGateMayRun({
   required bool lifecycleStopped,
   required bool covered,
@@ -25,11 +31,31 @@ bool studyClockGateMayRun({
   bool locallyCovered = false,
   bool unfocused = false,
   bool playing = false,
+  bool focusInOwnWindow = false,
 }) {
   if (manualPause || lifecycleStopped || covered || locallyCovered) {
     return false;
   }
-  return !unfocused || playing;
+  return !unfocused || focusInOwnWindow || playing;
+}
+
+/// 把门的结论落到 [clock] 上（null = 还没开始计时，跳过）。起表前从设置刷一次空闲门
+/// [idleTimeout]（与阅读器 `_ensureStudyClock` 同律，BUG-2213：不在建时钟时快照——
+/// 学习中改了设置，下次起表即生效；改设置要开设置面板 / 设置页，那会先停表）。
+/// 返回时钟此刻是否在跑。
+bool applyStudyClockRun(
+  StudyClock? clock,
+  bool mayRun, {
+  Duration? Function()? idleTimeout,
+}) {
+  if (clock == null) return false;
+  if (mayRun) {
+    if (idleTimeout != null) clock.idleTimeout = idleTimeout();
+    clock.start();
+    return true;
+  }
+  unawaited(clock.stop());
+  return false;
 }
 
 /// 漫画 / PDF / 视频共用的学习计时门：持有 [studyClockGateMayRun] 的全部输入，任一
@@ -49,48 +75,83 @@ class StudyClockRunGate {
   StudyClockRunGate({
     required void Function(bool mayRun) apply,
     StudyCoverTracker? tracker,
-  }) : _apply = apply {
+    bool Function()? focusHeldByOwnWindow,
+  }) : _apply = apply,
+       _focusHeldByOwnWindow = focusHeldByOwnWindow {
     _watch = StudyCoverWatch(tracker: tracker, onChanged: sync);
   }
 
-  /// 门的结论直接落到 [clock] 返回的时钟上（为 null = 还没开始计时，跳过）。
+  /// 门的结论直接落到 [clock] 返回的时钟上（为 null = 还没开始计时，跳过），起表时
+  /// 从 [idleTimeout] 刷空闲门（见 [applyStudyClockRun]）。
+  ///
+  /// [focusHeldByOwnWindow]：焦点此刻是否在本 app 的独立查词窗里（见
+  /// [studyClockGateMayRun] 的 `focusInOwnWindow`）；该窗关掉时宿主要 [sync] 一次。
+  ///
+  /// [onApplied] 在每次落定后回报「时钟此刻是否在跑」与 [appForeground]（视频面据此
+  /// 向跨面入账仲裁 `VideoStudyAccrualArbiter` 报到）。
   factory StudyClockRunGate.forClock(
     StudyClock? Function() clock, {
     StudyCoverTracker? tracker,
-  }) => StudyClockRunGate(
-    tracker: tracker,
-    apply: (bool mayRun) {
-      final StudyClock? current = clock();
-      if (current == null) return;
-      if (mayRun) {
-        current.start();
-      } else {
-        unawaited(current.stop());
-      }
-    },
-  );
+    Duration? Function()? idleTimeout,
+    bool Function()? focusHeldByOwnWindow,
+    void Function(bool running, bool appForeground)? onApplied,
+  }) {
+    late final StudyClockRunGate gate;
+    gate = StudyClockRunGate(
+      tracker: tracker,
+      focusHeldByOwnWindow: focusHeldByOwnWindow,
+      apply: (bool mayRun) {
+        final bool running = applyStudyClockRun(
+          clock(),
+          mayRun,
+          idleTimeout: idleTimeout,
+        );
+        onApplied?.call(running, gate.appForeground);
+      },
+    );
+    return gate;
+  }
 
   final void Function(bool mayRun) _apply;
+  final bool Function()? _focusHeldByOwnWindow;
   late final StudyCoverWatch _watch;
   bool _lifecycleStopped = false;
-  bool _manualPause = false;
   bool _locallyCovered = false;
   bool _unfocused = false;
   bool _playing = false;
   bool _disposed = false;
 
+  /// 「首次开始播放后自动起表」还在等（[applyStartMode] 的 onPageTurn 对视频的解释）。
+  bool _awaitingFirstPlay = false;
+
+  /// 手动暂停旗的唯一持有者；UI（计时键图标 / 文案）经 [manualPauseListenable] 重建。
+  final ValueNotifier<bool> _manualPause = ValueNotifier<bool>(false);
+
   /// 当前结论。
   bool get mayRun => studyClockGateMayRun(
     lifecycleStopped: _lifecycleStopped,
     covered: _watch.covered,
-    manualPause: _manualPause,
+    manualPause: _manualPause.value,
     locallyCovered: _locallyCovered,
     unfocused: _unfocused,
     playing: _playing,
+    focusInOwnWindow: _focusInOwnWindow,
   );
 
+  bool get _focusInOwnWindow =>
+      _unfocused && (_focusHeldByOwnWindow?.call() ?? false);
+
+  /// 本 app 此刻持有焦点（主窗聚焦，或焦点在本 app 的独立查词窗里）。
+  bool get appForeground => !_unfocused || _focusInOwnWindow;
+
   /// 用户手动暂停着计时（UI 据此画计时键的图标）。
-  bool get manualPause => _manualPause;
+  bool get manualPause => _manualPause.value;
+
+  /// [manualPause] 的监听口（开始方式的自动起表也会翻它，UI 不能只在点按时重建）。
+  ValueListenable<bool> get manualPauseListenable => _manualPause;
+
+  /// 是否仍在等首次开始播放自动起表。
+  bool get awaitingFirstPlay => _awaitingFirstPlay;
 
   /// 当前是否被路由盖住。
   bool get covered => _watch.covered;
@@ -107,11 +168,23 @@ class StudyClockRunGate {
 
   /// 手动暂停 / 继续计时。切后台期间点「继续」只是清旗、回前台再起表（同小说的
   /// BUG-2209 统一判据）。
-  void toggleManualPause() => setManualPause(!_manualPause);
+  void toggleManualPause() => setManualPause(!_manualPause.value);
 
+  /// 用户亲手停 / 续：同时结束「等首次播放」——用户已决定，之后开播不再替他起表
+  /// （同 `ReaderStudyClockStartGate.toggleManualPause`）。
   void setManualPause(bool paused) {
-    if (_manualPause == paused) return;
-    _manualPause = paused;
+    _awaitingFirstPlay = false;
+    if (_manualPause.value == paused) return;
+    _manualPause.value = paused;
+    sync();
+  }
+
+  /// 按「计时开始方式」偏好（`stats_reading_clock_start_mode`，与小说同一设置）设定
+  /// 打开时的状态：manual = 打开即手动暂停；onOpen = 照常；onPageTurn 对视频解释为
+  /// 「打开时暂停，首次开始播放（[setPlaying] true）自动起表」。页面打开时调一次。
+  void applyStartMode(ReaderStudyClockStartMode mode) {
+    _awaitingFirstPlay = mode.awaitsFirstPageTurn;
+    _manualPause.value = mode.startsPaused;
     sync();
   }
 
@@ -134,6 +207,12 @@ class StudyClockRunGate {
   void setPlaying(bool playing) {
     if (_playing == playing) return;
     _playing = playing;
+    if (playing && _awaitingFirstPlay) {
+      _awaitingFirstPlay = false;
+      _manualPause.value = false;
+      sync();
+      return;
+    }
     if (_unfocused) sync();
   }
 
@@ -143,8 +222,11 @@ class StudyClockRunGate {
     _apply(mayRun);
   }
 
+  /// 幂等：宿主的异常拆栈与正常离场可能各调一次。
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _watch.dispose();
+    _manualPause.dispose();
   }
 }

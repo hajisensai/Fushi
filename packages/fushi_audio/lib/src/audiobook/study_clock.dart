@@ -149,7 +149,7 @@ typedef StudySessionTotals = ({int durationMs, int chars, bool active});
 ///
 /// 三道守卫（任一拒绝即整窗丢弃 + 封段）：
 ///  * 断档：[isContinuousReadingGap]（BUG-892，睡眠 / 挂起后的补发 tick）；
-///  * 活跃态：[isActive]（现无学习面传；不传 = 恒活跃，前台门由宿主的计时门承担——
+///  * 活跃态：[isActive]（视频面传跨面入账仲裁的结论；不传 = 恒活跃，前台门由宿主的计时门承担——
 ///    切后台、被盖住、手动暂停都会 stop）；
 ///  * 空闲：[idleTimeout]（阅读 / 漫画 / 视频面 10 分钟无 [touch] 即不入账；视频播放中由采集器每秒 touch）。
 ///

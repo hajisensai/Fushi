@@ -51,11 +51,16 @@ void main() {
     expect(src, contains('_studyClock?.retractChars(removed.chars);'));
     expect(src, contains('_studyClock?.retractPages(removed.pages);'));
     expect(
-      '_readLedger.arrive('.allMatches(src).length,
-      1,
+      '_readLedger.arrive('.allMatches(src),
+      isEmpty,
       reason:
-          'arrive 只许出现在 _noteVisiblePages 里（touch + arrive 一体），'
-          '其它任何直接 arrive 都会绕过空闲门',
+          'arrive 只许经 _noteVisiblePages 里的开始方式门（touch + 门 + arrive 一体），'
+          '其它任何直接 arrive 都会绕过空闲门 / 「翻页后开始」判据',
+    );
+    expect(
+      'ledger: _readLedger,'.allMatches(src).length,
+      1,
+      reason: '账本只许交给一处 arriveReadUnitThroughStartGate',
     );
     final String note = _functionSource(
       src,
@@ -63,7 +68,8 @@ void main() {
       '\n  }\n',
     );
     expect(note, contains('_studyClock?.touch();'));
-    expect(note, contains('_readLedger.arrive(start, end);'));
+    expect(note, contains('arriveReadUnitThroughStartGate('));
+    expect(note, contains('ledger: _readLedger,'));
     // 装载（本地卷 / 已下载的在线章 / 在线直读章共用 _presentPayload，阅读器
     // 只有这一条装载路径）/ _recordProgress / spread↔webtoon 切换 / 卡片来源
     // 回看转正常阅读（_onSourceReviewChanged：回看态不计统计，用户点「继续阅读」
@@ -89,7 +95,7 @@ void main() {
     );
   });
 
-  test('离开结算只在换章（leave + reset）；关书三条路不碰账本（BUG-2264）', () {
+  test('离开结算只在换章 / 换章失败（单点 leave + reset）；关书三条路不碰账本（BUG-2264）', () {
     final String dispose = _functionSource(
       src,
       '  void dispose() {',
@@ -163,12 +169,34 @@ void main() {
     // 换章：同一 State 内页号坐标系重用，先结算旧章末页再清并集。装载路径收在
     // _presentPayload 一条（本地卷 / 已下载章 / 2026-09-26 起的在线直读章共用），
     // 首次打开两步都是 no-op。
+    // 唯一结算点：「换掉 / 清空屏上这一章」的三条路径（换章装载 / 本章未下载回落 /
+    // 装载失败）都先经 _settleLeavingChapter，再动 `_payload` / 页状态。
+    final String settleBody = _functionSource(
+      src,
+      '  void _settleLeavingChapter() {',
+      '\n  }\n',
+    );
+    expect(
+      settleBody,
+      contains('_readLedger\n      ..leave()\n      ..reset();'),
+    );
+    expect(
+      '..leave()'.allMatches(src).length,
+      1,
+      reason: '离开结算只许在 _settleLeavingChapter 一处，关书路径零账本动作',
+    );
     final String load = _functionSource(
       src,
       '  Future<void> _presentPayload({',
       '\n  }\n',
     );
-    expect(load, contains('_readLedger\n      ..leave()\n      ..reset();'));
+    final int loadSettle = load.indexOf('_settleLeavingChapter();');
+    expect(loadSettle, isNonNegative, reason: '换章装载缺旧章末页结算');
+    expect(
+      loadSettle,
+      lessThan(load.indexOf('_payload = payload;')),
+      reason: '先结算旧章末页（按旧 payload 换算），再换上新章',
+    );
     // 换去的在线章没下载、直读也没成（「本章未下载」态）同样是换章：旧章末页必须在
     // `_payload = null` 之前结算——置空后页数无从换算，之后 `_presentPayload` 的
     // leave 只能结算出 0，这页永久漏记。此刻时钟还在走（页内遮挡在 setState 后才停表）。
@@ -177,17 +205,30 @@ void main() {
       '  Future<void> _openShelfChapter({',
       '\n  }\n',
     );
-    final int settle = shelf.indexOf(
-      '_readLedger\n        ..leave()\n        ..reset();',
-    );
+    final int settle = shelf.indexOf('_settleLeavingChapter();');
     final int drop = shelf.indexOf('_payload = null;');
     expect(settle, isNonNegative, reason: '未下载回落态缺旧章末页结算');
     expect(drop, isNonNegative);
     expect(settle, lessThan(drop), reason: '必须先结算旧章末页、再清掉旧章正文');
+    // 换章后加载失败（下一章 manga.json 缺失 / 开章抛错 / 定位页越界）：屏上那一章被
+    // 错误页替换，同一根因——失败态只许经 _presentLoadFailure 一处落，它先结算再置失败。
+    final String failure = _functionSource(
+      src,
+      '  void _presentLoadFailure({EpubBookRow? row}) {',
+      '\n  }\n',
+    );
+    final int failSettle = failure.indexOf('_settleLeavingChapter();');
+    expect(failSettle, isNonNegative, reason: '加载失败态缺旧章末页结算');
+    expect(failSettle, lessThan(failure.indexOf('_loadFailed = true;')));
     expect(
-      '..leave()'.allMatches(src).length,
-      2,
-      reason: '离开结算只许在两处换章点（_presentPayload / 未下载回落），关书路径零账本动作',
+      '_loadFailed = true'.allMatches(src).length,
+      1,
+      reason: '加载失败态只许经 _presentLoadFailure 落（散落各处必有漏结算）',
+    );
+    expect(
+      '_presentLoadFailure('.allMatches(src).length,
+      5,
+      reason: '定义 + 书行缺失 / manga.json 缺失 / 定位页越界 / 书架开章抛错四个失败点',
     );
   });
 

@@ -105,10 +105,13 @@ void main() {
     });
 
     test('手动暂停只经 StudyClockRunGate（控制条计时键 + 统计侧栏暂停键同一入口）', () {
-      expect(
-        methodBody(src, '  void _toggleStudyClockManualPause() {'),
-        contains('_studyClockGate.toggleManualPause'),
+      final String toggle = methodBody(
+        src,
+        '  void _toggleStudyClockManualPause() {',
       );
+      // 暂停旗唯一持有者是开始方式门：先翻它（同时结束「等首次翻页」），再推进运行门。
+      expect(toggle, contains('_studyClockStartGate.toggleManualPause()'));
+      expect(toggle, contains('_studyClockGate.setManualPause('));
       expect(
         src,
         contains('onTogglePause: _toggleStudyClockManualPause'),

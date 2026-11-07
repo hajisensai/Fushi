@@ -31,17 +31,16 @@ extension _VideoStudyStats on _VideoFushiPageState {
   /// 「继续」只是清旗，回前台再起表（门的统一判据）。
   void _toggleVideoStudyClockManualPause() {
     _studyClockGate.toggleManualPause();
-    _studyClockManualPaused.value = _studyClockGate.manualPause;
   }
 
   StudySessionTotals _videoStudySessionTotals() =>
       _watchTracker?.clock.sessionTotals() ??
       (durationMs: 0, chars: 0, active: false);
 
-  /// 本视频的今日 / 累计（统一事实面，身份 = 观看统计身份 [_watchStatsIdentity] 的 uid，
-  /// 与时钟 `mediaKey` 同一个键）。
+  /// 本视频的今日 / 累计（统一事实面，身份 = 学习统计身份 [_studyStatsIdentity]：
+  /// 与时钟 `mediaKey`、查词 / 制卡计数的 `bookKey` 同一个键）。
   Future<ReaderBookStatTotals> _loadVideoStatTotals() async {
-    final String key = _watchTracker?.bookUid ?? _watchStatsIdentity.$1;
+    final String key = _studyStatsIdentity.bookKey;
     final StatFacts facts = await loadStatFacts(
       appModel.database,
       activityLimit: 0,

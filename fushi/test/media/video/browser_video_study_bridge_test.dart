@@ -12,6 +12,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
+import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -70,7 +71,10 @@ class _Rig {
   final BrowserVideoStudyBridge bridge;
   final List<VideoWatchTracker> trackers = <VideoWatchTracker>[];
 
-  static _Rig create({Duration idleTimeout = const Duration(seconds: 20)}) {
+  static _Rig create({
+    Duration idleTimeout = const Duration(seconds: 20),
+    VideoStudyAccrualArbiter? arbiter,
+  }) {
     _fakeNow = DateTime(2026, 1, 1, 12);
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -78,6 +82,8 @@ class _Rig {
       database: () => db,
       now: () => _fakeNow,
       idleTimeout: idleTimeout,
+      // 每个用例独立仲裁，不和进程级实例串味。
+      arbiter: arbiter ?? VideoStudyAccrualArbiter(),
     );
     final _Rig rig = _Rig(db, bridge);
     bridge.debugOnTrackerCreated = (VideoWatchTracker t) {
@@ -184,6 +190,24 @@ void main() {
       await rig.db.getPref(videoWatchCoveragePrefKey('web:yt-abc')),
       isNotNull,
     );
+  });
+
+  test('与 app 内视频同时在播：app 持焦时浏览器不入账，app 关掉后恢复（跨面去重）', () async {
+    final VideoStudyAccrualArbiter arbiter = VideoStudyAccrualArbiter();
+    final VideoStudyAccrualClaim inApp = arbiter.claim(
+      surface: VideoStudySurface.inApp,
+      settle: () {},
+    );
+    inApp.update(running: true, foreground: true);
+    final _Rig rig = _Rig.create(arbiter: arbiter);
+    await rig.open(_sample(positionMs: 0));
+    rig.play(fromMs: 0, seconds: 5);
+    // app 内视频页关掉：浏览器翻回入账，翻转前按旧结论（不入账）结算掉前 5 秒。
+    inApp.release();
+    rig.play(fromMs: 5000, seconds: 3);
+    await rig.bridge.stopAll();
+
+    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 3000);
   });
 
   test('RemoteVideoPlaybackSource 播放中按经过墙钟 × 倍速外推位置、暂停不外推、封顶片长', () {

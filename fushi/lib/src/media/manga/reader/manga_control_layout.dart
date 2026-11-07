@@ -123,9 +123,10 @@ enum MangaControlItem implements ControlItemSpec<MangaControlSlot> {
   /// 与小说阅读器同一张 `ReaderStatisticsSheet`）。侧栏不遮正文，开着照常计时。
   statistics('statistics', foldPriority: 3, recoverySlot: MangaControlSlot.top),
 
-  /// 暂停 / 继续学习计时（与统计侧栏 hero 的暂停键同一入口，图标随暂停态换）。
-  /// 出厂在托盘（同小说阅读器的 studyTimer）：不多占默认栏一格，可拖去右上角 /
-  /// 底栏 / 更多。
+  /// 暂停 / 继续学习计时（与统计侧栏 hero 的暂停键、快捷键 P 同一入口，图标随暂停态
+  /// 换）。出厂在右上角、紧挨统计键：小说的对等入口是状态行里恒可见的计时键
+  /// （`ReaderStudyClockButton`），漫画没有状态行，收在托盘就只剩统计侧栏里那一个
+  /// 可见入口——「打开时暂停」的开始方式下用户找不到从哪儿起表。
   studyTimer('studyTimer', foldPriority: 2, recoverySlot: MangaControlSlot.top);
 
   const MangaControlItem(
@@ -195,9 +196,11 @@ class MangaControlLayout {
   ///  * 底部工具栏：章节目录 / 页面一览 / 阅读模式 / 单双页 / 翻页方向 / 快捷设置
   ///    （/ Apple 下的识别框开关）——与旧 `_chromeActionGroups` 的声明顺序一致；
   ///  * 右上角：按旧版「按优先级从高到低」排好的顺序（取消 OCR 9 / 全屏 7 / 书签 6 /
-  ///    全部设置 5 / 识别本卷 4 / 统计 3 / 回到开头 1 / 重新识别 1 / 隐藏界面 0）。书签、
-  ///    统计是新增项，按各自优先级插进去；
-  ///  * 托盘（不在阅读器里）：暂停 / 继续计时（新增项，没列在任何槽里即进托盘）。
+  ///    全部设置 5 / 识别本卷 4 / 统计 3 / 计时 2 / 回到开头 1 / 重新识别 1 / 隐藏界面
+  ///    0）。书签、统计、计时是新增项，按各自优先级插进去。
+  ///
+  /// 存量布局不受影响：已存的 JSON 里有计时键（含移进托盘的 `removed`）就照用户的
+  /// 放；没有这一项的旧布局解码时按这里的出厂位置回填（[decode] 的缺项回填）。
   static final MangaControlLayout defaults = MangaControlLayout._(
     ControlLayout<MangaControlSlot, MangaControlItem>.fromSlots(
       kMangaControlScheme,
@@ -218,6 +221,7 @@ class MangaControlLayout {
           MangaControlItem.settings,
           MangaControlItem.ocrVolume,
           MangaControlItem.statistics,
+          MangaControlItem.studyTimer,
           MangaControlItem.backToStart,
           MangaControlItem.ocrRerun,
           MangaControlItem.hideChrome,
