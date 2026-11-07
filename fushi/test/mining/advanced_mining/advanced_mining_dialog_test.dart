@@ -528,7 +528,8 @@ void main() {
           1,
           true,
         ]);
-      });
+        // 桌面主题默认 shrinkWrap 命中区（移动端默认 padded 会掩盖问题），按桌面跑。
+      }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
     }
 
     Finder editorWith(String text) => find.byWidgetPredicate(
