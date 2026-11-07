@@ -600,6 +600,7 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 | `music_videos` | `track_uid`、`kind`（local / youtube / disc-chapter / anime-episode）、`ref`、`offset_ms`（MV 相对音频）、`confidence`、`is_user_bound` |
 | `music_disc_sources` | `disc_uid`、`path`、`kind`（dvd / bluray / cdda / cdg）、`volume_id`、`has_menu`、`title_map`（json） |
 | `music_playlists` / `music_playlist_entries` | 常规；智能歌单规则存 json |
+| `music_remote_tracks`（v147） | `track_uid`（= 播放引擎里的 uid：YouTube `musicServerTrackUid('youtube', videoId)` / 插件 `musicPluginTrackUid`）、`kind`（youtube / plugin）、`source_key`、`item_id`、`title`、`artist`、`album`、`duration_ms`、`cover_url`、`library_added_at`（NULL = 只被歌单引用）、`created_at`、`updated_at`。只能串流的远程曲目加入音乐库 / 本地歌单；播放路径不落库（按身份现推占位）；随「音乐」备份类别按 `updated_at` LWW；iOS 按 `onlineMusicSource` 判据不显示 |
 | `music_play_events` | `track_uid`、`started_at`、`listened_ms`、`completed`（history 唯一含义：最近播放流） |
 | `music_scrape_meta` / `music_metadata_raw_snapshots` / `music_locked_fields` | 与视频刮削同构 |
 
