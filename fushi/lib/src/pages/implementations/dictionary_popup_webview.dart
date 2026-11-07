@@ -898,11 +898,22 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     window.__fushiRelayoutPopupColumns && window.__fushiRelayoutPopupColumns();
   };
   // 竖向滚动条是内容变长后才出现的（换词 / 展开词典），宽度约束要跟着 gutter 重算。
+  // 回调里只读 gutter、不写布局：重算会改 #entries-container 宽度，进而改被观察的
+  // documentElement 自身尺寸。投递期间这样写，规范要求把新变化留到下一帧，浏览器就抛
+  // 「ResizeObserver loop completed with undelivered notifications」，经 window.onerror
+  // 桥每次查词落一条错误日志（与 popup.js 词头观察者 BUG-4106 同一机理）。所以写挪到
+  // 下一帧 rAF；那一帧再核一次 gutter，期间已被别的重算追平就不重复铺。
   if (!window.__fushiPopupGutterObserver && window.ResizeObserver) {
+    window.__fushiPopupGutterRaf = 0;
     window.__fushiPopupGutterObserver = new window.ResizeObserver(function(){
-      if ($kPopupScrollbarGutterJsExpr !== window.__fushiPopupScrollbarGutter) {
-        window.__fushiApplyPopupViewport();
-      }
+      if (window.__fushiPopupGutterRaf) return;
+      if ($kPopupScrollbarGutterJsExpr === window.__fushiPopupScrollbarGutter) return;
+      window.__fushiPopupGutterRaf = window.requestAnimationFrame(function(){
+        window.__fushiPopupGutterRaf = 0;
+        if ($kPopupScrollbarGutterJsExpr !== window.__fushiPopupScrollbarGutter) {
+          window.__fushiApplyPopupViewport();
+        }
+      });
     });
     window.__fushiPopupGutterObserver.observe(document.documentElement);
   }
