@@ -249,6 +249,25 @@ void main() {
         ),
         isNot(id),
       );
+      // 地址里写死的 query（说话人 / 模型）决定声音：只改它也必须换身份。
+      final Map<String, Object?> speakerA = _descriptor.audioIdentity(
+        _preset(<String, String>{
+          ...base,
+          CustomHttpTtsDescriptor.endpointKey:
+              'http://127.0.0.1:8001/infer?speaker=A',
+        }),
+      );
+      expect(speakerA, isNot(id));
+      expect(
+        _descriptor.audioIdentity(
+          _preset(<String, String>{
+            ...base,
+            CustomHttpTtsDescriptor.endpointKey:
+                'http://127.0.0.1:8001/infer?speaker=B',
+          }),
+        ),
+        isNot(speakerA),
+      );
     },
   );
 

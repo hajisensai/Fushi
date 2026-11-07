@@ -169,8 +169,9 @@ class CustomHttpTtsDescriptor extends TtsProviderDescriptor {
     return problems;
   }
 
-  /// 声音由对面服务的模型 / 说话人决定：地址（主机 + 端口 + 路径）进身份，换一台服务
-  /// 不复用另一台的缓存；方法与返回格式不改变声音，不进身份。
+  /// 声音由对面服务的模型 / 说话人决定：地址（主机 + 端口 + 路径 + 固定 query）进身份，
+  /// 换一台服务、或地址里写死的 `?speaker=` / `?model=` 变了，都不复用旧缓存；
+  /// 方法与返回格式不改变声音，不进身份。
   @override
   Map<String, Object?> audioIdentity(TtsVoicePreset preset) {
     final Uri? uri = Uri.tryParse(preset.param(endpointKey).trim());
@@ -179,6 +180,7 @@ class CustomHttpTtsDescriptor extends TtsProviderDescriptor {
       'host': uri?.host ?? '',
       'port': uri?.port ?? 0,
       'path': uri?.path ?? '',
+      'query': uri?.query ?? '',
     };
   }
 
