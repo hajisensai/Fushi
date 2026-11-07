@@ -10,8 +10,11 @@
 //! - 牌组树计数对齐 Anki v3 的 limit tree（见 [count_tree]），口径与旧 Dart 逐项相同
 //!   （fushi_engine test/srs/srs_study_vectors_test.dart 用旧实现生成的向量钉住；本文件的测试拿 L2 的逐条 SQL
 //!   实现当基准，随机写入 / 跨日 / 回滚下逐步对拍）；
-//! - 出卡：学习卡 → 到期复习卡（会话里按块下界取此刻可提取度最低的一张，不扫全部到期卡）→ 新卡（部分索引序
-//!   `LIMIT 1`，命中第一张即停）→ 20 分钟内到期的学习卡；
+//! - 出卡：到期的学习卡 → 复习卡与新卡（两者的先后按所点牌组的「新卡与复习」[NewMix]：缺省复习全部在前；
+//!   复习卡按「复习顺序」[ReviewOrder]，缺省是会话里按块下界取此刻可提取度最低的一张，其余顺序走会话里按静态键
+//!   懒建的有序索引，都不扫全部到期卡；新卡走部分索引序 `LIMIT 1`，命中第一张即停）→ 20 分钟内到期的学习卡。
+//!   这两项与新卡顺序一样随参数继承取所点牌组的 own 祖先；own 祖先按 RWKV 排程时整棵子树的复习顺序固定按 R。
+//!   自定义学习（[CustomPicker]）不受这两项影响；
 //! - RWKV-Instant 的牌组：分数由 Dart 侧的 RWKV 服务给（另一个原生库），是**今天结束时刻**的 R——R 到今天结束
 //!   会降到目标保留率以下的卡就是「今天到期」，与 FSRS 按天到期同一粒度，计数、出卡都用它，但**不**当新卡负荷：
 //!   RWKV 牌组不按复习量调整新卡（恒为每日新卡上限），也不计入 FSRS 祖先的负荷；这里只做排队规则（目标保留率、
@@ -41,6 +44,71 @@ const LIVE: &str = "hidden = 0 AND suspended = 0 AND scheduler = 'fushi' AND (bu
 const DAY_MS: i64 = 86_400_000;
 /// 「忽略每日复习上限」的牌组这一层的剩余复习额度（实际出卡数由合格的卡数决定）。
 const UNLIMITED_REVIEWS: i64 = 1 << 30;
+
+/// 复习顺序（牌组寄存器 `reviewOrder`，视图键 `ro`；Dart `SrsReviewCardOrder`）。除 R 以外都是静态键（store/
+/// queue.rs `order_key`），同键按当天哈希 h(卡, 今天) 断平、再按 id：
+///
+/// | wire | 排序（升序） | Anki `reviewOrder` 导出 / 导入 |
+/// |---|---|---|
+/// | `retrievability` | 此刻 R（NULL 最前），同 R 按 id | 7 / 其余 |
+/// | `dueDate` | (到期日, h, id) | 0 / 0、1、2 |
+/// | `difficulty` | (D 为空, −D, h, id)：最难的先出 | 5 / 5 |
+/// | `intervalAscending` | (间隔天数, h, id) | 3 / 3 |
+/// | `random` | (h, id) | 8 / 8 |
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) enum ReviewOrder {
+    #[default]
+    Retrievability,
+    DueDate,
+    Difficulty,
+    IntervalAscending,
+    Random,
+}
+
+impl ReviewOrder {
+    /// 不认识 / 没写 = 缺省（可提取度从低到高，加这项设置之前的行为）。
+    pub(crate) fn from_wire(wire: Option<&str>) -> ReviewOrder {
+        match wire {
+            Some("dueDate") => ReviewOrder::DueDate,
+            Some("difficulty") => ReviewOrder::Difficulty,
+            Some("intervalAscending") => ReviewOrder::IntervalAscending,
+            Some("random") => ReviewOrder::Random,
+            _ => ReviewOrder::Retrievability,
+        }
+    }
+}
+
+/// 新卡与复习怎么排（牌组寄存器 `newMix`，视图键 `mx`；Dart `SrsNewCardMix`）。三种都是到期的学习卡最先、
+/// 20 分钟内到期的学习卡最后兜底。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum NewMix {
+    /// 复习全部出完再出新卡（缺省，加这项设置之前的行为；Anki 1）。
+    #[default]
+    AfterReviews,
+    /// 新卡先出，新卡上限用完或没有新卡了再出复习（Anki 2）。
+    BeforeReviews,
+    /// 按今天的总量均匀穿插（Anki 0），见 [Picker::next]。
+    Mixed,
+}
+
+impl NewMix {
+    /// 不认识 / 没写 = 缺省（复习之后）。
+    pub(crate) fn from_wire(wire: Option<&str>) -> NewMix {
+        match wire {
+            Some("beforeReviews") => NewMix::BeforeReviews,
+            Some("mixed") => NewMix::Mixed,
+            _ => NewMix::AfterReviews,
+        }
+    }
+}
+
+/// 出的一张是哪一类（「再下一张」按它虚拟扣掉一张的计数）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Learning,
+    Review,
+    New,
+}
 
 /// 一个牌组自己（或整棵子树）的原始卡数与今天的学习量。
 #[derive(Clone, Copy, Default, Debug)]
@@ -253,16 +321,20 @@ trait Source {
         limit: i64,
         exclude: &[&str],
     ) -> Result<Option<(String, Option<i64>)>, String>;
-    /// 几个牌组的到期复习卡里此刻可提取度最低的一张。
-    fn lowest_due(
+    /// 几个牌组的到期复习卡里按 [order] 排第一的一张（R 顺序 = 此刻可提取度最低）。
+    fn first_due(
         &self,
         decks: &[&str],
+        order: ReviewOrder,
         now: i64,
         exclude: &HashSet<&str>,
     ) -> Result<Option<DueCand>, String>;
+    /// [first_due] 按 [order] 出卡之前调：会话按需建这个顺序的索引（读完牌组树才知道要哪种顺序，而会话必须在
+    /// 这次读事务的第一条读之前取到，所以不能在开会话时就建）；测试基准什么都不用做。
+    fn ensure_order(&mut self, order: ReviewOrder);
 }
 
-struct SessionSource<'a>(&'a Session);
+struct SessionSource<'a>(&'a mut Session);
 
 impl Source for SessionSource<'_> {
     fn logs(&self) -> &LogState {
@@ -290,13 +362,18 @@ impl Source for SessionSource<'_> {
         Ok(self.0.first_learning(decks, limit, exclude))
     }
 
-    fn lowest_due(
+    fn first_due(
         &self,
         decks: &[&str],
+        order: ReviewOrder,
         now: i64,
         exclude: &HashSet<&str>,
     ) -> Result<Option<DueCand>, String> {
-        Ok(self.0.lowest_due(decks, now, exclude))
+        self.0.first_due(decks, order, now, exclude)
+    }
+
+    fn ensure_order(&mut self, order: ReviewOrder) {
+        self.0.ensure_order(order);
     }
 }
 
@@ -513,6 +590,21 @@ struct Picker<'a> {
     counts: &'a HashMap<String, Count>,
     instant_decks: HashSet<&'a str>,
     eligible: &'a [(String, String, f64)],
+    /// 所点牌组的复习顺序（[DeckTree::review_order]；FSRS 一路用，RWKV 一路恒按 R）。
+    order: ReviewOrder,
+    /// 所点牌组的新卡与复习怎么排（[DeckTree::new_mix]）。
+    mix: NewMix,
+}
+
+/// [NewMix::Mixed]：按今天的总量均匀穿插（Bresenham 式，不在会话里记状态）。[nd] / [rd] = 所点牌组子树今天已学的
+/// 新卡 / 已复习的卡，[nr] / [rr] = 根上还剩的新卡 / 复习数（都已算上「再下一张」虚拟出掉的那张）。设
+/// N = nd + nr、R = rd + rr、L = N + R、i = nd + rd：当且仅当 (i + 1)·N ≥ (nd + 1)·L 时这一张出新卡——第 k 张新卡
+/// 落在 ⌈k·L/N⌉ − 1 号位上，N = 2、R = 6 时是 RRRNRRRN。
+fn mixed_wants_new(nd: i64, rd: i64, nr: i64, rr: i64) -> bool {
+    let n = i128::from(nd) + i128::from(nr);
+    let l = n + i128::from(rd) + i128::from(rr);
+    let i = i128::from(nd) + i128::from(rd);
+    (i + 1) * n >= (i128::from(nd) + 1) * l
 }
 
 impl Picker<'_> {
@@ -563,9 +655,59 @@ impl Picker<'_> {
         }
     }
 
-    /// 下一张：到期的学习卡 → 到期复习卡（可提取度从低到高；RWKV 牌组按 R）→ 新卡（所点牌组的新卡顺序）→
-    /// 20 分钟内到期的学习卡。
-    fn next(&self, exclude: &[&str]) -> Result<Option<String>, String> {
+    /// 下一张到期复习卡：FSRS 一路按复习顺序取队首，RWKV 一路按 R 取队首（[Picker::eligible] 已按 R 升序），
+    /// 两个队首再比「此刻 R」，低的先出。
+    fn review(&self, sub: &[&str], ex: &HashSet<&str>) -> Result<Option<String>, String> {
+        let instant_best = self.eligible.iter().find(|(id, deck, _)| {
+            !ex.contains(id.as_str()) && self.path_has_room(deck, |c| c.review_remaining)
+        });
+        let fsrs_decks: Vec<&str> = sub
+            .iter()
+            .copied()
+            .filter(|d| {
+                !self.instant_decks.contains(d) && self.path_has_room(d, |c| c.review_remaining)
+            })
+            .collect();
+        let due = if fsrs_decks.is_empty() {
+            None
+        } else {
+            self.src
+                .first_due(&fsrs_decks, self.order, self.ctx.now, ex)?
+        };
+        Ok(match (instant_best, due) {
+            (None, Some((id, _, _))) => Some(id),
+            (Some((id, _, _)), None) => Some(id.clone()),
+            (Some((iid, _, ir)), Some((did, last, s))) => {
+                // 子树里 RWKV 与 FSRS 牌组混排：两边各自的「此刻 R」比，低的先出。
+                let days = last.map_or(0.0, |l| (self.ctx.now - l) as f64 / 86_400_000.0);
+                let fsrs_r = 1.0 / (1.0 + days / (9.0 * s.unwrap_or(1.0)));
+                Some(if fsrs_r < *ir { did } else { iid.clone() })
+            }
+            (None, None) => None,
+        })
+    }
+
+    /// 下一张新卡（所点牌组的新卡顺序）。
+    fn new_card(&self, sub: &[&str], exclude: &[&str]) -> Result<Option<String>, String> {
+        let decks: Vec<&str> = sub
+            .iter()
+            .copied()
+            .filter(|d| self.path_has_room(d, |c| c.new_remaining))
+            .collect();
+        let owner = self.ctx.tree.params_owner(self.root).map(|d| &d.view);
+        let order = match owner.and_then(|v| v["no"].as_str()) {
+            Some("position") => NEW_BY_POSITION,
+            _ => NEW_BY_FREQUENCY,
+        };
+        self.first_new(&decks, order, exclude)
+    }
+
+    /// 下一张：到期的学习卡 → 复习卡与新卡（先后按 [Picker::mix]；复习卡按 [Picker::order]）→ 20 分钟内到期的
+    /// 学习卡。[v] = 已虚拟出掉的（新卡, 复习）张数：算「再下一张」时按「下一张」的类别给 (1, 0) / (0, 1)，根上的
+    /// 剩余数与均匀穿插的进度都扣掉它（新卡上限只剩 1、下一张已是新卡时，再下一张不再出新卡）。各层的
+    /// [Picker::path_has_room] 没有虚拟扣减（同一张在子牌组那层的上限也只剩 1 时，再下一张仍可能越过它；下一次
+    /// 真排队时按实际计数纠正），这里不扩大范围。
+    fn next(&self, exclude: &[&str], v: (i64, i64)) -> Result<Option<(String, Kind)>, String> {
         let ex: HashSet<&str> = exclude.iter().copied().collect();
         let sub: Vec<&str> = self.sub.iter().map(String::as_str).collect();
         let learning = self
@@ -573,54 +715,39 @@ impl Picker<'_> {
             .first_learning(&sub, self.ctx.now + LEARN_AHEAD_MS, exclude)?;
         if let Some((id, due)) = &learning {
             if due.unwrap_or(0) <= self.ctx.now {
-                return Ok(Some(id.clone()));
+                return Ok(Some((id.clone(), Kind::Learning)));
             }
         }
         let sum = self.counts[self.root];
-        if sum.review_count > 0 {
-            let instant_best = self.eligible.iter().find(|(id, deck, _)| {
-                !ex.contains(id.as_str()) && self.path_has_room(deck, |c| c.review_remaining)
-            });
-            let fsrs_decks: Vec<&str> = sub
-                .iter()
-                .copied()
-                .filter(|d| {
-                    !self.instant_decks.contains(d) && self.path_has_room(d, |c| c.review_remaining)
-                })
-                .collect();
-            let due = if fsrs_decks.is_empty() {
-                None
-            } else {
-                self.src.lowest_due(&fsrs_decks, self.ctx.now, &ex)?
+        let new_left = (sum.new_count - v.0).max(0);
+        let review_left = (sum.review_count - v.1).max(0);
+        let new_first = match self.mix {
+            NewMix::AfterReviews => false,
+            NewMix::BeforeReviews => true,
+            NewMix::Mixed => mixed_wants_new(
+                sum.sub.new_done + v.0,
+                sum.sub.review_done + v.1,
+                new_left,
+                review_left,
+            ),
+        };
+        let kinds = if new_first {
+            [Kind::New, Kind::Review]
+        } else {
+            [Kind::Review, Kind::New]
+        };
+        // 选中的那一类没有可出的卡时退到另一类。
+        for kind in kinds {
+            let hit = match kind {
+                Kind::Review if review_left > 0 => self.review(&sub, &ex)?,
+                Kind::New if new_left > 0 => self.new_card(&sub, exclude)?,
+                _ => None,
             };
-            match (instant_best, due) {
-                (None, Some((id, _, _))) => return Ok(Some(id)),
-                (Some((id, _, _)), None) => return Ok(Some(id.clone())),
-                (Some((iid, _, ir)), Some((did, last, s))) => {
-                    // 子树里 RWKV 与 FSRS 牌组混排：两边各自的「此刻 R」比，低的先出。
-                    let days = last.map_or(0.0, |l| (self.ctx.now - l) as f64 / 86_400_000.0);
-                    let fsrs_r = 1.0 / (1.0 + days / (9.0 * s.unwrap_or(1.0)));
-                    return Ok(Some(if fsrs_r < *ir { did } else { iid.clone() }));
-                }
-                (None, None) => {}
+            if let Some(id) = hit {
+                return Ok(Some((id, kind)));
             }
         }
-        if sum.new_count > 0 {
-            let decks: Vec<&str> = sub
-                .iter()
-                .copied()
-                .filter(|d| self.path_has_room(d, |c| c.new_remaining))
-                .collect();
-            let owner = self.ctx.tree.params_owner(self.root).map(|d| &d.view);
-            let order = match owner.and_then(|v| v["no"].as_str()) {
-                Some("position") => NEW_BY_POSITION,
-                _ => NEW_BY_FREQUENCY,
-            };
-            if let Some(id) = self.first_new(&decks, order, exclude)? {
-                return Ok(Some(id));
-            }
-        }
-        Ok(learning.map(|(id, _)| id))
+        Ok(learning.map(|(id, _)| (id, Kind::Learning)))
     }
 }
 
@@ -1002,21 +1129,32 @@ pub(crate) fn study(
 ) -> Result<Value, String> {
     let (now, day) = when(req)?;
     hub.with_session(c, profile, day, day.index(now), uncommitted, |s| {
-        run(c, &SessionSource(s), profile, req)
+        run(c, &mut SessionSource(s), profile, req)
     })
 }
 
 /// 排队本身：数据从 [src] 取（会话，或测试基准）。
-fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<Value, String> {
+fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Result<Value, String> {
     let (now, day) = when(req)?;
+    let tree = DeckTree::load(c, profile)?;
+    let root = req.get("deck").and_then(Value::as_str);
+    // 出卡顺序随所点牌组的 own 祖先（读完牌组树才知道）；要出卡、不是自定义学习时才让会话建这个顺序的索引。
+    let (order, mix) = root.map_or((ReviewOrder::default(), NewMix::default()), |r| {
+        (tree.review_order(r), tree.new_mix(r))
+    });
+    let picks =
+        req["pick"] == Value::Bool(true) && !req.get("custom").is_some_and(Value::is_object);
+    if root.is_some() && picks {
+        src.ensure_order(order);
+    }
+    let src: &dyn Source = src;
     let ctx = Ctx {
-        tree: DeckTree::load(c, profile)?,
+        tree,
         day,
         now,
         today: day.index(now),
         logs: src.logs(),
     };
-    let root = req.get("deck").and_then(Value::as_str);
     if root.is_some_and(|r| !ctx.tree.decks.contains_key(r)) {
         return Ok(json!({"counts": null, "next": null, "after": null, "eligible": []}));
     }
@@ -1166,13 +1304,21 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
             counts: &counts,
             instant_decks: instant.keys().map(String::as_str).collect(),
             eligible: &eligible,
+            order,
+            mix,
         };
         let mut ex: Vec<&str> = exclude.iter().map(String::as_str).collect();
-        next = picker.next(&ex)?;
-        if let Some(n) = &next {
+        let first = picker.next(&ex, (0, 0))?;
+        if let Some((n, kind)) = &first {
             ex.push(n);
-            after = picker.next(&ex)?;
+            let v = match kind {
+                Kind::New => (1, 0),
+                Kind::Review => (0, 1),
+                Kind::Learning => (0, 0),
+            };
+            after = picker.next(&ex, v)?.map(|(id, _)| id);
         }
+        next = first.map(|(id, _)| id);
     }
     let counts_json: serde_json::Map<String, Value> = counts
         .iter()
@@ -1514,12 +1660,16 @@ mod tests {
                 }
             }
 
-            fn lowest_due(
+            fn first_due(
                 &self,
                 decks: &[&str],
+                order: ReviewOrder,
                 now: i64,
                 exclude: &HashSet<&str>,
             ) -> Result<Option<DueCand>, String> {
+                if order != ReviewOrder::Retrievability {
+                    return self.first_by_key(decks, order, exclude);
+                }
                 let ex: Vec<&str> = exclude.iter().copied().collect();
                 let sql_text = due_sql(decks.len(), ex.len());
                 let mut args: Vec<Sql> =
@@ -1539,19 +1689,73 @@ mod tests {
                     None => Ok(None),
                 }
             }
+
+            fn ensure_order(&mut self, _order: ReviewOrder) {}
+        }
+
+        impl SqlSource<'_> {
+            /// R 以外的复习顺序：把全部到期候选读出来（当天哈希在 SQL 里算不了），按（键, id）取最小。
+            fn first_by_key(
+                &self,
+                decks: &[&str],
+                order: ReviewOrder,
+                exclude: &HashSet<&str>,
+            ) -> Result<Option<DueCand>, String> {
+                let ex: Vec<&str> = exclude.iter().copied().collect();
+                let sql_text = due_all_sql(decks.len(), ex.len());
+                let mut args: Vec<Sql> =
+                    vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.today)];
+                args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
+                args.push(Sql::Integer(self.today));
+                args.extend(ex.iter().map(|d| Sql::Text((*d).to_owned())));
+                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
+                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+                let mut best: Option<(crate::store::queue::OrdKey, String, DueCand)> = None;
+                while let Some(r) = q.next().map_err(sql)? {
+                    let id: String = r.get(0).map_err(sql)?;
+                    let key = crate::store::queue::order_key(
+                        order,
+                        &id,
+                        self.today,
+                        r.get(3).map_err(sql)?,
+                        r.get(4).map_err(sql)?,
+                        r.get::<_, Option<f64>>(5).map_err(sql)?.map(|d| d as f32),
+                    );
+                    if best.as_ref().is_none_or(|(k, i, _)| (key, &id) < (*k, i)) {
+                        let cand = (id.clone(), r.get(1).map_err(sql)?, r.get(2).map_err(sql)?);
+                        best = Some((key, id, cand));
+                    }
+                }
+                Ok(best.map(|(_, _, c)| c))
+            }
+        }
+
+        /// 子树里全部到期复习候选（不排序）：id、上次作答、稳定度、到期日、间隔、难度。
+        pub(super) fn due_all_sql(decks: usize, exclude: usize) -> String {
+            let not_in = if exclude == 0 {
+                String::new()
+            } else {
+                format!(" AND id NOT IN ({})", marks(exclude))
+            };
+            format!(
+                "SELECT srs_idt(id), last_reviewed_at, stability, due_day, scheduled_days, difficulty FROM srs_cards_cache \
+                 WHERE profile_uid = srs_id(?) AND {LIVE} \
+                 AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in}",
+                marks(decks),
+            )
         }
 
         /// 用旧实现排一次（每次整段扫日志）。
         pub(super) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
             let (now, day) = when(req)?;
             let today = day.index(now);
-            let src = SqlSource {
+            let mut src = SqlSource {
                 c,
                 profile,
                 today,
                 logs: LogState::scan(c, profile, day, today)?,
             };
-            run(c, &src, profile, req)
+            run(c, &mut src, profile, req)
         }
     }
 
@@ -1738,6 +1942,22 @@ mod tests {
          hidden, queue, due_day, due_at, stability, last_reviewed_at, scheduler, note_created_at, new_position, freq_rank) \
          VALUES (srs_id(?1), srs_id(?2), srs_id(?1), 't', srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)";
 
+    /// [CARD_UPSERT] 再加间隔天数（?16）与难度（?17）：复习顺序的静态键要用。
+    const CARD_UPSERT_ORDERED: &str = "INSERT OR REPLACE INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, buried_until_day, \
+         hidden, queue, due_day, due_at, stability, last_reviewed_at, scheduler, note_created_at, new_position, freq_rank, scheduled_days, difficulty) \
+         VALUES (srs_id(?1), srs_id(?2), srs_id(?1), 't', srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)";
+
+    /// [card_values] 加上间隔天数与难度（取值有限，制造同键按当天哈希断平；含难度为空）。
+    fn card_values_ordered(rng: &mut Rng, id: &str, today: i64, now: i64) -> Vec<Sql> {
+        let mut v = card_values(rng, id, today, now);
+        v.push(Sql::Integer(rng.below(4) as i64));
+        v.push(match rng.below(5) {
+            0 => Sql::Null,
+            n => Sql::Real([2.0, 5.5, 5.5, 9.0][n as usize - 1]),
+        });
+        v
+    }
+
     fn log(core: &SrsCore, n: &mut i64, card: &str, at: i64, ty: &str, reps: i64, kind: &str) {
         *n += 1;
         exec(
@@ -1847,6 +2067,12 @@ mod tests {
                 json!({"new": new, "review": review}),
             );
         }
+        // 出卡顺序（复习顺序 / 新卡与复习）跟参数归属走：R、O 是 FSRS 顶层，RA 自己一份参数（RA1 随 RA，RB 随 R）；
+        // 没写算法的牌组按 RWKV，复习顺序恒为 R。下面随机改这几项、偶尔把 R 切成 RWKV。
+        for d in ["R", "O", "RA"] {
+            edit(&core, &mut n, d, "algorithm", json!({"alg": "fsrs6"}));
+        }
+        edit(&core, &mut n, "RA", "paramsMode", json!("own"));
         let mut day = Day {
             utc_offset_min: 0,
             rollover_hour: 4,
@@ -1857,8 +2083,8 @@ mod tests {
             let id = format!("c{i:04}");
             exec(
                 &core,
-                CARD_UPSERT,
-                card_values(&mut rng, &id, day.index(now), now),
+                CARD_UPSERT_ORDERED,
+                card_values_ordered(&mut rng, &id, day.index(now), now),
             );
             cards.push(id);
         }
@@ -1884,12 +2110,16 @@ mod tests {
             match rng.below(100) {
                 0..=29 => {
                     let id = rng.pick(&cards).clone();
-                    exec(&core, CARD_UPSERT, card_values(&mut rng, &id, today, now));
+                    exec(
+                        &core,
+                        CARD_UPSERT_ORDERED,
+                        card_values_ordered(&mut rng, &id, today, now),
+                    );
                 }
                 30..=37 => {
                     // 只改一两列（UPDATE 触发器）。
                     let id = rng.pick(&cards).clone();
-                    let (col, v) = match rng.below(5) {
+                    let (col, v) = match rng.below(8) {
                         0 => ("suspended", Sql::Integer(rng.below(2) as i64)),
                         1 => (
                             "buried_until_day",
@@ -1897,6 +2127,10 @@ mod tests {
                         ),
                         2 => ("deck_id", Sql::Text((*rng.pick(&DECKS)).into())),
                         3 => ("hidden", Sql::Integer(rng.below(2) as i64)),
+                        // 复习顺序的键变了：顺序索引要按旧键删、新键加。
+                        4 => ("difficulty", Sql::Real(rng.below(10) as f64 + 0.5)),
+                        5 => ("scheduled_days", Sql::Integer(rng.below(4) as i64)),
+                        6 => ("due_day", Sql::Integer(today - 2 + rng.below(4) as i64)),
                         _ => ("stability", Sql::Real(rng.below(30) as f64 + 0.5)),
                     };
                     exec(
@@ -1907,7 +2141,11 @@ mod tests {
                 }
                 38..=42 => {
                     let id = format!("c{:04}", cards.len());
-                    exec(&core, CARD_UPSERT, card_values(&mut rng, &id, today, now));
+                    exec(
+                        &core,
+                        CARD_UPSERT_ORDERED,
+                        card_values_ordered(&mut rng, &id, today, now),
+                    );
                     cards.push(id);
                 }
                 43..=45 => {
@@ -1970,7 +2208,41 @@ mod tests {
                         json!(*rng.pick(&["position", "frequency"])),
                     );
                 }
-                68..=84 => now += rng.below(90) as i64 * 60_000,
+                68..=71 => {
+                    // 出卡顺序：复习顺序（含不认识的值）/ 新卡与复习，偶尔把 R 在 FSRS 与 RWKV 之间切。
+                    let d = *rng.pick(&["R", "O", "RA"]);
+                    match rng.below(5) {
+                        0 | 1 => edit(
+                            &core,
+                            &mut n,
+                            d,
+                            "reviewOrder",
+                            json!(*rng.pick(&[
+                                "retrievability",
+                                "dueDate",
+                                "difficulty",
+                                "intervalAscending",
+                                "random",
+                                "bogus",
+                            ])),
+                        ),
+                        2 | 3 => edit(
+                            &core,
+                            &mut n,
+                            d,
+                            "newMix",
+                            json!(*rng.pick(&["afterReviews", "beforeReviews", "mixed", "bogus"])),
+                        ),
+                        _ => edit(
+                            &core,
+                            &mut n,
+                            "R",
+                            "algorithm",
+                            json!({"alg": *rng.pick(&["fsrs6", "rwkv"])}),
+                        ),
+                    }
+                }
+                72..=84 => now += rng.below(90) as i64 * 60_000,
                 85..=87 => {
                     now += 20 * H + rng.below(10) as i64 * H;
                     new_day = true;
@@ -1994,7 +2266,11 @@ mod tests {
                     // 一段写在 SAVEPOINT 里又回滚掉（Drift 嵌套事务失败）。
                     exec(&core, "SAVEPOINT t", vec![]);
                     let id = rng.pick(&cards).clone();
-                    exec(&core, CARD_UPSERT, card_values(&mut rng, &id, today, now));
+                    exec(
+                        &core,
+                        CARD_UPSERT_ORDERED,
+                        card_values_ordered(&mut rng, &id, today, now),
+                    );
                     let card = rng.pick(&cards).clone();
                     log(&core, &mut logs, &card, now, "review", 2, "review");
                     picked += compare(&core, &mut rng, now, day, &cards, step);
@@ -2878,5 +3154,404 @@ mod tests {
         }
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    // ------------------------------------------------------------ 出卡顺序（复习顺序 / 新卡与复习）
+
+    /// 出卡顺序测试的小库：一个 profile、手写的牌组与卡。
+    struct OrderLab {
+        core: SrsCore,
+        dir: std::path::PathBuf,
+        n: i64,
+        logs: i64,
+        now: i64,
+        day: Day,
+    }
+
+    impl OrderLab {
+        fn new(tag: &str) -> OrderLab {
+            // 同一个 tag 可能被并行的两个测试同时用（mix_run）：再加一个进程内序号。
+            static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let seq = SEQ.fetch_add(1, AtomicOrdering::SeqCst);
+            let dir = std::env::temp_dir()
+                .join(format!("ffsrs_order_{tag}_{}_{seq}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("srs.db");
+            let _ = std::fs::remove_file(&path);
+            OrderLab {
+                core: SrsCore::open(&path).unwrap(),
+                dir,
+                n: 0,
+                logs: 0,
+                now: 1_760_000_000_000,
+                day: Day {
+                    utc_offset_min: 0,
+                    rollover_hour: 4,
+                },
+            }
+        }
+
+        fn today(&self) -> i64 {
+            self.day.index(self.now)
+        }
+
+        /// 一个牌组：[parent]、算法（"rwkv" / "fsrs6"）、是否自己一份参数（顶层恒为 own）。
+        fn deck(&mut self, id: &str, parent: Option<&str>, alg: &str, own: bool) {
+            exec(
+                &self.core,
+                "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')",
+                vec![Sql::Text(id.into()), Sql::Text(P.into())],
+            );
+            if let Some(p) = parent {
+                self.set(id, "parent", json!(p));
+            }
+            if own {
+                self.set(id, "paramsMode", json!("own"));
+            }
+            self.set(id, "algorithm", json!({"alg": alg}));
+            self.set(id, "newPlan", json!({"auto": false}));
+        }
+
+        fn set(&mut self, deck: &str, key: &str, v: Value) {
+            edit(&self.core, &mut self.n, deck, key, v);
+        }
+
+        /// 一张到期复习卡：到期日（相对今天）、间隔、难度、上次作答在几天前、稳定度。
+        #[allow(clippy::too_many_arguments)]
+        fn review(
+            &self,
+            id: &str,
+            deck: &str,
+            due: i64,
+            ivl: i64,
+            d: Option<f64>,
+            ago_days: i64,
+            stab: f64,
+        ) {
+            exec(
+                &self.core,
+                CARD_UPSERT_ORDERED,
+                vec![
+                    Sql::Text(id.into()),
+                    Sql::Text(P.into()),
+                    Sql::Text(deck.into()),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(0),
+                    Sql::Text("review".into()),
+                    Sql::Integer(self.today() + due),
+                    Sql::Null,
+                    Sql::Real(stab),
+                    Sql::Integer(self.now - ago_days * 86_400_000),
+                    Sql::Text("fushi".into()),
+                    Sql::Integer(0),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(ivl),
+                    d.map_or(Sql::Null, Sql::Real),
+                ],
+            );
+        }
+
+        fn new_card(&self, id: &str, deck: &str, pos: i64) {
+            exec(
+                &self.core,
+                CARD_UPSERT_ORDERED,
+                vec![
+                    Sql::Text(id.into()),
+                    Sql::Text(P.into()),
+                    Sql::Text(deck.into()),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(0),
+                    Sql::Text("new".into()),
+                    Sql::Null,
+                    Sql::Null,
+                    Sql::Null,
+                    Sql::Null,
+                    Sql::Text("fushi".into()),
+                    Sql::Integer(pos),
+                    Sql::Integer(pos),
+                    Sql::Integer(pos),
+                    Sql::Integer(0),
+                    Sql::Null,
+                ],
+            );
+        }
+
+        /// 排一次（出卡）；同时与 L2 基准对拍。
+        fn pick(&self, deck: &str, exclude: &[String], rwkv: Option<&Value>) -> Value {
+            let mut req = json!({"now": self.now, "utcOff": 0, "rollover": 4, "deck": deck, "pick": true, "exclude": exclude});
+            if let Some(r) = rwkv {
+                req["rwkv"] = r.clone();
+            }
+            let got = self.core.study(P, &req).unwrap();
+            let want = self
+                .core
+                .read_visible(|c| oracle::study(c, P, &req))
+                .unwrap();
+            assert_eq!(got, want, "session vs SQL baseline, req {req}");
+            got
+        }
+
+        /// 不作答、逐张排除得到的出卡序列。
+        fn sequence(&self, deck: &str, rwkv: Option<&Value>) -> Vec<String> {
+            let mut ex: Vec<String> = Vec::new();
+            while let Some(id) = self.pick(deck, &ex, rwkv)["next"].as_str() {
+                ex.push(id.to_owned());
+                assert!(ex.len() < 100, "runaway sequence");
+            }
+            ex
+        }
+
+        /// 作答一张：写今天的日志（新卡 = 第一次学，否则复习），卡挪到五天后到期。
+        fn answer(&mut self, id: &str) {
+            let new = id.starts_with('n');
+            log(
+                &self.core,
+                &mut self.logs,
+                id,
+                self.now,
+                if new { "learn" } else { "review" },
+                if new { 1 } else { 2 },
+                "review",
+            );
+            exec(
+                &self.core,
+                "UPDATE srs_cards_cache SET queue = 'review', due_day = ? WHERE id = srs_id(?)",
+                vec![Sql::Integer(self.today() + 5), Sql::Text(id.into())],
+            );
+        }
+
+        fn close(self) {
+            self.core.close();
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// 复习顺序表里的一张卡：(id, 到期日相对今天, 间隔, 难度, 几天前作答, 稳定度)。
+    type OrderCard = (&'static str, i64, i64, Option<f64>, i64, f64);
+
+    const ORDER_CARDS: [OrderCard; 7] = [
+        ("a", -3, 10, Some(5.0), 10, 2.0),
+        ("b", -1, 3, Some(9.0), 1, 10.0),
+        ("c", -1, 3, None, 4, 1.0),
+        ("d", 0, 7, Some(2.0), 30, 5.0),
+        ("e", -1, 3, Some(9.0), 2, 3.0),
+        ("f", 0, 1, Some(7.5), 6, 0.5),
+        ("g", -3, 7, None, 3, 8.0),
+    ];
+
+    /// 按（主键, 当天哈希, id）排好的卡 id。
+    fn by_key(today: i64, prim: impl Fn(&OrderCard) -> (i64, i64)) -> Vec<String> {
+        let mut v: Vec<&OrderCard> = ORDER_CARDS.iter().collect();
+        v.sort_by_key(|c| (prim(c), crate::store::queue::day_hash(c.0, today), c.0));
+        v.iter().map(|c| c.0.to_owned()).collect()
+    }
+
+    /// 缺省顺序：此刻 R 升序、同 R 按 id。
+    fn by_r(now: i64) -> Vec<String> {
+        let mut v: Vec<(f64, &str)> = ORDER_CARDS
+            .iter()
+            .map(|c| {
+                let r = crate::store::queue::sql_r(now, Some(now - c.4 * 86_400_000), Some(c.5));
+                (r.unwrap(), c.0)
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(b.1)));
+        v.iter().map(|c| c.1.to_owned()).collect()
+    }
+
+    /// 五种复习顺序各自的出卡序列逐张对：同到期日（a/g、b/c/e、d/f）、同间隔（b/c/e、d/g）、同难度（b/e）按当天
+    /// 哈希断平，难度为空的（c、g）排最后；没写 / 不认识的值 = 缺省（R 升序），与加这项设置之前逐张相同。
+    #[test]
+    fn review_order_picks_follow_each_option() {
+        let mut lab = OrderLab::new("each");
+        lab.deck("F", None, "fsrs6", true);
+        lab.set("F", "limits", json!({"new": 0, "review": 1000}));
+        for c in ORDER_CARDS {
+            lab.review(c.0, "F", c.1, c.2, c.3, c.4, c.5);
+        }
+        let today = lab.today();
+        let by_d = |c: &OrderCard| match c.3 {
+            Some(d) => (0, -(d * 100.0) as i64),
+            None => (1, 0),
+        };
+        let r_order = by_r(lab.now);
+        assert_eq!(lab.sequence("F", None), r_order, "unset = retrievability");
+        for (wire, want) in [
+            ("retrievability", r_order.clone()),
+            ("bogus", r_order.clone()),
+            ("dueDate", by_key(today, |c| (c.1, 0))),
+            ("difficulty", by_key(today, by_d)),
+            ("intervalAscending", by_key(today, |c| (c.2, 0))),
+            ("random", by_key(today, |_| (0, 0))),
+        ] {
+            lab.set("F", "reviewOrder", json!(wire));
+            assert_eq!(lab.sequence("F", None), want, "reviewOrder {wire}");
+        }
+        // 手写的主键：难度从高到低、空难度最后。
+        let d = by_key(today, by_d);
+        assert_eq!(
+            &d[..2].iter().map(String::as_str).collect::<HashSet<_>>(),
+            &HashSet::from(["b", "e"])
+        );
+        assert_eq!(&d[2..5], &["f", "a", "d"]);
+        assert_eq!(
+            &d[5..].iter().map(String::as_str).collect::<HashSet<_>>(),
+            &HashSet::from(["c", "g"])
+        );
+        lab.close();
+    }
+
+    /// 随机顺序：同一天里不变（此刻前进也不变），第二天换一组（当天哈希里的日序号变了）。
+    #[test]
+    fn random_review_order_is_stable_within_a_day_and_changes_next_day() {
+        let mut lab = OrderLab::new("random");
+        lab.deck("F", None, "fsrs6", true);
+        lab.set("F", "limits", json!({"new": 0, "review": 1000}));
+        for c in ORDER_CARDS {
+            lab.review(c.0, "F", c.1, c.2, c.3, c.4, c.5);
+        }
+        lab.set("F", "reviewOrder", json!("random"));
+        let today = lab.today();
+        let first = lab.sequence("F", None);
+        assert_eq!(first, by_key(today, |_| (0, 0)));
+        lab.now += 3 * H;
+        assert_eq!(lab.today(), today);
+        assert_eq!(lab.sequence("F", None), first, "same day, same order");
+        lab.now += 24 * H;
+        assert_eq!(lab.today(), today + 1);
+        let next_day = lab.sequence("F", None);
+        assert_eq!(next_day, by_key(today + 1, |_| (0, 0)));
+        assert_ne!(next_day, first, "a new day reshuffles");
+        lab.close();
+    }
+
+    /// 参数归属祖先按 RWKV 排程：从它出卡时整棵子树（含自己一份参数的 FSRS 子牌组）都按 R，寄存器里的复习顺序
+    /// 照存不认；直接点那个 FSRS 子牌组时按它自己的复习顺序。
+    #[test]
+    fn rwkv_owner_forces_retrievability_for_whole_subtree() {
+        let mut lab = OrderLab::new("rwkv_root");
+        lab.deck("W", None, "rwkv", true);
+        lab.deck("WF", Some("W"), "fsrs6", true);
+        for d in ["W", "WF"] {
+            lab.set(d, "limits", json!({"new": 0, "review": 1000}));
+            lab.set(d, "reviewOrder", json!("difficulty"));
+        }
+        for c in ORDER_CARDS {
+            lab.review(c.0, "WF", c.1, c.2, c.3, c.4, c.5);
+        }
+        let today = lab.today();
+        assert_eq!(lab.sequence("W", None), by_r(lab.now));
+        let by_d = by_key(today, |c| match c.3 {
+            Some(d) => (0, -(d * 100.0) as i64),
+            None => (1, 0),
+        });
+        assert_eq!(lab.sequence("WF", None), by_d);
+        lab.close();
+    }
+
+    /// FSRS 根（按难度）下混着 RWKV 子牌组：FSRS 一路按难度取队首、RWKV 一路按 R 取队首，两个队首比此刻 R。
+    #[test]
+    fn fsrs_root_mixed_with_rwkv_subdeck_merges_by_r() {
+        let mut lab = OrderLab::new("mixed_rwkv");
+        lab.deck("F", None, "fsrs6", true);
+        lab.deck("FR", Some("F"), "rwkv", true);
+        lab.set("F", "reviewOrder", json!("difficulty"));
+        // R = 1 / (1 + t / 9S)：a 0.5（难度 9）、b 0.2（难度 5）。
+        lab.review("a", "F", -1, 3, Some(9.0), 9, 1.0);
+        lab.review("b", "F", -1, 3, Some(5.0), 36, 1.0);
+        lab.review("x", "FR", -1, 3, Some(1.0), 1, 1.0);
+        lab.review("y", "FR", -1, 3, Some(1.0), 1, 1.0);
+        let rwkv = json!({"decks": {"FR": [0.9, 0, 0, 0]}, "cands": [["x", "FR", null, 0.3], ["y", "FR", null, 0.6]]});
+        assert_eq!(lab.sequence("F", Some(&rwkv)), ["x", "a", "b", "y"]);
+        lab.close();
+    }
+
+    /// 新卡与复习：N = 2、R = 6，逐张真作答（今天已学 / 已复习随之变）。每一步的「再下一张」都等于真作答之后的
+    /// 下一张（虚拟扣掉了下一张那一类）。
+    fn mix_run(mix: &str, new_limit: i64) -> Vec<char> {
+        let mut lab = OrderLab::new(&format!("mix_{mix}_{new_limit}"));
+        lab.deck("F", None, "fsrs6", true);
+        lab.set("F", "limits", json!({"new": new_limit, "review": 6}));
+        lab.set("F", "newMix", json!(mix));
+        lab.new_card("n1", "F", 1);
+        lab.new_card("n2", "F", 2);
+        for i in 1..=6 {
+            lab.review(&format!("r{i}"), "F", -1, i, Some(5.0), i, 1.0);
+        }
+        let mut seq = Vec::new();
+        let mut predicted: Option<Value> = None;
+        loop {
+            let got = lab.pick("F", &[], None);
+            if let Some(p) = predicted.take() {
+                assert_eq!(
+                    got["next"],
+                    p,
+                    "{mix}: after == next once answered (step {})",
+                    seq.len()
+                );
+            }
+            let Some(id) = got["next"].as_str().map(str::to_owned) else {
+                break;
+            };
+            predicted = Some(got["after"].clone());
+            seq.push(if id.starts_with('n') { 'N' } else { 'R' });
+            lab.answer(&id);
+            assert!(seq.len() < 20);
+        }
+        lab.close();
+        seq
+    }
+
+    #[test]
+    fn new_mix_sequences() {
+        let s = |v: Vec<char>| v.into_iter().collect::<String>();
+        assert_eq!(s(mix_run("mixed", 2)), "RRRNRRRN");
+        assert_eq!(s(mix_run("beforeReviews", 2)), "NNRRRRRR");
+        assert_eq!(s(mix_run("afterReviews", 2)), "RRRRRRNN");
+        assert_eq!(s(mix_run("bogus", 2)), "RRRRRRNN");
+        // 新卡上限 0：混排退成纯复习。
+        assert_eq!(s(mix_run("mixed", 0)), "RRRRRR");
+
+        // 选中的那一类没有可出的卡时退到另一类：混排第一张该出复习，复习全被排除 → 出新卡；新卡全被排除 → 出复习。
+        let mut lab = OrderLab::new("mix_fallback");
+        lab.deck("F", None, "fsrs6", true);
+        lab.set("F", "limits", json!({"new": 2, "review": 6}));
+        lab.set("F", "newMix", json!("mixed"));
+        lab.new_card("n1", "F", 1);
+        lab.new_card("n2", "F", 2);
+        for i in 1..=6 {
+            lab.review(&format!("r{i}"), "F", -1, i, Some(5.0), i, 1.0);
+        }
+        let reviews: Vec<String> = (1..=6).map(|i| format!("r{i}")).collect();
+        assert_eq!(lab.pick("F", &reviews, None)["next"], json!("n1"));
+        lab.set("F", "newMix", json!("beforeReviews"));
+        let news = vec!["n1".to_owned(), "n2".to_owned()];
+        assert!(
+            lab.pick("F", &news, None)["next"]
+                .as_str()
+                .unwrap()
+                .starts_with('r')
+        );
+        lab.close();
+    }
+
+    /// 「再下一张」虚拟扣掉「下一张」：新卡先出、新卡上限只剩 1 时，下一张是新卡，再下一张不能再是新卡。
+    #[test]
+    fn after_respects_virtual_counts() {
+        let mut lab = OrderLab::new("after_virtual");
+        lab.deck("F", None, "fsrs6", true);
+        lab.set("F", "limits", json!({"new": 1, "review": 6}));
+        lab.set("F", "newMix", json!("beforeReviews"));
+        lab.new_card("n1", "F", 1);
+        lab.new_card("n2", "F", 2);
+        lab.review("r1", "F", -1, 1, Some(5.0), 3, 1.0);
+        let got = lab.pick("F", &[], None);
+        assert_eq!(got["next"], json!("n1"));
+        assert_eq!(got["after"], json!("r1"));
+        lab.close();
+        // 混排下每一步的再下一张 = 真作答后的下一张（mix_run 里逐步断言）。
+        assert_eq!(mix_run("mixed", 2).len(), 8);
     }
 }
