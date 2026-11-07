@@ -137,8 +137,7 @@ abstract final class _J {
 
   static String str(Object? v, String at) => v is String ? v : bad(at);
 
-  static String? optStr(Object? v, String at) =>
-      v == null ? null : str(v, at);
+  static String? optStr(Object? v, String at) => v == null ? null : str(v, at);
 
   static int integer(Object? v, String at) => v is int ? v : bad(at);
 
@@ -316,10 +315,11 @@ abstract final class SrsRemoteWire {
       ? const <SrsNoteTypeView>[]
       : _J.guard(
           'noteTypes',
-          () => srsMaterializeNoteTypes(<(SrsEntitySource, SrsBuiltinNoteType?)>[
-            for (final SrsEntitySource s in sources)
-              (s, srsBuiltinNoteTypeForKey(profileUid, _builtinKeyOf(s))),
-          ]),
+          () =>
+              srsMaterializeNoteTypes(<(SrsEntitySource, SrsBuiltinNoteType?)>[
+                for (final SrsEntitySource s in sources)
+                  (s, srsBuiltinNoteTypeForKey(profileUid, _builtinKeyOf(s))),
+              ]),
         );
 
   /// 笔记类型身份记录里的内置标识（`builtin`）；没有为 null。
@@ -334,7 +334,8 @@ abstract final class SrsRemoteWire {
 
   static SrsEntityEdits entityEditsFrom(Object? json, [String at = 'edits']) {
     final List<SrsEditItem> items = editItemsFrom(json, at);
-    return _J.guard(at, () => srsEntityEditsOf(<List<SrsEditItem>>[items]))
+    return _J
+        .guard(at, () => srsEntityEditsOf(<List<SrsEditItem>>[items]))
         .single;
   }
 
@@ -534,7 +535,8 @@ abstract final class SrsRemoteWire {
         : _J.strings(m['states'], '$at.states');
     final String mode = _J.str(m['mode'], '$at.mode');
     return SrsCustomStudy(
-      mode: <SrsCustomStudyMode?>[
+      mode:
+          <SrsCustomStudyMode?>[
             for (final SrsCustomStudyMode x in SrsCustomStudyMode.values)
               if (x.wire == mode) x,
           ].firstOrNull ??
@@ -570,9 +572,8 @@ abstract final class SrsRemoteWire {
     final List<Object?> params = _J.list(m['params'], '$at.params');
     return SrsAnswerPreview(
       plan: SrsAnswerPlan(<int, SrsScheduleResult>{
-        for (final MapEntry<String, Object?> e in _J
-            .map(m['plan'], '$at.plan')
-            .entries)
+        for (final MapEntry<String, Object?> e
+            in _J.map(m['plan'], '$at.plan').entries)
           int.tryParse(e.key) ?? _J.bad('$at.plan.${e.key}'): _J.guard(
             '$at.plan.${e.key}',
             () => SrsScheduleResult.fromJson(
@@ -762,9 +763,8 @@ abstract final class SrsRemoteWire {
   ]) {
     final Map<String, Object?> m = _J.map(json, at);
     final Map<String, SrsEntityEdits> edits = <String, SrsEntityEdits>{
-      for (final MapEntry<String, Object?> e in _J
-          .map(m['edits'], '$at.edits')
-          .entries)
+      for (final MapEntry<String, Object?> e
+          in _J.map(m['edits'], '$at.edits').entries)
         e.key: entityEditsFrom(e.value, '$at.edits.${e.key}'),
     };
     final List<Object?> items = _J.list(m['items'], '$at.items');
@@ -1418,6 +1418,7 @@ class SrsRemoteStoreService {
         for (final SrsFieldEdit e in await s.editFieldsBatch(<SrsFieldChange>[
           for (final SrsEditSpec x in SrsRemoteWire.editSpecsFrom(
             a.raw('changes'),
+            'changes',
           ))
             SrsFieldChange(x.kind, x.entityId, x.key, x.value),
         ]))
@@ -1429,10 +1430,7 @@ class SrsRemoteStoreService {
       (SrsDbStore s, _Args a) async => <Object?>[
         for (final SrsFieldEdit e in await s.writeEdits(
           SrsRemoteWire.editSpecsFrom(a.raw('specs')),
-          records: SrsRemoteWire.entityRecordsFrom(
-            a.raw('records'),
-            'records',
-          ),
+          records: SrsRemoteWire.entityRecordsFrom(a.raw('records'), 'records'),
         ))
           e.toJson(),
       ],
