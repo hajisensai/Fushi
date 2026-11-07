@@ -23,8 +23,6 @@ import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
-import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
-    show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -426,12 +424,9 @@ class HeadlessHost {
             remoteLookupService: dictionaries.available
                 ? ServerRemoteLookupService(
                     dictionaries,
+                    // 运行期现读：WebUI / `ctl settings set` 改完即生效。
                     scriptVariantsEnabled: () =>
-                        prefs.getPref(
-                          kLookupChineseScriptVariantsPrefKey,
-                          defaultValue: false,
-                        ) ==
-                        true,
+                        config.lookupChineseScriptVariants,
                   )
                 : null,
             historyService: dictionaries.available
