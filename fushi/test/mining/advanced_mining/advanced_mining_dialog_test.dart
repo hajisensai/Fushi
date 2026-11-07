@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart' show RenderParagraph, SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -541,7 +541,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(t.popup_ctx_edit_clear_keeps_audio_hint), findsNothing);
       await tester.enterText(editorWith('まえ0。'), '');
-      await tester.pump();
+      // 提示出现会让卡片长高（尺寸动画），等它落定再点确认。
+      await tester.pumpAndSettle();
       expect(
         find.text(t.popup_ctx_edit_clear_keeps_audio_hint),
         findsOneWidget,
