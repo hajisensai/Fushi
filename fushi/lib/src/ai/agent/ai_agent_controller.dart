@@ -135,16 +135,17 @@ class AiAgentController extends ChangeNotifier
     DateTime Function()? clock,
     AgentLiveSessions? live,
     McpClientToolbox? mcpToolbox,
-  }) => AiAgentController._(
-    database: database,
-    settings: settings,
-    opContext: opContext,
-    llmFactory: llmFactory,
-    clock: clock,
-    live: live ?? AgentLiveSessions(),
-  )
-    .._invoker = invoker
-    .._mcp = mcpToolbox;
+  }) =>
+      AiAgentController._(
+          database: database,
+          settings: settings,
+          opContext: opContext,
+          llmFactory: llmFactory,
+          clock: clock,
+          live: live ?? AgentLiveSessions(),
+        )
+        .._invoker = invoker
+        .._mcp = mcpToolbox;
 
   final FushiDatabase database;
   final AiSettingsSource settings;

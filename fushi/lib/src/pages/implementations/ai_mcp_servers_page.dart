@@ -17,13 +17,11 @@ import 'package:fushi_engine/ai/mcp_client/mcp_client_toolbox.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_form.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
-import 'package:fushi/src/settings/settings_schema_widgets.dart'
-    show SettingsSectionFooter;
+import 'package:fushi/src/settings/settings_section_footer.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -40,14 +38,17 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-/// 打开 MCP 服务器页。
+/// 打开 MCP 服务器页。[liveStatuses] 由调用方注入（生产接 AI 助手控制器的 MCP
+/// 工具箱）：本页不 import 控制器，免得经 `op_context → app_model` 被拖进 lib/ 的
+/// 大 import 环（守卫 `import_cycle_guard_test.dart`）。
 Future<void> openAiMcpServersPage(
   BuildContext context,
-  PreferencesRepository prefs,
-) => Navigator.of(context).push(
+  PreferencesRepository prefs, {
+  required Map<String, McpServerStatus> Function() liveStatuses,
+}) => Navigator.of(context).push(
   adaptivePageRoute<void>(
     context: context,
-    builder: (_) => AiMcpServersPage(prefs: prefs),
+    builder: (_) => AiMcpServersPage(prefs: prefs, liveStatuses: liveStatuses),
   ),
 );
 
@@ -85,7 +86,8 @@ class AiMcpServersPage extends StatefulWidget {
 
   final PreferencesRepository prefs;
 
-  /// 对话里实际连接的状态（生产接 AI 助手控制器的 MCP 工具箱）。测试注入。
+  /// 对话里实际连接的状态（生产接 AI 助手控制器的 MCP 工具箱，见
+  /// [openAiMcpServersPage]）。不给时当作都还没连过。
   final Map<String, McpServerStatus> Function()? liveStatuses;
 
   /// 打开编辑页（测试注入以免真的推路由）。
@@ -113,13 +115,8 @@ class _AiMcpServersPageState extends State<AiMcpServersPage> {
     if (mounted) setState(() {});
   }
 
-  Map<String, McpServerStatus> _statuses() {
-    final Map<String, McpServerStatus> Function()? injected =
-        widget.liveStatuses;
-    if (injected != null) return injected();
-    return AiAgentController.instanceOrNull?.mcpToolbox.statuses ??
-        const <String, McpServerStatus>{};
-  }
+  Map<String, McpServerStatus> _statuses() =>
+      widget.liveStatuses?.call() ?? const <String, McpServerStatus>{};
 
   List<McpServerConfig> get _servers => widget.prefs.aiMcpClientServers;
 

@@ -6512,9 +6512,7 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
-  Future<void> setAiMcpClientServers(
-    Iterable<McpServerConfig> servers,
-  ) async {
+  Future<void> setAiMcpClientServers(Iterable<McpServerConfig> servers) async {
     await setPref('ai_mcp_client_servers', encodeMcpServerConfigs(servers));
     notifyListeners();
   }
