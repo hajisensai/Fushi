@@ -6,7 +6,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
 import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
-import 'package:fushi/src/srs/srs_directory_key.dart';
+import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 
 void main() {
