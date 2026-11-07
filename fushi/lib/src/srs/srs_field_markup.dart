@@ -37,7 +37,7 @@ enum SrsFieldKind {
 
 final RegExp _imgTag = RegExp(r'<img\b[^>]*>', caseSensitive: false);
 final RegExp _imgSrc = RegExp(
-  r'''\ssrc\s*=\s*(["'])([^"']*)\1''',
+  r'''\ssrc\s*=\s*(?:(["'])([^"']*)\1|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');

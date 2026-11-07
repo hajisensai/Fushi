@@ -1914,23 +1914,24 @@ String _mangaGestureJs({
   window.__mangaCurlRevert = function(){
     _curlPlaceStrip(CURRENT);
   };
-  // 卷页的纸面：跨页 i 的页图（一页或两页）在视口里的外接框，按视口比例
-  // [l, t, r, b] 返回；黑边不是纸，不跟着卷。.manga-page 的盒子就是页图本身
-  // （_layoutSource 按页图比例定宽高，没有内部信箱留白）。量不到返回 null。
+  // 卷页的纸面：跨页 i 的每张页图（一页或两页）在视口里的矩形，按视口比例
+  // [[l, t, r, b], ...] 从左到右返回；黑边不是纸，不跟着卷。双页时 Dart 只翻外侧那张、
+  // 靠里那张当对面页。.manga-page 的盒子就是页图本身（_layoutSource 按页图比例定
+  // 宽高，没有内部信箱留白）。量不到返回 null。
   window.__mangaCurlPaperRect = function(i){
     var pages = document.querySelectorAll('.manga-page[data-spread="'+i+'"]');
     var w = window.innerWidth || 1, h = window.innerHeight || 1;
-    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    var out = [];
     for (var k = 0; k < pages.length; k++) {
       var rc = pages[k].getBoundingClientRect();
-      if (!(rc.width > 0 && rc.height > 0)) continue;
-      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
-      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+      var l = Math.max(0, rc.left), t = Math.max(0, rc.top);
+      var r = Math.min(w, rc.right), b = Math.min(h, rc.bottom);
+      if (!(r > l && b > t)) continue;
+      out.push([l / w, t / h, r / w, b / h]);
     }
-    l = Math.max(0, l); t = Math.max(0, t);
-    r = Math.min(w, r); b = Math.min(h, b);
-    if (!(r > l && b > t)) return null;
-    return [l / w, t / h, r / w, b / h];
+    if (!out.length || out.length > 2) return null;
+    out.sort(function(a, c){ return a[0] - c[0]; });
+    return out;
   };
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;

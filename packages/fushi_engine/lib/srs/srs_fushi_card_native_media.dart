@@ -29,7 +29,8 @@ const List<String> kSrsFushiNativeAudioFields = <String>[
 
 final RegExp _img = RegExp(r'<img\b[^>]*>', caseSensitive: false);
 final RegExp _imgSrc = RegExp(
-  r'''\ssrc\s*=\s*(["'])([^"']*)\1''',
+  // 带引号或不带引号（`<img src=x.jpg>`，老制卡工具 / Anki 字段常见，浏览器同样认）。
+  r'''\ssrc\s*=\s*(?:(["'])([^"']*)\1|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 
@@ -95,7 +96,7 @@ bool srsFushiCardMediaIsNative(Map<String, String> fields) {
   for (final Match m in _img.allMatches(picture)) {
     final Match? src = _imgSrc.firstMatch(m.group(0)!);
     if (src == null) return false;
-    sources.add(_unescapeAttr(src.group(2)!));
+    sources.add(_unescapeAttr(src.group(2) ?? src.group(3)!));
   }
   final String rest = picture
       .replaceAll(_img, '')
