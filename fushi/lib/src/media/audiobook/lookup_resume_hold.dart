@@ -1,9 +1,27 @@
-/// 查词关弹窗后「恢复播放」在途期间的按住窗口何时结束。
+/// 查词关弹窗后「恢复播放」：从哪里恢复，以及恢复在途期间的按住窗口何时结束。
 library;
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+
+/// 查词暂停后关弹窗：要从哪一句的句首重播。返回 null 表示照旧原地 `play()`。
+///
+/// - [restartEnabled]：用户开了「查词后从句首重播」；
+/// - [alreadyPlaying]：关弹窗时播放器已经在播（用户在弹窗里按过播放 / 「从此句播放」），
+///   不再二次跳句，免得把用户自己选的位置拽回去；
+/// - [lookupCue]：被查词所在的句（点在哪句就重播哪句，哪怕那句早已播完）；
+/// - [currentCue]：查不到被查词所在句时退回暂停那一刻正在播的句。
+AudioCue? lookupRestartCue({
+  required bool restartEnabled,
+  required bool alreadyPlaying,
+  required AudioCue? lookupCue,
+  required AudioCue? currentCue,
+}) {
+  if (!restartEnabled || alreadyPlaying) return null;
+  return lookupCue ?? currentCue;
+}
 
 /// 查词暂停后恢复播放：按住（`playbackHeldForLookup`）该在什么时候撤掉。
 ///

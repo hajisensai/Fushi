@@ -4742,6 +4742,8 @@
   "lookup_popup_ui_scale": "Popup UI scale",
   "lookup_popup_ui_scale_hint": "Scales popup content and buttons on top of the app UI size; the popup window size is unchanged",
   "lookup_recent_searches": "Recent searches",
+  "lookup_resume_restart_sentence": "Restart sentence after lookup",
+  "lookup_resume_restart_sentence_hint": "When the dictionary closes, replay the looked-up sentence from its start instead of continuing mid-sentence",
   "low_memory_mode": "وضع الذاكرة المنخفضة",
   "low_memory_mode_hint": "تقليل استخدام الذاكرة والتخزين المؤقت للأجهزة منخفضة المواصفات. بعض التغييرات تتطلب إعادة التشغيل.",
   "low_memory_mode_suggestion": "جرب تفعيل وضع الذاكرة المنخفضة في الإعدادات ← إعدادات متنوعة.",

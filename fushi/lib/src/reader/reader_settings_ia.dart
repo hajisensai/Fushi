@@ -271,6 +271,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'lookup.auto_read_on_lookup',
           'lookup.audio_volume',
           'lookup.pause_on_lookup',
+          'lookup.restart_sentence_after_lookup',
         ],
       ),
       ReaderSettingsSectionSpec(

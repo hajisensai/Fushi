@@ -807,6 +807,26 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
+          // 查词暂停后关弹窗从被查词那句的句首重播（而非原地续播）；只在「查词时暂停」
+          // 开着时有意义，关掉暂停就隐藏。
+          SettingsSwitchItem(
+            id: 'lookup.restart_sentence_after_lookup',
+            title: t.lookup_resume_restart_sentence,
+            subtitle: t.lookup_resume_restart_sentence_hint,
+            icon: Icons.replay_outlined,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.pauseOnLookup,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 16),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.restartSentenceAfterLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setRestartSentenceAfterLookup(
+                value: value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: false,
+          ),
         ],
       ),
       SettingsSection(

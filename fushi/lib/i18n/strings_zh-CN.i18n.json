@@ -4742,6 +4742,8 @@
   "lookup_popup_ui_scale": "查词弹窗缩放",
   "lookup_popup_ui_scale_hint": "在界面大小之上单独缩放弹窗内容与按钮，弹窗窗口尺寸不变",
   "lookup_recent_searches": "最近搜索",
+  "lookup_resume_restart_sentence": "查词后从句首重播",
+  "lookup_resume_restart_sentence_hint": "关闭词典弹窗后，从被查词所在句的开头重播，而不是从中途续播",
   "low_memory_mode": "小内存模式",
   "low_memory_mode_hint": "减少缓存和内存使用，适合低端设备。部分更改需重启后生效。",
   "low_memory_mode_suggestion": "可尝试在 设置 → 其他设置 中开启小内存模式。",

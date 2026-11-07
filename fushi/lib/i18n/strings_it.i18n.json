@@ -4742,6 +4742,8 @@
   "lookup_popup_ui_scale": "Popup UI scale",
   "lookup_popup_ui_scale_hint": "Scales popup content and buttons on top of the app UI size; the popup window size is unchanged",
   "lookup_recent_searches": "Recent searches",
+  "lookup_resume_restart_sentence": "Restart sentence after lookup",
+  "lookup_resume_restart_sentence_hint": "When the dictionary closes, replay the looked-up sentence from its start instead of continuing mid-sentence",
   "low_memory_mode": "Modalità memoria ridotta",
   "low_memory_mode_hint": "Riduce l'uso di cache e memoria per dispositivi di fascia bassa. Alcune modifiche richiedono il riavvio.",
   "low_memory_mode_suggestion": "Prova ad attivare la modalità memoria ridotta in Impostazioni → Varie.",

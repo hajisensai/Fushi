@@ -4742,6 +4742,8 @@
   "lookup_popup_ui_scale": "Popup UI scale",
   "lookup_popup_ui_scale_hint": "Scales popup content and buttons on top of the app UI size; the popup window size is unchanged",
   "lookup_recent_searches": "Recent searches",
+  "lookup_resume_restart_sentence": "Restart sentence after lookup",
+  "lookup_resume_restart_sentence_hint": "When the dictionary closes, replay the looked-up sentence from its start instead of continuing mid-sentence",
   "low_memory_mode": "Mode Memori Rendah",
   "low_memory_mode_hint": "Mengurangi penggunaan cache dan memori untuk perangkat kelas bawah. Beberapa perubahan berlaku setelah mulai ulang.",
   "low_memory_mode_suggestion": "Coba aktifkan Mode Memori Rendah di Pengaturan → Lain-lain.",

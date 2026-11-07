@@ -1568,6 +1568,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
   }
 
+  /// 查词暂停后关弹窗时，从被查词所在那句的句首重播，而不是原地续播。
+  /// 只在 [pauseOnLookup] 开着时有意义（没暂停就没有「恢复」）。默认关。
+  bool get restartSentenceAfterLookup => getPreference<bool>(
+    key: 'restart_sentence_after_lookup',
+    defaultValue: false,
+  );
+
+  Future<void> setRestartSentenceAfterLookup({required bool value}) async {
+    await setPreference<bool>(
+      key: 'restart_sentence_after_lookup',
+      value: value,
+    );
+  }
+
   /// 悬停查词时，鼠标离开字幕与查词浮层后是否自动关掉浮层并恢复播放（免去「再点一下
   /// 空白」那一步）。只作用于**悬停发起**的查词会话——点击查词是显式的「停在这儿看」，
   /// 鼠标移开不关（判据见 `VideoFushiPage.shouldAutoResumeOnHoverLeave`）。

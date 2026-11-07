@@ -4742,6 +4742,8 @@
   "lookup_popup_ui_scale": "Popup UI scale",
   "lookup_popup_ui_scale_hint": "Scales popup content and buttons on top of the app UI size; the popup window size is unchanged",
   "lookup_recent_searches": "Recent searches",
+  "lookup_resume_restart_sentence": "Restart sentence after lookup",
+  "lookup_resume_restart_sentence_hint": "When the dictionary closes, replay the looked-up sentence from its start instead of continuing mid-sentence",
   "low_memory_mode": "省メモリモード",
   "low_memory_mode_hint": "キャッシュとメモリ使用量を削減します。一部の変更は再起動後に反映されます。",
   "low_memory_mode_suggestion": "設定 → その他の設定で省メモリモードを有効にしてみてください。",

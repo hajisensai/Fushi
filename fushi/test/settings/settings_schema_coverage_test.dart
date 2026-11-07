@@ -1401,6 +1401,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',
   'lookup/Pause on lookup': 'DEVICE: audiobook pause on selection',
+  // 查词暂停后关弹窗从被查词那句句首重播：恢复点判据 + 阅读器接线由专项测试守，
+  // 真实跳句起播随「查词时暂停」同属设备 backlog。
+  'lookup/Restart sentence after lookup':
+      'test/media/audiobook/lookup_restart_sentence_test.dart '
+      '(DEVICE: resume from sentence start after popup close)',
   // TODO-756b：悬停即查词（视频 onCharHover 门控 + 阅读器 window.__hoverAutoLookup
   // JS 门控）。change/persist/restore 经 DB 由本测试守，运行时悬停查词分流由
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。

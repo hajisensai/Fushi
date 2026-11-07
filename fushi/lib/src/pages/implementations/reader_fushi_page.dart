@@ -5002,6 +5002,10 @@ $liveConfigJs
       _recordAudioJumpDeparture(fromGlobalMs, source);
 
   AudioCue? _lookupCue;
+
+  /// 查词暂停期间最近一次在正文 / 歌词里点中的句，关弹窗「从句首重播」用。
+  /// 与 [_lookupCue] 分开存：弹窗收尾的 [clearDictionaryResult] 会先清掉 [_lookupCue]。
+  AudioCue? _lookupRestartCue;
   final LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>
   _audioPositionIndices =
       LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>();
