@@ -593,7 +593,8 @@ class FushiSyncServer {
   GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter;
 
   /// 远程更新本机 app（`GET/POST /api/host/update`，反馈 Pp8XPyve0N）。实现是各平台
-  /// app 的现有自更新流程；无头服务端不接——null 时端点 404、能力位 `hostUpdate=false`。
+  /// app 的现有自更新流程，无头服务端是 `ServerSelfUpdater`；null 时端点 404、能力位
+  /// `hostUpdate=false`。
   HostSelfUpdater? hostSelfUpdater;
 
   /// 触发远程更新的一次性 nonce（GET 签发、POST 核销）。

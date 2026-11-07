@@ -1777,7 +1777,7 @@ void main() {
           reason: 'webtoon 的锚点屏幕坐标是 layout*ZOOM - scrollY',
         );
         expect(
-          doc.contains('window.scrollTo(0, Math.max(0, localY * ZOOM - ay));'),
+          doc.contains('_zoomAnchorScrollTo(Math.max(0, localY * ZOOM - ay));'),
           isTrue,
           reason: '捏合后必须把锚点补偿写回 scrollY，否则画面跟着缩放跳走',
         );
