@@ -838,6 +838,23 @@ class ReaderSettings {
   Future<void> toggleShowReadingTimer() =>
       _set<bool>('show_reading_timer', !showReadingTimer);
 
+  /// 读数胶囊里的「本次字数」段是否显示（per-reader）。默认 true。
+  bool get showSessionChars => _get<bool>('show_session_chars', true);
+  Future<void> toggleShowSessionChars() =>
+      _set<bool>('show_session_chars', !showSessionChars);
+
+  /// 读数胶囊里的「本次字每时」段是否显示（per-reader）。默认 true。
+  bool get showCharsPerHour => _get<bool>('show_chars_per_hour', true);
+  Future<void> toggleShowCharsPerHour() =>
+      _set<bool>('show_chars_per_hour', !showCharsPerHour);
+
+  /// 悬浮控制栏收起后读数胶囊是否留在屏上（per-reader）。默认 true；false = 读数
+  /// 随控制栏一起收起、屏底只剩细进度线（此前行为）。
+  bool get statusFooterPersistent =>
+      _get<bool>('status_footer_persistent', true);
+  Future<void> toggleStatusFooterPersistent() =>
+      _set<bool>('status_footer_persistent', !statusFooterPersistent);
+
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);

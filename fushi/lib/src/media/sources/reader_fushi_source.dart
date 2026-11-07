@@ -1835,6 +1835,45 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 读数胶囊「本次字数」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showSessionChars =>
+      readerSettings?.showSessionChars ??
+      getPreference<bool>(key: 'show_session_chars', defaultValue: true);
+
+  void toggleShowSessionChars() async {
+    await (readerSettings?.toggleShowSessionChars() ??
+        setPreference<bool>(
+          key: 'show_session_chars',
+          value: !showSessionChars,
+        ));
+  }
+
+  /// 读数胶囊「本次字每时」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showCharsPerHour =>
+      readerSettings?.showCharsPerHour ??
+      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: true);
+
+  void toggleShowCharsPerHour() async {
+    await (readerSettings?.toggleShowCharsPerHour() ??
+        setPreference<bool>(
+          key: 'show_chars_per_hour',
+          value: !showCharsPerHour,
+        ));
+  }
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（分层同 [showTopProgressBar]）。
+  bool get statusFooterPersistent =>
+      readerSettings?.statusFooterPersistent ??
+      getPreference<bool>(key: 'status_footer_persistent', defaultValue: true);
+
+  void toggleStatusFooterPersistent() async {
+    await (readerSettings?.toggleStatusFooterPersistent() ??
+        setPreference<bool>(
+          key: 'status_footer_persistent',
+          value: !statusFooterPersistent,
+        ));
+  }
+
   bool get keepScreenAwake =>
       readerSettings?.keepScreenAwake ??
       getPreference<bool>(key: 'keep_screen_awake', defaultValue: true);

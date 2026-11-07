@@ -21,6 +21,8 @@ void main() {
             lyricsMode: lyricsMode,
             showTimer: true,
             showProgress: true,
+            showChars: false,
+            showSpeed: false,
           );
       expect(enabled(desktop: true, lyricsMode: false), isTrue);
       expect(enabled(desktop: true, lyricsMode: true), isFalse);
@@ -37,6 +39,8 @@ void main() {
             lyricsMode: false,
             showTimer: showTimer,
             showProgress: showProgress,
+            showChars: false,
+            showSpeed: false,
           );
       expect(enabled(showTimer: true, showProgress: true), isTrue);
       expect(enabled(showTimer: true, showProgress: false), isTrue);
@@ -52,6 +56,8 @@ void main() {
           lyricsMode: true,
           showTimer: true,
           showProgress: true,
+          showChars: false,
+          showSpeed: false,
         ),
         isFalse,
         reason: '歌词模式仍然一票否决',
@@ -307,6 +313,8 @@ void main() {
       int? total = 123962,
       bool showTimer = true,
       bool showProgress = true,
+      bool showChars = false,
+      bool showSpeed = false,
       bool centered = false,
       VoidCallback? onTap,
       VoidCallback? onTapTracker,
@@ -325,6 +333,8 @@ void main() {
                 totalChars: total,
                 showTimer: showTimer,
                 showProgress: showProgress,
+                showChars: showChars,
+                showSpeed: showSpeed,
                 centered: centered,
                 textColor: Colors.white,
                 backgroundColor: Colors.black,
@@ -726,6 +736,8 @@ void main() {
                     totalChars: 123962,
                     showTimer: showTimer,
                     showProgress: showProgress,
+                    showChars: false,
+                    showSpeed: false,
                     textColor: Colors.white,
                     onToggleTimer: onToggleTimer,
                     tick: const Duration(milliseconds: 100),
@@ -781,6 +793,282 @@ void main() {
         findsOneWidget,
         reason: '进度段与计时段互不连带',
       );
+    });
+  });
+
+  // 反馈：计时 / 本次字数 / 字每时要常驻在屏上。读数胶囊加长成四段，窄屏按实测
+  // 宽度逐档降级；悬浮态控制栏收起后胶囊留在原位（常驻）。
+  group('session readouts', () {
+    // 1284 字 / 535 秒 = 8640 字/时。
+    const StudySessionTotals totals = (
+      durationMs: 535000,
+      chars: 1284,
+      active: true,
+    );
+
+    ReaderStatusReadoutTexts texts(
+      ReaderStatusReadoutDensity d, {
+      String locale = 'en',
+      StudySessionTotals sample = totals,
+      String? progress = '53.9%',
+    }) => readerStatusReadoutTexts(
+      density: d,
+      totals: sample,
+      showTimer: true,
+      showChars: true,
+      showSpeed: true,
+      progress: progress,
+      locale: locale,
+      charsUnit: (String n) => '$n chars',
+      speedUnit: (String n) => '$n chars/h',
+    );
+
+    test('enabled while any of the four readouts is on', () {
+      bool enabled({
+        bool timer = false,
+        bool progress = false,
+        bool chars = false,
+        bool speed = false,
+      }) => readerStatusFooterEnabled(
+        desktop: false,
+        lyricsMode: false,
+        showTimer: timer,
+        showProgress: progress,
+        showChars: chars,
+        showSpeed: speed,
+      );
+      expect(enabled(), isFalse);
+      expect(enabled(chars: true), isTrue);
+      expect(enabled(speed: true), isTrue);
+    });
+
+    test('persistent floating footer reserves its band and stays visible', () {
+      expect(
+        readerStatusFooterReserve(
+          enabled: true,
+          footerHeight: 36,
+          floating: true,
+          persistent: true,
+        ),
+        36,
+        reason: '常驻胶囊一直在屏上，不占预留就会常年盖住每栏末尾',
+      );
+      expect(
+        readerStatusFooterReserve(
+          enabled: true,
+          footerHeight: 36,
+          floating: true,
+          persistent: true,
+          absorbedByBar: true,
+        ),
+        36,
+        reason: '悬浮态的吸收只来自播放条临时唤出，跟着翻预留会让正文反复重排',
+      );
+      expect(
+        readerStatusFooterReserve(
+          enabled: true,
+          footerHeight: 36,
+          floating: true,
+        ),
+        0,
+        reason: '不常驻 = 旧行为：悬浮态不占预留',
+      );
+      expect(
+        readerStatusFooterVisible(
+          enabled: true,
+          hasEverLoaded: true,
+          absorbedByBar: false,
+          floating: true,
+          transientVisible: false,
+          persistent: true,
+        ),
+        isTrue,
+      );
+      expect(
+        readerStatusFooterResting(
+          floating: true,
+          persistent: true,
+          transientVisible: false,
+        ),
+        isTrue,
+      );
+      expect(
+        readerStatusFooterResting(
+          floating: true,
+          persistent: true,
+          transientVisible: true,
+        ),
+        isFalse,
+        reason: '控制栏唤出时胶囊是正常样子',
+      );
+    });
+
+    test('texts per density', () {
+      final ReaderStatusReadoutTexts labeled = texts(
+        ReaderStatusReadoutDensity.labeled,
+      );
+      expect(labeled.clock, '8:55');
+      expect(labeled.chars, '1,284 chars');
+      expect(labeled.speed, '8,640 chars/h');
+      expect(labeled.trackWidth, kReaderStatusProgressTrackWidthLabeled);
+      expect(labeled.iconLabels, isFalse);
+
+      final ReaderStatusReadoutTexts icons = texts(
+        ReaderStatusReadoutDensity.icons,
+      );
+      expect(icons.chars, '1,284');
+      expect(icons.speed, '8,640/h');
+      expect(icons.trackWidth, kReaderStatusProgressTrackWidth);
+      expect(icons.iconLabels, isTrue);
+
+      expect(texts(ReaderStatusReadoutDensity.noTrack).trackWidth, isNull);
+      expect(texts(ReaderStatusReadoutDensity.noTrack).progress, '53.9%');
+
+      final ReaderStatusReadoutTexts compact = texts(
+        ReaderStatusReadoutDensity.compact,
+        locale: 'zh_CN',
+        sample: (durationMs: 535000, chars: 12345, active: true),
+      );
+      expect(compact.chars, '1.23万', reason: '中日文紧凑写法用「万」');
+
+      final ReaderStatusReadoutTexts minimal = texts(
+        ReaderStatusReadoutDensity.minimal,
+      );
+      expect(minimal.chars, isNull, reason: '最窄档隐藏字数');
+      expect(minimal.clock, isNotNull);
+      expect(minimal.speed, isNotNull);
+      expect(minimal.progress, isNotNull);
+    });
+
+    test('width estimate shrinks monotonically and picks the first fit', () {
+      double measure(String s) => s.length * 7.0;
+      final List<double> widths = <double>[
+        for (final ReaderStatusReadoutDensity d
+            in ReaderStatusReadoutDensity.values)
+          readerStatusReadoutWidth(texts(d), measure: measure, clockSize: 28),
+      ];
+      for (int i = 1; i < widths.length; i++) {
+        expect(widths[i], lessThanOrEqualTo(widths[i - 1]), reason: '第 $i 档');
+      }
+      ReaderStatusReadoutDensity pick(double max, {bool labeled = true}) =>
+          readerStatusPickDensity(
+            maxWidth: max,
+            allowLabeled: labeled,
+            widthOf: (ReaderStatusReadoutDensity d) => readerStatusReadoutWidth(
+              texts(d),
+              measure: measure,
+              clockSize: 28,
+            ),
+          );
+      expect(pick(double.infinity), ReaderStatusReadoutDensity.labeled);
+      expect(
+        pick(double.infinity, labeled: false),
+        ReaderStatusReadoutDensity.icons,
+      );
+      expect(pick(widths[2]), ReaderStatusReadoutDensity.noTrack);
+      expect(pick(1), ReaderStatusReadoutDensity.minimal);
+    });
+
+    Widget footerAt(double width, {bool resting = false}) => MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomRight,
+          child: SizedBox(
+            width: width,
+            child: ReaderStatusFooter(
+              sessionTotals: () => totals,
+              currentChars: 64988,
+              totalChars: 123962,
+              showTimer: true,
+              showProgress: true,
+              showChars: true,
+              showSpeed: true,
+              floating: true,
+              resting: resting,
+              textColor: Colors.white,
+              backgroundColor: Colors.black,
+              tick: const Duration(milliseconds: 100),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    String densityShown(WidgetTester tester) {
+      final Row row = tester.widget<Row>(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is Row &&
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith(
+                'fushi_status_readouts_',
+              ),
+        ),
+      );
+      return (row.key! as ValueKey<String>).value.substring(
+        'fushi_status_readouts_'.length,
+      );
+    }
+
+    testWidgets('wide window shows all four readouts with unit labels', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(footerAt(1000));
+      expect(densityShown(tester), 'labeled');
+      expect(
+        find.byKey(const ValueKey<String>('fushi_status_chars')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('fushi_status_speed')),
+        findsOneWidget,
+      );
+      expect(find.text('53.9%'), findsNothing, reason: '52.4% 是本例的真进度');
+      expect(find.text('52.4%'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('narrow windows degrade instead of overflowing', (
+      WidgetTester tester,
+    ) async {
+      final List<String> seen = <String>[];
+      for (final double width in <double>[380, 300, 240, 200, 120]) {
+        await tester.pumpWidget(footerAt(width));
+        seen.add(densityShown(tester));
+        expect(tester.takeException(), isNull, reason: '宽 $width 不溢出');
+        expect(
+          tester.getRect(find.byType(ReaderStatusFooter)).height,
+          readerStatusFooterPaintedHeight(floating: true),
+          reason: '不换行、不加高',
+        );
+      }
+      expect(seen.first, isNot('labeled'), reason: '380 宽放不下带单位的写法');
+      expect(seen.last, 'minimal');
+      final List<int> order = <int>[
+        for (final String s in seen)
+          ReaderStatusReadoutDensity.values.byName(s).index,
+      ];
+      for (int i = 1; i < order.length; i++) {
+        expect(order[i], greaterThanOrEqualTo(order[i - 1]), reason: '越窄越降级');
+      }
+    });
+
+    testWidgets('resting pill drops its shadow', (WidgetTester tester) async {
+      ShapeDecoration pill() =>
+          tester
+                  .widget<AnimatedContainer>(
+                    find.byKey(
+                      const ValueKey<String>('fushi_status_footer_pill'),
+                    ),
+                  )
+                  .decoration!
+              as ShapeDecoration;
+      await tester.pumpWidget(footerAt(1000));
+      expect(pill().shadows!.single.color.a, greaterThan(0));
+      await tester.pumpWidget(footerAt(1000, resting: true));
+      await tester.pumpAndSettle();
+      expect(pill().shadows!.single.color.a, 0);
+      expect(pill().color!.a, lessThan(1));
     });
   });
 
