@@ -38,6 +38,8 @@ const UpdateAsset _asset = UpdateAsset(
 
 void main() {
   late int resolveCalls;
+  late int installCalls;
+  late Completer<void>? resolveGate;
   late ({String version, UpdateAsset? asset})? latest;
   late Future<void> Function({
     required void Function(double progress) onProgress,
@@ -50,6 +52,8 @@ void main() {
 
   setUp(() {
     resolveCalls = 0;
+    installCalls = 0;
+    resolveGate = null;
     latest = (version: '2.11.0', asset: _asset);
     installBody = ({required onProgress, required onInstalling}) async {
       onProgress(0.5);
@@ -67,6 +71,7 @@ void main() {
     isAllowed: () async => allowed,
     resolve: () async {
       resolveCalls++;
+      await resolveGate?.future;
       return latest;
     },
     install:
@@ -75,7 +80,13 @@ void main() {
           required String version,
           required void Function(double progress) onProgress,
           required void Function() onInstalling,
-        }) => installBody(onProgress: onProgress, onInstalling: onInstalling),
+        }) {
+          installCalls++;
+          return installBody(
+            onProgress: onProgress,
+            onInstalling: onInstalling,
+          );
+        },
     onRemoteUpdateStarted: () => startedToasts++,
     now: () => now,
   );
@@ -174,6 +185,44 @@ void main() {
     );
     gate.complete();
     await settle();
+  });
+
+  Matcher deniedWith(HostUpdateDenial d) => throwsA(
+    isA<HostUpdateRejected>().having(
+      (HostUpdateRejected e) => e.denial,
+      'denial',
+      d,
+    ),
+  );
+
+  test('two devices triggering at once while the first is still resolving: '
+      'only one update runs, the other is busy', () async {
+    // 两台已配对设备各带自己的 nonce 同时 POST，都走到同一个 updater：第一个还卡在
+    // 重查更新源（尚未进 downloading）时第二个进来。
+    resolveGate = Completer<void>();
+    final AppHostSelfUpdater updater = build();
+    final Future<HostUpdateStatus> deviceA = updater.startUpdate();
+    await expectLater(updater.startUpdate(), deniedWith(HostUpdateDenial.busy));
+    resolveGate!.complete();
+    expect((await deviceA).phase, HostUpdatePhase.downloading);
+    await settle();
+    expect(resolveCalls, 1);
+    expect(installCalls, 1);
+    expect(startedToasts, 1);
+  });
+
+  test('a failed resolve or no update releases the slot for a retry', () async {
+    latest = null;
+    final AppHostSelfUpdater updater = build();
+    await expectLater(
+      updater.startUpdate(),
+      deniedWith(HostUpdateDenial.noUpdate),
+    );
+    expect((await updater.status()).phase, HostUpdatePhase.idle);
+    latest = (version: '2.11.0', asset: _asset);
+    expect((await updater.startUpdate()).phase, HostUpdatePhase.downloading);
+    await settle();
+    expect(installCalls, 1);
   });
 
   test('missing Android install permission waits for the host user', () async {
