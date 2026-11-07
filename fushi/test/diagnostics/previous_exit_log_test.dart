@@ -404,6 +404,35 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    // BUG-4228（反馈 vJrUPZW9I8）：125 = IMPORTANCE_FOREGROUND_SERVICE（放歌 / 下载保活 /
+    // 悬浮窗），界面可能早已退到后台。标记停在 paused 48 分钟后被 SIGNALED 杀掉，旧判定
+    // 按 125 <= 125 直判前台 →「停在前台时没了，疑似闪退」。
+    test('importance=125（前台服务）+ 标记停在 paused → 后台回收，不弹闪退报告', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'paused',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, reason: 'SIGNALED'),
+        ],
+      );
+      expect(v, isNotNull);
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.foreground, isFalse);
+      expect(v.worthReporting, isFalse);
+      expect(v.summary, contains('androidImportanceAtDeath=125'));
+      expect(v.summary, contains('停在后台时没了'));
+    });
+
+    test('importance=125（前台服务）+ 标记停在 resumed → 仍是疑似闪退', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, reason: 'SIGNALED'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.worthReporting, isTrue);
+    });
+
     test('后台时原生崩溃照样上报（平台崩溃原因优先）', () async {
       final PreviousExitVerdict? v = await verdictFor(
         lifecycle: 'inactive',
@@ -607,6 +636,64 @@ void main() {
       expect(v.worthReporting, isFalse);
     });
 
+    // BUG-4227（反馈 1jhwtJQIZq）：iOS 后台拉起时引擎的初始生命周期就是 inactive。
+    // foldIntoErrorLog 挂观察者时补记当前生命周期，旧实现把 headless 覆盖成 inactive
+    // （算前台），进程之后在后台被回收就判成「启动即闪退」。走真实的折入 + 观察者路径。
+    test('iOS 后台拉起：补记的初始 inactive / 后续 hidden、paused 不覆盖 headless', () async {
+      final TestWidgetsFlutterBinding binding =
+          TestWidgetsFlutterBinding.instance;
+      addTearDown(
+        () => binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed),
+      );
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      answerLaunch(hasUi: false);
+      await ErrorLogService.instance.init(directoryOverride: tmp);
+      await PreviousExitLog.foldIntoErrorLog(
+        collector: (Directory appDir) =>
+            launchProcess(nowMs: 1000, android: false),
+      );
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+      expect(readMarker().diedInForeground, isFalse);
+
+      answerLaunch(hasUi: true);
+      final PreviousExitVerdict? v = classifyPreviousExit(
+        await launchProcess(nowMs: 9000, android: false),
+        version: '3.3.0-debug.23025',
+        nowMs: 9000,
+      );
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.worthReporting, isFalse);
+      expect(v.summary, contains('lastLifecycle=headless'));
+      await ErrorLogService.instance.flush();
+    });
+
+    test('headless 标记：只有 resumed 升级，detached 照常标 clean', () {
+      final File f = File('${tmp.path}/session_marker.json');
+      final SessionMarker m = SessionMarker(f, pid: 5, version: 'v')
+        ..start(
+          nowMs: 1,
+          launch: const LaunchPresence(hasUi: false, detail: ''),
+        );
+      m.recordLifecycle('inactive', nowMs: 2);
+      expect(readMarker().lifecycle, kSessionLifecycleHeadless);
+      expect(readMarker().lifecycleAt, 1);
+      m.recordLifecycle('detached', nowMs: 3);
+      expect(readMarker().clean, isTrue);
+
+      final SessionMarker up = SessionMarker(f, pid: 6, version: 'v')
+        ..start(
+          nowMs: 10,
+          launch: const LaunchPresence(hasUi: false, detail: ''),
+        );
+      up.recordLifecycle('resumed', nowMs: 11);
+      up.recordLifecycle('inactive', nowMs: 12);
+      expect(readMarker().lifecycle, 'inactive', reason: '上过屏后照常记录');
+      expect(readMarker().diedInForeground, isTrue);
+    });
+
     test('桌面不问原生（没有无界面启动），通道不存在时按旧逻辑记 launching', () async {
       int asked = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -790,6 +877,123 @@ void main() {
         (ExitReportEntry e) => e.source == kMacCrashReportSource,
       ),
       isEmpty,
+    );
+  });
+
+  // BUG-4226（反馈 J1ZWNUeaCT）：3.3.0 启动时把 3.0.1 三天前 dyld「Library missing」的
+  // .ips 当成上次闪退上报。只收上次会话启动之后的报告；版本对不上的只作诊断。
+  test('macOS：上次会话启动前的 .ips 不收、版本对不上的只作诊断', () async {
+    final Directory reports = Directory('${tmp.path}/DiagnosticReports')
+      ..createSync();
+    String ips(String appVersion) {
+      final String header = jsonEncode(<String, Object?>{
+        'app_name': 'fushi',
+        'app_version': appVersion,
+        'bug_type': '309',
+        'timestamp': '2026-11-04 17:05:58.00 +0800',
+      });
+      final String body = jsonEncode(<String, Object?>{
+        'exception': <String, Object?>{
+          'type': 'EXC_CRASH',
+          'signal': 'SIGABRT',
+        },
+        'termination': <String, Object?>{
+          'namespace': 'DYLD',
+          'code': 1,
+          'indicator': 'Library missing',
+        },
+      });
+      return '$header\n$body';
+    }
+
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int previousStart = now - const Duration(hours: 1).inMilliseconds;
+    File('${tmp.path}/session_marker.json').writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'pid': 4321,
+        'startedAt': previousStart,
+        'version': '3.3.0-debug.24434',
+        'lifecycle': 'exit',
+        'lifecycleAt': now - 1000,
+        'clean': true,
+        'initialised': true,
+      }),
+    );
+    // 上次会话启动之前（仍在 7 天回看窗口内）、版本相同：不是上次进程的。
+    File('${reports.path}/fushi-2026-11-07-100000.ips')
+      ..writeAsStringSync(ips('3.3.0'))
+      ..setLastModifiedSync(
+        DateTime.fromMillisecondsSinceEpoch(
+          previousStart - const Duration(hours: 1).inMilliseconds,
+        ),
+      );
+    // 上次会话期间、版本却是别处的旧副本：只作诊断。
+    File('${reports.path}/fushi-2026-11-07-110000.ips')
+      ..writeAsStringSync(ips('3.0.1'))
+      ..setLastModifiedSync(
+        DateTime.fromMillisecondsSinceEpoch(now - 10 * 60 * 1000),
+      );
+
+    Future<List<ExitReportEntry>> run(int at) => PreviousExitLog.collect(
+      appDir: tmp,
+      version: '3.3.0-debug.24440',
+      isAndroid: false,
+      isWindows: false,
+      isMacOS: true,
+      isIOS: false,
+      macReportsDir: reports,
+      macProcessName: 'fushi',
+      nowMs: at,
+    );
+    final List<ExitReportEntry> entries = await run(now);
+    final List<ExitReportEntry> mac = entries
+        .where((ExitReportEntry e) => e.source == kMacCrashReportSource)
+        .toList();
+    expect(mac, hasLength(1), reason: '上次会话启动前的那份不收');
+    expect(mac.single.text, contains('version=3.0.1'));
+    expect(mac.single.text, contains('只作诊断'));
+    expect(mac.single.kind, isNull);
+    expect(mac.single.severe, isFalse);
+    expect(
+      classifyPreviousExit(entries, version: '3.3.0', nowMs: now),
+      isNull,
+      reason: '上次正常退出、没有属于它的崩溃报告 → 不弹闪退报告',
+    );
+
+    // 刚才那次会话（startedAt=now）期间同版本主干崩了（Apple 包的
+    // CFBundleShortVersionString 剥掉了预发布段）：照常判崩溃。
+    File('${reports.path}/fushi-2026-11-07-120000.ips')
+      ..writeAsStringSync(ips('3.3.0'))
+      ..setLastModifiedSync(DateTime.fromMillisecondsSinceEpoch(now + 5000));
+    final PreviousExitVerdict? v = classifyPreviousExit(
+      await run(now + 10000),
+      version: '3.3.0',
+      nowMs: now + 10000,
+    );
+    expect(v!.kind, PreviousExitKind.crash);
+    expect(v.summary, contains('Library missing'));
+  });
+
+  test('macOS 崩溃报告版本比对：比数字主干，任一方未知按属于处理', () {
+    expect(
+      macCrashReportVersionMatches('3.3.0', <String?>['3.3.0-debug.1']),
+      isTrue,
+    );
+    expect(
+      macCrashReportVersionMatches('3.0.1', <String?>[
+        '3.3.0',
+        '3.3.0-debug.2',
+      ]),
+      isFalse,
+    );
+    expect(
+      macCrashReportVersionMatches('3.0.1', <String?>['3.0.1', '3.3.0']),
+      isTrue,
+    );
+    expect(macCrashReportVersionMatches(null, <String?>['3.3.0']), isTrue);
+    expect(
+      macCrashReportVersionMatches('3.0.1', <String?>['unknown', null, 'v']),
+      isTrue,
     );
   });
 
