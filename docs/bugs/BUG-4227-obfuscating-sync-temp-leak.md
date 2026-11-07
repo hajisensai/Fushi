@@ -1,0 +1,11 @@
+## BUG-4227 · iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB）
+- **报告**：2026-11-07（内部发现：反馈分诊时 iOS `Storage.footprint` 诊断显示 `tmp/` 6.3GB，其中 `tmp/obf_up_*/blob` 9 份各 603MB + 1 份 299MB，与有声书 m4b 同尺寸）
+- **真实性**：✅ 真 bug，但根因与分诊不完全一致。
+  - 分诊指出的 `fushi/lib/src/sync/obfuscating_sync_backend.dart:44`（`_obfuscateToTemp` 先建临时目录、混淆不在 try/finally 里）确是一处缺口：混淆本身抛异常时临时目录不删。但它**解释不了日志**——残留的 9 份 blob 都是完整 603MB，说明混淆已跑完、进入了上传阶段，而上传阶段（`uploadContentFile` / `putAsset`）本来就在 try/finally 里，网络异常（日志里的 Broken pipe / HTTP 400）会正常删。
+  - 真实主因：临时目录生命周期只靠进程内 finally（同文件 `_createTempFile` 原 :59-62 直接 `Directory.systemTemp.createTemp(prefix)`），iOS 在数百 MB 上传途中挂起 / 内存压力杀进程（日志同期 `Process.memoryPressure rss=2552MB`）时 finally 不执行；且启动时没有任何清理，临时目录又散落在系统临时目录根下无法安全识别，于是每次被杀就永久多 603MB（那份 299MB 是混淆写到一半被杀）。
+- **[x] ① 已修复** — `abda603fc4`：
+  - 上传路径改为 `_withObfuscatedTemp`：建临时目录后立即进 try/finally，混淆失败与上传失败都删；
+  - 所有混淆临时目录只建在本功能独占的 `<systemTemp>/fushi_sync_obf/` 下；
+  - `ObfuscatingSyncBackend.sweepStaleTemps()`（进程级 memo）在启动时（`fushi/lib/main.dart`，`installInterconnectP2pClient` 之后）清整个 `fushi_sync_obf/`，并清旧版本留在根下的 `obf_(up|dn|get)_*`——名字匹配且目录内只有 `blob`（或为空）才删，桌面共享临时目录里他人的同前缀目录不误删；每次建临时目录前先 await 同一个 memo Future，清理不会删到本进程正在用的目录；清理失败记错误日志后不阻塞同步。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/obfuscating_sync_backend_test.dart` 组 `ObfuscatingSyncBackend temp lifecycle (BUG-4227)`：混淆失败不留临时目录、inner 上传失败不留、成功路径不留、`sweepStaleTempsIn` 只删本功能遗留（独占子目录 + 指纹匹配的旧 `obf_*`，保留同前缀异内容目录 / 无关目录 / 普通文件）。变异验证：把混淆挪回 try 之外 + 让清理空跑 → 2 例红（exit 1，+10 -2）；还原后 exit 0。
+- **备注**：同一份诊断里还有 `tmp/また、同じ夢を見ていた.m4b 603MB`，是别的功能留在 `tmp/` 根下的有声书副本，不属于本功能、本条不处理（清理不会碰它，测试里也断言保留）。未在 iOS 真机复测清理效果。
