@@ -240,7 +240,10 @@ export function requestOrigin(request, signed) {
   };
 }
 
-async function ticketHash(ticket) {
+/** 开发者 CLI（scripts/feedback.mjs new）建的反馈的 origin：没有请求、没有账户签名；开发者身份由 account_id 表达。 */
+export const DEV_CLI_ORIGIN = Object.freeze({ via: 'dev_cli', signed: false });
+
+export async function ticketHash(ticket) {
   return hex(await sha256(new TextEncoder().encode(String(ticket))));
 }
 
@@ -496,6 +499,28 @@ async function replaySubmission(env, keyHash, key) {
 }
 
 /**
+ * 建反馈行的唯一 INSERT（createFeedback 与 scripts/feedback.mjs new 执行同一份 SQL）。重新提交的次数上限
+ * 做成条件 INSERT：计数与写入在同一条语句里，并发的重新提交不会一起越过上限（parentId 为 null 时恒成立）。
+ * @param {{id: string, ticketHash: string, accountId: string | null,
+ *   sub: {category: string, title: string, body: string, contact: string, meta: string},
+ *   now: number, flags: string[], contentHash: string, origin: object, parentId: string | null,
+ *   installId: string | null, installVerified: boolean, submissionHash: string | null}} p
+ * @returns {[string, Array<string | number | null>]}
+ */
+export function feedbackInsertStatement(p) {
+  const installId = p.installId ?? null;
+  return [
+    `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
+                             flags, content_hash, origin, parent_id, install_id, install_verified, submission_hash)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?15, ?16, ?17
+       WHERE ?13 IS NULL OR (SELECT COUNT(*) FROM feedback WHERE parent_id = ?13) < ?14`,
+    [p.id, p.ticketHash, p.accountId, p.sub.category, p.sub.title, p.sub.body, p.sub.contact, p.sub.meta, p.now,
+      JSON.stringify(p.flags), p.contentHash, JSON.stringify(p.origin), p.parentId,
+      FEEDBACK_LIMITS.reopensPerFeedback, installId, installId && p.installVerified ? 1 : 0, p.submissionHash ?? null],
+  ];
+}
+
+/**
  * 建反馈。幂等（2026-10-17，BUG-3489 审查）：客户端带 submissionKey 时，同一个键只会建一条反馈——
  * 「请求其实到了、回执没收到」（超时 / 断网）或「回执收到了、本机落盘失败」之后重试，都拿回同一张回执，
  * 而不是再建一条重复反馈或撞上「重复反馈」409 丢掉回执。查重放在最前面：重放不经限流 / 预算 / 判重桶，
@@ -545,14 +570,21 @@ export async function createFeedback(env, account, ip, body, now, origin = {}, i
   // 重新提交的次数上限做成条件 INSERT：计数与写入在同一条语句里，并发的重新提交不会一起越过上限。
   let res;
   try {
-    res = await env.DB.prepare(
-      `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
-                             flags, content_hash, origin, parent_id, install_id, install_verified, submission_hash)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?15, ?16, ?17
-       WHERE ?13 IS NULL OR (SELECT COUNT(*) FROM feedback WHERE parent_id = ?13) < ?14`,
-    ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
-      sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null,
-      FEEDBACK_LIMITS.reopensPerFeedback, installId, installId && installVerified ? 1 : 0, keyHash).run();
+    const [sql, args] = feedbackInsertStatement({
+      id,
+      ticketHash: await ticketHash(ticket),
+      accountId: account ? account.id : null,
+      sub,
+      now,
+      flags,
+      contentHash: hash,
+      origin,
+      parentId: parent ? parent.id : null,
+      installId,
+      installVerified,
+      submissionHash: keyHash,
+    });
+    res = await env.DB.prepare(sql).bind(...args).run();
   } catch (e) {
     // 同键并发撞唯一索引：另一个请求已经建好了 → 按重放回。别的错误照常抛。
     const replay = keyHash && /UNIQUE/i.test(String(e && e.message))
@@ -888,11 +920,13 @@ export function cleanDevReply(value) {
 }
 
 /**
- * 开发者处理：改状态和 / 或回复（两者至少一个）。写库之后在后台（[ctx].waitUntil）给反馈人的
- * iOS 设备发 APNs 推送（通用文案，不带正文），结案的顺带清掉推送令牌——见 feedback_push.js。
- * App 处理台（routeFeedback）与网页处理台（devconsole.js）都走这里，推送不会漏掉任一路径。
+ * 开发者改状态和 / 或回复的校验与写库语句（devUpdate 与 scripts/feedback.mjs status 共用）：
+ * 状态须在 STATUSES 里（否则 400 bad_status），回复走 cleanDevReply，两者都没有实际变化 → 400 nothing_to_update。
+ * 只回复（状态没变）时 UPDATE 不写 status 列（见 devReplyStatements）。
+ * @param {{row: {id: string, status: string}, devId: string, body: {status?: string | null, reply?: string} | null, now: number}} p
+ * @returns {{statements: Array<[string, Array<string | number | null>]>, reply: string, changed: boolean, after: string}}
  */
-export async function devUpdate(env, dev, row, body, now, ctx = null) {
+export function devUpdateStatements({ row, devId, body, now }) {
   const status = body && body.status !== undefined && body.status !== null && body.status !== ''
     ? body.status : null;
   if (status !== null && !STATUSES.includes(status)) throw new HttpError(400, 'bad_status');
@@ -900,10 +934,19 @@ export async function devUpdate(env, dev, row, body, now, ctx = null) {
   const changed = status !== null && status !== row.status;
   if (!changed && !reply) throw new HttpError(400, 'nothing_to_update');
   const statements = devReplyStatements({
-    id: row.id, devId: dev.id, reply, timelineStatus: changed ? status : null, status: changed ? status : null, now,
+    id: row.id, devId, reply, timelineStatus: changed ? status : null, status: changed ? status : null, now,
   });
+  return { statements, reply, changed, after: changed ? status : row.status };
+}
+
+/**
+ * 开发者处理：改状态和 / 或回复（两者至少一个）。写库之后在后台（[ctx].waitUntil）给反馈人的
+ * iOS 设备发 APNs 推送（通用文案，不带正文），结案的顺带清掉推送令牌——见 feedback_push.js。
+ * App 处理台（routeFeedback）与网页处理台（devconsole.js）都走这里，推送不会漏掉任一路径。
+ */
+export async function devUpdate(env, dev, row, body, now, ctx = null) {
+  const { statements, reply, after } = devUpdateStatements({ row, devId: dev.id, body, now });
   await env.DB.batch(statements.map(([sql, args]) => env.DB.prepare(sql).bind(...args)));
-  const after = changed ? status : row.status;
   await background(ctx, notifyFeedbackUpdate(env, row.id, {
     kind: reply ? 'reply' : 'status',
     closed: CLOSED_STATUSES.includes(after),
