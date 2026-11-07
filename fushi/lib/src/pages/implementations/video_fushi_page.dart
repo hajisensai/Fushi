@@ -256,6 +256,7 @@ import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
+import 'package:fushi/src/media/video/video_control_popover_hover_dismiss.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_density.dart';
 import 'package:fushi/src/media/video/video_push_aside_column.dart';
@@ -2206,10 +2207,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   _VideoControlPopoverPlacement? _activeControlPopoverPlacement;
   VideoControlSlot? _activeControlPopoverSourceSlot;
   VideoControlItem? _activeControlPopoverSourceItem;
-  bool _controlPopoverAnchorHovered = false;
-  bool _controlPopoverPanelHovered = false;
-  bool _controlPopoverPinned = false;
-  Timer? _controlPopoverHideTimer;
+
+  /// 浮层收起判据（固定 / 悬停 / 按住三条来源，BUG-4226）：hover 关闭也认按住，
+  /// 拖滑条拖出浮层边界时不收。
+  late final VideoControlPopoverHoverDismiss _controlPopoverHoverDismiss =
+      VideoControlPopoverHoverDismiss(onDismiss: _hideControlPopover);
+  bool get _controlPopoverPinned => _controlPopoverHoverDismiss.pinned;
 
   /// 画面内控制布局编辑模式（TODO-440）。用 [ValueNotifier] 而非普通 setState：
   /// 叠层渲染在 media_kit controls builder 里，全屏路由同样需要即时开关。
@@ -6901,7 +6904,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleSearchRequests.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
-    _controlPopoverHideTimer?.cancel();
+    _controlPopoverHoverDismiss.dispose();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _controlLayoutNotifier.dispose();

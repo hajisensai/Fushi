@@ -33,19 +33,60 @@ void main() {
     expect(body, contains('onPressedChanged: _setControlPopoverPressed'));
   });
 
-  test('press hold feeds _controlsHeld', () {
+  test('press hold feeds _controlsHeld and the popover dismiss gate', () {
     final String setter = methodBody(
       src,
       'void _setControlPopoverPressed(bool pressed)',
     );
-    expect(setter, contains('_controlsHoldPopoverPress = pressed;'));
-    expect(setter, contains('_syncControlsHold();'));
+    expect(
+      setter,
+      contains('_controlPopoverHoverDismiss.setPressed(pressed)'),
+      reason: '按住必须同时进浮层自己的收起判据（拖出浮层边界会 onExit）',
+    );
+    expect(setter, contains('_syncControlPopoverPressHold();'));
+    final String pressSync = methodBody(
+      src,
+      'void _syncControlPopoverPressHold()',
+    );
+    expect(
+      pressSync,
+      contains(
+        '_controlsHoldPopoverPress = _controlPopoverHoverDismiss.pressed;',
+      ),
+    );
+    expect(pressSync, contains('_syncControlsHold();'));
     final String sync = methodBody(src, 'void _syncControlsHold()');
     expect(sync, contains('_controlsHoldPopoverPress'));
   });
 
+  test('anchor and panel hover changes go through the dismiss gate', () {
+    // 收起判据只有一处（VideoControlPopoverHoverDismiss，行为由
+    // test/media/video/video_control_popover_hover_dismiss_test.dart 钉）；页面不得
+    // 绕开它自建只看悬停的收起计时。
+    final String anchor = methodBody(src, 'Widget _controlPopoverAnchor({');
+    expect(
+      anchor,
+      contains(
+        'onExit: (_) => _controlPopoverHoverDismiss.setAnchorHovered(false)',
+      ),
+    );
+    final String keepAlive = methodBody(
+      src,
+      'Widget _controlPopoverHoverKeepAlive({required Widget child})',
+    );
+    expect(
+      keepAlive,
+      contains(
+        'onExit: (_) => _controlPopoverHoverDismiss.setPanelHovered(false)',
+      ),
+    );
+    expect(src.contains('_controlPopoverHideTimer'), isFalse);
+    expect(src.contains('_scheduleControlPopoverHide'), isFalse);
+  });
+
   test('closing the popover releases the press hold', () {
     final String body = methodBody(src, 'void _hideControlPopover()');
-    expect(body, contains('_setControlPopoverPressed(false);'));
+    expect(body, contains('_controlPopoverHoverDismiss.closed()'));
+    expect(body, contains('_syncControlPopoverPressHold();'));
   });
 }
