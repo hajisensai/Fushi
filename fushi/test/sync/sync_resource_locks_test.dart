@@ -42,10 +42,21 @@ class _RecordingBackend implements SyncBackend {
   final List<String> log;
   int restoreCalls = 0;
 
+  /// 每次同步时读一下「此刻的本地进度」，记进 [seenProgress]（测「上传的是哪份」）。
+  String Function()? probe;
+  final List<String> seenProgress = <String>[];
+
+  /// 非空时，restoreAuth 记账后挂在它上面（模拟这一遍同步正在跑、还没结束）。
+  Completer<void>? hold;
+
   @override
   Future<bool> restoreAuth(SyncRepository repo) async {
     restoreCalls++;
     log.add(name);
+    final String Function()? read = probe;
+    if (read != null) seenProgress.add(read());
+    final Completer<void>? gate = hold;
+    if (gate != null) await gate.future;
     return false;
   }
 
@@ -344,6 +355,93 @@ void main() {
       await sweep;
       await exclusive;
       expect(ran, isTrue);
+    });
+
+    test('sweep 占着云通道时同一本书退出两次：host 拿到第二次的进度，云那份只跑一次', () async {
+      String progress = 'P1';
+      interconnect.probe = () => progress;
+      cloud.probe = () => progress;
+      final Completer<void> sweepOnCloud = Completer<void>();
+      final Future<void> sweep = syncResourceLocks.withResources(<String>{
+        kSyncRoundResource,
+        syncChannelResource(SyncChannelScope.unscoped),
+      }, () => sweepOnCloud.future);
+
+      final Future<void> firstExit = runAutoSyncForBookForTest(
+        db: db,
+        mediaIdentifier: 'fushi://book/BookA',
+      );
+      await _waitFor(
+        () => interconnect.restoreCalls == 1,
+        what: 'first exit interconnect part',
+      );
+      await _settle();
+
+      // 用户重开这本书、读到 P2 后再退出：云那份还排在 sweep 后面（这本书的云去重位
+      // 仍被占着），互联那份必须照跑，不能因为同一本书还有请求在飞就丢掉。
+      progress = 'P2';
+      await runAutoSyncForBookForTest(
+        db: db,
+        mediaIdentifier: 'fushi://book/BookA',
+      );
+      expect(interconnect.seenProgress, <String>['P1', 'P2']);
+      expect(cloud.restoreCalls, 0, reason: 'sweep 还占着云通道');
+
+      sweepOnCloud.complete();
+      await sweep;
+      await firstExit;
+      // 云那份开跑时才读本地进度，两次退出合并成一遍，读到的是 P2。
+      expect(cloud.seenProgress, <String>['P2']);
+      expect(syncTasks.value, isEmpty);
+    });
+
+    test('某条通道的同步正在跑时又退出：跑完在同一处再跑一遍，读最新进度', () async {
+      String progress = 'P1';
+      interconnect.probe = () => progress;
+      cloud.probe = () => progress;
+      final Completer<void> interconnectBusy = Completer<void>();
+      interconnect.hold = interconnectBusy;
+
+      final Future<void> firstExit = runAutoSyncForBookForTest(
+        db: db,
+        mediaIdentifier: 'fushi://book/BookA',
+      );
+      await _waitFor(
+        () => interconnect.restoreCalls == 1,
+        what: 'first interconnect pass to start',
+      );
+      progress = 'P2';
+      // 互联那一遍正在跑：这次退出的互联那份只记一笔重跑，不另起一遍并发去跑。
+      final Future<void> secondExit = runAutoSyncForBookForTest(
+        db: db,
+        mediaIdentifier: 'fushi://book/BookA',
+      );
+      // 第二次退出的云那份拿到云通道、排在这本书的锁后面，说明它已过了逐通道认领。
+      await _waitFor(
+        () => syncTasks.value.any((SyncTask t) => t.isWaiting),
+        what: 'second exit to claim its channels',
+      );
+      expect(interconnect.restoreCalls, 1);
+
+      interconnect.hold = null;
+      interconnectBusy.complete();
+      await firstExit;
+      await secondExit;
+      expect(interconnect.seenProgress, <String>[
+        'P1',
+        'P2',
+      ], reason: '开跑之后到的请求要在同一处再跑一遍，读最新进度');
+      expect(cloud.seenProgress.last, 'P2');
+      expect(syncTasks.value, isEmpty);
+
+      // 去重位已让出：之后的退出照常跑。
+      progress = 'P3';
+      await runAutoSyncForBookForTest(
+        db: db,
+        mediaIdentifier: 'fushi://book/BookA',
+      );
+      expect(interconnect.seenProgress.last, 'P3');
+      expect(cloud.seenProgress.last, 'P3');
     });
 
     test('排队期间通道的自动同步被关：拿到锁后复核，不跑', () async {

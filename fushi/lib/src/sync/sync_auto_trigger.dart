@@ -1534,7 +1534,30 @@ enum _ExitChannelResult {
 
   /// 抛错收场。
   failed,
+
+  /// 拿到锁后重读这本书时，它已不在库里。
+  bookGone,
 }
+
+/// 退出书同步在飞的（书, 通道）——去重键见 [_exitChannelKey]。
+///
+/// BUG-1569③ 回归修复：退出书不再等整轮，云那份可能排在 sweep 后面等好几分钟（sweep
+/// 在云通道上传视频）。去重若按整本书算，这段时间同一本书再退出一次（重开读到新进度
+/// 再退出 / 切后台）会被直接丢掉，互联 host 就停在第一次的进度。所以去重细化到
+/// （书, 通道）：已跑完的通道立刻让位，下次退出照常跑；仍在飞的通道只记一笔重跑。
+final Set<String> _exitChannelsInFlight = <String>{};
+
+/// （书, 通道）上「在飞期间又来了退出书请求」的重跑标记；值是最近一个非空的
+/// [SyncReportCallback]（有可见入口要冲突对话框时不被后台入口的 null 抹掉）。
+///
+/// 那一遍**拿到锁开跑时**清掉标记：开跑时重读本地进度，之前到的请求都已被它覆盖；
+/// 只有开跑之后到的请求才需要再跑一遍。
+final Map<String, SyncReportCallback?> _exitChannelReruns =
+    <String, SyncReportCallback?>{};
+
+String _exitChannelKey(String bookKey, SyncChannel channel) =>
+    '$bookKey|interconnect=${channel.isInterconnect}|'
+    '${syncChannelResource(channel.scope)}';
 
 /// 退出书：在**一条**通道上同步这本书，持有它需要的那几样资源。
 ///
@@ -1542,64 +1565,112 @@ enum _ExitChannelResult {
 ///   本就是并发使用的，不碰后端的 WebDAV 文件箱与 folder 缓存——全量 sweep 正在这条
 ///   通道上传视频也不用等（BUG-1569③）。sweep 的书进度阶段同样逐本拿书锁，两边不会
 ///   对同一本书交错判定。
-/// - 云：通道后端是无锁单例，连通道带书一起独占。sweep 跑到这条通道时排队，跑完这条
-///   通道就轮到它，不等整轮。
+/// - 云：通道后端是无锁单例，先独占通道，**拿到通道后**再拿书锁（加锁顺序「通道 →
+///   书」，书锁是嵌套请求）。sweep 跑到这条通道时排队，跑完这条通道就轮到它，不等整轮。
+///   不把通道和书合成一个请求去排：那样它在等 sweep 放通道的几分钟里，就是一个排在
+///   前面、要这本书的等待者，按先来先得会把之后别的入口对这本书的请求（同一本书再次
+///   退出时的互联那份、对比弹窗应用）一起拖到 sweep 跑完云通道之后。
 ///
 /// 拿到锁后复核这条通道的自动同步开关：排队期间用户可能已经关掉它（BUG-3305 的同款
-/// 「最终判据」）。
+/// 「最终判据」）。书行也在拿到锁后重读，排队几分钟后上传的是那时的本地进度。
+///
+/// 调用方已把 [key] 记进 [_exitChannelsInFlight]；这一遍跑完若期间又来了请求
+/// （[_exitChannelReruns]），在同一处再跑一遍，最后把 [key] 让出来。
 Future<_ExitChannelResult> _syncExitedBookChannel({
   required FushiDatabase db,
   required SyncRepository repo,
   required SyncChannel channel,
-  required EpubBookRow book,
+  required String bookKey,
+  required String key,
   required SyncTaskHandle task,
   required SyncReportCallback? onReport,
-}) => _withTaskResources(
-  task,
-  <String>{
-    if (!channel.isInterconnect) syncChannelResource(channel.scope),
-    syncBookResource(book.bookKey),
-  },
-  () async {
-    final SyncBackend backend = channel.backend;
-    try {
-      if (!await isChannelAutoSyncEnabled(repo, channel)) {
-        return _ExitChannelResult.disabled;
-      }
-      await backend.restoreAuth(repo);
-      if (!await backend.isAuthenticated) {
-        return _ExitChannelResult.notAuthenticated;
-      }
-      final SyncConflict? conflict = await syncExitedBookOnChannel(
-        db: db,
-        repo: repo,
-        backend: backend,
-        book: book,
-      );
-      // TODO-132 诉求B：退出书同步静默，不弹「同步成功」。真正需要用户介入的**冲突**
-      // 经 onReport → presentAutoConflicts 弹对话框。
-      if (onReport != null) {
-        final SyncRunReport report = SyncRunReport();
-        if (conflict != null) report.conflicts.add(conflict);
-        onReport(report, backend);
-      }
-      return _ExitChannelResult.ran;
-    } catch (e, stack) {
-      task.error(
-        'book exit sync (interconnect=${channel.isInterconnect}) '
-        '"${book.title}": $e',
-      );
-      developer.log(
-        'Book-exit sync channel failed '
-        '(interconnect=${channel.isInterconnect})',
-        error: e,
-        stackTrace: stack,
-        name: 'SyncAutoTrigger',
-      );
-      return _ExitChannelResult.failed;
+}) async {
+  SyncReportCallback? report = onReport;
+  bool anyFailed = false;
+  _ExitChannelResult result;
+  try {
+    Future<_ExitChannelResult> pass() =>
+        _withTaskResources(task, <String>{syncBookResource(bookKey)}, () {
+          // 开跑即清重跑标记：这一遍读的是此刻的本地进度，已覆盖此前到的请求。
+          if (_exitChannelReruns.containsKey(key)) {
+            report = _exitChannelReruns.remove(key) ?? report;
+          }
+          return _syncExitedBookChannelOnce(
+            db: db,
+            repo: repo,
+            channel: channel,
+            bookKey: bookKey,
+            task: task,
+            onReport: report,
+          );
+        });
+    do {
+      result = channel.isInterconnect
+          ? await pass()
+          : await _withTaskResources(task, <String>{
+              syncChannelResource(channel.scope),
+            }, pass);
+      if (result == _ExitChannelResult.failed) anyFailed = true;
+      // 这里的检查与 finally 里的让位之间没有 await：不会有请求落在两者之间被漏掉。
+    } while (_exitChannelReruns.containsKey(key));
+  } finally {
+    _exitChannelsInFlight.remove(key);
+    _exitChannelReruns.remove(key);
+  }
+  return anyFailed ? _ExitChannelResult.failed : result;
+}
+
+/// [_syncExitedBookChannel] 的一遍：已持有资源；重读书行，拿到的是此刻的本地进度。
+Future<_ExitChannelResult> _syncExitedBookChannelOnce({
+  required FushiDatabase db,
+  required SyncRepository repo,
+  required SyncChannel channel,
+  required String bookKey,
+  required SyncTaskHandle task,
+  required SyncReportCallback? onReport,
+}) async {
+  final SyncBackend backend = channel.backend;
+  String title = bookKey;
+  try {
+    if (!await isChannelAutoSyncEnabled(repo, channel)) {
+      return _ExitChannelResult.disabled;
     }
-  },
-);
+    final EpubBookRow? book = await db.getEpubBook(bookKey);
+    if (book == null) return _ExitChannelResult.bookGone;
+    title = book.title;
+    await backend.restoreAuth(repo);
+    if (!await backend.isAuthenticated) {
+      return _ExitChannelResult.notAuthenticated;
+    }
+    final SyncConflict? conflict = await syncExitedBookOnChannel(
+      db: db,
+      repo: repo,
+      backend: backend,
+      book: book,
+    );
+    // TODO-132 诉求B：退出书同步静默，不弹「同步成功」。真正需要用户介入的**冲突**
+    // 经 onReport → presentAutoConflicts 弹对话框。
+    if (onReport != null) {
+      final SyncRunReport report = SyncRunReport();
+      if (conflict != null) report.conflicts.add(conflict);
+      onReport(report, backend);
+    }
+    return _ExitChannelResult.ran;
+  } catch (e, stack) {
+    task.error(
+      'book exit sync (interconnect=${channel.isInterconnect}) '
+      '"$title": $e',
+    );
+    developer.log(
+      'Book-exit sync channel failed '
+      '(interconnect=${channel.isInterconnect})',
+      error: e,
+      stackTrace: stack,
+      name: 'SyncAutoTrigger',
+    );
+    return _ExitChannelResult.failed;
+  }
+}
 
 Future<void> _runAutoSync({
   required FushiDatabase db,
@@ -1611,14 +1682,15 @@ Future<void> _runAutoSync({
   if (bookKey == null || !_bookKeyPattern.hasMatch(mediaIdentifier)) return;
   if (!await _autoSyncGateOpen(db, SyncActivityKind.singleBook)) return;
   // BUG-1569③：整轮 sweep 进行中不再记账、等 sweep 收尾补跑——各通道直接排各自的
-  // 资源（见 [_syncExitedBookChannel]），不等整轮结束。
-  if (!_syncingIds.add(mediaIdentifier)) return;
+  // 资源（见 [_syncExitedBookChannel]），不等整轮结束。同一本书的重复退出按
+  // （书, 通道）合并，不丢（见 [_exitChannelsInFlight]）。
 
   final SyncTaskHandle task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.singleBook),
   );
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
+  bool merged = false;
 
   try {
     final repo = SyncRepository(db);
@@ -1639,18 +1711,34 @@ Future<void> _runAutoSync({
     // option B 双通道：每条启用的通道（云备份 + 互联）各同步一次这本书。两条通道
     // 要的资源不同，**并发**排队：云通道在等 sweep 放掉云后端时，互联那份不陪着等。
     // BUG-1604：逐通道隔离异常——一条通道抛错只记它自己的账。
-    final List<_ExitChannelResult> results =
-        await Future.wait(<Future<_ExitChannelResult>>[
-          for (final SyncChannel channel in channels)
-            _syncExitedBookChannel(
-              db: db,
-              repo: repo,
-              channel: channel,
-              book: book,
-              task: task,
-              onReport: onReport,
-            ),
-        ]);
+    // 这本书在某条通道上已有同步在飞：记一笔重跑交给它（还在排队的那一遍拿到锁时
+    // 重读最新进度；已开跑的跑完再来一遍），本次不重复排队。认领与检查之间没有 await。
+    final List<Future<_ExitChannelResult>> runs =
+        <Future<_ExitChannelResult>>[];
+    for (final SyncChannel channel in channels) {
+      final String key = _exitChannelKey(bookKey, channel);
+      if (!_exitChannelsInFlight.add(key)) {
+        _exitChannelReruns[key] = onReport ?? _exitChannelReruns[key];
+        continue;
+      }
+      runs.add(
+        _syncExitedBookChannel(
+          db: db,
+          repo: repo,
+          channel: channel,
+          bookKey: bookKey,
+          key: key,
+          task: task,
+          onReport: onReport,
+        ),
+      );
+    }
+    if (runs.isEmpty) {
+      // 全部并进了在飞的那一轮：结局由它公布，本次不另报。
+      merged = true;
+      return;
+    }
+    final List<_ExitChannelResult> results = await Future.wait(runs);
     channelsRun = results
         .where((_ExitChannelResult r) => r == _ExitChannelResult.ran)
         .length;
@@ -1662,6 +1750,10 @@ Future<void> _runAutoSync({
       (_ExitChannelResult r) => r == _ExitChannelResult.disabled,
     )) {
       reason = SyncOutcomeReason.autoDisabled;
+    } else if (results.every(
+      (_ExitChannelResult r) => r == _ExitChannelResult.bookGone,
+    )) {
+      reason = SyncOutcomeReason.nothingToSync;
     } else {
       reason = SyncOutcomeReason.noChannels;
     }
@@ -1672,15 +1764,18 @@ Future<void> _runAutoSync({
       name: 'SyncAutoTrigger',
     );
   } finally {
-    _syncingIds.remove(mediaIdentifier);
-    _endSyncActivity(
-      task,
-      SyncRunOutcome(
-        kind: SyncActivityKind.singleBook,
-        reason: reason,
-        channelsRun: channelsRun,
-        finishedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
+    if (merged) {
+      task.finish();
+    } else {
+      _endSyncActivity(
+        task,
+        SyncRunOutcome(
+          kind: SyncActivityKind.singleBook,
+          reason: reason,
+          channelsRun: channelsRun,
+          finishedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
   }
 }
