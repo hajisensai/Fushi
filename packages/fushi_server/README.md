@@ -431,7 +431,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 ### 远程更新（`remote_update`）
 
 已配对的手机 / 桌面可以在「互联」里看到服务端版本并让它自己更新，端点与 app 当 host 时同一条
-（`/api/host/update`：只认已配对设备的专属 token、只收局域网、一次性 nonce、开关默认关）。
+（`/api/host/update`：只认已配对设备的专属 token、一次性 nonce、开关默认关；不按来源网络区分——
+局域网、组网、公网、P2P 隧道进来的已配对设备权限相同）。同一时刻只跑一轮更新，重复触发回 `busy`。
 
 - **只对发布包可用**：包根目录的 `release.json`（`release-server.yml` 打包时写入版本、发布序号、
   通道）是版本身份；本机 `dart run` / 自己 `dart build cli` 出的 bundle 没有它，端点回
@@ -441,7 +442,10 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - **安装**：本平台包下载到安装目录里的 `.fushi_update/`，核对 GitHub 给资产算的 SHA-256（没有
   校验值或对不上一律不装），系统 `tar` 解包（Windows 用自带的 `System32\tar.exe`），然后逐个文件
   换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
-  覆盖），新文件再改名到位；中途失败整体还原。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
+  覆盖），新文件再改名到位；中途失败整体还原。动文件前先写换包日志 `.fushi_update_journal.json`，
+换完才删：换到一半进程被杀 / 断电，下次启动按日志逆序还原（若正在跑的已是没换完的新版可执行文件，
+还原后以退出码 75 退出让服务管理器拉起旧版）。下载正文 60 秒没有新数据即判失败、清掉暂存，可以
+再触发。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
 - **重启**：换完进程以**退出码 75** 退出，由 systemd（`Restart=on-failure`）/ 服务管理器拉起新版；
   新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
