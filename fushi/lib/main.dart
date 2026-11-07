@@ -803,9 +803,9 @@ void main([List<String> args = const <String>[]]) {
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
       // BUG-4227：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
-      // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉，启动时清一次。进程内
-      // 第一次建混淆临时目录前也会等这同一个 Future，不与本进程同步竞争。
-      // 清理失败由 sweepStaleTemps 自己记错误日志。
+      // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
+      // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
+      // 系统临时目录根下的 obf_*。失败由 sweepStaleTemps 自己记错误日志。
       unawaited(
         ObfuscatingSyncBackend.sweepStaleTemps().then((int removed) {
           if (removed > 0) {

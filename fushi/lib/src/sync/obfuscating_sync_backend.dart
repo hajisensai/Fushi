@@ -1,14 +1,18 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_obfuscator.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
+import 'package:path/path.dart' as p;
 
 /// 「防扫盘」字节混淆装饰器（TODO-623 A1）。
 ///
@@ -30,8 +34,8 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 /// 下载时原样落地仍可导入；新上传带魔数混淆，逐步重传即全部变混淆，无需一键全重传。
 class ObfuscatingSyncBackend extends SyncBackend
     implements RemoteListingCapable {
-  /// [tempRoot] 仅供测试注入：给了就把临时目录建在它下面，并且不触发进程级的
-  /// [sweepStaleTemps]（测试不去动真实系统临时目录）。
+  /// [tempRoot] 仅供测试注入：替代 [defaultTempRoot] 作为临时根（槽位认领 / 死槽位
+  /// 清理照常在它下面进行），测试不碰真实的 app 缓存目录。
   ObfuscatingSyncBackend(this._inner, {Directory? tempRoot})
     : _tempRoot = tempRoot;
 
@@ -41,61 +45,89 @@ class ObfuscatingSyncBackend extends SyncBackend
   /// 暴露被包裹的真后端（测试 / 诊断用）。
   SyncBackend get inner => _inner;
 
-  // ── 混淆临时文件的归属与启动清理（BUG-4227） ─────────────────────────
+  // ── 混淆临时文件的归属与清理（BUG-4227） ─────────────────────────
   //
   // 上传 / 下载的混淆临时文件与原文件同尺寸（有声书可达数百 MB）。try/finally 只能
   // 覆盖进程活着时的异常路径；iOS 在上传途中挂起 / 内存压力杀进程时 finally 根本
-  // 不会执行，临时目录就永久留在 tmp/ 里。所以生命周期分两层兜住：
+  // 不会执行。所以生命周期分两层兜住：
   // 1. 进程内：建临时目录后立刻进 try/finally（含混淆本身失败）。
-  // 2. 跨进程：所有临时目录只建在本功能独占的 [tempDirName] 子目录下，每个进程第一次
-  //    用临时目录之前（以及启动时）整目录清掉上一个进程的遗留；同一进程内的清理与
-  //    新建经同一个 memo Future 排序，绝不会删到本进程正在用的临时目录。
+  // 2. 跨进程：每个进程在独占根下认领一个「槽位」目录并一直持有它的独占文件锁；
+  //    认领时（注册锁内）删掉锁拿得到的兄弟槽位——所有者已死，锁随进程退出被 OS
+  //    释放——活进程的槽位锁拿不到，绝不删。
+  //
+  // 布局（根默认在本用户、本 app 私有的缓存目录下，不在多用户共享的 /tmp）：
+  //   <appCache>/fushi_sync_obf/
+  //     .registry.lock          认领槽位 + 清理死槽位时的跨进程互斥
+  //     p_<pid>_<rand>/         每个进程一个槽位
+  //       .owner.lock           所有者进程存活期间一直持有独占锁
+  //       obf_up_<rand>/blob    单次上传 / 下载的临时目录
 
-  /// 本功能独占的临时子目录名（位于 [Directory.systemTemp] 下）。
+  /// 本功能独占的临时根目录名（位于 app 私有缓存目录下）。
   static const String tempDirName = 'fushi_sync_obf';
+
+  static const String _registryLockName = '.registry.lock';
+  static const String _ownerLockName = '.owner.lock';
+  static const String _slotPrefix = 'p_';
+  static final RegExp _slotName = RegExp(r'^p_(\d+)_');
 
   /// 旧版本直接建在 [Directory.systemTemp] 根下的临时目录名形态（`createTemp` 前缀 +
   /// 随机后缀）。只用于识别遗留目录。
   static final RegExp _legacyTempDirName = RegExp(r'^obf_(up|dn|get)_[^/\\]+$');
 
-  /// 旧版本每个临时目录里只会有这一个文件。
+  /// 每个临时目录里只会有这一个文件。
   static const String _blobName = 'blob';
 
-  static Future<int>? _sweepOnce;
+  /// 根目录绝对路径 → 本进程（本 isolate）在该根下认领的槽位。
+  static final Map<String, Future<_TempSlot>> _slots =
+      <String, Future<_TempSlot>>{};
 
-  /// 进程级一次性清理上一个进程遗留的混淆临时目录（启动时调用；临时目录创建前也会
-  /// 先等它完成）。返回删掉的目录数。
+  static Future<int>? _legacySweepOnce;
+
+  /// 生产环境的临时根：`<getApplicationCacheDirectory()>/fushi_sync_obf`。
   ///
-  /// 清理失败记进错误日志后返回 0：删不掉旧遗留不应让本进程的同步全部失败（memo
-  /// 住一个失败 Future 会让之后每次建临时目录都抛）。
-  static Future<int> sweepStaleTemps() =>
-      _sweepOnce ??= sweepStaleTempsIn(Directory.systemTemp).then(
-        (int removed) => removed,
-        onError: (Object e, StackTrace st) {
-          ErrorLogService.instance.log(
-            'ObfuscatingSyncBackend.sweepStaleTemps',
-            e,
-            st,
-          );
-          return 0;
-        },
-      );
+  /// 不用 [Directory.systemTemp]：Linux 上它常是多用户共享的 `/tmp`，固定名字的
+  /// 子目录会被先建它的用户占住（别的用户在里面 createTemp 报 EACCES），也能被别的
+  /// 本地用户抢先建成 0777 来读 / 换混淆中间文件。app 缓存目录各平台都是本用户、
+  /// 本 app 私有（iOS / Android 是沙盒，桌面是 XDG_CACHE_HOME / LocalAppData /
+  /// ~/Library/Caches/<bundle id>）。
+  static Future<Directory> defaultTempRoot() async => Directory(
+    p.join((await AppPaths.appCacheRootDirectory()).path, tempDirName),
+  );
 
-  /// 清理 [systemTemp] 下本功能遗留的临时目录：
-  /// - 整个 [tempDirName] 子目录（本功能独占）；
-  /// - 旧版本建在根下的 `obf_up_*` / `obf_dn_*` / `obf_get_*`，且目录里只有 `blob`
-  ///   一个文件（或为空）——名字与内容双重指纹都对上才删，桌面端共享的系统临时目录里
-  ///   别的程序的同名前缀目录不会被误删。
+  /// 启动时调用：在默认根下认领本进程槽位（顺带删掉已死进程的槽位），并清理旧版本
+  /// 散落在 [Directory.systemTemp] 根下的 `obf_*`。返回删掉的目录数。
+  ///
+  /// 失败记进错误日志后返回已删数：启动清理是 fire-and-forget；认领失败不 memo，
+  /// 之后第一次建临时目录会重新认领，错误照常抛给那次同步。
+  static Future<int> sweepStaleTemps() async {
+    int removed = 0;
+    try {
+      removed += (await _claimSlot(await defaultTempRoot())).sweptDead;
+    } catch (e, st) {
+      ErrorLogService.instance.log('ObfuscatingSyncBackend.claimSlot', e, st);
+    }
+    removed += await (_legacySweepOnce ??=
+        sweepLegacyTempsIn(Directory.systemTemp).then(
+          (int n) => n,
+          onError: (Object e, StackTrace st) {
+            ErrorLogService.instance.log(
+              'ObfuscatingSyncBackend.sweepLegacyTemps',
+              e,
+              st,
+            );
+            return 0;
+          },
+        ));
+    return removed;
+  }
+
+  /// 清理旧版本建在 [systemTemp] 根下的 `obf_up_*` / `obf_dn_*` / `obf_get_*`：
+  /// 名字匹配且目录里只有 `blob` 一个文件（或为空）才删——桌面端共享的系统临时目录
+  /// 里别的程序的同前缀目录不会被误删。只碰根下这些遗留，不碰任何子目录。
   ///
   /// 不吞异常：删除失败照常抛给调用方（启动处记日志）。
-  static Future<int> sweepStaleTempsIn(Directory systemTemp) async {
+  static Future<int> sweepLegacyTempsIn(Directory systemTemp) async {
     if (!await systemTemp.exists()) return 0;
-    int removed = 0;
-    final Directory owned = Directory('${systemTemp.path}/$tempDirName');
-    if (await owned.exists()) {
-      await owned.delete(recursive: true);
-      removed++;
-    }
     final List<Directory> legacy = <Directory>[];
     await for (final FileSystemEntity e in systemTemp.list(
       followLinks: false,
@@ -106,9 +138,8 @@ class ObfuscatingSyncBackend extends SyncBackend
     }
     for (final Directory d in legacy) {
       await d.delete(recursive: true);
-      removed++;
     }
-    return removed;
+    return legacy.length;
   }
 
   static String _baseName(FileSystemEntity e) {
@@ -121,6 +152,115 @@ class ObfuscatingSyncBackend extends SyncBackend
       if (e is! File || _baseName(e) != _blobName) return false;
     }
     return true;
+  }
+
+  /// 本进程在 [root] 下的槽位（memo）。认领失败不 memo，下次重新认领。
+  static Future<_TempSlot> _claimSlot(Directory root) {
+    final String key = root.absolute.path;
+    final Future<_TempSlot>? existing = _slots[key];
+    if (existing != null) return existing;
+    final Future<_TempSlot> claimed = _doClaimSlot(root);
+    _slots[key] = claimed;
+    claimed.then(
+      (_TempSlot _) {},
+      onError: (Object _) {
+        if (identical(_slots[key], claimed)) _slots.remove(key);
+      },
+    );
+    return claimed;
+  }
+
+  static Future<_TempSlot> _doClaimSlot(Directory root) async {
+    await root.create(recursive: true);
+    final RandomAccessFile registry = await File(
+      p.join(root.path, _registryLockName),
+    ).open(mode: FileMode.append);
+    try {
+      await registry.lock(FileLock.blockingExclusive);
+      try {
+        final int swept = await _sweepDeadSlots(root);
+        final Directory dir = await root.createTemp('$_slotPrefix${pid}_');
+        final RandomAccessFile owner = await File(
+          p.join(dir.path, _ownerLockName),
+        ).open(mode: FileMode.append);
+        try {
+          await owner.lock(FileLock.exclusive);
+        } catch (_) {
+          await owner.close();
+          rethrow;
+        }
+        // owner 句柄在进程存活期间一直不关：锁随进程退出才由 OS 释放。
+        return _TempSlot(dir, owner, swept);
+      } finally {
+        await registry.unlock();
+      }
+    } finally {
+      await registry.close();
+    }
+  }
+
+  /// 删 [root] 下所有者已死的槽位（调用方持有注册锁）。返回删掉的槽位数。
+  ///
+  /// 跳过名字里 pid 等于本进程的槽位：POSIX 的 fcntl 记录锁对同一进程不互斥，同进程
+  /// 另一个 isolate 的活槽位在这里也能「拿到锁」，且关句柄会连带释放它的锁，所以同
+  /// pid 一律当活的。
+  static Future<int> _sweepDeadSlots(Directory root) async {
+    final List<Directory> dead = <Directory>[];
+    await for (final FileSystemEntity e in root.list(followLinks: false)) {
+      if (e is! Directory) continue;
+      final RegExpMatch? m = _slotName.firstMatch(_baseName(e));
+      if (m == null) continue;
+      if (int.parse(m.group(1)!) == pid) continue;
+      if (await _isSlotOwnerDead(e)) dead.add(e);
+    }
+    int removed = 0;
+    for (final Directory d in dead) {
+      try {
+        await d.delete(recursive: true);
+        removed++;
+      } on FileSystemException catch (e, st) {
+        // 删不掉一个死槽位（如被外部占用）不该让本进程认领失败、同步全挂；记日志，
+        // 下个进程认领时再删。
+        ErrorLogService.instance.log(
+          'ObfuscatingSyncBackend.sweepDeadSlots',
+          e,
+          st,
+        );
+      }
+    }
+    return removed;
+  }
+
+  /// 槽位所有者是否已死：锁文件不存在（认领在注册锁内完成，活进程的槽位此刻必有
+  /// 锁文件，没有说明进程死在认领途中）或能拿到它的独占锁。
+  static Future<bool> _isSlotOwnerDead(Directory slot) async {
+    final File lockFile = File(p.join(slot.path, _ownerLockName));
+    if (!await lockFile.exists()) return true;
+    final RandomAccessFile raf = await lockFile.open(mode: FileMode.append);
+    try {
+      try {
+        await raf.lock(FileLock.exclusive);
+      } on FileSystemException {
+        return false; // 别的活进程持有锁。
+      }
+      await raf.unlock();
+      return true;
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// 测试用：关掉本进程所有槽位的锁句柄并清空 memo（Windows 上句柄不关删不掉目录）。
+  @visibleForTesting
+  static Future<void> debugReleaseSlots() async {
+    final List<Future<_TempSlot>> all = _slots.values.toList();
+    _slots.clear();
+    for (final Future<_TempSlot> f in all) {
+      await f.then(
+        (_TempSlot s) => s.ownerLock.close(),
+        onError: (Object _) => null,
+      );
+    }
   }
 
   // ── 混淆临时文件辅助 ──────────────────────────────────────────────
@@ -151,18 +291,20 @@ class ObfuscatingSyncBackend extends SyncBackend
   }
 
   Future<File> _createTempFile(String prefix) async {
-    final Directory? injected = _tempRoot;
-    final Directory root;
-    if (injected != null) {
-      root = injected;
-    } else {
-      // 先等进程级清理跑完，再在独占子目录下建，保证清理不会删到本进程的新临时目录。
-      await sweepStaleTemps();
-      root = Directory('${Directory.systemTemp.path}/$tempDirName');
+    final Directory root = _tempRoot ?? await defaultTempRoot();
+    _TempSlot slot = await _claimSlot(root);
+    if (!await slot.dir.exists()) {
+      // 槽位被外部删了（系统清缓存）：放掉旧锁，重新认领一个。
+      final String key = root.absolute.path;
+      final Future<_TempSlot>? current = _slots[key];
+      if (current != null && identical(await current, slot)) {
+        _slots.remove(key);
+        await slot.ownerLock.close();
+      }
+      slot = await _claimSlot(root);
     }
-    await root.create(recursive: true);
-    final Directory dir = await root.createTemp(prefix);
-    return File('${dir.path}/$_blobName');
+    final Directory dir = await slot.dir.createTemp(prefix);
+    return File(p.join(dir.path, _blobName));
   }
 
   Future<void> _deleteTemp(File tmp) async {
@@ -171,7 +313,7 @@ class ObfuscatingSyncBackend extends SyncBackend
       if (await tmp.exists()) await tmp.delete();
       if (await parent.exists()) await parent.delete(recursive: true);
     } catch (_) {
-      // 临时文件清理失败不影响同步结果；系统临时目录会被 OS 回收。
+      // 临时文件清理失败不影响同步结果；本进程槽位会在它死后被下一个进程整个删掉。
     }
   }
 
@@ -414,4 +556,14 @@ class ObfuscatingSyncBackend extends SyncBackend
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
       _inner.deleteAsset(id, isFolder: isFolder);
+}
+
+/// 本进程在某个临时根下认领的槽位：[dir] 存放本进程的临时目录，[ownerLock] 在进程
+/// 存活期间一直持有独占锁（别的进程据此判活）。[sweptDead] 是认领时删掉的死槽位数。
+class _TempSlot {
+  _TempSlot(this.dir, this.ownerLock, this.sweptDead);
+
+  final Directory dir;
+  final RandomAccessFile ownerLock;
+  final int sweptDead;
 }
