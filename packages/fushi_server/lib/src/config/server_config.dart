@@ -8,6 +8,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -107,6 +108,8 @@ class ServerConfig {
     this.leaderboardLink = true,
     this.tmdbApiKey,
     this.ai,
+    this.srs = const ServerSrsConfig(),
+    this.ankiConnect = const ServerAnkiConnectConfig(),
   });
 
   static const int defaultPort = 38765;
@@ -236,6 +239,12 @@ class ServerConfig {
   /// 助手能力位报 `no_provider`、不发任何 AI 请求。保存即生效。
   final ServerAiConfig? ai;
 
+  /// 复习库（`srs:` 段，见 server_srs_config.dart）；默认 = 复习关。
+  final ServerSrsConfig srs;
+
+  /// AnkiConnect 兼容监听（`ankiconnect:` 段）；默认关。
+  final ServerAnkiConnectConfig ankiConnect;
+
   ServerConfig copyWith({
     String? dataDir,
     int? port,
@@ -269,6 +278,8 @@ class ServerConfig {
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
+    ServerSrsConfig? srs,
+    ServerAnkiConnectConfig? ankiConnect,
   }) => ServerConfig(
     dataDir: dataDir ?? this.dataDir,
     port: port ?? this.port,
@@ -301,6 +312,8 @@ class ServerConfig {
     leaderboardLink: leaderboardLink ?? this.leaderboardLink,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
+    srs: srs ?? this.srs,
+    ankiConnect: ankiConnect ?? this.ankiConnect,
   );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -370,6 +383,8 @@ class ServerConfig {
       leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
+      srs: ServerSrsConfig.fromYaml(map['srs']),
+      ankiConnect: ServerAnkiConnectConfig.fromYaml(map['ankiconnect']),
     );
   }
 
@@ -436,6 +451,8 @@ class ServerConfig {
     }
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
     ai?.writeYaml(b, _q);
+    srs.writeYaml(b, _q);
+    ankiConnect.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
     if (torrentLibraryPath != null) {

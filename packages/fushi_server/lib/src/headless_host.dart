@@ -22,6 +22,8 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
+import 'package:fushi_engine/srs/sync2/srs_host_directory.dart'
+    show srsHostUploadedSegmentDevice;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -70,6 +72,7 @@ import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_srs.dart';
 import 'package:fushi_server/src/server_subtitle_backfill.dart';
 import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
@@ -155,6 +158,7 @@ class HeadlessHost {
   ServerDownloadHost? _downloads;
   ServerAgentHistoryPruner? _agentHistoryPruner;
   ServerAnkiLanding? _anki;
+  ServerSrs? _srs;
   ServerVideoScrape? _videoScrape;
 
   /// 测试注入的词典引擎（指定原生库 / 变形表目录）；null = [start] 按 bundle 布局建。
@@ -208,6 +212,9 @@ class HeadlessHost {
 
   /// Anki 落地（手机的待发卡经互联同步进来，这里写进 Anki 并同步）。
   ServerAnkiLanding? get anki => _anki;
+
+  /// 服务端复习库（`srs:` 段选了 profile 才开；见 server_srs.dart）。[start] 之后非空。
+  ServerSrs? get srs => _srs;
 
   /// 词典引擎（互联查词 / 词典媒体）。[start] 之后非空；原生库不可用时
   /// `available == false`，查词路由不接线（对端按 capabilities `lookup.dictionary` 判断）。
@@ -353,6 +360,18 @@ class HeadlessHost {
     );
     _anki = anki;
 
+    // 复习库：服务端当一台复习设备（远程复习 / 本机目录同步）。没选 profile 时什么都不开。
+    final ServerSrs srs = ServerSrs(
+      support: paths.support,
+      syncData: paths.syncData,
+      deviceId: identity.deviceId,
+      hostId: identity.deviceId,
+      config: () => config.srs,
+      // 发出了新段：叫醒客户端 `/api/srs/changes` 长轮询（与 app 当 host 同）。
+      onPublished: () => _server?.notifySrsChanged(),
+    );
+    _srs = srs;
+
     _loopbackOnly = _isLoopbackBind(config.bind);
     final FushiSyncServer server =
         FushiSyncServer(
@@ -444,7 +463,11 @@ class HeadlessHost {
           ..videoSubtitleBackfill = backfillVideoSubtitle
           // 「互联主机」AI 提供商：已配对设备用本服务端 `ai:` 段配的提供商（key 不出本机）；
           // 开关是 preferences 表里的 interconnect_ai_relay_enabled（缺省开）。
-          ..aiRelaySettings = (() => ServerAiSettings(() => config.ai));
+          ..aiRelaySettings = (() => ServerAiSettings(() => config.ai))
+          // 复习库：远程复习按客户端点名的 profile 走；已配对设备写进来的复习数据叫醒对应那份同步。
+          ..srsRemoteStoreProvider = (() => srs.remoteStore)
+          ..onClientWrite = srs.onClientWrite
+          ..onClientUpload = _onClientUpload;
     try {
       await server.start();
     } catch (_) {
@@ -460,6 +483,7 @@ class HeadlessHost {
     await _attachP2p(server);
 
     anki.start();
+    await srs.start();
 
     _advertiser = LanAdvertiser(
       deviceName: config.deviceName,
@@ -562,6 +586,8 @@ class HeadlessHost {
     _config = next;
     final FushiSyncServer? server = _server;
     if (server == null) return;
+    // 复习库选的 profile 变了：新加的打开、去掉的关掉（不重启）。
+    if (!identical(prev.srs, next.srs)) await _srs?.applyConfig();
     final bool relaysChanged = !_sameStrings(prev.p2pRelays, next.p2pRelays);
     if (prev.p2p == next.p2p && !relaysChanged) return;
     // 换中继 = 先整个卸下（关旧端点）再按新中继挂上，与 app 的 setP2pRelayUrls 同序。
@@ -630,6 +656,9 @@ class HeadlessHost {
     // 排在所有在飞的 P2P 动作之后卸下（之前的挂载先落地、再被这次拆掉）。
     if (server != null) await _detachP2p(server);
     await server?.stop();
+    final ServerSrs? srs = _srs;
+    _srs = null;
+    await srs?.stop();
     await _stopPipelines();
     await pairingEvents.close();
   }
@@ -706,6 +735,22 @@ class HeadlessHost {
       'HeadlessHost',
       'paired: ${registration.deviceName ?? registration.peerId}',
     );
+  }
+
+  /// 已配对设备写成功一个文件：复习段按对端名给那台设备补名字。
+  void _onClientUpload(String relativePath, String? peerToken) {
+    final ServerSrs? srs = _srs;
+    if (srs == null || peerToken == null) return;
+    // 只有某台设备自己的段才补名字；书 / 视频等别的写入不查对端表。
+    if (srsHostUploadedSegmentDevice(relativePath) == null) return;
+    unawaited(() async {
+      final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
+      final String? name = peers
+          .where((FushiPairedPeerRow r) => r.token == peerToken)
+          .firstOrNull
+          ?.deviceName;
+      await srs.onClientUpload(relativePath, name);
+    }());
   }
 
   Future<Set<String>> _loadPairedPeerTokens() async {
