@@ -19,6 +19,8 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribeResult;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -303,4 +305,53 @@ Future<AudiobookMaterialMatch> matchAudiobookMaterialsForAudio(
     if (key != null) break;
   }
   return matchAudiobookMaterial(scan.index, key: key, title: title);
+}
+
+/// 书架文件夹导入：一本书配上了有声书音频却没有字幕时，要不要排转录。
+///
+/// 五个条件全满足才排：
+/// - [asrSupported]：本机有设备端 ASR；
+/// - [autoTranscribe]：总开关 `audiobook_auto_transcribe`（默认开）——关了一律不自动
+///   转录，子开关开着也不算；
+/// - [folderImportTranscribe]：子开关 `audiobook_folder_import_transcribe`（默认关）；
+/// - [isLocalSource]：本地来源。网络来源的音频要先整本下到本机，转录队列只认本地
+///   路径，不做；
+/// - ![hasBookmark]：不是 iOS 安全作用域书签来源。书签的访问窗口只撑这一次扫描，
+///   转录要跑几个小时，窗口早就关了。
+///
+/// 不满足的一律计入「缺字幕」，由完成提示告诉用户。
+bool shouldTranscribeFolderImportAudiobook({
+  required bool asrSupported,
+  required bool autoTranscribe,
+  required bool folderImportTranscribe,
+  required bool isLocalSource,
+  required bool hasBookmark,
+}) =>
+    asrSupported &&
+    autoTranscribe &&
+    folderImportTranscribe &&
+    isLocalSource &&
+    !hasBookmark;
+
+/// 书架文件夹导入的转录端口实现：把 [audioPaths] 排进转录队列，转完挂到已导入的
+/// [bookKey] 上（`targetBookKey`，对齐书的正文）。
+///
+/// 这组音频已有任务（含已结束的失败 / 取消任务）时不再排：重扫不该把用户取消掉的
+/// 几小时转录又排回去，失败的由用户在下载中心重试。
+Future<BookAudiobookTranscribeResult> enqueueFolderImportTranscription({
+  required AudiobookTranscribeImportQueue queue,
+  required String bookKey,
+  required List<String> audioPaths,
+  required String title,
+}) async {
+  await queue.load();
+  if (queue.findJobForAudio(audioPaths) != null) {
+    return BookAudiobookTranscribeResult.alreadyTracked;
+  }
+  await queue.enqueue(
+    audioPaths: audioPaths,
+    targetBookKey: bookKey,
+    title: title,
+  );
+  return BookAudiobookTranscribeResult.queued;
 }

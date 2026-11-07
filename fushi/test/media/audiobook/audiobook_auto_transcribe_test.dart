@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribeResult;
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
@@ -7,6 +12,23 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
+
+/// 永不结束的转录端口：任务停在 running，测试只看排队与去重。
+class _HangingTranscriber implements AudiobookTranscriber {
+  @override
+  Future<String> transcribe(
+    AudiobookTranscribeJob job, {
+    required void Function(AudiobookTranscribeJobPhase phase, double? progress)
+    onProgress,
+    required AudiobookTranscribeCancelToken cancel,
+  }) {
+    final Completer<String> c = Completer<String>();
+    cancel.onCancel(() {
+      if (!c.isCompleted) c.completeError(const AudiobookTranscribeCancelled());
+    });
+    return c.future;
+  }
+}
 
 class _Calls {
   final List<DiscoveryImportPlan> imported = <DiscoveryImportPlan>[];
@@ -369,6 +391,83 @@ void main() {
         calls: calls,
       );
       expect(calls.enqueued.single, startsWith('01|/dl/Book/book.epub|'));
+    });
+  });
+
+  group('shouldTranscribeFolderImportAudiobook', () {
+    bool decide({
+      bool asr = true,
+      bool auto = true,
+      bool folder = true,
+      bool local = true,
+      bool bookmark = false,
+    }) => shouldTranscribeFolderImportAudiobook(
+      asrSupported: asr,
+      autoTranscribe: auto,
+      folderImportTranscribe: folder,
+      isLocalSource: local,
+      hasBookmark: bookmark,
+    );
+
+    test('五个条件全满足才排转录', () {
+      expect(decide(), isTrue);
+      expect(decide(asr: false), isFalse);
+      expect(decide(folder: false), isFalse);
+      expect(decide(local: false), isFalse);
+      expect(decide(bookmark: true), isFalse);
+    });
+
+    test('总开关关时子开关开着也不排', () {
+      expect(decide(auto: false, folder: true), isFalse);
+    });
+  });
+
+  group('enqueueFolderImportTranscription', () {
+    late Directory root;
+    late AudiobookTranscribeImportQueue queue;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('fold_tx_');
+      queue = AudiobookTranscribeImportQueue(
+        store: File('${root.path}/jobs.json'),
+        transcriber: _HangingTranscriber(),
+        importer: (_, _, _) async => null,
+      );
+    });
+
+    tearDown(() async {
+      await queue.close();
+      root.deleteSync(recursive: true);
+    });
+
+    test('排进队列并挂到已有书;同一组音频再来不重排', () async {
+      final BookAudiobookTranscribeResult first =
+          await enqueueFolderImportTranscription(
+            queue: queue,
+            bookKey: 'book-key',
+            audioPaths: const <String>['/lib/X/01.mp3'],
+            title: 'X',
+          );
+      expect(first, BookAudiobookTranscribeResult.queued);
+      expect(queue.jobs.single.targetBookKey, 'book-key');
+      expect(queue.jobs.single.contentPath, isNull);
+
+      final AudiobookTranscribeJob job = queue.jobs.single;
+      await queue.cancel(job.id);
+      for (int i = 0; i < 200 && !job.isTerminal; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(job.status, AudiobookTranscribeJobStatus.cancelled);
+
+      final BookAudiobookTranscribeResult again =
+          await enqueueFolderImportTranscription(
+            queue: queue,
+            bookKey: 'book-key',
+            audioPaths: const <String>['/lib/X/01.mp3'],
+            title: 'X',
+          );
+      expect(again, BookAudiobookTranscribeResult.alreadyTracked);
+      expect(queue.jobs, hasLength(1));
     });
   });
 }

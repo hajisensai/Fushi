@@ -159,6 +159,28 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
+        // 子开关：书架「导入文件夹」/ 本地书籍来源扫描时，书配上了有声书音频却没有
+        // 字幕，就排转录、转完对齐到这本书（默认关）。只在总开关开时生效，总开关
+        // 关时置灰。网络来源与 iOS 书签来源不转录（见
+        // shouldTranscribeFolderImportAudiobook）。设备本地偏好。
+        SettingsSwitchItem(
+          id: 'listening.audiobook_folder_import_transcribe',
+          title: t.audiobook_folder_import_transcribe,
+          subtitle: t.audiobook_folder_import_transcribe_hint,
+          icon: FushiIcons.voice,
+          defaultValue: false,
+          visible: (_) => isAsrSupported,
+          enabled: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookAutoTranscribe,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookFolderImportTranscribe,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setAudiobookFolderImportTranscribe(
+              value: value,
+            );
+            settingsContext.refresh();
+          },
+        ),
         SettingsSwitchItem(
           id: 'listening.media_notification',
           title: t.show_media_notification,

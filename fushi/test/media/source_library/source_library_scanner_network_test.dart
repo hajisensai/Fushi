@@ -292,7 +292,7 @@ void main() {
 
     // No credentials configured / no server contacted: the video guard throws
     // BEFORE any network I/O, so this is deterministic and offline.
-    await SourceLibraryScanner(db).scan(source);
+    await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
     final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
     expect(
@@ -359,7 +359,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       // The remote EPUB was downloaded (copyToLocal invoked) before import.
@@ -430,7 +433,10 @@ void main() {
           final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
           await tester.runAsync(() async {
-            await SourceLibraryScanner(db).scan(source, fs: fs);
+            await SourceLibraryScanner(
+              db,
+              transcribeAudiobook: null,
+            ).scan(source, fs: fs);
           });
 
           final List<VideoBookRow> videos = await VideoBookRepository(
@@ -558,7 +564,10 @@ void main() {
           final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
           await tester.runAsync(() async {
-            await SourceLibraryScanner(db).scan(source, fs: fs);
+            await SourceLibraryScanner(
+              db,
+              transcribeAudiobook: null,
+            ).scan(source, fs: fs);
           });
 
           final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -665,7 +674,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -685,7 +697,10 @@ void main() {
 
       // 重扫：标题预检命中已入库卷，零页图重下载、不重复导入、不算错误。
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(after, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(after, fs: fs);
       });
       expect(await db.getAllEpubBooks(), hasLength(1));
       expect(
@@ -727,6 +742,7 @@ void main() {
       Future<void> scan() => tester.runAsync(() async {
         await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan((await db.getMediaSourceById(sid))!, fs: fs);
       });
 
@@ -804,7 +820,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -873,7 +892,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -963,7 +985,10 @@ void main() {
         SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         source = (await db.getMediaSourceById(sid))!;
@@ -996,7 +1021,10 @@ void main() {
         expect(manifest['pages'] as List<Object?>, hasLength(2));
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
         expect(await db.getAllEpubBooks(), hasLength(2));
         expect(fs.copyToLocalCalls, 3, reason: '重扫命中标题预检，零页图重下载');
@@ -1027,7 +1055,10 @@ void main() {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -1103,7 +1134,10 @@ void main() {
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       source = (await db.getMediaSourceById(sid))!;
@@ -1131,7 +1165,10 @@ void main() {
       expect(fs.copyToLocalCalls, 3, reason: 'epub + srt + mp3 各下一次');
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
       expect(await db.getAllEpubBooks(), hasLength(1));
       expect(
@@ -1186,7 +1223,10 @@ void main() {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -1261,11 +1301,17 @@ void main() {
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
       source = (await db.getMediaSourceById(sid))!;
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
@@ -1305,7 +1351,10 @@ void main() {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);
