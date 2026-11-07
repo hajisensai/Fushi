@@ -413,7 +413,7 @@ void main() {
     expect(config.algorithm.memoryAlgorithm, SrsAlgorithm.fsrs7);
   });
 
-  test('deleteRetired 删掉退役权重（大模型、SM40）与标记，留下当前权重', () async {
+  test('deleteRetired 删掉退役权重（大模型、SM40、SM56）与标记，留下当前权重', () async {
     final Directory dir = Directory.systemTemp.createTempSync('rwkv_models');
     addTearDown(() => dir.deleteSync(recursive: true));
     final SrsRwkvModels models = SrsRwkvModels(dir: dir);
@@ -424,6 +424,9 @@ void main() {
       ],
     ];
     expect(kSrsRwkvRetiredWeightsNames, contains('sm40_weights.int8.bin'));
+    // 2026-11-07 换成 sm72e25：SM56 的权重与（中断时残留的）发布包也要清掉。
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm56_weights.int8.bin'));
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm56-package.zip'));
     expect(
       kSrsRwkvRetiredWeightsNames,
       isNot(contains(kSrsRwkvSmallWeightsName)),
