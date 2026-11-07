@@ -19,13 +19,15 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart'
     show musicSourceLabel;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 档位显示名（`Hi-Res` 是通行写法，各语言不译，仍走 i18n 便于个别语言调整）。
@@ -52,74 +54,11 @@ bool musicItemQualitySelectable(MusicPlayItem? item) =>
 
 /// 打开音质快切。
 Future<void> showMusicQualitySheet(BuildContext context, AppModel appModel) =>
-    adaptiveModalSheet<void>(
+    showMusicFloatingPanel(
       context: context,
+      maxWidth: 640,
       builder: (BuildContext _) => MusicQualitySheet(appModel: appModel),
     );
-
-/// 播放器信息行里的音质胶囊：显示这首当前按哪一档取流，点开 [showMusicQualitySheet]。
-/// 不是插件曲目时不占位。
-class MusicQualityChip extends StatelessWidget {
-  const MusicQualityChip({
-    required this.appModel,
-    required this.item,
-    super.key,
-  });
-
-  final AppModel appModel;
-  final MusicPlayItem? item;
-
-  @override
-  Widget build(BuildContext context) {
-    final MusicPlayItem? it = item;
-    if (it == null || !musicItemQualitySelectable(it)) {
-      return const SizedBox.shrink();
-    }
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final String label = musicPluginQualityLabel(
-      appModel.musicPluginQualityFor(it.path),
-    );
-    return Semantics(
-      button: true,
-      label: t.music_quality_chip_semantics(quality: label),
-      excludeSemantics: true,
-      child: FushiPressScale(
-        child: Material(
-          key: const ValueKey<String>('music_quality_chip'),
-          color: cs.secondaryContainer,
-          shape: const StadiumBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => unawaited(showMusicQualitySheet(context, appModel)),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 32, minWidth: 48),
-              child: Padding(
-                padding: const EdgeInsetsDirectional.only(start: 12, end: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      label,
-                      style: context.fushiType.labelLarge.copyWith(
-                        color: cs.onSecondaryContainer,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Icon(
-                      FushiIcons.expandMore,
-                      size: 18,
-                      color: cs.onSecondaryContainer,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class MusicQualitySheet extends StatefulWidget {
   const MusicQualitySheet({required this.appModel, super.key});
@@ -187,78 +126,204 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
     final String stream = _engine.resolving
         ? t.music_quality_fetching
         : (s == null ? '—' : musicSourceLabel(s));
-    final List<Widget> rows = <Widget>[
-      Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(24, 4, 24, 4),
-        child: Text(
-          t.music_quality_title,
-          style: context.fushiType.titleLarge.copyWith(
-            fontWeight: FontWeight.w700,
+    final List<Widget> blocks = <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              t.music_quality_title,
+              style: context.fushiType.titleLarge.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          FushiIconButtonControl(
+            key: const ValueKey<String>('music_quality_close'),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            icon: const FushiIcon(FushiIcons.close),
+            onPressed: () => unawaited(Navigator.of(context).maybePop()),
+          ),
+        ],
+      ),
+      // 四档并排的选择卡：档名 + 一行规格，选中的填色。
+      LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) {
+          final int cols = c.maxWidth >= 480 ? 4 : 2;
+          const double gap = 8;
+          final double w = (c.maxWidth - gap * (cols - 1)) / cols;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: <Widget>[
+              for (final MusicPluginQuality q in MusicPluginQuality.values)
+                SizedBox(
+                  width: w,
+                  child: _TierCard(
+                    key: ValueKey<String>('music_quality_${q.wire}'),
+                    label: musicPluginQualityLabel(q),
+                    hint: musicPluginQualityHint(q),
+                    selected: q == selected,
+                    onTap: path == null || q == selected
+                        ? null
+                        : () => unawaited(_pick(path, q)),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+      // 当前流：mpv 实际解出的规格。
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: <Widget>[
+              Text(
+                t.music_quality_current_stream,
+                style: context.fushiType.labelMedium.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  stream,
+                  key: const ValueKey<String>('music_quality_stream'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: context.fushiType.labelLarge.copyWith(
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-      for (final MusicPluginQuality q in MusicPluginQuality.values)
-        FushiListTileControl(
-          key: ValueKey<String>('music_quality_${q.wire}'),
-          selected: q == selected,
-          enabled: path != null,
-          leading: Icon(
-            q == selected ? FushiIcons.check : FushiIcons.radioUnchecked,
-          ),
-          title: Text(musicPluginQualityLabel(q)),
-          subtitle: Text(musicPluginQualityHint(q)),
-          onTap: path == null || q == selected
-              ? null
-              : () => unawaited(_pick(path, q)),
-        ),
-      Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(24, 12, 24, 0),
-        child: Text(
-          t.music_quality_current_stream,
-          style: context.fushiType.labelLarge.copyWith(
-            color: cs.onSurfaceVariant,
-          ),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(24, 4, 24, 8),
-        child: Text(
-          stream,
-          key: const ValueKey<String>('music_quality_stream'),
-          style: context.fushiType.bodyLarge,
-        ),
-      ),
-      FushiListTileControl(
+      Row(
         key: const ValueKey<String>('music_quality_set_default'),
-        title: Text(t.music_quality_set_default),
-        subtitle: Text(t.music_quality_set_default_hint),
-        trailing: adaptiveSwitch(
-          context: context,
-          value: _setDefault,
-          onChanged: (bool v) => setState(() => _setDefault = v),
-        ),
-        onTap: () => setState(() => _setDefault = !_setDefault),
-      ),
-      Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(24, 4, 24, 16),
-        child: Text(
-          t.music_quality_note,
-          style: context.fushiType.bodySmall.copyWith(
-            color: cs.onSurfaceVariant,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.music_quality_set_default,
+                  style: context.fushiType.labelLarge,
+                ),
+                Text(
+                  t.music_quality_set_default_hint,
+                  style: context.fushiType.bodySmall.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          adaptiveSwitch(
+            context: context,
+            value: _setDefault,
+            onChanged: (bool v) => setState(() => _setDefault = v),
+          ),
+        ],
+      ),
+      Text(
+        t.music_quality_note,
+        style: context.fushiType.bodySmall.copyWith(color: cs.onSurfaceVariant),
       ),
     ];
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: FushiEntranceScope(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (int i = 0; i < rows.length; i++)
-                FushiStaggeredEntrance(index: i, child: rows[i]),
-            ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 16, 20),
+      child: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12,
+          children: <Widget>[
+            for (int i = 0; i < blocks.length; i++)
+              FushiStaggeredEntrance(index: i, child: blocks[i]),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 一档：档名（选中带勾）+ 规格，选中填 primaryContainer。
+class _TierCard extends StatelessWidget {
+  const _TierCard({
+    required this.label,
+    required this.hint,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final String hint;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color fg = selected ? cs.onPrimaryContainer : cs.onSurface;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: FushiPressScale(
+        enabled: onTap != null,
+        child: Material(
+          color: selected
+              ? cs.primaryContainer
+              : cs.surfaceContainerHighest.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.fushiType.titleSmall.copyWith(
+                            color: fg,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (selected)
+                        FushiIcon(FushiIcons.check, size: 18, color: fg),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    hint,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.fushiType.bodySmall.copyWith(
+                      color: selected
+                          ? cs.onPrimaryContainer
+                          : cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

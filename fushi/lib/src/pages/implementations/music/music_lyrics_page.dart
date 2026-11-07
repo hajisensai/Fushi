@@ -1091,7 +1091,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                               const SizedBox(height: 12),
                               _buildTransport(context),
                               const SizedBox(height: 4),
-                              _buildTools(context),
+                              _buildTools(context, actions: true),
                             ],
                           ),
                         ),
@@ -1197,7 +1197,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[_buildSeek(), _buildTransport(context)],
+              children: <Widget>[
+                _buildSeek(),
+                _buildTransport(context),
+                _buildTools(context, actions: true),
+              ],
             ),
           ),
       ],
@@ -1248,7 +1252,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               _buildMeta(context, item),
               _buildSeek(),
               Center(child: _buildTransport(context)),
-              _buildTools(context),
+              _buildTools(context, actions: true),
             ],
           ),
         ),
@@ -1410,12 +1414,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           item,
           context.fushiType.bodyMedium.copyWith(color: cs.onSurfaceVariant),
         ),
-        // 在线插件曲目：音质胶囊（点开换档，原位重取）。
-        if (musicItemQualitySelectable(item))
-          Padding(
-            padding: EdgeInsets.only(top: dense ? 6 : 10),
-            child: MusicQualityChip(appModel: appModel, item: item),
-          ),
       ],
     );
   }
@@ -1474,6 +1472,38 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     strokeWidth: 4,
     barHeight: 20,
     debugLabel: 'music-lyrics-seek',
+  );
+
+  /// 功能图标（音质 / 音效 / 队列）：与偏移、AB 循环同款的裸图标按钮，无底色无文字，
+  /// 说明放 tooltip（用户 2026-11-08「有点突兀，无底色和其他选项并列」「无文字」）。
+  Widget _buildActionRow(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge(<Listenable>[
+      _engine,
+      appModelNoUpdate.prefsRepo,
+    ]),
+    builder: (BuildContext context, _) {
+      final MusicPlayItem? item = _engine.current;
+      final String? quality = item != null && musicItemQualitySelectable(item)
+          ? musicPluginQualityLabel(
+              appModelNoUpdate.musicPluginQualityFor(item.path),
+            )
+          : null;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // 音质（在线插件曲目才有）：点开换档、原位重取。
+          if (quality != null)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_lyrics_quality'),
+              icon: const FushiIcon(FushiIcons.highQuality),
+              tooltip: t.music_quality_chip_semantics(quality: quality),
+              onPressed: () => unawaited(
+                showMusicQualitySheet(_themedContext, appModelNoUpdate),
+              ),
+            ),
+        ],
+      );
+    },
   );
 
   /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
@@ -1622,10 +1652,15 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     }
   }
 
-  /// 小工具：偏移 ± 与 AB 循环（只有带时间轴的歌词才有）。
-  Widget _buildTools(BuildContext context) {
+  /// 偏移 ± / AB 循环（有逐行时间轴才有）；[actions] 时同一行后面接功能图标
+  /// （[_buildActionRow]）。
+  Widget _buildTools(BuildContext context, {bool actions = false}) {
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    if (!synced) return const SizedBox.shrink();
+    if (!synced) {
+      return actions
+          ? Center(child: _buildActionRow(context))
+          : const SizedBox.shrink();
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1669,6 +1704,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   onPressed: () => unawaited(_extendLoop()),
                 ),
         ),
+        if (actions) _buildActionRow(context),
       ],
     );
   }
@@ -1711,7 +1747,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                       ),
                     ),
                     _buildTransport(context),
-                    const Expanded(child: SizedBox.shrink()),
+                    // 右侧放功能行（设计稿 W1：底栏右边是音效 / 队列）。
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _buildActionRow(context),
+                      ),
+                    ),
                   ],
                 ),
               ],
