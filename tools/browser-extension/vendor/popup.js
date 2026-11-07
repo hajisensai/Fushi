@@ -3590,10 +3590,29 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     return (code >= 0x3040 && code <= 0x30ff) || (code >= 0x3400 && code <= 0x9fff) ||
            (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff66 && code <= 0xff9f);
   }
+  function anchorOf(event) {
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    return target && target.closest ? target.closest('a[href]') : null;
+  }
+  function isSoundLink(anchor) {
+    return /^sound:/i.test((anchor.getAttribute('href') || '').trim());
+  }
+  // sound:// 是 MDict 约定由宿主从 MDD 取字节播放的协议，沙箱里的词典脚本自己播不了
+  // （CSP 不放行网络与相对路径媒体）。词典脚本却常在释义根节点上委托接管 speaker 点击并
+  // return false（LDOCE5++ 的 LM5Switch.js 在桌面 Chrome UA 下改走 ldoceonline 在线发音），
+  // 冒泡阶段的监听因此既收不到、也被 defaultPrevented 挡掉，发音整个哑掉。所以在 window
+  // 捕获阶段先接住：早于词典脚本的任何监听，只阻止默认导航、不拦传播，词典自己的 UI 照跑。
+  window.addEventListener('click', function (event) {
+    var anchor = anchorOf(event);
+    if (!anchor || !isSoundLink(anchor)) return;
+    event.preventDefault();
+    post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
+           rect: rectOf(event.clientX, event.clientY, anchor) });
+  }, true);
   document.addEventListener('click', function (event) {
     if (event.defaultPrevented) return;
-    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
-    var anchor = target && target.closest ? target.closest('a[href]') : null;
+    var anchor = anchorOf(event);
+    if (anchor && isSoundLink(anchor)) return;
     if (anchor) {
       event.preventDefault();
       post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
