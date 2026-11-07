@@ -1530,10 +1530,20 @@ String _mangaGestureJs({
     // webtoon 纵向不回中（内容仍长于视口），由紧随其后的 scrollTo 保住锚点。
     if (ZOOM <= 1) _recenterPan();
     _applyCanvas();
-    if (IS_WEBTOON) window.scrollTo(0, Math.max(0, localY * ZOOM - ay));
+    if (IS_WEBTOON) _zoomAnchorScrollTo(Math.max(0, localY * ZOOM - ay));
     var b = _bridge();
     if (b && !silent) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
     return true;
+  }
+  // 条漫缩放的锚点回写：以手指 / 视口顶部为锚缩放时，靠改 scrollY 让锚点下的内容
+  // 不动。这次滚动是缩放的一部分，不是读者在滚条漫——滚动收起界面的监听（见
+  // lastReaderScroll）按「按下后 1200ms 内的滚动 = 用户滚动」判，旧实现把它当成
+  // 用户滚动回报 onMangaReaderHide：双击放大（scrollY 变大）收起界面、双击缩回
+  // （scrollY 变小）把界面弹出来，捏合同理（反馈 P2jQzOBBag 排查）。回写后把那条
+  // 监听的基线同步到新位置，这段位移就不计入用户滚动距离。
+  function _zoomAnchorScrollTo(y){
+    window.scrollTo(0, y);
+    lastReaderScroll = window.scrollY;
   }
   var doubleTapZoomFrame=null;
   function _cancelDoubleTapZoom(){
@@ -1634,7 +1644,7 @@ String _mangaGestureJs({
     ZOOM = _clampZoom(percent / 100);
     _recenterPan();
     _applyCanvas();
-    if (IS_WEBTOON) window.scrollTo(0, anchorLayout * ZOOM);
+    if (IS_WEBTOON) _zoomAnchorScrollTo(anchorLayout * ZOOM);
   };
   // Wide-page paging is a view transform, so OCR and selection remain in the
   // same page DOM.  Dart may ask this function before a turn; true means that
@@ -3235,6 +3245,8 @@ String _mangaGestureJs({
     if(flashTimer) clearTimeout(flashTimer);
     flashTimer=setTimeout(function(){flash.style.opacity='0';flashTimer=null;},80);
   }
+  // 基线：上一次 scroll 事件时的 scrollY。缩放锚点回写（_zoomAnchorScrollTo）会
+  // 直接改它，让那段位移不算用户滚动。
   var lastReaderScroll = window.scrollY;
   var readerScrollDistance = 0;
   // 只有用户自己滚才收起工具栏：恢复位置、换窗、跳页、自动滚动都是程序滚动，

@@ -1,0 +1,6 @@
+## BUG-4220 · manga-webtoon-zoom-scroll-toggles-chrome
+- **报告**：2026-11-07（排查反馈 P2jQzOBBag「漫画双击缩放总是先弹出控制层」时沿代码路径发现；不能确认就是该反馈在 iOS 上的全部根因，见备注）
+- **真实性**：✅ 真 bug（真 Chromium 复现）。条漫缩放以手指 / 视口顶部为锚，靠改 `window.scrollY` 保住锚点：`manga_overlay_html.dart` `_zoomAbout`（双击 / 捏合）与 `__mangaSetZoom` 里的 `window.scrollTo`。「滚动收起界面」监听（同文件 `var lastReaderScroll` 起那段 scroll 监听）把按下后 1200ms 内的任何滚动都当成读者自己滚动，于是这次锚点回写被回报成 `onMangaReaderHide`（Dart 侧 `manga_fushi_page.dart` 同名 handler → `_toggleMangaChrome`）：双击放大（scrollY 变大）把界面整个收起，双击缩回（scrollY 变小）把界面弹出来；捏合同理。修复前实测：放大回报 `["onMangaReaderHide",true]`，缩回回报 `["onMangaReaderHide",false]`。
+- **[x] ① 已修复** — 新增 `_zoomAnchorScrollTo(y)`：缩放锚点回写滚动后把收起监听的基线 `lastReaderScroll` 同步到新位置，这段位移不计入用户滚动距离。`_zoomAbout` 与 `__mangaSetZoom` 改用它；真实拖动 / 惯性 / 热区滚屏不变，照常收起界面。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_zoom_scroll_chrome_js_test.dart`（+ 同名 `.js`）：在 headless Chromium 里加载生成的整份条漫文档、用真实 `PointerEvent` 双击放大 / 缩回，断言零 `onMangaReaderHide`；对照组单指上拖滚动仍回报 `true`。修复前 2 条断言红、修复后 9/9 绿。`manga_overlay_html_test.dart` 的锚点回写源码守卫跟随改名。
+- **备注**：P2jQzOBBag 是 iOS（iPhone，3.3.0-debug.23922，已含 `aa6358e491`「第二击按下即武装双击」），反馈没说阅读模式。本 bug 只在条漫模式出现；分页模式下双击仍弹控制层的情形本机无法复现（页内双击判定由 `manga_zoomed_tap_zone_js_test.dart` 钉住且为绿），推测与 iOS platform view 把触摸转给 WKWebView 的延迟吃掉 300ms 双击窗口有关，未验证。未上真机。
