@@ -1013,9 +1013,12 @@ SettingsDestination buildInterconnectDestination() {
             icon: FushiIcons.ankiCard,
             visible: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
             subtitleBuilder: (SettingsContext ctx) =>
-                mineToServerTargetSubtitle(ctx.appModel),
+                mineToServerTargetSubtitle(_mineTargetAccess(ctx.appModel)),
             onTap: (SettingsContext ctx) async {
-              await pickMineToServerTarget(ctx.context, ctx.appModel);
+              await pickMineToServerTarget(
+                ctx.context,
+                _mineTargetAccess(ctx.appModel),
+              );
               ctx.refresh();
             },
             cli: SettingsCliAction(
@@ -1034,7 +1037,10 @@ SettingsDestination buildInterconnectDestination() {
                 ),
               ],
               run: (SettingsContext ctx, Map<String, String> args) =>
-                  setMineToServerTargetFromCli(ctx.appModel, args),
+                  setMineToServerTargetFromCli(
+                    _mineTargetAccess(ctx.appModel),
+                    args,
+                  ),
             ),
           ),
           SettingsCustomItem(
@@ -1656,3 +1662,12 @@ class _SyncSettingsState {
     }
   }
 }
+
+/// 「保存到」用到的 AppModel 能力（选择器不直接 import AppModel，见 [MineToServerTargetAccess]）。
+MineToServerTargetAccess _mineTargetAccess(AppModel appModel) =>
+    MineToServerTargetAccess(
+      targets: () => appModel.mineToServerTargets,
+      labels: () => appModel.mineToServerTargetLabels,
+      askHost: () => appModel.createRemoteMiningClient().miningTargets(),
+      save: appModel.setMineToServerTarget,
+    );

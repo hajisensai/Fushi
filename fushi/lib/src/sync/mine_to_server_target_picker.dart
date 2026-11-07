@@ -3,7 +3,6 @@
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption, showFushiChoiceDialog;
@@ -11,6 +10,36 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:material_ui/material_ui.dart';
+
+/// 「保存到」读写本机存的选择、向主机问选项要用的几样东西（调用方从 AppModel 取了传进来）。
+///
+/// 本文件不 import AppModel：它被设置 schema 引用，直接读 AppModel 会把它接进 AppModel 的大 import 环
+/// （fushi/test/build/import_cycle_guard_test.dart）。
+class MineToServerTargetAccess {
+  const MineToServerTargetAccess({
+    required this.targets,
+    required this.labels,
+    required this.askHost,
+    required this.save,
+  });
+
+  /// hostId → 已选的落点（没有条目 = 主机默认）。
+  final Map<String, RemoteMiningTarget> Function() targets;
+
+  /// hostId → 选的时候存下的显示名。
+  final Map<String, String> Function() labels;
+
+  /// 向当前配对的主机问能落到哪（`POST /api/mine/targets`）。
+  final Future<RemoteMiningTargetsReply?> Function() askHost;
+
+  /// 存下某台主机的选择（[target] 为 null = 主机默认）。
+  final Future<void> Function(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  })
+  save;
+}
 
 /// 「保存到」里的一项。[target] 为 null = 主机默认。
 class MineToServerTargetOption {
@@ -118,8 +147,8 @@ List<MineToServerTargetOption> mineToServerTargetOptions(
 }
 
 /// 设置行副标题：此刻卡落到哪（按选的时候存下的名字；没选过 = 主机默认）。
-String mineToServerTargetSubtitle(AppModel appModel) {
-  final List<String> labels = appModel.mineToServerTargetLabels.values.toList();
+String mineToServerTargetSubtitle(MineToServerTargetAccess access) {
+  final List<String> labels = access.labels().values.toList();
   if (labels.isEmpty) return t.anki_mine_to_server_target_default;
   return labels.join(' / ');
 }
@@ -130,7 +159,7 @@ bool _asking = false;
 /// 问主机能落到哪，弹单选框，存下所选。主机不支持挑（老主机 / 桌面 host）或连不上时提示一句。
 Future<void> pickMineToServerTarget(
   BuildContext context,
-  AppModel appModel,
+  MineToServerTargetAccess access,
 ) async {
   if (_asking) return;
   _asking = true;
@@ -138,7 +167,7 @@ Future<void> pickMineToServerTarget(
   try {
     // 要经网络问主机（最长十几秒）：先说一声，别让点了没反应。
     FushiToast.show(msg: t.anki_mine_to_server_target_loading);
-    reply = await appModel.createRemoteMiningClient().miningTargets();
+    reply = await access.askHost();
   } catch (_) {
     FushiToast.show(msg: t.anki_mine_to_server_target_unavailable);
     return;
@@ -159,7 +188,7 @@ Future<void> pickMineToServerTarget(
     context: context,
     title: t.anki_mine_to_server_target,
     icon: FushiIcons.ankiCard,
-    selected: mineToServerTargetKey(appModel.mineToServerTargets[hostId]),
+    selected: mineToServerTargetKey(access.targets()[hostId]),
     options: <FushiChoiceOption<String>>[
       for (final MineToServerTargetOption o in options)
         FushiChoiceOption<String>(
@@ -178,17 +207,13 @@ Future<void> pickMineToServerTarget(
   final MineToServerTargetOption choice = options.firstWhere(
     (MineToServerTargetOption o) => o.key == picked,
   );
-  await appModel.setMineToServerTarget(
-    hostId,
-    choice.target,
-    label: choice.label,
-  );
+  await access.save(hostId, choice.target, label: choice.label);
 }
 
 /// 控制通道（`fushi_cli config run interconnect.mine_to_server_target`）：不弹框，按参数直接设。
 /// 选项仍向主机现问：只能设主机列出来的落点，设不存在的会被拒绝而不是静默退回。
 Future<Object?> setMineToServerTargetFromCli(
-  AppModel appModel,
+  MineToServerTargetAccess access,
   Map<String, String> args,
 ) async {
   final String kind = (args['kind'] ?? '').trim();
@@ -203,9 +228,7 @@ Future<Object?> setMineToServerTargetFromCli(
       kind != kRemoteMiningKindAnki) {
     throw ArgumentError.value(kind, 'kind', 'default | review | anki');
   }
-  final RemoteMiningTargetsReply? reply = await appModel
-      .createRemoteMiningClient()
-      .miningTargets();
+  final RemoteMiningTargetsReply? reply = await access.askHost();
   final String? hostId = reply?.hostId;
   if (reply == null || hostId == null) {
     throw StateError(t.anki_mine_to_server_target_unavailable);
@@ -221,11 +244,7 @@ Future<Object?> setMineToServerTargetFromCli(
   if (choice == null) {
     throw ArgumentError('The paired device does not offer this location.');
   }
-  await appModel.setMineToServerTarget(
-    hostId,
-    choice.target,
-    label: choice.label,
-  );
+  await access.save(hostId, choice.target, label: choice.label);
   return <String, Object?>{
     'host': hostId,
     'target': choice.target?.toJson(),
