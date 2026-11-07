@@ -637,6 +637,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       jumpActions: _jumpHistoryToolbarItems(),
       // 同一份跳转记录在全书音频时间轴上的刻度（与迷你播放条 / 有声书面板同源）。
       jumpMarks: _audioJumpMarks(),
+      // 制卡结果小卡按正文行流选上角（竖排落左上，不压首列）。
+      verticalText: ReaderFushiSource.instance.lyricsVerticalWriting,
       // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       statsTimerPaused: _studyClockManualPause,
