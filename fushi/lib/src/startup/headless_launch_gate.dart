@@ -12,7 +12,7 @@
 ///    `app.fushi.reader/process_exit`）在这个引擎上全是 MissingPluginException——
 ///    Activity 之后接管这个缓存引擎时，Dart 早期那几次调用已经失败、不会重来；
 ///    （`FlutterLogs.initLogs` 的 MissingPluginException 不属此类：那是 flutter_logs
-///    2.1.x 把 channel 存成进程级静态、同进程另一个引擎销毁时把它清掉，BUG-4220，
+///    2.1.x 把 channel 存成进程级静态、同进程另一个引擎销毁时把它清掉，BUG-4221，
 ///    已靠升级插件根修）；
 /// 3. 无界面进程常驻后台却开着数据库、词典、同步、WebView 预热，白占内存。
 ///
