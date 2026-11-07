@@ -6,6 +6,7 @@
 // - 回包丢了用同一请求 id 重发：只记一条日志；出卡后卡在主机上被复习过：作答回 stale；
 // - 媒体按名字拉进缓存，同名只拉一次，非法名字不发请求；
 // - 本机同一个 SrsReviewPage 跑在远程作用域里：键盘翻面 → 评分 → 下一张 → Ctrl+Z 撤销，日志写在主机库。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -14,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
@@ -74,8 +76,14 @@ class _Host {
   /// 作答请求「主机处理完、回包丢了」的次数（> 0 时下一次作答回包丢掉）。
   int dropAnswerResponses = 0;
 
-  /// 为 true 时 deckSummaries 回一个不合契约的包（result 不是列表）。
-  bool malformedDeckSummaries = false;
+  /// 操作名 → 代替真实回包发回去的整个回包体（模拟不合契约的主机）。
+  final Map<String, Map<String, Object?>> malformed =
+      <String, Map<String, Object?>>{};
+
+  /// deckSummaries 回一个不合契约的包（result 不是列表）。
+  set malformedDeckSummaries(bool on) => on
+      ? malformed['deckSummaries'] = <String, Object?>{'result': 5}
+      : malformed.remove('deckSummaries');
 
   /// 收到的操作名（媒体请求记成 `media/<名字>`）。
   final List<String> ops = <String>[];
@@ -98,9 +106,9 @@ class _Host {
       } else {
         ops.add(path.substring(kSrsRemoteStorePathPrefix.length));
       }
-      if (op == 'deckSummaries' && malformedDeckSummaries) {
+      if (malformed[op] case final Map<String, Object?> body) {
         return http.Response(
-          jsonEncode(<String, Object?>{'result': 5}),
+          jsonEncode(body),
           200,
           headers: <String, String>{'content-type': 'application/json'},
         );
@@ -158,15 +166,33 @@ class _FakeConnector extends SrsRemoteHostConnector {
   final Directory dir;
   final Map<String, _Host> hosts;
 
+  /// 不再声明远程复习能力的主机（探测时不列）。
+  final Set<String> unsupported = <String>{};
+
+  /// 落盘缓存（代替偏好表；空串 = 没有缓存，同库开着但没写过）。
+  String homeCache = '';
+
+  /// 可拨的时钟。
+  DateTime clock = DateTime(2026, 11, 7, 9);
+
   @override
   SyncRepository? get repository => host.repository;
+
+  @override
+  String? readHomeCache() => homeCache;
+
+  @override
+  Future<void> writeHomeCache(String value) async => homeCache = value;
+
+  @override
+  DateTime now() => clock;
 
   @override
   Future<List<InterconnectHostTarget>> supporting(
     List<InterconnectHostTarget> candidates,
   ) async => <InterconnectHostTarget>[
     for (final InterconnectHostTarget c in candidates)
-      if (hosts.containsKey(c.hostId)) c,
+      if (hosts.containsKey(c.hostId) && !unsupported.contains(c.hostId)) c,
   ];
 
   @override
@@ -194,6 +220,9 @@ class _CountingConnector extends _FakeConnector {
   int get probes => probed.length;
   int get opens => opened.length;
 
+  /// 设了就让握手等它（看清握手之前界面画的是什么）。
+  Completer<void>? openGate;
+
   @override
   Future<List<InterconnectHostTarget>> supporting(
     List<InterconnectHostTarget> candidates,
@@ -203,8 +232,9 @@ class _CountingConnector extends _FakeConnector {
   }
 
   @override
-  Future<SrsRemoteSession> open(InterconnectHostTarget target) {
+  Future<SrsRemoteSession> open(InterconnectHostTarget target) async {
     opened.add(target.hostId);
+    await openGate?.future;
     return super.open(target);
   }
 }
@@ -261,6 +291,20 @@ void main() {
     );
   });
 
+  test('首页已配对设备的落盘缓存：偏好键已登记且设备本地；库没开时不读不写', () async {
+    expect(kKnownPreferenceKeys, contains(kSrsHomePairedCachePrefKey));
+    expect(
+      SyncRepository.deviceLocalPrefKeys,
+      contains(kSrsHomePairedCachePrefKey),
+      reason: '描述的是这台设备配对的主机，不随备份 / 同步 / Profile 走',
+    );
+    final SrsRemoteHostConnector connector = SrsRemoteHostConnector(
+      SrsTestAppModel(),
+    );
+    expect(connector.readHomeCache(), isNull);
+    await connector.writeHomeCache('x');
+  });
+
   group('远程库 ↔ 主机', () {
     late _Host host;
     setUp(() async {
@@ -303,6 +347,53 @@ void main() {
         await remote.noteIdsOfType(host.store.lapisNoteTypeId),
         await host.store.noteIdsOfType(host.store.lapisNoteTypeId),
       );
+    });
+
+    test('主机回包不合契约：抛机读码 bad_response 的错误（带出错路径），不漏成 TypeError', () async {
+      final SrsRemoteStore remote = await host.remote();
+      final String card = (await remote.studyState(
+        host.store.defaultDeckId,
+      ))!.next!;
+      Matcher bad(String op, String path) => throwsA(
+        isA<SrsRemoteBadResponse>()
+            .having(
+              (SrsRemoteBadResponse e) => e.message,
+              'message',
+              'bad_response',
+            )
+            .having((SrsRemoteBadResponse e) => e.op, 'op', op)
+            .having((SrsRemoteBadResponse e) => e.cause.path, 'path', path),
+      );
+
+      host.malformed['cardDetail'] = <String, Object?>{
+        'result': <String, Object?>{'card': 3},
+      };
+      await expectLater(
+        remote.cardDetail(card),
+        bad('cardDetail', 'result.card'),
+      );
+      host.malformed['deckSummaries'] = <String, Object?>{
+        'rev': 'x',
+        'result': <Object?>[],
+      };
+      await expectLater(remote.deckSummaries(), bad('deckSummaries', 'rev'));
+      host.malformed['history'] = <String, Object?>{'result': 'x'};
+      await expectLater(remote.history(card), bad('history', 'result'));
+      host.malformed['deviceNames'] = <String, Object?>{
+        'result': <String, Object?>{'a': 1},
+      };
+      await expectLater(
+        remote.remoteDeviceNames(),
+        bad('deviceNames', 'result.a'),
+      );
+
+      // 握手回包没有 profile：连不上，同样是 bad_response。
+      host.malformed['hello'] = <String, Object?>{'result': null};
+      await expectLater(host.remote(), bad('hello', 'profile'));
+
+      // 主机恢复：同一个远程库照常读。
+      host.malformed.clear();
+      expect((await remote.cardDetail(card))!.card.id, card);
     });
 
     test('卡片 / 笔记操作与扩展流程落在主机库上', () async {
@@ -824,8 +915,12 @@ void main() {
       final Finder retry = find.byKey(
         const ValueKey<String>('srs-paired-retry-host-1'),
       );
-      expect(retry, findsOneWidget, reason: '类型错误也落成可重试的错误态');
-      expect(pairedHeaderText(t.srs_home_paired_error_load), findsOneWidget);
+      expect(retry, findsOneWidget, reason: '回包不合契约也落成可重试的错误态');
+      expect(
+        pairedHeaderText(t.srs_remote_review_error_bad_response),
+        findsOneWidget,
+        reason: '按机读码 bad_response 出文案，不是 TypeError',
+      );
       expect(pairedHeaderText(t.srs_home_deck_cards(n: 0)), findsNothing);
 
       // 主机恢复正常：点重试重新握手，读到牌组。
@@ -843,7 +938,10 @@ void main() {
       shown.value = true;
       await settle(tester);
       expect(retry, findsOneWidget);
-      expect(pairedHeaderText(t.srs_home_paired_error_load), findsOneWidget);
+      expect(
+        pairedHeaderText(t.srs_remote_review_error_bad_response),
+        findsOneWidget,
+      );
       expect(
         pairedHeaderText(t.srs_home_deck_cards(n: 2)),
         findsOneWidget,
@@ -889,6 +987,7 @@ void main() {
       final int opsBefore = host.ops.length;
       await reopen(tester, shown);
       expect(find.byKey(pairedSection), findsNothing, reason: '尊重用户关掉互联');
+      expect(connector.homeCache, isEmpty, reason: '关掉互联后落盘缓存一并清掉');
       expect(host.ops.length, opsBefore, reason: '关了互联不再用旧会话向主机发请求');
       expect(connector.probes, 1, reason: '配置门控关闭时不走网络探测');
 
@@ -989,6 +1088,171 @@ void main() {
       );
       expect(header2, findsOneWidget);
       expect(host.ops.length, opsBefore, reason: '停用后不再向它发请求');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('冷启动：先画落盘的主机牌组（握手之前），再握手重读；探测结果没过期不重探', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector first) =
+          await openFixture(tester);
+      await pumpReopenableHome(tester, first, local);
+      await settle(tester);
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
+      expect(first.homeCache, contains('host-1'), reason: '读到的牌组落盘');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+
+      // 「重启」：新的根容器（app 级状态全没了），只剩落盘缓存；期间主机多了一张卡。
+      await tester.runAsync(
+        () => host.store.createNote(
+          noteTypeId: host.store.lapisNoteTypeId,
+          createdAt: 1700000009000,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '鳥',
+            srsLapisFieldId(kSrsTestProfile, 'MainDefinition'): 'def-鳥',
+          },
+        ),
+      );
+      final _CountingConnector connector =
+          _CountingConnector(first.app, host, first.dir)
+            ..homeCache = first.homeCache
+            ..clock = first.clock.add(const Duration(minutes: 5))
+            ..openGate = Completer<void>();
+      final int hellos = host.ops.where((String o) => o == 'hello').length;
+      await pumpReopenableHome(tester, connector, local);
+      await settle(tester, rounds: 6);
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-paired')),
+        findsOneWidget,
+        reason: '冷启动第一次进来就出分区',
+      );
+      expect(
+        pairedHeaderText(t.srs_home_deck_cards(n: 2)),
+        findsOneWidget,
+        reason: '握手之前先画上次落盘的数字',
+      );
+      expect(pairedHeaderText(t.srs_home_paired_refreshing), findsOneWidget);
+      expect(connector.probes, 0, reason: '探测结果没过期，不重探');
+      expect(host.ops.where((String o) => o == 'hello').length, hellos);
+
+      connector.openGate!.complete();
+      await settle(tester);
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 3)), findsOneWidget);
+      expect(connector.opens, 1);
+      expect(connector.probes, 0);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('探测结果过期：再进首页自动重探已知主机，不再声明能力的从分区去掉', (
+      WidgetTester tester,
+    ) async {
+      final (_, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      expect(connector.probes, 1);
+
+      // 有效期内：不重探。
+      connector.clock = connector.clock.add(const Duration(minutes: 10));
+      await reopen(tester, shown);
+      expect(connector.probes, 1);
+
+      // 过期：自动重探，还支持的保留会话。
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(connector.probed, <String>['host-1', 'host-1']);
+      expect(connector.opens, 1, reason: '重探后仍支持：会话照用');
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
+
+      // 主机关了远程复习：再过期后进页面它就不在了，不用点「立即同步」。
+      connector.unsupported.add('host-1');
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(find.byKey(pairedSection), findsNothing);
+      expect(connector.homeCache, isEmpty);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('远程复习页：主机回包不合契约是可重试的错误态，主机恢复后点重试接着复习', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬', '猫']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rpe_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final SrsRemoteHostClient client = host.client();
+      final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
+      final SrsRemoteStore remote = (await tester.runAsync(
+        () => SrsRemoteStore.connect(client, prefetchMedia: media.prefetch),
+      ))!;
+      final AppModel app = AppModel(testPlatformServices())
+        ..shortcutRegistry.loadDefaults(TargetPlatform.windows);
+      final List<SrsCardFace> faces = <SrsCardFace>[];
+      host.malformed['studyState'] = <String, Object?>{'result': 7};
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            srsCardFaceBuilderProvider.overrideWithValue((
+              BuildContext context,
+              SrsCardFace face,
+            ) {
+              faces.add(face);
+              return SrsPlainCardFace(face: face);
+            }),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                designSystem: FushiDesignSystem.material,
+                glass: FushiGlassMaterial.off,
+                glassDesign: false,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: SrsRemoteCollectionScope(
+                store: remote,
+                media: media,
+                child: SrsReviewPage(
+                  deckId: remote.defaultDeckId,
+                  deckName: 'Default',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-review-load-retry'),
+      );
+      expect(retry, findsOneWidget, reason: '统一错误态带重试');
+      expect(find.text(t.srs_remote_review_error_bad_response), findsOneWidget);
+      expect(find.textContaining('TypeError'), findsNothing);
+
+      host.malformed.clear();
+      await tester.tap(retry);
+      await settle(tester);
+      expect(retry, findsNothing);
+      expect(faces, isNotEmpty, reason: '主机恢复后重试出卡');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

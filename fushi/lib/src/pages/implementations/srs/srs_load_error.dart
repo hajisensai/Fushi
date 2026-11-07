@@ -5,7 +5,8 @@
 /// 按机读码出文案；本机库的已知失败（升级空间不够）给可读说明；其余照原文。
 library;
 
-import 'package:fushi_engine/srs/srs_remote_store.dart' show SrsRemoteStoreError;
+import 'package:fushi_engine/srs/srs_remote_store.dart'
+    show SrsRemoteStoreError;
 import 'package:fushi_srs/fushi_srs.dart' show SrsUpgradeNoSpaceException;
 import 'package:material_ui/material_ui.dart';
 
