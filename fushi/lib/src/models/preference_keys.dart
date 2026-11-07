@@ -385,6 +385,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
   // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
+  // bool（默认 false）：中文查词时简体 ↔ 繁體双向互查（查 这个 也出 這個 的词条）。开发者
+  // 要求默认关：只查原文字形。随 Profile 走；服务端读同名键。常量在 fushi_engine
+  // `kLookupChineseScriptVariantsPrefKey`。
+  'lookup_chinese_script_variants',
   // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
   // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
   'lookup_library_sentences',

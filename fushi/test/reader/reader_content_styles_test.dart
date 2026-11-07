@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
@@ -950,7 +951,7 @@ void main() {
     // (content-box − (N−1)·gap)/N，浏览器才在 content-box 里正好排下 N 列；gap 仍固定
     // 22px（单量纲）。与 JS getScrollContext 的 pageStep = columnCount·(usedColW+gap) 成对，
     // N·(subW+gap) == content-box+gap，翻页网格不动（保 TODO-729/753/792 不变式）。
-    test('TODO-1285 每页 N 列：column-count:N + column-width 均分成子列宽（横排）', () async {
+    test('TODO-1285 横排双页：column-count:2 + column-width 均分成子列宽', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
@@ -958,7 +959,7 @@ void main() {
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       await settings.setWritingMode('horizontal-tb');
-      await settings.setPageColumns(2);
+      await settings.setPageSpread(ReaderPageSpread.double);
 
       final String css = ReaderContentStyles.css(settings: settings);
       expect(
@@ -991,7 +992,7 @@ void main() {
       );
     });
 
-    test('TODO-1285 每页列数=0（自动/单列）：无 column-count、列宽仍整页（字节等价）', () async {
+    test('TODO-1285 单双页=自动（无窗口信息时单页）：无 column-count、列宽仍整页（字节等价）', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
@@ -999,12 +1000,12 @@ void main() {
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       await settings.setWritingMode('horizontal-tb');
-      // 默认 pageColumns=0。
+      // 默认单双页 = 自动；css() 不带窗口信息时按单页排。
       final String css = ReaderContentStyles.css(settings: settings);
       expect(
         css,
         isNot(contains('column-count:')),
-        reason: 'pageColumns=0 不发 column-count',
+        reason: '单页不发 column-count',
       );
       // 单列列宽仍是整页 content-box（不被 max(1px,...) 包裹）——零回归。
       expect(
@@ -1016,7 +1017,9 @@ void main() {
       expect(css, isNot(contains('max(1px, calc(')));
     });
 
-    test('TODO-1285 竖排每页 3 列：子列宽 = (竖排 content-box − 2·22px)/3', () async {
+    // 单双页（2026-11-07）：竖排双页是对开（一屏右页 + 左页，column-wrap），不再是
+    // 旧「每页 N 列」那样上下叠 N 段。
+    test('竖排双页 = 对开：不发 column-count，发 @supports column-wrap 对开几何', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
@@ -1024,24 +1027,38 @@ void main() {
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       await settings.setWritingMode('vertical-rl');
-      await settings.setPageColumns(3);
+      await settings.setPageSpread(ReaderPageSpread.double);
 
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('column-count: 3 !important;'));
-      // 竖排基准是 verticalColumnWidthCss 的 max(F, calc(...))，均分后包一层 max(1px, ...)。
+      expect(
+        css,
+        isNot(contains('column-count: 2 !important;')),
+        reason: '竖排双页不能退回上下两段',
+      );
+      expect(css, contains('@supports (column-wrap: wrap)'));
+      expect(css, contains('column-wrap: wrap !important;'));
+      // 竖排列高仍是整页 content-box（一列 = 一页），没有被均分。
       final String base = ReaderContentStyles.verticalColumnWidthCss(
         marginTopVh: settings.marginTop,
         marginBottomVh: settings.marginBottom,
         fontSizePx: settings.fontSize.round(),
       );
-      // totalGap = (3-1)*22 = 44。
-      expect(
-        css,
-        contains(
-          'column-width: max(1px, calc(($base - 44px) / 3)) !important;',
-        ),
-        reason: '竖排 N=3：子列高 = (content-box − 44px)/3',
+      expect(css, contains('column-width: $base !important;'));
+    });
+
+    test('旧版存下的 3、4 栏读出来是双页（不需要迁移）', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
       );
+      addTearDown(db.close);
+      await db.setPref('src:reader_fushi:page_columns', '4');
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      expect(settings.pageSpread, ReaderPageSpread.double);
+      await settings.setWritingMode('horizontal-tb');
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('column-count: 2 !important;'));
+      expect(css, isNot(contains('column-count: 4')));
     });
 
     // 直接单测 helper 的均分代数（不经整条 css 组装）。
@@ -1089,11 +1106,12 @@ void main() {
     // column-fill:auto，否则按规范引擎可对每个 fragment 均摊列高 → 列不落 pageStep 网格
     // → 相邻页列露出。守卫：分页 body 必发 column-fill:auto（横排/竖排/单列都发）。
     test('TODO-1285 分页 multicol 必发 column-fill: auto（横排/竖排/单列）', () async {
-      for (final ({String mode, int cols}) c in <({String mode, int cols})>[
-        (mode: 'horizontal-tb', cols: 2),
-        (mode: 'vertical-rl', cols: 3),
-        (mode: 'horizontal-tb', cols: 0),
-      ]) {
+      for (final ({String mode, ReaderPageSpread cols}) c
+          in <({String mode, ReaderPageSpread cols})>[
+            (mode: 'horizontal-tb', cols: ReaderPageSpread.double),
+            (mode: 'vertical-rl', cols: ReaderPageSpread.double),
+            (mode: 'horizontal-tb', cols: ReaderPageSpread.auto),
+          ]) {
         final FushiDatabase db = FushiDatabase.forTesting(
           NativeDatabase.memory(),
         );
@@ -1101,13 +1119,13 @@ void main() {
         final ReaderSettings settings = ReaderSettings(db);
         await settings.refreshFromDb();
         await settings.setWritingMode(c.mode);
-        await settings.setPageColumns(c.cols);
+        await settings.setPageSpread(c.cols);
         final String css = ReaderContentStyles.css(settings: settings);
         expect(
           css,
           contains('column-fill: auto !important;'),
           reason:
-              '分页 multicol（${c.mode} pageColumns=${c.cols}）必须显式 column-fill:auto',
+              '分页 multicol（${c.mode} 单双页=${c.cols.name}）必须显式 column-fill:auto',
         );
       }
     });
@@ -1125,7 +1143,7 @@ void main() {
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       await settings.setWritingMode('horizontal-tb');
-      await settings.setPageColumns(2);
+      await settings.setPageSpread(ReaderPageSpread.double);
       final String css = ReaderContentStyles.css(settings: settings);
 
       expect(
@@ -1830,10 +1848,10 @@ void main() {
     });
   });
 
-  // TODO-1285：每页列数设置写穿守卫——UI onChanged → source.setReaderPageColumns →
-  // ReaderSettings.setPageColumns → preferences 表 `ttu_page_columns`。getter 反读一致。
-  group('TODO-1285 每页列数写穿 DB', () {
-    test('setPageColumns 写穿 preferences 且 getter 反读一致', () async {
+  // 单双页设置写穿守卫——UI onChanged → source.setReaderPageSpread →
+  // ReaderSettings.setPageSpread → preferences 表 `page_columns`（键冻结沿用旧「每页列数」）。
+  group('单双页写穿 DB', () {
+    test('setPageSpread 写穿 preferences 且 getter 反读一致', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
@@ -1841,24 +1859,27 @@ void main() {
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
 
-      expect(settings.pageColumns, 0, reason: '默认自动（0）');
-      await settings.setPageColumns(3);
-      expect(settings.pageColumns, 3, reason: 'getter 立即反读新值');
+      expect(settings.pageSpread, ReaderPageSpread.auto, reason: '默认自动');
+      await settings.setPageSpread(ReaderPageSpread.double);
+      expect(settings.pageSpread, ReaderPageSpread.double);
 
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(
         prefs['src:reader_fushi:page_columns'],
-        '3',
-        reason: '每页列数必须落到 preferences 表（写穿）',
+        '2',
+        reason: '单双页必须落到 preferences 表（写穿，沿用 page_columns 键）',
       );
 
-      // 独立实例重新从 DB 加载，仍读到 3（真持久化，非内存态）。
+      // 独立实例重新从 DB 加载（真持久化，非内存态）。
       final ReaderSettings reloaded = ReaderSettings(db);
       await reloaded.refreshFromDb();
-      expect(reloaded.pageColumns, 3);
+      expect(reloaded.pageSpread, ReaderPageSpread.double);
+
+      await reloaded.setPageSpread(ReaderPageSpread.single);
+      expect((await db.getAllPrefs())['src:reader_fushi:page_columns'], '1');
     });
 
-    test('source.setReaderPageColumns 经 ReaderSettings 写穿并反读', () async {
+    test('source.setReaderPageSpread 经 ReaderSettings 写穿并反读', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
@@ -1868,10 +1889,15 @@ void main() {
       ReaderFushiSource.readerSettings = settings;
       addTearDown(() => ReaderFushiSource.readerSettings = null);
 
-      await ReaderFushiSource.instance.setReaderPageColumns(2);
-      expect(ReaderFushiSource.instance.readerPageColumns, 2);
+      await ReaderFushiSource.instance.setReaderPageSpread(
+        ReaderPageSpread.single,
+      );
+      expect(
+        ReaderFushiSource.instance.readerPageSpread,
+        ReaderPageSpread.single,
+      );
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs['src:reader_fushi:page_columns'], '2');
+      expect(prefs['src:reader_fushi:page_columns'], '1');
     });
   });
 }

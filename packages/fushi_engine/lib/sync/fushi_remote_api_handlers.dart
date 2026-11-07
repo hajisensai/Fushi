@@ -210,12 +210,19 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // 请求方的查词语言（可选）：中文 → host 开简体 → 繁體回落。缺省 = 旧行为，按 host
   // 本机当前查词语言；旧 host 不认该字段，同样是旧行为。
   final String? language = remoteLookupLanguageOf(body);
+  // 请求方用户的简繁互查开关（可选 bool）。缺省 = host 用自己的开关。
+  final bool? chineseScriptVariants = remoteLookupChineseScriptVariantsOf(body);
   // 原文自带振假名（可选，`[{s, e, r}]` 以 term 为坐标系）：认识它的 host 让引擎按读音
   // 一致度排同长度候选；缺省 / 旧 host = 旧排序。
   final List<FushiRubySpan> rubySpans = remoteLookupRubySpansOf(body);
   if (popupOnly &&
       !record &&
-      hasPopupFastPath(lookup, language: language, rubySpans: rubySpans)) {
+      hasPopupFastPath(
+        lookup,
+        language: language,
+        chineseScriptVariants: chineseScriptVariants,
+        rubySpans: rubySpans,
+      )) {
     final RemoteDictionaryPopupLookup? popup =
         await searchRemoteDictionaryPopupForRequest(
           lookup,
@@ -223,6 +230,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
           wildcards: wildcards,
           maximumTerms: maximumTerms,
           language: language,
+          chineseScriptVariants: chineseScriptVariants,
           timing: popupTiming,
           rubySpans: rubySpans,
         );
@@ -241,6 +249,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     wildcards: wildcards,
     maximumTerms: maximumTerms,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
   );
   if (result != null && history != null && record) {
