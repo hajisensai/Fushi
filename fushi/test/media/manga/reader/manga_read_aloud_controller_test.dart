@@ -326,11 +326,17 @@ void main() {
     final MangaReadAloudController c = controllerFor(host);
     c.start(fromPage: 0);
     await _waitFor(() => player.playing);
+    final List<MangaReadAloudState> states = <MangaReadAloudState>[];
+    void record() => states.add(c.state);
+    c.addListener(record);
     c.next();
     // 自己停了全局播放器（正在播自己的句子）。
     expect(player.stops, 1);
     await _waitFor(() => player.played.length == 2 && player.playing);
     expect(c.state, MangaReadAloudState.playing);
+    // 被自己打断的那段返回 false，期间一次都没转成 paused。
+    expect(states, isNot(contains(MangaReadAloudState.paused)));
+    c.removeListener(record);
     expect(playedTexts(all), <String>['あ。', 'い。']);
 
     player.interruptExternally();
