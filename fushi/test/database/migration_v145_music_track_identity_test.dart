@@ -147,7 +147,7 @@ void main() {
     raw.dispose();
 
     Future<void> check(FushiDatabase db) async {
-      expect(db.schemaVersion, 146);
+      expect(db.schemaVersion, 147);
       expect(
         await _col(db, 'SELECT track_uid FROM music_tracks ORDER BY track_uid'),
         <String>['other', 'win'],
@@ -366,6 +366,9 @@ void main() {
     const Set<String> exempt = <String>{
       'music_tracks.track_uid', // 主键本身，由 mergeMusicTrackInto 删败者行
       'music_track_uid_aliases.track_uid', // 别名表自己
+      // 远程曲目（v147）的主键：来源 + 条目 id 派生的 uid（srv / plg 命名空间），从来不是
+      // 本地曲库的内容派生 uid，曲库合并不会改指它。
+      'music_remote_tracks.track_uid',
     };
     final List<String> found = <String>[];
     for (final QueryRow t

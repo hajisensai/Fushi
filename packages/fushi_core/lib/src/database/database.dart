@@ -868,6 +868,7 @@ void _requireOneVideoMetadataOwner({
     MusicDiscSources,
     MusicPlaylists,
     MusicPlaylistEntries,
+    MusicRemoteTracks,
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
@@ -924,7 +925,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 146;
+  int get schemaVersion => 147;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2939,6 +2940,13 @@ class FushiDatabase extends _$FushiDatabase
         // 身份合并之后：建表时曲库已是一文件一行，不会有挂在败者 uid 上的断点。
         if (!await _tableExists('music_resume_points')) {
           await m.createTable(musicResumePoints);
+        }
+      }
+      if (from < 147) {
+        // v147：music_remote_tracks——只能串流的远程曲目（YouTube 内置音源 / 在线插件）
+        // 加入音乐库与本地歌单（反馈 0tRY-D2JgG）。纯新增、无回填；幂等守卫同 v146。
+        if (!await _tableExists('music_remote_tracks')) {
+          await m.createTable(musicRemoteTracks);
         }
       }
     },

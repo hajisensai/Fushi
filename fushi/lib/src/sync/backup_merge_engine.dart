@@ -1905,6 +1905,7 @@ class BackupMergeEngine {
   /// - 歌词：按 (track_uid, source) LWW（`updated_at`）。
   /// - MV 绑定：按 (track_uid, kind, ref) LWW（`updated_at`）。
   /// - 播放流：按 (track_uid, started_at) 去重并集。
+  /// - 远程曲目（v147）：按 `track_uid` LWW（`updated_at`，含「移出音乐库」）。
   /// 曲目身份是内容派生 uid，两边同一首歌同一个 uid，无需重映射。
   Future<void> _mergeMusicUserData() async {
     if (await _srcTableExists('music_playlists')) {
@@ -1944,6 +1945,28 @@ class BackupMergeEngine {
         );
       }
       await _db.customStatement('DROP TABLE IF EXISTS temp.merge_music_pl');
+    }
+    if (await _srcTableExists('music_remote_tracks')) {
+      // 远程曲目（v147）：歌单条目可能引用它们，与歌单同一类别。按 track_uid LWW：元数据
+      // 与入库状态（library_added_at，移出曲库时置 NULL）一起取较新的一方；created_at 留
+      // 先到的那份。
+      await _db.customStatement(
+        'INSERT INTO music_remote_tracks (track_uid, kind, source_key, '
+        'item_id, title, artist, album, duration_ms, cover_url, '
+        'library_added_at, created_at, updated_at) '
+        'SELECT s.track_uid, s.kind, s.source_key, s.item_id, s.title, '
+        's.artist, s.album, s.duration_ms, s.cover_url, s.library_added_at, '
+        's.created_at, s.updated_at '
+        'FROM $_srcAlias.music_remote_tracks AS s WHERE true '
+        'ON CONFLICT (track_uid) DO UPDATE SET '
+        'kind = excluded.kind, source_key = excluded.source_key, '
+        'item_id = excluded.item_id, title = excluded.title, '
+        'artist = excluded.artist, album = excluded.album, '
+        'duration_ms = excluded.duration_ms, cover_url = excluded.cover_url, '
+        'library_added_at = excluded.library_added_at, '
+        'updated_at = excluded.updated_at '
+        'WHERE excluded.updated_at > music_remote_tracks.updated_at',
+      );
     }
     if (await _srcTableExists('music_lyrics')) {
       await _db.customStatement(

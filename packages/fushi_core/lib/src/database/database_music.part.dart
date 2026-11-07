@@ -789,6 +789,283 @@ mixin _FushiDbMusic on _$FushiDatabase {
         ),
     ];
   }
+
+  // ── 本地歌单与远程曲目（v147，反馈 0tRY-D2JgG）──────────────────────────
+  //
+  // 歌单条目只存 `track_uid`：本地曲目指 `music_tracks`，远程曲目指 `music_remote_tracks`
+  // （两边 uid 命名空间不同，不撞）。往歌单里加远程曲目时，远程曲目行与条目在同一个事务里
+  // 落库，不会出现「条目指向一个查不到的远程曲目」。
+
+  /// 新建一个普通歌单（可带初始曲目），返回新歌单行。[remote] 是 [trackUids] 里远程曲目的
+  /// 元数据（同事务 upsert，入库状态不变）。
+  Future<MusicPlaylistRow> createMusicPlaylist(
+    String name, {
+    required int at,
+    List<String> trackUids = const <String>[],
+    List<MusicRemoteTracksCompanion> remote =
+        const <MusicRemoteTracksCompanion>[],
+  }) => transaction(() async {
+    final String uid = _FushiDbSrs.newProfileUid(); // UUIDv7：跨设备合并按它认歌单
+    await into(musicPlaylists).insert(
+      MusicPlaylistsCompanion.insert(
+        playlistUid: uid,
+        name: name,
+        createdAt: at,
+        updatedAt: at,
+      ),
+    );
+    if (trackUids.isNotEmpty) {
+      await addMusicPlaylistEntries(uid, trackUids, at: at, remote: remote);
+    }
+    return (select(musicPlaylists)
+          ..where(($MusicPlaylistsTable t) => t.playlistUid.equals(uid)))
+        .getSingle();
+  });
+
+  /// 一个歌单（软删的不算）；没有为 null。
+  Future<MusicPlaylistRow?> getMusicPlaylist(String playlistUid) =>
+      (select(musicPlaylists)..where(
+            ($MusicPlaylistsTable t) =>
+                t.playlistUid.equals(playlistUid) & t.deletedAt.isNull(),
+          ))
+          .getSingleOrNull();
+
+  /// 改名（同时推进 `updated_at`，备份合并按它 LWW）。
+  Future<void> renameMusicPlaylist(
+    String playlistUid,
+    String name, {
+    required int at,
+  }) =>
+      (update(musicPlaylists)..where(
+            ($MusicPlaylistsTable t) => t.playlistUid.equals(playlistUid),
+          ))
+          .write(
+            MusicPlaylistsCompanion(
+              name: Value<String>(name),
+              updatedAt: Value<int>(at),
+            ),
+          );
+
+  /// 软删歌单（留墓碑让删除随备份传到别的设备）并清掉条目。
+  Future<void> deleteMusicPlaylist(String playlistUid, {required int at}) =>
+      transaction(() async {
+        await (delete(musicPlaylistEntries)..where(
+              ($MusicPlaylistEntriesTable t) =>
+                  t.playlistUid.equals(playlistUid),
+            ))
+            .go();
+        await (update(musicPlaylists)..where(
+              ($MusicPlaylistsTable t) => t.playlistUid.equals(playlistUid),
+            ))
+            .write(
+              MusicPlaylistsCompanion(
+                deletedAt: Value<int?>(at),
+                updatedAt: Value<int>(at),
+              ),
+            );
+      });
+
+  /// 歌单条目（按位置排）。
+  Future<List<MusicPlaylistEntryRow>> listMusicPlaylistEntries(
+    String playlistUid,
+  ) =>
+      (select(musicPlaylistEntries)
+            ..where(
+              ($MusicPlaylistEntriesTable t) =>
+                  t.playlistUid.equals(playlistUid),
+            )
+            ..orderBy(<OrderingTerm Function($MusicPlaylistEntriesTable)>[
+              ($MusicPlaylistEntriesTable t) =>
+                  OrderingTerm(expression: t.position),
+              ($MusicPlaylistEntriesTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  /// 各歌单的条目数（选歌单对话框显示用）。
+  Future<Map<String, int>> countMusicPlaylistEntries() async {
+    final Expression<int> n = musicPlaylistEntries.id.count();
+    final List<TypedResult> rows =
+        await (selectOnly(musicPlaylistEntries)
+              ..addColumns(<Expression<Object>>[
+                musicPlaylistEntries.playlistUid,
+                n,
+              ])
+              ..groupBy(<Expression<Object>>[musicPlaylistEntries.playlistUid]))
+            .get();
+    return <String, int>{
+      for (final TypedResult r in rows)
+        r.read(musicPlaylistEntries.playlistUid)!: r.read(n) ?? 0,
+    };
+  }
+
+  /// 把 [trackUids] 依次追加到歌单末尾；[remote] 是其中远程曲目的元数据（同事务 upsert，
+  /// 不改它们的入库状态）。推进歌单 `updated_at`。
+  Future<void> addMusicPlaylistEntries(
+    String playlistUid,
+    List<String> trackUids, {
+    required int at,
+    List<MusicRemoteTracksCompanion> remote =
+        const <MusicRemoteTracksCompanion>[],
+  }) => transaction(() async {
+    for (final MusicRemoteTracksCompanion r in remote) {
+      await upsertMusicRemoteTrack(r, at: at);
+    }
+    final Expression<int> maxPos = musicPlaylistEntries.position.max();
+    final int? last =
+        await (selectOnly(musicPlaylistEntries)
+              ..addColumns(<Expression<Object>>[maxPos])
+              ..where(musicPlaylistEntries.playlistUid.equals(playlistUid)))
+            .map((TypedResult r) => r.read(maxPos))
+            .getSingle();
+    int position = last == null ? 0 : last + 1;
+    for (final String uid in trackUids) {
+      await into(musicPlaylistEntries).insert(
+        MusicPlaylistEntriesCompanion.insert(
+          playlistUid: playlistUid,
+          trackUid: uid,
+          position: position++,
+          addedAt: at,
+        ),
+      );
+    }
+    await _touchMusicPlaylist(playlistUid, at);
+  });
+
+  /// 删一条歌单条目（按条目 id：同一首在歌单里可以出现两次，只删点的那一条），其后的
+  /// 位置前移、不留空洞。推进歌单 `updated_at`。
+  Future<void> removeMusicPlaylistEntry(
+    String playlistUid,
+    int entryId, {
+    required int at,
+  }) => transaction(() async {
+    await (delete(musicPlaylistEntries)..where(
+          ($MusicPlaylistEntriesTable t) =>
+              t.id.equals(entryId) & t.playlistUid.equals(playlistUid),
+        ))
+        .go();
+    final List<MusicPlaylistEntryRow> rest = await listMusicPlaylistEntries(
+      playlistUid,
+    );
+    for (int i = 0; i < rest.length; i++) {
+      if (rest[i].position == i) continue;
+      await (update(musicPlaylistEntries)
+            ..where(($MusicPlaylistEntriesTable t) => t.id.equals(rest[i].id)))
+          .write(MusicPlaylistEntriesCompanion(position: Value<int>(i)));
+    }
+    await _touchMusicPlaylist(playlistUid, at);
+  });
+
+  Future<void> _touchMusicPlaylist(String playlistUid, int at) =>
+      (update(musicPlaylists)..where(
+            ($MusicPlaylistsTable t) => t.playlistUid.equals(playlistUid),
+          ))
+          .write(MusicPlaylistsCompanion(updatedAt: Value<int>(at)));
+
+  /// 写一首远程曲目的元数据（有则更新元数据；[MusicRemoteTracksCompanion.libraryAddedAt]
+  /// 缺省时保留原入库状态；`created_at` 只在首次写入时定）。
+  Future<void> upsertMusicRemoteTrack(
+    MusicRemoteTracksCompanion track, {
+    required int at,
+  }) => into(musicRemoteTracks).insert(
+    track.copyWith(createdAt: Value<int>(at), updatedAt: Value<int>(at)),
+    onConflict: DoUpdate(
+      (_) => track.copyWith(
+        createdAt: const Value<int>.absent(),
+        updatedAt: Value<int>(at),
+      ),
+    ),
+  );
+
+  /// 加入音乐库（已在库的不改入库时刻，只刷新元数据）。
+  Future<void> addMusicRemoteTrackToLibrary(
+    MusicRemoteTracksCompanion track, {
+    required int at,
+  }) => transaction(() async {
+    final MusicRemoteTrackRow? existing = await getMusicRemoteTrack(
+      track.trackUid.value,
+    );
+    await upsertMusicRemoteTrack(
+      track.copyWith(
+        libraryAddedAt: Value<int?>(existing?.libraryAddedAt ?? at),
+      ),
+      at: at,
+    );
+  });
+
+  /// 从音乐库移除：只清入库时刻（行留着，歌单 / 别的设备可能还引用它）。
+  Future<void> removeMusicRemoteTrackFromLibrary(
+    String trackUid, {
+    required int at,
+  }) =>
+      (update(musicRemoteTracks)
+            ..where(($MusicRemoteTracksTable t) => t.trackUid.equals(trackUid)))
+          .write(
+            MusicRemoteTracksCompanion(
+              libraryAddedAt: const Value<int?>(null),
+              updatedAt: Value<int>(at),
+            ),
+          );
+
+  Future<MusicRemoteTrackRow?> getMusicRemoteTrack(String trackUid) =>
+      (select(musicRemoteTracks)
+            ..where(($MusicRemoteTracksTable t) => t.trackUid.equals(trackUid)))
+          .getSingleOrNull();
+
+  /// 在音乐库里的远程曲目（最近加入的在前）。
+  Future<List<MusicRemoteTrackRow>> listMusicRemoteLibraryTracks() =>
+      (select(musicRemoteTracks)
+            ..where(($MusicRemoteTracksTable t) => t.libraryAddedAt.isNotNull())
+            ..orderBy(<OrderingTerm Function($MusicRemoteTracksTable)>[
+              ($MusicRemoteTracksTable t) => OrderingTerm(
+                expression: t.libraryAddedAt,
+                mode: OrderingMode.desc,
+              ),
+              ($MusicRemoteTracksTable t) => OrderingTerm(expression: t.title),
+            ]))
+          .get();
+
+  /// 一批远程曲目（歌单解析条目用）。按块查询，不受 SQLite 变量个数上限限制。
+  Future<Map<String, MusicRemoteTrackRow>> listMusicRemoteTracks(
+    Iterable<String> trackUids,
+  ) async {
+    final List<String> uids = trackUids.toSet().toList();
+    final Map<String, MusicRemoteTrackRow> out =
+        <String, MusicRemoteTrackRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      for (final MusicRemoteTrackRow r in await (select(
+        musicRemoteTracks,
+      )..where(($MusicRemoteTracksTable t) => t.trackUid.isIn(part))).get()) {
+        out[r.trackUid] = r;
+      }
+    }
+    return out;
+  }
+
+  /// 一批本地曲库曲目（含软删的：歌单条目仍要能解析到被删文件的那一行）。按块查询。
+  Future<Map<String, MusicTrackRow>> listMusicTracksByUid(
+    Iterable<String> trackUids,
+  ) async {
+    final List<String> uids = trackUids.toSet().toList();
+    final Map<String, MusicTrackRow> out = <String, MusicTrackRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      for (final MusicTrackRow r in await (select(
+        musicTracks,
+      )..where(($MusicTracksTable t) => t.trackUid.isIn(part))).get()) {
+        out[r.trackUid] = r;
+      }
+    }
+    return out;
+  }
 }
 
 /// 写播放事件时随行落库的播放项快照与播放来源（v139）。来源 [sourceKind] 为 null 时
