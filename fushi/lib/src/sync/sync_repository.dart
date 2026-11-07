@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
     show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
@@ -1823,6 +1825,8 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
+    kLibraryGridColumnsPrefKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,

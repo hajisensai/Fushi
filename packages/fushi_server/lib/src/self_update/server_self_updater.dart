@@ -1,0 +1,319 @@
+/// 无头服务端的互联远程自更新：[HostSelfUpdater] 的服务端实现（app 侧对应
+/// `fushi/lib/src/updates/host_self_update_service.dart`）。
+///
+/// 流程：查 `hajisensai/fushi-server` Releases → 下载本平台包到安装目录的暂存区 →
+/// 核对 GitHub 给的 SHA-256 → 系统 tar 解包 → [swapServerBundle] 换文件 →
+/// [onInstalled]（`serve` 收到后停服并以退出码 75 退出，由 systemd / 服务管理器拉起
+/// 新版）。client 看到的是连接断开、重连后版本号变了（与桌面 host 同一种结局）。
+///
+/// 平台门只有一处（[platformSupported]）：发布包（有 `release.json`）+ 有对应发布
+/// 包的平台（Linux / Windows x64）。用户开关是配置 `remote_update`（默认关）。
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/utils/net/app_http.dart'
+    show createAppHttpIoClient;
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+
+import 'package:fushi_server/src/self_update/server_bundle_swap.dart';
+import 'package:fushi_server/src/self_update/server_release.dart';
+
+/// 取 Releases JSON（测试缝；生产 = GitHub REST API）。
+typedef ServerReleaseFetcher = Future<Object?> Function(Uri url);
+
+/// 把 [url] 下载到 [into]，边下边报进度（测试缝；生产 = [downloadServerPackage]）。
+typedef ServerPackageDownloader =
+    Future<void> Function(
+      Uri url,
+      File into, {
+      required void Function(double progress) onProgress,
+      int? expectedSize,
+    });
+
+/// 服务端退出码：装好了新版，等服务管理器重启（EX_TEMPFAIL，systemd
+/// `Restart=on-failure` 会拉起）。
+const int kExitSelfUpdated = 75;
+
+class ServerSelfUpdater implements HostSelfUpdater {
+  ServerSelfUpdater({
+    required this.installRoot,
+    required this.current,
+    required this.assetSuffix,
+    required Future<bool> Function() isAllowed,
+    required this.onInstalled,
+    ServerReleaseFetcher? fetchReleases,
+    ServerPackageDownloader? download,
+    ServerArchiveExtractor? extract,
+    DateTime Function()? now,
+    this.refreshThrottle = const Duration(minutes: 5),
+    String? platform,
+  }) : _isAllowed = isAllowed,
+       _fetch = fetchReleases ?? fetchGitHubJson,
+       _download = download ?? downloadServerPackage,
+       _extract = extract ?? extractServerArchiveWithTar,
+       _now = now ?? DateTime.now,
+       _platform = platform ?? Platform.operatingSystem;
+
+  /// 用运行中的可执行文件定位安装目录与版本身份。不是发布包 / 平台没有发布包时
+  /// 照样返回实例，只是 [platformSupported] 为假（端点回 unsupported，能力位仍在，
+  /// client 能说清「这台服务端不能远程更新」而不是「不懂」）。
+  factory ServerSelfUpdater.forRunningBundle({
+    required Future<bool> Function() isAllowed,
+    required void Function() onInstalled,
+  }) {
+    final Directory? root = currentBundleRoot();
+    return ServerSelfUpdater(
+      installRoot: root,
+      current: root == null ? null : ServerReleaseInfo.readFrom(root),
+      assetSuffix: serverReleaseAssetSuffix(),
+      isAllowed: isAllowed,
+      onInstalled: onInstalled,
+    );
+  }
+
+  /// 安装目录（`bin/` 的上一级）；不是发布包 → null。
+  final Directory? installRoot;
+
+  /// 本机发布包的版本身份；没有 `release.json` → null。
+  final ServerReleaseInfo? current;
+
+  /// 本平台发布包后缀；没有发布包的平台 → null。
+  final String? assetSuffix;
+
+  /// 新版已换进安装目录：`serve` 据此停服退出。
+  final void Function() onInstalled;
+
+  final Duration refreshThrottle;
+
+  final Future<bool> Function() _isAllowed;
+  final ServerReleaseFetcher _fetch;
+  final ServerPackageDownloader _download;
+  final ServerArchiveExtractor _extract;
+  final DateTime Function() _now;
+  final String _platform;
+
+  ServerReleaseCandidate? _latest;
+  DateTime? _lastResolvedAt;
+  Future<void>? _resolving;
+  HostUpdatePhase _phase = HostUpdatePhase.idle;
+  double? _progress;
+  String? _error;
+
+  @override
+  bool get platformSupported =>
+      installRoot != null && current != null && assetSuffix != null;
+
+  @override
+  Future<bool> isRemoteUpdateAllowed() => _isAllowed();
+
+  @override
+  Future<HostUpdateStatus> status({bool refresh = false}) async {
+    if (refresh && platformSupported && !_phase.isBusy) {
+      await _refreshLatest();
+    }
+    return _snapshot(await _isAllowed());
+  }
+
+  @override
+  Future<HostUpdateStatus> startUpdate() async {
+    if (_phase.isBusy) throw const HostUpdateRejected(HostUpdateDenial.busy);
+    await _refreshLatest(force: true);
+    final ServerReleaseCandidate? latest = _latest;
+    if (latest == null) {
+      throw const HostUpdateRejected(HostUpdateDenial.noUpdate);
+    }
+    _phase = HostUpdatePhase.downloading;
+    _progress = 0;
+    _error = null;
+    final HostUpdateStatus accepted = _snapshot(true);
+    unawaited(_run(latest));
+    return accepted;
+  }
+
+  Future<void> _run(ServerReleaseCandidate latest) async {
+    final Directory staging = Directory(
+      p.join(installRoot!.path, kServerUpdateStagingDir),
+    );
+    try {
+      final String? expected = latest.sha256;
+      if (expected == null) {
+        // 不装校验不了的包：GitHub 给每个 release 资产都算 digest，缺了就是异常。
+        throw const ServerUpdateException('missing_digest');
+      }
+      if (staging.existsSync()) await staging.delete(recursive: true);
+      await staging.create(recursive: true);
+      final File archive = File(p.join(staging.path, latest.assetName));
+      await _download(
+        latest.downloadUrl,
+        archive,
+        expectedSize: latest.size,
+        onProgress: (double v) => _progress = v,
+      );
+      final String actual = (await sha256.bind(archive.openRead()).first)
+          .toString();
+      if (actual != expected) {
+        throw ServerUpdateException(
+          'digest_mismatch',
+          'expected $expected, got $actual',
+        );
+      }
+      _phase = HostUpdatePhase.installing;
+      _progress = null;
+      final Directory extracted = Directory(p.join(staging.path, 'extract'));
+      await _extract(archive, extracted);
+      final Directory bundle = Directory(
+        p.join(extracted.path, kServerBundleDirName),
+      );
+      _checkExtractedBundle(bundle, latest);
+      await swapServerBundle(newBundle: bundle, installRoot: installRoot!);
+      engineLog.logDiagnostic(
+        'ServerSelfUpdate',
+        'installed ${latest.displayVersion} '
+            '(was ${current!.displayVersion}); exiting for restart',
+      );
+      onInstalled();
+    } catch (e, stack) {
+      engineLog.log('ServerSelfUpdate.run', e, stack);
+      _phase = HostUpdatePhase.failed;
+      _progress = null;
+      _error = e is ServerUpdateException ? e.code : '$e';
+      try {
+        if (staging.existsSync()) await staging.delete(recursive: true);
+      } on FileSystemException {
+        // 下次启动的 cleanupAfterServerUpdate 再删。
+      }
+    }
+  }
+
+  /// 解出来的必须是同一序号、同一平台的完整发布包：有可执行文件、`release.json`
+  /// 与 release 对得上。
+  void _checkExtractedBundle(Directory bundle, ServerReleaseCandidate latest) {
+    final String exe = Platform.isWindows ? 'fushi_server.exe' : 'fushi_server';
+    if (!File(p.join(bundle.path, 'bin', exe)).existsSync()) {
+      throw const ServerUpdateException('bad_package', 'no bin/ executable');
+    }
+    final ServerReleaseInfo? info = ServerReleaseInfo.readFrom(bundle);
+    if (info == null || info.sequence != latest.sequence) {
+      throw ServerUpdateException(
+        'bad_package',
+        'release.json sequence ${info?.sequence} != ${latest.sequence}',
+      );
+    }
+  }
+
+  /// 节流地重查；并发合并成一次。查失败只留痕，保留上一次结果。
+  Future<void> _refreshLatest({bool force = false}) {
+    if (!platformSupported) return Future<void>.value();
+    final DateTime? last = _lastResolvedAt;
+    if (!force && last != null && _now().difference(last) < refreshThrottle) {
+      return Future<void>.value();
+    }
+    return _resolving ??= () async {
+      try {
+        final ServerReleaseInfo info = current!;
+        final Uri url = info.isBeta
+            ? Uri.https(
+                'api.github.com',
+                '/repos/$kServerReleaseRepo/releases',
+                <String, String>{'per_page': '20'},
+              )
+            : Uri.https(
+                'api.github.com',
+                '/repos/$kServerReleaseRepo/releases/latest',
+              );
+        _latest = pickServerUpdate(
+          releasesJson: await _fetch(url),
+          current: info,
+          assetSuffix: assetSuffix!,
+        );
+        _lastResolvedAt = _now();
+      } catch (e, stack) {
+        engineLog.log('ServerSelfUpdate.resolve', e, stack);
+      } finally {
+        _resolving = null;
+      }
+    }();
+  }
+
+  HostUpdateStatus _snapshot(bool allowed) => HostUpdateStatus(
+    currentVersion: current?.displayVersion ?? 'dev',
+    platform: _platform,
+    supported: platformSupported,
+    remoteUpdateAllowed: allowed,
+    latestVersion: _latest?.displayVersion,
+    phase: _phase,
+    progress: _progress,
+    error: _error,
+  );
+}
+
+const Map<String, String> _githubHeaders = <String, String>{
+  'Accept': 'application/vnd.github+json',
+  'User-Agent': 'fushi_server',
+  'X-GitHub-Api-Version': '2022-11-28',
+};
+
+/// GitHub REST 取 JSON；非 200 抛出。
+Future<Object?> fetchGitHubJson(Uri url) async {
+  final http.Client client = createAppHttpIoClient();
+  try {
+    final http.Response r = await client
+        .get(url, headers: _githubHeaders)
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode != 200) {
+      throw HttpException('GitHub ${r.statusCode}', uri: url);
+    }
+    return jsonDecode(r.body);
+  } finally {
+    client.close();
+  }
+}
+
+/// 流式下载到 [into]，按 [expectedSize]（或 Content-Length）报进度。
+Future<void> downloadServerPackage(
+  Uri url,
+  File into, {
+  required void Function(double progress) onProgress,
+  int? expectedSize,
+}) async {
+  final http.Client client = createAppHttpIoClient();
+  try {
+    final http.Request req = http.Request('GET', url)
+      ..headers['User-Agent'] = 'fushi_server';
+    final http.StreamedResponse res = await client
+        .send(req)
+        .timeout(const Duration(seconds: 60));
+    if (res.statusCode != 200) {
+      throw HttpException('download ${res.statusCode}', uri: url);
+    }
+    final int? total = expectedSize ?? res.contentLength;
+    final IOSink sink = into.openWrite();
+    int received = 0;
+    try {
+      await for (final List<int> chunk in res.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total != null && total > 0) {
+          onProgress((received / total).clamp(0, 1).toDouble());
+        }
+      }
+    } finally {
+      await sink.close();
+    }
+    if (total != null && received != total) {
+      throw ServerUpdateException(
+        'download_incomplete',
+        '$received of $total bytes',
+      );
+    }
+  } finally {
+    client.close();
+  }
+}

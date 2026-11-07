@@ -801,3 +801,56 @@ class ShelfTitleOverflowTooltip extends StatelessWidget {
     );
   }
 }
+
+/// 书架 / 漫画库网格格宽小于它时，格子内边距减半（每行数量 ≥ 3 的手机窄屏，
+/// 2026-11-07 用户选「紧凑间距」）：360dp 手机定 3 列时格宽约 115dp，标准 12dp
+/// 内边距会让封面只剩约 91dp、封面之间空隙比封面宽的四分之一还多。
+const double kShelfGridCompactCellWidth = 130;
+
+/// 书架网格格子的内边距：格宽 < [kShelfGridCompactCellWidth] 时取 [standard] 的
+/// 一半，否则就是 [standard]。
+double shelfGridCellInsetFor(double cardWidth, double standard) =>
+    cardWidth < kShelfGridCompactCellWidth ? standard / 2 : standard;
+
+/// 向下传书架网格格子的内边距（书卡 / 合集扇形卡读它，网格外的卡片读到
+/// fallback = 设计 token 的标准值）。
+class ShelfGridCellInset extends InheritedWidget {
+  const ShelfGridCellInset({
+    required this.inset,
+    required super.child,
+    super.key,
+  });
+
+  final double inset;
+
+  static double of(BuildContext context, double fallback) =>
+      context.dependOnInheritedWidgetOfExactType<ShelfGridCellInset>()?.inset ??
+      fallback;
+
+  @override
+  bool updateShouldNotify(ShelfGridCellInset oldWidget) =>
+      oldWidget.inset != inset;
+}
+
+/// 书封宽高比（约 1:1.42，常见文库本封面 450×640；与
+/// `kDiscoveryBookCoverAspectRatio` 同一口径）。
+const double kShelfBookCoverAspectRatio = 1 / 1.42;
+
+/// 书架 / 漫画库网格一格的宽高比：封面区恒为 [kShelfBookCoverAspectRatio]，
+/// 格高 = 两倍格子内边距 + 封面高 + 文字块高。
+///
+/// 此前格子用固定比例 `kShelfBookCardAspectRatio`（180/320）、封面区是「格高 −
+/// 文字块」剩下的 Expanded：文字块高度不随格宽变，格子一窄（3 / 4 列、窄窗）
+/// 封面区就比书封扁，封面按高度适配后两侧露出材质衬底；格子一宽又反过来裁掉
+/// 封面两侧（2026-11-07 用户截图「材质溢出」，两列也会）。视频库 / 游戏库早就
+/// 按「封面高 + 文字块」算行高，这里对齐。
+double shelfBookCellAspectRatio({
+  required double cellWidth,
+  required double inset,
+  required double footerHeight,
+}) {
+  final double coverWidth = math.max(1, cellWidth - inset * 2);
+  final double cellHeight =
+      coverWidth / kShelfBookCoverAspectRatio + footerHeight + inset * 2;
+  return cellWidth / cellHeight;
+}

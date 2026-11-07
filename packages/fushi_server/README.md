@@ -83,6 +83,9 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
+`Restart=on-failure` 也覆盖远程更新：装完新版后进程以退出码 75 退出，systemd 据此拉起新版（见下文
+「远程更新」）。Windows 上用 NSSM / WinSW 这类服务管理器托管时同理（退出即重启）。
+
 ## 配置文件 `fushi_server.yaml`
 
 ```yaml
@@ -101,6 +104,7 @@ scan_scrape: true             # 扫描后自动补刮「从未识别过」的视
 # tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
 scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
 profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
+remote_update: false          # 允许已配对设备远程更新本服务端（见下文「远程更新」）；默认关，WebUI 可开，保存即生效
 leaderboard_link: true        # 允许「我的设备」跟随本机排行榜账户自动登录（见下文「跟随已配对设备登录」）；保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
@@ -439,6 +443,24 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - 不从服务端自己的偏好生成配置，所以这条通道带不出服务端任何凭据；寄存物的凭据已由发送端剔除。
 - 默认关：没开关的入站写就是隐形写入通道（与 app「允许已配对设备读写本机配置」同一默认）。
   WebUI「配对」页的「配置文件寄存」卡片可一键开关、指定分发、删除。
+
+### 远程更新（`remote_update`）
+
+已配对的手机 / 桌面可以在「互联」里看到服务端版本并让它自己更新，端点与 app 当 host 时同一条
+（`/api/host/update`：只认已配对设备的专属 token、只收局域网、一次性 nonce、开关默认关）。
+
+- **只对发布包可用**：包根目录的 `release.json`（`release-server.yml` 打包时写入版本、发布序号、
+  通道）是版本身份；本机 `dart run` / 自己 `dart build cli` 出的 bundle 没有它，端点回
+  `platform_unsupported`。有发布包的平台：Linux x64、Windows x64。
+- **更新源**：独立发布仓 `hajisensai/fushi-server` 的 Releases，新旧只比发布序号。beta 包跟最近的
+  release（beta 与正式版都收），正式版只跟 Latest。
+- **安装**：本平台包下载到安装目录里的 `.fushi_update/`，核对 GitHub 给资产算的 SHA-256（没有
+  校验值或对不上一律不装），系统 `tar` 解包（Windows 用自带的 `System32\tar.exe`），然后逐个文件
+  换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
+  覆盖），新文件再改名到位；中途失败整体还原。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
+- **重启**：换完进程以**退出码 75** 退出，由 systemd（`Restart=on-failure`）/ 服务管理器拉起新版；
+  新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
+- 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
 
 ### 跟随已配对设备登录（`leaderboard_link`）
 
