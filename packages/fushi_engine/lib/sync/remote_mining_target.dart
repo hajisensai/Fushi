@@ -1,8 +1,8 @@
 /// 互联「制卡到已配对设备」时，手机挑卡落到主机的哪里（docs/specs/2026-11-05-server-srs-design.md §4.8）。
 ///
-/// - `GET /api/mine/targets`：主机能落到哪些地方（它的默认、Fushi 复习的各份 profile 与牌组、Anki 的牌组）；
+/// - `POST /api/mine/targets`（空请求体）：主机能落到哪些地方（它的默认、Fushi 复习的各份 profile 与牌组、Anki 的牌组）；
 /// - `/api/mine`、`/api/mine/forward`、`/api/duplicate` 可带 `target: {kind?, profile?, deck?}`：缺项 = 主机默认；
-///   回包带 `landed: {kind, profile?, deck?}` 说实际落到了哪（主机没有所选的就退回默认并如实说）。
+///   回包带 `landed: {kind, profile?, deck?}` 说实际落到了哪；主机没有所点名的就退回默认并带 `targetUnavailable: true`。
 ///
 /// 全是可选字段：老主机不认 `target` 照旧落到自己的默认，老客户端不发 `target` 照旧。
 library;
@@ -65,16 +65,24 @@ class RemoteMiningTarget {
 
 /// 一次制卡的结果 + 实际落点。
 class RemoteMineLanding {
-  const RemoteMineLanding(this.result, {this.landed});
+  const RemoteMineLanding(
+    this.result, {
+    this.landed,
+    this.targetUnavailable = false,
+  });
 
   final RemoteMineResult result;
   final RemoteMiningTarget? landed;
+
+  /// 请求点名的落点主机没有（不再提供那份 profile / 没有那一类），卡落到了主机默认。手机据此把「保存到」
+  /// 退回主机默认并提示（回包字段 `targetUnavailable: true`）。
+  final bool targetUnavailable;
 }
 
 /// 主机能让手机挑落点（服务端；桌面 host 之后也可以实现）。路由在 [FushiRemoteMiningService] 同时实现它时
-/// 才把请求里的 `target` 交进来、才挂 `GET /api/mine/targets`；没实现的主机行为与以前逐字节一致。
+/// 才把请求里的 `target` 交进来、才挂 `POST /api/mine/targets`；没实现的主机行为与以前逐字节一致。
 abstract interface class FushiRemoteMiningTargetService {
-  /// `GET /api/mine/targets` 的回包：
+  /// `POST /api/mine/targets` 的回包：
   /// `{default: {kind, profile?, deck?}, review: [{profile, name, decks: [name]}], anki?: {decks: [name]}}`。
   Future<Map<String, Object?>> miningTargets();
 

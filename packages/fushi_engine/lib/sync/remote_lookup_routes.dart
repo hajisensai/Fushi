@@ -307,7 +307,7 @@ class RemoteLookupRoutes {
 
   /// 「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的
   /// Anki 配置落卡。rawPayloadJson 缺失/类型错 → 400；未注入挖词 service → 404。
-  /// `GET /api/mine/targets`（§4.8）：主机能让手机挑的落点。主机不支持挑 → 404（客户端据此只显示「主机默认」）。
+  /// `POST /api/mine/targets`（§4.8）：主机能让手机挑的落点。主机不支持挑 → 404（客户端据此只显示「主机默认」）。
   Future<shelf.Response> handleMiningTargets(shelf.Request request) async {
     if (mining case final FushiRemoteMiningTargetService targeted) {
       return jsonResponse(await targeted.miningTargets());

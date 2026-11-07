@@ -343,8 +343,11 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
   // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
   // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。
   // §4.8：主机让手机挑落点时把请求里的 `target` 交进去，回包带实际落点。
-  final RemoteMiningTarget? target = RemoteMiningTarget.fromJson(body['target']);
+  final RemoteMiningTarget? target = RemoteMiningTarget.fromJson(
+    body['target'],
+  );
   RemoteMiningTarget? landed;
+  bool targetUnavailable = false;
   final RemoteMineResult r;
   if (payload.isImmersion) {
     r = await mining.mineImmersion(payload);
@@ -356,6 +359,7 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
     );
     r = l.result;
     landed = l.landed;
+    targetUnavailable = l.targetUnavailable;
   } else {
     r = await mining.mineEntry(
       fields: payload.fields,
@@ -364,6 +368,7 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
   }
   return <String, dynamic>{
     if (landed != null) 'landed': landed.toJson(),
+    if (targetUnavailable) 'targetUnavailable': true,
     'result': r.result,
     if (r.message != null) 'message': r.message,
     if (r.detail != null) 'detail': r.detail,
@@ -424,6 +429,7 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
 }) async {
   final ForwardedMinePayload payload = ForwardedMinePayload.fromJson(body);
   RemoteMiningTarget? landed;
+  bool targetUnavailable = false;
   final RemoteMineResult r;
   if (mining case final FushiRemoteMiningTargetService targeted) {
     final RemoteMineLanding l = await targeted.mineForwardedTo(
@@ -432,11 +438,13 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
     );
     r = l.result;
     landed = l.landed;
+    targetUnavailable = l.targetUnavailable;
   } else {
     r = await mining.mineForwarded(payload);
   }
   return <String, dynamic>{
     if (landed != null) 'landed': landed.toJson(),
+    if (targetUnavailable) 'targetUnavailable': true,
     'result': r.result,
     if (r.message != null) 'message': r.message,
     if (r.detail != null) 'detail': r.detail,

@@ -948,7 +948,8 @@ class FushiSyncServer {
       return _lookupRoutes.handleMine(request);
     }
     if (reqPath == '/api/mine/targets') {
-      if (method != 'GET') return shelf.Response(405);
+      // POST 与其它 /api/mine* 一致：客户端走同一条带钉扎的互联 POST 传输（请求体为空对象）。
+      if (method != 'POST') return shelf.Response(405);
       return _lookupRoutes.handleMiningTargets(request);
     }
     if (reqPath == '/api/mine/forward') {

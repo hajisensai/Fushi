@@ -2030,6 +2030,9 @@ class SyncRepository {
     'tts_gpt_sovits_local',
     // 本机 Irodori-TTS-Server 的专属目录与端口：同上。
     'tts_irodori_local',
+    // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
+    // 带到另一台设备上没有意义。
+    PreferencesRepository.mineToServerTargetsKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

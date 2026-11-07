@@ -135,7 +135,18 @@ void main() {
     );
     expect(unknown['result'], 'success');
     expect((unknown['landed'] as Map)['profile'], kJa);
+    expect(unknown['targetUnavailable'], isTrue, reason: '点名了牌组 = 显式选择，退回要如实说');
     expect(await notes(kJa), 1);
+
+    // 只带手机自己的 profile uid（= 主机默认）：服务端没有那份就落默认 profile，不算退回。
+    final Map<String, dynamic> own = await mine(
+      '書く',
+      target: <String, Object?>{
+        'profile': '01928c3e-0000-7000-8000-00000000beef',
+      },
+    );
+    expect((own['landed'] as Map)['profile'], kJa);
+    expect(own.containsKey('targetUnavailable'), isFalse);
 
     final Map<String, dynamic> anki = await mine(
       '走る',
@@ -143,6 +154,7 @@ void main() {
     );
     expect(anki['result'], 'success');
     expect((anki['landed'] as Map)['kind'], 'review');
+    expect(anki['targetUnavailable'], isTrue);
   });
 
   test('/api/mine/targets 列出服务提供的 profile 与牌组；没有 Anki 时不带 anki', () async {

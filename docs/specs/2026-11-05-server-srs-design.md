@@ -158,17 +158,17 @@ If #2944 merges first, this is a small edit in this PR.
 
 - Move `SrsMiner` and its helpers to the engine (see §5). They are free of Flutter and depend on `SrsDbStore`, `SrsMediaStore` and `AnkiNoteComposer`, which is in `fushi_anki_core`.
 - New config `srs.mining_target: anki | review`. The default is `review` when a profile is selected and the Anki landing is not configured; otherwise `anki`. That way nothing changes for current Anki-landing users.
-- New config `srs.mining_decks: {<uid>: <deckId>}` (missing = that profile's built-in default deck), with the built-in Lapis note type and the auto field mapping from `srsMiningFieldMappingsFor`.
-- **Target list for clients.** New `GET /api/mine/targets` (peer token) returns what a phone may pick:
+- New config `srs.mining_decks: {<uid>: <deck name>}` (missing = that profile's built-in default deck), with the built-in Lapis note type and the auto field mapping from `srsMiningFieldMappingsFor`.
+- **Target list for clients.** New `POST /api/mine/targets` (peer token, empty body) returns what a phone may pick. It is POST like the other `/api/mine*` routes, so the phone reuses the shared pinned interconnect transport:
 
   ```json
-  {"default": {"kind": "review", "profile": "<uid>", "deck": "<deckId>"},
-   "review": [{"profile": "<uid>", "name": "Chinese", "decks": [{"id": "...", "name": "..."}]}],
+  {"default": {"kind": "review", "profile": "<uid>", "deck": "<deck name>"},
+   "review": [{"profile": "<uid>", "name": "Chinese", "decks": ["Default", "Mining"]}],
    "anki": {"decks": ["Mining", "..."]}}
   ```
 
-  `anki` is present only while the Anki landing is signed in; `review` lists only served, readable profiles. The desktop host answers it too (its own target, its current profile, its Anki decks), so the phone setting works the same against either host.
-- **Per-request target.** `/api/mine/forward`, `/api/mine` and `/api/duplicate` accept an optional `target: {kind, profile?, deck?}`. Missing = the server default (below). An unknown profile or deck falls back to the default and the reply says where the card actually went (`landed: {kind, profile, deck}`), so the phone can show it. Old clients don't send `target` and get today's behaviour.
+  Decks are full deck names, not ids. That is the same form as the per-card deck override (`miningOverrides.deck`), which is how the target deck reaches the miner. `anki` is present only while the Anki landing is signed in; `review` lists only served, readable profiles. A host that doesn't implement targets answers 404 and the phone only offers "<host> default". **Not in v1:** the desktop host doesn't answer it yet. It ignores `target` and keeps landing cards by its own mining target.
+- **Per-request target.** `/api/mine/forward`, `/api/mine` and `/api/duplicate` accept an optional `target: {kind, profile?, deck?}`. Missing = the server default (below). An unknown profile or kind falls back to the default and the reply says where the card actually went (`landed: {kind, profile, deck}`). When the phone had **explicitly** named a kind or deck that the host couldn't honour, the reply also carries `targetUnavailable: true`. A bare `{profile}` (the phone's own uid, i.e. "<host> default") that the host doesn't serve is not a fallback. Old clients don't send `target` and get today's behaviour.
 - **Server default.** `srs.mining_target` decides `anki` vs `review`. For `review`, the profile is the phone's own active profile uid when the server serves it (sent as `target.profile` by new clients), otherwise `srs.default_profile`; the deck is that profile's `srs.mining_decks` entry.
 - `ServerRemoteMiningService` dispatches on `srs.mining_target`. With `review`, these all go to `SrsMiner` on `ServerSrs`'s store:
   - `isDuplicate` → `SrsMiner.isDuplicate`, which uses `store.lookupTermStatus`;
@@ -176,7 +176,7 @@ If #2944 merges first, this is a small edit in this PR.
   - then `scheduleUpload`.
 
   Anki-only operations (note-type templates, media dedup, `openWordInAnki`) return their "unsupported" result, as the desktop host does in review mode.
-- **Capabilities.** The host reports which collection it saves to, with a new field `miningTarget: "anki" | "review"`. The desktop host reports it too, which is a small app change in `fushi_server_controller.dart`.
+- **Capabilities.** No new `miningTarget` field: the phone reads the host's default from `/api/mine/targets`. `capabilities.mining` now reflects availability. The server reports `false` (and the mining routes 404) while it has neither a signed-in Anki landing nor a served review profile, and this changes with config without a restart (`FushiRemoteMiningAvailability`).
 
 **Client change (app).**
 
@@ -184,8 +184,9 @@ If #2944 merges first, this is a small edit in this PR.
 - **The phone can choose where on the host (owner decision 2026-11-06).** Under the toggle, a new "Save to" row, filled from `GET /api/mine/targets`:
   - **"<host> default"** is the default selection. It sends no explicit kind or deck, only the phone's active profile uid, so the server's own setting decides (§4.8 server default).
   - The host's Fushi review profiles and decks, and its Anki decks when it has a signed-in Anki copy.
-  - The choice is stored per paired host on the phone. If the host later stops offering it, the phone falls back to "<host> default" and shows a notice.
-  - The row's subtitle says where cards land right now, for example "<host> · Fushi review · Chinese · Mining", from the last `landed` reply or the targets list.
+  - The choice is stored per paired host (`hostId`) on the phone, in one device-local pref `mine_to_server_targets` (`{<hostId>: {kind?, profile?, deck?, label?}}`). If the host later answers `targetUnavailable`, the phone resets that host to "<host> default" and shows a notice.
+  - The row's subtitle shows the chosen location's label, saved when it was picked, for example "Fushi review · Chinese · Mining". The phone doesn't have to contact the host to show it.
+  - The row also has a control-channel action (`interconnect.mine_to_server_target`, args `kind=default|review|anki`, `profile`, `deck`). It only accepts locations the host lists.
   - Strings go through `dart fushi/tool/i18n_sync.dart --add`.
   - The duplicate check uses the same target, so "already in your decks" means "in the collection your cards are going to".
 - Background mining (`srsMiningBackground`) does not apply while forwarding, because the host must give a definite answer. That's the same as today's remote path.

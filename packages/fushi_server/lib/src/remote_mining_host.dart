@@ -71,7 +71,13 @@ RemoteMineResult serverRemoteMineResult(
 }
 
 /// 落到哪：解析好的目标（[ServerRemoteMiningService._resolve]）。
-typedef _ServerLanding = ({String kind, String? profile, String? deck});
+/// [fellBack]：手机点名的那一类 / profile 服务端没有，退回了默认。
+typedef _ServerLanding = ({
+  String kind,
+  String? profile,
+  String? deck,
+  bool fellBack,
+});
 
 /// 互联制卡在服务端的落点分派（docs/specs/2026-11-05-server-srs-design.md §4.8）：
 /// - Anki：[ServerAnkiLanding] 的同步客户端库（老行为）；
@@ -169,6 +175,7 @@ class ServerRemoteMiningService
   /// [target] → 实际落点：所选的那一类没有就退到另一类；复习的 profile 没提供就落默认 profile。
   _ServerLanding? _resolve(RemoteMiningTarget? target) {
     String kind = target?.kind ?? _defaultKind();
+    final String? askedKind = target?.kind;
     if (kind == kRemoteMiningKindReview && !_reviewAvailable) {
       kind = kRemoteMiningKindAnki;
     } else if (kind == kRemoteMiningKindAnki &&
@@ -178,7 +185,13 @@ class ServerRemoteMiningService
     }
     if (kind == kRemoteMiningKindAnki) {
       if (!_ankiAvailable) return null;
-      return (kind: kind, profile: null, deck: target?.deck);
+      return (
+        kind: kind,
+        profile: null,
+        // 从复习退到 Anki 时不沿用复习的牌组名。
+        deck: askedKind == null || askedKind == kind ? target?.deck : null,
+        fellBack: askedKind != null && askedKind != kind,
+      );
     }
     final ServerSrs srs = _srs!;
     final String? asked = target?.profile;
@@ -186,8 +199,22 @@ class ServerRemoteMiningService
         ? asked
         : srs.defaultProfile!.uid;
     // 牌组只对点名的那份 profile 有意义：退到默认 profile 时不沿用别人那份的牌组名。
-    final String? deck = asked == null || asked == uid ? target?.deck : null;
-    return (kind: kind, profile: uid, deck: deck);
+    final bool kindKept = askedKind == null || askedKind == kind;
+    final String? deck = kindKept && (asked == null || asked == uid)
+        ? target?.deck
+        : null;
+    return (
+      kind: kind,
+      profile: uid,
+      deck: deck,
+      // 手机默认带自己的 profile uid（不点名类别 / 牌组）：服务端没有那份就落默认，这是「服务端默认」的
+      // 本义，不算退回。点名了类别或牌组才算手机的显式选择。
+      fellBack:
+          !kindKept ||
+          (asked != null &&
+              asked != uid &&
+              (askedKind != null || target?.deck != null)),
+    );
   }
 
   /// 把「落到哪个牌组」写进载荷的单卡覆盖（与「高级制卡」同一个键）；单卡已经选了牌组的不动。
@@ -243,6 +270,7 @@ class ServerRemoteMiningService
         profile: to.profile,
         deck: outcome.deckName ?? to.deck,
       ),
+      targetUnavailable: to.fellBack,
     );
   }
 
