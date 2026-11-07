@@ -7,6 +7,7 @@ import 'package:fushi/src/sync/sync_obfuscator.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 
 /// 「防扫盘」字节混淆装饰器（TODO-623 A1）。
@@ -29,21 +30,114 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 /// 下载时原样落地仍可导入；新上传带魔数混淆，逐步重传即全部变混淆，无需一键全重传。
 class ObfuscatingSyncBackend extends SyncBackend
     implements RemoteListingCapable {
-  ObfuscatingSyncBackend(this._inner);
+  /// [tempRoot] 仅供测试注入：给了就把临时目录建在它下面，并且不触发进程级的
+  /// [sweepStaleTemps]（测试不去动真实系统临时目录）。
+  ObfuscatingSyncBackend(this._inner, {Directory? tempRoot})
+    : _tempRoot = tempRoot;
 
   final SyncBackend _inner;
+  final Directory? _tempRoot;
 
   /// 暴露被包裹的真后端（测试 / 诊断用）。
   SyncBackend get inner => _inner;
 
+  // ── 混淆临时文件的归属与启动清理（BUG-4227） ─────────────────────────
+  //
+  // 上传 / 下载的混淆临时文件与原文件同尺寸（有声书可达数百 MB）。try/finally 只能
+  // 覆盖进程活着时的异常路径；iOS 在上传途中挂起 / 内存压力杀进程时 finally 根本
+  // 不会执行，临时目录就永久留在 tmp/ 里。所以生命周期分两层兜住：
+  // 1. 进程内：建临时目录后立刻进 try/finally（含混淆本身失败）。
+  // 2. 跨进程：所有临时目录只建在本功能独占的 [tempDirName] 子目录下，每个进程第一次
+  //    用临时目录之前（以及启动时）整目录清掉上一个进程的遗留；同一进程内的清理与
+  //    新建经同一个 memo Future 排序，绝不会删到本进程正在用的临时目录。
+
+  /// 本功能独占的临时子目录名（位于 [Directory.systemTemp] 下）。
+  static const String tempDirName = 'fushi_sync_obf';
+
+  /// 旧版本直接建在 [Directory.systemTemp] 根下的临时目录名形态（`createTemp` 前缀 +
+  /// 随机后缀）。只用于识别遗留目录。
+  static final RegExp _legacyTempDirName = RegExp(r'^obf_(up|dn|get)_[^/\\]+$');
+
+  /// 旧版本每个临时目录里只会有这一个文件。
+  static const String _blobName = 'blob';
+
+  static Future<int>? _sweepOnce;
+
+  /// 进程级一次性清理上一个进程遗留的混淆临时目录（启动时调用；临时目录创建前也会
+  /// 先等它完成）。返回删掉的目录数。
+  ///
+  /// 清理失败记进错误日志后返回 0：删不掉旧遗留不应让本进程的同步全部失败（memo
+  /// 住一个失败 Future 会让之后每次建临时目录都抛）。
+  static Future<int> sweepStaleTemps() =>
+      _sweepOnce ??= sweepStaleTempsIn(Directory.systemTemp).then(
+        (int removed) => removed,
+        onError: (Object e, StackTrace st) {
+          ErrorLogService.instance.log(
+            'ObfuscatingSyncBackend.sweepStaleTemps',
+            e,
+            st,
+          );
+          return 0;
+        },
+      );
+
+  /// 清理 [systemTemp] 下本功能遗留的临时目录：
+  /// - 整个 [tempDirName] 子目录（本功能独占）；
+  /// - 旧版本建在根下的 `obf_up_*` / `obf_dn_*` / `obf_get_*`，且目录里只有 `blob`
+  ///   一个文件（或为空）——名字与内容双重指纹都对上才删，桌面端共享的系统临时目录里
+  ///   别的程序的同名前缀目录不会被误删。
+  ///
+  /// 不吞异常：删除失败照常抛给调用方（启动处记日志）。
+  static Future<int> sweepStaleTempsIn(Directory systemTemp) async {
+    if (!await systemTemp.exists()) return 0;
+    int removed = 0;
+    final Directory owned = Directory('${systemTemp.path}/$tempDirName');
+    if (await owned.exists()) {
+      await owned.delete(recursive: true);
+      removed++;
+    }
+    final List<Directory> legacy = <Directory>[];
+    await for (final FileSystemEntity e in systemTemp.list(
+      followLinks: false,
+    )) {
+      if (e is! Directory) continue;
+      if (!_legacyTempDirName.hasMatch(_baseName(e))) continue;
+      if (await _isLegacyTempDir(e)) legacy.add(e);
+    }
+    for (final Directory d in legacy) {
+      await d.delete(recursive: true);
+      removed++;
+    }
+    return removed;
+  }
+
+  static String _baseName(FileSystemEntity e) {
+    final List<String> parts = e.path.split(RegExp(r'[/\\]'));
+    return parts.lastWhere((String s) => s.isNotEmpty, orElse: () => '');
+  }
+
+  static Future<bool> _isLegacyTempDir(Directory dir) async {
+    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
+      if (e is! File || _baseName(e) != _blobName) return false;
+    }
+    return true;
+  }
+
   // ── 混淆临时文件辅助 ──────────────────────────────────────────────
 
-  /// 把 [source] 文件经 [SyncObfuscator.obfuscateFile] 混淆到一个临时文件，返回该临时
-  /// 文件；调用方用完须删。整段在 Rust 里流式读写，不把大文件读进内存。
-  Future<File> _obfuscateToTemp(File source) async {
-    final tmp = await _createTempFile('obf_up_');
-    await SyncObfuscator.obfuscateFile(source, tmp);
-    return tmp;
+  /// 把 [source] 混淆到一个临时文件后交给 [body] 使用；无论混淆本身还是 [body] 失败，
+  /// 临时目录都在 finally 里删掉。整段在 Rust 里流式读写，不把大文件读进内存。
+  Future<void> _withObfuscatedTemp(
+    File source,
+    Future<void> Function(File obfuscated) body,
+  ) async {
+    final File tmp = await _createTempFile('obf_up_');
+    try {
+      await SyncObfuscator.obfuscateFile(source, tmp);
+      await body(tmp);
+    } finally {
+      await _deleteTemp(tmp);
+    }
   }
 
   /// 把 [obfuscated] 文件经 [SyncObfuscator.deobfuscateFile] 还原到 [destination]
@@ -57,8 +151,18 @@ class ObfuscatingSyncBackend extends SyncBackend
   }
 
   Future<File> _createTempFile(String prefix) async {
-    final dir = await Directory.systemTemp.createTemp(prefix);
-    return File('${dir.path}/blob');
+    final Directory? injected = _tempRoot;
+    final Directory root;
+    if (injected != null) {
+      root = injected;
+    } else {
+      // 先等进程级清理跑完，再在独占子目录下建，保证清理不会删到本进程的新临时目录。
+      await sweepStaleTemps();
+      root = Directory('${Directory.systemTemp.path}/$tempDirName');
+    }
+    await root.create(recursive: true);
+    final Directory dir = await root.createTemp(prefix);
+    return File('${dir.path}/$_blobName');
   }
 
   Future<void> _deleteTemp(File tmp) async {
@@ -192,17 +296,15 @@ class ObfuscatingSyncBackend extends SyncBackend
     required File file,
     SyncTransferProgress? onProgress,
   }) async {
-    final tmp = await _obfuscateToTemp(file);
-    try {
-      await _inner.uploadContentFile(
+    await _withObfuscatedTemp(
+      file,
+      (File tmp) => _inner.uploadContentFile(
         folderId: folderId,
         fileName: fileName,
         file: tmp,
         onProgress: onProgress,
-      );
-    } finally {
-      await _deleteTemp(tmp);
-    }
+      ),
+    );
   }
 
   @override
@@ -279,12 +381,11 @@ class ObfuscatingSyncBackend extends SyncBackend
     File file, {
     SyncTransferProgress? onProgress,
   }) async {
-    final tmp = await _obfuscateToTemp(file);
-    try {
-      await _inner.putAsset(namespaceId, name, tmp, onProgress: onProgress);
-    } finally {
-      await _deleteTemp(tmp);
-    }
+    await _withObfuscatedTemp(
+      file,
+      (File tmp) =>
+          _inner.putAsset(namespaceId, name, tmp, onProgress: onProgress),
+    );
   }
 
   @override

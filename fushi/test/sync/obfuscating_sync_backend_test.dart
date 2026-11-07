@@ -99,6 +99,43 @@ class _RecordingBackend implements SyncBackend {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// 上传必失败的 inner（模拟网络断 / 服务端 400）。
+class _FailingUploadBackend extends _RecordingBackend {
+  int uploadCalls = 0;
+
+  @override
+  Future<void> uploadContentFile({
+    required String folderId,
+    required String fileName,
+    required File file,
+    void Function(double progress)? onProgress,
+  }) async {
+    uploadCalls++;
+    throw const SocketException('Broken pipe');
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    uploadCalls++;
+    throw const SocketException('Broken pipe');
+  }
+}
+
+Future<List<String>> _listRel(Directory root) async {
+  final List<String> out = <String>[];
+  if (!await root.exists()) return out;
+  await for (final FileSystemEntity e in root.list(recursive: true)) {
+    out.add(e.path.substring(root.path.length + 1).replaceAll(r'\', '/'));
+  }
+  out.sort();
+  return out;
+}
+
 Future<File> _tmpFile(String name, List<int> bytes) async {
   final dir = await Directory.systemTemp.createTemp('obf_test_');
   final f = File('${dir.path}/$name');
@@ -166,6 +203,115 @@ void main() {
       await backend.getAsset('back', dest);
 
       expect(await dest.readAsBytes(), plain);
+    });
+  });
+
+  // BUG-4227：iOS 日志里 tmp/ 残留 9 份 603MB 的 obf_up_*/blob。混淆临时目录必须在
+  // 进程内任何失败路径上删掉，且上一个进程被杀留下的遗留要在启动时清掉。
+  group('ObfuscatingSyncBackend temp lifecycle (BUG-4227)', () {
+    test('obfuscation failure still removes the temp dir', () async {
+      final Directory root = await Directory.systemTemp.createTemp('b4227_');
+      addTearDown(() => root.delete(recursive: true));
+      final inner = _RecordingBackend();
+      final backend = ObfuscatingSyncBackend(inner, tempRoot: root);
+      // 源文件不存在 → Rust 混淆失败（建好临时目录之后才失败）。
+      final File missing = File('${root.path}/does_not_exist.m4b');
+
+      await expectLater(
+        backend.uploadContentFile(
+          folderId: 'F',
+          fileName: 'a.m4b',
+          file: missing,
+        ),
+        throwsA(anything),
+      );
+      await expectLater(
+        backend.putAsset('NS', 'a.m4b', missing),
+        throwsA(anything),
+      );
+
+      expect(inner.uploaded, isEmpty);
+      expect(await _listRel(root), isEmpty, reason: '混淆失败也不许留临时目录');
+    });
+
+    test('inner upload failure removes the temp dir', () async {
+      final Directory root = await Directory.systemTemp.createTemp('b4227_');
+      addTearDown(() => root.delete(recursive: true));
+      final inner = _FailingUploadBackend();
+      final backend = ObfuscatingSyncBackend(inner, tempRoot: root);
+      final Directory srcDir = await Directory.systemTemp.createTemp('b4227s_');
+      addTearDown(() => srcDir.delete(recursive: true));
+      final File src = File('${srcDir.path}/a.bin')
+        ..writeAsBytesSync(List<int>.generate(4096, (int i) => i & 0xFF));
+
+      await expectLater(
+        backend.uploadContentFile(folderId: 'F', fileName: 'a', file: src),
+        throwsA(isA<SocketException>()),
+      );
+      await expectLater(
+        backend.putAsset('NS', 'a', src),
+        throwsA(isA<SocketException>()),
+      );
+
+      expect(inner.uploadCalls, 2);
+      expect(await _listRel(root), isEmpty);
+    });
+
+    test('sweepStaleTempsIn removes only this feature leftovers', () async {
+      final Directory sys = await Directory.systemTemp.createTemp('b4227sys_');
+      addTearDown(() => sys.delete(recursive: true));
+      void mk(String rel, [String content = 'x']) {
+        File('${sys.path}/$rel')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(content);
+      }
+
+      // 本功能独占子目录：上一个进程被杀时留下的上传 / 下载临时目录。
+      mk('${ObfuscatingSyncBackend.tempDirName}/obf_up_AAAA/blob');
+      mk('${ObfuscatingSyncBackend.tempDirName}/obf_dn_BBBB/blob');
+      // 旧版本直接建在系统临时目录根下的遗留（iOS 日志里的 obf_up_0p1Dl4/blob 形态）。
+      mk('obf_up_0p1Dl4/blob');
+      mk('obf_get_xyz/blob');
+      Directory('${sys.path}/obf_dn_empty').createSync();
+      // 不属于本功能的东西：同前缀但内容不是只有 blob、无关目录、同名普通文件。
+      mk('obf_up_foreign/other.txt');
+      mk('obf_up_mixed/blob');
+      mk('obf_up_mixed/notes.txt');
+      mk('keep_me/blob');
+      mk('obf_up_plainfile');
+      mk('また、同じ夢を見ていた.m4b');
+
+      final int removed = await ObfuscatingSyncBackend.sweepStaleTempsIn(sys);
+
+      expect(removed, 4);
+      expect(await _listRel(sys), <String>[
+        'keep_me',
+        'keep_me/blob',
+        'obf_up_foreign',
+        'obf_up_foreign/other.txt',
+        'obf_up_mixed',
+        'obf_up_mixed/blob',
+        'obf_up_mixed/notes.txt',
+        'obf_up_plainfile',
+        'また、同じ夢を見ていた.m4b',
+      ]);
+    });
+
+    test('successful upload leaves nothing under the temp root', () async {
+      final Directory root = await Directory.systemTemp.createTemp('b4227_');
+      addTearDown(() => root.delete(recursive: true));
+      final inner = _RecordingBackend();
+      final backend = ObfuscatingSyncBackend(inner, tempRoot: root);
+      final Directory srcDir = await Directory.systemTemp.createTemp('b4227s_');
+      addTearDown(() => srcDir.delete(recursive: true));
+      final File src = File('${srcDir.path}/a.bin')
+        ..writeAsBytesSync(List<int>.generate(1024, (int i) => i & 0xFF));
+
+      await backend.uploadContentFile(folderId: 'F', fileName: 'a', file: src);
+      inner.remoteBytes['r'] = inner.uploaded['F/a']!;
+      await backend.getAsset('r', File('${srcDir.path}/out.bin'));
+
+      expect(await _listRel(root), isEmpty);
     });
   });
 

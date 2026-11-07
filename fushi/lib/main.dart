@@ -57,6 +57,7 @@ import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
@@ -801,6 +802,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-4227：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
+      // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉，启动时清一次。进程内
+      // 第一次建混淆临时目录前也会等这同一个 Future，不与本进程同步竞争。
+      // 清理失败由 sweepStaleTemps 自己记错误日志。
+      unawaited(
+        ObfuscatingSyncBackend.sweepStaleTemps().then((int removed) {
+          if (removed > 0) {
+            debugPrint('[startup] removed $removed stale sync obf temp dirs');
+          }
+        }),
+      );
 
       // ── 预热 WebView 引擎 ──────────────────────────────────────────────
       // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
