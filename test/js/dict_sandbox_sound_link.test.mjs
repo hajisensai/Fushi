@@ -1,4 +1,4 @@
-// BUG-4227 行为测试（jsdom 真实 DOM 事件传播）：LDOCE5++ V 2-15.mdx 的内置发音点了不响。
+// BUG-4231 行为测试（jsdom 真实 DOM 事件传播）：LDOCE5++ V 2-15.mdx 的内置发音点了不响。
 //
 // 根因：带脚本的词典释义跑在沙箱 iframe 里，沙箱辅助脚本 DICT_SANDBOX_HELPER_JS 只在
 // document 冒泡阶段监听点击、且 defaultPrevented 就放弃。LM5Switch.js 在桌面 Chrome UA
