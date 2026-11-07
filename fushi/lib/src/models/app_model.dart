@@ -12,8 +12,6 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
-import 'package:fushi/src/models/preference_keys.dart'
-    show kLibrarySentencesEnabledPrefKey;
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
@@ -24,6 +22,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -150,7 +149,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
@@ -478,6 +477,8 @@ import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
@@ -1549,13 +1550,6 @@ class AppModel with ChangeNotifier {
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
 
-  /// 查词弹窗「我库里的例句」开关（D-L2 默认开）。偏好还没装好（独立弹窗 entry point /
-  /// 测试替身没跑 initialise）时按默认值，不抛——判据放在这个 getter 自己身上，弹窗注入等
-  /// 读它的地方不各自判空。
-  bool get librarySentencesEnabled =>
-      _prefsRepo?.getPref(kLibrarySentencesEnabledPrefKey, defaultValue: true)
-          as bool? ??
-      true;
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -2961,8 +2955,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setLookupChineseScriptVariants(value);
 
   /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
-  /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
-  /// [librarySentencesEnabled] 同一纪律，判据放在 getter 自己身上。
+  /// 偏好还没装好（测试替身没跑 initialise）时按默认值，不抛——判据放在 getter
+  /// 自己身上，读它的地方不各自判空。
   bool get lookupPagePullToClear => _prefsRepo?.lookupPagePullToClear ?? true;
   Future<void> setLookupPagePullToClear(bool value) =>
       prefsRepo.setLookupPagePullToClear(value);
@@ -4700,11 +4694,11 @@ class AppModel with ChangeNotifier {
       );
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
-      // 「我库里的例句」（作品图谱 L4）：延后打开本机语料库并对账、订阅来源表做增量。
+      // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
+      // 游戏文档（反馈 4S2_J80DfK），再对账歌词、订阅歌词表做增量。
       LibraryCorpusService.instance.start(
         database: _database,
         directory: LibraryCorpusService.directoryUnder(_databaseDirectory.path),
-        isEnabled: () => librarySentencesEnabled,
       );
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
@@ -5578,8 +5572,8 @@ class AppModel with ChangeNotifier {
   double get appUiScale => themeNotifier.appUiScale;
 
   /// 查词弹窗独立缩放系数（偏好 `popup_ui_scale`，反馈 2jGkpD-iD6）。偏好还没装好
-  /// （独立弹窗 entry point 首帧 / 测试替身没跑 initialise）时按默认 1.0，与
-  /// [librarySentencesEnabled] 同律——判据放在 getter 自身，弹窗宿主不各自判空。
+  /// （独立弹窗 entry point 首帧 / 测试替身没跑 initialise）时按默认 1.0——判据放在
+  /// getter 自身，弹窗宿主不各自判空。
   double get popupUiScaleFactor =>
       _prefsRepo?.popupUiScale ?? kPopupUiScaleDefault;
   Future<void> setPopupUiScaleFactor(double factor) =>
@@ -10820,6 +10814,17 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
+  /// 「制卡到已配对设备」每台主机的「保存到」（hostId → 目标；没有条目 = 主机默认，§4.8）。
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      _prefsRepo?.mineToServerTargets ?? const <String, RemoteMiningTarget>{};
+  Map<String, String> get mineToServerTargetLabels =>
+      _prefsRepo?.mineToServerTargetLabels ?? const <String, String>{};
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
+
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
   // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
@@ -11770,10 +11775,23 @@ class AppModel with ChangeNotifier {
   /// 构造互联「制卡到服务端」的客户端发送器（供 [ankiRepositoryProvider] 在开关开启时包装
   /// [RemoteMiningAnkiRepository]）。复用与远程查词同一 keep-alive http client + 同一配对目标
   /// （enabled 的 FushiClientUrls），明文 http 候选走复用连接、https 带指纹候选走钉扎 client。
-  FushiRemoteMiningClient createRemoteMiningClient() {
+  ///
+  /// 卡落到主机的哪里（§4.8）：每台主机按用户的「保存到」，没选过 = 主机默认（带上本机当前 profile
+  /// 的 uid）。主机说所选的它没有时，这台主机的「保存到」退回主机默认，再交给 [onTargetUnavailable] 提示。
+  FushiRemoteMiningClient createRemoteMiningClient({
+    void Function(RemoteMiningTarget? landed)? onTargetUnavailable,
+  }) {
     return FushiRemoteMiningClient(
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
+      activeProfileUid: () async =>
+          _database.profileUidOf(await _database.resolveActiveProfileId()),
+      chosenTarget: (String hostId) => mineToServerTargets[hostId],
+      onTargetUnavailable: (String hostId, RemoteMiningTarget? landed) {
+        if (mineToServerTargets[hostId] == null) return;
+        unawaited(setMineToServerTarget(hostId, null));
+        onTargetUnavailable?.call(landed);
+      },
     );
   }
 
