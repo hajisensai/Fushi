@@ -103,9 +103,7 @@ void main() {
         final File weights = which == 'small'
             ? _smallWeights()
             : _modelFile('RWKV_trained_on_5000_10000.bin');
-        if (which == 'small') {
-          addTearDown(() => weights.parent.deleteSync(recursive: true));
-        }
+        // 两种权重都是 native/fushi_rwkv/model/ 下的真文件（只读），测试不清理它们。
         final RwkvNativeModel model = RwkvNativeModel.load(
           weights.readAsBytesSync(),
         );
