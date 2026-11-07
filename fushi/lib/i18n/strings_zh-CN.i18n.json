@@ -744,6 +744,7 @@
   "anki_mine_to_server_target_deck_default": "默认牌组",
   "anki_mine_to_server_target_default": "已配对设备的默认",
   "anki_mine_to_server_target_default_hint": "由已配对设备自己的设置决定。它有本机当前的配置文件时，卡片落进那份。",
+  "anki_mine_to_server_target_loading": "正在询问已配对设备可以保存到哪里…",
   "anki_mine_to_server_target_reset": "已配对设备不再提供你选的保存位置，之后的卡片落到它的默认位置。",
   "anki_mine_to_server_target_review": "Fushi 复习 · ${profile}",
   "anki_mine_to_server_target_unavailable": "已配对设备没有列出可保存的位置。它可能离线，或不支持选择。",

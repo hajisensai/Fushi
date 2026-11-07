@@ -200,9 +200,14 @@ class ServerRemoteMiningService
         : srs.defaultProfile!.uid;
     // 牌组只对点名的那份 profile 有意义：退到默认 profile 时不沿用别人那份的牌组名。
     final bool kindKept = askedKind == null || askedKind == kind;
-    final String? deck = kindKept && (asked == null || asked == uid)
+    final String? askedDeck = kindKept && (asked == null || asked == uid)
         ? target?.deck
         : null;
+    // 手机没点名牌组：用配置给这份定的制卡牌组（全名；空 = 默认牌组）。
+    final String? configured = _srsConfig().miningDecks[uid];
+    final String? deck =
+        askedDeck ??
+        (configured == null || configured.isEmpty ? null : configured);
     return (
       kind: kind,
       profile: uid,
@@ -218,20 +223,26 @@ class ServerRemoteMiningService
   }
 
   /// 把「落到哪个牌组」写进载荷的单卡覆盖（与「高级制卡」同一个键）；单卡已经选了牌组的不动。
-  static String _withDeck(String rawPayloadJson, String? deck) {
-    if (deck == null || deck.isEmpty) return rawPayloadJson;
+  /// [own] = 这张卡自己选了牌组（这时实际牌组与 [deck] 不同是预期内的）。
+  static ({String raw, bool own}) _withDeck(
+    String rawPayloadJson,
+    String? deck,
+  ) {
+    if (deck == null || deck.isEmpty) return (raw: rawPayloadJson, own: false);
     final Object? decoded = jsonDecode(rawPayloadJson);
-    if (decoded is! Map) return rawPayloadJson;
+    if (decoded is! Map) return (raw: rawPayloadJson, own: false);
     final Map<String, dynamic> fields = Map<String, dynamic>.from(decoded);
     final MiningRequestOverrides? existing = MiningRequestOverrides.readFrom(
       fields,
     );
-    if ((existing?.deckName ?? '').isNotEmpty) return rawPayloadJson;
+    if ((existing?.deckName ?? '').isNotEmpty) {
+      return (raw: rawPayloadJson, own: true);
+    }
     fields[MiningRequestOverrides.wireKey] = jsonEncode(<String, Object?>{
       ...?existing?.toJson(),
       'deck': deck,
     });
-    return jsonEncode(fields);
+    return (raw: jsonEncode(fields), own: false);
   }
 
   Future<RemoteMineLanding> _mineTo(
@@ -246,7 +257,11 @@ class ServerRemoteMiningService
         RemoteMineResult(result: MineResult.notConfigured.name),
       );
     }
-    final String raw = _withDeck(rawPayloadJson, to.deck);
+    final ({String raw, bool own}) withDeck = _withDeck(
+      rawPayloadJson,
+      to.deck,
+    );
+    final String raw = withDeck.raw;
     final MineOutcome outcome;
     if (to.kind == kRemoteMiningKindAnki) {
       outcome = await _mineCard!(raw, context);
@@ -270,7 +285,15 @@ class ServerRemoteMiningService
         profile: to.profile,
         deck: outcome.deckName ?? to.deck,
       ),
-      targetUnavailable: to.fellBack,
+      // 手机点名的牌组主机没有（被删 / 改名）：卡落进了默认牌组，如实说，手机据此退回主机默认。
+      targetUnavailable:
+          to.fellBack ||
+          (outcome.result == MineResult.success &&
+              !withDeck.own &&
+              target?.deck != null &&
+              to.deck == target!.deck &&
+              outcome.deckName != null &&
+              outcome.deckName != to.deck),
     );
   }
 
@@ -389,7 +412,11 @@ class ServerRemoteMiningService
     return <String, Object?>{
       'default': def == null
           ? null
-          : RemoteMiningTarget(kind: def.kind, profile: def.profile).toJson(),
+          : RemoteMiningTarget(
+              kind: def.kind,
+              profile: def.profile,
+              deck: def.deck,
+            ).toJson(),
       'review': review,
       if (_ankiAvailable)
         'anki': <String, Object?>{

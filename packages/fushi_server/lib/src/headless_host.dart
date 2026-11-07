@@ -764,12 +764,17 @@ class HeadlessHost {
     // 只有某台设备自己的段才补名字；书 / 视频等别的写入不查对端表。
     if (srsHostUploadedSegmentDevice(relativePath) == null) return;
     unawaited(() async {
-      final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
-      final String? name = peers
-          .where((FushiPairedPeerRow r) => r.token == peerToken)
-          .firstOrNull
-          ?.deviceName;
-      await srs.onClientUpload(relativePath, name);
+      try {
+        final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
+        final String? name = peers
+            .where((FushiPairedPeerRow r) => r.token == peerToken)
+            .firstOrNull
+            ?.deviceName;
+        await srs.onClientUpload(relativePath, name);
+      } catch (e, stack) {
+        // 只是补个显示名：失败记日志，不影响那次写入。
+        engineLog.log('HeadlessHost.srsDeviceHint', e, stack);
+      }
     }());
   }
 

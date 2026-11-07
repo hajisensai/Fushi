@@ -124,14 +124,28 @@ String mineToServerTargetSubtitle(AppModel appModel) {
   return labels.join(' / ');
 }
 
+/// 正在问主机：再点一次不再发第二个请求。
+bool _asking = false;
+
 /// 问主机能落到哪，弹单选框，存下所选。主机不支持挑（老主机 / 桌面 host）或连不上时提示一句。
 Future<void> pickMineToServerTarget(
   BuildContext context,
   AppModel appModel,
 ) async {
-  final RemoteMiningTargetsReply? reply = await appModel
-      .createRemoteMiningClient()
-      .miningTargets();
+  if (_asking) return;
+  _asking = true;
+  final RemoteMiningTargetsReply? reply;
+  try {
+    // 要经网络问主机（最长十几秒）：先说一声，别让点了没反应。
+    FushiToast.show(msg: t.anki_mine_to_server_target_loading);
+    reply = await appModel.createRemoteMiningClient().miningTargets();
+  } catch (_) {
+    FushiToast.show(msg: t.anki_mine_to_server_target_unavailable);
+    return;
+  } finally {
+    _asking = false;
+  }
+  FushiToast.dismissCurrent();
   final String? hostId = reply?.hostId;
   if (reply == null || hostId == null) {
     FushiToast.show(msg: t.anki_mine_to_server_target_unavailable);

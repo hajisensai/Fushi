@@ -269,7 +269,6 @@ class _SharedExclusive implements SrsExclusiveOuter {
   }
 }
 
-/// 一次只跑一个（各份 profile 的同步轮次共用）。
 /// 后台 isolate 里对 [address] 那份 Rust 连接出快照（顶层函数：闭包里不能捎带 [ServerSrs]，它带着不可跨 isolate 的
 /// Future）。设备本地表照留。
 Future<void> _snapshotSrsCore(int address, String? libraryPath, String path) =>
@@ -280,6 +279,7 @@ Future<void> _snapshotSrsCore(int address, String? libraryPath, String path) =>
       ).snapshotInto(path, stripDeviceLocal: false),
     );
 
+/// 一次只跑一个（各份 profile 的同步轮次与备份快照共用）。
 class _SerialQueue {
   Future<void> _tail = Future<void>.value();
 
@@ -394,19 +394,17 @@ class ServerSrs {
 
   ServerSrsProfile? profile(String uid) => _profiles[uid];
 
-  /// [uid] 那份的制卡器（[deckId] 空 = 配置里那份的制卡牌组，再空 = 内置默认牌组）。
-  SrsMiner? minerFor(String uid, {String? deckId}) {
+  /// [uid] 那份的制卡器。落到哪个牌组由载荷里的单卡牌组覆盖（全名）决定：配置的 `mining_decks` 与手机选的牌组都
+  /// 经它进来（[ServerRemoteMiningService]），没有 = 那份的默认牌组。
+  SrsMiner? minerFor(String uid) {
     final ServerSrsProfile? prof = _profiles[uid];
     final SrsDbStore? s = prof?.store;
     final SrsMediaStore? m = prof?.media;
     if (s == null || m == null) return null;
-    final String deck = (deckId ?? '').isNotEmpty
-        ? deckId!
-        : (_config().miningDecks[uid] ?? '');
     return SrsMiner(
       store: s,
       media: m,
-      destination: SrsMiningDestination(deckId: deck),
+      destination: const SrsMiningDestination(),
     );
   }
 
@@ -416,9 +414,14 @@ class ServerSrs {
     await _reconcile();
     _safety?.cancel();
     _safety = Timer.periodic(kServerSrsSafetyInterval, (_) {
-      for (final ServerSrsProfile prof in profiles) {
-        unawaited(prof.syncNow());
-      }
+      // 先补开上次没打开的（原生库后装上 / 一时打不开），再各同步一轮。
+      unawaited(
+        applyConfig().whenComplete(() {
+          for (final ServerSrsProfile prof in profiles) {
+            unawaited(prof.syncNow());
+          }
+        }),
+      );
     });
   });
 
@@ -438,12 +441,12 @@ class ServerSrs {
     if (!changes.isClosed) await changes.close();
   });
 
+  /// 起 / 停 / 改配置排成一队。出错只记日志、不往外抛：复习库出问题不能拖垮 serve 的启动与改配置。
   Future<void> _serial(Future<void> Function() body) {
     final Future<void> next = _ops.then((_) => body());
-    _ops = next.catchError((Object e, StackTrace st) {
+    return _ops = next.catchError((Object e, StackTrace st) {
       engineLog.log('ServerSrs', e, st);
     });
-    return next;
   }
 
   Future<void> _reconcile() async {
@@ -459,9 +462,22 @@ class ServerSrs {
       _storage = null;
       return;
     }
-    final SrsStorage storage = _storage ??= await SrsStorage.open(
-      path: SrsStorage.pathIn(support.path),
-    );
+    final SrsStorage storage;
+    try {
+      storage = _storage ??= await SrsStorage.open(
+        path: SrsStorage.pathIn(support.path),
+      );
+    } catch (e, stack) {
+      // 原生库 libfushi_fsrs 不在 / srs.db 打不开：各份标成出错，服务照常起（其余功能不受影响），兜底定时器再试。
+      engineLog.log('ServerSrs.storage', e, stack);
+      for (final String uid in wanted) {
+        (_profiles[uid] ??= ServerSrsProfile._(uid, this))._setState(
+          ServerSrsProfileState.failed,
+          'srs.db could not be opened: $e',
+        );
+      }
+      return;
+    }
     _engine ??= _engineFactory();
     final Map<String, SrsRemoteProfile> found = await _discover();
     for (final String uid in wanted) {

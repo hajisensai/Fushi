@@ -108,6 +108,24 @@ void main() {
     expect(File(SrsStorage.pathIn(support.path)).existsSync(), isFalse);
   });
 
+  test('srs.db 打不开（原生库缺 / 路径坏）：start 不抛，那份标成出错，服务照常起', () async {
+    final Directory bad = Directory(p.join(tmp.path, 'not-a-dir'));
+    File(bad.path).writeAsStringSync('this is a file, not a directory');
+    final ServerSrs broken = ServerSrs(
+      support: bad,
+      syncData: syncData,
+      deviceId: 'server-device',
+      hostId: kHostId,
+      config: () => const ServerSrsConfig(profiles: <String>[kJa]),
+      engine: () => null,
+    );
+    addTearDown(broken.stop);
+    await broken.start();
+    expect(broken.profile(kJa)?.state, ServerSrsProfileState.failed);
+    expect(broken.profile(kJa)?.lastError, contains('srs.db'));
+    expect(broken.remoteStore, isNull);
+  });
+
   test('两份 profile 各自同步：手机的卡收进对应那份，服务端写的卡发回手机', () async {
     final SrsDbStore ja = await phone(kJa, 'phone-ja');
     final SrsDbStore zh = await phone(kZh, 'phone-zh');

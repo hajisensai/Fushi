@@ -744,6 +744,7 @@
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",
   "anki_mine_to_server_target_default_hint": "The paired device's own setting decides. Cards go into your current profile when the device has it.",
+  "anki_mine_to_server_target_loading": "Asking the paired device where cards can go…",
   "anki_mine_to_server_target_reset": "The paired device no longer offers your chosen save location. Cards now go to its default.",
   "anki_mine_to_server_target_review": "Fushi review · ${profile}",
   "anki_mine_to_server_target_unavailable": "The paired device didn't list any save locations. It may be offline or not support choosing.",

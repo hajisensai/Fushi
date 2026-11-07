@@ -157,6 +157,38 @@ void main() {
     expect(anki['targetUnavailable'], isTrue);
   });
 
+  test(
+    'mining_decks 按牌组全名生效；手机点名的牌组主机没有 → 落默认牌组并报 targetUnavailable',
+    () async {
+      final SrsDbStore ja = srs.storeFor(kJa)!;
+      await ja.createDeck('Configured');
+      config = ServerSrsConfig(
+        profiles: const <String>[kJa, kZh],
+        miningDecks: const <String, String>{kJa: 'Configured'},
+      );
+      final Map<String, dynamic> r = await mine('泳ぐ');
+      expect(r['result'], 'success', reason: '$r');
+      expect((r['landed'] as Map)['deck'], 'Configured');
+      expect(await deckOfOnlyNote(kJa), 'Configured');
+      expect((await mining.miningTargets())['default'], <String, Object?>{
+        'kind': 'review',
+        'profile': kJa,
+        'deck': 'Configured',
+      });
+
+      final Map<String, dynamic> gone = await mine(
+        '歌う',
+        target: <String, Object?>{
+          'kind': 'review',
+          'profile': kJa,
+          'deck': 'Deleted deck',
+        },
+      );
+      expect(gone['result'], 'success');
+      expect(gone['targetUnavailable'], isTrue, reason: '$gone');
+    },
+  );
+
   test('/api/mine/targets 列出服务提供的 profile 与牌组；没有 Anki 时不带 anki', () async {
     await srs.storeFor(kZh)!.createDeck('Mining');
     final Map<String, Object?> t = await mining.miningTargets();
