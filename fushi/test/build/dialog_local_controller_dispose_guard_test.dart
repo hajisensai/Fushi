@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4219 守卫：函数里自己建的输入控制器（`TextEditingController` / `FocusNode` /
 /// `ScrollController`）交给弹窗 / 底部弹层用，又在同一个函数里 `await` 完弹窗后
