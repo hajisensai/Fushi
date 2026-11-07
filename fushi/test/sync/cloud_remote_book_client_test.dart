@@ -1,12 +1,18 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:archive/archive.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
+import 'package:fushi/src/sync/cloud_legacy_manga_sniffer.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi_core/fushi_core.dart' show BookFormat;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show kSyncDictionaryNamespace, kSyncLocalAudioNamespace;
@@ -597,4 +603,175 @@ void main() {
       expect(backend.getAssetCalls, isEmpty);
     });
   });
+
+  group('CloudRemoteBookClient legacy `.epub` content sniff (ecNgkRQcTk)', () {
+    Uint8List zipOf(Map<String, List<int>> files) {
+      final Archive a = Archive();
+      for (final MapEntry<String, List<int>> e in files.entries) {
+        a.addFile(ArchiveFile(e.key, e.value.length, e.value));
+      }
+      return Uint8List.fromList(ZipEncoder().encode(a)!);
+    }
+
+    final Uint8List mangaPkg = zipOf(<String, List<int>>{
+      'manga.json': utf8.encode('{}'),
+      'p001.jpg': List<int>.generate(64 * 1024, (int i) => (i * 31) & 0xff),
+    });
+    final Uint8List epubPkg = zipOf(<String, List<int>>{
+      'mimetype': utf8.encode('application/epub+zip'),
+      'OEBPS/ch1.xhtml': utf8.encode('<html/>'),
+    });
+
+    _ControllableSyncBackend legacyLibrary() => _ControllableSyncBackend(
+      folders: <SyncFileRef>[
+        SyncFileRef(id: 'fid_m', name: 'Old Manga'),
+        SyncFileRef(id: 'fid_e', name: 'Real Epub'),
+      ],
+      childrenByFolder: <String, List<AssetEntry>>{
+        // 旧版本以 `<title>.epub` 上传的漫画包，且没有任何设备补过格式标记。
+        'fid_m': <AssetEntry>[
+          AssetEntry(
+            id: 'pkg_m',
+            name: 'Old Manga.epub',
+            sizeBytes: mangaPkg.length,
+            revision: 'md5-m',
+          ),
+        ],
+        'fid_e': <AssetEntry>[
+          AssetEntry(
+            id: 'pkg_e',
+            name: 'Real Epub.epub',
+            sizeBytes: epubPkg.length,
+            revision: 'md5-e',
+          ),
+        ],
+      },
+    );
+
+    test('an unmarked legacy manga package is listed on the manga shelf, '
+        'a real EPUB stays a book, and the verdict is sniffed once', () async {
+      final _BytesRangeReader reader = _BytesRangeReader(<String, Uint8List>{
+        'pkg_m': mangaPkg,
+        'pkg_e': epubPkg,
+      });
+      final _InMemorySniffCache cache = _InMemorySniffCache();
+      CloudRemoteBookClient client() => CloudRemoteBookClient(
+        backend: legacyLibrary(),
+        rootFolderId: 'root',
+        backendType: SyncBackendType.oneDrive,
+        contentRangeReader: reader,
+        contentSniffCache: cache,
+      );
+
+      final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
+        for (final RemoteBookInfo b in await client().listRemoteBooks())
+          b.title: b,
+      };
+      final RemoteBookInfo m = byTitle['Old Manga']!;
+      expect(m.format, BookFormat.manga.dbValue);
+      expect(m.hasMangaContent, isTrue);
+      expect(m.hasContent, isFalse);
+      final RemoteBookInfo e = byTitle['Real Epub']!;
+      expect(e.format, BookFormat.epub.dbValue);
+      expect(e.hasContent, isTrue);
+      expect(reader.requests, hasLength(2));
+
+      // 再列一次（新 client、同一份本机缓存）：不再读云端，判定不变。
+      reader.requests.clear();
+      final List<RemoteBookInfo> again = await client().listRemoteBooks();
+      expect(reader.requests, isEmpty);
+      expect(
+        again.firstWhere((RemoteBookInfo b) => b.title == 'Old Manga').format,
+        BookFormat.manga.dbValue,
+      );
+    });
+
+    test('without a range reader (WebDAV / FTP / SFTP) the legacy package '
+        'stays EPUB and nothing is downloaded', () async {
+      final _ControllableSyncBackend backend = legacyLibrary();
+      final CloudRemoteBookClient client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+        contentSniffCache: _InMemorySniffCache(),
+      );
+
+      final List<RemoteBookInfo> books = await client.listRemoteBooks();
+
+      expect(
+        books.firstWhere((RemoteBookInfo b) => b.title == 'Old Manga').format,
+        BookFormat.epub.dbValue,
+      );
+      expect(backend.getAssetCalls, isEmpty);
+    });
+
+    test(
+      'a failed sniff keeps the filename verdict instead of hiding the book',
+      () async {
+        final _BytesRangeReader reader = _BytesRangeReader(
+          <String, Uint8List>{},
+        )..failWith = SyncBackendError('HTTP 503', isRetryable: true);
+        final CloudRemoteBookClient client = CloudRemoteBookClient(
+          backend: legacyLibrary(),
+          rootFolderId: 'root',
+          backendType: SyncBackendType.dropbox,
+          contentRangeReader: reader,
+          contentSniffCache: _InMemorySniffCache(),
+        );
+
+        final List<RemoteBookInfo> books = await client.listRemoteBooks();
+
+        expect(books, hasLength(2));
+        final RemoteBookInfo m = books.firstWhere(
+          (RemoteBookInfo b) => b.title == 'Old Manga',
+        );
+        expect(m.format, BookFormat.epub.dbValue);
+        expect(m.hasContent, isTrue);
+      },
+    );
+  });
+}
+
+/// 内存字节的区间读（云端原样字节）。
+class _BytesRangeReader implements SyncAssetRangeReader {
+  _BytesRangeReader(this.assets);
+
+  final Map<String, Uint8List> assets;
+  final List<String> requests = <String>[];
+  Object? failWith;
+
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) async {
+    requests.add(assetId);
+    final Object? failure = failWith;
+    if (failure != null) throw failure;
+    final Uint8List bytes = assets[assetId]!;
+    final int last = end == null || end >= bytes.length
+        ? bytes.length - 1
+        : end;
+    return SyncAssetRange(
+      start: start,
+      end: last,
+      totalBytes: bytes.length,
+      bytes: Stream<List<int>>.value(
+        Uint8List.sublistView(bytes, start, last + 1),
+      ),
+    );
+  }
+}
+
+class _InMemorySniffCache implements CloudContentSniffCacheStore {
+  Map<String, Object?> entries = <String, Object?>{};
+
+  @override
+  Future<Map<String, Object?>> load() async => Map<String, Object?>.of(entries);
+
+  @override
+  Future<void> save(Map<String, Object?> next) async {
+    entries = Map<String, Object?>.of(next);
+  }
 }
