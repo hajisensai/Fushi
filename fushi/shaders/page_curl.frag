@@ -19,6 +19,11 @@
 // 朝向读者）同一亮度，往圆柱侧面平滑变暗，正反两半在轮廓处（k = 1）取同一值；
 // 不画卷边描线，所以卷轴处、纸边转过圆柱处都不会出现一道「折痕」。
 //
+// 双页（uSpread = 1）：纸面只是外侧那一页，书脊是它靠里的边（中缝）。对面那一页
+// uFacing（屏幕坐标 [l, t, r, b]）在被翻过来的纸盖住之前保持翻页前的样子（取 uSheet
+// 同一位置）；纸背是翻过去后落在对面的那一页（uBackSheet），按纸面点关于书脊的镜像
+// 位置采样，不再蒙纸色——纸完全落下时背面与活的正文逐像素相同，撤掉覆盖层不闪。
+//
 // 拎起的角 uCorner 当前在 uPoint：轴线是两点连线的「卷曲中垂线」——取
 // a = (|C − F| − πr)/2，使角点刚好落在 F（r 随拖动距离收缩，避免起手时角点跳动）。
 #version 460 core
@@ -39,8 +44,12 @@ uniform float uMirror;
 uniform float uHasBase;
 // 纸背：rgb = 纸色（0..1），a = 蒙在镜像正文上的纸色比例（0 = 正文原样透出）。
 uniform vec4 uBack;
+// 双页：1 = 纸面是外侧页、uFacing 是对面页、纸背取 uBackSheet。
+uniform float uSpread;
+uniform vec4 uFacing;
 uniform sampler2D uSheet;
 uniform sampler2D uBase;
+uniform sampler2D uBackSheet;
 
 out vec4 fragColor;
 
@@ -66,8 +75,16 @@ vec3 sheetAt(vec2 q) {
   return texture(uSheet, sheetUv(q)).rgb;
 }
 
-// 纸背：镜像正文蒙一层纸色，再乘表面明暗。
+// 纸背：单页时镜像正文蒙一层纸色；双页时是翻过去后落在对面的那一页——纸面点 q
+// 关于书脊（未镜像空间 x = 0）的镜像点 (-q.x, q.y) 落在对面页上，按它的屏幕位置取
+// uBackSheet。再乘表面明暗。
 vec4 backAt(vec2 q, float shade) {
+  if (uSpread > 0.5) {
+    float x = uMirror > 0.5 ? uSize.x + q.x : -q.x;
+    vec2 screen = uOrigin + vec2(x, q.y);
+    vec3 page = texture(uBackSheet, clamp(screen / uView, vec2(0.0), vec2(1.0))).rgb;
+    return vec4(page * shade, 1.0);
+  }
   vec3 ink = mix(sheetAt(q), uBack.rgb, uBack.a);
   return vec4(ink * shade, 1.0);
 }
@@ -111,6 +128,12 @@ float rollSheen(float k) {
 }
 
 vec4 under(vec2 frag, float shadow) {
+  // 双页：对面那一页还没被翻过来的纸盖住，保持翻页前的样子（带卷起的纸投下的阴影）。
+  if (uSpread > 0.5 && frag.x >= uFacing.x && frag.x <= uFacing.z &&
+      frag.y >= uFacing.y && frag.y <= uFacing.w) {
+    vec4 f = texture(uSheet, clamp(frag / uView, vec2(0.0), vec2(1.0)));
+    return vec4(f.rgb * (1.0 - shadow), 1.0);
+  }
   if (uHasBase > 0.5) {
     vec4 b = texture(uBase, clamp(frag / uView, vec2(0.0), vec2(1.0)));
     return vec4(b.rgb * (1.0 - shadow), 1.0);
