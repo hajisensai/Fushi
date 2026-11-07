@@ -23,9 +23,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_asr_core/asr_core.dart' show AsrCueTokenTiming;
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
-    show SubtitleCue, SubtitleFormat, renderSubtitles;
+    show SubtitleCue, SubtitleFormat, renderSubtitles, subtitleCueCharTimes;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
@@ -1076,6 +1077,10 @@ class VideoSubtitlePipeline {
             startMs: c.startMs,
             endMs: c.endMs < c.startMs + 300 ? c.startMs + 300 : c.endMs,
             text: c.text,
+            // 逐字时间按 cue 的**原始**时长算（token 偏移相对原起点）；上面的
+            // 300 ms 下限只拉长显示，扫光唱完后停在全亮。
+            charTimes: _cueCharTimes(c),
+            lyricsHint: isSubtitleLyricsCue(c) || _lyricsMark.hasMatch(c.text),
           ),
       ],
       reference: reference,
@@ -1083,6 +1088,19 @@ class VideoSubtitlePipeline {
     await writeSubtitleJobFileAtomic(File(path), ass);
     e.state.exports[path] = sha1.convert(utf8.encode(ass)).toString();
     return (path: path, label: reference.label);
+  }
+
+  static final RegExp _lyricsMark = RegExp(r'^[\s　]*[♪♫♬]');
+
+  /// 草稿行的逐字时间（来自日语音频的 ASR 逐 token 时间）；没有 token 时间、或校对
+  /// 后的文字与识别原文对不上（歌词被整段替换等）时为 null。
+  static List<AssCharTime>? _cueCharTimes(SubtitleDraftCue c) {
+    final AsrCueTokenTiming? timing = c.tokenTiming;
+    if (timing == null || c.endMs <= c.startMs) return null;
+    return subtitleCueCharTimes(
+      timing,
+      SubtitleCue(index: 1, startMs: c.startMs, endMs: c.endMs, text: c.text),
+    );
   }
 
   static List<SubtitleDraftCue>? _readCues(File f) {

@@ -223,7 +223,7 @@ void main() {
       find.byKey(const ValueKey<String>('music-source-server:subsonic-b')),
       findsNothing,
     );
-    // a 下移一位：可见顺序 c, a, apple-music。
+    // a 下移一位：可见顺序 c, a, apple-music, youtube（后两者是关着时的占位行）。
     await tester.tap(
       find.byKey(const ValueKey<String>('music-source-down-server:subsonic-a')),
     );
@@ -235,6 +235,7 @@ void main() {
         'server:subsonic-c',
         'server:subsonic-a',
         kAppleMusicSourceKey,
+        kYoutubeMusicSourceKey,
       ],
     );
     expect(_stored(env.prefs).first.enabled, isFalse);
@@ -267,6 +268,46 @@ void main() {
     }))!;
     expect(back.first.source.key, 'server:subsonic-b');
     expect(back.first.enabled, isFalse);
+    await _teardown(tester);
+  });
+
+  testWidgets('来源页：YouTube 占位行的开关就是启用开关（反馈 0tRY-D2JgG）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    expect(env.prefs.musicYoutubeEnabled, isFalse, reason: '默认关（显式 opt-in）');
+    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await _settle(tester);
+
+    final Finder toggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('music-source-toggle-$kYoutubeMusicSourceKey'),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(toggle, findsOneWidget);
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(toggle);
+    await _settle(tester);
+    expect(env.prefs.musicYoutubeEnabled, isTrue);
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    final List<MusicOrderedSource> loaded = (await tester.runAsync(
+      () => loadOrderedMusicOnlineSources(env.app),
+    ))!;
+    final MusicOrderedSource yt = loaded.singleWhere(
+      (MusicOrderedSource o) => o.source.key == kYoutubeMusicSourceKey,
+    );
+    expect(yt.enabled, isTrue);
+    expect(
+      (yt.source as MusicServerOnlineSource).browser.kind,
+      MusicServerKind.youtube,
+    );
+    // 只有搜索、没有浏览树：不进「推荐」。
+    expect(musicSourceHasRecommend(yt.source), isFalse);
     await _teardown(tester);
   });
 
