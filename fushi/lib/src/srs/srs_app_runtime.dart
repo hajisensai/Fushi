@@ -59,6 +59,16 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
+/// 读当前 profile 正在暂缓的并入（[SrsSyncScheduler.deferredProfileMerge]，状态由引擎的 linker 持有）；模块关着 /
+/// 没有暂缓时得 null。同步状态页每次重读状态时调。单独一个 provider 是让页面测试能注入（运行时整套不在页面测试范围）。
+final Provider<Future<SrsDeferredProfileMerge?> Function()>
+srsDeferredProfileMergeReaderProvider =
+    Provider<Future<SrsDeferredProfileMerge?> Function()>(
+      (Ref ref) =>
+          () async =>
+              ref.read(srsAppRuntimeProvider)?.sync.deferredProfileMerge(),
+    );
+
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
 final Provider<SrsAppRuntime?>
 srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
@@ -539,6 +549,21 @@ class SrsAppRuntime {
   String? _deferredConflictKey;
   bool _conflictDialogOpen = false;
 
+  /// 冲突弹窗选定候选后的提示：做完了说已关联；并入暂缓（[SrsProfileAdoptDeferred]）不是失败，说已排队、等撤销
+  /// 记录同步到后自动完成（同步状态页同时显示暂缓状态）。真正的失败由调用方按错误提示。
+  static void _showProfileAdoptResult(SrsProfileAdoptResult result) {
+    switch (result) {
+      case SrsProfileAdopted():
+        FushiToast.show(msg: t.srs_sync_profile_conflict_done);
+      case SrsProfileAdoptDeferred():
+        FushiToast.show(
+          msg: t.srs_sync_profile_merge_queued,
+          severity: ToastSeverity.info,
+          toastLength: Toast.LENGTH_LONG,
+        );
+    }
+  }
+
   List<String> _ignoredConflicts() {
     if (!app.isPreferencesReady) return const <String>[];
     final Object? raw = app.prefsRepo.getPref(kIgnoredProfileConflictsPrefKey);
@@ -579,9 +604,12 @@ class SrsAppRuntime {
               <String>[..._ignoredConflicts(), conflict.ignoreKey],
             );
           case SrsProfileConflictAdopt(:final String uid):
-            FushiToast.show(msg: t.srs_sync_profile_conflict_done);
             try {
-              await sync.adoptProfile(conflict, uid);
+              await sync.adoptProfile(
+                conflict,
+                uid,
+                onAdopted: _showProfileAdoptResult,
+              );
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'SrsAppRuntime.adoptProfile',
