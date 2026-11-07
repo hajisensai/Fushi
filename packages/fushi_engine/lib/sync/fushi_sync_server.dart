@@ -68,6 +68,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/sync/srs_change_feed.dart';
@@ -593,7 +594,8 @@ class FushiSyncServer {
   GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter;
 
   /// 远程更新本机 app（`GET/POST /api/host/update`，反馈 Pp8XPyve0N）。实现是各平台
-  /// app 的现有自更新流程；无头服务端不接——null 时端点 404、能力位 `hostUpdate=false`。
+  /// app 的现有自更新流程，无头服务端是 `ServerSelfUpdater`；null 时端点 404、能力位
+  /// `hostUpdate=false`。
   HostSelfUpdater? hostSelfUpdater;
 
   /// 触发远程更新的一次性 nonce（GET 签发、POST 核销）。
@@ -945,6 +947,11 @@ class FushiSyncServer {
     if (reqPath == '/api/mine') {
       if (method != 'POST') return shelf.Response(405);
       return _lookupRoutes.handleMine(request);
+    }
+    if (reqPath == '/api/mine/targets') {
+      // POST 与其它 /api/mine* 一致：客户端走同一条带钉扎的互联 POST 传输（请求体为空对象）。
+      if (method != 'POST') return shelf.Response(405);
+      return _lookupRoutes.handleMiningTargets(request);
     }
     if (reqPath == '/api/mine/forward') {
       if (method != 'POST') return shelf.Response(405);

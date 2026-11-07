@@ -47,9 +47,6 @@ const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 
-/// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
-const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
-
 /// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
 /// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
 /// 设备本地：同意的是这台设备上配的那个后端。
@@ -383,8 +380,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 要求默认关：只查原文字形。随 Profile 走；服务端读同名键。常量在 fushi_engine
   // `kLookupChineseScriptVariantsPrefKey`。
   'lookup_chinese_script_variants',
-  // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
-  // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
+  // bool（默认 true）：已删除的查词弹窗「我库里的例句」开关（2026-11-07 按反馈 4S2_J80DfK
+  // 移除整个功能，书 / 视频 / 游戏语料文档启动时清掉）。存量键冻结、不再读写；留在这里只为
+  // 键名不被别的功能复用。
   'lookup_library_sentences',
   // bool（默认 true = 原行为）：进入查词页（导航点「查词」）以及清空查询后自动
   // 聚焦搜索框、弹出软键盘（反馈 cczhbM7ZOI）。关掉后只有用户点搜索框才弹。
@@ -463,6 +461,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （反馈 zNuGKLIhmT：阅读时挡住正文）。
   'mine_notice_success',
   'mine_to_server',
+  // JSON `{<hostId>: {kind?, profile?, deck?}}`：「制卡到已配对设备」每台主机的「保存到」
+  // （缺省 = 主机默认，docs/specs/2026-11-05-server-srs-design.md §4.8）。设备本地。
+  'mine_to_server_targets',
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',
@@ -571,6 +572,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
+  // bool（默认 false）：在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG，显式 opt-in；
+  // iOS 上整类不存在，合规门 isYoutubeMusicSourceAvailable）。
+  'music_youtube_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
   // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-23 起 mode_strip）：
@@ -985,6 +989,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // string（默认空）：主字幕轨默认语言偏好（反馈 Fz9HXThdSW，参考 PotPlayer）：逗号 /
   // 空白分隔，按顺序挑第一条命中的内封轨，见 parseSubtitleLanguagePreferences。
   'video_subtitle_preferred_languages',
+  // bool（默认 true）：视频页「生成字幕」是否把字幕文件写到视频旁边（开 = 生成字幕
+  // 管线；关 = 只在 Fushi 里转录使用），见 PreferencesRepository.videoSubtitleSaveBesideVideo。
+  'video_subtitle_save_beside_video',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
   'video_subtitle_style',
