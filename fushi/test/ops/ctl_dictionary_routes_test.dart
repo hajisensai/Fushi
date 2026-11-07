@@ -574,7 +574,75 @@ void main() {
       );
       expect(plain.containsKey('pitchPositions'), isFalse);
       expect(plain.containsKey('frequenciesHtml'), isFalse);
+      expect(plain.containsKey('singleFrequencyNumbers'), isFalse);
+      expect(plain.containsKey('singleFrequenciesHtml'), isFalse);
       expect(plain['furiganaPlain'], '生[なま]');
+    });
+
+    test('BUG-4226：ctl 制卡带逐词典频率，{single-frequency-number-<名>} 渲染出值', () {
+      final DictionarySearchResult withFreq = DictionarySearchResult(
+        searchTerm: '言葉',
+        entries: <DictionaryEntry>[
+          DictionaryEntry(
+            dictionaryName: 'JMdict',
+            word: '言葉',
+            reading: 'ことば',
+            meaning: 'word',
+            extra: jsonEncode(<String, Object?>{
+              'frequencies': <Object?>[
+                <String, Object?>{
+                  'dictName': 'Jiten',
+                  'values': <Object?>[
+                    // display 前导数字优先于 value；只取第一条。
+                    <String, Object?>{'value': 9, 'display': '1234㋕'},
+                    <String, Object?>{'value': 5, 'display': '5'},
+                  ],
+                },
+                <String, Object?>{
+                  'dictName': 'Jiten',
+                  'values': <Object?>[
+                    <String, Object?>{'value': 1, 'display': '1'},
+                  ],
+                },
+                <String, Object?>{
+                  'dictName': 'BCCWJ',
+                  'values': <Object?>[
+                    <String, Object?>{'value': 100, 'display': ''},
+                  ],
+                },
+                <String, Object?>{
+                  'dictName': 'Empty',
+                  'values': <Object?>[
+                    <String, Object?>{'value': 0, 'display': '-'},
+                  ],
+                },
+              ],
+            }),
+          ),
+        ],
+      );
+      final Map<String, String> fields = buildCtlMineFields(
+        word: '言葉',
+        lookup: withFreq,
+      );
+      // 与弹窗制卡同一条 wire：rawPayloadJson → AnkiMiningPayload.fromJson → 渲染。
+      final AnkiMiningPayload payload = AnkiMiningPayload.fromJson(
+        jsonDecode(jsonEncode(fields)) as Map<String, dynamic>,
+      );
+      const AnkiMiningContext context = AnkiMiningContext(sentence: '');
+      String render(String template) =>
+          AnkiHandlebarRenderer.render(template, payload, context);
+
+      expect(render('{single-frequency-number-jiten}'), '1234');
+      expect(render('{single-frequency-number-BCCWJ}'), '100');
+      expect(render('{single-frequency-number-Empty}'), '');
+      expect(
+        render('{single-frequency-jiten}'),
+        '<ul style="text-align: left;"><li>Jiten: 1234㋕</li>'
+        '<li>Jiten: 5</li><li>Jiten: 1</li></ul>',
+      );
+      // 调和平均与逐词典数同源：2 / (1/1234 + 1/100) 向下取整。
+      expect(fields['freqHarmonicRank'], '185');
     });
 
     test('没查词结果时字段留空，不臆造', () {
