@@ -256,6 +256,7 @@ import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
+import 'package:fushi/src/media/video/video_control_popover_hover_dismiss.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_density.dart';
 import 'package:fushi/src/media/video/video_push_aside_column.dart';
@@ -1663,10 +1664,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
   ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
   /// - [_controlsHoldJumpPanel]：「跳转记录」面板开着——面板期间控制条保持显示
-  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）。
+  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）；
+  /// - [_controlsHoldPopoverPress]：音量 / 倍速轻浮层里有指针按着（拖滑条，BUG-4227）
+  ///   ——拖动发的是 move 不是 hover，没有任何东西续命，控制条到点淡出、浮层随之关掉。
   final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
   bool _controlsHoldMenuOpen = false;
   bool _controlsHoldJumpPanel = false;
+  bool _controlsHoldPopoverPress = false;
 
   static const double _volumeStep = 5.0;
 
@@ -2203,10 +2207,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   _VideoControlPopoverPlacement? _activeControlPopoverPlacement;
   VideoControlSlot? _activeControlPopoverSourceSlot;
   VideoControlItem? _activeControlPopoverSourceItem;
-  bool _controlPopoverAnchorHovered = false;
-  bool _controlPopoverPanelHovered = false;
-  bool _controlPopoverPinned = false;
-  Timer? _controlPopoverHideTimer;
+
+  /// 浮层收起判据（固定 / 悬停 / 按住三条来源，BUG-4227）：hover 关闭也认按住，
+  /// 拖滑条拖出浮层边界时不收。
+  late final VideoControlPopoverHoverDismiss _controlPopoverHoverDismiss =
+      VideoControlPopoverHoverDismiss(onDismiss: _hideControlPopover);
+  bool get _controlPopoverPinned => _controlPopoverHoverDismiss.pinned;
 
   /// 画面内控制布局编辑模式（TODO-440）。用 [ValueNotifier] 而非普通 setState：
   /// 叠层渲染在 media_kit controls builder 里，全屏路由同样需要即时开关。
@@ -6898,7 +6904,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleSearchRequests.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
-    _controlPopoverHideTimer?.cancel();
+    _controlPopoverHoverDismiss.dispose();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _controlLayoutNotifier.dispose();
@@ -9293,7 +9299,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
   void _syncControlsHold() {
-    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPanel;
+    _controlsHeld.value =
+        _controlsHoldMenuOpen ||
+        _controlsHoldJumpPanel ||
+        _controlsHoldPopoverPress;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
