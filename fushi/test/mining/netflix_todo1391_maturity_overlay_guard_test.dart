@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1391 / BUG-702 guard: Netflix 剧集开头左上角短暂显示的年龄分级/成熟度评级
 /// overlay 会被制卡录制录进卡片截图/gif。修法复用 TODO-1361 ① 的常驻 CSS 隐藏机制

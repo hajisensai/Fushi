@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v80 迁移（media_items → media_open_history）：19 列旧最近打开表收敛为
@@ -65,7 +65,7 @@ CREATE TABLE media_items (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 144);
+    expect(db.schemaVersion, 146);
 
     final rows = await db.getAllMediaOpenHistory();
     expect(rows, hasLength(2), reason: '迁移零丢行');

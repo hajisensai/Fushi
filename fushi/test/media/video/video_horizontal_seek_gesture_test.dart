@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 
 /// BUG-1485：移动端横滑 seek 的像素→时间换算模型。

@@ -411,6 +411,17 @@ class FushiContinueEntry {
   /// 横图剧照。
   bool get still => coverAspectRatio > 1;
 
+  /// 排版时要给封面留的宽高比：方向待探测（[orientationImage]）的条目在解码前
+  /// 按它可能变成的 16:9 剧照留，已探测过（[CoverProbeMemo]）就按实测方向；
+  /// 否则就是 [coverAspectRatio]。并列卡按它定卡宽，竖图解出来只是信息列更宽，
+  /// 不会出现横图解出来把信息列挤没。
+  double get layoutAspectRatio {
+    final ImageProvider? image = orientationImage;
+    if (image == null || coverAspectRatio > 1) return coverAspectRatio;
+    final double? probed = CoverProbeMemo.aspectOf(image);
+    return probed == null || probed > 1 ? 16 / 9 : coverAspectRatio;
+  }
+
   /// 按探测结果定型：横图 → 16:9 剧照 + [landscapeCover]；否则原样。
   FushiContinueEntry _oriented(bool landscape) => !landscape
       ? this
@@ -440,8 +451,12 @@ class FushiContinueEntry {
 
 /// 按 [FushiContinueEntry.orientationImage] 的真实宽高比给条目定型再建子树；没给
 /// 探测图时直接原样。
-class _OrientedEntry extends StatelessWidget {
-  const _OrientedEntry({required this.entry, required this.builder});
+class FushiContinueOrientedEntry extends StatelessWidget {
+  const FushiContinueOrientedEntry({
+    required this.entry,
+    required this.builder,
+    super.key,
+  });
 
   final FushiContinueEntry entry;
   final Widget Function(FushiContinueEntry entry) builder;
@@ -622,7 +637,7 @@ class FushiContinueSpotlight extends StatelessWidget {
       vertical: math.max(0, vertical),
     );
     Widget tile(int i) {
-      final Widget child = _OrientedEntry(
+      final Widget child = FushiContinueOrientedEntry(
         entry: side[i],
         builder: (FushiContinueEntry e) => FushiContinueSideTile(
           entry: e,
@@ -709,7 +724,7 @@ class FushiContinueSpotlight extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => _OrientedEntry(
+  Widget build(BuildContext context) => FushiContinueOrientedEntry(
     entry: main,
     builder: (FushiContinueEntry m) => _layout(context, m),
   );

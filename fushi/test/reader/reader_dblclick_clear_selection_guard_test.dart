@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1028 / BUG-481 source guard: the reader must clear the native
 /// double-click text selection (so it stops hijacking single-tap lookup), while

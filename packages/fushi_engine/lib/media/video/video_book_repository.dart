@@ -1082,6 +1082,9 @@ class VideoBookRepository {
   /// [localFileHooks] 是这条尾活的前后挂钩：删之前先让引用方放手（下载后端把该
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
   /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
+  ///
+  /// [keepLocalFiles]：调用方确认已转交给别的库的原始文件，与幸存行引用的文件同等
+  /// 进删除护栏（含 iOS 选择器副本的强制回收）。
   Future<int> deleteVideoBooksAndReclaimAssets(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
@@ -1090,6 +1093,7 @@ class VideoBookRepository {
     bool removeFromCollections = true,
     LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
+    Iterable<String> keepLocalFiles = const <String>[],
   }) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
@@ -1105,6 +1109,7 @@ class VideoBookRepository {
         removeFromCollections: removeFromCollections,
         localFileHooks: localFileHooks,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+        keepLocalFiles: keepLocalFiles,
       ),
     ).whenComplete(lease.release);
   }
@@ -1117,6 +1122,7 @@ class VideoBookRepository {
     required bool removeFromCollections,
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
+    required Iterable<String> keepLocalFiles,
   }) async {
     final List<String> uids = bookUids.toSet().toList(growable: false);
     // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
@@ -1214,6 +1220,9 @@ class VideoBookRepository {
           // 幸存行手动挂着的外挂字幕也进护栏：它可能正躺在被删视频旁边、名字还
           // 对得上（用户给 B.mkv 挂了 A.ja.srt），那也不能删。
           ...referencedLocalSubtitlePaths(survivors),
+          // 调用方声明「这些文件已归别处所有」（纯音频搬进音乐库后曲目还指着它，
+          // BUG-4175）：iOS 选择器副本也不回收。
+          for (final String path in keepLocalFiles) platformPathKey(path),
         };
         final List<String> videoCandidates = <String>[
           for (final snapshot in deleted)

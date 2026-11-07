@@ -1113,26 +1113,6 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: 0.6,
           ),
-          // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
-          // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
-          // 就得连带吃下纯黑白主题。与上面两项同属查词弹窗滑关行为，紧邻摆放。
-          // 默认 true = 保持既有手感；墨水屏模式下无论本开关如何都已归零。
-          SettingsSwitchItem(
-            id: 'reading_controls.popup_dismiss_animation',
-            title: t.popup_dismiss_animation,
-            subtitle: t.popup_dismiss_animation_hint,
-            icon: Icons.animation_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 16),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.popupDismissAnimation,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setPopupDismissAnimation(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: true,
-          ),
           // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
           // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
           // （与 page_columns 只在翻页模式可见同理）。默认开启。
@@ -1172,7 +1152,7 @@ SettingsDestination buildLookupDestination() {
           ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
-          // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
+          // 排除。默认关（用户要求，2026-07）。Windows / macOS 有，X11 没有（canBlockCapture）。
           // 写穿 pref（存储键沿用历史名 clipboard_panel_block_capture）后经
           // GlobalLookupController.applyBlockCapture 即时重应用到覆盖窗；native 侧
           // 记值并在窗口重建后自动重加，不新起并行机制。
@@ -1182,7 +1162,7 @@ SettingsDestination buildLookupDestination() {
             subtitle: t.lookup_block_capture_hint,
             icon: Icons.shield_outlined,
             visible: (SettingsContext settingsContext) =>
-                GlobalLookupController.isSupported,
+                GlobalLookupController.canBlockCapture,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.lookupBlockCapture,
             onChanged: (SettingsContext settingsContext, bool value) async {

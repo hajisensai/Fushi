@@ -17,6 +17,12 @@ class FakeLnReaderRuntime implements LnReaderRuntime {
   Set<String> failingChapters;
   List<LnReaderFilter> filters;
 
+  /// 非空时 [popular] 记下调用后抛它（源站要登录 / 拒绝访问时的典型表现）。
+  Exception? popularError;
+
+  /// 非空时 [novel] 记下调用后抛它（作品页取不到详情 / 章节）。
+  Exception? novelError;
+
   final List<String> loaded = <String>[];
 
   /// 每次装载时管理器送进来的插件存储（按插件 id，后一次覆盖前一次）。
@@ -57,6 +63,8 @@ class FakeLnReaderRuntime implements LnReaderRuntime {
   }) async {
     calls.add('popular:$page:$latest');
     popularFilters.add(filters);
+    final Exception? error = popularError;
+    if (error != null) throw error;
     return page == 1 ? items : const <LnReaderNovelItem>[];
   }
 
@@ -73,6 +81,8 @@ class FakeLnReaderRuntime implements LnReaderRuntime {
   @override
   Future<LnReaderNovel> novel(String pluginId, String path) async {
     calls.add('novel:$path');
+    final Exception? error = novelError;
+    if (error != null) throw error;
     return novelResult!;
   }
 

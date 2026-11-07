@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-900 守卫：副字幕（视频双字幕副层）必须与主字幕轨行**共用同一份可用字幕列表**
 /// [_subtitleMenuSources]（内嵌轨 + 同目录外挂文件），而不是只取内嵌轨。

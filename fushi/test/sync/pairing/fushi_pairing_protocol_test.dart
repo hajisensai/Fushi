@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 
 /// TODO-961 M1 §3.6 协议单元测试：nonce 生成、pinProof HMAC 计算/校验、错误 PIN

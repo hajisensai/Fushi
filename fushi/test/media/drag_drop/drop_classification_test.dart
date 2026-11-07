@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -296,25 +296,51 @@ void main() {
     });
   });
 
-  group('audio in the video library (media_extensions.dart)', () {
-    test('kAudioExtensions = AudiobookStorage.audioExtensions minus .mp4', () {
-      // media_extensions.dart 零依赖、不能引用 fushi_audio，只能靠守卫钉同步。
+  group('pure audio criterion (media_extensions.dart)', () {
+    test('kAudioExtensions contains AudiobookStorage.audioExtensions minus '
+        '.mp4', () {
+      // 有声书素材都是纯音频；反过来不成立（ape / dsf 等有声书播放器解不了，音乐库收）。
+      // 与音乐扫描器的相等关系由 fushi/test/build/ 的 Rust 表同步守卫钉。
       // `.mp4` 首先是视频容器，归 kVideoExtensions。
       expect(
-        kAudioExtensions,
-        equals(AudiobookStorage.audioExtensions.difference(<String>{'.mp4'})),
+        AudiobookStorage.audioExtensions
+            .difference(<String>{'.mp4'})
+            .difference(kAudioExtensions),
+        isEmpty,
       );
     });
 
-    test('audio and video sets are disjoint; library set is their union', () {
+    test(
+      'pure audio outside the audiobook table is classified, not unknown',
+      () {
+        final DroppedFiles r = classifyDroppedFiles(<String>[
+          '/x/a.ape',
+          '/x/b.dsf',
+          '/x/c.tta',
+          '/x/d.mka',
+          '/x/e.flac',
+          '/x/f.mp4',
+        ]);
+        expect(r.pureAudios, <String>[
+          '/x/a.ape',
+          '/x/b.dsf',
+          '/x/c.tta',
+          '/x/d.mka',
+          '/x/e.flac',
+        ]);
+        // 书卡挂音频的口径不变：只认有声书播放器放得了的。
+        expect(r.audios, <String>['/x/e.flac', '/x/f.mp4']);
+        expect(r.unknown, isEmpty);
+        expect(r.hasAny, isTrue);
+      },
+    );
+
+    test('audio and video sets are disjoint (pure audio is never video '
+        'library media, QAondMh4M5)', () {
       expect(kAudioExtensions.intersection(kVideoExtensions), isEmpty);
       expect(
         kAudioExtensions.intersection(kPlaylistManifestExtensions),
         isEmpty,
-      );
-      expect(
-        kVideoLibraryMediaExtensions,
-        equals(<String>{...kVideoExtensions, ...kAudioExtensions}),
       );
     });
 

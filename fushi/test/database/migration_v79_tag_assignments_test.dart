@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v79 迁移（五张标签映射表合一，2026-08 数据层重构·用户拍板）：
@@ -125,7 +125,7 @@ CREATE TABLE galgame_tag_mappings (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 144);
+    expect(db.schemaVersion, 146);
 
     final List<TagAssignmentRow> rows = await db.getAllTagAssignments();
     expect(rows, hasLength(5), reason: '5 张表各 1 行有效映射（孤儿 srt 行丢弃）');

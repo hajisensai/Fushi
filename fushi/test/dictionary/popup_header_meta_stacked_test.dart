@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 用户 10-23：查词弹窗词头的元数据列（频率 / 音调 / 词形标签）换到词头下方时铺满整行，
 /// 不再被按钮组那一截宽度挤成一枚 chip 一行。判据在 popup.js 的

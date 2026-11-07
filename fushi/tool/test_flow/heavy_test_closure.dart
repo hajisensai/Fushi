@@ -151,61 +151,156 @@ String? _directiveHead(String path) {
   }
 }
 
+/// The pseudo edge recorded for a `dart:ui` import: a closure that reaches
+/// it needs the Flutter engine (`flutter test`); one that never does runs on
+/// the plain Dart VM (`dart test`). Flutter and every plugin import it, so it
+/// is the exact line, not a heuristic over package names.
+const String kDartUiEdge = 'dart:ui';
+
+/// What a set of test files compiles: the number of Dart files in the union
+/// of their import closures and whether that closure reaches `dart:ui`.
+typedef TestClosure = ({int files, bool needsFlutter});
+
 /// Number of Dart files the [targets] (relative to [cwd]) pull in, or null
 /// when a target or the package config cannot be read.
+int? testClosureFiles(String cwd, List<String> targets, {File? edgeCache}) =>
+    testClosureOf(cwd, targets, edgeCache: edgeCache)?.files;
+
+/// The [TestClosure] of [targets] (relative to [cwd]), or null when a target
+/// or the package config cannot be read.
 ///
 /// [edgeCache] (a JSON file) remembers the resolved imports of files outside
 /// the workspace: pub-cache and SDK paths carry their version, so their
 /// imports never change, and they are ~3/4 of a full-app closure. Reading
 /// them on every leased run cost seconds on a busy desktop.
-int? testClosureFiles(String cwd, List<String> targets, {File? edgeCache}) {
-  final _PackageTable? table = _packageLibs(cwd);
-  if (table == null) return null;
-  final Map<String, String> libs = table.libs;
-  final String workspacePrefix = '${table.workspace}/';
-  final Map<String, List<String>> cache = _readEdgeCache(edgeCache);
-  bool cacheDirty = false;
-  final Set<String> seen = <String>{};
-  final List<String> todo = <String>[];
-  for (final String t in targets) {
-    final File f = File(t).isAbsolute ? File(t) : File('$cwd/$t');
-    if (!f.existsSync()) return null;
-    final String path = _join(_slashes(f.absolute.path), '');
-    if (seen.add(path)) todo.add(path);
+///
+/// [rootSkipUris] are import URIs ignored in the [targets] themselves (not in
+/// what they import): the pure-Dart guard asks what a test would compile
+/// without its own `package:flutter_test` import.
+TestClosure? testClosureOf(
+  String cwd,
+  List<String> targets, {
+  File? edgeCache,
+  Set<String> rootSkipUris = const <String>{},
+}) {
+  final TestClosureWalker? walker = TestClosureWalker.open(
+    cwd,
+    edgeCache: edgeCache,
+  );
+  if (walker == null) return null;
+  final TestClosure? result = walker.closureOf(
+    targets,
+    rootSkipUris: rootSkipUris,
+  );
+  walker.saveCache();
+  return result;
+}
+
+/// Walks import closures under one package config, remembering every file's
+/// edges for its lifetime: a caller asking about thousands of tests (the
+/// pure-Dart guard) reads each file once instead of once per test.
+class TestClosureWalker {
+  TestClosureWalker._(this._cwd, this._table, this._edgeCache)
+    : _external = _readEdgeCache(_edgeCache);
+
+  /// A walker for the package config at or above [cwd], or null when there
+  /// is none.
+  static TestClosureWalker? open(String cwd, {File? edgeCache}) {
+    final _PackageTable? table = _packageLibs(cwd);
+    if (table == null) return null;
+    return TestClosureWalker._(cwd, table, edgeCache);
   }
-  while (todo.isNotEmpty) {
-    final String path = todo.removeLast();
-    final bool immutable = !path.startsWith(workspacePrefix);
-    List<String>? edges = immutable ? cache[path] : null;
-    if (edges == null) {
-      edges = _edgesOf(path, libs);
+
+  final String _cwd;
+  final _PackageTable _table;
+  final File? _edgeCache;
+
+  /// Edges of files outside the workspace (persisted in [_edgeCache]).
+  final Map<String, List<String>> _external;
+
+  /// Edges of workspace files, for this walker's lifetime only.
+  final Map<String, List<String>> _workspace = <String, List<String>>{};
+  bool _externalDirty = false;
+
+  /// The closure of [targets]; with [stopAtFlutter] the walk ends at the
+  /// first `dart:ui` (then [TestClosure.files] is only what was seen so far).
+  TestClosure? closureOf(
+    List<String> targets, {
+    Set<String> rootSkipUris = const <String>{},
+    bool stopAtFlutter = false,
+  }) {
+    final String workspacePrefix = '${_table.workspace}/';
+    final Set<String> seen = <String>{};
+    final List<String> todo = <String>[];
+    final List<String> roots = <String>[];
+    for (final String t in targets) {
+      final File f = File(t).isAbsolute ? File(t) : File('$_cwd/$t');
+      if (!f.existsSync()) return null;
+      final String path = _join(_slashes(f.absolute.path), '');
+      roots.add(path);
+      if (seen.add(path)) todo.add(path);
+    }
+    bool needsFlutter = false;
+    while (todo.isNotEmpty) {
+      final String path = todo.removeLast();
+      final List<String>? edges = roots.contains(path)
+          ? _edgesOf(path, _table.libs, skip: rootSkipUris)
+          : _edgesFor(path, workspacePrefix);
       if (edges == null) continue; // generated file not there yet, or a stub
-      if (immutable) {
-        cache[path] = edges;
-        cacheDirty = true;
+      for (final String target in edges) {
+        if (target == kDartUiEdge) {
+          needsFlutter = true;
+          if (stopAtFlutter) {
+            return (files: seen.length, needsFlutter: true);
+          }
+        } else if (seen.add(target)) {
+          todo.add(target);
+        }
       }
     }
-    for (final String target in edges) {
-      if (seen.add(target)) todo.add(target);
-    }
+    return (files: seen.length, needsFlutter: needsFlutter);
   }
-  if (cacheDirty && edgeCache != null) _writeEdgeCache(edgeCache, cache);
-  return seen.length;
+
+  List<String>? _edgesFor(String path, String workspacePrefix) {
+    final bool external = !path.startsWith(workspacePrefix);
+    final Map<String, List<String>> memo = external ? _external : _workspace;
+    final List<String>? known = memo[path];
+    if (known != null) return known;
+    final List<String>? edges = _edgesOf(path, _table.libs);
+    if (edges == null) return null;
+    memo[path] = edges;
+    if (external) _externalDirty = true;
+    return edges;
+  }
+
+  /// Persists newly learned external edges to the edge cache file.
+  void saveCache() {
+    final File? file = _edgeCache;
+    if (_externalDirty && file != null) _writeEdgeCache(file, _external);
+    _externalDirty = false;
+  }
 }
 
 /// The files [path] imports, exports or includes as parts.
-List<String>? _edgesOf(String path, Map<String, String> libs) {
+List<String>? _edgesOf(
+  String path,
+  Map<String, String> libs, {
+  Set<String> skip = const <String>{},
+}) {
   final String? src = _directiveHead(path);
   if (src == null) return null;
   final String dir = path.substring(0, path.lastIndexOf('/'));
   final List<String> out = <String>[];
   for (final RegExpMatch m in _directive.allMatches(src)) {
     final String uri = m.group(1)!;
+    if (skip.contains(uri)) continue;
     if (uri.startsWith('package:')) {
       final int slash = uri.indexOf('/');
       if (slash < 0) continue;
       final String? lib = libs[uri.substring('package:'.length, slash)];
       if (lib != null) out.add(_join(lib, uri.substring(slash + 1)));
+    } else if (uri == kDartUiEdge) {
+      out.add(kDartUiEdge);
     } else if (!uri.contains(':')) {
       out.add(_join(dir, uri));
     }

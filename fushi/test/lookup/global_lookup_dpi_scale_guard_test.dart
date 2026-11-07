@@ -13,7 +13,7 @@
 //   ④ BUG-693 自愈重建与 BUG-1097 状态栏关闭不得被顺手改掉。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String src = File(

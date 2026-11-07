@@ -8,6 +8,7 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -81,6 +82,31 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicGapless(value);
             },
+          ),
+          // 逐曲断点续播（music_resume.dart）：只影响之后打开的曲目。
+          SettingsSegmentedItem<MusicResumeMode>(
+            id: 'music.resume_mode',
+            title: t.music_resume_mode_title,
+            subtitle: t.music_resume_mode_hint,
+            icon: FushiIcons.history,
+            options: <SettingsSegmentOption<MusicResumeMode>>[
+              SettingsSegmentOption<MusicResumeMode>(
+                value: MusicResumeMode.off,
+                label: t.music_resume_mode_off,
+              ),
+              SettingsSegmentOption<MusicResumeMode>(
+                value: MusicResumeMode.longTracks,
+                label: t.music_resume_mode_long_tracks,
+              ),
+              SettingsSegmentOption<MusicResumeMode>(
+                value: MusicResumeMode.all,
+                label: t.music_resume_mode_all,
+              ),
+            ],
+            defaultValue: MusicResumeMode.longTracks,
+            selected: (SettingsContext c) => c.appModel.musicResumeMode,
+            onChanged: (SettingsContext c, MusicResumeMode v) =>
+                c.appModel.setMusicResumeMode(v),
           ),
           // 交叉淡入（设计 §7.2）：双 libmpv 实例、逐样本等功率曲线；独占 / 硬件直出时
           // 后端自动停用（musicCrossfadeAvailability），这里与信号路径面板都标出来。

@@ -17,7 +17,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningClipFormat;
 

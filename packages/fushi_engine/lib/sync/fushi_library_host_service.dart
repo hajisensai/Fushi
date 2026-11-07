@@ -550,6 +550,7 @@ class RemoteBookInfo {
     this.coverUrl,
     this.coverPath,
     this.hasAudiobook = false,
+    this.isSubtitleBookBody = false,
     this.tags = const <String>[],
     this.tagsAddedAt = const <String, int>{},
     this.tagTombstones = const <String, int>{},
@@ -655,6 +656,13 @@ class RemoteBookInfo {
   /// 渲染类型徽章（耳机 / 书本），与本地书卡 `_getAudiobookInfo` 同源（TODO-655a）。
   final bool hasAudiobook;
 
+  /// 这本 EPUB 是 host 上某本独立字幕书由 cue 生成的正文（BUG-4197），不是一本
+  /// 单独的书。那本字幕书经有声书清单按 uid 下发，收端按同一份 cue 再生成正文，所以
+  /// 书架 / 首页不该再把它当一本普通书展示（否则同一本书出两张卡，还能被当成没有
+  /// 音频的普通书下载）。同步对账（推送 / 比对）仍要看到它：清单里没有它时，本机
+  /// 那份生成的正文会被当成「host 缺这本」推回去。旧 host 不下发 → false。
+  final bool isSubtitleBookBody;
+
   /// 该书在 host 端的标签名列表（TODO-1165）。标签是每设备本地数据，只传
   /// 名不传本地 id；client 下载后 getOrCreateTagByName + addTagToBook 重建映射。
   final List<String> tags;
@@ -692,6 +700,7 @@ class RemoteBookInfo {
     if (hasDisplayCover) 'hasCover': true,
     if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
     if (hasAudiobook) 'hasAudiobook': true,
+    if (isSubtitleBookBody) 'subtitleBookBody': true,
     if (tags.isNotEmpty) 'tags': tags,
     if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
     if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
@@ -719,6 +728,7 @@ class RemoteBookInfo {
     String? coverUrl,
     String? coverPath,
     bool? hasAudiobook,
+    bool? isSubtitleBookBody,
     List<String>? tags,
     Map<String, int>? tagsAddedAt,
     Map<String, int>? tagTombstones,
@@ -744,6 +754,7 @@ class RemoteBookInfo {
     coverUrl: coverUrl ?? this.coverUrl,
     coverPath: coverPath ?? this.coverPath,
     hasAudiobook: hasAudiobook ?? this.hasAudiobook,
+    isSubtitleBookBody: isSubtitleBookBody ?? this.isSubtitleBookBody,
     tags: tags ?? this.tags,
     tagsAddedAt: tagsAddedAt ?? this.tagsAddedAt,
     tagTombstones: tagTombstones ?? this.tagTombstones,
@@ -783,6 +794,7 @@ class RemoteBookInfo {
       coverUrl: coverUrl,
       coverPath: coverPath,
       hasAudiobook: json['hasAudiobook'] == true,
+      isSubtitleBookBody: json['subtitleBookBody'] == true,
       tags: _jsonStringList(json['tags']),
       tagsAddedAt: _jsonNameIntMap(json['tagsAddedAt']),
       tagTombstones: _jsonNameIntMap(json['tagTombstones']),
@@ -3165,6 +3177,33 @@ abstract interface class VideoDiscShareHost {
   /// 是成员路径相对盘根的部分（正斜杠，如 `BDMV/PLAYLIST/00800.mpls`、
   /// `VIDEO_TS/TITLE_01.dvdtitle`）。client 整盘下载落地后据此把这些行认领成本地行。
   Future<List<({String id, String path})>> videoTitlesOnDisc(String discRoot);
+}
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
+const String kVideoClipExportCapability = 'videoClipExport';
+
+/// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
+/// 视频的片段导出）。
+///
+/// 分工：host 只裁**无字幕**的原料段（本地文件、不经网络 / TLS，与 `clipaudio` 同一
+/// 理由——移动端 client ffmpeg 打不开 host 自签 https / token 流）；字幕烧录留在
+/// client，用它屏幕上正在显示的那份 cue（含 ASS 样式、用户调轴与字幕外观），与本机
+/// 导出共用同一个导出器。与 [VideoDiscShareHost] 同范式：server 用 `is` 探测，不实现
+/// → `/api/library/videos/<id>/clipvideo` 404、能力位 [kVideoClipExportCapability]
+/// 为 false，client 提示「对端版本过低」而不发请求。
+abstract interface class VideoClipExportHost {
+  /// 把视频 [id] 第 [episodeIndex] 集的 `[startMs, endMs)` 逐帧精确裁成无字幕 mp4，
+  /// 返回落在**独立临时目录**里的文件（调用方传完负责删该目录）。视频未知 / 没有
+  /// 本地媒体文件 / 区间非法 / ffmpeg 失败 → null。[audioStreamIndex] /
+  /// [audioStreamCount] 选 client 当前在听的音轨（越界回退默认轨）。
+  Future<File?> clipVideoSegment(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+  });
 }
 
 /// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好

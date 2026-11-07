@@ -433,6 +433,9 @@ class BackupRestoreService {
         // （导出时已清空，这里兜底更老 / 外来的备份），也不从 bak 回灌——搬进 srs.db 后
         // SRS 引擎须按「无本机状态」换新化身并重建缓存。新形态主库里没有这些表，空操作。
         await clearLegacySrsDeviceLocalTables(db!);
+        // 曲目 uid 别名随本机回灌回来（v145）：备份里的歌单 / 播放记录 / 收藏句可能
+        // 还挂着本机已并掉的重复曲目 uid，改指胜者。
+        await db!.applyMusicTrackUidAliases();
       });
       await db.customStatement('DETACH DATABASE devbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

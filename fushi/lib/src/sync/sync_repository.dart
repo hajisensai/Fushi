@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
     show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
@@ -31,11 +33,14 @@ import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
     show decodeInterconnectPublicUrls, kInterconnectPublicUrlsPref;
+import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart'
     show
         kInterconnectP2pEnabledPref,
         kInterconnectP2pRelayUrlsPref,
         kInterconnectP2pSecretPref;
+import 'package:fushi_engine/sync/ai_relay_routes.dart'
+    show kInterconnectAiRelayEnabledPref;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
@@ -282,18 +287,10 @@ class SyncRepository {
   // 登录账户的已配对 host 时，后台自动把本机新生成的设备钥匙挂到同一账户。
   static const _keyLeaderboardFollowPairedLogin =
       'leaderboard_follow_paired_login';
-  // host 侧「我的设备」标记（所有者 2026-10-16 拍板）：被标记的已配对 peer 才能跟随本机
-  // 账户自动登录。JSON 字符串数组，元素是 `fushi_paired_peers.peerId`。每次（重新）配对
-  // 落库都按审批时的选择**显式**重写这台 peer 的标记（选「仅互联」/ 扫码票据配对 = 去掉），
-  // 吊销时删掉——所以残留在这里的旧 peerId 永远碰不到一台没经过本次审批的 peer。升级前
-  // 配对过的 peer 不在集合里 = 「仅互联」，不追溯授权。
-  static const _keyInterconnectOwnerDevicePeers =
-      'interconnect_owner_device_peers';
-  // host 侧：已配对 peer 在配对时**验签通过**的互联设备公钥指纹（JSON 对象
-  // `{peerId: fingerprint}`，见 `interconnect_device_key.dart`）。「我的设备」资格只给
-  // 出现在这里的 peer——配对里自报的 deviceId 谁都能冒报，设备私钥签名冒不了（PR #2258
-  // 审查）。每次（重新）配对按本次是否验签通过显式重写，吊销时删掉。设备本地。
-  static const _keyInterconnectPeerDeviceKeys = 'interconnect_peer_device_keys';
+  // host 侧「我的设备」标记（所有者 2026-10-16 拍板）与配对时验签通过的设备公钥指纹：
+  // 键名与格式见引擎 `interconnect_owner_devices.dart`（[kInterconnectOwnerDevicePeersPref] /
+  // [kInterconnectPeerDeviceKeysPref]，与无头服务端共用）。被标记的已配对 peer 才能跟随本机
+  // 账户自动登录；升级前配对过的 peer 不在集合里 = 「仅互联」，不追溯授权。设备本地。
   // client 侧：本机互联设备私钥（base64url P-256 标量）。配对时签 host 下发的会话
   // nonce，证明「这个 deviceId 真是我」。设备本地 + 名字命中凭据红线（`private_key`），
   // 不进备份 / Profile 快照 / 导出；私钥外带 = 两台设备共用一个身份。
@@ -842,101 +839,36 @@ class SyncRepository {
   Future<void> setInterconnectLeaderboardLinkHostEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectLeaderboardLinkHost, v);
 
+  /// host 侧「我的设备」标记与设备钥匙指纹（实现与无头服务端共用，见引擎
+  /// `interconnect_owner_devices.dart`）。
+  InterconnectOwnerDeviceStore get _ownerDevices =>
+      InterconnectOwnerDeviceStore(_db);
+
   /// host 侧：被标记为「我的设备」的已配对 peer（peerId 集合）。
-  Future<Set<String>> getOwnerDevicePeerIds() async {
-    final String? raw = await _getStringOrNull(
-      _keyInterconnectOwnerDevicePeers,
-    );
-    if (raw == null || raw.isEmpty) return <String>{};
-    try {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! List) return <String>{};
-      return <String>{
-        for (final Object? e in decoded)
-          if (e is String) e,
-      };
-    } on FormatException {
-      return <String>{};
-    }
-  }
+  Future<Set<String>> getOwnerDevicePeerIds() =>
+      _ownerDevices.ownerDevicePeerIds();
 
   /// 标记 / 取消一台已配对 peer 为「我的设备」。返回最终是否为「我的设备」。
   ///
   /// 标记要求这台 peer 配对时证明过设备钥匙（[getPeerDeviceKeyFingerprints] 里有它）；
   /// 没证明过的（旧版 client / 没上报设备钥匙）标不上，返回 false。
-  Future<bool> setOwnerDevicePeer(String peerId, bool owner) async {
-    if (owner && !(await getPeerDeviceKeyFingerprints()).containsKey(peerId)) {
-      owner = false;
-    }
-    final Set<String> ids = await getOwnerDevicePeerIds();
-    final bool changed = owner ? ids.add(peerId) : ids.remove(peerId);
-    if (!changed) return owner;
-    if (ids.isEmpty) {
-      await _deleteKey(_keyInterconnectOwnerDevicePeers);
-    } else {
-      await _setString(
-        _keyInterconnectOwnerDevicePeers,
-        jsonEncode(ids.toList()..sort()),
-      );
-    }
-    return owner;
-  }
+  Future<bool> setOwnerDevicePeer(String peerId, bool owner) =>
+      _ownerDevices.setOwnerDevicePeer(peerId, owner);
 
   /// host 侧：配对时验签通过的设备公钥指纹（peerId → fingerprint）。
-  Future<Map<String, String>> getPeerDeviceKeyFingerprints() async {
-    final String? raw = await _getStringOrNull(_keyInterconnectPeerDeviceKeys);
-    if (raw == null || raw.isEmpty) return <String, String>{};
-    try {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map) return <String, String>{};
-      return <String, String>{
-        for (final MapEntry<Object?, Object?> e in decoded.entries)
-          if (e.key is String && e.value is String)
-            e.key! as String: e.value! as String,
-      };
-    } on FormatException {
-      return <String, String>{};
-    }
-  }
+  Future<Map<String, String>> getPeerDeviceKeyFingerprints() =>
+      _ownerDevices.deviceKeyFingerprints();
 
   /// 记下 / 清掉一台 peer 的已验签设备公钥指纹（null = 本次配对没证明设备钥匙）。
   Future<void> setPeerDeviceKeyFingerprint(
     String peerId,
     String? fingerprint,
-  ) async {
-    final Map<String, String> keys = await getPeerDeviceKeyFingerprints();
-    if (keys[peerId] == fingerprint) return;
-    if (fingerprint == null) {
-      keys.remove(peerId);
-    } else {
-      keys[peerId] = fingerprint;
-    }
-    if (keys.isEmpty) {
-      await _deleteKey(_keyInterconnectPeerDeviceKeys);
-    } else {
-      final List<String> ids = keys.keys.toList()..sort();
-      await _setString(
-        _keyInterconnectPeerDeviceKeys,
-        jsonEncode(<String, String>{
-          for (final String id in ids) id: keys[id]!,
-        }),
-      );
-    }
-  }
+  ) => _ownerDevices.setDeviceKeyFingerprint(peerId, fingerprint);
 
   /// 持 [token] 的已配对 peer 是否被标记为「我的设备」（token 不属于任何现存 peer = false）。
   /// 同时要求这台 peer 有已验签的设备钥匙记录：标记集合里的 peerId 不能单独生效。
-  Future<bool> isOwnerDevicePeerToken(String token) async {
-    final Set<String> owners = await getOwnerDevicePeerIds();
-    if (owners.isEmpty) return false;
-    final Map<String, String> keys = await getPeerDeviceKeyFingerprints();
-    for (final FushiPairedPeerRow peer in await _db.getPairedPeers()) {
-      if (peer.token == token) {
-        return owners.contains(peer.peerId) && keys.containsKey(peer.peerId);
-      }
-    }
-    return false;
-  }
+  Future<bool> isOwnerDevicePeerToken(String token) =>
+      _ownerDevices.isOwnerDevicePeerToken(token);
 
   /// client 侧：本机无账户时是否跟随已配对设备自动登录（默认开）。
   Future<bool> isLeaderboardFollowPairedLoginEnabled() =>
@@ -1893,6 +1825,8 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
+    kLibraryGridColumnsPrefKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,
@@ -1969,8 +1903,8 @@ class SyncRepository {
     // 互联设备钥匙与「我的设备」：私钥外带 = 两台设备共用一个身份；host 侧的标记 /
     // 指纹描述的是**本机**配对表里的 peer，搬到别的设备上毫无意义（还会串号）。
     _keyInterconnectDevicePrivateKey,
-    _keyInterconnectOwnerDevicePeers,
-    _keyInterconnectPeerDeviceKeys,
+    kInterconnectOwnerDevicePeersPref,
+    kInterconnectPeerDeviceKeysPref,
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,
@@ -1985,6 +1919,8 @@ class SyncRepository {
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,
+    // 「当 host 时让不让已配对设备用本机的 AI 额度」同理是这台机器主人的决定。
+    kInterconnectAiRelayEnabledPref,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 

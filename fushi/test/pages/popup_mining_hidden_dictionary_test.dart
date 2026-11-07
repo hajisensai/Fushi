@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-865 (BUG-419 sibling): a dictionary disabled in 词典管理 (its show/hide
 /// switch off) must not have its definitions written into the Anki mining payload.

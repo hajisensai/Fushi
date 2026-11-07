@@ -1,6 +1,6 @@
 // 「我库里的例句」各模块文档构造：书的阅读器锚点（学习单位）、字幕 / 歌词的时间口径、指纹。
 // 真 fushi_corpus（切句）与 fushi_compute（学习单位前缀）原生库：找不到库直接红。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/corpus/corpus_documents.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_corpus/fushi_corpus.dart';

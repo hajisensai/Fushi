@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
 
 /// AJATT（subtitles.ajatt.top）页面结构守卫：fixture 是 2026-08-29 从真实页面裁出的

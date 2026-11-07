@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // ---------------------------------------------------------------------------
 // Fushi 改名收尾守卫（构建/打包/运维**脚本与配置**面）。

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -13,6 +15,8 @@ import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
@@ -169,6 +173,7 @@ class _Backend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async => opened.add(current.title);
 
   @override
@@ -223,6 +228,7 @@ class _AppModel extends AppModel {
   late final MusicSession _session = MusicSession(
     engine: MusicPlayerEngine(backendFactory: () => backend),
     audio: audioCtrl,
+    hasSystemMediaSession: platformServices.hasSystemMediaSession,
     audiobook: audiobookSession,
     database: () => db,
     showMediaNotification: () => false,
@@ -262,28 +268,72 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
-  Future<void> pumpPlaylist(WidgetTester tester, String id) async {
+  // 同一个容器跨 pump 保留（收藏状态要能从卡片带到歌单页）。
+  late ProviderContainer container;
+  setUp(() {
+    container = ProviderContainer(
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => app)],
+    );
+  });
+  tearDown(() => container.dispose());
+
+  /// 挂 [home]；[uiScale] 是全局界面大小（与 main.dart 同拓扑：[FushiAppUiScale]
+  /// 挂在 `MaterialApp.builder`，包住 Navigator / Overlay）。
+  Future<void> pumpHome(
+    WidgetTester tester,
+    Widget home, {
+    double uiScale = 1,
+  }) async {
     LocaleSettings.setLocale(AppLocale.en);
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((Ref ref) => app)],
+      UncontrolledProviderScope(
+        container: container,
         child: TranslationProvider(
           child: MaterialApp(
             theme: ThemeData(useMaterial3: true),
             builder: (BuildContext context, Widget? child) => MediaQuery(
               data: MediaQuery.of(context).copyWith(disableAnimations: true),
-              child: child!,
+              child: FushiAppUiScale(scale: uiScale, child: child!),
             ),
-            home: MusicPluginCollectionPage.playlist(
-              manifest: _manifest(),
-              playlist: MusicPluginPlaylist(id: id, title: id),
-            ),
+            home: home,
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
+
+  Future<void> pumpPlaylist(WidgetTester tester, String id) => pumpHome(
+    tester,
+    MusicPluginCollectionPage.playlist(
+      manifest: _manifest(),
+      playlist: MusicPluginPlaylist(id: id, title: id),
+    ),
+  );
+
+  /// 插件条目行（搜索 / 推荐 / 我的歌单共用的 [musicPluginItemTile]）。
+  Widget itemTiles(List<Object> items) => Scaffold(
+    body: Consumer(
+      builder: (BuildContext context, WidgetRef ref, Widget? _) => ListView(
+        children: <Widget>[
+          for (int i = 0; i < items.length; i++)
+            musicPluginItemTile(context, ref, _manifest(), items, i),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> rightClick(WidgetTester tester, Finder target) async {
+    await tester.tap(
+      target,
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Finder menuAction(String id) =>
+      find.byKey(ValueKey<String>('music-menu-action-$id'));
 
   Future<void> openTrackMenu(WidgetTester tester, String id) async {
     await tester.tap(
@@ -354,33 +404,258 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('歌单「更多」：未收藏只给「收藏」，收藏后改成只给「取消收藏」', (WidgetTester tester) async {
+  testWidgets('曲目整行右键弹同一份菜单（下拉，不是居中面板）', (WidgetTester tester) async {
     await pumpPlaylist(tester, _other);
-    final Finder more = find.byKey(
-      const ValueKey<String>('music-plugin-collection-more'),
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-plugin-track-2')),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
     );
-    await tester.tap(more);
     await tester.pumpAndSettle();
-    expect(find.text(t.music_action_uncollect), findsNothing);
-    await tester.tap(find.text(t.music_action_collect));
+    expect(
+      find.byKey(const ValueKey<String>('music-menu-action-dislike')),
+      findsOneWidget,
+    );
+    expect(find.byType(Dialog), findsNothing, reason: '菜单是锚定下拉，不是对话框');
+    await tester.tap(find.text(t.music_action_dislike));
     await tester.pumpAndSettle();
-    expect(app.manager.log, contains('collect:playlist:$_other:true'));
-
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(find.text(t.music_action_collect), findsNothing);
-    expect(find.text(t.music_action_uncollect), findsOneWidget);
+    expect(app.manager.log, contains('trash:2'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('自己的歌单「更多」：只有删除（不出收藏）', (WidgetTester tester) async {
-    await pumpPlaylist(tester, _mine);
-    await tester.tap(
+  testWidgets('歌单「收藏」平铺在按钮行：点一下收藏，再点取消', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _other);
+    expect(
       find.byKey(const ValueKey<String>('music-plugin-collection-more')),
+      findsNothing,
+      reason: '收藏不再收进「更多」',
+    );
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('music-plugin-collection-collect'),
+    );
+    expect(
+      find.descendant(of: toggle, matching: find.text(t.music_action_collect)),
+      findsOneWidget,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(app.manager.log, contains('collect:playlist:$_other:true'));
+    expect(
+      find.descendant(
+        of: toggle,
+        matching: find.text(t.music_action_collected),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(app.manager.log, contains('collect:playlist:$_other:false'));
+    expect(
+      find.descendant(of: toggle, matching: find.text(t.music_action_collect)),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('自己的歌单：按钮行给「删除歌单」，不出收藏', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _mine);
+    expect(
+      find.byKey(const ValueKey<String>('music-plugin-playlist-delete')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-plugin-collection-collect')),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('歌单行右键收藏后再右键变成「取消收藏」，进歌单页按钮也是已收藏', (WidgetTester tester) async {
+    await pumpHome(
+      tester,
+      itemTiles(const <Object>[
+        MusicPluginPlaylist(id: _other, title: 'Other', collected: false),
+      ]),
+    );
+    final Finder row = find.byKey(
+      const ValueKey<String>('music-plugin-playlist-$_other'),
+    );
+    await rightClick(tester, row);
+    expect(menuAction('open'), findsOneWidget);
+    expect(menuAction('collect'), findsOneWidget);
+    expect(menuAction('uncollect'), findsNothing, reason: '快照是未收藏');
+    await tester.tap(menuAction('collect'));
+    await tester.pumpAndSettle();
+    expect(app.manager.log, <String>['collect:playlist:$_other:true']);
+
+    // 条目快照仍是 collected: false；菜单要跟着这次收藏走，不能还给「收藏」。
+    await rightClick(tester, row);
+    expect(menuAction('collect'), findsNothing);
+    expect(menuAction('uncollect'), findsOneWidget);
+    await tester.tap(menuAction('uncollect'));
+    await tester.pumpAndSettle();
+    expect(app.manager.log.last, 'collect:playlist:$_other:false');
+    await rightClick(tester, row);
+    expect(menuAction('collect'), findsOneWidget);
+    expect(menuAction('uncollect'), findsNothing);
+    await tester.tap(menuAction('collect'));
+    await tester.pumpAndSettle();
+
+    // 卡片上收藏过，歌单页（插件给的快照仍是未收藏）的切换按钮也要是已收藏。
+    await pumpPlaylist(tester, _other);
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('music-plugin-collection-collect'),
+        ),
+        matching: find.text(t.music_action_collected),
+      ),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('歌单页按钮收藏后，回到列表右键也是「取消收藏」', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _other);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-plugin-collection-collect')),
     );
     await tester.pumpAndSettle();
-    expect(find.text(t.music_action_delete_playlist), findsOneWidget);
-    expect(find.text(t.music_action_collect), findsNothing);
+    expect(app.manager.log, contains('collect:playlist:$_other:true'));
+    await pumpHome(
+      tester,
+      itemTiles(const <Object>[
+        MusicPluginPlaylist(id: _other, title: 'Other', collected: false),
+      ]),
+    );
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-plugin-playlist-$_other')),
+    );
+    expect(menuAction('collect'), findsNothing);
+    expect(menuAction('uncollect'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('自己的歌单行右键：只有「打开」，不出收藏', (WidgetTester tester) async {
+    await pumpHome(
+      tester,
+      itemTiles(const <Object>[
+        MusicPluginPlaylist(id: _mine, title: 'Mine', editable: true),
+      ]),
+    );
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-plugin-playlist-$_mine')),
+    );
+    expect(menuAction('open'), findsOneWidget);
+    expect(menuAction('collect'), findsNothing);
+    expect(menuAction('uncollect'), findsNothing);
+    await tester.tap(menuAction('open'));
+    await tester.pumpAndSettle();
+    expect(app.manager.log, contains('playlist:$_mine'), reason: '打开 = 进歌单页');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('专辑行右键：收藏未知时两项都给，「去艺人」带艺人名', (WidgetTester tester) async {
+    await pumpHome(
+      tester,
+      itemTiles(const <Object>[
+        MusicPluginAlbum(
+          id: 'al9',
+          title: 'Album 9',
+          artists: <MusicPluginArtistRef>[
+            MusicPluginArtistRef(id: 'ar1', name: 'Singer'),
+          ],
+        ),
+      ]),
+    );
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-plugin-album-al9')),
+    );
+    expect(menuAction('collect'), findsOneWidget);
+    expect(menuAction('uncollect'), findsOneWidget);
+    expect(
+      find.descendant(of: menuAction('artist'), matching: find.text('Singer')),
+      findsOneWidget,
+    );
+    await tester.tap(menuAction('collect'));
+    await tester.pumpAndSettle();
+    expect(app.manager.log, <String>['collect:album:al9:true']);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('界面大小 ≠ 100% 时右键菜单贴着指针弹（锚点经 Overlay 换算）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await pumpHome(
+      tester,
+      itemTiles(<Object>[
+        for (int i = 0; i < 8; i++)
+          MusicPluginPlaylist(id: 'p$i', title: 'P$i'),
+      ]),
+      uiScale: 1.5,
+    );
+    // 屏幕中部的一行：离原点够远，漏了换算会差出 (scale - 1) 倍坐标（几百像素）。
+    final Offset click = tester.getCenter(
+      find.byKey(const ValueKey<String>('music-plugin-playlist-p3')),
+    );
+    await tester.tapAt(
+      click,
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final Rect item = tester.getRect(menuAction('open'));
+    // 画布右下都有余量，菜单左上角就落在指针处；第一项只差菜单的内边距。
+    // 漏了换算会落在「指针 × 1.5」，差出几百像素。
+    expect(
+      (item.topLeft - click).distance,
+      lessThan(40),
+      reason: 'click=$click item=$item',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；不加行尾「⋯」', (WidgetTester tester) async {
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'lt1',
+      path: '/m/local.flac',
+      title: 'Local One',
+      isLossless: true,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-track-menu-lt1')),
+      findsNothing,
+    );
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-lt1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('detail'), findsOneWidget);
+    await tester.tap(menuAction('play'));
+    await tester.pumpAndSettle();
+    expect(app.musicSession.engine.current?.title, 'Local One');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

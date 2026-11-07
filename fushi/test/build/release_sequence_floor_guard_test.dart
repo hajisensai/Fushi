@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：发布序号必须走 `tool/release_sequence.sh`，且地板高过所有历史发布序号。
 ///

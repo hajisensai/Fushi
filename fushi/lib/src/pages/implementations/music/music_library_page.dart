@@ -10,10 +10,15 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_corpus/fushi_corpus.dart'
+    show CorpusHit, CorpusSourceKind;
 import 'package:fushi_music/fushi_music.dart'
     show MusicPluginCapability, MusicPluginManifest, MusicPluginSearchType;
 
+import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/mining/mined_origin_navigation.dart'
+    show playMusicOriginClip;
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
@@ -1445,6 +1450,27 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
     );
   }
 
+  /// 曲库歌词命中（Rust 语料索引的音乐文档），只留仍在曲库里的曲目（语料对账是异步的，
+  /// 刚删的曲目可能还在索引里）。
+  Future<List<CorpusHit>> _searchLyrics(
+    String query,
+    MusicLibrarySnapshot snapshot,
+  ) async {
+    final List<CorpusHit> hits = await LibraryCorpusService.instance.searchText(
+      query,
+      kind: CorpusSourceKind.music,
+    );
+    return musicLyricHitsInLibrary(hits, snapshot.tracks);
+  }
+
+  Future<void> _openLyricHit(CorpusHit hit) async {
+    await playMusicOriginClip(
+      app: ProviderScope.containerOf(context, listen: false).read(appProvider),
+      trackUid: hit.key,
+      positionMs: hit.pos,
+    );
+  }
+
   Widget _body(BuildContext context, _MusicSearchInputs inputs) {
     final String query = _query;
     if (query.trim().isEmpty) {
@@ -1463,9 +1489,14 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
       inputs.searchPlugins,
       inputs.searchServers,
     );
+    final bool includesLocal = _musicSearchIncludesLocal(effective);
     return MusicSearchOverview(
       key: const ValueKey<String>('music-search-page-overview'),
       query: query,
+      searchLyrics: includesLocal
+          ? (String q) => _searchLyrics(q, inputs.snapshot)
+          : null,
+      onLyricHit: _openLyricHit,
       sources: _musicFilteredSources(effective, inputs.searchPlugins),
       servers: _musicFilteredServers(effective, inputs.searchServers),
       serverSearch: _serverSearch,

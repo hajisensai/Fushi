@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-271 文案守卫：画质增强档位说明不得让用户误以为「只能用于动画」。
 ///

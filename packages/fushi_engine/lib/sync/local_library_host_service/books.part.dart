@@ -37,6 +37,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 有声书（有 Audiobook 无 SrtBook）会亮徽章 + 可点下载，但 exportAudiobook
     // 抛 StateError → 服务端 404。
     final Set<String> audiobookKeys = await _srtBackedAudiobookKeys();
+    final Set<String> subtitleBodyKeys = await _standaloneSubtitleBodyKeys();
     final Map<String, List<String>> tagsByBookKey = await _tagNamesByBookKey();
     // tags 稳健档：host 为每本书带上标签 LWW 时钟（名→加入戳）+ 移除墓碑，供 client
     // mergeRemoteBookTags 传播 host 侧的删除/改名、防复活（旧 client 忽略这些键、按
@@ -123,6 +124,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         hasEmbeddedCover: coverPath != null,
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
+        isSubtitleBookBody: subtitleBodyKeys.contains(r.bookKey),
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],
         tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
         tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},

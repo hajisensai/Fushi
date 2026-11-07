@@ -1,6 +1,7 @@
 /// 歌词候选的评分与查询词构造（纯函数，不带任何平台客户端 / HTTP）。
 ///
-/// 宿主统一裁决各来源（插件 / 非官方来源）返回的候选：标题 / 艺人相似度 + 宽松时长。
+/// 宿主统一裁决各来源（插件 / 非官方来源）返回的候选：标题 / 艺人相似度 + 宽松时长，
+/// 候选带歌词正文时再看书写系统是否与曲目元数据一致（原文版 vs 罗马音 / 翻译版）。
 library;
 
 /// 一条歌词搜索候选。[ref] 是来源自己的取词凭据。
@@ -11,6 +12,7 @@ class LyricsCandidate {
     required this.artist,
     this.durationMs,
     this.ref = const <String, String>{},
+    this.lyricsText,
   });
 
   final String providerId;
@@ -18,7 +20,242 @@ class LyricsCandidate {
   final String artist;
   final int? durationMs;
   final Map<String, String> ref;
+
+  /// 候选自带的歌词正文（LRCLIB 搜索结果带；插件搜索结果只有元数据，为 null）。
+  /// 非 null 时 [pickBestLyricsCandidate] 按 [lyricsScriptFit] 区分原文版与罗马音 / 翻译版。
+  final String? lyricsText;
 }
+
+/// 书写系统（按字符所属文字统计，不是语言识别）。
+enum LyricsScript {
+  /// 有假名：日文。
+  kana,
+
+  /// 只有汉字：中文（或纯汉字标题的日文）。
+  han,
+
+  /// 谚文：韩文。
+  hangul,
+
+  /// 拉丁字母：英文 / 罗马音 / 拼音。
+  latin,
+}
+
+/// 一段文字里各文字的「音节级单位」数（标点、数字、空白、LRC 时间戳都不计）。
+///
+/// 假名 / 汉字 / 谚文一个字就是一个音节，按字计；拉丁字母按**词**计（连续的拉丁字母
+/// 算一个，词内撇号不断词）——按字母计会让夹英文的原文版被高估成拉丁字母：一行日文
+/// （约 9 字）配两行英文（约 46 个字母、9 个词）按字母只有 9/55，按词是 9/18。
+class LyricsScriptProfile {
+  const LyricsScriptProfile({
+    required this.kana,
+    required this.han,
+    required this.hangul,
+    required this.latin,
+  });
+
+  final int kana;
+  final int han;
+  final int hangul;
+  final int latin;
+
+  /// 计入统计的单位总数（假名 / 汉字 / 谚文按字，拉丁字母按词）。
+  int get letters => kana + han + hangul + latin;
+
+  double _ratio(int n) => letters == 0 ? 0 : n / letters;
+
+  double get kanaRatio => _ratio(kana);
+  double get hanRatio => _ratio(han);
+  double get hangulRatio => _ratio(hangul);
+  double get latinRatio => _ratio(latin);
+
+  /// 主导文字；字母太少（< [kLyricsScriptMinLetters]）或混得分不出来时为 null。
+  LyricsScript? get dominant {
+    if (letters < kLyricsScriptMinLetters) return null;
+    if (kana > 0 && _ratio(kana + han) >= kLyricsScriptMismatchFit) {
+      return LyricsScript.kana;
+    }
+    if (_ratio(hangul) >= kLyricsScriptMismatchFit) return LyricsScript.hangul;
+    if (_ratio(han) >= kLyricsScriptMismatchFit) return LyricsScript.han;
+    if (latinRatio >= 0.5) return LyricsScript.latin;
+    return null;
+  }
+}
+
+/// 判书写系统至少要这么多个单位（[LyricsScriptProfile.letters]；太短的文本不下结论）。
+const int kLyricsScriptMinLetters = 8;
+
+/// [lyricsScriptFit] 低于它即「明显不是这种文字」（例如期望日文却几乎全是拉丁字母）。
+const double kLyricsScriptMismatchFit = 0.2;
+
+/// 统计 [text] 里各文字的单位数（见 [LyricsScriptProfile]：拉丁字母按词）。
+LyricsScriptProfile lyricsScriptProfile(String text) {
+  int kana = 0;
+  int han = 0;
+  int hangul = 0;
+  int latin = 0;
+  bool inLatinWord = false;
+  for (final int r in text.runes) {
+    // 词内撇号（don't / rock'n'roll）不断词。
+    if (inLatinWord && (r == 0x27 || r == 0x2019)) continue;
+    bool isLatin = false;
+    if ((r >= 0x3041 && r <= 0x309F) ||
+        (r >= 0x30A1 && r <= 0x30FA) ||
+        (r >= 0x30FD && r <= 0x30FF) ||
+        (r >= 0x31F0 && r <= 0x31FF) ||
+        (r >= 0xFF66 && r <= 0xFF9D)) {
+      kana++;
+    } else if ((r >= 0x4E00 && r <= 0x9FFF) ||
+        (r >= 0x3400 && r <= 0x4DBF) ||
+        (r >= 0xF900 && r <= 0xFAFF) ||
+        (r >= 0x20000 && r <= 0x3134F) ||
+        r == 0x3005) {
+      han++;
+    } else if ((r >= 0xAC00 && r <= 0xD7A3) ||
+        (r >= 0x1100 && r <= 0x11FF) ||
+        (r >= 0x3130 && r <= 0x318F)) {
+      hangul++;
+    } else if ((r >= 0x41 && r <= 0x5A) ||
+        (r >= 0x61 && r <= 0x7A) ||
+        (r >= 0xC0 && r <= 0x24F && r != 0xD7 && r != 0xF7) ||
+        (r >= 0x1E00 && r <= 0x1EFF) ||
+        (r >= 0xFF21 && r <= 0xFF3A) ||
+        (r >= 0xFF41 && r <= 0xFF5A)) {
+      isLatin = true;
+    }
+    if (isLatin && !inLatinWord) latin++;
+    inLatinWord = isLatin;
+  }
+  return LyricsScriptProfile(
+    kana: kana,
+    han: han,
+    hangul: hangul,
+    latin: latin,
+  );
+}
+
+/// 由曲目元数据推断出的歌词原文书写系统，以及这个推断有多可靠（[fromTitle]）。
+class LyricsScriptExpectation {
+  const LyricsScriptExpectation(this.script, {required this.fromTitle});
+
+  final LyricsScript script;
+
+  /// true：标题（去掉括注后）本身就有假名 / 谚文 / 汉字——标题是歌词语言最直接的信号，
+  /// 正文是别的文字（罗马音、英文翻译、中文翻译）都算对不上。
+  ///
+  /// false：标题全是拉丁字母，只有艺人 / 专辑带假名 / 谚文 / 汉字。英文原文的歌
+  /// （『桜高軽音部 - Don't say "lazy"』、中文歌手唱的英文歌）与英文标题的日文歌
+  /// （米津玄師『Lemon』）靠元数据分不开，所以只把「正文是罗马音 / 拼音」
+  /// （[lyricsLooksRomanized]）算对不上；英文正文照常采用，不会被换成翻译版。
+  final bool fromTitle;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LyricsScriptExpectation &&
+      other.script == script &&
+      other.fromTitle == fromTitle;
+
+  @override
+  int get hashCode => Object.hash(script, fromTitle);
+
+  @override
+  String toString() =>
+      'LyricsScriptExpectation($script, fromTitle: $fromTitle)';
+}
+
+/// 由曲目元数据（标题 / 艺人 / 专辑）推断歌词原文应有的书写系统：出现假名即日文，
+/// 否则谚文即韩文，否则汉字即汉字系。标题（去掉括注）有这些文字时是强推断
+/// （[LyricsScriptExpectation.fromTitle]），只有艺人 / 专辑有时是弱推断；元数据全是
+/// 拉丁字母时不推断（返回 null）。
+LyricsScriptExpectation? expectedLyricsScript({
+  required String title,
+  String? artist,
+  String? album,
+}) {
+  final String bare = _stripBrackets(title);
+  final LyricsScriptProfile t = lyricsScriptProfile(
+    bare.isEmpty ? title : bare,
+  );
+  final bool fromTitle = t.kana + t.han + t.hangul > 0;
+  // 标题有汉字时艺人 / 专辑的假名仍能把它细化成日文（『千本桜』/ 黒うさP）；标题有假名 /
+  // 谚文时标题自己说了算。
+  final LyricsScriptProfile p = fromTitle && (t.kana > 0 || t.hangul > 0)
+      ? t
+      : lyricsScriptProfile('$title ${artist ?? ''} ${album ?? ''}');
+  final LyricsScript? script = p.kana > 0
+      ? LyricsScript.kana
+      : p.hangul > 0
+      ? LyricsScript.hangul
+      : p.han > 0
+      ? LyricsScript.han
+      : null;
+  return script == null
+      ? null
+      : LyricsScriptExpectation(script, fromTitle: fromTitle);
+}
+
+/// 一个拉丁字母词能否整个拆成日文罗马字 / 汉语拼音式的音节（辅音 + 元音、拨音 n、
+/// 促音双写、`tch`、`mb` / `mp`）。英文词大多拆不开（`the` / `love` / `night`）。
+final RegExp _romanizedWord = RegExp(
+  r'^(?:'
+  r'(?:[kgsztdnhbpmr]y|sh|ch|ts|dz|[kgsztdnhbpmrfjvwy])?[aeiouāīūēōâîûêô]'
+  r'|([kgstpdbzfjhc])(?=\1)'
+  r'|t(?=ch)'
+  r'|m(?=[bpm])'
+  r'|n'
+  r')+$',
+);
+
+/// [lyricsLooksRomanized] 的门槛：拉丁字母词里能拆成罗马字音节的比例。实测整首罗马音
+/// 1.0、罗马音夹两句英文约 0.84；英文歌词 0.3–0.45，只用最简单短词的英文也只到 0.67。
+const double kLyricsRomanizedWordRatio = 0.8;
+
+/// [text] 的拉丁字母部分是罗马音 / 拼音（不是英文等原文）：拉丁字母词够多
+/// （≥ [kLyricsScriptMinLetters]）且至少 [kLyricsRomanizedWordRatio] 能拆成罗马字音节。
+bool lyricsLooksRomanized(String text) {
+  int words = 0;
+  int romanized = 0;
+  for (final Match m in RegExp(
+    r'[a-zāīūēōâîûêô]+',
+  ).allMatches(text.toLowerCase())) {
+    words++;
+    if (_romanizedWord.hasMatch(m.group(0)!)) romanized++;
+  }
+  return words >= kLyricsScriptMinLetters &&
+      romanized / words >= kLyricsRomanizedWordRatio;
+}
+
+/// 0..1：[text] 有多大比例是 [expected] 这种文字。日文要求真的有假名（只有汉字的
+/// 多半是中文翻译版）；汉字系把假名也算进去（纯汉字标题的日文歌）。
+double lyricsScriptFit(LyricsScript expected, LyricsScriptProfile p) {
+  if (p.letters == 0) return 0;
+  switch (expected) {
+    case LyricsScript.kana:
+      return p.kana == 0 ? 0 : (p.kana + p.han) / p.letters;
+    case LyricsScript.han:
+      return (p.han + p.kana) / p.letters;
+    case LyricsScript.hangul:
+      return (p.hangul + p.han) / p.letters;
+    case LyricsScript.latin:
+      return p.latinRatio;
+  }
+}
+
+/// [text] 明显不是 [expected] 期望的文字（字母够多且 [lyricsScriptFit] 低于阈值）。
+/// 弱推断（[LyricsScriptExpectation.fromTitle] 为 false）只在正文是罗马音 / 拼音
+/// （[lyricsLooksRomanized]）时才算对不上。[expected] 为 null（元数据推断不出）时永远 false。
+bool lyricsScriptMismatches(LyricsScriptExpectation? expected, String text) {
+  if (expected == null) return false;
+  final LyricsScriptProfile p = lyricsScriptProfile(text);
+  if (p.letters < kLyricsScriptMinLetters) return false;
+  if (lyricsScriptFit(expected.script, p) >= kLyricsScriptMismatchFit) {
+    return false;
+  }
+  return expected.fromTitle || lyricsLooksRomanized(text);
+}
+
+/// 书写系统一致时的加分（同名同艺人的候选之间由它分出原文版；名字差得多时盖不过名字分）。
+const double kLyricsScriptMatchWeight = 0.5;
 
 /// 时长容差（各家同一首的版本 / 剪辑差几秒很常见）。
 const int kOnlineLyricsDurationToleranceMs = 5000;
@@ -82,10 +319,15 @@ List<String> lyricsQueries(String title, String? artist, {int max = 4}) {
 
 /// 依次用 [lyricsQueries] 的查询词调 [run]，累计候选（按 `ref|title|artist` 去重），
 /// 一旦 [pickBestLyricsCandidate] 能挑出像样的就停。
+///
+/// [expectedScript] 非 null 且 [requireScriptMatch] 为 true 时，只有书写系统对得上的
+/// 候选才算「像样」（见 [pickBestLyricsCandidate]）。
 Future<List<LyricsCandidate>> searchWithFallbackQueries({
   required String title,
   String? artist,
   int? durationMs,
+  LyricsScript? expectedScript,
+  bool requireScriptMatch = false,
   required Future<List<LyricsCandidate>> Function(String query) run,
 }) async {
   final List<LyricsCandidate> all = <LyricsCandidate>[];
@@ -99,6 +341,8 @@ Future<List<LyricsCandidate>> searchWithFallbackQueries({
           title: title,
           artist: artist,
           durationMs: durationMs,
+          expectedScript: expectedScript,
+          requireScriptMatch: requireScriptMatch,
         ) !=
         null) {
       break;
@@ -139,20 +383,25 @@ double _titleScore(String trackTitle, String hitTitle) {
   return best;
 }
 
-/// 从候选里挑最像的一条；全都不像（标题相似度 < 0.6，或艺人已知却对不上，
-/// 或时长两侧已知且差超过 [kOnlineLyricsDurationToleranceMs]）返回 null。
-/// 得分 `标题×2 + 艺人`；同分时时长差小者优先，再保持来源给出的顺序。
-LyricsCandidate? pickBestLyricsCandidate(
+/// 候选按像不像排序（最像的在前），全都不像的（标题相似度 < 0.6，或艺人已知却对不上，
+/// 或时长两侧已知且差超过 [kOnlineLyricsDurationToleranceMs]）剔除。
+/// 得分 `标题×2 + 艺人`，[expectedScript] 已知且候选带歌词正文时，书写系统对得上的再加
+/// [kLyricsScriptMatchWeight]；同分时时长差小者优先，再保持来源给出的顺序。
+/// [requireScriptMatch] 为 true 时剔除正文明显不是 [expectedScript] 的候选
+/// （[lyricsScriptMismatches]）。
+List<LyricsCandidate> rankLyricsCandidates(
   List<LyricsCandidate> hits, {
   required String title,
   String? artist,
   int? durationMs,
+  LyricsScript? expectedScript,
+  bool requireScriptMatch = false,
 }) {
   final String a = _stripBrackets(artist ?? '');
-  LyricsCandidate? best;
-  double bestScore = 0;
-  int bestDiff = 1 << 30;
-  for (final LyricsCandidate h in hits) {
+  final List<({LyricsCandidate hit, double score, int diff, int order})> kept =
+      <({LyricsCandidate hit, double score, int diff, int order})>[];
+  for (int i = 0; i < hits.length; i++) {
+    final LyricsCandidate h = hits[i];
     final double ts = _titleScore(title, h.title);
     if (ts < 0.6) continue;
     double artistScore = 0.5;
@@ -174,14 +423,56 @@ LyricsCandidate? pickBestLyricsCandidate(
       diff = (h.durationMs! - durationMs).abs();
       if (diff > kOnlineLyricsDurationToleranceMs) continue;
     }
-    final double score = ts * 2 + artistScore;
-    if (best == null ||
-        score > bestScore + 1e-9 ||
-        ((score - bestScore).abs() <= 1e-9 && diff < bestDiff)) {
-      best = h;
-      bestScore = score;
-      bestDiff = diff;
+    // 只分「对得上 / 对不上」两档：吻合度的细小差别（多两句英文副歌）不该盖过时长裁决。
+    double scriptScore = 0;
+    final String? text = h.lyricsText;
+    if (expectedScript != null && text != null) {
+      final LyricsScriptProfile p = lyricsScriptProfile(text);
+      if (p.letters >= kLyricsScriptMinLetters) {
+        final bool fits =
+            lyricsScriptFit(expectedScript, p) >= kLyricsScriptMismatchFit;
+        if (!fits && requireScriptMatch) continue;
+        if (fits) scriptScore = kLyricsScriptMatchWeight;
+      }
     }
+    kept.add((
+      hit: h,
+      score: ts * 2 + artistScore + scriptScore,
+      diff: diff,
+      order: i,
+    ));
   }
-  return best;
+  kept.sort((
+    ({LyricsCandidate hit, double score, int diff, int order}) x,
+    ({LyricsCandidate hit, double score, int diff, int order}) y,
+  ) {
+    if ((x.score - y.score).abs() > 1e-9) return y.score.compareTo(x.score);
+    if (x.diff != y.diff) return x.diff.compareTo(y.diff);
+    return x.order.compareTo(y.order);
+  });
+  return <LyricsCandidate>[
+    for (final ({LyricsCandidate hit, double score, int diff, int order}) k
+        in kept)
+      k.hit,
+  ];
+}
+
+/// [rankLyricsCandidates] 的第一名；全都不像返回 null。
+LyricsCandidate? pickBestLyricsCandidate(
+  List<LyricsCandidate> hits, {
+  required String title,
+  String? artist,
+  int? durationMs,
+  LyricsScript? expectedScript,
+  bool requireScriptMatch = false,
+}) {
+  final List<LyricsCandidate> ranked = rankLyricsCandidates(
+    hits,
+    title: title,
+    artist: artist,
+    durationMs: durationMs,
+    expectedScript: expectedScript,
+    requireScriptMatch: requireScriptMatch,
+  );
+  return ranked.isEmpty ? null : ranked.first;
 }

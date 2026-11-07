@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2901：截屏识字的选取层点一个字就被拆掉（`onSelectionTap` 末尾 `finishFlow()`），
 /// 查下一个词得重新截屏、重新过授权框；选取层本身整屏压暗 + 每行实线框，满屏蓝框

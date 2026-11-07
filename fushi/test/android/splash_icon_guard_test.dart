@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:image/image.dart' as img;
 
 /// 防回归守卫（TODO-886）：Android 12+ 系统 splash 前景必须用专用 splash 图标

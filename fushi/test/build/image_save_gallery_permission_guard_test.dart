@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 长按图片「保存图片」写系统相册（gal）的平台契约：缺了这些声明，iOS 第一次
 /// 写相册直接 SIGABRT（同 BUG-531 的隐私用途串），Android 10 及以下写公共

@@ -197,9 +197,11 @@ void main() {
         reason: '恢复后必须清标记，否则下次关任意子层都会误续播',
       );
       expect(
-        pop.contains('_controller?.play()'),
+        pop.contains('_controller?.resumePlayback()'),
         isTrue,
-        reason: '整栈关闭后必须恢复播放（BUG-072 核心）',
+        reason:
+            '整栈关闭后必须恢复播放（BUG-072 核心）；走自动续播入口，播完时不把'
+            '视频从头重播（ji9GSMzD4E）',
       );
     });
   });

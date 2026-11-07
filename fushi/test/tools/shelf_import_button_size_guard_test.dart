@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Guards the BUG-735 fix: the shelf "添加" (book import) header button must
 /// match the size of its sibling header buttons (管理来源 / 合集 / 统计, which

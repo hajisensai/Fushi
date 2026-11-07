@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi_music/fushi_music.dart'
+    show MusicTagField, MusicTagFieldsIo, MusicTagWriteException;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 // TODO-757：把制卡媒体压缩档位 re-export 给只 import tts_channel 的调用方
 // （阅读器句子音频走 TtsChannel 桌面回退，需要选档但没直接 import clipper）。
@@ -425,12 +427,22 @@ class TtsChannel {
   }
 
   /// TODO-1045：读音频容器（M4B/M4A/MP3…）的 title/artist/album tag，供导入对话框
-  /// 仅填空自动回填标题/作者。**全平台统一走 ffprobe / ffmpeg-kit**——不经 Android
-  /// 原生 `TtsChannelHandler`（P1 无原生实现）：桌面 CliFfmpegBackend 起 ffprobe、
-  /// 移动端 KitFfmpegBackend 走 `FFprobeKit.executeWithArguments`。缺 ffprobe / 无 tag
-  /// 时返回 null（[extractAudioMetadataViaFfprobe] 内部吞异常降级），调用方保留文件名
-  /// 兜底，绝不崩。
-  Future<AudioMetadata?> extractAudioMetadata({required String audioPath}) {
+  /// 仅填空自动回填标题/作者。
+  ///
+  /// 先走音乐胖核心的标签读取（native/fushi_music `ffm_tags_read_fields`，lofty）：它和
+  /// 曲库扫描共用同一套 ID3 Latin-1 帧本地编码探测（`legacy_text.rs`，#SIZTG3MNjt），
+  /// 日文旧编码 MP3 的作者栏不再是 `Çà¤¤Í«` 乱码。ffprobe 只按规范把 ISO-8859-1 帧逐
+  /// 字节转成 Latin-1，没有这一层。lofty 认不出的容器（MKA / WMA / CAF …）读出
+  /// [MusicTagWriteException]，才交给 ffprobe / ffmpeg-kit（桌面 CliFfmpegBackend 起
+  /// ffprobe、移动端 KitFfmpegBackend 走 `FFprobeKit`）。缺 ffprobe / 无 tag 时返回
+  /// null，调用方保留文件名兜底。
+  Future<AudioMetadata?> extractAudioMetadata({
+    required String audioPath,
+  }) async {
+    final AudioMetadata? tagged = await readAudioMetadataViaMusicCore(
+      audioPath,
+    );
+    if (tagged != null) return tagged.isEmpty ? null : tagged;
     return extractAudioMetadataViaFfprobe(inputPath: audioPath);
   }
 
@@ -604,4 +616,29 @@ class TtsChannel {
       debugPrint('[Fushi] TTS stop failed: $e');
     }
   }
+}
+
+/// 用音乐胖核心读 [audioPath] 的主标签（后台 isolate：FFI 是同步文件 IO）。lofty 读不了
+/// 这个容器时返回 null（交给 ffprobe）；读得了但没有可用字段返回空的 [AudioMetadata]。
+Future<AudioMetadata?> readAudioMetadataViaMusicCore(String audioPath) async {
+  if (!File(audioPath).existsSync()) return null;
+  final Map<MusicTagField, String> fields;
+  try {
+    fields = await Isolate.run(
+      () => MusicTagFieldsIo.instance.read(audioPath),
+      debugName: 'audio-tag-read',
+    );
+  } on MusicTagWriteException {
+    return null;
+  }
+  String? pick(MusicTagField f) {
+    final String? v = fields[f]?.trim();
+    return v == null || v.isEmpty ? null : v;
+  }
+
+  return AudioMetadata(
+    title: pick(MusicTagField.title),
+    author: pick(MusicTagField.artist),
+    album: pick(MusicTagField.album),
+  );
 }

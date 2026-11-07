@@ -464,7 +464,8 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 下载页「手动添加任务」的 .torrent 元数据（随任务持久化）。体量很小，但必须
         // 归进某个类目——否则存储页总量对不上白名单（守卫逼着新目录选类目）。
         'manual_torrents',
-        // 音频 CD 抓轨产物（BUG-3312）：按「无画面的视频」导入视频库的本地媒体。
+        // 音频 CD 抓轨产物（BUG-3312）：抓好的 FLAC，「仅此一次」导入音乐库
+        // （BUG-4175 前按「无画面的视频」进视频库）；类目沿用，不挪。
         'audio_cd',
       ],
       StorageCategoryId.covers: <String>[

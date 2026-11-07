@@ -1,0 +1,19 @@
+## BUG-4176 · 同一个音频文件在曲库里出现两次（路径拼法随扫描根而变）
+- **报告**：2026-11-06（PR #2977 回报，反馈 QAondMh4M5：视频来源里的纯音频自动登记成音乐来源后，先单独导入、又被上层来源扫到的同一个文件在曲库里有两行）
+- **真实性**：✅ 真 bug，#2977 之前就有（嵌套的手动音乐来源同样会出重复）。曲目 uid = 路径原文 + CUE 起点 + 音频指纹（`native/fushi_music/src/uid.rs` `track_uid`）。来源根经 `normalizeSourceRootPath` 统一成正斜杠（`D:/Music`），而 Rust 扫描器展开目录时用 `PathBuf::join` 拼平台分隔符（`scan.rs` `expand_dir` 的 `entry.path()`），`path_str` 原样交给 `track_uid`：同一个文件从「所在目录」「上层递归目录」「单文件」三种根进来分别拼成 `D:/Music/Album\x.flac`、`D:/Music\Album\x.flac`、`D:/Music/Album\x.flac`，uid 不同、行就不同。#2977 在单文件分支（`Scanner::open` 里 `dir.join(name)` 的特例）只对齐了「根正好是直接父目录」这一种。专辑 uid 在没有专辑艺人时含目录原文，同理会分裂。
+- **[x] ① 已修复** —
+  - Rust：`scan.rs` 新增 `canonical_track_path`（只做词法处理：平台分隔符、合并重复分隔符、去 `.`、Windows 盘符大写；不跟随符号链接）。`Scanner::open` 先把根规范化，目录展开与单文件分支都从规范化的根拼路径，删掉单文件拼接特例；`set_known` 把调用方给的库内路径（可能是旧写法）先规范化再比，「文件没动过」照常命中。uid 派生规则（`TRACK_NS` v1）不变，FFI 签名不变。
+  - Dart / Drift（schema v145）：`music_tracks.path_key`（`musicTrackPathKey` = 宿主平台 `p.canonicalize`，全仓比较曲目路径只用这一个函数）。`writeMusicScanBatch` 落库前按 路径键 + CUE 起点 + 音频指纹 认出库里已有的同一个文件，沿用它的 uid 与专辑、路径改写成新拼法，返回改写表；`MusicLibraryScanner.scanSource` 按实际落库 uid 记「本次见到」，「没变」记录按路径键查（`packages/fushi_core/lib/src/database/database_music_identity.part.dart`、`fushi/lib/src/media/music/music_library_scanner.dart`）。存量 Windows 曲目因此不会因为 Rust 改拼法整体换 uid。
+  - 存量重复行：v145 迁移回填 `path_key` 后跑 `mergeDuplicateMusicTracks`（幂等），胜者 = 在库 > 挂在仍存在的来源下 > 最早入库；`mergeMusicTrackInto` 把 `kMusicTrackUidReferences` 里每一列（署名、歌词 LWW、MV、歌单条目、播放流、刮削结论、字段锁、主题曲片段、专辑封面曲目、音乐制卡句）与收藏句偏好改指胜者，删败者行，败者 → 胜者记进设备本地的 `music_track_uid_aliases`。
+  - 跨设备：歌单 / 歌词 / 播放流随「音乐」备份类别走，别的设备或旧备份里仍是败者 uid 的行合入后由 `applyMusicTrackUidAliases` 改指胜者（合并导入收尾、覆盖恢复回灌设备本地表之后各调一次）。不写同步墓碑。
+  - `DataRootMigrator._rebaseMusicTracks` 改写路径时同步改 `path_key`。
+- **[x] ② 已加自动化测试** —
+  - `native/fushi_music/tests/scan.rs`：`one_file_has_one_path_and_uid_whatever_the_root`、`known_files_in_legacy_spelling_still_count_as_unchanged`（改前两条都红）；`src/scan.rs` 单测锁 Windows / POSIX 规范化。
+  - `fushi/test/database/migration_v145_music_track_identity_test.dart`：`musicTrackPathKey` 两种平台口径；v144 → v145 合并重复行（歌单去重、歌词 LWW、播放流去重、只改音乐制卡句、收藏句改指、别名、二次运行不变）；扫描落库沿用旧 uid / 指纹不同不并；`releaseMusicTracksOfSource`；守卫：schema 里每一列 `*track_uid` 都在 `kMusicTrackUidReferences`。
+  - `fushi/test/media/music/music_library_scanner_test.dart`：库里是旧拼法，Rust 报统一拼法的「没变」不被误删，重解析沿用旧 uid。
+  - `fushi/test/sync/backup_music_category_test.dart`：合并导入后按别名改指。
+  - `fushi/test/storage/data_root_migrator_path_gaps_test.dart`：换数据根后 `path_key` 跟着改。
+- **备注**：
+  - 目录名大小写不同（`d:/music` 与 `D:/Music`）Rust 不统一（`fs::canonicalize` 会跟随 junction、改用户看到的路径），由 Dart 路径键（Windows 下转小写）在落库时并成一行。
+  - 两个来源重叠时曲目的 `source_id` 仍会在两次扫描之间换（只记最后扫到它的来源），重叠部分每次重新解析标签；移除来源时 `releaseMusicTracksOfSource` 把仍被别的来源覆盖的曲目改挂过去，不会误删。
+  - 收藏句以外，Anki 卡片里存的出处链接（`card_source_link.dart`）在 Anki 侧，不改写；跳回时找不到败者 uid 的曲目。

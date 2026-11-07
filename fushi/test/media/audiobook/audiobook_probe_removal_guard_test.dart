@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-914：移除有声书按句同步/高亮热路径的发布版诊断噪声后，锁住这两处
 /// 打点不再回归。测试从 `fushi/` 工作目录运行：

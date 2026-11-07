@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3492：在线视频后台制卡时弹窗当场只拿到「已加入」（`MinePopupResult.queued`），
 /// 卡真正进 Anki 是在后台任务落地那一刻。落地后必须经 [MinedStateSignal] 通知正在

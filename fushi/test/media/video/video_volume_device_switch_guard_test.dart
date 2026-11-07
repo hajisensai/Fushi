@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-739）：**反复切换音频输出设备后视频音量不衰减的根因不变量**。
 ///

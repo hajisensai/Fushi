@@ -2,7 +2,7 @@
 // 发现页 AniList 适配器同口径（providerId 'anilist' + mediaId = AniList id），
 // 否则详情页的订阅/在库状态匹配与 loadDetails 补全全部失效——那正是旧日历
 // 「根本下载不出来」的根源形态。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-677 / board 1360 守卫：安卓「导入选字幕文件」回退到系统文件选择器。
 ///

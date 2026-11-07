@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('R2 镜像先清理、再按 8GB 安全线上传，失败时回滚半成品', () {

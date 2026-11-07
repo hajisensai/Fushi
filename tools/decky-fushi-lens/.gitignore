@@ -1,0 +1,6 @@
+web/popup/
+.dev/
+node_modules/
+dist/
+out/
+__pycache__/

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('iOS declares Fushi and Anki URL schemes for AnkiMobile callbacks', () {

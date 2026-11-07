@@ -636,15 +636,23 @@ List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) => <AnkiSectionRow>[
 
 /// 「发送与待发卡片」分组里此刻出现的行。待发队列不受「Anki 已配置」门控——恰恰
 /// 是连不上 Anki 的时候卡会攒在这里；目标为 Fushi 复习时它在「Fushi 复习」分组末尾。
+///
+/// 「待发卡片」行：批量制卡与「连不上时暂存」都关着（默认）时新卡不会进队列，空队列
+/// 不入列。由这里决定、行自己不缩成零尺寸——否则分段分组把看不见的空行当组尾，
+/// 真正的末行没有组尾圆角（#ZWr6B6u_RM）。
 @visibleForTesting
-List<AnkiSectionRow> ankiDeliveryRowsFor(SettingsContext c) => _toReview(c)
-    ? const <AnkiSectionRow>[]
-    : const <AnkiSectionRow>[
-        AnkiSectionRow.batchMining,
-        AnkiSectionRow.queueUndelivered,
-        AnkiSectionRow.pendingLanding,
-        AnkiSectionRow.pendingMines,
-      ];
+List<AnkiSectionRow> ankiDeliveryRowsFor(SettingsContext c) {
+  if (_toReview(c)) return const <AnkiSectionRow>[];
+  final AnkiUiState s = c.ref.watch(ankiViewModelProvider);
+  final bool queueing =
+      s.settings.batchMiningEnabled || s.settings.queueUndeliveredMinesEnabled;
+  return <AnkiSectionRow>[
+    AnkiSectionRow.batchMining,
+    AnkiSectionRow.queueUndelivered,
+    AnkiSectionRow.pendingLanding,
+    if (queueing || pendingMineCountOf(c.ref) > 0) AnkiSectionRow.pendingMines,
+  ];
+}
 
 /// 一组 [AnkiSectionRow] 渲染成分组里的独立行（每行一个 [AnkiSettingsBody]）。
 SettingsCustomItem _rowsItem(

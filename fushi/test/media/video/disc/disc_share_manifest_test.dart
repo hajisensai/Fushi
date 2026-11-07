@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart';
 import 'package:fushi_engine/sync/disc_share_routes.dart';

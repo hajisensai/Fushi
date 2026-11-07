@@ -995,4 +995,89 @@ void main() {
     skip: skip,
     timeout: const Timeout(Duration(seconds: 60)),
   );
+
+  // 断点续播（music_resume.dart）：openPair 的 startAt 经 on_load 下发逐文件 `start`。
+  for (final ({String name, bool cue}) c in <({String name, bool cue})>[
+    (name: '普通文件', cue: false),
+    (name: 'CUE 的 EDL 段', cue: true),
+  ]) {
+    test(
+      '断点续播（${c.name}）：从 startAt 起播，第一条出声位置就在断点附近；单曲循环预排的同一首从头',
+      () async {
+        final MpvMusicOutputBackend backend = _backend();
+        final _Recorder rec = _Recorder(backend);
+        try {
+          await backend.applySettings(
+            const MusicOutputSettings(
+              gapless: true,
+              replayGain: MusicReplayGainMode.off,
+            ),
+          );
+          // full.flac 3 秒；CUE 用例取 [0.5 s, 3 s) 这一段（段内时间轴从 0 起）。
+          final MusicPlayItem item = c.cue
+              ? _item('cue', full, startMs: 500, endMs: 3000, durationMs: 2500)
+              : _item('whole', full, durationMs: 3000);
+          await backend.openPair(
+            item,
+            item,
+            play: true,
+            startAt: const Duration(milliseconds: 1500),
+          );
+          await rec.waitFor(
+            () => rec.events.any(
+              (e) =>
+                  e.event is MusicBackendPosition &&
+                  (e.event as MusicBackendPosition).position > Duration.zero,
+            ),
+          );
+          final Duration first = rec.events
+              .map((e) => e.event)
+              .whereType<MusicBackendPosition>()
+              .firstWhere(
+                (MusicBackendPosition p) => p.position > Duration.zero,
+              )
+              .position;
+          expect(
+            first,
+            greaterThanOrEqualTo(const Duration(milliseconds: 1400)),
+            reason: '没从断点起播（第一条出声位置 $first）',
+          );
+          // 单曲循环：同一首接着放，这一遍从头（起点只给这次打开的「当前」用一次）。
+          await rec.waitFor(() => rec.count<MusicBackendAdvanced>() > 0);
+          final int advIdx = rec.events.indexWhere(
+            (e) => e.event is MusicBackendAdvanced,
+          );
+          await rec.waitFor(
+            () => rec.events
+                .skip(advIdx + 1)
+                .any(
+                  (e) =>
+                      e.event is MusicBackendPosition &&
+                      (e.event as MusicBackendPosition).position >
+                          const Duration(milliseconds: 200),
+                ),
+          );
+          final Duration again = rec.events
+              .skip(advIdx + 1)
+              .map((e) => e.event)
+              .whereType<MusicBackendPosition>()
+              .firstWhere(
+                (MusicBackendPosition p) =>
+                    p.position > const Duration(milliseconds: 200),
+              )
+              .position;
+          expect(
+            again,
+            lessThan(const Duration(milliseconds: 1200)),
+            reason: '循环的下一遍不该再从断点起播（$again）',
+          );
+        } finally {
+          await rec.cancel();
+          await backend.dispose();
+        }
+      },
+      skip: skip,
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
+  }
 }

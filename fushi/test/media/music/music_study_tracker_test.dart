@@ -25,6 +25,7 @@ class _Backend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {}
 
   @override

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-782 守卫：阅读器快捷设置面板「退出」按钮直接 `Navigator.pop()` 绕过
 /// PopScope，导致关书后书架陈旧、关书自动同步不触发。

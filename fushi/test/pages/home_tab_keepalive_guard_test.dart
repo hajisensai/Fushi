@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 根因守卫（远端视频/书「每次进 tab 重新加载」）：
 ///

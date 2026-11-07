@@ -190,6 +190,9 @@ Future<void> showBackgroundTasksSheet({
       title: t.video_source_scrape_tasks_open,
       leadingIcon: FushiIcons.sync,
       scrollable: true,
+      // 框架的 body 默认零内边距：不给的话任务行贴着弹层左右边缘、进度条画出圆角、
+      // 末行压着底边（对话框与底部 sheet 都是）。左右与 MD3 标题同 24；行自带上下 8，底部再加 16。
+      bodyPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
       body: ListenableBuilder(
         listenable: listenable,
         builder: (BuildContext context, _) {

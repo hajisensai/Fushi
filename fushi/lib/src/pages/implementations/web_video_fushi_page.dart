@@ -66,6 +66,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
@@ -323,7 +324,8 @@ typedef WebVideoDebugSnapshot = ({
 });
 
 class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin
+    implements PopupBodyWebViewProvider {
   /// 缓存的 [AppModel]（浮层在 LayoutBuilder 回调里读，widget 失活后 `ref.read` 会抛）。
   late final AppModel _appModel = ref.read(appProvider);
 
@@ -372,6 +374,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   );
 
   InAppWebViewController? _web;
+
+  @override
+  Object? get popupBodyWebViewId => _web?.getViewId();
   VideoBookRow? _row;
   String? _failReason;
   WebViewEnvironment? _env;
@@ -503,10 +508,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   WebMineReturnState? _replayOrigin;
 
   /// 待恢复的播放状态：画面就绪后由 [_applyPendingRestore] 逐拍对齐（站点轨清单可能晚到）。
-  WebMineReturnState? _pendingRestore;
-  DateTime? _pendingRestoreDeadline;
-  DateTime? _lastRestoreActionAt;
-  bool _restoreNavigated = false;
+  WebMineRestoreTracker? _pendingRestore;
 
   /// 真机钩子收集：非 null 时每句重放抓到的媒体都记一份（只在 debugRunMineQueue 内）。
   List<WebMineReplayCapture>? _debugCaptures;
@@ -559,6 +561,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void initState() {
     super.initState();
     attachLookupCounter(_popup);
+    _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
     _controller.addListener(_onControllerChanged);
     assert(() {
       WebVideoFushiPage.debugSnapshot = () => (
@@ -789,7 +792,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       case 'state':
         _onState(msg);
       case 'seekDone':
-        break;
+        _onSeekDone(parseWebVideoSeekDonePayload(msg));
       case 'lookup':
         unawaited(_onDomLookup(msg));
     }
@@ -838,6 +841,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final bool fullscreenChanged = state.fullscreen != _fullscreen;
     _state = state;
     if (videoChanged) {
+      _dropSeekTarget(); // 上一个视频的跳转目标对这一个没有意义
       _videoKey = state.videoKey;
       _activeTrackKey = null;
       _pinnedTrackKey = null;
@@ -904,11 +908,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   // ── Dart → JS ─────────────────────────────────────────────────────────
 
-  Future<void> _js(String expression) async {
+  Future<Object?> _js(String expression) async {
     final InAppWebViewController? web = _web;
-    if (web == null) return;
+    if (web == null) return null;
     try {
-      await web.evaluateJavascript(
+      return await web.evaluateJavascript(
         source:
             '(function(){try{return window.__fushiWebVideo&&'
             '($expression);}catch(e){return String(e);}})()',
@@ -918,14 +922,61 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'web_video',
         'evaluateJavascript failed: $e',
       );
+      return null;
     }
   }
 
   // 播放控制意图都记一笔 [_remoteControlRevision]（手机遥控据此判断查词期间电脑上有没有
   // 人动过播放，语义同 [VideoPlayerController.remoteControlRevision]）。
-  Future<void> _seekMs(int ms) {
+  //
+  // 每次 seek 带序号：glue / bridge 在途时把连发的 seek 合并成「落地后补发最后一个」，
+  // [_seekTargetMs] 记住最后一次的目标，回执（或没发出去）才清掉。连按 ←/→ 时相对跳转以它为
+  // 基准，而不是以还没追上的轮询位置为基准对同一落点反复 seek。回执可能永远不来（在途时整页
+  // 重载 / 换集，页面里的轮询随文档一起没了），所以目标只在 [_kSeekTargetLifetime] 内、且仍是
+  // 同一个视频时作数（[_relativeSeekBaseMs]），换视频时直接作废。
+  Future<void> _seekMs(int ms) async {
     _remoteControlRevision++;
-    return _js('window.__fushiWebVideo.seek($ms)');
+    final int id = ++_seekSeq;
+    _seekTargetMs = ms;
+    _seekTargetAt = DateTime.now();
+    final Object? result = await _js('window.__fushiWebVideo.seek($ms, $id)');
+    if (!mounted || id != _seekSeq) return;
+    if (result != 'bridge' && result != 'direct') _dropSeekTarget();
+  }
+
+  int _seekSeq = 0;
+  int? _seekTargetMs;
+  DateTime? _seekTargetAt;
+
+  /// bridge 单次 seek 最长 4 s 超时，再留一次排队补发的余量。
+  static const Duration _kSeekTargetLifetime = Duration(seconds: 9);
+
+  void _dropSeekTarget() {
+    _seekTargetMs = null;
+    _seekTargetAt = null;
+  }
+
+  int _relativeSeekBaseMs() {
+    final int? target = _seekTargetMs;
+    final DateTime? at = _seekTargetAt;
+    if (target != null &&
+        at != null &&
+        DateTime.now().difference(at) <= _kSeekTargetLifetime) {
+      return target;
+    }
+    _dropSeekTarget();
+    return _state?.positionMs ?? 0;
+  }
+
+  void _onSeekDone(WebVideoSeekDone? done) {
+    if (done == null) return;
+    if (!done.ok && done.err != 'superseded') {
+      ErrorLogService.instance.log(
+        'web_video',
+        'seek failed (id=${done.id}): ${done.err}',
+      );
+    }
+    if (done.id == null || done.id == _seekSeq) _dropSeekTarget();
   }
 
   Future<void> _play() {
@@ -954,7 +1005,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _js('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');
 
   Future<void> _seekRelative(int deltaMs) {
-    final int pos = _state?.positionMs ?? 0;
+    final int pos = _relativeSeekBaseMs();
     return _seekMs((pos + deltaMs).clamp(0, 1 << 31));
   }
 
@@ -1262,38 +1313,22 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 原页一轮结束：把重放前的集 / 轨 / 位置原样还回去（[_applyPendingRestore] 逐拍对齐）。
   void _beginRestore(WebMineReturnState? want) {
     if (want == null) return;
-    _pendingRestore = want;
-    _pendingRestoreDeadline = DateTime.now().add(const Duration(seconds: 30));
-    _lastRestoreActionAt = null;
-    _restoreNavigated = false;
+    _pendingRestore = WebMineRestoreTracker(want, now: DateTime.now());
     final WebVideoPlaybackState? state = _state;
     if (state != null) _applyPendingRestore(state);
   }
 
-  /// 每拍站点状态到来时对齐一次（动作之间至少隔 1 秒，等站点把上一个动作报回来）。
+  /// 每拍站点状态到来时对齐一次；每项动作最多首发 + 一次补发（[WebMineRestoreTracker]）。
   void _applyPendingRestore(WebVideoPlaybackState state) {
-    final WebMineReturnState? want = _pendingRestore;
-    if (want == null || _mineRunning) return;
-    final DateTime now = DateTime.now();
-    if (now.isAfter(_pendingRestoreDeadline ?? now)) {
+    final WebMineRestoreTracker? tracker = _pendingRestore;
+    if (tracker == null || _mineRunning) return;
+    final WebMineRestorePlan? plan = tracker.step(state, DateTime.now());
+    if (plan == null) {
       _pendingRestore = null;
       return;
     }
-    if (!state.hasVideo) return;
-    final WebMineRestorePlan plan = planWebMineRestore(want, state);
-    if (webMineRestoreDone(plan)) {
-      _pendingRestore = null;
-      return;
-    }
-    final DateTime? last = _lastRestoreActionAt;
-    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
-      return;
-    }
-    _lastRestoreActionAt = now;
     final String? href = plan.navigateHref;
     if (href != null) {
-      if (_restoreNavigated) return;
-      _restoreNavigated = true;
       unawaited(
         _web?.loadUrl(urlRequest: URLRequest(url: WebUri(href))) ??
             Future<void>.value(),
@@ -2159,23 +2194,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       seekBackward: () => unawaited(_seekRelative(-5000)),
       seekForward: () => unawaited(_seekRelative(5000)),
       toggleShaderCompare: noop,
-      volumeUp: () => unawaited(
-        _js(
-          '(function(){var v=document.querySelector("video");if(v)v.volume=Math.min(1,v.volume+0.1);return true;})()',
-        ),
-      ),
-      volumeDown: () => unawaited(
-        _js(
-          '(function(){var v=document.querySelector("video");if(v)v.volume=Math.max(0,v.volume-0.1);return true;})()',
-        ),
-      ),
+      // 音量走 glue（Netflix 上是正片播放器的 setVolume / setMuted），不直写 <video>.volume。
+      volumeUp: () => unawaited(_js('window.__fushiWebVideo.nudgeVolume(0.1)')),
+      volumeDown: () =>
+          unawaited(_js('window.__fushiWebVideo.nudgeVolume(-0.1)')),
       toggleMute: () => unawaited(_js('window.__fushiWebVideo.toggleMute()')),
       speedUp: () => unawaited(_adjustRate(0.25)),
       speedDown: () => unawaited(_adjustRate(-0.25)),
       resetSpeed: () => unawaited(_setRate(1.0)),
       toggleHoldSpeed: noop,
-      previousFrame: () => unawaited(_seekRelative(-40)),
-      nextFrame: () => unawaited(_seekRelative(40)),
+      // 网页视频没有逐帧：±40 ms 在 Netflix 上每按一次就是一次完整的 DRM 重定位（可连发），
+      // 与原生控制条档对网页视频的处理一致，落空。
+      previousFrame: noop,
+      nextFrame: noop,
       screenshot: noop,
       // 网页视频页没有 media_kit 帧可取（画面在 WebView 里），两条截图动作同样落空。
       screenshotSubtitled: noop,
@@ -3308,6 +3339,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       onWebViewCreated: (InAppWebViewController controller) {
         _web = controller;
         _viewId = controller.platform.id;
+        _popup.bodyStaticLayer.bodyChanged();
         if (_isMiningHost && !_windowed && Platform.isWindows) {
           // 控制器建好 = 浏览器进程已在；站点还没加载完、还没自动播放。后台制卡页同样
           // 要预起：它没有交接档，但站点照样一加载就带声音自动播放。

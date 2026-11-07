@@ -6,7 +6,7 @@
 // 层序只能在源码里钉：缩略图层必须排在所有字幕类层之后。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('缩略图预览层排在弹幕 / 文本字幕 / 图形字幕各层之后', () {

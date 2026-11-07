@@ -299,6 +299,11 @@ void main() {
       );
       await _pumpUntil(tester, cards);
       expect(cards, findsNWidgets(2));
+      // 有字段冲突时才画「全部确认」（#IBjxAjty39：没有可确认的就不画）。
+      expect(
+        find.byKey(const ValueKey<String>('srs_conflicts_confirm_all')),
+        findsOneWidget,
+      );
       final Finder first = cards.first;
       // 一边是 A（自报名字），一边是本机。
       expect(

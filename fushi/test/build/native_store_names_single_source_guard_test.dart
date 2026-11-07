@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：原生产物持久库（`.github/actions/native-artifact-store`）的名字只有一种算法，
 /// 且 PR 门读的每一份件在可信 ref（develop）上都有生产方。

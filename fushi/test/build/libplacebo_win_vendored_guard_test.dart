@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 计划 P2 守卫：`third_party/libplacebo-win` 随包产物的完整性与三处契约一致。
 ///

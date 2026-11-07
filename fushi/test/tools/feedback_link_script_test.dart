@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 /// 反馈修复标记脚本 `tool/feedback_link.mjs` 的离线测试（真脚本，node 跑）。

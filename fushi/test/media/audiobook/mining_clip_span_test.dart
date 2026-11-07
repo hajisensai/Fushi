@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1104: audiobook mining from a DRAG selection that spans multiple
 /// sentences must capture the WHOLE dragged span — both the card sentence text

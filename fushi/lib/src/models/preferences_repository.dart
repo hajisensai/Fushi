@@ -30,10 +30,13 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
         kLibraryManualOrderPrefKeyPrefix;
+import 'package:fushi/src/models/library_grid_columns.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
@@ -64,6 +67,8 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/sync/ai_relay_routes.dart'
+    show kInterconnectAiRelayEnabledPref, readInterconnectAiRelayEnabled;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
@@ -131,6 +136,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
@@ -689,6 +695,11 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 截屏识字（悬浮球 / 桌面冻结层 / 拍照 / 浏览器图片 / AI 读屏）送给系统 OCR
+  /// 的语言：跟随 [defaultContentLanguage]，没设时日语（[resolveScreenOcrLanguage]）。
+  String get screenOcrLanguage =>
+      resolveScreenOcrLanguage(defaultContentLanguage);
+
   // ── 库页排序方式（排序交互重设计 2026-07-12）──────────────────────────
 
   /// 书架排序方式 `.name`（recent/title/imported）。默认 recent（=历史序，现状零变化）。
@@ -778,6 +789,38 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setGamesLibraryListLayout(bool list) async {
     await setPref('games_library_layout', list ? 'list' : 'grid');
+    notifyListeners();
+  }
+
+  /// 库页「每行数量」：[domain] 在 [sizeClass] 档下的固定列数，null = 自动
+  /// （见 [kLibraryGridColumnsPrefKey]，设备本地）。
+  int? libraryGridColumns(
+    LibraryGridDomain domain,
+    WindowSizeClass sizeClass,
+  ) => libraryGridFixedColumnsFrom(
+    decodeLibraryGridColumns(
+      getPref(kLibraryGridColumnsPrefKey, defaultValue: null) as String?,
+    ),
+    domain,
+    sizeClass,
+  );
+
+  /// 写「每行数量」；[columns] 为 null = 恢复自动。内存缓存在第一个 await 之前
+  /// 就已更新，调用方同步 setState 后读到的就是新值。
+  Future<void> setLibraryGridColumns(
+    LibraryGridDomain domain,
+    WindowSizeClass sizeClass,
+    int? columns,
+  ) async {
+    final Map<String, int> next = withLibraryGridColumns(
+      decodeLibraryGridColumns(
+        getPref(kLibraryGridColumnsPrefKey, defaultValue: null) as String?,
+      ),
+      domain,
+      sizeClass,
+      columns,
+    );
+    await setPref(kLibraryGridColumnsPrefKey, encodeLibraryGridColumns(next));
     notifyListeners();
   }
 
@@ -1027,6 +1070,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setInterconnectTranscodeEnabled(bool enabled) async {
     await setPref(kInterconnectTranscodeEnabledPref, enabled);
+    notifyListeners();
+  }
+
+  /// 本机当 host 时是否允许已配对设备使用本机的 AI 提供商（「互联主机」提供商，
+  /// key 不出本机）。默认开；默认值与解码规则在引擎侧 [readInterconnectAiRelayEnabled]。
+  bool get interconnectAiRelayEnabled => readInterconnectAiRelayEnabled(this);
+
+  Future<void> setInterconnectAiRelayEnabled(bool enabled) async {
+    await setPref(kInterconnectAiRelayEnabledPref, enabled);
     notifyListeners();
   }
 
@@ -5058,6 +5110,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 音乐逐曲断点续播（music_resume.dart）。默认只给长曲目续播。
+  MusicResumeMode get musicResumeMode => MusicResumeMode.fromWire(
+    getPref('music_resume_mode', defaultValue: MusicResumeMode.longTracks.wire)
+        as String?,
+  );
+
+  Future<void> setMusicResumeMode(MusicResumeMode value) async {
+    await setPref('music_resume_mode', value.wire);
+    notifyListeners();
+  }
+
   /// 音乐 ReplayGain（专辑顺序播 album / 其它 track，设计 §7.2）。默认开。
   bool get musicReplayGain =>
       getPref('music_replaygain', defaultValue: true) == true;
@@ -5971,12 +6034,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 只有音频的有声书下载完成后是否自动转录入库（默认开）。
+  /// 总开关：没有字幕的有声书下载完成后是否自动转录入库（默认开）。关 = 一律
+  /// 不自动转录（不下语音模型、不跑长时间推理），带不带正文都停在「缺字幕」。
   bool get audiobookAutoTranscribe =>
       getPref('audiobook_auto_transcribe', defaultValue: true) as bool;
 
   Future<void> setAudiobookAutoTranscribe({required bool value}) async {
     await setPref('audiobook_auto_transcribe', value);
+    notifyListeners();
+  }
+
+  /// 子开关：下载里没有正文（EPUB / 文本）时也转录成独立字幕书（默认关：没有
+  /// 正文时字幕书质量差，正常流程是有 EPUB 后搭配转录对齐）。只在总开关
+  /// [audiobookAutoTranscribe] 开时生效。
+  bool get audiobookAutoTranscribeWithoutText =>
+      getPref('audiobook_auto_transcribe_without_text', defaultValue: false)
+          as bool;
+
+  Future<void> setAudiobookAutoTranscribeWithoutText({
+    required bool value,
+  }) async {
+    await setPref('audiobook_auto_transcribe_without_text', value);
     notifyListeners();
   }
 

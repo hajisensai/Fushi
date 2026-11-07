@@ -342,3 +342,56 @@ fn concurrent_put_and_query() {
     );
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn match_all_requires_every_term_in_one_sentence() {
+    let dir = temp_dir("match_all");
+    let c = Corpus::open(&dir).unwrap();
+    put(&c, 1, "book-a", -1, "fp1", 10, &book_sentences());
+    put(
+        &c,
+        3,
+        "track-1",
+        -1,
+        "fp",
+        5,
+        &[
+            S {
+                section: 0,
+                pos: 12_000,
+                len: 2_000,
+                text: "猫と魚の話",
+                tokens: vec![(0, 1, "猫"), (2, 1, "魚")],
+            },
+            S {
+                section: 0,
+                pos: 20_000,
+                len: 2_000,
+                text: "猫だけ",
+                tokens: vec![(0, 1, "猫")],
+            },
+        ],
+    );
+    let mut w = Writer::default();
+    w.buf = query_bytes(&["猫", "魚"], 10, 0, 1 << 3);
+    w.u8(1);
+    let json = c.query_json(&w.buf).unwrap();
+    // 只有 kind=3 里同时含两词的那句；「猫だけ」与书（kind 1，被掩码排除）都不出。
+    assert!(json.contains("猫と魚の話"), "{json}");
+    assert!(!json.contains("猫だけ"), "{json}");
+    assert!(json.contains("\"total\":1"), "{json}");
+    assert!(json.contains("\"pos\":12000"), "{json}");
+
+    // 有一个词库里没有：一条都不出（不退化成「含任一」）。
+    let mut w = Writer::default();
+    w.buf = query_bytes(&["猫", "存在しない"], 10, 0, u32::MAX);
+    w.u8(1);
+    assert!(c.query_json(&w.buf).unwrap().contains("\"total\":0"));
+
+    // 不带尾字节 = 旧口径「含任一」。
+    let any = c
+        .query_json(&query_bytes(&["猫", "魚"], 10, 0, 1 << 3))
+        .unwrap();
+    assert!(any.contains("猫だけ"), "{any}");
+    let _ = fs::remove_dir_all(&dir);
+}

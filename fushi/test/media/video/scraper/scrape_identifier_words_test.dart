@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 
 /// 设计稿 C 二期第一项：识别词（对标 MoviePilot WordsMatcher）。

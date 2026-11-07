@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// reader live 设置 hook / eval 异步守卫的回归测试（源码扫描，沿用

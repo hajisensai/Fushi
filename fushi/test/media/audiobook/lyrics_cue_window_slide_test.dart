@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_cue_window_slide.dart';
 
 /// BUG-4004 复审：歌词滑动窗口的上限对「锚点」生效。

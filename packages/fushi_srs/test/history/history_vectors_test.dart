@@ -8,6 +8,12 @@
 //   equivalentImports / lastEffective / scheduler / state / effectiveRatings；
 // - 落库形态（srsHistoryStatesFromJson，canonical JSON 原文）：state 与 lastEffective。
 //
+// 唯一有意的偏离（BUG-4218）：同一事件的多 ID 副本（同卡 / kind / HLC / 发生时刻 / 来源 / 评分 / ankiId）
+// 只算一份：ID 最小的是代表，其余仍在 all 里但不算有效；组里一份被撤销，每一份都算撤销。旧生成器随机造出了
+// 4 份这样的「副本」（同一条 Anki revlog 镜像两次，只有 ID 与结果不同；真实数据里同一事件的副本内容逐字相同），
+// 见 [_copyVectors]：它们的期望 = 旧期望里被并掉的那份不再有效（被撤销的组里它也进 revoked），其余 1496 份
+// 仍与旧实现逐条一致。
+//
 // 要真实原生库（FUSHI_FSRS_LIB，缺省本仓 prebuilt/）；库加载失败直接判红，不 skip。
 @TestOn('vm')
 library;
@@ -44,6 +50,39 @@ List<String> _ids(Iterable<SrsReviewLog> logs) => <String>[
   for (final SrsReviewLog l in logs) l.id,
 ];
 
+/// 含同一事件副本的向量 → 被并掉的那份（组里 ID 较大的）。
+const Map<int, String> _copyVectors = <int, String>{
+  1003: 'Lgmyr477', // 另一份 L1kmqtt0 被撤销：整组撤销，原本有效的这份也不再有效、也进 revoked。
+  1053: 'L8j43k612', // 两份都有效、这份原是最后一条：最后一条变成 L82lzrx13。
+  1148: 'Lemh1s27', // 两份都是等价导入。
+  1439: 'Lew1zyb4', // 两份都是等价导入。
+};
+
+/// 副本合并后最后一条有效日志变了的向量（状态随之是那条的结果；落库形态逐条对照列模式）。
+const Map<int, String> _copyLastEffective = <int, String>{1053: 'L82lzrx13'};
+
+/// 第 [i] 份向量的期望：旧实现的期望；副本向量里被并掉的那份不再有效。
+Map<String, Object?> _expectOf(int i, Map<String, Object?> v) {
+  final Map<String, Object?> e = v['expect']! as Map<String, Object?>;
+  final String? drop = _copyVectors[i];
+  if (drop == null) return e;
+  List<Object?> without(String key) => <Object?>[
+    for (final Object? id in e[key]! as List<Object?>)
+      if (id != drop) id,
+  ];
+  final List<String> revoked = (e['revoked']! as List<Object?>).cast<String>();
+  return <String, Object?>{
+    ...e,
+    'effective': without('effective'),
+    'effectiveRatings': without('effectiveRatings'),
+    if (i == 1003) 'revoked': <String>[...revoked, drop]..sort(),
+    if (_copyLastEffective.containsKey(i)) ...<String, Object?>{
+      'lastEffective': _copyLastEffective[i],
+      'state': null,
+    },
+  };
+}
+
 void main() {
   test('原生库可加载（硬依赖）', () {
     expect(FushiFsrs.instance, isNotNull, reason: 'fushi_fsrs 原生库缺失');
@@ -73,8 +112,15 @@ void main() {
     ];
     final List<SrsCardHistory> batch = SrsCardHistory.many(inputs);
     for (int i = 0; i < vectors.length; i++) {
-      final Map<String, Object?> e =
-          vectors[i]['expect']! as Map<String, Object?>;
+      final Map<String, Object?> e = _expectOf(i, vectors[i]);
+      // 副本向量：被并掉的那份原本在旧期望里（不是空转）。
+      if (_copyVectors[i] case final String drop) {
+        expect(
+          (vectors[i]['expect']! as Map<String, Object?>)['all'],
+          contains(drop),
+          reason: 'vector $i',
+        );
+      }
       for (final SrsCardHistory h in <SrsCardHistory>[
         batch[i],
         SrsCardHistory(inputs[i].$1, serverTimeOf: inputs[i].$2),
@@ -90,11 +136,20 @@ void main() {
         );
         expect(h.lastEffective?.id, e['lastEffective'], reason: at);
         expect(h.scheduler, e['scheduler'], reason: at);
-        expect(
-          srsCanonicalJson(h.state.toJson()),
-          srsCanonicalJson(e['state']),
-          reason: at,
-        );
+        if (e['state'] != null) {
+          expect(
+            srsCanonicalJson(h.state.toJson()),
+            srsCanonicalJson(e['state']),
+            reason: at,
+          );
+        } else {
+          final SrsScheduleResult want = h.lastEffective!.result!;
+          expect(
+            srsCanonicalJson(h.state.toJson()),
+            srsCanonicalJson(want.copyWith(scheduler: h.scheduler).toJson()),
+            reason: at,
+          );
+        }
         expect(_ids(h.effectiveRatings), e['effectiveRatings'], reason: at);
       }
     }
@@ -115,12 +170,18 @@ void main() {
     ];
     final List<SrsHistoryState> states = srsHistoryStatesFromJson(stored);
     for (int i = 0; i < vectors.length; i++) {
-      final Map<String, Object?> e =
-          vectors[i]['expect']! as Map<String, Object?>;
+      final Map<String, Object?> e = _expectOf(i, vectors[i]);
       expect(states[i].lastLogId, e['lastEffective'], reason: 'vector $i');
+      // 副本合并后状态变了的向量：与列模式（同一个 Rust 选取）逐条对照。
+      final Object? want =
+          e['state'] ??
+          SrsCardHistory(
+            _logsOf(vectors[i]),
+            serverTimeOf: _serverOf(vectors[i]),
+          ).state.toJson();
       expect(
         srsCanonicalJson(states[i].result.toJson()),
-        srsCanonicalJson(e['state']),
+        srsCanonicalJson(want),
         reason: 'vector $i',
       );
     }

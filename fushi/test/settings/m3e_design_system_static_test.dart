@@ -748,6 +748,8 @@ class AnotherPopupPart {
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
           'Card-face pitch accent badge digit scales with the card term size (0.42x, floor 9) and follows the user card text size; card content typography, not page chrome.',
+      'lib/src/pages/implementations/srs/srs_html_card_view.dart':
+          'Native HTML card face: every fontSize: is the computed CSS font-size of the note\'s own card HTML (times the card zoom), and the <details> marker is 0.7x its summary\'s computed size; card content typography, not page chrome (same class as srs_fushi_card_view).',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
@@ -1346,6 +1348,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/srs/srs_html_card_view.dart': <String>{
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{
@@ -2217,13 +2222,15 @@ class AnotherPopupPart {
     expect(frame, contains('FushiDialogFrame('));
     expect(frame, contains('.surfaces.overlay'));
     expect(frame, contains('class _CoverAspectResolver'));
-    // B：宫格 + 大色块；D：分组分段列表（组首尾大圆角、组内小圆角）。
+    // B：宫格 + 大色块；D：分组分段网格（2026-11-05 宽屏重排：组内动作按行铺
+    // 进多列，网格外圈大圆角、内部小圆角、格间分段缝）。
     expect(frame, contains('_ActionTile('));
     expect(frame, contains('_HeroActionTile('));
-    expect(frame, contains('_ActionSection('));
+    expect(frame, contains('_ActionGridSection('));
     expect(frame, contains('_Md3SegmentRow('));
     expect(frame, contains('kSettingsSegmentOuterRadius'));
-    expect(frame, contains('SizedBox(height: kSettingsSegmentGap)'));
+    expect(frame, contains('kSettingsSegmentInnerRadius'));
+    expect(frame, contains('apple ? 0 : kSettingsSegmentGap'));
     expect(frame, contains('FushiFilledButton.tonalIcon('));
     // E：设置组收进子菜单。
     expect(frame, contains('_ContextSubmenuRow('));

@@ -28,7 +28,7 @@ abstract interface class MusicDesktopLyricsSurface {
   Future<bool> show();
   Future<void> hide();
 
-  /// 推一块文本（当前行 + 下一行），[currentStart] / [currentLength] 是当前行在块内的
+  /// 推一块文本（当前行居中，前后若干行），[currentStart] / [currentLength] 是当前行在块内的
   /// UTF-16 区间（-1 = 没有当前行）。
   Future<void> showBlock(String text, int currentStart, int currentLength);
 
@@ -37,7 +37,7 @@ abstract interface class MusicDesktopLyricsSurface {
   Future<void> setPlaying(bool playing);
 }
 
-/// 桌面窗口里显示的一块：当前行 + 下一行（双行模式）。
+/// 桌面窗口里显示的一块：当前行居中，前后各几行（行数跟悬浮字幕「同时显示句数」）。
 @immutable
 class MusicDesktopLyricsBlock {
   const MusicDesktopLyricsBlock({
@@ -61,28 +61,57 @@ class MusicDesktopLyricsBlock {
   int get hashCode => Object.hash(text, currentStart, currentLength);
 }
 
-/// 纯函数：当前主行 [line]（-1 = 前奏）→ 窗口文本块。前奏里显示第一行（当前行区间
-/// -1，整块按「未唱」显示）；最后一行之后只剩它自己。
-MusicDesktopLyricsBlock musicDesktopLyricsBlock(LyricTimeline t, int line) {
-  int first = line;
+/// 纯函数：当前主行 [line]（-1 = 前奏）→ 窗口文本块，当前行前取 [before] 个主行、
+/// 后取 [after] 个主行（伴唱 / 空行不占名额）。前奏里以第一行为锚、当前行区间 -1
+/// （整块按「未唱」显示）；靠近开头 / 结尾时那一侧有多少给多少。
+MusicDesktopLyricsBlock musicDesktopLyricsBlock(
+  LyricTimeline t,
+  int line, {
+  int before = 0,
+  int after = 1,
+}) {
+  int anchor = line;
   bool hasCurrent = line >= 0;
-  if (first < 0) {
-    first = musicLyricNextMainLine(t, -1);
+  if (anchor < 0) {
+    anchor = musicLyricNextMainLine(t, -1);
     hasCurrent = false;
   }
-  if (first < 0 || first >= t.lines.length) {
+  if (anchor < 0 || anchor >= t.lines.length) {
     return const MusicDesktopLyricsBlock(
       text: '',
       currentStart: -1,
       currentLength: 0,
     );
   }
-  final String cur = t.lines[first].text.trim();
-  final int next = musicLyricNextMainLine(t, first);
-  final String text = next < 0 ? cur : '$cur\n${t.lines[next].text.trim()}';
+  final List<int> above = <int>[];
+  for (int i = anchor; above.length < before;) {
+    i = musicLyricPreviousMainLine(t, i);
+    if (i < 0) break;
+    above.insert(0, i);
+  }
+  final List<int> below = <int>[];
+  for (int i = anchor; below.length < after;) {
+    i = musicLyricNextMainLine(t, i);
+    if (i < 0) break;
+    below.add(i);
+  }
+  final StringBuffer buffer = StringBuffer();
+  for (final int i in above) {
+    buffer
+      ..write(t.lines[i].text.trim())
+      ..write('\n');
+  }
+  final int currentStart = buffer.length;
+  final String cur = t.lines[anchor].text.trim();
+  buffer.write(cur);
+  for (final int i in below) {
+    buffer
+      ..write('\n')
+      ..write(t.lines[i].text.trim());
+  }
   return MusicDesktopLyricsBlock(
-    text: text,
-    currentStart: hasCurrent ? 0 : -1,
+    text: buffer.toString(),
+    currentStart: hasCurrent ? currentStart : -1,
     currentLength: hasCurrent ? cur.length : 0,
   );
 }
@@ -116,6 +145,7 @@ class MusicLyricsLive extends ChangeNotifier {
     required MusicLyricsService service,
     required MusicDesktopLyricsSurface desktop,
     required bool Function() desktopEnabled,
+    required ({int before, int after}) Function() desktopSpan,
     required bool Function() mediaSessionEnabled,
     required Listenable sessionOwnerChanged,
     required bool Function() musicOwnsSession,
@@ -124,18 +154,28 @@ class MusicLyricsLive extends ChangeNotifier {
        _service = service,
        _desktop = desktop,
        _desktopEnabled = desktopEnabled,
+       _desktopSpan = desktopSpan,
        _mediaSessionEnabled = mediaSessionEnabled,
        _ownerChanged = sessionOwnerChanged,
        _owns = musicOwnsSession,
        _onDesktopReleased = onDesktopReleased {
     _engine.addListener(_onEngine);
     _ownerChanged.addListener(_onEngine);
+    _generatedSub = _service.generatedUpdates.listen((String uid) {
+      if (uid == _uid) unawaited(reload());
+    });
   }
+
+  /// 生成字幕写进当前曲目时重新解析（[MusicLyricsService.generatedUpdates]）。
+  late final StreamSubscription<String> _generatedSub;
 
   final MusicPlayerEngine _engine;
   final MusicLyricsService _service;
   final MusicDesktopLyricsSurface _desktop;
   final bool Function() _desktopEnabled;
+
+  /// 桌面窗口里当前行前后各显示几个主行（悬浮字幕「同时显示句数」，与有声书同口径）。
+  final ({int before, int after}) Function() _desktopSpan;
   final bool Function() _mediaSessionEnabled;
   final Listenable _ownerChanged;
   final bool Function() _owns;
@@ -297,7 +337,13 @@ class MusicLyricsLive extends ChangeNotifier {
   Future<void> _pushDesktop() async {
     final LyricTimeline? t = _timeline;
     if (t == null) return;
-    final MusicDesktopLyricsBlock block = musicDesktopLyricsBlock(t, _line);
+    final ({int before, int after}) span = _desktopSpan();
+    final MusicDesktopLyricsBlock block = musicDesktopLyricsBlock(
+      t,
+      _line,
+      before: span.before,
+      after: span.after,
+    );
     if (block != _pushedBlock) {
       _pushedBlock = block;
       _pushedSung = -1;
@@ -325,7 +371,9 @@ class MusicLyricsLive extends ChangeNotifier {
     final int sung = musicDesktopSungLength(line, lyricMs);
     if (sung != _pushedSung) {
       _pushedSung = sung;
-      await _desktop.highlight(0, sung);
+      // 区间是块内偏移：当前行前面可能还有上文行。
+      final int start = _pushedBlock?.currentStart ?? 0;
+      await _desktop.highlight(start < 0 ? 0 : start, sung);
     }
     if (!_engine.isPlaying) return;
     final int? next = musicNextSyllableBoundary(line, lyricMs);
@@ -348,6 +396,7 @@ class MusicLyricsLive extends ChangeNotifier {
   void dispose() {
     _engine.removeListener(_onEngine);
     _ownerChanged.removeListener(_onEngine);
+    unawaited(_generatedSub.cancel());
     _stopSyllableTimer();
     _clock?.dispose();
     if (_desktopShown) unawaited(_desktop.hide());

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// PR#910 审查必修 ②（BUG-1419 症状回归守卫）：`onPointerCancel` 绝不前置坐标。
 ///

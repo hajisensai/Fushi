@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// BUG-2117：快捷键设置页的卡片顺序就是 [ShortcutScope.values] 的声明顺序

@@ -25,6 +25,17 @@ String aiFailureText(String code) {
     'context_overflow' => t.ai_error_context_overflow,
     // `kAiTranscriptionUnsupportedProtocol`：云端转录只认 OpenAI 兼容协议。
     'unsupported_protocol' => t.ai_error_unsupported_protocol,
+    // 「互联主机」提供商（`ai_relay.dart` 的 `kAiRelay*`）。
+    'relay_unavailable' => t.ai_error_relay_unavailable,
+    'relay_host_not_paired' => t.ai_error_relay_host_not_paired,
+    'relay_host_unreachable' => t.ai_error_relay_host_unreachable,
+    'relay_certificate_mismatch' => t.ai_error_relay_certificate_mismatch,
+    'relay_auth_rejected' => t.ai_error_relay_auth_rejected,
+    'relay_host_unsupported' => t.ai_error_relay_host_unsupported,
+    'relay_disabled' => t.ai_error_relay_disabled,
+    'relay_no_provider' => t.ai_error_relay_no_provider,
+    'relay_bad_request' => t.ai_error_relay_bad_request,
+    'relay_operation_unsupported' => t.ai_error_relay_operation_unsupported,
     _ => code,
   };
 }

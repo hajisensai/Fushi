@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -52,6 +55,155 @@ void main() {
       expect(b?.tallImages, 0);
       expect(WebPageContentProbe.tryParse('not json'), isNull);
       expect(WebPageContentProbe.tryParse(null), isNull);
+    });
+
+    // 反馈 tNQr1gO6_2：canvas / 背景图翻页阅读器一屏只有一两页（跨页里单页约 1/3 屏宽），
+    // 竖长图计数（≥ 3 张、宽 ≥ 四成屏）永远数不到。
+    group('翻页式阅读器', () {
+      const Size desktop = Size(1600, 900);
+      const Size phone = Size(400, 860);
+      WebPageContentProbe flip(
+        List<Size> surfaces, {
+        Size viewport = desktop,
+        bool scrolls = false,
+        int t = 0,
+        int i = 0,
+      }) => WebPageContentProbe(
+        largeVideos: 0,
+        tallImages: i,
+        textLength: t,
+        pageSurfaces: surfaces,
+        viewport: viewport,
+        scrolls: scrolls,
+      );
+
+      test('桌面跨页（两张单页 canvas）→ 漫画', () {
+        expect(
+          classifyWebPageContent(
+            flip(const <Size>[Size(560, 830), Size(560, 830)]),
+          ),
+          WebPageContentKind.comic,
+        );
+      });
+
+      test('两页拼成一张图面的跨页 → 漫画', () {
+        expect(
+          classifyWebPageContent(flip(const <Size>[Size(1180, 850)])),
+          WebPageContentKind.comic,
+        );
+      });
+
+      test('手机竖屏单页铺满宽度 → 漫画', () {
+        expect(
+          classifyWebPageContent(
+            flip(const <Size>[Size(400, 580)], viewport: phone),
+          ),
+          WebPageContentKind.comic,
+        );
+      });
+
+      test('长滚动页面、正文多、图面太小或形状不像书页都不算', () {
+        const List<Size> pages = <Size>[Size(560, 830)];
+        // 插画投稿页：一张竖图但页面能往下滚（评论 / 相关作品）。
+        expect(classifyWebPageContent(flip(pages, scrolls: true)), isNull);
+        // 正文不少的页面。
+        expect(
+          classifyWebPageContent(flip(pages, t: kWebPageFlipMaxText)),
+          isNull,
+        );
+        // 太矮：不到视口六成高。
+        expect(
+          classifyWebPageContent(flip(const <Size>[Size(300, 420)])),
+          isNull,
+        );
+        // 整屏地图 / 游戏画布：16:9 横幅、手机上竖长全屏，都不是书页比例。
+        expect(
+          classifyWebPageContent(flip(const <Size>[Size(1600, 900)])),
+          isNull,
+        );
+        expect(
+          classifyWebPageContent(
+            flip(const <Size>[
+              Size(1024, 640),
+            ], viewport: const Size(1024, 640)),
+          ),
+          isNull,
+        );
+        expect(
+          classifyWebPageContent(
+            flip(const <Size>[Size(400, 860)], viewport: phone),
+          ),
+          isNull,
+        );
+        // 没有视口读数（老读数）：不触发。
+        expect(
+          classifyWebPageContent(flip(pages, viewport: Size.zero)),
+          isNull,
+        );
+      });
+
+      test('读数解析：图面列表 / 视口 / 滚动；缺 s 按会滚动', () {
+        final WebPageContentProbe? a = WebPageContentProbe.tryParse(
+          '{"v":0,"i":0,"t":12,"p":[[560,830],[560,830],"x",[1]],'
+          '"w":1600,"h":900,"s":0}',
+        );
+        expect(a?.pageSurfaces, const <Size>[Size(560, 830), Size(560, 830)]);
+        expect(a?.viewport, desktop);
+        expect(a?.scrolls, isFalse);
+        expect(classifyWebPageContent(a!), WebPageContentKind.comic);
+        final WebPageContentProbe? b = WebPageContentProbe.tryParse(
+          '{"p":[[560,830]],"w":1600,"h":900}',
+        );
+        expect(b?.scrolls, isTrue);
+        expect(classifyWebPageContent(b!), isNull);
+      });
+
+      test('探针脚本在假 DOM 上收到 canvas / 背景图页面，跳过小图与非图元素', () async {
+        final Directory dir = Directory.systemTemp.createTempSync(
+          'page-probe-',
+        );
+        try {
+          final File script = File('${dir.path}/probe.js')
+            ..writeAsStringSync('''
+function el(tag, w, h, extra) {
+  var e = Object.assign({tagName: tag, parentElement: null,
+    getBoundingClientRect: function () { return {width: w, height: h}; }},
+    extra || {});
+  return e;
+}
+var left = el('CANVAS', 560, 830, {height: 1600});
+var right = el('DIV', 560, 830, {bg: 'url("blob:x")'});
+var smallCanvas = el('CANVAS', 560, 830, {height: 300});
+var wrapper = el('DIV', 1600, 900, {bg: 'none'});
+global.window = {innerWidth: 1600, innerHeight: 900};
+global.getComputedStyle = function (e) { return {backgroundImage: e.bg || ''}; };
+global.document = {
+  images: [],
+  querySelectorAll: function () { return []; },
+  elementsFromPoint: function (x, y) {
+    return x < 800 ? [left, smallCanvas, wrapper] : [right, wrapper];
+  },
+  scrollingElement: {scrollHeight: 900},
+};
+var out = JSON.parse(eval(${_jsString(kWebPageContentProbeScript)}));
+var want = JSON.stringify({v:0,i:0,t:0,p:[[560,830],[560,830]],w:1600,h:900,s:0});
+if (JSON.stringify(out) !== want) {
+  console.error('got ' + JSON.stringify(out));
+  process.exit(1);
+}
+''');
+          final ProcessResult result = await Process.run('node', <String>[
+            script.path,
+          ], runInShell: Platform.isWindows);
+          expect(
+            result.exitCode,
+            0,
+            reason: '${result.stdout}\n${result.stderr}',
+          );
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
+      });
     });
 
     test('探针脚本只读：不写 DOM', () {
@@ -182,3 +334,6 @@ void main() {
     expect(WebVideoBrowserReturn.take(), isNull);
   });
 }
+
+/// Dart 字符串 → JS 字符串字面量（JSON 编码即合法 JS）。
+String _jsString(String value) => jsonEncode(value);

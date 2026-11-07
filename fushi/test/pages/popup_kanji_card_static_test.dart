@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // TODO-094 S5: the lookup popup renders a kanji-dictionary card (onyomi /
 // kunyomi / radical / strokes / meanings) above the term entries for a

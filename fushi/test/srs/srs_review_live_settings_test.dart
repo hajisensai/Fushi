@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
@@ -162,12 +163,42 @@ Future<void> _openDeckSettings(WidgetTester tester) async {
   );
 }
 
+/// 把设置页里 [target] 滚进视口：设置页是惰性列表，首屏之外的项还没构建时先沿列表往下滚到它出现，再对齐、
+/// 等一帧排版（ensureVisible 改的滚动位置下一帧才生效，不 pump 就点空）。
+Future<void> _reveal(WidgetTester tester, Finder target) async {
+  if (target.evaluate().isEmpty) {
+    // 设置页的竖向列表：取页内此刻还在的任一输入框，往上最近的竖向 Scrollable（滚过去的项会被回收，不能认死某一项）。
+    final Element list = find
+        .ancestor(
+          of: find
+              .descendant(
+                of: find.byType(SrsDeckSettingsPage),
+                matching: find.byType(EditableText),
+              )
+              .first,
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is Scrollable && w.axisDirection == AxisDirection.down,
+          ),
+        )
+        .evaluate()
+        .first;
+    await tester.scrollUntilVisible(
+      target,
+      200,
+      scrollable: find.byElementPredicate((Element e) => e == list),
+    );
+  }
+  await tester.ensureVisible(target);
+  await tester.pump();
+}
+
 Future<void> _type(WidgetTester tester, String key, String text) async {
   final Finder field = find.descendant(
     of: find.byKey(ValueKey<String>(key)),
     matching: find.byType(EditableText),
   );
-  await tester.ensureVisible(field);
+  await _reveal(tester, field);
   await tester.enterText(field, text);
   await tester.pump();
 }
@@ -357,7 +388,7 @@ void main() {
     final Finder autoplay = find.byKey(
       const ValueKey<String>('srs-settings-autoplay-audio'),
     );
-    await tester.ensureVisible(autoplay);
+    await _reveal(tester, autoplay);
     await tester.tap(autoplay);
     await tester.pump();
     await _saveSettings(tester);

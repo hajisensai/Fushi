@@ -373,7 +373,7 @@
       updateParents();
     });
   }
-  const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'listWordAudioSources', 'openLink', 'openInAnki',
+  const allowed = new Set(['mineEntry', 'duplicateCheck', 'findMinedMatches', 'resolveWordAudio', 'listWordAudioSources', 'openLink', 'openInAnki',
     'favoriteEntry', 'favoriteCheck', 'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview',
     'srsTermStatus', 'srsTermStatusBatch', 'srsOpenCard']);
   function receive(layer, message) {

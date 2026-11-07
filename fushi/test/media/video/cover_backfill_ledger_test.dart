@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
 
 /// BUG-1564 ②：封面回填失败记账。失败一次后，同一文件（mtime/size 不变）不再进入

@@ -600,6 +600,12 @@ mod convergence {
             dev: usize,
             card: u8,
         },
+        /// 把本设备这张卡最后一条评分换个 ID 再写一份（同一事件的副本，BUG-4217 修好前 profile 合并会写出；
+        /// 读侧只算一份，BUG-4218）。之后的撤销撤的是这份副本。
+        Copy {
+            dev: usize,
+            card: u8,
+        },
         /// C3 继承某张卡的历史（更改笔记类型的血统，historyFrom）。
         Lineage {
             dev: usize,
@@ -632,6 +638,7 @@ mod convergence {
             (0..n, 0..3u8, 0..60u8).prop_map(|(dev, card, due)| Act::SetDue { dev, card, due }),
             (0..n, 1..30u8).prop_map(|(dev, first)| Act::Steps { dev, first }),
             (0..n, 0..3u8).prop_map(|(dev, card)| Act::Undo { dev, card }),
+            (0..n, 0..3u8).prop_map(|(dev, card)| Act::Copy { dev, card }),
             (0..n, 0..3u8).prop_map(|(dev, from)| Act::Lineage { dev, from }),
             (0..n, 70..97u8).prop_map(|(dev, pct)| Act::Retention { dev, pct }),
             (0..n).prop_map(|dev| Act::Sync { dev }),
@@ -658,6 +665,12 @@ mod convergence {
             let mut k = 0u32;
             // 每台设备每张卡最后一条自己写的评分（撤销只撤它，Dart 侧的 canUndo 同一约束由界面保证）。
             let mut last_review: std::collections::HashMap<(usize, u8), String> = std::collections::HashMap::new();
+            // 同上，整条日志（副本照抄它、只换 ID）。
+            let mut last_log: std::collections::HashMap<(usize, u8), Value> = std::collections::HashMap::new();
+            // 每台设备自己的写入者 ID（真实设备是 `deviceId#incarnation`，srs_db_store.dart），HLC 才只在同写入者内唯一：
+            // 共用一个写入者时两台设备的时钟各自从 T0 起，会造出「不同设备、同卡、同 HLC」的两次不同改期，被读侧当成
+            // 同一事件的副本（BUG-4218 的 EventKey），测不到「两条并发改期都要被看见」的收敛。
+            let hlc = |dev: usize, at: i64| json!(format!("{at}:0:dart{dev}"));
             for a in &acts {
                 k += 1;
                 match a {
@@ -669,8 +682,11 @@ mod convergence {
                         clock[*dev] += i64::from(*dt_min) * 60_000 + 1;
                         let rtype = if *rating == 1 { "relearn" } else { "learn" };
                         let id = format!("r{dev}-{k}");
-                        devs[*dev].apply(clock[*dev], vec![review(&id, &format!("C{card}"), clock[*dev], i64::from(*rating), rtype)]);
+                        let mut r = review(&id, &format!("C{card}"), clock[*dev], i64::from(*rating), rtype);
+                        r["x"]["hlc"] = hlc(*dev, clock[*dev]);
+                        devs[*dev].apply(clock[*dev], vec![r.clone()]);
                         last_review.insert((*dev, *card), id);
+                        last_log.insert((*dev, *card), r);
                     }
                     Act::SetDue { dev, card, due } => {
                         clock[*dev] += 5000;
@@ -678,6 +694,7 @@ mod convergence {
                         m["x"]["kind"] = json!("manual");
                         m["x"].as_object_mut().unwrap().remove("rating");
                         m["x"]["res"] = json!({"queue": "review", "dueDay": 19_700 + i64::from(*due), "ivl": 3, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi"});
+                        m["x"]["hlc"] = hlc(*dev, clock[*dev]);
                         devs[*dev].apply(clock[*dev], vec![m]);
                     }
                     Act::Steps { dev, first } => {
@@ -689,10 +706,21 @@ mod convergence {
                             clock[*dev] += 1000;
                             let u = json!({"t": "log", "x": {
                                 "id": format!("u{dev}-{k}"), "p": P, "card": format!("C{card}"), "kind": "undo", "revokes": target,
-                                "hlc": format!("{}:0:dart", clock[*dev]), "at": clock[*dev], "ts": "anchored", "origin": "fushi", "rtype": "manual",
+                                "hlc": hlc(*dev, clock[*dev]), "at": clock[*dev], "ts": "anchored", "origin": "fushi", "rtype": "manual",
                                 "utcOff": 0, "rollover": 4, "fv": 1
                             }});
                             devs[*dev].apply(clock[*dev], vec![u]);
+                            last_log.remove(&(*dev, *card));
+                        }
+                    }
+                    Act::Copy { dev, card } => {
+                        if let Some(orig) = last_log.get(&(*dev, *card)) {
+                            clock[*dev] += 1000;
+                            let mut c = orig.clone();
+                            let id = format!("c{dev}-{k}");
+                            c["x"]["id"] = json!(id);
+                            devs[*dev].apply(clock[*dev], vec![c]);
+                            last_review.insert((*dev, *card), id);
                         }
                     }
                     Act::Lineage { dev, from } => {
@@ -2227,6 +2255,104 @@ fn deck_config_change_does_not_rewrite_past_reviews() {
     }
     assert_eq!(projection(&a), projection(&b));
     assert_eq!(log_json(&a, "b1")["sc"]["ret"], json!(0.8));
+}
+
+/// BUG-4218 存量升级（srs.db v26）：同一次复习换了 ID 的副本（BUG-4217 修好前的 profile 合并写出，带 `sc`）在旧规则下
+/// 让副本再推进一次状态，后面派生日志重放写回的 `res` 与新规则不同。升级时把带副本的卡按新规则重放，结果与收段新建的
+/// 设备逐位相同（投影与摘要）；没有副本的卡不在候选里，不动。
+#[test]
+fn v26_upgrade_replays_cards_with_event_copies() {
+    let a = Device::new("v26-a");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let r1 = review("r1", "C", T0 + 10, 3, "learn");
+    let mut copy = r1.clone();
+    copy["x"]["id"] = json!("r1-copy");
+    a.apply(T0 + 10, vec![r1]);
+    a.apply(T0 + 11, vec![copy]);
+    a.apply(T0 + DAY, vec![review("r2", "C", T0 + DAY, 3, "review")]);
+    a.apply(T0 + DAY, vec![review("s1", "S", T0 + DAY, 3, "learn")]);
+    assert!(
+        log_json(&a, "r1-copy")["sc"].is_object(),
+        "the copy carries a config snapshot"
+    );
+    a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    let fresh = Device::new("v26-fresh");
+    fresh.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    assert_eq!(projection(&a), projection(&fresh));
+    let want_r2 = log_json(&a, "r2");
+    let want_s1 = log_json(&a, "s1");
+
+    // 对照：副本的 HLC 不同（EventKey 不成组，等于旧规则下把副本当独立有效日志再推进一次），r2 写回的 `res` 必须
+    // 与新规则的不同——否则这条测试在 EventKey 不再成组时也会绿。
+    let old_rule = Device::new("v26-old-rule");
+    let mut independent = review("r1-copy", "C", T0 + 10, 3, "learn");
+    independent["x"]["hlc"] = json!(format!("{}:0:dart", T0 + 11));
+    old_rule.apply(T0, vec![deck_entity(&deck)]);
+    old_rule.apply(T0 + 10, vec![review("r1", "C", T0 + 10, 3, "learn")]);
+    old_rule.apply(T0 + 11, vec![independent]);
+    old_rule.apply(T0 + DAY, vec![review("r2", "C", T0 + DAY, 3, "review")]);
+    assert_ne!(
+        log_json(&old_rule, "r2")["res"],
+        want_r2["res"],
+        "treating the copy as an independent log changes r2's result"
+    );
+
+    // 模拟旧规则算出的存量行：r2（带副本的卡）与 s1（没有副本的卡）的 `res` 都改成别的值，版本退回 v25。
+    let stale = |d: &Device, id: &str, v: &Value| {
+        let mut j = v.clone();
+        j["res"]["dueDay"] = json!(1);
+        let w = d.core.writer().unwrap();
+        w.execute(
+            "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+            rusqlite::params![id, j.to_string()],
+        )
+        .unwrap();
+    };
+    stale(&a, "r2", &want_r2);
+    stale(&a, "s1", &want_s1);
+    a.core
+        .writer()
+        .unwrap()
+        .execute_batch("UPDATE srs_meta SET value = '25' WHERE key = 'schema';")
+        .unwrap();
+    assert_ne!(log_json(&a, "r2"), want_r2);
+    let Device { core, _dir } = a;
+    drop(core);
+    let a = Device {
+        core: SrsCore::open(&_dir.0.join("srs.db")).unwrap(),
+        _dir,
+    };
+    assert_eq!(
+        log_json(&a, "r2"),
+        want_r2,
+        "the card with an event copy is replayed under the new rule"
+    );
+    assert_eq!(
+        log_json(&a, "s1")["res"]["dueDay"],
+        json!(1),
+        "cards without copies are not candidates"
+    );
+    // 修回 s1 之后，升级的库与新建的库投影、摘要逐位相同。
+    let w = a.core.writer().unwrap();
+    w.execute(
+        "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+        rusqlite::params!["s1", want_s1.to_string()],
+    )
+    .unwrap();
+    drop(w);
+    assert_eq!(projection(&a), projection(&fresh));
+    assert_eq!(a.digest(), fresh.digest());
+    // 本机缓存的摘要按新前缀记（`<根>@4:<vv>`）。
+    let stored = &a.rows(&format!(
+        "SELECT value FROM srs_meta WHERE key = 'sync2_digest/{P}'"
+    ))[1][0];
+    assert!(stored.contains("@4:"), "{stored}");
+    assert!(!stored.contains("@3:"), "{stored}");
+    // 可重放：再跑一遍什么也不改。
+    let w = a.core.writer().unwrap();
+    assert!(super::replay_event_copies(&w).unwrap().is_empty());
 }
 
 /// 旧库：一张卡两条旧日志，作者结果故意与「按当前配置重放」会算出的不同；牌组配置也改过。

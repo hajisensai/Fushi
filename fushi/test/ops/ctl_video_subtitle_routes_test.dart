@@ -10,6 +10,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:path/path.dart' as p;
 
@@ -50,6 +51,7 @@ void main() {
           ({
             required VideoSubtitleSegmenterMode mode,
             MossBackendPreference mossBackend = MossBackendPreference.auto,
+            VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
           }) async {
             resolvedModes.add(mode);
             resolvedBackends.add(mossBackend);
@@ -249,5 +251,60 @@ void main() {
     expect((entries.single! as Map<String, Object?>)['userEdited'], isTrue);
     final SubtitleGlossary stored = store.rows[workKey]!;
     expect(stored.entries.single.misrecognitions, <String>['結衣']);
+  });
+
+  test('专名表按 language 分表：zh 读写 `<workKey>:zh`，不碰日语那张；非法值 400', () async {
+    CtlCall get(Map<String, String> query) => CtlCall(
+      method: 'GET',
+      path: kCtlVideoSubtitleGlossaryPath,
+      query: query,
+    );
+    final Map<String, Object?> ja =
+        await handlers.glossary(get(const <String, String>{'bookUid': 'a'}))
+            as Map<String, Object?>;
+    final String workKey = ja['workKey']! as String;
+    expect(ja['language'], 'ja');
+
+    final Map<String, Object?> saved =
+        await handlers.setGlossary(
+              CtlCall(
+                method: 'PUT',
+                path: kCtlVideoSubtitleGlossaryPath,
+                body: <String, Object?>{
+                  'bookUid': 'a',
+                  'language': 'zh',
+                  'entries': <Object?>[
+                    <String, Object?>{'ja': '林晓明', 'kind': '人名'},
+                  ],
+                },
+              ),
+            )
+            as Map<String, Object?>;
+    expect(saved['language'], 'zh');
+    expect(store.rows['$workKey:zh']!.entries.single.ja, '林晓明');
+    expect(store.rows.containsKey(workKey), isFalse, reason: '日语那张没被写');
+
+    final Map<String, Object?> zh =
+        await handlers.glossary(
+              get(const <String, String>{'bookUid': 'a', 'language': 'zh'}),
+            )
+            as Map<String, Object?>;
+    expect(
+      (zh['entries']! as List<Object?>).map(
+        (Object? e) => (e! as Map<String, Object?>)['ja'],
+      ),
+      <String>['林晓明'],
+    );
+    final Map<String, Object?> jaAgain =
+        await handlers.glossary(get(const <String, String>{'bookUid': 'a'}))
+            as Map<String, Object?>;
+    expect(jaAgain['entries'], isEmpty);
+
+    await expectLater(
+      handlers.glossary(
+        get(const <String, String>{'bookUid': 'a', 'language': 'yue'}),
+      ),
+      failure(400),
+    );
   });
 }

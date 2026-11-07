@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/video/jimaku_matching.dart'

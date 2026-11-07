@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/stats/interval_coverage.dart';
 
 // BUG-2108 起视频只计首次覆盖；2026-09-06 抽成通用 [IntervalCoverage]（阅读三域的

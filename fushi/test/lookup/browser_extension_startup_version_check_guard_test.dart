@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 自更新升级点守卫（源码扫描）：把扩展版本检查从「仅查词后被动比对」升级为「启动即主动
 /// 检查」。此前 app 升级当天用户若不划词，浏览器里的弹窗逻辑一直停在旧版；现在扩展 SW

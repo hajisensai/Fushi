@@ -30,6 +30,7 @@ class _Backend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {}
 
   @override
@@ -112,6 +113,7 @@ void main() {
   late _Surface surface;
   late bool desktop;
   late bool lockScreen;
+  late ({int before, int after}) span;
   late ValueNotifier<bool> owns;
   late int released;
 
@@ -134,6 +136,7 @@ void main() {
     ),
     desktop: surface,
     desktopEnabled: () => desktop,
+    desktopSpan: () => span,
     mediaSessionEnabled: () => lockScreen,
     sessionOwnerChanged: owns,
     musicOwnsSession: () => owns.value,
@@ -157,6 +160,7 @@ void main() {
     surface = _Surface();
     desktop = true;
     lockScreen = true;
+    span = (before: 0, after: 1);
     owns = ValueNotifier<bool>(true);
     released = 0;
   });
@@ -189,6 +193,31 @@ void main() {
 
     lockScreen = false;
     expect(l.mediaSessionLine, isNull, reason: '锁屏开关关着不给行');
+  });
+
+  test('同时显示句数：当前行带上文时，已唱高亮从块内当前行起点算；改设置即重推', () async {
+    span = (before: 1, after: 1);
+    final MusicLyricsLive l = live();
+    addTearDown(l.dispose);
+    await engine.playQueue(<MusicPlayItem>[item('a'), item('b')]);
+    await _settle();
+    backend.controller.add(
+      const MusicBackendPosition(Duration(milliseconds: 4500), null),
+    );
+    await _settle();
+    // 第二行是当前行：上文一行在前，块内起点 = '夜に駆ける\n'.length = 6。
+    expect(surface.log, contains('block:夜に駆ける|沈むように@6+5'));
+    expect(
+      surface.log,
+      contains('hl:6+2'),
+      reason: '4.5 s 唱到「沈む」，高亮落在当前行而不是块首的上一行',
+    );
+
+    span = (before: 0, after: 0);
+    l.onSettingsChanged();
+    await _settle();
+    expect(surface.log.last, isNot(startsWith('block:夜に駆ける')));
+    expect(surface.log, contains('block:沈むように@0+5'));
   });
 
   test('有声书持有会话时让出窗口并回调；设置关掉同样隐藏；没有歌词不弹窗', () async {

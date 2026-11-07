@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
+      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 680c0a182f236aabefa2ba726eaa2cc9e56c55dc
+      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
   archive: ^3.6.1
   async_zip: ^0.1.0
   audio_service: ^0.18.9
@@ -254,6 +254,10 @@ dev_dependencies:
   flutter_lints: ^2.0.1
   flutter_native_splash: ^2.2.8
   fake_async: ^1.3.1
+  # 2026-11-05：import 闭包不碰 dart:ui 的测试用 package:test 写，heavy 本机用
+  # `dart test` 跑（单 VM，约 0.8 GB；flutter test 起步 3.3 GB）。守卫
+  # test/build/pure_dart_test_import_guard_test.dart。
+  test: ^1.24.0
   flutter_test:
     sdk: flutter
   integration_test:

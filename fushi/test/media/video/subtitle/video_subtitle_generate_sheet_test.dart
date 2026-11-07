@@ -14,7 +14,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
@@ -61,17 +63,47 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   int downloads = 0;
 
   @override
-  Future<bool> isReady() async => false;
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async => false;
 
   @override
-  Stream<ModelDownloadEvent> download() {
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) {
     downloads++;
     return running.stream;
   }
 
   @override
-  Stream<ModelDownloadEvent>? resumeDownload() =>
-      running.isClosed ? null : running.stream;
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => running.isClosed ? null : running.stream;
+}
+
+/// 按语言分开的识别模型：日语那包正在下（之前那次弹层发起的），普通话没下也没在下。
+class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
+  final StreamController<ModelDownloadEvent> japanese =
+      StreamController<ModelDownloadEvent>.broadcast();
+
+  @override
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async => false;
+
+  @override
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => language == VideoSubtitleLanguage.japanese
+      ? japanese.stream
+      : const Stream<ModelDownloadEvent>.empty();
+
+  @override
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => language == VideoSubtitleLanguage.japanese && !japanese.isClosed
+      ? japanese.stream
+      : null;
 }
 
 void main() {
@@ -80,11 +112,13 @@ void main() {
   late FakeVideoSubtitleSettings settings;
   late AppVideoSubtitleTarget target;
   AiTextCompleter completer = FakeAiCompleter(answerAll);
+  final List<String> probedAudio = <String>[];
 
   setUpAll(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
   tearDownAll(() => db.close());
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('vsub_sheet_');
+    probedAudio.clear();
     settings = FakeVideoSubtitleSettings();
     final File video = File(p.join(tmp.path, 'ep01.mkv'))
       ..writeAsBytesSync(List<int>.filled(32, 1));
@@ -109,6 +143,7 @@ void main() {
 
   AppVideoSubtitleService buildService({
     VideoSubtitleAsrModelPort asrModelPort = const ReadyModels(),
+    List<AudioTrackFacts> audioTracks = const <AudioTrackFacts>[],
   }) => AppVideoSubtitleService(
     database: db,
     settings: settings,
@@ -116,12 +151,17 @@ void main() {
     jobRegistry: VideoRemoteJobRegistry(),
     jobsRoot: () async => Directory(p.join(tmp.path, 'jobs')),
     probeDurationMs: (String _) async => 24 * 60 * 1000,
+    probeAudioTracks: (String path) async {
+      probedAudio.add(path);
+      return audioTracks;
+    },
     mossPort: const ReadyModels(),
     asrModelPort: asrModelPort,
     recognizerResolver:
         ({
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
+          VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
         }) async =>
             VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
     completerFactory: (AiProviderConfig _) =>
@@ -152,6 +192,18 @@ void main() {
     await tester.pumpAndSettle();
     return openedSettings;
   }
+
+  VideoSubtitleLanguage selectedLanguage(WidgetTester tester) => tester
+      .widget<SegmentedButton<VideoSubtitleLanguage>>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('video-subtitle-ai-language')),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is SegmentedButton<VideoSubtitleLanguage>,
+          ),
+        ),
+      )
+      .selected
+      .single;
 
   VoidCallback? startPressed(WidgetTester tester) => tester
       .widget<FushiFilledButton>(
@@ -348,5 +400,189 @@ void main() {
       find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
       findsNothing,
     );
+  });
+
+  testWidgets('只有中文音轨：语言默认中文，可手动改回日语', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'chi'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+
+    final Finder ja = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-language-ja'),
+    );
+    await tester.ensureVisible(ja);
+    await tester.tap(ja);
+    await tester.pumpAndSettle();
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+  });
+
+  testWidgets('日中双音轨：语言默认日语（原有行为）', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'jpn'),
+          AudioTrackFacts(index: 2, language: 'chi'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+  });
+
+  testWidgets('换了语言后，另一门语言那条下载的进度 / 失败不写进当前语言的模型状态', (
+    WidgetTester tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _PerLanguageAsr asr = _PerLanguageAsr();
+    // 只有中文音轨：面板先按日语接回日语那条下载，猜出普通话后切过去。
+    await pumpSheet(
+      tester,
+      buildService(
+        asrModelPort: asr,
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'chi'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+
+    final Finder button = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-model-download'),
+    );
+    expect(
+      tester.widget<FushiOutlinedButton>(button).onPressed,
+      isNotNull,
+      reason: '普通话模型没在下，下载钮可点',
+    );
+
+    asr.japanese.add(
+      const ModelDownloadEvent(
+        fileName: 'parakeet.onnx',
+        receivedBytes: 40,
+        totalBytes: 100,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      tester.widget<FushiOutlinedButton>(button).onPressed,
+      isNotNull,
+      reason: '日语那条的进度不属于普通话模型，不能把普通话的下载钮挡掉',
+    );
+
+    asr.japanese.addError(StateError('ja download failed'));
+    await asr.japanese.close();
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('ja download failed'), findsNothing);
+  });
+
+  AppVideoSubtitleTarget retarget({
+    String? contentLanguage,
+    String? originalLanguage,
+  }) => AppVideoSubtitleTarget(
+    title: target.title,
+    work: SubtitleWorkContext(
+      workKey: target.work.workKey,
+      title: target.work.title,
+      originalTitle: target.work.originalTitle,
+      originalLanguage: originalLanguage,
+    ),
+    episodes: <AppVideoSubtitleEpisode>[
+      for (final AppVideoSubtitleEpisode e in target.episodes)
+        AppVideoSubtitleEpisode(
+          bookUid: e.bookUid,
+          videoPath: e.videoPath,
+          title: e.title,
+          contentLanguage: contentLanguage,
+        ),
+    ],
+    bookUid: target.bookUid,
+  );
+
+  String? languageHint(WidgetTester tester) {
+    final Finder f = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-language-source'),
+    );
+    return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+  }
+
+  testWidgets('视频设了内容语言 zh：压过只有 jpn 的音轨，不探测音轨，提示来由', (
+    WidgetTester tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    target = retarget(contentLanguage: 'zh-Hans', originalLanguage: 'ja');
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, language: 'jpn'),
+        ],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+    expect(probedAudio, isEmpty);
+    expect(languageHint(tester), t.video_subtitle_ai_language_from_content);
+  });
+
+  testWidgets('音轨没标语言：按刮削原语言 zh 选中文；手动改后提示消失', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    target = retarget(originalLanguage: 'zh');
+    await pumpSheet(
+      tester,
+      buildService(
+        audioTracks: const <AudioTrackFacts>[AudioTrackFacts(index: 1)],
+      ),
+      _FakePrefs(),
+    );
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.mandarin);
+    expect(probedAudio, hasLength(1));
+    expect(languageHint(tester), t.video_subtitle_ai_language_from_metadata);
+
+    final Finder ja = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-language-ja'),
+    );
+    await tester.ensureVisible(ja);
+    await tester.tap(ja);
+    await tester.pumpAndSettle();
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+    expect(languageHint(tester), isNull);
+  });
+
+  testWidgets('什么语言信息都没有：日语，提示是默认', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpSheet(tester, buildService(), _FakePrefs());
+    expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
+    expect(languageHint(tester), t.video_subtitle_ai_language_from_default);
   });
 }

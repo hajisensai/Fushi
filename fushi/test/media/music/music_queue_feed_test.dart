@@ -35,6 +35,7 @@ class _FakeBackend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
     this.current = current;
     this.next = next;

@@ -6,7 +6,7 @@
 // 测试要真 DLL + 做种夹具，CI 上多半 skip，守不住这条）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:path/path.dart' as p;
 

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-722: dictionary popup glossary furigana of multi-kanji words (勝負 / 将棋)
 // fully superimposed — しょう printed on top of ぶ, しょう on top of ぎ.

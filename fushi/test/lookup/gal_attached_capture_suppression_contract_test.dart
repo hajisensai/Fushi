@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   // 反馈 U9k4hlYaNZ：attached 的字形捕获窗与桌面查词卡都是独立顶层 HWND，按窗口的

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4120: under X11 (Steam Game Mode / gamescope Xwayland) video fell back to
 /// mpv's software renderer.

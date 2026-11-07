@@ -1046,6 +1046,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     with WidgetsBindingObserver, WindowListener {
   InAppWebViewController? _controller;
 
+  @override
+  Object? get popupBodyWebViewId => _controller?.getViewId();
+
   /// 右键菜单盖在整页 WebView 上：macOS 上点 WebView 的事件到不了菜单遮罩，由页内
   /// JS 回报鼠标按下来关菜单（反馈 U_8sCB0h_f）；不叠加由 showFushiMenu 自己保证。
   final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
@@ -5326,10 +5329,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   Future<MinePopupResult> onMinedCardActionFromPopup(
-    Map<String, String> fields,
-  ) => _sourceReviewSession != null
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) => _sourceReviewSession != null
       ? onMineFromPopup(fields)
-      : super.onMinedCardActionFromPopup(fields);
+      : super.onMinedCardActionFromPopup(fields, openChooser: openChooser);
 
   @override
   Future<MinePopupResult> onUpdateFromPopup(
@@ -7761,6 +7765,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
+        notifyPopupBodyWebViewChanged();
         // ERRATA H2/C1：唯一的 onTextSelected 注册点。
         _registerSelectionHandlers(controller);
         // 空白 tap 本身是 no-op；但指针已让原生 WebView 夺走 OS 焦点，焦点回收

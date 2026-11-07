@@ -1,0 +1,12 @@
+## BUG-4178 · 复习同步冲突弹窗候选只有名字和 uid，看不出该选哪份
+- **报告**：2026-10-29（应用内反馈 dOv8AdJ6yV，shishamo，墨水屏安卓 + 电脑：「复习冲突我看不出冲突了啥不知道怎么对比」；截图里唯一候选是「Default · 01a13df1」）
+- **真实性**：✅ 真缺陷（信息缺失）。`fushi/lib/src/pages/implementations/srs/srs_sync_settings.dart:138` `srsProfileCandidateSubtitle` 只拼「更新于 …」+ uid 前 8 位；而「更新于」取的是后端给说明文件的 `modifiedAt`，互联 / 部分后端不给，于是只剩 uid。说明文件 `profile.json`（`packages/fushi_engine/lib/srs/srs_profile_link.dart` `srsPublishProfileInfo`）只写 `name` / `hasNotes`，没有任何能认出是哪台设备、有多少数据的东西；弹窗也不显示本机这一份有多少笔记，用户无从对比。
+- **[x] ① 已修复** —
+  - 说明文件加两个**附加键**：`device`（本机设备人读名 = 昵称或型号，取 `SrsDbStore.sync2DeviceInfo()['name']`，与同步页「设备」列表同源）、`notes`（用户笔记数，新 `SrsDbStore.userNoteCount()`，`COUNT` 查询）。旧读者只认 `name` / `hasNotes`，忽略新键；发布签名带上笔记数与设备名，变了才重写。
+  - `srsListRemoteProfiles` 汇总成 `SrsRemoteProfile.devices`（按出现顺序去重）与 `noteCount`（各写入者里最大的一份）；`SrsProfileLinkOutcome.localNoteCount` → `SrsProfileConflict.localNoteCount`。
+  - 弹窗：每个候选副标题显示「来自 <设备> · N 条笔记 · 更新于 … · uid」（各项有才显示，旧版本写的说明文件不编造）；正文多一行「本机：N 条笔记」。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_engine/test/srs/srs_profile_link_sync_test.dart`「两边都有笔记：候选带着对方的设备名与笔记数，本机笔记数一并给出」：两台真 `SrsDbStore` 经真目录同步，按 SrsSyncScheduler 顺序 link → round → publish，断言 B 端候选 `devices == ['Boox Note Air']`、`noteCount == 2`、`localNoteCount == 1`。
+  - `packages/fushi_engine/test/srs/srs_profile_link_test.dart`：多写入者设备名去重、笔记数取最大；旧格式说明文件 `devices` 为空、`noteCount` 为 null。
+  - `fushi/test/srs/srs_profile_conflict_subtitle_test.dart`：副标题拼装（有 / 无新字段）。
+- **备注**：旧版本设备写的说明文件没有新键，要等对方也升级、同步一轮后弹窗才显示设备名与笔记数。「两端数据具体差异」的逐条对比（反馈人的期望之一）不做：候选 profile 的数据没拉到本机之前只能看说明文件里的摘要。未在真机复测。

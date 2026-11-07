@@ -3388,14 +3388,30 @@
       }
       var body = doc.body;
       var docEl = doc.documentElement;
+      var docScroll = docEl ? (docEl.scrollHeight || 0) : 0;
+      var docClient = docEl ? (docEl.clientHeight || 0) : 0;
+      // The root scrollHeight never drops below the viewport. When the content
+      // does not overflow (docScroll <= docClient) that term is the iframe's own
+      // height, not content, and engines disagree on its unit under a zoomed
+      // documentElement: Chromium reports it unzoomed (H / z), WebKitGTK already
+      // zoomed (H). Multiplying WebKit's value by z again shrank the shell by z
+      // on every measure, a feedback loop down to a ~30 px card on Linux. Take
+      // that floor from the iframe itself, in host px, which matches Chromium's
+      // H / z * z exactly.
+      var viewportFloor = 0;
+      if (docScroll > 0 && docScroll <= docClient) {
+        viewportFloor = record.iframe.clientHeight || 0;
+        docScroll = 0;
+      }
       var layoutPx = Math.max(
         body.scrollHeight || 0,
         body.offsetHeight || 0,
-        docEl ? (docEl.scrollHeight || 0) : 0);
-      if (layoutPx <= 0) {
+        docScroll);
+      if (layoutPx <= 0 && viewportFloor <= 0) {
         return 0;
       }
-      var measured = Math.ceil(layoutPx * frameContentZoom(record));
+      var measured = Math.max(
+        Math.ceil(layoutPx * frameContentZoom(record)), viewportFloor);
       record.measuredContentHeight = measured;
       record.contentMeasureDirty = false;
       return measured;

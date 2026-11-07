@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3274：视频页换词时查词弹窗先闪「未找到」、结果多时滑动掉帧（Node 真执行
 /// popup.js，见同名 .js）。

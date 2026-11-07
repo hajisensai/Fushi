@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Linux runner 单实例 + 外部打开转交的源码守卫（Windows 对应物见
 /// `windows_single_instance_guard_static_test.dart`）。

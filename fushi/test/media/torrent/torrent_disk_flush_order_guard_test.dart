@@ -17,7 +17,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   // 测试的工作目录是 `fushi/`，packages 在它的上一级。

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
 /// TODO-1192：锁定 EPUB **每章字数**的抽取与计数接线。

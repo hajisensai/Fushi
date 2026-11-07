@@ -343,11 +343,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                       },
                     ),
                   ),
-                  // 切到 Fushi 复习之前排队等发往 Anki 的卡：有才显示。
-                  const SettingsSearchTarget(
-                    id: 'card_creation.anki.pending_mines',
-                    child: PendingMinesEntryRow(hideWhenEmpty: true),
-                  ),
+                  // 切到 Fushi 复习之前排队等发往 Anki 的卡：有才显示。由本分组按
+                  // 张数决定入不入列，末行才拿得到组尾圆角（#ZWr6B6u_RM）。
+                  if (pendingMineCountOf(ref) > 0)
+                    const SettingsSearchTarget(
+                      id: 'card_creation.anki.pending_mines',
+                      child: PendingMinesEntryRow(),
+                    ),
                 ],
               ),
             ),
@@ -519,14 +521,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
       // 待发制卡队列：不受「Anki 已配置」门控——恰恰是连不上 Anki 的时候卡会攒在
       // 这里。切到 Fushi 复习前攒下的待发卡片仍要发往 Anki：队列非空时照旧露出。
-      // 批量制卡与「连不上时暂存」都关着（默认）时，新卡不会进队列：空队列不露出。
-      AnkiSectionRow.pendingMines => SettingsSearchTarget(
+      // 批量制卡与「连不上时暂存」都关着（默认）时，新卡不会进队列：空队列不露出
+      // （入不入列由 schema 的 [ankiDeliveryRowsFor] 决定）。
+      AnkiSectionRow.pendingMines => const SettingsSearchTarget(
         id: 'card_creation.anki.pending_mines',
-        child: PendingMinesEntryRow(
-          hideWhenEmpty:
-              !settings.batchMiningEnabled &&
-              !settings.queueUndeliveredMinesEnabled,
-        ),
+        child: PendingMinesEntryRow(),
       ),
       // 「卡片内容」：两种目标都生效（SRS 制卡复用 AnkiNoteComposer：查重放行、✓ 覆写
       // 范围、紧凑释义都读同一份设置）。只对 Anki 成立的「查重范围」在「Anki」分组。

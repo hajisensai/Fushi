@@ -6,6 +6,7 @@
   - `fushi/lib/src/utils/components/fushi_material_components.dart:3136` — `FushiPopupSurface` 新增 `borderOnForeground` 参数（默认 true，不改既有观感）
   - `fushi/lib/src/pages/implementations/reader_fushi_page.dart` + `reader_fushi/chrome.part.dart` — 阅读器排在 WebView 之后的 chrome（macOS 标题栏拖拽区 / 顶部进度 pill / 底栏）各包 `RepaintBoundary`
 - **[x] ② 已加自动化测试** — `fushi/test/tools/bug_1692_platform_view_overlay_guard_test.dart`（6 例：`borderOnForeground` 透传的 widget 行为 + 四处「平台视图之后必须有 RepaintBoundary / 不得 foreground 描边」的源码守卫）；另有先前落的命中测试探针 `fushi/integration_test/popup_hittest_probe_itest.dart`（用 `document.elementFromPoint()` 而非 `.click()`），补既有测试的结构性盲区。
+- **iOS 侧**：2026-11-05 在 `upstream/develop`（`df8bddcd161`，Flutter 3.47.6）iPhone 17 模拟器 / iOS 27 上用 XCUITest 真实触摸复验，**浮层 WebView 点击 / 拖拽全部到 DOM，无同类问题、无需修复**；回归用例 `fushi/integration_test/ios_popup_real_touch_itest.dart`。证据与命令见文末「iOS 状态」。
 - **备注**：既有 `popup_dictionary_test.dart` 用 `element.click()` 直接派发事件，**绕过 DOM 命中测试**，因此本 bug 在它下面永远是绿的——这是它测不出「点不动」这类问题的结构性原因，不是用例写漏。
 
 ### 现象（真机实测矩阵，macOS 26.6 / M4 / Hibiki 1.2.0(885)）
@@ -86,6 +87,12 @@ child 2 (surface 同级): PictureLayer (0,0,384.7,346.2)  ← 尺寸拖拽把手
 中间还做了一次**判据实验**：把阅读器 WebView 临时移到 Stack 末尾（最后绘制），点击立刻恢复 —— 反向坐实「之后绘制的 Flutter 内容」才是唯一变量。
 
 ### iOS 结论：**本 bug 不影响 iOS**（已实测 A/B，2026-08-17）
+
+> 2026-11-05 注：下面这段对 iOS 命中模型的描述只对当时的引擎成立。Flutter 3.47 起
+> `FlutterTouchInterceptingView.hitTest:` 会**同步问框架**命中路径里有没有平台视图
+> （`platformViewShouldAcceptTouchAtTouchBeganLocation` → `PlatformDispatcher.onHitTest`），
+> 判据是框架的**命中测试**（不是 macOS 那种按绘制求交的粗矩形）。结论「不受影响」在
+> 3.47.6 上已重新实测成立，见文末「iOS 状态」。
 
 iOS embedder 与 macOS 不是同一套模型：Flutter 画在平台视图之上的内容进的是
 `FlutterOverlayView`，而它以 **`userInteractionEnabled = NO`** 创建，**根本不参与命中测试**；
@@ -217,6 +224,60 @@ Windows 关**。macOS 真机实测：在查词**结果区**单击词，弹出的
 
 ### iOS 状态
 
+**已验证（2026-11-05，`upstream/develop` `df8bddcd161`，Flutter 3.47.6）：浮层 WebView 收得到真实触摸，iOS 无同类问题，未改产品代码。**
+
+环境：Mac（Xcode 27.2）上 iPhone 17 模拟器 `4DDB6CD0-A321-4EA8-B8E5-4B043B5ABFDA` / iOS 27；
+真实触摸由 XCUITest 走模拟器 HID 通道投递（经 UIKit `hitTest:` → `FlutterTouchInterceptingView`
+→ WKWebView，与手指同一路径），不是 JS `.click()`、不是 `tester.tap`。
+
+命令（Mac，`fushi/` 下）：
+
+```bash
+TAG=popuptouch bash integration_test/support/run_sim_touch_itest.sh 4DDB6CD0-A321-4EA8-B8E5-4B043B5ABFDA
+# → 00:44 +1: All tests passed!  RUN_END rc=0
+```
+
+用例 `fushi/integration_test/ios_popup_real_touch_itest.dart`（真 app：首页词典查「猫」→ 真触摸点结果区
+词头 → 弹出嵌套浮层 → 浮层内逐项真触摸；每步读 WebView 里 capture 阶段的 DOM 事件探针）：
+
+| 步骤 | 落点（逻辑 px） | 框架命中路径含该平台视图 | DOM 收到 | 结果 |
+|---|---|---|---|---|
+| 结果区点词头「猫」 | (31.0, 168.4) | ✅ | `pointerdown/touchstart/pointerup/touchend/click`（`RT`） | ✅ 弹出嵌套浮层 |
+| 浮层内点收藏 ☆ | (289.1, 293.1) | ✅ | 同上五件，`click` 落在 `.favorite-button` | ✅ `favorited false→true`，截图 ★ 变实心 |
+| 浮层区域扫描 ×8（中心、四角、左右中、下中，内缩 8px） | 可见卡片 `(7,257.7)-(395,451.7)` 内 | 7 处 ✅ / 右下角 ❌ | 7 处 ✅ / 右下角无事件 | ✅ 与框架判定逐点一致；右下角是 Flutter 的尺寸拖拽把手，该归 Flutter |
+| 浮层内竖拖（按住 0.6s 后拖） | (201,305.7)→(205,431.7) | — | `touchmove` ×27 | ✅ 原生选区「猫
+Generated Japanese lookup」 |
+| 浮层 Flutter 外壳点 × | (366.8, 232.5) | — | — | ✅ 浮层关闭 |
+
+附带观测：前一轮把拖拽做成横拖时，DOM 收到 78 个 `touchmove`，同时浮层被「滑动关闭」
+（`_BodySwipeDismissDetector`，iOS 默认开）关掉——指针同时到了 WebView 与 Flutter 的滑关手势，属预期。
+
+**为什么 iOS 不会出现 macOS 那种整块失聪**：3.47 的 iOS 判据是框架 `hitTestInView` 的命中路径
+（`GestureBinding._handleHitTest`：路径里有 `NativeHitTestTarget` 即交给平台视图）。描边是纯绘制、不参与
+命中，拖拽把手只占右下角自己的命中区——扫描结果正好是「只有右下角归 Flutter」。
+
+**测试装置的根因（顺带修掉的结构性盲区）**：此前多份记录（BUG-3482、BUG-3876）写「`flutter test` 下
+平台视图收不到 XCUITest 真触摸」，只当成环境限制绕开。根因是：`GestureBinding.initInstances` 把
+`onHitTest` 设到 `binding.platformDispatcher`，集成测试绑定里那是 `TestPlatformDispatcher`，它没实现
+`onHitTest` 的 setter（`flutter_test/lib/src/window.dart` 的 `noSuchMethod` 直接返回 null），真
+dispatcher 的 `onHitTest` 一直是 null → 引擎拿 `HitTestResponse.empty` → 所有平台视图拒收触摸。
+`fushi/integration_test/support/ios_real_touch.dart` 的 `IosRealTouchSession` 把同一判据装到真
+`PlatformDispatcher.instance.onHitTest`，并打开 `shouldPropagateDevicePointerEvents`。
+**对照**：同一用例把这一行去掉重跑，结果区点词 `RESULT-AREA events=[]`（Flutter 收到了 Down/Up，
+WebView 零事件）——坐实上述根因，也说明不装它时 iOS 真触摸用例必然假红。
+
+装置：`fushi/integration_test/support/ios_touch_tapper/`（XCUITest 投递器，xcodegen 生成工程）+
+`support/run_sim_touch_itest.sh`（编排：等 flutter 的 Xcode 构建结束再起投递器、把日志里的
+`[ios-touch] TAP` 行桥成请求文件、每次触摸后截一张真屏）。
+
+证据（Mac）：`~/dev/popuptouch-evidence-20261105/pass/`（`popuptouch-itest.log`、`popuptouch-tapper.log`、
+`shots/t000–t011.png`，`t001.png` 为点收藏后的浮层）与 `control-no-onhittest/popuptouch-itest.log`。
+
+真机：Mac 配对着 iPhone 17（`HUAWEI 17`），但真机没有触摸注入通道，未测；iOS 引擎的命中判据在
+模拟器与真机上是同一份代码。
+
+<details><summary>2026-08 的旧状态（已过时，留痕）</summary>
+
 **未验证**。原因是 iOS 模拟器在最新 develop 上**根本构建不起来**：
 `fushi/ios/build_aidoku_runtime.sh` 硬性要求 `PLATFORM_NAME == iphoneos`，模拟器直接 `exit 1`；
 绕过该 gate 则链接阶段缺 `libfushi_aidoku_runtime.a`。这挡住的不只是漫画源，而是
@@ -231,3 +292,5 @@ Windows 关**。macOS 真机实测：在查词**结果区**单击词，弹出的
 `inViewport: true`，用例 All tests passed）。与 macOS 结果区结论一致。
 **iOS 的浮层侧仍未验证**——探针目前只覆盖结果区，且模拟器上的真实触摸注入需要
 桌面解锁后用 CGEvent 点模拟器窗口。
+
+</details>

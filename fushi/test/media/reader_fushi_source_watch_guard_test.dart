@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-793 source-scan guard：书架的 `fushiBooksProvider` / `srtBooksProvider` 是
 /// `FutureProvider`，本身不监听 DB；历史上靠每个导入/变更点各自 `ref.invalidate`

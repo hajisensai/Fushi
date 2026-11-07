@@ -24,6 +24,11 @@ enum DropIntent {
   importNewVideo,
   importNewPlaylist,
 
+  /// 视频页拖入的只有纯音频（[DroppedFiles.pureAudios]）→ 交给音乐库（反馈
+  /// QAondMh4M5：纯音频不再按「无画面的视频」进视频库）。和视频一起拖入时意图仍是
+  /// [importNewVideo]，落点把其中的纯音频同样交给音乐库。
+  importAudioToMusic,
+
   /// 拖入的可导入网络流 URL → 走视频「流媒体导入」（[_importStreamUrl]，入库进视频
   /// 书架）。books/video 两表面都自动切到视频导入，与拖视频文件的自动切换一致（TODO-1306）。
   importVideoUrl,
@@ -56,8 +61,8 @@ enum DropIntent {
 ///   列表/视频文件→**自动切到视频导入**（带上拖入文件，不再只提示让用户手动切，TODO-558）；
 ///   否则有字幕/音频（必非命中卡）→提示需要目标卡；其余忽略。
 /// - video 表面：有 m3u8 播放列表→新建播放列表（比单视频更具体，优先）；否则有视频文件→
-///   新建视频（纯音频按无画面的视频同样新建）；否则有字幕→命中卡则附加、否则提示；
-///   其余忽略。
+///   新建视频；否则有纯音频→交给音乐库（不进视频库）；否则有字幕→命中卡则附加、
+///   否则提示；其余忽略。
 DropIntent decideDropIntent({
   required DropSurface surface,
   required DroppedFiles files,
@@ -124,8 +129,9 @@ DropIntent decideDropIntent({
       if (files.torrents.isNotEmpty) return DropIntent.importTorrent;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
-      // 纯音频 = 无画面的视频，同样新建视频条目（[DroppedFiles.videoLibraryMedia]）。
-      if (files.videoLibraryMedia.isNotEmpty) return DropIntent.importNewVideo;
+      if (files.videos.isNotEmpty) return DropIntent.importNewVideo;
+      // 纯音频归音乐库（[DroppedFiles.pureAudios]）。
+      if (files.pureAudios.isNotEmpty) return DropIntent.importAudioToMusic;
       if (files.subtitles.isNotEmpty) {
         return cardHit
             ? DropIntent.attachToVideoCard
@@ -134,4 +140,38 @@ DropIntent decideDropIntent({
       if (files.hasAny) return DropIntent.unsupportedSurface;
       return DropIntent.ignore;
   }
+}
+
+/// 视频**播放页**（正在播某一集）拖放的意图。和库页的 [DropIntent] 分开：播放页只认
+/// 「给当前视频挂字幕」，其余一律就地提示，不建库、不要求拖到卡片。
+enum PlaybackDropIntent {
+  /// 受支持的字幕 → 导入到当前播放的视频。
+  importSubtitle,
+
+  /// 认得是字幕但格式导不了。
+  unsupportedSubtitle,
+
+  /// 只拖了音频（有声书表 [DroppedFiles.audios] 或纯音频 [DroppedFiles.pureAudios]，
+  /// 后者含 `.ape` / `.mka` / `.ac3` 这类只在音乐库认的格式）→ 「不支持音频」。
+  unsupportedAudio,
+
+  /// 其余认得出的文件 → 「只支持字幕」。
+  unsupportedSurface,
+  ignore,
+}
+
+/// 播放页拖放决策。纯函数。[hasImportableSubtitle] = 拖入路径里有当前播放器能导的字幕
+/// （`firstSubtitlePath`）。
+PlaybackDropIntent decidePlaybackDropIntent({
+  required DroppedFiles files,
+  required bool hasImportableSubtitle,
+}) {
+  if (hasImportableSubtitle) return PlaybackDropIntent.importSubtitle;
+  if (files.subtitles.isNotEmpty) return PlaybackDropIntent.unsupportedSubtitle;
+  if ((files.audios.isNotEmpty || files.pureAudios.isNotEmpty) &&
+      files.videos.isEmpty) {
+    return PlaybackDropIntent.unsupportedAudio;
+  }
+  if (files.hasAny) return PlaybackDropIntent.unsupportedSurface;
+  return PlaybackDropIntent.ignore;
 }

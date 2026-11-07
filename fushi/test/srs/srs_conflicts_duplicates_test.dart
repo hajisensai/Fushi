@@ -149,6 +149,12 @@ void main() {
         );
         await _pumpUntil(tester, card);
         expect(find.text(t.srs_duplicates_title), findsOneWidget);
+        // #IBjxAjty39：只有重复笔记、没有字段冲突时不画「全部确认」（它只确认字段
+        // 冲突；此前是一颗灰掉、看着像点不动的按钮）。
+        expect(
+          find.byKey(const ValueKey<String>('srs_conflicts_confirm_all')),
+          findsNothing,
+        );
         for (final String id in <String>[keep, other]) {
           expect(
             find.descendant(

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-459 接线守卫：收藏句 / 制卡历史「跳回原文」必须按「章节内绝对字符锚」定位，
 /// 不能把 getNormalizedOffset 口径的绝对索引误当 0-10000 进度分数 /10000≈0 而恒跳

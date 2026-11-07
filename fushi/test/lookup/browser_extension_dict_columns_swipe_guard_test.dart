@@ -15,7 +15,7 @@
 // browser_extension_dict_media_mirror_guard_test.dart 另行守卫；真实手感待桌面/真机复测。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('browser extension dict-columns + swipe-close app parity', () {

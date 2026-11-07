@@ -22,7 +22,7 @@
 // tools/browser-extension), which render pitch the same way.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Extract the body of the first `<selector> { ... }` rule (naive single-level
 /// brace match — the popup pitch rules contain no nested braces).

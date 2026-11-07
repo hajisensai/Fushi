@@ -17,6 +17,9 @@ String musicCodecLabel(String? codec) => switch (codec) {
   'opus' => 'Opus',
   'vorbis' => 'Vorbis',
   'musepack' => 'Musepack',
+  'ac3' => 'AC-3',
+  'eac3' => 'E-AC-3',
+  'matroska' => 'MKA',
   final String other => other.toUpperCase(),
 };
 

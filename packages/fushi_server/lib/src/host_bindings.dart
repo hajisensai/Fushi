@@ -17,6 +17,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -120,9 +121,11 @@ Future<VideoSubtitleRecognizerChoice> resolveServerVideoSubtitleRecognizer({
   asr.AsrAccelerationPreference preference = asr.AsrAccelerationPreference.auto,
   String? mossCliPath,
   String? mossModelPath,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) => resolveVideoSubtitleRecognizer(
   mode: mode,
   mossBackend: mossBackend,
+  language: language,
   serviceFactory: (asr.AsrAudioProfile profile) =>
       createServerAsrTranscriptionService(audioProfile: profile),
   preference: preference,

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1299 / BUG-595 源码守卫：手机（默认 lapis 卡组）制卡无书籍封面。
 ///

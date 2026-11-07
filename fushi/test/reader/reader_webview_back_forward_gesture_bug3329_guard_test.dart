@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3356：iOS 上阅读器左缘横滑（用户习惯的侧滑返回）把正文跳走。
 ///

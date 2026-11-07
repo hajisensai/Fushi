@@ -123,10 +123,12 @@ void main() {
       store: store,
       media: media,
       file: file,
-      // 默认（= Anki）不含预设与排程；这里要看被截步长，打开牌组预设。
+      // 默认（= Anki）不含预设与排程；这里要看被截步长，打开牌组预设。开着「使用 RWKV」时非 RWKV 预设的步长
+      // 不带过来（也就无从截），所以关掉。
       options: const SrsAnkiImportOptions(
         withScheduling: true,
         withDeckConfigs: true,
+        useRwkv: false,
       ),
       onProgress: progress.add,
       zstdDecompress: (Uint8List b) => null,
@@ -158,10 +160,10 @@ void main() {
         t.srs_import_report_steps_removed(preset: 'JP preset', removed: '1d'),
       ),
     );
-    // 开了 FSRS 但预设没有参数：落到默认算法，报告里写明。
+    // 关着 RWKV、预设没有 FSRS 参数：落到 FSRS-7 默认参数，报告里写明。
     expect(
       lines,
-      contains(t.srs_import_report_default_algorithm(preset: 'JP preset')),
+      contains(t.srs_import_report_default_fsrs(preset: 'JP preset')),
     );
 
     // 再导一次（默认不更新已有笔记）：没有新增。

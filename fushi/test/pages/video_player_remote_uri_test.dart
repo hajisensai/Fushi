@@ -2,6 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'video_fushi_page_source_corpus.dart';
 
+/// 取 [signature] 起到其方法体闭合 `}` 的源码（签名本身不含 `{`）。
+String _methodBody(String source, String signature) {
+  final int start = source.indexOf(signature);
+  if (start < 0) throw StateError('missing method signature: $signature');
+  final int bodyStart = source.indexOf('{', start + signature.length);
+  int depth = 0;
+  for (int i = bodyStart; i >= 0 && i < source.length; i++) {
+    if (source[i] == '{') depth++;
+    if (source[i] == '}') {
+      depth--;
+      if (depth == 0) return source.substring(start, i + 1);
+    }
+  }
+  throw StateError('unterminated method body: $signature');
+}
+
 void main() {
   final String page = readVideoFushiSource();
 
@@ -21,14 +37,36 @@ void main() {
       );
       final String body = page.substring(idx, end);
 
-      final int remoteCheck = body.indexOf('if (_isRemote');
+      // 7eba730dbf 起互联远端改走 host 原料段 + 本机烧字幕，可以导出；门控收成
+      // 「拿不到片段源键 = 没有可裁的源」：本地返回本机路径，互联远端返回
+      // host 条目键，其它远端（媒体服务器 / 在线源 / 直链）返回 null 并提示先下载。
+      final String keyBody = _methodBody(
+        page,
+        'String? _clipExportSourceKey()',
+      );
+      expect(
+        keyBody.contains('if (!_isRemote) return _currentVideoPath;'),
+        isTrue,
+        reason: '本地视频的源键就是本机路径',
+      );
+      expect(
+        keyBody.contains('if (target == null) return null;'),
+        isTrue,
+        reason: '非互联远端没有 host 端裁切，源键必须是 null',
+      );
+
+      final int keyRead = body.indexOf(
+        'final String? sourceKey = _clipExportSourceKey();',
+      );
+      final int remoteCheck = body.indexOf('if (sourceKey == null)');
       final int remoteMessage = body.indexOf(
         't.video_clip_export_remote_download_required',
       );
       final int markingWrite = body.indexOf('_clipExportMarking = true');
       final int exportingWrite = body.indexOf('_clipExporting = true');
 
-      expect(remoteCheck, greaterThanOrEqualTo(0), reason: '远端视频没有本地源文件，必须先门控');
+      expect(keyRead, greaterThanOrEqualTo(0), reason: '门控必须基于片段源键');
+      expect(remoteCheck, greaterThan(keyRead), reason: '没有可裁源的远端视频必须先门控');
       expect(
         remoteMessage,
         greaterThan(remoteCheck),
@@ -50,28 +88,38 @@ void main() {
       final int idx = page.indexOf('Future<void> _toggleClipExport(');
       expect(idx, greaterThanOrEqualTo(0));
       final int end = page.indexOf('Future<void> _saveScreenshot(', idx);
-      final String body = page.substring(idx, end);
+      // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
+      final String body = page
+          .substring(idx, end)
+          .replaceAll(RegExp(r'\s+'), ' ');
 
       final int outputPathAwait = body.indexOf(
         'final String? outputPath = await _resolveClipOutputPath',
       );
+      // 源比对用片段源键（本地 = 路径，互联远端 = host 条目键），见 7eba730dbf。
       final int preStartGuard = body.indexOf(
-        'generation != _clipExportGeneration || _currentVideoPath != startPath',
+        'generation != _clipExportGeneration || '
+        '_clipExportSourceKey() != startPath',
         outputPathAwait,
       );
       final int exportingWrite = body.indexOf(
         '_clipExporting = true',
         outputPathAwait,
       );
-      final int exportCall = body.indexOf(
-        'exportVideoClipViaFfmpeg',
+      final int remoteExportCall = body.indexOf(
+        'await _exportRemoteClipFile(',
+        outputPathAwait,
+      );
+      final int localExportCall = body.indexOf(
+        'await _exportClipFile(',
         outputPathAwait,
       );
 
       expect(outputPathAwait, greaterThanOrEqualTo(0));
       expect(preStartGuard, greaterThan(outputPathAwait));
       expect(preStartGuard, lessThan(exportingWrite));
-      expect(preStartGuard, lessThan(exportCall));
+      expect(remoteExportCall, greaterThan(preStartGuard));
+      expect(localExportCall, greaterThan(preStartGuard));
     });
 
     test('页面文案保持源片段导出语义', () {

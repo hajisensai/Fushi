@@ -18,14 +18,17 @@
 ///    profile 之间 ID 不相交，正是靠「派生里带 uid / 写入者是集合内的设备」保证的。
 ///
 /// 所以这里按「**假如这份数据一直就在新 uid 下创建**」重算每个按 uid 派生的 ID：能从不可变的来源身份还原
-/// 出派生输入（笔记 guid、笔记类型 ankiNum、字段 / 模板 ankiNum 或名字、牌组全名、卡片的笔记 + 模板 + 序号、
-/// Anki revlog id、导入锚点时刻）且用旧 uid 验算吻合的，用同一条规则换成新 uid 算；还原不出来的用确定性兜底
-/// `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。修改记录的写入者按 `merged-uuidV5(NS, profile-merge/<newUid>/
-/// writer/<旧写入者>)` 一一改名（dot / 因果上下文 / HLC 里的写入者一起改），记录之间的支配关系原样保留，
-/// 修改记录 ID（由 dot 派生）也就与旧 profile 不相交。复习日志 ID 同理重算。
+/// 出派生输入（笔记 guid、笔记类型 ankiNum、字段 / 模板 ankiNum 或名字、牌组全名、卡片的笔记 + 模板 + 序号）且用
+/// 旧 uid 验算吻合的，用同一条规则换成新 uid 算；还原不出来的用确定性兜底 `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。
+/// 复习日志：Anki 导入的原日志不看旧 ID、按新卡片套导入规则，其余（原生日志、undo、重放副本）按旧 ID 兜底（第 7 步，
+/// BUG-4217）；undo 撤销的日志本机还没收到时整个并入暂缓（[SrsProfileMergeDeferred]），等同步送到再并。
+/// 修改记录的写入者按 `merged-uuidV5(NS, profile-merge/<newUid>/writer/<最初的写入者>)~<最初的写入者>` 一一改名
+/// （dot / 因果上下文 / HLC 里的写入者一起改；[_mergedWriterNames]），记录之间的支配关系原样保留，修改记录 ID
+/// （由 dot 派生）也就与旧 profile 不相交。
 ///
-/// 全部映射只依赖 (旧 ID, newUid)：重跑得到同一批 ID（幂等）；两台设备各自把同一个旧 profile 并入同一个
-/// 新 uid，也得到同一批 ID，合并后是同一行而不是两份。
+/// 全部映射只依赖 (旧 ID 或导入身份, newUid)：重跑得到同一批 ID（幂等）；两台设备各自把同一个旧 profile 并入同一个
+/// 新 uid，也得到同一批 ID，合并后是同一行而不是两份。写入者名字与合并路径无关（A→B→C 与 A→C 相同）；原生日志的
+/// 兜底 ID 与路径有关（链式合并得到另一个 ID），同一事件的多 ID 副本由读侧按内容身份合并（BUG-4218）。
 ///
 /// ## 怎么落进同步
 ///
@@ -73,6 +76,39 @@ const String kSrsMergedWriterPrefix = 'merged-';
 /// 按 ID 映射改写，不改名。
 const String _kSyntheticWriterPrefix = 'sync2:';
 
+/// 合并后写入者名字里「哈希」与「最初的写入者」之间的分隔符：`merged-<UUIDv5>~<最初的写入者>`（[_mergedWriterNames]）。
+const String _kMergedWriterOriginSeparator = '~';
+
+/// UUID 文本长度。
+const int _kUuidLength = 36;
+
+/// 写入者 [w] 最初的名字：`merged-<UUIDv5>~<最初>` 剥出 `<最初>`；别的（设备写入者、旧格式的 `merged-<UUIDv5>`）
+/// 就是它自己。
+String _mergedWriterOrigin(String w) {
+  const int at = kSrsMergedWriterPrefix.length + _kUuidLength;
+  if (w.length <= at + 1 ||
+      !w.startsWith(kSrsMergedWriterPrefix) ||
+      w[at] != _kMergedWriterOriginSeparator ||
+      !_uuidToken.hasMatch(w.substring(kSrsMergedWriterPrefix.length, at))) {
+    return w;
+  }
+  return w.substring(at + 1);
+}
+
+/// 最初的写入者 [origins] 并入 [newUid] 后的名字：`merged-UUIDv5(NS, profile-merge/<newUid>/writer/<最初>)~<最初>`（一次
+/// FFI）。哈希输入与 2026-11 之前的 `merged-<UUIDv5>` 相同，后缀把最初的写入者带下去，下一次合并据此剥回最初的写入者
+/// 再算，名字与合并路径无关。
+List<String> _mergedWriterNames(String newUid, List<String> origins) {
+  final List<String> h = uuidV5Batch(<(String, String)>[
+    for (final String o in origins)
+      (srsNamespace, 'profile-merge/$newUid/writer/$o'),
+  ]);
+  return <String>[
+    for (int i = 0; i < origins.length; i++)
+      '$kSrsMergedWriterPrefix${h[i]}$_kMergedWriterOriginSeparator${origins[i]}',
+  ];
+}
+
 /// 一次并入的结果。
 class SrsProfileMergeResult {
   const SrsProfileMergeResult({
@@ -82,6 +118,7 @@ class SrsProfileMergeResult {
     required this.appliedEvents,
     required this.exactIds,
     required this.fallbackIds,
+    required this.aliasedIds,
   });
 
   final int profileId;
@@ -96,6 +133,41 @@ class SrsProfileMergeResult {
 
   /// 还原不出派生输入、走确定性兜底的 ID 数。
   final int fallbackIds;
+
+  /// 复习日志里沿用目标已有 ID 的条数：目标里已有同一次复习（同卡片 / 种类 / 评分 / 发生时刻 / HLC），只是 ID 与
+  /// 规则 / 兜底算出的不同（例如目标里是原生日志的原 UUIDv7）。
+  final int aliasedIds;
+}
+
+/// 并入**暂缓**（不是失败）：旧 profile 里有 undo 撤销的日志既不在旧 profile 里、按旧 ID 兜底算出的 ID 也不在目标里
+/// （同步顺序不保证，undo 先到、它的目标还没到，BUG-4217）。这时这条 undo 的 `revokes` 只能按旧 ID 兜底，而有那条日志
+/// 的设备会按导入规则（`anki-revlog/<id>` / `anki-anchor/<时刻>`）或目标沿用（[_IdMap.alias]）给它另一个 ID——同一条
+/// undo（同 ID）两份内容，[_applyMissing] 按 ID 先到先得，被撤销的复习可能复活；读侧按内容身份合并（BUG-4218）也帮不上，
+/// 因为兜底 ID 下根本没有日志。所以在**任何写入之前**（第一次落库前；并入标记已写、媒体可能已按内容寻址拷过）中止，
+/// 旧 profile 一行不动、标记留着；调用方（[SrsDbProfileLinker] 的 `_resumePendingMerges`）跳过这次并入、按当前 uid 继续
+/// 同步，等同步把那条日志送进旧 profile（或把它按兜底 ID 并好的那份送进目标）后下一轮重跑。
+///
+/// 代价：那条日志永远不来（被撤销的日志所在的段已被清掉 / 来自别的集合）时，并入一直暂缓，这台设备一直留在旧 uid
+/// 上同步（不丢数据、同步不停，但两边的复习数据不互通），见 docs/bugs/BUG-4217。
+class SrsProfileMergeDeferred extends StateError {
+  SrsProfileMergeDeferred({
+    required this.oldUid,
+    required this.newUid,
+    required this.missingRevoked,
+  }) : super(
+         'profile merge $oldUid -> $newUid deferred: '
+         '${missingRevoked.length} log(s) revoked by an undo are neither in '
+         'the old profile nor in the target yet '
+         '(${missingRevoked.take(3).join(', ')}'
+         '${missingRevoked.length > 3 ? ', ...' : ''}); nothing written, '
+         'retried after sync delivers them',
+       );
+
+  final String oldUid;
+  final String newUid;
+
+  /// 被撤销、还没收到的日志的旧 ID（排序后）。
+  final List<String> missingRevoked;
 }
 
 /// 还没做完的并入（进程在中途退出）。调用方启动时对每一项用同样的参数再调一次 [srsMergeProfileUid]。
@@ -287,6 +359,7 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
     appliedEvents: applied,
     exactIds: plan.exact,
     fallbackIds: plan.fallback,
+    aliasedIds: plan.aliased,
   );
 }
 
@@ -300,6 +373,7 @@ class _MergePlan {
     required this.oldToNew,
     required this.exact,
     required this.fallback,
+    required this.aliased,
   });
 
   /// 身份记录与修改记录（先并：缓存刷新据此生成卡片，日志并入时才查得到卡片所属笔记）。
@@ -315,6 +389,7 @@ class _MergePlan {
   final Map<String, String> oldToNew;
   final int exact;
   final int fallback;
+  final int aliased;
 }
 
 final RegExp _uuidToken = RegExp(
@@ -534,35 +609,55 @@ Future<_MergePlan> _plan(
     for (final SrsReviewLog l in logs) l.cardId,
   ]);
 
-  // 7. 复习日志：导入的 revlog = UUIDv5(cardId, anki-revlog/<id>)、导入锚点 = UUIDv5(cardId, anki-anchor/<时刻>)；
-  //    原生日志（UUIDv7）与还原不出来的走兜底。
+  // 7. 复习日志（BUG-4217）。同一次复习可能经两条路径进到目标集合（两台设备各自导入过同一份 Anki、旧 profile 本身是
+  //    更早一次并入的结果、目标里早就有原生日志的原 ID），两条路径算出的 ID 不同，同步按 ID 认身份，一次复习就落成
+  //    两条，间隔 0 天的同评分重复样本把 FSRS 优化的 log loss 从 0.6 推到 1.6。所以：
+  //    a. **自身身份就是那次 Anki 导入**的日志按导入规则重算，不再验证旧 ID：revlog（origin = anki、HLC =
+  //       [srsImportedRevlogHlc]、没有 replayOf）→ UUIDv5(新卡片, anki-revlog/<id>)；锚点（importAnchor、origin = anki、
+  //       HLC = [srsImportAnchorHlc]、没有 replayOf）→ UUIDv5(新卡片, anki-anchor/<时刻>)。恢复备份写出的重放副本
+  //       （packages/fushi_srs/lib/src/restore_plan.dart `_replayOf`）照抄了 ankiRevlogId / 种类 / 发生时刻，只换了 ID 与
+  //       HLC、extra 记了 replayOf——它不是那次导入；套上规则就和已被 undo 撤销的原日志撞成同一个 ID，并入只留一份、
+  //       undo 指过来，这次复习整条消失。
+  //    b. 其余日志（原生日志、undo、重放副本）与 undo 的目标、不认识的事件一律按旧 ID 兜底
+  //       `uuidV5(NS, profile-merge/<newUid>/<旧 ID>)`。**不能**按日志内容派生：那样 undo 的目标不在本机旧 profile 里的
+  //       设备与有这条日志的设备算出两个 ID。代价：链式合并 A→B→C 与直接合并 A→C 给同一条原生日志两个 ID，由读侧按
+  //       内容身份合并成一组（native/fushi_fsrs/src/history.rs `EventKey`，BUG-4218），撤销任一份即整组撤销。
+  //    c. 目标里已有同一条复习（映射后的卡片 + 种类 + 评分 + 发生时刻 + HLC 都相同）但 ID 与 a / b 算出的不同 → 沿用目标
+  //       里的 ID（与修改记录的 [_Writers.alias] 同一思路，BUG-4011）；目标里同一身份有多条时取 ID 最小的那条。
+  //    d. undo 的 revokes 只有在**本机看得到它撤销的那条日志**时才与别的设备一致：a / c 都按日志内容（导入身份、目标里
+  //       的同一身份）给 ID，看不到内容就只能落到 b 的兜底，而有这条日志的设备给的是规则 ID / 目标 ID。所以 undo 的目标
+  //       既不在旧 profile 里、兜底 ID 也不在目标里（没有别的设备按兜底并过它）时整个并入暂缓
+  //       （[SrsProfileMergeDeferred]，在任何落库之前），等同步把它送到再重跑。
+  //    a / b 之后两条旧日志映射到同一个新 ID 时只认「本来就是同一次复习」，见第 9 步。
+  bool replayed(SrsReviewLog l) => l.extra.containsKey(srsReplayOfLogExtraKey);
   final List<SrsReviewLog> anki = <SrsReviewLog>[
     for (final SrsReviewLog l in logs)
-      if (l.ankiRevlogId != null) l,
+      if (l.ankiRevlogId case final int revlog
+          when l.origin == SrsLogOrigin.anki &&
+              l.hlc == srsImportedRevlogHlc(revlog) &&
+              !replayed(l))
+        l,
   ];
-  final List<String> oldRevlogs = SrsIds.importedRevlogsOf(<(String, int)>[
-    for (final SrsReviewLog l in anki) (l.cardId, l.ankiRevlogId!),
-  ]);
   final List<String> newRevlogs = SrsIds.importedRevlogsOf(<(String, int)>[
     for (final SrsReviewLog l in anki) (ids[l.cardId]!, l.ankiRevlogId!),
   ]);
   for (int i = 0; i < anki.length; i++) {
-    if (oldRevlogs[i] == anki[i].id) ids.exactly(anki[i].id, newRevlogs[i]);
+    ids.exactly(anki[i].id, newRevlogs[i]);
   }
   final List<SrsReviewLog> anchors = <SrsReviewLog>[
     for (final SrsReviewLog l in logs)
-      if (l.kind == SrsLogKind.importAnchor && !ids.has(l.id)) l,
+      if (l.kind == SrsLogKind.importAnchor &&
+          l.origin == SrsLogOrigin.anki &&
+          l.hlc == srsImportAnchorHlc(l.occurredAt) &&
+          !replayed(l) &&
+          !ids.has(l.id))
+        l,
   ];
-  final List<String> oldAnchors = SrsIds.importAnchorsOf(<(String, int)>[
-    for (final SrsReviewLog l in anchors) (l.cardId, l.occurredAt),
-  ]);
   final List<String> newAnchors = SrsIds.importAnchorsOf(<(String, int)>[
     for (final SrsReviewLog l in anchors) (ids[l.cardId]!, l.occurredAt),
   ]);
   for (int i = 0; i < anchors.length; i++) {
-    if (oldAnchors[i] == anchors[i].id) {
-      ids.exactly(anchors[i].id, newAnchors[i]);
-    }
+    ids.exactly(anchors[i].id, newAnchors[i]);
   }
   ids.fallbackAll(<String>[
     for (final SrsReviewLog l in logs) ...<String>[
@@ -571,6 +666,39 @@ Future<_MergePlan> _plan(
     ],
     for (final SrsUnknownEvent u in unknown) u.id,
   ]);
+  final Map<String, String> targetLogs = await _logIdsByIdentity(db, newUid);
+  for (final SrsReviewLog l in logs) {
+    final String? existing = targetLogs[_logIdentity(ids[l.cardId]!, l)];
+    if (existing != null) ids.alias(l.id, existing);
+  }
+  final Set<String> oldLogIds = <String>{
+    for (final SrsReviewLog l in logs) l.id.toLowerCase(),
+  };
+  final List<String> dangling = <String>{
+    for (final SrsReviewLog l in logs)
+      if (l.revokesId case final String r
+          when !oldLogIds.contains(r.toLowerCase()))
+        r.toLowerCase(),
+  }.toList()..sort();
+  if (dangling.isNotEmpty) {
+    final Set<String> landed = <String>{
+      for (final String id in await _presentIn(db, newUid, <String>[
+        for (final String r in dangling) ids[r]!,
+      ]))
+        id.toLowerCase(),
+    };
+    final List<String> missing = <String>[
+      for (final String r in dangling)
+        if (!landed.contains(ids[r]!.toLowerCase())) r,
+    ];
+    if (missing.isNotEmpty) {
+      throw SrsProfileMergeDeferred(
+        oldUid: oldUid,
+        newUid: newUid,
+        missingRevoked: missing,
+      );
+    }
+  }
 
   // 8. 修改记录的写入者一一改名（合成的标签行写入者带笔记 ID，按 ID 映射改写）；目标集合里已经有同一批修改记录的
   //    写入者沿用目标里的名字（[_Writers.alias]）。
@@ -614,6 +742,7 @@ Future<_MergePlan> _plan(
     structure.add(SrsEditEvent(n));
   }
   final List<SrsEvent> tail = <SrsEvent>[];
+  final Map<String, (String, String)> seenLogs = <String, (String, String)>{};
   for (final SrsReviewLog l in logs) {
     final Map<String, Object?> j = (ids.deep(l.toJson())! as Map)
         .cast<String, Object?>();
@@ -623,7 +752,20 @@ Future<_MergePlan> _plan(
     if (l.revokesId != null) j['revokes'] = ids[l.revokesId!];
     final SrsReviewLog n = SrsReviewLog.fromJson(j);
     track(l.id, n.id);
-    tail.add(SrsLogEvent(n));
+    // 两条旧日志映射到同一个新 ID：只有它们本来就是同一次复习（旧 profile 里同一次复习有两个 ID，BUG-4217）才只并
+    // 一份；身份不同说明映射把两次不同的复习合成了一条，不能静默丢掉其中一条（丢掉的那次复习就没了，撤销还可能指向
+    // 剩下那条），整个并入中止，旧 profile 不删。
+    final String identity = '${_logIdentity(n.cardId, l)}|${n.revokesId}';
+    final (String, String)? seen = seenLogs[n.id];
+    if (seen == null) {
+      seenLogs[n.id] = (l.id, identity);
+      tail.add(SrsLogEvent(n));
+    } else if (seen.$2 != identity) {
+      throw StateError(
+        'profile merge $oldUid -> $newUid: logs ${seen.$1} and ${l.id} are '
+        'different reviews but both map to ${n.id}; old rows kept',
+      );
+    }
   }
   for (final SrsUnknownEvent u in unknown) {
     final Map<String, Object?> raw = (ids.deep(u.raw)! as Map)
@@ -643,7 +785,38 @@ Future<_MergePlan> _plan(
     oldToNew: oldToNew,
     exact: ids.exact,
     fallback: ids.fallback,
+    aliased: ids.aliased,
   );
+}
+
+/// 一条复习日志的身份（不含它自己的 ID）：卡片、种类、评分、发生时刻与 HLC。Anki 导入的 revlog 的 HLC 物理部分
+/// 就是 revlog id、写入者是 `anki`，两台设备各自导入同一份 Anki 得到的是同一个身份。
+String _logIdentity(String cardId, SrsReviewLog l) =>
+    '${cardId.toLowerCase()}|${l.kind}|${l.rating}|${l.occurredAt}|'
+    '${l.hlc.physical}:${l.hlc.counter}:${l.hlc.writerId}';
+
+/// [profileUid] 名下已有复习日志的 身份 → ID。
+Future<Map<String, String>> _logIdsByIdentity(
+  SrsDatabase db,
+  String profileUid,
+) async {
+  final Map<String, String> out = <String, String>{};
+  for (final QueryRow r
+      in await db
+          .customSelect(
+            'SELECT json FROM srs_review_logs WHERE profile_uid = ? '
+            'ORDER BY id',
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid, srsIdType),
+            ],
+          )
+          .get()) {
+    final SrsReviewLog l = SrsReviewLog.fromJson(
+      (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
+    );
+    out.putIfAbsent(_logIdentity(l.cardId, l), () => l.id);
+  }
+  return out;
 }
 
 /// 旧 ID → 新 ID。
@@ -659,6 +832,9 @@ class _IdMap {
   int exact = 0;
   int fallback = 0;
 
+  /// 被 [alias] 改到目标里已有 ID 的条数（同一次复习目标里已经有，只是 ID 与规则 / 兜底算出的不同）。
+  int aliased = 0;
+
   bool has(String id) => _m.containsKey(id.toLowerCase());
 
   String? operator [](String id) => _m[id.toLowerCase()];
@@ -668,6 +844,14 @@ class _IdMap {
     if (_m.containsKey(k)) return;
     _m[k] = newId;
     exact++;
+  }
+
+  /// [oldId] 改映射到 [newId]（目标里已有的同一条记录），与原映射相同时不算。
+  void alias(String oldId, String newId) {
+    final String k = oldId.toLowerCase();
+    if (_m[k]?.toLowerCase() == newId.toLowerCase()) return;
+    _m[k] = newId;
+    aliased++;
   }
 
   /// 还没有映射的 [oldIds] 一律走确定性兜底（一次 FFI）。
@@ -783,15 +967,53 @@ class _Writers {
       taken.add(t);
     }
     final List<String> plain = <String>[
-      for (final String w in all)
+      for (final String w in all.toList()..sort())
         if (!w.startsWith(_kSyntheticWriterPrefix) && !_m.containsKey(w)) w,
     ];
-    final List<String> renamed = uuidV5Batch(<(String, String)>[
-      for (final String w in plain)
-        (srsNamespace, 'profile-merge/$newUid/writer/$w'),
+    // 改名只从**最初的写入者**派生（[_mergedWriterOrigin]），不从上一跳的名字派生：A→B→C 链式合并与 A→C 直接
+    // 合并得到同一个名字，同一批修改记录 dot 相同 → ID 相同，不会在目标里落成两份。两种情况不剥（按整个名字当最初的
+    // 写入者）：这个旧 profile 里还有别的写入者剥出同一个最初写入者（剥了就两个写入者并成一个、同 seq 撞 dot）；
+    // 剥完算出来的名字就是它自己（它本来就是为 newUid 改的名，原样留着会和旧 uid 的行同 ID）。
+    final Map<String, int> origins = <String, int>{};
+    for (final String w in all) {
+      if (w.startsWith(_kSyntheticWriterPrefix)) continue;
+      final String o = _mergedWriterOrigin(w);
+      origins[o] = (origins[o] ?? 0) + 1;
+    }
+    String originOf(String w) {
+      final String o = _mergedWriterOrigin(w);
+      return o != w && origins[o]! > 1 ? w : o;
+    }
+
+    final List<String> renamed = _mergedWriterNames(newUid, <String>[
+      for (final String w in plain) originOf(w),
     ]);
+    final List<int> self = <int>[
+      for (int i = 0; i < plain.length; i++)
+        if (renamed[i] == plain[i]) i,
+    ];
+    if (self.isNotEmpty) {
+      final List<String> again = _mergedWriterNames(newUid, <String>[
+        for (final int i in self) plain[i],
+      ]);
+      for (int k = 0; k < self.length; k++) {
+        renamed[self[k]] = again[k];
+      }
+    }
     for (int i = 0; i < plain.length; i++) {
-      _m[plain[i]] = '$kSrsMergedWriterPrefix${renamed[i]}';
+      _m[plain[i]] = renamed[i];
+    }
+    // 一一对应是支配关系与 dot 唯一性的前提：任何两个旧写入者改成同一个名字都会让不同的修改记录同 dot。
+    final Map<String, String> back = <String, String>{};
+    for (final MapEntry<String, String> e in _m.entries) {
+      final String? other = back[e.value];
+      if (other != null) {
+        throw StateError(
+          'profile merge into $newUid: writers $other and ${e.key} would both '
+          'become ${e.value}; old rows kept',
+        );
+      }
+      back[e.value] = e.key;
     }
   }
 

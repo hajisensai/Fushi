@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/separated_audio_load_guard.dart';
 
 /// PR #2688 review：分离音轨载入在途按令牌归属、回退按集序号作废、被拒按集记账。

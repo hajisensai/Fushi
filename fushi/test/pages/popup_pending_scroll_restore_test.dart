@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 弹窗内原地跳转：后退 / 前进回到历史页时的滚动位恢复（Node 真执行 popup.js，
 /// 见同名 .js）。

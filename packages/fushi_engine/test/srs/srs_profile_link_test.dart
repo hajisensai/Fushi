@@ -395,6 +395,31 @@ void main() {
       expect(list.single.writers, <String>['host#1']);
       expect(list.single.names, <String>{'Old'});
       expect(list.single.hasNotes, isTrue);
+      // 旧版本不报设备名与笔记数：未知，不瞎猜。
+      expect(list.single.devices, isEmpty);
+      expect(list.single.noteCount, isNull);
+    });
+
+    test('多台设备的设备名按出现顺序去重，笔记数取最大的一份', () async {
+      for (final (String w, String dev, int n) in <(String, String, int)>[
+        ('host#1', 'Pixel 9', 3),
+        ('pc#1', 'Windows PC', 7),
+        ('pc#2', 'Windows PC', 5),
+      ]) {
+        await srsPublishProfileInfo(
+          store,
+          profileUid: kOther,
+          writerId: w,
+          name: 'Default',
+          hasNotes: true,
+          device: dev,
+          noteCount: n,
+        );
+      }
+      final SrsRemoteProfile p = (await srsListRemoteProfiles(store)).single;
+      expect(p.devices.toSet(), <String>{'Pixel 9', 'Windows PC'});
+      expect(p.devices.length, 2);
+      expect(p.noteCount, 7);
     });
 
     test('清理只删本设备的旧格式写入者目录；目录空了整个删', () async {

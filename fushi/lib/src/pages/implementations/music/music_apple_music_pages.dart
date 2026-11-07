@@ -1185,24 +1185,28 @@ class AppleMusicPlaylistEditor implements MusicPlaylistEditor {
 String _appleErrorText(Object e) =>
     t.music_apple_music_action_failed(error: '$e');
 
-/// Apple Music 曲目的「更多」按钮；其它来源回 null（行尾不留空位）。
-Widget? appleMusicTrackMenuButton(
+/// Apple Music 曲目的菜单（行尾「更多」+ 整行右键）；其它来源回 null（行尾不留空位）。
+MusicItemMenu? appleMusicTrackMenu(
   BuildContext context,
   MusicServerBrowser browser,
   MusicServerTrack track,
 ) {
   if (browser.kind != MusicServerKind.appleMusic) return null;
-  return musicMoreButton(
-    key: ValueKey<String>('apple-music-track-menu-${track.id}'),
-    onTap: () => unawaited(_showTrackMenu(context, browser, track)),
+  return MusicItemMenu(
+    buttonKey: ValueKey<String>('apple-music-track-menu-${track.id}'),
+    open: (MusicMenuAnchor? anchor) =>
+        unawaited(_showTrackMenu(context, browser, track, anchor: anchor)),
   );
 }
 
 Future<void> _showTrackMenu(
   BuildContext context,
   MusicServerBrowser browser,
-  MusicServerTrack track,
-) async {
+  MusicServerTrack track, {
+  MusicMenuAnchor? anchor,
+}) async {
+  // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
+  final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
   final AppModel app = _app(context);
   final AppleMusicLinkedSources? sources = appleMusicLinkedSourcesFor(
     app,
@@ -1224,7 +1228,7 @@ Future<void> _showTrackMenu(
     final bool disliked = rating == AppleMusicRating.dislike;
     await showMusicActionMenu(
       context,
-      title: track.title,
+      anchor: at,
       errorText: _appleErrorText,
       actions: <MusicMenuAction>[
         if (write) ...<MusicMenuAction>[
@@ -1377,7 +1381,9 @@ List<Widget> appleMusicCollectionActions(
   return <Widget>[
     musicMoreButton(
       key: const ValueKey<String>('apple-music-collection-more'),
-      onTap: () => unawaited(_showCollectionMenu(context, browser, type, id)),
+      onTap: (MusicMenuAnchor? anchor) => unawaited(
+        _showCollectionMenu(context, browser, type, id, anchor: anchor),
+      ),
     ),
   ];
 }
@@ -1386,8 +1392,9 @@ Future<void> _showCollectionMenu(
   BuildContext context,
   AppleMusicCatalogClient catalog,
   AppleMusicResourceType type,
-  String id,
-) async {
+  String id, {
+  MusicMenuAnchor? anchor,
+}) async {
   final AppleMusicLinkedSources? sources = appleMusicLinkedSourcesFor(
     _app(context),
     catalog,
@@ -1402,8 +1409,7 @@ Future<void> _showCollectionMenu(
     if (!context.mounted) return;
     await showMusicActionMenu(
       context,
-      title: t.music_action_more,
-      icon: FushiIcons.moreHoriz,
+      anchor: anchor,
       errorText: _appleErrorText,
       actions: <MusicMenuAction>[
         MusicMenuAction(

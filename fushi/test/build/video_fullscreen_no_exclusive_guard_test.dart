@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guard for BUG-837: desktop video fullscreen must NOT become a
 /// DWM exclusive fullscreen (Fullscreen Optimization / exclusive MPO flip).

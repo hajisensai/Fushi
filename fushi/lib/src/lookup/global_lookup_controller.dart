@@ -26,6 +26,7 @@ import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
@@ -103,10 +104,16 @@ class GlobalLookupController {
   static bool? platformOverride;
 
   /// Windows: runner GlobalLookupWindow (WebView2). macOS: Runner
-  /// GlobalLookupOverlay.swift (NSPanel + WKWebView) on the SAME channel
-  /// contract. Linux has no native overlay yet.
+  /// GlobalLookupOverlay.swift (NSPanel + WKWebView). Linux (X11 only): the
+  /// `fushi_lookup_card` helper (GTK + WebKitGTK), which the runner forwards
+  /// the channel to. All three speak the SAME channel contract.
   static bool get isSupported =>
-      platformOverride ?? (Platform.isWindows || Platform.isMacOS);
+      platformOverride ??
+      (Platform.isWindows || Platform.isMacOS || linuxLookupCardAvailableHere);
+
+  /// 覆盖窗能不能从截图 / 录屏里排除自己（「防截屏」开关）：Windows display
+  /// affinity、macOS sharingType 有，X11 没有这种能力。
+  static bool get canBlockCapture => isSupported && !Platform.isLinux;
 
   /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
   /// 覆盖窗还是退回主窗 tab，请求不丢。
@@ -148,6 +155,13 @@ class GlobalLookupController {
   // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
   // fired for the between-lookups reset (that hide passes notify=false).
   void Function()? onHidden;
+  // 与 [onHidden] 同一时机（desktop 路由被用户真正关掉），但可挂多个、互不顶替：
+  // [onHidden] 是单槽，视频页会接管再归还；常驻订阅方（音乐桌面歌词查词暂停）走这里。
+  final List<VoidCallback> _hiddenListeners = <VoidCallback>[];
+  void addHiddenListener(VoidCallback listener) =>
+      _hiddenListeners.add(listener);
+  void removeHiddenListener(VoidCallback listener) =>
+      _hiddenListeners.remove(listener);
   void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //
@@ -761,7 +775,7 @@ class GlobalLookupController {
   /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
   /// hotkey_manager keys off the USB-HID [PhysicalKeyboardKey]; the registry
   /// stores a logical key + [ModifierKey] set. [InputBinding.physicalKey] reuses
-  /// the same logical→physical table the IME fallback uses (US-QWERTY). Returns
+  /// the same logical→physical table normalizeCapturedKey indexes (US-QWERTY). Returns
   /// null when the logical key has no physical mapping (e.g. game* / numpad keys
   /// that are not valid global hotkeys anyway).
   HotKey? _hotKeyFromBinding(InputBinding binding) {
@@ -1803,6 +1817,11 @@ class GlobalLookupController {
       onRoutedHidden?.call(route);
       if (route.source == 'desktop') {
         onHidden?.call();
+        for (final VoidCallback listener in List<VoidCallback>.of(
+          _hiddenListeners,
+        )) {
+          listener();
+        }
       }
     } finally {
       // A genuine dismissal ends this immutable lookup. Retiring it here makes

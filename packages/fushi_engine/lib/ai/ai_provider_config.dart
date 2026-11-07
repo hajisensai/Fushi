@@ -268,6 +268,52 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
   ),
 ];
 
+/// 「互联主机」提供商的预设 id（[AiProviderConfig.interconnectHost]）：不在
+/// [kAiProviderPresets] 里——它没有地址、协议与 key，界面另走选主机的流程。
+const String kAiInterconnectPresetId = 'interconnect';
+
+/// 「互联主机」提供商不用的 [AiProviderConfig.baseUrl] 占位值：请求经已配对主机的
+/// 鉴权通道发出（见 `ai_relay.dart`），这个地址永远不会被连。
+final Uri kAiInterconnectPlaceholderBaseUrl = Uri.parse(
+  'fushi-interconnect://host',
+);
+
+/// 一家「互联主机」提供商指向哪里：已配对的哪台主机（[hostId]，与
+/// `FushiClientUrl.hostId` 同值）、用那台主机上配置的哪家提供商（[providerId]；
+/// null = 主机的默认提供商）。API Key 只在主机上，这里一个都不存。
+class AiRelayTarget {
+  const AiRelayTarget({required this.hostId, this.providerId});
+
+  factory AiRelayTarget.fromJson(Map<String, Object?> json) {
+    final String host = (json['host'] as String? ?? '').trim();
+    if (host.isEmpty) {
+      throw const FormatException('interconnect AI provider has no host');
+    }
+    final String provider = (json['provider'] as String? ?? '').trim();
+    return AiRelayTarget(
+      hostId: host,
+      providerId: provider.isEmpty ? null : provider,
+    );
+  }
+
+  final String hostId;
+  final String? providerId;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'host': hostId,
+    if (providerId != null) 'provider': providerId,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is AiRelayTarget &&
+      other.hostId == hostId &&
+      other.providerId == providerId;
+
+  @override
+  int get hashCode => Object.hash(hostId, providerId);
+}
+
 /// [AiProviderConfig.batchConcurrency]：每把 key 同时在途的批数。
 const int kAiBatchConcurrencyPerKey = 4;
 
@@ -345,6 +391,7 @@ class AiProviderConfig {
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
     this.pricing = const AiModelPricing(),
     this.acceptsImages = false,
+    this.relay,
   }) : apiKeys = List<AiApiKey>.unmodifiable(
          apiKeys ??
              (apiKey.isEmpty
@@ -357,6 +404,10 @@ class AiProviderConfig {
     );
     if (id.trim().isEmpty) {
       throw ArgumentError.value(id, 'id', 'AI provider id must not be empty');
+    }
+    // 互联主机提供商不连 [baseUrl]（请求走已配对主机的鉴权通道），地址规则不适用。
+    if (relay != null) {
+      return;
     }
     if (baseUrl.scheme != 'http' && baseUrl.scheme != 'https') {
       throw ArgumentError('AI provider base URL must use HTTP or HTTPS');
@@ -397,8 +448,48 @@ class AiProviderConfig {
     allowInsecureHttp: preset.isLocal,
   );
 
+  /// 一家「互联主机」提供商：补全请求交给已配对的 [AiRelayTarget.hostId]，由那台
+  /// 主机用它自己配置的提供商执行（key 不离开主机，见 `ai_relay.dart`）。
+  ///
+  /// [model] / [toolCallingOverride] / [acceptsImages] 是选主机提供商那一刻的快照：
+  /// 前者只用于显示，后两者让本机的调用方（AI 助手是否发 tools、OCR 是否附图）
+  /// 不必每次先问一遍主机。
+  factory AiProviderConfig.interconnectHost({
+    required String id,
+    required String name,
+    required AiRelayTarget relay,
+    String model = '',
+    bool enabled = true,
+    AiToolCallingOverride toolCallingOverride = AiToolCallingOverride.forceOff,
+    bool acceptsImages = false,
+  }) => AiProviderConfig(
+    id: id,
+    presetId: kAiInterconnectPresetId,
+    name: name,
+    baseUrl: kAiInterconnectPlaceholderBaseUrl,
+    model: model,
+    enabled: enabled,
+    toolCallingOverride: toolCallingOverride,
+    acceptsImages: acceptsImages,
+    relay: relay,
+  );
+
   /// 解析一条配置；字段畸形就抛，由列表层逐条丢弃——一条坏记录不该让整份清单消失。
   factory AiProviderConfig.fromJson(Map<String, Object?> json) {
+    final Object? rawRelay = json['relay'];
+    if (rawRelay is Map) {
+      return AiProviderConfig.interconnectHost(
+        id: (json['id'] as String? ?? '').trim(),
+        name: json['name'] as String? ?? '',
+        relay: AiRelayTarget.fromJson(rawRelay.cast<String, Object?>()),
+        model: json['model'] as String? ?? '',
+        enabled: json['enabled'] as bool? ?? true,
+        toolCallingOverride: AiToolCallingOverride.fromStorageKey(
+          json['toolCalling'] as String?,
+        ),
+        acceptsImages: json['images'] as bool? ?? false,
+      );
+    }
     final Uri? url = Uri.tryParse((json['baseUrl'] as String? ?? '').trim());
     if (url == null) {
       throw const FormatException('AI provider entry has no usable base URL');
@@ -456,6 +547,10 @@ class AiProviderConfig {
   /// 至少 1。真正的限频仍由 `AiRateLimiter` 把关——这里只决定排多少批同时等，
   /// 不让并发大到全在限频器里干排队，也不让多 key / 不限速的提供商只跑 2 批。
   int get batchConcurrency {
+    // 互联主机提供商：主机那家的 key 数本机不知道，按一把 key 的量排，限频由主机把关。
+    if (relay != null) {
+      return kAiBatchConcurrencyPerKey;
+    }
     final int keys = math.max(1, activeApiKeys.length);
     int n = math.min(kAiBatchConcurrencyPerKey * keys, kAiBatchConcurrencyMax);
     if (requestsPerMinute > 0) {
@@ -506,6 +601,12 @@ class AiProviderConfig {
   /// AI 助手据此决定「附上屏幕」时要不要连截图一起发。
   final bool acceptsImages;
 
+  /// 非 null = 「互联主机」提供商（[AiProviderConfig.interconnectHost]）：请求经已配对
+  /// 主机转发，本条的地址 / 协议 / key / 限频都不参与调用。
+  final AiRelayTarget? relay;
+
+  bool get isInterconnectHost => relay != null;
+
   String get displayName => name.trim().isNotEmpty ? name.trim() : baseUrl.host;
 
   AiProviderPreset? get preset => aiProviderPresetById(presetId);
@@ -516,6 +617,11 @@ class AiProviderConfig {
   /// 各处再抄一份判据必然漂移（既有的
   /// `createConfiguredVideoSubtitleProviders` 也是这个纪律）。
   bool get isUsable {
+    // 互联主机提供商：模型、key 都在主机上，本机只要指着一台主机就能发；主机那边
+    // 没配好 / 不在线由请求时的错误码说清楚（`ai_relay.dart`）。
+    if (relay != null) {
+      return enabled;
+    }
     if (!enabled || model.trim().isEmpty) {
       return false;
     }
@@ -539,6 +645,7 @@ class AiProviderConfig {
     AiToolCallingOverride? toolCallingOverride,
     AiModelPricing? pricing,
     bool? acceptsImages,
+    AiRelayTarget? relay,
   }) => AiProviderConfig(
     id: id,
     presetId: presetId,
@@ -558,6 +665,7 @@ class AiProviderConfig {
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
     pricing: pricing ?? this.pricing,
     acceptsImages: acceptsImages ?? this.acceptsImages,
+    relay: relay ?? this.relay,
   );
 
   /// API Key 在 JSON 里 base64 存放：`apiKeys` 是完整有序列表（空白草稿不落盘），
@@ -568,34 +676,46 @@ class AiProviderConfig {
   /// secure storage，既有做法（OPDS 密码、同步服务器密码）同样是 base64。真正被
   /// 执行的纪律不在编码强度，而在**隔离**：本键登记进 `kCredentialPreferenceKeys`
   /// （绝不写日志、绝不进明文导出）与 device-local 清单（绝不随备份/同步出设备）。
-  Map<String, Object?> toJson() => <String, Object?>{
-    'id': id,
-    'presetId': presetId,
-    'name': name,
-    'baseUrl': baseUrl.toString(),
-    if (apiKey.isNotEmpty) 'apiKeyB64': _b64(apiKey),
-    if (apiKeys.any((AiApiKey k) => k.trimmed.isNotEmpty))
-      'apiKeys': <Map<String, Object?>>[
-        for (final AiApiKey key in apiKeys)
-          if (key.trimmed.isNotEmpty)
-            <String, Object?>{
-              'keyB64': _b64(key.trimmed),
-              if (!key.enabled) 'enabled': false,
-            },
-      ],
-    'model': model,
-    'protocol': protocol.storageKey,
-    if (reasoningEffort != AiReasoningEffort.none)
-      'reasoningEffort': reasoningEffort.storageKey,
-    'enabled': enabled,
-    if (allowInsecureHttp) 'allowInsecureHttp': true,
-    if (requestsPerMinute > 0) 'rpm': requestsPerMinute,
-    // 跟随预设时不落盘：旧数据缺字段 = 跟随预设，两者同一口径。
-    if (toolCallingOverride != AiToolCallingOverride.followPreset)
-      'toolCalling': toolCallingOverride.storageKey,
-    if (!pricing.isEmpty) 'pricing': pricing.toJson(),
-    if (acceptsImages) 'images': true,
-  };
+  Map<String, Object?> toJson() => relay != null
+      ? <String, Object?>{
+          'id': id,
+          'presetId': presetId,
+          'name': name,
+          'relay': relay!.toJson(),
+          'model': model,
+          'enabled': enabled,
+          if (toolCallingOverride != AiToolCallingOverride.followPreset)
+            'toolCalling': toolCallingOverride.storageKey,
+          if (acceptsImages) 'images': true,
+        }
+      : <String, Object?>{
+          'id': id,
+          'presetId': presetId,
+          'name': name,
+          'baseUrl': baseUrl.toString(),
+          if (apiKey.isNotEmpty) 'apiKeyB64': _b64(apiKey),
+          if (apiKeys.any((AiApiKey k) => k.trimmed.isNotEmpty))
+            'apiKeys': <Map<String, Object?>>[
+              for (final AiApiKey key in apiKeys)
+                if (key.trimmed.isNotEmpty)
+                  <String, Object?>{
+                    'keyB64': _b64(key.trimmed),
+                    if (!key.enabled) 'enabled': false,
+                  },
+            ],
+          'model': model,
+          'protocol': protocol.storageKey,
+          if (reasoningEffort != AiReasoningEffort.none)
+            'reasoningEffort': reasoningEffort.storageKey,
+          'enabled': enabled,
+          if (allowInsecureHttp) 'allowInsecureHttp': true,
+          if (requestsPerMinute > 0) 'rpm': requestsPerMinute,
+          // 跟随预设时不落盘：旧数据缺字段 = 跟随预设，两者同一口径。
+          if (toolCallingOverride != AiToolCallingOverride.followPreset)
+            'toolCalling': toolCallingOverride.storageKey,
+          if (!pricing.isEmpty) 'pricing': pricing.toJson(),
+          if (acceptsImages) 'images': true,
+        };
 }
 
 String _b64(String value) => base64Encode(utf8.encode(value));

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-865 source-scan guard: app 外查词面（剪贴板 / 悬浮 / 选区弹窗）的制卡跑在
 /// `popupMain` 副 FlutterEngine（`PopupEngineHolder`）里。AnkiDroid 制卡走

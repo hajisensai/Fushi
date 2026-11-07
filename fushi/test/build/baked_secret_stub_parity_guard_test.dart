@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：「烘进包里的密钥」注入只有**一份**真相源，且每个构建 app 的 job 都用它。
 ///

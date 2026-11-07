@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 用户 10-24「查词偶发一直闪」的同类排查：M3E 暗色下词典浅底的调色不能因为滚动指示类 /
 /// nudge 等无关写入而先复原、下一帧才重调，露出一帧词典原色。判据在 popup.js 的

@@ -21,7 +21,7 @@
 // PREMULTIPLIED 目标下 D2D 本就走 GRAYSCALE，加了反而可能改到其余浮窗的观感。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String window = File(

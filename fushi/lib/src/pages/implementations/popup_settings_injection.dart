@@ -1290,6 +1290,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMinedActionOverwrite = ${jsonEncode(t.anki_mined_action_overwrite)};
     window.i18nMinedActionView = ${jsonEncode(t.anki_mined_action_view)};
     window.i18nMinedActionAddDuplicate = ${jsonEncode(t.anki_mined_action_add_duplicate)};
+    // 反馈 E0sdqm4h-F：已制卡 ✓ 的提示——右键 / 长按是覆写 / 查看已有卡的入口。
+    window.i18nMinedManageHint = ${jsonEncode(t.anki_mined_manage_hint)};
     window.i18nMinedActionCancel = ${jsonEncode(t.dialog_cancel)};
     window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
     window.i18nMinedOpenNoCard = ${jsonEncode(t.anki_open_no_card)};

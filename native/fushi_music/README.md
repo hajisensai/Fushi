@@ -23,7 +23,7 @@ sha256 + 可选 Ed25519 签名）、原子安装、每次加载重新哈希、�
 
 | 符号 | 作用 |
 |---|---|
-| `ffm_abi_version() -> i32` | ABI 版本（当前 1）；批次格式变化也要升 |
+| `ffm_abi_version() -> i32` | ABI 版本（当前 2，见 `src/lib.rs` 的 `ABI_VERSION`）；批次格式变化也要升 |
 | `ffm_free_bytes(u8*, usize)` | 释放本库交给调用方的缓冲区 |
 | `ffm_scan_open(const u8* root, usize, u8 recursive, Scanner** out) -> i32` | 建扫描游标（根不存在 -5） |
 | `ffm_scan_set_known(Scanner*, const u8*, usize) -> i32` | 已知文件清单（路径 → 修改时刻 + 大小）；没变的文件只回 `unchanged` |

@@ -120,13 +120,16 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
-        // 只有音频的有声书下载完成后自动转录入库（默认开）。本机没有设备端
-        // ASR 的平台这条开关没有意义，不显示。
+        // 总开关：没有字幕的有声书下载完成后自动转录入库（默认开；关 = 一律
+        // 不自动转录，不下模型、不跑推理）。有正文就转完对齐；没有正文要再开
+        // 下面的子开关（见 routeTranscribeAudiobookPlan）。
+        // 本机没有设备端 ASR 的平台这两条开关没有意义，不显示。
         SettingsSwitchItem(
           id: 'listening.audiobook_auto_transcribe',
           title: t.audiobook_auto_transcribe,
-          subtitle: t.audiobook_auto_transcribe_hint,
+          subtitle: t.audiobook_auto_transcribe_align_hint,
           icon: FushiIcons.voice,
+          defaultValue: true,
           visible: (_) => isAsrSupported,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.audiobookAutoTranscribe,
@@ -134,6 +137,25 @@ List<SettingsSection> buildListeningSections() {
             await settingsContext.appModel.setAudiobookAutoTranscribe(
               value: value,
             );
+            settingsContext.refresh();
+          },
+        ),
+        // 子开关：没有正文（EPUB / 文本）的下载也转录成独立字幕书（默认关：没有
+        // 正文时字幕书质量差）。只在总开关开时生效，总开关关时置灰。
+        SettingsSwitchItem(
+          id: 'listening.audiobook_auto_transcribe_without_text',
+          title: t.audiobook_auto_transcribe_without_text,
+          subtitle: t.audiobook_auto_transcribe_without_text_hint,
+          icon: FushiIcons.voice,
+          defaultValue: false,
+          visible: (_) => isAsrSupported,
+          enabled: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookAutoTranscribe,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookAutoTranscribeWithoutText,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel
+                .setAudiobookAutoTranscribeWithoutText(value: value);
             settingsContext.refresh();
           },
         ),

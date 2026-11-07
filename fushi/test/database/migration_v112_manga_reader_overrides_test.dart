@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -59,7 +59,7 @@ void main() {
       isMainProcess: false,
     );
     addTearDown(migrated.close);
-    expect(migrated.schemaVersion, 144);
+    expect(migrated.schemaVersion, 146);
 
     Future<Map<String, Object?>?> overridesOf(String uid) async {
       final MangaReaderOverrideRow? row = await migrated.getMangaReaderOverride(

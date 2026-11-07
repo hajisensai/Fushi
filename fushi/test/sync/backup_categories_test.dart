@@ -1278,6 +1278,56 @@ void main() {
     },
   );
 
+  test(
+    'excluding videos keeps auto-registered music sources as manual ones and '
+    'drops their dismissals (v145, QAondMh4M5)',
+    () async {
+      final built = await buildDataSource();
+      final int video = await built.db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Videos',
+          mediaKind: 'video',
+          rootPath: 'D:/videos',
+          createdAt: 1,
+        ),
+      );
+      await built.db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'OST',
+          mediaKind: 'music',
+          rootPath: 'D:/videos/Show/OST',
+          createdAt: 1,
+          autoOwnerSourceId: Value<int?>(video),
+        ),
+      );
+      await built.db.addMusicAutoSourceDismissal(video, 'D:/videos/Drama');
+      final zip = p.join(src.path, 'auto_music_novideo.zip');
+      await built.service.createBackup(
+        zip,
+        categories: allExcept(BackupCategory.videos),
+      );
+      await built.db.close();
+
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        final rows = await db
+            .customSelect(
+              'SELECT media_kind, auto_owner_source_id FROM media_sources',
+            )
+            .get();
+        expect(rows.map((r) => r.data['media_kind']), <String>['music']);
+        expect(
+          rows.single.data['auto_owner_source_id'],
+          isNull,
+          reason: 'owner 不在包里：恢复后是普通的手动音乐来源，不挂悬空 owner',
+        );
+        expect(await countRows(db, 'music_auto_source_dismissals'), 0);
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
   test('collections / shelf / tags FOLLOW their book: kept when the book is '
       'exported', () async {
     final built = await buildDataSource();

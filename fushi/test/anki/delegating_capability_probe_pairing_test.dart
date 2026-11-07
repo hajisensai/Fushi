@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 // 「静态能力位 + 当场探测」成对覆盖守卫（BUG-4122）。
@@ -19,11 +19,26 @@ import 'package:path/path.dart' as p;
 // 覆盖了 `supports<X>` 而基类有 `probe<X>`，就必须同时覆盖 `probe<X>`。
 // 成对清单从基类源码**解析**出来，不是写死的：以后基类新增一对能力自动纳入。
 
-/// 递归找出 [root] 下所有源码文件。
+/// 本机构建 / 工具链生成的目录：里面是生成物或指回包根的插件符号链接
+/// （例如构建 `example/` 后的 `windows/flutter/ephemeral/.plugin_symlinks/` 会
+/// 链回包自身，跟链接递归在 Windows 上直接 PathNotFound），不是手写源码。
+const Set<String> _generatedDirNames = <String>{
+  'ephemeral',
+  '.plugin_symlinks',
+  'build',
+  '.dart_tool',
+};
+
+/// 递归找出 [root] 下所有手写源码文件：不跟符号链接，跳过生成目录。
 List<File> _dartFiles(Directory root) => root
-    .listSync(recursive: true)
+    .listSync(recursive: true, followLinks: false)
     .whereType<File>()
     .where((File f) => f.path.endsWith('.dart'))
+    .where(
+      (File f) => !p
+          .split(p.relative(f.path, from: root.path))
+          .any(_generatedDirNames.contains),
+    )
     .toList();
 
 /// [source] 里所有 `class Name extends DelegatingAnkiRepository` 的类体

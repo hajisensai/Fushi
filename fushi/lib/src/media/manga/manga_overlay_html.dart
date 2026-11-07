@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
@@ -234,13 +235,16 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
     indices.sort(
       (int a, int b) => _compareMangaBlockReadingOrder(blocks[a], blocks[b]),
     );
-    final String sentence = indices
-        .where((int index) => !rubyBlocks.contains(index))
-        .map((int index) => _mangaBlockText(blocks[index]))
-        .join();
+    final String sentence = mangaJoinOcrText(
+      indices
+          .where((int index) => !rubyBlocks.contains(index))
+          .map((int index) => _mangaBlockText(blocks[index])),
+    );
     final String fallback = sentence.isNotEmpty
         ? sentence
-        : indices.map((int index) => _mangaBlockText(blocks[index])).join();
+        : mangaJoinOcrText(
+            indices.map((int index) => _mangaBlockText(blocks[index])),
+          );
     for (final int index in indices) {
       result[index] = (group: groupIndex, sentence: fallback);
     }
@@ -249,7 +253,7 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
   return result.cast<({int group, String sentence})>();
 }
 
-String _mangaBlockText(MokuroBlock block) => block.lines.join();
+String _mangaBlockText(MokuroBlock block) => mangaJoinOcrText(block.lines);
 
 bool _mangaKanaOnly(String text) =>
     text.isNotEmpty &&
@@ -588,9 +592,34 @@ String _mangaCharacterRegionsHtml({
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
+  // 各行在 [sentence] 里的分界（UTF-16）：行与行直接拼接，行尾不带空格。
+  final List<int> lineBreaks = <int>[];
+  int lineEnd = 0;
+  for (int i = 0; i < block.lines.length - 1; i++) {
+    lineEnd += block.lines[i].length;
+    lineBreaks.add(lineEnd);
+  }
+  int? previousEnd;
   // [regions] comes from [mangaEffectiveTextRegions]: every range is already
   // known to lie inside the sentence, so nothing is filtered here.
   for (final MangaOcrTextRegion region in regions) {
+    // 反馈 vXYKPudf7U：区域只覆盖可见字，词间空格与换行不在任何区域里——原样逐字输出
+    // 会让 DOM 正文成为 `BEENSOLONGSINCE…`，取词一路扫过词界，拉丁文整串查不到。
+    // 两个区域之间夹着空白或拉丁文行界时，补一个纯空白文本节点：阅读器取词脚本把它
+    // 当词界（BUG-3453 的 hasSkippedWhitespaceBetween），且它在两个绝对定位的字格之间
+    // 按 CSS 空白折叠不占版面、不成命中区。
+    final int? gapStart = previousEnd;
+    if (gapStart != null &&
+        region.utf16Start >= gapStart &&
+        _mangaRegionsHaveWordGap(
+          sentence,
+          gapStart,
+          region.utf16Start,
+          lineBreaks,
+        )) {
+      buffer.write(' ');
+    }
+    previousEnd = region.utf16End;
     final MokuroRect r = region.rectangle;
     final double leftPct = ((r.left - parent.left) / parentWidth) * 100;
     final double topPct = ((r.top - parent.top) / parentHeight) * 100;
@@ -615,6 +644,32 @@ String _mangaCharacterRegionsHtml({
     );
   }
   return buffer.toString();
+}
+
+final RegExp _mangaWhitespace = RegExp(r'\s');
+
+/// [sentence] 里相邻两个字格区域之间（`[start, end)`）是否有词界：夹着空白，或跨过一个
+/// 拉丁文行界（[mangaOcrNeedsWordGap]）。
+bool _mangaRegionsHaveWordGap(
+  String sentence,
+  int start,
+  int end,
+  List<int> lineBreaks,
+) {
+  if (_mangaWhitespace.hasMatch(sentence.substring(start, end))) {
+    return true;
+  }
+  for (final int lineBreak in lineBreaks) {
+    if (lineBreak >= start &&
+        lineBreak <= end &&
+        mangaOcrNeedsWordGap(
+          sentence.substring(0, lineBreak),
+          sentence.substring(lineBreak),
+        )) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// 一整页：底图 `<img pointer-events:none>` + 上层 OCR 框。

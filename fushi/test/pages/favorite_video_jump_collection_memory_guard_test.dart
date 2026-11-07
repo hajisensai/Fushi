@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1067 接线守卫：从收藏夹的视频句子跳转进播放器时，必须解析并透传该视频所属
 /// 的主 playlist 合集 id（`playlistCollectionId`）。否则视频初始化时系列级音轨/字幕

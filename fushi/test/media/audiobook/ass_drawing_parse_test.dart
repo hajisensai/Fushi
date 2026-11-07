@@ -3,7 +3,7 @@
 // 遮罩（`{\1c&HFFFFFF&\p1}m 0 0 l ...`）在 Fushi 里根本不存在，被遮的原文透出来、手写
 // 字看着糊成一团。本组钉死：绘图命令解析成归一化路径 + 包围盒 + 样式快照；只有播放
 // 路径（includeDrawings）才把它当 cue 产出。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 const String _kHead = r'''

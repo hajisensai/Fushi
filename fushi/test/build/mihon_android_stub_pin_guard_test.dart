@@ -13,7 +13,7 @@
 //   ② android-jar 不再走 exclusiveContent，或钉的不是 40 位 commit SHA。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 仓库根（测试从 `fushi/` 下跑，与本目录其它 build 守卫同约定）。
 const String _patchPath =

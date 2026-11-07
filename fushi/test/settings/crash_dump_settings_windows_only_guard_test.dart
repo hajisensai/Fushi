@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-607 P0-3/③：诊断区「崩溃转储」项必须 Windows-only 门控。
 ///

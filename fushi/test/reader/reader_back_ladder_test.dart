@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 
 /// 阅读器返回阶梯：Esc（globalBack）与系统返回同一条——词典弹窗先关，其余一律退书；

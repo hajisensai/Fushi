@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-082 source guards: batch dictionary import must not block ~3s per failed
 /// dictionary, and failures must be surfaced to the caller (rethrown) so the
