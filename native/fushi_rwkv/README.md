@@ -5,11 +5,11 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 - **大模型**（2,762,884 参数）：Anki 社区 RWKV 调度（[kuma3-anki-core](https://github.com/Pedrubik2000/kuma3-anki-core)
   的 `rslib/src/rwkv`，AGPL-3.0-or-later）的推理核心原样搬过来；来源、搬了什么 / 删了什么见
   [UPSTREAM.md](UPSTREAM.md)。
-- **小模型 SM56**（331,511 参数，d_model 64）：JSchoreels/anki-rwkv release
-  `small-model-sm56-2026-10-24`（包 sm56）。Fushi 按 SM40（`small-model-sm40-2026-10-19`，包 sm40v2）
-  的 INTEGRATION.md 与 NumPy 参考实现**新写**（`src/rwkv/small/`）；SM56 是同一架构重训
-  （`architecture.json` 与参考代码逐字节相同，只换权重与测试向量），与发布包黄金向量对拍；
-  特征构造器与大模型共用。
+- **小模型 sm72e25**（331,511 参数，d_model 64；2026-11-07 起，之前是 SM56）：无泄漏 SM72、第 25 轮起
+  降温，来自 JSchoreels/anki @ `986963d2` 的 `qt/aqt/rwkv_inference/sm72e25/`（作者桌面端的默认小模型）。
+  Fushi 按 SM40（`small-model-sm40-2026-10-19`，包 sm40v2）的 INTEGRATION.md 与 NumPy 参考实现**新写**
+  （`src/rwkv/small/`）；SM56 与 SM72 各版都是同一架构重训（`architecture.json` 逐字节相同，只换权重），
+  与上游黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入规则**（见「sm72e25」）。
 
 外面包一层输入校验 + 作答时排程 + C ABI。权重都不入库（`fetch_model.*` 下载，见「测试」）。
 
@@ -214,10 +214,10 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
 
 ## 两个模型与状态精度
 
-| | 大模型 | 小模型（SM56） |
+| | 大模型 | 小模型（sm72e25） |
 |---|---|---|
 | 参数 | 2,762,884 | 331,511 |
-| 权重 | `RWKV_trained_on_5000_10000.bin`（11 MB，AGPL） | 发布包里的 `weights.int8.bin`（436 KB，加载时反量化）或 `weights.f32.bin`；许可作者尚未声明 |
+| 权重 | `RWKV_trained_on_5000_10000.bin`（11 MB，AGPL） | `weights.int8.bin`（436 KB，加载时反量化）或 `weights.f32.bin`；随上游 Anki fork 以 AGPL 发布 |
 | 状态精度 | f32 / **int8**（推荐） | f32 / int8 / **int4**（推荐） |
 | card + note 状态 / 卡（一卡一笔记） | int8 25,698 B | int4 2,944 B（int8 4,480 B） |
 | 回放速度（下表） | ≈16k 条/s | ≈50k 条/s |
@@ -242,7 +242,7 @@ card 状态第一层的递推不阻尼这种误差：在一份 121 万条复习�
 
 **准确率（部署路径）**：`examples/replay_eval.rs` 在 anki-revlogs-10k 的 295 个封存用户（两个模型都
 没训练过）上，用本库的特征构造与回放算每条非首次复习作答前的 R（2026-10-20，共 19,462,638 条；
-**小模型为 SM40**，换 SM56 后未在这 295 人上重跑，见下方「SM56」）：
+**小模型为 SM40**，原始带泄漏输入；换 sm72e25 时在这 295 人上按无泄漏输入重跑了 SM56 与 SM72 各版，见下方「sm72e25」）：
 
 | | LogLoss（按条加权） | 更好的用户数 | 非有限值 | 状态峰值（card / note） | 回放耗时（16 线程，总计） |
 |---|---|---|---|---|---|
@@ -272,6 +272,38 @@ SM56 上测 int4 状态，所以换之前在部署路径上补测（本机没有
 测试向量用户的 .bin 由包里 `testvectors/user_*.npz` 的更新行（`raw_*` 列，`card_type` 取
 `raw_state`）转换；部署路径在这两人上与参考实现的即时头 LogLoss 相差 < 1%（ID 编码随机不同）。
 换模型后旧快照按权重指纹被拒，首次启动全量重放一次。
+
+## sm72e25（2026-11-07 换上）
+
+**为什么换。** SM56 训练时用了线上拿不到的信息：训练导出里导出前删掉的卡不在 cards 表，朴素构造
+特征会把缺失 note / deck / preset 标志（输入 13–15）置 1——等于告诉模型「这张卡以后会被删」。SM72 各版
+训练与打分时这三个输入恒为 0（作者称 leak-free）；sm72e25 是其中常量学习率阶段最长（25 轮）再降温的
+一版，也是作者桌面端的默认小模型。
+
+**无泄漏输入规则。** 小模型引擎在特征进网络的唯一入口（`small/model.rs` 的 `feature_mlp_rows`，回放、
+批量回放、查询都走它）把输入 13–15 与原有的 22 一起清零。Fushi 的实时输入三种 ID 本来都有（标志就是
+0），规则只管缺 ID 的输入：仍用占位实体，标志按训练时的 0 给。大模型不受影响。
+
+**部署路径实测**（`examples/model_compare.rs`，本库特征构造 + 批量回放，int4 状态、int8 权重）：
+anki-revlogs-10k 的 295 个封存 final_test 用户（tiers.json；与 SM56 / SM72 的 8,000 个训练用户零交集），
+1,946 万条非首次复习。原始数据里 30% 的行是已删卡（缺 ID），先按 SM72 发布包的无泄漏转换补齐（每张
+缺 ID 的卡自成一个 note，deck / preset 取 id 最近的现存卡，标志清零），五个模型吃完全相同的输入。
+区间是按用户聚类、按条加权的 bootstrap（2,000 次）95% 区间。
+
+| 对 SM56 | 全部 | 同日重复 | 隔天及以上 | 胜出用户 |
+|---|---|---|---|---|
+| SM56 LogLoss | 0.269466 | 0.288101 | 0.261462 | |
+| sm72 | −0.000607 [−0.000943, −0.000359] | −0.000685 | −0.000573 | 247 / 295 |
+| sm72e20 | −0.000978 [−0.001461, −0.000643] | −0.001020 | −0.000960 | 261 / 295 |
+| **sm72e25** | **−0.001050 [−0.001403, −0.000764]（−0.39%）** | −0.001106 | −0.001026 | **264 / 295** |
+| sm92（show-time 重训） | −0.000879 [−0.001359, −0.000492] | −0.000254 | −0.001148 | 226 / 295 |
+
+以 sm72e25 为基线：sm72e20 +0.000072 [−0.000036, +0.000161]（sm72e25 在 188 / 295 人上更好），sm92
++0.000170 [+0.000014, +0.000358]（同日重复差 0.30%；它按「展示时刻」的间隔训练，Fushi 按作答间隔查询）。
+作者本人的收藏（46,775 条，单用户，按卡聚类）上五个小模型差距都在噪声内，sm92 最差。四个 SM72 系列
+模型在这组用户上都没有非有限值，int4 状态 card / note 峰值 ≤ 2.9 / 2.2。
+
+sm72e25 自带的作答时间头（`time_head.*`）没有接入。
 
 ## 快照
 
@@ -340,23 +372,25 @@ cargo test --release --manifest-path native/fushi_rwkv/Cargo.toml
 ```
 
 权重缺失 / SHA-256 不符时测试**失败**并提示跑 fetch_model（不跳过）；`FUSHI_RWKV_MODEL`
-可指向别处的大模型权重，`FUSHI_RWKV_SMALL_PACKAGE` 指向别处的小模型发布包（zip，测试直接从包里读
-权重与 `testvectors/*.npz`）。
+可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着小模型四个文件（`sm72e25_weights.int8.bin`、
+`sm72e25_weights.f32.bin`、`sm72e25_architecture.json`、`sm72e25-vectors.json.gz`）的目录。
 
 - `tests/parity.rs`：与上游对拍（夹具由 `tools/oracle` 把上游 `rslib/src/rwkv` 原样编译后产出，
   f32 / int8 各一份），上游自己测试里写死的两个数，批量回放 vs 逐条回放的状态逐位相同，
   快照中断续跑，损坏快照拒收，线程数无关，reset。
 - `tests/c_abi.rs`：只走 `extern "C"` 的往返与错误路径。
-- `tests/small_model.rs`：小模型与发布包 NumPy 参考实现的黄金向量（两位用户、14,403 行，f32 / int8
-  权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的 p_curve，容差 1e-5（实测最大 3.4e-6）；
-  块边界不改结果（三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致。
+- `tests/small_model.rs`：小模型与上游 NumPy 参考实现的黄金向量（`sm72e25-vectors.json.gz`，两位用户
+  各 500 行，无泄漏输入，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的 p_curve，
+  容差 1e-5（实测最大 8.3e-7）；缺失 ID 标志（输入 13–15）置 1 时 f32 / int4 下每个输出逐位不变（去掉
+  清零即红，已做变异实测）；块边界不改结果（三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致。
 - `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线随时间不增、次日 Again
   低于 Easy，天数是曲线上「当天 R ≤ 目标、前一天 > 目标」的那天；`src/curve.rs` 的单元测试用已知
   形状的曲线钉住求解器（越线点向上取整、评分顺序、上限 / 下限）。
 - `examples/interval_dist.rs`：真实历史上排出的间隔分布（各保留率下 Good / Hard / Again 的分位数）。
 - `tests/long_history.rs`：长历史下紧凑状态有界（见「状态精度」），`LONG_DAYS=10000` 加长。
 - `examples/replay_eval.rs`、`examples/state_drift.rs`、`examples/bench.rs`：真实历史评测、状态峰值
-  追踪、速度与内存。
+  追踪、速度与内存。`examples/model_compare.rs`：多个小模型权重在同一份历史（单文件或每用户一个
+  `.bin` 的目录）上的成对 LogLoss 差与聚类 bootstrap 区间（见「sm72e25」）。
 - 容差：f32 `1e-5`；int8 `1e-3`（来源见 `tests/common/mod.rs`：生成平台上实测 0 差；把 x86
   的 AVX2+FMA 内核强制换成标量内核模拟别的平台，int8 最大差 3.78e-4、f32 2.98e-7）。
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -238,6 +239,106 @@ void main() {
           e.path,
     ];
     expect(hits, isEmpty);
+  });
+
+  test('library home remove: rows map back to their work and removeWorks '
+      'deletes only that work (no server needed), dropping the emptied series '
+      'collection', () async {
+    const MediaServerItem movie = MediaServerItem(
+      id: 'm1',
+      name: 'A Movie',
+      type: MediaServerItemType.movie,
+    );
+    expect(await library.addToLibrary(browser, series), 3);
+    expect(await library.addToLibrary(browser, movie), 1);
+
+    final MediaServerLibraryWork episodeWork = mediaServerWorkOfRow(
+      (await repository.getByBookUid('e3'))!,
+    )!;
+    expect(episodeWork, (serverId: browser.serverId, workId: 'show'));
+    expect(mediaServerWorkOfRow((await repository.getByBookUid('m1'))!), (
+      serverId: browser.serverId,
+      workId: 'm1',
+    ));
+
+    expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 3);
+    for (final String uid in <String>['e1', 'e2', 'e3']) {
+      expect(await repository.getByBookUid(uid), isNull);
+    }
+    expect(
+      await database.getMediaCollectionByNaturalKey('The Show', 'playlist'),
+      isNull,
+      reason: '剧名合集被删空后随之删除，库页不留空卡',
+    );
+    expect(await repository.getByBookUid('m1'), isNotNull);
+    expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 0);
+  });
+
+  test('removeWorks runs afterDeleteBeforeReclaim after the rows are gone '
+      '(library home unmounts cards before covers are reclaimed)', () async {
+    expect(await library.addToLibrary(browser, series), 3);
+    final MediaServerLibraryWork work = (
+      serverId: browser.serverId,
+      workId: 'show',
+    );
+    final List<String?> seenDuringHook = <String?>[];
+    int calls = 0;
+    expect(
+      await library.removeWorks(
+        <MediaServerLibraryWork>{work},
+        afterDeleteBeforeReclaim: () async {
+          calls++;
+          for (final String uid in <String>['e1', 'e2', 'e3']) {
+            seenDuringHook.add((await repository.getByBookUid(uid))?.bookUid);
+          }
+        },
+      ),
+      3,
+    );
+    expect(calls, 1);
+    expect(seenDuringHook, <String?>[null, null, null], reason: '钩子在删行之后跑');
+  });
+
+  test(
+    'membershipChanges fires on add and remove, not on progress writes',
+    () async {
+      int signals = 0;
+      final StreamSubscription<void> sub = library.membershipChanges.listen(
+        (_) => signals++,
+      );
+      addTearDown(sub.cancel);
+      Future<void> flush() => Future<void>.delayed(Duration.zero);
+
+      expect(await library.addToLibrary(browser, series), 3);
+      await flush();
+      expect(signals, greaterThan(0), reason: '加入要通知压在栈里的详情页');
+
+      signals = 0;
+      await repository.updatePosition('e1', 42000);
+      await flush();
+      expect(signals, 0, reason: '播放进度写入不改变在库与否，不该触发全表重读');
+
+      expect(await library.removeFromLibrary(browser, series), 3);
+      await flush();
+      expect(signals, greaterThan(0), reason: '移出要通知压在栈里的详情页');
+    },
+  );
+
+  test('mediaServerWorkOfRow ignores rows that are not media-server rows', () {
+    final VideoBookRow local = VideoBookRow(
+      bookUid: 'local',
+      title: 'Local',
+      videoPath: 'C:/videos/a.mkv',
+      currentEpisode: 0,
+      lastPositionMs: 0,
+      delayMs: 0,
+      importedAt: 0,
+      streamSpecJson: MediaServerBookSpec(
+        serverId: 'srv',
+        info: browser.toRemoteVideoInfo(_episode('e1', 1, 1)),
+      ).encode(),
+    );
+    expect(mediaServerWorkOfRow(local), isNull);
   });
 
   test('movie is one row keyed by itself and is not a series work', () async {
