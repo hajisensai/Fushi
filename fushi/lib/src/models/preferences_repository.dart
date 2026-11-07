@@ -5327,6 +5327,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 在线插件取流音质档（`MusicPluginQuality.wire`：standard / high / lossless / hires）。
+  /// null = 没单独设过，由 [musicServerMaxBitrate] 反推（两者以前共用一个设置）。
+  String? get musicPluginQualityWire {
+    final Object? raw = getPref('music_plugin_quality', defaultValue: null);
+    return raw is String && raw.isNotEmpty ? raw : null;
+  }
+
+  Future<void> setMusicPluginQualityWire(String wire) async {
+    await setPref('music_plugin_quality', wire);
+    notifyListeners();
+  }
+
   /// 服务器曲库里显示 Apple Music catalog 来源（只浏览 + 30 秒试听）。默认关（显式 opt-in：
   /// 开了才会向 Worker 取 developer token、向 Apple 发请求）。
   bool get musicAppleMusicEnabled =>

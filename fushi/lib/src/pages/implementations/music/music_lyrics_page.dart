@@ -73,6 +73,7 @@ import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
+import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
@@ -1409,6 +1410,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           item,
           context.fushiType.bodyMedium.copyWith(color: cs.onSurfaceVariant),
         ),
+        // 在线插件曲目：音质胶囊（点开换档，原位重取）。
+        if (musicItemQualitySelectable(item))
+          Padding(
+            padding: EdgeInsets.only(top: dense ? 6 : 10),
+            child: MusicQualityChip(appModel: appModel, item: item),
+          ),
       ],
     );
   }

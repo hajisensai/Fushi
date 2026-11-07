@@ -29,6 +29,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
+import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
@@ -356,6 +357,23 @@ class _CompactMusicBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (musicItemQualitySelectable(session.engine.current))
+              FushiListTileControl(
+                key: const ValueKey<String>('music_bar_quality'),
+                leading: const FushiIcon(FushiIcons.highQuality),
+                title: Text(t.music_quality_title),
+                subtitle: Text(
+                  musicPluginQualityLabel(
+                    appModel.musicPluginQualityFor(
+                      session.engine.current!.path,
+                    ),
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  unawaited(showMusicQualitySheet(context, appModel));
+                },
+              ),
             if (session.engine.capabilities.signalPath)
               FushiListTileControl(
                 leading: const FushiIcon(FushiIcons.highQuality),
