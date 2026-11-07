@@ -5,5 +5,5 @@
 - **[x] ② 已加自动化测试** — `fushi/test/sync/cloud_remote_book_client_test.dart`「BUG-4223: a `.manga.zip` folder is listed as manga content, not EPUB」（原「`.manga.zip` has content」断言 `hasContent=true`，正是把漫画送进书籍书架的旧契约，已改）；`fushi/test/pages/reader_remote_cloud_manga_test.dart`（真实 `CloudRemoteBookClient` + 真实书架页 + 真实导入器，只替换网络）：书籍书架不收云盘漫画包、漫画书架渲染它、从漫画书架下载导入成 `format=manga` 并让位。回退修复实测 4 条红，修复后绿。
 - **备注**：
   - 旧版本把漫画包也传成 `<title>.epub`：只看文件名与 EPUB 无从区分，仍会出现在书籍书架（下载导入按内容嗅探照样落成漫画）。要分清只能在上传端补元数据或改名，属另议。
-  - 同条反馈里的「书架下载卡 100% 打不开、对比页下载正常」沿代码路径未复现，单列 BUG-4221。
+  - 同条反馈里的「书架下载卡 100% 打不开、对比页下载正常」沿代码路径未复现，单列 BUG-4225。
   - 未在真机（macOS + OneDrive）复测。

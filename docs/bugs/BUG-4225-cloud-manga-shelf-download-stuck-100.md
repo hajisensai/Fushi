@@ -1,4 +1,4 @@
-## BUG-4221 · 书架下载云盘漫画卡 100% 打不开（对比页正常）
+## BUG-4225 · 书架下载云盘漫画卡 100% 打不开（对比页正常）
 - **报告**：2026-11-07（用户：应用内反馈 ecNgkRQcTk 的追加说明，macOS 3.3.0-debug.24478，OneDrive 云同步）
 - **真实性**：❌ 沿真实代码路径未复现。两条下载路径的内容处理逐字同源：书架 `_runRemoteBookDownload`（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart:966-990`）= `CloudRemoteBookClient.getRemoteBook`（`pickRemoteBookContentEntry` → `backend.getAsset`）→ `_importRemoteBookFile`（`isMangaPackage` 嗅探 → `importMangaPackageFile`，:2132-2160）；对比页 `importRemoteBookFolder`（`fushi/lib/src/sync/sync_orchestrator.dart:2495-2540`）= 同一 `pickRemoteBookContentEntry` → 同一 `backend.getAsset` → 同一嗅探与 `importMangaPackageFile`。不存在「下载完没走导入 / 按书籍导入漫画」的分叉——占位卡被误归书籍书架（BUG-4223）不影响导入，导入按内容嗅探落成漫画。实测：在修复 BUG-4223 之前的代码上，用真实 `CloudRemoteBookClient` + 真实书架页 + 真实导入器从**书籍书架**下载 `.manga.zip`，任务 `completed`、落成 `format=manga` 行、远端清单重载后占位卡让位（探针输出 `status=completed rows=[Takagi 05/manga]`，重载后卡数 0）。
 - **[ ] ① 未修复** — 未定位到可证实的根因，不改代码。
