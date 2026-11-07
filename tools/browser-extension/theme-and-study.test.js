@@ -244,7 +244,7 @@ test('悬停预览 / 小窗 / 短片不追踪；直播（duration=Infinity）追
   assert.strictEqual(h.samples()[0].durationMs, null);
 });
 
-test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true；关掉设置即停', () => {
+test('暂停发 playing=false 且心跳降频；ended / 页面卸载发 ended=true；关掉设置即停', () => {
   const h = loadStudy();
   const v = h.makeVideo();
   h.dispatch('play', v);
@@ -252,7 +252,7 @@ test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true�
   v.fire('pause');
   assert.strictEqual(h.samples().at(-1).playing, false);
   h.tick();
-  assert.strictEqual(h.samples().length, 2, '暂停态不刷心跳');
+  assert.strictEqual(h.samples().length, 2, '暂停态不再每秒发');
   v.paused = false;
   v.fire('seeked');
   assert.strictEqual(h.samples().length, 3, 'seek 后立刻补一个样本');
@@ -267,6 +267,42 @@ test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true�
   assert.strictEqual(h2.samples().at(-1).ended, true, '关掉设置 = 立刻停表');
   h2.dispatch('play', h2.makeVideo());
   assert.strictEqual(h2.samples().length, 2, '关掉后不再追踪');
+});
+
+test('暂停期间每 5 拍一跳心跳；切走 / 切回立刻补发，attending 报人在不在页面前', () => {
+  const h = loadStudy();
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  assert.strictEqual(h.samples()[0].attending, true, '拿不到可见性 / 焦点 API 时当在场');
+  v.paused = true;
+  v.fire('pause');
+  const afterPause = h.samples().length;
+  for (let i = 0; i < 4; i++) h.tick();
+  assert.strictEqual(h.samples().length, afterPause, '前 4 拍不发');
+  h.tick();
+  assert.strictEqual(h.samples().length, afterPause + 1, '第 5 拍发一次心跳，app 据此知道会话还活着');
+  assert.strictEqual(h.samples().at(-1).playing, false);
+  assert.strictEqual(h.samples().at(-1).attending, true);
+  // 标签页被切走：立刻补一条 attending=false（app 暂停且人不在即停表）。
+  h.sandbox.document.visibilityState = 'hidden';
+  h.dispatch('visibilitychange');
+  assert.strictEqual(h.samples().length, afterPause + 2);
+  assert.strictEqual(h.samples().at(-1).attending, false);
+  // 切回但窗口没焦点（焦点在别的 app）：仍不在场。
+  h.sandbox.document.visibilityState = 'visible';
+  h.sandbox.document.hasFocus = () => false;
+  h.dispatch('visibilitychange');
+  assert.strictEqual(h.samples().at(-1).attending, false);
+  // 本页（含页内查词 iframe）拿回焦点：在场。
+  h.sandbox.document.hasFocus = () => true;
+  h.dispatch('visibilitychange');
+  assert.strictEqual(h.samples().at(-1).attending, true);
+  // 播放中照常每秒一条，降频计数清零。
+  v.paused = false;
+  const beforePlay = h.samples().length;
+  h.tick();
+  assert.strictEqual(h.samples().length, beforePlay + 1);
+  assert.strictEqual(h.samples().at(-1).playing, true);
 });
 
 test('样本带上此刻 Fushi 正在出的那一句；没有字幕出口 / 字幕被藏 / ended 时为 null（jk4rTLHPZ_）', () => {

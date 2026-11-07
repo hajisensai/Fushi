@@ -57,6 +57,8 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     alignSubtitleToPrev: () => log.add('alignSubtitleToPrev'),
     alignSubtitleToNext: () => log.add('alignSubtitleToNext'),
     enterCaret: () => log.add('enterCaret'),
+    openStudyStatistics: () => log.add('openStudyStatistics'),
+    toggleStudyClock: () => log.add('toggleStudyClock'),
     escape: () => log.add('escape'),
   );
 }

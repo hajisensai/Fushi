@@ -1107,6 +1107,11 @@ String mangaImageFilterCss(MangaReaderPreferences preferences) =>
     'contrast(${preferences.contrast.clamp(0, 200) / 100}) '
     'saturate(${preferences.saturation.clamp(0, 200) / 100})';
 
+/// 页内输入（捏合 / 拖动平移 / 双击 / 滚轮）报给 Dart `onMangaUserActivity` 的最小
+/// 间隔：只喂学习计时的空闲门，按手势事件节流，不逐帧过桥。必须远小于空闲门下限
+/// （`PreferencesRepository.readingIdleTimeoutMinutesMin` = 1 分钟）。
+const int kMangaActivityReportIntervalMs = 5000;
+
 /// 内联手势机 + 翻页/滚动几何。一个 pointerdown/pointerup 对（消歧 tap vs swipe）+
 /// webtoon 滚动监听 + spread 鼠标滚轮翻页（BUG-051）。tap 命中 `.ocr-box` → 选词
 /// （单击查词路径）；Shift 悬停是第二条显式查词路径。tap 命中裸图或未完成 OCR 的
@@ -1199,6 +1204,23 @@ String _mangaGestureJs({
   return '''
 (function(){
   function _bridge(){ return window.flutter_inappwebview; }
+  // ── 学习计时空闲门的输入信号（所有者拍板：缩放 / 平移 / 双击缩放算在读）──
+  // 放大后盯着一个跨页拖来拖去不翻页，此前时钟只在翻页 / 滚动落定时 touch，过了
+  // 空闲阈值就停表。这里在捕获阶段看页内指针 / 滚轮输入（捏合、拖动平移、双击、
+  // 滚轮缩放都在其中），按 Dart 常量 kMangaActivityReportIntervalMs 节流后报给 Dart 的
+  // `onMangaUserActivity`（只 touch 空闲门，不碰位置 / 账本）。悬停的鼠标移动
+  // （没按键）不算输入。节流远小于空闲门下限（1 分钟），不会误停表。
+  var lastActivityReport = 0;
+  function _reportReaderActivity(e){
+    if (e.type === 'pointermove' && !e.buttons) return;
+    var now = Date.now();
+    if (now - lastActivityReport < $kMangaActivityReportIntervalMs) return;
+    lastActivityReport = now;
+    var b = _bridge(); if (b) b.callHandler('onMangaUserActivity');
+  }
+  ['pointerdown','pointermove','wheel'].forEach(function(type){
+    document.addEventListener(type, _reportReaderActivity, {passive:true, capture:true});
+  });
   // ── canvas zoom/pan ──
   var ZOOM_MIN = ${disableZoomOut ? 1.0 : zoomMinPercent / 100.0};
   var ZOOM_MAX = ${zoomMaxPercent / 100.0};

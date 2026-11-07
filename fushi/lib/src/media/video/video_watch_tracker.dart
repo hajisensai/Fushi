@@ -49,13 +49,13 @@ const int kCueDwellMs = kArrivalDwellMs;
 /// 留一点余量是因为倍速播放与 tick 抖动会让两者不严格相等。
 const int kCueDwellWallClockSlackMs = 250;
 
-/// 观看时长采样间隔（BUG-2108）。位置推进按这个节奏采样成「片内区间」并入
-/// [IntervalCoverage]；只有首次覆盖的部分计时。1s 足够细：一次 ≥ 1.5s 的 seek 在
+/// 位置采样间隔。位置推进按这个节奏采样成「片内区间」并入 [IntervalCoverage]（字幕
+/// 字数的「看过没」判据），播放中每次采样喂一次空闲门。1s 足够细：一次 ≥ 1.5s 的 seek 在
 /// 一个采样间隔里就会超过 [kPlaybackAdvanceSlackMs] 余量被判成跳变。
 const Duration kWatchSampleInterval = Duration(seconds: 1);
 
 /// 采样间隔内「媒体推进 vs 墙钟 × 倍速」的对账余量（毫秒）。超出 = seek 跳变，该
-/// 区间不算看过、不计时（跳过去的内容没看）。
+/// 区间不算看过（跳过去的内容没看）。
 const int kPlaybackAdvanceSlackMs = 500;
 
 /// 纯谓词（BUG-1763）：候选 cue 的**真实播放推进量**是否已满足停留门。
@@ -91,23 +91,26 @@ bool isContinuousPlaybackAdvance({
   return delta <= wallMs * rate * 1.25 + kPlaybackAdvanceSlackMs;
 }
 
-/// 视频观看统计采集器：观看时长（首次覆盖，BUG-2108）+ 字幕字数（停留门 + 单调去重，
-/// 见 [shouldCountCueDwell]）+ 完成标记。
+/// 视频观看统计采集器：字幕字数（停留门 + 首次覆盖去重，见 [shouldCountCueDwell]）+
+/// 完成标记 + 喂时钟的空闲门；**观看时长本身由 [StudyClock] 按墙钟计**。
 ///
-/// 观看时长口径（用户拍板 2026-09-04）：**重听不计**。每 [kWatchSampleInterval] 采一次
-/// 位置，两次采样间若是连续播放（[isContinuousPlaybackAdvance]），把这段片内区间并入
-/// [IntervalCoverage]，只有**此前未覆盖**的部分按比例折成墙钟时间经
-/// [StudyClock.addActiveMs] 记账。回放上一句 / 拖回重听 / 次日重看：区间已在并集里，
-/// 推进为 0，不计。覆盖并集按视频身份持久化（[loadCoverage] / [saveCoverage]），
-/// 所以单部视频累计观看时长 ≤ 片长。
+/// 观看时长口径（所有者 2026-11-07 拍板，取代 BUG-2108 的「只计首次覆盖片长」）：
+/// **按实际花在视频上的时间算**，与小说阅读面同一套墙钟时钟——暂停查词、回放上一句、
+/// 拖回重听都是学习时间，照计；不在看的时候由页面的计时门停表（切后台、被整页 /
+/// 对话框 / 侧板盖住、手动暂停，见 `StudyClockRunGate`），挂机由空闲门截断
+/// （[StudyClock.idleTimeout]，与阅读面同一设置）。播放中每个采样点 [StudyClock.touch]
+/// 一次：连续播放本身就是「在看」的证据，不会被空闲门误截；暂停后停在原地超过空闲
+/// 阈值才不再入账。合盖睡眠 / 长时间卡缓冲由时钟的断档守卫（120s）兜底。
 ///
-/// 此前观看时长由 [StudyClock] 按 tick 末刻 `isPlaying` 整窗计——一个 20s 回放可能
-/// 记 60s 也可能记 0s，而且重听照计：用户实测 90 分钟电影记 120 分钟。现在时钟走
-/// [StudyAccrual.explicit]，只做段生命周期与落库。
+/// 片内覆盖并集（[IntervalCoverage]）仍按视频身份持久化，但只服务字幕字数：本次
+/// 会话前就已整段看过的 cue 不再计字（[_coverageAtAttach]），会话内回看由
+/// [_countedCues] 去重——字数是「新读到的字」，时长是「花掉的时间」，两本账各自成立。
+/// 停留量与覆盖比对都在字幕时间轴 / 视频时间轴之间按
+/// [VideoPlaybackSource.subtitleDelayMs] 换算（9rdFBLEnVg）。
 ///
-/// 字幕字数同律：本次会话前就已整段覆盖的 cue 不再计字（[_coverageAtAttach]）；
-/// 会话内回看由 [_countedCues] 去重。停留量与覆盖比对都在字幕时间轴 / 视频时间轴
-/// 之间按 [VideoPlaybackSource.subtitleDelayMs] 换算（9rdFBLEnVg）。
+/// **时钟的起停不归本类管**：[start] / [stop] 只管位置采样与落库，起表由宿主的计时门
+/// 决定（页面在 [start] 之后按门的结论起表）。播放态翻转经 [onPlayingChanged] 报给
+/// 宿主（失焦时「仍在播放才计」要它）。
 ///
 /// 不直接依赖 `VideoPlayerController`（其状态读 libmpv，测试宿主无法实例化），
 /// 而经 [VideoPlaybackSource] 接口，因此纯单测可用 fake 验证采集逻辑。
@@ -118,9 +121,10 @@ class VideoWatchTracker {
     FutureOr<void> Function()? onEpisodeCompleted,
     Future<String?> Function()? loadCoverage,
     Future<void> Function(String json)? saveCoverage,
+    this.onPlayingChanged,
   }) : assert(
-         clock.accrual == StudyAccrual.explicit,
-         '视频面时钟必须是显式记账：时长由 tracker 按首次覆盖推入',
+         clock.accrual == StudyAccrual.wallClock,
+         '视频面时钟按墙钟计（2026-11-07）：时长 = 实际花在视频上的时间',
        ),
        _clock = clock,
        _onEpisodeCompleted = onEpisodeCompleted,
@@ -135,6 +139,13 @@ class VideoWatchTracker {
 
   final String bookUid;
   final StudyClock _clock;
+
+  /// 本采集器喂的时钟（宿主的计时门据此起停表）。
+  StudyClock get clock => _clock;
+
+  /// 采样到的播放态翻转（播放 ↔ 暂停）。宿主据此喂计时门「失焦时仍在播放才计」。
+  void Function(bool playing)? onPlayingChanged;
+  bool? _reportedPlaying;
   final FutureOr<void> Function()? _onEpisodeCompleted;
   final Future<String?> Function()? _loadCoverage;
   final Future<void> Function(String json)? _saveCoverage;
@@ -158,16 +169,17 @@ class VideoWatchTracker {
     _coverageLoad ??= _initCoverage();
   }
 
-  /// 启动观看计时（位置采样 + [StudyClock] 60s 周期落库）。
+  /// 开始位置采样（覆盖 / 完成判定 / 喂空闲门）。**不起表**——时钟由宿主的计时门
+  /// 起停（见类文档）。
   void start() {
-    _clock.start();
     _lastSample = null;
     _sampler ??= Timer.periodic(kWatchSampleInterval, (_) => _sample());
     _sample();
   }
 
-  /// 停止观看计时。返回的 Future 在最后一次 DB 写完成后才完成，供进程退出路径
-  /// await（TODO-086/BUG-191）。可重复调用，第二次 no-op。
+  /// 停止采样并停表（离开 / 进后台）。返回的 Future 在最后一次 DB 写完成后才完成，
+  /// 供进程退出路径 await（TODO-086/BUG-191）。可重复调用，第二次 no-op。之后要续，
+  /// 宿主先 [start] 再按计时门起表。
   Future<void> stop() async {
     _sampler?.cancel();
     _sampler = null;
@@ -200,7 +212,7 @@ class VideoWatchTracker {
     _source = null;
   }
 
-  // ── 观看时长：位置采样 → 首次覆盖区间 → 显式记账（BUG-2108）──────────────
+  // ── 位置采样：首次覆盖区间（字幕字数用）+ 完成判定 + 空闲门 ────────────────
 
   /// 本视频已看过的片内区间并集（attach 时从持久层加载，会话中增长）。
   IntervalCoverage _coverage = IntervalCoverage();
@@ -211,6 +223,10 @@ class VideoWatchTracker {
   bool _coverageReady = false;
   bool _coverageDirty = false;
   Timer? _sampler;
+
+  /// 位置采样在跑（[start] 之后、[stop] 之前）。宿主的计时门只在采样期间起表：
+  /// 采样停了就没人喂空闲门 / 报播放态，此时起表会把不在看的时间记进去。
+  bool get isSampling => _sampler != null;
 
   /// 上一次采样：(位置, 墙钟, 播放态)。
   ({int? posMs, DateTime at, bool playing})? _lastSample;
@@ -241,8 +257,9 @@ class VideoWatchTracker {
     _coverageReady = true;
   }
 
-  /// 采一次位置。相邻两次采样之间若是连续播放，把 `[prev, now)` 并入覆盖并集，
-  /// 只有新增（此前未覆盖）的部分按「墙钟 × 新增/推进」折成时长记账。
+  /// 采一次位置：播放中喂空闲门（[StudyClock.touch]）并报告播放态翻转；相邻两次
+  /// 采样之间若是连续播放，把 `[prev, now)` 并入覆盖并集（只给字幕字数判「看过没」，
+  /// 不再折成时长）。
   ///
   /// 采样点 = 定时器每秒一次 + 播放源每次通知（play / pause / seek / 换句都会
   /// 通知），所以状态翻转那一刻也会被结算到，精度不受 1s 节奏限制。
@@ -252,16 +269,23 @@ class VideoWatchTracker {
     final DateTime now = debugNowForTesting();
     final int? pos = s.positionMs;
     final bool playing = s.isPlaying;
-    // 播放中每个采样点都判一次完成（BUG-3491）；暂停态拖条预览不判，离开时
-    // 由 [stop] 按离开那一刻的位置补判。
-    if (playing) unawaited(_checkCompletionAt(pos, s.durationMs));
+    if (_reportedPlaying != playing) {
+      _reportedPlaying = playing;
+      onPlayingChanged?.call(playing);
+    }
+    if (playing) {
+      // 连续播放就是在看：喂空闲门，长片不被 10 分钟无输入截断。
+      _clock.touch();
+      // 播放中每个采样点都判一次完成（BUG-3491）；暂停态拖条预览不判，离开时
+      // 由 [stop] 按离开那一刻的位置补判。
+      unawaited(_checkCompletionAt(pos, s.durationMs));
+    }
     final ({int? posMs, DateTime at, bool playing})? prev = _lastSample;
     _lastSample = (posMs: pos, at: now, playing: playing);
     if (prev == null || !_coverageReady) return;
     final int? from = prev.posMs;
     if (from == null || pos == null) return;
-    // 两端都在播放才算一段连续播放窗口；中途暂停过的窗口（≤ 1s）整窗不计，
-    // 与「宁可少算」的停留门同一取向。
+    // 两端都在播放才算一段连续播放窗口；中途暂停过的窗口（≤ 1s）整窗不并入。
     if (!prev.playing || !playing) return;
     final int wallMs = now.difference(prev.at).inMilliseconds;
     if (!isContinuousPlaybackAdvance(
@@ -272,32 +296,7 @@ class VideoWatchTracker {
     )) {
       return;
     }
-    final int advanced = pos - from;
-    final int fresh = _coverage.add(from, pos);
-    if (fresh <= 0) return;
-    _coverageDirty = true;
-    // 记账封顶：这段新内容按当前倍速播完本来就只需要 `fresh / rate` 毫秒真实时间，
-    // 记账不可能比它多。
-    //
-    // 没有这条时，采样窗口的墙钟没有任何上界，而 [isContinuousPlaybackAdvance] 的容差
-    // 是 `wallMs * rate * 1.25`——窗口越大越松，恒判「连续」，于是整段墙钟被记成观看
-    // 时长。两条真实路径都会踩到：
-    //  * **合盖睡眠**：Flutter 桌面端 S3 唤醒不走 `paused`（只有 paused/hidden 分支才
-    //    `stop()`），sampler 全程没停；唤醒后位置只前进几百毫秒，墙钟却走了 8 小时；
-    //  * **网络流长时间卡缓冲**：`isPlaying` 仍为 true，位置冻结十分钟后前进 100ms。
-    // 后果不只是数字虚高——`addActiveMs` 会把这些毫秒全塞进单个小时桶，产出一条
-    // `durationMs = 8h` 的段，直接破坏本域「段不跨小时边界」的不变式。
-    //
-    // **不用「窗口超界就整窗丢弃」**：那会误杀「采样被拖慢但内容真的在播」的合法窗口
-    // （位置与墙钟同步推进 10s，本该记 10s）。封顶按内容量结算，两种病态各自收敛到
-    // 它们真正看掉的那点内容，合法窗口分毫不动。
-    final double rate = s.speed > 0 ? s.speed : 1.0;
-    final int credit = math.min(
-      (wallMs * fresh) ~/ advanced,
-      (fresh / rate).round(),
-    );
-    if (credit <= 0) return;
-    _clock.addActiveMs(credit);
+    if (_coverage.add(from, pos) > 0) _coverageDirty = true;
   }
 
   Future<void> _persistCoverage() async {

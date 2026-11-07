@@ -1,11 +1,16 @@
 // 网页视频的沉浸时间 → Fushi 学习统计（先支持视频；用户 2026-09-18）。
 //
-// 扩展只当一个「远端播放源」：视频播放期间每秒、以及 play / pause / seek / 倍速 / ended
-// 时刻，把 {mediaKey, title, positionMs, durationMs, playing, speed} 样本经 background
-// （`studySample` 消息 → POST /api/extension/study）交给 app；app 侧
-// `BrowserVideoStudyBridge` 为每个 mediaKey 建一个 VideoWatchTracker + StudyClock（显式记账、
-// 只计首次覆盖、覆盖并集按视频身份持久化），口径与 app 内视频页完全一致——回放 / 拖回 /
-// 次日重看不计，切走标签仍在播照常计（视频面不设前台门）。这里**不算时长**，只报位置。
+// 扩展只当一个「远端播放源」：视频播放期间每秒、暂停期间每 PAUSED_HEARTBEAT_TICKS 秒、
+// 以及 play / pause / seek / 倍速 / ended / 切走切回时刻，把 {mediaKey, title, positionMs,
+// durationMs, playing, speed, attending} 样本经 background（`studySample` 消息 → POST
+// /api/extension/study）交给 app；app 侧 `BrowserVideoStudyBridge` 为每个 mediaKey 建一个
+// VideoWatchTracker + 墙钟 StudyClock，口径与 app 内视频页一致（2026-11-07）：时长 = 实际
+// 花在视频上的时间，暂停查词照计；切走标签 / 窗口时**仍在播放才计**，暂停且人不在
+// （attending=false）即停表。这里**不算时长**，只报位置与在场。
+//
+// 在场 attending = 页面可见且本页（含页内查词弹窗 iframe）持有焦点。暂停期间的心跳让 app
+// 分得清「人还在页面前、暂停查词」与「标签页已被关掉 / 扩展断连」：后者没有心跳，app 只把
+// 时间结算到最后一条样本，不再把超时等待的空档算进去。
 //
 // 身份：`web:` + fushiVideoKey()（YouTube 'yt-<id>'、Netflix movieId、其它 host+path），
 // 与字幕轨 store 同一把 key。标题用 document.title（app 侧 study_segments.title 快照）。
@@ -43,6 +48,9 @@
   // 未知值（旧版写的、手改 storage 写歪的）一律回落默认档，不静默变成「全都计」。
   var CONDITIONS = { fushiSubtitle: 1, anySubtitle: 1, always: 1 };
   var SAMPLE_MS = 1000;
+  // 暂停期间每这么多拍（秒）发一次心跳。必须远小于 app 侧会话超时
+  // （BrowserVideoStudyBridge.idleTimeout = 20s），否则暂停查词会被当成断连。
+  var PAUSED_HEARTBEAT_TICKS = 5;
   var MIN_DURATION_S = 30;
   var MIN_W = 200, MIN_H = 120;
 
@@ -56,6 +64,7 @@
   var trackedKey = '';     // 追踪开始时的 mediaKey（换视频 = key 变）
   var timer = 0;
   var lastSentAt = 0;
+  var pausedTicks = 0;
 
   function applySetting(saved) {
     saved = saved || {};
@@ -124,6 +133,16 @@
     return null;
   }
 
+  // 人在不在页面前：可见且本页持有焦点（document.hasFocus 对页内 iframe 持焦同样为真，
+  // 所以开着查词弹窗不算走开）。拿不到这两个 API 的环境当在场（旧行为）。
+  function attending() {
+    try {
+      if (document.visibilityState === 'hidden') return false;
+      if (typeof document.hasFocus === 'function' && !document.hasFocus()) return false;
+    } catch (_) {}
+    return true;
+  }
+
   function sampleOf(v, ended) {
     var d = Number(v.duration);
     var pos = Number(v.currentTime);
@@ -138,6 +157,7 @@
       playing: !ended && !v.paused && !v.ended,
       speed: isFinite(rate) && rate > 0 ? rate : 1,
       ended: ended === true,
+      attending: attending(),
       cue: ended === true ? null : cueAt(posMs),
     };
   }
@@ -202,7 +222,16 @@
     var before = tracked;
     evaluate();
     if (!tracked || tracked !== before) return;
-    if (tracked.paused || tracked.ended) return; // 暂停态不刷心跳：pause 事件已经发过一次 playing=false
+    if (tracked.paused || tracked.ended) {
+      // 暂停态降频心跳：pause 事件已发过一次 playing=false，这里只为让 app 知道会话还活着、
+      // 人在不在（见文件头）。
+      pausedTicks++;
+      if (pausedTicks < PAUSED_HEARTBEAT_TICKS) return;
+      pausedTicks = 0;
+      send(sampleOf(tracked, false));
+      return;
+    }
+    pausedTicks = 0;
     send(sampleOf(tracked, false));
   }
 
@@ -235,7 +264,10 @@
     trackedKey = '';
   }
 
-  function onPause() { if (tracked) send(sampleOf(tracked, false)); }
+  function onPause() { pausedTicks = 0; if (tracked) send(sampleOf(tracked, false)); }
+  // 切走 / 切回（标签页隐藏、窗口失焦 / 回焦）：立刻补一条，app 据 attending 停 / 起表，
+  // 不等下一拍心跳。
+  function onPresenceChange() { if (tracked) send(sampleOf(tracked, false)); }
   function onSeeked() { if (tracked && !tracked.paused) send(sampleOf(tracked, false)); }
   function onEnded() { if (tracked) send(sampleOf(tracked, false)); }
   function onEmptied() { release(true); candidate = null; stopTimer(); }
@@ -259,6 +291,13 @@
     if (!v || v.tagName !== 'VIDEO' || tracked || v.paused) return;
     notice(v);
   }, true);
+  document.addEventListener('visibilitychange', onPresenceChange);
+  try {
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener('focus', onPresenceChange);
+      window.addEventListener('blur', onPresenceChange);
+    }
+  } catch (_) {}
   document.addEventListener('pagehide', function () {
     release(true);
     candidate = null;

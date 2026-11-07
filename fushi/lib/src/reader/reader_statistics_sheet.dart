@@ -1,4 +1,6 @@
-/// 阅读器内「书内统计」右侧侧栏。
+/// 阅读器内「书内统计」右侧侧栏；漫画阅读器与视频播放页共用同一件
+/// （[ReaderStatsMedia]：书按字数、漫画按页数、视频按播放时间换位置卡 / 预计读完 /
+/// 指标卡的单位，其余骨架与视觉完全一致）。
 ///
 /// 由 `_openReadingStatistics` 经 `showReaderSideSheet` 从右贴边滑出（与导航 /
 /// 设置 / 有声书同一容器，用户 2026-09-13 拍板：不再弹居中对话框）。自上而下：
@@ -40,8 +42,15 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart'
-    show StatBarChartPainter, StatDayData;
+    show
+        StatBarChartPainter,
+        StatDayData,
+        statCharsValue,
+        statCountAxisScale,
+        statDurationAxisScale,
+        statMsValue;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show StatChartEntrance, formatStatTime;
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
@@ -61,6 +70,14 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
+/// 侧栏服务的学习面。决定位置卡 / 预计读完 / 指标卡的单位与文案，账本与骨架不变。
+///
+/// - [book]：EPUB——本章 / 全书字数位置，按字速预计读完；
+/// - [manga]：漫画——本章页位置 + 章序，按页速预计本章读完，指标以页数为主；
+/// - [video]：视频——本集播放位置 + 集序，本集剩余片长（按倍速），指标里的字数是
+///   字幕字数。
+enum ReaderStatsMedia { book, manga, video }
+
 /// 本书某个统计日的阅读量（迷你柱状图的一根柱子）。
 typedef ReaderBookDayStat = ({String dateKey, int chars, int ms});
 
@@ -76,6 +93,8 @@ typedef ReaderBookStatTotals = ({
   int todayCards,
   int allChars,
   int allMs,
+  int todayPages,
+  int allPages,
   List<ReaderBookDayStat> last7Days,
 });
 
@@ -86,6 +105,8 @@ const ReaderBookStatTotals kEmptyReaderBookStatTotals = (
   todayCards: 0,
   allChars: 0,
   allMs: 0,
+  todayPages: 0,
+  allPages: 0,
   last7Days: <ReaderBookDayStat>[],
 );
 
@@ -115,6 +136,8 @@ ReaderBookStatTotals summarizeReaderBookStats(
   int todayMs = 0;
   int allChars = 0;
   int allMs = 0;
+  int todayPages = 0;
+  int allPages = 0;
   // 近 7 天逐日累加：与「今日」同一个 [StatWindow]（同一锚时刻、同一统计日边界），
   // 跨午夜打开侧栏时柱子与今日卡不会落在两个时刻上（BUG-2219 同款纪律）。
   final List<String> weekKeys = window.lastDayKeys(7);
@@ -126,9 +149,11 @@ ReaderBookStatTotals summarizeReaderBookStats(
     if (!statFactBelongsToBook(f, bookKey: bookKey, title: title)) continue;
     allChars += f.chars;
     allMs += f.ms;
+    allPages += f.pages;
     if (window.isToday(f.dateKey)) {
       todayChars += f.chars;
       todayMs += f.ms;
+      todayPages += f.pages;
     }
     final ({int chars, int ms})? day = week[f.dateKey];
     if (day != null) {
@@ -152,6 +177,8 @@ ReaderBookStatTotals summarizeReaderBookStats(
     todayCards: todayCards,
     allChars: allChars,
     allMs: allMs,
+    todayPages: todayPages,
+    allPages: allPages,
     last7Days: List<ReaderBookDayStat>.unmodifiable(<ReaderBookDayStat>[
       for (final String key in weekKeys)
         (dateKey: key, chars: week[key]!.chars, ms: week[key]!.ms),
@@ -215,6 +242,40 @@ int? readerRemainingChars({required int? current, required int? total}) {
   return (total - current).clamp(0, total);
 }
 
+/// 漫画预计读完用的「每页毫秒」：本次会话样本够（≥ [kMinCphSampleMs] 且翻过页）用
+/// 会话速度，否则退到本书累计；都没有 → null（显示「—」）。
+double? mangaMsPerPage({
+  required StudySessionTotals session,
+  required int sessionPages,
+  required ReaderBookStatTotals book,
+}) {
+  if (sessionPages > 0 && session.durationMs >= kMinCphSampleMs) {
+    return session.durationMs / sessionPages;
+  }
+  if (book.allPages > 0 && book.allMs >= kMinCphSampleMs) {
+    return book.allMs / book.allPages;
+  }
+  return null;
+}
+
+/// 每小时页数（漫画会话读数）；样本不足 1 分钟或没翻页 → 0（同 [readingCharsPerHour]
+/// 开局即显 0 的口径）。
+int readingPagesPerHour({required int pages, required int durationMs}) {
+  if (pages <= 0 || durationMs < kMinCphSampleMs) return 0;
+  return (pages * 3600000 / durationMs).round();
+}
+
+/// 视频本集剩余的真实时长：剩余片长 ÷ 倍速。任一未知 → null。
+int? videoRemainingMs({
+  required int? positionMs,
+  required int? durationMs,
+  double speed = 1,
+}) {
+  if (positionMs == null || durationMs == null || durationMs <= 0) return null;
+  final int left = (durationMs - positionMs).clamp(0, durationMs);
+  return (left / (speed > 0 ? speed : 1)).round();
+}
+
 class ReaderStatisticsSheet extends StatefulWidget {
   const ReaderStatisticsSheet({
     super.key,
@@ -224,8 +285,24 @@ class ReaderStatisticsSheet extends StatefulWidget {
     required this.progress,
     required this.onTogglePause,
     required this.onOpenFullRecords,
+    this.media = ReaderStatsMedia.book,
+    this.sessionPages,
+    this.playbackSpeed,
+    this.showHeader = true,
     this.tick = const Duration(seconds: 1),
   });
+
+  /// 学习面口径（见 [ReaderStatsMedia]）。
+  final ReaderStatsMedia media;
+
+  /// 本次会话页数读口（漫画；`StudyClock.sessionPages`）。null = 0。
+  final int Function()? sessionPages;
+
+  /// 当前倍速读口（视频；本集剩余按它折成真实时长）。null = 1×。
+  final double Function()? playbackSpeed;
+
+  /// 画自带的标题行 + 关闭键。宿主外壳已有页头（视频侧板）时传 false。
+  final bool showHeader;
 
   final String bookTitle;
 
@@ -235,7 +312,9 @@ class ReaderStatisticsSheet extends StatefulWidget {
   /// 本书今日 / 累计（从统一事实面加载，进侧栏时读一次）。
   final Future<ReaderBookStatTotals> Function() loadBookTotals;
 
-  /// 阅读位置读口（每 [tick] 采样，翻页后侧栏里的进度跟着走）。
+  /// 位置读口（每 [tick] 采样，翻页 / 播放后侧栏里的进度跟着走）。两行的含义随
+  /// [media]：书 = 本章 / 全书字数；漫画 = 本章页（当前页从 1 起）/ 章序；视频 =
+  /// 本集播放位置毫秒 / 集序（从 1 起）。
   final ReaderPositionSnapshot Function() progress;
 
   /// 暂停 / 继续手动计时（与状态行计时块同一入口）。
@@ -267,8 +346,10 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
       final Object snap = (
         seconds: s.durationMs ~/ 1000,
         chars: s.chars,
+        pages: widget.sessionPages?.call() ?? 0,
         active: s.active,
         chapter: p.chapterCurrent,
+        chapterTotal: p.chapterTotal,
         book: p.bookCurrent,
       );
       if (snap == _lastSnapshot) return;
@@ -287,34 +368,256 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
     super.dispose();
   }
 
+  /// 本次会话 hero 下挂的两个读数：书 / 视频 = 字数 + 字时（视频是字幕字数）；漫画 =
+  /// 页数 + 页时。
+  List<_Reading> _sessionReadings(StudySessionTotals session) {
+    if (widget.media == ReaderStatsMedia.manga) {
+      final int pages = widget.sessionPages?.call() ?? 0;
+      return <_Reading>[
+        (
+          key: 'fushi_reader_stats_session_pages',
+          value: formatGroupedInt(pages),
+          unit: t.stat_format_pages(n: '').trim(),
+        ),
+        (
+          key: 'fushi_reader_stats_session_pph',
+          value: formatGroupedInt(
+            readingPagesPerHour(pages: pages, durationMs: session.durationMs),
+          ),
+          unit: t.reader_stats_pages_per_hour(n: '').trim(),
+        ),
+      ];
+    }
+    return <_Reading>[
+      (
+        key: 'fushi_reader_stats_session_chars',
+        value: formatGroupedInt(session.chars),
+        unit: t.stat_format_chars(n: '').trim(),
+      ),
+      (
+        key: 'fushi_reader_stats_session_cph',
+        value: formatGroupedInt(
+          readingCharsPerHour(
+            chars: session.chars,
+            durationMs: session.durationMs,
+          ),
+        ),
+        unit: t.reader_stats_chars_per_hour(n: '').trim(),
+      ),
+    ];
+  }
+
+  /// 位置卡的行（书：本章 / 全书字数；漫画：本章页 / 章序；视频：本集时间 / 集序）。
+  /// 漫画 / 视频的第二行总数 ≤ 1（单章、单集）时不画——「1 / 1」没有信息量。
+  List<_PositionSpec> _positionRows(ReaderPositionSnapshot pos) {
+    switch (widget.media) {
+      case ReaderStatsMedia.book:
+        return <_PositionSpec>[
+          (
+            label: t.reader_stats_position_chapter,
+            current: pos.chapterCurrent,
+            total: pos.chapterTotal,
+            keyPrefix: 'chapter',
+            text: _charsProgress,
+          ),
+          (
+            label: t.reader_stats_position_book,
+            current: pos.bookCurrent,
+            total: pos.bookTotal,
+            keyPrefix: 'book',
+            text: _charsProgress,
+          ),
+        ];
+      case ReaderStatsMedia.manga:
+        return <_PositionSpec>[
+          (
+            label: t.reader_stats_position_chapter,
+            current: pos.chapterCurrent,
+            total: pos.chapterTotal,
+            keyPrefix: 'chapter',
+            text: (int c, int n) => t.reader_stats_position_progress_pages(
+              current: formatGroupedInt(c),
+              total: formatGroupedInt(n),
+            ),
+          ),
+          if ((pos.bookTotal ?? 0) > 1)
+            (
+              label: t.reader_stats_position_chapters,
+              current: pos.bookCurrent,
+              total: pos.bookTotal,
+              keyPrefix: 'book',
+              text: (int c, int n) => t.reader_stats_position_progress_chapters(
+                current: '$c',
+                total: '$n',
+              ),
+            ),
+        ];
+      case ReaderStatsMedia.video:
+        return <_PositionSpec>[
+          (
+            label: t.video_stats_position_episode,
+            current: pos.chapterCurrent,
+            total: pos.chapterTotal,
+            keyPrefix: 'chapter',
+            text: (int c, int n) =>
+                '${formatStatClock(c)} / ${formatStatClock(n)}',
+          ),
+          if ((pos.bookTotal ?? 0) > 1)
+            (
+              label: t.video_stats_position_series,
+              current: pos.bookCurrent,
+              total: pos.bookTotal,
+              keyPrefix: 'book',
+              text: (int c, int n) =>
+                  t.video_stats_position_episodes(current: '$c', total: '$n'),
+            ),
+        ];
+    }
+  }
+
+  static String _charsProgress(int current, int total) =>
+      t.reader_stats_position_progress(
+        current: formatGroupedInt(current),
+        total: formatGroupedInt(total),
+      );
+
+  /// 「预计读完 / 看完」格子（值 null = 显示「—」）。
+  List<_Metric> _finishMetrics(
+    StudySessionTotals session,
+    ReaderBookStatTotals book,
+    ReaderPositionSnapshot pos,
+  ) {
+    String fmt(int? ms) => ms == null ? '—' : formatStatTime(ms);
+    switch (widget.media) {
+      case ReaderStatsMedia.book:
+        final double? cph = readerFinishCph(session: session, book: book);
+        return <_Metric>[
+          (
+            icon: Icons.bookmark_outline,
+            label: t.reader_stats_remaining_chapter,
+            value: fmt(
+              estimateFinishMs(
+                remainingChars: readerRemainingChars(
+                  current: pos.chapterCurrent,
+                  total: pos.chapterTotal,
+                ),
+                cph: cph,
+              ),
+            ),
+            key: 'fushi_reader_stats_finish_chapter',
+          ),
+          (
+            icon: Icons.menu_book_outlined,
+            label: t.reader_stats_remaining_book,
+            value: fmt(
+              estimateFinishMs(
+                remainingChars: readerRemainingChars(
+                  current: pos.bookCurrent,
+                  total: pos.bookTotal,
+                ),
+                cph: cph,
+              ),
+            ),
+            key: 'fushi_reader_stats_finish_book',
+          ),
+        ];
+      case ReaderStatsMedia.manga:
+        final double? msPerPage = mangaMsPerPage(
+          session: session,
+          sessionPages: widget.sessionPages?.call() ?? 0,
+          book: book,
+        );
+        // 当前页还没翻走，本章剩余 = 总页数 − 当前页 + 1。
+        final int? current = pos.chapterCurrent;
+        final int? total = pos.chapterTotal;
+        final int? remaining = current == null || total == null
+            ? null
+            : (total - current + 1).clamp(0, total);
+        return <_Metric>[
+          (
+            icon: Icons.bookmark_outline,
+            label: t.reader_stats_remaining_chapter,
+            value: fmt(
+              remaining == null || msPerPage == null
+                  ? null
+                  : (remaining * msPerPage).round(),
+            ),
+            key: 'fushi_reader_stats_finish_chapter',
+          ),
+        ];
+      case ReaderStatsMedia.video:
+        return <_Metric>[
+          (
+            icon: FushiIcons.video,
+            label: t.video_stats_remaining_episode,
+            value: fmt(
+              videoRemainingMs(
+                positionMs: pos.chapterCurrent,
+                durationMs: pos.chapterTotal,
+                speed: widget.playbackSpeed?.call() ?? 1,
+              ),
+            ),
+            key: 'fushi_reader_stats_finish_chapter',
+          ),
+        ];
+    }
+  }
+
+  /// 今日 / 累计卡的「量」那一格：书 = 字数；漫画 = 页数；视频 = 字幕字数。
+  _Metric _amountMetric({
+    required int chars,
+    required int pages,
+    required String key,
+  }) {
+    switch (widget.media) {
+      case ReaderStatsMedia.book:
+        return (
+          icon: Icons.notes_outlined,
+          label: t.stat_metric_chars,
+          value: formatGroupedInt(chars),
+          key: key,
+        );
+      case ReaderStatsMedia.manga:
+        return (
+          icon: FushiIcons.manga,
+          label: t.stat_metric_pages,
+          value: formatGroupedInt(pages),
+          key: key,
+        );
+      case ReaderStatsMedia.video:
+        return (
+          icon: FushiIcons.subtitles,
+          label: t.stat_metric_subtitle_chars,
+          value: formatGroupedInt(chars),
+          key: key,
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final StudySessionTotals session = widget.sessionTotals();
     final ReaderBookStatTotals book = _book ?? kEmptyReaderBookStatTotals;
     final ReaderPositionSnapshot pos = widget.progress();
-    final double? finishCph = readerFinishCph(session: session, book: book);
-    final int? chapterMs = estimateFinishMs(
-      remainingChars: readerRemainingChars(
-        current: pos.chapterCurrent,
-        total: pos.chapterTotal,
-      ),
-      cph: finishCph,
-    );
-    final int? bookMs = estimateFinishMs(
-      remainingChars: readerRemainingChars(
-        current: pos.bookCurrent,
-        total: pos.bookTotal,
-      ),
-      cph: finishCph,
-    );
+    final bool video = widget.media == ReaderStatsMedia.video;
     final TextStyle muted = theme.textTheme.bodyMedium!.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
     // 每块内容是一个错峰进场项：侧栏滑入的同时卡片自上而下依次浮起。
     final List<Widget> blocks = <Widget>[
-      _SessionHero(session: session, onTogglePause: widget.onTogglePause),
-      _PositionCard(pos: pos),
+      _SessionHero(
+        session: session,
+        title: video
+            ? t.video_stats_session_title
+            : t.reader_stats_session_title,
+        readings: _sessionReadings(session),
+        onTogglePause: widget.onTogglePause,
+      ),
+      _PositionCard(
+        title: video ? t.video_stats_position : t.reader_stats_position,
+        rows: _positionRows(pos),
+      ),
       _MetricSection(
         key: const ValueKey<String>('fushi_reader_stats_today'),
         title: t.stat_today,
@@ -325,10 +628,9 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
             value: formatStatTime(book.todayMs),
             key: 'fushi_reader_stats_today_time',
           ),
-          (
-            icon: Icons.notes_outlined,
-            label: t.stat_metric_chars,
-            value: formatGroupedInt(book.todayChars),
+          _amountMetric(
+            chars: book.todayChars,
+            pages: book.todayPages,
             key: 'fushi_reader_stats_today_chars',
           ),
           (
@@ -354,13 +656,17 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
               t.reader_stats_last_7_days,
               padding: const EdgeInsets.only(bottom: 12),
             ),
-            _WeekChart(days: book.last7Days),
+            // 书按字数画；漫画 / 视频的字数稀疏（只有 OCR / 字幕才有），按时长画。
+            _WeekChart(
+              days: book.last7Days,
+              byTime: widget.media != ReaderStatsMedia.book,
+            ),
           ],
         ),
       ),
       _MetricSection(
         key: const ValueKey<String>('fushi_reader_stats_all'),
-        title: t.reader_stats_book_total,
+        title: video ? t.video_stats_video_total : t.reader_stats_book_total,
         metrics: <_Metric>[
           (
             icon: Icons.schedule_outlined,
@@ -368,31 +674,19 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
             value: formatStatTime(book.allMs),
             key: 'fushi_reader_stats_all_time',
           ),
-          (
-            icon: Icons.notes_outlined,
-            label: t.stat_metric_chars,
-            value: formatGroupedInt(book.allChars),
+          _amountMetric(
+            chars: book.allChars,
+            pages: book.allPages,
             key: 'fushi_reader_stats_all_chars',
           ),
         ],
       ),
       _MetricSection(
-        title: t.reader_stats_time_to_finish,
+        title: video
+            ? t.video_stats_time_to_finish
+            : t.reader_stats_time_to_finish,
         tone: ReaderPanelCardTone.tertiary,
-        metrics: <_Metric>[
-          (
-            icon: Icons.bookmark_outline,
-            label: t.reader_stats_remaining_chapter,
-            value: chapterMs == null ? '—' : formatStatTime(chapterMs),
-            key: 'fushi_reader_stats_finish_chapter',
-          ),
-          (
-            icon: Icons.menu_book_outlined,
-            label: t.reader_stats_remaining_book,
-            value: bookMs == null ? '—' : formatStatTime(bookMs),
-            key: 'fushi_reader_stats_finish_book',
-          ),
-        ],
+        metrics: _finishMetrics(session, book, pos),
       ),
       Align(
         alignment: AlignmentDirectional.centerEnd,
@@ -407,6 +701,21 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
         ),
       ),
     ];
+    final Widget body = FushiEntranceScope(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < blocks.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(height: 12),
+              readerPanelStagger(i, blocks[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+    if (!widget.showHeader) return body;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -420,7 +729,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      t.reader_stats_title,
+                      video ? t.video_stats_title : t.reader_stats_title,
                       key: const ValueKey<String>('fushi_side_sheet_title'),
                       style: theme.textTheme.titleLarge,
                     ),
@@ -446,22 +755,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
             ],
           ),
         ),
-        Expanded(
-          child: FushiEntranceScope(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  for (int i = 0; i < blocks.length; i++) ...<Widget>[
-                    if (i > 0) const SizedBox(height: 12),
-                    readerPanelStagger(i, blocks[i]),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
+        Expanded(child: body),
       ],
     );
   }
@@ -499,10 +793,20 @@ Widget _cardHeading(
 ///
 /// M3E 是 primaryContainer 饱和大色块（[ReaderPanelCardTone.emphasis]），Apple
 /// 是分组卡 + 强调色按钮。颜色全部取当前主题，歌词模式注入的封面取色主题照样生效。
+/// hero 下挂的一个读数（值 + 单位）。
+typedef _Reading = ({String key, String value, String unit});
+
 class _SessionHero extends StatelessWidget {
-  const _SessionHero({required this.session, required this.onTogglePause});
+  const _SessionHero({
+    required this.session,
+    required this.title,
+    required this.readings,
+    required this.onTogglePause,
+  });
 
   final StudySessionTotals session;
+  final String title;
+  final List<_Reading> readings;
   final VoidCallback onTogglePause;
 
   @override
@@ -520,8 +824,6 @@ class _SessionHero extends StatelessWidget {
         : subtle;
     final Duration fade = fushiMotionDuration(context, FushiMotion.short);
     // 单位取自带数字的现有文案（17 种语言都是「$n 单位」形态），不新增 i18n key。
-    final String charsUnit = t.stat_format_chars(n: '').trim();
-    final String cphUnit = t.reader_stats_chars_per_hour(n: '').trim();
     return ReaderPanelCard(
       key: const ValueKey<String>('fushi_reader_stats_hero'),
       tone: tone,
@@ -533,7 +835,7 @@ class _SessionHero extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  t.reader_stats_session_title,
+                  title,
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: subtle,
                     fontWeight: FontWeight.w700,
@@ -591,25 +893,14 @@ class _SessionHero extends StatelessWidget {
             spacing: 28,
             runSpacing: 12,
             children: <Widget>[
-              ReaderStatNumber(
-                key: const ValueKey<String>('fushi_reader_stats_session_chars'),
-                value: formatGroupedInt(session.chars),
-                unit: charsUnit,
-                color: onSurface,
-                large: false,
-              ),
-              ReaderStatNumber(
-                key: const ValueKey<String>('fushi_reader_stats_session_cph'),
-                value: formatGroupedInt(
-                  readingCharsPerHour(
-                    chars: session.chars,
-                    durationMs: session.durationMs,
-                  ),
+              for (final _Reading r in readings)
+                ReaderStatNumber(
+                  key: ValueKey<String>(r.key),
+                  value: r.value,
+                  unit: r.unit,
+                  color: onSurface,
+                  large: false,
                 ),
-                unit: cphUnit,
-                color: onSurface,
-                large: false,
-              ),
             ],
           ),
         ],
@@ -707,10 +998,20 @@ class _SessionPauseButton extends StatelessWidget {
 
 /// 阅读位置卡：本章 / 全书两行，两行百分比同一字级；M3E 下是
 /// tertiaryContainer 色块 + 波浪进度，Apple 下分组卡 + 细线进度。
-class _PositionCard extends StatelessWidget {
-  const _PositionCard({required this.pos});
+/// 位置卡的一行：标签 + 当前 / 总数 + 「当前 / 总数」文案的格式化（单位随媒体）。
+typedef _PositionSpec = ({
+  String label,
+  int? current,
+  int? total,
+  String keyPrefix,
+  String Function(int current, int total) text,
+});
 
-  final ReaderPositionSnapshot pos;
+class _PositionCard extends StatelessWidget {
+  const _PositionCard({required this.title, required this.rows});
+
+  final String title;
+  final List<_PositionSpec> rows;
 
   @override
   Widget build(BuildContext context) {
@@ -723,25 +1024,21 @@ class _PositionCard extends StatelessWidget {
         children: <Widget>[
           _cardHeading(
             context,
-            t.reader_stats_position,
+            title,
             tone,
             padding: const EdgeInsets.only(bottom: 12),
           ),
-          _PositionRow(
-            label: t.reader_stats_position_chapter,
-            current: pos.chapterCurrent,
-            total: pos.chapterTotal,
-            keyPrefix: 'chapter',
-            tone: tone,
-          ),
-          const SizedBox(height: 16),
-          _PositionRow(
-            label: t.reader_stats_position_book,
-            current: pos.bookCurrent,
-            total: pos.bookTotal,
-            keyPrefix: 'book',
-            tone: tone,
-          ),
+          for (int i = 0; i < rows.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(height: 16),
+            _PositionRow(
+              label: rows[i].label,
+              current: rows[i].current,
+              total: rows[i].total,
+              keyPrefix: rows[i].keyPrefix,
+              text: rows[i].text,
+              tone: tone,
+            ),
+          ],
         ],
       ),
     );
@@ -883,15 +1180,20 @@ class _MetricTile extends StatelessWidget {
 /// 近 7 天每日字数迷你柱状图：复用统计中心的 [StatBarChartPainter]（同一纵轴
 /// 刻度 / 横轴标签口径）与 [StatChartEntrance]（柱高进场，减弱动态效果时直接到位）。
 class _WeekChart extends StatelessWidget {
-  const _WeekChart({required this.days});
+  const _WeekChart({required this.days, this.byTime = false});
 
   final List<ReaderBookDayStat> days;
+
+  /// 按时长画（漫画 / 视频）；false = 按字数（书）。
+  final bool byTime;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool glass = isGlassDesign(context);
-    final bool empty = days.every((ReaderBookDayStat d) => d.chars <= 0);
+    final bool empty = days.every(
+      (ReaderBookDayStat d) => (byTime ? d.ms : d.chars) <= 0,
+    );
     if (empty) {
       return SizedBox(
         height: 48,
@@ -919,13 +1221,17 @@ class _WeekChart extends StatelessWidget {
       key: const ValueKey<String>('fushi_reader_stats_week_chart'),
       height: 128,
       child: StatChartEntrance(
-        replayKey: Object.hashAll(days.map((ReaderBookDayStat d) => d.chars)),
+        replayKey: Object.hashAll(
+          days.map((ReaderBookDayStat d) => byTime ? d.ms : d.chars),
+        ),
         builder: (BuildContext context, double progress) => CustomPaint(
           size: Size.infinite,
           painter: StatBarChartPainter(
             data: data,
             progress: progress,
             labelEvery: 2,
+            valueOf: byTime ? statMsValue : statCharsValue,
+            axisScaleOf: byTime ? statDurationAxisScale : statCountAxisScale,
             barColor: glass
                 ? appleColorsOf(context).accent
                 : theme.colorScheme.primary,
@@ -949,6 +1255,7 @@ class _PositionRow extends StatelessWidget {
     required this.current,
     required this.total,
     required this.keyPrefix,
+    required this.text,
     required this.tone,
   });
 
@@ -956,6 +1263,7 @@ class _PositionRow extends StatelessWidget {
   final int? current;
   final int? total;
   final String keyPrefix;
+  final String Function(int current, int total) text;
   final ReaderPanelCardTone tone;
 
   @override
@@ -994,12 +1302,7 @@ class _PositionRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    ratio == null
-                        ? '—'
-                        : t.reader_stats_position_progress(
-                            current: formatGroupedInt(current!),
-                            total: formatGroupedInt(total!),
-                          ),
+                    ratio == null ? '—' : text(current!, total!),
                     key: ValueKey<String>(
                       'fushi_reader_stats_${keyPrefix}_text',
                     ),

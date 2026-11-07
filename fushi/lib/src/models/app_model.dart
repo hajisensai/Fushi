@@ -11776,6 +11776,8 @@ class AppModel with ChangeNotifier {
   BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
       _browserVideoStudyBridge ??= BrowserVideoStudyBridge(
         database: () => database,
+        // 暂停且在场时的空闲门：与阅读面 / app 内视频同一设置。
+        studyIdleTimeout: () => readingIdleTimeout,
       );
 
   /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`

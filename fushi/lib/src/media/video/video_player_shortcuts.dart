@@ -92,6 +92,8 @@ class VideoPlayerShortcutActions {
     required this.alignSubtitleToPrev,
     required this.alignSubtitleToNext,
     required this.enterCaret,
+    required this.openStudyStatistics,
+    required this.toggleStudyClock,
     required this.escape,
   });
 
@@ -202,6 +204,14 @@ class VideoPlayerShortcutActions {
   /// 激活期的方向/确认/退出键不经本表，由页面先于注册表截获。
   final VoidCallback enterCaret;
 
+  /// 打开 / 关闭统计侧栏（videoOpenStatistics，默认不绑键）：与控制条「统计」键同一
+  /// 执行体。没有统计侧栏的宿主（网页档视频页）传空操作。
+  final VoidCallback openStudyStatistics;
+
+  /// 停 / 续学习计时（videoToggleStudyClock，默认不绑键）：与控制条计时键、统计侧栏
+  /// 暂停键同一执行体。
+  final VoidCallback toggleStudyClock;
+
   final VoidCallback escape;
 }
 
@@ -275,6 +285,8 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   // 学习
   ShortcutAction.videoToggleFavoriteSentence,
   ShortcutAction.videoEnterCaret,
+  ShortcutAction.videoOpenStatistics,
+  ShortcutAction.videoToggleStudyClock,
   // 「返回上一级」：视频页把它解释成逐级退出阶梯（关字幕列表 → 退侧栏 → … → 退页）。
   ShortcutAction.globalBack,
   // 全局全屏键（默认 F11）：视频页把它解释成**与双击 / F 完全相同**的视频全屏
@@ -336,6 +348,8 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev,
     ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext,
     ShortcutAction.videoEnterCaret: actions.enterCaret,
+    ShortcutAction.videoOpenStatistics: actions.openStudyStatistics,
+    ShortcutAction.videoToggleStudyClock: actions.toggleStudyClock,
     // 「返回上一级」（universal scope，默认 Esc / Alt+← / 手柄 B）。它不是 video
     // scope 的动作，但执行体属于本页——视频的逐级退出阶梯（控件编辑 → 字幕列表 →
     // 剧集列表 → 侧栏 → 沉浸锁 → 全屏 → 浮层 → 退页）只有本页知道。
@@ -382,6 +396,9 @@ const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
   // 手柄 D-pad 的按住自动重复是方向通道自己的语义（不带重复标记），不在这里翻译。
   ShortcutAction.videoLookupNextWord,
   ShortcutAction.videoLookupPrevWord,
+  // 统计侧栏开关 / 计时停续都是翻转型：按住连发 = 侧栏开关闪烁、计时来回翻。
+  ShortcutAction.videoOpenStatistics,
+  ShortcutAction.videoToggleStudyClock,
 };
 
 /// 把注册表里的视频键盘绑定冻结成一张 `Map<ShortcutActivator, VoidCallback>`

@@ -31,6 +31,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
@@ -97,6 +98,10 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/reader/reader_statistics_sheet.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
@@ -151,6 +156,7 @@ import 'package:fushi/src/utils/misc/image_file_saver.dart'
     show defaultTargetPlatformForImageSave;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -259,6 +265,14 @@ enum MangaReaderInputAction {
   /// Toggle the desktop window's fullscreen presentation without rebuilding
   /// the manga WebView or losing its current OCR/selection state.
   toggleFullscreen,
+
+  /// 打开统计侧栏（快捷键 [ShortcutAction.mangaOpenStatistics]，与控制条统计键同一
+  /// 执行体）。
+  openStatistics,
+
+  /// 停 / 续学习计时（快捷键 [ShortcutAction.mangaToggleStudyClock]，与控制条计时键、
+  /// 统计侧栏暂停键同一执行体）。
+  toggleStudyClock,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -641,6 +655,14 @@ class MangaFushiPage extends BaseSourcePage {
     // 想把顶栏收掉看清页图，是完全合理的操作。
     if (action == ShortcutAction.mangaToggleChrome) {
       return MangaReaderInputAction.toggleChrome;
+    }
+    // 统计侧栏 / 停续计时同理排在翻页门控之前：都不翻页，查词弹窗开着、webtoon
+    // 模式下照样该能用。
+    if (action == ShortcutAction.mangaOpenStatistics) {
+      return MangaReaderInputAction.openStatistics;
+    }
+    if (action == ShortcutAction.mangaToggleStudyClock) {
+      return MangaReaderInputAction.toggleStudyClock;
     }
     // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
     // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
@@ -1407,6 +1429,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _controller = null;
   }
 
+  /// 当前章离场的**唯一**结算点：换章装载（[_presentPayload]）、换去的章未下载
+  /// （[_openShelfChapter] 的回落态）、装载失败（[_presentLoadFailure]）三条「换掉 /
+  /// 清空屏上这一章」的路径都先经这里，再动 `_payload` / 页状态。
+  ///
+  /// 顺序是契约：结算回调 [_creditPages] 按**此刻的** `_payload` 把页号换算成字数 /
+  /// 页数——先换 payload（或置空）再结算，旧章末页要么按新章换算错、要么换算出 0，
+  /// 永久漏记。此刻时钟还在走：页内遮挡（加载失败 / 本章未下载）在随后的 `setState`
+  /// 里才停表。首次打开没有当前单元，两步都是 no-op。
+  void _settleLeavingChapter() {
+    _readLedger
+      ..leave()
+      ..reset();
+  }
+
+  /// 正文装不出来（书行缺失 / manga.json 缺失 / 卡片定位页越界 / 书架在线条目开章
+  /// 抛错）的唯一落点：先结算离开的旧章（换章失败时屏上还挂着上一章，末页不能漏记），
+  /// 再释放 WebView、置失败态。[row] 非空时一并挂上（错误页要书名）。
+  void _presentLoadFailure({EpubBookRow? row}) {
+    _settleLeavingChapter();
+    _releaseWebView();
+    setState(() {
+      if (row != null) _bookRow = row;
+      _loadFailed = true;
+    });
+  }
+
   /// 旧选区 payload 的制卡卡图回退：当前 spread 首页图的绝对文件路径。新 payload
   /// 会以 [_miningPageIndex] 精确定位 OCR 命中的页，不能用此值覆盖。
   String? _currentPageImagePath;
@@ -1525,6 +1573,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     () => _studyClock,
   );
 
+  /// 计时「开始方式」（与小说共用偏好 `stats_reading_clock_start_mode` 与同一个
+  /// [ReaderStudyClockStartGate]）：打开这一卷时定初值——手动 / 翻页后开始 = 先暂停，
+  /// 打开即开始 = 照旧。暂停旗的**唯一持有者**是它：[_studyClockGate] 的
+  /// `manualPause` 只是它的镜像，所有翻转（手动键 / 快捷键 / 统计侧栏 / 首次翻页
+  /// 自动起表）都先改它再推进门。会话内改设置不影响已打开的这一卷。
+  late final ReaderStudyClockStartGate _studyClockStartGate;
+
+  /// 空闲门分钟数的订阅源（建时钟时挂上、dispose 摘掉）：设置里改「阅读空闲门」
+  /// 运行中即生效，不必重开这一卷（同小说 BUG-2213）。
+  PreferencesRepository? _idleTimeoutPrefs;
+
+  /// 页内遮挡（非路由，[StudyCoverTracker] 看不见）的唯一喂点：「屏上没有可读正文」
+  /// 的两个旗（[_loadFailed] / [_chapterNotDownloaded]）只在 `setState` 里改，所以在
+  /// 这里按 [mangaStudyContentAbsent] 对齐一次即覆盖全部写点，不必逐处记得喂门。
+  /// 结论没变时 [StudyClockRunGate.setLocallyCovered] 是 no-op。
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _studyClockGate.setLocallyCovered(
+      mangaStudyContentAbsent(
+        loadFailed: _loadFailed,
+        chapterNotDownloaded: _chapterNotDownloaded,
+      ),
+    );
+  }
+
   /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
   /// `docs/plans/2026-09-06-read-unit-ledger.md`）：**翻走即计 + 会话覆盖并集**。
   /// 单元 = 页号半开区间——webtoon `[page, page+1)`、spread 模式按当前 entry 覆盖的
@@ -1536,13 +1610,35 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     onRetract: _retractPages,
   );
 
+  /// 不改位置的阅读输入（所有者拍板：缩放 / 平移 / 双击缩放算在读）：只喂空闲门。
+  /// 放大后盯着一个跨页拖来拖去、超过空闲阈值也不停表。页内手势由 JS 节流后经
+  /// `onMangaUserActivity` 进来（[kMangaActivityReportIntervalMs]），键盘平移在
+  /// [_executeReaderInputAction] 里直接调。与 [_noteVisiblePages] 共用同一个
+  /// `touch()`，不另立判据。
+  void _noteReaderActivity() {
+    _studyClock?.touch();
+  }
+
   /// 位置落定：喂空闲门（翻页 / 页内滚动 = 用户输入）并把当前可见页交给账本。
   /// 与当前单元相同的重复落定（webtoon 页内滚动）在账本里是 no-op。
+  ///
+  /// 先过「开始方式门」再进账本（[arriveReadUnitThroughStartGate]，与小说同一判据）：
+  /// 「翻页后开始」下首次向前翻页那一刻先起表、再 arrive，刚翻走的那页才落进新开的段。
+  /// 回翻（起点变小）不算；换章（[_settleLeavingChapter] 清了当前单元）与卡片来源
+  /// 回看转正常阅读（`reset`）后的第一次落定没有上一单元，也不算。
   void _noteVisiblePages() {
     if (_sourceReviewActive) return;
     _studyClock?.touch();
     final (int start, int end) = _visiblePageRange();
-    _readLedger.arrive(start, end);
+    final bool autoStarted = arriveReadUnitThroughStartGate(
+      gate: _studyClockStartGate,
+      ledger: _readLedger,
+      start: start,
+      end: end,
+      onAutoStart: () => _studyClockGate.setManualPause(false),
+    );
+    // 控制条计时键随暂停旗换图标。
+    if (autoStarted && mounted) setState(() {});
   }
 
   /// 当前可见页的页号半开区间：spread 模式取当前 entry 的页（升序、连续），
@@ -1625,6 +1721,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
     );
     _chrome.addListener(_onChromeChanged);
+    _studyClockStartGate = ReaderStudyClockStartGate(
+      appModelNoUpdate.readerStudyClockStartMode,
+    );
+    _studyClockGate.setManualPause(_studyClockStartGate.manualPause);
     WidgetsBinding.instance.addObserver(this);
     // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
     readerSessionRemotes.register(_sessionRemote);
@@ -1790,6 +1890,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // detach 只停表，攒下的写和最后的位置一起交给退出汇合点统一 await。
     // 时钟为空 = 本页从没开始计时，整段跳过。
     _studyClockGate.dispose();
+    _idleTimeoutPrefs?.removeListener(_syncStudyClockIdleTimeout);
+    _idleTimeoutPrefs = null;
     _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
     // 异常拆栈兜底（正常退出已在 onSourcePagePop 收掉）：只推已排队的进度，
@@ -2040,8 +2142,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         StateError('manga shelf row missing: bookKey=${widget.bookKey}'),
         StackTrace.current,
       );
-      _releaseWebView();
-      setState(() => _loadFailed = true);
+      _presentLoadFailure();
       return;
     }
     _bookmarkBookUid = row.uid.isEmpty ? null : row.uid;
@@ -2088,11 +2189,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
         StackTrace.current,
       );
-      _releaseWebView();
-      setState(() {
-        _bookRow = row;
-        _loadFailed = true;
-      });
+      _presentLoadFailure(row: row);
       return;
     }
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
@@ -2312,8 +2409,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (restoredPage >= payload.images.length) {
         await localPageSession.close();
         if (!mounted) return;
-        _releaseWebView();
-        setState(() => _loadFailed = true);
+        _presentLoadFailure();
         return;
       }
       restoredFraction = 0;
@@ -2322,10 +2418,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
     _ensureStudyClock(db);
     // 同一 State 内换章 = 页号坐标系重用（新章页号从 0 起）：先结算离开的旧章
-    // 末页（翻走即计），再清并集；首次打开两步都是 no-op。
-    _readLedger
-      ..leave()
-      ..reset();
+    // 末页（翻走即计），再清并集；首次打开是 no-op。
+    _settleLeavingChapter();
 
     final int restoredSpread = MangaFushiPage.restoreSpreadFromProgress(
       spreads,
@@ -2456,13 +2550,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         error,
         stack,
       );
-      if (mounted) {
-        _releaseWebView();
-        setState(() {
-          _bookRow = row;
-          _loadFailed = true;
-        });
-      }
+      if (mounted) _presentLoadFailure(row: row);
     }
   }
 
@@ -2558,6 +2646,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       if (!mounted) return;
       _detachWholeVolumeOcrObserver();
+      // 换章 = 翻走旧章末页：下面 `_payload` 置空前先结算（见 [_settleLeavingChapter]）。
+      _settleLeavingChapter();
       _releaseWebView();
       setState(() {
         _bookRow = row;
@@ -3920,6 +4010,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 方向键连续挪画面是正常操作，而翻页去抖正是为了压掉连发）。
     final Offset? panStep = _panStepFor(action);
     if (panStep != null) {
+      _noteReaderActivity();
       unawaited(
         _controller?.evaluateJavascript(
               source:
@@ -3935,6 +4026,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 与本动作无关）。
     if (action == MangaReaderInputAction.toggleChrome) {
       _toggleMangaChrome();
+      return;
+    }
+    // 统计 / 计时与控制条按钮同一入口；回看态（卡片来源隔离会话）不建时钟，按钮
+    // 本就不渲染，快捷键同样不响应。
+    if (action == MangaReaderInputAction.openStatistics) {
+      if (!_sourceReviewActive) unawaited(_openMangaStatistics());
+      return;
+    }
+    if (action == MangaReaderInputAction.toggleStudyClock) {
+      if (!_sourceReviewActive) _toggleStudyClockManualPause();
       return;
     }
     final DateTime now = DateTime.now();
@@ -5501,8 +5602,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ErrorLogService.instance.log('StudyClock.write(manga)', e, st),
       deferWrite: ExitFlushRegistry.instance.defer,
     );
+    _idleTimeoutPrefs ??= appModelNoUpdate.prefsRepo
+      ..addListener(_syncStudyClockIdleTimeout);
     // 建表时已在后台 / 已被盖住就不起表（BUG-3994）。
     _studyClockGate.sync();
+  }
+
+  /// 偏好变了：把空闲门分钟数重新喂给时钟（值没变时是无副作用的赋值）。直接读
+  /// 订阅源本身，不经 context（监听可能在本页 element 停用之后、dispose 之前到达）。
+  void _syncStudyClockIdleTimeout() {
+    final PreferencesRepository? prefs = _idleTimeoutPrefs;
+    if (prefs == null) return;
+    _studyClock?.idleTimeout = Duration(
+      minutes: prefs.readingIdleTimeoutMinutes,
+    );
   }
 
   Future<void> _persistPosition(int page, double fraction) async {
@@ -7255,7 +7368,128 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           priority: priority,
           onPressed: _toggleMangaChrome,
         );
+      case MangaControlItem.statistics:
+        // 回看态（卡片来源隔离会话）不建时钟，没有可看的会话统计。
+        if (_sourceReviewActive) return null;
+        return MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_statistics_button'),
+          icon: FushiIcons.statistics,
+          label: t.reading_statistics,
+          slot: slot,
+          priority: priority,
+          onPressed: () => unawaited(_openMangaStatistics()),
+        );
+      case MangaControlItem.studyTimer:
+        if (_sourceReviewActive) return null;
+        // 图标 / 文案按手动暂停旗换，文案是「按下去会怎样」（同小说计时键）。
+        final bool paused = _studyClockGate.manualPause;
+        return MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_study_timer_button'),
+          icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
+          label: paused
+              ? t.reader_stats_clock_resume
+              : t.reader_stats_clock_pause,
+          slot: slot,
+          priority: priority,
+          onPressed: _toggleStudyClockManualPause,
+        );
     }
+  }
+
+  // ── 学习计时 / 统计侧栏（对齐小说阅读器 chrome.part 的同名入口）──────────────
+
+  /// 手动暂停 / 继续学习计时：旗归 [_studyClockGate]（统一判据，切后台期间点「继续」
+  /// 只清旗、回前台再起表）。setState 让控制条计时键换图标；统计侧栏按秒采样
+  /// `sessionTotals().active` 自己跟上。
+  ///
+  /// 先翻 [_studyClockStartGate]（同时结束「等首次翻页」：用户已亲手决定，之后翻页
+  /// 不再替他起表），再把结论推进 [_studyClockGate]。
+  void _toggleStudyClockManualPause() {
+    setState(
+      () => _studyClockGate.setManualPause(
+        _studyClockStartGate.toggleManualPause(),
+      ),
+    );
+  }
+
+  /// 会话累计读口：账只在 [StudyClock] 一本（v92），时钟未建时零值 + 未计时。
+  StudySessionTotals _mangaSessionTotals() =>
+      _studyClock?.sessionTotals() ?? (durationMs: 0, chars: 0, active: false);
+
+  /// 统计侧栏位置读口（见 [mangaStatsPosition]）。
+  ReaderPositionSnapshot _mangaStatsPositionSnapshot() {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    return mangaStatsPosition(
+      currentPage: _currentPage,
+      pageCount: _payload?.images.length ?? 0,
+      chapterIndex: entry == null ? -1 : _shelfChapterIndex,
+      chapterCount: entry?.chapters.length ?? 0,
+    );
+  }
+
+  /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律），身份
+  /// 与时钟的 `mediaKey` 同为 `widget.bookKey`。
+  Future<ReaderBookStatTotals> _loadMangaBookStatTotals() async {
+    final StatFacts facts = await loadStatFacts(
+      appModel.database,
+      activityLimit: 0,
+      includeCounters: true,
+    );
+    return summarizeReaderBookStats(
+      facts.dailyBooks,
+      counters: facts.counters.lookupCounters,
+      bookKey: widget.bookKey,
+      title: _bookRow?.title,
+      now: DateTime.now(),
+    );
+  }
+
+  /// 控制条「统计」：右侧侧栏（窄屏底部升起）——实时秒表 + 暂停键 / 本次页数与页时 /
+  /// 本章页与章序 / 今日 / 本书累计 / 预计读完 / 打开完整记录。
+  ///
+  /// 侧栏不遮正文（小说同款），路由构造时就声明豁免学习计时，开着照常计时；其余
+  /// 侧板 / 对话框仍由 [StudyCoverTracker] 判成「被盖住」停表。
+  Future<void> _openMangaStatistics() async {
+    if (!mounted || _sourceReviewActive) return;
+    final ValueNotifier<bool> transparent = ValueNotifier<bool>(true);
+    bool openFullRecords = false;
+    try {
+      await showReaderSideSheet<void>(
+        context: context,
+        side: ReaderSideSheetSide.right,
+        bottomSheetWhenCompact: true,
+        studyClockTransparentWhen: transparent,
+        builder: (BuildContext sheetContext) => ReaderStatisticsSheet(
+          media: ReaderStatsMedia.manga,
+          bookTitle: _shelfEntry?.series.title ?? _bookRow?.title ?? '',
+          sessionTotals: _mangaSessionTotals,
+          sessionPages: () => _studyClock?.sessionPages ?? 0,
+          loadBookTotals: _loadMangaBookStatTotals,
+          progress: _mangaStatsPositionSnapshot,
+          onTogglePause: _toggleStudyClockManualPause,
+          onOpenFullRecords: () {
+            openFullRecords = true;
+            Navigator.of(sheetContext).maybePop();
+          },
+        ),
+      );
+    } finally {
+      // 路由出栈时观察器已同步退订（didPop 先于这里的 await 恢复）。
+      transparent.dispose();
+    }
+    if (openFullRecords && mounted) await _openStatisticsCenter();
+  }
+
+  /// 统计侧栏「打开完整记录」→ 统计中心（阅读 tab）。全页路由压住正文，由
+  /// [StudyCoverTracker] 自动停表，回来续表。
+  Future<void> _openStatisticsCenter() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            const StatisticsCenterPage(initialTab: StatsCenterTab.reading),
+      ),
+    );
   }
 
   /// 打开工具栏布局编辑器（阅读设置面板里的入口）。写偏好后本页 setState，
@@ -7922,6 +8156,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               _zoomPercent = normalized;
             }
           },
+        );
+        // 页内指针 / 滚轮输入（捏合缩放、拖动平移、双击缩放…，JS 侧已节流）：只喂
+        // 学习计时空闲门，见 [_noteReaderActivity]。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaUserActivity',
+          callback: (List<dynamic> _) => _noteReaderActivity(),
         );
         // webtoon 滚动报告：更新 fraction/页码（绝不重载）。
         controller.addJavaScriptHandler(

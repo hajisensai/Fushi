@@ -668,6 +668,10 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_favorite_sentence',
   ),
+  // 视频的统计侧栏 / 停续学习计时（执行体 = 控制条 statistics / studyTimer 键同一入口）。
+  // 小说 / 漫画用的 I / P 在 video 组里已被快进 / 播放暂停占用，**默认不绑键**，用户自绑。
+  videoOpenStatistics(ShortcutScope.video, 'video_open_statistics'),
+  videoToggleStudyClock(ShortcutScope.video, 'video_toggle_study_clock'),
 
   // 漫画：翻页存的是**页序语义**（forward=下一页），左右方向键再按跨页方向
   // （日漫默认 rtl）校正——与 reader 的 resolveReaderArrowPageTurn 同构，见
@@ -691,6 +695,12 @@ enum ShortcutAction {
   mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
   mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
   mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
+  // 漫画的统计侧栏 / 停续学习计时（执行体 = 控制条 statistics / studyTimer 键同一
+  // 入口）。与 reader 组的 readerOpenStatistics(I) / readerToggleStudyClock(P) 同键：
+  // manga scope 内 I / P 未被占用，与小说分属不同 co-active 组、绝不同时激活，
+  // 肌肉记忆跨阅读器复用。手柄留空，用户可自绑。
+  mangaOpenStatistics(ShortcutScope.manga, 'manga_open_statistics'),
+  mangaToggleStudyClock(ShortcutScope.manga, 'manga_toggle_study_clock'),
 
   // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
   // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的
