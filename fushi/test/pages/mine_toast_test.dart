@@ -152,7 +152,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('角落锚点（歌词模式）：小号卡贴区域左下角、不压屏幕底部正中；撤销后复原', (
+  testWidgets('角落锚点（歌词模式）：小号卡放在正文区域下沿之外、不压正文；撤销后复原', (
     WidgetTester tester,
   ) async {
     await _pumpToastHost(tester);
@@ -173,7 +173,9 @@ void main() {
       );
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
       expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      expect(box.bottom, moreOrLessEquals(region.bottom - 12, epsilon: 2));
+      // 反馈 OOZ-lrCsU0：放在正文区域外（紧贴下沿之下），不压正文。
+      expect(box.top, moreOrLessEquals(region.bottom + 12, epsilon: 2));
+      expect(box.overlaps(region), isFalse);
       expect(box.height, lessThanOrEqualTo(44));
       await tester.pump(const Duration(seconds: 3));
     } finally {
@@ -211,7 +213,9 @@ void main() {
       expect(card.visibleFor, kMineNoticeActionVisibleFor);
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
       expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      expect(box.bottom, moreOrLessEquals(region.bottom - 12, epsilon: 2));
+      // 反馈 OOZ-lrCsU0：放在正文区域外（紧贴下沿之下），不压正文。
+      expect(box.top, moreOrLessEquals(region.bottom + 12, epsilon: 2));
+      expect(box.overlaps(region), isFalse);
 
       // 普通结果卡 2.4 秒就收；带按钮的小卡还在。
       await tester.pump(const Duration(seconds: 3));
@@ -273,6 +277,70 @@ void main() {
     expect(box.bottom, greaterThan(region.bottom));
     FushiToast.dismissCurrent();
     await tester.pump();
+  });
+
+  testWidgets('正文区域下方放不下：小卡放到区域上沿之上，仍不压正文', (WidgetTester tester) async {
+    await _pumpToastHost(tester);
+    // 测试屏 800x600：区域下方只剩 20，上方有 100。
+    const Rect region = Rect.fromLTRB(40, 100, 500, 580);
+    final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
+      () => region,
+    );
+    try {
+      await _show(tester, '卡片已导出到『日语单词』。', MineToastStatus.added);
+      final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
+      expect(box.bottom, moreOrLessEquals(region.top - 12, epsilon: 2));
+      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
+      expect(box.overlaps(region), isFalse);
+      await tester.pump(const Duration(seconds: 3));
+    } finally {
+      anchor.release();
+    }
+  });
+
+  test('mineToastOffsetClearOf：下方优先、其次上方、RTL 贴右、都放不下才进区域内', () {
+    const Size overlay = Size(1000, 700);
+    const Size card = Size(300, 40);
+    // 下方带子 700-560=140 ≥ 64：紧贴下沿。
+    expect(
+      mineToastOffsetClearOf(
+        overlay: overlay,
+        region: const Rect.fromLTRB(40, 28, 960, 560),
+        card: card,
+        rtl: false,
+      ),
+      const Offset(52, 572),
+    );
+    // RTL：贴区域右边。
+    expect(
+      mineToastOffsetClearOf(
+        overlay: overlay,
+        region: const Rect.fromLTRB(40, 28, 960, 560),
+        card: card,
+        rtl: true,
+      ),
+      const Offset(960 - 12 - 300, 572),
+    );
+    // 下方 30 放不下、上方 100 放得下：紧贴上沿之上。
+    expect(
+      mineToastOffsetClearOf(
+        overlay: overlay,
+        region: const Rect.fromLTRB(40, 100, 960, 670),
+        card: card,
+        rtl: false,
+      ),
+      const Offset(52, 100 - 12 - 40),
+    );
+    // 正文铺满整屏：只能落进区域内的底部起始角。
+    expect(
+      mineToastOffsetClearOf(
+        overlay: overlay,
+        region: const Rect.fromLTRB(0, 0, 1000, 700),
+        card: card,
+        rtl: false,
+      ),
+      const Offset(12, 700 - 12 - 40),
+    );
   });
 
   testWidgets('角落锚点解析不出区域（页面被盖住 / 未布局）：退回默认大卡', (WidgetTester tester) async {

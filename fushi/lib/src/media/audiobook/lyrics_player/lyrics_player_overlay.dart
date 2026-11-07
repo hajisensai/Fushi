@@ -115,7 +115,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   LyricsThemeHostState? _host;
 
   /// 歌词 WebView 的矩形（本组件坐标，即外观给的歌词矩形），每次布局刷新；
-  /// 制卡结果卡贴它的底部起始角（见 [FushiToast.anchorMineToCorner]）。
+  /// 制卡结果卡放在它外面、不压歌词（见 [FushiToast.anchorMineToCorner]）。
   Rect? _lyricsRect;
 
   /// 本页当前是否在屏上可见：上面压了不透明路由（歌词模式上再推一个页面）时
