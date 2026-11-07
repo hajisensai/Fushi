@@ -220,7 +220,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// **直链优先**：先试用户粘的链接本身，跑不通才回退 jsDelivr/ghfast 镜像（中国可达），
   /// 内容校验防 404/HTML 占位。
   Future<void> _downloadFromUrl() async {
-    // BUG-4219：用自带控制器生命周期的标准输入框；关窗动画期间输入框仍在重建，
+    // BUG-4220：用自带控制器生命周期的标准输入框；关窗动画期间输入框仍在重建，
     // 调用方自己建的控制器不能在 await 返回后立刻释放。
     final String? url = await showFushiTextInputDialog(
       context: context,

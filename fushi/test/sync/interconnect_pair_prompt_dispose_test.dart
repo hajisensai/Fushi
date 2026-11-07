@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 
-/// BUG-4219：互联配对的输入弹窗（PIN / 粘贴配对链接）在关窗动画期间输入框还在重建。
+/// BUG-4220：互联配对的输入弹窗（PIN / 粘贴配对链接）在关窗动画期间输入框还在重建。
 /// 旧实现在 `await showAppDialog` 返回后立刻释放调用方建的控制器，关窗那几帧撞上
 /// 「A TextEditingController was used after being disposed」并拖垮元素树，配对一成功
 /// 就红屏（`_dependents.isEmpty`）。这里走真实弹窗：输入 → 确认 → 把关窗动画放完，

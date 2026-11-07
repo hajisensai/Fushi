@@ -3301,7 +3301,7 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
     // 守的不变式：导入弹窗走共享 FushiDialogFrame + FushiModalSheetFrame，不得回退到
-    // adaptiveAlertDialog。BUG-4219 起弹窗内容是自持控制器的 `_ThemeImportDialog`
+    // adaptiveAlertDialog。BUG-4220 起弹窗内容是自持控制器的 `_ThemeImportDialog`
     // （文件末尾的 State），不再内联在 `_importTheme` 里。
     expect(
       _functionSource(

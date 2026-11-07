@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4219 守卫：函数里自己建的输入控制器（`TextEditingController` / `FocusNode` /
+/// BUG-4220 守卫：函数里自己建的输入控制器（`TextEditingController` / `FocusNode` /
 /// `ScrollController`）交给弹窗 / 底部弹层用，又在同一个函数里 `await` 完弹窗后
 /// 自己 `dispose()`——这是错的：`await` 返回时弹窗还在播关闭动画、输入框还在重建，
 /// 撞上「控制器已释放」异常并拖垮元素树（互联配对一成功就红屏）。

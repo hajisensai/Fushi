@@ -4671,7 +4671,7 @@ class GalResourceUnpairedLineTrackDialog extends StatelessWidget {
 
 /// 粘贴 Hook Code 弹窗。返回 null = 取消；否则返回原文（规范化由调用方做）。
 ///
-/// BUG-4219：两个输入框的控制器归本 State 持有、路由移除时才释放；调用方在
+/// BUG-4220：两个输入框的控制器归本 State 持有、路由移除时才释放；调用方在
 /// `await showAppDialog` 返回后立刻释放会撞上关窗动画里输入框的重建。
 class _HookCodePasteDialog extends StatefulWidget {
   const _HookCodePasteDialog({required this.initialLabel});

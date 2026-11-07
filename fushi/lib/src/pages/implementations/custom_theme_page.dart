@@ -2731,7 +2731,7 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
 
 /// 粘贴主题 JSON 的导入弹窗。返回 null = 关闭；否则返回解析好的主题。
 ///
-/// BUG-4219：输入框控制器归本 State 持有、路由移除时才释放；调用方在
+/// BUG-4220：输入框控制器归本 State 持有、路由移除时才释放；调用方在
 /// `await showAppDialog` 结束后立刻释放会撞上关窗动画里输入框的重建。
 class _ThemeImportDialog extends StatefulWidget {
   const _ThemeImportDialog({required this.decode});
