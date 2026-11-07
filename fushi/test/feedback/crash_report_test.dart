@@ -643,7 +643,7 @@ void main() {
     });
   });
 
-  group('问过没回答的待报不重问（BUG-4220，反馈 dCYn9_hix-）', () {
+  group('问过没回答的待报不重问（BUG-4222，反馈 dCYn9_hix-）', () {
     testWidgets('首页提示条自己收起：下次启动（典型是更新交接后）不再弹同一次', (WidgetTester tester) async {
       final CrashReporter r = CrashReporter()
         ..attach(dir, enabled: true)

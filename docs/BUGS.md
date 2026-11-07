@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3782 条。点号进各自文件。
+> 共 3784 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4220](bugs/BUG-4220-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
-> 共 3783 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4222](bugs/BUG-4222-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
 | [BUG-4221](bugs/BUG-4221-dialog-controller-disposed-while-closing.md) | ✅ | ✅ | 配对后红屏：弹窗关闭动画期间输入框控制器已被释放 |
 | [BUG-4220](bugs/BUG-4220-youtube-timedtext-double-escaped.md) | ✅ | ✅ | 内置播放器 YouTube 字幕残留 HTML 实体（&#39;） |
 | [BUG-4219](bugs/BUG-4219-shelf-columns-shrink-regression.md) | ✅ | ✅ | shelf-columns-shrink-regression |
