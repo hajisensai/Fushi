@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 27;
+pub const SCHEMA_VERSION: i64 = 28;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -736,6 +736,13 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         super::sync2::revoke_copies_of_revoked_events(&tx, now)?;
+    }
+    if (1..28).contains(&current) {
+        // V28（BUG-4227）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件（history.rs `EventKey` 对 Anki
+        // 来源不比卡）。按新规则重放带这种副本的卡、写回日志投影行的 `res`（store/sync2/mod.rs
+        // [super::sync2::replay_anki_copies]），与收段新建的库、与对端逐位相同（摘要前缀换成 `5:`）。只改投影行，
+        // 操作日志不动；新建的库没有日志，不跑。可重放。
+        super::sync2::replay_anki_copies(&tx)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

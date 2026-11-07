@@ -233,7 +233,7 @@ pub(crate) fn refresh(
         stat_seeds.extend(strings(c, "SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)", &[profile])?);
     }
     if !stat_seeds.is_empty() {
-        refresh_stats(c, profile, cfg, &mut links, &stat_seeds)?;
+        refresh_stats(c, profile, cfg, &mut links, &stat_seeds, !dirty.all_stats)?;
     }
     Ok(out)
 }
@@ -1257,27 +1257,50 @@ fn link_family(
 
 /// 有效复习投影（`srs_stat_reviews`）：[seeds] 所在的「前身 ↔ 后继」连通分量整份重算。归属：卡自己可见 → 归
 /// 自己；否则归继承它历史的可见卡中 id 最小的；都不可见 → 归后代里的链尾中 id 最小的；没有后代 → 归自己。
+///
+/// 同一条 Anki revlog 导入到两张**没有血统链接**的卡上（BUG-4227：删光重导时笔记按来源类型恢复，旧卡隐藏、新卡
+/// 可见，日志 ID 由卡派生而各有一份）时，两个归属组各投影一份，统计算两遍。所以 [expand] 时再把「有同一 Anki
+/// 复习时刻日志的卡」（[anki_partners]）及其连通分量一起重算（到不动点，结果与刷新顺序无关），投影后按
+/// [history::AnkiEvent] 只留一份（[dedupe_anki_rows]）。全量重建（`all_stats`）的种子已是全部有日志的卡，不必扩。
 fn refresh_stats(
     c: &Connection,
     profile: &str,
     cfg: &CacheConfig,
     links: &mut Links,
     seeds: &BTreeSet<String>,
+    expand: bool,
 ) -> Result<(), String> {
     // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
-    let family = link_family(c, links, seeds)?;
+    let mut family = link_family(c, links, seeds)?;
+    if expand {
+        loop {
+            let partners = anki_partners(c, profile, &family)?;
+            if partners.iter().all(|p| family.contains(p)) {
+                break;
+            }
+            let grown: BTreeSet<String> = family.iter().cloned().chain(partners).collect();
+            family = link_family(c, links, &grown)?;
+        }
+    }
     let mut ids: Vec<String> = family.iter().cloned().collect();
     ids.sort_by(|a, b| cmp_utf16(a, b));
     let mut visible: HashSet<String> = HashSet::new();
+    // 有缓存行的卡所属的笔记（隐藏的也有）；没有缓存行的卡（例如笔记换了类型后不再属于它的旧卡）认不出笔记。
+    let mut note_of: HashMap<String, String> = HashMap::new();
     for chunk in ids.chunks(500) {
         let q = format!(
-            "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE hidden = 0 AND id IN ({})",
+            "SELECT srs_idt(id) AS id, srs_idt(note_id) AS note_id, hidden FROM srs_cards_cache WHERE id IN ({})",
             marks(chunk.len())
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
-            visible.insert(r.get(0).map_err(sql)?);
+            let id: String = r.get(0).map_err(sql)?;
+            let hidden: bool = r.get(2).map_err(sql)?;
+            note_of.insert(id.clone(), r.get(1).map_err(sql)?);
+            if !hidden {
+                visible.insert(id);
+            }
         }
     }
     // 真后代：p 在 X 的血统里（X ≠ p）。只有带链接的卡才可能有前身 / 后代。
@@ -1353,6 +1376,7 @@ fn refresh_stats(
         )
         .map_err(sql)?;
     let empty: Vec<LogRow> = Vec::new();
+    let mut rows: Vec<(String, history::StatRow)> = Vec::new();
     for owners in order.chunks(500) {
         let batch: Vec<Vec<String>> = owners.iter().map(|o| groups[o].clone()).collect();
         let logs = logs_of(c, &batch)?;
@@ -1364,23 +1388,132 @@ fn refresh_stats(
                 }
             }
             for r in history::stats_from_stored(&stored)? {
-                ins.execute(rusqlite::params![
-                    r.log_id,
-                    profile,
-                    o,
-                    r.occurred_at,
-                    r.utc_off,
-                    r.rating,
-                    r.kind,
-                    r.dur,
-                    r.prev_due_day,
-                    r.maturity_delta,
-                ])
-                .map_err(sql)?;
+                rows.push((o.clone(), r));
             }
         }
     }
+    for (o, r) in dedupe_anki_rows(rows, &visible, &note_of) {
+        ins.execute(rusqlite::params![
+            r.log_id,
+            profile,
+            o,
+            r.occurred_at,
+            r.utc_off,
+            r.rating,
+            r.kind,
+            r.dur,
+            r.prev_due_day,
+            r.maturity_delta,
+        ])
+        .map_err(sql)?;
+    }
     Ok(())
+}
+
+/// [cards] 上 Anki 导入日志的时刻（导入日志的发生时刻 = revlog id）在本 profile 里出现过的全部卡（含 [cards] 自己）。
+/// 只按落库列粗筛（走 `idx_srs_review_logs_profile_kind_time`），是否同一事件由 [dedupe_anki_rows] 判。
+fn anki_partners(
+    c: &Connection,
+    profile: &str,
+    cards: &HashSet<String>,
+) -> Result<BTreeSet<String>, String> {
+    let cards: Vec<&String> = cards.iter().collect();
+    let mut times: BTreeSet<i64> = BTreeSet::new();
+    for chunk in cards.chunks(500) {
+        let q = format!(
+            "SELECT DISTINCT occurred_at FROM srs_review_logs WHERE origin = 'anki' \
+             AND kind IN ('review', 'manual') AND card_id IN ({})",
+            marks(chunk.len())
+        );
+        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+        let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
+        while let Some(r) = it.next().map_err(sql)? {
+            times.insert(r.get(0).map_err(sql)?);
+        }
+    }
+    let times: Vec<i64> = times.into_iter().collect();
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for chunk in times.chunks(500) {
+        let q = format!(
+            "SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?) \
+             AND kind IN ('review', 'manual') AND occurred_at IN ({}) AND origin = 'anki'",
+            plain_marks(chunk.len())
+        );
+        let mut args: Vec<rusqlite::types::Value> =
+            vec![rusqlite::types::Value::Text(profile.to_owned())];
+        args.extend(chunk.iter().map(|t| rusqlite::types::Value::Integer(*t)));
+        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+        let mut it = stmt.query(params_from_iter(args.iter())).map_err(sql)?;
+        while let Some(r) = it.next().map_err(sql)? {
+            out.insert(r.get(0).map_err(sql)?);
+        }
+    }
+    Ok(out)
+}
+
+/// 不同归属组里同一次 Anki 复习（[history::AnkiEvent] 相同）的投影行只留一份（BUG-4227）。同一份历史里的副本已由
+/// 选取规则（history.rs `EventKey`）去掉，这里只管没有血统链接的卡。
+///
+/// 按笔记收紧：组里认得出笔记的行（归属卡有缓存行）若分属不止一条笔记，只在同一笔记内合并，认不出笔记的行原样
+/// 保留（不同集合撞同一毫秒、同评分同用时的复习不误并）；只有一条或没有可认的笔记时整组是一次复习。留哪一份：
+/// 归属卡可见的优先，再取日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
+fn dedupe_anki_rows(
+    rows: Vec<(String, history::StatRow)>,
+    visible: &HashSet<String>,
+    note_of: &HashMap<String, String>,
+) -> Vec<(String, history::StatRow)> {
+    let mut by_event: HashMap<history::AnkiEvent, Vec<usize>> = HashMap::new();
+    for (i, (_, r)) in rows.iter().enumerate() {
+        if let Some(e) = r.anki_event {
+            by_event.entry(e).or_default().push(i);
+        }
+    }
+    let better = |a: usize, b: usize| -> bool {
+        let (va, vb) = (visible.contains(&rows[a].0), visible.contains(&rows[b].0));
+        if va != vb {
+            return va;
+        }
+        cmp_utf16(&rows[a].1.log_id, &rows[b].1.log_id) == std::cmp::Ordering::Less
+    };
+    let mut drop: HashSet<usize> = HashSet::new();
+    for members in by_event.values() {
+        if members.len() < 2 {
+            continue;
+        }
+        let notes: BTreeSet<&String> = members
+            .iter()
+            .filter_map(|&i| note_of.get(&rows[i].0))
+            .collect();
+        let clusters: Vec<Vec<usize>> = if notes.len() <= 1 {
+            vec![members.clone()]
+        } else {
+            notes
+                .iter()
+                .map(|n| {
+                    members
+                        .iter()
+                        .copied()
+                        .filter(|&i| note_of.get(&rows[i].0) == Some(*n))
+                        .collect()
+                })
+                .collect()
+        };
+        for cluster in clusters {
+            let Some(keep) = cluster
+                .iter()
+                .copied()
+                .reduce(|a, b| if better(b, a) { b } else { a })
+            else {
+                continue;
+            };
+            drop.extend(cluster.into_iter().filter(|&i| i != keep));
+        }
+    }
+    rows.into_iter()
+        .enumerate()
+        .filter(|(i, _)| !drop.contains(i))
+        .map(|(_, r)| r)
+        .collect()
 }
 
 // ---------------------------------------------------------------- 读
@@ -1878,6 +2011,77 @@ mod tests {
     }
 
     const N4: &str = "0193a1b2-0000-7000-8000-000000000004";
+
+    /// Anki 导入的一条评分复习（与 srs_apkg_import.dart `_revlogLog` 同形：HLC / 发生时刻由 revlog id 派生、写入者
+    /// 固定 `anki`；日志 ID 由卡派生，这里直接给）。
+    fn anki_review(id: &str, card: &str, rid: i64, rating: i64, dur: i64) -> Value {
+        json!({"t": "log", "x": {
+            "id": id, "p": P, "card": card, "kind": "review", "rating": rating, "hlc": format!("{rid}:0:anki"),
+            "at": rid, "ts": "wall", "origin": "anki", "ankiId": rid, "rtype": "review", "dur": dur, "utcOff": 0,
+            "rollover": 4, "alg": "anki",
+            "res": {"queue": "review", "ivl": 3, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi", "dueDay": 1}
+        }})
+    }
+
+    fn stat_count(d: &Device) -> usize {
+        d.rows("SELECT log_id FROM srs_stat_reviews").len() - 1
+    }
+
+    /// BUG-4227：同一条 Anki revlog 先导入到旧卡（之后笔记被删、按来源类型恢复，旧卡不再属于它），删光重导又按新卡派生
+    /// 一份日志——两张卡没有血统链接，各自投影进统计，复习数 ×2。投影后按 Anki 事件身份只留一份；后到的那张卡
+    /// 单独刷新（增量，只带它自己）也要把旧卡一起重算，结果与一次全量重建相同。
+    #[test]
+    fn anki_revlog_on_two_unlinked_cards_is_projected_once() {
+        let d = Device::new("anki-copies-unlinked");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        let cards = |xs: &[&str]| Dirty {
+            cards: xs.iter().map(|c| (*c).to_owned()).collect(),
+            ..Dirty::default()
+        };
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                anki_review("old-1", "card-old", 1_000, 3, 5_000),
+                anki_review("old-2", "card-old", 2_000, 3, 4_000),
+            ],
+        );
+        run(&d, &cfg, cards(&["card-old"]));
+        assert_eq!(stat_count(&d), 2);
+        // 重导：同两条 revlog 落到新卡，另多一条 Anki 端新做的复习；用时不同的同一毫秒复习（另一个集合）不算副本。
+        d.apply(
+            T0 + 1,
+            vec![
+                anki_review("new-1", "card-new", 1_000, 3, 5_000),
+                anki_review("new-2", "card-new", 2_000, 3, 4_000),
+                anki_review("new-3", "card-new", 3_000, 4, 3_000),
+                anki_review("other", "card-other", 1_000, 3, 7_777),
+            ],
+        );
+        run(&d, &cfg, cards(&["card-new", "card-other"]));
+        assert_eq!(stat_count(&d), 4);
+        // 两张卡都没有缓存行（不可见）：留日志 ID 最小的那份。
+        let ids: Vec<String> = d
+            .rows("SELECT srs_idt(log_id) FROM srs_stat_reviews ORDER BY log_id")
+            .into_iter()
+            .skip(1)
+            .map(|r| r[0].clone())
+            .collect();
+        assert_eq!(ids, ["new-1", "new-2", "new-3", "other"]);
+        // 只刷新旧卡也不会把它的那份加回来；全量重建同一结果。
+        run(&d, &cfg, cards(&["card-old"]));
+        assert_eq!(stat_count(&d), 4);
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_stats: true,
+                ..Dirty::default()
+            },
+        );
+        assert_eq!(stat_count(&d), 4);
+    }
 
     fn tags(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|t| (*t).to_owned()).collect()

@@ -18,6 +18,10 @@
 //!   [STATUS_DUPLICATE]、不算有效；组里任何一份被撤销，整组（每一份）算撤销。undo 与不认识的 kind 不成组。依据：HLC 每次写日志都由写入者时钟
 //!   tick 出来，同写入者内唯一；Anki 导入的 HLC 由 revlog id / 锚点时刻派生；合并 / 跨 profile 导入原样保留 HLC；
 //!   恢复备份的重放副本取新 HLC，不与原日志成组；
+//!   **Anki 来源的日志不比卡**（BUG-4227）：同一次 Anki 复习的导入日志 ID 由本机卡 ID 派生（`SrsIds.importedRevlogs`），
+//!   来源笔记换过模板 / 笔记类型（Lapis 迁到 Fushi 卡片、删光重导时按来源类型恢复）后再导入，同一条 revlog 会落成
+//!   血统里另一张卡上的另一条日志。HLC 与发生时刻都由 revlog id 派生、写入者固定，所以在一份历史（一张逻辑卡的
+//!   血统）里，HLC / 时刻 / 评分 / 种类都相同的 Anki 日志就是同一次复习，按卡区分只会让它算两遍；
 //! - 排序键见 ordering.rs（与字段寄存器共用一份）：(钳位后的物理时间, 计数器, writerId, eventId)，
 //!   字符串按 UTF-16 码元比较；
 //! - 撤销：undo 日志的 revokes 目标不算有效；不级联；
@@ -117,7 +121,12 @@ impl Log<'_> {
             return None;
         }
         Some(EventKey {
-            card: &self.card,
+            // Anki 来源：同一条 revlog 落在血统里不同的卡上也是同一事件（见文件头）。
+            card: if self.origin == Origin::Anki {
+                None
+            } else {
+                Some(&self.card)
+            },
             kind: self.kind,
             physical: self.physical,
             counter: self.counter,
@@ -146,7 +155,8 @@ impl Log<'_> {
 /// 导入都原样保留；其余字段是副本照抄的内容，只用来再收紧（两条不同事件撞同一 HLC 时不被误并）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EventKey<'a> {
-    card: &'a str,
+    /// 日志所属的卡；Anki 来源的日志为 None（同一条 revlog 换卡导入的副本也成组，见文件头）。
+    card: Option<&'a str>,
     kind: Kind,
     physical: i64,
     counter: i64,
@@ -771,6 +781,24 @@ pub struct StatRow {
     pub prev_due_day: Option<i64>,
     /// +1 = 这条之后变成熟，−1 = 掉出成熟，0 = 不变。
     pub maturity_delta: i64,
+    /// Anki 导入日志的事件身份（不是 Anki 来源 / 没有 revlog id 时 None）：不在同一份历史里的两张卡（没有血统链接，
+    /// 例如删光重导后按来源类型恢复的笔记：旧卡隐藏、新卡可见）各自投影时，统计按它判同一次复习（BUG-4227，
+    /// store/caches.rs `refresh_stats`）。不落库。
+    pub anki_event: Option<AnkiEvent>,
+}
+
+/// 一条 Anki 导入日志的事件身份（[StatRow::anki_event]）：同一条 revlog 不论导入到哪张卡，这些字段都相同
+/// （HLC / 发生时刻由 revlog id 派生；评分、复习类型、用时照抄 revlog）。用时一起比，是为了把两个不同 Anki 集合
+/// 恰好在同一毫秒有一次同评分复习的情况分开。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AnkiEvent {
+    pub anki_id: i64,
+    pub physical: i64,
+    pub counter: i64,
+    pub kind: i64,
+    pub rating_type: bool,
+    pub rating: Option<i64>,
+    pub dur: i64,
 }
 
 /// 一份归属组（归属卡 + 归它的前身卡，日志合在一起）的有效复习投影：每条有效日志在分类 / 成熟变化
@@ -867,6 +895,18 @@ fn stat_rows(
                     None
                 },
                 maturity_delta: delta,
+                anki_event: match (log.origin, log.anki_id) {
+                    (Origin::Anki, Some(anki_id)) => Some(AnkiEvent {
+                        anki_id,
+                        physical: log.physical,
+                        counter: log.counter,
+                        kind: log.kind as i64,
+                        rating_type: log.rating_type,
+                        rating: log.rating,
+                        dur: extra.dur,
+                    }),
+                    _ => None,
+                },
             });
         }
         if let Some(r) = res {
@@ -1362,6 +1402,40 @@ mod tests {
             .replace(r#""rating":3"#, r#""rating":2"#)
             .replace(r#""id":"b""#, r#""id":"a""#);
         assert_eq!(effective_ids(&[&mine, &other_rating]), ["a", "b"]);
+    }
+
+    /// 卡 [card] 上一条 Anki 导入的评分复习（HLC / 时刻都由 revlog id [rid] 派生，与导入器同形）。
+    fn anki_on(card: &str, id: &str, rid: i64, rating: i64, due: i64) -> String {
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"{card}","kind":"review","hlc":"{rid}:0:anki","at":{rid},"origin":"anki","ankiId":{rid},"rtype":"review","rating":{rating},"res":{{"queue":"review","dueDay":{due}}}}}"#
+        )
+    }
+
+    #[test]
+    fn anki_revlog_imported_onto_two_cards_of_one_lineage_counts_once() {
+        // BUG-4227：Lapis 迁到 Fushi 卡片（新卡继承旧卡历史）后再从 Anki 迁一次，同一条 revlog 落在新卡上又写一份
+        // （日志 ID 由卡派生，不同）。血统里两份是同一次复习：只算一份，状态 / 统计 / 重放都只推进一次。
+        let on_old = anki_on("lapis", "b-old", 1000, 3, 5);
+        let on_new = anki_on("fushi", "a-new", 1000, 3, 5);
+        let later = anki_on("lapis", "c-later", 2000, 3, 9);
+        let jsons = [on_old.as_str(), on_new.as_str(), later.as_str()];
+        assert_eq!(effective_ids(&jsons), ["a-new", "c-later"]);
+        assert_eq!(status_of(&jsons, "b-old"), Some(STATUS_DUPLICATE));
+        let rows = stats_from_json(&jsons, &[None, None, None]).unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn anki_logs_with_other_rating_or_revlog_or_native_origin_are_not_grouped_across_cards() {
+        // 不同 revlog / 评分不同的 Anki 日志照旧各算各的；原生（fushi）日志仍按卡区分（前身卡上同 HLC 的原生日志不是副本）。
+        let a = anki_on("lapis", "a", 1000, 3, 5);
+        let other_rid = anki_on("fushi", "b", 1001, 3, 5);
+        let other_rating = anki_on("fushi", "c", 1000, 2, 5);
+        assert_eq!(effective_ids(&[&a, &other_rid]), ["a", "b"]);
+        assert_eq!(effective_ids(&[&a, &other_rating]), ["a", "c"]);
+        let mine = review("b", "10:0:A", 10, 10);
+        let pred = review_on("pred", "a", "10:0:A", 10, 20, "");
+        assert_eq!(effective_ids(&[&mine, &pred]), ["a", "b"]);
     }
 
     #[test]

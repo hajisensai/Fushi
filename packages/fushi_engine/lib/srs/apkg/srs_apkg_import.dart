@@ -233,6 +233,7 @@ class _ExistingPrefetch {
     required this.cards,
     required this.cardEdits,
     required this.histories,
+    required this.ankiLogsAt,
   });
 
   static final _ExistingPrefetch empty = _ExistingPrefetch(
@@ -240,12 +241,16 @@ class _ExistingPrefetch {
     cards: const <String, SrsCardCacheRow>{},
     cardEdits: const <String, SrsEntityEdits>{},
     histories: const <String, SrsCardHistory>{},
+    ankiLogsAt: const <int, List<SrsAnkiLogAt>>{},
   );
 
   final Map<String, SrsNoteView?> notes;
   final Map<String, SrsCardCacheRow> cards;
   final Map<String, SrsEntityEdits> cardEdits;
   final Map<String, SrsCardHistory> histories;
+
+  /// 本机已有的 Anki 导入日志，按 revlog id（这一块已有笔记的来源 revlog；见 [SrsDbStore.ankiImportedLogsAt]）。
+  final Map<int, List<SrsAnkiLogAt>> ankiLogsAt;
 }
 
 /// 一个来源笔记类型映射到本机的结果。
@@ -1528,17 +1533,28 @@ class _Importer {
   ) async {
     final List<String> noteIds = <String>[];
     final List<String> cardIds = <String>[];
+    final List<int> revlogIds = <int>[];
     for (final (Row n, List<_SrcCard> cards) in chunk) {
       final _NtMap? nt = _nts[n['mid'] as int];
       if (nt == null || nt.conflict != null) continue;
       final String noteId = SrsIds.note(profileUid, n['guid'] as String);
       if (!_existingNotes.contains(noteId)) continue;
       noteIds.add(noteId);
-      for (final (_SrcCard _, String cardId) in _cardIdsOf(nt, noteId, cards)) {
+      for (final (_SrcCard c, String cardId) in _cardIdsOf(nt, noteId, cards)) {
         cardIds.add(cardId);
+        for (final _SrcRevlog r in c.revlogs) {
+          revlogIds.add(r.id);
+        }
       }
     }
     if (noteIds.isEmpty) return _ExistingPrefetch.empty;
+    // 只有本机已有的笔记才可能已经有这条复习（新笔记的卡 ID 都是新的）：按 revlog id 一块一次查。
+    final Map<int, List<SrsAnkiLogAt>> ankiLogsAt = <int, List<SrsAnkiLogAt>>{};
+    if (options.withScheduling && revlogIds.isNotEmpty) {
+      for (final SrsAnkiLogAt l in await store.ankiImportedLogsAt(revlogIds)) {
+        (ankiLogsAt[l.revlogId] ??= <SrsAnkiLogAt>[]).add(l);
+      }
+    }
     return _ExistingPrefetch(
       notes: await store.notes(noteIds),
       cards: <String, SrsCardCacheRow>{
@@ -1548,6 +1564,7 @@ class _Importer {
       histories: options.withScheduling
           ? await store.histories(cardIds)
           : const <String, SrsCardHistory>{},
+      ankiLogsAt: ankiLogsAt,
     );
   }
 
@@ -1747,6 +1764,8 @@ class _Importer {
           cardId,
           c,
           isNew ? null : pre.histories[cardId] ?? await store.history(cardId),
+          noteId: noteId,
+          ankiLogsAt: pre.ankiLogsAt,
         );
       } else if (isNew && (c.type != 0 || c.queue < 0)) {
         report.cardsResetToNew++;
@@ -1861,9 +1880,42 @@ class _Importer {
     String cardId,
     _SrcCard c,
     // 已有笔记的卡在本机的历史（块开头预读）；新笔记为 null（据此也判断笔记是否已存在）。
-    SrsCardHistory? existingHistory,
-  ) async {
+    SrsCardHistory? existingHistory, {
+    required String noteId,
+    required Map<int, List<SrsAnkiLogAt>> ankiLogsAt,
+  }) async {
     final List<_SrcRevlog> revlogs = c.revlogs;
+    // 这条 revlog 已经在本 profile 里、只是落在另一张卡上（BUG-4227）：日志 ID 由本机卡 ID 派生，来源笔记换过
+    // 模板 / 笔记类型（Lapis 迁到 Fushi 卡片、删光重导按来源类型恢复）后再导入，同一次复习会按新卡再写一份，
+    // 统计 ×2。在这张卡的血统里（前身卡上）的：不写。不在血统里、那张卡已不可见（旧卡）的：给这张卡接上
+    // `historyFrom/<旧卡>`，历史随血统过来，不再写一份；那张卡仍可见的：这次复习已经记在一张活卡上，同样不写
+    // （不让两张活卡共享一份历史）。别的笔记的卡不算；认不出笔记的旧卡（缓存行已没有）按评分 / 复习类型 / 用时都
+    // 相同才认（不同集合恰好同一毫秒同评分同用时的复习不误认）。
+    final Set<String> lineage = <String>{
+      cardId,
+      for (final SrsReviewLog l
+          in existingHistory?.all ?? const <SrsReviewLog>[])
+        l.cardId,
+    };
+    final Set<String> linkedOld = <String>{};
+    bool presentElsewhere(_SrcRevlog r) {
+      final List<SrsAnkiLogAt>? hits = ankiLogsAt[r.id];
+      if (hits == null) return false;
+      final int? rating = r.ease >= 1 && r.ease <= 4 ? r.ease : null;
+      final String rtype = SrsReviewType.fromAnki(r.type);
+      bool found = false;
+      for (final SrsAnkiLogAt h in hits) {
+        if (h.cardId == cardId) continue;
+        if (h.rating != rating || h.reviewType != rtype) continue;
+        if (h.noteId == null ? h.durationMs != r.time : h.noteId != noteId) {
+          continue;
+        }
+        found = true;
+        if (!lineage.contains(h.cardId) && !h.visible) linkedOld.add(h.cardId);
+      }
+      return found;
+    }
+
     // 整张卡的 revlog id 一次批量派生（UUIDv5 在 native/fushi_compute 里算）。
     final List<String> revlogIds = SrsIds.importedRevlogs(cardId, <int>[
       for (final _SrcRevlog r in revlogs) r.id,
@@ -1911,6 +1963,10 @@ class _Importer {
         report.revlogsVerifiedByExt++;
         continue;
       }
+      if (presentElsewhere(r)) {
+        report.revlogsAlreadyPresent++;
+        continue;
+      }
       if (pkg.fushiExt != null) report.revlogsNotInExt++;
       _pending.add(
         SrsReadyDraft(
@@ -1927,6 +1983,17 @@ class _Importer {
         ),
       );
       report.reviewLogsImported++;
+    }
+
+    for (final String old in linkedOld) {
+      _historyLinks.add(
+        SrsEditSpec(
+          SrsEntityKind.card,
+          cardId,
+          SrsFieldKeys.cardHistoryFrom(old),
+          true,
+        ),
+      );
     }
 
     final SrsAnchorDecision d = srsDecideAnchor(

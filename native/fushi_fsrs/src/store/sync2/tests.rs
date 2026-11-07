@@ -2344,15 +2344,92 @@ fn v26_upgrade_replays_cards_with_event_copies() {
     drop(w);
     assert_eq!(projection(&a), projection(&fresh));
     assert_eq!(a.digest(), fresh.digest());
-    // 本机缓存的摘要按新前缀记（`<根>@4:<vv>`）。
+    // 本机缓存的摘要按当前前缀记（`<根>@<VV_PREFIX><vv>`）。
     let stored = &a.rows(&format!(
         "SELECT value FROM srs_meta WHERE key = 'sync2_digest/{P}'"
     ))[1][0];
-    assert!(stored.contains("@4:"), "{stored}");
+    assert!(
+        stored.contains(&format!("@{}", super::digest::VV_PREFIX)),
+        "{stored}"
+    );
     assert!(!stored.contains("@3:"), "{stored}");
     // 可重放：再跑一遍什么也不改。
     let w = a.core.writer().unwrap();
     assert!(super::replay_event_copies(&w).unwrap().is_empty());
+}
+
+/// Anki 导入的一条评分复习（srs_apkg_import.dart `_revlogLog` 同形：HLC / 时刻由 revlog id 派生、写入者 `anki`）。
+fn anki_review(id: &str, card: &str, rid: i64, due: i64) -> Value {
+    json!({"t": "log", "x": {
+        "id": id, "p": P, "card": card, "kind": "review", "rating": 3, "hlc": format!("{rid}:0:anki"), "at": rid,
+        "ts": "wall", "origin": "anki", "ankiId": rid, "rtype": "review", "dur": 5000, "utcOff": 0, "rollover": 4,
+        "alg": "anki",
+        "res": {"queue": "review", "ivl": 3, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi", "dueDay": due,
+                "lastReviewedAt": rid}
+    }})
+}
+
+/// srs.db v28（BUG-4227）：同一条 Anki revlog 导入到血统里两张卡上（Lapis 迁到 Fushi 卡片后再从 Anki 迁一次）在新规则下
+/// 算同一事件。升级时带这种副本的卡按新规则重放、写回派生日志的 `res`，与新建的库逐位相同；没有副本的卡不动；可重放。
+#[test]
+fn v28_upgrade_replays_cards_with_anki_copies_across_cards() {
+    let a = Device::new("v28-a");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    // 旧卡 OLD 上的导入日志；新卡 NEW 继承 OLD 的历史，又按 NEW 派生写了同一条 revlog（dueDay 不同：两次导入
+    // 时来源卡的状态不同，旧规则下后一份再推进一次）。
+    a.apply(T0 + 1, vec![anki_review("old-1", "OLD", T0 + 1, 5)]);
+    a.apply(
+        T0 + 2,
+        vec![edit("card", "NEW", "historyFrom/OLD", json!(true))],
+    );
+    a.apply(T0 + 3, vec![anki_review("new-1", "NEW", T0 + 1, 9)]);
+    a.apply(T0 + DAY, vec![review("r2", "NEW", T0 + DAY, 3, "review")]);
+    a.apply(T0 + DAY, vec![review("s1", "S", T0 + DAY, 3, "learn")]);
+    a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    let fresh = Device::new("v28-fresh");
+    fresh.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    assert_eq!(projection(&a), projection(&fresh));
+    let want_r2 = log_json(&a, "r2");
+    let want_s1 = log_json(&a, "s1");
+
+    let stale = |d: &Device, id: &str, v: &Value| {
+        let mut j = v.clone();
+        j["res"]["dueDay"] = json!(1);
+        let w = d.core.writer().unwrap();
+        w.execute(
+            "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+            rusqlite::params![id, j.to_string()],
+        )
+        .unwrap();
+    };
+    stale(&a, "r2", &want_r2);
+    stale(&a, "s1", &want_s1);
+    a.core
+        .writer()
+        .unwrap()
+        .execute_batch("UPDATE srs_meta SET value = '27' WHERE key = 'schema';")
+        .unwrap();
+    let Device { core, _dir } = a;
+    drop(core);
+    let a = Device {
+        core: SrsCore::open(&_dir.0.join("srs.db")).unwrap(),
+        _dir,
+    };
+    assert_eq!(
+        log_json(&a, "r2"),
+        want_r2,
+        "the card with a cross-card Anki copy is replayed under the new rule"
+    );
+    assert_eq!(
+        log_json(&a, "s1")["res"]["dueDay"],
+        json!(1),
+        "cards without Anki copies are not candidates"
+    );
+    // 可重放：再跑一遍什么也不改。
+    let w = a.core.writer().unwrap();
+    assert!(super::replay_anki_copies(&w).unwrap().is_empty());
 }
 
 /// 只按 ID 认撤销的旧规则（BUG-4218 之前的选取）：不是 undo、没被任何 undo 点名的日志 ID。

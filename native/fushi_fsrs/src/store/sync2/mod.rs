@@ -395,6 +395,33 @@ pub(crate) fn replay_event_copies(c: &Connection) -> Result<BTreeSet<String>, St
     replay_cards(c, &cards)
 }
 
+/// srs.db v28（BUG-4227）：卡片历史选取把「同一条 Anki revlog 导入到血统里不同卡上」的两份算同一事件（history.rs
+/// `EventKey` 对 Anki 来源不比卡）。与 v26 同理：旧规则让第二份再推进一次状态，后面每条派生日志重放写回的 `res`
+/// 都可能不同，升级时把可能带这种副本的卡按新规则重放一遍。
+///
+/// 候选按落库列粗筛：Anki 来源、同 kind / 发生时刻（= revlog id）/ 评分 / 是否评分类复习类型的日志落在不止一张卡上——
+/// 是带副本的卡的超集（不在同一血统里的两张卡也会被选中，多重放一遍只是写回它本来就该有的值）。只处理已启用
+/// 同步 v2 的 profile（`sync2_self`）。可重放。返回改了投影行的卡。
+pub(crate) fn replay_anki_copies(c: &Connection) -> Result<BTreeSet<String>, String> {
+    let cards: BTreeSet<String> = c
+        .prepare(
+            "SELECT DISTINCT srs_idt(l.card_id) AS card_id FROM srs_review_logs l JOIN (\
+               SELECT profile_uid, kind, occurred_at, rating, review_type IN ('learn', 'review', 'relearn') AS rt \
+               FROM srs_review_logs WHERE origin = 'anki' AND kind <> 'undo' \
+               AND profile_uid IN (SELECT profile_uid FROM sync2_self) \
+               GROUP BY profile_uid, kind, occurred_at, rating, rt HAVING COUNT(DISTINCT card_id) > 1) d \
+             ON l.profile_uid = d.profile_uid AND l.kind = d.kind AND l.occurred_at = d.occurred_at \
+             AND l.rating IS d.rating AND (l.review_type IN ('learn', 'review', 'relearn')) = d.rt \
+             WHERE l.origin = 'anki'",
+        )
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    replay_cards(c, &cards)
+}
+
 /// [revoke_copies_of_revoked_events] 补的 undo 的 HLC 写入者（各设备共用：同一条补的 undo 在每台设备上逐字节相同）。
 pub(crate) const COPY_REPAIR_WRITER: &str = "repair-event-copy";
 
