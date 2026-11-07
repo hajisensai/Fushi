@@ -1128,6 +1128,38 @@ impl FrwkvReview {
         })
     }
 
+    /// 解析一段 `FrwkvReview` 行（80 字节一行，小端，与 C 结构体同布局；评测 / 诊断 example 读
+    /// `.bin` 历史用）。长度不是 80 的倍数时报错。`reserved` 一律置 0。
+    pub fn parse_rows(bytes: &[u8]) -> io::Result<Vec<Self>> {
+        let size = std::mem::size_of::<Self>();
+        if !bytes.len().is_multiple_of(size) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{} bytes is not a multiple of {size}", bytes.len()),
+            ));
+        }
+        Ok(bytes
+            .chunks_exact(size)
+            .map(|b| {
+                let i = |k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+                Self {
+                    card_id: i(0),
+                    note_id: i(1),
+                    deck_id: i(2),
+                    preset_id: i(3),
+                    duration_millis: i(4),
+                    card_type: i(5),
+                    day_offset: i(6),
+                    elapsed_days: i(7),
+                    elapsed_seconds: i(8),
+                    present: u32::from_le_bytes(b[72..76].try_into().unwrap()),
+                    ease: b[76],
+                    reserved: [0; 3],
+                }
+            })
+            .collect())
+    }
+
     /// [Self::to_input] 的反向（测试与 Rust 调用方构造用）。
     pub fn from_input(input: &ReviewInput) -> Self {
         let mut row = Self {
