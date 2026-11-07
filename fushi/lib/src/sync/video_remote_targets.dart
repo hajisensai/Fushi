@@ -73,51 +73,73 @@ Future<List<VideoRemoteTarget>> probeVideoRemoteTargets({
   timeout: timeout,
 );
 
-/// 列出此刻声明了某项能力（[probe]）的互联主机（每台 host 只一条，顺序同配对清单）。
-///
-/// 互联未启用、本机正在做互联 host（`serverEnabled`：host 本身不能再作为客户端
-/// 连出去）时直接返回空。各 host 并发探测，单台超过 [timeout] 或探测抛错都静默
-/// 视为不可用——入口只在确认可用时出现，不报错。没有 hostId 的老条目无法稳定
-/// 认出是哪台主机，不列。
+/// 列出此刻声明了某项能力（[probe]）的互联主机（每台 host 只一条，顺序同配对清单）：
+/// [configuredInterconnectHostTargets] 读本机配置，[filterInterconnectHostTargets] 逐台探能力。
 Future<List<InterconnectHostTarget>> probeInterconnectHostTargets({
   required SyncRepository repository,
   required InterconnectCapabilityProbe probe,
   Duration timeout = const Duration(seconds: 6),
-}) async {
+}) async => filterInterconnectHostTargets(
+  repository: repository,
+  candidates: await configuredInterconnectHostTargets(repository),
+  probe: probe,
+  timeout: timeout,
+);
+
+/// 本机互联配置此刻允许连的主机（纯本地读库，不走网络；每台 host 只一条，顺序同配对清单）。
+///
+/// 互联未启用、本机正在做互联 host（`serverEnabled`：host 本身不能再作为客户端
+/// 连出去）时返回空。只列启用的、有凭据的条目；没有 hostId 的老条目无法稳定
+/// 认出是哪台主机，不列。缓存了主机列表的调用方每次复用前都要用它重新对账：
+/// 请求层只按 hostId + 凭据挑地址，不看总开关与服务端模式。
+Future<List<InterconnectHostTarget>> configuredInterconnectHostTargets(
+  SyncRepository repository,
+) async {
   if (!await repository.isInterconnectEnabled()) {
-    return const <VideoRemoteTarget>[];
+    return const <InterconnectHostTarget>[];
   }
-  if (await repository.isServerEnabled()) return const <VideoRemoteTarget>[];
+  if (await repository.isServerEnabled()) {
+    return const <InterconnectHostTarget>[];
+  }
   final List<FushiClientUrl> urls = await repository.getFushiClientUrls();
   final String? fallbackToken = await repository.getFushiClientToken();
-
-  final List<FushiClientUrl> peers = <FushiClientUrl>[
+  return <InterconnectHostTarget>[
     for (final FushiClientUrl u in interconnectPeerRepresentatives(
       urls.where((FushiClientUrl u) => u.enabled),
     ))
       if (u.hostId != null &&
           u.hostId!.isNotEmpty &&
           interconnectTokenFor(u, fallbackToken) != null)
-        interconnectHostPeerFor(u, urls, fallbackToken),
+        _targetOf(interconnectHostPeerFor(u, urls, fallbackToken)),
   ];
+}
 
-  Future<bool> supported(FushiClientUrl peer) async {
+InterconnectHostTarget _targetOf(FushiClientUrl peer) => InterconnectHostTarget(
+  hostId: peer.hostId!,
+  displayName: _displayNameOf(peer),
+  peer: peer,
+);
+
+/// [candidates] 里此刻声明了 [probe] 能力的那些（顺序不变）。各 host 并发探测，单台超过
+/// [timeout] 或探测抛错都静默视为不可用——入口只在确认可用时出现，不报错。
+Future<List<InterconnectHostTarget>> filterInterconnectHostTargets({
+  required SyncRepository repository,
+  required List<InterconnectHostTarget> candidates,
+  required InterconnectCapabilityProbe probe,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  Future<bool> supported(InterconnectHostTarget target) async {
     try {
-      return await probe(repository, peer).timeout(timeout) == true;
+      return await probe(repository, target.peer).timeout(timeout) == true;
     } catch (_) {
       return false;
     }
   }
 
-  final List<bool> results = await Future.wait(peers.map(supported));
+  final List<bool> results = await Future.wait(candidates.map(supported));
   return <InterconnectHostTarget>[
-    for (int i = 0; i < peers.length; i++)
-      if (results[i])
-        InterconnectHostTarget(
-          hostId: peers[i].hostId!,
-          displayName: _displayNameOf(peers[i]),
-          peer: peers[i],
-        ),
+    for (int i = 0; i < candidates.length; i++)
+      if (results[i]) candidates[i],
   ];
 }
 

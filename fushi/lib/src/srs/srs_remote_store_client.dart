@@ -74,13 +74,23 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   }
 }
 
-/// 列出此刻提供远程复习库的互联主机。
-Future<List<InterconnectHostTarget>> probeSrsRemoteStoreTargets(
+/// 远程复习库的能力探测。
+Future<bool?> _probeSrsRemoteStore(
   SyncRepository repository,
-) => probeInterconnectHostTargets(
+  FushiClientUrl peer,
+) => SrsRemoteHostClient(
   repository: repository,
-  probe: (SyncRepository repo, FushiClientUrl peer) =>
-      SrsRemoteHostClient(repository: repo, peer: peer).supportsRemoteStore(),
+  peer: peer,
+).supportsRemoteStore();
+
+/// [candidates]（[configuredInterconnectHostTargets] 列出的）里此刻提供远程复习库的那些。
+Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(
+  SyncRepository repository,
+  List<InterconnectHostTarget> candidates,
+) => filterInterconnectHostTargets(
+  repository: repository,
+  candidates: candidates,
+  probe: _probeSrsRemoteStore,
 );
 
 /// 主机上的复习库（见文件头）。本类没覆盖的 [SrsDbStore] 成员（导入、同步、备份等库管理）调用时抛
