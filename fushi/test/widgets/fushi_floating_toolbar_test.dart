@@ -140,6 +140,53 @@ void main() {
     expect(find.text('bar'), findsNothing);
   });
 
+  // BUG-4227：阅读器把悬浮底栏包在「歌词覆盖层在场就关 TickerMode」的层里；
+  // 从阅读器（底栏已显示）切进歌词时 visible→false 与 TickerMode 关同一帧到达，
+  // 收起弹簧被静音冻在 1，底栏整条浮在歌词页上。
+  testWidgets('chrome reveal hides when tickers mute in the same frame', (
+    WidgetTester tester,
+  ) async {
+    Widget build({required bool visible, required bool tickers}) => _host(
+      TickerMode(
+        enabled: tickers,
+        child: FushiChromeReveal(
+          visible: visible,
+          from: AxisDirection.down,
+          child: const Text('bar'),
+        ),
+      ),
+    );
+    await tester.pumpWidget(build(visible: true, tickers: true));
+    await tester.pumpAndSettle();
+    expect(find.text('bar'), findsOneWidget);
+    await tester.pumpWidget(build(visible: false, tickers: false));
+    await tester.pump();
+    expect(find.text('bar'), findsNothing);
+    // 回到阅读器（TickerMode 重开、visible→true）照常弹出。
+    await tester.pumpWidget(build(visible: true, tickers: true));
+    await tester.pumpAndSettle();
+    expect(find.text('bar'), findsOneWidget);
+  });
+
+  testWidgets('chrome reveal settles when tickers mute mid-animation', (
+    WidgetTester tester,
+  ) async {
+    Widget build({required bool visible, required bool tickers}) => _host(
+      TickerMode(
+        enabled: tickers,
+        child: FushiChromeReveal(visible: visible, child: const Text('bar')),
+      ),
+    );
+    await tester.pumpWidget(build(visible: true, tickers: true));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(build(visible: false, tickers: true));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(find.text('bar'), findsOneWidget); // 收起动画进行中
+    await tester.pumpWidget(build(visible: false, tickers: false));
+    await tester.pump();
+    expect(find.text('bar'), findsNothing);
+  });
+
   testWidgets('chrome reveal is instant under reduce motion', (
     WidgetTester tester,
   ) async {
