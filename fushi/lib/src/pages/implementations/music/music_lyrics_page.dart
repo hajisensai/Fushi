@@ -72,6 +72,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
@@ -98,6 +99,8 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiActionChip;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -1085,6 +1088,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                                 ),
                                 align: TextAlign.center,
                               ),
+                              _buildEffectsChip(context),
                               const SizedBox(height: 20),
                               _buildSeek(),
                               const SizedBox(height: 12),
@@ -1245,6 +1249,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _buildMeta(context, item),
+              _buildEffectsChip(context),
               _buildSeek(),
               Center(child: _buildTransport(context)),
               _buildTools(context),
@@ -1454,6 +1459,35 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         for (final Widget w in parts) w is _LinkText ? Flexible(child: w) : w,
       ],
     );
+  }
+
+  /// 「音效 · <预设名>」胶囊（点进音效页）：只在效果器可用的后端显示（托管播放的
+  /// Apple Music 等拿不到信号）。
+  Widget _buildEffectsChip(BuildContext context) {
+    if (!_engine.capabilities.signalPath) return const SizedBox.shrink();
+    final String state = appModelNoUpdate.musicAudioEffects.enabled
+        ? musicEqPresetLabel(appModelNoUpdate.musicEqPreset)
+        : t.music_eq_off;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Align(
+        alignment: Alignment.center,
+        child: FushiPressScale(
+          child: FushiActionChip(
+            key: const ValueKey<String>('music_lyrics_effects_chip'),
+            icon: FushiIcons.barChart,
+            label: '${t.music_effects_title} · $state',
+            onPressed: () => unawaited(_openEffects()),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openEffects() async {
+    await pushMusicAudioEffectsPage(_themedContext);
+    // 回来时胶囊上的预设名跟着刷新。
+    if (mounted) setState(() {});
   }
 
   /// 波浪进度（自带位置监听与拖动，不随整页重建）。
@@ -1824,6 +1858,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_signal_path_title,
             icon: FushiIcons.highQuality,
           ),
+        // 音效：与信号路径同一道能力门（托管播放的后端拿不到信号）。
+        if (_engine.capabilities.signalPath)
+          FushiChoiceOption<int>(
+            value: 6,
+            label: t.music_effects_title,
+            icon: FushiIcons.barChart,
+          ),
         if (_canGenerateSubtitles)
           FushiChoiceOption<int>(
             value: 5,
@@ -1847,6 +1888,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         }
       case 5:
         if (mounted) await _generateSubtitles();
+      case 6:
+        if (mounted) await pushMusicAudioEffectsPage(_themedContext);
       default:
     }
   }

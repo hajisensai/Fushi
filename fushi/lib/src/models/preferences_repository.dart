@@ -5262,6 +5262,105 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 选中的均衡预设（`MusicEqPreset.wire`；空 = 没选过，按增益认）。
+  String get musicEqPreset =>
+      (getPref('music_eq_preset', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicEqPreset(String value) async {
+    await setPref('music_eq_preset', value);
+    notifyListeners();
+  }
+
+  /// 音效前级（dB，±12）。
+  double get musicEqPreampDb =>
+      (getPref('music_eq_preamp_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEqPreampDb(double value) async {
+    await setPref('music_eq_preamp_db', value);
+    notifyListeners();
+  }
+
+  /// 低音搁架增益（dB，±12）。
+  double get musicEffectsBassDb =>
+      (getPref('music_effects_bass_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsBassDb(double value) async {
+    await setPref('music_effects_bass_db', value);
+    notifyListeners();
+  }
+
+  /// 低音搁架转折频率（Hz）。
+  int get musicEffectsBassHz =>
+      (getPref('music_effects_bass_hz', defaultValue: 100) as num).toInt();
+
+  Future<void> setMusicEffectsBassHz(int value) async {
+    await setPref('music_effects_bass_hz', value);
+    notifyListeners();
+  }
+
+  /// 高音搁架增益（dB，±12）。
+  double get musicEffectsTrebleDb =>
+      (getPref('music_effects_treble_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsTrebleDb(double value) async {
+    await setPref('music_effects_treble_db', value);
+    notifyListeners();
+  }
+
+  /// 高音搁架转折频率（Hz）。
+  int get musicEffectsTrebleHz =>
+      (getPref('music_effects_treble_hz', defaultValue: 8000) as num).toInt();
+
+  Future<void> setMusicEffectsTrebleHz(int value) async {
+    await setPref('music_effects_treble_hz', value);
+    notifyListeners();
+  }
+
+  /// 声道平衡（−1 左 … 0 居中 … 1 右）。
+  double get musicEffectsBalance =>
+      (getPref('music_effects_balance', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsBalance(double value) async {
+    await setPref('music_effects_balance', value);
+    notifyListeners();
+  }
+
+  /// 立体声宽度（0 … 2，1 = 原样）。
+  double get musicEffectsWidth =>
+      (getPref('music_effects_width', defaultValue: 1.0) as num).toDouble();
+
+  Future<void> setMusicEffectsWidth(double value) async {
+    await setPref('music_effects_width', value);
+    notifyListeners();
+  }
+
+  /// 单声道下混。
+  bool get musicEffectsMono =>
+      getPref('music_effects_mono', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsMono(bool value) async {
+    await setPref('music_effects_mono', value);
+    notifyListeners();
+  }
+
+  /// 左右声道互换。
+  bool get musicEffectsSwapChannels =>
+      getPref('music_effects_swap_channels', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsSwapChannels(bool value) async {
+    await setPref('music_effects_swap_channels', value);
+    notifyListeners();
+  }
+
+  /// 音效防削波限幅器。
+  bool get musicEffectsLimiter =>
+      getPref('music_effects_limiter', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsLimiter(bool value) async {
+    await setPref('music_effects_limiter', value);
+    notifyListeners();
+  }
+
   /// 用户自配的 OpenSubsonic 服务器清单（服务器曲库，音乐方案 §13 P5；设备本地，条目里
   /// 带 base64 的密码 / API key）。坏条目逐条丢弃（`decodeSubsonicServerConfigs`）。
   List<SubsonicServerConfig> get musicSubsonicServers {

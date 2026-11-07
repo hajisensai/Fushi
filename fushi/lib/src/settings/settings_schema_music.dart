@@ -6,12 +6,12 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -221,18 +221,20 @@ SettingsDestination buildMusicDestination() {
             ),
             onTap: _pickAudioDevice,
           ),
-          // 图示均衡器（P5，可选）：子页里开关 + 10 段；开且不平直即非 bit-perfect（信号路径
-          // 面板单独标「均衡器」），关 / 平直时不挂任何滤镜。
+          // 音效（P5，可选；id 沿用图示均衡器时代）：子页里总开关、预设、均衡 + 前级、
+          // 音色、声场、限幅器。任何一项生效即非 bit-perfect（信号路径面板单独标「音效」），
+          // 关 / 全部中性时不挂任何滤镜。
           SettingsNavigationItem(
             id: 'music.equalizer',
-            title: t.music_eq_title,
+            title: t.music_effects_title,
             subtitleBuilder: (SettingsContext c) =>
-                c.appModel.prefsRepo.musicEqEnabled
-                ? t.music_eq_on
-                : t.music_eq_off,
+                musicAudioEffectsStatusLabel(
+                  c.appModel.musicAudioEffects,
+                  c.appModel.musicEqPreset,
+                ),
             icon: FushiIcons.barChart,
             showIcon: true,
-            child: _equalizerDestination,
+            child: buildMusicAudioEffectsDestination,
           ),
           SettingsSegmentedItem<int>(
             id: 'music.dsd_rate',
@@ -490,77 +492,63 @@ String musicLyricsBackdropStyleLabel(MusicLyricsBackdropStyle style) =>
       MusicLyricsBackdropStyle.classic => t.music_lyrics_backdrop_style_classic,
     };
 
-/// 均衡器子页：开关 + 每段一个 ±12 dB 滑块 + 复位。改动立即经引擎重新下发（`af`）。
-SettingsDestination _equalizerDestination() => SettingsDestination(
+/// 音效子页：正文是自绘的 [MusicAudioEffectsBody]（曲线 / 竖推子 / 宽屏双栏，schema 行
+/// 表达不了）；控制通道条目在 `ops/ctl_settings_body_music_effects.dart` 用同一套 item
+/// 声明，搜索元数据在 [SettingsDestination.bodySearchEntries]。
+SettingsDestination buildMusicAudioEffectsDestination() => SettingsDestination(
   id: SettingsDestinationId.music,
-  title: t.music_eq_title,
+  title: t.music_effects_title,
   icon: FushiIcons.barChart,
-  sections: <SettingsSection>[
-    SettingsSection(
-      items: <SettingsItem>[
-        SettingsSwitchItem(
-          id: 'music.eq_enabled',
-          title: t.music_eq_enabled_title,
-          subtitle: t.music_eq_enabled_hint,
-          icon: FushiIcons.barChart,
-          defaultValue: false,
-          value: (SettingsContext c) => c.appModel.prefsRepo.musicEqEnabled,
-          onChanged: (SettingsContext c, bool v) async {
-            await c.appModel.prefsRepo.setMusicEqEnabled(v);
-            await c.appModel.musicSession.engine.reapplySettings();
-          },
-        ),
-      ],
+  sections: const <SettingsSection>[],
+  body: (SettingsContext c) => MusicAudioEffectsBody(appModel: c.appModel),
+  bodySearchEntries: <SettingsBodySearchEntry>[
+    SettingsBodySearchEntry(
+      id: 'music.effects.enabled',
+      title: t.music_effects_enabled_title,
+      subtitle: t.music_effects_enabled_hint,
     ),
-    SettingsSection(
-      title: t.music_eq_bands,
-      items: <SettingsItem>[
-        for (int i = 0; i < kMusicEqualizerBandsHz.length; i++)
-          SettingsSliderItem(
-            id: 'music.eq_band_${kMusicEqualizerBandsHz[i]}',
-            title: musicEqualizerBandLabel(kMusicEqualizerBandsHz[i]),
-            icon: FushiIcons.barChart,
-            min: -kMusicEqualizerMaxGainDb,
-            max: kMusicEqualizerMaxGainDb,
-            divisions: (kMusicEqualizerMaxGainDb * 4).round(),
-            defaultValue: 0,
-            titleReadout: true,
-            commitOnRelease: true,
-            label: (double v) =>
-                '${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)} dB',
-            value: (SettingsContext c) => MusicEqualizerSettings.parseGains(
-              c.appModel.prefsRepo.musicEqGains,
-            )[i],
-            onChanged: (SettingsContext c, double v) async {
-              final List<double> gains = MusicEqualizerSettings.parseGains(
-                c.appModel.prefsRepo.musicEqGains,
-              );
-              gains[i] = (v * 2).roundToDouble() / 2;
-              await c.appModel.prefsRepo.setMusicEqGains(
-                MusicEqualizerSettings.encodeGains(gains),
-              );
-              await c.appModel.musicSession.engine.reapplySettings();
-            },
-          ),
-        SettingsActionItem(
-          id: 'music.eq_reset',
-          title: t.music_eq_reset,
-          icon: FushiIcons.restart,
-          cli: const SettingsCliAction.tap(),
-          onTap: (SettingsContext c) async {
-            await c.appModel.prefsRepo.setMusicEqGains('');
-            await c.appModel.musicSession.engine.reapplySettings();
-            c.refresh();
-          },
-        ),
-      ],
+    SettingsBodySearchEntry(
+      id: 'music.effects.preset',
+      title: t.music_eq_preset_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.equalizer',
+      title: t.music_eq_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.preamp',
+      title: t.music_eq_preamp_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.bass',
+      title: t.music_effects_bass_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.treble',
+      title: t.music_effects_treble_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.balance',
+      title: t.music_effects_balance_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.width',
+      title: t.music_effects_width_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.mono',
+      title: t.music_effects_mono_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.swap',
+      title: t.music_effects_swap_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.limiter',
+      title: t.music_effects_limiter_title,
     ),
   ],
 );
-
-/// 频段名（`31 Hz` / `1 kHz`）：单位是国际通用写法，不翻译。
-String musicEqualizerBandLabel(int hz) =>
-    hz >= 1000 ? '${hz ~/ 1000} kHz' : '$hz Hz';
 
 /// 识别整个曲库：串行跑（MusicBrainz 1 req/s），进度与结果走 toast。
 Future<void> _identifyLibrary(SettingsContext c) async {

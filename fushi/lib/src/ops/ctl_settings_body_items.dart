@@ -10,6 +10,7 @@ import 'package:fushi/src/ops/ctl_settings_body_downloads.dart';
 import 'package:fushi/src/ops/ctl_settings_body_fonts.dart';
 import 'package:fushi/src/ops/ctl_settings_body_media_server.dart';
 import 'package:fushi/src/ops/ctl_settings_body_misc.dart';
+import 'package:fushi/src/ops/ctl_settings_body_music_effects.dart';
 import 'package:fushi/src/ops/ctl_settings_body_storage.dart';
 import 'package:fushi/src/ops/ctl_settings_body_plex.dart';
 import 'package:fushi/src/ops/ctl_settings_body_sync.dart';
@@ -66,4 +67,5 @@ List<CtlBodyPage> buildCtlBodyPages() => <CtlBodyPage>[
   ...buildCtlMiscBodyPages(),
   ...buildCtlBrowserExtensionBodyPages(),
   ...buildCtlDictStyleBodyPages(),
+  ...buildCtlMusicEffectsBodyPages(),
 ];

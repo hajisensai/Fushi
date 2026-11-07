@@ -28,6 +28,7 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -363,6 +364,16 @@ class _CompactMusicBar extends StatelessWidget {
                 onTap: () {
                   Navigator.of(sheet).pop();
                   unawaited(showMusicSignalPathPanel(context, appModel));
+                },
+              ),
+            // 音效：托管播放的后端（Apple Music 等）拿不到信号，效果器对它无效，不给入口。
+            if (session.engine.capabilities.signalPath)
+              FushiListTileControl(
+                leading: const FushiIcon(FushiIcons.barChart),
+                title: Text(t.music_effects_title),
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  unawaited(pushMusicAudioEffectsPage(context));
                 },
               ),
             FushiListTileControl(

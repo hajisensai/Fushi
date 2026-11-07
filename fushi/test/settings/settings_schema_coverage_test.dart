@@ -134,20 +134,21 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 属性由 music_server_test 咬住。
   'services/Server streaming quality':
       'test/media/music/server/music_server_test.dart',
-  // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
-  // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
-  // 与交叉淡入同链在 music_equalizer_real_test。
-  'music/Enable equalizer': 'test/media/music/music_equalizer_test.dart',
-  'music/31 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/62 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/125 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/250 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/500 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/1 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/2 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/4 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/8 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/16 kHz': 'test/media/music/music_equalizer_test.dart',
+  // 音效（原图示均衡器）：body 逃生口页（曲线 / 竖推子 / 宽屏双栏），生效点是音乐 libmpv
+  // 实例的 `af`，harness 里没有在播的 mpv。偏好 → 设置 → `af` 链由 music_audio_effects_test 咬住，真 libmpv 上的增益 / 关与全部
+  // 中性时逐样本不变 / 与交叉淡入同链在 music_audio_effects_real_test，页面交互在
+  // music_audio_effects_page_test。
+  'music/Enable audio effects': 'test/media/music/music_audio_effects_test.dart',
+  'music/Bass': 'test/media/music/music_audio_effects_test.dart',
+  'music/Bass turnover': 'test/media/music/music_audio_effects_test.dart',
+  'music/Treble': 'test/media/music/music_audio_effects_test.dart',
+  'music/Treble turnover': 'test/media/music/music_audio_effects_test.dart',
+  'music/Balance': 'test/media/music/music_audio_effects_test.dart',
+  'music/Stereo width': 'test/media/music/music_audio_effects_test.dart',
+  'music/Mono': 'test/media/music/music_audio_effects_test.dart',
+  'music/Swap left and right': 'test/media/music/music_audio_effects_test.dart',
+  'music/Anti-clipping limiter': 'test/media/music/music_audio_effects_test.dart',
+  'music/Preamp': 'test/media/music/music_audio_effects_test.dart',
   // ASS 卡拉 OK 字幕默认显示：生效点是卡拉 OK 字幕页打开时选哪种叠加
   // （musicKaraokeDefaultOverlay），harness 设置页没有在播的曲目与 mpv；设置值 → 默认
   // 叠加的判据由 karaoke_stage_plan_test 咬住。

@@ -15,6 +15,7 @@ import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -46,7 +47,7 @@ String musicSignalStageLabel(MusicSignalStage stage) => switch (stage) {
   MusicSignalStage.replayGain => t.music_signal_stage_replay_gain,
   MusicSignalStage.speed => t.music_signal_stage_speed,
   MusicSignalStage.filters => t.music_signal_stage_filters,
-  MusicSignalStage.equalizer => t.music_signal_stage_equalizer,
+  MusicSignalStage.effects => t.music_signal_stage_effects,
   MusicSignalStage.crossfade => t.music_signal_stage_crossfade,
 };
 
@@ -196,11 +197,17 @@ class _MusicSignalPathPanelState extends State<MusicSignalPathPanel> {
         active: v.stages.contains(MusicSignalStage.speed),
         detail: '×${s.speed.toStringAsFixed(2)}',
       ),
-      // 均衡器（P5）：挂着就是一环（判非 bit-perfect）；关 / 平直时不挂滤镜，这里不出现。
-      if (s.equalizer)
+      // 音效（P5）：挂着就是一环（判非 bit-perfect）；关 / 全部中性时不挂滤镜，这里不出现。
+      // 细节写当前预设（与限幅器），点进音效页看全部。
+      if (s.effects)
         _Stage(
-          label: musicSignalStageLabel(MusicSignalStage.equalizer),
+          label: musicSignalStageLabel(MusicSignalStage.effects),
           active: true,
+          detail: <String>[
+            musicEqPresetLabel(widget.appModel.musicEqPreset),
+            if (widget.appModel.musicAudioEffects.limiter)
+              t.music_effects_limiter_short,
+          ].join(' · '),
         ),
       // 交叉淡入：作用于本曲时是一环（判非 bit-perfect）；设置开着但被独占 / 硬件直出
       // 自动停用时标出原因。
