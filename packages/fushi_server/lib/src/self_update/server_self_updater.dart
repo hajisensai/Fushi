@@ -103,6 +103,11 @@ class ServerSelfUpdater implements HostSelfUpdater {
   DateTime? _lastResolvedAt;
   Future<void>? _resolving;
   HostUpdatePhase _phase = HostUpdatePhase.idle;
+
+  /// [startUpdate] 已过 busy 检查、正在重查更新源（还没进 downloading）。检查与
+  /// 占位之间隔着一次 await：不同步占位，并发的两次触发都能过检查，各跑一遍
+  /// [_run]，在同一个暂存目录里互删、重复换包。
+  bool _starting = false;
   double? _progress;
   String? _error;
 
@@ -123,18 +128,26 @@ class ServerSelfUpdater implements HostSelfUpdater {
 
   @override
   Future<HostUpdateStatus> startUpdate() async {
-    if (_phase.isBusy) throw const HostUpdateRejected(HostUpdateDenial.busy);
-    await _refreshLatest(force: true);
-    final ServerReleaseCandidate? latest = _latest;
-    if (latest == null) {
-      throw const HostUpdateRejected(HostUpdateDenial.noUpdate);
+    if (_starting || _phase.isBusy) {
+      throw const HostUpdateRejected(HostUpdateDenial.busy);
     }
-    _phase = HostUpdatePhase.downloading;
-    _progress = 0;
-    _error = null;
-    final HostUpdateStatus accepted = _snapshot(true);
-    unawaited(_run(latest));
-    return accepted;
+    _starting = true;
+    try {
+      await _refreshLatest(force: true);
+      final ServerReleaseCandidate? latest = _latest;
+      if (latest == null) {
+        throw const HostUpdateRejected(HostUpdateDenial.noUpdate);
+      }
+      // 与上面的检查之间不再有 await：占位（_starting → downloading）不留空档。
+      _phase = HostUpdatePhase.downloading;
+      _progress = 0;
+      _error = null;
+      final HostUpdateStatus accepted = _snapshot(true);
+      unawaited(_run(latest));
+      return accepted;
+    } finally {
+      _starting = false;
+    }
   }
 
   Future<void> _run(ServerReleaseCandidate latest) async {
