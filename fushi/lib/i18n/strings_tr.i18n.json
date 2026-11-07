@@ -8208,7 +8208,6 @@
   "srs_home_streak": "$n günlük seri",
   "srs_home_streak_longest": "$n günlük seri · en uzun $m",
   "srs_home_subdecks_header": "Alt desteler",
-  "srs_home_today_left": "Bugün $n kart kaldı",
   "srs_import": "İçe aktar",
   "srs_import_background_started": "Importing in the background. You can keep using Fushi.",
   "srs_import_colpkg_note": "This is a whole-collection package. Anki would replace its entire collection with it; Fushi merges it instead and never deletes or replaces the cards you already have.",

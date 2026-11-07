@@ -434,7 +434,11 @@ void main() {
         findsOneWidget,
         reason: '有活的行尾有播放按钮',
       );
-      expect(find.text(t.srs_home_today_left(n: 1)), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-today-title')),
+        findsNothing,
+        reason: '有卡要复习时不显示「今天还剩 N 张」大标题',
+      );
       expect(
         find.byKey(const ValueKey<String>('srs-home-start')),
         findsOneWidget,

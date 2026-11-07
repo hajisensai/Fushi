@@ -8208,7 +8208,6 @@
   "srs_home_streak": "$n hari beruntun",
   "srs_home_streak_longest": "$n hari beruntun · terlama $m",
   "srs_home_subdecks_header": "Subdek",
-  "srs_home_today_left": "Sisa $n kartu hari ini",
   "srs_import": "Impor",
   "srs_import_background_started": "Importing in the background. You can keep using Fushi.",
   "srs_import_colpkg_note": "This is a whole-collection package. Anki would replace its entire collection with it; Fushi merges it instead and never deletes or replaces the cards you already have.",

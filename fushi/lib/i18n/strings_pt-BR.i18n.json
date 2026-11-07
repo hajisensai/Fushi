@@ -8208,7 +8208,6 @@
   "srs_home_streak": "Sequência de $n dias",
   "srs_home_streak_longest": "Sequência de $n dias · recorde $m",
   "srs_home_subdecks_header": "Sub-baralhos",
-  "srs_home_today_left": "Faltam $n cartões hoje",
   "srs_import": "Importar",
   "srs_import_background_started": "Importing in the background. You can keep using Fushi.",
   "srs_import_colpkg_note": "This is a whole-collection package. Anki would replace its entire collection with it; Fushi merges it instead and never deletes or replaces the cards you already have.",

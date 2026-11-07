@@ -8208,7 +8208,6 @@
   "srs_home_streak": "连续 $n 天",
   "srs_home_streak_longest": "连续 $n 天 · 最长 $m 天",
   "srs_home_subdecks_header": "子牌组",
-  "srs_home_today_left": "今天还剩 $n 张",
   "srs_import": "导入",
   "srs_import_background_started": "正在后台导入，可以继续使用 Fushi。",
   "srs_import_colpkg_note": "这是整库包（.colpkg）。Anki 会用它替换整个集合；Fushi 改为合并导入，不会删除或替换你已有的卡片。",
