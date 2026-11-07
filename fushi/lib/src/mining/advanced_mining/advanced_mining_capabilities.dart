@@ -175,7 +175,9 @@ class AdvancedMiningSentenceSection {
   });
 
   /// `{prev:[str], current:str, currentOffset:int?, next:[str], prevRemoved:[bool],
-  /// nextRemoved:[bool], total:int}`（[buildSentenceContextPreview]）。
+  /// nextRemoved:[bool], prevOriginal:[str], nextOriginal:[str], total:int}`
+  /// （[buildSentenceContextPreview]）。`prev`/`next` 为生效文本（清空文字 = `''`，
+  /// 音频保留），`prevOriginal`/`nextOriginal` 逐位给原句；旧宿主可能不给后两者。
   final Future<Map<String, Object?>> Function() fetchPreview;
 
   /// 整体设置「上 prev 句 / 下 next 句」，返回上下文句总数。

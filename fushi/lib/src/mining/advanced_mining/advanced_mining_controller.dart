@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show TextEditingController, TextSelection;
+import 'package:flutter/widgets.dart'
+    show TextEditingController, TextEditingValue, TextSelection;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -109,6 +110,11 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 与 [prev] / [next] 逐位对应：该句是否已被移除（宿主未给该字段时全 false）。
   List<bool> prevRemoved = const <bool>[];
   List<bool> nextRemoved = const <bool>[];
+
+  /// 与 [prev] / [next] 逐位对应：宿主给的原句（未手改前的文本）。旧宿主不给该字段
+  /// 时为空列表，[originalOf] 返回 null，「恢复原文」入口随之不显示。
+  List<String> prevOriginal = const <String>[];
+  List<String> nextOriginal = const <String>[];
   String current = '';
   int? currentOffset;
 
@@ -158,6 +164,8 @@ class AdvancedMiningController extends ChangeNotifier {
     next = _stringList(p['next']);
     prevRemoved = _boolList(p['prevRemoved'], prev.length);
     nextRemoved = _boolList(p['nextRemoved'], next.length);
+    prevOriginal = _stringList(p['prevOriginal']);
+    nextOriginal = _stringList(p['nextOriginal']);
     current = p['current'] as String? ?? '';
     currentOffset = (p['currentOffset'] as num?)?.toInt();
     contextTotal = (p['total'] as num?)?.toInt() ?? (prev.length + next.length);
@@ -266,6 +274,31 @@ class AdvancedMiningController extends ChangeNotifier {
     _notify();
   }
 
+  /// 某一句前文 / 后文的宿主原句；当前句、越界或宿主没给原句时返回 null。
+  String? originalOf(SentenceContextSlot slot, int index) {
+    final List<String> list = switch (slot) {
+      SentenceContextSlot.prev => prevOriginal,
+      SentenceContextSlot.next => nextOriginal,
+      SentenceContextSlot.current => const <String>[],
+    };
+    if (index < 0 || index >= list.length) return null;
+    return list[index];
+  }
+
+  /// 把正在编辑那句的输入框改回宿主原句（光标放末尾）。不自动提交——用户仍要点
+  /// 确认。清空不再等于还原（清空 = 只去文字、保留音频），这是回到原句的入口。
+  void restoreEditToOriginal() {
+    final SentenceContextSlot? slot = _editSlot;
+    final TextEditingController? controller = _editController;
+    if (slot == null || controller == null) return;
+    final String? original = originalOf(slot, _editIndex);
+    if (original == null) return;
+    controller.value = TextEditingValue(
+      text: original,
+      selection: TextSelection.collapsed(offset: original.length),
+    );
+  }
+
   /// 退出编辑态（不落地）。
   void cancelEdit() {
     if (!editing) return;
@@ -276,11 +309,11 @@ class AdvancedMiningController extends ChangeNotifier {
     _notify();
   }
 
-  /// 确认修改：写回宿主草稿，再重新拉一次预览（宿主是唯一真值——它可能把空白句还原
-  /// 成原句，UI 不把输入框里的文本直接当成结果显示）。
+  /// 确认修改：写回宿主草稿，再重新拉一次预览（宿主是唯一真值——它可能把与原句相同
+  /// 的文本还原，UI 不把输入框里的文本直接当成结果显示）。
   ///
-  /// 前文 / 后文清空后确认 = 移除这一句（用户的直觉操作：把那句删光再确认）。当前句
-  /// 清空仍是还原——当前句不可移除。
+  /// 前文 / 后文清空后确认 = **只去掉这句的文字，音频保留**（草稿 `editSentence`
+  /// 写入空串）；要连音频一起拿掉走「×」（[dismissSentence]）。当前句清空仍是还原。
   Future<void> commitEdit() async {
     final SentenceContextSlot? slot = _editSlot;
     final AdvancedMiningSentenceSection? section = sentenceSection;
@@ -289,20 +322,10 @@ class AdvancedMiningController extends ChangeNotifier {
     if (slot == null || edit == null) return;
     final String text = _editController?.text ?? '';
     final int index = _editIndex;
-    final Future<void> Function(SentenceContextSlot, int, bool)? remove =
-        section?.removeSentence;
-    final bool removeInstead =
-        text.trim().isEmpty &&
-        slot != SentenceContextSlot.current &&
-        remove != null;
     cancelEdit();
     busy = true;
     try {
-      if (removeInstead) {
-        await remove(slot, index, true);
-      } else {
-        await edit(slot, index, text);
-      }
+      await edit(slot, index, text);
       await refreshSentences();
     } finally {
       busy = false;

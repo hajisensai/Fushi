@@ -328,6 +328,37 @@ void main() {
       },
     );
 
+    // Feedback _RLnsVq_QZ: clearing a context row drops its text but keeps
+    // its audio; the original stays available for "restore original".
+    test(
+      'edit with empty text clears the row text but keeps its audio',
+      () async {
+        final String id = await begin('p1');
+        await context(id, 'set', <String, dynamic>{'prev': 1, 'next': 0});
+        final Map<String, Object?> preview = await context(
+          id,
+          'edit',
+          <String, dynamic>{'slot': 'prev', 'index': 0, 'text': ''},
+        );
+        expect(preview['prev'], <String>['']);
+        expect(preview['prevOriginal'], <String>['零']);
+        expect(preview['prevRemoved'], <bool>[false]);
+        expect(preview['total'], 1);
+
+        await call('mine', <String, dynamic>{
+          'contextId': id,
+          'fields': <String, dynamic>{
+            'rawFields': <String, dynamic>{'expression': '一'},
+          },
+        });
+        final VideoRemoteMineSelection selection = player.minedSelection!;
+        expect(selection.sentence, '一');
+        // The cleared row's audio still opens the clip.
+        expect(selection.startMs, 0);
+        expect(selection.endMs, 1900);
+      },
+    );
+
     test('without context the card is the looked-up row', () async {
       final String id = await begin('p2');
       await call('mine', <String, dynamic>{
