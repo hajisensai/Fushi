@@ -1,4 +1,4 @@
-## BUG-4224 · Windows 内存采样只有工作集没有分项
+## BUG-4229 · Windows 内存采样只有工作集没有分项
 - **报告**：2026-11-07（崩溃报告 `#8qHvq2p0oU`、`#laXmRta9VS`（x2）、`#9OjURIuBIx`：同一类 Win11 26100，3.3.0-debug.23880，「停在前台时没了」）
 - **真实性**：✅ 真 bug（取证端）；崩溃本身**未定位**。
   - 分拣的假设「`MaterialDesktopPositionIndicatorState.setState@material_desktop.dart:2089` 每帧重建」**不成立**：那一行是 `setState` 覆写本身（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material_desktop.dart:2089`），位置流已按 `kPositionUiThrottleStep` 量化（TODO-1243），采样里它每 30 s 只 9–107 次（≤ 4 次/秒），各窗口 build 总数 241–1638、frames 283–2538，是正常播放的量级。`who=` 是「谁要的重建最多」，不是「谁占的内存」。
