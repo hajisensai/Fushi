@@ -1,4 +1,4 @@
-## BUG-4220 · 书库系列扇形卡悬停动画卡顿（后几本常驻旋转永不烘焙、3D 倾斜整摞实时重画）
+## BUG-4222 · 书库系列扇形卡悬停动画卡顿（后几本常驻旋转永不烘焙、3D 倾斜整摞实时重画）
 - **报告**：2026-11-07（反馈 67oB1YAz76，Windows 3.3.0+24434，窗口 1440×852@2.0：「单本封面悬停动画很流畅，多卷叠放的系列卡悬停时卡得厉害」，附录屏）
 - **真实性**：✅ 真 bug。分拣怀疑的 `series_shelf_card.dart:176` 的 `FushiHoverLift` / `liftedOf` 依赖**不是**根因：`liftedOf` 只在抬升位翻转时通知（`fushi_hover_lift.dart:107`），每帧变的只有 `Transform` 与倾斜补间，build 次数与单本卡同量级。根因在 GPU 侧的烘焙缓存：
   - `fushi/lib/src/utils/components/baked_surface.dart:65`（`_Placement.of`）对带旋转 / 透视的变换返回 null，`:171-192`（`_endOfFrame`）对 null 位置既不烘焙、已烘焙的也 `_unbake()`（`:176`）——「只在可 1:1 贴图时才用纹理」。

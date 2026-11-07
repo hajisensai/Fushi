@@ -291,7 +291,7 @@ void main() {
     );
 
     test(
-      'BUG-4220: a `.manga.zip` folder is listed as manga content, not EPUB',
+      'BUG-4223: a `.manga.zip` folder is listed as manga content, not EPUB',
       () async {
         // 所有者 2026-10-21：漫画包改传 `<title>.manga.zip`。内容探针不认它的话，
         // 新版上传的漫画在书架「远端」里整本消失；认了却只给 hasContent=true、

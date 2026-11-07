@@ -32,7 +32,7 @@ import '../helpers/test_platform_services.dart';
 // （假 SyncBackend 只替换网络）+ 真实书架页 + 真实导入器，钉住：
 // - 云盘漫画占位卡只出现在漫画书架（清单按 `.manga.zip` 推断 format=manga）；
 // - 从漫画书架占位卡下载会把漫画包导入成 format=manga 的本地行，任务正常收尾、
-//   占位卡让位（BUG-4220）。
+//   占位卡让位（BUG-4223）。
 
 const String _folderId = 'fid_takagi_05';
 const String _title = 'Takagi 05';

@@ -297,7 +297,7 @@ void main() {
       await settleBake(tester);
       expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '停稳后重新烘焙');
 
-      // 旋转（扇形后层常驻旋转 / 悬停 3D 倾斜同类，BUG-4220）：不可能 1:1 贴图，
+      // 旋转（扇形后层常驻旋转 / 悬停 3D 倾斜同类，BUG-4222）：不可能 1:1 贴图，
       // 但内容没变、放大倍数没超过纹理分辨率，就一直贴纹理，不回实时栅格化。
       final double dpr = tester.view.devicePixelRatio;
       for (int i = 0; i < 4; i++) {

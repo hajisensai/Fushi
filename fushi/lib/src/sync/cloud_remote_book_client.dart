@@ -109,7 +109,7 @@ class CloudRemoteBookClient implements RemoteBookClient {
           // EPUB → hasContent；漫画包 `.manga.zip` → format=manga + hasMangaContent，
           // hasContent 保持 false。书架据此分架——书籍书架只收 hasContent，漫画书架
           // 只收 format=manga 的可读漫画；此前云盘一律只给 hasContent=true、format
-          // 缺省 epub，漫画包占位卡全落进书籍书架、漫画书架一张都没有（BUG-4220）。
+          // 缺省 epub，漫画包占位卡全落进书籍书架、漫画书架一张都没有（BUG-4223）。
           hasContent: contentKinds[i] == CloudBookContentKind.epub,
           format: contentKinds[i] == CloudBookContentKind.manga
               ? BookFormat.manga.dbValue

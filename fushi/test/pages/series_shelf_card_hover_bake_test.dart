@@ -7,7 +7,7 @@ import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi/src/utils/components/baked_surface.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
-/// BUG-4220（反馈 67oB1YAz76）：书库里多卷合集的扇形卡悬停时动画很卡，单本卡
+/// BUG-4222（反馈 67oB1YAz76）：书库里多卷合集的扇形卡悬停时动画很卡，单本卡
 /// 流畅。
 ///
 /// 根因：扇形后面几本常驻旋转、悬停中的整摞带 3D 倾斜透视，而 [BakedSurface]
