@@ -1,13 +1,12 @@
 // 「设置 › AI › AI 助手 › MCP 服务器」页（spec docs/specs/2026-11-05-ai-mcp-client-design.md §3），
 // MD3 与 Apple 两套设计系统：
-// - 空清单 → 一键添加 MangaBaka 预设（默认开着），预设加过后不再出现在添加菜单里；
+// - 空清单 → 添加菜单里没有内置预设，只有网络地址 / 本地程序 / 粘贴配置；
 // - 行内开关写回偏好；状态行按对话里的连接状态显示；
 // - 编辑页：测试连接列出工具，关掉一个工具、开「每次都问」，保存后写回；删除。
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/ai/mcp_client/ai_mcp_client_presets.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -60,7 +59,7 @@ Future<void> _pump(
 const List<McpRemoteTool> _tools = <McpRemoteTool>[
   McpRemoteTool(
     name: 'series_search',
-    title: 'Search MangaBaka series',
+    title: 'Search series',
     description: 'Search.',
     inputSchema: <String, Object?>{'type': 'object'},
     readOnly: true,
@@ -91,18 +90,19 @@ void main() {
     final String system = apple ? 'Apple' : 'MD3';
 
     testWidgets(
-      '$system: empty list → add MangaBaka preset; switch writes back',
+      '$system: empty list → no built-in preset, add a web server; switch writes back',
       (WidgetTester tester) async {
         final List<String> opened = <String>[];
         await _pump(
           tester,
           AiMcpServersPage(
             prefs: prefs,
-            liveStatuses: () => const <String, McpServerStatus>{
-              'mangabaka': McpServerStatus(
-                McpServerState.connected,
-                toolCount: 18,
-              ),
+            liveStatuses: () => <String, McpServerStatus>{
+              for (final McpServerConfig s in prefs.aiMcpClientServers)
+                s.id: const McpServerStatus(
+                  McpServerState.connected,
+                  toolCount: 18,
+                ),
             },
             openEditor: (BuildContext context, String id) async =>
                 opened.add(id),
@@ -120,16 +120,25 @@ void main() {
           find.byKey(const ValueKey<String>('ai_mcp_servers_add')),
         );
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.text(t.ai_mcp_client_add_preset(name: 'MangaBaka')),
-        );
+        // 没有内置预设（用户 2026-11-07 拍板：用哪个 server 由用户自己加）：只有通用入口。
+        expect(find.text(t.ai_mcp_client_add_http), findsOneWidget);
+        expect(find.text(t.ai_mcp_client_add_paste), findsOneWidget);
+        expect(find.textContaining('MangaBaka'), findsNothing);
+        await tester.tap(find.text(t.ai_mcp_client_add_http));
         await tester.pumpAndSettle();
 
         final McpServerConfig added = prefs.aiMcpClientServers.single;
-        expect(added.presetId, kMangaBakaMcpPreset.id);
-        expect(added.enabled, isTrue);
+        expect(added.transport, McpTransportKind.http);
+        // 新建的 server 直接进编辑页；地址没填之前不会连。
+        expect(opened, <String>[added.id]);
+        expect(added.isComplete, isFalse);
+
+        await prefs.setAiMcpClientServers(<McpServerConfig>[
+          added.copyWith(url: 'https://example.com/mcp'),
+        ]);
+        await tester.pumpAndSettle();
         expect(
-          find.byKey(const ValueKey<String>('ai_mcp_server_mangabaka')),
+          find.byKey(ValueKey<String>('ai_mcp_server_${added.id}')),
           findsOneWidget,
         );
         expect(
@@ -138,52 +147,36 @@ void main() {
         );
 
         await tester.tap(
-          find.byKey(const ValueKey<String>('ai_mcp_server_switch_mangabaka')),
+          find.byKey(ValueKey<String>('ai_mcp_server_switch_${added.id}')),
         );
         await tester.pumpAndSettle();
         expect(prefs.aiMcpClientServers.single.enabled, isFalse);
         expect(find.textContaining(t.ai_mcp_client_status_off), findsOneWidget);
 
-        // 预设只能加一次。
         await tester.tap(
-          find.byKey(const ValueKey<String>('ai_mcp_servers_add')),
+          find.byKey(ValueKey<String>('ai_mcp_server_${added.id}')),
         );
         await tester.pumpAndSettle();
-        expect(
-          find.text(t.ai_mcp_client_add_preset(name: 'MangaBaka')),
-          findsNothing,
-        );
-        await tester.tap(find.text(t.ai_mcp_client_add_http));
-        await tester.pumpAndSettle();
-        expect(prefs.aiMcpClientServers, hasLength(2));
-        expect(prefs.aiMcpClientServers.last.transport, McpTransportKind.http);
-        // 新建的自定义 server 直接进编辑页。
-        expect(opened, <String>[prefs.aiMcpClientServers.last.id]);
-
-        await tester.tap(
-          find.byKey(
-            ValueKey<String>(
-              'ai_mcp_server_${prefs.aiMcpClientServers.first.id}',
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(opened.last, 'mangabaka');
+        expect(opened.last, added.id);
       },
     );
 
     testWidgets('$system: edit page tests, toggles a tool, saves, deletes', (
       WidgetTester tester,
     ) async {
-      await prefs.setAiMcpClientServers(<McpServerConfig>[
-        kMangaBakaMcpPreset.toConfig(const <String>[]),
+      await prefs.setAiMcpClientServers(const <McpServerConfig>[
+        McpServerConfig(
+          id: 'books',
+          name: 'Books',
+          url: 'https://books.example/mcp',
+        ),
       ]);
       final List<McpServerConfig> probed = <McpServerConfig>[];
       await _pump(
         tester,
         AiMcpServerEditPage(
           prefs: prefs,
-          serverId: 'mangabaka',
+          serverId: 'books',
           probe: (McpServerConfig config) async {
             probed.add(config);
             return const McpProbeResult(
@@ -227,7 +220,7 @@ void main() {
       expect(saved.disabledTools, <String>{'tags_find'});
       expect(saved.confirmEveryCall, isTrue);
       expect(saved.headers, <String, String>{'X-Test': '1'});
-      expect(saved.url, 'https://api.mangabaka.org/mcp');
+      expect(saved.url, 'https://books.example/mcp');
     });
 
     testWidgets('$system: invalid address disables Test; delete asks first', (

@@ -9,7 +9,6 @@ void main() {
       const McpServerConfig config = McpServerConfig(
         id: 'my-server',
         name: 'My server',
-        presetId: 'mangabaka',
         enabled: false,
         url: 'https://example.com/mcp',
         headers: <String, String>{'Authorization': 'Bearer secret-token'},
@@ -21,7 +20,6 @@ void main() {
       final McpServerConfig back = decodeMcpServerConfigs(raw).single;
       expect(back.id, 'my-server');
       expect(back.name, 'My server');
-      expect(back.presetId, 'mangabaka');
       expect(back.enabled, isFalse);
       expect(back.transport, McpTransportKind.http);
       expect(back.url, 'https://example.com/mcp');
@@ -187,6 +185,8 @@ void main() {
         taken: const <String>['mangabaka'],
       );
       expect(imported, hasLength(2));
+      // 导入的一律先关着：片段多半是复制来的，要用户看过再亲手打开。
+      expect(imported.every((McpServerConfig c) => !c.enabled), isTrue);
       expect(imported[0].id, 'mangabaka-2');
       expect(imported[0].transport, McpTransportKind.http);
       expect(imported[0].url, 'https://api.mangabaka.org/mcp');
@@ -207,6 +207,17 @@ void main() {
         importMcpServersFromJson('{"b":{"url":"https://b/mcp"}}').single.id,
         'b',
       );
+    });
+
+    test('http servers need an http(s) address with a host', () {
+      bool complete(String url) =>
+          McpServerConfig(id: 'a', name: 'A', url: url).isComplete;
+      expect(complete('https://example.com/mcp'), isTrue);
+      expect(complete('http://127.0.0.1:3000/mcp'), isTrue);
+      expect(complete('file:///etc/passwd'), isFalse);
+      expect(complete('ftp://example.com/mcp'), isFalse);
+      expect(complete('https://'), isFalse);
+      expect(complete('example.com/mcp'), isFalse);
     });
 
     test('rejects non-object JSON', () {

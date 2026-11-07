@@ -1,8 +1,8 @@
 /// 「设置 › AI › AI 助手 › MCP 服务器」：AI 助手接入的外部 MCP server 清单与编辑页
 /// （spec `docs/specs/2026-11-05-ai-mcp-client-design.md` §3）。
 ///
-/// - 列表页：每个 server 一行（开关 + 状态），「添加服务器」给 MangaBaka 预设 / 网络地址 /
-///   本地程序（仅桌面）/ 粘贴配置。
+/// - 列表页：每个 server 一行（开关 + 状态），「添加服务器」给网络地址 / 本地程序（仅桌面）/
+///   粘贴配置。没有内置预设：用的是哪个 server 由用户自己决定、自己添加。
 /// - 编辑页：名称、地址与请求头（或命令、参数、环境变量）、「每次调用前都询问」、
 ///   「测试连接」（列出工具，逐个开关）、删除。改动按「保存」才落盘。
 ///
@@ -19,7 +19,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_form.dart';
-import 'package:fushi/src/ai/mcp_client/ai_mcp_client_presets.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
@@ -74,7 +73,7 @@ String aiMcpServerStatusText(McpServerStatus? status) {
 }
 
 /// 「添加服务器」的选项。
-enum _AddKind { preset, http, stdio, paste }
+enum _AddKind { http, stdio, paste }
 
 class AiMcpServersPage extends StatefulWidget {
   const AiMcpServersPage({
@@ -149,21 +148,11 @@ class _AiMcpServersPageState extends State<AiMcpServersPage> {
     final List<String> taken = <String>[
       for (final McpServerConfig s in _servers) s.id,
     ];
-    final bool hasPreset = _servers.any(
-      (McpServerConfig s) => s.presetId == kMangaBakaMcpPreset.id,
-    );
     final _AddKind? kind = await showFushiChoiceDialog<_AddKind>(
       context: context,
       title: t.ai_mcp_client_add,
       icon: FushiIcons.add,
       options: <FushiChoiceOption<_AddKind>>[
-        if (!hasPreset)
-          FushiChoiceOption<_AddKind>(
-            value: _AddKind.preset,
-            label: t.ai_mcp_client_add_preset(name: kMangaBakaMcpPreset.name),
-            subtitle: t.ai_mcp_client_preset_mangabaka_hint,
-            icon: FushiIcons.books,
-          ),
         FushiChoiceOption<_AddKind>(
           value: _AddKind.http,
           label: t.ai_mcp_client_add_http,
@@ -187,11 +176,6 @@ class _AiMcpServersPageState extends State<AiMcpServersPage> {
     );
     if (kind == null || !mounted) return;
     switch (kind) {
-      case _AddKind.preset:
-        await _save(<McpServerConfig>[
-          ..._servers,
-          kMangaBakaMcpPreset.toConfig(taken),
-        ]);
       case _AddKind.http:
       case _AddKind.stdio:
         final String name = t.ai_mcp_client_new_server;
@@ -227,7 +211,8 @@ class _AiMcpServersPageState extends State<AiMcpServersPage> {
       _snack(t.ai_mcp_client_paste_invalid);
       return;
     }
-    // 手机上不收本地程序（拉不起来）。
+    // 手机上不收本地程序（拉不起来）。导入的条目一律是关着的（见
+    // [importMcpServersFromJson]）：用户在列表里看过命令 / 地址、亲手打开后才会连。
     imported = <McpServerConfig>[
       for (final McpServerConfig c in imported)
         if (aiMcpServerSupported(c)) c,

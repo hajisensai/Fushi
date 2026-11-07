@@ -202,6 +202,55 @@ void main() {
       },
     );
 
+    test('a reply larger than the cap fails with response_too_large', () async {
+      final String padding = ' ' * (kMcpClientMaxResponseBytes + 1024);
+      final _Server server = await _Server.start((
+        HttpRequest r,
+        Map<String, Object?>? body,
+      ) async {
+        r.response
+          ..headers.contentType = ContentType.json
+          ..write('{"jsonrpc":"2.0","id":${body!['id']},"result":{}}$padding');
+        await r.response.close();
+      });
+      addTearDown(server.close);
+      await expectLater(
+        _transport(
+          server,
+        ).request(_req(1, 'tools/list'), timeout: const Duration(seconds: 10)),
+        throwsA(
+          isA<McpClientException>().having(
+            (McpClientException e) => e.code,
+            'code',
+            'response_too_large',
+          ),
+        ),
+      );
+    });
+
+    test('an invalid user header is a connect failure, not a crash', () async {
+      final _Server server = await _Server.start((
+        HttpRequest r,
+        Map<String, Object?>? body,
+      ) async {
+        await _json(r, <String, Object?>{'jsonrpc': '2.0', 'id': 1});
+      });
+      addTearDown(server.close);
+      await expectLater(
+        _transport(
+          server,
+          headers: <String, String>{'Bad Header': 'x'},
+        ).request(_req(1, 'tools/list'), timeout: const Duration(seconds: 5)),
+        throwsA(
+          isA<McpClientException>().having(
+            (McpClientException e) => e.code,
+            'code',
+            'connect_failed',
+          ),
+        ),
+      );
+    });
+
     test('non-JSON-RPC failures map to short codes', () async {
       final _Server server = await _Server.start((
         HttpRequest r,
@@ -334,7 +383,72 @@ void main() {
         });
         expect((replies[1]['error']! as Map)['code'], -32601);
         await transport.close();
+        // MCP stdio 正常结束：关 stdin，server 自己退出，不强杀。
+        expect(process.stdinClosed, isTrue);
+        expect(process.killed, isFalse);
+      },
+    );
+
+    test(
+      'close kills a program that ignores stdin EOF after the grace period',
+      () async {
+        final _FakeProcess process = _FakeProcess(exitOnStdinClose: false);
+        final McpStdioTransport transport = McpStdioTransport(
+          process,
+          exitGrace: const Duration(milliseconds: 20),
+        );
+        await transport.close();
+        expect(process.stdinClosed, isTrue);
         expect(process.killed, isTrue);
+      },
+    );
+
+    test(
+      'an overlong stdout line fails pending requests and kills the program',
+      () async {
+        final StreamController<String> raw = StreamController<String>();
+        final _FakeProcess process = _FakeProcess(
+          stdout: splitMcpStdioLines(raw.stream, maxLineChars: 16),
+        );
+        final McpStdioTransport transport = McpStdioTransport(process);
+        final Future<Map<String, Object?>> pending = transport.request(
+          _req(1, 'tools/list'),
+          timeout: const Duration(seconds: 5),
+        );
+        raw.add('{"jsonrpc":"2.0","id":1,"result":{"padding":"');
+        await expectLater(
+          pending,
+          throwsA(
+            isA<McpClientException>().having(
+              (McpClientException e) => e.code,
+              'code',
+              'response_too_large',
+            ),
+          ),
+        );
+        expect(process.killed, isTrue);
+        await raw.close();
+      },
+    );
+
+    test(
+      'splitMcpStdioLines: splits across chunks, strips CR, truncates when asked',
+      () async {
+        expect(
+          await splitMcpStdioLines(
+            Stream<String>.fromIterable(<String>['ab', 'c\r\nde\n', 'f']),
+            maxLineChars: 16,
+          ).toList(),
+          <String>['abc', 'de', 'f'],
+        );
+        expect(
+          await splitMcpStdioLines(
+            Stream<String>.fromIterable(<String>['0123456789', 'abcdef\nok\n']),
+            maxLineChars: 4,
+            truncateOverlong: true,
+          ).toList(),
+          <String>['cdef', 'ok'],
+        );
       },
     );
 
@@ -393,6 +507,13 @@ void main() {
 }
 
 class _FakeProcess implements McpStdioProcess {
+  _FakeProcess({this.exitOnStdinClose = true, Stream<String>? stdout})
+    : _stdoutOverride = stdout;
+
+  /// 像正常的 MCP server 一样读到 stdin EOF 就退出。
+  final bool exitOnStdinClose;
+  final Stream<String>? _stdoutOverride;
+  bool stdinClosed = false;
   final StreamController<String> _out = StreamController<String>();
   final StreamController<String> _err = StreamController<String>();
   final Completer<int> _exit = Completer<int>();
@@ -407,13 +528,19 @@ class _FakeProcess implements McpStdioProcess {
   void writeLine(String line) => written.add(line);
 
   @override
-  Stream<String> get stdoutLines => _out.stream;
+  Stream<String> get stdoutLines => _stdoutOverride ?? _out.stream;
 
   @override
   Stream<String> get stderrLines => _err.stream;
 
   @override
   Future<int> get exitCode => _exit.future;
+
+  @override
+  Future<void> closeStdin() async {
+    stdinClosed = true;
+    if (exitOnStdinClose && !_exit.isCompleted) _exit.complete(0);
+  }
 
   @override
   void kill() {

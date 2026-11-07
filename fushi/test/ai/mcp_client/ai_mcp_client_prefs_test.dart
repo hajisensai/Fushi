@@ -2,11 +2,10 @@
 // - 偏好 `ai_mcp_client_servers` 存取、坏数据不崩；
 // - 键登记为凭据键、日志脱敏键、设备本地键（请求头 / 环境变量里可能有 token）；
 // - 编辑页多行文本 ↔ 字段的解析；
-// - MangaBaka 预设与平台判据。
+// - 平台判据。没有内置预设：清单默认为空，server 全由用户自己添加。
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_form.dart';
-import 'package:fushi/src/ai/mcp_client/ai_mcp_client_presets.dart';
 import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -31,7 +30,11 @@ void main() {
     test('empty by default; round-trips through the database', () async {
       expect(prefs.aiMcpClientServers, isEmpty);
       await prefs.setAiMcpClientServers(<McpServerConfig>[
-        kMangaBakaMcpPreset.toConfig(const <String>[]),
+        const McpServerConfig(
+          id: 'public',
+          name: 'Public',
+          url: 'https://public.example/mcp',
+        ),
         const McpServerConfig(
           id: 'private',
           name: 'Private',
@@ -43,10 +46,10 @@ void main() {
       await reloaded.loadFromDb();
       final List<McpServerConfig> servers = reloaded.aiMcpClientServers;
       expect(servers.map((McpServerConfig s) => s.id), <String>[
-        'mangabaka',
+        'public',
         'private',
       ]);
-      expect(servers.first.presetId, 'mangabaka');
+      expect(servers.first.headers, isEmpty);
       expect(servers.last.headers['Authorization'], 'Bearer t0ken');
     });
 
@@ -97,18 +100,6 @@ void main() {
         <String>['-y', '@scope/server', '/path with space'],
       );
     });
-  });
-
-  test('MangaBaka preset: anonymous HTTP endpoint, id de-duplicated', () {
-    final McpServerConfig config = kMangaBakaMcpPreset.toConfig(const <String>[
-      'mangabaka',
-    ]);
-    expect(config.id, 'mangabaka-2');
-    expect(config.presetId, 'mangabaka');
-    expect(config.transport, McpTransportKind.http);
-    expect(config.url, 'https://api.mangabaka.org/mcp');
-    expect(config.headers, isEmpty);
-    expect(config.isComplete, isTrue);
   });
 
   test('web servers are supported everywhere', () {

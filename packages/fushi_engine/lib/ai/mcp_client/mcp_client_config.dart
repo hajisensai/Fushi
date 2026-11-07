@@ -28,7 +28,6 @@ class McpServerConfig {
   const McpServerConfig({
     required this.id,
     required this.name,
-    this.presetId,
     this.enabled = true,
     this.transport = McpTransportKind.http,
     this.url = '',
@@ -44,9 +43,6 @@ class McpServerConfig {
   /// [mcpServerIdFor] 生成，之后不变。
   final String id;
   final String name;
-
-  /// 来自哪个内置预设（`mangabaka`）；自定义的为 null。
-  final String? presetId;
   final bool enabled;
   final McpTransportKind transport;
 
@@ -83,7 +79,6 @@ class McpServerConfig {
   }) => McpServerConfig(
     id: id,
     name: name ?? this.name,
-    presetId: presetId,
     enabled: enabled ?? this.enabled,
     transport: transport ?? this.transport,
     url: url ?? this.url,
@@ -106,16 +101,16 @@ class McpServerConfig {
     'env': env,
   });
 
-  /// 配置是否填全了（能尝试连接）。
+  /// 配置是否填全了（能尝试连接）。HTTP 只认带主机名的 `http(s)://` 地址：别的 scheme
+  /// （`file:` / `ftp:` …）`package:http` 发不出去，留着只会每轮连接失败。
   bool get isComplete => switch (transport) {
-    McpTransportKind.http => Uri.tryParse(url.trim())?.hasScheme ?? false,
+    McpTransportKind.http => isValidMcpHttpUrl(url),
     McpTransportKind.stdio => command.trim().isNotEmpty,
   };
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'name': name,
-    if (presetId != null) 'presetId': presetId,
     'enabled': enabled,
     'transport': transport.name,
     if (url.isNotEmpty) 'url': url,
@@ -136,7 +131,6 @@ class McpServerConfig {
     return McpServerConfig(
       id: id,
       name: name.isEmpty ? id : name,
-      presetId: json['presetId'] as String?,
       enabled: json['enabled'] != false,
       transport: McpTransportKind.fromName(json['transport'] as String?),
       url: '${json['url'] ?? ''}',
@@ -173,6 +167,13 @@ Map<String, String> _decodeSecretMap(Object? raw) {
     }
   }
   return out;
+}
+
+/// HTTP 型 server 地址是否可用：`http` / `https`，且有主机名。
+bool isValidMcpHttpUrl(String url) {
+  final Uri? uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.host.isEmpty) return false;
+  return uri.scheme == 'https' || uri.scheme == 'http';
 }
 
 final RegExp _kServerIdPattern = RegExp(
@@ -228,6 +229,10 @@ List<McpServerConfig> decodeMcpServerConfigs(String raw) {
 /// 导入。认 `{"mcpServers": {...}}`、`{"servers": {...}}` 与直接的 `{名字: {...}}`。
 /// 每条：有 `url` → HTTP（`headers` 照收）；有 `command` → stdio（`args` / `env` 照收）。
 /// 认不出的条目跳过。新 id 避开 [taken]。
+///
+/// 导入的条目一律 **关着**（`enabled: false`）：配置片段多半是从网上 / 别的应用复制来的，
+/// 本地程序型等于在本机执行片段里的命令，网络地址型会把片段里的请求头（token）发出去；
+/// 要用户在设置页看过之后亲手打开。
 List<McpServerConfig> importMcpServersFromJson(
   String raw, {
   Iterable<String> taken = const <String>[],
@@ -253,6 +258,7 @@ List<McpServerConfig> importMcpServersFromJson(
       McpServerConfig(
         id: id,
         name: name,
+        enabled: false,
         transport: url.isNotEmpty
             ? McpTransportKind.http
             : McpTransportKind.stdio,

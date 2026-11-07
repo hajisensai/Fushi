@@ -20,7 +20,8 @@ class McpClientException implements Exception {
   const McpClientException(this.code, [this.message]);
 
   /// `connect_failed` / `http_status` / `session_expired` / `timeout` /
-  /// `protocol` / `process_exited` / `unsupported_version` / `rpc_error`。
+  /// `protocol` / `process_exited` / `unsupported_version` / `rpc_error` /
+  /// `response_too_large`。
   final String code;
   final String? message;
 
@@ -51,6 +52,26 @@ abstract interface class McpClientTransport {
 
 /// 会话 id 头（旧协议的有状态会话）。
 const String kMcpClientSessionHeader = 'Mcp-Session-Id';
+
+/// 一条应答（HTTP body / SSE 流 / stdio 一行）最多收多少：server 不可信，不设上限
+/// 一个坏 server 在时限内就能把内存灌满。实测最大的工具清单约 180 KB，工具结果交给
+/// 模型前还会截到 2 万字符，8 MiB 留足余量。
+const int kMcpClientMaxResponseBytes = 8 * 1024 * 1024;
+
+McpClientException _tooLarge() => const McpClientException(
+  'response_too_large',
+  'The MCP server sent a reply larger than 8 MB.',
+);
+
+/// 累计超过 [maxBytes] 就以 [_tooLarge] 出错（取消上游订阅即关连接）。
+Stream<List<int>> _capBytes(Stream<List<int>> source, int maxBytes) async* {
+  int total = 0;
+  await for (final List<int> chunk in source) {
+    total += chunk.length;
+    if (total > maxBytes) throw _tooLarge();
+    yield chunk;
+  }
+}
 
 /// Streamable HTTP 传输。
 class McpHttpTransport implements McpClientTransport {
@@ -91,18 +112,20 @@ class McpHttpTransport implements McpClientTransport {
       headers,
       timeout,
     );
+    final Stream<List<int>> body = _capBytes(
+      response.stream,
+      kMcpClientMaxResponseBytes,
+    );
     final String? session =
         response.headers[kMcpClientSessionHeader.toLowerCase()];
     if (session != null && session.isNotEmpty) _sessionId = session;
     final String contentType = response.headers['content-type'] ?? '';
     try {
       if (contentType.contains('text/event-stream')) {
-        return await _readSse(response.stream, id).timeout(timeout);
+        return await _readSse(body, id).timeout(timeout);
       }
-      final String body = await utf8
-          .decodeStream(response.stream)
-          .timeout(timeout);
-      final Map<String, Object?>? reply = _matchReply(_tryDecode(body), id);
+      final String text = await utf8.decodeStream(body).timeout(timeout);
+      final Map<String, Object?>? reply = _matchReply(_tryDecode(text), id);
       if (reply != null) return reply;
     } on TimeoutException {
       throw const McpClientException(
@@ -145,10 +168,10 @@ class McpHttpTransport implements McpClientTransport {
     Map<String, String> headers,
     Duration timeout,
   ) async {
-    final http.Request request = http.Request('POST', endpoint)
-      ..headers.addAll(_requestHeaders(headers))
-      ..body = jsonEncode(message);
     try {
+      final http.Request request = http.Request('POST', endpoint)
+        ..headers.addAll(_requestHeaders(headers))
+        ..body = jsonEncode(message);
       return await _client.send(request).timeout(timeout);
     } on TimeoutException {
       throw const McpClientException(
@@ -161,6 +184,11 @@ class McpHttpTransport implements McpClientTransport {
       throw McpClientException('connect_failed', error.message);
     } on HandshakeException catch (error) {
       throw McpClientException('connect_failed', error.message);
+    } on FormatException catch (error) {
+      // dart:io 拒收用户填的非法请求头名 / 值（含空格、换行…）。
+      throw McpClientException('connect_failed', error.message);
+    } on ArgumentError catch (error) {
+      throw McpClientException('connect_failed', '${error.message}');
     }
   }
 
@@ -255,6 +283,11 @@ abstract interface class McpStdioProcess {
   Stream<String> get stdoutLines;
   Stream<String> get stderrLines;
   Future<int> get exitCode;
+
+  /// 关掉子进程的 stdin（MCP stdio 规定的正常结束信号：server 读到 EOF 自己退出）。
+  Future<void> closeStdin();
+
+  /// 强制结束（连同它拉起的子进程）。
   void kill();
 }
 
@@ -267,27 +300,96 @@ class _RealStdioProcess implements McpStdioProcess {
   void writeLine(String line) => _process.stdin.writeln(line);
 
   @override
-  Stream<String> get stdoutLines =>
-      _process.stdout.transform(utf8.decoder).transform(const LineSplitter());
+  Stream<String> get stdoutLines => splitMcpStdioLines(
+    _process.stdout.transform(utf8.decoder),
+    maxLineChars: kMcpClientMaxResponseBytes,
+  );
 
   @override
-  Stream<String> get stderrLines =>
-      _process.stderr.transform(utf8.decoder).transform(const LineSplitter());
+  Stream<String> get stderrLines => splitMcpStdioLines(
+    _process.stderr.transform(const Utf8Decoder(allowMalformed: true)),
+    maxLineChars: kMcpStdioStderrTailChars,
+    truncateOverlong: true,
+  );
 
   @override
   Future<int> get exitCode => _process.exitCode;
 
   @override
-  void kill() => _process.kill();
+  Future<void> closeStdin() async {
+    try {
+      await _process.stdin.close();
+    } on Object {
+      // 进程已经退出、管道已断：本来就是要它结束。
+    }
+  }
+
+  /// Windows 上是经 `cmd /c` 拉起的（`runInShell`），`Process.kill` 只结束 cmd，
+  /// 真正的 server（node / python）会变成孤儿进程留在后台：用 `taskkill /T` 连树结束。
+  @override
+  void kill() {
+    if (Platform.isWindows) {
+      try {
+        Process.runSync('taskkill', <String>[
+          '/PID',
+          '${_process.pid}',
+          '/T',
+          '/F',
+        ]);
+      } on ProcessException {
+        // taskkill 不可用时退回只结束 shell。
+      }
+    }
+    _process.kill();
+  }
 }
+
+/// 按行切 stdio 输出；一行超过 [maxLineChars] 就以 `response_too_large` 出错（不让
+/// 一个不换行的 server 把内存灌满）。[truncateOverlong] 时改为只留这一行的最后
+/// [maxLineChars] 个字符、照常往下读（stderr 只作诊断，但必须一直读空，否则子进程
+/// 写满管道会卡住）。行尾 `\r` 去掉。
+Stream<String> splitMcpStdioLines(
+  Stream<String> chunks, {
+  required int maxLineChars,
+  bool truncateOverlong = false,
+}) async* {
+  void overflow(StringBuffer pending) {
+    if (!truncateOverlong) throw _tooLarge();
+    final String text = pending.toString();
+    pending
+      ..clear()
+      ..write(text.substring(text.length - maxLineChars));
+  }
+
+  final StringBuffer pending = StringBuffer();
+  await for (final String chunk in chunks) {
+    int start = 0;
+    while (true) {
+      final int nl = chunk.indexOf('\n', start);
+      if (nl < 0) break;
+      pending.write(chunk.substring(start, nl));
+      if (pending.length > maxLineChars) overflow(pending);
+      final String line = pending.toString();
+      pending.clear();
+      yield line.endsWith('\r') ? line.substring(0, line.length - 1) : line;
+      start = nl + 1;
+    }
+    pending.write(chunk.substring(start));
+    if (pending.length > maxLineChars) overflow(pending);
+  }
+  if (pending.isNotEmpty) yield pending.toString();
+}
+
+/// [McpStdioTransport.close] 关 stdin 后等 server 自己退出的时长，过了就强杀。
+const Duration kMcpStdioExitGrace = Duration(seconds: 2);
 
 /// stderr 最多留多少字符（出错时给用户看）。
 const int kMcpStdioStderrTailChars = 4096;
 
 /// 本地程序传输。
 class McpStdioTransport implements McpClientTransport {
-  McpStdioTransport(this._process) {
-    _stdout = _process.stdoutLines.listen(_onLine);
+  McpStdioTransport(this._process, {this.exitGrace = kMcpStdioExitGrace}) {
+    _stdout = _process.stdoutLines.listen(_onLine, onError: _onStdoutError);
     _stderr = _process.stderrLines.listen(_onStderr);
     unawaited(_process.exitCode.then(_onExit));
   }
@@ -312,6 +414,9 @@ class McpStdioTransport implements McpClientTransport {
   }
 
   final McpStdioProcess _process;
+
+  /// [close] 关 stdin 后等它自己退出多久。
+  final Duration exitGrace;
   late final StreamSubscription<String> _stdout;
   late final StreamSubscription<String> _stderr;
   final Map<String, Completer<Map<String, Object?>>> _pending =
@@ -354,6 +459,18 @@ class McpStdioTransport implements McpClientTransport {
     if (waiter != null && !waiter.isCompleted) {
       waiter.complete(Map<String, Object?>.from(decoded));
     }
+  }
+
+  /// stdout 读坏了（超长行、解码失败）：这条连接没法再用，挂着的请求全部失败、结束进程。
+  void _onStdoutError(Object error) {
+    final McpClientException failure = error is McpClientException
+        ? error
+        : McpClientException('protocol', '$error');
+    for (final Completer<Map<String, Object?>> waiter in _pending.values) {
+      if (!waiter.isCompleted) waiter.completeError(failure);
+    }
+    _pending.clear();
+    if (!_exited) _process.kill();
   }
 
   void _onStderr(String line) {
@@ -417,10 +534,18 @@ class McpStdioTransport implements McpClientTransport {
     if (!_exited) _process.writeLine(jsonEncode(message));
   }
 
+  /// MCP stdio 的结束顺序：关 stdin → 等它自己退出 → 过了 [exitGrace] 强杀。
   @override
   Future<void> close() async {
+    if (!_exited) {
+      await _process.closeStdin();
+      try {
+        await _process.exitCode.timeout(exitGrace);
+      } on TimeoutException {
+        _process.kill();
+      }
+    }
     await _stdout.cancel();
     await _stderr.cancel();
-    if (!_exited) _process.kill();
   }
 }

@@ -14,7 +14,9 @@
 > 并**明确批准这个想法**，再看代码；两位都签字之前不要合并。想法被否就直接关 PR，没有别的东西
 > 依赖它。
 >
-> 状态：已实现，待所有者批准。分支 `feat/ai-mcp-client`，base `177ca2c8b6`。
+> 状态：**所有者 2026-11-07 批准想法，但去掉内置的 MangaBaka 预设**——用哪个 MCP server 由用户
+> 自己添加（见 §3、§9 D4）。审查时一并补了 §6 里标「审查补」的几条安全加固。分支
+> `feat/ai-mcp-client`，base `177ca2c8b6`。
 > 相关：[2026-10-26-ai-operations-agent-design.md](2026-10-26-ai-operations-agent-design.md)
 > （AI 助手与操作目录）、[../mcp-external-ai.md](../mcp-external-ai.md)（反方向：外部 AI 调 Fushi）。
 
@@ -23,11 +25,12 @@
 Fushi already *is* an MCP server (external AIs can drive Fushi). This adds the other direction:
 Fushi's in-app AI assistant becomes an **MCP client**. Users add MCP servers under
 **Settings › AI › AI assistant › MCP servers**, turn each server (and each tool) on or off, and
-the assistant can then use those tools in chat. **MangaBaka** (open manga database,
-`https://api.mangabaka.org/mcp`, anonymous, 18 read-only tools) ships as a one-tap preset, off by
-default. Tools are loaded **on demand** through the existing `ops__search` / `ops__describe`
-meta tools (MangaBaka's 18 tool definitions alone are ~80 KB without output schemas, too large
-to send every turn to a local model). Read-only tools run directly; every other MCP tool shows
+the assistant can then use those tools in chat. **There are no built-in presets**: the owner
+approved the idea on 2026-11-07 but asked for the MangaBaka preset to be dropped — users add the
+servers they want themselves (web address, local program on desktop, or a pasted `mcpServers`
+snippet, which is imported switched off). Tools are loaded **on demand** through the existing
+`ops__search` / `ops__describe` meta tools (MangaBaka's 18 tool definitions alone are ~80 KB
+without output schemas, too large to send every turn to a local model). Read-only tools run directly; every other MCP tool shows
 the existing confirmation card first, because MCP calls cannot be undone. Tool results go into
 the existing `<untrusted_data>` wrapper. Server config is device-local and never synced/backed up.
 
@@ -38,7 +41,10 @@ Fushi 调 LLM 时只走 OpenAI 兼容的 `/chat/completions`，请求里只带 F
 的 MCP 开关只在它自己的聊天界面生效。要求：
 
 1. AI 助手能用 MangaBaka MCP 的工具。
-2. 用户能开 / 关它，也能加别的 MCP server（通用能力，MangaBaka 只是一个预设）。
+2. 用户能开 / 关它，也能加别的 MCP server（通用能力）。
+
+所有者 2026-11-07 拍板：**想法批准，但不内置 MangaBaka 预设**——用户想用哪个 server 自己加。
+MangaBaka 仍是本设计的实测对象（§2.1 的协议事实照旧成立），只是不再随应用预置。
 
 ## 2. 现状（HEAD `177ca2c8b6` 实测）
 
@@ -69,12 +75,13 @@ Fushi 调 LLM 时只走 OpenAI 兼容的 `/chat/completions`，请求里只带 F
 
 1. **设置 › AI › AI 助手 › MCP servers**：一个可增删的 server 列表。
    - 每个 server 一个开关 + 状态行（已连接，N 个工具 / 出错原因）。
-   - 「添加」：MangaBaka 预设（一键）/ 自定义网络地址（HTTP）/ 自定义本地程序（stdio，**仅桌面**）/
-     粘贴配置（通用 `mcpServers` JSON 形状，Claude Desktop 等客户端的配置片段可直接贴）。
+   - 「添加」：网络地址（HTTP）/ 本地程序（stdio，**仅桌面**）/ 粘贴配置（通用 `mcpServers`
+     JSON 形状，Claude Desktop 等客户端的配置片段可直接贴；**导入的条目一律先关着**，用户看过
+     命令 / 地址后亲手打开）。
    - 编辑页：名称、地址与请求头（或命令、参数、环境变量）、「每次调用前都问我」开关、
      「测试连接」（列出工具，每个工具一个开关）、删除。
 2. **AI 助手对话**：开着的 server 的工具对模型可见、可调用；连不上的 server 不影响对话。
-3. 预设只有 MangaBaka，**默认不加、默认不开**：用户点了「添加 MangaBaka」才出现。
+3. **没有内置预设**：清单默认为空，所有 server 都由用户自己添加（所有者 2026-11-07 拍板）。
 
 不做：MCP 的 resources / prompts / sampling / elicitation；OAuth 登录流（需要鉴权的 server
 先用请求头填 token）；把 MCP 工具开放给互联远端会话（`/api/assistant` 的已配对设备）——本机配的
@@ -89,7 +96,6 @@ packages/fushi_engine/lib/ai/mcp_client/      纯 Dart（不碰 Flutter / 插件
   mcp_client_session.dart     JSON-RPC 客户端：协商（旧握手 / 无状态）、tools/list 翻页、tools/call
   mcp_client_toolbox.dart     McpClientToolbox（AgentToolbox）+ ComposedAgentToolbox
 fushi/lib/src/ai/mcp_client/                  app 侧装配
-  ai_mcp_client_presets.dart  MangaBaka 预设
   ai_mcp_client_runtime.dart  传输工厂（HTTP 走 createAppHttpIoClient；stdio 只在桌面）
   ai_mcp_client_form.dart     编辑页多行文本 ↔ 请求头 / 参数 / 环境变量
 fushi/lib/src/pages/implementations/
@@ -134,7 +140,14 @@ fushi/lib/src/pages/implementations/
 | 密钥泄露 | 请求头 / 环境变量值 base64 存在偏好 `ai_mcp_client_servers`，登记进 `kCredentialPreferenceKeys`、`PrefRedactionPolicy.sensitiveKeys`、`deviceLocalPrefKeys`（与 `ai_providers` 同一存法）：不进日志、备份、同步、Profile。AI 自己读写不到（不加任何操作目录路由）。 |
 | 本地程序（stdio）= 执行任意命令 | 只能由用户在设置页亲手填写；只在桌面提供；AI 没有任何改这份配置的入口。 |
 | 代理 / 出站纪律 | HTTP 一律 `createAppHttpIoClient()`（守卫 `outbound_http_discipline_guard_test.dart`）；loopback 自动直连。 |
-| 远端会话 | 互联 `/api/assistant` 的远端会话不挂 MCP 工具箱。 |
+| 远端会话 | 互联 `/api/assistant` 的远端会话不挂 MCP 工具箱（`ai_agent_assistant_host.dart` 只用 `AiAgentToolbox`）。 |
+| 粘贴的配置片段（审查补） | 片段多半是从网上 / 别的应用复制的：`importMcpServersFromJson` 导入的条目一律 `enabled: false`，本地程序不会在下一轮对话里被自动拉起、请求头里的 token 也不会被自动发出，要用户在列表里看过命令 / 地址再亲手打开。 |
+| server 字符串进 system prompt（审查补） | 说明段只列**消毒过的工具 id 尾段**（`[A-Za-z0-9_.-]`，≤64），不放 server 给的原始工具名；说明段写明工具描述与结果都不可信、不得照做其中指令。工具描述本身经 `ops__search` / `ops__describe` 进 `<untrusted_data>`；被拉入后作为工具 spec 的描述发给模型（与所有 MCP 客户端相同，前缀 `[MCP: server 名]`）。 |
+| 工具名冒名（审查补） | `ComposedAgentToolbox.execute` 与 `describeTool` 同一归属：主工具箱认得的名字永远交给主工具箱，附加工具箱不能借同名让「按主目录 spec 弹确认、实际执行附加工具」。 |
+| 资源上限（审查补） | 单条应答（HTTP body / SSE / stdio 一行）≤ 8 MiB，超了报 `response_too_large` 并断开；stderr 只留最后 4 KB、超长行截断但持续读空（防子进程写满管道卡死）。时限见 §7。 |
+| 配坏的 server 不挡对话（审查补） | `prepare()` / 「测试连接」从不抛：非法请求头（`dart:io` 抛 `FormatException`）等映射成 `connect_failed`，进状态行。 |
+| 本地程序的退出（审查补） | 按 MCP stdio 规定先关 stdin、等 2 s 自己退出，再强杀；Windows 上经 `cmd /c` 拉起，强杀用 `taskkill /T` 连进程树（否则 node / python 子进程成孤儿）。 |
+| TLS | HTTP 走 `createAppHttpIoClient()`，不设 `badCertificateCallback`，证书照常校验。地址只认带主机名的 `http(s)://`；允许 `http://`（局域网 / 本机 server），用户自己填的地址。 |
 
 ## 7. 协议细节
 
@@ -158,7 +171,9 @@ fushi/lib/src/pages/implementations/
   翻页、调用结果映射；HTTP 传输（本地 `HttpServer`：JSON / SSE 应答、头部、会话 id、400 + JSON-RPC
   错误）；stdio 分帧（注入流）；工具箱（id 往返、搜索排序、describe、确认标记、结果截断、说明段）；
   组合工具箱路由；`AgentSession` 集成（说明段进 system prompt、非只读工具出确认卡）。
-- app：偏好键登记守卫、设置页 widget 测试。
+- app：偏好键登记守卫、设置页 widget 测试（添加菜单里没有内置预设）。
+- 审查补：导入条目默认关、`http(s)` 地址判据、说明段消毒、同名归属、`prepare` 从不抛、
+  应答超限、非法请求头、stdio 关 stdin 优雅退出 / 超时强杀、超长行。
 - 手动（2026-11-06）：引擎 `McpClientToolbox` + `McpHttpTransport` 直连真实端点
   `https://api.mangabaka.org/mcp`：协商为无状态 `2026-07-28`、列出 18 个工具、`ops.search`
   式检索「mangabaka series search」首位是 `series_search`、`describe` 风险为 read 且无需确认、
@@ -169,9 +184,11 @@ fushi/lib/src/pages/implementations/
 ## 9. 待所有者拍板
 
 - **D1 信任 `readOnlyHint`**：推荐信任（默认直接执行只读工具），用户可逐 server 改成每次都问。
-  备选：所有 MCP 调用一律确认（更安全，但 MangaBaka 这种全只读的会每步都弹卡）。
+  备选：所有 MCP 调用一律确认（更安全，但全只读的 server 会每步都弹卡）。所有者批准想法时未另行
+  改动，按推荐实现。注意：只读工具的**参数**也会发给 server，提示注入诱导模型把本机数据当参数
+  外传的风险不靠确认卡兜底，靠用户只添加自己信任的 server。
 - **D2 iOS**：HTTP 型 server 在 iOS 上是否算商店合规的「外部发现源」？当前实现**不区分 iOS**
   （与用户自配 AI 提供商同类：用户自己填的端点）。若判定需要限制，应加进
   `store_compliance.dart` 而不是在消费端写平台判断。
 - **D3 Dart 而非 Rust**：理由见 §4。若所有者认为应进 Rust 胖核心，协议层可整体搬走，接口不变。
-- **D4 预设清单**：目前只有 MangaBaka。以后加预设的门槛（只收匿名 / 只读？）待定。
+- **D4 预设清单**：**已定（2026-11-07）：不内置任何预设**，用户自行添加。
