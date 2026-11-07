@@ -1801,7 +1801,7 @@ abstract final class PreviousExitLog {
       );
       final int seen = state.readMacSeenAt();
       // 只收上次会话启动之后的报告：更早的属于更早的进程，不是「上次怎么没的」
-      // （反馈 J1ZWNUeaCT、BUG-4226）。没有上次会话（首次启动 / 标记丢了）时退回回看窗口。
+      // （反馈 J1ZWNUeaCT、BUG-4229）。没有上次会话（首次启动 / 标记丢了）时退回回看窗口。
       final int since = <int>[
         seen,
         now - kExitReportLookback.inMilliseconds,
@@ -1827,7 +1827,7 @@ abstract final class PreviousExitLog {
               ])) {
             // 同进程名、版本却对不上（别处留着的旧副本、旧安装启动失败）：不是上次那个
             // 进程的崩溃，只作诊断，不判定退出方式（反馈 J1ZWNUeaCT：3.3.0 上报了
-            // 3.0.1 三天前的 dyld「Library missing」，BUG-4226）。
+            // 3.0.1 三天前的 dyld「Library missing」，BUG-4229）。
             out.add(
               ExitReportEntry(
                 kMacCrashReportSource,

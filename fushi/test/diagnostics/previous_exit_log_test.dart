@@ -880,7 +880,7 @@ void main() {
     );
   });
 
-  // BUG-4226（反馈 J1ZWNUeaCT）：3.3.0 启动时把 3.0.1 三天前 dyld「Library missing」的
+  // BUG-4229（反馈 J1ZWNUeaCT）：3.3.0 启动时把 3.0.1 三天前 dyld「Library missing」的
   // .ips 当成上次闪退上报。只收上次会话启动之后的报告；版本对不上的只作诊断。
   test('macOS：上次会话启动前的 .ips 不收、版本对不上的只作诊断', () async {
     final Directory reports = Directory('${tmp.path}/DiagnosticReports')
