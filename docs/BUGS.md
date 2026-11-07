@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4220](bugs/BUG-4220-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
+| [BUG-4220](bugs/BUG-4220-youtube-timedtext-double-escaped.md) | ✅ | ✅ | 内置播放器 YouTube 字幕残留 HTML 实体（&#39;） |
 | [BUG-4219](bugs/BUG-4219-shelf-columns-shrink-regression.md) | ✅ | ✅ | shelf-columns-shrink-regression |
 | [BUG-4218](bugs/BUG-4218-srs-history-duplicate-event-copies.md) | ✅ | ✅ | SRS 历史把同一事件的多 ID 副本算成多次复习、撤销一份不生效 |
 | [BUG-4217](bugs/BUG-4217-srs-merge-duplicate-review-logs.md) | ✅ | ✅ | 合并 profile 后同一次复习变成两条，FSRS 优化 log loss 从 0.6 涨到 1.6 |

@@ -33,8 +33,11 @@ String srsMediaUrlPrefix({required bool customScheme}) => customScheme
     : 'https://$kSrsMediaHost$kSrsMediaPath';
 
 final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
+
+/// `src` / `poster` 属性：带引号（组 2 引号、组 3 值）或不带引号（组 4，`<img src=x.jpg>`，
+/// 浏览器同样认；不改写的话 WebView 卡面会按相对地址去请求、图片不显示）。
 final RegExp _srcAttr = RegExp(
-  r'''(\s(?:src|poster)\s*=\s*)(["'])([^"']*)\2''',
+  r'''(\s(?:src|poster)\s*=\s*)(?:(["'])([^"']*)\2|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 final RegExp _cssUrl = RegExp(
@@ -90,10 +93,11 @@ String srsLocalizeCardHtml(String html, {required String urlPrefix}) {
     (Match m) => srsSoundButtonHtml(m.group(1)!),
   );
   out = out.replaceAllMapped(_srcAttr, (Match m) {
-    final String value = m.group(3)!;
+    final String value = m.group(3) ?? m.group(4)!;
     if (!srsIsBareMediaName(value)) return m.group(0)!;
-    return '${m.group(1)}${m.group(2)}'
-        '${_attrEscape(_mediaUrl(urlPrefix, value))}${m.group(2)}';
+    final String quote = m.group(2) ?? '"';
+    return '${m.group(1)}$quote'
+        '${_attrEscape(_mediaUrl(urlPrefix, value))}$quote';
   });
   return srsLocalizeCardCss(out, urlPrefix: urlPrefix);
 }
@@ -118,7 +122,7 @@ Set<String> srsCardReferencedMedia(String text) {
     add(m.group(1)!);
   }
   for (final Match m in _srcAttr.allMatches(text)) {
-    add(m.group(3)!);
+    add(m.group(3) ?? m.group(4)!);
   }
   for (final Match m in _cssUrl.allMatches(text)) {
     add(m.group(2)!);

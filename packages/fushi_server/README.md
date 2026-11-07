@@ -490,6 +490,9 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 数据在 `<data>/support/anki_sync/`（本地牌组集合 + 未同步日志 + 账号凭据）与
   `<data>/support/pending_mine_queue/`。同步成功才出日志；服务器要求整库**上传**时 Fushi
   不做，停在「被拦」，等你在官方 Anki 里同步一次。
+- 登录后每 10 分钟自动同步一次（另外开机时、落完卡后各一次），所以在桌面 Anki / AnkiDroid
+  里加的卡，最迟 10 分钟后互联查词的查重就看得见；急的话 WebUI 或 `ctl anki sync` 手动同步。
+  被同步服务器限流时自动同步推迟到冷却结束。
 - 同一时刻只有一台设备负责落地（最后打开开关的那台）。关掉时立刻撤认领。
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
@@ -505,7 +508,9 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
   `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
-  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表。
+  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表；
+  Windows 发布包随包 MSVC 编的 `lib/fushidicts_ffi.dll` 与同一份变形表（自编：`cmake -S native/fushidicts -B <短路径>
+  -G "Visual Studio 17 2022" -A x64` 后 `cmake --build <短路径> --config Release --target fushidicts_ffi`）。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
 - 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
