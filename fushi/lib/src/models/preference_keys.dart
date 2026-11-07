@@ -985,6 +985,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // string（默认空）：主字幕轨默认语言偏好（反馈 Fz9HXThdSW，参考 PotPlayer）：逗号 /
   // 空白分隔，按顺序挑第一条命中的内封轨，见 parseSubtitleLanguagePreferences。
   'video_subtitle_preferred_languages',
+  // bool（默认 true）：视频页「生成字幕」是否把字幕文件写到视频旁边（开 = 生成字幕
+  // 管线；关 = 只在 Fushi 里转录使用），见 PreferencesRepository.videoSubtitleSaveBesideVideo。
+  'video_subtitle_save_beside_video',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
   'video_subtitle_style',

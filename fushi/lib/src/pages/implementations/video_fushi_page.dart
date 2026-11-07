@@ -150,6 +150,7 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
+        VideoSubtitleInAppTranscribe,
         showVideoSubtitleGenerateSheet,
         videoSubtitleEpisodeStatusLabel;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
