@@ -48,6 +48,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
@@ -70,9 +71,6 @@ const int kSrsClockSkewWarnMs = 10 * 60 * 1000;
 
 /// 后端拿不到服务器时间时的错误串（v2 不依赖服务器时间同步，保留给只想校时的调用方识别）。
 const String kSrsSyncServerTimeUnavailable = 'server time unavailable';
-
-/// 位置上的数据来自更新版本、本机读不了（设计 §8：停写并提示升级，不覆盖任何一方）。
-const String kSrsSyncNeedsUpgrade = 'srs sync data needs a newer app';
 
 /// 后端所指同步目录的稳定身份暂时拿不到（例如云盘账户还没认出来）：这一轮不同步它。
 const String kSrsSyncDirectoryIdentityUnavailable =
@@ -140,28 +138,23 @@ int? srsMaxConcurrentWritesOf(SyncAssetStore backend) =>
 Object srsBackendIdentityOf(SyncAssetStore backend) =>
     backend is ObfuscatingSyncBackend ? backend.inner : backend;
 
+/// [backend] 在引擎同步位置里的样子：身份按里层后端认、Dropbox 逐个写（见 [srsBackendIdentityOf] /
+/// [srsMaxConcurrentWritesOf]）。
+SrsLocationBackend srsLocationBackendOf(SyncAssetStore backend) =>
+    SrsLocationBackend(
+      backend,
+      maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+      identity: srsBackendIdentityOf(backend),
+    );
+
 /// [backend] 上 `fushi-srs/<profileUid>/<folder>/` 的位置实例（见 [srsBackendIdentityOf]）。
 SrsAssetLocationStore srsAssetLocation(
   SyncAssetStore backend,
   String profileUid, {
   String folder = kSrsSync2Folder,
-}) => SrsAssetLocationStore(
-  store: backend,
-  profileUid: profileUid,
-  folder: folder,
-  maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
-  backendIdentity: srsBackendIdentityOf(backend),
-);
+}) => srsLocationBackendOf(backend).location(profileUid, folder: folder);
 
-/// 本进程里已经确认旧集合根扫干净的位置（进程重启后的第一轮再扫一遍，接住围栏那一刻还在跑的旧版本晚到的写入）。
-final SrsLocationMigrationMemo _srsMigrationMemo = SrsLocationMigrationMemo();
-
-/// 生产实现：现有同步后端上的集合根（`fushi-srs/<profileUid>/v3/`）跑一轮同步 v2。先 [srsPrepareLocation]：立住
-/// 旧根 `v2/` 上让旧版本停下的围栏，旧根上的设备段迁过来。[directoryKey] 就是这个位置的稳定身份（本机按它记每个位置
-/// 传到了哪）。
-///
-/// 一轮成功之后旧根还有媒体残留：交给 [v1MediaMigrations] 在后台搬（[srsMigrateV1Media]，不挡这一轮、不占调度器的
-/// 串行队列；[onV1Bound] = 补了绑定、请一轮同步把它发出去）；没给就在这一轮里搬。
+/// 生产实现：引擎的 [srsRunLocationRound]，带上本机设备信息（[srsPublishDeviceInfo]）。
 Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
@@ -174,104 +167,20 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   SrsSyncStepCallback? onStep,
   SrsV1MediaMigrations? v1MediaMigrations,
   Future<void> Function()? onV1Bound,
-}) async {
-  SrsLocationStore currentRoot() => srsAssetLocation(backend, store.profileUid);
-  SrsLocationStore v1Root() =>
-      srsAssetLocation(backend, store.profileUid, folder: kSrsSync2V1Folder);
-  final SrsLocationStore location = currentRoot();
-  final SrsLocationPrepared prepared = await srsPrepareLocation(
-    host: store,
-    v1: v1Root(),
-    current: location,
-    locationId: directoryKey,
-    key: locationKey,
-    nowMs: () => store.now().$1,
-    writers: SrsAssetV1Writers(backend, store.profileUid),
-    memo: _srsMigrationMemo,
-    onStep: onStep,
-  );
-  if (prepared.needsUpgrade || prepared.error != null) {
-    final SrsSync2Report r = SrsSync2Report()
-      ..needsUpgrade = prepared.needsUpgrade
-      ..error = prepared.needsUpgrade ? kSrsSyncNeedsUpgrade : prepared.error
-      ..kdf = prepared.kdf;
-    return r;
-  }
-  srsLogMigrationLeftover(prepared, directoryKey);
-  // 本机型号 / 版本 / 平台随这一轮的 head 发布（别的设备的同步页 / 冲突中心据此认出这台设备）。
-  await srsPublishDeviceInfo(store);
-  final SrsSync2Report r = await srsSync2Round(
-    host: store,
-    location: location,
-    locationId: directoryKey,
-    nowMs: () => store.now().$1,
-    bootClockMs: store.trustedClock.bootNowMs,
-    key: locationKey,
-    onFetchProgress: onFetchProgress,
-    onUploadStart: onUploadStart,
-    beforeUpload: beforeUpload,
-    shouldStop: shouldStop,
-    onStep: onStep,
-  );
-  if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
-  if (r.error == null && prepared.mediaLeftover) {
-    // 本机这一轮在新根上读全了（没有缺段 / 坏段）才看得到已有的全部绑定；按名字存的旧文件等本位置的上传水位到了才删。
-    final bool canBind =
-        prepared.devicesSettled && r.missing == 0 && r.errors.isEmpty;
-    final String progressId = srsLocationProgressId(
-      directoryKey,
-      r.encrypted ? locationKey?.keyHex : null,
-    );
-    Future<SrsV1MediaReport> job(void Function(int, int)? onProgress) =>
-        srsMigrateV1Media(
-          host: store,
-          // 自己的实例（一轮的列表缓存不跟后台迁移共用）；建文件夹按后端身份进程内单飞，读按全部同名文件夹，
-          // 与并发的一轮 / 媒体对账不会建出两个同名前缀目录、也不会有对象落进读不到的那个。
-          v1: v1Root(),
-          current: currentRoot(),
-          locationId: directoryKey,
-          key: locationKey,
-          nowMs: () => store.now().$1,
-          canBind: canBind,
-          progressId: progressId,
-          recordPresence: true,
-          writers: SrsAssetV1Writers(backend, store.profileUid),
-          memo: _srsMigrationMemo,
-          onProgress: onProgress,
-          shouldStop: shouldStop,
-          onBound: onV1Bound,
-        );
-    if (v1MediaMigrations == null) {
-      srsLogV1MediaReport(await job(null), directoryKey);
-    } else {
-      v1MediaMigrations.start(directoryKey, job);
-    }
-  }
-  return r;
-}
-
-/// 旧根残留没处理成（读失败 / 解不开 / 新根口令问题）：不挡新根，但必须落日志（带原始栈），下一轮再试。
-void srsLogMigrationLeftover(SrsLocationPrepared prepared, String locationId) {
-  final String? leftover = prepared.leftoverError;
-  if (leftover == null) return;
-  ErrorLogService.instance.log(
-    'srsPrepareLocation',
-    StateError('srs v1 leftovers on $locationId: $leftover'),
-    prepared.leftoverStack ?? StackTrace.current,
-  );
-}
-
-/// 旧根媒体迁移删旧文件时逐个出的错：那些文件留着下一次再删，同步照样算成功，但每个错都记日志。
-void srsLogV1MediaReport(SrsV1MediaReport report, String locationId) {
-  for (final (Object e, StackTrace stack) in report.cleanupErrors) {
-    ErrorLogService.instance.log(
-      'srsMigrateV1Media.cleanup',
-      StateError('srs v1 media cleanup on $locationId: $e'),
-      stack,
-    );
-  }
-  report.cleanupErrors.clear();
-}
+}) => srsRunLocationRound(
+  srsLocationBackendOf(backend),
+  store,
+  directoryKey,
+  locationKey: locationKey,
+  publishDeviceInfo: srsPublishDeviceInfo,
+  onFetchProgress: onFetchProgress,
+  onUploadStart: onUploadStart,
+  beforeUpload: beforeUpload,
+  shouldStop: shouldStop,
+  onStep: onStep,
+  v1MediaMigrations: v1MediaMigrations,
+  onV1Bound: onV1Bound,
+);
 
 /// 本机直接读写的同步目录：本机作为互联 host 时，别的设备经互联写进来的就是这块目录，
 /// 本机自己的复习数据也要在这里发布、从这里读别人的（它不是任何一条同步通道）。
@@ -293,8 +202,7 @@ typedef SrsMediaSyncRunner =
       required String locationId,
     });
 
-/// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体
-/// （[srsSyncMedia]）。
+/// 生产实现：引擎的 [srsRunLocationMedia]。
 Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
@@ -302,13 +210,13 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SrsMediaCipher? cipher,
   required String locationId,
   bool uploadOnly = false,
-}) => srsSyncMedia(
+}) => srsRunLocationMedia(
+  srsLocationBackendOf(backend),
+  store,
+  mediaRoot,
   cipher: cipher,
   locationId: locationId,
   uploadOnly: uploadOnly,
-  location: srsAssetLocation(backend, store.profileUid),
-  store: store,
-  mediaRoot: mediaRoot,
 );
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
@@ -1412,7 +1320,7 @@ class SrsSyncScheduler {
               store: store,
               mediaRoot: mediaRoot,
               key: _locationKey?.call(l.locationId),
-              migrationMemo: _srsMigrationMemo,
+              migrationMemo: srsLocationMigrationMemo,
               v1MediaMigrations: _v1Media,
               onV1Bound: () async => unawaited(_publishFolderV1Bindings()),
               onFetchProgress: _reportFetchProgress,

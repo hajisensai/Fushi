@@ -7,8 +7,8 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
-/// 参数在设置页的输入形态。
-enum TtsParamKind { url, text, secret, choice, voice }
+/// 参数在设置页的输入形态。[multiline] 是多行文本（请求模板、请求头这类）。
+enum TtsParamKind { url, text, secret, choice, voice, multiline }
 
 /// 引擎的一个可配置参数。UI 按 [key] 取文案（app 侧 i18n），按 [kind] 选控件。
 class TtsParamSpec {
