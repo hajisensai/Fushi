@@ -4690,6 +4690,8 @@
   "lookup_audio_volume": "Volume opzoekaudio",
   "lookup_block_capture": "Schermopname blokkeren",
   "lookup_block_capture_hint": "Sluit het opzoek- en klembordpopupvenster uit van schermafbeeldingen, schermopnames en livestreaming (Windows / macOS). Schakel dit uit om schermafbeeldingen, opnames en streaming het opzoekpopup te laten vastleggen.",
+  "lookup_chinese_script_variants": "Match simplified and traditional Chinese",
+  "lookup_chinese_script_variants_hint": "When looking up Chinese, also find entries written in the other script (这个 ↔ 這個)",
   "lookup_dictionary_font_hint": "Lettertypen voor woordenboekpopups, met een live Japans voorbeeld",
   "lookup_dictionary_unified_style": "Woordenboekstijlen gelijktrekken",
   "lookup_dictionary_unified_style_hint": "Recolor imported dictionaries' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary's original colors.",

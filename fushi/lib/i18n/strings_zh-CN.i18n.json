@@ -4690,6 +4690,8 @@
   "lookup_audio_volume": "查词音量",
   "lookup_block_capture": "防截屏 / 防录屏",
   "lookup_block_capture_hint": "把查词悬浮窗从截图、录屏、直播串流中排除（Windows / macOS）。关闭后，截图、录屏和串流即可拍到查词悬浮窗。",
+  "lookup_chinese_script_variants": "简繁互查",
+  "lookup_chinese_script_variants_hint": "查中文时也查另一种字形的词条（这个 ↔ 這個）",
   "lookup_dictionary_font_hint": "词典弹窗使用的字体，可实时预览日文效果",
   "lookup_dictionary_unified_style": "统一词典样式",
   "lookup_dictionary_unified_style_hint": "将导入词典自带的标签、强调字与边框按当前强调色（Material）重新着色；关闭则保留各词典原样式。",

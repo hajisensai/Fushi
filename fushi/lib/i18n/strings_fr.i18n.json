@@ -4690,6 +4690,8 @@
   "lookup_audio_volume": "Volume audio de la recherche",
   "lookup_block_capture": "Bloquer la capture d'écran",
   "lookup_block_capture_hint": "Exclut les fenêtres de recherche et de presse-papiers des captures d'écran, enregistrements et diffusions en direct (Windows / macOS). Désactivez pour permettre la capture de la fenêtre de recherche.",
+  "lookup_chinese_script_variants": "Match simplified and traditional Chinese",
+  "lookup_chinese_script_variants_hint": "When looking up Chinese, also find entries written in the other script (这个 ↔ 這個)",
   "lookup_dictionary_font_hint": "Polices pour les fenêtres du dictionnaire, avec aperçu japonais en direct",
   "lookup_dictionary_unified_style": "Unifier les styles des dictionnaires",
   "lookup_dictionary_unified_style_hint": "Recolor imported dictionaries' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary's original colors.",
