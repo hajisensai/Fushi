@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3791 条。点号进各自文件。
+> 共 3795 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4229](bugs/BUG-4229-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
-| [BUG-4228](bugs/BUG-4228-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
-| [BUG-4227](bugs/BUG-4227-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
-> 共 3792 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4233](bugs/BUG-4233-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
+| [BUG-4232](bugs/BUG-4232-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
+| [BUG-4231](bugs/BUG-4231-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
 | [BUG-4230](bugs/BUG-4230-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |
 | [BUG-4229](bugs/BUG-4229-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |
 | [BUG-4228](bugs/BUG-4228-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |

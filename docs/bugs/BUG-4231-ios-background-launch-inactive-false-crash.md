@@ -1,4 +1,4 @@
-## BUG-4227 · iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退
+## BUG-4231 · iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退
 - **报告**：2026-11-07（用户：应用内自动闪退报告 1jhwtJQIZq，iOS 3.3.0-debug.24438）
 - **真实性**：✅ 真 bug。证据：`lastLifecycle=inactive@16:30:55.747 launch={applicationState=background scenes=1 foregroundScene=false}`，原生（`ios/Runner/AppDelegate.swift:812`）答 `hasUi=false`，标记初值本应是 `headless`，但 4ms 后被改成 `inactive`，判成「启动初始化未完成（停在前台时没了，疑似闪退）」。根因：
   - `fushi/lib/src/diagnostics/previous_exit_log.dart:1594`（修前）`foldIntoErrorLog` 挂观察者时补记 `WidgetsBinding.instance.lifecycleState`——iOS 后台拉起时引擎初始生命周期就是 `inactive`；

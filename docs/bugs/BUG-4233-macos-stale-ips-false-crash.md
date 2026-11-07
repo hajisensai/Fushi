@@ -1,4 +1,4 @@
-## BUG-4229 · macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退
+## BUG-4233 · macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退
 - **报告**：2026-11-07（用户：应用内自动闪退报告 J1ZWNUeaCT，macOS 3.3.0）
 - **真实性**：✅ 真 bug。报告里唯一证据是 `[Process.macCrashReport] app=fushi version=3.0.1 … at=2026-11-04 … termination: DYLD code=1 Library missing`，上次会话（3.3.0）已正常退出（无 `previousExitUnclean`），却被判成「崩溃（3.3.0）」弹闪退报告。根因：
   - `fushi/lib/src/diagnostics/previous_exit_log.dart:1742`（修前）收 `.ips` 的起点只取 `max(已读水位, now-7天)`，不看上次会话起点 `previous.startedAt`——上次会话启动前的报告也会被当成「上次怎么没的」；
