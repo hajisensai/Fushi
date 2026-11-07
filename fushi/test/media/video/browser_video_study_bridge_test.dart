@@ -26,6 +26,7 @@ BrowserVideoSample _sample({
   bool playing = true,
   double speed = 1.0,
   bool ended = false,
+  bool attending = true,
   BrowserVideoCue? cue,
 }) => BrowserVideoSample(
   mediaKey: mediaKey,
@@ -35,6 +36,7 @@ BrowserVideoSample _sample({
   playing: playing,
   speed: speed,
   ended: ended,
+  attending: attending,
   cue: cue,
 );
 
@@ -73,6 +75,7 @@ class _Rig {
 
   static _Rig create({
     Duration idleTimeout = const Duration(seconds: 20),
+    Duration? studyIdleTimeout,
     VideoStudyAccrualArbiter? arbiter,
   }) {
     _fakeNow = DateTime(2026, 1, 1, 12);
@@ -82,6 +85,7 @@ class _Rig {
       database: () => db,
       now: () => _fakeNow,
       idleTimeout: idleTimeout,
+      studyIdleTimeout: () => studyIdleTimeout,
       // 每个用例独立仲裁，不和进程级实例串味。
       arbiter: arbiter ?? VideoStudyAccrualArbiter(),
     );
@@ -124,6 +128,20 @@ class _Rig {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('BrowserVideoSample.tryParse：attending 缺省当在场，类型不对整条丢弃', () {
+    Map<String, dynamic> body(Object? attending) => <String, dynamic>{
+      'mediaKind': 'video',
+      'mediaKey': 'web:x',
+      'positionMs': 0,
+      'playing': false,
+      'attending': ?attending,
+    };
+    expect(BrowserVideoSample.tryParse(body(null))!.attending, isTrue);
+    expect(BrowserVideoSample.tryParse(body(false))!.attending, isFalse);
+    expect(BrowserVideoSample.tryParse(body(true))!.attending, isTrue);
+    expect(BrowserVideoSample.tryParse(body('no')), isNull);
+  });
 
   test('BrowserVideoSample.tryParse 契约', () {
     final BrowserVideoSample? ok = BrowserVideoSample.tryParse(
@@ -309,11 +327,78 @@ void main() {
     await rig.open(_sample(positionMs: 0));
     rig.play(fromMs: 0, seconds: 3);
     expect(rig.bridge.debugActiveMediaKey, 'web:yt-abc');
+    // 页面被直接关掉、没发 ended：墙钟照走 30s 都没有样本。
+    _fakeNow = _fakeNow.add(const Duration(seconds: 30));
     // 空闲 Timer 是真定时器（生产里就是它兜「页面被关没发 ended」）；40ms 到点即停。
     await Future<void>.delayed(const Duration(milliseconds: 150));
     expect(rig.bridge.debugActiveMediaKey, isNull);
     await rig.bridge.stopAll();
-    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 3000);
+    expect(
+      _totalMs(await _segments(rig.db), 'web:yt-abc'),
+      3000,
+      reason: '时间只结算到最后一条样本，等超时的空档不计',
+    );
+  });
+
+  test('暂停且人不在页面前（切走标签 / 窗口失焦）即停表，回来在场再续', () async {
+    final _Rig rig = _Rig.create();
+    await rig.open(_sample(positionMs: 0));
+    rig.play(fromMs: 0, seconds: 2);
+    // 暂停在页面前查词：心跳每 5s，照计。
+    for (int i = 0; i < 2; i++) {
+      _fakeNow = _fakeNow.add(const Duration(seconds: 5));
+      rig.bridge.onSample(_sample(positionMs: 2000, playing: false));
+    }
+    // 切走：暂停且不在场，之后 30s 的心跳都不计。
+    rig.bridge.onSample(
+      _sample(positionMs: 2000, playing: false, attending: false),
+    );
+    for (int i = 0; i < 6; i++) {
+      _fakeNow = _fakeNow.add(const Duration(seconds: 5));
+      rig.bridge.onSample(
+        _sample(positionMs: 2000, playing: false, attending: false),
+      );
+    }
+    // 切回：在场，再暂停 5s 照计。
+    rig.bridge.onSample(_sample(positionMs: 2000, playing: false));
+    _fakeNow = _fakeNow.add(const Duration(seconds: 5));
+    rig.bridge.onSample(_sample(positionMs: 2000, playing: false));
+    await rig.bridge.stopAll();
+    expect(
+      _totalMs(await _segments(rig.db), 'web:yt-abc'),
+      2000 + 10000 + 5000,
+    );
+  });
+
+  test('切走但仍在播放：照计（同 app 内视频「切走仍在播照常计时」）', () async {
+    final _Rig rig = _Rig.create();
+    await rig.open(_sample(positionMs: 0, attending: false));
+    for (int i = 1; i <= 4; i++) {
+      _fakeNow = _fakeNow.add(const Duration(seconds: 1));
+      rig.bridge.onSample(_sample(positionMs: i * 1000, attending: false));
+    }
+    await rig.bridge.stopAll();
+    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 4000);
+  });
+
+  test('暂停在场超过学习空闲门：之后不再入账（与阅读面 / app 内视频同一设置）', () async {
+    final _Rig rig = _Rig.create(studyIdleTimeout: const Duration(seconds: 10));
+    await rig.open(_sample(positionMs: 0));
+    rig.play(fromMs: 0, seconds: 2);
+    // 生产里时钟每 60s 结算一窗、窗末空闲则整窗丢弃（所有学习面同一语义）；这里先把
+    // 播放段结算掉（等同那一拍 tick 已落），只验暂停段。
+    await rig.trackers.single.clock.flushNow();
+    // 暂停 30s，在场、心跳每 5s，但没有任何播放推进喂门。
+    for (int i = 0; i < 6; i++) {
+      _fakeNow = _fakeNow.add(const Duration(seconds: 5));
+      rig.bridge.onSample(_sample(positionMs: 2000, playing: false));
+    }
+    await rig.bridge.stopAll();
+    expect(
+      _totalMs(await _segments(rig.db), 'web:yt-abc'),
+      2000,
+      reason: '暂停在场 30s 超过 10s 空闲门，这一窗不入账',
+    );
   });
 
   // 反馈 jk4rTLHPZ_：内置浏览器里看 YouTube，Fushi 在出字幕、时长照计，chars 恒 0——

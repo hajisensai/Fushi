@@ -22,6 +22,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  * `positionMs`：整数 ≥ 0；`durationMs`：整数或 null（直播 Infinity 时扩展发 null）；
 ///  * `playing`：bool；`speed`：数字 > 0（缺省 1.0）；
 ///  * `ended`：bool（缺省 false；true = 页面卸载 / 换视频，立刻停表）；
+///  * `attending`：bool（缺省 true）——人在页面前（页面可见且本页 / 页内查词弹窗持有
+///    焦点）。暂停且不在场即停表，与 app 内视频「失焦时仍在播放才计」同一判据；
 ///  * `cue`：null 或 `{index, startMs, endMs, text}`——此刻 Fushi 在页面上出的那一句
 ///    （视频轴，已套用户的时轴偏移）。缺省 / null = 没有在出字幕，不计字（反馈
 ///    jk4rTLHPZ_：此前契约里没有这一项，网页视频的字幕字数恒为 0）。
@@ -34,6 +36,7 @@ class BrowserVideoSample {
     required this.playing,
     required this.speed,
     required this.ended,
+    this.attending = true,
     this.cue,
   });
 
@@ -44,6 +47,9 @@ class BrowserVideoSample {
   final bool playing;
   final double speed;
   final bool ended;
+
+  /// 人在页面前（页面可见且持有焦点）。旧扩展不发这一项 = 当在场。
+  final bool attending;
 
   /// 此刻正在出的字幕句；null = 没有。
   final BrowserVideoCue? cue;
@@ -76,6 +82,8 @@ class BrowserVideoSample {
     }
     final Object? rawEnded = body['ended'];
     if (rawEnded != null && rawEnded is! bool) return null;
+    final Object? rawAttending = body['attending'];
+    if (rawAttending != null && rawAttending is! bool) return null;
     final Object? rawCue = body['cue'];
     BrowserVideoCue? cue;
     if (rawCue != null) {
@@ -90,6 +98,7 @@ class BrowserVideoSample {
       playing: playing,
       speed: speed,
       ended: rawEnded == true,
+      attending: rawAttending != false,
       cue: cue,
     );
   }
@@ -233,6 +242,7 @@ class _ActiveSession {
     required this.tracker,
     required this.source,
     required this.claim,
+    required this.lastSampleAt,
   });
 
   final String mediaKey;
@@ -242,6 +252,10 @@ class _ActiveSession {
   /// 本会话在视频跨面入账仲裁里的登记（时钟 `isActive` 读它），会话结束即释放。
   final VideoStudyAccrualClaim claim;
   Timer? idle;
+
+  /// 最后一条样本到达的时刻 = 本会话时钟的「现在」（见 [BrowserVideoStudyBridge] 类文档
+  /// 「时间轴」）。
+  DateTime lastSampleAt;
 }
 
 /// 浏览器扩展视频沉浸时间 → 学习统计的桥（新写入面 = 新的 [StudyClock] 实例，
@@ -257,11 +271,17 @@ class _ActiveSession {
 /// （来回抢会切碎段，但时长不重复）。样本 `ended` 或超过 [idleTimeout] 没有新样本
 /// （暂停后扩展不再发样本 / 页面被关 / 扩展断连、没来得及发 ended）即停表释放。
 ///
-/// 暂停的取舍：扩展只在播放中每 ~1s 发样本、暂停那一刻发一条，此后静默——app 侧无从
-/// 知道用户是不是还在页面前查词。所以暂停后的时间按会话存活计、最多 [idleTimeout]
-/// （默认 20s），之后停表；再播放开新会话。代价：标签页被直接关掉又没发出 `ended` 时，
-/// 最后 ≤ [idleTimeout] 的空档也被计入。网页视频没有库条目：完成标记 no-op、不报
-/// 单集完成。
+/// 暂停与在场（2026-11-07）：扩展播放中每 ~1s、暂停中每 ~5s 发样本，切走 / 切回立刻补
+/// 一条，样本带 `attending`（页面可见且持有焦点）。播放中或在场 → 计时（暂停查词照计，
+/// 空闲门与阅读面同一设置 [studyIdleTimeout]）；暂停且不在场 → 停表（同 app 内视频「失焦
+/// 时仍在播放才计」）。超过 [idleTimeout] 没有任何样本 = 页面被关 / 扩展断连：停表，且时间
+/// 只结算到最后一条样本，等待超时的空档不计。
+///
+/// 时间轴：会话时钟的「现在」恒为最后一条样本到达的时刻（[_ActiveSession.lastSampleAt]），
+/// 没有样本作证的时间一律不入账——时钟自己的 60s tick 落在两条样本之间也只结算到上一条
+/// 样本，下一条到来时补齐。总量不变，只是滞后不到一个样本间隔；断连时多等的那段永远
+/// 不会被结算进去。网页视频没有
+/// 库条目：完成标记 no-op、不报单集完成。
 ///
 /// 与 app 内视频同时在播：时长只一边入账，裁决归 [VideoStudyAccrualArbiter]（本 app
 /// 持有焦点且 app 内视频在计时 → app 内入账、这里不入账；否则这里入账）。字幕字数
@@ -271,8 +291,10 @@ class BrowserVideoStudyBridge {
     required FushiDatabase Function() database,
     DateTime Function()? now,
     this.idleTimeout = const Duration(seconds: 20),
+    Duration? Function()? studyIdleTimeout,
     VideoStudyAccrualArbiter? arbiter,
   }) : _database = database,
+       _studyIdleTimeout = studyIdleTimeout,
        _now = now ?? DateTime.now,
        _arbiter = arbiter ?? VideoStudyAccrualArbiter.instance;
 
@@ -282,8 +304,12 @@ class BrowserVideoStudyBridge {
   final DateTime Function() _now;
   final VideoStudyAccrualArbiter _arbiter;
 
-  /// 这么久没有新样本就当页面已关 / 扩展断连，停表释放。扩展播放中每 ~1s 一条，
-  /// 20s 足够宽（网络抖动 / 标签页被节流）又不至于把关掉的页面挂着不封段。
+  /// 学习空闲门（阅读面同一设置 `reading.stats_idle_timeout_minutes`）：暂停且在场超过它
+  /// 不再入账。每次开会话读一次（会话短、断连即重开）。null = 不设。
+  final Duration? Function()? _studyIdleTimeout;
+
+  /// 这么久没有新样本就当页面已关 / 扩展断连，停表释放。扩展播放中每 ~1s、暂停中每 ~5s
+  /// 一条，20s 足够宽（网络抖动 / 标签页被节流）又不至于把关掉的页面挂着不封段。
   final Duration idleTimeout;
 
   _ActiveSession? _active;
@@ -313,14 +339,29 @@ class BrowserVideoStudyBridge {
       // 只对「正在统计的那条」停表；没开过的 ended（页面开了没播就关）什么也不做，
       // 不为它建一条零时长的段。
       if (session != null) {
+        session.lastSampleAt = _now();
         session.source.apply(sample);
         _stopSession(session, reason: 'ended');
       }
       return;
     }
     session ??= _startSession(sample);
+    session.lastSampleAt = _now();
     session.source.apply(sample);
+    _applyAttendance(session, sample);
     _armIdle(session);
+  }
+
+  /// 起停表的唯一判据：播放中或人在页面前 → 计；暂停且不在场 → 停（与 app 内视频
+  /// `studyClockGateMayRun` 的「失焦时仍在播放才计」同律）。start / stop 都幂等。
+  void _applyAttendance(_ActiveSession session, BrowserVideoSample sample) {
+    final bool counting = sample.playing || sample.attending;
+    if (counting) {
+      session.tracker.clock.start();
+    } else {
+      unawaited(session.tracker.clock.stop());
+    }
+    session.claim.update(running: counting);
   }
 
   /// 进程退出 / server 停止：封掉正在统计的段并等最后一笔写完成。可重复调用。
@@ -338,6 +379,8 @@ class BrowserVideoStudyBridge {
     );
     // settle 在 tracker 建好后才有对象可结算；登记先于时钟，时钟的 isActive 读它。
     VideoWatchTracker? created;
+    // 时钟的「现在」走会话时间轴 = 最后一条样本到达的时刻（类文档「时间轴」）。
+    _ActiveSession? owner;
     final VideoStudyAccrualClaim claim = _arbiter.claim(
       surface: VideoStudySurface.browser,
       settle: () => created?.clock.flushNow(),
@@ -349,11 +392,12 @@ class BrowserVideoStudyBridge {
         mediaKind: kActivityMediaVideo,
         mediaKey: key,
         title: sample.displayTitle,
-        // 不设空闲门：会话本身由 [idleTimeout] 收口（无新样本即停表），播放中的
-        // 样本也经 tracker 的采样 touch；再叠一道 10 分钟门没有意义。
+        // 空闲门与阅读面 / app 内视频同一设置：播放中 tracker 每次采样 touch，暂停且
+        // 在场超过它就不再入账。
+        idleTimeout: _studyIdleTimeout?.call(),
         // 与 app 内视频同时播放时只一边入账时长（[VideoStudyAccrualArbiter]）。
         isActive: () => claim.timeAllowed,
-        now: _now,
+        now: () => owner?.lastSampleAt ?? _now(),
         onWriteError: (Object e, StackTrace st) => ErrorLogService.instance.log(
           'StudyClock.write(browser-video)',
           e,
@@ -369,16 +413,15 @@ class BrowserVideoStudyBridge {
     tracker
       ..attach(source)
       ..start();
-    // tracker.start() 只起采样；浏览器桥没有页面遮挡 / 生命周期可言（扩展只在页面
-    // 播放时发样本），会话存活即计时。
-    tracker.clock.start();
-    claim.update(running: true);
+    // tracker.start() 只起采样；起停表由 onSample 的 [_applyAttendance] 按样本决定。
     final _ActiveSession session = _ActiveSession(
       mediaKey: key,
       tracker: tracker,
       source: source,
       claim: claim,
+      lastSampleAt: _now(),
     );
+    owner = session;
     _active = session;
     studyDiag('browser-video', 'start $key title=${sample.displayTitle}');
     return session;
@@ -408,6 +451,7 @@ class BrowserVideoStudyBridge {
     session.idle?.cancel();
     session.idle = Timer(idleTimeout, () {
       if (!identical(_active, session)) return;
+      // 页面被关 / 扩展断连：时钟的「现在」停在最后一条样本，等超时的这段不入账。
       _stopSession(session, reason: 'idle ${idleTimeout.inSeconds}s');
     });
   }
