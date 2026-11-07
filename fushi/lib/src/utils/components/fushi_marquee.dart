@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:marquee/marquee.dart';
 
 /// Wrapper for a Marquee that only displays the Marquee effect only when there
@@ -392,57 +393,176 @@ class FushiMarquee extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        var span = TextSpan(text: text, style: style);
-
-        var tp = TextPainter(
-          maxLines: 1,
-          textAlign: TextAlign.left,
-          textDirection: TextDirection.ltr,
-          text: span,
-        );
-
-        tp.layout(maxWidth: constraints.maxWidth);
-
-        if (tp.didExceedMaxLines) {
+    // 量字与真正画字的 Text 用同一套样式 / 缩放：列表行的标题样式来自祖先
+    // DefaultTextStyle（FushiListItem 的 listTitle），只拿 [style] 量会按 14px 默认字
+    // 判溢出、给滚动版定错行高（BUG-4237）。
+    final TextStyle effectiveStyle = DefaultTextStyle.of(
+      context,
+    ).style.merge(style);
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: text, style: effectiveStyle),
+      textDirection: textDirection,
+      textScaler: textScaleFactor == null
+          ? MediaQuery.textScalerOf(context)
+          : TextScaler.linear(textScaleFactor!),
+      maxLines: 1,
+    )..layout();
+    final Size natural = Size(painter.width, painter.height);
+    final double alphabetic = painter.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
+    final double ideographic = painter.computeDistanceToActualBaseline(
+      TextBaseline.ideographic,
+    );
+    painter.dispose();
+    return _MarqueeIntrinsics(
+      natural: natural,
+      alphabeticBaseline: alphabetic,
+      ideographicBaseline: ideographic,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (natural.width > constraints.maxWidth) {
+            return SizedBox(
+              height: natural.height,
+              width: constraints.maxWidth,
+              child: Marquee(
+                text: text,
+                style: style,
+                textScaleFactor: textScaleFactor,
+                textDirection: textDirection,
+                scrollAxis: scrollAxis,
+                crossAxisAlignment: crossAxisAlignment,
+                blankSpace: blankSpace,
+                velocity: velocity,
+                startAfter: startAfter,
+                pauseAfterRound: pauseAfterRound,
+                numberOfRounds: numberOfRounds,
+                showFadingOnlyWhenScrolling: showFadingOnlyWhenScrolling,
+                fadingEdgeStartFraction: fadingEdgeStartFraction,
+                fadingEdgeEndFraction: fadingEdgeEndFraction,
+                startPadding: startPadding,
+                accelerationDuration: accelerationDuration,
+                accelerationCurve: accelerationCurve,
+                decelerationDuration: decelerationDuration,
+                decelerationCurve: decelerationCurve,
+                onDone: onDone,
+              ),
+            );
+          }
           return SizedBox(
-            height: tp.height,
-            width: constraints.maxWidth,
-            child: Marquee(
-              text: text,
-              style: style,
-              textScaleFactor: textScaleFactor,
-              textDirection: textDirection,
-              scrollAxis: scrollAxis,
-              crossAxisAlignment: crossAxisAlignment,
-              blankSpace: blankSpace,
-              velocity: velocity,
-              startAfter: startAfter,
-              pauseAfterRound: pauseAfterRound,
-              numberOfRounds: numberOfRounds,
-              showFadingOnlyWhenScrolling: showFadingOnlyWhenScrolling,
-              fadingEdgeStartFraction: fadingEdgeStartFraction,
-              fadingEdgeEndFraction: fadingEdgeEndFraction,
-              startPadding: startPadding,
-              accelerationDuration: accelerationDuration,
-              accelerationCurve: accelerationCurve,
-              decelerationDuration: decelerationDuration,
-              decelerationCurve: decelerationCurve,
-              onDone: onDone,
-            ),
-          );
-        } else {
-          return SizedBox(
-            width: constraints.maxWidth,
+            // 无界宽（不在列表行 / 对话框里时）按文字自然宽，别撑成无限宽。
+            width: constraints.hasBoundedWidth ? constraints.maxWidth : null,
             child: Align(
               // Remember for RTL
               alignment: Alignment.centerLeft,
+              // 恒为一行高（与滚动版、intrinsic 高一致），不在有界高里撑满。
+              heightFactor: 1,
               child: Text(text, style: style, textAlign: TextAlign.left),
             ),
           );
-        }
-      },
+        },
+      ),
     );
   }
+}
+
+/// 替 [FushiMarquee] 里的 LayoutBuilder 回答 intrinsic 尺寸与 dry layout（BUG-4237）。
+///
+/// AlertDialog / Apple 表单式对话框把正文包在 `IntrinsicWidth` 里量宽；往下问到
+/// LayoutBuilder 时 debug 抛「LayoutBuilder does not support returning intrinsic
+/// dimensions」、对话框面板没有尺寸，命中测试再抛「Cannot hit test a render box with
+/// no size」，只剩遮罩挡住页面；release 跳过断言答 0，跑马灯行被量成 0 宽。
+/// 这里按文字自然尺寸回答：最大宽 = 一行放下全文的宽，最小宽 0（放不下就滚动，
+/// 任何宽都能显示），高恒为一行。布局 / 绘制 / 命中原样交给子树。
+class _MarqueeIntrinsics extends SingleChildRenderObjectWidget {
+  const _MarqueeIntrinsics({
+    required this.natural,
+    required this.alphabeticBaseline,
+    required this.ideographicBaseline,
+    required super.child,
+  });
+
+  final Size natural;
+  final double alphabeticBaseline;
+  final double ideographicBaseline;
+
+  @override
+  _RenderMarqueeIntrinsics createRenderObject(BuildContext context) =>
+      _RenderMarqueeIntrinsics(
+        natural: natural,
+        alphabeticBaseline: alphabeticBaseline,
+        ideographicBaseline: ideographicBaseline,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderMarqueeIntrinsics renderObject,
+  ) {
+    renderObject
+      ..natural = natural
+      ..alphabeticBaseline = alphabeticBaseline
+      ..ideographicBaseline = ideographicBaseline;
+  }
+}
+
+class _RenderMarqueeIntrinsics extends RenderProxyBox {
+  _RenderMarqueeIntrinsics({
+    required Size natural,
+    required double alphabeticBaseline,
+    required double ideographicBaseline,
+  }) : _natural = natural,
+       _alphabeticBaseline = alphabeticBaseline,
+       _ideographicBaseline = ideographicBaseline;
+
+  Size _natural;
+  set natural(Size value) {
+    if (value == _natural) return;
+    _natural = value;
+    markNeedsLayout();
+  }
+
+  double _alphabeticBaseline;
+  set alphabeticBaseline(double value) {
+    if (value == _alphabeticBaseline) return;
+    _alphabeticBaseline = value;
+    markNeedsLayout();
+  }
+
+  double _ideographicBaseline;
+  set ideographicBaseline(double value) {
+    if (value == _ideographicBaseline) return;
+    _ideographicBaseline = value;
+    markNeedsLayout();
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _natural.width;
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _natural.height;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _natural.height;
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) =>
+      constraints.constrain(
+        Size(
+          constraints.hasBoundedWidth ? constraints.maxWidth : _natural.width,
+          _natural.height,
+        ),
+      );
+
+  @override
+  double? computeDryBaseline(
+    covariant BoxConstraints constraints,
+    TextBaseline baseline,
+  ) => switch (baseline) {
+    TextBaseline.alphabetic => _alphabeticBaseline,
+    TextBaseline.ideographic => _ideographicBaseline,
+  };
 }

@@ -41,12 +41,17 @@ void main() {
           size: const Size(150, 80),
         ),
       );
-      await tester.pumpAndSettle();
+      // 150 宽里标题按实际字号放不下：走跑马灯（BUG-4237 前按 14px 默认字量、误判
+      // 放得下，画成截断的「Di…」）。跑马灯一直滚、不会 settle，取首帧。
+      await tester.pump();
 
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile('golden_files/list_tile_narrow.png'),
       );
+      // 卸掉跑马灯，别留下滚动计时器。
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
     });
 
     testWidgets('wide layout', (tester) async {
