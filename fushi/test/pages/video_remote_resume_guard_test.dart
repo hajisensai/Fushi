@@ -193,10 +193,15 @@ void main() {
         ),
         reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );
-      // 读侧用 helper 结果元组构造按集 key。
+      // 读侧用 helper 结果元组读按集断点（BUG-4231：经 readLocalRemoteVideoPosition
+      // 直接读库，键由它按 videoRemotePositionEpisodePrefKey 构造）。
       expect(
-        src.contains('videoRemotePositionEpisodePrefKey(uid, ep)'),
-        isTrue,
+        _flat(src),
+        contains(
+          _flat(
+            'readLocalRemoteVideoPosition(appModel.database, uid, episodeIndex: ep)',
+          ),
+        ),
         reason: 'read-side key must derive from the helper tuple',
       );
       // 写侧（_persistRemotePosition）用 helper 结果构造同一按集 key。

@@ -217,6 +217,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           snapshot: snapshot,
         );
         if (step.localChanged) report.localBookProgressPulled++;
+        // 摘要计数（BUG-4235）只数位置真的挪动了的：落地了 host 的进度 / 推出了
+        // 本机的进度。只对齐时间戳（synced）不算变化。
+        if (step.action == BookProgressSyncAction.applyRemote &&
+            step.localChanged) {
+          report.bookProgressReceived++;
+        } else if (step.action == BookProgressSyncAction.pushLocal) {
+          report.bookProgressSent++;
+        }
         if (step.action == BookProgressSyncAction.conflict) {
           report.conflicts.add(
             SyncConflict(
@@ -288,8 +296,12 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
             await sync.alignSynced(key, local: local, remote: host);
           case BookProgressSyncAction.pushLocal:
             await sync.pushLocal(key, local: local, remote: host);
+            report.notePlaybackPositionMoved(sync.kind, received: false);
           case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host, local: local);
+            // BUG-3537：判定后本端被改写则不落地，也不计「已拉取」（BUG-4235）。
+            if (await sync.applyRemote(key, host, local: local)) {
+              report.notePlaybackPositionMoved(sync.kind, received: true);
+            }
           case BookProgressSyncAction.conflict:
             report.conflicts.add(
               SyncConflict(

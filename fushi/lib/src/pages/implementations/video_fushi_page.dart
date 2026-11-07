@@ -343,6 +343,7 @@ import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
+import 'package:fushi/src/media/video/remote_video_resume.dart';
 import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
@@ -4573,7 +4574,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             : EpisodeStartIntent.explicitCue,
         initialPositionMsOverride:
             widget.sourceReview?.startMs ??
-            _resolveRemoteInitialPositionMs(
+            await _resolveRemoteInitialPositionMs(
               _remoteMembers[startIndex],
               startIndex,
             ),
@@ -4604,7 +4605,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 起播集恢复其按集断点（host 真相 vs 本地 prefs 取较新者）。
       initialPositionMsOverride:
           widget.sourceReview?.startMs ??
-          _resolveRemoteInitialPositionMs(info, startIndex),
+          await _resolveRemoteInitialPositionMs(info, startIndex),
     );
   }
 
@@ -4677,6 +4678,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
     final List<SubtitleSource> restoredLocalSubtitles =
         await _restoreRemoteLocalSubtitleFiles(index);
+    final int initialPositionMs =
+        initialPositionMsOverride ??
+        await _readPersistedRemotePositionForEpisode(index);
     if (seq != _episodeLoadSeq || !mounted) return;
     _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
@@ -4686,9 +4690,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _youtubeVariantsAudioUrl = null;
     _youtubeVariantsLoading = false;
     _youtubeVariantsResolved = false;
-    final int initialPositionMs =
-        initialPositionMsOverride ??
-        _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
     _setLoadingPhase(_VideoLoadPhase.connecting);
     try {
@@ -5118,29 +5119,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// `_activeBookUid`（= 远端 `RemoteVideoInfo.id`，每次列举不变）。TODO-885：
   /// [episodeIndex]>0 用按集 key（`#ep<index>` 后缀），0 回退整书 key（向后兼容单视频 /
   /// 旧 TODO-559 prefs）。
-  int _readPersistedRemotePositionForEpisode(int episodeIndex) {
+  ///
+  /// BUG-4231：从库里读（[readLocalRemoteVideoPosition]），不读 prefsRepo 的内存缓存——
+  /// 互联 sweep / 冲突弹窗只写库，缓存里留着的是本机上次自己写的旧断点。
+  Future<int> _readPersistedRemotePositionForEpisode(int episodeIndex) async {
     final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
-    final Object? raw = appModel.prefsRepo.getPref(
-      videoRemotePositionEpisodePrefKey(uid, ep),
-      defaultValue: 0,
+    final PlaybackPosition local = await readLocalRemoteVideoPosition(
+      appModel.database,
+      uid,
+      episodeIndex: ep,
     );
-    final int v = raw is num
-        ? raw.toInt()
-        : int.tryParse(raw?.toString() ?? '') ?? 0;
-    return v < 0 ? 0 : v;
-  }
-
-  /// 读 per-book/per-episode 远端断点的本地「最后更新时间」（无则 0）。TODO-653 冲突解决用。
-  int _readPersistedRemotePositionAtForEpisode(int episodeIndex) {
-    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
-    final Object? raw = appModel.prefsRepo.getPref(
-      videoRemotePositionEpisodeAtPrefKey(uid, ep),
-      defaultValue: 0,
-    );
-    final int v = raw is num
-        ? raw.toInt()
-        : int.tryParse(raw?.toString() ?? '') ?? 0;
-    return v < 0 ? 0 : v;
+    return local.positionMs < 0 ? 0 : local.positionMs;
   }
 
   /// 读本地持久化的远端视频 [uid] 字幕调轴（prefs，无记录返回 0）。与断点同款
@@ -5284,18 +5273,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集 prefs 之间「取较新时间
   /// 戳」（[resolvePositionLww]）。host 进度新于本地时跨设备恢复；本地新于 host 时
   /// 不被旧 host 回退。非起播集只用本地按集 prefs（host 清单只带整书/当前集进度）。
-  int _resolveRemoteInitialPositionMs(RemoteVideoInfo info, int episodeIndex) {
+  /// BUG-4231：本机断点读库、互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。
+  Future<int> _resolveRemoteInitialPositionMs(
+    RemoteVideoInfo info,
+    int episodeIndex,
+  ) {
     // host 的 info.positionMs 是整书/当前集进度，只对 host 的 currentEpisode 那集叠加；
     // 其它集 host 没带进度 → 退本地按集 prefs。
     final bool hostProgressApplies =
         !info.isPlaylist || episodeIndex == info.currentEpisode;
-    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-      localPositionMs: _readPersistedRemotePositionForEpisode(episodeIndex),
-      localUpdatedAtMs: _readPersistedRemotePositionAtForEpisode(episodeIndex),
-      remotePositionMs: hostProgressApplies ? info.positionMs : 0,
-      remoteUpdatedAtMs: hostProgressApplies ? info.positionUpdatedAtMs : 0,
+    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
+    return resolveRemoteVideoResumeMs(
+      db: appModel.database,
+      client: _effectiveRemoteClient!,
+      uid: uid,
+      episodeIndex: ep,
+      listed: hostProgressApplies
+          ? (positionMs: info.positionMs, updatedAtMs: info.positionUpdatedAtMs)
+          : (positionMs: 0, updatedAtMs: 0),
     );
-    return winner.positionMs < 0 ? 0 : winner.positionMs;
   }
 
   /// 远端视频断点位置持久化（controller 每秒至多一次回调 / flush / dispose）。

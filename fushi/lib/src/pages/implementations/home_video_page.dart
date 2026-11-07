@@ -84,6 +84,7 @@ import 'package:fushi/src/media/video/media_server/media_server_library.dart'
 import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
+import 'package:fushi/src/media/video/remote_video_resume.dart';
 import 'package:fushi/src/media/video/remote_video_subtitle_refetch.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
@@ -556,6 +557,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 再重读一次——不在播放期间隔几秒就在后台重列整个书架。
   bool _watchProgressStale = false;
 
+  /// BUG-4236：本机远端视频断点变化监听（[watchLocalRemoteVideoPositionsChanged]）。
+  /// 远端卡的「看到 X」是清单快照与本机库断点取较新（[withLocalRemoteVideoPositions]）；
+  /// 清单有 TTL 缓存、页面常驻，互联 sweep 落地 host 的新断点或本机刚看完回来时，
+  /// 只有本机库断点变了——由它驱动重算远端卡，不等清单过期 / 下拉刷新。
+  StreamSubscription<void>? _remotePositionsSub;
+  Timer? _remotePositionsReloadDebounce;
+
+  /// 本页不在前台时到达的本机远端断点变化：露出来再重算一次（同 [_watchProgressStale]）。
+  bool _remotePositionsStale = false;
+
   /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
   bool _routeWasCurrent = true;
 
@@ -866,6 +877,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _watchProgressSub = widget.repo.watchVideoWatchProgressChanged().listen(
       _onWatchProgressChanged,
     );
+    // BUG-4236：本机远端断点（sweep / 冲突弹窗 / 播放页 / 对端 PUT 写入）变了 →
+    // 远端卡的「看到 X」跟着重算。
+    _remotePositionsSub = watchLocalRemoteVideoPositionsChanged(
+      appModelNoUpdate.database,
+    ).listen(_onRemotePositionsChanged);
     // BUG-1699：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
     // 落库后自动重载折叠映射——远端占位卡与新同步的合集立即成组。
     _collectionTablesSub = appModelNoUpdate.database
@@ -967,9 +983,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     });
   }
 
+  /// BUG-4236：本机远端断点变了。前台 → 防抖后重算远端卡（清单走缓存，只重读本机
+  /// 断点，见 [_loadRemoteVideos]）；不在前台 → 记一笔，露出来时再算。
+  void _onRemotePositionsChanged(void _) {
+    if (!mounted) return;
+    _remotePositionsReloadDebounce?.cancel();
+    _remotePositionsReloadDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () {
+        if (!mounted) return;
+        if (!_isShowingWatchProgress) {
+          _remotePositionsStale = true;
+          return;
+        }
+        setState(() {
+          _remoteFuture = _loadRemoteVideos();
+        });
+      },
+    );
+  }
+
   /// 露出来时补做被推迟的进度重读（没有推迟的就什么都不做）。
   void _reloadStaleWatchProgress() {
-    if (!mounted || !_watchProgressStale) return;
+    if (!mounted) return;
+    if (_remotePositionsStale) {
+      setState(() {
+        _remoteFuture = _loadRemoteVideos();
+      });
+    }
+    if (!_watchProgressStale) return;
     _watchProgressStale = false;
     _refreshAfterPlayback();
   }
@@ -1011,6 +1053,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _videoUidsRefreshTimer?.cancel();
     _watchProgressSub?.cancel();
     _watchProgressReloadDebounce?.cancel();
+    _remotePositionsSub?.cancel();
+    _remotePositionsReloadDebounce?.cancel();
     _collectionTablesSub?.cancel();
     _downloadSubscriptionsSub?.cancel();
     _legacySubscriptionStore?.revision.removeListener(
@@ -1957,6 +2001,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }) async {
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     _jellyfinGateAtLastLoad = _jellyfinGate;
+    // 每轮都按此刻的本机断点重算（[withLocalRemoteVideoPositions]），之前记下的
+    // 「断点变了待重算」随之作废（BUG-4236）。
+    _remotePositionsStale = false;
     // 远端清单换代 = 封面文件路径集合可能变，记忆表随之作废（见 _remoteCoverFileExists）。
     _remoteCoverExists.clear();
     if (!_shouldLoadRemoteVideos) {
@@ -2022,7 +2069,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
       unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
       return _RemoteVideoState(
-        videos: remoteOnly,
+        // BUG-4236：卡片的断点 = 清单快照与本机库断点取较新（与开播判定同一份）。
+        videos: await withLocalRemoteVideoPositions(
+          appModelNoUpdate.database,
+          remoteOnly,
+        ),
         localCopies: <String, RemoteVideoInfo>{
           for (final RemoteVideoInfo video in videos)
             if (localUids.contains(video.id)) video.id: video,
@@ -10237,12 +10288,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
       loadRemoteVideos: () async {
         final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
-        return filterOutLocallyDeletedRemoteVideos(
-          remote: peerPlayableRemoteVideos(
-            await _readRemoteVideoList(source: source, forceRefresh: false) ??
-                const <RemoteVideoInfo>[],
+        // BUG-4236：与库页同一口径——断点取清单快照与本机库断点的较新者。
+        return withLocalRemoteVideoPositions(
+          appModelNoUpdate.database,
+          filterOutLocallyDeletedRemoteVideos(
+            remote: peerPlayableRemoteVideos(
+              await _readRemoteVideoList(source: source, forceRefresh: false) ??
+                  const <RemoteVideoInfo>[],
+            ),
+            deletedKeys: deleted,
           ),
-          deletedKeys: deleted,
         );
       },
       openEpisode:

@@ -12,6 +12,51 @@ typedef PlaybackBaselineSnapshot = ({
   Map<String, int> pending,
 });
 
+/// 本机记下的远端视频断点（`video_remote_position_*` 位置 + `_at_` 时间戳键对），
+/// **直接读库**。[episodeIndex] 的键规则见 [videoRemotePositionEpisodePrefKey]。
+///
+/// 这对键有多个写者：播放页（经 `PreferencesRepository.setPref`，库 + 内存缓存）、
+/// 互联 sweep 与冲突弹窗（[InterconnectPlaybackPositionSync._writeLocal]，只写库）、
+/// 本机作为互联 host 收到的对端 PUT（引擎层，只写库）。库是唯一真相源；读
+/// `PreferencesRepository` 的内存缓存会拿到本机上次自己写的旧断点（BUG-4231）。
+/// sweep 与播放页开播都从这里读，两处口径不会漂移。
+Future<PlaybackPosition> readLocalRemoteVideoPosition(
+  FushiDatabase db,
+  String uid, {
+  int episodeIndex = 0,
+}) async => (
+  positionMs: await db.getPrefTyped<int>(
+    videoRemotePositionEpisodePrefKey(uid, episodeIndex),
+    0,
+  ),
+  updatedAtMs: await db.getPrefTyped<int>(
+    videoRemotePositionEpisodeAtPrefKey(uid, episodeIndex),
+    0,
+  ),
+);
+
+/// [readLocalRemoteVideoPosition] 的批量版：从一次读齐的 `video_remote_position_*`
+/// 偏好快照（[FushiDatabase.getPrefsByPrefix]）里取 [uid] 的本机断点，解码与
+/// [FushiDatabase.getPrefTyped] 同口径。列表展示一次给几十上百条远端条目用，
+/// 免逐条两次查询（BUG-4236）。
+PlaybackPosition localRemoteVideoPositionFromPrefs(
+  Map<String, String> prefs,
+  String uid, {
+  int episodeIndex = 0,
+}) {
+  int readInt(String key) {
+    final String? raw = prefs[key];
+    return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+  }
+
+  return (
+    positionMs: readInt(videoRemotePositionEpisodePrefKey(uid, episodeIndex)),
+    updatedAtMs: readInt(
+      videoRemotePositionEpisodeAtPrefKey(uid, episodeIndex),
+    ),
+  );
+}
+
 /// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
 
@@ -68,15 +113,14 @@ class InterconnectPlaybackPositionSync {
     switch (kind) {
       case PlaybackPositionKind.video:
         final VideoBookRow? row = await _db.getVideoBookByBookUid(key);
-        final int prefsPos = await _db.getPrefTyped<int>(
-          videoRemotePositionPrefKey(key),
-          0,
+        final PlaybackPosition prefs = await readLocalRemoteVideoPosition(
+          _db,
+          key,
         );
-        final int at = await _db.getPrefTyped<int>(
-          videoRemotePositionAtPrefKey(key),
-          0,
+        return (
+          positionMs: row?.lastPositionMs ?? prefs.positionMs,
+          updatedAtMs: prefs.updatedAtMs,
         );
-        return (positionMs: row?.lastPositionMs ?? prefsPos, updatedAtMs: at);
       case PlaybackPositionKind.audiobook:
         return (
           positionMs: await _db.getPrefTyped<int>(

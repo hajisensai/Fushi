@@ -286,6 +286,42 @@ class SyncRunReport {
   /// reader_positions).
   int localBookProgressPulled = 0;
 
+  /// 本轮互联进度 / 断点 sweep 里**位置真的挪动了**的条目数，按种类、按方向
+  /// （BUG-4235）。`*Received` = host 的位置落到了本机（applyRemote 落地），
+  /// `*Sent` = 本机的位置推给了 host（pushLocal）。两端位置相同、只对齐时间戳的
+  /// 条目不计——那不是一次「变化」。
+  ///
+  /// 此前报告只有内容 / 文件传输的计数，进度类改动不进任何计数，于是一轮只同步了
+  /// 播放断点 / 阅读进度的手动同步摘要显示「无变化」。[localBookProgressPulled] 是
+  /// 书架刷新信号（含只对齐时间戳的情形），不能拿来当摘要计数。
+  int bookProgressReceived = 0;
+  int bookProgressSent = 0;
+  int videoPositionsReceived = 0;
+  int videoPositionsSent = 0;
+  int audiobookPositionsReceived = 0;
+  int audiobookPositionsSent = 0;
+
+  /// 记一次播放断点落到本机（[received] = true）或推给 host（false）。
+  void notePlaybackPositionMoved(
+    PlaybackPositionKind kind, {
+    required bool received,
+  }) {
+    switch (kind) {
+      case PlaybackPositionKind.video:
+        if (received) {
+          videoPositionsReceived++;
+        } else {
+          videoPositionsSent++;
+        }
+      case PlaybackPositionKind.audiobook:
+        if (received) {
+          audiobookPositionsReceived++;
+        } else {
+          audiobookPositionsSent++;
+        }
+    }
+  }
+
   /// Per-book metadata/cover files that had spilled directly into the sync root
   /// and were swept back out this run (BUG-619 re-report / TODO-1340). Purely a
   /// cleanup counter — spill removal is neither an import nor a failure, so it
@@ -436,6 +472,12 @@ class SyncRunReport {
     fontsExported += other.fontsExported;
     videosExported += other.videosExported;
     localBookProgressPulled += other.localBookProgressPulled;
+    bookProgressReceived += other.bookProgressReceived;
+    bookProgressSent += other.bookProgressSent;
+    videoPositionsReceived += other.videoPositionsReceived;
+    videoPositionsSent += other.videoPositionsSent;
+    audiobookPositionsReceived += other.audiobookPositionsReceived;
+    audiobookPositionsSent += other.audiobookPositionsSent;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
     tagsUpdated += other.tagsUpdated;

@@ -2393,6 +2393,48 @@ class RemoteVideoInfo {
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
+  /// 只换断点（[positionMs] / [positionUpdatedAtMs]）的副本，其余字段原样。
+  ///
+  /// 客户端展示远端条目时把清单快照里的 host 断点与本机库断点取较新者
+  /// （BUG-4236，见 app 侧 `withLocalRemoteVideoPositions`）用。
+  RemoteVideoInfo withPosition({
+    required int positionMs,
+    required int positionUpdatedAtMs,
+  }) => RemoteVideoInfo(
+    id: id,
+    title: title,
+    sizeBytes: sizeBytes,
+    hasSubtitle: hasSubtitle,
+    subtitleFileName: subtitleFileName,
+    embeddedSubtitleTracks: embeddedSubtitleTracks,
+    durationMs: durationMs,
+    hasCover: hasCover,
+    coverUrl: coverUrl,
+    coverPath: coverPath,
+    seriesCoverUrl: seriesCoverUrl,
+    positionMs: positionMs,
+    positionUpdatedAtMs: positionUpdatedAtMs,
+    delayMs: delayMs,
+    delayUpdatedAtMs: delayUpdatedAtMs,
+    audioTrackId: audioTrackId,
+    audioTrackUpdatedAtMs: audioTrackUpdatedAtMs,
+    secondarySubtitleSource: secondarySubtitleSource,
+    secondarySubtitleUpdatedAtMs: secondarySubtitleUpdatedAtMs,
+    secondaryDelayMs: secondaryDelayMs,
+    secondaryDelayUpdatedAtMs: secondaryDelayUpdatedAtMs,
+    completedAt: completedAt,
+    completedMarkedAtMs: completedMarkedAtMs,
+    episodes: episodes,
+    currentEpisode: currentEpisode,
+    tags: tags,
+    tagsAddedAt: tagsAddedAt,
+    tagTombstones: tagTombstones,
+    collection: collection,
+    importedAt: importedAt,
+    fileName: fileName,
+    peerPlayable: peerPlayable,
+  );
+
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'title': title,

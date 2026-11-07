@@ -1,0 +1,7 @@
+## BUG-4235 · 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」
+- **报告**：2026-11-07（Linux Phase 4 互联测试，Docker 客户端 + Windows host；实测截图（未入库）：sweep 刚把 host 的 50 s 断点落进客户端库，提示却是「Synced · no changes」）
+- **真实性**：✅ 真 bug。
+  - 根因：同步一轮的结果结构 `SyncRunReport`（`fushi/lib/src/sync/sync_orchestrator.dart:259`）只有内容 / 文件传输计数；进度类改动要么没有计数（视频 / 有声书断点 sweep `fushi/lib/src/sync/sync_orchestrator/books.part.dart:290-292` 推送 / 落地后什么都不记），要么只有书架刷新信号 `localBookProgressPulled`（`sync_orchestrator.dart:287`，含只对齐时间戳的情形，不是「变化」计数）。摘要 `summarizeSyncReport`（`fushi/lib/src/sync/manual_sync_ui.dart:24-42`）只能从这些计数拼类别，全为 0 就落到 `sync_now_no_changes`。
+- **[x] ① 已修复** — 在结果结构上补计数：`SyncRunReport` 新增按种类、按方向的 `bookProgressReceived/Sent`、`videoPositionsReceived/Sent`、`audiobookPositionsReceived/Sent`（`mergeFrom` 一并累加），只数位置真的挪动了的条目（applyRemote 落地 / pushLocal），只对齐时间戳不算。书籍进度 sweep 按 `BookProgressSyncStep` 计，视频 / 有声书共享模板 `_syncPositionsLive` 经 `notePlaybackPositionMoved` 计（applyRemote 比较后写入没落地的不计，BUG-3537 口径）。摘要按六类各出一段（新 i18n key `sync_now_{book,video,audio}_progress_{in,out}`）。提交见 git log（fix/interconnect-video-resume-stale）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/sync_orchestrator_live_progress_test.dart`「BUG-4235」组（真 `FushiSyncServer` + `LocalLibraryHostService` host、真互联后端、真 sweep）：视频 host 较新拉取计 received、摘要不再是「无变化」且收敛后的下一轮回到「无变化」；本机较新推送计 sent；只差时间戳不计；书籍进度一拉一推；有声书一拉一推；`mergeFrom` 带上全部计数。`fushi/test/sync/sync_summary_test.dart` 补摘要分类断言。
+- **备注**：云通道（非互联）的书籍进度走 SyncManager 文件箱，本次未加计数。设备复测见 BUG-4236 备注（下一轮 Phase 4 补）。

@@ -34,6 +34,30 @@ void main() {
       expect(_seps(s), 2);
     });
 
+    // BUG-4235：进度 / 断点改动各成一类，不再算进「无变化」。
+    test('progress / position changes are categories of their own', () {
+      final SyncRunReport r = SyncRunReport()
+        ..bookProgressReceived = 2
+        ..bookProgressSent = 3
+        ..videoPositionsReceived = 4
+        ..videoPositionsSent = 5
+        ..audiobookPositionsReceived = 6
+        ..audiobookPositionsSent = 7;
+      final String s = summarizeSyncReport(r);
+      for (final String segment in <String>[
+        '↓2',
+        '↑3',
+        '↓4',
+        '↑5',
+        '↓6',
+        '↑7',
+      ]) {
+        expect(s, contains(segment));
+      }
+      // done 模板 1 个 + 6 类之间 5 个。
+      expect(_seps(s), 6);
+    });
+
     test('errors append a failure segment', () {
       final String ok = summarizeSyncReport(SyncRunReport()..booksImported = 2);
       final SyncRunReport withErrors = SyncRunReport()
