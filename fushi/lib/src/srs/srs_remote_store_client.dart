@@ -83,17 +83,68 @@ Future<List<InterconnectHostTarget>> probeSrsRemoteStoreTargets(
       SrsRemoteHostClient(repository: repo, peer: peer).supportsRemoteStore(),
 );
 
+/// 握手回包里主机提供的 profile（老主机 / 桌面 host 不带 = 空）。
+List<SrsRemoteServedProfile> srsServedProfilesOf(Map<String, dynamic> hello) {
+  final Object? raw = hello['profiles'];
+  if (raw is! List) return const <SrsRemoteServedProfile>[];
+  return <SrsRemoteServedProfile>[
+    for (final Object? e in raw)
+      if (e is Map && e['uid'] is String)
+        SrsRemoteServedProfile.fromJson(e.cast<String, Object?>()),
+  ];
+}
+
+/// 用户在「选哪份复习库」时取消了。
+class SrsRemoteProfileChoiceCancelled implements Exception {
+  const SrsRemoteProfileChoiceCancelled();
+}
+
+/// 打开主机上的哪一份 profile（见 [SrsRemoteStore.connect]）：本机自己的在 [served] 里 → 它；主机提供不止一份
+/// 又没有本机的 → [chooseProfile]（没给就用主机默认）；其余 → 主机默认 [hostDefault]。
+Future<String> srsPickRemoteProfile({
+  required String hostDefault,
+  required List<SrsRemoteServedProfile> served,
+  String? preferProfile,
+  Future<String?> Function(List<SrsRemoteServedProfile> profiles)?
+  chooseProfile,
+}) async {
+  if (preferProfile != null &&
+      served.any((SrsRemoteServedProfile p) => p.uid == preferProfile)) {
+    return preferProfile;
+  }
+  if (served.length < 2 || chooseProfile == null) return hostDefault;
+  final String? chosen = await chooseProfile(served);
+  if (chosen == null) throw const SrsRemoteProfileChoiceCancelled();
+  return chosen;
+}
+
 /// 主机上的复习库（见文件头）。本类没覆盖的 [SrsDbStore] 成员（导入、同步、备份等库管理）调用时抛
 /// [UnsupportedError]：它们不在复习会话可达的页面里，守卫测试核对可达页面用到的成员都已覆盖。
 class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   SrsRemoteStore._(this._client, this.profileUid, {this.prefetchMedia});
 
   /// 握手：读主机当前的 profile 与状态。
+  ///
+  /// 主机同时提供几份 profile 时（无头服务端，握手回包带 `profiles`）：本机自己的 profile（[preferProfile]）在
+  /// 里面就直接打开那一份；不在就交给 [chooseProfile] 让用户选（返回 null = 用户取消，抛
+  /// [SrsRemoteProfileChoiceCancelled]）。主机只有一份（桌面 host、老服务端）时照旧打开主机的那一份。
   static Future<SrsRemoteStore> connect(
     SrsRemoteHostClient client, {
+    String? preferProfile,
+    Future<String?> Function(List<SrsRemoteServedProfile> profiles)?
+    chooseProfile,
     Future<void> Function(Set<String> names)? prefetchMedia,
   }) async {
-    final Map<String, dynamic> hello = await client.call('hello');
+    Map<String, dynamic> hello = await client.call('hello');
+    final String pick = await srsPickRemoteProfile(
+      hostDefault: hello['profile'] as String,
+      served: srsServedProfilesOf(hello),
+      preferProfile: preferProfile,
+      chooseProfile: chooseProfile,
+    );
+    if (pick != hello['profile']) {
+      hello = await client.call('hello', profile: pick);
+    }
     final SrsRemoteStore store = SrsRemoteStore._(
       client,
       hello['profile'] as String,

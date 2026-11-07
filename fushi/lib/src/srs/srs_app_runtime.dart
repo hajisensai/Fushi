@@ -364,7 +364,7 @@ class SrsAppRuntime {
         readStore: _readStore,
         readMedia: (String name) async => (await _readMedia())?.load(name),
         // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
-        onWrite: _bumpRevision,
+        onWrite: (String _) => _bumpRevision(),
       ),
     );
     fushiAnkiConnectCompatInstanceId = instanceId;

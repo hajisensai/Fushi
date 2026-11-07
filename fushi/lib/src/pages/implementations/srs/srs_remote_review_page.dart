@@ -11,6 +11,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart'
+    show SrsRemoteServedProfile;
 import 'package:fushi_srs/fushi_srs.dart' show SrsCustomStudy;
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
@@ -40,6 +42,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -47,6 +50,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 远程复习失败的提示文案（主机的机读码 / 连接层的码）。
 String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
@@ -166,8 +170,14 @@ class _SrsRemoteReviewEntryPageState
       );
       store = await SrsRemoteStore.connect(
         client,
+        preferProfile: await _localProfileUid(),
+        chooseProfile: _chooseProfile,
         prefetchMedia: media.prefetch,
       );
+    } on SrsRemoteProfileChoiceCancelled {
+      if (!mounted || _connecting != client) return;
+      setState(() => _loading = false);
+      return;
     } on InterconnectHostError catch (e) {
       if (!mounted || _connecting != client) return;
       setState(() {
@@ -185,6 +195,38 @@ class _SrsRemoteReviewEntryPageState
         media: media,
         child: SrsRemoteDeckListPage(hostName: target.displayName),
       ),
+    );
+  }
+
+  /// 本机当前配置的 profile uid：主机提供几份 profile 时直接打开同一份（见 [SrsRemoteStore.connect]）。
+  Future<String?> _localProfileUid() async {
+    final AppModel app = ref.read(appProvider);
+    try {
+      return await app.database.profileUidOf(
+        await app.database.resolveActiveProfileId(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsRemoteReview.localProfile', e, stack);
+      return null;
+    }
+  }
+
+  Future<String?> _chooseProfile(List<SrsRemoteServedProfile> profiles) {
+    return showFushiChoiceDialog<String>(
+      context: context,
+      title: t.srs_remote_review_choose_profile,
+      message: t.srs_remote_review_choose_profile_hint,
+      icon: FushiIcons.profiles,
+      options: <FushiChoiceOption<String>>[
+        for (final SrsRemoteServedProfile p in profiles)
+          FushiChoiceOption<String>(
+            value: p.uid,
+            label: p.name.isEmpty
+                ? t.srs_remote_review_profile_unnamed
+                : p.name,
+            subtitle: t.srs_remote_review_profile_notes(n: p.notes),
+          ),
+      ],
     );
   }
 
