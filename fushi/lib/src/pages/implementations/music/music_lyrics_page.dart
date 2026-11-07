@@ -71,7 +71,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
-import 'package:fushi/src/pages/implementations/music/music_player_action_row.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
@@ -308,12 +307,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// [showDialog] 会把这里的主题捕获进弹窗路由。
   final GlobalKey _themedKey = GlobalKey();
 
-  /// 这一帧的布局下队列是右侧常驻侧栏（宽屏且够宽，[musicQueueUsesSidebar]）；否则
-  /// 「队列」按钮弹底部弹层。
-  bool _queueDocked = false;
-
-  /// 常驻侧栏展开着（宽度够时默认展开，「队列」按钮切换）。
-  bool _queueSidebarOpen = true;
   BuildContext get _themedContext => _themedKey.currentContext ?? context;
 
   /// build 里调：封面或明暗变了才重新取色。
@@ -959,34 +952,29 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints box) {
                     final bool wide = lyricsPlayerIsWide(box.biggest);
-                    _queueDocked =
-                        wide && musicQueueUsesSidebar(context, box.maxWidth);
-                    return _withQueueSidebar(
-                      context,
-                      AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.medium,
-                        ),
-                        child: KeyedSubtree(
-                          key: ValueKey<String>('${_layout.name}-$wide'),
-                          child: switch ((_layout, wide)) {
-                            (MusicLyricsLayout.split, true) => _buildSplit(
-                              context,
-                              item,
-                            ),
-                            (MusicLyricsLayout.stage, true) => _buildStage(
-                              context,
-                              item,
-                            ),
-                            (MusicLyricsLayout.disc, _) => _buildDisc(
-                              context,
-                              item,
-                              wide: wide,
-                            ),
-                            (_, false) => _buildNarrow(context, item),
-                          },
-                        ),
+                    return AnimatedSwitcher(
+                      duration: fushiMotionDuration(
+                        context,
+                        FushiMotion.medium,
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey<String>('${_layout.name}-$wide'),
+                        child: switch ((_layout, wide)) {
+                          (MusicLyricsLayout.split, true) => _buildSplit(
+                            context,
+                            item,
+                          ),
+                          (MusicLyricsLayout.stage, true) => _buildStage(
+                            context,
+                            item,
+                          ),
+                          (MusicLyricsLayout.disc, _) => _buildDisc(
+                            context,
+                            item,
+                            wide: wide,
+                          ),
+                          (_, false) => _buildNarrow(context, item),
+                        },
                       ),
                     );
                   },
@@ -1104,9 +1092,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                               const SizedBox(height: 12),
                               _buildTransport(context),
                               const SizedBox(height: 4),
-                              _buildTools(context),
-                              const SizedBox(height: 8),
-                              _buildActionRow(context),
+                              _buildTools(context, actions: true),
                             ],
                           ),
                         ),
@@ -1215,8 +1201,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               children: <Widget>[
                 _buildSeek(),
                 _buildTransport(context),
-                const SizedBox(height: 8),
-                _buildActionRow(context),
+                _buildTools(context, actions: true),
               ],
             ),
           ),
@@ -1268,9 +1253,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               _buildMeta(context, item),
               _buildSeek(),
               Center(child: _buildTransport(context)),
-              _buildTools(context),
-              const SizedBox(height: 8),
-              Center(child: _buildActionRow(context)),
+              _buildTools(context, actions: true),
             ],
           ),
         ),
@@ -1492,69 +1475,32 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     debugLabel: 'music-lyrics-seek',
   );
 
-  /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
-  /// 收藏 · 音量，六格等宽、等距、同一行，图标同一尺寸，只有播放键是实心圆。音量与
-  /// 迷你条同一枚按钮，点开弹滑杆（用户 2026-10-30「做成和底栏一样点击打开的，
-  /// 按钮都在同一行」）。
-  /// 宽屏够宽时页面右侧挂常驻队列侧栏（[MusicQueueSidebar]），收起时宽度动画到 0。
-  Widget _withQueueSidebar(BuildContext context, Widget page) {
-    if (!_queueDocked) return page;
-    final bool open = _queueSidebarOpen;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(child: page),
-        ClipRect(
-          child: AnimatedContainer(
-            key: const ValueKey<String>('music_lyrics_queue_sidebar'),
-            duration: fushiMotionDuration(context, FushiMotion.medium),
-            curve: context.fushiMotion.effectsDefault.curve,
-            width: open ? kMusicQueueSidebarWidth : 0,
-            child: OverflowBox(
-              alignment: AlignmentDirectional.centerStart,
-              minWidth: kMusicQueueSidebarWidth,
-              maxWidth: kMusicQueueSidebarWidth,
-              child: ExcludeFocus(
-                excluding: !open,
-                child: MusicQueueSidebar(engine: _engine),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 传输行下方的功能行（[MusicPlayerActionRow]）：目前只有「队列」。宽屏常驻侧栏时
-  /// 切换侧栏，否则弹出队列。
+  /// 功能图标（音质 / 音效 / 队列）：与偏移、AB 循环同款的裸图标按钮，无底色无文字，
+  /// 说明放 tooltip（用户 2026-11-08「有点突兀，无底色和其他选项并列」「无文字」）。
   Widget _buildActionRow(BuildContext context) => ListenableBuilder(
-    listenable: _engine,
+    listenable: Listenable.merge(<Listenable>[
+      _engine,
+      appModelNoUpdate.prefsRepo,
+    ]),
     builder: (BuildContext context, _) {
-      final bool docked = _queueDocked;
-      final bool open = docked && _queueSidebarOpen;
-      return MusicPlayerActionRow(
+      return Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          MusicPlayerActionButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('music_lyrics_queue'),
-            icon: FushiIcons.playlist,
-            label: t.music_queue_button_count(count: _engine.queue.length),
-            tooltip: docked
-                ? (open ? t.music_queue_hide : t.music_queue_show)
-                : t.music_queue_title,
-            selected: open,
-            onPressed: () {
-              if (docked) {
-                setState(() => _queueSidebarOpen = !_queueSidebarOpen);
-              } else {
-                unawaited(showMusicQueue(context, _engine));
-              }
-            },
+            icon: const FushiIcon(FushiIcons.playlist),
+            tooltip: t.music_queue_button_count(count: _engine.queue.length),
+            onPressed: () => unawaited(showMusicQueue(_themedContext, _engine)),
           ),
         ],
       );
     },
   );
 
+  /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
+  /// 收藏 · 音量，六格等宽、等距、同一行，图标同一尺寸，只有播放键是实心圆。音量与
+  /// 迷你条同一枚按钮，点开弹滑杆（用户 2026-10-30「做成和底栏一样点击打开的，
+  /// 按钮都在同一行」）。
   Widget _buildTransport(BuildContext context) {
     final MusicSession session = appModelNoUpdate.musicSession;
     final MusicPlayerEngine engine = session.engine;
@@ -1697,10 +1643,15 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     }
   }
 
-  /// 小工具：偏移 ± 与 AB 循环（只有带时间轴的歌词才有）。
-  Widget _buildTools(BuildContext context) {
+  /// 偏移 ± / AB 循环（有逐行时间轴才有）；[actions] 时同一行后面接功能图标
+  /// （[_buildActionRow]）。
+  Widget _buildTools(BuildContext context, {bool actions = false}) {
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    if (!synced) return const SizedBox.shrink();
+    if (!synced) {
+      return actions
+          ? Center(child: _buildActionRow(context))
+          : const SizedBox.shrink();
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1744,6 +1695,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   onPressed: () => unawaited(_extendLoop()),
                 ),
         ),
+        if (actions) _buildActionRow(context),
       ],
     );
   }
@@ -1943,27 +1895,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   Widget _buildLyricsArea(BuildContext context, MusicPlayItem? item) {
     final MusicLyricsResolution? r = _lyrics;
     if (r == null || r.timeline.lines.isEmpty) {
-      // A / B 遇到没歌词的歌切到唱片态（与 C 同一个唱片），不再一行字挂在空处。
+      // 没歌词时歌词区只留提示与找歌词（用户 2026-11-08：歌词区再画一张唱片不合理，
+      // 封面已在左半 / 封面面）。
       if (_loading) {
         return const Center(child: FushiCircularProgressIndicator());
       }
-      return LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints c) => Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            _SpinningDisc(
-              coverPath: item?.coverPath,
-              size: (math.min(c.maxWidth, c.maxHeight) * 0.5).clamp(
-                140.0,
-                360.0,
-              ),
-              spinning: _engine.isPlaying,
-            ),
-            const SizedBox(height: 24),
-            _buildNoLyrics(context),
-          ],
-        ),
-      );
+      return Center(child: _buildNoLyrics(context));
     }
     final Widget view = KaraokeLyricsView(
       key: ValueKey<String>('karaoke_${_loadedUid}_${r.source}'),

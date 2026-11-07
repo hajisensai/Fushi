@@ -1,6 +1,5 @@
-/// 播放队列面板（设计稿 ③ / W1 / W3）：正文只有一份 [MusicQueuePanel]，窄屏装进底部弹层
-/// （[showMusicQueue]），宽屏装进全屏播放页右侧的常驻侧栏（[MusicQueueSidebar]）或从右侧
-/// 滑出的同一个侧栏（曲库页播放条的队列按钮）。
+/// 播放队列面板（设计稿 ③）：正文只有一份 [MusicQueuePanel]，窄屏装进底部弹层，宽屏装进
+/// 浮在右下角的卡片（[showMusicQueue]）。
 ///
 /// 队列状态全在 [MusicPlayerEngine]（顺序、当前曲、「下一首播放」标记）；面板只读引擎、发
 /// 编辑命令，不存镜像。唯一的本地状态是「刚移出、可撤销」的那一首（撤销 = 放回原位置）与
@@ -12,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kDoubleTapTimeout;
@@ -22,8 +22,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
     show kMineNoticeActionVisibleFor;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -35,102 +34,26 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-/// 侧栏宽度（设计稿 W1）。
-const double kMusicQueueSidebarWidth = 360;
+/// 宽屏浮层卡片的宽度。
+const double kMusicQueuePanelWidth = 400;
 
-/// 这个宽度（真实视口宽，见 [windowSizeClassReal]）下队列用侧栏而不是底部弹层：仓库统一的
-/// expanded 档（≥ 840）。
-bool musicQueueUsesSidebar(BuildContext context, double logicalWidth) =>
-    windowSizeClassReal(logicalWidth, FushiAppUiScale.of(context)) ==
-    WindowSizeClass.expanded;
-
-/// 打开播放队列：宽屏从右侧滑出侧栏，窄屏底部弹层。
+/// 打开播放队列：宽屏是浮在右下角的卡片（不挤压播放页，用户 2026-11-08「侧边栏推出
+/// 很丑」），窄屏底部弹层（[showMusicFloatingPanel]）。
 Future<void> showMusicQueue(BuildContext context, MusicPlayerEngine engine) {
   final Size screen = MediaQuery.sizeOf(context);
-  if (musicQueueUsesSidebar(context, screen.width)) {
-    final Duration motion = fushiMotionDuration(context, FushiMotion.medium);
-    return showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: Colors.black.withValues(alpha: 0.18),
-      transitionDuration: motion,
-      pageBuilder: (BuildContext c, _, _) => Align(
-        alignment: AlignmentDirectional.centerEnd,
-        child: SafeArea(
-          left: false,
-          child: MusicQueueSidebar(engine: engine, elevated: true),
-        ),
-      ),
-      transitionBuilder:
-          (
-            BuildContext c,
-            Animation<double> animation,
-            Animation<double> secondary,
-            Widget child,
-          ) {
-            final bool rtl = Directionality.of(c) == TextDirection.rtl;
-            return SlideTransition(
-              position:
-                  Tween<Offset>(
-                    begin: Offset(rtl ? -1 : 1, 0),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: FushiSpringCurve.spatial,
-                      reverseCurve: FushiSpringCurve.effects,
-                    ),
-                  ),
-              child: child,
-            );
-          },
-    );
-  }
-  return adaptiveModalSheet<void>(
+  return showMusicFloatingPanel(
     context: context,
-    builder: (BuildContext sheet) => SizedBox(
-      height: (screen.height * 0.75).clamp(320, 720).toDouble(),
-      child: MusicQueuePanel(engine: engine),
+    alignment: AlignmentDirectional.bottomEnd,
+    maxWidth: kMusicQueuePanelWidth,
+    margin: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+    height: math.min(screen.height * 0.72, 640),
+    scrollable: false,
+    builder: (BuildContext _) => MusicQueuePanel(
+      key: const ValueKey<String>('music_queue_floating'),
+      engine: engine,
+      sidebar: musicFloatingPanelFloats(context),
     ),
   );
-}
-
-/// 侧栏外壳（全屏播放页右侧常驻 / 曲库页从右侧滑出）：约 360 宽、左边一道分隔线。
-class MusicQueueSidebar extends StatelessWidget {
-  const MusicQueueSidebar({
-    super.key,
-    required this.engine,
-    this.elevated = false,
-  });
-
-  final MusicPlayerEngine engine;
-
-  /// 浮在页面上（滑出式）：加投影、不透明底色。
-  final bool elevated;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return Material(
-      type: MaterialType.canvas,
-      color: elevated
-          ? cs.surfaceContainerLow
-          : cs.surfaceContainerLow.withValues(alpha: 0.72),
-      elevation: elevated ? 6 : 0,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: BorderDirectional(
-            start: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
-          ),
-        ),
-        child: SizedBox(
-          width: kMusicQueueSidebarWidth,
-          child: MusicQueuePanel(engine: engine, sidebar: true),
-        ),
-      ),
-    );
-  }
 }
 
 /// `m:ss`（与曲目列表的 `formatMusicDuration` 同格式；不 import 曲目列表，免得本面板经
