@@ -107,8 +107,12 @@ void main() {
       reason: 'v2 配对成功（token 已落库）才代表互联真的投入使用',
     );
     final String v2Masked = maskComments(v2);
+    // BUG-4234：v2 的凭据落库收进与扫码配对共用的 recordInterconnectPairing（内含
+    // setFushiClientTokenForUrl）。先断言它在，免得 indexOf == -1 让下面的 lessThan 真空通过。
+    final int v2Credentials = v2Masked.indexOf('recordInterconnectPairing(');
+    expect(v2Credentials, greaterThanOrEqualTo(0), reason: 'v2 成功点没落凭据');
     expect(
-      v2Masked.indexOf('setFushiClientTokenForUrl('),
+      v2Credentials,
       lessThan(v2Masked.indexOf('setInterconnectEnabled(true)')),
       reason: '先落凭据再落启用：启用了却没凭据是半配置状态',
     );

@@ -595,8 +595,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// GET /api/host/addresses → `{hostId, addresses:[{url, kind}]}`
+  /// GET /api/host/addresses → `{hostId, deviceName?, addresses:[{url, kind}]}`
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  ///
+  /// `deviceName`（BUG-4234）：与 `/api/ping` 同一个 host 展示名。client 定期从这里学地址集时顺带给
+  /// 还没有名字的条目补上（升级前用手动地址配对的 host 只有 URL，`peer ls` / 远程复习标题都显示主机名）。
   ///
   /// 需鉴权——不放无鉴权的 /api/ping：不向任何能探到端口的人泄露内网拓扑。也不
   /// 并进 capabilities：那是「支持什么」，这是「在哪里」；capabilities 被各功能
@@ -607,6 +610,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (id == null) return shelf.Response.notFound('No host id');
     return jsonResponse(<String, dynamic>{
       'hostId': id,
+      if (_deviceName != null && _deviceName.isNotEmpty)
+        'deviceName': _deviceName,
       'addresses': <Map<String, Object?>>[
         for (final InterconnectHostAddress a in await _hostAddresses())
           a.toJson(),

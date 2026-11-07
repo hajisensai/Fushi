@@ -72,7 +72,7 @@ void main() {
     'lib/src/ops/ctl_dictionary_routes.dart':
         '`fushi_cli dict search` 的控制通道 handler：结果以 JSON 回给终端，'
         '本机屏幕上没有查词呈现；要弹窗查词用内置 `lookup` 命令（走浮窗表面，按偏好朗读）。'
-        'anki mine 补字段时的查词同理只为取回制卡字段。',
+        'anki mine 补字段时的查词同理只为取回制卡字段（两处都走 searchDictionaryForUser，BUG-4233）。',
     'lib/src/ops/ctl_video_player_routes.dart':
         '`fushi_cli video mine` 的控制通道 handler：查词只为给当前字幕句制卡补读音 / 释义'
         '等字段，结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且视频正在播放出声，'
@@ -98,7 +98,8 @@ void main() {
         '哪天要接，就把它挪进 wiredSurfaces 并在页面侧按偏好调 autoReadWord。',
   };
 
-  /// 收集 lib/ 下所有 `searchDictionary(` 的**调用**点（排除声明/重写本身）。
+  /// 收集 lib/ 下所有 `searchDictionary(` / `searchDictionaryForUser(`（控制通道替本机用户查词的同一条链，
+  /// BUG-4233）的**调用**点（排除声明/重写本身）。
   int scannedFiles = 0;
   Set<String> collectCallSiteFiles() {
     final Set<String> hits = <String>{};
@@ -114,7 +115,10 @@ void main() {
       final String source = e.readAsStringSync();
       // 便宜的预筛：掩码只会**减少**命中、绝不会新增，所以整文件连这个符号都没有
       // 就不必逐字符扫（lib/ 有好几 MB，全量词法掩码会明显拖慢这条守卫）。
-      if (!source.contains('searchDictionary(')) continue;
+      if (!source.contains('searchDictionary(') &&
+          !source.contains('searchDictionaryForUser(')) {
+        continue;
+      }
       // 注释里的同名文本不算调用点。旧写法是逐行 `startsWith('//')`，只堵住
       // 「整行行注释」一种形态：`/* await searchDictionary(x); */` 这种块注释会被
       // 当成真实调用点（把新表面塞进块注释就能绕过声明要求），反过来
@@ -122,10 +126,13 @@ void main() {
       // maskComments 是词法扫描，三种形态一并换成等长空白。
       for (final String line in maskComments(source).split('\n')) {
         final String t = line.trim();
-        if (!t.contains('searchDictionary(')) continue;
+        if (!t.contains('searchDictionary(') &&
+            !t.contains('searchDictionaryForUser(')) {
+          continue;
+        }
         // 方法声明/接口签名本身不算调用点。
         if (RegExp(
-          r'Future<DictionarySearchResult\??>\s+searchDictionary\(',
+          r'Future<DictionarySearchResult\??>\s+searchDictionary(ForUser)?\(',
         ).hasMatch(t)) {
           continue;
         }
@@ -151,7 +158,10 @@ void main() {
       found.length,
       what: 'searchDictionary 调用点所在文件',
       atLeast: 9,
-      measured: 10,
+      // 2026-11-07 BUG-4233：控制通道三处（dict search / anki mine、video mine、game mine）改走
+      // searchDictionaryForUser，ctl_dictionary_routes.dart 由此进入扫描面（以前走替对端的
+      // searchRemoteDictionaryForRequest，不在面里）。
+      measured: 11,
     );
     final Set<String> declared = <String>{
       ...wiredSurfaces.keys,

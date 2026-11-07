@@ -1046,6 +1046,9 @@ class AppModel with ChangeNotifier {
     // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
     // 复习远程刷卡：已配对设备在本机复习上出卡 / 作答（复习模块关着时 SrsAppHost.current 为 null）。
     srsRemoteStore: () => SrsAppHost.current?.remoteStore,
+    // 已配对设备一轮复习同步跑完问本机加入了没有（BUG-4232）：与本机目录那一轮的闸门同一个判据
+    // （srs_app_runtime.dart `firstSyncConfirmed`）。
+    srsSync2Joined: () => srsSync2MergeConfirmed,
     leaderboardLinkHost: () => AppLeaderboardLinkHost(
       enabled: () =>
           SyncRepository(database).isInterconnectLeaderboardLinkHostEnabled(),
@@ -9142,6 +9145,26 @@ class AppModel with ChangeNotifier {
           rubySpans: rubySpans,
           profileView: WorkProfileScope.instance.lookupView,
         );
+
+  /// 控制通道（fushi_cli / AI 助手）替**本机用户**查词：`dict search`、`anki mine`、`video mine`、`game mine`
+  /// （BUG-4233）。与查词页同一条链（[searchDictionary]：远端优先、本机作品级配置），多一个调用方声明的
+  /// [lookupLanguage]（null = 本机当前查词语言，与 [searchDictionary] 完全等价）。
+  ///
+  /// 不能用 [createRemoteLookupService]：那是**替对端 / 浏览器扩展**查词的服务，只查本机词典、不再转问
+  /// 已配对的电脑（否则两台互为 host 的设备会互相转发）。瘦客户端（本机没有词典、开着「远端查词」）经它
+  /// 查词永远是空的，CLI 制卡的释义因此全空。
+  Future<DictionarySearchResult> searchDictionaryForUser({
+    required String searchTerm,
+    required int maximumTerms,
+    bool searchWithWildcards = false,
+    String? lookupLanguage,
+  }) => _searchDictionaryInLanguage(
+    searchTerm: searchTerm,
+    searchWithWildcards: searchWithWildcards,
+    overrideMaximumTerms: maximumTerms,
+    lookupLanguage: lookupLanguage,
+    profileView: WorkProfileScope.instance.lookupView,
+  );
 
   /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
   /// 语言（见 [effectiveLookupLanguage]）；本机查词为 null，按本机当前查词语言。

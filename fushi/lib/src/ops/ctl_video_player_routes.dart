@@ -273,9 +273,9 @@ class _VideoPlayerCtl {
     DictionarySearchResult? found;
     if ((call.optBool('lookup') ?? true) &&
         (reading == null || glossary == null)) {
-      found = await appModel.createRemoteLookupService().searchDictionary(
-        term: word,
-        wildcards: false,
+      // 与查词页同一条查词链（远端优先，BUG-4233）：瘦客户端靠电脑的词典补释义。
+      found = await appModel.searchDictionaryForUser(
+        searchTerm: word,
         maximumTerms: 10,
       );
     }

@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart'
@@ -63,13 +64,20 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
+/// 复习运行时还没装好时（模块关着 / 正在打开）摘要行听的空集合。
+final ValueListenable<Set<String>> _noPeersNotJoined =
+    ValueNotifier<Set<String>>(const <String>{});
+
 /// 「同步状态」摘要行标题：同步在跑时说进行中（不能说「所有改动都已同步」——数字是开跑前的
-/// 快照），否则按未上传条数说。
+/// 快照）；已配对设备（互联 host）报告还没加入复习同步时如实说（BUG-4232：本机未上传条数为 0 只说明
+/// 发出去了，对端没并入、也没发它的数据）；否则按未上传条数说。
 String srsTimelineSummaryTitle({
   required SrsSyncProgress? syncing,
   required int unpublished,
+  bool peerNotJoined = false,
 }) {
   if (syncing != null) return t.srs_timeline_syncing;
+  if (peerNotJoined) return t.srs_sync_peer_not_joined;
   return unpublished > 0
       ? t.srs_timeline_unpublished(n: unpublished)
       : t.srs_timeline_all_published;
@@ -905,51 +913,70 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
     final SrsDeferredProfileMerge? deferred = _deferredMerge;
+    // 已配对设备（互联 host）报告还没加入复习同步的位置（BUG-4232）：调度器一轮跑完问到的。
+    final ValueListenable<Set<String>> peersNotJoined =
+        ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
+        _noPeersNotJoined;
     // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
     // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
-    return ValueListenableBuilder<SrsSyncProgress?>(
-      valueListenable: srsSyncProgress,
-      builder: (BuildContext context, SrsSyncProgress? syncing, _) =>
-          AdaptiveSettingsSection(
-            title: t.srs_timeline_status,
-            children: <Widget>[
-              AdaptiveSettingsRow(
-                key: const ValueKey<String>('srs_timeline_status_summary'),
-                title: srsTimelineSummaryTitle(
-                  syncing: syncing,
-                  unpublished: unpublished,
-                ),
-                subtitle: syncing != null
-                    ? srsSyncProgressLine(syncing)
-                    : t.srs_timeline_ops(n: ops),
-                icon: syncing != null
-                    ? FushiIcons.sync
-                    : (unpublished > 0
-                          ? FushiIcons.cloudSync
-                          : FushiIcons.success),
-                showIcon: true,
-              ),
-              if (pending > 0)
-                AdaptiveSettingsRow(
-                  key: const ValueKey<String>('srs_timeline_status_pending'),
-                  title: t.srs_timeline_waiting(n: pending),
-                  subtitle: t.srs_timeline_waiting_hint,
-                  icon: FushiIcons.schedule,
-                  showIcon: true,
-                ),
-              if (deferred != null)
-                AdaptiveSettingsRow(
-                  key: const ValueKey<String>(
-                    'srs_timeline_status_merge_deferred',
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: peersNotJoined,
+      builder: (BuildContext context, Set<String> notJoined, _) =>
+          ValueListenableBuilder<SrsSyncProgress?>(
+            valueListenable: srsSyncProgress,
+            builder: (BuildContext context, SrsSyncProgress? syncing, _) {
+              final bool peerNotJoined =
+                  syncing == null && notJoined.isNotEmpty;
+              return AdaptiveSettingsSection(
+                title: t.srs_timeline_status,
+                children: <Widget>[
+                  AdaptiveSettingsRow(
+                    key: const ValueKey<String>('srs_timeline_status_summary'),
+                    title: srsTimelineSummaryTitle(
+                      syncing: syncing,
+                      unpublished: unpublished,
+                      peerNotJoined: peerNotJoined,
+                    ),
+                    subtitle: syncing != null
+                        ? srsSyncProgressLine(syncing)
+                        : (peerNotJoined
+                              ? t.srs_sync_peer_not_joined_hint
+                              : t.srs_timeline_ops(n: ops)),
+                    icon: syncing != null
+                        ? FushiIcons.sync
+                        : (peerNotJoined
+                              ? FushiIcons.warning
+                              : (unpublished > 0
+                                    ? FushiIcons.cloudSync
+                                    : FushiIcons.success)),
+                    showIcon: true,
+                    subtitleMaxLines: 3,
                   ),
-                  title: t.srs_timeline_merge_deferred,
-                  subtitle: t.srs_timeline_merge_deferred_hint(
-                    n: deferred.missingRevoked.length,
-                  ),
-                  icon: FushiIcons.merge,
-                  showIcon: true,
-                ),
-            ],
+                  if (pending > 0)
+                    AdaptiveSettingsRow(
+                      key: const ValueKey<String>(
+                        'srs_timeline_status_pending',
+                      ),
+                      title: t.srs_timeline_waiting(n: pending),
+                      subtitle: t.srs_timeline_waiting_hint,
+                      icon: FushiIcons.schedule,
+                      showIcon: true,
+                    ),
+                  if (deferred != null)
+                    AdaptiveSettingsRow(
+                      key: const ValueKey<String>(
+                        'srs_timeline_status_merge_deferred',
+                      ),
+                      title: t.srs_timeline_merge_deferred,
+                      subtitle: t.srs_timeline_merge_deferred_hint(
+                        n: deferred.missingRevoked.length,
+                      ),
+                      icon: FushiIcons.merge,
+                      showIcon: true,
+                    ),
+                ],
+              );
+            },
           ),
     );
   }

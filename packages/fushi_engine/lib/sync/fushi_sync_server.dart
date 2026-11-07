@@ -537,6 +537,10 @@ class FushiSyncServer {
   /// host 自己的复习数据刚发布到本机同步目录（app 侧在本机目录一轮上传了段之后调）。
   void notifySrsChanged() => srsChanges.bump();
 
+  /// host 自己此刻是否已加入复习同步 v2（[kSrsSyncStatusPath]，BUG-4232），每个请求现读。app 装配为「首次 v2 同步已
+  /// 确认」；null（无头服务端 / 旧调用方 / 单测：没有首次确认这一步）→ 端点 404，客户端按「不报告」处理。
+  bool Function()? srsSync2Joined;
+
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
@@ -996,6 +1000,15 @@ class FushiSyncServer {
         int.tryParse(request.url.queryParameters['after'] ?? ''),
       );
       return jsonResponse(<String, dynamic>{'token': token});
+    }
+    // 复习同步 v2 的参与状态（BUG-4232）：客户端一轮跑完问 host 自己加入了没有。鉴权走上方 middleware。
+    if (reqPath == kSrsSyncStatusPath) {
+      if (method != 'GET') return shelf.Response(405);
+      final bool Function()? joined = srsSync2Joined;
+      if (joined == null) {
+        return shelf.Response.notFound('SRS sync status not reported');
+      }
+      return jsonResponse(<String, dynamic>{'joined': joined()});
     }
     // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
     if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {

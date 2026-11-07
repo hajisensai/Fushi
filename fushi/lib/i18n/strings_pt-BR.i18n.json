@@ -8821,6 +8821,8 @@
   "srs_sync_now": "Sync now",
   "srs_sync_now_busy": "Already syncing: $progress",
   "srs_sync_now_started": "Review sync started",
+  "srs_sync_peer_not_joined": "The paired device hasn't turned on review sync yet",
+  "srs_sync_peer_not_joined_hint": "Open Review on that device and tap Start syncing. Until then it neither receives your changes nor sends its own.",
   "srs_sync_profile_conflict_adopt_hint": "This device has no notes yet and will switch to the one you choose.",
   "srs_sync_profile_conflict_body": "This sync location has review data from other devices, and it isn't clear which one this device should use. Choose one:",
   "srs_sync_profile_conflict_devices": "From $devices",

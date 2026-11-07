@@ -253,17 +253,16 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       final String term = call.requireString('term');
       final int limit = call.optInt('limit') ?? 10;
       if (limit < 1) throw const CtlFailure.badRequest('limit 必须 ≥ 1');
-      // 与浏览器扩展 `/api/lookup/dictionary`（buildRemoteDictionaryLookupResponse）
-      // 同一个查词服务：同一套清洗 / 缓存 / 隐藏词典过滤，只是不要 popupJson。
-      // `language`（可选）：调用方的查词语言，与扩展 / 对端同一分派点；缺省按本机
-      // 当前查词语言。
-      final DictionarySearchResult? result =
-          await searchRemoteDictionaryForRequest(
-            app().createRemoteLookupService(),
-            term: term,
-            wildcards: call.optBool('wildcards') ?? false,
+      // 与查词页同一条查词链（AppModel.searchDictionaryForUser：同一套清洗 / 缓存 /
+      // 隐藏词典过滤，开着「远端查词」时远端优先），只是不要 popupJson。不走替对端
+      // 查词的 createRemoteLookupService：它只查本机词典，瘦客户端上永远是空的
+      // （BUG-4233）。`language`（可选）：调用方的查词语言；缺省按本机当前查词语言。
+      final DictionarySearchResult result = await app()
+          .searchDictionaryForUser(
+            searchTerm: term,
+            searchWithWildcards: call.optBool('wildcards') ?? false,
             maximumTerms: limit,
-            language: _ctlLookupLanguage(call),
+            lookupLanguage: _ctlLookupLanguage(call),
           );
       return ctlSearchResultJson(
         term,
@@ -379,12 +378,11 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       final bool lookup = call.optBool('lookup') ?? true;
       DictionarySearchResult? found;
       if (lookup && (reading == null || glossary == null)) {
-        found = await searchRemoteDictionaryForRequest(
-          app().createRemoteLookupService(),
-          term: word,
-          wildcards: false,
+        // 与查词页同一条查词链（远端优先，BUG-4233）：瘦客户端靠电脑的词典补释义。
+        found = await app().searchDictionaryForUser(
+          searchTerm: word,
           maximumTerms: 10,
-          language: _ctlLookupLanguage(call),
+          lookupLanguage: _ctlLookupLanguage(call),
         );
       }
       final Map<String, String> fields = buildCtlMineFields(

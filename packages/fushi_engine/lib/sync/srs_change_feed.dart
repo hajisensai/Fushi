@@ -8,6 +8,12 @@ library;
 
 import 'dart:async';
 
+/// host 自己加入复习同步 v2 了没有（BUG-4232）：`GET` 回 `{"joined": bool}`。app 作为 host 时，用户确认首次 v2
+/// 同步之前它不跑本机目录那一轮——既不发布自己的复习数据，也不并入已配对设备写进来的段，客户端那一轮「成功」却什么
+/// 都收不到。客户端一轮跑完问这里，据此说「对端还没开复习同步」而不是「全部已同步」。没有首次确认这一步的 host
+/// （无头服务端 / 老版本）不提供这个端点（404），客户端按「不报告」处理。
+const String kSrsSyncStatusPath = '/api/srs/sync-status';
+
 /// 一次长轮询最多挂多久（小于常见反向代理的 60 s 空闲超时）。
 const Duration kSrsChangeWait = Duration(seconds: 25);
 

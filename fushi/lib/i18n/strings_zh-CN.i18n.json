@@ -8821,6 +8821,8 @@
   "srs_sync_now": "立即同步",
   "srs_sync_now_busy": "正在同步：$progress",
   "srs_sync_now_started": "开始同步复习数据…",
+  "srs_sync_peer_not_joined": "已配对设备还没开启复习同步",
+  "srs_sync_peer_not_joined_hint": "在那台设备上打开复习并点「开始同步」。在那之前它既不接收你的改动，也不发出它自己的。",
   "srs_sync_profile_conflict_adopt_hint": "本机还没有笔记，将直接改用所选的那一份。",
   "srs_sync_profile_conflict_body": "同步位置里有其他设备的复习数据，没法自动确定本机该用哪一份。请选择：",
   "srs_sync_profile_conflict_devices": "来自 $devices",

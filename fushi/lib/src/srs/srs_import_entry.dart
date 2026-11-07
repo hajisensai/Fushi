@@ -500,6 +500,10 @@ Future<void> openSrsMinedHistoryImport(
   if (result.unconfigured) {
     return (msg: t.srs_sync_no_backend, severity: ToastSeverity.info);
   }
+  // BUG-4232：本机的改动发出去了，但已配对设备还没开启复习同步——它没并入、也没发它的数据，不能报「已同步」。
+  if (result.peersNotJoined > 0) {
+    return (msg: t.srs_sync_peer_not_joined, severity: ToastSeverity.warning);
+  }
   return (msg: t.srs_sync_done, severity: ToastSeverity.success);
 }
 

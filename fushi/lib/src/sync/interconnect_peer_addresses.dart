@@ -505,18 +505,30 @@ List<FushiClientUrl> applyIssuedInterconnectToken(
 /// - 新条目继承锚点的 token / 指纹 / 展示名：per-peer token 对这台 host 的所有
 ///   地址都有效，证书也是同一张。指纹只给 https 地址。
 /// - 插入位置：同组内第一个优先级更低的条目之前；手输条目的相对顺序不变。
+/// - [deviceName]（host 自报的展示名，BUG-4234）：同组里还没有名字的条目（含锚点）补上，已有的名字
+///   不动。升级前用手动地址配对的 host 没记名字，下次学地址时据此补齐。
 List<FushiClientUrl> mergeLearnedHostAddresses(
   List<FushiClientUrl> list, {
   required String anchorUrl,
   required String hostId,
   required List<InterconnectHostAddress> addresses,
+  String? deviceName,
 }) {
   final int anchorIndex = list.indexWhere(
     (FushiClientUrl u) => u.url == anchorUrl,
   );
   if (anchorIndex < 0) return list;
   if (!_anchorMayClaimHostId(list, anchorIndex, hostId)) return list;
-  final FushiClientUrl anchor = list[anchorIndex].copyWith(hostId: hostId);
+  final String? hostName = (deviceName?.trim().isNotEmpty ?? false)
+      ? deviceName!.trim()
+      : null;
+  FushiClientUrl named(FushiClientUrl u) =>
+      hostName == null || (u.deviceName?.trim().isNotEmpty ?? false)
+      ? u
+      : u.copyWith(deviceName: hostName);
+  final FushiClientUrl anchor = named(
+    list[anchorIndex].copyWith(hostId: hostId),
+  );
   final List<InterconnectHostAddress> kept = collapseRotatingIpv6Addresses(
     addresses,
     preferUrls: <String>[
@@ -545,10 +557,10 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     }
     if (u.hostId == null && !u.learned && published.contains(u.url)) {
       // 手输的同一台机器：归组。
-      out.add(withAnchorToken(u.copyWith(hostId: hostId)));
+      out.add(named(withAnchorToken(u.copyWith(hostId: hostId))));
       continue;
     }
-    out.add(u.hostId == hostId ? withAnchorToken(u) : u);
+    out.add(u.hostId == hostId ? named(withAnchorToken(u)) : u);
   }
 
   for (final InterconnectHostAddress a in kept) {
@@ -596,6 +608,13 @@ void setInterconnectAcceptsP2pAddresses(bool accept) {
   _acceptP2pAddresses = accept;
 }
 
+/// host 的 `/api/host/addresses` 回包：身份、展示名（老 host 为 null）与地址集。
+typedef _PublishedHostAddresses = ({
+  String hostId,
+  String? deviceName,
+  List<InterconnectHostAddress> addresses,
+});
+
 /// 从 host 的 `/api/host/addresses` 学习它公布的地址集并合并进候选列表。
 ///
 /// 触发点：配对成功（立即）、同步选路成功（后台、按地址节流）。学习失败只留痕，
@@ -640,8 +659,10 @@ class InterconnectAddressLearner {
       await _repo.getFushiClientToken(),
     );
     if (token == null) return false;
-    final ({String hostId, List<InterconnectHostAddress> addresses})?
-    published = await _fetchPublished(anchor, token);
+    final _PublishedHostAddresses? published = await _fetchPublished(
+      anchor,
+      token,
+    );
     if (published == null) return false;
 
     bool changed = false;
@@ -651,6 +672,7 @@ class InterconnectAddressLearner {
         anchorUrl: anchor.url,
         hostId: published.hostId,
         addresses: published.addresses,
+        deviceName: published.deviceName,
       );
       if (_sameList(before, after)) return before;
       changed = true;
@@ -672,8 +694,10 @@ class InterconnectAddressLearner {
     );
   }
 
-  Future<({String hostId, List<InterconnectHostAddress> addresses})?>
-  _fetchPublished(FushiClientUrl anchor, String token) async {
+  Future<_PublishedHostAddresses?> _fetchPublished(
+    FushiClientUrl anchor,
+    String token,
+  ) async {
     final Uri? base = Uri.tryParse(anchor.url);
     if (base == null || (base.scheme != 'http' && base.scheme != 'https')) {
       return null;
@@ -705,7 +729,13 @@ class InterconnectAddressLearner {
         final InterconnectHostAddress? a = InterconnectHostAddress.fromJson(e);
         if (a != null) addresses.add(a);
       }
-      return (hostId: hostId, addresses: addresses);
+      final Object? deviceName = decoded['deviceName'];
+      return (
+        hostId: hostId,
+        // BUG-4234：host 展示名（老 host 不带）。
+        deviceName: deviceName is String ? deviceName : null,
+        addresses: addresses,
+      );
     } finally {
       client.close();
     }

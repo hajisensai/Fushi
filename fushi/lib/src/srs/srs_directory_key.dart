@@ -42,6 +42,16 @@ String? srsServerDirectoryKey(String kind, String? server, String? user) {
   return '$kind:$s|${user ?? ''}';
 }
 
+/// [store] 那头自己也跑复习同步的设备加入了没有（BUG-4232）：只有互联 host 报告（[InterconnectSyncBackend.hostSrsSyncJoined]），
+/// 云盘 / WebDAV 等纯存储后端那头没有对端，回 null。
+Future<bool?> srsChannelPeerJoined(SyncAssetStore store) async {
+  SyncAssetStore inner = store;
+  while (inner is ObfuscatingSyncBackend) {
+    inner = inner.inner;
+  }
+  return inner is InterconnectSyncBackend ? inner.hostSrsSyncJoined() : null;
+}
+
 /// [store] 所指同步目录的身份；拿不到稳定身份时 null（见库注释）。
 Future<String?> srsDirectoryKeyOf(
   SyncAssetStore store,

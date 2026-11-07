@@ -139,6 +139,10 @@ class SrsSync2Report {
   /// 这一轮实际用密钥收发（位置是加密的且本机口令对）。
   bool encrypted = false;
 
+  /// 位置那头自己也跑复习同步的设备（互联 host）报告它还没加入复习同步（BUG-4232）：本机这一轮发出去了，但对端既
+  /// 不并入、也没发布它自己的数据。调度器在一轮成功后填（引擎的一轮不碰它）；不算这一轮失败。
+  bool peerNotJoined = false;
+
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 }

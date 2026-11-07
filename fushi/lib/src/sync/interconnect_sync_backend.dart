@@ -32,6 +32,7 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/sync/srs_change_feed.dart' show kSrsSyncStatusPath;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
@@ -1060,6 +1061,31 @@ class InterconnectSyncBackend extends SyncBackend
     }
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
     return decoded is Map ? (decoded['token'] as num?)?.toInt() : null;
+  }
+
+  /// host 自己是否已加入复习同步 v2（BUG-4232，[kSrsSyncStatusPath]）。host 没确认首次 v2 同步前既不发布自己的
+  /// 复习数据、也不并入本机写过去的段：本机这一轮「成功」却收不到任何东西，调度器据此提示而不是说「全部已同步」。
+  /// null = host 不报告（无头服务端 / 老 host 没有首次确认这一步，端点 404）。网络 / 鉴权失败照常抛。
+  Future<bool?> hostSrsSyncJoined() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kSrsSyncStatusPath',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $kSrsSyncStatusPath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map ? decoded['joined'] as bool? : null;
   }
 
   /// Pulls the host-owned service configuration over the pinned HTTPS session.

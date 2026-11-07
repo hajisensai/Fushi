@@ -34,6 +34,31 @@ final class InterconnectLinkPairingFailed
   final String reason;
 }
 
+/// 一次 v2 配对成功后落库（BUG-4234：设置页手动地址、LAN 发现、扫码 / 深链三条入口共用这一份）：地址 + TOFU
+/// 指纹 + host 展示名，再把 per-peer token 落到这台 host 的全部地址（53NT7G_tSO）。
+///
+/// [deviceName] 是 host 自报的展示名（`/api/ping` 的 `deviceName`，链接里的设备名）。以前设置页那两条入口在
+/// 这里写死 null：手动地址配对的 host 没有名字，`peer ls` 不列名字、远程复习标题只剩 URL 主机名。
+///
+/// 已为这条地址钉扎的指纹与 [fingerprint] 不符时抛 [FushiFingerprintMismatchException]，绝不覆盖（疑似 MITM）。
+Future<void> recordInterconnectPairing(
+  SyncRepository repo, {
+  required String baseUrl,
+  required String token,
+  String? fingerprint,
+  String? deviceName,
+  String? hostId,
+}) async {
+  await repo.addFushiClientUrl(
+    baseUrl,
+    fingerprint: fingerprint,
+    deviceName: (deviceName?.trim().isNotEmpty ?? false)
+        ? deviceName!.trim()
+        : null,
+  );
+  await repo.setFushiClientTokenForUrl(baseUrl, token, hostId: hostId);
+}
+
 /// 链接能否并入已有的同 hostId 组：组不存在 → 能；存在 → 双方都有证书指纹且
 /// 相等才能（指纹 = 那台 host 的私钥，冒名者给不出同一个）。
 bool _linkMayJoinHostGroup(List<FushiClientUrl> urls, FushiPairLink link) {
@@ -115,16 +140,14 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
     case FushiPairV2Failure(:final String reason):
       return InterconnectLinkPairingFailed(reason);
     case FushiPairV2Success(:final String token):
-      await repo.addFushiClientUrl(
-        chosen.url,
-        fingerprint: fingerprint,
-        deviceName: link.deviceName,
-      );
       // 53NT7G_tSO：新 token 同步到这台 host 的全部地址（重新配对作废了旧 token）。
       // 归组判据同下方 merge：指纹对不上就只改这一行。
-      await repo.setFushiClientTokenForUrl(
-        chosen.url,
-        token,
+      await recordInterconnectPairing(
+        repo,
+        baseUrl: chosen.url,
+        token: token,
+        fingerprint: fingerprint,
+        deviceName: link.deviceName,
         hostId: link.hostId,
       );
       await repo.updateFushiClientUrls((List<FushiClientUrl> urls) {
@@ -137,6 +160,7 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
           anchorUrl: chosen.url,
           hostId: link.hostId,
           addresses: link.addresses,
+          deviceName: link.deviceName,
         );
       });
       await repo.setInterconnectEnabled(true);
