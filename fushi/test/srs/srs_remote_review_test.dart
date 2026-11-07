@@ -46,6 +46,15 @@ const FushiClientUrl _peer = FushiClientUrl(
   url: 'http://host:8765',
   token: 'tok',
   hostId: 'host-1',
+  deviceName: 'Host',
+);
+
+/// 第二台已配对主机（配对清单里的条目；它的路由由 [_FakeConnector.hosts] 里的另一台 [_Host] 接）。
+const FushiClientUrl _peer2 = FushiClientUrl(
+  url: 'http://host2:8765',
+  token: 'tok2',
+  hostId: 'host-2',
+  deviceName: 'Host 2',
 );
 
 /// 一台互联主机：内存库上的复习 + 远程复习库服务；[client] 经 MockClient 打到真实路由。
@@ -133,30 +142,36 @@ Future<_Host> _openHost(List<String> expressions) async {
       },
     );
   }
-  await SyncRepository(db).setFushiClientUrls(const <FushiClientUrl>[_peer]);
+  final SyncRepository repository = SyncRepository(db);
+  await repository.setFushiClientUrls(const <FushiClientUrl>[_peer]);
+  await repository.setInterconnectEnabled(true);
   return _Host(db, store);
 }
 
-/// 首页「已配对设备」用的连接器：只有 [host] 一台主机，连它走 MockClient。
+/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），能力探测只认
+/// [hosts] 里有的 hostId（不走网络），连主机走对应 [_Host] 的 MockClient。
 class _FakeConnector extends SrsRemoteHostConnector {
-  const _FakeConnector(super.app, this.host, this.dir);
+  _FakeConnector(super.app, this.host, this.dir, {Map<String, _Host>? hosts})
+    : hosts = hosts ?? <String, _Host>{'host-1': host};
 
   final _Host host;
   final Directory dir;
+  final Map<String, _Host> hosts;
 
   @override
-  Future<List<InterconnectHostTarget>> probe() async =>
-      const <InterconnectHostTarget>[
-        InterconnectHostTarget(
-          hostId: 'host-1',
-          displayName: 'Host',
-          peer: _peer,
-        ),
-      ];
+  SyncRepository? get repository => host.repository;
+
+  @override
+  Future<List<InterconnectHostTarget>> supporting(
+    List<InterconnectHostTarget> candidates,
+  ) async => <InterconnectHostTarget>[
+    for (final InterconnectHostTarget c in candidates)
+      if (hosts.containsKey(c.hostId)) c,
+  ];
 
   @override
   Future<SrsRemoteSession> open(InterconnectHostTarget target) async {
-    final SrsRemoteHostClient client = host.client();
+    final SrsRemoteHostClient client = hosts[target.hostId]!.client();
     final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
     final SrsRemoteStore store = await SrsRemoteStore.connect(
       client,
@@ -166,22 +181,30 @@ class _FakeConnector extends SrsRemoteHostConnector {
   }
 }
 
-/// 记下探测 / 握手次数的连接器。
+/// 记下能力探测 / 握手次数的连接器。
 class _CountingConnector extends _FakeConnector {
-  _CountingConnector(super.app, super.host, super.dir);
+  _CountingConnector(super.app, super.host, super.dir, {super.hosts});
 
-  int probes = 0;
-  int opens = 0;
+  /// 探过能力的 hostId（按次序，一台探一次记一条）。
+  final List<String> probed = <String>[];
+
+  /// 握手过的 hostId。
+  final List<String> opened = <String>[];
+
+  int get probes => probed.length;
+  int get opens => opened.length;
 
   @override
-  Future<List<InterconnectHostTarget>> probe() {
-    probes++;
-    return super.probe();
+  Future<List<InterconnectHostTarget>> supporting(
+    List<InterconnectHostTarget> candidates,
+  ) {
+    probed.addAll(candidates.map((InterconnectHostTarget c) => c.hostId));
+    return super.supporting(candidates);
   }
 
   @override
   Future<SrsRemoteSession> open(InterconnectHostTarget target) {
-    opens++;
+    opened.add(target.hostId);
     return super.open(target);
   }
 }
@@ -831,6 +854,141 @@ void main() {
         findsOneWidget,
       );
       expect(connector.probes, 1);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    Future<void> reopen(WidgetTester tester, ValueNotifier<bool> shown) async {
+      shown.value = false;
+      await settle(tester, rounds: 4);
+      shown.value = true;
+      await settle(tester);
+    }
+
+    const Key pairedSection = ValueKey<String>('srs-home-paired');
+
+    testWidgets('关掉互联总开关 / 本机切成服务端后再进首页：分区消失、不再向主机发请求；重新打开后重新发现', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      expect(find.byKey(pairedSection), findsOneWidget);
+      expect(connector.opens, 1);
+
+      // 关总开关：缓存的会话不能再用。
+      await tester.runAsync(
+        () => host.repository.setInterconnectEnabled(false),
+      );
+      final int opsBefore = host.ops.length;
+      await reopen(tester, shown);
+      expect(find.byKey(pairedSection), findsNothing, reason: '尊重用户关掉互联');
+      expect(host.ops.length, opsBefore, reason: '关了互联不再用旧会话向主机发请求');
+      expect(connector.probes, 1, reason: '配置门控关闭时不走网络探测');
+
+      // 再打开：主机重新探测并握手（旧会话已作废）。
+      await tester.runAsync(() => host.repository.setInterconnectEnabled(true));
+      await reopen(tester, shown);
+      expect(find.byKey(pairedSection), findsOneWidget);
+      expect(connector.probes, 2);
+      expect(connector.opens, 2, reason: '移除时会话作废，重新发现后重新握手');
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
+
+      // 本机切成服务端：同样不显示、不发请求。
+      await tester.runAsync(() => host.repository.setServerEnabled(true));
+      final int opsBeforeServer = host.ops.length;
+      await reopen(tester, shown);
+      expect(find.byKey(pairedSection), findsNothing, reason: '本机做互联主机时不连出去');
+      expect(host.ops.length, opsBeforeServer);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('已有一台主机时再配对第二台：再进首页只探新的那台并发现它；停用一台后它从分区消失', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector first) =
+          await openFixture(tester);
+      final _Host host2 = (await tester.runAsync(
+        () => _openHost(<String>['山']),
+      ))!;
+      addTearDown(() => tester.runAsync(host2.db.close));
+      final _CountingConnector connector = _CountingConnector(
+        first.app,
+        host,
+        first.dir,
+        hosts: <String, _Host>{'host-1': host, 'host-2': host2},
+      );
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      expect(connector.probed, <String>['host-1']);
+      final Finder header2 = find.byKey(
+        const ValueKey<String>('srs-paired-header-host-2'),
+      );
+      expect(header2, findsNothing);
+
+      // 配对第二台。
+      await tester.runAsync(
+        () => host.repository.setFushiClientUrls(const <FushiClientUrl>[
+          _peer,
+          _peer2,
+        ]),
+      );
+      await reopen(tester, shown);
+      expect(header2, findsOneWidget, reason: '新配对的主机进页面就能发现');
+      expect(
+        find.descendant(of: header2, matching: find.text('Host 2')),
+        findsOneWidget,
+      );
+      expect(connector.probed, <String>[
+        'host-1',
+        'host-2',
+      ], reason: '只探新出现的那台，已有的不重探');
+      expect(connector.opened, <String>[
+        'host-1',
+        'host-2',
+      ], reason: '已有的主机复用会话，只给新的握手');
+      expect(
+        find.descendant(
+          of: header2,
+          matching: find.textContaining(t.srs_home_deck_cards(n: 1)),
+        ),
+        findsOneWidget,
+      );
+
+      // 停用第一台：它从分区消失，第二台还在；不再向第一台发请求。
+      await tester.runAsync(
+        () => host.repository.setFushiClientUrls(const <FushiClientUrl>[
+          FushiClientUrl(
+            url: 'http://host:8765',
+            token: 'tok',
+            hostId: 'host-1',
+            deviceName: 'Host',
+            enabled: false,
+          ),
+          _peer2,
+        ]),
+      );
+      final int opsBefore = host.ops.length;
+      await reopen(tester, shown);
+      expect(
+        find.byKey(const ValueKey<String>('srs-paired-header-host-1')),
+        findsNothing,
+        reason: '停用的主机不留在分区里停在错误态',
+      );
+      expect(header2, findsOneWidget);
+      expect(host.ops.length, opsBefore, reason: '停用后不再向它发请求');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

@@ -52,19 +52,31 @@ class SrsRemoteHostConnector {
   final AppModel app;
 
   /// 互联配置在 app 库里；库还没开（启动早期 / 测试替身）时没有可用主机。
-  SyncRepository? get _repository =>
+  SyncRepository? get repository =>
       app.isDatabaseOpen ? SyncRepository(app.database) : null;
 
-  /// 声明了远程复习能力的已配对主机（没应答的不列）。
-  Future<List<InterconnectHostTarget>> probe() async {
-    final SyncRepository? repository = _repository;
-    if (repository == null) return const <InterconnectHostTarget>[];
-    return probeSrsRemoteStoreTargets(repository);
+  /// 本机互联配置此刻允许连的已配对主机（只读本地库，不走网络：总开关、服务端模式、启用且有凭据的条目）。
+  /// 缓存了主机列表的调用方每次复用前用它对账。
+  Future<List<InterconnectHostTarget>> configured() async {
+    final SyncRepository? repo = repository;
+    if (repo == null) return const <InterconnectHostTarget>[];
+    return configuredInterconnectHostTargets(repo);
+  }
+
+  /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`，没应答的不列）。
+  Future<List<InterconnectHostTarget>> supporting(
+    List<InterconnectHostTarget> candidates,
+  ) async {
+    final SyncRepository? repo = repository;
+    if (repo == null || candidates.isEmpty) {
+      return const <InterconnectHostTarget>[];
+    }
+    return filterSrsRemoteStoreTargets(repo, candidates);
   }
 
   /// 连上 [target]：握手拿到主机的 profile，失败抛 [InterconnectHostError]。
   Future<SrsRemoteSession> open(InterconnectHostTarget target) async {
-    final SyncRepository? repository = _repository;
+    final SyncRepository? repository = this.repository;
     if (repository == null) {
       throw StateError('app database is closed');
     }

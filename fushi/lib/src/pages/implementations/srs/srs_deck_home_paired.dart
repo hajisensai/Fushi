@@ -12,12 +12,21 @@ part of 'srs_deck_list_page.dart';
 // - 主机列表、会话与牌组摘要由 [_srsPairedHostsProvider] 在 app 级持有：再进复习页先画上次的结果（组头标明
 //   更新时间 / 刷新中），后台用已有会话重读牌组，不重新探测、不重新握手；加载失败只记错误，不清掉上次的牌组。
 //   缓存的只是界面要画的牌组摘要（主机的库仍在主机上，翻页 / 作答都实时打到主机）。
+// - 缓存的是「网络探测」的结果，不是「本机配置门控」：每次进页面都先按本机互联配置（总开关、服务端模式、
+//   启用且有凭据的已配对条目，只读本地库）对账——配置里没有了的主机移除并作废会话，凭据变了的当新主机，
+//   新出现的只对它探能力 + 握手；配置没变的主机才复用会话。请求层只按 hostId + 凭据挑地址，不看总开关与
+//   服务端模式，所以这道门只能在这里。
 
 /// 一台已配对主机在首页上的状态。
 class _PairedHost {
   _PairedHost(this.target);
 
-  final InterconnectHostTarget target;
+  /// 最近一次对账时本机配置里的这台主机（显示名可能随配置更新；hostId 与凭据不变，变了就是另一个 [_PairedHost]）。
+  InterconnectHostTarget target;
+
+  /// [next] 是否还是这台主机的同一份配对：同 hostId、同凭据（请求层按这两项挑地址，会话据此仍然有效）。
+  bool sameAs(InterconnectHostTarget next) =>
+      next.hostId == target.hostId && next.peer.token == target.peer.token;
 
   /// 连上后的会话（本次运行内复用，不每次进页面都握手）；出错后为 null（下次加载重新握手）。
   SrsRemoteSession? session;
@@ -59,55 +68,113 @@ class _SrsPairedHosts extends ChangeNotifier {
   List<_PairedHost> hosts = const <_PairedHost>[];
   bool _disposed = false;
 
-  /// 正在跑的探测（同一时刻只跑一轮：页面重进 / 点刷新撞上时等同一轮）。
-  Future<void>? _probing;
+  /// 正在跑的一轮对账（同一时刻只跑一轮：页面重进 / 点刷新撞上时等同一轮）。
+  Future<void>? _syncing;
 
-  /// 探测是否完成过一轮（之后进页面复用探测结果）。
-  bool _probed = false;
+  /// 跑完之后还要不要补一轮全量重探（对账进行中点了「立即同步」）。
+  bool _reprobeQueued = false;
 
   void _notify() {
     if (!_disposed) notifyListeners();
   }
 
-  /// 进复习首页时调：探测过且找到过主机就复用主机列表与会话，只在后台重读各主机的牌组（界面先画缓存）；
-  /// 还没探测过、或上次一台都没找到（分区不显示、没有刷新入口，新配对的主机靠这里发现）时探测一轮。
-  Future<void> refresh() {
-    if (!_probed || hosts.isEmpty) return probe();
-    return Future.wait(<Future<void>>[
-      for (final _PairedHost h in hosts) load(h),
-    ]);
+  /// 进复习首页时调：先按本机配置对账（关了互联 / 切成服务端就清空，取消配对或停用的移除），配置没变的主机
+  /// 复用会话、只在后台重读牌组（界面先画缓存）；配置里新出现的（或上次没应答的）主机才探能力并握手。
+  Future<void> refresh() => _run(reprobeKnown: false);
+
+  /// 全量重探（「立即同步」）：对账后连已在列表里的主机也重新探能力（已有的保留会话、牌组缓存与展开状态），
+  /// 再并行读各自的牌组。
+  Future<void> probe() {
+    if (_syncing != null) {
+      _reprobeQueued = true;
+      return _syncing!;
+    }
+    return _run(reprobeKnown: true);
   }
 
-  /// 重新找一遍主机（已有的保留会话、牌组缓存与展开状态），再并行读各自的牌组。
-  Future<void> probe() {
-    final Future<void>? running = _probing;
+  Future<void> _run({required bool reprobeKnown}) {
+    final Future<void>? running = _syncing;
     if (running != null) return running;
-    final Future<void> run = _probe().whenComplete(() {
-      _probing = null;
+    final Future<void> run = _sync(reprobeKnown: reprobeKnown).whenComplete(() {
+      _syncing = null;
       _notify();
+      if (_reprobeQueued && !_disposed) {
+        _reprobeQueued = false;
+        srsRunLogged('SrsPairedHosts.probe', probe);
+      }
     });
-    _probing = run;
-    _notify();
+    _syncing = run;
     return run;
   }
 
-  Future<void> _probe() async {
-    final List<InterconnectHostTarget> targets = await connector.probe();
+  Future<void> _sync({required bool reprobeKnown}) async {
+    final List<InterconnectHostTarget> configured = await connector
+        .configured();
     if (_disposed) return;
-    _probed = true;
+
+    // 第一步（纯本地）：配置里没有了 / 凭据变了的主机立刻移除并作废会话，配置门控关闭时清空。
     final Map<String, _PairedHost> old = <String, _PairedHost>{
       for (final _PairedHost h in hosts) h.target.hostId: h,
     };
-    hosts = <_PairedHost>[
-      for (final InterconnectHostTarget t in targets)
-        old.remove(t.hostId) ?? _PairedHost(t),
-    ];
+    final Map<String, _PairedHost> kept = <String, _PairedHost>{};
+    for (final InterconnectHostTarget c in configured) {
+      final _PairedHost? prev = old[c.hostId];
+      if (prev != null && prev.sameAs(c)) {
+        prev.target = c;
+        kept[c.hostId] = old.remove(c.hostId)!;
+      }
+    }
     for (final _PairedHost gone in old.values) {
       gone.session?.client.cancelPending();
     }
+    hosts = <_PairedHost>[
+      for (final InterconnectHostTarget c in configured) ?kept[c.hostId],
+    ];
+    _notify();
+
+    // 第二步（走网络）：只探需要探的——新出现的 / 凭据变了的 / 上次没应答的；全量重探时连已有的一起。
+    // 已有的主机同时用已有会话重读牌组，不等探测。
+    final List<InterconnectHostTarget> candidates = <InterconnectHostTarget>[
+      for (final InterconnectHostTarget c in configured)
+        if (reprobeKnown || !kept.containsKey(c.hostId)) c,
+    ];
+    final Future<List<InterconnectHostTarget>> probing = connector.supporting(
+      candidates,
+    );
+    final List<Future<void>> loads = <Future<void>>[
+      if (!reprobeKnown)
+        for (final _PairedHost h in kept.values) load(h),
+    ];
+    final Set<String> supported = <String>{
+      for (final InterconnectHostTarget t in await probing) t.hostId,
+    };
+    if (_disposed) {
+      await Future.wait(loads);
+      return;
+    }
+
+    // 合并：探测期间本轮外没人改 [hosts]（同一时刻只跑一轮），按配置顺序排。
+    final List<_PairedHost> added = <_PairedHost>[];
+    final List<_PairedHost> next = <_PairedHost>[];
+    for (final InterconnectHostTarget c in configured) {
+      final _PairedHost? prev = kept[c.hostId];
+      if (prev != null) {
+        if (!reprobeKnown || supported.contains(c.hostId)) {
+          next.add(prev);
+        } else {
+          prev.session?.client.cancelPending();
+        }
+      } else if (supported.contains(c.hostId)) {
+        final _PairedHost h = _PairedHost(c);
+        added.add(h);
+        next.add(h);
+      }
+    }
+    hosts = next;
     _notify();
     await Future.wait(<Future<void>>[
-      for (final _PairedHost h in hosts) load(h),
+      ...loads,
+      for (final _PairedHost h in reprobeKnown ? next : added) load(h),
     ]);
   }
 
