@@ -191,17 +191,45 @@ class SourceReviewSession extends ChangeNotifier {
       }
       final CardSourceLink fixed =
           context.sourceLink?.withSourceId(link.sourceId) ?? link;
-      // Copy temporary audio/images before the caller's finally cleans them up,
-      // including when the paired device is currently offline.
-      final SourceReviewDraft saved = await draftStore.saveMining(
-        link: fixed,
-        rawPayloadJson: rawPayloadJson,
-        context: context.withSourceLink(fixed),
-        peerUrl: _peerUrl,
-        peerIdentity: _peerIdentity,
-      );
-      _hasDraft = true;
-      return await _reviewMining(saved.mining!);
+      // Copy temporary audio/images before the caller's finally cleans them up.
+      Future<SourceReviewDraft> retain() async {
+        final SourceReviewDraft saved = await draftStore.saveMining(
+          link: fixed,
+          rawPayloadJson: rawPayloadJson,
+          context: context.withSourceLink(fixed),
+          peerUrl: _peerUrl,
+          peerIdentity: _peerIdentity,
+        );
+        _hasDraft = true;
+        return saved;
+      }
+
+      // BUG-4231: ask for the original before persisting anything. A backend
+      // that could not answer (offline peer, Anki closed) leaves an uncertain
+      // state, so the work is kept as a resumable draft. A definitive "no such
+      // note" can never be resumed against the same link, so it must not
+      // leave a draft that blocks every later edit of this source.
+      final AnkiSourceNote? original;
+      try {
+        original = await repository.readSourceNote(link.sourceId);
+      } catch (error, stackTrace) {
+        await retain();
+        return MineOutcome.failure(
+          t.card_source_review_draft_saved,
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      if (original == null) {
+        return MineOutcome.failure(t.card_source_review_missing);
+      }
+      final SourceReviewDraft saved = await retain();
+      final Map<String, String> candidate = await repository
+          .prepareSourceNoteFields(
+            rawPayloadJson: saved.mining!.rawPayloadJson,
+            context: saved.mining!.context,
+          );
+      return await _reviewFields(original, candidate);
     } catch (error, stackTrace) {
       return MineOutcome.failure(
         _hasDraft

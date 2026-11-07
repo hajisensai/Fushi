@@ -58,6 +58,7 @@ class _Repository implements BaseAnkiRepository {
   int patches = 0;
   int additions = 0;
   bool offline = false;
+  bool missing = false;
   bool conflict = false;
   Completer<AnkiSourceNote?>? pendingRead;
   AnkiSourceNote? patchedOriginal;
@@ -70,6 +71,7 @@ class _Repository implements BaseAnkiRepository {
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
     reads++;
     if (offline) throw StateError('offline');
+    if (missing) return null;
     return pendingRead != null ? pendingRead!.future : snapshot;
   }
 
@@ -421,6 +423,40 @@ void main() {
       });
       expect(session.hasDraft, isTrue);
       expect(repository.reads, 1);
+      expect(repository.prepares, 0);
+      expect(repository.patches, 0);
+      expect(repository.additions, 0);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'missing original leaves no draft and does not block the next mining '
+    '(BUG-4231)',
+    (WidgetTester tester) async {
+      await mount(tester);
+      repository.missing = true;
+      await tester.runAsync(() async {
+        final File audio = await File(
+          p.join(scratch.path, 'temporary.wav'),
+        ).writeAsBytes(<int>[1, 2, 3]);
+        for (int attempt = 1; attempt <= 2; attempt++) {
+          final MineOutcome outcome = await session.mine(
+            rawPayloadJson: jsonEncode(<String, String>{'audio': audio.path}),
+            context: AnkiMiningContext(
+              sentence: 'sentence',
+              sentenceAudioPath: audio.path,
+            ),
+          );
+          expect(outcome.result, MineResult.error);
+          // The definitive answer is surfaced, not "kept as a draft", and the
+          // second attempt is not refused as "existing draft".
+          expect(outcome.errorDetail, t.card_source_review_missing);
+          expect(await store.read(_sourceId), isNull);
+        }
+      });
+      expect(session.hasDraft, isFalse);
+      expect(repository.reads, 2);
       expect(repository.prepares, 0);
       expect(repository.patches, 0);
       expect(repository.additions, 0);
