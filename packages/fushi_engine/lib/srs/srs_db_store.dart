@@ -203,6 +203,7 @@ class SrsRenderedCard {
     this.fushiCardDefinitions,
     this.fushiCardFront = const <FushiCardItem>[],
     this.fushiCardBack = const <FushiCardItem>[],
+    this.nativeFallback,
   });
 
   final String question;
@@ -223,6 +224,12 @@ class SrsRenderedCard {
   /// 里面；HTML 区块已按笔记字段展开）。只在 [fushiCardDefinitions] 非 null 时有意义。
   final List<FushiCardItem> fushiCardFront;
   final List<FushiCardItem> fushiCardBack;
+
+  /// [fushiCardDefinitions] 为 null（引擎判定原生 Fushi 卡面画不了）时卡在哪一道
+  /// （[srsFushiCardNative]）；能原生画时为 null。非 Fushi 卡片是
+  /// [SrsCardNativeFallbackCode.notBuiltin]，远程老主机没带原因时是
+  /// [SrsCardNativeFallbackCode.remoteUnknown]。app 侧再判的区块 / HTML 子集原因不在这里。
+  final SrsCardNativeFallback? nativeFallback;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -4735,7 +4742,7 @@ class SrsDbStore implements SrsSync2Host {
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
-    final SrsFushiCardNative? native = srsFushiCardNative(
+    final SrsFushiCardNativeProbe probe = srsFushiCardNative(
       builtinKey: d.noteType.builtinKey,
       front: front,
       back: back,
@@ -4744,15 +4751,19 @@ class SrsDbStore implements SrsSync2Host {
       cardOrd: tpl.ord,
       specials: specials,
     );
+    final SrsFushiCardNative? native = probe.native;
     return SrsRenderedCard(
       question: faces.question,
       answer: faces.answer,
-      css: d.noteType.css,
+      // 原生卡面只拿样式给释义 WebView 用：冻住的历史内置样式换成当前内置样式（释义 HTML
+      // 按当前模板生成），见 [SrsFushiCardNative.css]。
+      css: native?.css ?? d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
       fushiCardDefinitions: native?.definitions,
       fushiCardFront: native?.front ?? const <FushiCardItem>[],
       fushiCardBack: native?.back ?? const <FushiCardItem>[],
+      nativeFallback: probe.fallback,
     );
   }
 
