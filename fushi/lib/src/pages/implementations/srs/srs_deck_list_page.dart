@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show Directory;
 import 'dart:math' as math;
 
@@ -25,7 +26,7 @@ import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
-    show SrsRemoteStoreError;
+    show SrsRemoteStoreError, SrsRemoteWire, SrsRemoteWireError;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -54,6 +55,8 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_remote_store_client.dart'
+    show SrsRemoteBadResponse, SrsRemoteDeckSnapshot;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;
 import 'package:fushi/src/sync/video_remote_targets.dart'

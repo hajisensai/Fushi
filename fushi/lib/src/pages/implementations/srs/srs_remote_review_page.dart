@@ -22,6 +22,12 @@ import 'package:fushi/src/sync/interconnect_host_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
 
+/// 复习首页「已配对设备」的落盘缓存（String，JSON：`{v, hosts: [{id, at, probed, decks}]}`，`decks` 是
+/// [SrsRemoteWire.deckCache]）。写在 `srs_deck_home_paired.dart`。**设备本地**：描述的是这台设备配对的主机与
+/// 上次看到的数字，不随备份 / 同步 / Profile 走（已登记进 `kKnownPreferenceKeys` 与
+/// `SyncRepository.deviceLocalPrefKeys`）。不含凭据（只有 hostId）。
+const String kSrsHomePairedCachePrefKey = 'srs_home_paired_cache';
+
 /// 连上一台主机后的远程复习会话：转发到主机的库 + 按名字补拉的媒体缓存。
 class SrsRemoteSession {
   const SrsRemoteSession({
@@ -63,6 +69,25 @@ class SrsRemoteHostConnector {
     }
     return filterSrsRemoteStoreTargets(repo, candidates);
   }
+
+  /// 复习首页「已配对设备」的落盘缓存（[kSrsHomePairedCachePrefKey]）；库还没开时 null（之后再读）。
+  String? readHomeCache() {
+    if (!app.isDatabaseOpen) return null;
+    final Object? raw = app.prefsRepo.getPref(
+      kSrsHomePairedCachePrefKey,
+      defaultValue: '',
+    );
+    return raw is String ? raw : '';
+  }
+
+  /// 写回 [readHomeCache] 读的那份；空串 = 没有缓存。库没开时不写。
+  Future<void> writeHomeCache(String value) async {
+    if (!app.isDatabaseOpen) return;
+    await app.prefsRepo.setPref(kSrsHomePairedCachePrefKey, value);
+  }
+
+  /// 首页缓存的时间戳与探测有效期用的时钟（测试换成可拨的）。
+  DateTime now() => DateTime.now();
 
   /// 连上 [target]：握手拿到主机的 profile，失败抛 [InterconnectHostError]。
   Future<SrsRemoteSession> open(InterconnectHostTarget target) async {

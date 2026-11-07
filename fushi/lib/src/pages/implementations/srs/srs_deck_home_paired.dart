@@ -10,12 +10,23 @@ part of 'srs_deck_list_page.dart';
 // - 主机的数字只在它自己那组里显示，不并进本机的「今日计划」（用户同日拍板不要「另有 N 张在别的设备」那行）；
 // - 收起 / 展开子牌组只是本机界面状态：远程库不转发 setDeckCollapsed（改主机的牌组结构留给主机自己）；
 // - 主机列表、会话与牌组摘要由 [_srsPairedHostsProvider] 在 app 级持有：再进复习页先画上次的结果（组头标明
-//   更新时间 / 刷新中），后台用已有会话重读牌组，不重新探测、不重新握手；加载失败只记错误，不清掉上次的牌组。
+//   更新时间 / 刷新中），后台用已有会话重读牌组，不重新握手；加载失败只记错误，不清掉上次的牌组。
 //   缓存的只是界面要画的牌组摘要（主机的库仍在主机上，翻页 / 作答都实时打到主机）。
+// - 牌组摘要连同探测时刻落盘（[kSrsHomePairedCachePrefKey]，设备本地，格式是远程复习的线格式
+//   [SrsRemoteWire.deckCache]，读回经同一套校验）：冷启动第一次进复习页也先画上次的数字，再握手重读。
+// - 探测结果有效期 [kSrsPairedProbeTtl]：过期的已知主机下次进页面自动重探（关了远程复习 / 离线的去掉），
+//   不在分区里的主机（新配对、上次没应答）每次进页面都探，所以新上线的主机不用点「立即同步」也能出现。
 // - 缓存的是「网络探测」的结果，不是「本机配置门控」：每次进页面都先按本机互联配置（总开关、服务端模式、
 //   启用且有凭据的已配对条目，只读本地库）对账——配置里没有了的主机移除并作废会话，凭据变了的当新主机，
 //   新出现的只对它探能力 + 握手；配置没变的主机才复用会话。请求层只按 hostId + 凭据挑地址，不看总开关与
 //   服务端模式，所以这道门只能在这里。
+
+/// 已配对主机的能力探测结果多久内算数：超过就在下次进页面时重新探（主机关了远程复习 / 已离线的从分区去掉），
+/// 不必点「立即同步」。没进分区的主机（新配对 / 上次没应答）不受它限制，每次进页面都探。
+const Duration kSrsPairedProbeTtl = Duration(minutes: 15);
+
+/// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。
+const int _kPairedCacheVersion = 1;
 
 /// 一台已配对主机在首页上的状态。
 class _PairedHost {
@@ -28,14 +39,21 @@ class _PairedHost {
   bool sameAs(InterconnectHostTarget next) =>
       next.hostId == target.hostId && next.peer.token == target.peer.token;
 
-  /// 连上后的会话（本次运行内复用，不每次进页面都握手）；出错后为 null（下次加载重新握手）。
+  /// 连上后的会话（本次运行内复用，不每次进页面都握手）；出错后为 null（下次加载重新握手）。冷启动从落盘缓存
+  /// 恢复的主机也是 null。
   SrsRemoteSession? session;
 
   /// 上次读到的主机牌组（先序），界面用的摘要缓存；还没读到过为 null。加载失败不清它。
   List<SrsDeckSummary>? decks;
 
+  /// [decks] 的落盘格式（[SrsRemoteWire.deckCache]）。
+  Map<String, Object?>? deckCache;
+
   /// [decks] 读到的时刻。
   DateTime? updatedAt;
+
+  /// 最近一次确认它声明了远程复习能力的时刻（超过 [kSrsPairedProbeTtl] 重新探）。
+  DateTime? probedAt;
 
   /// 最近一次加载失败的提示（下次加载开始时清掉）。
   String? error;
@@ -47,6 +65,89 @@ class _PairedHost {
 
   bool isCollapsed(SrsDeckSummary d) =>
       collapsed[d.deck.id] ?? d.deck.collapsed;
+
+  /// 探测结果是否过期（或从没探过）。
+  bool probeDue(DateTime now) {
+    final DateTime? at = probedAt;
+    return at == null || now.difference(at) >= kSrsPairedProbeTtl;
+  }
+
+  /// 落盘的一条；还没读到过牌组时没有（冷启动照常探测）。
+  Map<String, Object?>? toCache() {
+    final Map<String, Object?>? cache = deckCache;
+    final DateTime? at = updatedAt;
+    final DateTime? probed = probedAt;
+    if (cache == null || at == null || probed == null) return null;
+    return <String, Object?>{
+      'id': target.hostId,
+      'at': at.millisecondsSinceEpoch,
+      'probed': probed.millisecondsSinceEpoch,
+      'decks': cache,
+    };
+  }
+}
+
+/// 落盘缓存里的一台主机（[_PairedHost.toCache] 的读回）。
+class _CachedPairedHost {
+  const _CachedPairedHost({
+    required this.decks,
+    required this.deckCache,
+    required this.updatedAt,
+    required this.probedAt,
+  });
+
+  final List<SrsDeckSummary> decks;
+  final Map<String, Object?> deckCache;
+  final DateTime updatedAt;
+  final DateTime probedAt;
+
+  _PairedHost restore(InterconnectHostTarget target) => _PairedHost(target)
+    ..decks = decks
+    ..deckCache = deckCache
+    ..updatedAt = updatedAt
+    ..probedAt = probedAt;
+}
+
+/// 读回落盘缓存：hostId → 那台主机。格式对不上（版本 / 字段 / 牌组线格式）的条目记进错误日志后不用，
+/// 那台主机按冷启动探测；缓存只是先画的数字，主机的库仍以实时读到的为准。
+Map<String, _CachedPairedHost> _decodePairedCache(String raw) {
+  final Map<String, _CachedPairedHost> out = <String, _CachedPairedHost>{};
+  final Object? json;
+  try {
+    json = jsonDecode(raw);
+  } on FormatException catch (e, stack) {
+    ErrorLogService.instance.log('SrsPairedHosts.cache', e, stack);
+    return out;
+  }
+  if (json is! Map || json['v'] != _kPairedCacheVersion) return out;
+  final Object? hosts = json['hosts'];
+  if (hosts is! List) return out;
+  for (final Object? h in hosts) {
+    if (h case {
+      'id': final String id,
+      'at': final int at,
+      'probed': final int probed,
+      'decks': final Map<String, Object?> cache,
+    }) {
+      try {
+        out[id] = _CachedPairedHost(
+          decks: SrsRemoteWire.deckCacheFrom(cache),
+          deckCache: cache,
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(at),
+          probedAt: DateTime.fromMillisecondsSinceEpoch(probed),
+        );
+      } on SrsRemoteWireError catch (e, stack) {
+        ErrorLogService.instance.log('SrsPairedHosts.cache', e, stack);
+      }
+    } else {
+      ErrorLogService.instance.log(
+        'SrsPairedHosts.cache',
+        const SrsRemoteWireError('hosts[]'),
+        StackTrace.current,
+      );
+    }
+  }
+  return out;
 }
 
 /// 首页「已配对设备」的 app 级状态：跟着根容器活，复习页关掉再开不重新探测 / 握手。
@@ -77,12 +178,19 @@ class _SrsPairedHosts extends ChangeNotifier {
   /// 跑完之后还要不要补一轮全量重探（对账进行中点了「立即同步」）。
   bool _reprobeQueued = false;
 
+  /// 落盘缓存读回过没有（本次运行只读一次：之后内存里的就是最新的）。
+  bool _restored = false;
+
+  /// 最近一次写盘的内容（没变就不写，免得白白递增偏好版本号）。
+  String? _persisted;
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
 
-  /// 进复习首页时调：先按本机配置对账（关了互联 / 切成服务端就清空，取消配对或停用的移除），配置没变的主机
-  /// 复用会话、只在后台重读牌组（界面先画缓存）；配置里新出现的（或上次没应答的）主机才探能力并握手。
+  /// 进复习首页时调：先按本机配置对账（关了互联 / 切成服务端就清空，取消配对或停用的移除），配置没变、探测
+  /// 结果没过期（[kSrsPairedProbeTtl]）的主机复用会话、只在后台重读牌组（界面先画缓存）；配置里新出现的、
+  /// 上次没应答的、探测结果过期的主机探能力（需要时握手）。冷启动第一次进来先从落盘缓存恢复上次的牌组。
   Future<void> refresh() => _run(reprobeKnown: false);
 
   /// 全量重探（「立即同步」）：对账后连已在列表里的主机也重新探能力（已有的保留会话、牌组缓存与展开状态），
@@ -101,6 +209,7 @@ class _SrsPairedHosts extends ChangeNotifier {
     final Future<void> run = _sync(reprobeKnown: reprobeKnown).whenComplete(() {
       _syncing = null;
       _notify();
+      _persist();
       if (_reprobeQueued && !_disposed) {
         _reprobeQueued = false;
         srsRunLogged('SrsPairedHosts.probe', probe);
@@ -108,6 +217,26 @@ class _SrsPairedHosts extends ChangeNotifier {
     });
     _syncing = run;
     return run;
+  }
+
+  /// 冷启动第一次对账时：落盘缓存里、配置里还有、内存里还没有的主机恢复成上次的样子（没有会话）。
+  Map<String, _PairedHost> _restore(List<InterconnectHostTarget> configured) {
+    if (_restored) return const <String, _PairedHost>{};
+    final String? raw = connector.readHomeCache();
+    if (raw == null) return const <String, _PairedHost>{};
+    _restored = true;
+    _persisted = raw;
+    if (raw.isEmpty) return const <String, _PairedHost>{};
+    final Map<String, _CachedPairedHost> cached = _decodePairedCache(raw);
+    final Set<String> live = <String>{
+      for (final _PairedHost h in hosts) h.target.hostId,
+    };
+    return <String, _PairedHost>{
+      for (final InterconnectHostTarget c in configured)
+        if (!live.contains(c.hostId))
+          if (cached[c.hostId] case final _CachedPairedHost hit)
+            c.hostId: hit.restore(c),
+    };
   }
 
   Future<void> _sync({required bool reprobeKnown}) async {
@@ -121,9 +250,11 @@ class _SrsPairedHosts extends ChangeNotifier {
     }
     if (_disposed) return;
 
-    // 第一步（纯本地）：配置里没有了 / 凭据变了的主机立刻移除并作废会话，配置门控关闭时清空。
+    // 第一步（纯本地）：配置里没有了 / 凭据变了的主机立刻移除并作废会话，配置门控关闭时清空；冷启动时
+    // 落盘缓存里的主机按已知主机接上（先画上次的牌组）。
     final Map<String, _PairedHost> old = <String, _PairedHost>{
       for (final _PairedHost h in hosts) h.target.hostId: h,
+      ..._restore(configured),
     };
     final Map<String, _PairedHost> kept = <String, _PairedHost>{};
     for (final InterconnectHostTarget c in configured) {
@@ -141,18 +272,23 @@ class _SrsPairedHosts extends ChangeNotifier {
     ];
     _notify();
 
-    // 第二步（走网络）：只探需要探的——新出现的 / 凭据变了的 / 上次没应答的；全量重探时连已有的一起。
-    // 已有的主机同时用已有会话重读牌组，不等探测。
+    // 第二步（走网络）：只探需要探的——新出现的 / 凭据变了的 / 上次没应答的 / 探测结果过期的；全量重探时
+    // 连已有的一起。探测结果还算数的主机同时用已有会话重读牌组，不等探测。
+    final DateTime now = connector.now();
+    final Set<String> due = <String>{
+      for (final _PairedHost h in kept.values)
+        if (reprobeKnown || h.probeDue(now)) h.target.hostId,
+    };
     final List<InterconnectHostTarget> candidates = <InterconnectHostTarget>[
       for (final InterconnectHostTarget c in configured)
-        if (reprobeKnown || !kept.containsKey(c.hostId)) c,
+        if (!kept.containsKey(c.hostId) || due.contains(c.hostId)) c,
     ];
     final Future<List<InterconnectHostTarget>> probing = connector.supporting(
       candidates,
     );
     final List<Future<void>> loads = <Future<void>>[
-      if (!reprobeKnown)
-        for (final _PairedHost h in kept.values) load(h),
+      for (final _PairedHost h in kept.values)
+        if (!due.contains(h.target.hostId)) load(h),
     ];
     final Set<String> supported = <String>{
       for (final InterconnectHostTarget t in await probing) t.hostId,
@@ -162,34 +298,34 @@ class _SrsPairedHosts extends ChangeNotifier {
       return;
     }
 
-    // 合并：探测期间本轮外没人改 [hosts]（同一时刻只跑一轮），按配置顺序排。
-    final List<_PairedHost> added = <_PairedHost>[];
+    // 合并：探测期间本轮外没人改 [hosts]（同一时刻只跑一轮），按配置顺序排。重探了的已有主机没应答 / 不再
+    // 声明能力就去掉（与新主机同一个判据）。
+    final DateTime probedAt = connector.now();
+    final List<_PairedHost> reload = <_PairedHost>[];
     final List<_PairedHost> next = <_PairedHost>[];
     for (final InterconnectHostTarget c in configured) {
       final _PairedHost? prev = kept[c.hostId];
-      if (prev != null) {
-        if (!reprobeKnown || supported.contains(c.hostId)) {
-          next.add(prev);
-        } else {
-          prev.session?.client.cancelPending();
-        }
+      if (prev != null && !due.contains(c.hostId)) {
+        next.add(prev);
       } else if (supported.contains(c.hostId)) {
-        final _PairedHost h = _PairedHost(c);
-        added.add(h);
+        final _PairedHost h = (prev ?? _PairedHost(c))..probedAt = probedAt;
+        reload.add(h);
         next.add(h);
+      } else {
+        prev?.session?.client.cancelPending();
       }
     }
     hosts = next;
     _notify();
     await Future.wait(<Future<void>>[
       ...loads,
-      for (final _PairedHost h in reprobeKnown ? next : added) load(h),
+      for (final _PairedHost h in reload) load(h),
     ]);
   }
 
   /// 重读 [h] 的牌组（还没连上时先握手）。任何失败都落成组头上可重试的错误态：会话作废（下次重新握手），
-  /// 上次的牌组缓存保留。连接层 / 主机报的错按机读码出文案；其余异常（主机回包不合契约导致的类型错误等）
-  /// 记进错误日志，组头出通用的加载失败。
+  /// 上次的牌组缓存保留。连接层 / 主机报的错、回包不合契约（[SrsRemoteBadResponse]）按机读码出文案；其余
+  /// 异常记进错误日志，组头出通用的加载失败。
   Future<void> load(_PairedHost h) async {
     if (h.loading || _disposed) return;
     h
@@ -197,11 +333,15 @@ class _SrsPairedHosts extends ChangeNotifier {
       ..error = null;
     _notify();
     try {
-      final List<SrsDeckSummary> decks = await _readDecks(h);
+      final SrsRemoteDeckSnapshot snapshot = await _readDecks(h);
       h
-        ..decks = decks
-        ..updatedAt = DateTime.now();
-    } on InterconnectHostError catch (e) {
+        ..decks = snapshot.decks
+        ..deckCache = snapshot.cache
+        ..updatedAt = connector.now();
+    } on InterconnectHostError catch (e, stack) {
+      if (e is SrsRemoteBadResponse) {
+        ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
+      }
       _fail(h, srsRemoteReviewErrorText(e));
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
@@ -209,6 +349,8 @@ class _SrsPairedHosts extends ChangeNotifier {
     } finally {
       h.loading = false;
       _notify();
+      // 对账一轮里的加载由那一轮结束时统一落盘。
+      if (_syncing == null) _persist();
     }
   }
 
@@ -220,11 +362,11 @@ class _SrsPairedHosts extends ChangeNotifier {
   }
 
   /// 用已有会话读牌组；没有会话、或主机回「已换配置」（这个会话绑定的 profile 作废）时握手开新会话再读。
-  Future<List<SrsDeckSummary>> _readDecks(_PairedHost h) async {
+  Future<SrsRemoteDeckSnapshot> _readDecks(_PairedHost h) async {
     final SrsRemoteSession? reused = h.session;
     if (reused != null) {
       try {
-        return await reused.store.deckSummaries();
+        return await reused.store.deckSnapshot();
       } on InterconnectHostError catch (e) {
         if (e.message != SrsRemoteStoreError.profileChanged) rethrow;
         reused.client.cancelPending();
@@ -233,7 +375,24 @@ class _SrsPairedHosts extends ChangeNotifier {
     }
     final SrsRemoteSession session = await connector.open(h.target);
     h.session = session;
-    return session.store.deckSummaries();
+    return session.store.deckSnapshot();
+  }
+
+  /// 把主机列表与牌组摘要写进 [kSrsHomePairedCachePrefKey]（没有主机时写空串，配置门控关掉后不留旧数据）。
+  void _persist() {
+    if (_disposed) return;
+    final String encoded = hosts.isEmpty
+        ? ''
+        : jsonEncode(<String, Object?>{
+            'v': _kPairedCacheVersion,
+            'hosts': <Object?>[for (final _PairedHost h in hosts) ?h.toCache()],
+          });
+    if (encoded == _persisted) return;
+    _persisted = encoded;
+    srsRunLogged(
+      'SrsPairedHosts.persist',
+      () => connector.writeHomeCache(encoded),
+    );
   }
 
   void toggleExpanded(_PairedHost h) {
