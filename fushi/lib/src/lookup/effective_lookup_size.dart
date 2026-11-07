@@ -174,15 +174,21 @@ const double kExternalPopupMaxHeightFraction = 0.72;
 /// 解锁后独立）为上限，再以可用空间封顶：宽不超过 [availableWidth]，高不超过
 /// [availableHeight] × [kExternalPopupMaxHeightFraction]。比例天花板与旧值相同，
 /// 所以任何屏幕上卡片都**不会比修复前更大**（手机竖屏 / 横屏不回归）。
+///
+/// [maxSize] 是基准逻辑像素，先乘 [uiScale]（界面大小 `AppModel.appUiScale`）再封顶，
+/// 与 app 内弹窗（base_source_page `popupMaxWidth`）、桌面覆盖窗（global_lookup_controller
+/// `overlaySize × appUiScale`）同一约定：宿主页面套了 `FushiAppUiScaleNeutralizer`
+/// （净缩放 = 1），不乘就会让同一「最大宽高」设置在 app 外浮卡上比其它宿主小一圈。
 LookupSize resolveExternalPopupCardBounds({
   required double availableWidth,
   required double availableHeight,
   required LookupSize maxSize,
+  required double uiScale,
 }) {
-  final double width = _nonNegativeMin(availableWidth, maxSize.width);
+  final double width = _nonNegativeMin(availableWidth, maxSize.width * uiScale);
   final double height = _nonNegativeMin(
     availableHeight * kExternalPopupMaxHeightFraction,
-    maxSize.height,
+    maxSize.height * uiScale,
   );
   return LookupSize(width, height);
 }

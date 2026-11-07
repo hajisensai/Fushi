@@ -546,6 +546,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       ? appModel.overlayLookupEffectiveSize
       : const LookupSize(kLookupPopupDefaultWidth, kLookupPopupDefaultHeight);
 
+  /// 弹窗盒子尺寸的缩放 = 界面大小（[AppModel.appUiScale]）。本页整树在
+  /// [FushiAppUiScaleNeutralizer] 下（净缩放 = 1），基准常量 / 设置值必须由宿主自己乘，
+  /// 与 base_source_page、global_lookup_controller 同一约定；弹窗缩放系数只放大内容与
+  /// 顶栏（[AppModel.popupUiScale]），不进盒子尺寸。未初始化时与 popup_main 的
+  /// [FushiAppUiScale] 同口径取 1（themeNotifier 尚未装配，不能读）。
+  double get _popupBoxScale =>
+      appModel.isInitialised ? appModel.appUiScale : 1.0;
+
   /// 驱动卡片高度的层：栈里最上面一个可见层（嵌套层与基础层一样满卡渲染、盖住下层，
   /// 用户看到的就是它）。其按内容测得的外壳高度（或「未找到」空态高度）决定卡片收到
   /// 多高；搜索中 / 尚未测到为 null → 卡片取上界。
@@ -554,7 +562,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     for (int i = entries.length - 1; i >= 0; i--) {
       final DictionaryPopupEntry entry = entries[i];
       if (entry.visible) {
-        return entry.layoutAutoFitHeight(emptyHeight: kLookupPopupEmptyHeight);
+        return entry.layoutAutoFitHeight(
+          emptyHeight: kLookupPopupEmptyHeight * _popupBoxScale,
+        );
       }
     }
     return null;
@@ -588,6 +598,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               availableWidth: constraints.maxWidth - gap * 2,
               availableHeight: constraints.maxHeight - gap * 2,
               maxSize: _externalPopupMaxSize,
+              uiScale: _popupBoxScale,
             );
             final double height = resolveExternalPopupCardHeight(
               maxHeight: bounds.height,
@@ -625,6 +636,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             availableWidth: constraints.maxWidth - gap * 2,
             availableHeight: constraints.maxHeight - gap * 2,
             maxSize: _externalPopupMaxSize,
+            uiScale: _popupBoxScale,
           );
           // 上界矩形：WebView 按它的高度布局；落点再按收缩后的高度重算（贴字上方时
           // 卡片底边仍贴着字，不因收缩悬空）。
@@ -970,13 +982,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 上限 = 上界（设置值并以可用空间封顶）。与 app 内弹窗同一 [resolveAutoFitPopupHeight]。
       onContentMetrics: (double contentHeight, double viewportHeight) {
         if (!mounted || !_popup.entries.contains(entry)) return;
+        final double minHeight = kLookupPopupMinHeight * _popupBoxScale;
         final double nextHeight = resolveAutoFitPopupHeight(
           currentPopupHeight: fullCardHeight,
           contentHeight: contentHeight,
           viewportHeight: viewportHeight,
-          minHeight: kLookupPopupMinHeight < fullCardHeight
-              ? kLookupPopupMinHeight
-              : fullCardHeight,
+          minHeight: minHeight < fullCardHeight ? minHeight : fullCardHeight,
           maxHeight: fullCardHeight,
         );
         _popup.setAutoFitHeight(entry, nextHeight);
