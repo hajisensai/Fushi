@@ -41,6 +41,12 @@
 | [BUG-4222](bugs/BUG-4222-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |
 | [BUG-4221](bugs/BUG-4221-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |
 | [BUG-4220](bugs/BUG-4220-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |
+> 共 3783 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4221](bugs/BUG-4221-dialog-controller-disposed-while-closing.md) | ✅ | ✅ | 配对后红屏：弹窗关闭动画期间输入框控制器已被释放 |
+| [BUG-4220](bugs/BUG-4220-youtube-timedtext-double-escaped.md) | ✅ | ✅ | 内置播放器 YouTube 字幕残留 HTML 实体（&#39;） |
 | [BUG-4219](bugs/BUG-4219-shelf-columns-shrink-regression.md) | ✅ | ✅ | shelf-columns-shrink-regression |
 | [BUG-4218](bugs/BUG-4218-srs-history-duplicate-event-copies.md) | ✅ | ✅ | SRS 历史把同一事件的多 ID 副本算成多次复习、撤销一份不生效 |
 | [BUG-4217](bugs/BUG-4217-srs-merge-duplicate-review-logs.md) | ✅ | ✅ | 合并 profile 后同一次复习变成两条，FSRS 优化 log loss 从 0.6 涨到 1.6 |

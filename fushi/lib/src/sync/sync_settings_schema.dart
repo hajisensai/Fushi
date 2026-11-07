@@ -1073,7 +1073,7 @@ SettingsDestination buildInterconnectDestination() {
                 ),
           ),
           // 主机版本 / 更新主机（反馈 Pp8XPyve0N）：在 client 上就能看到 host 跑的
-          // 版本、让它自己下载安装新版。门（host 开关 / 平台 / 局域网 / nonce）全在
+          // 版本、让它自己下载安装新版。门（host 开关 / 平台 / peer token / nonce）全在
           // host 端，这一行只展示状态与 host 给的拒绝原因。
           SettingsCustomItem(
             id: 'interconnect.host_update',
@@ -1276,8 +1276,8 @@ SettingsDestination _buildInterconnectHostPage() {
             },
           ),
           // 远程更新本机许可（反馈 Pp8XPyve0N）。默认关：让别的设备在本机下载安装
-          // 可执行文件必须是主人的显式意愿。端点另有已配对 peer token + 局域网信任区
-          // + 一次性 nonce 几道门。只在本机能应用内自更新的平台出现（平台门 =
+          // 可执行文件必须是主人的显式意愿。端点另有已配对 peer token + 一次性 nonce
+          // 几道门（不按来源网络区分）。只在本机能应用内自更新的平台出现（平台门 =
           // PlatformUpdater.supportsInAppInstall，与 host 端点同一个判据）。
           SettingsSwitchItem(
             id: 'interconnect.remote_update_host',
