@@ -1660,21 +1660,27 @@ body {
     // 了「滚动条」，锁不住 iOS 的手指：WKWebView 的 UIScrollView 内容尺寸取文档的可滚
     // 动溢出，只要正文里有东西沿交叉轴越出视口（有声书句高亮窄条、注音、书自带的块
     // 等，body 的后代），WebKit 就照样让手指把整页沿交叉轴拖开几像素（关了回弹也只是
-    // 不弹回、停在被拖到的位置），程序化的 scrollBy / scrollIntoView 也能把它推开。两
-    // 层都要：
+    // 不弹回、停在被拖到的位置），程序化的 scrollBy / scrollIntoView 也能把它推开。
     //  ① body 沿交叉轴 `clip`：后代的越界部分不再计入文档的可滚动溢出，交叉轴可滚
     //     范围归零（程序化滚动也无处可去）。用 clip 不用 hidden——hidden 会让 body 另一
     //     轴变 auto、body 自己成滚动容器，正是上面 TODO-718 要避开的；clip 不建滚动容器，
     //     主轴照旧由 html 滚。body 交叉轴尺寸就是视口（竖排 height = 可视高、横排
     //     width = 100vw），被裁掉的只有本来就在视口外的部分。
-    //  ② `touch-action` 只放行主轴平移：交叉轴的手势在浏览器层就不翻译成滚动，不依赖
-    //     「文档恰好没有溢出」。只影响原生平移 / 缩放，长按、点击、JS 触摸事件不变。
+    //  ② `touch-action: pan-x pan-y`：两轴平移都放行，只关掉缩放手势。**不能**只放主轴
+    //     （反馈 R7k887yaJI）：Chromium `TouchActionFilter::ShouldSuppressScrolling` 在
+    //     GestureScrollBegin 的起手位移偏交叉轴（|交叉| > |主轴|）且 touch-action 不含该轴
+    //     时，把**整段手势**的滚动全部丢弃——拇指弧线斜着滑超过 45° 正文一动不动（真
+    //     Chromium 探针 tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs：
+    //     `pan-y` 下 50° 斜滑 scrollTop 0、`pan-x pan-y` 下 215）。交叉轴照样顶得住：BUG-3482
+    //     真 WebKit 实测「只加 body clip」手指就拖不动交叉轴，Chromium 本来就尊重根元素的
+    //     hidden。起手偏交叉轴超过 ~52° 时 Chromium 仍按交叉轴锁存不滚，那一段由连续 shell
+    //     的触摸控制器按主轴分量补位（ReaderPaginationScripts.continuousPanAssistShouldEngage）。
     // 分页 / VN 是 html、body 两轴都 hidden（body 自己就裁掉后代越界，分页另有
     // `touch-action: none`），不经这里。
     final String crossAxisLockRule =
         '''
 html, body {
-  touch-action: ${isVertical ? 'pan-x' : 'pan-y'} !important;
+  touch-action: pan-x pan-y !important;
 }
 body {
   $hiddenOverflowAxis: clip !important;
