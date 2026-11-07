@@ -47,7 +47,8 @@ final String kSeamlessChaptersInstallJs =
       'columns:auto!important;background:transparent!important;box-sizing:border-box!important;}' +
     '.fushi-seamless-html.fushi-seamless-html::after,.fushi-seamless-body.fushi-seamless-body::after{' +
       'content:none!important;display:none!important;}';
-  var SCROLL_KEYS = {ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, PageUp: 1, PageDown: 1, Home: 1, End: 1, ' ': 1};
+  // 不含 Space：它被桥接给 Dart（播放 / 暂停或翻页），翻页经装饰过的 paginate 记为用户意图。
+  var SCROLL_KEYS = {ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, PageUp: 1, PageDown: 1, Home: 1, End: 1};
 
   function reader() { return window.fushiReader; }
   function vertical() { var r = reader(); return !!(r && r.isVertical()); }
