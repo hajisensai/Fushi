@@ -19,6 +19,7 @@ import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
@@ -1253,6 +1254,74 @@ void main() {
       await settle(tester);
       expect(retry, findsNothing);
       expect(faces, isNotEmpty, reason: '主机恢复后重试出卡');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('远程修改历史页：主机回包不合契约是可重试的错误态（不停在转圈），主机恢复后点重试出历史', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rhe_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String noteId = (await tester.runAsync(
+        () => host.store.noteIdsOfType(host.store.lapisNoteTypeId, limit: 1),
+      ))!.single;
+      final SrsRemoteHostClient client = host.client();
+      final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
+      final SrsRemoteStore remote = (await tester.runAsync(
+        () => SrsRemoteStore.connect(client, prefetchMedia: media.prefetch),
+      ))!;
+      final AppModel app = AppModel(testPlatformServices());
+      host.malformed['editHistory'] = <String, Object?>{'result': 7};
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[appProvider.overrideWith((Ref ref) => app)],
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                designSystem: FushiDesignSystem.material,
+                glass: FushiGlassMaterial.off,
+                glassDesign: false,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: SrsRemoteCollectionScope(
+                store: remote,
+                media: media,
+                child: SrsEditHistoryPage(noteId: noteId),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-edit-history-load-retry'),
+      );
+      expect(retry, findsOneWidget, reason: '加载失败落成可重试的错误态，不是一直转圈');
+      expect(find.text(t.srs_remote_review_error_bad_response), findsOneWidget);
+      expect(find.textContaining('SrsRemoteWireError'), findsNothing);
+      expect(find.byKey(const ValueKey<String>('srs-history-0')), findsNothing);
+
+      host.malformed.clear();
+      await tester.tap(retry);
+      await settle(tester);
+      expect(retry, findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('srs-history-0')),
+        findsOneWidget,
+        reason: '主机恢复后重试读出主机库上的修改历史',
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
