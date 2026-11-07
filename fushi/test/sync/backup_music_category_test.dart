@@ -22,7 +22,27 @@ Future<void> _seedUserData(
   required int lyricAt,
   required List<int> playStarts,
   Map<String, int> resumeAt = const <String, int>{},
+  Map<String, ({int at, bool inLibrary})> remoteAt =
+      const <String, ({int at, bool inLibrary})>{},
 }) async {
+  // 远程曲目（v148）：trackUid → (updated_at, 是否在库)，标题带 updated_at 便于认出是哪边的。
+  for (final MapEntry<String, ({int at, bool inLibrary})> r
+      in remoteAt.entries) {
+    await db
+        .into(db.musicRemoteTracks)
+        .insert(
+          MusicRemoteTracksCompanion.insert(
+            trackUid: r.key,
+            kind: 'youtube',
+            sourceKey: 'youtube',
+            itemId: r.key,
+            title: 'R${r.value.at}',
+            libraryAddedAt: Value<int?>(r.value.inLibrary ? r.value.at : null),
+            createdAt: 1,
+            updatedAt: r.value.at,
+          ),
+        );
+  }
   await db
       .into(db.musicPlaylists)
       .insert(
@@ -94,6 +114,11 @@ Future<String> _backupWithMusic(
     lyricAt: 50,
     playStarts: <int>[10, 20],
     resumeAt: <String, int>{'r1': 200, 'r2': 50},
+    remoteAt: <String, ({int at, bool inLibrary})>{
+      'srv-a': (at: 200, inLibrary: true),
+      'srv-b': (at: 50, inLibrary: true),
+      'srv-d': (at: 300, inLibrary: false),
+    },
   );
   await src.writeMusicScanBatch(
     MusicScanBatchWrite(
@@ -166,6 +191,12 @@ void main() {
       lyricAt: 90,
       playStarts: <int>[20],
       resumeAt: <String, int>{'r1': 100, 'r2': 90, 'r3': 5},
+      remoteAt: <String, ({int at, bool inLibrary})>{
+        'srv-a': (at: 100, inLibrary: false),
+        'srv-b': (at: 90, inLibrary: true),
+        'srv-c': (at: 5, inLibrary: true),
+        'srv-d': (at: 100, inLibrary: true),
+      },
     );
     await seed.close();
 
@@ -211,6 +242,21 @@ void main() {
     expect((await cur.getMusicResumePoint('r1'))?.positionMs, 2000);
     expect((await cur.getMusicResumePoint('r2'))?.positionMs, 900);
     expect((await cur.getMusicResumePoint('r3'))?.positionMs, 50);
+    // 远程曲目（v148）按 updated_at LWW，入库状态随胜者：srv-a 备份新（200，在库）、srv-b
+    // 本机新（90）、srv-c 只在本机、srv-d 备份新且已移出曲库（300 > 100）。
+    final MusicRemoteTrackRow a = (await cur.getMusicRemoteTrack('srv-a'))!;
+    expect(a.title, 'R200');
+    expect(a.libraryAddedAt, 200);
+    expect((await cur.getMusicRemoteTrack('srv-b'))?.title, 'R90');
+    expect((await cur.getMusicRemoteTrack('srv-c'))?.title, 'R5');
+    final MusicRemoteTrackRow d = (await cur.getMusicRemoteTrack('srv-d'))!;
+    expect(d.libraryAddedAt, isNull, reason: '另一台设备上「移出音乐库」随合并传过来');
+    expect(
+      (await cur.listMusicRemoteLibraryTracks()).map(
+        (MusicRemoteTrackRow r) => r.trackUid,
+      ),
+      unorderedEquals(<String>['srv-a', 'srv-b', 'srv-c']),
+    );
     expect(await _count(cur, 'music_tracks'), 0, reason: '曲库目录是设备本地，不随备份来');
   });
 
@@ -284,8 +330,8 @@ void main() {
     expect(withMusic.has(BackupCategory.music), isTrue);
     expect(
       withMusic.counts[BackupCategory.music],
-      8,
-      reason: '1 歌单 + 2 条目 + 1 歌词 + 2 播放 + 2 断点',
+      11,
+      reason: '1 歌单 + 2 条目 + 1 歌词 + 2 播放 + 2 断点 + 3 远程曲目（v148）',
     );
   });
 }
