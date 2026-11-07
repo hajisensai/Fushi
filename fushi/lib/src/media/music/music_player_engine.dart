@@ -437,6 +437,23 @@ class MusicPlayerEngine extends ChangeNotifier {
 
   List<MusicPlayItem> get queue => List<MusicPlayItem>.unmodifiable(_queue);
   int get index => _index;
+
+  /// 经 [playNext] 插进来、还没轮到播的曲目（按 trackUid）。轮到它成为当前曲（打开 / 无缝
+  /// 推进）、被移出队列或整队替换时去掉。界面据 [isPlayNextAt] 给这些行打「下一首播放」标签。
+  final Set<String> _playNextUids = <String>{};
+
+  /// 队列第 [i] 格是 [playNext] 插进来、还没播到的曲目（只看当前曲之后的格）。
+  bool isPlayNextAt(int i) =>
+      i > _index &&
+      i < _queue.length &&
+      _playNextUids.contains(_queue[i].trackUid);
+
+  /// 当前曲已经轮到了：不再算「下一首播放」插进来的。
+  void _unmarkCurrent() {
+    final MusicPlayItem? item = current;
+    if (item != null) _playNextUids.remove(item.trackUid);
+  }
+
   MusicPlayItem? get current =>
       _index >= 0 && _index < _queue.length ? _queue[_index] : null;
 
@@ -573,13 +590,49 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 最近一次发给后端的 [crossfadeToNext]（设置变了才重发「下一首」）。
   bool _sentCrossfadeNext = false;
 
+  /// 最近一次发给后端的「下一首」（[openPair] / [replaceNext]）；队列编辑后与 [next] 比对，
+  /// 变了才重发（[_syncNext]）。
+  MusicPlayItem? _sentNext;
+
+  /// 本曲开播以来交给过后端的所有「下一首」。mpv 无缝切换期（前一首尾巴还在设备缓冲里）
+  /// 已经在解码的那一首换不掉：期间队列被编辑（移除 / 插队 / 重排），后端随后报
+  /// [MusicBackendAdvanced] 的仍是它。引擎按这里认出「后端已经承诺播的那首」，把它摆到
+  /// 当前曲之后再推进（[_advanceIndexFor]），队列与实际出声保持一致。
+  List<MusicPlayItem> _handedNexts = const <MusicPlayItem>[];
+
+  /// 记下交给后端的「下一首」，返回它。
+  MusicPlayItem? _recordSentNext(MusicPlayItem? item, {required bool reset}) {
+    _sentNext = item;
+    _handedNexts = <MusicPlayItem>[if (!reset) ..._handedNexts, ?item];
+    return item;
+  }
+
   Future<void> _sendNext(MusicOutputBackend backend) {
     final bool crossfade = crossfadeToNext;
     _sentCrossfadeNext = crossfade;
     return backend.replaceNext(
-      _stopAfterCurrent ? null : next,
+      _recordSentNext(_stopAfterCurrent ? null : next, reset: false),
       crossfadeNext: crossfade,
     );
+  }
+
+  /// 队列编辑后把后端的「下一首」对齐到 [next]（没变就不发）。打开中（[_resolving]）不发：
+  /// [_openCurrent] 打开完成后再对齐一次；已播完 / 当前曲失败时后端里没有可接的文件，
+  /// 等 [play] 重开时按新队列整对下发。
+  Future<void> _syncNext() async {
+    final MusicOutputBackend? backend = _backend;
+    if (backend == null ||
+        _ended ||
+        _needsReopen ||
+        _resolving ||
+        current == null) {
+      return;
+    }
+    final MusicPlayItem? want = _stopAfterCurrent ? null : next;
+    if (identical(want, _sentNext) && crossfadeToNext == _sentCrossfadeNext) {
+      return;
+    }
+    await _sendNext(backend);
   }
 
   /// 正在播放时读信号路径（面板）；没在播为 null。
@@ -623,6 +676,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     // 自管队列的原项记录（电台在旧队列第几格）只对旧队列有意义：整队替换前丢掉，否则
     // [_openCurrent] 里的 [_restoreExternalRoot] 会拿旧下标把旧电台写进新队列。
     _clearExternalRoot();
+    _playNextUids.clear();
     _original = List<MusicPlayItem>.of(items);
     _context = context;
     _source = source;
@@ -656,6 +710,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     _restoreExternalRoot();
     final MusicPlayItem? item = current;
     if (item == null) return;
+    _unmarkCurrent();
     final int gen = ++_openGen;
     if (userInitiated) _consecutiveUnavailable = 0;
     final bool external = capabilities.externalQueue;
@@ -696,7 +751,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       _sentCrossfadeNext = crossfade;
       await backend.openPair(
         item,
-        _stopAfterCurrent ? null : next,
+        _recordSentNext(_stopAfterCurrent ? null : next, reset: true),
         play: play,
         crossfadeNext: crossfade,
         startAt: startAt,
@@ -737,6 +792,8 @@ class MusicPlayerEngine extends ChangeNotifier {
       return;
     }
     notifyListeners();
+    // 打开期间队列被编辑过：发出去的那个「下一首」可能已过时。
+    await _syncNext();
   }
 
   /// 当前曲目打开 / 播放失败。拿不到流（[MusicPlaybackFailure.trackUnavailable]）且是要播的：
@@ -937,6 +994,190 @@ class MusicPlayerEngine extends ChangeNotifier {
     if (wasLast && backend != null) await _sendNext(backend);
   }
 
+  /// 队列能不能编辑（移除 / 重排 / 插队 / 清空）：有队列、且当前项不是后端自管队列
+  /// （Apple Music 电台的曲目列表只有 MusicKit 知道，与 [canShuffleOrRepeat] 同判据）。
+  bool get canEditQueue => _queue.isNotEmpty && !externalQueue;
+
+  /// 从队列里移除第 [i] 首。当前曲不能移除（要换歌用 [skipNext] / [jumpTo]）；越界、
+  /// 不能编辑（[canEditQueue]）时无操作。移除的若是预排的下一首，后端随即换成新的下一首。
+  Future<void> removeFromQueue(int i) async {
+    if (!canEditQueue || i < 0 || i >= _queue.length || i == _index) return;
+    _restoreExternalRoot();
+    final MusicPlayItem removed = _queue[i];
+    _queue = List<MusicPlayItem>.of(_queue)..removeAt(i);
+    if (i < _index) _index--;
+    if (_shuffled) {
+      final List<MusicPlayItem> o = List<MusicPlayItem>.of(_original);
+      int at = o.indexWhere((MusicPlayItem x) => identical(x, removed));
+      if (at < 0) at = o.indexOf(removed);
+      if (at >= 0) o.removeAt(at);
+      _original = o;
+    } else {
+      _original = List<MusicPlayItem>.of(_queue);
+    }
+    if (!_queue.any((MusicPlayItem x) => x.trackUid == removed.trackUid)) {
+      _playNextUids.remove(removed.trackUid);
+    }
+    await _afterQueueEdit();
+  }
+
+  /// 把 [item] 放回队列第 [index] 格（撤销 [removeFromQueue] 用；[playNext] = 它原来带着
+  /// 「下一首播放」标记）。[index] 夹到 `[0, 队列长度]`；队列里已经有同一首、不能编辑时
+  /// 无操作。放在当前曲之前（含当前曲那格）时 [index] 跟着后移，当前曲不变。
+  Future<void> insertIntoQueue(
+    int index,
+    MusicPlayItem item, {
+    bool playNext = false,
+  }) async {
+    if (!canEditQueue) return;
+    if (_queue.any((MusicPlayItem x) => x.trackUid == item.trackUid)) return;
+    _restoreExternalRoot();
+    final int at = index.clamp(0, _queue.length);
+    final MusicPlayItem? before = at > 0 ? _queue[at - 1] : null;
+    _queue = List<MusicPlayItem>.of(_queue)..insert(at, item);
+    if (at <= _index) _index++;
+    if (!_shuffled) {
+      _original = List<MusicPlayItem>.of(_queue);
+    } else if (before == null) {
+      _original = <MusicPlayItem>[item, ..._original];
+    } else {
+      _insertIntoOriginalAfter(before, <MusicPlayItem>[item]);
+    }
+    if (playNext) _playNextUids.add(item.trackUid);
+    await _afterQueueEdit();
+  }
+
+  /// 把第 [from] 首挪到第 [to] 位（[to] 是挪完之后的下标）。当前曲可以挪，[index] 跟着它走。
+  /// 随机模式下只改播放顺序：关随机还原成原始顺序（[setShuffle]）。
+  Future<void> moveInQueue(int from, int to) async {
+    final int n = _queue.length;
+    if (!canEditQueue || from < 0 || from >= n || to < 0 || to >= n) return;
+    if (from == to) return;
+    _restoreExternalRoot();
+    final List<MusicPlayItem> q = List<MusicPlayItem>.of(_queue);
+    q.insert(to, q.removeAt(from));
+    _queue = q;
+    if (from == _index) {
+      _index = to;
+    } else if (from < _index && to >= _index) {
+      _index--;
+    } else if (from > _index && to <= _index) {
+      _index++;
+    }
+    if (!_shuffled) _original = List<MusicPlayItem>.of(q);
+    await _afterQueueEdit();
+  }
+
+  /// 「下一首播放」：把 [items] 按顺序插到当前曲之后。已在队列里的同一首挪过来（不重复），
+  /// 当前曲本身跳过。没有队列时直接从 [items] 开播；当前项由后端自管队列时无操作。
+  Future<void> playNext(List<MusicPlayItem> items) async {
+    if (items.isEmpty) return;
+    if (_queue.isEmpty) {
+      await playQueue(items);
+      return;
+    }
+    if (externalQueue) return;
+    await _insertUpcoming(items, atEnd: false);
+  }
+
+  /// 「加入播放队列」：把 [items] 追加到队尾。已在队列里的同一首挪到队尾（不重复），当前曲
+  /// 本身跳过。没有队列时直接从 [items] 开播；当前项由后端自管队列时无操作。电台续播的
+  /// 追加走 [appendToQueue]（不去重、队列播完时接着放）。
+  Future<void> addToQueue(List<MusicPlayItem> items) async {
+    if (items.isEmpty) return;
+    if (_queue.isEmpty) {
+      await playQueue(items);
+      return;
+    }
+    if (externalQueue) return;
+    await _insertUpcoming(items, atEnd: true);
+  }
+
+  Future<void> _insertUpcoming(
+    List<MusicPlayItem> items, {
+    required bool atEnd,
+  }) async {
+    _restoreExternalRoot();
+    final MusicPlayItem? playing = current;
+    if (playing == null) return;
+    final Set<String> uids = <String>{playing.trackUid};
+    final List<MusicPlayItem> incoming = <MusicPlayItem>[
+      for (final MusicPlayItem item in items)
+        if (uids.add(item.trackUid)) item,
+    ];
+    if (incoming.isEmpty) return;
+    uids.remove(playing.trackUid);
+    final List<MusicPlayItem> q = <MusicPlayItem>[];
+    int index = -1;
+    for (int i = 0; i < _queue.length; i++) {
+      final MusicPlayItem x = _queue[i];
+      if (i == _index) {
+        index = q.length;
+        q.add(x);
+      } else if (!uids.contains(x.trackUid)) {
+        q.add(x);
+      }
+    }
+    q.insertAll(atEnd ? q.length : index + 1, incoming);
+    _queue = q;
+    _index = index;
+    for (final MusicPlayItem x in incoming) {
+      if (atEnd) {
+        _playNextUids.remove(x.trackUid);
+      } else {
+        _playNextUids.add(x.trackUid);
+      }
+    }
+    if (_shuffled) {
+      _original = <MusicPlayItem>[
+        for (final MusicPlayItem x in _original)
+          if (!uids.contains(x.trackUid)) x,
+      ];
+      if (atEnd) {
+        _original = <MusicPlayItem>[..._original, ...incoming];
+      } else {
+        _insertIntoOriginalAfter(playing, incoming);
+      }
+    } else {
+      _original = List<MusicPlayItem>.of(q);
+    }
+    await _afterQueueEdit();
+  }
+
+  /// 随机模式下把 [items] 插进原始顺序里 [anchor] 之后（关随机还原时仍紧跟着它）；
+  /// 找不到 [anchor] 就追加到末尾。
+  void _insertIntoOriginalAfter(
+    MusicPlayItem anchor,
+    List<MusicPlayItem> items,
+  ) {
+    final List<MusicPlayItem> o = List<MusicPlayItem>.of(_original);
+    int at = o.indexWhere((MusicPlayItem x) => identical(x, anchor));
+    if (at < 0) at = o.indexOf(anchor);
+    o.insertAll(at < 0 ? o.length : at + 1, items);
+    _original = o;
+  }
+
+  /// 清空队列：只留正在播的这一首（不打断它），其余全部移除；预排的下一首随之取消（列表
+  /// 循环下接回它自己）。要连当前曲一起停用 [stop]。电台续播（`MusicQueueFeedRunner`）
+  /// 的来源不变，离队尾不足时照常续取下一批。
+  Future<void> clearQueue() async {
+    if (!canEditQueue) return;
+    _restoreExternalRoot();
+    final MusicPlayItem? playing = current;
+    if (playing == null || _queue.length == 1) return;
+    _queue = <MusicPlayItem>[playing];
+    _original = <MusicPlayItem>[playing];
+    _index = 0;
+    _playNextUids.clear();
+    await _afterQueueEdit();
+  }
+
+  /// 队列编辑之后：通知界面，并把后端的「下一首」对齐到新队列。
+  Future<void> _afterQueueEdit() async {
+    notifyListeners();
+    await _syncNext();
+  }
+
   /// 开 / 关随机：保持当前曲目不变、不中断，只重排它之后的队列并更新预排的下一首。
   ///
   /// 当前项由后端自管队列时无操作（Fushi 队列里它只占一格，打乱没有意义，也会把就地换过的
@@ -980,6 +1221,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     _queue = const <MusicPlayItem>[];
     _original = const <MusicPlayItem>[];
     _index = -1;
+    _playNextUids.clear();
     _clearExternalRoot();
     _pendingExternalNowPlaying = null;
     _source = null;
@@ -1045,17 +1287,9 @@ class MusicPlayerEngine extends ChangeNotifier {
         notifyListeners();
       case MusicBackendAdvanced(:final String? trackUid):
         // 后端已经无缝切到我们预排的下一首（以实际出声为准）：推进队列、补新的下一首。
-        // 后端报了曲目就按曲目对位（切换期内队列可能被重排过）。
-        final int found = trackUid == null
-            ? -1
-            : _queue.indexWhere((MusicPlayItem i) => i.trackUid == trackUid);
-        if (found >= 0) {
-          _index = found;
-        } else if (_index + 1 < _queue.length) {
-          _index++;
-        } else if (_repeat == MusicRepeatMode.all && _queue.isNotEmpty) {
-          _index = 0;
-        }
+        // 后端报了曲目就按曲目对位（切换期内队列可能被重排 / 编辑过）。
+        _advanceIndexFor(trackUid);
+        _unmarkCurrent();
         final MusicPlayItem? item = current;
         _dropAbLoopForTrackChange();
         _needsReopen = false;
@@ -1080,6 +1314,7 @@ class MusicPlayerEngine extends ChangeNotifier {
           _sleepDeadline = null;
           if (_index + 1 < _queue.length) {
             _index++;
+            _unmarkCurrent();
             final MusicPlayItem? item = current;
             _zeroPosition();
             _duration = item?.durationMs == null
@@ -1095,6 +1330,75 @@ class MusicPlayerEngine extends ChangeNotifier {
       case MusicBackendFailed():
         _onFailedEvent(event);
     }
+  }
+
+  /// [MusicBackendAdvanced] 的对位：
+  /// * 报的正是 [next]：按顺序推进（单曲循环留在原地、列表循环队尾接回队首）；
+  /// * 是本曲开播以来交给过后端的「下一首」（切换期内队列被编辑，后端已在解码它）：把它
+  ///   摆到当前曲之后（已被移出队列的放回去）再推进——后面排好的顺序不受影响；
+  /// * 其它：队列里离当前曲最近的那一格（往后找、绕回）；
+  /// * 后端没说是哪首 / 哪都找不到：按顺序推进一首。
+  void _advanceIndexFor(String? uid) {
+    final List<MusicPlayItem> handed = _handedNexts;
+    _handedNexts = const <MusicPlayItem>[];
+    if (uid != null && _index >= 0 && _index < _queue.length) {
+      if (next?.trackUid == uid) {
+        if (_repeat == MusicRepeatMode.one) return;
+        _index = _index + 1 < _queue.length ? _index + 1 : 0;
+        return;
+      }
+      MusicPlayItem? committed;
+      for (final MusicPlayItem h in handed.reversed) {
+        if (h.trackUid == uid) {
+          committed = h;
+          break;
+        }
+      }
+      if (committed != null) {
+        final int at = _nearestIndexOf(uid);
+        // 单曲循环切换期里改了模式：后端重放的就是当前曲本身。
+        if (at == _index) return;
+        final MusicPlayItem slotItem = at >= 0 ? _queue[at] : committed;
+        final List<MusicPlayItem> q = List<MusicPlayItem>.of(_queue);
+        int cur = _index;
+        if (at >= 0) {
+          q.removeAt(at);
+          if (at < cur) cur--;
+        }
+        q.insert(cur + 1, slotItem);
+        _queue = q;
+        if (!_shuffled) {
+          _original = List<MusicPlayItem>.of(q);
+        } else if (at < 0) {
+          _insertIntoOriginalAfter(_queue[cur], <MusicPlayItem>[slotItem]);
+        }
+        _index = cur + 1;
+        return;
+      }
+      final int found = _nearestIndexOf(uid);
+      if (found >= 0) {
+        _index = found;
+        return;
+      }
+    }
+    if (_index + 1 < _queue.length) {
+      _index++;
+    } else if (_repeat == MusicRepeatMode.all && _queue.isNotEmpty) {
+      _index = 0;
+    }
+  }
+
+  /// [uid] 在队列里离当前曲最近的位置：从当前曲之后往后找、绕回队首，最后才是当前曲本身；
+  /// 没有为 -1（队列里可以有同一首的多格：电台续播会追加重复曲目）。
+  int _nearestIndexOf(String uid) {
+    final int n = _queue.length;
+    if (n == 0) return -1;
+    final int base = _index < 0 ? -1 : _index;
+    for (int step = 1; step <= n; step++) {
+      final int i = (base + step) % n;
+      if (_queue[i].trackUid == uid) return i;
+    }
+    return -1;
   }
 
   /// 自管队列的后端换了歌：就地替换当前项（index 不动），刷新位置 / 时长；身份变了（或这是
@@ -1169,6 +1473,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     }
     if (!_resolving && uid == next?.trackUid) {
       _index++;
+      _unmarkCurrent();
       _dropAbLoopForTrackChange();
       _zeroPosition();
       final MusicPlayItem? item = current;

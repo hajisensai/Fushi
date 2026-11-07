@@ -9,6 +9,9 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
+
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -38,6 +41,47 @@ class MusicMenuAction {
   final String? subtitle;
   final IconData icon;
   final Future<void> Function(BuildContext context) run;
+}
+
+/// 曲目菜单最上面的两项「下一首播放」「加入播放队列」（各来源的曲目菜单共用），操作后
+/// 提示结果。[item] 在点下时才取（插件 / 服务器曲目的播放项要读当时的设置）。当前在放
+/// 后端自管的队列（Apple Music 电台，[MusicPlayerEngine.canEditQueue] 为假）时不给这两项；
+/// 没有队列时两项都直接开播。
+List<MusicMenuAction> musicQueueMenuActions(
+  MusicPlayerEngine engine,
+  MusicPlayItem Function() item,
+) {
+  if (engine.queue.isNotEmpty && !engine.canEditQueue) {
+    return const <MusicMenuAction>[];
+  }
+  return <MusicMenuAction>[
+    MusicMenuAction(
+      id: 'playNext',
+      label: t.music_queue_play_next,
+      icon: FushiIcons.playlist,
+      run: (_) async {
+        final MusicPlayItem it = item();
+        await engine.playNext(<MusicPlayItem>[it]);
+        FushiToast.show(
+          msg: t.music_queue_queued_next(title: it.title),
+          severity: ToastSeverity.success,
+        );
+      },
+    ),
+    MusicMenuAction(
+      id: 'addToQueue',
+      label: t.music_queue_add,
+      icon: FushiIcons.add,
+      run: (_) async {
+        final MusicPlayItem it = item();
+        await engine.addToQueue(<MusicPlayItem>[it]);
+        FushiToast.show(
+          msg: t.music_queue_added(title: it.title),
+          severity: ToastSeverity.success,
+        );
+      },
+    ),
+  ];
 }
 
 /// 菜单锚点（global 坐标系的矩形）：「更多」按钮给按钮自己的矩形，右键给按下处的点。

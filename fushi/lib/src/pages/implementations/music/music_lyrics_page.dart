@@ -71,6 +71,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_player_action_row.dart';
+import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
@@ -305,6 +307,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 封面主题之下的一个节点：页内弹出的对话框 / 浮窗用它的 context 打开，
   /// [showDialog] 会把这里的主题捕获进弹窗路由。
   final GlobalKey _themedKey = GlobalKey();
+
+  /// 这一帧的布局下队列是右侧常驻侧栏（宽屏且够宽，[musicQueueUsesSidebar]）；否则
+  /// 「队列」按钮弹底部弹层。
+  bool _queueDocked = false;
+
+  /// 常驻侧栏展开着（宽度够时默认展开，「队列」按钮切换）。
+  bool _queueSidebarOpen = true;
   BuildContext get _themedContext => _themedKey.currentContext ?? context;
 
   /// build 里调：封面或明暗变了才重新取色。
@@ -950,29 +959,34 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints box) {
                     final bool wide = lyricsPlayerIsWide(box.biggest);
-                    return AnimatedSwitcher(
-                      duration: fushiMotionDuration(
-                        context,
-                        FushiMotion.medium,
-                      ),
-                      child: KeyedSubtree(
-                        key: ValueKey<String>('${_layout.name}-$wide'),
-                        child: switch ((_layout, wide)) {
-                          (MusicLyricsLayout.split, true) => _buildSplit(
-                            context,
-                            item,
-                          ),
-                          (MusicLyricsLayout.stage, true) => _buildStage(
-                            context,
-                            item,
-                          ),
-                          (MusicLyricsLayout.disc, _) => _buildDisc(
-                            context,
-                            item,
-                            wide: wide,
-                          ),
-                          (_, false) => _buildNarrow(context, item),
-                        },
+                    _queueDocked =
+                        wide && musicQueueUsesSidebar(context, box.maxWidth);
+                    return _withQueueSidebar(
+                      context,
+                      AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.medium,
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey<String>('${_layout.name}-$wide'),
+                          child: switch ((_layout, wide)) {
+                            (MusicLyricsLayout.split, true) => _buildSplit(
+                              context,
+                              item,
+                            ),
+                            (MusicLyricsLayout.stage, true) => _buildStage(
+                              context,
+                              item,
+                            ),
+                            (MusicLyricsLayout.disc, _) => _buildDisc(
+                              context,
+                              item,
+                              wide: wide,
+                            ),
+                            (_, false) => _buildNarrow(context, item),
+                          },
+                        ),
                       ),
                     );
                   },
@@ -1091,6 +1105,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                               _buildTransport(context),
                               const SizedBox(height: 4),
                               _buildTools(context),
+                              const SizedBox(height: 8),
+                              _buildActionRow(context),
                             ],
                           ),
                         ),
@@ -1196,7 +1212,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[_buildSeek(), _buildTransport(context)],
+              children: <Widget>[
+                _buildSeek(),
+                _buildTransport(context),
+                const SizedBox(height: 8),
+                _buildActionRow(context),
+              ],
             ),
           ),
       ],
@@ -1248,6 +1269,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               _buildSeek(),
               Center(child: _buildTransport(context)),
               _buildTools(context),
+              const SizedBox(height: 8),
+              Center(child: _buildActionRow(context)),
             ],
           ),
         ),
@@ -1473,6 +1496,65 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 收藏 · 音量，六格等宽、等距、同一行，图标同一尺寸，只有播放键是实心圆。音量与
   /// 迷你条同一枚按钮，点开弹滑杆（用户 2026-10-30「做成和底栏一样点击打开的，
   /// 按钮都在同一行」）。
+  /// 宽屏够宽时页面右侧挂常驻队列侧栏（[MusicQueueSidebar]），收起时宽度动画到 0。
+  Widget _withQueueSidebar(BuildContext context, Widget page) {
+    if (!_queueDocked) return page;
+    final bool open = _queueSidebarOpen;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(child: page),
+        ClipRect(
+          child: AnimatedContainer(
+            key: const ValueKey<String>('music_lyrics_queue_sidebar'),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: context.fushiMotion.effectsDefault.curve,
+            width: open ? kMusicQueueSidebarWidth : 0,
+            child: OverflowBox(
+              alignment: AlignmentDirectional.centerStart,
+              minWidth: kMusicQueueSidebarWidth,
+              maxWidth: kMusicQueueSidebarWidth,
+              child: ExcludeFocus(
+                excluding: !open,
+                child: MusicQueueSidebar(engine: _engine),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 传输行下方的功能行（[MusicPlayerActionRow]）：目前只有「队列」。宽屏常驻侧栏时
+  /// 切换侧栏，否则弹出队列。
+  Widget _buildActionRow(BuildContext context) => ListenableBuilder(
+    listenable: _engine,
+    builder: (BuildContext context, _) {
+      final bool docked = _queueDocked;
+      final bool open = docked && _queueSidebarOpen;
+      return MusicPlayerActionRow(
+        children: <Widget>[
+          MusicPlayerActionButton(
+            key: const ValueKey<String>('music_lyrics_queue'),
+            icon: FushiIcons.playlist,
+            label: t.music_queue_button_count(count: _engine.queue.length),
+            tooltip: docked
+                ? (open ? t.music_queue_hide : t.music_queue_show)
+                : t.music_queue_title,
+            selected: open,
+            onPressed: () {
+              if (docked) {
+                setState(() => _queueSidebarOpen = !_queueSidebarOpen);
+              } else {
+                unawaited(showMusicQueue(context, _engine));
+              }
+            },
+          ),
+        ],
+      );
+    },
+  );
+
   Widget _buildTransport(BuildContext context) {
     final MusicSession session = appModelNoUpdate.musicSession;
     final MusicPlayerEngine engine = session.engine;
@@ -1704,7 +1786,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                       ),
                     ),
                     _buildTransport(context),
-                    const Expanded(child: SizedBox.shrink()),
+                    // 右侧放功能行（设计稿 W1：底栏右边是音效 / 队列）。
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _buildActionRow(context),
+                      ),
+                    ),
                   ],
                 ),
               ],

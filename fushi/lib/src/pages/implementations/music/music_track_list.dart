@@ -68,6 +68,13 @@ MusicItemMenu musicLocalTrackMenu(
           icon: FushiIcons.play,
           run: (_) async => onPlay(),
         ),
+        ...musicQueueMenuActions(
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appProvider).musicSession.engine,
+          () => musicPlayItemOf(track),
+        ),
         MusicMenuAction(
           id: 'detail',
           label: t.music_track_detail,

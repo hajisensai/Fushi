@@ -1231,6 +1231,16 @@ Future<void> _showTrackMenu(
       anchor: at,
       errorText: _appleErrorText,
       actions: <MusicMenuAction>[
+        ...musicQueueMenuActions(
+          app.musicSession.engine,
+          () => musicServerPlayItem(
+            browser,
+            track,
+            maxBitrateKbps: musicServerBitrateLimit(
+              app.isPreferencesReady ? app.prefsRepo.musicServerMaxBitrate : 0,
+            ),
+          ),
+        ),
         if (write) ...<MusicMenuAction>[
           MusicMenuAction(
             id: loved ? 'unlove' : 'love',
