@@ -855,7 +855,7 @@ class AnkiMiningPayload {
 
   /// 词典名 → 该词典的频率数（popup.js `constructSingleFrequencyNumbers`，与
   /// [freqHarmonicRank] 同一份逐词典取数）。供 Yomitan 的
-  /// `{single-frequency-number-<词典>}` 使用（BUG-4226）；没有可用数值的词典不在表里。
+  /// `{single-frequency-number-<词典>}` 使用（BUG-4227）；没有可用数值的词典不在表里。
   final Map<String, String> singleFrequencyNumbers;
 
   /// 词典名 → 只含该词典的 `{frequencies}` 列表 HTML（popup.js
@@ -1097,7 +1097,7 @@ class AnkiHandlebarRenderer {
   static final _handlebarRegex = RegExp(r'\{[^}]*\}');
   static const _singleGlossaryPrefix = '{single-glossary-';
 
-  /// Yomitan 逐词典频率标记（BUG-4226）。`-number-` 版必须先于短前缀判断：
+  /// Yomitan 逐词典频率标记（BUG-4227）。`-number-` 版必须先于短前缀判断：
   /// `{single-frequency-number-x}` 同样以 `{single-frequency-` 开头。
   static const _singleFrequencyNumberPrefix = '{single-frequency-number-';
   static const _singleFrequencyPrefix = '{single-frequency-';
@@ -1447,7 +1447,7 @@ class AnkiHandlebarOptions {
   ];
 
   /// [frequencyDictionaryNames]：频率词典名，各出一个 Yomitan 同名的
-  /// `{single-frequency-number-<名>}`（BUG-4226，Yomitan 下拉框里也只列这一个；
+  /// `{single-frequency-number-<名>}`（BUG-4227，Yomitan 下拉框里也只列这一个；
   /// `{single-frequency-<名>}` 渲染器同样认，只是不占候选位）。
   static List<String> forTermDictionaries(
     List<String> dictionaryNames, {

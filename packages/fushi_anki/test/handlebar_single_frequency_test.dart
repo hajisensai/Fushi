@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-/// BUG-4226（反馈 ArXVzMKmM5）：Yomitan 的逐词典频率标记
+/// BUG-4227（反馈 ArXVzMKmM5）：Yomitan 的逐词典频率标记
 /// `{single-frequency-number-<词典>}` / `{single-frequency-<词典>}` 映射后字段为空。
 ///
 /// 根因：制卡 payload 只带调和平均（`freqHarmonicRank`）与全部词典的列表 HTML，

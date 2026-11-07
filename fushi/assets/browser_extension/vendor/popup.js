@@ -2715,7 +2715,7 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
 // displayValue's leading digits when they parse to > 0, else its numeric value
 // when > 0, else the dictionary contributes nothing. This is the single source for
 // BOTH the harmonic rank ({frequency-harmonic-rank}) and Yomitan's per-dictionary
-// {single-frequency-number-<dict>} (BUG-4226: per-dict frequency could not
+// {single-frequency-number-<dict>} (BUG-4227: per-dict frequency could not
 // be mapped), so the two can never disagree about which number a dictionary gave.
 function collectFrequencyNumbers(frequencies) {
     const numbers = [];

@@ -38,11 +38,11 @@ class FrequencyField extends Field {
   static const String frequenciesHtmlExtraKey = 'frequenciesHtml';
 
   /// Extra value key for the per-dictionary frequency numbers
-  /// (Yomitan `{single-frequency-number-<dict>}`, BUG-4226).
+  /// (Yomitan `{single-frequency-number-<dict>}`, BUG-4227).
   static const String singleFrequencyNumbersExtraKey = 'singleFrequencyNumbers';
 
   /// Extra value key for the per-dictionary frequency HTML lists
-  /// (Yomitan `{single-frequency-<dict>}`, BUG-4226).
+  /// (Yomitan `{single-frequency-<dict>}`, BUG-4227).
   static const String singleFrequenciesHtmlExtraKey = 'singleFrequenciesHtml';
 
   /// Builds frequency extra values from a dictionary entry.
