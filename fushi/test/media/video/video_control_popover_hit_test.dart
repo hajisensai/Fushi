@@ -5,7 +5,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
-// BUG-4226（反馈 vskVvFumuG）：
+// BUG-4227（反馈 vskVvFumuG）：
 // ① 点音量 / 倍速浮层的空白底（内边距、控件间缝）会下穿到下面的进度条——Apple
 //    外框的玻璃是 IgnorePointer 兄弟层，Row 的缝不命中，点按落到 translucent
 //    dismiss 层与进度条的原始 Listener（关浮层 + 跳进度）。按真实层序搭：进度条

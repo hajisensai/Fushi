@@ -1,4 +1,4 @@
-## BUG-4226 · 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏
+## BUG-4227 · 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏
 - **报告**：2026-11-07（用户：应用内反馈 vskVvFumuG，Windows 3.3.0-debug.24478）
 - **真实性**：✅ 真 bug（两条都沿真实代码路径确认）。
   - ① 点浮层空白底下穿：浮层外框 `VideoControlPopoverFrame`（`fushi/lib/src/media/video/video_volume_overlays.dart`）在 Apple 设计系统下是 `VideoGlassHud` → `VideoGlassSurface`，玻璃底是 `IgnorePointer` 兄弟层（`fushi/lib/src/media/video/video_apple_chrome.dart:119`），内容 Row 的内边距 / 控件间缝都不命中；点按于是落到下面的 dismiss 层（`fushi/lib/src/pages/implementations/video_fushi/controls_popover.part.dart:410`，修前行号，`HitTestBehavior.translucent`，命中后继续往下）与 media_kit 进度条的原始 Listener → 点浮层空白处 = 关浮层 + 跳进度。MD3E 外框是 `DecoratedBox`，`RenderDecoratedBox.hitTestSelf` 按装饰命中，浮层内本就不下穿（测试在修前对 MD3E 即为绿，对 Apple 为红，见下）。

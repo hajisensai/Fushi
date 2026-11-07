@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
-/// 源码守卫（BUG-4226 ②，反馈 vskVvFumuG）：拖音量 / 倍速浮层的滑条时控制条照样
+/// 源码守卫（BUG-4227 ②，反馈 vskVvFumuG）：拖音量 / 倍速浮层的滑条时控制条照样
 /// 自动隐藏。控制条只靠 hover 续命，拖动发的是 move 不是 hover，没人重排隐藏计时
 /// → 控制条到点淡出、浮层随之被 `_applyControlsVisibilityFromMediaKit` 关掉。
 ///

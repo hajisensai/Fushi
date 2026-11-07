@@ -33,12 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3788 条。点号进各自文件。
+> 共 3789 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4227](bugs/BUG-4227-video-popover-click-through-and-drag-hide.md) | ✅ | ✅ | 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏 |
 | [BUG-4226](bugs/BUG-4226-collection-detail-open-eager-grid.md) | ✅ | ✅ | collection-detail-open-eager-grid |
-| [BUG-4226](bugs/BUG-4226-video-popover-click-through-and-drag-hide.md) | ✅ | ✅ | 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏 |
 | [BUG-4225](bugs/BUG-4225-cloud-manga-shelf-download-stuck-100.md) | 🚧 | 🚧 | 书架下载云盘漫画卡 100% 打不开（对比页正常） |
 | [BUG-4224](bugs/BUG-4224-manga-webtoon-zoom-scroll-toggles-chrome.md) | ✅ | ✅ | manga-webtoon-zoom-scroll-toggles-chrome |
 | [BUG-4223](bugs/BUG-4223-cloud-manga-placeholder-on-books-shelf.md) | ✅ | ✅ | 云盘漫画远端占位卡落在书籍书架 |

@@ -1665,7 +1665,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
   /// - [_controlsHoldJumpPanel]：「跳转记录」面板开着——面板期间控制条保持显示
   ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）；
-  /// - [_controlsHoldPopoverPress]：音量 / 倍速轻浮层里有指针按着（拖滑条，BUG-4226）
+  /// - [_controlsHoldPopoverPress]：音量 / 倍速轻浮层里有指针按着（拖滑条，BUG-4227）
   ///   ——拖动发的是 move 不是 hover，没有任何东西续命，控制条到点淡出、浮层随之关掉。
   final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
   bool _controlsHoldMenuOpen = false;
@@ -2208,7 +2208,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoControlSlot? _activeControlPopoverSourceSlot;
   VideoControlItem? _activeControlPopoverSourceItem;
 
-  /// 浮层收起判据（固定 / 悬停 / 按住三条来源，BUG-4226）：hover 关闭也认按住，
+  /// 浮层收起判据（固定 / 悬停 / 按住三条来源，BUG-4227）：hover 关闭也认按住，
   /// 拖滑条拖出浮层边界时不收。
   late final VideoControlPopoverHoverDismiss _controlPopoverHoverDismiss =
       VideoControlPopoverHoverDismiss(onDismiss: _hideControlPopover);

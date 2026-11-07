@@ -78,7 +78,7 @@ class VideoControlPopoverFrame extends StatelessWidget {
       ? appleColorsOf(context).label
       : Theme.of(context).colorScheme.primary;
 
-  /// 外框整块是命中面（BUG-4226）：浮层压在进度条 / 控制条之上，落在外框内、却
+  /// 外框整块是命中面（BUG-4227）：浮层压在进度条 / 控制条之上，落在外框内、却
   /// 不在任何控件上的点按（内边距、控件间缝、百分比读数旁）必须被外框吃掉，不能
   /// 下穿。Apple 玻璃底是 [VideoGlassSurface] 里的 `IgnorePointer` 兄弟层，内容
   /// Row 的缝不命中，点按一路落到下面的 dismiss 层（translucent）与进度条的
@@ -143,7 +143,7 @@ class VideoControlPopoverFrame extends StatelessWidget {
   }
 }
 
-/// 浮层内「按住」状态上报（BUG-4226）：有指针在浮层里按下时报 `true`，最后一个
+/// 浮层内「按住」状态上报（BUG-4227）：有指针在浮层里按下时报 `true`，最后一个
 /// 指针抬起 / 取消时报 `false`。
 ///
 /// 控制条的自动隐藏只靠 hover 续命：桌面 media_kit 的 MouseRegion 与浮层自己的

@@ -321,7 +321,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     }
   }
 
-  /// 浮层里按住 / 松开（BUG-4226）：按住期间既按住控制条（[_controlsHeld]），也让
+  /// 浮层里按住 / 松开（BUG-4227）：按住期间既按住控制条（[_controlsHeld]），也让
   /// 浮层自己的 hover 收起不生效（拖滑条拖出浮层边界照样会 onExit）；松开后 fork 按
   /// 一次 hover 重新倒计时，浮层若已不在悬停下按 hover 规则延迟收起。
   void _setControlPopoverPressed(bool pressed) {
