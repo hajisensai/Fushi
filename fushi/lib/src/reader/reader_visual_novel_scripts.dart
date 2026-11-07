@@ -2681,6 +2681,8 @@ $sharedInitViewport
     if (window.__fushiLanes) window.__fushiLanes.repaint();
     if (this.revealComplete) this.applyCurrentScreenHighlights();
     if (this.revealComplete) this.refreshSentenceAudioCuePresentation();
+    // 文字领读：新屏的句子首尾报给宿主（宿主侧没开文字领读时直接丢弃）。
+    if (typeof this.reportTextLeadsScreenCues === 'function') this.reportTextLeadsScreenCues(false);
   },
   // BUG-2711：拆屏判据（measureScreenFits → renderedTextFitsBounds）认的是**字形墨迹**
   // 落在内容盒内，而 flex 居中认的是段落的 margin 盒。长段落被拆开后，屏上那一截的
@@ -3293,6 +3295,8 @@ $sharedInitViewport
     this.buildNodeOffsets();
     this.prewrapScreenSentenceAudioCues();
     if (this.activeCueId) this.refreshSentenceAudioCuePresentation();
+    // 句子数据晚于首屏渲染到达：补报一次当前屏范围（文字领读）。
+    if (typeof this.reportTextLeadsScreenCues === 'function') this.reportTextLeadsScreenCues(false);
   },
   highlightSentenceAudioCue: function(cue, reveal, pauseEnabled, fromChapterStart) {
     var cueObject = this.sentenceAudioCueForInput(cue);
@@ -3467,6 +3471,85 @@ $sharedInitViewport
   if (typeof vn.contentRoot !== 'function') {
     vn.contentRoot = function() {
       return this.sourceRoot || document.body;
+    };
+  }
+  // 文字领读（Dart text_leads_page_stop.dart）：每次换屏把当前屏的有声书句子首尾报给
+  // 宿主，宿主据此在本屏末句句末停播、翻屏后从新屏首句续播。句子按「句首落在本屏」
+  // 归属（跨屏长句归它开头那一屏）；本屏一个句首都没有（整屏都在一句长句中间）时
+  // 退回「与本屏相交」。载荷与 cueIdAtPoint 同一身份约定：Sasayaki cue 报
+  // `{type:'frag'}`（id = textFragmentId），SRT/VTT/LRC 合成书的 `[data-cue-id]` 报
+  // `{type:'sid'}`（id = sentenceIndex）；插图屏 / 无句子报 `{type:'none'}`。
+  // 同一屏同一范围不重复报（force 除外：宿主刚打开文字领读时要一份当前值）。
+  if (typeof vn.textLeadsScreenCues !== 'function') {
+    vn.textLeadsScreenCues = function() {
+      var index = this.currentScreenIndex;
+      var screen = this.screens && this.screens[index];
+      if (!screen) return { type: 'none' };
+      var cues = this.sentenceAudioCues;
+      if (cues && cues.length) {
+        var screenStart = this.screenMatchableOffset(screen, false);
+        var screenEnd = this.screenMatchableOffset(screen, true);
+        var first = null, last = null, anyFirst = null, anyLast = null;
+        for (var i = 0; i < cues.length; i++) {
+          var cue = this.sentenceAudioCueForInput(cues[i]);
+          if (!cue || !cue.id) continue;
+          if (!this.sentenceAudioCueIntersectsScreen(cue, screen)) continue;
+          var start = this.sentenceAudioCueStart(cue);
+          if (!anyFirst || start < this.sentenceAudioCueStart(anyFirst)) anyFirst = cue;
+          if (!anyLast || start > this.sentenceAudioCueStart(anyLast)) anyLast = cue;
+          if (screenStart === null || screenEnd === null) continue;
+          if (start < screenStart || start >= screenEnd) continue;
+          if (!first || start < this.sentenceAudioCueStart(first)) first = cue;
+          if (!last || start > this.sentenceAudioCueStart(last)) last = cue;
+        }
+        if (!first) { first = anyFirst; last = anyLast; }
+        if (!first || !last) return { type: 'none' };
+        return { type: 'frag', first: first.id, last: last.id };
+      }
+      var scope = this.screen;
+      var root = this.contentRoot();
+      var stream = this.contentStream;
+      if (!scope || !scope.querySelectorAll) return { type: 'none' };
+      var seen = {};
+      var ids = [];
+      Array.prototype.forEach.call(scope.querySelectorAll('[data-cue-id]'), function(el) {
+        var id = el.getAttribute('data-cue-id');
+        if (id === null || seen[id]) return;
+        seen[id] = true;
+        ids.push(id);
+      });
+      if (!ids.length) return { type: 'none' };
+      var starting = [];
+      if (root && root.querySelector && stream && typeof stream.sourcePositionForNode === 'function') {
+        for (var j = 0; j < ids.length; j++) {
+          var node = null;
+          try {
+            var escaped = (window.CSS && CSS.escape) ? CSS.escape(String(ids[j])) : String(ids[j]);
+            node = root.querySelector('[data-cue-id="' + escaped + '"]');
+          } catch (_ignored) {}
+          var position = node ? stream.sourcePositionForNode(node) : null;
+          if (position && this.screenIndexForCharOffset(position.startChar) === index) {
+            starting.push(ids[j]);
+          }
+        }
+      }
+      var picked = starting.length ? starting : ids;
+      return { type: 'sid', first: picked[0], last: picked[picked.length - 1] };
+    };
+  }
+  if (typeof vn.reportTextLeadsScreenCues !== 'function') {
+    vn.reportTextLeadsScreenCues = function(force) {
+      if (!window.flutter_inappwebview || !window.flutter_inappwebview.callHandler) return;
+      var payload;
+      try {
+        payload = JSON.stringify(this.textLeadsScreenCues());
+      } catch (_ignored) {
+        payload = JSON.stringify({ type: 'none' });
+      }
+      var key = this.currentScreenIndex + '|' + payload;
+      if (!force && key === this.lastTextLeadsReportKey) return;
+      this.lastTextLeadsReportKey = key;
+      window.flutter_inappwebview.callHandler('onTextLeadsScreenCues', payload);
     };
   }
   // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的

@@ -2240,6 +2240,69 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       }
     }
   }
+
+  // ── 文字领读（media/audiobook/text_leads_page_stop.dart）────────────────────
+
+  /// 把 reader 侧条件（偏好选了「文字领读」+ 当前渲染的是 VN 模式）同步给控制器，
+  /// 并挂上「停在屏末按播放 → 翻屏」与「刚生效 → 补报当前屏」两个回调。控制器
+  /// 绑定、设置热更新、布局重载后各调一次；跟随开关 / 歌词覆盖层由控制器自己算。
+  void _syncAudiobookTextLeads() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return;
+    ctrl.onTextLeadsAdvancePage = _textLeadsAdvancePage;
+    ctrl.onTextLeadsActivated = _requestTextLeadsScreenReport;
+    ctrl.setTextLeadsRequested(
+      textLeadsRequestedFor(
+        linkDirection: ReaderFushiSource.instance.audiobookLinkDirection,
+        vnMode: _settings?.isVnMode ?? false,
+      ),
+    );
+  }
+
+  /// 本页与控制器解绑（控制器是会话对象，比页面活得久）：撤掉回调并关掉文字领读。
+  void _detachAudiobookTextLeads(AudiobookPlayerController ctrl) {
+    ctrl.onTextLeadsAdvancePage = null;
+    ctrl.onTextLeadsActivated = null;
+    ctrl.setTextLeadsRequested(false);
+  }
+
+  bool _textLeadsAdvancePage() {
+    if (_controller == null || !mounted) return false;
+    unawaited(_paginate(ReaderNavigationDirection.forward));
+    return true;
+  }
+
+  void _requestTextLeadsScreenReport() {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    unawaited(
+      controller
+          .evaluateJavascript(
+            source:
+                'if(window.fushiReader&&typeof window.fushiReader'
+                '.reportTextLeadsScreenCues==="function")'
+                'window.fushiReader.reportTextLeadsScreenCues(true);',
+          )
+          .catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log('ReaderFushi.textLeadsReport', e, s);
+            return null;
+          }),
+    );
+  }
+
+  /// VN 引擎 `onTextLeadsScreenCues` 回调：当前屏句子首尾 → 控制器。
+  void _onTextLeadsScreenCues(List<dynamic> args) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null || !ctrl.textLeads || args.isEmpty) return;
+    // 进章 / 恢复位置期间 VN 可能先渲一屏过渡屏再落到目标屏：只认落定后的那一屏
+    // （_onRestoreComplete 会强制补报），否则音频会先跳到过渡屏再跳回来。
+    if (_restoreInFlight) return;
+    final TextLeadsPageBounds? bounds = textLeadsBoundsFromPayload(
+      args[0]?.toString() ?? '',
+      _cachedAllCues ?? const <AudioCue>[],
+    );
+    unawaited(ctrl.onReaderPageBounds(bounds));
+  }
 }
 
 /// TODO-1115：有声书片段视频「多句连读 + 逐句高亮跟随」动态导出计划（纯数据）。

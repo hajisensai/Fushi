@@ -237,6 +237,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'listening.volume_key_sentence_nav',
           'reading_controls.invert_audiobook_skip_direction',
           'reading_vn.merge_spoken_sentence',
+          'listening.link_direction',
         ],
       ),
       // ── 查词 ──

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi_audio/fushi_audio.dart';
@@ -142,6 +143,46 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// playCueOnce 完成后恢复到的位置；null = 不恢复。
   ({int audioFileIndex, int positionMs})? _returnToPosition;
+
+  // ── 文字领读（见 text_leads_page_stop.dart）──────────────────────────────
+
+  /// reader 侧条件：选了「文字领读」且当前是 VN 模式（[setTextLeadsRequested]）。
+  /// 控制器不自己读偏好。
+  bool _textLeadsRequested = false;
+
+  /// 上一次算出的生效值，用于识别开 / 关的翻转（见 [_onTextLeadsInputsChanged]）。
+  bool _textLeadsWasActive = false;
+
+  /// 文字领读此刻是否生效：reader 条件 + 跟随音频开着 + 不在歌词覆盖层（覆盖层期间
+  /// [_readerFollowOverride] 恒真，正文必须跟着音频走）。
+  bool get _textLeads => textLeadsActive(
+    requested: _textLeadsRequested,
+    followAudio: followAudio.value,
+    lyricsOverlay: _readerFollowOverride,
+  );
+
+  /// 文字领读刚变成生效：reader 据此让 VN 引擎强制补报一次当前屏范围。
+  VoidCallback? onTextLeadsActivated;
+
+  /// reader 最近一次上报的当前屏句子范围；null = 未知 / 本屏没有句子。
+  TextLeadsPageBounds? _pageBounds;
+
+  /// 音频是被「播到屏末」停下的（而不是用户暂停）：翻屏 / 按播放时据此续播。
+  bool _pausedAtPageEnd = false;
+
+  /// 屏末停播只认「从屏内播到屏末」这一次越过：上一 tick 还在屏内才置真，任何
+  /// 显式 seek / 新范围上报都复位，等下一 tick 重新判定。否则显式跳句跳到下一屏
+  /// 的句子、而新屏范围还没报上来的那几个 tick 会被误判成「越过屏末」当场停下。
+  bool _pageEndCrossArmed = false;
+
+  /// 临近屏末时按剩余时长精确停播的一次性计时器：位置轮询每 125 ms 一次，单靠
+  /// 轮询会漏出最多一个周期的下一句开头。
+  Timer? _pageStopTimer;
+
+  /// 停在屏末时用户按播放（播放条 / 锁屏 / 耳机键）：请 reader 翻到下一屏，续播
+  /// 由新屏的范围上报驱动。返回 false = 翻不动（已是全书最后一屏等），控制器就
+  /// 直接往下播。
+  bool Function()? onTextLeadsAdvancePage;
 
   /// load() 完成前为未完成状态；seek 方法先 await 此 Completer 以避免
   /// 在音频源尚未就绪时 seek 导致位置归零。
@@ -1151,6 +1192,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
       // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
       followAudio.value = initialFollowAudio;
+      // 换书：上一本书的屏范围作废；跟随开关可能变了，重算文字领读是否生效。
+      _pageBounds = null;
+      _pausedAtPageEnd = false;
+      _resetTextLeadsCrossing();
+      _onTextLeadsInputsChanged();
       delayMs.value = initialDelayMs;
       imagePauseSec.value = initialImagePauseSec;
       // TODO-2389：换书是 reader 级作废——成对处理 Timer/Completer 并让上一本书的
@@ -1492,6 +1538,13 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 就把 reader 拉到音频章。
     _hasPlayedOnce = true;
     _manualReaderOverrideCue = null;
+    // 文字领读：停在屏末时按播放（播放条 / 锁屏 / 耳机键）= 翻到下一屏再续播，续播
+    // 由新屏的范围上报（[onReaderPageBounds]）驱动。翻不动（全书最后一屏）就直接往下播。
+    if (_textLeads && _pausedAtPageEnd) {
+      final bool Function()? advance = onTextLeadsAdvancePage;
+      if (advance != null && advance()) return;
+      _pausedAtPageEnd = false;
+    }
     // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
     // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
     // 手动按播放是显式“继续听书”手势，仍 snap；只复位 BUG-890 的窗口内翻页标志。
@@ -1570,6 +1623,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     _invalidateImageChapterPause();
     _readerMovedDuringImagePause = false;
     _resumeMainAfterClip = false;
+    // 用户自己暂停：不再算「停在屏末等续播」，翻屏只挪音频位置不起播。
+    _pausedAtPageEnd = false;
+    _cancelPageStopTimer();
     await _player.pause();
     _maybeSavePosition(force: true);
   }
@@ -1603,6 +1659,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [seekMs] 的本体，不报 [onBeforeAudioJump]：[seekGlobalMs] 已在入口报过、
   /// [seekRelative] 是步进不是跳转。
   Future<void> _seekWithinFile(int positionMs) async {
+    _pausedAtPageEnd = false;
+    _resetTextLeadsCrossing();
     await _loadReady.future;
     // 手动 seek（拖进度条 / 快进快退，seekRelative 也经此）是一个全新的、取代
     // 任何 in-flight 显式 seek（skipToCue / playCueOnce）的用户意图：**无条件**先
@@ -1769,6 +1827,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   }) {
     // 新的显式目标取代首次激活的恢复点（它自带同一判据的抑制窗）。
     _clearActivationRestore();
+    _resetTextLeadsCrossing();
     _explicitSeekInFlight = true;
     _explicitSeekTargetFileIndex = targetFileIndex;
     _explicitSeekTargetMs = targetMs;
@@ -1866,6 +1925,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _manualReaderOverrideCue = callerPositionsReader ? cue : null;
     _stopAtPositionMs = null;
     _returnToPosition = null;
+    _pausedAtPageEnd = false;
     await _loadReady.future;
     final ({int audioFileIndex, int positionMs})? mappedPosition =
         _positionForCue(cue);
@@ -2256,6 +2316,9 @@ class AudiobookPlayerController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // 文字领读：播到本屏末句句末就停，且这一 tick 不推进到下一句（否则高亮会先跳到
+    // 下一屏的句子）。
+    if (_textLeadsPageStopTick(posMs)) return;
     // BUG-3777 R1：播放所在句照常按位置推进（歌词层用它），跨章期间换句也要 notify——
     // 否则后台跨章卡住时歌词层一直停在进章那一句。
     final bool playbackCueChanged = _trackPlaybackCue(posMs);
@@ -2321,8 +2384,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 这是**被动跟随**的判据（暂停态不拽视口，BUG-2961 / BUG-2781）；用户在暂停中
   /// 显式跳句的那一次 reveal 另走 [consumeExplicitNavigationReveal]，不改这里——
   /// 它还决定「当前句拥有阅读位置」，暂停中放宽会让用户手翻的位置不落库。
+  ///
+  /// 文字领读时恒为 false：音频从不自己翻屏（屏由用户翻，音频停在屏末）；显式跳句
+  /// 的那一次 reveal 仍经 [consumeExplicitNavigationReveal] 照常翻过去。
   bool get shouldRevealCurrentCue =>
       _effectiveFollowAudio &&
+      !_textLeads &&
       _hasPlayedOnce &&
       _player.playing &&
       _stopAtPositionMs == null;
@@ -2367,6 +2434,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     if (_crossChapterHeldForCallerSeek) return;
     if (cue == null) return;
+    // 文字领读：被动播放从不替用户翻章（显式跳句 / 跟随开关重新打开走 bypass 照常）。
+    if (_textLeads && !bypassPlayGuard) return;
     if (!bypassPlayGuard && _isManualReaderOverrideCue(cue)) return;
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
       cue.textFragmentId,
@@ -2580,12 +2649,170 @@ class AudiobookPlayerController extends ChangeNotifier {
   void setReaderFollowOverride(bool value) {
     if (_readerFollowOverride == value) return;
     _readerFollowOverride = value;
+    _onTextLeadsInputsChanged();
     if (value && !followAudio.value) snapReaderToAudio();
   }
+
+  // ── 文字领读 ───────────────────────────────────────────────────────────────
+
+  bool get textLeads => _textLeads;
+
+  /// 音频是被「播到屏末」停下、正等用户翻屏续播。
+  bool get pausedAtPageEnd => _pausedAtPageEnd;
+
+  @visibleForTesting
+  TextLeadsPageBounds? get pageBoundsForTesting => _pageBounds;
+
+  /// reader 写入「选了文字领读 && VN 模式」。是否真正生效还要看跟随开关与歌词
+  /// 覆盖层（[_textLeads]）。
+  void setTextLeadsRequested(bool value) {
+    if (_textLeadsRequested == value) return;
+    _textLeadsRequested = value;
+    _onTextLeadsInputsChanged();
+  }
+
+  /// 三个输入（reader 条件 / 跟随开关 / 歌词覆盖层）任一变化后调用。变成不生效：
+  /// 清空屏范围与屏末停播状态，回到音频领读；变成生效：请 reader 补报当前屏。
+  void _onTextLeadsInputsChanged() {
+    final bool active = _textLeads;
+    if (active == _textLeadsWasActive) return;
+    _textLeadsWasActive = active;
+    if (!active) {
+      _pageBounds = null;
+      _pausedAtPageEnd = false;
+      _resetTextLeadsCrossing();
+    } else {
+      onTextLeadsActivated?.call();
+    }
+    notifyListeners();
+  }
+
+  /// reader 每次换屏（以及同屏重建）上报当前屏的句子范围；[bounds] 为 null = 本屏
+  /// 没有句子（插图屏）或解析不到。音频怎么跟由 [decideTextLeadsPageChange] 决定。
+  Future<void> onReaderPageBounds(TextLeadsPageBounds? bounds) async {
+    if (!_textLeads) return;
+    if (bounds == null) {
+      // 插图屏：没有可停的句末。停在屏末的保持停着，等用户翻到下一屏有字的地方。
+      _pageBounds = null;
+      _resetTextLeadsCrossing();
+      return;
+    }
+    // 同一屏重复上报（重排 / 换样式）：范围没变就什么都不做——否则停在屏末的位置
+    // 会被当成「不在本屏」而重播这一屏。
+    if (bounds.sameRangeAs(_pageBounds)) return;
+    _pageBounds = bounds;
+    _resetTextLeadsCrossing();
+    final ({int fileIndex, int positionMs}) at = _effectiveFilePosition;
+    final TextLeadsPageDecision decision = decideTextLeadsPageChange(
+      audioOnPage: textLeadsAudioOnPage(
+        fileIndex: at.fileIndex,
+        effectiveMs: (at.positionMs - delayMs.value).clamp(0, 1 << 30),
+        bounds: bounds,
+      ),
+      pausedAtPageEnd: _pausedAtPageEnd,
+      playing: _player.playing,
+    );
+    switch (decision.action) {
+      case TextLeadsPageAction.none:
+        return;
+      case TextLeadsPageAction.resumeHere:
+        _pausedAtPageEnd = false;
+        _hasPlayedOnce = true;
+        await _activateMainPlayer();
+      case TextLeadsPageAction.seekToPageStart:
+        _pausedAtPageEnd = false;
+        // 屏已经在用户手里定好了：本次 seek 不得再替它翻页 / 跨章。
+        await skipToCue(bounds.first, callerPositionsReader: true);
+        if (decision.play && !_player.playing) {
+          _hasPlayedOnce = true;
+          await _activateMainPlayer();
+        }
+    }
+  }
+
+  /// 屏末停播判定（每个位置 tick 调一次）。返回 true = 已停播，本 tick 不再推进 cue。
+  bool _textLeadsPageStopTick(int posMs) {
+    final TextLeadsPageBounds? bounds = _pageBounds;
+    if (!_textLeads ||
+        bounds == null ||
+        !_player.playing ||
+        _stopAtPositionMs != null) {
+      return false;
+    }
+    final int fileIndex = _player.currentIndex ?? 0;
+    final int effectiveMs = (posMs - delayMs.value).clamp(0, 1 << 30);
+    final bool past = textLeadsPastPageEnd(
+      fileIndex: fileIndex,
+      effectiveMs: effectiveMs,
+      last: bounds.last,
+    );
+    if (!past) {
+      _pageEndCrossArmed = textLeadsAudioOnPage(
+        fileIndex: fileIndex,
+        effectiveMs: effectiveMs,
+        bounds: bounds,
+      );
+      if (_pageEndCrossArmed) _armPageStopTimer(fileIndex, effectiveMs, bounds);
+      return false;
+    }
+    if (!_pageEndCrossArmed) return false;
+    _stopAtPageEnd();
+    return true;
+  }
+
+  /// 剩余不到两个轮询周期时按剩余时长（换算播放速度）排一次精确停播。
+  void _armPageStopTimer(
+    int fileIndex,
+    int effectiveMs,
+    TextLeadsPageBounds bounds,
+  ) {
+    if (_pageStopTimer != null) return;
+    if (fileIndex != bounds.last.audioFileIndex) return;
+    final int remainingMediaMs = bounds.last.endMs - effectiveMs;
+    if (remainingMediaMs > _positionPollPeriod.inMilliseconds * 2) return;
+    final double speed = _player.speed <= 0 ? 1.0 : _player.speed;
+    final int wallMs = (remainingMediaMs / speed).ceil().clamp(0, 1 << 20);
+    _pageStopTimer = Timer(Duration(milliseconds: wallMs), () {
+      _pageStopTimer = null;
+      // 计时期间范围换了 / 被 seek / 被暂停：以当前状态为准，不停。
+      if (!identical(_pageBounds, bounds) ||
+          !_pageEndCrossArmed ||
+          !_player.playing) {
+        return;
+      }
+      _stopAtPageEnd();
+    });
+  }
+
+  void _stopAtPageEnd() {
+    _cancelPageStopTimer();
+    _pageEndCrossArmed = false;
+    _pausedAtPageEnd = true;
+    unawaited(_player.pause());
+    _maybeSavePosition(force: true);
+    notifyListeners();
+  }
+
+  void _cancelPageStopTimer() {
+    _pageStopTimer?.cancel();
+    _pageStopTimer = null;
+  }
+
+  /// 显式 seek / 新屏范围 / 停止：越界判定从下一 tick 重新开始。
+  void _resetTextLeadsCrossing() {
+    _pageEndCrossArmed = false;
+    _cancelPageStopTimer();
+  }
+
+  /// 测试钩子：直接以指定位置跑一次屏末判定（不经平台位置流）。
+  @visibleForTesting
+  bool textLeadsPageStopTickForTesting(int posMs) =>
+      _textLeadsPageStopTick(posMs);
 
   void setFollowAudio(bool value) {
     if (followAudio.value == value) return;
     followAudio.value = value;
+    _onTextLeadsInputsChanged();
     final Future<void> Function(bool)? persist = onFollowAudioPersist;
     if (persist != null) {
       unawaited(persist(value));
@@ -2991,6 +3218,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 即便被唤醒也不得恢复播放）。
     _invalidateReaderTransition();
     _resumeMainAfterClip = false;
+    _pausedAtPageEnd = false;
+    _resetTextLeadsCrossing();
     final AudioPlayer? clip = _clipPlayer;
     _finishClipPlayback(RangePlaybackEnd.interrupted);
 
@@ -3115,6 +3344,8 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _pageStopTimer?.cancel();
+    _pageStopTimer = null;
     _teardownForDispose();
     // 同步 dispose 无法 await stop（会与 just_audio 异步平台切换竞争），止声职责
     // 交给停止路径（[AudiobookSession.stop] → [stopPlayback]）在 dispose 前完成；

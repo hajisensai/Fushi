@@ -2852,6 +2852,12 @@ updateLive: function(patch) {
           },
         );
 
+        // 文字领读：VN 引擎每次换屏回传当前屏的有声书句子首尾。
+        controller.addJavaScriptHandler(
+          handlerName: 'onTextLeadsScreenCues',
+          callback: _onTextLeadsScreenCues,
+        );
+
         // TODO-1289 / BUG-898：JS 揭开防剧透图后回传稳定 key（extractDir 相对归一路径）。
         // 归一化后登记进本次阅读会话内存集（章节重载 _buildReaderHtml 嵌回分页脚本跳过重
         // 遮罩），并持久化到 Drift（跨 app 重启永久 + 图片库双向同步的真相源）。

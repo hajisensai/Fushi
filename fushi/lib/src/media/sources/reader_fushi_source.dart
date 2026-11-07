@@ -27,6 +27,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -2424,6 +2425,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     await (readerSettings?.setVisualNovelMergeCrossScreenSentenceAudioCues(v) ??
         setPreference<bool>(key: 'vn_merge_cross_screen_cues', value: v));
   }
+
+  /// 「跟随音频」开着时的领读方向：'audio'（音频领读，文字跟着翻）或 'text'（文字
+  /// 领读：音频停在本屏末句、翻屏续播）。全局偏好，默认 'audio'。
+  String get audiobookLinkDirection => getPreference<String>(
+    key: 'audiobook_link_direction',
+    defaultValue: kAudiobookLinkDirectionAudio,
+  );
+
+  Future<void> setAudiobookLinkDirection(String value) async {
+    await setPreference<String>(key: 'audiobook_link_direction', value: value);
+  }
+
+  bool get audiobookTextLeads =>
+      audiobookLinkDirection == kAudiobookLinkDirectionText;
 
   String get readerTheme =>
       readerSettings?.theme ??

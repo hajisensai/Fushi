@@ -116,6 +116,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       _restoreCompleter!.complete(true);
     }
     _restoreCompleter = null;
+    // 文字领读：恢复期间的换屏上报被丢弃（见 _onTextLeadsScreenCues），落定后补报
+    // 最终停住的那一屏。
+    if (_audiobookController?.textLeads ?? false) {
+      _requestTextLeadsScreenReport();
+    }
 
     if (!_readerContentReady) {
       // BUG-111: 基线必须是「JS 实际分页用的宽高」(_paginatedWidth/Height)，

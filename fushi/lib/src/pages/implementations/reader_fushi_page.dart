@@ -198,6 +198,7 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/pointer_seek.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -2470,6 +2471,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       if (!mounted) return;
       // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
       _syncTapGateJs();
+      // 「跟随音频的领读方向」是热更新偏好：改完立刻同步给有声书控制器。
+      _syncAudiobookTextLeads();
       setState(() {});
     },
   );
@@ -3089,13 +3092,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       layoutReload: () {
         if (!mounted) return;
         unawaited(
-          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'ReaderFushi.onLayoutReloadLive',
-              e,
-              s,
-            );
-          }),
+          _reloadWithCurrentSettings()
+              .then((_) {
+                // 切换翻页 / 连续 / VN 后文字领读是否适用跟着变。
+                if (mounted) _syncAudiobookTextLeads();
+              })
+              .catchError((Object e, StackTrace s) {
+                ErrorLogService.instance.log(
+                  'ReaderFushi.onLayoutReloadLive',
+                  e,
+                  s,
+                );
+              }),
         );
       },
       // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，

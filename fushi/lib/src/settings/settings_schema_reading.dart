@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
@@ -374,6 +375,48 @@ SettingsDestination buildReadingDestination() {
               await c.readerSource.setReaderVisualNovelMergeSpokenSentence(v);
               notifyReaderLayoutChanged(c);
             },
+          ),
+          // 「跟随音频」开着时由谁领读：音频领读（文字跟着翻）/ 文字领读（音频停在本屏
+          // 末句、翻屏续播）。只有 VN 有逐屏上报，其它模式不显示。选文字领读时顺带打开
+          // 「合并跨屏朗读句」，保证每屏都结束在句末。
+          SettingsSegmentedItem<String>(
+            id: 'listening.link_direction',
+            title: t.audiobook_link_direction_title,
+            subtitle: t.audiobook_link_direction_hint,
+            icon: FushiIcons.link,
+            controlBelow: true,
+            visible: isVisualNovel,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 1,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kAudiobookLinkDirectionAudio,
+                label: t.audiobook_link_direction_audio,
+                tooltip: t.audiobook_link_direction_audio,
+              ),
+              SettingsSegmentOption<String>(
+                value: kAudiobookLinkDirectionText,
+                label: t.audiobook_link_direction_text,
+                tooltip: t.audiobook_link_direction_text,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.audiobookLinkDirection,
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setAudiobookLinkDirection(v);
+              if (v == kAudiobookLinkDirectionText &&
+                  !c.readerSource.readerVisualNovelMergeSpokenSentence) {
+                await c.readerSource.setReaderVisualNovelMergeSpokenSentence(
+                  true,
+                );
+                notifyReaderLayoutChanged(c);
+                return;
+              }
+              notifyReaderSettingsChanged(c);
+            },
+            defaultValue: kAudiobookLinkDirectionAudio,
           ),
         ],
       ),
