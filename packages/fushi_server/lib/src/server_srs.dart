@@ -9,6 +9,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -269,6 +270,16 @@ class _SharedExclusive implements SrsExclusiveOuter {
 }
 
 /// 一次只跑一个（各份 profile 的同步轮次共用）。
+/// 后台 isolate 里对 [address] 那份 Rust 连接出快照（顶层函数：闭包里不能捎带 [ServerSrs]，它带着不可跨 isolate 的
+/// Future）。设备本地表照留。
+Future<void> _snapshotSrsCore(int address, String? libraryPath, String path) =>
+    Isolate.run<void>(
+      () => SrsCore.fromAddress(
+        address,
+        libraryPath: libraryPath,
+      ).snapshotInto(path, stripDeviceLocal: false),
+    );
+
 class _SerialQueue {
   Future<void> _tail = Future<void>.value();
 
@@ -311,6 +322,19 @@ class ServerSrs {
 
   SrsStorage? _storage;
   FsrsEngine? _engine;
+
+  /// 备份用（`createServerBackup` 的 `snapshotSrs`）：复习库开着时在它那份连接上 Rust `VACUUM INTO`，排在同步轮次
+  /// 之间跑（快照不会落在一轮写入的中途）。设备本地表照留：整机还原回到的是同一台设备。没开（没选 profile）= null，
+  /// 备份自己离线打开 srs.db。
+  Future<void> Function(String path)? get snapshotFn {
+    final SrsStorage? storage = _storage;
+    if (storage == null || storage.isClosed) return null;
+    final int address = storage.core.address;
+    final String? libraryPath = storage.core.libraryPath;
+    return (String path) =>
+        _rounds.run(() => _snapshotSrsCore(address, libraryPath, path));
+  }
+
   final Map<String, ServerSrsProfile> _profiles = <String, ServerSrsProfile>{};
   final _SharedExclusive _exclusive = _SharedExclusive();
   final _SerialQueue _rounds = _SerialQueue();
