@@ -265,7 +265,7 @@ void main() {
         final Map<String, dynamic> body =
             jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['action'], 'findNotes');
-        // BUG-4226: `*:` qualifies every field, so a link field excluded
+        // BUG-4227: `*:` qualifies every field, so a link field excluded
         // from unqualified searches is still matched.
         expect(body['params']['query'], '*:*sourceId=$_sourceId*');
         return http.Response(
@@ -489,7 +489,7 @@ void main() {
     expect(_SourceRepository().tags(''), isEmpty);
     expect(
       CardSourceLink.searchQueryForSourceId(_sourceId),
-      // BUG-4226: field-qualified (`*:`) so Anki's "Exclude from unqualified
+      // BUG-4227: field-qualified (`*:`) so Anki's "Exclude from unqualified
       // searches" field option cannot hide the link field.
       '*:*sourceId=$_sourceId*',
     );
