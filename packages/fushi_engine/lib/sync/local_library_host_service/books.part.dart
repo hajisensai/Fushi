@@ -418,6 +418,28 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     );
   }
 
+  /// 全库书籍进度一次读齐（[BookProgressBatchHost]，反馈 kM-Gb_Xnu-）。
+  ///
+  /// 与 [getBookProgress] 同口径：wire 键 bookKey 经 epub_books 换算成本地 uid，
+  /// 书不在库 / uid 为空 / 无 `reader_positions` 行的书不进结果。两趟全表读，无逐书查询。
+  @override
+  Future<Map<String, RemoteBookProgress>> getAllBookProgress() async {
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final EpubBookRow b in await _db.getAllEpubBooks())
+        if (b.uid.isNotEmpty) b.uid: b.bookKey,
+    };
+    return <String, RemoteBookProgress>{
+      for (final ReaderPositionRow r in await _db.getAllReaderPositions())
+        if (bookKeyByUid[r.bookUid] case final String key)
+          key: RemoteBookProgress(
+            sectionIndex: r.sectionIndex,
+            normCharOffset: r.normCharOffset,
+            charOffset: r.charOffset,
+            updatedAtMs: r.updatedAt,
+          ),
+    };
+  }
+
   /// 把 client 上报的书 [bookKey] 进度写入 host 自己的 `reader_positions`
   /// （TODO-767）。
   ///
