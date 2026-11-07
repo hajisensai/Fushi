@@ -139,7 +139,7 @@ void main() {
         key: surfaceKey,
         controller: controller,
         hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
           Factory<VerticalDragGestureRecognizer>(
             VerticalDragGestureRecognizer.new,
           ),
