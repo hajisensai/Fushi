@@ -2,7 +2,7 @@
 ///
 /// - **Jellyfin 家族**：凭据就是视频的媒体服务器配置（`SyncRepository.getMediaServers` 里的
 ///   `JellyfinServerConfig`），登录 / 登出 / 换线路都在原来的设置页，这里不另存一份；
-/// - **OpenSubsonic**：用户在 设置 › 音乐 › 服务器曲库 里自配（`music_subsonic_servers`，
+/// - **OpenSubsonic**：用户在 设置 › 在线服务 › 媒体服务器 › 服务器曲库 里自配（`music_subsonic_servers`，
 ///   凭据键、设备本地）；
 /// - 混排进本地曲库是每台服务器的显式 opt-in（`music_server_library_mix`），混进去的是专辑卡，
 ///   点开仍走服务器专辑页（按需取曲目）。

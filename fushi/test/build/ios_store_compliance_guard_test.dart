@@ -613,6 +613,8 @@ void main() {
         'services.alist_sites',
         'services.kavita_servers',
         'services.audiobookshelf_servers',
+        // 音乐服务器曲库（OpenSubsonic 等用户自填地址的服务器）同理。
+        'services.music_servers',
       ]) {
         expect(resourcesSection, isNot(contains("id:'$id'")), reason: id);
         expect(mediaSection, contains("id:'$id'"), reason: id);
