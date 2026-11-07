@@ -43,6 +43,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
+    show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
     show redactSubsonicCredentials;
@@ -56,6 +58,7 @@ import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 
 /// 纯函数：整轨文件里的一段 → mpv EDL URI。路径按 UTF-8 字节数加 `%len%` 前缀，
 /// 路径里的逗号 / 等号不会被当成 EDL 分隔符。[endMs] 为 null = 播到文件尾。
@@ -145,12 +148,26 @@ bool musicCddaContinues(MusicPlayItem from, MusicPlayItem to) =>
 ///
 /// 在线音源插件曲目（`fushi-music-plugin://`）此时才向插件取流（[pluginResolver]，缺省
 /// [resolveMusicPluginStream]），取不到抛 [MusicPluginStreamUnavailable]。
+///
+/// YouTube 内置音源曲目（`fushi-music-youtube://`）同理此时才取 audio-only 直链
+/// （[youtubeResolver]，缺省 [resolveMusicYoutubeStream]），过期时刻取自直链的 `expire`。
 Future<MusicResolvedMedia> resolveMusicMedia(
   MusicPlayItem item, {
   MusicPlayItem? playThrough,
   MusicPluginStreamResolver? pluginResolver,
   MusicRemoteMediaResolver? remoteResolver,
+  MusicYoutubeStreamResolver? youtubeResolver,
 }) async {
+  final String? youtubeId = youtubeMusicVideoIdFromPath(item.path);
+  if (youtubeId != null) {
+    final MusicYoutubeStream s =
+        await (youtubeResolver ?? resolveMusicYoutubeStream)(youtubeId);
+    return (
+      media: Media(s.url, httpHeaders: s.headers.isEmpty ? null : s.headers),
+      fileLocal: const <String, String>{},
+      expiresAt: s.expiresAt,
+    );
+  }
   if (isMusicPluginPath(item.path)) {
     final MusicPluginStream s =
         await (pluginResolver ?? resolveMusicPluginStream)(item.path);

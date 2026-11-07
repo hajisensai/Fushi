@@ -72,6 +72,10 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// [languageHint]：书本身的语言（EPUB `dc:language` 经 [asrLanguageHintFromBookLanguage]
 /// 换算）。有 hint 时语言初值用 hint、不写回偏好；用户手动切换时才写回。没 hint
 /// 沿用偏好。
+///
+/// [autoProofread]：转录一完成就自动跑一次「AI 校对」（与完成态那个按钮同一条
+/// [AsrProofreadHost] 链路）。视频页「生成字幕」面板里选了 AI 校对、但不保存到视频
+/// 旁边时传 true（反馈 6Tj3ECtB0Q）；同意说明已在那个面板里确认过。
 Future<String?> showAsrTranscribeSheet({
   required BuildContext context,
   required List<String> audioPaths,
@@ -90,6 +94,7 @@ Future<String?> showAsrTranscribeSheet({
   Future<String?> Function()? directoryPicker,
   AsrTranscriptionService Function()? cloudService,
   AsrProofreadHost? proofreadHost,
+  bool autoProofread = false,
 }) {
   final AsrTranscriptionService effective =
       service ?? createAsrTranscriptionService();
@@ -151,6 +156,7 @@ Future<String?> showAsrTranscribeSheet({
     directoryPicker: directoryPicker,
     cloudService: cloud,
     proofreadHost: proofread,
+    autoProofread: autoProofread,
   );
   if (isDesktopPlatform) {
     return showAppDialog<String>(
@@ -460,6 +466,7 @@ class AsrTranscribeSheet extends StatefulWidget {
     this.systemSpeechService,
     this.cloudService,
     this.proofreadHost,
+    this.autoProofread = false,
     super.key,
   }) : catalogGetter = catalogGetter ?? _readAsrModelCatalog,
        catalogSetter = catalogSetter ?? saveAsrModelCatalog;
@@ -506,6 +513,9 @@ class AsrTranscribeSheet extends StatefulWidget {
 
   /// 转录稿 AI 校对（生产是 [appAsrProofreadHost]）；null = 完成态不出「AI 校对」。
   final AsrProofreadHost? proofreadHost;
+
+  /// 转录完成后自动跑一次 [proofreadHost] 校对（见 [showAsrTranscribeSheet]）。
+  final bool autoProofread;
 
   @override
   State<AsrTranscribeSheet> createState() => _AsrTranscribeSheetState();
@@ -593,6 +603,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   // AI 校对。
   int _proofreadDone = 0;
+
+  /// [AsrTranscribeSheet.autoProofread] 只生效一次：弹层里第一份完成的转录稿
+  /// 校对过（或已带校对备份）就清掉，之后的重转录交给用户手动点。
+  late bool _autoProofreadPending = widget.autoProofread;
   int _proofreadTotal = 0;
   SubtitleCancelSource? _proofreadCancel;
 
@@ -784,6 +798,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           _phase = _Phase.ready;
         }
       });
+      if (finished != null) _maybeAutoProofread(fresh: false);
     } catch (e) {
       if (!mounted) return;
       _failWith(e);
@@ -1049,6 +1064,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 _elapsedTotal = _runClock?.elapsed;
                 _phase = _Phase.finished;
               });
+              _maybeAutoProofread(fresh: true);
           }
         },
         onError: (Object e, StackTrace _) async {
@@ -1180,6 +1196,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                   _phase = srt == null ? _Phase.error : _Phase.finished;
                   if (srt == null) _error = 'no subtitle in remote result';
                 });
+                if (srt != null) _maybeAutoProofread(fresh: true);
             }
           },
           onError: (Object error) {
@@ -1477,6 +1494,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       _proofreadNote = note;
       _hasProofreadBackup = asrTranscriptHasProofreadBackup(srt);
     });
+  }
+
+  /// [AsrTranscribeSheet.autoProofread] 的一次性触发：转录稿一到完成态就校对。
+  /// [fresh] = 这次弹层里刚转录出来的稿；接回的现成稿（[fresh] 为 false）已带校对
+  /// 备份时说明校对过，不再花一次 AI 调用。
+  void _maybeAutoProofread({required bool fresh}) {
+    if (!_autoProofreadPending || _finishedSrt == null) return;
+    _autoProofreadPending = false;
+    if (!fresh && _hasProofreadBackup) return;
+    unawaited(_proofread());
   }
 
   /// 把 AI 校对前的原稿还原回去（备份仍保留，可再校对）。

@@ -3429,6 +3429,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频页「生成字幕」是否把字幕文件写到视频旁边（反馈 6Tj3ECtB0Q 合并两个入口后
+  /// 的选项）：开 = 走生成字幕管线（`<视频名>.<语言>.srt` 写在视频旁、可选专名表 AI
+  /// 校对）；关 = 只在 Fushi 里转录使用（转录弹层，语言 / 引擎更多，可再导出）。默认开。
+  bool get videoSubtitleSaveBesideVideo =>
+      getPref('video_subtitle_save_beside_video', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleSaveBesideVideo(bool enabled) async {
+    await setPref('video_subtitle_save_beside_video', enabled);
+    notifyListeners();
+  }
+
   /// 用户是否已看过并同意「AI 校对会发送什么」的说明（首次开启 AI 校对时弹一次；
   /// CLI 用 `--consent-ai` 写同一个键）。设备本地，理由同上。
   bool get videoSubtitleAiConsented =>
@@ -5260,6 +5271,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicAppleMusicEnabled(bool value) async {
     await setPref('music_apple_music_enabled', value);
+    notifyListeners();
+  }
+
+  /// 在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG）。默认关（显式 opt-in：开了统一搜索才会
+  /// 向 YouTube 发请求）；iOS 上不论取值都不存在（合规门 `isYoutubeMusicSourceAvailable`）。
+  bool get musicYoutubeEnabled =>
+      getPref('music_youtube_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicYoutubeEnabled(bool value) async {
+    await setPref('music_youtube_enabled', value);
     notifyListeners();
   }
 

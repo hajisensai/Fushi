@@ -26,7 +26,11 @@ enum MusicServerKind {
 
   /// Apple Music catalog（MusicKit 方案 P1b：Worker 代签 developer token，只浏览 + 30 秒
   /// 试听；`fushi_engine/media/music/apple_music/`）。
-  appleMusic('apple_music');
+  appleMusic('apple_music'),
+
+  /// YouTube 内置音源（反馈 0tRY-D2JgG）：只搜曲目 + 起播时取 audio-only 流，没有专辑 /
+  /// 艺人 / 歌单树；`fushi_engine/media/music/youtube/`。
+  youtube('youtube');
 
   const MusicServerKind(this.wire);
 
