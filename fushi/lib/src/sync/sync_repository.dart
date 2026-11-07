@@ -204,6 +204,11 @@ class SyncRepository {
 
   static const _keyRootFolderId = 'sync_root_folder_id';
   static const _keyFolderCache = 'sync_folder_cache';
+  // 云盘旧名 `<title>.epub` 内容资产的内容判型缓存（JSON：资产 id → {folder,
+  // revision, size, kind}，见 `CloudLegacyMangaSniffer`）。按通道分槽；设备本地
+  // （[_perChannelDeviceLocalBases]）：它是本机对远端字节的观测缓存，不是用户设置，
+  // 不进导出。条目按后端内容版本标记校验，带到别处也不会给出错的结论。
+  static const _keyContentSniffCache = 'sync_content_sniff_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
   // 废弃：词典与本地音频源数据库不再有「同步开关」，改成设置页的显式上传 / 下载
@@ -373,6 +378,41 @@ class SyncRepository {
           PreferencesCompanion.insert(
             key: scope.key(_keyFolderCache),
             value: jsonEncode(cache),
+          ),
+        );
+  }
+
+  /// [scope] 通道的云盘内容判型缓存（`CloudLegacyMangaSniffer`）；没有或损坏返回空表。
+  Future<Map<String, Object?>> getContentSniffCache(
+    SyncChannelScope scope,
+  ) async {
+    final row =
+        await (_db.select(_db.preferences)
+              ..where((t) => t.key.equals(scope.key(_keyContentSniffCache))))
+            .getSingleOrNull();
+    if (row == null) return <String, Object?>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(row.value);
+    } on FormatException {
+      // 缓存行坏了就当没有缓存：最坏是重新嗅探一遍，不影响任何用户数据。
+      return <String, Object?>{};
+    }
+    return decoded is Map<String, dynamic>
+        ? Map<String, Object?>.of(decoded)
+        : <String, Object?>{};
+  }
+
+  Future<void> setContentSniffCache(
+    SyncChannelScope scope,
+    Map<String, Object?> entries,
+  ) async {
+    await _db
+        .into(_db.preferences)
+        .insertOnConflictUpdate(
+          PreferencesCompanion.insert(
+            key: scope.key(_keyContentSniffCache),
+            value: jsonEncode(entries),
           ),
         );
   }
@@ -1807,6 +1847,7 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
+    _keyContentSniffCache,
   ];
 
   static const List<String> _deviceLocalFixedKeys = <String>[
