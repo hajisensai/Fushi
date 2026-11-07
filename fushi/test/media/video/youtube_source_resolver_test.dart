@@ -80,6 +80,123 @@ void main() {
     });
   });
 
+  // json3（cueDownloadUrl 请求的主格式，与浏览器扩展同一格式）：`segs[].utf8` 是字幕原文，
+  // 无实体转义。fixtures 按 YouTube json3 真实结构写（wireMagic/pens/窗口定义事件/逐词 seg/
+  // aAppend 换行事件），对应上面 XML 用例的同一批行（dQw4w9WgXcQ 人工轨 + en ASR 轨）。
+  group('parseYoutubeTimedTextToCues json3', () {
+    test('manual track: utf8 原文直用，作者写的 <i> / &amp; 不被改写', () {
+      const String json = r'''
+{"wireMagic":"pb3","pens":[{}],"wsWinStyles":[{}],"wpWinPositions":[{}],"events":[
+{"tStartMs":1360,"dDurationMs":1680,"segs":[{"utf8":"[♪♪♪]"}]},
+{"tStartMs":18640,"dDurationMs":3240,"segs":[{"utf8":"♪ We're no strangers to love ♪"}]},
+{"tStartMs":22000,"dDurationMs":3000,"segs":[{"utf8":"<i>you</i> know &amp; \"rules\""}]}
+]}''';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:abc',
+      );
+      expect(cues.map((AudioCue c) => c.text).toList(), <String>[
+        '[♪♪♪]',
+        "♪ We're no strangers to love ♪",
+        '<i>you</i> know &amp; "rules"',
+      ]);
+      expect(cues[0].startMs, 1360);
+      expect(cues[0].endMs, 3040);
+      expect(cues[2].startMs, 22000);
+      expect(cues[2].endMs, 25000);
+      expect(cues.map((AudioCue c) => c.sentenceIndex).toList(), <int>[
+        0,
+        1,
+        2,
+      ]);
+      expect(cues[1].bookKey, 'yt:abc');
+      expect(cues[1].chapterHref, 'youtube://yt:abc');
+      expect(cues[1].textFragmentId, 'yt-1');
+    });
+
+    test('ASR track: 逐词 seg 拼成整行，跳窗口定义事件与 aAppend 换行事件', () {
+      const String json = r'''
+{"wireMagic":"pb3","pens":[{}],"wsWinStyles":[{},{"mhModeHint":2,"juJustifCode":0,"sdScrollDir":3}],
+"wpWinPositions":[{},{"apPoint":6,"ahHorPos":20,"avVerPos":100,"rcRows":2,"ccCols":40}],"events":[
+{"tStartMs":0,"dDurationMs":214310,"id":1,"wpWinPosId":1,"wsWinStyleId":1},
+{"tStartMs":18800,"dDurationMs":7160,"wWinId":1,"segs":[{"utf8":"We're","acAsrConf":0},{"utf8":" no","tOffsetMs":239,"acAsrConf":0},{"utf8":" strangers","tOffsetMs":559,"acAsrConf":0},{"utf8":" to","tOffsetMs":1040,"acAsrConf":0}]},
+{"tStartMs":21790,"dDurationMs":4170,"wWinId":1,"aAppend":1,"segs":[{"utf8":"\n"}]},
+{"tStartMs":21800,"dDurationMs":6640,"wWinId":1,"segs":[{"utf8":"love","acAsrConf":0},{"utf8":" you","tOffsetMs":400,"acAsrConf":0},{"utf8":" know","tOffsetMs":800,"acAsrConf":0}]}
+]}''';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:asr',
+      );
+      expect(cues.map((AudioCue c) => c.text).toList(), <String>[
+        "We're no strangers to",
+        'love you know',
+      ]);
+      // json3 只负责如实给出每行时间；滚动双行的前后重叠留给轨级收尾截断。
+      expect(cues[0].startMs, 18800);
+      expect(cues[0].endMs, 25960);
+      expect(cues[1].startMs, 21800);
+      expect(cues[1].endMs, 28440);
+    });
+
+    test('缺 dDurationMs：以下一事件起点为终点，末尾兜底 1500ms', () {
+      const String json = '''
+  {"events":[
+  {"tStartMs":1000,"segs":[{"utf8":"a"}]},
+  {"tStartMs":1000,"segs":[{"utf8":"b"}]},
+  {"tStartMs":4000,"segs":[{"utf8":"c"}]},
+  {"tStartMs":9000,"dDurationMs":0,"segs":[{"utf8":"d"}]}
+  ]}''';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:x',
+      );
+      expect(
+        cues.map((AudioCue c) => '${c.text}:${c.startMs}-${c.endMs}').toList(),
+        <String>['a:1000-1001', 'b:1000-4000', 'c:4000-9000', 'd:9000-10500'],
+      );
+    });
+
+    test('无 tStartMs / 无 segs / 空文本的事件跳过；无 events 回空', () {
+      const String json =
+          '{"events":[{"segs":[{"utf8":"no start"}]},'
+          '{"tStartMs":10,"dDurationMs":5},'
+          '{"tStartMs":20,"dDurationMs":5,"segs":[{"utf8":"  "},{}]},'
+          '{"tStartMs":30,"dDurationMs":5,"segs":[{"utf8":"kept"}]}]}';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:x',
+      );
+      expect(cues.single.text, 'kept');
+      expect(cues.single.sentenceIndex, 0);
+      expect(
+        parseYoutubeTimedTextToCues(
+          content: '{"wireMagic":"pb3"}',
+          bookKey: 'yt:x',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('请求 json3 却回 XML（YouTube 无视 fmt）：按内容回退 XML 解析', () {
+      const String xml =
+          '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>'
+          '<p t="18640" d="3240">We&amp;#39;re here</p></body></timedtext>';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: xml,
+        bookKey: 'yt:x',
+      );
+      expect(cues.single.text, "We're here");
+      expect(cues.single.endMs, 21880);
+    });
+
+    test('json3 体损坏抛 FormatException（下载层当失败处理）', () {
+      expect(
+        () => parseYoutubeTimedTextToCues(content: '{"events":[', bookKey: 'x'),
+        throwsFormatException,
+      );
+    });
+  });
+
   // BUG-783：YouTube androidVr 现在一律返回 timedtext format="3" 的 <p t d>（毫秒），
   // 即使 fmt=srv1 也被无视；旧解析器只认 srv1 <text start dur>（秒）→ 0 cue → 字幕失效。
   // fixtures 用探测抓下来的真实结构（人工轨 <p>text</p>、ASR 轨 <p><s>词</s></p>）。

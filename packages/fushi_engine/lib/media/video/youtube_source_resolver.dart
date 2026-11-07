@@ -317,8 +317,9 @@ final HtmlUnescape _unescape = HtmlUnescape();
 /// 是 `We&amp;#39;re`（2026-11-06 实测 dQw4w9WgXcQ / jNQXAC9IVRw 的 en 轨，ja / de 轨原文里没有
 /// 要转义的字符所以看不出来）。第一层是 XML 本身的转义，第二层才是字幕文本的 HTML 转义，与
 /// youtube-transcript-api 的 ElementTree 解码 + `html.unescape` 同一口径。只解一层会把
-/// `&#39;` 原样显示出来；浏览器扩展取的是 json3（`segs[].utf8` 原文，无实体），所以只有 app 侧有。
-/// 固定两层而不是解到不动点：第二层之后剩下的 `&...;` 是字幕作者真写的字面文本。
+/// `&#39;` 原样显示出来。固定两层而不是解到不动点：第二层之后剩下的 `&...;` 是字幕作者真写的
+/// 字面文本。现在 app 与浏览器扩展一样请求 json3（`segs[].utf8` 原文，无实体），本函数只在
+/// YouTube 不照办 `fmt=json3`、回 XML 时的回退路径上用到。
 String _timedTextCueText(String inner) => _unescape
     .convert(_unescape.convert(inner.replaceAll(RegExp(r'<[^>]+>'), '')))
     .trim();
@@ -334,22 +335,87 @@ AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) =>
       ..endMs = endMs
       ..audioFileIndex = 0;
 
-/// 纯函数：YouTube timedtext XML → List<AudioCue>。两种格式**按内容自适应**（BUG-783）：
-/// - **srv1/legacy**：`<text start="秒" dur="秒">文本</text>`（旧路径，保留）。
+/// 纯函数：YouTube timedtext 响应体 → List<AudioCue>。三种格式**按内容自适应**：
+/// - **json3**（[YoutubeCaptionTrack.cueDownloadUrl] 请求的格式，主路径）：
+///   `{"events":[{"tStartMs","dDurationMs","segs":[{"utf8"}]}]}`，`utf8` 是字幕**原文**，
+///   不带任何实体转义（与浏览器扩展 `youtube-bridge.js` `parseJson3` 同一格式）。
+/// - **srv1/legacy**：`<text start="秒" dur="秒">文本</text>`。
 /// - **timedtext format="3"**：`<p t="毫秒" d="毫秒">文本</p>`，ASR 轨文本拆进内嵌
 ///   `<s>` 词级片段（需拼接）；含 `a="1"` 的空白滚动占位 `<p>` 与 `<w>` 元素跳过。
-///   YouTube androidVr 现在一律回 format 3（`fmt=srv1` 被无视），旧 srv1-only 正则对它
-///   解析出 0 cue → 字幕静默消失。
 ///
-/// 策略：先跑 srv1；有结果即返回（旧行为不变）。无 srv1 `<text>` 命中才按 format 3 解析
-/// `<p>`（两格式互斥，不会共存）。
+/// XML 两种保留为回退：YouTube 对 timedtext 的 `fmt` 参数并不总照办——BUG-783 实测 androidVr
+/// 的字幕 URL 无视 `fmt=srv1` 一律回 format 3，所以不能假设请求 json3 就一定拿到 json3，响应
+/// 体以 `{` 开头才按 json3 解析，否则按 XML。XML 分支先跑 srv1，无 `<text>` 命中才按
+/// format 3 解析 `<p>`（两格式互斥，不会共存）。json3 体不是合法 JSON 时抛
+/// [FormatException]（调用方 [resolveYoutubeCaptionCues] 当下载失败处理）。
 List<AudioCue> parseYoutubeTimedTextToCues({
   required String content,
   required String bookKey,
 }) {
+  if (content.trimLeft().startsWith('{')) {
+    return _parseJson3TimedText(content, bookKey);
+  }
   final List<AudioCue> srv1 = _parseSrv1TimedText(content, bookKey);
   if (srv1.isNotEmpty) return srv1;
   return _parseFormat3TimedText(content, bookKey);
+}
+
+/// json3 一个事件的 `segs[].utf8` 原样拼接后 trim。**不解实体、不剥标签**：json3 的 `utf8`
+/// 就是字幕原文，作者真写的 `&amp;` / `<i>` 是字面文本，照原样显示（XML 路径要解两层实体
+/// 才能还原，见 [_timedTextCueText]）。
+String _json3EventText(List<Object?> segs) => segs
+    .map(
+      (Object? seg) =>
+          seg is Map && seg['utf8'] is String ? seg['utf8'] as String : '',
+    )
+    .join()
+    .trim();
+
+/// json3：`events[]` 里**带 `segs` 的事件**才是字幕行（无 `segs` 的是 `wpWinPosId` /
+/// `wsWinStyleId` 窗口定义事件）。
+/// - 时间：`tStartMs` / `dDurationMs` 已是毫秒；`dDurationMs` 缺失或 ≤0 时以下一个带
+///   `tStartMs` 事件的起点为终点（至少 1ms），末尾事件兜底 1500ms——与扩展 `parseJson3` 一致。
+/// - 自动字幕（ASR）：一行拆成多个逐词 seg（第二个起带 `tOffsetMs`），整行拼接成一个 cue；
+///   行与行之间的 `aAppend: 1` 事件只有 `{"utf8":"\n"}`（滚动双行的换行标记），trim 后为空
+///   天然跳过。滚动双行造成的前后行时间重叠不在这里截，交给轨级收尾。
+/// - 无 `tStartMs` 或文本为空的事件跳过。
+List<AudioCue> _parseJson3TimedText(String content, String bookKey) {
+  final Object? decoded = jsonDecode(content);
+  final Object? events = decoded is Map ? decoded['events'] : null;
+  if (events is! List) return const <AudioCue>[];
+  final List<AudioCue> cues = <AudioCue>[];
+  int index = 0;
+  for (int i = 0; i < events.length; i++) {
+    final Object? event = events[i];
+    if (event is! Map) continue;
+    final Object? segs = event['segs'];
+    final Object? tStart = event['tStartMs'];
+    if (segs is! List || tStart is! num) continue;
+    final String text = _json3EventText(segs);
+    if (text.isEmpty) continue;
+    final int start = tStart.round();
+    final Object? dur = event['dDurationMs'];
+    final int end = dur is num && dur > 0
+        ? start + dur.round()
+        : _json3FallbackEnd(events, i, start);
+    cues.add(_cue(bookKey, index, text, start, end));
+    index++;
+  }
+  return cues;
+}
+
+/// `dDurationMs` 缺失时的终点：下一个带数值 `tStartMs` 的事件起点（至少比 [start] 晚 1ms），
+/// 没有后继事件时 [start] + 1500ms。
+int _json3FallbackEnd(List<Object?> events, int i, int start) {
+  for (int j = i + 1; j < events.length; j++) {
+    final Object? next = events[j];
+    final Object? nextStart = next is Map ? next['tStartMs'] : null;
+    if (nextStart is num) {
+      final int n = nextStart.round();
+      return n > start ? n : start + 1;
+    }
+  }
+  return start + 1500;
 }
 
 /// srv1/legacy：`<text start="秒" dur="秒">…</text>`，秒 → 毫秒。
@@ -1195,7 +1261,7 @@ class YoutubeCaptionTrack {
     this.translateToCode,
   });
 
-  /// timedtext baseUrl（不含 fmt/tlang 查询参数——下载时才补 `fmt=srv1` [+ `tlang=`]）。
+  /// timedtext baseUrl（不含 fmt/tlang 查询参数——下载时才补 `fmt=json3` [+ `tlang=`]）。
   final String baseUrl;
 
   /// 轨语言码（YouTube 原样：`ja` / `en` / `en-US` / `zh-Hans` 等）。
@@ -1220,7 +1286,8 @@ class YoutubeCaptionTrack {
       '${isAutoGenerated ? 'asr' : 'human'}'
       '${translateToCode != null ? ':tl=$translateToCode' : ''}';
 
-  /// timedtext 下载 URL：补 `fmt=srv1`（= [parseYoutubeTimedTextToCues] 认得的 XML）+
+  /// timedtext 下载 URL：补 `fmt=json3`（字幕原文、无实体转义，与浏览器扩展同一格式；
+  /// YouTube 不照办时回的 XML 由 [parseYoutubeTimedTextToCues] 按内容回退解析）+
   /// 翻译变体再补 `tlang=`（YouTube 机翻）。
   String get cueDownloadUrl {
     final Uri raw = Uri.parse(baseUrl);
@@ -1228,7 +1295,7 @@ class YoutubeCaptionTrack {
         .replace(
           queryParameters: <String, String>{
             ...raw.queryParameters,
-            'fmt': 'srv1',
+            'fmt': 'json3',
             if (translateToCode != null) 'tlang': translateToCode!,
           },
         )
@@ -1426,7 +1493,7 @@ Future<List<YoutubeCaptionTrack>> resolveYoutubeCaptionTracks(
 }
 
 /// IO：懒下载**单条**字幕轨的 cue（track-list-first 的 on-select，TODO-1302）。选中轨才调，
-/// 下载 [YoutubeCaptionTrack.cueDownloadUrl]（fmt=srv1 [+ tlang]）→ [parseYoutubeTimedTextToCues]。
+/// 下载 [YoutubeCaptionTrack.cueDownloadUrl]（fmt=json3 [+ tlang]）→ [parseYoutubeTimedTextToCues]。
 /// best-effort：失败返回空 cue（视频照播、字幕轨行仍在可重试）。
 Future<List<AudioCue>> resolveYoutubeCaptionCues(
   YoutubeCaptionTrack track, {
