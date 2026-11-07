@@ -1,11 +1,8 @@
 // v134 游戏台词（galgame_text_lines）进备份：所有者 2026-10-24 拍板——语料库里的游戏
 // 台词曾是唯一持久副本，换设备 / 恢复备份不能丢。台词进 DB 表后随 games 类别出境，
-// 覆盖导入整库落地、「我库里的例句」从表重建；合并导入按游戏身份重映射 + (游戏, 台词)
-// 去重。语料目录（<数据根>/corpus，派生索引）本身不进备份：坏了 / 缺了都不影响备份。
-import 'dart:convert';
+// 覆盖导入整库落地；合并导入按游戏身份重映射 + (游戏, 台词) 去重（「我库里的例句」已按
+// 反馈 4S2_J80DfK 下架，表与存量台词照旧随备份走）。语料目录（<数据根>/corpus，派生索引）本身不进备份：坏了 / 缺了都不影响备份。
 import 'dart:io';
-import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart'
@@ -14,38 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_corpus/fushi_corpus.dart';
 import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
-
-/// 假词元：按空白切词、小写 = 词典形（这里测的是备份往返，不是词形还原）。
-Uint8List _fakeTerms(List<String> sentences) {
-  final BytesBuilder b = BytesBuilder();
-  void u32(int v) =>
-      b.add((ByteData(4)..setUint32(0, v, Endian.little)).buffer.asUint8List());
-  for (final String s in sentences) {
-    final List<RegExpMatch> words = RegExp(r'[^\s]+').allMatches(s).toList();
-    u32(words.length);
-    for (final RegExpMatch m in words) {
-      final List<int> lemma = utf8.encode(m.group(0)!.toLowerCase());
-      u32(m.start);
-      u32(m.end - m.start);
-      u32(lemma.length);
-      b.add(lemma);
-    }
-  }
-  return b.takeBytes();
-}
-
-class _FakeNormalizer implements CorpusNormalizer {
-  @override
-  String? get signature => 'dict-v1';
-
-  @override
-  Future<T?> runInBackground<T>(T Function(CorpusTermsFn terms) job) =>
-      Isolate.run(() => job(_fakeTerms));
-}
 
 void main() {
   late Directory src;
@@ -122,7 +90,7 @@ void main() {
   BackupService serviceFor(({FushiDatabase db, String dbDir}) s) =>
       BackupService(db: s.db, dbDirectory: s.dbDir, appVersion: '1.0.0');
 
-  test('整份备份 → 空数据根覆盖恢复：台词落地、例句索引从表重建可查；语料目录不进包', () async {
+  test('整份备份 → 空数据根覆盖恢复：台词落地；语料目录不进包', () async {
     final s = await seed();
     final String zip = p.join(src.path, 'full.zip');
     await serviceFor(s).createBackup(zip);
@@ -144,32 +112,13 @@ void main() {
       zipPath: zip,
     );
     final FushiDatabase cur = FushiDatabase(curDbDir);
-    final LibraryCorpusService corpus = LibraryCorpusService(
-      normalizer: _FakeNormalizer(),
-      startDelay: Duration.zero,
-      debounce: const Duration(milliseconds: 1),
-    );
     try {
       expect(await lines(cur, 'G1'), <String>[
         'The night is long',
         'Run to the sea',
         'We ran together',
       ]);
-      corpus.start(
-        database: cur,
-        directory: LibraryCorpusService.directoryUnder(curDbDir),
-        isEnabled: () => true,
-      );
-      for (int i = 0; i < 3; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        await corpus.idle;
-      }
-      final CorpusQueryResult result = await corpus.query(<String>['ran']);
-      expect(result.groups.single.kind, CorpusSourceKind.game);
-      expect(result.groups.single.items.single.text, 'We ran together');
-      expect(result.groups.single.items.single.pos, 30);
     } finally {
-      await corpus.stop();
       await cur.close();
     }
   });
