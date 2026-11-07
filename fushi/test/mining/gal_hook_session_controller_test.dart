@@ -1373,6 +1373,102 @@ void main() {
   );
 
   test(
+    'BUG-4227: audio fallback policy is restored when attaching to a running '
+    'game, sharing the per-game memory with launch',
+    () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{};
+      const Map<int, String> exeByPid = <int, String>{
+        101: r'D:\anemoi\SiglusEngine.exe',
+        202: r'D:\other\Game.exe',
+      };
+      GalHookSessionController build() {
+        final GalHookSessionController controller = GalHookSessionController(
+          textService: service,
+          isWindows: true,
+          exe32BitProbe: (_) async => true,
+          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+          targetImagePathProbe: (int pid) => exeByPid[pid],
+          engineSourceFactory:
+              ({
+                required int targetPid,
+                required String? launchExe,
+                required String injectorPath,
+                required bool lunaPcHooks,
+                int? lunaCodepage,
+                List<String> launchArguments = const <String>[],
+                String launchWorkdir = '',
+                GalJapaneseLocaleMode japaneseLocaleMode =
+                    kGalDefaultJapaneseLocaleMode,
+                String? contentLanguage,
+              }) =>
+                  _FakeEngineSource(pairedBytes: Uint8List(0), rawReady: true),
+          loopbackSourceFactory: _FakeLoopbackSource.new,
+          windowListLoader: () async => const <ExternalWindowInfo>[],
+          windowPollAttempts: 1,
+          resourceAudioWait: Duration.zero,
+          endpointListenable: endpoints,
+          endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+        );
+        controller.attachCaptureMemory(
+          load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+          save: (String gameKey, GalCaptureMemory memory) =>
+              store[gameKey] = memory,
+        );
+        return controller;
+      }
+
+      const ExternalWindowInfo anemoi = ExternalWindowInfo(
+        hwnd: 11,
+        pid: 101,
+        title: 'anemoi',
+      );
+      const ExternalWindowInfo other = ExternalWindowInfo(
+        hwnd: 22,
+        pid: 202,
+        title: 'other game',
+      );
+
+      // 附着会话里做的选择按 PID 反查出的 exe 落到该游戏的记忆。
+      final GalHookSessionController first = build();
+      await first.startAttachedCapture(anemoi);
+      first.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+      expect(
+        store[r'd:\anemoi\siglusengine.exe']?.audioFallbackPolicy,
+        GalAudioFallbackPolicy.cleanOnly,
+      );
+      await first.close();
+
+      // 下一次附着同一游戏：会话一起就恢复，不等音轨快照。
+      final GalHookSessionController second = build();
+      await second.startAttachedCapture(anemoi);
+      expect(
+        second.state.audioFallbackPolicy,
+        GalAudioFallbackPolicy.cleanOnly,
+        reason: '附着已运行游戏必须与启动游戏走同一恢复入口，读回该游戏上次的降级选择',
+      );
+
+      // 换附着另一个游戏：按新 exe 重新加载记忆，不串上一个游戏（不做跨游戏全局默认）。
+      await second.startAttachedCapture(other);
+      expect(second.state.audioFallbackPolicy, GalAudioFallbackPolicy.full);
+
+      // launch 与 attach 共用同一份按游戏记忆：附着时选的，启动同一 exe 时也读回。
+      expect(
+        (await second.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+        isTrue,
+      );
+      expect(
+        second.state.audioFallbackPolicy,
+        GalAudioFallbackPolicy.cleanOnly,
+      );
+
+      await second.close();
+      endpoints.dispose();
+    },
+  );
+
+  test(
     'text process pipeline is remembered per game and restored on launch',
     () async {
       final TexthookerService service = TexthookerService.test();
@@ -1430,7 +1526,7 @@ void main() {
 
       final GalHookSessionController first = build();
       expect(
-        (await first.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
+        (await first.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
         isTrue,
       );
       expect(
@@ -1440,7 +1536,7 @@ void main() {
       );
       await first.setTextProcessPipeline(pipeline);
       expect(
-        store[r'd:nemoi\siglusengine.exe']?.textProcess.steps,
+        store[r'd:\anemoi\siglusengine.exe']?.textProcess.steps,
         pipeline.steps,
         reason: '设置管线必须当场落进这个游戏的捕获记忆',
       );
@@ -1448,7 +1544,7 @@ void main() {
 
       final GalHookSessionController second = build();
       expect(
-        (await second.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
+        (await second.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
         isTrue,
       );
       expect(
