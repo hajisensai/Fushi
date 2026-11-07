@@ -106,6 +106,7 @@ scan_prune: true              # 扫描后回收「文件已消失」的视频条
 profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
 remote_update: false          # 允许已配对设备远程更新本服务端（见下文「远程更新」）；默认关，WebUI 可开，保存即生效
 leaderboard_link: true        # 允许「我的设备」跟随本机排行榜账户自动登录（见下文「跟随已配对设备登录」）；保存即生效
+lookup_chinese_script_variants: false   # 中文查词简体 ↔ 繁體互查（见下文「词典与远程查词」）；默认关，与 app 一致；WebUI 可开，保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -136,6 +137,19 @@ ai:                           # 「AI 下视频」助手会话、补字幕前候
   #   kind: "searxng"         # searxng / brave
   #   endpoint: "https://searx.example.org"  # searxng 实例根地址，实例需在 settings.yml 打开 json 格式
   #   api_key: ""             # brave 的 X-Subscription-Token
+srs:                          # Fushi 复习（见下文「Fushi 复习」）；profiles 为空 = 关闭（默认）
+  profiles: []                # 提供哪几份配置文件（uid；每门语言一份）。WebUI「复习」页从同步目录里勾选
+  default_profile: ""         # 默认那份；空 = 列表第一份
+  rollover_hour: 4            # 换日时刻（配置文件自带设置时以它为准）
+  mining_target: "auto"       # 已配对设备转发的卡落到哪：auto（没配好 Anki 时进复习）| review | anki
+  mining_decks: {}            # uid → 制卡牌组全名；缺省 = 那份的默认牌组
+ankiconnect:                  # AnkiConnect 兼容接口（Yomitan 等往复习库加卡），默认关
+  enabled: false
+  bind: "127.0.0.1"           # 非本机地址必须设 api_key 或 profile_keys，否则拒绝启动
+  port: 8765
+  api_key: ""                 # 共用 key：落到默认那份
+  profile_keys: {}            # uid → 那份专用的 key（Yomitan 里一门语言一个 key）
+  cors_origins: []            # 额外允许的浏览器来源；空 = 内置清单
 libraries:
   - id: "anime"
     path: "/srv/media/anime"
@@ -179,7 +193,7 @@ fushi_server backup restore <file> --yes [--no-config]  从备份还原（须先
 ### 备份与还原
 
 备份的是这台服务端自己（换机 / 重装 / 回滚用），一个 zip：数据库的一致快照（`VACUUM INTO`，
-serve 在跑也安全）、配置文件、数据目录里其余文件（互联身份与 TLS 证书、配对、词典、任务、寄存的
+serve 在跑也安全）、复习库 `srs.db` 的一致快照（有才带）、配置文件、数据目录里其余文件（互联身份与 TLS 证书、配对、词典、任务、寄存的
 配置方案……）。不进包：`tmp/`、`logs/`、`backups/`、锁文件。`documents/`（书 / 封面 / 有声书 /
 下载）默认带上，`--no-documents` 只留设置与状态——还原后库里的条目会指向缺失文件，要重新扫描 /
 下载。**备份里有 `admin_token`、qBittorrent 密码、AI key 等凭据，要当密钥保管。**
@@ -212,6 +226,8 @@ fushi_server ctl dl add --torrent <路径|URL> --list-files  只列 .torrent 文
 fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
 fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
 fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
+fushi_server ctl srs [status] | profiles | add|remove|default <uid> | off | sync [<uid>]
+fushi_server ctl srs ankiconnect on|off | config '<json>'   复习库（见下文「Fushi 复习」）
 fushi_server ctl upload <文件…> --lib <id> [--path 目录]   分块断点续传（传完 scan）
 fushi_server ctl logs -f                                 跟随日志
 fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
@@ -320,6 +336,7 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
+| `GET|PUT srs` / `GET srs/profiles` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
 | `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
 
 ### 远程访问三项
@@ -501,6 +518,26 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
 
+## Fushi 复习（SRS）
+
+服务端可以当一台「复习设备」，替已配对设备保管 Fushi 复习的收藏，设计见
+`docs/specs/2026-11-05-server-srs-design.md`：
+
+- **选配置文件**：手机把复习数据经互联同步到服务端之后，WebUI →「复习」页列出同步目录里的配置文件，勾选要提供的
+  （每门语言一份，可以多选），再选一份默认。不勾选 = 关闭，什么都不开。服务端不会自己挑。
+- **同步**：服务端用与 app 同一套同步引擎，读写自己的互联同步目录：设备写入后几秒内合并，自己写入（远程复习、
+  制卡、AnkiConnect）后发出，另有每 30 分钟一次兜底；完成后叫醒客户端。
+- **远程复习**：手机「远程复习」直接用服务端的收藏，优先打开手机当前那份配置文件，服务端没有就让你选。
+- **制卡到已配对设备**：`mining_target` 决定转发来的卡进 Anki 落地还是复习库；手机可在「保存到」里另选
+  某份配置文件 / 牌组或 Anki 牌组（`POST /api/mine/targets` 列出可选项）。查重按卡要去的那份判。
+- **AnkiConnect**：默认关。打开后 Yomitan 等可以往复习库加卡；只听本机时可以不设 key，监听局域网地址必须设 key。
+  每份配置文件可以有自己的 key，带共用 key 的请求落到默认那份。没有界面类动作（`guiBrowse` 等回「不支持」）。
+- **原生库**：复习库与 FSRS 调度都在随包的 `libfushi_fsrs` 里（正式发布包已带；按 `FUSHI_FSRS_LIB` →
+  `bin/../lib/` 定位）。没找到时各份配置文件显示出错，其余功能照常。服务端不做 RWKV 调度。
+- 数据在 `<data>/support/srs.db` 与 `<data>/support/srs_media/<uid>/`，整机备份会带上 `srs.db` 的一致快照。
+- **限制（v1）：同步位置开了端到端加密的配置文件不支持。** 这份配置文件显示「同步位置已加密」，服务端不同步它、
+  也不提供远程复习 / 制卡 / AnkiConnect，其它配置文件不受影响。把口令存到服务端会削弱端到端加密，所以 v1 不做。
+
 ## 词典与远程查词
 
 带上 `libfushidicts_ffi`（与 app 同一个 C++ 引擎，源码 `native/fushidicts/`）时，服务端提供互联查词：
@@ -508,6 +545,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` 的 `lookup.dictionary` / `lookup.history`
 如实反映引擎是否加载成功；加载失败 serve 照常起，查词路由不注册（客户端按不可用处理）。
 
+- 简繁互查（中文查词时简体词也查繁體词头、反之亦然）：新版 app 每次查词带上**请求方自己的**开关（app「设置 › 查词 › 简繁互查」），以它为准；不带开关的请求方（浏览器扩展、旧客户端）用服务端配置 `lookup_chinese_script_variants`（默认关，WebUI「设置」页或 `fushi_server ctl settings set '{"lookupChineseScriptVariants":true}'` 改，保存即生效）。两种情况都只在请求声明的查词语言是中文时才互查，语言未知不互查。
 - 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
@@ -527,8 +565,9 @@ fushi_server dict rm <词典名> [--json]
 
   离线改动在 serve 重启后进引擎。退出码：用法错 64、词典包 / 配置不存在 66、原生库不可用 69、导入失败 1。
 
-制卡转发（`/api/mine`、`/api/mine/forward`、`/api/duplicate`）在服务端带 `fushi-anki-sync` helper 时接线，
-落到上面「Anki 落地」的同一个牌组集合；`/api/capabilities` 报 `mining`。
+制卡转发（`/api/mine`、`/api/mine/forward`、`/api/duplicate`、`/api/mine/targets`）在服务端带 `fushi-anki-sync`
+helper，或者提供了复习库时接线：落到上面「Anki 落地」的同一个牌组集合，或复习库（见「Fushi 复习」）。两样都没有时
+`/api/capabilities` 报 `mining: false`，路由 404；随配置即时变化。
 
 ## GPU（CUDA）
 

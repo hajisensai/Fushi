@@ -10,8 +10,11 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/sync/font_sync.dart';
+import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show BookProgressSyncAction;
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
@@ -1423,6 +1426,65 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
   }
 }
 
+/// 退出书时对**一条**通道同步这一本书；返回需要用户裁决的冲突（没有则 null）。
+///
+/// 互联（反馈 kM-Gb_Xnu-）：直接走 live 三方同步（`GET` host 进度 → 判定 →
+/// `PUT` / 落地），与全量 sweep 的书进度阶段同一份 [InterconnectBookProgressSync
+/// .syncOne]。此前这里对互联也跑 [SyncManager.syncBook]，写的是 host 上从不读回的
+/// WebDAV 文件箱（[SyncManager] 的 `_fileBoxIsClientOwned`），于是退出书后进度
+/// 根本没到对端，要等下一次全量 sweep 跑到书进度阶段。统计 / 有声书断点在互联下
+/// 本来就各走 live 聚合与断点 sweep，文件箱那份同样没人读，这里一并不再写。
+///
+/// 云通道照旧走 [SyncManager.syncBook]。BUG-988 续：per-book 的分资产门控与 sweep
+/// 走**同一份** [resolveChannelSyncFlags]。
+@visibleForTesting
+Future<SyncConflict?> syncExitedBookOnChannel({
+  required FushiDatabase db,
+  required SyncRepository repo,
+  required SyncBackend backend,
+  required EpubBookRow book,
+}) async {
+  if (backend is InterconnectSyncBackend) {
+    final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
+      db: db,
+      backend: backend,
+    );
+    final BookProgressSyncStep step = await sync.syncOne(
+      book,
+      remote: await sync.remoteProgress(book),
+    );
+    if (step.action != BookProgressSyncAction.conflict) return null;
+    return SyncConflict(
+      assetKey: book.bookKey,
+      dimension: kInterconnectBookProgressDimension,
+      title: book.title,
+      localVersion: step.localUpdatedAtMs,
+      remoteVersion: step.remoteUpdatedAtMs,
+    );
+  }
+  final ChannelSyncFlags flags = await resolveChannelSyncFlags(
+    repo,
+    isInterconnect: false,
+  );
+  final SyncBookResult result = await SyncManager(db: db, backend: backend)
+      .syncBook(
+        book: book,
+        syncStats: flags.syncStats,
+        statsSyncMode: StatisticsSyncMode.merge,
+        syncAudioBook: flags.syncAudioBookPosition,
+        syncContent: flags.syncContent,
+        syncMangaContent: flags.syncMangaContent,
+      );
+  if (result.direction != SyncResult.conflict) return null;
+  return SyncConflict(
+    assetKey: result.conflictAssetKey!,
+    dimension: result.conflictDimension!,
+    title: result.title,
+    localVersion: result.conflictLocalVersion,
+    remoteVersion: result.conflictRemoteVersion,
+  );
+}
+
 Future<void> _runAutoSync({
   required FushiDatabase db,
   required String mediaIdentifier,
@@ -1484,27 +1546,13 @@ Future<void> _runAutoSync({
           await backend.restoreAuth(repo);
           if (!await backend.isAuthenticated) continue;
 
-          // BUG-988 续：per-book 的分资产门控与 sweep 走**同一份**
-          // [resolveChannelSyncFlags]。原来三个开关在循环外读死、只给 content 补了
-          // 一个 `channel.isInterconnect ? ... : ...` 三元式，统计漏掉了——用户关掉
-          // 互联「共享统计」后全量 sweep 停了，可每退出一本书仍把该书的
-          // `statistics_*.json` PUT 给互联 host 再 merge 回本地（互联后端真的实现了
-          // 这条通道：InterconnectSyncBackend.updateStatsFile）。把解析收进循环，
-          // 「哪个开关记得分通道、哪个忘了分」这种特殊情况就不存在了。
-          final ChannelSyncFlags flags = await resolveChannelSyncFlags(
-            repo,
-            isInterconnect: channel.isInterconnect,
-          );
-          final manager = SyncManager(db: db, backend: backend);
-          final result = await manager.syncBook(
+          final SyncConflict? conflict = await syncExitedBookOnChannel(
+            db: db,
+            repo: repo,
+            backend: backend,
             book: book,
-            syncStats: flags.syncStats,
-            statsSyncMode: StatisticsSyncMode.merge,
-            syncAudioBook: flags.syncAudioBookPosition,
-            syncContent: flags.syncContent,
-            syncMangaContent: flags.syncMangaContent,
           );
-          // 计数放在 syncBook **之后**：抛异常的通道不算「跑过」，否则
+          // 计数放在同步**之后**：抛异常的通道不算「跑过」，否则
           // channelsRun>0 会把一条都没成功的轮次记成 completed（与 sweep 一致）。
           channelsRun++;
 
@@ -1515,22 +1563,10 @@ Future<void> _runAutoSync({
           // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
 
           // Surface a genuine fork to the caller as a one-conflict report so the
-          // book-exit flow can prompt resolution. The single-book path runs
-          // SyncManager.syncBook (not the orchestrator), so build the report here
-          // from the conflict fields SyncManager fills on SyncResult.conflict.
+          // book-exit flow can prompt resolution.
           if (onReport != null) {
             final SyncRunReport report = SyncRunReport();
-            if (result.direction == SyncResult.conflict) {
-              report.conflicts.add(
-                SyncConflict(
-                  assetKey: result.conflictAssetKey!,
-                  dimension: result.conflictDimension!,
-                  title: result.title,
-                  localVersion: result.conflictLocalVersion,
-                  remoteVersion: result.conflictRemoteVersion,
-                ),
-              );
-            }
+            if (conflict != null) report.conflicts.add(conflict);
             onReport(report, backend);
           }
         } catch (e, stack) {

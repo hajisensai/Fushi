@@ -209,7 +209,7 @@ void main() {
     ]);
     expect(before.localHasNotes, isTrue);
 
-    b.store = await b.linker.adopt(b.store, a.store.profileUid);
+    b.store = (await b.linker.adopt(b.store, a.store.profileUid)).store;
     expect(b.store.profileUid, a.store.profileUid);
     for (int i = 0; i < 3; i++) {
       expect((await b.sync(dir)).error, isNull, reason: 'b $i');

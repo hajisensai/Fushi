@@ -17,7 +17,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/backup_srs_tables.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
-import 'package:fushi/src/srs/srs_media_store.dart' show SrsMediaStore;
+import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';

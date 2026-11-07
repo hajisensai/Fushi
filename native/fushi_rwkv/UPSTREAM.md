@@ -99,8 +99,11 @@
 INTEGRATION.md 与 `reference/small_model_recurrent.py` 实现；不含发布包的代码。2026-10-27 起用的权重换成
 同架构重训的 release `small-model-sm56-2026-10-24`（包 `sm56-package.zip`，SHA-256
 `7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a`；`architecture.json` 与参考代码
-与 sm40v2 逐字节相同，代码无需改动）。权重与测试向量不入库，
-许可作者尚未声明（2026-10-20 核对：仓库 license 为空），Fushi 只在用户启用时从作者的 release 下载。
+与 sm40v2 逐字节相同，代码无需改动）。2026-11-07 起换成无泄漏的 sm72e25：JSchoreels/anki 提交
+`986963d23e7ec9f22771c38998ef9042214c2b98` 的 `qt/aqt/rwkv_inference/sm72e25/weights.{int8,f32}.bin`、
+`architecture.json`（与 SM56 逐字节相同）与 `rslib/src/rwkv/testdata/sm72e25-vectors.json.gz`，哈希见
+`src/lib.rs` 的 `SMALL_MODEL_*_SHA256`（与该提交的 `manifest.json` 一致）；随之加入无泄漏输入规则（输入
+13–15 恒为 0，README「sm72e25」）。权重与测试向量不入库，Fushi 只在用户启用时按钉死 URL 下载。
 
 ## 黄金值（tests/fixtures/）
 

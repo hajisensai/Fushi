@@ -125,6 +125,13 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   MediaServerWorkLibraryStatus? _libraryStatus;
   bool _libraryBusy = false;
 
+  /// 入库行增删就重读入库状态：库页菜单 / 合集详情页移出、后台探针补新集后，
+  /// 压在栈里的本页回来时按钮与「已在库」chip 不是旧的。
+  StreamSubscription<void>? _libraryChanges;
+
+  /// 每次读入库状态 +1：并发的两次读，旧的那次晚回来时丢掉。
+  int _libraryGeneration = 0;
+
   /// 换季 +1；旧季的响应回来时丢掉。
   int _generation = 0;
 
@@ -150,6 +157,9 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     unawaited(_loadDetail());
     if (_isSeries) unawaited(_loadSeasons());
     unawaited(_reloadLibraryState());
+    _libraryChanges = widget.session.library?.membershipChanges.listen(
+      (_) => unawaited(_reloadLibraryState()),
+    );
     // 从滚到半截的网格点进来：库页浮动工具区回到展开态（新页面从顶部开始），
     // 与 [MediaServerPageFrame] 每层路由成为栈顶时同一口径。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -160,6 +170,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
 
   @override
   void dispose() {
+    unawaited(_libraryChanges?.cancel());
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
@@ -320,6 +331,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   Future<void> _reloadLibraryState() async {
     final MediaServerVideoLibrary? library = widget.session.library;
     if (library == null) return;
+    final int generation = ++_libraryGeneration;
     final MediaServerWorkLibraryStatus status;
     try {
       status = await library.statusOf(_browser, widget.item);
@@ -331,7 +343,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       );
       return;
     }
-    if (mounted) setState(() => _libraryStatus = status);
+    if (!mounted || generation != _libraryGeneration) return;
+    setState(() => _libraryStatus = status);
   }
 
   bool get _inLibrary => _libraryStatus?.inLibrary ?? false;
@@ -878,8 +891,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
           buttonKey: const ValueKey<String>(
             'media-server-detail-library-remove',
           ),
-          icon: FushiIcons.libraryAdd,
+          // 「−」：与「加入」的「+」成对，一眼看出这部已在库里、点了是移出。
+          icon: FushiIcons.remove,
           label: t.video_online_library_remove,
+          selected: true,
           busy: _libraryBusy,
           onPressed: () => unawaited(_removeFromLibrary()),
         ),
