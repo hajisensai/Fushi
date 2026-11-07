@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
+import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import '../helpers/glass_unwrap.dart';
@@ -98,6 +99,35 @@ Future<AnkiViewModel> _pumpDialog(
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
+
+  test('BUG-4222：挖词目标 = Fushi 复习时进度不写「从 Anki 读取」', () {
+    const AnkiRepositionProgress fetch = AnkiRepositionProgress(
+      stage: AnkiRepositionStage.fetch,
+    );
+    for (final AnkiRepositionProgress? p in <AnkiRepositionProgress?>[
+      null,
+      fetch,
+    ]) {
+      final String srs = ankiRepositionProgressLabel(p, srsTarget: true);
+      expect(srs, t.anki_reposition_progress_fetch_srs);
+      expect(srs, isNot(contains('Anki')));
+      expect(
+        ankiRepositionProgressLabel(p, srsTarget: false),
+        t.anki_reposition_progress_fetch,
+      );
+    }
+    expect(t.anki_reposition_srs_order_hint, isNot(contains('Anki')));
+  });
+
+  testWidgets('Anki 目标的弹窗仍显示 Anki 牌组选项提示', (WidgetTester tester) async {
+    final AnkiViewModel vm = await _pumpDialog(
+      tester,
+      loaded: const <String>[],
+    );
+    expect(vm.repositionTargetsSrs, isFalse);
+    expect(find.text(t.anki_reposition_gather_order_hint), findsOneWidget);
+    expect(find.text(t.anki_reposition_srs_order_hint), findsNothing);
+  });
 
   testWidgets('没有词频词典时预览禁用；切到笔记字段来源后可用', (WidgetTester tester) async {
     await _pumpDialog(tester, loaded: const <String>[]);
