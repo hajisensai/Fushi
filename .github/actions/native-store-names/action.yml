@@ -7,7 +7,7 @@ description: >-
   requested platform are empty.
 inputs:
   platform:
-    description: windows | macos | ios | linux | android
+    description: windows | macos | ios | linux | android | flatpak
     required: true
 outputs:
   torrent:
@@ -31,6 +31,9 @@ outputs:
   anki_sync_debug:
     description: fushi-anki-sync debug binary (PR gates)
     value: ${{ steps.names.outputs.anki_sync_debug }}
+  baseapp:
+    description: Flatpak BaseApp bundle (flatpak; WebKit, mpv and the other libraries of the Linux Flatpak)
+    value: ${{ steps.names.outputs.baseapp }}
   p2p_rust:
     description: Rust toolchain pin for fushi_p2p; the `Set up Rust (fushi_p2p...)` steps read it from here.
     value: ${{ steps.names.outputs.p2p_rust }}

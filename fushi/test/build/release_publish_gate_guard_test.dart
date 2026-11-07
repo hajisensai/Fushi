@@ -99,13 +99,19 @@ void main() {
       <String, Map<String, String>>{
         'release.yml': <String, String>{'publish-android': 'build'},
         'release-desktop.yml': <String, String>{
-          'publish': '[windows, macos, ios]',
+          'publish': '[windows, macos, ios, linux]',
           'testflight': 'ios',
         },
       };
   const Map<String, List<String>> buildJobs = <String, List<String>>{
     'release.yml': <String>['build', 'tests'],
-    'release-desktop.yml': <String>['windows', 'macos', 'ios'],
+    'release-desktop.yml': <String>[
+      'windows',
+      'macos',
+      'flatpak-baseapp',
+      'linux',
+      'ios',
+    ],
   };
 
   test('判据自校验：环境行与动作特征串能命中真实写法', () {
@@ -213,6 +219,8 @@ void main() {
     for (final String step in <String>[
       'Upload Windows installer artifact',
       'Upload macOS app artifact',
+      'Upload Linux Flatpak artifact',
+      'Upload Flatpak repo commit artifact',
       'Upload iOS IPA artifact',
       'Upload signed TestFlight IPA artifact',
     ]) {

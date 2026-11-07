@@ -45,6 +45,8 @@ on:
       - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
       - 'tool/ffmpeg-unified/**'
+      # Linux bundle + Flatpak (linux / flatpak-baseapp jobs).
+      - 'tool/linux/**'
       - 'tool/sign_windows_release.ps1'
       - 'tool/simplysign_connect.ps1'
       - 'tool/engine_overlay.ps1'
@@ -2498,6 +2500,405 @@ jobs:
           if-no-files-found: ignore
           retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
+  # Linux Flatpak, layer 1: the BaseApp (WPE WebKit, mpv and the other libraries the
+  # GNOME runtime lacks; tool/linux/flatpak/baseapp/). WebKit takes hours, so it is a
+  # job of its own (own 6 h budget) and goes through the native artifact store: a hit
+  # is one download, only a change under baseapp/ or the Dockerfile (or the 30-day
+  # artifact expiry) rebuilds it. Built without debug info (-g0): with -g WebCore
+  # needs ~4 GB per compiler and a ~50 GB ccache, neither of which a runner has.
+  flatpak-baseapp:
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    permissions:
+      contents: read
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: flatpak
+      - name: Restore Flatpak BaseApp from native artifact store
+        id: baseapp_restore
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.baseapp }}
+          path: build/flatpak-baseapp
+      - name: Free disk space for the WebKit build
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - name: Build Flatpak BaseApp
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t fushi-flatpak-build tool/linux/flatpak
+          # Privileged: flatpak-builder runs every module in bubblewrap.
+          docker run --rm --privileged -v "$PWD:/src" -w /src \
+            -e FLATPAK_BUILDER_JOBS="$(nproc)" -e FLATPAK_STATE_DIR=/src/build/flatpak-state \
+            fushi-flatpak-build bash tool/linux/flatpak/flatpak_build.sh baseapp /src/build/flatpak-baseapp
+          sudo chown -R "$(id -u):$(id -g)" build
+          rm -rf build/flatpak-state
+          ls -lh build/flatpak-baseapp
+      - name: Save Flatpak BaseApp to native artifact store
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.baseapp }}
+          path: build/flatpak-baseapp
+
+  # Linux Flatpak, layer 2: the Linux bundle (tool/linux/build_bundle.sh, the same
+  # Debian image as local builds) as app.fushi.reader on top of the BaseApp. The
+  # Flatpak branch follows the channel (debug / beta / stable): the in-app updater
+  # (fushi/lib/src/utils/misc/flatpak_updater.dart) updates within the installed
+  # branch through the Flatpak portal, pulling from the repo the publish job deploys
+  # to GitHub Pages. Commits and the bundle are signed with FLATPAK_GPG_PRIVATE_KEY;
+  # without it the bundle is built unsigned and publish ships neither repo nor asset.
+  linux:
+    needs: flatpak-baseapp
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Resolve desktop release channel
+        id: channel
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          EVENT="${GITHUB_EVENT_NAME}"
+          CHANNEL="${INPUT_CHANNEL:-}"
+          TAG="${INPUT_TAG_NAME:-}"
+          NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
+          BODY=""
+          PRERELEASE=true
+          MAKE_LATEST=false
+          PUBLISH_MANAGED_RELEASE=false
+          # BUG-869: manifest-only publish flag decoupled from
+          # PUBLISH_MANAGED_RELEASE (see release.yml) so the `release` event can
+          # emit latest-stable.json without re-touching the manual Release.
+          PUBLISH_MANIFEST=false
+          MANIFEST_CHANNEL=""
+
+          case "$EVENT" in
+            push)
+              CHANNEL=debug
+              TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+              NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            workflow_dispatch)
+              case "$CHANNEL" in
+                debug)
+                  TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+                  NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  ;;
+                beta)
+                  TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+                  ;;
+                formal)
+                  TAG="${TAG:-v${VERSION}}"
+                  NAME="${NAME:-Fushi ${VERSION}}"
+                  BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+                  PRERELEASE=false
+                  MAKE_LATEST=true
+                  ;;
+                *)
+                  echo "::error title=Invalid release channel::Use debug, beta, or formal."
+                  exit 1
+                  ;;
+              esac
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            release)
+              CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+              TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              # BUG-869: a manually-published NON-prerelease Release IS the formal
+              # stable release → emit latest-stable.json (with releaseSequence) for
+              # in-China stable clients. Manifest-only; never touches the Release.
+              if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+                MANIFEST_CHANNEL=formal
+                PUBLISH_MANIFEST=true
+                PRERELEASE=false
+              fi
+              ;;
+            *)
+              echo "::error title=Unsupported event::$EVENT is not a desktop release event."
+              exit 1
+              ;;
+          esac
+
+          # BUG-869: push / workflow_dispatch unchanged — MANIFEST_CHANNEL follows
+          # CHANNEL and manifest publishes whenever the managed release does.
+          if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+          if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
+
+          BUILD_VERSION_NAME="$VERSION"
+          case "$CHANNEL" in
+            debug)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
+                exit 1
+              fi
+              ;;
+            beta)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
+                exit 1
+              fi
+              ;;
+            formal)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "::error title=Invalid formal tag::Use v<version>."
+                exit 1
+              fi
+              ;;
+          esac
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
+            BUILD_VERSION_NAME="${TAG#v}"
+            BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+          fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
+
+          # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
+          # the historical `debug-rolling`. Must match release.yml.
+          ROLLING_DEBUG_TAG=fushi-debug-rolling
+          if [ "$CHANNEL" = debug ]; then
+            PUBLISH_TAG="$ROLLING_DEBUG_TAG"
+            ROLLING_DEBUG=true
+          else
+            PUBLISH_TAG="$TAG"
+            ROLLING_DEBUG=false
+          fi
+
+          {
+            echo "channel=$CHANNEL"
+            echo "tag=$TAG"
+            echo "publish_tag=$PUBLISH_TAG"
+            echo "rolling_debug=$ROLLING_DEBUG"
+            echo "name=$NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$MAKE_LATEST"
+            echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "publish_manifest=$PUBLISH_MANIFEST"
+            echo "manifest_channel=$MANIFEST_CHANNEL"
+            echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+          acoustid-api-key: ${{ secrets.ACOUSTID_API_KEY }}
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: flatpak
+      - name: Restore Flatpak BaseApp from native artifact store
+        id: baseapp_restore
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.baseapp }}
+          path: build/flatpak-baseapp
+      - name: Require the Flatpak BaseApp
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        shell: bash
+        env:
+          BASEAPP: ${{ steps.native_store.outputs.baseapp }}
+        run: |
+          echo "::error title=Flatpak BaseApp missing::the flatpak-baseapp job saved $BASEAPP but it cannot be restored here."
+          exit 1
+      - name: Free disk space for the Linux build
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Build Linux bundle
+        shell: bash
+        env:
+          FUSHI_BUILD_NAME: ${{ steps.channel.outputs.build_version_name }}
+          FUSHI_BUILD_NUMBER: ${{ steps.channel.outputs.release_sequence }}
+        run: |
+          set -euo pipefail
+          docker build -t fushi-linux-build tool/linux
+          mkdir -p build/linux-dist
+          # The checkout is mounted as is (CI has no host-side .dart_tool to protect,
+          # unlike build_in_docker.sh), so the baked secret stubs above are included.
+          docker run --rm -v "$PWD:/src" -v "$PWD/build/linux-dist:/out" \
+            -e FUSHI_SOURCE_COMMIT="$GITHUB_SHA" -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            fushi-linux-build bash /src/tool/linux/build_bundle.sh
+          sudo chown -R "$(id -u):$(id -g)" .
+          ls -lh build/linux-dist
+      - name: Resolve Flatpak branch and signing
+        id: flatpak
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          REPO_URL_OVERRIDE: ${{ vars.FLATPAK_REPO_URL }}
+        run: |
+          set -euo pipefail
+          # One Flatpak branch per update channel; a manually published GitHub Release
+          # is stable unless it is a prerelease.
+          case "$CHANNEL" in
+            debug) BRANCH=debug ;;
+            beta) BRANCH=beta ;;
+            formal) BRANCH=stable ;;
+            github-release) if [ "$PRERELEASE" = true ]; then BRANCH=beta; else BRANCH=stable; fi ;;
+            *) echo "::error title=Unknown channel::$CHANNEL"; exit 1 ;;
+          esac
+          URL="${REPO_URL_OVERRIDE:-https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}}"
+          SIGNED=false
+          if [ -n "$FLATPAK_GPG_PRIVATE_KEY" ]; then
+            GNUPG="$RUNNER_TEMP/flatpak-gnupg"
+            mkdir -p -m 700 "$GNUPG"
+            printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --homedir "$GNUPG" --batch --import
+            KEY_ID="$(gpg --homedir "$GNUPG" --batch --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+            echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+            echo "gnupg=$GNUPG" >> "$GITHUB_OUTPUT"
+            SIGNED=true
+          else
+            echo "::warning title=Flatpak unsigned::FLATPAK_GPG_PRIVATE_KEY is not set: the bundle is built unsigned without a repo URL, and publish ships neither the Flatpak repo nor the asset."
+          fi
+          {
+            echo "branch=$BRANCH"
+            echo "repo_url=$URL"
+            echo "signed=$SIGNED"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build Flatpak
+        shell: bash
+        env:
+          BRANCH: ${{ steps.flatpak.outputs.branch }}
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          SIGNED: ${{ steps.flatpak.outputs.signed }}
+          KEY_ID: ${{ steps.flatpak.outputs.key_id }}
+          GNUPG: ${{ steps.flatpak.outputs.gnupg }}
+          REPO_URL: ${{ steps.flatpak.outputs.repo_url }}
+        run: |
+          set -euo pipefail
+          docker build -t fushi-flatpak-build tool/linux/flatpak
+          sign=()
+          if [ "$SIGNED" = true ]; then
+            sign=(-v "$GNUPG:/gnupg" -e FLATPAK_GPG_KEY_ID="$KEY_ID" -e FLATPAK_GPG_HOMEDIR=/gnupg
+                  -e FLATPAK_REPO_URL="$REPO_URL/repo/")
+          fi
+          tarball="$(ls build/linux-dist/fushi-*-linux-x64.tar.gz)"
+          docker run --rm --privileged -v "$PWD:/src" -w /src "${sign[@]}" \
+            -e FLATPAK_BUILDER_JOBS="$(nproc)" -e FLATPAK_STATE_DIR=/src/build/flatpak-state \
+            -e BRANCH -e VERSION -e TARBALL="/src/$tarball" \
+            fushi-flatpak-build bash -euo pipefail -c '
+              flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+              flatpak install --user -y --noninteractive build/flatpak-baseapp/*.flatpak
+              bash tool/linux/flatpak/flatpak_build.sh app "$TARBALL" "$BRANCH" "$VERSION" /src/build/flatpak-out'
+          sudo chown -R "$(id -u):$(id -g)" build
+          mkdir -p fushi/build/release-artifacts
+          cp build/flatpak-out/fushi-*-linux-x86_64.flatpak fushi/build/release-artifacts/
+          # One file instead of thousands of OSTree objects for the artifact upload.
+          tar -C build/flatpak-out -cf build/flatpak-repo.tar repo
+      - name: Upload Linux Flatpak artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-artifacts-linux
+          path: |
+            fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+          if-no-files-found: ignore
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+      - name: Upload Flatpak repo commit artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-repo-linux
+          path: build/flatpak-repo.tar
+          if-no-files-found: error
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+
   ios:
     # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
@@ -3300,7 +3701,7 @@ jobs:
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
   publish:
-    needs: [windows, macos, ios]
+    needs: [windows, macos, ios, linux]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
     # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
@@ -3317,6 +3718,9 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # Linux Flatpak repo on GitHub Pages (actions/deploy-pages).
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -3582,12 +3986,12 @@ jobs:
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
           # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
-          # iOS: *-ios.ipa) so it keeps
+          # iOS: *-ios.ipa / Linux: *-linux-x86_64.flatpak) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa|*-linux-x86_64.flatpak) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -3717,6 +4121,80 @@ jobs:
           ARTIFACTS_DIR: fushi/build/release-artifacts
           ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
+        run: bash tool/publish_update_manifest.sh
+      # Linux Flatpak: the repo first, then the asset. The asset is what tells the
+      # in-app updater that a release has a Linux build (FlatpakUpdater.selectAsset),
+      # so it only goes up once the repo the updater pulls from carries that build.
+      # The repo lives on GitHub Pages and is its own state: flatpak_build.sh publish
+      # mirrors what is live (the branches this run did not build), adds this run's
+      # commit, prunes and re-signs the summary. Known limit: two runs publishing at
+      # the same moment from different refs (a develop push and a formal dispatch on
+      # main) can each mirror the same live repo, and the later deploy drops the
+      # other's new commit. Nothing breaks: clients on that branch get "not in the
+      # Flatpak repository yet" until that branch's next build.
+      - name: Download Flatpak repo commit
+        if: needs.linux.result == 'success'
+        uses: actions/download-artifact@v7
+        with:
+          name: flatpak-repo-linux
+          path: build
+      - name: Assemble Flatpak repository
+        id: flatpak_repo
+        if: needs.linux.result == 'success'
+        shell: bash
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          REPO_URL_OVERRIDE: ${{ vars.FLATPAK_REPO_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FLATPAK_GPG_PRIVATE_KEY" ]; then
+            echo "::warning title=Flatpak not published::FLATPAK_GPG_PRIVATE_KEY is not set, so the Linux Flatpak repo and asset are not published."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          GNUPG="$RUNNER_TEMP/flatpak-gnupg"
+          mkdir -p -m 700 "$GNUPG"
+          printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --homedir "$GNUPG" --batch --import
+          KEY_ID="$(gpg --homedir "$GNUPG" --batch --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          URL="${REPO_URL_OVERRIDE:-https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}}"
+          tar -C build -xf build/flatpak-repo.tar
+          docker build -t fushi-flatpak-build tool/linux/flatpak
+          docker run --rm -v "$PWD:/src" -w /src -v "$GNUPG:/gnupg" \
+            -e FLATPAK_GPG_KEY_ID="$KEY_ID" -e FLATPAK_GPG_HOMEDIR=/gnupg -e URL="$URL" \
+            fushi-flatpak-build bash tool/linux/flatpak/flatpak_build.sh publish /src/build/repo /src/build/flatpak-site "$URL"
+          sudo chown -R "$(id -u):$(id -g)" build
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+      - name: Upload Flatpak repository to Pages
+        if: steps.flatpak_repo.outputs.publish == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/flatpak-site
+      - name: Deploy Flatpak repository
+        if: steps.flatpak_repo.outputs.publish == 'true'
+        uses: actions/deploy-pages@v4
+      - name: Upload Linux Flatpak to the release
+        if: steps.flatpak_repo.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event_name == 'release' && steps.channel.outputs.tag || steps.channel.outputs.publish_tag }}
+          files: |
+            fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+      - name: Publish mirror update manifest (Linux assets)
+        if: steps.channel.outputs.publish_manifest == 'true' && steps.flatpak_repo.outputs.publish == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          TAG: ${{ steps.channel.outputs.tag }}
+          DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+          NOTES: ${{ steps.channel.outputs.body }}
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
+          ARTIFACTS_DIR: fushi/build/release-artifacts
+          ASSET_GLOB: fushi-*-linux-x86_64.flatpak
+          PLATFORM_LABEL: linux
         run: bash tool/publish_update_manifest.sh
       # 反馈发布回填：三个平台并行构建、失败的平台不出产物（上面 download-artifact 的
       # 注释），所以按产物是否真的在本次发布里逐平台回填，不能一刀切记三个平台。

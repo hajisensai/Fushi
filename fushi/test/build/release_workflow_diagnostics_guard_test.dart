@@ -319,8 +319,8 @@ void main() {
   // latest-stable.json 里 notes 是「Manual formal release from … @ 4d1c8f4.」，
   // 而 GitHub 上那份正文有 3613 字——**发出去的每个正式版，弹窗里都是占位符**。
   //
-  // 判据按 channel step 逐个数，不是整文件 contains：release-desktop.yml 有 4 个
-  // channel step（windows/macos/ios/publish），少接一个就是那个平台的用户看占位符，
+  // 判据按 channel step 逐个数，不是整文件 contains：release-desktop.yml 有 5 个
+  // channel step（windows/macos/linux/ios/publish），少接一个就是那个平台的用户看占位符，
   // 而整文件 contains 只要有一个接了就绿。
   test('BUG-2088：每个 channel step 都把真实公告喂进 body', () {
     const String notesRead =
@@ -332,7 +332,7 @@ void main() {
     for (final MapEntry<String, int> e in <String, int>{
       // 文件 -> 它有几个 channel step
       'release.yml': 1,
-      'release-desktop.yml': 4,
+      'release-desktop.yml': 5,
     }.entries) {
       final String w = readRepositoryWorkflow(e.key);
       final int steps = e.value;
