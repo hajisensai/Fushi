@@ -31,6 +31,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
@@ -2555,12 +2556,15 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
-  int get readerPageColumns =>
-      readerSettings?.pageColumns ??
-      getPreference<int>(key: 'page_columns', defaultValue: 0);
-  Future<void> setReaderPageColumns(int v) async {
-    await (readerSettings?.setPageColumns(v) ??
-        setPreference<int>(key: 'page_columns', value: v));
+  /// 单双页（[ReaderPageSpread]，持久化键 `page_columns` 冻结沿用）。
+  ReaderPageSpread get readerPageSpread =>
+      readerSettings?.pageSpread ??
+      ReaderPageSpread.fromStored(
+        getPreference<int>(key: 'page_columns', defaultValue: 0),
+      );
+  Future<void> setReaderPageSpread(ReaderPageSpread v) async {
+    await (readerSettings?.setPageSpread(v) ??
+        setPreference<int>(key: 'page_columns', value: v.storedValue));
     onSettingsChangedLive?.call();
   }
 

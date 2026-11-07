@@ -2890,7 +2890,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       preference: _spreadPreference,
       isLandscape: _viewportIsLandscape,
       // 折叠姿态变化与窗口尺寸变化同走 didChangeMetrics → _applySpreadLayoutIfChanged。
-      bookPosture: FushiFoldState.of(context).isBook,
+      bookPosture: FushiFoldState.of(context).hasSpine,
     );
   }
 

@@ -67,12 +67,15 @@ abstract class FushiRemotePopupLookupService {
 /// 行为与从前逐字相同。分派只在 [searchRemoteDictionaryForRequest] /
 /// [searchRemoteDictionaryPopupForRequest] 一处。
 abstract class FushiRemoteLanguageLookupService {
-  /// [language] 为请求方声明的 BCP-47 语言标签（已裁掉空白、非空）。
+  /// [language] 为请求方声明的 BCP-47 语言标签（已裁掉空白；null = 没声明）。
+  /// [chineseScriptVariants] 为请求方用户的简繁互查开关（null = 没声明，host 用自己的开关）。
+  /// 两者至少一个非 null 才会分派到这里。
   Future<DictionarySearchResult?> searchDictionaryInLanguage({
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
   });
 
   /// [FushiRemotePopupLookupService.searchDictionaryPopup] 的带语言版本；[timing] 非 null
@@ -81,7 +84,8 @@ abstract class FushiRemoteLanguageLookupService {
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   });
 }
@@ -103,6 +107,7 @@ abstract class FushiRemoteRubyLookupService {
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
   });
 
   /// [searchDictionaryWithRuby] 的 popup 快路径版本；[timing] 同
@@ -113,6 +118,7 @@ abstract class FushiRemoteRubyLookupService {
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   });
 }
@@ -135,6 +141,23 @@ String? remoteLookupLanguageOf(Map<String, dynamic> body) {
   return trimmed.isEmpty ? null : trimmed;
 }
 
+/// 「中文查词时简体 ↔ 繁體双向互查」开关的偏好键（bool，默认 false = 只查原文字形）。
+/// app（`PreferencesRepository`，随 Profile 走）与服务端（`ServerPrefs`）读同一个键。
+const String kLookupChineseScriptVariantsPrefKey =
+    'lookup_chinese_script_variants';
+
+/// 查词请求体里「请求方用户的简繁互查开关」的字段名（可选 bool）。只发开关、不发最终
+/// 结论：「语言未知时看有没有中文词典」要看 host 的词典（瘦客户端本机可能一本都没有）。
+/// host 用它代替自己的开关，语言 / 词典的判据照旧在 host 上跑；没有这个字段（浏览器
+/// 扩展 / 旧客户端）就用 host 自己的开关。
+const String kRemoteLookupChineseScriptVariantsField = 'zhScriptVariants';
+
+/// 从请求体取 [kRemoteLookupChineseScriptVariantsField]：非 bool 当没给（null）。
+bool? remoteLookupChineseScriptVariantsOf(Map<String, dynamic> body) {
+  final Object? raw = body[kRemoteLookupChineseScriptVariantsField];
+  return raw is bool ? raw : null;
+}
+
 /// 完整查词结果的唯一分派点：请求带了语言且 [lookup] 认识语言时走
 /// [FushiRemoteLanguageLookupService.searchDictionaryInLanguage]，否则走旧方法。
 Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
@@ -143,6 +166,7 @@ Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
   required bool wildcards,
   required int maximumTerms,
   required String? language,
+  bool? chineseScriptVariants,
   List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
 }) {
   final Object service = lookup;
@@ -153,14 +177,17 @@ Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
       maximumTerms: maximumTerms,
       rubySpans: rubySpans,
       language: language,
+      chineseScriptVariants: chineseScriptVariants,
     );
   }
-  if (language != null && service is FushiRemoteLanguageLookupService) {
+  if ((language != null || chineseScriptVariants != null) &&
+      service is FushiRemoteLanguageLookupService) {
     return service.searchDictionaryInLanguage(
       term: term,
       wildcards: wildcards,
       maximumTerms: maximumTerms,
       language: language,
+      chineseScriptVariants: chineseScriptVariants,
     );
   }
   return lookup.searchDictionary(
@@ -176,11 +203,13 @@ Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
 bool hasPopupFastPath(
   FushiRemoteLookupService lookup, {
   String? language,
+  bool? chineseScriptVariants,
   List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
 }) {
   final Object service = lookup;
   return (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) ||
-      (language != null && service is FushiRemoteLanguageLookupService) ||
+      ((language != null || chineseScriptVariants != null) &&
+          service is FushiRemoteLanguageLookupService) ||
       service is FushiRemotePopupLookupService;
 }
 
@@ -191,6 +220,7 @@ Future<RemoteDictionaryPopupLookup?> searchRemoteDictionaryPopupForRequest(
   required bool wildcards,
   required int maximumTerms,
   required String? language,
+  bool? chineseScriptVariants,
   RemoteDictionaryPopupTiming? timing,
   List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
 }) {
@@ -202,15 +232,18 @@ Future<RemoteDictionaryPopupLookup?> searchRemoteDictionaryPopupForRequest(
       maximumTerms: maximumTerms,
       rubySpans: rubySpans,
       language: language,
+      chineseScriptVariants: chineseScriptVariants,
       timing: timing,
     );
   }
-  if (language != null && service is FushiRemoteLanguageLookupService) {
+  if ((language != null || chineseScriptVariants != null) &&
+      service is FushiRemoteLanguageLookupService) {
     return service.searchDictionaryPopupInLanguage(
       term: term,
       wildcards: wildcards,
       maximumTerms: maximumTerms,
       language: language,
+      chineseScriptVariants: chineseScriptVariants,
       timing: timing,
     );
   }
