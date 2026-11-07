@@ -37,12 +37,63 @@ class FrequencyField extends Field {
   /// Extra value key for the full frequency HTML list.
   static const String frequenciesHtmlExtraKey = 'frequenciesHtml';
 
+  /// Extra value key for the per-dictionary frequency numbers
+  /// (Yomitan `{single-frequency-number-<dict>}`, BUG-4227).
+  static const String singleFrequencyNumbersExtraKey = 'singleFrequencyNumbers';
+
+  /// Extra value key for the per-dictionary frequency HTML lists
+  /// (Yomitan `{single-frequency-<dict>}`, BUG-4227).
+  static const String singleFrequenciesHtmlExtraKey = 'singleFrequenciesHtml';
+
   /// Builds frequency extra values from a dictionary entry.
+  ///
+  /// 键名与 popup.js `buildMinePayload` 同名同语义：两张逐词典表用 popup.js 一样的
+  /// `JSON.stringify` 字符串形态（`AnkiMiningPayload.fromJson` 认这种形态）；表为空时给
+  /// 空串，让调用方按「空值不写」丢掉。
   static Map<String, String> extraValuesFromEntry(DictionaryEntry entry) {
+    final Map<String, String> numbers = getSingleFrequencyNumbers(entry: entry);
+    final Map<String, String> htmls = getSingleFrequenciesHtml(entry: entry);
     return {
       frequencyRankExtraKey: getFrequencyRank(entry: entry),
       frequenciesHtmlExtraKey: getFrequenciesHtml(entry: entry),
+      singleFrequencyNumbersExtraKey: numbers.isEmpty
+          ? ''
+          : jsonEncode(numbers),
+      singleFrequenciesHtmlExtraKey: htmls.isEmpty ? '' : jsonEncode(htmls),
     };
+  }
+
+  /// 词典名 → 该词典的频率数（popup.js `constructSingleFrequencyNumbers`）。
+  /// 与调和平均共用 [_collectFrequencyNumbers]；没有可用数值的词典不在表里。
+  static Map<String, String> getSingleFrequencyNumbers({
+    required DictionaryEntry entry,
+  }) {
+    final Map<String, String> result = <String, String>{};
+    for (final _DictionaryFrequencyNumber n in _collectFrequencyNumbers(
+      _readFrequencyGroups(entry),
+    )) {
+      if (n.dictName.isNotEmpty) result[n.dictName] = n.value.toString();
+    }
+    return result;
+  }
+
+  /// 词典名 → 只含该词典的 `{frequencies}` 列表 HTML（popup.js
+  /// `constructSingleFrequenciesHtml`，由同一个 [_frequenciesHtml] 渲染）。
+  static Map<String, String> getSingleFrequenciesHtml({
+    required DictionaryEntry entry,
+  }) {
+    final List<_FrequencyGroup> groups = _readFrequencyGroups(entry);
+    final Map<String, String> result = <String, String>{};
+    for (final _FrequencyGroup group in groups) {
+      final String dictName = group.dictName;
+      if (dictName.isEmpty || result.containsKey(dictName)) continue;
+      result[dictName] = _frequenciesHtml(
+        groups
+            .where((_FrequencyGroup g) => g.dictName == dictName)
+            .toList(growable: false),
+      );
+    }
+    return result;
   }
 
   /// Returns the frequency rank used for sorting Anki cards.
@@ -54,8 +105,11 @@ class FrequencyField extends Field {
   }
 
   /// Returns the complete frequency list as HTML.
-  static String getFrequenciesHtml({required DictionaryEntry entry}) {
-    final frequencies = _readFrequencyGroups(entry);
+  static String getFrequenciesHtml({required DictionaryEntry entry}) =>
+      _frequenciesHtml(_readFrequencyGroups(entry));
+
+  /// popup.js `constructFrequencyHtml` 的同款列表。
+  static String _frequenciesHtml(List<_FrequencyGroup> frequencies) {
     if (frequencies.isEmpty) {
       return '';
     }
@@ -75,29 +129,39 @@ class FrequencyField extends Field {
   }
 
   static String _getFrequencyRankFromExtra(DictionaryEntry entry) {
-    final values = <int>[];
-    final seenDictionaries = <String>{};
-    for (final group in _readFrequencyGroups(entry)) {
+    final int? rank = aggregateFrequencyRanks(
+      _collectFrequencyNumbers(
+        _readFrequencyGroups(entry),
+      ).map((_DictionaryFrequencyNumber n) => n.value).toList(growable: false),
+      FrequencyAggregate.harmonic,
+    );
+    return rank?.toString() ?? '';
+  }
+
+  /// 逐词典取数的唯一来源（popup.js `collectFrequencyNumbers` / Yomitan
+  /// `getFrequencyNumbers` 同语义）：每本词典只取第一组的第一条，display 的前导数字
+  /// > 0 优先，否则 value > 0；没有可用数值的词典跳过。调和平均与
+  /// `{single-frequency-number-<dict>}` 都从这里取，保证同一张卡上两者同源。
+  static List<_DictionaryFrequencyNumber> _collectFrequencyNumbers(
+    List<_FrequencyGroup> groups,
+  ) {
+    final List<_DictionaryFrequencyNumber> numbers =
+        <_DictionaryFrequencyNumber>[];
+    final Set<String> seenDictionaries = <String>{};
+    for (final _FrequencyGroup group in groups) {
       if (group.dictName.isNotEmpty && !seenDictionaries.add(group.dictName)) {
         continue;
       }
       if (group.values.isEmpty) {
         continue;
       }
-      // 每本词典只取第一条（Yomitan `frequency-harmonic-rank` 同款，
-      // 与已制卡片里的 FreqSort 数值保持一致）。
-      final first = group.values.first;
+      final _FrequencyValue first = group.values.first;
       final int? rank = frequencyRankOf(first.value, first.display);
       if (rank != null) {
-        values.add(rank);
+        numbers.add(_DictionaryFrequencyNumber(group.dictName, rank));
       }
     }
-
-    final int? rank = aggregateFrequencyRanks(
-      values,
-      FrequencyAggregate.harmonic,
-    );
-    return rank?.toString() ?? '';
+    return numbers;
   }
 
   static List<_FrequencyGroup> _readFrequencyGroups(DictionaryEntry entry) {
@@ -162,6 +226,14 @@ class _FrequencyGroup {
   final String dictName;
 
   final List<_FrequencyValue> values;
+}
+
+class _DictionaryFrequencyNumber {
+  const _DictionaryFrequencyNumber(this.dictName, this.value);
+
+  final String dictName;
+
+  final int value;
 }
 
 class _FrequencyValue {
