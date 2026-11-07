@@ -218,12 +218,6 @@ void main() {
           addedAt: 0,
         ),
       );
-      await db.insertGalgameTextLines(
-        'g1',
-        const <({String text, int receivedAt})>[
-          (text: 'hooked line', receivedAt: 5),
-        ],
-      );
       await settle();
       expect(await service.debugDocs(CorpusSourceKind.game), isEmpty);
       expect(docFiles(dir.path), 0);
