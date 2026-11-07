@@ -347,8 +347,9 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
       FushiCardTone.primary,
     )?.onContainer;
     // 前文 / 后文清空了文字（只去字幕、保留这句音频）：显示占位说明，否则卡片正文
-    // 是空的，用户看不出这句还占着音频。
-    final bool textCleared = !current && !removed && text.trim().isEmpty;
+    // 是空的，用户看不出这句还占着音频。与「移除」正交：清空后又被移除的句子同样
+    // 显示占位，再叠删除线——点「恢复」回到的正是这张占位卡。
+    final bool textCleared = !current && text.trim().isEmpty;
     final Widget body = editingThis
         ? _SentenceEditor(controller: c)
         : current
@@ -358,7 +359,10 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
             t.popup_ctx_sentence_text_cleared,
             style: context.fushiType.bodyMedium.copyWith(
               fontStyle: FontStyle.italic,
-              color: scheme.onSurfaceVariant,
+              decoration: removed ? TextDecoration.lineThrough : null,
+              color: removed
+                  ? scheme.onSurfaceVariant.withValues(alpha: 0.6)
+                  : scheme.onSurfaceVariant,
             ),
           )
         : Text(

@@ -556,6 +556,42 @@ void main() {
       expect(find.byTooltip(t.popup_ctx_sentence_restore), findsNothing);
     });
 
+    // 清空文字与移除正交：清空后再移除中间句，卡片仍显示占位（叠删除线），不能变成
+    // 只剩「恢复」按钮的空白卡。
+    for (final bool glass in <bool>[false, true]) {
+      testWidgets('清空后再移除中间句：占位 + 删除线 + 恢复（${glass ? 'Apple' : 'MD3'}）', (
+        WidgetTester tester,
+      ) async {
+        // Apple 套件的图标按钮不挂 Tooltip 组件，按控件的 tooltip 字段找。
+        Finder action(String tooltip) => find.byWidgetPredicate(
+          (Widget w) => w is FushiIconButtonControl && w.tooltip == tooltip,
+        );
+        host.prevCount = 2;
+        await open(tester, host.videoPage(), glass: glass);
+        await tester.tap(action(t.popup_ctx_edit_start).at(1));
+        await tester.pumpAndSettle();
+        await tester.enterText(editorWith('まえ1。'), '');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(t.popup_ctx_edit_confirm));
+        await tester.pumpAndSettle();
+        expect(find.text(t.popup_ctx_sentence_text_cleared), findsOneWidget);
+        await tester.tap(action(t.popup_ctx_sentence_remove).at(1));
+        await tester.pumpAndSettle();
+        expect(host.removeCalls.single, <Object>[
+          SentenceContextSlot.prev,
+          1,
+          true,
+        ]);
+        expect(action(t.popup_ctx_sentence_restore), findsOneWidget);
+        final Finder placeholder = find.text(t.popup_ctx_sentence_text_cleared);
+        expect(placeholder, findsOneWidget);
+        expect(
+          tester.widget<Text>(placeholder).style?.decoration,
+          TextDecoration.lineThrough,
+        );
+      });
+    }
+
     testWidgets('改字后出现「恢复原文」（随输入实时出现），点击回到原句', (WidgetTester tester) async {
       await open(tester, host.videoPage());
       await tester.tap(find.byTooltip(t.popup_ctx_edit_start).first);
