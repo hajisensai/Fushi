@@ -101,7 +101,7 @@ impl SmallFile {
 
 /// 读小模型文件；缺失或 SHA-256 不符时失败（不跳过）。`FUSHI_RWKV_SMALL_DIR` 可指向别处的目录。
 pub fn small_file(file: SmallFile) -> &'static [u8] {
-    static FILES: OnceLock<std::sync::Mutex<HashMap<SmallFile, &'static [u8]>>> = OnceLock::new();
+    static FILES: OnceLock<std::sync::Mutex<HashMap<SmallFile, &[u8]>>> = OnceLock::new();
     let mut files = FILES.get_or_init(Default::default).lock().unwrap();
     files.entry(file).or_insert_with(|| {
         let dir = match std::env::var_os("FUSHI_RWKV_SMALL_DIR") {
