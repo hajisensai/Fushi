@@ -70,6 +70,7 @@ import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
+import 'package:fushi_server/src/server_ankiconnect.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:fushi_server/src/server_srs.dart';
@@ -159,6 +160,7 @@ class HeadlessHost {
   ServerAgentHistoryPruner? _agentHistoryPruner;
   ServerAnkiLanding? _anki;
   ServerSrs? _srs;
+  ServerAnkiConnect? _ankiConnect;
   ServerVideoScrape? _videoScrape;
 
   /// 测试注入的词典引擎（指定原生库 / 变形表目录）；null = [start] 按 bundle 布局建。
@@ -215,6 +217,9 @@ class HeadlessHost {
 
   /// 服务端复习库（`srs:` 段选了 profile 才开；见 server_srs.dart）。[start] 之后非空。
   ServerSrs? get srs => _srs;
+
+  /// AnkiConnect 兼容监听（`ankiconnect:` 段，默认关）。[start] 之后非空。
+  ServerAnkiConnect? get ankiConnect => _ankiConnect;
 
   /// 词典引擎（互联查词 / 词典媒体）。[start] 之后非空；原生库不可用时
   /// `available == false`，查词路由不接线（对端按 capabilities `lookup.dictionary` 判断）。
@@ -371,6 +376,11 @@ class HeadlessHost {
       onPublished: () => _server?.notifySrsChanged(),
     );
     _srs = srs;
+    final ServerAnkiConnect ankiConnect = ServerAnkiConnect(
+      srs: srs,
+      config: () => config.ankiConnect,
+    );
+    _ankiConnect = ankiConnect;
 
     _loopbackOnly = _isLoopbackBind(config.bind);
     final FushiSyncServer server =
@@ -484,6 +494,7 @@ class HeadlessHost {
 
     anki.start();
     await srs.start();
+    await ankiConnect.apply();
 
     _advertiser = LanAdvertiser(
       deviceName: config.deviceName,
@@ -588,6 +599,11 @@ class HeadlessHost {
     if (server == null) return;
     // 复习库选的 profile 变了：新加的打开、去掉的关掉（不重启）。
     if (!identical(prev.srs, next.srs)) await _srs?.applyConfig();
+    // AnkiConnect 开关 / 端口 / key 变了：起停或换端口，不重启。
+    if (!identical(prev.ankiConnect, next.ankiConnect) ||
+        !identical(prev.srs, next.srs)) {
+      await _ankiConnect?.apply();
+    }
     final bool relaysChanged = !_sameStrings(prev.p2pRelays, next.p2pRelays);
     if (prev.p2p == next.p2p && !relaysChanged) return;
     // 换中继 = 先整个卸下（关旧端点）再按新中继挂上，与 app 的 setP2pRelayUrls 同序。
@@ -656,6 +672,9 @@ class HeadlessHost {
     // 排在所有在飞的 P2P 动作之后卸下（之前的挂载先落地、再被这次拆掉）。
     if (server != null) await _detachP2p(server);
     await server?.stop();
+    final ServerAnkiConnect? ankiConnect = _ankiConnect;
+    _ankiConnect = null;
+    await ankiConnect?.stop();
     final ServerSrs? srs = _srs;
     _srs = null;
     await srs?.stop();
