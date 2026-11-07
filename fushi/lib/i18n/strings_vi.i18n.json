@@ -10223,6 +10223,7 @@
   "video_online_library_add": "Thêm vào thư viện video",
   "video_online_library_added": "Đã thêm $n tập vào thư viện video",
   "video_online_library_remove": "Xóa khỏi thư viện video",
+  "video_online_library_remove_confirm": "Watch progress, attached subtitles and tags of these episodes are cleared. Watch statistics, files on the media server and episodes downloaded to this device are not affected.",
   "video_online_library_remove_series": "Remove series from video library",
   "video_online_library_removed": "Đã xóa khỏi thư viện video",
   "video_online_mining_mode": "Tạo thẻ từ video trực tuyến",

@@ -81,6 +81,7 @@ import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
+import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/remote_video_subtitle_refetch.dart';
@@ -4535,9 +4536,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             icon: Icons.image_search,
             onPressed: () {
               Navigator.pop(dialogContext);
-                unawaited(_rescrapeVideo(book));
-              },
-            ),
+              unawaited(_rescrapeVideo(book));
+            },
+          ),
         // 从媒体服务器加入的作品：移出整部作品（电影 = 自身，剧 = 全部集），与
         // 服务器详情页的「移出媒体库」同一动作。集卡上文案写明是整部剧。
         if (mediaServerWorkOfRow(book) case final MediaServerLibraryWork work)
@@ -4549,7 +4550,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(
-                _removeMediaServerWorks(<MediaServerLibraryWork>{work}),
+                _removeMediaServerWorks(
+                  <MediaServerLibraryWork>{work},
+                  confirmTitle: work.workId == book.bookUid
+                      ? t.video_online_library_remove
+                      : t.video_online_library_remove_series,
+                ),
               );
             },
           ),
@@ -4569,16 +4575,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 库页「移出媒体库」（卡片 / 合集菜单）：删这些媒体服务器作品的入库行，与服务器
   /// 详情页的「移出」同一实现（[MediaServerVideoLibrary.removeWorks]），不联网。
   /// 已下载到本机的集是普通本地视频，不跟着移出。失败也刷新：批删可能删掉了一部分。
+  /// 删行不可撤销（观看进度 / 字幕 / 标签随行消失），先经
+  /// [confirmMediaServerLibraryRemoval] 确认；与单删同一顺序：行删后先让卡片卸载、
+  /// 再回收封面等 app 资产（[_waitForVideoCardsToUnmount]）。
   Future<void> _removeMediaServerWorks(
-    Set<MediaServerLibraryWork> works,
-  ) async {
+    Set<MediaServerLibraryWork> works, {
+    required String confirmTitle,
+  }) async {
+    if (!await confirmMediaServerLibraryRemoval(context, title: confirmTitle) ||
+        !mounted) {
+      return;
+    }
     int removed = 0;
     Object? failure;
     try {
-      removed = await MediaServerVideoLibrary(
-        database: appModelNoUpdate.database,
-        repository: widget.repo,
-      ).removeWorks(works);
+      removed =
+          await MediaServerVideoLibrary(
+            database: appModelNoUpdate.database,
+            repository: widget.repo,
+          ).removeWorks(
+            works,
+            afterDeleteBeforeReclaim: () async {
+              if (!mounted) return;
+              _refreshAfterTagChange();
+              ref.invalidate(collectionTagMapProvider);
+              ref.invalidate(filteredCollectionIdsProvider);
+              await _waitForVideoCardsToUnmount();
+            },
+          );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'HomeVideoPage.removeMediaServerWorks',
@@ -9882,7 +9906,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           DialogListAction(
             label: t.video_online_library_remove,
             icon: FushiIcons.removeCircle,
-            onPressed: () => unawaited(_removeMediaServerWorks(serverWorks)),
+            onPressed: () => unawaited(
+              _removeMediaServerWorks(
+                serverWorks,
+                confirmTitle: t.video_online_library_remove,
+              ),
+            ),
           ),
       ],
     );

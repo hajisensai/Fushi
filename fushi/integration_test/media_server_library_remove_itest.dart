@@ -200,6 +200,21 @@ void main() {
           await tester.pump(const Duration(seconds: 2));
         }
 
+        // 库页 / 合集详情页的移出先弹确认框（确认键 autofocus），Enter 确认。
+        Future<void> confirmRemoval() async {
+          final Finder message = find.text(
+            t.video_online_library_remove_confirm,
+          );
+          expect(
+            await _waitFor(tester, () => message.evaluate().isNotEmpty),
+            isTrue,
+            reason: '移出前应弹确认框',
+          );
+          await captureFlutterFrame(tester, 'lib-confirm-dialog');
+          await driver.activate();
+          await tester.pump(const Duration(seconds: 2));
+        }
+
         // ── 1. 剧：详情页「+」→「−」──
         await openDetail(series);
         expect(addButton(), findsOneWidget, reason: '干净库里应显示「+」');
@@ -235,6 +250,7 @@ void main() {
         await rightClick(seriesCard);
         await captureFlutterFrame(tester, 'lib-04-home-series-menu');
         await chooseMenu(t.video_online_library_remove);
+        await confirmRemoval();
         expect(
           await _waitFor(
             tester,
@@ -278,6 +294,7 @@ void main() {
           );
           await captureFlutterFrame(tester, 'lib-07-home-movie-menu');
           await chooseMenu(t.video_online_library_remove);
+          await confirmRemoval();
           expect(
             await _waitFor(
               tester,
@@ -331,6 +348,7 @@ void main() {
         await captureFlutterFrame(tester, 'lib-09-collection-detail-minus');
         expect(await driver.focusWidget(collectionRemove), isTrue);
         await driver.activate();
+        await confirmRemoval();
         expect(
           await _waitFor(
             tester,

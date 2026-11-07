@@ -104,6 +104,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
+import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -2235,6 +2236,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 失败也重读：批删可能删掉了一部分。
   Future<void> _removeMediaServerWorks() async {
     if (_libraryRemoveBusy) return;
+    // 删行不可撤销（观看进度 / 字幕 / 标签随行消失），先确认。
+    if (!await confirmMediaServerLibraryRemoval(
+          context,
+          title: t.video_online_library_remove,
+        ) ||
+        !mounted) {
+      return;
+    }
     setState(() => _libraryRemoveBusy = true);
     int removed = 0;
     Object? failure;

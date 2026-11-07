@@ -260,7 +260,14 @@ class MediaServerVideoLibrary {
   /// 按作品身份移出（库页菜单用：不联网、不需要服务器在线）。一次删掉这些作品的
   /// 全部 `media-server://` 行；被删空的剧名合集随之删除（见
   /// `FushiDatabase.deleteVideoBooks`）。返回删掉的行数。
-  Future<int> removeWorks(Set<MediaServerLibraryWork> works) async {
+  ///
+  /// [afterDeleteBeforeReclaim] 透传给
+  /// [VideoBookRepository.deleteVideoBooksAndReclaimAssets]：库页在这里让卡片先
+  /// 卸载，再回收封面等 app 资产（与库页单删 / 批删同一顺序）。
+  Future<int> removeWorks(
+    Set<MediaServerLibraryWork> works, {
+    Future<void> Function()? afterDeleteBeforeReclaim,
+  }) async {
     if (works.isEmpty) return 0;
     final List<String> uids = <String>[
       for (final VideoBookRow row in await database.allVideoBooks())
@@ -269,7 +276,10 @@ class MediaServerVideoLibrary {
           row.bookUid,
     ];
     if (uids.isEmpty) return 0;
-    return repository.deleteVideoBooksAndReclaimAssets(uids);
+    return repository.deleteVideoBooksAndReclaimAssets(
+      uids,
+      afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+    );
   }
 
   /// 电影 = 自身；剧 = 整部剧的集（不带 SeasonId，按季集号升序，逐页取完）。

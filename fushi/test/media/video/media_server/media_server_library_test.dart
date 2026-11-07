@@ -274,6 +274,31 @@ void main() {
     expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 0);
   });
 
+  test('removeWorks runs afterDeleteBeforeReclaim after the rows are gone '
+      '(library home unmounts cards before covers are reclaimed)', () async {
+    expect(await library.addToLibrary(browser, series), 3);
+    final MediaServerLibraryWork work = (
+      serverId: browser.serverId,
+      workId: 'show',
+    );
+    final List<String?> seenDuringHook = <String?>[];
+    int calls = 0;
+    expect(
+      await library.removeWorks(
+        <MediaServerLibraryWork>{work},
+        afterDeleteBeforeReclaim: () async {
+          calls++;
+          for (final String uid in <String>['e1', 'e2', 'e3']) {
+            seenDuringHook.add((await repository.getByBookUid(uid))?.bookUid);
+          }
+        },
+      ),
+      3,
+    );
+    expect(calls, 1);
+    expect(seenDuringHook, <String?>[null, null, null], reason: '钩子在删行之后跑');
+  });
+
   test(
     'membershipChanges fires on add and remove, not on progress writes',
     () async {
