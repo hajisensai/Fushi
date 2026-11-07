@@ -186,6 +186,10 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   // 自动识别」范围设置（默认关）。与快捷键 videoOcrFrame 同一实现。**默认不在播放器
   // 上**，也不进「⋯」——同弹幕开关，用户在控件布局编辑器里拖进槽位才出现。
   ocrFrame('ocrFrame'),
+  // 观看统计侧栏 / 手动停续学习计时（2026-11-07，对齐小说 ReaderControlItem.statistics /
+  // studyTimer）。低频：默认移出播放器、进右上「⋯」（同片段导出），布局编辑器里可拖回。
+  statistics('statistics'),
+  studyTimer('studyTimer'),
   title('title', isSpecialRender: true),
   positionIndicator('positionIndicator', isSpecialRender: true),
 
@@ -473,6 +477,9 @@ class VideoControlLayout {
       VideoControlItem.danmaku: VideoControlSlot.hidden,
       // 识别当前画面：同弹幕开关，默认不在播放器上，用户自行加。
       VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+      // 观看统计 / 计时开关：低频，默认进「⋯」。
+      VideoControlItem.statistics: VideoControlSlot.hidden,
+      VideoControlItem.studyTimer: VideoControlSlot.hidden,
       // 自定义「快捷键」按钮默认落底栏右区，未绑定也显示——空槽位点一下即弹动作
       // 选择器，是手机上最短的配置路径。与 [currentChrome] 保持一致（那份还兼任老
       // 布局的解码兜底）。
@@ -579,6 +586,9 @@ class VideoControlLayout {
           VideoControlItem.danmaku: VideoControlSlot.hidden,
           // 识别当前画面：同弹幕开关（默认移出、不进「⋯」）。
           VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+          // 观看统计侧栏 / 计时开关：默认移出播放器、进右上「⋯」（同片段导出）。
+          VideoControlItem.statistics: VideoControlSlot.hidden,
+          VideoControlItem.studyTimer: VideoControlSlot.hidden,
           // 自定义「快捷键 1..4」按钮：默认在右下「⋯」里（已绑的 + 第一个未绑的「加号」，
           // 门控在 `_shouldRenderControlItem`），点它就地配动作。
           VideoControlItem.customAction1: VideoControlSlot.hidden,
@@ -818,6 +828,9 @@ class VideoControlLayout {
         // 新增的弹幕开关：老布局解码时同样落 removed，升级后不会凭空冒出来。
         VideoControlItem.danmaku: VideoControlSlot.hidden,
         VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+        // 新增的观看统计 / 计时开关：老布局同样落 removed（进「⋯」），不挤已定制的栏。
+        VideoControlItem.statistics: VideoControlSlot.hidden,
+        VideoControlItem.studyTimer: VideoControlSlot.hidden,
       };
 
   static Map<VideoControlItem, VideoControlSlot> _currentChromeAssignments() =>

@@ -97,6 +97,10 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/reader/reader_statistics_sheet.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
@@ -1525,6 +1529,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     () => _studyClock,
   );
 
+  /// 页内遮挡（非路由，[StudyCoverTracker] 看不见）的唯一喂点：「屏上没有可读正文」
+  /// 的两个旗（[_loadFailed] / [_chapterNotDownloaded]）只在 `setState` 里改，所以在
+  /// 这里按 [mangaStudyContentAbsent] 对齐一次即覆盖全部写点，不必逐处记得喂门。
+  /// 结论没变时 [StudyClockRunGate.setLocallyCovered] 是 no-op。
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _studyClockGate.setLocallyCovered(
+      mangaStudyContentAbsent(
+        loadFailed: _loadFailed,
+        chapterNotDownloaded: _chapterNotDownloaded,
+      ),
+    );
+  }
+
   /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
   /// `docs/plans/2026-09-06-read-unit-ledger.md`）：**翻走即计 + 会话覆盖并集**。
   /// 单元 = 页号半开区间——webtoon `[page, page+1)`、spread 模式按当前 entry 覆盖的
@@ -2558,6 +2577,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       if (!mounted) return;
       _detachWholeVolumeOcrObserver();
+      // 换章 = 翻走旧章末页（与 [_presentPayload] 同一结算）。这里先结算再清并集：
+      // 下面 `_payload` 置空后页数 / 字数无从换算，留到之后的 `_presentPayload` 再
+      // `leave()` 时这页就永久漏记了。此刻时钟还在走（「本章未下载」的页内遮挡在
+      // 下面的 setState 之后才停表）。首次打开就落到未下载态时没有当前单元，no-op。
+      _readLedger
+        ..leave()
+        ..reset();
       _releaseWebView();
       setState(() {
         _bookRow = row;
@@ -7255,7 +7281,121 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           priority: priority,
           onPressed: _toggleMangaChrome,
         );
+      case MangaControlItem.statistics:
+        // 回看态（卡片来源隔离会话）不建时钟，没有可看的会话统计。
+        if (_sourceReviewActive) return null;
+        return MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_statistics_button'),
+          icon: FushiIcons.statistics,
+          label: t.reading_statistics,
+          slot: slot,
+          priority: priority,
+          onPressed: () => unawaited(_openMangaStatistics()),
+        );
+      case MangaControlItem.studyTimer:
+        if (_sourceReviewActive) return null;
+        // 图标 / 文案按手动暂停旗换，文案是「按下去会怎样」（同小说计时键）。
+        final bool paused = _studyClockGate.manualPause;
+        return MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_study_timer_button'),
+          icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
+          label: paused
+              ? t.reader_stats_clock_resume
+              : t.reader_stats_clock_pause,
+          slot: slot,
+          priority: priority,
+          onPressed: _toggleStudyClockManualPause,
+        );
     }
+  }
+
+  // ── 学习计时 / 统计侧栏（对齐小说阅读器 chrome.part 的同名入口）──────────────
+
+  /// 手动暂停 / 继续学习计时：旗归 [_studyClockGate]（统一判据，切后台期间点「继续」
+  /// 只清旗、回前台再起表）。setState 让控制条计时键换图标；统计侧栏按秒采样
+  /// `sessionTotals().active` 自己跟上。
+  void _toggleStudyClockManualPause() {
+    setState(_studyClockGate.toggleManualPause);
+  }
+
+  /// 会话累计读口：账只在 [StudyClock] 一本（v92），时钟未建时零值 + 未计时。
+  StudySessionTotals _mangaSessionTotals() =>
+      _studyClock?.sessionTotals() ?? (durationMs: 0, chars: 0, active: false);
+
+  /// 统计侧栏位置读口（见 [mangaStatsPosition]）。
+  ReaderPositionSnapshot _mangaStatsPositionSnapshot() {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    return mangaStatsPosition(
+      currentPage: _currentPage,
+      pageCount: _payload?.images.length ?? 0,
+      chapterIndex: entry == null ? -1 : _shelfChapterIndex,
+      chapterCount: entry?.chapters.length ?? 0,
+    );
+  }
+
+  /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律），身份
+  /// 与时钟的 `mediaKey` 同为 `widget.bookKey`。
+  Future<ReaderBookStatTotals> _loadMangaBookStatTotals() async {
+    final StatFacts facts = await loadStatFacts(
+      appModel.database,
+      activityLimit: 0,
+      includeCounters: true,
+    );
+    return summarizeReaderBookStats(
+      facts.dailyBooks,
+      counters: facts.counters.lookupCounters,
+      bookKey: widget.bookKey,
+      title: _bookRow?.title,
+      now: DateTime.now(),
+    );
+  }
+
+  /// 控制条「统计」：右侧侧栏（窄屏底部升起）——实时秒表 + 暂停键 / 本次页数与页时 /
+  /// 本章页与章序 / 今日 / 本书累计 / 预计读完 / 打开完整记录。
+  ///
+  /// 侧栏不遮正文（小说同款），路由构造时就声明豁免学习计时，开着照常计时；其余
+  /// 侧板 / 对话框仍由 [StudyCoverTracker] 判成「被盖住」停表。
+  Future<void> _openMangaStatistics() async {
+    if (!mounted || _sourceReviewActive) return;
+    final ValueNotifier<bool> transparent = ValueNotifier<bool>(true);
+    bool openFullRecords = false;
+    try {
+      await showReaderSideSheet<void>(
+        context: context,
+        side: ReaderSideSheetSide.right,
+        bottomSheetWhenCompact: true,
+        studyClockTransparentWhen: transparent,
+        builder: (BuildContext sheetContext) => ReaderStatisticsSheet(
+          media: ReaderStatsMedia.manga,
+          bookTitle: _shelfEntry?.series.title ?? _bookRow?.title ?? '',
+          sessionTotals: _mangaSessionTotals,
+          sessionPages: () => _studyClock?.sessionPages ?? 0,
+          loadBookTotals: _loadMangaBookStatTotals,
+          progress: _mangaStatsPositionSnapshot,
+          onTogglePause: _toggleStudyClockManualPause,
+          onOpenFullRecords: () {
+            openFullRecords = true;
+            Navigator.of(sheetContext).maybePop();
+          },
+        ),
+      );
+    } finally {
+      // 路由出栈时观察器已同步退订（didPop 先于这里的 await 恢复）。
+      transparent.dispose();
+    }
+    if (openFullRecords && mounted) await _openStatisticsCenter();
+  }
+
+  /// 统计侧栏「打开完整记录」→ 统计中心（阅读 tab）。全页路由压住正文，由
+  /// [StudyCoverTracker] 自动停表，回来续表。
+  Future<void> _openStatisticsCenter() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            const StatisticsCenterPage(initialTab: StatsCenterTab.reading),
+      ),
+    );
   }
 
   /// 打开工具栏布局编辑器（阅读设置面板里的入口）。写偏好后本页 setState，

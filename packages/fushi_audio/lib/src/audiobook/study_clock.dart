@@ -85,14 +85,13 @@ typedef DeferredStudyWrite = void Function(Future<void> Function() write);
 /// [StudyClock] 的时长来源。
 enum StudyAccrual {
   /// 墙钟窗口：每个 tick 把 `[上次 tick, now]` 整窗计入（经断档 / 活跃态 / 空闲三道
-  /// 守卫）。阅读 / 漫画 / PDF 面用——「页面开着、没空闲」就是在读。
+  /// 守卫）。阅读 / 漫画 / PDF / 视频面用——「页面开着、没被盖住、没空闲」就是在学
+  /// （视频面 2026-11-07 起：暂停查词、回放重听都算，播放中由采集器喂空闲门）。
   wallClock,
 
   /// 显式记账：时长只由消费方经 [StudyClock.addActiveMs] 推入，tick 不再按墙钟计。
-  /// 视频面用（BUG-2108）：观看时长 = 位置推进到**首次覆盖**的片内区间所花的墙钟
-  /// 时间，由 `VideoWatchTracker` 按 1s 采样位置算出；回放 / 拖回 / 重看不推、不计。
-  /// 此前视频面按 tick 末刻 `isPlaying` 整窗计——一个 20s 回放可能记 60s 也可能记
-  /// 0s，且重听照计。
+  /// 现只有 galgame hook 的字数时钟用（只 `addChars`、时长恒 0，游玩时长另记）。
+  /// 视频面 BUG-2108 曾用它「只计首次覆盖片长」，2026-11-07 所有者改为按实际时间计。
   explicit,
 }
 
@@ -150,9 +149,9 @@ typedef StudySessionTotals = ({int durationMs, int chars, bool active});
 ///
 /// 三道守卫（任一拒绝即整窗丢弃 + 封段）：
 ///  * 断档：[isContinuousReadingGap]（BUG-892，睡眠 / 挂起后的补发 tick）；
-///  * 活跃态：[isActive]（视频 = 正在播放；阅读 / 游戏不传 = 恒活跃，前台门由
-///    生命周期的 stop/start 承担——桌面窗口失焦、移动端进后台都会 stop）；
-///  * 空闲：[idleTimeout]（阅读面 10 分钟无 [touch] 即不入账；视频不设）。
+///  * 活跃态：[isActive]（现无学习面传；不传 = 恒活跃，前台门由宿主的计时门承担——
+///    切后台、被盖住、手动暂停都会 stop）；
+///  * 空闲：[idleTimeout]（阅读 / 漫画 / 视频面 10 分钟无 [touch] 即不入账；视频播放中由采集器每秒 touch）。
 ///
 /// 字数 / 页数经 [addChars] / [addPages] 记到当前打开段（没有就以 0 时长开一段），
 /// 与时长同一行、同一 uid、同一次写；回翻经 [retractChars] / [retractPages] 从最新
@@ -264,6 +263,7 @@ class StudyClock {
   /// [retractChars]（回翻）扣回，但不低于 0。
   int _sessionDurationMs = 0;
   int _sessionChars = 0;
+  int _sessionPages = 0;
 
   Timer? _timer;
   DateTime? _tickStart;
@@ -287,6 +287,10 @@ class StudyClock {
 
   /// 计时中（已 [start] 且未 [stop]）。停表期间恒 false，后台时长永不入账。
   bool get isRunning => _timer != null;
+
+  /// 本次会话已入账的页数（漫画 / PDF 统计侧栏的只读读数，口径同
+  /// [StudySessionTotals.chars]：封段不清、回翻撤回扣减、不低于 0）。
+  int get sessionPages => _sessionPages;
 
   /// 本次会话的实时累计（不改任何状态、不写库）。
   ///
@@ -429,6 +433,7 @@ class StudyClock {
     _settleBeforeContentAccount();
     _ensureOpen(_now()).pages += pages;
     _open!.dirty = true;
+    _sessionPages += pages;
     _trace('+${pages}p → ${_describe(_open!)}');
   }
 
@@ -459,8 +464,7 @@ class StudyClock {
     return taken;
   }
 
-  /// 撤回本会话已记的页数（漫画 / PDF 回翻），同 [retractChars]。页数没有会话
-  /// 累计器，只改段。
+  /// 撤回本会话已记的页数（漫画 / PDF 回翻），同 [retractChars]。
   int retractPages(int pages) {
     if (pages <= 0 || !isRunning) return 0;
     final int taken = _retract(
@@ -468,6 +472,7 @@ class StudyClock {
       (_OpenSegment seg) => seg.pages,
       (_OpenSegment seg, int value) => seg.pages = value,
     );
+    _sessionPages -= taken;
     _trace('-${pages}p taken=$taken');
     return taken;
   }

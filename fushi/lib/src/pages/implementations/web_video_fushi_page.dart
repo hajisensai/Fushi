@@ -32,6 +32,8 @@ import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
@@ -449,6 +451,33 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   int _lastPersistedSec = -1;
   VideoWatchTracker? _watchTracker;
 
+  /// 学习计时门（与本地视频页 / 漫画 / PDF 同一判据 [studyClockGateMayRun]）：真后台
+  /// 停、失焦时仍在播才计、被根导航上的路由盖住停。只在 tracker 采样期间起表
+  /// （队列重放 / 后台制卡页不采样，见 [_syncWatchTracker]）。
+  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(() {
+    final VideoWatchTracker? tracker = _watchTracker;
+    if (tracker == null || !tracker.isSampling) return null;
+    return tracker.clock;
+  });
+
+  /// 生命周期 → [_studyClockGate]（本页不是 WidgetsBindingObserver）。
+  AppLifecycleListener? _studyLifecycle;
+
+  void _onStudyLifecycleChanged(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive:
+        _studyClockGate.setUnfocused(true);
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _studyClockGate.setLifecycleStopped(true);
+      case AppLifecycleState.resumed:
+        _studyClockGate.setUnfocused(false);
+        _studyClockGate.setLifecycleStopped(false);
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
   /// 本视频已收藏句缓存（`text|startMs`），列表面板星标同步读。
   final Set<String> _favoritedKeys = <String>{};
 
@@ -561,6 +590,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void initState() {
     super.initState();
     attachLookupCounter(_popup);
+    _studyLifecycle = AppLifecycleListener(
+      onStateChange: _onStudyLifecycleChanged,
+    );
     _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
     _controller.addListener(_onControllerChanged);
     assert(() {
@@ -654,12 +686,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _playbackRouteMark.attach(ModalRoute.of(context));
+    _studyClockGate.attach(ModalRoute.of(context));
   }
 
   @override
   void dispose() {
     _overlayInert = true;
     _playbackRouteMark.dispose();
+    _studyLifecycle?.dispose();
+    _studyLifecycle = null;
     assert(() {
       WebVideoFushiPage.debugSnapshot = null;
       WebVideoFushiPage.debugToggleList = null;
@@ -691,6 +726,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       GlobalLookupController.instance.onHidden = _prevGlobalLookupOnHidden;
     }
     unawaited(_watchTracker?.stop());
+    _studyClockGate.dispose();
     // 后台制卡页的播放全是机器驱动（站点自动播放 + 逐句重放），不是用户的续播点。
     if (!widget.closeAfterMining) unawaited(_flushPosition());
     final OverlayEntry? entry = _popupOverlayEntry;
@@ -865,7 +901,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // 整页都是机器驱动（开跑前站点自动播放、跑完到关页之间停在最后一句），同理。
       if (!_mineRunning && !widget.closeAfterMining) {
         _maybePersistPosition(pos);
-        _syncWatchTracker(state.isPlaying);
+        _syncWatchTracker();
       }
     }
     if (fullscreenChanged) {
@@ -1058,7 +1094,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await _persistPosition(pos);
   }
 
-  void _syncWatchTracker(bool playing) {
+  /// 每条站点播放快照都过一次（队列重放 / 后台制卡页除外）：按需建 tracker、采样没在
+  /// 跑就续上，起不起表交给 [_studyClockGate]。暂停**不**停采样、不停表（2026-11-07：
+  /// 暂停查词也是学习时间，挂机由空闲门截断）；播放态经 `onPlayingChanged` 喂门。
+  void _syncWatchTracker() {
     final VideoBookRow? row = _row;
     if (row == null) return;
     VideoWatchTracker? tracker = _watchTracker;
@@ -1066,29 +1105,29 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       final FushiDatabase db = _appModel.database;
       tracker = VideoWatchTracker(
         bookUid: widget.bookUid,
-        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
-        // tracker 挂上）。与本地视频页同一构造——网页档只是换了播放宿主，统计
-        // 语义不该因此分叉。
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。与本地视频页同一构造（墙钟
+        // + 阅读面同一空闲设置）——网页档只是换了播放宿主，统计语义不该因此分叉。
         clock: StudyClock(
           database: db,
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: row.title,
-          accrual: StudyAccrual.explicit,
+          idleTimeout: _appModel.readingIdleTimeout,
           onWriteError: (Object e, StackTrace st) => ErrorLogService.instance
               .log('StudyClock.write(web-video)', e, st),
+          deferWrite: ExitFlushRegistry.instance.defer,
         ),
         loadCoverage: () =>
             db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
         saveCoverage: (String json) =>
             db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
+        onPlayingChanged: _studyClockGate.setPlaying,
       )..attach(_controller);
       _watchTracker = tracker;
     }
-    if (playing) {
+    if (!tracker.isSampling) {
       tracker.start();
-    } else {
-      unawaited(tracker.stop());
+      _studyClockGate.sync();
     }
   }
 

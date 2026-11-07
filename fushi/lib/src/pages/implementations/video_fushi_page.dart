@@ -173,6 +173,7 @@ import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
+import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
@@ -395,6 +396,12 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
         QueuedOverwriteReply,
         QueuedOverwriteSettled;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/reader/reader_statistics_sheet.dart';
+import 'package:fushi/src/stats/study_clock_run_gate.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart'
+    show studyClockRouteSettings;
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
@@ -491,6 +498,7 @@ part 'video_fushi/web_source.part.dart';
 part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';
 part 'video_fushi/subtitle_text_edit.part.dart';
+part 'video_fushi/study_stats.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -1296,6 +1304,9 @@ enum _VideoSidePanelKind {
   quality,
   // TODO-1376：弹幕手动搜索/选集匹配侧栏。
   danmakuMatch,
+  // 观看统计侧栏（2026-11-07，对齐小说统计侧栏）：本次会话秒表 + 暂停键 / 本集位置 /
+  // 今天 / 本视频累计。开着**不停表**（[videoStudyClockLocallyCovered]）。
+  statistics,
 }
 
 class _VideoSidePanelState {
@@ -2716,8 +2727,41 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _ownsHandedOverNativeFullscreen = false;
   int _initialFullscreenRetries = 0;
 
-  /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
+  /// 观看统计采集器（字幕字数 + 完成标记 + 喂空闲门；时长由它的墙钟时钟计）；首次
+  /// load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
+
+  /// 学习计时门（与漫画 / PDF 共用判据 [studyClockGateMayRun]，2026-11-07 所有者拍板
+  /// 「视频也像小说一样暂停计时」）：真后台 / 最小化停（`paused` / `hidden`）；失焦
+  /// （`inactive`）时仍在播放照常计、停着就停；被根导航上未豁免的路由盖住（对话框 /
+  /// 菜单 / 整页；全屏路由豁免）停；页内侧板 / 剧集列表压着画面停
+  /// （[videoStudyClockLocallyCovered]）；手动暂停停。只在 tracker 采样期间起表
+  /// （[VideoWatchTracker.isSampling]）——采样停了就没人喂空闲门。
+  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(() {
+    final VideoWatchTracker? tracker = _watchTracker;
+    if (tracker == null || !tracker.isSampling) return null;
+    return tracker.clock;
+  });
+
+  /// 手动暂停旗的 UI 读口（控制条计时键图标随它重建）；状态持有者是
+  /// [_studyClockGate]，只经 [_VideoStudyStats._toggleVideoStudyClockManualPause] 写。
+  final ValueNotifier<bool> _studyClockManualPaused = ValueNotifier<bool>(
+    false,
+  );
+
+  /// 页内遮挡层变化 → 计时门（[videoStudyClockLocallyCovered]）。
+  void _syncStudyClockLocalCover() {
+    final _VideoSidePanelKind? panel = _videoSidePanel.value?.kind;
+    _studyClockGate.setLocallyCovered(
+      videoStudyClockLocallyCovered(
+        sidePanelOpen: panel != null,
+        statisticsPanelOpen: panel == _VideoSidePanelKind.statistics,
+        episodeListVisible: _episodeListVisible.value,
+        controlEditMode: _videoControlEditMode.value,
+      ),
+    );
+  }
+
   String? _discBookUid;
   String? _discBindingPath;
   int _discBindingGeneration = 0;
@@ -2805,6 +2849,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     super.didChangeDependencies();
     _providerContainer = ProviderScope.containerOf(context, listen: false);
     _playbackRouteMark.attach(ModalRoute.of(context));
+    _studyClockGate.attach(ModalRoute.of(context));
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;
@@ -3697,6 +3742,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.addListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // 学习计时门的页内遮挡输入（侧板 / 剧集列表 / 布局编辑）。
+    _videoSidePanel.addListener(_syncStudyClockLocalCover);
+    _episodeListVisible.addListener(_syncStudyClockLocalCover);
+    _videoControlEditMode.addListener(_syncStudyClockLocalCover);
     // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
     // 打开 / 关闭时光标策略不重跑，鼠标悬在弹窗上仍被上一轮的 `cursor: none` 吃掉。
     _lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit);
@@ -3742,8 +3791,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.inactive:
-        // inactive 仅瞬态过渡（通知栏下拉 / 多任务切换）：落库即可，不停观看计时
-        // （频繁误停丢真实时长）；clamp（[isContinuousWatchGap]）兜底任何残留异常间隔。
+        // inactive = 失焦（桌面切到别的窗口 / 通知栏下拉 / 多任务切换）：落库即可，
+        // 采样不停。计时门按「失焦时仍在播放才计」裁决（用户拍板：切走仍在播照常
+        // 计时；停着就停表）。
+        _studyClockGate.setUnfocused(true);
         unawaited(_controller?.flushPosition());
         unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
@@ -3755,6 +3806,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
         _watchTracker?.stop();
+        _studyClockGate.setLifecycleStopped(true);
         // BUG-1863：记下「真的进过后台」。移动端在 app 不可见期间可能被系统回收硬件
         // 解码器，回来后解码从非关键帧继续、参考帧缺失 → 静止区域被 libavcodec 的
         // error concealment 填成中性灰。`inactive` 不置这个标记（那期间 app 仍持有
@@ -3766,8 +3818,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // [VideoFushiPage.shouldPauseForBackground]。
         if (state == AppLifecycleState.paused) _pauseForBackground();
       case AppLifecycleState.resumed:
-        // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
+        // 回前台：先重启位置采样，再按计时门续表（仍被盖住 / 手动暂停就不续；时钟
+        // start() 重锚 tick 起点与空闲基准，后台那段不入账）。
         _watchTracker?.start();
+        _studyClockGate.setUnfocused(false);
+        _studyClockGate.setLifecycleStopped(false);
         // BUG-1863：从真后台回来先把视频解码链重建一次（详见
         // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
         _refreshDecodeAfterResumeIfNeeded();
@@ -6353,22 +6408,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _watchTracker =
         VideoWatchTracker(
             bookUid: uid,
-            // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。BUG-2108：视频面时钟是
-            // 显式记账——时长由 tracker 按「位置推进到首次覆盖的片内区间」推入，回放 /
-            // 拖回 / 重看不计；切走仍在播就照常计时（不设前台门）。
-            // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
-            // 页面（pushReplacement 换集）→ _activeBookUid 恒为当前集。
+            // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。2026-11-07（取代 BUG-2108
+            // 的首次覆盖口径）：时长 = 实际花在视频上的墙钟时间，暂停查词 / 回放 / 重看
+            // 都计；不在看由 [_studyClockGate] 停表，挂机由空闲门截断（与阅读面同一
+            // 设置）。按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频
+            // 每集独立页面（pushReplacement 换集）→ _activeBookUid 恒为当前集。
             clock: StudyClock(
               database: db,
               mediaKind: kActivityMediaVideo,
               mediaKey: uid,
               title: title,
-              accrual: StudyAccrual.explicit,
+              idleTimeout: appModel.readingIdleTimeout,
               onWriteError: (Object e, StackTrace st) => ErrorLogService
                   .instance
                   .log('StudyClock.write(video)', e, st),
+              deferWrite: ExitFlushRegistry.instance.defer,
             ),
-            // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
+            // 已看过的片内区间并集按视频身份持久化：只给字幕字数判「看过没」（次日
+            // 重看不再计字；时长照计）。
             loadCoverage: () => db.getPref(coverageKey),
             saveCoverage: (String json) => db.setPref(coverageKey, json),
             // BUG-3491（所有者 2026-10-17 拍板）：播放不再给库条目自动打「已看」勾；
@@ -6387,9 +6444,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     );
                   }
                 : null,
+            onPlayingChanged: _studyClockGate.setPlaying,
           )
           ..attach(controller)
           ..start();
+    // tracker.start() 只起采样；起不起表由计时门定（建表时已在后台 / 被盖住就不起）。
+    _studyClockGate.sync();
   }
 
   /// TODO-897 / BUG-805：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 /
@@ -6849,6 +6909,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _volumeDisplay.dispose();
     _watchTracker?.dispose();
     _watchTracker = null;
+    _studyClockGate.dispose();
+    _studyClockManualPaused.dispose();
     _stopAdaptiveQuality();
     // TODO-1276：撤销首帧就绪监听 + 兜底定时器（回调读 _controller，须在 dispose 前摘）。
     _networkOpenDiagnoseTimer?.cancel();
@@ -6898,6 +6960,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.removeListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
+    _videoSidePanel.removeListener(_syncStudyClockLocalCover);
+    _episodeListVisible.removeListener(_syncStudyClockLocalCover);
+    _videoControlEditMode.removeListener(_syncStudyClockLocalCover);
     // BUG-1798：与上面六个门控同批摘监听（顺序同理——回调读多个 notifier，先摘再 dispose）。
     _lookupOverlayActive.removeListener(_applyControlsVisibilityFromMediaKit);
     _lookupOverlayActive.dispose();
@@ -9367,6 +9432,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         on = panel == _VideoSidePanelKind.chapters;
       case VideoControlItem.settings:
         on = panel == _VideoSidePanelKind.settings;
+      case VideoControlItem.statistics:
+        on = panel == _VideoSidePanelKind.statistics;
+      // 计时键：手动暂停着 = secondary 选中态（「计时已停」是要一眼看到的状态）。
+      case VideoControlItem.studyTimer:
+        on = _studyClockManualPaused.value;
       case VideoControlItem.subtitleTrack
           when panel == _VideoSidePanelKind.subtitle:
         on = true;
@@ -9398,9 +9468,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 驱动 [_videoControlItemTone] 的状态源（面板 / 列表开关）。字幕源与收藏随页面
   /// setState / 控制器通知重建。
-  late final Listenable _videoChromeToneListenable = Listenable.merge(
-    <Listenable>[_subtitleListVisible, _episodeListVisible, _videoSidePanel],
-  );
+  late final Listenable _videoChromeToneListenable =
+      Listenable.merge(<Listenable>[
+        _subtitleListVisible,
+        _episodeListVisible,
+        _videoSidePanel,
+        _studyClockManualPaused,
+      ]);
 
   /// 倍速≠1.0 时倍速按钮换成显示数值的 secondary tonal 胶囊（M3E）。
   Widget _m3eSpeedValueButton({required VoidCallback onPressed}) {
@@ -9801,6 +9875,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.chapterList:
       case VideoControlItem.danmaku:
       case VideoControlItem.ocrFrame:
+      case VideoControlItem.statistics:
+      case VideoControlItem.studyTimer:
       // 自定义「快捷键」按钮就是一个普通图标按钮：图标 / tooltip 由绑定动作决定
       // （见 `_videoControlItemIcon` / `_videoControlItemTooltip`），点击走
       // `_activateVideoControlItem` 查动作表。没有任何专属渲染需求。
@@ -9955,6 +10031,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 没有弹幕来源，与章节 / 选集一样直接不渲染，免得放一个按了也不会有弹幕的开关。
       case VideoControlItem.danmaku:
         return _hasDanmakuSource;
+      // 观看统计 / 计时开关：只在计观看统计时有意义（回看态 / 原盘菜单不建 tracker，
+      // 见 [_ensureWatchTracker]）。
+      case VideoControlItem.statistics:
+      case VideoControlItem.studyTimer:
+        return _watchTracker != null;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -10256,6 +10337,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.photo_camera_outlined;
       case VideoControlItem.ocrFrame:
         return FushiIcons.ocr;
+      case VideoControlItem.statistics:
+        return FushiIcons.statistics;
+      // 图标按手动暂停旗换（[_studyClockManualPaused] 在 [_videoChromeToneListenable] 里）。
+      case VideoControlItem.studyTimer:
+        return _studyClockManualPaused.value
+            ? FushiIcons.timerOff
+            : FushiIcons.timer;
       case VideoControlItem.clipExport:
         return _clipExportIcon;
       case VideoControlItem.subtitleTrack:
@@ -10338,6 +10426,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return t.video_control_screenshot;
       case VideoControlItem.ocrFrame:
         return t.video_control_ocr_frame;
+      case VideoControlItem.statistics:
+        return t.video_stats_title;
+      // 文案是「按下去会怎样」（同小说计时键）。
+      case VideoControlItem.studyTimer:
+        return _studyClockManualPaused.value
+            ? t.reader_stats_clock_resume
+            : t.reader_stats_clock_pause;
       case VideoControlItem.clipExport:
         return _clipExportTooltip;
       case VideoControlItem.subtitleTrack:
@@ -10480,6 +10575,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.ocrFrame:
         _ocrCurrentFrame();
+        break;
+      case VideoControlItem.statistics:
+        _toggleVideoStatisticsPanel(sourceSlot: sourceSlot);
+        break;
+      case VideoControlItem.studyTimer:
+        _toggleVideoStudyClockManualPause();
         break;
       case VideoControlItem.clipExport:
         unawaited(_toggleClipExport());

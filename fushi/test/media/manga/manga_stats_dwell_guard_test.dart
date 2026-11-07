@@ -169,6 +169,26 @@ void main() {
       '\n  }\n',
     );
     expect(load, contains('_readLedger\n      ..leave()\n      ..reset();'));
+    // 换去的在线章没下载、直读也没成（「本章未下载」态）同样是换章：旧章末页必须在
+    // `_payload = null` 之前结算——置空后页数无从换算，之后 `_presentPayload` 的
+    // leave 只能结算出 0，这页永久漏记。此刻时钟还在走（页内遮挡在 setState 后才停表）。
+    final String shelf = _functionSource(
+      src,
+      '  Future<void> _openShelfChapter({',
+      '\n  }\n',
+    );
+    final int settle = shelf.indexOf(
+      '_readLedger\n        ..leave()\n        ..reset();',
+    );
+    final int drop = shelf.indexOf('_payload = null;');
+    expect(settle, isNonNegative, reason: '未下载回落态缺旧章末页结算');
+    expect(drop, isNonNegative);
+    expect(settle, lessThan(drop), reason: '必须先结算旧章末页、再清掉旧章正文');
+    expect(
+      '..leave()'.allMatches(src).length,
+      2,
+      reason: '离开结算只许在两处换章点（_presentPayload / 未下载回落），关书路径零账本动作',
+    );
   });
 
   test('停留门 / 会话 Set / 存档预置形态不得回潮', () {

@@ -27,15 +27,20 @@ void main() {
         MangaControlItem.bookmarks,
         MangaControlItem.settings,
         MangaControlItem.ocrVolume,
+        MangaControlItem.statistics,
         MangaControlItem.backToStart,
         MangaControlItem.ocrRerun,
         MangaControlItem.hideChrome,
       ]);
       expect(d.itemsIn(MangaControlSlot.overflow), isEmpty);
-      expect(d.core.removedItems, isEmpty);
+      // 暂停 / 继续计时出厂在托盘（同小说阅读器），不多占默认栏一格。
+      expect(d.core.removedItems, <MangaControlItem>{
+        MangaControlItem.studyTimer,
+      });
       final Set<MangaControlItem> placed = <MangaControlItem>{
         ...d.itemsIn(MangaControlSlot.toolbar),
         ...d.itemsIn(MangaControlSlot.top),
+        ...d.core.removedItems,
       };
       expect(placed, MangaControlItem.values.toSet());
       // 右上角出厂顺序就是按收起优先级从高到低（旧版「按优先级排序」的结果）。
@@ -268,9 +273,11 @@ void main() {
         );
         final MangaChromePlan now = planMangaChrome(
           width: width,
-          // 旧版没有书签键，Material 下识别框是 FAB。
+          // 旧版没有书签 / 统计 / 计时键，Material 下识别框是 FAB。
           groups: layoutGroups(<MangaControlItem>{
             MangaControlItem.bookmarks,
+            MangaControlItem.statistics,
+            MangaControlItem.studyTimer,
             MangaControlItem.ocrBoxes,
           }),
           hasFab: true,

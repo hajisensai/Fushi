@@ -1,11 +1,12 @@
 // 浏览器扩展网页视频沉浸时间 → 学习统计（`BrowserVideoStudyBridge`）。
 //
 // 桥把扩展 `POST /api/extension/study` 的样本喂给 VideoWatchTracker + StudyClock
-// （StudyAccrual.explicit、只计首次覆盖），与本地 / 网页档视频页同一装配。本测用真
-// 内存 DB 钉「样本进来 → study_segments 里出现什么」：
-//  * 连续播放样本累计成一段 media_kind='video' / media_key='web:...' 的时长；
-//  * 换 mediaKey 封上一段、开新段；ended 停表，之后再来样本开新 tracker；
-//  * 重看同一区间不再计（覆盖并集按 videoWatchCoveragePrefKey 持久化）；
+// （墙钟计时，2026-11-07 取代「只计首次覆盖」），与本地 / 网页档视频页同一装配。本测
+// 用真内存 DB 钉「样本进来 → study_segments 里出现什么」：
+//  * 会话存活期间按墙钟累计成一段 media_kind='video' / media_key='web:...' 的时长；
+//  * 换 mediaKey 封上一段、开新段（同一时刻只有一条在计时）；ended 停表，之后再来
+//    样本开新 tracker；
+//  * 重看同一区间照计时长（覆盖并集按 videoWatchCoveragePrefKey 持久化，只管字幕字数）；
 //  * 空闲超时没有新样本即停表落库。
 // 墙钟经 StudyClock(now:) + tracker.debugNowForTesting 全注入，不靠真实流逝。
 import 'package:drift/native.dart';
@@ -238,7 +239,7 @@ void main() {
     );
   });
 
-  test('ended 停表；之后再来样本开新 tracker，重看同区间不再计', () async {
+  test('ended 停表；之后再来样本开新 tracker，重看同区间照计时长', () async {
     final _Rig rig = _Rig.create();
     await rig.open(_sample(positionMs: 0));
     rig.play(fromMs: 0, seconds: 4);
@@ -251,13 +252,14 @@ void main() {
     _fakeNow = _fakeNow.add(const Duration(minutes: 5));
     await rig.open(_sample(positionMs: 0));
     expect(rig.trackers, hasLength(2));
-    // 重看 [0, 4000)：已覆盖，不计；再往前看 [4000, 6000) 是新内容，计 2s。
+    // 重看 [0, 4000) + 新内容 [4000, 6000)：时长按实际 6s 计（覆盖只管字幕字数）；
+    // ended 到重开之间的 5 分钟不在任何会话里，不计。
     rig.play(fromMs: 0, seconds: 6);
     await rig.bridge.stopAll();
-    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 6000);
+    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 10000);
   });
 
-  test('暂停样本之间不计；seek 跳变不计', () async {
+  test('会话存活期间的暂停照计（查词也是学习时间）；seek 跳变不进覆盖', () async {
     final _Rig rig = _Rig.create();
     await rig.open(_sample(positionMs: 0));
     rig.play(fromMs: 0, seconds: 2);
@@ -268,7 +270,14 @@ void main() {
     rig.bridge.onSample(_sample(positionMs: 60000));
     rig.play(fromMs: 60000, seconds: 3);
     await rig.bridge.stopAll();
-    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 5000);
+    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 15000);
+    expect(
+      rig.trackers.single.debugCoverage.ranges.any(
+        ((int, int) r) => r.$1 < 60000 && r.$2 > 2000,
+      ),
+      isFalse,
+      reason: '跳过的 2000..60000 不算看过',
+    );
   });
 
   test('空闲超时没有新样本 → 停表落库、释放', () async {

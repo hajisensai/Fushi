@@ -108,6 +108,8 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.ocrFrame:
       return 35;
     case VideoControlItem.clipExport:
+    case VideoControlItem.statistics:
+    case VideoControlItem.studyTimer:
       return 30;
     case VideoControlItem.customAction1:
     case VideoControlItem.customAction2:

@@ -117,7 +117,16 @@ enum MangaControlItem implements ControlItemSpec<MangaControlSlot> {
   ocrRerun('ocrRerun', foldPriority: 1, recoverySlot: MangaControlSlot.top),
 
   /// 隐藏界面（与快捷键 M / 手柄 Y 同一执行体）。
-  hideChrome('hideChrome', foldPriority: 0, recoverySlot: MangaControlSlot.top);
+  hideChrome('hideChrome', foldPriority: 0, recoverySlot: MangaControlSlot.top),
+
+  /// 统计侧栏（实时秒表 + 暂停键 / 本次页数 / 本章与章序 / 今日 / 累计 / 预计读完，
+  /// 与小说阅读器同一张 `ReaderStatisticsSheet`）。侧栏不遮正文，开着照常计时。
+  statistics('statistics', foldPriority: 3, recoverySlot: MangaControlSlot.top),
+
+  /// 暂停 / 继续学习计时（与统计侧栏 hero 的暂停键同一入口，图标随暂停态换）。
+  /// 出厂在托盘（同小说阅读器的 studyTimer）：不多占默认栏一格，可拖去右上角 /
+  /// 底栏 / 更多。
+  studyTimer('studyTimer', foldPriority: 2, recoverySlot: MangaControlSlot.top);
 
   const MangaControlItem(
     this.storageValue, {
@@ -186,8 +195,9 @@ class MangaControlLayout {
   ///  * 底部工具栏：章节目录 / 页面一览 / 阅读模式 / 单双页 / 翻页方向 / 快捷设置
   ///    （/ Apple 下的识别框开关）——与旧 `_chromeActionGroups` 的声明顺序一致；
   ///  * 右上角：按旧版「按优先级从高到低」排好的顺序（取消 OCR 9 / 全屏 7 / 书签 6 /
-  ///    全部设置 5 / 识别本卷 4 / 回到开头 1 / 重新识别 1 / 隐藏界面 0）。书签是新增项，
-  ///    按它的优先级插在全屏与全部设置之间。
+  ///    全部设置 5 / 识别本卷 4 / 统计 3 / 回到开头 1 / 重新识别 1 / 隐藏界面 0）。书签、
+  ///    统计是新增项，按各自优先级插进去；
+  ///  * 托盘（不在阅读器里）：暂停 / 继续计时（新增项，没列在任何槽里即进托盘）。
   static final MangaControlLayout defaults = MangaControlLayout._(
     ControlLayout<MangaControlSlot, MangaControlItem>.fromSlots(
       kMangaControlScheme,
@@ -207,6 +217,7 @@ class MangaControlLayout {
           MangaControlItem.bookmarks,
           MangaControlItem.settings,
           MangaControlItem.ocrVolume,
+          MangaControlItem.statistics,
           MangaControlItem.backToStart,
           MangaControlItem.ocrRerun,
           MangaControlItem.hideChrome,

@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 浏览器扩展 `POST /api/extension/study` 的一条播放样本（网页视频的沉浸时间进
 /// 学习统计）。扩展在视频播放时每 ~1s、以及 play / pause / seek / ended 时刻各发
 /// 一条；app 侧原样喂给 [VideoWatchTracker]（与本地 / 网页档视频页同一采集器、
-/// 同一「只计首次覆盖」口径，BUG-2108）。
+/// 同一墙钟口径，见 [BrowserVideoStudyBridge]）。
 ///
 /// 字段契约（[tryParse] 校验，任一不合即整条丢弃）：
 ///  * `mediaKind`：目前只接受 `'video'`；
@@ -242,11 +242,21 @@ class _ActiveSession {
 /// 浏览器扩展视频沉浸时间 → 学习统计的桥（新写入面 = 新的 [StudyClock] 实例，
 /// 不是新表；`docs/agent/statistics.md`「写入面」）。
 ///
-/// 每个 `mediaKey` 一个 [VideoWatchTracker]（`StudyAccrual.explicit`、只计首次覆盖，
-/// 覆盖并集按 [videoWatchCoveragePrefKey] 偏好持久化——与本地 / 网页档视频页同一
-/// 装配，统计语义不因播放宿主是浏览器而分叉）。换 `mediaKey` 先封上一条再开新的；
-/// 样本 `ended` 或超过 [idleTimeout] 没有新样本（页面被关 / 扩展断连、没来得及发
-/// ended）即停表释放。网页视频没有库条目：完成标记 no-op、不报单集完成。
+/// 每个 `mediaKey` 一个 [VideoWatchTracker]（墙钟时钟，2026-11-07 取代「只计首次覆盖」：
+/// 时长 = 会话存活期间的实际时间；覆盖并集仍按 [videoWatchCoveragePrefKey] 偏好持久化，
+/// 只给字幕字数去重——与本地 / 网页档视频页同一装配，统计语义不因播放宿主是浏览器而
+/// 分叉）。
+///
+/// **同一时刻至多一条在计时**（[_active] 只有一个）：换 `mediaKey` 先封上一条再开新的，
+/// 所以两个标签页同时放视频也不会两份墙钟叠加——后发样本的那条抢走计时、前一条封段
+/// （来回抢会切碎段，但时长不重复）。样本 `ended` 或超过 [idleTimeout] 没有新样本
+/// （暂停后扩展不再发样本 / 页面被关 / 扩展断连、没来得及发 ended）即停表释放。
+///
+/// 暂停的取舍：扩展只在播放中每 ~1s 发样本、暂停那一刻发一条，此后静默——app 侧无从
+/// 知道用户是不是还在页面前查词。所以暂停后的时间按会话存活计、最多 [idleTimeout]
+/// （默认 20s），之后停表；再播放开新会话。代价：标签页被直接关掉又没发出 `ended` 时，
+/// 最后 ≤ [idleTimeout] 的空档也被计入。网页视频没有库条目：完成标记 no-op、不报
+/// 单集完成。
 class BrowserVideoStudyBridge {
   BrowserVideoStudyBridge({
     required FushiDatabase Function() database,
@@ -270,7 +280,7 @@ class BrowserVideoStudyBridge {
   /// 统一 await，保证进程退出前最后一笔落库完成。
   Future<void> _stopChain = Future<void>.value();
 
-  /// 测试钩子：新 tracker 建好（attach + start 之前）时回调，供注入受控墙钟
+  /// 测试钩子：新 tracker 建好（attach + start + 起表之前）时回调，供注入受控墙钟
   /// （`debugNowForTesting`）/ 等覆盖加载。
   @visibleForTesting
   void Function(VideoWatchTracker tracker)? debugOnTrackerCreated;
@@ -321,7 +331,8 @@ class BrowserVideoStudyBridge {
         mediaKind: kActivityMediaVideo,
         mediaKey: key,
         title: sample.displayTitle,
-        accrual: StudyAccrual.explicit,
+        // 不设空闲门：会话本身由 [idleTimeout] 收口（无新样本即停表），播放中的
+        // 样本也经 tracker 的采样 touch；再叠一道 10 分钟门没有意义。
         now: _now,
         onWriteError: (Object e, StackTrace st) => ErrorLogService.instance.log(
           'StudyClock.write(browser-video)',
@@ -337,6 +348,9 @@ class BrowserVideoStudyBridge {
     tracker
       ..attach(source)
       ..start();
+    // tracker.start() 只起采样；浏览器桥没有页面遮挡 / 生命周期可言（扩展只在页面
+    // 播放时发样本），会话存活即计时。
+    tracker.clock.start();
     final _ActiveSession session = _ActiveSession(
       mediaKey: key,
       tracker: tracker,
