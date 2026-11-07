@@ -42,6 +42,12 @@
 | [BUG-4222](bugs/BUG-4222-android-tombstone-summary-misses-crash-thread.md) | ✅ | ✅ | Android 原生崩溃摘要抽不到崩溃线程栈 |
 | [BUG-4221](bugs/BUG-4221-manga-series-chapter-column-anr.md) | ✅ | ✅ | 作品页章节表一次建全上千行致主线程 ANR |
 | [BUG-4220](bugs/BUG-4220-anime-subtitle-file-uri-fetched-over-http.md) | ✅ | ✅ | 在线视频源本地 file:// 字幕被当 HTTP 去取 |
+> 共 3783 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4221](bugs/BUG-4221-dialog-controller-disposed-while-closing.md) | ✅ | ✅ | 配对后红屏：弹窗关闭动画期间输入框控制器已被释放 |
+| [BUG-4220](bugs/BUG-4220-youtube-timedtext-double-escaped.md) | ✅ | ✅ | 内置播放器 YouTube 字幕残留 HTML 实体（&#39;） |
 | [BUG-4219](bugs/BUG-4219-shelf-columns-shrink-regression.md) | ✅ | ✅ | shelf-columns-shrink-regression |
 | [BUG-4218](bugs/BUG-4218-srs-history-duplicate-event-copies.md) | ✅ | ✅ | SRS 历史把同一事件的多 ID 副本算成多次复习、撤销一份不生效 |
 | [BUG-4217](bugs/BUG-4217-srs-merge-duplicate-review-logs.md) | ✅ | ✅ | 合并 profile 后同一次复习变成两条，FSRS 优化 log loss 从 0.6 涨到 1.6 |
