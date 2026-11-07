@@ -168,7 +168,7 @@ dependency_overrides:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
+      ref: 6103af012c57189835e7d409122fbd982fa1e294
   # fushi_asr_onnx_ffi（仅无头 fushi_server 依赖）把 archive 钉成 ^4.0.0，本仓其余
   # 全部钉 ^3.6.1；pub workspace 只解析一次，两者无法共存。
   #

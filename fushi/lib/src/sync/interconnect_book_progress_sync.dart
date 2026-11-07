@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -14,6 +16,26 @@ const String kInterconnectBookProgressDimension = 'progress_live';
 /// 编码）；推送成功并记下基线后删除。见 [InterconnectBookProgressSync.decide]。
 const String kInterconnectBookProgressPendingDimension =
     'progress_live_pending';
+
+/// 一本书一次 live 同步的结果（[InterconnectBookProgressSync.syncOne]）。
+///
+/// [action] 为 null = 两端已收敛、本轮什么都没做（sweep 快照判定跳过）。
+/// [localChanged] = 本端 `reader_positions` 被改写（调用方据此刷新书架）。
+/// 冲突时 [localUpdatedAtMs] / [remoteUpdatedAtMs] 是判定所依据的两端时间戳。
+typedef BookProgressSyncStep = ({
+  BookProgressSyncAction? action,
+  bool localChanged,
+  int localUpdatedAtMs,
+  int remoteUpdatedAtMs,
+});
+
+/// host 端某本书进度的一次读取结果：成功给 [progress]，失败给 [error]（逐本错误
+/// 交给轮到这本书时的调用方处理，不在预取里吞掉）。
+typedef RemoteBookProgressRead = ({
+  RemoteBookProgress? progress,
+  Object? error,
+  StackTrace? stackTrace,
+});
 
 /// 一轮书籍进度 sweep 开头一次读齐的本端状态（见
 /// [InterconnectBookProgressSync.loadSweepSnapshot]）：`reader_positions` 按书 uid，
@@ -112,6 +134,118 @@ class InterconnectBookProgressSync {
   /// host 端该书进度（host 无记录 → empty）。
   Future<RemoteBookProgress> remoteProgress(EpubBookRow book) =>
       _backend.remoteBookProgress(book.bookKey);
+
+  /// 老 host（无 [kBookProgressBatchPath]）逐本预取的并发上限。只是把同样多的
+  /// GET 叠起来发，请求数不变；与云通道逐本列举预取（`SyncManager`）取同一个值。
+  static const int remoteReadConcurrency = 4;
+
+  /// 一轮 sweep 要用的 host 端进度，按 [books] 顺序给出每本的读取结果。
+  ///
+  /// - 新 host：一次 `GET` [kBookProgressBatchPath] 拿全库（反馈 kM-Gb_Xnu-，此前
+  ///   每本书一次往返）；不在表里的书 = host 无记录 = empty，与逐本端点同口径。
+  /// - 老 host（端点 404）：逐本 GET，但以 [remoteReadConcurrency] 路并发预取，
+  ///   不再一本等一本。
+  ///
+  /// 整批读取失败（网络 / 鉴权 / 5xx）照常抛给调用方，不降级成「全都没进度」。
+  /// 返回的每个 future 都不会以错误完成（错误装进 [RemoteBookProgressRead.error]），
+  /// 调用方可以按顺序逐个 await，不会有未处理的异步错误。
+  Future<List<Future<RemoteBookProgressRead>>> readRemoteForSweep(
+    List<EpubBookRow> books,
+  ) async {
+    final Map<String, RemoteBookProgress>? all = await _backend
+        .remoteBookProgressSnapshot();
+    if (all != null) {
+      return <Future<RemoteBookProgressRead>>[
+        for (final EpubBookRow book in books)
+          Future<RemoteBookProgressRead>.value((
+            progress: all[book.bookKey] ?? RemoteBookProgress.empty,
+            error: null,
+            stackTrace: null,
+          )),
+      ];
+    }
+    final List<Completer<RemoteBookProgressRead>> slots =
+        <Completer<RemoteBookProgressRead>>[
+          for (int i = 0; i < books.length; i++)
+            Completer<RemoteBookProgressRead>(),
+        ];
+    int next = 0;
+    Future<void> worker() async {
+      while (next < books.length) {
+        final int i = next++;
+        try {
+          slots[i].complete((
+            progress: await remoteProgress(books[i]),
+            error: null,
+            stackTrace: null,
+          ));
+        } catch (e, stack) {
+          slots[i].complete((progress: null, error: e, stackTrace: stack));
+        }
+      }
+    }
+
+    for (int k = 0; k < remoteReadConcurrency; k++) {
+      unawaited(worker());
+    }
+    return <Future<RemoteBookProgressRead>>[
+      for (final Completer<RemoteBookProgressRead> c in slots) c.future,
+    ];
+  }
+
+  /// 对一本书跑一次完整的 live 三方同步：判定 → 推送 / 落地 / 对齐 / 报冲突。
+  ///
+  /// sweep（[snapshot] 非 null，两端已收敛的书在内存判定后跳过）与退出书的单本
+  /// 同步（[snapshot] 为 null，直接判定）共用这一份，两条路径的判定与落地口径不会
+  /// 漂移。冲突不落任何一端，由调用方按返回的时间戳上报。
+  Future<BookProgressSyncStep> syncOne(
+    EpubBookRow book, {
+    required RemoteBookProgress remote,
+    BookProgressSweepSnapshot? snapshot,
+  }) async {
+    if (snapshot != null &&
+        isSettled(
+          book: book,
+          local: localProgressFromSnapshot(book, snapshot),
+          remote: remote,
+          snapshot: snapshot,
+        )) {
+      return (
+        action: null,
+        localChanged: false,
+        localUpdatedAtMs: remote.updatedAtMs,
+        remoteUpdatedAtMs: remote.updatedAtMs,
+      );
+    }
+    final RemoteBookProgress local = await localProgress(book);
+    final BookProgressSyncAction action = await decide(
+      book,
+      local: local,
+      remote: remote,
+    );
+    bool localChanged = false;
+    switch (action) {
+      case BookProgressSyncAction.synced:
+        // BUG-686: a host-newer progress pull lands in reader_positions but
+        // writes no book content, so it must still flag the shelf for a
+        // refresh — the cached fushiBooksProvider otherwise keeps showing
+        // the pre-sync progress bar and the sync looks like it did nothing.
+        localChanged = await alignSynced(book, local: local, remote: remote);
+      case BookProgressSyncAction.pushLocal:
+        await pushLocal(book, local: local, remote: remote);
+      case BookProgressSyncAction.applyRemote:
+        // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
+        localChanged = await applyRemote(book, remote, local: local);
+      case BookProgressSyncAction.conflict:
+        break;
+    }
+    return (
+      action: action,
+      localChanged: localChanged,
+      localUpdatedAtMs: local.updatedAtMs,
+      remoteUpdatedAtMs: remote.updatedAtMs,
+    );
+  }
 
   /// 上次两端达成一致的位置基线（没有 → null）。
   Future<BookProgressBaseline?> baseline(EpubBookRow book) async =>

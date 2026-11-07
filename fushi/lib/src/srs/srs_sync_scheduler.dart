@@ -1233,13 +1233,19 @@ class SrsSyncScheduler {
   ///
   /// 弹窗开着的时候用户可能已经切到别的 profile：此刻的 profile 不是 [conflict] 判定时的那个就抛
   /// [StateError]、什么都不动——否则会把另一个 profile 并进不相干的候选。
+  ///
+  /// [onAdopted]：改用 / 并入一结束（跑「立即同步」之前）就回调结果。并入暂缓（[SrsProfileAdoptDeferred]，undo 撤销
+  /// 的日志还没同步到）不是失败、不抛：并入标记已写，冲突就此解决（不再弹），之后每一轮 [SrsProfileLinker.link] 续做；
+  /// 接着这一轮同步照跑，正是它把缺的日志送进来。
   Future<SrsSyncNowResult> adoptProfile(
     SrsProfileConflict conflict,
-    String uid,
-  ) async {
+    String uid, {
+    void Function(SrsProfileAdoptResult result)? onAdopted,
+  }) async {
     final SrsProfileLinker? linker = _profileLinker;
     if (linker == null) return const SrsSyncNowResult(ran: 0);
     bool done = false;
+    SrsProfileAdoptResult? adoptedResult;
     Future<void> adopt(SyncAssetStore? within) => _serially(() async {
       done = true;
       final SrsDbStore? store = await _readStore();
@@ -1250,10 +1256,16 @@ class SrsSyncScheduler {
           '(${conflict.localUid} -> ${store.profileUid})',
         );
       }
-      await linker.adopt(store, uid, within: within);
+      final SrsProfileAdoptResult result = await linker.adopt(
+        store,
+        uid,
+        within: within,
+      );
+      adoptedResult = result;
       if (identical(profileConflict, conflict)) profileConflict = null;
+      // 暂缓时也要清：否则冲突判定在复用期内跳过 [SrsProfileLinker.link]，并入要等复用期过了才续做。
       _linkDecided.clear();
-      _onDataChanged();
+      if (result is SrsProfileAdopted) _onDataChanged();
     });
     // 候选在某条通道上：在那条通道的锁里并入（并入之前要从它收目标 uid 的数据，BUG-4011；通道锁不可重入，先锁后
     // [_serially] 与常规轮次同一顺序）。[_channels] 把每条通道的错误收进 errors，这里原样抛出。
@@ -1274,7 +1286,19 @@ class SrsSyncScheduler {
     if (error != null) Error.throwWithStackTrace(error, failureStack!);
     // 候选在本机目录 / 文件夹位置上（或那条通道此刻不可用）：不拿通道锁并入。
     if (!done) await adopt(null);
+    final SrsProfileAdoptResult? result = adoptedResult;
+    if (result != null) onAdopted?.call(result);
     return syncNow();
+  }
+
+  /// 当前 profile 正在暂缓的并入（[SrsProfileLinker.deferredMerge]：并入标记还在、最近一次重跑是暂缓）；没有、没配
+  /// linker 或 store 不可用时为 null。并入做完后自动回到 null。同步状态页按它显示「profile 合并暂缓中」。
+  Future<SrsDeferredProfileMerge?> deferredProfileMerge() async {
+    final SrsProfileLinker? linker = _profileLinker;
+    if (linker == null || _halted) return null;
+    final SrsDbStore? store = await _readStore();
+    if (store == null || store.isWindingDown) return null;
+    return linker.deferredMerge(store);
   }
 
   static String _linkKey(String directoryKey, String profileUid) =>

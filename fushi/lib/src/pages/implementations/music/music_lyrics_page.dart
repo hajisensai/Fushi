@@ -59,6 +59,8 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamResolver, resolveMusicPluginStream;
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
+import 'package:fushi/src/mining/immersion_mining_engine.dart'
+    show RemoteAudioMaterializer;
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
 import 'package:fushi/src/pages/base_source_page.dart';
@@ -247,6 +249,11 @@ MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
 /// widget 测试注入替身。
 @visibleForTesting
 MusicPluginStreamResolver? musicLyricsClipPluginResolver;
+
+/// 制卡截音频前远端流的物化（null = [materializeMusicClipSource] 的缺省 range 分片下载）；
+/// widget 测试注入替身。
+@visibleForTesting
+RemoteAudioMaterializer? musicLyricsClipMaterializer;
 
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
@@ -580,10 +587,26 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         tempDir = await Directory.systemTemp.createTemp(
           'fushi_music_mine_audio_',
         );
+        // googlevideo 流先整段物化到本地再裁（远端 -ss 会被限速卡到超时）；下载失败带原因报失败。
+        final MusicClipSource cutSource;
+        try {
+          cutSource = await materializeMusicClipSource(
+            source,
+            workDir: tempDir.path,
+            materializer: musicLyricsClipMaterializer,
+          );
+        } on MusicClipSourceUnavailable catch (e, st) {
+          final String reason = 'sentence audio export failed: ${e.message}';
+          ErrorLogService.instance.log('MusicLyricsPage.mineAudio', e, st);
+          return MinePopupResult.failed(
+            MineOutcome(MineResult.error, errorDetail: reason),
+            message: reason,
+          );
+        }
         String? failure;
         audioPath = await musicLyricsClipExtractor(
-          inputPath: source.inputPath,
-          httpHeaders: source.httpHeaders,
+          inputPath: cutSource.inputPath,
+          httpHeaders: cutSource.httpHeaders,
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: p.join(
