@@ -1651,8 +1651,9 @@ sub_b/ep2.mp4
       final String src = File(
         'lib/src/media/source_library/source_library_scanner.dart',
       ).readAsStringSync();
+      // 新导入与重复跳过两条分支共用同一个挂载 helper（z398R0ndAw 起不再各写一份）。
       expect(
-        src.contains('_attachSidecarAudiobookToExisting'),
+        src.contains('_attachAudiobook('),
         isTrue,
         reason: 'the duplicate-skip branch must call the sidecar-attach helper',
       );

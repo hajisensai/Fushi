@@ -21,7 +21,7 @@
 /// 路径只做字符串运算，按 [p.Context] 解释（网络来源传 `p.url`），原样保留输入写法。
 library;
 
-import 'package:fushi_audio/fushi_audio.dart' show compareAudioFilePath;
+import 'package:fushi_audio/fushi_audio_core.dart' show compareAudioFilePath;
 import 'package:fushi_core/fushi_core.dart' show foldMediaTitle;
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_pick.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
