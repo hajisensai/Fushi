@@ -155,29 +155,18 @@ class FushiContinueCardRow extends StatelessWidget {
                 : math.max(1, ((fit + gap) / (baseCardHeight + gap)).floor());
             // 给定高度时卡片撑高铺满（封面跟着放大，封顶 [_maxCoverHeight]），
             // 与旁边的大卡上下齐平。
-            final double cover = fit == null
+            final double baseCover = fit == null
                 ? coverHeight
                 : (((fit - gap * (rows - 1)) / rows) - pad * 2).clamp(
                     coverHeight,
                     _maxCoverHeight,
                   );
-            // 卡高恒铺满（封面封顶后在卡里竖向居中）。
-            final double cardHeight = fit == null
-                ? baseCardHeight
-                : math.max(
-                    math.max(cover, infoMin) + pad * 2,
-                    (fit - gap * (rows - 1)) / rows,
-                  );
-            // 悬停放大的余量必须按**卡片实际尺寸**算：卡被铺满 / 撑高后比下限
-            // 大，按下限留的余量不够，放大的卡就被视口裁掉（用户 2026-11-03
-            // 截图：视频首页大卡旁的取色卡抬起后右缘被切）。
-            final double headroom = cardHeight * kFushiHoverLiftOverflow + 4;
             double hoverInset(double w) => w * kFushiHoverLiftOverflow + 2;
             final double cardWidth;
             final double? cellWidth = _cellWidth;
             final int? columns = _columns;
             if (cellWidth == null || columns == null) {
-              final double need = _minCardWidth(cover, pad);
+              final double need = _minCardWidth(baseCover, pad);
               // 页边外扩（[bleed]）不够放大余量时，差额在视口内补。
               final double room =
                   c.maxWidth - math.max(0, hoverInset(need) - bleed) * 2;
@@ -202,6 +191,28 @@ class FushiContinueCardRow extends StatelessWidget {
               );
               cardWidth = cellWidth * span - gap;
             }
+            // 不定高（单行）时卡宽放不下「封面 | 信息列」就按卡宽缩封面，卡高
+            // 跟着缩封面走——不再按 [coverHeight] 留高：iPhone 竖屏视频首页大卡
+            // 下那排 16:9 剧照被压到约 70 高，卡却还有 150 多高，下半截空着
+            // （用户 2026-11-08 截图）。缩法与 [_CardGeometry] 左右排的兜底一致。
+            final double widest = _widestAspect;
+            final double cover = fit != null || widest <= 0
+                ? baseCover
+                : ((cardWidth - pad * 3 - minInfoWidth) / widest).clamp(
+                    _CardGeometry._minCoverHeight,
+                    baseCover,
+                  );
+            // 卡高恒铺满（封面封顶后在卡里竖向居中）。
+            final double cardHeight = fit == null
+                ? math.max(cover, infoMin) + pad * 2
+                : math.max(
+                    math.max(cover, infoMin) + pad * 2,
+                    (fit - gap * (rows - 1)) / rows,
+                  );
+            // 悬停放大的余量必须按**卡片实际尺寸**算：卡被铺满 / 撑高后比下限
+            // 大，按下限留的余量不够，放大的卡就被视口裁掉（用户 2026-11-03
+            // 截图：视频首页大卡旁的取色卡抬起后右缘被切）。
+            final double headroom = cardHeight * kFushiHoverLiftOverflow + 4;
             // 给定高度时卡片正好铺满 [fitHeight]（与旁边大卡上下齐平），悬停
             // 放大的上下余量改成把视口向上下外扩，不占版面高度。
             final double height = fit ?? cardHeight + headroom * 2;
