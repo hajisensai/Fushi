@@ -601,6 +601,9 @@ final String kSeamlessChaptersInstallJs =
     if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
       window.fushiSelection.clearSelection();
     }
+    // 收藏 / 搜索 / 句音频 / 选区 / 跳转落点都是挂在旧活动章节点上的 Range；节点即将搬进
+    // shadow 宿主，注册表整份清掉，Dart 收到晋升后按新章重新下发。
+    if (window.__fushiCssHighlightsSupported && window.CSS && CSS.highlights) CSS.highlights.clear();
     r.clearImageLateAnchor();
     r._setRestoreCharAnchor(null);
   }
