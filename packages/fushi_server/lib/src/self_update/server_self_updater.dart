@@ -68,7 +68,7 @@ class ServerSelfUpdater implements HostSelfUpdater {
     required Future<bool> Function() isAllowed,
     required void Function() onInstalled,
   }) {
-    final Directory? root = currentBundleRoot();
+    final Directory? root = currentReleaseBundleRoot();
     return ServerSelfUpdater(
       installRoot: root,
       current: root == null ? null : ServerReleaseInfo.readFrom(root),
@@ -290,19 +290,34 @@ Future<Object?> fetchGitHubJson(Uri url) async {
 }
 
 /// 流式下载到 [into]，按 [expectedSize]（或 Content-Length）报进度。
+///
+/// 两道超时：[headerTimeout] 等响应头；[idleTimeout] 是读正文时两块数据之间的最长
+/// 空档（不是总时长——慢而不断的下载照常完成）。连接卡死不报错也不关时，没有这道
+/// 空闲超时 `await for` 会永远等下去，更新永远停在 downloading、再也触发不了。
+/// 超时抛 [ServerUpdateException]（`download_timeout` / `download_stalled`），由
+/// [ServerSelfUpdater] 转成失败态并清掉暂存。[client] 是测试缝（传入的不负责关）。
 Future<void> downloadServerPackage(
   Uri url,
   File into, {
   required void Function(double progress) onProgress,
   int? expectedSize,
+  http.Client? client,
+  Duration headerTimeout = const Duration(seconds: 60),
+  Duration idleTimeout = const Duration(seconds: 60),
 }) async {
-  final http.Client client = createAppHttpIoClient();
+  final http.Client httpClient = client ?? createAppHttpIoClient();
   try {
     final http.Request req = http.Request('GET', url)
       ..headers['User-Agent'] = 'fushi_server';
-    final http.StreamedResponse res = await client
-        .send(req)
-        .timeout(const Duration(seconds: 60));
+    final http.StreamedResponse res;
+    try {
+      res = await httpClient.send(req).timeout(headerTimeout);
+    } on TimeoutException {
+      throw ServerUpdateException(
+        'download_timeout',
+        'no response headers in ${headerTimeout.inSeconds}s',
+      );
+    }
     if (res.statusCode != 200) {
       throw HttpException('download ${res.statusCode}', uri: url);
     }
@@ -310,13 +325,19 @@ Future<void> downloadServerPackage(
     final IOSink sink = into.openWrite();
     int received = 0;
     try {
-      await for (final List<int> chunk in res.stream) {
+      // 退出 await for（含超时抛出）会取消订阅，底层连接随之断开。
+      await for (final List<int> chunk in res.stream.timeout(idleTimeout)) {
         sink.add(chunk);
         received += chunk.length;
         if (total != null && total > 0) {
           onProgress((received / total).clamp(0, 1).toDouble());
         }
       }
+    } on TimeoutException {
+      throw ServerUpdateException(
+        'download_stalled',
+        'no data for ${idleTimeout.inMilliseconds}ms after $received bytes',
+      );
     } finally {
       await sink.close();
     }
@@ -327,6 +348,6 @@ Future<void> downloadServerPackage(
       );
     }
   } finally {
-    client.close();
+    if (client == null) httpClient.close();
   }
 }
