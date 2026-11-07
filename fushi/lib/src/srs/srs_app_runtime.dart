@@ -20,6 +20,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
     show fushiAnkiConnectCompatInstanceId;
+import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -46,8 +47,8 @@ import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -373,7 +374,7 @@ class SrsAppRuntime {
         readStore: _readStore,
         readMedia: (String name) async => (await _readMedia())?.load(name),
         // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
-        onWrite: _bumpRevision,
+        onWrite: (String _) => _bumpRevision(),
       ),
     );
     fushiAnkiConnectCompatInstanceId = instanceId;

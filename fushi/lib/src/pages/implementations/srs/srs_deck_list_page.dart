@@ -24,6 +24,8 @@ import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart'
+    show SrsRemoteServedProfile;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -51,6 +53,8 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_remote_store_client.dart'
+    show SrsRemoteProfileChoiceCancelled;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;
 import 'package:fushi/src/sync/video_remote_targets.dart'
@@ -149,6 +153,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   /// 首页「已配对设备」分区的主机与连接（见 srs_deck_home_paired.dart）。
   late final _SrsPairedHosts _paired = _SrsPairedHosts(
     connector: ref.read(srsRemoteHostConnectorProvider),
+    chooseProfile: (List<SrsRemoteServedProfile> profiles) async =>
+        mounted ? showSrsRemoteProfileChoice(context, profiles) : null,
   );
 
   /// 分区有没有主机：变了才重建页面（分区自己听 [_paired] 的细节变化）。

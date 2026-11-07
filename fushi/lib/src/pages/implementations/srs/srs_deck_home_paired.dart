@@ -36,9 +36,12 @@ class _PairedHost {
 
 /// 已配对主机列表与各自的连接 / 牌组。由牌组页持有，不放进懒建的列表项：分区滚出屏幕再滚回来不重连。
 class _SrsPairedHosts extends ChangeNotifier {
-  _SrsPairedHosts({required this.connector});
+  _SrsPairedHosts({required this.connector, this.chooseProfile});
 
   final SrsRemoteHostConnector connector;
+
+  /// 主机提供几份 profile 又没有本机这份时让用户选（见 [SrsRemoteHostConnector.open]）。
+  final SrsRemoteProfileChooser? chooseProfile;
 
   List<_PairedHost> hosts = const <_PairedHost>[];
   bool _disposed = false;
@@ -79,6 +82,7 @@ class _SrsPairedHosts extends ChangeNotifier {
     try {
       final SrsRemoteSession session = h.session ??= await connector.open(
         h.target,
+        chooseProfile: chooseProfile,
       );
       final List<SrsDeckSummary> decks = await session.store.deckSummaries();
       if (_disposed) return;
@@ -86,6 +90,12 @@ class _SrsPairedHosts extends ChangeNotifier {
     } on InterconnectHostError catch (e) {
       h
         ..error = srsRemoteReviewErrorText(e)
+        ..session = null
+        ..decks = null;
+    } on SrsRemoteProfileChoiceCancelled {
+      // 没选复习库：组头提示去选，点组头重试时再问一次。
+      h
+        ..error = t.srs_remote_review_choose_profile
         ..session = null
         ..decks = null;
     } finally {

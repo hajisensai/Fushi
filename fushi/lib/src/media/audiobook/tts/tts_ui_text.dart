@@ -4,6 +4,7 @@ library;
 import 'package:fushi_engine/tts/local/local_service_support.dart'
     show LocalInstallRemoveException;
 import 'package:fushi_engine/tts/providers/azure_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/custom_http_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
@@ -36,6 +37,7 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
     t.audiobook_tts_provider_irodori_server,
   OpenAiCompatibleTtsDescriptor.providerId =>
     t.audiobook_tts_provider_openai_compatible,
+  CustomHttpTtsDescriptor.providerId => t.audiobook_tts_provider_custom_http,
   EdgeTtsDescriptor.providerId => t.audiobook_tts_provider_edge,
   MicrosoftTranslatorTtsDescriptor.providerId =>
     t.audiobook_tts_provider_ms_translator,
@@ -75,6 +77,8 @@ String? ttsProviderHint(String providerId) => switch (providerId) {
   VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak_hint,
   OpenAiCompatibleTtsDescriptor.providerId =>
     t.audiobook_tts_provider_openai_compatible_hint,
+  CustomHttpTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_custom_http_hint,
   _ => null,
 };
 
@@ -114,7 +118,31 @@ String ttsParamLabel(String key) => switch (key) {
   VoicepeakTtsDescriptor.executableKey => t.audiobook_tts_param_executable,
   VoicepeakTtsDescriptor.narratorKey => t.audiobook_tts_param_narrator,
   VoicepeakTtsDescriptor.emotionKey => t.audiobook_tts_param_emotion,
+  CustomHttpTtsDescriptor.methodKey => t.audiobook_tts_param_method,
+  CustomHttpTtsDescriptor.queryKey => t.audiobook_tts_param_query_template,
+  CustomHttpTtsDescriptor.bodyKey => t.audiobook_tts_param_body_template,
+  CustomHttpTtsDescriptor.headersKey => t.audiobook_tts_param_headers,
+  CustomHttpTtsDescriptor.langKey => t.audiobook_tts_param_lang,
+  CustomHttpTtsDescriptor.responseKey => t.audiobook_tts_param_response_format,
+  CustomHttpTtsDescriptor.responsePathKey =>
+    t.audiobook_tts_param_response_path,
   _ => key,
+};
+
+/// 选择类参数取值的显示文案：自定义 HTTP 的返回格式有专门文案，其余按语言代码翻译
+/// （认不出的原样显示，例如请求方法 `GET` / `POST`）。
+String ttsChoiceLabel(String providerId, String key, String value) => switch ((
+  providerId,
+  key,
+)) {
+  (CustomHttpTtsDescriptor.providerId, CustomHttpTtsDescriptor.responseKey) =>
+    switch (CustomHttpTtsResponse.parse(value)) {
+      CustomHttpTtsResponse.audio => t.audiobook_tts_response_audio,
+      CustomHttpTtsResponse.jsonBase64 => t.audiobook_tts_response_json_base64,
+      CustomHttpTtsResponse.jsonUrl => t.audiobook_tts_response_json_url,
+    },
+  (CustomHttpTtsDescriptor.providerId, _) => value,
+  _ => ttsLanguageLabel(value),
 };
 
 /// 非必填的声音类参数「不选」时显示什么（系统语音：默认引擎 / 按文字语言自动挑）。
@@ -196,6 +224,23 @@ String? ttsParamHint(String providerId, String key) => switch ((
     t.audiobook_tts_param_voicepeak_speed_hint,
   (VoicepeakTtsDescriptor.providerId, VoicepeakTtsDescriptor.pitchKey) =>
     t.audiobook_tts_param_voicepeak_pitch_hint,
+  (CustomHttpTtsDescriptor.providerId, final String key) =>
+    _customHttpParamHint(key),
+  _ => null,
+};
+
+/// 自定义 HTTP 各参数的说明（占位符 `{text}` 等是字面文字：本仓 slang 的插值语法是
+/// `${x}`，花括号不会被当成参数）。
+String? _customHttpParamHint(String key) => switch (key) {
+  CustomHttpTtsDescriptor.queryKey => t.audiobook_tts_param_query_template_hint,
+  CustomHttpTtsDescriptor.bodyKey => t.audiobook_tts_param_body_template_hint,
+  CustomHttpTtsDescriptor.headersKey => t.audiobook_tts_param_headers_hint,
+  CustomHttpTtsDescriptor.apiKeyKey =>
+    t.audiobook_tts_param_custom_api_key_hint,
+  CustomHttpTtsDescriptor.langKey => t.audiobook_tts_param_lang_hint,
+  CustomHttpTtsDescriptor.speedKey => t.audiobook_tts_param_custom_speed_hint,
+  CustomHttpTtsDescriptor.responsePathKey =>
+    t.audiobook_tts_param_response_path_hint,
   _ => null,
 };
 
