@@ -133,6 +133,9 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/pages/implementations/library_view_options.dart';
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show LibraryGridDomain;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -5523,12 +5526,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                             // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
                             final double availableWallWidth =
                                 constraints.maxWidth - tokens.spacing.card * 2;
+                            // 「每行数量」（BUG-4219 / 2026-11-07）：系列墙与「全部
+                            // 视频」共用这一格设定，null = 自动按目标卡宽算。
+                            final int? fixedColumns = _gridFixedColumns;
                             final ({int columns, double cardWidth}) cardLayout =
                                 unifiedShelfCardLayout(
                                   availableWidth: availableWallWidth,
                                   targetWidth: readerShelfGridExtentForWidth(
                                     constraints.maxWidth,
                                   ),
+                                  fixedColumns: fixedColumns,
                                 );
                             final ({int columns, double cardWidth})
                             allVideosCardLayout = unifiedShelfCardLayout(
@@ -5536,6 +5543,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                               targetWidth: allVideoThumbnailTargetWidthForWidth(
                                 constraints.maxWidth,
                               ),
+                              fixedColumns: fixedColumns,
                             );
                             final double chromeInset =
                                 FushiFloatingChromeInset.of(context);
@@ -8368,6 +8376,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           onToggleSelectionMode: _toggleSelectionMode,
           onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
           onManageCollections: _openCollectionManagement,
+          // 排序图标不变（视频库另有独立的「筛选」按钮），菜单多了「每行数量」，
+          // tooltip 换成「排序与显示」。
+          sortTooltipOverride: t.library_sort_view,
+          onOpenViewSheet: libraryViewOptionsUseSheet(context)
+              ? _openViewSheet
+              : null,
         ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
       // （browse_page）里有完整入口，视频库页头只留库管理动作。
@@ -8456,6 +8470,64 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       sortMode: _sortMode,
       sortModeLabel: _sortModeLabel,
       onSortModeChanged: _setSortMode,
+      extraSections: <LibraryViewSection>[_gridColumnsSection()],
+    );
+  }
+
+  /// 本页网格当前尺寸档下的「每行数量」，null = 自动。
+  int? get _gridFixedColumns => ref
+      .read(appProvider)
+      .prefsRepo
+      .libraryGridColumns(
+        LibraryGridDomain.video,
+        libraryGridSizeClassOf(context),
+      );
+
+  /// 「每行数量」一组（排序菜单与窄窗抽屉共用）。
+  LibraryViewSection _gridColumnsSection() {
+    final WindowSizeClass sizeClass = libraryGridSizeClassOf(context);
+    return libraryGridColumnsSection(
+      sizeClass: sizeClass,
+      selected: _gridFixedColumns,
+      onSelected: (int? columns) {
+        unawaited(
+          ref
+              .read(appProvider)
+              .prefsRepo
+              .setLibraryGridColumns(
+                LibraryGridDomain.video,
+                sizeClass,
+                columns,
+              ),
+        );
+        setState(() {});
+      },
+    );
+  }
+
+  /// 窄窗「排序与显示」底部抽屉：排序方式 / 每行数量（观看状态等维度仍在
+  /// 「筛选」面板）。
+  void _openViewSheet() {
+    unawaited(
+      showLibraryViewSheet(
+        context: context,
+        title: t.library_sort_view,
+        sections: () => <LibraryViewSection>[
+          LibraryViewSection(
+            title: t.sort_by,
+            options: <LibraryViewOption>[
+              for (final ShelfSortMode mode in ShelfSortMode.values)
+                LibraryViewOption(
+                  key: ValueKey<String>('library_sort_${mode.name}'),
+                  label: _sortModeLabel(mode),
+                  selected: mode == _sortMode,
+                  onSelected: () => _setSortMode(mode),
+                ),
+            ],
+          ),
+          _gridColumnsSection(),
+        ],
+      ),
     );
   }
 
@@ -9255,6 +9327,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       sortMode: _sortMode,
       sortModeLabel: _sortModeLabel,
       onSortModeChanged: _setSortMode,
+      extraSections: <LibraryViewSection>[_gridColumnsSection()],
+      onOpenViewSheet: libraryViewOptionsUseSheet(context)
+          ? _openViewSheet
+          : null,
       onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
       // AI 整理库（spec 2026-10-20 §10.1）：过 AI 模块门。
       onAiOrganize: isAiModuleEnabled(ref.read(appProvider).moduleVisibility)
