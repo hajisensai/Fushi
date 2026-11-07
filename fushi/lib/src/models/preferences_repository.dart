@@ -5263,6 +5263,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG）。默认关（显式 opt-in：开了统一搜索才会
+  /// 向 YouTube 发请求）；iOS 上不论取值都不存在（合规门 `isYoutubeMusicSourceAvailable`）。
+  bool get musicYoutubeEnabled =>
+      getPref('music_youtube_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicYoutubeEnabled(bool value) async {
+    await setPref('music_youtube_enabled', value);
+    notifyListeners();
+  }
+
   /// 本机已把 Apple Music 账号连接到 Fushi（整曲播放 + 资料库）。设备本地。
   bool get musicAppleMusicConnected =>
       getPref('music_apple_music_connected', defaultValue: false) == true;

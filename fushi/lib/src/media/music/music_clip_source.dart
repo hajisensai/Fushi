@@ -14,12 +14,15 @@ import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.
     show isAppleMusicTrackPath;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart'
     show isMusicDiscTitlePath;
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
+    show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart'
     show isMusicCddaPath;
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 
 /// 截音频用的源：[inputPath] 交给 ffmpeg（本机路径或流 URL），[httpHeaders] 是流的请求头
 /// （本机文件为空），[fileOffsetMs] 是曲目在该输入里的起点（CUE 虚拟曲目非 0）。
@@ -59,12 +62,30 @@ final class MusicClipSourceProtected implements Exception {
 /// 抛 [MusicClipSourceProtected]（调用方降级成纯文本卡）。
 ///
 /// [pluginResolver]：插件曲目取流（缺省 [resolveMusicPluginStream]，测试注入替身）。
+/// [youtubeResolver]：YouTube 内置音源曲目取流（缺省 [resolveMusicYoutubeStream]）。
 Future<MusicClipSource> resolveMusicClipSource(
   MusicPlayItem item, {
   MusicPluginStreamResolver? pluginResolver,
+  MusicYoutubeStreamResolver? youtubeResolver,
 }) async {
   if (isAppleMusicTrackPath(item.path)) {
     throw const MusicClipSourceProtected();
+  }
+  final String? youtubeId = youtubeMusicVideoIdFromPath(item.path);
+  if (youtubeId != null) {
+    final MusicYoutubeStream s;
+    try {
+      s = await (youtubeResolver ?? resolveMusicYoutubeStream)(youtubeId);
+    } on MusicPluginStreamUnavailable catch (e) {
+      throw MusicClipSourceUnavailable(
+        'youtube stream unavailable: ${e.message}',
+      );
+    }
+    // 取到的 audio-only 流就是这一首本身：起点 0。
+    return MusicClipSource(
+      inputPath: s.url,
+      httpHeaders: Map<String, String>.unmodifiable(s.headers),
+    );
   }
   if (isMusicPluginPath(item.path)) {
     final MusicPluginStream s;

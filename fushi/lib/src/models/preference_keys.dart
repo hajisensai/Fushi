@@ -571,6 +571,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
+  // bool（默认 false）：在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG，显式 opt-in；
+  // iOS 上整类不存在，合规门 isYoutubeMusicSourceAvailable）。
+  'music_youtube_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
   // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-23 起 mode_strip）：

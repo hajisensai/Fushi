@@ -31,6 +31,46 @@ void main() {
     expect(s.fileOffsetMs, 0);
   });
 
+  test('YouTube 内置音源曲目：交给 ffmpeg 的是 audio-only 流 + 回放头，起点 0', () async {
+    final MusicClipSource s = await resolveMusicClipSource(
+      const MusicPlayItem(
+        trackUid: 'y',
+        path: 'fushi-music-youtube://video/dQw4w9WgXcQ',
+        title: 'Y',
+      ),
+      youtubeResolver: (String id) async => (
+        url: 'https://rr1.googlevideo.com/videoplayback?id=$id',
+        headers: <String, String>{'User-Agent': 'UA'},
+        expiresAt: null,
+      ),
+    );
+    expect(
+      s.inputPath,
+      'https://rr1.googlevideo.com/videoplayback?id=dQw4w9WgXcQ',
+    );
+    expect(s.httpHeaders, <String, String>{'User-Agent': 'UA'});
+    expect(s.fileOffsetMs, 0);
+
+    await expectLater(
+      resolveMusicClipSource(
+        const MusicPlayItem(
+          trackUid: 'y',
+          path: 'fushi-music-youtube://video/dQw4w9WgXcQ',
+          title: 'Y',
+        ),
+        youtubeResolver: (String _) async =>
+            throw const MusicPluginStreamUnavailable('private video'),
+      ),
+      throwsA(
+        isA<MusicClipSourceUnavailable>().having(
+          (MusicClipSourceUnavailable e) => e.message,
+          'message',
+          contains('private video'),
+        ),
+      ),
+    );
+  });
+
   test('插件取流失败：抛带原因的 MusicClipSourceUnavailable（不悄悄降级）', () async {
     await expectLater(
       resolveMusicClipSource(
