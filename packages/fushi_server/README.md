@@ -106,6 +106,7 @@ scan_prune: true              # 扫描后回收「文件已消失」的视频条
 profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
 remote_update: false          # 允许已配对设备远程更新本服务端（见下文「远程更新」）；默认关，WebUI 可开，保存即生效
 leaderboard_link: true        # 允许「我的设备」跟随本机排行榜账户自动登录（见下文「跟随已配对设备登录」）；保存即生效
+lookup_chinese_script_variants: false   # 中文查词简体 ↔ 繁體互查（见下文「词典与远程查词」）；默认关，与 app 一致；WebUI 可开，保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -508,6 +509,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` 的 `lookup.dictionary` / `lookup.history`
 如实反映引擎是否加载成功；加载失败 serve 照常起，查词路由不注册（客户端按不可用处理）。
 
+- 简繁互查（中文查词时简体词也查繁體词头、反之亦然）：新版 app 每次查词带上**请求方自己的**开关（app「设置 › 查词 › 简繁互查」），以它为准；不带开关的请求方（浏览器扩展、旧客户端）用服务端配置 `lookup_chinese_script_variants`（默认关，WebUI「设置」页或 `fushi_server ctl settings set '{"lookupChineseScriptVariants":true}'` 改，保存即生效）。两种情况都只在请求声明的查词语言是中文时才互查，语言未知不互查。
 - 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
