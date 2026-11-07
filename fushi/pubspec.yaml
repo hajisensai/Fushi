@@ -125,7 +125,11 @@ dependencies:
   # Linux，必须由 app 直接依赖实现包才会注册；vendored 原因见该包 pubspec 顶部。
   flutter_inappwebview_linux:
     path: ../packages/flutter_inappwebview_linux
-  flutter_logs: ^2.1.11
+  # BUG（后台拉起白屏）：≥2.2.7。2.1.x 的 Android 插件把 MethodChannel 存在
+  # companion object（进程级静态）里，同进程第二个引擎（WorkManager 后台引擎）销毁时
+  # 会把主引擎的 flutter_logs handler 清掉，main() 的 initLogs 抛 MissingPlugin、
+  # 初始化永不开始。守卫：test/platform/flutter_logs_engine_scoped_channel_test.dart。
+  flutter_logs: ^2.2.8
   # v101 统一更新提醒的系统通知后端。选 20.x 而不是 22.x：22 起要求
   # `sdk: ^3.10.0`，会把本包的 SDK 下界从 3.8 顶上去；20.1.0 的
   # environment 与本仓一致，且 android/ios/macos/linux/windows 五端都有实现
