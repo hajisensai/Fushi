@@ -1,0 +1,11 @@
+## BUG-4231 · 作品页章节表一次建全上千行致主线程 ANR
+- **报告**：2026-11-07（崩溃报告 `#x2m35Gfrjh`：SSH Telecom Flex 3，Android 15，3.3.0，ANR x2「Input dispatching timed out, Waited 5000ms for MotionEvent」）
+- **真实性**：✅ 结构性根因已定位（ANR 现场 Dart 帧无法符号化，见备注，下面是证据链）。
+  - 崩前内存采样（pid 26936）：`page=[HomePage>MangaLibraryPage>ReaderFushiHistoryPage>MangaSeriesPage]` 45 s 窗口主线程（`pp.fushi.reader`，Flutter 3.29+ UI 与平台线程合一）CPU 27.1 s；下一窗口停在 `MangaSeriesPage` 15 s 里主线程 13.1 s、`build=3`——不是重建风暴，是**每次布局 / 绘制本身就重**。
+  - 另一次 ANR（pid 24972）主线程栈用 Flutter 3.47.6 引擎符号（engine `692136cb…` android-arm64-release `symbols.zip`，BuildId `3042c18d…` 对上）符号化：`#00 SkFontMgr::RefEmpty ← skia::textlayout::OneLineShaper::shape ← ParagraphImpl::layout(float)` ← libapp（Dart）——主线程在排版文字。
+  - 根因：`MangaChapterList`（`fushi/lib/src/media/manga/library/manga_chapter_list.dart` `build`）是一个 `Column`，`for (int i = 0; i < visible.length; i++) _buildRow(...)` 把**每一话**都建出来；作品页（`manga_series_page.dart` `_buildBody`）把它包在一个 `SliverToBoxAdapter` 里。在线源（这台机是 mangafire）动辄上千话，每行标题 + 副标题 + 序号胶囊 + 菜单：每次 setState（下载任务表 `watchJobs` 事件、OCR 事件、刷新进度条）都把上千行重建、重排、全部重绘（Column 不裁掉视口外子项的 paint），低端机上一帧就是几秒。
+- **[x] ① 已修复** — `MangaChapterList` 加 `sliver: true` 形态：标题 / 空态是 `SliverToBoxAdapter`，章节行是懒建 `SliverList.builder`（`findChildIndexCallback` 按 `manga_chapter_<key>` 找回已建行，换序 / 筛选不丢行状态），外层 `SliverMainAxisGroup`。作品页章节区与 OCR 横幅改成 sliver 直接放进 `MediaDetailLayout.slivers`。「跳到当前章节」在懒列表里当前章可能还没建：新 `scrollToMangaChapter`（同文件）先看锚点，没建就按已建行平均行高估第 N 行的偏移 `jumpTo`，下一帧锚点建出来后 `ensureVisible`，行高不一时以新样本再估（最多 4 轮）。阅读器章节抽屉（`manga_chapter_drawer.dart`）仍用 Box 形态——抽屉打开即要定位当前章、且没有本次 ANR 证据，未改。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/library/manga_chapter_list_sliver_test.dart`：两千话（行高不一）sliver 形态建出的行 < 100、末话不在树里；当前章在第 1963 行（未建）时 `scrollToMangaChapter` 后锚点建出且整行落在视口内。
+- **备注**：
+  - 同一用户另一份 ANR 栈 `#02 dart::NativeEntry::BootstrapNativeCallWrapper` ← libapp：Dart 帧在 `libapp.so`（无 `--split-debug-info`，release 包没有 Dart 符号），无法确认具体函数；与本 bug 同页同窗口，归同一现场，未单独立案。
+  - 未在真机复测（需要上千话的在线源 + 低端机）。
