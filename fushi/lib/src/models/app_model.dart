@@ -22,6 +22,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -148,7 +149,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
@@ -472,6 +473,8 @@ import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
@@ -10757,6 +10760,17 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
+  /// 「制卡到已配对设备」每台主机的「保存到」（hostId → 目标；没有条目 = 主机默认，§4.8）。
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      _prefsRepo?.mineToServerTargets ?? const <String, RemoteMiningTarget>{};
+  Map<String, String> get mineToServerTargetLabels =>
+      _prefsRepo?.mineToServerTargetLabels ?? const <String, String>{};
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
+
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
   // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
@@ -11707,10 +11721,23 @@ class AppModel with ChangeNotifier {
   /// 构造互联「制卡到服务端」的客户端发送器（供 [ankiRepositoryProvider] 在开关开启时包装
   /// [RemoteMiningAnkiRepository]）。复用与远程查词同一 keep-alive http client + 同一配对目标
   /// （enabled 的 FushiClientUrls），明文 http 候选走复用连接、https 带指纹候选走钉扎 client。
-  FushiRemoteMiningClient createRemoteMiningClient() {
+  ///
+  /// 卡落到主机的哪里（§4.8）：每台主机按用户的「保存到」，没选过 = 主机默认（带上本机当前 profile
+  /// 的 uid）。主机说所选的它没有时，这台主机的「保存到」退回主机默认，再交给 [onTargetUnavailable] 提示。
+  FushiRemoteMiningClient createRemoteMiningClient({
+    void Function(RemoteMiningTarget? landed)? onTargetUnavailable,
+  }) {
     return FushiRemoteMiningClient(
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
+      activeProfileUid: () async =>
+          _database.profileUidOf(await _database.resolveActiveProfileId()),
+      chosenTarget: (String hostId) => mineToServerTargets[hostId],
+      onTargetUnavailable: (String hostId, RemoteMiningTarget? landed) {
+        if (mineToServerTargets[hostId] == null) return;
+        unawaited(setMineToServerTarget(hostId, null));
+        onTargetUnavailable?.call(landed);
+      },
     );
   }
 

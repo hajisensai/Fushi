@@ -13,9 +13,14 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:drift/native.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1154,11 +1159,14 @@ void main() {
     ProviderContainer container({
       required bool srsEnabled,
       required SrsMiningTarget target,
+      bool mineToServer = false,
     }) {
       final ProviderContainer c = ProviderContainer(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(testPlatformServices()),
-          appProvider.overrideWith((Ref ref) => _TargetAppModel(target)),
+          appProvider.overrideWith(
+            (Ref ref) => _TargetAppModel(target, mineToServer: mineToServer),
+          ),
           srsModuleEnabledProvider.overrideWithValue(srsEnabled),
         ],
       );
@@ -1198,6 +1206,19 @@ void main() {
       );
     });
 
+    test('制卡到已配对设备：不套本机复习层，查重与落卡都交给主机（§4.8）', () {
+      final BaseAnkiRepository repo = container(
+        srsEnabled: true,
+        target: SrsMiningTarget.srs,
+        mineToServer: true,
+      ).read(ankiRepositoryProvider);
+      expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
+      expect(
+        ankiRepositoryChainLabel(repo),
+        contains('RemoteMiningAnkiRepository'),
+      );
+    });
+
     test('目标是 Anki：重排快照仍落在 Anki 的目录', () {
       final BaseAnkiRepository repo = container(
         srsEnabled: true,
@@ -1228,12 +1249,25 @@ void main() {
 }
 
 class _TargetAppModel extends AppModel {
-  _TargetAppModel(this._target) : super(testPlatformServices());
+  _TargetAppModel(this._target, {bool mineToServer = false})
+    : _mineToServer = mineToServer,
+      super(testPlatformServices());
 
   final SrsMiningTarget _target;
+  final bool _mineToServer;
 
   @override
   SrsMiningTarget get srsMiningTarget => _target;
+
+  @override
+  bool get mineToServerEnabled => _mineToServer;
+
+  @override
+  FushiRemoteMiningClient createRemoteMiningClient({
+    void Function(RemoteMiningTarget? landed)? onTargetUnavailable,
+  }) => FushiRemoteMiningClient(
+    repo: SyncRepository(FushiDatabase.forTesting(NativeDatabase.memory())),
+  );
 }
 
 /// 后端类型支持重排、但连着的那一端缺原生接口（新版 AnkiConnect 无
