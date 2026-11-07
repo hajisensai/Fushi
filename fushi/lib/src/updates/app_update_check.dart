@@ -97,9 +97,11 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
   }
 }
 
-/// 当前设置选中的更新通道（与 [UpdateChecker.scheduleCheck] 内的
-/// debug > beta > stable 优先级一致）。
+/// 当前生效的更新通道：安装方式绑定了通道（Flatpak 的 branch）时用它，否则用设置
+/// （与 [UpdateChecker.scheduleCheck] 内的 debug > beta > stable 优先级一致）。
 UpdateChannel appUpdateChannelOf(AppModel appModel) {
+  final UpdateChannel? installed = updaterForCurrentPlatform().installedChannel;
+  if (installed != null) return installed;
   if (appModel.updateDebugChannel) return UpdateChannel.debug;
   if (appModel.updateBetaChannel) return UpdateChannel.beta;
   return UpdateChannel.stable;

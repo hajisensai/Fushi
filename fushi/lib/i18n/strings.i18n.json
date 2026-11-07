@@ -9682,6 +9682,8 @@
   "update_download_source_unavailable": "$source is not available for this file; falling back to the automatic order",
   "update_download_speed": "Speed: $speed",
   "update_downloading": "Downloading update…",
+  "update_flatpak_needs_permissions": "This update needs new permissions. Update Fushi from your software center, or run: flatpak update app.fushi.reader",
+  "update_flatpak_not_published": "This version isn't in the Flatpak repository yet. Try again in a little while.",
   "update_hide": "Hide",
   "update_install_current_executable": "Running executable: $path",
   "update_install_deletefile_failure": "Installer failed to replace $path (code $code)",

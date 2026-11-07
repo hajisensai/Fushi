@@ -324,6 +324,8 @@ class UpdateChecker {
   }) async {
     final PlatformUpdater updater = updaterForCurrentPlatform();
     if (!updater.supportsUpdateCheck) return;
+    // Flatpak：通道由已安装的 branch 决定（portal 只能更新它），覆盖设置。
+    channel = updater.installedChannel ?? channel;
     final bool canInstall = updater.supportsInAppInstall;
     // 不能自装的平台忽略 autoInstall（无意义），但仍可「检查→打开发布页」。
     if (neverRemind && !(canInstall && autoInstall)) return;
@@ -1043,6 +1045,9 @@ class UpdateChecker {
     PlatformUpdater updater, {
     String customProxy = '',
   }) async {
+    if (updater is PackageManagedUpdater) {
+      return _runManagedInstall(context, version, updater);
+    }
     // 下载浮层 + 取消令牌（TODO-683/738）与互联远程触发共用同一个会话，见
     // [_UpdateDownloadSession]（update_checker_headless.dart）。
     final _UpdateDownloadSession session = _UpdateDownloadSession()
@@ -1123,6 +1128,41 @@ class UpdateChecker {
       // 取消路径已 close(force: true)，这里再 close() 幂等无害。
       cancellation.clearAbort();
       client?.close();
+      session.dispose();
+    }
+  }
+
+  /// 包管理器取回 + 部署（Flatpak），同一个下载浮层显示进度、「取消」停止等待；
+  /// 部署完成后启动新版并退出本进程。
+  static Future<void> _runManagedInstall(
+    BuildContext context,
+    String version,
+    PackageManagedUpdater updater,
+  ) async {
+    final _UpdateDownloadSession session = _UpdateDownloadSession()
+      ..showIn(Overlay.of(context));
+    try {
+      await updater.stage(
+        version,
+        onProgress: session.onProgress,
+        cancellation: session.cancellation,
+      );
+      session.status.value = t.update_installing;
+      await updater.restartIntoStagedUpdate(version);
+    } on UpdateDownloadCancelledException {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.update_cancelled)));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.managedInstall', e, stack);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          FushiSnackBar(content: Text(describeManagedInstallFailure(e))),
+        );
+      }
+    } finally {
       session.dispose();
     }
   }

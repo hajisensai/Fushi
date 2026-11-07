@@ -9682,6 +9682,8 @@
   "update_download_source_unavailable": "$source ใช้กับไฟล์นี้ไม่ได้ จึงกลับไปใช้ลำดับอัตโนมัติ",
   "update_download_speed": "ความเร็ว: $speed",
   "update_downloading": "กำลังดาวน์โหลดอัปเดต…",
+  "update_flatpak_needs_permissions": "This update needs new permissions. Update Fushi from your software center, or run: flatpak update app.fushi.reader",
+  "update_flatpak_not_published": "This version isn't in the Flatpak repository yet. Try again in a little while.",
   "update_hide": "ซ่อน",
   "update_install_current_executable": "โปรแกรมที่กำลังทำงาน: $path",
   "update_install_deletefile_failure": "ตัวติดตั้งแทนที่ $path ไม่ได้ (รหัส $code)",

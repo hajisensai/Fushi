@@ -165,6 +165,7 @@ abstract final class HeadlessUpdateFlow {
   }) async {
     final PlatformUpdater platformUpdater =
         updater ?? updaterForCurrentPlatform();
+    channel = platformUpdater.installedChannel ?? channel;
     final int? localSeq = currentReleaseSequence(
       version: currentVersion,
       buildNumber: currentBuildNumber,
@@ -241,6 +242,21 @@ abstract final class HeadlessUpdateFlow {
       () async {
         final _UpdateDownloadSession session = _UpdateDownloadSession();
         try {
+          if (updater is PackageManagedUpdater) {
+            if (overlay != null && overlay.mounted) session.showIn(overlay);
+            await updater.stage(
+              version,
+              onProgress: (double value) {
+                session.onProgress(value);
+                onProgress(value);
+              },
+              cancellation: session.cancellation,
+            );
+            session.status.value = t.update_installing;
+            onInstalling();
+            await updater.restartIntoStagedUpdate(version);
+            return;
+          }
           final File outFile = await _downloadInSession(
             session,
             asset: asset,

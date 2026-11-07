@@ -9682,6 +9682,8 @@
   "update_download_source_unavailable": "$source 不适用于该文件，已回退到自动顺序",
   "update_download_speed": "速度：$speed",
   "update_downloading": "正在下载更新…",
+  "update_flatpak_needs_permissions": "这次更新需要新权限。请在软件中心更新 Fushi，或运行：flatpak update app.fushi.reader",
+  "update_flatpak_not_published": "Flatpak 仓库里还没有这个版本，请稍后再试。",
   "update_hide": "隐藏",
   "update_install_current_executable": "当前运行程序：$path",
   "update_install_deletefile_failure": "安装器无法替换 $path（代码 $code）",

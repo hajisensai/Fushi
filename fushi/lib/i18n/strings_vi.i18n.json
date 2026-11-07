@@ -9682,6 +9682,8 @@
   "update_download_source_unavailable": "$source không khả dụng cho tệp này; đã quay lại thứ tự tự động",
   "update_download_speed": "Tốc độ: $speed",
   "update_downloading": "Đang tải bản cập nhật…",
+  "update_flatpak_needs_permissions": "This update needs new permissions. Update Fushi from your software center, or run: flatpak update app.fushi.reader",
+  "update_flatpak_not_published": "This version isn't in the Flatpak repository yet. Try again in a little while.",
   "update_hide": "Ẩn",
   "update_install_current_executable": "Chương trình đang chạy: $path",
   "update_install_deletefile_failure": "Trình cài đặt không thể thay thế $path (mã $code)",
