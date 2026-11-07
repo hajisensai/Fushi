@@ -11,6 +11,7 @@ import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -566,8 +567,12 @@ class ReaderSettings {
   Future<void> setMarginRight(double v) =>
       _set<double>('margin_right', normalizeMarginPercent(v));
 
-  int get pageColumns => _get<int>('page_columns', 0);
-  Future<void> setPageColumns(int v) => _set<int>('page_columns', v);
+  /// 单双页（[ReaderPageSpread]）。持久化键沿用旧「每页列数」的 `page_columns`
+  /// （冻结不改名）：0 = 自动、1 = 单页、≥ 2 = 双页（旧版的 3、4 栏读出来是双页）。
+  ReaderPageSpread get pageSpread =>
+      ReaderPageSpread.fromStored(_get<int>('page_columns', 0));
+  Future<void> setPageSpread(ReaderPageSpread v) =>
+      _set<int>('page_columns', v.storedValue);
 
   /// 「中缝折痕」显示风格：翻页模式一屏两栏时在两页之间画书脊阴影（见
   /// [ReaderContentStyles.pageCreaseCss]）。默认关：不改变既有书面观感。

@@ -35,8 +35,14 @@ class _FakeHost implements PageCurlHost {
   /// 宿主报告的纸面矩形（null = 整个视口）。不进 [calls]：生命周期断言不关心它。
   Rect? paper;
 
+  /// 双页时对面那一页（null = 单页）。
+  Rect? facing;
+
   @override
-  Future<Rect?> paperRect() async => paper;
+  Future<PageCurlPaper?> paperRect() async {
+    final Rect? rect = paper;
+    return rect == null ? null : PageCurlPaper(rect, facing: facing);
+  }
 
   @override
   Future<bool> previewNeighbour({required bool forward}) async {
@@ -492,6 +498,103 @@ void main() {
       expect(curl.geometry.paper, Offset.zero & _size);
       drag.cancel();
       await settleAnimation(tester);
+    });
+  });
+
+  group('two-page spread (only the outer page turns)', () {
+    test('pageCurlSpreadPaper splits the view at the spine', () {
+      const Size view = Size(1000, 600);
+      final PageCurlPaper? ltr = pageCurlSpreadPaper(
+        view: view,
+        spineX: 480,
+        mirror: false,
+      );
+      expect(ltr?.rect, const Rect.fromLTRB(480, 0, 1000, 600));
+      expect(ltr?.facing, const Rect.fromLTRB(0, 0, 480, 600));
+      expect(ltr?.spread, isTrue);
+      final PageCurlPaper? rtl = pageCurlSpreadPaper(
+        view: view,
+        spineX: 480,
+        mirror: true,
+      );
+      expect(rtl?.rect, const Rect.fromLTRB(0, 0, 480, 600));
+      expect(rtl?.facing, const Rect.fromLTRB(480, 0, 1000, 600));
+      expect(
+        pageCurlSpreadPaper(view: view, spineX: 0, mirror: false),
+        isNull,
+        reason: '中缝不在视口内就按单页卷整个视口',
+      );
+      expect(
+        pageCurlSpreadPaper(view: Size.zero, spineX: 10, mirror: false),
+        isNull,
+      );
+    });
+
+    testWidgets('forward: curls the right page around the spine and captures '
+        'the next spread as the back of the sheet', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)
+        ..paper = const Rect.fromLTRB(200, 0, 400, 800)
+        ..facing = const Rect.fromLTRB(0, 0, 200, 800);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      unawaited(curl.turn(size: _size, forward: true, mirror: false));
+      await settlePrepare(tester);
+      // 截当前跨页 → 预览下一跨页 → 等绘制 → 再截一张当纸背。
+      expect(host.calls.take(4).toList(), <String>[
+        'capture',
+        'preview:f',
+        'paint',
+        'capture',
+      ]);
+      expect(curl.back, isNotNull);
+      expect(curl.geometry.paper, const Rect.fromLTRB(200, 0, 400, 800));
+      expect(curl.geometry.facing, const Rect.fromLTRB(0, 0, 200, 800));
+      // 纸面局部：书脊在 x = 0（中缝），拎起的角在纸面宽（外侧页的外缘）。
+      expect(curl.geometry.corner, const Offset(200, 800));
+      await settleAnimation(tester);
+      expect(host.calls, contains('commit:f'));
+      expect(curl.visible, isFalse);
+    });
+
+    testWidgets('backward: the back of the sheet is the current spread', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image)
+        ..paper = const Rect.fromLTRB(200, 0, 400, 800)
+        ..facing = const Rect.fromLTRB(0, 0, 200, 800);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      unawaited(curl.turn(size: _size, forward: false, mirror: false));
+      await settlePrepare(tester);
+      expect(host.calls.take(4).toList(), <String>[
+        'capture',
+        'preview:b',
+        'paint',
+        'capture',
+      ]);
+      expect(curl.back, isNotNull);
+      expect(identical(curl.back, curl.base), isTrue);
+      await settleAnimation(tester);
+      expect(host.calls, contains('commit:b'));
+    });
+
+    testWidgets('single page never takes the extra capture', (
+      WidgetTester tester,
+    ) async {
+      final _FakeHost host = _FakeHost(image);
+      final PageCurlController curl = controllerFor(host);
+      addTearDown(curl.dispose);
+
+      unawaited(curl.turn(size: _size, forward: true, mirror: false));
+      await settlePrepare(tester);
+      expect(curl.back, isNull);
+      expect(curl.geometry.facing, isNull);
+      await settleAnimation(tester);
+      expect(host.calls.where((String c) => c == 'capture').length, 1);
     });
   });
 
