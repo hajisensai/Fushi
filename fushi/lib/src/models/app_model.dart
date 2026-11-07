@@ -261,7 +261,7 @@ import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart'
-    show kEmbeddedTorrentFastResumeDirName;
+    show kEmbeddedTorrentFastResumeDirName, kEmbeddedTorrentFastResumeExtension;
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -335,6 +335,10 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinato
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart'
+    show
+        VideoFilenameOrganizeService,
+        videoFilenameOrganizeShouldConsultBackend;
 import 'package:fushi_engine/media/video/video_path_migration.dart'
     show DownloadRelocation;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -7860,6 +7864,56 @@ class AppModel with ChangeNotifier {
         applyRelocation: (DownloadRelocation relocation) =>
             VideoBookRepository(database).applyDownloadRelocation(relocation),
       );
+
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名，做种的文件
+  /// 走同一个下载后端（[_torrentBackendFor]）在引擎侧改名，路径映射与
+  /// [downloadRelocateService] 同一份契约。确定不可能有种子时不接后端（判据见
+  /// [videoFilenameOrganizeShouldConsultBackend]：商店合规无下载中心、内置引擎
+  /// 一个种子都没有、外接 qb 没配地址）。
+  VideoFilenameOrganizeService get videoFilenameOrganizeService {
+    final QbConnectionConfig config = effectiveTorrentConfig(
+      prefsRepo.qbConnectionConfig,
+    );
+    final bool consult = videoFilenameOrganizeShouldConsultBackend(
+      downloadsAvailable: StoreRestrictedCapability.downloads.isAvailable,
+      embeddedSelected:
+          config.resolveBackend(
+            embeddedSupported: _supportsEmbeddedTorrent(),
+          ) ==
+          QbConnectionConfig.backendEmbedded,
+      embeddedSessionAlive: _embeddedTorrentHost != null,
+      embeddedHasResumeFiles: _embeddedTorrentHasResumeFiles(),
+      qbBaseUrl: config.baseUrl,
+    );
+    return VideoFilenameOrganizeService(
+      database: database,
+      backendFactory: consult ? () => _torrentBackendFor(config) : null,
+      pathMappings: () async {
+        final VideoDownloadBackendIdentity identity =
+            await _currentVideoDownloadBackendIdentity(
+              effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+            );
+        return downloadPathMappingsForProfile(identity.profileId);
+      },
+    );
+  }
+
+  /// 内置引擎的 fast-resume 目录里有没有种子（同步、只看文件名，不建 session）。
+  bool _embeddedTorrentHasResumeFiles() {
+    final String? resumeDir = _embeddedTorrentResumeDir;
+    if (resumeDir == null) return false;
+    try {
+      return Directory(resumeDir)
+          .listSync(followLinks: false)
+          .any(
+            (FileSystemEntity e) =>
+                e is File &&
+                e.path.endsWith(kEmbeddedTorrentFastResumeExtension),
+          );
+    } on FileSystemException {
+      return false;
+    }
+  }
 
   /// 后端配置档 [profileId]（任务行 `backendProfileId`）的显式下载路径映射。
   /// 任务的后端坐标只能用它**自己那台后端**的映射解释，不能用当前设置的。

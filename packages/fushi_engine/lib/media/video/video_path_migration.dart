@@ -15,6 +15,8 @@
 /// 出错也最该被单测钉死的部分。IO 留给仓库层。
 library;
 
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 
 /// 内嵌字幕轨哨兵前缀（`embedded:<n>`）——不是路径，绝不能当路径重写。
@@ -103,6 +105,55 @@ VideoPathRemap remapVideoBookPaths({
     subtitleSource: moved.newPathFor(subtitleSource),
     secondarySubtitleSource: moved.newPathFor(secondarySubtitleSource),
   );
+}
+
+/// 多集播放列表书（`playlistJson` = `[{title,path,positionMs}]`）在 [moved] 下的
+/// 新 JSON；没有任何一集被搬走（或 JSON 读不懂）返回 null = 这列不动。
+///
+/// 只改命中集的 `path`，其余键（`positionMs` 各集进度、将来新增的字段）原样
+/// 保留——播放列表的进度就存在这里，重写整条会把它们抹掉。
+String? remapPlaylistJson(String? playlistJson, MovedMediaFiles moved) {
+  if (playlistJson == null || playlistJson.trim().isEmpty || moved.isEmpty) {
+    return null;
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(playlistJson);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! List<Object?>) return null;
+  bool changed = false;
+  final List<Object?> next = <Object?>[];
+  for (final Object? entry in decoded) {
+    final Object? path = entry is Map<String, Object?> ? entry['path'] : null;
+    final String? newPath = path is String ? moved.newPathFor(path) : null;
+    if (newPath == null) {
+      next.add(entry);
+      continue;
+    }
+    changed = true;
+    next.add(<String, Object?>{
+      ...entry! as Map<String, Object?>,
+      'path': newPath,
+    });
+  }
+  return changed ? jsonEncode(next) : null;
+}
+
+/// 下载后端里一个文件的改名回执（种子 [infoHash] 的第 [fileIndex] 个文件，新的
+/// 种子内相对路径 [newRelativePath]，POSIX `/`）。库侧据此改任务文件行的
+/// `current_relative_path`，否则任务删除 / 打开位置会拼出旧名。
+class TorrentFileRenameRecord {
+  const TorrentFileRenameRecord({
+    required this.infoHash,
+    required this.fileIndex,
+    required this.newRelativePath,
+  });
+
+  final String infoHash;
+  final int fileIndex;
+  final String newRelativePath;
 }
 
 /// 一次下载改名 / 移动在引擎侧**已经成功**之后，库与下载任务表要落的全部变化。

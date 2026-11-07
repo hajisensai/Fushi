@@ -127,6 +127,7 @@ import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_filename_organize_dialog.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -4534,6 +4535,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_rescrapeVideo(book));
+            },
+          ),
+        // 「整理文件名」（ZDYNkAP3Ln）：按刮削资料改磁盘文件名。门只挡「本机根本
+        // 没有文件」的条目；未刮削 / 已是规范名由计划判出、给明确提示。
+        if (videoBookHasLocalFiles(book))
+          DialogListAction(
+            label: t.video_filename_organize_action,
+            icon: Icons.drive_file_rename_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_organizeVideoFilenames(<String>[book.bookUid]));
             },
           ),
       ],
@@ -9796,6 +9808,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () => _rescrapeCollection(collection),
           ),
         DialogListAction(
+          label: t.video_filename_organize_action,
+          icon: Icons.drive_file_rename_outline,
+          onPressed: () => _organizeCollectionFilenames(collection),
+        ),
+        DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           group: DialogActionGroup.content,
@@ -9877,6 +9894,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collection.id,
     );
     _refresh();
+  }
+
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名（及同名字幕 /
+  /// 元数据），做种的文件走下载引擎改名；预览、做种联动查不清时的提示、撤销都在
+  /// [runVideoFilenameOrganize]。
+  Future<void> _organizeVideoFilenames(List<String> bookUids) async {
+    if (bookUids.isEmpty || !mounted) return;
+    await runVideoFilenameOrganize(
+      context,
+      service: ref.read(appProvider).videoFilenameOrganizeService,
+      bookUids: bookUids,
+      onLibraryChanged: () async {
+        if (mounted) _refresh();
+      },
+    );
+  }
+
+  /// 合集整体「整理文件名」：成员里的视频一次预览、一次确认。
+  Future<void> _organizeCollectionFilenames(
+    MediaCollectionRow collection,
+  ) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final List<String> uids = <String>[
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(
+        collection.id,
+      ))
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+    ];
+    await _organizeVideoFilenames(uids);
   }
 
   /// 合集右键「重新刮削资料与封面」：手动指定作品身份 → 走 canonical 来源刮削
