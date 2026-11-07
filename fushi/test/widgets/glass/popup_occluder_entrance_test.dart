@@ -70,7 +70,7 @@ class _HostState extends State<_Host> {
 
 /// 下层里「真的在挖洞」的 [ClipPath]：有 clipper 且推裁剪层。
 ///
-/// [PopupOccluderClip] 恒包一层 [ClipPath]（BUG-4222 / 5hnsRtTrQj：平台视图上方的
+/// [PopupOccluderClip] 恒包一层 [ClipPath]（BUG-4226 / 5hnsRtTrQj：平台视图上方的
 /// 祖先结构必须恒定），不裁时 clipper 为 null + [Clip.none]——绘制直接 paintChild、
 /// 命中不受限，等于没有这一层。所以「被挖洞」判的是这层是否生效，不是它在不在。
 Finder _lowerClip() => find.descendant(

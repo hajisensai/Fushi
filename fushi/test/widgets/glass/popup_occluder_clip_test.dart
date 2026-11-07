@@ -68,7 +68,7 @@ void main() {
       TargetPlatform.android,
     ]) {
       await tester.pumpWidget(host(p));
-      // ClipPath 恒在（祖先结构恒定，BUG-4222），但不裁：无 clipper、不推裁剪层。
+      // ClipPath 恒在（祖先结构恒定，BUG-4226），但不裁：无 clipper、不推裁剪层。
       final ClipPath clip = tester.widget<ClipPath>(find.byType(ClipPath));
       expect(clip.clipper, isNull, reason: '$p');
       expect(clip.clipBehavior, Clip.none, reason: '$p');

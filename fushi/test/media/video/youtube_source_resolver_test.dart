@@ -47,9 +47,9 @@ void main() {
     });
   });
 
-  // BUG-4224：真实 timedtext XML 是双重转义的（2026-11-06 抓 dQw4w9WgXcQ 的 en 轨：
+  // BUG-4228：真实 timedtext XML 是双重转义的（2026-11-06 抓 dQw4w9WgXcQ 的 en 轨：
   // `We&amp;#39;re`）。只解一层时内置播放器显示 `We&#39;re`；扩展走 json3 不受影响。
-  group('parseYoutubeTimedTextToCues double-escaped entities (BUG-4224)', () {
+  group('parseYoutubeTimedTextToCues double-escaped entities (BUG-4228)', () {
     test('format 3 <p>: &amp;#39; → apostrophe', () {
       const xml =
           '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>'
