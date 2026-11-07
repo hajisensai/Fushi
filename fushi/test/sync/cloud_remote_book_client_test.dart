@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
+import 'package:fushi_core/fushi_core.dart' show BookFormat;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -290,14 +292,27 @@ void main() {
     );
 
     test(
-      'a folder holding only a manga package `.manga.zip` has content',
+      'BUG-4223: a `.manga.zip` folder is listed as manga content, not EPUB',
       () async {
         // 所有者 2026-10-21：漫画包改传 `<title>.manga.zip`。内容探针不认它的话，
-        // 新版上传的漫画在书架「远端」里整本消失。
+        // 新版上传的漫画在书架「远端」里整本消失；认了却只给 hasContent=true、
+        // format 缺省 epub 的话，漫画占位卡全落进书籍书架（反馈 ecNgkRQcTk）。
+        // 分键契约与互联 host 一致：漫画 = format manga + hasMangaContent，
+        // hasContent（EPUB 内容树）保持 false。
         final backend = _ControllableSyncBackend(
-          folders: <SyncFileRef>[SyncFileRef(id: 'fid_m', name: 'Manga M')],
+          folders: <SyncFileRef>[
+            SyncFileRef(id: 'fid_m', name: 'Manga M'),
+            SyncFileRef(id: 'fid_e', name: 'Book E'),
+            SyncFileRef(id: 'fid_both', name: 'Manga Both'),
+          ],
           childrenByFolder: <String, List<AssetEntry>>{
             'fid_m': <AssetEntry>[_epub('asset_m', 'Manga M.manga.zip')],
+            'fid_e': <AssetEntry>[_epub('asset_e', 'Book E.epub')],
+            // 新旧名并存时与下载同一判据：取新名 `.manga.zip`。
+            'fid_both': <AssetEntry>[
+              _epub('legacy', 'Manga Both.epub'),
+              _epub('new', 'Manga Both.MANGA.ZIP'),
+            ],
           },
         );
         final client = CloudRemoteBookClient(
@@ -306,8 +321,60 @@ void main() {
           backendType: SyncBackendType.webDav,
         );
 
-        final List<RemoteBookInfo> books = await client.listRemoteBooks();
-        expect(books.single.hasContent, isTrue);
+        final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
+          for (final RemoteBookInfo b in await client.listRemoteBooks())
+            b.title: b,
+        };
+        for (final String manga in <String>['Manga M', 'Manga Both']) {
+          final RemoteBookInfo m = byTitle[manga]!;
+          expect(m.format, BookFormat.manga.dbValue, reason: manga);
+          expect(m.hasMangaContent, isTrue, reason: manga);
+          expect(m.hasContent, isFalse, reason: manga);
+        }
+        final RemoteBookInfo e = byTitle['Book E']!;
+        expect(e.format, BookFormat.epub.dbValue);
+        expect(e.hasContent, isTrue);
+        expect(e.hasMangaContent, isFalse);
+      },
+    );
+
+    test(
+      'ecNgkRQcTk: a legacy `<title>.epub` manga package with the format '
+      'marker is listed as manga; without the marker it stays EPUB',
+      () async {
+        // 旧版本把漫画包传成 `<title>.epub`。持有这本漫画的设备补写
+        // `manga_content.json` 标记后，远端清单必须把它归漫画书架，而不是留在书籍下。
+        final backend = _ControllableSyncBackend(
+          folders: <SyncFileRef>[
+            SyncFileRef(id: 'fid_legacy', name: 'Legacy Manga'),
+            SyncFileRef(id: 'fid_plain', name: 'Plain Epub'),
+          ],
+          childrenByFolder: <String, List<AssetEntry>>{
+            'fid_legacy': <AssetEntry>[
+              _epub('legacy_pkg', 'Legacy Manga.epub'),
+              _epub('marker', kCloudLegacyMangaMarkerAssetName),
+            ],
+            'fid_plain': <AssetEntry>[_epub('plain', 'Plain Epub.epub')],
+          },
+        );
+        final client = CloudRemoteBookClient(
+          backend: backend,
+          rootFolderId: 'root',
+          backendType: SyncBackendType.webDav,
+        );
+
+        final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
+          for (final RemoteBookInfo b in await client.listRemoteBooks())
+            b.title: b,
+        };
+        final RemoteBookInfo m = byTitle['Legacy Manga']!;
+        expect(m.format, BookFormat.manga.dbValue);
+        expect(m.hasMangaContent, isTrue);
+        expect(m.hasContent, isFalse);
+        final RemoteBookInfo e = byTitle['Plain Epub']!;
+        expect(e.format, BookFormat.epub.dbValue);
+        expect(e.hasContent, isTrue);
+        expect(e.hasMangaContent, isFalse);
       },
     );
 
