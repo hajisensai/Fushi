@@ -70,6 +70,37 @@ void main() {
     expect(b.p2pRelays, a.p2pRelays);
   });
 
+  test('简繁互查 lookup_chinese_script_variants：默认关（与 app 一致），往返一致', () {
+    final ServerConfig defaults = ServerConfig.parse(
+      'port: 1\n',
+      configDir: '/etc/fushi',
+    );
+    expect(defaults.lookupChineseScriptVariants, isFalse);
+    expect(
+      ServerConfig.defaults(dataDir: '/srv/d').lookupChineseScriptVariants,
+      isFalse,
+    );
+
+    final ServerConfig on = ServerConfig.defaults(
+      dataDir: '/srv/d',
+    ).copyWith(lookupChineseScriptVariants: true);
+    expect(on.toYaml(), contains('lookup_chinese_script_variants: true'));
+    expect(
+      ServerConfig.parse(
+        on.toYaml(),
+        configDir: '/etc/fushi',
+      ).lookupChineseScriptVariants,
+      isTrue,
+    );
+    expect(
+      ServerConfig.parse(
+        'lookup_chinese_script_variants: true\n',
+        configDir: '/etc/fushi',
+      ).lookupChineseScriptVariants,
+      isTrue,
+    );
+  });
+
   test('缺项取默认，相对 data_dir 按配置目录解析', () {
     final ServerConfig c = ServerConfig.parse(
       'port: 1234\n',
