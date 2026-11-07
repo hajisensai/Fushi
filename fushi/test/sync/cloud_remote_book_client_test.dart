@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi_core/fushi_core.dart' show BookFormat;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -331,6 +332,46 @@ void main() {
           expect(m.hasContent, isFalse, reason: manga);
         }
         final RemoteBookInfo e = byTitle['Book E']!;
+        expect(e.format, BookFormat.epub.dbValue);
+        expect(e.hasContent, isTrue);
+        expect(e.hasMangaContent, isFalse);
+      },
+    );
+
+    test(
+      'ecNgkRQcTk: a legacy `<title>.epub` manga package with the format '
+      'marker is listed as manga; without the marker it stays EPUB',
+      () async {
+        // 旧版本把漫画包传成 `<title>.epub`。持有这本漫画的设备补写
+        // `manga_content.json` 标记后，远端清单必须把它归漫画书架，而不是留在书籍下。
+        final backend = _ControllableSyncBackend(
+          folders: <SyncFileRef>[
+            SyncFileRef(id: 'fid_legacy', name: 'Legacy Manga'),
+            SyncFileRef(id: 'fid_plain', name: 'Plain Epub'),
+          ],
+          childrenByFolder: <String, List<AssetEntry>>{
+            'fid_legacy': <AssetEntry>[
+              _epub('legacy_pkg', 'Legacy Manga.epub'),
+              _epub('marker', kCloudLegacyMangaMarkerAssetName),
+            ],
+            'fid_plain': <AssetEntry>[_epub('plain', 'Plain Epub.epub')],
+          },
+        );
+        final client = CloudRemoteBookClient(
+          backend: backend,
+          rootFolderId: 'root',
+          backendType: SyncBackendType.webDav,
+        );
+
+        final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
+          for (final RemoteBookInfo b in await client.listRemoteBooks())
+            b.title: b,
+        };
+        final RemoteBookInfo m = byTitle['Legacy Manga']!;
+        expect(m.format, BookFormat.manga.dbValue);
+        expect(m.hasMangaContent, isTrue);
+        expect(m.hasContent, isFalse);
+        final RemoteBookInfo e = byTitle['Plain Epub']!;
         expect(e.format, BookFormat.epub.dbValue);
         expect(e.hasContent, isTrue);
         expect(e.hasMangaContent, isFalse);
