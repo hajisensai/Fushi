@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
+import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
@@ -226,6 +229,81 @@ void main() {
         modified.nativeFallback?.code,
         SrsCardNativeFallbackCode.cssModified,
       );
+    });
+  });
+
+  // apkg 导入（定稿方案第 0 步之外补的路径）：导入在 update 模式下把包里的 CSS / 模板整段写成
+  // 修改记录。本版本导出的包、以及带着冻住旧版本的包，导入后卡都得仍走原生（或原因可见）。
+  group('apkg 导入', () {
+    int t = DateTime.utc(2026, 11, 7, 13).millisecondsSinceEpoch;
+
+    Future<SrsRenderedCard> firstCard(SrsDbStore s) async {
+      final String note = (await s.noteIdsOfType(s.fushiCardNoteTypeId)).first;
+      final SrsCardCacheRow card = (await s.cardsOfNote(note)).first;
+      return (await s.renderCard(card.id))!;
+    }
+
+    Future<SrsRenderedCard> roundTrip({required bool frozenOld}) async {
+      final SrsDbStore a = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'export',
+        now: () => t++,
+      );
+      await a.createNote(
+        noteTypeId: a.fushiCardNoteTypeId,
+        fieldsById: <String, String>{
+          srsFushiCardFieldId(kProfile, 'Expression'): '免許',
+          srsFushiCardFieldId(kProfile, 'MainDefinition'):
+              '<ol><li>licence</li></ol>',
+        },
+      );
+      if (frozenOld) {
+        final SrsNoteTypeView type = (await a.noteType(a.fushiCardNoteTypeId))!;
+        final Map<String, String> nameToId = <String, String>{
+          for (final SrsFieldDef f in type.fields) f.name: f.id,
+        };
+        await a.saveTemplateEdits(
+          type.id,
+          type.templates.single.id,
+          front: templateNamesToIds(oldFront, nameToId),
+          back: templateNamesToIds(oldBack, nameToId),
+          css: oldCss,
+        );
+      }
+      final Uint8List pkg = await exportAnkiPackage(store: a);
+      final SrsDbStore b = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'import',
+        now: () => t++,
+      );
+      await importAnkiPackage(
+        store: b,
+        bytes: pkg,
+        storeMedia: (String name, Uint8List bytes) async => name,
+        options: const SrsAnkiImportOptions(
+          mergeNoteTypes: true,
+          updateNotes: SrsImportUpdateCondition.always,
+          updateNoteTypes: SrsImportUpdateCondition.always,
+        ),
+      );
+      final SrsNoteTypeView imported = (await b.noteType(
+        b.fushiCardNoteTypeId,
+      ))!;
+      // 冻住的旧版本确实随导入落进了这台设备（走的是 update 模式整段写入那条路）。
+      expect(fushiCardCssIsDefault(imported.css), !frozenOld);
+      return firstCard(b);
+    }
+
+    test('导入本版本导出的 Fushi 卡片包：仍走原生', () async {
+      final SrsRenderedCard r = await roundTrip(frozenOld: false);
+      expect(r.nativeFallback, isNull);
+      expect(r.fushiCardDefinitions, contains('licence'));
+    });
+
+    test('导入带冻住旧版内置模板的包：仍走原生', () async {
+      final SrsRenderedCard r = await roundTrip(frozenOld: true);
+      expect(r.nativeFallback, isNull);
+      expect(r.fushiCardDefinitions, contains('licence'));
     });
   });
 }
