@@ -460,11 +460,16 @@ jobs:
         env:
           VERSION: ${{ needs.channel.outputs.version }}
           SEQ: ${{ needs.channel.outputs.release_sequence }}
+          TAG: ${{ needs.channel.outputs.tag }}
+          PRERELEASE: ${{ needs.channel.outputs.prerelease }}
         run: |
           set -euo pipefail
           mkdir -p build/release-artifacts stage
           cp -a build/fushi_server_linux/bundle stage/fushi_server
           cp packages/fushi_server/README.md stage/fushi_server/README.md
+          # 版本身份：互联远程自更新据此判新旧（server_release.dart）；没有它 = 不是发布包。
+          CHANNEL=formal; [ "$PRERELEASE" = "true" ] && CHANNEL=beta
+          printf '{"version":"%s","sequence":%s,"tag":"%s","channel":"%s"}\n' "$VERSION" "$SEQ" "$TAG" "$CHANNEL" > stage/fushi_server/release.json
           tar -C stage -czf "build/release-artifacts/fushi_server-${VERSION}-${SEQ}-linux-x64.tar.gz" fushi_server
           ls -la build/release-artifacts
       - uses: actions/upload-artifact@v7
@@ -704,10 +709,16 @@ jobs:
         env:
           VERSION: ${{ needs.channel.outputs.version }}
           SEQ: ${{ needs.channel.outputs.release_sequence }}
+          TAG: ${{ needs.channel.outputs.tag }}
+          PRERELEASE: ${{ needs.channel.outputs.prerelease }}
         run: |
           New-Item -ItemType Directory -Force build/release-artifacts, stage | Out-Null
           Copy-Item build/fushi_server_win/bundle stage/fushi_server -Recurse -Force
           Copy-Item packages/fushi_server/README.md stage/fushi_server/README.md -Force
+          # 版本身份：互联远程自更新据此判新旧（server_release.dart）；没有它 = 不是发布包。
+          $channel = if ($env:PRERELEASE -eq 'true') { 'beta' } else { 'formal' }
+          [ordered]@{ version = $env:VERSION; sequence = [int]$env:SEQ; tag = $env:TAG; channel = $channel } |
+            ConvertTo-Json -Compress | Set-Content -Encoding utf8NoBOM stage/fushi_server/release.json
           Compress-Archive -Path stage/fushi_server -DestinationPath "build/release-artifacts/fushi_server-$env:VERSION-$env:SEQ-windows-x64.zip" -Force
           Get-ChildItem build/release-artifacts
       - uses: actions/upload-artifact@v7
