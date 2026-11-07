@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 
 void main() {

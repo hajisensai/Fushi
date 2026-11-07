@@ -86,6 +86,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -127,15 +128,22 @@ String _selectedThreadPreview(
   return '';
 }
 
-/// 文本处理编辑器的样例行：所选线程的 native 预览行。
+/// 文本处理编辑器的样例行。
 ///
-/// 刻意**不以已发布台词（`latestText`）为首选**——那已经是管线处理**之后**的结果，拿它当
-/// 样例等于把管线套两遍，预览会和真实入库文本对不上。native 预览行不受线程选择门控、也不
-/// 经管线，是这里唯一的原文来源；它拿不到时才回落已发布台词。
+/// 首选 [processInput]：产出**当前字幕**那一行的管线输入原文
+/// （`GalHookSessionController.selectedLineProcessInput`）。选定线程的 native 预览槽只是
+/// 该线程自己最近一次 Output，而字幕吃的还可能是同 hook 面兄弟线程的行、或渐进折叠后
+/// 留下的更长旧快照——拿预览槽当样例，预览「正常」而字幕是另一份输入的结果（BUG-4029）。
+///
+/// 还没有经管线入库的字幕行时才回落 native 预览行，再回落已发布台词。刻意**不以已发布
+/// 台词（`latestText`）为首选**——那已经是管线处理**之后**的结果，拿它当样例等于把管线
+/// 套两遍。
 String _selectedThreadSample(
   List<TexthookerTextThread> threads,
-  String? selectedKey,
-) {
+  String? selectedKey, {
+  String? processInput,
+}) {
+  if (processInput != null && processInput.isNotEmpty) return processInput;
   if (selectedKey == null) return '';
   for (final TexthookerTextThread thread in threads) {
     if (thread.key == selectedKey) {
@@ -272,7 +280,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
-    if (line.audioBackend == 'game_resource') {
+    final GalLineTrackView view = galLineTrackViewFor(
+      line,
+      _session.state.audioBackend,
+    );
+    if (view == GalLineTrackView.resourceUnpaired) {
+      // BUG-4206 审查：资源模式下还没有原件的行（匹配中 / 无原件）。PCM 轨与它无关，
+      // 也没有可试听的字节：只说明资源模式与这句当前状态，不给播放键、不列轨。
+      await showAppDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) =>
+            GalResourceUnpairedLineTrackDialog(line: line),
+      );
+      return;
+    }
+    if (view == GalLineTrackView.resourceAudio) {
+      // BUG-4206：只有真配上了原件（matched / encoded）才走这里；还在「匹配中」的
+      // 行没有任何资源字节，弹这个带播放键的窗口只会让用户点了没声音。
       // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
       // -1.0、"这句时刻没有声音"）。列 PCM 轨只会被读成「音频没抓到」，所以这里
       // 只展示本句真正的资源音频并给试听；文案与右侧面板
@@ -2787,6 +2811,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           latestSample: () => _selectedThreadSample(
             _session.textThreads,
             selectedTextThreadKey,
+            processInput: _session.selectedLineProcessInput,
           ),
           resolveAiProvider: _resolveTextProcessAiProvider,
           aiEnabled: isAiModuleEnabled(_appModel.moduleVisibility),
@@ -3668,9 +3693,8 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     const SizedBox(height: 10),
                     _MetadataRow(
                       label: t.game_health_audio,
-                      value:
-                          line.audioBackend ??
-                          texthookerLineAudioStatusLabel(line.audioStatus),
+                      // BUG-4206：匹配中 / 未匹配的行报状态，不报 backend。
+                      value: texthookerLineAudioSummary(line),
                     ),
                     if (line.audioDurationMs != null)
                       _MetadataRow(
@@ -3819,8 +3843,7 @@ class _SelectedLineBar extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    line.audioBackend ??
-                        texthookerLineAudioStatusLabel(line.audioStatus),
+                    texthookerLineAudioSummary(line),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -4293,13 +4316,16 @@ class _TexthookerLine extends ConsumerWidget {
             colors: colors,
             onCharTap: onCharTap,
           ),
-          if (line.audioBackend != null ||
+          // BUG-4206：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
+          // 不报来源（否则一句还没配上的台词会顶着 game_resource 字样）。
+          if ((line.hasAudio && line.audioBackend != null) ||
               line.audioResourceId != null ||
               line.fallbackReason != null) ...<Widget>[
             const SizedBox(height: 6),
             Text(
               <String>[
-                if (line.audioBackend != null) line.audioBackend!,
+                if (line.hasAudio && line.audioBackend != null)
+                  line.audioBackend!,
                 if (line.audioResourceId != null) line.audioResourceId!,
                 if (line.audioDurationMs != null)
                   '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
@@ -4474,6 +4500,14 @@ class _LineAudioChip extends StatelessWidget {
     }
     // 「已按干净源策略抑制」绝不能和「无配音」共用灰标：前者是「没证据」，后者是
     // 「有证据判定没配音」。混成一句会让用户以为游戏这句本来就没语音。
+    // 资源模式越过配对容差仍没有原件：中性「无原件」+ 悬停说明，不是红色故障。
+    if (status == TexthookerLineAudioStatus.missing &&
+        fallbackReason == kGalResourceNotPairedReason) {
+      return FushiTooltip(
+        message: t.game_line_audio_not_paired_hint,
+        child: _chip(t.game_line_audio_not_paired, FushiTagTone.neutral),
+      );
+    }
     if (status == TexthookerLineAudioStatus.missing &&
         fallbackReason == kGalCleanSourceSuppressedReason) {
       return FushiTooltip(
@@ -4642,3 +4676,41 @@ class _CharSpan extends StatelessWidget {
 
 /// 列表头「特殊码」菜单的动作。
 enum _HookCodeAction { paste, save, import, export }
+
+/// 资源模式下尚未配上原件的行的「本句音轨」对话框（BUG-4206 审查）。
+///
+/// 这句没有任何资源字节，PCM 轨又与资源模式无关：只说明资源模式（与右侧面板
+/// [GalTrackEmptyHint.resourceMode] 同一句）和这句当前状态（匹配中 / 无原件 …），
+/// 不给试听键、不列 PCM 轨。
+class GalResourceUnpairedLineTrackDialog extends StatelessWidget {
+  const GalResourceUnpairedLineTrackDialog({required this.line, super.key});
+
+  final TexthookerLineEntry line;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool notPaired =
+        line.audioStatus == TexthookerLineAudioStatus.missing &&
+        line.fallbackReason == kGalResourceNotPairedReason;
+    return FushiSimpleDialog(
+      title: Text(t.game_line_track_dialog_title),
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+          child: Text(
+            t.game_tracks_resource_mode_hint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        FushiListItem(
+          leading: FushiIcon(
+            notPaired ? FushiIcons.volumeOff : FushiIcons.pending,
+          ),
+          title: Text(texthookerLineAudioSummary(line)),
+          subtitle: notPaired ? Text(t.game_line_audio_not_paired_hint) : null,
+          subtitleMaxLines: 4,
+        ),
+      ],
+    );
+  }
+}

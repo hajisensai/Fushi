@@ -4,12 +4,18 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/screen_ocr_lens_engine.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/sync/game_stream_host.dart';
@@ -110,6 +116,7 @@ class FushiSyncServerController extends ChangeNotifier {
     InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
     SrsRemoteStoreService? Function()? srsRemoteStore,
     PrefStore Function()? prefsStore,
+    AiSettingsSource Function()? aiRelaySettings,
     PlatformDeviceInfoService? deviceInfo,
   }) : _navigatorKey = navigatorKey,
        _database = database,
@@ -134,6 +141,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _leaderboardLinkHost = leaderboardLinkHost,
        _srsRemoteStore = srsRemoteStore,
        _prefsStore = prefsStore,
+       _aiRelaySettings = aiRelaySettings,
        // Headless/test construction without an injected service falls back to
        // the desktop (machine-hostname) source; production wires the real
        // per-platform service so mobile hosts advertise their model, not
@@ -193,6 +201,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
   final PrefStore Function()? _prefsStore;
+
+  /// 「互联主机」AI 提供商的主机侧：已配对设备用本机的 AI 提供商（key 不出本机）。
+  /// 开关由引擎按请求现读 [_prefsStore]。null（单测 / 老调用方）= 端点 404。
+  final AiSettingsSource Function()? _aiRelaySettings;
   final PlatformDeviceInfoService _deviceInfo;
 
   FushiSyncServer? _server;
@@ -799,6 +811,8 @@ class FushiSyncServerController extends ChangeNotifier {
             // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
             // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
             mangaOcrJobs: _buildMangaOcrJobManager(),
+            // 截屏识字（Steam Deck 游戏内识字插件把截图交给这台 host）：同一个 OCR 服务。
+            screenOcr: _buildScreenOcrHost(),
             // 通用任务 / 代下载 / 订阅：与无头 fushi_server 同一份引擎路由，只是实现
             // 挂在 app 自己的管线上（见 app_download_host.dart）。
             hostJobs: hostJobs,
@@ -851,7 +865,9 @@ class FushiSyncServerController extends ChangeNotifier {
           // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
           ..leaderboardLinkHost = _leaderboardLinkHost?.call()
           // 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）。
-          ..srsRemoteStoreProvider = _srsRemoteStore;
+          ..srsRemoteStoreProvider = _srsRemoteStore
+          // 「互联主机」AI 提供商（反馈 M8KvhMTHVS）：每个请求现取本机 AI 设置。
+          ..aiRelaySettings = _aiRelaySettings;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
@@ -898,6 +914,55 @@ class FushiSyncServerController extends ChangeNotifier {
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
       ),
+    );
+  }
+
+  /// 截屏识字 host：与远程漫画 OCR 同一个 OCR 服务工厂；未注入返回 null（端点 404）。
+  ScreenOcrHost? _buildScreenOcrHost() {
+    final MangaOcrService Function()? factory = _mangaOcrServiceFactory;
+    if (factory == null) return null;
+    return ScreenOcrHost(
+      service: factory(),
+      workDir: Directory(
+        '${_syncDataDir()}${Platform.pathSeparator}screen_ocr',
+      ),
+      externalEngine: _selectScreenOcrEngine,
+    );
+  }
+
+  /// 截屏识字跟随本机 OCR 引擎偏好（每次请求现读）：选了 Google Lens 就交给 Lens。
+  ScreenOcrExternalEngine? _selectScreenOcrEngine() {
+    final PrefStore? prefs = _prefsStore?.call();
+    if (prefs is! PreferencesRepository) return null;
+    return selectScreenOcrEngine(
+      enginePreferenceKey: prefs.mangaOcrEnginePreference,
+      lens: () => GoogleLensScreenOcrEngine(
+        runner: _screenOcrLens,
+        language: prefs.mangaOcrLensLanguage,
+        hasConsent: () => hasGoogleLensDisclosure(
+          scene: GoogleLensDisclosureScene.gameScreens,
+        ),
+        requestConsent: _promptScreenOcrLensConsent,
+      ),
+    );
+  }
+
+  /// 一个常驻 Lens 客户端（复用 HTTP 连接）。
+  late final GoogleLensMangaOcrService _screenOcrLens =
+      GoogleLensMangaOcrService();
+  bool _screenOcrConsentOpen = false;
+
+  /// 对端截屏被同意门挡下时在本机弹一次同意框；框开着时不叠第二个。
+  void _promptScreenOcrLensConsent() {
+    if (_screenOcrConsentOpen) return;
+    final BuildContext? ctx = _navigatorKey.currentContext;
+    if (ctx == null) return;
+    _screenOcrConsentOpen = true;
+    unawaited(
+      ensureGoogleLensDisclosure(
+        ctx,
+        scene: GoogleLensDisclosureScene.gameScreens,
+      ).whenComplete(() => _screenOcrConsentOpen = false),
     );
   }
 

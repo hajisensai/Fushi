@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guard: the shared reader JS must expose a `cueIdAtPoint`
 /// reverse-lookup that reuses the existing cue↔DOM maps (cueRangesMap /

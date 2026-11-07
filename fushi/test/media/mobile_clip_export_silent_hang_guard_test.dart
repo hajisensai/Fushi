@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2542 守卫：手机端片段导出「点了没反应，连失败提示都没有」。
 ///

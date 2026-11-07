@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：`fushi/lib/i18n/strings.g.dart` 不入库，凡是要编 app 的地方都先生成它。
 ///

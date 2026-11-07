@@ -13,6 +13,7 @@ import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 
@@ -59,6 +60,7 @@ class VideoSubtitleRecognizerChoice {
 /// - [startProcess]：MOSS / `nvidia-smi` 子进程的启动器，宿主接自己的子进程登记表；
 ///   null = 引擎的 [engineAsrProcessStarter]（同一个 `HelperProcessRegistry`）。
 /// - [probes]：环境探测（测试注入）；null = 真实探测。
+/// - [language]：识别语言（两种识别器都按它选上游模型包）。
 /// - [mossCliPath] / [mossModelPath]：跳过下载目录、直接用本机已有的 audio.cpp CLI
 ///   与 GGUF（CLI 排障 / 已手动部署时）；给了就只检查文件存在。
 Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
@@ -71,6 +73,7 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
   MossHostProbes? probes,
   String? mossCliPath,
   String? mossModelPath,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) async {
   VideoSubtitleRecognizerChoice sliding({
     MossUnavailableCode? code,
@@ -79,6 +82,7 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
     recognizer: SlidingWindowVideoSubtitleRecognizer(
       serviceFactory: serviceFactory,
       preference: preference,
+      language: language,
     ),
     mossUnavailableReason: reason,
     mossUnavailableCode: code,
@@ -152,6 +156,7 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
     recognizer: MossVideoSubtitleRecognizer(
       serviceFactory: serviceFactory,
       preference: preference,
+      language: language,
       moss: asr.MossRunner(
         cliPath: cli,
         modelPath: model,

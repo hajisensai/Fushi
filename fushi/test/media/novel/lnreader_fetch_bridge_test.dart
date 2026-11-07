@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
@@ -26,6 +26,26 @@ void main() {
       switch (request.uri.path) {
         case '/login':
           response.cookies.add(Cookie('session', 'abc'));
+          response.write('ok');
+        case '/renew':
+          // 同值续期：会话值不变，每次响应把 Max-Age 往后推。
+          response.headers.add(
+            HttpHeaders.setCookieHeader,
+            'session=steady; Max-Age=3600; Path=/',
+          );
+          response.write('ok');
+        case '/logout':
+          // 站点清 cookie 的标准写法：同名、Max-Age=0。
+          response.headers.add(
+            HttpHeaders.setCookieHeader,
+            'session=; Max-Age=0; Path=/',
+          );
+          response.write('bye');
+        case '/foreign-domain':
+          // 替别的域种 cookie（RFC 6265 §5.3 第 6 步要求丢弃），外加一条合法的。
+          response.headers
+            ..add(HttpHeaders.setCookieHeader, 'evil=1; Domain=example.com')
+            ..add(HttpHeaders.setCookieHeader, 'own=1; Domain=127.0.0.1');
           response.write('ok');
         case '/redirect-local':
           response.statusCode = HttpStatus.found;
@@ -81,12 +101,22 @@ void main() {
 
   tearDown(() => server.close(force: true));
 
+  /// 每个用例一份独立的持久 jar（桥唯一的 cookie 存储）。
+  LnReaderCloudflare freshCloudflare() {
+    final Directory dir = Directory.systemTemp.createTempSync('lnreader_jar');
+    addTearDown(() => dir.delete(recursive: true));
+    return LnReaderCloudflare(
+      MangaCookieJar(File('${dir.path}${Platform.pathSeparator}cookies.json')),
+    );
+  }
+
   LnReaderFetchBridge bridge() => LnReaderFetchBridge(
     clientFactory: HttpClient.new,
     // 测试服务器本身在回环上：放行 127.0.0.1，只拦 localhost（模拟「打到本机」）；
     // 连接层（解析后地址）同样放行，由下面的专门用例钉。
     isBlockedHost: (String host) => host == 'localhost',
     isBlockedAddress: (InternetAddress _) => false,
+    cloudflare: freshCloudflare(),
   );
 
   LnReaderFetchBridge cloudflareBridge(LnReaderCloudflare cloudflare) =>
@@ -186,6 +216,103 @@ void main() {
     expect(cookie, contains('cf_clearance=solved'));
     expect(cookie, contains('session=abc'));
     expect(cookie, isNot(contains('stale')));
+  });
+
+  // 审查（PR #2986）：桥曾把 Set-Cookie 另存进程内、且同名优先于 jar。「从浏览器
+  // 导入」写完 jar 后用户直接关页（pop(false)）时没人通知桥，匿名会话照样盖过
+  // 登录会话。现在 jar 是唯一存储：整站替换后下一个请求就带新会话，不需要通知。
+  test('登录页整站替换 jar 后（不论登录页怎么关），下一个请求只带登录会话', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    // 登录前：站点下发匿名会话。
+    await fetch.perform(<String, Object?>{
+      'url': '$base/login',
+      'method': 'GET',
+    });
+    // 「从浏览器导入」/「完成」导出都走 replaceForSite；这里不做任何通知。
+    await cloudflare.jar.replaceForSite('127.0.0.1', const <MangaCookie>[
+      MangaCookie(name: 'session', value: 'signed-in', domain: '127.0.0.1'),
+    ]);
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+    });
+    expect(seenHeaders.last.value('cookie'), 'session=signed-in');
+  });
+
+  test('解题页 replaceForHost 换掉的放行 cookie 同样立刻生效', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await cloudflare.jar.replaceForHost('127.0.0.1', const <MangaCookie>[
+      MangaCookie(name: 'cf_clearance', value: 'old', domain: '127.0.0.1'),
+    ]);
+    await fetch.perform(<String, Object?>{'url': '$base/login'});
+    await cloudflare.jar.replaceForHost('127.0.0.1', const <MangaCookie>[
+      MangaCookie(name: 'cf_clearance', value: 'new', domain: '127.0.0.1'),
+    ]);
+    await fetch.perform(<String, Object?>{'url': '$base/echo'});
+    expect(seenHeaders.last.value('cookie'), 'cf_clearance=new');
+  });
+
+  test('站点下发 / 轮转的会话 cookie 落进持久 jar，重启（新桥 + 新 jar 实例）后仍带', () async {
+    final Directory dir = await Directory.systemTemp.createTemp('lnreader_cf');
+    addTearDown(() => dir.delete(recursive: true));
+    final File file = File('${dir.path}${Platform.pathSeparator}cookies.json');
+    final LnReaderFetchBridge first = cloudflareBridge(
+      LnReaderCloudflare(MangaCookieJar(file)),
+    );
+    await first.perform(<String, Object?>{'url': '$base/login'});
+    first.close();
+
+    final LnReaderFetchBridge second = cloudflareBridge(
+      LnReaderCloudflare(MangaCookieJar(file)),
+    );
+    await second.perform(<String, Object?>{'url': '$base/echo'});
+    expect(seenHeaders.last.value('cookie'), 'session=abc');
+    second.close();
+  });
+
+  // 审查（PR #2986）：jar 合并只比较值，同值续期被当成无变化丢掉，过了第一次
+  // 下发的 Max-Age 后会话不再发出——靠续期维持登录的站点中途掉线。
+  test('靠同值续期维持的会话不掉线：续期刷新过期时刻', () async {
+    final Directory dir = await Directory.systemTemp.createTemp('lnreader_cf');
+    addTearDown(() => dir.delete(recursive: true));
+    int now = DateTime.utc(2026, 11, 6).millisecondsSinceEpoch;
+    final LnReaderCloudflare cloudflare = LnReaderCloudflare(
+      MangaCookieJar(
+        File('${dir.path}${Platform.pathSeparator}cookies.json'),
+        clock: () => now,
+      ),
+    );
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{'url': '$base/renew'});
+    now += 3000 * 1000;
+    await fetch.perform(<String, Object?>{'url': '$base/renew'});
+    // 越过第一次下发的 Max-Age=3600，仍在续期后的有效期内。
+    now += 1000 * 1000;
+    await fetch.perform(<String, Object?>{'url': '$base/echo'});
+    expect(seenHeaders.last.value('cookie'), 'session=steady');
+    fetch.close();
+  });
+
+  test('站点用 Max-Age=0 清掉的 cookie 从 jar 里删除，不再发回', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{'url': '$base/login'});
+    await fetch.perform(<String, Object?>{'url': '$base/logout'});
+    await fetch.perform(<String, Object?>{'url': '$base/echo'});
+    expect(seenHeaders.last.value('cookie'), isNull);
+    expect(cloudflare.jar.cookiesForSite('127.0.0.1'), isEmpty);
+  });
+
+  test('Domain= 不覆盖请求 host 的 Set-Cookie 不收（站点不能替别的域种 cookie）', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{'url': '$base/foreign-domain'});
+    expect(
+      cloudflare.jar.cookies.map((MangaCookie c) => '${c.name}@${c.domain}'),
+      <String>['own@127.0.0.1'],
+    );
   });
 
   test('不合 RFC 的 Set-Cookie 不拖垮请求，能解析的照样回带', () async {
@@ -326,6 +453,7 @@ void main() {
       clientFactory: HttpClient.new,
       isBlockedHost: (String _) => false,
       isBlockedAddress: (InternetAddress _) => false,
+      cloudflare: freshCloudflare(),
     );
     final Map<String, Object?> result = await open.perform(<String, Object?>{
       'url': 'http://localhost:${server.port}/echo',
@@ -341,6 +469,7 @@ void main() {
     final LnReaderFetchBridge guarded = LnReaderFetchBridge(
       clientFactory: HttpClient.new,
       isBlockedHost: (String _) => false,
+      cloudflare: freshCloudflare(),
     );
     for (final String url in <String>[
       '$base/secret',

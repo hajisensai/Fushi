@@ -1,0 +1,45 @@
+--- a/packages/flutter/lib/src/semantics/semantics.dart
++++ b/packages/flutter/lib/src/semantics/semantics.dart
+@@ -2925,6 +2925,29 @@
+     }
+     _isMergedIntoParent = value;
+     parent?._markDirty();
++    // Whether this node is merged decides whether its traversal children are
++    // grafted onto it or skipped (see _shouldSkipInHitTest). Re-send them, their
++    // hit-test parents and their unmerged descendants, as when a traversal
++    // parent is newly registered in SemanticsOwner.sendSemanticsUpdate.
++    if (!kIsWeb && _isTraversalParent && owner != null) {
++      final Set<SemanticsNode>? childNodes =
++          owner!._traversalChildNodes[_traversalParentIdentifier];
++      if (childNodes != null) {
++        for (final SemanticsNode childNode in childNodes) {
++          if (!childNode.attached) {
++            continue;
++          }
++          childNode._markDirty();
++          childNode.parent?._markDirty();
++          childNode._visitDescendants((SemanticsNode descendant) {
++            if (!descendant.isMergedIntoParent) {
++              descendant._markDirty();
++            }
++            return true;
++          });
++        }
++      }
++    }
+   }
+ 
+   /// Whether the user can interact with this node in assistive technologies.
+@@ -4084,6 +4107,12 @@
+       if (traversalParent == null) {
+         return true;
+       }
++      // A traversal parent that is merged into an ancestor is never serialized
++      // on its own, so nothing would list this node as a traversal child: it
++      // would be sent as an orphan.
++      if (traversalParent.isMergedIntoParent) {
++        return true;
++      }
+       visited ??= <SemanticsNode>{};
+       if (!visited.add(this)) {
+         return false;

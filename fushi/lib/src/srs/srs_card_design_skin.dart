@@ -2,7 +2,9 @@
 /// 卡（Anki 导入牌组、Lapis、用户自建类型）套上当前设计系统的外观层。
 ///
 /// 只换**外观类**样式，不碰布局与内容语义：
-/// - 卡面底（body / `.card`）、正文色、字体 → 设计系统的表面色 / onSurface / 界面字体链；
+/// - 卡面底（body / `.card`）→ 透明，透出复习页背景（设计系统的表面色、形状背景、壁纸），与
+///   跟随主题的 Fushi 卡片同一语义（[srsCardPaintsOwnSurface]）；正文色、字体 → onSurface /
+///   界面字体链；
 /// - 模板画的中性色块（米色纸底、灰底框）→ 与卡面同色的透明 / 表面容器色，圆角换成设计系统
 ///   形状令牌，去掉阴影；中性色描边（细灰框、`<hr>`）→ outlineVariant；
 /// - 中性色文字 → onSurface / onSurfaceVariant；链接 → primary；
@@ -35,7 +37,6 @@ const String kSrsDesignSkinMeasuringClass = 'fushi-ds-measuring';
 
 /// 覆盖层的字体链：Apple = 系统字体（SF）在前；MD3 = 界面字体链（与 Fushi 卡片模板默认的
 /// `--fc-font-ui` 同一份）。日文 / 中文按卡面 `lang` 换对应字形的回落链。
-@visibleForTesting
 String srsCardDesignSkinFont({required bool apple}) => apple
     ? '-apple-system, "SF Pro Text", system-ui, "Segoe UI", $kSrsCardDefaultFontJa'
     : kSrsCardDefaultFontUi;
@@ -54,7 +55,6 @@ String srsCardDesignSkinCss({
   final String font = srsCardDesignSkinFont(apple: tokens.apple);
   String px(double v) => '${v.toStringAsFixed(1).replaceFirst('.0', '')}px';
   return ':root{'
-      '--fushi-ds-bg:${srsCardCssColor(scheme.surface)};'
       '--fushi-ds-fg:${srsCardCssColor(scheme.onSurface)};'
       '--fushi-ds-fg-muted:${srsCardCssColor(scheme.onSurfaceVariant)};'
       '--fushi-ds-surface:${srsCardCssColor(tokens.surface1(scheme))};'
@@ -63,7 +63,10 @@ String srsCardDesignSkinCss({
       '--fushi-ds-radius:${px(tokens.radius)};'
       '--fushi-ds-radius-small:${px(tokens.radiusSmall)};'
       '--fushi-ds-font:$font;}'
-      '$s,$r.card{background:var(--fushi-ds-bg)!important;'
+      // 卡面底透明而不是铺 surface：复习页自己就是设计系统的表面（还可能叠着壁纸 /
+      // 形状背景）。此前铺不透明 surface，同一套壁纸下 Fushi 卡片透得出、其它类型被
+      // 盖住（#slX_WVK_pe）。
+      '$s,$r.card{background:transparent!important;'
       'color:var(--fushi-ds-fg)!important;'
       'font-family:var(--fushi-ds-font)!important;}'
       '$s [lang|="zh"]{--fushi-ds-font:system-ui, $kSrsCardDefaultFontZh;'

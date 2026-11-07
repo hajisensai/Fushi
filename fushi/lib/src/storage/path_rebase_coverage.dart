@@ -508,6 +508,13 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     PathRebaseKind.notAPath,
     '远端来源连接参数 JSON（host/port/user/tls），无本机路径。',
   ),
+  PathRebaseColumn(
+    'MusicAutoSourceDismissals',
+    'rootPath',
+    PathRebaseKind.externalUserPath,
+    '用户删掉的自动音乐来源根（v145），与 MediaSources.rootPath 同语义：视频来源根下的'
+        '外部目录，不随数据根改写。',
+  ),
 
   // ── 合集 / 系列封面来源 ─────────────────────────────────────────────
   PathRebaseColumn(

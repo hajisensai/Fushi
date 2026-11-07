@@ -503,17 +503,19 @@ class MediaItemDialogFrame extends StatelessWidget {
   /// 宽高比探测的解码宽度（像素）。
   static const int _aspectDecodeWidth = 64;
 
-  /// 屏宽达到它对话框放宽到 [_wideMaxWidth]（右栏两列）；否则 [_midMaxWidth]。
+  /// 屏宽达到它对话框放宽到 [_wideMaxWidth]（右栏三列网格）；否则 [_midMaxWidth]。
   static const double _wideScreenMinWidth = 900;
-  static const double _wideMaxWidth = 780;
+  static const double _wideMaxWidth = 820;
   static const double _midMaxWidth = 600;
   static const double _narrowMaxWidth = 420;
 
   /// 对话框可用宽度达到它才走双栏（D），否则退回宫格（B）。
   static const double _twoPaneMinWidth = 540;
 
-  /// 右栏可用宽度达到它分两列。
-  static const double _twoColumnMinWidth = 460;
+  /// 双栏右侧动作网格的单格最小宽度：右栏按它算列数（最多
+  /// [_actionGridMaxColumns] 列），组内动作按行铺满各列。
+  static const double _actionCellMinWidth = 164;
+  static const int _actionGridMaxColumns = 3;
 
   /// 宽高比超过它按横版封面（视频）排。
   static const double _bannerMinAspect = 1.15;
@@ -963,14 +965,15 @@ class MediaItemDialogFrame extends StatelessWidget {
         ? quickActions
         : const <DialogQuickAction>[];
     final Map<DialogActionGroup, List<DialogAction>> sections = _sections;
-    final double rightWidth = width - leftWidth;
-    final int columns = rightWidth >= _twoColumnMinWidth && sections.length > 1
-        ? 2
-        : 1;
-    final List<List<DialogActionGroup>> columnGroups = _balanceSections(
-      sections,
-      columns,
-    );
+    // 右栏内容宽 = 栏宽 − 左右内边距（pad + pad / 2 + pad / 2）。分组自上而下
+    // 排、组内动作按行铺进 N 列：此前按「整组」分两列，组不能拆，合集菜单「整理」
+    // 一组十来项全挤在一列、另一列只剩一两项（用户 2026-11-05：信息密度低）。
+    final double gridWidth = width - leftWidth - pad * 2;
+    final int columns =
+        ((gridWidth + kSettingsSegmentGap) /
+                (_actionCellMinWidth + kSettingsSegmentGap))
+            .floor()
+            .clamp(1, _actionGridMaxColumns);
     final Color leftColor = apple
         ? appleColorsOf(context).tertiaryFill
         : Theme.of(context).colorScheme.surfaceContainer;
@@ -1052,32 +1055,23 @@ class MediaItemDialogFrame extends StatelessWidget {
           ),
           Padding(
             padding: EdgeInsetsDirectional.only(end: pad / 2),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (int c = 0; c < columnGroups.length; c++) ...<Widget>[
-                  if (c > 0) SizedBox(width: tokens.spacing.gap + 4),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        for (final DialogActionGroup group
-                            in columnGroups[c]) ...<Widget>[
-                          _SectionLabel(text: _groupLabel(group)),
-                          _ActionSection(
-                            actions: sections[group]!,
-                            firstIndex: () {
-                              final int start = index;
-                              index += sections[group]!.length;
-                              return start;
-                            }(),
-                          ),
-                          SizedBox(height: tokens.spacing.gap + 4),
-                        ],
-                      ],
-                    ),
+                for (final MapEntry<DialogActionGroup, List<DialogAction>> entry
+                    in sections.entries) ...<Widget>[
+                  _SectionLabel(text: _groupLabel(entry.key)),
+                  _ActionGridSection(
+                    actions: entry.value,
+                    columns: columns,
+                    firstIndex: () {
+                      final int start = index;
+                      index += entry.value.length;
+                      return start;
+                    }(),
                   ),
+                  SizedBox(height: tokens.spacing.gap + 4),
                 ],
               ],
             ),
@@ -1107,28 +1101,6 @@ class MediaItemDialogFrame extends StatelessWidget {
       ),
     );
   }
-
-  /// 把分节按动作数均匀分进 [columns] 列（保持分组顺序，贪心放进当前最矮的列）。
-  static List<List<DialogActionGroup>> _balanceSections(
-    Map<DialogActionGroup, List<DialogAction>> sections,
-    int columns,
-  ) {
-    final List<List<DialogActionGroup>> result = <List<DialogActionGroup>>[
-      for (int i = 0; i < columns; i++) <DialogActionGroup>[],
-    ];
-    final List<int> heights = List<int>.filled(columns, 0);
-    for (final MapEntry<DialogActionGroup, List<DialogAction>> entry
-        in sections.entries) {
-      int target = 0;
-      for (int i = 1; i < columns; i++) {
-        if (heights[i] < heights[target]) target = i;
-      }
-      result[target].add(entry.key);
-      // 分节标题按一行算。
-      heights[target] += entry.value.length + 1;
-    }
-    return result.where((List<DialogActionGroup> c) => c.isNotEmpty).toList();
-  }
 }
 
 /// 分节标题（MD3：labelLarge primary；Apple：footnote secondaryLabel）。
@@ -1155,68 +1127,114 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-/// 一节分组动作：MD3 分段列表（组首尾 [kSettingsSegmentOuterRadius]、组内
-/// [kSettingsSegmentInnerRadius]、缝 [kSettingsSegmentGap]）；Apple 一块实色
-/// 圆角面板里的菜单行。
-class _ActionSection extends StatelessWidget {
-  const _ActionSection({required this.actions, required this.firstIndex});
+/// 双栏右侧的一组动作，按行铺进 [columns] 列（用户 2026-11-05 宽屏重排）。
+///
+/// MD3：整组拼成一块分段网格——只有网格外圈的角取
+/// [kSettingsSegmentOuterRadius]，其余取 [kSettingsSegmentInnerRadius]，格间
+/// [kSettingsSegmentGap]，行高收紧到 48（仍 ≥ 48dp 命中区）。Apple：一块实色圆角
+/// 面板里按列排菜单行。同一行的格子等高；焦点 / 错峰进场按行优先。
+class _ActionGridSection extends StatelessWidget {
+  const _ActionGridSection({
+    required this.actions,
+    required this.columns,
+    required this.firstIndex,
+  });
 
   final List<DialogAction> actions;
+  final int columns;
   final int firstIndex;
+
+  /// 第 [i] 格（共 [count] 格、[cols] 列）的圆角：网格外圈的角大圆角，其余小
+  /// 圆角。末行不满时，倒数第二行行尾格的右下角也露在外圈。
+  static BorderRadius radiusFor(
+    int i,
+    int count,
+    int cols,
+    TextDirection direction,
+  ) {
+    const Radius outer = Radius.circular(kSettingsSegmentOuterRadius);
+    const Radius inner = Radius.circular(kSettingsSegmentInnerRadius);
+    final int rows = (count + cols - 1) ~/ cols;
+    final int row = i ~/ cols;
+    final int col = i % cols;
+    final int lastRowStart = (rows - 1) * cols;
+    final bool rowEnd = col == cols - 1 || i == count - 1;
+    final bool bottomEnd =
+        (row == rows - 1 && rowEnd) ||
+        (row == rows - 2 && col == cols - 1 && count - lastRowStart < cols);
+    return BorderRadiusDirectional.only(
+      topStart: i == 0 ? outer : inner,
+      topEnd: row == 0 && rowEnd ? outer : inner,
+      bottomStart: i == lastRowStart ? outer : inner,
+      bottomEnd: bottomEnd ? outer : inner,
+    ).resolve(direction);
+  }
+
+  Widget _cell(BuildContext context, int i, int cols, bool apple) {
+    final DialogAction action = actions[i];
+    return FushiStaggeredEntrance(
+      index: firstIndex + i,
+      child: apple
+          ? _AppleMenuRow(
+              icon: action.icon,
+              label: action.label,
+              onPressed: action.onPressed,
+              selected: action.selected,
+            )
+          : _Md3SegmentRow(
+              icon: action.icon,
+              label: action.label,
+              onPressed: action.onPressed,
+              selected: action.selected,
+              gridCell: true,
+              borderRadius: radiusFor(
+                i,
+                actions.length,
+                cols,
+                Directionality.of(context),
+              ),
+            ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context)) {
-      final FushiAppleColors palette = appleColorsOf(context);
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.secondaryGroupedBackground,
-          borderRadius: const BorderRadius.all(Radius.circular(12)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    final bool apple = isGlassDesign(context);
+    final double gap = apple ? 0 : kSettingsSegmentGap;
+    final int cols = columns < 1 ? 1 : columns;
+    final List<Widget> rows = <Widget>[];
+    for (int start = 0; start < actions.length; start += cols) {
+      if (rows.isNotEmpty && gap > 0) rows.add(SizedBox(height: gap));
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              for (int i = 0; i < actions.length; i++)
-                FushiStaggeredEntrance(
-                  index: firstIndex + i,
-                  child: _AppleMenuRow(
-                    icon: actions[i].icon,
-                    label: actions[i].label,
-                    onPressed: actions[i].onPressed,
-                    selected: actions[i].selected,
-                  ),
+              for (int c = 0; c < cols; c++) ...<Widget>[
+                if (c > 0) SizedBox(width: gap),
+                Expanded(
+                  child: start + c < actions.length
+                      ? _cell(context, start + c, cols, apple)
+                      : const SizedBox.shrink(),
                 ),
+              ],
             ],
           ),
         ),
       );
     }
-    const Radius outer = Radius.circular(kSettingsSegmentOuterRadius);
-    const Radius inner = Radius.circular(kSettingsSegmentInnerRadius);
-    return Column(
+    final Widget grid = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        for (int i = 0; i < actions.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(height: kSettingsSegmentGap),
-          FushiStaggeredEntrance(
-            index: firstIndex + i,
-            child: _Md3SegmentRow(
-              icon: actions[i].icon,
-              label: actions[i].label,
-              onPressed: actions[i].onPressed,
-              selected: actions[i].selected,
-              borderRadius: BorderRadius.vertical(
-                top: i == 0 ? outer : inner,
-                bottom: i == actions.length - 1 ? outer : inner,
-              ),
-            ),
-          ),
-        ],
-      ],
+      children: rows,
+    );
+    if (!apple) return grid;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: appleColorsOf(context).secondaryGroupedBackground,
+        borderRadius: const BorderRadius.all(Radius.circular(12)),
+      ),
+      child: Padding(padding: const EdgeInsets.all(4), child: grid),
     );
   }
 }
@@ -2016,6 +2034,15 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
 
   static const double _width = 232;
 
+  /// 子菜单与本行的水平间隙。
+  static const double _gap = 4;
+
+  /// 子菜单的内边距：首项与本行顶边对齐，所以整体上提这么多。
+  static const double _verticalPadding = 6;
+
+  /// 离屏幕边缘至少留这么多。
+  static const double _screenMargin = 8;
+
   @override
   void dispose() {
     _rowFocus.dispose();
@@ -2052,27 +2079,49 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  /// 子菜单相对本行的落点：右侧放不下就翻到左侧，下方放不下就改成底边对齐本行
+  /// 往上长。子菜单每项与本行是同一个 [_ContextMenuRow]，高度按本行实测高度推算。
+  ({bool flipLeft, bool flipUp}) _placement(BuildContext context) {
+    final RenderObject? object = context.findRenderObject();
+    if (_link.leaderSize == null || object is! RenderBox || !object.hasSize) {
+      return (flipLeft: false, flipUp: false);
+    }
+    final Size screen = MediaQuery.sizeOf(context);
+    final Rect row = object.localToGlobal(Offset.zero) & object.size;
+    final double height =
+        _verticalPadding * 2 + widget.actions.length * row.height;
+    return (
+      flipLeft: row.right + _gap + _width > screen.width - _screenMargin,
+      flipUp:
+          row.top - _verticalPadding + height > screen.height - _screenMargin &&
+          row.bottom + _verticalPadding - height >= _screenMargin,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool flip =
-        _link.leaderSize != null &&
-        (context.findRenderObject() as RenderBox?) != null &&
-        () {
-          final RenderBox box = context.findRenderObject()! as RenderBox;
-          final double right = box.localToGlobal(Offset(box.size.width, 0)).dx;
-          return right + _width > MediaQuery.sizeOf(context).width - 8;
-        }();
+    final ({bool flipLeft, bool flipUp}) placement = _placement(context);
+    final bool flip = placement.flipLeft;
+    final bool up = placement.flipUp;
+    // [CompositedTransformFollower] 把 followerAnchor 量在它**自己的**尺寸上。下面的
+    // [Align] 会撑满整个 Overlay，所以它的对齐必须与 followerAnchor 是同一个角：
+    // 否则翻到左侧时（followerAnchor = 右上角）锚的是整屏宽盒子的右边，子菜单被
+    // 推到屏幕左侧外面——游戏库最右一列的「设置」子菜单因此打不开（DnG4jZW57v）。
+    final Alignment corner = Alignment(flip ? 1 : -1, up ? 1 : -1);
     return OverlayPortal(
       controller: _portal,
       overlayChildBuilder: (BuildContext overlayContext) =>
           CompositedTransformFollower(
             link: _link,
             showWhenUnlinked: false,
-            targetAnchor: flip ? Alignment.topLeft : Alignment.topRight,
-            followerAnchor: flip ? Alignment.topRight : Alignment.topLeft,
-            offset: Offset(flip ? -4 : 4, -6),
+            targetAnchor: Alignment(flip ? -1 : 1, up ? 1 : -1),
+            followerAnchor: corner,
+            offset: Offset(
+              flip ? -_gap : _gap,
+              up ? _verticalPadding : -_verticalPadding,
+            ),
             child: Align(
-              alignment: AlignmentDirectional.topStart,
+              alignment: corner,
               child: MouseRegion(
                 onEnter: (_) {
                   _hoverMenu = true;
@@ -2145,7 +2194,7 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
     );
     final Widget body = FushiEntranceScope(
       child: Padding(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(_verticalPadding),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2199,12 +2248,16 @@ class _Md3SegmentRow extends StatelessWidget {
     required this.onPressed,
     required this.borderRadius,
     this.selected = false,
+    this.gridCell = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
   final BorderRadius borderRadius;
+
+  /// 网格格子（双栏右侧）：行高 48、图标 20、横向内边距收紧。
+  final bool gridCell;
 
   /// 开关类动作当前开着：图标与文字走 primary，行尾一个勾。
   final bool selected;
@@ -2230,16 +2283,18 @@ class _Md3SegmentRow extends StatelessWidget {
         onTap: onPressed,
         overlayColor: eink ? null : fushiMd3ContentStateLayer(scheme),
         child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: tokens.density.listMinHeight),
+          constraints: BoxConstraints(
+            minHeight: gridCell ? 48 : tokens.density.listMinHeight,
+          ),
           child: Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal,
-              vertical: tokens.spacing.gap,
+              horizontal: gridCell ? 14 : tokens.spacing.rowHorizontal,
+              vertical: gridCell ? 6 : tokens.spacing.gap,
             ),
             child: Row(
               children: <Widget>[
-                FushiIcon(icon, size: 24, color: iconColor),
-                SizedBox(width: tokens.spacing.rowHorizontal),
+                FushiIcon(icon, size: gridCell ? 20 : 24, color: iconColor),
+                SizedBox(width: gridCell ? 10 : tokens.spacing.rowHorizontal),
                 Expanded(
                   child: Text(
                     label,

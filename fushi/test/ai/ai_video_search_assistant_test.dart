@@ -2,7 +2,7 @@
 // 重复 / 缺失补齐 / 坏 JSON 恒等）、三种提示词含全部候选下标、请求函数只喂前 30 条。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -13,7 +13,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class _Sub extends VideoSubtitleCandidate {

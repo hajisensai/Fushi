@@ -107,6 +107,8 @@ PlatformServices fakePlatformServices({
   bool? isDesktop,
   bool? isIOS,
   bool? isAndroid,
+  // 假服务不碰平台通道：默认没有系统媒体会话（不起 audio_service）。
+  bool hasSystemMediaSession = false,
 }) {
   return PlatformServices(
     directory: directory ?? FakeDirectoryService(),
@@ -128,5 +130,6 @@ PlatformServices fakePlatformServices({
     isDesktop: isDesktop,
     isIOS: isIOS,
     isAndroid: isAndroid,
+    hasSystemMediaSession: hasSystemMediaSession,
   );
 }

@@ -2,7 +2,7 @@
 // 包 / 半个 PES）、不定长 PES、失步重同步、33 位 PTS 环绕。
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';
 
 import 'bitmap_subtitle_fixtures.dart';

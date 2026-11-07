@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-049 wiring guard (source scan, sibling of reader_live_settings_guard).
 ///

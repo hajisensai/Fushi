@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 测试里**按磁盘路径读源码**的那批守卫，路径必须指得到真实文件。
 ///

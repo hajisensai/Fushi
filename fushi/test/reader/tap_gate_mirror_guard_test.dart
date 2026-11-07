@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-712 ①（查词时延·触发段 3 跳并 1 跳）源码扫描守卫。
 ///

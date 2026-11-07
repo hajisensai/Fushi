@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 阅读器 WebView 的原生过滚回弹必须关闭，包括 BUG-2578 的 Android
 /// EdgeEffect 和 iOS WKWebView 的 UIScrollView.bounces。

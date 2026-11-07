@@ -237,6 +237,42 @@ void main() {
     expect(scanner.lastError, contains('/nonexistent/x.flac'));
   });
 
+  test('网络音乐来源的曲目不交给 FFmpeg：记已扫描、增益留空、不报错（QAondMh4M5）', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _ScriptedFfmpeg ffmpeg = _ScriptedFfmpeg(
+      result: const FfmpegRunResult(returnCode: 1, output: 'should not run'),
+    );
+    final int source = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'nas',
+        mediaKind: 'music',
+        transport: const Value<String>('sftp'),
+        rootPath: '/m',
+        createdAt: 1,
+      ),
+    );
+    await db
+        .into(db.musicTracks)
+        .insert(
+          _track(
+            'r',
+            path: 'sftp://nas:22/m/a.flac',
+          ).copyWith(sourceId: Value<int?>(source)),
+        );
+    final MusicLoudnessScanner scanner = MusicLoudnessScanner(
+      database: () => db,
+      enabled: () => true,
+      ffmpeg: () => ffmpeg,
+    );
+    await scanner.schedule();
+    expect(ffmpeg.runs, 0);
+    final MusicTrackRow r = (await db.getMusicTrack('r'))!;
+    expect(r.r128ScannedAt, isNotNull);
+    expect(r.rgTrackGain, isNull);
+    expect(scanner.lastError, isNull);
+  });
+
   test('FFmpeg 本身起不来：schedule 不抛、原因进 lastError、曲目保持待测', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

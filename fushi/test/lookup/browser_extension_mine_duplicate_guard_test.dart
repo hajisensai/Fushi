@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1176 守卫：浏览器扩展查词弹窗制卡按钮与 app 内统一——真查重（`+`→`✓`）。
 /// 源码扫描，不依赖真机/真浏览器，守住 bridge-shim 的 `duplicateCheck` 不再被桩成恒

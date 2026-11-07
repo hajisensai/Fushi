@@ -172,6 +172,26 @@ void main() {
     expect(b.unlinked, contains('Default'));
   });
 
+  // 反馈 dOv8AdJ6yV：冲突弹窗只有「Default · 01a13df1」，看不出是哪台设备的、有多少数据，没法选。
+  test('两边都有笔记：候选带着对方的设备名与笔记数，本机笔记数一并给出', () async {
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    await a.store.sync2DeviceInfo(model: 'Boox Note Air');
+    await a.addNote('雪');
+    await a.addNote('霜');
+    await b.addNote('雨');
+    for (int i = 0; i < 2; i++) {
+      expect((await a.sync(dir)).error, isNull);
+      expect((await b.sync(dir)).error, isNull);
+    }
+    final SrsProfileLinkOutcome before = await b.linker.link(dir, b.store);
+    final SrsRemoteProfile candidate = before.choose!.single;
+    expect(candidate.uid, a.store.profileUid);
+    expect(candidate.devices, <String>['Boox Note Air']);
+    expect(candidate.noteCount, 2);
+    expect(before.localNoteCount, 1);
+  });
+
   // 反馈：电脑与 iPhone 各自随机生成 uid、都叫 Default、都有笔记，只弹一条「无法自动关联」toast 就没了下文。
   test('两边都有笔记：用户在 B 上选 A 那份 → B 并入 A，两边看到全部笔记，B 的旧目录被清掉', () async {
     final _Device a = await _Device.open('a');

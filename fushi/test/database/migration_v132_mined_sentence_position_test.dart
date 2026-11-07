@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -66,13 +66,13 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 144);
+    expect(migrated.schemaVersion, 146);
     final List<MinedSentenceRow> rows = await migrated.getAllMinedSentences();
     expect(rows, hasLength(3));
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 144);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
     for (final String column in <String>[
       'position_ms',
       'duration_ms',

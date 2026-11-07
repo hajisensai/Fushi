@@ -109,7 +109,7 @@ void main() {
       final ThemeNotifier themeNotifier = appModel.themeNotifier;
 
       tester.view.devicePixelRatio = 1.0;
-      // 宽屏主从分支的门是 maxWidth >= 720。
+      // 宽屏主从分支的门是 maxWidth >= kFushiSettingsHomeTwoPaneMinWidth（600）。
       tester.view.physicalSize = const Size(1200, 900);
       addTearDown(() {
         tester.view.resetDevicePixelRatio();

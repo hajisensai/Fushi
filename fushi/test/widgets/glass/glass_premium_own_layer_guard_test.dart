@@ -15,7 +15,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 返回 `GlassContainer(` 调用的实参文本（括号配平）。
 List<({int line, String args})> _glassContainerCalls(String source) {

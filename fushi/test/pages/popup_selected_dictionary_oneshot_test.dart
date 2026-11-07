@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-645 / BUG-358: the popup mining dictionary selection must be one-shot.
 ///

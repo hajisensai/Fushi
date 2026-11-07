@@ -9,7 +9,7 @@
 // 情况一律折叠成一个 `null`，只剩一句话可说。本文件钉住三者必须分开，以及
 // 判定顺序。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
 

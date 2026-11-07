@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// PR#914 阻塞②：per-book 统计（`statistics_*.json`）的两条调用点必须与全量 sweep
 /// 一样分通道。

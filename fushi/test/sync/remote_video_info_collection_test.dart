@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
 /// 守卫：`RemoteVideoInfo.fromJson` 必须解析 `collection` 归属字段。此前 toJson 写了

@@ -5,8 +5,10 @@
 /// Music-User-Token 由 MusicKit 存进托管页源的 localStorage；隐藏的播放 WebView 与这里同一
 /// WebView 数据目录，重建后即读到（[AppleMusicWebBridge.authorize]）。
 ///
-/// 登录分两段：先 `init()`（configure，带 [kAppleMusicWebInitTimeout]——DRM 服务卡死的设备上
-/// MusicKit 在这里永远不返回），再 `authorize()`（用户输密码，不设超时）。弹窗每加载完一个
+/// 登录分两段：先 `init()`（加载 MusicKit JS → 向 Fushi 服务器取开发者 token → configure，
+/// 带 [kAppleMusicWebInitTimeout]——DRM 服务卡死的设备上 configure 永远不返回），再
+/// `authorize()`（用户输密码，不设超时）。init 失败 / 超时按托管页报的段名
+/// （`fushiMusicKit.initStage()`）分类报错，见 [appleMusicInitFailureText]。弹窗每加载完一个
 /// Apple 授权页就补回传通道（[appleMusicPopupOpenerSeedJs]），失败时按弹窗走过的页面给出原因
 /// （[AppleMusicLoginBlocker]），整段轨迹写进诊断日志。
 library;
@@ -68,6 +70,34 @@ const String _kWrapWindowOpenJs =
   };
 })()
 ''';
+
+/// 读托管页 init 停在哪一段；旧版托管页没有 `initStage` 时为 null。
+const String _kInitStageJs = '''
+(window.fushiMusicKit && typeof window.fushiMusicKit.initStage === 'function')
+  ? window.fushiMusicKit.initStage() : null
+''';
+
+/// init 失败 / 超时的用户可读原因（D69n21etZ1）。[stage] 是托管页 `initStage()` 的段名：
+/// `musickit_js`（Apple 的脚本没加载下来）、`token`（连不上 Fushi 服务器取开发者 token）、
+/// `configure`（MusicKit 配置 / 拉 DRM）。只有卡在 configure 才说「系统 DRM 服务没有响应」；
+/// 不知道卡在哪段（旧版托管页）时只说超时，不猜原因。[error] 是 JS 侧报的错（非超时）。
+String appleMusicInitFailureText({
+  required String? stage,
+  required bool timedOut,
+  String? error,
+}) {
+  String withDetail(String text) =>
+      error == null || error.isEmpty ? text : '$text ($error)';
+  return switch (stage) {
+    'musickit_js' => withDetail(
+      t.music_apple_music_login_init_musickit_js_failed,
+    ),
+    'token' => withDetail(t.music_apple_music_login_init_token_failed),
+    'configure' when timedOut => t.music_apple_music_login_init_timeout,
+    _ when timedOut => t.music_apple_music_login_init_timeout_unknown,
+    _ => error ?? 'unknown',
+  };
+}
 
 /// 只把 https 的 Apple 页交给系统浏览器。
 bool _isAppleHttps(Uri url) =>
@@ -140,8 +170,8 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
   /// 本次尝试的弹窗轨迹（每次 [_authorize] 重开）。
   AppleMusicLoginTrace _trace = AppleMusicLoginTrace();
 
-  /// 跑一段桥函数体，解出 `{ok, ...}`；失败返回错误文本。
-  Future<({Map<Object?, Object?>? ok, String? error})> _call(
+  /// 跑一段桥函数体，解出 `{ok, ...}`；失败返回错误文本与（init 的）出错段名。
+  Future<({Map<Object?, Object?>? ok, String? error, String? stage})> _call(
     InAppWebViewController c,
     String body,
   ) async {
@@ -149,21 +179,36 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
       functionBody: body,
     );
     if (r?.error case final String e when e.isNotEmpty) {
-      return (ok: null, error: e);
+      return (ok: null, error: e, stage: null);
     }
     final Object? v = r?.value;
     final Object? decoded = v is String ? jsonDecode(v) : v;
     if (decoded is Map && decoded['ok'] == true) {
-      return (ok: decoded, error: null);
+      return (ok: decoded, error: null, stage: null);
     }
     if (decoded is Map && decoded['error'] is Map) {
       final Map<Object?, Object?> e = decoded['error'] as Map<Object?, Object?>;
+      final Object? stage = e['stage'];
       return (
         ok: null,
         error: '${e['name'] ?? 'Error'}: ${e['message'] ?? ''}',
+        stage: stage is String ? stage : null,
       );
     }
-    return (ok: null, error: 'unknown');
+    return (ok: null, error: 'unknown', stage: null);
+  }
+
+  /// init 总超时后问托管页卡在哪一段。页面 JS 线程没被占（init 是 await 挂起），正常立即
+  /// 返回；这是诊断查询，给个短上限，查不到就当未知段（只报超时、不猜原因）。
+  Future<String?> _initStage(InAppWebViewController c) async {
+    try {
+      final Object? v = await c
+          .evaluateJavascript(source: _kInitStageJs)
+          .timeout(const Duration(seconds: 2));
+      return v is String && v.isNotEmpty ? v : null;
+    } on TimeoutException {
+      return null;
+    }
   }
 
   Future<void> _authorize() async {
@@ -179,18 +224,18 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
     String result;
     bool authorized = false;
     try {
-      final ({Map<Object?, Object?>? ok, String? error}) init = await _call(
-        c,
-        _kInitJs,
-      ).timeout(kAppleMusicWebInitTimeout);
+      final ({Map<Object?, Object?>? ok, String? error, String? stage}) init =
+          await _call(c, _kInitJs).timeout(kAppleMusicWebInitTimeout);
       if (init.ok == null) {
-        error = init.error;
-        result = 'init failed: $error';
-      } else {
-        final ({Map<Object?, Object?>? ok, String? error}) auth = await _call(
-          c,
-          _kAuthorizeJs,
+        error = appleMusicInitFailureText(
+          stage: init.stage,
+          timedOut: false,
+          error: init.error,
         );
+        result = 'init failed at ${init.stage ?? '?'}: ${init.error}';
+      } else {
+        final ({Map<Object?, Object?>? ok, String? error, String? stage}) auth =
+            await _call(c, _kAuthorizeJs);
         authorized = auth.ok?['authorized'] == true;
         error = auth.ok == null
             ? auth.error
@@ -198,8 +243,9 @@ class _AppleMusicWebLoginPageState extends State<AppleMusicWebLoginPage> {
         result = authorized ? 'authorized' : 'authorize failed: $error';
       }
     } on TimeoutException {
-      error = t.music_apple_music_login_init_timeout;
-      result = 'init timeout';
+      final String? stage = await _initStage(c);
+      error = appleMusicInitFailureText(stage: stage, timedOut: true);
+      result = 'init timeout at ${stage ?? '?'}';
     } on Object catch (e) {
       error = '$e';
       result = 'error: $e';

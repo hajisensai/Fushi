@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：PR 关闭 / 合并后，取消它还在排队 / 在跑的 CI，并删掉它 PR ref 下的缓存。
 ///

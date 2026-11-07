@@ -1,4 +1,7 @@
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show MusicTrackRow;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -18,6 +21,7 @@ class _FakeServer implements MusicServerBrowser {
     required this.displayName,
     this.result = const MusicServerSearchResult(),
     this.error,
+    this.kind = MusicServerKind.subsonic,
   });
 
   @override
@@ -33,7 +37,7 @@ class _FakeServer implements MusicServerBrowser {
   int searchCalls = 0;
 
   @override
-  MusicServerKind get kind => MusicServerKind.subsonic;
+  final MusicServerKind kind;
 
   @override
   Future<MusicServerPage<MusicServerAlbum>> listAlbums({
@@ -436,5 +440,123 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await expectLater(cache.search(broken, 'q'), throwsStateError);
     expect(broken.searchCalls, 2);
+  });
+
+  group('歌曲行的菜单入口', () {
+    const MusicTrackRow localTrack = MusicTrackRow(
+      trackUid: 'lt1',
+      path: '/m/local.flac',
+      title: 'Local Song',
+      isLossless: true,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+
+    Future<void> pumpSongs(
+      WidgetTester tester, {
+      List<MusicServerBrowser> servers = const <MusicServerBrowser>[],
+      MusicSearchLocalItems local = MusicSearchLocalItems.none,
+    }) async {
+      await _pump(
+        tester,
+        MusicSearchResultsView(
+          type: MusicPluginSearchType.song,
+          query: 'song',
+          sources: const <MusicPluginManifest>[],
+          servers: servers,
+          local: local,
+          localActions: _noLocalActions(),
+        ),
+      );
+      await _settleSearch(tester);
+    }
+
+    testWidgets('本地曲目：没有行尾「⋯」，整行右键给播放 / 曲目详情', (WidgetTester tester) async {
+      await pumpSongs(
+        tester,
+        local: const MusicSearchLocalItems(tracks: <MusicTrackRow>[localTrack]),
+      );
+      final Finder row = find.byKey(
+        const ValueKey<String>('music-search-song-local-lt1'),
+      );
+      expect(row, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('music-track-menu-lt1')),
+        findsNothing,
+        reason: '点按播放、长按详情已覆盖本地菜单的两项，行尾不加按钮',
+      );
+      await tester.tap(
+        row,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('music-menu-action-play')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('music-menu-action-detail')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Apple Music 曲目有行尾「⋯」；其它服务器曲目没有菜单', (
+      WidgetTester tester,
+    ) async {
+      const MusicServerSearchResult result = MusicServerSearchResult(
+        tracks: <MusicServerTrack>[MusicServerTrack(id: 'tr1', title: 'Song')],
+      );
+      await pumpSongs(
+        tester,
+        servers: <MusicServerBrowser>[
+          _FakeServer(
+            serverId: 'apple_music:catalog',
+            displayName: 'Apple Music',
+            result: result,
+            kind: MusicServerKind.appleMusic,
+          ),
+          _FakeServer(
+            serverId: 'subsonic:navi',
+            displayName: 'Navidrome',
+            result: result,
+          ),
+        ],
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'music-search-song-server-apple_music:catalog-tr1',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('apple-music-track-menu-tr1')),
+        findsOneWidget,
+        reason: '只有 Apple Music 这一行有菜单按钮（Navidrome 同 id 的行没有）',
+      );
+      final Finder navi = find.byKey(
+        const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+      );
+      expect(navi, findsOneWidget);
+      await tester.tap(
+        navi,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate((Widget w) => w is PopupMenuItem),
+        findsNothing,
+        reason: '非 Apple Music 服务器曲目没有菜单，右键不弹',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
   });
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1152 静态守卫：锁住「in-app 查词结果区 WebView 渲染完补表面重绘 nudge」的
 /// 接线，防止静默回退到下半屏黑。

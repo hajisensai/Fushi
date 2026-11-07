@@ -265,10 +265,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ..._srtMissingAudioActions(dialogContext, book),
       // 纯字幕（standalone）有声书的「从互联对端重新拉取」：host 上重新转录 / 换了
       // 字幕之后把新字幕（或整本）拉回来。与 EPUB 书卡的同名两项同一语义、同一套
-      // 拉取与导入（只更新字幕不动音频，本机进度 / 断点 / 调轴保留）；配对书
-      // （bookKey 非空）的入口在 EPUB 书卡上，这里不重复给。
-      if (bookKey.isEmpty &&
-          modules.isEnabled(ModuleId.listening) &&
+      // 拉取与导入（只更新字幕不动音频，本机进度 / 断点 / 调轴保留）。判据是「对端
+      // 按 uid 列着这本独立字幕书」（[_remoteSrtRefetchFor]）——BUG-4197：收下来的
+      // 字幕书 bookKey 指向收端再生成的正文，不再为空，旧的 bookKey 为空判据会把
+      // 入口藏掉。EPUB 有声书的配对行对端不按 uid 列，命不中，入口仍在 EPUB 书卡上。
+      if (modules.isEnabled(ModuleId.listening) &&
           _remoteSrtRefetchFor(book.uid) != null) ...<DialogAction>[
         DialogListAction(
           label: t.remote_book_subtitles_refresh,
@@ -1977,6 +1978,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           FushiSnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
       case DropIntent.attachToVideoCard:
+      // 只由 video 表面产出（书架上的音频是有声书素材），列在此处仅为穷尽 switch。
+      case DropIntent.importAudioToMusic:
       case DropIntent.ignore:
         break;
     }

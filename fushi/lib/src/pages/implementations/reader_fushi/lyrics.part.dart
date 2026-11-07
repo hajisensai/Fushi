@@ -240,6 +240,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _lyricsWebViewRetained = true;
         _lyricsPageReady = false;
         _rebuild(() => _lyricsMode = true);
+        notifyPopupBodyWebViewChanged();
         // 查词弹窗换成歌词页主题：Apple 深色档当场生效（app 已是深色时宿主主题
         // 不变、不会发布通知）；MD3 封面取色到达后经宿主通知再换一次。
         _syncDictionaryTheme();
@@ -254,6 +255,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           _lyricsWebViewParkedSize = lyricsBox.size;
         }
         _rebuild(() => _lyricsMode = false);
+        notifyPopupBodyWebViewChanged();
         // 查词弹窗立即回到阅读器主题（不等覆盖层卸载后宿主再发布）。
         _syncDictionaryTheme();
         await _exitLyricsMode();
@@ -555,9 +557,31 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
   /// 覆盖层。不在歌词模式时：歌词 WebView 挂上过就停在屏外（BUG-3913，实例复用），
   /// 否则是一个零尺寸占位——两者都占主 Stack 同一个孩子位，保持孩子数恒定。
+  /// 歌词覆盖层此刻在场（[_buildLyricsOverlay] 挂覆盖层的唯一判据）。在场时它不透明、
+  /// 铺满整页，盖住它下面的整个阅读器层。
+  bool get _lyricsOverlayShown => _lyricsMode && _audiobookController != null;
+
+  /// 被歌词覆盖层盖住的阅读器层（正文、页面遮罩、顶 / 底 chrome、状态行、悬浮球
+  /// 场景）的统一 [TickerMode]：覆盖层在场时这一层看不见，它的 Ticker 与跟随
+  /// TickerMode 的周期刷新一律停下。
+  ///
+  /// 为什么必须停：Android 上正文 WebView 是 Hybrid Composition 平台视图，覆盖层
+  /// 画在它上方，Flutter 每出一帧都要把整屏叠层（ImageReader）重新合成、主线程逐块
+  /// `Bitmap.wrapHardwareBuffer`、Android 视图树整棵重绘。被盖住的有声书迷你条里
+  /// 播放中的波浪进度（[FushiWavyLinearProgress] 逐 vsync repeat）原先一直在要帧，
+  /// 把歌词模式播放顶成逐 vsync 出帧、发热（BUG-4126）。
+  ///
+  /// [slot] 给每层一个稳定 key：Stack 里有条件出现的孩子，不带 key 的同型包装会按
+  /// 下标错配。覆盖层自身与查词弹层不经这里。
+  Widget _coveredByLyricsOverlay(String slot, Widget child) => TickerMode(
+    key: ValueKey<String>('fushi_reader_layer_$slot'),
+    enabled: !_lyricsOverlayShown,
+    child: child,
+  );
+
   Widget _buildLyricsOverlay() {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (!_lyricsMode || ctrl == null) {
+    if (!_lyricsOverlayShown || ctrl == null) {
       if (!_lyricsWebViewRetained) return const SizedBox.shrink();
       // 同一个 [_lyricsWebViewKey]：进出覆盖层时 Flutter 把整棵 WebView 子树（含
       // 原生实例）搬过去，不销毁重建。
@@ -1000,9 +1024,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final List<AudioCue> all = ctrl.allBookCuesSnapshot;
     final int start = _lyricsCueIndexOffset;
     final int end = start + _lyricsCueList.length;
-    if (end > all.length ||
-        !identical(all[start], _lyricsCueList.first) ||
-        !identical(all[end - 1], _lyricsCueList.last)) {
+    if (!lyricsWindowIsSliceOf<AudioCue>(
+      window: _lyricsCueList,
+      offset: start,
+      source: all,
+    )) {
       unawaited(_loadLyricsPage());
       return true;
     }
@@ -1076,6 +1102,20 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (!_lyricsCueWindowUsesAllBookCues &&
         controller.chapterCuesSnapshot.isNotEmpty &&
         !identical(controller.chapterCuesSnapshot, _lyricsCueList)) {
+      unawaited(_loadLyricsPage());
+      return;
+    }
+    // 整书 cue 窗口：已装的那段必须仍是控制器**当前**整书 cue 的同一段（元素身份）。
+    // reader 每装一章都重灌整书 cue（`_injectAudiobookBridge`），歌词模式下正文跟着
+    // 音频跨章——元素没换 → 窗口照常用，跨章不重载（BUG-4202，旧码装章后无条件整页
+    // 重载）；元素换了（重新对齐 / SRT 重建）→ 窗口下标已对不上，先重载，不下发错位
+    // 的 setCue。
+    if (_lyricsCueWindowUsesAllBookCues &&
+        !lyricsWindowIsSliceOf<AudioCue>(
+          window: _lyricsCueList,
+          offset: _lyricsCueIndexOffset,
+          source: controller.allBookCuesSnapshot,
+        )) {
       unawaited(_loadLyricsPage());
       return;
     }
@@ -1476,6 +1516,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // 停放中创建完成（进入后立刻退出 / 停放时 renderer 死亡换代）也记下：实例
         // 复用（BUG-3913），下次进入由 _toggleLyricsMode 装载文档。
         _lyricsWebViewController = controller;
+        notifyPopupBodyWebViewChanged();
         _lyricsMenuDismiss.attach(controller);
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',

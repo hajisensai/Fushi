@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Guards BUG-546 (TODO-1135) under the TODO-1321 unified-width model.
 ///

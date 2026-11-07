@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// White-flash unification guard: the shared [DictionaryPopupLayer] (used by the
 /// reader, audiobook, video, home dictionary tab and the standalone popup

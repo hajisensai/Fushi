@@ -30,9 +30,10 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 /// 路由名。
 const String kAppleMusicBackendRoute = 'apple-music';
 
-/// MusicKit 曲目的能力：没有音频信号可读、不能在音频时间轴上做 A-B 循环。
+/// MusicKit 曲目的能力：没有音频信号可读、不能在音频时间轴上做 A-B 循环、不能从曲内
+/// 某处开始放（不做断点续播）。
 const MusicBackendCapabilities kAppleMusicBackendCapabilities =
-    MusicBackendCapabilities(signalPath: false, abLoop: false);
+    MusicBackendCapabilities(signalPath: false, abLoop: false, startAt: false);
 
 /// MusicKit 电台：在整曲能力之外，队列由 MusicKit 自管（引擎的「下一首」委托给后端）。
 const MusicBackendCapabilities kAppleMusicStationCapabilities =
@@ -40,6 +41,7 @@ const MusicBackendCapabilities kAppleMusicStationCapabilities =
       signalPath: false,
       abLoop: false,
       externalQueue: true,
+      startAt: false,
     );
 
 /// [item]（已归 Apple Music 路由）的能力：电台自管队列，其余是整曲。
@@ -356,7 +358,9 @@ class AppleMusicOutputBackend implements MusicExternalQueueBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
+    // [startAt] 不支持（能力表里 `startAt: false`）：引擎对这类曲目不传。
     final int gen = ++_gen;
     _current = null;
     _currentSongId = null;

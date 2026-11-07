@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 合集墓碑 + 手动序时间戳 DAO 测试（多端库联合视图 §2.3 任务2）：

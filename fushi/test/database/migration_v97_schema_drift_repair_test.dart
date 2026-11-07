@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
@@ -132,7 +132,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 144);
+      expect(probe.select('PRAGMA user_version').first.values.first, 146);
       for (final (String table, String column) in <(String, String)>[
         ('epub_books', 'language'),
         ('dictionary_metadata', 'language_override'),
@@ -184,7 +184,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 144);
+      expect(probe.select('PRAGMA user_version').first.values.first, 146);
     } finally {
       probe.dispose();
     }

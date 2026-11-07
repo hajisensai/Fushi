@@ -18,7 +18,7 @@
 // 只锁一处的话，另一处将来被人重写就会悄悄把预览放回来。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// fork 的 WebView 实现源码（相对 `fushi/` 的测试 cwd）。
 const String _forkSourcePath =

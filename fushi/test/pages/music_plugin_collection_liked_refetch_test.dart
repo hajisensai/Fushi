@@ -118,6 +118,7 @@ class _Backend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {}
 
   @override
@@ -172,6 +173,7 @@ class _AppModel extends AppModel {
   late final MusicSession _session = MusicSession(
     engine: MusicPlayerEngine(backendFactory: () => backend),
     audio: audioCtrl,
+    hasSystemMediaSession: platformServices.hasSystemMediaSession,
     audiobook: audiobookSession,
     database: () => db,
     showMediaNotification: () => false,

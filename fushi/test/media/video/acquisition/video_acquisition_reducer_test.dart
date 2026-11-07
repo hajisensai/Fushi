@@ -1,5 +1,5 @@
 // 「AI 下视频」纯函数状态机：槽位决策表 / 作品消解 / 资源阶段 / 提交 / 取消。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';

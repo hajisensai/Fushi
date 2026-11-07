@@ -748,6 +748,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
     final int gen = ++_openGen;
     await _collapse();
@@ -759,11 +760,11 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     final bool enabled = _enabled;
     primary.crossfadeFiltersEnabled = enabled;
     if (enabled && crossfadeNext && next != null) {
-      await primary.openPair(current, null, play: play);
+      await primary.openPair(current, null, play: play, startAt: startAt);
       if (gen != _openGen) return;
       _plan = _Plan(next);
     } else {
-      await primary.openPair(current, next, play: play);
+      await primary.openPair(current, next, play: play, startAt: startAt);
     }
   }
 

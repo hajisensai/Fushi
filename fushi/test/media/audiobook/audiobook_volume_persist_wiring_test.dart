@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-031）：控制器侧的音量持久化原语必须与 speed 同型存在——
 /// `onVolumePersist` 回调、`setVolume` 触发它、`load` 应用 `initialVolume`。

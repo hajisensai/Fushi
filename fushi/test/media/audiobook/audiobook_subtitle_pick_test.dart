@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_pick.dart';
 
 /// 有声书字幕文件名级唯一规则：Audiobookshelf、下载包分类、本机同名扫描共用。

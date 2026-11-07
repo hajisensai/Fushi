@@ -1,0 +1,23 @@
+{
+  "name": "decky-fushi-lens",
+  "version": "0.1.0",
+  "description": "Fushi screen OCR, dictionary lookup and mining in Steam Deck Game Mode.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "python scripts/copy_popup.py && rollup -c",
+    "watch": "rollup -c -w",
+    "test": "python -m unittest discover -s tests"
+  },
+  "devDependencies": {
+    "@decky/rollup": "^1.0.1",
+    "@decky/ui": "^4.7.2",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "rollup": "^4.22.5",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "@decky/api": "^1.1.2"
+  }
+}

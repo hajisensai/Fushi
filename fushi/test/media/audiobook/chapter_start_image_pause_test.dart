@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2536：有声书从上一章连续读到新章，新章第一句之前的插图（章扉画 / 合并进
 /// 宿主顶部的单图片章）既不触发图片等待、也不揭防剧透遮罩。

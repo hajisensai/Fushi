@@ -481,7 +481,12 @@ pub(crate) fn evaluate_holds(
 }
 
 /// 实体上有没有过 `deleted` 写入（[evaluate_holds] 的快速出口）。
-fn any_delete(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
+pub(crate) fn any_delete(
+    conn: &Connection,
+    profile: &str,
+    kind: &str,
+    entity: &str,
+) -> Result<bool, String> {
     conn.prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = 'deleted' LIMIT 1")
         .map_err(sql)?
         .exists(params![profile, kind, entity])

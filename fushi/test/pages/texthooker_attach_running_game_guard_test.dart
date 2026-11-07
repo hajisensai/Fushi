@@ -19,7 +19,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 取 [signature]（须一路匹配到方法体的开花括号）对应的方法体，用于把断言限制在实现内，
 /// 避开 dartdoc 里为解释反例而出现的同名符号。

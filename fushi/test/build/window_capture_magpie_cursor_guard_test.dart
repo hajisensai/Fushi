@@ -8,7 +8,7 @@
 //   ③ diagnostics 要真的经 channel 回到 Dart（否则等于没记）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String capture = File(

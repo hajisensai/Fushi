@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/ai/ai_text_process_assistant.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 

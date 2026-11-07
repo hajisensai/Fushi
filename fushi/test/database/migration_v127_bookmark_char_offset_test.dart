@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
@@ -46,7 +46,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 144);
+      expect(migrated.schemaVersion, 146);
       final List<Bookmark> legacy = await BookmarkRepository(
         migrated,
       ).getBookmarks('book_1');
@@ -61,7 +61,7 @@ void main() {
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
-      expect(probe.select('PRAGMA user_version').first.values.first, 144);
+      expect(probe.select('PRAGMA user_version').first.values.first, 146);
       expect(columnsOf(probe, 'bookmarks'), contains('char_offset'));
       expect(columnsOf(probe, 'bookmarks'), contains('chapter_key'));
       // 重跑 v127 步：列已在，不得报错、不得清数据。

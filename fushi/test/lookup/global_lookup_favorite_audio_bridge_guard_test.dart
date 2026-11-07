@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1188 — app-external global lookup overlay: the audio (♪ pronunciation)
 /// and favorite (☆/★) buttons did nothing. Two root causes, three layers wired

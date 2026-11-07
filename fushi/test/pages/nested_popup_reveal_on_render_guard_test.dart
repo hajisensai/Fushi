@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-058 source-scan guard: locks the "a cold nested popup's visibility is
 /// driven by the WebView render signal, not by FFI-result-ready" wiring across

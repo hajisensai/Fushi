@@ -2936,6 +2936,165 @@ testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
   process.exitCode = 1;
 });
 
+// 反馈 E0sdqm4h-F / PR #2980 审查：「允许重复」开着时单击已制卡 ✓ 直接再制一张——判据在
+// 宿主（app 内 runAnkiMinedCardAction / app 外 findMinedMatches 回 {mineNew:true} / 扩展经
+// /api/duplicate 的 allowDuplicates），popup.js 不读任何本地 allowDupes。右键 / 长按（「管理」
+// 手势）带 openChooser:true，永远弹选择单，覆写指定旧卡 / 查看不因允许重复而消失。
+function stubDupesAwareExternalHost(context, calls, allowDupes) {
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'openInAnki') return Promise.resolve('opened');
+    if (name === 'findMinedMatches') {
+      calls.findMinedMatches.push(payload);
+      if (allowDupes && payload.openChooser !== true) {
+        return Promise.resolve({ mineNew: true });
+      }
+      return Promise.resolve([{ noteId: 9001, preview: '刀 — 既存カード' }]);
+    }
+    if (name === 'mineEntry') {
+      calls.mineEntry.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: 222 });
+    }
+    if (name === 'updateEntry') {
+      calls.updateEntry.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    return Promise.resolve(true);
+  };
+}
+
+async function testAppExternalAllowDupesTapMinesDirectlyWithoutPanel() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(calls.findMinedMatches.length, 1);
+  assert.equal(calls.findMinedMatches[0].openChooser, false,
+    'a plain tap tells the host it is NOT the manage gesture');
+  assert.equal(context.document.querySelector('.mined-action-panel'), null,
+    'allow-duplicates on: a tap must not open the overwrite / add chooser');
+  assert.equal(calls.mineEntry.length, 1, 'the tap mines a new card directly');
+  assert.equal(calls.mineEntry[0].allowDuplicate, 'true',
+    'the direct add carries the duplicate override, same as the in-app mineNew');
+}
+
+async function testAppExternalManageGestureAlwaysOpensChooser() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.ok(mineButton.title, 'a mined ✓ advertises the manage gesture in its tooltip');
+
+  let prevented = false;
+  mineButton.dispatchEvent({
+    type: 'contextmenu',
+    pointerType: 'mouse',
+    preventDefault() { prevented = true; },
+    stopPropagation() {},
+  });
+  await flush();
+  await flush();
+
+  assert.equal(prevented, true, 'right-click on a mined ✓ replaces the native menu');
+  assert.equal(calls.findMinedMatches.length, 1);
+  assert.equal(calls.findMinedMatches[0].openChooser, true);
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'even with allow-duplicates on, the manage gesture opens the chooser');
+  assert.equal(calls.mineEntry.length, 0, 'nothing is mined before the user decides');
+
+  findPanelButton(context, '覆写这张卡').onclick();
+  await flush();
+  await flush();
+  assert.equal(calls.updateEntry.length, 1, 'overwrite of a specific old card stays reachable');
+  assert.equal(calls.updateEntry[0].noteId, 9001);
+}
+
+async function testManageGestureIgnoredOnUnminedButton() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'findMinedMatches') calls.findMinedMatches.push(payload);
+    return Promise.resolve(null);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '');
+  let prevented = false;
+  mineButton.dispatchEvent({
+    type: 'contextmenu',
+    pointerType: 'mouse',
+    preventDefault() { prevented = true; },
+    stopPropagation() {},
+  });
+  await flush();
+  assert.equal(prevented, false, 'a "+" keeps the native context menu');
+  assert.equal(calls.findMinedMatches.length, 0);
+}
+
+async function testNativeLanePassesOpenChooserIntent() {
+  const context = loadPopup();
+  context.window.__fushiMinedCardActionNative = true;
+  const intents = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload, extra) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'minedCardAction') {
+      intents.push(extra);
+      return Promise.resolve({ ankiConnect: false, noteId: null });
+    }
+    return Promise.resolve(true);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  mineButton.dispatchEvent({
+    type: 'keydown',
+    key: 'ContextMenu',
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  await flush();
+  await flush();
+  assert.equal(intents.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(intents[0])), { openChooser: false },
+    'a tap hands the host openChooser:false (allow-duplicates may add directly)');
+  assert.deepEqual(JSON.parse(JSON.stringify(intents[1])), { openChooser: true },
+    'the menu key hands the host openChooser:true (always the chooser)');
+}
+
+// 这几条在旧实现上会卡在「等用户在面板里选」——一个永不 settle 的 promise 不会报错，
+// 进程照样 0 退出。所以记账：退出时还没跑完的一律判红（不让挂起冒充通过）。
+const pendingAllowDupesTests = new Set();
+process.on('exit', () => {
+  if (pendingAllowDupesTests.size === 0) return;
+  console.error('allow-duplicates tests never finished:', [...pendingAllowDupesTests]);
+  process.exitCode = 1;
+});
+for (const t of [
+  testAppExternalAllowDupesTapMinesDirectlyWithoutPanel,
+  testAppExternalManageGestureAlwaysOpensChooser,
+  testManageGestureIgnoredOnUnminedButton,
+  testNativeLanePassesOpenChooserIntent,
+]) {
+  pendingAllowDupesTests.add(t.name);
+  t().then(() => pendingAllowDupesTests.delete(t.name)).catch((error) => {
+    pendingAllowDupesTests.delete(t.name);
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
 // BUG-2051 ↗「在 Anki 中打开卡片」——app 内外**同一根桥、同一条判据**。
 //
 // 旧实现按宿主能力分两条：app 内交给 openInAnki，app 外自己先 findMinedMatches 反查

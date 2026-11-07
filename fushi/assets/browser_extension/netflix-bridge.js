@@ -164,13 +164,21 @@
   // 正片播放器：Netflix 同页同时挂着多个播放器会话（浏览页的 billboard 预告、悬停预览、正片），
   // 正片会话 id 以 'watch' 开头。只认它——没有正片会话就是没有（返回 null），绝不退化成「随便
   // 最后一个」：那会把 seek / 暂停 / 选轨打到预告片播放器上，正片纹丝不动。
-  function nfPlayer() {
+  function nfWatchSessionId() {
     try {
       var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
       var ids = vp.getAllPlayerSessionIds() || [];
       for (var i = ids.length - 1; i >= 0; i--) {
-        if (String(ids[i]).indexOf('watch') === 0) return vp.getVideoPlayerBySessionId(ids[i]) || null;
+        if (String(ids[i]).indexOf('watch') === 0) return String(ids[i]);
       }
+    } catch (_) {}
+    return null;
+  }
+  function nfPlayer() {
+    var id = nfWatchSessionId();
+    if (id == null) return null;
+    try {
+      return window.netflix.appContext.state.playerApp.getAPI().videoPlayer.getVideoPlayerBySessionId(id) || null;
     } catch (_) {}
     return null;
   }
@@ -501,22 +509,95 @@
   // 4s 不到位也放行，绝不卡死批量）。
   // done(ok, err)：逼近目标 → ok；4 s 没到位 → ok=false（'timeout'），调用方据此记日志、放弃
   // 「跳转在途」状态，不再把旧位置当成 seek 的结果死等。
-  // 新 seek 到来时旧 seek 的轮询立即作废（回 superseded），不叠出成片 80 ms 轮询各等 4 s。
-  var nfSeekGen = 0;
+  //
+  // 合并连发：同一时刻最多一次 player.seek 在途。在途期间新到的请求只覆盖「待发目标」（被覆盖的
+  // 那条回 superseded）；在途那次落地或超时后才把最后一个待发目标发出去。按住方向键、拖进度条、
+  // 连点上下句时 Netflix 只看到「一次重定位落地 → 下一次」的节奏，而不是每 30 ms 一次叠在一起
+  // 的重定位（正常网页客户端不会这样发，叠发的重定位与 Netflix 断流相关）。最终落点仍是最后一次
+  // 请求；待发目标与刚落地的位置已在落点精度内时不再发，直接回 ok。
+  //
+  // 「落地」= 播放器 API 时间逼近目标 **且** 页面上的 <video> 已不在 seeking、有当前帧（readyState
+  // ≥ 2）。只看 getCurrentTime 不够：Cadmium 收到 seek 就把自己的时间报成目标，MSE 的重定位（清缓冲、
+  // 拉新分片）还在后面——那时放出下一次 seek 仍是叠发。<video> 一直不安定时由 4 s 超时兜底。
+  //
+  // 在途 / 排队都绑定发起时的正片会话 id：会话换了（播放器里换集、重开正片）就以 'session-changed'
+  // 结束，不把上一集的目标打到新一集上，也不让旧会话的轮询拖住新会话的 seek。
+  var NF_SEEK_LANDED_MS = 300;
+  var NF_SEEK_TIMEOUT_MS = 4000;
+  var nfSeekInFlight = null; // { session, done }
+  var nfSeekQueued = null; // { ms, done, session }
   function nfSeek(ms, done) {
+    var session = nfWatchSessionId();
+    if (session == null || !nfPlayer()) throw new Error('no watch player session');
+    if (nfSeekInFlight && nfSeekInFlight.session === session) {
+      if (nfSeekQueued) nfSeekQueued.done(false, 'superseded');
+      nfSeekQueued = { ms: ms, done: done, session: session };
+      return;
+    }
+    if (nfSeekInFlight) nfSeekAbandon('session-changed'); // 旧会话的在途 / 排队就此收尾
+    nfSeekStart(ms, done, session);
+  }
+  function nfSeekAbandon(err) {
+    var flight = nfSeekInFlight;
+    var queued = nfSeekQueued;
+    nfSeekInFlight = null;
+    nfSeekQueued = null;
+    if (flight) flight.done(false, err);
+    if (queued) queued.done(false, err);
+  }
+  function nfVideoSettled() {
+    try {
+      if (typeof document === 'undefined' || !document.querySelector) return true;
+      var v = document.querySelector('video');
+      if (!v) return true;
+      return !v.seeking && v.readyState >= 2;
+    } catch (_) { return true; }
+  }
+  function nfSeekLanded(player, ms) {
+    var cur = null;
+    try { cur = player.getCurrentTime(); } catch (_) { cur = null; }
+    return cur != null && Math.abs(cur - ms) < NF_SEEK_LANDED_MS;
+  }
+  // 目标夹在片长内：越过片尾的目标 getCurrentTime 永远追不上，会白白拖满 4 s 超时。
+  function nfClampSeekMs(player, ms) {
+    var dur = null;
+    try { dur = player.getDuration(); } catch (_) { dur = null; }
+    return typeof dur === 'number' && dur > 0 ? Math.min(ms, dur) : ms;
+  }
+  function nfSeekStart(ms, done, session) {
     var player = nfPlayer();
-    if (!player) throw new Error('no watch player session');
-    var gen = ++nfSeekGen;
-    player.seek(ms);
-    var deadline = Date.now() + 4000;
+    if (!player || nfWatchSessionId() !== session) { done(false, 'session-changed'); nfSeekDrain(); return; }
+    ms = nfClampSeekMs(player, ms);
+    var flight = { session: session, done: done };
+    nfSeekInFlight = flight;
+    try { player.seek(ms); }
+    catch (x) { nfSeekInFlight = null; done(false, String(x)); nfSeekDrain(); return; }
+    var deadline = Date.now() + NF_SEEK_TIMEOUT_MS;
     (function poll() {
-      if (gen !== nfSeekGen) { done(false, 'superseded'); return; }
-      var cur = null;
-      try { cur = player.getCurrentTime(); } catch (_) { cur = null; }
-      if (cur != null && Math.abs(cur - ms) < 300) { done(true, ''); return; } // 已逼近目标：真重定位完成
-      if (Date.now() > deadline) { done(false, 'timeout'); return; } // 超时兜底：不卡死批量
-      setTimeout(poll, 80);
+      if (nfSeekInFlight !== flight) return; // 已被 nfSeekAbandon 收尾（回执已发）
+      if (nfWatchSessionId() !== session) {
+        nfSeekInFlight = null;
+        done(false, 'session-changed');
+        nfSeekDrain();
+        return;
+      }
+      var landed = nfSeekLanded(player, ms) && nfVideoSettled();
+      if (!landed && Date.now() <= deadline) { setTimeout(poll, 80); return; }
+      nfSeekInFlight = null;
+      if (!landed) done(false, 'timeout'); // 超时兜底：不卡死批量；真实失败照常报出
+      // 有更新的目标在排队：这一次的结果已没人要（回 superseded），接着发最后那一个。
+      else if (nfSeekQueued) done(false, 'superseded');
+      else done(true, '');
+      nfSeekDrain(landed ? player : null);
     })();
+  }
+  function nfSeekDrain(landedPlayer) {
+    var next = nfSeekQueued;
+    nfSeekQueued = null;
+    if (!next) return;
+    if (nfWatchSessionId() !== next.session) { next.done(false, 'session-changed'); return; }
+    if (landedPlayer && nfSeekLanded(landedPlayer, nfClampSeekMs(landedPlayer, next.ms))) { next.done(true, ''); return; }
+    nfSeekStart(next.ms, next.done, next.session);
   }
 
   window.addEventListener('message', function (e) {

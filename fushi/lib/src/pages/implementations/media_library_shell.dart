@@ -515,11 +515,18 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
         ),
       );
     }
-    // 一级只剩一组（iOS 合规门下没有在线视图）时不画胶囊，页签位置改放该组名
-    // 的标题胶囊（书架），左上角不空着。
+    // 一级只剩一组（iOS 合规门下没有在线视图）时不画胶囊，页签位置改放标题
+    // 胶囊，左上角不空着。标题是外壳给本 tab 的页面名（漫画 / 书架），不是组名：
+    // 「我的」组以库视图命名（漫画库也叫「书架」），当页面名会把漫画页标成书架。
+    // 没有外壳页面名（独立挂载）时才回落组名。
     if (tabs.length < 2) {
+      final String? pageName = FushiShellTitleScope.maybeTitleOf(context);
       return FushiFloatingChromeSoloTitle(
-        title: tabs.isEmpty ? '' : tabs.single.label,
+        title: pageName != null && pageName.isNotEmpty
+            ? pageName
+            : tabs.isEmpty
+            ? ''
+            : tabs.single.label,
       );
     }
     // 停在导入页时高亮「我的」组：导入管理的就是本地库。

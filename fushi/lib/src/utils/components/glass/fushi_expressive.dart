@@ -7,6 +7,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 // Material 3 Expressive（Google 2025-05，Android 16）的按钮动效：Flutter 3.44
@@ -587,7 +588,8 @@ class _FushiPressMorphState extends State<FushiPressMorph>
 
 // ---------------------------------------------------------------------------
 // 挤压排布：一排子项，按下的那个按比例变宽，宽度从相邻项匀出（总宽不变，
-// 组的外框不抖）。连接式按钮组与标准按钮组共用。
+// 组的外框不抖）。只给标准按钮组用；分段（连接式按钮组）的段宽走
+// [FushiSegmentRow] / [fushiSegmentWidths]，不在这里另写一份等宽逻辑（BUG-4205）。
 // ---------------------------------------------------------------------------
 
 class _FushiSqueezeParentData extends ContainerBoxParentData<RenderBox> {}
@@ -597,7 +599,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
     required this.press,
     required this.growFactor,
     required this.gap,
-    required this.equalExtents,
     required this.expand,
     required super.children,
   });
@@ -605,7 +606,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
   final List<double> press;
   final double growFactor;
   final double gap;
-  final bool equalExtents;
   final bool expand;
 
   @override
@@ -613,7 +613,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
     press: press,
     growFactor: growFactor,
     gap: gap,
-    equalExtents: equalExtents,
     expand: expand,
     textDirection: Directionality.of(context),
   );
@@ -627,7 +626,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
       ..press = press
       ..growFactor = growFactor
       ..gap = gap
-      ..equalExtents = equalExtents
       ..expand = expand
       ..textDirection = Directionality.of(context);
   }
@@ -641,13 +639,11 @@ class _RenderFushiSqueeze extends RenderBox
     required List<double> press,
     required double growFactor,
     required double gap,
-    required bool equalExtents,
     required bool expand,
     required TextDirection textDirection,
   }) : _press = press,
        _growFactor = growFactor,
        _gap = gap,
-       _equalExtents = equalExtents,
        _expand = expand,
        _textDirection = textDirection;
 
@@ -669,13 +665,6 @@ class _RenderFushiSqueeze extends RenderBox
   set gap(double value) {
     if (_gap == value) return;
     _gap = value;
-    markNeedsLayout();
-  }
-
-  bool _equalExtents;
-  set equalExtents(bool value) {
-    if (_equalExtents == value) return;
-    _equalExtents = value;
     markNeedsLayout();
   }
 
@@ -715,10 +704,9 @@ class _RenderFushiSqueeze extends RenderBox
   double _intrinsicMain(double height, double Function(RenderBox) measure) {
     final List<RenderBox> children = _children;
     if (children.isEmpty) return 0;
-    final List<double> sizes = children.map(measure).toList();
-    final double content = _equalExtents
-        ? sizes.reduce(math.max) * sizes.length
-        : sizes.fold<double>(0, (double a, double b) => a + b);
+    final double content = children
+        .map(measure)
+        .fold<double>(0, (double a, double b) => a + b);
     return content + _gaps(children.length);
   }
 
@@ -757,13 +745,13 @@ class _RenderFushiSqueeze extends RenderBox
   double? computeDistanceToActualBaseline(TextBaseline baseline) =>
       defaultComputeDistanceToHighestActualBaseline(baseline);
 
-  /// 各子项的最终宽度：基准宽（等宽 = 最宽者；否则各自的最大固有宽，受约束
-  /// 时按比例缩放 / 撑满），再按按下进度把宽度从邻居匀给按下的那个。
+  /// 各子项的最终宽度：基准宽（各自的最大固有宽，受约束时按比例缩放 /
+  /// 撑满），再按按下进度把宽度从邻居匀给按下的那个。
   ///
   /// 邻居只让出「超出自身单行固有宽」的那部分富余（反馈 orCq_DE1i7：按下
   /// 「更多」把「分享主题」挤到比单行还窄，文字折成两行、按钮高度跳变）。
   /// 按自然宽排布的组没有富余，按下只剩按钮自身的形变，不再挤压邻居；撑满
-  /// 整行（[expand]）或等宽段这类有富余的组照常挤压，但永远不会挤到折行。
+  /// 整行（[expand]）这类有富余的组照常挤压，但永远不会挤到折行。
   List<double> _widths(BoxConstraints constraints, List<RenderBox> children) {
     final int n = children.length;
     final double gaps = _gaps(n);
@@ -771,10 +759,6 @@ class _RenderFushiSqueeze extends RenderBox
         .map((RenderBox c) => c.getMaxIntrinsicWidth(double.infinity))
         .toList();
     List<double> base = List<double>.of(natural);
-    if (_equalExtents) {
-      final double widest = base.reduce(math.max);
-      base = List<double>.filled(n, widest);
-    }
     final double content = base.fold<double>(0, (double a, double b) => a + b);
     double? targetContent;
     if (constraints.hasBoundedWidth &&
@@ -836,19 +820,6 @@ class _RenderFushiSqueeze extends RenderBox
       (double a, Size s) => math.max(a, s.height),
     );
     height = math.max(height, constraints.minHeight);
-    if (_equalExtents) {
-      // 连接式按钮组的段必须等高（图标段与文字段的固有高可能差一两像素）。
-      for (int i = 0; i < children.length; i++) {
-        if (sizes[i].height == height) continue;
-        final BoxConstraints cc = BoxConstraints.tightFor(
-          width: widths[i],
-          height: height,
-        );
-        sizes[i] = dry
-            ? children[i].getDryLayout(cc)
-            : _layoutChild(children[i], cc);
-      }
-    }
     final double width =
         widths.fold<double>(0, (double a, double b) => a + b) +
         _gaps(children.length);
@@ -915,12 +886,17 @@ const double _kConnectedCheckPadding = 4;
 /// （default spatial 弹簧）并填 primary + onPrimary + 对勾（M3 Expressive
 /// 连接式组用的是 filled toggle：选中 primary；secondaryContainer 与未选的
 /// 底同为浅色，两段读成两颗互不相干的淡色胶囊），未选
-/// surfaceContainerHighest + onSurface；高 40（紧凑密度 32）；各段等宽，宽度
-/// 按「最宽标签 + 两侧对勾槽」预留，对勾在文字左侧的槽里淡入，**文字在按压与
+/// surfaceContainerHighest + onSurface；高 40（紧凑密度 32）。段宽由
+/// [FushiSegmentRow]（[fushiSegmentWidths]）分配：放得下时各段等宽，宽度按
+/// 「最宽标签 + 两侧对勾槽」预留，对勾在文字左侧的槽里淡入，**文字在按压与
 /// 选中切换前后都原地不动**（用户 2026-10-06：字体库「日文 / 中文 / 西文」点完
-/// 文字左右跳）。连接式组不做标准按钮组那种按下变宽：段等宽、文字居中，按下的
-/// 段一变宽，它和邻段的文字中心都跟着挪；按压反馈只靠状态层。调用方 style 的颜色 / 字体 /
-/// 内边距 / 密度照用，shape 与 side 由组决定（与 SegmentedButton 一样不下发到段）。
+/// 文字左右跳）；放不下时按内容分宽 → 收对勾槽 → 只压最宽段折行，不再整体等比
+/// 缩窄把最长段先截断（反馈 GaI5uPQEbF / BUG-4205）。连接式组不做标准按钮组那种
+/// 按下变宽：文字居中，按下的段一变宽，它和邻段的文字中心都跟着挪；按压反馈只靠
+/// 状态层。调用方 style 的颜色 / 字体 / 内边距 / 密度照用，shape 与 side 由组决定
+/// （与 SegmentedButton 一样不下发到段；墨水屏下组给每段补 outline 描边）。
+/// 墨水屏也走本组（主题 segmentedButtonTheme 的反色填充照用），不再退回原生
+/// [SegmentedButton] 的等宽段。
 class FushiConnectedButtonGroup<T> extends StatefulWidget {
   const FushiConnectedButtonGroup({
     super.key,
@@ -1124,6 +1100,14 @@ class _FushiConnectedButtonGroupState<T>
         segTheme.style?.backgroundColor != null;
     final bool customPadding =
         callerStyle.padding != null || segTheme.style?.padding != null;
+    // 墨水屏：未选段的底色就是页面底色，段的边界只能靠描边（原生
+    // SegmentedButton 的 outline 同理）。
+    final BorderSide? einkSide =
+        isEinkTheme(context) &&
+            callerStyle.side == null &&
+            segTheme.style?.side == null
+        ? BorderSide(color: cs.outline)
+        : null;
     final Widget? selectedIcon = widget.showSelectedIcon
         ? widget.selectedIcon ??
               segTheme.selectedIcon ??
@@ -1183,6 +1167,11 @@ class _FushiConnectedButtonGroupState<T>
             // 形状 / 底色都由弹簧逐帧给出，Material 的隐式补间会叠出拖影。
             animationDuration: Duration.zero,
           );
+          if (einkSide != null) {
+            style = style.copyWith(
+              side: WidgetStatePropertyAll<BorderSide?>(einkSide),
+            );
+          }
           if (!customBackground) {
             style = style.copyWith(
               backgroundColor: WidgetStatePropertyAll<Color?>(
@@ -1238,15 +1227,22 @@ class _FushiConnectedButtonGroupState<T>
       for (int i = 0; i < n; i++) segmentFor(i),
     ];
 
+    // 对勾段两侧各一个对勾槽，放不下时先收它（[_CheckSlotRow]），再压文字。
+    final double checkSlots = 2 * (iconExtent + _kConnectedIconGap);
     Widget group;
     if (horizontal) {
-      // 不挤压（growFactor 0）：等宽段里文字居中，按下变宽会让文字跟着挪。
-      group = _FushiSqueezeRow(
-        press: List<double>.filled(n, 0),
-        growFactor: 0,
+      // 不挤压：段里文字居中，按下变宽会让文字跟着挪。
+      group = FushiSegmentRow(
+        extras: <double>[
+          for (final ButtonSegment<T> s in widget.segments)
+            // 与 segmentFor 同一判据：有对勾、且没有段自带的前置图标。
+            selectedIcon != null && (s.label == null || s.icon == null)
+                ? checkSlots
+                : 0,
+        ],
+        extrasInIntrinsic: true,
         gap: _kConnectedGap,
-        equalExtents: true,
-        expand: widget.expandedInsets != null,
+        fill: widget.expandedInsets != null,
         children: segments,
       );
     } else {
@@ -1346,8 +1342,8 @@ class _ConnectedSegmentContent extends StatelessWidget {
         ],
       );
     }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return _CheckSlotRow(
+      slot: slot,
       children: <Widget>[
         // 左槽：对勾贴文字一侧；未选时不建对勾（树里只有选中段带对勾图标）。
         SizedBox(
@@ -1371,11 +1367,217 @@ class _ConnectedSegmentContent extends StatelessWidget {
                   ),
                 ),
         ),
-        Flexible(child: label),
+        label,
         // 右侧对称空槽：让文字恒在段正中。
         SizedBox(width: slot, height: iconExtent),
       ],
     );
+  }
+}
+
+/// 「对勾槽 + 文字 + 对称空槽」三段排布（[_ConnectedSegmentContent]）：宽度
+/// 够时两槽满宽、文字居中；段被 [FushiSegmentRow] 压窄时**先对称收两槽**，
+/// 文字保持单行自然宽，两槽收到 0 后才压文字（折行）。槽被收窄时左槽内容
+/// （对勾）裁在槽内，不压到文字上。
+///
+/// 固有宽：最大 = 文字最大固有宽 + 2 × [slot]（放得下时与旧 Row 一致）；最小 =
+/// 文字最小固有宽（槽可收掉）。
+class _CheckSlotRow extends MultiChildRenderObjectWidget {
+  const _CheckSlotRow({required this.slot, required super.children})
+    : assert(children.length == 3);
+
+  final double slot;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderCheckSlotRow(
+    slot: slot,
+    textDirection: Directionality.of(context),
+  );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderCheckSlotRow renderObject,
+  ) {
+    renderObject
+      ..slot = slot
+      ..textDirection = Directionality.of(context);
+  }
+}
+
+class _CheckSlotParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderCheckSlotRow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _CheckSlotParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _CheckSlotParentData> {
+  _RenderCheckSlotRow({
+    required double slot,
+    required TextDirection textDirection,
+  }) : _slot = slot,
+       _textDirection = textDirection;
+
+  double _slot;
+  set slot(double value) {
+    if (value == _slot) return;
+    _slot = value;
+    markNeedsLayout();
+  }
+
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (value == _textDirection) return;
+    _textDirection = value;
+    markNeedsLayout();
+  }
+
+  final LayerHandle<ClipRectLayer> _clip = LayerHandle<ClipRectLayer>();
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _CheckSlotParentData) {
+      child.parentData = _CheckSlotParentData();
+    }
+  }
+
+  RenderBox get _lead => firstChild!;
+  RenderBox get _label => childAfter(firstChild!)!;
+  RenderBox get _trail => lastChild!;
+
+  /// 给定可用宽时每个槽的宽：文字单行自然宽之外的富余对称分给两槽，至多 [_slot]。
+  double _slotFor(double maxWidth) {
+    if (!maxWidth.isFinite) return _slot;
+    final double label = _label.getMaxIntrinsicWidth(double.infinity);
+    return ((maxWidth - label) / 2).clamp(0.0, _slot);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      _label.getMinIntrinsicWidth(height);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _label.getMaxIntrinsicWidth(height) + 2 * _slot;
+
+  double _intrinsicHeight(double width, double Function(RenderBox, double) m) {
+    final double s = _slotFor(width);
+    final double labelWidth = width.isFinite
+        ? math.max(0.0, width - 2 * s)
+        : double.infinity;
+    return <double>[
+      m(_lead, s),
+      m(_label, labelWidth),
+      m(_trail, s),
+    ].reduce(math.max);
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _intrinsicHeight(
+    width,
+    (RenderBox c, double w) => c.getMinIntrinsicHeight(w),
+  );
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _intrinsicHeight(
+    width,
+    (RenderBox c, double w) => c.getMaxIntrinsicHeight(w),
+  );
+
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) =>
+      defaultComputeDistanceToHighestActualBaseline(baseline);
+
+  Size _layout(BoxConstraints constraints, {required bool dry}) {
+    final double s = _slotFor(constraints.maxWidth);
+    final BoxConstraints slotConstraints = BoxConstraints(
+      minWidth: s,
+      maxWidth: s,
+      maxHeight: constraints.maxHeight,
+    );
+    final BoxConstraints labelConstraints = BoxConstraints(
+      maxWidth: constraints.hasBoundedWidth
+          ? math.max(0.0, constraints.maxWidth - 2 * s)
+          : double.infinity,
+      maxHeight: constraints.maxHeight,
+    );
+    Size measure(RenderBox c, BoxConstraints cc) {
+      if (dry) return c.getDryLayout(cc);
+      c.layout(cc, parentUsesSize: true);
+      return c.size;
+    }
+
+    final Size lead = measure(_lead, slotConstraints);
+    final Size label = measure(_label, labelConstraints);
+    final Size trail = measure(_trail, slotConstraints);
+    final Size size = constraints.constrain(
+      Size(
+        lead.width + label.width + trail.width,
+        math.max(label.height, math.max(lead.height, trail.height)),
+      ),
+    );
+    if (!dry) {
+      final bool rtl = _textDirection == TextDirection.rtl;
+      final double content = lead.width + label.width + trail.width;
+      double x = (size.width - content) / 2;
+      for (final (RenderBox c, Size sz) in <(RenderBox, Size)>[
+        (_lead, lead),
+        (_label, label),
+        (_trail, trail),
+      ]) {
+        final double dx = rtl ? size.width - x - sz.width : x;
+        (c.parentData! as _CheckSlotParentData).offset = Offset(
+          dx,
+          (size.height - sz.height) / 2,
+        );
+        x += sz.width;
+      }
+    }
+    return size;
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) =>
+      _layout(constraints, dry: true);
+
+  @override
+  void performLayout() {
+    size = _layout(constraints, dry: false);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final RenderBox lead = _lead;
+    final Offset leadOffset =
+        offset + (lead.parentData! as _CheckSlotParentData).offset;
+    if (lead.size.width < _slot) {
+      // 槽被收窄：对勾裁在槽内，不压到文字上。
+      _clip.layer = context.pushClipRect(
+        needsCompositing,
+        leadOffset,
+        Offset.zero & lead.size,
+        (PaintingContext context, Offset o) => context.paintChild(lead, o),
+        oldLayer: _clip.layer,
+      );
+    } else {
+      _clip.layer = null;
+      context.paintChild(lead, leadOffset);
+    }
+    for (final RenderBox c in <RenderBox>[_label, _trail]) {
+      context.paintChild(
+        c,
+        offset + (c.parentData! as _CheckSlotParentData).offset,
+      );
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    super.dispose();
   }
 }
 
@@ -1453,7 +1655,6 @@ class _FushiButtonGroupState extends State<FushiButtonGroup>
         press: List<double>.filled(widget.children.length, 0),
         growFactor: 0,
         gap: widget.spacing,
-        equalExtents: false,
         expand: false,
         children: widget.children,
       );
@@ -1477,7 +1678,6 @@ class _FushiButtonGroupState extends State<FushiButtonGroup>
         press: _press.map((FushiSpring s) => s.value).toList(),
         growFactor: widget.growFactor,
         gap: widget.spacing,
-        equalExtents: false,
         expand: widget.expanded,
         children: items,
       ),

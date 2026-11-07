@@ -1,5 +1,5 @@
 // 「整套下载」的系列解析：TMDB collection 拿剧场版，按系列名找同名剧集。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'

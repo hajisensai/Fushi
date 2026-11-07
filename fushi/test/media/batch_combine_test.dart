@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 
 /// 块3 组合三档判定 + 合并目标选择的纯函数单测（widget/DB-free）。

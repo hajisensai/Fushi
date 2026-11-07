@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'reader_history_source_corpus.dart';
 
 /// TODO-558 / BUG-326 源码守卫：书架（books 表面）拖入视频/播放列表时，必须**自动切到

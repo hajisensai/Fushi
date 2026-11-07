@@ -25,6 +25,7 @@ import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_image_kind.dart';
 import 'media_link_kind.dart';
+import 'media_source_util.dart' show musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
@@ -49,6 +50,7 @@ part 'database_web_browser.part.dart';
 part 'database_media_links.part.dart';
 part 'database_galgame_text_lines.part.dart';
 part 'database_music.part.dart';
+part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
 part 'database_people.part.dart';
@@ -783,6 +785,7 @@ void _requireOneVideoMetadataOwner({
     MiningStatistics,
     MinedSentences,
     MediaSources,
+    MusicAutoSourceDismissals,
     Series,
     ShelfEntries,
     MediaCollections,
@@ -856,6 +859,7 @@ void _requireOneVideoMetadataOwner({
     WebBrowserDownloads,
     MediaLinks,
     MusicTracks,
+    MusicTrackUidAliases,
     MusicAlbums,
     MusicArtists,
     MusicTrackCredits,
@@ -865,6 +869,7 @@ void _requireOneVideoMetadataOwner({
     MusicPlaylists,
     MusicPlaylistEntries,
     MusicPlayEvents,
+    MusicResumePoints,
     VideoThemeSongSpans,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
@@ -893,6 +898,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbWebBrowser,
         _FushiDbMediaLinks,
         _FushiDbMusic,
+        _FushiDbMusicIdentity,
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbPeople,
@@ -918,7 +924,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 144;
+  int get schemaVersion => 146;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2895,6 +2901,46 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureAiAgentSessionOriginIndex();
         }
       }
+      if (from < 145) {
+        // v145（反馈 QAondMh4M5）：
+        // - media_sources.auto_owner_source_id：音乐来源由哪个视频来源自动登记（NULL =
+        //   手动添加），删视频来源时连带移除；
+        // - music_auto_source_dismissals：用户单独删掉的自动来源，不再登记回来；
+        // - music_tracks.path_key + 回填：同一个文件只有一行，存量重复行并成一行
+        //   （败者 uid 记进 music_track_uid_aliases，跨设备的歌单 / 播放记录据此改指）。
+        // 全部幂等：早期步骤按当前定义建表时已带这些列 / 表，跳过；回填只补 NULL，
+        // 合并之后每个文件只剩一行，再跑是空操作。
+        if (await _tableExists('media_sources') &&
+            !await _columnExists(
+              'media_sources',
+              mediaSources.autoOwnerSourceId.name,
+            )) {
+          await m.addColumn(mediaSources, mediaSources.autoOwnerSourceId);
+        }
+        if (!await _tableExists('music_auto_source_dismissals')) {
+          await m.createTable(musicAutoSourceDismissals);
+        }
+        if (!await _tableExists('music_track_uid_aliases')) {
+          await m.createTable(musicTrackUidAliases);
+        }
+        if (await _tableExists('music_tracks')) {
+          if (!await _columnExists('music_tracks', musicTracks.pathKey.name)) {
+            await m.addColumn(musicTracks, musicTracks.pathKey);
+          }
+          await _ensureMusicPathKeyIndex();
+          await backfillMusicTrackPathKeys();
+          await mergeDuplicateMusicTracks();
+        }
+      }
+      if (from < 146) {
+        // v146：music_resume_points——音乐逐曲断点续播（反馈 QAondMh4M5：广播剧 CD
+        // 迁进音乐库后不能丢续播）。纯新增、无回填（视频库带过来的断点由 app 侧迁移
+        // video_audio_to_music_migration.dart 写）；幂等守卫同 v143。排在 v145 的曲目
+        // 身份合并之后：建表时曲库已是一文件一行，不会有挂在败者 uid 上的断点。
+        if (!await _tableExists('music_resume_points')) {
+          await m.createTable(musicResumePoints);
+        }
+      }
     },
     onCreate: (m) async {
       await m.createAll();
@@ -2913,6 +2959,7 @@ class FushiDatabase extends _$FushiDatabase
       await _ensureProfileUidIndex();
       await _ensureSrsIndexes();
       await _ensureMusicIndexes();
+      await _ensureMusicPathKeyIndex();
       await _ensureAiAgentIndexes();
       await _ensureAiAgentSessionProfileIndex();
       await _ensureAiAgentSessionOriginIndex();

@@ -140,8 +140,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('evil.srt'));
     // 落盘是真实文件 I/O：`pumpAndSettle` 全程停在 fake-async 里，dart:io 的 future
-    // 永远不会完成，必须交替「假时钟 pump」与「真事件循环」推进。
-    for (int i = 0; i < 20; i++) {
+    // 永远不会完成，必须交替「假时钟 pump」与「真事件循环」推进。推进到下载真的
+    // 落地（弹窗带着路径关掉）为止，上限约 4 秒真时间：固定 20 轮（~100 ms）在负载重的
+    // 机器上 I/O 还没落盘就断言，偶发红。
+    for (int i = 0; i < 400 && popped == null; i++) {
       await tester.pump(const Duration(milliseconds: 20));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 5)),

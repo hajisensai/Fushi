@@ -601,6 +601,9 @@ void main() {
             // 弱网转码开关（host 按对端选的画质档切段转 HLS）也住在主机服务子页：
             // 它是「本机作为服务器」的能力开关，不是对端侧偏好。
             'interconnect.transcode_host',
+            // 允许已配对设备使用本机 AI（「互联主机」AI 提供商，反馈 M8KvhMTHVS）：
+            // 花的是本机的 AI 额度，同样是主机主人的能力开关。
+            'interconnect.ai_relay_host',
             // 允许已配对设备远程启动本机游戏（PR #1616）：会在主机上拉起进程，
             // 必须是主机主人的显式意愿，所以同样是主机服务子页的能力开关。
             'interconnect.game_stream_remote_launch',

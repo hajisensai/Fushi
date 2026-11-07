@@ -59,7 +59,14 @@ void main() {
       'Embedded/image.flac',
       'Embedded/image.flac',
       'Formats/alac.m4a',
+      'Formats/chapters.m4b',
+      'Formats/chapters.m4b',
+      'Formats/chapters.m4b',
       'Formats/dsd.dsf',
+      'Formats/layer2.mp2',
+      'Formats/sample.ac3',
+      'Formats/sample.eac3',
+      'Formats/sample44k.ac3',
       'Formats/tta.tta',
       'Formats/wavpack.wv',
     ]);
@@ -93,9 +100,32 @@ void main() {
     expect(cue[0].cueSheetPath, endsWith('full.cue'));
 
     expect(tracks[7].codec, 'alac');
-    expect(tracks[8].codec, 'dsd');
-    expect(tracks[8].sampleRate, 2822400);
-    expect(tracks[10].codec, 'wavpack');
+    expect(tracks[7].cueStartMs, isNull, reason: 'm4a 不按章节拆');
+    final List<MusicScannedTrack> book = tracks.sublist(8, 11);
+    expect(book.map((MusicScannedTrack t) => t.title), <String>[
+      'Opening',
+      '第二章',
+      'Ending',
+    ], reason: 'M4B 章节拆成虚拟曲目');
+    expect(
+      book.map((MusicScannedTrack t) => (t.cueStartMs, t.cueEndMs)),
+      <(int?, int?)>[(0, 1000), (1000, 2500), (2500, null)],
+    );
+    expect(book.map((MusicScannedTrack t) => t.albumTitle).toSet(), <String?>{
+      'Book Title',
+    });
+    expect(tracks[11].codec, 'dsd');
+    expect(tracks[11].sampleRate, 2822400);
+    expect(tracks[12].codec, 'mp2');
+    expect(tracks[13].codec, 'ac3');
+    expect(tracks[13].channels, 6);
+    expect(tracks[13].durationMs, 1024);
+    expect(tracks[14].codec, 'eac3');
+    // 44.1 kHz AC-3：帧长 69 / 70 字交替，帧长算错会整个文件被拒。
+    expect(tracks[15].codec, 'ac3');
+    expect(tracks[15].sampleRate, 44100);
+    expect(tracks[15].durationMs, 1010);
+    expect(tracks[17].codec, 'wavpack');
     expect(
       tracks.map((MusicScannedTrack t) => t.trackUid).toSet(),
       hasLength(tracks.length),
@@ -148,7 +178,7 @@ void main() {
       maxRecords: 4,
     ).toList();
     expect(batches.last.done, isTrue);
-    expect(tracksOf(batches), hasLength(11));
+    expect(tracksOf(batches), hasLength(18));
   });
 
   test('根不存在：流以 MusicScanRootError 结束', () async {

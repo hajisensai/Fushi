@@ -198,6 +198,7 @@ class MusicRoutingBackend implements MusicExternalQueueBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
     final int gen = ++_gen;
     _handingOff = false;
@@ -216,6 +217,7 @@ class MusicRoutingBackend implements MusicExternalQueueBackend {
       sameNext ? next : null,
       play: play,
       crossfadeNext: sameNext && crossfadeNext,
+      startAt: startAt,
     );
   }
 

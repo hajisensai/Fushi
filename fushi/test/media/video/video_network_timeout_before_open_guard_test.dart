@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：网络流的 libmpv 网络属性（含 `network-timeout`）必须在 `player.open` **之前**
 /// 下发。

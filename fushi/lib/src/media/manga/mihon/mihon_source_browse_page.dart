@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -116,6 +117,12 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
   String get title => switch (target) {
     MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.name,
     MihonPreviewTarget(:final MihonSource source) => source.name,
+  };
+
+  /// 源站地址：取自浏览目标本身，[prepare] 失败（拿不到上下文）时也有。
+  String get _baseUrl => switch (target) {
+    MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.baseUrl,
+    MihonPreviewTarget(:final MihonSource source) => source.baseUrl,
   };
 
   @override
@@ -291,10 +298,28 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
     BuildContext context, {
     required Object? error,
     required Future<void> Function() onVerified,
-  }) => MihonCloudflareAction(
-    runtime: manager.runtime,
-    error: error,
-    onVerified: onVerified,
+  }) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+    children: <Widget>[
+      if (MihonCloudflareAction.shows(runtime: manager.runtime, error: error))
+        MihonCloudflareAction(
+          runtime: manager.runtime,
+          error: error,
+          onVerified: onVerified,
+        ),
+      // 真出错了才给登录（本页 verifyOnEmpty 为 false，空结果不走这里）；漫画与
+      // 视频源共用这一页。
+      if (error != null &&
+          mihonLoginTarget(runtime: manager.runtime, baseUrl: _baseUrl) != null)
+        MihonLoginAction(
+          runtime: manager.runtime,
+          sourceName: title,
+          baseUrl: _baseUrl,
+          onLoggedIn: onVerified,
+        ),
+    ],
   );
 }
 

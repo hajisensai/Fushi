@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫：锁定「标签管理页每行长按 + 右键弹上下文菜单（编辑 + 删除）」，防止
 /// 回归到桌面端鼠标无删除入口（此前删除仅 swipe / gamepad X，鼠标只能 tap→编辑）。

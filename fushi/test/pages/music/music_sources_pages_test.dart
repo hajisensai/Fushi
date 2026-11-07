@@ -8,6 +8,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:flutter/services.dart' show EventChannel;
+import 'package:fushi/src/media/music/apple_music/apple_music_native_bridge.dart'
+    show kAppleMusicNativeEventChannel;
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -173,6 +176,26 @@ Future<void> _teardown(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() {
+    // 宿主是 macOS 14+ 时 createAppleMusicBridge 给的是原生桥，flutter test 里没有插件，
+    // 订阅事件通道会报 MissingPluginException（Windows / Linux 宿主走网页桥 / null，不受影响）。
+    // 给一个不发事件的桩：页面只读「本平台能不能整曲播」，不靠原生事件。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockStreamHandler(
+          const EventChannel(kAppleMusicNativeEventChannel),
+          MockStreamHandler.inline(
+            onListen: (Object? _, MockStreamHandlerEventSink __) {},
+          ),
+        );
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockStreamHandler(
+          const EventChannel(kAppleMusicNativeEventChannel),
+          null,
+        );
+  });
+
   testWidgets('来源页：排序 / 开关写回时，停用中的服务器的顺序与隐藏原样保留', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 1600);

@@ -31,6 +31,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
         DictionaryPopupWebViewState,
+        OpenAdvancedMiningCallback,
         QueuedOverwriteReply,
         closePopupAfterAcceptedMine;
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
@@ -317,6 +318,29 @@ mixin DictionaryPageMixin {
     }
   }
 
+  /// 「高级制卡」入口：接到 [webViewKey] 那个弹窗 WebView 的 `onOpenAdvancedMining` 上
+  /// （浮层各层与查词页结果区同一个口径）。只跟制卡模块走——模块关着时为 null，
+  /// popup 不渲染这颗按钮。
+  ///
+  /// [lookupContext] 是这个表面自己的查词语境（字段预填里 Sentence 的兜底句）；不给时用
+  /// 宿主级的 [favoriteLookupContext]。查词页结果区的语境是源文本条那一句，只属于
+  /// 结果区、不属于浮层（BUG-3216 / BUG-4209），所以按表面传，不覆写宿主级 getter。
+  @protected
+  OpenAdvancedMiningCallback? advancedMiningOpenerFor(
+    GlobalKey<DictionaryPopupWebViewState> webViewKey, {
+    FavoriteLookupContext? Function()? lookupContext,
+  }) => mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
+      ? (int entryIndex, String matched, String expression, String reading) =>
+            _openAdvancedMiningDialog(
+              webViewKey: webViewKey,
+              entryIndex: entryIndex,
+              matched: matched,
+              expression: expression,
+              reading: reading,
+              lookupContext: lookupContext ?? () => favoriteLookupContext,
+            )
+      : null;
+
   /// 「高级制卡」（视频 / 首页查词车道）：点某词条的「高级制卡」→ 弹 **app 原生顶层
   /// 对话框**（[showAdvancedMiningDialog]，BUG-763/766：不画在查词弹窗 WebView 内）。
   /// 卡组分区按 Anki 设置统一组装；句子 / 音频 / 图片分区由页面覆写
@@ -333,6 +357,7 @@ mixin DictionaryPageMixin {
     required String matched,
     required String expression,
     required String reading,
+    required FavoriteLookupContext? Function() lookupContext,
   }) async {
     if (!mounted) return;
     // 本 mixin 没有 State 的 mounted 语义可借（mounted 是抽象成员），按 lint 的要求
@@ -352,7 +377,7 @@ mixin DictionaryPageMixin {
               ref,
               fetchPayload: () async =>
                   webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
-              fallbackSentence: () => favoriteLookupContext?.sentence ?? '',
+              fallbackSentence: () => lookupContext()?.sentence ?? '',
             )
           : null;
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
@@ -789,7 +814,10 @@ mixin DictionaryPageMixin {
   /// 词条 [fields] 的 expression/reading 反查 Anki 全部命中卡，弹操作选择让用户选
   /// （覆写哪张 / 新增重复卡 / 查看·在 Anki 中打开），复用 [onMineEntry]/[onUpdateEntry]
   /// 执行，返回 [MinePopupResult] 刷新 ✓。与 reader 车道（base_source_page）对称。
-  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async {
+  Future<MinePopupResult> onMinedCardAction(
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) async {
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
@@ -819,6 +847,7 @@ mixin DictionaryPageMixin {
       },
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
+      openChooser: openChooser,
     );
     if (minedNew?.queued ?? false) return minedNew!;
     if (!r.ankiConnect && failed != null) return failed!;
@@ -967,7 +996,13 @@ mixin DictionaryPageMixin {
 
   /// 切换收藏当前词条：已收藏则取消，否则收藏。返回切换后的新状态（true=已收藏）。
   /// 收藏按来源（book/video）落 DB，并计入各自统计。
-  Future<bool> onFavoriteEntry(Map<String, String> fields) async {
+  ///
+  /// [lookupContext] 是发起收藏的那个表面自己的语境（原句 + 锚点）；不给时用宿主级的
+  /// [favoriteLookupContext]。查词页结果区据此把源文本条那一句随收藏落库（BUG-4209）。
+  Future<bool> onFavoriteEntry(
+    Map<String, String> fields, {
+    FavoriteLookupContext? lookupContext,
+  }) async {
     final String expression = fields['expression'] ?? '';
     final String reading = fields['reading'] ?? '';
     if (expression.isEmpty) return false;
@@ -995,7 +1030,8 @@ mixin DictionaryPageMixin {
     // TODO-1252：把当前书 / 视频身份（视频页覆写 lookupBookIdentity）随收藏落库，供
     // 统计页 per-book/video tile 聚合「收藏 N」；无书来源为 null / '' → 只进汇总。
     final ({String? bookKey, String? title})? favIdentity = lookupBookIdentity;
-    final FavoriteLookupContext? favContext = favoriteLookupContext;
+    final FavoriteLookupContext? favContext =
+        lookupContext ?? favoriteLookupContext;
     await db.addFavoriteWord(
       expression: expression,
       reading: reading,
@@ -1369,9 +1405,12 @@ mixin DictionaryPageMixin {
               popupResourceSource == null,
           onDuplicateCheck: checkDuplicate,
           onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-          onMinedCardAction: (Map<String, String> fields) => onMinedCardAction(
-            miningFieldsForLayer(index, controller, fields),
-          ),
+          onMinedCardAction:
+              (Map<String, String> fields, {bool openChooser = false}) =>
+                  onMinedCardAction(
+                    miningFieldsForLayer(index, controller, fields),
+                    openChooser: openChooser,
+                  ),
           onQueueOverwrite: (Map<String, String> fields) =>
               onQueueOverwrite(miningFieldsForLayer(index, controller, fields)),
           onOpenInAnki: onOpenInAnki,
@@ -1385,21 +1424,7 @@ mixin DictionaryPageMixin {
           // 「高级制卡」：点某词条的「高级制卡」→ 弹 app 原生顶层对话框（BUG-763/766：
           // 不画在弹窗 WebView 内）；确认制卡回该层 WebView 精确点中该词条的「+」并带上
           // 覆盖项。只跟制卡模块走——纯查词页也有（对话框只有卡组分区）。
-          onOpenAdvancedMining:
-              mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
-              ? (
-                  int entryIndex,
-                  String matched,
-                  String expression,
-                  String reading,
-                ) => _openAdvancedMiningDialog(
-                  webViewKey: entry.webViewKey,
-                  entryIndex: entryIndex,
-                  matched: matched,
-                  expression: expression,
-                  reading: reading,
-                )
-              : null,
+          onOpenAdvancedMining: advancedMiningOpenerFor(entry.webViewKey),
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
             appUiScale: mixinAppModel.popupUiScale,

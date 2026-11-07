@@ -1,0 +1,11 @@
+{
+  "name": "Fushi Lens",
+  "author": "Fushi",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["language", "ocr", "dictionary"],
+    "description": "Read the text on screen with your Fushi app: press a back button, pick a word, look it up and mine it to Anki.",
+    "image": ""
+  }
+}

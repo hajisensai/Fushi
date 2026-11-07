@@ -226,11 +226,35 @@ void main() {
       expect(sectionX, greaterThan(coverRect.right));
       expect(find.text(t.item_actions_group_progress), findsOneWidget);
       expect(find.text(t.item_actions_group_settings), findsOneWidget);
-      // 宽屏右栏两列：设置节与整理节不在同一列。
-      expect(
-        tester.getTopLeft(find.text(t.item_actions_group_settings)).dx,
-        isNot(closeTo(sectionX, 1)),
+      // 宽屏右栏（用户 2026-11-05 重排）：分组自上而下排、左缘对齐；组内动作
+      // 按行铺成三列网格——整理组前三项同一行、左到右，第四项另起一行。
+      final Offset settingsLabel = tester.getTopLeft(
+        find.text(t.item_actions_group_settings),
       );
+      // 设置节在整理节正下方（同一左栏线附近，不再另起一列）。
+      expect(settingsLabel.dx, lessThan(sectionX + 24));
+      expect(
+        settingsLabel.dy,
+        greaterThan(
+          tester.getTopLeft(find.text(t.item_actions_group_organize)).dy,
+        ),
+      );
+      // 比格子（InkWell）而不是文字：长标签折两行时文字垂直居中会上移。
+      Rect cell(String label) => tester.getRect(
+        find
+            .ancestor(of: find.text(label), matching: find.byType(InkWell))
+            .first,
+      );
+      final Rect rename = cell('Rename');
+      final Rect addTo = cell('Add to collection');
+      final Rect tags = cell('Tags');
+      expect(addTo.top, closeTo(rename.top, 1));
+      expect(tags.top, closeTo(rename.top, 1));
+      expect(addTo.left, greaterThan(rename.right));
+      expect(tags.left, greaterThan(addTo.right));
+      // 格子命中区 ≥ 48dp；同一行等高。
+      expect(rename.height, greaterThanOrEqualTo(48));
+      expect(tags.height, closeTo(addTo.height, 0.5));
       // 开着的开关类动作行尾打勾。
       expect(
         find.descendant(
@@ -373,6 +397,59 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    // 反馈 DnG4jZW57v：游戏库最右一列的条目右键，「设置」子菜单打不开。子菜单翻到
+    // 左侧时被推到了屏幕左边外面——它的项建出来了，只是不在屏上。
+    Future<void> expectSubmenuOnScreen(
+      WidgetTester tester, {
+      required Size screen,
+      required Offset anchor,
+    }) async {
+      await open(tester, screen: screen, anchor: anchor);
+      final Rect panel = menuPanel(tester);
+      await tester.tap(find.text(t.item_actions_group_settings));
+      await tester.pumpAndSettle();
+      final Rect first = tester.getRect(find.text('Content language'));
+      final Rect last = tester.getRect(find.text('Edit CSS'));
+      final Rect row = tester.getRect(find.text(t.item_actions_group_settings));
+      for (final Rect r in <Rect>[first, last]) {
+        expect(r.left, greaterThanOrEqualTo(0));
+        expect(r.right, lessThanOrEqualTo(screen.width));
+        expect(r.top, greaterThanOrEqualTo(0));
+        expect(r.bottom, lessThanOrEqualTo(screen.height));
+      }
+      // 翻到主菜单左侧、紧贴主菜单，而不是飞到别处。
+      expect(last.right, lessThanOrEqualTo(panel.left));
+      expect(last.right, greaterThan(panel.left - 80));
+      // 与「设置」行同一高度带。
+      expect(
+        first.top <= row.bottom && last.bottom >= row.top,
+        isTrue,
+        reason: 'submenu $first..$last must sit beside row $row',
+      );
+      await tester.tap(find.text('Edit CSS'));
+      await tester.pumpAndSettle();
+      expect(fired, <String>['Edit CSS']);
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('near the right edge the settings submenu flips left and '
+        'stays on screen', (WidgetTester tester) async {
+      await expectSubmenuOnScreen(
+        tester,
+        screen: const Size(1280, 800),
+        anchor: const Offset(1270, 40),
+      );
+    });
+
+    testWidgets('near the bottom-right corner the settings submenu grows '
+        'upward and stays on screen', (WidgetTester tester) async {
+      await expectSubmenuOnScreen(
+        tester,
+        screen: const Size(1280, 800),
+        anchor: const Offset(1270, 795),
+      );
+    });
 
     testWidgets('the entrance grows out of the pointer corner, not the screen '
         'corner', (WidgetTester tester) async {

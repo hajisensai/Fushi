@@ -122,6 +122,54 @@ class _FailingGpuStore extends GpuRuntimeStore {
   }
 }
 
+/// 推荐固定为 fp32 · DirectML（模拟「今天显存预算够了」）的服务：不探测本机。
+class _Fp32RecommendingService extends _FakeService {
+  _Fp32RecommendingService(super.root, {super.profile});
+
+  @override
+  Future<AsrTranscribePlan> plan({
+    required AsrLanguage language,
+    required AsrAccelerationPreference preference,
+  }) async {
+    planned.add(language);
+    return AsrTranscribePlan(
+      language: language,
+      variant: AsrEncoderVariant.fp32,
+      expectedProvider: OnnxExecutionProvider.directml,
+      modelStatus: const AsrModelStatus(
+        ready: false,
+        diskBytes: 0,
+        totalBytes: 300,
+        obtainedBytes: 0,
+      ),
+      availableProviders: const <OnnxExecutionProvider>{
+        OnnxExecutionProvider.directml,
+      },
+    );
+  }
+}
+
+/// 按变体在盘的包目录：[readyVariants] 里的变体算已下好。
+class _VariantStore extends AsrModelStore {
+  _VariantStore(super.dir, super.pack, this.readyVariants);
+
+  final Set<AsrEncoderVariant> readyVariants;
+
+  @override
+  bool isReady(AsrEncoderVariant variant) => readyVariants.contains(variant);
+
+  @override
+  Future<AsrModelStatus> status(AsrEncoderVariant variant) async {
+    final bool ready = isReady(variant);
+    return AsrModelStatus(
+      ready: ready,
+      diskBytes: ready ? 300 : 0,
+      totalBytes: 300,
+      obtainedBytes: ready ? 300 : 0,
+    );
+  }
+}
+
 OnnxSessionFactory _unusedOnnxFactory() =>
     throw UnimplementedError('本用例不该建 ONNX 后端');
 
@@ -375,5 +423,46 @@ void main() {
     downloads.start(kAsrParakeetJapanesePack, plan: plan);
     await _settle();
     expect(stores.downloaded, <String>[kAsrParakeetJapanesePack.id]);
+  });
+
+  group('「已下载」看任一可用变体，不随显存预算翻转（BUG-4128）', () {
+    AsrModelDownloads variantRegistry(Set<AsrEncoderVariant> ready) =>
+        AsrModelDownloads(
+          openPackStore: (AsrModelPack pack) async =>
+              _VariantStore(Directory(p.join(tmp.path, pack.id)), pack, ready),
+          gpuRuntimeToDownload: () async => null,
+          shared: SharedModelDownloads(),
+          serviceForProfile: (AsrAudioProfile profile) =>
+              _Fp32RecommendingService(tmp, profile: profile),
+        );
+
+    test('前一晚只下了 int8、今天推荐 fp32 → 已就绪，规划 int8 · CPU', () async {
+      final AsrTranscribePlan plan = await variantRegistry(<AsrEncoderVariant>{
+        AsrEncoderVariant.int8,
+      }).planFor(service, kAsrParakeetJapanesePack);
+      expect(plan.modelStatus.ready, isTrue);
+      expect(plan.variant, AsrEncoderVariant.int8);
+      expect(plan.recommendedVariant, AsrEncoderVariant.fp32);
+      expect(plan.expectedProvider, OnnxExecutionProvider.cpu);
+    });
+
+    test('什么都没下 → 规划推荐的 fp32 · DirectML（要下载的那个）', () async {
+      final AsrTranscribePlan plan = await variantRegistry(
+        const <AsrEncoderVariant>{},
+      ).planFor(service, kAsrParakeetJapanesePack);
+      expect(plan.modelStatus.ready, isFalse);
+      expect(plan.variant, AsrEncoderVariant.fp32);
+      expect(plan.expectedProvider, OnnxExecutionProvider.directml);
+    });
+
+    test('两个都在盘 → 用推荐的 fp32', () async {
+      final AsrTranscribePlan plan = await variantRegistry(<AsrEncoderVariant>{
+        AsrEncoderVariant.int8,
+        AsrEncoderVariant.fp32,
+      }).planFor(service, kAsrParakeetJapanesePack);
+      expect(plan.modelStatus.ready, isTrue);
+      expect(plan.variant, AsrEncoderVariant.fp32);
+      expect(plan.expectedProvider, OnnxExecutionProvider.directml);
+    });
   });
 }

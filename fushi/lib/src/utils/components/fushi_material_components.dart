@@ -6763,9 +6763,23 @@ class FushiPopupSurface extends StatelessWidget {
     // 结构恒定：两种情况都挂在同一个 Stack 槽位里，切换时 WebView 不会被拆出重挂；
     // 纯 Flutter 浮层（foreground 描边）不受影响。
     final bool md3Glass = !borderOnForeground && !eink && !standaloneWindow;
+    // iOS / macOS 墨水屏：实底同样不能由 Flutter `Material` 画——嵌套层的 Flutter
+    // 底色紧跟在父层查词 WebView（圆角裁剪）之后绘制，压在正文上的部分整块透明
+    // （反馈 hQpYQyWJNQ，见 [fushiNativePopupBackdropHostAvailable]）。改由背衬槽画
+    // 原生实色面板（墨水屏下系统材质不可用，[_ApplePopupGlassBackdrop._buildGlass]
+    // 自然落到 solidColor），颜色与墨水屏原卡面一致、不带主色淡染。
+    final bool einkNativePanel =
+        !borderOnForeground &&
+        eink &&
+        !standaloneWindow &&
+        fushiGlassOverPlatformView(context) &&
+        fushiNativePopupBackdropHostAvailable(Theme.of(context));
+    final bool backdropPanel = md3Glass || einkNativePanel;
     final Widget md3 = Material(
-      color: md3Glass ? Colors.transparent : (color ?? tokens.surfaces.card),
-      elevation: md3Glass ? 0 : (eink || elevation > 0 ? elevation : 2),
+      color: backdropPanel
+          ? Colors.transparent
+          : (color ?? tokens.surfaces.card),
+      elevation: backdropPanel ? 0 : (eink || elevation > 0 ? elevation : 2),
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: _outerRadius(tokens),
@@ -6780,13 +6794,15 @@ class FushiPopupSurface extends StatelessWidget {
     if (borderOnForeground) return md3;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return _ApplePopupGlassBackdrop(
-      enabled: md3Glass && !_panelSuppressed,
+      enabled: backdropPanel && !_panelSuppressed,
       md3: true,
       borderRadius: _outerRadius(tokens),
-      panelColor: Color.alphaBlend(
-        scheme.primary.withValues(alpha: 0.05),
-        (color ?? scheme.surfaceContainer).withValues(alpha: 1),
-      ),
+      panelColor: einkNativePanel
+          ? (color ?? tokens.surfaces.card).withValues(alpha: 1)
+          : Color.alphaBlend(
+              scheme.primary.withValues(alpha: 0.05),
+              (color ?? scheme.surfaceContainer).withValues(alpha: 1),
+            ),
       child: md3,
     );
   }
@@ -6863,9 +6879,19 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final Color opaque = panelColor.withValues(alpha: 1);
+    // iOS / macOS：背衬一律是原生平台视图——能真模糊就是系统材质，透明度不被允许
+    // 就是原生实色面板。实底不能由 Flutter 画：嵌套层的 Flutter 实底紧跟在父层查词
+    // WebView（带圆角裁剪）之后绘制，iOS 引擎把这段内容裁成父层的圆角形状，压在正文
+    // 上的部分整块透明（反馈 hQpYQyWJNQ，见 [fushiNativePopupBackdropHostAvailable]）。
     if (fushiGlassOverPlatformView(context) &&
-        fushiNativePopupMaterialAvailableOf(context)) {
-      return _buildNativeMaterial(context, dark: dark);
+        fushiNativePopupBackdropHostAvailable(Theme.of(context))) {
+      return _buildNativeMaterial(
+        context,
+        dark: dark,
+        solidColor: fushiNativePopupMaterialAvailableOf(context)
+            ? null
+            : opaque,
+      );
     }
     // 查词面板压在**正文文字**上（阅读器 / 视频字幕 / 上一层查词卡），可读性优先：
     // - 采不到背后画面（iOS / macOS 背后是原生 WebView 平台视图；Android 的 WebView
@@ -6945,15 +6971,24 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
   ///
   /// - MD3：材质上叠一层面板色（主色 5% 淡染的 surfaceContainer）低 alpha 色层，
   ///   面板仍读作 MD3 的配色；Apple：纯系统材质，只有用户手动指定的词典底色才淡染。
-  /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]）：画进形状内会被材质
-  ///   采样、把模糊整块压暗。它画在原生视图之前（同一 Stack 的更低层），不会给
-  ///   平台视图挖 hit-test 忽略区（BUG-1692）。
-  Widget _buildNativeMaterial(BuildContext context, {required bool dark}) {
+  /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]），画在原生视图**之后**：
+  ///   原生背衬必须是本层第一个绘制的东西（iOS 合成规则，见
+  ///   [fushiNativePopupBackdropHostAvailable]）。它不碰形状内侧，不会压暗面板；它
+  ///   只盖在原生背衬（本身不接收事件）与更早的平台视图上，不给本层 WebView 挖
+  ///   macOS hit-test 忽略区（BUG-1692）。
+  /// - [solidColor] 非 null（透明度不被允许）：原生侧不挂材质，画这块不透明实色面板。
+  Widget _buildNativeMaterial(
+    BuildContext context, {
+    required bool dark,
+    Color? solidColor,
+  }) {
     final Color appleDefault = appleColorsOf(
       context,
     ).secondaryGroupedBackground;
     // 嵌套层与第一层同一材质 / 色层（用户 2026-10-05 拍板）。
-    final Color? tint = md3
+    final Color? tint = solidColor != null
+        ? null
+        : md3
         ? panelColor.withValues(alpha: dark ? 0.42 : 0.38)
         : (panelColor.withValues(alpha: 1) == appleDefault.withValues(alpha: 1)
               ? null
@@ -6962,34 +6997,45 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
       fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: <Widget>[
-        IgnorePointer(
-          child: CustomPaint(
-            painter: _PopupOuterShadowPainter(
-              borderRadius: borderRadius,
-              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
-            ),
-          ),
-        ),
+        // 原生背衬必须是本层**第一个**绘制的东西（反馈 hQpYQyWJNQ，见
+        // [fushiNativePopupBackdropHostAvailable]）：嵌套层排在它前面的 Flutter 内容
+        // 会落进父层查词 WebView 之后的那段合成切片，被裁成父层的圆角形状，压在正文上
+        // 的部分整块不显示。
         FushiNativeMaterialBackdrop(
           dark: dark,
           borderRadius: borderRadius.topLeft.x,
           continuousCorners: !md3,
           tint: tint,
+          solidColor: solidColor,
         ),
+        // 墨水屏不画投影（灰阶抖动），与 MD3 墨水屏卡面不带 elevation 同口径。
+        if (!isEinkTheme(context))
+          IgnorePointer(
+            child: CustomPaint(
+              painter: _PopupOuterShadowPainter(
+                borderRadius: borderRadius,
+                continuousCorners: !md3,
+                color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-/// 只画在圆角矩形**外侧**的柔和投影（内侧裁掉）：原生材质会采样它背后的一切，
-/// 画进形状内的阴影会被模糊进面板、把材质整体压暗。
+/// 只画在面板形状**外侧**的柔和投影（内侧裁掉）：它画在原生背衬**之上**（见
+/// [_ApplePopupGlassBackdrop._buildNativeMaterial]），内侧必须一个像素都不碰，否则
+/// 会压暗面板。挖掉的形状与原生背衬同形（Apple 连续曲率圆角 = superellipse）。
 class _PopupOuterShadowPainter extends CustomPainter {
   const _PopupOuterShadowPainter({
     required this.borderRadius,
+    required this.continuousCorners,
     required this.color,
   });
 
   final BorderRadius borderRadius;
+  final bool continuousCorners;
   final Color color;
 
   static const double _blurSigma = 12;
@@ -6997,15 +7043,15 @@ class _PopupOuterShadowPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final RRect shape = borderRadius.toRRect(Offset.zero & size);
-    final Rect bounds = (Offset.zero & size).inflate(_blurSigma * 3 + _offsetY);
+    final Rect rect = Offset.zero & size;
+    final RRect shape = borderRadius.toRRect(rect);
+    final Path panel = continuousCorners
+        ? (Path()..addRSuperellipse(borderRadius.toRSuperellipse(rect)))
+        : (Path()..addRRect(shape));
+    final Rect bounds = rect.inflate(_blurSigma * 3 + _offsetY);
     canvas.save();
     canvas.clipPath(
-      Path.combine(
-        PathOperation.difference,
-        Path()..addRect(bounds),
-        Path()..addRRect(shape),
-      ),
+      Path.combine(PathOperation.difference, Path()..addRect(bounds), panel),
     );
     canvas.drawRRect(
       shape.shift(const Offset(0, _offsetY)),
@@ -7018,7 +7064,9 @@ class _PopupOuterShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_PopupOuterShadowPainter oldDelegate) =>
-      oldDelegate.borderRadius != borderRadius || oldDelegate.color != color;
+      oldDelegate.borderRadius != borderRadius ||
+      oldDelegate.continuousCorners != continuousCorners ||
+      oldDelegate.color != color;
 }
 
 class FushiCompactSearchRow extends StatelessWidget {

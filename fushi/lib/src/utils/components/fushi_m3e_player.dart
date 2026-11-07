@@ -519,6 +519,9 @@ class FushiWavySeekBar extends StatefulWidget {
   State<FushiWavySeekBar> createState() => _FushiWavySeekBarState();
 }
 
+/// [FushiWavySeekBar] 一段按下 / 拖动的发起方。
+enum _SeekGesture { tap, drag }
+
 class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     with TickerProviderStateMixin {
   /// 只在过渡期（振幅弹簧 / 拖动 / thumb 弹簧）跑的逐 vsync 驱动。
@@ -546,6 +549,12 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
 
   /// 拖动中的比例（null = 没在拖）。
   double? _dragFraction;
+
+  /// 当前这段按下 / 拖动是哪个识别器开的。点按与横向拖动在同一竞技场里竞争，输掉的一方
+  /// 会收到自己的 cancel：只许收尾自己开的那段，不能把赢家的状态一起清掉
+  /// （#358s4Ae_fn：按住超过 kPressTimeout 时 onTapDown 先触发，随后横向拖动被拒、
+  /// onHorizontalDragCancel 把点按的状态清空，松手的 onTapUp 就没东西可提交）。
+  _SeekGesture? _dragOwner;
 
   /// 刚松手 / 按键跳转的目标：播放器回报位置追上来之前先显示它，免得 thumb
   /// 弹回旧位置再跳过去。
@@ -721,17 +730,19 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return rtl ? 1 - f : f;
   }
 
-  void _beginDrag(double fraction) {
+  void _beginDrag(double fraction, _SeekGesture owner) {
     if (_duration <= Duration.zero) return;
+    _dragOwner = owner;
     setState(() => _dragFraction = fraction);
     _drag.animateTo(1, animate: _motion);
     if (!_ticker.isActive) _ticker.start();
     _syncSteady();
   }
 
-  void _endDrag({required bool commit}) {
+  void _endDrag(_SeekGesture owner, {required bool commit}) {
     final double? fraction = _dragFraction;
-    if (fraction == null) return;
+    if (fraction == null || _dragOwner != owner) return;
+    _dragOwner = null;
     _drag.animateTo(0, animate: _motion);
     setState(() {
       _dragFraction = null;
@@ -851,20 +862,28 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
           children: <Widget>[
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (TapDownDetails d) =>
-                  _beginDrag(_fractionAt(d.localPosition.dx, width)),
-              onTapUp: (_) => _endDrag(commit: true),
-              onTapCancel: () => _endDrag(commit: false),
-              onHorizontalDragStart: (DragStartDetails d) =>
-                  _beginDrag(_fractionAt(d.localPosition.dx, width)),
+              onTapDown: (TapDownDetails d) => _beginDrag(
+                _fractionAt(d.localPosition.dx, width),
+                _SeekGesture.tap,
+              ),
+              onTapUp: (_) => _endDrag(_SeekGesture.tap, commit: true),
+              onTapCancel: () => _endDrag(_SeekGesture.tap, commit: false),
+              onHorizontalDragStart: (DragStartDetails d) => _beginDrag(
+                _fractionAt(d.localPosition.dx, width),
+                _SeekGesture.drag,
+              ),
               onHorizontalDragUpdate: (DragUpdateDetails d) {
-                if (_dragFraction == null) return;
+                if (_dragFraction == null || _dragOwner != _SeekGesture.drag) {
+                  return;
+                }
                 setState(
                   () => _dragFraction = _fractionAt(d.localPosition.dx, width),
                 );
               },
-              onHorizontalDragEnd: (_) => _endDrag(commit: true),
-              onHorizontalDragCancel: () => _endDrag(commit: false),
+              onHorizontalDragEnd: (_) =>
+                  _endDrag(_SeekGesture.drag, commit: true),
+              onHorizontalDragCancel: () =>
+                  _endDrag(_SeekGesture.drag, commit: false),
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: track,

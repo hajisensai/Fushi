@@ -30,6 +30,10 @@ const Duration kLrclibNegativeCacheTtl = Duration(days: 7);
 /// 插件说「这首没有歌词」后多久再问（平台常在发行后补歌词，比 LRCLIB 短）。
 const Duration kPluginLyricsNegativeCacheTtl = Duration(days: 1);
 
+/// 歌词插件里书写系统对不上时，同一插件最多再取几条同名候选找原文版（含第一条；
+/// 插件候选不带正文，只能逐条取来看）。
+const int kPluginLyricsScriptProbeLimit = 3;
+
 /// 向在线音源插件要一首歌的歌词（app 装配：`MusicPluginManager.source(id).lyrics`）。
 typedef MusicPluginLyricsFetcher =
     Future<MusicPluginLyrics?> Function(String pluginId, String trackId);
@@ -131,6 +135,29 @@ Future<LyricTimeline> parseStoredMusicLyrics(
 /// 负缓存行的 format。
 const String kMusicLyricsNoneFormat = 'none';
 
+/// 纯函数：一首歌的多条 `music_lyrics` 行里，播放器（[MusicLyricsService.resolve]）会用
+/// 哪一条——用户手动指定的最高，其次按 [MusicLyricsSource.automaticRank]，同档取最近
+/// 更新的；负缓存行不算。歌词页与「我库里的例句」/ 曲库歌词搜索共用这一个判据，搜到的
+/// 行与点进去显示的歌词是同一份。没有可用行返回 null。
+///
+/// 只看库里的行：sidecar / 内嵌在 resolve 里每次重读文件，库里这两档是上次读到的缓存。
+MusicLyricRow? preferredMusicLyricRow(Iterable<MusicLyricRow> rows) {
+  MusicLyricRow? best;
+  for (final MusicLyricRow r in rows) {
+    if (r.format == kMusicLyricsNoneFormat) continue;
+    if (best == null || _prefers(r, best)) best = r;
+  }
+  return best;
+}
+
+bool _prefers(MusicLyricRow a, MusicLyricRow b) {
+  if (a.isUserEdited != b.isUserEdited) return a.isUserEdited;
+  final int ra = MusicLyricsSource.automaticRank(a.source);
+  final int rb = MusicLyricsSource.automaticRank(b.source);
+  if (ra != rb) return ra < rb;
+  return a.updatedAt > b.updatedAt;
+}
+
 /// 解析歌词所需的曲目信息。
 class MusicLyricsTrackRef {
   const MusicLyricsTrackRef({
@@ -157,8 +184,14 @@ class MusicLyricsTrackRef {
 
   /// 这一首认不认同目录 sidecar / 文件内嵌歌词：CUE 虚拟曲目（那些属于整张镜像）与在线音源
   /// 插件曲目（[path] 是 `fushi-plugin` URI，不是本地文件）都不认。解析与选来源面板共用。
-  bool get readsLocalLyrics =>
-      !isCueTrack && parseMusicPluginTrackPath(path) == null;
+  bool get readsLocalLyrics => !isCueTrack && isLocalFile;
+
+  /// [path] 是本机文件路径：不是任何 `scheme://` 地址（插件 `fushi-music-plugin://`、
+  /// 服务器曲库 / 网络音乐来源的 http(s) / `sftp://` 条目、`cdda://`）。只有本机文件才有
+  /// 同目录 sidecar、内嵌标签可读，也才能「导出到文件旁边」（反馈 QAondMh4M5）。
+  bool get isLocalFile => !_uriScheme.hasMatch(path);
+
+  static final RegExp _uriScheme = RegExp(r'^[A-Za-z][A-Za-z0-9+.\-]+://');
 }
 
 /// 解析结果：生效的时间轴（已带该来源的偏移）+ 它来自哪个来源。
@@ -204,7 +237,31 @@ class MusicLyricsCandidate {
   final String format;
   final Uint8List raw;
   final LyricTimeline timeline;
+
+  /// 正文的主导书写系统（界面据此标出「日文 / 拉丁字母」，区分原文版与罗马音版）。
+  LyricsScript? get script =>
+      lyricsScriptProfile(musicLyricsTimelineText(timeline)).dominant;
 }
+
+/// 时间轴各行正文拼成一段（判书写系统用）。
+String musicLyricsTimelineText(LyricTimeline t) =>
+    t.lines.map((LyricLine l) => l.text).join('\n');
+
+/// 一个在线来源（LRCLIB / 歌词插件）的解析结果；[scriptMismatch] = 歌词书写系统与曲目
+/// 元数据对不上（罗马音 / 翻译版）又没挑到原文版：只当兜底，所有在线来源都没有对得上的
+/// 才用它（LRCLIB 的兜底先于插件的兜底，与来源顺序一致）。
+typedef _OnlineOutcome = ({
+  MusicLyricsResolution resolution,
+  bool scriptMismatch,
+});
+
+/// 歌词插件取到并解析好的一份歌词；[scriptMismatch] 同 [_OnlineOutcome]。
+typedef _PluginFetched = ({
+  Uint8List raw,
+  String format,
+  LyricTimeline timeline,
+  bool scriptMismatch,
+});
 
 typedef _Sidecar = ({LyricTimeline timeline, Uint8List raw, String label});
 
@@ -222,6 +279,20 @@ List<String> _listDirFiles(String dir) {
   }
 }
 
+/// [audioPath] 旁的 [path] 是不是本机字幕管线（视频库「生成日语字幕」的旧产物，
+/// `<主名>.ja.srt`）写的。生产接 `isDefaultVideoSubtitlePipelineOutput`。
+typedef MusicGeneratedSidecarCheck =
+    Future<bool> Function(String audioPath, String path);
+
+/// 一首要写手动指定的曲目（[MusicLyricsService.chooseFileForTracks]）：CUE 虚拟曲目带
+/// 区间（`[cueStartMs, cueEndMs)`，end 为 null = 到文件尾），普通曲目两者都为 null。
+typedef MusicLyricsFileTrack = ({
+  String trackUid,
+  int? cueStartMs,
+  int? cueEndMs,
+  int? durationMs,
+});
+
 class MusicLyricsService {
   MusicLyricsService({
     required FushiDatabase? Function() database,
@@ -237,7 +308,9 @@ class MusicLyricsService {
     MusicPluginLyricsSearcher? pluginSearch,
     MusicPluginLyricsRefFetcher? pluginFetch,
     MusicLyricsProviderIds? providers,
+    MusicGeneratedSidecarCheck? isGeneratedSidecar,
   }) : _database = database,
+       _isGeneratedSidecar = isGeneratedSidecar,
        _pluginLyrics = pluginLyrics,
        _pluginSearch = pluginSearch,
        _pluginFetch = pluginFetch,
@@ -267,6 +340,14 @@ class MusicLyricsService {
   final MusicPluginLyricsSearcher? _pluginSearch;
   final MusicPluginLyricsRefFetcher? _pluginFetch;
   final MusicLyricsProviderIds? _providers;
+  final MusicGeneratedSidecarCheck? _isGeneratedSidecar;
+
+  final StreamController<String> _generated =
+      StreamController<String>.broadcast();
+
+  /// [saveGenerated] 写完一首就发它的 trackUid：歌词页 / 桌面歌词正显示这首时重载
+  /// （生成任务常在页面关掉之后才结束）。
+  Stream<String> get generatedUpdates => _generated.stream;
 
   Future<List<MusicLyricRow>> _rows(FushiDatabase db, String trackUid) =>
       (db.select(
@@ -401,9 +482,28 @@ class MusicLyricsService {
     final ({String pluginId, String trackId})? plugin =
         parseMusicPluginTrackPath(track.path);
 
-    // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。
+    // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。本机字幕
+    // 管线以前写在音频旁的 `<主名>.ja.srt` 已有对应的 `asr` 行（存量迁移转过来、或在音乐库
+    // 重新生成过）时不当 sidecar：它是生成字幕那一档的旧副本，否则重新生成之后仍显示
+    // 旧稿（sidecar 档位高于 asr）。
     if (track.readsLocalLyrics) {
-      final _Sidecar? side = await _readSidecars(track);
+      final bool skipGenerated = _hasGenerated(rowOf(MusicLyricsSource.asr));
+      final _Sidecar? side = await _readSidecars(
+        track,
+        skipGenerated: skipGenerated,
+      );
+      if (side == null &&
+          skipGenerated &&
+          rowOf(MusicLyricsSource.sidecar) != null) {
+        // 以前把那份旧产物当 sidecar 缓存过：删掉，语料对账（[preferredMusicLyricRow]，
+        // sidecar 档位高于 asr）才会跟着改用生成字幕，搜到的与显示的是同一份。
+        await (db.delete(db.musicLyrics)..where(
+              ($MusicLyricsTable r) =>
+                  r.trackUid.equals(track.trackUid) &
+                  r.source.equals(MusicLyricsSource.sidecar),
+            ))
+            .go();
+      }
       if (side != null) {
         final MusicLyricRow? prev = rowOf(MusicLyricsSource.sidecar);
         await _upsert(
@@ -447,6 +547,16 @@ class MusicLyricsService {
           rawAss: _assRawOf(emb.format, emb.raw),
         );
       }
+    }
+
+    // ③'' 本机生成的字幕（[MusicLyricsSource.asr]，只读库、不联网）：广播剧 CD 等
+    // 没有文件自带歌词的曲目，生成后就用它；CUE 虚拟曲目也有（按曲目区间切好入库）。
+    final MusicLyricRow? generated = rowOf(MusicLyricsSource.asr);
+    if (generated != null && generated.format != kMusicLyricsNoneFormat) {
+      return MusicLyricsResolution(
+        timeline: await _timelineOf(db, generated, track.durationMs),
+        source: MusicLyricsSource.asr,
+      );
     }
 
     // ③' 插件自带歌词（逐字歌词等）：缓存（含负缓存）→ 问插件。插件报错不吞成
@@ -528,25 +638,35 @@ class MusicLyricsService {
 
     // ④ LRCLIB（固定第一）→ ⑤ 已启用的歌词插件按用户排序，第一个命中的胜出。
     // LRCLIB 联网失败不挡后面的插件：记下异常，插件也没结果时再抛给调用方。
+    // 书写系统对不上的版本（罗马音 / 翻译）只当兜底：LRCLIB 与插件都没有对得上的才用，
+    // 兜底之间仍是 LRCLIB 在前。
     Object? lrclibError;
     StackTrace? lrclibStack;
+    MusicLyricsResolution? lrclibFallback;
     try {
-      final MusicLyricsResolution? viaLrclib = await _resolveLrclib(
+      final _OnlineOutcome? viaLrclib = await _resolveLrclib(
         db,
         track,
         rowOf(MusicLyricsSource.lrclib),
       );
-      if (viaLrclib != null) return viaLrclib;
+      if (viaLrclib != null) {
+        if (!viaLrclib.scriptMismatch) return viaLrclib.resolution;
+        lrclibFallback = viaLrclib.resolution;
+      }
     } on Exception catch (e, st) {
       lrclibError = e;
       lrclibStack = st;
     }
-    final MusicLyricsResolution? viaPlugins = await _resolvePluginProviders(
+    final _OnlineOutcome? viaPlugins = await _resolvePluginProviders(
       db,
       track,
       rowOf,
     );
-    if (viaPlugins != null) return viaPlugins;
+    if (viaPlugins != null && !viaPlugins.scriptMismatch) {
+      return viaPlugins.resolution;
+    }
+    if (lrclibFallback != null) return lrclibFallback;
+    if (viaPlugins != null) return viaPlugins.resolution;
     if (lrclibError != null) {
       Error.throwWithStackTrace(lrclibError, lrclibStack!);
     }
@@ -554,23 +674,73 @@ class MusicLyricsService {
   }
 
   /// LRCLIB：先看缓存（含负缓存），再按需在线查。
-  Future<MusicLyricsResolution?> _resolveLrclib(
+  ///
+  /// 精确匹配（`/api/get`）或缓存里的歌词书写系统与曲目元数据明显对不上（[expectedLyricsScript]
+  /// 期望日文，正文却几乎全是拉丁字母：罗马音 / 翻译版）时不直接采用：按 [lyricsQueries] 走
+  /// `/api/search`，挑同名、同录音时长且书写系统对得上的那条（[_searchLrclibInScript]）。
+  /// 挑不到仍留着这条，但标 `scriptMismatch`，让歌词插件里书写系统对得上的先上。
+  ///
+  /// 缓存里这种行每 [kLrclibNegativeCacheTtl] 重挑一次，按行的 `updated_at` 计：改版前落库的
+  /// 罗马音行只有更新时间已早于 TTL 的才会第一次解析就重挑；TTL 内落库的旧行要等到期
+  /// （表里没有「是否搜过原文版」的标记，与「刚搜过没有」分不开），期间排在插件之后兜底。
+  /// 重挑换行时保留用户调过的偏移。
+  Future<_OnlineOutcome?> _resolveLrclib(
     FushiDatabase db,
     MusicLyricsTrackRef track,
     MusicLyricRow? cached,
   ) async {
+    final LyricsScriptExpectation? expected = expectedLyricsScript(
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+    );
+    final bool canQuery =
+        _onlineEnabled() && (track.artist ?? '').trim().isNotEmpty;
     if (cached != null) {
       if (cached.format != kMusicLyricsNoneFormat) {
-        return MusicLyricsResolution(
+        final MusicLyricsResolution kept = MusicLyricsResolution(
           timeline: await _timelineOf(db, cached, track.durationMs),
           source: MusicLyricsSource.lrclib,
+        );
+        if (!lyricsScriptMismatches(
+          expected,
+          musicLyricsTimelineText(kept.timeline),
+        )) {
+          return (resolution: kept, scriptMismatch: false);
+        }
+        if (!canQuery ||
+            _now() - cached.updatedAt <
+                kLrclibNegativeCacheTtl.inMilliseconds) {
+          return (resolution: kept, scriptMismatch: true);
+        }
+        final ({String raw, String format})? alt;
+        try {
+          alt = await _searchLrclibInScript(track, expected!.script);
+        } on Exception {
+          // 重挑联网失败：已有缓存照常顶上（与 resolve「在线失败时本地结果照常返回」一致），
+          // 不刷新更新时间，下次解析再挑。
+          return (resolution: kept, scriptMismatch: true);
+        }
+        if (alt == null) {
+          // 搜过了没有原文版：刷新更新时间，TTL 内不再重挑。
+          await (db.update(db.musicLyrics)..where(
+                ($MusicLyricsTable r) =>
+                    r.trackUid.equals(track.trackUid) &
+                    r.source.equals(MusicLyricsSource.lrclib),
+              ))
+              .write(MusicLyricsCompanion(updatedAt: Value<int>(_now())));
+          return (resolution: kept, scriptMismatch: true);
+        }
+        return (
+          resolution: await _storeLrclib(db, track, alt, cached.offsetMs),
+          scriptMismatch: false,
         );
       }
       if (_now() - cached.updatedAt < kLrclibNegativeCacheTtl.inMilliseconds) {
         return null;
       }
     }
-    if (!_onlineEnabled() || (track.artist ?? '').trim().isEmpty) return null;
+    if (!canQuery) return null;
     final LrclibRecord? hit = await _lrclib.get(
       title: track.title,
       artist: track.artist!,
@@ -588,33 +758,139 @@ class MusicLyricsService {
       );
       return null;
     }
-    final Uint8List raw = utf8.encode(best.raw);
+    final int offsetMs = cached?.offsetMs ?? 0;
+    if (!lyricsScriptMismatches(expected, best.raw)) {
+      return (
+        resolution: await _storeLrclib(db, track, best, offsetMs),
+        scriptMismatch: false,
+      );
+    }
+    final ({String raw, String format})? alt;
+    try {
+      alt = await _searchLrclibInScript(track, expected!.script);
+    } on Exception {
+      // 精确命中已到手、只是搜不了原文版：这次先用它（排在插件之后），不落库，下次解析重查。
+      final Uint8List raw = utf8.encode(best.raw);
+      final LyricTimeline t = (await _parse(
+        raw,
+        best.format,
+        track.durationMs,
+      )).copyWith(source: MusicLyricsSource.lrclib, offsetMs: offsetMs);
+      return (
+        resolution: MusicLyricsResolution(
+          timeline: t,
+          source: MusicLyricsSource.lrclib,
+        ),
+        scriptMismatch: true,
+      );
+    }
+    if (alt != null) {
+      return (
+        resolution: await _storeLrclib(db, track, alt, offsetMs),
+        scriptMismatch: false,
+      );
+    }
+    return (
+      resolution: await _storeLrclib(db, track, best, offsetMs),
+      scriptMismatch: true,
+    );
+  }
+
+  /// 解析并落库一份 LRCLIB 歌词（已有行保留偏移，返回值带上 [offsetMs]）。
+  Future<MusicLyricsResolution> _storeLrclib(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    ({String raw, String format}) lyrics,
+    int offsetMs,
+  ) async {
+    final Uint8List raw = utf8.encode(lyrics.raw);
     final LyricTimeline t = (await _parse(
       raw,
-      best.format,
+      lyrics.format,
       track.durationMs,
     )).copyWith(source: MusicLyricsSource.lrclib);
     await _upsert(
       db,
       trackUid: track.trackUid,
       source: MusicLyricsSource.lrclib,
-      format: best.format,
+      format: lyrics.format,
       raw: raw,
       timeline: t,
     );
     return MusicLyricsResolution(
-      timeline: t.copyWith(offsetMs: cached?.offsetMs ?? 0),
+      timeline: t.copyWith(offsetMs: offsetMs),
       source: MusicLyricsSource.lrclib,
     );
   }
 
+  /// `/api/search` 里挑书写系统为 [expected] 的同一首：按 [lyricsQueries] 逐条查，只认时长在
+  /// LRCLIB 同录音容差内（[lrclibDurationMatches]）的记录，再由 [pickBestLyricsCandidate]
+  /// 按标题 / 艺人 / 时长裁决（正文书写系统对不上的剔除）。没有返回 null；网络错误照常抛出。
+  Future<({String raw, String format})?> _searchLrclibInScript(
+    MusicLyricsTrackRef track,
+    LyricsScript expected,
+  ) async {
+    final Map<String, ({String raw, String format})> byId =
+        <String, ({String raw, String format})>{};
+    final List<LyricsCandidate> all = await searchWithFallbackQueries(
+      title: track.title,
+      artist: track.artist,
+      durationMs: track.durationMs,
+      expectedScript: expected,
+      requireScriptMatch: true,
+      run: (String q) async {
+        final List<LyricsCandidate> out = <LyricsCandidate>[];
+        for (final LrclibRecord r in await _lrclib.search(
+          title: track.title,
+          artist: track.artist,
+          durationMs: track.durationMs,
+          query: q,
+        )) {
+          final ({String raw, String format})? lyr = r.bestLyrics;
+          if (lyr == null || !lrclibDurationMatches(r, track.durationMs)) {
+            continue;
+          }
+          final String id = '${r.id}';
+          byId[id] = lyr;
+          final double? sec = r.durationSec;
+          out.add(
+            LyricsCandidate(
+              providerId: MusicLyricsSource.lrclib,
+              title: r.trackName,
+              artist: r.artistName,
+              durationMs: sec == null ? null : (sec * 1000).round(),
+              ref: <String, String>{'id': id},
+              lyricsText: lyr.raw,
+            ),
+          );
+        }
+        return out;
+      },
+    );
+    final LyricsCandidate? best = pickBestLyricsCandidate(
+      all,
+      title: track.title,
+      artist: track.artist,
+      durationMs: track.durationMs,
+      expectedScript: expected,
+      requireScriptMatch: true,
+    );
+    return best == null ? null : byId[best.ref['id']];
+  }
+
   /// 歌词插件来源：按用户排序逐个「缓存（含负缓存）→ lyricsSearch → 评分挑 → lyricsFetch」，
-  /// 第一个拿到歌词的胜出。插件报错只跳过它（不写负缓存），不影响后面的插件。
+  /// 第一个拿到书写系统对得上（[lyricsScriptMismatches]）的歌词的胜出。插件报错只跳过它
+  /// （不写负缓存），不影响后面的插件。拿到的歌词对不上（罗马音 / 只有翻译）照常落库，
+  /// 但只记作兜底继续问下一个插件；全都对不上时返回第一个兜底（`scriptMismatch` = true）。
+  ///
+  /// 缓存里对不上的行与 LRCLIB 一样按 `updated_at` 每 [kPluginLyricsNegativeCacheTtl] 重挑
+  /// 一次（[_searchAndFetch] 会在同一插件的同名候选里接着找原文版）：挑到对得上的就换掉
+  /// 并保留用户偏移；还是对不上或没结果只刷新更新时间，旧行照常兜底；插件报错不刷新。
   ///
   /// 缓存键是 [MusicLyricsSource.lyricsPlugin]，与平台曲目自带歌词（③'，
   /// [MusicLyricsSource.plugin]）分开；缓存命中走 [_timelineOf]，与 ③' 同一条新鲜度判断
   /// （原始各轨按当前解析器重新合并）。
-  Future<MusicLyricsResolution?> _resolvePluginProviders(
+  Future<_OnlineOutcome?> _resolvePluginProviders(
     FushiDatabase db,
     MusicLyricsTrackRef track,
     MusicLyricRow? Function(String source) rowOf,
@@ -623,31 +899,57 @@ class MusicLyricsService {
     final MusicPluginLyricsSearcher? search = _pluginSearch;
     final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
     if (listProviders == null || search == null || fetch == null) return null;
+    final LyricsScriptExpectation? expected = expectedLyricsScript(
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+    );
+    MusicLyricsResolution? fallback;
     final List<String> ids = await listProviders();
     for (final String id in ids) {
       final String source = MusicLyricsSource.lyricsPlugin(id);
       final MusicLyricRow? prev = rowOf(source);
+      // 缓存里有歌词但书写系统对不上、且已到重挑时间：带着它去重挑，挑不到原文版仍用它兜底。
+      MusicLyricsResolution? kept;
       if (prev != null) {
+        final bool fresh =
+            _now() - prev.updatedAt <
+            kPluginLyricsNegativeCacheTtl.inMilliseconds;
         if (prev.format != kMusicLyricsNoneFormat) {
-          return MusicLyricsResolution(
+          final MusicLyricsResolution cachedHit = MusicLyricsResolution(
             timeline: await _timelineOf(db, prev, track.durationMs),
             source: source,
           );
-        }
-        if (_now() - prev.updatedAt <
-            kPluginLyricsNegativeCacheTtl.inMilliseconds) {
+          if (!lyricsScriptMismatches(
+            expected,
+            musicLyricsTimelineText(cachedHit.timeline),
+          )) {
+            return (resolution: cachedHit, scriptMismatch: false);
+          }
+          if (fresh || !_onlineEnabled()) {
+            fallback ??= cachedHit;
+            continue;
+          }
+          kept = cachedHit;
+        } else if (fresh) {
           continue;
         }
       }
       if (!_onlineEnabled()) continue;
       try {
-        final MusicPluginLyrics? got = await _searchAndFetch(
+        final _PluginFetched? got = await _searchAndFetch(
           id,
           track,
           search,
           fetch,
+          expected,
         );
         if (got == null) {
+          if (kept != null) {
+            await _touch(db, track.trackUid, source);
+            fallback ??= kept;
+            continue;
+          }
           await _upsert(
             db,
             trackUid: track.trackUid,
@@ -657,35 +959,62 @@ class MusicLyricsService {
           );
           continue;
         }
-        final ({Uint8List raw, String format, LyricTimeline timeline}) built =
-            await buildMusicPluginLyrics(got, track.durationMs, _parse);
-        final LyricTimeline t = built.timeline.copyWith(source: source);
+        final LyricTimeline t = got.timeline.copyWith(source: source);
+        final bool mismatch = got.scriptMismatch;
+        if (kept != null && mismatch) {
+          // 重挑还是对不上：旧行照用，TTL 内不再重挑。
+          await _touch(db, track.trackUid, source);
+          fallback ??= kept;
+          continue;
+        }
         await _upsert(
           db,
           trackUid: track.trackUid,
           source: source,
-          format: built.format,
-          raw: built.raw,
+          format: got.format,
+          raw: got.raw,
           timeline: t,
         );
-        return MusicLyricsResolution(
+        final MusicLyricsResolution fetched = MusicLyricsResolution(
           timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
           source: source,
         );
+        if (!mismatch) return (resolution: fetched, scriptMismatch: false);
+        fallback ??= fetched;
       } on MusicPluginException {
+        if (kept != null) fallback ??= kept;
         continue;
       } on LyricsParseException {
+        if (kept != null) fallback ??= kept;
         continue;
       }
     }
-    return null;
+    return fallback == null
+        ? null
+        : (resolution: fallback, scriptMismatch: true);
   }
 
-  Future<MusicPluginLyrics?> _searchAndFetch(
+  /// 只刷新一行的更新时间（重挑过但没换掉：TTL 内不再重挑）。
+  Future<void> _touch(FushiDatabase db, String trackUid, String source) =>
+      (db.update(db.musicLyrics)..where(
+            ($MusicLyricsTable r) =>
+                r.trackUid.equals(trackUid) & r.source.equals(source),
+          ))
+          .write(MusicLyricsCompanion(updatedAt: Value<int>(_now())));
+
+  /// 在一个歌词插件里搜候选、评分、取歌词并解析。
+  ///
+  /// 插件候选不带正文，同名的原文版与罗马音 / 翻译版靠评分分不开：[expected] 已知时按
+  /// [rankLyricsCandidates] 的名次逐条取，解析后书写系统对得上的就用它；最多取
+  /// [kPluginLyricsScriptProbeLimit] 条，都对不上返回取到的第一条（`scriptMismatch` =
+  /// true，调用方当兜底）。[expected] 为 null 时只取第一名。某条解析失败跳过它；一条都没
+  /// 解析成而有解析失败时抛出那个 [LyricsParseException]（与只取一条时一样不写负缓存）。
+  Future<_PluginFetched?> _searchAndFetch(
     String pluginId,
     MusicLyricsTrackRef track,
     MusicPluginLyricsSearcher search,
     MusicPluginLyricsRefFetcher fetch,
+    LyricsScriptExpectation? expected,
   ) async {
     final Map<String, MusicPluginLyricsCandidate> byKey =
         <String, MusicPluginLyricsCandidate>{};
@@ -719,24 +1048,77 @@ class MusicLyricsService {
         return out;
       },
     );
-    final LyricsCandidate? best = pickBestLyricsCandidate(
+    final List<LyricsCandidate> ranked = rankLyricsCandidates(
       all,
       title: track.title,
       artist: track.artist,
       durationMs: track.durationMs,
     );
-    if (best == null) return null;
-    final MusicPluginLyrics? lyrics = await fetch(
-      pluginId,
-      byKey[best.ref['k']]!.ref,
-    );
-    return lyrics?.original == null ? null : lyrics;
+    _PluginFetched? first;
+    LyricsParseException? parseError;
+    StackTrace? parseStack;
+    final int probes = expected == null ? 1 : kPluginLyricsScriptProbeLimit;
+    for (final LyricsCandidate c in ranked.take(probes)) {
+      final MusicPluginLyrics? lyrics = await fetch(
+        pluginId,
+        byKey[c.ref['k']]!.ref,
+      );
+      if (lyrics?.original == null) continue;
+      final ({Uint8List raw, String format, LyricTimeline timeline}) built;
+      try {
+        built = await buildMusicPluginLyrics(lyrics!, track.durationMs, _parse);
+      } on LyricsParseException catch (e, st) {
+        parseError ??= e;
+        parseStack ??= st;
+        continue;
+      }
+      final bool mismatch = lyricsScriptMismatches(
+        expected,
+        musicLyricsTimelineText(built.timeline),
+      );
+      final _PluginFetched got = (
+        raw: built.raw,
+        format: built.format,
+        timeline: built.timeline,
+        scriptMismatch: mismatch,
+      );
+      if (!mismatch) return got;
+      first ??= got;
+    }
+    if (first == null && parseError != null) {
+      Error.throwWithStackTrace(parseError, parseStack!);
+    }
+    return first;
   }
 
-  Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {
+  static bool _hasGenerated(MusicLyricRow? row) =>
+      row != null && row.format != kMusicLyricsNoneFormat;
+
+  /// [skipGenerated]：本机字幕管线写的旁置文件（[MusicGeneratedSidecarCheck]）不算
+  /// sidecar（这首已有 `asr` 行时由调用方置位）。
+  Future<_Sidecar?> _readSidecars(
+    MusicLyricsTrackRef track, {
+    bool skipGenerated = false,
+  }) async {
     final String dir = File(track.path).parent.path;
     final List<String> siblings = _listDir(dir);
-    final LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
+    LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
+    final MusicGeneratedSidecarCheck? generated = _isGeneratedSidecar;
+    if (skipGenerated && generated != null) {
+      final Set<String> own = <String>{};
+      for (final LyricSidecarFile f in <LyricSidecarFile>[
+        if (set.primary != null) set.primary!,
+        ...set.translations,
+      ]) {
+        if (await generated(track.path, f.path)) own.add(f.path);
+      }
+      if (own.isNotEmpty) {
+        set = pickLyricSidecars(track.path, <String>[
+          for (final String s in siblings)
+            if (!own.contains(s)) s,
+        ]);
+      }
+    }
     final LyricSidecarFile? primary =
         set.primary ?? await _ultraStarByHeader(track.path, siblings);
     if (primary == null) return null;
@@ -854,8 +1236,11 @@ class MusicLyricsService {
         if (r.format == kMusicLyricsNoneFormat) continue;
         // 插件来源的标签是插件 id；平台曲目自带歌词与歌词插件搜到的是两种来源，界面按
         // [MusicLyricsCandidate.source] 再标出是哪一种。
+        // 生成字幕的标签由界面按来源换成本地化名（`musicLyricsCandidateTitle`）。
         final String? label = r.source == MusicLyricsSource.lrclib
             ? 'LRCLIB'
+            : r.source == MusicLyricsSource.asr
+            ? 'ASR'
             : MusicLyricsSource.pluginIdOf(r.source) ??
                   MusicLyricsSource.lyricsPluginIdOf(r.source);
         if (label == null) continue;
@@ -892,22 +1277,28 @@ class MusicLyricsService {
       artist: artist ?? track.artist,
       durationMs: track.durationMs,
     );
-    final List<MusicLyricsCandidate> out = <MusicLyricsCandidate>[];
+    // 书写系统与曲目元数据对得上的（原文版）排前，组内保持 LRCLIB 排序（有时间的在前、时长近的在前）。
+    final LyricsScriptExpectation? expected = expectedLyricsScript(
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+    );
+    final List<MusicLyricsCandidate> matching = <MusicLyricsCandidate>[];
+    final List<MusicLyricsCandidate> others = <MusicLyricsCandidate>[];
     for (final LrclibRecord r in records) {
       final ({String raw, String format})? best = r.bestLyrics;
       if (best == null) continue;
       final Uint8List raw = utf8.encode(best.raw);
-      out.add(
-        MusicLyricsCandidate(
-          source: MusicLyricsSource.lrclib,
-          label: '${r.trackName} — ${r.artistName}',
-          format: best.format,
-          raw: raw,
-          timeline: await _parse(raw, best.format, track.durationMs),
-        ),
+      final MusicLyricsCandidate c = MusicLyricsCandidate(
+        source: MusicLyricsSource.lrclib,
+        label: '${r.trackName} — ${r.artistName}',
+        format: best.format,
+        raw: raw,
+        timeline: await _parse(raw, best.format, track.durationMs),
       );
+      (lyricsScriptMismatches(expected, best.raw) ? others : matching).add(c);
     }
-    return out;
+    return <MusicLyricsCandidate>[...matching, ...others];
   }
 
   /// 用户挑定一份候选：写成 `user` 行（`is_user_edited` = 手动指定，永远最高）。原文存
@@ -936,6 +1327,142 @@ class MusicLyricsService {
       isUserEdited: true,
       offsetMs: candidate.timeline.offsetMs,
     );
+  }
+
+  /// 写入本机生成的字幕（[MusicLyricsSource.asr] 行）：重生成覆盖原文与时间轴，保留
+  /// 用户调过的整首偏移。不碰 `user` 行——用户手动指定过别的来源时仍显示那份，界面
+  /// 「重置来源」后回到生成字幕。时间轴不带注音（ASR 转写本来就没有 ruby）。
+  Future<void> saveGenerated(
+    String trackUid, {
+    required String format,
+    required Uint8List raw,
+    required LyricTimeline timeline,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    await _upsert(
+      db,
+      trackUid: trackUid,
+      source: MusicLyricsSource.asr,
+      format: format,
+      raw: raw,
+      timeline: timeline.copyWith(source: MusicLyricsSource.asr, offsetMs: 0),
+    );
+    _generated.add(trackUid);
+  }
+
+  /// [trackUids] 里已有生成字幕（`asr` 行，非负缓存）的曲目：批量生成跳过它们，存量迁移
+  /// 不覆盖。
+  Future<Set<String>> tracksWithGenerated(List<String> trackUids) async {
+    final FushiDatabase? db = _database();
+    if (db == null || trackUids.isEmpty) return const <String>{};
+    // 按块查：整个来源批量时曲目数没有上限，一条 IN 会撞 SQLite 变量上限。
+    final Set<String> out = <String>{};
+    for (int i = 0; i < trackUids.length; i += _kInChunk) {
+      final List<String> chunk = trackUids.sublist(
+        i,
+        i + _kInChunk > trackUids.length ? trackUids.length : i + _kInChunk,
+      );
+      final List<MusicLyricRow> rows =
+          await (db.select(db.musicLyrics)..where(
+                ($MusicLyricsTable l) =>
+                    l.trackUid.isIn(chunk) &
+                    l.source.equals(MusicLyricsSource.asr) &
+                    l.format.equals(kMusicLyricsNoneFormat).not(),
+              ))
+              .get();
+      out.addAll(<String>[for (final MusicLyricRow r in rows) r.trackUid]);
+    }
+    return out;
+  }
+
+  /// [tracksWithGenerated] 每条 IN 的 uid 数（远低于 SQLite 变量上限，同仓库其余分块口径）。
+  static const int _kInChunk = 500;
+
+  /// 这首有没有用户手动指定的歌词（`is_user_edited`）。
+  Future<bool> hasUserChoice(String trackUid) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return false;
+    return (await _rows(db, trackUid)).any((MusicLyricRow r) => r.isUserEdited);
+  }
+
+  /// 把一份整文件的字幕 / 歌词文件 [path] 设成这个文件下各曲目 [tracks] 的手动指定
+  /// （`user` 行，走 [choose] 同一写法）：存量迁移带走旧视频行上用户选过、又不在音频旁
+  /// （sidecar 规则认不到）的字幕——不搬的话删视频行会把 app 目录里的导入副本一起回收
+  /// （BUG-4175）。CUE 虚拟曲目按区间截取并平移成曲内时间（整批一次后台 isolate），普通
+  /// 曲目整份。已有手动指定的曲目不覆盖（用户在音乐库里选过的优先）。
+  ///
+  /// 返回写了的曲目；读不了 / 解析不了 / 一行都没有返回 null（调用方决定要不要保留源行）。
+  /// 数据库未就绪抛 [StateError]（不能当成「写成了」让调用方删源行）。
+  Future<List<String>?> chooseFileForTracks(
+    String path,
+    List<MusicLyricsFileTrack> tracks,
+  ) async {
+    final FushiDatabase? db = _database();
+    if (db == null) throw StateError('music lyrics: database not ready');
+    final Uint8List raw;
+    try {
+      raw = await File(path).readAsBytes();
+    } on FileSystemException {
+      return null;
+    }
+    final String name = File(path).uri.pathSegments.last;
+    final int dot = name.lastIndexOf('.');
+    final String ext = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+    final bool whole = tracks.length == 1 && tracks.single.cueStartMs == null;
+    final LyricTimeline t;
+    try {
+      t = await _parse(raw, ext, whole ? tracks.single.durationMs : null);
+    } on LyricsParseException {
+      return null;
+    }
+    if (t.lines.isEmpty) return null;
+    final List<MusicLyricsFileTrack> pending = <MusicLyricsFileTrack>[
+      for (final MusicLyricsFileTrack tr in tracks)
+        if (!await hasUserChoice(tr.trackUid)) tr,
+    ];
+    final List<MusicLyricsFileTrack> cue = <MusicLyricsFileTrack>[
+      for (final MusicLyricsFileTrack tr in pending)
+        if (tr.cueStartMs != null) tr,
+    ];
+    final List<({LyricTimeline timeline, Uint8List ttml})> cut = cue.isEmpty
+        ? const <({LyricTimeline timeline, Uint8List ttml})>[]
+        : await FushiLyricsAsync.sliceAll(t, <({int startMs, int? endMs})>[
+            for (final MusicLyricsFileTrack tr in cue)
+              (startMs: tr.cueStartMs!, endMs: tr.cueEndMs),
+          ]);
+    final List<String> wrote = <String>[];
+    int at = 0;
+    for (final MusicLyricsFileTrack tr in pending) {
+      if (tr.cueStartMs == null) {
+        await choose(
+          tr.trackUid,
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.user,
+            label: name,
+            format: t.format,
+            raw: raw,
+            timeline: t,
+          ),
+        );
+      } else {
+        final ({LyricTimeline timeline, Uint8List ttml}) c = cut[at++];
+        // 这一曲的区间里一行都没有：不写空的手动指定（会把这首钉成「没有歌词」）。
+        if (c.timeline.lines.isEmpty) continue;
+        await choose(
+          tr.trackUid,
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.user,
+            label: name,
+            format: 'ttml',
+            raw: c.ttml,
+            timeline: c.timeline,
+          ),
+        );
+      }
+      wrote.add(tr.trackUid);
+    }
+    return wrote;
   }
 
   /// 撤销手动指定，回到自动优先级。
@@ -969,6 +1496,11 @@ class MusicLyricsService {
     String format, {
     bool overwrite = false,
   }) async {
+    // 不是本机文件（网络来源 / 插件 / 服务器曲目）就没有「文件旁边」：明确拒绝，不往
+    // 当前目录下写一个用地址拼出来的相对路径。界面对这类曲目不给入口。
+    if (!track.isLocalFile) {
+      throw FileSystemException('not a local audio file', track.path);
+    }
     final File audio = File(track.path);
     final String name = audio.uri.pathSegments.last;
     final int dot = name.lastIndexOf('.');

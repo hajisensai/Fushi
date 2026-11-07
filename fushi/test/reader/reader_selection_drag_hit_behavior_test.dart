@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 移动端 EPUB 选区拖动命中**行为**测试（问题：「手柄拖到字缝/行尾/行距/段间空白就卡住，
 /// 松手再拖也过不去」）。

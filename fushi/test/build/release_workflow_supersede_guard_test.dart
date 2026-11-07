@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：develop / main 的新 push 把「正在跑、但还很年轻」的旧发布 run 取消掉。
 ///

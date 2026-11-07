@@ -3183,11 +3183,34 @@ void AttachedTextSurfaceWindow::EmitStateIfChanged(bool force) {
          << ':' << snapshot.shield.fault_mask << ':'
          << snapshot.shield.status_flags;
   const std::string signature = stream.str();
+  LogStateTransition(snapshot);
   if (!force && signature == last_emitted_signature_)
     return;
   last_emitted_signature_ = signature;
   if (on_state_)
     on_state_(snapshot);
+}
+
+void AttachedTextSurfaceWindow::LogStateTransition(const Snapshot &snapshot) {
+  // 只记「接不接点击」相关的四元组，几何 / shield 计数的抖动不进日志。每次查词卡
+  // 拿走 WH_MOUSE_LL 都会 visible -> suspended/mouseHookBusy 一次，量级与查词次数
+  // 相同。held_ms = 上一个状态持续了多久：表面隐藏几十秒的报告据此直接定位到闸门。
+  std::ostringstream key;
+  key << snapshot.state << '/' << snapshot.status << '/' << snapshot.reason
+      << " visible=" << (snapshot.surface_visible ? 1 : 0);
+  const std::string transition = key.str();
+  if (transition == last_logged_transition_)
+    return;
+  const ULONGLONG now = GetTickCount64();
+  std::ostringstream line;
+  line << "gal-attached: state " << transition << " tick=" << now;
+  if (last_logged_transition_at_ != 0) {
+    line << " held_ms=" << (now - last_logged_transition_at_) << " from "
+         << last_logged_transition_;
+  }
+  last_logged_transition_ = transition;
+  last_logged_transition_at_ = now;
+  NativeGlog(line.str());
 }
 
 void AttachedTextSurfaceWindow::NotifyCalibrationCommitted() {

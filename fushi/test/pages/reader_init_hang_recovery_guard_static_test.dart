@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-437 源码守卫：打开书籍偶发永久卡加载、不恢复（双实例更易触发）。
 ///

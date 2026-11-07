@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 
 /// BUG-1436：批量「组合成合集」此前直接按选择集（`Set<String>`，迭代序 = 点选/

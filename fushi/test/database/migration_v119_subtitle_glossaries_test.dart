@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -61,7 +61,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 144);
+    expect(migrated.schemaVersion, 146);
     final VideoMetadataCharacterRow? character = await migrated
         .getVideoMetadataCharacter('character:mal:7');
     expect(character?.name, 'Hirasawa, Yui');
@@ -110,7 +110,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 144);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
     expect(
       columnsOf(probe, 'video_metadata_characters'),
       contains('original_name'),
@@ -150,6 +150,6 @@ void main() {
 
     final sqlite.Database probe2 = sqlite.sqlite3.open(path);
     addTearDown(probe2.dispose);
-    expect(probe2.select('PRAGMA user_version').first.values.first, 144);
+    expect(probe2.select('PRAGMA user_version').first.values.first, 146);
   });
 }

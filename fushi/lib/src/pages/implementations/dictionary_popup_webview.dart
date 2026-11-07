@@ -39,7 +39,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
-    show readerShouldHandleDesktopCopy;
+    show desktopShouldHandleCopyGesture;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
@@ -517,7 +517,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 同一份），宿主据其 expression/reading 反查全部命中卡并据用户选择执行。返回执行后
   /// 的 [MinePopupResult]（驱动 popup.js 刷新 ✓/+ 与第三态）。null 时 popup 回退到旧的
   /// 「重验 + 静默」两态行为（Never break userspace）。
-  final Future<MinePopupResult> Function(Map<String, String> fields)?
+  ///
+  /// `openChooser`：用户用的是「管理」手势（右键 / 长按 ✓），宿主必须弹选择单；单击时
+  /// 为 false，「允许重复」开着就直接新增（`ankiMinedTapMinesNewDirectly`）。
+  final Future<MinePopupResult> Function(
+    Map<String, String> fields, {
+    bool openChooser,
+  })?
   onMinedCardAction;
 
   /// BUG-3492：这个词刚交给后台写入（弹窗显示「已加入」），卡还没进 Anki 时用户又要
@@ -3333,8 +3339,16 @@ JSON.stringify((function(){
                 // 对话框在整条链路落地时关，这正是这条路该有的样子：用户本来就在
                 // 上面那张模态单里忙着。
                 _markConfirmMineHostEntered();
+                // 第二个参数是 popup.js 的手势意图（右键 / 长按 = 管理，必须弹选择单）。
+                final bool openChooser =
+                    args.length > 1 &&
+                    args[1] is Map &&
+                    (args[1] as Map)['openChooser'] == true;
                 return await _runMineBridge(
-                  () => widget.onMinedCardAction!(fields),
+                  () => widget.onMinedCardAction!(
+                    fields,
+                    openChooser: openChooser,
+                  ),
                 );
               }
             } catch (e, stack) {
@@ -3932,7 +3946,6 @@ JSON.stringify((function(){
         // controller/document pair may mark the surface ready afterwards.
         _invalidatePopupDocument();
         final int generation = _documentGeneration;
-        debugPrint('[popup-perf] webview loadStop $url');
         // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
         // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
         // 300KB 内联 HTML/CSS/JS）的解析成本。
@@ -4049,38 +4062,39 @@ JSON.stringify((function(){
 
     // TODO-896 症状②：Windows 上原生 WebView2 菜单已禁（hideDefaultSystemContextMenuItems
     // = isWindowsPlatform），右键改由 Flutter 层 [showMenu] 接管，锚点经 BUG-261 范式映射到
-    // appUiScale 空间。非 Windows 平台不包 GestureDetector，保持原生菜单行为不变。
+    // appUiScale 空间。非 Windows 平台不包 ContextMenuTrigger，保持原生菜单行为不变。
     // [HitTestBehavior.translucent] 让右键之外的所有指针事件照常落到 WebView（不抢左键
     // 框选 / 滚动 / 点击）。
-    final Widget guardedWebView;
+    Widget menuWrappedWebView = webView;
     if (isWindowsPlatform) {
-      guardedWebView = KeyedSubtree(
-        key: _deathGuard.rebuildKey,
-        child: Focus(
-          // BUG-1451 键盘那一半（BUG-402 当年只修了阅读器正文，弹窗漏修）：Windows 的
-          // WebView2 走合成模式，fork 只转发鼠标、**不转发键盘**，所以弹窗里按 Ctrl+C
-          // 永远到不了 WebView2、浏览器原生 copy 永不触发。但这一按键**一定**会到
-          // Flutter（平台视图的 FocusNode 是本节点的后代，KeyEvent 沿焦点链向上冒泡），
-          // 在这里接住即可。`canRequestFocus:false` + `skipTraversal`：只做拦截，不参与
-          // 遍历、不抢焦点，与 BUG-1347 那层宿主键桥同范式、互不干扰（它只转发宿主
-          // 动作 token，不含 Ctrl+C）。
-          canRequestFocus: false,
-          skipTraversal: true,
-          onKeyEvent: _handleDesktopCopyKey,
-          child: ContextMenuTrigger(
-            // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-            onInvoke: (Offset position) =>
-                _showWindowsContextMenu(context, position),
-            child: webView,
-          ),
-        ),
-      );
-    } else {
-      guardedWebView = KeyedSubtree(
-        key: _deathGuard.rebuildKey,
+      menuWrappedWebView = ContextMenuTrigger(
+        // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+        onInvoke: (Offset position) =>
+            _showWindowsContextMenu(context, position),
         child: webView,
       );
     }
+    // BUG-1451 键盘那一半：Windows 的 WebView2 走合成模式，fork 只转发鼠标、**不转发
+    // 键盘**，复制键到不了 WebView2 的原生 copy。Flutter 焦点在弹窗平台视图的 FocusNode
+    // 上时（它是本节点的后代），KeyEvent 沿焦点链冒泡到这里，就地接住。是否接管全由
+    // 平台谓词 [desktopShouldHandleCopyGesture] 决定，本层不按平台包裹。
+    //
+    // ⚠️ 本层只在 Flutter 焦点**进了弹窗子树**时才收得到按键。macOS 上这件事不发生：
+    // `AppKitView` 只在引擎回调 `onFocus` 时 requestFocus，macOS 引擎不发 viewFocused
+    // （BUG-3131 排除路径里的真机事实），焦点一直停在宿主（阅读器 `_focusNode`）上。
+    // 所以 macOS 的 ⌘C 由宿主分派：阅读器经 `visiblePopupStatesTopDown` 自顶向下调
+    // [copyNativeSelectionForHost]（BUG-4204），不靠这一层。
+    // `canRequestFocus:false` + `skipTraversal`：只做拦截，不参与遍历、不抢焦点，与
+    // BUG-1347 那层宿主键桥同范式、互不干扰（它只转发宿主动作 token，不含复制键）。
+    final Widget guardedWebView = KeyedSubtree(
+      key: _deathGuard.rebuildKey,
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleDesktopCopyKey,
+        child: menuWrappedWebView,
+      ),
+    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         _capturePopupLayout(constraints);
@@ -4089,25 +4103,39 @@ JSON.stringify((function(){
     );
   }
 
-  /// Windows 弹窗内的「Ctrl+C 复制选中文字」兼容层（BUG-1451，BUG-402 同根）。
+  /// 桌面弹窗内的「复制选中文字」兼容层（BUG-1451 Windows Ctrl+C、BUG-4204 macOS ⌘C，
+  /// 与 BUG-402 同根）。
   ///
-  /// 判据复用阅读器正文那条**同一个纯谓词** [readerShouldHandleDesktopCopy]（Windows +
-  /// 仅 Ctrl + 键 C），两条复制路径不会漂开。未命中一律返回 [KeyEventResult.ignored]
+  /// 判据复用阅读器正文那条**同一个纯谓词** [desktopShouldHandleCopyGesture]（Windows
+  /// 仅 Ctrl / macOS 仅 ⌘ + 键 C），两条复制路径不会漂开。未命中一律返回 [KeyEventResult.ignored]
   /// 继续冒泡——弹窗内的制卡（Ctrl+Enter）、切词条、宿主的关词典键全部不受影响。
   ///
   /// 取的是**浏览器原生选区**（[_selectedTextAcrossFrames] 穿透同源 iframe），刻意不碰
   /// `window.fushiSelection`——那是查词高亮的另一套坐标/状态（BUG-368/402 注释）。
   KeyEventResult _handleDesktopCopyKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (!readerShouldHandleDesktopCopy(
+    if (!desktopShouldHandleCopyGesture(
       key: event.logicalKey,
       modifiers: activeModifierKeys(),
       isWindows: isWindowsPlatform,
+      isMacOS: isMacOSPlatform,
     )) {
       return KeyEventResult.ignored;
     }
     unawaited(_copyNativeSelectionToClipboard());
     return KeyEventResult.handled;
+  }
+
+  /// BUG-4204：宿主键盘路径的复制入口。Flutter 焦点不在弹窗子树里时（macOS 恒如此，
+  /// 见 [build] 里复制拦截层的注释），复制键落在宿主上，宿主按可见层叠顺序逐层调本
+  /// 方法：本层原生选区（穿透同源 iframe，与 [_handleDesktopCopyKey] 同一来源）非空就
+  /// 写剪贴板、给成功提示并返回 true；空选区返回 false 且**不提示**——空不代表失败，
+  /// 宿主还要接着问下一层，「没选中」的提示不该由某一层抢先给。
+  Future<bool> copyNativeSelectionForHost() async {
+    final String text = await _selectedTextAcrossFrames();
+    if (!mounted || text.isEmpty) return false;
+    await _copySelectionToClipboard(text);
+    return true;
   }
 
   /// Ctrl+C 落地：读原生选区 → 写系统剪贴板。空选区不覆盖剪贴板已有内容，但给出提示

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：WebView 查词弹窗内部 card 表面的圆角走 Dart token 单一真相源。
 ///

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（TODO-935 ①A）：「引用原文件（不复制）」只能在桌面生效，移动端零回归。
 ///

@@ -135,10 +135,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'asr_transcribe_language',
   'audio_source_configs',
   'audio_sources',
-  // bool：只有音频（没有字幕）的有声书下载完成后，自动用设备端语音模型转录
-  // 并入库（有正文对齐、没有成独立字幕书）。默认开；关掉 = 改前行为（任务
-  // 停在「缺字幕」，用户手动配对）。见 media/audiobook/audiobook_auto_transcribe.dart。
+  // bool：总开关。没有字幕的有声书下载完成后，自动用设备端语音模型转录并入库
+  // （有正文转完对齐）。默认开；关 = 一律不自动转录（不下模型、不跑推理），
+  // 任务停在「缺字幕」，用户手动配对。见 media/audiobook/audiobook_auto_transcribe.dart。
   'audiobook_auto_transcribe',
+  // bool：子开关。总开关开时，下载里没有正文（EPUB / 文本）也转录成独立字幕书。
+  // 默认关（2026-11-06：没正文时转录质量差，正常流程是有 EPUB 后搭配转录）；
+  // 关 = 没有正文的任务停在「缺字幕」。
+  'audiobook_auto_transcribe_without_text',
   'audiobook_background_play',
   // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
   // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
@@ -358,6 +362,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
+  // （library_grid_columns.dart，BUG-4219）。设备本地。
+  'library_grid_columns',
   // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
   // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个
   // 分组在每台设备上自然解除拒绝（设备本地）。
@@ -548,6 +555,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
+  // String（默认 'long_tracks'）：逐曲断点续播 off / long_tracks / all
+  // （MusicResumeMode.wire，music_resume.dart）。
+  'music_resume_mode',
   // String（JSON 数组，serverId）：混排进本地曲库的服务器（服务器曲库 P5，显式 opt-in）。
   // 服务器配置本身设备本地，这份也设备本地（deviceLocalPrefKeys）。
   'music_server_library_mix',

@@ -1,7 +1,7 @@
 /// 合集子篇判据（BUG-1393）：谁是子篇、它的作品海报该落到哪个合集。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart';
 import 'package:fushi_core/fushi_core.dart';
 

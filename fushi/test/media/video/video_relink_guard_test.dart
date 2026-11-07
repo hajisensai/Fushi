@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1133 / BUG-805 源码守卫：缺失的本地视频除「删除」外必须提供真实的重链/重导入
 /// 路径。

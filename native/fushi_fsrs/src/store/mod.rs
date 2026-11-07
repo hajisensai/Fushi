@@ -20,6 +20,7 @@ pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
 pub(crate) mod ids;
+mod mem_budget;
 mod profile_data;
 mod projections;
 #[cfg(test)]
@@ -83,6 +84,11 @@ pub struct SrsCore {
     /// [SrsCore::set_ingest_phase] 与阶段一起写，不单独置位；会话怎么结束（收尾刷完、出错作废、Dart 收手发
     /// `ingest_end`、删 profile）页缓存就随之放掉，不靠下一轮碰巧收尾。
     ingest_holds_cache: AtomicBool,
+    /// Dart 的批量写入（`bulkWrites`：导入包、大批改写）进行中：写连接放回时不还页缓存，批与批之间不从盘上重读同一批
+    /// 索引页（`bulk_cache` 命令置位 / 清除，[SrsCore::set_bulk_holds_cache]）。结束后下一次放回照常收回。
+    bulk_holds_cache: AtomicBool,
+    /// 写连接页缓存上限的自适应状态（store/mem_budget.rs）：取写连接时按可用内存重算。
+    writer_cache: Mutex<mem_budget::WriterCache>,
     /// 库里可能有进行中的新设备收段通道（store/sync2/channel.rs，`sync2_boot` 有行）：打开时按已提交的表置、开通道
     /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
     /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
@@ -145,6 +151,8 @@ pub(crate) struct Conn<'a>(
     MutexGuard<'a, Option<Connection>>,
     Option<&'a queue::StudyHub>,
     Option<&'a AtomicBool>,
+    /// 批量写入期间留着页缓存（[SrsCore] `bulk_holds_cache`）。
+    Option<&'a AtomicBool>,
 );
 
 impl<'a> Conn<'a> {
@@ -159,7 +167,7 @@ impl<'a> Conn<'a> {
         if guard.is_none() {
             return Err(CLOSED.to_string());
         }
-        Ok(Self(guard, hub, None))
+        Ok(Self(guard, hub, None, None))
     }
 }
 
@@ -197,11 +205,11 @@ impl Drop for Conn<'_> {
                 hub.settle();
             }
         }
-        // 收段会话开着 / 收尾刷缓存中留着页缓存（[SrsCore] `ingest_holds_cache`）。
-        if !self
-            .2
-            .is_some_and(|h| h.load(std::sync::atomic::Ordering::Relaxed))
-        {
+        // 收段会话开着 / 收尾刷缓存中 / 批量写入期间留着页缓存（[SrsCore] `ingest_holds_cache` / `bulk_holds_cache`）。
+        let held = |h: Option<&AtomicBool>| {
+            h.is_some_and(|h| h.load(std::sync::atomic::Ordering::Relaxed))
+        };
+        if !held(self.2) && !held(self.3) {
             trim_idle_cache(c);
         }
     }
@@ -450,6 +458,8 @@ impl SrsCore {
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
             ingest_yield: AtomicBool::new(false),
             ingest_holds_cache: AtomicBool::new(false),
+            bulk_holds_cache: AtomicBool::new(false),
+            writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
@@ -469,7 +479,35 @@ impl SrsCore {
             Some(&self.study_hub),
         )?;
         w.2 = Some(&self.ingest_holds_cache);
+        w.3 = Some(&self.bulk_holds_cache);
+        self.tune_writer_cache(&w);
         Ok(w)
+    }
+
+    /// 写连接页缓存上限按可用内存重算（至多每 [mem_budget::RECHECK] 一次，store/mem_budget.rs）。调低时 SQLite 当场
+    /// 还掉超出的页。设不上（库正被关）不影响这次命令。
+    fn tune_writer_cache(&self, w: &Connection) {
+        let Ok(mut st) = self.writer_cache.lock() else {
+            return;
+        };
+        if let Some(kib) = st.due(std::time::Instant::now(), mem_budget::available_bytes) {
+            if w.execute_batch(&format!("PRAGMA cache_size = -{kib}"))
+                .is_err()
+            {
+                st.checked = None;
+            }
+        }
+    }
+
+    /// 批量写入开始 / 结束（Dart `bulkWrites` 的最外层）：期间写连接放回时留着页缓存。
+    pub fn set_bulk_holds_cache(&self, on: bool) {
+        self.bulk_holds_cache.store(on, Ordering::Relaxed);
+    }
+
+    /// 写连接此刻的页缓存上限（KiB），测试 / 诊断用。
+    #[cfg(test)]
+    pub(crate) fn writer_cache_kib(&self) -> i64 {
+        self.writer_cache.lock().map(|s| s.kib).unwrap_or(0)
     }
 
     /// 收段阶段唯一的转换入口：把 [slot]（持着 `ingest` 锁拿到的）换成 [next]，同时写下写连接放回时看的镜像

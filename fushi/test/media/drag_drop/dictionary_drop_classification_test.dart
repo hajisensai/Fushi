@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 
 /// TODO-059: 词典管理页拖放导入。验证拖入文件 -> 词典包筛选的纯逻辑

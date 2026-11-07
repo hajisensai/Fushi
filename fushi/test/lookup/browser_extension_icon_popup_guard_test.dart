@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：浏览器扩展 TODO-1184（图标菜单/队列/删除/开始生成）+ TODO-1185（弹窗字号 zoom /
 /// 多列 columns / 嵌套查词）+ TODO-1190（网页源文高亮）源码扫描。不依赖真浏览器，守住实现

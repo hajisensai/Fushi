@@ -10,7 +10,7 @@
 // 4. 清统计墓碑语义原样保留（经 addMineCountPerBook，重新制卡 = 新活动）。
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<FushiDatabase> _openDb() async {

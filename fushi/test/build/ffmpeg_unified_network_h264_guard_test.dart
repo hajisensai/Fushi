@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1214 / TODO-1257 / BUG-2630 guard: the unified FFmpeg (tool/ffmpeg-unified,
 /// shared by the player and mining on every platform) must carry the network +

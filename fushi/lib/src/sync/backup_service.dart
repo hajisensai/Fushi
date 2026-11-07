@@ -485,6 +485,10 @@ const List<String> _deviceLocalTables = <String>[
   'music_scrape_meta',
   'music_metadata_raw_snapshots',
   'music_locked_fields',
+  // v145：曲目 uid 别名（同一文件的重复行并掉后，败者 uid → 胜者 uid）。uid 含本机
+  // 路径，设备本地；覆盖恢复后回灌，再由 applyMusicTrackUidAliases 改指恢复进来的
+  // 歌单 / 播放记录。无外键。
+  'music_track_uid_aliases',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -524,6 +528,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_scrape_meta',
   'music_metadata_raw_snapshots',
   'music_locked_fields',
+  'music_track_uid_aliases',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`
@@ -541,13 +546,14 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 /// v92 added `study_segments` (the ONLY study-time fact table the statistics
 /// pages read from since then) and its identity tombstones; both were missing
 /// here, so an "exclude statistics" export still leaked every study segment.
-/// 「音乐」类别的五张用户数据表（子表在前，删除顺序）。曲库目录表不在其中（设备本地）。
+/// 「音乐」类别的六张用户数据表（子表在前，删除顺序）。曲库目录表不在其中（设备本地）。
 const List<String> musicUserTables = <String>[
   'music_playlist_entries',
   'music_playlists',
   'music_lyrics',
   'music_videos',
   'music_play_events',
+  'music_resume_points',
 ];
 
 const List<String> _statisticsTables = <String>[
@@ -1865,6 +1871,19 @@ class BackupService {
         );
       }
       if (!includeVideos) {
+        // 视频来源自动登记的音乐来源（v145 auto_owner_source_id）：音乐库本身不随视频
+        // 类别裁剪，这些来源照常导出，但 owner 不在包里——显式清空归属（不依赖导出库
+        // 是否开着外键 setNull），恢复后它们是普通的手动音乐来源；挂在被裁视频来源上
+        // 的「不再登记」清单一并去掉（没有 owner，清单无意义）。
+        await db.customStatement(
+          'UPDATE media_sources SET auto_owner_source_id = NULL '
+          'WHERE auto_owner_source_id IN '
+          "(SELECT id FROM media_sources WHERE media_kind = 'video')",
+        );
+        await db.customStatement(
+          'DELETE FROM music_auto_source_dismissals WHERE owner_source_id IN '
+          "(SELECT id FROM media_sources WHERE media_kind = 'video')",
+        );
         await db.customStatement(
           "DELETE FROM media_sources WHERE media_kind = 'video'",
         );

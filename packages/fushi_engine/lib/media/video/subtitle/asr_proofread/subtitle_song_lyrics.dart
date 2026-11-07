@@ -27,6 +27,8 @@ import 'package:fushi_engine/media/music/lrclib_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_prompts_zh.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_proofreader.dart'
     show formatProofreadTime;
@@ -160,10 +162,16 @@ class SubtitleSongQuery {
     this.title,
     this.artist,
     this.evidenceLines = const <String>[],
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
-  /// 作品名（日文优先）。
+  /// 作品名（[VideoSubtitleLanguage.workTitle]：日语取日文原名优先）。
   final String workTitle;
+
+  /// 字幕语言：决定搜索词后缀（`歌詞` / `歌词`）与抽歌词的提示词。
+  final VideoSubtitleLanguage language;
+
+  bool get isMandarin => language == VideoSubtitleLanguage.mandarin;
 
   /// 认出的歌名 / 歌手；认不出为 null。
   final String? title;
@@ -265,7 +273,7 @@ class LrclibSubtitleLyricsFinder implements SubtitleLyricsFinder {
   }
 }
 
-/// 联网搜索：搜「歌名 歌手 歌詞」（认不出歌名时搜识别稿里最长的一句），抓前几页正文，
+/// 联网搜索：搜「歌名 歌手 歌詞」（普通话 `歌词`；认不出歌名时搜识别稿里最长的一句），抓前几页正文，
 /// 让 AI 只抽出页面里原有的歌词。
 class WebSearchSubtitleLyricsFinder implements SubtitleLyricsFinder {
   WebSearchSubtitleLyricsFinder(this.search, {this.maxPages = 3});
@@ -282,8 +290,11 @@ class WebSearchSubtitleLyricsFinder implements SubtitleLyricsFinder {
   }) async {
     if (!search.isEnabled) return const <SubtitleLyricsCandidate>[];
     final String? title = query.title;
+    final String suffix = query.isMandarin
+        ? SubtitleLyricsLabelsZh.searchSuffix
+        : '歌詞';
     final String q = title != null && title.trim().isNotEmpty
-        ? '${title.trim()} ${query.artist ?? ''} 歌詞'.replaceAll(
+        ? '${title.trim()} ${query.artist ?? ''} $suffix'.replaceAll(
             RegExp(r'\s+'),
             ' ',
           )
@@ -321,7 +332,8 @@ class WebSearchSubtitleLyricsFinder implements SubtitleLyricsFinder {
       final String s = stripSongMark(l);
       if (s.length > best.length) best = s;
     }
-    return best.length < 6 ? '' : '"$best" 歌詞';
+    if (best.length < 6) return '';
+    return '"$best" ${query.isMandarin ? SubtitleLyricsLabelsZh.searchSuffix : '歌詞'}';
   }
 }
 
@@ -332,12 +344,22 @@ Future<List<String>> extractLyricsFromPage({
   required AiTextCompleter completer,
   required SubtitleAiUsageTally usage,
 }) async {
+  final bool zh = query.isMandarin;
+  final String heard = query.sungLines.take(4).map(stripSongMark).join(' / ');
   final String song = query.title == null
-      ? '(曲名不明。音声認識: ${query.sungLines.take(4).map(stripSongMark).join(' / ')})'
+      ? (zh
+            ? SubtitleLyricsLabelsZh.songUnknown.replaceAll('{lines}', heard)
+            : '(曲名不明。音声認識: $heard)')
       : '「${query.title}」${query.artist == null ? '' : '(${query.artist})'}';
   final AiChatCompletion reply = await completer.complete(
-    '曲: $song\nURL: ${page.url}\n\nページ本文:\n${page.text}',
-    stablePrefix: kSubtitleLyricsExtractPrompt,
+    zh
+        ? '${SubtitleLyricsLabelsZh.song}: $song\n'
+              '${SubtitleLyricsLabelsZh.url}: ${page.url}\n\n'
+              '${SubtitleLyricsLabelsZh.pageText}\n${page.text}'
+        : '曲: $song\nURL: ${page.url}\n\nページ本文:\n${page.text}',
+    stablePrefix: zh
+        ? kSubtitleLyricsExtractPromptZh
+        : kSubtitleLyricsExtractPrompt,
   );
   usage.addCall(reply.usage);
   final AiLineReply parsed = parseAiLineReply(reply);
@@ -474,10 +496,19 @@ class SubtitleLyricsPassResult {
 
 /// S4s 歌词补齐。
 class SubtitleLyricsPass {
-  SubtitleLyricsPass({required this.completer, required this.finder});
+  SubtitleLyricsPass({
+    required this.completer,
+    required this.finder,
+    this.language = VideoSubtitleLanguage.japanese,
+  });
 
   final AiTextCompleter completer;
   final SubtitleLyricsFinder finder;
+
+  /// 选认歌 / 对齐 / 抽歌词的提示词与搜索词。
+  final VideoSubtitleLanguage language;
+
+  bool get _zh => language == VideoSubtitleLanguage.mandarin;
 
   Future<SubtitleLyricsPassResult> run({
     required List<SubtitleDraftCue> cues,
@@ -596,6 +627,7 @@ class SubtitleLyricsPass {
       artist: song?.$2,
       sungLines: sung,
       evidenceLines: span.evidenceLines,
+      language: language,
     );
     final List<SubtitleLyricsCandidate> candidates = await finder.find(
       query,
@@ -642,14 +674,17 @@ class SubtitleLyricsPass {
     bool answered = false;
     await runAiLineExchange(
       completer: completer,
-      stablePrefix: kSubtitleSongIdentifyPrompt,
+      stablePrefix: _zh
+          ? kSubtitleSongIdentifyPromptZh
+          : kSubtitleSongIdentifyPrompt,
       body: () => <String>[
-        '作品名: $workTitle',
-        '区間: ${formatProofreadTime(span.startMs)}-${formatProofreadTime(span.endMs)}',
-        '音声認識:',
+        '${_zh ? SubtitleLyricsLabelsZh.workTitle : '作品名'}: $workTitle',
+        '${_zh ? SubtitleLyricsLabelsZh.span : '区間'}: '
+            '${formatProofreadTime(span.startMs)}-${formatProofreadTime(span.endMs)}',
+        _zh ? SubtitleLyricsLabelsZh.recognized : '音声認識:',
         for (final String s in sung) '  $s',
         if (span.evidenceLines.isNotEmpty) ...<String>[
-          '既存字幕の歌詞行:',
+          _zh ? SubtitleLyricsLabelsZh.evidence : '既存字幕の歌詞行:',
           for (final String s in span.evidenceLines) '  $s',
         ],
       ].join('\n'),
@@ -693,13 +728,16 @@ class SubtitleLyricsPass {
     final Map<int, String> got = <int, String>{};
     await runAiLineExchange(
       completer: completer,
-      stablePrefix: kSubtitleLyricsAlignPrompt,
+      stablePrefix: _zh
+          ? kSubtitleLyricsAlignPromptZh
+          : kSubtitleLyricsAlignPrompt,
       body: () => <String>[
-        if (songLabel != null) '曲: $songLabel',
-        '歌詞:',
+        if (songLabel != null)
+          '${_zh ? SubtitleLyricsLabelsZh.song : '曲'}: $songLabel',
+        _zh ? SubtitleLyricsLabelsZh.lyrics : '歌詞:',
         for (final String l in candidate.lines) '  $l',
         '',
-        '歌唱行:',
+        _zh ? SubtitleLyricsLabelsZh.sungLines : '歌唱行:',
         for (final int i in span.cueIndexes)
           'id=$i [${formatProofreadTime(cues[i].startMs)}-'
               '${formatProofreadTime(cues[i].endMs)}] ${stripSongMark(cues[i].text)}',

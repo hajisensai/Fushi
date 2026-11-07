@@ -14,7 +14,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 
 Map<String, String> _recipe() => <String, String>{

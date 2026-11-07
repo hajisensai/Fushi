@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2466：连续模式听书跟随滚动跨过一个视口以上必须瞬时落地（smooth 补间会把途中
 /// 所有页 arrive 进阅读账本 = 字数虚增 / 字/时爆表）；一个视口之内保持 TODO-825 的

@@ -396,6 +396,7 @@ class SrsProfileConflict {
     required this.localUid,
     required this.candidates,
     required this.localHasNotes,
+    this.localNoteCount = 0,
   });
 
   /// 冲突所在的同步位置（[SrsSyncEngine.directoryKey] 同一身份）。
@@ -409,6 +410,9 @@ class SrsProfileConflict {
 
   /// 本机 profile 有用户笔记：选定后并入，而不是直接改用。
   final bool localHasNotes;
+
+  /// 本机 profile 的用户笔记数：弹窗里与各候选报的笔记数并排给用户对比。
+  final int localNoteCount;
 
   /// 「保持本机独立」按它记（本机 profile + 位置 + 候选）：同一位置出现了别的候选、或换了本机 profile 会再提示。
   String get ignoreKey => <String>[
@@ -1096,6 +1100,7 @@ class SrsSyncScheduler {
           localUid: store.profileUid,
           candidates: choose,
           localHasNotes: link.localHasNotes,
+          localNoteCount: link.localNoteCount,
         );
         profileConflict = conflict;
         _linkDecided[linkKey] = (at: _clock(), conflict: conflict);

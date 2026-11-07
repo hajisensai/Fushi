@@ -22,6 +22,7 @@ import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart'
         ThemeSongAudioDecoder,
         ThemeSongDecodeException;
 import 'package:fushi/src/media/music/acoustid_secret.dart';
+import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_auxiliary_providers.dart';
@@ -96,6 +97,11 @@ MusicAcoustidFingerprinter defaultMusicAcoustidFingerprinter({
 }) => (MusicTrackRow track) async {
   final int? durationMs = track.durationMs;
   if (durationMs == null || durationMs <= 0) return null;
+  // 网络音乐来源的曲目（反馈 QAondMh4M5）：FFmpeg 拿不到 SFTP 连接 / WebDAV 认证 /
+  // AList 临期直链，不解码——没有声纹，识别走标签文本检索。
+  if (isMusicRemoteSourceTrack(sourceId: track.sourceId, path: track.path)) {
+    return null;
+  }
   final Directory dir = Directory(
     p.join(Directory.systemTemp.path, 'fushi_music_acoustid'),
   );

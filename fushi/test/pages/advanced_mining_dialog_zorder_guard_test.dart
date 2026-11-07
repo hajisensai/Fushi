@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-797 / BUG-1040 守卫：任何盖在查词弹窗之上的 Flutter 对话框（「制卡·选择句子
 /// 上下文」→「高级制卡」对话框 `AdvancedMiningDialog`、「卡片已在 Anki 中」动作对话框、「打开卡片」多卡

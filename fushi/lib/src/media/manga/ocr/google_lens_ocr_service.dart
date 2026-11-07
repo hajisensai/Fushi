@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -566,6 +567,7 @@ MokuroBlock _normalizeCachedLensBlock(MokuroBlock block) {
       _CachedLensPiece(
         text: original.substring(start, end),
         rectangle: region.rectangle,
+        spaceBefore: start > 0 && original[start - 1].trim().isEmpty,
       ),
     );
   }
@@ -578,10 +580,27 @@ MokuroBlock _normalizeCachedLensBlock(MokuroBlock block) {
   final List<_CachedLensPiece> ordered = <_CachedLensPiece>[
     for (final List<_CachedLensPiece> group in groups) ...group,
   ];
+  final Map<_CachedLensPiece, List<_CachedLensPiece>> groupOf =
+      <_CachedLensPiece, List<_CachedLensPiece>>{
+        for (final List<_CachedLensPiece> group in groups)
+          for (final _CachedLensPiece piece in group) piece: group,
+      };
   final StringBuffer sentence = StringBuffer();
   final List<MangaOcrTextRegion> normalizedRegions = <MangaOcrTextRegion>[];
   int offset = 0;
+  _CachedLensPiece? previous;
   for (final _CachedLensPiece piece in ordered) {
+    // 反馈 vXYKPudf7U：区域不覆盖空白，按区域重拼会把词间空格全部丢掉（`BEENSOLONG`）。
+    // 原文里紧挨在前面的空白照留；换到另一行（分组）时按拉丁文行界补空格。
+    final _CachedLensPiece? before = previous;
+    if (before != null &&
+        (piece.spaceBefore ||
+            (!identical(groupOf[before], groupOf[piece]) &&
+                mangaOcrNeedsWordGap(before.text, piece.text)))) {
+      sentence.write(' ');
+      offset += 1;
+    }
+    previous = piece;
     final int end = offset + piece.text.length;
     sentence.write(piece.text);
     normalizedRegions.add(
@@ -670,10 +689,17 @@ double _axisOverlap(double a0, double a1, double b0, double b1) =>
     math.max(0, math.min(a1, b1) - math.max(a0, b0));
 
 class _CachedLensPiece {
-  const _CachedLensPiece({required this.text, required this.rectangle});
+  const _CachedLensPiece({
+    required this.text,
+    required this.rectangle,
+    required this.spaceBefore,
+  });
 
   final String text;
   final MokuroRect rectangle;
+
+  /// 原文里这一段前面紧挨着空白（区域不覆盖空白，重拼时据此补回词间空格）。
+  final bool spaceBefore;
 }
 
 Future<Map<String, MokuroImage>> _readExistingPages(File output) async {

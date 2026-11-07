@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 

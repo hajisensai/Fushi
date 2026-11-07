@@ -38,6 +38,7 @@ class _FakeBackend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
     log.add('open:${current.trackUid}+${next?.trackUid}:$play:$crossfadeNext');
     if (failOpen.contains(current.trackUid)) {

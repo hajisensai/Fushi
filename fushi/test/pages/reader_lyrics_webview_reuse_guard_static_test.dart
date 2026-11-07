@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3913 源码守卫：阅读器整页存活期间复用同一个歌词 WebView。
 ///
@@ -65,12 +65,12 @@ void main() {
   test('不在歌词模式时，挂上过的歌词 WebView 停进 ParkedWebViewSlot', () {
     final String overlay = methodBody(lyrics, '  Widget _buildLyricsOverlay()');
     final int notLyrics = overlay.indexOf(
-      'if (!_lyricsMode || ctrl == null) {',
+      'if (!_lyricsOverlayShown || ctrl == null) {',
     );
     expect(notLyrics, greaterThanOrEqualTo(0));
     final String parkedBranch = methodBody(
       overlay.substring(notLyrics),
-      'if (!_lyricsMode || ctrl == null)',
+      'if (!_lyricsOverlayShown || ctrl == null)',
     );
     expect(parkedBranch, contains('if (!_lyricsWebViewRetained)'));
     expect(parkedBranch, contains('ParkedWebViewSlot('));

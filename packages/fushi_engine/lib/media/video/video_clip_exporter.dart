@@ -23,6 +23,10 @@ enum VideoClipExportFailure {
   ffmpegUnavailable,
   ffmpegFailed,
   outputMissing,
+
+  /// 互联远端片段：没能从 host 取回片段原料（网络 / host 上这一集没有本地文件 /
+  /// host 端裁切失败）。本机导出器不产出此值，只有远端取料一步会报。
+  remoteSourceFailed,
 }
 
 class VideoClipExportResult {
@@ -1181,4 +1185,68 @@ void _deleteIfPresent(File file) {
   try {
     if (file.existsSync()) file.deleteSync();
   } catch (_) {}
+}
+
+/// [exportVideoClipSourceSegmentViaFfmpeg] 的 ffmpeg 超时：两分钟托底，再按
+/// 「至少 0.5 倍速转码」给片段时长的两倍余量（十分钟的片段给到 22 分钟）。
+Duration videoClipSourceSegmentTimeout(int spanMs) =>
+    Duration(milliseconds: 2 * 60 * 1000 + 2 * (spanMs < 0 ? 0 : spanMs));
+
+/// 互联远端片段导出的 host 一步（反馈 6nBmSBj_2W）：把本机视频 [inputPath] 的
+/// `[startMs, endMs)` **逐帧精确**裁成一段无字幕 mp4（选中的音轨 + 首条视频轨）。
+///
+/// 为什么必须重编码、不能 `-c copy`：client 拿回这段后要按自己内存里的字幕 cue
+/// （时间轴以 [startMs] 为 0）烧录硬字幕。`-ss` 在 `-i` 前配 `-c copy` 只能从
+/// 区间前最近的关键帧起，片头多出最多一个 GOP（数秒），字幕整体错位且错多少无从
+/// 得知。重编码时 `-ss` 解码定位到精确帧，产物的 0 时刻就是 [startMs]。参数取既有
+/// 重编码兜底（[buildFfmpegVideoClipReencodeArgs]，libx264 `-crf 20` + AAC），不另起
+/// 一套编码配置。
+///
+/// 成功返回 [outputPath]；区间非法 / 源不存在 / ffmpeg 失败返回 null（失败原因写
+/// [engineLog]，残片删掉）。
+Future<String?> exportVideoClipSourceSegmentViaFfmpeg({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  int? audioStreamIndex,
+  int? audioStreamCount,
+  FfmpegBackend? backend,
+  Duration? timeout,
+}) async {
+  final File output = File(outputPath);
+  if (endMs <= startMs || startMs < 0) return null;
+  if (!await File(inputPath).exists()) return null;
+  try {
+    output.parent.createSync(recursive: true);
+    final FfmpegBackend resolved = backend ?? resolveFfmpegBackend();
+    final FfmpegRunResult result = await resolved.run(
+      buildFfmpegVideoClipReencodeArgs(
+        inputPath: inputPath,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: outputPath,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+      ),
+      timeout ?? videoClipSourceSegmentTimeout(endMs - startMs),
+    );
+    if (result.isSuccess && output.existsSync() && output.lengthSync() > 0) {
+      return outputPath;
+    }
+    engineLog.log(
+      'VideoClipSourceSegment',
+      'host-side clip cut failed: ${result.failureSummary}',
+    );
+  } on ProcessException catch (e, stack) {
+    engineLog.log(
+      'VideoClipSourceSegment',
+      describeFfmpegProcessException(e),
+      stack,
+    );
+  } catch (e, stack) {
+    engineLog.log('VideoClipSourceSegment', e, stack);
+  }
+  _deleteIfPresent(output);
+  return null;
 }

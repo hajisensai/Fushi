@@ -143,14 +143,43 @@ class VideoDownloadOrganizer {
             )
         ? VideoOrganizationKind.episodic
         : request.kind;
-    final TorrentFileEntry? mainMovie = kind == VideoOrganizationKind.movie
-        ? (videoFiles.toList()..sort(
-                (TorrentFileEntry a, TorrentFileEntry b) =>
-                    b.size.compareTo(a.size),
-              ))
-              .first
-        : null;
     final String? sharedRoot = _sharedRootSegment(videoFiles);
+    // 并列正片的体量门槛始终相对全种子最大的视频；「哪一部是任务身份」另判
+    // （[mainMovieFeatureIndex]）——两者曾混成一个「最大文件」，合集包里体量
+    // 最大的那部被改名成任务标题（BUG：孤独摇滚 Re：/Re：Re： 包，Re：被改名成
+    // Re：Re：）。
+    TorrentFileEntry? largestVideo;
+    if (kind == VideoOrganizationKind.movie) {
+      for (final TorrentFileEntry file in videoFiles) {
+        if (largestVideo == null || file.size > largestVideo.size) {
+          largestVideo = file;
+        }
+      }
+    }
+    TorrentFileEntry? mainMovie;
+    if (largestVideo != null) {
+      final TorrentFileEntry largest = largestVideo;
+      final List<TorrentFileEntry> features = <TorrentFileEntry>[
+        for (final TorrentFileEntry file in videoFiles)
+          if (identical(file, largest) ||
+              _isStandaloneMovieCandidate(
+                file,
+                largestVideo: largest,
+                sharedRoot: sharedRoot,
+              ))
+            file,
+      ];
+      mainMovie =
+          features[mainMovieFeatureIndex(
+            title: request.title,
+            featurePaths: features
+                .map((TorrentFileEntry file) => file.name)
+                .toList(growable: false),
+            sizes: features
+                .map((TorrentFileEntry file) => file.size)
+                .toList(growable: false),
+          )!];
+    }
     // 先按目录判正片/特典、再解析集号（BUG-1865）。纯特典种子（用户单独下的
     // SP 盘）在这一口径下会一集都认不出——那不是「种子与 kind 不符」，只是这个
     // 种子里根本没有正片。这种情况退回旧口径（只按文件名解集号）再走一遍，别
@@ -162,6 +191,7 @@ class VideoDownloadOrganizer {
       displayRoot: displayRoot,
       sharedRoot: sharedRoot,
       mainMovie: mainMovie,
+      largestVideo: largestVideo,
       classifyExtras: true,
     );
     if (kind == VideoOrganizationKind.episodic &&
@@ -173,6 +203,7 @@ class VideoDownloadOrganizer {
         displayRoot: displayRoot,
         sharedRoot: sharedRoot,
         mainMovie: mainMovie,
+        largestVideo: largestVideo,
         classifyExtras: false,
       );
     }
@@ -230,6 +261,7 @@ class VideoDownloadOrganizer {
     required String displayRoot,
     required String? sharedRoot,
     required TorrentFileEntry? mainMovie,
+    required TorrentFileEntry? largestVideo,
     required bool classifyExtras,
   }) {
     final Map<String, String> claimedTargets = <String, String>{};
@@ -297,10 +329,10 @@ class VideoDownloadOrganizer {
           displayRoot,
           '$displayRoot$extension',
         ]);
-      } else if (mainMovie != null &&
+      } else if (largestVideo != null &&
           _isStandaloneMovieCandidate(
             file,
-            mainMovie: mainMovie,
+            largestVideo: largestVideo,
             sharedRoot: sharedRoot,
           )) {
         // 多部电影一个种子（BUG-2007）：修前只有最大文件算正片，其余剧场版被
@@ -740,11 +772,11 @@ class VideoDownloadOrganizer {
   ///   集，只有最大那部入库、其余 24 部全进 `Extras/`（BUG-2965）。
   static bool _isStandaloneMovieCandidate(
     TorrentFileEntry file, {
-    required TorrentFileEntry mainMovie,
+    required TorrentFileEntry largestVideo,
     required String? sharedRoot,
   }) {
     if (_isExplicitExtra(file.name, sharedRoot: sharedRoot)) return false;
-    if (file.size * 4 < mainMovie.size) return false;
+    if (file.size * 4 < largestVideo.size) return false;
     final String fileName = _segments(file.name).last;
     if (FilenameParser.parse(fileName).isMovieHint) return true;
     return parseVideoFilename(fileName).episode == null;
@@ -822,6 +854,94 @@ String standaloneFeatureTitleOf(String relativePath) {
       .replaceAll(RegExp(r'^[\s\-_.]+|[\s\-_.]+$'), '');
   return stripped.isEmpty ? stem : stripped;
 }
+
+/// movie 形态任务里，**任务身份对应的那部正片**在 [featurePaths]（种子内相对
+/// 路径，与 [sizes] 一一对应）里的下标；列表为空时返回 null。
+///
+/// 整理器（改名成任务标题）与下游（字幕、入库标题、身份绑定）必须调用同一个
+/// 函数，否则各阶段会认出不同的「主片」。
+///
+/// 多部电影一个种子时，体量最大的不一定是任务那部：`BOCCHI THE ROCK! Re：` 与
+/// `Re：Re：` 同包，任务是「Re:Re:」，但 Re： 文件更大，旧口径「取最大」把它改名
+/// 成 Re:Re:，库里出现两部 Re:Re:。所以先按任务标题在并列正片里找**唯一**匹配
+/// （[_titleMatchedFeature]），找不出才退回最大文件（平手取先出现的）。
+int? mainMovieFeatureIndex({
+  required String title,
+  required List<String> featurePaths,
+  required List<int> sizes,
+}) {
+  if (featurePaths.isEmpty) return null;
+  final int? matched = _titleMatchedFeature(title, featurePaths);
+  if (matched != null) return matched;
+  var largest = 0;
+  for (var i = 1; i < sizes.length; i++) {
+    if (sizes[i] > sizes[largest]) largest = i;
+  }
+  return largest;
+}
+
+/// 按标题**尾部词元**对齐，在 ≥2 部并列正片里找与 [title] 唯一匹配的一部。
+///
+/// 同包续作 / 分部的差异几乎总在标题尾部（`Re：` / `Re：Re：`、`Movie 1` /
+/// `Movie 2`），任务标题与文件名常是不同语言的前半段（「ぼっち・ざ・ろっく！」
+/// vs `BOCCHI THE ROCK!`），所以只比尾部：
+/// * 各文件名先剥发布组括号标签（[standaloneFeatureTitleOf]）与 `(2024)` 年份，
+///   按非字母数字切词、转小写；
+/// * 所有文件共有的词元前缀之后的部分是该文件的「区分段」；
+/// * 一部文件算匹配，要求标题与它的尾部连续相同的词元数 **严格大于** 区分段长度
+///   ——即对齐必须越过区分段、锚进共有部分。仅「尾部恰好相同」不够：任务是
+///   「Re:」时 `Re：Re：` 末尾的 `re` 也能对上，但它的区分段 `re` 前面那个 `re`
+///   对不上标题的「ろっく」，不算；
+/// * 多部匹配取对齐最长的，最长者不唯一就返回 null（宁可退回旧口径，也不猜）。
+int? _titleMatchedFeature(String title, List<String> featurePaths) {
+  if (featurePaths.length < 2) return null;
+  final List<String> titleTokens = _featureTitleTokens(title);
+  if (titleTokens.isEmpty) return null;
+  final List<List<String>> features = <List<String>>[
+    for (final String path in featurePaths)
+      _featureTitleTokens(standaloneFeatureTitleOf(path)),
+  ];
+  var common = features.first.length;
+  for (final List<String> tokens in features.skip(1)) {
+    var i = 0;
+    while (i < common && i < tokens.length && tokens[i] == features.first[i]) {
+      i += 1;
+    }
+    common = i;
+  }
+  int? best;
+  var bestRun = 0;
+  var tied = false;
+  for (var index = 0; index < features.length; index++) {
+    final List<String> tokens = features[index];
+    var run = 0;
+    while (run < tokens.length &&
+        run < titleTokens.length &&
+        tokens[tokens.length - 1 - run] ==
+            titleTokens[titleTokens.length - 1 - run]) {
+      run += 1;
+    }
+    if (run <= tokens.length - common) continue;
+    if (run > bestRun) {
+      best = index;
+      bestRun = run;
+      tied = false;
+    } else if (run == bestRun) {
+      tied = true;
+    }
+  }
+  return tied ? null : best;
+}
+
+final RegExp _featureYearPattern = RegExp(r'[(（]\s*(?:19|20)\d{2}\s*[)）]');
+final RegExp _featureTokenSplit = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
+
+List<String> _featureTitleTokens(String value) => value
+    .replaceAll(_featureYearPattern, ' ')
+    .toLowerCase()
+    .split(_featureTokenSplit)
+    .where((String token) => token.isNotEmpty)
+    .toList(growable: false);
 
 /// 整理器眼里的「视频文件」（扩展名判据与 [VideoDownloadOrganizer.plan] 同一份）。
 bool isVideoDownloadVideoFile(String relativePath) =>

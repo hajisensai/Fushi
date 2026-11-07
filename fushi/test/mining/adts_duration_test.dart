@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/adts_duration.dart';
 
 /// 合成一个 ADTS 帧：7 字节头 + [payload] 字节，采样率索引 [frequencyIndex]。

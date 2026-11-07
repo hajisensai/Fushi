@@ -21,7 +21,16 @@ void main() {
       // The ✓ click (mined, not latest) must hand off to the host, not silently
       // return.
       expect(src.contains('async function minedCardAction('), isTrue);
-      expect(src.contains("callHandler('minedCardAction', fields)"), isTrue);
+      // 第二个桥参数是手势意图（PR #2980 审查：右键 / 长按 = openChooser，必须弹选择单）。
+      expect(
+        compactCode(src).contains(
+          compactCode(
+            "callHandler('minedCardAction', fields, "
+            '{ openChooser: openChooser === true });',
+          ),
+        ),
+        isTrue,
+      );
       // BUG-1064：宿主自带原生对话框时（app 内）仍然必须把点击交给 minedCardAction。
       // 这一支现在写在三元里（另一支是 app 外的页内面板），所以钉调用本身而不是旧的
       // `const reply = await ...` 行形。
@@ -194,8 +203,8 @@ void main() {
       expect(
         compactCode(src).contains(
           compactCode(
-            'final Future<MinePopupResult> Function(Map<String, String> fields)? '
-            'onMinedCardAction;',
+            'final Future<MinePopupResult> Function( Map<String, String> fields, '
+            '{ bool openChooser, })? onMinedCardAction;',
           ),
         ),
         isTrue,
@@ -215,44 +224,50 @@ void main() {
     },
   );
 
-  test('both host lanes provide onMinedCardAction and wire it into the layer', () {
-    final mixin = read(
-      'lib/src/pages/implementations/dictionary_page_mixin.dart',
-    );
-    expect(
-      mixin.contains(
-        'Future<MinePopupResult> onMinedCardAction(Map<String, String> fields)',
-      ),
-      isTrue,
-    );
-    // 允许直传或包一层闭包（先 miningFieldsForLayer 补层级字段）再转给它。
-    expect(
-      RegExp(
-        r'onMinedCardAction:\s*(onMinedCardAction\b|'
-        r'\([^)]*\)\s*=>\s*onMinedCardAction\()',
-      ).hasMatch(mixin),
-      isTrue,
-      reason: 'mixin 车道必须把 onMinedCardAction 接进弹窗层',
-    );
-    expect(mixin.contains('runAnkiMinedCardAction('), isTrue);
+  test(
+    'both host lanes provide onMinedCardAction and wire it into the layer',
+    () {
+      final mixin = read(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      );
+      expect(
+        compactCode(mixin).contains(
+          compactCode(
+            'Future<MinePopupResult> onMinedCardAction( '
+            'Map<String, String> fields, { bool openChooser = false, })',
+          ),
+        ),
+        isTrue,
+      );
+      // 允许直传或包一层闭包（先 miningFieldsForLayer 补层级字段）再转给它。
+      expect(
+        RegExp(
+          r'onMinedCardAction:\s*(onMinedCardAction\b|'
+          r'\([^)]*\)\s*=>\s*onMinedCardAction\()',
+        ).hasMatch(mixin),
+        isTrue,
+        reason: 'mixin 车道必须把 onMinedCardAction 接进弹窗层',
+      );
+      expect(mixin.contains('runAnkiMinedCardAction('), isTrue);
 
-    final base = read('lib/src/pages/base_source_page.dart');
-    expect(
-      base.contains('Future<MinePopupResult> onMinedCardActionFromPopup('),
-      isTrue,
-    );
-    // 钉不变式而不是某一种写法：制卡模块关掉时这条接线变成
-    // `onMinedCardAction: cardCreationEnabled ? onMinedCardActionFromPopup : null`
-    // 并换了行，接线本身没断。写死整串实参会让这类合法改动无辜变红。
-    expect(
-      RegExp(
-        r'onMinedCardAction:[\s\S]{0,120}?onMinedCardActionFromPopup',
-      ).hasMatch(base),
-      isTrue,
-      reason: 'host lane 必须把 onMinedCardActionFromPopup 接进弹窗层（允许模块闸）',
-    );
-    expect(base.contains('runAnkiMinedCardAction('), isTrue);
-  });
+      final base = read('lib/src/pages/base_source_page.dart');
+      expect(
+        base.contains('Future<MinePopupResult> onMinedCardActionFromPopup('),
+        isTrue,
+      );
+      // 钉不变式而不是某一种写法：制卡模块关掉时这条接线变成
+      // `onMinedCardAction: cardCreationEnabled ? onMinedCardActionFromPopup : null`
+      // 并换了行，接线本身没断。写死整串实参会让这类合法改动无辜变红。
+      expect(
+        RegExp(
+          r'onMinedCardAction:[\s\S]{0,120}?onMinedCardActionFromPopup',
+        ).hasMatch(base),
+        isTrue,
+        reason: 'host lane 必须把 onMinedCardActionFromPopup 接进弹窗层（允许模块闸）',
+      );
+      expect(base.contains('runAnkiMinedCardAction('), isTrue);
+    },
+  );
 
   // BUG-2605：mineNew 只在用户已被告知「卡已有」并选择继续后才会被调（「新增为重复卡」
   // / AnkiMobile「再加一张」/ 反查为空后重制）。两条车道构造它时必须给请求拍上

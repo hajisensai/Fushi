@@ -80,6 +80,66 @@ public class PluginScriptsUtil {
           null
   );
 
+  // Fushi patch (BUG-4180, see PATCHES.md): close the plugin's floating context menu when the
+  // text selection ends. The menu is a native view the plugin draws itself after finishing the
+  // system ActionMode, so WebView's own "selection cleared -> finish ActionMode" no longer reaches
+  // it; upstream only closes it on a touch tap, a menu-item click, an in-page keydown (texture mode
+  // only) or a delayed poll (texture mode only). With hybrid composition and no touch screen
+  // (Android TV, D-pad) none of those fire and the menu stays up for the life of the WebView.
+  // Runs in the top frame and treats the page as "nothing selected" only when the top document and
+  // every same-origin descendant frame have no selection (and no editable element is focused, the
+  // same rule as CHECK_CONTEXT_MENU_SHOULD_BE_HIDDEN_JS_SOURCE): a selection that just ended in one
+  // frame must not close the menu of a selection still alive in another.
+  public static final String FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT_GROUP_NAME = "FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT";
+  public static final String FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_SOURCE = "(function(){" +
+          "  var isTop = false;" +
+          "  try { isTop = (window.top == null || window.top === window); } catch (e) { isTop = false; }" +
+          "  if (!isTop || window.__fushiHideMenuOnSelectionEnd === true) { return; }" +
+          "  window.__fushiHideMenuOnSelectionEnd = true;" +
+          "  var hasSelection = function(win, depth) {" +
+          "    try {" +
+          "      var sel = win.getSelection ? win.getSelection() : null;" +
+          "      if (sel != null && !sel.isCollapsed && String(sel.toString()) !== '') { return true; }" +
+          "      if (depth > 8) { return false; }" +
+          "      for (var i = 0; i < win.frames.length; i++) {" +
+          "        if (hasSelection(win.frames[i], depth + 1)) { return true; }" +
+          "      }" +
+          "    } catch (e) {}" +
+          "    return false;" +
+          "  };" +
+          "  var onSelectionChange = function() {" +
+          "    if (hasSelection(window, 0)) { return; }" +
+          IS_ACTIVE_ELEMENT_INPUT_EDITABLE_JS_SOURCE +
+          "    if (isActiveElementEditable) { return; }" +
+          "    var b = window." + JavaScriptBridgeJS.JAVASCRIPT_BRIDGE_NAME + ";" +
+          "    if (b == null) { return; }" +
+          "    if (typeof b._fushiHideContextMenuCall === 'function') { b._fushiHideContextMenuCall(); } else { b._hideContextMenu(); }" +
+          "  };" +
+          "  document.addEventListener('selectionchange', onSelectionChange);" +
+          // Same-origin child frames fire selectionchange on their own document: hook each child
+          // document when its iframe loads (iframe load events reach the top document's capture
+          // phase). Opaque-origin (sandboxed) frames throw on contentDocument and stay unhooked.
+          "  document.addEventListener('load', function(e) {" +
+          "    var t = e.target;" +
+          "    if (t == null || t.tagName == null || String(t.tagName).toLowerCase() !== 'iframe') { return; }" +
+          "    try {" +
+          "      var doc = t.contentDocument;" +
+          "      if (doc != null && doc.__fushiHideMenuWatched !== true) {" +
+          "        doc.__fushiHideMenuWatched = true;" +
+          "        doc.addEventListener('selectionchange', onSelectionChange);" +
+          "      }" +
+          "    } catch (err) {}" +
+          "  }, true);" +
+          "})();";
+  public static final PluginScript FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT = new PluginScript(
+          PluginScriptsUtil.FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT_GROUP_NAME,
+          PluginScriptsUtil.FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_SOURCE,
+          UserScriptInjectionTime.AT_DOCUMENT_START,
+          null,
+          false,
+          null
+  );
+
   // android Workaround to hide context menu when user emit a keydown event
   public static final String CHECK_GLOBAL_KEY_DOWN_EVENT_TO_HIDE_CONTEXT_MENU_JS_SOURCE = "(function(){" +
           "  document.addEventListener('keydown', function(e) {" +

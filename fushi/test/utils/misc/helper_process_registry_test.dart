@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 
 /// BUG-1708 第二面：app 为更新主动退出后，它拉起的 ffmpeg 还活着并锁住

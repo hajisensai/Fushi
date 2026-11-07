@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：桌面 sidecar 与 Android 宿主给 Mihon / Aniyomi 扩展的 **network ABI**
 /// 必须同形（BUG-2601）。

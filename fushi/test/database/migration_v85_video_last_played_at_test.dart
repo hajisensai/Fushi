@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v85（BUG-1542）：`video_books` 加 `last_played_at`，给「有进度」这个事实补上
@@ -98,8 +98,8 @@ void main() {
     final QueryRow version = await db
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 144);
-    expect(db.schemaVersion, 144);
+    expect(version.read<int>('user_version'), 146);
+    expect(db.schemaVersion, 146);
 
     final List<VideoBookRow> rows = await db.select(db.videoBooks).get();
     expect(rows, hasLength(4), reason: '迁移丢一行就是丢一部视频的观看记录');

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit/native_open_policy.dart';
 

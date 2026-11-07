@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-036 守卫：sync_asset_package_service.dart 不得回归到「整文件/整 zip 进内存」。
 /// OOM 根因正是 readAsBytes 整文件 + ZipEncoder().encode / ZipDecoder().decodeBytes

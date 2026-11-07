@@ -158,6 +158,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_profile.h"
   "include/sgre_family.h"
   "hook/adapters/sgre_voice_archive.h"
+  "hook/adapters/sgre_voice_binding.h"
   "hook/adapters/leaf_aquaplus_profile.h"
   "hook/adapters/leaf_aquaplus_lookup.h"
   "hook/adapters/leaf_aquaplus_voice_archive.h"

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
@@ -371,6 +371,71 @@ void main() {
       VideoSubtitleEpisodeStatus.skippedExistingSubtitle,
     );
     expect(r.episodes.last.status, VideoSubtitleEpisodeStatus.exported);
+  });
+
+  test('exportDirFor：同名媒体各进各的目录，不互判「已有同名字幕」', () async {
+    // 曲库里大量同名 01.flac：共用一个 exportDir 时第二个会被当成「已有别人的字幕」
+    // 落到 .asr 退路；按路径给目录则两份都正常导出。
+    final Directory a = Directory(p.join(tmp.path, 'albumA'))..createSync();
+    final Directory b = Directory(p.join(tmp.path, 'albumB'))..createSync();
+    final String fa = p.join(a.path, 'ep01.mkv');
+    final String fb = p.join(b.path, 'ep01.mkv');
+    File(fa).writeAsBytesSync(List<int>.filled(11, 1));
+    File(fb).writeAsBytesSync(List<int>.filled(13, 1));
+    final Directory shared = Directory(p.join(tmp.path, 'out'));
+
+    VideoSubtitlePipeline build({
+      Directory? Function(String mediaPath)? exportDirFor,
+    }) => VideoSubtitlePipeline(
+      recognizer: _FakeRecognizer(drafts),
+      jobsRoot: jobs,
+      styleReference: null,
+      evidence: null,
+      exportDir: shared,
+      exportDirFor: exportDirFor,
+      probeDurationMs: duration,
+    );
+
+    final VideoSubtitlePipelineResult sharedRun = await build().run(
+      videoPaths: <String>[fa, fb],
+      work: work,
+    );
+    expect(
+      sharedRun.episodes.map((VideoSubtitleEpisodeResult e) => e.status),
+      <VideoSubtitleEpisodeStatus>[
+        VideoSubtitleEpisodeStatus.exported,
+        VideoSubtitleEpisodeStatus.exportedAsAsr,
+      ],
+      reason: '旧行为：单目录撞名',
+    );
+
+    await jobs.delete(recursive: true);
+    final VideoSubtitlePipeline perPath = build(
+      exportDirFor: (String path) =>
+          Directory(p.join(tmp.path, 'per', p.basename(p.dirname(path)))),
+    );
+    final VideoSubtitlePipelineResult r = await perPath.run(
+      videoPaths: <String>[fa, fb],
+      work: work,
+    );
+    expect(
+      r.episodes.map((VideoSubtitleEpisodeResult e) => e.status),
+      everyElement(VideoSubtitleEpisodeStatus.exported),
+    );
+    expect(
+      r.episodes.first.outputPath,
+      p.join(tmp.path, 'per', 'albumA', 'ep01.ja.srt'),
+    );
+    expect(
+      r.episodes.last.outputPath,
+      p.join(tmp.path, 'per', 'albumB', 'ep01.ja.srt'),
+    );
+    expect(perPath.subtitlePathFor(fa), r.episodes.first.outputPath);
+    // 回调给 null 的路径照旧落 exportDir。
+    expect(
+      build(exportDirFor: (String _) => null).subtitlePathFor(fa),
+      p.join(shared.path, 'ep01.ja.srt'),
+    );
   });
 
   test('已取消：抛 SubtitlePipelineCancelled，不识别', () async {

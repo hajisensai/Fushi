@@ -20,10 +20,13 @@
 //!                       | u32 creditCount | (str role | str name | str artistUid)*creditCount
 //!   kind 1 unchanged := str path            （已知文件没变：只报「还在」）
 //!   kind 2 error     := str path | str message
+//!   kind 3 cover     := str path | bytes image  （远程曲目的内嵌封面，排在该文件的曲目
+//!                       记录之前；本地曲目之后按路径现读，不走这里）
 //! str     := u32 byteLen | utf8 bytes
 //! opt_str := u32 byteLen（0xFFFFFFFF = null）| utf8 bytes
 //! opt_i64 := u8 present | i64（present = 0 时仍写 8 字节 0，定长便于读）
 //! opt_f64 := u8 present | f64
+//! bytes   := u32 byteLen | bytes
 //! ```
 //!
 //! 已知文件清单（Dart → Rust，[parse_known_files]）：
@@ -32,11 +35,12 @@
 use std::collections::HashMap;
 
 /// 批次格式版本；改字段必须同时升它与 [crate::ABI_VERSION]。
-pub const BATCH_FORMAT_VERSION: u32 = 1;
+pub const BATCH_FORMAT_VERSION: u32 = 2;
 
 pub const KIND_TRACK: u8 = 0;
 pub const KIND_UNCHANGED: u8 = 1;
 pub const KIND_ERROR: u8 = 2;
+pub const KIND_COVER: u8 = 3;
 
 /// 一首曲目（普通文件或 CUE 虚拟曲目）的扫描结果。
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -93,7 +97,15 @@ pub struct Credit {
 pub enum Record {
     Track(Box<TrackRecord>),
     Unchanged(String),
-    Error { path: String, message: String },
+    Error {
+        path: String,
+        message: String,
+    },
+    /// 远程曲目的内嵌封面字节（[crate::remote]）。
+    Cover {
+        path: String,
+        data: Vec<u8>,
+    },
 }
 
 /// 库里已有文件的（修改时刻毫秒, 大小）。
@@ -128,6 +140,11 @@ impl Writer {
     pub fn str(&mut self, v: &str) {
         self.u32(v.len() as u32);
         self.buf.extend_from_slice(v.as_bytes());
+    }
+
+    pub fn bytes(&mut self, v: &[u8]) {
+        self.u32(v.len() as u32);
+        self.buf.extend_from_slice(v);
     }
 
     pub fn opt_str(&mut self, v: Option<&str>) {
@@ -167,6 +184,11 @@ pub fn encode_batch(records: &[Record], done: bool) -> Vec<u8> {
                 w.u8(KIND_ERROR);
                 w.str(path);
                 w.str(message);
+            }
+            Record::Cover { path, data } => {
+                w.u8(KIND_COVER);
+                w.str(path);
+                w.bytes(data);
             }
         }
     }
@@ -263,6 +285,11 @@ impl<'a> Reader<'a> {
         String::from_utf8(self.take(n)?.to_vec()).ok()
     }
 
+    pub fn bytes(&mut self) -> Option<Vec<u8>> {
+        let n = self.u32()? as usize;
+        Some(self.take(n)?.to_vec())
+    }
+
     pub fn opt_str(&mut self) -> Option<Option<String>> {
         let n = self.u32()?;
         if n == u32::MAX {
@@ -318,6 +345,10 @@ pub fn decode_batch(bytes: &[u8]) -> Option<(bool, Vec<Record>)> {
             KIND_ERROR => out.push(Record::Error {
                 path: r.str()?,
                 message: r.str()?,
+            }),
+            KIND_COVER => out.push(Record::Cover {
+                path: r.str()?,
+                data: r.bytes()?,
             }),
             _ => return None,
         }
@@ -403,6 +434,10 @@ mod tests {
             Record::Error {
                 path: "/d.ape".into(),
                 message: "bad".into(),
+            },
+            Record::Cover {
+                path: "sftp://h/e.flac".into(),
+                data: vec![0xFF, 0xD8, 0],
             },
         ];
         let bytes = encode_batch(&records, true);

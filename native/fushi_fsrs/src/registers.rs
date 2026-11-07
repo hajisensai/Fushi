@@ -891,6 +891,14 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
     } else {
         (Value::Null, Value::Null)
     };
+    let builtin = as_str(get(payload, "builtin"), "builtin")?;
+    // 内置默认牌组没有「新建」那一刻（身份记录每台设备确定性生成、不写修改记录），没改过 RWKV 排队设置时
+    // 按代码里的推荐值算——与内置笔记类型「没改过就跟代码默认」同一个做法。值 = Dart
+    // `SrsRwkvQueueSettings.forNewDeck`（新建牌组写进去的那份），两边一致由 Dart 测试咬住。
+    let rwkv_queue = match ent.value("rwkvQueue") {
+        Value::Null if builtin == Some("default") => json!({ "minReviews": 40 }),
+        v => v.clone(),
+    };
     Ok(json!({
         "nm": as_str(ent.value("name"), "name")?.unwrap_or("Default"),
         "pa": parent,
@@ -911,14 +919,14 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "ap": *ent.value("autoplay") != Value::Bool(false),
         "no": as_str(ent.value("newOrder"), "newOrder")?,
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
-        "rw": ent.value("rwkvQueue"),
+        "rw": rwkv_queue,
         "npl": ent.value("newPlan"),
         // 自定义学习「提升今日上限」（`{"day", "new", "review"}`；store/study.rs `today_extension`）。
         "ext": ent.value("extendLimits"),
         "ba": baseline_at,
         "bn": baseline_n,
         "da": ent.deleted_at(),
-        "bk": as_str(get(payload, "builtin"), "builtin")?,
+        "bk": builtin,
         "ca": created_at(payload)?,
     }))
 }

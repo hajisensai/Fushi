@@ -11,10 +11,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/disc/music_disc.dart';
 
+import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
+    show MusicSubtitleTargets;
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
+import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
@@ -22,6 +26,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -277,6 +282,28 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                       label: Text(t.music_shuffle_play),
                     ),
                   ),
+                  // 广播剧 CD 一类整张专辑：一键排队生成日语字幕（已有生成字幕的曲目跳过）。
+                  if (musicSubtitleGenerationAvailableForAny(<String>[
+                    for (final MusicTrackRow t in tracks) t.path,
+                  ]))
+                    FushiPressScale(
+                      child: FushiFilledButton.tonalIcon(
+                        size: FushiButtonSize.m,
+                        key: const ValueKey<String>(
+                          'music_album_generate_subtitles',
+                        ),
+                        onPressed: () => unawaited(
+                          openMusicSubtitleGenerateSheet(
+                            context: context,
+                            appModel: _app,
+                            resolve: (MusicSubtitleTargets targets) =>
+                                targets.forAlbum(album.albumUid),
+                          ),
+                        ),
+                        icon: const FushiIcon(FushiIcons.subtitles),
+                        label: Text(t.music_subtitle_generate_album),
+                      ),
+                    ),
                   if (disc != null) ...<Widget>[
                     FushiPressScale(
                       child: FushiFilledButton.tonalIcon(
@@ -409,8 +436,10 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   }
 }
 
-/// 一碟的曲目。点一首 = 整张专辑为队列（album 语境），从这首开始。
-class _AlbumDiscList extends ConsumerWidget {
+/// 一碟的曲目。点一首 = 整张专辑为队列（album 语境），从这首开始。有会被续播的断点
+/// （`music_resume.dart`）的轨：行尾显示剩余时间，下面一条细进度条（与 [MusicTrackList]
+/// 同一套显示）——广播剧 CD 迁进来是一张专辑，按轨浏览主要在这里。
+class _AlbumDiscList extends ConsumerStatefulWidget {
   const _AlbumDiscList({
     required this.tracks,
     required this.allTracks,
@@ -424,8 +453,59 @@ class _AlbumDiscList extends ConsumerWidget {
   final MusicAlbumRow album;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AlbumDiscList> createState() => _AlbumDiscListState();
+}
+
+class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
+  /// 这一碟的断点：挂上时按块查齐，之后只吃这一碟里那几首的改动。
+  late final MusicResumePointsWatch _resume;
+
+  List<MusicTrackRow> get tracks => widget.tracks;
+
+  static Iterable<String> _uids(List<MusicTrackRow> tracks) =>
+      tracks.map((MusicTrackRow t) => t.trackUid);
+
+  @override
+  void initState() {
+    super.initState();
+    _resume =
+        ref
+            .read(appProvider)
+            .musicSession
+            .watchResumePoints(_uids(widget.tracks))
+          ..addListener(_onResumeChanged);
+  }
+
+  @override
+  void didUpdateWidget(_AlbumDiscList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.tracks, widget.tracks)) {
+      _resume.watch(_uids(widget.tracks));
+    }
+  }
+
+  @override
+  void dispose() {
+    _resume
+      ..removeListener(_onResumeChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onResumeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
+    final MusicResumeMode mode = watchMusicResumeMode(ref);
+    final List<MusicTrackRow> allTracks = widget.allTracks;
+    final MusicAlbumRow album = widget.album;
+    final List<Duration?> resumes = <Duration?>[
+      for (final MusicTrackRow t in tracks)
+        musicTrackResumeOf(t, _resume[t.trackUid], mode),
+    ];
     return Column(
       children: <Widget>[
         for (int i = 0; i < tracks.length; i++)
@@ -463,13 +543,16 @@ class _AlbumDiscList extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle:
-                    tracks[i].artistCredit == null ||
-                        tracks[i].artistCredit == album.albumArtistCredit
-                    ? null
-                    : Text(tracks[i].artistCredit!),
+                subtitle: musicTrackSubtitleWithResume(
+                  tracks[i],
+                  tracks[i].artistCredit == null ||
+                          tracks[i].artistCredit == album.albumArtistCredit
+                      ? null
+                      : Text(tracks[i].artistCredit!),
+                  resumes[i],
+                ),
                 trailing: Text(
-                  formatMusicDuration(tracks[i].durationMs),
+                  musicTrackTimeLabel(tracks[i].durationMs, resumes[i]),
                   style: context.fushiType.bodySmall,
                 ),
               ),

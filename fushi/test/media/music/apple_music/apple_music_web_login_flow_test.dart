@@ -128,4 +128,53 @@ void main() {
       expect(appleMusicLoginFailureText(blocker: null, error: null), 'unknown');
     });
   });
+
+  // D69n21etZ1：init 超时一律报「DRM 无响应」是误报——该设备连 Fushi 服务器本身就在超时。
+  group('appleMusicInitFailureText', () {
+    test('只有卡在 configure 才说 DRM', () {
+      expect(
+        appleMusicInitFailureText(stage: 'configure', timedOut: true),
+        t.music_apple_music_login_init_timeout,
+      );
+    });
+
+    test('卡在取 token / 加载 MusicKit JS：报网络段，不提 DRM', () {
+      expect(
+        appleMusicInitFailureText(stage: 'token', timedOut: true),
+        t.music_apple_music_login_init_token_failed,
+      );
+      expect(
+        appleMusicInitFailureText(stage: 'musickit_js', timedOut: true),
+        t.music_apple_music_login_init_musickit_js_failed,
+      );
+      expect(
+        appleMusicInitFailureText(
+          stage: 'token',
+          timedOut: false,
+          error: 'Error: token_timeout',
+        ),
+        '${t.music_apple_music_login_init_token_failed} (Error: token_timeout)',
+      );
+    });
+
+    test('不知道卡在哪段（旧版托管页）：只说超时', () {
+      for (final String? stage in <String?>[null, 'idle', 'ready']) {
+        expect(
+          appleMusicInitFailureText(stage: stage, timedOut: true),
+          t.music_apple_music_login_init_timeout_unknown,
+        );
+      }
+    });
+
+    test('configure 自己抛错（非超时）：原样给错误', () {
+      expect(
+        appleMusicInitFailureText(
+          stage: 'configure',
+          timedOut: false,
+          error: 'MKError: DRM_UNSUPPORTED',
+        ),
+        'MKError: DRM_UNSUPPORTED',
+      );
+    });
+  });
 }

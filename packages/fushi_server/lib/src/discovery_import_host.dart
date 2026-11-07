@@ -51,7 +51,8 @@ DiscoveryDomainImporters buildServerDiscoveryImporters(FushiDatabase db) =>
             plan: plan,
           ),
       // 服务端不自动转录（模型要显式 `fushi_server models pull`，转录排队也还没
-      // 接）：只有音频的包与改前同一个原因码挡下。
+      // 接）：只有音频的包与改前同一个原因码挡下。接 ASR 要补的几样见
+      // docs/agent/server-parity-gaps.md（「Audiobooks with audio only」）。
       transcribeAudiobook: (TranscribeAudiobookPlan plan) async =>
           throw const DiscoveryImportBlockedException(
             DiscoveryImportBlocker.audiobookMissingSubtitle,

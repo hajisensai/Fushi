@@ -3,7 +3,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import '../../tool/test_flow/dist_console.dart';
 import '../../tool/test_flow/dist_plan.dart';

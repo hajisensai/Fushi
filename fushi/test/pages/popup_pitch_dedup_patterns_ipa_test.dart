@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2397：「音调去重」对 pattern 式音调与 IPA 完全不生效，且在浏览器扩展里
 /// **从来没生效过**。

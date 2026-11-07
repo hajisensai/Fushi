@@ -388,7 +388,9 @@ List<OpDescription> _describePlayerOps(
       summary:
           'Play music. Without album / tracks: resume the current queue. With '
           'album: play the whole album; with tracks: play that list starting '
-          'at index. Undo restores the previous queue and play state.',
+          'at index. A track the user stopped partway through continues from '
+          'its saved position (per the Resume playback setting). Undo restores '
+          'the previous queue and play state.',
       risk: OpRisk.write,
       availability: music,
       params: const <OpParam>[

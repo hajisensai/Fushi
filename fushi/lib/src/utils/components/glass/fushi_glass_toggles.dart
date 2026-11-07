@@ -3823,23 +3823,11 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      // MD3 = M3 Expressive 连接式按钮组；墨水屏保留 Material 原件（主题里
-      // 那套反色填充是为墨水屏选中段可辨认专门调过的，见 theme_notifier）。
-      if (!isEinkTheme(context)) {
-        return FushiConnectedButtonGroup<T>(
-          segments: widget.segments,
-          selected: widget.selected,
-          onSelectionChanged: widget.onSelectionChanged,
-          multiSelectionEnabled: widget.multiSelectionEnabled,
-          emptySelectionAllowed: widget.emptySelectionAllowed,
-          expandedInsets: widget.expandedInsets,
-          style: widget.style,
-          showSelectedIcon: widget.showSelectedIcon,
-          selectedIcon: widget.selectedIcon,
-          direction: widget.direction,
-        );
-      }
-      return SegmentedButton<T>(
+      // MD3 与墨水屏都是 M3 Expressive 连接式按钮组：段宽走共用的
+      // [fushiSegmentWidths]（BUG-4205：墨水屏以前退回原生 SegmentedButton，
+      // 各段等宽、放不下整体缩窄，最长段先被截断）。主题 segmentedButtonTheme
+      // 里为墨水屏调的反色填充由连接式组照用，段边界由组补 outline 描边。
+      return FushiConnectedButtonGroup<T>(
         segments: widget.segments,
         selected: widget.selected,
         onSelectionChanged: widget.onSelectionChanged,
@@ -3958,21 +3946,40 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   /// 退回形态（多选 / 允许空选 / 竖排 / 富文本段）：与主形态同一套液态玻璃
   /// 语言——无色透明玻璃胶囊轨，选中段是更亮的透明 pill + label 字（降低透明度
   /// 下轨道 systemFill、选中段实色高一阶底）。
+  ///
+  /// 横排段宽走 [FushiSegmentRow]（[fushiSegmentWidths]，与主形态同一套退让：
+  /// 等宽 → 按内容分宽 → 收内边距 → 只压最宽段），不再 `Expanded` 等分或按
+  /// 自然宽溢出（BUG-4205）。
   Widget _buildButtonRow(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool expanded = widget.expandedInsets != null;
+    final bool horizontal = widget.direction == Axis.horizontal;
     final List<Widget> children = <Widget>[
       for (final ButtonSegment<T> s in widget.segments)
-        _segmentButton(context, s),
+        _segmentButton(
+          context,
+          s,
+          padding: horizontal ? _rowMinPadding : _rowPadding,
+        ),
     ];
-    Widget row = Flex(
-      direction: widget.direction,
-      mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-      spacing: 2,
-      children: expanded
-          ? <Widget>[for (final Widget c in children) Expanded(child: c)]
-          : children,
-    );
+    Widget row = horizontal
+        ? FushiSegmentRow(
+            extras: List<double>.filled(
+              children.length,
+              2 * (_rowPadding - _rowMinPadding),
+            ),
+            gap: 2,
+            fill: expanded,
+            children: children,
+          )
+        : Flex(
+            direction: widget.direction,
+            mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
+            spacing: 2,
+            children: expanded
+                ? <Widget>[for (final Widget c in children) Expanded(child: c)]
+                : children,
+          );
     final double trackRadius = widget.direction == Axis.horizontal ? 999 : 12;
     row = Padding(padding: const EdgeInsets.all(3), child: row);
     row = glassMaterialOf(context) == FushiGlassMaterial.off
@@ -3988,7 +3995,15 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     return row;
   }
 
-  Widget _segmentButton(BuildContext context, ButtonSegment<T> s) {
+  /// 退回形态段的首选 / 最小左右内边距（放不下时先收到最小，见 [_buildButtonRow]）。
+  static const double _rowPadding = 12;
+  static const double _rowMinPadding = 6;
+
+  Widget _segmentButton(
+    BuildContext context,
+    ButtonSegment<T> s, {
+    required double padding,
+  }) {
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
     final bool selected = widget.selected.contains(s.value);
@@ -4010,7 +4025,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: padding),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,

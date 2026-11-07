@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-851: dictionary usage tags (明鏡 の「使い方」用法タグ等) arrive as Yomitan
 // structured content carrying an inline background-color designed for a WHITE

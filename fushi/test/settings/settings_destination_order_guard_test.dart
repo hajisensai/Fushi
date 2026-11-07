@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 分类声明顺序与分组导航一致；平台隐藏后首个可见项仍是默认选择。
 void main() {

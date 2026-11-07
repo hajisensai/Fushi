@@ -244,6 +244,27 @@ void main() {
     expect(back.timeline.offsetMs, 250);
   });
 
+  test('chooseFileForTracks：视频行搬来的 SRT（ASR 转写）定为手动指定；已有手动指定不覆盖；'
+      '解析不出返回 null（BUG-4175）', () async {
+    final File srt = File('${dir.path}${Platform.pathSeparator}speech-a.srt')
+      ..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n沈むように\n');
+    final MusicLyricsService s = service();
+    const List<MusicLyricsFileTrack> one = <MusicLyricsFileTrack>[
+      (trackUid: 'uid-1', cueStartMs: null, cueEndMs: null, durationMs: 261000),
+    ];
+    expect(await s.chooseFileForTracks(srt.path, one), <String>['uid-1']);
+    final MusicLyricsResolution user = (await s.resolve(track()))!;
+    expect(user.source, MusicLyricsSource.user);
+    expect(user.timeline.lines.single.text, '沈むように');
+
+    srt.writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n別の\n');
+    expect(await s.chooseFileForTracks(srt.path, one), isEmpty);
+    expect((await s.resolve(track()))!.timeline.lines.single.text, '沈むように');
+
+    srt.writeAsStringSync('');
+    expect(await s.chooseFileForTracks(srt.path, one), isNull);
+  });
+
   test('缓存版本对不上时从 raw 重建', () async {
     writeSide('夜に駆ける.lrc', '[00:01.00]沈むように');
     final MusicLyricsService s = service();
@@ -277,6 +298,44 @@ void main() {
       () => service().exportBesideAudio(track(), t, 'ttml'),
       throwsA(isA<FileSystemException>()),
     );
+  });
+
+  test('网络来源曲目（sftp:// / https://）不读内嵌、不导出到文件旁边（QAondMh4M5）', () async {
+    final List<String> readEmbeddedFor = <String>[];
+    final MusicLyricsService s = MusicLyricsService(
+      database: () => db,
+      lrclib: LrclibClient(transport: lrclib.call),
+      onlineEnabled: () => false,
+      readEmbedded: (String path, int? _) async {
+        readEmbeddedFor.add(path);
+        return embedded;
+      },
+      parse: _parse,
+      now: () => now,
+    );
+    final LyricTimeline t = FushiLyrics.parse(
+      utf8.encode('[00:01.00]沈むように'),
+      hint: 'lrc',
+    );
+    for (final String path in <String>[
+      'sftp://nas:22/music/夜に駆ける.flac',
+      'https://dav.test/music/夜に駆ける.flac',
+    ]) {
+      final MusicLyricsTrackRef remote = MusicLyricsTrackRef(
+        trackUid: 'r',
+        path: path,
+        title: '夜に駆ける',
+      );
+      expect(remote.isLocalFile, isFalse);
+      expect(remote.readsLocalLyrics, isFalse);
+      expect(await s.resolve(remote), isNull);
+      await expectLater(
+        s.exportBesideAudio(remote, t, 'ttml'),
+        throwsA(isA<FileSystemException>()),
+      );
+    }
+    expect(readEmbeddedFor, isEmpty);
+    expect(track().isLocalFile, isTrue);
   });
 
   test('LyricTimeline → AudioCue：偏移与 CUE 起点换回音频时间、跳过和声', () {

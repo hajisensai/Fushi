@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guards for TODO-1268 / BUG — 「点击悬浮字幕文字，没有出现查词窗口」
 /// on **Android**.

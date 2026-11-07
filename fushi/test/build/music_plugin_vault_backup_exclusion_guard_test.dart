@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 音乐插件凭据（`<support>/music_plugins/.credentials/` 的密文，与 flutter_secure_storage 里的
 /// 数据密钥）不随 Android 自动备份 / 设备迁移走：两份备份规则必须同步排除它们，且排除的路径

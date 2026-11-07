@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-728 guard：书架有声书进度条。EPUB-backed 有声书在书架**只渲染成 SRT 卡**
 /// （其 EpubBooks 行被 `srtBookKeys` 过滤出 EPUB 卡列表，见

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1387: the lookup popup froze on a Windows precision touchpad
 /// ("时好时坏") because the document wheel handler in assets/popup/popup.js has

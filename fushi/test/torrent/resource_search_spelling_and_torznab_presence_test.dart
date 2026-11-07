@@ -8,7 +8,7 @@
 //    「无法搜索这个查询词」。现在没有启用的索引器就不注册。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

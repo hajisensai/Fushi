@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1541 回归守卫（源码扫描；vendored 的 Windows 原生插件 C++ 在 headless
 /// Dart 测试里跑不到 —— 既没有 GameInput.h，也没有真手柄/真蓝牙断连，故守住

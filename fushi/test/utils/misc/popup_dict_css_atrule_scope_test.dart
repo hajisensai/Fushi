@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-812: 明鏡国語辞典 第三版 (and any Yomitan dictionary whose `styles.css`
 /// contains at-rules) must render correctly in the lookup popup. The legacy

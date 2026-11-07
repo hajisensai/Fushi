@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-806 守卫：框选 tap 坐标探针 + barrier-hover 真坐标系修复（源码扫描，

@@ -11,6 +11,8 @@
 #include "../hook/adapters/sgre_lookup.h"
 #include "../hook/adapters/sgre_profile.h"
 #include "../hook/adapters/sgre_voice_archive.h"
+#include "../hook/adapters/sgre_voice_binding.h"
+#include "../hook/voice_resource_filename.h"
 #include "../hook/xaudio_resource_dispatch.h"
 #include "../hook/xwma_resource.h"
 
@@ -544,7 +546,230 @@ void TestGameStreamRemoteKeys() {
          deferred == 8);
 }
 
+// BUG-4206 — SGRE publishes a line only once the typewriter has revealed it,
+// while its voice starts with the page. The page start (first glyph) is the
+// text timestamp, and a voice is named after the page it played on.
+void TestScenarioPageVoiceBinding() {
+  using namespace fushi_voice_hook;
+  SgreScenarioPageTracker tracker;
+  assert(!tracker.observed_any_page());
+
+  // Typing frames of one page keep its identity and its first-glyph tick.
+  const SgreScenarioPage first = tracker.Observe(L"\x300c\x805e", 2, 1000);
+  assert(first.id != 0 && first.first_glyph_tick == 1000);
+  const SgreScenarioPage typing =
+      tracker.Observe(L"\x300c\x805e\x304b\x308c", 4, 4200);
+  assert(typing.id == first.id && typing.first_glyph_tick == 1000);
+  tracker.MarkPublished(41, 4250);
+  // A redraw of the published line is the same page.
+  const SgreScenarioPage redraw =
+      tracker.Observe(L"\x300c\x805e\x304b\x308c", 4, 4300);
+  assert(redraw.id == first.id && redraw.text_seq == 41);
+
+  // Voice started 80 ms before the first glyph, the page was revealed 3.2 s
+  // later: bound to that page's seq, not left to the host's unmarked window.
+  SgreScenarioPage pages[kSgrePageHistorySlots] = {};
+  size_t count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  VoiceResourcePairDecision decision =
+      ResolveSgreVoicePage(920, 4300, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 41);
+  // The marked file name carries the event ID the host matches exactly.
+  assert(BuildVoiceResourceFileName(
+             920, L"sgre-voicebody-77-0000000000001234-1-2.xwma",
+             decision.text_event_id) ==
+         L"920_fushi_textseq41_sgre-voicebody-77-0000000000001234-1-2.xwma");
+
+  // Within the lead a later page may still start: wait.
+  decision = ResolveSgreVoicePage(920, 1000, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kWait);
+
+  // Next page: a shorter prefix that is not an extension starts a new page.
+  const SgreScenarioPage second = tracker.Observe(L"\x2026", 1, 9000);
+  assert(second.id != first.id && second.first_glyph_tick == 9000);
+  count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  // Its voice (started 30 ms after the first glyph) waits while it types...
+  decision = ResolveSgreVoicePage(9030, 9600, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kWait);
+  // ...and is never handed the previous line's seq.
+  assert(decision.text_event_id != 41);
+  tracker.Observe(L"\x2026\x3048", 2, 12000);
+  tracker.MarkPublished(42, 12000);
+  count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  decision = ResolveSgreVoicePage(9030, 12010, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 42);
+
+  // A voice that started long after its page began has no owner: unmarked.
+  decision = ResolveSgreVoicePage(9000 + kSgreVoiceLagMs + 1, 20000, true,
+                                  pages, count);
+  assert(decision.state == VoiceResourcePairState::kExpired &&
+         decision.text_event_id == 0);
+
+  // Text appended after the line was published is a new line.
+  const SgreScenarioPage appended =
+      tracker.Observe(L"\x2026\x3048\xff1f", 3, 13000);
+  assert(appended.id != second.id && appended.first_glyph_tick == 13000);
+
+  // A page replaced before it was ever published expires its voice.
+  tracker.EndPage();
+  const SgreScenarioPage skipped = tracker.Observe(L"\x3042", 1, 20000);
+  tracker.EndPage();
+  tracker.Observe(L"\x3044", 1, 20600);
+  count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  decision = ResolveSgreVoicePage(skipped.first_glyph_tick + 10, 21000, true,
+                                  pages, count);
+  assert(decision.state == VoiceResourcePairState::kExpired);
+
+  // Still typing past the reveal deadline: unmarked, never held forever.
+  decision = ResolveSgreVoicePage(20610, 20610 + kSgreVoiceRevealDeadlineMs,
+                                  true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kExpired);
+
+  // No exact lane (text from elsewhere): written unmarked immediately.
+  decision = ResolveSgreVoicePage(920, 921, false, nullptr, 0);
+  assert(decision.state == VoiceResourcePairState::kUnselected);
+}
+
+// BUG-4206 review — a page whose line was fully revealed before a voice
+// started never owns that voice, so the next line's voice (its text fading in
+// later than the lead) is not handed to the line still on screen; a voice that
+// started while a page was being typed (every case the host's old
+// [T-330, T-130] window paired) is bound to that page even when the next page
+// begins within the lead; final passes decide without waiting.
+void TestScenarioPageVoiceOwnership() {
+  using namespace fushi_voice_hook;
+  SgreScenarioPageTracker tracker;
+  SgreScenarioPage pages[kSgrePageHistorySlots] = {};
+
+  // Page A: first glyph 30000, revealed and published at 30400 as seq 50.
+  tracker.Observe(L"\x3042", 1, 30000);
+  tracker.Observe(L"\x3042\x3044", 2, 30400);
+  tracker.MarkPublished(50, 30400);
+  size_t count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  // Page B's voice starts at 31000 (A still on screen, already revealed); B's
+  // text fades in at 31700, past the lead. Never A's seq, even though A began
+  // within kSgreVoiceLagMs of the voice.
+  VoiceResourcePairDecision decision =
+      ResolveSgreVoicePage(31000, 31600, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kExpired &&
+         decision.text_event_id == 0);
+  // Final pass reaches the same verdict.
+  decision = ResolveSgreVoicePage(31000, 31000, true, pages, count, true);
+  assert(decision.state == VoiceResourcePairState::kExpired &&
+         decision.text_event_id == 0);
+
+  // Page C: voice at 40100 while C types (first glyph 40000), C published at
+  // 40300 — the old window's case (voice 200 ms before reveal-complete).
+  tracker.EndPage();
+  tracker.Observe(L"\x304b", 1, 40000);
+  tracker.Observe(L"\x304b\x304d", 2, 40300);
+  tracker.MarkPublished(51, 40300);
+  // Page D begins at 40350, inside the voice's lead: C, the page typed when
+  // the voice started, still owns it.
+  tracker.EndPage();
+  tracker.Observe(L"\x304f", 1, 40350);
+  count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  decision = ResolveSgreVoicePage(40100, 40700, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 51);
+
+  // A voice started at 41000 while D (begun at 40350) is still being typed:
+  // C was revealed before it, so D owns it and it waits while D types.
+  decision = ResolveSgreVoicePage(41000, 41600, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kWait);
+  // A final pass cannot wait for D: written unmarked, not guessed.
+  decision = ResolveSgreVoicePage(41000, 41600, true, pages, count, true);
+  assert(decision.state == VoiceResourcePairState::kExpired);
+  // Once D is published at 43000 the voice is D's.
+  tracker.Observe(L"\x304f\x3051", 2, 43000);
+  tracker.MarkPublished(52, 43000);
+  count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  decision = ResolveSgreVoicePage(41000, 43010, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 52);
+
+  // Voice before its page's first glyph (lead): voice 45000, page E at 45300,
+  // published 46000. Every earlier page was revealed before the voice.
+  tracker.EndPage();
+  tracker.Observe(L"\x3053", 1, 45300);
+  tracker.MarkPublished(53, 46000);
+  count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  decision = ResolveSgreVoicePage(45000, 46010, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 53);
+  // A final pass inside the lead binds an already-published owner without
+  // waiting for the lead to elapse.
+  decision = ResolveSgreVoicePage(45000, 45001, true, pages, count, true);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 53);
+}
+
+// BUG-4206 review — page boundaries the tracker must see without the help of
+// a shorter prefix or an empty surface: the visible text is replaced by a
+// different line of the same or greater length (no EndPage in between).
+void TestScenarioPageReplacedInPlace() {
+  using namespace fushi_voice_hook;
+  SgreScenarioPageTracker tracker;
+  const SgreScenarioPage first = tracker.Observe(L"\x3042\x3044", 2, 1000);
+  // Same length, different glyphs: the prefix is not extended, a new page.
+  const SgreScenarioPage same_length =
+      tracker.Observe(L"\x304b\x304d", 2, 2000);
+  assert(same_length.id != first.id &&
+         same_length.first_glyph_tick == 2000);
+  // Longer, but the first glyphs differ: still not an extension.
+  const SgreScenarioPage longer =
+      tracker.Observe(L"\x3055\x3057\x3059", 3, 3000);
+  assert(longer.id != same_length.id && longer.first_glyph_tick == 3000);
+  // A genuine extension keeps the page.
+  const SgreScenarioPage typing =
+      tracker.Observe(L"\x3055\x3057\x3059\x305b", 4, 3500);
+  assert(typing.id == longer.id && typing.first_glyph_tick == 3000);
+}
+
+// BUG-4206 review — instant text: the page's first frame is already complete,
+// so first glyph, publication and voice start coincide. The voice is
+// submitted on the XAudio thread and may land a few ticks after the page was
+// published from the draw callback; it still belongs to that page. A voice
+// that starts beyond the race allowance is the next line's and is refused.
+void TestScenarioPageInstantRevealVoiceRace() {
+  using namespace fushi_voice_hook;
+  SgreScenarioPageTracker tracker;
+  SgreScenarioPage pages[kSgrePageHistorySlots] = {};
+
+  tracker.Observe(L"\x3042\x3044\x3046", 3, 50000);
+  tracker.MarkPublished(60, 50000);
+  size_t count = tracker.Snapshot(pages, kSgrePageHistorySlots);
+  // Same tick as the publication.
+  VoiceResourcePairDecision decision =
+      ResolveSgreVoicePage(50000, 50600, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 60);
+  // A few ticks later (thread race / 16 ms tick granularity).
+  decision = ResolveSgreVoicePage(50016, 50600, true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 60);
+  decision = ResolveSgreVoicePage(50000 + kSgreVoicePublishRaceMs, 50700,
+                                  true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 60);
+  // Final pass reaches the same verdict.
+  decision = ResolveSgreVoicePage(50016, 50016, true, pages, count, true);
+  assert(decision.state == VoiceResourcePairState::kMatched &&
+         decision.text_event_id == 60);
+  // Past the allowance the line had been on screen before the voice: not its
+  // voice, even though the page began within kSgreVoiceLagMs.
+  decision = ResolveSgreVoicePage(50000 + kSgreVoicePublishRaceMs + 1, 50800,
+                                  true, pages, count);
+  assert(decision.state == VoiceResourcePairState::kExpired &&
+         decision.text_event_id == 0);
+}
+
 int main() {
+  TestScenarioPageVoiceBinding();
+  TestScenarioPageVoiceOwnership();
+  TestScenarioPageReplacedInPlace();
+  TestScenarioPageInstantRevealVoiceRace();
   TestRemoteKeyboardAnchors();
   TestGameStreamRemoteKeys();
   assert(fushi_voice_hook::MatchesSgreExecutableHash(

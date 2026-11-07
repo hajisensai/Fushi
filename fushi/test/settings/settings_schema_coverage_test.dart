@@ -88,6 +88,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 逐曲断点续播：行为型偏好（只影响之后打开的曲目从哪开始放，无渲染树效果）。
+  'music/Resume playback':
+      'test/media/music/music_resume_test.dart + test/media/music/music_resume_session_test.dart',
   'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
   // 交叉淡入：设置值 → 引擎判衔接（crossfadeNext）→ 双实例编排由 music_crossfade_test
   // 咬住；真 libmpv 上的样本级曲线 / 实时对齐在 music_crossfade_real_test。
@@ -111,8 +114,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // music_lyrics_service_test 咬住。
   'music/Online lyrics (LRCLIB)':
       'test/media/music/lyrics/music_lyrics_service_test.dart',
-  // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup），harness
-  // 设置页没有歌词页；判据由 music_lyrics_page_logic_test 咬住。
+  // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup）与桌面歌词
+  // 点词（MusicLookupPause，music_lookup_pause_test，BUG-4198），harness 设置页两者
+  // 都没有；判据由 music_lyrics_page_logic_test 咬住。
   // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
   'music/VGMdb lookup':
       'test/media/music/metadata/music_scrape_service_test.dart',
@@ -283,6 +287,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
   'interconnect/Transcode video for peers':
       'test/sync/fushi_sync_server_transcode_test.dart',
+  // 「互联主机」AI 转发（host 侧许可，默认开）。写 prefsRepo（changed=true），生效点在
+  // **HTTP 端点**：sync server 每次处理 `/api/capabilities` 与 `/api/ai/relay/*` 都现读
+  // 该偏好，关着就不声明 aiRelayV1、转发请求被拒。harness 里没有起 server，探不到。
+  "interconnect/Let paired devices use this device's AI":
+      'packages/fushi_engine/test/ai/ai_relay_host_test.dart（关掉后能力位消失、'
+      '转发请求被拒）',
   // 游戏串流「允许远程启动」（host 侧许可，默认关，只在 Windows 出现）。写
   // prefsRepo（changed=true），生效点在 **HTTP 端点**：app 把
   // `prefsRepo.gameStreamRemoteLaunchEnabled` 实时注入成 host 的
@@ -654,7 +664,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 探针；由专项纯函数测试咬住「刮削结论 → 字幕目标」这一步——那才是这个功能的
   // 全部准确率所在（外部 id / 原名 / 季集号怎么传给 provider）。
   'video/Auto-fetch subtitles after scraping':
-      'test/media/video/scraped_subtitle_targets_test.dart',
+      '../packages/fushi_engine/test/media/video/subtitle/scraped_subtitle_targets_test.dart',
   // BUG-2728 自动上传的开关（默认开）。写 prefsRepo（changed=true），生效点是视频页
   // _uploadRemoteSubtitleToHost 的进场门（关=不发 PUT、不提示），只在互联远端视频
   // 导入 / 重定时字幕时触发——harness 里没有视频页、没有已配对 host，无适用探针。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-877 守卫：捕获工作台的查词 WebView 必须在净缩放 1 的根 Overlay 中。
 ///

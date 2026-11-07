@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1073 / BUG-498 源码守卫（vendored media_kit 补丁，移动版 material.dart）：
 /// 「单击唤控制栏」的 tap 命中区必须覆盖**整个画面**，与防边缘误触竖滑的

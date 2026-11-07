@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 自定义主题「未接入颜色」补齐的源码守卫（2026-09 审计）：
 /// - 词典弹窗配色不再拿阅读器纸色当 seed 重造 ColorScheme（那样弹窗里的按钮 /
@@ -108,9 +108,13 @@ void main() {
     // Apple 歌词页恒深色档：弹窗经 lyricsMode 走同一配方。
     expect(body.contains('lyricsMode: _lyricsMode,'), isTrue);
     // 进入歌词模式当场重算（app 已是深色时宿主主题不变、不会发通知）。
+    // 判据是「同一段同步代码里、任何 await 之前」：中间允许正文 WebView 换了
+    // 一个的通知（[notifyPopupBodyWebViewChanged]，查词弹窗静态层闸门要求它紧跟
+    // _lyricsMode 翻转，见 popup_body_static_layer_wiring_guard_test.dart）。
     expect(
       RegExp(
-        r'_rebuild\(\(\) => _lyricsMode = true\);\s*(//[^\n]*\n\s*)*'
+        r'_rebuild\(\(\) => _lyricsMode = true\);\s*'
+        r'(notifyPopupBodyWebViewChanged\(\);\s*)?(//[^\n]*\n\s*)*'
         r'_syncDictionaryTheme\(\);',
       ).hasMatch(lyrics),
       isTrue,
@@ -118,7 +122,8 @@ void main() {
     // 退出歌词模式当场恢复阅读器原覆盖值。
     expect(
       RegExp(
-        r'_rebuild\(\(\) => _lyricsMode = false\);\s*(//[^\n]*\n\s*)*'
+        r'_rebuild\(\(\) => _lyricsMode = false\);\s*'
+        r'(notifyPopupBodyWebViewChanged\(\);\s*)?(//[^\n]*\n\s*)*'
         r'_syncDictionaryTheme\(\);',
       ).hasMatch(lyrics),
       isTrue,

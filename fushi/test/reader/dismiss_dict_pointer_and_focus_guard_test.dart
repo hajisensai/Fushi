@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-1071 源码守卫：关闭词典（查词弹窗）的三症同源修复。原生平台 WebView 抢 OS

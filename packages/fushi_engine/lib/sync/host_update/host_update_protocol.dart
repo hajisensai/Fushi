@@ -3,8 +3,8 @@
 ///
 /// 只有协议与 host 侧的门禁住在引擎里（纯 Dart，无 Flutter）；「怎么查更新 / 怎么
 /// 下载安装」是各平台 app 的现有自更新流程，由装配方实现 [HostSelfUpdater] 注入
-/// （app 侧见 `fushi/lib/src/updates/host_self_update_service.dart`）。无头服务端
-/// 不接线——端点 404、能力位 `hostUpdate=false`。
+/// （app 侧见 `fushi/lib/src/updates/host_self_update_service.dart`；无头服务端见
+/// `packages/fushi_server/lib/src/self_update/server_self_updater.dart`）。
 ///
 /// 安全边界（端点在 `FushiSyncServer` 的 `/api/host/update`）：
 ///   * 只认**已配对 peer token**（共享 server token 一律拒，同 service-config）；
@@ -64,7 +64,8 @@ enum HostUpdateDenial {
   /// host 平台不能应用内自更新（iOS / Linux 等）。
   unsupported('platform_unsupported'),
 
-  /// 请求来自 P2P 隧道或公网，不在允许触发的信任区内。
+  /// 请求来自 P2P 隧道或公网，不在允许触发的信任区内。现行 host 已不发这个拒绝
+  /// （反馈 d639PMD5mS），只有旧版 host 还会回它，client 据此提示先更新一次主机。
   zone('zone_not_allowed'),
 
   /// 没有带已配对设备的专属 token（老的共享 token 不收）。

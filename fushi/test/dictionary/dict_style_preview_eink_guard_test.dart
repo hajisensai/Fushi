@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2434 ②：词典样式预览（设置 › 词典样式，用户在这里调词典字体/字号/配色）
 /// 跑的是**真的** `popup.html` + `popup.js`，文件开头明写「渲染路径与真弹窗同源」

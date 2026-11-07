@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1184 / TODO-1185 守卫（源码扫描，不依赖真机/真浏览器）。两份扩展镜像
 /// （随 app 打包的 `assets/` 与真源 `tools/`）都守，且必须逐字节一致。

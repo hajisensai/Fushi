@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1505 守卫：迁移导入失败时，**页面不许被强制重启带走**，失败原因必须落盘，
 /// 且关库之前必须把后台写手停掉。

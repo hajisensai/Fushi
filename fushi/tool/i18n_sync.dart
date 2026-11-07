@@ -12,11 +12,15 @@
 ///                                                  # language's existing translation and moving
 ///                                                  # it to the new name's alphabetical position
 ///                                                  # (errors out if the new key already exists)
+///   dart tool/i18n_sync.dart --set key locale value  # change ONE language's value of an
+///                                                  # existing key (locale = file suffix:
+///                                                  # en / ja / zh-CN / pt-BR ...), every
+///                                                  # other language untouched
 ///   dart tool/i18n_sync.dart --sort                # sort keys alphabetically in all files
 ///                                                  # (stable, idempotent)
 ///   dart tool/i18n_sync.dart --dry-run             # show what would change without writing
 ///
-/// `--add` / `--remove` / `--rename` / `--sort` may be repeated and mixed in one
+/// `--add` / `--remove` / `--rename` / `--set` / `--sort` may be repeated and mixed in one
 /// invocation; they run **in the order given**, each language file is read once,
 /// all operations are applied to it, and it is written once:
 ///
@@ -44,11 +48,12 @@ Usage:
   dart tool/i18n_sync.dart --add <key> <en> <zh>
   dart tool/i18n_sync.dart --remove <key>
   dart tool/i18n_sync.dart --rename <old_key> <new_key>
+  dart tool/i18n_sync.dart --set <key> <locale> <value>   (locale: en / ja / zh-CN ...)
   dart tool/i18n_sync.dart --sort
   dart tool/i18n_sync.dart --dry-run            preview without writing
 
---add / --remove / --rename / --sort may be repeated and mixed; they run in the
-order given.''';
+--add / --remove / --rename / --set / --sort may be repeated and mixed; they run
+in the order given.''';
 
 /// One key-table edit. A command line is an ordered list of these — repeating a
 /// flag repeats the op instead of silently discarding the extra operands.
@@ -93,6 +98,29 @@ final class RenameKeyOp extends I18nOp {
   String describe() => '--rename $oldKey $newKey';
 }
 
+/// Change the value of an EXISTING [key] in exactly one language file — the one
+/// whose locale ([i18nLocaleOfPath]) is [locale]. Every other file is left
+/// byte-for-byte alone.
+///
+/// Why it exists: fixing a wrong source text used to mean `--remove` + `--add`,
+/// which resets all 16 translations to the English value (the same damage a
+/// rename that way does). With `--set` a wrong value is corrected in the
+/// languages that are actually wrong and the good translations survive.
+final class SetValueOp extends I18nOp {
+  const SetValueOp({
+    required this.key,
+    required this.locale,
+    required this.value,
+  });
+
+  final String key;
+  final String locale;
+  final String value;
+
+  @override
+  String describe() => '--set $key $locale';
+}
+
 final class SortKeysOp extends I18nOp {
   const SortKeysOp();
 
@@ -133,6 +161,7 @@ const Set<String> _flags = <String>{
   '--add',
   '--remove',
   '--rename',
+  '--set',
   '--sort',
   '--dry-run',
 };
@@ -170,6 +199,12 @@ I18nCommand parseI18nCommand(List<String> args) {
       case '--rename':
         final List<String> operands = _takeOperands(args, i + 1, 2, token);
         ops.add(RenameKeyOp(oldKey: operands[0], newKey: operands[1]));
+        i += 1 + operands.length;
+      case '--set':
+        final List<String> operands = _takeOperands(args, i + 1, 3, token);
+        ops.add(
+          SetValueOp(key: operands[0], locale: operands[1], value: operands[2]),
+        );
         i += 1 + operands.length;
       default:
         throw I18nUsageError('Error: unknown argument "$token".\n\n$usage');
@@ -238,7 +273,9 @@ I18nApplyResult applyI18nOps({
   required List<I18nOp> ops,
   required bool isZhCn,
   required String label,
+  String? locale,
 }) {
+  final String fileLocale = locale ?? i18nLocaleOfPath(label);
   Map<String, dynamic> current = Map<String, dynamic>.of(json);
   final List<String> log = <String>[];
   final List<int> hitsPerOp = List<int>.filled(ops.length, 0);
@@ -289,6 +326,25 @@ I18nApplyResult applyI18nOps({
         );
         hitsPerOp[i] = 1;
         log.add('  rename "$oldKey" -> "$newKey" in $label');
+      case SetValueOp(
+        :final String key,
+        locale: final String target,
+        :final String value,
+      ):
+        if (target != fileLocale) continue;
+        if (!current.containsKey(key)) {
+          throw I18nOpError(
+            'Error: --set: key "$key" does not exist in $label; aborting '
+            '(use --add for new keys).',
+          );
+        }
+        // In place: the key keeps its slot, only the value changes.
+        current = <String, dynamic>{
+          for (final MapEntry<String, dynamic> e in current.entries)
+            e.key: e.key == key ? value : e.value,
+        };
+        hitsPerOp[i] = 1;
+        log.add('  set "$key" = "$value" in $label');
       case SortKeysOp():
         final List<String> keys = current.keys.toList();
         final List<String> sortedKeys = List<String>.of(keys)..sort();
@@ -502,6 +558,19 @@ void main(List<String> args) {
   _runOps(command);
 }
 
+/// Locale of one i18n file from its name: `strings.i18n.json` is the English
+/// base (`en`), `strings_<locale>.i18n.json` is `<locale>` (`ja`, `zh-CN`, ...).
+String i18nLocaleOfPath(String path) {
+  final String name = path.replaceAll('\\', '/').split('/').last;
+  if (name == _baseFile) return 'en';
+  const String prefix = 'strings_';
+  const String suffix = '.i18n.json';
+  if (name.startsWith(prefix) && name.endsWith(suffix)) {
+    return name.substring(prefix.length, name.length - suffix.length);
+  }
+  return name;
+}
+
 /// Run the op list: read every file once, apply all ops in memory, then write
 /// only the files that actually changed. Any [I18nOpError] aborts before the
 /// first write, so a run is all-or-nothing.
@@ -539,6 +608,9 @@ void _runOps(I18nCommand command) {
     switch (op) {
       case RenameKeyOp(:final String oldKey):
         stderr.writeln('Error: key "$oldKey" not found in any i18n file.');
+        exit(1);
+      case SetValueOp(:final String locale):
+        stderr.writeln('Error: --set: no i18n file has locale "$locale".');
         exit(1);
       case RemoveKeyOp(:final String key):
         stderr.writeln(
