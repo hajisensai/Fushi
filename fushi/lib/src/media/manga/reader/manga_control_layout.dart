@@ -79,6 +79,13 @@ enum MangaControlItem implements ControlItemSpec<MangaControlSlot> {
     recoverySlot: MangaControlSlot.toolbar,
   ),
 
+  /// 漫画朗读（按阅读顺序逐句读当前章已识别的文字）。
+  readAloud(
+    'readAloud',
+    foldPriority: 5,
+    recoverySlot: MangaControlSlot.toolbar,
+  ),
+
   /// 识别框开关：只在 Apple 设计系统下作为按钮渲染（Material 下是底部 FAB）。
   ocrBoxes(
     'ocrBoxes',
@@ -185,6 +192,7 @@ class MangaControlLayout {
   /// 出厂布局 = 布局化之前写死的那一套 + 新增的书签键：
   ///  * 底部工具栏：章节目录 / 页面一览 / 阅读模式 / 单双页 / 翻页方向 / 快捷设置
   ///    （/ Apple 下的识别框开关）——与旧 `_chromeActionGroups` 的声明顺序一致；
+  ///    后加的「朗读」插在快捷设置之后；
   ///  * 右上角：按旧版「按优先级从高到低」排好的顺序（取消 OCR 9 / 全屏 7 / 书签 6 /
   ///    全部设置 5 / 识别本卷 4 / 回到开头 1 / 重新识别 1 / 隐藏界面 0）。书签是新增项，
   ///    按它的优先级插在全屏与全部设置之间。
@@ -199,6 +207,7 @@ class MangaControlLayout {
           MangaControlItem.spreadPreference,
           MangaControlItem.direction,
           MangaControlItem.quickSettings,
+          MangaControlItem.readAloud,
           MangaControlItem.ocrBoxes,
         ],
         MangaControlSlot.top: <MangaControlItem>[

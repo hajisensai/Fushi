@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_plan.dart';
-import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 

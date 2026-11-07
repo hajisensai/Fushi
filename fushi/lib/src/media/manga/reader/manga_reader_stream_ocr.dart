@@ -387,6 +387,7 @@ class MangaStreamPageOcr {
     required this.pageFile,
     required MangaStreamPageRecognizer recognizer,
     required this.onPage,
+    this.onPageFailed,
     this.onBusyChanged,
     this.onError,
     this.onAiError,
@@ -398,6 +399,10 @@ class MangaStreamPageOcr {
   final Future<File?> Function(int pageIndex) pageFile;
   final MangaStreamPageRecognizer _recognizer;
   final void Function(int pageIndex, MokuroImage page) onPage;
+
+  /// 这一页这一轮没识别出来（取不到页图 / 识别抛错）。等这页文字的人（漫画朗读）
+  /// 据此落定，而不是一直等：失败页本轮不再重试，读者重新翻到它才再给一次机会。
+  final void Function(int pageIndex)? onPageFailed;
   final void Function(bool busy)? onBusyChanged;
   final void Function(Object error, StackTrace stack)? onError;
 
@@ -482,6 +487,7 @@ class MangaStreamPageOcr {
       if (_closed) return;
       if (file == null) {
         _failed.add(pageIndex);
+        onPageFailed?.call(pageIndex);
         return;
       }
       final MokuroImage page = await _recognizer.recognize(file);
@@ -492,6 +498,7 @@ class MangaStreamPageOcr {
     } on Object catch (error, stack) {
       if (_closed) return;
       _failed.add(pageIndex);
+      onPageFailed?.call(pageIndex);
       onError?.call(error, stack);
     } finally {
       _running = false;

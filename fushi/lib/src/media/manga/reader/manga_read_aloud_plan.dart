@@ -6,7 +6,6 @@
 /// 干扰面板聚类。
 library;
 
-import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/reading_order.dart';
