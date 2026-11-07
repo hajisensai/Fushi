@@ -239,12 +239,10 @@ bool sameSubtitleLanguage(String? a, String? b) {
 // 角色分类
 // ---------------------------------------------------------------------------
 
-/// 样式名 / Name / Effect 命中这些就是歌词（OP / ED / 插曲 / 卡拉 OK）。
-final RegExp _songStyle = RegExp(
-  r'(^|[^a-z])(op|ed|song|songs|insert|ins|karaoke|kara|lyric|lyrics|opening|ending|theme)([^a-z]|$)|歌|曲|歌词|歌詞|op[0-9]|ed[0-9]',
-  caseSensitive: false,
-);
-final RegExp _karaokeTag = RegExp(r'\\(k|kf|ko|K)\d');
+/// 样式名 / Name / Effect 命中这些就是歌词（OP / ED / 插曲 / 卡拉 OK）；与 ASS 导出
+/// 判歌词行共用一份（`subtitle_ass_style_transfer.dart`）。
+final RegExp _songStyle = assSongStylePattern;
+final RegExp _karaokeTag = assKaraokeTagPattern;
 final RegExp _songMark = RegExp(r'^[\s　]*[♪♫♬〜～]');
 
 /// ASS 事件的角色：排版（定位 / 绘图）→ sign；样式像歌 / 带 `\k` → song；其余台词。

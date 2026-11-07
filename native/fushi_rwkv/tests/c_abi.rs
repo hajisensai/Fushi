@@ -439,3 +439,42 @@ fn model_handle_can_be_freed_before_its_runtimes() {
     }
     unsafe { frwkv_runtime_free(runtime) };
 }
+
+/// `FrwkvReview::parse_rows` 读回 C 布局的字节（example 读 `.bin` 历史用的同一份解析）。
+#[test]
+fn parse_rows_reads_back_the_c_layout() {
+    let rows = [
+        FrwkvReview::from_input(&ReviewInput {
+            card_id: 7,
+            note_id: Some(70),
+            deck_id: Some(3),
+            preset_id: None,
+            ease: Some(3),
+            duration_millis: Some(4_200),
+            card_type: Some(2),
+            day_offset: Some(12),
+            current_elapsed_days: Some(4),
+            current_elapsed_seconds: Some(345_600),
+            is_query: false,
+        }),
+        FrwkvReview::from_input(&ReviewInput {
+            card_id: -9,
+            note_id: None,
+            deck_id: None,
+            preset_id: None,
+            is_query: false,
+            ease: None,
+            duration_millis: None,
+            card_type: None,
+            day_offset: None,
+            current_elapsed_days: None,
+            current_elapsed_seconds: None,
+        }),
+    ];
+    let bytes: &[u8] = unsafe {
+        std::slice::from_raw_parts(rows.as_ptr().cast::<u8>(), std::mem::size_of_val(&rows))
+    };
+    assert_eq!(FrwkvReview::parse_rows(bytes).unwrap(), rows);
+    assert!(FrwkvReview::parse_rows(&bytes[..79]).is_err());
+    assert!(FrwkvReview::parse_rows(&[]).unwrap().is_empty());
+}

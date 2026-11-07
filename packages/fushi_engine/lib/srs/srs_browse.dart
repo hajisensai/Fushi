@@ -140,6 +140,7 @@ class SrsBrowseRow {
     required this.deckId,
     required this.noteTypeName,
     required this.templateName,
+    required this.templateCount,
     required this.queue,
     required this.dueInDays,
     required this.flag,
@@ -176,6 +177,13 @@ class SrsBrowseRow {
 
   /// 主卡的模板名（模板被删了为空串）。
   final String templateName;
+
+  /// 这一行笔记类型现有的模板（卡片类型）数。> 1 时同一条笔记在卡片模式下有多行（每个卡片类型一张卡），
+  /// 浏览页在卡片行上标出 [templateName]（[showsTemplateName]）。
+  final int templateCount;
+
+  /// 卡片行要不要标出卡片类型名：笔记类型有多个模板、且主卡的模板还在。
+  bool get showsTemplateName => templateCount > 1 && templateName.isNotEmpty;
 
   /// 主卡的队列；null = 这一行的卡在取行之前已被删掉（列表下次刷新时消失）。
   final SrsQueue? queue;
@@ -675,6 +683,7 @@ class SrsBrowseSession {
             noteTypeName: t[4]! as String,
             deckId: t[5]! as String,
             templateName: t[6]! as String,
+            templateCount: t[15]! as int,
             queue: q < 0 ? null : SrsQueue.values[q],
             dueInDays: due == none ? null : due,
             flag: at(2),

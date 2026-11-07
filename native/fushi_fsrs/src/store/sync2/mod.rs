@@ -395,6 +395,135 @@ pub(crate) fn replay_event_copies(c: &Connection) -> Result<BTreeSet<String>, St
     replay_cards(c, &cards)
 }
 
+/// [revoke_copies_of_revoked_events] 补的 undo 的 HLC 写入者（各设备共用：同一条补的 undo 在每台设备上逐字节相同）。
+pub(crate) const COPY_REPAIR_WRITER: &str = "repair-event-copy";
+
+/// 补的 undo 的 ID：只由被点名的副本 ID 派生（各设备独立算出同一个 ID）。
+pub(crate) fn copy_repair_undo_id(copy: &str) -> Key {
+    Key::Uuid(Id::v5(
+        &Id::parse(config::SRS_NAMESPACE).expect("ns"),
+        &format!("event-copy-revoke/{}", Key::of(copy).text()),
+    ))
+}
+
+/// srs.db v27（BUG-4218 后续）：给「整组已撤销、但还没被 undo 直接点名」的事件副本各补一条确定性 undo
+/// （[crate::history::unnamed_revoked_copies]），让只按 ID 认撤销的旧版本客户端（BUG-4218 之前）经同步也看到这次
+/// 事件被撤销——用户在旧客户端上撤销一份副本、另一份还算有效（「撤销没生效」）的那一类分歧从此收敛。
+///
+/// 补的 undo 逐字段由被点名的副本决定：ID = [copy_repair_undo_id]，HLC = 副本的 `physical:counter` + 固定写入者
+/// [COPY_REPAIR_WRITER]（带旧 HLC，投影行原样带回），S(e) = 副本的物理时刻（不钳位），卡 / 笔记 / 发生时刻 / 时间来源 /
+/// 时区 / 换日时刻照抄副本，结果为空。所以各设备独立升级写出的是同一条日志、载荷逐字节相同：投影按 ID 只落一份，
+/// 两条操作流里的重复由存量重复流收敛（dedup.rs，带旧 HLC 的日志按载荷核对）收掉。
+///
+/// **只补整组已撤销的组**：在新规则（BUG-4218）下这些副本已随整组撤销，补的 undo 不改变任何选取结果，任何版本都不会
+/// 因此多撤销一次真实复习。「同一次复习两份都算有效」的那一类（组里没有任何一份被撤销）**不补**：要让旧客户端只算一份
+/// 就得撤销其中一份，而已发布的 BUG-4218 版本（3.3.0）把「组里任何一份被撤销」当整组撤销，补的 undo 会让这些版本上
+/// 每一次被合并成两份的复习整条消失。
+///
+/// 只处理已启用同步 v2 的 profile（`sync2_self`）：别的设备只能经同步看到补的 undo，没启用的 profile 本机新规则已经
+/// 只算一份。候选与 v26 同一个粗筛（带副本的卡的超集）。可重放：补过的副本已被点名，第二次什么也不写。返回补的条数。
+pub(crate) fn revoke_copies_of_revoked_events(c: &Connection, now: i64) -> Result<usize, String> {
+    let rows: Vec<(String, String)> = c
+        .prepare(
+            "SELECT DISTINCT srs_idt(profile_uid) AS p, srs_idt(card_id) AS card_id FROM srs_review_logs \
+             WHERE kind <> 'undo' AND profile_uid IN (SELECT profile_uid FROM sync2_self) \
+             GROUP BY profile_uid, card_id, kind, occurred_at, rating, review_type IN ('learn', 'review', 'relearn'), origin HAVING COUNT(*) > 1",
+        )
+        .map_err(sql)?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let mut by_profile: std::collections::BTreeMap<String, BTreeSet<String>> = Default::default();
+    for (p, card) in rows {
+        by_profile.entry(p).or_default().insert(card);
+    }
+    let mut written = 0usize;
+    for (profile, cards) in &by_profile {
+        let Some(mut local) = Local::load(c, profile)? else {
+            continue;
+        };
+        let mut groups: BTreeSet<String> = BTreeSet::new();
+        for card in cards {
+            groups.extend(tails(c, card)?);
+        }
+        let mut bodies: std::collections::BTreeMap<String, LogBody> = Default::default();
+        for tail in &groups {
+            let Group { rows, .. } = group_of(c, tail, None)?;
+            let parsed: Vec<crate::history::Log<'_>> = rows
+                .iter()
+                .map(|(_, j, s, _, _)| crate::history::parse_full(j, *s).map(|p| p.0))
+                .collect::<Result<_, _>>()?;
+            for i in crate::history::unnamed_revoked_copies(&parsed) {
+                let l = &parsed[i];
+                let id = copy_repair_undo_id(&l.id);
+                if bodies.contains_key(&id.text()) {
+                    continue;
+                }
+                let x: Value = serde_json::from_str(&rows[i].1).map_err(sql)?;
+                let note: Option<String> = c
+                    .prepare_cached(
+                        "SELECT srs_idt(note_id) FROM sync2_log_meta WHERE log_id = srs_id(?1)",
+                    )
+                    .map_err(sql)?
+                    .query_row([&*l.id], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?
+                    .flatten();
+                bodies.insert(
+                    id.text(),
+                    LogBody {
+                        id,
+                        card: Key::of(&l.card),
+                        note: note.as_deref().map(Key::of),
+                        kind: "undo".into(),
+                        rating: None,
+                        revokes: Some(Key::of(&l.id)),
+                        at: l.occurred_at,
+                        ts: op::ts_code(x["ts"].as_str().unwrap_or("wall")),
+                        origin: "fushi".into(),
+                        rtype: "manual".into(),
+                        dur: 0,
+                        params: None,
+                        alg: None,
+                        utc_off: x["utcOff"].as_i64().unwrap_or(0),
+                        rollover: x["rollover"].as_i64().unwrap_or(4),
+                        anki_id: None,
+                        fv: 1,
+                        intent: Intent::Absolute,
+                        res: None,
+                        extra: "{\"repairOf\":\"eventCopy\"}".into(),
+                        legacy_hlc: Some(format!(
+                            "{}:{}:{COPY_REPAIR_WRITER}",
+                            l.physical, l.counter
+                        )),
+                        legacy_server_time: Some(l.physical),
+                    },
+                );
+            }
+        }
+        if bodies.is_empty() {
+            continue;
+        }
+        let mut applied = applied_vv(c, profile)?;
+        // 与本机批量写入（[SrsCore::sync2_apply_local]）同样：依赖向量行在一批里复用，批内记住「没有删除」。
+        let mut t = Touched {
+            log_no_delete: Some(Default::default()),
+            ..Touched::default()
+        };
+        let mut deps_row: Option<(Vec<u8>, i64)> = None;
+        for (_, b) in bodies {
+            let b = Body::Log(b);
+            let op = append_local_cached(c, &mut local, &mut applied, &b, now, &mut deps_row)?;
+            project_body(c, profile, &op, b, now, true, &mut t)?;
+            written += 1;
+        }
+        local.save(c)?;
+        replay_touched(c, &t)?;
+    }
+    Ok(written)
+}
+
 /// srs.db v19：去掉存量因果上下文里的合成写入者（[is_synthetic_writer]）——`sync2_legacy.ctx` 与投影行
 /// `srs_field_edits` 的 `ctx`。确定性：只是对各设备逐位相同的投影套同一个函数，结果等于新代码从操作重新投影；
 /// 操作日志（`sync2_ops`，已上传的载荷）一个字节不动。摘要桶由 UPDATE 触发器随行增减（digest.rs）。可重放：
@@ -2355,6 +2484,8 @@ mod tests_cache_pending;
 mod tests_causal;
 #[cfg(test)]
 mod tests_channel;
+#[cfg(test)]
+mod tests_copy_migration_bench;
 #[cfg(test)]
 mod tests_dedup;
 #[cfg(test)]
