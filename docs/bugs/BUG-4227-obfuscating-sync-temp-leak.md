@@ -5,7 +5,11 @@
   - 真实主因：临时目录生命周期只靠进程内 finally（同文件 `_createTempFile` 原 :59-62 直接 `Directory.systemTemp.createTemp(prefix)`），iOS 在数百 MB 上传途中挂起 / 内存压力杀进程（日志同期 `Process.memoryPressure rss=2552MB`）时 finally 不执行；且启动时没有任何清理，临时目录又散落在系统临时目录根下无法安全识别，于是每次被杀就永久多 603MB（那份 299MB 是混淆写到一半被杀）。
 - **[x] ① 已修复** — `abda603fc4`：
   - 上传路径改为 `_withObfuscatedTemp`：建临时目录后立即进 try/finally，混淆失败与上传失败都删；
-  - 所有混淆临时目录只建在本功能独占的 `<systemTemp>/fushi_sync_obf/` 下；
+  - 所有混淆临时目录只建在本功能独占的 `<systemTemp>/fushi_sync_obf/` 下（已被下方「审查回归修复」改为 app 缓存目录 + 进程槽位）；
   - `ObfuscatingSyncBackend.sweepStaleTemps()`（进程级 memo）在启动时（`fushi/lib/main.dart`，`installInterconnectP2pClient` 之后）清整个 `fushi_sync_obf/`，并清旧版本留在根下的 `obf_(up|dn|get)_*`——名字匹配且目录内只有 `blob`（或为空）才删，桌面共享临时目录里他人的同前缀目录不误删；每次建临时目录前先 await 同一个 memo Future，清理不会删到本进程正在用的目录；清理失败记错误日志后不阻塞同步。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/obfuscating_sync_backend_test.dart` 组 `ObfuscatingSyncBackend temp lifecycle (BUG-4227)`：混淆失败不留临时目录、inner 上传失败不留、成功路径不留、`sweepStaleTempsIn` 只删本功能遗留（独占子目录 + 指纹匹配的旧 `obf_*`，保留同前缀异内容目录 / 无关目录 / 普通文件）。变异验证：把混淆挪回 try 之外 + 让清理空跑 → 2 例红（exit 1，+10 -2）；还原后 exit 0。
+- **[x] 审查回归修复** — `30995f78de` / `12687e0756`：初版把独占目录放在 `<systemTemp>/fushi_sync_obf` 固定名下、启动时整目录删，审查指出两处回归，均成立：
+  - 多用户共享 `/tmp`：目录归先建它的用户（0777&umask），另一用户 `root.create` 直接过、`createTemp` 报 EACCES，同步全挂；还可被他人抢建 0777 读 / 换中间文件。改为 `defaultTempRoot()`（`fushi/lib/src/sync/obfuscating_sync_backend.dart:93`）= `<getApplicationCacheDirectory()>/fushi_sync_obf`，各平台本用户、本 app 私有。
+  - 整目录删会删到活进程（并行测试进程 / 另一实例）的在用临时文件。改为每进程认领 `p_<pid>_<rand>/` 槽位并一直持有 `.owner.lock` 独占锁（`_doClaimSlot` :173，在根下 `.registry.lock` 内完成）；清理只删锁拿得到或无锁文件的兄弟槽位（`_sweepDeadSlots` :207 / `_isSlotOwnerDead` :236），同 pid 槽位一律当活的（POSIX fcntl 锁同进程不互斥）。旧版本根下 `obf_*` 遗留由 `sweepLegacyTempsIn`（:129）只扫根、不碰子目录。
+  - 测试：新组 `ObfuscatingSyncBackend temp ownership (BUG-4227 review)`——默认根在 app 缓存目录下（mock path_provider）；真实子进程持锁的活槽位不被删也不被尝试删、死槽位 / 无锁槽位被删、同 pid 槽位保留。所有走 IO 的现有测试（含 `sync_orchestrator_video_test.dart`）改注入独立 `tempRoot`。变异：根改回 systemTemp + 判活恒真 → 2 例红（exit 1，+12 -2）；去掉死槽位清理 → 1 例红（exit 1，+13 -1）；还原后两文件 exit 0，+29。
 - **备注**：同一份诊断里还有 `tmp/また、同じ夢を見ていた.m4b 603MB`，是别的功能留在 `tmp/` 根下的有声书副本，不属于本功能、本条不处理（清理不会碰它，测试里也断言保留）。未在 iOS 真机复测清理效果。
