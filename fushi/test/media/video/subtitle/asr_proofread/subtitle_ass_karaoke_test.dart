@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_transfer.dart';
 
 /// 字幕组 ASS 的缩影：对白样式 + 乐队歌词样式（红色副色）+ 罗马音卡拉 OK 特效。
