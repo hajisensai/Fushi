@@ -312,6 +312,17 @@ Future<List<YoutubeSearchHit>> searchYoutubeVideos(
 
 final HtmlUnescape _unescape = HtmlUnescape();
 
+/// timedtext 一个 cue 的显示文本：剥内嵌标签后**解两层实体**（BUG-4220）。YouTube 的 timedtext XML
+/// 是双重转义的——字幕原文先被 HTML 转义成 `We&#39;re`，写进 XML 时 `&` 再被转义一次，文件里
+/// 是 `We&amp;#39;re`（2026-11-06 实测 dQw4w9WgXcQ / jNQXAC9IVRw 的 en 轨，ja / de 轨原文里没有
+/// 要转义的字符所以看不出来）。第一层是 XML 本身的转义，第二层才是字幕文本的 HTML 转义，与
+/// youtube-transcript-api 的 ElementTree 解码 + `html.unescape` 同一口径。只解一层会把
+/// `&#39;` 原样显示出来；浏览器扩展取的是 json3（`segs[].utf8` 原文，无实体），所以只有 app 侧有。
+/// 固定两层而不是解到不动点：第二层之后剩下的 `&...;` 是字幕作者真写的字面文本。
+String _timedTextCueText(String inner) => _unescape
+    .convert(_unescape.convert(inner.replaceAll(RegExp(r'<[^>]+>'), '')))
+    .trim();
+
 AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) =>
     AudioCue()
       ..bookKey = bookKey
@@ -352,9 +363,7 @@ List<AudioCue> _parseSrv1TimedText(String content, String bookKey) {
   for (final RegExpMatch m in re.allMatches(content)) {
     final double start = double.tryParse(m.group(1) ?? '') ?? 0;
     final double dur = double.tryParse(m.group(2) ?? '') ?? 0;
-    final String raw = _unescape
-        .convert((m.group(3) ?? '').replaceAll(RegExp(r'<[^>]+>'), ''))
-        .trim();
+    final String raw = _timedTextCueText(m.group(3) ?? '');
     if (raw.isEmpty) continue;
     cues.add(
       _cue(
@@ -384,9 +393,7 @@ List<AudioCue> _parseFormat3TimedText(String content, String bookKey) {
     if (tm == null) continue; // 无起始时间的 <p> 跳过
     final int start = int.tryParse(tm.group(1) ?? '') ?? 0;
     final int dur = int.tryParse(dRe.firstMatch(attrs)?.group(1) ?? '') ?? 0;
-    final String raw = _unescape
-        .convert((m.group(2) ?? '').replaceAll(RegExp(r'<[^>]+>'), ''))
-        .trim();
+    final String raw = _timedTextCueText(m.group(2) ?? '');
     if (raw.isEmpty) continue; // 空白滚动占位 <p a="1"> </p> 天然跳过
     cues.add(_cue(bookKey, index, raw, start, start + dur));
     index++;

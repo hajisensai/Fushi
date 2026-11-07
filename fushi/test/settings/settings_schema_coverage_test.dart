@@ -194,6 +194,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // popup_dict_unified_style_test 咬住。
   'lookup/Unify dictionary styles':
       'test/pages/popup_dict_unified_style_test.dart',
+  // 简繁互查开关：生效点是引擎 flag（中文查词多出另一种字形的变体），harness 没有装
+  // 中文词典。开关→判据由 app_model_search_pure_logic_test 咬住，远端接线由
+  // remote_lookup_request_language_test，引擎 flag 关/开由
+  // native/fushidicts/tests/chinese_simp_trad_lookup_test.cpp。
+  'lookup/Match simplified and traditional Chinese':
+      'test/models/app_model_search_pure_logic_test.dart + test/sync/remote_lookup_request_language_test.dart',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
@@ -732,13 +738,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
-  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
-  // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
-  // 随后驱动 page_columns 时 reader 已非翻页态、T1 reader CSS 探针看不到 column-count
-  // 变化（多列模型只在 _paginatedLayoutCss）。page_columns 的 CSS 生效（翻页态发
-  // column-count、连续/VN 态不发）与 paginated-only 可见性由专项测试咬住。
-  'reading/Columns per page':
-      'test/settings/page_columns_paginated_only_test.dart',
+  // 「单双页」（reading_display.page_columns，旧「每页列数」改三档，id / 持久化键沿用）。
+  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区之前，覆盖
+  // harness 焦点遍历会先把 view_mode 从 paginated 切走，随后驱动单双页时 reader 已非
+  // 翻页态、T1 reader CSS 探针看不到 column-count 变化（多列模型只在
+  // _paginatedLayoutCss）。单双页的 CSS 生效（翻页态双页发 column-count、连续/VN 态
+  // 不发）与 paginated-only 可见性由专项测试咬住；「自动」按窗口 / 折痕的解析由
+  // reader_page_spread_test 咬住。
+  'reading/Page spread': 'test/settings/page_columns_paginated_only_test.dart',
   // 中缝折痕（reading_display.page_crease）：纯 CSS 键，只在翻页且一屏恰好两栏时发
   // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
   // 由专项纯函数测试咬住。

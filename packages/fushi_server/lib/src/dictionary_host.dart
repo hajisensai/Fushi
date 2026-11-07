@@ -269,8 +269,8 @@ class ServerDictionaryHost {
   /// [buildPopupJsonFromLookup]（隐藏词典在源头剔除）→ 单汉字附汉字词典结果。
   /// 无结果返回 null。
   ///
-  /// [chineseSimpToTrad]：请求方声明查词语言为中文时置 true（引擎额外试简体 → 繁體
-  /// 变体）。服务端没有「当前查词语言」，请求不带语言时为 false。
+  /// [chineseSimpToTrad]：这次要简繁互查时置 true（引擎额外试另一种字形），判据见
+  /// [serverLookupUsesChineseScriptVariants]。
   ///
   /// [rubySpans]：请求方原文自带的振假名（以 [rawTerm] 为坐标系），对齐后交给引擎按读音
   /// 排同长度候选。
@@ -409,20 +409,45 @@ class ServerDictionaryHost {
   }
 }
 
+/// 「这次服务端查词要不要简繁互查」的唯一判据（纯函数，便于单测）：开关取请求方发来的
+/// [requested]（没发 = 浏览器扩展 / 旧客户端，取服务端开关 [serverToggle]，默认关），
+/// 开着且请求方声明的 [language] 是中文才开。服务端没有「当前查词语言」，语言未知一律不开。
+bool serverLookupUsesChineseScriptVariants({
+  required bool? requested,
+  required String? language,
+  required bool serverToggle,
+}) =>
+    (requested ?? serverToggle) &&
+    language != null &&
+    isChineseLanguageTag(language);
+
 /// 互联查词 service：查词走 [ServerDictionaryHost]，单词音频服务端不提供
 /// （服务端不做查词发音，见 README；`/api/lookup/audio` 恒回「未命中」）。
 ///
-/// 请求带了请求方查词语言（[FushiRemoteLanguageLookupService]）时按它决定是否开简体 →
-/// 繁體回落；不带语言 = 旧行为（不回落）。
+/// 简繁互查按 [serverLookupUsesChineseScriptVariants] 判；[scriptVariantsEnabled] 读服务端
+/// 偏好 [kLookupChineseScriptVariantsPrefKey]（默认关），不给 = 恒关。
 class ServerRemoteLookupService
     implements
         FushiRemoteLookupService,
         FushiRemotePopupLookupService,
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService {
-  ServerRemoteLookupService(this.dictionaries);
+  ServerRemoteLookupService(
+    this.dictionaries, {
+    bool Function()? scriptVariantsEnabled,
+  }) : _scriptVariantsEnabled = scriptVariantsEnabled ?? _alwaysOff;
+
+  static bool _alwaysOff() => false;
 
   final ServerDictionaryHost dictionaries;
+  final bool Function() _scriptVariantsEnabled;
+
+  bool _scriptVariants(String? language, bool? requested) =>
+      serverLookupUsesChineseScriptVariants(
+        requested: requested,
+        language: language,
+        serverToggle: _scriptVariantsEnabled(),
+      );
 
   @override
   Future<DictionarySearchResult?> searchDictionary({
@@ -443,11 +468,12 @@ class ServerRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
   }) async => dictionaries.search(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
   );
 
   @override
@@ -455,12 +481,13 @@ class ServerRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) async => dictionaries.searchPopup(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
   );
 
   @override
@@ -470,10 +497,11 @@ class ServerRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
   }) async => dictionaries.search(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: language != null && isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
     rubySpans: rubySpans,
   );
 
@@ -484,11 +512,12 @@ class ServerRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) async => dictionaries.searchPopup(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: language != null && isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
     rubySpans: rubySpans,
   );
 
