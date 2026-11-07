@@ -9145,7 +9145,7 @@
   "srs_settings_review_order_interval": "Shortest interval first",
   "srs_settings_review_order_random": "Random",
   "srs_settings_review_order_retrievability": "Lowest retrievability first",
-  "srs_settings_review_order_rwkv_hint": "RWKV decks (and their subdecks) always review lowest retrievability first.",
+  "srs_settings_review_order_rwkv_hint": "Reviewing from an RWKV deck always shows lowest retrievability first, across all its subdecks. A subdeck with its own parameters uses its own review order when you review it on its own.",
   "srs_settings_reviews_per_day": "Reviews per day",
   "srs_settings_reviews_per_day_ignored": "Not applied: “Ignore daily review limit” is on.",
   "srs_settings_reviews_per_day_rwkv_hint": "RWKV keeps offering cards as their recall drops; today's reviews stop here.",

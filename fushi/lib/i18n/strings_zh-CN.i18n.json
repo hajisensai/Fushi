@@ -9145,7 +9145,7 @@
   "srs_settings_review_order_interval": "间隔从短到长",
   "srs_settings_review_order_random": "随机",
   "srs_settings_review_order_retrievability": "可提取度从低到高",
-  "srs_settings_review_order_rwkv_hint": "RWKV 牌组（含子牌组）固定按可提取度从低到高出卡。",
+  "srs_settings_review_order_rwkv_hint": "从 RWKV 牌组开始复习时，整棵子树都按可提取度从低到高出卡；自己管参数的子牌组单独复习时，按它自己的复习顺序。",
   "srs_settings_reviews_per_day": "每日复习上限",
   "srs_settings_reviews_per_day_ignored": "已开「忽略每日复习上限」，当前不截断。",
   "srs_settings_reviews_per_day_rwkv_hint": "RWKV 会一直出回忆率降下来的卡，今天复习到这个数就停。",
