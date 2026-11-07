@@ -27,7 +27,9 @@ import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dar
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
-import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart'
+    show buildMusicServersDestination;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -267,21 +269,17 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     await _load();
   }
 
-  Future<void> _openServerSettings() => Navigator.of(context).push<void>(
-    adaptivePageRoute<void>(
-      context: context,
-      builder: (BuildContext context) => musicBrowseScaffold(
-        context,
-        title: t.music_servers_title,
-        body: Builder(
-          builder: (BuildContext context) => SingleChildScrollView(
-            padding: musicBrowsePagePadding(context),
-            child: MusicServerSettingsBody(appModel: _app),
-          ),
+  /// 「添加 › 服务器」：推设置 › 在线服务 › 媒体服务器里那一页（同一棵
+  /// [buildMusicServersDestination]，同壳、同正文、同串流音质行），不在模块页另拼一份。
+  /// 与视频的「去设置添加服务器」（`openMediaServerSettings`）同走根导航器。
+  Future<void> _openServerSettings() =>
+      Navigator.of(context, rootNavigator: true).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) =>
+              const SettingsDetailPage.subPage(buildMusicServersDestination),
         ),
-      ),
-    ),
-  );
+      );
 
   String _subtitleOf(MusicOnlineSource s) => switch (s) {
     MusicServerOnlineSource(:final MusicServerBrowser browser) =>
