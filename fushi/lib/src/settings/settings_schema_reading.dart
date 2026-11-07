@@ -974,6 +974,66 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
+          // 读数胶囊（底部右下角）的各段开关 + 常驻开关。开关段数会改变读数是否整条
+          // 不画（四段都关时回收预留），常驻会改变悬浮态预留 → 都走重锚通道。
+          SettingsSwitchItem(
+            id: 'reading_controls.show_reading_timer',
+            title: t.reader_timer_show,
+            icon: FushiIcons.timer,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 26,
+            ),
+            value: (SettingsContext c) => c.readerSource.showReadingTimer,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowReadingTimer();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.show_session_chars',
+            title: t.reader_status_show_session_chars,
+            icon: FushiIcons.textFields,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 27,
+            ),
+            value: (SettingsContext c) => c.readerSource.showSessionChars,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowSessionChars();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.show_chars_per_hour',
+            title: t.reader_status_show_chars_per_hour,
+            icon: FushiIcons.speed,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 28,
+            ),
+            value: (SettingsContext c) => c.readerSource.showCharsPerHour,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowCharsPerHour();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.status_footer_persistent',
+            title: t.reader_status_persistent,
+            subtitle: t.reader_status_persistent_subtitle,
+            icon: FushiIcons.pin,
+            visible: (SettingsContext c) => c.readerSource.tapEmptyToHideChrome,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 29,
+            ),
+            value: (SettingsContext c) => c.readerSource.statusFooterPersistent,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleStatusFooterPersistent();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
           // TODO-975 决策#2：顶部进度悬浮开关（点击唤出 + 自动收起 + 不占正文位置）。
           // 仅当进度本身开启时显示。切换改变预留高 → 走重锚通道。
           // TODO-1029：「悬浮控制栏」开关（原「点击空白处隐藏控制栏」）紧挨「悬浮阅读

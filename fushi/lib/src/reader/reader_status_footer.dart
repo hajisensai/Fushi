@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:intl/intl.dart' show NumberFormat;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
@@ -9,6 +10,8 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart'
     show kTopProgressFontSize;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 各平台共用的阅读器底部状态行。
 ///
@@ -62,7 +65,7 @@ const double kReaderStatusFooterFontSize = kTopProgressFontSize;
 /// 不画），且它的底部留白走 `independentDocumentInsets` 的 Flutter 侧 Padding，
 /// 不经 `setChromeInsets`；状态行在歌词模式下既不画也不占预留。
 ///
-/// 「显示阅读计时器」「阅读进度指示」两个开关**都**关掉时整条行不画也不占预留——
+/// 「计时 / 本次字数 / 字每时 / 进度」四个读数开关**都**关掉时整条行不画也不占预留——
 /// 空行照占 28px 是白吃正文高度。判据只此一处（[readerStatusFooterReserve] 的
 /// `enabled` 就是它），绘制与预留不会各判各的。
 bool readerStatusFooterEnabled({
@@ -70,7 +73,9 @@ bool readerStatusFooterEnabled({
   required bool lyricsMode,
   required bool showTimer,
   required bool showProgress,
-}) => !lyricsMode && (showTimer || showProgress);
+  required bool showChars,
+  required bool showSpeed,
+}) => !lyricsMode && (showTimer || showProgress || showChars || showSpeed);
 
 /// 状态行是否已被底栏**吸收**：挤压态底栏占位（[bottomChromeReserve] > 0）且宽屏把
 /// 同一串读数并进了底栏右端（[inlineStatus]，[ReaderStatusInline]）。
@@ -96,26 +101,46 @@ bool readerStatusFooterAbsorbedByBar({
 /// 悬浮态（[floating]）状态行与顶栏 / 底栏同一台显隐状态机：收起时正文满屏、唤出时
 /// 盖在正文上——与 `readerDesktopHeaderReserve` / `bottomChromeReserve` 的悬浮语义
 /// 一致（用户 2026-09-13 拍板「隐藏满屏、唤出覆盖」）。
+///
+/// 悬浮态但读数**常驻**（[persistent]，「收起控制栏时保留读数」）时，读数胶囊一直
+/// 在屏上，就按挤压式占 [footerHeight]——不然它常年盖住每一栏的末几个字。这时**不**看
+/// [absorbedByBar]：悬浮态的吸收只来自有声书播放条的临时唤出（`floatingBarPainted`），
+/// 跟着它翻预留会让正文在每次唤出 / 收起时重排。
 double readerStatusFooterReserve({
   required bool enabled,
   required double footerHeight,
   bool absorbedByBar = false,
   bool floating = false,
-}) => enabled && !absorbedByBar && !floating ? footerHeight : 0;
+  bool persistent = false,
+}) {
+  if (!enabled) return 0;
+  if (floating) return persistent ? footerHeight : 0;
+  return absorbedByBar ? 0 : footerHeight;
+}
 
 /// 状态行是否此刻绘制：启用、首屏已就绪、未被底栏吸收；悬浮态额外随
-/// [transientVisible]（与 `bottomBarVisible` 同一唤出 / 收起真值）。
+/// [transientVisible]（与 `bottomBarVisible` 同一唤出 / 收起真值），除非读数常驻
+/// （[persistent]）——那时控制栏收起后读数胶囊照样留在原位（[readerStatusFooterResting]）。
 bool readerStatusFooterVisible({
   required bool enabled,
   required bool hasEverLoaded,
   required bool absorbedByBar,
   required bool floating,
   required bool transientVisible,
+  bool persistent = false,
 }) {
   if (!enabled || !hasEverLoaded || absorbedByBar) return false;
-  if (floating) return transientVisible;
+  if (floating) return transientVisible || persistent;
   return true;
 }
+
+/// 读数胶囊是否处于「常驻静息」态：悬浮态、读数常驻、控制栏此刻收起。静息态胶囊
+/// 更透明、不带阴影，只留读数本身，不跟正文抢视线。
+bool readerStatusFooterResting({
+  required bool floating,
+  required bool persistent,
+  required bool transientVisible,
+}) => floating && persistent && !transientVisible;
 
 /// 屏底细进度线是否绘制：只在悬浮态、状态行收起、进度开关开着且总字数已知时——
 /// 它是状态行收起后唯一留在屏上的进度指示（2px，不占预留、不参与命中）。
@@ -130,9 +155,9 @@ bool readerProgressEdgeLineVisible({
 const double kReaderProgressEdgeLineHeight = 2;
 
 /// 状态读数并进底栏那一行所需的最小可用宽（逻辑 px）：五颗传输键（-10s / 上一句 /
-/// 播放 / 下一句 / +10s）加槽位按钮之后，还要塞得下「计时 + 进度条 + 百分比」
-/// 这一串（约 160）。
-const double kReaderStatusInlineMinWidth = 480;
+/// 播放 / 下一句 / +10s）加槽位按钮之后，还要塞得下「计时 · 字数 · 字每时 · 进度条
+/// 百分比」这一串（图标写法约 300；此前只有计时 + 进度时约 160、阈值 480）。
+const double kReaderStatusInlineMinWidth = 620;
 
 /// 状态读数是否并进底栏那一行（横屏「同层」），而不是在底栏之下另占一行。
 ///
@@ -195,8 +220,8 @@ String formatReadingSessionClock(int durationMs) {
   return '$minutes:$ss';
 }
 
-/// 阅读追踪文案：`<本次时长>`（`m:ss` / `h:mm:ss`）。字/时不再挤在状态行里
-/// （进统计侧栏）；[readingCharsPerHour] 仍是它的口径。
+/// 阅读追踪文案：`<本次时长>`（`m:ss` / `h:mm:ss`）。字数 / 字每时是读数行里
+/// 另外两段（[readerStatusReadoutTexts]），口径仍是 [readingCharsPerHour]。
 String readerTrackerLabel(StudySessionTotals totals) =>
     formatReadingSessionClock(totals.durationMs);
 
@@ -206,6 +231,154 @@ String? readerProgressLabel({required int? current, required int? total}) {
   final double? ratio = readerProgressRatio(current: current, total: total);
   if (ratio == null) return null;
   return '${(ratio * 100).toStringAsFixed(1)}%';
+}
+
+/// 读数行的排版密度，从宽到窄依次降级（[readerStatusPickDensity] 取第一档放得下的）：
+///  * [labeled]——数字带文字单位（`1,284 字` / `8,640 字/时`），进度条加长；宽屏用；
+///  * [icons]——单位换成图标（`T 1,284` / `⌚ 8,640/h`），宽度与界面语言无关；
+///  * [noTrack]——去掉进度条，只留百分比（屏底细线 / 百分比已经说明了进度）；
+///  * [compact]——数字改紧凑写法（`1.2万` / `8.6k`）；
+///  * [minimal]——再隐藏本次字数。计时、字每时、百分比始终保留。
+enum ReaderStatusReadoutDensity { labeled, icons, noTrack, compact, minimal }
+
+/// 读数行加长后的进度条宽（[ReaderStatusReadoutDensity.labeled]）。
+const double kReaderStatusProgressTrackWidthLabeled = 84;
+
+/// 读数行里字数 / 字每时前面那枚图标的边长与它和数字的间距。
+const double kReaderStatusReadoutIconSize = 13;
+const double kReaderStatusReadoutIconGap = 3;
+
+/// 两段读数之间那颗圆点分隔符：点宽 + 两侧留白。
+const double kReaderStatusReadoutDotSize = 3;
+const double kReaderStatusReadoutDotGap = 7;
+
+/// 计时键与时长文字的间距；进度条与百分比的间距。
+const double kReaderStatusClockTextGap = 2;
+const double kReaderStatusTrackTextGap = 8;
+
+/// 读数行某一档密度下各段的文案与排版（纯数据，宽度估算与绘制共用同一份）。
+/// 某段为 null = 这一档不画它（开关关着，或被降级掉）。
+@immutable
+class ReaderStatusReadoutTexts {
+  const ReaderStatusReadoutTexts({
+    required this.density,
+    required this.clock,
+    required this.chars,
+    required this.speed,
+    required this.progress,
+    required this.trackWidth,
+  });
+
+  final ReaderStatusReadoutDensity density;
+  final String? clock;
+  final String? chars;
+  final String? speed;
+  final String? progress;
+
+  /// 进度条宽；null = 这一档不画进度条。
+  final double? trackWidth;
+
+  /// 字数 / 字每时前面是否画图标（非 [ReaderStatusReadoutDensity.labeled] 档）。
+  bool get iconLabels => density != ReaderStatusReadoutDensity.labeled;
+}
+
+/// 按 [density] 生成读数各段文案。[charsUnit] / [speedUnit] 是带文字单位档的格式化
+/// 函数（i18n，`$n 字` / `$n 字/时`），由调用方传入，纯函数本身不碰全局翻译。
+ReaderStatusReadoutTexts readerStatusReadoutTexts({
+  required ReaderStatusReadoutDensity density,
+  required StudySessionTotals totals,
+  required bool showTimer,
+  required bool showChars,
+  required bool showSpeed,
+  required String? progress,
+  required String locale,
+  required String Function(String n) charsUnit,
+  required String Function(String n) speedUnit,
+}) {
+  final bool compact =
+      density.index >= ReaderStatusReadoutDensity.compact.index;
+  final NumberFormat format = compact
+      ? NumberFormat.compact(locale: locale)
+      : NumberFormat.decimalPattern(locale);
+  final bool labeled = density == ReaderStatusReadoutDensity.labeled;
+  final int cph = readingCharsPerHour(
+    chars: totals.chars,
+    durationMs: totals.durationMs,
+  );
+  final String? chars =
+      showChars && density != ReaderStatusReadoutDensity.minimal
+      ? (labeled
+            ? charsUnit(format.format(totals.chars))
+            : format.format(totals.chars))
+      : null;
+  final String? speed = showSpeed
+      ? (labeled ? speedUnit(format.format(cph)) : '${format.format(cph)}/h')
+      : null;
+  final double? trackWidth =
+      progress == null || density.index > ReaderStatusReadoutDensity.icons.index
+      ? null
+      : (labeled
+            ? kReaderStatusProgressTrackWidthLabeled
+            : kReaderStatusProgressTrackWidth);
+  return ReaderStatusReadoutTexts(
+    density: density,
+    clock: showTimer ? readerTrackerLabel(totals) : null,
+    chars: chars,
+    speed: speed,
+    progress: progress,
+    trackWidth: trackWidth,
+  );
+}
+
+/// 一档读数排成一行要多宽（逻辑 px）。[measure] 量一段文字的宽（绘制用同一套
+/// TextStyle / textScaler），[clockSize] 是计时键边长。与 [ReaderStatusReadouts] 的
+/// 排版常量一一对应——改排版必须同时改这里。
+double readerStatusReadoutWidth(
+  ReaderStatusReadoutTexts texts, {
+  required double Function(String text) measure,
+  required double clockSize,
+}) {
+  final List<double> segments = <double>[];
+  final String? clock = texts.clock;
+  if (clock != null) {
+    segments.add(clockSize + kReaderStatusClockTextGap + measure(clock));
+  }
+  final double icon = texts.iconLabels
+      ? kReaderStatusReadoutIconSize + kReaderStatusReadoutIconGap
+      : 0;
+  final String? chars = texts.chars;
+  if (chars != null) segments.add(icon + measure(chars));
+  final String? speed = texts.speed;
+  if (speed != null) segments.add(icon + measure(speed));
+  final String? progress = texts.progress;
+  if (progress != null) {
+    final double? track = texts.trackWidth;
+    segments.add(
+      (track == null ? 0 : track + kReaderStatusTrackTextGap) +
+          measure(progress),
+    );
+  }
+  if (segments.isEmpty) return 0;
+  final double separators =
+      (segments.length - 1) *
+      (kReaderStatusReadoutDotSize + 2 * kReaderStatusReadoutDotGap);
+  return segments.fold<double>(0, (double a, double b) => a + b) + separators;
+}
+
+/// 从宽到窄取第一档宽度不超过 [maxWidth] 的密度；[allowLabeled] 为 false 时从
+/// [ReaderStatusReadoutDensity.icons] 起步（有声书播放条内联形态和 cue 文本抢宽度，
+/// 不带文字单位）。都放不下时返回最窄档，由调用方缩放兜底。
+ReaderStatusReadoutDensity readerStatusPickDensity({
+  required double maxWidth,
+  required double Function(ReaderStatusReadoutDensity density) widthOf,
+  bool allowLabeled = true,
+}) {
+  for (final ReaderStatusReadoutDensity d
+      in ReaderStatusReadoutDensity.values) {
+    if (!allowLabeled && d == ReaderStatusReadoutDensity.labeled) continue;
+    if (widthOf(d) <= maxWidth) return d;
+  }
+  return ReaderStatusReadoutDensity.minimal;
 }
 
 /// 播放条内联形态里那颗计时开关键的边长（逻辑 px）。播放条本身 56 高，容得下比
@@ -358,6 +531,8 @@ class ReaderStatusFooter extends StatefulWidget {
     required this.totalChars,
     required this.showTimer,
     required this.showProgress,
+    required this.showChars,
+    required this.showSpeed,
     required this.textColor,
     required this.backgroundColor,
     this.height = kReaderStatusFooterHeight,
@@ -368,12 +543,17 @@ class ReaderStatusFooter extends StatefulWidget {
     this.onTapTracker,
     this.onTapProgress,
     this.floating = false,
+    this.resting = false,
   });
 
   /// 悬浮工具栏样式（M3E，默认）：读数是一枚浮在正文上的小胶囊（底色
   /// [backgroundColor]、全圆角、轻阴影），整条带透明——不画整条实体底栏，竖排 /
   /// 横排一样。带高（预留）不变，只是不再铺底色。
   final bool floating;
+
+  /// 常驻静息态（[readerStatusFooterResting]）：控制栏收起、读数胶囊仍留在原位。
+  /// 胶囊底色更透明、去掉阴影。只在 [floating] 时有意义。
+  final bool resting;
 
   /// 会话累计的**读口**（每个 [tick] 采样一次）。账本在 `StudyClock`，页面不持有
   /// 任何会话累计副本（v92 统计纪律），所以这里拿的是函数而不是快照。
@@ -382,13 +562,19 @@ class ReaderStatusFooter extends StatefulWidget {
   final int? currentChars;
   final int? totalChars;
 
-  /// 阅读追踪（计时器图标 + 本次时长）是否显示（「显示阅读计时器」开关落到
-  /// 这里）。关掉只是不画这一段——[StudyClock] 照常计时、照常落库，隐藏读数不等于
-  /// 停表（停表是点这一段本身的手动暂停）。
+  /// 阅读追踪（计时键 + 本次时长）是否显示（「显示阅读计时器」开关落到这里）。
+  /// 关掉只是不画这一段——[StudyClock] 照常计时、照常落库，隐藏读数不等于停表
+  /// （停表是点这一段本身的手动暂停）。
   final bool showTimer;
 
   /// 进度读数是否显示（「阅读进度指示」开关落到这里）。
   final bool showProgress;
+
+  /// 本次已读字数（[StudySessionTotals] 的 chars）是否显示。
+  final bool showChars;
+
+  /// 本次字每时（[readingCharsPerHour]）是否显示。
+  final bool showSpeed;
 
   final Color textColor;
   final Color backgroundColor;
@@ -415,11 +601,11 @@ class ReaderStatusFooter extends StatefulWidget {
   /// 点状态行空白处：与顶部进度 pill 同语义——唤出 / 收起控制栏。
   final VoidCallback? onTap;
 
-  /// 点计时块「计时器 + 字/时 + 时长」：切换手动暂停计时。这是手动停 / 续表的**唯一**
+  /// 点计时段「计时键 + 时长」：切换手动暂停计时。这是手动停 / 续表的**唯一**
   /// 入口——统计浮层里曾有一个同功能按钮，但开浮层本身就停表，层内开关改不动运行态。
   final VoidCallback? onTapTracker;
 
-  /// 点进度数字：直接打开阅读统计浮层。
+  /// 点字数 / 字每时 / 进度这几段：直接打开阅读统计浮层。
   final VoidCallback? onTapProgress;
 
   @override
@@ -428,15 +614,17 @@ class ReaderStatusFooter extends StatefulWidget {
 
 /// 状态行秒表的周期刷新（[ReaderStatusFooter] / [ReaderStatusInline] 共用）。
 ///
-/// 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。计时器
+/// 秒表 tick 只在读数真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。计时器
 /// 只在所在子树看得见（[TickerMode] 开）时跑：被歌词覆盖层或别的路由盖住时停
 /// （BUG-4126）。恢复时 TickerMode 翻转让 [didChangeDependencies] 重跑、随后照常
 /// build，build 直接读 `sessionTotals()`，当帧就是现值。
 mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
   Timer? _ticker;
-  String? _lastTracker;
+  String? _lastSignature;
 
   Duration get trackerTick;
+
+  /// 读数里是否有随会话累计变化的段（计时 / 字数 / 字每时任一开着）。
   bool get trackerShown;
   StudySessionTotals trackerTotals();
 
@@ -453,11 +641,13 @@ mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
 
   void _onTrackerTick() {
     if (!mounted) return;
-    // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
+    // 会话类读数都隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
     if (!trackerShown) return;
-    final String tracker = readerTrackerLabel(trackerTotals());
-    if (tracker == _lastTracker) return;
-    setState(() => _lastTracker = tracker);
+    final StudySessionTotals totals = trackerTotals();
+    final String signature =
+        '${readerTrackerLabel(totals)}|${totals.chars}|${totals.active}';
+    if (signature == _lastSignature) return;
+    setState(() => _lastSignature = signature);
   }
 
   @override
@@ -473,50 +663,19 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
   Duration get trackerTick => widget.tick;
 
   @override
-  bool get trackerShown => widget.showTimer;
+  bool get trackerShown =>
+      widget.showTimer || widget.showChars || widget.showSpeed;
 
   @override
   StudySessionTotals trackerTotals() => widget.sessionTotals();
 
-  /// 状态行里可点的一段（计时块 / 进度数字）。命中区**撑满整条行高**：裸文字 + 14px
-  /// 图标的行盒只有十几 px 高，指针（尤其手指）要精确戳中那一行才有反应；撑满后整条
-  /// 28px 高的那一段都可点。只扩竖向、不加横向内边距——右端 16 的边距是与顶部 pill /
-  /// inline 形态共用的视觉基线，补一层横向 padding 会把进度数字从右缘往里推。行高不
-  /// 能为命中区加高（视觉高度 == 预留高度是 chrome 铁律，加高就是挤正文），所以这一段
-  /// 的命中区上限就是行高 28px，达不到 48dp 的触摸下限。统计浮层里那颗 48dp 的整宽开关
-  /// 已经撤了（开浮层本身就停表，层内开关改不动运行态），别再把它当后备入口写进注释。
-  Widget _hitTarget({required Widget child, VoidCallback? onTap}) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        height: widget.height,
-        child: Center(widthFactor: 1, child: child),
-      ),
-    );
-  }
+  /// 悬浮胶囊左右内边距（单侧）。
+  static const double _pillPadding = 12;
 
   @override
   Widget build(BuildContext context) {
     final StudySessionTotals totals = widget.sessionTotals();
     final Color muted = widget.textColor.withValues(alpha: 0.55);
-    final TextStyle style = TextStyle(
-      fontSize: kReaderStatusFooterFontSize,
-      color: muted,
-      height: 1.0,
-    );
-    final double? ratio = widget.showProgress
-        ? readerProgressRatio(
-            current: widget.currentChars,
-            total: widget.totalChars,
-          )
-        : null;
-    final String? progress = ratio == null
-        ? null
-        : readerProgressLabel(
-            current: widget.currentChars,
-            total: widget.totalChars,
-          );
     final double bandHeight = readerStatusFooterBandHeight(
       footerReserve: readerStatusFooterPaintedHeight(
         floating: widget.floating,
@@ -534,11 +693,27 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
           child: Padding(
             // 读数行贴带顶，多出的安全区在读数之下（BUG-2470）。
             padding: EdgeInsets.fromLTRB(16, 0, 16, bandHeight - widget.height),
-            // 两段读数并排贴右：Row 主轴 end 对齐把它们一起推到右缘，追踪块不再被
-            // Expanded 的进度段挤到左角。窄屏保护不变——追踪块仍最多占 40% 宽、
-            // 两段都 ellipsis，谁放不下谁先省略，行永远不溢出。
             child: LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
+                final Widget readouts = ReaderStatusReadouts(
+                  keyPrefix: 'fushi_status',
+                  totals: totals,
+                  currentChars: widget.currentChars,
+                  totalChars: widget.totalChars,
+                  showTimer: widget.showTimer,
+                  showChars: widget.showChars,
+                  showSpeed: widget.showSpeed,
+                  showProgress: widget.showProgress,
+                  color: muted,
+                  clockSize: widget.height,
+                  rowHeight: widget.height,
+                  maxWidth:
+                      constraints.maxWidth -
+                      (widget.floating ? 2 * _pillPadding : 0),
+                  onTapTracker: widget.onTapTracker,
+                  onTapStats: widget.onTapProgress,
+                );
+                // 读数整串贴右（或居中），只有一处落点。
                 final Widget row = Row(
                   mainAxisSize: widget.floating
                       ? MainAxisSize.min
@@ -546,105 +721,39 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
                   mainAxisAlignment: widget.centered
                       ? MainAxisAlignment.center
                       : MainAxisAlignment.end,
-                  children: <Widget>[
-                    if (widget.showTimer)
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth:
-                              constraints.maxWidth *
-                              (progress == null ? 1 : .4),
-                        ),
-                        child: _hitTarget(
-                          onTap: widget.onTapTracker,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              // 图标本身就是停 / 续表的按钮（[ReaderStudyClockButton]）；
-                              // 外面那层 [_hitTarget] 仍在，点读数文字也照停——28px 行里
-                              // 一颗 28px 的按钮命中区仍嫌小，多一条路不多。
-                              ReaderStudyClockButton(
-                                key: const ValueKey<String>(
-                                  'fushi_status_clock_toggle',
-                                ),
-                                active: totals.active,
-                                color: muted,
-                                onPressed: widget.onTapTracker,
-                              ),
-                              const SizedBox(width: 2),
-                              Flexible(
-                                child: Text(
-                                  readerTrackerLabel(totals),
-                                  key: const ValueKey<String>(
-                                    'fushi_status_tracker',
-                                  ),
-                                  style: style,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (progress != null)
-                      Flexible(
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            left: widget.showTimer ? 8 : 0,
-                          ),
-                          child: _hitTarget(
-                            onTap: widget.onTapProgress,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                ReaderStatusProgressTrack(
-                                  key: const ValueKey<String>(
-                                    'fushi_status_progress_track',
-                                  ),
-                                  ratio: ratio!,
-                                  color: muted,
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    progress,
-                                    key: const ValueKey<String>(
-                                      'fushi_status_progress',
-                                    ),
-                                    style: style,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                  children: <Widget>[Flexible(child: readouts)],
                 );
                 if (!widget.floating) return row;
+                final bool resting = widget.resting;
                 return Align(
                   alignment: widget.centered
                       ? Alignment.center
                       : AlignmentDirectional.centerEnd,
-                  child: DecoratedBox(
+                  child: AnimatedContainer(
                     key: const ValueKey<String>('fushi_status_footer_pill'),
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _pillPadding,
+                    ),
                     decoration: ShapeDecoration(
-                      color: widget.backgroundColor,
+                      color: resting
+                          ? widget.backgroundColor.withValues(
+                              alpha: widget.backgroundColor.a * 0.72,
+                            )
+                          : widget.backgroundColor,
                       shape: const StadiumBorder(),
                       shadows: <BoxShadow>[
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
+                          color: Colors.black.withValues(
+                            alpha: resting ? 0 : 0.12,
+                          ),
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: row,
-                    ),
+                    child: row,
                   ),
                 );
               },
@@ -656,8 +765,254 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
   }
 }
 
-/// 状态行文案的单行内联版：桌面端有声书播放条唤出时，把「阅读追踪 + 进度」并进播放条
-/// 右端（底部只留一条）。同一读口、同一格式函数，只是排版成一行两段。
+/// 读数行本体：「计时键 时长 · 字数 · 字每时 · 进度条 百分比」，状态行胶囊
+/// （[ReaderStatusFooter]）与有声书播放条内联形态（[ReaderStatusInline]）共用。
+///
+/// 按 [maxWidth] 自动降级（[readerStatusPickDensity]）：每一档先用与绘制同一套
+/// TextStyle / textScaler 量宽，取第一档放得下的，不换行、不加高。最窄档仍放不下
+/// （极窄 + 系统大字号）时整行等比缩小兜底。
+class ReaderStatusReadouts extends StatelessWidget {
+  const ReaderStatusReadouts({
+    super.key,
+    required this.keyPrefix,
+    required this.totals,
+    required this.currentChars,
+    required this.totalChars,
+    required this.showTimer,
+    required this.showChars,
+    required this.showSpeed,
+    required this.showProgress,
+    required this.color,
+    required this.clockSize,
+    required this.rowHeight,
+    required this.maxWidth,
+    this.allowLabeled = true,
+    this.onTapTracker,
+    this.onTapStats,
+  });
+
+  /// 各段 key 的前缀（`<prefix>_tracker` / `_chars` / `_speed` / `_progress` …）。
+  final String keyPrefix;
+  final StudySessionTotals totals;
+  final int? currentChars;
+  final int? totalChars;
+  final bool showTimer;
+  final bool showChars;
+  final bool showSpeed;
+  final bool showProgress;
+
+  /// 已调过透明度的读数前景色。
+  final Color color;
+  final double clockSize;
+
+  /// 每段命中区的高度（撑满所在行高）。
+  final double rowHeight;
+  final double maxWidth;
+
+  /// 是否允许带文字单位的最宽档（播放条内联形态不允许）。
+  final bool allowLabeled;
+
+  /// 点计时段：停 / 续表。
+  final VoidCallback? onTapTracker;
+
+  /// 点字数 / 字每时 / 进度：打开统计浮层。
+  final VoidCallback? onTapStats;
+
+  /// 每一段的可点区域：命中区**撑满整条行高**（裸文字 + 14px 图标的行盒只有十几 px
+  /// 高）。只扩竖向、不加横向内边距——读数和胶囊边缘的间距是视觉基线。行高不能为
+  /// 命中区加高（视觉高度 == 预留高度是 chrome 铁律），28px 达不到 48dp 是已知取舍。
+  Widget _hitTarget({required Widget child, VoidCallback? onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: rowHeight,
+        child: Center(widthFactor: 1, child: child),
+      ),
+    );
+  }
+
+  Widget _dot() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: kReaderStatusReadoutDotGap),
+    child: SizedBox.square(
+      dimension: kReaderStatusReadoutDotSize,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: color.a * 0.6),
+          shape: BoxShape.circle,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle style = TextStyle(
+      fontSize: kReaderStatusFooterFontSize,
+      color: color,
+      height: 1.0,
+      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+    );
+    final TextScaler scaler =
+        MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
+    final TextDirection direction =
+        Directionality.maybeOf(context) ?? TextDirection.ltr;
+    final String locale = _numberLocale(context);
+    final String? progress = showProgress
+        ? readerProgressLabel(current: currentChars, total: totalChars)
+        : null;
+    final double? ratio = progress == null
+        ? null
+        : readerProgressRatio(current: currentChars, total: totalChars);
+
+    ReaderStatusReadoutTexts textsFor(ReaderStatusReadoutDensity d) =>
+        readerStatusReadoutTexts(
+          density: d,
+          totals: totals,
+          showTimer: showTimer,
+          showChars: showChars,
+          showSpeed: showSpeed,
+          progress: progress,
+          locale: locale,
+          charsUnit: (String n) => t.reader_status_session_chars(n: n),
+          speedUnit: (String n) => t.reader_stats_chars_per_hour(n: n),
+        );
+
+    double measure(String text) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final ReaderStatusReadoutDensity density = readerStatusPickDensity(
+      maxWidth: maxWidth,
+      allowLabeled: allowLabeled,
+      widthOf: (ReaderStatusReadoutDensity d) => readerStatusReadoutWidth(
+        textsFor(d),
+        measure: measure,
+        clockSize: clockSize,
+      ),
+    );
+    final ReaderStatusReadoutTexts texts = textsFor(density);
+
+    Widget label(String text, String keySuffix) => Text(
+      text,
+      key: ValueKey<String>('${keyPrefix}_$keySuffix'),
+      style: style,
+      maxLines: 1,
+      softWrap: false,
+    );
+
+    Widget iconLabel(IconData icon, String text, String keySuffix) {
+      if (!texts.iconLabels) return label(text, keySuffix);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIcon(icon, size: kReaderStatusReadoutIconSize, color: color),
+          const SizedBox(width: kReaderStatusReadoutIconGap),
+          label(text, keySuffix),
+        ],
+      );
+    }
+
+    final String? chars = texts.chars;
+    final String? speed = texts.speed;
+    final String? progressText = texts.progress;
+    final double? trackWidth = texts.trackWidth;
+    final String? clock = texts.clock;
+
+    final List<Widget> statsSegments = <Widget>[
+      if (chars != null) iconLabel(FushiIcons.textFields, chars, 'chars'),
+      if (speed != null) iconLabel(FushiIcons.speed, speed, 'speed'),
+      if (progressText != null)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (trackWidth != null && ratio != null) ...<Widget>[
+              ReaderStatusProgressTrack(
+                key: ValueKey<String>('${keyPrefix}_progress_track'),
+                ratio: ratio,
+                color: color,
+                width: trackWidth,
+              ),
+              const SizedBox(width: kReaderStatusTrackTextGap),
+            ],
+            label(progressText, 'progress'),
+          ],
+        ),
+    ];
+
+    final List<Widget> children = <Widget>[
+      if (clock != null)
+        _hitTarget(
+          onTap: onTapTracker,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // 计时键本身就是停 / 续表的按钮（[ReaderStudyClockButton]）；外面那层
+              // 命中区仍在，点时长文字也照停。
+              ReaderStudyClockButton(
+                key: ValueKey<String>('${keyPrefix}_clock_toggle'),
+                active: totals.active,
+                color: color,
+                size: clockSize,
+                onPressed: onTapTracker,
+              ),
+              const SizedBox(width: kReaderStatusClockTextGap),
+              label(clock, 'tracker'),
+            ],
+          ),
+        ),
+      if (clock != null && statsSegments.isNotEmpty) _dot(),
+      if (statsSegments.isNotEmpty)
+        _hitTarget(
+          onTap: onTapStats,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int i = 0; i < statsSegments.length; i++) ...<Widget>[
+                if (i > 0) _dot(),
+                statsSegments[i],
+              ],
+            ],
+          ),
+        ),
+    ];
+    final Widget row = Row(
+      key: ValueKey<String>('${keyPrefix}_readouts_${density.name}'),
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+    // 最窄档仍放不下（极窄 + 系统大字号）：等比缩小，行永远不溢出。
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerEnd,
+      child: row,
+    );
+  }
+}
+
+/// 数字格式用的 locale：跟随界面语言（`1,284` / `1.2万`）；intl 不认识的退回 en。
+String _numberLocale(BuildContext context) {
+  final Locale? locale = Localizations.maybeLocaleOf(context);
+  if (locale == null) return 'en';
+  final String tag = locale.toLanguageTag().replaceAll('-', '_');
+  if (NumberFormat.localeExists(tag)) return tag;
+  if (NumberFormat.localeExists(locale.languageCode)) {
+    return locale.languageCode;
+  }
+  return 'en';
+}
+
+/// 状态行文案的单行内联版：桌面端有声书播放条唤出时，把同一串读数并进播放条
+/// 右端（底部只留一条）。同一读口、同一组件（[ReaderStatusReadouts]），只是起步
+/// 于图标档（不带文字单位，和 cue 文本抢宽度）、计时键更大。
 class ReaderStatusInline extends StatefulWidget {
   const ReaderStatusInline({
     super.key,
@@ -666,8 +1021,11 @@ class ReaderStatusInline extends StatefulWidget {
     required this.totalChars,
     required this.showTimer,
     required this.showProgress,
+    required this.showChars,
+    required this.showSpeed,
     required this.textColor,
     this.onToggleTimer,
+    this.onOpenStats,
     this.tick = const Duration(seconds: 1),
   });
 
@@ -676,12 +1034,17 @@ class ReaderStatusInline extends StatefulWidget {
   final int? totalChars;
   final bool showTimer;
   final bool showProgress;
+  final bool showChars;
+  final bool showSpeed;
   final Color textColor;
 
   /// 停 / 续表（与状态行的 [ReaderStatusFooter.onTapTracker] 同一入口
   /// `_toggleStudyClockManualPause`）。此前内联形态整块不接指针：播放条一唤出，
   /// 状态行让位（BUG-2467），屏幕上就只剩这一份写着「计时中」的读数，而它点不动。
   final VoidCallback? onToggleTimer;
+
+  /// 点字数 / 字每时 / 进度：打开统计浮层（与状态行同一入口）。
+  final VoidCallback? onOpenStats;
 
   final Duration tick;
 
@@ -695,69 +1058,32 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline>
   Duration get trackerTick => widget.tick;
 
   @override
-  bool get trackerShown => widget.showTimer;
+  bool get trackerShown =>
+      widget.showTimer || widget.showChars || widget.showSpeed;
 
   @override
   StudySessionTotals trackerTotals() => widget.sessionTotals();
 
   @override
   Widget build(BuildContext context) {
-    final StudySessionTotals totals = widget.sessionTotals();
-    final Color muted = widget.textColor.withValues(alpha: 0.55);
-    final TextStyle style = TextStyle(
-      fontSize: kReaderStatusFooterFontSize,
-      color: muted,
-      height: 1.0,
-    );
-    final double? ratio = widget.showProgress
-        ? readerProgressRatio(
-            current: widget.currentChars,
-            total: widget.totalChars,
-          )
-        : null;
-    final String? progress = ratio == null
-        ? null
-        : readerProgressLabel(
-            current: widget.currentChars,
-            total: widget.totalChars,
-          );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (widget.showTimer) ...<Widget>[
-          // 播放条上一排都是按钮，这里也给一颗真按钮（状态行形态里那层「点读数也
-          // 停表」的兜底是 28px 行高逼出来的，56px 的播放条不需要）。
-          ReaderStudyClockButton(
-            key: const ValueKey<String>('fushi_bar_status_clock_toggle'),
-            active: totals.active,
-            color: muted,
-            size: kReaderStatusInlineClockButtonSize,
-            onPressed: widget.onToggleTimer,
-          ),
-          const SizedBox(width: 2),
-          Text(
-            readerTrackerLabel(totals),
-            key: const ValueKey<String>('fushi_bar_status_tracker'),
-            style: style,
-            maxLines: 1,
-          ),
-        ],
-        if (progress != null) ...<Widget>[
-          if (widget.showTimer) const SizedBox(width: 16),
-          ReaderStatusProgressTrack(
-            key: const ValueKey<String>('fushi_bar_status_progress_track'),
-            ratio: ratio!,
-            color: muted,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            progress,
-            key: const ValueKey<String>('fushi_bar_status_progress'),
-            style: style,
-            maxLines: 1,
-          ),
-        ],
-      ],
+    // 播放条尾部是一串 mainAxisSize.min 的 Row，拿不到有界宽度；内联形态只在
+    // [kReaderStatusInlineMinWidth] 以上出现，固定用图标档。
+    return ReaderStatusReadouts(
+      keyPrefix: 'fushi_bar_status',
+      totals: widget.sessionTotals(),
+      currentChars: widget.currentChars,
+      totalChars: widget.totalChars,
+      showTimer: widget.showTimer,
+      showChars: widget.showChars,
+      showSpeed: widget.showSpeed,
+      showProgress: widget.showProgress,
+      color: widget.textColor.withValues(alpha: 0.55),
+      clockSize: kReaderStatusInlineClockButtonSize,
+      rowHeight: kReaderStatusInlineClockButtonSize,
+      maxWidth: double.infinity,
+      allowLabeled: false,
+      onTapTracker: widget.onToggleTimer,
+      onTapStats: widget.onOpenStats,
     );
   }
 }
