@@ -12,3 +12,4 @@
   - `fushi/integration_test/reader_cross_axis_lock_itest.dart`：真 app 6 种组合（竖 / 横 × 翻页 / 滚动 / VN），往 body 塞沿交叉轴越界 16 px 的块，断言根滚动器交叉轴无可滚范围、`scrollBy` 推不动交叉轴、滚动模式主轴照常滚。修复前 iOS 模拟器上滚动模式两条都红（竖排 890 > 874、横排 418 > 402），修复后全绿。
   - `fushi/integration_test/support/ios_webkit_pan_probe/`：真触摸那一层的实测装置（纯 WKWebView + XCUITest 拖动 + contentOffset 日志），实验页由上面的 itest 带 `--dart-define=FUSHI_XAXIS_DUMP=true` 从真 app 导出。Flutter 平台视图在模拟器上收不到 XCUITest 合成的触摸（框架侧手势竞技场已判给 WebView，WKWebView 一次 touchstart 都没收到），所以手指那层只能在纯 WKWebView 里测。
 - **备注**：Android 一侧 BUG-2578 已关掉过滚，Chromium 本就尊重根元素的 hidden，不受此 bug 影响；新规则在 Chromium 上只是把交叉轴本来就不会发生的原生平移显式声明掉，长按 / 点击 / JS 触摸事件不变。所有者真机（带有声书）上的那段溢出具体来自哪个元素没有逐一定位——修法不依赖来源：凡 body 后代都被 clip 收住，手指层再由 touch-action 兜底。
+- **后续（BUG-4231，2026-11-07）**：touch-action 改为 `pan-x pan-y`。只放主轴会让 Chromium 把起手偏交叉轴的整段手势滚动丢弃（拇指斜滑正文不动）；交叉轴改由 body `clip` 单独顶住（本条实测「只加 body clip」手指已拖不动交叉轴）。
