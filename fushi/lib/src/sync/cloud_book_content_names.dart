@@ -47,6 +47,27 @@ T? pickRemoteBookContentEntry<T>(
   return epub;
 }
 
+/// 书文件夹里的内容资产**按文件名**能确认的格式（远端清单据此分架）。
+enum CloudBookContentKind { epub, manga }
+
+/// 从书文件夹的文件名里判定内容格式：挑中的内容资产（与下载同一判据
+/// [pickRemoteBookContentEntry]）是 `.manga.zip` → [CloudBookContentKind.manga]，
+/// `.epub` → [CloudBookContentKind.epub]，都没有 → null。
+///
+/// 旧版本把漫画包也传成 `<title>.epub`，单看文件名与 EPUB 无从区分，这里如实归
+/// [CloudBookContentKind.epub]；下载导入仍按内容嗅探（`isMangaPackage`）落成漫画，
+/// 不受影响。
+CloudBookContentKind? cloudBookContentKindOf(Iterable<String> fileNames) {
+  final String? picked = pickRemoteBookContentEntry<String>(
+    fileNames,
+    (String name) => name,
+  );
+  if (picked == null) return null;
+  return picked.toLowerCase().endsWith(kCloudMangaContentSuffix)
+      ? CloudBookContentKind.manga
+      : CloudBookContentKind.epub;
+}
+
 /// 内容资产名去掉内容后缀后的书名部分（`.manga.zip` 去两段，`.epub` 去一段）。
 /// 不是内容资产名时原样返回。
 String remoteBookContentBaseName(String name) {
