@@ -21,10 +21,10 @@ class _MangaPageCurlHost implements PageCurlHost {
   @override
   Future<ui.Image?> capturePage() => capturePageCurlWebView(_state._controller);
 
-  /// 正在显示的跨页（往回翻时是预览中的上一跨页）的页图外接框：只卷页图，黑边
-  /// 不卷。
+  /// 正在显示的跨页（往回翻时是预览中的上一跨页）的页图：只卷页图，黑边不卷。
+  /// 双页（两张页图并排）时只翻外侧那一页，靠里那页是对面页。
   @override
-  Future<Rect?> paperRect() async {
+  Future<PageCurlPaper?> paperRect() async {
     final InAppWebViewController? controller = _state._controller;
     final Size size = _state._mangaCurlSize;
     if (controller == null || size.isEmpty) return null;
@@ -32,7 +32,7 @@ class _MangaPageCurlHost implements PageCurlHost {
     final Object? raw = await controller.evaluateJavascript(
       source: mangaCurlPaperRectInvocation(spread),
     );
-    return mangaCurlPaperRectFrom(raw, size);
+    return mangaCurlPaperFrom(raw, size, mirror: _state._mangaCurlMirror);
   }
 
   @override
@@ -113,13 +113,40 @@ String mangaApplyTranslateInvocation(int target) =>
 String mangaCurlPreviewInvocation(int target) =>
     '!!(window.__mangaCurlPreview && window.__mangaCurlPreview($target));';
 
-/// 卷页纸面：跨页 [spread] 的页图外接框（视口比例 [l, t, r, b] 或 null）。
+/// 卷页纸面：跨页 [spread] 里每张页图在视口里的矩形（视口比例 `[[l, t, r, b], ...]`，
+/// 从左到右）或 null。
 String mangaCurlPaperRectInvocation(int spread) =>
     '(window.__mangaCurlPaperRect ? window.__mangaCurlPaperRect($spread) : null);';
 
-/// 把 [mangaCurlPaperRectInvocation] 的返回值换算成覆盖层坐标；形状不对返回 null
+/// 把 [mangaCurlPaperRectInvocation] 的返回值换算成卷页纸面；形状不对返回 null
 /// （卷页退回整个视口当纸面）。
-Rect? mangaCurlPaperRectFrom(Object? raw, Size size) {
+///
+/// - 一张页图（单页 / 宽页独占）：纸就是它。
+/// - 两张并排（双页）：外侧那张是纸、靠里那张是对面页——从左往右读外侧是右页，
+///   右开（[mirror]）外侧是左页。
+PageCurlPaper? mangaCurlPaperFrom(
+  Object? raw,
+  Size size, {
+  required bool mirror,
+}) {
+  if (raw is! List || raw.isEmpty || raw.length > 2) return null;
+  final List<Rect> rects = <Rect>[];
+  for (final Object? e in raw) {
+    final Rect? rect = mangaCurlRectFrom(e, size);
+    if (rect == null) return null;
+    rects.add(rect);
+  }
+  if (rects.length == 1) return PageCurlPaper(rects.single);
+  rects.sort((Rect a, Rect b) => a.left.compareTo(b.left));
+  final Rect left = rects.first;
+  final Rect right = rects.last;
+  return mirror
+      ? PageCurlPaper(left, facing: right)
+      : PageCurlPaper(right, facing: left);
+}
+
+/// 一个视口比例 `[l, t, r, b]` 换算成覆盖层坐标；形状不对 / 为空返回 null。
+Rect? mangaCurlRectFrom(Object? raw, Size size) {
   if (raw is! List || raw.length != 4) return null;
   final List<double> v = <double>[];
   for (final Object? e in raw) {

@@ -3300,13 +3300,19 @@ class AnotherPopupPart {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
-    // 结束锚点随 BUG-2187 重设计更新：_importTheme 之后紧接的已不是
-    // _buildPreviewCard 而是 build()。守的不变式没变：导入弹窗走共享
-    // FushiDialogFrame + FushiModalSheetFrame，不得回退到 adaptiveAlertDialog。
-    final String importDialog = _functionSource(
-      source,
-      'Future<void> _importTheme()',
-      '  Widget build(BuildContext context)',
+    // 守的不变式：导入弹窗走共享 FushiDialogFrame + FushiModalSheetFrame，不得回退到
+    // adaptiveAlertDialog。BUG-4220 起弹窗内容是自持控制器的 `_ThemeImportDialog`
+    // （文件末尾的 State），不再内联在 `_importTheme` 里。
+    expect(
+      _functionSource(
+        source,
+        'Future<void> _importTheme()',
+        '  Widget build(BuildContext context)',
+      ),
+      contains('_ThemeImportDialog('),
+    );
+    final String importDialog = source.substring(
+      source.indexOf('class _ThemeImportDialogState'),
     );
 
     expect(importDialog, contains('FushiDialogFrame('));

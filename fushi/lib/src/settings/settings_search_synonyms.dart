@@ -26,6 +26,7 @@ const List<Set<String>> kSettingsSearchSynonymGroups = <Set<String>>[
   },
   <String>{'手柄', '游戏手柄', '控制器', 'gamepad', 'controller', 'コントローラー'},
   <String>{'查词', '词典', '辞典', '字典', 'dictionary', 'lookup', '辞書'},
+  <String>{'简繁', '繁简', '简体', '繁体', '繁體', 'simplified', 'traditional', 'opencc'},
   <String>{'弹窗', '浮窗', '弹出', 'popup', 'pop-up', 'ポップアップ'},
   <String>{'制卡', '卡片', 'anki', '挖矿', 'mining', 'card', 'カード'},
   <String>{'有声书', '听书', '音频', 'audiobook', 'audio', 'オーディオブック'},

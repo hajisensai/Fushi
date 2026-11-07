@@ -149,7 +149,13 @@ bool srsIsVideoName(String name) {
 }
 
 final RegExp _mediaTagSrc = RegExp(
-  r'''<(audio|video)\b[^>]*?\ssrc\s*=\s*(["'])([^"']*)\2''',
+  r'''<(audio|video)\b[^>]*?\ssrc\s*=\s*(?:(["'])([^"']*)\2|([^\s"'=<>`]+))''',
+  caseSensitive: false,
+);
+
+/// `<img src>`：带引号或不带引号（`<img src=x.jpg>`，浏览器同样认）。
+final RegExp _imgTagSrc = RegExp(
+  r'''<img\b[^>]*?\ssrc\s*=\s*(?:(["'])([^"']*)\1|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 
@@ -162,7 +168,7 @@ List<String> _mediaNames(String html, Set<String> tags) {
       (m.start, m.group(1)!.trim()),
     for (final Match m in _mediaTagSrc.allMatches(html))
       if (tags.contains(m.group(1)!.toLowerCase()))
-        (m.start, srsDecodeEntities(m.group(3)!).trim()),
+        (m.start, srsDecodeEntities(m.group(3) ?? m.group(4)!).trim()),
   ]..sort(((int, String) a, (int, String) b) => a.$1.compareTo(b.$1));
   final Set<String> seen = <String>{};
   return <String>[
@@ -183,11 +189,8 @@ List<String> srsVideoSources(String html) => <String>[
 
 /// 字段里 `<img src>` 的值（按出现顺序，实体已解）。
 List<String> srsImageSources(String html) => <String>[
-  for (final Match m in RegExp(
-    r'''<img\b[^>]*?\ssrc\s*=\s*(["'])([^"']*)\1''',
-    caseSensitive: false,
-  ).allMatches(html))
-    srsDecodeEntities(m.group(2)!),
+  for (final Match m in _imgTagSrc.allMatches(html))
+    srsDecodeEntities(m.group(2) ?? m.group(3)!),
 ];
 
 /// 把一段纯文本里的 Anki 振假名 `漢字[かな]` 拆成带注音的段。

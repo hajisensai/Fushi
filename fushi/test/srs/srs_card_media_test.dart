@@ -71,6 +71,14 @@ void main() {
       expect(out, contains('url("${prefix}_bg.png")'));
     });
 
+    test('不带引号的 src（<img src=x.jpg>）同样改写并补上引号、算进引用', () {
+      const String html = '<img src=b9.jpg><img src=https://x.org/y.png>';
+      final String out = srsLocalizeCardHtml(html, urlPrefix: prefix);
+      expect(out, contains('src="${prefix}b9.jpg"'));
+      expect(out, contains('src=https://x.org/y.png'));
+      expect(srsCardReferencedMedia(html), <String>{'b9.jpg'});
+    });
+
     test('[sound:x] → 播放按钮（data-sound 原名）', () {
       final String out = srsLocalizeCardHtml(
         '前[sound:word.mp3]后',

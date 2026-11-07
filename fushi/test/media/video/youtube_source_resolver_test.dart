@@ -47,6 +47,39 @@ void main() {
     });
   });
 
+  // BUG-4220：真实 timedtext XML 是双重转义的（2026-11-06 抓 dQw4w9WgXcQ 的 en 轨：
+  // `We&amp;#39;re`）。只解一层时内置播放器显示 `We&#39;re`；扩展走 json3 不受影响。
+  group('parseYoutubeTimedTextToCues double-escaped entities (BUG-4220)', () {
+    test('format 3 <p>: &amp;#39; → apostrophe', () {
+      const xml =
+          '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>'
+          '<p t="18640" d="3240">♪ We&amp;#39;re no strangers to love ♪</p>'
+          '<p t="22000" d="3000">and that&amp;#39;s cool &amp;amp; &amp;quot;fine&amp;quot;</p>'
+          '</body></timedtext>';
+      final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:x');
+      expect(cues.map((c) => c.text).toList(), <String>[
+        "♪ We're no strangers to love ♪",
+        "and that's cool & \"fine\"",
+      ]);
+    });
+    test('format 3 ASR <s> segments are decoded after joining', () {
+      const xml =
+          '<timedtext format="3"><body><p t="0" d="900">'
+          '<s ac="0">We&amp;#39;re</s><s t="239" ac="0"> here</s></p></body></timedtext>';
+      final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:x');
+      expect(cues.single.text, "We're here");
+    });
+    test('srv1 <text>: double-escaped decoded, literal entity text kept', () {
+      const xml =
+          '<transcript><text start="0" dur="1">it&amp;#39;s</text>'
+          '<text start="1" dur="1">&amp;amp;amp; stays</text></transcript>';
+      final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:x');
+      expect(cues[0].text, "it's");
+      // 字幕作者真写的 `&amp;`（三层转义）只解两层，原样留下字面文本。
+      expect(cues[1].text, '&amp; stays');
+    });
+  });
+
   // BUG-783：YouTube androidVr 现在一律返回 timedtext format="3" 的 <p t d>（毫秒），
   // 即使 fmt=srv1 也被无视；旧解析器只认 srv1 <text start dur>（秒）→ 0 cue → 字幕失效。
   // fixtures 用探测抓下来的真实结构（人工轨 <p>text</p>、ASR 轨 <p><s>词</s></p>）。

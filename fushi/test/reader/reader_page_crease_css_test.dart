@@ -1,16 +1,19 @@
+import 'dart:ui' show Size;
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show buildSpreadPageHtml;
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<ReaderSettings> _settings({
   String writingMode = 'horizontal-tb',
   String viewMode = 'paginated',
-  int pageColumns = 0,
+  ReaderPageSpread spread = ReaderPageSpread.auto,
   bool crease = false,
 }) async {
   final FushiDatabase db = FushiDatabase.forTesting(
@@ -21,91 +24,75 @@ Future<ReaderSettings> _settings({
   await settings.refreshFromDb();
   await settings.setWritingMode(writingMode);
   await settings.setViewMode(viewMode);
-  await settings.setPageColumns(pageColumns);
+  await settings.setPageSpread(spread);
   await settings.setPageCrease(crease);
   return settings;
 }
 
+/// 阅读器页面同一条路径：偏好 + 窗口 + 折痕 → 本次排版（[resolveReaderSpreadLayout]）。
+ReaderSpreadLayout _layoutFor(
+  ReaderSettings s, {
+  bool fold = false,
+  Size window = const Size(400, 800),
+}) => resolveReaderSpreadLayout(
+  preference: s.pageSpread,
+  viewMode: s.viewMode,
+  writingMode: s.writingMode,
+  hasFoldSpine: fold,
+  window: window,
+);
+
 const String _creaseMarker = '中缝折痕（page crease）';
+const String _spreadMarker = '竖排对开（竖排双页）';
 
 void main() {
-  group('foldPageColumnsOverride（折叠屏书本姿态）', () {
-    test('横排翻页 + 每页列数自动 → 2 栏', () async {
+  group('横排双页进 multicol', () {
+    test('「自动」在折叠屏上解析成 2 栏，真的进了 column-count', () async {
       final ReaderSettings s = await _settings();
       expect(
-        ReaderContentStyles.foldPageColumnsOverride(
-          bookPosture: true,
-          settings: s,
-        ),
-        2,
-      );
-      expect(
-        ReaderContentStyles.foldPageColumnsOverride(
-          bookPosture: false,
-          settings: s,
-        ),
-        isNull,
-      );
-    });
-
-    test('用户显式列数 / 竖排 / 滚动 / VN 不覆盖', () async {
-      for (final ReaderSettings s in <ReaderSettings>[
-        await _settings(pageColumns: 1),
-        await _settings(pageColumns: 3),
-        await _settings(writingMode: 'vertical-rl'),
-        await _settings(viewMode: 'continuous'),
-        await _settings(viewMode: 'vn'),
-      ]) {
-        expect(
-          ReaderContentStyles.foldPageColumnsOverride(
-            bookPosture: true,
-            settings: s,
-          ),
-          isNull,
-        );
-      }
-    });
-
-    test('覆盖值真的进了 multicol 列数', () async {
-      final ReaderSettings s = await _settings();
-      expect(
-        ReaderContentStyles.css(settings: s),
+        ReaderContentStyles.css(settings: s, spreadLayout: _layoutFor(s)),
         isNot(contains('column-count:')),
       );
       expect(
-        ReaderContentStyles.css(settings: s, pageColumnsOverride: 2),
+        ReaderContentStyles.css(
+          settings: s,
+          spreadLayout: _layoutFor(s, fold: true),
+        ),
         contains('column-count: 2 !important;'),
       );
     });
   });
 
   group('foldColumnGapPx（铰链不压字）', () {
-    test('两栏横排翻页：栏间隙 = 22 + 铰链缝；无铰链缝不覆盖', () async {
-      final ReaderSettings s = await _settings();
+    test('双页：间隙 = 22 + 铰链缝；无铰链缝 / 单页不覆盖', () {
       expect(
         ReaderContentStyles.foldColumnGapPx(
           hingeGutterPx: 24,
-          effectivePageColumns: 2,
-          settings: s,
+          layout: ReaderSpreadLayout.horizontalDouble,
+        ),
+        46,
+      );
+      expect(
+        ReaderContentStyles.foldColumnGapPx(
+          hingeGutterPx: 24,
+          layout: ReaderSpreadLayout.verticalDouble,
         ),
         46,
       );
       expect(
         ReaderContentStyles.foldColumnGapPx(
           hingeGutterPx: 0,
-          effectivePageColumns: 2,
-          settings: s,
+          layout: ReaderSpreadLayout.horizontalDouble,
         ),
         isNull,
       );
       expect(
         ReaderContentStyles.foldColumnGapPx(
           hingeGutterPx: 24,
-          effectivePageColumns: 1,
-          settings: s,
+          layout: ReaderSpreadLayout.single,
         ),
         isNull,
-        reason: '单栏没有「两页之间」，铰链缝不适用',
+        reason: '单页没有「两页之间」，铰链缝不适用',
       );
     });
 
@@ -113,7 +100,7 @@ void main() {
       final ReaderSettings s = await _settings();
       final String css = ReaderContentStyles.css(
         settings: s,
-        pageColumnsOverride: 2,
+        spreadLayout: ReaderSpreadLayout.horizontalDouble,
         columnGapOverridePx: 46,
       );
       expect(css, contains('column-gap: 46px !important;'));
@@ -122,64 +109,18 @@ void main() {
     });
   });
 
-  group('foldVerticalSpread（竖排对开）', () {
-    const String spreadMarker = '竖排对开（折叠屏书本姿态）';
-
-    test('竖排翻页 + 每页列数自动 + 书本姿态 → 对开；其余不对开', () async {
-      final ReaderSettings vertical = await _settings(
-        writingMode: 'vertical-rl',
-      );
-      expect(
-        ReaderContentStyles.foldVerticalSpread(
-          bookPosture: true,
-          settings: vertical,
-        ),
-        isTrue,
-      );
-      expect(
-        ReaderContentStyles.foldVerticalSpread(
-          bookPosture: false,
-          settings: vertical,
-        ),
-        isFalse,
-      );
-      for (final ReaderSettings s in <ReaderSettings>[
-        await _settings(),
-        await _settings(writingMode: 'vertical-rl', pageColumns: 1),
-        await _settings(writingMode: 'vertical-rl', pageColumns: 2),
-        await _settings(writingMode: 'vertical-rl', viewMode: 'continuous'),
-        await _settings(writingMode: 'vertical-rl', viewMode: 'vn'),
-      ]) {
-        expect(
-          ReaderContentStyles.foldVerticalSpread(
-            bookPosture: true,
-            settings: s,
-          ),
-          isFalse,
-          reason: '横排走两栏；用户显式列数 / 滚动 / VN 不对开',
-        );
-      }
-      // 竖排不走「每页列数」覆盖：竖排的 2 栏是上下两条，挡不住竖向折痕。
-      expect(
-        ReaderContentStyles.foldPageColumnsOverride(
-          bookPosture: true,
-          settings: vertical,
-        ),
-        isNull,
-      );
-    });
-
+  group('竖排双页 = 对开', () {
     test('对开几何：column-wrap 行换行，整段在 @supports 里，补一页空白页', () async {
       final ReaderSettings s = await _settings(writingMode: 'vertical-rl');
       expect(
         ReaderContentStyles.css(settings: s),
-        isNot(contains(spreadMarker)),
+        isNot(contains(_spreadMarker)),
       );
       final String css = ReaderContentStyles.css(
         settings: s,
-        verticalSpread: true,
+        spreadLayout: ReaderSpreadLayout.verticalDouble,
       );
-      final int block = css.indexOf(spreadMarker);
+      final int block = css.indexOf(_spreadMarker);
       expect(block, isNonNegative);
       final String rule = css.substring(block);
       expect(rule, contains('@supports (column-wrap: wrap) {'));
@@ -196,45 +137,45 @@ void main() {
       expect(block, greaterThan(css.indexOf('column-fill: auto !important;')));
     });
 
-    test('横排 / 滚动 / VN 下即使传了 verticalSpread 也不发', () async {
+    test('偏好「双页」不看窗口也排对开（css 不带 spreadLayout 时按偏好解析）', () async {
+      final ReaderSettings s = await _settings(
+        writingMode: 'vertical-rl',
+        spread: ReaderPageSpread.double,
+      );
+      final String css = ReaderContentStyles.css(settings: s);
+      expect(css, contains(_spreadMarker));
+      expect(css, isNot(contains('column-count: 2 !important;')));
+    });
+
+    test('横排 / 滚动 / VN 不发对开', () async {
       for (final ReaderSettings s in <ReaderSettings>[
-        await _settings(),
-        await _settings(writingMode: 'vertical-rl', viewMode: 'continuous'),
-        await _settings(writingMode: 'vertical-rl', viewMode: 'vn'),
+        await _settings(spread: ReaderPageSpread.double),
+        await _settings(
+          writingMode: 'vertical-rl',
+          viewMode: 'continuous',
+          spread: ReaderPageSpread.double,
+        ),
+        await _settings(
+          writingMode: 'vertical-rl',
+          viewMode: 'vn',
+          spread: ReaderPageSpread.double,
+        ),
       ]) {
         expect(
-          ReaderContentStyles.css(settings: s, verticalSpread: true),
-          isNot(contains(spreadMarker)),
+          ReaderContentStyles.css(settings: s, spreadLayout: _layoutFor(s)),
+          isNot(contains(_spreadMarker)),
         );
       }
     });
 
     test('铰链缝加宽的是两页之间的 row-gap', () async {
       final ReaderSettings s = await _settings(writingMode: 'vertical-rl');
-      expect(
-        ReaderContentStyles.foldColumnGapPx(
-          hingeGutterPx: 24,
-          effectivePageColumns: 0,
-          settings: s,
-          verticalSpread: true,
-        ),
-        46,
-      );
-      expect(
-        ReaderContentStyles.foldColumnGapPx(
-          hingeGutterPx: 24,
-          effectivePageColumns: 0,
-          settings: s,
-        ),
-        isNull,
-        reason: '竖排单条没有「两页之间」',
-      );
       final String css = ReaderContentStyles.css(
         settings: s,
-        verticalSpread: true,
+        spreadLayout: ReaderSpreadLayout.verticalDouble,
         columnGapOverridePx: 46,
       );
-      final String rule = css.substring(css.indexOf(spreadMarker));
+      final String rule = css.substring(css.indexOf(_spreadMarker));
       expect(rule, contains('row-gap: 46px !important;'));
       expect(rule, contains(' - 46px) / 2)) !important;'));
     });
@@ -250,7 +191,7 @@ void main() {
       );
       final String css = ReaderContentStyles.css(
         settings: s,
-        verticalSpread: true,
+        spreadLayout: ReaderSpreadLayout.verticalDouble,
       );
       final int crease = css.indexOf(_creaseMarker);
       expect(crease, isNonNegative);
@@ -261,14 +202,6 @@ void main() {
         css.substring(0, css.indexOf('/* $_creaseMarker')).trimRight(),
         endsWith('@supports (column-wrap: wrap) {'),
         reason: '不支持 column-wrap 的 WebView 退回竖排单条，不能在正文中间画一道阴影',
-      );
-      expect(
-        ReaderContentStyles.pageCreaseApplies(
-          viewMode: 'paginated',
-          effectivePageColumns: 0,
-          verticalSpread: true,
-        ),
-        isTrue,
       );
     });
   });
@@ -289,15 +222,18 @@ void main() {
 
   group('中缝折痕 CSS', () {
     test('关闭时不发', () async {
-      final ReaderSettings s = await _settings(pageColumns: 2);
+      final ReaderSettings s = await _settings(spread: ReaderPageSpread.double);
       expect(
         ReaderContentStyles.css(settings: s),
         isNot(contains(_creaseMarker)),
       );
     });
 
-    test('开启 + 横排两栏 → html::after 竖向阴影，落在 content-box 中线', () async {
-      final ReaderSettings s = await _settings(pageColumns: 2, crease: true);
+    test('开启 + 横排双页 → html::after 竖向阴影，落在 content-box 中线', () async {
+      final ReaderSettings s = await _settings(
+        spread: ReaderPageSpread.double,
+        crease: true,
+      );
       final String css = ReaderContentStyles.css(settings: s);
       expect(css, contains(_creaseMarker));
       final String rule = css.substring(css.indexOf(_creaseMarker));
@@ -310,8 +246,11 @@ void main() {
       expect(rule, contains('var(--page-width, 100vw)'));
     });
 
-    test('书本姿态加宽栏间隙时阴影跟着加宽', () async {
-      final ReaderSettings s = await _settings(pageColumns: 2, crease: true);
+    test('折痕加宽栏间隙时阴影跟着加宽', () async {
+      final ReaderSettings s = await _settings(
+        spread: ReaderPageSpread.double,
+        crease: true,
+      );
       final String css = ReaderContentStyles.css(
         settings: s,
         columnGapOverridePx: 47,
@@ -321,39 +260,44 @@ void main() {
       expect(rule, contains(' - 23.5px)'));
     });
 
-    test('书本姿态的自动 2 栏同样出折痕', () async {
+    test('「自动」解析成双页（宽屏 / 折叠屏）同样出折痕', () async {
       final ReaderSettings s = await _settings(crease: true);
       expect(
-        ReaderContentStyles.css(settings: s),
+        ReaderContentStyles.css(settings: s, spreadLayout: _layoutFor(s)),
         isNot(contains(_creaseMarker)),
       );
       expect(
-        ReaderContentStyles.css(settings: s, pageColumnsOverride: 2),
+        ReaderContentStyles.css(
+          settings: s,
+          spreadLayout: _layoutFor(s, window: const Size(1280, 800)),
+        ),
+        contains(_creaseMarker),
+      );
+      expect(
+        ReaderContentStyles.css(
+          settings: s,
+          spreadLayout: _layoutFor(s, fold: true),
+        ),
         contains(_creaseMarker),
       );
     });
 
-    test('竖排上下两栏 → 横向阴影', () async {
-      final ReaderSettings s = await _settings(
-        writingMode: 'vertical-rl',
-        pageColumns: 2,
-        crease: true,
-      );
-      final String css = ReaderContentStyles.css(settings: s);
-      final String rule = css.substring(css.indexOf(_creaseMarker));
-      expect(rule, contains('linear-gradient(to bottom'));
-      expect(rule, contains('height: 22px'));
-    });
-
-    test('单栏 / 三栏 / 滚动 / VN 不发（没有「两页之间」）', () async {
+    test('单页 / 滚动 / VN 不发（没有「两页之间」）', () async {
       for (final ReaderSettings s in <ReaderSettings>[
-        await _settings(pageColumns: 1, crease: true),
-        await _settings(pageColumns: 3, crease: true),
-        await _settings(pageColumns: 2, viewMode: 'continuous', crease: true),
-        await _settings(pageColumns: 2, viewMode: 'vn', crease: true),
+        await _settings(spread: ReaderPageSpread.single, crease: true),
+        await _settings(
+          spread: ReaderPageSpread.double,
+          viewMode: 'continuous',
+          crease: true,
+        ),
+        await _settings(
+          spread: ReaderPageSpread.double,
+          viewMode: 'vn',
+          crease: true,
+        ),
       ]) {
         expect(
-          ReaderContentStyles.css(settings: s),
+          ReaderContentStyles.css(settings: s, spreadLayout: _layoutFor(s)),
           isNot(contains(_creaseMarker)),
         );
       }
