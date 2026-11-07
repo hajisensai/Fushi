@@ -30,7 +30,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 String mangaOcrBoxesHtml(MokuroImage page) {
   final double pageWidth = page.size.width <= 0 ? 1 : page.size.width;
   final double pageHeight = page.size.height <= 0 ? 1 : page.size.height;
-  final List<({int group, String sentence})> sentenceAssignments =
+  final List<MangaBlockSentence> sentenceAssignments =
       _mangaBlockSentenceAssignments(page);
   final StringBuffer buffer = StringBuffer();
   for (int blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
@@ -99,7 +99,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
 @visibleForTesting
 List<String> mangaBlockSentenceTexts(MokuroImage page) {
   return _mangaBlockSentenceAssignments(page)
-      .map((({int group, String sentence}) assignment) => assignment.sentence)
+      .map((MangaBlockSentence assignment) => assignment.sentence)
       .toList(growable: false);
 }
 
@@ -107,8 +107,9 @@ List<String> mangaBlockSentenceTexts(MokuroImage page) {
 /// OCR 块的下标。组号与 [mangaOcrBoxesHtml] 同一次分组算出，所以 JS 回传的组号能
 /// 原样映射回块。
 List<int> mangaSentenceGroupBlockIndices(MokuroImage page, int group) {
-  final List<({int group, String sentence})> assignments =
-      _mangaBlockSentenceAssignments(page);
+  final List<MangaBlockSentence> assignments = _mangaBlockSentenceAssignments(
+    page,
+  );
   return <int>[
     for (int i = 0; i < assignments.length; i++)
       if (assignments[i].group == group) i,
@@ -147,12 +148,19 @@ Rect? mangaSentenceGroupNormalizedRect(MokuroImage page, int group) {
   return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
-List<({int group, String sentence})> _mangaBlockSentenceAssignments(
-  MokuroImage page,
-) {
+/// 一个 OCR 块所属的句子分组：[group] 即 overlay 的 `data-manga-sentence-group`，
+/// [sentence] 是整句文本（注音块不进句子），[ruby] 表示这块被判为注音（振假名）。
+typedef MangaBlockSentence = ({int group, String sentence, bool ruby});
+
+/// 每个 OCR 块（与 `page.blocks` 同下标）的句子分组。与 [mangaOcrBoxesHtml] 写进
+/// overlay 的组号同一次算出，漫画朗读按它逐句读、按组号高亮。
+List<MangaBlockSentence> mangaBlockSentenceGroups(MokuroImage page) =>
+    _mangaBlockSentenceAssignments(page);
+
+List<MangaBlockSentence> _mangaBlockSentenceAssignments(MokuroImage page) {
   final List<MokuroBlock> blocks = page.blocks;
   if (blocks.isEmpty) {
-    return const <({int group, String sentence})>[];
+    return const <MangaBlockSentence>[];
   }
 
   final List<int> parents = List<int>.generate(blocks.length, (int i) => i);
@@ -228,8 +236,10 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
   for (int i = 0; i < blocks.length; i++) {
     groups.putIfAbsent(rootOf(i), () => <int>[]).add(i);
   }
-  final List<({int group, String sentence})?> result =
-      List<({int group, String sentence})?>.filled(blocks.length, null);
+  final List<MangaBlockSentence?> result = List<MangaBlockSentence?>.filled(
+    blocks.length,
+    null,
+  );
   int groupIndex = 0;
   for (final List<int> indices in groups.values) {
     indices.sort(
@@ -246,11 +256,15 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
             indices.map((int index) => _mangaBlockText(blocks[index])),
           );
     for (final int index in indices) {
-      result[index] = (group: groupIndex, sentence: fallback);
+      result[index] = (
+        group: groupIndex,
+        sentence: fallback,
+        ruby: rubyBlocks.contains(index),
+      );
     }
     groupIndex++;
   }
-  return result.cast<({int group, String sentence})>();
+  return result.cast<MangaBlockSentence>();
 }
 
 String _mangaBlockText(MokuroBlock block) => mangaJoinOcrText(block.lines);
@@ -1062,6 +1076,10 @@ String mangaWindowDocument(
       '.ocr-boxes-visible .ocr-box{outline:2px solid rgba(255,64,64,.9);'
       'background:rgba(255,64,64,.12);}'
       '.ocr-boxes-visible .ocr-char{outline:1px dashed rgba(64,160,255,.7);}'
+      // 漫画朗读：正在读的那句的全部块。不依赖 ocr-boxes-visible——识别框隐藏时
+      // 也要看得见读到哪了；写在其后，识别框显示时以朗读高亮为准。
+      '.ocr-box.manga-speaking{outline:3px solid rgba(255,170,0,.95);'
+      'background:rgba(255,200,0,.28);border-radius:4px;}'
       // Character geometry is entirely explicit. Keep the common hit-layer
       // declarations in one rule instead of repeating them for every OCR
       // character: dense magazine pages can contain several thousand regions.
@@ -2126,6 +2144,31 @@ String _mangaGestureJs({
     for (var i = 0; i < boxes.length; i++) boxes[i].remove();
     var source = page.querySelector('.manga-source') || page;
     if (html) source.insertAdjacentHTML('beforeend', html);
+    // 换掉的文字层里可能正好有朗读中的那句：按记下的状态重新挂高亮。
+    window.__mangaApplySpeaking(false);
+  };
+  // 漫画朗读高亮：{page, group} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
+  // 之后由 __mangaApplySpeaking 重新应用（组号与 data-manga-sentence-group 同源）。
+  window.__mangaSpeaking = window.__mangaSpeaking || null;
+  window.__mangaApplySpeaking = function(scroll){
+    var lit = document.querySelectorAll('.ocr-box.manga-speaking');
+    for (var i = 0; i < lit.length; i++) lit[i].classList.remove('manga-speaking');
+    var s = window.__mangaSpeaking;
+    if (!s) return;
+    var page = document.querySelector('.manga-page[data-page="'+s.page+'"]');
+    if (!page) return;
+    var boxes = page.querySelectorAll(
+        '.ocr-box[data-manga-sentence-group="'+s.group+'"]');
+    for (var j = 0; j < boxes.length; j++) boxes[j].classList.add('manga-speaking');
+    // 条漫是一整条长图：读到的句子不在视口里就滚到刚好露出它。
+    if (scroll && IS_WEBTOON && boxes.length && boxes[0].scrollIntoView) {
+      boxes[0].scrollIntoView({block: 'nearest'});
+    }
+  };
+  // group < 0 = 清除高亮。
+  window.__mangaSetSpeaking = function(page, group){
+    window.__mangaSpeaking = group < 0 ? null : {page: page, group: group};
+    window.__mangaApplySpeaking(true);
   };
   document.addEventListener('pointermove', function(e){
     if (rightDrag) {

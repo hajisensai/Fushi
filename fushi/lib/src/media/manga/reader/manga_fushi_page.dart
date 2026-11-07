@@ -78,6 +78,17 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
+import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
+import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart'
+    show openTtsVoiceSettingsPage;
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi_engine/tts/tts_audio_cache.dart';
+import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
@@ -182,6 +193,7 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart'
 part 'manga_jump_history.part.dart';
 part 'manga_fushi/kavita.part.dart';
 part 'manga_fushi/page_curl.part.dart';
+part 'manga_fushi/read_aloud.part.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
 ///
@@ -1482,6 +1494,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 在线直读章的边看边识别（[MangaStreamPageOcr]）；只在直读章、自动触发时有。
   MangaStreamPageOcr? _streamOcr;
   bool _streamOcrStarting = false;
+
+  /// 漫画朗读（read_aloud.part.dart）：宿主实现、页文字等待者与会话。
+  late final _MangaReadAloudSupport _readAloud = _MangaReadAloudSupport(
+    this,
+    rebuild: () {
+      if (mounted) setState(() {});
+    },
+  );
   bool _streamOcrBusy = false;
 
   /// 直读识别失败只提示一次（离线 / 源坏了时逐页失败会刷屏）。
@@ -1725,6 +1745,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void dispose() {
     _menuDismiss.detach();
+    _readAloud.dispose();
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
     _pageCurlDrag = null;
@@ -1935,6 +1956,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算部分窗口再封段落库。
       _studyClockGate.setLifecycleStopped(true);
+      // 朗读不做后台播放：切到后台即暂停（回来从当前句开头续）。
+      _readAloud.pause();
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
       // BUG-892 同款纪律：start() 只重锚 tick 起点并开新段，后台时长不会被计入。
@@ -2078,6 +2101,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }) async {
     // 锚点是页索引，只对当前这一卷有效。
     _spreadAnchorPage = -1;
+    // 朗读的页号同理：换章 / 重载正文即停。
+    _readAloud._onChapterReset();
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
       ErrorLogService.instance.log(
@@ -2563,6 +2588,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _bookRow = row;
         // 换章直读失败时这里还挂着旧章正文：清掉，免得旧页码被当成新章进度落库。
         _payload = null;
+        _readAloud._onChapterReset();
         _volumeOcrQueued = false;
         _volumeOcrNoEngine = false;
         _chapterNotDownloaded = true;
@@ -3820,6 +3846,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     (page.querySelector('.manga-source') || page).insertAdjacentHTML('beforeend', htmlByPage[String(index)] || '');
     page.setAttribute('data-ocr-loaded', '1');
   });
+  ${_readAloud.reapplyJs}
 })();
 ''',
     );
@@ -4377,6 +4404,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         .any((String directory) => p.equals(directory, row.extractDir));
     if (queued != _volumeOcrQueued) setState(() => _volumeOcrQueued = queued);
     if (_observedOcrJob == null) _reattachRunningOcrJob(row.extractDir);
+    // 排队的任务被放弃 / 结束了又没接上新任务：朗读等的页文字不会再来。
+    _readAloud._settleOrphanWaiters();
   }
 
   /// 进入即整卷识别：本卷 / 本章还没识别过就排一个整卷任务，从当前页开始跑。
@@ -4483,9 +4512,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             );
           }
           setState(() => _volumeOcrNoEngine = true);
+          _readAloud._failWaiters(MangaPageTextUnavailableReason.noEngine);
         case MangaReaderVolumeOcrLensDeclined():
           // 刷新顶栏：拒绝后「识别本卷」要出现。
           setState(() {});
+          _readAloud._failWaiters(MangaPageTextUnavailableReason.lensDeclined);
       }
     } catch (error, stack) {
       ErrorLogService.instance.log(
@@ -4493,6 +4524,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         error,
         stack,
       );
+      _readAloud._failWaiters(MangaPageTextUnavailableReason.failed);
     } finally {
       _volumeOcrStarting = false;
       // 探测引擎 / 等授权期间换了章：上面因目录不符直接返回，而新章那次调用又被
@@ -4520,6 +4552,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
     _observedOcrJob = null;
+    _readAloud._failWaiters(MangaPageTextUnavailableReason.cancelled);
     if (mounted && _wholeVolumeOcrRunning) {
       setState(() => _wholeVolumeOcrRunning = false);
     }
@@ -4531,11 +4564,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _onReaderPageChanged() {
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
+    _readAloud.onPageChanged(_pageNotifier.value);
   }
 
   /// 在线直读章的边看边识别：从读者当前页起识别眼前这页与后面几页，识别完一页
-  /// 热替换一页（[MangaStreamPageOcr]）。手动触发模式下不自动识别。
-  Future<void> _maybeStartStreamingOcr() async {
+  /// 热替换一页（[MangaStreamPageOcr]）。手动触发模式下不自动识别；
+  /// [userInitiated]（漫画朗读要这页的文字）不受触发方式限制。
+  Future<void> _maybeStartStreamingOcr({bool userInitiated = false}) async {
     final MangaReaderSession? session = _pageSession;
     if (!mounted ||
         !_streamingChapter ||
@@ -4543,7 +4578,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _streamOcr != null ||
         _streamOcrStarting ||
         _sourceReviewActive ||
-        _readerPreferences.ocrTrigger == 'manual') {
+        (!userInitiated && _readerPreferences.ocrTrigger == 'manual')) {
       return;
     }
     final String enginePreference = appModel.mangaOcrEnginePreference;
@@ -4565,11 +4600,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         preference: MangaOcrEnginePreferenceKey.fromKey(enginePreference),
         lensLanguage: appModel.mangaOcrLensLanguage,
         confirmLensUpload: () async {
-          if (_lensAutoOcrDeclined || !mounted) return false;
+          if ((!userInitiated && _lensAutoOcrDeclined) || !mounted) {
+            return false;
+          }
           final bool accepted =
               await (widget.lensDisclosureOverride ??
                   ensureGoogleLensDisclosure)(context);
-          if (!accepted) _lensAutoOcrDeclinedFor = enginePreference;
+          if (!accepted && !userInitiated) {
+            _lensAutoOcrDeclinedFor = enginePreference;
+          }
           return accepted;
         },
       );
@@ -4595,6 +4634,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 .instance
                 .log('MangaFushiPage.streamOcrAi', error, stack),
             onPage: _applyStreamOcrPage,
+            onPageFailed: _readAloud._pageTextFailed,
             onBusyChanged: (bool busy) {
               if (mounted && _streamOcrBusy != busy) {
                 setState(() => _streamOcrBusy = busy);
@@ -4606,12 +4646,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ocr.focus(_currentPage);
         case MangaStreamOcrNoEngine():
           setState(() => _volumeOcrNoEngine = true);
+          _readAloud._failWaiters(MangaPageTextUnavailableReason.noEngine);
         case MangaStreamOcrLensDeclined():
+          _readAloud._failWaiters(MangaPageTextUnavailableReason.lensDeclined);
         case MangaStreamOcrUnsupported():
-          break;
+          _readAloud._failWaiters(MangaPageTextUnavailableReason.failed);
       }
     } catch (error, stack) {
       ErrorLogService.instance.log('MangaFushiPage.streamOcr', error, stack);
+      _readAloud._failWaiters(MangaPageTextUnavailableReason.failed);
     } finally {
       _streamOcrStarting = false;
       // 探测引擎 / 等授权期间换了章：新章那次调用被 _streamOcrStarting 挡掉了，
@@ -4645,6 +4688,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     setState(() {
       _payload = MokuroPayload(images: images, ocr: current.ocr);
     });
+    _readAloud._pageTextArrived(pageIndex, merged);
     unawaited(_replacePageOcrOverlay(pageIndex, merged));
   }
 
@@ -4663,6 +4707,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _streamOcr = null;
     _streamOcrBusy = false;
     if (ocr != null) unawaited(ocr.close());
+    _readAloud._failWaiters(MangaPageTextUnavailableReason.cancelled);
   }
 
   /// 观察注册表里的任务：进度态、逐页热替换、完成刷新都从这里来。
@@ -4691,6 +4736,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               error,
               stack,
             );
+            _readAloud._failWaiters(MangaPageTextUnavailableReason.failed);
             if (!mounted) return;
             setState(() => _wholeVolumeOcrRunning = false);
             FushiToast.show(
@@ -4701,6 +4747,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           onDone: () {
             _wholeVolumeOcrSubscription = null;
             _observedOcrJob = null;
+            _readAloud._settleOrphanWaiters();
             if (mounted && _wholeVolumeOcrRunning) {
               setState(() => _wholeVolumeOcrRunning = false);
             }
@@ -4740,6 +4787,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     setState(() {
       _payload = MokuroPayload(images: images, ocr: current.ocr);
     });
+    _readAloud._pageTextArrived(pageIndex, merged);
     await _replacePageOcrOverlay(pageIndex, merged);
   }
 
@@ -4791,6 +4839,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrUploading = false;
       _wholeVolumeOcrRunning = false;
     });
+    _readAloud._volumeSettled(payload);
     for (final int pageIndex in _loadedPageIndices()) {
       if (pageIndex >= 0 && pageIndex < payload.images.length) {
         await _replacePageOcrOverlay(pageIndex, payload.images[pageIndex]);
@@ -4811,6 +4860,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
     _observedOcrJob = null;
+    _readAloud._failWaiters(MangaPageTextUnavailableReason.cancelled);
     if (mounted) {
       setState(() {
         _wholeVolumeOcrRunning = false;
@@ -6650,6 +6700,34 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       ),
                     ),
                   ),
+                  // 漫画朗读播放条：不受 chrome 显隐门控（隐藏界面读漫画时也要能
+                  // 暂停 / 停止），chrome 显示时让到底部 chrome 上方。
+                  if (_readAloud.controller
+                      case final MangaReadAloudController readAloud)
+                    Positioned(
+                      left: kMangaChromeEdgeInset,
+                      right: kMangaChromeEdgeInset,
+                      bottom:
+                          MediaQuery.paddingOf(context).bottom +
+                          (_chromeVisible && _chromeActionsEnabled
+                              ? kMangaChromeBottomBarHeight
+                              : kMangaChromeBottomGap),
+                      child: ListenableBuilder(
+                        listenable: readAloud,
+                        builder: (BuildContext context, Widget? _) =>
+                            MangaChromeReveal(
+                              fromTop: false,
+                              visible: readAloud.isActive,
+                              child: Center(
+                                child: MangaReadAloudBar(
+                                  controller: readAloud,
+                                  onVoice: () =>
+                                      unawaited(_readAloud.switchVoice()),
+                                ),
+                              ),
+                            ),
+                      ),
+                    ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。
                   if (!_chromeVisible &&
                       _chromeContentReady &&
@@ -7149,6 +7227,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           slot: slot,
           priority: priority,
           onPressed: () => unawaited(_showQuickSettings()),
+        );
+      case MangaControlItem.readAloud:
+        final bool reading = _readAloud.active;
+        return MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_read_aloud_button'),
+          icon: reading
+              ? FushiIcons.filled(FushiIcons.voice)
+              : FushiIcons.voice,
+          label: reading ? t.manga_read_aloud_stop : t.manga_read_aloud_start,
+          slot: slot,
+          priority: priority,
+          active: reading,
+          onPressed: () => unawaited(_readAloud.toggle()),
         );
       case MangaControlItem.ocrBoxes:
         // Apple 没有 FAB：识别框开关是一颗普通开关按钮（开 = 强调色字形，
