@@ -38,6 +38,8 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSwitchRow;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
@@ -2693,6 +2695,8 @@ void main() {
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
+      // 按复习量调整只对 FSRS 牌组生效（RWKV 牌组见下一条）。
+      await _useFsrs7(tester, store);
       await _pumpPage(
         tester,
         store: store,
@@ -2756,6 +2760,72 @@ void main() {
           boostPercent: 30,
         ),
       );
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：RWKV 牌组的新卡计划开关禁用、预算 / 多出收起、显示说明；保存不改 newPlan', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      const SrsNewCardPlan plan = SrsNewCardPlan(
+        budgetPercent: 120,
+        boostPercent: 30,
+      );
+      // 默认牌组没写过算法 = 缺省 RWKV；新卡计划写成开着调整、带自定义预算与多出。
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{SrsFieldKeys.deckNewPlan: plan.toValue()},
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      Future<Finder> reveal(String key) async {
+        final Finder field = find.byKey(ValueKey<String>(key));
+        await tester.scrollUntilVisible(
+          field,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await Scrollable.ensureVisible(tester.element(field), alignment: 0.5);
+        await tester.pumpAndSettle();
+        return field;
+      }
+
+      final Finder auto = await reveal('srs-settings-new-load-auto');
+      final AdaptiveSettingsSwitchRow row = tester
+          .widget<AdaptiveSettingsSwitchRow>(auto);
+      expect(row.onChanged, isNull, reason: 'RWKV 下开关禁用');
+      expect(row.value, isFalse, reason: '显示实际生效值：不调整');
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-new-load-budget')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-new-load-boost')),
+        findsNothing,
+      );
+      expect(find.text(t.srs_settings_new_load_rwkv_note), findsOneWidget);
+
+      // 改别的字段（每日新卡上限）保存：新卡计划寄存器保持原值，不被改写成「关」。
+      final Finder limit = await reveal('srs-settings-new');
+      await tester.enterText(
+        find.descendant(of: limit, matching: find.byType(EditableText)),
+        '7',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.newPerDay, 7);
+      expect(tree[store.defaultDeckId]!.newCardPlan, plan);
       await _unmount(tester);
     });
   });
