@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/media_pref_keys.dart'
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/profile/work_profile_scope.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
@@ -821,6 +822,19 @@ class ReaderSettings {
       ReaderTapZoneLayout.fromKey(_cache[tapZoneLayoutKey]?.toString());
   Future<void> setTapZoneLayout(ReaderTapZoneLayout v) =>
       _set<String>(tapZoneLayoutKey, v.key);
+
+  /// 连续（滚动）模式拉过章首 / 章末切章的阻尼档（反馈 R7k887yaJI）。语义见
+  /// [ContinuousChapterTurnResistance]；只在连续模式的触摸手势上生效。
+  static const String continuousChapterTurnResistanceKey =
+      'continuous_chapter_turn_resistance';
+
+  ContinuousChapterTurnResistance get continuousChapterTurnResistance =>
+      ContinuousChapterTurnResistance.fromKey(
+        _cache[continuousChapterTurnResistanceKey]?.toString(),
+      );
+  Future<void> setContinuousChapterTurnResistance(
+    ContinuousChapterTurnResistance v,
+  ) => _set<String>(continuousChapterTurnResistanceKey, v.key);
 
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
