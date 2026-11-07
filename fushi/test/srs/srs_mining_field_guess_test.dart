@@ -1,5 +1,5 @@
 import 'package:fushi_engine/srs/srs_miner.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 自建笔记类型设为挖词目标时，字段按名字预填制卡内容槽（截图巡检：此前只认与
 /// Lapis 完全同名的字段，「Front / Back」「正面 / 背面」类型全是「未映射」）。

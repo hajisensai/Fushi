@@ -1020,10 +1020,7 @@ SettingsDestination buildInterconnectDestination() {
             },
             cli: SettingsCliAction(
               params: const <SettingsCliParam>[
-                SettingsCliParam(
-                  'kind',
-                  help: 'default | review | anki',
-                ),
+                SettingsCliParam('kind', help: 'default | review | anki'),
                 SettingsCliParam(
                   'profile',
                   required: false,
@@ -1032,7 +1029,8 @@ SettingsDestination buildInterconnectDestination() {
                 SettingsCliParam(
                   'deck',
                   required: false,
-                  help: 'Deck name on the paired device (omit = its default deck)',
+                  help:
+                      'Deck name on the paired device (omit = its default deck)',
                 ),
               ],
               run: (SettingsContext ctx, Map<String, String> args) =>
