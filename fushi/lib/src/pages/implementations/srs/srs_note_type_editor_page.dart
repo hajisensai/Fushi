@@ -403,6 +403,24 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     );
     final SrsDbStore? store = _store;
     if (name == null || store == null) return;
+    // 加模板 = 这个类型的每条笔记各多一张卡（缓存刷新时按笔记 × 模板确定性生成，正面为空的不出）。不先说清楚，
+    // 用户会在浏览里看到每个词两张卡、以为导入重复（Discord 反馈：10.9k 笔记、浏览里 21k 张卡）。
+    final int notes = (await store.noteCountsByType())[type.id] ?? 0;
+    if (!mounted) return;
+    if (notes > 0) {
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_note_types_template_add,
+        message: t.srs_note_types_template_add_confirm(
+          name: name.trim(),
+          n: notes,
+        ),
+        confirmLabel: t.srs_note_types_template_add,
+        cancelLabel: t.cancel,
+        icon: FushiIcons.ankiCard,
+      );
+      if (!ok || !mounted) return;
+    }
     final ({String front, String back}) body = srsNewTemplateBody(type);
     try {
       final String id = await store.addTemplate(

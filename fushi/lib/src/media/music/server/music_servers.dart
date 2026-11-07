@@ -19,11 +19,13 @@ import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.da
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
@@ -72,6 +74,9 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
           ),
         );
       }
+    }
+    if (isYoutubeMusicSourceAvailable && app.prefsRepo.musicYoutubeEnabled) {
+      out.add(YoutubeMusicClient(displayName: 'YouTube'));
     }
   }
   return out;
@@ -159,7 +164,16 @@ AppleMusicLinkedSources? appleMusicLinkedSourcesFor(
 /// 这类来源能不能混排进本地曲库（Apple Music 只有热门榜、没有「整库」，不混）。
 bool musicServerSupportsLibraryMix(MusicServerKind kind) => switch (kind) {
   MusicServerKind.jellyfin || MusicServerKind.subsonic => true,
-  MusicServerKind.appleMusic => false,
+  MusicServerKind.appleMusic || MusicServerKind.youtube => false,
+};
+
+/// 这类来源有没有可浏览的树（专辑 / 艺人 / 歌单 / 榜单）：「推荐」页与推荐首页的服务器货架只列
+/// 有的。YouTube 内置音源只有搜索。
+bool musicServerHasBrowse(MusicServerKind kind) => switch (kind) {
+  MusicServerKind.jellyfin ||
+  MusicServerKind.subsonic ||
+  MusicServerKind.appleMusic => true,
+  MusicServerKind.youtube => false,
 };
 
 /// 来源列表 / 设置里的副标题（Apple Music 分试听与整曲）。
@@ -171,6 +185,7 @@ String musicServerSubtitle(MusicServerBrowser server) => switch (server) {
     MusicServerKind.jellyfin => t.music_server_jellyfin_subtitle,
     MusicServerKind.subsonic => t.music_server_subsonic_subtitle,
     MusicServerKind.appleMusic => t.music_server_apple_music_subtitle,
+    MusicServerKind.youtube => t.music_server_youtube_subtitle,
   },
 };
 
