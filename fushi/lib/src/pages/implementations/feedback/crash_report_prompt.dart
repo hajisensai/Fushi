@@ -280,6 +280,8 @@ Future<void> offerCrashReportAfterStartup({
   final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(ctx);
   if (messenger == null) return;
   final Color fg = Theme.of(ctx).colorScheme.onInverseSurface;
+  // 提示条 15 秒自己收起、或用户没理它就关了 app：下次启动不再重问这批（BUG-4220）。
+  reporter.markOfferShown(offer);
   messenger.showSnackBar(
     FushiSnackBar(
       key: const ValueKey<String>('crash-report-prompt'),
@@ -421,6 +423,7 @@ Future<void> runCrashReportStartupGate(
     await reporter.submit(service, crashReportDraftFor);
   });
   markAwaitingDecision(true);
+  reporter.markOfferShown(offer);
   crashReportStartupPrompt.value = request;
   try {
     await request._done.future;

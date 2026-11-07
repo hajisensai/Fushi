@@ -178,6 +178,7 @@ class CrashReportState {
     this.inFlight,
     this.lastSubmittedAt = 0,
     this.lastTicketId,
+    this.asked = const <String>[],
   });
 
   factory CrashReportState.fromJson(Object? raw) {
@@ -186,6 +187,7 @@ class CrashReportState {
     final Object? last = raw['lastSubmittedAt'];
     final Object? legacyKey = raw['submissionKey'];
     final Object? ticket = raw['lastTicketId'];
+    final Object? asked = raw['asked'];
     List<CrashOccurrence> pending = _parseOccurrences(raw['pending']);
     int droppedCount = dropped is int && dropped > 0 ? dropped : 0;
     CrashReportBatch? inFlight = CrashReportBatch.tryParse(raw['inFlight']);
@@ -209,6 +211,12 @@ class CrashReportState {
       inFlight: inFlight,
       lastSubmittedAt: last is int ? last : 0,
       lastTicketId: ticket is String && ticket.isNotEmpty ? ticket : null,
+      asked: asked is List
+          ? <String>[
+              for (final Object? id in asked)
+                if (id is String && id.isNotEmpty) id,
+            ]
+          : const <String>[],
     );
   }
 
@@ -230,6 +238,14 @@ class CrashReportState {
   /// 上一份闪退报告的反馈 id（「查看」跳转用）。
   final String? lastTicketId;
 
+  /// 已经在提示里给用户看过、他还没选「发送」也没选「不用了」的那几次待报的
+  /// [CrashOccurrence.identity]（[CrashReporter.markOfferShown]）。提示条 15 秒自己收起、
+  /// 或用户没理它就关了 app（典型是开机即自动更新）时，这批不能留到下次启动再问：
+  /// 提示说的是「上次意外退出了」，下次启动的「上次」已经是一次正常退出（更新交接、
+  /// 关窗），重问就成了每次更新后都弹的误报（反馈 dCYn9_hix-，BUG-4220）。下次接上状态
+  /// 文件时（[CrashReporter.attach]）按没理会处理、作废这几次。
+  final List<String> asked;
+
   CrashReportState copyWith({
     bool? autoSend,
     List<CrashOccurrence>? pending,
@@ -237,6 +253,7 @@ class CrashReportState {
     CrashReportBatch? Function()? inFlight,
     int? lastSubmittedAt,
     String? lastTicketId,
+    List<String>? asked,
   }) => CrashReportState(
     autoSend: autoSend ?? this.autoSend,
     pending: pending ?? this.pending,
@@ -244,6 +261,7 @@ class CrashReportState {
     inFlight: inFlight != null ? inFlight() : this.inFlight,
     lastSubmittedAt: lastSubmittedAt ?? this.lastSubmittedAt,
     lastTicketId: lastTicketId ?? this.lastTicketId,
+    asked: asked ?? this.asked,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -253,6 +271,7 @@ class CrashReportState {
     'inFlight': inFlight?.toJson(),
     'lastSubmittedAt': lastSubmittedAt,
     'lastTicketId': lastTicketId,
+    if (asked.isNotEmpty) 'asked': asked,
   };
 }
 
@@ -382,7 +401,44 @@ class CrashReporter extends ChangeNotifier {
     );
     _state = _store!.read();
     _enabled = enabled;
+    _dropAskedLastSession();
     notifyListeners();
+  }
+
+  /// 上次启动已经问过、用户没回答的待报作废（[CrashReportState.asked]）。在本次的
+  /// [recordVerdict] 之前跑，本次新判出来的那次不受影响。
+  void _dropAskedLastSession() {
+    final List<String> asked = _state.asked;
+    if (asked.isEmpty) return;
+    final List<CrashOccurrence> kept = <CrashOccurrence>[
+      for (final CrashOccurrence c in _state.pending)
+        if (!asked.contains(c.identity)) c,
+    ];
+    final bool droppedAny = kept.length != _state.pending.length;
+    _save(
+      _state.copyWith(
+        pending: kept,
+        // 被挤掉的更早几次属于给他看过的那批（标题里的次数含它们），一并作废。
+        droppedCount: droppedAny ? 0 : _state.droppedCount,
+        asked: const <String>[],
+      ),
+    );
+  }
+
+  /// 提示（启动前的卡片 / 首页出来后的提示条）已经把 [offer] 摆到用户面前：记下这批
+  /// 待报。用户本次选了「发送」（挪进 [CrashReportState.inFlight]）或「不用了」（清掉）
+  /// 之外的结局——提示自己收起、没选就关了 app——下次启动都不再重问同一批。
+  /// 已经同意发送、还没交上去的那批（[CrashReportState.inFlight]）不在此列：那是用户
+  /// 点过「发送」的，照常重试。
+  void markOfferShown(CrashReportOffer offer) {
+    if (_state.inFlight != null) return;
+    final List<String> ids = <String>[
+      for (final CrashOccurrence c in offer.occurrences)
+        if (_state.pending.any((CrashOccurrence p) => p.identity == c.identity))
+          c.identity,
+    ];
+    if (ids.isEmpty) return;
+    _save(_state.copyWith(asked: ids));
   }
 
   bool get enabled => _enabled;
@@ -479,7 +535,13 @@ class CrashReporter extends ChangeNotifier {
       _save(_state.copyWith(inFlight: () => null));
       return;
     }
-    _save(_state.copyWith(pending: const <CrashOccurrence>[], droppedCount: 0));
+    _save(
+      _state.copyWith(
+        pending: const <CrashOccurrence>[],
+        droppedCount: 0,
+        asked: const <String>[],
+      ),
+    );
   }
 
   /// 提交一份报告（[buildDraft] 按语言组标题与说明）：有没交上去的那批就重发它（同一个
@@ -504,6 +566,7 @@ class CrashReporter extends ChangeNotifier {
           inFlight: () => created,
           pending: const <CrashOccurrence>[],
           droppedCount: 0,
+          asked: const <String>[],
         ),
       );
       batch = created;
