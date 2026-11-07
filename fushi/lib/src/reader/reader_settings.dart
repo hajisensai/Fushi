@@ -836,6 +836,17 @@ class ReaderSettings {
     ContinuousChapterTurnResistance v,
   ) => _set<String>(continuousChapterTurnResistanceKey, v.key);
 
+  /// 连续（滚动）模式章节无缝衔接（反馈 R7k887yaJI ③，默认关）：前后章挂在同一文档里
+  /// 一起滚动，滚过章界不再整章重载。设计见
+  /// `docs/specs/2026-11-07-continuous-seamless-chapters-design.md`。
+  static const String continuousSeamlessChaptersKey =
+      'continuous_seamless_chapters';
+
+  bool get continuousSeamlessChapters =>
+      _get<bool>(continuousSeamlessChaptersKey, false);
+  Future<void> setContinuousSeamlessChapters(bool v) =>
+      _set<bool>(continuousSeamlessChaptersKey, v);
+
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
       _set<bool>('highlight_on_tap', !highlightOnTap);
