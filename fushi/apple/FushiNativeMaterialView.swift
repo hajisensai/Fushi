@@ -27,7 +27,17 @@ import FlutterMacOS
 /// 色层（MD3 的主色淡染面板色）。
 ///
 /// 创建参数（StandardMessageCodec 字典）：
-/// `dark: Bool`、`cornerRadius: Double`、`continuousCorners: Bool`、`tint: Int?`。
+/// `dark: Bool`、`cornerRadius: Double`、`continuousCorners: Bool`、`tint: Int?`、
+/// `solid: Int?`。
+///
+/// `solid`（ARGB，不透明）：不挂系统材质，只画一块同圆角的实色面板（反馈 hQpYQyWJNQ）。
+/// 透明度不被允许（材质档 off / 降低透明度 / 高对比度）时查词面板要画实底，但这块
+/// 实底**不能由 Flutter 画**：父层查词 WebView 带圆角裁剪（非矩形 mutator），iOS 引擎
+/// 把紧跟在它之后绘制的 Flutter 内容的 overlay 裁成它的圆角形状，形状外的部分只画进
+/// 所有平台视图之下的底层画布（`preserve_underlay`），被阅读器 WKWebView 整块盖住——
+/// 嵌套查词层的 Flutter 实底于是只在与父层重叠处可见，压在正文上的部分整块透明。
+/// 实底本身是平台视图（无非矩形裁剪）时它就是排在父层 WebView 之上的原生层，本层在它
+/// 之后绘制的 Flutter 内容照常合成。详见 Dart 侧 `fushiNativePopupBackdropHostAvailable`。
 enum FushiNativeMaterial {
   static let viewType = "app.fushi/native_material"
 
@@ -42,6 +52,8 @@ struct FushiNativeMaterialParams {
   let continuousCorners: Bool
   /// 0xAARRGGBB；nil = 不叠色层。
   let tint: UInt32?
+  /// 0xAARRGGBB；非 nil = 实色面板（不挂系统材质），见文件头 `solid`。
+  let solid: UInt32?
 
   init(_ arguments: Any?) {
     let map = arguments as? [String: Any] ?? [:]
@@ -53,15 +65,29 @@ struct FushiNativeMaterialParams {
     } else {
       tint = nil
     }
+    if let value = map["solid"] as? NSNumber {
+      solid = UInt32(truncatingIfNeeded: value.int64Value)
+    } else {
+      solid = nil
+    }
   }
 
   var tintComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)? {
     guard let tint else { return nil }
+    return Self.components(tint)
+  }
+
+  var solidComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)? {
+    guard let solid else { return nil }
+    return Self.components(solid)
+  }
+
+  private static func components(_ argb: UInt32) -> (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) {
     return (
-      CGFloat((tint >> 16) & 0xFF) / 255,
-      CGFloat((tint >> 8) & 0xFF) / 255,
-      CGFloat(tint & 0xFF) / 255,
-      CGFloat((tint >> 24) & 0xFF) / 255
+      CGFloat((argb >> 16) & 0xFF) / 255,
+      CGFloat((argb >> 8) & 0xFF) / 255,
+      CGFloat(argb & 0xFF) / 255,
+      CGFloat((argb >> 24) & 0xFF) / 255
     )
   }
 }
@@ -70,7 +96,11 @@ struct FushiNativeMaterialParams {
 
 final class FushiNativeMaterialFactory: NSObject, FlutterPlatformViewFactory {
   func create(withViewIdentifier viewId: Int64, arguments args: Any?) -> NSView {
-    return FushiNativeMaterialNSView(params: FushiNativeMaterialParams(args))
+    let params = FushiNativeMaterialParams(args)
+    if let c = params.solidComponents {
+      return FushiNativeSolidNSView(params: params, color: c)
+    }
+    return FushiNativeMaterialNSView(params: params)
   }
 
   func createArgsCodec() -> (FlutterMessageCodec & NSObjectProtocol)? {
@@ -81,6 +111,29 @@ final class FushiNativeMaterialFactory: NSObject, FlutterPlatformViewFactory {
 /// 透传事件的色层（`hitTest` 返回 nil）。
 private final class FushiPassthroughLayerView: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// `solid` 实色面板：不挂材质，同圆角、永不接收事件。
+final class FushiNativeSolidNSView: NSView {
+  init(params: FushiNativeMaterialParams, color c: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)) {
+    super.init(frame: .zero)
+    wantsLayer = true
+    autoresizingMask = [.width, .height]
+    layer?.backgroundColor = CGColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
+    layer?.cornerRadius = max(0, params.cornerRadius)
+    if params.continuousCorners {
+      layer?.cornerCurve = .continuous
+    }
+    layer?.masksToBounds = true
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override var acceptsFirstResponder: Bool { false }
 }
 
 final class FushiNativeMaterialNSView: NSVisualEffectView {
@@ -158,12 +211,27 @@ final class FushiNativeMaterialFactory: NSObject, FlutterPlatformViewFactory {
 }
 
 final class FushiNativeMaterialPlatformView: NSObject, FlutterPlatformView {
-  private let effectView: UIVisualEffectView
+  private let rootView: UIView
 
   init(frame: CGRect, params: FushiNativeMaterialParams) {
+    if let c = params.solidComponents {
+      // `solid` 实色面板（见文件头）：不挂材质。
+      let solidView = UIView(frame: frame)
+      solidView.backgroundColor = UIColor(red: c.r, green: c.g, blue: c.b, alpha: c.a)
+      solidView.isUserInteractionEnabled = false
+      solidView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      solidView.layer.cornerRadius = max(0, params.cornerRadius)
+      if params.continuousCorners {
+        solidView.layer.cornerCurve = .continuous
+      }
+      solidView.clipsToBounds = true
+      rootView = solidView
+      super.init()
+      return
+    }
     // 浅色用更通透的 thin，深色用标准 material（深色 thin 压在正文上偏灰脏）。
     let blur = UIBlurEffect(style: params.dark ? .systemMaterialDark : .systemThinMaterialLight)
-    effectView = UIVisualEffectView(effect: blur)
+    let effectView = UIVisualEffectView(effect: blur)
     effectView.frame = frame
     effectView.isUserInteractionEnabled = false
     effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -180,11 +248,12 @@ final class FushiNativeMaterialPlatformView: NSObject, FlutterPlatformView {
       tintView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
       effectView.contentView.addSubview(tintView)
     }
+    rootView = effectView
     super.init()
   }
 
   func view() -> UIView {
-    return effectView
+    return rootView
   }
 }
 

@@ -5,11 +5,13 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/engine_storage_sandbox.dart';
 
 FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
@@ -356,6 +358,8 @@ void main() {
   });
 
   group('Audio database sync packages', () {
+    useEngineStorageSandbox();
+
     test('round trip rewrites paths and restores cues', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'fushi-audio-package-',
@@ -538,7 +542,7 @@ void main() {
         final Directory targetAudio = Directory(
           p.join(temp.path, 'target-audio'),
         );
-        // 即便传 bookKeyOverride，纯 SRT 分支也必须忽略它（bookKey 恒空）。
+        // 即便传 bookKeyOverride，纯 SRT 分支也必须忽略它（身份恒为 uid）。
         await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
           packageFile: package,
           audioDatabaseRoot: targetAudio,
@@ -555,7 +559,10 @@ void main() {
         final SrtBookRow srt = (await targetDb.getSrtBookByUid(
           'srt-standalone-1',
         ))!;
-        expect(srt.bookKey, '', reason: 'standalone bookKey 恒空（忽略 override）');
+        // BUG-4197：bookKey 指向收端按 cue 生成的正文，忽略 override。
+        expect(srt.bookKey, isNotEmpty);
+        expect(srt.bookKey, isNot('should-be-ignored'));
+        expect(await targetDb.getEpubBook(srt.bookKey), isNotNull);
         expect(srt.title, 'Standalone SRT');
         // 持久目录键 = uid。
         expect(

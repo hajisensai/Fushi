@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1645：嵌套查词点不开英文注释里的单词（子卡恒「未找到搜索结果」），
 /// 同一个词在顶层查词框输入却能正常查到。

@@ -25,11 +25,13 @@ String statementAt(String src, String anchor) {
   fail('锚点 $anchor 之后找不到同层分号（语句未收口？）');
 }
 
-/// BUG-402 源码守卫：阅读器桌面 Windows 复制兼容层接线不得回退。
+/// BUG-402 / BUG-4204 源码守卫：阅读器桌面复制兼容层（Windows Ctrl+C、macOS ⌘C）
+/// 接线不得回退。
 ///
-/// 复制链路涉 WebView2 + 平台键盘转发，widget 测试照不到真实复制，故这里用源码
-/// 扫描钉死三件事：① 键事件处理调用纯谓词 readerShouldHandleDesktopCopy 且门控
-/// isWindowsPlatform；② 取的是浏览器原生 getSelection（window.getSelection），
+/// 复制链路涉 WebView2 键盘转发 / macOS first responder（BUG-2948），widget 测试照
+/// 不到真实复制，故这里用源码扫描钉死三件事：① 键事件处理调用纯谓词
+/// desktopShouldHandleCopyGesture，且把 Windows 与 macOS 两个平台事实都传进去
+/// （BUG-4204：旧版只传 isWindows，macOS 的 ⌘C 永远到不了 WKWebView）；② 取的是浏览器原生 getSelection（window.getSelection），
 /// **不是** fushiSelection 查词选区；③ 命中后写系统剪贴板 Clipboard.setData。
 void main() {
   final File caret = File(
@@ -37,20 +39,23 @@ void main() {
   );
   final File scripts = File('lib/src/reader/reader_selection_scripts.dart');
 
-  test('caret.part.dart：Ctrl+C → 谓词门控 Windows + 取原生选区 + 写剪贴板', () {
+  test('caret.part.dart：复制键 → 谓词门控 Windows/macOS + 取原生选区 + 写剪贴板', () {
     expect(caret.existsSync(), isTrue, reason: 'caret.part.dart 不存在，路径变了须更新守卫');
     final String src = caret.readAsStringSync();
 
-    // ① 走纯谓词，且门控 Windows。
+    // ① 走纯谓词，且 Windows / macOS 两个平台事实都传进去。
+    final String call = statementAt(src, 'if (desktopShouldHandleCopyGesture(');
     expect(
-      src,
-      contains('readerShouldHandleDesktopCopy('),
-      reason: '复制手势判定必须走纯谓词 readerShouldHandleDesktopCopy',
+      call,
+      contains('isWindows: isWindowsPlatform'),
+      reason: 'Windows 的 Ctrl+C 到不了 WebView2（BUG-402），谓词必须拿到 isWindowsPlatform',
     );
     expect(
-      src,
-      contains('isWindows: isWindowsPlatform'),
-      reason: '必须门控 isWindowsPlatform（移动/mac 原生 copy 本就 work）',
+      call,
+      contains('isMacOS: isMacOSPlatform'),
+      reason:
+          'macOS 点正文后 first responder 通常仍是 FlutterView，⌘C 的 copy: 到不了 WKWebView'
+          '（BUG-4204 / BUG-2948），谓词必须拿到 isMacOSPlatform',
     );
 
     // ② + ③ 经 helper 取原生选区写剪贴板。
@@ -68,6 +73,41 @@ void main() {
       src,
       contains('nativeSelectionTextInvocation'),
       reason: '必须取浏览器原生选区，不碰 fushiSelection 查词选区',
+    );
+  });
+
+  test('caret.part.dart：复制按可见层叠顺序分派（弹窗各层 → 歌词 / 正文），BUG-4204', () {
+    // macOS 上 Flutter 焦点从不跟随点击进入平台视图（AppKitView 只在引擎 onFocus 时
+    // requestFocus，macOS 引擎不发；BUG-3131），弹窗 / 歌词里拖选后的 ⌘C 也落在阅读器
+    // 的 _focusNode 上。复制若只读正文 _controller，弹窗 / 歌词里的选区永远复制不到，
+    // 正文残留旧选区时还会复制出错误文字。
+    final String src = caret.readAsStringSync();
+    final String body = methodBody(
+      src,
+      'Future<void> _copyNativeSelectionToClipboard(',
+    );
+    expect(
+      body,
+      contains('copyFromTopmostSurfaceWithSelection('),
+      reason: '取选区必须走自顶向下的层叠分派，不能只认一个 controller',
+    );
+    final int popups = body.indexOf('_caretVisiblePopupStatesTopDown');
+    final int forHost = body.indexOf('copyNativeSelectionForHost');
+    expect(popups, greaterThanOrEqualTo(0), reason: '可见弹窗各层必须进候选');
+    expect(forHost, greaterThan(popups), reason: '弹窗层经弹窗自己的复制入口取选区');
+    expect(
+      body,
+      contains('_lyricsOverlayShown'),
+      reason: '歌词覆盖层显示时阅读面是歌词 WebView（正文被盖住）',
+    );
+    expect(
+      statementAt(body, 'final InAppWebViewController? readingSurface'),
+      allOf(contains('_lyricsController'), contains('_controller')),
+    );
+    expect(
+      body.lastIndexOf('readingSurface'),
+      greaterThan(forHost),
+      reason: '阅读面排在所有弹窗层之后（弹窗盖在阅读面之上）',
     );
   });
 

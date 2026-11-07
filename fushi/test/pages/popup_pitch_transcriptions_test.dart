@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-688: the lookup popup must RENDER the IPA `transcriptions` that
 /// TODO-687 block3 wired into the popup JSON.

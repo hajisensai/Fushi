@@ -13,6 +13,7 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -69,6 +70,104 @@ void main() {
   });
   tearDown(() => SettingsSearchReveal.pendingItemId = null);
 
+  // 双栏门槛钉在设置页自身宽度（不是窗口宽度）的 600dp：11 寸平板竖屏 711dp、
+  // 640dp 这类 600~719 宽度必须一级直接双栏（旧门槛 720 在这里是单列）；599 仍单列。
+  // 左栏宽按分支各自的契约：MD3 / 玻璃定宽 240，Cupertino 按
+  // [supportingPaneWidthForLayout]（600 宽时 280，右详情 320）。Cupertino 是隐藏
+  // 设计系统（偏好只认 auto / material / glass，见
+  // ThemeNotifier.normalizeDesignSystemPreference），这里在 MD3 主题上直接挂
+  // [FushiDesignSystemTheme] 进 SettingsHomePage 的 Cupertino 分支。
+  for (final String designSystem in <String>[
+    'material',
+    'glass',
+    'cupertino',
+  ]) {
+    // 期望写成字面量而不是拿常量反推：门槛被改回 720 时 600/640/711 必须红。
+    for (final (double width, bool twoPane) in <(double, bool)>[
+      (599, false),
+      (600, true),
+      (640, true),
+      (711, true),
+    ]) {
+      testWidgets('$designSystem settings home at ${width.toInt()}dp is '
+          '${twoPane ? 'two-pane' : 'single-column'}', (
+        WidgetTester tester,
+      ) async {
+        final AppModel model = (await tester.runAsync<AppModel>(
+          () => _buildAppModel(
+            designSystem == 'cupertino' ? 'material' : designSystem,
+          ),
+        ))!;
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(900, 1000);
+        addTearDown(() {
+          tester.view.resetDevicePixelRatio();
+          tester.view.resetPhysicalSize();
+        });
+        final ThemeData baseTheme = model.themeNotifier.theme;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: <Override>[
+              appProvider.overrideWith((Ref ref) => model),
+              platformServicesProvider.overrideWithValue(
+                model.platformServices,
+              ),
+            ],
+            child: TranslationProvider(
+              child: MaterialApp(
+                theme: baseTheme.copyWith(
+                  splashFactory: NoSplash.splashFactory,
+                  extensions: <ThemeExtension<dynamic>>[
+                    ...baseTheme.extensions.values.cast(),
+                    if (designSystem == 'cupertino')
+                      const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
+                  ],
+                ),
+                home: Scaffold(
+                  body: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: width,
+                      child: const SettingsHomePage(embedded: true),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final Finder home = find.byType(SettingsHomePage);
+        expect(tester.getSize(home).width, width);
+        expect(
+          isCupertinoPlatform(tester.element(home)),
+          designSystem == 'cupertino',
+        );
+        final Finder split = find.byType(MaterialSupportingPaneLayout);
+        if (!twoPane) {
+          expect(split, findsNothing);
+        } else {
+          expect(split, findsOneWidget);
+          // 双栏真的铺开了（不是外层判宽、内层 minSplitWidth 又退回单列）：
+          // 分栏 Row 的第一个孩子就是定宽左栏。
+          final Finder supporting = find
+              .descendant(of: split, matching: find.byType(SizedBox))
+              .first;
+          final double expectedSupporting = designSystem == 'cupertino'
+              ? supportingPaneWidthForLayout(width)
+              : 240;
+          expect(tester.getSize(supporting).width, expectedSupporting);
+          expect(
+            width - expectedSupporting,
+            greaterThanOrEqualTo(designSystem == 'cupertino' ? 320 : 360),
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }, timeout: const Timeout(Duration(seconds: 60)));
+    }
+  }
+
   for (final String designSystem in <String>['material', 'glass']) {
     for (final bool submit in <bool>[true, false]) {
       testWidgets(
@@ -105,7 +204,7 @@ void main() {
                     body: Align(
                       alignment: Alignment.topLeft,
                       child: SizedBox(
-                        width: 680,
+                        width: 560,
                         child: SettingsHomePage(embedded: true),
                       ),
                     ),
@@ -117,7 +216,7 @@ void main() {
           await tester.pumpAndSettle();
           final Finder home = find.byType(SettingsHomePage);
           expect(MediaQuery.sizeOf(tester.element(home)).width, 900);
-          expect(tester.getSize(home).width, 680);
+          expect(tester.getSize(home).width, 560);
           expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
 
           await tester.enterText(find.byType(EditableText), t.eink_mode);

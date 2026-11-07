@@ -791,7 +791,26 @@
       v.playbackRate = r;
       return v.playbackRate;
     },
-    toggleMute: function () { var v = video(); if (!v) return false; v.muted = !v.muted; return v.muted; },
+    // 静音 / 音量增减：Netflix 走正片播放器 API（与 setVolume 同一通道），其它站点直接操作 <video>。
+    toggleMute: function () {
+      var p = nfPlayer();
+      var v = video();
+      if (p && typeof p.setMuted === 'function') {
+        var cur = typeof p.isMuted === 'function' ? !!p.isMuted() : !!(v && v.muted);
+        try { p.setMuted(!cur); return !cur; } catch (_) {}
+      }
+      if (!v) return false;
+      v.muted = !v.muted;
+      return v.muted;
+    },
+    nudgeVolume: function (delta) {
+      var p = nfPlayer();
+      var v = video();
+      var cur = p && typeof p.getVolume === 'function' ? Number(p.getVolume()) : (v ? v.volume : 1);
+      var muted = p && typeof p.isMuted === 'function' ? !!p.isMuted() : !!(v && v.muted);
+      if (!isFinite(cur)) cur = 1;
+      return this.setVolume(cur + (Number(delta) || 0), muted);
+    },
     replayCues: function () {
       try { window.postMessage({ __fushiNf: 'replayCues' }, '/'); } catch (_) {}
       try { window.postMessage({ __fushiStream: 'replayCues' }, '/'); } catch (_) {}

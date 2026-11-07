@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/ops/ctl_settings_task_routes.dart';
 import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi_cli/fushi_cli.dart';

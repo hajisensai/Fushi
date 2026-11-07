@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1483 守卫：Windows 装进不可写目录（如 Program Files）后，WebView2 的
 /// 默认用户数据目录（exe 旁 `<exe>.WebView2`）建不出来 → 每次启动弹

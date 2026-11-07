@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1063 / BUG-512 source-scan guard: the "media type bindings" settings
 /// list (profile_management_page.dart) must include `video`, and the video

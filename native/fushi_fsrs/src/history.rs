@@ -12,12 +12,18 @@
 //! 规则与旧 Dart 实现逐条对应（固定向量 packages/fushi_srs/test/history/fixtures/ 由删除前的 Dart
 //! 实现生成，两条入口都必须逐条一致）：
 //! - 同一份历史里同 ID 的日志只留最后一条（Dart `Map` 去重语义）；
+//! - 同一事件的多份副本只算一份（[EventKey]，BUG-4218）：同卡、同 kind、同 HLC（physical, counter, writerId）、
+//!   同发生时刻 / 来源 / 评分 / Anki revlog 时刻的日志是同一次真实事件换了 ID 的副本（profile 合并在 BUG-4217
+//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里 ID 最小（UTF-16 序）的一条是代表，其余标
+//!   [STATUS_DUPLICATE]、不算有效；组里任何一份被撤销，整组（每一份）算撤销。undo 与不认识的 kind 不成组。依据：HLC 每次写日志都由写入者时钟
+//!   tick 出来，同写入者内唯一；Anki 导入的 HLC 由 revlog id / 锚点时刻派生；合并 / 跨 profile 导入原样保留 HLC；
+//!   恢复备份的重放副本取新 HLC，不与原日志成组；
 //! - 排序键见 ordering.rs（与字段寄存器共用一份）：(钳位后的物理时间, 计数器, writerId, eventId)，
 //!   字符串按 UTF-16 码元比较；
 //! - 撤销：undo 日志的 revokes 目标不算有效；不级联；
 //! - 等价导入：Anki 导入的评分日志与本机原生评分同评分、Anki revlog 时刻与原生时刻相差 ≤ 1 秒时不算有效
 //!   （两条日志之间的判据 [import_equivalent] 也是 Anki 导入器入库前判重的唯一实现）；
-//! - 有效 = 已知 kind、不是 undo、没被撤销、不是等价导入；
+//! - 有效 = 已知 kind、不是 undo、没被撤销、不是等价导入、不是副本；
 //! - 状态 = 最后一条有结果的有效日志的结果；排程归属 = 最后一条有结果的有效 handOff 的方向，没有 = fushi。
 
 use std::borrow::Cow;
@@ -34,7 +40,7 @@ use serde_json::value::RawValue;
 pub const IMPORT_EQUIVALENCE_TOLERANCE_MS: i64 = 1000;
 
 /// 日志种类（持久化名冻结，见 review_log.dart `SrsLogKind`）。列模式下的编码与 Dart 侧同序。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Review = 0,
     Manual = 1,
@@ -72,7 +78,7 @@ impl Kind {
 }
 
 /// 日志来源（`SrsLogOrigin`）：只有 fushi / anki 两个值参与规则，别的值两边都不算。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Origin {
     Fushi,
     Anki,
@@ -83,6 +89,8 @@ pub enum Origin {
 #[derive(Debug, Clone)]
 pub struct Log<'a> {
     pub id: Cow<'a, str>,
+    /// 日志所属的卡（一份历史可以是血统里几张卡的日志之和；同一事件只在同一张卡上成组）。
+    pub card: Cow<'a, str>,
     pub writer: Cow<'a, str>,
     pub physical: i64,
     pub counter: i64,
@@ -103,6 +111,25 @@ impl Log<'_> {
         self.kind == Kind::Review && self.rating_type
     }
 
+    /// 同一事件的副本才相等的内容身份；undo / 不认识的 kind 没有（不成组）。
+    fn event_key(&self) -> Option<EventKey<'_>> {
+        if matches!(self.kind, Kind::Undo | Kind::Unknown) {
+            return None;
+        }
+        Some(EventKey {
+            card: &self.card,
+            kind: self.kind,
+            physical: self.physical,
+            counter: self.counter,
+            writer: &self.writer,
+            occurred_at: self.occurred_at,
+            origin: self.origin,
+            rating_type: self.rating_type,
+            rating: self.rating,
+            anki_id: self.anki_id,
+        })
+    }
+
     fn sort_key(&self) -> SortKey<'_> {
         SortKey::new(
             self.physical,
@@ -112,6 +139,23 @@ impl Log<'_> {
             self.server_time,
         )
     }
+}
+
+/// 一次真实事件的内容身份（BUG-4218）：同一事件换了 ID 的副本（profile 合并）在这些字段上逐个相同。
+/// HLC 由写入者时钟 tick 出来、同写入者内唯一，Anki 导入的 HLC 由 revlog id / 锚点时刻派生，合并与跨 profile
+/// 导入都原样保留；其余字段是副本照抄的内容，只用来再收紧（两条不同事件撞同一 HLC 时不被误并）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct EventKey<'a> {
+    card: &'a str,
+    kind: Kind,
+    physical: i64,
+    counter: i64,
+    writer: &'a str,
+    occurred_at: i64,
+    origin: Origin,
+    rating_type: bool,
+    rating: Option<i64>,
+    anki_id: Option<i64>,
 }
 
 fn cmp_sort_key(a: &Log<'_>, b: &Log<'_>) -> Ordering {
@@ -145,11 +189,13 @@ pub const STATUS_EQUIVALENT_IMPORT: u8 = 4;
 pub const STATUS_REVOKER: u8 = 8;
 /// 排序键的物理部分被钳位（HLC 物理时间超过 S(e) + 10 分钟）。
 pub const STATUS_CLAMPED: u8 = 16;
+/// 同一事件的副本里不是代表的那几份（[EventKey]：组里 ID 最小的是代表），不算有效。
+pub const STATUS_DUPLICATE: u8 = 32;
 
 /// 一份历史的选取结果。下标都指向输入切片。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
-    /// 去重（同 ID 留最后一条）后按排序键升序的输入下标。
+    /// 去重（同 ID 留最后一条）后按排序键升序的输入下标。同一事件的副本都在，非代表的标 [STATUS_DUPLICATE]。
     pub order: Vec<usize>,
     /// 与 [Selection::order] 一一对应的 `STATUS_*` 位。
     pub status: Vec<u8>,
@@ -162,11 +208,11 @@ pub struct Selection {
 /// 选取（铁律 B）。
 pub fn select(logs: &[Log<'_>]) -> Selection {
     // 同 ID 留最后一条。历史一般十几条，线性查找比建哈希表快。
-    let mut order: Vec<usize> = Vec::with_capacity(logs.len());
+    let mut kept: Vec<usize> = Vec::with_capacity(logs.len());
     if logs.len() <= 32 {
         for (i, l) in logs.iter().enumerate() {
             if !logs[i + 1..].iter().any(|later| later.id == l.id) {
-                order.push(i);
+                kept.push(i);
             }
         }
     } else {
@@ -177,13 +223,13 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         }
         for (i, l) in logs.iter().enumerate() {
             if last.get(&*l.id) == Some(&i) {
-                order.push(i);
+                kept.push(i);
             }
         }
     }
-    order.sort_by(|&a, &b| cmp_sort_key(&logs[a], &logs[b]));
 
-    let revoked_ids: Vec<&str> = order
+    // 撤销目标：全部 undo 的 revokes（undo 不成组，副本 undo 撤的是同一个目标，取并集即可）。
+    let revoked_ids: Vec<&str> = kept
         .iter()
         .filter_map(|&i| {
             let l = &logs[i];
@@ -194,6 +240,32 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
             }
         })
         .collect();
+    let is_revoked = |l: &Log<'_>| revoked_ids.iter().any(|r| *r == l.id);
+
+    // 同一事件的副本成组（BUG-4218）：root[k] = 组里第一个成员在 kept 里的位置。
+    let root: Vec<usize> = event_groups(logs, &kept);
+    // 每组的代表（ID 最小，UTF-16 序）与「组里有一份被撤销」。
+    let mut best: Vec<usize> = (0..kept.len()).collect();
+    let mut group_revoked: Vec<bool> = vec![false; kept.len()];
+    for (k, &r) in root.iter().enumerate() {
+        let l = &logs[kept[k]];
+        if is_revoked(l) {
+            group_revoked[r] = true;
+        }
+        if r != k && cmp_utf16(&l.id, &logs[kept[best[r]]].id) == Ordering::Less {
+            best[r] = k;
+        }
+    }
+    // 副本仍留在排序里（标 [STATUS_DUPLICATE]、不算有效）：重放（sync2/replay.rs）要给每条派生日志按它的位置
+    // 算一次投影行，投影行才是操作集合的纯函数；撤销 / 副本标记跟着下标一起排。
+    let mut paired: Vec<(usize, bool, bool)> = root
+        .iter()
+        .enumerate()
+        .map(|(k, &r)| (kept[k], group_revoked[r], best[r] != k))
+        .collect();
+    paired.sort_by(|a, b| cmp_sort_key(&logs[a.0], &logs[b.0]));
+    let order: Vec<usize> = paired.iter().map(|p| p.0).collect();
+
     let natives: Vec<&Log<'_>> = order
         .iter()
         .map(|&i| &logs[i])
@@ -203,15 +275,17 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
     let mut status = Vec::with_capacity(order.len());
     let mut last_effective = None;
     let mut scheduler_from = None;
-    for &i in &order {
+    for &(i, revoked, duplicate) in &paired {
         let l = &logs[i];
         let mut s = 0u8;
         if l.kind == Kind::Undo && l.revokes.is_some() {
             s |= STATUS_REVOKER;
         }
-        let revoked = revoked_ids.iter().any(|r| *r == l.id);
         if revoked {
             s |= STATUS_REVOKED;
+        }
+        if duplicate {
+            s |= STATUS_DUPLICATE;
         }
         let equivalent =
             l.origin == Origin::Anki && natives.iter().any(|n| import_equivalent(l, n));
@@ -221,7 +295,8 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         if is_clamped(l.physical, l.server_time) {
             s |= STATUS_CLAMPED;
         }
-        if l.kind != Kind::Unknown && l.kind != Kind::Undo && !revoked && !equivalent {
+        if l.kind != Kind::Unknown && l.kind != Kind::Undo && !revoked && !equivalent && !duplicate
+        {
             s |= STATUS_EFFECTIVE;
             if l.has_result {
                 last_effective = Some(i);
@@ -240,6 +315,32 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
     }
 }
 
+/// [kept]（输入下标）里每条日志所在事件组的根：组里第一个成员在 [kept] 里的位置；不成组的日志是自己。
+fn event_groups(logs: &[Log<'_>], kept: &[usize]) -> Vec<usize> {
+    let mut root: Vec<usize> = (0..kept.len()).collect();
+    if kept.len() <= 32 {
+        for k in 0..kept.len() {
+            let Some(key) = logs[kept[k]].event_key() else {
+                continue;
+            };
+            if let Some(j) =
+                (0..k).find(|&j| root[j] == j && logs[kept[j]].event_key() == Some(key))
+            {
+                root[k] = j;
+            }
+        }
+    } else {
+        let mut first: std::collections::HashMap<EventKey<'_>, usize> =
+            std::collections::HashMap::with_capacity(kept.len());
+        for (k, &i) in kept.iter().enumerate() {
+            if let Some(key) = logs[i].event_key() {
+                root[k] = *first.entry(key).or_insert(k);
+            }
+        }
+    }
+    root
+}
+
 // ---------------------------------------------------------------- 落库形态（JSON）入口
 
 /// 落库 JSON 里选取要读的键（`SrsReviewLog.toJson` 的线格式；别的键忽略）。必填键缺失 / 类型不对
@@ -252,8 +353,8 @@ struct WireLog<'a> {
     id: Option<Cow<'a, str>>,
     #[serde(default, borrow, rename = "p")]
     _p: Option<Cow<'a, str>>,
-    #[serde(default, borrow, rename = "card")]
-    _card: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    card: Option<Cow<'a, str>>,
     #[serde(default, borrow)]
     kind: Option<Cow<'a, str>>,
     #[serde(borrow)]
@@ -421,6 +522,7 @@ pub(crate) fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
 /// （store/slim.rs）用它代替拼回的 `json`。
 pub struct LogCols {
     pub id: String,
+    pub card: String,
     pub kind: String,
     pub rating: Option<i64>,
     pub at: i64,
@@ -453,6 +555,9 @@ fn parse_wire<'a>(
     if let Some(c) = col("id") {
         w.id.get_or_insert(Cow::Borrowed(&c.id));
     }
+    if let Some(c) = col("card") {
+        w.card.get_or_insert(Cow::Borrowed(&c.card));
+    }
     if let Some(c) = col("kind") {
         w.kind.get_or_insert(Cow::Borrowed(&c.kind));
     }
@@ -471,13 +576,12 @@ fn parse_wire<'a>(
     if let Some(r) = col("rating").and_then(|c| c.rating) {
         w.rating.get_or_insert(r);
     }
-    // p / card 选取用不到：瘦存里缺了不补（原文缺照旧报错）。
-    for (key, v) in [("p", w._p.is_some()), ("card", w._card.is_some())] {
-        if !v && col(key).is_none() {
-            return Err(format!("bad review log: missing field `{key}`"));
-        }
+    // p 选取用不到：瘦存里缺了不补（原文缺照旧报错）。
+    if w._p.is_none() && col("p").is_none() {
+        return Err("bad review log: missing field `p`".to_owned());
     }
     let id = w.id.ok_or("bad review log: missing field `id`")?;
+    let card = w.card.ok_or("bad review log: missing field `card`")?;
     let kind = w.kind.ok_or("bad review log: missing field `kind`")?;
     let at = w.at.ok_or("bad review log: missing field `at`")?;
     let (physical, counter, writer) = match w.hlc {
@@ -515,6 +619,7 @@ fn parse_wire<'a>(
     Ok((
         Log {
             id,
+            card,
             writer,
             physical,
             counter,
@@ -904,8 +1009,11 @@ pub fn encode_states(states: &[State]) -> Vec<u8> {
 /// 2 其它）、`1<<5` 评分类 reviewType、`1<<6` 有结果、`1<<7` 有 revokes。
 pub const COLUMN_WORDS: usize = 7;
 
-/// 列模式批量：第 i 条日志的三个串 = `text[offs[3i]..offs[3i+1]]`（id）、`[3i+1..3i+2]`（writerId）、
-/// `[3i+2..3i+3]`（revokes，无则空串且 bits 不带 `1<<7`）。
+/// 列模式每条日志带几个串（[select_columns]：id、writerId、revokes、cardId）。
+pub const COLUMN_STRINGS: usize = 4;
+
+/// 列模式批量：第 i 条日志的四个串 = `text[offs[4i]..offs[4i+1]]`（id）、`[4i+1..4i+2]`（writerId）、
+/// `[4i+2..4i+3]`（revokes，无则空串且 bits 不带 `1<<7`）、`[4i+3..4i+4]`（cardId）。
 ///
 /// 输出布局（小端）：`[u32 组边界 × (n_groups + 1)][u32 输入下标 × 去重后总数][i32 lastEffective × n_groups]
 /// [i32 schedulerFrom × n_groups][u8 STATUS_* × 去重后总数]`；下标都是全局输入下标，-1 = 无。
@@ -919,7 +1027,7 @@ pub fn select_columns(
         return Err("bad history column layout".to_owned());
     }
     let n_logs = ints.len() / COLUMN_WORDS;
-    if offs.len() != n_logs * 3 + 1
+    if offs.len() != n_logs * COLUMN_STRINGS + 1
         || groups.is_empty()
         || *groups.last().unwrap() as usize != n_logs
     {
@@ -938,8 +1046,9 @@ pub fn select_columns(
         let c = &ints[i * COLUMN_WORDS..(i + 1) * COLUMN_WORDS];
         let bits = c[6];
         logs.push(Log {
-            id: Cow::Borrowed(slice(3 * i)?),
-            writer: Cow::Borrowed(slice(3 * i + 1)?),
+            id: Cow::Borrowed(slice(COLUMN_STRINGS * i)?),
+            card: Cow::Borrowed(slice(COLUMN_STRINGS * i + 3)?),
+            writer: Cow::Borrowed(slice(COLUMN_STRINGS * i + 1)?),
             physical: c[0],
             counter: c[1],
             server_time: opt(c[2]),
@@ -954,7 +1063,7 @@ pub fn select_columns(
             anki_id: opt(c[4]),
             occurred_at: c[3],
             revokes: (bits & (1 << 7) != 0)
-                .then(|| slice(3 * i + 2).map(Cow::Borrowed))
+                .then(|| slice(COLUMN_STRINGS * i + 2).map(Cow::Borrowed))
                 .transpose()?,
             has_result: bits & (1 << 6) != 0,
         });
@@ -1087,5 +1196,229 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    // ---- BUG-4218：同一事件的多 ID 副本（profile 合并在 BUG-4217 修好前写出的重复）
+
+    /// 卡 [card] 上一条评分复习（落库 JSON）：rating 3、res 的 dueDay = [due]。
+    fn review_on(card: &str, id: &str, hlc: &str, at: i64, due: i64, extra: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"{card}","kind":"review","hlc":"{hlc}","at":{at},"rtype":"review","rating":3,"res":{{"queue":"review","dueDay":{due}}}{extra}}}"#
+        )
+    }
+
+    fn review(id: &str, hlc: &str, at: i64, due: i64) -> String {
+        review_on("c", id, hlc, at, due, "")
+    }
+
+    fn selection_of(jsons: &[&str]) -> Selection {
+        let logs: Vec<Log<'_>> = jsons
+            .iter()
+            .map(|j| parse_full(j, None).unwrap().0)
+            .collect();
+        select(&logs)
+    }
+
+    /// [id] 那条日志在选取里的 `STATUS_*` 位（不在排序里 = None）。
+    fn status_of(jsons: &[&str], id: &str) -> Option<u8> {
+        let logs: Vec<Log<'_>> = jsons
+            .iter()
+            .map(|j| parse_full(j, None).unwrap().0)
+            .collect();
+        let sel = select(&logs);
+        let at = sel.order.iter().position(|&i| logs[i].id == id)?;
+        Some(sel.status[at])
+    }
+
+    fn effective_ids(jsons: &[&str]) -> Vec<String> {
+        let logs: Vec<Log<'_>> = jsons
+            .iter()
+            .map(|j| parse_full(j, None).unwrap().0)
+            .collect();
+        let sel = select(&logs);
+        sel.order
+            .iter()
+            .zip(&sel.status)
+            .filter(|(_, s)| **s & STATUS_EFFECTIVE != 0)
+            .map(|(&i, _)| logs[i].id.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn duplicate_event_copies_count_once() {
+        // 合并写出的两份：内容逐字相同，只有 ID 不同（规则 ID + 兜底 ID / 原 v7 + 兜底 v5）。
+        let first = review("l0", "5:0:A", 5, 5);
+        let orig = review("b-orig", "10:0:A", 10, 10);
+        let copy = review("a-copy", "10:0:A", 10, 10);
+        for jsons in [[&first, &orig, &copy], [&copy, &first, &orig]] {
+            let jsons: Vec<&str> = jsons.iter().map(|s| s.as_str()).collect();
+            // 组里 ID 最小的一条是代表；另一份仍在排序里（重放要给它算投影行），标副本、不算有效。
+            assert_eq!(effective_ids(&jsons), ["l0", "a-copy"]);
+            assert_eq!(selection_of(&jsons).order.len(), 3);
+            assert_eq!(status_of(&jsons, "b-orig"), Some(STATUS_DUPLICATE));
+            assert_eq!(status_of(&jsons, "a-copy"), Some(STATUS_EFFECTIVE));
+            let s = state_from_json(&jsons, &[None, None, None]).unwrap();
+            assert_eq!(s.last_log_id.as_deref(), Some("a-copy"));
+            // 统计 / 优化器走同一个选取：这次复习只算一次。
+            let rows = stats_from_json(&jsons, &[None, None, None]).unwrap();
+            assert_eq!(
+                rows.iter().map(|r| r.log_id.as_str()).collect::<Vec<_>>(),
+                ["l0", "a-copy"]
+            );
+            let eff = crate::projection::effective_logs(
+                &jsons
+                    .iter()
+                    .map(|j| parse_full(j, None).unwrap())
+                    .collect::<Vec<_>>(),
+            );
+            assert_eq!(eff.len(), 2);
+        }
+    }
+
+    #[test]
+    fn undoing_either_copy_revokes_the_event() {
+        let first = review("l0", "5:0:A", 5, 5);
+        let orig = review("b-orig", "10:0:A", 10, 10);
+        let copy = review("a-copy", "10:0:A", 10, 10);
+        for target in ["b-orig", "a-copy"] {
+            let undo = wire(
+                "u1",
+                "undo",
+                "11:0:A",
+                11,
+                &format!(r#","revokes":"{target}""#),
+            );
+            let jsons = [first.as_str(), orig.as_str(), copy.as_str(), undo.as_str()];
+            assert_eq!(effective_ids(&jsons), ["l0"], "undo {target}");
+            let s = state_from_json(&jsons, &[None; 4]).unwrap();
+            assert_eq!(s.last_log_id.as_deref(), Some("l0"), "undo {target}");
+            assert_eq!(s.due_day, Some(5));
+            // 两份都带撤销标记，非代表的那份另带副本标记；undo 本身仍是撤销者。
+            assert_eq!(status_of(&jsons, "a-copy"), Some(STATUS_REVOKED));
+            assert_eq!(
+                status_of(&jsons, "b-orig"),
+                Some(STATUS_REVOKED | STATUS_DUPLICATE)
+            );
+            assert_eq!(status_of(&jsons, "u1"), Some(STATUS_REVOKER));
+        }
+    }
+
+    #[test]
+    fn restore_replay_copy_is_a_new_event() {
+        // 恢复备份的重放副本照抄内容但取新 HLC（restore_plan.dart `_replayOf`）：不与被撤销的原日志成组。
+        let orig = review("l1", "10:0:A", 10, 10);
+        let undo = wire("u1", "undo", "11:0:A", 11, r#","revokes":"l1""#);
+        let replay = review_on(
+            "c",
+            "r1",
+            "12:0:A",
+            10,
+            10,
+            r#","restoreOf":"bk","replayOf":"l1""#,
+        );
+        let jsons = [orig.as_str(), undo.as_str(), replay.as_str()];
+        assert_eq!(effective_ids(&jsons), ["r1"]);
+        let s = state_from_json(&jsons, &[None; 3]).unwrap();
+        assert_eq!(s.last_log_id.as_deref(), Some("r1"));
+    }
+
+    #[test]
+    fn same_hlc_on_another_card_or_with_other_content_is_not_a_copy() {
+        // 血统里另一张卡（前身）上同 HLC 的日志、同 HLC 但评分 / 发生时刻不同的日志，都不是同一事件。
+        let mine = review("b", "10:0:A", 10, 10);
+        let pred = review_on("pred", "a", "10:0:A", 10, 20, "");
+        assert_eq!(effective_ids(&[&mine, &pred]), ["a", "b"]);
+        let other_at = review("a", "10:0:A", 11, 20);
+        assert_eq!(effective_ids(&[&mine, &other_at]), ["a", "b"]);
+        let other_rating = mine
+            .replace(r#""rating":3"#, r#""rating":2"#)
+            .replace(r#""id":"b""#, r#""id":"a""#);
+        assert_eq!(effective_ids(&[&mine, &other_rating]), ["a", "b"]);
+    }
+
+    #[test]
+    fn undo_logs_are_never_grouped() {
+        // 两条 undo 撞同一 HLC（不会发生，但 undo 的效果只看 revokes）：各撤各的。
+        let l1 = review("l1", "10:0:A", 10, 10);
+        let l2 = review("l2", "11:0:A", 11, 11);
+        let u1 = wire("u1", "undo", "12:0:A", 12, r#","revokes":"l1""#);
+        let u2 = wire("u2", "undo", "12:0:A", 12, r#","revokes":"l2""#);
+        assert!(effective_ids(&[&l1, &l2, &u1, &u2]).is_empty());
+    }
+
+    #[test]
+    fn equivalent_import_rule_still_applies_to_copies() {
+        // 原生评分 + 同一条 Anki revlog 的两份导入副本（ankiId 与原生时刻相差 1 秒内）：两份都被判与原生
+        // 等价，只有原生那条有效。
+        let native = review("n1", "1000:0:A", 1000, 1);
+        let anki = |id: &str| {
+            format!(
+                r#"{{"id":"{id}","p":"p","card":"c","kind":"review","hlc":"1500:0:anki","at":1500,"origin":"anki","ankiId":1500,"rtype":"review","rating":3,"res":{{"queue":"review","dueDay":2}}}}"#
+            )
+        };
+        let (a1, a2) = (anki("y-anki"), anki("x-anki"));
+        let jsons = [native.as_str(), a1.as_str(), a2.as_str()];
+        assert_eq!(effective_ids(&jsons), ["n1"]);
+        assert_eq!(status_of(&jsons, "x-anki"), Some(STATUS_EQUIVALENT_IMPORT));
+        assert_eq!(
+            status_of(&jsons, "y-anki"),
+            Some(STATUS_EQUIVALENT_IMPORT | STATUS_DUPLICATE)
+        );
+        // 超出 1 秒容差：两份副本仍只算一份，且有效。
+        let far = |id: &str| anki(id).replace(r#""ankiId":1500"#, r#""ankiId":2001"#);
+        let (f1, f2) = (far("y-anki"), far("x-anki"));
+        assert_eq!(effective_ids(&[&native, &f1, &f2]), ["n1", "x-anki"]);
+    }
+
+    #[test]
+    fn long_histories_group_copies_the_same_way() {
+        // > 32 条走哈希表分支：与短历史同一结果。
+        let mut owned: Vec<String> = (0..40)
+            .map(|k| review(&format!("l{k:02}"), &format!("{}:0:A", 100 + k), 100 + k, k))
+            .collect();
+        owned.push(review("a-copy", "120:0:A", 120, 20));
+        owned.push(wire("u1", "undo", "200:0:A", 200, r#","revokes":"l39""#));
+        let jsons: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let eff = effective_ids(&jsons);
+        assert_eq!(eff.len(), 39);
+        assert!(eff.contains(&"a-copy".to_owned()));
+        assert!(!eff.contains(&"l20".to_owned()));
+        let s = state_from_json(&jsons, &vec![None; jsons.len()]).unwrap();
+        assert_eq!(s.last_log_id.as_deref(), Some("l38"));
+    }
+
+    #[test]
+    fn column_mode_reads_card_and_groups_copies() {
+        // 列模式（Dart SrsCardHistory）：每条日志四个串 id / writerId / revokes / cardId。
+        let rows: [(&str, &str, i64, &str); 3] = [
+            ("b-orig", "c", 10, ""),
+            ("a-copy", "c", 10, ""),
+            ("p1", "pred", 10, ""),
+        ];
+        let mut ints: Vec<i64> = Vec::new();
+        let mut text = String::new();
+        let mut offs: Vec<u32> = vec![0];
+        for (id, card, phys, revokes) in rows {
+            // kind review(0) | 评分类 1<<5 | 有结果 1<<6。
+            ints.extend_from_slice(&[phys, 0, NONE_I64, phys, NONE_I64, 3, (1 << 5) | (1 << 6)]);
+            for part in [id, "A", revokes, card] {
+                text.push_str(part);
+                offs.push(text.len() as u32);
+            }
+        }
+        let out = select_columns(&ints, text.as_bytes(), &offs, &[0, 3]).unwrap();
+        let u32_at = |k: usize| u32::from_le_bytes(out[k * 4..k * 4 + 4].try_into().unwrap());
+        // [bounds × 2][order × 3][last][sched][status × 3]：排序 a-copy < b-orig < p1（同 HLC 按 ID）；
+        // b-orig 是 a-copy 的副本，前身卡上同 HLC 的 p1 不是。
+        assert_eq!(out.len(), 2 * 4 + 3 * 4 + 4 + 4 + 3);
+        assert_eq!((u32_at(0), u32_at(1)), (0, 3));
+        assert_eq!([u32_at(2), u32_at(3), u32_at(4)], [1, 0, 2]);
+        assert_eq!(u32_at(5), 2, "last effective = p1");
+        assert_eq!(
+            &out[out.len() - 3..],
+            [STATUS_EFFECTIVE, STATUS_DUPLICATE, STATUS_EFFECTIVE]
+        );
+        // 旧布局（三个串）判坏。
+        assert!(select_columns(&ints, text.as_bytes(), &offs[..10], &[0, 3]).is_err());
     }
 }

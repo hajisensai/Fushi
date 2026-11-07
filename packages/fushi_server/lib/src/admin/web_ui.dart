@@ -78,7 +78,8 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 
 <section id="s-pairing">
 <div class="card"><h2>配对请求</h2><div id="pairing-pending"><p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p></div></div>
-<div class="card"><h2>已配对设备</h2><table><thead><tr><th>设备</th><th>peer id</th><th>最近地址</th><th>配对时间</th><th></th></tr></thead><tbody id="peers"></tbody></table></div>
+<div class="card"><h2>已配对设备</h2><table><thead><tr><th>设备</th><th>peer id</th><th>最近地址</th><th>配对时间</th><th>我的设备</th><th></th></tr></thead><tbody id="peers"></tbody></table>
+<p class="small muted"><span id="lb-link-state"></span> 标为「我的设备」的已配对设备在本机没有 Fushi 账户时，会跟随本机（当前 Profile）的排行榜账户自动登录：设备只交来它自己的公钥，由本机账户代绑；私钥 / 恢复码不外传。配对不会自动标记；只有配对时证明过设备钥匙的设备能标（旧版客户端需升级后重新配对）。仅 TLS 下可用，总开关在「设置」。</p></div>
 <div class="card"><h2>配置文件寄存</h2>
 <div class="row"><span id="prof-state" class="small"></span><span class="sp"></span><button class="b sec" id="btn-prof-toggle"></button></div>
 <p class="small muted">已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。</p>
@@ -90,7 +91,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <table><thead><tr><th>id</th><th>路径</th><th>类型</th><th>状态</th><th></th></tr></thead><tbody id="libs"></tbody></table>
 <div class="row" style="margin-top:12px">
 <input type="text" id="lib-path" placeholder="/srv/media/anime" style="flex:1">
-<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option></select>
+<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option><option value="manga">manga (mokuro / cbz / cbr / cb7 / zip / rar / 页图目录)</option><option value="audiobook">audiobook (音频目录，可带 epub / 字幕)</option></select>
 <input type="text" id="lib-id" placeholder="id（可空）" style="min-width:120px">
 <button class="b" id="btn-lib-add">添加</button></div>
 <p class="small muted">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</p>
@@ -246,8 +247,11 @@ async function loadPairing(){
   $('#pairing-pending').innerHTML = p.pending
     ? `<p>${esc(p.pending.deviceName||'未知设备')} <span class="muted">(${esc(p.pending.remoteAddress||'?')})</span> 请求配对，请在该设备输入：</p><div class="pin">${esc(p.pending.pin)}</div><p class="small muted">${fmtTime(p.pending.createdAt)}</p>`
     : '<p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p>';
-  $('#peers').innerHTML = p.peers.map(x=>`<tr><td>${esc(x.deviceName||'—')}</td><td class="small muted">${esc(x.peerId)}</td><td>${esc(x.lastSeenIp||'')}</td><td>${fmtTime(x.pairedAtMs)}</td><td><button class="b danger" data-revoke="${esc(x.peerId)}">吊销</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">无</td></tr>';
+  $('#peers').innerHTML = p.peers.map(x=>`<tr><td>${esc(x.deviceName||'—')}</td><td class="small muted">${esc(x.peerId)}</td><td>${esc(x.lastSeenIp||'')}</td><td>${fmtTime(x.pairedAtMs)}</td><td>${x.deviceKeyVerified ? `<button class="b ${x.ownerDevice?'':'sec'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${x.ownerDevice?'是（取消）':'标为我的设备'}</button>` : '<span class="small muted">未证明设备钥匙</span>'}</td><td><button class="b danger" data-revoke="${esc(x.peerId)}">吊销</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">无</td></tr>';
+  const lb = p.leaderboardLink || {};
+  $('#lb-link-state').innerHTML = lb.enabled ? (lb.tls ? '<span class="tag ok">自动登录已开</span>' : '<span class="tag">自动登录已开，但 TLS 关着——端点在明文下拒绝访问</span>') : '<span class="tag">自动登录已关</span>';
   $('#peers').querySelectorAll('[data-revoke]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('吊销该设备？')) return; await del('pairing/peers/'+encodeURIComponent(b.dataset.revoke)); loadPairing(); }));
+  $('#peers').querySelectorAll('[data-owner]').forEach(b=>b.onclick=guard(async()=>{ const on = b.dataset.on!=='1'; if(on && !confirm('标为「我的设备」？它将能跟随本机的 Fushi 排行榜账户自动登录（代绑出去的设备钥匙在账户里是满权限）。只标你自己的设备。')) return; await put('pairing/peers/'+encodeURIComponent(b.dataset.owner)+'/owner',{owner:on}); toast(on?'已标为我的设备':'已取消'); loadPairing(); }));
   await loadProfiles();
 }
 async function loadProfiles(){
@@ -535,7 +539,7 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
   ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],
-  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['remoteUpdate','允许已配对设备远程更新本服务端（仅发布包；装完退出码 75，由服务管理器重启）','bool'],['leaderboardLink','允许「我的设备」跟随本机 Fushi 排行榜账户自动登录','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
   ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],

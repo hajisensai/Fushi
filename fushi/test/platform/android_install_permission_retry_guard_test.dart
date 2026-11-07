@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-427/TODO-852: Android 安装权限授予后无法续接/重试安装。
 ///

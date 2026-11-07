@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：**发布构建失败时必须能看见真错误**，以及别再拿 debug 构建冒充发布验证。
 ///

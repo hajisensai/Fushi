@@ -1,6 +1,6 @@
 // 视频车道「高级制卡」覆盖项 → 这张卡的区间 / 图片方式（纯函数，写卡与对话框试听同源）。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
     show MiningMosaicRegion, MiningRequestOverrides;

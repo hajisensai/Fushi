@@ -4,7 +4,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 
 import '../../integration_test/support/fake_ankiconnect.dart';

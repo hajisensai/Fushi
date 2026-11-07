@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 振假名三态 `toggle`（对齐 Hoshi Reader iOS FuriganaMode.toggle）的行为级守卫：
 /// 用 node 执行 `reader_furigana_toggle_reveal_behavior_test.js`，它从

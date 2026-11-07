@@ -36,6 +36,12 @@ class MihonCloudflareAction extends StatefulWidget {
   final Future<void> Function() onVerified;
   final bool compact;
 
+  /// [error] 里有没有可解的 Cloudflare 挑战（= 这个按钮显不显示）。与别的按钮
+  /// 并排进 `Wrap` 时按它决定要不要放进去：零尺寸的子项照样占 `spacing`。
+  static bool shows({required Object? runtime, required Object? error}) =>
+      runtime is ChallengeMihonRuntime &&
+      mihonCloudflareChallenge(error) != null;
+
   @override
   State<MihonCloudflareAction> createState() => _MihonCloudflareActionState();
 }
@@ -72,8 +78,10 @@ class _MihonCloudflareActionState extends State<MihonCloudflareAction> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.runtime is! ChallengeMihonRuntime ||
-        mihonCloudflareChallenge(widget.error) == null) {
+    if (!MihonCloudflareAction.shows(
+      runtime: widget.runtime,
+      error: widget.error,
+    )) {
       return const SizedBox.shrink();
     }
     final String label = t.manga_source_cloudflare_verify_title;

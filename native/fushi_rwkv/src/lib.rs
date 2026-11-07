@@ -276,6 +276,8 @@ pub struct RwkvRuntime {
     /// restore / reset）清空它。
     journal: Vec<(u64, i64, SmallUndo)>,
     journal_bytes: usize,
+    /// 诊断：撤销日志字节数在任何时刻到过的最大值（[Self::journal_peak_bytes]）。
+    journal_peak_bytes: usize,
     /// 因超出容量从撤销日志里丢掉的条目的最晚时刻（没丢过 = `i64::MIN`）；replay / restore / reset 清空
     /// 日志时一起归位——那之前的行由调用方在 [Self::rewind_from] 的 `floor` 里交代。
     trimmed_floor: i64,
@@ -283,6 +285,25 @@ pub struct RwkvRuntime {
     /// 同一张卡与同一条笔记的项作废（它们的卡 / 笔记状态变了）；牌组 / 预设 / 全局状态的变化
     /// 不作废别的项——调用方在换日、换设置、同步合并后 [Self::scores_clear] 全量刷新。
     scores: HashMap<i64, ScoreEntry>,
+}
+
+/// 撤销日志超出 [JOURNAL_MAX_BYTES] 时从最早的丢起，丢掉的最晚时刻记进 `trimmed_floor`
+/// （[RwkvRuntime::rewind_from] 退不到它之前）。[RwkvRuntime::append] 每追加一条调一次，所以
+/// 撤销日志任何时刻都不超过上限加一条。
+fn trim_journal(
+    journal: &mut Vec<(u64, i64, SmallUndo)>,
+    journal_bytes: &mut usize,
+    trimmed_floor: &mut i64,
+) {
+    let mut drop = 0;
+    while drop < journal.len() && *journal_bytes > JOURNAL_MAX_BYTES {
+        *journal_bytes -= journal[drop].2.bytes();
+        *trimmed_floor = (*trimmed_floor).max(journal[drop].1);
+        drop += 1;
+    }
+    if drop > 0 {
+        journal.drain(..drop);
+    }
 }
 
 /// [RwkvRuntime] 的错误。
@@ -357,6 +378,7 @@ impl RwkvRuntime {
             poisoned: false,
             journal: Vec::new(),
             journal_bytes: 0,
+            journal_peak_bytes: 0,
             trimmed_floor: i64::MIN,
             scores: HashMap::new(),
         })
@@ -672,6 +694,12 @@ impl RwkvRuntime {
             .retain(|card, entry| !cards.contains(card) && !notes.contains(&entry.note_key));
     }
 
+    /// 诊断：撤销日志字节数到过的最大值（含一批追加的途中）。
+    #[doc(hidden)]
+    pub fn journal_peak_bytes(&self) -> usize {
+        self.journal_peak_bytes
+    }
+
     /// 撤销日志里有几条（测试 / 诊断）。
     pub fn journal_len(&self) -> usize {
         self.journal.len()
@@ -731,6 +759,8 @@ impl RwkvRuntime {
             poisoned,
             journal,
             journal_bytes,
+            journal_peak_bytes,
+            trimmed_floor,
             ..
         } = self;
         let Engine::Small(small) = inference else {
@@ -742,6 +772,11 @@ impl RwkvRuntime {
                     let undo = small.append_journaled(input)?;
                     *journal_bytes += undo.bytes();
                     journal.push((tag, at, undo));
+                    *journal_peak_bytes = (*journal_peak_bytes).max(*journal_bytes);
+                    // 每条都修剪（BUG-4075）：以前整批跑完才修剪，一次追加几万行（同步后退回重放）时
+                    // 撤销日志按每行约 55 KB 涨到 GB 级，移动端 Scudo OOM。
+                    trim_journal(journal, journal_bytes, trimmed_floor);
+                    *journal_peak_bytes = (*journal_peak_bytes).max(*journal_bytes);
                 }
                 Ok(())
             })
@@ -749,7 +784,6 @@ impl RwkvRuntime {
         match outcome {
             Ok(result) => {
                 result?;
-                self.trim_journal();
                 Ok(())
             }
             Err(panic) => {
@@ -757,16 +791,6 @@ impl RwkvRuntime {
                 std::panic::resume_unwind(panic)
             }
         }
-    }
-
-    fn trim_journal(&mut self) {
-        let mut drop = 0;
-        while drop < self.journal.len() && self.journal_bytes > JOURNAL_MAX_BYTES {
-            self.journal_bytes -= self.journal[drop].2.bytes();
-            self.trimmed_floor = self.trimmed_floor.max(self.journal[drop].1);
-            drop += 1;
-        }
-        self.journal.drain(..drop);
     }
 
     /// 撤回最近一条 [Self::append]——仅当它的标签是 `tag`（返回 true）。否则（日志空、最近一条

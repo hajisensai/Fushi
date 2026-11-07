@@ -82,5 +82,7 @@ public enum WebViewChannelDelegateMethods {
   canScrollVertically,
   canScrollHorizontally,
   isInFullscreen,
-  clearFormData
+  clearFormData,
+  // Fushi: see InAppWebView#setStaticLayer.
+  fushiSetStaticLayer
 }

@@ -1,24 +1,35 @@
 //! 单个音频文件的标签 + 音频属性（lofty）。lofty 不认的格式（TAK / TTA / DSF / DFF /
-//! MKA / CAF / W64 / WMA）退化成「扩展名定编码 + 文件名作标题」，DSF 另从头部读属性。
+//! MKA / CAF / W64 / WMA）退化成「扩展名定编码 + 文件名作标题」，DSF 另从头部读属性，
+//! 裸 AC-3 / E-AC-3 从帧头读属性（`ac3.rs`）。M4B 另读章节（`mp4_chapters.rs`），由扫描器
+//! 拆成 CUE 同款虚拟曲目。
 
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use lofty::config::ParseOptions;
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::mp4::{Mp4Codec, Mp4File};
-use lofty::mpeg::MpegFile;
+use lofty::mpeg::{Layer, MpegFile};
 use lofty::picture::PictureType;
 use lofty::probe::Probe;
-use lofty::tag::{Accessor, ItemKey, Tag};
+use lofty::tag::{Accessor, ItemKey, Tag, TagType};
 
-use crate::dsf;
+use crate::ac3::{self, Ac3Kind};
+use crate::mp4_chapters::{self, Mp4Chapter};
+use crate::{dsf, legacy_text};
 
 /// 曲库认的音频扩展名（小写，不带点）。
+///
+/// Dart 侧「是不是纯音频」的唯一判据 `kAudioExtensions`
+/// （`packages/fushi_engine/lib/media/media_extensions.dart`）= 本表去掉 `mp4` 再加点号，
+/// 守卫测试 `fushi/test/build/music_audio_extensions_rust_parity_guard_test.dart` 读本表
+/// 文本钉死同步。`mp4` 是两表唯一允许的差异：它首先是视频容器，视频来源里的 mp4 归视频
+/// 库；但音乐来源目录里的 mp4（只装音轨的 iTunes 购买曲目等）照收。
 pub const AUDIO_EXTENSIONS: &[&str] = &[
-    "flac", "m4a", "alac", "mp3", "ogg", "oga", "opus", "wav", "aiff", "aif", "aifc", "ape", "wv",
-    "tak", "tta", "mpc", "dsf", "dff", "aac", "mka", "caf", "w64", "wma", "mp4",
+    "flac", "m4a", "m4b", "alac", "mp3", "mp2", "mpa", "ogg", "oga", "opus", "wav", "aiff", "aif",
+    "aifc", "ape", "wv", "tak", "tta", "mpc", "dsf", "dff", "aac", "ac3", "eac3", "ec3", "mka",
+    "caf", "w64", "wma", "mp4",
 ];
 
 pub fn is_audio_extension(ext: &str) -> bool {
@@ -62,6 +73,9 @@ pub struct FileMeta {
     pub has_embedded_cover: bool,
     /// FLAC 内嵌 CUE 表（Vorbis 注释 `CUESHEET` 文本）。
     pub embedded_cuesheet: Option<String>,
+    /// M4B 章节（按起点升序）。只读 `.m4b`：`.m4a` 带章节的极少，且已在库的 m4a 一旦按
+    /// 章节拆轨，曲目 uid 会变、收藏与播放历史会断。
+    pub mp4_chapters: Vec<Mp4Chapter>,
 }
 
 fn clean(s: &str) -> Option<String> {
@@ -184,11 +198,11 @@ pub fn fill_loudness(tag: &Tag, meta: &mut FileMeta) {
 
 /// MP3 的 ID3v2：`TXXX` 描述大小写不规范（`replaygain_track_gain`）与 `COMM:iTunNORM`
 /// 在 lofty 的通用 [`Tag`] 里拿不到，直接读 ID3v2 帧补。
-fn fill_loudness_from_id3v2(path: &Path, meta: &mut FileMeta) {
-    let Ok(f) = File::open(path) else { return };
-    let mut reader = BufReader::new(f);
-    let Ok(mp3) = MpegFile::read_from(&mut reader, ParseOptions::new().read_cover_art(false))
-    else {
+fn fill_loudness_from_id3v2<R: Read + Seek>(reader: &mut R, meta: &mut FileMeta) {
+    if reader.seek(SeekFrom::Start(0)).is_err() {
+        return;
+    }
+    let Ok(mp3) = MpegFile::read_from(reader, ParseOptions::new().read_cover_art(false)) else {
         return;
     };
     let Some(id3) = mp3.id3v2() else { return };
@@ -260,6 +274,39 @@ fn codec_of_extension(ext: &str) -> Option<(&'static str, bool)> {
     })
 }
 
+/// ID3v1 与 ID3v2 是会带 ISO-8859-1 文本的标签类型（见 [legacy_text]）；其余（Vorbis
+/// 注释、MP4 ilst、APE）按规范只装 UTF-8 / UTF-16，不做本地编码探测。
+pub fn is_latin1_tag_type(t: TagType) -> bool {
+    matches!(t, TagType::Id3v1 | TagType::Id3v2)
+}
+
+/// 把一份 ID3 标签里所有文本字段合起来探测本地多字节编码并重解（见 [legacy_text]）。
+fn repair_legacy_text(meta: &mut FileMeta) {
+    let mut fields: Vec<&mut String> = Vec::new();
+    for v in [
+        &mut meta.title,
+        &mut meta.title_sort,
+        &mut meta.album,
+        &mut meta.album_sort,
+        &mut meta.album_artist,
+        &mut meta.genre,
+        &mut meta.catalog_no,
+    ] {
+        if let Some(s) = v.as_mut() {
+            fields.push(s);
+        }
+    }
+    for list in [
+        &mut meta.artists,
+        &mut meta.composers,
+        &mut meta.lyricists,
+        &mut meta.arrangers,
+    ] {
+        fields.extend(list.iter_mut());
+    }
+    legacy_text::repair_in_place(&mut fields);
+}
+
 /// 读一个文件的标签与属性。lofty 读不了的格式不报错，退化为扩展名推断（标题由调用方
 /// 用文件名补）；真正打不开（权限 / IO）才返回 Err。
 pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
@@ -268,11 +315,30 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
+    let f = File::open(path).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(f);
+    read_meta_from(&mut reader, &ext, false).map(|(meta, _)| meta)
+}
 
+/// [read_file_meta] 的读取器版本：本地文件与远程曲目（`remote.rs` 的稀疏缓冲）共用同一份
+/// 解析。`ext` 是小写扩展名（不带点）。`want_cover` 时顺带交回内嵌封面字节（远程曲目
+/// 没有本地文件可供之后再读封面）。
+pub fn read_meta_from<R: Read + Seek>(
+    reader: &mut R,
+    ext: &str,
+    want_cover: bool,
+) -> Result<(FileMeta, Option<Vec<u8>>), String> {
     if ext == "dsf" {
         let mut head = [0u8; 80];
-        let mut f = File::open(path).map_err(|e| e.to_string())?;
-        let n = f.read(&mut head).map_err(|e| e.to_string())?;
+        reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        let mut n = 0usize;
+        while n < head.len() {
+            let got = reader.read(&mut head[n..]).map_err(|e| e.to_string())?;
+            if got == 0 {
+                break;
+            }
+            n += got;
+        }
         let mut meta = FileMeta {
             codec: Some("dsd".into()),
             is_lossless: true,
@@ -285,34 +351,71 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
             meta.duration_ms = Some(info.duration_ms);
             meta.bitrate_kbps = Some(info.sample_rate as i64 * info.channels as i64 / 1000);
         }
-        return Ok(meta);
+        return Ok((meta, None));
     }
 
-    let probe = Probe::open(path)
-        .map_err(|e| e.to_string())?
+    if matches!(ext, "ac3" | "eac3" | "ec3") {
+        let len = reader.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
+        reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        // 帧头对不上（坏文件 / 伪装扩展名）如实报错，与 lofty 解析失败同语义。
+        let info = ac3::probe(&mut *reader, len)
+            .ok_or_else(|| "not an AC-3 / E-AC-3 stream".to_owned())?;
+        let meta = FileMeta {
+            codec: Some(
+                match info.kind {
+                    Ac3Kind::Ac3 => "ac3",
+                    Ac3Kind::Eac3 => "eac3",
+                }
+                .into(),
+            ),
+            is_lossless: false,
+            duration_ms: Some(info.duration_ms),
+            sample_rate: Some(info.sample_rate as i64),
+            channels: Some(info.channels as i64),
+            bitrate_kbps: Some(info.bitrate_kbps),
+            ..Default::default()
+        };
+        return Ok((meta, None));
+    }
+
+    reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let probe = Probe::new(&mut *reader)
         .options(ParseOptions::new())
         .guess_file_type()
         .map_err(|e| e.to_string())?;
     let Some(file_type) = probe.file_type() else {
-        // lofty 认不出的容器（TAK / TTA / MKA ...）：扩展名定编码。
-        let (codec, lossless) = codec_of_extension(&ext).unwrap_or(("unknown", false));
-        return Ok(FileMeta {
-            codec: Some(codec.into()),
-            is_lossless: lossless,
-            ..Default::default()
-        });
+        return Ok((meta_from_extension(ext), None));
     };
     // 解析失败（坏文件 / 截断 / 伪装扩展名）如实报错：扫描器记一条错误记录、不入库，
     // 不把读不出来的东西当成「无标签的歌」塞进曲库。
     let tagged = probe.read().map_err(|e| e.to_string())?;
 
     let (mut codec, mut lossless) = codec_of(file_type);
+    let mut mp4_chapters: Vec<Mp4Chapter> = Vec::new();
+    if file_type == FileType::Mpeg {
+        // MPEG-1/2 音频的 Layer I / II（.mp2 / .mpa 广播与 VCD 音轨）lofty 统一归 Mpeg。
+        if reader.seek(SeekFrom::Start(0)).is_ok() {
+            if let Ok(mp) =
+                MpegFile::read_from(&mut *reader, ParseOptions::new().read_cover_art(false))
+            {
+                codec = match mp.properties().layer() {
+                    Layer::Layer1 => "mp1",
+                    Layer::Layer2 => "mp2",
+                    Layer::Layer3 => "mp3",
+                };
+            }
+        }
+    }
+    if file_type == FileType::Mp4 && ext == "m4b" {
+        if let Ok(len) = reader.seek(SeekFrom::End(0)) {
+            mp4_chapters = mp4_chapters::read_chapters(&mut *reader, len);
+        }
+    }
     if file_type == FileType::Mp4 {
         // MP4 里装的是 ALAC 还是 AAC 只有 mp4 专用属性知道。
-        if let Ok(f) = File::open(path) {
-            let mut reader = BufReader::new(f);
+        if reader.seek(SeekFrom::Start(0)).is_ok() {
             if let Ok(mp4) =
-                Mp4File::read_from(&mut reader, ParseOptions::new().read_cover_art(false))
+                Mp4File::read_from(&mut *reader, ParseOptions::new().read_cover_art(false))
             {
                 if matches!(mp4.properties().codec(), Mp4Codec::ALAC) {
                     codec = "alac";
@@ -335,6 +438,7 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
             .audio_bitrate()
             .or_else(|| props.overall_bitrate())
             .map(i64::from),
+        mp4_chapters,
         ..Default::default()
     };
     if !lossless {
@@ -343,7 +447,7 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
     }
 
     let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
-        return Ok(meta);
+        return Ok((meta, None));
     };
     meta.title = tag.title().and_then(|s| clean(&s));
     meta.title_sort = get(tag, &ItemKey::TrackTitleSortOrder);
@@ -376,7 +480,7 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
     fill_loudness(tag, &mut meta);
     if file_type == FileType::Mpeg && (meta.rg_track_gain.is_none() || meta.rg_album_gain.is_none())
     {
-        fill_loudness_from_id3v2(path, &mut meta);
+        fill_loudness_from_id3v2(reader, &mut meta);
     }
     meta.mb_recording_id = get(tag, &ItemKey::MusicBrainzRecordingId);
     meta.mb_work_id = get(tag, &ItemKey::MusicBrainzWorkId);
@@ -385,8 +489,37 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
     meta.embedded_cuesheet = tag
         .get_string(&ItemKey::Unknown("CUESHEET".into()))
         .and_then(clean);
+    if is_latin1_tag_type(tag.tag_type()) {
+        repair_legacy_text(&mut meta);
+    }
     meta.has_embedded_cover = tagged.tags().iter().any(|t| !t.pictures().is_empty());
-    Ok(meta)
+    let cover = if want_cover { cover_of(&tagged) } else { None };
+    Ok((meta, cover))
+}
+
+/// lofty 认不出的容器（TAK / TTA / MKA ...）：扩展名定编码，其余留空（标题由调用方用
+/// 文件名补）。
+pub fn meta_from_extension(ext: &str) -> FileMeta {
+    let (codec, lossless) = codec_of_extension(ext).unwrap_or(("unknown", false));
+    FileMeta {
+        codec: Some(codec.into()),
+        is_lossless: lossless,
+        ..Default::default()
+    }
+}
+
+fn cover_of(tagged: &lofty::file::TaggedFile) -> Option<Vec<u8>> {
+    for tag in tagged.tags() {
+        let pics = tag.pictures();
+        if let Some(p) = pics
+            .iter()
+            .find(|p| p.pic_type() == PictureType::CoverFront)
+            .or_else(|| pics.first())
+        {
+            return Some(p.data().to_vec());
+        }
+    }
+    None
 }
 
 /// 内嵌封面字节：优先 front cover，没有就取第一张。
@@ -400,17 +533,7 @@ pub fn embedded_cover(path: &Path) -> Result<Option<Vec<u8>>, String> {
         Ok(t) => t,
         Err(_) => return Ok(None),
     };
-    for tag in tagged.tags() {
-        let pics = tag.pictures();
-        if let Some(p) = pics
-            .iter()
-            .find(|p| p.pic_type() == PictureType::CoverFront)
-            .or_else(|| pics.first())
-        {
-            return Ok(Some(p.data().to_vec()));
-        }
-    }
-    Ok(None)
+    Ok(cover_of(&tagged))
 }
 
 #[cfg(test)]
@@ -494,5 +617,112 @@ mod tests {
         assert_eq!(meta.rg_album_gain, Some(-1.25));
         assert!((meta.rg_track_gain.unwrap() + 10.0).abs() < 1e-9);
         assert_eq!(meta.rg_track_peak, Some(1.0));
+    }
+
+    /// 入库样本 MP3 的音频帧（去掉它自带的 ID3v2 / ID3v1），前面接手工构造的标签。
+    fn bare_mpeg_frames() -> Vec<u8> {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/library/Album A/02 Second Song.mp3");
+        let mut b = std::fs::read(fixture).unwrap();
+        if b.starts_with(b"ID3") {
+            let size = b[6..10]
+                .iter()
+                .fold(0usize, |acc, &x| (acc << 7) | usize::from(x & 0x7F));
+            b.drain(..10 + size);
+        }
+        if b.len() >= 128 && &b[b.len() - 128..b.len() - 125] == b"TAG" {
+            b.truncate(b.len() - 128);
+        }
+        b
+    }
+
+    /// ID3v2.3 文本帧，encoding = 0（ISO-8859-1），内容是给定的原始字节。
+    fn latin1_frame(id: &[u8; 4], raw: &[u8]) -> Vec<u8> {
+        let mut f = id.to_vec();
+        f.extend_from_slice(&((raw.len() + 1) as u32).to_be_bytes());
+        f.extend_from_slice(&[0, 0, 0]);
+        f.extend_from_slice(raw);
+        f
+    }
+
+    fn id3v23(frames: &[Vec<u8>]) -> Vec<u8> {
+        let body: Vec<u8> = frames.concat();
+        let n = body.len();
+        let mut out = b"ID3\x03\x00\x00".to_vec();
+        out.extend([
+            (n >> 21) as u8 & 0x7F,
+            (n >> 14) as u8 & 0x7F,
+            (n >> 7) as u8 & 0x7F,
+            n as u8 & 0x7F,
+        ]);
+        out.extend(body);
+        out
+    }
+
+    fn write_temp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("fushi_music_tags_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    }
+
+    fn sjis(s: &str) -> Vec<u8> {
+        let (b, _, e) = encoding_rs::SHIFT_JIS.encode(s);
+        assert!(!e);
+        b.into_owned()
+    }
+
+    #[test]
+    fn id3v2_latin1_frames_with_shift_jis_bytes_are_redecoded() {
+        let mut file = id3v23(&[
+            latin1_frame(b"TIT2", &sjis("act.2 夜に駆ける")),
+            latin1_frame(b"TPE1", &sjis("ヨルシカ")),
+            latin1_frame(b"TALB", &sjis("ドラマCD 第一巻")),
+        ]);
+        file.extend(bare_mpeg_frames());
+        let p = write_temp("sjis_v2.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("act.2 夜に駆ける"));
+        assert_eq!(meta.artists, vec!["ヨルシカ".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("ドラマCD 第一巻"));
+        // 写回 diff 预览读的「当前值」走同一判据。
+        let fields = crate::tag_write::read_fields(&p).unwrap();
+        assert!(fields.contains(&("title".to_owned(), "act.2 夜に駆ける".to_owned())));
+        assert!(fields.contains(&("artist".to_owned(), "ヨルシカ".to_owned())));
+    }
+
+    #[test]
+    fn id3v2_latin1_frames_with_real_latin1_text_stay_latin1() {
+        let mut file = id3v23(&[
+            latin1_frame(b"TIT2", b"Pok\xE9mon Th\xE9me"),
+            latin1_frame(b"TPE1", b"Mot\xF6rhead"),
+            latin1_frame(b"TALB", b"Gr\xF6\xDFe"),
+        ]);
+        file.extend(bare_mpeg_frames());
+        let p = write_temp("latin1_v2.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("Pokémon Théme"));
+        assert_eq!(meta.artists, vec!["Motörhead".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("Größe"));
+    }
+
+    #[test]
+    fn id3v1_with_shift_jis_bytes_is_redecoded() {
+        let mut v1 = vec![0u8; 128];
+        v1[..3].copy_from_slice(b"TAG");
+        let put =
+            |buf: &mut [u8], at: usize, raw: &[u8]| buf[at..at + raw.len()].copy_from_slice(raw);
+        put(&mut v1, 3, &sjis("夜に駆ける"));
+        put(&mut v1, 33, &sjis("ヨルシカ"));
+        put(&mut v1, 63, &sjis("だから僕は"));
+        v1[127] = 255;
+        let mut file = bare_mpeg_frames();
+        file.extend(v1);
+        let p = write_temp("sjis_v1.mp3", &file);
+        let meta = read_file_meta(&p).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("夜に駆ける"));
+        assert_eq!(meta.artists, vec!["ヨルシカ".to_owned()]);
+        assert_eq!(meta.album.as_deref(), Some("だから僕は"));
     }
 }

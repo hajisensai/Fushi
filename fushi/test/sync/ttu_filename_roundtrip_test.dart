@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 /// BUG-2274：`sanitizeTtuFilename` / `unsanitizeTtuFilename` 必须成对无损。

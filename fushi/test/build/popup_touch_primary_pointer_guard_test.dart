@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// Source-scan guard for BUG-871: Windows touchscreen finger-drag must scroll the
 /// dictionary popup (and every other InAppWebView) WebView.

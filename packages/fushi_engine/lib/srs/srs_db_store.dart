@@ -201,6 +201,8 @@ class SrsRenderedCard {
     required this.isEmpty,
     this.fields = const <String, String>{},
     this.fushiCardDefinitions,
+    this.fushiCardFront = const <FushiCardItem>[],
+    this.fushiCardBack = const <FushiCardItem>[],
   });
 
   final String question;
@@ -211,10 +213,16 @@ class SrsRenderedCard {
   /// 笔记字段（按字段名）。
   final Map<String, String> fields;
 
-  /// 内置「Fushi 卡片」且模板 / 样式未被改动时：只含释义区的背面（见
-  /// [kFushiCardDefinitionsTemplate]），复习页据此走原生 + 释义 WebView 的混合渲染。
-  /// 其它类型、或用户改过模板的 Fushi 卡片为 null（整面 WebView，与 Anki 一致）。
+  /// 内置「Fushi 卡片」能原生画时（样式没改、正背面认得出区块布局，见
+  /// [srsFushiCardNative]）：只含释义区的背面（见 [kFushiCardDefinitionsTemplate]），复习页
+  /// 据此走原生 + 释义 WebView 的混合渲染。其它类型、或模板改到原生画不了的 Fushi 卡片为
+  /// null（整面 WebView，与 Anki 一致）。
   final String? fushiCardDefinitions;
+
+  /// 原生 Fushi 卡面正面 / 背面的区块布局（[fushiCardLayoutOf]，自上而下；删掉的区块不在
+  /// 里面；HTML 区块已按笔记字段展开）。只在 [fushiCardDefinitions] 非 null 时有意义。
+  final List<FushiCardItem> fushiCardFront;
+  final List<FushiCardItem> fushiCardBack;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -548,7 +556,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 10（srs.db schema v25）：srs_notes_cache.source_key（出处寄存器的分组键，与浏览页出处视图同一个键；自定义学习
   /// 按作品出卡直接按它的索引查，见 store/study.rs `CustomStudy`）。老行这一列是 NULL，升级时内核只补这一列
   /// （caches.rs `backfill_source_keys`），不算缓存写入，不进变更日志。
-  static const int _kCacheRevision = 10;
+  /// 11（BUG-4218）：卡片历史选取把同一事件的多 ID 副本只算一份、撤销任一份即整组撤销（history.rs `EventKey`）。
+  /// srs_cards_cache 的卡片状态与 srs_stat_reviews 的有效复习投影都是本机按 `select` 从日志算出来的，存量库里带副本的
+  /// 卡（BUG-4217 修好前的 profile 合并写出）仍按旧规则重复计数、撤销一份不回退，要等这张卡再被改一次；哪些卡带副本
+  /// 要逐卡解析日志才知道，所以与修订号 2 / 7 同样整库重算全部笔记缓存与全部投影（同一 srs.db 打开时，Rust 侧 v26
+  /// 迁移已先按新规则重放了带副本的卡的日志投影行，这里读到的 `res` 已是新值）。
+  static const int _kCacheRevision = 11;
 
   /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
   /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
@@ -753,6 +766,9 @@ class SrsDbStore implements SrsSync2Host {
       await db.customStatement(
         'PRAGMA wal_autocheckpoint = $_bulkWalAutocheckpointPages',
       );
+      // 批与批之间写连接留着页缓存（上限按可用内存自适应，native/fushi_fsrs/src/store/mem_budget.rs）：大库上每批都要
+      // 往同一批散列键索引页里插，以前每批结束收回到 8 MB、下一批从盘上重读。
+      await _bulkCache(true);
     }
     try {
       return await body();
@@ -763,12 +779,25 @@ class SrsDbStore implements SrsSync2Host {
         try {
           await _walCheckpoint();
         } finally {
-          await db.customStatement(
-            'PRAGMA wal_autocheckpoint = ${state.restore}',
-          );
+          try {
+            await _bulkCache(false);
+          } finally {
+            await db.customStatement(
+              'PRAGMA wal_autocheckpoint = ${state.restore}',
+            );
+          }
         }
       }
     }
+  }
+
+  /// 批量写入开始 / 结束：内核据此在写连接放回时留着 / 收回页缓存（`bulk_cache`，只置标志、不拿写锁）。收回发生在
+  /// 下一次写连接放回时（紧接着的 `PRAGMA wal_autocheckpoint` 就是一次）。
+  Future<void> _bulkCache(bool on) async {
+    await _coreSync2(core.address, core.libraryPath, <String, Object?>{
+      'op': 'bulk_cache',
+      'on': on,
+    }, const <Uint8List>[]);
   }
 
   /// 大批量写入期间的 WAL 自动 checkpoint 阈值（页，缺省页大小 4 KB 下约 64 MB）：远大于一个导入批次的
@@ -1013,6 +1042,80 @@ class SrsDbStore implements SrsSync2Host {
     }
     return out;
   }
+
+  /// 一组笔记里字段键以 [prefix] 开头（如「不是重复」的 `notDup/`）的那些键的生效值：
+  /// `笔记 ID → (键 → 值)`。与 [noteFieldKeyValues] 同理，只读这些键的修改记录、只把它们交给字段寄存器内核，
+  /// 不读笔记字段正文。没有这类键的笔记不出现在结果里。
+  ///
+  /// 条件是 `profile_uid = ? AND entity_kind = ? AND entity_id IN (…) AND field_key` 的前缀区间，正好落在
+  /// `idx_srs_field_edits_profile_register (profile_uid, entity_kind, entity_id, field_key)` 上：逐 ID 定位到
+  /// 这段键，读回的行数只等于真有的这类记录数，与笔记有多少字段、字段多长无关（BUG-4187）。
+  Future<Map<String, Map<String, Object?>>> noteFieldKeyPrefixValues(
+    Iterable<String> ids,
+    String prefix,
+  ) async {
+    if (prefix.isEmpty) {
+      throw ArgumentError.value(prefix, 'prefix', 'must not be empty');
+    }
+    // 前缀区间的上界：最后一个字符加一（`notDup/` → `notDup0`）。
+    final String upper =
+        prefix.substring(0, prefix.length - 1) +
+        String.fromCharCode(prefix.codeUnitAt(prefix.length - 1) + 1);
+    final Map<String, Map<String, Object?>> out =
+        <String, Map<String, Object?>>{};
+    final String kind = SrsEntityKind.note.wire;
+    int rowsRead = 0;
+    for (final List<String> chunk in _chunks(ids.toSet())) {
+      final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
+      for (final QueryRow q
+          in await db
+              .customSelect(
+                'SELECT f.entity_id AS e, '
+                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
+                'FROM srs_field_edits f '
+                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
+                'WHERE f.profile_uid = ? AND f.entity_kind = ? '
+                'AND f.entity_id IN (${_marks(chunk)}) '
+                'AND f.field_key >= ? AND f.field_key < ?',
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                  Variable<String>(kind),
+                  for (final String id in chunk)
+                    Variable<String>(id, srsIdType),
+                  Variable<String>(prefix),
+                  Variable<String>(upper),
+                ],
+                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+                  db.srsFieldEdits,
+                  db.srsEventLocal,
+                },
+              )
+              .get()) {
+        rowsRead++;
+        (byId[q.read<String>('e')] ??= <SrsEditItem>[]).add(
+          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
+        );
+      }
+      if (byId.isEmpty) continue;
+      final List<String> order = byId.keys.toList();
+      final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
+        for (final String id in order) byId[id]!,
+      ]);
+      for (int i = 0; i < order.length; i++) {
+        final SrsEntityEdits e = edits[i];
+        out[order[i]] = <String, Object?>{
+          for (final String key in e.keys)
+            if (key.startsWith(prefix)) key: e.value(key),
+        };
+      }
+    }
+    debugKeyPrefixRowsRead = rowsRead;
+    return out;
+  }
+
+  /// 最近一次 [noteFieldKeyPrefixValues] 从库里读回的修改记录条数（测试核对没把字段正文读回来）。
+  @visibleForTesting
+  int debugKeyPrefixRowsRead = 0;
 
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async =>
       srsEntityEditsOf(<List<SrsEditItem>>[await _editItems(kind, id)]).single;
@@ -2578,6 +2681,10 @@ class SrsDbStore implements SrsSync2Host {
       if (_cacheRevision < 10) {
         await _sync2(const <String, Object?>{'op': 'backfill_source_keys'});
       }
+      // BUG-4218：选取规则变了（同一事件的副本只算一份），卡片状态与有效复习投影整库按新规则重算。
+      if (_cacheRevision < 11) {
+        await _refreshCaches(allNotes: true, allStats: true);
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -3020,8 +3127,8 @@ class SrsDbStore implements SrsSync2Host {
             SrsFieldKeys.name: trimmed,
             if (parentId != null) SrsFieldKeys.deckParent: parentId,
             if (current.deletedAt != null) SrsFieldKeys.deleted: null,
-            // 新建牌组的 RWKV 排队设置初值：忽略每日复习上限开着（上游 RWKV 推荐）。只在牌组从没写过
-            // 这一项时写——复活的旧牌组保留原值；没有这个键的旧牌组读出为关（[SrsRwkvQueueSettings]）。
+            // 新建牌组的 RWKV 排队设置初值（[SrsRwkvQueueSettings.forNewDeck]：复习上限当停止点、每天
+            // 最少复习 40）。只在牌组从没写过这一项时写——复活的旧牌组保留原值。
             if (current[SrsFieldKeys.deckRwkvQueue] == null)
               SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck
                   .toValue(),
@@ -4269,7 +4376,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
   /// （[SrsStudyState.rwkvPending]），复习页等 RWKV 就绪再出。绝不退回按 FSRS-7 存下的到期日排队——那是另一种
   /// 排程，日志的 `alg` 会混进 FSRS-7，时钟出问题时还会把「回放失败 → 改按到期日」放大成整批重复出卡。
-  /// 没启用「每天最少复习数」时只交 R 不高于目标保留率的卡（其余的内核也只会丢掉）。
+  /// 只交 R 不高于目标保留率的卡，加上「每天最少复习数」补足可能用到的卡（[_minimumTopUp]）；其余的内核也只会丢掉。
   Future<Map<String, Object?>?> _instantInput(
     SrsDeckTree tree,
     List<String> decks,
@@ -4347,15 +4454,29 @@ class SrsDbStore implements SrsSync2Host {
     }
     rows.addAll(answered);
     final List<double> scores = <double>[...dayEnd, ...current];
-    final bool anyMinimum = queueOf.values.any(
-      (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
+    final int answeredFrom = dayEnd.length;
+    final Set<int> topUp = _minimumTopUp(
+      tree,
+      targets,
+      queueOf,
+      rows,
+      scores,
+      unansweredCount: answeredFrom,
     );
+    bool sent(int i) {
+      if (!scores[i].isFinite) return false;
+      if (scores[i] <= targets[rows[i].card.deckId]!) return true;
+      // 今天答过的卡还要过内核的同日间隔守卫，补足时被挡下的由后面的卡顶上，所以它们全交。
+      return i >= answeredFrom
+          ? queueOf[rows[i].card.deckId]!.minReviewsPerDay > 0
+          : topUp.contains(i);
+    }
+
     return <String, Object?>{
       'decks': deckInput,
       'cands': <Object?>[
         for (int i = 0; i < rows.length; i++)
-          if (scores[i].isFinite &&
-              (anyMinimum || scores[i] <= targets[rows[i].card.deckId]!))
+          if (sent(i))
             <Object?>[
               rows[i].card.id,
               rows[i].card.deckId,
@@ -4364,6 +4485,47 @@ class SrsDbStore implements SrsSync2Host {
             ],
       ],
     };
+  }
+
+  /// 「每天最少复习数」补足时内核可能用到的、今天还没答过且 R 高于目标的卡（[rows] / [scores] 的下标）：每个参数
+  /// 归属牌组（配额按它记，store/study.rs `instant_eligible`）只留 R 最低（同 R 按 id）的前 `minReviewsPerDay`
+  /// 张——内核补足时按同一顺序取、最多取这么多，其余的交过去也只会被丢掉。以前开了这一项就把 RWKV 牌组的全部
+  /// 复习卡都交给内核，新建牌组默认开（[SrsRwkvQueueSettings.forNewDeck]）后每次排队都要搬整表。
+  Set<int> _minimumTopUp(
+    SrsDeckTree tree,
+    Map<String, double> targets,
+    Map<String, SrsRwkvQueueSettings> queueOf,
+    List<_RwkvCandidate> rows,
+    List<double> scores, {
+    required int unansweredCount,
+  }) {
+    final Map<String, String> ownerOf = <String, String>{
+      for (final String d in targets.keys)
+        if (queueOf[d]!.minReviewsPerDay > 0)
+          d: tree
+              .paramsOwner(tree.effectiveDeckOf(d, fallback: defaultDeckId))
+              .id,
+    };
+    if (ownerOf.isEmpty) return const <int>{};
+    final Map<String, List<int>> above = <String, List<int>>{};
+    final Map<String, int> quota = <String, int>{};
+    for (int i = 0; i < unansweredCount; i++) {
+      final String deck = rows[i].card.deckId;
+      final String? owner = ownerOf[deck];
+      if (owner == null) continue;
+      if (!scores[i].isFinite || scores[i] <= targets[deck]!) continue;
+      (above[owner] ??= <int>[]).add(i);
+      quota[owner] = queueOf[deck]!.minReviewsPerDay;
+    }
+    final Set<int> out = <int>{};
+    for (final MapEntry<String, List<int>> e in above.entries) {
+      e.value.sort((int a, int b) {
+        final int byR = scores[a].compareTo(scores[b]);
+        return byR != 0 ? byR : rows[a].card.id.compareTo(rows[b].card.id);
+      });
+      out.addAll(e.value.take(quota[e.key]!));
+    }
+    return out;
   }
 
   /// RWKV-Instant 的候选复习卡（RWKV 牌组里此刻可出的复习卡）。按（纪元、今天、RWKV 牌组集）缓存，之后只按
@@ -4573,7 +4735,7 @@ class SrsDbStore implements SrsSync2Host {
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
-    final String? definitions = srsFushiCardNativeDefinitions(
+    final SrsFushiCardNative? native = srsFushiCardNative(
       builtinKey: d.noteType.builtinKey,
       front: front,
       back: back,
@@ -4588,7 +4750,9 @@ class SrsDbStore implements SrsSync2Host {
       css: d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
-      fushiCardDefinitions: definitions,
+      fushiCardDefinitions: native?.definitions,
+      fushiCardFront: native?.front ?? const <FushiCardItem>[],
+      fushiCardBack: native?.back ?? const <FushiCardItem>[],
     );
   }
 
@@ -4912,6 +5076,20 @@ class SrsDbStore implements SrsSync2Host {
               ..limit(1))
             .getSingleOrNull();
     return any != null;
+  }
+
+  /// 本 profile 的用户笔记数（铁律 E：内置行不算）。profile 冲突时给用户对比本机与候选（反馈 dOv8AdJ6yV）。
+  Future<int> userNoteCount() async {
+    final Expression<int> n = db.srsEntities.id.count();
+    final TypedResult row =
+        await (db.selectOnly(db.srsEntities)
+              ..addColumns(<Expression<Object>>[n])
+              ..where(
+                db.srsEntities.profileUid.equals(profileUid) &
+                    db.srsEntities.kind.equals(SrsEntityKind.note.wire),
+              ))
+            .getSingle();
+    return row.read(n) ?? 0;
   }
 
   // ------------------------------------------------------------------ SrsSyncReplica

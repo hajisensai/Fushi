@@ -12,6 +12,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
@@ -1600,8 +1601,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   ) async => const MinePopupResult();
 
   @override
-  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async =>
-      const MinePopupResult();
+  Future<MinePopupResult> onMinedCardAction(
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) async => const MinePopupResult();
 
   /// BUG-3492：卡在电脑那边制，手机既查不了那边的重、也不做远程覆盖（所有者
   /// 2026-10-17 拍板）——只如实说一声。
@@ -1617,7 +1620,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   ) async => AnkiOpenWordOutcome.failed;
 
   @override
-  Future<bool> onFavoriteEntry(Map<String, String> fields) async => false;
+  Future<bool> onFavoriteEntry(
+    Map<String, String> fields, {
+    FavoriteLookupContext? lookupContext,
+  }) async => false;
 
   @override
   Future<bool> onFavoriteCheck(String expression, String reading) async =>

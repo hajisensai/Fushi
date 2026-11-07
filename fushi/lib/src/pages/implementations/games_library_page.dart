@@ -36,6 +36,8 @@ import 'package:fushi/src/media/collections/collection_drag.dart'
     show
         CollectionAddOutcome,
         CollectionDropTarget,
+        LibraryDragReorderScope,
+        LibraryReorderCell,
         MediaCardDraggable,
         addMediaRefToCollection;
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
@@ -79,6 +81,9 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/pages/implementations/library_view_options.dart';
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show LibraryGridDomain;
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
@@ -117,6 +122,8 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_divider.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -294,11 +301,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   /// 手动序，拖动从用户眼前的顺序开始。
   void _startReorder() {
     if (!mounted) return;
-    if (_view.sortField != GalgameSortField.manual) {
-      _setManualOrder(_sortedUnitKeys);
-      _setView(_view.copyWith(sortField: GalgameSortField.manual));
-    }
+    _adoptManualSort();
     setState(() => _reordering = true);
+  }
+
+  /// 排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成手动序（排序模式
+  /// 与桌面直拖共用）。
+  void _adoptManualSort() {
+    if (_view.sortField == GalgameSortField.manual) return;
+    _setManualOrder(_sortedUnitKeys);
+    _setView(_view.copyWith(sortField: GalgameSortField.manual));
+  }
+
+  /// 桌面常态网格的直拖重排（[LibraryDragReorderScope]）：任何排序下都可拖，拖一次
+  /// 即把当前显示顺序连同这次移动存为手动序（与合集详情页同一语义）。
+  void _onGameDragReorder(List<String> visible, int from, int to) {
+    _adoptManualSort();
+    _onGameReorder(visible, from, to);
   }
 
   void _endReorder() => setState(() => _reordering = false);
@@ -1003,11 +1022,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           ),
           FushiIconButton(
             key: const ValueKey<String>('games_sort_menu_button'),
-            tooltip: t.game_sort,
+            tooltip: list ? t.game_sort : t.library_sort_view,
             icon: FushiIcons.sort,
             overflowPriority: 40,
-            onTap: () =>
-                _sortMenu.isOpen ? _sortMenu.close() : _sortMenu.open(),
+            // 窄窗：「排序与显示」底部抽屉；宽窗：锚定菜单。
+            onTap: libraryViewOptionsUseSheet(context)
+                ? _openViewSheet
+                : () => _sortMenu.isOpen ? _sortMenu.close() : _sortMenu.open(),
           ),
           FushiIconButton(
             key: const ValueKey<String>('games_filter_button'),
@@ -1069,8 +1090,77 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
               ],
             ),
           ),
+        // 「每行数量」只管海报网格，列表布局下不出。
+        if (!_listLayout) ...<Widget>[
+          const FushiDivider(),
+          for (final LibraryViewOption option in _gridColumnsSection().options)
+            MenuItemButton(
+              key: option.key,
+              onPressed: option.onSelected,
+              trailingIcon: option.selected
+                  ? const FushiIcon(FushiIcons.check, size: 16)
+                  : null,
+              child: Text('${t.library_grid_columns} · ${option.label}'),
+            ),
+        ],
       ],
       child: const SizedBox.shrink(),
+    );
+  }
+
+  /// 游戏网格当前尺寸档下的「每行数量」，null = 自动。
+  int? get _gridFixedColumns => _appModel.prefsRepo.libraryGridColumns(
+    LibraryGridDomain.games,
+    libraryGridSizeClassOf(context),
+  );
+
+  /// 「每行数量」一组（排序菜单与窄窗抽屉共用）。
+  LibraryViewSection _gridColumnsSection() {
+    final WindowSizeClass sizeClass = libraryGridSizeClassOf(context);
+    return libraryGridColumnsSection(
+      sizeClass: sizeClass,
+      selected: _gridFixedColumns,
+      onSelected: (int? columns) {
+        unawaited(
+          _appModel.prefsRepo.setLibraryGridColumns(
+            LibraryGridDomain.games,
+            sizeClass,
+            columns,
+          ),
+        );
+        setState(() {});
+      },
+    );
+  }
+
+  /// 窄窗「排序与显示」底部抽屉：排序维度（再点当前维度 = 翻转方向，选中项带
+  /// 方向箭头）+ 每行数量（列表布局下不出）。游玩状态等维度仍在「筛选」面板。
+  void _openViewSheet() {
+    unawaited(
+      showLibraryViewSheet(
+        context: context,
+        title: _listLayout ? t.game_sort : t.library_sort_view,
+        sections: () => <LibraryViewSection>[
+          LibraryViewSection(
+            title: t.game_sort,
+            options: <LibraryViewOption>[
+              for (final GalgameSortField field in GalgameSortField.values)
+                LibraryViewOption(
+                  key: ValueKey<String>('games_sort_${field.name}'),
+                  label: galgameSortFieldLabel(field),
+                  icon: field == _view.sortField
+                      ? (_view.ascending
+                            ? FushiIcons.arrowUp
+                            : FushiIcons.arrowDown)
+                      : null,
+                  selected: field == _view.sortField,
+                  onSelected: () => _selectSortField(field),
+                ),
+            ],
+          ),
+          if (!_listLayout) _gridColumnsSection(),
+        ],
+      ),
     );
   }
 
@@ -1238,6 +1328,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           _selectSortField(value);
         } else if (value == _GamesToolbarOverflowAction.scrapeAll) {
           unawaited(_scrapeAllGames());
+        } else if (value == _GamesToolbarOverflowAction.viewOptions) {
+          _openViewSheet();
         }
       },
       itemBuilder: (BuildContext context) => <PopupMenuEntry<Object>>[
@@ -1262,6 +1354,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             value: field,
             child: _sortFieldMenuLabel(field),
           ),
+        // 旧工具行（Apple / 非嵌入）窄屏：「每行数量」进抽屉调。
+        if (!_listLayout) ...<PopupMenuEntry<Object>>[
+          const PopupMenuDivider(),
+          PopupMenuItem<Object>(
+            key: const ValueKey<String>('games_overflow_view_options'),
+            value: _GamesToolbarOverflowAction.viewOptions,
+            child: Text(t.library_grid_columns),
+          ),
+        ],
       ],
     );
   }
@@ -1531,6 +1632,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
         builder: (BuildContext context, BoxConstraints constraints) {
           final _GameGridMetrics metrics = _GameGridMetrics.forWidth(
             constraints.maxWidth,
+            fixedColumns: _gridFixedColumns,
           );
           // 浮动工具区的让位（[FushiFloatingChromeScrollInset] 交来的 MediaQuery
           // 顶部 padding）由首个 sliver 吃掉，再从子树里摘掉，免得卡片里的
@@ -1820,12 +1922,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
         );
     if (!_listLayout) {
       return <Widget>[
-        SliverGrid.builder(
-          gridDelegate: gridDelegate,
-          itemCount: groups.length,
-          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
-            index: i,
-            child: _buildGroupCard(groups[i]),
+        // 桌面直拖：卡与卡之间 = 重排，合集卡正中 = 放进合集（懒构建不变）。
+        // 与合集详情页 `canReorder` 同一口径：搜索 / 筛选下不直拖重排（只剩拖进合集）。
+        LibraryDragReorderScope(
+          enabled: !_view.hasActiveFilter && _view.search.trim().isEmpty,
+          onReorder: (int from, int to) =>
+              _onGameDragReorder(unitKeys, from, to),
+          child: SliverGrid.builder(
+            gridDelegate: gridDelegate,
+            itemCount: groups.length,
+            itemBuilder: (BuildContext context, int i) =>
+                FushiStaggeredEntrance(
+                  index: i,
+                  child: LibraryReorderCell(
+                    index: i,
+                    child: _buildGroupCard(groups[i]),
+                  ),
+                ),
           ),
         ),
       ];
@@ -2098,15 +2211,18 @@ class _GameGridMetrics {
   });
 
   /// 复算 `MaxCrossAxisExtent(168)` 的列数与卡宽（ceil → 卡宽 ≤168）。
-  factory _GameGridMetrics.forWidth(double maxWidth) {
+  ///
+  /// [fixedColumns]：库页「每行数量」里用户定的列数（null = 自动）。
+  factory _GameGridMetrics.forWidth(double maxWidth, {int? fixedColumns}) {
     // 网格段左右各一个页边的内边距。
     final double rawWidth = maxWidth - _kGameGridEdge * 2;
     final double available = rawWidth < 1 ? 1 : rawWidth;
-    final int columns =
-        ((available + _kGameGridSpacing) /
-                (_kGameCardTargetWidth + _kGameGridSpacing))
-            .ceil()
-            .clamp(1, 1 << 10);
+    final int columns = (fixedColumns != null && fixedColumns > 0)
+        ? fixedColumns
+        : ((available + _kGameGridSpacing) /
+                  (_kGameCardTargetWidth + _kGameGridSpacing))
+              .ceil()
+              .clamp(1, 1 << 10);
     return _GameGridMetrics(
       columns: columns,
       cardWidth: (available - (columns - 1) * _kGameGridSpacing) / columns,
@@ -3057,7 +3173,7 @@ class GalgameStatusBadge extends StatelessWidget {
 }
 
 /// 游戏库窄屏工具条溢出菜单里除排序维度外的动作。
-enum _GamesToolbarOverflowAction { scrapeAll }
+enum _GamesToolbarOverflowAction { scrapeAll, viewOptions }
 
 /// 游戏库列表行宽屏的一格元信息：小图标 + 值（等宽数字），整格带语义标签。
 class _ListMetaCell extends StatelessWidget {

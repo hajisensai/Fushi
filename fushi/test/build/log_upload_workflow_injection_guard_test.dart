@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-290 / TODO-385 守卫：错误日志「上传到云端」按钮的显示由非空端点门控
 /// （`showUploadLogAction => isLogUploadConfigured(kLogUploadEndpoint)`，无平台判断）。

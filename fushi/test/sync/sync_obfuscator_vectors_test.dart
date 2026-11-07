@@ -6,7 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/sync/sync_obfuscator.dart';
 
 /// 与 packages/fushi_compute/test/crypto/crypto_vector_inputs.dart 的 pseudoRandomBytes 同一算法。

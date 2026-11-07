@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v90（统一代理）：下载域独立的代理三态（`download_network_proxy_mode` +
@@ -132,8 +132,8 @@ void main() {
     final QueryRow version = await db
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 144);
-    expect(db.schemaVersion, 144);
+    expect(version.read<int>('user_version'), 146);
+    expect(db.schemaVersion, 146);
 
     expect(await _prefs(db), <String, String>{
       'theme': 's:dark',

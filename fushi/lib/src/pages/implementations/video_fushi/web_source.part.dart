@@ -266,10 +266,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       // 制卡重放换回来的：用户重放前的选择就是「亲手选过的」，不让每集首次的语言偏好盖掉。
       _webSubtitleUserChosen = true;
       _webAudioUserChosen = true;
-      _webPendingRestore = restore;
-      _webPendingRestoreDeadline = DateTime.now().add(
-        const Duration(seconds: 30),
-      );
+      _webPendingRestore = WebMineRestoreTracker(restore, now: DateTime.now());
     }
     // 站点入口还没有书：进度 / 观看统计等播起某一集落库后再接（[_bindWebEpisode]）。
     if (_webBoundEpisodeUrl == null) {
@@ -1308,31 +1305,20 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 每拍站点状态到来时把 [_webPendingRestore] 对齐一次（动作之间至少隔 1 秒，等站点报回）。
+  /// 每拍站点状态到来时把 [_webPendingRestore] 对齐一次；每项动作最多首发 + 一次补发
+  /// （[WebMineRestoreTracker]）。
   void _applyWebPendingRestore(WebVideoPlaybackState state) {
-    final WebMineReturnState? want = _webPendingRestore;
-    if (want == null) return;
-    final DateTime now = DateTime.now();
-    if (now.isAfter(_webPendingRestoreDeadline ?? now)) {
-      _webPendingRestore = null;
-      return;
-    }
-    if (!state.hasVideo) return;
-    final WebMineRestorePlan plan = planWebMineRestore(want, state);
-    if (webMineRestoreDone(plan)) {
-      _webPendingRestore = null;
-      return;
-    }
-    final DateTime? last = _webLastRestoreActionAt;
-    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
-      return;
-    }
-    _webLastRestoreActionAt = now;
+    final WebMineRestoreTracker? tracker = _webPendingRestore;
+    if (tracker == null) return;
     final WebVideoSession? session = _webSession;
+    if (session == null) return;
+    final WebMineRestorePlan? plan = tracker.step(state, DateTime.now());
+    if (plan == null) {
+      _webPendingRestore = null;
+      return;
+    }
     final String? href = plan.navigateHref;
     if (href != null) {
-      if (_webRestoreNavigated || session == null) return;
-      _webRestoreNavigated = true;
       unawaited(session.loadUrl(href));
       return;
     }
@@ -1341,7 +1327,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       if (text.isEmpty) {
         _selectWebTrack(null);
         unawaited(
-          session?.evaluate("window.__fushiWebVideo.selectNetflixTrack('')"),
+          session.evaluate("window.__fushiWebVideo.selectNetflixTrack('')"),
         );
       } else {
         final WebVideoSiteTrack? track = state.siteTracks

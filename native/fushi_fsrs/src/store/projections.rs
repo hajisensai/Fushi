@@ -163,10 +163,11 @@ impl ScanOutcome {
 }
 
 impl ScanLog {
-    /// 选取规则看的那一份（写入者借自写入者表；UUID 形态的 ID 当场还原成文本）。
-    fn log<'a>(&'a self, writers: &'a [Box<str>]) -> Log<'a> {
+    /// 选取规则看的那一份（写入者借自写入者表，卡 ID 借自 [LogsByCard::by_card] 的键；UUID 形态的 ID 当场还原成文本）。
+    fn log<'a>(&'a self, card: &'a str, writers: &'a [Box<str>]) -> Log<'a> {
         Log {
             id: self.id.text(),
+            card: Cow::Borrowed(card),
             writer: Cow::Borrowed(&writers[self.writer as usize]),
             physical: self.physical,
             counter: self.counter,
@@ -260,15 +261,18 @@ impl LogsByCard {
 
     /// 一份历史（血统里各卡日志之和）的有效日志；[upto] 给了就只看 rowid 不超过它的日志。
     fn effective(&self, lineage: &[String], upto: Option<i64>) -> Vec<EffLog> {
-        let scans: Vec<&ScanLog> = lineage
+        let scans: Vec<(&str, &ScanLog)> = lineage
             .iter()
-            .filter_map(|c| self.by_card.get(c))
-            .flatten()
-            .filter(|l| upto.is_none_or(|u| l.rowid <= u))
+            .filter_map(|c| self.by_card.get_key_value(c))
+            .flat_map(|(c, v)| v.iter().map(move |l| (c.as_str(), l)))
+            .filter(|(_, l)| upto.is_none_or(|u| l.rowid <= u))
             .collect();
-        let logs: Vec<Log<'_>> = scans.iter().map(|l| l.log(&self.writers)).collect();
+        let logs: Vec<Log<'_>> = scans
+            .iter()
+            .map(|&(c, l)| l.log(c, &self.writers))
+            .collect();
         projection::effective_by(&logs, |i, clamped| {
-            scans[i].eff(logs[i].id.to_string(), clamped)
+            scans[i].1.eff(logs[i].id.to_string(), clamped)
         })
     }
 }

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
 /// BUG-1620：互联远端视频字幕调轴跨设备同步的纯逻辑守卫。

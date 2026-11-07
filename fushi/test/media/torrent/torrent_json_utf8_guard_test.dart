@@ -10,7 +10,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 取出 `name(...)` 每次出现时括号里的实参文本（含定义处的形参列表）。
 /// 只匹配带括号的出现，注释里裸提函数名不会污染结果。

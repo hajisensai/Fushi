@@ -2990,10 +2990,15 @@ async function updateEntry(noteId, expression, reading, frequencies, pitches, ru
 // Anki). The host returns the post-action {ankiConnect, noteId} so the button
 // can refresh. This replaces the old silent "re-verify then return with no
 // feedback" path (TODO-1007 root cause: clicking ✓ did nothing).
-async function minedCardAction(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+//
+// [openChooser]（反馈 E0sdqm4h-F / PR #2980 审查）：true = 用户用的是「管理」手势（右键 / 长按 /
+// 菜单键 ✓），宿主必须弹选择单；false = 单击，「允许重复」开着时宿主直接再制一张。意图走
+// 第二个桥参数，不混进制卡 payload。
+async function minedCardAction(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, openChooser) {
     const fields = await buildMinePayload(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
-    return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
+    return await window.flutter_inappwebview.callHandler(
+        'minedCardAction', fields, { openChooser: openChooser === true });
 }
 
 // BUG-3492：卡还在后台写入 Anki（按钮显示「已加入」）时的覆盖请求。宿主收下后排到那次
@@ -3022,6 +3027,66 @@ async function queueOverwrite(expression, reading, frequencies, pitches, rules, 
 
 const MINED_ACTION_OPEN_CLASS = 'mined-action-open';
 
+// 反馈 E0sdqm4h-F / PR #2980 审查：已制卡 ✓ 的「管理」手势——桌面右键、触屏长按（Android
+// 长按也会派发 contextmenu）、按钮聚焦时 ContextMenu 键 / Shift+F10。永远弹覆写 / 新增 /
+// 查看的选择单。单击在「允许重复」开着时直接新增，覆写指定旧卡 / 查看就只剩这条入口，
+// 所以它对所有宿主、不论设置都在。未制卡（+）时不拦，原生菜单照常。与 ♪ 的选源菜单
+// （bindAudioSourceMenuTriggers）同一套触发与「长按后吞掉补发 click」的约定。
+const MINED_MANAGE_LONG_PRESS_MS = 450;
+const MINED_MANAGE_MOVE_TOLERANCE_PX = 10;
+function bindMinedCardManageTriggers(button, openManage) {
+    let pressTimer = 0;
+    let pressStart = null;
+    const isMined = () => button.dataset.mined === '1' && button.dataset.mining !== '1';
+    const cancelPress = () => {
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = 0;
+        pressStart = null;
+    };
+    button.addEventListener('pointerdown', (e) => {
+        delete button.dataset.fushiSuppressClick;
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        cancelPress();
+        if (!isMined()) return;
+        pressStart = { x: e.clientX, y: e.clientY };
+        pressTimer = setTimeout(() => {
+            pressTimer = 0;
+            pressStart = null;
+            button.dataset.fushiSuppressClick = '1';
+            openManage();
+        }, MINED_MANAGE_LONG_PRESS_MS);
+    });
+    button.addEventListener('pointermove', (e) => {
+        if (!pressStart) return;
+        if (Math.abs(e.clientX - pressStart.x) > MINED_MANAGE_MOVE_TOLERANCE_PX ||
+            Math.abs(e.clientY - pressStart.y) > MINED_MANAGE_MOVE_TOLERANCE_PX) {
+            cancelPress();
+        }
+    });
+    button.addEventListener('pointerup', cancelPress);
+    button.addEventListener('pointercancel', cancelPress);
+    button.addEventListener('pointerleave', cancelPress);
+    button.addEventListener('contextmenu', (e) => {
+        if (!isMined()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // 长按计时已经打开过：只吞掉原生菜单，不重复打开。
+        if (button.dataset.fushiSuppressClick === '1') return;
+        cancelPress();
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            button.dataset.fushiSuppressClick = '1';
+        }
+        openManage();
+    });
+    button.addEventListener('keydown', (e) => {
+        const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
+        if (!isMenuKey || !isMined()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openManage();
+    });
+}
+
 // 宿主是否自带原生（Flutter）动作对话框。未注入 = 没有（扩展、以及任何还没接线的
 // 表面）→ 走页内面板，绝不静默。
 function hasNativeMinedCardAction() {
@@ -3032,10 +3097,17 @@ function hasNativeMinedCardAction() {
 // 走重新制卡（与 app 内 runAnkiMinedCardAction 的 matches.isEmpty 分支同语义）。
 // 宿主回的不是数组（null）= 这个宿主**列不出**命中卡（浏览器扩展：服务端没有反查笔记的
 // 端点，shim 未接这根桥）→ 返回 null，与「查了，确实没有」的 [] 区分开（反馈 _3tWQR6J2G）。
-async function findMinedMatches(expression, reading) {
+//
+// 反馈 E0sdqm4h-F：宿主回 {mineNew:true} = 单击（[openChooser] 不为 true）且「允许重复」
+// 开着——与 app 内 runAnkiMinedCardAction 同一判据（Dart 侧 ankiMinedTapMinesNewDirectly，
+// 扩展经 /api/duplicate 的 allowDuplicates 位），返回 MINED_TAP_MINE_NEW，调用方不弹面板、
+// 直接再制一张。
+const MINED_TAP_MINE_NEW = 'mineNew';
+async function findMinedMatches(expression, reading, openChooser) {
     try {
         const reply = await window.flutter_inappwebview.callHandler(
-            'findMinedMatches', { expression, reading });
+            'findMinedMatches', { expression, reading, openChooser: openChooser === true });
+        if (reply && !Array.isArray(reply) && reply.mineNew === true) return MINED_TAP_MINE_NEW;
         if (!Array.isArray(reply)) return null;
         return reply
             .map((row) => ({
@@ -3264,9 +3336,15 @@ async function openWordInAnki(button, expression, reading) {
 // 页内面板的完整编排。返回：
 //   'handled'     —— 面板已处理（含用户取消），调用方只需按 Anki 真值刷新按钮态。
 //   'fallthrough' —— Anki 里其实已经没有这张卡（别处删了），按普通新卡制卡。
+//   'mineNew'     —— 单击且「允许重复」开着（宿主判，见 findMinedMatches）：不弹面板，
+//                    带 allowDuplicate 直接再制一张。
 async function runInPageMinedCardAction(
-        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
-    let matches = await findMinedMatches(expression, reading);
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText,
+        openChooser) {
+    let matches = await findMinedMatches(expression, reading, openChooser);
+    if (matches === MINED_TAP_MINE_NEW) {
+        return { outcome: 'mineNew', result: { ankiConnect: false, noteId: null } };
+    }
     if (matches === null) {
         // 宿主列不出命中卡（浏览器扩展）：用画 ✓ 的同一判据再核一次「卡还在不在」。还在就
         // 照样问用户——面板只剩「新增为重复卡 / 取消」（没有可覆写的行），对齐 app 交互式
@@ -5657,7 +5735,10 @@ function createEntryHeader(entry, idx) {
         mineButton.__fushiMineStateKnown = true;
         const queued = isEntryQueued();
         mineButton.dataset.queued = queued ? '1' : '';
-        mineButton.title = queued ? (window.i18nMineQueued || '已加入制卡队列') : '';
+        // 已制卡的 ✓ 提示「管理」手势（右键 / 长按）在哪——单击在「允许重复」开着时会直接新增。
+        mineButton.title = queued
+            ? (window.i18nMineQueued || '已加入制卡队列')
+            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : '');
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
@@ -5710,6 +5791,18 @@ function createEntryHeader(entry, idx) {
             snapshotSelection();
         },
         onclick: async () => {
+            // openChooser：false = 单击；true = 「管理」手势（右键 / 长按 / 菜单键，只对已制卡的
+            // ✓ 生效，见 bindMinedCardManageTriggers，它置一次性的 __fushiOpenChooserOnce 再调
+            // 本处理器）——永远弹覆写 / 新增 / 查看的选择单，不走「最新可改」原地覆写，也不因
+            // 「允许重复」直接新增（PR #2980 审查：开了允许重复，覆写指定旧卡 / 查看这两个入口
+            // 不能跟着消失）。先读后清：无论下面哪条早退，这个意图都只作用于这一次。
+            const openChooser = mineButton.__fushiOpenChooserOnce === true;
+            mineButton.__fushiOpenChooserOnce = false;
+            // 长按刚打开过「管理」选择单：内核随后补发的这次 click 不能再当单击制一张。
+            if (!openChooser && mineButton.dataset.fushiSuppressClick === '1') {
+                delete mineButton.dataset.fushiSuppressClick;
+                return;
+            }
             // Single-flight guard against double-firing one click. Always cleared
             // in finally — it is the ONLY thing that disables the button, never a
             // permanent lock (BUG-077).
@@ -5758,7 +5851,11 @@ function createEntryHeader(entry, idx) {
                 // data-mined, then invalidate late decoration work for this click.
                 await runEntryStateCheckNow(mineButton);
                 invalidateEntryStateCheck(mineButton);
-                if (mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
+                // 「管理」手势只对已制卡有意义：探测后发现其实是 +（别处删了）就什么都不做。
+                if (openChooser && mineButton.dataset.mined !== '1') return;
+                // 单击「允许重复」直接新增时，这次 mineEntry 要带上重复标记（同 BUG-2605）。
+                let allowDuplicateThisClick = false;
+                if (!openChooser && mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
                     // TODO-270 D green ✓⤺: this is the latest mined card and it
                     // carries a real note id → OVERWRITE that note in place with
                     // the freshly-built fields (does NOT create a second card).
@@ -5805,10 +5902,12 @@ function createEntryHeader(entry, idx) {
                             ? {
                                 outcome: 'handled',
                                 result: parseMineResult(await minedCardAction(
-                                    expression, reading, frequencies, pitches, rules, matched, idx, lastSelection)),
+                                    expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
+                                    openChooser)),
                             }
                             : await runInPageMinedCardAction(
-                                expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                                expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
+                                openChooser);
                         if (action.outcome === 'handled') {
                             // The host applied the chosen action (or the user cancelled,
                             // in which case it echoes the unchanged mined state). Refresh
@@ -5836,19 +5935,19 @@ function createEntryHeader(entry, idx) {
                         // outcome === 'fallthrough'：反查发现 Anki 里其实已经没有这张卡
                         // （别处删了）→ 不弹面板，落到下面的新卡制卡路径重制，与 app 内
                         // runAnkiMinedCardAction 的 matches.isEmpty → mineNew 同语义。
+                        // outcome === 'mineNew'：单击且「允许重复」开着（宿主判）→ 同样落到
+                        // 下面，带重复标记再制一张，与 app 内 mineNew 的 withAllowDuplicate 同口径。
+                        allowDuplicateThisClick = action.outcome === 'mineNew';
                         mineButton.dataset.mined = '';
-                    } else {
-                        // No bridge (degenerate harness): keep the old behaviour.
-                        const stillExists = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
-                        if (stillExists && !window.allowDupes) {
-                            setMineState(true);
-                            return;
-                        }
-                        // Deleted in Anki (or dupes allowed) → fall through and re-mine.
                     }
+                    // 旧的「无桥退化宿主」分支（读从未注入的 window.allowDupes）已删：它在
+                    // callHandler 不是函数时还去调 callHandler，本身就跑不通；「允许重复」的
+                    // 判据只在宿主（见 findMinedMatches / minedCardAction）。
                 }
 
-                const reply = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                const reply = await mineEntry(
+                    expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
+                    allowDuplicateThisClick);
                 const result = parseMineResult(reply);
                 // TODO-393：制卡后宿主清空草稿（合并卡已落地），同步把 JS 两个镜像标量
                 // 归零并刷新上下文选择器，使两端状态在同一事件归零、不漂移。仅在启用草稿
@@ -5928,6 +6027,10 @@ function createEntryHeader(entry, idx) {
                 }
             }
         }
+    });
+    bindMinedCardManageTriggers(mineButton, () => {
+        mineButton.__fushiOpenChooserOnce = true;
+        return mineButton.onclick();
     });
     // 反馈 -K86qlwBg6：「高级制卡」字段预填要的是**这颗按钮点下去会发出的那份** payload
     // ——同一组闭包参数、同一个 buildMinePayload、同一份选区快照（lastSelection），

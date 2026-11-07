@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-518 / TODO-1086 — source-scan guards for the app-OUTSIDE global lookup
 /// hotkey (Ctrl+Alt+D) reliability on Windows.

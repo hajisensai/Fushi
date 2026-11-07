@@ -1660,16 +1660,6 @@ class ReaderFushiSource extends ReaderMediaSource {
   bool get enableTouchSwipeToClose =>
       readStoredPreference<bool>('enable_swipe_to_close') ?? true;
 
-  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
-  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。唯一消费点是
-  /// [popupDismissAnimationDuration]。
-  bool get popupDismissAnimation =>
-      getPreference<bool>(key: 'popup_dismiss_animation', defaultValue: true);
-
-  Future<void> setPopupDismissAnimation(bool value) async {
-    await setPreference<bool>(key: 'popup_dismiss_animation', value: value);
-  }
-
   /// 滚动（连续）模式下，查词弹窗开着时继续滚动正文（横排纵向滚、竖排横向滚）
   /// 即关闭弹窗，并把这次滚动交给正文。默认开启；只在滚动模式生效。
   bool get dismissPopupOnScroll =>
@@ -1699,7 +1689,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<int>(key: 'wheel_page_turn_interval', value: value));
   }
 
-  /// 翻页动画效果（只在翻页模式生效；小说默认淡入淡出）。落盘 key 与
+  /// 翻页动画效果（只在翻页模式生效；小说默认卷页）。落盘 key 与
   /// [ReaderSettings.pageTurnAnimation] 同一个，`readerSettings` 为 null 的旁路
   /// entry point 走偏好表兜底。
   PageTurnAnimation get pageTurnAnimation =>

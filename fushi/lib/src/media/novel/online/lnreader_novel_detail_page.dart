@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
+import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
@@ -143,6 +144,16 @@ class _LnReaderNovelDetailPageState
         _error = error;
       });
     }
+  }
+
+  /// 菜单「登录」：登完立刻从源重取，用户不用自己想到去点刷新。
+  Future<void> _login() async {
+    final bool saved = await loginToLnReaderSource(
+      context,
+      manager: widget.manager,
+      plugin: widget.plugin,
+    );
+    if (saved && mounted) await _load();
   }
 
   Future<void> _openWebsite() async {
@@ -581,6 +592,19 @@ class _LnReaderNovelDetailPageState
           label: t.mihon_source_website_open,
           onSelected: () => unawaited(_openWebsite()),
         ),
+        // 源站要登录才给章节 / 正文时的常驻入口（与漫画作品页同一口径）。
+        if (lnReaderLoginTarget(
+              cloudflare: widget.manager.cloudflare,
+              site: widget.plugin.site,
+            ) !=
+            null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('novel_detail_login'),
+            icon: FushiIcons.login,
+            label: t.mihon_source_login,
+            enabled: !_loading,
+            onSelected: () => unawaited(_login()),
+          ),
         MediaDetailMenuItem(
           key: const ValueKey<String>('novel_detail_refresh'),
           icon: FushiIcons.refresh,
@@ -604,10 +628,33 @@ class _LnReaderNovelDetailPageState
               ),
             ),
           // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。
-          LnReaderCloudflareAction(
-            cloudflare: widget.manager.cloudflare,
-            pluginId: widget.plugin.id,
-            onVerified: () => unawaited(_load()),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+            children: <Widget>[
+              if (LnReaderCloudflareAction.shows(
+                widget.manager.cloudflare,
+                widget.plugin.id,
+              ))
+                LnReaderCloudflareAction(
+                  cloudflare: widget.manager.cloudflare,
+                  pluginId: widget.plugin.id,
+                  onVerified: () => unawaited(_load()),
+                ),
+              // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
+              if (error != null &&
+                  lnReaderLoginTarget(
+                        cloudflare: widget.manager.cloudflare,
+                        site: widget.plugin.site,
+                      ) !=
+                      null)
+                LnReaderLoginAction(
+                  manager: widget.manager,
+                  plugin: widget.plugin,
+                  onLoggedIn: _load,
+                ),
+            ],
           ),
         ],
       ),

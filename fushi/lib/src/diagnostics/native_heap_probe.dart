@@ -50,9 +50,15 @@ _MallInfo Function()? _resolveMallinfo() {
   return _mallinfo;
 }
 
-/// `malloc=…MB`：Android 上 malloc 当前已分配的字节；别的平台或取不到返回 null。
-String? nativeHeapProbe() {
+/// Android 上 malloc 当前已分配的 MB；别的平台或取不到返回 null。
+int? nativeHeapAllocatedMb() {
   final _MallInfo Function()? f = _resolveMallinfo();
   if (f == null) return null;
-  return 'malloc=${f().uordblks >> 20}MB';
+  return f().uordblks >> 20;
+}
+
+/// `malloc=…MB`：Android 上 malloc 当前已分配的字节；别的平台或取不到返回 null。
+String? nativeHeapProbe() {
+  final int? mb = nativeHeapAllocatedMb();
+  return mb == null ? null : 'malloc=${mb}MB';
 }

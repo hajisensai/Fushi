@@ -134,4 +134,5 @@ MusicPlayItem musicPlayItemOf(
   rgTrackPeak: track.rgTrackPeak,
   rgAlbumGain: track.rgAlbumGain,
   rgAlbumPeak: track.rgAlbumPeak,
+  sourceId: track.sourceId,
 );

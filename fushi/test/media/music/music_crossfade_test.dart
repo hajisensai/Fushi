@@ -71,6 +71,7 @@ class _FakeInstance implements MusicCrossfadeInstance {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async => log.add('open:${current.trackUid}+${next?.trackUid}:$play');
 
   @override
@@ -753,6 +754,7 @@ class _FlagBackend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async => flags.add(crossfadeNext);
 
   @override

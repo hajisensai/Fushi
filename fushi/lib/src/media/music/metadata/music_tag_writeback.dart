@@ -12,6 +12,8 @@ import 'dart:isolate';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/music/music_remote_media.dart';
+
 /// 字段锁的实体种类（`music_locked_fields.entity_kind`）。
 abstract final class MusicLockEntity {
   static const String track = 'track';
@@ -65,6 +67,9 @@ abstract final class MusicTagBlocked {
   static const String cueTrack = 'cue_track';
   static const String notIdentified = 'not_identified';
   static const String unreadable = 'unreadable';
+
+  /// 网络音乐来源上的文件（反馈 QAondMh4M5）：本机没有这个文件，远端只读。
+  static const String remoteFile = 'remote_file';
 }
 
 /// 识别结论 → 提议写进文件的值（纯函数）。空值不提议（识别没给的字段不删文件里的值）。
@@ -143,6 +148,14 @@ class MusicTagWriteback {
         path: track.path,
         changes: const <MusicTagChange>[],
         blockedReason: MusicTagBlocked.cueTrack,
+      );
+    }
+    if (isMusicRemoteSourceTrack(sourceId: track.sourceId, path: track.path)) {
+      return MusicTagPreview(
+        trackUid: trackUid,
+        path: track.path,
+        changes: const <MusicTagChange>[],
+        blockedReason: MusicTagBlocked.remoteFile,
       );
     }
     final MusicScrapeMetaRow? meta = await database.getMusicScrapeMeta(

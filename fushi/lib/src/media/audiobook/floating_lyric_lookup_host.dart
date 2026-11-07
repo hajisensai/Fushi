@@ -82,10 +82,23 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
     return req;
   }
 
+  final _LookupClosedSignal _closed = _LookupClosedSignal();
+
+  /// 用户把 [FloatingLyricLookupHost] 的查词卡整栈关掉（关到一层不剩）时通知。
+  /// 只由显式关闭触发，查词中途换词 / 热槽复用不算（音乐桌面歌词据此恢复播放）。
+  Listenable get lookupClosed => _closed;
+
+  /// host 在用户关掉最后一层弹窗后调用。
+  void notifyLookupClosed() => _closed.fire();
+
   @visibleForTesting
   void debugReset() {
     _pending = null;
   }
+}
+
+class _LookupClosedSignal extends ChangeNotifier {
+  void fire() => notifyListeners();
 }
 
 /// 常驻主窗口的悬浮字幕查词弹窗宿主（TODO-354 ①）。
@@ -240,6 +253,13 @@ class _FloatingLyricLookupHostState
     );
   }
 
+  void _onPop(int index) {
+    popNestedPopupAt(index, _popup);
+    if (!FloatingLyricLookupHost.shouldBlockHitTest(_popup)) {
+      _notifier.notifyLookupClosed();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Size screen = MediaQuery.sizeOf(context);
@@ -277,7 +297,7 @@ class _FloatingLyricLookupHostState
                     controller: _popup,
                     rubySpans: rubySpans,
                   ),
-              onPop: (int index) => popNestedPopupAt(index, _popup),
+              onPop: _onPop,
             ),
           ...buildParkedRealmLayers(screen: screen, controller: _popup),
         ],

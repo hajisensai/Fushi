@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 
 /// BUG-1666：制卡后卡片上「词典释义里指向另一个单词」的链接点开跳向

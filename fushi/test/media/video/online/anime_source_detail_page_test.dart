@@ -12,6 +12,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
@@ -668,10 +669,105 @@ void main() {
       expect(launched, <Uri>[
         Uri.parse('https://site.example/watch/fixture-show'),
       ]);
+      // 该运行时不接受 app 内登录（也没报 baseUrl）：不给登录入口。
+      expect(
+        find.byKey(const ValueKey<String>('anime_source_login')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a source that accepts in-app login offers it in the menu and next to '
+    'a load error',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final _LoginAnimeRuntime loginRuntime = _LoginAnimeRuntime()
+        ..failEpisodes = true;
+      final MihonManager loginManager = MihonManager(
+        database: database,
+        rootDirectory: root,
+        runtime: loginRuntime,
+        kind: MihonMediaKind.anime,
+        ownsRuntime: false,
+      );
+      addTearDown(loginManager.dispose);
+      // 改源行 / 初始化 manager / 取上下文都是真实 IO：FakeAsync 区里永远不完成。
+      final MihonSourceContext loginContext = (await tester.runAsync(() async {
+        await database.replaceMangaOnlineSources(
+          'eu.kanade.tachiyomi.animeextension.all.fixture',
+          <MangaOnlineSourcesCompanion>[
+            MangaOnlineSourcesCompanion.insert(
+              extensionPackage:
+                  'eu.kanade.tachiyomi.animeextension.all.fixture',
+              sourceId: '42',
+              name: 'Fixture Anime',
+              language: 'all',
+              baseUrl: const Value('https://site.example'),
+              mediaKind: const Value('anime'),
+            ),
+          ],
+        );
+        await loginManager.initialise();
+        return loginManager.contextForSource(loginManager.sources.single);
+      }))!;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: AnimeSourceDetailPage(
+              manager: loginManager,
+              sourceContext: loginContext,
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('anime_source_error')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('mihon_source_login_action')),
+        findsOneWidget,
+        reason: '剧集取不到时错误旁边给登录入口',
+      );
+      // 错误旁的动作行只放真要显示的按钮：不是 Cloudflare 挑战时不放解题按钮，
+      // 否则它的零尺寸占位照样吃一份 spacing，把登录按钮挤离行首。
+      final Finder actionRow = find
+          .ancestor(
+            of: find.byKey(const ValueKey<String>('mihon_source_login_action')),
+            matching: find.byType(Wrap),
+          )
+          .first;
+      final Wrap row = tester.widget<Wrap>(actionRow);
+      expect(row.spacing, 8);
+      expect(row.runSpacing, 8);
+      expect(row.children, hasLength(1), reason: '只有登录按钮一个子项');
+      expect(
+        tester.getTopLeft(find.byWidget(row.children.last)).dx,
+        tester.getTopLeft(actionRow).dx,
+        reason: '登录按钮贴行首，前面没有幽灵 spacing',
+      );
+      expect(
+        tester.getSize(find.byWidget(row.children.last)).width,
+        greaterThan(0),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('anime_source_login')),
+        findsOneWidget,
+        reason: '作品页常驻的登录入口',
+      );
       expect(tester.takeException(), isNull);
     },
   );
 }
+
+/// 接受 app 内登录（扩展直接读平台浏览器 cookie，与 Android 运行时同一能力）。
+class _LoginAnimeRuntime extends _AnimeRuntime
+    implements BrowserCookieMihonRuntime {}
 
 /// 作品页经 `appProvider` 读远端断点时间戳：挂一份真 [PreferencesRepository]（同一个
 /// 内存 DB），其余 AppModel 初始化不跑。
@@ -692,6 +788,9 @@ class _AnimeRuntime extends MihonBridgeRuntime {
   Object? videos = <Object?>[];
   String? animeUrl;
   final List<String> animeUrlRequests = <String>[];
+
+  /// 剧集表取不到（源站要登录时的典型表现）。
+  bool failEpisodes = false;
 
   @override
   Future<Object?> invokeBridge(
@@ -720,6 +819,9 @@ class _AnimeRuntime extends MihonBridgeRuntime {
           'description': 'A show.',
         };
       case 'getEpisodeList':
+        if (failEpisodes) {
+          throw const MihonRuntimeException('HTTP_401', 'login required');
+        }
         return <Object?>[
           <Object?, Object?>{
             'url': '/ep/2',

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1077 的静态守卫：app 外**嵌套**查词瞬间全局鼠标不得再卡一下。
 ///

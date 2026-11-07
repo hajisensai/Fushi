@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-544 源码守卫：移动端阅读器选区右键菜单顺序不得回退。
 ///

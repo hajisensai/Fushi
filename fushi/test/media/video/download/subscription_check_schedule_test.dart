@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/download/subscription_check_schedule.dart';
 
 /// 周三 15:00 UTC，作为「每周更新点」的基准。

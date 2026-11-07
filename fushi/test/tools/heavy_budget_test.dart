@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import '../../tool/test_flow/heavy_budget.dart';
 
@@ -303,6 +303,55 @@ void main() {
     expect(testBookMb(closureFiles: 1039, testers: 1), greaterThan(3331));
     expect(testBookMb(closureFiles: 2276, testers: 1), greaterThan(4832));
     expect(testBookMb(closureFiles: 8683, testers: 4), greaterThan(5593));
+  });
+
+  test('dartTestCommandFor: shared flags pass, flutter-only flags refuse', () {
+    expect(
+      dartTestCommandFor(<String>[
+        'D:/sdk/bin/flutter.bat',
+        'test',
+        '--concurrency=4',
+        'test/a_test.dart',
+        '--plain-name',
+        'x y',
+        '-j',
+        '2',
+        '--no-pub',
+      ]),
+      <String>[
+        'D:/sdk/bin/dart.bat',
+        'test',
+        '--concurrency=4',
+        'test/a_test.dart',
+        '--plain-name',
+        'x y',
+        '-j',
+        '2',
+      ],
+    );
+    expect(
+      dartTestCommandFor(<String>['flutter', 'test', '-j3', 'a_test.dart']),
+      <String>['dart', 'test', '-j3', 'a_test.dart'],
+    );
+    expect(
+      dartTestCommandFor(<String>['/sdk/bin/flutter', 'test', 'a_test.dart']),
+      <String>['/sdk/bin/dart', 'test', 'a_test.dart'],
+    );
+    for (final String flutterOnly in <String>[
+      '--dart-define=A=1',
+      '--update-goldens',
+      '--coverage',
+      '--enable-impeller',
+    ]) {
+      expect(
+        dartTestCommandFor(<String>['flutter', 'test', flutterOnly, 'a.dart']),
+        isNull,
+        reason: flutterOnly,
+      );
+    }
+    expect(dartTestCommandFor(<String>['fvm', 'flutter', 'test']), isNull);
+    expect(dartTestCommandFor(<String>['flutter', 'analyze']), isNull);
+    expect(dartTestCommandFor(<String>['flutter', 'test', '-j']), isNull);
   });
 
   test('testConcurrencyOf: --concurrency=N, --concurrency N, -jN, -j N', () {

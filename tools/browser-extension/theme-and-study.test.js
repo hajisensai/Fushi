@@ -269,6 +269,35 @@ test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true�
   assert.strictEqual(h2.samples().length, 2, '关掉后不再追踪');
 });
 
+test('样本带上此刻 Fushi 正在出的那一句；没有字幕出口 / 字幕被藏 / ended 时为 null（jk4rTLHPZ_）', () => {
+  const h = loadStudy();
+  const asked = [];
+  h.sandbox.window.fushiSubtitleStudyCue = (posMs) => {
+    asked.push(posMs);
+    return posMs < 13000 ? { index: 4, startMs: 11000, endMs: 13000, text: 'こんにちは' } : null;
+  };
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  assert.deepStrictEqual(asked, [12300], '按样本自己的位置问');
+  assert.strictEqual(JSON.stringify(h.samples()[0].cue),
+    JSON.stringify({ index: 4, startMs: 11000, endMs: 13000, text: 'こんにちは' }));
+  v.currentTime = 13.3;
+  h.tick();
+  assert.strictEqual(h.samples().at(-1).cue, null, '句间空隙不带句');
+  v.currentTime = 12.5;
+  h.sandbox.chrome.storage.local.set({ subtitleHidden: true });
+  // 默认档下字幕一藏就停表：最后那条 ended 样本也不带句。
+  assert.strictEqual(h.samples().at(-1).ended, true);
+  assert.strictEqual(h.samples().at(-1).cue, null);
+  const h2 = loadStudy({ stored: { studyTrackVideoCondition: 'always', subtitleHidden: true } });
+  h2.sandbox.window.fushiSubtitleStudyCue = () => ({ index: 0, startMs: 0, endMs: 99999, text: 'x' });
+  h2.dispatch('play', h2.makeVideo());
+  assert.strictEqual(h2.samples()[0].cue, null, '「全都计」档下字幕藏着也不计字');
+  const h3 = loadStudy();
+  h3.dispatch('play', h3.makeVideo());
+  assert.strictEqual(h3.samples()[0].cue, null, '面板没装：不带句');
+});
+
 test('同页换视频（key 变）：先给旧视频 ended，再以新 key 开始', () => {
   const h = loadStudy();
   const v = h.makeVideo();

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
@@ -45,7 +45,7 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(migrated.close);
-      expect(migrated.schemaVersion, 144);
+      expect(migrated.schemaVersion, 146);
       final AnidbFileIdentityRow? hit = await migrated.anidbFileIdentityByHash(
         ed2k: '7f4b11b73f63e7500b8cb0e15a249951',
         fileSize: 1,

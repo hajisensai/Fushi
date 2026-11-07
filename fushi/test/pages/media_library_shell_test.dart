@@ -12,6 +12,8 @@ import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellTitleScope;
 
 /// [MediaLibraryShell] 的行为守卫（PR#550 审查补）。
 ///
@@ -318,6 +320,39 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('test-library-view-import')),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('iOS 形态的漫画库：左上角标题用外壳页面名「漫画」，不用组名「书架」', (
+    WidgetTester tester,
+  ) async {
+    // 漫画库的库视图与书籍库同名（书架），只剩一组时若拿组名当标题，漫画页
+    // 左上角就成了「书架」（用户 iOS 截图 2026-11-06）。
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FushiShellTitleScope(
+            title: '漫画',
+            child: MediaLibraryShell(
+              focusIdPrefix: 'test-library-view',
+              views: <MediaLibraryViewSpec>[
+                spec(0, MediaLibraryViewKind.library, '书架'),
+                spec(1, MediaLibraryViewKind.sources, '导入'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.widgetWithText(FushiFloatingChromeSoloTitle, '漫画'),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(FushiFloatingChromeSoloTitle, '书架'),
+      findsNothing,
     );
   });
 

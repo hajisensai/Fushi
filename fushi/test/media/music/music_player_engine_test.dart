@@ -6,6 +6,7 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
+import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 
 /// 记录引擎发给后端的每一条命令；测试手动发后端事件。
 class _FakeBackend implements MusicOutputBackend {
@@ -35,12 +36,17 @@ class _FakeBackend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   }) async {
     this.current = current;
     this.next = next;
     crossfadeFlags.add(crossfadeNext);
+    startAts.add(startAt);
     log.add('open:${current.trackUid}+${next?.trackUid}');
   }
+
+  /// 每次 openPair 带的 startAt（断点续播）。
+  final List<Duration> startAts = <Duration>[];
 
   @override
   Future<void> replaceNext(
@@ -490,5 +496,194 @@ void main() {
     backend.controller.add(const MusicBackendAdvanced('c'));
     await Future<void>.delayed(Duration.zero);
     expect(engine.current?.trackUid, 'c');
+  });
+
+  group('断点续播（music_resume.dart）', () {
+    /// 记下每次问起点的（曲目, 意图），按 [saved] 回答（resolveEpisodeStart 的意图分类）。
+    late List<(String, EpisodeStartIntent)> asked;
+    late Map<String, int> saved;
+    late List<MusicTrackLeave> left;
+
+    Future<Duration> answer(MusicPlayItem i, EpisodeStartIntent intent) {
+      asked.add((i.trackUid, intent));
+      return Future<Duration>.value(
+        Duration(
+          milliseconds: resolveEpisodeStart(
+            intent,
+            saved[i.trackUid] ?? 0,
+            i.durationMs,
+          ),
+        ),
+      );
+    }
+
+    setUp(() {
+      asked = <(String, EpisodeStartIntent)>[];
+      saved = <String, int>{};
+      left = <MusicTrackLeave>[];
+      engine
+        ..resolveStartPosition = answer
+        ..onTrackLeft = left.add;
+    });
+
+    test('列表点开 / 跳转 / 下一首从断点起播，上一首从头', () async {
+      saved = <String, int>{'a': 60000, 'b': 30000, 'c': 45000};
+      await engine.playQueue(<MusicPlayItem>[
+        _item('a'),
+        _item('b'),
+        _item('c'),
+      ]);
+      expect(backend.startAts.last, const Duration(seconds: 60));
+      expect(engine.position, const Duration(seconds: 60));
+      expect(engine.restoringResume, isTrue);
+      await engine.skipNext();
+      expect(backend.startAts.last, const Duration(seconds: 30));
+      await engine.jumpTo(2);
+      expect(backend.startAts.last, const Duration(seconds: 45));
+      // 位置 ≤ 3 秒时「上一首」退到上一首：manualPrevious 从头。
+      await engine.seek(Duration.zero);
+      await engine.skipPrevious();
+      expect(engine.current?.trackUid, 'b');
+      expect(backend.startAts.last, Duration.zero);
+      expect(
+        asked.map(((String, EpisodeStartIntent) a) => a.$2).toList(),
+        <EpisodeStartIntent>[
+          EpisodeStartIntent.listSelect,
+          EpisodeStartIntent.manualNext,
+          EpisodeStartIntent.listSelect,
+          EpisodeStartIntent.manualPrevious,
+        ],
+      );
+    });
+
+    test('playQueue(resume: false)：这一次从头，不问断点', () async {
+      saved = <String, int>{'a': 60000};
+      await engine.playQueue(<MusicPlayItem>[_item('a')], resume: false);
+      expect(asked, isEmpty);
+      expect(backend.startAts.last, Duration.zero);
+    });
+
+    test('无缝推进到的下一首不问断点、从头放', () async {
+      saved = <String, int>{'b': 30000};
+      await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
+      asked.clear();
+      backend.controller.add(const MusicBackendAdvanced());
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.current?.trackUid, 'b');
+      expect(asked, isEmpty);
+      expect(engine.position, Duration.zero);
+      expect(engine.restoringResume, isFalse);
+    });
+
+    test('拿不到流的自动跳过按自动连播问（从头）', () async {
+      saved = <String, int>{'b': 30000};
+      await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
+      backend.controller.add(
+        const MusicBackendFailed(
+          'gone',
+          reason: MusicPlaybackFailure.trackUnavailable,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.current?.trackUid, 'b');
+      expect(asked.last, ('b', EpisodeStartIntent.autoAdvance));
+      expect(backend.startAts.last, Duration.zero);
+    });
+
+    test('后端不能从曲内起播（Apple Music）时不问断点', () async {
+      final MusicPlayerEngine apple = MusicPlayerEngine(
+        backendFactory: () => backend,
+        capabilitiesOf: (MusicPlayItem i) => const MusicBackendCapabilities(
+          signalPath: false,
+          abLoop: false,
+          startAt: false,
+        ),
+      )..resolveStartPosition = answer;
+      addTearDown(apple.dispose);
+      saved = <String, int>{'a': 60000};
+      await apple.playQueue(<MusicPlayItem>[_item('a')]);
+      expect(asked, isEmpty);
+      expect(backend.startAts.last, Duration.zero);
+    });
+
+    test('恢复守护：过渡期的 0 不算落地；追上目标、实际已播宽限、用户 seek 都清掉', () async {
+      saved = <String, int>{'a': 60000};
+      await engine.playQueue(<MusicPlayItem>[_item('a')]);
+      backend.controller.add(const MusicBackendPosition(Duration.zero, null));
+      expect(engine.restoringResume, isTrue, reason: '打开时的 0 是过渡值');
+      backend.controller.add(
+        const MusicBackendPosition(Duration(milliseconds: 58600), null),
+      );
+      expect(engine.restoringResume, isFalse, reason: '差 1.5 秒以内算落地');
+
+      // 起点没落地（不可 seek 的流）：从开头实际播过宽限就放弃守护。
+      await engine.jumpTo(0);
+      expect(engine.restoringResume, isTrue);
+      backend.controller.add(
+        const MusicBackendPosition(Duration(seconds: 9), null),
+      );
+      expect(engine.restoringResume, isTrue);
+      backend.controller.add(
+        const MusicBackendPosition(kMusicResumeGuardGrace, null),
+      );
+      expect(engine.restoringResume, isFalse);
+
+      // 恢复还没落地时用户自己往前拖：立即清守护。
+      await engine.jumpTo(0);
+      expect(engine.restoringResume, isTrue);
+      await engine.seek(const Duration(seconds: 5));
+      expect(engine.restoringResume, isFalse);
+      expect(engine.position, const Duration(seconds: 5));
+    });
+
+    test('换曲时报 onTrackLeft：带换下前的位置与「恢复是否落地」', () async {
+      saved = <String, int>{'b': 30000};
+      await engine.playQueue(<MusicPlayItem>[
+        _item('a'),
+        _item('b'),
+        _item('c'),
+      ]);
+      backend.controller.add(
+        const MusicBackendPosition(Duration(seconds: 12), null),
+      );
+      await engine.skipNext();
+      expect(left.single.item.trackUid, 'a');
+      expect(left.single.position, const Duration(seconds: 12));
+      expect(left.single.restoring, isFalse);
+      expect(left.single.duration, const Duration(milliseconds: 200000));
+      // b 的断点还没落地就切走：标成 restoring（位置是过渡值，不能写）。
+      await engine.skipNext();
+      expect(left.last.item.trackUid, 'b');
+      expect(left.last.restoring, isTrue);
+      expect(engine.startedItem?.trackUid, 'c');
+      await engine.stop();
+      expect(left.last.item.trackUid, 'c');
+      expect(engine.startedItem, isNull);
+    });
+
+    test('读断点期间用户又切了曲：旧结果不套到新曲上', () async {
+      final Completer<Duration> slow = Completer<Duration>();
+      engine.resolveStartPosition =
+          (MusicPlayItem i, EpisodeStartIntent intent) {
+            asked.add((i.trackUid, intent));
+            return i.trackUid == 'a'
+                ? slow.future
+                : Future<Duration>.value(Duration.zero);
+          };
+      final Future<void> first = engine.playQueue(<MusicPlayItem>[
+        _item('a'),
+        _item('b'),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      await engine.jumpTo(1);
+      slow.complete(const Duration(seconds: 90));
+      await first;
+      expect(engine.current?.trackUid, 'b');
+      expect(backend.startAts, <Duration>[Duration.zero]);
+      expect(backend.log.where((String l) => l.startsWith('open:')), <String>[
+        'open:b+null',
+      ]);
+      expect(engine.restoringResume, isFalse);
+    });
   });
 }

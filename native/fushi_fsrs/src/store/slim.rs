@@ -412,6 +412,7 @@ pub(crate) fn log_row(
         }
         Some(crate::history::LogCols {
             id: take_str(&mut c[0])?,
+            card: take_str(&mut c[2])?,
             kind: take_str(&mut c[3])?,
             rating: int(&c[4]),
             at: int(&c[5])?,
@@ -741,6 +742,7 @@ mod tests {
             );
             let cols = LogCols {
                 id: id.into(),
+                card: "c1".into(),
                 kind: "review".into(),
                 rating: Some(rating),
                 at,

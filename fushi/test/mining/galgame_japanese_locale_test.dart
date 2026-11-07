@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 
 /// BUG-1477 守卫：转区必须**有开关**，且 `auto` 的判据不能再把「32 位」当成

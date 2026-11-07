@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1110 / BUG-535 source-scan guard: the Android manifest must disable
 /// Flutter's SurfaceControl backend

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：统计入口的唯一落点是首页 dashboard（用户定案 2026-09-01：各媒体页头
 /// 的「xx统计」全部撤掉，统一从首页热力图卡进统计中心总览）。

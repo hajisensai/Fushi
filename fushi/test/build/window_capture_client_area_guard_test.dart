@@ -10,7 +10,7 @@
 //   ③ 裁不出来必须回退整窗并写 diagnostics（宁可多一条标题栏，不能丢图）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String capture = File(

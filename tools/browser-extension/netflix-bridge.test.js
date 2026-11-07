@@ -55,7 +55,13 @@ function loadBridge(opts) {
     },
     getTimedTextTrack: () => player.track,
     getCurrentTime: () => player.time,
-    seek: (ms) => { player.seeks.push(ms); if (!opts.seekNeverLands) player.time = ms; },
+    getDuration: () => player.duration,
+    seek: (ms) => {
+      player.seeks.push(ms);
+      if (opts.seekNeverLands) return;
+      if (opts.timers) opts.timers.push(() => { player.time = ms; });
+      else player.time = ms;
+    },
   };
   const trailerPlayer = {
     getTimedTextTrack: () => ({ bcp47: 'en', trackId: 'T:trailer' }),
@@ -115,7 +121,8 @@ function loadBridge(opts) {
     TextEncoder,
     Uint8Array,
     Math,
-    setTimeout: (fn) => { fn(); return 0; },
+    // opts.timers：给数组就改成排队（测试手动 flush），用于让「重定位落地」晚于后续消息。
+    setTimeout: opts.timers ? (fn) => { opts.timers.push(fn); return 0; } : (fn) => { fn(); return 0; },
     setInterval: (fn) => { intervals.push(fn); return 0; },
     Date: opts.Date || Date,
     // BUG-1728：记录 fetch 第二参（init）供「不带 credentials」断言；mock 响应带 ok/status
@@ -421,6 +428,83 @@ test('seek 4 s 没落地：回执 ok:false err:timeout（不再假装成功）',
   assert.strictEqual(done[0].ok, false);
   assert.strictEqual(done[0].err, 'timeout');
   assert.strictEqual(done[0].id, 9);
+});
+
+test('连发 seek 合并：在途时只留最后一个目标，落地后再发一次；每个 id 都有回执', () => {
+  const timers = [];
+  const h = loadBridge({ timers });
+  for (const [ms, id] of [[10000, 1], [15000, 2], [20000, 3], [25000, 4]]) sendSeek(h, ms, id);
+  assert.deepStrictEqual(h.player.seeks, [10000], '在途期间不叠发 player.seek');
+  while (timers.length) timers.shift()();
+  assert.deepStrictEqual(h.player.seeks, [10000, 25000], '落地后只补发最后一个目标');
+  const done = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'seekDone').map((p) => p.msg);
+  assert.strictEqual(done.length, 4);
+  const last = done.find((d) => d.id === 4);
+  assert.strictEqual(last.ok, true);
+  for (const id of [1, 2, 3]) assert.strictEqual(done.find((d) => d.id === id).err, 'superseded');
+});
+
+test('排队目标已在刚落地的位置附近：不再发第二次 seek，直接回 ok', () => {
+  const timers = [];
+  const h = loadBridge({ timers });
+  sendSeek(h, 10000, 1);
+  sendSeek(h, 10100, 2);
+  while (timers.length) timers.shift()();
+  assert.deepStrictEqual(h.player.seeks, [10000]);
+  const done = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'seekDone').map((p) => p.msg);
+  const second = done.find((d) => d.id === 2);
+  assert.strictEqual(second.ok, true);
+  assert.strictEqual(second.err, '');
+});
+
+function seekDones(h) {
+  return h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'seekDone').map((p) => p.msg);
+}
+
+test('在途 seek 超时、后面还有排队：在途那条照实报 timeout（不伪装成 superseded），再发排队目标', () => {
+  const timers = [];
+  let now = 0;
+  class FakeDate { static now() { return now; } }
+  const h = loadBridge({ timers, seekNeverLands: true, Date: FakeDate });
+  sendSeek(h, 10000, 1);
+  sendSeek(h, 20000, 2);
+  now = 5000;
+  timers.shift()();
+  assert.deepStrictEqual(h.player.seeks, [10000, 20000]);
+  assert.strictEqual(seekDones(h).find((d) => d.id === 1).err, 'timeout');
+});
+
+test('正片会话换了（换集）：旧会话的在途与排队以 session-changed 收尾，不把上一集的目标打到新一集', () => {
+  const timers = [];
+  const h = loadBridge({ timers });
+  sendSeek(h, 10000, 1);
+  sendSeek(h, 20000, 2);
+  h.player.sessionIds = ['watch-81002'];
+  while (timers.length) timers.shift()();
+  assert.deepStrictEqual(h.player.seeks, [10000], '排队目标属于上一集，不再发出');
+  const done = seekDones(h);
+  assert.strictEqual(done.find((d) => d.id === 1).err, 'session-changed');
+  assert.strictEqual(done.find((d) => d.id === 2).err, 'session-changed');
+});
+
+test('新会话的 seek 不被旧会话的在途拖住：立即发出，旧在途收尾', () => {
+  const timers = [];
+  const h = loadBridge({ timers });
+  sendSeek(h, 10000, 1);
+  h.player.sessionIds = ['watch-81002'];
+  sendSeek(h, 5000, 2);
+  assert.deepStrictEqual(h.player.seeks, [10000, 5000]);
+  assert.strictEqual(seekDones(h).find((d) => d.id === 1).err, 'session-changed');
+  while (timers.length) timers.shift()();
+  assert.strictEqual(seekDones(h).find((d) => d.id === 2).ok, true);
+});
+
+test('目标越过片尾：夹到片长再 seek（落得了地，不白等 4 s 超时）', () => {
+  const h = loadBridge();
+  h.player.duration = 1440000;
+  const done = sendSeek(h, 9999999, 5);
+  assert.deepStrictEqual(h.player.seeks, [1440000]);
+  assert.strictEqual(done[0].ok, true);
 });
 
 test('window.fushiNetflixPlayer 暴露同一个正片会话判据（glue 共用）', () => {

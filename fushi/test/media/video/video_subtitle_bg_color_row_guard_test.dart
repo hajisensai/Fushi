@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1059 zi wenti 1 fangan B yuanma shouwei: shezhi mianban (video quick
 /// settings sheet) bixu you ziti beijing SE xuanze hang. Yonghu bao shezhi mianban

@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import WidgetKit
 
@@ -102,14 +103,20 @@ struct FushiCoverImage: View {
   let path: String?
   let kind: String
   var cornerRadius: CGFloat = 8
+  /// 解码上限（点）：按显示尺寸降采样，避免整张原图进小组件的内存配额。
+  var maxPoint: CGFloat = 220
 
   var body: some View {
     Group {
-      if let image = FushiPlatformImage.load(path) {
-        image
-          .resizable()
-          .widgetAccentedRenderingModeIfAvailable()
-          .aspectRatio(contentMode: .fill)
+      if let image = FushiPlatformImage.load(path, maxPoint: maxPoint) {
+        // `.fill` 的图会按原图比例撑出父框；先用 Color.clear 吃下父级给的框，再把图铺在
+        // overlay 里，最后 clipShape 才能真的裁住（BUG：大号「继续」封面溢出盖满整个组件）。
+        Color.clear.overlay {
+          image
+            .resizable()
+            .widgetAccentedRenderingModeIfAvailable()
+            .aspectRatio(contentMode: .fill)
+        }
       } else {
         ZStack {
           LinearGradient(
@@ -182,15 +189,28 @@ struct FushiEmptyState: View {
 
 /// App Group 里的封面缩略图 → SwiftUI Image（iOS UIImage / macOS NSImage）。
 enum FushiPlatformImage {
-  static func load(_ path: String?) -> Image? {
-    guard let url = FushiAppGroup.resolve(path) else { return nil }
-    #if os(iOS)
-      guard let image = UIImage(contentsOfFile: url.path) else { return nil }
-      return Image(uiImage: image)
-    #else
-      guard let image = NSImage(contentsOf: url) else { return nil }
-      return Image(nsImage: image)
-    #endif
+  #if os(iOS)
+    static let scale: CGFloat = 3
+  #else
+    static let scale: CGFloat = 2
+  #endif
+
+  /// 按 `maxPoint`（长边，点）用 ImageIO 降采样解码；图的点尺寸 ≤ `maxPoint`。
+  /// Live Activity 要求图片不大于所在呈现区域，否则灵动岛紧凑位只画一块灰占位。
+  static func load(_ path: String?, maxPoint: CGFloat) -> Image? {
+    guard let url = FushiAppGroup.resolve(path),
+      let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+    else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(1, Int(maxPoint * scale)),
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+      return nil
+    }
+    return Image(decorative: cgImage, scale: scale)
   }
 }
 

@@ -79,6 +79,9 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/pages/implementations/library_view_options.dart';
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show LibraryGridDomain;
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
@@ -117,7 +120,7 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'
-    show unifiedShelfCardLayout;
+    show shelfGridCardLayout;
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
@@ -580,14 +583,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 手动序，拖动从用户眼前的顺序开始。
   void _startReorder() {
     if (!mounted) return;
-    if (_sortMode != ShelfSortMode.manual) {
-      _setManualOrder(_sortedUnitKeys);
-    }
-    setState(() {
-      _reordering = true;
-      _sortMode = ShelfSortMode.manual;
-    });
+    _adoptManualSort();
+    setState(() => _reordering = true);
+  }
+
+  /// 排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成手动序（排序模式
+  /// 与桌面直拖共用：拖动从用户眼前的顺序开始）。
+  void _adoptManualSort() {
+    if (_sortMode == ShelfSortMode.manual) return;
+    _setManualOrder(_sortedUnitKeys);
+    setState(() => _sortMode = ShelfSortMode.manual);
     unawaited(appModel.prefsRepo.setShelfSortModeName(_sortMode.name));
+  }
+
+  /// 桌面常态网格的直拖重排（[LibraryDragReorderScope]）：任何排序下都可拖，拖一次
+  /// 即把当前显示顺序连同这次移动存为手动序（与合集详情页同一语义）。
+  void _onShelfDragReorder(List<String> visible, int from, int to) {
+    _adoptManualSort();
+    _onShelfReorder(visible, from, to);
   }
 
   void _endReorder() => setState(() => _reordering = false);
@@ -1205,6 +1218,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             onSelected: () => _setReadStatusFilter(status),
           ),
       ],
+      extraSections: <LibraryViewSection>[_gridColumnsSection()],
+      onOpenViewSheet: libraryViewOptionsUseSheet(context)
+          ? _openViewSheet
+          : null,
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
       // AI 整理库（spec 2026-10-20 §10.1）：过 AI 模块门；没指派提供商时入口照常
       // 可见，点了引导去设置指派（BUG-2694 同口径）。
@@ -1245,6 +1262,60 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       filterOptionsTitle: t.shelf_filter_read_status,
       filterActive: _readStatusFilter != null,
       filterOptions: _readStatusFilterOptions(),
+      extraSections: <LibraryViewSection>[_gridColumnsSection()],
+    );
+  }
+
+  /// 本页在网格偏好里的库（书架 / 漫画库分别记）。
+  LibraryGridDomain get _gridDomain =>
+      _mangaOnly ? LibraryGridDomain.manga : LibraryGridDomain.books;
+
+  /// 「每行数量」一组（菜单与窄窗抽屉共用）。
+  LibraryViewSection _gridColumnsSection() {
+    final WindowSizeClass sizeClass = libraryGridSizeClassOf(context);
+    return libraryGridColumnsSection(
+      sizeClass: sizeClass,
+      selected: appModel.prefsRepo.libraryGridColumns(_gridDomain, sizeClass),
+      onSelected: (int? columns) {
+        // 偏好内存缓存在第一个 await 前已更新，这里 setState 读到的就是新值。
+        unawaited(
+          appModel.prefsRepo.setLibraryGridColumns(
+            _gridDomain,
+            sizeClass,
+            columns,
+          ),
+        );
+        setState(() {});
+      },
+    );
+  }
+
+  /// 窄窗「排序与筛选」底部抽屉：排序方式 / 阅读状态 / 每行数量。
+  void _openViewSheet() {
+    unawaited(
+      showLibraryViewSheet(
+        context: context,
+        title: t.library_sort_filter,
+        sections: () => <LibraryViewSection>[
+          LibraryViewSection(
+            title: t.sort_by,
+            options: <LibraryViewOption>[
+              for (final ShelfSortMode mode in ShelfSortMode.values)
+                LibraryViewOption(
+                  key: ValueKey<String>('library_sort_${mode.name}'),
+                  label: _sortModeLabel(mode),
+                  selected: mode == _sortMode,
+                  onSelected: () => _setSortMode(mode),
+                ),
+            ],
+          ),
+          LibraryViewSection(
+            title: t.shelf_filter_read_status,
+            options: _readStatusFilterOptions(),
+          ),
+          _gridColumnsSection(),
+        ],
+      ),
     );
   }
 
@@ -1278,6 +1349,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         onToggleSelectionMode: _toggleSelectionMode,
         onTagsChanged: () => ref.invalidate(bookTagMapProvider),
         onManageCollections: _openCollectionManagement,
+        onOpenViewSheet: libraryViewOptionsUseSheet(context)
+            ? _openViewSheet
+            : null,
       ),
       // 单件导入入口已统一收敛到库页「导入」视图的快速导入区（书 / 漫画 / 视频 /
       // 游戏四域同位，2026-08-13 定案）；页头只在书架被**独立使用**（无导航壳、
@@ -1738,14 +1812,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 原并排的「统计」三格（总数/在读/已完成，BUG-991 的口径修正随之退役）已按
   /// 用户反馈移除——与右上角「阅读统计」入口重复。
   /// 书架网格的列数与格宽（hero 宽度上限与网格共用同一份）。
+  ///
+  /// 列数：用户在「每行数量」里给这一尺寸档定了值就用它；否则（自动）按**整个**
+  /// 内容宽算——BUG-4219：10-30 给网格加左右各 gap 的内缩（封面外缘对齐顶栏）时
+  /// 连列数也改按内缩后的宽度算，360dp 手机在 80% 缩放下（逻辑宽 450）从 3 列掉成
+  /// 2 列。内缩只是视觉对齐，只该从卡宽里扣，不该改列数。
   ({int columns, double cardWidth}) _shelfCardLayout(
     BoxConstraints constraints,
   ) {
     final double gridInset = FushiDesignTokens.of(context).spacing.gap;
-    return unifiedShelfCardLayout(
-      availableWidth: constraints.maxWidth - gridInset * 2,
+    return shelfGridCardLayout(
+      contentWidth: constraints.maxWidth,
+      gridInset: gridInset,
       targetWidth: _gridExtent(context, constraints),
-      spacing: 0,
+      fixedColumns: appModel.prefsRepo.libraryGridColumns(
+        _gridDomain,
+        libraryGridSizeClassOf(context),
+      ),
     );
   }
 
@@ -2262,6 +2345,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           in shelfGroups)
                         sortKeys[g]!.tieKey,
                     ],
+                    // 与合集详情页 `canReorder` 同一口径：多选 / 搜索 / 筛选下不直拖
+                    // 重排（只剩拖进合集），排序模式另走拖排网格。
+                    dragReorderable:
+                        !_selectionMode && !hasActiveFilter && !searching,
                   ),
               ],
             ),
@@ -2288,6 +2375,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     Map<String, String> epubCoverUrisByBookKey,
     BoxConstraints constraints, {
     required List<String> unitKeys,
+    required bool dragReorderable,
   }) {
     // 书卡自带约 12 的内边距：网格再左右各缩 gap（8），封面外缘落在页边 20
     // 上，与顶栏胶囊、「继续阅读」hero 同一条竖线（2026-10-30 窄屏截图里书格
@@ -2296,6 +2384,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final ({int columns, double cardWidth}) cardLayout = _shelfCardLayout(
       constraints,
     );
+    final double cellInset = shelfGridCellInsetFor(
+      cardLayout.cardWidth,
+      FushiDesignTokens.of(context).spacing.rowVertical,
+    );
+    // 格子比例按格宽现算：封面区恒为书封比例（见 [shelfBookCellAspectRatio]）。
+    final double cellAspectRatio = shelfBookCellAspectRatio(
+      cellWidth: cardLayout.cardWidth,
+      inset: cellInset,
+      footerHeight: ShelfCardMeta.heightFor(context),
+    );
     if (_reordering) {
       return <Widget>[
         SliverPadding(
@@ -2303,21 +2401,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           sliver: SliverToBoxAdapter(
             child: ShelfCoverMaterialScope(
               material: ShelfCoverMaterial.glossyBook,
-              child: FushiReorderableGrid(
-                key: const ValueKey<String>('reader_shelf_reorder_grid'),
-                itemCount: groups.length,
-                crossAxisCount: cardLayout.columns,
-                childAspectRatio: kShelfBookCardAspectRatio,
-                reordering: true,
-                keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
-                onReorder: (int from, int to) =>
-                    _onShelfReorder(unitKeys, from, to),
-                itemBuilder: (_, int i) => FushiStaggeredEntrance(
-                  index: i,
-                  child: IgnorePointer(
-                    child: _buildShelfGroupCard(
-                      groups[i],
-                      epubCoverUrisByBookKey,
+              child: ShelfGridCellInset(
+                inset: cellInset,
+                child: FushiReorderableGrid(
+                  key: const ValueKey<String>('reader_shelf_reorder_grid'),
+                  itemCount: groups.length,
+                  crossAxisCount: cardLayout.columns,
+                  childAspectRatio: cellAspectRatio,
+                  reordering: true,
+                  keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
+                  onReorder: (int from, int to) =>
+                      _onShelfReorder(unitKeys, from, to),
+                  itemBuilder: (_, int i) => FushiStaggeredEntrance(
+                    index: i,
+                    child: IgnorePointer(
+                      child: _buildShelfGroupCard(
+                        groups[i],
+                        epubCoverUrisByBookKey,
+                      ),
                     ),
                   ),
                 ),
@@ -2335,17 +2436,32 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 顶部「继续阅读」hero 不在本次定版范围内。
       SliverPadding(
         padding: EdgeInsets.symmetric(horizontal: gridInset),
-        sliver: ShelfCoverMaterialScope(
-          material: ShelfCoverMaterial.glossyBook,
-          child: SliverGrid.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: cardLayout.columns,
-              childAspectRatio: kShelfBookCardAspectRatio,
-            ),
-            itemCount: groups.length,
-            itemBuilder: (_, int i) => FushiStaggeredEntrance(
-              index: i,
-              child: _buildShelfGroupCard(groups[i], epubCoverUrisByBookKey),
+        sliver: ShelfGridCellInset(
+          inset: cellInset,
+          child: ShelfCoverMaterialScope(
+            material: ShelfCoverMaterial.glossyBook,
+            // 桌面直拖：卡与卡之间 = 重排，合集卡正中 = 放进合集（懒构建不变）。
+            child: LibraryDragReorderScope(
+              enabled: dragReorderable,
+              onReorder: (int from, int to) =>
+                  _onShelfDragReorder(unitKeys, from, to),
+              child: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cardLayout.columns,
+                  childAspectRatio: cellAspectRatio,
+                ),
+                itemCount: groups.length,
+                itemBuilder: (_, int i) => FushiStaggeredEntrance(
+                  index: i,
+                  child: LibraryReorderCell(
+                    index: i,
+                    child: _buildShelfGroupCard(
+                      groups[i],
+                      epubCoverUrisByBookKey,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

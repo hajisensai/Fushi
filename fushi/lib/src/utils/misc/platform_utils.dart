@@ -341,6 +341,23 @@ const double kFushiSettingsWideThreshold = 560.0;
 /// 外观详情、左父菜单只留分类导航 + 动作，使两个 sheet 的左栏都能在此高度内放下。
 const double kFushiSettingsWideMinHeight = 440.0;
 
+/// 设置首页（[SettingsHomePage]）切成「左分类导航 + 右详情」双栏的最小可用宽度。
+///
+/// 全平台只按几何判定、不按平台分支：宽屏一律直接进一级双栏（与 Windows 同形），
+/// 窄于此值才走单列 + push 二级详情页。取 Material 3 medium 窗口档 600dp：旧值
+/// 720 让 11 寸平板竖屏（1600px ÷ 2.25 ≈ 711dp）差 9dp 掉回二级菜单。
+///
+/// 判的是设置页**自身**的 `LayoutBuilder` 宽度，不是窗口宽：Android / iOS / Linux
+/// 的设置 tab 隐藏主导航 rail、全屏铺开（`HomePage._buildDesktopLayout`），平板竖屏
+/// 拿到整屏宽；Windows / macOS 自绘标题栏下 rail 常驻，拿到的是「窗口宽 − rail」。
+///
+/// 600 时右详情的下限按分支各不相同：MD3 与玻璃左栏定宽 240
+/// （`MaterialSettingsRenderer.navPaneWidth` / `GlassSettingsRenderer.sidebarWidth`），
+/// 右详情 ≥ 360dp；隐藏的 Cupertino 设计系统左栏走 [supportingPaneWidthForLayout]
+/// （`(width * 0.3).clamp(280, 360)`，与 iPad 横屏的系统设置侧栏同量级），600 时
+/// 右详情 320dp。手机竖屏（≤ 430dp）不受影响。
+const double kFushiSettingsHomeTwoPaneMinWidth = 600.0;
+
 /// 桌面宽窗下书籍 / 视频 / 阅读器快捷设置弹窗（[FushiDialogFrame]）的最大内容宽度。
 /// 全屏 push 的设置类页面（如 `BookCssEditorPage`）也用它约束正文宽度，与限宽弹窗
 /// 里的兄弟设置页保持同宽，消除各处重复出现的 `900` 魔法数。

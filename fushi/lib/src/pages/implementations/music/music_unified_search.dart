@@ -35,6 +35,7 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerPlaylist,
         MusicServerSearchResult,
         MusicServerTrack;
+import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/media_search_text.dart';
@@ -45,11 +46,16 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart'
+    show appleMusicTrackMenu;
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart'
+    show ReaderQuoteCard, readerHighlightSpans;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -400,6 +406,10 @@ class _SongTile extends ConsumerWidget {
     final bool playable;
     final Widget leading;
     VoidCallback? onLongPress;
+    MusicItemMenu? menu;
+    // 行尾「⋯」只给在线曲目（喜欢 / 加歌单等在触屏上只有这一个入口）。本地曲目的菜单
+    // 只是「播放 / 曲目详情」，点按与长按已经各管一项，只接右键，与本地曲目列表一致。
+    bool menuButton = true;
     switch (track) {
       case MusicTrackRow r:
         final String badge = musicFormatBadge(
@@ -419,6 +429,8 @@ class _SongTile extends ConsumerWidget {
         playable = true;
         leading = const FushiListLeadingIcon(FushiIcons.music);
         onLongPress = () => openMusicTrackDetail(context, r.trackUid);
+        menu = musicLocalTrackMenu(context, r, onPlay: onTap);
+        menuButton = false;
       case MusicPluginTrack p:
         id = '${song.plugin?.id}-${p.id}';
         title = p.title;
@@ -434,6 +446,9 @@ class _SongTile extends ConsumerWidget {
           size: 48,
           compact: true,
         );
+        if (song.plugin case final MusicPluginManifest m) {
+          menu = musicPluginTrackMenu(context, ref, m, p);
+        }
       case _ServerHit(
         :final MusicServerBrowser browser,
         item: MusicServerTrack s,
@@ -446,6 +461,7 @@ class _SongTile extends ConsumerWidget {
           bitrateKbps: s.bitrateKbps,
         );
         id = 'server-${browser.serverId}-${s.id}';
+        menu = appleMusicTrackMenu(context, browser, s);
         title = s.title;
         subtitle = <String>[
           s.artist ?? t.music_artist_unknown,
@@ -468,29 +484,37 @@ class _SongTile extends ConsumerWidget {
     final String? source = sourceLabel;
     return Opacity(
       opacity: playable ? 1 : 0.5,
-      child: FushiPressScale(
-        child: FushiGroupedListItem(
-          key: ValueKey<String>('music-search-song-$id'),
-          index: index,
-          count: count,
-          onTap: playable ? onTap : null,
-          onLongPress: onLongPress,
-          child: FushiListItem(
-            leading: leading,
-            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: subtitle.isEmpty
-                ? null
-                : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: FushiDesignTokens.of(context).spacing.gap,
-              children: <Widget>[
-                if (source != null) _SourceTag(label: source),
-                Text(
-                  formatMusicDuration(durationMs),
-                  style: context.fushiType.bodySmall,
-                ),
-              ],
+      child: musicWithContextMenu(
+        menu,
+        FushiPressScale(
+          child: FushiGroupedListItem(
+            key: ValueKey<String>('music-search-song-$id'),
+            index: index,
+            count: count,
+            onTap: playable ? onTap : null,
+            onLongPress: onLongPress,
+            child: FushiListItem(
+              leading: leading,
+              title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: subtitle.isEmpty
+                  ? null
+                  : Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: FushiDesignTokens.of(context).spacing.gap,
+                children: <Widget>[
+                  if (source != null) _SourceTag(label: source),
+                  Text(
+                    formatMusicDuration(durationMs),
+                    style: context.fushiType.bodySmall,
+                  ),
+                  if (menuButton) ?menu?.button(),
+                ],
+              ),
             ),
           ),
         ),
@@ -625,6 +649,7 @@ class _ArtistCard extends StatelessWidget {
 /// 一个网格 / 横滑条目的卡片。[plugin] 为空 = 本地条目。
 Widget _entityCard(
   BuildContext context,
+  WidgetRef ref,
   MusicPluginManifest? plugin,
   Object item,
   MusicSearchLocalActions local,
@@ -692,7 +717,7 @@ Widget _entityCard(
   }
   final MusicPluginManifest? m = plugin;
   if (m == null) return const SizedBox.shrink();
-  return switch (item) {
+  final Widget card = switch (item) {
     MusicPluginAlbum a => _CoverCard(
       key: ValueKey<String>('music-search-album-${m.id}-${a.id}'),
       title: a.title,
@@ -721,6 +746,10 @@ Widget _entityCard(
     ),
     _ => const SizedBox.shrink(),
   };
+  return musicWithContextMenu(
+    musicPluginEntityMenu(context, ref, m, item),
+    card,
+  );
 }
 
 /// 网格列数：与曲库专辑网格同一公式（[musicAlbumGridDelegate]），宽度不扣页边。
@@ -1177,6 +1206,7 @@ class _MusicSearchResultsViewState
                   child: c < items.length
                       ? _entityCard(
                           context,
+                          ref,
                           plugin,
                           items[c],
                           widget.localActions,
@@ -1381,6 +1411,21 @@ typedef _ServerOverviewResult = ({
   Object? error,
 });
 
+/// 歌词命中只留仍在曲库里的曲目（[CorpusHit.key] = 曲目 uid）：语料对账是异步的，刚删的
+/// 曲目可能还在索引里。
+List<CorpusHit> musicLyricHitsInLibrary(
+  List<CorpusHit> hits,
+  Iterable<MusicTrackRow> tracks,
+) {
+  final Set<String> live = <String>{
+    for (final MusicTrackRow t in tracks) t.trackUid,
+  };
+  return <CorpusHit>[
+    for (final CorpusHit h in hits)
+      if (live.contains(h.key)) h,
+  ];
+}
+
 /// 推荐页签上有搜索词时的综合结果（设计稿「示意 1」）：左「最佳匹配」、右「歌曲」前 5，下面
 /// 「专辑」「艺人」「歌单」各一行横滑。段标题右侧「全部」调 [onSeeAll] 切页签（保留搜索词）。
 /// 各插件第一页并行取（每种类型 [kMusicSearchOverviewPageSize] 条）。
@@ -1394,9 +1439,18 @@ class MusicSearchOverview extends ConsumerStatefulWidget {
     required this.onSeeAll,
     this.servers = const <MusicServerBrowser>[],
     this.serverSearch,
+    this.searchLyrics,
+    this.onLyricHit,
   });
 
   final String query;
+
+  /// 曲库歌词 / 生成字幕的全文命中（Rust 语料索引，查询词分词后整句须全含）；null = 不搜
+  /// （来源过滤排除了本地）。与插件结果互不等待，单独一段「歌词命中」。
+  final Future<List<CorpusHit>> Function(String query)? searchLyrics;
+
+  /// 点一条歌词命中：从那一行开播（[CorpusHit.key] = 曲目 uid，[CorpusHit.pos] = 毫秒）。
+  final Future<void> Function(CorpusHit hit)? onLyricHit;
 
   /// 声明 `search` 能力的插件（已按来源过滤）；各类型按插件的 `searchTypes` 再筛。
   final List<MusicPluginManifest> sources;
@@ -1434,6 +1488,10 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
   Timer? _debounce;
   bool _armed = false;
 
+  /// 歌词命中；null = 还没取 / 在途。查询词变了就作废（[_lyricGeneration]）。
+  List<CorpusHit>? _lyricHits;
+  int _lyricGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -1448,10 +1506,26 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       _best = <String, MusicPluginSearchBest>{};
       _serverResults = <String, _ServerOverviewResult>{};
       _inFlight.clear();
+      _lyricHits = null;
+      _lyricGeneration++;
       _schedule();
     } else if (_armed) {
       // 来源过滤放宽后补取新出现的插件（已取过的保留）。
       _fetchMissing();
+      // 来源过滤换了「含不含本地」：歌词命中跟着重取 / 清掉（闭包每次 build 都是新的，
+      // 只看有没有）。
+      if ((old.searchLyrics == null) != (widget.searchLyrics == null)) {
+        // 作废在途的那次；这里正处在重建里，不 setState，取数排到下一个微任务。
+        _lyricGeneration++;
+        if (widget.searchLyrics == null) {
+          _lyricHits = const <CorpusHit>[];
+        } else {
+          _lyricHits = null;
+          scheduleMicrotask(() {
+            if (mounted) unawaited(_fetchLyrics());
+          });
+        }
+      }
     }
   }
 
@@ -1468,7 +1542,60 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       if (!mounted) return;
       setState(() => _armed = true);
       _fetchMissing();
+      unawaited(_fetchLyrics());
     });
+  }
+
+  Future<void> _fetchLyrics() async {
+    final Future<List<CorpusHit>> Function(String)? search =
+        widget.searchLyrics;
+    final int generation = ++_lyricGeneration;
+    if (search == null) {
+      setState(() => _lyricHits = const <CorpusHit>[]);
+      return;
+    }
+    List<CorpusHit> hits;
+    try {
+      hits = await search(widget.query.trim());
+    } on Object catch (e, st) {
+      // 歌词命中只是附加一段：失败按「没有」处理，不打断综合结果。
+      ErrorLogService.instance.log('MusicSearchOverview.searchLyrics', e, st);
+      hits = const <CorpusHit>[];
+    }
+    if (!mounted || generation != _lyricGeneration) return;
+    setState(() => _lyricHits = hits);
+  }
+
+  String _clockOf(int ms) {
+    final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+    return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  Widget _lyricHitCard(CorpusHit hit, int i) {
+    final ({int start, int length})? h = hit.highlights.firstOrNull;
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: FushiDesignTokens.of(context).spacing.gap,
+      ),
+      child: ReaderQuoteCard(
+        key: ValueKey<String>('music-search-lyric-hit-$i'),
+        overline: '${hit.title} · ${_clockOf(hit.pos)}',
+        quote: Text.rich(
+          readerHighlightSpans(
+            context,
+            text: hit.text,
+            start: h?.start ?? 0,
+            end: h == null ? 0 : h.start + h.length,
+          ),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        focusIdPrefix: 'music-search-lyric-hit',
+        onTap: widget.onLyricHit == null
+            ? null
+            : () => unawaited(widget.onLyricHit!(hit)),
+      ),
+    );
   }
 
   bool _supports(MusicPluginManifest m, MusicPluginSearchType type) =>
@@ -1710,6 +1837,7 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
                 width: _cardWidth,
                 child: _entityCard(
                   context,
+                  ref,
                   items[i].plugin,
                   items[i].item,
                   widget.localActions,
@@ -1923,7 +2051,10 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
               MapEntry<MusicServerBrowser, Object>(s, e),
         ];
     final bool pending = _pending;
+    final List<CorpusHit> lyricHits = _lyricHits ?? const <CorpusHit>[];
     if (!pending &&
+        _lyricHits != null &&
+        lyricHits.isEmpty &&
         songs.isEmpty &&
         albums.isEmpty &&
         artists.isEmpty &&
@@ -2016,6 +2147,24 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
             );
           },
         ),
+      // 歌词命中：曲库歌词 / 生成字幕里含查询词的行，点了从那一行开播。
+      if (lyricHits.isNotEmpty) ...<Widget>[
+        Padding(
+          key: const ValueKey<String>('music-search-lyric-hits'),
+          padding: EdgeInsets.only(
+            top: tokens.spacing.section,
+            bottom: tokens.spacing.gap,
+          ),
+          child: Text(
+            t.music_search_lyrics_hits,
+            style: context.fushiType.titleLarge.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        for (int i = 0; i < lyricHits.length; i++)
+          _lyricHitCard(lyricHits[i], i),
+      ],
       if (albums.isNotEmpty) ...<Widget>[
         _sectionHeader(t.music_section_albums, MusicPluginSearchType.album),
         _carousel(MusicPluginSearchType.album, albums),

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
 /// 守卫：断点 prefs 键「三件套」抽成 [PositionPrefKeys] 生成器后，**键字符串必须

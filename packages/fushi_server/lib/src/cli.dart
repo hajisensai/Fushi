@@ -24,8 +24,10 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisionin
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
     show MossBackendPreference;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show asrAudioProfileForJob, parseAsrAudioProfile;
+import 'package:fushi_server/src/self_update/server_self_updater.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
@@ -358,13 +360,18 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   if (!Platform.isWindows) {
     sigterm = ProcessSignal.sigterm.watch().listen(onSignal);
   }
-  await stop.future;
-  stdout.writeln('正在停止…');
+  bool selfUpdated = false;
+  await Future.any(<Future<void>>[
+    stop.future,
+    host.selfUpdateInstalled.then((_) => selfUpdated = true),
+  ]);
+  stdout.writeln(selfUpdated ? '已装好新版服务端，正在停止以便服务管理器重启…' : '正在停止…');
   await sigint.cancel();
   await sigterm?.cancel();
   await admin?.stop();
   await host.stop();
-  return 0;
+  // 远程更新装完：非零退出码让 systemd（Restart=on-failure）/ 服务管理器拉起新版。
+  return selfUpdated ? kExitSelfUpdated : 0;
 }
 
 Future<void> _scanInBackground(AdminContext ctx) async {
@@ -444,13 +451,21 @@ Future<int> _pair(ServerRuntime rt, List<String> rest) async {
         stdout.writeln('（尚无已配对设备）');
         return 0;
       }
+      final InterconnectOwnerDeviceStore ownerDevices =
+          InterconnectOwnerDeviceStore(rt.db);
+      final Set<String> owners = await ownerDevices.ownerDevicePeerIds();
+      final Map<String, String> deviceKeys = await ownerDevices
+          .deviceKeyFingerprints();
       for (final FushiPairedPeerRow peer in peers) {
         final String at = DateTime.fromMillisecondsSinceEpoch(
           peer.pairedAtMs,
         ).toIso8601String();
+        final bool owner =
+            owners.contains(peer.peerId) && deviceKeys.containsKey(peer.peerId);
         stdout.writeln(
           '${peer.peerId}  ${peer.deviceName ?? '-'}  '
-          '${peer.lastSeenIp ?? '-'}  paired $at',
+          '${peer.lastSeenIp ?? '-'}  paired $at'
+          '${owner ? '  [我的设备]' : ''}',
         );
       }
       return 0;
@@ -460,6 +475,7 @@ Future<int> _pair(ServerRuntime rt, List<String> rest) async {
         return 64;
       }
       final int n = await rt.db.revokePairedPeer(rest[1]);
+      await InterconnectOwnerDeviceStore(rt.db).forgetPeer(rest[1]);
       stdout.writeln(n == 0 ? '没有这个对端' : '已吊销 ${rest[1]}');
       return n == 0 ? 1 : 0;
     default:

@@ -86,6 +86,16 @@ class PlatformServices {
   /// 拿到完整的平台元组。
   final bool isAndroid;
 
+  /// 本平台有没有 audio_service 的系统媒体会话实现（Android / iOS / macOS：通知、
+  /// 锁屏、Now Playing 控制）。默认取真实平台。
+  ///
+  /// 收在这里同 [isWindows]：音乐会话据此决定要不要起 `AudioService.init`，而那一步
+  /// 会连带构造 `DefaultCacheManager`、在后台调 path_provider。此前判据是
+  /// `MusicSession` 里直读 `Platform` 的静态量，widget 测试没有缝，macOS 宿主上一放音乐
+  /// 就真去起系统媒体会话，测试绑定里没有插件实现 → 未捕获的 MissingPluginException
+  /// （Windows / Linux 宿主上判据为 false，同一用例不红）。
+  final bool hasSystemMediaSession;
+
   PlatformServices({
     required this.directory,
     required this.lifecycle,
@@ -100,6 +110,7 @@ class PlatformServices {
     bool? isDesktop,
     bool? isIOS,
     bool? isAndroid,
+    bool? hasSystemMediaSession,
     AnkiSyncSession? Function()? ankiSyncSession,
   }) : _ankiSyncSession = ankiSyncSession ?? (() => sharedAnkiSyncSession),
        isWindows = isWindows ?? Platform.isWindows,
@@ -108,6 +119,9 @@ class PlatformServices {
            (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
        isIOS = isIOS ?? Platform.isIOS,
        isAndroid = isAndroid ?? Platform.isAndroid,
+       hasSystemMediaSession =
+           hasSystemMediaSession ??
+           (Platform.isAndroid || Platform.isIOS || Platform.isMacOS),
        _createDefaultAnkiRepository = createAnkiRepository,
        _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
        _isMobile = isMobile,

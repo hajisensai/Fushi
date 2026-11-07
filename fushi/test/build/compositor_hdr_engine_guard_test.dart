@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 合成器内 HDR（`ci/patches/flutter-engine/<版本>/`）的源码守卫。
 ///

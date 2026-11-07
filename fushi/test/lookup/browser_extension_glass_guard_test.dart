@@ -7,7 +7,7 @@
 // （行为与 CSS 由 tools/browser-extension/popup-glass.test.js 钉住，CI 的 node --test 跑）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('browserExtensionThemeColors 的 --fushi-glass 只看墨水屏，不再跟随设计系统', () {

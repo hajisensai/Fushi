@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/engine_storage_sandbox.dart';
 
 /// BUG-1577：有声书资产包「缺资源」不得被两侧的静默 fail-open 掩盖。
 ///
@@ -98,6 +100,8 @@ Future<(File, File, File)> _seedSrtBackedBook(
 
 void main() {
   group('audio package missing resources (BUG-1577)', () {
+    useEngineStorageSandbox();
+
     test('导出：源音频文件不存在时记进 manifest.missingResources，不静默跳过', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'fushi-pkg-missing-export-',

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // BUG-293: re-mining the same word after deleting its just-mined Anki card must
 // not crash the app (闪退).

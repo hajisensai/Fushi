@@ -94,17 +94,18 @@ void main() {
     );
     await tester.pump();
 
-    // 组 Stack 的 Positioned.fill 按分组键挂 ValueKey<String>；列表序 = 绘制序。
+    // 碰撞布局容器的各组按分组键挂 ValueKey<String>（KeyedSubtree）；容器按子序
+    // defaultPaint，列表序 = 绘制序。
     final List<String> keys = tester
-        .widgetList<Positioned>(
+        .widgetList<KeyedSubtree>(
           find.descendant(
             of: find.byType(VideoSubtitleOverlay),
             matching: find.byWidgetPredicate(
-              (Widget w) => w is Positioned && w.key is ValueKey<String>,
+              (Widget w) => w is KeyedSubtree && w.key is ValueKey<String>,
             ),
           ),
         )
-        .map((Positioned p) => (p.key! as ValueKey<String>).value)
+        .map((KeyedSubtree p) => (p.key! as ValueKey<String>).value)
         .toList();
     expect(keys, hasLength(2));
     final int signIdx = keys.indexWhere((String k) => k.startsWith('m|p:'));

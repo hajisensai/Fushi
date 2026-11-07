@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-902 守卫：制卡时词典媒体（外字 gaiji + 词典内嵌图片）登记进 payload 的 `path`
 /// 必须先经 `normalizeDictMediaPath` 归一化（trim / `\\`→`/` / 去开头 `./` 或 `/`），

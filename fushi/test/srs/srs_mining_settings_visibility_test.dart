@@ -4,7 +4,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/anki/anki_view_model.dart'
+    show pendingMineCountProvider;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/platform_providers.dart'
+    show platformServicesProvider;
+import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
+    show AnkiSectionRow;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -209,4 +215,50 @@ void main() {
       expect(entry(id).isVisible(ctx), isFalse, reason: id);
     }
   });
+
+  // #ZWr6B6u_RM：空的「待发卡片」行不能以零尺寸行混进分段分组当组尾——入不入列由
+  // 分组按张数决定。
+  for (final int pending in <int>[0, 3]) {
+    testWidgets('待发卡片行只在会用到 / 有卡时入列（pending=$pending）', (
+      WidgetTester tester,
+    ) async {
+      final _TargetAppModel app = _TargetAppModel();
+      late SettingsContext ctx;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            pendingMineCountProvider.overrideWith(
+              (Ref ref) => Stream<int>.value(pending),
+            ),
+          ],
+          child: Consumer(
+            builder: (BuildContext context, WidgetRef ref, Widget? _) {
+              ref.watch(pendingMineCountProvider);
+              ctx = SettingsContext(
+                context: context,
+                appModel: app,
+                ref: ref,
+                readerSource: ReaderFushiSource.instance,
+                refresh: () {},
+              );
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      final List<AnkiSectionRow> rows = ankiDeliveryRowsFor(ctx);
+      // 默认批量制卡与「连不上时暂存」都关着：只有队列里真有卡才露出。
+      expect(rows.contains(AnkiSectionRow.pendingMines), pending > 0);
+      expect(
+        rows.last,
+        pending > 0
+            ? AnkiSectionRow.pendingMines
+            : AnkiSectionRow.pendingLanding,
+        reason: '分组末行必须是真画出来的那一行',
+      );
+    });
+  }
 }

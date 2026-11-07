@@ -108,6 +108,12 @@ fn read_tag_fields(tag: &Tag) -> Vec<(String, String)> {
             out.push(((*name).to_owned(), v));
         }
     }
+    // 与曲库扫描同一判据（tags.rs）：diff 预览的「当前值」与曲库显示一致，写回时也是正确
+    // 的 Unicode 文本，不把 Latin-1 乱码当成当前值再写回去。
+    if crate::tags::is_latin1_tag_type(tag.tag_type()) {
+        let mut values: Vec<&mut String> = out.iter_mut().map(|(_, v)| v).collect();
+        crate::legacy_text::repair_in_place(&mut values);
+    }
     out
 }
 

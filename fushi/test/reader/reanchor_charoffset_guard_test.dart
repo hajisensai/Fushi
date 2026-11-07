@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-109 / TODO-736 回归守卫（源码扫描，沿用 `reader_live_settings_guard_test.dart` 的
 /// `File(...).readAsStringSync()` + `contains` 模式）。

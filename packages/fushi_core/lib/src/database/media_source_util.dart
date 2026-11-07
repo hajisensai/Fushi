@@ -10,6 +10,8 @@
 
 import 'dart:convert';
 
+import 'package:path/path.dart' as p;
+
 /// 归一化来源根路径：
 /// - 本地（transport=='local'）：统一正斜杠分隔符、去掉末尾斜杠（盘符根如 `C:/` 保留）。
 /// - 网络（sftp/ftp/http）：保 scheme 原样，仅去末尾斜杠（不动 scheme 后的 `//`）。
@@ -36,6 +38,17 @@ String normalizeSourceRootPath(String raw, {required String transport}) {
   }
   return result;
 }
+
+/// 音乐曲目路径的比较键（`music_tracks.path_key`，schema v145）：同一个文件不管拼成哪种
+/// 写法都得到同一个键。全仓比较曲目 / 音频路径只用这一个函数（扫描落库认旧行、存量迁移、
+/// 音乐来源规划），不各写一份。
+///
+/// 就是宿主平台的 [p.Context.canonicalize]：Windows 上统一分隔符并转小写（文件系统大小写
+/// 不敏感），POSIX 只做词法归一。**依赖平台**：键与曲库同在本机生成、只在本机比较
+/// （曲目表设备本地、不进备份），迁移回填也跑在同一台设备上；[context] 只给测试锁定
+/// 两种平台的口径用。曲目路径恒为绝对路径（相对路径会被拼上当前目录，不该出现）。
+String musicTrackPathKey(String path, {p.Context? context}) =>
+    (context ?? p.context).canonicalize(path);
 
 /// 取归一化后路径的末段作为默认显示名（文件夹名）。
 /// - 末段为空（如根路径）时回退整段。

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-804: a dictionary disabled in 词典管理 (its show/hide switch off) must not
 /// appear in the lookup popup results.

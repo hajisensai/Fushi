@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 根因守卫（BUG-054，与阅读器 BUG-039 同因）：全局「界面大小」用 FittedBox 把整棵
 /// 渲染树当一张画布拉伸，WebView 是平台视图纹理、被拉大必糊。跨平台唯一干净解法是让

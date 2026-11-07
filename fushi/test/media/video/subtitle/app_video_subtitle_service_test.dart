@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:path/path.dart' as p;
@@ -43,6 +44,7 @@ void main() {
         ({
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
+          VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
         }) =>
             resolve?.call() ??
             Future<VideoSubtitleRecognizerChoice>.value(

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-354 ③ 源码守卫：书架底栏「正在听书」迷你条上必须有一个**真启停 app 外悬浮
 /// 字幕窗口**的「悬浮字幕」开关（不是只翻 bool）。

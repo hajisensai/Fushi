@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-732: Fushi 的浏览器扩展把 popup.js 作为 content script 注入到所有网页
 /// （`<all_urls>`）。popup.js 的 document 'wheel' 监听为「查词弹窗」重写了滚动

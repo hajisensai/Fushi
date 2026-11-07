@@ -28,6 +28,14 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi/src/ai/ai_interconnect_relay.dart' show aiRelayFailureFor;
+import 'package:fushi/src/sync/interconnect_host_client.dart'
+    show InterconnectHostError;
+import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
+import 'package:fushi/src/sync/sync_repository.dart' show FushiClientUrl;
+import 'package:fushi/src/sync/video_remote_targets.dart'
+    show InterconnectHostTarget;
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show isPrivateNetworkProviderHost;
 import 'package:fushi/src/models/app_model.dart';
@@ -45,6 +53,48 @@ import 'package:fushi/i18n/strings.g.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
+
+/// 互联主机提供商的假出口：按路径回固定应答，记下每次请求。
+class _FakeRelayTransport implements AiRelayTransport {
+  _FakeRelayTransport({this.providersReply});
+
+  Map<String, Object?>? providersReply;
+  final List<(String host, String path, Map<String, Object?> body)> calls =
+      <(String, String, Map<String, Object?>)>[];
+
+  @override
+  Future<Map<String, Object?>> post(
+    String hostId,
+    String path,
+    Map<String, Object?> body,
+  ) async {
+    calls.add((hostId, path, body));
+    if (path == kAiRelayProvidersPath) {
+      return providersReply ??
+          <String, Object?>{
+            'ok': true,
+            'providers': <Object?>[
+              const AiRelayProviderInfo(
+                id: 'h1',
+                name: 'Host GPT',
+                model: 'gpt-x',
+                supportsTools: true,
+                acceptsImages: true,
+              ).toJson(),
+              const AiRelayProviderInfo(
+                id: 'h2',
+                name: 'Host Claude',
+                model: 'claude-y',
+                supportsTools: false,
+                acceptsImages: false,
+              ).toJson(),
+            ],
+            'defaultProvider': 'h1',
+          };
+    }
+    return <String, Object?>{'ok': true, 'text': '', 'toolCalls': <Object?>[]};
+  }
+}
 
 AiProviderConfig _config({
   String id = 'p1',
@@ -363,6 +413,8 @@ void main() {
     /// 释放的 repo——那是 harness 假象，不是生产行为。
     Widget harness({
       AiChatClientFactory? clientFactory,
+      AiRelayHostProbe? relayHostProbe,
+      AiRelayTransport? relayTransport,
       double width = 640,
       double textScale = 1,
       bool apple = false,
@@ -385,7 +437,11 @@ void main() {
           body: SizedBox(
             width: width,
             child: SingleChildScrollView(
-              child: AiProviderSettingsSection(clientFactory: clientFactory),
+              child: AiProviderSettingsSection(
+                clientFactory: clientFactory,
+                relayHostProbe: relayHostProbe,
+                relayTransport: relayTransport,
+              ),
             ),
           ),
         ),
@@ -395,6 +451,8 @@ void main() {
     Future<void> pumpSection(
       WidgetTester tester, {
       AiChatClientFactory? clientFactory,
+      AiRelayHostProbe? relayHostProbe,
+      AiRelayTransport? relayTransport,
       double width = 640,
       double textScale = 1,
       bool apple = false,
@@ -405,6 +463,8 @@ void main() {
       await tester.pumpWidget(
         harness(
           clientFactory: clientFactory,
+          relayHostProbe: relayHostProbe,
+          relayTransport: relayTransport,
           width: width,
           textScale: textScale,
           apple: apple,
@@ -467,6 +527,140 @@ void main() {
       expect(saved.model, 'deepseek-reasoner');
       expect(saved.protocol, AiWireProtocol.openAiCompatible);
       expect(saved.isUsable, isTrue);
+    });
+
+    const InterconnectHostTarget desk = InterconnectHostTarget(
+      hostId: 'host-1',
+      displayName: 'Desk',
+      peer: FushiClientUrl(url: 'https://192.168.1.5:8765', hostId: 'host-1'),
+    );
+
+    testWidgets('添加互联主机提供商：选主机 → 主机默认那家的能力快照写穿；改选另一家；测试连接经主机', (
+      WidgetTester tester,
+    ) async {
+      final _FakeRelayTransport relay = _FakeRelayTransport();
+      await pumpSection(
+        tester,
+        relayHostProbe: () async => const <InterconnectHostTarget>[desk],
+        relayTransport: relay,
+      );
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiInterconnectPresetId');
+      await tapKey(tester, 'ai-relay-host-host-1');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      AiProviderConfig saved = prefs.aiProviders.single;
+      expect(saved.relay, const AiRelayTarget(hostId: 'host-1'));
+      expect(saved.name, 'Desk');
+      expect(saved.isUsable, isTrue);
+      expect(saved.activeApiKeys, isEmpty);
+      // 快照取自主机的默认提供商 h1。
+      expect(saved.model, 'gpt-x');
+      expect(saved.supportsToolCalling, isTrue);
+      expect(saved.acceptsImages, isTrue);
+      expect(relay.calls.first.$1, 'host-1');
+      expect(relay.calls.first.$2, kAiRelayProvidersPath);
+      // 编辑页没有 key / 地址 / 模型输入框。
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-0-api-key')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-0-base-url')),
+        findsNothing,
+      );
+
+      await tapKey(tester, 'ai-provider-0-relay-provider');
+      await tapKey(tester, 'ai-relay-provider-h2');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      saved = prefs.aiProviders.single;
+      expect(
+        saved.relay,
+        const AiRelayTarget(hostId: 'host-1', providerId: 'h2'),
+      );
+      expect(saved.model, 'claude-y');
+      expect(saved.supportsToolCalling, isFalse);
+      expect(saved.acceptsImages, isFalse);
+
+      await tapKey(tester, 'ai-provider-0-test');
+      final (String, String, Map<String, Object?>) ping = relay.calls.last;
+      expect(ping.$2, kAiRelayChatPath);
+      expect(ping.$3['mode'], 'ping');
+      expect(ping.$3['provider'], 'h2');
+      expect(find.text(t.ai_provider_test_ok), findsOneWidget);
+
+      // 统一提供商层：功能指派里照常能选到它（不在各功能入口写特例）。
+      await closeEditor(tester);
+      expect(
+        AiFeatureAssignments(
+          defaultProviderId: saved.id,
+        ).resolve(AiFeature.srsTemplate, prefs.aiProviders)?.id,
+        saved.id,
+      );
+    });
+
+    testWidgets('添加互联主机提供商：一台可用主机都没有 → 说明要检查什么，不新增', (
+      WidgetTester tester,
+    ) async {
+      await pumpSection(
+        tester,
+        relayHostProbe: () async => const <InterconnectHostTarget>[],
+        relayTransport: _FakeRelayTransport(),
+      );
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiInterconnectPresetId');
+      expect(
+        find.byKey(const ValueKey<String>('ai-relay-hosts-empty')),
+        findsOneWidget,
+      );
+      expect(find.text(t.ai_relay_hosts_empty), findsOneWidget);
+      expect(prefs.aiProviders, isEmpty);
+    });
+
+    testWidgets('主机关了共享：拉提供商清单的失败原样说清楚，不吞', (WidgetTester tester) async {
+      await pumpSection(
+        tester,
+        relayHostProbe: () async => const <InterconnectHostTarget>[desk],
+        relayTransport: _FakeRelayTransport(
+          providersReply: const <String, Object?>{
+            'ok': false,
+            'error': kAiRelayDisabled,
+          },
+        ),
+      );
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiInterconnectPresetId');
+      await tapKey(tester, 'ai-relay-host-host-1');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text(t.ai_error_relay_disabled), findsOneWidget);
+    });
+
+    testWidgets('云端语音转录的指派里不列互联主机提供商（它只转发对话补全）', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        AiProviderConfig.interconnectHost(
+          id: 'relay',
+          name: 'Desk relay',
+          relay: const AiRelayTarget(hostId: 'host-1'),
+        ),
+      ]);
+      await pumpSection(tester);
+      final int closed = find.text('Desk relay').evaluate().length;
+      await tapKey(
+        tester,
+        'ai-feature-${AiFeature.cloudTranscription.storageKey}-provider',
+      );
+      // 菜单展开后没有多出这家。
+      expect(find.text('Desk relay').evaluate().length, closed);
+      await tester.tap(find.text(t.ai_feature_unset).last);
+      await tester.pumpAndSettle();
+      await tapKey(
+        tester,
+        'ai-feature-${AiFeature.dictStyle.storageKey}-provider',
+      );
+      expect(find.text('Desk relay').evaluate().length, greaterThan(closed));
     });
 
     testWidgets('多 key：添加 / 停用 / 删除写穿偏好，冷却状态显示在框下', (
@@ -1738,6 +1932,58 @@ void main() {
         expect(text, isNot(code), reason: '$code 必须映射到真实文案而不是原样透出');
       }
       expect(aiFailureText('http_503'), contains('503'));
+    });
+  });
+
+  group('互联主机提供商：连接层失败 → 短码', () {
+    test('鉴权被拒 / 证书不符 / 不可达 / 老主机 / 其它状态码各有其码', () {
+      expect(
+        aiRelayFailureFor(SyncAuthError('x')).message,
+        kAiRelayAuthRejected,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError(
+            InterconnectHostError.certificateMismatchCode,
+          ),
+        ).message,
+        kAiRelayCertificateMismatch,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError(InterconnectHostError.unreachableCode),
+        ).message,
+        kAiRelayHostUnreachable,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError('HTTP 404', statusCode: 404),
+        ).message,
+        kAiRelayHostUnsupported,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError('HTTP 503', statusCode: 503),
+        ).message,
+        'http_503',
+      );
+    });
+
+    test('每个 relay 短码都有自己的界面文案（不原样把码给用户看）', () {
+      for (final String code in <String>[
+        kAiRelayUnavailable,
+        kAiRelayHostNotPaired,
+        kAiRelayHostUnreachable,
+        kAiRelayCertificateMismatch,
+        kAiRelayAuthRejected,
+        kAiRelayHostUnsupported,
+        kAiRelayDisabled,
+        kAiRelayNoProvider,
+        kAiRelayBadRequest,
+        kAiRelayOperationUnsupported,
+      ]) {
+        expect(aiFailureText(code), isNot(code), reason: code);
+      }
     });
   });
 }

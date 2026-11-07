@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -110,17 +109,14 @@ Future<void> _dragOn(
     await tester.pump();
   }
   await gesture.up();
-  // TODO-890: onDismiss now fires only when the slide-out animation completes
-  // (AnimationStatus.completed), so settle the 200ms tween before asserting.
-  await tester.pumpAndSettle();
+  // 用户 2026-11-06：抬手过阈值当帧 onDismiss，没有补间要等。
+  await tester.pump();
 }
 
 void main() {
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
     await ReaderFushiSource.instance.setDismissSwipeSensitivity(0.6);
-    // 单例偏好：跟手动画默认开着，别让 BUG-2439 那组的关闭态泄漏进本文件其余用例。
-    await ReaderFushiSource.instance.setPopupDismissAnimation(true);
   });
 
   testWidgets(
@@ -260,73 +256,50 @@ void main() {
     },
   );
 
-  testWidgets(
-    'BUG-1242: second pointer cancels the first swipe and springs back',
-    (WidgetTester tester) async {
-      int dismissed = 0;
-      await tester.pumpWidget(
-        _host(
-          _layer(
-            onDismiss: () => dismissed++,
-            enableSwipeToClose: true,
-            onClose: () {},
-          ),
+  testWidgets('BUG-1242: second pointer cancels the first swipe', (
+    WidgetTester tester,
+  ) async {
+    int dismissed = 0;
+    await tester.pumpWidget(
+      _host(
+        _layer(
+          onDismiss: () => dismissed++,
+          enableSwipeToClose: true,
+          onClose: () {},
         ),
-      );
+      ),
+    );
+    await tester.pump();
+
+    final TestGesture first = await tester.startGesture(
+      _popupBodyPoint,
+      pointer: 1,
+    );
+    for (int i = 0; i < 12; i++) {
+      await first.moveBy(const Offset(10, 0));
       await tester.pump();
+    }
+    final TestGesture second = await tester.startGesture(
+      _popupBodyPoint + const Offset(0, 30),
+      pointer: 2,
+    );
+    await tester.pump();
+    await first.moveBy(const Offset(120, 0));
+    await tester.pump();
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
 
-      final TestGesture first = await tester.startGesture(
-        _popupBodyPoint,
-        pointer: 1,
-      );
-      for (int i = 0; i < 12; i++) {
-        await first.moveBy(const Offset(10, 0));
-        await tester.pump();
-      }
-      expect(
-        tester
-            .widgetList<Transform>(find.byType(Transform))
-            .any(
-              (Transform transform) =>
-                  transform.transform.getTranslation().x > 80,
-            ),
-        isTrue,
-        reason: 'precondition: the first pointer is tracking a dismiss swipe',
-      );
-
-      final TestGesture second = await tester.startGesture(
-        _popupBodyPoint + const Offset(0, 30),
-        pointer: 2,
-      );
-      await tester.pump();
-      await first.moveBy(const Offset(120, 0));
-      await tester.pump();
-      await first.up();
-      await second.up();
-      await tester.pumpAndSettle();
-
-      expect(
-        dismissed,
-        0,
-        reason: 'a later move/up from the first pointer must not dismiss',
-      );
-      expect(
-        tester
-            .widgetList<Transform>(find.byType(Transform))
-            .every(
-              (Transform transform) =>
-                  transform.transform.getTranslation().x.abs() < 0.5,
-            ),
-        isTrue,
-        reason: 'the second pointer immediately cancels and springs back',
-      );
-
-      // Once every pointer from the cancelled gesture is up, a fresh one-finger
-      // gesture is eligible again.
-      await _dragOn(tester, _popupBodyPoint, dx: 200);
-      expect(dismissed, 1);
-    },
-  );
+    expect(
+      dismissed,
+      0,
+      reason: 'a later move/up from the first pointer must not dismiss',
+    );
+    // Once every pointer from the cancelled gesture is up, a fresh one-finger
+    // gesture is eligible again.
+    await _dragOn(tester, _popupBodyPoint, dx: 200);
+    expect(dismissed, 1);
+  });
 
   testWidgets(
     'switch OFF: horizontal drag on the body is inert, X still closes',
@@ -388,44 +361,42 @@ void main() {
     },
   );
 
-  testWidgets('TODO-890 switch ON: the popup follows the finger mid-drag '
-      '(Transform.translate tracks accumulated dx)', (
+  // 用户 2026-11-06：横滑关弹窗时弹窗一动不动，抬手过阈值当帧关。录屏里 Android
+  // 混合合成下跟手平移只挪了原生 WebView、顶栏与卡框不动，看起来是「正文在框里横着滚」。
+  testWidgets('switch ON: the popup stays put mid-drag (no follow-finger)', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       _host(_layer(onDismiss: () {}, enableSwipeToClose: true, onClose: () {})),
     );
     await tester.pump();
+    final Finder close = find.byIcon(Icons.close);
+    final Offset before = tester.getTopLeft(close);
 
     final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
-    // Drive the drag incrementally (mirrors _dragOn) so the horizontal-drag
-    // recognizer wins the arena and _onHorizontalDragUpdate accumulates.
     for (int i = 0; i < 12; i++) {
-      await gesture.moveBy(const Offset(8, 0));
+      await gesture.moveBy(const Offset(-20, 0)); // 240px, well past threshold
       await tester.pump();
     }
 
-    // The popup body is wrapped in a Transform.translate that follows the finger.
-    final Iterable<Transform> transforms = tester.widgetList<Transform>(
-      find.byType(Transform),
-    );
-    final bool followed = transforms.any((Transform t) {
-      final double dx = t.transform.getTranslation().x;
-      return dx > 40; // tracks the ~96px drag (gesture slop trims a little)
-    });
     expect(
-      followed,
+      tester.getTopLeft(close),
+      before,
+      reason: 'mid-drag the popup must not translate with the finger',
+    );
+    expect(
+      tester
+          .widgetList<Transform>(find.byType(Transform))
+          .every((Transform t) => t.transform.getTranslation().x.abs() < 0.5),
       isTrue,
-      reason: 'mid-drag the popup must translate with the finger (follow-hand)',
     );
 
     await gesture.up();
-    await tester.pumpAndSettle();
+    await tester.pump();
   });
 
   testWidgets(
-    'TODO-890 switch ON: over-threshold does NOT dismiss until the slide-out '
-    'animation completes, then fires exactly once',
+    'switch ON: over-threshold dismisses on the release frame, exactly once',
     (WidgetTester tester) async {
       int dismissed = 0;
       await tester.pumpWidget(
@@ -445,59 +416,9 @@ void main() {
         await tester.pump();
       }
       await gesture.up();
-      // First frame after release: animation is running, NOT yet completed.
-      await tester.pump();
-      expect(
-        dismissed,
-        0,
-        reason: 'dismiss must wait for the slide-out animation to finish',
-      );
-      // Settle the 200ms tween -> completion callback fires onDismiss once.
+      expect(dismissed, 1, reason: 'no slide-out tween to wait for');
       await tester.pumpAndSettle();
-      expect(
-        dismissed,
-        1,
-        reason: 'onDismiss fires once when the slide-out completes',
-      );
-    },
-  );
-
-  testWidgets(
-    'TODO-890 switch ON: below-threshold springs the popup back to origin '
-    '(translation returns to 0, no dismiss)',
-    (WidgetTester tester) async {
-      int dismissed = 0;
-      await tester.pumpWidget(
-        _host(
-          _layer(
-            onDismiss: () => dismissed++,
-            enableSwipeToClose: true,
-            onClose: () {},
-          ),
-        ),
-      );
-      await tester.pump();
-
-      final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
-      for (int i = 0; i < 5; i++) {
-        await gesture.moveBy(const Offset(8, 0)); // 40px total, below ~94px
-        await tester.pump();
-      }
-      await gesture.up();
-      await tester.pumpAndSettle();
-
-      expect(dismissed, 0, reason: 'a below-threshold drag closes nothing');
-      final Iterable<Transform> transforms = tester.widgetList<Transform>(
-        find.byType(Transform),
-      );
-      final bool allBack = transforms.every(
-        (Transform t) => t.transform.getTranslation().x.abs() < 0.5,
-      );
-      expect(
-        allBack,
-        isTrue,
-        reason: 'spring-back returns the popup translation to 0',
-      );
+      expect(dismissed, 1);
     },
   );
 
@@ -546,99 +467,4 @@ void main() {
       );
     },
   );
-
-  _bug2439BodyFollowGuards();
-}
-
-/// BUG-2439：弹窗**正文**横拖在「弹窗关闭动画」关掉后同样不许跟手。
-///
-/// 与顶栏 wrapper 是两套独立实现（这里是不进竞技场的 raw `Listener`，BUG-1242），
-/// BUG-2405 也是两处分别打的补丁，所以两边各要一组守卫——只测一边，另一边回归时
-/// 全绿。判别点同样落在**手指还没抬起**的那一帧。
-void _bug2439BodyFollowGuards() {
-  group('弹窗正文横拖：关掉动画后跟手期零位移（BUG-2439）', () {
-    tearDown(() async {
-      await ReaderFushiSource.instance.setPopupDismissAnimation(true);
-    });
-
-    /// 过阈值横拖但**不抬手**，回报弹窗表面左上角相对拖动前挪了多少 px。
-    Future<double> dragWithoutReleasing(
-      WidgetTester tester, {
-      required bool animation,
-    }) async {
-      await ReaderFushiSource.instance.setPopupDismissAnimation(animation);
-      int dismissed = 0;
-      await tester.pumpWidget(
-        _host(
-          _layer(
-            onDismiss: () => dismissed++,
-            enableSwipeToClose: true,
-            onClose: () {},
-          ),
-        ),
-      );
-      await tester.pump();
-
-      final Finder surface = find.byType(FushiPopupSurface);
-      final Offset before = tester.getTopLeft(surface);
-      final TestGesture gesture = await tester.startGesture(
-        _popupBodyPoint,
-        kind: PointerDeviceKind.touch,
-      );
-      const int steps = 12;
-      for (int i = 0; i < steps; i++) {
-        await gesture.moveBy(const Offset(200 / steps, 0));
-        await tester.pump();
-      }
-      final double moved = tester.getTopLeft(surface).dx - before.dx;
-      await gesture.up();
-      await tester.pumpAndSettle();
-      expect(dismissed, 1, reason: '过阈值抬手后总该关一层，两版一致');
-      return moved;
-    }
-
-    testWidgets('开关开着：跟手期弹窗跟着手指走（既有手感不变）', (WidgetTester tester) async {
-      // 12 步累加有浮点尾数（199.9999…），跟手判据只关心「挪没挪、挪多少」。
-      expect(
-        await dragWithoutReleasing(tester, animation: true),
-        moreOrLessEquals(200, epsilon: 0.01),
-      );
-    });
-
-    testWidgets('开关关掉：跟手期弹窗一动不动', (WidgetTester tester) async {
-      expect(await dragWithoutReleasing(tester, animation: false), 0);
-    });
-
-    testWidgets('同一条拖动：开着跟手位移 200、关掉恒 0（开关真的改变跟手期行为）', (
-      WidgetTester tester,
-    ) async {
-      final double on = await dragWithoutReleasing(tester, animation: true);
-      final double off = await dragWithoutReleasing(tester, animation: false);
-      expect(on, moreOrLessEquals(200, epsilon: 0.01));
-      expect(off, 0);
-      expect(on, isNot(equals(off)));
-    });
-
-    testWidgets('开关关掉、未过阈值：不误关，弹窗也没挪过', (WidgetTester tester) async {
-      await ReaderFushiSource.instance.setPopupDismissAnimation(false);
-      int dismissed = 0;
-      await tester.pumpWidget(
-        _host(
-          _layer(
-            onDismiss: () => dismissed++,
-            enableSwipeToClose: true,
-            onClose: () {},
-          ),
-        ),
-      );
-      await tester.pump();
-
-      final Finder surface = find.byType(FushiPopupSurface);
-      final Offset before = tester.getTopLeft(surface);
-      await _dragOn(tester, _popupBodyPoint, dx: 40);
-
-      expect(dismissed, 0);
-      expect(tester.getTopLeft(surface), before);
-    });
-  });
 }

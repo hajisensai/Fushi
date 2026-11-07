@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1667 守卫：本地音频库导入必须走「真实路径」选择器，不得回到裸
 /// `FilePicker.platform.pickFiles()`。

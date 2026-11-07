@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-904 跨文件字面量一致守卫：WebView2 实例创建失败的 sentinel。
 ///

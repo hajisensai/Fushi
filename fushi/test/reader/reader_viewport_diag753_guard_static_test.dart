@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-909 源码守卫：TODO-792 / 753 竖排翻页漂移取证已完成，一次性诊断探针
 /// （`[792-REVEAL]` / `[792-REVEAL-RB]` / `[792-RPITCH]` / `[792-TURN]` /

@@ -95,4 +95,46 @@ void main() {
       ),
     );
   });
+
+  // #SIZTG3MNjt：ID3v2 encoding=0（ISO-8859-1）帧里装的是 Shift_JIS 字节。有声书导入页
+  // 的作者栏经 [MusicTagFieldsIo.read] 取值，必须解成日文而不是 Latin-1 乱码。
+  test('ID3 Latin-1 帧里的 Shift_JIS 字节按日文读出', () {
+    final Uint8List mp3 = File(
+      _fixture('Album A/02 Second Song.mp3'),
+    ).readAsBytesSync();
+    int start = 0;
+    if (mp3[0] == 0x49 && mp3[1] == 0x44 && mp3[2] == 0x33) {
+      final int size = mp3
+          .sublist(6, 10)
+          .fold<int>(0, (int acc, int x) => (acc << 7) | (x & 0x7F));
+      start = 10 + size;
+    }
+    List<int> frame(String id, List<int> raw) => <int>[
+      ...id.codeUnits,
+      ...(ByteData(4)..setUint32(0, raw.length + 1)).buffer.asUint8List(),
+      0, 0, // flags
+      0, // encoding = ISO-8859-1
+      ...raw,
+    ];
+    final List<int> body = <int>[
+      // 「act.2 夜に駆ける」
+      ...frame('TIT2', <int>[
+        0x61, 0x63, 0x74, 0x2E, 0x32, 0x20, 0x96, 0xE9, 0x82, 0xC9, //
+        0x8B, 0xEC, 0x82, 0xAF, 0x82, 0xE9,
+      ]),
+      // 「ヨルシカ」（片假名尾字节落在 ASCII 区）
+      ...frame('TPE1', <int>[0x83, 0x88, 0x83, 0x8B, 0x83, 0x56, 0x83, 0x4A]),
+    ];
+    final int n = body.length;
+    final List<int> tag = <int>[
+      0x49, 0x44, 0x33, 3, 0, 0, //
+      (n >> 21) & 0x7F, (n >> 14) & 0x7F, (n >> 7) & 0x7F, n & 0x7F,
+      ...body,
+    ];
+    final String path = '${tmp.path}/sjis.mp3';
+    File(path).writeAsBytesSync(<int>[...tag, ...mp3.sublist(start)]);
+    final Map<MusicTagField, String> got = io.read(path);
+    expect(got[MusicTagField.title], 'act.2 夜に駆ける');
+    expect(got[MusicTagField.artist], 'ヨルシカ');
+  });
 }

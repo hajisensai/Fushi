@@ -19,10 +19,16 @@ import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show VideoSubtitleBackfillReport;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show videoSubtitleJobsRootUnder;
@@ -31,6 +37,7 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -51,6 +58,9 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/self_update/server_bundle_swap.dart';
+import 'package:fushi_server/src/self_update/server_release.dart';
+import 'package:fushi_server/src/self_update/server_self_updater.dart';
 import 'package:fushi_server/src/admin/admin_ops.dart';
 import 'package:fushi_server/src/agent_host.dart';
 import 'package:fushi_server/src/assistant_host.dart';
@@ -58,11 +68,14 @@ import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_backfill.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
@@ -102,8 +115,19 @@ class HeadlessHost {
     required this.identity,
     bool Function()? p2pAvailable,
     ServerDictionaryHost? dictionaryHost,
+    HostSelfUpdater Function({
+      required Future<bool> Function() isAllowed,
+      required void Function() onInstalled,
+    })?
+    selfUpdaterFactory,
+    VideoSubtitleRegistry Function()? subtitleRegistryFactory,
   }) : _config = config,
        _injectedDictionaryHost = dictionaryHost,
+       _selfUpdaterFactory =
+           selfUpdaterFactory ?? ServerSelfUpdater.forRunningBundle,
+       _subtitleRegistryFactory =
+           subtitleRegistryFactory ??
+           (() => buildServerSubtitleRegistry(prefs)),
        _p2pAvailable =
            p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
@@ -116,6 +140,22 @@ class HeadlessHost {
 
   /// 原生 libfushi_p2p 是否可用（测试可注入）。
   final bool Function() _p2pAvailable;
+
+  /// 互联远程自更新的装配（测试可注入；生产按运行中的发布包建）。
+  final HostSelfUpdater Function({
+    required Future<bool> Function() isAllowed,
+    required void Function() onInstalled,
+  })
+  _selfUpdaterFactory;
+  final Completer<void> _selfUpdateInstalled = Completer<void>();
+
+  /// 远程更新已把新版换进安装目录：`serve` 等到它就停服，以 [kExitSelfUpdated]
+  /// 退出，由服务管理器拉起新版。
+  Future<void> get selfUpdateInstalled => _selfUpdateInstalled.future;
+
+  /// 在线字幕来源（下载管线字幕阶段 + 单视频补字幕）。生产 =
+  /// [buildServerSubtitleRegistry]：只装偏好开着且有 key 的来源；测试注入假来源。
+  final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -206,6 +246,7 @@ class HeadlessHost {
   Future<void> start() async {
     if (_server != null) return;
     await paths.ensureLayout();
+    await _cleanupAfterSelfUpdate();
 
     SecurityContext? securityContext;
     if (config.tls) {
@@ -257,9 +298,11 @@ class HeadlessHost {
               (
                 VideoSubtitleSegmenterMode mode,
                 MossBackendPreference mossBackend,
+                VideoSubtitleLanguage language,
               ) => resolveServerVideoSubtitleRecognizer(
                 mode: mode,
                 mossBackend: mossBackend,
+                language: language,
               ),
           pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
           database: () => db,
@@ -278,6 +321,8 @@ class HeadlessHost {
       db: db,
       prefs: prefs,
       config: () => config,
+      // 刮完下载来的作品 → 给仍缺字幕的分集补字幕（与 app 下载管线同一个钩子）。
+      onWorkScraped: subtitleBackfill.onWorkScraped,
     );
     _videoScrape = videoScrape;
 
@@ -289,9 +334,14 @@ class HeadlessHost {
       prefs: prefs,
       identity: identity,
       scrape: videoScrape,
+      // 字幕语言现读配置（WebUI 改完，下一次重建管线生效）。
+      subtitleLanguage: () => config.subtitleLanguage,
+      subtitleRegistryFactory: _subtitleRegistryFactory,
     );
     await downloads.start();
     _downloads = downloads;
+    // 下载那一刻没搜到字幕的分集，过几小时再找（与 app 同：随下载管线起）。
+    if (downloads.configured) subtitleBackfill.startRetryLoop();
 
     // AI 助手存档（远端会话 + 操作记录）按保留期清：服务端常驻，起来清一次、之后定时清。
     final ServerAgentHistoryPruner agentHistoryPruner =
@@ -336,6 +386,11 @@ class HeadlessHost {
             allowLan: !_loopbackOnly,
             libraryService: buildLibraryService(),
             mangaOcrJobs: ocrJobs,
+            // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
+            screenOcr: ScreenOcrHost(
+              service: ocrService,
+              workDir: Directory(p.join(paths.temp.path, 'screen_ocr')),
+            ),
             hostJobs: jobs,
             downloads: downloads,
             subscriptions: downloads.subscriptions,
@@ -400,12 +455,30 @@ class HeadlessHost {
           // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
           ..hostId = identity.deviceId
           ..publicUrlsProvider = (() async => config.publicUrls)
+          // 「我的设备」跟随本机 Fushi 账户自动登录（见 leaderboard_link_host.dart）。
+          ..leaderboardLinkHost = buildLeaderboardLinkHost()
           // 图形字幕（PGS / VobSub / DVB）整轨回传：与 app 当 host 同一份引擎实现（抽轨走
           // 引擎 ffmpeg 后端解析——配置里的 ffmpeg 路径 / `FUSHI_FFMPEG` / PATH），缓存落
           // 服务端自己的临时目录。
           ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
             cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
-          ).export;
+          ).export
+          // 远程自更新：与 app 当 host 同一个端点。开关是配置 `remote_update`（默认关，
+          // 现读）；不是发布包时端点照挂、回 unsupported。
+          ..hostSelfUpdater = _selfUpdaterFactory(
+            isAllowed: () async => config.remoteUpdate,
+            onInstalled: () {
+              if (!_selfUpdateInstalled.isCompleted) {
+                _selfUpdateInstalled.complete();
+              }
+            },
+          )
+          // 「立即给这个视频补字幕」：与 app 当 host 同一个引擎服务（身份取已落库的刮削
+          // 结论，只补缺的，不覆盖已有字幕）。
+          ..videoSubtitleBackfill = backfillVideoSubtitle
+          // 「互联主机」AI 提供商：已配对设备用本服务端 `ai:` 段配的提供商（key 不出本机）；
+          // 开关是 preferences 表里的 interconnect_ai_relay_enabled（缺省开）。
+          ..aiRelaySettings = (() => ServerAiSettings(() => config.ai));
     try {
       await server.start();
     } catch (_) {
@@ -434,6 +507,19 @@ class HeadlessHost {
       'listening on ${config.bind}:${server.port} '
           '(${securityContext != null ? 'https' : 'http'}, device=${config.deviceName})',
     );
+  }
+
+  /// 上一次远程更新换包留下的旧文件（`*.fushi-old`）此刻已无人占用，删掉。
+  Future<void> _cleanupAfterSelfUpdate() async {
+    final Directory? root = currentBundleRoot();
+    if (root == null) return;
+    final int left = await cleanupAfterServerUpdate(root);
+    if (left > 0) {
+      engineLog.logDiagnostic(
+        'ServerSelfUpdate',
+        'cleanup left $left stale file(s) under ${root.path}',
+      );
+    }
   }
 
   static bool _isLoopbackBind(String bind) =>
@@ -598,6 +684,7 @@ class HeadlessHost {
   /// 停下载管线（含订阅检查，等在途的一轮落地）再关刮削：正常停机与启动半途失败
   /// 共用。
   Future<void> _stopPipelines() async {
+    await subtitleBackfill.stop();
     _agentHistoryPruner?.stop();
     _agentHistoryPruner = null;
     final ServerDownloadHost? downloads = _downloads;
@@ -658,6 +745,9 @@ class HeadlessHost {
         lastSeenIp: Value<String?>(registration.remoteAddress),
       ),
     );
+    // 设备钥匙指纹与「我的设备」按本次会话显式重写（与 app 同一份实现）。无头审批不授予
+    // 「我的设备」，所以这里只会清掉旧标记、记下指纹，供管理员之后手动标记。
+    await InterconnectOwnerDeviceStore(db).recordPairing(registration);
     _server?.invalidatePeerTokenCache();
     engineLog.logDiagnostic(
       'HeadlessHost',
@@ -669,6 +759,30 @@ class HeadlessHost {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     return peers.map((FushiPairedPeerRow r) => r.token).toSet();
   }
+
+  /// 补字幕（单视频 / 刮削后 / 下载后缺字幕重试）的装配，见 server_subtitle_backfill.dart。
+  late final ServerSubtitleBackfill subtitleBackfill = ServerSubtitleBackfill(
+    db: db,
+    prefs: prefs,
+    config: () => config,
+    registryFactory: _subtitleRegistryFactory,
+  );
+
+  /// 给库里一个视频补一条字幕（互联 `POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// 视频不存在返回 null（路由 404）；一家字幕来源都没配时回 `unavailable`。
+  Future<VideoSubtitleBackfillReport?> backfillVideoSubtitle(
+    String videoId, {
+    String? language,
+  }) => subtitleBackfill.backfillVideo(videoId, language: language);
+
+  /// 「跟随已配对设备自动登录」的 host 侧装配（[start] 用；测试也直接拿它挂到自建的 TLS
+  /// [FushiSyncServer] 上）。总闸现读 [config]，账户每次请求现读激活 Profile 的账户文件。
+  ServerLeaderboardLinkHost buildLeaderboardLinkHost() =>
+      ServerLeaderboardLinkHost(
+        db: db,
+        supportRoot: paths.support,
+        enabled: () => config.leaderboardLink,
+      );
 
   /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
   Future<String?> _resolveVideoPath(String videoId) async {

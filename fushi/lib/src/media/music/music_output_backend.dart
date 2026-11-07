@@ -36,6 +36,7 @@ class MusicPlayItem {
     this.rgAlbumPeak,
     this.artistRefs = const <MusicPlayArtistRef>[],
     this.sourceAlbumId,
+    this.sourceId,
   });
 
   final String trackUid;
@@ -48,6 +49,10 @@ class MusicPlayItem {
 
   /// 来源侧的专辑 id（插件曲目）；本地曲目用 [albumUid]。
   final String? sourceAlbumId;
+
+  /// 曲库曲目所属的音乐来源（`music_tracks.source_id`）。网络音乐来源的曲目起播时按它的
+  /// transport 取流（`music_remote_media.dart`）；服务器曲库 / 插件 / 单文件导入为 null。
+  final int? sourceId;
 
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
   final int? startMs;
@@ -218,6 +223,7 @@ class MusicBackendCapabilities {
     required this.signalPath,
     required this.abLoop,
     this.externalQueue = false,
+    this.startAt = true,
   });
 
   /// libmpv 链路：一切照旧。
@@ -238,15 +244,20 @@ class MusicBackendCapabilities {
   /// 「上一首」/ 随机 / 预排下一首都不适用；没有时长（直播）时不能 seek。
   final bool externalQueue;
 
+  /// 打开时能从曲内某处开始放（[MusicOutputBackend.openPair] 的 `startAt`）：断点续播靠它。
+  /// MusicKit 不支持（Apple Music 曲目不续播）。
+  final bool startAt;
+
   @override
   bool operator ==(Object other) =>
       other is MusicBackendCapabilities &&
       other.signalPath == signalPath &&
       other.abLoop == abLoop &&
-      other.externalQueue == externalQueue;
+      other.externalQueue == externalQueue &&
+      other.startAt == startAt;
 
   @override
-  int get hashCode => Object.hash(signalPath, abLoop, externalQueue);
+  int get hashCode => Object.hash(signalPath, abLoop, externalQueue, startAt);
 }
 
 /// 后端上报的事件。
@@ -383,11 +394,16 @@ abstract interface class MusicOutputBackend {
   /// `openPair` 会作废还没打开完的前一次（前一次静默返回、不再碰播放器，也不抛）：调用方
   /// 自己按代次判断结果是否还作数。需要异步取流的曲目在取流期间先停掉正在放的旧曲，新文件
   /// 真正交给播放器之后才上报它的位置。
+  ///
+  /// [startAt]：[current] 从曲内哪儿开始放（相对曲目起点；断点续播，见 `music_resume.dart`）。
+  /// 只作用于 [current]，预排的 [next] 一律从头。由后端自管队列的实现（Apple Music）不支持，
+  /// 忽略它——引擎也不会对这类曲目传非零值。
   Future<void> openPair(
     MusicPlayItem current,
     MusicPlayItem? next, {
     required bool play,
     bool crossfadeNext = false,
+    Duration startAt = Duration.zero,
   });
 
   /// 只换「下一首」（当前曲目不中断）。

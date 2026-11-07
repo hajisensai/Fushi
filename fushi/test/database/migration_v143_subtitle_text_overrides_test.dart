@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -60,7 +60,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 144);
+    expect(migrated.schemaVersion, 146);
     await migrated.upsertVideoSubtitleTextOverride(row('直した字幕'));
     // 同一句再改一次是覆盖，不是第二行。
     await migrated.upsertVideoSubtitleTextOverride(row('もう一度直した'));
@@ -108,7 +108,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 144);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
     expect(hasTable(probe), isTrue);
   });
 
@@ -147,6 +147,6 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 144);
+    expect(probe.select('PRAGMA user_version').first.values.first, 146);
   });
 }

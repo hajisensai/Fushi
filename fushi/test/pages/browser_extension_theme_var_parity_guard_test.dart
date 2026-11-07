@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-736 防回归守卫：浏览器扩展查词弹窗的主题变量必须与 app 内弹窗注入的**同一套** CSS
 /// 变量对齐。

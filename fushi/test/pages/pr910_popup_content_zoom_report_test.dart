@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// PR#910 审查必修 ①（BUG-1651）：popupRendered 上报的内容高度必须与同一次调用里
 /// 上报的 `window.innerHeight` **同单位**（host CSS px）。

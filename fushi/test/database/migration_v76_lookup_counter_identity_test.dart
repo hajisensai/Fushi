@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v76 迁移（v39 的另一半）：`lookup_mining_counters` 的 `book_key` 进唯一键，
@@ -96,7 +96,7 @@ CREATE TABLE statistics_tombstones (
     expect(version.read<int>('user_version'), db.schemaVersion);
     expect(
       db.schemaVersion,
-      144,
+      146,
       reason: 'v76 给 lookup_mining_counters 的 book_key 进唯一键',
     );
 

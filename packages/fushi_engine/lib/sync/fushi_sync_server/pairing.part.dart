@@ -566,6 +566,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
         // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。
         kDiscShareCapability: _libraryService is VideoDiscShareHost,
+        // 互联远端片段导出（`GET .../clipvideo`，反馈 6nBmSBj_2W）。老 host 无此字段
+        // → client 提示「对端版本过低」，不发请求。
+        kVideoClipExportCapability: _libraryService is VideoClipExportHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。

@@ -206,6 +206,14 @@ const String kGalOverlongSliceSuspectReason = 'slice_overlong_suspect';
 /// 说成没配音，资源模式的**真漏抓**也会被这句话盖过去。
 const String kGalCleanSourceSuppressedReason = 'clean_source_suppressed';
 
+/// 资源模式下这句越过了配对容差仍没有原件落盘（BUG-4206 审查）。
+///
+/// 只说「没找到这句的游戏资源」，**不是**「这句没配音」：资源通道活着时多半就是
+/// 旁白无配音，但也可能是漏抓 / 引擎绑定没命中，没有 [kGalLineNoVoiceReason] 那种
+/// PCM 静默证据。UI 因此给中性的「无原件」标并在悬停里说清两种可能，不给红色
+/// 「未匹配」——资源模式下每句无配音旁白都会走到这里，无配音是常态不是故障。
+const String kGalResourceNotPairedReason = 'game_resource_not_paired';
+
 /// 实时台词列表的筛选维度。单一枚举驱动 [lineMatchesFilter] 一个 predicate，
 /// 消除「有音频 / 已制卡 / 已收藏」各写一条 if 分支的特殊情况。与线程下拉筛选正交：
 /// 先按线程取行，再按本枚举过滤。
@@ -444,6 +452,15 @@ class TexthookerLineEntry {
     TexthookerLineAudioStatus.unavailable => false,
   };
 
+  /// 这行的音频是否是**已配上的**游戏资源原件（BUG-4206）：backend 是
+  /// game_resource 且状态是已配对 / 已编码。只看 backend 会把还在等资源、或没配上
+  /// 的行当成有原件（折叠进来的旧事件也可能留着 backend 字样）。UI 的资源弹窗与
+  /// 操作目录的「来自游戏资源直提」描述共用这一个判据。
+  bool get hasResourceAudio =>
+      audioBackend == 'game_resource' &&
+      (audioStatus == TexthookerLineAudioStatus.matched ||
+          audioStatus == TexthookerLineAudioStatus.encoded);
+
   TexthookerLineEntry copyWith({
     String? text,
     List<RubySpan>? rubySpans,
@@ -540,6 +557,15 @@ class TexthookerService extends ChangeNotifier {
   /// 注销的生命周期和 observer 顺序问题。
   List<String> get lastFoldedLineIds =>
       List<String>.unmodifiable(_lastFoldedLineIds);
+
+  /// 上一次 [appendLine] 返回行的**文本出处**：null = 文本就是本次入参；否则是被折叠
+  /// 回吞、文本更长而胜出的那条旧行的 id（合并结果显示的是它的文本，不是本次入参）。
+  ///
+  /// galgame 会话据此记住「当前这条字幕到底是哪一份 hook 原文经管线得来的」——规则
+  /// 过滤页的预览样本必须是这一份，否则预览看的是一份输入、字幕吃的是另一份（BUG-4029）。
+  /// 与 [lastFoldedLineIds] 同生命周期：调用方在 [appendLine] 返回后立刻读走。
+  String? get lastAppendTextDonorId => _lastAppendTextDonorId;
+  String? _lastAppendTextDonorId;
   final List<String> _lastFoldedLineIds = <String>[];
   final Map<String, TexthookerTextThread> _discoveredTextThreads =
       <String, TexthookerTextThread>{};
@@ -905,6 +931,7 @@ class TexthookerService extends ChangeNotifier {
     final String trimmed = parsed.text;
     if (trimmed.isEmpty) return null;
     _lastFoldedLineIds.clear();
+    _lastAppendTextDonorId = null;
 
     // 同一句被引擎分多次吐出来时，把 buffer 尾巴上属于这一句的几条**一次性回吞**成
     // 一条，而不是追加新行。用户报的 Zato 序列是三拍：
@@ -963,6 +990,7 @@ class TexthookerService extends ChangeNotifier {
             normalizeForFold(mergedText).length) {
           mergedText = tail.text;
           mergedSpans = tail.rubySpans;
+          _lastAppendTextDonorId = tail.id;
         }
         absorbed.add(_entries.removeAt(tailIndex));
       }

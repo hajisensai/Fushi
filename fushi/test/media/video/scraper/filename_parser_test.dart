@@ -1,7 +1,7 @@
 /// 文件名解析层（[FilenameParser]）单元测试：全部使用真实世界命名样例。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';

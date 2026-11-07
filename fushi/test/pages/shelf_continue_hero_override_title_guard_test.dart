@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1108 源码扫描守卫：书架顶部「继续阅读」hero 条的书名必须经
 /// [MediaSource.getDisplayTitleFromMediaItem] 应用编辑弹窗写入的 override 书名，

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-904 native 源码守卫：WebView2 实例异步创建失败时孤儿 hwnd 必须被回收。
 ///

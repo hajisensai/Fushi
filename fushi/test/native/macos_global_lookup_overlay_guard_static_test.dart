@@ -8,7 +8,7 @@
 // never-activate window contract and the Xcode wiring stay in place.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   String read(String relativeToFushi) {
@@ -293,11 +293,11 @@ void main() {
     });
 
     test('Dart macOS capture runs inside the clipboard gate', () {
-      expect(dart, contains('if (Platform.isMacOS) {'));
+      expect(dart, contains('if (Platform.isMacOS || Platform.isLinux) {'));
       expect(
         dart,
         contains(
-          '_runClipboardExclusive<String>(\n        _captureForegroundSelectionMac,',
+          '_runClipboardExclusive<String>(\n        _captureForegroundSelectionNative,',
         ),
       );
     });

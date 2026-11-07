@@ -5,7 +5,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ifo.dart';
 import 'package:path/path.dart' as p;

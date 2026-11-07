@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import '../../tool/test_flow/flutter_sdk_executables.dart';
 import '../../tool/test_flow/heavy_sdk_check.dart';

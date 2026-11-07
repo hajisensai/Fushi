@@ -12,6 +12,7 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
@@ -75,14 +76,19 @@ class ReadyModels implements VideoSubtitleAsrModelPort, VideoSubtitleMossPort {
   const ReadyModels();
 
   @override
-  Future<bool> isReady() async => true;
+  Future<bool> isReady({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) async => true;
 
   @override
-  Stream<ModelDownloadEvent> download() =>
-      const Stream<ModelDownloadEvent>.empty();
+  Stream<ModelDownloadEvent> download({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => const Stream<ModelDownloadEvent>.empty();
 
   @override
-  Stream<ModelDownloadEvent>? resumeDownload() => null;
+  Stream<ModelDownloadEvent>? resumeDownload({
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => null;
 
   @override
   Future<VideoSubtitleMossState> status(MossBackendPreference backend) async =>

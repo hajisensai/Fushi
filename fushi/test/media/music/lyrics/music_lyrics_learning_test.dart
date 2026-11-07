@@ -144,6 +144,40 @@ void main() {
       expect(musicDesktopLyricsBlock(t, 3).text, '溶けて');
     });
 
+    test('同时显示句数：当前行居中，跳过伴唱 / 空行，两端有多少给多少', () {
+      final LyricTimeline t = _timeline();
+      // 主行是 0、1、3（2 是伴唱 / 空行，不占名额）。
+      expect(musicLyricPreviousMainLine(t, 3), 1);
+      expect(musicLyricPreviousMainLine(t, 0), -1);
+      final MusicDesktopLyricsBlock mid = musicDesktopLyricsBlock(
+        t,
+        1,
+        before: 1,
+        after: 1,
+      );
+      expect(mid.text, '夜に駆ける\n沈むように\n溶けて');
+      expect(mid.currentStart, '夜に駆ける\n'.length);
+      expect(mid.currentLength, '沈むように'.length);
+      // 自动档的大半径：开头 / 结尾不够就只给现有的。
+      final MusicDesktopLyricsBlock last = musicDesktopLyricsBlock(
+        t,
+        3,
+        before: 12,
+        after: 12,
+      );
+      expect(last.text, '夜に駆ける\n沈むように\n溶けて');
+      expect(last.currentStart, '夜に駆ける\n沈むように\n'.length);
+      // 前奏：以第一行为锚，没有当前行标记。
+      final MusicDesktopLyricsBlock intro = musicDesktopLyricsBlock(
+        t,
+        -1,
+        before: 1,
+        after: 1,
+      );
+      expect(intro.text, '夜に駆ける\n沈むように');
+      expect(intro.currentStart, -1);
+    });
+
     test('已唱长度按音节、对齐 trim；下一个音节边界', () {
       final LyricLine l = _timeline().lines[0];
       expect(musicDesktopSungLength(l, 900), 0);

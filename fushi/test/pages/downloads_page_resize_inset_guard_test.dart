@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-1003）：「浏览」页（[BrowsePage]，原「下载」页 → 内联
 /// [AnimeDownloadDialog]）的 [Scaffold] 必须显式 `resizeToAvoidBottomInset: false`。

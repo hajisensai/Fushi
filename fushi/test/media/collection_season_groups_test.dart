@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 
 /// 合集内分季：分组键派生 / 多组判定 / 分节 / tab 展示序 / 按季重排 纯函数契约。

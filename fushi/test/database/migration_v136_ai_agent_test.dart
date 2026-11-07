@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -67,13 +67,13 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 144);
+    expect(migrated.schemaVersion, 146);
     await saveSession(migrated, 's1', 10);
     final int actionId = await migrated.insertAiAgentAction(action('s1', 11));
     await migrated.close();
 
     raw = sqlite.sqlite3.open(path);
-    expect(raw.select('PRAGMA user_version').first.values.first, 144);
+    expect(raw.select('PRAGMA user_version').first.values.first, 146);
     for (final String t in tables) {
       expect(tableExists(raw, t), isTrue, reason: t);
     }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// G15 全目录镜像守卫：`tools/browser-extension/`（唯一真相源）与随 app 打包的
 /// `assets/browser_extension/` 必须整目录字节一致——不再是逐文件手工点名

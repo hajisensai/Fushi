@@ -1346,7 +1346,7 @@ int mangaSliderPageIndex({
 /// 细线滑块。两端是 tonal 圆钮的上一章 / 下一章（[onPreviousChapter] / [onNextChapter] 为 null 时不画——
 /// 本地卷没有「章」）。RTL 下两颗按钮随 slider 一起镜像：左钮恒指向物理左端。
 /// 拖动中在手柄上方画一枚数值气泡（`页 / 总页`），有 [pagePreview] 时气泡里带
-/// 那一页的缩略图。左侧读数可点（[onPageTap]）：弹出跳页输入框——顶栏不再放页码
+/// 那一页的缩略图。当前页读数（LTR 在左、RTL 在右）可点（[onPageTap]）：弹出跳页输入框——顶栏不再放页码
 /// 胶囊，跳页入口与滑块收在同一块胶囊里。
 ///
 /// 拖动中只更新本地预览，**松手才真跳页**（[onPageCommitted]）：漫画翻页要
@@ -1479,6 +1479,30 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     final String? rightTooltip = widget.rtl
         ? widget.previousChapterTooltip
         : widget.nextChapterTooltip;
+    final Widget currentReadout = _pageReadout(
+      colors,
+      ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 28),
+        child: Text(
+          '$shownPage',
+          key: const ValueKey<String>('manga_slider_current_page'),
+          textAlign: TextAlign.center,
+          style: readout,
+        ),
+      ),
+    );
+    final Widget totalReadout = ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 28),
+      child: Text(
+        '$pageCount',
+        key: const ValueKey<String>('manga_slider_page_count'),
+        textAlign: TextAlign.center,
+        style: readout?.copyWith(
+          color: colors.secondaryForeground,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
     return Row(
       children: <Widget>[
         if (leftAction != null)
@@ -1494,18 +1518,9 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
           )
         else
           const SizedBox(width: 10),
-        _pageReadout(
-          colors,
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 28),
-            child: Text(
-              '$shownPage',
-              key: const ValueKey<String>('manga_slider_current_page'),
-              textAlign: TextAlign.center,
-              style: readout,
-            ),
-          ),
-        ),
+        // 读数跟着页序走：LTR 当前页在左、总页数在右；RTL（右开本）第 1 页在
+        // 物理右端，当前页读数也在右、总页数在左（#oOre-vefJy）。
+        if (widget.rtl) totalReadout else currentReadout,
         Expanded(
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
@@ -1544,18 +1559,7 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
             },
           ),
         ),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 28),
-          child: Text(
-            '$pageCount',
-            key: const ValueKey<String>('manga_slider_page_count'),
-            textAlign: TextAlign.center,
-            style: readout?.copyWith(
-              color: colors.secondaryForeground,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
+        if (widget.rtl) currentReadout else totalReadout,
         if (rightAction != null)
           Padding(
             padding: const EdgeInsets.only(right: 6),
@@ -1613,9 +1617,16 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     double position,
     double maxPosition,
   ) {
-    final Widget slider = FushiSlider(
+    // 本栏其余部分（气泡、跳转刻度、读数）都按「物理左端起」的 [position]
+    // 算；滑块控件本身在 RTL 下包一层 Directionality.rtl、吃逻辑页号（物理
+    // 位置的镜像）：这样已读的那段高亮轨道从物理右端（第 1 页）长到把手，
+    // 而不是从左端长出一截「未读」高亮（#oOre-vefJy）。拖动 / 方向键方向随之
+    // 由控件自己镜像。
+    final bool rtl = widget.rtl;
+    double toPhysical(double v) => rtl ? maxPosition - v : v;
+    Widget slider = FushiSlider(
       key: const ValueKey<String>('manga_page_slider'),
-      value: position.clamp(0, maxPosition),
+      value: toPhysical(position.clamp(0, maxPosition)),
       max: maxPosition,
       // Apple 滑块默认取主题强调色，压在深色玻璃上换成深色档的强调色 / 填充色；
       // MD3 跟主题（primary / secondaryContainer）。
@@ -1629,18 +1640,21 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
       // 两端都要分格——它的刻度点在格距不足 8px 时自己不画，长卷不会糊成一串。
       // 0 / 1 页没有可跳的格（整条栏本就不画），保持 null。
       divisions: widget.pageCount <= 1 ? null : widget.pageCount - 1,
-      onChanged: (double v) => setState(() => _dragPosition = v),
+      onChanged: (double v) => setState(() => _dragPosition = toPhysical(v)),
       onChangeEnd: (double v) {
         setState(() => _dragPosition = null);
         widget.onPageCommitted(
           mangaSliderPageIndex(
-            position: v,
+            position: toPhysical(v),
             pageCount: widget.pageCount,
-            rtl: widget.rtl,
+            rtl: rtl,
           ),
         );
       },
     );
+    if (rtl) {
+      slider = Directionality(textDirection: TextDirection.rtl, child: slider);
+    }
     if (colors.apple) return slider;
     // 一页一格的离散滑块在 40 页上会画出 40 颗刻度点：数值气泡由本栏自己画，
     // 刻度点与系统气泡都关掉。

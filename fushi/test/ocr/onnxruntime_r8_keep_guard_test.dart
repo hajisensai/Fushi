@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1780 守卫：Android release 的 R8 规则必须以**原名**保住 ONNX Runtime 的
 /// JNI 反查类。

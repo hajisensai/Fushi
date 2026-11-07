@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1070 接线守卫：galgame hook 台词浮窗（Windows 原生 Direct2D，
 /// `floating_lyric_window.cpp`）的台词文本垂直居中且无裁剪，多行溢出时顶部行会挤进顶部

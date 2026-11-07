@@ -194,9 +194,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
             data: fileBytes,
           );
       final Uint8List data = fixed.data;
-      debugPrint(
-        '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
-      );
       final String mime = fixed.mime ?? fallbackMimeType(safeFontPath);
       return _ReaderResourceResponse(
         contentType: mime,
@@ -2268,6 +2265,7 @@ updateLive: function(patch) {
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        notifyPopupBodyWebViewChanged();
         _bodyMenuDismiss.attach(controller);
         _openTrace.mark('webViewCreated');
         assert(() {

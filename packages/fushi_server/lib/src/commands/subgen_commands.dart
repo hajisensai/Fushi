@@ -1,8 +1,9 @@
-/// `fushi_server subgen …`：离线跑视频日语字幕管线（识别 → AI 校对 → 导出）。
+/// `fushi_server subgen …`：离线跑视频字幕管线（识别 → AI 校对 → 导出）。
 ///
 /// ```
 /// subgen <视频或目录>... [--title T] [--no-ai] [--segmenter auto|moss|window]
-///        [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary]
+///        [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
+///        [--regen-glossary]
 ///        [--glossary g.json] [--dry-run] [--season] [--out-dir D]
 ///        [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
 /// ```
@@ -18,6 +19,7 @@
 ///   数组），条目一律标成用户编辑过、资料指纹按当前资料算——之后不会被自动重新
 ///   生成覆盖（除非 `--regen-glossary`，那也会保留这些条目）。
 /// - `--out-dir`：字幕全部写进这个目录，不碰视频目录。
+/// - `--language`：`ja`（默认）/ `zh`（普通话）；`--suffix` 缺省取它。
 /// - `--moss-cli` / `--moss-model`：直接用本机已有的 audio.cpp CLI 与 GGUF，不走
 ///   下载目录。
 /// - 进度打 stderr；结束打每集结果与 AI 用量（应答没带用量的调用单列，不按 0 计）。
@@ -43,6 +45,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.d
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
     show buildSubtitleLyricsFinder;
@@ -60,8 +63,8 @@ import 'package:path/path.dart' as p;
 
 const String _usage = '''
 subgen <视频或目录>... [--title T] [--no-ai] [--segmenter auto|moss|window]
-       [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary]
-       [--glossary g.json] [--dry-run] [--season] [--out-dir D]
+       [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
+       [--regen-glossary] [--glossary g.json] [--dry-run] [--season] [--out-dir D]
        [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
   目录 = 递归找视频、默认整季（已有字幕的集跳过）；AI 用配置 ai: 段那一家''';
 
@@ -73,7 +76,8 @@ class SubgenOptions {
     this.ai = true,
     this.segmenter = VideoSubtitleSegmenterMode.auto,
     this.mossBackend = MossBackendPreference.auto,
-    this.suffix = 'ja',
+    this.language = VideoSubtitleLanguage.japanese,
+    String? suffix,
     this.regenerateGlossary = false,
     this.glossaryFile,
     this.dryRun = false,
@@ -82,14 +86,18 @@ class SubgenOptions {
     this.mossCli,
     this.mossModel,
     this.json = false,
-  });
+  }) : _suffix = suffix;
 
   final List<String> inputs;
   final String? title;
   final bool ai;
   final VideoSubtitleSegmenterMode segmenter;
   final MossBackendPreference mossBackend;
-  final String suffix;
+  final VideoSubtitleLanguage language;
+  final String? _suffix;
+
+  /// 输出后缀；没给时取 [language] 的标签。
+  String get suffix => _suffix ?? language.tag;
   final bool regenerateGlossary;
   final String? glossaryFile;
   final bool dryRun;
@@ -124,7 +132,16 @@ void buildSubgenParser(ArgParser parser) {
       ],
       defaultsTo: 'auto',
     )
-    ..addOption('suffix', help: '输出 <视频名>.<后缀>.srt', defaultsTo: 'ja')
+    ..addOption(
+      'language',
+      help: '字幕语言：ja（日语）| zh（普通话）',
+      allowed: <String>[
+        for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+          l.tag,
+      ],
+      defaultsTo: VideoSubtitleLanguage.japanese.tag,
+    )
+    ..addOption('suffix', help: '输出 <视频名>.<后缀>.srt（缺省取 --language）')
     ..addFlag('regen-glossary', negatable: false, help: '资料没变也重新生成专名表')
     ..addOption('glossary', help: '导入 / 覆盖专名表的 JSON 文件')
     ..addFlag('dry-run', negatable: false, help: '只列要处理 / 跳过的集与费用预估')
@@ -141,7 +158,10 @@ SubgenOptions parseSubgenOptions(ArgResults command) {
   }
   T pick<T extends Enum>(List<T> values, String name) =>
       values.firstWhere((T e) => e.name == command[name] as String);
-  final String suffix = command['suffix'] as String;
+  final VideoSubtitleLanguage language = VideoSubtitleLanguage.fromTag(
+    command['language'] as String,
+  )!;
+  final String suffix = command['suffix'] as String? ?? language.tag;
   if (!RegExp(r'^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$').hasMatch(suffix)) {
     throw FormatException('subgen: 后缀不合法 "$suffix"');
   }
@@ -151,6 +171,7 @@ SubgenOptions parseSubgenOptions(ArgResults command) {
     ai: command['ai'] as bool,
     segmenter: pick(VideoSubtitleSegmenterMode.values, 'segmenter'),
     mossBackend: pick(MossBackendPreference.values, 'moss-backend'),
+    language: language,
     suffix: suffix,
     regenerateGlossary: command['regen-glossary'] as bool,
     glossaryFile: command['glossary'] as String?,
@@ -258,6 +279,7 @@ class SubgenDeps {
     MossBackendPreference backend, {
     String? mossCli,
     String? mossModel,
+    VideoSubtitleLanguage language,
   })
   resolveRecognizer;
 
@@ -272,11 +294,13 @@ Future<VideoSubtitleRecognizerChoice> _resolveRecognizer(
   MossBackendPreference backend, {
   String? mossCli,
   String? mossModel,
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) => resolveServerVideoSubtitleRecognizer(
   mode: mode,
   mossBackend: backend,
   mossCliPath: mossCli,
   mossModelPath: mossModel,
+  language: language,
 );
 
 /// `subgen` 模块。
@@ -380,6 +404,7 @@ Future<int> runSubgen(
       options.mossBackend,
       mossCli: options.mossCli,
       mossModel: options.mossModel,
+      language: options.language,
     );
   } on VideoSubtitleRecognizeFailure catch (e) {
     io.err.writeln(e.message);
@@ -418,7 +443,14 @@ Future<int> runSubgen(
       ' ${group.videos.length} 集${group.wholeSeason ? '（整季）' : ''}',
     );
     if (glossaryEntries != null && !options.dryRun) {
-      await _importGlossary(glossaryEntries, work, glossaryStore, sites, io);
+      await _importGlossary(
+        glossaryEntries,
+        work,
+        glossaryStore,
+        sites,
+        io,
+        options.language,
+      );
     }
     final AiChatClient? client = provider == null || options.dryRun
         ? null
@@ -433,6 +465,7 @@ Future<int> runSubgen(
     final VideoSubtitlePipeline pipeline = VideoSubtitlePipeline(
       recognizer: choice.recognizer,
       jobsRoot: jobsRoot,
+      language: options.language,
       subtitleSuffix: options.suffix,
       exportDir: outDir,
       probeDurationMs: deps.probeDurationMs,
@@ -630,10 +663,12 @@ Future<void> _importGlossary(
   SubtitleGlossaryStore store,
   List<WebKnowledgeSite> sites,
   CommandIo io,
+  VideoSubtitleLanguage language,
 ) async {
   final int now = DateTime.now().millisecondsSinceEpoch;
+  final String key = language.glossaryKey(work.workKey);
   await store.save(
-    work.workKey,
+    key,
     SubtitleGlossary(
       entries: entries,
       sourceFingerprint: subtitleGlossaryFingerprint(
@@ -644,7 +679,7 @@ Future<void> _importGlossary(
       userEditedAt: now,
     ),
   );
-  io.err.writeln('已导入专名表 ${entries.length} 条 → ${work.workKey}');
+  io.err.writeln('已导入专名表 ${entries.length} 条 → $key');
 }
 
 Future<Map<String, Object?>> _dryRun(
@@ -704,7 +739,8 @@ Future<Map<String, Object?>> _dryRun(
   if (options.ai) {
     final SubtitleProofreadCostEstimate cost = estimateSubtitleProofreadCost(
       episodes: toProofread,
-      title: work.japaneseTitle,
+      title: options.language.workTitle(work),
+      language: options.language,
     );
     out['estimate'] = <String, Object?>{
       'batches': cost.batches,

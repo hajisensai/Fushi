@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_waveform_select.dart';
 
 /// galgame 波形选区纯函数单测（docs/specs/galgame-mining A5）：

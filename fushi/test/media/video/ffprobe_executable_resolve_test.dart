@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
 /// TODO-1045：ffprobe 可执行解析优先级镜像 ffmpeg——FUSHI_FFPROBE 覆盖 >

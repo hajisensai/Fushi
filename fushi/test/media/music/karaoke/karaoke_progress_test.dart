@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_progress.dart';
 import 'package:fushi_music/fushi_music.dart';
 

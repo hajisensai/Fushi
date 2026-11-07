@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
 
 /// 分镜模型的训练集署名（PR #1591 审查）。

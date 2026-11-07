@@ -27,7 +27,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// cocoapods-core `Specification::Linter#_validate_license` 里那条正则的等价实现。
 ///

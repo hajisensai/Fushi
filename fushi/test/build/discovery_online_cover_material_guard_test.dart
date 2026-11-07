@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 发现页 / 在线源浏览页的封面卡与库页同款（2026-10-25 定版：书 / 漫画光面书皮、
 /// 视频光面海报，封面上不压角标，信息进副行）。

@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
@@ -26,6 +27,7 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
 import 'package:fushi_engine/updates/update_feed_kind.dart';
@@ -139,6 +141,8 @@ import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/ai/ai_relay.dart' show aiRelayTransport;
+import 'package:fushi/src/ai/ai_interconnect_relay.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
@@ -199,6 +203,7 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
 export 'package:fushi/src/lookup/lookup_edge_punctuation.dart'
     show leadingPunctuationStripUnits;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -318,10 +323,10 @@ import 'package:fushi_engine/media/video/download/video_download_subtitle_langua
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_work_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/download_subtitle_retry.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
@@ -345,6 +350,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show
         MossBackendPreference,
+        VideoSubtitleLanguage,
         VideoSubtitleSegmenterMode,
         appMossProvisionStatus,
         createAsrTranscriptionService,
@@ -352,7 +358,7 @@ import 'package:fushi/src/asr_host/asr_host.dart'
         resolveAppVideoSubtitleRecognizer;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
-    show videoSubtitleJobsRootUnder;
+    show isDefaultVideoSubtitlePipelineOutput, videoSubtitleJobsRootUnder;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -401,6 +407,7 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
+import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
@@ -424,7 +431,12 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
+import 'package:fushi/src/media/music/music_audio_intake.dart';
+import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show defaultVideoSubtitleJobsRoot;
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
+import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
@@ -434,11 +446,13 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
@@ -849,6 +863,12 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// Test seam：注入已 `loadFromDb` 的偏好仓库（只接了数据库的页面测试要读 / 改偏好时用）。
+  @visibleForTesting
+  void wirePreferencesForTesting(PreferencesRepository prefsRepo) {
+    _prefsRepo = prefsRepo;
+  }
+
   /// Test seam：注入插件管理器（音乐页一初始化就读插件列表；只接了数据库、没有
   /// 数据目录的测试用它给一个临时目录下的空管理器）。
   @visibleForTesting
@@ -971,9 +991,11 @@ class AppModel with ChangeNotifier {
                 (
                   VideoSubtitleSegmenterMode mode,
                   MossBackendPreference mossBackend,
+                  VideoSubtitleLanguage language,
                 ) => resolveAppVideoSubtitleRecognizer(
                   mode: mode,
                   mossBackend: mossBackend,
+                  language: language,
                 ),
             pipelineJobsRoot: videoSubtitleJobsRootUnder(
               await AppPaths.supportRootDirectory(),
@@ -1008,6 +1030,8 @@ class AppModel with ChangeNotifier {
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
+    // 「互联主机」AI 提供商：已配对设备把补全交给本机，用本机配的提供商执行。
+    aiRelaySettings: () => prefsRepo,
     // 已配对设备远程更新本机（反馈 Pp8XPyve0N）。同一个实例跨互联服务重启存活：
     // 在途下载的进度不因用户开关一次互联而丢。
     hostSelfUpdater: () => hostSelfUpdater,
@@ -1972,6 +1996,9 @@ class AppModel with ChangeNotifier {
         ),
       );
     }
+    // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
+    // 这个进程级装配点里（交叉淡入的两个 mpv 实例共用一份连接）。
+    musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。
@@ -1998,9 +2025,13 @@ class AppModel with ChangeNotifier {
     final MusicSession session = MusicSession(
       engine: engine,
       audio: audioCtrl,
+      hasSystemMediaSession: platformServices.hasSystemMediaSession,
       audiobook: audiobookSession,
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
+      resumeMode: () => isPreferencesReady
+          ? prefsRepo.musicResumeMode
+          : MusicResumeMode.longTracks,
       // 歌曲收藏 = 平台账号的「喜欢」（插件 `like`）：首次被问到才拉喜欢集合。
       favorites: _musicFavorites = isMusicPluginSourcesAvailable
           ? MusicPluginFavorites(
@@ -2027,6 +2058,18 @@ class AppModel with ChangeNotifier {
             ErrorLogService.instance.log('AppleMusicFavorites', e, st),
       ),
     );
+    // 桌面歌词点词查词遵守「查词时暂停」（与歌词页同一个设置）；关卡后续播。
+    final MusicLookupPause lookupPause = MusicLookupPause(
+      playback: engine,
+      isPlaying: () => engine.isPlaying,
+      play: engine.play,
+      pause: engine.pause,
+      settingEnabled: () => isDatabaseReady && prefsRepo.musicLyricsLookupPause,
+    );
+    GlobalLookupController.instance.addHiddenListener(lookupPause.lookupClosed);
+    FloatingLyricLookupNotifier.instance.lookupClosed.addListener(
+      lookupPause.lookupClosed,
+    );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
       service: musicLyrics,
@@ -2044,8 +2087,13 @@ class AppModel with ChangeNotifier {
               index: index,
               wordRect: wordRect,
             )) {
+              // 全局查词卡确实弹出来了才暂停：关卡回调（onHidden）只对弹出过的卡触发。
+              lookupPause.lookupStarted();
               return;
             }
+            // requestLookup 对空白文本直接忽略、不会弹卡，也就不会有关卡回调来续播。
+            if (text.trim().isEmpty) return;
+            lookupPause.lookupStarted();
             FloatingLyricLookupNotifier.instance.requestLookup(
               text,
               index,
@@ -2061,6 +2109,13 @@ class AppModel with ChangeNotifier {
         onClose: () => unawaited(setMusicDesktopLyrics(false)),
       ),
       desktopEnabled: () => isDatabaseReady && prefsRepo.musicDesktopLyrics,
+      // 与有声书悬浮字幕同一个「同时显示句数」：自动 = 填满窗口（拖高看到更多行）。
+      desktopSpan: () => floatingLyricVisibleSpan(
+        isDatabaseReady
+            ? prefsRepo.floatingLyricVisibleLines
+            : PreferencesRepository.floatingLyricVisibleLinesDefault,
+        autoFillsWindow: !Platform.isAndroid,
+      ),
       mediaSessionEnabled: () =>
           isDatabaseReady && prefsRepo.musicLyricsMediaSession,
       sessionOwnerChanged: audioCtrl.sessionOwner,
@@ -2079,6 +2134,11 @@ class AppModel with ChangeNotifier {
     )..addListener(session.refreshMediaSession);
     session.mediaSessionLyricLine = () => live.mediaSessionLine;
     _musicLyricsLive = live;
+    // 逐曲断点写穿：退出（桌面关窗 / ⌘Q / detach 都经 ExitFlushRegistry.flushAll）与进
+    // 后台（Android 后台播放时进程随时可能被杀；AppLifecycleListener 不经 main.dart 里
+    // Android 的早返回）。会话是进程级的，两处登记不注销。
+    ExitFlushRegistry.instance.register(session.flushResumePoint);
+    AppLifecycleListener(onPause: () => unawaited(session.flushResumePoint()));
     _musicStudy = MusicStudyTracker(
       engine: engine,
       database: () => isDatabaseReady ? database : null,
@@ -2131,6 +2191,13 @@ class AppModel with ChangeNotifier {
     await musicSession.engine.reapplySettings();
   }
 
+  /// 逐曲断点续播模式（music_resume.dart）：只影响之后的打开，不打断当前曲。
+  MusicResumeMode get musicResumeMode => prefsRepo.musicResumeMode;
+  Future<void> setMusicResumeMode(MusicResumeMode value) async {
+    await prefsRepo.setMusicResumeMode(value);
+    notifyListeners();
+  }
+
   bool get musicReplayGain => prefsRepo.musicReplayGain;
   Future<void> setMusicReplayGain(bool value) async {
     await prefsRepo.setMusicReplayGain(value);
@@ -2141,6 +2208,13 @@ class AppModel with ChangeNotifier {
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
+    // 视频库字幕管线以前写在音频旁的 `<主名>.ja.srt`：有 asr 行时不当 sidecar。
+    isGeneratedSidecar: (String audioPath, String path) async =>
+        isDefaultVideoSubtitlePipelineOutput(
+          jobsRoot: await defaultVideoSubtitleJobsRoot(),
+          mediaPath: audioPath,
+          path: path,
+        ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
     pluginLyrics: isMusicPluginSourcesAvailable
         ? (String pluginId, String trackId) =>
@@ -3375,6 +3449,49 @@ class AppModel with ChangeNotifier {
   /// 本进程是否已经跑过一轮 [_migrateDictionaryRedirectFlags]。
   bool _redirectFlagsMigrated = false;
 
+  /// 见 [migrateAudioOnlyVideoBooksToMusic]。失败（原生库缺失、视频库正在清理刮削
+  /// 资料）只记错误日志：数据原样保留，下次启动按同一判据重来。
+  Future<void> _migrateAudioOnlyVideosToMusic() async {
+    try {
+      final VideoAudioMigrationReport report =
+          await migrateAudioOnlyVideoBooksToMusic(
+            _database,
+            intake: MusicAudioIntake(
+              _database,
+              fileExists: (String path) => File(path).existsSync(),
+            ),
+            fileExists: (String path) => File(path).existsSync(),
+            // 带走旧视频管线生成过 / 用户选过的字幕（音乐库「生成日语字幕」同一份歌词库）。
+            lyrics: musicLyrics,
+            subtitleJobsRoot: await defaultVideoSubtitleJobsRoot(),
+            importedSubtitlesDir: await VideoStorage.subtitlesDir(),
+          );
+      if (report.candidates == 0) return;
+      debugPrint(
+        '[Fushi] audio-only videos -> music: migrated ${report.migrated}/'
+        '${report.candidates}, play events ${report.playEventsWritten}, '
+        'resume points ${report.resumePointsWritten}, '
+        'subtitles ${report.subtitlesCarried}',
+      );
+      if (report.errors.isNotEmpty) {
+        ErrorLogService.instance.log(
+          'AppModel.migrateAudioOnlyVideosToMusic',
+          StateError(
+            '${report.leftInVideoLibrary} audio item(s) left in the video '
+            'library; first scan error: ${report.errors.first}',
+          ),
+          StackTrace.current,
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.migrateAudioOnlyVideosToMusic',
+        e,
+        stack,
+      );
+    }
+  }
+
   /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。
   ///
   /// 装载只读这份标记、不扫描（扫描是整本、单本最多约 1 s）；缺标记的旧词典在查词时
@@ -4251,6 +4368,9 @@ class AppModel with ChangeNotifier {
       // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
       // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
       installCollectionAiOrderSettings(_prefsRepo);
+      // 「互联主机」AI 提供商的客户端出口：按 hostId 找已配对主机、经它的鉴权通道转发
+      // （弹窗进程不装：那边没有 AI 功能入口）。
+      aiRelayTransport = AppAiRelayTransport(SyncRepository(_database));
       // AI 整理库「导入后自动整理」（spec 2026-10-20 §10.2）：同一处装配，弹窗 /
       // 悬浮词典进程不经 initialise()，那边自动路径是 no-op。
       installLibraryOrganizeAutomatic(
@@ -4570,6 +4690,9 @@ class AppModel with ChangeNotifier {
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
       unawaited(deleteRemovedMangaOcrModelDirs());
+      // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
+      // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
+      unawaited(_migrateAudioOnlyVideosToMusic());
 
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
@@ -6701,22 +6824,12 @@ class AppModel with ChangeNotifier {
     final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
     if (service == null || service.registry.providers.isEmpty) return;
     _downloadSubtitleRetryRunning = true;
-    // 一轮共用一个解析器（惰性：没有到期行就不扫）。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
     try {
       final DownloadSubtitleRetryReport report =
-          await retryUnavailableDownloadSubtitles(
+          await runDownloadSubtitleRetryRound(
             database: database,
-            // 内嵌轨选择不挡：这些分集本该由下载流水线装上 sidecar。
-            backfill: (String videoId) => backfillLibraryVideoSubtitle(
-              database: database,
-              service: service,
-              videoId: videoId,
-              confirmedIdentities: confirmedIdentities,
-              seriesLanguage: _seriesSubtitleLanguage,
-              embeddedSelectionBlocks: false,
-            ),
+            service: service,
+            seriesLanguage: _seriesSubtitleLanguage,
             now: DateTime.now(),
           );
       if (report.attempted > 0) {
@@ -7611,41 +7724,12 @@ class AppModel with ChangeNotifier {
     // 探一堆视频时长。
     if (service == null || service.registry.providers.isEmpty) return;
 
-    final Set<String> withSubtitle = <String>{
-      for (final VideoBookRow book in notice.work.members)
-        if (book.subtitleSource?.trim().isNotEmpty == true) book.bookUid,
-    };
-    final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
-      members: notice.work.members,
-      metadata: notice.metadata,
-      hasExistingSubtitle: withSubtitle.contains,
-      // 单文件作品没有合集，也就没有每系列记忆可查。
-      explicitLanguage: notice.work.collection == null
-          ? null
-          : _seriesSubtitleLanguage(
-              notice.work.collection!.name.trim().toLowerCase(),
-            ),
+    await backfillScrapedWorkSubtitles(
+      database: database,
+      service: service,
+      notice: notice,
+      seriesLanguage: _seriesSubtitleLanguage,
     );
-    // 整季共用一个解析器：下载文件行只扫一次，不是逐集全表扫描。
-    final DownloadConfirmedIdentityResolver confirmedIdentities =
-        DownloadConfirmedIdentityResolver(database);
-    for (final SubtitleBackfillTarget scraped in targets) {
-      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3926）。
-      final SubtitleBackfillTarget target = scraped.withMedia(
-        await withDownloadConfirmedIdentity(
-          confirmedIdentities,
-          videoPath: scraped.videoPath,
-          media: scraped.media,
-        ),
-      );
-      final SubtitleBackfillResult result = await service.backfill(target);
-      if (result.installed) {
-        debugPrint(
-          '[subtitle-backfill] installed ${result.language} for '
-          '${target.bookUid}: ${result.installedPath}',
-        );
-      }
-    }
   }
 
   /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务
@@ -7817,10 +7901,6 @@ class AppModel with ChangeNotifier {
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
 
-  /// 本机是否在有声书下载后自动转录：用户开关 + 设备端 ASR 可用。
-  bool get audiobookAutoTranscribeActive =>
-      prefsRepo.audiobookAutoTranscribe && isAsrSupported;
-
   /// 有声书「转录后入库」队列（懒建，app 生命周期常驻；落盘在数据库目录旁，
   /// 重启后未完成的任务从断点续跑）。
   AudiobookTranscribeImportQueue get audiobookTranscribeImportQueue =>
@@ -7859,7 +7939,9 @@ class AppModel with ChangeNotifier {
     final SrtBookRepository srtBookRepo = SrtBookRepository(database);
     return routeTranscribeAudiobookPlan(
       plan,
-      autoTranscribeEnabled: audiobookAutoTranscribeActive,
+      asrSupported: isAsrSupported,
+      autoTranscribe: prefsRepo.audiobookAutoTranscribe,
+      transcribeWithoutContent: prefsRepo.audiobookAutoTranscribeWithoutText,
       contentAlreadyInLibrary: (String contentPath) =>
           isDuplicateDiscoveryAudiobookContent(database, contentPath),
       matchMaterials: (List<String> audioPaths, String title) =>
@@ -9836,6 +9918,11 @@ class AppModel with ChangeNotifier {
   bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
   Future<void> setAudiobookAutoTranscribe({required bool value}) =>
       prefsRepo.setAudiobookAutoTranscribe(value: value);
+
+  bool get audiobookAutoTranscribeWithoutText =>
+      prefsRepo.audiobookAutoTranscribeWithoutText;
+  Future<void> setAudiobookAutoTranscribeWithoutText({required bool value}) =>
+      prefsRepo.setAudiobookAutoTranscribeWithoutText(value: value);
 
   // ── player streams & audio handler (delegated to AudioController) ───
 
@@ -12376,8 +12463,11 @@ class AppModel with ChangeNotifier {
 
   // 悬浮字幕同时显示句数（1..15；0 = 按窗口高度自动）。
   int get floatingLyricVisibleLines => prefsRepo.floatingLyricVisibleLines;
-  Future<void> setFloatingLyricVisibleLines(int value) =>
-      prefsRepo.setFloatingLyricVisibleLines(value);
+  Future<void> setFloatingLyricVisibleLines(int value) async {
+    await prefsRepo.setFloatingLyricVisibleLines(value);
+    // 音乐桌面歌词共用这个设置：改完立即按新行数重推（有声书由设置页 resync）。
+    _musicLyricsLive?.onSettingsChanged();
+  }
 
   void _setupFloatingDictHandlers() {
     FloatingDictChannel.setEventHandlers(
@@ -12829,6 +12919,7 @@ class _AppModelRemoteLookupService
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService,
         FushiRemoteMiningService,
+        FushiRemoteDuplicatePolicyService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
   const _AppModelRemoteLookupService(this._appModel, [this._view]);
@@ -13012,6 +13103,18 @@ class _AppModelRemoteLookupService
     // 按视图处理、挖词目标 = Fushi 复习时查的是那份配置的复习（[AppModel.hostMiningRepositoryForView]）。
     final BaseAnkiRepository repo = _miningRepository;
     return repo.isDuplicate(expression, reading);
+  }
+
+  /// 反馈 E0sdqm4h-F：与 app 内点 ✓ 同一判据（[ankiMinedTapMinesNewDirectly]），按视图读
+  /// 那份配置的设置。读不到时回 false（扩展照旧弹「新增为重复卡 / 取消」）。
+  @override
+  Future<bool> allowsDuplicates() async {
+    try {
+      return await ankiMinedTapMinesNewDirectly(_miningRepository);
+    } catch (e, st) {
+      ErrorLogService.instance.log('RemoteMining.allowsDuplicates', e, st);
+      return false;
+    }
   }
 
   @override

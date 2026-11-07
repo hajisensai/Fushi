@@ -4,7 +4,7 @@
 // 2. 字节模式：totalBytes 记账、LRU 淘汰顺序、maxBytes 触发、超大单条、
 //    条数兜底、clear 归零；
 // 3. 运行期调整 maxBytes（低内存模式切换）立即淘汰。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/utils/misc/lru_cache.dart';
 
 void main() {
@@ -84,11 +84,11 @@ void main() {
     test('constructor asserts maxBytes and sizeOf come as a pair', () {
       expect(
         () => LruCache<String, String>(10, maxBytes: 100),
-        throwsAssertionError,
+        throwsA(isA<AssertionError>()),
       );
       expect(
         () => LruCache<String, String>(10, sizeOf: (String v) => v.length),
-        throwsAssertionError,
+        throwsA(isA<AssertionError>()),
       );
     });
 

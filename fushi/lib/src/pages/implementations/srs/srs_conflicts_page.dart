@@ -369,29 +369,32 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     if (mounted) await _reload();
   }
 
-  FushiToolbarItem get _confirmAllItem => FushiToolbarItem(
-    key: const ValueKey<String>('srs_conflicts_confirm_all'),
-    icon: FushiIcons.checklist,
-    label: t.srs_conflict_confirm_all,
-    onPressed: _conflicts.isEmpty
-        ? null
-        : () => srsRunLogged('SrsConflicts.confirmAll', _confirmAll),
-  );
+  /// 「全部确认」只作用于字段冲突（[_conflicts]）。没有字段冲突时整颗不画，而不是
+  /// 留一颗灰掉的按钮：页上只剩重复笔记 / 待删除 / 待确认时，它看起来像坏了点不动
+  /// （#IBjxAjty39）。那几节各有自己的逐条按钮。
+  FushiToolbarItem? get _confirmAllItem => _conflicts.isEmpty
+      ? null
+      : FushiToolbarItem(
+          key: const ValueKey<String>('srs_conflicts_confirm_all'),
+          icon: FushiIcons.checklist,
+          label: t.srs_conflict_confirm_all,
+          onPressed: () => srsRunLogged('SrsConflicts.confirmAll', _confirmAll),
+        );
 
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final FushiToolbarItem? confirmAll = _confirmAllItem;
     return FushiPageScaffold(
       title: t.srs_conflicts_title,
-      header: apple ? null : _buildTopBar(context),
-      actions: apple
+      header: apple ? null : _buildTopBar(context, confirmAll),
+      actions: apple && confirmAll != null
           ? <Widget>[
               FushiIconButton(
-                key: _confirmAllItem.key,
-                icon: _confirmAllItem.icon,
-                tooltip: _confirmAllItem.label,
-                enabled: _confirmAllItem.onPressed != null,
-                onTap: _confirmAllItem.onPressed,
+                key: confirmAll.key,
+                icon: confirmAll.icon,
+                tooltip: confirmAll.label,
+                onTap: confirmAll.onPressed,
               ),
             ]
           : const <Widget>[],
@@ -399,7 +402,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     );
   }
 
-  Widget _buildTopBar(BuildContext context) {
+  Widget _buildTopBar(BuildContext context, FushiToolbarItem? confirmAll) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final NavigatorState? navigator = Navigator.maybeOf(context);
     return Padding(
@@ -420,7 +423,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[_confirmAllItem],
+          if (confirmAll != null) <FushiToolbarItem>[confirmAll],
         ],
       ),
     );

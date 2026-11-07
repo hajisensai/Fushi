@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 
 LyricsCandidate _hit(String title, String artist, [int? ms]) => LyricsCandidate(

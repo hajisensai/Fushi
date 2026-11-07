@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-793 source-scan guard：视频库页（[HomeVideoPage]）的列表是一次性
 /// `FutureBuilder` + 保活 tab，对 `videoBooks` 表变更零自动感知；非本页发起的

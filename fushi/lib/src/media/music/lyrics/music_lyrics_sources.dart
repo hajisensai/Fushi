@@ -11,6 +11,10 @@ abstract final class MusicLyricsSource {
   static const String embedded = 'embedded';
   static const String lrclib = 'provider:lrclib';
 
+  /// 本机 ASR 生成的日语字幕（音乐库「生成日语字幕」，原文存 SRT / TTML）。只读库、
+  /// 不联网；排在文件自带的 sidecar / 内嵌之后、在线来源之前。
+  static const String asr = 'asr';
+
   /// 在线音源插件自带的歌词：`provider:plugin:<插件 id>`（插件曲目才有，排在 LRCLIB 前）。
   static const String _pluginPrefix = 'provider:plugin:';
 
@@ -36,12 +40,26 @@ abstract final class MusicLyricsSource {
       ? source.substring(_lyricsPluginPrefix.length)
       : null;
 
-  /// 自动来源的优先级（高 → 低），不含 [user]。
+  /// 自动来源的优先级（高 → 低），不含 [user]。插件自带歌词（[plugin]）排在 [asr] 与
+  /// [lrclib] 之间，歌词插件（[lyricsPlugin]）排在 [lrclib] 之后（按用户排序）。
   static const List<String> automaticPriority = <String>[
     sidecar,
     embedded,
+    asr,
     lrclib,
   ];
+
+  /// 自动来源的档位（越小越优先），与 [MusicLyricsService.resolve] 的查找顺序一致：
+  /// sidecar > 内嵌 > 生成字幕 > 插件自带 > LRCLIB > 歌词插件 > 其它。
+  static int automaticRank(String source) {
+    if (source == sidecar) return 0;
+    if (source == embedded) return 1;
+    if (source == asr) return 2;
+    if (isPlugin(source)) return 3;
+    if (source == lrclib) return 4;
+    if (isLyricsPlugin(source)) return 5;
+    return 6;
+  }
 }
 
 /// sidecar 扩展名分档（高 → 低）：同名 `.ttml` > `.ass` > `.lys/.qrc/.krc/.yrc` >

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1303 源码扫描守卫（不依赖真浏览器）：浏览器扩展 content.js 的
 /// `fushiClassifyMineResp` 必须读取服务端回带的诊断（`message`/`detail`）并在末尾弹

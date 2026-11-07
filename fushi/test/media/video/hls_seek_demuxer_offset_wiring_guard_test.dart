@@ -5,7 +5,7 @@
 // 没有真 libmpv 的单测覆盖不到，所以按源码钉。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _body(String source, String signature) {
   final int start = source.indexOf(signature);

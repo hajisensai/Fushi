@@ -191,6 +191,9 @@ pub struct InQuery<'a> {
     pub per_kind: usize,
     pub per_doc: usize,
     pub kind_mask: u32,
+    /// 句子必须**含全部** [keys]（文本搜索：查询文本分词后逐词求交）；false = 含任一
+    /// （查词弹窗按一个词的各词形查）。线格式里是可选的尾字节，缺省 false。
+    pub match_all: bool,
 }
 
 pub fn read_query(data: &[u8]) -> Result<InQuery<'_>, WireError> {
@@ -203,6 +206,7 @@ pub fn read_query(data: &[u8]) -> Result<InQuery<'_>, WireError> {
     let per_kind = r.u32()? as usize;
     let per_doc = r.u32()? as usize;
     let kind_mask = r.u32()?;
+    let match_all = if r.is_empty() { false } else { r.u8()? != 0 };
     if !r.is_empty() {
         return Err(WireError("trailing bytes in query"));
     }
@@ -211,6 +215,7 @@ pub fn read_query(data: &[u8]) -> Result<InQuery<'_>, WireError> {
         per_kind,
         per_doc,
         kind_mask,
+        match_all,
     })
 }
 

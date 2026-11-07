@@ -6,7 +6,7 @@
 // AI 入口的构造 / 接线点，要求它在同一个文件里经过判据；不是手抄一份文件名单。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 一类 AI 入口：[site] 匹配到的每一处接线都要有一处 [gate] 与之对应。
 class _EntrySite {

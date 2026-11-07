@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1419 源码守卫：Windows fork 的鼠标键状态必须全量跟随 Flutter 的 `ev.buttons`
 /// 掩码，不得回到「按 pointer id 记单个 PointerButton」的粘滞增量实现。

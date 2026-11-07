@@ -918,6 +918,11 @@ pub(crate) fn sync2_dispatch(
         "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
         // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
         "wal_checkpoint" => return c.wal_checkpoint(),
+        // 批量写入开始 / 结束（Dart `bulkWrites`）：期间写连接放回时留着页缓存（store/mem_budget.rs）。只置标志，不拿写锁。
+        "bulk_cache" => {
+            c.set_bulk_holds_cache(req.get("on") == Some(&Value::Bool(true)));
+            return Ok(json!({}));
+        }
         // 有写入在等写锁：正在投的收段那一片尽快收（只置一个标志，等锁的一侧直接同步调）。
         "ingest_yield" => {
             c.sync2_ingest_yield();
@@ -2242,6 +2247,7 @@ mod tests {
             "profile_uids",
             "orphan_sweep_done",
             "wal_checkpoint",
+            "bulk_cache",
             "ingest_yield",
         ] {
             assert!(

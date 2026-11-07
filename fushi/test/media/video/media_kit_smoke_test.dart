@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:media_kit/media_kit.dart';
 
 /// Phase 0 / Task 0 smoke coverage for the media_kit video backend.

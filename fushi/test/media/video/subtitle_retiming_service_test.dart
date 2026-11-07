@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi_asr_subtitles/asr_subtitles.dart';
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 AudioCue _cue(String text, int startMs, int endMs) {

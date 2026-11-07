@@ -2,7 +2,7 @@
 // 定位配对。根因：buildMangaSpreads 的偏移只作用于首段（卷首到第一张宽页），
 // 宽页之后的段一律从段首配对，与偏移无关。现在配对按段进行，锚点段与首段都受
 // 偏移支配；锚点由阅读器在旋转进双页 / 后段拨开关时设定。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 
 List<List<int>> _flatten(List<MangaSpreadEntry> entries) =>

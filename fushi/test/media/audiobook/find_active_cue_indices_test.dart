@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1312：`findActiveCueIndices` 纯函数守卫——同一时刻区间重叠的多条 cue **全部**

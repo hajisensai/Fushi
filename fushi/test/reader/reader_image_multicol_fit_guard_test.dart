@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-679 (TODO-1285) 源码守卫：分页多列(pageColumns>=2)时整页插图必须收进**子列**，
 /// 不得按整 content-box 撑开越界盖住相邻列正文。根因是图片 max 约束过去恒用整
