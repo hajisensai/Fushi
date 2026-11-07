@@ -137,7 +137,7 @@ const String kMusicLyricsNoneFormat = 'none';
 
 /// 纯函数：一首歌的多条 `music_lyrics` 行里，播放器（[MusicLyricsService.resolve]）会用
 /// 哪一条——用户手动指定的最高，其次按 [MusicLyricsSource.automaticRank]，同档取最近
-/// 更新的；负缓存行不算。歌词页与「我库里的例句」/ 曲库歌词搜索共用这一个判据，搜到的
+/// 更新的；负缓存行不算。歌词页与曲库歌词搜索共用这一个判据，搜到的
 /// 行与点进去显示的歌词是同一份。没有可用行返回 null。
 ///
 /// 只看库里的行：sidecar / 内嵌在 resolve 里每次重读文件，库里这两档是上次读到的缓存。

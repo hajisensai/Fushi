@@ -171,6 +171,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// [InterconnectBookProgressSync]，与冲突弹窗的手动解决共用同一份。
   ///
   /// 逐本错误进 [report.errors] 不中断整体。
+  ///
+  /// 反馈 kM-Gb_Xnu-：host 端进度改为一次 `GET /api/library/book-progress` 取齐
+  /// （老 host 回落逐本 GET，4 路并发预取），不再每本书一次串行往返；判定与落地
+  /// 仍逐本、按书架顺序串行（[InterconnectBookProgressSync.syncOne]），本地写入
+  /// 顺序与改动前一致。
   Future<void> _syncBookProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -184,52 +189,44 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // 本端进度 / 基线整轮一次读齐（三条查询）；两端已收敛的书在内存里判定后
     // 跳过，其余照旧逐本重读、判定、落地（快照只用来跳过，从不用来写）。
     final BookProgressSweepSnapshot snapshot = await sync.loadSweepSnapshot();
-    for (final EpubBookRow book in localBooks) {
+    final List<Future<RemoteBookProgressRead>> remotes;
+    try {
+      remotes = await sync.readRemoteForSweep(localBooks);
+    } catch (e) {
+      // 整批读不到（网络 / 鉴权 / 5xx）：本阶段整体失败，记一条，后续阶段照跑。
+      report.noteError('live book progress', e);
+      return;
+    }
+    for (int i = 0; i < localBooks.length; i++) {
+      final EpubBookRow book = localBooks[i];
+      _emit(
+        SyncPhase.readingData,
+        itemIndex: i,
+        itemTotal: localBooks.length,
+        title: book.title,
+      );
       try {
-        final RemoteBookProgress remote = await sync.remoteProgress(book);
-        if (InterconnectBookProgressSync.isSettled(
-          book: book,
-          local: InterconnectBookProgressSync.localProgressFromSnapshot(
-            book,
-            snapshot,
-          ),
-          remote: remote,
-          snapshot: snapshot,
-        )) {
-          continue;
+        final RemoteBookProgressRead read = await remotes[i];
+        final Object? readError = read.error;
+        if (readError != null) {
+          Error.throwWithStackTrace(readError, read.stackTrace!);
         }
-        final RemoteBookProgress local = await sync.localProgress(book);
-        final BookProgressSyncAction action = await sync.decide(
+        final BookProgressSyncStep step = await sync.syncOne(
           book,
-          local: local,
-          remote: remote,
+          remote: read.progress!,
+          snapshot: snapshot,
         );
-        switch (action) {
-          case BookProgressSyncAction.synced:
-            // BUG-686: a host-newer progress pull lands in reader_positions but
-            // writes no book content, so it must still flag the shelf for a
-            // refresh — the cached fushiBooksProvider otherwise keeps showing
-            // the pre-sync progress bar and the sync looks like it did nothing.
-            if (await sync.alignSynced(book, local: local, remote: remote)) {
-              report.localBookProgressPulled++;
-            }
-          case BookProgressSyncAction.pushLocal:
-            await sync.pushLocal(book, local: local, remote: remote);
-          case BookProgressSyncAction.applyRemote:
-            // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
-            if (await sync.applyRemote(book, remote, local: local)) {
-              report.localBookProgressPulled++;
-            }
-          case BookProgressSyncAction.conflict:
-            report.conflicts.add(
-              SyncConflict(
-                assetKey: book.bookKey,
-                dimension: kInterconnectBookProgressDimension,
-                title: book.title,
-                localVersion: local.updatedAtMs,
-                remoteVersion: remote.updatedAtMs,
-              ),
-            );
+        if (step.localChanged) report.localBookProgressPulled++;
+        if (step.action == BookProgressSyncAction.conflict) {
+          report.conflicts.add(
+            SyncConflict(
+              assetKey: book.bookKey,
+              dimension: kInterconnectBookProgressDimension,
+              title: book.title,
+              localVersion: step.localUpdatedAtMs,
+              remoteVersion: step.remoteUpdatedAtMs,
+            ),
+          );
         }
       } catch (e) {
         report.noteError('live book progress "${book.title}"', e);

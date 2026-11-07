@@ -2355,6 +2355,153 @@ fn v26_upgrade_replays_cards_with_event_copies() {
     assert!(super::replay_event_copies(&w).unwrap().is_empty());
 }
 
+/// 只按 ID 认撤销的旧规则（BUG-4218 之前的选取）：不是 undo、没被任何 undo 点名的日志 ID。
+fn old_rule_effective(d: &Device, card: &str) -> Vec<String> {
+    let logs: Vec<Value> = d
+        .rows(&format!(
+            "SELECT json FROM srs_review_logs WHERE card_id = srs_id('{card}')"
+        ))
+        .iter()
+        .skip(1)
+        .map(|r| serde_json::from_str(&r[0]).unwrap())
+        .collect();
+    let revoked: Vec<&str> = logs
+        .iter()
+        .filter(|l| l["kind"] == "undo")
+        .filter_map(|l| l["revokes"].as_str())
+        .collect();
+    let mut out: Vec<String> = logs
+        .iter()
+        .filter(|l| l["kind"] != "undo")
+        .map(|l| l["id"].as_str().unwrap().to_owned())
+        .filter(|id| !revoked.contains(&id.as_str()))
+        .collect();
+    out.sort();
+    out
+}
+
+/// 关库、把版本退回 [v]、重开（升级在打开时跑）。
+fn reopen_from(d: Device, v: i64) -> Device {
+    d.core
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
+            [v.to_string()],
+        )
+        .unwrap();
+    let Device { core, _dir } = d;
+    drop(core);
+    Device {
+        core: SrsCore::open(&_dir.0.join("srs.db")).unwrap(),
+        _dir,
+    }
+}
+
+/// BUG-4218 后续（srs.db v27）：同一事件的两份副本，旧客户端上的用户撤销了其中一份。新规则整组撤销；只按 ID 认撤销的
+/// 旧规则下另一份仍有效（「撤销没生效」）。两台设备各自独立升级，给没被点名的那份补的 undo 逐字节相同（ID / HLC / 内容
+/// 只由副本决定）：同步后投影与摘要逐位相同，旧规则也选不出有效日志，新规则的卡片状态不变。组里没有任何一份被撤销的
+/// 副本不补（撤销其中一份会让 3.3.0 的整组撤销规则把这次复习整条撤掉）。可重放。
+#[test]
+fn v27_upgrade_names_every_copy_of_a_revoked_event() {
+    let a = Device::new("v27-a");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let r1 = review("r1", "C", T0 + 10, 3, "learn");
+    let mut r1_copy = r1.clone();
+    r1_copy["x"]["id"] = json!("r1-copy");
+    a.apply(T0 + 10, vec![r1]);
+    a.apply(T0 + 11, vec![r1_copy]);
+    // 旧客户端上的用户撤销了副本那份（旧客户端看得到两条、撤的是最后一条）。
+    a.apply(
+        T0 + 20,
+        vec![json!({"t": "log", "x": {
+            "id": "u1", "p": P, "card": "C", "kind": "undo", "revokes": "r1-copy",
+            "hlc": format!("{}:0:dart", T0 + 20), "at": T0 + 20, "ts": "anchored", "origin": "fushi", "rtype": "manual",
+            "utcOff": 0, "rollover": 4, "fv": 1
+        }})],
+    );
+    // 另一张卡：两份副本都没被撤销。
+    let s1 = review("s1", "S", T0 + 30, 3, "learn");
+    let mut s1_copy = s1.clone();
+    s1_copy["x"]["id"] = json!("s1-copy");
+    a.apply(T0 + 30, vec![s1]);
+    a.apply(T0 + 31, vec![s1_copy]);
+    let b = Device::new("v27-b");
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    b.sync(&mut bucket, "loc", T0 + DAY);
+    assert_eq!(projection(&a), projection(&b));
+    assert_eq!(
+        old_rule_effective(&a, "C"),
+        vec!["r1".to_owned()],
+        "before the repair the old rule still counts the other copy"
+    );
+    let state_c = a.state("C");
+    let state_s = a.state("S");
+
+    // 两台设备各自独立升级（没有先同步对方的补丁）。
+    let a = reopen_from(a, 26);
+    let b = reopen_from(b, 26);
+    let repair = super::copy_repair_undo_id("r1").text();
+    for d in [&a, &b] {
+        let u = log_json(d, &repair);
+        assert_eq!(u["kind"], "undo");
+        assert_eq!(u["revokes"], "r1");
+        assert_eq!(u["card"], "C");
+        assert_eq!(
+            u["hlc"],
+            json!(format!("{}:0:{}", T0 + 10, super::COPY_REPAIR_WRITER))
+        );
+        assert!(u.get("res").is_none(), "{u}");
+        assert!(
+            old_rule_effective(d, "C").is_empty(),
+            "the old rule now sees the event revoked"
+        );
+        assert_eq!(d.state("C"), state_c, "the new rule's state is unchanged");
+        assert_eq!(d.state("S"), state_s);
+        assert_eq!(
+            old_rule_effective(d, "S"),
+            vec!["s1".to_owned(), "s1-copy".to_owned()],
+            "copies of an event nobody revoked are left alone"
+        );
+        assert_eq!(
+            d.rows("SELECT COUNT(*) FROM srs_review_logs WHERE kind = 'undo'")[1][0],
+            "2"
+        );
+    }
+    assert_eq!(
+        log_json(&a, &repair),
+        log_json(&b, &repair),
+        "both devices wrote the same repair independently"
+    );
+    assert_eq!(projection(&a), projection(&b));
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+        b.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    }
+    assert_eq!(projection(&a), projection(&b));
+    assert_eq!(a.digest(), b.digest());
+    // 别的设备的同一条补丁到了：投影仍只有一份。
+    assert_eq!(
+        a.rows(&format!(
+            "SELECT COUNT(*) FROM srs_review_logs WHERE id = srs_id('{repair}')"
+        ))[1][0],
+        "1"
+    );
+    // 没升级、只经同步收到补丁的设备（这里用一台新设备代表）与升级过的设备逐位相同。
+    let fresh = Device::new("v27-fresh");
+    fresh.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    assert_eq!(projection(&fresh), projection(&a));
+    assert!(old_rule_effective(&fresh, "C").is_empty());
+    // 可重放。
+    let w = a.core.writer().unwrap();
+    assert_eq!(
+        super::revoke_copies_of_revoked_events(&w, T0 + 3 * DAY).unwrap(),
+        0
+    );
+}
+
 /// 旧库：一张卡两条旧日志，作者结果故意与「按当前配置重放」会算出的不同；牌组配置也改过。
 pub(crate) fn legacy_library(d: &Device) {
     let deck = super::config::default_deck_id(P);
