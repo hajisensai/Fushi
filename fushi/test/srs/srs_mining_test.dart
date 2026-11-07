@@ -1213,7 +1213,10 @@ void main() {
         mineToServer: true,
       ).read(ankiRepositoryProvider);
       expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
-      expect(ankiRepositoryChainLabel(repo), contains('RemoteMiningAnkiRepository'));
+      expect(
+        ankiRepositoryChainLabel(repo),
+        contains('RemoteMiningAnkiRepository'),
+      );
     });
 
     test('目标是 Anki：重排快照仍落在 Anki 的目录', () {
