@@ -152,9 +152,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('角落锚点（歌词模式）：小号卡放在正文区域下沿之外、不压正文；撤销后复原', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('角落锚点（歌词模式）：小号卡贴正文区域右上角；撤销后复原', (WidgetTester tester) async {
     await _pumpToastHost(tester);
     const Rect region = Rect.fromLTRB(40, 60, 500, 520);
     final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
@@ -172,10 +170,9 @@ void main() {
         reason: '小号卡不画标题行',
       );
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
-      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      // 反馈 OOZ-lrCsU0：放在正文区域外（紧贴下沿之下），不压正文。
-      expect(box.top, moreOrLessEquals(region.bottom + 12, epsilon: 2));
-      expect(box.overlaps(region), isFalse);
+      // 反馈 OOZ-lrCsU0：贴正文区域上角，横排 LTR 落右上（行流收尾一侧）。
+      expect(box.right, moreOrLessEquals(region.right - 12, epsilon: 2));
+      expect(box.top, moreOrLessEquals(region.top + 12, epsilon: 2));
       expect(box.height, lessThanOrEqualTo(44));
       await tester.pump(const Duration(seconds: 3));
     } finally {
@@ -212,10 +209,9 @@ void main() {
       expect(card.compact, isTrue);
       expect(card.visibleFor, kMineNoticeActionVisibleFor);
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
-      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      // 反馈 OOZ-lrCsU0：放在正文区域外（紧贴下沿之下），不压正文。
-      expect(box.top, moreOrLessEquals(region.bottom + 12, epsilon: 2));
-      expect(box.overlaps(region), isFalse);
+      // 反馈 OOZ-lrCsU0：贴正文区域上角，横排 LTR 落右上（行流收尾一侧）。
+      expect(box.right, moreOrLessEquals(region.right - 12, epsilon: 2));
+      expect(box.top, moreOrLessEquals(region.top + 12, epsilon: 2));
 
       // 普通结果卡 2.4 秒就收；带按钮的小卡还在。
       await tester.pump(const Duration(seconds: 3));
@@ -279,67 +275,57 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('正文区域下方放不下：小卡放到区域上沿之上，仍不压正文', (WidgetTester tester) async {
+  testWidgets('竖排正文（行流 rtl）：小卡落左上角，不压首列', (WidgetTester tester) async {
     await _pumpToastHost(tester);
-    // 测试屏 800x600：区域下方只剩 20，上方有 100。
-    const Rect region = Rect.fromLTRB(40, 100, 500, 580);
+    const Rect region = Rect.fromLTRB(40, 60, 500, 520);
     final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
       () => region,
+      textFlow: () => TextDirection.rtl,
     );
     try {
       await _show(tester, '卡片已导出到『日语单词』。', MineToastStatus.added);
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
-      expect(box.bottom, moreOrLessEquals(region.top - 12, epsilon: 2));
       expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      expect(box.overlaps(region), isFalse);
+      expect(box.top, moreOrLessEquals(region.top + 12, epsilon: 2));
       await tester.pump(const Duration(seconds: 3));
     } finally {
       anchor.release();
     }
   });
 
-  test('mineToastOffsetClearOf：下方优先、其次上方、RTL 贴右、都放不下才进区域内', () {
+  test('mineToastOffsetInRegion：行流收尾一侧的上角，夹在屏幕内', () {
     const Size overlay = Size(1000, 700);
     const Size card = Size(300, 40);
-    // 下方带子 700-560=140 ≥ 64：紧贴下沿。
+    const Rect region = Rect.fromLTRB(40, 28, 960, 560);
+    // 横排 LTR：右上。
     expect(
-      mineToastOffsetClearOf(
+      mineToastOffsetInRegion(
         overlay: overlay,
-        region: const Rect.fromLTRB(40, 28, 960, 560),
+        region: region,
         card: card,
-        rtl: false,
+        textFlow: TextDirection.ltr,
       ),
-      const Offset(52, 572),
+      const Offset(960 - 12 - 300, 40),
     );
-    // RTL：贴区域右边。
+    // 竖排右起左排 / 横排 RTL：左上。
     expect(
-      mineToastOffsetClearOf(
+      mineToastOffsetInRegion(
         overlay: overlay,
-        region: const Rect.fromLTRB(40, 28, 960, 560),
+        region: region,
         card: card,
-        rtl: true,
+        textFlow: TextDirection.rtl,
       ),
-      const Offset(960 - 12 - 300, 572),
+      const Offset(52, 40),
     );
-    // 下方 30 放不下、上方 100 放得下：紧贴上沿之上。
+    // 区域伸出屏幕：夹回屏内。
     expect(
-      mineToastOffsetClearOf(
+      mineToastOffsetInRegion(
         overlay: overlay,
-        region: const Rect.fromLTRB(40, 100, 960, 670),
+        region: const Rect.fromLTRB(-100, 0, 1200, 700),
         card: card,
-        rtl: false,
+        textFlow: TextDirection.rtl,
       ),
-      const Offset(52, 100 - 12 - 40),
-    );
-    // 正文铺满整屏：只能落进区域内的底部起始角。
-    expect(
-      mineToastOffsetClearOf(
-        overlay: overlay,
-        region: const Rect.fromLTRB(0, 0, 1000, 700),
-        card: card,
-        rtl: false,
-      ),
-      const Offset(12, 700 - 12 - 40),
+      const Offset(12, 12),
     );
   });
 
