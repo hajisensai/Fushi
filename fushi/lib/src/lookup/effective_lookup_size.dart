@@ -157,3 +157,50 @@ LookupSize resolveExtensionPopupSize({
     h.clamp(minHeight, maxHeightLimit),
   );
 }
+
+/// app 外独立查词窗（Android `popup_main` / 非 Android 的 in-app 查词对话框，即
+/// `PopupDictionaryPage`）里那张浮卡的高度占可用高度的上限比例。卡片之外是触发查词的
+/// 其它 app 画面，必须留出一截可见；这是屏幕比例上的天花板，用户的「最大高度」设置
+/// 在其下生效。
+const double kExternalPopupMaxHeightFraction = 0.72;
+
+/// app 外独立查词浮卡的外壳上界（逻辑像素）。
+///
+/// BUG：此前宽读 app 内 `popupMaxWidth`（无视「app 外覆盖窗独立尺寸」），高直接写死成
+/// `可用高 × 0.72` 且是**固定**高度，完全不读「最大高度」设置——平板竖屏（如
+/// 668×1070 逻辑像素）上卡片因此近乎占满全屏，怎么调设置都不变。
+///
+/// 现在宽、高都以 [maxSize]（`AppModel.overlayLookupEffectiveSize`，跟随 app 内 /
+/// 解锁后独立）为上限，再以可用空间封顶：宽不超过 [availableWidth]，高不超过
+/// [availableHeight] × [kExternalPopupMaxHeightFraction]。比例天花板与旧值相同，
+/// 所以任何屏幕上卡片都**不会比修复前更大**（手机竖屏 / 横屏不回归）。
+LookupSize resolveExternalPopupCardBounds({
+  required double availableWidth,
+  required double availableHeight,
+  required LookupSize maxSize,
+}) {
+  final double width = _nonNegativeMin(availableWidth, maxSize.width);
+  final double height = _nonNegativeMin(
+    availableHeight * kExternalPopupMaxHeightFraction,
+    maxSize.height,
+  );
+  return LookupSize(width, height);
+}
+
+/// 独立查词浮卡按内容伸缩后的实际高度：[fitHeight]（WebView 上报内容测得的外壳高度，
+/// 或「未找到」空态高度）为 null（尚未测到 / 搜索中）时取上界 [maxHeight]，否则取
+/// 二者较小者——高度随内容收缩，但永不超过设置值与可用空间。
+double resolveExternalPopupCardHeight({
+  required double maxHeight,
+  required double? fitHeight,
+}) {
+  if (fitHeight == null || !fitHeight.isFinite || fitHeight >= maxHeight) {
+    return maxHeight;
+  }
+  return fitHeight < 0 ? 0 : fitHeight;
+}
+
+double _nonNegativeMin(double a, double b) {
+  final double v = a < b ? a : b;
+  return v.isFinite && v > 0 ? v : 0;
+}
