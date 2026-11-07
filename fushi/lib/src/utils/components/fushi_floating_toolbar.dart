@@ -2168,14 +2168,29 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
     spring: FushiSprings.effectsDefault.description,
   );
 
+  /// 外层 [TickerMode] 关着时 ticker 被静音，弹簧一帧也走不了：要么落在目标上，
+  /// 要么永远停在半路。BUG-4227：阅读器把底栏包在「被歌词覆盖层盖住就关
+  /// TickerMode」的层里，进歌词那一帧 visible→false 与 TickerMode 关同时到达，
+  /// 收起动画被冻在 1，底栏整条浮在歌词页上。故 ticker 不可用时直接落到目标。
+  void _settle() {
+    final double target = widget.visible ? 1 : 0;
+    final bool animate =
+        fushiMotionEnabled(context) && TickerMode.valuesOf(context).enabled;
+    _t.animateTo(target, animate: animate);
+    _fade.animateTo(target, animate: animate);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 动画进行中 TickerMode 被关（或与 visible 同帧变化）：把剩下的路直接走完。
+    if (!TickerMode.valuesOf(context).enabled) _settle();
+  }
+
   @override
   void didUpdateWidget(FushiChromeReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.visible != widget.visible) {
-      final bool animate = fushiMotionEnabled(context);
-      _t.animateTo(widget.visible ? 1 : 0, animate: animate);
-      _fade.animateTo(widget.visible ? 1 : 0, animate: animate);
-    }
+    if (oldWidget.visible != widget.visible) _settle();
   }
 
   @override
