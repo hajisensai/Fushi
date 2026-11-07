@@ -1695,7 +1695,7 @@ mod tests {
 
         impl SqlSource<'_> {
             /// R 以外的复习顺序：把全部到期候选读出来（当天哈希在 SQL 里算不了），按（键, id）取最小。
-            fn first_by_key(
+            pub(super) fn first_by_key(
                 &self,
                 decks: &[&str],
                 order: ReviewOrder,
@@ -2023,6 +2023,48 @@ mod tests {
             let want = core.read_visible(|c| oracle::study(c, P, &req)).unwrap();
             assert_eq!(got, want, "step {step} root {root:?} req {req}");
             picked += usize::from(!got["next"].is_null()) + usize::from(!got["after"].is_null());
+        }
+        // 复习顺序索引：不经每日上限（上限常把复习挡成 0），直接拿会话的顺序索引与 SQL 全量排序比队首。索引按天
+        // 懒建一次，之后只靠增量重读维护，所以这里比的是增量维护的结果。
+        let today = day.index(now);
+        for order in [
+            ReviewOrder::DueDate,
+            ReviewOrder::Difficulty,
+            ReviewOrder::IntervalAscending,
+            ReviewOrder::Random,
+        ] {
+            let ex: Vec<&str> = if cards.is_empty() {
+                Vec::new()
+            } else {
+                (0..rng.below(3))
+                    .map(|_| rng.pick(cards).as_str())
+                    .collect()
+            };
+            let ex: HashSet<&str> = ex.into_iter().collect();
+            let got = core
+                .read_visible_tx(|c, unc| {
+                    core.study_hub.with_session(c, P, day, today, unc, |s| {
+                        s.ensure_order(order);
+                        s.first_due(&DECKS, order, now, &ex)
+                    })
+                })
+                .unwrap();
+            let want = core
+                .read_visible(|c| {
+                    let src = oracle::SqlSource {
+                        c,
+                        profile: P,
+                        today,
+                        logs: LogState::default(),
+                    };
+                    src.first_by_key(&DECKS, order, &ex)
+                })
+                .unwrap();
+            assert_eq!(
+                got, want,
+                "step {step} first due by {order:?}, exclude {ex:?}"
+            );
+            picked += usize::from(got.is_some());
         }
         picked
     }
