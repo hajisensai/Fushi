@@ -6027,6 +6027,8 @@
   "music_server_search_hint": "专辑、艺人、歌曲",
   "music_server_subsonic_subtitle": "OpenSubsonic · 显示在曲库里",
   "music_server_test_and_save": "测试并保存",
+  "music_server_youtube_subtitle": "搜索 YouTube 并串流音频",
+  "music_server_youtube_unavailable": "此平台不提供 YouTube 音源",
   "music_servers_empty": "还没有音乐服务器",
   "music_servers_manage": "服务器",
   "music_servers_settings_hint": "视频里已登录的 Jellyfin / Emby 服务器会列在这里；OpenSubsonic（Navidrome 等）在下面添加。打开开关即把该服务器的专辑显示在曲库里。",

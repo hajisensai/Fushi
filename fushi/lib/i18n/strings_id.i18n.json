@@ -6027,6 +6027,8 @@
   "music_server_search_hint": "Albums, artists, songs",
   "music_server_subsonic_subtitle": "OpenSubsonic · show in music library",
   "music_server_test_and_save": "Test and save",
+  "music_server_youtube_subtitle": "Search YouTube and stream the audio",
+  "music_server_youtube_unavailable": "The YouTube source is not available on this platform",
   "music_servers_empty": "No music servers yet",
   "music_servers_manage": "Servers",
   "music_servers_settings_hint": "Jellyfin / Emby servers you signed in to for video are listed here; add OpenSubsonic servers (Navidrome and others) below. Turn a server on to show its albums in the music library.",

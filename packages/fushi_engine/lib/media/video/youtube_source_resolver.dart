@@ -914,6 +914,81 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
   }
 }
 
+/// 一条 YouTube audio-only 播放流（音乐模块的 YouTube 内置音源起播时取，反馈 0tRY-D2JgG）。
+class YoutubeAudioStream {
+  const YoutubeAudioStream({
+    required this.url,
+    required this.httpHeaders,
+    this.expiresAt,
+    this.codec,
+    this.bitrateKbps,
+  });
+
+  final String url;
+
+  /// 回放请求头（UA 必须与铸流会话一致，见 [youtubeStreamReplayHeaders]）。
+  final Map<String, String> httpHeaders;
+
+  /// 直链过期时刻（epoch 毫秒，取自 googlevideo 地址的 `expire` 参数）；解不出为 null。
+  final int? expiresAt;
+  final String? codec;
+  final int? bitrateKbps;
+}
+
+/// 纯函数：googlevideo 直链的过期时刻（`expire` 参数是 epoch 秒）→ epoch 毫秒；没有 / 畸形
+/// 返回 null（调用方按「不知道何时过期」处理，播放失败时走既有的原位重取）。
+int? youtubeStreamExpiresAtMs(String url) {
+  final String? raw = Uri.tryParse(url)?.queryParameters['expire'];
+  final int? seconds = raw == null ? null : int.tryParse(raw);
+  if (seconds == null || seconds <= 0) return null;
+  return seconds * 1000;
+}
+
+/// IO：取 [videoId] 的最高码率 audio-only 流（音乐播放 / 制卡截音频用）。与视频播放同一条
+/// 多 client 兜底链（[_getManifestWithClientFallback]）与出站装配；该视频没有分离音频流时
+/// 回落最高码率 muxed（mpv 只取其音轨）。不取标题 / 字幕：音乐侧元数据来自搜索结果。
+Future<YoutubeAudioStream> resolveYoutubeAudioStream(
+  String videoId, {
+  Duration? timeout,
+  List<yt.YoutubeApiClient>? ytClients,
+}) async {
+  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final yt.YoutubeExplode client = yt.YoutubeExplode(http);
+  try {
+    final yt.StreamManifest manifest = await _getManifestWithClientFallback(
+      client,
+      http,
+      yt.VideoId(videoId),
+      ytClients ?? kYoutubeManifestClientFallback,
+    ).timeout(timeout ?? kYoutubeResolveTimeout);
+    final String url;
+    final String? codec;
+    final int? kbps;
+    if (manifest.audioOnly.isNotEmpty) {
+      final yt.AudioOnlyStreamInfo a = manifest.audioOnly.withHighestBitrate();
+      url = a.url.toString();
+      codec = a.audioCodec;
+      kbps = a.bitrate.kiloBitsPerSecond.round();
+    } else if (manifest.muxed.isNotEmpty) {
+      final yt.MuxedStreamInfo m = manifest.muxed.withHighestBitrate();
+      url = m.url.toString();
+      codec = m.audioCodec;
+      kbps = null;
+    } else {
+      throw StateError('youtube $videoId: no audio stream');
+    }
+    return YoutubeAudioStream(
+      url: url,
+      httpHeaders: youtubeStreamReplayHeaders(),
+      expiresAt: youtubeStreamExpiresAtMs(url),
+      codec: codec,
+      bitrateKbps: kbps,
+    );
+  } finally {
+    client.close();
+  }
+}
+
 Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   yt.YoutubeExplode client,
   yt.YoutubeHttpClient http,
