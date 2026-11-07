@@ -163,6 +163,9 @@ class _RecordingLinker implements SrsProfileLinker {
   /// 非 null：[adopt] 按暂缓返回它，[deferredMerge] 报它；link 期间像真实 linker 一样不再重判、不算已关联。
   SrsDeferredProfileMerge? deferred;
 
+  /// 非 null：[adopt] 时转成 [deferred]（像真实 linker：并入暂缓是采用那一刻才发生的）。
+  SrsDeferredProfileMerge? deferOnAdopt;
+
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
@@ -189,6 +192,7 @@ class _RecordingLinker implements SrsProfileLinker {
     SyncAssetStore? within,
   }) async {
     adopted.add('${store.profileUid}->$uid');
+    deferred ??= deferOnAdopt;
     final SrsDeferredProfileMerge? d = deferred;
     return d == null
         ? SrsProfileAdopted(store)
@@ -513,6 +517,53 @@ void main() {
     expect(linker.adopted, isEmpty, reason: '冲突属于别的 profile：不许把当前 profile 并进去');
   });
 
+  test('profile 冲突每轮重判：另一边解决之后下一轮就清掉，弹窗前重判与拿旧冲突采用都不再成立', () async {
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () {},
+      onNotice: notices.add,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    final SrsProfileConflict stale = s.profileConflict!;
+    final SrsProfileConflict? still = await s.recheckProfileConflict(stale);
+    expect(still, isNotNull, reason: '仍成立：返回这一轮重判的');
+    expect(still, isNot(same(stale)));
+    expect(linker.linkedUids, hasLength(2), reason: '弹窗前重判真的重列了位置');
+
+    // 另一台设备采用了本机的 profile：本机 uid 的目录里有了对方，冲突不再成立。
+    linker.conflictFor.clear();
+    await s.syncWithBackend(dir);
+    expect(linker.linkedUids, hasLength(3), reason: '冲突不复用，后台轮次照样重判');
+    expect(s.profileConflict, isNull, reason: '检出时缓存的冲突随重判作废');
+    expect(await s.recheckProfileConflict(stale), isNull);
+    await expectLater(
+      s.adoptProfile(stale, 'remote-uid'),
+      throwsA(
+        isA<SrsProfileConflictStale>().having(
+          (SrsProfileConflictStale e) => e.current,
+          'current',
+          isNull,
+        ),
+      ),
+    );
+    expect(linker.adopted, isEmpty, reason: '旧冲突：什么都不动');
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(1),
+      reason: '同一个冲突重判不重复通知',
+    );
+  });
+
   test('冲突弹窗选定后并入暂缓：不抛、回调暂缓结果、冲突清掉、之后每轮照样跑 link 续做；暂缓状态经调度器可查、做完消失', () async {
     final _RecordingLinker linker = _RecordingLinker(
       conflictFor: <String>{kSrsTestProfile},
@@ -540,7 +591,7 @@ void main() {
       newUid: 'remote-uid',
       missingRevoked: <String>['missing-log'],
     );
-    linker.deferred = d;
+    linker.deferOnAdopt = d;
     final List<SrsProfileAdoptResult> results = <SrsProfileAdoptResult>[];
     await s.adoptProfile(conflict, 'remote-uid', onAdopted: results.add);
     expect(linker.adopted, <String>['$kSrsTestProfile->remote-uid']);
@@ -550,11 +601,11 @@ void main() {
     expect(await s.deferredProfileMerge(), same(d));
     expect(
       linker.linkedUids,
-      hasLength(2),
-      reason: '选定后那一轮立即同步重跑 link（不复用冲突判定）',
+      hasLength(3),
+      reason: '采用之前按位置现状重判一次，选定后那一轮立即同步再重跑 link（不复用冲突判定）',
     );
     await s.syncWithBackend(dir);
-    expect(linker.linkedUids, hasLength(3), reason: '暂缓不算已关联：每轮都重跑 link 续做并入');
+    expect(linker.linkedUids, hasLength(4), reason: '暂缓不算已关联：每轮都重跑 link 续做并入');
 
     linker.deferred = null;
     expect(await s.deferredProfileMerge(), isNull, reason: '并入做完：暂缓状态消失');

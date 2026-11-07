@@ -8831,6 +8831,7 @@
   "srs_sync_profile_conflict_local": "This device: $count notes",
   "srs_sync_profile_conflict_merge_hint": "Notes and review history already on this device will be merged into the one you choose. Nothing is lost.",
   "srs_sync_profile_conflict_notes": "$count notes",
+  "srs_sync_profile_conflict_resolved": "This conflict was already resolved. Nothing was changed.",
   "srs_sync_profile_conflict_title": "Review sync conflict",
   "srs_sync_profile_conflict_updated": "Updated $date",
   "srs_sync_profile_merge_queued": "Merge queued. It finishes automatically once the undone reviews it depends on have synced.",

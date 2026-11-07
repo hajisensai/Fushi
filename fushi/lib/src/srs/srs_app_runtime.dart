@@ -575,21 +575,37 @@ class SrsAppRuntime {
 
   /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。[tabEntry] = 用户刚进复习页：
   /// 「稍后」过的冲突只在这时再问，同步后台重判出来时不当场再弹。
+  ///
+  /// [_pendingConflict] 是检出那一刻的快照：之后另一台设备可能已经解决了它（采用了本机的 profile），笔记数也会变。
+  /// 弹窗之前按同步位置的现状重判（[SrsSyncScheduler.recheckProfileConflict]），只问此刻仍成立的冲突、报现在的数。
   void _maybeShowProfileConflict({bool tabEntry = false}) {
-    final SrsProfileConflict? conflict = _pendingConflict;
-    if (conflict == null || _conflictDialogOpen) return;
-    if (_ignoredConflicts().contains(conflict.ignoreKey)) {
+    final SrsProfileConflict? pending = _pendingConflict;
+    if (pending == null || _conflictDialogOpen) return;
+    if (_ignoredConflicts().contains(pending.ignoreKey)) {
       _pendingConflict = null;
       return;
     }
     if (homeShellTabNotifier.value != HomeTab.srs) return;
-    if (!tabEntry && conflict.ignoreKey == _deferredConflictKey) return;
-    final BuildContext? context = app.navigatorKey.currentContext;
-    if (context == null) return;
+    if (!tabEntry && pending.ignoreKey == _deferredConflictKey) return;
+    if (app.navigatorKey.currentContext == null) return;
     _pendingConflict = null;
     _conflictDialogOpen = true;
+    bool askAgain = false;
     unawaited(() async {
       try {
+        final SrsProfileConflict? conflict = await sync.recheckProfileConflict(
+          pending,
+        );
+        // 已经不成立（另一边解决了）、本机切了 profile 或位置此刻连不上：不问；之后判出来会重新通知。
+        if (conflict == null) return;
+        if (_ignoredConflicts().contains(conflict.ignoreKey)) return;
+        final BuildContext? context = app.navigatorKey.currentContext;
+        if (homeShellTabNotifier.value != HomeTab.srs ||
+            context == null ||
+            !context.mounted) {
+          _pendingConflict ??= conflict;
+          return;
+        }
         final SrsProfileConflictChoice? choice =
             await showSrsProfileConflictDialog(context, conflict);
         switch (choice) {
@@ -611,6 +627,15 @@ class SrsAppRuntime {
                 uid,
                 onAdopted: _showProfileAdoptResult,
               );
+            } on SrsProfileConflictStale catch (e) {
+              // 弹窗开着的时候冲突变了：什么都没动。已经解决就告诉用户；换了候选就按新的再问一次。
+              final SrsProfileConflict? current = e.current;
+              if (current == null) {
+                FushiToast.show(msg: t.srs_sync_profile_conflict_resolved);
+              } else {
+                _pendingConflict = current;
+                askAgain = true;
+              }
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'SrsAppRuntime.adoptProfile',
@@ -627,6 +652,7 @@ class SrsAppRuntime {
         ErrorLogService.instance.log('SrsAppRuntime.profileConflict', e, stack);
       } finally {
         _conflictDialogOpen = false;
+        if (askAgain) _maybeShowProfileConflict(tabEntry: true);
       }
     }());
   }

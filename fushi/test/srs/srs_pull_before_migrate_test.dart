@@ -108,11 +108,18 @@ List<String> _files(Directory root) => <String>[
 class _RecordingLinker implements SrsProfileLinker {
   final List<SyncAssetStore?> adoptedWithin = <SyncAssetStore?>[];
 
+  /// 位置上判出冲突时的候选（[SrsSyncScheduler.adoptProfile] 采用之前按位置现状重判，候选里得有选的那个）。
+  List<SrsRemoteProfile>? candidates;
+
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
     SrsDbStore store,
-  ) async => SrsProfileLinkOutcome(store);
+  ) async => SrsProfileLinkOutcome(
+    store,
+    choose: candidates,
+    localHasNotes: candidates != null,
+  );
 
   @override
   Future<SrsProfileAdoptResult> adopt(
@@ -405,7 +412,11 @@ void main() {
   test('冲突弹窗选定候选：在候选所在那条通道的锁里并入，并入拿得到那条通道', () async {
     final SrsStorage st = await _legacyStorage(kShared);
     final SrsDbStore store = await _open(st, 'B');
-    final _RecordingLinker linker = _RecordingLinker();
+    const String candidate = '01928c3e-0000-7000-8000-0000000000ea';
+    final _RecordingLinker linker = _RecordingLinker()
+      ..candidates = const <SrsRemoteProfile>[
+        SrsRemoteProfile(uid: candidate, writers: <String>['v2:other']),
+      ];
     final SrsSyncScheduler s = scheduler(
       store: store,
       linker: linker,
@@ -418,7 +429,7 @@ void main() {
         candidates: const <SrsRemoteProfile>[],
         localHasNotes: true,
       ),
-      '01928c3e-0000-7000-8000-0000000000ea',
+      candidate,
     );
     expect(linker.adoptedWithin, <SyncAssetStore?>[backend]);
   });

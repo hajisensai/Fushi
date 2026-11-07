@@ -8831,6 +8831,7 @@
   "srs_sync_profile_conflict_local": "本机：$count 条笔记",
   "srs_sync_profile_conflict_merge_hint": "本机已有的笔记和复习记录会并入所选的那一份，不会丢失。",
   "srs_sync_profile_conflict_notes": "$count 条笔记",
+  "srs_sync_profile_conflict_resolved": "这个冲突已经解决了，没有做任何改动。",
   "srs_sync_profile_conflict_title": "复习同步冲突",
   "srs_sync_profile_conflict_updated": "更新于 $date",
   "srs_sync_profile_merge_queued": "合并已排队，等撤销记录依赖的复习同步过来后会自动完成",

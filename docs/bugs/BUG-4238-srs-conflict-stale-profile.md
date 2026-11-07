@@ -1,0 +1,15 @@
+## BUG-4238 · 复习同步冲突：一边采用对方 profile 解决后，另一边仍按检出时缓存的旧冲突再问一次（旧候选、旧笔记数），选了会分叉
+- **报告**：2026-11-07（用户：两台设备经互联配对、各有自己的复习 profile；host 在「复习同步冲突」弹窗里采用了客户端的 profile 并入成功、两边同为 4 条笔记，之后客户端也弹了冲突，候选是 host 已经并走的旧 profile，「本设备：1 条笔记」也是旧数。证据在本机，未入库）
+- **真实性**：✅ 真 bug，但不是「旧 profile 还留在同步位置、检测仍把它当活的」——host 并入后的那轮立即同步里 `SrsDbProfileLinker.link` 已经把它离开的旧 uid 目录清掉了（只有它自己写过），重新判定的结果是「本机 uid 目录里已有 host → 已关联」。客户端被问的是**检出那一刻缓存下来的冲突快照**，三层都不重新验证：
+  - `fushi/lib/src/srs/srs_sync_scheduler.dart:993-998`（修前）：判出冲突后 `_linkDecided` 把这个结论复用 `kSrsProfileConflictRecheck`（30 分钟），期间后台轮次直接跳过 `linker.link`；注释前提（`:564-566`）「冲突不会因为再列一遍目录而改变」是错的——另一边解决冲突之后它就不成立了。
+  - 同文件 `:1004-1024`（修前）：重新判定判不出冲突时 `profileConflict` 也从不清掉。
+  - `fushi/lib/src/srs/srs_app_runtime.dart:578-594`（修前）：`_pendingConflict` 是通知那一刻抓的快照，用户之后进复习页时原样弹出（进页的同步排在弹窗之后），候选和「本设备 N 条」都是检出时的。
+  - `srs_sync_scheduler.dart:1148-1196`（修前）：`adoptProfile` 不核对所选候选此刻是否还是冲突的一方。
+  - **选那个旧候选的后果（已用测试复现）**：客户端把自己（含刚从 host 并进来的笔记）并进 host 已弃用的旧 uid、在同步位置上重新建出那个目录；host 留在新 uid，目录里有客户端的旧写入者 → 判成「已关联」、永不再提示。两边各同步各的 uid，客户端之后新建的笔记到不了 host（静默分叉）。没有丢数据（两边各自保有分叉前的全部笔记），但复习从此不互通，客户端还会被再问一次（候选变成 host 当前的 uid）。
+- **[x] ① 已修复**（分支 `fix/srs-conflict-stale-profile`）— 冲突是对同步位置现状的判断，现状变了它就作废：
+  - 调度器：冲突**不再复用**，每轮重判（与「未关联」的轮次一样本来就每轮列目录；只有「已关联」永久复用）；`kSrsProfileConflictRecheck` 改为「同一个冲突隔多久再通知」。判定收进 `_link`：判不出冲突时作废属于这个（位置, 本机 profile）的 `profileConflict`；判出时换成这一轮的（候选与笔记数都是现在的），只在候选变了或满间隔时通知。
+  - 新 `SrsSyncScheduler.recheckProfileConflict`：在冲突所在的位置（通道先拿通道锁、本机目录只串行）按现状重判，返回此刻仍成立的冲突或 null。app 侧弹窗之前先重判，只问仍成立的、报现在的数。
+  - `adoptProfile` 在同一把锁里先重判，所选 uid 不再是候选就抛 `SrsProfileConflictStale`、什么都不动；冲突所在位置不可用（没法重判）也不盲并。app 侧：已解决提示「这个冲突已经解决了，没有做任何改动」（新 key `srs_sync_profile_conflict_resolved`），候选变了按新的再问一次。
+  - 真正未解决的冲突照常：仍成立就照常弹、照常采用 / 并入 / 暂缓。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_srs_two_way_sync_test.dart`「两边都有笔记、host 采用客户端的 profile 之后…」：真 `FushiSyncServer` + 真互联客户端 + 两台各自的 `SrsDbProfileLinker`，两边各一条笔记 → 都检出冲突；客户端再建一条后重判报 2 条（快照是 1）；host 采用客户端的 profile → 客户端后台轮次后 `profileConflict` 为 null、重判为 null、拿旧冲突采用抛 `SrsProfileConflictStale` 且 uid 不变、两边 uid 一致（修前：客户端仍挂着候选为 host 旧 uid、笔记数 1 的冲突，采用后两边分叉）。`fushi/test/srs/srs_sync_scheduler_test.dart`「profile 冲突每轮重判…」覆盖调度器层的清除 / 重判 / 拒绝 / 不重复通知。
+- **备注**：未在真机 host + 客户端复测（证据在本机，未入库）。复测：两台设备各建不同笔记、经互联配对 → 两边都出冲突（先别在客户端处理）→ host 选客户端的 profile → 客户端进复习页：不应再弹；若弹窗开着时 host 才处理，在客户端选旧候选应提示「已经解决」且 uid 不变。仍未覆盖的边角：host 的并入**暂缓**（undo 撤销的日志还没同步到）期间它仍按旧 uid 同步，客户端此时重判仍会看到那个旧 profile 是候选——这时冲突在数据上确实还没解决，要等 host 的并入做完。

@@ -295,6 +295,108 @@ void main() {
     expect(b.store.profileUid, bUid);
     expect(b.notices, <SrsSyncNotice>[SrsSyncNotice.profileNotLinked]);
   });
+
+  // 用户报的真实路径：两台设备各有自己的 profile 与笔记 → 两边都检出冲突；host 在弹窗里采用了客户端的 profile
+  // （并入），之后客户端不该再被问起 host 那个已经并走的旧 profile，弹窗里的笔记数也不能是检出那一刻的旧数。
+  test('两边都有笔记、host 采用客户端的 profile 之后：客户端不再有冲突，拿旧冲突采用被拒、两边不分叉', () async {
+    final SyncRepository repo = SyncRepository(clientAppDb);
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
+    ]);
+    await repo.setFushiClientToken(kToken);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String url, String tok) async => true,
+    );
+    expect(await backend.restoreAuth(repo), isTrue);
+    await backend.authenticate(repo: repo);
+    final String clientKey = (await srsDirectoryKeyOf(backend, repo))!;
+    final LocalDirectoryAssetStore hostDir = LocalDirectoryAssetStore(
+      Directory(p.join(server.syncDataDir, kSyncRootFolderName)),
+    );
+    final String hostKey = srsInterconnectDirectoryKey(kHostId);
+
+    final _LinkedDevice host = await _LinkedDevice.open(
+      'host',
+      localDirectory: hostDir,
+      localKey: hostKey,
+    );
+    final _LinkedDevice phone = await _LinkedDevice.open(
+      'phone',
+      channel: backend,
+      channelKey: clientKey,
+    );
+    final String hostOldUid = host.store.profileUid;
+    final String phoneUid = phone.store.profileUid;
+    await _addNote(host.store, '雪');
+    final String fromPhone = await _addNote(phone.store, '雨');
+
+    Future<void> rounds(int n) async {
+      for (int round = 0; round < n; round++) {
+        final SrsSyncNowResult h = await host.scheduler.syncLocalDirectories();
+        expect(h.errors, isEmpty, reason: 'host round $round');
+        expect(
+          (await phone.scheduler.syncWithBackend(
+            backend,
+            directoryKey: clientKey,
+          )).error,
+          isNull,
+          reason: 'phone round $round',
+        );
+      }
+    }
+
+    await rounds(2);
+    final SrsProfileConflict hostConflict = host.scheduler.profileConflict!;
+    final SrsProfileConflict stale = phone.scheduler.profileConflict!;
+    expect(hostConflict.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      phoneUid,
+    ]);
+    expect(stale.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      hostOldUid,
+    ]);
+    expect(stale.localNoteCount, 1);
+    // 检出之后客户端又建了一条：弹窗前重判报的是现在的数，不是检出那一刻的。
+    await _addNote(phone.store, '霞');
+    final SrsProfileConflict? fresh = await phone.scheduler
+        .recheckProfileConflict(stale);
+    expect(fresh?.localNoteCount, 2);
+    expect(fresh?.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      hostOldUid,
+    ]);
+
+    // host 在弹窗里选了客户端的 profile：并入，之后那一轮立即同步。
+    await host.scheduler.adoptProfile(hostConflict, phoneUid);
+    expect(host.store.profileUid, phoneUid);
+    expect(host.scheduler.profileConflict, isNull);
+    await rounds(2);
+    // host 的笔记并入后换了新 uid 下的 ID：按内容核对两边都是同一套三条。
+    expect(await phone.store.userNoteCount(), 3);
+    expect(await host.store.userNoteCount(), 3);
+    expect(_expressionOf(host.store, await host.store.note(fromPhone)), '雨');
+    // host 离开的旧 profile 目录只有它自己写过：已清掉。
+    expect(
+      Directory(
+        p.join(hostDir.root.path, kSrsSync2Namespace, hostOldUid),
+      ).existsSync(),
+      isFalse,
+    );
+
+    // 客户端：后台轮次已经看到 host 加入了自己的 profile，检出时缓存的冲突不能还挂着。
+    expect(phone.scheduler.profileConflict, isNull);
+    // 弹窗之前按当前同步位置重判：旧冲突已经不成立。
+    expect(await phone.scheduler.recheckProfileConflict(stale), isNull);
+    // 用户手里还开着旧弹窗、选了那个旧候选：按当前位置重判后拒绝，本机什么都不动（不会把自己并进已经没人用的旧
+    // profile、与 host 分叉）。
+    await expectLater(
+      phone.scheduler.adoptProfile(stale, hostOldUid),
+      throwsA(isA<SrsProfileConflictStale>()),
+    );
+    expect(phone.store.profileUid, phoneUid);
+    expect(await phone.db.profileUidOf(phone.profileId), phoneUid);
+    await rounds(1);
+    expect(phone.scheduler.profileConflict, isNull);
+    expect(host.store.profileUid, phone.store.profileUid);
+  });
 }
 
 Future<String> _addNote(SrsDbStore s, String expression) => s.createNote(
@@ -319,7 +421,15 @@ class _LinkedDevice {
   late final SrsSyncScheduler scheduler;
   final List<SrsSyncNotice> notices = <SrsSyncNotice>[];
 
-  static Future<_LinkedDevice> open(String deviceId) async {
+  /// [channel] / [channelKey]：这台设备的同步通道（互联客户端）；[localDirectory] / [localKey]：本机直接读写的
+  /// 目录（互联 host）。都不给时只能直接调 [SrsSyncScheduler.syncWithBackend]。
+  static Future<_LinkedDevice> open(
+    String deviceId, {
+    SyncAssetStore? channel,
+    String? channelKey,
+    SyncAssetStore? localDirectory,
+    String? localKey,
+  }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SrsStorage srs = await openSrsTestStorage();
@@ -331,9 +441,18 @@ class _LinkedDevice {
     d.store = await d._openStore();
     d.scheduler = SrsSyncScheduler(
       readStore: () async => d.store,
-      channels: (Future<void> Function(SyncAssetStore backend) body) async =>
-          (ran: 0, errors: <Object>[]),
-      directoryKeyOf: (SyncAssetStore backend) async => null,
+      channels: (Future<void> Function(SyncAssetStore backend) body) async {
+        if (channel == null) return (ran: 0, errors: <Object>[]);
+        await body(channel);
+        return (ran: 1, errors: <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore backend) async =>
+          identical(backend, channel) ? channelKey : null,
+      localDirectories: localDirectory == null
+          ? null
+          : () async => <SrsLocalDirectory>[
+              SrsLocalDirectory(directoryKey: localKey!, store: localDirectory),
+            ],
       onDataChanged: () {},
       onNotice: d.notices.add,
       profileLinker: SrsDbProfileLinker(

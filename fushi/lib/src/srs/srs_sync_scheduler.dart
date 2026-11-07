@@ -63,7 +63,9 @@ const Duration kSrsSyncMinInterval = Duration(seconds: 60);
 /// 有新操作的一轮（新笔记引用了新媒体 / 别的设备传来了笔记）照常立刻对账。
 const Duration kSrsMediaReconcileInterval = Duration(minutes: 30);
 
-/// 「两边都有笔记、无法自动关联」的判定结果复用多久（判定要把同步目录里全部 profile 列一遍、逐个下载说明文件）。
+/// 同一个（候选没变的）profile 冲突隔多久再通知一次（[SrsSyncNotice.profileNotLinked]）。判定本身每一轮都重做、不复用：
+/// 冲突会被另一边解决（对方采用了本机的 profile 之后，本机 uid 的目录里就有了对方），复用检出时的结论会把已经解决的
+/// 冲突、连同检出那一刻的笔记数，留到很久以后再拿出来问用户。
 const Duration kSrsProfileConflictRecheck = Duration(minutes: 30);
 
 /// 可信时间与系统时钟的偏差超过它就提示一次。
@@ -330,6 +332,21 @@ class SrsProfileConflict {
   ].join('|');
 }
 
+/// [SrsSyncScheduler.adoptProfile] 按同步位置的现状重判之后，用户选的候选已经不再是冲突的一方（检出之后对方采用了
+/// 本机的 profile、候选的目录清掉了、换了一批候选……）：什么都没动。[current] 是此刻仍成立的冲突（候选与笔记数都是
+/// 现在的），冲突已经不成立时为 null。
+class SrsProfileConflictStale implements Exception {
+  const SrsProfileConflictStale(this.current);
+
+  final SrsProfileConflict? current;
+
+  @override
+  String toString() =>
+      'SrsProfileConflictStale: the chosen profile is no longer a conflict '
+      'candidate at this sync location'
+      '${current == null ? ' (conflict resolved)' : ''}';
+}
+
 enum SrsSyncNotice {
   /// 当前同步后端拿不到服务器时间，复习数据没法同步。
   backendUnsupported,
@@ -561,9 +578,11 @@ class SrsSyncScheduler {
   /// 最近一次检出的 profile 冲突（[SrsSyncNotice.profileNotLinked]）；app 侧据此弹窗。
   SrsProfileConflict? profileConflict;
 
-  /// 各（位置, 本机 profile uid）最近一次 profile 关联判定（键见 [_linkKey]）：冲突的判定 [kSrsProfileConflictRecheck]
-  /// 内复用，「已关联上」（本机 uid 目录里已有别的设备）永久复用——两者都不会因为再列一遍目录而改变，每轮重列只是
-  /// 白走一圈网盘请求。键里必须带 uid：调度器跨 profile 切换常驻，只按位置记会让切过去的 profile 永远跳过关联。
+  /// 各（位置, 本机 profile uid）最近一次 profile 关联判定（键见 [_linkKey]）。只有「已关联上」（本机 uid 目录里已有
+  /// 别的设备，`conflict == null`）永久复用——它不会因为再列一遍目录而改变。冲突**不复用**：另一边解决冲突（采用了本机
+  /// 的 profile）之后它就不成立了，每轮都重判；这里记的冲突只用来决定要不要再通知（`at` = 上次通知的时刻，见
+  /// [kSrsProfileConflictRecheck]）。键里必须带 uid：调度器跨 profile 切换常驻，只按位置记会让切过去的 profile 永远
+  /// 跳过关联。
   final Map<String, ({DateTime at, SrsProfileConflict? conflict})>
   _linkDecided = <String, ({DateTime at, SrsProfileConflict? conflict})>{};
 
@@ -989,38 +1008,13 @@ class SrsSyncScheduler {
     }
     final SrsProfileLinker? linker = _profileLinker;
     bool adopted = false;
-    final String linkKey = _linkKey(key, store.profileUid);
     final ({DateTime at, SrsProfileConflict? conflict})? decided =
-        _linkDecided[linkKey];
-    final bool reuseLink =
-        decided != null &&
-        (decided.conflict == null ||
-            _clock().difference(decided.at) < kSrsProfileConflictRecheck);
-    if (linker != null && !reuseLink) {
-      _step('link');
-      final SrsProfileLinkOutcome link = await linker.link(backend, store);
-      adopted = !identical(link.store, store);
-      store = link.store;
-      final List<SrsRemoteProfile>? choose = link.choose;
-      if (choose != null) {
-        final SrsProfileConflict conflict = SrsProfileConflict(
-          directoryKey: key,
-          localUid: store.profileUid,
-          candidates: choose,
-          localHasNotes: link.localHasNotes,
-          localNoteCount: link.localNoteCount,
-        );
-        profileConflict = conflict;
-        _linkDecided[linkKey] = (at: _clock(), conflict: conflict);
-        // 每次重新判出都通知（不是 [_noticeOnce]）：用户选了「稍后」或冲突换了内容，下一次判定还要能再问；
-        // 判定本身按 [kSrsProfileConflictRecheck] 复用，不会每轮都通知。
-        _onNotice(SrsSyncNotice.profileNotLinked);
-      } else if (link.linked) {
-        _linkDecided[_linkKey(key, store.profileUid)] = (
-          at: _clock(),
-          conflict: null,
-        );
-      }
+        _linkDecided[_linkKey(key, store.profileUid)];
+    // 只有「已关联上」复用；冲突每轮重判（另一边可能已经解决了它，见 [_linkDecided]）。
+    if (linker != null && (decided == null || decided.conflict != null)) {
+      final SrsDbStore linked = await _link(linker, backend, store, key);
+      adopted = !identical(linked, store);
+      store = linked;
       if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
     // 首次同步确认之后的第一轮：旧库先并成操作再上传（BUG-4011）。在一轮里只从这一条位置收（不再拿通道锁）。
@@ -1136,11 +1130,147 @@ class SrsSyncScheduler {
     return report;
   }
 
+  /// 在位置 [key]（[backend]）上做一次 profile 关联判定（[SrsProfileLinker.link]），按结果更新 [profileConflict] 与
+  /// [_linkDecided]，返回之后继续同步用的 store（自动采用 / 续做并入时是重开的那个）。
+  ///
+  /// 判不出冲突时，检出时记下的、属于这个（位置, 本机 profile）的冲突一并作废：对方已经采用了本机的 profile、候选的
+  /// 目录清掉了、本机自动采用 / 续做了并入——都说明它不再成立，不能留到之后再拿出来问用户。判出冲突时每次都换成
+  /// 这一轮的（候选与笔记数都是现在的）；只在候选变了、或同一个冲突距上次通知满 [kSrsProfileConflictRecheck] 时
+  /// 通知（用户选了「稍后」或冲突换了内容，之后还要能再问；但不每轮都通知）。
+  Future<SrsDbStore> _link(
+    SrsProfileLinker linker,
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String key,
+  ) async {
+    _step('link');
+    final String uid = store.profileUid;
+    final String linkKey = _linkKey(key, uid);
+    final ({DateTime at, SrsProfileConflict? conflict})? previous =
+        _linkDecided[linkKey];
+    final SrsProfileLinkOutcome link = await linker.link(backend, store);
+    final SrsDbStore linked = link.store;
+    final List<SrsRemoteProfile>? choose = link.choose;
+    if (choose == null) {
+      _linkDecided.remove(linkKey);
+      final SrsProfileConflict? pending = profileConflict;
+      if (pending != null &&
+          pending.directoryKey == key &&
+          pending.localUid == uid) {
+        profileConflict = null;
+      }
+      if (link.linked) {
+        _linkDecided[_linkKey(key, linked.profileUid)] = (
+          at: _clock(),
+          conflict: null,
+        );
+      }
+      return linked;
+    }
+    final SrsProfileConflict conflict = SrsProfileConflict(
+      directoryKey: key,
+      localUid: linked.profileUid,
+      candidates: choose,
+      localHasNotes: link.localHasNotes,
+      localNoteCount: link.localNoteCount,
+    );
+    profileConflict = conflict;
+    final DateTime now = _clock();
+    final SrsProfileConflict? before = previous?.conflict;
+    final bool notify =
+        previous == null ||
+        before == null ||
+        before.ignoreKey != conflict.ignoreKey ||
+        now.difference(previous.at) >= kSrsProfileConflictRecheck;
+    _linkDecided[_linkKey(key, linked.profileUid)] = (
+      at: notify ? now : previous.at,
+      conflict: conflict,
+    );
+    if (notify) _onNotice(SrsSyncNotice.profileNotLinked);
+    return linked;
+  }
+
+  /// [profileConflict] 若属于位置 [directoryKey] 上的本机 profile [localUid] 就返回它，否则 null。
+  SrsProfileConflict? _conflictAt(String directoryKey, String localUid) {
+    final SrsProfileConflict? c = profileConflict;
+    return c != null && c.directoryKey == directoryKey && c.localUid == localUid
+        ? c
+        : null;
+  }
+
+  /// 在位置 [directoryKey] 上跑 [body]，返回是否找到了这个位置。锁的顺序与常规轮次相同：通道先拿通道锁、再
+  /// [_serially]（通道锁不可重入）；本机直接读写的目录（互联 host）只 [_serially]。[body] 的 `channel` = 这是一条
+  /// 通道（并入之前只从通道收目标 uid 的数据，本机目录由拉取自己收）。[body] 抛的错原样抛出。
+  Future<bool> _onLocation(
+    String directoryKey,
+    Future<void> Function(SyncAssetStore backend, bool channel) body,
+  ) async {
+    bool found = false;
+    Object? failure;
+    StackTrace? failureStack;
+    await _channels((SyncAssetStore backend) async {
+      if (found || await _directoryKeyOf(backend) != directoryKey) return;
+      found = true;
+      try {
+        await _serially(() => body(backend, true));
+      } catch (e, stack) {
+        // [_channels] 把每条通道的错误收进 errors：这里截下来原样抛。
+        failure = e;
+        failureStack = stack;
+      }
+    });
+    final Object? error = failure;
+    if (error != null) Error.throwWithStackTrace(error, failureStack!);
+    if (found) return true;
+    final Future<List<SrsLocalDirectory>> Function()? local = _localDirectories;
+    if (local == null || _halted) return false;
+    for (final SrsLocalDirectory d in await local()) {
+      if (d.directoryKey != directoryKey) continue;
+      await _serially(() => body(d.store, false));
+      return true;
+    }
+    return false;
+  }
+
+  /// 弹窗之前按同步位置的现状重判 [conflict]：检出之后另一边可能已经解决了它（采用了本机的 profile），候选和笔记数
+  /// 也会变。返回此刻仍成立的冲突（候选与笔记数都是现在的）；已经不成立、本机已经切到别的 profile、或那个位置此刻
+  /// 不可用时返回 null——位置不可用时忘掉这个冲突的通知状态，等能连上的那一轮判出来再通知。
+  Future<SrsProfileConflict?> recheckProfileConflict(
+    SrsProfileConflict conflict,
+  ) async {
+    final SrsProfileLinker? linker = _profileLinker;
+    if (linker == null || _halted) return null;
+    SrsProfileConflict? current;
+    final bool found = await _onLocation(conflict.directoryKey, (
+      SyncAssetStore backend,
+      bool _,
+    ) async {
+      final SrsDbStore? store = await _readStore();
+      if (store == null ||
+          _halted ||
+          store.isWindingDown ||
+          store.profileUid != conflict.localUid) {
+        return;
+      }
+      await _link(linker, backend, store, conflict.directoryKey);
+      current = _conflictAt(conflict.directoryKey, conflict.localUid);
+    });
+    if (!found) {
+      _linkDecided.remove(_linkKey(conflict.directoryKey, conflict.localUid));
+    }
+    return current;
+  }
+
   /// 用户在冲突弹窗里选了 [uid]（[conflict] 的候选）：本机 profile 改用它（本机有笔记时并入，见
   /// [SrsProfileLinker.adopt]），之后跑一轮「立即同步」把两边的数据收发齐。与同步串行（同一个 store）。
   ///
   /// 弹窗开着的时候用户可能已经切到别的 profile：此刻的 profile 不是 [conflict] 判定时的那个就抛
   /// [StateError]、什么都不动——否则会把另一个 profile 并进不相干的候选。
+  ///
+  /// [conflict] 是检出那一刻的快照：之后另一边可能已经解决了它（采用了本机的 profile，自己离开的旧 profile 目录也清掉
+  /// 了）。并入之前在冲突所在的位置上按现状重判，[uid] 此刻不再是冲突的候选就抛 [SrsProfileConflictStale]、什么都
+  /// 不动——照旧并进去会把本机并进对方已经弃用的 profile，两边从此各同步各的（分叉，且两边都不再提示）。冲突所在的
+  /// 位置此刻不可用（没法重判）同样什么都不动，抛 [StateError]。
   ///
   /// [onAdopted]：改用 / 并入一结束（跑「立即同步」之前）就回调结果。并入暂缓（[SrsProfileAdoptDeferred]，undo 撤销
   /// 的日志还没同步到）不是失败、不抛：并入标记已写，冲突就此解决（不再弹），之后每一轮 [SrsProfileLinker.link] 续做；
@@ -1152,10 +1282,13 @@ class SrsSyncScheduler {
   }) async {
     final SrsProfileLinker? linker = _profileLinker;
     if (linker == null) return const SrsSyncNowResult(ran: 0);
-    bool done = false;
     SrsProfileAdoptResult? adoptedResult;
-    Future<void> adopt(SyncAssetStore? within) => _serially(() async {
-      done = true;
+    // 候选在某条通道上：在那条通道的锁里重判、并入（并入之前要从它收目标 uid 的数据，BUG-4011）；在本机目录上
+    // （互联 host）不拿通道锁。
+    final bool found = await _onLocation(conflict.directoryKey, (
+      SyncAssetStore backend,
+      bool channel,
+    ) async {
       final SrsDbStore? store = await _readStore();
       if (store == null || _halted) return;
       if (store.profileUid != conflict.localUid) {
@@ -1164,36 +1297,38 @@ class SrsSyncScheduler {
           '(${conflict.localUid} -> ${store.profileUid})',
         );
       }
+      final SrsDbStore linked = await _link(
+        linker,
+        backend,
+        store,
+        conflict.directoryKey,
+      );
+      final SrsProfileConflict? current = _conflictAt(
+        conflict.directoryKey,
+        conflict.localUid,
+      );
+      if (!identical(linked, store) ||
+          current == null ||
+          !current.candidates.any((SrsRemoteProfile c) => c.uid == uid)) {
+        throw SrsProfileConflictStale(current);
+      }
       final SrsProfileAdoptResult result = await linker.adopt(
         store,
         uid,
-        within: within,
+        within: channel ? backend : null,
       );
       adoptedResult = result;
-      if (identical(profileConflict, conflict)) profileConflict = null;
-      // 暂缓时也要清：否则冲突判定在复用期内跳过 [SrsProfileLinker.link]，并入要等复用期过了才续做。
+      if (identical(profileConflict, current)) profileConflict = null;
+      // 本机换了（或排上了要换的）uid：之前按旧 uid 记的判定全部作废，之后的轮次重判（暂缓时同样）。
       _linkDecided.clear();
       if (result is SrsProfileAdopted) _onDataChanged();
     });
-    // 候选在某条通道上：在那条通道的锁里并入（并入之前要从它收目标 uid 的数据，BUG-4011；通道锁不可重入，先锁后
-    // [_serially] 与常规轮次同一顺序）。[_channels] 把每条通道的错误收进 errors，这里原样抛出。
-    Object? failure;
-    StackTrace? failureStack;
-    await _channels((SyncAssetStore backend) async {
-      if (done || await _directoryKeyOf(backend) != conflict.directoryKey) {
-        return;
-      }
-      try {
-        await adopt(backend);
-      } catch (e, stack) {
-        failure = e;
-        failureStack = stack;
-      }
-    });
-    final Object? error = failure;
-    if (error != null) Error.throwWithStackTrace(error, failureStack!);
-    // 候选在本机目录 / 文件夹位置上（或那条通道此刻不可用）：不拿通道锁并入。
-    if (!done) await adopt(null);
+    if (!found) {
+      throw StateError(
+        'the sync location of the profile conflict is not available '
+        '(${conflict.directoryKey})',
+      );
+    }
     final SrsProfileAdoptResult? result = adoptedResult;
     if (result != null) onAdopted?.call(result);
     return syncNow();
