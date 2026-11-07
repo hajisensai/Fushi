@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.24584",
-  "tag": "v3.3.0-debug.24584+9da8d01",
+  "version": "3.3.0-debug.24601",
+  "tag": "v3.3.0-debug.24601+1060c38",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 24584,
-  "notes": "Automated release-signed debug-channel build from develop @ 9da8d01. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 24601,
+  "notes": "Automated desktop debug-channel build from develop @ 1060c38. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.24555-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "ad36c7ad2decea556dea84e0fc1dc3deba7261b16b41927089ab1c139ce8f745"
     },
     {
-      "name": "fushi-3.3.0-debug.24555-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.24555-windows-setup.exe",
-      "releaseSequence": 24555,
-      "tag": "v3.3.0-debug.24555+3dda6fa",
-      "version": "3.3.0-debug.24555",
-      "size": 296200768,
-      "sha256": "8257c8b614d7cc2990fd4d4bd79f3fdca7a8f3b70f92abb748d4bc83b1e8b852"
-    },
-    {
       "name": "fushi-3.3.0-debug.24584-9da8d01-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.24584-9da8d01-debug.apk",
       "releaseSequence": 24584,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.24584",
       "size": 267993733,
       "sha256": "05809b07bd83c243a6415562687a31b5be04488b63276e9c4e5937a9823b8277"
+    },
+    {
+      "name": "fushi-3.3.0-debug.24601-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.24601-windows-setup.exe",
+      "releaseSequence": 24601,
+      "tag": "v3.3.0-debug.24601+1060c38",
+      "version": "3.3.0-debug.24601",
+      "size": 296295160,
+      "sha256": "19dabf1a3c646c275483107cf960d79d197e3c6242a198224e57de5421f68cae"
     }
   ]
 }
