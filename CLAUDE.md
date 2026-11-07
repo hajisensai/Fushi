@@ -10,6 +10,7 @@
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
 - 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
+- **反馈里的新功能先拍板再做**：处理反馈（群反馈 / 应用内反馈 / 反馈任务）时只修 bug；凡是新功能、新设置项、新入口、行为改动，除非已在群里确认过（有确认原文可引），一律不实现，列成待拍板清单交用户拍板后再做。拿不准是 bug 还是新功能的按新功能处理。（[细则](docs/agent/rules-detail.md#反馈里的新功能先拍板)）
 - 函数和新增 Dart helper 要有明确类型签名。
 
 ## UI 硬规则
