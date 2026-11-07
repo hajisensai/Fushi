@@ -149,7 +149,11 @@ void main() {
     test('global card fires hidden listeners on a desktop dismissal', () {
       final String src = read('lib/src/lookup/global_lookup_controller.dart');
       final int start = src.indexOf('void _onOverlayHidden(');
-      final String body = src.substring(start, src.indexOf('} finally', start));
+      // 关窗通知在路由作废（finally）之后发，取到函数尾而不是 finally 前。
+      final String body = src.substring(
+        start,
+        src.indexOf('GlobalLookupRoute debugActivateDesktopRoute()', start),
+      );
       final int desktop = body.indexOf("if (route.source == 'desktop')");
       expect(desktop, isNonNegative);
       expect(body.substring(desktop), contains('_hiddenListeners'));

@@ -393,21 +393,21 @@ void main() {
     // 2026-11-07 起视频面也走 StudyClockRunGate：失焦只喂「失焦」，由门按「仍在播放
     // 才计」裁决（studyClockGateMayRun 的 unfocused + playing）。
     expect(
-      videoInactive.contains('_studyClockGate.setUnfocused(true);'),
+      videoInactive.contains('_studySession.onAppLifecycleChanged(state);'),
       isTrue,
       reason: '视频失焦必须喂计时门（停着就停表、在播照计）',
     );
     final String videoBg = video.substring(paused, resumed);
     expect(
       videoBg.contains('_watchTracker?.stop()') &&
-          videoBg.contains('_studyClockGate.setLifecycleStopped(true);'),
+          videoBg.contains('_studySession.onAppLifecycleChanged(state);'),
       isTrue,
       reason: '真后台 / 熄屏才停',
     );
     final String videoFg = video.substring(resumed);
     expect(
-      videoFg.contains('_studyClockGate.setUnfocused(false);') &&
-          videoFg.contains('_studyClockGate.setLifecycleStopped(false);'),
+      videoFg.indexOf('_studySession.onAppLifecycleChanged(state);') >
+          videoFg.indexOf('_watchTracker?.start();'),
       isTrue,
       reason: '回前台经计时门续表（仍被盖住 / 手动暂停就不续）',
     );

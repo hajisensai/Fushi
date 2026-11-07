@@ -32,6 +32,7 @@ import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
+import 'package:fushi/src/media/video/video_study_clock_session.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
@@ -456,28 +457,20 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 停、失焦时仍在播才计、被根导航上的路由盖住停。只在 tracker 采样期间起表
   /// （队列重放 / 后台制卡页不采样，见 [_syncWatchTracker]）。
   ///
-  /// 与本地视频页同一装配：起表时从设置刷空闲门；焦点在本 app 的桌面查词窗里（窗口
-  /// 宿主档点词弹的就是它）不算失焦——暂停查词也算时间；每次落定向跨面仲裁
-  /// [VideoStudyAccrualArbiter] 报到。
-  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(
-    () {
+  /// 与本地视频页同一装配：起表时从设置刷空闲门；桌面查词窗（窗口宿主档点词弹的就是
+  /// 它）不抢主窗焦点，暂停查词时照常计（见 [studyClockGateMayRun]）；每次落定向跨面
+  /// 仲裁 [VideoStudyAccrualArbiter] 报到。
+  late final VideoStudyClockSession _studySession = VideoStudyClockSession(
+    clock: () {
       final VideoWatchTracker? tracker = _watchTracker;
       if (tracker == null || !tracker.isSampling) return null;
       return tracker.clock;
     },
     idleTimeout: () => _appModel.readingIdleTimeout,
-    focusHeldByOwnWindow: () =>
-        GlobalLookupController.instance.desktopLookupInFlight,
-    onApplied: (bool running, bool appForeground) =>
-        _studyAccrualClaim.update(running: running, foreground: appForeground),
+    settle: () => _watchTracker?.clock.flushNow(),
   );
 
-  /// 本页在视频跨面入账仲裁里的登记；时钟的 `isActive` 读它的 [timeAllowed]。
-  late final VideoStudyAccrualClaim _studyAccrualClaim =
-      VideoStudyAccrualArbiter.instance.claim(
-        surface: VideoStudySurface.inApp,
-        settle: () => _watchTracker?.clock.flushNow(),
-      );
+  StudyClockRunGate get _studyClockGate => _studySession.gate;
 
   /// 计时开始方式已按偏好设定过（本页首次建 tracker 时一次）。
   bool _studyStartModeApplied = false;
@@ -493,20 +486,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 生命周期 → [_studyClockGate]（本页不是 WidgetsBindingObserver）。
   AppLifecycleListener? _studyLifecycle;
 
-  void _onStudyLifecycleChanged(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.inactive:
-        _studyClockGate.setUnfocused(true);
-      case AppLifecycleState.paused:
-      case AppLifecycleState.hidden:
-        _studyClockGate.setLifecycleStopped(true);
-      case AppLifecycleState.resumed:
-        _studyClockGate.setUnfocused(false);
-        _studyClockGate.setLifecycleStopped(false);
-      case AppLifecycleState.detached:
-        break;
-    }
-  }
+  void _onStudyLifecycleChanged(AppLifecycleState state) =>
+      _studySession.onAppLifecycleChanged(state);
 
   /// 本视频已收藏句缓存（`text|startMs`），列表面板星标同步读。
   final Set<String> _favoritedKeys = <String>{};
@@ -632,8 +613,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _studyClockGate.manualPauseListenable.addListener(
       _onStudyManualPauseChanged,
     );
-    // 桌面查词窗被关掉：焦点不再「在本 app 的查词窗里」，计时门按真实失焦重判。
-    GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);
     _popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId;
     _controller.addListener(_onControllerChanged);
     assert(() {
@@ -767,12 +746,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       GlobalLookupController.instance.onHidden = _prevGlobalLookupOnHidden;
     }
     unawaited(_watchTracker?.stop());
-    GlobalLookupController.instance.removeHiddenListener(_studyClockGate.sync);
     _studyClockGate.manualPauseListenable.removeListener(
       _onStudyManualPauseChanged,
     );
-    _studyClockGate.dispose();
-    _studyAccrualClaim.release();
+    _studySession.dispose();
     // 后台制卡页的播放全是机器驱动（站点自动播放 + 逐句重放），不是用户的续播点。
     if (!widget.closeAfterMining) unawaited(_flushPosition());
     final OverlayEntry? entry = _popupOverlayEntry;
@@ -1166,7 +1143,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           // 起表时再由计时门从设置刷（[applyStudyClockRun]）。
           idleTimeout: _appModel.readingIdleTimeout,
           // 与浏览器扩展视频同时播放时只一边入账时长（[VideoStudyAccrualArbiter]）。
-          isActive: () => _studyAccrualClaim.timeAllowed,
+          isActive: () => _studySession.timeAllowed,
           onWriteError: (Object e, StackTrace st) => ErrorLogService.instance
               .log('StudyClock.write(web-video)', e, st),
           deferWrite: ExitFlushRegistry.instance.defer,

@@ -1270,8 +1270,8 @@ class GlobalLookupController {
   /// [_onOverlayHidden]、下一次查词与查词中止 [_endAbortedRoute] 都会作废它）。查词入口在
   /// 第一个 await 之前就 [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
   ///
-  /// 生产读者：视频页学习计时门——焦点在查词窗里时主窗报 `inactive`，这不算失焦
-  /// （`StudyClockRunGate` 的 `focusHeldByOwnWindow`）。
+  /// 生产读者：[prewarmDesktopStatic]（在途就不铸新路由）。它**不是**焦点信号——查词窗
+  /// 三端都不抢焦点，学习计时门不读它（PR #3020 审查）。
   bool get desktopLookupInFlight {
     final GlobalLookupRoute? active = _activeRoute;
     return active != null &&
@@ -1817,14 +1817,6 @@ class GlobalLookupController {
       // uses that validity check to accept the genuine-dismiss event and clear
       // the corresponding in-game card.
       onRoutedHidden?.call(route);
-      if (route.source == 'desktop') {
-        onHidden?.call();
-        for (final VoidCallback listener in List<VoidCallback>.of(
-          _hiddenListeners,
-        )) {
-          listener();
-        }
-      }
     } finally {
       // A genuine dismissal ends this immutable lookup. Retiring it here makes
       // every already-queued Future/Timer/JS callback inert immediately instead
@@ -1834,7 +1826,33 @@ class GlobalLookupController {
         _activeRoute = null;
       }
     }
+    // 「窗已关」的消费方在路由作废**之后**才通知：它们读到的是关窗后的状态
+    // （[desktopLookupInFlight] 已为 false）。先通知后作废时，回调里重判的人读到的
+    // 仍是「在途」，之后又没人再通知，结论就停在旧值上（PR #3020 审查）。
+    if (route.source == 'desktop') {
+      onHidden?.call();
+      for (final VoidCallback listener in List<VoidCallback>.of(
+        _hiddenListeners,
+      )) {
+        listener();
+      }
+    }
   }
+
+  /// 测试缝：激活一个桌面查词路由（等同查词入口在第一个 await 之前做的那步）。
+  @visibleForTesting
+  GlobalLookupRoute debugActivateDesktopRoute() {
+    final GlobalLookupRoute route = GlobalLookupRoute.desktop(
+      lookupEpoch: ++_desktopLookupEpoch,
+    );
+    _activateRoute(route);
+    return route;
+  }
+
+  /// 测试缝：原生回报 [route] 的查词窗被用户真正关掉（同 `overlayHidden` 反向事件）。
+  @visibleForTesting
+  void debugDispatchOverlayHidden(GlobalLookupRoute route) =>
+      GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route));
 
   /// Phase C（弹窗尺寸精细化 2026-07-13）— 覆盖窗拖角 resize 落库。native（模态
   /// size 循环结束）回报的 [message] args = [left, top, width, height]（**窗口物理

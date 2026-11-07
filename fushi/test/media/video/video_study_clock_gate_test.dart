@@ -135,14 +135,10 @@ void main() {
         ),
         isFalse,
       );
-      // 查词窗关掉要让门按真实失焦重判；跨面仲裁随页面释放。
-      expect(
-        src,
-        contains(
-          'GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);',
-        ),
-      );
-      expect(src, contains('_studyAccrualClaim.release();'));
+      // 门 + 跨面仲裁登记由 VideoStudyClockSession 装配（行为见
+      // video_study_clock_session_test.dart），随页面一起释放。
+      expect(src, contains('_studySession.dispose();'));
+      expect(src, contains('isActive: () => _studySession.timeAllowed,'));
       // 门只在 tracker 采样期间起表：采样停了（离开前 / 进后台）就没人喂空闲门。
       expect(src, contains('if (tracker == null || !tracker.isSampling)'));
     });
@@ -201,16 +197,30 @@ void main() {
         _body(src, 'void didChangeDependencies('),
         contains('_studyClockGate.attach(ModalRoute.of(context));'),
       );
-      final String lifecycle = _body(
-        src,
-        'void _onStudyLifecycleChanged(AppLifecycleState state)',
-      );
-      expect(lifecycle, contains('_studyClockGate.setUnfocused(true);'));
-      expect(lifecycle, contains('_studyClockGate.setLifecycleStopped(true);'));
       expect(
-        lifecycle,
-        contains('_studyClockGate.setLifecycleStopped(false);'),
+        src,
+        contains(
+          'void _onStudyLifecycleChanged(AppLifecycleState state) =>\n'
+          '      _studySession.onAppLifecycleChanged(state);',
+        ),
       );
+      expect(src, contains('_studySession.dispose();'));
+      expect(src, contains('isActive: () => _studySession.timeAllowed,'));
+    });
+
+    // PR #3020 审查：「桌面查词路由仍有效」被当成「焦点在本 app 的查词窗」，切走时
+    // 暂停的视频照计、仲裁把浏览器那段判给 app。查词窗三端都不抢焦点，这路输入不存在。
+    test('两页的计时门都不读查词路由冒充焦点', () {
+      for (final String path in <String>[_videoPage, _webPage]) {
+        final String src = _read(path);
+        expect(src.contains('desktopLookupInFlight'), isFalse, reason: path);
+        expect(src.contains('focusHeldByOwnWindow'), isFalse, reason: path);
+        expect(
+          src.contains('addHiddenListener(_studyClockGate.sync)'),
+          isFalse,
+          reason: '$path：关查词窗不是计时门的输入',
+        );
+      }
     });
   });
 }

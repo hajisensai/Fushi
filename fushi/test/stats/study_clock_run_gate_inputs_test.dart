@@ -3,48 +3,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
 
-/// 计时门 2026-11-07 新增的输入：本 app 查词窗持有焦点不算失焦、计时开始方式、
-/// 首次开播自动起表、手动暂停旗的监听口。
+/// 计时门 2026-11-07 新增的输入：失焦（视频面仍在播照计）、计时开始方式、首次开播
+/// 自动起表、手动暂停旗的监听口。
 void main() {
-  test('判据：焦点在本 app 的查词窗里不算失焦（暂停查词也算时间）', () {
-    expect(
-      studyClockGateMayRun(
-        lifecycleStopped: false,
-        covered: false,
-        unfocused: true,
-        focusInOwnWindow: true,
-      ),
-      isTrue,
-    );
-    expect(
-      studyClockGateMayRun(
-        lifecycleStopped: false,
-        covered: false,
-        unfocused: true,
-        focusInOwnWindow: true,
-        manualPause: true,
-      ),
-      isFalse,
-      reason: '手动暂停仍一票否决',
-    );
-  });
-
-  test('门：失焦 + 查词窗持焦 → 可跑且 appForeground；查词窗关了 sync 重判', () {
-    bool lookupHasFocus = true;
+  // PR #3020 审查：桌面查词窗三端都不抢焦点，主窗报失焦就是切到了别的 app——不存在
+  // 「焦点在本 app 查词窗」这种失焦，门也不再有这路输入。
+  test('门：失焦且没在播放 → 停表、appForeground 为假；回前台一次落定续表', () {
     final List<bool> applied = <bool>[];
-    final StudyClockRunGate gate = StudyClockRunGate(
-      apply: applied.add,
-      focusHeldByOwnWindow: () => lookupHasFocus,
-    );
+    final StudyClockRunGate gate = StudyClockRunGate(apply: applied.add);
     addTearDown(gate.dispose);
     gate.setUnfocused(true);
-    expect(gate.mayRun, isTrue);
-    expect(gate.appForeground, isTrue);
-    lookupHasFocus = false;
-    gate.sync();
     expect(gate.mayRun, isFalse, reason: '真失焦且没在播放');
     expect(gate.appForeground, isFalse);
-    expect(applied.last, isFalse);
+    expect(applied, <bool>[false]);
+    gate.setLifecycleStopped(true);
+    gate.setFocusedForeground();
+    expect(gate.mayRun, isTrue);
+    expect(gate.appForeground, isTrue);
+    expect(applied.last, isTrue);
+    expect(applied, <bool>[false, false, true], reason: '回前台两旗一起清，只落定一次');
   });
 
   group('开始方式（与小说同一偏好）', () {

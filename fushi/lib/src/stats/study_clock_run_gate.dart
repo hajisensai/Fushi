@@ -20,10 +20,12 @@ import 'package:fushi/src/stats/study_cover_tracker.dart';
 ///   它们不是路由，[StudyCoverTracker] 看不见，由页面显式喂；
 /// - [unfocused] + [playing]：窗口失焦（`inactive`）。阅读面失焦即停；视频面失焦时
 ///   **仍在播放**就照常计（用户拍板：切走仍在播照常计时），停着则停表。
-/// - [focusInOwnWindow]：焦点在**本 app 自己的**独立顶层窗口里（桌面查词窗
-///   `GlobalLookupController`：WebView2 / NSPanel / GTK 原生窗，不是 Flutter 视图，
-///   拿走焦点时主窗照样报 `inactive`）。查词是学习的一部分（「暂停查词也算时间」），
-///   这种失焦不算失焦。
+///
+/// 桌面查词窗不是输入：它在三端都拿不到焦点（Windows `WS_EX_NOACTIVATE` + 激活守卫、
+/// macOS nonactivating `NSPanel` 且 `canBecomeKey == false`、Linux GTK
+/// `accept_focus = FALSE`），在本 app 里查词时主窗仍持焦、不会报 `inactive`，「暂停
+/// 查词也算时间」由此自然成立；主窗报 `inactive` 就是焦点去了别的 app。曾用「桌面
+/// 查词路由仍有效」冒充「焦点在本 app 的查词窗」，把切走误判成在场（PR #3020 审查）。
 bool studyClockGateMayRun({
   required bool lifecycleStopped,
   required bool covered,
@@ -31,12 +33,11 @@ bool studyClockGateMayRun({
   bool locallyCovered = false,
   bool unfocused = false,
   bool playing = false,
-  bool focusInOwnWindow = false,
 }) {
   if (manualPause || lifecycleStopped || covered || locallyCovered) {
     return false;
   }
-  return !unfocused || focusInOwnWindow || playing;
+  return !unfocused || playing;
 }
 
 /// 把门的结论落到 [clock] 上（null = 还没开始计时，跳过）。起表前从设置刷一次空闲门
@@ -75,17 +76,12 @@ class StudyClockRunGate {
   StudyClockRunGate({
     required void Function(bool mayRun) apply,
     StudyCoverTracker? tracker,
-    bool Function()? focusHeldByOwnWindow,
-  }) : _apply = apply,
-       _focusHeldByOwnWindow = focusHeldByOwnWindow {
+  }) : _apply = apply {
     _watch = StudyCoverWatch(tracker: tracker, onChanged: sync);
   }
 
   /// 门的结论直接落到 [clock] 返回的时钟上（为 null = 还没开始计时，跳过），起表时
   /// 从 [idleTimeout] 刷空闲门（见 [applyStudyClockRun]）。
-  ///
-  /// [focusHeldByOwnWindow]：焦点此刻是否在本 app 的独立查词窗里（见
-  /// [studyClockGateMayRun] 的 `focusInOwnWindow`）；该窗关掉时宿主要 [sync] 一次。
   ///
   /// [onApplied] 在每次落定后回报「时钟此刻是否在跑」与 [appForeground]（视频面据此
   /// 向跨面入账仲裁 `VideoStudyAccrualArbiter` 报到）。
@@ -93,13 +89,11 @@ class StudyClockRunGate {
     StudyClock? Function() clock, {
     StudyCoverTracker? tracker,
     Duration? Function()? idleTimeout,
-    bool Function()? focusHeldByOwnWindow,
     void Function(bool running, bool appForeground)? onApplied,
   }) {
     late final StudyClockRunGate gate;
     gate = StudyClockRunGate(
       tracker: tracker,
-      focusHeldByOwnWindow: focusHeldByOwnWindow,
       apply: (bool mayRun) {
         final bool running = applyStudyClockRun(
           clock(),
@@ -113,7 +107,6 @@ class StudyClockRunGate {
   }
 
   final void Function(bool mayRun) _apply;
-  final bool Function()? _focusHeldByOwnWindow;
   late final StudyCoverWatch _watch;
   bool _lifecycleStopped = false;
   bool _locallyCovered = false;
@@ -135,14 +128,10 @@ class StudyClockRunGate {
     locallyCovered: _locallyCovered,
     unfocused: _unfocused,
     playing: _playing,
-    focusInOwnWindow: _focusInOwnWindow,
   );
 
-  bool get _focusInOwnWindow =>
-      _unfocused && (_focusHeldByOwnWindow?.call() ?? false);
-
-  /// 本 app 此刻持有焦点（主窗聚焦，或焦点在本 app 的独立查词窗里）。
-  bool get appForeground => !_unfocused || _focusInOwnWindow;
+  /// 本 app 此刻持有焦点（主窗没报失焦；查词窗不抢焦点，见 [studyClockGateMayRun]）。
+  bool get appForeground => !_unfocused;
 
   /// 用户手动暂停着计时（UI 据此画计时键的图标）。
   bool get manualPause => _manualPause.value;
@@ -200,6 +189,14 @@ class StudyClockRunGate {
   void setUnfocused(bool unfocused) {
     if (_unfocused == unfocused) return;
     _unfocused = unfocused;
+    sync();
+  }
+
+  /// 回到前台且持焦（`resumed`）：失焦与后台两旗一起清，只落定一次（分两步清会先按
+  /// 「仍在后台」落定一次停表，再起表）。
+  void setFocusedForeground() {
+    _unfocused = false;
+    _lifecycleStopped = false;
     sync();
   }
 

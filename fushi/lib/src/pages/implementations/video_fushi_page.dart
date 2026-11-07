@@ -175,6 +175,7 @@ import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
+import 'package:fushi/src/media/video/video_study_clock_session.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
@@ -2739,17 +2740,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （[videoStudyClockLocallyCovered]）；手动暂停停。只在 tracker 采样期间起表
   /// （[VideoWatchTracker.isSampling]）——采样停了就没人喂空闲门。
   ///
-  /// 起表时从设置刷空闲门（改了「空闲多久停止计时」不必重开视频）；焦点在本 app 的
-  /// 桌面查词窗里不算失焦（暂停查词也算时间）；每次落定向跨面仲裁
-  /// [VideoStudyAccrualArbiter] 报到（与浏览器扩展视频同时播放时只一边入账时长）。
-  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(
-    _activeWatchClock,
+  /// 起表时从设置刷空闲门（改了「空闲多久停止计时」不必重开视频）；桌面查词窗不抢
+  /// 主窗焦点，暂停查词时主窗仍持焦、照常计（见 [studyClockGateMayRun]）；每次落定向
+  /// 跨面仲裁 [VideoStudyAccrualArbiter] 报到（与浏览器扩展视频同时播放时只一边入账时长）。
+  late final VideoStudyClockSession _studySession = VideoStudyClockSession(
+    clock: _activeWatchClock,
     idleTimeout: () => appModel.readingIdleTimeout,
-    focusHeldByOwnWindow: () =>
-        GlobalLookupController.instance.desktopLookupInFlight,
-    onApplied: (bool running, bool appForeground) =>
-        _studyAccrualClaim.update(running: running, foreground: appForeground),
+    settle: () => _watchTracker?.clock.flushNow(),
   );
+
+  StudyClockRunGate get _studyClockGate => _studySession.gate;
 
   /// 采样中的观看时钟（采样停了 = null，门不起表）。
   StudyClock? _activeWatchClock() {
@@ -2757,13 +2757,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (tracker == null || !tracker.isSampling) return null;
     return tracker.clock;
   }
-
-  /// 本页在视频跨面入账仲裁里的登记；时钟的 `isActive` 读它的 [timeAllowed]。
-  late final VideoStudyAccrualClaim _studyAccrualClaim =
-      VideoStudyAccrualArbiter.instance.claim(
-        surface: VideoStudySurface.inApp,
-        settle: () => _watchTracker?.clock.flushNow(),
-      );
 
   /// 手动暂停旗的 UI 读口（控制条计时键图标随它重建）；状态持有者是
   /// [_studyClockGate]（开始方式的自动起表也会翻它）。
@@ -3766,8 +3759,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 学习计时门的页内遮挡输入（侧板 / 布局编辑；剧集列表不盖画面、不停表）。
     _videoSidePanel.addListener(_syncStudyClockLocalCover);
     _videoControlEditMode.addListener(_syncStudyClockLocalCover);
-    // 桌面查词窗被关掉：焦点不再「在本 app 的查词窗里」，计时门按真实失焦重判。
-    GlobalLookupController.instance.addHiddenListener(_studyClockGate.sync);
     // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
     // 打开 / 关闭时光标策略不重跑，鼠标悬在弹窗上仍被上一轮的 `cursor: none` 吃掉。
     _lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit);
@@ -3816,7 +3807,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // inactive = 失焦（桌面切到别的窗口 / 通知栏下拉 / 多任务切换）：落库即可，
         // 采样不停。计时门按「失焦时仍在播放才计」裁决（用户拍板：切走仍在播照常
         // 计时；停着就停表）。
-        _studyClockGate.setUnfocused(true);
+        _studySession.onAppLifecycleChanged(state);
         unawaited(_controller?.flushPosition());
         unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
@@ -3828,7 +3819,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
         _watchTracker?.stop();
-        _studyClockGate.setLifecycleStopped(true);
+        _studySession.onAppLifecycleChanged(state);
         // BUG-1863：记下「真的进过后台」。移动端在 app 不可见期间可能被系统回收硬件
         // 解码器，回来后解码从非关键帧继续、参考帧缺失 → 静止区域被 libavcodec 的
         // error concealment 填成中性灰。`inactive` 不置这个标记（那期间 app 仍持有
@@ -3843,8 +3834,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // 回前台：先重启位置采样，再按计时门续表（仍被盖住 / 手动暂停就不续；时钟
         // start() 重锚 tick 起点与空闲基准，后台那段不入账）。
         _watchTracker?.start();
-        _studyClockGate.setUnfocused(false);
-        _studyClockGate.setLifecycleStopped(false);
+        _studySession.onAppLifecycleChanged(state);
         // BUG-1863：从真后台回来先把视频解码链重建一次（详见
         // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
         _refreshDecodeAfterResumeIfNeeded();
@@ -6463,7 +6453,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               // 起表时再由计时门从设置刷（[applyStudyClockRun]）。
               idleTimeout: appModel.readingIdleTimeout,
               // 与浏览器扩展视频同时播放时只一边入账时长（[VideoStudyAccrualArbiter]）。
-              isActive: () => _studyAccrualClaim.timeAllowed,
+              isActive: () => _studySession.timeAllowed,
               onWriteError: (Object e, StackTrace st) => ErrorLogService
                   .instance
                   .log('StudyClock.write(video)', e, st),
@@ -6954,9 +6944,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _volumeDisplay.dispose();
     _watchTracker?.dispose();
     _watchTracker = null;
-    GlobalLookupController.instance.removeHiddenListener(_studyClockGate.sync);
-    _studyClockGate.dispose();
-    _studyAccrualClaim.release();
+    _studySession.dispose();
     _stopAdaptiveQuality();
     // TODO-1276：撤销首帧就绪监听 + 兜底定时器（回调读 _controller，须在 dispose 前摘）。
     _networkOpenDiagnoseTimer?.cancel();
