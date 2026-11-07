@@ -2,6 +2,7 @@
 // 按区块选项取媒体（新加模板的起点见 srs_template_presets_test.dart）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -26,12 +27,12 @@ void main() {
         FushiCardHtmlItem(html),
       ];
       expect(
-        srsFushiCardItemsNative(
+        srsFushiCardItemsFallback(
           front: kFushiCardDefaultFrontItems,
           back: back('<p style="color:red">自定义</p>'),
           fields: _fields(),
         ),
-        isTrue,
+        isNull,
       );
       for (final String bad in <String>[
         '<script>alert(1)</script>',
@@ -39,12 +40,12 @@ void main() {
         '<div style="position:absolute">x</div>',
       ]) {
         expect(
-          srsFushiCardItemsNative(
+          srsFushiCardItemsFallback(
             front: kFushiCardDefaultFrontItems,
             back: back(bad),
             fields: _fields(),
           ),
-          isFalse,
+          isNotNull,
           reason: bad,
         );
         expect(srsHtmlFragmentProbe(bad).reason, isNotNull, reason: bad);
@@ -56,15 +57,15 @@ void main() {
         'MiscInfo': '<table><tr><td>x</td></tr></table>',
       });
       expect(
-        srsFushiCardItemsNative(
+        srsFushiCardItemsFallback(
           front: kFushiCardDefaultFrontItems,
           back: <FushiCardItem>[FushiCardFieldItem(field: 'MiscInfo')],
           fields: f,
         ),
-        isFalse,
+        isNotNull,
       );
       expect(
-        srsFushiCardItemsNative(
+        srsFushiCardItemsFallback(
           front: kFushiCardDefaultFrontItems,
           back: <FushiCardItem>[
             FushiCardFieldItem(
@@ -74,7 +75,7 @@ void main() {
           ],
           fields: f,
         ),
-        isTrue,
+        isNull,
       );
     });
 
@@ -86,7 +87,7 @@ void main() {
         isEmpty: false,
         fields: _fields(),
       );
-      expect(srsFushiCardRenderedNative(r), isFalse);
+      expect(srsCardFaceRoute(r, fushiCard: true), isA<SrsCardFaceWeb>());
       final SrsRenderedCard ok = SrsRenderedCard(
         question: '',
         answer: '',
@@ -97,7 +98,10 @@ void main() {
         fushiCardFront: kFushiCardDefaultFrontItems,
         fushiCardBack: kFushiCardDefaultBackItems,
       );
-      expect(srsFushiCardRenderedNative(ok), isTrue);
+      expect(
+        srsCardFaceRoute(ok, fushiCard: true),
+        isA<SrsCardFaceFushiNative>(),
+      );
     });
   });
 

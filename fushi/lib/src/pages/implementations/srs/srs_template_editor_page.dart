@@ -443,6 +443,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                     f.id: _sampleFields[f.name] ?? '',
                 },
                 tags: _sample?.tags ?? const <String>[],
+                languageCode: ref.read(appProvider).defaultContentLanguage,
               )
             : null;
       }

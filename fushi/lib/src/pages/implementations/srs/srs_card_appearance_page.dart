@@ -15,6 +15,7 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -25,8 +26,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardRenderedNative;
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -154,8 +154,15 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
   AnkiRenderedCard? _sample;
   String _css = FushiCardNoteType.template.css;
 
-  /// 用户的 Fushi 卡片模板未改过：预览与复习页一样走原生 + 释义 WebView。
-  bool _sampleNative = true;
+  /// 样例卡（用户当前的 Fushi 卡片模板 + 样例字段）能原生画时的混合渲染内容；与复习页同一
+  /// 判据（[srsFushiCardNative] + [srsCardFaceRoute]）。null = 还没读到用户模板（按内置模板）
+  /// 或走整面 WebView（原因见 [_sampleFallback]）。
+  SrsFushiCardNative? _sampleNativeCard;
+
+  /// 样例卡走整面 WebView 的原因；null = 走原生（复习卡同样走原生，外观选项生效）。
+  SrsCardNativeFallback? _sampleFallback;
+
+  bool get _sampleNative => _sampleFallback == null;
 
   /// 读到的库与 Fushi 卡片笔记类型（「恢复内置模板」入口用）。
   SrsDbStore? _store;
@@ -205,22 +212,19 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
           for (final SrsFieldDef f in type.fields) f.id: f.name,
         };
         final SrsTemplateDef tpl = type.templates.first;
-        final AnkiRenderedCard? sample = _renderSample(
-          templateIdsToNames(tpl.front, idToName),
-          templateIdsToNames(tpl.back, idToName),
-        );
+        final String front = templateIdsToNames(tpl.front, idToName);
+        final String back = templateIdsToNames(tpl.back, idToName);
+        final AnkiRenderedCard? sample = _renderSample(front, back);
         if (mounted && sample != null) {
+          final ({SrsFushiCardNative? native, SrsCardNativeFallback? fallback})
+          route = _sampleRouteOf(type, front, back);
           setState(() {
             _store = store;
             _fushiType = type;
             _sample = sample;
             _css = type.css;
-            _sampleNative =
-                templateIdsToNames(tpl.front, idToName) ==
-                    FushiCardNoteType.template.front &&
-                templateIdsToNames(tpl.back, idToName) ==
-                    FushiCardNoteType.template.back &&
-                type.css == FushiCardNoteType.template.css;
+            _sampleNativeCard = route.native;
+            _sampleFallback = route.fallback;
           });
         }
       }
@@ -239,6 +243,39 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsCardAppearance.load', e, stack);
     }
+  }
+
+  /// 样例卡按用户当前的模板 [front] / [back]（名字形式）与样式走哪种卡面：与复习页同一判据。
+  ({SrsFushiCardNative? native, SrsCardNativeFallback? fallback})
+  _sampleRouteOf(SrsNoteTypeView type, String front, String back) {
+    final Map<String, String> fields = srsSampleCardFields();
+    final SrsFushiCardNativeProbe probe = srsFushiCardNative(
+      builtinKey: type.builtinKey,
+      front: front,
+      back: back,
+      css: type.css,
+      fieldsByName: fields,
+      cardOrd: 0,
+    );
+    final SrsFushiCardNative? native = probe.native;
+    final SrsCardFaceRoute route = srsCardFaceRoute(
+      SrsRenderedCard(
+        question: '',
+        answer: '',
+        css: native?.css ?? type.css,
+        isEmpty: false,
+        fields: fields,
+        fushiCardDefinitions: native?.definitions,
+        fushiCardFront: native?.front ?? const <FushiCardItem>[],
+        fushiCardBack: native?.back ?? const <FushiCardItem>[],
+        nativeFallback: probe.fallback,
+      ),
+      fushiCard: true,
+      languageCode: ref.read(appProvider).defaultContentLanguage,
+    );
+    return route is SrsCardFaceWeb
+        ? (native: null, fallback: route.fallback)
+        : (native: native, fallback: null);
   }
 
   SrsCardAppearance get _appearance => ref.watch(srsCardAppearanceProvider);
@@ -417,7 +454,7 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     final String body = mine
         ? (_answer ? _mine!.answer : _mine!.question)
         : (_answer ? _sample?.answer : _sample?.question) ?? '';
-    final String css = mine ? _mine!.css : _css;
+    final String css = mine ? _mine!.css : (_sampleNativeCard?.css ?? _css);
     final String language = ref.read(appProvider).defaultContentLanguage;
     final SrsCardFace face = SrsCardFace(
       cardId: 'appearance-preview-${mine ? 'mine' : 'sample'}',
@@ -499,18 +536,26 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     SrsCardFaceBuilder faceBuilder, {
     required bool mine,
   }) {
-    // 我的卡：与复习页同一判据（区块布局认得出、自定义区块原生画得全）。
+    // 我的卡与样例卡都与复习页同一判据（[srsCardFaceRoute]：区块布局认得出、媒体与自定义区块
+    // 原生画得全）。
     final String? defs = mine
-        ? (srsFushiCardRenderedNative(_mine!, languageCode: face.languageCode)
+        ? (srsCardFaceRoute(
+                    _mine!,
+                    fushiCard: true,
+                    languageCode: ref.read(appProvider).defaultContentLanguage,
+                  )
+                  is SrsCardFaceFushiNative
               ? _mine!.fushiCardDefinitions
               : null)
-        : (_sampleNative ? _sampleDefinitions : null);
+        : (_sampleNative
+              ? (_sampleNativeCard?.definitions ?? _sampleDefinitions)
+              : null);
     if (defs == null) return faceBuilder(context, face);
     return SrsFushiCardView(
       key: const ValueKey<String>('srs-card-preview-native'),
       face: face,
-      front: mine ? _mine!.fushiCardFront : null,
-      back: mine ? _mine!.fushiCardBack : null,
+      front: mine ? _mine!.fushiCardFront : _sampleNativeCard?.front,
+      back: mine ? _mine!.fushiCardBack : _sampleNativeCard?.back,
       fields: mine ? _mine!.fields : srsSampleCardFields(),
       definitionsHtml: defs,
     );
@@ -623,8 +668,19 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsDbStore? store = _store;
     final SrsNoteTypeView? type = _fushiType;
+    final SrsCardNativeFallback? fallback = _sampleFallback;
+    // 样式 / 模板类原因才给「恢复内置模板」（媒体、区块的原因恢复模板解决不了）。
+    final bool templateCause = switch (fallback?.code) {
+      SrsCardNativeFallbackCode.cssModified ||
+      SrsCardNativeFallbackCode.frontTemplate ||
+      SrsCardNativeFallbackCode.backTemplate => true,
+      _ => false,
+    };
     final bool restorable =
-        store != null && type != null && store.builtinTemplatesModified(type);
+        templateCause &&
+        store != null &&
+        type != null &&
+        store.builtinTemplatesModified(type);
     return AdaptiveSettingsSection(
       key: const ValueKey<String>('srs-card-native-off'),
       children: <Widget>[
@@ -644,9 +700,37 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
                   ),
                   SizedBox(width: tokens.spacing.gap),
                   Expanded(
-                    child: Text(
-                      t.srs_card_appearance_native_off_hint,
-                      style: context.fushiType.bodyMedium,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          t.srs_card_appearance_native_off_hint,
+                          style: context.fushiType.bodyMedium,
+                        ),
+                        if (fallback != null) ...<Widget>[
+                          SizedBox(height: tokens.spacing.gap / 2),
+                          Text(
+                            srsCardNativeFallbackText(fallback),
+                            key: const ValueKey<String>(
+                              'srs-card-native-off-reason',
+                            ),
+                            style: context.fushiType.bodyMedium,
+                          ),
+                          if (fallback.detail.isNotEmpty &&
+                              fallback.code != SrsCardNativeFallbackCode.block)
+                            Text(
+                              fallback.detail,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.fushiType.bodySmall.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -1101,3 +1185,21 @@ class _Swatch extends StatelessWidget {
     );
   }
 }
+
+/// 卡面没走原生的原因，给用户看的一句话（外观页提示）。
+String srsCardNativeFallbackText(SrsCardNativeFallback f) => switch (f.code) {
+  SrsCardNativeFallbackCode.block => t.srs_fushi_block_html_unsupported(
+    reason: f.detail,
+  ),
+  SrsCardNativeFallbackCode.cssModified => t.srs_card_native_off_reason(
+    reason: t.srs_card_native_reason_css_modified,
+  ),
+  SrsCardNativeFallbackCode.frontTemplate ||
+  SrsCardNativeFallbackCode.backTemplate => t.srs_card_native_off_reason(
+    reason: t.srs_card_native_reason_template_modified,
+  ),
+  SrsCardNativeFallbackCode.media => t.srs_card_native_off_reason(
+    reason: t.srs_card_native_reason_media,
+  ),
+  _ => t.srs_card_native_off_reason(reason: f.toString()),
+};

@@ -1205,7 +1205,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   }
 
   /// 卡面上的一段 HTML（字段区块 / HTML 区块）：原生 HTML 渲染器画（能不能画由
-  /// [srsFushiCardItemsNative] 事先判过，画不了的卡整张走 WebView，不会到这里）。
+  /// [srsFushiCardItemsFallback] 事先判过，画不了的卡整张走 WebView，不会到这里）。
   Widget? _htmlFragment(String html, String key) {
     if (html.trim().isEmpty) return null;
     final SrsHtmlCardFace? face = srsHtmlFragmentProbe(

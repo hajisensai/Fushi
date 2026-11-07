@@ -3,7 +3,7 @@
 ///
 /// 引擎只判模板认不认得出区块布局（`srsFushiCardNative`）；HTML 区块里写了原生 HTML 子集
 /// 画不了的东西（脚本、表格、定位……）由这里再判一次，画不了就整张卡回退 WebView。复习页、
-/// 浏览预览、笔记 / 模板编辑预览、外观页预览共用这一处判据。
+/// 浏览预览、笔记 / 模板编辑预览、外观页预览都经 srs_card_face_route.dart 用这一处判据。
 library;
 
 import 'package:fushi_anki/fushi_anki_core.dart'
@@ -12,7 +12,6 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         FushiCardFieldStyle,
         FushiCardHtmlItem,
         FushiCardItem;
-import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
 
 import 'package:fushi/src/srs/srs_html_card.dart';
 
@@ -76,8 +75,9 @@ String? srsFushiItemHtml(
   _ => null,
 };
 
-/// 正背面布局（[front] / [back]）里的字段区块 / HTML 区块原生都画得了吗。
-bool srsFushiCardItemsNative({
+/// 正背面布局（[front] / [back]）里的字段区块 / HTML 区块原生画不了时，第一处画不了的原因
+/// （[srsHtmlFragmentProbe] 的原因）；都画得了为 null。卡面路线见 srs_card_face_route.dart。
+String? srsFushiCardItemsFallback({
   required List<FushiCardItem> front,
   required List<FushiCardItem> back,
   required Map<String, String> fields,
@@ -86,22 +86,9 @@ bool srsFushiCardItemsNative({
   for (final FushiCardItem x in <FushiCardItem>[...front, ...back]) {
     final String? html = srsFushiItemHtml(x, fields);
     if (html == null || html.trim().isEmpty) continue;
-    if (srsHtmlFragmentProbe(html, languageCode: languageCode).face == null) {
-      return false;
-    }
+    final ({SrsHtmlCardFace? face, String? reason}) probe =
+        srsHtmlFragmentProbe(html, languageCode: languageCode);
+    if (probe.face == null) return probe.reason ?? 'unsupported';
   }
-  return true;
+  return null;
 }
-
-/// 引擎渲染好的卡 [r] 走不走原生 Fushi 卡面（混合渲染）：引擎认得出区块布局
-/// （[SrsRenderedCard.fushiCardDefinitions] 非 null），且自定义区块原生画得全。
-bool srsFushiCardRenderedNative(SrsRenderedCard r, {String? languageCode}) =>
-    r.fushiCardDefinitions != null &&
-    srsFushiCardItemsNative(
-      front: r.fushiCardFront,
-      back: r.fushiCardBack,
-      fields: r.fields,
-      languageCode: languageCode == null || languageCode.isEmpty
-          ? null
-          : languageCode,
-    );
