@@ -174,7 +174,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/v1/dev/feedback/:id` | 签名·开发者 | 详情（含联系方式 / 设备信息 / 反馈人） |
 | GET | `/v1/dev/feedback/:id/attachments/:slot[?view=text\|download=1]` | 签名·开发者 | 附件；日志 `view=text` 服务端流式解压；视频支持 `Range`（206），`download=1` 作附件下载 |
 | POST | `/v1/dev/feedback/:id` `{status?, reply?}` | 签名·写·开发者 | 改状态 / 回复 |
-| POST | `/v1/dev/feedback/:id/notes` `{aiSummary?, devNote?}` | 签名·写·开发者 | AI 总结 / 开发者批改（仅开发者可见，反馈人接口不返回；空白 = 清除）。本机 CLI：`node scripts/feedback.mjs`（list / show / summarize），见 `docs/specs/2026-10-08-feedback.md` |
+| POST | `/v1/dev/feedback/:id/notes` `{aiSummary?, devNote?}` | 签名·写·开发者 | AI 总结 / 开发者批改（仅开发者可见，反馈人接口不返回；空白 = 清除）。本机 CLI：`node scripts/feedback.mjs`（list / show / summarize / fixed / reply / new / status），见 `docs/specs/2026-10-08-feedback.md` |
 | POST | `/v1/ci/feedback/fixed` `{sha, ids ≤ 50, scope: app\|none}` | Bearer `FEEDBACK_CI_TOKEN` | CI 标记修复 commit → `{updated, unchanged, missing}`（open / 处理中 → 已解决并记时间线；换了 sha 或 scope 会清空已发布记录，sha 与 scope 都没变的幂等跳过、进 `unchanged`）。没配 secret 时 `/v1/ci/**` 一律 404。手动兜底：`node scripts/feedback.mjs fixed <id> --sha <commit> [--no-app]` |
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
