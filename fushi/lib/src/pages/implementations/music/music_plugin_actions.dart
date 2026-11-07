@@ -148,26 +148,46 @@ MusicItemMenu? musicPluginTrackMenu(
   MusicPluginPlaylist? inPlaylist,
   VoidCallback? onChanged,
 }) {
-  List<MusicMenuAction> actions() => _pluginTrackActions(
-    ref,
-    manifest,
-    track,
-    inPlaylist: inPlaylist,
-    onChanged: onChanged,
-  );
+  List<MusicMenuAction> actions({bool inLibrary = false}) =>
+      _pluginTrackActions(
+        ref,
+        manifest,
+        track,
+        inPlaylist: inPlaylist,
+        onChanged: onChanged,
+        inLibrary: inLibrary,
+      );
   if (actions().isEmpty) return null;
   return MusicItemMenu(
     buttonKey: ValueKey<String>('music-plugin-track-menu-${track.id}'),
-    open: (MusicMenuAnchor? anchor) => unawaited(
-      showMusicActionMenu(
+    open: (MusicMenuAnchor? anchor) => unawaited(() async {
+      // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
+      final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
+      final bool inLibrary = await _inMusicLibrary(ref, manifest, track);
+      if (!context.mounted) return;
+      await showMusicActionMenu(
         context,
-        anchor: anchor,
-        // 菜单打开时重算：喜欢状态可能刚在别处变过。
-        actions: actions(),
+        anchor: at,
+        // 菜单打开时重算：喜欢 / 入库状态可能刚在别处变过。
+        actions: actions(inLibrary: inLibrary),
         errorText: (Object e) => _pluginActionError(manifest, e),
-      ),
-    ),
+      );
+    }()),
   );
+}
+
+/// 这首插件曲目是否已加入音乐库（远程曲目，v147）；库没就绪时按不在库。
+Future<bool> _inMusicLibrary(
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  MusicPluginTrack track,
+) async {
+  final AppModel app = ref.read(appProvider);
+  if (!app.isDatabaseReady || !musicRemoteTracksAvailable) return false;
+  final MusicRemoteTrackRow? row = await app.database.getMusicRemoteTrack(
+    musicPluginTrackUid(manifest.id, track.id),
+  );
+  return row?.libraryAddedAt != null;
 }
 
 List<MusicMenuAction> _pluginTrackActions(
@@ -176,9 +196,11 @@ List<MusicMenuAction> _pluginTrackActions(
   MusicPluginTrack track, {
   MusicPluginPlaylist? inPlaylist,
   VoidCallback? onChanged,
+  bool inLibrary = false,
 }) {
   bool can(MusicPluginCapability c) => manifest.can(c);
-  final MusicSession session = ref.read(appProvider).musicSession;
+  final AppModel app = ref.read(appProvider);
+  final MusicSession session = app.musicSession;
   final MusicPlayItem item = musicPluginPlayItem(manifest.id, track);
   final bool likeable = track.playable && session.canFavorite(item);
   final bool liked = likeable && session.isFavorite(item);
@@ -239,6 +261,14 @@ List<MusicMenuAction> _pluginTrackActions(
           },
         ),
     ],
+    // 加入音乐库 / 本地歌单（远程曲目，v147）：与账号歌单并列时写明「本地」。
+    if (track.playable && app.isDatabaseReady)
+      ...musicRemoteLibraryActions(
+        app.database,
+        item,
+        inLibrary: inLibrary,
+        playlistLabel: t.music_action_add_to_local_playlist,
+      ),
     if (can(MusicPluginCapability.radio) && track.playable)
       MusicMenuAction(
         id: 'station',

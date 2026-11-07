@@ -17,7 +17,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show musicServerTrackUid;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
-    show kYoutubeMusicServerId, youtubeMusicTrackPath, youtubeMusicVideoIdFromPath;
+    show
+        kYoutubeMusicServerId,
+        youtubeMusicTrackPath,
+        youtubeMusicVideoIdFromPath;
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
@@ -71,8 +74,9 @@ MusicRemoteIdentity? musicRemoteIdentityOfPath(String path) {
       itemId: videoId,
     );
   }
-  final ({String pluginId, String trackId})? plugin =
-      parseMusicPluginTrackPath(path);
+  final ({String pluginId, String trackId})? plugin = parseMusicPluginTrackPath(
+    path,
+  );
   if (plugin != null) {
     return (
       kind: MusicRemoteTrackKind.plugin,

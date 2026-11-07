@@ -88,9 +88,11 @@ MusicItemMenu musicLocalTrackMenu(
             label: t.music_action_add_to_playlist,
             icon: FushiIcons.playlist,
             run: (BuildContext c) async {
-              await musicAddItemsToLocalPlaylist(c, app.database, <
-                MusicPlayItem
-              >[musicPlayItemOf(track)]);
+              await musicAddItemsToLocalPlaylist(
+                c,
+                app.database,
+                <MusicPlayItem>[musicPlayItemOf(track)],
+              );
             },
           ),
         ...extra,
@@ -165,31 +167,44 @@ class MusicTrackListPlaylist {
 /// 条目可以是本地曲库曲目，也可以是加入音乐库 / 歌单的远程曲目（[MusicLibraryEntry]，v147）：
 /// 两种排在同一条队列里，远程曲目行带封面缩略图与来源名、行尾是「更多」菜单。
 class MusicTrackList extends ConsumerStatefulWidget {
-  MusicTrackList({
+  /// 只有本地曲库曲目的列表（专辑 / 艺人 / 歌曲分区）。
+  const MusicTrackList({
     super.key,
     required List<MusicTrackRow> tracks,
     required this.albums,
     required this.context,
     this.shrinkWrap = false,
     this.showTrackNumbers = false,
-  }) : entries = <MusicLibraryEntry>[
-         for (final MusicTrackRow t in tracks) MusicLocalEntry(t),
-       ],
+  }) : _tracks = tracks,
+       _entries = null,
        playlist = null,
        source = null;
 
+  /// 本地与远程曲目混排的列表（歌曲分区含远程曲目、本地歌单）。
   const MusicTrackList.entries({
     super.key,
-    required this.entries,
+    required List<MusicLibraryEntry> entries,
     required this.albums,
     required this.context,
     this.shrinkWrap = false,
     this.showTrackNumbers = false,
     this.playlist,
     this.source,
-  });
+  }) : _entries = entries,
+       _tracks = null;
 
-  final List<MusicLibraryEntry> entries;
+  final List<MusicTrackRow>? _tracks;
+  final List<MusicLibraryEntry>? _entries;
+
+  /// 调用方传进来的那份列表（判断「列表换了没有」用身份，不逐项比）。
+  Object get _source => _entries ?? _tracks!;
+
+  /// 列表条目（本地构造时现包一层）。
+  List<MusicLibraryEntry> get entries =>
+      _entries ??
+      <MusicLibraryEntry>[
+        for (final MusicTrackRow t in _tracks!) MusicLocalEntry(t),
+      ];
   final Map<String, MusicAlbumRow> albums;
 
   /// 队列语境（决定 ReplayGain 模式）。
@@ -211,7 +226,10 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   /// 这一列曲目的断点：挂上时按块查齐，之后只吃这一列里那几首的改动。
   late final MusicResumePointsWatch _resume;
 
-  List<MusicLibraryEntry> get entries => widget.entries;
+  /// [MusicTrackList.entries] 的缓存：调用方的列表换了才重包。
+  late List<MusicLibraryEntry> _list = widget.entries;
+
+  List<MusicLibraryEntry> get entries => _list;
 
   static List<String> _uids(List<MusicLibraryEntry> entries) => <String>[
     for (final MusicLibraryEntry e in entries) e.trackUid,
@@ -220,22 +238,17 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   @override
   void initState() {
     super.initState();
-    _resume =
-        ref
-            .read(appProvider)
-            .musicSession
-            .watchResumePoints(_uids(widget.entries))
-          ..addListener(_onResumeChanged);
+    _resume = ref.read(appProvider).musicSession.watchResumePoints(_uids(_list))
+      ..addListener(_onResumeChanged);
   }
 
   @override
   void didUpdateWidget(MusicTrackList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 本地构造每次重建都新建条目列表：按 uid 序列比，不按身份比（否则每帧重查断点）。
-    if (!identical(oldWidget.entries, widget.entries) &&
-        !listEquals(_uids(oldWidget.entries), _uids(widget.entries))) {
-      _resume.watch(_uids(widget.entries));
-    }
+    if (identical(oldWidget._source, widget._source)) return;
+    final List<MusicLibraryEntry> previous = _list;
+    _list = widget.entries;
+    if (!listEquals(_uids(previous), _uids(_list))) _resume.watch(_uids(_list));
   }
 
   @override
@@ -533,7 +546,8 @@ Widget? musicTrackSubtitleWithResume(
   MusicTrackRow track,
   Widget? subtitle,
   Duration? resume,
-) => musicSubtitleWithResume(track.trackUid, track.durationMs, subtitle, resume);
+) =>
+    musicSubtitleWithResume(track.trackUid, track.durationMs, subtitle, resume);
 
 /// [musicTrackSubtitleWithResume] 的通用形（远程曲目也用：只要 uid 与曲长）。
 Widget? musicSubtitleWithResume(

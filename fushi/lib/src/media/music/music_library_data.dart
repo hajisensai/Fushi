@@ -42,8 +42,8 @@ class MusicLibrarySnapshot {
   /// 上恒为空（[load] 不读）。
   final List<MusicRemoteTrackRow> remoteTracks;
 
-  /// 「歌曲」分区的条目：本地曲目在前，远程曲目随后（同一条队列）。
-  List<MusicLibraryEntry> get songEntries => <MusicLibraryEntry>[
+  /// 「歌曲」分区的条目：本地曲目在前，远程曲目随后（同一条队列）。快照不可变，算一次。
+  late final List<MusicLibraryEntry> songEntries = <MusicLibraryEntry>[
     for (final MusicTrackRow t in tracks) MusicLocalEntry(t),
     for (final MusicRemoteTrackRow r in remoteTracks) MusicRemoteEntry(r),
   ];
@@ -59,8 +59,13 @@ class MusicLibrarySnapshot {
 
   final Map<String, MusicTrackRow> _trackByUid;
 
-  /// 曲库里什么都没有：没有曲目，也没有（还没导入章节的）光盘专辑，也没有加入的远程曲目。
-  bool get isEmpty => tracks.isEmpty && albums.isEmpty && remoteTracks.isEmpty;
+  /// 曲库里什么都没有：没有曲目，也没有（还没导入章节的）光盘专辑、加入的远程曲目与本地
+  /// 歌单（歌单可以只装远程曲目，此时曲库没有一首本地曲目也不是空的）。
+  bool get isEmpty =>
+      tracks.isEmpty &&
+      albums.isEmpty &&
+      remoteTracks.isEmpty &&
+      playlists.isEmpty;
 
   /// 专辑内嵌封面所在的音频文件（[MusicAlbumRow.coverTrackUid] → 路径）。
   String? embeddedCoverPathOf(MusicAlbumRow album) {
@@ -166,7 +171,9 @@ Future<List<MusicPlaylistItem>> loadMusicPlaylistItems(
   final List<MusicPlaylistEntryRow> rows = await db.listMusicPlaylistEntries(
     playlistUid,
   );
-  final Iterable<String> uids = rows.map((MusicPlaylistEntryRow r) => r.trackUid);
+  final Iterable<String> uids = rows.map(
+    (MusicPlaylistEntryRow r) => r.trackUid,
+  );
   final Map<String, MusicTrackRow> local = await db.listMusicTracksByUid(uids);
   final Map<String, MusicRemoteTrackRow> remote =
       (remoteAvailable ?? musicRemoteTracksAvailable)

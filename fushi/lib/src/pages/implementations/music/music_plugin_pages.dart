@@ -8,7 +8,12 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, MusicAlbumRow, MusicTrackRow;
+    show
+        FushiDatabase,
+        MusicAlbumRow,
+        MusicPlaylistRow,
+        MusicRemoteTrackRow,
+        MusicTrackRow;
 import 'package:fushi_music/fushi_music.dart';
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
@@ -29,6 +34,11 @@ import 'package:fushi/src/pages/implementations/music/music_mv_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart'
+    show openMusicLocalPlaylist;
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicRemoteTracksAvailable;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -1717,6 +1727,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
   /// 能点回去的来源种类（服务器来源要现连服务器，先不进快捷格）。
   static const Set<MusicPlaySourceKind> _kinds = <MusicPlaySourceKind>{
     MusicPlaySourceKind.album,
+    MusicPlaySourceKind.playlist,
     MusicPlaySourceKind.pluginAlbum,
     MusicPlaySourceKind.pluginPlaylist,
   };
@@ -1763,6 +1774,14 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         );
         if (!mounted) return;
         await _push(context, MusicAlbumPage(album: album, tracks: tracks));
+      case MusicPlaySourceKind.playlist:
+        // 本地歌单（v147 起可建可播）：删了的歌单不再能点回去。
+        final MusicPlaylistRow? playlist = await ref
+            .read(appProvider)
+            .database
+            .getMusicPlaylist(src.id);
+        if (playlist == null || !mounted) return;
+        openMusicLocalPlaylist(context, playlist);
       case MusicPlaySourceKind.pluginAlbum ||
           MusicPlaySourceKind.pluginPlaylist:
         final ({String hostId, String itemId})? ref_ = src.hostRef;

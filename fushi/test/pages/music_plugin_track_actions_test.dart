@@ -16,6 +16,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show musicPluginTrackPath, musicPluginTrackUid;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -656,6 +659,119 @@ void main() {
     await tester.tap(menuAction('play'));
     await tester.pumpAndSettle();
     expect(app.musicSession.engine.current?.title, 'Local One');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // ── 远程曲目加入音乐库 / 本地歌单（v147，反馈 0tRY-D2JgG）──
+
+  testWidgets('插件曲目菜单：加入音乐库 → 落远程曲目行；再开菜单变成「从音乐库移除」', (
+    WidgetTester tester,
+  ) async {
+    await pumpPlaylist(tester, _other);
+    await openTrackMenu(tester, '1');
+    expect(menuAction('addToLocalPlaylist'), findsOneWidget);
+    expect(find.text(t.music_action_add_to_local_playlist), findsOneWidget);
+    await tester.tap(menuAction('addToLibrary'));
+    await tester.pumpAndSettle();
+    final MusicRemoteTrackRow row = (await db.getMusicRemoteTrack(
+      musicPluginTrackUid(_pluginId, '1'),
+    ))!;
+    expect(row.kind, 'plugin');
+    expect(row.sourceKey, _pluginId);
+    expect(row.itemId, '1');
+    expect(row.title, 'Track 1');
+    expect(row.libraryAddedAt, isNotNull);
+
+    await openTrackMenu(tester, '1');
+    expect(menuAction('addToLibrary'), findsNothing);
+    await tester.tap(menuAction('removeFromLibrary'));
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getMusicRemoteTrack(
+        musicPluginTrackUid(_pluginId, '1'),
+      ))?.libraryAddedAt,
+      isNull,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('插件曲目菜单「加入本地歌单」→ 新建歌单：条目与远程曲目行同时落库', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _other);
+    await openTrackMenu(tester, '2');
+    await tester.tap(menuAction('addToLocalPlaylist'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.music_action_new_playlist));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Road');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    final MusicPlaylistRow p = (await db.listMusicPlaylists()).single;
+    expect(p.name, 'Road');
+    final List<MusicPlaylistEntryRow> entries = await db
+        .listMusicPlaylistEntries(p.playlistUid);
+    expect(entries.single.trackUid, musicPluginTrackUid(_pluginId, '2'));
+    final MusicRemoteTrackRow row = (await db.getMusicRemoteTrack(
+      musicPluginTrackUid(_pluginId, '2'),
+    ))!;
+    expect(row.libraryAddedAt, isNull, reason: '加进歌单不等于加入音乐库');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('混排曲目列表：远程曲目行带「⋯」菜单，点行以整列为队列从这首起播', (WidgetTester tester) async {
+    const MusicTrackRow local = MusicTrackRow(
+      trackUid: 'lt1',
+      path: '/m/local.flac',
+      title: 'Local One',
+      isLossless: true,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    final String uid = musicPluginTrackUid(_pluginId, '9');
+    final MusicRemoteTrackRow remote = MusicRemoteTrackRow(
+      trackUid: uid,
+      kind: 'plugin',
+      sourceKey: _pluginId,
+      itemId: '9',
+      title: 'Remote Nine',
+      artist: 'Singer',
+      libraryAddedAt: 5,
+      createdAt: 5,
+      updatedAt: 5,
+    );
+    await pumpHome(
+      tester,
+      Scaffold(
+        body: MusicTrackList.entries(
+          entries: <MusicLibraryEntry>[
+            const MusicLocalEntry(local),
+            MusicRemoteEntry(remote),
+          ],
+          albums: const <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.text('Singer · $_pluginId'), findsOneWidget);
+    await tester.tap(find.byKey(ValueKey<String>('music-track-$uid')));
+    await tester.pumpAndSettle();
+    final MusicPlayerEngine engine = app.musicSession.engine;
+    expect(engine.current?.title, 'Remote Nine');
+    expect(engine.current?.trackUid, uid);
+    expect(engine.current?.path, musicPluginTrackPath(_pluginId, '9'));
+    expect(engine.queue.map((MusicPlayItem i) => i.trackUid), <String>[
+      'lt1',
+      uid,
+    ]);
+
+    await tester.tap(
+      find.byKey(ValueKey<String>('music-remote-track-menu-$uid')),
+    );
+    await tester.pumpAndSettle();
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('removeFromLibrary'), findsOneWidget);
+    expect(menuAction('addToLocalPlaylist'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

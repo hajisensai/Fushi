@@ -33,6 +33,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicBarReserve, MusicFloatingBarHost;
@@ -44,6 +46,8 @@ import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicPlaylistTarget, musicCreatePlaylist;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -339,6 +343,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicTracks,
                 db.musicAlbums,
                 db.musicPlaylists,
+                db.musicRemoteTracks,
                 db.musicDiscSources,
                 db.musicPlayEvents,
               ],
@@ -960,9 +965,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         artists: snap.artists,
         onOpen: (MusicArtistRow a) => unawaited(_openArtist(a)),
       ),
+      // 本地曲目在前，加入音乐库的远程曲目（YouTube / 在线插件，v147）随后，同一条队列。
       MusicLibrarySection.songs ||
-      MusicLibrarySection.recommend => MusicTrackList(
-        tracks: snap.tracks,
+      MusicLibrarySection.recommend => MusicTrackList.entries(
+        entries: snap.songEntries,
         albums: snap.albumByUid,
         context: MusicQueueContext.mixed,
       ),
@@ -979,6 +985,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 child: FushiPlaceholderMessage(
                   icon: FushiIcons.playlist,
                   message: t.music_playlists_empty,
+                  action: const _NewLocalPlaylistButton(),
                 ),
               )
             : _PlaylistList(playlists: snap.playlists),
@@ -1009,9 +1016,13 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           manifest: m,
         ),
       _groupTitle(context, t.music_playlists_local),
-      if (local.isEmpty)
-        Text(t.music_playlists_empty, style: context.fushiType.bodySmall)
-      else
+      if (local.isEmpty) ...<Widget>[
+        Text(t.music_playlists_empty, style: context.fushiType.bodySmall),
+        const Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: _NewLocalPlaylistButton(),
+        ),
+      ] else
         _PlaylistList(playlists: local, shrinkWrap: true),
     ];
     return FushiEntranceScope(
@@ -1270,17 +1281,29 @@ class _PlaylistList extends StatelessWidget {
                   tokens.spacing.section,
                 ),
               ),
-        itemCount: playlists.length,
+        // 首行是「新建歌单」，其后每行一个本地歌单（点开 = 本地歌单页）。
+        itemCount: playlists.length + 1,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-          final MusicPlaylistRow p = playlists[i];
+          if (i == 0) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: const Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: _NewLocalPlaylistButton(),
+              ),
+            );
+          }
+          final MusicPlaylistRow p = playlists[i - 1];
           return FushiPressScale(
             child: FushiGroupedListItem(
               key: ValueKey<String>('music-playlist-${p.playlistUid}'),
-              index: i,
+              index: i - 1,
               count: playlists.length,
+              onTap: () => openMusicLocalPlaylist(context, p),
               child: FushiListItem(
                 leading: const FushiListLeadingIcon(FushiIcons.playlist),
                 title: Text(p.name),
+                trailing: const FushiIcon(FushiIcons.chevronRight),
               ),
             ),
           );
@@ -1288,6 +1311,35 @@ class _PlaylistList extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 「新建歌单」：问名字建一个空的本地歌单（歌曲在曲目菜单「加入歌单」里加）。
+class _NewLocalPlaylistButton extends ConsumerWidget {
+  const _NewLocalPlaylistButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => FushiPressScale(
+    child: FushiFilledButton.tonalIcon(
+      key: const ValueKey<String>('music_new_local_playlist'),
+      onPressed: () {
+        final AppModel app = ref.read(appProvider);
+        if (!app.isDatabaseReady) return;
+        unawaited(() async {
+          final MusicPlaylistTarget? created = await musicCreatePlaylist(
+            context,
+            MusicLocalPlaylistEditor(app.database),
+          );
+          if (created == null) return;
+          FushiToast.show(
+            msg: t.music_action_playlist_created(name: created.title),
+            severity: ToastSeverity.success,
+          );
+        }());
+      },
+      icon: const FushiIcon(FushiIcons.add),
+      label: Text(t.music_action_new_playlist),
+    ),
+  );
 }
 
 /// 二级搜索页（宽窄屏同一套，曲库页右上角搜索按钮推入）：顶栏是带返回的搜索框（自动聚焦），正文是统一搜索的综合结果，段标题

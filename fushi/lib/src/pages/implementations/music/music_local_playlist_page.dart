@@ -123,10 +123,7 @@ class _MusicLocalPlaylistPageState
     }
     final FushiDatabase db = _app.database;
     final String uid = widget.playlist.playlistUid;
-    final List<MusicPlaylistItem> items = await loadMusicPlaylistItems(
-      db,
-      uid,
-    );
+    final List<MusicPlaylistItem> items = await loadMusicPlaylistItems(db, uid);
     final Map<String, MusicAlbumRow> albums = <String, MusicAlbumRow>{};
     for (final MusicPlaylistItem i in items) {
       if (i.entry case MusicLocalEntry(:final MusicTrackRow track)) {

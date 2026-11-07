@@ -9,12 +9,17 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart'
+    show musicServerPlayItem;
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -180,9 +185,8 @@ MusicItemMenu? musicRemoteSearchTrackMenu(
   }
   return MusicItemMenu(
     buttonKey: ValueKey<String>('music-remote-track-menu-${item.trackUid}'),
-    open: (MusicMenuAnchor? anchor) => unawaited(
-      _showRemoteSearchMenu(context, db, item, anchor: anchor),
-    ),
+    open: (MusicMenuAnchor? anchor) =>
+        unawaited(_showRemoteSearchMenu(context, db, item, anchor: anchor)),
   );
 }
 
@@ -202,5 +206,26 @@ Future<void> _showRemoteSearchMenu(
     anchor: at,
     errorText: (Object e) => t.music_action_failed(error: '$e'),
     actions: musicRemoteLibraryActions(db, item, inLibrary: inLibrary),
+  );
+}
+
+/// 服务器来源曲目行（统一搜索 / 来源搜索页）的远程曲目菜单：只有 YouTube 内置音源的曲目是
+/// 只能串流的远程曲目（Jellyfin / Subsonic 的播放地址带账号凭据、整库可混排，不进远程曲目表；
+/// Apple Music 有自己的菜单）。其它来源回 null。
+MusicItemMenu? musicServerTrackLibraryMenu(
+  BuildContext context,
+  MusicServerBrowser browser,
+  MusicServerTrack track,
+) {
+  if (browser.kind != MusicServerKind.youtube) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  if (!app.isDatabaseReady) return null;
+  return musicRemoteSearchTrackMenu(
+    context,
+    app.database,
+    musicServerPlayItem(browser, track),
   );
 }
