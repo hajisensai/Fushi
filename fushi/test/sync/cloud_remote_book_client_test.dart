@@ -738,7 +738,7 @@ class _BytesRangeReader implements SyncAssetRangeReader {
 
   final Map<String, Uint8List> assets;
   final List<String> requests = <String>[];
-  Object? failWith;
+  Exception? failWith;
 
   @override
   Future<SyncAssetRange> openAssetRange(
@@ -747,7 +747,7 @@ class _BytesRangeReader implements SyncAssetRangeReader {
     int? end,
   }) async {
     requests.add(assetId);
-    final Object? failure = failWith;
+    final Exception? failure = failWith;
     if (failure != null) throw failure;
     final Uint8List bytes = assets[assetId]!;
     final int last = end == null || end >= bytes.length

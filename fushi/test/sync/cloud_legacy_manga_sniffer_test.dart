@@ -46,7 +46,7 @@ class _MemoryRangeReader implements SyncAssetRangeReader {
   final Map<String, Uint8List> assets;
   final List<(String, int, int?)> requests = <(String, int, int?)>[];
   int bytesServed = 0;
-  Object? failWith;
+  Exception? failWith;
 
   @override
   Future<SyncAssetRange> openAssetRange(
@@ -55,7 +55,7 @@ class _MemoryRangeReader implements SyncAssetRangeReader {
     int? end,
   }) async {
     requests.add((assetId, start, end));
-    final Object? failure = failWith;
+    final Exception? failure = failWith;
     if (failure != null) throw failure;
     final Uint8List bytes = assets[assetId]!;
     if (start >= bytes.length) throw SyncAssetRangeNotSatisfiable(bytes.length);

@@ -8,7 +8,6 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show isMangaPackageMarkerEntry;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/utils/archive/zip_central_directory.dart';
 
 /// 内容判型缓存的持久化端（一条云盘通道一份）。
