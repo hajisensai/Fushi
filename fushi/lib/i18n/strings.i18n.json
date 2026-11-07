@@ -8589,6 +8589,7 @@
   "srs_settings_new_load_boost_hint": "When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.",
   "srs_settings_new_load_budget": "Review budget (% of daily average)",
   "srs_settings_new_load_budget_hint": "Lower = new cards shrink sooner when reviews pile up. Default 150.",
+  "srs_settings_new_load_rwkv_note": "RWKV decks always get the full daily new card limit: under RWKV, due reviews don't measure workload. These settings apply again if you switch to FSRS.",
   "srs_settings_new_order": "New card order",
   "srs_settings_new_order_frequency": "By frequency",
   "srs_settings_new_order_frequency_hint": "Common words first, by the frequency rank saved on each card when it was mined (FreqSort). The rank syncs with the note, so every device shows the same order. Cards without a rank come after, by position.",

@@ -8589,6 +8589,7 @@
   "srs_settings_new_load_boost_hint": "到期复习不到预算一半时，新卡最多增加这么多百分比。0 = 不增加。",
   "srs_settings_new_load_budget": "复习预算（日均复习数的 %）",
   "srs_settings_new_load_budget_hint": "调小 = 到期堆积时更早减少新卡。默认 150。",
+  "srs_settings_new_load_rwkv_note": "RWKV 牌组不按复习量调整新卡，每天固定出满新卡上限（RWKV 的到期复习不代表复习负担）。切回 FSRS 后这里的设置照旧生效。",
   "srs_settings_new_order": "新卡顺序",
   "srs_settings_new_order_frequency": "按词频",
   "srs_settings_new_order_frequency_hint": "常用词先出：按制卡时存在卡上的词频名次（FreqSort）。名次随笔记同步，每台设备顺序一致。没有名次的卡排在后面，按位置。",
