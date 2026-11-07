@@ -133,6 +133,44 @@ hr { border: none; border-top: 1px solid var(--border-color); margin: 16px 0; }
 b { color: var(--primary-color-b); font-weight: 600; }
 ''';
 
+/// 「JLPT N1 真题」牌组（用户真实牌组）的样式：带一条卡面用不上的 `table` 规则
+/// （`border-collapse` 原生不画）——不命中元素就不该让整张卡回退。
+const String _jlptCss = '''
+.card { font-size: 18px; line-height: 1.65; color: #202124; background: #fafafa; }
+.meta { color: #666; font-size: 13px; margin-bottom: 8px; }
+.prompt { color: #333; border-left: 4px solid #6b8afd; padding-left: 10px; margin: 8px 0 12px; }
+.question { font-weight: 600; margin: 12px 0; }
+.answers { margin-top: 8px; }
+.answer { background: #fff; border: 1px solid #d8d8d8; color: #202124; border-radius: 6px; padding: 7px 9px; margin: 6px 0; }
+.answer-no { color: #555; font-weight: 700; }
+.answer-box { background: #eef7ee; border-left: 4px solid #35a853; color: #202124; padding: 10px 12px; margin: 12px 0; }
+.answer-title { font-weight: 700; }
+.correct-text { margin-top: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92em; }
+th, td { border: 1px solid #ccc; padding: 4px 6px; vertical-align: top; }
+.card.nightMode, .nightMode .card { color: #f1f3f4; background: #242424; }
+.card.nightMode .meta, .nightMode .card .meta { color: #bdc1c6; }
+.card.nightMode .prompt, .nightMode .card .prompt { color: #e8eaed; border-left-color: #7aa2ff; }
+.card.nightMode .answer, .nightMode .card .answer { background: #333538; border-color: #55585d; color: #f1f3f4; }
+.card.nightMode .answer-no, .nightMode .card .answer-no { color: #d1d5db; }
+.card.nightMode .answer-box, .nightMode .card .answer-box { background: #173421; border-left-color: #3fb950; color: #e6f4ea; }
+''';
+
+const String _jlptBack = '''
+<div class="meta">202012 · 近义替换 · 問題3</div>
+<div class="prompt">問題3___の言葉に意味が最も近いものを、1・2・3・4 から一つ選びなさい。</div>
+<div class="question">15. 兄は手にした新聞の記事を<u>凝視した</u>。</div>
+<div class="answers"><div class="answer"><span class="answer-no">1)</span> ざっと見た</div>
+<div class="answer correct"><span class="answer-no">2)</span> じっと見た</div>
+<div class="answer"><span class="answer-no">3)</span> ちらっと見た</div>
+<div class="answer"><span class="answer-no">4)</span> ぼうっと見た</div></div>
+<hr id="answer">
+<div class="answer-box">
+  <div class="answer-title" style="”text-align: left">正确答案：2</div>
+  <div class="correct-text">じっと見た</div>
+</div>
+''';
+
 const String _grammarBack = '''
 <div class="card-container">
     <div class="card-header">
@@ -364,6 +402,12 @@ void main() {
       _grammarCss,
       languageCode: 'ja',
     );
+    final SrsHtmlCardFace jlpt = srsHtmlCardOf(
+      question: _jlptBack,
+      answer: _jlptBack,
+      css: _jlptCss,
+      languageCode: 'ja',
+    )!.answer;
     for (final (
           String name,
           SrsHtmlCardFace src,
@@ -379,6 +423,9 @@ void main() {
           ('grammar-back-light', grammar, true, false, true),
           ('grammar-back-noskin', grammar, true, false, false),
           ('grammar-back-dark-noskin', grammar, true, true, false),
+          ('jlpt-back-noskin', jlpt, true, false, false),
+          ('jlpt-back-dark-noskin', jlpt, true, true, false),
+          ('jlpt-back-light', jlpt, true, false, true),
         ]) {
       testWidgets('shot $name', (WidgetTester tester) async {
         await tester.runAsync(_loadFonts);

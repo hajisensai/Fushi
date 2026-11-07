@@ -342,6 +342,7 @@ void main() {
       for (final String? unknown in <String?>[null, '', '  ']) {
         expect(
           lookupUsesChineseScriptVariants(
+            enabled: true,
             lookupLanguage: unknown,
             filters: withZh,
           ),
@@ -350,6 +351,7 @@ void main() {
         );
         expect(
           lookupUsesChineseScriptVariants(
+            enabled: true,
             lookupLanguage: unknown,
             filters: withoutZh,
           ),
@@ -359,17 +361,47 @@ void main() {
       }
       // 语言已知：只看语言，词典集合不改变结论。
       expect(
-        lookupUsesChineseScriptVariants(lookupLanguage: 'ja', filters: withZh),
+        lookupUsesChineseScriptVariants(
+          enabled: true,
+          lookupLanguage: 'ja',
+          filters: withZh,
+        ),
         isFalse,
         reason: '日语书里查词不因装了中文词典而多出简繁变体',
       );
       expect(
         lookupUsesChineseScriptVariants(
+          enabled: true,
           lookupLanguage: 'zh-Hant',
           filters: withoutZh,
         ),
         isTrue,
       );
+    });
+
+    test('开关关着（默认）时一律不展开简繁，语言与词典都不改变结论', () {
+      const DictionaryLookupFilters withZh = DictionaryLookupFilters(
+        hiddenDictionaryNames: <String>{},
+        termDictionaryOrder: <String>['ABC', 'DrEye'],
+        hasChineseTermDictionary: true,
+      );
+      for (final String? language in <String?>[
+        null,
+        '',
+        'zh',
+        'zh-Hant',
+        'ja',
+      ]) {
+        expect(
+          lookupUsesChineseScriptVariants(
+            enabled: false,
+            lookupLanguage: language,
+            filters: withZh,
+          ),
+          isFalse,
+          reason: '开关关 + "$language" → 只查原文字形',
+        );
+      }
     });
 
     test('缓存键：关着时与旧格式逐字相同，开着时带 /zh 后缀不与之共用', () {

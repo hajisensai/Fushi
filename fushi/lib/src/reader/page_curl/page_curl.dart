@@ -16,6 +16,11 @@
 ///    （[PageCurlHost.commitTurn]：进度 / 统计 / 跨章判定只在这里记一次），再把剩余的
 ///    卷曲播完；否则回卷并撤销预览（[PageCurlHost.revertPreview]）。
 ///
+/// **双页**（一屏左右两页，[PageCurlPaper.facing] 非 null）时像实体书一样只翻外侧那一页：
+/// 纸面 = 外侧页，书脊 = 两页之间的中缝；对面那页在纸翻过来盖住它之前保持原样（取自
+/// 翻页前的快照），纸背是翻过去之后落在对面的那一页（前进时预览落定后再截一张相邻
+/// 跨页，往回翻时就是翻页前的底图），翻完覆盖层撤掉时与活的正文逐像素接上、不闪。
+///
 /// 相邻页不存在（章首 / 章末、漫画首尾）时预览返回 false：本次不卷页，交回宿主的普通
 /// 翻页路径（点按 / 按键走 [PageCurlHost.fallbackTurn]，跨章照旧）。截图失败同样回落。
 ///
@@ -49,10 +54,11 @@ abstract interface class PageCurlHost {
   /// 截当前视口（WebView 截图后解码）。失败返回 null。
   Future<ui.Image?> capturePage();
 
-  /// 此刻正文显示的页面在覆盖层里的矩形（屏幕坐标，逻辑像素）。只有这块是「纸」：
-  /// 卷起来的只有它，矩形外（漫画的黑边）不卷、直接露出下面。null = 整个视口都是
-  /// 纸（小说）。往回翻时在预览到上一页之后调用，量的是上一页。
-  Future<Rect?> paperRect();
+  /// 此刻正文显示的页面在覆盖层里的位置（屏幕坐标，逻辑像素）。只有
+  /// [PageCurlPaper.rect] 是「纸」：卷起来的只有它，矩形外（漫画的黑边）不卷、直接露出
+  /// 下面。null = 整个视口都是一张纸（小说单页）。往回翻时在预览到上一页之后调用，
+  /// 量的是上一页。
+  Future<PageCurlPaper?> paperRect();
 
   /// 把正文**瞬时**落到相邻页，只做预览、不记翻页账。返回 false = 那个方向没有
   /// 相邻页（章首 / 章末），本次不卷页。
@@ -141,6 +147,48 @@ Future<ui.Image?> decodePageCurlSnapshot(Uint8List? bytes) async {
   }
 }
 
+/// [PageCurlHost.paperRect] 的结果：翻动的纸面，以及双页时对面那一页。
+@immutable
+class PageCurlPaper {
+  const PageCurlPaper(this.rect, {this.facing});
+
+  /// 翻动的那张纸（屏幕坐标）。双页时是外侧页：从左往右读是右页、从右往左读是左页，
+  /// 书脊（中缝）是它靠里的那条边。
+  final Rect rect;
+
+  /// 双页时对面那一页（屏幕坐标）：翻页过程中它不动，直到翻过来的纸盖住它。null = 单页。
+  final Rect? facing;
+
+  /// 是否双页。
+  bool get spread => facing != null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PageCurlPaper && other.rect == rect && other.facing == facing;
+
+  @override
+  int get hashCode => Object.hash(rect, facing);
+
+  @override
+  String toString() => 'PageCurlPaper($rect, facing: $facing)';
+}
+
+/// 双页时纸面 / 对面页的划分：[view] 在中缝 [spineX] 处一分为二，外侧那半是纸、
+/// 靠里那半是对面页。[mirror] = 从右往左读（书脊在纸的右边，纸是左半）。中缝不在
+/// 视口内时返回 null（按单页卷整个视口）。
+PageCurlPaper? pageCurlSpreadPaper({
+  required Size view,
+  required double spineX,
+  required bool mirror,
+}) {
+  if (view.isEmpty || !(spineX > 0 && spineX < view.width)) return null;
+  final Rect left = Rect.fromLTRB(0, 0, spineX, view.height);
+  final Rect right = Rect.fromLTRB(spineX, 0, view.width, view.height);
+  return mirror
+      ? PageCurlPaper(left, facing: right)
+      : PageCurlPaper(right, facing: left);
+}
+
 /// 卷页的几何快照（[corner] / [point] 在纸面局部的「未镜像空间」：书脊在左，拎起的角
 /// 在右）。
 @immutable
@@ -151,6 +199,7 @@ class PageCurlGeometry {
     required this.mirror,
     required this.paper,
     required this.radius,
+    this.facing,
   });
 
   /// 被拎起的角（纸面上的原位置）。
@@ -168,6 +217,9 @@ class PageCurlGeometry {
 
   /// 此刻的卷曲圆柱半径（[constrainPageCurl] 按书脊约束收紧过）。
   final double radius;
+
+  /// 双页时对面那一页（屏幕坐标，见 [PageCurlPaper.facing]）；null = 单页。
+  final Rect? facing;
 }
 
 /// 纸背蒙在镜像正文上的纸色比例：纸背像苹果图书那样透出镜像的正文（用户
@@ -440,6 +492,9 @@ class PageCurlController extends ChangeNotifier {
   /// 纸面在覆盖层里的矩形（屏幕坐标）。会话开始时是整个视口，准备阶段由
   /// [PageCurlHost.paperRect] 收窄到真正的页面（漫画留黑边时只卷页图本身）。
   Rect _paper = Rect.zero;
+
+  /// 双页时对面那一页（[PageCurlPaper.facing]）；单页为 null。
+  Rect? _facing;
   bool _forward = true;
   bool _mirror = false;
 
@@ -458,6 +513,11 @@ class PageCurlController extends ChangeNotifier {
   Offset get _finger => _toPaper(_fingerScreen);
   ui.Image? _sheet;
   ui.Image? _base;
+
+  /// 双页的纸背：纸翻过去后落在对面的那一页。前进时是预览落定后另截的相邻跨页；
+  /// 往回翻时与 [_base]（翻页前的当前跨页）是同一张图。单页为 null（纸背透出镜像
+  /// 正文）。
+  ui.Image? _back;
   bool _visible = false;
 
   /// 当前会话由哪一次手指拖动发起；null = 点按 / 按键会话（或空闲）。拖动事件只在
@@ -475,12 +535,16 @@ class PageCurlController extends ChangeNotifier {
   ui.Image? get sheet => _sheet;
   ui.Image? get base => _base;
 
+  /// 双页的纸背（见 [_back]）；单页或还没截到时为 null。
+  ui.Image? get back => _facing == null ? null : _back;
+
   PageCurlGeometry get geometry => PageCurlGeometry(
     corner: Offset(_size.width, _y0),
     point: _point,
     mirror: _mirror,
     paper: _paper,
     radius: _radius,
+    facing: _facing,
   );
 
   /// 当前圆柱半径（书脊约束收紧过）。
@@ -710,6 +774,7 @@ class PageCurlController extends ChangeNotifier {
     _sessionDrag = null;
     _view = size;
     _paper = Offset.zero & size;
+    _facing = null;
     _forward = forward;
     _mirror = mirror;
     _jumpToEnd = false;
@@ -735,17 +800,26 @@ class PageCurlController extends ChangeNotifier {
     _radius = _forward ? pageCurlRadiusFor(_size) : 0;
   }
 
-  /// 收窄纸面到宿主报告的页面矩形（与视口取交集；拿不到 / 太小就保持整个视口）。
+  /// 收窄纸面到宿主报告的页面矩形（与视口取交集；拿不到 / 太小就保持整个视口），
+  /// 双页时记下对面那一页。
   Future<void> _resolvePaper() async {
-    Rect? rect;
+    PageCurlPaper? reported;
     try {
-      rect = await host.paperRect();
+      reported = await host.paperRect();
     } catch (e, stack) {
       ErrorLogService.instance.log('PageCurl.paperRect', e, stack);
     }
     final Rect view = Offset.zero & _view;
-    final Rect paper = rect == null ? view : rect.intersect(view);
-    _paper = paper.width >= 8 && paper.height >= 8 ? paper : view;
+    bool usable(Rect r) => r.width >= 8 && r.height >= 8;
+    final Rect? rect = reported?.rect.intersect(view);
+    if (rect == null || !usable(rect)) {
+      _paper = view;
+      _facing = null;
+    } else {
+      _paper = rect;
+      final Rect? facing = reported?.facing?.intersect(view);
+      _facing = facing != null && usable(facing) ? facing : null;
+    }
     _anchorToPaper();
   }
 
@@ -796,6 +870,17 @@ class PageCurlController extends ChangeNotifier {
         }
         if (stale()) return;
         await host.waitForPaint();
+        if (stale()) return;
+        if (_facing != null) {
+          // 双页：纸背 = 翻过去后落在对面的那一页，取自已落定的相邻跨页。截不到就
+          // 按单页画法卷（对面页露出活的正文），不中断这次翻页。
+          final ui.Image? back = await host.capturePage();
+          if (stale()) {
+            back?.dispose();
+            return;
+          }
+          _back = back;
+        }
       } else {
         final ui.Image? base = await host.capturePage();
         if (stale()) {
@@ -834,6 +919,8 @@ class PageCurlController extends ChangeNotifier {
           return;
         }
         _sheet = sheet;
+        // 双页往回翻：纸背是翻页前的当前跨页（翻回来的纸原先就盖在它对面）。
+        if (_facing != null) _back = base;
       }
       if (stale()) return;
       _phase = _CurlPhase.dragging;
@@ -1014,14 +1101,20 @@ class PageCurlController extends ChangeNotifier {
   }
 
   void _clearImages() {
-    final ui.Image? sheet = _sheet;
-    final ui.Image? base = _base;
+    _disposeImages();
+    _visible = false;
+    notifyListeners();
+  }
+
+  /// 释放快照：[_sheet] / [_base] / [_back] 可能指向同一张图，每张只释放一次。
+  void _disposeImages() {
+    final Set<ui.Image> images = <ui.Image>{?_sheet, ?_base, ?_back};
     _sheet = null;
     _base = null;
-    _visible = false;
-    if (!identical(sheet, base)) sheet?.dispose();
-    base?.dispose();
-    notifyListeners();
+    _back = null;
+    for (final ui.Image image in images) {
+      image.dispose();
+    }
   }
 
   void _complete() {
@@ -1036,12 +1129,7 @@ class PageCurlController extends ChangeNotifier {
     _completeTurn();
     _ticker?.dispose();
     _ticker = null;
-    final ui.Image? sheet = _sheet;
-    final ui.Image? base = _base;
-    _sheet = null;
-    _base = null;
-    if (!identical(sheet, base)) sheet?.dispose();
-    base?.dispose();
+    _disposeImages();
     _complete();
     super.dispose();
   }
@@ -1117,6 +1205,7 @@ class _PageCurlOverlayState extends State<PageCurlOverlay> {
               shader: shader,
               sheet: sheet,
               base: widget.controller.base,
+              back: widget.controller.back,
               geometry: widget.controller.geometry,
               paperColor: widget.paperColor,
             ),
@@ -1132,6 +1221,7 @@ class _PageCurlPainter extends CustomPainter {
     required this.shader,
     required this.sheet,
     required this.base,
+    required this.back,
     required this.geometry,
     required this.paperColor,
   });
@@ -1139,12 +1229,17 @@ class _PageCurlPainter extends CustomPainter {
   final ui.FragmentShader shader;
   final ui.Image sheet;
   final ui.Image? base;
+
+  /// 双页的纸背（[PageCurlController.back]）；null = 单页（纸背透出镜像正文）。
+  final ui.Image? back;
   final PageCurlGeometry geometry;
   final Color paperColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     final Rect paper = geometry.paper;
+    // 双页：对面页矩形 + 纸背快照都在时才按双页画（缺一个就退回单页画法）。
+    final Rect? facing = back == null ? null : geometry.facing;
     shader
       ..setFloat(0, size.width)
       ..setFloat(1, size.height)
@@ -1164,8 +1259,14 @@ class _PageCurlPainter extends CustomPainter {
       ..setFloat(15, paperColor.b)
       // 纸背：镜像正文上蒙的纸色比例。
       ..setFloat(16, kPageCurlBackVeil)
+      ..setFloat(17, facing != null ? 1 : 0)
+      ..setFloat(18, facing?.left ?? 0)
+      ..setFloat(19, facing?.top ?? 0)
+      ..setFloat(20, facing?.right ?? 0)
+      ..setFloat(21, facing?.bottom ?? 0)
       ..setImageSampler(0, sheet)
-      ..setImageSampler(1, base ?? sheet);
+      ..setImageSampler(1, base ?? sheet)
+      ..setImageSampler(2, back ?? sheet);
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
 
