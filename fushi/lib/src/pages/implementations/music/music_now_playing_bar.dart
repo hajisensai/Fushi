@@ -373,7 +373,7 @@ class _CompactMusicBar extends StatelessWidget {
                 title: Text(t.music_effects_title),
                 onTap: () {
                   Navigator.of(sheet).pop();
-                  unawaited(pushMusicAudioEffectsPage(context));
+                  unawaited(showMusicAudioEffectsPanel(context, appModel));
                 },
               ),
             FushiListTileControl(

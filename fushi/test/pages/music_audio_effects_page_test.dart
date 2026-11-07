@@ -167,6 +167,7 @@ void main() {
     AppModel app, {
     required double width,
     bool apple = false,
+    bool panel = false,
   }) async {
     LocaleSettings.setLocale(AppLocale.en);
     tester.view.physicalSize = Size(width, 2400);
@@ -187,7 +188,9 @@ void main() {
               body: SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: MusicAudioEffectsBody(appModel: app),
+                  child: panel
+                      ? MusicAudioEffectsPanel(appModel: app)
+                      : MusicAudioEffectsBody(appModel: app),
                 ),
               ),
             ),
@@ -351,6 +354,71 @@ void main() {
         MusicEqPreset.vocal.gainsDb,
       );
     });
+  }
+
+  for (final bool apple in <bool>[false, true]) {
+    final String ds = apple ? 'Apple' : 'MD3';
+    for (final double width in <double>[420, 1100]) {
+      testWidgets('$ds 播放页浮层面板（宽 $width）：总开关 → 预设 → 单声道 → 复位', (
+        WidgetTester tester,
+      ) async {
+        final _App app = await makeApp();
+        await pump(tester, app, width: width, apple: apple, panel: true);
+        for (final int hz in kMusicEqualizerBandsHz) {
+          expect(
+            find.byKey(ValueKey<String>('music-eq-band-$hz')),
+            findsOneWidget,
+          );
+        }
+        expect(
+          find.byKey(const ValueKey<String>('music-eq-preamp')),
+          findsOneWidget,
+        );
+        // 自定义不在预设条里（只有正处于自定义时才出现）。
+        expect(
+          find.byKey(const ValueKey<String>('music-eq-preset-custom')),
+          findsNothing,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('music-effects-enabled')),
+        );
+        await settle(tester);
+        expect(prefs.musicEqEnabled, isTrue);
+
+        await tester.ensureVisible(
+          find.byKey(const ValueKey<String>('music-eq-preset-vocal')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('music-eq-preset-vocal')),
+        );
+        await settle(tester);
+        expect(prefs.musicEqPreset, 'vocal');
+        expect(backend.applied?.effects.gainsDb, MusicEqPreset.vocal.gainsDb);
+        expect(find.text(t.music_effects_panel_active), findsOneWidget);
+
+        await tester.ensureVisible(
+          find.byKey(const ValueKey<String>('music-effects-mono')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('music-effects-mono')),
+        );
+        await settle(tester);
+        expect(backend.applied?.effects.mono, isTrue);
+
+        await tester.ensureVisible(
+          find.byKey(const ValueKey<String>('music-effects-reset')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('music-effects-reset')),
+        );
+        await settle(tester);
+        expect(prefs.musicEqPreset, 'flat');
+        expect(backend.applied?.effects.mono, isFalse);
+        expect(backend.applied?.effects.isActive, isFalse);
+        expect(find.text(t.music_effects_panel_bitperfect), findsOneWidget);
+      });
+    }
   }
 
   testWidgets('托管播放的后端（Apple Music）：页内说明音效不生效', (WidgetTester tester) async {

@@ -99,8 +99,6 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart'
-    show FushiActionChip;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -1088,13 +1086,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                                 ),
                                 align: TextAlign.center,
                               ),
-                              _buildEffectsChip(context),
                               const SizedBox(height: 20),
                               _buildSeek(),
                               const SizedBox(height: 12),
                               _buildTransport(context),
                               const SizedBox(height: 4),
-                              _buildTools(context),
+                              _buildTools(context, actions: true),
                             ],
                           ),
                         ),
@@ -1200,7 +1197,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[_buildSeek(), _buildTransport(context)],
+              children: <Widget>[
+                _buildSeek(),
+                _buildTransport(context),
+                _buildTools(context, actions: true),
+              ],
             ),
           ),
       ],
@@ -1249,10 +1250,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _buildMeta(context, item),
-              _buildEffectsChip(context),
               _buildSeek(),
               Center(child: _buildTransport(context)),
-              _buildTools(context),
+              _buildTools(context, actions: true),
             ],
           ),
         ),
@@ -1461,32 +1461,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
-  /// 「音效 · <预设名>」胶囊（点进音效页）：只在效果器可用的后端显示（托管播放的
-  /// Apple Music 等拿不到信号）。
-  Widget _buildEffectsChip(BuildContext context) {
-    if (!_engine.capabilities.signalPath) return const SizedBox.shrink();
-    final String state = appModelNoUpdate.musicAudioEffects.enabled
-        ? musicEqPresetLabel(appModelNoUpdate.musicEqPreset)
-        : t.music_eq_off;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Align(
-        alignment: Alignment.center,
-        child: FushiPressScale(
-          child: FushiActionChip(
-            key: const ValueKey<String>('music_lyrics_effects_chip'),
-            icon: FushiIcons.barChart,
-            label: '${t.music_effects_title} · $state',
-            onPressed: () => unawaited(_openEffects()),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _openEffects() async {
-    await pushMusicAudioEffectsPage(_themedContext);
-    // 回来时胶囊上的预设名跟着刷新。
+    await showMusicAudioEffectsPanel(_themedContext, appModelNoUpdate);
+    // 关掉后功能图标的高亮 / 预设名跟着刷新。
     if (mounted) setState(() {});
   }
 
@@ -1501,6 +1478,35 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     strokeWidth: 4,
     barHeight: 20,
     debugLabel: 'music-lyrics-seek',
+  );
+
+  /// 功能图标（音质 / 音效 / 队列）：与偏移、AB 循环同款的裸图标按钮，无底色无文字，
+  /// 说明放 tooltip（用户 2026-11-08「有点突兀，无底色和其他选项并列」「无文字」）。
+  Widget _buildActionRow(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge(<Listenable>[
+      _engine,
+      appModelNoUpdate.prefsRepo,
+    ]),
+    builder: (BuildContext context, _) {
+      final String effects = appModelNoUpdate.musicAudioEffects.enabled
+          ? '${t.music_effects_title} · '
+                '${musicEqPresetLabel(appModelNoUpdate.musicEqPreset)}'
+          : '${t.music_effects_title} · ${t.music_eq_off}';
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // 音效（能处理信号的后端才有）：处理中时高亮。
+          if (_engine.capabilities.signalPath)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_lyrics_effects'),
+              icon: const FushiIcon(FushiIcons.barChart),
+              isSelected: appModelNoUpdate.musicAudioEffects.isActive,
+              tooltip: effects,
+              onPressed: () => unawaited(_openEffects()),
+            ),
+        ],
+      );
+    },
   );
 
   /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
@@ -1649,10 +1655,15 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     }
   }
 
-  /// 小工具：偏移 ± 与 AB 循环（只有带时间轴的歌词才有）。
-  Widget _buildTools(BuildContext context) {
+  /// 偏移 ± / AB 循环（有逐行时间轴才有）；[actions] 时同一行后面接功能图标
+  /// （[_buildActionRow]）。
+  Widget _buildTools(BuildContext context, {bool actions = false}) {
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    if (!synced) return const SizedBox.shrink();
+    if (!synced) {
+      return actions
+          ? Center(child: _buildActionRow(context))
+          : const SizedBox.shrink();
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1696,6 +1707,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   onPressed: () => unawaited(_extendLoop()),
                 ),
         ),
+        if (actions) _buildActionRow(context),
       ],
     );
   }
@@ -1738,7 +1750,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                       ),
                     ),
                     _buildTransport(context),
-                    const Expanded(child: SizedBox.shrink()),
+                    // 右侧放功能行（设计稿 W1：底栏右边是音效 / 队列）。
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _buildActionRow(context),
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1889,7 +1908,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       case 5:
         if (mounted) await _generateSubtitles();
       case 6:
-        if (mounted) await pushMusicAudioEffectsPage(_themedContext);
+        if (mounted) await _openEffects();
       default:
     }
   }

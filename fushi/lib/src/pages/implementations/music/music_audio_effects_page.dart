@@ -20,6 +20,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_music.dart'
     show buildMusicAudioEffectsDestination;
@@ -112,7 +113,8 @@ class MusicAudioEffectsBody extends StatefulWidget {
   State<MusicAudioEffectsBody> createState() => _MusicAudioEffectsBodyState();
 }
 
-class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody> {
+/// 音效编辑的状态（草稿 + 停手写回）：音效页与播放页浮层面板共用一份。
+mixin _EffectsEditing<W extends StatefulWidget> on State<W> {
   late MusicAudioEffects _fx;
   late MusicEqPreset _preset;
 
@@ -121,7 +123,7 @@ class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody> {
   MusicEqPreset? _draftPreset;
   Timer? _commitTimer;
 
-  AppModel get _app => widget.appModel;
+  AppModel get _app;
 
   @override
   void initState() {
@@ -214,6 +216,12 @@ class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody> {
       preset: MusicEqPreset.flat,
     );
   }
+}
+
+class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
+    with _EffectsEditing<MusicAudioEffectsBody> {
+  @override
+  AppModel get _app => widget.appModel;
 
   @override
   Widget build(BuildContext context) {
@@ -964,4 +972,531 @@ class MusicEqCurvePainter extends CustomPainter {
       old.line != line ||
       old.grid != grid ||
       old.background != background;
+}
+
+// -----------------------------------------------------------------------------
+// 播放页里的音效浮层面板（用户 2026-11-08「音效不做二级界面做个 panel」）
+// -----------------------------------------------------------------------------
+
+/// 打开音效浮层面板：标题 + 总开关 + 关闭；一行预设 + 复位；均衡器推子卡；音色与声场卡。
+/// 与音效页（设置里那一页）共用 [_EffectsEditing]，改动即时写回、即时下发。
+Future<void> showMusicAudioEffectsPanel(
+  BuildContext context,
+  AppModel appModel,
+) => showMusicFloatingPanel(
+  context: context,
+  maxWidth: 920,
+  builder: (BuildContext _) => MusicAudioEffectsPanel(appModel: appModel),
+);
+
+class MusicAudioEffectsPanel extends StatefulWidget {
+  const MusicAudioEffectsPanel({required this.appModel, super.key});
+
+  final AppModel appModel;
+
+  @override
+  State<MusicAudioEffectsPanel> createState() => _MusicAudioEffectsPanelState();
+}
+
+class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
+    with _EffectsEditing<MusicAudioEffectsPanel> {
+  @override
+  AppModel get _app => widget.appModel;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> blocks = <Widget>[
+      _header(context),
+      _presetRow(context),
+      _sectionLabel(context, t.music_eq_title, trailing: t.music_eq_range_hint),
+      _eqCard(context),
+      _sectionLabel(context, t.music_effects_panel_chain),
+      _chainCard(context),
+    ];
+    return Padding(
+      key: const ValueKey<String>('music-effects-panel'),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      child: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12,
+          children: <Widget>[
+            for (int i = 0; i < blocks.length; i++)
+              FushiStaggeredEntrance(index: i, child: blocks[i]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context) {
+    final MusicAudioEffects fx = _view;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool unsupported = !_app.musicSession.engine.capabilities.signalPath;
+    final String sub = unsupported
+        ? t.music_effects_unsupported_backend
+        : (fx.isActive
+              ? t.music_effects_panel_active
+              : t.music_effects_panel_bitperfect);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 2,
+            children: <Widget>[
+              Text(
+                t.music_effects_title,
+                style: context.fushiType.titleLarge.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                sub,
+                key: const ValueKey<String>('music-effects-panel-state'),
+                style: context.fushiType.bodySmall.copyWith(
+                  color: unsupported
+                      ? cs.error
+                      : (fx.isActive ? cs.primary : cs.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 窄屏（底部弹层）放不下文字：只留开关，文字进读屏标签。
+        if (musicFloatingPanelFloats(context)) ...<Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              t.music_effects_enabled_title,
+              style: context.fushiType.labelMedium.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        Semantics(
+          label: t.music_effects_enabled_title,
+          child: KeyedSubtree(
+            key: const ValueKey<String>('music-effects-enabled'),
+            child: adaptiveSwitch(
+              context: context,
+              value: fx.enabled,
+              onChanged: (bool v) => _edit(fx.copyWith(enabled: v)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('music-effects-panel-close'),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          icon: const FushiIcon(FushiIcons.close),
+          onPressed: () => unawaited(Navigator.of(context).maybePop()),
+        ),
+      ],
+    );
+  }
+
+  Widget _presetRow(BuildContext context) {
+    final MusicEqPreset selected = _viewPreset;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            primary: false,
+            child: Row(
+              spacing: 6,
+              children: <Widget>[
+                for (final MusicEqPreset p in MusicEqPreset.values)
+                  if (p != MusicEqPreset.custom || p == selected)
+                    FushiPressScale(
+                      child: FushiChoiceChip(
+                        key: ValueKey<String>('music-eq-preset-${p.wire}'),
+                        label: Text(musicEqPresetLabel(p)),
+                        selected: p == selected,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (bool _) => _pickPreset(p),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('music-effects-reset'),
+          tooltip: t.music_effects_reset,
+          icon: const FushiIcon(FushiIcons.refresh),
+          onPressed: _resetAll,
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String text, {String? trailing}) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              text,
+              style: context.fushiType.titleSmall.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (trailing != null)
+            Text(
+              trailing,
+              style: context.fushiType.bodySmall.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context, Widget child) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
+    );
+  }
+
+  Widget _eqCard(BuildContext context) {
+    final MusicAudioEffects fx = _view;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final TextStyle axis = context.fushiType.labelSmall.copyWith(
+      color: cs.onSurfaceVariant,
+    );
+    final double height = musicFloatingPanelFloats(context) ? 200 : 150;
+    final String max = '+${kMusicEqualizerMaxGainDb.round()}';
+    final String min = '−${kMusicEqualizerMaxGainDb.round()}';
+    return _card(
+      context,
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // 刻度：与推子轨道同高，夹在读数行与频率行之间。
+          Padding(
+            padding: const EdgeInsets.only(top: 18, bottom: 18, right: 4),
+            child: SizedBox(
+              height: height,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  Text(max, style: axis),
+                  Text('0', style: axis),
+                  Text(min, style: axis),
+                ],
+              ),
+            ),
+          ),
+          for (int i = 0; i < kMusicEqualizerBandsHz.length; i++)
+            Expanded(
+              child: _VerticalFader(
+                key: ValueKey<String>(
+                  'music-eq-band-${kMusicEqualizerBandsHz[i]}',
+                ),
+                top: musicDbLabel(fx.gainsDb[i], unit: false),
+                bottom: musicEqBandShortLabel(kMusicEqualizerBandsHz[i]),
+                height: height,
+                value: fx.gainsDb[i],
+                limit: kMusicEqualizerMaxGainDb,
+                semanticLabel: musicHzLabel(kMusicEqualizerBandsHz[i]),
+                onChanged: (double v) => _setBand(i, v),
+                onChangeEnd: (_) => _flush(),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: SizedBox(
+              height: height + 36,
+              child: VerticalDivider(width: 1, color: cs.outlineVariant),
+            ),
+          ),
+          SizedBox(
+            width: 56,
+            child: _VerticalFader(
+              key: const ValueKey<String>('music-eq-preamp'),
+              top: musicDbLabel(fx.preampDb, unit: false),
+              bottom: t.music_eq_preamp_title,
+              height: height,
+              value: fx.preampDb,
+              limit: kMusicEffectsMaxPreampDb,
+              semanticLabel: t.music_eq_preamp_title,
+              onChanged: (double v) => _edit(
+                fx.copyWith(preampDb: (v * 2).roundToDouble() / 2),
+                immediate: false,
+              ),
+              onChangeEnd: (_) => _flush(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggle(String key, String label, bool on, VoidCallback tap) =>
+      FushiPressScale(
+        child: FushiChoiceChip(
+          key: ValueKey<String>(key),
+          label: Text(label),
+          selected: on,
+          visualDensity: VisualDensity.compact,
+          onSelected: (bool _) => tap(),
+        ),
+      );
+
+  Widget _chainCard(BuildContext context) {
+    final MusicAudioEffects fx = _view;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final double headroom = musicAudioEffectsAutoHeadroomDb(fx);
+    int nextOf(List<int> options, int current) {
+      final int i = options.indexOf(current);
+      return options[(i + 1) % options.length];
+    }
+
+    final List<Widget> tiles = <Widget>[
+      _SliderTile(
+        key: const ValueKey<String>('music-effects-bass'),
+        title: t.music_effects_bass_title,
+        readout: musicDbLabel(fx.bassDb),
+        freq: musicHzLabel(fx.bassHz),
+        freqTooltip: t.music_effects_bass_freq_title,
+        onFreqTap: () => _edit(
+          fx.copyWith(bassHz: nextOf(kMusicBassFrequenciesHz, fx.bassHz)),
+        ),
+        value: fx.bassDb,
+        min: -kMusicToneMaxGainDb,
+        max: kMusicToneMaxGainDb,
+        divisions: (kMusicToneMaxGainDb * 4).round(),
+        onChanged: (double v) => _edit(
+          fx.copyWith(bassDb: (v * 2).roundToDouble() / 2),
+          immediate: false,
+        ),
+        onChangeEnd: (_) => _flush(),
+      ),
+      _SliderTile(
+        key: const ValueKey<String>('music-effects-treble'),
+        title: t.music_effects_treble_title,
+        readout: musicDbLabel(fx.trebleDb),
+        freq: musicHzLabel(fx.trebleHz),
+        freqTooltip: t.music_effects_treble_freq_title,
+        onFreqTap: () => _edit(
+          fx.copyWith(trebleHz: nextOf(kMusicTrebleFrequenciesHz, fx.trebleHz)),
+        ),
+        value: fx.trebleDb,
+        min: -kMusicToneMaxGainDb,
+        max: kMusicToneMaxGainDb,
+        divisions: (kMusicToneMaxGainDb * 4).round(),
+        onChanged: (double v) => _edit(
+          fx.copyWith(trebleDb: (v * 2).roundToDouble() / 2),
+          immediate: false,
+        ),
+        onChangeEnd: (_) => _flush(),
+      ),
+      _SliderTile(
+        key: const ValueKey<String>('music-effects-balance'),
+        title: t.music_effects_balance_title,
+        readout: musicBalanceLabel(fx.balance),
+        value: fx.balance,
+        min: -1,
+        max: 1,
+        divisions: 40,
+        onChanged: (double v) => _edit(
+          fx.copyWith(balance: (v * 20).roundToDouble() / 20),
+          immediate: false,
+        ),
+        onChangeEnd: (_) => _flush(),
+      ),
+      _SliderTile(
+        key: const ValueKey<String>('music-effects-width'),
+        title: t.music_effects_width_title,
+        readout: '${(fx.width * 100).round()}%',
+        value: fx.width,
+        min: 0,
+        max: kMusicStereoWidthMax,
+        divisions: (kMusicStereoWidthMax * 20).round(),
+        onChanged: (double v) => _edit(
+          fx.copyWith(width: (v * 20).roundToDouble() / 20),
+          immediate: false,
+        ),
+        onChangeEnd: (_) => _flush(),
+      ),
+    ];
+    return _card(
+      context,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: <Widget>[
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              final int cols = c.maxWidth >= 640
+                  ? 4
+                  : (c.maxWidth >= 360 ? 2 : 1);
+              const double gap = 20;
+              final double w = (c.maxWidth - gap * (cols - 1)) / cols;
+              return Wrap(
+                spacing: gap,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final Widget tile in tiles)
+                    SizedBox(width: w, child: tile),
+                ],
+              );
+            },
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              _toggle(
+                'music-effects-mono',
+                t.music_effects_mono_title,
+                fx.mono,
+                () => _edit(fx.copyWith(mono: !fx.mono)),
+              ),
+              _toggle(
+                'music-effects-swap',
+                t.music_effects_swap_title,
+                fx.swapChannels,
+                () => _edit(fx.copyWith(swapChannels: !fx.swapChannels)),
+              ),
+              _toggle(
+                'music-effects-limiter',
+                t.music_effects_limiter_title,
+                fx.limiter,
+                () => _edit(fx.copyWith(limiter: !fx.limiter)),
+              ),
+            ],
+          ),
+          Text(
+            !fx.limiter && headroom >= 0.05
+                ? t.music_effects_limiter_hint_headroom(
+                    db: headroom.toStringAsFixed(1),
+                  )
+                : (fx.limiter
+                      ? t.music_eq_preamp_hint_limiter
+                      : t.music_eq_preamp_hint),
+            style: context.fushiType.bodySmall.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 面板里的一格滑块：标题（可带一个点按轮换的频率小标）+ 读数，下面一条滑块。
+class _SliderTile extends StatelessWidget {
+  const _SliderTile({
+    required this.title,
+    required this.readout,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+    required this.onChangeEnd,
+    this.freq,
+    this.freqTooltip,
+    this.onFreqTap,
+    super.key,
+  });
+
+  final String title;
+  final String readout;
+  final String? freq;
+  final String? freqTooltip;
+  final VoidCallback? onFreqTap;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final String? f = freq;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.fushiType.labelLarge,
+              ),
+            ),
+            if (f != null) ...<Widget>[
+              const SizedBox(width: 6),
+              Tooltip(
+                message: freqTooltip ?? '',
+                child: FushiPressScale(
+                  child: Material(
+                    color: cs.secondaryContainer,
+                    shape: const StadiumBorder(),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: onFreqTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          f,
+                          style: context.fushiType.labelSmall.copyWith(
+                            color: cs.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            const Spacer(),
+            Text(
+              readout,
+              style: context.fushiType.labelMedium.copyWith(
+                color: cs.primary,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        adaptiveSlider(
+          context: context,
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: readout,
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
+      ],
+    );
+  }
 }
