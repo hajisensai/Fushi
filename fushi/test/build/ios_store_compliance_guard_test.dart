@@ -959,6 +959,53 @@ void main() {
     });
   });
 
+  group('音乐 YouTube 内置音源（onlineMusicSource，反馈 0tRY-D2JgG）', () {
+    test('门只写在 youtube_music_gate.dart，装配 / 「来源」页 / 取流都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/server/youtube_music_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisYoutubeMusicSourceAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      // 取流本身也过门：iOS 上即便队列里残留了 YouTube 曲目也取不到流。
+      expect(
+        gate,
+        contains(
+          'Future<MusicYoutubeStream>resolveMusicYoutubeStream(StringvideoId)'
+          'async{if(!isYoutubeMusicSourceAvailable){',
+        ),
+      );
+      expect(
+        compactCode(read('lib/src/media/music/server/music_servers.dart')),
+        contains(
+          'if(isYoutubeMusicSourceAvailable&&app.prefsRepo.musicYoutubeEnabled)'
+          '{out.add(YoutubeMusicClient(',
+        ),
+        reason: '在线来源清单里的 YouTube 浏览器只在门后建。',
+      );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_sources_page.dart'),
+        ),
+        contains(
+          'if(isYoutubeMusicSourceAvailable&&'
+          '!sources.any((MusicOnlineSources)=>s.key==kYoutubeMusicSourceKey,))'
+          '{sources.add(const_YoutubeOffSource());',
+        ),
+        reason: '「来源」页的 YouTube 占位开关行只在门后出现。',
+      );
+      expect(
+        StoreRestrictedCapability.onlineMusicSource.availableOn(isIOS: true),
+        isFalse,
+      );
+    });
+  });
+
   group('音乐在线音源插件（onlineMusicSource）', () {
     test('门只写在 music_plugin_gate.dart，消费端都只问它', () {
       final String gate = compactCode(
@@ -973,15 +1020,23 @@ void main() {
         ),
       );
       expect(gate, isNot(contains('Platform.isIOS')));
-      // 设置 › 音乐 › 插件音源：整节 visible 走门（分类正文 / 主从详情 / 搜索索引三条路径共用）。
+      // 设置 › 音乐：不再挂插件管理（来源管理只在曲库「来源」页，与其他媒体一致），
+      // 歌词来源那行（含插件歌词来源）仍整行 visible 走门（分类正文 / 主从详情 / 搜索
+      // 索引三条路径共用）。
+      final String musicSettings = compactCode(
+        read('lib/src/settings/settings_schema_music.dart'),
+      );
+      expect(musicSettings, isNot(contains('MusicPluginSettingsBody')));
       expect(
-        compactCode(read('lib/src/settings/settings_schema_music.dart')),
+        musicSettings,
         contains(
-          'title:t.music_plugins_title,visible:(_)=>isMusicPluginSourcesAvailable,',
+          "id:'music.lyrics_providers',title:t.music_lyrics_providers_title,"
+          'subtitle:t.music_lyrics_providers_hint,icon:FushiIcons.lyrics,'
+          'showIcon:true,visible:(_)=>isMusicPluginSourcesAvailable,',
         ),
       );
-      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（旧的服务器清单页已删，
-      // 插件管理入口只剩这里与设置页）。
+      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（插件管理的设置入口
+      // 已撤，入口只剩这里与服务器曲库页）。
       expect(
         compactCode(
           read('lib/src/pages/implementations/music/music_sources_page.dart'),

@@ -422,6 +422,57 @@ class SrsProfileLinkOutcome {
   final int localNoteCount;
 }
 
+/// 暂缓中的并入（[SrsProfileMergeDeferred] 的最近一次结果，BUG-4217）：profile [profileId] 要从 [oldUid] 并入
+/// [newUid]，但旧 profile 里有 undo 撤销的日志（[missingRevoked]，旧 ID）还没同步到。并入标记留在 srs.db，之后每一轮
+/// [SrsProfileLinker.link] 重跑；这台设备期间按 [oldUid] 照常同步（正是把缺的日志送进来的途径）。
+class SrsDeferredProfileMerge {
+  const SrsDeferredProfileMerge({
+    required this.profileId,
+    required this.oldUid,
+    required this.newUid,
+    required this.missingRevoked,
+  });
+
+  /// 从并入抛出的暂缓构造（[profileId] 是被并入的本机 profile）。
+  factory SrsDeferredProfileMerge.fromError(
+    int profileId,
+    SrsProfileMergeDeferred e,
+  ) => SrsDeferredProfileMerge(
+    profileId: profileId,
+    oldUid: e.oldUid,
+    newUid: e.newUid,
+    missingRevoked: List<String>.unmodifiable(e.missingRevoked),
+  );
+
+  final int profileId;
+  final String oldUid;
+  final String newUid;
+
+  /// 被撤销、还没收到的日志的旧 ID（排序后）。
+  final List<String> missingRevoked;
+}
+
+/// 用户选定候选之后 [SrsProfileLinker.adopt] 的结果。
+sealed class SrsProfileAdoptResult {
+  const SrsProfileAdoptResult(this.store);
+
+  /// 之后继续同步用的 store：改用成功时是按新身份重开的那个，暂缓时是原来那个（旧 uid）。
+  final SrsDbStore store;
+}
+
+/// 改用 / 并入做完了。
+final class SrsProfileAdopted extends SrsProfileAdoptResult {
+  const SrsProfileAdopted(super.store);
+}
+
+/// 并入暂缓（不是失败）：并入标记已写，旧 profile 一行没动，之后的 [SrsProfileLinker.link] 轮次在缺的日志同步到后
+/// 自动做完（[SrsProfileMergeDeferred]）。
+final class SrsProfileAdoptDeferred extends SrsProfileAdoptResult {
+  const SrsProfileAdoptDeferred(super.store, this.deferred);
+
+  final SrsDeferredProfileMerge deferred;
+}
+
 /// 同步前的 profile 关联与同步后的说明文件发布（铁律 E，见文件头）。
 abstract interface class SrsProfileLinker {
   /// 跑引擎之前：决定本机 profile 是否改用目录里已有的 uid（必要时采用并重开 store）。
@@ -432,11 +483,19 @@ abstract interface class SrsProfileLinker {
   ///
   /// [within]：候选所在的那条通道（调用方正拿着它的通道锁）；并入之前从它收目标 uid 的数据。null = 候选在本机目录 /
   /// 文件夹位置上，或那条通道此刻不可用。
-  Future<SrsDbStore> adopt(
+  ///
+  /// 并入暂缓（undo 撤销的日志还没同步到，[SrsProfileMergeDeferred]）不是失败：返回 [SrsProfileAdoptDeferred]
+  /// （store 不变、并入标记已写，之后的 [link] 续做）；其它失败照常抛。
+  Future<SrsProfileAdoptResult> adopt(
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
   });
+
+  /// [store] 所属的当前 profile 正在暂缓的并入：并入标记还在、且本进程里最近一次跑它的结果是暂缓；否则 null。
+  /// 并入做完（标记删掉）或最近一次重跑不再是暂缓后回到 null。标记本身不带暂缓原因，所以进程启动后要等第一轮
+  /// [link] 重跑过才知道。
+  Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store);
 
   /// 引擎跑成功之后：在本机写入者目录里写 profile 说明文件（内容没变就不重写）。
   Future<void> publish(
@@ -491,6 +550,55 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 已经记过的暂缓并入（`旧 uid->新 uid|缺的日志`）：同一批缺口每个进程只记一次（[_resumePendingMerges]）。
   final Set<String> _deferredLogged = <String>{};
 
+  /// 每个并入（[_mergeKey]）最近一次跑的结果是暂缓时的那次暂缓；做完或以别的方式失败就删（[deferredMerge]）。
+  final Map<String, SrsDeferredProfileMerge> _deferred =
+      <String, SrsDeferredProfileMerge>{};
+
+  static String _mergeKey(int profileId, String oldUid, String newUid) =>
+      '$profileId|$oldUid->$newUid';
+
+  /// 记下一次暂缓（[deferredMerge] 查得到），并经 [onError] 记日志：同一批缺口每个进程只记一次，缺口变了（收到了
+  /// 一部分）再记。暂缓不是失败，日志里标成 `deferred (not a failure)`。
+  SrsDeferredProfileMerge _noteDeferred(
+    int profileId,
+    SrsProfileMergeDeferred e,
+    StackTrace stack, {
+    required String where,
+  }) {
+    final SrsDeferredProfileMerge d = SrsDeferredProfileMerge.fromError(
+      profileId,
+      e,
+    );
+    _deferred[_mergeKey(profileId, e.oldUid, e.newUid)] = d;
+    final String key = '${e.oldUid}->${e.newUid}|${e.missingRevoked.join(',')}';
+    if (_deferredLogged.add(key)) {
+      onError?.call(
+        '$where deferred (not a failure) profile '
+        '$profileId ${e.oldUid} -> ${e.newUid}: waiting for '
+        '${e.missingRevoked.length} revoked log(s) to sync, keeps syncing '
+        'the current uid, retried next round',
+        e,
+        stack,
+      );
+    }
+    return d;
+  }
+
+  @override
+  Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store) async {
+    if (_deferred.isEmpty) return null;
+    final int profileId = await activeProfileId();
+    for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
+      store.db,
+    )) {
+      if (m.profileId != profileId) continue;
+      final SrsDeferredProfileMerge? d =
+          _deferred[_mergeKey(profileId, m.oldUid, m.newUid)];
+      if (d != null) return d;
+    }
+    return null;
+  }
+
   Future<String> _nameOf(String uid) async {
     final QueryRow? row = await db
         .customSelect(
@@ -525,6 +633,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     // 上次并入做到一半进程就退出了（标记还在 srs.db）：先用同样的参数做完，再按新身份判定。
     final SrsDbStore? resumed = await _resumePendingMerges(store, backend);
     if (resumed != null) return SrsProfileLinkOutcome(resumed, linked: true);
+    // 当前 profile 的并入暂缓中：用户（或之前的自动判定）已经选定了要并入的 uid，不再重新判定、不再弹冲突让用户
+    // 另选；按旧 uid 照常同步（把缺的日志送进来）。不算已关联（linked: false），调度器每一轮都重跑 [link] 续做并入。
+    if (await deferredMerge(store) != null) return SrsProfileLinkOutcome(store);
     final List<SrsRemoteProfile> remote = await srsListRemoteProfiles(backend);
     // 本设备的孤儿目录：本设备**换 uid 时离开的**旧 uid（[kSrsRetiredProfileUidsKey]，例如用户在冲突弹窗里选了
     // 别的 profile），且只有本设备写过、本机也没有 profile 再用它。本机判定本来就不把它算作别人的数据，但别的设备会
@@ -608,21 +719,34 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   }
 
   @override
-  Future<SrsDbStore> adopt(
+  Future<SrsProfileAdoptResult> adopt(
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
   }) async {
-    if (uid == store.profileUid) return store;
+    if (uid == store.profileUid) return SrsProfileAdopted(store);
     if (await _uidTakenLocally(uid)) {
       throw StateError('profile uid $uid is already another local profile');
     }
-    return _switchUid(
-      store,
-      uid,
-      merge: await store.hasUserNotes(),
-      within: within,
-    );
+    final int profileId = await activeProfileId();
+    try {
+      return SrsProfileAdopted(
+        await _switchUid(
+          store,
+          uid,
+          merge: await store.hasUserNotes(),
+          within: within,
+        ),
+      );
+    } on SrsProfileMergeDeferred catch (e, stack) {
+      // 暂缓在第一次落库之前抛（[SrsProfileMergeDeferred]）：主库还指向旧 uid、并入标记已写（[srsMergeProfileUid]
+      // 一开头），之后的 [link] 经 [_resumePendingMerges] 重跑。主库已经改了 uid 就不是这种干净的暂缓，按失败抛。
+      if (await db.profileUidOf(profileId) != store.profileUid) rethrow;
+      return SrsProfileAdoptDeferred(
+        store,
+        _noteDeferred(profileId, e, stack, where: 'SrsProfileLinker.adopt'),
+      );
+    }
   }
 
   /// srs.db `srs_meta` 里 [key] 存的字符串集合（JSON 数组；没有 / 坏了为空）。
@@ -709,22 +833,17 @@ class SrsDbProfileLinker implements SrsProfileLinker {
           pullTarget: _pullTarget(within),
         );
       } on SrsProfileMergeDeferred catch (e, stack) {
-        // 暂缓不是失败（undo 撤销的日志还没同步到，[SrsProfileMergeDeferred]）：什么都没写，下一轮重跑。同一批缺口
-        // 只记一次，不每轮往错误日志里刷；缺口变了（收到了一部分）再记。
-        final String key =
-            '${m.oldUid}->${m.newUid}|${e.missingRevoked.join(',')}';
-        if (_deferredLogged.add(key)) {
-          onError?.call(
-            'SrsProfileLinker.resumeMerge deferred (not a failure) profile '
-            '${m.profileId} ${m.oldUid} -> ${m.newUid}: waiting for '
-            '${e.missingRevoked.length} revoked log(s) to sync, keeps syncing '
-            'the current uid, retried next round',
-            e,
-            stack,
-          );
-        }
+        // 暂缓不是失败（undo 撤销的日志还没同步到，[SrsProfileMergeDeferred]）：什么都没写，下一轮重跑。记下这次
+        // 暂缓（[deferredMerge]，同步状态页显示）；同一批缺口只记一次日志，不每轮往错误日志里刷。
+        _noteDeferred(
+          m.profileId,
+          e,
+          stack,
+          where: 'SrsProfileLinker.resumeMerge',
+        );
         continue;
       } catch (e, stack) {
+        _deferred.remove(_mergeKey(m.profileId, m.oldUid, m.newUid));
         onError?.call(
           'SrsProfileLinker.resumeMerge profile ${m.profileId} '
           '${m.oldUid} -> ${m.newUid} (marker kept, retried next round)',
@@ -733,6 +852,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         );
         continue;
       }
+      _deferred.remove(_mergeKey(m.profileId, m.oldUid, m.newUid));
       await _addToMetaSet(store, kSrsRetiredProfileUidsKey, m.oldUid);
       resumed = true;
     }

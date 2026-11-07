@@ -62,6 +62,11 @@ abstract interface class VideoSubtitleGeneratePrefs {
   VideoSubtitleSegmenterMode get segmenter;
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value);
 
+  /// 「保存字幕文件」（写到视频旁边）上次的选择；只在面板带
+  /// [VideoSubtitleInAppTranscribe] 时出现与读写。
+  bool get saveBesideVideo;
+  Future<void> setSaveBesideVideo(bool value);
+
   MossBackendPreference get mossBackend;
 
   /// 开 AI 生成前：配了联网搜索后端却没答过「抓前 3 页交给 AI」时问一次
@@ -97,12 +102,28 @@ class PrefsRepoVideoSubtitleGeneratePrefs
       prefs.setVideoSubtitleSegmenter(value);
 
   @override
+  bool get saveBesideVideo => prefs.videoSubtitleSaveBesideVideo;
+
+  @override
+  Future<void> setSaveBesideVideo(bool value) =>
+      prefs.setVideoSubtitleSaveBesideVideo(value);
+
+  @override
   MossBackendPreference get mossBackend => prefs.videoSubtitleMossBackend;
 
   @override
   Future<void> ensureWebSearchPageFetchDecided(BuildContext context) =>
       ensureAiWebSearchPageFetchDecided(context, prefs);
 }
+
+/// 「生成字幕」面板里关掉「保存字幕文件」后点开始：面板先关，由视频页走「只在 Fushi
+/// 里转录」那条路（转录弹层，产物进 Fushi 字幕库并当场选中）。[proofread] = 面板里
+/// AI 校对开关的值，转录完就自动校对一次。
+///
+/// 视频页「语音识别生成字幕」与「生成日语字幕」两个入口合并成一个（反馈
+/// 6Tj3ECtB0Q）后，两条原流程都从这一个面板出发：开着保存 = 生成字幕管线，关着 =
+/// 原「语音识别生成字幕」。
+typedef VideoSubtitleInAppTranscribe = void Function({required bool proofread});
 
 /// AI 失败短码 → 文案（管线自己的 `reply_incomplete` 在通用映射里没有）。
 String videoSubtitleAiFailureText(String code) =>
@@ -209,6 +230,7 @@ Future<void> showVideoSubtitleGenerateSheet({
   required VideoSubtitleGeneratePrefs prefs,
   required Future<void> Function(BuildContext context) openAiSettings,
   void Function(AppVideoSubtitleJob job)? onJobStarted,
+  VideoSubtitleInAppTranscribe? onTranscribeInApp,
 }) {
   Widget build(BuildContext ctx) => VideoSubtitleGenerateSheet(
     service: service,
@@ -216,6 +238,7 @@ Future<void> showVideoSubtitleGenerateSheet({
     prefs: prefs,
     openAiSettings: openAiSettings,
     onJobStarted: onJobStarted,
+    onTranscribeInApp: onTranscribeInApp,
   );
   if (isDesktopPlatform) {
     return showAppDialog<void>(
@@ -243,6 +266,7 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
     required this.prefs,
     required this.openAiSettings,
     this.onJobStarted,
+    this.onTranscribeInApp,
   });
 
   final AppVideoSubtitleService service;
@@ -250,6 +274,10 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
   final VideoSubtitleGeneratePrefs prefs;
   final Future<void> Function(BuildContext context) openAiSettings;
   final void Function(AppVideoSubtitleJob job)? onJobStarted;
+
+  /// 非 null 时面板多一项「保存字幕文件」开关（视频页单集入口）；关掉后「开始」改走
+  /// 这条回调（见 [VideoSubtitleInAppTranscribe]）。整季 / 音乐入口不传。
+  final VideoSubtitleInAppTranscribe? onTranscribeInApp;
 
   @override
   State<VideoSubtitleGenerateSheet> createState() =>
@@ -263,6 +291,12 @@ class _VideoSubtitleGenerateSheetState
 
   late bool _proofread = widget.prefs.proofread;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
+
+  /// 写到视频旁边（走管线）；false = 只在 Fushi 里转录。没有
+  /// [VideoSubtitleGenerateSheet.onTranscribeInApp] 时恒为 true。接回已有管线任务时
+  /// 在 [initState] 里强制为 true，免得任务卡被藏起来。
+  late bool _saveBeside =
+      widget.onTranscribeInApp == null || widget.prefs.saveBesideVideo;
 
   /// 字幕语言。初值：接回的任务用它自己的；否则先按日语，音轨探测出来后
   /// （[_guessLanguage]）若用户还没动过就换成猜到的。
@@ -362,6 +396,7 @@ class _VideoSubtitleGenerateSheetState
       _attach(latest);
       _language = latest.options.language;
       _languageTouched = true;
+      _saveBeside = true;
     } else if (!_target.isMusic) {
       // 音乐只生成日语字幕（入口与批量标题都写明日语），不猜语言、不给语言选项。
       unawaited(_guessLanguage());
@@ -571,6 +606,25 @@ class _VideoSubtitleGenerateSheetState
     if (on) unawaited(_refreshEstimate());
   }
 
+  Future<void> _setSaveBeside(bool on) async {
+    setState(() {
+      _saveBeside = on;
+      _startError = null;
+    });
+    await widget.prefs.setSaveBesideVideo(on);
+    if (on && _proofread) unawaited(_refreshEstimate());
+  }
+
+  /// 不保存到视频旁：关面板，交给视频页走转录弹层（见 [VideoSubtitleInAppTranscribe]）。
+  /// 用 maybePop：面板总在自己的路由里，pop 掉的就是它本身。
+  Future<void> _transcribeInApp() async {
+    final VideoSubtitleInAppTranscribe? transcribe = widget.onTranscribeInApp;
+    if (transcribe == null) return;
+    final bool proofread = _proofread;
+    await Navigator.of(context).maybePop();
+    transcribe(proofread: proofread);
+  }
+
   Future<void> _openAiSettings() async {
     await widget.openAiSettings(context);
     // 回来后现读指派（build 里求值）。
@@ -637,12 +691,18 @@ class _VideoSubtitleGenerateSheetState
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 不保存到视频旁时语言 / 模型 / 分段都归转录弹层管（那边语言与引擎更多），
+    // 这里只留对象、保存开关与 AI 校对。
     final List<(String, Widget)> parts = <(String, Widget)>[
       (t.video_subtitle_ai_target_label, _targetSummary(context)),
-      if (!_target.isMusic)
-        (t.video_subtitle_ai_language_label, _languageControl()),
-      (t.video_subtitle_ai_model_label, _modelStatus(context)),
-      (t.video_subtitle_ai_segmenter_label, _segmenterControl()),
+      if (widget.onTranscribeInApp != null)
+        (t.video_subtitle_save_label, _saveControl()),
+      if (_saveBeside) ...<(String, Widget)>[
+        if (!_target.isMusic)
+          (t.video_subtitle_ai_language_label, _languageControl()),
+        (t.video_subtitle_ai_model_label, _modelStatus(context)),
+        (t.video_subtitle_ai_segmenter_label, _segmenterControl()),
+      ],
       (t.video_subtitle_ai_proofread_label, _proofreadControl()),
     ];
     final List<Widget> sections = <Widget>[
@@ -671,7 +731,7 @@ class _VideoSubtitleGenerateSheetState
               duration: context.fushiMotion.spatialDefault.duration,
               curve: context.fushiMotion.spatialDefault.curve,
               alignment: Alignment.topCenter,
-              child: job == null
+              child: job == null || !_saveBeside
                   ? const SizedBox(width: double.infinity)
                   : Padding(
                       padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
@@ -764,7 +824,7 @@ class _VideoSubtitleGenerateSheetState
           AppVideoSubtitleUnavailableReason.missingFile =>
             t.video_subtitle_ai_unavailable_missing(title: u.title),
         }),
-      if (_proofread && _target.missingScrapedData)
+      if (_saveBeside && _proofread && _target.missingScrapedData)
         _hint(
           t.video_subtitle_ai_scrape_hint,
           key: const ValueKey<String>('video-subtitle-ai-scrape-hint'),
@@ -924,6 +984,37 @@ class _VideoSubtitleGenerateSheetState
     );
   }
 
+  Widget _saveControl() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _hint(
+            _saveBeside
+                ? t.video_subtitle_save_beside_hint
+                : t.video_subtitle_save_off_hint,
+            key: ValueKey<String>(
+              _saveBeside
+                  ? 'video-subtitle-save-beside-hint'
+                  : 'video-subtitle-save-off-hint',
+            ),
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        KeyedSubtree(
+          key: const ValueKey<String>('video-subtitle-save-beside'),
+          child: adaptiveSwitch(
+            context: context,
+            value: _saveBeside,
+            onChanged: _running
+                ? null
+                : (bool v) => unawaited(_setSaveBeside(v)),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _proofreadControl() {
     final AiProviderConfig? provider = _service.proofreadProvider;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -932,7 +1023,13 @@ class _VideoSubtitleGenerateSheetState
       children: <Widget>[
         Row(
           children: <Widget>[
-            Expanded(child: _hint(t.video_subtitle_ai_proofread_hint)),
+            Expanded(
+              child: _hint(
+                _saveBeside
+                    ? t.video_subtitle_ai_proofread_hint
+                    : t.video_subtitle_transcribe_proofread_hint,
+              ),
+            ),
             SizedBox(width: tokens.spacing.gap),
             KeyedSubtree(
               key: const ValueKey<String>('video-subtitle-ai-proofread'),
@@ -984,17 +1081,20 @@ class _VideoSubtitleGenerateSheetState
                             'video-subtitle-ai-provider',
                           ),
                         ),
-                      _estimateLine(),
-                      FushiPressScale(
-                        child: FushiOutlinedButton.icon(
-                          key: const ValueKey<String>(
-                            'video-subtitle-ai-glossary',
+                      // 费用预估与专名表只属于管线校对；转录弹层的校对不用专名表。
+                      if (_saveBeside) ...<Widget>[
+                        _estimateLine(),
+                        FushiPressScale(
+                          child: FushiOutlinedButton.icon(
+                            key: const ValueKey<String>(
+                              'video-subtitle-ai-glossary',
+                            ),
+                            icon: const FushiIcon(FushiIcons.edit, size: 18),
+                            label: Text(t.video_subtitle_glossary_open),
+                            onPressed: () => unawaited(_openGlossary()),
                           ),
-                          icon: const FushiIcon(FushiIcons.edit, size: 18),
-                          label: Text(t.video_subtitle_glossary_open),
-                          onPressed: () => unawaited(_openGlossary()),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -1217,13 +1317,29 @@ class _VideoSubtitleGenerateSheetState
     final bool modelReady = _modelReady ?? false;
     final bool providerMissing =
         _proofread && _service.proofreadProvider == null;
-    final bool canStart = modelReady && !providerMissing && !_running;
     final List<Widget> buttons = <Widget>[
       FushiTextButton(
         onPressed: () => Navigator.pop(context),
         child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
       ),
     ];
+    if (!_saveBeside) {
+      // 识别模型由转录弹层自己查 / 下，这里不看 modelReady。
+      buttons.add(
+        FushiPressScale(
+          child: FushiFilledButton.icon(
+            key: const ValueKey<String>('video-subtitle-transcribe-start'),
+            icon: const FushiIcon(FushiIcons.play, size: 18),
+            label: Text(t.video_subtitle_ai_start),
+            onPressed: providerMissing || _running
+                ? null
+                : () => unawaited(_transcribeInApp()),
+          ),
+        ),
+      );
+      return buttons;
+    }
+    final bool canStart = modelReady && !providerMissing && !_running;
     if (job != null && job.isRunning) {
       buttons.add(
         FushiFilledButton.icon(

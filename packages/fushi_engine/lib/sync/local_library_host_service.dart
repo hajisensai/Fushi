@@ -143,6 +143,7 @@ Future<String?> _existingFilePathAsync(String? path) async {
 abstract class _LocalLibraryHostBase
     implements
         FushiLibraryHostService,
+        BookProgressBatchHost,
         MangaLibraryHost,
         DeletionTombstoneHost,
         PeerPushDeletionGate,
