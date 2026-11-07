@@ -439,6 +439,52 @@ void main() {
       },
     );
 
+    // 反馈 Mvgfc0Ervz：单独成段的「…………」/ ……… 在缝里零个有读音的字，此前被
+    // 「至少 2 个字」门槛整段丢掉；两侧歌词行又都不认领段落之间的整段符号，
+    // 于是哪里都不显示。
+    test('symbol-only paragraph between adjacent cues is shown as skipped', () {
+      // 归一化：前だ(0-2) 誰だ(2-4) 次だ(4-6)。
+      final EpubBook book = _book(<String>[
+        '<p>前だ。</p><p>「…………」</p><p>誰だ。</p><p>…………</p><p>――次だ</p>',
+      ]);
+      final LyricsCueTextResolver resolver = LyricsCueTextResolver(book);
+      expect(resolver.textForCue(_cue(0, 2)), '前だ。');
+      expect(
+        resolver.skippedTextBetween(_cue(0, 2), _cue(2, 4))?.text,
+        '「…………」',
+      );
+      expect(resolver.textForCue(_cue(2, 4)), '誰だ。');
+      expect(resolver.skippedTextBetween(_cue(2, 4), _cue(4, 6))?.text, '…………');
+      expect(resolver.textForCue(_cue(4, 6)), '――次だ');
+      // 同段内的标点缝仍归两侧歌词行，不多出空灰显行。
+      final LyricsCueTextResolver inline = LyricsCueTextResolver(
+        _book(<String>['<p>前だ。「…………」誰だ。</p>']),
+      );
+      expect(inline.skippedTextBetween(_cue(0, 2), _cue(2, 4)), isNull);
+      expect(inline.textForCue(_cue(0, 2)), '前だ。');
+      expect(inline.textForCue(_cue(2, 4)), '「…………」誰だ。');
+    });
+
+    test('symbol-only paragraph becomes a .ly-gap row in lyrics HTML', () {
+      final EpubBook book = _book(<String>[
+        '<p>前だ。</p><p>「…………」</p><p>誰だ。</p>',
+      ]);
+      final html_dom.Document doc = html_parser.parse(
+        LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0, 2), _cue(2, 4)],
+          book: book,
+          currentIndex: 0,
+          backgroundColor: '#fff',
+          textColor: '#000',
+          accentColor: '#f08',
+          fontSize: 24,
+        ),
+      );
+      final List<html_dom.Element> gaps = doc.querySelectorAll('.ly-gap');
+      expect(gaps, hasLength(1));
+      expect(gaps.single.text, '「…………」');
+    });
+
     test('no gap across chapters, at chapter edges, or for unmatched cues', () {
       final EpubBook book = _book(<String>['あいうえお。', 'かきくけこ。']);
       final LyricsCueTextResolver resolver = LyricsCueTextResolver(book);

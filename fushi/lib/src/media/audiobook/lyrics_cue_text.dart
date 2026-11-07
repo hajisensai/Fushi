@@ -14,7 +14,9 @@ class LyricsCueText {
 }
 
 /// 两条 cue 之间的未认领正文至少这么多个有读音的字才在歌词页灰显
-/// （[LyricsCueTextResolver.skippedTextBetween]）。
+/// （[LyricsCueTextResolver.skippedTextBetween]）。缝里**零个**有读音的字时
+/// 不受此限：那种缝里没有模糊命中漏掉的词尾可滤，两侧歌词行都不认领的只会是
+/// 整段只有符号的段落（「…………」「――」「◇」），照样灰显。
 const int kLyricsSkippedTextMinChars = 2;
 
 /// Resolves display text without changing transcript cues or their token timing.
@@ -87,10 +89,13 @@ class LyricsCueTextResolver {
   /// 的 ASR 漏转），按歌词行同一取法带回 ruby；没有这样的正文返回 null。
   ///
   /// 只在同章、区间都合法、[prev] 止于 [next] 起点之前时产生——跨章、开头结尾、
-  /// 区间重叠或乱序一律不算。缝的归一化字数（有读音的字）不足
-  /// [kLyricsSkippedTextMinChars] 不算（只剩标点 / 空白，或模糊命中漏掉的一个
-  /// 词尾字）。文本区间与两侧歌词行首尾相接：从 [prev] 补完收尾标点之后起，到
-  /// [next] 往回补的开括号之前止，再去掉两端空白。
+  /// 区间重叠或乱序一律不算。缝的归一化字数（有读音的字）为 1 ~
+  /// [kLyricsSkippedTextMinChars] - 1 不算（模糊命中漏掉的词尾字）。为 0 时照常
+  /// 取文本：段内的标点缝被 [_gapSplit] 分给两侧歌词行、取出来是空串；只有夹在
+  /// 段落之间、两侧都不认领的整段符号（「…………」）留下来（用户反馈 Mvgfc0Ervz：
+  /// 单独成段的省略号 / 引号此前因「标点算 0 字」整段被丢）。文本区间与两侧歌词
+  /// 行首尾相接：从 [prev] 补完收尾标点之后起，到 [next] 往回补的开括号之前止，
+  /// 再去掉两端空白。
   ///
   /// 纯显示：不改 cue、不改匹配区间，统计 / 制卡 / 高亮仍只认 cue 区间，所以
   /// 已落库的书不用重新对齐就能看到。
@@ -108,8 +113,12 @@ class LyricsCueTextResolver {
         a.sectionIndex >= book.chapters.length ||
         a.normCharStart < 0 ||
         a.normCharEnd <= a.normCharStart ||
-        b.normCharEnd <= b.normCharStart ||
-        b.normCharStart - a.normCharEnd < kLyricsSkippedTextMinChars) {
+        b.normCharEnd <= b.normCharStart) {
+      return null;
+    }
+    final int readingChars = b.normCharStart - a.normCharEnd;
+    if (readingChars < 0 ||
+        (readingChars > 0 && readingChars < kLyricsSkippedTextMinChars)) {
       return null;
     }
     final _Chapter chapter = _chapter(a.sectionIndex);
