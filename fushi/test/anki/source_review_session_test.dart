@@ -432,7 +432,7 @@ void main() {
 
   testWidgets(
     'missing original leaves no draft and does not block the next mining '
-    '(BUG-4220)',
+    '(BUG-4222)',
     (WidgetTester tester) async {
       await mount(tester);
       repository.missing = true;

@@ -953,7 +953,7 @@ public class AnkiChannelHandler {
      * Candidate notes whose fields contain the card source ID substring, without
      * guessing by word or local note id. The notes URI accepts Anki browser
      * syntax (notes_v2 accepts SQL instead); a {@code *:}-qualified substring
-     * match over every note field (BUG-4220: unqualified terms skip fields set
+     * match over every note field (BUG-4222: unqualified terms skip fields set
      * to "Exclude from unqualified searches"), mirroring
      * {@code CardSourceLink.searchQueryForSourceId}. Substring hits are only
      * candidates: the Dart repository confirms identity by parsing each note's
