@@ -30,6 +30,8 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
         kLibraryManualOrderPrefKeyPrefix;
+import 'package:fushi/src/models/library_grid_columns.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -787,6 +789,38 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setGamesLibraryListLayout(bool list) async {
     await setPref('games_library_layout', list ? 'list' : 'grid');
+    notifyListeners();
+  }
+
+  /// 库页「每行数量」：[domain] 在 [sizeClass] 档下的固定列数，null = 自动
+  /// （见 [kLibraryGridColumnsPrefKey]，设备本地）。
+  int? libraryGridColumns(
+    LibraryGridDomain domain,
+    WindowSizeClass sizeClass,
+  ) => libraryGridFixedColumnsFrom(
+    decodeLibraryGridColumns(
+      getPref(kLibraryGridColumnsPrefKey, defaultValue: null) as String?,
+    ),
+    domain,
+    sizeClass,
+  );
+
+  /// 写「每行数量」；[columns] 为 null = 恢复自动。内存缓存在第一个 await 之前
+  /// 就已更新，调用方同步 setState 后读到的就是新值。
+  Future<void> setLibraryGridColumns(
+    LibraryGridDomain domain,
+    WindowSizeClass sizeClass,
+    int? columns,
+  ) async {
+    final Map<String, int> next = withLibraryGridColumns(
+      decodeLibraryGridColumns(
+        getPref(kLibraryGridColumnsPrefKey, defaultValue: null) as String?,
+      ),
+      domain,
+      sizeClass,
+      columns,
+    );
+    await setPref(kLibraryGridColumnsPrefKey, encodeLibraryGridColumns(next));
     notifyListeners();
   }
 

@@ -29,8 +29,8 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart'
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogListAction, MediaItemDialogFrame, showMediaItemActions;
-import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
-    show kShelfBookCardAspectRatio;
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfBookCellAspectRatio;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -885,7 +885,10 @@ class _MediaCollectionGridDetailPageState
           spacing: spacing,
         );
         // 游戏合集：卡盒竖长 1:1.6 + 封面下文字块，按真实行高算格子比例（书卡
-        // 比例装不下，卡片会溢出格子）；其余域沿用书架卡槽比例。
+        // 比例装不下，卡片会溢出格子）。书 / 漫画：与书架网格同一公式
+        // （[shelfBookCellAspectRatio]，封面区恒为书封比例；成员卡自带标准内边距，
+        // 本页不包 [ShelfGridCellInset]）——固定卡槽比例在格宽偏离设计值时封面
+        // 两侧会露出材质衬底。
         final bool gameDomain =
             _rows.isNotEmpty &&
             _rows.every(
@@ -896,7 +899,11 @@ class _MediaCollectionGridDetailPageState
             ? layout.cardWidth /
                   (layout.cardWidth / kShelfGameCaseAspectRatio +
                       ShelfCardMeta.heightFor(context))
-            : kShelfBookCardAspectRatio;
+            : shelfBookCellAspectRatio(
+                cellWidth: layout.cardWidth,
+                inset: tokens.spacing.rowVertical,
+                footerHeight: ShelfCardMeta.heightFor(context),
+              );
 
         final List<Widget> slivers = <Widget>[
           SliverPadding(

@@ -104,6 +104,7 @@ class ServerConfig {
     this.scanPrune = true,
     this.scanScrape = true,
     this.profileTransfer = false,
+    this.remoteUpdate = false,
     this.leaderboardLink = true,
     this.tmdbApiKey,
     this.ai,
@@ -215,6 +216,12 @@ class ServerConfig {
   /// （BUG-988）。运行期现读，WebUI 改完即生效。
   final bool profileTransfer;
 
+  /// 允许已配对设备经互联 `/api/host/update` 让本机下载并安装新版服务端（与 app 的
+  /// 「允许已配对设备远程更新本机」同一条默认：关）。只在发布包里可用（见
+  /// `self_update/`）；装完进程以退出码 75 退出，由 systemd / 服务管理器拉起新版。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool remoteUpdate;
+
   /// 允许被标记为「我的设备」的已配对设备跟随本机（当前激活 Profile）的 Fushi 排行榜账户
   /// 自动登录（`/api/interconnect/leaderboard-link`，只在 TLS 下可达）。默认开：与 app 的
   /// 「允许已配对设备自动登录我的账户」同一默认（所有者 2026-10-16 拍板）——真正的门是逐台
@@ -265,6 +272,7 @@ class ServerConfig {
     bool? scanPrune,
     bool? scanScrape,
     bool? profileTransfer,
+    bool? remoteUpdate,
     bool? leaderboardLink,
     String? tmdbApiKey,
     ServerAiConfig? ai,
@@ -298,6 +306,7 @@ class ServerConfig {
     scanPrune: scanPrune ?? this.scanPrune,
     scanScrape: scanScrape ?? this.scanScrape,
     profileTransfer: profileTransfer ?? this.profileTransfer,
+    remoteUpdate: remoteUpdate ?? this.remoteUpdate,
     leaderboardLink: leaderboardLink ?? this.leaderboardLink,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
@@ -367,6 +376,7 @@ class ServerConfig {
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
+      remoteUpdate: _bool(map['remote_update']) ?? base.remoteUpdate,
       leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
@@ -415,6 +425,7 @@ class ServerConfig {
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
+    b.writeln('remote_update: $remoteUpdate');
     b.writeln('leaderboard_link: $leaderboardLink');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');

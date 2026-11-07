@@ -58,8 +58,17 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     this.sortMenuController,
     this.leadingChips = const <Widget>[],
     this.onAiOrganize,
+    this.extraSections = const <LibraryViewSection>[],
+    this.onOpenViewSheet,
     super.key,
   });
+
+  /// 排序（与筛选）组之后追加的单选组（库页「每行数量」，2026-11-07）。
+  final List<LibraryViewSection> extraSections;
+
+  /// 非 null 时排序按钮不开锚定菜单、改调它（窄窗打开「排序与显示」底部抽屉，
+  /// 见 [showLibraryViewSheet]）。调用方按 [libraryViewOptionsUseSheet] 决定传不传。
+  final VoidCallback? onOpenViewSheet;
 
   /// [FushiTagFilterBarPart.tags] 行首的额外 chip（库页生效中的筛选条件，带 ✕；
   /// 2026-10-14）。非空时即使没有标签也出这一行；与标签之间画一道竖分隔。
@@ -409,7 +418,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final bool hasFilter =
         filterTitle != null && widget.filterOptions.isNotEmpty;
     final bool hasTags = widget.tagsInMenu && widget.tags.isNotEmpty;
-    final bool grouped = hasFilter || hasTags;
+    final bool grouped =
+        hasFilter || hasTags || widget.extraSections.isNotEmpty;
     // 筛选生效（阅读状态不是「全部」/ 菜单里的标签有选中）：按钮亮圆点。
     final bool filtered =
         widget.filterActive || (hasTags && selectedTagIds.isNotEmpty);
@@ -421,6 +431,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       builder: (BuildContext context, MenuController controller, Widget? _) {
         final String tooltip = hasFilter || hasTags
             ? t.library_sort_filter
+            : grouped
+            ? t.library_sort_view
             : t.sort_by;
         return LibraryFilterBadge(
           key: const ValueKey<String>('library_sort_menu_button'),
@@ -430,8 +442,10 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             tooltip: filtered
                 ? '$tooltip · ${t.library_filter_active}'
                 : tooltip,
-            onTap: () =>
-                controller.isOpen ? controller.close() : controller.open(),
+            onTap:
+                widget.onOpenViewSheet ??
+                () =>
+                    controller.isOpen ? controller.close() : controller.open(),
           ),
         );
       },
@@ -465,7 +479,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final bool hasFilter =
         filterTitle != null && widget.filterOptions.isNotEmpty;
     final bool hasTags = widget.tagsInMenu && widget.tags.isNotEmpty;
-    final bool grouped = hasFilter || hasTags;
+    final bool grouped =
+        hasFilter || hasTags || widget.extraSections.isNotEmpty;
     return <Widget>[
       if (grouped) _menuSectionLabel(tokens, t.sort_by),
       for (final ShelfSortMode mode in ShelfSortMode.values)
@@ -486,6 +501,21 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             icon: option.icon,
             selected: option.selected,
             // 排序组已有 autofocus 落点（选中的排序项），这组不抢。
+            autofocus: false,
+            onPressed: option.onSelected,
+          ),
+      ],
+      for (final LibraryViewSection section
+          in widget.extraSections) ...<Widget>[
+        const FushiDivider(),
+        _menuSectionLabel(tokens, section.title),
+        for (final LibraryViewOption option in section.options)
+          _choiceMenuItem(
+            tokens,
+            key: option.key,
+            label: option.label,
+            icon: option.icon,
+            selected: option.selected,
             autofocus: false,
             onPressed: option.onSelected,
           ),
@@ -670,6 +700,15 @@ class LibraryViewOption {
   final Key? key;
 }
 
+/// 「排序与显示」里的一组单选项（菜单里一段 / 窄窗抽屉里一组 chip）。
+@immutable
+class LibraryViewSection {
+  const LibraryViewSection({required this.title, required this.options});
+
+  final String title;
+  final List<LibraryViewOption> options;
+}
+
 /// [FushiTagFilterBar] 渲染哪一段。
 enum FushiTagFilterBarPart {
   /// 整栏：标签 chip + 末尾全部动作（独立使用 / 旧调用点）。
@@ -712,9 +751,12 @@ List<FushiIconButton> libraryHeaderTagActions(
   int sortPriority = 20,
   int tagManagePriority = 10,
   int collectionManagePriority = 9,
+  String? sortTooltipOverride,
+  VoidCallback? onOpenViewSheet,
 }) {
   final t = Translations.of(context);
-  final String sortTooltip = sortGrouped ? t.library_sort_filter : t.sort_by;
+  final String sortTooltip =
+      sortTooltipOverride ?? (sortGrouped ? t.library_sort_filter : t.sort_by);
   final MenuController? menu = sortMenu;
   return <FushiIconButton>[
     if (onToggleSelectionMode != null)
@@ -737,7 +779,9 @@ List<FushiIconButton> libraryHeaderTagActions(
             : sortTooltip,
         badge: sortFilterActive,
         overflowPriority: sortPriority,
-        onTap: () => menu.isOpen ? menu.close() : menu.open(),
+        // 窄窗：「排序与显示」底部抽屉（[showLibraryViewSheet]）；宽窗：锚定菜单。
+        onTap:
+            onOpenViewSheet ?? () => menu.isOpen ? menu.close() : menu.open(),
       ),
     if (showTagManagement)
       FushiIconButton(
