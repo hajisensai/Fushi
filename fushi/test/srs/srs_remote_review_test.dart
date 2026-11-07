@@ -1117,7 +1117,7 @@ void main() {
         ),
       );
       final _CountingConnector connector =
-          _CountingConnector(first.app, host, first.dir)
+          _CountingConnector(SrsTestAppModel(), host, first.dir)
             ..homeCache = first.homeCache
             ..clock = first.clock.add(const Duration(minutes: 5))
             ..openGate = Completer<void>();
