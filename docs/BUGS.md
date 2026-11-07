@@ -38,6 +38,13 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4226](bugs/BUG-4226-collection-detail-open-eager-grid.md) | ✅ | ✅ | collection-detail-open-eager-grid |
+> 共 3790 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4228](bugs/BUG-4228-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
+| [BUG-4227](bugs/BUG-4227-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
+| [BUG-4226](bugs/BUG-4226-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
 | [BUG-4225](bugs/BUG-4225-cloud-manga-shelf-download-stuck-100.md) | 🚧 | 🚧 | 书架下载云盘漫画卡 100% 打不开（对比页正常） |
 | [BUG-4224](bugs/BUG-4224-manga-webtoon-zoom-scroll-toggles-chrome.md) | ✅ | ✅ | manga-webtoon-zoom-scroll-toggles-chrome |
 | [BUG-4223](bugs/BUG-4223-cloud-manga-placeholder-on-books-shelf.md) | ✅ | ✅ | 云盘漫画远端占位卡落在书籍书架 |
