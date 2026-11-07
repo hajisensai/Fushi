@@ -16,40 +16,15 @@
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
+// 真 popup.js 整份跑在共享宿主里（vm + 假 DOM，见 _popup_dom_host.js），顶层函数声明
+// 落在沙盒全局上，直接取用——不再各测试复制一份「抽函数 + vm」的样板。
+const { loadPopup } = require('../pages/_popup_dom_host.js');
 
-const popupSrc = fs.readFileSync(
-  path.resolve(__dirname, '..', '..', 'assets', 'popup', 'popup.js'), 'utf8');
-
-function extractFunction(name) {
-  let start = popupSrc.indexOf(`\nfunction ${name}(`);
-  if (start < 0) start = popupSrc.indexOf(`\nasync function ${name}(`);
-  assert.ok(start >= 0, `popup.js must define function ${name}`);
-  const end = popupSrc.indexOf('\n}\n', start);
-  assert.ok(end > start, `function ${name} must end with a column-0 brace`);
-  return popupSrc.slice(start + 1, end + 2);
+const api = loadPopup();
+for (const name of ['constructFrequencyHtml', 'getFrequencyHarmonicRank',
+  'constructSingleFrequencyNumbers', 'constructSingleFrequenciesHtml']) {
+  assert.strictEqual(typeof api[name], 'function', `popup.js must define function ${name}`);
 }
-
-function extractConst(name) {
-  const re = new RegExp(`\\nconst ${name} = [\\s\\S]*?;\\n`);
-  const match = popupSrc.match(re);
-  assert.ok(match, `popup.js must define const ${name}`);
-  return match[0].slice(1);
-}
-
-const sandbox = {};
-vm.createContext(sandbox);
-vm.runInContext([
-  extractConst('DEFAULT_HARMONIC_RANK'),
-  extractFunction('constructFrequencyHtml'),
-  extractFunction('collectFrequencyNumbers'),
-  extractFunction('getFrequencyHarmonicRank'),
-  extractFunction('constructSingleFrequencyNumbers'),
-  extractFunction('constructSingleFrequenciesHtml'),
-  'this.api = { constructFrequencyHtml, getFrequencyHarmonicRank, ' +
-    'constructSingleFrequencyNumbers, constructSingleFrequenciesHtml };',
-].join('\n'), sandbox);
-const api = sandbox.api;
 
 // popup 的 frequencies 形状：按词典分组，每组若干条 {value, displayValue}。
 const frequencies = [
@@ -64,10 +39,10 @@ const frequencies = [
   { dictionary: 'Empty', frequencies: [] },
 ];
 
-const numbers = JSON.parse(JSON.stringify(api.constructSingleFrequencyNumbers(frequencies)));
+const numbers = structuredClone(api.constructSingleFrequencyNumbers(frequencies));
 assert.deepStrictEqual(numbers, { JPDB: '5000', Jiten: '1234', BCCWJ: '88' });
 
-const htmls = JSON.parse(JSON.stringify(api.constructSingleFrequenciesHtml(frequencies)));
+const htmls = structuredClone(api.constructSingleFrequenciesHtml(frequencies));
 assert.deepStrictEqual(Object.keys(htmls), ['JPDB', 'Jiten', 'BCCWJ', 'Zero']);
 assert.strictEqual(
   htmls.Jiten,
@@ -85,12 +60,16 @@ assert.strictEqual(api.getFrequencyHarmonicRank(frequencies), expectedHarmonic);
 assert.strictEqual(api.getFrequencyHarmonicRank([]), '9999999');
 assert.strictEqual(api.getFrequencyHarmonicRank(null), '9999999');
 assert.deepStrictEqual(
-  JSON.parse(JSON.stringify(api.constructSingleFrequencyNumbers(null))), {});
+  structuredClone(api.constructSingleFrequencyNumbers(null)), {});
 assert.deepStrictEqual(
-  JSON.parse(JSON.stringify(api.constructSingleFrequenciesHtml([]))), {});
+  structuredClone(api.constructSingleFrequenciesHtml([])), {});
 
 // buildMinePayload 必须把两张表带上（Dart fromJson 读的键名）。
-const buildMinePayload = extractFunction('buildMinePayload');
+const popupSrc = fs.readFileSync(
+  path.resolve(__dirname, '..', '..', 'assets', 'popup', 'popup.js'), 'utf8');
+const bmpStart = popupSrc.indexOf('\nasync function buildMinePayload(');
+assert.ok(bmpStart >= 0, 'popup.js must define function buildMinePayload');
+const buildMinePayload = popupSrc.slice(bmpStart, popupSrc.indexOf('\n}\n', bmpStart));
 assert.match(
   buildMinePayload,
   /singleFrequencyNumbers: JSON\.stringify\(singleFrequencyNumbers\)/,
