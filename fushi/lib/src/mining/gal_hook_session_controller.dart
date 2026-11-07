@@ -1598,8 +1598,7 @@ class GalHookSessionController extends ChangeNotifier {
       fallbackTitle: window.title,
     );
     if (generation != _operationGeneration) return;
-    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
-    _attachedCaptureExecutable = identity.executablePath;
+    _beginGameSession(identity, attachedExecutable: identity.executablePath);
     _noteKnifeTextServiceForAttach(identity.executablePath);
     // 计时与 hook 彻底解耦：附着时游戏**已经在跑**，注入成功与否、走哪条降级，都不
     // 改变「用户此刻正在玩」这个事实。所以计时起点就在这里，不挂在任何一条成功分支上。
@@ -1615,6 +1614,30 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
     );
     await _attachHooksToProcess(generation, pid: window.pid);
+  }
+
+  /// 会话的游戏身份确立后、注入开始前的**唯一**入口（launch 与 attach 共用）。
+  ///
+  /// 依次：开新的活动记账（同时复位上一游戏的捕获记忆会话）→ 写入本会话的捕获
+  /// exe 身份 → 按该身份恢复按游戏记忆的降级策略。三步必须在一处、按此顺序：记忆
+  /// key 由 [currentCaptureExecutable] 派生，身份没写入就恢复只会加载到空 key；而
+  /// 恢复散落在各条启动路径里时，附着已运行游戏的路径曾漏掉这一步，用户每次附着
+  /// 都得重新选「音频降级」。
+  ///
+  /// [attachedExecutable] 是附着时由 PID 反查出的 exe 全路径；launch 传 null（它的
+  /// 身份是 state.launchExe，调用前已写入）。
+  ///
+  /// 降级策略不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举音轨（native 只
+  /// 枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会在最需要它的资源
+  /// 模式游戏里静默失效。活动 mediaKey 的跨层契约统一为 galgames.id（历史版本写过
+  /// exePath，读取侧保留兼容；新写入不再延续一字段两种身份的歧义）。
+  void _beginGameSession(
+    GalHookSessionIdentity identity, {
+    required String? attachedExecutable,
+  }) {
+    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
+    _attachedCaptureExecutable = attachedExecutable;
+    _restoreAudioFallbackPolicy();
   }
 
   /// 按 PID 把 hook 挂到一个**已经在跑**的游戏进程上（附着与「接手进程」共用）：
@@ -1774,13 +1797,8 @@ class GalHookSessionController extends ChangeNotifier {
         GalHookLaunchFailureReason.superseded,
       );
     }
-    // 活动 mediaKey 的跨层契约统一为 galgames.id。历史版本写过 exePath，读取侧保留
-    // 兼容；新写入不再延续一字段两种身份的歧义。
-    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
-    // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
-    // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会
-    // 在最需要它的资源模式游戏里静默失效。
-    _restoreAudioFallbackPolicy();
+    // launch 的捕获身份是 state.launchExe（上面已写入），不需要附着反查的 exe。
+    _beginGameSession(identity, attachedExecutable: null);
     final bool? is32Bit = await _exe32BitProbe(executablePath);
     final String? injector = await _injectorResolver(is32Bit: is32Bit ?? false);
     if (injector == null) {
