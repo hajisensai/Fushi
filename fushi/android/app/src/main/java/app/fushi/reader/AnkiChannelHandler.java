@@ -952,8 +952,9 @@ public class AnkiChannelHandler {
     /**
      * Candidate notes whose fields contain the card source ID substring, without
      * guessing by word or local note id. The notes URI accepts Anki browser
-     * syntax (notes_v2 accepts SQL instead); an unqualified term is a substring
-     * match over the note fields, mirroring
+     * syntax (notes_v2 accepts SQL instead); a {@code *:}-qualified substring
+     * match over every note field (BUG-4220: unqualified terms skip fields set
+     * to "Exclude from unqualified searches"), mirroring
      * {@code CardSourceLink.searchQueryForSourceId}. Substring hits are only
      * candidates: the Dart repository confirms identity by parsing each note's
      * {@code fushi://source} href (BUG-2527 removed the redundant marker tag).
@@ -968,7 +969,7 @@ public class AnkiChannelHandler {
         try (Cursor cursor = context.getContentResolver().query(
                 target.rebase(FlashCardsContract.Note.CONTENT_URI),
                 new String[] {FlashCardsContract.Note._ID},
-                "sourceId=" + sourceId, null, null)) {
+                "*:*sourceId=" + sourceId + "*", null, null)) {
             // A null cursor means lookup failed, never a trustworthy empty match.
             if (cursor == null) {
                 throw new IllegalStateException("AnkiDroid source lookup returned no cursor");

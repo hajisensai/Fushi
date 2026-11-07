@@ -164,13 +164,17 @@ class CardSourceLink {
     return sourceId;
   }
 
-  /// Anki browser-syntax candidate query for [sourceId]: an unqualified
-  /// substring match over note fields (AnkiConnect `findNotes` and the
-  /// AnkiDroid notes ContentProvider accept the same syntax). Substring hits
-  /// are candidates only; identity is confirmed by parsing the field hrefs
-  /// with [fromHtml] and comparing [sourceId] exactly.
+  /// Anki browser-syntax candidate query for [sourceId]: a substring match
+  /// qualified with the `*` field-name wildcard, i.e. over every field of
+  /// every note (AnkiConnect `findNotes` and the AnkiDroid notes
+  /// ContentProvider accept the same syntax). BUG-4220: an unqualified term
+  /// skips fields marked "Exclude from unqualified searches", so a link field
+  /// configured that way made the original note unfindable; field-qualified
+  /// searches ignore that option. Hits are candidates only; identity is
+  /// confirmed by parsing the field hrefs with [fromHtml] and comparing
+  /// [sourceId] exactly.
   static String searchQueryForSourceId(String sourceId) =>
-      'sourceId=${validateSourceId(sourceId)}';
+      '*:*sourceId=${validateSourceId(sourceId)}*';
 
   CardSourceLink withSourceId(String value) => CardSourceLink(
     kind: kind,

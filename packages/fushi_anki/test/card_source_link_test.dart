@@ -258,31 +258,31 @@ void main() {
     },
   );
 
-  test(
-    'AnkiConnect source lookup searches fields by source ID substring',
-    () async {
-      final AnkiConnectService service = AnkiConnectService(
-        client: MockClient((http.Request request) async {
-          final Map<String, dynamic> body =
-              jsonDecode(request.body) as Map<String, dynamic>;
-          expect(body['action'], 'findNotes');
-          expect(body['params']['query'], 'sourceId=$_sourceId');
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'result': <int>[42, 43],
-              'error': null,
-            }),
-            200,
-          );
-        }),
-      );
-      expect(await service.findNotesBySourceId(_sourceId), <int>[42, 43]);
-      expect(
-        () => service.findNotesBySourceId('fushi_source_$_sourceId'),
-        throwsFormatException,
-      );
-    },
-  );
+  test('AnkiConnect source lookup searches all fields by field-qualified '
+      'source ID substring', () async {
+    final AnkiConnectService service = AnkiConnectService(
+      client: MockClient((http.Request request) async {
+        final Map<String, dynamic> body =
+            jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['action'], 'findNotes');
+        // BUG-4220: `*:` qualifies every field, so a link field excluded
+        // from unqualified searches is still matched.
+        expect(body['params']['query'], '*:*sourceId=$_sourceId*');
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'result': <int>[42, 43],
+            'error': null,
+          }),
+          200,
+        );
+      }),
+    );
+    expect(await service.findNotesBySourceId(_sourceId), <int>[42, 43]);
+    expect(
+      () => service.findNotesBySourceId('fushi_source_$_sourceId'),
+      throwsFormatException,
+    );
+  });
 
   test('book and manga links carry the cross-device bookKey', () {
     // The uid is minted per device at import; a synced copy of the same book
@@ -489,7 +489,9 @@ void main() {
     expect(_SourceRepository().tags(''), isEmpty);
     expect(
       CardSourceLink.searchQueryForSourceId(_sourceId),
-      'sourceId=$_sourceId',
+      // BUG-4220: field-qualified (`*:`) so Anki's "Exclude from unqualified
+      // searches" field option cannot hide the link field.
+      '*:*sourceId=$_sourceId*',
     );
     expect(book().toHtml(), contains('sourceId=$_sourceId'));
     expect(
