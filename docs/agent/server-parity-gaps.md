@@ -67,6 +67,9 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   - The desktop host doesn't answer `POST /api/mine/targets` yet and ignores `target`, so the
     phone's "Save to" only offers "<host> default" against it.
   - AnkiConnect `getProfiles` reports one profile per key.
+  - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
+    already lives in the engine; the server's collections pick up parameters optimized on
+    other devices through the normal sync.
   - The server op catalog (`admin_ops.dart`) has no SRS entries. The AnkiConnect keys are
     credentials, the same reason the AnkiWeb settings are left out.
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
