@@ -61,6 +61,10 @@ SrsRemoteMediaStore (extends SrsMediaStore) ─GET /api/srs/remote/media/<名字
   客户端每次回包都吸收信封：`now()` 按主机时钟偏移算（日界、到期显示与主机同口径）。
 - `GET /api/srs/remote/media/<名字>`：媒体字节。
 - 错误：`{error: stale | profile_changed | unavailable | bad_request | unknown_op | failed}`。
+- 回包不合契约（缺字段 / 类型不对 / 认不得的枚举值）由客户端判定：解码器抛带路径的 `SrsRemoteWireError`，
+  `SrsRemoteStore` 统一换成机读码 `bad_response` 的 `InterconnectHostError`（`SrsRemoteBadResponse`），页面与其它
+  远程失败走同一套文案和「重试」（`srs_load_error.dart` 的 `SrsLoadErrorView`）。同一批解码器在主机上解请求体时
+  落成 400 `bad_request`。线格式解码器里不留未校验的 `as`。
 
 ### 3.1 线格式
 
@@ -109,6 +113,12 @@ SrsRemoteMediaStore (extends SrsMediaStore) ─GET /api/srs/remote/media/<名字
 （与本机同一个行组件，可折叠；折叠只是本机界面状态，不写回主机）。点牌组 / 播放进复习页；行菜单（长按 / 右键）有
 自定义学习、浏览该牌组、牌组设置；组头「⋯」有添加笔记、浏览、刷新。「立即同步」顺带重新探测。原来同步菜单里的
 「复习已配对设备的卡组」与「选主机 → 牌组列表」两层页面已删除。
+
+首页缓存（2026-11-07）：主机列表、会话与牌组摘要在 app 级持有，再进页面先画上次的数字、后台用已有会话重读；牌组摘要
+连同读到 / 探测的时刻落盘到设备本地偏好 `srs_home_paired_cache`（格式就是线格式：牌组树的 `SrsEntitySource` +
+牌组行，`SrsRemoteWire.deckCache` / `deckCacheFrom`），冷启动第一次进复习页也先画缓存再握手。探测结果有效期 15 分钟
+（`kSrsPairedProbeTtl`）：过期的已知主机进页面时自动重探，关了远程复习 / 离线的从分区去掉；不在分区里的主机（新配对、
+上次没应答）每次进页面都探。关掉互联 / 本机切成服务端时缓存清空。
 
 **没有代理的（属于「管理这份收藏」而不是「刷卡」，到主机上做）**：
 
