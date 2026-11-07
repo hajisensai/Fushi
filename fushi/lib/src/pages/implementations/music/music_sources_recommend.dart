@@ -18,6 +18,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/music_online_sources.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
@@ -36,12 +37,13 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-/// 有推荐首页可看的来源：声明了 home 的插件，或任一服务器。
+/// 有推荐首页可看的来源：声明了 home 的插件，或有浏览树的服务器（YouTube 内置音源只有搜索）。
 bool musicSourceHasRecommend(MusicOnlineSource s) => switch (s) {
   MusicPluginOnlineSource(:final MusicPluginManifest manifest) => manifest.can(
     MusicPluginCapability.home,
   ),
-  MusicServerOnlineSource() => true,
+  MusicServerOnlineSource(:final MusicServerBrowser browser) =>
+    musicServerHasBrowse(browser.kind),
   _ => false,
 };
 

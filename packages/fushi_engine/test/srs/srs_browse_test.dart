@@ -8,6 +8,7 @@ import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
@@ -478,6 +479,71 @@ void main() {
           for (final c in await s.cardsOfNote(i.noteId)) c.id,
         ]);
       }
+    });
+
+    test('多个卡片类型：每张卡一行、带模板名与模板数；card: 按序号 / 名字筛；笔记模式一行', () async {
+      final SrsDbStore s = await device('a');
+      await add(s, '食べる');
+      final String nt = await s.createStockNoteType(
+        SrsStockNoteType.basic,
+        'B',
+      );
+      final SrsNoteTypeView v = (await s.noteType(nt))!;
+      final String n = await s.createNote(
+        noteTypeId: nt,
+        fieldsById: <String, String>{
+          v.fields[0].id: '飲む',
+          v.fields[1].id: 'to drink',
+        },
+      );
+      t += 1000;
+      await s.addTemplate(
+        nt,
+        name: 'Card 2',
+        front: v.templates.single.front,
+        back: v.templates.single.back,
+      );
+      final SrsBrowseSession b = SrsBrowseSession(s);
+      addTearDown(b.close);
+      final List<SrsBrowseRow> cards = await rowsOf(b);
+      final List<SrsBrowseRow> mine = <SrsBrowseRow>[
+        for (final SrsBrowseRow r in cards)
+          if (r.noteId == n) r,
+      ];
+      expect(mine.map((SrsBrowseRow r) => r.templateName).toSet(), <String>{
+        'Card 1',
+        'Card 2',
+      });
+      for (final SrsBrowseRow r in mine) {
+        expect(r.templateCount, 2);
+        expect(r.showsTemplateName, isTrue);
+      }
+      final SrsBrowseRow lapis = cards.firstWhere(
+        (SrsBrowseRow r) => r.noteId != n,
+      );
+      expect(lapis.templateCount, 1);
+      expect(lapis.showsTemplateName, isFalse);
+
+      expect(
+        (await rowsOf(
+          b,
+          query: 'card:2',
+        )).map((SrsBrowseRow r) => r.templateName),
+        <String>['Card 2'],
+      );
+      expect(
+        (await rowsOf(
+          b,
+          query: 'card:"card 2"',
+        )).map((SrsBrowseRow r) => r.noteId),
+        <String>[n],
+      );
+      final List<SrsBrowseRow> notes = await rowsOf(
+        b,
+        query: 'note:B',
+        mode: SrsBrowseMode.notes,
+      );
+      expect(notes.single.cardCount, 2);
     });
 
     test('按字段搜索（不用记语法）：特殊字符转义成字面量', () async {

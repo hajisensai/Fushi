@@ -143,6 +143,10 @@ void main() {
         // 校对费用预估：按提示词 / 回复字符数估 token，是费用估算不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart':
             2,
+        // ASS 歌词行逐字 \kf：每个码点一段唱时，唱时表长度须等于文本码点数才输出卡拉 OK，
+        // 是对齐校验不是学习计数。
+        'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_ass_style_transfer.dart':
+            1,
         // 排行榜昵称长度校验（与服务端「1–24 个码点」同口径），是表单校验不是记账。
         'lib/src/pages/implementations/leaderboard/leaderboard_account_page.dart':
             1,

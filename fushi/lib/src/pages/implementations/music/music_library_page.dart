@@ -201,7 +201,12 @@ typedef _MusicSearchInputs = ({
   List<MusicServerBrowser> searchServers,
 });
 
-/// 音乐来源管理对话框（曲库页顶栏与「设置 › 音乐」共用的入口）。
+/// 音乐本地文件夹管理对话框：列出已添加的文件夹，可重新扫描 / 移除 / 添加（库页共用的
+/// 来源管理对话框；移除时连带软删该来源下的曲目，见 [removeSourceLibrary]）。曲库经
+/// 表级变更流自动刷新，不用回调。
+///
+/// 只从「来源」页（[openMusicSourcesPage]）的「本地文件夹」行 / 添加菜单进：与视频 /
+/// 书 / 漫画一样，来源管理只有模块页里这一个入口，设置分类与导入菜单不再各挂一份。
 Future<void> showMusicSourcesDialog(BuildContext context) =>
     showAppDialog<void>(
       context: context,
@@ -511,11 +516,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     await _reload();
   }
 
-  /// 管理音乐来源：列出已添加的文件夹，可重新扫描 / 移除 / 添加（库页共用的
-  /// 来源管理对话框；移除时连带软删该来源下的曲目，见 [removeSourceLibrary]）。
-  /// 曲库经表级变更流自动刷新，不用回调。
-  Future<void> _manageSources() => showMusicSourcesDialog(context);
-
   /// 顶栏动作：搜索最常用、最后才收进「⋯」（[FushiShellHeaderActions] 从尾部往前收）。
   void _claimHeaderActions() {
     final bool idle = !_scanning;
@@ -548,8 +548,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     );
   }
 
-  /// 导入钮菜单：加文件夹 / 管理文件夹 / 加光盘 / 读 CD（音乐没有独立的导入页，
-  /// 这几个入库动作收在库页共用的导入钮下，不占顶栏动作位）。
+  /// 导入钮菜单：加文件夹 / 加光盘 / 读 CD（音乐没有独立的导入页，这几个入库动作
+  /// 收在库页共用的导入钮下，不占顶栏动作位）。管理已有文件夹不在这里：它属于来源管理，
+  /// 走顶栏「来源」页（与视频 / 书的导入页只管导入、来源在「来源」视图同理）。
   Future<void> _openImportMenu() async {
     if (_scanning) return;
     final RenderObject? overlay = Overlay.of(
@@ -586,12 +587,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               FushiIcons.libraryAdd,
               t.music_folder_add,
               _addFolder,
-            ),
-            item(
-              'music_manage_sources',
-              FushiIcons.folderOpen,
-              t.music_sources_manage,
-              _manageSources,
             ),
             item(
               'music_add_disc',

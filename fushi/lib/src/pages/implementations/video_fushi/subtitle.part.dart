@@ -223,45 +223,23 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     : _pickAndImportSubtitle(controller),
               ),
       ),
-      // 模型重定时：与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
-      // 它要把整条音轨喂给设备端转录：本地视频直接用文件，互联远端视频由 host 在
-      // 本地裁出整集音轨回传（[_resolveSubtitleTimingAudio]）；其它远端流拿不到音轨。
-      // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
-      if (_canResolveSubtitleTimingAudio && isAsrSupported)
+      // 生成字幕：原「语音识别生成字幕」与「生成日语字幕」合并成这一个入口（反馈
+      // 6Tj3ECtB0Q），两条路由面板里的「保存字幕文件」选项分流，见
+      // [_openSubtitleGeneration]。与上面两行同属「拿到一份字幕」，所以并在同一组。
+      if (_canTranscribeVideoSpeech || _canRunSubtitlePipeline)
         FushiListTileControl(
+          key: const ValueKey<String>('video-subtitle-generate'),
           leading: const FushiIcon(Icons.transcribe_outlined),
-          title: Text(t.video_subtitle_asr_generate),
-          subtitle: Text(t.video_subtitle_asr_generate_hint),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_generateSubtitleWithSpeechModel(controller)),
-        ),
-      // 生成日语字幕（ASR + 可选 AI 校对管线）：本机视频在本机跑，产物写在视频文件旁
-      // （`<视频名>.ja.srt`）；互联远端视频在放视频的那台 host 上跑（host 任务
-      // `video_subtitle`，老 host 面板里说明不支持），取回 SRT 当本机外挂字幕加载。
-      // 其它远端 / 流（YouTube、媒体服务器）没有能跑任务的 host，入口不出现；上一行
-      // 「语音转写（不校对）」照常可用。蓝光走盘结构、没有单个视频文件，同样不出现。
-      if ((_currentVideoPath != null &&
-              !_isRemote &&
-              _discBookUid == null &&
-              isAsrSupported) ||
-          (_isRemote && _remoteHostVideoTarget() != null))
-        FushiListTileControl(
-          key: const ValueKey<String>('video-subtitle-ai-generate'),
-          leading: const FushiIcon(FushiIcons.ai),
           title: Text(t.video_subtitle_ai_generate_title),
-          subtitle: Text(t.video_subtitle_ai_entry_hint),
+          subtitle: Text(t.video_subtitle_generate_entry_hint),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
-              : () => unawaited(
-                  _isRemote
-                      ? _openRemoteJapaneseSubtitlePipeline(controller)
-                      : _openJapaneseSubtitlePipeline(controller),
-                ),
+              : () => unawaited(_openSubtitleGeneration(controller)),
         ),
-      if (_canResolveSubtitleTimingAudio && isAsrSupported)
+      // 模型重定时：它要把整条音轨喂给设备端转录（判据同上面的本机转录）。
+      // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
+      if (_canTranscribeVideoSpeech)
         FushiListTileControl(
           leading: const FushiIcon(Icons.model_training_outlined),
           title: Text(t.video_subtitle_retime_action),
@@ -2815,12 +2793,60 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return start ?? false;
   }
 
+  /// 本机转录当前音轨（转录弹层）：本地视频直接用文件，互联远端视频由 host 在本地
+  /// 裁出整集音轨回传（[_resolveSubtitleTimingAudio]）；其它远端流拿不到音轨。蓝光盘
+  /// 也能走（抽当前音轨）。
+  bool get _canTranscribeVideoSpeech =>
+      _canResolveSubtitleTimingAudio && isAsrSupported;
+
+  /// 生成字幕管线（ASR + 可选专名表 AI 校对，字幕写在视频旁 `<视频名>.<语言>.srt`）：
+  /// 本机视频在本机跑；互联远端视频在放视频的那台 host 上跑（host 任务
+  /// `video_subtitle`，老 host 面板里说明不支持），取回 SRT 当本机外挂字幕加载。其它
+  /// 远端 / 流（YouTube、媒体服务器）没有能跑任务的 host；蓝光走盘结构、没有单个
+  /// 视频文件——这些只剩本机转录。
+  bool get _canRunSubtitlePipeline =>
+      (_currentVideoPath != null &&
+          !_isRemote &&
+          _discBookUid == null &&
+          isAsrSupported) ||
+      (_isRemote && _remoteHostVideoTarget() != null);
+
+  /// 「生成字幕」入口（反馈 6Tj3ECtB0Q：原来两个入口功能重叠）。管线能跑时打开管线
+  /// 面板，面板里多一项「保存字幕文件」：开 = 管线（原「生成日语字幕」），关 = 本机
+  /// 转录弹层（原「语音识别生成字幕」，可选转录完自动 AI 校对）。只有一条路能走时
+  /// 直接走那条，不多弹一层。
+  Future<void> _openSubtitleGeneration(VideoPlayerController controller) async {
+    final bool canTranscribe = _canTranscribeVideoSpeech;
+    if (!_canRunSubtitlePipeline) {
+      if (canTranscribe) await _generateSubtitleWithSpeechModel(controller);
+      return;
+    }
+    final VideoSubtitleInAppTranscribe? inApp = canTranscribe
+        ? ({required bool proofread}) => unawaited(
+            _generateSubtitleWithSpeechModel(
+              controller,
+              autoProofread: proofread,
+            ),
+          )
+        : null;
+    if (_isRemote) {
+      await _openRemoteJapaneseSubtitlePipeline(
+        controller,
+        onTranscribeInApp: inApp,
+      );
+    } else {
+      await _openJapaneseSubtitlePipeline(controller, onTranscribeInApp: inApp);
+    }
+  }
+
   /// 从视频音轨生成文字字幕，允许无字幕或仅有 PGS 的视频直接进入查词和制卡链路。
   ///
-  /// [transcribe] 见 [_transcribeVideoSpeech]。
+  /// [transcribe] 见 [_transcribeVideoSpeech]。[autoProofread]：转录完自动 AI 校对一次
+  /// （「生成字幕」面板里关了保存、开了 AI 校对）。
   Future<void> _generateSubtitleWithSpeechModel(
     VideoPlayerController controller, {
     _VideoSpeechTranscriber? transcribe,
+    bool autoProofread = false,
   }) async {
     final int loadSeq = _episodeLoadSeq;
     final String? videoPath = _currentVideoPath;
@@ -2834,6 +2860,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       final String? transcriptSrt = await _transcribeVideoSpeech(
         controller,
         transcribe: transcribe,
+        autoProofread: autoProofread,
       );
       // 转录可能持续数分钟；取消、换集或重建播放器后保留产物，但不串到新视频。
       if (transcriptSrt == null || !isCurrent()) return;
@@ -2876,12 +2903,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
-  /// 「生成日语字幕」面板（[showVideoSubtitleGenerateSheet]）：编排全在
+  /// 「生成字幕」管线面板（[showVideoSubtitleGenerateSheet]）：编排全在
   /// [AppVideoSubtitleService]（与合集页整季、桌面 CLI 同一个服务），这里只解析当前这
   /// 一集的目标，并在任务结束后把产物切成当前字幕（面板关掉了也照样切）。
+  /// [onTranscribeInApp] 见 [_openSubtitleGeneration]。
   Future<void> _openJapaneseSubtitlePipeline(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
     final String? videoPath = _currentVideoPath;
     if (videoPath == null || _isRemote) return;
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
@@ -2889,6 +2918,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     try {
       target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
     } on AppVideoSubtitleTargetNotFound {
+      // 管线认不到这一集（不在库里）时本机转录照样能用：直接走那条。
+      if (onTranscribeInApp != null) {
+        await _generateSubtitleWithSpeechModel(controller);
+        return;
+      }
       _showOsd(
         t.video_subtitle_ai_no_local_episodes,
         severity: ToastSeverity.error,
@@ -2904,6 +2938,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       openAiSettings: pushAiSettingsPage,
       onJobStarted: (AppVideoSubtitleJob job) =>
           unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
+      onTranscribeInApp: onTranscribeInApp,
     );
   }
 
@@ -2911,13 +2946,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// AI 用 host 自己的指派；结束后取回的 SRT 走「远端视频加外挂字幕」同一条路加载。
   /// host 播放列表从第 2 集起 host 任务认不到那一集的文件，直接说明。
   Future<void> _openRemoteJapaneseSubtitlePipeline(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
     final (InterconnectSyncBackend, String, int)? host =
         _remoteHostVideoTarget();
     if (host == null) return;
     final (InterconnectSyncBackend _, String videoId, int episode) = host;
     if (episode > 0) {
+      // host 管线认不到这一集，本机转录（host 照样能裁音轨）不受影响。
+      if (onTranscribeInApp != null) {
+        await _generateSubtitleWithSpeechModel(controller);
+        return;
+      }
       _showOsd(
         t.video_subtitle_ai_remote_episode_unsupported,
         severity: ToastSeverity.warning,
@@ -2938,6 +2979,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
         _applyRemotePipelineSubtitleWhenDone(controller, job, videoId),
       ),
+      onTranscribeInApp: onTranscribeInApp,
     );
   }
 
@@ -3024,6 +3066,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<String?> _transcribeVideoSpeech(
     VideoPlayerController controller, {
     _VideoSpeechTranscriber? transcribe,
+    bool autoProofread = false,
   }) async {
     if (!_discExtractionAllowed(controller)) return null;
     final int loadSeq = _episodeLoadSeq;
@@ -3085,6 +3128,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       service: createAsrTranscriptionService(
         audioProfile: AsrAudioProfile.mixedAudio,
       ),
+      autoProofread: autoProofread,
     );
   }
 
