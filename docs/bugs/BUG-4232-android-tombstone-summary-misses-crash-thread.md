@@ -1,4 +1,4 @@
-## BUG-4227 · Android 原生崩溃摘要抽不到崩溃线程栈
+## BUG-4232 · Android 原生崩溃摘要抽不到崩溃线程栈
 - **报告**：2026-11-07（崩溃报告 `#MdVKlfPOWD`：Xiaomi 2311DRK48C，Android 15，3.3.0，`CRASH_NATIVE status=6`）
 - **真实性**：✅ 真 bug（取证端）。报告里的 `trace summary` 只有 `SIGABRT` / `SI_QUEUE`、abort message `FORTIFY: pthread_mutex_lock called on a destroyed mutex (0xb400007b25adc2f0)`，之后是 `hwuiTask1`、`mali-compiler`、`CookieMonsterBa`（WebView）几条线程的 `futex/pthread_cond_wait` 帧，**没有崩溃线程**，无法定位。
   - 根因：`fushi/android/app/src/main/java/app/fushi/reader/ProcessExitChannel.java` `readTraceSummary` 对 API 31+ 的 tombstone protobuf 只读前 64 KB、抽长度 ≥ 6 的可打印串、截 3000 字（`printableRuns`）。tombstone 的线程表是 `map<uint32, Thread>`，序列化顺序与崩溃线程无关，一百多条线程（这份 thr=108）各带寄存器与栈内存片段，崩溃线程常在 64 KB 之外；即使读到了，可打印串里也不标哪条是崩溃线程。
