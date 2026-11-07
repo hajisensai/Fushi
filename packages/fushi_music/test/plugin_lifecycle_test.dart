@@ -112,6 +112,48 @@ void main() {
     await m.dispose();
   });
 
+  // BUG-4226：启停状态首次读盘不是单飞的。新管理器上两个调用方同步地先后进
+  // `_enabledState()`，都看到缓存为空、各读一份盘、各拿到自己的 Map；后完成的
+  // 那份覆盖缓存，先完成那份上的改动（停用）既不在内存缓存里、也会被另一份写盘覆盖。
+  // 这里两个停用在同一同步段里发出（中间没有 await），无论两次读盘谁先完成，修复前
+  // 总有一个停用丢失——时序是构造出来的，不靠撞概率。
+  test('首次读启停状态时并发停用两个插件：两个都生效（内存与落盘）', () async {
+    final MusicPluginManager m = await installed();
+    const String other = 'moe.test.other';
+    final Uint8List zip = buildPlugin(
+      <String, Object?>{...manifest(), 'id': other},
+      <String, String>{'main.js': _js},
+    );
+    await m.install(zip, (await m.inspect(zip)).digest);
+    // install 不读启停状态：缓存此刻仍为空，下面两次 setEnabled 都是首读。
+    await Future.wait(<Future<void>>[
+      m.setEnabled('moe.test.fake', false),
+      m.setEnabled(other, false),
+    ]);
+    for (final String id in <String>['moe.test.fake', other]) {
+      await expectLater(
+        m.instance(id),
+        unavailable(MusicPluginUnavailableReason.disabled),
+      );
+    }
+    final MusicPluginManager reopened = MusicPluginManager(
+      rootDir: root,
+      vaultKey: testVaultKey,
+      httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
+      log: (_, _, _) {},
+    );
+    for (final String id in <String>['moe.test.fake', other]) {
+      await expectLater(
+        reopened.instance(id),
+        unavailable(MusicPluginUnavailableReason.disabled),
+      );
+    }
+    await m.dispose();
+    await reopened.dispose();
+  });
+
   test('没装 / 卸载后：类型化的「未安装」', () async {
     final MusicPluginManager m = await installed();
     await expectLater(

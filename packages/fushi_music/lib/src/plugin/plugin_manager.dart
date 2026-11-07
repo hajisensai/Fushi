@@ -93,14 +93,24 @@ class MusicPluginManager {
 
   /// 启停状态的内存副本（首次读盘后常驻；[setEnabled] / [uninstall] 先改它再写盘，
   /// [instance] 据此同步判可用，不会在读盘的空档里放过刚停用的插件）。
-  Map<String, bool>? _enabledCache;
+  ///
+  /// 存的是「读盘的 Future」而不是读完的 Map：首读是单飞的，所有并发的首读调用方
+  /// 拿到同一个 Map 对象。以前是 `_cache ??= await _readEnabled()`，`??=` 在 await
+  /// 之前判空，并发首读各读一份、各拿自己的 Map，后完成的覆盖缓存，先完成那份上的
+  /// 停用就丢了（BUG-4226）。
+  Future<Map<String, bool>>? _enabledLoad;
 
   /// 正在卸载的插件：卸载期间（删目录前后）不再开实例。
   final Set<String> _uninstalling = <String>{};
   int _stateWrites = 0;
 
-  Future<Map<String, bool>> _enabledState() async =>
-      _enabledCache ??= await _readEnabled();
+  Future<Map<String, bool>> _enabledState() =>
+      _enabledLoad ??= _readEnabled().catchError((Object e, StackTrace st) {
+        // 读盘意外失败（IO / 格式错误已在 _readEnabled 里按空状态处理，这里只剩
+        // 结构不符之类）：不把失败缓存成永久状态，错误照常抛给调用方，下次重读。
+        _enabledLoad = null;
+        Error.throwWithStackTrace(e, st);
+      });
 
   Future<Map<String, bool>> _readEnabled() async {
     try {
@@ -130,7 +140,8 @@ class MusicPluginManager {
   /// 列出已安装插件（逐个重新哈希校验）。
   Future<List<InstalledMusicPlugin>> list() async {
     if (!rootDir.existsSync()) return const <InstalledMusicPlugin>[];
-    final Map<String, bool> enabled = await _readEnabled();
+    // 与 [instance] 同一份内存真相源：写盘进行中也不会读到旧状态。
+    final Map<String, bool> enabled = await _enabledState();
     final List<InstalledMusicPlugin> out = <InstalledMusicPlugin>[];
     for (final FileSystemEntity e in rootDir.listSync()) {
       if (e is! Directory) continue;
