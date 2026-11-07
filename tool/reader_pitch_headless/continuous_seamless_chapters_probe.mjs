@@ -333,6 +333,49 @@ async function runSeamless(browser, vertical) {
   } else {
     check(`${tag} next neighbor visible for tap test`, false, tap);
   }
+
+  // 换样式（beginStyleReanchor 换 #fushi-reader-style）同步刷新邻章里的阅读器样式副本。
+  await page.evaluate(async () => {
+    const el = document.getElementById('fushi-reader-style');
+    const css = el.textContent.replace('font-size: 20px', 'font-size: 26px');
+    const r = window.fushiReader;
+    r.beginStyleReanchor(el, css);
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    r.commitStyleReanchor();
+  });
+  await sleep(300);
+  const styled = await page.evaluate(() => Array.from(document.querySelectorAll('fushi-seamless-chapter')).map((h) => {
+    const p = h.shadowRoot.querySelector('.fushi-seamless-body p');
+    return { ch: h.getAttribute('data-chapter'), size: p ? getComputedStyle(p).fontSize : null };
+  }));
+  const lightSize = await page.evaluate(() => getComputedStyle(document.body.querySelector('p')).fontSize);
+  check(`${tag} reader style change reaches neighbor chapters`, lightSize === '26px' && styled.length > 0 && styled.every((x) => x.size === '26px'), { lightSize, styled });
+  await page.close();
+}
+
+// 真触摸：CDP 发手指上推，原生滚动 + 惯性越过章界时晋升，期间不触发整章重载 / 边界跨章。
+async function runTouch(browser) {
+  const tag = '[touch]';
+  const page = await open(browser, false, true);
+  await page.evaluate(() => window.fushiReader.restoreProgress(0.97));
+  await sleep(400);
+  const href = await page.evaluate(() => location.href);
+  const cdp = await page.createCDPSession();
+  for (let k = 0; k < 8; k++) {
+    const active = await page.evaluate(() => window.__fushiSeamless.activeChapter);
+    if (active === 2) break;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 210, y: 620 }] });
+    for (let i = 1; i <= 10; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 210, y: 620 - i * 40 }] });
+      await sleep(12);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(900);
+  }
+  const s = await state(page);
+  const boundary = await page.evaluate(() => window.__events.filter((e) => e[0] === 'onBoundarySwipe').length);
+  check(`${tag} real touch scrolling promotes chapter 2`, s.active === 2 && s.events.length >= 1 && s.events[0][1] === 2, s);
+  check(`${tag} no reload and no boundary chapter turn`, boundary === 0 && (await page.evaluate(() => location.href)) === href, { boundary });
   await page.close();
 }
 
@@ -357,6 +400,7 @@ const browser = await puppeteer.launch({
 try {
   await runSeamless(browser, false);
   await runSeamless(browser, true);
+  await runTouch(browser);
   await runOff(browser);
 } finally {
   await browser.close();
