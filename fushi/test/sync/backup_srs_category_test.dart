@@ -6,7 +6,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart'
     show DatabaseConnectionUser, QueryRow, Variable, driftRuntimeOptions;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupCategoryShownInExport, importSelectableCategories;

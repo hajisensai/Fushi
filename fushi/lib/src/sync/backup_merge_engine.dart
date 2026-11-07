@@ -228,8 +228,6 @@ class BackupMergeEngine {
       await _buildGameIdMap();
       if (_wants('games')) {
         await _insertMissingGalgames();
-        // v134：游戏台词跟着游戏走（唯一持久副本，「我库里的例句」由它派生）。
-        await _mergeGalgameTextLines();
       }
       // Media collections (unified-collections Phase 5) have no dialog toggle:
       // always merge the grouping itself; orphan members are kept and folded in
@@ -396,23 +394,6 @@ class BackupMergeEngine {
       'JOIN $_gameMapTable AS m ON m.src_id = ss.game_id '
       'WHERE NOT EXISTS (SELECT 1 FROM galgame_sources AS t '
       'WHERE t.game_id = m.dst_id AND t.source = ss.source)',
-    );
-  }
-
-  /// v134 文本钩子台词 dedupe-UNION under the remapped game id. Natural key =
-  /// `(game, text)`（表上的唯一键）：同一句台词在同一游戏里只留一行，所以同一份备份合并
-  /// 两次、或两台设备都录到同一句，都不会重复；保留本机已有行的 `received_at`。src 台词
-  /// 的游戏在本机没有宿主（游戏没勾 / 被裁掉）时跳过，不留悬空 `game_id`。`id` 不搬
-  /// （本机自增）：语料分块按本机 id 重新算。自守卫旧备份（v134 之前）没有这张表。
-  Future<void> _mergeGalgameTextLines() async {
-    if (!await _srcTableExists('galgame_text_lines')) return;
-    await _db.customStatement(
-      'INSERT OR IGNORE INTO galgame_text_lines (game_id, text, received_at) '
-      'SELECT m.dst_id, s.text, MIN(s.received_at) '
-      'FROM $_srcAlias.galgame_text_lines AS s '
-      'JOIN $_gameMapTable AS m ON m.src_id = s.game_id '
-      'GROUP BY m.dst_id, s.text '
-      'ORDER BY MIN(s.received_at)',
     );
   }
 
@@ -1905,7 +1886,7 @@ class BackupMergeEngine {
   /// - 歌词：按 (track_uid, source) LWW（`updated_at`）。
   /// - MV 绑定：按 (track_uid, kind, ref) LWW（`updated_at`）。
   /// - 播放流：按 (track_uid, started_at) 去重并集。
-  /// - 远程曲目（v147）：按 `track_uid` LWW（`updated_at`，含「移出音乐库」）。
+  /// - 远程曲目（v148）：按 `track_uid` LWW（`updated_at`，含「移出音乐库」）。
   /// 曲目身份是内容派生 uid，两边同一首歌同一个 uid，无需重映射。
   Future<void> _mergeMusicUserData() async {
     if (await _srcTableExists('music_playlists')) {
@@ -1947,7 +1928,7 @@ class BackupMergeEngine {
       await _db.customStatement('DROP TABLE IF EXISTS temp.merge_music_pl');
     }
     if (await _srcTableExists('music_remote_tracks')) {
-      // 远程曲目（v147）：歌单条目可能引用它们，与歌单同一类别。按 track_uid LWW：元数据
+      // 远程曲目（v148）：歌单条目可能引用它们，与歌单同一类别。按 track_uid LWW：元数据
       // 与入库状态（library_added_at，移出曲库时置 NULL）一起取较新的一方；created_at 留
       // 先到的那份。
       await _db.customStatement(

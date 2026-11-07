@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';

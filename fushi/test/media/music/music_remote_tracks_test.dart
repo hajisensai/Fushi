@@ -14,7 +14,7 @@ import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 
-/// 远程曲目（反馈 0tRY-D2JgG，v147）：YouTube / 在线插件曲目加入音乐库与本地歌单。
+/// 远程曲目（反馈 0tRY-D2JgG，v148）：YouTube / 在线插件曲目加入音乐库与本地歌单。
 ///
 /// 钉死的是「同一首同一个 uid」——落库再还原的播放项与从搜索结果直接播的播放项 uid / 占位路径
 /// 一致，歌词缓存 / 断点 / 最近播放 / 统计 / 制卡（都按 uid 或路径走）在远程曲目上天然可用。

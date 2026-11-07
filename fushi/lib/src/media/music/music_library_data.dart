@@ -38,7 +38,7 @@ class MusicLibrarySnapshot {
   final List<MusicPlaylistRow> playlists;
   final Map<String, MusicAlbumRow> albumByUid;
 
-  /// 加入了音乐库的远程曲目（YouTube / 在线插件，最近加入的在前；v147）。合规门没过的平台
+  /// 加入了音乐库的远程曲目（YouTube / 在线插件，最近加入的在前；v148）。合规门没过的平台
   /// 上恒为空（[load] 不读）。
   final List<MusicRemoteTrackRow> remoteTracks;
 
@@ -96,7 +96,7 @@ class MusicLibrarySnapshot {
   );
 }
 
-/// 曲库 / 歌单里的一首：本地曲库曲目，或只能串流的远程曲目（v147）。两者 uid 命名空间不同，
+/// 曲库 / 歌单里的一首：本地曲库曲目，或只能串流的远程曲目（v148）。两者 uid 命名空间不同，
 /// 播放项的 uid 就是这里的 [trackUid]。
 sealed class MusicLibraryEntry {
   const MusicLibraryEntry();

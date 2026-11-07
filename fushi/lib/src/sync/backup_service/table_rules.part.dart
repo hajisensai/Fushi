@@ -192,10 +192,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 游戏 ──
   'galgame_sources': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
   'galgames': BackupTableRule.rowLevel('_retainGames'),
-  // v134：文本钩子台词——唯一的持久副本（「我库里的例句」的游戏来源由它派生），随游戏
-  // 一起出境；按游戏选择裁剪时经外键 cascade 跟着宿主走。合并导入见
-  // BackupMergeEngine._mergeGalgameTextLines（按游戏身份重映射 + (游戏, 台词) 去重）。
-  'galgame_text_lines': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
+  // v134 的游戏台词表 galgame_text_lines 已在 v147 删除（「我库里的例句」下架后无读写者）。
+  // 旧备份里带它也不用登记：恢复 / 合并导入先把备份库迁到当前版本，表在那一步就删掉了。
 
   // ── 书 / 视频共享 ──
   'media_tracking_outbox': BackupTableRule.follows(_bookOrVideo),
@@ -326,7 +324,7 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_playlists': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,
   }),
-  // 远程曲目（v147）：歌单条目可能引用它，与歌单同进同出；身份与设备无关（来源 + 条目 id
+  // 远程曲目（v148）：歌单条目可能引用它，与歌单同进同出；身份与设备无关（来源 + 条目 id
   // 派生），不含本机路径。
   'music_remote_tracks': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,

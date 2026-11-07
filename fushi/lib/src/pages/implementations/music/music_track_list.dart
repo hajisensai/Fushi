@@ -104,7 +104,7 @@ MusicItemMenu musicLocalTrackMenu(
 AppModel _appOf(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false).read(appProvider);
 
-/// 远程曲目（YouTube / 在线插件，v147）在曲库 / 歌单里的菜单：播放 / 移出音乐库（在库时）/
+/// 远程曲目（YouTube / 在线插件，v148）在曲库 / 歌单里的菜单：播放 / 移出音乐库（在库时）/
 /// 加入歌单；[extra] 追加在末尾（歌单页的「从这个歌单移除」）。
 MusicItemMenu musicRemoteEntryMenu(
   BuildContext context,
@@ -164,7 +164,7 @@ class MusicTrackListPlaylist {
 /// 长按 / 行尾「详情」= 曲目详情页。有没听完的断点（点开会接着放的，`music_resume.dart`）
 /// 的行：行尾显示剩余时间，副标题下一条细进度条。
 ///
-/// 条目可以是本地曲库曲目，也可以是加入音乐库 / 歌单的远程曲目（[MusicLibraryEntry]，v147）：
+/// 条目可以是本地曲库曲目，也可以是加入音乐库 / 歌单的远程曲目（[MusicLibraryEntry]，v148）：
 /// 两种排在同一条队列里，远程曲目行带封面缩略图与来源名、行尾是「更多」菜单。
 class MusicTrackList extends ConsumerStatefulWidget {
   /// 只有本地曲库曲目的列表（专辑 / 艺人 / 歌曲分区）。

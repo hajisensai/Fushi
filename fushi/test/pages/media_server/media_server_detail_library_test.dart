@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
@@ -77,6 +78,10 @@ void main() {
 
   Finder addButton() =>
       find.byKey(const ValueKey<String>('media-server-detail-library-add'));
+  // 按字形码位比（选中态会换成实心字体，码位不变）。
+  Finder iconGlyph(IconData glyph) => find.byWidgetPredicate(
+    (Widget w) => w is Icon && w.icon?.codePoint == glyph.codePoint,
+  );
   Finder removeButton() =>
       find.byKey(const ValueKey<String>('media-server-detail-library-remove'));
 
@@ -128,10 +133,68 @@ void main() {
     );
     expect(addButton(), findsNothing);
     expect(find.text(t.video_discovery_in_library), findsOneWidget);
+    // 已在库：按钮从「+」换成「−」。
+    expect(
+      find.descendant(
+        of: removeButton(),
+        matching: iconGlyph(FushiIcons.remove),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: removeButton(),
+        matching: iconGlyph(FushiIcons.libraryAdd),
+      ),
+      findsNothing,
+    );
 
     await tester.tap(removeButton());
     await settleUntil(tester, () => addButton().evaluate().isNotEmpty);
     expect((await tester.runAsync(database.allVideoBooks))!, isEmpty);
     expect(removeButton(), findsNothing);
+  });
+  testWidgets('removing the work elsewhere (library home menu) flips the open '
+      'detail page back to add without reopening it', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final MediaServerVideoLibrary library = MediaServerVideoLibrary(
+      database: database,
+    );
+    await tester.runAsync(() => library.addToLibrary(browser, series));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MediaServerDetailView(
+              session: MediaServerSession(
+                browser: browser,
+                play: (BuildContext _, MediaServerPlayRequest _) {},
+                library: library,
+              ),
+              item: series,
+            ),
+          ),
+        ),
+      ),
+    );
+    await settleUntil(tester, () => removeButton().evaluate().isNotEmpty);
+    expect(addButton(), findsNothing);
+
+    // 库页菜单走的是按作品身份移出，不经过本页。
+    final int removed = (await tester.runAsync(
+      () => library.removeWorks(<MediaServerLibraryWork>{
+        (serverId: browser.serverId, workId: series.id),
+      }),
+    ))!;
+    expect(removed, 2);
+    await settleUntil(tester, () => addButton().evaluate().isNotEmpty);
+    expect(removeButton(), findsNothing);
+    expect(find.text(t.video_discovery_in_library), findsNothing);
   });
 }

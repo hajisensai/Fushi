@@ -26,7 +26,7 @@ node fushi-plugin.mjs keygen --out my-plugin-key.pem
 node fushi-plugin.mjs pack my-plugin --key my-plugin-key.pem
 ```
 
-在 Fushi 里安装：设置 › 音乐 › 插件音源 › 从文件安装。iOS 不支持插件。
+在 Fushi 里安装：音乐 › 曲库页顶栏「来源」› 添加 › 音源插件 › 从文件安装。iOS 不支持插件。
 
 ## 用 AI 写插件
 

@@ -20,7 +20,6 @@ import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
-import 'galgame_text_line_tables.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_image_kind.dart';
@@ -48,7 +47,6 @@ part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
 part 'database_web_browser.part.dart';
 part 'database_media_links.part.dart';
-part 'database_galgame_text_lines.part.dart';
 part 'database_music.part.dart';
 part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
@@ -878,7 +876,6 @@ void _requireOneVideoMetadataOwner({
     GameVoiceCasts,
     PersonIdentityBridges,
     AdaptationProgressAnchors,
-    GalgameTextLines,
     AiAgentSessions,
     AiAgentActions,
     RemoteAudioBindings,
@@ -903,7 +900,6 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbPeople,
-        _FushiDbGalgameTextLines,
         _FushiDbAiAgent {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
@@ -925,7 +921,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 147;
+  int get schemaVersion => 148;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2742,14 +2738,8 @@ class FushiDatabase extends _$FushiDatabase
           }
         }
       }
-      if (from < 134) {
-        // v134（作品图谱 L4 跟进，docs/specs/2026-10-24-cross-media-links.md §3）：
-        // galgame_text_lines——文本钩子台词的持久副本（「我库里的例句」的游戏来源，
-        // 随备份 games 类别走）。纯建表；幂等守卫同 v119。
-        if (!await _tableExists('galgame_text_lines')) {
-          await m.createTable(galgameTextLines);
-        }
-      }
+      // v134 曾建游戏台词表 galgame_text_lines（「我库里的例句」的游戏来源）。该功能
+      // 2026-11-07 下架后表已没有读写者，v147 把它删掉；这里不再建，免得老库先建后删。
       if (from < 135) {
         // v135（作品图谱 L5，docs/specs/2026-10-24-cross-media-links.md §5 / §6）：
         // game_voice_casts（游戏 VNDB 配音表缓存，设备本地）、person_identity_bridges
@@ -2943,7 +2933,15 @@ class FushiDatabase extends _$FushiDatabase
         }
       }
       if (from < 147) {
-        // v147：music_remote_tracks——只能串流的远程曲目（YouTube 内置音源 / 在线插件）
+        // v147：删游戏台词表 galgame_text_lines（v134 建）。它唯一的读者「我库里的
+        // 例句」已按反馈 4S2_J80DfK 下架，app 也不再写入；表与存量台词一并清掉。
+        // DROP ... IF EXISTS 幂等：从 v134 之前升上来的库从没建过这张表，重跑也安全。
+        // 旧备份里带这张表时，恢复 / 合并导入都先用 FushiDatabase.atFile 把备份库迁到
+        // 当前版本（restore.part.dart），走到这一步就删掉了，不会报错。
+        await customStatement('DROP TABLE IF EXISTS galgame_text_lines');
+      }
+      if (from < 148) {
+        // v148：music_remote_tracks——只能串流的远程曲目（YouTube 内置音源 / 在线插件）
         // 加入音乐库与本地歌单（反馈 0tRY-D2JgG）。纯新增、无回填；幂等守卫同 v146。
         if (!await _tableExists('music_remote_tracks')) {
           await m.createTable(musicRemoteTracks);

@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
@@ -15,7 +16,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_term_status_bridge.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show SrsExtensionApi;

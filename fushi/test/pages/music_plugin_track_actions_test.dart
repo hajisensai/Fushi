@@ -662,7 +662,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  // ── 远程曲目加入音乐库 / 本地歌单（v147，反馈 0tRY-D2JgG）──
+  // ── 远程曲目加入音乐库 / 本地歌单（v148，反馈 0tRY-D2JgG）──
 
   testWidgets('插件曲目菜单：加入音乐库 → 落远程曲目行；再开菜单变成「从音乐库移除」', (
     WidgetTester tester,

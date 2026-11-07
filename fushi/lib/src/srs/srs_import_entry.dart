@@ -38,7 +38,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_export_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';

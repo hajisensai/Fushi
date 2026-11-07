@@ -25,7 +25,7 @@ Future<void> _seedUserData(
   Map<String, ({int at, bool inLibrary})> remoteAt =
       const <String, ({int at, bool inLibrary})>{},
 }) async {
-  // 远程曲目（v147）：trackUid → (updated_at, 是否在库)，标题带 updated_at 便于认出是哪边的。
+  // 远程曲目（v148）：trackUid → (updated_at, 是否在库)，标题带 updated_at 便于认出是哪边的。
   for (final MapEntry<String, ({int at, bool inLibrary})> r
       in remoteAt.entries) {
     await db
@@ -242,7 +242,7 @@ void main() {
     expect((await cur.getMusicResumePoint('r1'))?.positionMs, 2000);
     expect((await cur.getMusicResumePoint('r2'))?.positionMs, 900);
     expect((await cur.getMusicResumePoint('r3'))?.positionMs, 50);
-    // 远程曲目（v147）按 updated_at LWW，入库状态随胜者：srv-a 备份新（200，在库）、srv-b
+    // 远程曲目（v148）按 updated_at LWW，入库状态随胜者：srv-a 备份新（200，在库）、srv-b
     // 本机新（90）、srv-c 只在本机、srv-d 备份新且已移出曲库（300 > 100）。
     final MusicRemoteTrackRow a = (await cur.getMusicRemoteTrack('srv-a'))!;
     expect(a.title, 'R200');
@@ -331,7 +331,7 @@ void main() {
     expect(
       withMusic.counts[BackupCategory.music],
       11,
-      reason: '1 歌单 + 2 条目 + 1 歌词 + 2 播放 + 2 断点 + 3 远程曲目（v147）',
+      reason: '1 歌单 + 2 条目 + 1 歌词 + 2 播放 + 2 断点 + 3 远程曲目（v148）',
     );
   });
 }

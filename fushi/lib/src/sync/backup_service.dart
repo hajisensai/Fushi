@@ -17,7 +17,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/backup_srs_tables.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
-import 'package:fushi/src/srs/srs_media_store.dart' show SrsMediaStore;
+import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -547,7 +547,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 /// pages read from since then) and its identity tombstones; both were missing
 /// here, so an "exclude statistics" export still leaked every study segment.
 /// 「音乐」类别的用户数据表（子表在前，删除顺序）。曲库目录表不在其中（设备本地）；
-/// 远程曲目（v147）身份与设备无关、被歌单条目引用，随歌单走。
+/// 远程曲目（v148）身份与设备无关、被歌单条目引用，随歌单走。
 const List<String> musicUserTables = <String>[
   'music_playlist_entries',
   'music_playlists',

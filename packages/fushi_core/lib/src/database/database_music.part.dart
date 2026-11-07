@@ -790,7 +790,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
     ];
   }
 
-  // ── 本地歌单与远程曲目（v147，反馈 0tRY-D2JgG）──────────────────────────
+  // ── 本地歌单与远程曲目（v148，反馈 0tRY-D2JgG）──────────────────────────
   //
   // 歌单条目只存 `track_uid`：本地曲目指 `music_tracks`，远程曲目指 `music_remote_tracks`
   // （两边 uid 命名空间不同，不撞）。往歌单里加远程曲目时，远程曲目行与条目在同一个事务里

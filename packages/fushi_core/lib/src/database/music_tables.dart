@@ -270,7 +270,7 @@ class MusicPlaylistEntries extends Table {
   IntColumn get addedAt => integer()();
 }
 
-/// 远程曲目（schema v147，反馈 0tRY-D2JgG）：只能串流、不进扫描曲库的曲目（YouTube 内置音源、
+/// 远程曲目（schema v148，反馈 0tRY-D2JgG）：只能串流、不进扫描曲库的曲目（YouTube 内置音源、
 /// 在线音源插件）被用户「加入音乐库」或加进本地歌单后，在这里留一行元数据。
 ///
 /// 身份 [trackUid] 就是这首在播放引擎里的那个 uid（YouTube = `musicServerTrackUid('youtube',

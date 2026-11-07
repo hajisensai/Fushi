@@ -4,11 +4,13 @@
 //! 测试共用：权重加载（缺失 / 校验失败直接 panic 并提示跑 fetch_model）与上游黄金值夹具。
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use fushi_rwkv::{
-    MODEL_SHA256, ReviewInput, RwkvModel, SMALL_MODEL_PACKAGE_SHA256, StatePrecision,
+    MODEL_SHA256, ReviewInput, RwkvModel, SMALL_MODEL_ARCHITECTURE_SHA256, SMALL_MODEL_F32_SHA256,
+    SMALL_MODEL_INT8_SHA256, SMALL_MODEL_VECTORS_SHA256, StatePrecision,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -67,22 +69,51 @@ pub fn model_bytes() -> &'static [u8] {
     })
 }
 
-/// 小模型发布包（`fetch_model.sh` / `fetch_model.ps1` 一并下载）；缺失或 SHA-256 不符时失败。
-/// `FUSHI_RWKV_SMALL_PACKAGE` 可指向别处的包。
-pub fn small_package() -> &'static [u8] {
-    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
-    BYTES.get_or_init(|| {
-        let path = match std::env::var_os("FUSHI_RWKV_SMALL_PACKAGE") {
-            Some(path) => PathBuf::from(path),
-            None => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("model")
-                .join("sm56-package.zip"),
+/// 小模型（sm72e25）的一个文件：`fetch_model.sh` / `fetch_model.ps1` 下载到 `model/` 的
+/// 文件名与钉死的 SHA-256。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SmallFile {
+    Int8Weights,
+    F32Weights,
+    Architecture,
+    Vectors,
+}
+
+impl SmallFile {
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::Int8Weights => "sm72e25_weights.int8.bin",
+            Self::F32Weights => "sm72e25_weights.f32.bin",
+            Self::Architecture => "sm72e25_architecture.json",
+            Self::Vectors => "sm72e25-vectors.json.gz",
+        }
+    }
+
+    fn sha256(self) -> &'static str {
+        match self {
+            Self::Int8Weights => SMALL_MODEL_INT8_SHA256,
+            Self::F32Weights => SMALL_MODEL_F32_SHA256,
+            Self::Architecture => SMALL_MODEL_ARCHITECTURE_SHA256,
+            Self::Vectors => SMALL_MODEL_VECTORS_SHA256,
+        }
+    }
+}
+
+/// 读小模型文件；缺失或 SHA-256 不符时失败（不跳过）。`FUSHI_RWKV_SMALL_DIR` 可指向别处的目录。
+pub fn small_file(file: SmallFile) -> &'static [u8] {
+    static FILES: OnceLock<std::sync::Mutex<HashMap<SmallFile, &[u8]>>> = OnceLock::new();
+    let mut files = FILES.get_or_init(Default::default).lock().unwrap();
+    files.entry(file).or_insert_with(|| {
+        let dir = match std::env::var_os("FUSHI_RWKV_SMALL_DIR") {
+            Some(dir) => PathBuf::from(dir),
+            None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("model"),
         };
+        let path = dir.join(file.file_name());
         let bytes = std::fs::read(&path).unwrap_or_else(|error| {
             panic!(
-                "small RWKV model package not found at {} ({error}).\n\
+                "small RWKV model file not found at {} ({error}).\n\
                  Run native/fushi_rwkv/fetch_model.sh (or fetch_model.ps1 on Windows) first, \
-                 or point FUSHI_RWKV_SMALL_PACKAGE at the zip.",
+                 or point FUSHI_RWKV_SMALL_DIR at a directory holding it.",
                 path.display()
             )
         });
@@ -92,13 +123,17 @@ pub fn small_package() -> &'static [u8] {
             .collect();
         assert_eq!(
             hex,
-            SMALL_MODEL_PACKAGE_SHA256,
-            "small RWKV model package at {} has the wrong SHA-256; \
-             re-run fetch_model.sh / fetch_model.ps1",
+            file.sha256(),
+            "small RWKV model file {} has the wrong SHA-256; re-run fetch_model.sh / fetch_model.ps1",
             path.display()
         );
-        bytes
+        Box::leak(bytes.into_boxed_slice())
     })
+}
+
+/// 运行时用的小模型 int8 权重。
+pub fn small_weights() -> &'static [u8] {
+    small_file(SmallFile::Int8Weights)
 }
 
 pub fn model() -> &'static RwkvModel {

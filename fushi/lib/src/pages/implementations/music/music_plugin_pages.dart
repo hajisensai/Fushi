@@ -1775,7 +1775,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         if (!mounted) return;
         await _push(context, MusicAlbumPage(album: album, tracks: tracks));
       case MusicPlaySourceKind.playlist:
-        // 本地歌单（v147 起可建可播）：删了的歌单不再能点回去。
+        // 本地歌单（v148 起可建可播）：删了的歌单不再能点回去。
         final MusicPlaylistRow? playlist = await ref
             .read(appProvider)
             .database

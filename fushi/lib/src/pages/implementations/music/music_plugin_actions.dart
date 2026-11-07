@@ -176,7 +176,7 @@ MusicItemMenu? musicPluginTrackMenu(
   );
 }
 
-/// 这首插件曲目是否已加入音乐库（远程曲目，v147）；库没就绪时按不在库。
+/// 这首插件曲目是否已加入音乐库（远程曲目，v148）；库没就绪时按不在库。
 Future<bool> _inMusicLibrary(
   WidgetRef ref,
   MusicPluginManifest manifest,
@@ -261,7 +261,7 @@ List<MusicMenuAction> _pluginTrackActions(
           },
         ),
     ],
-    // 加入音乐库 / 本地歌单（远程曲目，v147）：与账号歌单并列时写明「本地」。
+    // 加入音乐库 / 本地歌单（远程曲目，v148）：与账号歌单并列时写明「本地」。
     if (track.playable && app.isDatabaseReady)
       ...musicRemoteLibraryActions(
         app.database,
