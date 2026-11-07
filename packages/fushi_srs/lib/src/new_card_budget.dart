@@ -22,7 +22,7 @@ class SrsNewCardBudget {
   /// 今天实际出的新卡数（已扣掉今天已学的之前的值）。
   final int allowed;
 
-  /// 复习预算（[SrsNewCardPlan.autoLoad] 关掉时为 0）。
+  /// 复习预算（[SrsNewCardPlan.autoLoad] 关掉或牌组按 RWKV 排程时为 0）。
   final int reviewBudget;
 
   /// 没调整 = null；其余见 [SrsNewCardBudgetReason]。界面据此显示一行小字。

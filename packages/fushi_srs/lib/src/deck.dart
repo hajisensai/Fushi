@@ -188,7 +188,8 @@ class SrsNewCardPlan {
   });
 
   /// 按复习量自动调整新卡（规则在 Rust 排队内核 native/fushi_fsrs/src/store/study.rs
-  /// `new_card_budget`，读牌组视图的 `npl`）。
+  /// `new_card_budget`，读牌组视图的 `npl`）。按 RWKV 排程的牌组下不生效（值照存，
+  /// 切回 FSRS 恢复）；RWKV 牌组也不计入 FSRS 祖先的复习负荷。
   final bool autoLoad;
 
   /// 复习预算 = 最近 30 天日均复习数 × [budgetPercent]%。

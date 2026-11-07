@@ -246,6 +246,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       ? _algorithm
       : (_parentOwnerAlgorithm ?? _algorithm);
 
+  /// 保存后按 RWKV 排程（与内核 `DeckTree::uses_rwkv` 同一口径：参数归属祖先的算法）：「按复习量自动调整新卡」
+  /// 不生效（内核恒给每日新卡上限），开关禁用、预算 / 多出两项收起。
+  bool get _newPlanUnderRwkv => _stepsAlgorithm.usesRwkv;
+
   /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
   List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
   List<double> get _baselineRelearn => _deck!.relearnStepsFor(_stepsAlgorithm);
@@ -1093,10 +1097,18 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-new-load-auto'),
           title: t.srs_settings_new_load_auto,
           subtitle: t.srs_settings_new_load_auto_hint,
-          value: _newLoadAuto,
-          onChanged: (bool v) => setState(() => _newLoadAuto = v),
+          // RWKV 下显示实际生效值（关）并禁用；`_newLoadAuto` 照存，切回 FSRS 恢复、保存也不改写。
+          value: _newPlanUnderRwkv ? false : _newLoadAuto,
+          onChanged: _newPlanUnderRwkv
+              ? null
+              : (bool v) => setState(() => _newLoadAuto = v),
         ),
-        if (_newLoadAuto) ...<Widget?>[
+        if (_newPlanUnderRwkv)
+          Text(
+            t.srs_settings_new_load_rwkv_note,
+            style: context.fushiType.bodySmall,
+          ),
+        if (_newLoadAuto && !_newPlanUnderRwkv) ...<Widget?>[
           _numberField(
             _newLoadBudget,
             t.srs_settings_new_load_budget,
