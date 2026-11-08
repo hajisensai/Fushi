@@ -13,12 +13,12 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show AudioFetchOutcome;
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_word_audio_backfill.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';

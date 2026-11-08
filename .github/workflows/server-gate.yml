@@ -37,6 +37,9 @@ on:
       # RWKV-Instant 排程推理（硬依赖，经 fushi_srs → fushi_engine）。
       - 'packages/fushi_rwkv/**'
       - 'native/fushi_rwkv/**'
+      # 复习库内核（srs.db + FSRS 调度）：服务端的复习 / AnkiConnect / 制卡测试要真库。
+      - 'packages/fushi_srs/**'
+      - 'native/fushi_fsrs/**'
       - '.github/workflows/server-gate.yml'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
@@ -53,6 +56,9 @@ on:
       # RWKV-Instant 排程推理（硬依赖，经 fushi_srs → fushi_engine）。
       - 'packages/fushi_rwkv/**'
       - 'native/fushi_rwkv/**'
+      # 复习库内核（srs.db + FSRS 调度）：服务端的复习 / AnkiConnect / 制卡测试要真库。
+      - 'packages/fushi_srs/**'
+      - 'native/fushi_fsrs/**'
       - '.github/workflows/server-gate.yml'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
@@ -101,6 +107,23 @@ jobs:
       # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
       - name: Build fushi_rwkv (Linux .so)
         uses: ./.github/actions/setup-fushi-rwkv
+      # 复习库内核 fushi_fsrs（srs.db 与 FSRS 调度都在里面）：服务端复习相关测试要真库，导出 FUSHI_FSRS_LIB。
+      # 工具链与 setup-fushi-compute 同一个 pin（native-store-names/names.sh 的 P2P_RUST）；测试 job 冷编、
+      # 不挂 rust-cache（缓存配额，见 fushi/test/build/workflow_cache_quota_guard_test.dart）。
+      - name: Build fushi_fsrs (Linux .so)
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^P2P_RUST=//p' .github/actions/native-store-names/names.sh)"
+          if [ -z "$toolchain" ]; then
+            echo "::error title=No Rust pin::names.sh has no P2P_RUST= line"
+            exit 1
+          fi
+          rustup toolchain install "$toolchain" --profile minimal
+          RUSTUP_TOOLCHAIN="$toolchain" bash native/fushi_fsrs/build_linux_so.sh
+          lib="$GITHUB_WORKSPACE/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so"
+          bash native/fushi_fsrs/verify_abi.sh "$lib" nm
+          echo "FUSHI_FSRS_LIB=$lib" >> "$GITHUB_ENV"
       - name: Test fushi_server
         working-directory: packages/fushi_server
         run: dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/fushi_server

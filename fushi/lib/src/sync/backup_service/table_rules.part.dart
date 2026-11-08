@@ -324,6 +324,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_playlists': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,
   }),
+  // 远程曲目（v148）：歌单条目可能引用它，与歌单同进同出；身份与设备无关（来源 + 条目 id
+  // 派生），不含本机路径。
+  'music_remote_tracks': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
   'music_lyrics': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,
   }),

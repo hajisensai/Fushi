@@ -15,12 +15,33 @@ void main() {
     'lib/src/settings/cupertino_settings_renderer.dart',
   );
   final String shared = read('lib/src/settings/settings_schema_widgets.dart');
+  // footer 件挪到不碰 SettingsContext / AppModel 的叶子文件（防 lib/ 大 import
+  // 环，见 import_cycle_guard_test.dart），由 settings_schema_widgets 转出。
+  final String footer = read('lib/src/settings/settings_section_footer.dart');
 
   group('schema 渲染 widget 收口共享 (settings_schema_widgets)', () {
     test('共享文件定义 Section/Item/Footer + 参数化 routeBuilder/footerStyle', () {
       expect(shared, contains('class SettingsSchemaSection'));
       expect(shared, contains('class SettingsSchemaItem'));
-      expect(shared, contains('class SettingsSectionFooter'));
+      expect(footer, contains('class SettingsSectionFooter'));
+      expect(
+        shared,
+        contains(
+          "export 'package:fushi/src/settings/settings_section_footer.dart';",
+        ),
+        reason: '共享 widget 文件应转出 footer 件，渲染器只 import 一处',
+      );
+      expect(
+        shared.contains('class SettingsSectionFooter'),
+        isFalse,
+        reason: 'footer 只能有一份定义（叶子文件）',
+      );
+      expect(
+        footer.contains('settings_context.dart') ||
+            footer.contains('app_model.dart'),
+        isFalse,
+        reason: '叶子文件不得依赖 SettingsContext / AppModel',
+      );
       expect(shared, contains('footerStyle'), reason: 'footer 文字样式应作参数（两平台不同）');
       expect(
         shared,

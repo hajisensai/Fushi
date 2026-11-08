@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
@@ -21,7 +22,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -757,7 +758,10 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
-    client: appModel.createRemoteMiningClient(),
+    client: appModel.createRemoteMiningClient(
+      onTargetUnavailable: (_) =>
+          FushiToast.show(msg: t.anki_mine_to_server_target_reset),
+    ),
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
     // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
     onAuthRejected: (String message) =>
@@ -765,12 +769,12 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
   // 远端制卡的仓库 `supportsAutoReposition` 为 false，装饰器里的判据会跳过——
   // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
-  return _withSrsMining(
-    ref,
-    _withPendingQueue(ref, _withAutoReposition(ref, remote)),
-    followWorkSession: true,
-    background: true,
-  );
+  //
+  // 不套本机的复习层（[_withSrsMining]）：开关承诺的是「卡交给已配对设备」，查重与落卡都在主机——
+  // 主机的挖词目标 / 手机选的「保存到」决定落进主机的 Anki 还是复习（§4.8）。此前复习层包在最外面，
+  // 本机挖词目标是 Fushi 复习时卡和查重都留在本机，没有本机复习副本的手机永远显示「不在牌组里」。
+  // 本机挖词目标只在开关关着时生效；后台制卡同理不适用（主机要给确定结果）。
+  return _withPendingQueue(ref, _withAutoReposition(ref, remote));
 });
 
 /// 互联主机**替别的设备**制卡（收转发、浏览器扩展、读写出处笔记）用的仓库：裸本机后端，
