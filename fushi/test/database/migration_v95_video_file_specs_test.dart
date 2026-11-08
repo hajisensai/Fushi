@@ -97,7 +97,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 147);
+      expect(probe.select('PRAGMA user_version').first.values.first, 148);
       expect(hasTable(probe, 'video_file_specs'), isTrue);
     } finally {
       probe.dispose();
