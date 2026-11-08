@@ -175,6 +175,14 @@ class CompanionLookupController extends ChangeNotifier {
     );
   }
 
+  /// The dictionary started one lookup (the shown one, a nested one): the
+  /// main engine counts it for the media on top, through the same counter its
+  /// in-page popup uses. The panel's own popup writes no counter.
+  void countLookup() {
+    if (_disposed) return;
+    unawaited(_session.reportLookupCounted());
+  }
+
   void removeFromHistory(CompanionLookupEntry entry) {
     if (_history.remove(entry)) notifyListeners();
   }

@@ -22,6 +22,13 @@ typedef CompanionRequestHandler =
 /// Opens a `fushi://widget/...` deep link on the main screen.
 typedef CompanionLinkOpener = Future<void> Function(String link);
 
+/// Counts one companion lookup that no page on top claimed (a route-level
+/// context): the same unattributed count the panel's own popup used to write.
+typedef CompanionLookupCounter = void Function();
+
+/// A card was mined on the companion ([term] = the looked-up word, if known).
+typedef CompanionMinedListener = void Function(String? term);
+
 /// What plays on top (music, an audiobook; a video page adds itself in S3).
 abstract interface class CompanionNowPlayingSource implements Listenable {
   CompanionNowPlaying? get current;
@@ -37,13 +44,15 @@ abstract interface class CompanionNowPlayingSource implements Listenable {
 /// companion panel is up and wanted) and the panel said it is ready; on
 /// "ready" everything is sent again, so a new panel (relaunch after the app
 /// came back, the game stream giving the screen back) catches up.
-class CompanionBridge {
+class CompanionBridge implements CompanionControllerSink {
   CompanionBridge({
     required SecondScreenHost? host,
     required SecondScreenController controller,
     required CompanionContextRegistry contexts,
     required CompanionSummaryCollector collectSummary,
     CompanionNowPlayingSource? nowPlaying,
+    CompanionLookupCounter? countUnclaimedLookup,
+    CompanionMinedListener? onMined,
     Directory? spillRoot,
     Duration Function(DateTime now)? untilNextDay,
   }) : _host = host,
@@ -51,6 +60,8 @@ class CompanionBridge {
        _contexts = contexts,
        _collectSummary = collectSummary,
        _nowPlaying = nowPlaying,
+       _countUnclaimedLookup = countUnclaimedLookup,
+       _onMined = onMined,
        _spillRoot =
            spillRoot ?? secondScreenSpillRoot('second_screen_companion'),
        _untilNextDay = untilNextDay {
@@ -75,6 +86,8 @@ class CompanionBridge {
   final CompanionContextRegistry _contexts;
   final CompanionSummaryCollector _collectSummary;
   final CompanionNowPlayingSource? _nowPlaying;
+  final CompanionLookupCounter? _countUnclaimedLookup;
+  final CompanionMinedListener? _onMined;
   final Directory _spillRoot;
   final Duration Function(DateTime now)? _untilNextDay;
   SecondScreenPipe? _pipe;
@@ -114,7 +127,29 @@ class CompanionBridge {
 
   /// The companion's lookup panel is open (S3 / S6: A mines instead of
   /// looking up again).
-  ValueListenable<bool> get lookupOpen => _lookupOpen;
+  ValueListenable<bool> get lookupOpenListenable => _lookupOpen;
+
+  // ---- CompanionControllerSink (S6 controller lookup mode / R1 drive) ----
+
+  @override
+  bool get lookupOpen => _lookupOpen.value;
+
+  @override
+  bool sendLookupAction(
+    String action, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]) {
+    if (!_canSend || !_panelReady) return false;
+    _send(CompanionLookupActionMessage(action, args: args));
+    return true;
+  }
+
+  @override
+  bool sendPanelNav(String action) {
+    if (!_canSend || !_panelReady) return false;
+    _send(CompanionPanelNavMessage(action));
+    return true;
+  }
 
   /// The top screen's context; pages claim it here (or with
   /// [CompanionContextClaim]) and publish their module snapshots.
@@ -160,6 +195,7 @@ class CompanionBridge {
     _controller.addListener(_onControllerChanged);
     _contexts.setActive(_controller.isActive);
     _contexts.bindLookupSink(sendLookup);
+    _contexts.bindControllerSink(this);
     _contexts.addListener(_onContextChanged);
     _nowPlaying?.addListener(_onNowPlayingChanged);
     _messages = _host.messages.listen(_onHostMessage);
@@ -255,8 +291,17 @@ class CompanionBridge {
         :final Map<String, Object?> args,
       ):
         unawaited(_answer(id, method, args));
-      case CompanionLookupStateMessage(:final bool open):
+      case CompanionLookupStateMessage(
+        :final bool open,
+        :final String? term,
+        :final bool mined,
+      ):
         _lookupOpen.value = open;
+        if (mined) _onMined?.call(term);
+      case CompanionLookupCountedMessage():
+        // The page that owns the context counts it with its own counter (its
+        // book / video identity); a route-level context gets the plain count.
+        if (!_contexts.countLookup()) _countUnclaimedLookup?.call();
     }
   }
 
@@ -407,6 +452,7 @@ class CompanionBridge {
     if (_started) {
       _contexts.setActive(false);
       _contexts.bindLookupSink(null);
+      _contexts.bindControllerSink(null);
       _controller.removeListener(_onControllerChanged);
       _contexts.removeListener(_onContextChanged);
       _nowPlaying?.removeListener(_onNowPlayingChanged);

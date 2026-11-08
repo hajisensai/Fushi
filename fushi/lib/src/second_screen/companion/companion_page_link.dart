@@ -45,18 +45,27 @@ class CompanionPageLink {
 
   /// Claims (or updates) the page's context. Call again with the page's
   /// [route] once it is known (`didChangeDependencies`), and whenever the
-  /// context changes (title, kind).
+  /// context changes (title, kind). [onLookupCounted]: the page's lookup
+  /// counter (the one its in-page popup uses), run for each lookup made on the
+  /// companion while this page owns the context.
   void claim(
     CompanionContext context, {
     Route<Object?>? route,
     CompanionCommandHandler? onCommand,
+    VoidCallback? onLookupCounted,
   }) {
     if (_disposed) return;
     // A new kind drops the stored snapshot (the registry does the same).
     if (_kind != context.kind) _lastJson = null;
     _kind = context.kind;
     _claimed = true;
-    _registry.claim(this, context, route: route, onCommand: onCommand);
+    _registry.claim(
+      this,
+      context,
+      route: route,
+      onCommand: onCommand,
+      onLookupCounted: onLookupCounted,
+    );
     _ensureListening();
     _syncTimer();
   }

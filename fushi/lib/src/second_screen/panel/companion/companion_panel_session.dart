@@ -49,6 +49,8 @@ class CompanionPanelSession extends ChangeNotifier {
   int _nextId = 1;
   final StreamController<void> _prefsChanges =
       StreamController<void>.broadcast();
+  final StreamController<CompanionHostMessage> _controllerInput =
+      StreamController<CompanionHostMessage>.broadcast(sync: true);
 
   /// The top screen's context.
   CompanionContext get context => _context;
@@ -80,6 +82,11 @@ class CompanionPanelSession extends ChangeNotifier {
 
   /// Fires when the main process changed preferences.
   Stream<void> get prefsChanges => _prefsChanges.stream;
+
+  /// The top screen's controller driving the companion (S6): each
+  /// [CompanionLookupActionMessage] / [CompanionPanelNavMessage] as it
+  /// arrives. Not state: a step nobody listens to is gone.
+  Stream<CompanionHostMessage> get controllerInput => _controllerInput.stream;
 
   /// Tells the main engine the panel listens; it answers with everything.
   Future<void> start() => _sendMessage(const CompanionReadyMessage());
@@ -116,6 +123,10 @@ class CompanionPanelSession extends ChangeNotifier {
         _libraryRevision++;
       case CompanionSettingsChangedMessage():
         _settingsRevision++;
+      case CompanionLookupActionMessage():
+      case CompanionPanelNavMessage():
+        _controllerInput.add(message);
+        return;
       case CompanionReplyMessage(
         :final int id,
         :final Object? value,
@@ -171,6 +182,11 @@ class CompanionPanelSession extends ChangeNotifier {
     CompanionLookupStateMessage(open: open, term: term, mined: mined),
   );
 
+  /// The companion's lookup started one dictionary lookup: the main engine
+  /// counts it for the media on top (S6).
+  Future<void> reportLookupCounted() =>
+      _sendMessage(const CompanionLookupCountedMessage());
+
   /// Closes the lookup panel.
   void clearLookup() {
     if (_lookup == null) return;
@@ -211,6 +227,7 @@ class CompanionPanelSession extends ChangeNotifier {
       c.completeError(const CompanionRequestException('panel closed'));
     }
     unawaited(_prefsChanges.close());
+    unawaited(_controllerInput.close());
     super.dispose();
   }
 }

@@ -51,6 +51,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.showSearchBar = true,
     this.embedded = false,
     this.onMined,
+    this.onLookupStarted,
     super.key,
   });
 
@@ -109,6 +110,12 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// Called with the outcome of every mining attempt made from this page
   /// (the companion tells the main screen a card was mined).
   final void Function(MinePopupResult result)? onMined;
+
+  /// Replaces this page's own lookup counter (TODO-1204): called for every
+  /// lookup the page starts (top / nested / repeated). The second-screen
+  /// companion passes one that has the main engine count the lookup for the
+  /// media on top; null = count here as usual.
+  final VoidCallback? onLookupStarted;
 
   @override
   ConsumerState<PopupDictionaryPage> createState() =>
@@ -177,7 +184,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     _searchController = TextEditingController(text: widget.searchTerm);
     _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
-    attachLookupCounter(_popup);
+    final VoidCallback? onLookupStarted = widget.onLookupStarted;
+    if (onLookupStarted == null) {
+      attachLookupCounter(_popup);
+    } else {
+      _popup.onLookupStarted = onLookupStarted;
+    }
     _sourceLookupText = widget.searchTerm.trim();
     _sourceSentence = _sentenceOf(widget);
     _sourceLineQuery = '';

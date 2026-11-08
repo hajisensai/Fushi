@@ -353,12 +353,12 @@ void main() {
     expect(lookup.sentence, '猫がいる。');
 
     await fromPanel(const CompanionLookupStateMessage(open: true, term: '猫'));
-    expect(bridge.lookupOpen.value, isTrue);
+    expect(bridge.lookupOpen, isTrue);
 
     // The panel goes away: lookups fall back to the page, state resets.
     platform.detach();
     expect(bridge.isActive, isFalse);
-    expect(bridge.lookupOpen.value, isFalse);
+    expect(bridge.lookupOpen, isFalse);
     expect(await bridge.sendLookup(text: '猫'), isFalse);
   });
 

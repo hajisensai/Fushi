@@ -53,6 +53,60 @@ abstract final class CompanionRequestMethods {
   static const String libraryOpenOnMain = 'library.openOnMain';
 }
 
+/// Actions of [CompanionLookupActionMessage] (S6 controller lookup mode): the
+/// top screen's controller drives the companion's open lookup.
+abstract final class CompanionLookupActions {
+  /// Mine the first entry (the popup's own mining bridge).
+  static const String mine = 'mine';
+
+  /// Play the first entry's word audio.
+  static const String playAudio = 'playAudio';
+
+  /// Focus the next / previous dictionary entry.
+  static const String nextEntry = 'nextEntry';
+  static const String prevEntry = 'prevEntry';
+
+  /// Scroll the lookup by `dy` logical pixels (positive = down).
+  static const String scroll = 'scroll';
+
+  /// Close the lookup (its nested layers first, like Back).
+  static const String close = 'close';
+
+  /// [scroll] argument.
+  static const String dy = 'dy';
+}
+
+/// Steps of [CompanionPanelNavMessage] (S6 R1 panel drive): while R1 is held
+/// on the controller, D-pad / A / B move the companion's own focus.
+abstract final class CompanionPanelNav {
+  /// R1 went down with a panel button: the panel shows its focus ring.
+  static const String begin = 'begin';
+
+  /// R1 went up: the panel keeps its focus position, hides the ring.
+  static const String end = 'end';
+  static const String up = 'up';
+  static const String down = 'down';
+  static const String left = 'left';
+  static const String right = 'right';
+
+  /// A: activate the focused control.
+  static const String activate = 'activate';
+
+  /// B: Back in the companion (close the lookup / pop the tab's history).
+  static const String back = 'back';
+
+  static const List<String> values = <String>[
+    begin,
+    end,
+    up,
+    down,
+    left,
+    right,
+    activate,
+    back,
+  ];
+}
+
 Map<String, Object?> _decodeObject(String raw) {
   final Object? decoded = jsonDecode(raw);
   if (decoded is! Map) {
@@ -532,6 +586,13 @@ sealed class CompanionHostMessage {
         const CompanionLibraryChangedMessage(),
       CompanionSettingsChangedMessage.type =>
         const CompanionSettingsChangedMessage(),
+      CompanionLookupActionMessage.type => CompanionLookupActionMessage(
+        _requireString(json, 'action'),
+        args: _objectOf(json['args']),
+      ),
+      CompanionPanelNavMessage.type => CompanionPanelNavMessage(
+        _requireString(json, 'action'),
+      ),
       CompanionReplyMessage.type => CompanionReplyMessage(
         id: _requireInt(json, 'id'),
         value: json['value'],
@@ -665,6 +726,42 @@ class CompanionSettingsChangedMessage extends CompanionHostMessage {
   Map<String, Object?> toJson() => <String, Object?>{_typeKey: type};
 }
 
+/// The top screen's controller acts on the companion's open lookup (S6
+/// controller lookup mode): [action] is one of [CompanionLookupActions].
+class CompanionLookupActionMessage extends CompanionHostMessage {
+  const CompanionLookupActionMessage(
+    this.action, {
+    this.args = const <String, Object?>{},
+  });
+
+  static const String type = 'lookupAction';
+
+  final String action;
+  final Map<String, Object?> args;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    _typeKey: type,
+    'action': action,
+    'args': args,
+  };
+}
+
+/// One step of R1 panel drive (S6): [action] is one of [CompanionPanelNav].
+class CompanionPanelNavMessage extends CompanionHostMessage {
+  const CompanionPanelNavMessage(this.action);
+
+  static const String type = 'panelNav';
+
+  final String action;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    _typeKey: type,
+    'action': action,
+  };
+}
+
 /// Answer to the panel's [CompanionRequestMessage] [id]: [value] (JSON) or
 /// [error] when the request failed.
 class CompanionReplyMessage extends CompanionHostMessage {
@@ -717,6 +814,8 @@ sealed class CompanionPanelMessage {
         method: _requireString(json, 'method'),
         args: _objectOf(json['args']),
       ),
+      CompanionLookupCountedMessage.type =>
+        const CompanionLookupCountedMessage(),
       CompanionLookupStateMessage.type => CompanionLookupStateMessage(
         open: json['open'] == true,
         term: _string(json, 'term'),
@@ -856,4 +955,18 @@ class CompanionLookupStateMessage extends CompanionPanelMessage {
     if (term != null) 'term': term,
     'mined': mined,
   };
+}
+
+/// The companion's lookup started one dictionary lookup (a main-screen lookup,
+/// a nested one, a line tapped on a module panel). The main engine counts it
+/// through the page that owns the context (its own lookup counter, the one
+/// its in-page popup uses), so the companion's lookups show up in that
+/// media's statistics. The panel itself writes no counter.
+class CompanionLookupCountedMessage extends CompanionPanelMessage {
+  const CompanionLookupCountedMessage();
+
+  static const String type = 'lookupCounted';
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{_typeKey: type};
 }

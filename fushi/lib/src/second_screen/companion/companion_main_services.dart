@@ -15,7 +15,10 @@ import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/music/music_player_engine.dart'
     show MusicPlayerEngine;
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart'
+    show statTodayKey;
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/ops/settings_index.dart' show settingsIndexContext;
@@ -33,6 +36,8 @@ import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 export 'package:fushi/src/second_screen/companion/companion_continue.dart'
     show
@@ -237,6 +242,8 @@ final Provider<CompanionBridge> companionBridgeProvider =
         collectSummary: () => collectCompanionDailySummary(ref),
         nowPlaying: nowPlaying,
         untilNextDay: StatWindow.untilNextStatDayBoundary,
+        countUnclaimedLookup: () => _countUnclaimedCompanionLookup(appModel),
+        onMined: _showCompanionMinedOnTop,
       );
       ref.onDispose(() {
         bridge.dispose();
@@ -321,3 +328,35 @@ final Provider<CompanionBridge> companionBridgeProvider =
       maybeStart();
       return bridge;
     });
+
+/// A companion lookup no page on top claimed (home, a library, settings):
+/// the same identity-less count the panel's own popup wrote before S6
+/// (`PopupDictionaryPage`'s default counter), now written by the main engine.
+void _countUnclaimedCompanionLookup(AppModel appModel) {
+  try {
+    unawaited(
+      appModel.database
+          .addLookupCount(
+            bookKey: null,
+            title: '',
+            sourceType: kStatSourceBook,
+            dateKey: statTodayKey(),
+          )
+          .catchError((Object e, StackTrace st) {
+            ErrorLogService.instance.log('CompanionLookupCount', e, st);
+          }),
+    );
+  } catch (e, st) {
+    ErrorLogService.instance.log('CompanionLookupCount', e, st);
+  }
+}
+
+/// A card was mined on the companion: a brief confirmation on top, where the
+/// controller user is looking (controller lookup mode mines from the top).
+void _showCompanionMinedOnTop(String? term) {
+  // The mining notice exit (respects the user's "mining notices" setting).
+  FushiToast.showMine(
+    msg: t.second_screen_lookup_mined(term: term ?? ''),
+    status: MineToastStatus.added,
+  );
+}

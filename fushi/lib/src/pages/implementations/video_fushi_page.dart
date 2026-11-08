@@ -176,6 +176,8 @@ import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
 import 'package:fushi/src/second_screen/companion/modules/video_companion_hook.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -494,6 +496,7 @@ part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';
 part 'video_fushi/subtitle_text_edit.part.dart';
 part 'video_fushi/companion.part.dart';
+part 'video_fushi/controller_lookup.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -1996,6 +1999,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoPlayerController? _controller;
 
   /// 桌面控制通道遥控面（见 `video_fushi/playback_remote.part.dart`）。
+  /// Controller lookup mode adapter (hold L1 / Select; see
+  /// `video_fushi/controller_lookup.part.dart`).
+  _VideoControllerLookupTarget? _controllerLookupTarget;
+
   late final _VideoPagePlaybackRemote _playbackRemote =
       _VideoPagePlaybackRemote(this);
 
@@ -3673,6 +3680,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
+    _attachControllerLookup();
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
@@ -6803,6 +6811,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
     videoPlaybackRemotes.unregister(_playbackRemote);
+    _detachControllerLookup();
     _companionHook.dispose();
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生

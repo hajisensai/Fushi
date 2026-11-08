@@ -17,18 +17,39 @@ typedef CompanionLookupSink =
       String? sentence,
     });
 
+/// The controller side of the companion (S6), bound by the companion bridge:
+/// lets the main engine's controller lookup mode drive the companion's lookup
+/// and focus without depending on the bridge / AppModel layer.
+abstract interface class CompanionControllerSink {
+  /// The companion's lookup is open (A mines instead of looking up again).
+  bool get lookupOpen;
+
+  /// Sends one of `CompanionLookupActions` to the open lookup. False when the
+  /// companion did not take it.
+  bool sendLookupAction(
+    String action, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]);
+
+  /// Sends one `CompanionPanelNav` step (R1 panel drive). False when the
+  /// companion did not take it.
+  bool sendPanelNav(String action);
+}
+
 class _Claim {
   _Claim({
     required this.owner,
     required this.context,
     required this.route,
     required this.onCommand,
+    required this.onLookupCounted,
   });
 
   final Object owner;
   CompanionContext context;
   Route<Object?>? route;
   CompanionCommandHandler? onCommand;
+  VoidCallback? onLookupCounted;
   Map<String, Object?>? snapshot;
 }
 
@@ -103,6 +124,29 @@ class CompanionContextRegistry extends ChangeNotifier {
     return sink(text: text, charIndex: charIndex, sentence: sentence);
   }
 
+  CompanionControllerSink? _controllerSink;
+
+  /// The companion bridge's controller side (S6); null before the bridge
+  /// starts. Use [controller] to reach it.
+  void bindControllerSink(CompanionControllerSink? sink) =>
+      _controllerSink = sink;
+
+  /// The companion's controller side while the companion is up; null when it
+  /// is not (controller lookup then falls back to the in-page popup and R1
+  /// keeps its page binding).
+  CompanionControllerSink? get controller =>
+      _active.value ? _controllerSink : null;
+
+  /// The companion started one lookup: counts it through the context owner's
+  /// lookup counter (the one its in-page popup uses). False when the owner
+  /// has none (a route-level context, a page without lookups).
+  bool countLookup() {
+    final VoidCallback? count = _current.claim?.onLookupCounted;
+    if (count == null) return false;
+    count();
+    return true;
+  }
+
   /// The top screen's context.
   CompanionContext get current => _current.context;
 
@@ -121,17 +165,21 @@ class CompanionContextRegistry extends ChangeNotifier {
   /// claiming again only updates the context and command handler (keeps the
   /// claim's place). [route] is the owner's page route (null: always counts);
   /// a claim made before the route was known takes it on a later call.
+  /// [onLookupCounted] counts one lookup made on the companion for this page
+  /// ([countLookup]); pages pass the counter their in-page popup uses.
   void claim(
     Object owner,
     CompanionContext context, {
     Route<Object?>? route,
     CompanionCommandHandler? onCommand,
+    VoidCallback? onLookupCounted,
   }) {
     for (final _Claim existing in _claims) {
       if (identical(existing.owner, owner)) {
         if (existing.context != context) existing.snapshot = null;
         existing.context = context;
         existing.onCommand = onCommand;
+        existing.onLookupCounted = onLookupCounted;
         if (route != null) existing.route = route;
         _recompute();
         return;
@@ -143,6 +191,7 @@ class CompanionContextRegistry extends ChangeNotifier {
         context: context,
         route: route,
         onCommand: onCommand,
+        onLookupCounted: onLookupCounted,
       ),
     );
     _recompute();

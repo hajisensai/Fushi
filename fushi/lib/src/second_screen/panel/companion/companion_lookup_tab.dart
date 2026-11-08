@@ -102,6 +102,7 @@ class _PopupDictionary extends ConsumerWidget {
       closeInApp: lookup.close,
       showSearchBar: false,
       embedded: true,
+      onLookupStarted: lookup.countLookup,
       onMined: (result) {
         if (result.ankiConnect || result.queued) lookup.reportMined();
       },
