@@ -56,7 +56,8 @@ class CompanionLookupTab extends ConsumerWidget {
 
 /// The real dictionary: [PopupDictionaryPage] (the same page the system
 /// lookup popup runs, so mining / audio / nested lookups behave the same)
-/// filling the tab, once the panel's popup AppModel is up.
+/// filling the tab, once the panel's popup AppModel is up. The tab owns the
+/// insets (top safe area, bottom bar height); the embedded page applies none.
 Widget buildCompanionPopupDictionary(
   BuildContext context,
   CompanionLookupEntry entry,
