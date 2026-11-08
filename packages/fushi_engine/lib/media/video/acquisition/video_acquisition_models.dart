@@ -782,6 +782,7 @@ class VideoAcquisitionState {
     this.pendingQueries = const <String>[],
     this.workCandidates = const <VideoDiscoveryItem>[],
     this.chosenItem,
+    this.siblingWorks = const <VideoMediaReference>[],
     this.work,
     this.airing,
     this.contentLanguage,
@@ -822,6 +823,10 @@ class VideoAcquisitionState {
   final List<VideoDiscoveryItem> workCandidates;
 
   final VideoDiscoveryItem? chosenItem;
+
+  /// 选定作品时同一次作品搜索的其它候选（续作 / 前作 / 外传）：资源搜索是模糊词
+  /// 匹配，它们的发布会混进这一部的候选，按兄弟作品判据排掉（BUG-4241）。
+  final List<VideoMediaReference> siblingWorks;
 
   /// `loadDetails` 之后的完整作品资料（TMDB 搜索项在这之前没有 status）。
   final VideoMetadataWork? work;
@@ -882,6 +887,7 @@ class VideoAcquisitionState {
     List<String>? pendingQueries,
     List<VideoDiscoveryItem>? workCandidates,
     VideoDiscoveryItem? chosenItem,
+    List<VideoMediaReference>? siblingWorks,
     VideoMetadataWork? work,
     VideoAiringStatus? airing,
     bool clearAiring = false,
@@ -912,6 +918,7 @@ class VideoAcquisitionState {
     pendingQueries: pendingQueries ?? this.pendingQueries,
     workCandidates: workCandidates ?? this.workCandidates,
     chosenItem: chosenItem ?? this.chosenItem,
+    siblingWorks: siblingWorks ?? this.siblingWorks,
     work: work ?? this.work,
     airing: clearAiring ? null : (airing ?? this.airing),
     contentLanguage: contentLanguage ?? this.contentLanguage,

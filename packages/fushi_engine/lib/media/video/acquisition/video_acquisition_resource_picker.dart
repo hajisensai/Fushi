@@ -394,8 +394,8 @@ int? estimatedBytesPerEpisode(VideoResourceVersionGroup group) {
 /// - 订阅 → 代表条 + [StrictVideoSubscriptionFilter] + `startAfterEpisode = episodes.min`；
 /// - 下载 tv：`Single(n)` → `pickResourceVersionCandidate(group, episode: n)`；
 ///   `Range` → 组内集号落在范围内的成员（同集取代表序最优），缺的集进 `missingEpisodes`；
-///   `All` → 有 `isLikelyBatchVideoRelease` 成员则只取做种最多的合集（`usesBatch`），
-///   否则所有能解析出集号的成员（同集去重）；结果为空 → null。
+///   `All` → 有 `isLikelyBatchVideoRelease` 成员（只会在整包卡里）则只取做种最多
+///   的合集（`usesBatch`），否则所有能解析出集号的成员（同集去重）；结果为空 → null。
 VideoAcquisitionResourcePlan? planResourceFromGroup(
   VideoResourceVersionGroup group, {
   required VideoAcquisitionMode mode,
@@ -492,6 +492,10 @@ VideoAcquisitionResourcePlan? _planEpisodesDownload(
         missingEpisodes: List<int>.unmodifiable(missing),
       );
     case VideoAcquisitionAllEpisodes():
+      // 发布形态是分组键的一维（BUG-4241）：逐集卡里没有整包，整包卡里没有单集，
+      // 不会再拿 A 作品的整包去配 B 作品的逐集。整包卡里只认**写明是合集**的那几条
+      // （关键词 / 区间）：没有集号的单条（`Show Special`、没写 batch 的 BD 包）
+      // 分不清是全集还是一集特典，当「全集」下错了比给不出计划更糟。
       final List<VideoResourceCandidate> batches = <VideoResourceCandidate>[
         for (final VideoResourceCandidate member in group.members)
           if (isLikelyBatchVideoRelease(member.title)) member,
@@ -565,7 +569,8 @@ List<String> availableResolutionsOf(List<VideoResourceVersionGroup> groups) {
 /// * [work]：与目标作品身份矛盾的发布（别的年份 / 重制版 / 别的续作序号，判据在
 ///   [videoResourceWorkMismatch]）。长寿系列的兄弟作品共用几乎全部标题词
 ///   （哆啦A梦《大雄的恐龙》1980 / 《大雄的新恐龙》2020），不按身份排除就会下错
-///   那一部（BUG-3065）。
+///   那一部（BUG-3065）；标题点名了同系列另一部的发布（`Garupa Pico: Fever!`
+///   混在 2018 年《ガルパ☆ピコ》的候选里）同样丢弃，剧集也适用。
 /// * [originalLanguageOnly]：用户要原语言时，标题明写「只有配音」或「硬字幕」的
 ///   发布（[releaseIsDubOnly] / [releaseHasBurnedInSubtitles]，BUG-3066）。
 ///   [workLanguage] 是作品原语言码：国产片的「国语」、粤语片的「粤语」是原音轨，

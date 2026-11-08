@@ -793,6 +793,12 @@ VideoAcquisitionReduction _chooseWork(
   next = next.copyWith(
     stage: VideoAcquisitionStage.loadingDetails,
     chosenItem: item,
+    // 同一次搜索搜出来的其它作品就是资源搜索最容易混进来的兄弟作品（搜
+    // 「Garupa Pico」同时出 2018 / 大盛 / Fever 三部）。
+    siblingWorks: <VideoMediaReference>[
+      for (final VideoDiscoveryItem other in state.workCandidates)
+        if (!_sameWork(other.reference, item.reference)) other.reference,
+    ],
     workCandidates: const <VideoDiscoveryItem>[],
     clearQuestion: true,
     busy: true,
@@ -1443,8 +1449,14 @@ VideoAcquisitionReduction _onResourcesLoaded(
         event.items,
         skipExtras: defaults.skipExtras,
         work: reference.mediaKind == VideoMetadataMediaKind.movie
-            ? VideoResourceWorkTarget.fromReference(reference)
-            : null,
+            ? VideoResourceWorkTarget.fromReference(
+                reference,
+                siblings: state.siblingWorks,
+              )
+            : VideoResourceWorkTarget.seriesFromReference(
+                reference,
+                siblings: state.siblingWorks,
+              ),
         originalLanguageOnly: wantsOriginalLanguageRelease(state),
         workLanguage: state.contentLanguage?.code,
       ),
@@ -1874,6 +1886,7 @@ VideoAcquisitionReduction _changeScope(
     slots: state.slots.copyWith(scope: scope),
     transcript: state.transcript,
     chosenItem: state.chosenItem,
+    siblingWorks: state.siblingWorks,
     work: state.work,
     airing: state.airing,
     contentLanguage: state.contentLanguage,
@@ -2219,6 +2232,10 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
     // 剧集时按年份排除写了别的年份的发布。独一份的长寿剧不排（逐集发布常带
     // 播出年份，按首播年排会误杀）。
     filterSeriesByYear: _hasSameTitledSeries(state.franchiseEntries, target),
+    siblings: <VideoMediaReference>[
+      for (int i = 0; i < state.franchiseEntries.length; i++)
+        if (i != index) state.franchiseEntries[i].item.reference,
+    ],
     originalLanguageOnly: wantsOriginalLanguageRelease(state),
     workLanguage: state.contentLanguage?.code,
   );
@@ -2264,7 +2281,9 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
 /// * 模式：电影 / 已完结 / 已取消 → 下载；在播 / 未开播 / 状态未知 → 订阅（订阅
 ///   从已知最小集号起，已出的集会一起下）。订阅推不出严格规则时退回下载。
 /// * 身份：电影按完整身份（年份 / 重制版 / 续作序号）排除兄弟作品的发布
-///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。
+///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。两者都按 [siblings]
+///   （清单里的其它作品）排除标题点名了另一部的发布（`Garupa Pico: Fever!` 不是
+///   2018 年的《ガルパ☆ピコ》，BUG-4241）。
 /// * 语言：[originalLanguageOnly] 时排除只有配音 / 硬字幕的发布（BUG-3066）；
 ///   「配音 / 硬字幕」按这一部的原语言判（详情给得出就用它，否则用会话的
 ///   [workLanguage]）——国产片的国语、粤语片的粤语、中文作品的中字都不算。
@@ -2277,6 +2296,7 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   required VideoAcquisitionQuality quality,
   required VideoAcquisitionDefaults defaults,
   bool filterSeriesByYear = false,
+  List<VideoMediaReference> siblings = const <VideoMediaReference>[],
   bool originalLanguageOnly = false,
   String? workLanguage,
 }) {
@@ -2297,10 +2317,13 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
           work: kind == VideoMetadataMediaKind.movie
               ? VideoResourceWorkTarget.fromReference(
                   reference.withWorkLatinTitles(event.work),
+                  siblings: siblings,
                 )
-              : filterSeriesByYear
-              ? VideoResourceWorkTarget.yearOnly(reference.year)
-              : null,
+              : VideoResourceWorkTarget.seriesFromReference(
+                  reference.withWorkLatinTitles(event.work),
+                  siblings: siblings,
+                  byYear: filterSeriesByYear,
+                ),
           originalLanguageOnly: originalLanguageOnly,
           workLanguage:
               resolveVideoWorkContentLanguage(event.work, reference).code ??

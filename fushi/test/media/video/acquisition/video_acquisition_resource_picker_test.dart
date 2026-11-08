@@ -252,13 +252,24 @@ void main() {
       );
     });
 
-    test('tv All 有合集 → 只取做种最多的合集，usesBatch', () {
-      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
-        _episode('SubsPlease', '1080p', 1, seeders: 300),
-        _episode('SubsPlease', '1080p', 2, seeders: 300),
-        _batch('SubsPlease', '1080p', seeders: 50),
-        _batch('SubsPlease', '1080p', seeders: 200, marker: '[01-12]'),
-      ]);
+    test('tv All 合集卡 → 只取做种最多的合集，usesBatch；逐集另成一张卡（BUG-4241）', () {
+      final List<VideoResourceVersionGroup> groups =
+          _groupsOf(<VideoResourceCandidate>[
+            _episode('SubsPlease', '1080p', 1, seeders: 300),
+            _episode('SubsPlease', '1080p', 2, seeders: 300),
+            _batch('SubsPlease', '1080p', seeders: 50),
+            _batch('SubsPlease', '1080p', seeders: 200, marker: '[01-12]'),
+          ]);
+      expect(groups, hasLength(2), reason: '逐集与整包是两个版本');
+      expect(
+        groups
+            .firstWhere((VideoResourceVersionGroup g) => !g.wholeRelease)
+            .episodes,
+        <int>{1, 2},
+      );
+      final VideoResourceVersionGroup group = groups.firstWhere(
+        (VideoResourceVersionGroup g) => g.wholeRelease,
+      );
       final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
         group,
         mode: VideoAcquisitionMode.download,
@@ -633,30 +644,35 @@ void main() {
       );
     });
 
-    test('每集体积只数单集发布，合集不参与估算', () {
-      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
-        _FakeCandidate(
-          remoteId: 'e1',
-          title: '[G] Show - 01 (1080p)',
-          releaseGroup: 'G',
-          resolution: '1080p',
-          sizeBytes: 100,
-        ),
-        _FakeCandidate(
-          remoteId: 'e2',
-          title: '[G] Show - 02 (1080p)',
-          releaseGroup: 'G',
-          resolution: '1080p',
-          sizeBytes: 300,
-        ),
-        _FakeCandidate(
-          remoteId: 'b',
-          title: '[G] Show (01-12) (Batch) (1080p)',
-          releaseGroup: 'G',
-          resolution: '1080p',
-          sizeBytes: 999999,
-        ),
-      ]);
+    test('每集体积只数单集发布，合集另成一张卡、不参与估算（BUG-4241）', () {
+      final List<VideoResourceVersionGroup> groups =
+          _groupsOf(<VideoResourceCandidate>[
+            _FakeCandidate(
+              remoteId: 'e1',
+              title: '[G] Show - 01 (1080p)',
+              releaseGroup: 'G',
+              resolution: '1080p',
+              sizeBytes: 100,
+            ),
+            _FakeCandidate(
+              remoteId: 'e2',
+              title: '[G] Show - 02 (1080p)',
+              releaseGroup: 'G',
+              resolution: '1080p',
+              sizeBytes: 300,
+            ),
+            _FakeCandidate(
+              remoteId: 'b',
+              title: '[G] Show (01-12) (Batch) (1080p)',
+              releaseGroup: 'G',
+              resolution: '1080p',
+              sizeBytes: 999999,
+            ),
+          ]);
+      expect(groups, hasLength(2));
+      final VideoResourceVersionGroup group = groups.firstWhere(
+        (VideoResourceVersionGroup g) => !g.wholeRelease,
+      );
       expect(estimatedBytesPerEpisode(group), 200);
     });
   });

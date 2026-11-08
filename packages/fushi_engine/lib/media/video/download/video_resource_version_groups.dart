@@ -6,6 +6,7 @@
 /// 负责把「哪个组哪个清晰度」这层决策折起来，选组后再展开挑集。
 library;
 
+import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 
@@ -93,7 +94,8 @@ String? resolutionFromTitle(String title) => RegExp(
 bool isLikelyBatchVideoRelease(String title) =>
     looksLikeBatchVideoRelease(title);
 
-/// 一张资源「版本卡」：同来源实例、同发布组、同清晰度、同 trusted 的发布集合。
+/// 一张资源「版本卡」：同来源实例、同发布组、同清晰度、同片源、同发布形态（逐集 /
+/// 整包）、同 trusted 的发布集合。
 class VideoResourceVersionGroup {
   VideoResourceVersionGroup._({required this.key, required this.members});
 
@@ -104,6 +106,10 @@ class VideoResourceVersionGroup {
 
   String get providerId => members.first.providerId;
   bool get trusted => members.first.trusted;
+
+  /// 这张卡是不是「整包」卡（成员没有单集身份，判据 [subscriptionReleaseIsBatch]，
+  /// 与订阅侧同一份）。发布形态是分组键的一维，所以全卡一致。
+  bool get wholeRelease => subscriptionReleaseIsBatch(members.first.title);
 
   String? get releaseGroup => _releaseGroupOf(members.first);
 
@@ -177,6 +183,12 @@ String _groupKeyOf(VideoResourceCandidate candidate) {
     releaseGroup?.toLowerCase() ?? _unknownReleaseFamilyKey(candidate),
     (candidate.resolution ?? resolutionFromTitle(candidate.title) ?? '')
         .toLowerCase(),
+    // 片源与发布形态也是版本身份：同一发布组同一清晰度的 BDRip 整包与 WebRip
+    // 逐集是两个版本（常常还是两部作品——喵萌的《ガルパ☆ピコ～大盛り～》BD 包与
+    // 《ふぃーばー！》WebRip 逐集）。混成一张卡，片源标签取做种最多那条、每集体积
+    // 把整包当单集算、「全集」计划找不到整包就逐集拿另一部的集，三处一起错。
+    parseAnimeReleaseDescriptor(candidate.title).videoSource.name,
+    subscriptionReleaseIsBatch(candidate.title) ? 'whole' : 'episode',
     candidate.trusted ? 'trusted' : '',
   ].join('\u001f');
 }
