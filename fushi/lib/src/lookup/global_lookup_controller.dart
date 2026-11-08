@@ -755,39 +755,6 @@ class GlobalLookupController {
     glog('openLookupPage: main window fronted + dictionary tab requested');
   }
 
-  /// [triggerSelectionLookup] without an overlay (a native Wayland desktop):
-  /// raise the main window, read the primary selection and look it up on the
-  /// dictionary page ([AppModel.queueExternalLookup], the same exit
-  /// `fushi://lookup` uses). Nothing selected: the lookup page opens with the
-  /// search box focused, so the key press always does something visible.
-  ///
-  /// The raise comes FIRST on purpose. A compositor with data control (KDE,
-  /// wlroots) hands the selection to the runner at any time, but one without it
-  /// (GNOME) offers the primary selection only to the focused client; the
-  /// runner then waits for the main window to become active before reading
-  /// (linux/runner/global_lookup_channel.cc `CaptureGtkPrimary`). The other
-  /// app's selection stays primary after it loses focus. Raising never selects
-  /// anything in Fushi, so it cannot replace that selection.
-  Future<void> _lookupSelectionInMainWindow(String source) async {
-    final AppModel? model = _appModel;
-    if (model == null) {
-      glog('hotkey(main window): no AppModel (start() not run) — ignored');
-      return;
-    }
-    await DesktopLookupService.instance.bringMainWindowToFront();
-    final String text =
-        (await SelectionCapture.captureForegroundSelection())?.trim() ?? '';
-    glog(
-      'hotkey(main window): FIRED (source=$source) '
-      'selection=${text.isEmpty ? 'empty' : '${text.length} chars'}',
-    );
-    if (text.isEmpty) {
-      model.requestHomeDictionaryTab(focusSearch: true);
-      return;
-    }
-    model.queueExternalLookup(text);
-  }
-
   /// TODO-1066 — DOM `MouseEvent.button` 号里**允许**当全局触发的那两个：
   /// 3=侧键后退（XBUTTON1）/ 4=侧键前进（XBUTTON2）。理由与真相源都在
   /// [ShortcutAction.allowedMouseButtons]——设置页的录制门读同一份，否则会出现
@@ -908,11 +875,10 @@ class GlobalLookupController {
   /// 是零行为变更。[source] 只进诊断日志，用来区分是哪个触发源点的火。
   ///
   /// 没有覆盖窗（Linux Wayland 桌面：查词卡要自己摆窗口，Wayland 不许）时，热键经
-  /// GlobalShortcuts portal 照样会到这里：选中文本照样取（runner 经
-  /// ext-data-control 读合成器的 primary selection），结果落到主窗查词页
-  /// （[_lookupSelectionInMainWindow]），而不是对着一个不存在的覆盖窗调 showAt。
+  /// GlobalShortcuts portal 照样会到这里，走同一条链（route、stillWanted 都一样）：
+  /// 选中文本照样取，只有出口不同——结果落到主窗查词页，而不是对着一个不存在的
+  /// 覆盖窗调 showAt。见 [_onHotKeyRouted] 里的 `overlay` 分支。
   Future<void> triggerSelectionLookup({String source = 'hotkey'}) async {
-    if (!isSupported) return _lookupSelectionInMainWindow(source);
     final GlobalLookupRoute route = GlobalLookupRoute.desktop(
       lookupEpoch: ++_desktopLookupEpoch,
     );
@@ -956,7 +922,21 @@ class GlobalLookupController {
       // TODO-1233 — notify:false: this is the between-lookups reset, NOT a user
       // dismissal, so it must not fire overlayHidden (which would resume a paused
       // video mid re-lookup).
-      await GlobalLookupChannel.hide(notify: false);
+      //
+      // No overlay (native Wayland desktop): there is no card to hide; the
+      // result goes to the main window's dictionary page instead. The raise
+      // comes BEFORE the capture on purpose: a compositor without data control
+      // (GNOME) offers the primary selection only to the focused client, and
+      // the runner waits for the main window to become active before reading
+      // (linux/runner/global_lookup_channel.cc `CaptureGtkPrimary`). The other
+      // app's selection stays primary after it loses focus; raising selects
+      // nothing in Fushi, so it cannot replace that selection.
+      final bool overlay = isSupported;
+      if (overlay) {
+        await GlobalLookupChannel.hide(notify: false);
+      } else {
+        await DesktopLookupService.instance.bringMainWindowToFront();
+      }
       if (!_isCurrentRoute) return;
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
@@ -987,6 +967,23 @@ class GlobalLookupController {
                 .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
+      }
+      if (!overlay) {
+        // Main-window exit ([AppModel.queueExternalLookup], the same one
+        // `fushi://lookup` uses). Nothing selected: open the lookup page with
+        // the search box focused, so the key press always does something
+        // visible. The route ends in `finally` (no card is shown, so nothing
+        // else would retire it).
+        glog(
+          'hotkey(main window): selection='
+          '${text.isEmpty ? 'empty' : '${text.length} chars'}',
+        );
+        if (text.isEmpty) {
+          model.requestHomeDictionaryTab(focusSearch: true);
+        } else {
+          model.queueExternalLookup(text);
+        }
+        return;
       }
       if (text.isEmpty) {
         glog('hotkey: empty selection — abort');

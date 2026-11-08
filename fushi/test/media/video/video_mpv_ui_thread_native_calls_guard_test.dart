@@ -16,6 +16,12 @@ import '../../helpers/source_guard.dart';
 /// `commandWithResult`；`setProperty` / `command` 由补丁走 `mpv_*_async`。
 void main() {
   final RegExp forbidden = RegExp(r'\.getProperty\(|\.mpv\.mpv_[a-z_]+\(');
+  // 同名但不是 mpv 的 `getProperty`：正则分不出接收者类型，只能逐个点名。
+  // 每条都要写清楚它调的是什么。
+  const Map<String, String> notMpv = <String, String>{
+    // package:dbus 的 DBusRemoteObject.getProperty（异步 D-Bus 调用），与 libmpv 无关。
+    'lib/src/shortcuts/global_shortcuts_portal.dart': 'D-Bus property read',
+  };
 
   test('fushi/lib never calls libmpv synchronously', () {
     final List<String> offenders = <String>[];
@@ -24,6 +30,7 @@ void main() {
     ).listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       if (entity.path.endsWith('.g.dart')) continue;
+      if (notMpv.containsKey(entity.path.replaceAll(r'\', '/'))) continue;
       final String source = entity.readAsStringSync();
       // 掩码串与原串逐字节等长、换行同位，可按行对照回原文。
       final List<String> masked = maskComments(source).split('\n');

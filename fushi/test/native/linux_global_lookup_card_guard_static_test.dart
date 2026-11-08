@@ -270,12 +270,12 @@ void main() {
       final String controller = read(
         'lib/src/lookup/global_lookup_controller.dart',
       );
-      final int start = controller.indexOf(
-        'Future<void> _lookupSelectionInMainWindow(',
-      );
+      // The no-overlay path is a branch of the shared hotkey pipeline, not a
+      // second capture path: the raise must sit before its single capture.
+      final int start = controller.indexOf('Future<void> _onHotKeyRouted(');
       final int raise = controller.indexOf('bringMainWindowToFront()', start);
       final int capture = controller.indexOf(
-        'captureForegroundSelection()',
+        'SelectionCapture.captureForegroundSelection(',
         start,
       );
       expect(start, greaterThan(0));

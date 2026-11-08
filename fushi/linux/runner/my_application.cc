@@ -89,8 +89,8 @@ static gboolean present_main_window_with_token(MyApplication* self,
     return FALSE;
   }
 #ifdef GDK_WINDOWING_WAYLAND
-  GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(self->window));
-  if (token != nullptr && token[0] != '\0' && GDK_IS_WAYLAND_DISPLAY(display)) {
+  if (GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(self->window));
+      GDK_IS_WAYLAND_DISPLAY(display) && token != nullptr && token[0] != '\0') {
     gdk_wayland_display_set_startup_notification_id(display, token);
   }
 #endif
