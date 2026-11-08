@@ -738,7 +738,7 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         super::sync2::revoke_copies_of_revoked_events(&tx, now)?;
     }
     if (1..28).contains(&current) {
-        // V28（BUG-4227）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件（history.rs `EventKey` 对 Anki
+        // V28（BUG-4242）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件（history.rs `EventKey` 对 Anki
         // 来源不比卡）。按新规则重放带这种副本的卡、写回日志投影行的 `res`（store/sync2/mod.rs
         // [super::sync2::replay_anki_copies]），与收段新建的库、与对端逐位相同（摘要前缀换成 `5:`）。只改投影行，
         // 操作日志不动；新建的库没有日志，不跑。可重放。

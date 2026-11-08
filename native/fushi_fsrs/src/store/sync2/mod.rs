@@ -395,7 +395,7 @@ pub(crate) fn replay_event_copies(c: &Connection) -> Result<BTreeSet<String>, St
     replay_cards(c, &cards)
 }
 
-/// srs.db v28（BUG-4227）：卡片历史选取把「同一条 Anki revlog 导入到血统里不同卡上」的两份算同一事件（history.rs
+/// srs.db v28（BUG-4242）：卡片历史选取把「同一条 Anki revlog 导入到血统里不同卡上」的两份算同一事件（history.rs
 /// `EventKey` 对 Anki 来源不比卡）。与 v26 同理：旧规则让第二份再推进一次状态，后面每条派生日志重放写回的 `res`
 /// 都可能不同，升级时把可能带这种副本的卡按新规则重放一遍。
 ///

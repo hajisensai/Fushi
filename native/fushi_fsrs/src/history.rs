@@ -18,7 +18,7 @@
 //!   [STATUS_DUPLICATE]、不算有效；组里任何一份被撤销，整组（每一份）算撤销。undo 与不认识的 kind 不成组。依据：HLC 每次写日志都由写入者时钟
 //!   tick 出来，同写入者内唯一；Anki 导入的 HLC 由 revlog id / 锚点时刻派生；合并 / 跨 profile 导入原样保留 HLC；
 //!   恢复备份的重放副本取新 HLC，不与原日志成组；
-//!   **Anki 来源的日志不比卡**（BUG-4227）：同一次 Anki 复习的导入日志 ID 由本机卡 ID 派生（`SrsIds.importedRevlogs`），
+//!   **Anki 来源的日志不比卡**（BUG-4242）：同一次 Anki 复习的导入日志 ID 由本机卡 ID 派生（`SrsIds.importedRevlogs`），
 //!   来源笔记换过模板 / 笔记类型（Lapis 迁到 Fushi 卡片、删光重导时按来源类型恢复）后再导入，同一条 revlog 会落成
 //!   血统里另一张卡上的另一条日志。HLC 与发生时刻都由 revlog id 派生、写入者固定，所以在一份历史（一张逻辑卡的
 //!   血统）里，HLC / 时刻 / 评分 / 种类都相同的 Anki 日志就是同一次复习，按卡区分只会让它算两遍；
@@ -782,7 +782,7 @@ pub struct StatRow {
     /// +1 = 这条之后变成熟，−1 = 掉出成熟，0 = 不变。
     pub maturity_delta: i64,
     /// Anki 导入日志的事件身份（不是 Anki 来源 / 没有 revlog id 时 None）：不在同一份历史里的两张卡（没有血统链接，
-    /// 例如删光重导后按来源类型恢复的笔记：旧卡隐藏、新卡可见）各自投影时，统计按它判同一次复习（BUG-4227，
+    /// 例如删光重导后按来源类型恢复的笔记：旧卡隐藏、新卡可见）各自投影时，统计按它判同一次复习（BUG-4242，
     /// store/caches.rs `refresh_stats`）。不落库。
     pub anki_event: Option<AnkiEvent>,
 }
@@ -1413,7 +1413,7 @@ mod tests {
 
     #[test]
     fn anki_revlog_imported_onto_two_cards_of_one_lineage_counts_once() {
-        // BUG-4227：Lapis 迁到 Fushi 卡片（新卡继承旧卡历史）后再从 Anki 迁一次，同一条 revlog 落在新卡上又写一份
+        // BUG-4242：Lapis 迁到 Fushi 卡片（新卡继承旧卡历史）后再从 Anki 迁一次，同一条 revlog 落在新卡上又写一份
         // （日志 ID 由卡派生，不同）。血统里两份是同一次复习：只算一份，状态 / 统计 / 重放都只推进一次。
         let on_old = anki_on("lapis", "b-old", 1000, 3, 5);
         let on_new = anki_on("fushi", "a-new", 1000, 3, 5);

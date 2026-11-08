@@ -26,7 +26,7 @@ pub const BUCKETS: usize = 4096;
 /// 新旧版本互不比较（不误报「数据不一致」），也让本机按旧前缀缓存的摘要在同一 vv 下重算。
 /// `4:`（srs.db v26，BUG-4218）：卡片历史选取把同一事件的多 ID 副本只算一份，重放写回日志投影行的 `res` 在带副本的卡上
 /// 与旧版本不同（升级时 v26 迁移已按新规则重放，见 store/sync2/mod.rs `replay_event_copies`）；同理换前缀。
-/// `5:`（srs.db v28，BUG-4227）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件，重放写回的 `res` 在带这种
+/// `5:`（srs.db v28，BUG-4242）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件，重放写回的 `res` 在带这种
 /// 副本的卡上与旧版本不同（v28 迁移按新规则重放，store/sync2/mod.rs `replay_anki_copies`）；同理换前缀。
 pub const VV_PREFIX: &str = "5:";
 

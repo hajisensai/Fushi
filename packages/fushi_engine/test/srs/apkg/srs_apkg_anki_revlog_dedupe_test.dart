@@ -1,4 +1,4 @@
-// BUG-4227：从 Anki 迁移后复习数 ×2（Discord 用户：同一天 Anki 2082 次、Fushi 4164 次）。
+// BUG-4242：从 Anki 迁移后复习数 ×2（Discord 用户：同一天 Anki 2082 次、Fushi 4164 次）。
 //
 // 导入的复习日志 ID 由本机卡 ID 派生（SrsIds.importedRevlogs），同一条 Anki revlog 落到另一张卡上就成了另一条日志：
 // - B：Lapis 迁到 Fushi 卡片后（新卡经 historyFrom 继承旧卡历史），Anki 端笔记已是 Fushi 卡片、再迁一次——同一血统里两份；

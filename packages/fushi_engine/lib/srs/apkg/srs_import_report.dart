@@ -140,7 +140,7 @@ class SrsImportReport {
   /// 包里有 fushi-ext、却对不上任何 Fushi 日志的 revlog（Anki 端导出后又复习的），按普通 revlog 导入。
   int revlogsNotInExt = 0;
 
-  /// 本 profile 里已经有、只是落在这张卡的前身卡或旧卡上的 revlog（不再写一份；旧卡经 `historyFrom` 接进血统，BUG-4227）。
+  /// 本 profile 里已经有、只是落在这张卡的前身卡或旧卡上的 revlog（不再写一份；旧卡经 `historyFrom` 接进血统，BUG-4242）。
   int revlogsAlreadyPresent = 0;
 
   int mediaStored = 0;

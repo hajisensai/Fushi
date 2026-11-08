@@ -1,4 +1,4 @@
-## BUG-4227 · 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次）
+## BUG-4242 · 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次）
 - **报告**：2026-11-07（用户：Discord 群反馈；2026-09-06 这天 Anki 统计 2082 次复习，Fushi 统计日历 4164 次，正好 2 倍）
 - **真实性**：✅ 真 bug（合成 apkg 复现，`packages/fushi_engine/test/srs/apkg/srs_apkg_anki_revlog_dedupe_test.dart`）。
   - 根因：导入的复习日志 ID 由**本机卡 ID** 派生（`packages/fushi_srs/lib/src/ids.dart:223` `SrsIds.importedRevlogs`，

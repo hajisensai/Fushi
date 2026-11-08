@@ -585,7 +585,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 卡（BUG-4217 修好前的 profile 合并写出）仍按旧规则重复计数、撤销一份不回退，要等这张卡再被改一次；哪些卡带副本
   /// 要逐卡解析日志才知道，所以与修订号 2 / 7 同样整库重算全部笔记缓存与全部投影（同一 srs.db 打开时，Rust 侧 v26
   /// 迁移已先按新规则重放了带副本的卡的日志投影行，这里读到的 `res` 已是新值）。
-  /// 12（BUG-4227）：同一条 Anki revlog 导入到不同卡上的两份算同一次复习——血统里的两份由选取规则合并（history.rs
+  /// 12（BUG-4242）：同一条 Anki revlog 导入到不同卡上的两份算同一次复习——血统里的两份由选取规则合并（history.rs
   /// `EventKey` 对 Anki 来源不比卡），没有血统链接的两张卡（删光重导后旧卡隐藏、新卡可见）由有效复习投影按 Anki 事件身份
   /// 只留一份（caches.rs `refresh_stats`）。存量库的卡片状态与投影是旧规则算的（「从 Anki 迁移」后复习数 ×2），与修订号
   /// 11 同样整库重算（srs.db v28 迁移已先按新规则重放了带这种副本的卡的日志投影行）。
@@ -2625,7 +2625,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// Anki 导入的复习日志里发生时刻（= Anki revlog id，见 srs_apkg_import.dart `_revlogLog`）落在 [revlogIds] 的那些，
   /// 连同日志所在卡此刻的笔记与可见性（卡没有缓存行时为 null）。导入器写 revlog 前按它判「这次复习已经在本 profile
-  /// 里、只是落在另一张卡上」（BUG-4227）。走 `idx_srs_review_logs_profile_kind_time`，按块一次查。
+  /// 里、只是落在另一张卡上」（BUG-4242）。走 `idx_srs_review_logs_profile_kind_time`，按块一次查。
   Future<List<SrsAnkiLogAt>> ankiImportedLogsAt(Iterable<int> revlogIds) async {
     final List<int> ids = revlogIds.toSet().toList();
     final List<SrsAnkiLogAt> out = <SrsAnkiLogAt>[];
@@ -2756,7 +2756,7 @@ class SrsDbStore implements SrsSync2Host {
       if (_cacheRevision < 10) {
         await _sync2(const <String, Object?>{'op': 'backfill_source_keys'});
       }
-      // BUG-4218 / BUG-4227：选取规则变了（同一事件的副本只算一份；Anki 来源的副本跨卡也算同一事件），卡片状态与
+      // BUG-4218 / BUG-4242：选取规则变了（同一事件的副本只算一份；Anki 来源的副本跨卡也算同一事件），卡片状态与
       // 有效复习投影整库按新规则重算。两级要做的是同一件事，只做一次。
       if (_cacheRevision < 12) {
         await _refreshCaches(allNotes: true, allStats: true);

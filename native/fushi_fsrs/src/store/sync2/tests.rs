@@ -2369,7 +2369,7 @@ fn anki_review(id: &str, card: &str, rid: i64, due: i64) -> Value {
     }})
 }
 
-/// srs.db v28（BUG-4227）：同一条 Anki revlog 导入到血统里两张卡上（Lapis 迁到 Fushi 卡片后再从 Anki 迁一次）在新规则下
+/// srs.db v28（BUG-4242）：同一条 Anki revlog 导入到血统里两张卡上（Lapis 迁到 Fushi 卡片后再从 Anki 迁一次）在新规则下
 /// 算同一事件。升级时带这种副本的卡按新规则重放、写回派生日志的 `res`，与新建的库逐位相同；没有副本的卡不动；可重放。
 #[test]
 fn v28_upgrade_replays_cards_with_anki_copies_across_cards() {

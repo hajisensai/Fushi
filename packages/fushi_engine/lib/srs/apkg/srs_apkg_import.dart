@@ -1885,7 +1885,7 @@ class _Importer {
     required Map<int, List<SrsAnkiLogAt>> ankiLogsAt,
   }) async {
     final List<_SrcRevlog> revlogs = c.revlogs;
-    // 这条 revlog 已经在本 profile 里、只是落在另一张卡上（BUG-4227）：日志 ID 由本机卡 ID 派生，来源笔记换过
+    // 这条 revlog 已经在本 profile 里、只是落在另一张卡上（BUG-4242）：日志 ID 由本机卡 ID 派生，来源笔记换过
     // 模板 / 笔记类型（Lapis 迁到 Fushi 卡片、删光重导按来源类型恢复）后再导入，同一次复习会按新卡再写一份，
     // 统计 ×2。在这张卡的血统里（前身卡上）的：不写。不在血统里、那张卡已不可见（旧卡）的：给这张卡接上
     // `historyFrom/<旧卡>`，历史随血统过来，不再写一份；那张卡仍可见的：这次复习已经记在一张活卡上，同样不写
