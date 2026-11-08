@@ -3,7 +3,7 @@
 ///
 /// 流程：查 `hajisensai/fushi-server` Releases → 下载本平台包到安装目录的暂存区 →
 /// 核对 GitHub 给的 SHA-256 → 系统 tar 解包 → [swapServerBundle] 换文件 →
-/// [onInstalled]（`serve` 收到后停服并以退出码 75 退出，由 systemd / 服务管理器拉起
+/// [onInstalled]（`serve` 收到后停服并以 [kExitSelfUpdated] 退出，由 systemd / 服务管理器拉起
 /// 新版）。client 看到的是连接断开、重连后版本号变了（与桌面 host 同一种结局）。
 ///
 /// 平台门只有一处（[platformSupported]）：发布包（有 `release.json`）+ 有对应发布
@@ -37,9 +37,15 @@ typedef ServerPackageDownloader =
       int? expectedSize,
     });
 
-/// 服务端退出码：装好了新版，等服务管理器重启（EX_TEMPFAIL，systemd
-/// `Restart=on-failure` 会拉起）。
-const int kExitSelfUpdated = 75;
+/// 服务端退出码：装好了新版（或启动收尾把中断的换包还原了），等服务管理器重启。
+///
+/// 专用码，不与任何别的退出码共用：75（EX_TEMPFAIL）是冲突（数据目录被占、端口被占、
+/// ctl 409……，见 `command_io.dart` 的 `kExitConflict`），服务单元要能「75 不重启、
+/// 这个码重启」——两者共用一个码时，数据目录被另一个实例占着的服务端会被服务管理器
+/// 无限重启。选 10：非零（systemd `Restart=on-failure`、NSSM 默认都会拉起），不在
+/// LSB（1–7）、sysexits（64–78）、shell（≥126）与 systemd 自用（200+）的有含义区间里。
+/// 契约钉在 `cli_exit_code_test.dart`。
+const int kExitSelfUpdated = 10;
 
 class ServerSelfUpdater implements HostSelfUpdater {
   ServerSelfUpdater({

@@ -78,31 +78,41 @@ User=fushi
 WorkingDirectory=/opt/fushi_server
 ExecStart=/opt/fushi_server/bin/fushi_server serve --config /opt/fushi_server/fushi_server.yaml
 Restart=on-failure
+RestartPreventExitStatus=75
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`Restart=on-failure` 也覆盖远程更新：装完新版后进程以退出码 75 退出，systemd 据此拉起新版（见下文
-「远程更新」）。别写成 `Restart=no`，也别把 75 列进 `SuccessExitStatus=`／`RestartPreventExitStatus=`，
-否则更新装完服务就停在那里。`User=` 要对安装目录有写权限（换包是在 `bin/`、`lib/` 里改名）。
+两个退出码分工：
+
+- **10 = 远程更新装好了新版，请重启**（`Restart=on-failure` 据此拉起新版，见下文「远程更新」）。
+  别写成 `Restart=no`，也别把 10 列进 `SuccessExitStatus=`／`RestartPreventExitStatus=`，否则更新
+  装完服务就停在那里。
+- **75 = 冲突**：数据目录被另一个 fushi_server（serve 或离线命令）占着、端口被占。重启也解决不了，
+  `RestartPreventExitStatus=75` 让服务停下（`systemctl status` 里是 `status=75/TEMPFAIL`），而不是
+  反复重启直到撞上启动频率上限。解决占用后 `systemctl restart fushi_server`。
+
+`User=` 要对安装目录有写权限（换包是在 `bin/`、`lib/` 里改名）。
 
 ### Windows 服务
 
-`fushi_server.exe` 不是原生 Windows 服务，要用服务包装器托管，并且**非零退出必须自动重启**
-（远程更新装完以 75 退出，靠它拉起新版）。安装目录放在服务账户能写的地方（如 `C:\fushi_server`，
+`fushi_server.exe` 不是原生 Windows 服务，要用服务包装器托管：退出码 **10**（远程更新装完）必须
+自动重启；**75**（冲突：数据目录 / 端口被另一个实例占着）最好不重启，重启也解决不了。安装目录放在服务账户能写的地方（如 `C:\fushi_server`，
 不要放 `Program Files`）。
 
-NSSM（默认 `AppExit` 就是 Restart，退出即重启）：
+NSSM（默认 `AppExit` 就是 Restart；可按退出码单独设，75 设成 Exit 就停下）：
 
 ```bat
 nssm install fushi_server C:\fushi_server\bin\fushi_server.exe serve --config C:\fushi_server\fushi_server.yaml
 nssm set fushi_server AppDirectory C:\fushi_server
 nssm set fushi_server AppExit Default Restart
+nssm set fushi_server AppExit 75 Exit
 nssm start fushi_server
 ```
 
-WinSW（不写 `<onfailure>` 就不重启，必须显式配）：
+WinSW（不写 `<onfailure>` 就不重启，必须显式配；它不分退出码，75 也会重启，所以把间隔设长些，
+冲突时看日志处理占用）：
 
 ```xml
 <service>
@@ -111,7 +121,7 @@ WinSW（不写 `<onfailure>` 就不重启，必须显式配）：
   <executable>C:\fushi_server\bin\fushi_server.exe</executable>
   <arguments>serve --config C:\fushi_server\fushi_server.yaml</arguments>
   <workingdirectory>C:\fushi_server</workingdirectory>
-  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
 </service>
 ```
 
@@ -492,12 +502,12 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
   换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
   覆盖），新文件再改名到位；中途失败整体还原。动文件前先写换包日志 `.fushi_update_journal.json`，
 换完才删：换到一半进程被杀 / 断电，下次启动（拿到数据目录锁之后、**打开数据库之前**）按日志逆序
-还原；若正在跑的已是没换完的新版可执行文件，还原后不开库、直接以退出码 75 退出，让服务管理器拉起
+还原；若正在跑的已是没换完的新版可执行文件，还原后不开库、直接以退出码 10 退出，让服务管理器拉起
 旧版（先开库的话新版会把库迁到旧版打不开的 schema）。下载正文 60 秒没有新数据即判失败、清掉暂存，可以
 再触发。只动包里有的文件，安装目录里的配置与 `data/` 不碰；旧版有、新版包里没有的文件留在原处。
 - **只进不退**：新版第一次启动可能把数据库迁到新 schema，之后再手动换回旧版二进制会被拒绝开库
   （`FushiDatabaseDowngradeException`）。要回退请连 `data/` 一起用更新前的备份。
-- **重启**：换完进程以**退出码 75** 退出，由 systemd（`Restart=on-failure`）/ NSSM / WinSW
+- **重启**：换完进程以**退出码 10**（专用，不是冲突的 75）退出，由 systemd（`Restart=on-failure`）/ NSSM / WinSW
   （`<onfailure action="restart"/>`，见上文「Windows 服务」）拉起新版；
   新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。

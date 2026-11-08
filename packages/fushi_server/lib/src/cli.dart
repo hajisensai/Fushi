@@ -370,7 +370,8 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   await sigterm?.cancel();
   await admin?.stop();
   await host.stop();
-  // 远程更新装完：非零退出码让 systemd（Restart=on-failure）/ 服务管理器拉起新版。
+  // 远程更新装完：专用的非零退出码（不是冲突的 75）让 systemd（Restart=on-failure）/
+  // 服务管理器拉起新版。
   return selfUpdated ? kExitSelfUpdated : 0;
 }
 

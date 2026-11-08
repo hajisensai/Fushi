@@ -377,7 +377,7 @@ void main() {
       expectOldInstall();
     });
 
-    test('换包中断、拉起的是新 exe → 开库之前还原并以 75 退出，库不被迁移', () async {
+    test('换包中断、拉起的是新 exe → 开库之前还原并以重启码退出，库不被迁移', () async {
       // 实机复现（Windows，真发布包）：先开库再收尾时，新版把库迁到新 schema，还原后
       // 拉起的旧版报 FushiDatabaseDowngradeException，服务端再也起不来。
       writeNewBundle();

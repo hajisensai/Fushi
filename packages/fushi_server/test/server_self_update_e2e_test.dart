@@ -260,7 +260,7 @@ void main() {
           expect((mode.stdout as String).trim(), '755');
         }
 
-        // ── 旧进程退出（serve 收到 onInstalled 后以 75 退出），服务管理器拉起新版 ──
+        // ── 旧进程退出（serve 收到 onInstalled 后以 kExitSelfUpdated 退出），服务管理器拉起新版 ──
         running.kill(ProcessSignal.sigkill);
         await running.exitCode;
         running = null;

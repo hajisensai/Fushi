@@ -222,7 +222,7 @@ class ServerConfig {
 
   /// 允许已配对设备经互联 `/api/host/update` 让本机下载并安装新版服务端（与 app 的
   /// 「允许已配对设备远程更新本机」同一条默认：关）。只在发布包里可用（见
-  /// `self_update/`）；装完进程以退出码 75 退出，由 systemd / 服务管理器拉起新版。
+  /// `self_update/`）；装完进程以退出码 10（`kExitSelfUpdated`）退出，由 systemd / 服务管理器拉起新版。
   /// 运行期现读，WebUI 改完即生效。
   final bool remoteUpdate;
 
