@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -207,7 +208,8 @@ class CompanionLibraryCard extends StatelessWidget {
                           tooltip: t.second_screen_library_browse_details,
                           onTap: details,
                           size: 20,
-                          backgroundColor: colors.surfaceContainerHigh
+                          backgroundColor: colors
+                              .containerOf(FushiTone.neutral)
                               .withValues(alpha: 0.85),
                           padTouchTarget: true,
                         ),
@@ -275,7 +277,9 @@ class CompanionLibrarySkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color tone = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final Color tone = Theme.of(
+      context,
+    ).colorScheme.containerOf(FushiTone.neutral);
     Widget card() => SizedBox(
       width: kCompanionLibraryCardWidth,
       child: Column(

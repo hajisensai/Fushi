@@ -449,7 +449,7 @@ class _DescriptionState extends State<_Description> {
           children: <Widget>[
             FushiAnimatedSize(
               duration: fushiMotionDuration(context, FushiMotion.short),
-              curve: Curves.easeOutCubic,
+              curve: fushiMd3StateCurve,
               alignment: Alignment.topLeft,
               child: Text(
                 widget.text,

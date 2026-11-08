@@ -234,7 +234,7 @@ class CompanionBackToPreviousBar extends ConsumerWidget {
     }
     return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.short),
-      curve: Curves.easeOutCubic,
+      curve: fushiMd3StateCurve,
       alignment: Alignment.topCenter,
       child: child,
     );
