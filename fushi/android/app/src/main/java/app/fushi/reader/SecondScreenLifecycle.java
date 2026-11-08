@@ -43,6 +43,19 @@ final class SecondScreenLifecycle<P> {
     static final int NO_TOKEN = 0;
     static final int NO_DISPLAY = -1;
 
+    /** {@code android.view.KeyEvent.KEYCODE_BACK} (kept here so this class stays pure). */
+    static final int KEYCODE_BACK = 4;
+
+    /**
+     * Whether a key that reached the panel's window belongs to the top screen
+     * (forwarded to the main Activity). Controller keys always do, Back
+     * included: only this display's own Back (gesture / nav bar, not from a
+     * controller) stays with the panel.
+     */
+    static boolean keyGoesToTop(int keyCode, boolean fromController) {
+        return keyCode != KEYCODE_BACK || fromController;
+    }
+
     private final Effects<P> effects;
     private int nextToken = 1;
 

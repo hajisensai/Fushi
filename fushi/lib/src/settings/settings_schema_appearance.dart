@@ -12,6 +12,7 @@ import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -648,6 +649,40 @@ SettingsDestination buildAppearanceDestination() {
                 .setMode(value)
                 .then((_) => c.refresh()),
             defaultValue: SecondScreenMode.auto,
+          ),
+          // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
+          // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
+          SettingsSegmentedItem<ControllerLookupStyle>(
+            id: 'appearance.controller_lookup_style',
+            title: t.second_screen_controller_lookup_title,
+            subtitle: t.second_screen_controller_lookup_hint,
+            icon: FushiIcons.lookup,
+            options: <SettingsSegmentOption<ControllerLookupStyle>>[
+              SettingsSegmentOption<ControllerLookupStyle>(
+                value: ControllerLookupStyle.holdL1,
+                label: t.second_screen_controller_lookup_hold_l1,
+              ),
+              SettingsSegmentOption<ControllerLookupStyle>(
+                value: ControllerLookupStyle.selectToggle,
+                label: t.second_screen_controller_lookup_select,
+              ),
+              SettingsSegmentOption<ControllerLookupStyle>(
+                value: ControllerLookupStyle.off,
+                label: t.second_screen_controller_lookup_off,
+              ),
+            ],
+            selected: (SettingsContext c) => ControllerLookupStyle.resolve(
+              c.appModel.prefsRepo.getPref(kControllerLookupStylePrefKey),
+              companionActive: c.ref
+                  .read(secondScreenControllerProvider)
+                  .isActive,
+            ),
+            onChanged: (SettingsContext c, ControllerLookupStyle value) => c
+                .appModel
+                .prefsRepo
+                .setPref(kControllerLookupStylePrefKey, value.name)
+                .then((_) => c.refresh()),
+            defaultValue: ControllerLookupStyle.off,
           ),
           // 「启动页」(id 'appearance.startup_default_dictionary_tab'，前身是开关
           // 「启动时打开查词」) 在「系统 · 通用」分区（它管的是启动落地页/导航行为，

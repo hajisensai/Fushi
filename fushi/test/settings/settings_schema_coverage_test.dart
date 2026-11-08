@@ -737,6 +737,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
+  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（副屏在用 = 按住 L1、否则关）
+  // 和按键行为由 ControllerLookupMode 的专项测试钉死（生效点在手柄分派层）。
+  'appearance/Controller lookup mode':
+      'test/second_screen/controller_lookup_mode_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',

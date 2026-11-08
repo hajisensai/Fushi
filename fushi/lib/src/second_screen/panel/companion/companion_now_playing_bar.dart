@@ -4,9 +4,9 @@ import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Title and play / pause of what plays on the main screen, for the
@@ -89,19 +89,11 @@ class _Bar extends StatelessWidget {
                   ],
                 ),
               ),
-              FushiPressScale(
-                child: IconButton(
-                  tooltip: toggleLabel,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 48,
-                    height: 48,
-                  ),
-                  onPressed: onToggle,
-                  icon: FushiIcon(
-                    nowPlaying.playing ? FushiIcons.pause : FushiIcons.play,
-                    semanticLabel: toggleLabel,
-                  ),
-                ),
+              FushiIconButton(
+                icon: nowPlaying.playing ? FushiIcons.pause : FushiIcons.play,
+                tooltip: toggleLabel,
+                onTap: onToggle,
+                padTouchTarget: true,
               ),
             ],
           ),

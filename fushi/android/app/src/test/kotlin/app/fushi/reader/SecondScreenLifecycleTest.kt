@@ -205,6 +205,16 @@ class SecondScreenLifecycleTest {
         assertEquals(listOf(true, false), attached)
     }
 
+    @Test
+    fun controllerKeysIncludingBackGoToTheTopScreen() {
+        // A controller B that arrives as KEYCODE_BACK used to be swallowed.
+        assertTrue(SecondScreenLifecycle.keyGoesToTop(SecondScreenLifecycle.KEYCODE_BACK, true))
+        assertTrue(SecondScreenLifecycle.keyGoesToTop(96 /* BUTTON_A */, true))
+        assertTrue(SecondScreenLifecycle.keyGoesToTop(96, false))
+        // This display's own Back stays with the panel.
+        assertFalse(SecondScreenLifecycle.keyGoesToTop(SecondScreenLifecycle.KEYCODE_BACK, false))
+    }
+
     private companion object {
         const val COMPANION = "companion"
         const val GAME_STREAM = "gameStream"

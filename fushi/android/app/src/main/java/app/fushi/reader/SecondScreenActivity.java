@@ -258,18 +258,23 @@ public class SecondScreenActivity extends FlutterActivity
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            // The panel never closes itself on Back. The companion steps back
-            // in its tab history on this display's own Back; a controller's
-            // Back belongs to the top screen.
+        if (!SecondScreenLifecycle.keyGoesToTop(
+                event.getKeyCode(), isFromController(event))) {
+            // This display's own Back (gesture / nav bar). The panel never
+            // closes itself on Back; the companion steps back in its tab
+            // history.
             if (handlesBackItself()
-                    && !isFromController(event)
                     && event.getAction() == KeyEvent.ACTION_UP
                     && !event.isCanceled()) {
                 popFlutterRoute();
             }
             return true;
         }
+        // Everything else, including a controller's Back (controllers that
+        // send KEYCODE_BACK for B), belongs to the top screen: forward it to
+        // the main Activity, where it is Back on top exactly as when the main
+        // display has focus. Swallowing it here left a controller B pressed
+        // while this display had focus doing nothing at all.
         final Message message = Message.obtain(null, SecondScreenRelayService.MSG_KEY);
         final Bundle data = new Bundle();
         data.putParcelable(SecondScreenRelayService.KEY_EVENT, event);

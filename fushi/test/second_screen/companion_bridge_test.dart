@@ -41,6 +41,8 @@ void main() {
   late int collected;
   late StateError? summaryError;
   late List<String> opened;
+  late int unclaimedCounts;
+  late List<String?> mined;
 
   CompanionDailySummary summaryFor(int n) =>
       CompanionDailySummary(dayKey: 'd', readingMs: n);
@@ -65,6 +67,8 @@ void main() {
     collected = 0;
     summaryError = null;
     opened = <String>[];
+    unclaimedCounts = 0;
+    mined = <String?>[];
     bridge = CompanionBridge(
       host: host,
       controller: controller,
@@ -76,6 +80,8 @@ void main() {
         return summaryFor(collected);
       },
       nowPlaying: nowPlaying,
+      countUnclaimedLookup: () => unclaimedCounts++,
+      onMined: mined.add,
       spillRoot: spill,
     )..bindOpenLink((String link) async => opened.add(link));
     bridge.start();
@@ -361,6 +367,64 @@ void main() {
     expect(bridge.lookupOpen, isFalse);
     expect(await bridge.sendLookup(text: '猫'), isFalse);
   });
+
+  test('S6: companion lookups are counted by the page on top, else '
+      'unattributed; a mined card is reported once', () async {
+    await ready();
+    drain();
+    int pageCounts = 0;
+    final Object reader = Object();
+    contexts.claim(
+      reader,
+      const CompanionContext(CompanionContextKind.reader),
+      onLookupCounted: () => pageCounts++,
+    );
+    await fromPanel(const CompanionLookupCountedMessage());
+    expect(pageCounts, 1);
+    expect(unclaimedCounts, 0);
+
+    contexts.release(reader);
+    await fromPanel(const CompanionLookupCountedMessage());
+    expect(pageCounts, 1);
+    expect(unclaimedCounts, 1);
+
+    await fromPanel(const CompanionLookupStateMessage(open: true, term: '猫'));
+    await fromPanel(
+      const CompanionLookupStateMessage(open: true, term: '猫', mined: true),
+    );
+    expect(mined, <String?>['猫']);
+  });
+
+  test(
+    'S6: the controller sink reaches the panel only while it is up',
+    () async {
+      await ready();
+      drain();
+      expect(contexts.controller, same(bridge));
+      expect(bridge.sendPanelNav(CompanionPanelNav.begin), isTrue);
+      expect(
+        bridge.sendLookupAction(
+          CompanionLookupActions.scroll,
+          <String, Object?>{CompanionLookupActions.dy: 12.0},
+        ),
+        isTrue,
+      );
+      await pumpEventQueue();
+      final List<CompanionHostMessage> sent = drain();
+      expect(
+        (sent[0] as CompanionPanelNavMessage).action,
+        CompanionPanelNav.begin,
+      );
+      final CompanionLookupActionMessage action =
+          sent[1] as CompanionLookupActionMessage;
+      expect(action.action, CompanionLookupActions.scroll);
+      expect(action.args[CompanionLookupActions.dy], 12.0);
+
+      platform.detach();
+      expect(contexts.controller, isNull);
+      expect(bridge.sendPanelNav(CompanionPanelNav.up), isFalse);
+    },
+  );
 
   test('pages route lookups through the registry: active mirrors the '
       'controller, the sink is the bridge', () async {

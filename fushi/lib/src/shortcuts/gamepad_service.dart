@@ -12,6 +12,8 @@ import 'package:gamepads/gamepads.dart' as gp;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_badge.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
@@ -404,8 +406,16 @@ class GamepadService {
     }
   }
 
+  ControllerLookupBadgeHost? _lookupBadge;
+
   void start() {
     if (_inputRoutesInstalled) return; // already started (idempotent)
+    // Controller lookup mode (hold L1 / Select) and R1 panel drive of the
+    // second-screen companion sit in front of page dispatch; a tapped L1 / R1
+    // is replayed through the normal path on release.
+    ControllerLookupMode.instance.redispatch = _dispatchButtonCore;
+    _lookupBadge = ControllerLookupBadgeHost(navigatorKey: navigatorKey)
+      ..install();
     // TODO-939: the input-device → highlight-strategy tracking runs on EVERY
     // platform (Android included). Only the gamepads POLLER is platform-gated.
     _installHighlightTracking();
@@ -434,6 +444,7 @@ class GamepadService {
     // hidden, hardware nav → shown). Installed on all platforms (TODO-939).
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointerGlobal);
     HardwareKeyboard.instance.addHandler(_onKey);
+    FocusManager.instance.addEarlyKeyEventHandler(_onEarlyKey);
     _inputRoutesInstalled = true;
   }
 
@@ -454,11 +465,17 @@ class GamepadService {
   }
 
   void dispose() {
+    _lookupBadge?.dispose();
+    _lookupBadge = null;
+    if (ControllerLookupMode.instance.redispatch == _dispatchButtonCore) {
+      ControllerLookupMode.instance.redispatch = null;
+    }
     _poller?.dispose();
     _poller = null;
     if (_inputRoutesInstalled) {
       GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointerGlobal);
       HardwareKeyboard.instance.removeHandler(_onKey);
+      FocusManager.instance.removeEarlyKeyEventHandler(_onEarlyKey);
       _inputRoutesInstalled = false;
     }
   }
@@ -481,6 +498,17 @@ class GamepadService {
       dispatchDictionaryPopupGamepadButton(galHooks, registry, button);
       return;
     }
+    // Controller lookup mode / companion panel drive come before any page
+    // binding (they hand a tapped L1 / R1 back through [_dispatchButtonCore]).
+    if (ControllerLookupMode.instance.onPress(button)) {
+      _onGamepadNav();
+      return;
+    }
+    _dispatchButtonCore(button);
+  }
+
+  /// The normal (non-lookup-mode) press path; also replays a tapped L1 / R1.
+  void _dispatchButtonCore(GamepadButton button) {
     // TODO-1066：app 外全局查词的手柄触发。
     //
     // 位置刻意在取 `_dispatchContext` **之前**，两个理由缺一不可：
@@ -574,6 +602,7 @@ class GamepadService {
   /// releases are swallowed like presses.
   void _dispatchButtonRelease(GamepadButton button) {
     if (GalIngameLookupGamepadRoute.current != null) return;
+    if (ControllerLookupMode.instance.onRelease(button)) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     Actions.maybeInvoke<GamepadButtonReleaseIntent>(
@@ -591,6 +620,10 @@ class GamepadService {
     // P5：游戏内卡片独占期间左摇杆也吞掉——后台 app 的焦点不能被游戏里的
     // 摇杆悄悄挪走。
     if (GalIngameLookupGamepadRoute.current != null) return;
+    if (ControllerLookupMode.instance.onStickMove(dir)) {
+      _onGamepadNav();
+      return;
+    }
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _onGamepadNav();
@@ -604,6 +637,11 @@ class GamepadService {
   /// 页面滚动已有 LB/RB 整页滚（globalScrollPage*）与左摇杆焦点滚动兜底，右摇杆
   /// 现阶段专职弹窗，避免同一根摇杆在不同页面语义漂移。
   void _dispatchRightStickScroll(double dyNorm) {
+    if (ControllerLookupMode.instance.onRightStick(
+      dyNorm * _kRightStickScrollPxPerTick,
+    )) {
+      return;
+    }
     // P5：游戏内卡片可见时右摇杆滚动卡片内容（独占路由优先）。
     final DictionaryPopupGamepadHooks? hooks =
         GalIngameLookupGamepadRoute.current ??
@@ -640,6 +678,9 @@ class GamepadService {
   void _dispatchLongPress(GamepadButton button) {
     // P5：游戏内卡片独占期间长按也吞掉（后台 app 的长按语义不该被游戏触发）。
     if (GalIngameLookupGamepadRoute.current != null) return;
+    // A held past the long-press threshold is still "A" for lookup mode /
+    // panel drive (the press edge already went there).
+    if (ControllerLookupMode.instance.swallowsRepeat(button)) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _onGamepadNav();
@@ -697,6 +738,19 @@ class GamepadService {
           FocusHighlightStrategy.alwaysTouch;
     }
   }
+
+  /// Runs before the focus tree. A `HardwareKeyboard` handler cannot stop the
+  /// focus tree (Flutter still dispatches the key to it), so controller lookup
+  /// mode / companion panel drive intercept Android's controller keys here,
+  /// exactly like the desktop poller path in [_dispatchButton].
+  KeyEventResult _onEarlyKey(KeyEvent event) =>
+      interceptNativeControllerLookupKey(
+        event,
+        ControllerLookupMode.instance,
+        onConsumed: _onGamepadNav,
+      )
+      ? KeyEventResult.handled
+      : KeyEventResult.ignored;
 
   bool _onKey(KeyEvent event) {
     // Only ACTUAL focus navigation (arrow keys / Tab) should light the ring.
@@ -1430,4 +1484,30 @@ class _PluginGamepadPoller {
     final gp.GamepadAxis? axis = e.axis;
     if (axis != null) _state.applyAxis(axis, e.value);
   }
+}
+
+/// Android: controller buttons arrive as key events (also the ones the
+/// second-screen panel forwards to the main Activity). Feeds them to
+/// [mode] ([ControllerLookupMode.onPress] / [ControllerLookupMode.onRelease],
+/// OS key repeats swallowed while the mode owns the button). True = the
+/// focus tree must not see the event. Desktop has no controller key events
+/// (the poller dispatches), so this is a no-op there.
+@visibleForTesting
+bool interceptNativeControllerLookupKey(
+  KeyEvent event,
+  ControllerLookupMode mode, {
+  VoidCallback? onConsumed,
+  bool? isAndroid,
+}) {
+  if (!(isAndroid ?? Platform.isAndroid)) return false;
+  final GamepadButton? button = GamepadButton.fromKeyEvent(event);
+  if (button == null) return false;
+  if (event is KeyDownEvent) {
+    if (!mode.onPress(button)) return false;
+    onConsumed?.call();
+    return true;
+  }
+  if (event is KeyRepeatEvent) return mode.swallowsRepeat(button);
+  if (event is KeyUpEvent) return mode.onRelease(button);
+  return false;
 }

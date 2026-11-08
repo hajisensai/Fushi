@@ -1865,6 +1865,8 @@ class SyncRepository {
     // 本机硬件，不跟去别的设备。
     'second_screen_mode',
     'second_screen_approved_displays',
+    // 手柄查词模式的开启方式（ControllerLookupStyle）：跟这台设备的手柄走。
+    'controller_lookup_style',
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,

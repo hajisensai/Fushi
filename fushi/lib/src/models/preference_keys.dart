@@ -168,6 +168,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'collapse_dictionaries',
   'collapsed_collection_ids',
   'compress_mining_media',
+  // String：手柄查词模式开启方式 `holdL1` / `selectToggle` / `off`；未设 = 副屏伴侣在用时
+  // 按住 L1、否则关（ControllerLookupStyle.resolve）。设备本地。
+  'controller_lookup_style',
   'current_home_tab_index',
   'custom_dict_css',
   'deduplicate_pitch_accents',

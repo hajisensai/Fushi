@@ -1,13 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_tab.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_settings_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_actions.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_tab.dart';
+import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show gamepadMoveFocusInDirection;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -105,15 +114,169 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
   }
 
   int _seenArrivals = 0;
+  StreamSubscription<CompanionHostMessage>? _controllerInput;
+  bool _driving = false;
+  final GlobalKey _focusScopeKey = GlobalKey(debugLabel: 'companion-focus');
+
+  /// R1 is held on the top screen's controller: the panel shows its focus.
+  bool get driving => _driving;
 
   @override
   void initState() {
     super.initState();
-    _seenArrivals = ref.read(companionLookupControllerProvider).arrivals;
+    final CompanionLookupController lookup = ref.read(
+      companionLookupControllerProvider,
+    );
+    _seenArrivals = lookup.arrivals;
+    // A main-screen lookup that arrived before the shell was up (it waited in
+    // the panel's backlog and the lookup controller showed it on creation)
+    // surfaces like any other: open on the Lookup tab, closing returns to Now.
+    if (lookup.arrivals > 0 && lookup.current != null) {
+      _tab = CompanionTab.lookup;
+      _beforeLookup = CompanionTab.now;
+    }
+    _controllerInput = ref
+        .read(companionPanelSessionProvider)
+        .controllerInput
+        .listen(_onControllerInput);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_controllerInput?.cancel());
+    if (_driving) {
+      FocusManager.instance.highlightStrategy =
+          FocusHighlightStrategy.automatic;
+    }
+    super.dispose();
   }
 
   /// Back: pops the current tab's history (nothing at its root).
   void _back() => navigatorOf(_tab)?.maybePop();
+
+  // ---- Controller from the top screen (S6) --------------------------------
+
+  void _onControllerInput(CompanionHostMessage message) {
+    if (!mounted) return;
+    switch (message) {
+      case CompanionPanelNavMessage(:final String action):
+        _onPanelNav(action);
+      case CompanionLookupActionMessage(
+        :final String action,
+        :final Map<String, Object?> args,
+      ):
+        _onLookupAction(action, args);
+      default:
+        break;
+    }
+  }
+
+  void _onPanelNav(String action) {
+    switch (action) {
+      case CompanionPanelNav.begin:
+        _setDriving(true);
+        _ensureFocus();
+      case CompanionPanelNav.end:
+        _setDriving(false);
+      case CompanionPanelNav.back:
+        _setDriving(true);
+        _back();
+      case CompanionPanelNav.activate:
+        _setDriving(true);
+        final BuildContext? focused = _focusedContext;
+        if (focused == null) {
+          _ensureFocus();
+        } else {
+          Actions.maybeInvoke<ActivateIntent>(focused, const ActivateIntent());
+        }
+      case CompanionPanelNav.up:
+        _move(TraversalDirection.up);
+      case CompanionPanelNav.down:
+        _move(TraversalDirection.down);
+      case CompanionPanelNav.left:
+        _move(TraversalDirection.left);
+      case CompanionPanelNav.right:
+        _move(TraversalDirection.right);
+    }
+  }
+
+  void _onLookupAction(String action, Map<String, Object?> args) {
+    final CompanionLookupController lookup = ref.read(
+      companionLookupControllerProvider,
+    );
+    if (action == CompanionLookupActions.close) {
+      if (lookup.current == null) return;
+      // Like Back on the Lookup tab: nested dictionary layers first, then the
+      // lookup itself.
+      if (_tab == CompanionTab.lookup) {
+        _back();
+      } else {
+        lookup.close();
+      }
+      return;
+    }
+    // The embedded dictionary registers its gamepad hooks in this engine.
+    final DictionaryPopupGamepadHooks? hooks =
+        DictionaryPopupGamepadRegistry.current;
+    if (hooks == null) return;
+    switch (action) {
+      case CompanionLookupActions.mine:
+        unawaited(hooks.mineFirstEntry());
+      case CompanionLookupActions.playAudio:
+        unawaited(hooks.playFirstAudio());
+      case CompanionLookupActions.nextEntry:
+        unawaited(hooks.entryMove(true));
+      case CompanionLookupActions.prevEntry:
+        unawaited(hooks.entryMove(false));
+      case CompanionLookupActions.scroll:
+        final Object? dy = args[CompanionLookupActions.dy];
+        if (dy is num) unawaited(hooks.scrollBy(dy.toDouble()));
+    }
+  }
+
+  void _setDriving(bool value) {
+    if (_driving == value) return;
+    // Controls paint their focus ring only in traditional highlight mode, and
+    // nothing on this display flips it (the keys come from the top screen's
+    // controller): force it while driven, hand it back afterwards. The focus
+    // position itself is kept for the next drive.
+    FocusManager.instance.highlightStrategy = value
+        ? FocusHighlightStrategy.alwaysTraditional
+        : FocusHighlightStrategy.automatic;
+    setState(() => _driving = value);
+  }
+
+  /// The focused control inside this shell; null when focus is elsewhere
+  /// (nothing focused yet, the focus root's fallback node).
+  BuildContext? get _focusedContext {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    final BuildContext? shell = _focusScopeKey.currentContext;
+    if (primary == null || shell == null || primary.context == null) {
+      return null;
+    }
+    final FocusScopeNode scope = FocusScope.of(shell);
+    if (identical(primary, scope) || !primary.ancestors.contains(scope)) {
+      return null;
+    }
+    return primary.context;
+  }
+
+  void _ensureFocus() {
+    if (_focusedContext != null) return;
+    final BuildContext? shell = _focusScopeKey.currentContext;
+    if (shell == null) return;
+    FocusScope.of(shell).nextFocus();
+  }
+
+  void _move(TraversalDirection direction) {
+    _setDriving(true);
+    final BuildContext? focused = _focusedContext;
+    if (focused == null) {
+      _ensureFocus();
+      return;
+    }
+    gamepadMoveFocusInDirection(focused, direction);
+  }
 
   Widget _root(CompanionTab tab) => switch (tab) {
     CompanionTab.now => CompanionNowTab(contextPanels: widget.contextPanels),
@@ -158,10 +321,18 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
       },
       child: CompanionShowNowScope(
         showNow: _showNow,
-        child: Scaffold(
-          resizeToAvoidBottomInset: false,
-          extendBody: true,
-          body: IndexedStack(
+        child: FocusScope(key: _focusScopeKey, child: _scaffold(context)),
+      ),
+    );
+  }
+
+  Widget _scaffold(BuildContext context) => Scaffold(
+    resizeToAvoidBottomInset: false,
+    extendBody: true,
+    body: Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: IndexedStack(
             index: _tab.index,
             children: <Widget>[
               for (final CompanionTab tab in CompanionTab.values)
@@ -178,13 +349,64 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
                 ),
             ],
           ),
-          bottomNavigationBar: FocusTraversalGroup(
-            child: adaptiveBottomBar(
-              context: context,
-              currentIndex: _tab.index,
-              onTap: (int index) => select(CompanionTab.values[index]),
-              items: _items(),
-              showLabels: false,
+        ),
+        _DriveHint(visible: _driving),
+      ],
+    ),
+    bottomNavigationBar: FocusTraversalGroup(
+      child: adaptiveBottomBar(
+        context: context,
+        currentIndex: _tab.index,
+        onTap: (int index) => select(CompanionTab.values[index]),
+        items: _items(),
+        showLabels: false,
+      ),
+    ),
+  );
+}
+
+/// "Controller drives this screen · release R1 to return", shown at the top
+/// while R1 panel drive is on (non-interactive).
+class _DriveHint extends StatelessWidget {
+  const _DriveHint({required this.visible});
+
+  final bool visible;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return IgnorePointer(
+      child: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            child: Semantics(
+              liveRegion: visible,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer,
+                    borderRadius: FushiM3eShape.smallRadius,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      t.second_screen_panel_drive_hint,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

@@ -17,6 +17,9 @@ import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.
 import 'package:fushi/src/second_screen/panel/companion/companion_shell.dart';
 import 'package:fushi/src/second_screen/second_screen_pipe.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart'
+    show FushiFocusRoot;
+import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -169,10 +172,16 @@ class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp> {
           supportedLocales: ready
               ? appModel.locales.values
               : const <Locale>[Locale('en')],
-          builder: (BuildContext context, Widget? child) =>
-              LegacyDesignCompatibility(
+          // The panel is drivable by controller (R1 held on the top
+          // screen's controller, S6): the same directional focus engine and
+          // focus ring as the main app's focus navigation.
+          builder: (BuildContext context, Widget? child) => FushiFocusRoot(
+            child: FushiFocusRing(
+              child: LegacyDesignCompatibility(
                 child: FushiGlassScope(child: child ?? const SizedBox.shrink()),
               ),
+            ),
+          ),
           home:
               widget.home ??
               CompanionShell(contextPanels: companionContextPanels),
