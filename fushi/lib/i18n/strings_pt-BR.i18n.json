@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "Recuo da primeira linha",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "Minerar para dispositivo pareado",
-  "anki_mine_to_server_hint": "Enviar cartões minerados para o Anki do dispositivo pareado (seus baralhos e configurações) em vez deste dispositivo. Requer um pareamento Interconnect. Se o servidor estiver offline, os cartões aguardam neste dispositivo e são enviados quando ele voltar.",
+  "anki_mine_to_server_hint": "Enviar cartões minerados para o dispositivo Fushi pareado (para o Anki ou a revisão do Fushi dele) em vez deste dispositivo. Requer um pareamento Interconnect. Se o dispositivo estiver offline, os cartões aguardam aqui e são enviados quando ele voltar.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

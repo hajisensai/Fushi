@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "İlk satır girintisi",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "Eşleştirilmiş cihaza çıkar",
-  "anki_mine_to_server_hint": "Çıkarılan kartları bu cihaz yerine eşleştirilmiş ana bilgisayarın Anki'sine (onun desteleri ve ayarları) gönderir. Bir interconnect eşleştirmesi gerektirir. Sunucu çevrimdışıysa kartlar bu cihazda bekler ve bağlantı geri geldiğinde gönderilir.",
+  "anki_mine_to_server_hint": "Çıkarılan kartları bu cihaz yerine eşleştirilmiş Fushi cihazına (onun Anki'sine veya Fushi tekrarına) gönderir. Bir interconnect eşleştirmesi gerektirir. Cihaz çevrimdışıysa kartlar burada bekler ve bağlantı geri geldiğinde gönderilir.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

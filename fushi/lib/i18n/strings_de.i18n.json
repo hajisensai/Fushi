@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "Einzug der ersten Zeile",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "An gekoppeltes Gerät senden",
-  "anki_mine_to_server_hint": "Erstellte Karten an das Anki des gekoppelten Hosts senden (dessen Decks und Einstellungen) statt an dieses Gerät. Erfordert eine Interconnect-Kopplung. Ist der Server offline, warten die Karten auf diesem Gerät und werden gesendet, sobald er wieder erreichbar ist.",
+  "anki_mine_to_server_hint": "Erstellte Karten an das gekoppelte Fushi-Gerät senden (dessen Anki oder Fushi-Wiederholung) statt an dieses Gerät. Erfordert eine Interconnect-Kopplung. Ist das Gerät offline, warten die Karten hier und werden gesendet, sobald es wieder erreichbar ist.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "Indentasi baris pertama",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "Kirim kartu ke perangkat berpasangan",
-  "anki_mine_to_server_hint": "Kirim kartu yang ditambang ke Anki perangkat host berpasangan (dek dan pengaturannya) alih-alih perangkat ini. Memerlukan koneksi Interconnect. Jika server sedang offline, kartu menunggu di perangkat ini dan dikirim setelah tersambung kembali.",
+  "anki_mine_to_server_hint": "Kirim kartu yang ditambang ke perangkat Fushi berpasangan (ke Anki atau tinjauan Fushi miliknya) alih-alih perangkat ini. Memerlukan koneksi Interconnect. Jika perangkat sedang offline, kartu menunggu di sini dan dikirim setelah tersambung kembali.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

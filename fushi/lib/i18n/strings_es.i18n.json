@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "Sangría de primera línea",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "Enviar al dispositivo emparejado",
-  "anki_mine_to_server_hint": "Envía las tarjetas creadas al Anki del dispositivo emparejado (sus mazos y ajustes) en lugar de este dispositivo. Requiere emparejamiento por Interconnect. Si el servidor está desconectado, las tarjetas esperan en este dispositivo y se envían cuando vuelve.",
+  "anki_mine_to_server_hint": "Envía las tarjetas creadas al dispositivo Fushi emparejado (a su Anki o a su repaso de Fushi) en lugar de a este dispositivo. Requiere emparejamiento por Interconnect. Si el dispositivo está desconectado, las tarjetas esperan aquí y se envían cuando vuelve.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

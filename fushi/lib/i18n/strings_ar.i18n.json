@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "إزاحة السطر الأول",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "إرسال إلى الجهاز المقترن",
-  "anki_mine_to_server_hint": "أرسل البطاقات المستخرجة إلى Anki على الجهاز المضيف المقترن (رزمه وإعداداته) بدلاً من هذا الجهاز. يتطلب اقتراناً عبر الربط. إذا كان الخادم غير متصل، تنتظر البطاقات على هذا الجهاز وتُرسل عند عودته.",
+  "anki_mine_to_server_hint": "أرسل البطاقات المستخرجة إلى جهاز Fushi المقترن (إلى Anki أو مراجعة Fushi فيه) بدلاً من هذا الجهاز. يتطلب اقتراناً عبر الربط. إذا كان الجهاز غير متصل، تنتظر البطاقات هنا وتُرسل عند عودته.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

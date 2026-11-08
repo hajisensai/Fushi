@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "첫 줄 들여쓰기",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "페어링된 기기로 채굴",
-  "anki_mine_to_server_hint": "채굴한 카드를 이 기기 대신 페어링된 호스트의 Anki(해당 덱 및 설정)로 전송합니다. 인터커넥트 페어링이 필요합니다. 서버가 오프라인이면 카드는 이 기기에 보관되었다가 연결되면 전송됩니다.",
+  "anki_mine_to_server_hint": "채굴한 카드를 이 기기 대신 페어링된 Fushi 기기(해당 기기의 Anki 또는 Fushi 복습)로 전송합니다. 인터커넥트 페어링이 필요합니다. 기기가 오프라인이면 카드는 여기에 보관되었다가 다시 연결되면 전송됩니다.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

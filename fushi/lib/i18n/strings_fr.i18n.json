@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "Retrait de première ligne",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "Envoyer au périphérique apparié",
-  "anki_mine_to_server_hint": "Envoyer les cartes créées vers l'Anki de l'hôte apparié (ses paquets et paramètres) au lieu de cet appareil. Nécessite un appairage d'interconnexion. Si le serveur est hors ligne, les cartes restent sur cet appareil et sont envoyées dès son retour.",
+  "anki_mine_to_server_hint": "Envoyer les cartes créées à l'appareil Fushi apparié (vers son Anki ou sa révision Fushi) au lieu de cet appareil. Nécessite un appairage d'interconnexion. Si l'appareil est hors ligne, les cartes attendent ici et sont envoyées dès son retour.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

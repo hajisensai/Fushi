@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "字下げ",
   "anki_lapis_visual_text_indent_chars": "$count 字",
   "anki_mine_to_server": "ペアリングデバイスに制カード",
-  "anki_mine_to_server_hint": "制カードをこのデバイスではなく、ペアリングしたホストの Anki（そのデッキと設定）に送信します。互連ペアリングが必要です。サーバーがオフラインの間、カードはこのデバイスに保存され、接続が戻ると送信されます。",
+  "anki_mine_to_server_hint": "作成したカードを、このデバイスではなくペアリングした Fushi デバイス（その Anki または Fushi 復習）に送信します。互連ペアリングが必要です。デバイスがオフラインの間、カードはここで待機し、接続が戻ると送信されます。",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "Отступ первой строки",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "Добывать на сопряжённое устройство",
-  "anki_mine_to_server_hint": "Отправлять добытые карточки в Anki сопряжённого хоста (его колоды и настройки) вместо этого устройства. Требуется сопряжение через Interconnect. Если сервер недоступен, карточки ждут на этом устройстве и отправляются, когда он снова в сети.",
+  "anki_mine_to_server_hint": "Отправлять добытые карточки на сопряжённое устройство Fushi (в его Anki или повторение Fushi) вместо этого устройства. Требуется сопряжение через Interconnect. Если устройство недоступно, карточки ждут здесь и отправляются, когда оно снова в сети.",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

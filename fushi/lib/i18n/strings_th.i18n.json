@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "เยื้องบรรทัดแรก",
   "anki_lapis_visual_text_indent_chars": "$count em",
   "anki_mine_to_server": "สร้างบัตรไปยังอุปกรณ์ที่จับคู่",
-  "anki_mine_to_server_hint": "ส่งบัตรที่สร้างไปยัง Anki ของโฮสต์ที่จับคู่ (สำรับและการตั้งค่าของโฮสต์) แทนที่จะเป็นอุปกรณ์นี้ ต้องมีการจับคู่ Interconnect หากเซิร์ฟเวอร์ออฟไลน์ การ์ดจะรออยู่บนอุปกรณ์นี้และส่งเมื่อกลับมาเชื่อมต่อ",
+  "anki_mine_to_server_hint": "ส่งการ์ดที่สร้างไปยังอุปกรณ์ Fushi ที่จับคู่ (ไปยัง Anki หรือการทบทวน Fushi ของอุปกรณ์นั้น) แทนที่จะเป็นอุปกรณ์นี้ ต้องมีการจับคู่ Interconnect หากอุปกรณ์ออฟไลน์ การ์ดจะรออยู่ที่นี่และส่งเมื่อกลับมาเชื่อมต่อ",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",

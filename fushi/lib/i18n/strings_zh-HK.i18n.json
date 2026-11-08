@@ -784,7 +784,7 @@
   "anki_lapis_visual_text_indent": "首行縮排",
   "anki_lapis_visual_text_indent_chars": "$count 字",
   "anki_mine_to_server": "製卡到 Fushi 互聯服務端",
-  "anki_mine_to_server_hint": "把製卡發送到 Fushi 互聯服務端的 Anki（用服務端的牌組與設定），而非本機。需先在互聯/同步裡完成配對。服務端離線時卡片先存在本機，連上後自動發送。",
+  "anki_mine_to_server_hint": "把製作的卡片交給已配對的 Fushi 裝置（它的 Anki 或 Fushi 複習），而不是本機。需要先互聯配對。裝置離線時卡片在本機等待，恢復後再發送。",
   "anki_mine_to_server_target": "Save to",
   "anki_mine_to_server_target_deck_default": "Default deck",
   "anki_mine_to_server_target_default": "Paired device default",
