@@ -18,6 +18,7 @@ import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/key_event_device_type.dart';
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -445,6 +446,9 @@ class GamepadService {
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointerGlobal);
     HardwareKeyboard.instance.addHandler(_onKey);
     FocusManager.instance.addEarlyKeyEventHandler(_onEarlyKey);
+    // Before the first key: [GamepadButton.fromKeyEvent] needs the Android
+    // source of each key to tell a controller D-pad from keyboard arrows.
+    AndroidKeyEventSource.install();
     _inputRoutesInstalled = true;
   }
 

@@ -12,6 +12,7 @@ import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
+import 'package:fushi/src/shortcuts/key_event_device_type.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
@@ -1470,7 +1471,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     // up here, and the game gets no arrows in this mode anyway.
     final GameStreamPhysicalButton? physical =
         GameStreamPhysicalButton.gameButtonFor(event.logicalKey) ??
-        (lookupMode || _isControllerSource(event.deviceType)
+        (lookupMode || _isControllerSource(keyEventDeviceType(event))
             ? GameStreamPhysicalButton.dpadFor(event.logicalKey)
             : null);
     if (physical != null) {

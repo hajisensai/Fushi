@@ -19,6 +19,7 @@ import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebView;
 
@@ -297,7 +298,17 @@ public class SecondScreenActivity extends FlutterActivity
         data.putParcelable(SecondScreenRelayService.KEY_EVENT, event);
         message.setData(data);
         sendToRelay(message);
-        return true;
+        // Not consumed on purpose. A hat D-pad (ABS_HAT0X/Y, e.g. the Thor's
+        // built-in controller) arrives as joystick motion, and only an
+        // UNHANDLED joystick event makes ViewRootImpl synthesize the D-pad key
+        // events from it -- the forwarded copy is dispatched straight into the
+        // main Activity, outside its input pipeline, so nothing would turn it
+        // into keys there. Leaving it unhandled here lets this window's
+        // pipeline synthesize the keys exactly as the main window does when it
+        // has focus; they come back through dispatchKeyEvent and go to the top
+        // screen like every other controller key. This panel's own view never
+        // sees the motion either way.
+        return false;
     }
 
     @Override
@@ -358,6 +369,22 @@ public class SecondScreenActivity extends FlutterActivity
     protected void onResume() {
         super.onResume();
         if (isOffTargetDisplay()) finish();
+    }
+
+    // The first navigation key (D-pad) a window gets in touch mode is consumed
+    // by ViewRootImpl to hand some view focus (checkForLeavingTouchModeAndConsume)
+    // when nothing is focused -- before dispatchKeyEvent ever sees it. The
+    // panel's FlutterView takes no focus from a tap, so after every touch on
+    // this display the first controller D-pad press was swallowed and only
+    // its release reached the top screen. Give the FlutterView focus as soon
+    // as the window has it (same idea as MainActivity.ensureKeyFocusTarget);
+    // a focused FlutterView lets every key through.
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus || getCurrentFocus() != null) return;
+        final View flutterView = findViewById(FLUTTER_VIEW_ID);
+        if (flutterView != null) flutterView.requestFocus();
     }
 
     @Override
