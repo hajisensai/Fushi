@@ -404,7 +404,7 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
-    // BUG-4232（反馈 vJrUPZW9I8）：125 = IMPORTANCE_FOREGROUND_SERVICE（放歌 / 下载保活 /
+    // BUG-4243（反馈 vJrUPZW9I8）：125 = IMPORTANCE_FOREGROUND_SERVICE（放歌 / 下载保活 /
     // 悬浮窗），界面可能早已退到后台。标记停在 paused 48 分钟后被 SIGNALED 杀掉，旧判定
     // 按 125 <= 125 直判前台 →「停在前台时没了，疑似闪退」。
     test('importance=125（前台服务）+ 标记停在 paused → 后台回收，不弹闪退报告', () async {
@@ -636,7 +636,7 @@ void main() {
       expect(v.worthReporting, isFalse);
     });
 
-    // BUG-4231（反馈 1jhwtJQIZq）：iOS 后台拉起时引擎的初始生命周期就是 inactive。
+    // BUG-4242（反馈 1jhwtJQIZq）：iOS 后台拉起时引擎的初始生命周期就是 inactive。
     // foldIntoErrorLog 挂观察者时补记当前生命周期，旧实现把 headless 覆盖成 inactive
     // （算前台），进程之后在后台被回收就判成「启动即闪退」。走真实的折入 + 观察者路径。
     test('iOS 后台拉起：补记的初始 inactive / 后续 hidden、paused 不覆盖 headless', () async {
@@ -880,7 +880,7 @@ void main() {
     );
   });
 
-  // BUG-4233（反馈 J1ZWNUeaCT）：3.3.0 启动时把 3.0.1 三天前 dyld「Library missing」的
+  // BUG-4244（反馈 J1ZWNUeaCT）：3.3.0 启动时把 3.0.1 三天前 dyld「Library missing」的
   // .ips 当成上次闪退上报。只收上次会话启动之后的报告；版本对不上的只作诊断。
   test('macOS：上次会话启动前的 .ips 不收、版本对不上的只作诊断', () async {
     final Directory reports = Directory('${tmp.path}/DiagnosticReports')
