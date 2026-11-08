@@ -558,6 +558,181 @@ void main() {
       'request': <String, Object?>{'op': 'browse_close'},
     });
   });
+  // 回包 / 请求体不合契约：解码器抛带路径的 SrsRemoteWireError，不漏成 TypeError（客户端据此落成
+  // bad_response，主机落成 400）。
+  test('线格式解码不合契约一律抛带路径的 SrsRemoteWireError', () async {
+    final SrsDbStore store = await openTestStore(
+      profileUid: _uid,
+      deviceId: 'wire',
+      now: () => DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch,
+    );
+    final SrsDeckTree tree = await store.deckTree();
+    final Map<String, Object?> row = SrsRemoteWire.summary(
+      (await store.deckSummaries()).first,
+    );
+    final List<(String, Object? Function())> cases =
+        <(String, Object? Function())>[
+          ('result', () => SrsRemoteWire.summariesFrom(5, tree)),
+          (
+            'result[0].n',
+            () => SrsRemoteWire.summariesFrom(<Object?>[
+              <String, Object?>{...row, 'n': 'x'},
+            ], tree),
+          ),
+          (
+            'result.b.why',
+            () => SrsRemoteWire.summaryFrom(<String, Object?>{
+              ...row,
+              'b': <String, Object?>{
+                ...(row['b']! as Map<String, Object?>),
+                'why': 'nope',
+              },
+            }, tree),
+          ),
+          (
+            'result.roll',
+            () => SrsRemoteWire.dayContextFrom(<String, Object?>{'off': 60}),
+          ),
+          (
+            'result.fields.x',
+            () => SrsRemoteWire.renderedFrom(<String, Object?>{
+              'q': '',
+              'a': '',
+              'css': '',
+              'fields': <String, Object?>{'x': 1},
+            }),
+          ),
+          (
+            'result[0]',
+            () => SrsRemoteWire.cardRowsFrom(<Object?>[
+              <String, Object?>{'id': 3},
+            ]),
+          ),
+          (
+            'result.files[0]',
+            () => SrsRemoteWire.sync2ResultFrom(<String, Object?>{
+              'files': <Object?>[
+                <Object?>['a', '!!'],
+              ],
+            }),
+          ),
+          (
+            'result.items[0]',
+            () => SrsRemoteWire.syncConflictsFrom(<String, Object?>{
+              'edits': <String, Object?>{},
+              'items': <Object?>[3],
+            }),
+          ),
+          (
+            'result.plans[0].dropped',
+            () => SrsRemoteWire.noteTypeChangeFrom(<String, Object?>{
+              'from': <String, Object?>{'id': 'a', 'tag': 't'},
+              'to': <String, Object?>{'id': 'b', 'tag': 't'},
+              'plans': <Object?>[
+                <String, Object?>{
+                  'note': 'n',
+                  'fields': <String, Object?>{},
+                  'links': <String, Object?>{},
+                  'dropped': 'x',
+                },
+              ],
+            }),
+          ),
+          (
+            'rev',
+            () => SrsRemoteWire.envelopeFrom(<String, Object?>{'rev': '1'}),
+          ),
+          (
+            'cache.tree',
+            () => SrsRemoteWire.deckCacheFrom(<String, Object?>{'tree': 3}),
+          ),
+          ('result[1]', () => SrsRemoteWire.stringsFrom(<Object?>['a', 1])),
+        ];
+    for (final (String path, Object? Function() decode) in cases) {
+      expect(
+        decode,
+        throwsA(
+          isA<SrsRemoteWireError>().having(
+            (SrsRemoteWireError e) => e.path,
+            'path',
+            path,
+          ),
+        ),
+        reason: path,
+      );
+    }
+  });
+
+  test('牌组缓存格式往返：同一棵树、同一批牌组行', () async {
+    final (SrsDbStore store, _, _) = await _setUp();
+    final List<SrsDeckSummary> decks = await store.deckSummaries();
+    final Map<String, Object?> cache = SrsRemoteWire.deckCache(
+      await store.entitySources(SrsEntityKind.deck),
+      decks,
+    );
+    final List<SrsDeckSummary> back = SrsRemoteWire.deckCacheFrom(
+      jsonDecode(jsonEncode(cache)),
+    );
+    expect(back.map((SrsDeckSummary d) => d.deck.id), <String>[
+      for (final SrsDeckSummary d in decks) d.deck.id,
+    ]);
+    expect(back.map((SrsDeckSummary d) => d.deck.name), <String>[
+      for (final SrsDeckSummary d in decks) d.deck.name,
+    ]);
+    expect(
+      jsonEncode(<Object?>[
+        for (final SrsDeckSummary d in back) SrsRemoteWire.summary(d),
+      ]),
+      jsonEncode(<Object?>[
+        for (final SrsDeckSummary d in decks) SrsRemoteWire.summary(d),
+      ]),
+    );
+  });
+
+  test('请求体里经线格式解码的结构不合契约：400 bad_request，不执行', () async {
+    int writes = 0;
+    final (_, SrsRemoteStoreService service, _) = await _setUp(
+      onWrite: (String _) => writes++,
+    );
+    for (final (String op, Map<String, Object?> args)
+        in <(String, Map<String, Object?>)>[
+          (
+            'writeEdits',
+            <String, Object?>{
+              'specs': <Object?>[],
+              'records': <Object?>[5],
+            },
+          ),
+          (
+            'editFieldsBatch',
+            <String, Object?>{
+              'changes': <Object?>[
+                <Object?>['nope', 'id', 'k', 1],
+              ],
+            },
+          ),
+          (
+            'studyState',
+            <String, Object?>{
+              'deck': 'd',
+              'custom': <String, Object?>{'mode': 'nope', 'since': 0},
+            },
+          ),
+        ]) {
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{
+          'profile': _uid,
+          'op': op,
+          'args': args,
+          'request': 'r-$op',
+        },
+      );
+      expect(status, 400, reason: '$op → $body');
+      expect(body['error'], SrsRemoteStoreError.badRequest, reason: op);
+    }
+    expect(writes, 0);
+  });
 
   group('一台主机提供几份 profile（无头服务端：一门语言一份）', () {
     const String other = '01928c3e-0000-7000-8000-0000000b0b02';

@@ -1880,6 +1880,9 @@ class SyncRepository {
     PreferencesRepository.srsSync2MergeConfirmedKey,
     // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
     PreferencesRepository.srsLocationKeysKey,
+    // 复习首页「已配对设备」的牌组摘要缓存（kSrsHomePairedCachePrefKey）：描述的是这台设备配对的主机与
+    // 上次看到的数字，别的设备恢复备份带过来只会画出它没配对的主机。
+    'srs_home_paired_cache',
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，

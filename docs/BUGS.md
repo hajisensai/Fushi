@@ -38,6 +38,15 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4234](bugs/BUG-4234-continuous-diagonal-swipe-dropped.md) | ✅ | ✅ | 滚动模式斜着滑（拇指弧线）正文不动、也不跨章 |
+> 共 3800 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4238](bugs/BUG-4238-android-file-rss-no-attribution.md) | ✅ | ✅ | Android 文件映射常驻暴涨时没有按文件分项 |
+| [BUG-4237](bugs/BUG-4237-android-tombstone-summary-misses-crash-thread.md) | ✅ | ✅ | Android 原生崩溃摘要抽不到崩溃线程栈 |
+| [BUG-4236](bugs/BUG-4236-manga-series-chapter-column-anr.md) | ✅ | ✅ | 作品页章节表一次建全上千行致主线程 ANR |
+| [BUG-4235](bugs/BUG-4235-anime-subtitle-file-uri-fetched-over-http.md) | ✅ | ✅ | 在线视频源本地 file:// 字幕被当 HTTP 去取 |
+| [BUG-4234](bugs/BUG-4234-windows-memory-sample-no-breakdown.md) | ✅ | ✅ | Windows 内存采样只有工作集没有分项 |
 | [BUG-4233](bugs/BUG-4233-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
 | [BUG-4232](bugs/BUG-4232-anki-source-link-mine-missing-original.md) | ✅ | ✅ | anki-source-link-mine-missing-original |
 | [BUG-4231](bugs/BUG-4231-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
