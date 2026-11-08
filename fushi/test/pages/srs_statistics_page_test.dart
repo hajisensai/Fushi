@@ -33,6 +33,7 @@ const List<String> kSectionKeys = <String>[
   'srs-stats-card-counts',
   'srs-stats-retention',
   'srs-stats-memory',
+  'srs-stats-calibration',
   'srs-stats-added',
   'srs-stats-sources',
 ];
