@@ -156,6 +156,8 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
   `setpriv` 永久降权运行；媒体目录不改属主，只需对 `PUID` 可读（上传落盘的库根要可写）。
   `docker compose exec fushi-server fushi_server ctl …` 同样以 `PUID:PGID` 运行。
 - **端口**：38765（互联，TLS）、38780（WebUI / admin API，`https://`）、6881 tcp+udp（内置 torrent）。
+  宿主侧端口可在 `.env` 改（`FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` / `FUSHI_TORRENT_PORT`），同机已有桌面 Fushi
+  占着 38765 时用得上；配对时输入改后的端口。
   健康检查打无鉴权的 `GET /api/ping`（`/api/capabilities` 要已配对 token）。
 - **配对**：容器不做局域网 mDNS 广播（镜像里没有 avahi，默认 bridge 网络也传不出组播），Fushi 的
   局域网列表里看不到它：在 Fushi 里手动输入 `<宿主机地址>:38765`。`network_mode: host`（仅 Linux 宿主）

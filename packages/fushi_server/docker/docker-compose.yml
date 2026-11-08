@@ -30,10 +30,12 @@ services:
       TZ: ${TZ:-Etc/UTC}
       FUSHI_DEVICE_NAME: ${FUSHI_DEVICE_NAME:-Fushi Server}
     ports:
-      - "38765:38765"       # interconnect: pairing, sync, streaming (TLS)
-      - "38780:38780"       # WebUI + admin API
-      - "6881:6881/tcp"     # embedded torrent engine
-      - "6881:6881/udp"
+      # Host side is configurable (e.g. when a desktop Fushi on the same machine
+      # already listens on 38765); the container side stays fixed.
+      - "${FUSHI_SYNC_PORT:-38765}:38765"        # interconnect: pairing, sync, streaming (TLS)
+      - "${FUSHI_WEBUI_PORT:-38780}:38780"       # WebUI + admin API
+      - "${FUSHI_TORRENT_PORT:-6881}:6881/tcp"   # embedded torrent engine
+      - "${FUSHI_TORRENT_PORT:-6881}:6881/udp"
     volumes:
       # Config, database, pairing identity, covers, logs. Back this up.
       - ${FUSHI_CONFIG_DIR:-./config}:/config
