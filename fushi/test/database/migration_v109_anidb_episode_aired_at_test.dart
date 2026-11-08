@@ -52,7 +52,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 147);
+      expect(migrated.schemaVersion, 148);
 
       // 存量行保留，新列为 null（= 尚未取到播出日）。
       final AnidbFileIdentityRow? hit = await migrated.anidbFileIdentityByHash(
@@ -96,7 +96,7 @@ void main() {
       addTearDown(reopened.close);
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 147);
+      expect(probe.select('PRAGMA user_version').first.values.first, 148);
       expect(
         probe
             .select('PRAGMA table_info(anidb_file_identities)')
@@ -160,7 +160,7 @@ void main() {
       expect(row?.episodeAiredAt, 1777075200000, reason: '既有播出日原样保留');
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 147);
+      expect(probe.select('PRAGMA user_version').first.values.first, 148);
       expect(
         probe
             .select('PRAGMA table_info(anidb_file_identities)')
@@ -204,7 +204,7 @@ void main() {
       expect(await migrated.getCollectionBookAliases(), isEmpty);
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 147);
+      expect(probe.select('PRAGMA user_version').first.values.first, 148);
       final List<Object?> columns = probe
           .select('PRAGMA table_info(video_metadata_episodes)')
           .map((row) => row['name'])

@@ -270,6 +270,53 @@ class MusicPlaylistEntries extends Table {
   IntColumn get addedAt => integer()();
 }
 
+/// 远程曲目（schema v148，反馈 0tRY-D2JgG）：只能串流、不进扫描曲库的曲目（YouTube 内置音源、
+/// 在线音源插件）被用户「加入音乐库」或加进本地歌单后，在这里留一行元数据。
+///
+/// 身份 [trackUid] 就是这首在播放引擎里的那个 uid（YouTube = `musicServerTrackUid('youtube',
+/// videoId)`、插件 = `musicPluginTrackUid(pluginId, trackId)`）：与本地曲库的内容派生 uid
+/// 命名空间不同、不撞；从搜索结果直接播与从曲库 / 歌单播是同一个 uid，所以歌词缓存
+/// （`music_lyrics`）、断点（`music_resume_points`）、最近播放 / 统计（`music_play_events`）、
+/// 制卡来源都天然挂在同一首上，不需要再映射。
+///
+/// 播放路径不落库：由 [kind] + [sourceKey] + [itemId] 现推（`fushi-music-youtube://` /
+/// `fushi-music-plugin://` 占位，真正的流起播时才取），表里没有会过期的直链、也没有凭据。
+/// 媒体服务器（Jellyfin / Subsonic）曲目不进这张表：它们的播放地址带账号凭据，且整库可混排。
+///
+/// 与歌单一起随「音乐」备份类别走（歌单条目可能引用这里的行），按 [updatedAt] LWW 合并；
+/// 「从音乐库移除」只清 [libraryAddedAt]、不删行（别的设备 / 歌单可能还引用）。
+@DataClassName('MusicRemoteTrackRow')
+class MusicRemoteTracks extends Table {
+  TextColumn get trackUid => text()();
+
+  /// 来源种类 wire 值（冻结）：`youtube` | `plugin`。
+  TextColumn get kind => text()();
+
+  /// 来源宿主：YouTube 为 `youtube`；插件为插件 id。
+  TextColumn get sourceKey => text()();
+
+  /// 来源内的条目 id：YouTube videoId / 插件曲目 id。
+  TextColumn get itemId => text()();
+
+  TextColumn get title => text()();
+  TextColumn get artist => text().nullable()();
+  TextColumn get album => text().nullable()();
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 封面的 http(s) 地址（来源给的缩略图）；没有为 NULL。
+  TextColumn get coverUrl => text().nullable()();
+
+  /// 加入音乐库的时刻（毫秒）；NULL = 不在曲库里（只被歌单引用）。
+  IntColumn get libraryAddedAt => integer().nullable()();
+  IntColumn get createdAt => integer()();
+
+  /// 最后一次改动（元数据 / 入库 / 移出曲库）的时刻：备份合并按它 LWW。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{trackUid};
+}
+
 /// 逐曲断点续播（v146，反馈 QAondMh4M5）：每首曲目上次停在哪，一首一行。
 ///
 /// 与 [MusicPlayEvents] 同一身份（`trackUid`：路径 + 起点 + 音频属性派生，改标签不换；
