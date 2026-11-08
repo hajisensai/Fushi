@@ -11,12 +11,23 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show kManualVideoDownloadResourceProvider;
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show planBlurayDiscRoots;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
+import 'package:fushi_engine/media/video/download/video_download_disc_payload.dart'
+    show downloadPayloadSegments;
 import 'package:fushi_engine/media/video/download/video_download_organizer.dart'
-    show mainMovieFeatureIndex;
+    show isVideoDownloadExtraFile, mainMovieFeatureIndex;
+import 'package:fushi_engine/media/video/dvd/dvd_disc.dart'
+    show planDvdDiscRoots;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDiscImagePath;
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
@@ -184,6 +195,175 @@ List<VideoSourceScrapeWork> downloadJobPathMatches(
       .toList(growable: false);
 }
 
+/// 任务落位后的一张原盘（BUG-4245）。
+class VideoDownloadJobDisc {
+  const VideoDownloadJobDisc({
+    required this.rootPath,
+    required this.isImage,
+    required this.isFolderDvd,
+    required this.isExtra,
+    required this.fileIds,
+  });
+
+  /// 本机盘根：文件夹形态含 `BDMV` / `VIDEO_TS` 的那层目录，镜像是 `.iso` 本身。
+  final String rootPath;
+
+  /// `.iso` 镜像（导入时探测是 DVD 还是 BD）。
+  final bool isImage;
+
+  /// 文件夹形态的 DVD（`VIDEO_TS`）；两者都不是即文件夹形态的蓝光。
+  final bool isFolderDvd;
+
+  /// 盘根落在发布组划的特典目录（`SP/` `特典/` …）里：整张盘是特典，入库照常，
+  /// 但不承接任务确认的身份。
+  final bool isExtra;
+
+  /// 属于这张盘的任务文件行 id。
+  final Set<int> fileIds;
+
+  bool get isFolderBluray => !isImage && !isFolderDvd;
+}
+
+/// 任务文件行里已落位的原盘（BUG-4245）。盘内文件行是 `kind: 'other'` 且有
+/// `finalAbsolutePath`；盘形态由路径本身确证（与扫描器同一判据：精确大小写的
+/// `BDMV/PLAYLIST/*.mpls` / `VIDEO_TS/VIDEO_TS.IFO`，加 `.iso`），不另存标记，崩溃
+/// 重放、删除、补刮各自从行上算出同一组盘。
+List<VideoDownloadJobDisc> videoDownloadJobDiscs(
+  List<VideoDownloadJobFileRow> files,
+) {
+  final List<VideoDownloadJobFileRow> placed = <VideoDownloadJobFileRow>[
+    for (final VideoDownloadJobFileRow row in files)
+      if (row.kind == 'other' &&
+          row.selected &&
+          (row.finalAbsolutePath?.trim().isNotEmpty ?? false) &&
+          row.targetRelativePath != null)
+        row,
+  ];
+  if (placed.isEmpty) return const <VideoDownloadJobDisc>[];
+  final List<String> paths = <String>[
+    for (final VideoDownloadJobFileRow row in placed) row.finalAbsolutePath!,
+  ];
+  final Set<String> dvd = planDvdDiscRoots(paths).toSet();
+  final List<String> folderRoots = <String>[
+    ...planBlurayDiscRoots(paths),
+    ...dvd,
+  ];
+  // 行 → 所属盘根：文件夹盘取包含它的**最深**盘根（盘根下还套着另一张盘时，
+  // 内层盘的文件归内层），镜像就是 `.iso` 行本身。盘根下的已排布 `other` 行都是
+  // 这张盘的文件（整理器只给盘内文件排 `other`），含 `CERTIFICATE/` `AUDIO_TS/`
+  // 这类盘根级附属目录。
+  final Map<String, List<VideoDownloadJobFileRow>> byRoot =
+      <String, List<VideoDownloadJobFileRow>>{};
+  for (final VideoDownloadJobFileRow row in placed) {
+    final String path = row.finalAbsolutePath!;
+    // 镜像自成一张盘——除非它躺在某张文件夹盘的 `BDMV` / `VIDEO_TS` 树里（那是
+    // 盘自带的数据文件，与 `planDownloadDiscRoots` 同一口径）。
+    final bool image =
+        isDiscImagePath(path) &&
+        !folderRoots.any(
+          (String root) =>
+              p.isWithin(p.join(root, 'BDMV'), path) ||
+              p.isWithin(p.join(root, 'VIDEO_TS'), path),
+        );
+    String? owner = image ? path : null;
+    for (final String root in image ? const <String>[] : folderRoots) {
+      if (!p.isWithin(root, path)) continue;
+      if (owner == null || root.length > owner.length) owner = root;
+    }
+    if (owner != null) (byRoot[owner] ??= <VideoDownloadJobFileRow>[]).add(row);
+  }
+  final List<VideoDownloadJobDisc> discs = <VideoDownloadJobDisc>[];
+  for (final MapEntry<String, List<VideoDownloadJobFileRow>> entry
+      in byRoot.entries) {
+    final String root = entry.key;
+    final bool image = !folderRoots.contains(root);
+    // 盘根的目标相对路径（第一段是作品目录，当共享根剥掉）：从任一成员行的目标路径
+    // 截掉盘内部分得到。
+    final VideoDownloadJobFileRow sample = entry.value.first;
+    final List<String> target = downloadPayloadSegments(
+      sample.targetRelativePath!,
+    );
+    final int inner = image
+        ? 0
+        : p.split(p.relative(sample.finalAbsolutePath!, from: root)).length;
+    final List<String> rootTarget = target.sublist(
+      0,
+      (target.length - inner).clamp(0, target.length),
+    );
+    discs.add(
+      VideoDownloadJobDisc(
+        rootPath: root,
+        isImage: image,
+        isFolderDvd: dvd.contains(root),
+        isExtra:
+            rootTarget.length > 1 &&
+            isVideoDownloadExtraFile(
+              // 末段补一个占位文件名：特典判据只看目录段（镜像另看文件名本身）。
+              image ? rootTarget.join('/') : '${rootTarget.join('/')}/BDMV',
+              sharedRoot: rootTarget.first,
+            ),
+        fileIds: <int>{
+          for (final VideoDownloadJobFileRow row in entry.value) row.id,
+        },
+      ),
+    );
+  }
+  discs.sort(
+    (VideoDownloadJobDisc a, VideoDownloadJobDisc b) =>
+        a.rootPath.compareTo(b.rootPath),
+  );
+  return List<VideoDownloadJobDisc>.unmodifiable(discs);
+}
+
+/// [works] 里由任务的原盘入库出来的作品（BUG-4245）：每张盘是一个盘合集，计划器把
+/// 盘合集当一部作品（见 [VideoSourceWorkPlanner]），成员全是本任务某张盘上的标题
+/// 才算。特典目录里的盘不算（它不承接任务身份）。
+List<VideoSourceScrapeWork> downloadJobDiscWorks(
+  List<VideoDownloadJobFileRow> files,
+  List<VideoSourceScrapeWork> works,
+) {
+  final Set<String> roots = <String>{
+    for (final VideoDownloadJobDisc disc in videoDownloadJobDiscs(files))
+      if (!disc.isExtra) normalizeVideoPath(disc.rootPath),
+  };
+  if (roots.isEmpty) return const <VideoSourceScrapeWork>[];
+  bool onJobDisc(VideoBookRow member) {
+    final String? root = discRootForMemberPath(member.videoPath);
+    return root != null && roots.contains(normalizeVideoPath(root));
+  }
+
+  return <VideoSourceScrapeWork>[
+    for (final VideoSourceScrapeWork work in works)
+      if (work.members.isNotEmpty && work.members.every(onJobDisc)) work,
+  ];
+}
+
+/// 这条任务的确认身份承接到 [works] 里的哪些作品：散装视频的那一部
+/// （[downloadJobWork]）加上任务每张非特典原盘的盘作品（[downloadJobDiscWorks]，
+/// BUG-4245）。多卷原盘（`MYGO_1` … `MYGO_N`）每卷是一个盘合集、一部盘作品，都是
+/// 同一身份的分卷，一并承接。空 = 说不清，宁可不绑。
+List<VideoSourceScrapeWork> downloadJobWorks(
+  VideoDownloadJobRow job,
+  List<VideoDownloadJobFileRow> files,
+  List<VideoSourceScrapeWork> works,
+) {
+  final VideoSourceScrapeWork? loose =
+      downloadJobImportedVideoPaths(files).isEmpty
+      ? null
+      : downloadJobWork(job, files, works);
+  final List<VideoSourceScrapeWork> result = <VideoSourceScrapeWork>[
+    if (loose != null) loose,
+  ];
+  for (final VideoSourceScrapeWork work in downloadJobDiscWorks(files, works)) {
+    if (result.every(
+      (VideoSourceScrapeWork value) => value.stableKey != work.stableKey,
+    )) {
+      result.add(work);
+    }
+  }
+  return List<VideoSourceScrapeWork>.unmodifiable(result);
+}
+
 /// 这条任务的确认身份属于 [works] 里的哪一部；说不清（文件散在多部作品里且没有
 /// 一部是任务的合集、也不是能挑出主片的电影包）为 null——宁可不绑，也不猜。
 VideoSourceScrapeWork? downloadJobWork(
@@ -260,8 +440,12 @@ downloadConfirmedLookupListsForWorks(
   if (works.isEmpty) return const <String, List<VideoMetadataLookup>>{};
   final Map<String, List<VideoDownloadJobFileRow>> filesByJob =
       <String, List<VideoDownloadJobFileRow>>{};
-  for (final VideoDownloadJobFileRow row
-      in await database.getImportedVideoDownloadJobFiles()) {
+  // 散装视频行 + 整盘落位的原盘行（BUG-4245：盘作品的成员是 `.mpls` / DVD title，
+  // 不是任务的 video 行）。
+  for (final VideoDownloadJobFileRow row in <VideoDownloadJobFileRow>[
+    ...await database.getImportedVideoDownloadJobFiles(),
+    ...await database.getPlacedDiscVideoDownloadJobFiles(),
+  ]) {
     filesByJob
         .putIfAbsent(row.jobId, () => <VideoDownloadJobFileRow>[])
         .add(row);
@@ -278,20 +462,28 @@ downloadConfirmedLookupListsForWorks(
   for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
     final List<VideoDownloadJobFileRow>? files = filesByJob[job.jobId];
     if (files == null) continue;
-    if (!downloadJobImportedVideoPaths(files).any(memberPaths.contains)) {
-      continue;
-    }
+    final bool loose = downloadJobImportedVideoPaths(
+      files,
+    ).any(memberPaths.contains);
+    final List<VideoSourceScrapeWork> discWorks = loose
+        ? const <VideoSourceScrapeWork>[]
+        : downloadJobDiscWorks(files, works);
+    if (!loose && discWorks.isEmpty) continue;
     final List<VideoMetadataLookup> lookups = videoDownloadJobConfirmedLookups(
       job,
     );
     if (lookups.isEmpty) continue;
-    final VideoSourceScrapeWork? work = downloadJobWork(job, files, works);
-    if (work == null) continue;
-    final List<VideoMetadataLookup>? existing = result[work.stableKey];
-    if (existing != null && !_sameLookup(existing.first, lookups.first)) {
-      conflicted.add(work.stableKey);
+    for (final VideoSourceScrapeWork work in downloadJobWorks(
+      job,
+      files,
+      works,
+    )) {
+      final List<VideoMetadataLookup>? existing = result[work.stableKey];
+      if (existing != null && !_sameLookup(existing.first, lookups.first)) {
+        conflicted.add(work.stableKey);
+      }
+      result[work.stableKey] = lookups;
     }
-    result[work.stableKey] = lookups;
   }
   conflicted.forEach(result.remove);
   return result;

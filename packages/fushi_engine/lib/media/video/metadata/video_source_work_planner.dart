@@ -2,6 +2,8 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
@@ -117,9 +119,14 @@ class VideoSourceWorkPlanner {
       final VideoNameInfo parsed = parseVideoFilename(
         p.basename(book.videoPath),
       );
+      // 原盘标题（BUG-4245）：盘合集整体是一部作品。成员名是 `00001.mpls` /
+      // `TITLE_01.dvdtitle`，按文件名解集号要么解不出、要么把播放列表号当集号；
+      // 修前每条标题被拆成一部单独的「作品」，各自拿盘名去搜、下载任务的确认身份
+      // 也绑不回任何一部。
+      final bool discMember = isDiscMemberPath(book.videoPath);
       if (collectionId == null ||
           collections[collectionId] == null ||
-          parsed.episode == null) {
+          (parsed.episode == null && !discMember)) {
         result.add(
           VideoSourceScrapeWork(
             source: source,
@@ -132,12 +139,26 @@ class VideoSourceWorkPlanner {
       grouped.putIfAbsent(collectionId, () => <VideoBookRow>[]).add(book);
     }
 
+    final Map<(int, String), int> sortIndex = <(int, String), int>{
+      for (final MediaCollectionItemRow item in allItems)
+        (item.collectionId, item.entryKey): item.sortIndex,
+    };
     for (final MapEntry<int, List<VideoBookRow>> entry in grouped.entries) {
       final MediaCollectionRow collection = collections[entry.key]!;
-      entry.value.sort(
-        (VideoBookRow a, VideoBookRow b) =>
-            a.videoPath.toLowerCase().compareTo(b.videoPath.toLowerCase()),
+      // 盘合集按盘上的标题顺序（入库时就按标题序写进合集，见
+      // `DiscLibraryImporter`），不按路径字典序（`MYGO_10` 会排到 `MYGO_2` 前面）；
+      // 其余合集沿用路径序。
+      final bool discWork = entry.value.every(
+        (VideoBookRow book) => isDiscMemberPath(book.videoPath),
       );
+      entry.value.sort((VideoBookRow a, VideoBookRow b) {
+        if (discWork) {
+          final int byIndex = (sortIndex[(entry.key, a.bookUid)] ?? 0)
+              .compareTo(sortIndex[(entry.key, b.bookUid)] ?? 0);
+          if (byIndex != 0) return byIndex;
+        }
+        return a.videoPath.toLowerCase().compareTo(b.videoPath.toLowerCase());
+      });
       result.add(
         VideoSourceScrapeWork(
           source: source,

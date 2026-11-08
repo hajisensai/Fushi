@@ -2549,66 +2549,8 @@ class SourceLibraryScanner {
   /// 选哪份语言的元数据跟界面语言（[blurayLanguageCodes]），没有就按盘上的顺序。
   /// 写入走 [MediaCoverService.applyCollectionDiscImage]（刮削清理期租约 + 封面写
   /// 互斥）；拿不到租约、图解不开都只跳过，不让整次扫描失败。
-  Future<void> _applyBlurayDiscArtwork(
-    int collectionId,
-    String discRootPath,
-  ) async {
-    final List<MediaImageRow> images = await _db.getMediaImagesForCollection(
-      collectionId,
-    );
-    Future<bool> filled(MediaImageKind kind) async {
-      for (final MediaImageRow row in images) {
-        if (row.kind == kind.dbValue) return _existingFile(row.path);
-      }
-      return false;
-    }
-
-    final bool coverFilled = await filled(MediaImageKind.discCover);
-    final bool artFilled = await filled(MediaImageKind.discArt);
-    if (coverFilled && artFilled) return;
-
-    final List<BlurayDiscArtwork> artwork = await readBlurayDiscArtwork(
-      discRootPath,
-      preferredLanguages: blurayLanguageCodes(
-        LocaleSettings.currentLocale.languageCode,
-      ),
-    );
-    if (artwork.isEmpty) return;
-    BlurayDiscArtwork? largest(bool portrait) {
-      BlurayDiscArtwork? best;
-      for (final BlurayDiscArtwork a in artwork) {
-        if ((a.aspect <= PortraitCoverImage.portraitAspectThreshold) !=
-            portrait) {
-          continue;
-        }
-        if (best == null || a.area > best.area) best = a;
-      }
-      return best;
-    }
-
-    try {
-      for (final (MediaImageKind kind, bool done, BlurayDiscArtwork? art)
-          in <(MediaImageKind, bool, BlurayDiscArtwork?)>[
-            (MediaImageKind.discCover, coverFilled, largest(true)),
-            (MediaImageKind.discArt, artFilled, largest(false)),
-          ]) {
-        if (done || art == null) continue;
-        await MediaCoverService.applyCollectionDiscImage(
-          database: _db,
-          collectionId: collectionId,
-          kind: kind,
-          sourcePath: art.path,
-        );
-      }
-    } on StateError catch (e) {
-      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
-    } on CoverImageInvalidException catch (e) {
-      // 盘上的图是不可信输入：解不开就当没有，合集照旧回落到刮削图。
-      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
-    } on FileSystemException catch (e) {
-      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
-    }
-  }
+  Future<void> _applyBlurayDiscArtwork(int collectionId, String discRootPath) =>
+      applyBlurayDiscCollectionArtwork(_db, collectionId, discRootPath);
 
   static Future<bool> _existingFile(String? path) async =>
       path != null && path.isNotEmpty && await File(path).exists();
@@ -2634,6 +2576,73 @@ class SourceLibraryScanner {
           restoreDissolvedGroups: restoreDissolvedGroups,
         );
     return (imported: report.imported, failed: report.failed);
+  }
+}
+
+/// 盘合集的盘面图（[SourceLibraryScanner] 扫描导入与下载流水线入库原盘共用，BUG-4245：
+/// 后者经 `VideoDownloadPipelineService.onDiscCollectionImported` 接进来）。规则见
+/// [SourceLibraryScanner._applyBlurayDiscArtwork]。
+Future<void> applyBlurayDiscCollectionArtwork(
+  FushiDatabase db,
+  int collectionId,
+  String discRootPath,
+) async {
+  final List<MediaImageRow> images = await db.getMediaImagesForCollection(
+    collectionId,
+  );
+  Future<bool> filled(MediaImageKind kind) async {
+    for (final MediaImageRow row in images) {
+      if (row.kind == kind.dbValue) {
+        return SourceLibraryScanner._existingFile(row.path);
+      }
+    }
+    return false;
+  }
+
+  final bool coverFilled = await filled(MediaImageKind.discCover);
+  final bool artFilled = await filled(MediaImageKind.discArt);
+  if (coverFilled && artFilled) return;
+
+  final List<BlurayDiscArtwork> artwork = await readBlurayDiscArtwork(
+    discRootPath,
+    preferredLanguages: blurayLanguageCodes(
+      LocaleSettings.currentLocale.languageCode,
+    ),
+  );
+  if (artwork.isEmpty) return;
+  BlurayDiscArtwork? largest(bool portrait) {
+    BlurayDiscArtwork? best;
+    for (final BlurayDiscArtwork a in artwork) {
+      if ((a.aspect <= PortraitCoverImage.portraitAspectThreshold) !=
+          portrait) {
+        continue;
+      }
+      if (best == null || a.area > best.area) best = a;
+    }
+    return best;
+  }
+
+  try {
+    for (final (MediaImageKind kind, bool done, BlurayDiscArtwork? art)
+        in <(MediaImageKind, bool, BlurayDiscArtwork?)>[
+          (MediaImageKind.discCover, coverFilled, largest(true)),
+          (MediaImageKind.discArt, artFilled, largest(false)),
+        ]) {
+      if (done || art == null) continue;
+      await MediaCoverService.applyCollectionDiscImage(
+        database: db,
+        collectionId: collectionId,
+        kind: kind,
+        sourcePath: art.path,
+      );
+    }
+  } on StateError catch (e) {
+    debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
+  } on CoverImageInvalidException catch (e) {
+    // 盘上的图是不可信输入：解不开就当没有，合集照旧回落到刮削图。
+    debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
+  } on FileSystemException catch (e) {
+    debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
   }
 }
 

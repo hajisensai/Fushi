@@ -2280,6 +2280,24 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
+  /// 所有任务里按整盘落位的原盘文件（BUG-4245：`kind = other` 且有整理目标与最终
+  /// 路径——普通 `other` 行不排布、没有目标路径）。盘形态由调用方按路径确证。
+  Future<List<VideoDownloadJobFileRow>> getPlacedDiscVideoDownloadJobFiles() =>
+      (select(videoDownloadJobFiles)
+            ..where(
+              ($VideoDownloadJobFilesTable t) =>
+                  t.kind.equals('other') &
+                  t.finalAbsolutePath.isNotNull() &
+                  t.targetRelativePath.isNotNull(),
+            )
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobFilesTable)>[
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.jobId),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.backendFileIndex),
+            ]))
+          .get();
+
   Future<List<VideoDownloadJobFileRow>> getVideoDownloadJobFiles(
     String jobId,
   ) =>

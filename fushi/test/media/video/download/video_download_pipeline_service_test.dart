@@ -21,7 +21,10 @@ import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.da
     show VideoAcquisitionDownloadSubmission;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
-    show videoDownloadJobConfirmedLookup, videoDownloadJobConfirmedLookups;
+    show
+        downloadJobWorks,
+        videoDownloadJobConfirmedLookup,
+        videoDownloadJobConfirmedLookups;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -35,6 +38,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
@@ -44,6 +48,8 @@ import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi_engine/updates/update_feed_port.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../bluray_fixture.dart';
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
 
@@ -5281,6 +5287,271 @@ void main() {
       expect(await hashOf(environment, 'unlinked'), stuckHash);
     });
   });
+
+  group('原盘下载整盘落位、按盘入库、刮削按盘作品承接身份（BUG-4245）', () {
+    /// 在 [discRoot] 下铺一张能被 [readBlurayDisc] 读出两条标题的盘（两集各 1500
+    /// 秒，TV 盘形状）。
+    void writeDisc(String discRoot) {
+      for (final String dir in <String>['PLAYLIST', 'CLIPINF', 'STREAM']) {
+        Directory(p.join(discRoot, 'BDMV', dir)).createSync(recursive: true);
+      }
+      File(
+        p.join(discRoot, 'BDMV', 'index.bdmv'),
+      ).writeAsBytesSync(Uint8List.fromList('INDX0200'.codeUnits));
+      Directory(p.join(discRoot, 'CERTIFICATE')).createSync(recursive: true);
+      File(
+        p.join(discRoot, 'CERTIFICATE', 'id.bdmv'),
+      ).writeAsBytesSync(Uint8List(16));
+      const int start = 45000 * 4;
+      const int seconds = 1500;
+      for (final (int i, String clip) in <String>['00010', '00011'].indexed) {
+        File(
+          p.join(discRoot, 'BDMV', 'PLAYLIST', '0000${i + 1}.mpls'),
+        ).writeAsBytesSync(
+          buildMplsFixture(
+            playItems: <FixturePlayItem>[
+              FixturePlayItem(
+                clipId: clip,
+                inTimeTicks: start,
+                outTimeTicks: start + 45000 * seconds,
+              ),
+            ],
+            marks: const <FixtureMark>[
+              FixtureMark(playItemIndex: 0, timestampTicks: start),
+            ],
+          ),
+        );
+        File(
+          p.join(discRoot, 'BDMV', 'CLIPINF', '$clip.clpi'),
+        ).writeAsBytesSync(
+          buildClpiFixture(
+            presentationStartTicks: start,
+            presentationEndTicks: start + 45000 * seconds,
+          ),
+        );
+        File(
+          p.join(discRoot, 'BDMV', 'STREAM', '$clip.m2ts'),
+        ).writeAsBytesSync(Uint8List(4096 + i));
+      }
+    }
+
+    /// 递归列 [root] 下全部文件：种子内相对路径（`/` 分隔）→ 文件。
+    Map<String, File> listTree(Directory root) => <String, File>{
+      for (final FileSystemEntity entity in root.listSync(recursive: true))
+        if (entity is File)
+          p.relative(entity.path, from: root.path).replaceAll(r'\', '/'):
+              entity,
+    };
+
+    test('两卷 BDMV 的 TV 任务：整盘平移、每卷一个盘合集、成员是 .mpls、'
+        '刮削按盘作品承接身份、崩溃重放幂等', () async {
+      // 种子原样：`MyGO BD/MYGO_1/BDMV/...`、`MyGO BD/MYGO_2/BDMV/...`。
+      final Directory staging = await Directory.systemTemp.createTemp(
+        'fushi-disc-payload-',
+      );
+      addTearDown(() => staging.delete(recursive: true));
+      writeDisc(p.join(staging.path, 'MyGO BD', 'MYGO_1'));
+      writeDisc(p.join(staging.path, 'MyGO BD', 'MYGO_2'));
+      final Map<String, File> tree = listTree(staging);
+      final List<String> names = tree.keys.toList()..sort();
+      final _MaterializingTorrentBackend backend =
+          _MaterializingTorrentBackend(<TorrentFileEntry>[
+            for (final (int i, String name) in names.indexed)
+              TorrentFileEntry(
+                name: name,
+                size: tree[name]!.lengthSync(),
+                progress: 1,
+                index: i,
+              ),
+          ]);
+      final _RecordingMetadataProvider recorder = _RecordingMetadataProvider(
+        VideoMetadataProviderKind.mal,
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+            backend: backend,
+            metadataProvider: recorder,
+          );
+      addTearDown(environment.close);
+      // 后端「落位」：按改名后的相对路径把种子内容放到来源根下（真后端的
+      // moveStorage 做的事；fake 只记次数）。
+      backend.onMoveStorage = () async {
+        for (final MapEntry<int, String> entry in backend.renamed.entries) {
+          final File source = tree[names[entry.key]]!;
+          final File target = File(
+            p.joinAll(<String>[
+              environment.root.path,
+              ...entry.value.split('/'),
+            ]),
+          );
+          await target.parent.create(recursive: true);
+          await source.copy(target.path);
+        }
+      };
+      const String jobId = 'bdmv-two-volume-job';
+      // 下载器与本机同视角：保存位置就在来源根下的 incoming。
+      final Directory incoming = Directory(
+        p.join(environment.root.path, 'incoming'),
+      );
+      await incoming.create(recursive: true);
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.organize,
+        observedSavePath: incoming.path,
+        identityJson: encodeVideoMediaReference(_confirmedReference()),
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final (int i, String name) in names.indexed) {
+        await environment.database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion.insert(
+            jobId: jobId,
+            backendFileIndex: Value<int?>(i),
+            originalRelativePath: name,
+            currentRelativePath: name,
+            sizeBytes: Value<int?>(tree[name]!.lengthSync()),
+            status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+
+      environment.service.wake();
+      VideoDownloadJobRow job = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+      );
+
+      // 修前：'unable to determine episode number: MyGO BD/MYGO_1/BDMV/...m2ts'。
+      // 现在一路走到刮削，用确认身份去取作品（记录器在 fetchWork 抛出）。
+      expect(job.stage, VideoDownloadJobStage.scrape, reason: job.lastError);
+      expect(job.lastError, contains('recorded confirmed lookup'));
+      expect(recorder.lookups, isNotEmpty);
+      expect(recorder.searchCalls, 0);
+
+      // 整盘平移：每个文件只剥掉发布根前缀，盘内结构与文件名一字不改。
+      const String display = 'Show (2026)';
+      for (final (int i, String name) in names.indexed) {
+        expect(
+          backend.renamed[i],
+          '$display/${name.substring('MyGO BD/'.length)}',
+          reason: name,
+        );
+      }
+      expect(backend.moveStoragePaths, isNotEmpty);
+      final List<VideoDownloadJobFileRow> rows = await environment.database
+          .getVideoDownloadJobFiles(jobId);
+      expect(
+        rows.every((VideoDownloadJobFileRow row) => row.kind == 'other'),
+        isTrue,
+        reason: '盘内文件不是散装视频',
+      );
+      expect(
+        rows.every(
+          (VideoDownloadJobFileRow row) =>
+              row.status == VideoDownloadJobFileStatus.imported,
+        ),
+        isTrue,
+      );
+
+      // 每卷一个 playlist 盘合集，成员是盘上真实的 .mpls，按标题顺序。
+      Future<Map<String, List<String>>> discCollections() async {
+        final Map<String, List<String>> result = <String, List<String>>{};
+        for (final MediaCollectionRow c
+            in await environment.database.getAllMediaCollections()) {
+          final List<String> paths = <String>[];
+          for (final MediaCollectionItemRow item
+              in await environment.database.getCollectionItems(c.id)) {
+            paths.add(
+              (await environment.database.getVideoBookByBookUid(
+                item.entryKey,
+              ))!.videoPath,
+            );
+          }
+          result[c.name] = paths;
+        }
+        return result;
+      }
+
+      final Map<String, List<String>> collections = await discCollections();
+      expect(collections.keys.toSet(), <String>{'MYGO_1', 'MYGO_2'});
+      for (final String volume in <String>['MYGO_1', 'MYGO_2']) {
+        expect(collections[volume], <String>[
+          p.join(
+            environment.root.path,
+            display,
+            volume,
+            'BDMV',
+            'PLAYLIST',
+            '00001.mpls',
+          ),
+          p.join(
+            environment.root.path,
+            display,
+            volume,
+            'BDMV',
+            'PLAYLIST',
+            '00002.mpls',
+          ),
+        ]);
+      }
+      final List<VideoBookRow> books = await environment.database
+          .allVideoBooks();
+      expect(books, hasLength(4));
+      expect(
+        books.every((VideoBookRow b) => b.sourceId == environment.sourceId),
+        isTrue,
+      );
+
+      // 刮削口径：每卷一部盘作品（不再每条 .mpls 一部），任务身份承接两卷。
+      final MediaSourceRow source = (await environment.database
+          .getMediaSourceById(environment.sourceId))!;
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        environment.database,
+      ).plan(source);
+      expect(works, hasLength(2));
+      final List<VideoSourceScrapeWork> bound = downloadJobWorks(
+        job,
+        rows,
+        works,
+      );
+      expect(bound.map((VideoSourceScrapeWork w) => w.title).toSet(), <String>{
+        'MYGO_1',
+        'MYGO_2',
+      });
+      expect(
+        bound.every((VideoSourceScrapeWork w) => w.members.length == 2),
+        isTrue,
+      );
+
+      // 崩溃重放：从 organize 重来——已落位的文件被认出，不再改名；入库对齐既有
+      // 盘合集，不重复建合集 / 行。
+      final int renamesBefore = backend.renameFileCalls;
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(VideoDownloadJobLifecycle.active),
+          stage: Value<String>(VideoDownloadJobStage.organize),
+          attemptCount: Value<int>(0),
+          nextAttemptAt: Value<int?>(null),
+          lastError: Value<String?>(null),
+        ),
+      );
+      environment.service.wake();
+      job = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.needsAttention &&
+            row.stage == VideoDownloadJobStage.scrape,
+      );
+      expect(backend.renameFileCalls, renamesBefore);
+      expect(await discCollections(), collections);
+      expect(await environment.database.allVideoBooks(), hasLength(4));
+    });
+  });
 }
 
 /// 与 torrent_metainfo_test 同款的最小 v1 metainfo（单文件 name=test）。
@@ -5910,6 +6181,35 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   ) async {
     renameFileCalls += 1;
     return TorrentStorageResult(ok: true, path: newPath);
+  }
+}
+
+/// 记下每个文件改到的相对路径，并在 moveStorage 时调 [onMoveStorage] 把内容真正
+/// 落到来源根下（BUG-4245 原盘入库要读真实的盘文件）。
+class _MaterializingTorrentBackend extends _FakeTorrentBackend {
+  _MaterializingTorrentBackend(List<TorrentFileEntry> files)
+    : super(files: files);
+
+  final Map<int, String> renamed = <int, String>{};
+  Future<void> Function()? onMoveStorage;
+
+  @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) {
+    renamed[fileIndex] = newPath;
+    return super.renameFile(torrentId, fileIndex, newPath);
+  }
+
+  @override
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  ) async {
+    await onMoveStorage?.call();
+    return super.moveStorage(torrentId, newSavePath);
   }
 }
 
