@@ -98,7 +98,9 @@ void main() {
     final (_StagedAppModel appModel, List<Color> primaries) = await _pumpPanel(
       tester,
     );
-    // Still loading: a plain surface, no app, no seed-colour content.
+    // Still loading: nothing painted (window background), no app, no
+    // seed-colour content.
+    expect(find.byType(ColoredBox), findsNothing);
     expect(find.byType(MaterialApp), findsNothing);
     expect(find.text('panel content'), findsNothing);
     expect(primaries, isEmpty);

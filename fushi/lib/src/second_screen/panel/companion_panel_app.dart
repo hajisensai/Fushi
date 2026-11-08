@@ -80,7 +80,7 @@ Future<void> runCompanionPanel(MethodChannel channel) async {
 /// Companion panel root: the user's theme and language, reloaded whenever the
 /// main process changes preferences.
 ///
-/// Nothing themed is painted before the AppModel has loaded them
+/// Nothing is painted before the AppModel has loaded them
 /// ([AppModel.isAppearanceReady], early in its initialisation): painting the
 /// seed-colour fallback first showed the default blue for seconds after every
 /// panel start. Only when initialisation failed does the fallback theme show.
@@ -161,9 +161,10 @@ class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp> {
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
     );
     if (!ready && appModel.initError == null) {
-      // Preferences are still loading (a fraction of a second): a plain
-      // surface instead of the fallback palette.
-      return ColoredBox(color: fallback.colorScheme.surface);
+      // Preferences are still loading (a fraction of a second): paint
+      // nothing, the window background stays (no third colour between it
+      // and the app theme).
+      return const SizedBox.shrink();
     }
     final Locale? locale = ready ? appModel.appLocale : null;
     // Most strings read the global `t`, which does not rebuild on a language

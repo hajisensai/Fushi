@@ -93,7 +93,7 @@
 - **Settings**（`companion_settings_tab.dart`）：先列「当前屏幕」的分类，再是搜索 + 全部分类。
 
 - 启动配色：面板进程的 `AppModel.initialiseForDictionaryPopup` 在偏好加载后立刻建好界面语言、主题与壁纸色板并置
-  `isAppearanceReady`，`runCompanionPanel` 在 `runApp` 之前就开始初始化；`CompanionPanelApp` 在此之前只画一块纯表面色，
+  `isAppearanceReady`，`runCompanionPanel` 在 `runApp` 之前就开始初始化；`CompanionPanelApp` 在此之前什么都不画（保留窗口背景），
   不先用默认种子色（蓝）画界面——之前要等整个初始化（词典、语言引擎、快捷键）完成，每次面板重启都蓝几秒。只有初始化失败
   才用回退主题。守卫 `test/second_screen/panel_process_system_palette_guard_test.dart`、
   `test/second_screen/companion_panel_startup_theme_test.dart`。
