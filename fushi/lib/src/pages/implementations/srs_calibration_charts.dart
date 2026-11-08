@@ -60,6 +60,78 @@ void _paintText(
   tp.paint(canvas, Offset(at.dx - tp.width * alignX, at.dy - tp.height / 2));
 }
 
+/// 一张图的命中回调：局部坐标 + 绘图区宽度（`toggle` 只来自点按，悬停/拖拽不带）。
+typedef _ChartPick = void Function(Offset local, double width, {bool toggle});
+
+/// 两张图共用的外壳：语义标签、定高、悬停 / 点按 / 横向拖拽命中、气泡配色都一致，
+/// 差异只在「坐标 → 第几箱」的算式和具体 painter。
+class _PickableChart extends StatelessWidget {
+  const _PickableChart({
+    required this.height,
+    required this.tooltip,
+    required this.onPick,
+    required this.onExit,
+    required this.painter,
+    this.onDrag,
+  });
+
+  final double height;
+  final List<String>? tooltip;
+  final _ChartPick onPick;
+  final VoidCallback onExit;
+  final CustomPainter Function(double width) painter;
+
+  /// 只有 UM+ 跟着手指连续选箱；校准图按箱吸附，不需要。
+  final _ChartPick? onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final _ChartPick? drag = onDrag;
+    return Semantics(
+      container: true,
+      label: tooltip?.join(', '),
+      child: SizedBox(
+        height: height,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            final double width = box.maxWidth;
+            return MouseRegion(
+              onHover: (PointerHoverEvent e) => onPick(e.localPosition, width),
+              onExit: (_) => onExit(),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (TapDownDetails d) =>
+                    onPick(d.localPosition, width, toggle: true),
+                onHorizontalDragUpdate: drag == null
+                    ? null
+                    : (DragUpdateDetails d) => drag(d.localPosition, width),
+                child: CustomPaint(
+                  size: Size(width, height),
+                  painter: painter(width),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// 底部「每箱复习数」淡柱：两张图共用，只差颜色与每根柱的矩形（宽度 / 高度系数由调用方算）。
+void _paintCountBars(Canvas canvas, Iterable<Rect> rects, Paint paint) {
+  for (final Rect rect in rects) {
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        rect,
+        topLeft: const Radius.circular(2),
+        topRight: const Radius.circular(2),
+      ),
+      paint,
+    );
+  }
+}
+
 /// 校准图。
 class SrsCalibrationChart extends StatefulWidget {
   const SrsCalibrationChart({
@@ -108,6 +180,23 @@ class _SrsCalibrationChartState extends State<SrsCalibrationChart> {
     return out;
   }
 
+  void _pick(Offset p, double width, {bool toggle = false}) {
+    const double left = 36;
+    final double plot = width - left - 8;
+    final double v = ((p.dx - left) / plot).clamp(0.0, 1.0);
+    int bin = 0;
+    while (bin < _kCalibrationBins - 1 && _calibrationEdge(bin + 1) <= v) {
+      bin++;
+    }
+    final bool has = widget.lines.any(
+      (SrsCalibrationLine l) =>
+          l.series.bins.any((SrsCalibrationBin b) => b.index == bin),
+    );
+    setState(
+      () => _selected = !has || (toggle && bin == _selected) ? null : bin,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final TextStyle style = _axisStyle(context);
@@ -115,60 +204,21 @@ class _SrsCalibrationChartState extends State<SrsCalibrationChart> {
     const double left = 36;
     final int? sel = _selected;
     final List<String>? tip = sel == null ? null : _tooltip(sel);
-    return Semantics(
-      container: true,
-      label: tip?.join(', '),
-      child: SizedBox(
-        height: widget.height,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints box) {
-            final double width = box.maxWidth;
-            void pick(Offset p, {bool toggle = false}) {
-              final double plot = width - left - 8;
-              final double v = ((p.dx - left) / plot).clamp(0.0, 1.0);
-              int bin = 0;
-              while (bin < _kCalibrationBins - 1 &&
-                  _calibrationEdge(bin + 1) <= v) {
-                bin++;
-              }
-              final bool has = widget.lines.any(
-                (SrsCalibrationLine l) =>
-                    l.series.bins.any((SrsCalibrationBin b) => b.index == bin),
-              );
-              setState(
-                () => _selected = !has || (toggle && bin == _selected)
-                    ? null
-                    : bin,
-              );
-            }
-
-            return MouseRegion(
-              onHover: (PointerHoverEvent e) => pick(e.localPosition),
-              onExit: (_) => setState(() => _selected = null),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (TapDownDetails d) =>
-                    pick(d.localPosition, toggle: true),
-                child: CustomPaint(
-                  size: Size(width, widget.height),
-                  painter: _SrsCalibrationPainter(
-                    lines: widget.lines,
-                    left: left,
-                    labelStyle: style,
-                    gridColor: scheme.onSurfaceVariant,
-                    surface: scheme.surfaceContainerLow,
-                    selected: sel,
-                    tooltip: tip,
-                    tooltipBackground: scheme.inverseSurface,
-                    tooltipStyle: style.copyWith(
-                      color: scheme.onInverseSurface,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+    return _PickableChart(
+      height: widget.height,
+      tooltip: tip,
+      onExit: () => setState(() => _selected = null),
+      onPick: _pick,
+      painter: (double width) => _SrsCalibrationPainter(
+        lines: widget.lines,
+        left: left,
+        labelStyle: style,
+        gridColor: scheme.onSurfaceVariant,
+        surface: scheme.surfaceContainerLow,
+        selected: sel,
+        tooltip: tip,
+        tooltipBackground: scheme.inverseSurface,
+        tooltipStyle: style.copyWith(color: scheme.onInverseSurface),
       ),
     );
   }
@@ -234,20 +284,16 @@ class _SrsCalibrationPainter extends CustomPainter {
     }
     final int n = math.max(1, lines.length);
     for (int s = 0; s < lines.length; s++) {
-      final Paint bar = Paint()..color = lines[s].color.withValues(alpha: 0.2);
-      for (final SrsCalibrationBin b in lines[s].series.bins) {
-        final double x0 = x(_calibrationEdge(b.index)) + 1;
-        final double w = (x(_calibrationEdge(b.index + 1)) - x0 - 1) / n;
-        final double h = b.count / maxCount * plotH * 0.4;
-        canvas.drawRRect(
-          RRect.fromRectAndCorners(
-            Rect.fromLTWH(x0 + s * w, plotH - h, math.max(1, w - 1), h),
-            topLeft: const Radius.circular(2),
-            topRight: const Radius.circular(2),
-          ),
-          bar,
-        );
-      }
+      _paintCountBars(
+        canvas,
+        lines[s].series.bins.map((SrsCalibrationBin b) {
+          final double x0 = x(_calibrationEdge(b.index)) + 1;
+          final double w = (x(_calibrationEdge(b.index + 1)) - x0 - 1) / n;
+          final double h = b.count / maxCount * plotH * 0.4;
+          return Rect.fromLTWH(x0 + s * w, plotH - h, math.max(1, w - 1), h);
+        }),
+        Paint()..color = lines[s].color.withValues(alpha: 0.2),
+      );
     }
     final int? sel = selected;
     if (sel != null) {
@@ -366,72 +412,50 @@ class _SrsUmPlusChartState extends State<SrsUmPlusChart> {
     if (_selected != null && _selected! >= widget.bins.length) _selected = null;
   }
 
+  void _pick(Offset p, double width, {bool toggle = false}) {
+    if (widget.bins.isEmpty) return;
+    const double left = 40;
+    final (double x0, double x1) = srsUmPlusDisagreementDomain(widget.bins);
+    final double plot = width - left - 8;
+    final double v = x0 + (p.dx - left) / plot * (x1 - x0);
+    int best = 0;
+    for (int i = 1; i < widget.bins.length; i++) {
+      if ((widget.bins[i].disagreement - v).abs() <
+          (widget.bins[best].disagreement - v).abs()) {
+        best = i;
+      }
+    }
+    setState(() => _selected = toggle && best == _selected ? null : best);
+  }
+
   @override
   Widget build(BuildContext context) {
     final TextStyle style = _axisStyle(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     const double left = 40;
-    final (double x0, double x1) = srsUmPlusDisagreementDomain(widget.bins);
     final int? sel = _selected;
     final List<String>? tip = sel == null
         ? null
         : widget.tooltipOf(widget.bins[sel]);
-    return Semantics(
-      container: true,
-      label: tip?.join(', '),
-      child: SizedBox(
-        height: widget.height,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints box) {
-            final double width = box.maxWidth;
-            void pick(Offset p, {bool toggle = false}) {
-              if (widget.bins.isEmpty) return;
-              final double plot = width - left - 8;
-              final double v = x0 + (p.dx - left) / plot * (x1 - x0);
-              int best = 0;
-              for (int i = 1; i < widget.bins.length; i++) {
-                if ((widget.bins[i].disagreement - v).abs() <
-                    (widget.bins[best].disagreement - v).abs()) {
-                  best = i;
-                }
-              }
-              setState(
-                () => _selected = toggle && best == _selected ? null : best,
-              );
-            }
-
-            return MouseRegion(
-              onHover: (PointerHoverEvent e) => pick(e.localPosition),
-              onExit: (_) => setState(() => _selected = null),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (TapDownDetails d) =>
-                    pick(d.localPosition, toggle: true),
-                onHorizontalDragUpdate: (DragUpdateDetails d) =>
-                    pick(d.localPosition),
-                child: CustomPaint(
-                  size: Size(width, widget.height),
-                  painter: _SrsUmPlusPainter(
-                    bins: widget.bins,
-                    total: widget.total,
-                    fsrsColor: widget.fsrs.color,
-                    rwkvColor: widget.rwkv.color,
-                    left: left,
-                    labelStyle: style,
-                    gridColor: scheme.onSurfaceVariant,
-                    surface: scheme.surfaceContainerLow,
-                    selected: sel,
-                    tooltip: tip,
-                    tooltipBackground: scheme.inverseSurface,
-                    tooltipStyle: style.copyWith(
-                      color: scheme.onInverseSurface,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+    return _PickableChart(
+      height: widget.height,
+      tooltip: tip,
+      onExit: () => setState(() => _selected = null),
+      onPick: _pick,
+      onDrag: _pick,
+      painter: (double width) => _SrsUmPlusPainter(
+        bins: widget.bins,
+        total: widget.total,
+        fsrsColor: widget.fsrs.color,
+        rwkvColor: widget.rwkv.color,
+        left: left,
+        labelStyle: style,
+        gridColor: scheme.onSurfaceVariant,
+        surface: scheme.surfaceContainerLow,
+        selected: sel,
+        tooltip: tip,
+        tooltipBackground: scheme.inverseSurface,
+        tooltipStyle: style.copyWith(color: scheme.onInverseSurface),
       ),
     );
   }
@@ -523,18 +547,14 @@ class _SrsUmPlusPainter extends CustomPainter {
       (int m, SrsUmPlusBin b) => math.max(m, b.count),
     );
     final double barW = math.max(2, plotW / ((x1 - x0) * 20) * 0.8);
-    final Paint bar = Paint()..color = gridColor.withValues(alpha: 0.14);
-    for (final SrsUmPlusBin b in bins) {
-      final double h = b.count / maxCount * plotH * 0.35;
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTWH(x(b.disagreement) - barW / 2, plotH - h, barW, h),
-          topLeft: const Radius.circular(2),
-          topRight: const Radius.circular(2),
-        ),
-        bar,
-      );
-    }
+    _paintCountBars(
+      canvas,
+      bins.map((SrsUmPlusBin b) {
+        final double h = b.count / maxCount * plotH * 0.35;
+        return Rect.fromLTWH(x(b.disagreement) - barW / 2, plotH - h, barW, h);
+      }),
+      Paint()..color = gridColor.withValues(alpha: 0.14),
+    );
     final int? sel = selected;
     if (sel != null) {
       final double cx = x(bins[sel].disagreement);
