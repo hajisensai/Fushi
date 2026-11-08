@@ -39,4 +39,23 @@ void main() {
           'before that)',
     );
   });
+
+  test('the panel / popup engine registers the dynamic_color plugin', () {
+    // Both secondary engines (SecondScreenActivity, the :popup engine) use
+    // this hand-written registrant instead of GeneratedPluginRegistrant.
+    // Without dynamic_color, getCorePalette throws MissingPluginException,
+    // which refreshSystemPalette turns into "no palette" (seed colour).
+    final File registrant = File(
+      'android/app/src/main/java/app/fushi/reader/'
+      'FloatingDictPluginRegistrant.java',
+    );
+    expect(registrant.existsSync(), isTrue, reason: registrant.absolute.path);
+    expect(
+      registrant.readAsStringSync().replaceAll(RegExp(r'\s+'), ' '),
+      contains(
+        'getPlugins().add( new '
+        'io.material.plugins.dynamic_color.DynamicColorPlugin())',
+      ),
+    );
+  });
 }
