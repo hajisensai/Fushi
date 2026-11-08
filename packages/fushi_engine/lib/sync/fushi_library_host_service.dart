@@ -191,6 +191,7 @@ class RemoteAudiobookInfo {
     this.delayUpdatedAtMs = 0,
     this.importedAt,
     this.hasAudio,
+    this.contentRevision,
   });
 
   final String bookKey;
@@ -227,6 +228,13 @@ class RemoteAudiobookInfo {
   /// null = 旧 host 不下发此字段，**未知**（消费方必须按旧行为放行，不能当 false）。
   final bool? hasAudio;
 
+  /// host 上这本有声书的**内容版本**（`audiobookContentState`）：音频或字幕一换就变，
+  /// 断点 / 调轴 / 标题变了不变。不透明字符串，只比相等。
+  ///
+  /// client 在下载时记下它，之后清单里的值不同 = host 上内容换过，提示可以重新下载。
+  /// null = 旧 host 不下发（未知，消费方不得据此提示更新）。
+  final String? contentRevision;
+
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
 
@@ -243,6 +251,7 @@ class RemoteAudiobookInfo {
     if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
     if (importedAt != null) 'importedAt': importedAt,
     if (hasAudio != null) 'hasAudio': hasAudio,
+    if (contentRevision != null) 'contentRevision': contentRevision,
   };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -260,6 +269,11 @@ class RemoteAudiobookInfo {
         importedAt: (json['importedAt'] as num?)?.toInt(),
         // 缺键 / 非 bool → null（未知），**不是** false：旧 host 的清单一律放行。
         hasAudio: json['hasAudio'] is bool ? json['hasAudio']! as bool : null,
+        contentRevision:
+            (json['contentRevision'] is String &&
+                (json['contentRevision']! as String).isNotEmpty)
+            ? json['contentRevision']! as String
+            : null,
       );
 }
 
@@ -286,6 +300,15 @@ abstract interface class AudiobookSubtitleHost {
   /// 把身份键为 [identity] 的有声书字幕侧打成临时包，返回该文件（调用方负责删除
   /// 它及其父临时目录）。查无此书抛 [StateError]，含路径穿越字符抛 [ArgumentError]。
   Future<File> exportAudiobookSubtitles(String identity);
+}
+
+/// host 端「有声书内容版本」的**可选**能力（与 [AudiobookDelayHost] 同范式，不并进
+/// 主接口）。包端点拿它给导出缓存定版本：缓存的包只在版本相同时命中，内容换过的书
+/// 下一次普通下载就重新打包。host 不实现 → 缓存只按 TTL 换代（旧行为）。
+abstract interface class AudiobookContentRevisionHost {
+  /// 身份键为 [identity] 的有声书此刻的内容版本（与清单的
+  /// [RemoteAudiobookInfo.contentRevision] 同值）；查无此书返回 null。
+  Future<String?> audiobookContentRevision(String identity);
 }
 
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /

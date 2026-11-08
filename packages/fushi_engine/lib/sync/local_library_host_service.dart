@@ -76,6 +76,7 @@ import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/audiobook_content_revision.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
@@ -154,6 +155,7 @@ abstract class _LocalLibraryHostBase
         VideoClipExportHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
+        AudiobookContentRevisionHost,
         VideoSubtitleDefaultHost,
         VideoSubtitleClearHost,
         InterconnectServiceConfigHost,

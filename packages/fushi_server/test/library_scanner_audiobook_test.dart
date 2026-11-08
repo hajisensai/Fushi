@@ -9,6 +9,9 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
@@ -423,5 +426,166 @@ void main() {
     expect(first.audiobooksAdded, 0);
     await scan();
     expect(await db.getAllSrtBooks(), isEmpty);
+  });
+
+  // ── 多文件 + 一份单时间轴字幕：cue 按各文件实测时长分配（BUG-4248）──────────
+
+  /// 换掉服务端装配的 ffprobe 探测：测试里的 mp3 是假字节，按文件名给时长。
+  void fakeDurations(Map<String, int> byName) {
+    AudiobookStorage.audioDurationProbeMs = (String path) async =>
+        byName[p.basename(path)] ?? 0;
+  }
+
+  List<(int, int)> placement(List<AudioCue> cues) => <(int, int)>[
+    for (final AudioCue c
+        in List<AudioCue>.of(cues)..sort(
+          (AudioCue a, AudioCue b) =>
+              a.sentenceIndex.compareTo(b.sentenceIndex),
+        ))
+      (c.audioFileIndex, c.startMs),
+  ];
+
+  test('服务端装配了有声书时长探测（ffprobe），不再是全 0 的未装配状态', () {
+    expect(AudiobookStorage.audioDurationProbeMs, isNotNull);
+  });
+
+  test('独立字幕书：两个文件导入时 cue 按时长分到各文件；补第三段重扫后重新分配', () async {
+    fakeDurations(<String, int>{
+      '01.mp3': 2000,
+      '02.mp3': 2000,
+      '03.mp3': 2000,
+    });
+    addTearDown(() => AudiobookStorage.audioDurationProbeMs = null);
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, '01.mp3'));
+    _write(p.join(book, '02.mp3'));
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+
+    expect((await scan()).audiobooksAdded, 1);
+    final SrtBook imported = await standalone('Neko');
+    expect(
+      placement(await SrtBookRepository(db).cuesFor(imported.uid)),
+      <(int, int)>[(0, 0), (1, 0), (1, 2000)],
+      reason: '第 3 句起点在两段总长之后：夹在最后一个文件末尾，不丢句子',
+    );
+
+    _write(p.join(book, '03.mp3'));
+    final ScanSummary added = await scan();
+    expect(added.errors, isEmpty);
+    expect(added.audiobooksUpdated, 1);
+    expect(
+      placement(await SrtBookRepository(db).cuesFor(imported.uid)),
+      <(int, int)>[(0, 0), (1, 0), (2, 0)],
+    );
+  });
+
+  test('EPUB 有声书：两个文件导入时 cue 按时长分到各文件；补第三段重扫后重新分配', () async {
+    fakeDurations(<String, int>{
+      '01.mp3': 2000,
+      '02.mp3': 2000,
+      '03.mp3': 2000,
+    });
+    addTearDown(() => AudiobookStorage.audioDurationProbeMs = null);
+    final File txt = File(p.join(tmp.path, 'neko.txt'))
+      ..writeAsStringSync('吾輩は猫である。\n\n名前はまだ無い。\n\nどこで生れたかとんと見当がつかぬ。\n');
+    final Uint8List epub = await TextToEpub.convert(file: txt, title: 'Neko');
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, 'Neko.epub'), epub);
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+    _write(p.join(book, '01.mp3'));
+    _write(p.join(book, '02.mp3'));
+
+    expect((await scan()).audiobooksAdded, 1);
+    final String bookKey = (await db.getAllAudiobooks()).single.bookKey;
+    expect(
+      placement(await AudiobookRepository(db).cuesForBook(bookKey)),
+      <(int, int)>[(0, 0), (1, 0), (1, 2000)],
+    );
+    final int importedAt = (await SrtBookRepository(
+      db,
+    ).findByBookKey(bookKey))!.importedAt;
+
+    _write(p.join(book, '03.mp3'));
+    final ScanSummary added = await scan();
+    expect(added.errors, isEmpty);
+    expect(added.audiobooksUpdated, 1);
+    expect(
+      placement(await AudiobookRepository(db).cuesForBook(bookKey)),
+      <(int, int)>[(0, 0), (1, 0), (2, 0)],
+      reason: '只换音频也要按新文件清单重新分配（同一份持久字幕重新对齐）',
+    );
+    expect(
+      (await SrtBookRepository(db).findByBookKey(bookKey))!.importedAt,
+      importedAt,
+      reason: '重新对齐不是新导入',
+    );
+    expect(await persistedSubtitles(bookKey), hasLength(1));
+  });
+
+  test('探不出时长（未装配 / 坏文件）时 cue 留在第 0 个文件，不猜', () async {
+    fakeDurations(<String, int>{'01.mp3': 2000});
+    addTearDown(() => AudiobookStorage.audioDurationProbeMs = null);
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, '01.mp3'));
+    _write(p.join(book, '02.mp3'));
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+
+    expect((await scan()).audiobooksAdded, 1);
+    final SrtBook imported = await standalone('Neko');
+    expect(
+      placement(await SrtBookRepository(db).cuesFor(imported.uid)),
+      <(int, int)>[(0, 0), (0, 2000), (0, 4000)],
+    );
+  });
+
+  // ── 互联清单的内容版本（contentRevision）────────────────────────────────
+
+  test('清单的 contentRevision：没变的重扫不变；补分段、换字幕各变一次', () async {
+    final LocalLibraryHostService host = LocalLibraryHostService(
+      db: db,
+      dictionaryResourceRoot: Directory(p.join(tmp.path, 'dicts'))
+        ..createSync(),
+      packages: SyncAssetPackageService(db: db),
+      refreshDictionaryCache: () async {},
+      runExclusive: (Future<void> Function() body) => body(),
+    );
+    Future<String?> revision() async {
+      final List<RemoteAudiobookInfo> list = await host.listAudiobooks();
+      expect(list, hasLength(1));
+      final String? rev = list.single.contentRevision;
+      expect(
+        await host.audiobookContentRevision(list.single.identity),
+        rev,
+        reason: '包端点给导出缓存定版本用的值必须与清单同源',
+      );
+      return rev;
+    }
+
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, '01.mp3'));
+    _writeText(p.join(book, 'neko.srt'), _kSrt);
+    await scan();
+    final String? r1 = await revision();
+    expect(r1, isNotNull);
+    expect(r1, startsWith('r1-'));
+
+    expect((await scan()).audiobooksUpdated, 0);
+    expect(await revision(), r1, reason: '没变的重扫不写库，版本不变');
+
+    _write(p.join(book, '02.mp3'));
+    expect((await scan()).audiobooksUpdated, 1);
+    final String? r2 = await revision();
+    expect(r2, isNot(r1));
+
+    // 换字幕：持久副本可能与旧副本同名，版本靠大小 / 修改时刻区分。
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+    expect((await scan()).audiobooksUpdated, 1);
+    final String? r3 = await revision();
+    expect(r3, isNot(r2));
+    expect(r3, isNot(r1));
+
+    expect((await scan()).audiobooksUpdated, 0);
+    expect(await revision(), r3);
   });
 }
