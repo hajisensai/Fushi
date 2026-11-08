@@ -38,6 +38,19 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4233](bugs/BUG-4233-ldoce-mdx-sound-sandbox-swallowed.md) | ✅ | ✅ | LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击） |
+> 共 3803 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
+| [BUG-4240](bugs/BUG-4240-music-plugin-enabled-state-concurrent-load.md) | ✅ | ✅ | 音乐插件启停状态并发首读各得一份副本，停用丢失 |
+| [BUG-4239](bugs/BUG-4239-continuous-diagonal-swipe-dropped.md) | ✅ | ✅ | 滚动模式斜着滑（拇指弧线）正文不动、也不跨章 |
+| [BUG-4238](bugs/BUG-4238-android-file-rss-no-attribution.md) | ✅ | ✅ | Android 文件映射常驻暴涨时没有按文件分项 |
+| [BUG-4237](bugs/BUG-4237-android-tombstone-summary-misses-crash-thread.md) | ✅ | ✅ | Android 原生崩溃摘要抽不到崩溃线程栈 |
+| [BUG-4236](bugs/BUG-4236-manga-series-chapter-column-anr.md) | ✅ | ✅ | 作品页章节表一次建全上千行致主线程 ANR |
+| [BUG-4235](bugs/BUG-4235-anime-subtitle-file-uri-fetched-over-http.md) | ✅ | ✅ | 在线视频源本地 file:// 字幕被当 HTTP 去取 |
+| [BUG-4234](bugs/BUG-4234-windows-memory-sample-no-breakdown.md) | ✅ | ✅ | Windows 内存采样只有工作集没有分项 |
+| [BUG-4233](bugs/BUG-4233-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
 | [BUG-4232](bugs/BUG-4232-anki-source-link-mine-missing-original.md) | ✅ | ✅ | anki-source-link-mine-missing-original |
 | [BUG-4231](bugs/BUG-4231-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
 | [BUG-4230](bugs/BUG-4230-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |

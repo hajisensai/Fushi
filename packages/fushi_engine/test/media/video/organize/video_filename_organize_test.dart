@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/video/download/video_download_path_mapping.da
 import 'package:fushi_engine/media/video/organize/video_filename_organize.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart';
 import 'package:fushi_engine/media/video/subtitle_text_override_keys.dart';
+import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart'
+    show videoSourceFolderPath;
 import 'package:fushi_engine/media/video/video_path_migration.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
@@ -66,9 +68,15 @@ class _FakeBackend implements TorrentBackend {
     final TorrentFileEntry file = files.firstWhere(
       (TorrentFileEntry f) => f.index == fileIndex,
     );
+    // 与 libtorrent `rename_file` 一样：新相对路径可以带目录，引擎自己建。
+    final String target = p.joinAll(<String>[
+      savePath,
+      ...p.posix.split(newPath),
+    ]);
+    Directory(p.dirname(target)).createSync(recursive: true);
     File(
       p.joinAll(<String>[savePath, ...p.posix.split(file.name)]),
-    ).renameSync(p.joinAll(<String>[savePath, ...p.posix.split(newPath)]));
+    ).renameSync(target);
     files[files.indexOf(file)] = TorrentFileEntry(
       name: newPath,
       size: file.size,
@@ -711,6 +719,496 @@ void main() {
       );
       expect((await service.apply(plan)).outcomes, isEmpty);
       expect(File(newVideo()).readAsStringSync(), 'someone else');
+    });
+  });
+
+  group('纯函数：规范目录 / 库根 / 搬空的目录', () {
+    test('电影 [标题 (年份)]；剧集再加 Season 01；横跨多季只到作品层', () {
+      expect(
+        canonicalVideoDirectorySegments(
+          const VideoFilenameIdentity(title: 'Re:Zero', year: 2016),
+        ),
+        <String>['Re：Zero (2016)'],
+      );
+      expect(
+        canonicalVideoDirectorySegments(
+          const VideoFilenameIdentity(
+            title: 'Show',
+            seasonNumber: 0,
+            episodeNumbers: <int>[1],
+          ),
+        ),
+        <String>['Show', 'Season 00'],
+      );
+      expect(
+        canonicalVideoDirectorySegments(
+          const VideoFilenameIdentity(
+            title: 'Show',
+            seasonNumber: 1,
+            episodeNumbers: <int>[1],
+            spansMultipleSeasons: true,
+          ),
+        ),
+        <String>['Show'],
+      );
+      expect(
+        canonicalVideoDirectorySegments(const VideoFilenameIdentity(title: '')),
+        isNull,
+      );
+    });
+
+    test('库根取最深的那个；根本身不算之下', () {
+      final String base = p.join(Directory.systemTemp.path, 'lib');
+      final String nested = p.join(base, 'anime');
+      expect(
+        containingLibraryRoot(p.join(nested, 'a', 'x.mkv'), <String>[
+          base,
+          nested,
+        ]),
+        p.normalize(nested),
+      );
+      expect(containingLibraryRoot(base, <String>[base]), isNull);
+      expect(
+        containingLibraryRoot(p.join(base, 'x.mkv'), <String>['relative']),
+        isNull,
+      );
+    });
+
+    test('搬空候选：根之内、由深到浅、去重', () {
+      final String root = p.join(Directory.systemTemp.path, 'lib');
+      expect(
+        emptiedDirectoryCandidates(<String>[
+          p.join(root, 'dl', 'Show', 'a.mkv'),
+          p.join(root, 'dl', 'Show', 'a.srt'),
+          p.join(root, 'b.mkv'),
+        ], root),
+        <String>[p.join(root, 'dl', 'Show'), p.join(root, 'dl')],
+      );
+    });
+
+    test('季图落点：seasonXX-* 进作品目录，其余进季目录', () {
+      expect(
+        seasonSidecarBelongsInWorkDirectory('season01-poster.jpg'),
+        isTrue,
+      );
+      expect(
+        seasonSidecarBelongsInWorkDirectory('season-specials-poster.jpg'),
+        isTrue,
+      );
+      expect(seasonSidecarBelongsInWorkDirectory('season.nfo'), isFalse);
+      expect(seasonSidecarBelongsInWorkDirectory('poster.jpg'), isFalse);
+    });
+
+    test('跨目录搬：目标目录里的同名文件算冲突；保留原名时只换目录', () {
+      final String from = p.join(Directory.systemTemp.path, 'a');
+      final String to = p.join(Directory.systemTemp.path, 'b');
+      expect(
+        planVideoFileMoves(
+          videoPath: p.join(from, 'ep01.mkv'),
+          dirFileNames: <String>['ep01.mkv'],
+          targetDirectory: to,
+          targetDirFileNames: <String>['ep01.mkv'],
+        ).status,
+        VideoFilenamePlanStatus.conflict,
+      );
+      final VideoFilenameItemDraft draft = planVideoFileMoves(
+        videoPath: p.join(from, 'ep01.mkv'),
+        dirFileNames: <String>['ep01.mkv', 'ep01.ja.srt'],
+        targetDirectory: to,
+      );
+      expect(draft.status, VideoFilenamePlanStatus.ready);
+      expect(draft.moves.map((VideoFileMove m) => m.to), <String>[
+        p.join(to, 'ep01.mkv'),
+        p.join(to, 'ep01.ja.srt'),
+      ]);
+      expect(
+        planVideoFileMoves(
+          videoPath: p.join(to, 'ep01.mkv'),
+          dirFileNames: <String>['ep01.mkv'],
+          targetDirectory: to,
+        ).status,
+        VideoFilenamePlanStatus.unchanged,
+      );
+    });
+  });
+
+  group('归到规范目录（VideoOrganizeLayout.directories）', () {
+    late Directory tmp;
+    late FushiDatabase db;
+    late String root;
+    late int sourceId;
+    late String oldDir;
+    late String video;
+    late String subtitle;
+    const String movieTitle = 'ぼっち・ざ・ろっく！ Re:';
+    const String workDirName = 'ぼっち・ざ・ろっく！ Re： (2024)';
+
+    String newDir() => p.join(root, workDirName);
+    String newVideo() => p.join(newDir(), '$workDirName.mkv');
+    String newSubtitle() => p.join(newDir(), '$workDirName.ja.ass');
+
+    Future<VideoBookRow> book(String uid) async => (await db.allVideoBooks())
+        .firstWhere((VideoBookRow r) => r.bookUid == uid);
+
+    Future<int> seedMovie({String uid = 'video/re', String? path}) async {
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: movieTitle,
+          videoPath: path ?? video,
+          subtitleSource: Value<String?>(path == null ? subtitle : null),
+          sourceId: Value<int?>(sourceId),
+          lastPositionMs: const Value<int>(777),
+        ),
+      );
+      return db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              bookUid: Value<String?>(uid),
+              mediaType: 'movie',
+              title: movieTitle,
+              year: const Value<int?>(2024),
+              updatedAt: 1,
+            ),
+          );
+    }
+
+    setUp(() async {
+      tmp = Directory.systemTemp.createTempSync('fushi_dirorg_');
+      root = p.join(tmp.path, 'lib');
+      oldDir = p.join(root, 'dl', 'Bocchi');
+      Directory(oldDir).createSync(recursive: true);
+      video = p.join(oldDir, 'ぼっち・ざ・ろっく！ Re_Re_ (2024).mkv');
+      subtitle = p.join(oldDir, 'ぼっち・ざ・ろっく！ Re_Re_ (2024).ja.ass');
+      File(video).writeAsStringSync('mkv!');
+      File(subtitle).writeAsStringSync('ass');
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      sourceId = await db
+          .into(db.mediaSources)
+          .insert(
+            MediaSourcesCompanion.insert(
+              label: 'lib',
+              mediaKind: 'video',
+              rootPath: root,
+              createdAt: 1,
+            ),
+          );
+    });
+
+    tearDown(() async {
+      await db.close();
+      tmp.deleteSync(recursive: true);
+    });
+
+    test('电影：搬进 <库根>/标题 (年份)/，搬空的旧目录删掉；撤销原路搬回、新目录收掉', () async {
+      await seedMovie();
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      final VideoFilenameOrganizePlan plan = await service.plan(<String>[
+        'video/re',
+      ], layout: VideoOrganizeLayout.directories);
+      final VideoFilenameItemPlan item = plan.items.single;
+      expect(item.status, VideoFilenamePlanStatus.ready);
+      expect(item.changesDirectory, isTrue);
+      expect(
+        item.moves.map((VideoFilenamePlannedMove m) => m.move.to),
+        <String>[newVideo(), newSubtitle()],
+      );
+
+      final VideoFilenameOrganizeResult result = await service.apply(plan);
+      expect(
+        result.renamedCount,
+        1,
+        reason: '${result.failures.map((o) => o.error)}',
+      );
+      expect(File(newVideo()).readAsStringSync(), 'mkv!');
+      expect(File(newSubtitle()).existsSync(), isTrue);
+      expect(Directory(p.join(root, 'dl')).existsSync(), isFalse);
+      expect(Directory(root).existsSync(), isTrue, reason: '库根本身绝不删');
+      final VideoBookRow row = await book('video/re');
+      expect(row.videoPath, p.normalize(newVideo()));
+      expect(row.subtitleSource, p.normalize(newSubtitle()));
+      expect(row.lastPositionMs, 777);
+
+      final VideoFilenameOrganizeResult undo = await service.apply(
+        result.undoPlan!,
+      );
+      expect(undo.renamedCount, 1);
+      expect(File(video).readAsStringSync(), 'mkv!');
+      expect(File(subtitle).existsSync(), isTrue);
+      expect(Directory(newDir()).existsSync(), isFalse);
+      expect((await book('video/re')).videoPath, p.normalize(video));
+    });
+
+    test('不在任何来源库根下：outsideLibraryRoot；只改文件名照常可做', () async {
+      final String outside = p.join(tmp.path, 'elsewhere', 'movie.mkv');
+      Directory(p.dirname(outside)).createSync(recursive: true);
+      File(outside).writeAsStringSync('x');
+      await seedMovie(uid: 'video/out', path: outside);
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      expect(
+        (await service.plan(<String>[
+          'video/out',
+        ], layout: VideoOrganizeLayout.directories)).items.single.status,
+        VideoFilenamePlanStatus.outsideLibraryRoot,
+      );
+      expect(
+        (await service.plan(<String>['video/out'])).items.single.status,
+        VideoFilenamePlanStatus.ready,
+      );
+    });
+
+    test('在做种：保存目录之内走引擎改相对路径（可换目录）；要搬出保存目录的拒绝', () async {
+      await seedMovie();
+      final String relative = 'dl/Bocchi/${p.basename(video)}';
+      _FakeBackend backendAt(String savePath, String name) => _FakeBackend(
+        savePath: savePath,
+        files: <TorrentFileEntry>[
+          TorrentFileEntry(name: name, size: 4, progress: 1, index: 0),
+        ],
+      );
+
+      final _FakeBackend inside = backendAt(root, relative);
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+        backendFactory: () => inside,
+        pathMappings: () async => const <VideoDownloadPathMapping>[],
+      );
+      final VideoFilenameOrganizePlan plan = await service.plan(<String>[
+        'video/re',
+      ], layout: VideoOrganizeLayout.directories);
+      expect(plan.items.single.isSeeding, isTrue);
+      final VideoFilenameOrganizeResult result = await service.apply(plan);
+      expect(
+        result.renamedCount,
+        1,
+        reason: '${result.failures.map((o) => o.error)}',
+      );
+      expect(inside.renameCalls, <String>[
+        'abc123#0->$workDirName/$workDirName.mkv',
+      ]);
+      expect(File(newVideo()).existsSync(), isTrue);
+      await service.apply(result.undoPlan!);
+      expect(inside.renameCalls.last, 'abc123#0->$relative');
+      expect(File(video).existsSync(), isTrue);
+
+      final VideoFilenameOrganizeService narrow = VideoFilenameOrganizeService(
+        database: db,
+        backendFactory: () => backendAt(oldDir, p.basename(video)),
+        pathMappings: () async => const <VideoDownloadPathMapping>[],
+      );
+      final VideoFilenameOrganizePlan blocked = await narrow.plan(<String>[
+        'video/re',
+      ], layout: VideoOrganizeLayout.directories);
+      expect(
+        blocked.items.single.status,
+        VideoFilenamePlanStatus.torrentOutsideSaveRoot,
+      );
+      expect(blocked.ready, isEmpty);
+    });
+
+    test('目录合集：成员全部跟着走 → 换目录键（撤销换回）；拆开合集 → 拒绝', () async {
+      await seedMovie();
+      final int collectionId = await db
+          .into(db.mediaCollections)
+          .insert(
+            MediaCollectionsCompanion.insert(
+              name: 'dl',
+              createdAt: 1,
+              sourceFolderPath: Value<String?>(
+                videoSourceFolderPath(video, root),
+              ),
+            ),
+          );
+      await db.addToCollection(collectionId, MediaKind.video, 'video/re');
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      final VideoFilenameOrganizePlan plan = await service.plan(<String>[
+        'video/re',
+      ], layout: VideoOrganizeLayout.directories);
+      expect(
+        plan.folderCollectionMoves.single.toKey,
+        videoSourceFolderPath(newVideo(), root),
+      );
+      final VideoFilenameOrganizeResult result = await service.apply(plan);
+      expect(result.appliedCollectionMoves, hasLength(1));
+      expect(
+        (await db.getMediaCollectionById(collectionId))!.sourceFolderPath,
+        videoSourceFolderPath(newVideo(), root),
+      );
+      await service.apply(result.undoPlan!);
+      expect(
+        (await db.getMediaCollectionById(collectionId))!.sourceFolderPath,
+        videoSourceFolderPath(video, root),
+      );
+
+      // 同一目录合集里还有一个不在这一批的成员：搬走一个就把合集拆了。
+      final String other = p.join(oldDir, 'other.mkv');
+      File(other).writeAsStringSync('o');
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/other',
+          title: 'other',
+          videoPath: other,
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+      await db.addToCollection(collectionId, MediaKind.video, 'video/other');
+      final VideoFilenameOrganizePlan split = await service.plan(<String>[
+        'video/re',
+      ], layout: VideoOrganizeLayout.directories);
+      expect(
+        split.items.single.status,
+        VideoFilenamePlanStatus.folderCollectionSplit,
+      );
+      expect(split.folderCollectionMoves, isEmpty);
+    });
+
+    test('多集播放列表：只改名不支持；归目录时各集保留原名搬进季目录，各集进度原样', () async {
+      final int showCollection = await db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: 'Show', createdAt: 1));
+      final int workId = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(showCollection),
+              mediaType: 'tv',
+              title: 'Show',
+              year: const Value<int?>(2020),
+              updatedAt: 1,
+            ),
+          );
+      final int seasonId = await db
+          .into(db.videoMetadataSeasons)
+          .insert(
+            VideoMetadataSeasonsCompanion.insert(
+              workId: workId,
+              seasonNumber: 1,
+              updatedAt: 1,
+            ),
+          );
+      final String a = p.join(oldDir, 'show 01.mkv');
+      final String b = p.join(oldDir, 'show 02.mkv');
+      File(a).writeAsStringSync('a');
+      File(b).writeAsStringSync('b');
+      File(p.join(oldDir, 'show 02.zh.srt')).writeAsStringSync('s');
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/pl',
+          title: 'Show',
+          videoPath: a,
+          sourceId: Value<int?>(sourceId),
+          playlistJson: Value<String?>(
+            jsonEncode(<Object?>[
+              <String, Object?>{'title': '1', 'path': a, 'positionMs': 11},
+              <String, Object?>{'title': '2', 'path': b, 'positionMs': 22},
+            ]),
+          ),
+        ),
+      );
+      for (final int n in <int>[1, 2]) {
+        await db
+            .into(db.videoMetadataEpisodes)
+            .insert(
+              VideoMetadataEpisodesCompanion.insert(
+                seasonId: seasonId,
+                bookUid: const Value<String?>('video/pl'),
+                episodeNumber: n,
+                updatedAt: 1,
+              ),
+            );
+      }
+      // 作品级 sidecar（刮削写在旧作品目录的 tvshow.nfo）：作品的全部条目都在
+      // 这一批里，跟着搬进新作品目录。
+      final String nfo = p.join(oldDir, 'tvshow.nfo');
+      File(nfo).writeAsStringSync('<tvshow/>');
+      await db
+          .into(db.videoSidecarArtifacts)
+          .insert(
+            VideoSidecarArtifactsCompanion.insert(
+              workId: Value<int?>(workId),
+              artifactKind: 'nfo',
+              path: nfo,
+              sha256: 'x',
+              generatorVersion: '1',
+              writePolicy: 'managed',
+              createdAt: 1,
+              updatedAt: 1,
+            ),
+          );
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      expect(
+        (await service.plan(<String>['video/pl'])).items.single.status,
+        VideoFilenamePlanStatus.playlistNeedsDirectories,
+      );
+      final VideoFilenameOrganizePlan plan = await service.plan(<String>[
+        'video/pl',
+      ], layout: VideoOrganizeLayout.directories);
+      expect(plan.items.single.status, VideoFilenamePlanStatus.ready);
+      final VideoFilenameOrganizeResult result = await service.apply(plan);
+      expect(
+        result.renamedCount,
+        1,
+        reason: '${result.failures.map((o) => o.error)}',
+      );
+      final String season = p.join(root, 'Show (2020)', 'Season 01');
+      expect(File(p.join(season, 'show 01.mkv')).existsSync(), isTrue);
+      expect(File(p.join(season, 'show 02.mkv')).existsSync(), isTrue);
+      expect(File(p.join(season, 'show 02.zh.srt')).existsSync(), isTrue);
+      final String newNfo = p.join(root, 'Show (2020)', 'tvshow.nfo');
+      expect(File(newNfo).existsSync(), isTrue);
+      expect(
+        (await db.select(db.videoSidecarArtifacts).get()).single.path,
+        p.normalize(newNfo),
+      );
+      final VideoBookRow row = await book('video/pl');
+      expect(row.videoPath, p.normalize(p.join(season, 'show 01.mkv')));
+      final List<Object?> entries =
+          jsonDecode(row.playlistJson!) as List<Object?>;
+      expect((entries[1]! as Map<String, Object?>)['positionMs'], 22);
+      expect(
+        (entries[1]! as Map<String, Object?>)['path'],
+        p.normalize(p.join(season, 'show 02.mkv')),
+      );
+      // 旧目录里还有不相干的文件（setUp 放的电影）：不是搬空的目录，原样保留。
+      expect(
+        Directory(
+          oldDir,
+        ).listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        unorderedEquals(<String>[p.basename(video), p.basename(subtitle)]),
+      );
+    });
+
+    test('光盘条目：盘内文件名是盘结构，不整理', () async {
+      final String mpls = p.join(
+        root,
+        'Disc',
+        'BDMV',
+        'PLAYLIST',
+        '00001.mpls',
+      );
+      Directory(p.dirname(mpls)).createSync(recursive: true);
+      File(mpls).writeAsStringSync('mpls');
+      await seedMovie(uid: 'video/disc', path: mpls);
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      for (final VideoOrganizeLayout layout in VideoOrganizeLayout.values) {
+        expect(
+          (await service.plan(<String>[
+            'video/disc',
+          ], layout: layout)).items.single.status,
+          VideoFilenamePlanStatus.disc,
+        );
+      }
     });
   });
 }

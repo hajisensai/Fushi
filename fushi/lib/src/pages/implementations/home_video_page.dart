@@ -10777,6 +10777,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           onPickOnlineCover: _onlineCoverController == null
               ? null
               : _pickOnlineCollectionCoverFile,
+          // 单集菜单「整理文件名」（ZDYNkAP3Ln）：与库页同一条实现。
+          onOrganizeFilenames: _organizeVideoFilenames,
         ),
       ),
     );
