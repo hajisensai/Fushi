@@ -12,6 +12,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_view_model.dart'
     show invalidateAnkiStateAfterPrefsChange;
+import 'package:fushi/src/second_screen/panel/companion/companion_context_panels.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_shell.dart';
 import 'package:fushi/src/second_screen/second_screen_pipe.dart';
@@ -75,10 +76,11 @@ Future<void> runCompanionPanel(MethodChannel channel) async {
 /// up (the fallback theme until then), reloaded whenever the main process
 /// changes preferences.
 class CompanionPanelApp extends ConsumerStatefulWidget {
-  const CompanionPanelApp({this.home = const CompanionShell(), super.key});
+  const CompanionPanelApp({this.home, super.key});
 
-  /// The shell (tests pass their own).
-  final Widget home;
+  /// The shell (tests pass their own); defaults to [CompanionShell] with
+  /// the module panels.
+  final Widget? home;
 
   @override
   ConsumerState<CompanionPanelApp> createState() => _CompanionPanelAppState();
@@ -171,7 +173,9 @@ class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp> {
               LegacyDesignCompatibility(
                 child: FushiGlassScope(child: child ?? const SizedBox.shrink()),
               ),
-          home: widget.home,
+          home:
+              widget.home ??
+              CompanionShell(contextPanels: companionContextPanels),
         ),
       ),
     );
