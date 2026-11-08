@@ -3286,12 +3286,12 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
+    _audioOutputRecovery.reset();
     // 换片：A-B 端点是旧片的时间轴，作废；有限次数循环数的是旧片那一句，连模式一起关
     // （只清次数会把「循环 N 次」变成无限循环）。无限循环模式与自动暂停是会话级开关，保留。
     _resetAbLoop();
     if (_loopRepeatsRemaining != null) setLoopCurrentCue(false);
-    // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
-    _audioOutputRecovery.reset();
     // 上一片的外挂音轨判定作废（见 [externalAudioTrackFailed]）。
     _externalAudioNativeUri = null;
     _externalAudioTrackFailed = false;
