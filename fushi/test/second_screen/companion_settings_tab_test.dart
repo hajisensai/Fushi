@@ -171,6 +171,7 @@ class _SettingsHost {
         if (query is String) {
           return CompanionSettingsPage(
             rows: <CompanionSettingRow>[
+              if (query.toLowerCase() == 'accent') _appearancePage.rows[1],
               if ('font'.contains(query.toLowerCase()) ||
                   query.toLowerCase().contains('font'))
                 const CompanionSettingRow(
@@ -552,6 +553,43 @@ void main() {
       find.text(t.second_screen_settings_context(title: 'Reader')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('S7j: picking a value from a search result never focuses the '
+      'search field again (no keyboard on return)', (
+    WidgetTester tester,
+  ) async {
+    await pumpTab(tester);
+    final Finder search = find.byKey(
+      const ValueKey<String>('companion-settings-search'),
+    );
+    await tester.enterText(search, 'accent');
+    await settle(tester);
+    EditableText field() => tester.widget<EditableText>(
+      find.descendant(of: search, matching: find.byType(EditableText)),
+    );
+    expect(field().focusNode.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+
+    // The result's long choice opens the picker page; pick a value.
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('companion-setting-appearance.accent-pick'),
+      ),
+    );
+    await settle(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('companion-setting-option-green')),
+    );
+    await settle(tester);
+    expect(lastSet().args, <String, Object?>{
+      CompanionSettingsArgs.key: 'appearance.accent',
+      CompanionSettingsArgs.value: 'green',
+    });
+    expect(find.text('accent'), findsOneWidget, reason: 'search kept');
+    expect(field().focusNode.hasFocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a reply overtaken by a newer query is dropped', (

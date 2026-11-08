@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/modules/settings_companion_schema.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_page_route.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_settings_controller.dart';
 import 'package:fushi/src/second_screen/panel/companion/modules/companion_module_widgets.dart';
@@ -160,21 +161,15 @@ class _CompanionSettingsTabState extends ConsumerState<CompanionSettingsTab>
     _openCategory = category.id;
     if (report) _reportUi();
     unawaited(
-      Navigator.of(context)
-          .push<void>(
-            adaptivePageRoute<void>(
-              context: context,
-              builder: (BuildContext context) => _CompanionSettingsCategoryPage(
-                session: _panel,
-                category: category,
-              ),
-            ),
-          )
-          .then((void _) {
-            if (!mounted || _openCategory != category.id) return;
-            _openCategory = null;
-            _reportUi();
-          }),
+      pushCompanionPage<void>(
+        context,
+        (BuildContext context) =>
+            _CompanionSettingsCategoryPage(session: _panel, category: category),
+      ).then((void _) {
+        if (!mounted || _openCategory != category.id) return;
+        _openCategory = null;
+        _reportUi();
+      }),
     );
   }
 
@@ -906,11 +901,9 @@ class _SettingRowState extends State<_SettingRow> {
   }
 
   Future<void> _pick(BuildContext context) async {
-    final String? picked = await Navigator.of(context).push<String>(
-      adaptivePageRoute<String>(
-        context: context,
-        builder: (BuildContext context) => _ChoicePickerPage(row: row),
-      ),
+    final String? picked = await pushCompanionPage<String>(
+      context,
+      (BuildContext context) => _ChoicePickerPage(row: row),
     );
     if (picked != null && picked != row.choiceValue && mounted) {
       _commit(picked);

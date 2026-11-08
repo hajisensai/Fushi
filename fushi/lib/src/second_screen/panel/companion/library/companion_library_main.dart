@@ -5,10 +5,10 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_labels.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_page_route.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_details_page.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_widgets.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -142,12 +142,10 @@ class _CompanionLibraryMainRootState
       unawaited(_session.command(CompanionLibraryMainActions.openHighlighted));
 
   void _details(CompanionLibraryItem item) => unawaited(
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) =>
-            CompanionLibraryDetailsPage(itemRef: item.ref, title: item.title),
-      ),
+    pushCompanionPage<void>(
+      context,
+      (BuildContext context) =>
+          CompanionLibraryDetailsPage(itemRef: item.ref, title: item.title),
     ),
   );
 
