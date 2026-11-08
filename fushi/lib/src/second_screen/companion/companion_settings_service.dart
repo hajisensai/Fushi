@@ -1,4 +1,3 @@
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart' show CtlBodyPage;
 import 'package:fushi/src/ops/settings_index.dart';
 import 'package:fushi/src/second_screen/companion/companion_bridge.dart';
@@ -319,7 +318,7 @@ bool _listed(SettingsIndexEntry entry) =>
 /// as "Open on main screen".
 CompanionSettingControl companionSettingControlOf(SettingsIndexEntry entry) {
   if (entry.virtual != null) {
-    return _virtualLabels.containsKey(entry.key)
+    return _directVirtuals.contains(entry.key)
         ? CompanionSettingControl.choice
         : CompanionSettingControl.open;
   }
@@ -333,29 +332,20 @@ CompanionSettingControl companionSettingControlOf(SettingsIndexEntry entry) {
   };
 }
 
-/// Labels of the drawn appearance selectors the index reads as choices (the
-/// same strings the selectors show). Language names come with the options;
-/// the theme picker (swatches, custom themes) stays on the main screen.
-final Map<String, String Function(String token, String label)> _virtualLabels =
-    <String, String Function(String token, String label)>{
-      'appearance.design_system': (String token, String label) =>
-          switch (token) {
-            'auto' => t.design_system_auto,
-            'glass' => t.design_system_glass,
-            _ => label,
-          },
-      'appearance.brightness': (String token, String label) => switch (token) {
-        'light' => t.dark_mode_light,
-        'dark' => t.dark_mode_dark,
-        'system' => t.dark_mode_system,
-        _ => label,
-      },
-      'appearance.language': (String _, String label) => label,
-    };
+/// The drawn appearance selectors the companion edits as choices. The theme
+/// picker (swatches, custom themes) stays on the main screen; its row shows
+/// the current theme's name.
+const Set<String> _directVirtuals = <String>{
+  'appearance.design_system',
+  'appearance.brightness',
+  'appearance.language',
+};
 
 /// [entry] as a companion row. Values, display, options and ranges come
-/// from [settingsIndexEntryJson] (what `fushi_cli config get` prints); the
-/// companion adds option labels, steps and the enabled state.
+/// from [settingsIndexEntryJson] (what `fushi_cli config get` prints); option
+/// and value labels from [settingsIndexChoices] / [settingsIndexValueLabel]
+/// (the settings page's strings in the main screen's language); the companion
+/// adds steps and the enabled state.
 CompanionSettingRow companionSettingRow(
   SettingsIndexEntry entry,
   SettingsContext context, {
@@ -367,42 +357,17 @@ CompanionSettingRow companionSettingRow(
       ? CompanionSettingControl.open
       : companionSettingControlOf(entry);
   final SettingsItem? item = entry.item;
-  final List<String> tokens = <String>[
-    for (final Object? o in (json['options'] as List<Object?>?) ?? <Object?>[])
-      '$o',
+  final List<CompanionSettingOption> options = <CompanionSettingOption>[
+    if (control == CompanionSettingControl.choice)
+      for (final SettingsIndexChoice choice
+          in settingsIndexChoices(entry, context) ??
+              const <SettingsIndexChoice>[])
+        CompanionSettingOption(value: choice.token, label: choice.label),
   ];
-  final List<CompanionSettingOption> options = <CompanionSettingOption>[];
-  if (control == CompanionSettingControl.choice) {
-    final SettingsIndexVirtual? virtual = entry.virtual;
-    if (virtual != null) {
-      final String Function(String, String) label = _virtualLabels[entry.key]!;
-      for (final (String token, String raw) in virtual.options(
-        context.appModel,
-      )) {
-        options.add(
-          CompanionSettingOption(value: token, label: label(token, raw)),
-        );
-      }
-    } else if (item is SettingsSegmentedItem<Object>) {
-      final List<SettingsSegmentOption<Object>> choices = item.optionsFor(
-        context,
-      );
-      for (int i = 0; i < choices.length && i < tokens.length; i++) {
-        options.add(
-          CompanionSettingOption(value: tokens[i], label: choices[i].label),
-        );
-      }
-    }
-  }
-  String display = '${json['display'] ?? ''}';
-  if (control == CompanionSettingControl.choice) {
-    display =
-        options
-            .where((CompanionSettingOption o) => o.value == json['value'])
-            .firstOrNull
-            ?.label ??
-        display;
-  }
+  final String display = failed
+      ? '${json['display'] ?? ''}'
+      : settingsIndexValueLabel(entry, context, json['value']) ??
+            '${json['display'] ?? ''}';
   final String? section = entry.pagePath;
   return CompanionSettingRow(
     key: entry.key,

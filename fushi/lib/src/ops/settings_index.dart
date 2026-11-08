@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
+
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
@@ -49,11 +51,19 @@ class SettingsIndexVirtual {
     required this.read,
     required this.options,
     required this.write,
+    this.valueLabel,
   });
 
   final String Function(AppModel appModel) read;
+
+  /// 可选值：（`config set` 收的 token，自绘行上显示的标签——按当前界面语言
+  /// 解析，与设置页同一串文案）。`config set` 也认标签。
   final List<(String, String)> Function(AppModel appModel) options;
   final Future<void> Function(SettingsContext context, String value) write;
+
+  /// 当前值不在 [options] 里时（旧预设键、裸 `custom-theme`）它的标签；null =
+  /// 原样显示值。
+  final String? Function(AppModel appModel, String value)? valueLabel;
 }
 
 final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
@@ -62,10 +72,10 @@ final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
       // Apple 等隐藏值由 ThemeNotifier 在写入边界归一化。
       'appearance.design_system': SettingsIndexVirtual(
         read: (AppModel appModel) => appModel.themeNotifier.designSystem,
-        options: (AppModel _) => const <(String, String)>[
-          ('auto', 'auto'),
+        options: (AppModel _) => <(String, String)>[
+          ('auto', t.design_system_auto),
           ('material', 'Material'),
-          ('glass', 'glass'),
+          ('glass', t.design_system_glass),
         ],
         write: (SettingsContext context, String value) =>
             context.appModel.themeNotifier.setDesignSystem(value),
@@ -73,10 +83,10 @@ final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
       // buildBrightnessSelector（settings_actions.dart）。
       'appearance.brightness': SettingsIndexVirtual(
         read: (AppModel appModel) => appModel.brightnessMode,
-        options: (AppModel _) => const <(String, String)>[
-          ('light', 'light'),
-          ('system', 'system'),
-          ('dark', 'dark'),
+        options: (AppModel _) => <(String, String)>[
+          ('light', t.dark_mode_light),
+          ('system', t.dark_mode_system),
+          ('dark', t.dark_mode_dark),
         ],
         write: (SettingsContext context, String value) async {
           await context.appModel.setBrightnessMode(value);
@@ -87,11 +97,25 @@ final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
       'appearance.theme': SettingsIndexVirtual(
         read: (AppModel appModel) => appModel.appThemeKey,
         options: (AppModel appModel) => <(String, String)>[
-          ('system-theme', 'system-theme'),
-          for (final String key in AppModel.themePresets.keys) (key, key),
-          for (final CustomThemeEntry entry in appModel.customThemes)
-            ('custom-theme:${entry.id}', entry.name),
+          ('system-theme', AppModel.themeLabel('system-theme')),
+          for (final String key in AppModel.themePresets.keys)
+            (key, AppModel.themeLabel(key)),
+          for (final (int i, CustomThemeEntry entry)
+              in appModel.customThemes.indexed)
+            ('custom-theme:${entry.id}', _customThemeLabel(entry, i)),
         ],
+        // 裸 `custom-theme` 指当前活跃的自定义主题；旧预设键由 themeLabel 映射到
+        // 替代预设的名字。
+        valueLabel: (AppModel appModel, String value) {
+          if (value == 'custom-theme') {
+            final CustomThemeEntry? active = appModel.activeCustomThemeEntry;
+            if (active == null) return null;
+            final int i = appModel.customThemes.indexOf(active);
+            return _customThemeLabel(active, i < 0 ? 0 : i);
+          }
+          if (value.startsWith('custom-theme:')) return null;
+          return AppModel.themeLabel(value);
+        },
         write: (SettingsContext context, String value) async {
           await context.appModel.setAppThemeKey(value);
           notifyReaderSettingsChanged(context);
@@ -109,6 +133,73 @@ final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
             context.appModel.setAppLocale(value),
       ),
     };
+
+/// 主题色卡上自定义主题的名字（与 buildThemeSelector 同一规则）。
+String _customThemeLabel(CustomThemeEntry entry, int index) =>
+    entry.name.trim().isNotEmpty
+    ? entry.name.trim()
+    : t.custom_theme_default_name(n: index + 1);
+
+/// 选择类设置项的一个可选值：`config set` 收的 [token]，设置页上显示的 [label]
+/// （当前界面语言）。
+class SettingsIndexChoice {
+  const SettingsIndexChoice({required this.token, required this.label});
+
+  final String token;
+  final String label;
+}
+
+/// [entry] 的可选值及其人读标签：自绘选择行（[settingsIndexVirtuals]）与分段行；
+/// 其它类型为 null。`config` 的 JSON 只给 token（[settingsIndexEntryJson]），
+/// 标签给要按设置页原样显示的消费方（第二屏伴屏）。
+List<SettingsIndexChoice>? settingsIndexChoices(
+  SettingsIndexEntry entry,
+  SettingsContext context,
+) {
+  final SettingsIndexVirtual? virtual = entry.virtual;
+  if (virtual != null) {
+    return <SettingsIndexChoice>[
+      for (final (String token, String label) in virtual.options(
+        context.appModel,
+      ))
+        SettingsIndexChoice(token: token, label: label),
+    ];
+  }
+  final SettingsItem? item = entry.item;
+  if (item is SettingsSegmentedItem<Object>) {
+    return <SettingsIndexChoice>[
+      for (final SettingsSegmentOption<Object> option in item.optionsFor(
+        context,
+      ))
+        SettingsIndexChoice(
+          token: ctlSettingOptionToken(option.value),
+          label: option.label,
+        ),
+    ];
+  }
+  return null;
+}
+
+/// [value]（[entry] 的当前 token）在设置页上的标签；不是选择行、或没有对应
+/// 标签时为 null（调用方回落到原值）。
+String? settingsIndexValueLabel(
+  SettingsIndexEntry entry,
+  SettingsContext context,
+  Object? value,
+) {
+  if (value == null) return null;
+  final String token = '$value';
+  final List<SettingsIndexChoice>? choices = settingsIndexChoices(
+    entry,
+    context,
+  );
+  final String? label = choices
+      ?.where((SettingsIndexChoice c) => c.token == token)
+      .firstOrNull
+      ?.label;
+  if (label != null) return label;
+  return entry.virtual?.valueLabel?.call(context.appModel, token);
+}
 
 /// 索引里的一条设置项。
 class SettingsIndexEntry {
