@@ -1076,6 +1076,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
             token,
             fingerprint,
             hostId: hostId,
+            deviceName: deviceName,
           );
         case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
@@ -1206,17 +1207,24 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
   /// [FushiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
   /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
+  ///
+  /// [deviceName] 是 host 在 `/api/ping` 报的展示名（身份确认框里给用户看过的那个）。存进这条地址，
+  /// 复习页「已配对设备」、地址列表等处才显示设备名而不是 IP（BUG-4245：此前这里写死 null）。
   Future<String> _onPairSuccess(
     String baseUrl,
     String token,
     String? fingerprint, {
     String? hostId,
+    String? deviceName,
   }) async {
+    final String? name = (deviceName?.trim().isNotEmpty ?? false)
+        ? deviceName!.trim()
+        : null;
     try {
       await _pairRepo.addFushiClientUrl(
         baseUrl,
         fingerprint: fingerprint,
-        deviceName: null,
+        deviceName: name,
       );
     } on FushiFingerprintMismatchException catch (e, stack) {
       ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
