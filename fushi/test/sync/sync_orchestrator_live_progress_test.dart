@@ -5,6 +5,7 @@
 /// live host-apply + bidirectional + full-sweep fix with a real server/host/client/local.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,6 +21,10 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart'
+    show syncExitedBookOnChannel;
+import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -1910,6 +1915,110 @@ void main() {
         360000,
         reason: 'run() full sweep must also push audiobook progress to host',
       );
+    });
+  });
+
+  // BUG-1569③：退出书的单本同步不再等整轮 sweep，在互联上只锁那本书。sweep 的书进度
+  // 阶段在开头一次读齐 host 进度与本端快照；若某本书在 sweep 跑到它之前被单本同步
+  // 改过（推了 host、记了新基线），拿那份旧 host 值去判定会被当成「host 偏离基线」
+  // 落回本机——进度倒退。锁代数变了必须重读 host、不信快照。
+  group('sweep 与退出书单本同步并发（BUG-1569③）', () {
+    test('单本同步在 sweep 读完快照后改过这本书：sweep 重读 host，不把旧值落回本机', () async {
+      await _seedBook(hostDb, 'BookA');
+      await _seedPosition(
+        hostDb,
+        'BookA',
+        section: 0,
+        norm: 1000,
+        charOffset: -1,
+        updatedAt: 1000,
+      );
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookA');
+      // 本机已读到 2000（偏离基线 1000），host 停在基线 → 快照判不了「已收敛」。
+      await _seedPosition(
+        localDb,
+        'BookA',
+        section: 0,
+        norm: 2000,
+        charOffset: -1,
+        updatedAt: 2000,
+      );
+      await _seedBaseline(localDb, 'BookA', section: 0, norm: 1000);
+
+      final Directory tmp = Directory(p.join(work.path, 'stale'))..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: base,
+        token: token,
+      );
+      // sweep 跑到 BookA、排上这本书的锁时发出它的 readingData tick。
+      final Completer<void> sweepAtBook = Completer<void>();
+      final SyncOrchestrator orch = SyncOrchestrator(
+        db: localDb,
+        backend: backend,
+        dictionaryResourceRoot: tmp,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncMangaContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+        onProgress: (SyncProgress progress) {
+          if (progress.phase == SyncPhase.readingData &&
+              progress.title == 'BookA' &&
+              !sweepAtBook.isCompleted) {
+            sweepAtBook.complete();
+          }
+        },
+      );
+
+      // 退出书：持有这本书的锁（与生产 _syncExitedBookChannel 同一把），等 sweep
+      // 读完快照、排到这本书之后，本机读到 3000 并同步给 host。
+      final Completer<void> lockHeld = Completer<void>();
+      final Future<SyncConflict?> exitBook = syncResourceLocks
+          .withResources<SyncConflict?>(
+            <String>{syncBookResource('BookA')},
+            () async {
+              lockHeld.complete();
+              await sweepAtBook.future;
+              expect(syncResourceLocks.waiterCount, 1, reason: 'sweep 在等书锁');
+              await _seedPosition(
+                localDb,
+                'BookA',
+                section: 0,
+                norm: 3000,
+                charOffset: -1,
+                updatedAt: 3000,
+              );
+              return syncExitedBookOnChannel(
+                db: localDb,
+                repo: SyncRepository(localDb),
+                backend: backend,
+                book: (await localDb.getEpubBook('BookA'))!,
+              );
+            },
+          );
+      await lockHeld.future;
+      final SyncRunReport report = SyncRunReport();
+      final Future<void> sweep = orch.syncBookProgressLiveForTest(
+        report,
+        backend,
+      );
+      expect(await exitBook, isNull, reason: '退出书：host 在基线上，直接推本机');
+      expect((await _positionOf(hostDb, 'BookA'))!.normCharOffset, 3000);
+      await sweep;
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(
+        (await _positionOf(localDb, 'BookA'))!.normCharOffset,
+        3000,
+        reason: 'sweep 不得拿开头读到的 host 旧值（1000）把本机拉回去',
+      );
+      expect(report.localBookProgressPulled, 0);
+      expect((await _positionOf(hostDb, 'BookA'))!.normCharOffset, 3000);
     });
   });
 }
