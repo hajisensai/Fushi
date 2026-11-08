@@ -761,6 +761,37 @@ pub extern "C" fn ffsrs_store_optimizer_items(
     )
 }
 
+/// 复习统计页校准图的训练集与条目元数据（`SrsCore::calibration_items`）。参数同 [ffsrs_store_optimizer_items]。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_calibration_items(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, page, args| {
+            let n = group_count(args)?;
+            let (lineages, _) = lineage_page(page, n)?;
+            let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
+            let ids = args.get(4..4 + n).ok_or("missing card ids")?;
+            c.calibration_items(&lineages, ids, alg, &day_of(args, 2)?)
+        },
+    )
+}
+
 /// RWKV 回放行。mode 0 = 逐卡（`SrsCore::rwkv_cards`）：`args = [n_groups, 0, utcOffsetMin, rolloverHour, 0,
 /// 数字 id × 4·n_groups]`；mode 1 = 回放（`SrsCore::rwkv_replay`，页里要有 profile 行）：`args = [n_groups, 1,
 /// utcOffsetMin, rolloverHour, since, rebaseSince|NONE, rowsFrom|NONE, 数字 id × 4·n_groups]`（NONE = i64::MIN，

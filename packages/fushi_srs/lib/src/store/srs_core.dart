@@ -331,6 +331,9 @@ final class SrsCoreBindings {
       optimizerItems = lib.lookupFunction<_CmdC, _CmdDart>(
         'ffsrs_store_optimizer_items',
       ),
+      calibrationItems = lib.lookupFunction<_CmdC, _CmdDart>(
+        'ffsrs_store_calibration_items',
+      ),
       rwkvRows = lib.lookupFunction<_CmdC, _CmdDart>('ffsrs_store_rwkv_rows'),
       rwkvLogTail = lib.lookupFunction<_CmdC, _CmdDart>(
         'ffsrs_store_rwkv_log_tail',
@@ -362,6 +365,7 @@ final class SrsCoreBindings {
   final _DiagCountsDart diagCounts;
   final _HistDart historyStates;
   final _CmdDart optimizerItems;
+  final _CmdDart calibrationItems;
   final _CmdDart rwkvRows;
   final _CmdDart rwkvLogTail;
   final _HistDart statProjection;
@@ -848,6 +852,22 @@ final class SrsCore {
     required int utcOffsetMin,
     required int rolloverHour,
   }) => _command(_b.optimizerItems, _lineagePage(lineages, null), <int>[
+    lineages.length,
+    algorithm,
+    utcOffsetMin,
+    rolloverHour,
+    ...cardIds,
+  ]);
+
+  /// 复习统计页校准图的训练集：与 [optimizerItems] 同一布局，末尾按列接每个条目的时刻 / 日志数字 ID / 间隔天数 /
+  /// 卡数字 id / 记住（`ffsrs_store_calibration_items`）。参数同 [optimizerItems]。
+  Uint8List calibrationItems(
+    List<List<String>> lineages,
+    List<int> cardIds, {
+    required int algorithm,
+    required int utcOffsetMin,
+    required int rolloverHour,
+  }) => _command(_b.calibrationItems, _lineagePage(lineages, null), <int>[
     lineages.length,
     algorithm,
     utcOffsetMin,

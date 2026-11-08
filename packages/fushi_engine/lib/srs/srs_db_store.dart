@@ -2850,6 +2850,27 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
+  /// 复习统计页校准图的训练集（[optimizerTrainingSet] 同一份，外加每个条目的时刻 / 日志数字 ID / 间隔天数 /
+  /// 卡数字 id / 记住）。
+  Future<SrsCalibrationItems> calibrationItems(
+    List<String> cardIds, {
+    required SrsAlgorithm algorithm,
+    required SrsDayContext day,
+  }) async {
+    if (cardIds.isEmpty) return SrsCalibrationItems(Uint8List(32));
+    return SrsCalibrationItems(
+      await _coreCalibrationItems(
+        core.address,
+        core.libraryPath,
+        _seedGroups(cardIds),
+        SrsIds.ankiNumericIds(cardIds),
+        srsProjectionAlgorithmCode(algorithm),
+        day.utcOffsetMin,
+        day.rolloverHour,
+      ),
+    );
+  }
+
   /// RWKV 逐卡：每张卡（[ids] 每卡 4 个数字 id：卡 / 笔记 / 牌组 / 预设）的保留评分行与摘要。
   Future<List<SrsRwkvCardRows>> rwkvCardRows(
     List<String> cardIds,
@@ -5764,6 +5785,29 @@ Future<Uint8List> _coreOptimizerItems(
   () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
     address,
     (SrsCore c) => c.optimizerItems(
+      groups,
+      cardIds,
+      algorithm: algorithm,
+      utcOffsetMin: utcOffsetMin,
+      rolloverHour: rolloverHour,
+    ),
+  ),
+  measure: (Uint8List b) => (b.length, 0),
+);
+
+Future<Uint8List> _coreCalibrationItems(
+  int address,
+  String? libraryPath,
+  List<List<String>> groups,
+  List<int> cardIds,
+  int algorithm,
+  int utcOffsetMin,
+  int rolloverHour,
+) => SrsOpLedger.track(
+  'core:calibration_items',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.calibrationItems(
       groups,
       cardIds,
       algorithm: algorithm,

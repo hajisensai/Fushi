@@ -335,6 +335,33 @@ pub fn optimizer_card(
     Ok(Some((input.reviews, items)))
 }
 
+/// 复习统计页校准图的条目：[optimizer_card] 的条目再带上目标评分在 [eff] 里的下标与它距上一次评分的天数
+/// （按复习日 [Day::index]，扩展「隔天复习才进校准」的口径）。顺序与 [optimizer_card] 的条目相同。
+pub type CalibrationItem = (i64, usize, usize, i64);
+
+pub fn calibration_card(
+    eff: &[EffLog],
+    alg: Alg,
+    day: &Day,
+) -> Result<Option<(Vec<(i64, f64)>, Vec<CalibrationItem>)>, String> {
+    let Some((reviews, items)) = optimizer_card(eff, alg, day)? else {
+        return Ok(None);
+    };
+    // 与 [optimizer_card] 同一组评分（它已核对过与记忆状态输入一一对应）。
+    let ratings: Vec<usize> = (0..eff.len())
+        .filter(|&i| eff[i].is_rating() && !eff[i].time_uncertain)
+        .collect();
+    let items = items
+        .into_iter()
+        .map(|(at, len)| {
+            let log = ratings[len - 1];
+            let prev = ratings[len - 2];
+            (at, len, log, day.index(eff[log].at) - day.index(eff[prev].at))
+        })
+        .collect();
+    Ok(Some((reviews, items)))
+}
+
 // ---------------------------------------------------------------- RWKV 回放行
 
 /// `FrwkvReview` 的大小（packages/fushi_rwkv `kFrwkvReviewSize`）。

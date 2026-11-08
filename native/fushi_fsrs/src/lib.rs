@@ -22,9 +22,12 @@
 //!   ffsrs_memory_input / ffsrs_rwkv_now_rows
 //!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）/
 //!   ffsrs_boot_time_ms
-//!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）
+//!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）/
+//!   ffsrs_predict_tss / ffsrs_calibration_report
+//!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）
 
 pub mod boot_clock;
+pub mod calibration;
 pub mod card_cache;
 pub mod history;
 pub mod ordering;
@@ -45,14 +48,15 @@ use std::time::Duration;
 
 use fsrs::{
     CombinedProgressState, ComputeParametersInput, ComputeParametersVersion, DEFAULT_PARAMETERS,
-    FSRS, FSRS6_DEFAULT_PARAMETERS, FSRSItem, FSRSReview, MemoryState,
+    FSRS, FSRS6_DEFAULT_PARAMETERS, FSRSError, FSRSItem, FSRSReview, MemoryState,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
 /// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
-pub const ABI_VERSION: i32 = 5;
+/// 6：复习统计页的校准图 / UM+（`ffsrs_predict_tss` / `ffsrs_calibration_report` / `ffsrs_store_calibration_items`）。
+pub const ABI_VERSION: i32 = 6;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
@@ -514,6 +518,244 @@ fn spawn_watcher(
             thread::sleep(Duration::from_millis(50));
         }
     })
+}
+
+/// 时间序列切分的留出预测（复习统计页的校准图 / UM+）：训练集按评分时刻切成 `folds + 1` 段，第 k 折只用第 k 段
+/// 之前的条目训练参数，再预测第 k 段每一条作答前的可提取度——模型从没见过它预测的那些复习（与
+/// `evaluate_tss` 同一切分，fsrs-rs `TimeSeriesSplit`；kuma3-anki-core 的 `FsrsCalibrationFinalFit` 同一做法）。
+/// 第一段只训练不预测。某一折数据不够训练（fsrs-rs NotEnoughData）就跳过那一折。
+///
+/// 训练集参数同 [ffsrs_fit]（条目必须按复习时间排好序，要有卡 ID）；`request` = `{"algorithm", "folds"?}`（缺省 5）；
+/// `out` 长 `n_items`：第 i 条的预测，没预测的写 NaN。`progress` = `[已完成, 总数]`（按折累加各折的训练进度）。
+/// 响应 `{"ok":{"folds":训练成功的折数,"predicted":条数}}` / `{"error":"…"}`，用 [ffsrs_free_string] 释放。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn ffsrs_predict_tss(
+    request: *const c_char,
+    ratings: *const u8,
+    delta_days: *const f32,
+    n_reviews: usize,
+    card_offsets: *const u32,
+    card_ids: *const i64,
+    n_cards: usize,
+    item_cards: *const u32,
+    item_lengths: *const u32,
+    n_items: usize,
+    out: *mut f32,
+    cancel: *const AtomicI32,
+    progress: *const AtomicI64,
+) -> *mut c_char {
+    let cancel_addr = cancel as usize;
+    let progress_addr = progress as usize;
+    let out_addr = out as usize;
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
+        let req = read_request(request)?;
+        let algorithm = Algorithm::parse(str_field(&req, "algorithm")?)?;
+        let folds = req.get("folds").and_then(Value::as_u64).unwrap_or(5) as usize;
+        if folds == 0 {
+            return Err("folds must be positive".into());
+        }
+        if n_items == 0 {
+            return Err("not enough data".into());
+        }
+        if out_addr == 0
+            || card_offsets.is_null()
+            || item_cards.is_null()
+            || item_lengths.is_null()
+            || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
+        {
+            return Err("null buffer".into());
+        }
+        let set = TrainingSet {
+            ratings: bytes(ratings, n_reviews),
+            delta_days: bytes(delta_days, n_reviews),
+            card_offsets: bytes(card_offsets, n_cards + 1),
+            card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
+            item_cards: bytes(item_cards, n_items),
+            item_lengths: bytes(item_lengths, n_items),
+        };
+        set.validate()?;
+        let (items, ids) = set.expand(true);
+        let ids = ids.ok_or("card ids required")?;
+        let out = unsafe { std::slice::from_raw_parts_mut(out_addr as *mut f32, n_items) };
+        out.fill(f32::NAN);
+        let segment = n_items / (folds + 1);
+        if segment == 0 {
+            return Err("not enough data".into());
+        }
+        let cancelled = || {
+            cancel_addr != 0
+                && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0
+        };
+        let mut trained = 0usize;
+        let mut predicted = 0usize;
+        for k in 0..folds {
+            let start = (k + 1) * segment;
+            let end = if k == folds - 1 {
+                n_items
+            } else {
+                (k + 2) * segment
+            };
+            let state = CombinedProgressState::new_shared();
+            let done = Arc::new(AtomicBool::new(false));
+            let watcher = spawn_fold_watcher(
+                state.clone(),
+                done.clone(),
+                cancel_addr,
+                progress_addr,
+                k,
+                folds,
+            );
+            let result = fsrs::compute_parameters(ComputeParametersInput {
+                train_set: items[..start].to_vec(),
+                card_ids: Some(ids[..start].to_vec()),
+                progress: Some(state.clone()),
+                model_version: algorithm.compute_version(),
+                ..Default::default()
+            });
+            done.store(true, Ordering::SeqCst);
+            let _ = watcher.join();
+            if cancelled() {
+                return Err("cancelled".into());
+            }
+            let params = match result {
+                Ok(p) => p,
+                Err(FSRSError::NotEnoughData) => continue,
+                Err(e) => return Err(format!("compute_parameters: {e:?}")),
+            };
+            let model = FSRS::new(&params).map_err(|e| format!("invalid parameters: {e:?}"))?;
+            let fold = model
+                .predict_retrievability_with_card_ids(
+                    items[start..end].to_vec(),
+                    ids[start..end].to_vec(),
+                    |_| !cancelled(),
+                )
+                .map_err(|e| match e {
+                    FSRSError::Interrupted => "cancelled".to_string(),
+                    e => format!("predict: {e:?}"),
+                })?;
+            out[start..end].copy_from_slice(&fold);
+            trained += 1;
+            predicted += fold.len();
+        }
+        Ok(json!({ "folds": trained, "predicted": predicted }))
+    }));
+    respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
+}
+
+/// [ffsrs_predict_tss] 的看门线程：第 `fold` 折的训练进度折进总进度 `[fold·T + 当前, folds·T]`（T = 一折的总量）。
+fn spawn_fold_watcher(
+    state: Arc<Mutex<CombinedProgressState>>,
+    done: Arc<AtomicBool>,
+    cancel_addr: usize,
+    progress_addr: usize,
+    fold: usize,
+    folds: usize,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        loop {
+            let finished = done.load(Ordering::SeqCst);
+            if let Ok(mut s) = state.lock() {
+                if cancel_addr != 0
+                    && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0
+                {
+                    s.want_abort = true;
+                }
+                if progress_addr != 0 {
+                    let total = s.total().max(1) as i64;
+                    let current = if finished {
+                        total
+                    } else {
+                        s.current() as i64
+                    };
+                    let p = progress_addr as *const AtomicI64;
+                    unsafe {
+                        (*p).store(fold as i64 * total + current, Ordering::SeqCst);
+                        (*p.add(1)).store(folds as i64 * total, Ordering::SeqCst);
+                    }
+                }
+            }
+            if finished {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    })
+}
+
+/// 校准图与 UM+ 的一整份结果（[calibration::report]），一次调用：
+///
+/// - 样本 `n` 条（与 `ffsrs_store_calibration_items` 的条目一一对应）：`cards` / `tags`（复习日志数字 ID）/ `ats`（毫秒）/
+///   `elapsed`（距上次评分的复习日天数）/ `actual`（1 = 记住）/ `fsrs`（[ffsrs_predict_tss] 的预测，NaN = 没有）；
+/// - RWKV 回放预测 `n_rwkv` 条：`rwkv_tags` 与 `rwkv_preds`（可为 0 条）；
+/// - 范围 `n_scope` 张卡（0 = 全部）。
+///
+/// `request` = `{"from"?: 毫秒, "to"?: 毫秒, "minElapsedDays"?: 1}`；响应见 [calibration::report]。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn ffsrs_calibration_report(
+    request: *const c_char,
+    n: usize,
+    cards: *const i64,
+    tags: *const i64,
+    ats: *const i64,
+    elapsed: *const i64,
+    actual: *const i64,
+    fsrs: *const f32,
+    n_rwkv: usize,
+    rwkv_tags: *const i64,
+    rwkv_preds: *const f32,
+    n_scope: usize,
+    scope_cards: *const i64,
+) -> *mut c_char {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
+        let req = read_request(request)?;
+        if n > 0
+            && (cards.is_null()
+                || tags.is_null()
+                || ats.is_null()
+                || elapsed.is_null()
+                || actual.is_null()
+                || fsrs.is_null())
+        {
+            return Err("null buffer".into());
+        }
+        if (n_rwkv > 0 && (rwkv_tags.is_null() || rwkv_preds.is_null()))
+            || (n_scope > 0 && scope_cards.is_null())
+        {
+            return Err("null buffer".into());
+        }
+        let samples = calibration::Samples {
+            cards: bytes(cards, n),
+            tags: bytes(tags, n),
+            ats: bytes(ats, n),
+            elapsed: bytes(elapsed, n),
+            actual: bytes(actual, n),
+            fsrs: bytes(fsrs, n),
+        };
+        let rwkv: std::collections::HashMap<i64, f32> = bytes(rwkv_tags, n_rwkv)
+            .iter()
+            .copied()
+            .zip(bytes(rwkv_preds, n_rwkv).iter().copied())
+            .collect();
+        let scope: Option<std::collections::HashSet<i64>> =
+            (n_scope > 0).then(|| bytes(scope_cards, n_scope).iter().copied().collect());
+        let ms = |key: &str| req.get(key).and_then(Value::as_i64);
+        Ok(calibration::report(
+            &samples,
+            &rwkv,
+            calibration::Filter {
+                from: ms("from"),
+                to: ms("to"),
+                min_elapsed: req
+                    .get("minElapsedDays")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(1),
+                scope: scope.as_ref(),
+            },
+        ))
+    }));
+    respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
 }
 
 /// 批量可提取度：同一组参数下一次算完一整批卡（统计页）。

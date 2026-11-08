@@ -434,6 +434,76 @@ impl SrsCore {
         Ok(out)
     }
 
+    /// 复习统计页的校准图（`srsCalibration`）：与 [SrsCore::optimizer_items] 同一份训练集（同一布局、同一顺序），
+    /// 末尾再按列接五段 `i64 × n_items`：目标评分的时刻、它的复习日志数字 ID（与 RWKV 回放行的标签同一个：
+    /// `schema::anki_numeric_id`）、距上一次评分的复习日天数、卡的数字 id、记住（评分 > 1 为 1）。按列存，
+    /// Dart 侧直接取视图交给 `ffsrs_calibration_report`，不逐条解码。
+    pub fn calibration_items(
+        &self,
+        groups: &[Vec<String>],
+        card_ids: &[i64],
+        alg: Alg,
+        day: &Day,
+    ) -> Result<Vec<u8>, String> {
+        if card_ids.len() != groups.len() {
+            return Err("calibration: card id count differs from group count".into());
+        }
+        let (groups, logs) = self.read_snapshot(|r| {
+            let groups = expand_lineages(r, groups)?;
+            let logs = fetch_logs(r, &wanted_cards(&groups))?;
+            Ok((groups, logs))
+        })?;
+        let mut seq_start: Vec<i64> = vec![0];
+        let mut seq_card: Vec<i64> = Vec::new();
+        let mut ratings: Vec<i64> = Vec::new();
+        let mut deltas: Vec<f64> = Vec::new();
+        // (时刻, 序列, 前缀长度, 标签, 间隔天数)；稳定排序保住输入顺序（与 optimizer_items 相同）。
+        let mut items: Vec<(i64, i64, i64, i64, i64)> = Vec::new();
+        for (g, lineage) in groups.iter().enumerate() {
+            let eff = logs.effective(lineage, None);
+            let Some((reviews, card_items)) = projection::calibration_card(&eff, alg, day)? else {
+                continue;
+            };
+            let seq = seq_card.len() as i64;
+            seq_card.push(card_ids[g]);
+            for (r, d) in &reviews {
+                ratings.push(*r);
+                deltas.push(*d);
+            }
+            seq_start.push(ratings.len() as i64);
+            for (at, len, log, elapsed) in card_items {
+                let tag = crate::store::schema::anki_numeric_id(&eff[log].id);
+                items.push((at, seq, len as i64, tag, elapsed));
+            }
+        }
+        items.sort_by_key(|i| i.0);
+        let mut out = Vec::with_capacity(
+            24 + (seq_start.len() + seq_card.len() + 2 * ratings.len() + 5 * items.len()) * 8,
+        );
+        push_i64(&mut out, seq_card.len() as i64);
+        push_i64(&mut out, ratings.len() as i64);
+        push_i64(&mut out, items.len() as i64);
+        seq_start.iter().for_each(|&v| push_i64(&mut out, v));
+        seq_card.iter().for_each(|&v| push_i64(&mut out, v));
+        ratings.iter().for_each(|&v| push_i64(&mut out, v));
+        deltas.iter().for_each(|&v| push_f64(&mut out, v));
+        for &(_, seq, len, _, _) in &items {
+            push_i64(&mut out, seq);
+            push_i64(&mut out, len);
+        }
+        items.iter().for_each(|i| push_i64(&mut out, i.0));
+        items.iter().for_each(|i| push_i64(&mut out, i.3));
+        items.iter().for_each(|i| push_i64(&mut out, i.4));
+        items
+            .iter()
+            .for_each(|i| push_i64(&mut out, seq_card[i.1 as usize]));
+        items.iter().for_each(|i| {
+            let target = seq_start[i.1 as usize] + i.2 - 1;
+            push_i64(&mut out, i64::from(ratings[target as usize] > 1));
+        });
+        Ok(out)
+    }
+
     /// RWKV 逐卡（增量追加、排队的此刻行用）：每份历史的保留评分行与摘要。`ids[4g..4g+4]` 是第 g 份的
     /// 卡 / 笔记 / 牌组 / 预设数字 id。
     ///
