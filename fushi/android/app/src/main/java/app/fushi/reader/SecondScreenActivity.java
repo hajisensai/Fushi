@@ -88,6 +88,8 @@ public class SecondScreenActivity extends FlutterActivity
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Messenger inbox = new Messenger(new Handler(Looper.getMainLooper(), this::onRelayMessage));
     @Nullable private Messenger relay;
+    /** Dart's messages to the main process, kept while the relay connects. */
+    private final SecondScreenRelayOutbox<Message> outbox = new SecondScreenRelayOutbox<>();
     @Nullable private MethodChannel channel;
     @Nullable private DisplayManager displayManager;
     private boolean bound = false;
@@ -104,13 +106,16 @@ public class SecondScreenActivity extends FlutterActivity
                     Message.obtain(null, SecondScreenRelayService.MSG_REGISTER);
             register.replyTo = inbox;
             register.arg1 = launchToken;
-            if (!sendToRelay(register)) finish();
+            if (!sendToRelay(register) || !outbox.connect(SecondScreenActivity.this::sendToRelay)) {
+                finish();
+            }
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
             // The main process died: there is nothing left to show.
             relay = null;
+            outbox.close();
             finish();
         }
     };
@@ -203,7 +208,7 @@ public class SecondScreenActivity extends FlutterActivity
                     data.putString(SecondScreenRelayService.KEY_JSON, (String) json);
                     message.setData(data);
                     message.replyTo = inbox;
-                    result.success(sendToRelay(message));
+                    result.success(outbox.offer(message));
                     break;
                 }
                 default:
@@ -412,6 +417,7 @@ public class SecondScreenActivity extends FlutterActivity
             bound = false;
         }
         relay = null;
+        outbox.close();
         if (channel != null) {
             channel.setMethodCallHandler(null);
             channel = null;

@@ -10,7 +10,8 @@
   `SecondScreenLifecycle.java`（JVM 测试 `android/app/src/test/kotlin/app/fushi/reader/SecondScreenLifecycleTest.kt`）。
 - **面板**：`SecondScreenActivity.java`，跑在独立进程 `:second_screen`（WebView 数据目录后缀 `second_screen`），中转
   `SecondScreenRelayService.java`（Messenger）。channel `app.fushi.reader/second_screen`（`ChannelNames.SECOND_SCREEN` /
-  `FushiChannels.secondScreen`）。旧的 `GameStreamCompanion*` 四件套、`game_stream_companion` channel 与 `:companion`
+  `FushiChannels.secondScreen`）。relay 是异步 bind 的：连上并注册之前 Dart 发出的消息（伴屏的 `ready`）先存在
+  `SecondScreenRelayOutbox.java`（JVM 测试 `SecondScreenRelayOutboxTest.kt`），连上后按序发出，不再丢。旧的 `GameStreamCompanion*` 四件套、`game_stream_companion` channel 与 `:companion`
   进程已删除，不留回退。
 - 为什么不用 `Presentation`：查词词典要真 Activity 里的 WebView；完整的 popup AppModel 只在自己进程里安全；第二个
   engine 里的 WebView 有 Impeller 拆除卡死风险（BUG-2790）。
