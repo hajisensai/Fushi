@@ -1,5 +1,21 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-08 增补（Linux Wayland 全局热键）：**
+>
+> - `globalExternal` 三个动作的 OS 注册收口到 `GlobalHotKeyBackend`（`lib/src/shortcuts/global_hotkey_backend.dart`）：
+>   Windows / macOS / Linux X11 走 `NativeGlobalHotKeyBackend`（hotkey_manager，X11 即 keybinder，行为不变）；
+>   Linux **Wayland 桌面**（按 `XDG_SESSION_TYPE` / `WAYLAND_DISPLAY` 判，不看 GTK 后端——Flatpak 钉了
+>   `GDK_BACKEND=x11` 但桌面仍是 Wayland）走 XDG GlobalShortcuts portal（`portal_global_hotkey_backend.dart` +
+>   `global_shortcuts_portal.dart`）。
+> - portal 下按键归桌面：注册表里的键盘绑定只作 `preferred_trigger` 提示，桌面可能弹窗让用户确认 / 改键，之后改键在
+>   系统设置里。设置页 `globalExternal` 的「键盘」视图在 Wayland 上换成 `GlobalHotKeyPortalPanel`：显示桌面回报的
+>   实际触发键、portal 缺失 / 对话框被取消 / 会话被关等原因，以及「在系统设置中修改」（portal v2 `ConfigureShortcuts`）
+>   或文字指引；手柄 / 鼠标视图不变。
+> - 热键不再依附查词卡覆盖窗：Wayland 会话没有覆盖窗时照样注册；选中文本查词改落到主窗查词页
+>   （`queueExternalLookup`），没取到选区就打开查词页；截屏识字需要覆盖窗，没有时不向 portal 声明。
+> - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
+>   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
+
 > **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
 >
 > - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、

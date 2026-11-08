@@ -46,14 +46,21 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart'
     show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_chords.dart';
+import 'package:fushi/src/shortcuts/global_shortcuts_portal.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/native_global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/portal_global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/storage/legacy_support_dir_migration.dart'
+    show kFushiLinuxApplicationId;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceGame, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
 
 /// Per-lookup placement facts supplied by a native hit surface.
@@ -129,12 +136,41 @@ class GlobalLookupController {
 
   AppModel? _appModel;
 
-  /// 本进程当前已注册到 OS 的热键，按动作索引。表驱动而不是每个动作一个字段：
-  /// 撤销/重注册只有一条路径，加动作不必再抄一遍生命周期。
-  final Map<ShortcutAction, HotKey> _hotKeys = <ShortcutAction, HotKey>{};
+  /// The OS mechanism the app-outside hotkeys go through (created on the
+  /// first registration): `hotkey_manager` on Windows / macOS / Linux X11, the
+  /// XDG GlobalShortcuts portal on a Linux Wayland desktop. See
+  /// `global_hotkey_backend.dart`.
+  GlobalHotKeyBackend? _hotKeyBackend;
+  StreamSubscription<GlobalHotKeyStatus>? _hotKeyStatusSub;
 
-  /// 热键(重)注册的串行链。见 [_registerHotKeysFromRegistry] 的重入说明。
-  Future<void> _hotKeyRegistration = Future<void>.value();
+  /// What the hotkey backend reports, for the shortcut settings page (null
+  /// until the controller started). On the portal it carries the triggers the
+  /// desktop actually bound and why hotkeys may be unavailable.
+  final ValueNotifier<GlobalHotKeyStatus?> hotKeyStatus =
+      ValueNotifier<GlobalHotKeyStatus?>(null);
+
+  /// Test seam: replaces the platform backend.
+  @visibleForTesting
+  static GlobalHotKeyBackend Function()? hotKeyBackendOverride;
+
+  /// Which hotkey backend this platform uses; null = none (mobile).
+  static GlobalHotKeyBackendKind? get platformHotKeyBackendKind =>
+      globalHotKeyBackendKindFor(
+        isWindows: Platform.isWindows,
+        isMacOS: Platform.isMacOS,
+        isLinux: Platform.isLinux,
+        environment: Platform.environment,
+      );
+
+  /// Whether this process registers app-outside hotkeys at all. Independent of
+  /// [isSupported]: a Linux Wayland desktop has no lookup card overlay, yet its
+  /// hotkeys still work through the portal (selection lookup then lands in the
+  /// main window, see [triggerSelectionLookup]).
+  static bool get osHotKeysSupported =>
+      hotKeyBackendOverride != null || platformHotKeyBackendKind != null;
+
+  /// [start]'s gate: either surface is reason enough to start.
+  static bool get _startable => isSupported || osHotKeysSupported;
   // TODO-1066 — the live shortcut registry we read the global-lookup hotkey
   // from (was a hard-coded Ctrl+Alt+D). Listened to so a user remapping the
   // key in settings (or a profile switch that reloads bindings) re-registers
@@ -361,7 +397,7 @@ class GlobalLookupController {
   /// 查词模块开着、平台支持且覆盖窗还没起：起它。
   Future<void> startIfLookupModuleEnabled(AppModel appModel) async {
     // 先判闩再调 start：AppModel 通知很频繁，别每次都往 glog 里记一条 start。
-    if (!isSupported || _started) return;
+    if (!_startable || _started) return;
     if (!appModel.moduleVisibility.isEnabled(ModuleId.lookup)) return;
     await start(appModel: appModel);
   }
@@ -378,14 +414,56 @@ class GlobalLookupController {
 
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
+  ///
+  /// The overlay part needs [isSupported]; the app-outside triggers (OS
+  /// hotkeys, gamepad route) only need [osHotKeysSupported] — on a Linux
+  /// Wayland desktop there is no overlay, but the hotkeys still work through
+  /// the GlobalShortcuts portal.
   Future<void> start({required AppModel appModel}) async {
-    glog('start: called (supported=$isSupported started=$_started)');
-    if (!isSupported || _started) {
+    glog(
+      'start: called (supported=$isSupported '
+      'hotkeys=$osHotKeysSupported started=$_started)',
+    );
+    if (!_startable || _started) {
       return;
     }
     _started = true;
     _appModel = appModel;
+    if (isSupported) await _startOverlay(appModel);
 
+    // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
+    // hard-coded Ctrl+Alt+D that bypassed the whole registry, so it never showed
+    // up in the settings page and could not be remapped). Register it now and
+    // re-register whenever the registry changes (user remap / profile switch).
+    _registry = appModel.shortcutRegistry;
+    _registry!.addListener(_onRegistryChanged);
+    await _registerHotKeysFromRegistry();
+
+    // TODO-1066 — 另外两条非键盘触发源（手柄按钮 / 鼠标侧键）。它们与上面的键盘
+    // 热键是**同一个执行体、不同的 OS 机制**（见 ShortcutScope.globalExternal 的
+    // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
+    // native 侧按绑定注册 RawInput 监听（随覆盖窗的 native 通道，没有覆盖窗就没有）。
+    // 两者都随注册表变更重推（_onRegistryChanged）。
+    GlobalExternalLookupRoute.set(
+      () => triggerSelectionLookup(source: 'gamepad'),
+    );
+    if (!isSupported) return;
+    await _registerMouseTriggerFromRegistry();
+
+    // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
+    // so the first hotkey lookup hits a WARM surface instead of racing a cold
+    // create chain (>450ms) against the reveal. Sized to the current card size ×
+    // dpr so its off-screen self-measure is at a sane size; the real geometry is
+    // applied on the first showAt/reveal. Non-fatal on failure (the lazy create
+    // path in showAt still works, just cold). Semantics mirror the in-app
+    // keepWebViewWarm hot slot, but for THIS bare overlay window (which
+    // webview_prewarm.dart never warmed — that gap was the root cause).
+    unawaited(_prewarmOverlay(appModel));
+  }
+
+  /// The overlay half of [start]: popup assets, reverse handlers, capture
+  /// blocking.
+  Future<void> _startOverlay(AppModel appModel) async {
     final String assetsDir = _popupAssetsDir();
     glog('start: assetsDir=$assetsDir');
     await GlobalLookupChannel.prepare(assetsDir);
@@ -409,33 +487,6 @@ class GlobalLookupController {
     } catch (e) {
       glog('start: setBlockCapture FAILED (non-fatal): $e');
     }
-
-    // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
-    // hard-coded Ctrl+Alt+D that bypassed the whole registry, so it never showed
-    // up in the settings page and could not be remapped). Register it now and
-    // re-register whenever the registry changes (user remap / profile switch).
-    _registry = appModel.shortcutRegistry;
-    _registry!.addListener(_onRegistryChanged);
-    await _registerHotKeysFromRegistry();
-
-    // TODO-1066 — 另外两条非键盘触发源（手柄按钮 / 鼠标侧键）。它们与上面的键盘
-    // 热键是**同一个执行体、不同的 OS 机制**（见 ShortcutScope.globalExternal 的
-    // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
-    // native 侧按绑定注册 RawInput 监听。两者都随注册表变更重推（_onRegistryChanged）。
-    GlobalExternalLookupRoute.set(
-      () => triggerSelectionLookup(source: 'gamepad'),
-    );
-    await _registerMouseTriggerFromRegistry();
-
-    // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
-    // so the first hotkey lookup hits a WARM surface instead of racing a cold
-    // create chain (>450ms) against the reveal. Sized to the current card size ×
-    // dpr so its off-screen self-measure is at a sane size; the real geometry is
-    // applied on the first showAt/reveal. Non-fatal on failure (the lazy create
-    // path in showAt still works, just cold). Semantics mirror the in-app
-    // keepWebViewWarm hot slot, but for THIS bare overlay window (which
-    // webview_prewarm.dart never warmed — that gap was the root cause).
-    unawaited(_prewarmOverlay(appModel));
   }
 
   /// 「防截屏」pref（lookupBlockCapture）即时重应用到覆盖窗。设置页开关是唯一
@@ -573,104 +624,104 @@ class GlobalLookupController {
     await handler();
   }
 
-  /// TODO-1066 — (un)registers the OS-level hotkeys from the current
-  /// [_osHotKeyActions] bindings in the registry. Unregisters everything
-  /// previously registered first so a remap does not leak the old combo. For
-  /// each action the first keyboard binding is used (there is at most one
-  /// meaningful global hotkey per action); when an action has no keyboard
-  /// binding (e.g. the user cleared it, or a platform with no default) nothing
-  /// is registered for it and that one action is simply off until a key is
-  /// assigned — the others still register. Non-fatal on failure.
+  /// TODO-1066 — (re)registers the OS-level hotkeys from the current
+  /// [_osHotKeyActions] bindings in the registry, through the platform's
+  /// [GlobalHotKeyBackend]. The backend replaces the whole set (so a remap
+  /// never leaks the old combo) and serializes overlapping rounds. For each
+  /// action the first keyboard binding is used (there is at most one
+  /// meaningful global hotkey per action). Native backend: an action without a
+  /// keyboard binding stays off until a key is assigned. Portal backend: the
+  /// binding is only the preferred-trigger hint; the desktop owns the key.
+  /// Non-fatal on failure (the backends log every failure visibly).
   Future<void> _registerHotKeysFromRegistry() {
-    // 串行化：本方法从「同步清空 _hotKeys」到「逐个 register 完」之间有多个 await，
-    // 而调用方 [_onRegistryChanged] 是 fire-and-forget、registry 每次 notifyListeners
-    // 都触发一次（改键 + 恢复默认 + 切 profile 可以连着来）。若第二次调用在第一次的
-    // await 缝里进来，它看到的 _hotKeys 已被清空 ⇒ **跳过注销**，同一组合键被注册两
-    // 遍，而表里只留得下最后一个 —— 另一个再也注销不掉（旧键继续生效 / 一次按键触发
-    // 两遍）。接在上一轮尾巴上跑，缝就不存在了。
-    final Future<void> next = _hotKeyRegistration
-        .then((_) => _registerHotKeysNow())
-        // 上一轮失败不能卡死整条链（内部已逐条 catch，这里只兜底）。
-        .catchError(
-          (Object e) => glog('hotkey: registration round FAILED: $e'),
-        );
-    _hotKeyRegistration = next;
-    return next;
+    final GlobalHotKeyBackend backend = _hotKeyBackend ??= _createHotKeyBackend();
+    return backend.apply(_hotKeyRequests());
   }
 
-  /// 串行链上的一轮实际注册，只由 [_registerHotKeysFromRegistry] 调用。
-  Future<void> _registerHotKeysNow() async {
-    // Drop everything registered last round (idempotent: safe when empty).
-    final List<MapEntry<ShortcutAction, HotKey>> previous = _hotKeys.entries
-        .toList(growable: false);
-    _hotKeys.clear();
-    for (final MapEntry<ShortcutAction, HotKey> entry in previous) {
-      try {
-        await hotKeyManager.unregister(entry.value);
-      } catch (e) {
-        glog(
-          'hotkey: unregister previous ${entry.key.key} '
-          'FAILED (non-fatal): $e',
-        );
-      }
-    }
+  GlobalHotKeyBackend _createHotKeyBackend() {
+    final GlobalHotKeyBackend backend =
+        hotKeyBackendOverride?.call() ??
+        switch (platformHotKeyBackendKind) {
+          GlobalHotKeyBackendKind.portal => PortalGlobalHotKeyBackend(
+            portal: DBusGlobalShortcutsPortal(log: glog),
+            appId: kFushiLinuxApplicationId,
+            log: glog,
+            onError: (String context, Object error, StackTrace? stack) =>
+                ErrorLogService.instance.log(
+                  'GlobalLookupController.$context',
+                  error,
+                  stack ?? StackTrace.current,
+                ),
+          ),
+          _ => NativeGlobalHotKeyBackend(),
+        };
+    glog('hotkey: backend=${backend.kind.name}');
+    hotKeyStatus.value = backend.status;
+    _hotKeyStatusSub = backend.statusChanges.listen(
+      (GlobalHotKeyStatus status) => hotKeyStatus.value = status,
+    );
+    return backend;
+  }
+
+  /// One request per [_osHotKeyActions] entry whose executor works in this
+  /// session.
+  List<GlobalHotKeyRequest> _hotKeyRequests() {
     final FushiShortcutRegistry? registry = _registry;
-    if (registry == null) {
-      return;
-    }
+    if (registry == null) return const <GlobalHotKeyRequest>[];
+    final List<GlobalHotKeyRequest> requests = <GlobalHotKeyRequest>[];
     for (final MapEntry<ShortcutAction, Future<void> Function()> entry
         in _osHotKeyActions.entries) {
-      await _registerOneHotKey(registry, entry.key, entry.value);
+      final ShortcutAction action = entry.key;
+      if (!osHotKeyActionWorksHere(action)) {
+        glog('hotkey: ${action.key} not available in this session — skipped');
+        continue;
+      }
+      final ShortcutBindingSet set = registry.bindingsFor(action);
+      final GlobalHotKeyChord? chord = set.keyboardBindings.isEmpty
+          ? null
+          : globalHotKeyChordFor(set.keyboardBindings.first);
+      if (set.keyboardBindings.isNotEmpty && chord == null) {
+        glog('hotkey: ${action.key} binding has no mappable physical key');
+      }
+      final Future<void> Function() run = entry.value;
+      requests.add(
+        GlobalHotKeyRequest(
+          id: action.key,
+          description: action.label,
+          chord: chord,
+          onActivated: (GlobalHotKeyActivation activation) =>
+              DesktopLookupService.runWithActivationToken<void>(
+                activation.activationToken,
+                run,
+              ),
+        ),
+      );
     }
+    return requests;
   }
 
-  /// 注册单个 OS 热键。失败只影响这一个动作，其余照常注册。
-  Future<void> _registerOneHotKey(
-    FushiShortcutRegistry registry,
-    ShortcutAction action,
-    Future<void> Function() run,
-  ) async {
-    final ShortcutBindingSet set = registry.bindingsFor(action);
-    if (set.keyboardBindings.isEmpty) {
-      glog(
-        'hotkey: no keyboard binding for ${action.key} — not '
-        'registered (feature off until a key is assigned)',
-      );
-      return;
-    }
-    final HotKey? hotKey = _hotKeyFromBinding(set.keyboardBindings.first);
-    if (hotKey == null) {
-      glog(
-        'hotkey: ${action.key} binding has no mappable physical key — '
-        'not registered',
-      );
-      return;
-    }
-    _hotKeys[action] = hotKey;
-    try {
-      await hotKeyManager.register(
-        hotKey,
-        keyDownHandler: (_) => unawaited(run()),
-      );
-      glog(
-        'hotkey: registered ${action.key} = '
-        '${set.keyboardBindings.first.displayLabel} from registry OK',
-      );
-    } catch (e, st) {
-      // 注册失败要能被撤销逻辑之外的人看见：本表已记下它，但 OS 侧其实没接上，
-      // 下一轮 unregister 对未注册的 HotKey 是无害 no-op，故不必回滚这条记录。
-      glog('hotkey: register ${action.key} FAILED: $e');
-      // TODO-1086 可见化：全局查词热键注册失败过去只写进 glog 临时诊断文件，用户/开发者
-      // 都看不到「应用外查词唤不出来」的真正原因（热键没注册上）。这里额外把失败记进
-      // ErrorLogService（用户可见的错误日志页 + 随复制/上传链路带走），让此失败成为可诊断
-      // 项而不是静默吞掉。别的注册/系统热键冲突（另一个 app 已占用同一组合键）也会经此暴露。
-      ErrorLogService.instance.log(
-        'GlobalLookupController.registerHotKey',
-        'Failed to register global hotkey ${action.key} = '
-            '${set.keyboardBindings.first.displayLabel}: $e',
-        st,
-      );
-    }
+  /// Screen OCR needs the overlay (freeze layer + lookup card); the other two
+  /// actions work without it ([triggerSelectionLookup] falls back to the main
+  /// window, [openLookupPageInMainWindow] never needed it).
+  static bool osHotKeyActionWorksHere(ShortcutAction action) =>
+      action != ShortcutAction.globalExternalScreenOcr || isSupported;
+
+  /// Settings page: bind the hotkeys again after the user dismissed the
+  /// desktop's shortcut dialog or the desktop closed the session.
+  Future<void> rebindHotKeys() async => _hotKeyBackend?.rebind();
+
+  /// Settings page: let the desktop open its shortcut editor for Fushi
+  /// (portal version 2). false = it cannot; the page explains where instead.
+  Future<bool> configureHotKeysInSystem() async =>
+      await _hotKeyBackend?.configure() ?? false;
+
+  /// Exit chain: unregister the hotkeys / close the portal session.
+  Future<void> releaseHotKeys() async {
+    final GlobalHotKeyBackend? backend = _hotKeyBackend;
+    _hotKeyBackend = null;
+    await _hotKeyStatusSub?.cancel();
+    _hotKeyStatusSub = null;
+    await backend?.dispose();
   }
 
   /// 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上
@@ -701,6 +752,33 @@ class GlobalLookupController {
     await DesktopLookupService.instance.bringMainWindowToFront();
     model.requestHomeDictionaryTab(focusSearch: true);
     glog('openLookupPage: main window fronted + dictionary tab requested');
+  }
+
+  /// [triggerSelectionLookup] without an overlay: capture the foreground
+  /// selection, raise the main window and look it up on the dictionary page
+  /// ([AppModel.queueExternalLookup], the same exit `fushi://lookup` uses).
+  /// Nothing selected (or a desktop whose compositor offers no data control,
+  /// e.g. GNOME): open the lookup page with the search box focused instead —
+  /// [openLookupPageInMainWindow] — so the key press always does something
+  /// visible.
+  Future<void> _lookupSelectionInMainWindow(String source) async {
+    final AppModel? model = _appModel;
+    if (model == null) {
+      glog('hotkey(main window): no AppModel (start() not run) — ignored');
+      return;
+    }
+    final String text =
+        (await SelectionCapture.captureForegroundSelection())?.trim() ?? '';
+    glog(
+      'hotkey(main window): FIRED (source=$source) '
+      'selection=${text.isEmpty ? 'empty' : '${text.length} chars'}',
+    );
+    if (text.isEmpty) {
+      await openLookupPageInMainWindow();
+      return;
+    }
+    await DesktopLookupService.instance.bringMainWindowToFront();
+    model.queueExternalLookup(text);
   }
 
   /// TODO-1066 — DOM `MouseEvent.button` 号里**允许**当全局触发的那两个：
@@ -769,42 +847,7 @@ class GlobalLookupController {
   /// 同步的 OS 侧状态）。
   void _onRegistryChanged() {
     unawaited(_registerHotKeysFromRegistry());
-    unawaited(_registerMouseTriggerFromRegistry());
-  }
-
-  /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
-  /// hotkey_manager keys off the USB-HID [PhysicalKeyboardKey]; the registry
-  /// stores a logical key + [ModifierKey] set. [InputBinding.physicalKey] reuses
-  /// the same logical→physical table normalizeCapturedKey indexes (US-QWERTY). Returns
-  /// null when the logical key has no physical mapping (e.g. game* / numpad keys
-  /// that are not valid global hotkeys anyway).
-  HotKey? _hotKeyFromBinding(InputBinding binding) {
-    final PhysicalKeyboardKey? physical = binding.physicalKey;
-    if (physical == null) {
-      return null;
-    }
-    final List<HotKeyModifier> modifiers = <HotKeyModifier>[];
-    for (final ModifierKey mod in binding.modifiers) {
-      switch (mod) {
-        case ModifierKey.ctrl:
-          modifiers.add(HotKeyModifier.control);
-          break;
-        case ModifierKey.shift:
-          modifiers.add(HotKeyModifier.shift);
-          break;
-        case ModifierKey.alt:
-          modifiers.add(HotKeyModifier.alt);
-          break;
-        case ModifierKey.meta:
-          modifiers.add(HotKeyModifier.meta);
-          break;
-      }
-    }
-    return HotKey(
-      key: physical,
-      modifiers: modifiers,
-      scope: HotKeyScope.system,
-    );
+    if (isSupported) unawaited(_registerMouseTriggerFromRegistry());
   }
 
   /// Absolute folder that holds popup.html — see [popupAssetsDirFor].
@@ -856,7 +899,13 @@ class GlobalLookupController {
   ///
   /// 方法体里没有任何键盘/修饰键相关的逻辑——它本来就是触发源无关的，改成公开
   /// 是零行为变更。[source] 只进诊断日志，用来区分是哪个触发源点的火。
+  ///
+  /// 没有覆盖窗（Linux Wayland 桌面：查词卡要自己摆窗口，Wayland 不许）时，热键经
+  /// GlobalShortcuts portal 照样会到这里：选中文本照样取（runner 经
+  /// ext-data-control 读合成器的 primary selection），结果落到主窗查词页
+  /// （[_lookupSelectionInMainWindow]），而不是对着一个不存在的覆盖窗调 showAt。
   Future<void> triggerSelectionLookup({String source = 'hotkey'}) async {
+    if (!isSupported) return _lookupSelectionInMainWindow(source);
     final GlobalLookupRoute route = GlobalLookupRoute.desktop(
       lookupEpoch: ++_desktopLookupEpoch,
     );

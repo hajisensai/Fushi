@@ -102,4 +102,12 @@ abstract final class FushiChannels {
   static const MethodChannel gameStreamCompanion = MethodChannel(
     '$_prefix/game_stream_companion',
   );
+
+  /// Linux GTK runner: raise the main window with a Wayland `xdg_activation_v1`
+  /// token (e.g. the one the GlobalShortcuts portal sends with `Activated`).
+  /// Runner side `linux/runner/my_application.cc`, Dart facade
+  /// `lib/src/platform/desktop/linux_window_activation_channel.dart`.
+  static const MethodChannel windowActivation = MethodChannel(
+    '$_prefix/window_activation',
+  );
 }

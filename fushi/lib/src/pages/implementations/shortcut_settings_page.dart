@@ -16,7 +16,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings/global_hotkey_portal_panel.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -47,6 +49,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
+    show GlobalHotKeyBackendKind;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -610,6 +614,23 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// 这类 scope 与鼠标设备一律回落到列表行（off-figure 键也在列表里可改）。
   Widget? _buildFigure(ShortcutScope scope, ShortcutInputDevice device) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // Linux Wayland: the desktop owns the app-outside keys (GlobalShortcuts
+    // portal), so the keyboard view of this scope shows what the desktop bound
+    // instead of an in-app recorder nobody would listen to. Gamepad / mouse
+    // stay the regular rows: those triggers are Fushi's own.
+    if (scope == ShortcutScope.globalExternal &&
+        device == ShortcutInputDevice.keyboard &&
+        GlobalLookupController.platformHotKeyBackendKind ==
+            GlobalHotKeyBackendKind.portal) {
+      final GlobalLookupController controller = GlobalLookupController.instance;
+      return GlobalHotKeyPortalPanel(
+        status: controller.hotKeyStatus,
+        actions: ShortcutAction.actionsForScope(scope),
+        availableHere: GlobalLookupController.osHotKeyActionWorksHere,
+        onRebind: controller.rebindHotKeys,
+        onConfigure: controller.configureHotKeysInSystem,
+      );
+    }
     if (_visualMode) {
       final EdgeInsets padding = EdgeInsets.symmetric(
         horizontal: tokens.spacing.rowHorizontal,

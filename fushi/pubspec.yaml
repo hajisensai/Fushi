@@ -49,6 +49,9 @@ dependencies:
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
+  # XDG desktop portals over the session bus: Linux Wayland global shortcuts
+  # (lib/src/shortcuts/global_shortcuts_portal.dart).
+  dbus: ^0.7.12
   device_info_plus: ^9.0.0
   dio: ^5.1.1
   # 2.x 起依赖 material_ui：其 ColorScheme 与本仓迁移后的 ColorScheme 同一类型。

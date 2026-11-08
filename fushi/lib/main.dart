@@ -90,6 +90,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
+    show GlobalHotKeyBackendKind;
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
@@ -481,7 +483,12 @@ void main([List<String> args = const <String>[]]) {
         await windowManager.setPreventClose(true);
         // Windows runner keeps the main window hidden until the first usable
         // home or error frame has reached the raster thread.
-        await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
+        // 热重载清理残留全局热键（hotkey_manager 的初始化约定）。Linux Wayland
+        // 桌面的热键走 GlobalShortcuts portal，不碰 X11 keybinder。
+        if (GlobalLookupController.platformHotKeyBackendKind ==
+            GlobalHotKeyBackendKind.native) {
+          await hotKeyManager.unregisterAll();
+        }
         // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
         // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
         if (Platform.isWindows) {
@@ -1534,6 +1541,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // （CLI 能认出残留，但少一次连不上的探测）。
       _guardedExitStep('ctl channel stop', () async {
         await _ctlServer?.stop().timeout(_exitCtlStopTimeout);
+      }),
+      // app 外热键：注销 OS 热键 / 关掉 GlobalShortcuts portal 会话（连接断开时
+      // portal 也会收，这里是显式收口）。
+      _guardedExitStep('global hotkeys release', () async {
+        await GlobalLookupController.instance.releaseHotKeys().timeout(
+          _exitCtlStopTimeout,
+        );
       }),
       // 本机 GPT-SoVITS：Windows 不连坐子进程，exit(0) 后服务会继续占着显存和端口，
       // 解压中的 tar 也会继续往安装目录写。shutdown 同时停服务、取消安装（杀 tar）。

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:characters/characters.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:fushi/src/platform/desktop/linux_window_activation_channel.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -93,6 +95,30 @@ class DesktopLookupService extends ChangeNotifier {
   /// false，照常唤起。
   Future<void> bringPendingLookupToFront() => bringMainWindowToFront();
 
+  static final Object _activationTokenKey = Object();
+
+  /// Runs [body] with a Wayland activation [token] in scope: a
+  /// [bringMainWindowToFront] anywhere inside it (across awaits) raises the
+  /// window with that token. The app-outside hotkey path uses it for the token
+  /// the GlobalShortcuts portal sends with `Activated`; scoped to the one
+  /// activation instead of a field, so a stale token can never leak into a
+  /// later, unrelated raise. A null token just runs [body].
+  static Future<T> runWithActivationToken<T>(
+    String? token,
+    Future<T> Function() body,
+  ) {
+    if (token == null || token.isEmpty) return body();
+    return runZoned(
+      body,
+      zoneValues: <Object?, Object?>{_activationTokenKey: token},
+    );
+  }
+
+  /// The activation token [runWithActivationToken] put in scope, if any.
+  @visibleForTesting
+  static String? get activationTokenInScope =>
+      Zone.current[_activationTokenKey] as String?;
+
   /// 统一的桌面主窗口显式唤起出口。Hook 台词浮窗的“打开捕获工作台”等非查词
   /// 场景也必须经过这里，复用 Windows 前台归属判断和任务栏闪烁清理。
   Future<void> bringMainWindowToFront() async {
@@ -115,7 +141,14 @@ class DesktopLookupService extends ChangeNotifier {
         await windowManager.restore();
       }
       await windowManager.show();
-      await windowManager.focus();
+      // Wayland: a plain focus request is refused (the window at most demands
+      // attention); a token from the user's action lets the compositor raise it.
+      final String? token = activationTokenInScope;
+      final bool presented =
+          Platform.isLinux &&
+          token != null &&
+          await LinuxWindowActivationChannel.present(token);
+      if (!presented) await windowManager.focus();
     } on MissingPluginException {
       return;
     } on PlatformException {
