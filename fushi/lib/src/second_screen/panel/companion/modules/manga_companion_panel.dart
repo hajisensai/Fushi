@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
@@ -352,17 +351,8 @@ class _TapWordLineState extends State<_TapWordLine> {
   final GlobalKey _textKey = GlobalKey();
   int? _tapped;
 
-  /// UTF-16 index of the character under [global]; null when the text is
-  /// not laid out.
-  int? _indexAt(Offset global) {
-    final RenderObject? box = _textKey.currentContext?.findRenderObject();
-    if (box is! RenderParagraph || widget.text.isEmpty) return null;
-    final Offset local = box.globalToLocal(global);
-    final TextPosition position = box.getPositionForOffset(local);
-    int index = position.offset;
-    if (position.affinity == TextAffinity.upstream && index > 0) index--;
-    return index.clamp(0, widget.text.length - 1);
-  }
+  int? _indexAt(Offset global) =>
+      companionTextIndexAt(_textKey, widget.text, global);
 
   @override
   Widget build(BuildContext context) {

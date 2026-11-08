@@ -63,7 +63,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(lookup.current!.term, '先生と呼んでいた');
       expect(lookup.current!.source, 'こころ');
-      expect(lookup.arrivals, 1);
+      expect(lookup.surfaced, 1);
       expect(lookup.history, hasLength(1));
       expect(_states(rec).single.open, isTrue);
       expect(_states(rec).single.term, '先生と呼んでいた');
@@ -88,14 +88,31 @@ void main() {
       );
     });
 
-    test('panel lookups do not count as arrivals; replay bumps the '
+    test('panel lookups surface the Lookup tab; replay only bumps the '
         'generation', () {
       lookup.lookUp(text: _line, charIndex: 8, sentence: _line);
-      expect(lookup.arrivals, 0);
+      expect(lookup.surfaced, 1);
       final int generation = lookup.generation;
       lookup.replay(lookup.history.first);
+      expect(lookup.surfaced, 1);
       expect(lookup.generation, generation + 1);
       expect(lookup.history, hasLength(1));
+    });
+
+    test('the matched headword labels the history; replay keeps it', () {
+      lookup.lookUp(text: _line, charIndex: 8, sentence: _line);
+      final CompanionLookupEntry first = lookup.current!;
+      expect(first.label, '先生と呼んでいた');
+      lookup.reportHeadword(first, '先生');
+      expect(lookup.current!.label, '先生');
+      expect(lookup.current!.term, '先生と呼んでいた');
+      expect(lookup.history.single.label, '先生');
+      lookup.replay(lookup.history.single);
+      expect(lookup.current!.label, '先生');
+      expect(lookup.history, hasLength(1));
+      // A stale entry (no longer in the history) changes nothing.
+      lookup.reportHeadword(first, '先');
+      expect(lookup.current!.label, '先生');
     });
 
     test('close reports the panel closed and keeps the history', () async {
@@ -217,6 +234,61 @@ void main() {
       await tester.tap(companionButton(t.second_screen_lookup_close));
       await tester.pumpAndSettle();
       expect(shell.currentState!.tab, CompanionTab.lookup);
+    });
+
+    testWidgets('a line looked up on a module panel opens the Lookup tab '
+        '(the result is not visible on Now); closing goes back to Now', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<CompanionShellState> shell =
+          GlobalKey<CompanionShellState>();
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(470, 540);
+      addTearDown(tester.view.reset);
+      rec.push(
+        const CompanionSummaryMessage(
+          CompanionDailySummary(dayKey: '2026-11-07'),
+        ),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            companionPanelSessionProvider.overrideWith(
+              (Ref ref) => rec.session,
+            ),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              builder: (BuildContext context, Widget? child) =>
+                  LegacyDesignCompatibility(
+                    child: FushiGlassScope(child: child!),
+                  ),
+              home: CompanionShell(
+                key: shell,
+                lookupTab: const CompanionLookupTab(
+                  dictionaryBuilder: _fakeDictionary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.tab, CompanionTab.now);
+
+      ProviderScope.containerOf(tester.element(find.byType(CompanionShell)))
+          .read(companionLookupControllerProvider)
+          .lookUp(text: _line, charIndex: 0, sentence: _line);
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.tab, CompanionTab.lookup);
+      expect(
+        find.text('dict:${companionLookupTerm(_line, 0)}:1'),
+        findsOneWidget,
+      );
+
+      await tester.tap(companionButton(t.second_screen_lookup_close));
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.tab, CompanionTab.now);
     });
   });
 }

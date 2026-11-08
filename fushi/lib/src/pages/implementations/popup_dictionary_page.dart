@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show FushiRubySpan, shiftRubySpans;
+    show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
@@ -52,6 +52,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.embedded = false,
     this.onMined,
     this.onLookupStarted,
+    this.onHeadword,
     super.key,
   });
 
@@ -116,6 +117,11 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// companion passes one that has the main engine count the lookup for the
   /// media on top; null = count here as usual.
   final VoidCallback? onLookupStarted;
+
+  /// Called with the dictionary headword the host's lookup (the
+  /// [searchTerm] / [sourceCharIndex] scan, not a nested or re-scanned one)
+  /// matched, once its result is in. The companion labels its history with it.
+  final ValueChanged<String>? onHeadword;
 
   @override
   ConsumerState<PopupDictionaryPage> createState() =>
@@ -234,6 +240,19 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
   /// 把整行放上源文本条，从被点字起扫描查词——与在条上点那个字同一条路径。
+  /// The query of the host's lookup whose headword [PopupDictionaryPage.onHeadword]
+  /// still waits for; null once reported (or for any other search).
+  String? _headwordQuery;
+
+  @override
+  void onPopupSearchResult(String query, DictionarySearchResult result) {
+    final ValueChanged<String>? onHeadword = widget.onHeadword;
+    if (onHeadword == null || query != _headwordQuery) return;
+    _headwordQuery = null;
+    final String word = result.entries.first.word;
+    if (word.isNotEmpty) onHeadword(word);
+  }
+
   void _lookupWidgetSource() {
     final String text = widget.searchTerm;
     final int unitIndex = widget.sourceCharIndex;
@@ -245,10 +264,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           );
     if (scan == null) {
       _sourceLineQuery = '';
+      _headwordQuery = text.trim();
       _pushSearch(text, Rect.zero, reuseWarmSlot: true);
       return;
     }
     _sourceLineQuery = scan.suffix.trim();
+    _headwordQuery = scan.suffix.trim();
     final String line = text.trim();
     _searchController.text = line;
     _searchController.selection = TextSelection.collapsed(offset: line.length);

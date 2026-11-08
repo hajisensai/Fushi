@@ -142,8 +142,8 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
     CompanionLookupController? previous,
     CompanionLookupController lookup,
   ) {
-    if (lookup.arrivals != _seenArrivals) {
-      _seenArrivals = lookup.arrivals;
+    if (lookup.surfaced != _seenSurfaced) {
+      _seenSurfaced = lookup.surfaced;
       if (_tab != CompanionTab.lookup) {
         final CompanionTab from = _tab;
         navigatorOf(
@@ -162,7 +162,7 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
     }
   }
 
-  int _seenArrivals = 0;
+  int _seenSurfaced = 0;
   StreamSubscription<CompanionHostMessage>? _controllerInput;
   bool _driving = false;
   final GlobalKey _focusScopeKey = GlobalKey(debugLabel: 'companion-focus');
@@ -176,7 +176,7 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
     final CompanionLookupController lookup = ref.read(
       companionLookupControllerProvider,
     );
-    _seenArrivals = lookup.arrivals;
+    _seenSurfaced = lookup.surfaced;
     _tab =
         CompanionTab.fromWire(
           ref.read(companionPanelSessionProvider).uiState.tab,
@@ -186,7 +186,7 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
     // the panel's backlog and the lookup controller showed it on creation)
     // surfaces like any other: open on the Lookup tab, closing returns to the
     // tab the user was on (Now, or the restored one).
-    if (lookup.arrivals > 0 && lookup.current != null) {
+    if (lookup.surfaced > 0 && lookup.current != null) {
       _beforeLookup = _tab;
       _tab = CompanionTab.lookup;
     }

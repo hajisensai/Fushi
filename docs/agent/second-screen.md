@@ -82,7 +82,7 @@
   详情）；从这里打开 → 主屏先按正常离开方式保存位置再打开，副屏切到 Now，并显示 5 分钟的「回到 <上一个>」。
   在线源、统计、词典管理等 →「在主屏打开」。
 - **Lookup**（`companion_lookup_tab.dart`）：嵌入式 `PopupDictionaryPage(embedded: true)`（制卡、词音、条目切换都来自弹窗
-  本身；embedded 不套自己的 SafeArea，insets 归页签管，否则底栏高度被算两次）+ 内存里的查词历史（50 条）。主屏发来的查词自动切到本页签，关闭后回到原页签。
+  本身；embedded 不套自己的 SafeArea，insets 归页签管，否则底栏高度被算两次）+ 内存里的查词历史（50 条）。主屏发来的查词、模块面板上点 / 长按的行（查按下的那个字起的词，`CompanionLineTile.onLongPressChar` 给字下标）都自动切到本页签（词典只渲染在这里，留在 Now 上结果不可见），关闭后回到原页签；历史重查不切。历史标签显示词典匹配到的词头（`PopupDictionaryPage.onHeadword`），没有结果时才显示扫描文本。
 - **Settings**（`companion_settings_tab.dart`）：先列「当前屏幕」的分类，再是搜索 + 全部分类。
 
 ## 6. 设置索引共享
@@ -119,7 +119,14 @@
   `manga_fushi/controller_lookup.part.dart`、`music/music_lyrics_controller_lookup.part.dart`，公共步进
   `media/shared/controller_lookup_steps.dart`。绑定盘点见 [shortcuts-inventory.md](shortcuts-inventory.md)。
 - 原生：手柄键（含 `KEYCODE_BACK`）在面板上一律转发给 MainActivity，**手柄永远驱动主屏**（规则
-  `SecondScreenLifecycle.keyGoesToTop`，JVM 测试覆盖）；非手柄 Back 在伴屏模式变成 `popRoute()`。改按键前先读
+  `SecondScreenLifecycle.keyGoesToTop`，JVM 测试覆盖）；非手柄 Back 在伴屏模式变成 `popRoute()`。
+- 方向键是不是手柄：一律用 `shortcuts/key_event_device_type.dart` 的 `keyEventDeviceType(event)`，**不要读
+  `KeyEvent.deviceType`**——Flutter 3.47 的 dart:ui `_unpackKeyData` 丢掉了引擎写进 key data 的设备类型，Android 上
+  它恒为 keyboard（`ControllerKeySource` 收窄 source 也救不回来）；兼容层从同一次按键的 raw 消息取 source，清理条件
+  见文件头与 `test/shortcuts/key_event_device_type_test.dart` 的探测用例。
+- 帽子键方向键（`ABS_HAT0X/Y`，Thor 自带手柄）是摇杆 MotionEvent，只有窗口**没消费**的摇杆事件才会被 ViewRootImpl
+  合成方向键：面板转发摇杆事件后返回 false，让面板窗口自己合成方向键再按键转发；面板窗口拿到焦点即给 FlutterView
+  焦点，否则触摸后的第一个方向键会被「离开触摸模式」吞掉。改按键前先读
   [focus-ownership.md](focus-ownership.md)。
 
 ## 9. 怎么测

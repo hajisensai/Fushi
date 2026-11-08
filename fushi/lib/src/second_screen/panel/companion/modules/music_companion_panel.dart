@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
@@ -368,20 +367,8 @@ class _LyricLineRowState extends ConsumerState<_LyricLineRow> {
   final GlobalKey _textKey = GlobalKey(debugLabel: 'music-companion-text');
   int? _tappedIndex;
 
-  /// The UTF-16 index of the character under [global]; null when the text is
-  /// not laid out.
-  int? _indexAt(Offset global) {
-    final RenderObject? box = _textKey.currentContext?.findRenderObject();
-    if (box is! RenderParagraph) return null;
-    final Offset local = box.globalToLocal(global);
-    if (local.dy < 0 || local.dy > box.size.height) return null;
-    final TextPosition pos = box.getPositionForOffset(local);
-    // getPositionForOffset gives the caret nearest to the tap; the
-    // character is the one the caret is in front of (or the last one).
-    final int n = widget.text.length;
-    if (n == 0) return null;
-    return pos.offset.clamp(0, n - 1);
-  }
+  int? _indexAt(Offset global) =>
+      companionTextIndexAt(_textKey, widget.text, global);
 
   void _lookUp() {
     final String text = widget.text;

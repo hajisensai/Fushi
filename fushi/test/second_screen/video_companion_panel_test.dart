@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -278,14 +279,26 @@ void main() {
       VideoCompanionKeys.text: _cueC,
     });
 
-    await tester.longPress(find.text(_cueA));
+    // Long-press the 4th character (いい天気): the pressed word is looked up,
+    // not the start of the line.
+    final RenderParagraph line = tester.renderObject<RenderParagraph>(
+      find.text(_cueA),
+    );
+    final Offset caret = line.getOffsetForCaret(
+      const TextPosition(offset: 3),
+      Rect.zero,
+    );
+    await tester.longPressAt(
+      line.localToGlobal(caret + Offset(4, line.size.height / 2)),
+    );
     await tester.pumpAndSettle();
     final CompanionLookupEntry? entry = _container(
       tester,
     ).read(companionLookupControllerProvider).current;
     expect(entry?.text, _cueA);
     expect(entry?.sentence, _cueA);
-    expect(entry?.charIndex, -1);
+    expect(entry?.charIndex, 3);
+    expect(entry?.term, 'いい天気だね');
     // Looked up on the panel: no round trip to the main screen.
     expect(rec.commands, hasLength(1));
   });

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/rendering.dart' show RenderParagraph;
+
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
@@ -320,13 +322,33 @@ class CompanionSectionLabel extends StatelessWidget {
   }
 }
 
+/// The UTF-16 index of the character of [text] under [global] in the
+/// [RenderParagraph] behind [textKey]; null when it is not laid out.
+/// A tap lands nearest a caret; the character is the one the caret is in
+/// front of (the one behind it for an upstream caret at a line end).
+int? companionTextIndexAt(GlobalKey textKey, String text, Offset global) {
+  final RenderObject? box = textKey.currentContext?.findRenderObject();
+  if (box is! RenderParagraph || text.isEmpty) return null;
+  final TextPosition position = box.getPositionForOffset(
+    box.globalToLocal(global),
+  );
+  int index = position.offset;
+  if (position.affinity == TextAffinity.upstream && index > 0) index--;
+  return index.clamp(0, text.length - 1);
+}
+
 /// A tappable line (bookmark, transcript / subtitle line, OCR line): >= 48 dp
 /// tall, optional trailing text, [selected] highlights the current one.
-class CompanionLineTile extends StatelessWidget {
+///
+/// [onLongPressChar] gets the UTF-16 index of the pressed character in
+/// [text] (-1 when it is unknown, e.g. a long press from the accessibility
+/// tree), so a line looked up by long press looks up the pressed word, not
+/// the start of the line.
+class CompanionLineTile extends StatefulWidget {
   const CompanionLineTile({
     required this.text,
     required this.onTap,
-    this.onLongPress,
+    this.onLongPressChar,
     this.leading,
     this.trailing,
     this.selected = false,
@@ -337,7 +359,7 @@ class CompanionLineTile extends StatelessWidget {
 
   final String text;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
+  final ValueChanged<int>? onLongPressChar;
   final String? leading;
   final String? trailing;
   final bool selected;
@@ -345,18 +367,34 @@ class CompanionLineTile extends StatelessWidget {
   final String? semanticsHint;
 
   @override
+  State<CompanionLineTile> createState() => _CompanionLineTileState();
+}
+
+class _CompanionLineTileState extends State<CompanionLineTile> {
+  final GlobalKey _textKey = GlobalKey(debugLabel: 'companion-line-text');
+  int? _pressedIndex;
+
+  void _onLongPress() {
+    final int index = _pressedIndex ?? -1;
+    _pressedIndex = null;
+    widget.onLongPressChar?.call(index);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
-    final String? lead = leading;
-    final String? end = trailing;
+    final String? lead = widget.leading;
+    final String? end = widget.trailing;
+    final bool selected = widget.selected;
+    final bool longPress = widget.onLongPressChar != null;
     final TextStyle? meta = theme.textTheme.labelSmall?.copyWith(
       color: colors.onSurfaceVariant,
     );
     return Semantics(
-      button: onTap != null,
+      button: widget.onTap != null,
       selected: selected,
-      hint: semanticsHint,
+      hint: widget.semanticsHint,
       child: FushiPressScale(
         child: Material(
           color: selected
@@ -367,8 +405,17 @@ class CompanionLineTile extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: onTap,
-            onLongPress: onLongPress,
+            onTap: widget.onTap,
+            // The down position decides the pressed character; InkWell's
+            // long press carries no position.
+            onTapDown: longPress
+                ? (TapDownDetails d) => _pressedIndex = companionTextIndexAt(
+                    _textKey,
+                    widget.text,
+                    d.globalPosition,
+                  )
+                : null,
+            onLongPress: longPress ? _onLongPress : null,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 48),
               child: Padding(
@@ -384,8 +431,9 @@ class CompanionLineTile extends StatelessWidget {
                     ],
                     Expanded(
                       child: Text(
-                        text,
-                        maxLines: maxLines,
+                        widget.text,
+                        key: _textKey,
+                        maxLines: widget.maxLines,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: selected

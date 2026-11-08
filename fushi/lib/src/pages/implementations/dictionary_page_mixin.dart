@@ -224,6 +224,13 @@ mixin DictionaryPageMixin {
     required String matched,
   }) async => AdvancedMiningSections.none;
 
+  /// A popup search for [query] found entries ([result]); called once per
+  /// search with a result, nested layers included. Default: nothing. The
+  /// second-screen companion's embedded page reports the matched headword so
+  /// its history shows the word, not the scanned text.
+  @protected
+  void onPopupSearchResult(String query, DictionarySearchResult result) {}
+
   /// 「高级制卡」对话框里能不能为这张卡选卡组。默认 true（卡组取本机 Anki 设置）；
   /// 卡组由别的设备决定的表面覆写成 false（手机遥控页：遥控制卡落在电脑端、用电脑的
   /// Anki 配置），对话框就不渲染卡组分区。
@@ -1654,6 +1661,7 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
+      onPopupSearchResult(trimmed, result);
       if (autoRead && ReaderFushiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {

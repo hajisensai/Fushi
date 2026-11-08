@@ -327,9 +327,9 @@ class _VideoBody extends ConsumerWidget {
               VideoCompanionKeys.start: cue.start,
               VideoCompanionKeys.text: cue.text,
             }),
-        onLookUp: (_Cue cue) => ref
+        onLookUp: (_Cue cue, int charIndex) => ref
             .read(companionLookupControllerProvider)
-            .lookUp(text: cue.text, sentence: cue.text),
+            .lookUp(text: cue.text, charIndex: charIndex, sentence: cue.text),
       ),
       Row(
         children: <Widget>[
@@ -526,7 +526,7 @@ class _CueList extends StatefulWidget {
   final List<_Cue> cues;
   final int currentStart;
   final ValueChanged<_Cue> onJump;
-  final ValueChanged<_Cue> onLookUp;
+  final void Function(_Cue cue, int charIndex) onLookUp;
 
   static const double height = 184;
 
@@ -600,7 +600,7 @@ class _CueListState extends State<_CueList> {
                     selected: cue.start == widget.currentStart,
                     semanticsHint: t.second_screen_video_line_hint,
                     onTap: () => widget.onJump(cue),
-                    onLongPress: () => widget.onLookUp(cue),
+                    onLongPressChar: (int index) => widget.onLookUp(cue, index),
                   ),
                 ),
             ],

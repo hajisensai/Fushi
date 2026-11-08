@@ -104,6 +104,7 @@ class _PopupDictionary extends ConsumerWidget {
       showSearchBar: false,
       embedded: true,
       onLookupStarted: lookup.countLookup,
+      onHeadword: (String word) => lookup.reportHeadword(entry, word),
       onMined: (result) {
         if (result.ankiConnect || result.queued) lookup.reportMined();
       },
@@ -214,7 +215,7 @@ class _RecentRow extends StatelessWidget {
                     child: FushiActionChip(
                       key: ValueKey<String>('companion-recent-$i'),
                       icon: FushiIcons.history,
-                      label: entries[i].term,
+                      label: entries[i].label,
                       onPressed: () => onTap(entries[i]),
                     ),
                   ),
@@ -312,8 +313,8 @@ class _HistoryTile extends StatelessWidget {
         '${entry.at.minute.toString().padLeft(2, '0')}';
     final String sentence = entry.sentence ?? entry.text;
     return FushiListItem(
-      title: Text(entry.term, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: sentence.isEmpty || sentence == entry.term
+      title: Text(entry.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: sentence.isEmpty || sentence == entry.label
           ? null
           : Text(sentence, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Text(time),

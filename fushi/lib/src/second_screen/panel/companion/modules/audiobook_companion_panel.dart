@@ -239,9 +239,9 @@ class _AudiobookCompanionPanelState
           AudiobookCompanionActions.seekLine,
           <String, Object?>{AudiobookCompanionActions.index: index},
         ),
-        onLongPress: () => ref
+        onLongPressChar: (int index) => ref
             .read(companionLookupControllerProvider)
-            .lookUp(text: text, sentence: text),
+            .lookUp(text: text, charIndex: index, sentence: text),
       ),
     );
   }

@@ -15,6 +15,7 @@ class CompanionLookupEntry {
     required this.term,
     required this.at,
     this.source,
+    this.headword,
   });
 
   /// The source text handed to the dictionary (a line / sentence, or the
@@ -33,6 +34,23 @@ class CompanionLookupEntry {
   /// Title of what was open on top when it was looked up ("from こころ").
   final String? source;
   final DateTime at;
+
+  /// The dictionary headword the lookup matched (null until the result is
+  /// in, or when nothing matched).
+  final String? headword;
+
+  /// What the history shows: the matched headword when known, else [term].
+  String get label => headword ?? term;
+
+  CompanionLookupEntry withHeadword(String headword) => CompanionLookupEntry(
+    text: text,
+    charIndex: charIndex,
+    sentence: sentence,
+    term: term,
+    at: at,
+    source: source,
+    headword: headword,
+  );
 }
 
 final RegExp _termRun = RegExp(r'^[^\s、。，,.!?！？「」『』（）()\[\]【】…‥・]{1,8}');
@@ -68,7 +86,7 @@ class CompanionLookupController extends ChangeNotifier {
   final List<CompanionLookupEntry> _history = <CompanionLookupEntry>[];
   CompanionLookupEntry? _current;
   int _generation = 0;
-  int _arrivals = 0;
+  int _surfaced = 0;
   bool _reportedOpen = false;
   bool _disposed = false;
 
@@ -79,10 +97,13 @@ class CompanionLookupController extends ChangeNotifier {
   /// dictionary page searches again.
   int get generation => _generation;
 
-  /// Bumps only for lookups made on the **main screen**: the shell switches
-  /// to the Lookup tab on these (lookups surface on the bottom screen), not
-  /// on lookups started from the panel itself.
-  int get arrivals => _arrivals;
+  /// Bumps for every lookup the shell must bring onto the Lookup tab: one
+  /// made on the **main screen** (lookups surface on the bottom screen) and a
+  /// line looked up on a **module panel** ([lookUp]): the dictionary only
+  /// renders on the Lookup tab, so staying on the Now tab left the result
+  /// invisible. Closing it returns to the tab the lookup came from. A history
+  /// [replay] happens on the Lookup tab itself and does not bump it.
+  int get surfaced => _surfaced;
 
   /// This run's lookups, newest first.
   List<CompanionLookupEntry> get history =>
@@ -96,7 +117,7 @@ class CompanionLookupController extends ChangeNotifier {
   }
 
   void _fromTop(CompanionLookupMessage message) {
-    _arrivals++;
+    _surfaced++;
     _show(
       text: message.text,
       charIndex: message.charIndex,
@@ -109,6 +130,7 @@ class CompanionLookupController extends ChangeNotifier {
   /// [text] (-1 = [text] is the query); [sentence] the mining sentence.
   void lookUp({required String text, int charIndex = -1, String? sentence}) {
     if (text.trim().isEmpty) return;
+    _surfaced++;
     _show(text: text, charIndex: charIndex, sentence: sentence);
   }
 
@@ -118,6 +140,7 @@ class CompanionLookupController extends ChangeNotifier {
     charIndex: entry.charIndex,
     sentence: entry.sentence,
     source: entry.source,
+    headword: entry.headword,
   );
 
   void _show({
@@ -125,6 +148,7 @@ class CompanionLookupController extends ChangeNotifier {
     required int charIndex,
     required String? sentence,
     String? source,
+    String? headword,
   }) {
     if (_disposed) return;
     final String term = companionLookupTerm(text, charIndex);
@@ -136,6 +160,7 @@ class CompanionLookupController extends ChangeNotifier {
       term: term,
       source: source ?? (title == null || title.isEmpty ? null : title),
       at: DateTime.now(),
+      headword: headword,
     );
     _history.removeWhere(
       (CompanionLookupEntry e) =>
@@ -181,6 +206,20 @@ class CompanionLookupController extends ChangeNotifier {
   void countLookup() {
     if (_disposed) return;
     unawaited(_session.reportLookupCounted());
+  }
+
+  /// The dictionary matched [headword] for [entry]: its history chip / row
+  /// shows the word instead of the scanned text.
+  void reportHeadword(CompanionLookupEntry entry, String headword) {
+    if (_disposed || headword.isEmpty || entry.headword == headword) return;
+    final int index = _history.indexWhere(
+      (CompanionLookupEntry e) => identical(e, entry),
+    );
+    if (index < 0) return;
+    final CompanionLookupEntry updated = entry.withHeadword(headword);
+    _history[index] = updated;
+    if (identical(_current, entry)) _current = updated;
+    notifyListeners();
   }
 
   void removeFromHistory(CompanionLookupEntry entry) {
