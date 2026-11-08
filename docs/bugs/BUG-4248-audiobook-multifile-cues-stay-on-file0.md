@@ -1,0 +1,6 @@
+## BUG-4248 · 服务端 / 发现页 / 书+字幕+音频导入的多文件有声书 cue 全落在第 0 个文件
+- **报告**：2026-11-08（用户：服务端有声书根目录重扫任务里发现）
+- **真实性**：✅ 真 bug。单时间轴字幕（srt / lrc / vtt / ass）解析出的 cue 全是 `audioFileIndex = 0` + 全书时间；`packages/fushi_engine/lib/media/audiobook/audiobook_alignment_service.dart:505` `alignAndPersistAudiobook` 把它们原样落库，按实测时长切到各文件的逻辑只在 app 导入弹窗里（`fushi/lib/src/media/audiobook/audiobook_import_dialog.dart:1003`，TODO-811）内联了一份。服务端扫描、发现页 / 互联导入、纯字幕书导入与重新导入、换音频（`replaceAudiobookAudio`、`reimportSrtBook` 只换音频）都绕过它，多文件书第 2 个文件起的句子播放 / 跳转全错。
+- **[x] ① 已修复** — 共享入口 `packages/fushi_engine/lib/media/audiobook/audiobook_cue_file_split.dart` `splitSingleTimelineCuesAcrossAudioFiles`（时长走 `AudiobookStorage.probeAudioDurationsMs`，探测缺一个就不切、记诊断）；`alignAndPersistAudiobook` 落库前统一切，`replaceAudiobookAudio` 换音频时按持久化字幕重新对齐，`reimportSrtBook` / `standalone_subtitle_book` 同样经它；导入弹窗的内联版删掉改调它。服务端在 `host_bindings.dart` 装 ffprobe 时长探测，app 仍用 just_audio。已带文件映射的格式（SMIL / JSON）和已分过文件的 cue 不动。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/audiobook/audiobook_cue_file_split_test.dart`（切分 / 不切的各种情况 / `reimportSrtBook` 只换音频）、`packages/fushi_server/test/library_scanner_audiobook_test.dart`（扫描导入纯字幕书与 EPUB 书都按文件分、加第 3 个文件重扫后重新分、探测不全时留在文件 0）。
+- **备注**：形态转换（纯字幕书后来放进 EPUB）仍不做，见 `docs/agent/server-parity-gaps.md`。服务端没有 ffprobe 时退回文件 0 并记诊断。

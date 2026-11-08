@@ -8,6 +8,7 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/media/audiobook/asr_cue_post_host.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
@@ -615,8 +616,8 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   step(AudiobookAlignmentStep.persisting, detail: p.basename(subtitlePath));
   report(0.8, messages.persisting);
   // 换字幕时旧的持久副本：落库后回收（见函数尾）。
-  final String previousSrt =
-      (await audiobookRepo.findByBookKey(bookKey))?.alignmentPath ?? '';
+  final Audiobook? existing = await audiobookRepo.findByBookKey(bookKey);
+  final String previousSrt = existing?.alignmentPath ?? '';
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
   final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
     File(subtitlePath),
@@ -637,6 +638,23 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
           report(0.85, messages._copying(name));
         },
       );
+
+  // 单时间轴字幕 + 多个音频文件：按实测时长把 cue 分到各文件（BUG-4248）。没传音频
+  // （只换字幕）时按这本书现有的音频分。
+  final List<String> cueAudio = persistedAudioPaths.isNotEmpty
+      ? persistedAudioPaths
+      : <String>[
+          for (final File f in await resolveAudiobookPlaybackFiles(
+            audioPaths: existing?.audioPaths,
+            audioRoot: existing?.audioRoot,
+          ))
+            f.path,
+        ];
+  cues = await splitSingleTimelineCuesAcrossAudioFiles(
+    cues: cues,
+    subtitlePath: persistedSrt,
+    audioPaths: cueAudio,
+  );
 
   step(AudiobookAlignmentStep.saving);
   report(0.9, messages.saving);
@@ -707,8 +725,12 @@ Future<void> deletePersistedSubtitleCopy({
 /// 配对 SrtBook（[epubBackedSrtBookUid]）的音频一起换掉——互联导出打包两行的音频都
 /// 读（`exportAudioDatabasePackage`），只换一行就会把旧音频继续发给对端。
 ///
-/// 不碰 cue、字幕与 `importedAt`：音频变了 cue 不变（单时间轴字幕的 cue 不随文件
-/// 列表变），也不该让这本书在对端书架上「变成刚导入的」。播放进度按
+/// cue：对齐文件自带文件映射（SMIL / JSON），或换前换后都只有一个音频文件时，cue 不
+/// 随音频变，原样保留。对齐文件是单时间轴字幕、且换前或换后有多个文件时，cue 归哪个
+/// 文件取决于每个文件的时长（BUG-4248），只能用这份字幕按新音频重新对齐：走
+/// [alignAndPersistAudiobook]（字幕就是持久目录里那份，不会被再复制一次）。
+///
+/// 不碰字幕文件与 `importedAt`：不该让这本书在对端书架上「变成刚导入的」。播放进度按
 /// [AudiobookRepository.replaceAudio] 的判据保留或归零。返回落地后的音频路径。
 Future<List<String>> replaceAudiobookAudio({
   required FushiDatabase db,
@@ -717,6 +739,32 @@ Future<List<String>> replaceAudiobookAudio({
   bool copyAudio = true,
   void Function(int copiedBytes, int totalBytes)? onProgress,
 }) async {
+  final AudiobookRepository audiobookRepo = AudiobookRepository(db);
+  final Audiobook? existing = await audiobookRepo.findByBookKey(bookKey);
+  final int previousCount = (await resolveAudiobookPlaybackFiles(
+    audioPaths: existing?.audioPaths,
+    audioRoot: existing?.audioRoot,
+  )).length;
+  final String alignment = existing?.alignmentPath ?? '';
+  if (existing != null &&
+      alignment.isNotEmpty &&
+      isSingleTimelineSubtitle(alignment) &&
+      File(alignment).existsSync() &&
+      (previousCount > 1 || audioPaths.length > 1)) {
+    final EpubBookRow? body = await db.getEpubBook(bookKey);
+    final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
+      db: db,
+      repo: SrtBookRepository(db),
+      audiobookRepo: audiobookRepo,
+      bookKey: bookKey,
+      title: body?.title ?? bookKey,
+      author: body?.author,
+      subtitlePath: alignment,
+      audioPaths: audioPaths,
+      copyAudio: copyAudio,
+    );
+    return result.persistedAudioPaths;
+  }
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
   final List<String> persisted = await AudiobookStorage.syncAudioFiles(
     persistDir,
@@ -724,9 +772,7 @@ Future<List<String>> replaceAudiobookAudio({
     copy: copyAudio,
     onProgress: onProgress,
   );
-  await AudiobookRepository(
-    db,
-  ).replaceAudio(bookKey: bookKey, audioPaths: persisted);
+  await audiobookRepo.replaceAudio(bookKey: bookKey, audioPaths: persisted);
   await SrtBookRepository(
     db,
   ).patchByUid(epubBackedSrtBookUid(bookKey), audioPaths: persisted);

@@ -15,6 +15,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
         finalizeAlignedCues,
         loadEpubSectionsInBackground,
         parseCuesForFormat;
+import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
@@ -1000,28 +1001,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         }
       }
       if (parsed != null) {
-        // TODO-811: single-timeline subtitle formats (srt/lrc/vtt/ass) carry one
-        // continuous timeline, so the parser sets every cue's audioFileIndex to 0.
-        // With multiple audio files that cuts sentence audio from the wrong file.
-        // SMIL/JSON already map files/fragments themselves, so skip them. Probe
-        // per-file durations and rebind each cue to its real file + local time.
-        if (persistedPaths.length > 1 &&
-            persistedAlignment != null &&
-            kAudiobookSubtitleExtensions.contains(alignmentFormat)) {
-          final List<int> durationsMs =
-              await AudiobookStorage.probeAudioDurationsMs(persistedPaths);
-          if (durationsMs.length == persistedPaths.length &&
-              durationsMs.every((int d) => d > 0)) {
-            reindexCuesByFileBoundaries(
-              cues: parsed.cues,
-              fileDurationsMs: durationsMs,
-            );
-          } else {
-            debugPrint(
-              '[AudiobookImport] TODO-811 skip cue reindex: '
-              'duration probe incomplete ($durationsMs).',
-            );
-          }
+        // TODO-811 / BUG-4248: single-timeline subtitles (srt/vtt/ass/ssa/lrc) put
+        // every cue on file 0; with several audio files the shared engine helper
+        // (same one the server, discovery and book imports use) probes the file
+        // durations and rebinds each cue to its real file + local time.
+        if (persistedAlignment != null) {
+          await splitSingleTimelineCuesAcrossAudioFiles(
+            cues: parsed.cues,
+            subtitlePath: persistedAlignment,
+            audioPaths: persistedPaths,
+          );
         }
         await widget.repo.saveCues(bookKey: widget.bookKey, cues: parsed.cues);
         await widget.repo.updateHealthOverlay(

@@ -1077,7 +1077,8 @@ class LibraryScanner {
   ///
   /// - EPUB 有声书（有 `audiobooks` 行）：换字幕 = [alignAndPersistAudiobook]（app
   ///   「换字幕」同一函数，连同当前音频清单重新对齐）；只换音频 =
-  ///   [replaceAudiobookAudio]（cue 不动）。
+  ///   [replaceAudiobookAudio]（单时间轴字幕 + 多个文件时它按新音频重新对齐、把 cue
+  ///   按各文件实测时长重新分配，BUG-4248；其余情况 cue 不动）。
   /// - 独立字幕书：[reimportSrtBook]（字幕书「重新导入」同一函数，换字幕连带按新 cue
   ///   重建正文）。
   ///

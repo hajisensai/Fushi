@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -86,7 +87,17 @@ Future<SrtBook> importStandaloneSubtitleBook({
   final List<AudioCue> parsed = subtitlePath == null
       ? const <AudioCue>[]
       : await parseCuesForFormat(File(subtitlePath), uid, 0);
-  final List<AudioCue> cues = cueTransform?.call(parsed) ?? parsed;
+  // 有 cueTransform 的调用方（Audiobookshelf：按服务器音轨偏移切）自己管 cue 归哪
+  // 条轨；其余按本机音频的实测时长切（BUG-4248，单时间轴字幕 + 多个音频文件）。
+  final List<AudioCue> cues =
+      cueTransform?.call(parsed) ??
+      (subtitlePath == null
+          ? parsed
+          : await splitSingleTimelineCuesAcrossAudioFiles(
+              cues: parsed,
+              subtitlePath: subtitlePath,
+              audioPaths: audioPaths,
+            ));
   fushiDebugPrint('[fushi-import] subtitleBook: parsed ${cues.length} cues');
 
   String bookKey = '';

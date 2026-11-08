@@ -5,6 +5,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/fake_audiobook_duration_probe.dart';
 import 'helpers/fake_inappwebview_platform.dart';
 import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
@@ -31,6 +32,8 @@ import 'package:fushi_web_core/testing.dart';
 ///    FakeAsync's 20s timeout timer. See [installFakeVideoSpecsProbe].
 /// 5. Pins the disk image cache's metadata repository to the host-independent
 ///    JSON one. See [installHostIndependentImageCacheRepository].
+/// 6. Makes the audiobook duration probe return 0 instead of building a real
+///    just_audio player. See [installFakeAudiobookDurationProbe].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -40,6 +43,7 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installToleranceGoldenComparator();
   installFakeVideoSpecsProbe();
   installHostIndependentImageCacheRepository();
+  installFakeAudiobookDurationProbe();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();

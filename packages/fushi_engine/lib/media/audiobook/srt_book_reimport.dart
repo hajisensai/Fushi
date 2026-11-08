@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
         deletePersistedSubtitleCopy,
         parseCuesForFormat,
         throwIfAlignmentCancelled;
+import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 
 /// 字幕书重新导入的进度回调（与 [AudiobookAlignmentProgress] 同形）。
@@ -178,6 +179,22 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
       cues = splitCuesAcrossTracks(cues, <AudioTrackSpan>[
         for (final RemoteAudioTrack t in binding.tracks) t.span,
       ]);
+    } else {
+      // 本机音频：单时间轴字幕按各文件实测时长切（BUG-4248）。这次一并换音频就按
+      // 新音频切，否则按书现有的音频。
+      cues = await splitSingleTimelineCuesAcrossAudioFiles(
+        cues: cues,
+        subtitlePath: subtitlePath,
+        audioPaths: wantAudio
+            ? audioPaths
+            : <String>[
+                for (final File f in await resolveAudiobookPlaybackFiles(
+                  audioPaths: book.audioPaths,
+                  audioRoot: book.audioRoot,
+                ))
+                  f.path,
+              ],
+      );
     }
     cueCount = cues.length;
     throwIfAlignmentCancelled(isCancelled);
@@ -230,6 +247,12 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
 
   if (wantAudio) {
     report(0.85, messages.persisting);
+    final int previousAudioCount = wantSubtitle
+        ? 0
+        : (await resolveAudiobookPlaybackFiles(
+            audioPaths: book.audioPaths,
+            audioRoot: book.audioRoot,
+          )).length;
     // 音频照旧走 `replaceAudio` 唯一写入路径（内部重新 findByUid，故排在字幕
     // 落库之后不会把刚写的 srtPath 覆盖回旧值）。
     await repo.replaceAudio(
@@ -238,6 +261,35 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
       copy: copyAudio,
       onProgress: (int copied, int total) => report(0.85, messages.persisting),
     );
+    // 只换音频：单时间轴字幕的 cue 归哪个文件取决于各文件时长（BUG-4248），换前或
+    // 换后有多个文件就用库里那份字幕按新音频重新切。cue 文本不变，正文不用重建。
+    if (!wantSubtitle &&
+        (previousAudioCount > 1 || audioPaths.length > 1) &&
+        isSingleTimelineSubtitle(book.srtPath) &&
+        await File(book.srtPath).exists() &&
+        await RemoteAudioBindingRepository(db).get(uid) == null) {
+      final SrtBook? updated = await repo.findByUid(uid);
+      final List<AudioCue> parsed = await parseCuesForFormat(
+        File(book.srtPath),
+        uid,
+        0,
+      );
+      if (updated != null && parsed.isNotEmpty) {
+        final List<AudioCue> split =
+            await splitSingleTimelineCuesAcrossAudioFiles(
+              cues: parsed,
+              subtitlePath: book.srtPath,
+              audioPaths: <String>[
+                for (final File f in await resolveAudiobookPlaybackFiles(
+                  audioPaths: updated.audioPaths,
+                  audioRoot: updated.audioRoot,
+                ))
+                  f.path,
+              ],
+            );
+        await repo.saveCues(uid: uid, cues: split);
+      }
+    }
   }
 
   report(1, messages.done);
