@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "Siapkan sekarang",
   "download_backend_setup_title": "Siapkan backend unduhan",
   "download_backend_unsupported_note": "Mesin bawaan tidak tersedia di platform ini. Unduhan menggunakan qBittorrent eksternal.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "Hapus $n tugas unduhan?",
   "download_batch_done": "$n tugas diproses",

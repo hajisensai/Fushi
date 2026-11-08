@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "Configurar ahora",
   "download_backend_setup_title": "Configurar el backend de descargas",
   "download_backend_unsupported_note": "El motor integrado no está disponible en esta plataforma. Las descargas usan qBittorrent externo.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "¿Eliminar $n tarea(s) de descarga?",
   "download_batch_done": "$n tarea(s) procesada(s)",

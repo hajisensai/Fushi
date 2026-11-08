@@ -15,6 +15,10 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/acquisition/host_video_acquisition_assembly.dart'
+    show enqueueVideoAcquisitionPicks;
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart'
+    show VideoAcquisitionDownloadSubmission;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
     show videoDownloadJobConfirmedLookup, videoDownloadJobConfirmedLookups;
@@ -4849,13 +4853,28 @@ void main() {
       );
       await failJob(environment, oldJobId);
 
+      // BUG-4242：挡下来的是类型化的「已在队列」并指向旧任务，不是撞唯一索引的
+      // 原始数据库异常；旧任务不被偷偷复活。
       await expectLater(
         environment.service.enqueue(environment.enqueueRequest()),
-        throwsA(anything),
+        throwsA(
+          isA<VideoDownloadAlreadyQueued>()
+              .having(
+                (VideoDownloadAlreadyQueued e) => e.existingJobId,
+                'existingJobId',
+                oldJobId,
+              )
+              .having(
+                (VideoDownloadAlreadyQueued e) => e.existingLifecycle,
+                'existingLifecycle',
+                VideoDownloadJobLifecycle.needsAttention,
+              ),
+        ),
       );
       final VideoDownloadJobRow job = (await environment.database
           .getVideoDownloadJob(oldJobId))!;
       expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
+      expect(await environment.database.getVideoDownloadJobs(), hasLength(1));
     });
 
     test(
@@ -4919,6 +4938,113 @@ void main() {
         ]);
       },
     );
+  });
+
+  group('BUG-4242 re-enqueueing a managed torrent is a domain outcome', () {
+    Matcher alreadyQueuedBy(String jobId, String lifecycle) => throwsA(
+      isA<VideoDownloadAlreadyQueued>()
+          .having(
+            (VideoDownloadAlreadyQueued e) => e.existingJobId,
+            'existingJobId',
+            jobId,
+          )
+          .having(
+            (VideoDownloadAlreadyQueued e) => e.existingLifecycle,
+            'existingLifecycle',
+            lifecycle,
+          ),
+    );
+
+    test(
+      'an active job for the same torrent is reported, not re-inserted',
+      () async {
+        final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+        final _PipelineEnvironment environment =
+            await _PipelineEnvironment.create(backend: backend);
+        addTearDown(environment.close);
+        final String first = await environment.service.enqueue(
+          environment.enqueueRequest(),
+        );
+
+        await expectLater(
+          environment.service.enqueue(environment.enqueueRequest()),
+          alreadyQueuedBy(first, VideoDownloadJobLifecycle.active),
+        );
+        expect(await environment.database.getVideoDownloadJobs(), hasLength(1));
+      },
+    );
+
+    test('a completed job for the same torrent is reported', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend();
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      await environment.insertJob(
+        jobId: 'done-job',
+        stage: VideoDownloadJobStage.scrape,
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      );
+
+      await expectLater(
+        environment.service.enqueue(environment.enqueueRequest()),
+        alreadyQueuedBy('done-job', VideoDownloadJobLifecycle.completed),
+      );
+      expect(await environment.database.getVideoDownloadJobs(), hasLength(1));
+    });
+
+    test('the AI acquisition batch counts an already-queued pick instead of '
+        'failing the whole submit', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      await environment.service.enqueue(environment.enqueueRequest());
+      final MediaSourceRow source = (await environment.database
+          .getMediaSourceById(environment.sourceId))!;
+
+      // 用户原始失败：首条就撞已有任务 → 旧实现 rethrow 出 DriftRemoteException，
+      // 会话 failed {"message":"DriftRemoteException"}。
+      final VideoAcquisitionDownloadSubmission result =
+          await enqueueVideoAcquisitionPicks(
+            pipeline: environment.service,
+            media: _mediaReference(),
+            coverUrl: null,
+            picks: <VideoResourceCandidate>[environment.provider.candidate],
+            source: source,
+            target: _expectedTarget,
+            installSubtitles: false,
+          );
+
+      expect(result.queued, 0);
+      expect(result.alreadyQueued, 1);
+      expect(await environment.database.getVideoDownloadJobs(), hasLength(1));
+    });
+
+    test('concurrent submits of one torrent create exactly one job', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+
+      Future<Object> attempt() => environment.service
+          .enqueue(environment.enqueueRequest())
+          .then<Object>(
+            (String jobId) => jobId,
+            onError: (Object error) => error,
+          );
+      final List<Object> outcomes = await Future.wait(<Future<Object>>[
+        attempt(),
+        attempt(),
+      ]);
+
+      final List<String> created = outcomes.whereType<String>().toList();
+      expect(created, hasLength(1), reason: '$outcomes');
+      expect(
+        outcomes.whereType<VideoDownloadAlreadyQueued>().single.existingJobId,
+        created.single,
+      );
+      expect(await environment.database.getVideoDownloadJobs(), hasLength(1));
+    });
   });
 
   group('BUG-2776 completed seeds leave the engine with their source', () {

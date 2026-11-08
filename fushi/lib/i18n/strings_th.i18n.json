@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "ตั้งค่าเลย",
   "download_backend_setup_title": "ตั้งค่าแบ็กเอนด์ดาวน์โหลด",
   "download_backend_unsupported_note": "เอนจินในตัวไม่พร้อมใช้งานบนแพลตฟอร์มนี้ การดาวน์โหลดใช้ qBittorrent ภายนอก",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "ลบงานดาวน์โหลด $n งานหรือไม่?",
   "download_batch_done": "ประมวลผลงานแล้ว $n งาน",

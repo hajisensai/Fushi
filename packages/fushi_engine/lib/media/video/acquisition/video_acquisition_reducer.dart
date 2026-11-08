@@ -1729,6 +1729,7 @@ VideoAcquisitionReduction _onSubmitted(
           args: <String, Object?>{
             'mode': state.slots.mode?.name,
             'count': event.count,
+            'alreadyQueued': event.alreadyQueued,
           },
         ),
       );
@@ -2503,6 +2504,7 @@ VideoAcquisitionReduction _onFranchiseSubmitted(
               'downloads': event.downloads,
               'subscriptions': event.subscriptions,
               'failed': event.failed,
+              'alreadyQueued': event.alreadyQueued,
             },
           ),
         ),

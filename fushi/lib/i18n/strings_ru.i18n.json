@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "Настроить",
   "download_backend_setup_title": "Настройка бэкенда загрузок",
   "download_backend_unsupported_note": "Встроенный движок недоступен на этой платформе. Загрузки используют внешний qBittorrent.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "Удалить задач загрузки: $n?",
   "download_batch_done": "Обработано задач: $n",

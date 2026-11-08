@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "Şimdi ayarla",
   "download_backend_setup_title": "İndirme arka ucunu ayarla",
   "download_backend_unsupported_note": "Yerleşik motor bu platformda kullanılamıyor. İndirmeler harici qBittorrent kullanıyor.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "$n indirme görevi silinsin mi?",
   "download_batch_done": "$n görev işlendi",

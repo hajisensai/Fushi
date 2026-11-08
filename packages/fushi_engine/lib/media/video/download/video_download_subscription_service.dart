@@ -726,10 +726,9 @@ class VideoDownloadSubscriptionService {
       }
       // failed / needsAttention：**恢复**这一条既有任务，不再 enqueue 一份新的。
       //
-      // `pipeline.enqueue` 每次调用都 `generateVideoDownloadInstallationId()`
-      // 生成全新 jobId，而 `VideoDownloadJobs` 对
-      // (fingerprint, resourceProvider, selectedResourceId) / torrentHash
-      // 没有任何唯一约束。生产 checkInterval 是 15 分钟，一个持续性故障
+      // `pipeline.enqueue` 只按 (fingerprint, torrentHash) 判重（那是唯一索引），
+      // 对 (fingerprint, resourceProvider, selectedResourceId) 没有约束：没有
+      // infoHash 的候选每次都会新建 jobId。生产 checkInterval 是 15 分钟，一个持续性故障
       // （实测例：内置下载引擎运行时缺失）下这等于每集每天往下载面板堆约 96 条
       // 死任务行，永不收敛。`needsAttention` 更糟：它是「需要用户处理的可恢复
       // 状态」，backendTaskId 还在、后端 torrent 可能仍在跑，再派一份同 magnet
@@ -794,6 +793,16 @@ class VideoDownloadSubscriptionService {
       return true;
     } on VideoDownloadLeaseLost {
       rethrow;
+    } on VideoDownloadAlreadyQueued catch (error) {
+      // BUG-4242：同一 infohash 已有任务（来自别的 provider / remoteId，或 AI
+      // 下视频 / 发现页先建的任务），上面按 provider+remoteId 的预扫描认不出来。
+      // 管线判重后给出既有任务 —— 这一集就挂到它上面，与预扫描命中同一语义，
+      // 不标 failed、不再派一份。
+      final String? existingJobId = error.existingJobId;
+      if (existingJobId == null) rethrow;
+      _ensureLeaseHeld();
+      await _markItemQueued(item.id, existingJobId);
+      return true;
     } on Object catch (error) {
       _ensureLeaseHeld();
       await database.updateVideoDownloadSubscriptionItem(

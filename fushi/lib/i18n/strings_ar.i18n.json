@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "إعداد الآن",
   "download_backend_setup_title": "إعداد خلفية التحميل",
   "download_backend_unsupported_note": "المحرك المدمج غير متاح على هذه المنصة. تستخدم التحميلات qBittorrent خارجي.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "حذف $n مهمة تنزيل؟",
   "download_batch_done": "تمت معالجة $n مهمة",

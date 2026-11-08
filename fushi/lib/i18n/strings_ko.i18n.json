@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "지금 설정",
   "download_backend_setup_title": "다운로드 백엔드 설정",
   "download_backend_unsupported_note": "이 플랫폼에서는 내장 엔진을 사용할 수 없습니다. 외부 qBittorrent를 사용하여 다운로드합니다.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "다운로드 작업 $n개를 삭제하시겠습니까?",
   "download_batch_done": "작업 $n개 처리됨",

@@ -877,10 +877,20 @@ class VideoDownloadScrapeProviderUnavailable implements Exception {
   String toString() => message;
 }
 
-/// 要下载的文件已经被同一颗 torrent 的另一个未完成任务选中（例如同一卷点了
-/// 两次）。与别的「需要处理」区分开，调用方据此提示「已在队列」而不是「失败」。
+/// 要下载的内容已经有任务管着：同一后端 fingerprint 下同一颗 torrent 已有任务
+/// （[VideoDownloadPipelineService.enqueue]），或同一卷的文件已被另一个未完成
+/// 手动任务选中。与别的「需要处理」区分开，调用方据此提示「已在队列」、按已入队
+/// 计数，而不是当成失败（BUG-4242）。[existingJobId] / [existingLifecycle] 指向
+/// 管着它的那条任务，调用方可据此挂接（订阅）或提示去下载页处理。
 class VideoDownloadAlreadyQueued extends VideoDownloadPipelineActionRequired {
-  const VideoDownloadAlreadyQueued(super.message);
+  const VideoDownloadAlreadyQueued(
+    super.message, {
+    this.existingJobId,
+    this.existingLifecycle,
+  });
+
+  final String? existingJobId;
+  final String? existingLifecycle;
 }
 
 class VideoDownloadLeaseLost implements Exception {
@@ -1112,81 +1122,97 @@ class VideoDownloadPipelineService {
     if (request.maxAttempts <= 0) {
       throw ArgumentError.value(request.maxAttempts, 'maxAttempts');
     }
-    final String? revivedJobId = await _reviveOrphanedJobForRequest(request);
-    if (revivedJobId != null) return revivedJobId;
-    final int now = _now().millisecondsSinceEpoch;
-    final String jobId = generateVideoDownloadInstallationId();
-    await database.upsertVideoDownloadJob(
-      VideoDownloadJobsCompanion(
-        jobId: Value<String>(jobId),
-        resourceProvider: Value<String>(
-          persistedVideoResourceProviderId(request.resource),
-        ),
-        selectedResourceId: Value<String>(request.resource.remoteId),
-        resourceTitle: Value<String?>(request.resource.title),
-        torrentHash: Value<String?>(request.resource.infoHash?.toLowerCase()),
-        // 候选自带的持久磁链随任务落库（BUG-1784）：重启/重试直接用它物化
-        // payload，不再依赖回索引器重搜发布名——搜不回条目会把还活着的资源
-        // 误报成 notFound。
-        magnetUri: Value<String?>(_persistableMagnetOf(request.resource)),
-        metadataProvider: Value<String?>(request.media.providerId),
-        externalId: Value<String?>(request.media.mediaId),
-        mediaKind: Value<String>(request.media.mediaKind.name),
-        discoveryCategory: Value<String?>(request.media.discoveryCategory.name),
-        // v94（BUG-2003）：发现页完整身份随任务落库。原名/别名/全部外部 id 是
-        // subtitle 阶段与 scrape 阶段的输入，不能在入队这一刻降维成显示名。
-        identityJson: Value<String?>(encodeVideoMediaReference(request.media)),
-        title: Value<String>(request.media.title),
-        year: Value<int?>(request.media.year),
-        season: Value<int?>(request.media.season),
-        coverUrl: Value<String?>(request.coverUrl),
-        backendKind: Value<String>(request.backendTarget.kind),
-        backendProfileId: Value<String?>(request.backendTarget.profileId),
-        fingerprint: Value<String>(request.backendTarget.fingerprint),
-        category: Value<String?>(request.backendTarget.category),
-        targetSourceId: Value<int?>(request.targetSourceId),
-        organizationPolicy: const Value<String>('library'),
-        subtitlePolicy: Value<String>(request.subtitlePolicy.name),
-        lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
-        stage: const Value<String>(VideoDownloadJobStage.enqueue),
-        priority: Value<int>(request.priority),
-        maxAttempts: Value<int>(request.maxAttempts),
-        createdAt: Value<int>(now),
-        updatedAt: Value<int>(now),
-      ),
-    );
-    wake();
-    return jobId;
-  }
-
-  /// 同一 torrent 的旧任务停在 failed / needsAttention、目标来源又已失效时，
-  /// 把它改绑到本次请求的来源并按用户重试恢复，返回它的 jobId（BUG-2755）。
-  ///
-  /// `(fingerprint, torrent_hash)` 唯一：不这样做，新任务行一插就撞唯一索引，
-  /// 这一集改了来源也永远下不回来。旧任务的来源还可用、还在跑或文件已落进来源
-  /// 时返回 null，照常新建（撞索引的老行为不变）。
-  Future<String?> _reviveOrphanedJobForRequest(
-    VideoDownloadEnqueueRequest request,
-  ) async {
-    final String? hash = request.resource.infoHash?.trim().toLowerCase();
-    if (hash == null || hash.isEmpty) return null;
-    final VideoDownloadJobRow? existing = await database
-        .findVideoDownloadJobByFingerprintAndTorrentHash(
-          request.backendTarget.fingerprint,
-          hash,
+    final String? rawHash = request.resource.infoHash?.trim().toLowerCase();
+    final String? hash = rawHash == null || rawHash.isEmpty ? null : rawHash;
+    final String fingerprint = request.backendTarget.fingerprint;
+    // 查重与插入同一事务：`(fingerprint, torrent_hash)` 部分唯一索引只当最后一道
+    // 一致性护栏，重复入队在这里变成领域结果（BUG-4242），并发提交也不会在查完
+    // 与插入之间撞索引冒出原始 SqliteException / DriftRemoteException。
+    final ({String jobId, bool revived}) claim = await database.transaction(
+      () async {
+        if (hash != null) {
+          final VideoDownloadJobRow? existing = await database
+              .findVideoDownloadJobByFingerprintAndTorrentHash(
+                fingerprint,
+                hash,
+              );
+          if (existing != null) {
+            if (await _isOrphanedFromSource(existing)) {
+              // BUG-2755：旧任务停在 failed / needsAttention、目标来源又已失效
+              // —— 改绑到本次请求的来源，事务提交后按用户重试恢复。
+              await database.updateVideoDownloadJob(
+                existing.jobId,
+                VideoDownloadJobsCompanion(
+                  targetSourceId: Value<int?>(request.targetSourceId),
+                  updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+                ),
+              );
+              return (jobId: existing.jobId, revived: true);
+            }
+            // 还在跑 / 已完成 / 失败但来源可用：已有任务管着这颗种子。不偷偷
+            // 复活失败任务（用户应在下载页知情地重试），交给调用方按「已在队列」处理。
+            throw VideoDownloadAlreadyQueued(
+              'This torrent is already queued by job ${existing.jobId} '
+              '(${existing.lifecycle})',
+              existingJobId: existing.jobId,
+              existingLifecycle: existing.lifecycle,
+            );
+          }
+        }
+        final int now = _now().millisecondsSinceEpoch;
+        final String jobId = generateVideoDownloadInstallationId();
+        await database.upsertVideoDownloadJob(
+          VideoDownloadJobsCompanion(
+            jobId: Value<String>(jobId),
+            resourceProvider: Value<String>(
+              persistedVideoResourceProviderId(request.resource),
+            ),
+            selectedResourceId: Value<String>(request.resource.remoteId),
+            resourceTitle: Value<String?>(request.resource.title),
+            torrentHash: Value<String?>(hash),
+            // 候选自带的持久磁链随任务落库（BUG-1784）：重启/重试直接用它物化
+            // payload，不再依赖回索引器重搜发布名——搜不回条目会把还活着的资源
+            // 误报成 notFound。
+            magnetUri: Value<String?>(_persistableMagnetOf(request.resource)),
+            metadataProvider: Value<String?>(request.media.providerId),
+            externalId: Value<String?>(request.media.mediaId),
+            mediaKind: Value<String>(request.media.mediaKind.name),
+            discoveryCategory: Value<String?>(
+              request.media.discoveryCategory.name,
+            ),
+            // v94（BUG-2003）：发现页完整身份随任务落库。原名/别名/全部外部 id 是
+            // subtitle 阶段与 scrape 阶段的输入，不能在入队这一刻降维成显示名。
+            identityJson: Value<String?>(
+              encodeVideoMediaReference(request.media),
+            ),
+            title: Value<String>(request.media.title),
+            year: Value<int?>(request.media.year),
+            season: Value<int?>(request.media.season),
+            coverUrl: Value<String?>(request.coverUrl),
+            backendKind: Value<String>(request.backendTarget.kind),
+            backendProfileId: Value<String?>(request.backendTarget.profileId),
+            fingerprint: Value<String>(request.backendTarget.fingerprint),
+            category: Value<String?>(request.backendTarget.category),
+            targetSourceId: Value<int?>(request.targetSourceId),
+            organizationPolicy: const Value<String>('library'),
+            subtitlePolicy: Value<String>(request.subtitlePolicy.name),
+            lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+            stage: const Value<String>(VideoDownloadJobStage.enqueue),
+            priority: Value<int>(request.priority),
+            maxAttempts: Value<int>(request.maxAttempts),
+            createdAt: Value<int>(now),
+            updatedAt: Value<int>(now),
+          ),
         );
-    if (existing == null || !await _isOrphanedFromSource(existing)) {
-      return null;
-    }
-    await database.updateVideoDownloadJob(
-      existing.jobId,
-      VideoDownloadJobsCompanion(
-        targetSourceId: Value<int?>(request.targetSourceId),
-        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
-      ),
+        return (jobId: jobId, revived: false);
+      },
     );
-    await retryJob(existing.jobId);
-    return existing.jobId;
+    if (claim.revived) {
+      await retryJob(claim.jobId);
+    } else {
+      wake();
+    }
+    return claim.jobId;
   }
 
   /// 任务停在 failed / needsAttention、文件还没落进来源、而目标来源已失效。
@@ -1277,9 +1303,11 @@ class VideoDownloadPipelineService {
         !request.importAfterDownload &&
         _releasesPackSlot(duplicate);
     if (duplicate != null && !waitsForPackHolder) {
-      throw VideoDownloadPipelineActionRequired(
+      throw VideoDownloadAlreadyQueued(
         'This torrent is already managed by job ${duplicate.jobId}; '
         'remove that task before selecting another volume from the same pack',
+        existingJobId: duplicate.jobId,
+        existingLifecycle: duplicate.lifecycle,
       );
     }
     await _rejectOverlappingPackSelection(
@@ -1427,6 +1455,8 @@ class VideoDownloadPipelineService {
       if (overlaps) {
         throw VideoDownloadAlreadyQueued(
           'The selected files are already queued by job ${sibling.jobId}',
+          existingJobId: sibling.jobId,
+          existingLifecycle: sibling.lifecycle,
         );
       }
     }

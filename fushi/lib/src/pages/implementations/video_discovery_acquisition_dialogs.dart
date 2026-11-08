@@ -872,21 +872,35 @@ class _VideoResourceSearchSurfaceState
         // 串行：入队最终落到同一张 video_download_jobs 表，并发只会把一批提交
         // 变成一批竞态。首条失败直接抛给下面的 catch（后端不可用 / 没配好这类
         // 前置问题对整批都成立，逐条重复报 N 次没有意义）；后续条目的失败聚合成
-        // 一句，不让一条挂掉把其余的也废掉。
+        // 一句，不让一条挂掉把其余的也废掉。已有任务管着同一颗种子是管线的领域
+        // 结果（[VideoDownloadAlreadyQueued]，BUG-4242）：单独计「已在队列」，
+        // 不算失败、也不让首条重复把整批判成失败。
+        int queued = 0;
+        int alreadyQueued = 0;
         int failed = 0;
         for (int i = 0; i < resources.length; i++) {
           try {
             await widget.onSubmit!(downloadFor(resources[i]));
+            queued++;
+          } on VideoDownloadAlreadyQueued {
+            alreadyQueued++;
           } on Object catch (error, stackTrace) {
-            if (i == 0) rethrow;
+            if (queued == 0 && alreadyQueued == 0) rethrow;
             failed++;
             debugPrint(
               '[fushi-discovery] batch enqueue failed: $error\n$stackTrace',
             );
           }
         }
-        if (failed > 0 && mounted) {
-          _showSubmitFailure(t.download_batch_failed(n: failed), null);
+        if (mounted && (failed > 0 || alreadyQueued > 0)) {
+          _showSubmitFailure(
+            <String>[
+              if (alreadyQueued > 0)
+                t.download_batch_already_queued(n: alreadyQueued),
+              if (failed > 0) t.download_batch_failed(n: failed),
+            ].join(' · '),
+            null,
+          );
         }
       }
       if (mounted) widget.onClose?.call();

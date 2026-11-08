@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "今すぐ設定",
   "download_backend_setup_title": "ダウンロードバックエンドを設定",
   "download_backend_unsupported_note": "内蔵エンジンはこのプラットフォームでは利用できません。ダウンロードは外部のqBittorrentを使用します。",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "ダウンロードタスク $n 件を削除しますか？",
   "download_batch_done": "$n 件を処理しました",

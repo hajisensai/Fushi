@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "开始配置",
   "download_backend_setup_title": "配置下载后端",
   "download_backend_unsupported_note": "本平台无内置引擎，下载使用外接 qBittorrent。",
+  "download_batch_already_queued": "$n 项已在下载队列中",
   "download_batch_clear": "从列表移除",
   "download_batch_delete_confirm": "删除 $n 个下载任务？",
   "download_batch_done": "已处理 $n 项",

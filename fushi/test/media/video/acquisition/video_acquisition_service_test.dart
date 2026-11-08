@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -150,6 +151,72 @@ void main() {
     },
   );
 
+  // BUG-4242：写入类效果失败时对话只给脱敏短文（超长异常只剩类型名），真实原因
+  // 必须落诊断日志；旧实现 _guard 一行日志都不写，error_log 里查无此事。
+  test(
+    'a failing write effect logs the raw error to the diagnostic log',
+    () async {
+      final _RecordingLogSink sink = _RecordingLogSink();
+      final EngineLogSink previous = engineLog;
+      engineLog = sink;
+      addTearDown(() => engineLog = previous);
+      final _Ports ports = _Ports(
+        submitError: _LongException('UNIQUE constraint failed: ${'x' * 300}'),
+      );
+      final VideoAcquisitionService service = VideoAcquisitionService(
+        ports: ports.build(),
+        defaults: _defaults(),
+      );
+      addTearDown(service.dispose);
+
+      await service.submitText('Show');
+      await service.confirm();
+
+      final VideoAcquisitionAssistantMessage failed = service.state.transcript
+          .whereType<VideoAcquisitionAssistantMessage>()
+          .lastWhere(
+            (VideoAcquisitionAssistantMessage m) =>
+                m.say.kind == VideoAcquisitionSayKind.failed,
+          );
+      expect(failed.say.args['message'], '_LongException');
+      expect(
+        sink.diagnostics,
+        contains(
+          allOf(
+            startsWith(
+              'VideoAcquisition.effect: '
+              'VideoAcquisitionSubmitDownloadEffect failed: ',
+            ),
+            contains('UNIQUE constraint failed'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'already-queued picks finish the session as submitted, not failed',
+    () async {
+      final _Ports ports = _Ports(submitResult: (queued: 1, alreadyQueued: 2));
+      final VideoAcquisitionService service = VideoAcquisitionService(
+        ports: ports.build(),
+        defaults: _defaults(),
+      );
+      addTearDown(service.dispose);
+
+      await service.submitText('Show');
+      await service.confirm();
+
+      expect(service.state.stage, VideoAcquisitionStage.done);
+      final VideoAcquisitionAssistantMessage last = service.state.transcript
+          .whereType<VideoAcquisitionAssistantMessage>()
+          .last;
+      expect(last.say.kind, VideoAcquisitionSayKind.submitted);
+      expect(last.say.args['count'], 1);
+      expect(last.say.args['alreadyQueued'], 2);
+    },
+  );
+
   test('a failing effect aborts the rest of its batch: nothing is enqueued '
       'after the series subtitle write throws', () async {
     final _Ports ports = _Ports(
@@ -250,6 +317,7 @@ class _Ports {
       VideoAcquisitionIntentPatch(workQueries: <String>['Show']),
     ),
     this.submitError,
+    this.submitResult,
     this.setSeriesError,
     this.knownTitles,
     this.aliases = const <String>[],
@@ -264,6 +332,9 @@ class _Ports {
 
   final VideoAcquisitionIntent? intent;
   final Exception? submitError;
+
+  /// 非 null 时 submitDownload 原样返回它（模拟部分条目已在队列）。
+  final VideoAcquisitionDownloadSubmission? submitResult;
   final Exception? setSeriesError;
   final List<String> searchQueries = <String>[];
   final List<String> calls = <String>[];
@@ -303,7 +374,8 @@ class _Ports {
       if (submitError != null) throw submitError!;
       submittedInstallSubtitles = effect.installSubtitles;
       calls.add('submitDownload:${effect.plan.picks.length}');
-      return effect.plan.picks.length;
+      return submitResult ??
+          (queued: effect.plan.picks.length, alreadyQueued: 0);
     },
     submitSubscription: (_) async => calls.add('submitSubscription'),
     resolveAlias: (String query) async {
@@ -311,4 +383,27 @@ class _Ports {
       return aliases;
     },
   );
+}
+
+class _LongException implements Exception {
+  const _LongException(this.detail);
+
+  final String detail;
+
+  @override
+  String toString() => 'LongException: $detail';
+}
+
+class _RecordingLogSink implements EngineLogSink {
+  final List<String> diagnostics = <String>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) {}
+
+  @override
+  void logDiagnostic(String source, Object info) =>
+      diagnostics.add('$source: $info');
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) {}
 }

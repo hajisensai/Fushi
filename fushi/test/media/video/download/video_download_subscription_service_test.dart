@@ -158,6 +158,78 @@ Future<VideoDownloadSubscriptionRow> _waitForSubscription(
 }
 
 void main() {
+  // BUG-4242：同一 infohash 已被别的 provider / remoteId（AI 下视频、发现页、
+  // 另一个索引器）建的任务管着时，按 provider+remoteId 的预扫描认不出来；管线
+  // 判重给出的「已在队列」必须让这一集挂到既有任务，而不是标 failed。
+  test(
+    'an already-queued torrent attaches the episode to the existing job',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'dup',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        startAfterEpisode: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+          'nyaaCategory': '1_2',
+        },
+      );
+      final VideoResourceCandidate candidate = _candidate(
+        remoteId: 'episode-1',
+        episode: 1,
+      );
+      await database.upsertVideoDownloadJob(
+        VideoDownloadJobsCompanion.insert(
+          jobId: 'foreign-job',
+          resourceProvider: 'other-indexer',
+          selectedResourceId: 'elsewhere-1',
+          torrentHash: Value<String?>(candidate.infoHash),
+          mediaKind: 'tv',
+          title: 'Example Show',
+          backendKind: 'embedded',
+          fingerprint: 'backend-fingerprint',
+          createdAt: _nowAt,
+          updatedAt: _nowAt,
+        ),
+      );
+      int enqueueCalls = 0;
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: _nyaaProviderId,
+          candidates: <VideoResourceCandidate>[candidate],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueueCalls++;
+          throw const VideoDownloadAlreadyQueued(
+            'This torrent is already queued by job foreign-job (active)',
+            existingJobId: 'foreign-job',
+            existingLifecycle: VideoDownloadJobLifecycle.active,
+          );
+        },
+      );
+
+      await service.checkNow();
+
+      expect(enqueueCalls, 1);
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems('dup')).single;
+      expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+      expect(item.jobId, 'foreign-job');
+      expect(item.error, isNull);
+      expect(await database.getVideoDownloadJobs(), hasLength(1));
+    },
+  );
+
   test(
     'Nyaa strict rules include the selected first episode and persist outbox',
     () async {

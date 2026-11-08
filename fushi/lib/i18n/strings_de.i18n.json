@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "Jetzt einrichten",
   "download_backend_setup_title": "Download-Backend einrichten",
   "download_backend_unsupported_note": "Die integrierte Engine ist auf dieser Plattform nicht verfügbar. Downloads verwenden externes qBittorrent.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "$n Download-Aufgabe(n) löschen?",
   "download_batch_done": "$n Aufgabe(n) verarbeitet",

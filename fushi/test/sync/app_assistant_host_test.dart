@@ -403,7 +403,7 @@ class _HostPorts {
           calls.add('setSeriesSubtitleLanguage:$code'),
       submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
         calls.add('submitDownload:${effect.plan.picks.length}');
-        return effect.plan.picks.length;
+        return (queued: effect.plan.picks.length, alreadyQueued: 0);
       },
       submitSubscription: (_) async => calls.add('submitSubscription'),
     ),

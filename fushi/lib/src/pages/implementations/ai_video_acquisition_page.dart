@@ -203,6 +203,14 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   String _sayText(VideoAcquisitionSay say) {
     final Map<String, Object?> a = say.args;
     String arg(String key) => '${a[key] ?? ''}';
+    // BUG-4242：已有任务管着同一颗种子的条目不算失败，单独补一句「已在队列」。
+    String withAlreadyQueued(String text) {
+      final Object? n = a['alreadyQueued'];
+      return n is int && n > 0
+          ? '$text ${t.download_batch_already_queued(n: n)}'
+          : text;
+    }
+
     return switch (say.kind) {
       VideoAcquisitionSayKind.greeting => t.ai_video_acquire_greeting,
       VideoAcquisitionSayKind.workNotFound => t.ai_video_acquire_work_not_found(
@@ -249,7 +257,9 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       VideoAcquisitionSayKind.submitted =>
         a['mode'] == VideoAcquisitionMode.subscribe.name
             ? t.ai_video_acquire_submitted_subscribe
-            : t.ai_video_acquire_submitted_download(count: arg('count')),
+            : withAlreadyQueued(
+                t.ai_video_acquire_submitted_download(count: arg('count')),
+              ),
       VideoAcquisitionSayKind.failed => t.ai_video_acquire_failed(
         message: _failureText(arg('message')),
       ),
@@ -278,12 +288,13 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           ready: arg('ready'),
           total: arg('total'),
         ),
-      VideoAcquisitionSayKind.franchiseSubmitted =>
+      VideoAcquisitionSayKind.franchiseSubmitted => withAlreadyQueued(
         t.ai_video_acquire_franchise_submitted(
           downloads: arg('downloads'),
           subscriptions: arg('subscriptions'),
           failed: arg('failed'),
         ),
+      ),
       VideoAcquisitionSayKind.cancelled => t.ai_video_acquire_cancelled,
       VideoAcquisitionSayKind.aiUnavailable =>
         t.ai_video_acquire_ai_unavailable(reason: aiFailureText(arg('code'))),

@@ -19,6 +19,8 @@ import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.da
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -93,8 +95,10 @@ class VideoAcquisitionPorts {
   )
   setSeriesSubtitleLanguage;
 
-  /// 入队；返回真正入队的条数。
-  final Future<int> Function(VideoAcquisitionSubmitDownloadEffect effect)
+  /// 入队；返回新建条数与「已有任务管着、未重复入队」的条数（BUG-4242）。
+  final Future<VideoAcquisitionDownloadSubmission> Function(
+    VideoAcquisitionSubmitDownloadEffect effect,
+  )
   submitDownload;
 
   final Future<void> Function(VideoAcquisitionSubmitSubscriptionEffect effect)
@@ -267,22 +271,30 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         await _searchResources(effect);
       case VideoAcquisitionPersistPreferenceEffect():
         return _guard(
+          effect,
           () => _ports.persistPreference(effect.preference, effect.value),
         );
       case VideoAcquisitionSetSeriesSubtitleLanguageEffect():
         return _guard(
+          effect,
           () => _ports.setSeriesSubtitleLanguage(
             effect.reference,
             effect.languageCode,
           ),
         );
       case VideoAcquisitionSubmitDownloadEffect():
-        return _guard(() async {
-          final int count = await _ports.submitDownload(effect);
-          _queue.add(VideoAcquisitionSubmittedEvent(count: count));
+        return _guard(effect, () async {
+          final VideoAcquisitionDownloadSubmission result = await _ports
+              .submitDownload(effect);
+          _queue.add(
+            VideoAcquisitionSubmittedEvent(
+              count: result.queued,
+              alreadyQueued: result.alreadyQueued,
+            ),
+          );
         });
       case VideoAcquisitionSubmitSubscriptionEffect():
-        return _guard(() async {
+        return _guard(effect, () async {
           await _ports.submitSubscription(effect);
           _queue.add(const VideoAcquisitionSubmittedEvent(count: 1));
         });
@@ -293,7 +305,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       case VideoAcquisitionResolveFranchiseEntryEffect():
         await _resolveFranchiseEntry(effect);
       case VideoAcquisitionSubmitFranchiseEffect():
-        return _guard(() => _submitFranchise(effect));
+        return _guard(effect, () => _submitFranchise(effect));
       case VideoAcquisitionCloseEffect():
         break;
     }
@@ -407,6 +419,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     VideoAcquisitionSubmitFranchiseEffect effect,
   ) async {
     int downloads = 0;
+    int alreadyQueued = 0;
     int subscriptions = 0;
     int failed = 0;
     Object? firstError;
@@ -422,14 +435,17 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         }
         switch (entry.mode) {
           case VideoAcquisitionMode.download:
-            downloads += await _ports.submitDownload(
-              VideoAcquisitionSubmitDownloadEffect(
-                item: entry.item,
-                plan: plan,
-                targetSourceId: effect.targetSourceId,
-                installSubtitles: code != null,
-              ),
-            );
+            final VideoAcquisitionDownloadSubmission result = await _ports
+                .submitDownload(
+                  VideoAcquisitionSubmitDownloadEffect(
+                    item: entry.item,
+                    plan: plan,
+                    targetSourceId: effect.targetSourceId,
+                    installSubtitles: code != null,
+                  ),
+                );
+            downloads += result.queued;
+            alreadyQueued += result.alreadyQueued;
           case VideoAcquisitionMode.subscribe:
             await _ports.submitSubscription(
               VideoAcquisitionSubmitSubscriptionEffect(
@@ -451,7 +467,10 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         );
       }
     }
-    if (downloads == 0 && subscriptions == 0 && firstError != null) {
+    if (downloads == 0 &&
+        alreadyQueued == 0 &&
+        subscriptions == 0 &&
+        firstError != null) {
       Error.throwWithStackTrace(firstError, firstStack!);
     }
     _queue.add(
@@ -459,18 +478,27 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         downloads: downloads,
         subscriptions: subscriptions,
         failed: failed,
+        alreadyQueued: alreadyQueued,
       ),
     );
   }
 
-  /// 效果失败 → 记住原始异常、回灌 failed 事件、返回 false；绝不让异常冲出
-  /// dispatch。
-  Future<bool> _guard(Future<void> Function() body) async {
+  /// 效果失败 → 记住原始异常、把原始错误与栈写进诊断日志、回灌 failed 事件、
+  /// 返回 false；绝不让异常冲出 dispatch。对话里只给脱敏短文（[_describe]），
+  /// 真实原因必须落日志，否则写入类效果的失败无从排查（BUG-4242）。
+  Future<bool> _guard(
+    VideoAcquisitionEffect effect,
+    Future<void> Function() body,
+  ) async {
     try {
       await body();
       return true;
-    } catch (error) {
+    } catch (error, stack) {
       lastError = error;
+      engineLog.logDiagnostic(
+        'VideoAcquisition.effect',
+        '${effect.runtimeType} failed: $error\n$stack',
+      );
       _queue.add(VideoAcquisitionFailedEvent(_describe(error)));
       return false;
     }
@@ -693,6 +721,8 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     // 已经脱敏过的短码 / 面向用户的消息直接用；其它异常只留类型名，不把 URL /
     // 凭据回显进对话。
     if (error is AiChatFailure) return error.message;
+    // 管线的「需要处理」是面向用户的固定句子（只带 jobId），直接给原文。
+    if (error is VideoDownloadPipelineActionRequired) return error.message;
     return text.length > 200 ? error.runtimeType.toString() : text;
   }
 }

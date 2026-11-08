@@ -2540,6 +2540,7 @@
   "download_backend_setup_start": "Configurer",
   "download_backend_setup_title": "Configurer le backend de téléchargement",
   "download_backend_unsupported_note": "Le moteur intégré n'est pas disponible sur cette plateforme. Les téléchargements utilisent qBittorrent externe.",
+  "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
   "download_batch_delete_confirm": "Supprimer $n tâche(s) de téléchargement ?",
   "download_batch_done": "$n tâche(s) traitée(s)",

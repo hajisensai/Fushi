@@ -13,6 +13,7 @@ import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi_engine/ai/ai_video_franchise_assistant.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -94,6 +95,59 @@ Future<VideoLibraryPresence?> resolveAiAcquisitionPresence(
   return first;
 }
 
+/// AI 下视频一次「下载」提交的批量入队：串行、首条真正失败直接抛（后端 / 落地
+/// 问题对整批成立）、后续失败只记数并落诊断日志。同一颗种子已有任务管着时管线给
+/// [VideoDownloadAlreadyQueued]，这里按「已在队列」计数而不是失败（BUG-4242）。
+Future<VideoAcquisitionDownloadSubmission> enqueueVideoAcquisitionPicks({
+  required VideoDownloadPipelineService pipeline,
+  required VideoMediaReference media,
+  required String? coverUrl,
+  required List<VideoResourceCandidate> picks,
+  required MediaSourceRow source,
+  required VideoDownloadBackendTarget target,
+  required bool installSubtitles,
+}) async {
+  // 串行入队、首条失败直接抛（后端 / 落地问题对整批成立）、后续失败只记数：
+  // 与资源搜索页的批量提交同一口径。已有任务管着同一颗种子是领域结果
+  // （[VideoDownloadAlreadyQueued]），按「已在队列」计数，不算失败、不抛
+  // （BUG-4242）。
+  int queued = 0;
+  int alreadyQueued = 0;
+  for (int i = 0; i < picks.length; i++) {
+    try {
+      await enqueueLocalVideoDownload(
+        pipeline: pipeline,
+        coverUrl: coverUrl,
+        selection: VideoDiscoveryDownloadSelection(
+          media: media,
+          resource: picks[i],
+          source: source,
+          subtitlePolicy: installSubtitles
+              ? VideoDownloadSubtitlePolicy.bestEffort
+              : VideoDownloadSubtitlePolicy.none,
+        ),
+        target: target,
+      );
+      queued++;
+    } on VideoDownloadAlreadyQueued catch (error) {
+      alreadyQueued++;
+      engineLog.logDiagnostic(
+        'VideoAcquisition.enqueue',
+        'already queued: ${picks[i].title}: $error',
+      );
+    } on Object catch (error, stackTrace) {
+      // 第一条真正的失败、且此前没有任何一条入队或已在队列：失败对整批成立
+      // （后端没配 / 来源失效），抛给 _guard 回灌 failed 并落诊断日志。
+      if (queued == 0 && alreadyQueued == 0) rethrow;
+      engineLog.logDiagnostic(
+        'VideoAcquisition.enqueue',
+        'batch enqueue failed: $error\n$stackTrace',
+      );
+    }
+  }
+  return (queued: queued, alreadyQueued: alreadyQueued);
+}
+
 /// 组装一个在本宿主执行的 [VideoAcquisitionService]。
 ///
 /// [defaults] 由宿主从自己的偏好里取（画质 / 片源 / 码率 / 字幕语言 / 默认目标来源 /
@@ -167,35 +221,15 @@ VideoAcquisitionService createHostVideoAcquisitionService({
           ),
       submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
         final VideoDownloadBackendTarget target = await backendTarget();
-        final MediaSourceRow source = sourceById(effect.targetSourceId);
-        // 串行入队、首条失败直接抛（后端 / 落地问题对整批成立）、后续失败只记数：
-        // 与资源搜索页的批量提交同一口径。
-        int queued = 0;
-        for (int i = 0; i < effect.plan.picks.length; i++) {
-          try {
-            await enqueueLocalVideoDownload(
-              pipeline: pipeline,
-              coverUrl: effect.item.posterUrl,
-              selection: VideoDiscoveryDownloadSelection(
-                media: effect.item.reference,
-                resource: effect.plan.picks[i],
-                source: source,
-                subtitlePolicy: effect.installSubtitles
-                    ? VideoDownloadSubtitlePolicy.bestEffort
-                    : VideoDownloadSubtitlePolicy.none,
-              ),
-              target: target,
-            );
-            queued++;
-          } on Object catch (error, stackTrace) {
-            if (i == 0) rethrow;
-            engineLog.logDiagnostic(
-              'VideoAcquisition.enqueue',
-              'batch enqueue failed: $error\n$stackTrace',
-            );
-          }
-        }
-        return queued;
+        return enqueueVideoAcquisitionPicks(
+          pipeline: pipeline,
+          media: effect.item.reference,
+          coverUrl: effect.item.posterUrl,
+          picks: effect.plan.picks,
+          source: sourceById(effect.targetSourceId),
+          target: target,
+          installSubtitles: effect.installSubtitles,
+        );
       },
       submitSubscription:
           (VideoAcquisitionSubmitSubscriptionEffect effect) async {

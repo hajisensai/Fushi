@@ -1104,11 +1104,19 @@ class VideoAcquisitionResourcesLoadedEvent extends VideoAcquisitionEvent {
   final List<VideoResourceCandidate> items;
 }
 
-/// 提交成功（[count] = 入队条数；订阅为 1）。
+/// 一次下载提交的结果：[queued] = 新建的任务条数，[alreadyQueued] = 已有任务管着
+/// 同一颗种子、没有重复入队的条数（BUG-4242：不算失败）。
+typedef VideoAcquisitionDownloadSubmission = ({int queued, int alreadyQueued});
+
+/// 提交成功（[count] = 入队条数；订阅为 1；[alreadyQueued] = 已在队列的条数）。
 class VideoAcquisitionSubmittedEvent extends VideoAcquisitionEvent {
-  const VideoAcquisitionSubmittedEvent({required this.count});
+  const VideoAcquisitionSubmittedEvent({
+    required this.count,
+    this.alreadyQueued = 0,
+  });
 
   final int count;
+  final int alreadyQueued;
 }
 
 /// 某个效果失败了（网络 / 后端 / 提交）。
@@ -1167,6 +1175,7 @@ class VideoAcquisitionFranchiseSubmittedEvent extends VideoAcquisitionEvent {
     required this.downloads,
     required this.subscriptions,
     required this.failed,
+    this.alreadyQueued = 0,
   });
 
   /// 入队的下载任务条数。
@@ -1177,6 +1186,9 @@ class VideoAcquisitionFranchiseSubmittedEvent extends VideoAcquisitionEvent {
 
   /// 提交失败的作品数。
   final int failed;
+
+  /// 已有任务管着、没有重复入队的下载条数（BUG-4242）。
+  final int alreadyQueued;
 }
 
 // ---------------------------------------------------------------------------
