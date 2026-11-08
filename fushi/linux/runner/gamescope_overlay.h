@@ -32,19 +32,20 @@
 
 #include <gtk/gtk.h>
 
+#include <array>
 #include <cstdint>
+#include <cstring>
 
-namespace fushi {
-namespace gamescope {
+namespace fushi::gamescope {
 
-enum Role : unsigned {
-  kNone = 0,
-  // Drawn above the game (external overlay). No input.
-  kDraw = 1u << 0,
-  // Steam overlay slot with input: every touch goes to this window. The window
-  // must cover the whole output, or Gamescope scales it up.
-  kInput = 1u << 1,
-};
+// Role bits, combined with |. Shared with the C++17 lookup card process, so
+// plain constants rather than an enum class with bit operators.
+constexpr unsigned kNone = 0;
+// Drawn above the game (external overlay). No input.
+constexpr unsigned kDraw = 1u << 0;
+// Steam overlay slot with input: every touch goes to this window. The window
+// must cover the whole output, or Gamescope scales it up.
+constexpr unsigned kInput = 1u << 1;
 
 // Window opacity ranks (full opacity is 0xFFFFFFFF, Steam's own overlay).
 constexpr uint32_t kFreezeLayerRank = 0xFFFFFFFDu;
@@ -60,7 +61,7 @@ inline bool InGameMode() {
     GdkWindow* root = gdk_screen_get_root_window(
         gdk_display_get_default_screen(display));
     if (root == nullptr) return false;
-    GdkAtom type = GDK_NONE;
+    auto type = GDK_NONE;
     gint format = 0;
     gint length = 0;
     guchar* data = nullptr;
@@ -77,11 +78,12 @@ namespace detail {
 
 inline void SetCardinal(GdkWindow* window, const char* name, gulong value) {
   // Format 32 property data is an array of C longs (Xlib convention).
-  const long data = static_cast<long>(value);
+  const auto data = static_cast<long>(value);
+  std::array<guchar, sizeof(data)> bytes{};
+  std::memcpy(bytes.data(), &data, sizeof(data));
   gdk_property_change(window, gdk_atom_intern_static_string(name),
                       gdk_atom_intern_static_string("CARDINAL"), 32,
-                      GDK_PROP_MODE_REPLACE,
-                      reinterpret_cast<const guchar*>(&data), 1);
+                      GDK_PROP_MODE_REPLACE, bytes.data(), 1);
 }
 
 inline void Delete(GdkWindow* window, const char* name) {
@@ -90,7 +92,7 @@ inline void Delete(GdkWindow* window, const char* name) {
 
 }  // namespace detail
 
-// Gives |window| a Game Mode role (a combination of Role bits) with opacity
+// Gives |window| a Game Mode role (a combination of role bits) with opacity
 // |rank|. A no-op outside Game Mode. Realizes |window|.
 inline void SetRole(GtkWidget* window, unsigned role, uint32_t rank) {
   if (window == nullptr || !InGameMode()) return;
@@ -132,7 +134,7 @@ inline bool TagSteamApp(GtkWidget* window) {
   if (value == nullptr || *value == '\0') return false;
   gchar* end = nullptr;
   const guint64 app_id = g_ascii_strtoull(value, &end, 10);
-  if (end == value || *end != '\0' || app_id == 0 || app_id > 0xFFFFFFFFull) {
+  if (end == value || *end != '\0' || app_id == 0 || app_id > 0xFFFFFFFFULL) {
     return false;
   }
   gtk_widget_realize(window);
@@ -143,7 +145,6 @@ inline bool TagSteamApp(GtkWidget* window) {
   return true;
 }
 
-}  // namespace gamescope
-}  // namespace fushi
+}  // namespace fushi::gamescope
 
 #endif  // RUNNER_GAMESCOPE_OVERLAY_H_

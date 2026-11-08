@@ -185,7 +185,7 @@ void main() {
         '"$name": \\(([01]), (0x[0-9A-Fa-f]+)\\)',
       ).firstMatch(python);
       final RegExpMatch? native = RegExp(
-        'case BackButton::k$name:\\n\\s*return \\{([01]), (0x[0-9A-Fa-f]+)u\\};',
+        'case (?:BackButton::)?k$name:\\n\\s*return \\{([01]), (0x[0-9A-Fa-f]+)u\\};',
       ).firstMatch(buttons);
       expect(lens, isNotNull, reason: 'lens $name');
       expect(native, isNotNull, reason: 'native $name');

@@ -23,6 +23,9 @@ add_executable(${BINARY_NAME}
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+# Fushi's own runner code is C++20 (std::jthread, std::format). Plugins keep
+# the standard settings' C++14.
+target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
 target_compile_options(${BINARY_NAME} PRIVATE -Werror)
 
 # Add preprocessor definitions for the application ID.

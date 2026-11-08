@@ -1152,16 +1152,16 @@ gboolean CardOverlay::OnWindowRelease(GtkWidget*, GdkEventButton*,
   return TRUE;
 }
 
-gboolean CardOverlay::OnStagePress(GtkWidget*, GdkEventButton* event,
+gboolean CardOverlay::OnStagePress(GtkWidget*, const GdkEventButton* event,
                                    gpointer data) {
   auto* self = static_cast<CardOverlay*>(data);
   if (!self->visible_ || self->resizing_) {
     return FALSE;
   }
   const Frame& f = self->frame_;
-  const bool inside = event->x_root >= f.x && event->x_root < f.x + f.width &&
-                      event->y_root >= f.y && event->y_root < f.y + f.height;
-  if (inside) {
+  // A press on the card itself belongs to the card.
+  if (event->x_root >= f.x && event->x_root < f.x + f.width &&
+      event->y_root >= f.y && event->y_root < f.y + f.height) {
     return FALSE;
   }
   self->Hide(true);

@@ -5,11 +5,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <format>
+#include <memory>
 #include <string>
-#include <thread>
 #include <utility>
 
 #include "gamescope_overlay.h"
+#include "main_loop.h"
 
 #ifdef FUSHI_GAMESCOPE_CAPTURE
 #include <gst/app/gstappsink.h>
@@ -97,18 +99,10 @@ GdkPixbuf* CropToMonitor(GdkPixbuf* desktop, GdkMonitor* monitor) {
 
 // Runs |done| from the GTK main loop, never inline. Safe from any thread.
 void AnswerLater(CaptureDone done, MonitorCapture capture, std::string error) {
-  using Pending =
-      std::pair<CaptureDone, std::pair<MonitorCapture, std::string>>;
-  auto* pending =
-      new Pending(std::move(done), {std::move(capture), std::move(error)});
-  g_idle_add_full(
-      G_PRIORITY_DEFAULT,
-      [](gpointer data) -> gboolean {
-        auto* p = static_cast<Pending*>(data);
-        p->first(std::move(p->second.first), p->second.second);
-        return G_SOURCE_REMOVE;
-      },
-      pending, [](gpointer data) { delete static_cast<Pending*>(data); });
+  PostToMainLoop([done = std::move(done), capture = std::move(capture),
+                  error = std::move(error)]() mutable {
+    done(std::move(capture), error);
+  });
 }
 
 // ── X11 session: read the root window ───────────────────────────────────────
@@ -142,6 +136,34 @@ void CaptureX11(GdkMonitor* monitor, CaptureDone done) {
 // when the game draws; a game that stopped drawing times out.
 constexpr GstClockTime kGamescopeFrameTimeout = 2 * GST_SECOND;
 
+// Copies an RGB sample into a new pixbuf; nullptr when it cannot be read.
+GdkPixbuf* CopyRgbFrame(GstSample* sample) {
+  GstVideoInfo info;
+  GstBuffer* buffer = gst_sample_get_buffer(sample);
+  if (buffer == nullptr ||
+      !gst_video_info_from_caps(&info, gst_sample_get_caps(sample))) {
+    return nullptr;
+  }
+  GstMapInfo map;
+  if (!gst_buffer_map(buffer, &map, GST_MAP_READ)) return nullptr;
+  const int width = GST_VIDEO_INFO_WIDTH(&info);
+  const int height = GST_VIDEO_INFO_HEIGHT(&info);
+  const int stride = GST_VIDEO_INFO_PLANE_STRIDE(&info, 0);
+  GdkPixbuf* pixbuf =
+      gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, width, height);
+  if (pixbuf != nullptr) {
+    guchar* out = gdk_pixbuf_get_pixels(pixbuf);
+    const int out_stride = gdk_pixbuf_get_rowstride(pixbuf);
+    for (int y = 0; y < height; ++y) {
+      std::memcpy(out + static_cast<size_t>(y) * out_stride,
+                  map.data + static_cast<size_t>(y) * stride,
+                  static_cast<size_t>(width) * 3);
+    }
+  }
+  gst_buffer_unmap(buffer, &map);
+  return pixbuf;
+}
+
 // Runs on a worker thread. Returns an RGB pixbuf or nullptr with |error| set.
 GdkPixbuf* PullGamescopeFrame(std::string* error) {
   static const bool gst_ready = gst_init_check(nullptr, nullptr, nullptr);
@@ -170,26 +192,7 @@ GdkPixbuf* PullGamescopeFrame(std::string* error) {
   if (sample == nullptr) {
     *error = "no frame from gamescope";
   } else {
-    GstVideoInfo info;
-    GstBuffer* buffer = gst_sample_get_buffer(sample);
-    GstMapInfo map;
-    if (gst_video_info_from_caps(&info, gst_sample_get_caps(sample)) &&
-        buffer != nullptr && gst_buffer_map(buffer, &map, GST_MAP_READ)) {
-      const int width = GST_VIDEO_INFO_WIDTH(&info);
-      const int height = GST_VIDEO_INFO_HEIGHT(&info);
-      const int stride = GST_VIDEO_INFO_PLANE_STRIDE(&info, 0);
-      pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, width, height);
-      if (pixbuf != nullptr) {
-        guchar* out = gdk_pixbuf_get_pixels(pixbuf);
-        const int out_stride = gdk_pixbuf_get_rowstride(pixbuf);
-        for (int y = 0; y < height; ++y) {
-          std::memcpy(out + static_cast<size_t>(y) * out_stride,
-                      map.data + static_cast<size_t>(y) * stride,
-                      static_cast<size_t>(width) * 3);
-        }
-      }
-      gst_buffer_unmap(buffer, &map);
-    }
+    pixbuf = CopyRgbFrame(sample);
     if (pixbuf == nullptr) *error = "unreadable gamescope frame";
     gst_sample_unref(sample);
   }
@@ -199,37 +202,51 @@ GdkPixbuf* PullGamescopeFrame(std::string* error) {
   return pixbuf;
 }
 
+struct GamescopeJob {
+  GdkRectangle screen;
+  CaptureDone done;
+};
+
+// Worker thread body: pulls one frame and answers from the main loop. The job
+// owns everything it touches, so the thread needs no owner of its own; a
+// stuck stream ends at kGamescopeFrameTimeout.
+gpointer RunGamescopeJob(gpointer data) {
+  const std::unique_ptr<GamescopeJob> job(static_cast<GamescopeJob*>(data));
+  const GdkRectangle& screen = job->screen;
+  const gint64 started = g_get_monotonic_time();
+  std::string failure;
+  GdkPixbuf* frame = PullGamescopeFrame(&failure);
+  MonitorCapture capture;
+  capture.screen = screen;
+  std::string error;
+  if (frame == nullptr) {
+    error = "capture_failed";
+    capture.diagnostic = "gamescope: " + failure;
+  } else {
+    const int width = gdk_pixbuf_get_width(frame);
+    const int height = gdk_pixbuf_get_height(frame);
+    // Image px == screen px is the channel contract.
+    if (width != screen.width || height != screen.height) {
+      GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
+          frame, screen.width, screen.height, GDK_INTERP_BILINEAR);
+      g_object_unref(frame);
+      frame = scaled;
+    }
+    capture.pixbuf = Adopt(frame);
+    capture.diagnostic =
+        std::format("gamescope {}x{} {} ms", width, height,
+                    (g_get_monotonic_time() - started) / 1000);
+  }
+  AnswerLater(std::move(job->done), std::move(capture), std::move(error));
+  return nullptr;
+}
+
 void CaptureGamescope(GdkMonitor* monitor, CaptureDone done) {
   // GDK is main-thread only: read the monitor before leaving it.
-  const GdkRectangle screen = PhysicalScreen(monitor);
-  std::thread([screen, done = std::move(done)]() mutable {
-    const gint64 started = g_get_monotonic_time();
-    std::string failure;
-    GdkPixbuf* frame = PullGamescopeFrame(&failure);
-    MonitorCapture capture;
-    capture.screen = screen;
-    std::string error;
-    if (frame == nullptr) {
-      error = "capture_failed";
-      capture.diagnostic = "gamescope: " + failure;
-    } else {
-      const int width = gdk_pixbuf_get_width(frame);
-      const int height = gdk_pixbuf_get_height(frame);
-      // Image px == screen px is the channel contract.
-      if (width != screen.width || height != screen.height) {
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
-            frame, screen.width, screen.height, GDK_INTERP_BILINEAR);
-        g_object_unref(frame);
-        frame = scaled;
-      }
-      capture.pixbuf = Adopt(frame);
-      capture.diagnostic =
-          "gamescope " + std::to_string(width) + "x" + std::to_string(height) +
-          " " + std::to_string((g_get_monotonic_time() - started) / 1000) +
-          " ms";
-    }
-    AnswerLater(std::move(done), std::move(capture), std::move(error));
-  }).detach();
+  auto job = std::make_unique<GamescopeJob>(
+      GamescopeJob{PhysicalScreen(monitor), std::move(done)});
+  g_thread_unref(
+      g_thread_new("fushi-gamescope-capture", RunGamescopeJob, job.release()));
 }
 
 #endif  // FUSHI_GAMESCOPE_CAPTURE

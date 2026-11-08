@@ -1,11 +1,13 @@
 #ifndef RUNNER_DECK_BUTTONS_H_
 #define RUNNER_DECK_BUTTONS_H_
 
-#include <atomic>
+#include <poll.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -25,8 +27,7 @@
 //   byte 2 = 9 (Deck state), bytes 8-11 = buttons low dword, 12-15 = high.
 //   L5 = low 0x8000, R5 = low 0x10000, L4 = high 0x200, R4 = high 0x400.
 // Same table as tools/decky-fushi-lens/py_modules/fushi_lens/paddles.py.
-namespace fushi {
-namespace deck_buttons {
+namespace fushi::deck_buttons {
 
 enum class BackButton { kL4, kR4, kL5, kR5 };
 
@@ -55,17 +56,18 @@ class Watcher {
   void Stop() noexcept;
 
  private:
-  void Run();
+  void Run(const std::stop_token& stop) const;
   // Reads until Stop or a read error; false when no node could be opened.
-  bool ReadUntilError();
+  bool ReadUntilError(const std::stop_token& stop) const;
+  // Handles one poll result: the button's new held state, or nullopt when the
+  // node is gone. Posts |on_press_| on the press edge.
+  std::optional<bool> ReadReport(const pollfd& node, bool was_held) const;
 
   BackButton button_ = BackButton::kR4;
   PressCallback on_press_;
-  std::thread thread_;
-  std::atomic<bool> stop_{false};
+  std::jthread thread_;
 };
 
-}  // namespace deck_buttons
-}  // namespace fushi
+}  // namespace fushi::deck_buttons
 
 #endif  // RUNNER_DECK_BUTTONS_H_

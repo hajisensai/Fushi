@@ -5,11 +5,13 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include <array>
 #include <chrono>
 #include <utility>
 
-namespace fushi {
-namespace deck_buttons {
+#include "main_loop.h"
+
+namespace fushi::deck_buttons {
 
 namespace {
 
@@ -23,14 +25,15 @@ struct Mask {
 };
 
 Mask MaskFor(BackButton button) {
+  using enum BackButton;
   switch (button) {
-    case BackButton::kL4:
+    case kL4:
       return {1, 0x00000200u};
-    case BackButton::kR4:
+    case kR4:
       return {1, 0x00000400u};
-    case BackButton::kL5:
+    case kL5:
       return {0, 0x00008000u};
-    case BackButton::kR5:
+    case kR5:
       return {0, 0x00010000u};
   }
   return {1, 0x00000400u};
@@ -84,26 +87,25 @@ void Watcher::Start(BackButton button, PressCallback on_press) {
   Stop();
   button_ = button;
   on_press_ = std::move(on_press);
-  stop_ = false;
-  thread_ = std::thread([this] { Run(); });
+  thread_ = std::jthread([this](const std::stop_token& stop) { Run(stop); });
 }
 
 void Watcher::Stop() noexcept {
-  stop_ = true;
+  thread_.request_stop();
   if (thread_.joinable()) thread_.join();
 }
 
-void Watcher::Run() {
-  while (!stop_) {
-    ReadUntilError();
+void Watcher::Run(const std::stop_token& stop) const {
+  while (!stop.stop_requested()) {
+    ReadUntilError(stop);
     // Controller asleep or reconnecting: try again shortly.
-    for (int i = 0; i < 20 && !stop_; ++i) {
+    for (int i = 0; i < 20 && !stop.stop_requested(); ++i) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 }
 
-bool Watcher::ReadUntilError() {
+bool Watcher::ReadUntilError(const std::stop_token& stop) const {
   std::vector<pollfd> fds;
   for (const std::string& node : ControllerNodes()) {
     const int fd = open(node.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -114,39 +116,35 @@ bool Watcher::ReadUntilError() {
   // only one of them sends Deck state reports.
   std::vector<bool> held(fds.size(), false);
   bool ok = true;
-  while (!stop_ && ok) {
+  while (!stop.stop_requested() && ok) {
     // Short timeout so Stop() is noticed quickly.
     if (poll(fds.data(), fds.size(), 250) <= 0) continue;
-    for (size_t i = 0; i < fds.size(); ++i) {
-      if (fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    for (size_t i = 0; i < fds.size() && ok; ++i) {
+      const std::optional<bool> now = ReadReport(fds[i], held[i]);
+      if (now.has_value()) {
+        held[i] = *now;
+      } else {
         ok = false;
-        break;
       }
-      if (!(fds[i].revents & POLLIN)) continue;
-      uint8_t report[kReportSize];
-      const ssize_t n = read(fds[i].fd, report, sizeof(report));
-      if (n < 0) continue;
-      const std::optional<bool> now =
-          IsHeld(report, static_cast<size_t>(n), button_);
-      if (!now.has_value()) continue;
-      if (*now && !held[i]) {
-        // Hand the press to the GTK main thread.
-        auto* callback = new PressCallback(on_press_);
-        g_idle_add_full(
-            G_PRIORITY_DEFAULT,
-            [](gpointer data) -> gboolean {
-              (*static_cast<PressCallback*>(data))();
-              return G_SOURCE_REMOVE;
-            },
-            callback,
-            [](gpointer data) { delete static_cast<PressCallback*>(data); });
-      }
-      held[i] = *now;
     }
   }
   for (const pollfd& fd : fds) close(fd.fd);
   return true;
 }
 
-}  // namespace deck_buttons
-}  // namespace fushi
+std::optional<bool> Watcher::ReadReport(const pollfd& node,
+                                        bool was_held) const {
+  if (node.revents & (POLLERR | POLLHUP | POLLNVAL)) return std::nullopt;
+  if (!(node.revents & POLLIN)) return was_held;
+  std::array<uint8_t, kReportSize> report{};
+  const ssize_t n = read(node.fd, report.data(), report.size());
+  if (n < 0) return was_held;
+  const std::optional<bool> now =
+      IsHeld(report.data(), static_cast<size_t>(n), button_);
+  if (!now.has_value()) return was_held;
+  // Hand the press to the GTK main thread.
+  if (*now && !was_held) PostToMainLoop(on_press_);
+  return *now;
+}
+
+}  // namespace fushi::deck_buttons

@@ -96,7 +96,7 @@ class CardOverlay {
                                   gpointer data);
   static gboolean OnWindowGrabBroken(GtkWidget* widget, GdkEvent* event,
                                      gpointer data);
-  static gboolean OnStagePress(GtkWidget* widget, GdkEventButton* event,
+  static gboolean OnStagePress(GtkWidget* widget, const GdkEventButton* event,
                                gpointer data);
   static void OnLoadChanged(WebKitWebView* view, WebKitLoadEvent event,
                             gpointer data);
