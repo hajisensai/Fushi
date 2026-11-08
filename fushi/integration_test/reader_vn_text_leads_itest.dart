@@ -7,6 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/reader/reader_settings_ia.dart'
+    show ReaderSettingsTab;
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
@@ -26,7 +31,8 @@ import 'helpers/library_fixture.dart'
     show openBookViaProductionPath, readyAppModel;
 import 'helpers/media_fixtures.dart'
     show generateSilentAudio, kFixtureChapterHref;
-import 'helpers/observe_capture.dart' show captureReaderWebView;
+import 'helpers/observe_capture.dart'
+    show captureFlutterFrame, captureReaderWebView;
 import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
@@ -455,6 +461,61 @@ void main() {
           c.setFollowAudio(true);
           check(c.textLeads, '9b follow on re-enables text leads');
           await c.pause();
+
+          // ── 10. 设置行在手机宽 / 桌面宽下的渲染（标题、两个选项不截断）──
+          Future<void> captureSettingsRow(String name, Size logical) async {
+            tester.view.devicePixelRatio = 1.0;
+            tester.view.physicalSize = logical;
+            await tester.pump(const Duration(milliseconds: 500));
+            await ReaderFushiPage.debugOpenQuickSettings!();
+            final Finder tabs = find.byKey(
+              const ValueKey<String>('fushi_side_sheet_tabs'),
+            );
+            await _poll(tester, () => tabs.evaluate().isNotEmpty);
+            final LibrarySectionTabs<String> tabBar = tester
+                .widget<LibrarySectionTabs<String>>(tabs);
+            final int listening = tabBar.tabs.indexWhere(
+              (LibrarySectionTab<String> tab) =>
+                  tab.value == ReaderSettingsTab.listening.id,
+            );
+            check(listening >= 0, '10 $name: Listening tab exists');
+            tabBar.controller!.animateTo(listening);
+            await tester.pump(const Duration(milliseconds: 800));
+            final Finder title = find.textContaining(
+              t.audiobook_page_end_title,
+              findRichText: true,
+            );
+            await _poll(tester, () => title.evaluate().isNotEmpty);
+            if (title.evaluate().isNotEmpty) {
+              await Scrollable.ensureVisible(tester.element(title.first));
+              await tester.pump(const Duration(milliseconds: 500));
+            }
+            // 侧板把分段项渲染成「标题 + 当前值」的选择行（点开再选），所以只认
+            // 标题与当前选中值（测试前已设为文字领读 = 「暂停」）。
+            check(
+              title.evaluate().isNotEmpty &&
+                  find
+                      .textContaining(
+                        t.audiobook_page_end_pause,
+                        findRichText: true,
+                      )
+                      .evaluate()
+                      .isNotEmpty,
+              '10 $name: row title and selected value render',
+            );
+            await captureFlutterFrame(tester, name);
+            Navigator.of(tester.element(tabs)).maybePop();
+            await tester.pump(const Duration(seconds: 1));
+          }
+
+          await captureSettingsRow('04-settings-phone', const Size(390, 844));
+          await captureSettingsRow(
+            '05-settings-desktop',
+            const Size(1280, 800),
+          );
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          await tester.pump(const Duration(milliseconds: 500));
 
           debugPrint('[$_kLabel] VERDICT failures=${failures.length}');
           for (final String f in failures) {

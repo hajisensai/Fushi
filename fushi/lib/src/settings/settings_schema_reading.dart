@@ -380,9 +380,9 @@ SettingsDestination buildReadingDestination() {
           // 末句、翻屏续播）。只有 VN 有逐屏上报，其它模式不显示。选文字领读时顺带打开
           // 「合并跨屏朗读句」，保证每屏都结束在句末。
           SettingsSegmentedItem<String>(
-            id: 'listening.link_direction',
-            title: t.audiobook_link_direction_title,
-            subtitle: t.audiobook_link_direction_hint,
+            id: 'listening.page_end_audio',
+            title: t.audiobook_page_end_title,
+            subtitle: t.audiobook_page_end_hint,
             icon: FushiIcons.link,
             controlBelow: true,
             visible: isVisualNovel,
@@ -393,13 +393,13 @@ SettingsDestination buildReadingDestination() {
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: kAudiobookLinkDirectionAudio,
-                label: t.audiobook_link_direction_audio,
-                tooltip: t.audiobook_link_direction_audio,
+                label: t.audiobook_page_end_keep_playing,
+                tooltip: t.audiobook_page_end_keep_playing,
               ),
               SettingsSegmentOption<String>(
                 value: kAudiobookLinkDirectionText,
-                label: t.audiobook_link_direction_text,
-                tooltip: t.audiobook_link_direction_text,
+                label: t.audiobook_page_end_pause,
+                tooltip: t.audiobook_page_end_pause,
               ),
             ],
             selected: (SettingsContext c) =>
