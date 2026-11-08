@@ -1,7 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:fushi/src/platform/desktop/linux_steam_shortcut.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show kJumpHistoryAutoHideDefaultSeconds, kJumpHistoryAutoHideOptions;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -335,6 +340,32 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.translate_outlined,
             searchTitle: t.options_language,
             builder: buildLanguageSelector,
+          ),
+          // Linux：把 Fushi 作为非 Steam 游戏加进 Steam 库（带库封面），Steam Deck
+          // 游戏模式里从库启动，配合游戏模式截屏识字（gamescope_overlay.h）。
+          // 已加过就换成「从 Steam 移除」（只认 Fushi 自己写的条目）。
+          SettingsActionItem(
+            id: 'appearance.steam_shortcut',
+            title: t.settings_steam_shortcut_add,
+            subtitle: t.settings_steam_shortcut_add_hint,
+            icon: FushiIcons.games,
+            visible: (_) =>
+                Platform.isLinux &&
+                !LinuxSteamShortcut.forThisProcess().isInstalled(),
+            // 写的是 Steam 的配置（Fushi 数据之外），CLI 要带 --yes。
+            cli: const SettingsCliAction.tap(confirm: true),
+            onTap: _addFushiToSteam,
+          ),
+          SettingsActionItem(
+            id: 'appearance.steam_shortcut_remove',
+            title: t.settings_steam_shortcut_remove,
+            subtitle: t.settings_steam_shortcut_remove_hint,
+            icon: FushiIcons.games,
+            visible: (_) =>
+                Platform.isLinux &&
+                LinuxSteamShortcut.forThisProcess().isInstalled(),
+            cli: const SettingsCliAction.tap(confirm: true),
+            onTap: _removeFushiFromSteam,
           ),
         ],
       ),
@@ -681,4 +712,72 @@ SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
         .then((_) => c.refresh()),
     defaultValue: HomeDashboardPanelMode.auto,
   );
+}
+
+/// 「添加到 Steam」：写 Steam 的 shortcuts.vdf + 库封面（linux_steam_shortcut.dart）。
+Future<void> _addFushiToSteam(SettingsContext settingsContext) async {
+  try {
+    final ByteData icon = await rootBundle.load('assets/meta/icon.png');
+    final SteamShortcutReport report = await LinuxSteamShortcut.forThisProcess()
+        .install(
+          iconPng: icon.buffer.asUint8List(
+            icon.offsetInBytes,
+            icon.lengthInBytes,
+          ),
+        );
+    if (report.failures.isNotEmpty) {
+      ErrorLogService.instance.log(
+        'settings.steam_shortcut',
+        StateError(report.failures.join('; ')),
+        StackTrace.current,
+      );
+    }
+    switch (report.outcome) {
+      case SteamShortcutOutcome.added:
+        FushiToast.show(msg: t.settings_steam_shortcut_added);
+      case SteamShortcutOutcome.steamNotFound:
+        FushiToast.show(msg: t.settings_steam_shortcut_not_found);
+      case SteamShortcutOutcome.failed || SteamShortcutOutcome.removed:
+        FushiToast.show(
+          msg: t.settings_steam_shortcut_failed(
+            reason: report.failures.join('; '),
+          ),
+        );
+    }
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('settings.steam_shortcut', error, stack);
+    FushiToast.show(msg: t.settings_steam_shortcut_failed(reason: '$error'));
+  }
+  // 行在「添加 / 移除」之间切换。
+  settingsContext.refresh();
+}
+
+/// 「从 Steam 移除」：删 Fushi 自己的条目、库封面和启动脚本。
+Future<void> _removeFushiFromSteam(SettingsContext settingsContext) async {
+  try {
+    final SteamShortcutReport report = await LinuxSteamShortcut.forThisProcess()
+        .uninstall();
+    if (report.outcome == SteamShortcutOutcome.removed) {
+      FushiToast.show(msg: t.settings_steam_shortcut_removed);
+    } else {
+      FushiToast.show(
+        msg: t.settings_steam_shortcut_remove_failed(
+          reason: report.failures.join('; '),
+        ),
+      );
+    }
+    if (report.failures.isNotEmpty) {
+      ErrorLogService.instance.log(
+        'settings.steam_shortcut',
+        StateError(report.failures.join('; ')),
+        StackTrace.current,
+      );
+    }
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('settings.steam_shortcut', error, stack);
+    FushiToast.show(
+      msg: t.settings_steam_shortcut_remove_failed(reason: '$error'),
+    );
+  }
+  settingsContext.refresh();
 }

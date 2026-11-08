@@ -119,6 +119,30 @@ inline void SetRole(GtkWidget* window, unsigned role, uint32_t rank) {
   gdk_display_flush(gdk_window_get_display(gdk_window));
 }
 
+// Game Mode, Fushi started from its Steam library entry ("Add to Steam",
+// lib/src/platform/desktop/linux_steam_shortcut.dart): Gamescope matches
+// windows to Steam apps only through STEAM_GAME. Steam's own way of setting it
+// (a preloaded library) does not reach into the Flatpak sandbox, so the
+// launcher passes the entry's app id in FUSHI_STEAM_APPID and the main window
+// carries it; Steam can then switch to Fushi like to any running game.
+// Returns whether the window was tagged.
+inline bool TagSteamApp(GtkWidget* window) {
+  if (window == nullptr || !InGameMode()) return false;
+  const gchar* value = g_getenv("FUSHI_STEAM_APPID");
+  if (value == nullptr || *value == '\0') return false;
+  gchar* end = nullptr;
+  const guint64 app_id = g_ascii_strtoull(value, &end, 10);
+  if (end == value || *end != '\0' || app_id == 0 || app_id > 0xFFFFFFFFull) {
+    return false;
+  }
+  gtk_widget_realize(window);
+  GdkWindow* gdk_window = gtk_widget_get_window(window);
+  if (gdk_window == nullptr) return false;
+  detail::SetCardinal(gdk_window, "STEAM_GAME", static_cast<gulong>(app_id));
+  gdk_display_flush(gdk_window_get_display(gdk_window));
+  return true;
+}
+
 }  // namespace gamescope
 }  // namespace fushi
 

@@ -156,6 +156,26 @@ void main() {
     );
   });
 
+  test('a Steam library launch tags the main window with its app id', () {
+    // The launcher written by "Add to Steam" and the runner agree on the
+    // variable; Gamescope matches windows to Steam apps only by STEAM_GAME.
+    final String shortcut = read(
+      'lib/src/platform/desktop/linux_steam_shortcut.dart',
+    );
+    expect(shortcut, contains('FUSHI_STEAM_APPID='));
+    expect(gamescope, contains('g_getenv("FUSHI_STEAM_APPID")'));
+    expect(gamescope, contains('"STEAM_GAME"'));
+    expect(
+      read('linux/runner/my_application.cc'),
+      contains('fushi::gamescope::TagSteamApp(GTK_WIDGET(window))'),
+    );
+    // Overlays only count on Gamescope's first X display.
+    expect(shortcut, contains(r'GAMESCOPE_WAYLAND_DISPLAY'));
+    expect(shortcut, contains('export DISPLAY=:0'));
+    // InGameMode() reads an X root property; a Wayland GDK backend never sees it.
+    expect(shortcut, contains('export GDK_BACKEND=x11'));
+  });
+
   test('back button masks match the Fushi Lens plugin table', () {
     final String python = read(
       '../tools/decky-fushi-lens/py_modules/fushi_lens/paddles.py',
