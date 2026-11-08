@@ -17,7 +17,6 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
 import 'package:fushi/src/media/audiobook/audiobook_session.dart'
     show SessionBookInfo;
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/music/music_player_engine.dart'
@@ -35,6 +34,7 @@ import 'package:fushi/src/platform/widget_snapshot.dart'
     show WidgetImmersionCategory;
 import 'package:fushi/src/second_screen/companion/companion_bridge.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
+import 'package:fushi/src/second_screen/companion/companion_covers.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/companion_settings_service.dart';
 import 'package:fushi/src/second_screen/companion/modules/video_companion_now_playing.dart';
@@ -196,29 +196,11 @@ Future<List<CompanionContinueCandidate>> _bookCandidates(
           ).toUri(),
         ),
         recentAt: lastReadByUid[uidByKey[bookKey] ?? bookKey] ?? 0,
-        resolveCover: () async => _bookCoverPath(appModel, item),
+        resolveCover: () async => companionMediaItemCoverPath(appModel, item),
       ),
     );
   }
   return result;
-}
-
-/// The book's cover file: the user's override, else a local `file://` image.
-String _bookCoverPath(AppModel appModel, MediaItem item) {
-  try {
-    final File? override = item
-        .getMediaSource(appModel: appModel)
-        .resolveOverrideThumbnailFile(appModel: appModel, item: item);
-    if (override != null && override.existsSync()) return override.path;
-    final String? url = item.imageUrl;
-    if (url != null && url.startsWith('file://')) {
-      final String path = Uri.parse(url).toFilePath();
-      if (File(path).existsSync()) return path;
-    }
-  } on FileSystemException {
-    return '';
-  }
-  return '';
 }
 
 /// Videos in progress: a saved position and not finished (the home

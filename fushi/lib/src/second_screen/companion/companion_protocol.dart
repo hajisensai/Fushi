@@ -41,6 +41,16 @@ abstract final class CompanionRequestMethods {
   static const String settingsGet = 'settings.get';
   static const String settingsSet = 'settings.set';
   static const String settingsOpenOnMain = 'settings.openOnMain';
+
+  /// The Library tab (S5): see `modules/library_companion_schema.dart`.
+  static const String libraryHome = 'library.home';
+  static const String libraryList = 'library.list';
+  static const String librarySearch = 'library.search';
+  static const String libraryDetails = 'library.details';
+  static const String libraryOpen = 'library.open';
+  static const String libraryMarkFinished = 'library.markFinished';
+  static const String libraryCover = 'library.cover';
+  static const String libraryOpenOnMain = 'library.openOnMain';
 }
 
 Map<String, Object?> _decodeObject(String raw) {
