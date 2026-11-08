@@ -553,6 +553,46 @@ class PreferencesRepository extends ChangeNotifier
     return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
   }
 
+  /// 运行中会被 Android 查词弹窗（`:popup` 进程）写入、主进程又要读的偏好键。
+  ///
+  /// 跨进程对账原本只有一个方向：弹窗按 `prefs_version` 重载主进程的改动
+  /// （[readPrefsVersionFromDb]）；主进程的缓存只在启动时装一次，弹窗写进库的值它看不见。
+  /// 这里列出的键由主进程回到前台时按行重读（[reloadPopupWrittenPrefs]），它们的读改写也先从
+  /// 库里取当前行（[_freshRaw]），陈旧缓存不会把另一个进程清掉的条目写回去（BUG-4241）。
+  ///
+  /// - [mineToServerTargetsKey]：弹窗里制卡时主机回 `targetUnavailable`，弹窗把这台主机的
+  ///   「保存到」退回主机默认。
+  static const Set<String> popupWrittenKeys = <String>{mineToServerTargetsKey};
+
+  /// 按行从库里重读 [popupWrittenKeys]（每键一次索引读），有变化才通知监听者。返回是否变过。
+  /// 主进程回到前台时调用（弹窗关掉后主 Activity 会 resume）。
+  Future<bool> reloadPopupWrittenPrefs() async {
+    bool changed = false;
+    for (final String key in popupWrittenKeys) {
+      final String? raw = await _db.getPref(key);
+      if (raw == _prefCache[key]) continue;
+      if (raw == null) {
+        _prefCache.remove(key);
+      } else {
+        _prefCache[key] = raw;
+      }
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
+  /// [key] 在库里的当前原始值（同时刷新本进程缓存）；给 [popupWrittenKeys] 的读改写用。
+  Future<String?> _freshRaw(String key) async {
+    final String? raw = await _db.getPref(key);
+    if (raw == null) {
+      _prefCache.remove(key);
+    } else {
+      _prefCache[key] = raw;
+    }
+    return raw;
+  }
+
   bool containsKey(String key) => _workScoped(key)
       ? WorkProfileScope.instance.scopedRaw(key) != null
       : _prefCache.containsKey(key);
@@ -3797,6 +3837,8 @@ class PreferencesRepository extends ChangeNotifier
     RemoteMiningTarget? target, {
     String? label,
   }) async {
+    // 另一个进程（查词弹窗）可能刚改过这一行：从库里取当前值再改，不拿陈旧缓存覆盖（BUG-4241）。
+    await _freshRaw(mineToServerTargetsKey);
     final Map<String, Map<Object?, Object?>> next =
         Map<String, Map<Object?, Object?>>.of(_mineToServerTargetsRaw());
     if (target == null || target.isEmpty) {

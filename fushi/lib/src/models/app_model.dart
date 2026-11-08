@@ -10825,6 +10825,14 @@ class AppModel with ChangeNotifier {
     String? label,
   }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
 
+  /// 主进程回到前台时重读查词弹窗（`:popup` 进程）会写的偏好行（BUG-4241，见
+  /// [PreferencesRepository.popupWrittenKeys]）。偏好还没装配时什么都不做。
+  Future<void> reloadPopupWrittenPrefs() async {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null || _isDictionaryPopupProcess) return;
+    if (await prefs.reloadPopupWrittenPrefs()) notifyListeners();
+  }
+
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
   // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
