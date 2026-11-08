@@ -117,6 +117,7 @@ Widget _srsTopStackLayout(Widget? current, List<Widget> previous) => Stack(
 class _SrsHomeView extends StatelessWidget {
   const _SrsHomeView({
     required this.data,
+    required this.paired,
     required this.wide,
     required this.focus,
     required this.selectedId,
@@ -132,6 +133,9 @@ class _SrsHomeView extends StatelessWidget {
   });
 
   final SrsDeckListData data;
+
+  /// 已配对设备（有可用主机时非 null）：根层牌组树下面放「已配对设备」分区。
+  final _SrsPairedHosts? paired;
 
   /// 双栏排法（[_kSrsHomeWideMin]）。
   final bool wide;
@@ -232,6 +236,18 @@ class _SrsHomeView extends StatelessWidget {
       ),
   ];
 
+  /// 根层树下面的「已配对设备」分区（没有可用主机时为空）。
+  List<Widget> _pairedSection() {
+    final _SrsPairedHosts? p = paired;
+    return <Widget>[
+      if (p != null)
+        _SrsPairedDevicesSection(
+          key: const ValueKey<String>('srs-home-paired'),
+          paired: p,
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -319,9 +335,10 @@ class _SrsHomeView extends StatelessWidget {
                     rootId: null,
                     selectedId: selected?.deck.id,
                     header: _rootHeader(horizontal: true),
-                    footer: three
-                        ? const <Widget>[]
-                        : <Widget>[if (statCards.isNotEmpty) statCards.first],
+                    footer: <Widget>[
+                      ..._pairedSection(),
+                      if (!three && statCards.isNotEmpty) statCards.first,
+                    ],
                     padding: columnPadding,
                     onOpen: (SrsDeckSummary d) => onSelect(d.deck.id),
                   ),
@@ -357,6 +374,7 @@ class _SrsHomeView extends StatelessWidget {
         rootId: null,
         header: _rootHeader(horizontal: false),
         footer: <Widget>[
+          ..._pairedSection(),
           if (s != null)
             _SrsHomeStatsPair(
               key: const ValueKey<String>('srs-home-stats'),
@@ -1225,52 +1243,69 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
   required bool isDefault,
   required bool canMoveUp,
   required bool canMoveDown,
-}) => <PopupMenuEntry<_DeckAction>>[
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.customStudy,
-    child: Text(t.srs_custom_study_title),
-  ),
-  // 默认牌组同样可用：批量移动 / 删除错导的卡从这里进（反馈 SSfSHb5JNt）。
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.browse,
-    child: Text(t.srs_deck_browse_cards),
-  ),
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.addChild,
-    child: Text(t.srs_deck_new_child),
-  ),
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.rename,
-    child: Text(t.srs_deck_rename),
-  ),
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.move,
-    child: Text(t.srs_deck_move),
-  ),
-  if (canMoveUp)
-    PopupMenuItem<_DeckAction>(
-      value: _DeckAction.moveUp,
-      child: Text(t.srs_deck_move_up),
-    ),
-  if (canMoveDown)
-    PopupMenuItem<_DeckAction>(
-      value: _DeckAction.moveDown,
-      child: Text(t.srs_deck_move_down),
-    ),
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.settings,
-    child: Text(t.srs_deck_settings),
-  ),
-  PopupMenuItem<_DeckAction>(
-    value: _DeckAction.fillWordAudio,
-    child: Text(t.srs_word_audio_backfill_title),
-  ),
-  if (!isDefault)
-    PopupMenuItem<_DeckAction>(
-      value: _DeckAction.delete,
-      child: Text(t.srs_deck_delete),
-    ),
-];
+  bool remote = false,
+}) => remote
+    // 已配对设备上的牌组：只有在主机库上能做、且不改牌组结构的几项（改名 / 移动 / 删除留给主机自己）。
+    ? <PopupMenuEntry<_DeckAction>>[
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.customStudy,
+          child: Text(t.srs_custom_study_title),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.browse,
+          child: Text(t.srs_deck_browse_cards),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.settings,
+          child: Text(t.srs_deck_settings),
+        ),
+      ]
+    : <PopupMenuEntry<_DeckAction>>[
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.customStudy,
+          child: Text(t.srs_custom_study_title),
+        ),
+        // 默认牌组同样可用：批量移动 / 删除错导的卡从这里进（反馈 SSfSHb5JNt）。
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.browse,
+          child: Text(t.srs_deck_browse_cards),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.addChild,
+          child: Text(t.srs_deck_new_child),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.rename,
+          child: Text(t.srs_deck_rename),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.move,
+          child: Text(t.srs_deck_move),
+        ),
+        if (canMoveUp)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveUp,
+            child: Text(t.srs_deck_move_up),
+          ),
+        if (canMoveDown)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveDown,
+            child: Text(t.srs_deck_move_down),
+          ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.settings,
+          child: Text(t.srs_deck_settings),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.fillWordAudio,
+          child: Text(t.srs_word_audio_backfill_title),
+        ),
+        if (!isDefault)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.delete,
+            child: Text(t.srs_deck_delete),
+          ),
+      ];
 
 /// 在 [anchorContext] 的位置弹出牌组菜单，选中后交给 [onAction]。
 Future<void> _showDeckMenu(
@@ -1280,6 +1315,7 @@ Future<void> _showDeckMenu(
   required bool canMoveUp,
   required bool canMoveDown,
   required void Function(SrsDeckSummary deck, _DeckAction action) onAction,
+  bool remote = false,
   Offset? at,
 }) async {
   final RenderBox? box = anchorContext.findRenderObject() as RenderBox?;
@@ -1301,6 +1337,7 @@ Future<void> _showDeckMenu(
       isDefault: isDefault,
       canMoveUp: canMoveUp,
       canMoveDown: canMoveDown,
+      remote: remote,
     ),
   );
   if (picked != null) onAction(deck, picked);

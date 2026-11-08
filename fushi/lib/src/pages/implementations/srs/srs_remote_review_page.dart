@@ -1,55 +1,28 @@
-/// 远程复习（docs/specs/2026-11-01-srs-remote-review-design.md）：选一台已配对的互联主机 → 它的牌组 → 复习。
+/// 远程复习（docs/specs/2026-11-01-srs-remote-review-design.md）：在已配对设备（互联主机）的复习库上直接刷卡。
 ///
-/// 卡组不下载。复习页、笔记编辑、牌组设置、浏览、自定义学习都是本机复习用的同一套页面，只是跑在
-/// [SrsRemoteCollectionScope] 这个子作用域里：`srsStoreProvider` 换成转发到主机的 [SrsRemoteStore]，
-/// 媒体换成按名字从主机补拉的缓存（[SrsRemoteMediaStore]）。所以功能与在本机复习一致。
+/// 入口在复习首页的「已配对设备」分区（`srs_deck_home_paired.dart`，用户 2026-11-07 拍板方案 A）：每台主机一组，
+/// 展开就是它的牌组树，与本机牌组同一个行组件。卡组不下载。复习页、笔记编辑、牌组设置、浏览、自定义学习都是
+/// 本机复习用的同一套页面，只是跑在 [SrsRemoteCollectionScope] 这个子作用域里：`srsStoreProvider` 换成转发到
+/// 主机的 [SrsRemoteStore]，媒体换成按名字从主机补拉的缓存（[SrsRemoteMediaStore]）。所以功能与在本机复习一致。
 library;
 
-import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
-import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
     show SrsRemoteServedProfile;
-import 'package:fushi_srs/fushi_srs.dart' show SrsCustomStudy;
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
-import 'package:fushi/src/srs/srs_change_note_type.dart';
-import 'package:fushi/src/srs/srs_custom_study_flow.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
 import 'package:fushi/src/sync/interconnect_host_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
-import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 远程复习失败的提示文案（主机的机读码 / 连接层的码）。
@@ -63,6 +36,110 @@ String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
   SrsRemoteStoreError.stale => t.srs_remote_review_card_changed,
   _ => t.srs_remote_review_error_other(code: e.message),
 };
+
+/// 连上一台主机后的远程复习会话：转发到主机的库 + 按名字补拉的媒体缓存。
+class SrsRemoteSession {
+  const SrsRemoteSession({
+    required this.client,
+    required this.store,
+    required this.media,
+  });
+
+  final SrsRemoteHostClient client;
+  final SrsRemoteStore store;
+  final SrsRemoteMediaStore media;
+}
+
+/// 找主机、连主机。单独成一个 provider，测试换成打到内存主机的实现。
+class SrsRemoteHostConnector {
+  const SrsRemoteHostConnector(this.app);
+
+  final AppModel app;
+
+  /// 互联配置在 app 库里；库还没开（启动早期 / 测试替身）时没有可用主机。
+  SyncRepository? get _repository =>
+      app.isDatabaseOpen ? SyncRepository(app.database) : null;
+
+  /// 声明了远程复习能力的已配对主机（没应答的不列）。
+  Future<List<InterconnectHostTarget>> probe() async {
+    final SyncRepository? repository = _repository;
+    if (repository == null) return const <InterconnectHostTarget>[];
+    return probeSrsRemoteStoreTargets(repository);
+  }
+
+  /// 本机当前配置的 profile uid：主机提供几份 profile 时直接打开同一份（见 [SrsRemoteStore.connect]）。
+  Future<String?> _localProfileUid() async {
+    if (!app.isDatabaseOpen) return null;
+    try {
+      return await app.database.profileUidOf(
+        await app.database.resolveActiveProfileId(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsRemoteReview.localProfile', e, stack);
+      return null;
+    }
+  }
+
+  /// 连上 [target]：握手拿到主机的 profile，失败抛 [InterconnectHostError]。主机提供几份 profile 又没有
+  /// 本机这份时交给 [chooseProfile] 让用户选，用户取消抛 [SrsRemoteProfileChoiceCancelled]。
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) async {
+    final SyncRepository? repository = _repository;
+    if (repository == null) {
+      throw StateError('app database is closed');
+    }
+    final SrsRemoteHostClient client = SrsRemoteHostClient(
+      repository: repository,
+      peer: target.peer,
+    );
+    final SrsRemoteMediaStore media = SrsRemoteMediaStore(
+      SrsRemoteMediaStore.directoryFor(
+        await getTemporaryDirectory(),
+        target.hostId,
+      ),
+      client,
+    );
+    final SrsRemoteStore store = await SrsRemoteStore.connect(
+      client,
+      preferProfile: await _localProfileUid(),
+      chooseProfile: chooseProfile,
+      prefetchMedia: media.prefetch,
+    );
+    return SrsRemoteSession(client: client, store: store, media: media);
+  }
+}
+
+/// 主机提供几份 profile 时让用户选一份；返回 null = 用户取消。
+typedef SrsRemoteProfileChooser =
+    Future<String?> Function(List<SrsRemoteServedProfile> profiles);
+
+/// 「选择复习库」对话框（[SrsRemoteProfileChooser] 的界面实现）。
+Future<String?> showSrsRemoteProfileChoice(
+  BuildContext context,
+  List<SrsRemoteServedProfile> profiles,
+) {
+  return showFushiChoiceDialog<String>(
+    context: context,
+    title: t.srs_remote_review_choose_profile,
+    message: t.srs_remote_review_choose_profile_hint,
+    icon: FushiIcons.profiles,
+    options: <FushiChoiceOption<String>>[
+      for (final SrsRemoteServedProfile p in profiles)
+        FushiChoiceOption<String>(
+          value: p.uid,
+          label: p.name.isEmpty ? t.srs_remote_review_profile_unnamed : p.name,
+          subtitle: t.srs_remote_review_profile_notes(n: p.notes),
+        ),
+    ],
+  );
+}
+
+final Provider<SrsRemoteHostConnector> srsRemoteHostConnectorProvider =
+    Provider<SrsRemoteHostConnector>(
+      (Ref ref) => SrsRemoteHostConnector(ref.watch(appProvider)),
+    );
 
 /// 把主机上的复习库装进子作用域：作用域里的复习页 / 笔记编辑 / 牌组设置 / 浏览读写的都是主机的库。
 ///
@@ -97,520 +174,3 @@ class SrsRemoteCollectionScope extends StatelessWidget {
     child: child,
   );
 }
-
-/// 入口：列出提供远程复习的互联主机，选一台后进它的牌组。只有一台时直接进。
-class SrsRemoteReviewEntryPage extends ConsumerStatefulWidget {
-  const SrsRemoteReviewEntryPage({super.key, this.probeTargets});
-
-  /// 探测可用主机（测试覆写）。
-  final Future<List<InterconnectHostTarget>> Function(SyncRepository repo)?
-  probeTargets;
-
-  @override
-  ConsumerState<SrsRemoteReviewEntryPage> createState() =>
-      _SrsRemoteReviewEntryPageState();
-}
-
-class _SrsRemoteReviewEntryPageState
-    extends ConsumerState<SrsRemoteReviewEntryPage> {
-  List<InterconnectHostTarget>? _targets;
-  String? _error;
-  bool _loading = true;
-  SrsRemoteHostClient? _connecting;
-
-  SyncRepository get _repo => SyncRepository(ref.read(appProvider).database);
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_probe(autoOpen: true));
-  }
-
-  @override
-  void dispose() {
-    _connecting?.cancelPending();
-    super.dispose();
-  }
-
-  Future<void> _probe({bool autoOpen = false}) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final List<InterconnectHostTarget> targets =
-        await (widget.probeTargets ?? probeSrsRemoteStoreTargets)(_repo);
-    if (!mounted) return;
-    setState(() {
-      _targets = targets;
-      _loading = false;
-    });
-    if (autoOpen && targets.length == 1) await _open(targets.single);
-  }
-
-  Future<void> _open(InterconnectHostTarget target) async {
-    _connecting?.cancelPending();
-    final SrsRemoteHostClient client = SrsRemoteHostClient(
-      repository: _repo,
-      peer: target.peer,
-    );
-    setState(() {
-      _connecting = client;
-      _error = null;
-      _loading = true;
-    });
-    final SrsRemoteStore store;
-    final SrsRemoteMediaStore media;
-    try {
-      media = SrsRemoteMediaStore(
-        SrsRemoteMediaStore.directoryFor(
-          await getTemporaryDirectory(),
-          target.hostId,
-        ),
-        client,
-      );
-      store = await SrsRemoteStore.connect(
-        client,
-        preferProfile: await _localProfileUid(),
-        chooseProfile: _chooseProfile,
-        prefetchMedia: media.prefetch,
-      );
-    } on SrsRemoteProfileChoiceCancelled {
-      if (!mounted || _connecting != client) return;
-      setState(() => _loading = false);
-      return;
-    } on InterconnectHostError catch (e) {
-      if (!mounted || _connecting != client) return;
-      setState(() {
-        _error = srsRemoteReviewErrorText(e);
-        _loading = false;
-      });
-      return;
-    }
-    if (!mounted || _connecting != client) return;
-    setState(() => _loading = false);
-    await srsPushPage<void>(
-      context,
-      (_) => SrsRemoteCollectionScope(
-        store: store,
-        media: media,
-        child: SrsRemoteDeckListPage(hostName: target.displayName),
-      ),
-    );
-  }
-
-  /// 本机当前配置的 profile uid：主机提供几份 profile 时直接打开同一份（见 [SrsRemoteStore.connect]）。
-  Future<String?> _localProfileUid() async {
-    final AppModel app = ref.read(appProvider);
-    try {
-      return await app.database.profileUidOf(
-        await app.database.resolveActiveProfileId(),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsRemoteReview.localProfile', e, stack);
-      return null;
-    }
-  }
-
-  Future<String?> _chooseProfile(List<SrsRemoteServedProfile> profiles) {
-    return showFushiChoiceDialog<String>(
-      context: context,
-      title: t.srs_remote_review_choose_profile,
-      message: t.srs_remote_review_choose_profile_hint,
-      icon: FushiIcons.profiles,
-      options: <FushiChoiceOption<String>>[
-        for (final SrsRemoteServedProfile p in profiles)
-          FushiChoiceOption<String>(
-            value: p.uid,
-            label: p.name.isEmpty
-                ? t.srs_remote_review_profile_unnamed
-                : p.name,
-            subtitle: t.srs_remote_review_profile_notes(n: p.notes),
-          ),
-      ],
-    );
-  }
-
-  void _refresh() => unawaited(_probe());
-
-  @override
-  Widget build(BuildContext context) {
-    final String title = t.srs_remote_review_title;
-    return FushiPageScaffold(
-      title: title,
-      header: isGlassDesign(context) ? null : _topBar(context, title, _refresh),
-      actions: isGlassDesign(context)
-          ? <Widget>[
-              FushiIconButton(
-                icon: FushiIcons.refresh,
-                tooltip: t.retry,
-                onTap: _refresh,
-              ),
-            ]
-          : const <Widget>[],
-      body: Builder(
-        builder: (BuildContext context) => AnimatedSwitcher(
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          switchInCurve: FushiMotion.enter,
-          switchOutCurve: FushiMotion.exit,
-          child: KeyedSubtree(
-            key: ValueKey<String>(
-              _loading
-                  ? 'loading'
-                  : _error != null
-                  ? 'error'
-                  : 'hosts',
-            ),
-            child: _buildBody(context),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBody(BuildContext context) {
-    if (_loading) {
-      return const SafeArea(bottom: false, child: FushiLoadingView());
-    }
-    final String? error = _error;
-    if (error != null) return _errorView(error, _refresh);
-    final List<InterconnectHostTarget> targets =
-        _targets ?? const <InterconnectHostTarget>[];
-    if (targets.isEmpty) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          key: const ValueKey<String>('srs_remote_no_hosts'),
-          icon: FushiIcons.devices,
-          message: t.srs_remote_review_hosts_empty,
-          detail: t.srs_remote_review_hosts_empty_hint,
-          action: FushiFilledButton.icon(
-            onPressed: _refresh,
-            icon: const FushiIcon(FushiIcons.refresh),
-            label: Text(t.retry),
-          ),
-        ),
-      );
-    }
-    return _list(context, <Widget>[
-      _hint(context),
-      for (int i = 0; i < targets.length; i++)
-        FushiPressScale(
-          child: FushiGroupedListItem(
-            key: ValueKey<String>('srs_remote_host_${targets[i].hostId}'),
-            index: i,
-            count: targets.length,
-            onTap: () => unawaited(_open(targets[i])),
-            child: FushiListItem(
-              density: srsListDensityOf(context),
-              leading: const FushiListLeadingIcon(FushiIcons.devices),
-              title: Text(targets[i].displayName),
-              trailing: const FushiIcon(FushiIcons.chevronRight),
-            ),
-          ),
-        ),
-    ]);
-  }
-}
-
-enum _RemoteDeckAction { customStudy, browse, settings }
-
-/// 主机上的牌组列表（在 [SrsRemoteCollectionScope] 里）：点牌组进本机同一个复习页；「⋯」里是自定义学习、
-/// 浏览此牌组的卡片、牌组设置；顶栏是添加笔记与浏览。
-class SrsRemoteDeckListPage extends ConsumerStatefulWidget {
-  const SrsRemoteDeckListPage({super.key, required this.hostName});
-
-  final String hostName;
-
-  @override
-  ConsumerState<SrsRemoteDeckListPage> createState() =>
-      _SrsRemoteDeckListPageState();
-}
-
-class _SrsRemoteDeckListPageState extends ConsumerState<SrsRemoteDeckListPage> {
-  List<SrsDeckSummary>? _decks;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
-    try {
-      final List<SrsDeckSummary> decks = await store.deckSummaries();
-      if (!mounted) return;
-      setState(() {
-        _decks = decks;
-        _error = null;
-      });
-    } on InterconnectHostError catch (e) {
-      if (!mounted) return;
-      setState(() => _error = srsRemoteReviewErrorText(e));
-    }
-  }
-
-  Future<void> _push(WidgetBuilder builder) async {
-    await srsPushPage<void>(context, builder);
-    // 回来时重读计数（这一轮复习掉的卡、改过的设置）。
-    if (mounted) await _load();
-  }
-
-  Future<void> _review(SrsDeckSummary deck, [SrsCustomStudy? custom]) => _push(
-    (_) => SrsReviewPage(
-      deckId: deck.deck.id,
-      deckName: deck.fullName,
-      custom: custom,
-    ),
-  );
-
-  Future<void> _browse({String? query}) => _push(
-    (_) => SrsBrowsePage(
-      initialQuery: query,
-      onChangeNoteType: showSrsChangeNoteTypeFlow,
-      onMigrateToFushiCard: srsMigrateNotesToFushiCard,
-    ),
-  );
-
-  void _onAction(SrsDeckSummary deck, _RemoteDeckAction action) {
-    switch (action) {
-      case _RemoteDeckAction.customStudy:
-        srsRunLogged(
-          'SrsRemoteDeckList.customStudy',
-          () => srsRunCustomStudy(
-            context,
-            ref,
-            deck,
-            openReview: (SrsCustomStudy? custom) => _review(deck, custom),
-          ),
-        );
-      case _RemoteDeckAction.browse:
-        srsRunLogged(
-          'SrsRemoteDeckList.browseDeck',
-          () => _browse(query: srsDeckQuery(deck.fullName)),
-        );
-      case _RemoteDeckAction.settings:
-        srsRunLogged(
-          'SrsRemoteDeckList.settings',
-          () => _push((_) => SrsDeckSettingsPage(deckId: deck.deck.id)),
-        );
-    }
-  }
-
-  void _refresh() => unawaited(_load());
-
-  List<FushiToolbarItem> get _toolbar => <FushiToolbarItem>[
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_remote_add_note'),
-      icon: FushiIcons.add,
-      label: t.srs_note_add,
-      onPressed: () => srsRunLogged(
-        'SrsRemoteDeckList.addNote',
-        () => _push((_) => const SrsNoteEditorPage()),
-      ),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_remote_browse'),
-      icon: FushiIcons.search,
-      label: t.srs_browse_title,
-      onPressed: () => srsRunLogged('SrsRemoteDeckList.browse', _browse),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_remote_refresh'),
-      icon: FushiIcons.refresh,
-      label: t.retry,
-      onPressed: _refresh,
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final String title = widget.hostName;
-    return FushiPageScaffold(
-      title: title,
-      header: isGlassDesign(context)
-          ? null
-          : _topBar(context, title, _refresh, extra: _toolbar),
-      actions: isGlassDesign(context)
-          ? <Widget>[
-              for (final FushiToolbarItem item in _toolbar)
-                FushiIconButton(
-                  icon: item.icon,
-                  tooltip: item.label,
-                  onTap: item.onPressed,
-                ),
-            ]
-          : const <Widget>[],
-      body: Builder(builder: _buildBody),
-    );
-  }
-
-  Widget _buildBody(BuildContext context) {
-    final String? error = _error;
-    if (error != null) return _errorView(error, _refresh);
-    final List<SrsDeckSummary>? decks = _decks;
-    if (decks == null) {
-      return const SafeArea(bottom: false, child: FushiLoadingView());
-    }
-    if (decks.isEmpty) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.libraryAdd,
-          message: t.srs_remote_review_decks_empty,
-        ),
-      );
-    }
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return _list(context, <Widget>[
-      for (int i = 0; i < decks.length; i++)
-        FushiPressScale(
-          child: FushiGroupedListItem(
-            key: ValueKey<String>('srs_remote_deck_${decks[i].deck.id}'),
-            index: i,
-            count: decks.length,
-            onTap: () => srsRunLogged(
-              'SrsRemoteDeckList.review',
-              () => _review(decks[i]),
-            ),
-            child: FushiListItem(
-              density: srsListDensityOf(context),
-              padding: EdgeInsetsDirectional.only(
-                start: tokens.spacing.gap * (1 + decks[i].depth),
-                end: tokens.spacing.gap / 2,
-              ),
-              title: Text(
-                decks[i].deck.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SrsCountTriple(
-                    newCount: decks[i].newCount,
-                    learnCount: decks[i].learnCount,
-                    reviewCount: decks[i].reviewCount,
-                    reviewPending: decks[i].rwkvPending,
-                    dense: true,
-                    tight: true,
-                  ),
-                  FushiPopupMenuButton<_RemoteDeckAction>(
-                    key: ValueKey<String>(
-                      'srs_remote_deck_menu_${decks[i].deck.id}',
-                    ),
-                    tooltip: t.srs_deck_menu,
-                    icon: const FushiIcon(FushiIcons.more),
-                    onSelected: (_RemoteDeckAction a) => _onAction(decks[i], a),
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<_RemoteDeckAction>>[
-                          PopupMenuItem<_RemoteDeckAction>(
-                            value: _RemoteDeckAction.customStudy,
-                            child: Text(t.srs_custom_study_title),
-                          ),
-                          PopupMenuItem<_RemoteDeckAction>(
-                            value: _RemoteDeckAction.browse,
-                            child: Text(t.srs_deck_browse_cards),
-                          ),
-                          PopupMenuItem<_RemoteDeckAction>(
-                            value: _RemoteDeckAction.settings,
-                            child: Text(t.srs_deck_settings),
-                          ),
-                        ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-    ]);
-  }
-}
-
-Widget _topBar(
-  BuildContext context,
-  String title,
-  VoidCallback refresh, {
-  List<FushiToolbarItem>? extra,
-}) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  final NavigatorState? navigator = Navigator.maybeOf(context);
-  return Padding(
-    padding: EdgeInsets.fromLTRB(
-      tokens.spacing.page,
-      tokens.spacing.gap,
-      tokens.spacing.page,
-      tokens.spacing.gap,
-    ),
-    child: FushiFloatingTopBar(
-      title: title,
-      leading: <FushiToolbarItem>[
-        if (navigator != null && navigator.canPop())
-          FushiToolbarItem(
-            icon: FushiIcons.back,
-            label: MaterialLocalizations.of(context).backButtonTooltip,
-            onPressed: () => unawaited(navigator.maybePop()),
-          ),
-      ],
-      actions: <List<FushiToolbarItem>>[
-        extra ??
-            <FushiToolbarItem>[
-              FushiToolbarItem(
-                key: const ValueKey<String>('srs_remote_refresh'),
-                icon: FushiIcons.refresh,
-                label: t.retry,
-                onPressed: refresh,
-              ),
-            ],
-      ],
-    ),
-  );
-}
-
-Widget _errorView(String error, VoidCallback retry) => Center(
-  child: FushiPlaceholderMessage(
-    icon: FushiIcons.error,
-    message: error,
-    tone: FushiPlaceholderTone.error,
-    action: FushiFilledButton.icon(
-      onPressed: retry,
-      icon: const FushiIcon(FushiIcons.refresh),
-      label: Text(t.retry),
-    ),
-  ),
-);
-
-Widget _list(BuildContext context, List<Widget> items) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  return FushiEntranceScope(
-    child: ListView.builder(
-      padding: withBottomSafeInset(
-        context,
-        EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-          tokens.spacing.page,
-          tokens.spacing.section,
-        ),
-      ),
-      itemCount: items.length,
-      itemBuilder: fushiStaggeredItemBuilder(
-        (BuildContext context, int index) => items[index],
-      ),
-    ),
-  );
-}
-
-Widget _hint(BuildContext context) => Padding(
-  padding: EdgeInsets.only(bottom: FushiDesignTokens.of(context).spacing.gap),
-  child: Text(
-    t.srs_remote_review_hint,
-    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-    ),
-  ),
-);
-
-/// 测试与调用方用：主机媒体缓存目录（临时目录下按主机分）。
-Future<Directory> srsRemoteMediaRootFor(String hostId) async =>
-    SrsRemoteMediaStore.directoryFor(await getTemporaryDirectory(), hostId);
