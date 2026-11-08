@@ -191,9 +191,11 @@ Future<FushiClientUrl?> raceInterconnectHostAddresses(
   return done.future;
 }
 
-/// 最近一次选路结果（hostId → 胜出地址），[_raceCacheTtl] 内直接复用，免得查词
-/// 这类高频调用每次都多付一轮探测。缓存的地址失效时消费方会顺序试组内其余地址，
-/// 不会因为缓存而连不上。
+/// 最近一次选路结果（hostId → 胜出地址的持久 URL），[_raceCacheTtl] 内直接复用，免得
+/// 查词这类高频调用每次都多付一轮探测。缓存只决定组内顺序：返回的整组都是可拨的
+/// （`p2p://` 已换成本地转发口），缓存的地址失效时消费方顺序试组内其余地址照样能到；
+/// 消费方用 [reportInterconnectCandidateUnreachable] 报告失败后缓存立即作废，
+/// 不会在 TTL 内一直把死地址排在组首（BUG-4241）。
 final Map<String, (String url, DateTime at)> _raceCache =
     <String, (String, DateTime)>{};
 const Duration _raceCacheTtl = Duration(seconds: 30);
@@ -201,8 +203,36 @@ const Duration _raceCacheTtl = Duration(seconds: 30);
 @visibleForTesting
 void resetInterconnectRaceCache() => _raceCache.clear();
 
+/// 消费方对 [candidate]（选路结果里的一条，可以是本地转发口）的请求在传输层失败了：
+/// 它若正是该 host 缓存的胜出地址，作废缓存，下一次选路重新探测。
+void reportInterconnectCandidateUnreachable(FushiClientUrl candidate) {
+  final String? hostId = candidate.hostId;
+  if (hostId == null) return;
+  final (String, DateTime)? cached = _raceCache[hostId];
+  if (cached != null && cached.$1 == interconnectPersistedUrl(candidate.url)) {
+    _raceCache.remove(hostId);
+  }
+}
+
+/// 消费方经 [candidate] 拿到了 host 的应答：该 host 没有有效缓存（刚因失败作废）时
+/// 记它为胜出地址，后续请求不必重新探测一轮死地址。已有缓存不覆盖。
+void reportInterconnectCandidateReached(
+  FushiClientUrl candidate, {
+  DateTime Function() now = DateTime.now,
+}) {
+  final String? hostId = candidate.hostId;
+  if (hostId == null) return;
+  final (String, DateTime)? cached = _raceCache[hostId];
+  if (cached != null && now().difference(cached.$2) < _raceCacheTtl) return;
+  _raceCache[hostId] = (interconnectPersistedUrl(candidate.url), now());
+}
+
 /// 把候选列表按 host 重排：每台 host 的可达地址排到组首，组内其余保持原序；组
-/// 与组之间保持首次出现的顺序。单地址组（含全部老条目）原样不探测。
+/// 与组之间保持首次出现的顺序。单地址组（含全部老条目）不探测。
+///
+/// 返回的每一条都可以直接拨：`p2p://` 已换成本进程的本地转发口（隧道层没装 / 起
+/// 不来的 `p2p://` 去掉）。换转发口只在本机开一个回环监听口，真正的隧道连接在第
+/// 一次有请求经过时才建。
 ///
 /// 各消费方的「逐个试候选」循环结构不用改，只把数据源换成本函数的结果。
 Future<List<FushiClientUrl>> rankInterconnectCandidates(
@@ -227,40 +257,66 @@ Future<List<FushiClientUrl>> _rankGroup(
   required DateTime Function() now,
 }) async {
   final String? hostId = group.first.hostId;
-  if (group.length < 2 || hostId == null) return group;
+  if (group.length < 2 || hostId == null) return _dialable(group);
 
-  final (String, DateTime)? cached = _raceCache[hostId];
+  // winner 始终是组内的持久条目（P2P 是 `p2p://`，不是本次的本地转发口）。
   FushiClientUrl? winner;
+  final (String, DateTime)? cached = _raceCache[hostId];
   if (cached != null && now().difference(cached.$2) < _raceCacheTtl) {
     for (final FushiClientUrl u in group) {
-      if (u.url == cached.$1) winner = await _resolveTransport(u);
+      if (u.url == cached.$1) winner = u;
     }
   }
-  // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才建 P2P 隧道——
-  // 否则每次选路都会去连一次中继（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
-  winner ??= await raceInterconnectHostAddresses(
-    <FushiClientUrl>[
-      for (final FushiClientUrl u in group)
-        if (!_isP2pUrl(u.url)) u,
-    ],
-    hostId: hostId,
-    probe: probe,
-    grace: grace,
-  );
-  winner ??= await _raceP2p(group, hostId: hostId, probe: probe, grace: grace);
+  if (winner == null) {
+    // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才探 P2P 隧道——
+    // 否则每次选路都会经中继建一次隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+    final FushiClientUrl? raced =
+        await raceInterconnectHostAddresses(
+          <FushiClientUrl>[
+            for (final FushiClientUrl u in group)
+              if (!_isP2pUrl(u.url)) u,
+          ],
+          hostId: hostId,
+          probe: probe,
+          grace: grace,
+        ) ??
+        await _raceP2p(group, hostId: hostId, probe: probe, grace: grace);
+    if (raced != null) {
+      final String persisted = interconnectPersistedUrl(raced.url);
+      for (final FushiClientUrl u in group) {
+        if (u.url == persisted) winner = u;
+      }
+    }
+  }
   if (winner == null) {
     _raceCache.remove(hostId);
-    return group;
+    return _dialable(group);
   }
-  // 缓存记的是持久地址（P2P 是 `p2p://`，不是本次的本地转发口）。
   final FushiClientUrl first = winner;
-  final String persistedUrl = _p2pOrigins[first.url] ?? first.url;
-  _raceCache[hostId] = (persistedUrl, now());
-  return <FushiClientUrl>[
+  final List<FushiClientUrl> ordered = await _dialable(<FushiClientUrl>[
     first,
     for (final FushiClientUrl u in group)
-      if (u.url != persistedUrl) u,
-  ];
+      if (u.url != first.url) u,
+  ]);
+  if (ordered.isEmpty ||
+      interconnectPersistedUrl(ordered.first.url) != first.url) {
+    // 胜出的 `p2p://` 这次换不出转发口（隧道层停了）：不缓存它。
+    _raceCache.remove(hostId);
+  } else {
+    _raceCache[hostId] = (first.url, now());
+  }
+  return ordered;
+}
+
+/// [group] 的每条都换成可拨地址（`p2p://` → 本地转发口，换不出的去掉），顺序不变。
+Future<List<FushiClientUrl>> _dialable(List<FushiClientUrl> group) async {
+  if (!group.any((FushiClientUrl u) => _isP2pUrl(u.url))) return group;
+  final List<FushiClientUrl> out = <FushiClientUrl>[];
+  for (final FushiClientUrl u in group) {
+    final FushiClientUrl? resolved = await _resolveTransport(u);
+    if (resolved != null) out.add(resolved);
+  }
+  return out;
 }
 
 Future<FushiClientUrl?> _raceP2p(

@@ -121,25 +121,8 @@ class InterconnectPostTransport {
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
   }) async {
-    List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList();
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    if (onlyCandidate != null) {
-      final String? onlyHost = onlyCandidate.hostId;
-      candidates.removeWhere(
-        (FushiClientUrl candidate) =>
-            // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host
-            // 的任一地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
-            (onlyHost != null
-                ? candidate.hostId != onlyHost
-                : (candidate.url != onlyCandidate.url ||
-                      candidate.fingerprintSha256 !=
-                          onlyCandidate.fingerprintSha256)) ||
-            interconnectTokenFor(candidate, fallbackToken) !=
-                onlyCandidate.token,
-      );
-    }
+    final (:List<FushiClientUrl> candidates, :String? fallbackToken) =
+        await _rankedCandidates(onlyCandidate);
     if (candidates.isEmpty) {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
       return (
@@ -149,8 +132,6 @@ class InterconnectPostTransport {
         candidate: null,
       );
     }
-    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）。
-    candidates = await rankInterconnectCandidates(candidates);
 
     bool attempted = false;
     bool anyResponse = false;
@@ -188,6 +169,7 @@ class InterconnectPostTransport {
         // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
+        reportInterconnectCandidateReached(candidate);
         if (response.statusCode == 401) {
           // BUG-2377：这条通道的凭据只可能是配对 token（地址行自带的 per-peer
           // token，或全局回落键）——本文件从头到尾只服务互联。语义写死成
@@ -218,8 +200,10 @@ class InterconnectPostTransport {
         onRejectedResponse?.call(response.statusCode, null);
       } on TimeoutException {
         anyTimedOut = true;
+        reportInterconnectCandidateUnreachable(candidate);
         continue;
       } catch (_) {
+        reportInterconnectCandidateUnreachable(candidate);
         continue;
       } finally {
         // 每候选独立 pinned client 用完即关，所有出口（return/continue/throw）统一
@@ -238,6 +222,87 @@ class InterconnectPostTransport {
       mayHaveDelivered: anyResponse || anyTimedOut,
       candidate: null,
     );
+  }
+
+  /// [post] 与 [get] 共用的**唯一**候选来源：已启用条目 → 按 [onlyCandidate] 过滤
+  /// 同一台 host（凭据须一致）→ [rankInterconnectCandidates] 组内选路。结果里的
+  /// `p2p://` 已换成本地转发口，直连不通时逐个试到隧道（BUG-4241：GET 曾另写一套
+  /// 候选遍历，绕过选路，`p2p://` 从不换转发口）。
+  Future<({List<FushiClientUrl> candidates, String? fallbackToken})>
+  _rankedCandidates(FushiClientUrl? onlyCandidate) async {
+    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
+        .where((FushiClientUrl u) => u.enabled)
+        .toList();
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    if (onlyCandidate != null) {
+      final String? onlyHost = onlyCandidate.hostId;
+      candidates.removeWhere(
+        (FushiClientUrl candidate) =>
+            // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host
+            // 的任一地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
+            (onlyHost != null
+                ? candidate.hostId != onlyHost
+                : (candidate.url != onlyCandidate.url ||
+                      candidate.fingerprintSha256 !=
+                          onlyCandidate.fingerprintSha256)) ||
+            interconnectTokenFor(candidate, fallbackToken) !=
+                onlyCandidate.token,
+      );
+    }
+    if (candidates.isEmpty) {
+      return (candidates: candidates, fallbackToken: fallbackToken);
+    }
+    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）。
+    return (
+      candidates: await rankInterconnectCandidates(candidates),
+      fallbackToken: fallbackToken,
+    );
+  }
+
+  /// `GET` [path]，候选、鉴权与钉扎规则同 [post]，返回第一个 200 应答。
+  ///
+  /// 404 是 host 的回答（比如没有这个媒体），不是坏地址：问它的其他地址只会得到
+  /// 同样的回答、还要各等一次超时，所以直接返回 null。其它非 200 与传输层失败换
+  /// 下一个候选；全部试完返回 null。
+  Future<http.Response?> get({
+    required String path,
+    required Duration timeout,
+    FushiClientUrl? onlyCandidate,
+  }) async {
+    final (:List<FushiClientUrl> candidates, :String? fallbackToken) =
+        await _rankedCandidates(onlyCandidate);
+    for (final FushiClientUrl candidate in candidates) {
+      final Uri? uri = interconnectEndpointUri(candidate.url, path);
+      final String? token = interconnectTokenFor(candidate, fallbackToken);
+      if (uri == null || token == null) continue;
+      final String? fp = candidate.fingerprintSha256;
+      final bool usePinned =
+          uri.isScheme('https') && fp != null && fp.isNotEmpty;
+      final http.Client client = usePinned
+          ? _pinnedClientFactory(fp)
+          : _httpClient;
+      try {
+        final http.Response response = await client
+            .get(
+              uri,
+              headers: <String, String>{
+                'Authorization':
+                    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+              },
+            )
+            .timeout(timeout);
+        reportInterconnectCandidateReached(candidate);
+        if (response.statusCode == 404) return null;
+        if (response.statusCode != 200) continue;
+        return response;
+      } catch (_) {
+        reportInterconnectCandidateUnreachable(candidate);
+        continue;
+      } finally {
+        if (usePinned) client.close();
+      }
+    }
+    return null;
   }
 
   /// Fetches the short-lived lookup-audio asset issued by [candidate] while

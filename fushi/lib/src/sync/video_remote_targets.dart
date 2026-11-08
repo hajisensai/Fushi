@@ -36,8 +36,21 @@ typedef InterconnectCapabilityProbe =
 /// 视频遥控的能力探测。
 typedef VideoRemoteCapabilityProbe = InterconnectCapabilityProbe;
 
-Future<bool?> _defaultProbe(SyncRepository repository, FushiClientUrl peer) =>
-    VideoRemoteClient(repository: repository, peer: peer).supportsVideoRemote();
+/// 一次性 client，探完关掉它的连接。
+Future<bool?> _defaultProbe(
+  SyncRepository repository,
+  FushiClientUrl peer,
+) async {
+  final VideoRemoteClient client = VideoRemoteClient(
+    repository: repository,
+    peer: peer,
+  );
+  try {
+    return await client.supportsVideoRemote();
+  } finally {
+    client.cancelPending();
+  }
+}
 
 /// 固定的对端：凭据按 BUG-1550 规则取；本行没有指纹（P2P 明文转发口等）
 /// 时沿用同一台 host 的配对指纹，客户端据此拒绝任何不符的证书。

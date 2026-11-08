@@ -181,55 +181,12 @@ class InterconnectHostClient {
   }
 
   /// `GET` [path] on the first address of the selected host that answers 200
-  /// (same host, credential and pin rules as [postJson]). Null when none did.
-  Future<http.Response?> getFromHost(
-    String path, {
-    required Duration timeout,
-  }) async {
-    final String? fallbackToken = await _repository.getFushiClientToken();
-    final List<FushiClientUrl> candidates =
-        (await _repository.getFushiClientUrls()).where((FushiClientUrl u) {
-          if (!u.enabled) return false;
-          final bool sameHost = peer.hostId != null
-              ? u.hostId == peer.hostId
-              : u.url == peer.url &&
-                    u.fingerprintSha256 == peer.fingerprintSha256;
-          return sameHost &&
-              interconnectTokenFor(u, fallbackToken) == peer.token;
-        }).toList();
-    for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = interconnectEndpointUri(candidate.url, path);
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (uri == null || token == null) continue;
-      final String? pin = candidate.fingerprintSha256;
-      final bool usePinned =
-          uri.isScheme('https') && pin != null && pin.isNotEmpty;
-      final http.Client client = usePinned
-          ? pinnedClientFactory(pin)
-          : guardPlaintext(_injected ?? http.Client());
-      try {
-        final http.Response response = await client
-            .get(
-              uri,
-              headers: <String, String>{
-                'Authorization':
-                    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-              },
-            )
-            .timeout(timeout);
-        // 404 is the host's answer (e.g. no cover), not a bad address: asking
-        // its other addresses would get the same answer, each after a timeout.
-        if (response.statusCode == 404) return null;
-        if (response.statusCode != 200) continue;
-        return response;
-      } catch (_) {
-        continue;
-      } finally {
-        if (usePinned || _injected == null) client.close();
-      }
-    }
-    return null;
-  }
+  /// (same candidates, route selection, credential and pin rules as
+  /// [postJson]: both go through [InterconnectPostTransport], so a `p2p://`
+  /// address is dialed through its local forwarding port). Null when none did,
+  /// or when the host answered 404.
+  Future<http.Response?> getFromHost(String path, {required Duration timeout}) =>
+      _transport.get(path: path, timeout: timeout, onlyCandidate: peer);
 }
 
 /// Refuses requests [allowed] rejects; the refusal surfaces as a transport
