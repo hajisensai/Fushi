@@ -73,7 +73,9 @@ void main() {
     ];
   }
 
-  Widget buildApp() => TranslationProvider(
+  Widget buildApp({
+    Future<void> Function(List<String> bookUids)? onOrganizeFilenames,
+  }) => TranslationProvider(
     child: MaterialApp(
       home: MediaCollectionDetailPage(
         database: db,
@@ -94,6 +96,7 @@ void main() {
         ],
         onOpenEpisode: (VideoBookRow _) {},
         onChanged: () {},
+        onOrganizeFilenames: onOrganizeFilenames,
       ),
     ),
   );
@@ -254,6 +257,32 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   }
+
+  testWidgets('单集菜单「整理文件名」：库页注入了才出现，点了交出这一集（ZDYNkAP3Ln）', (
+    WidgetTester tester,
+  ) async {
+    useSurface(tester, const Size(1280, 1600));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await openEpisodeMenu(tester, 'video/e1');
+    expect(find.text(t.video_filename_organize_action), findsNothing);
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    final List<List<String>> calls = <List<String>>[];
+    await tester.pumpWidget(
+      buildApp(
+        onOrganizeFilenames: (List<String> uids) async => calls.add(uids),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openEpisodeMenu(tester, 'video/e2');
+    await tester.tap(find.text(t.video_filename_organize_action));
+    await tester.pumpAndSettle();
+    expect(calls, <List<String>>[
+      <String>['video/e2'],
+    ]);
+  });
 
   testWidgets('本机已有文件的集：菜单不出「下载本集」，改出「打开文件位置」', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
