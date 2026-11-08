@@ -579,7 +579,7 @@ void main() {
       expect(plain['furiganaPlain'], '生[なま]');
     });
 
-    test('BUG-4227：ctl 制卡带逐词典频率，{single-frequency-number-<名>} 渲染出值', () {
+    test('BUG-4242：ctl 制卡带逐词典频率，{single-frequency-number-<名>} 渲染出值', () {
       final DictionarySearchResult withFreq = DictionarySearchResult(
         searchTerm: '言葉',
         entries: <DictionaryEntry>[

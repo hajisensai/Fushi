@@ -1,4 +1,4 @@
-// BUG-4227（反馈 ArXVzMKmM5）：popup.js 制卡 payload 的逐词典频率。
+// BUG-4242（反馈 ArXVzMKmM5）：popup.js 制卡 payload 的逐词典频率。
 //
 // node 真执行 popup.js 抽出的 collectFrequencyNumbers / getFrequencyHarmonicRank /
 // constructSingleFrequencyNumbers / constructSingleFrequenciesHtml /

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4227（反馈 ArXVzMKmM5）：popup.js 制卡 payload 必须带逐词典频率，Yomitan 的
+/// BUG-4242（反馈 ArXVzMKmM5）：popup.js 制卡 payload 必须带逐词典频率，Yomitan 的
 /// `{single-frequency-number-<词典>}` / `{single-frequency-<词典>}` 才有数据可渲染。
 /// node 真执行 popup.js 抽出的取数函数（见同名 .js）。Dart 渲染侧见
 /// `packages/fushi_anki/test/handlebar_single_frequency_test.dart`。无 node 时 skip。
