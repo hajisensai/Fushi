@@ -1,4 +1,4 @@
-## BUG-4221 · 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉）
+## BUG-4242 · 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉）
 - **报告**：2026-11-07（用户：手机一段时间不用后打开 Fushi 白屏，然后提示加载超时）
 - **真实性**：✅ 真 bug。OnePlus CPH2747（Android 16，3.3.0-debug.24478）经无线 adb 自然复现两次，日志全程在案。
   - 链路：进程在后台被系统回收 → WorkManager 周期任务（反馈新回复检查，`fushi/lib/src/feedback/feedback_reply_background.dart`）拉起进程，workmanager 的 `BackgroundWorker` 用 `FlutterEngine(applicationContext)` 建后台引擎 W 并自动注册全部插件 → W 上的 audio_service 插件 `onAttachedToEngine` 里 `connect()` 绑定 `AudioService`，`AudioService.onCreate` 新建主引擎 A 跑 `main()`（停在无界面 gate）→ 任务结束销毁 W。实测时间线：14:45:42.557 W 建、.733 A 建、.844 A 停在 gate、.847 W 销毁；14:47:31 打开界面，A 放行后 `main()` 抛 `MissingPluginException(No implementation found for method initLogs on channel flutter_logs)`。

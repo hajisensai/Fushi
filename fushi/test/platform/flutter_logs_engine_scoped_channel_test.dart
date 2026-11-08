@@ -1,4 +1,4 @@
-// BUG-4221：Android 上同一进程会同时存在多个 FlutterEngine——WorkManager 的后台引擎
+// BUG-4242：Android 上同一进程会同时存在多个 FlutterEngine——WorkManager 的后台引擎
 // （workmanager 的 BackgroundWorker）自动注册全部插件，其中 audio_service 插件一附着就
 // 绑定 AudioService，AudioService.onCreate 再新建主引擎跑 main()。后台任务结束销毁后台
 // 引擎时，每个插件的 onDetachedFromEngine 只该拆自己那个引擎上的东西。
@@ -84,7 +84,7 @@ void main() {
         isFalse,
         reason:
             'flutter_logs 把 channel 放回了 companion object（进程级静态）：'
-            '后台引擎销毁时会清掉主引擎的 handler（BUG-4221）',
+            '后台引擎销毁时会清掉主引擎的 handler（BUG-4242）',
       );
     }
     // 实例字段 + 拆的是自己那个：onDetachedFromEngine 置空的是实例上的 channel。
