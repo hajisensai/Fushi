@@ -1,4 +1,4 @@
-## BUG-4233 · 音乐插件启停状态并发首读各得一份副本，停用丢失
+## BUG-4239 · 音乐插件启停状态并发首读各得一份副本，停用丢失
 - **报告**：2026-11-07（用户：hajisensai；PR #2927 的 CI build job 观察到 develop 上 `packages/fushi_music/test/plugin_lifecycle_test.dart`「停用时正在等实例的调用方也被拒，不会重开一份」偶发红：期望抛 disabled，实际拿到实例。该 PR 没碰 fushi_music）
 - **真实性**：✅ 真 bug（产品代码，不是测试时序假设错）。根因 `packages/fushi_music/lib/src/plugin/plugin_manager.dart:102-103`（修前）：`_enabledState() async => _enabledCache ??= await _readEnabled();`。`??=` 在 `await` **之前**判空，新管理器上两个调用方在同一同步段里先后进来（`instance()` 修前 :258、`setEnabled()` 修前 :227），都看到缓存为空、各自读一遍 `.state.json`、各拿一份**不同的** Map；后读完的那份覆盖 `_enabledCache`。`setEnabled(id,false)` 改的是自己那份并写盘；若 `instance()` 的读盘后完成，缓存里留下的是没有 `id:false` 的那份，之后 `instance(id)` 的 `_requireUsable`（修前 :307-315）放行并重开一份 —— 正是 CI 的失败形态。两次文件读谁先完成由 IO 决定，所以偶发。同一缺陷还会让并发的两次停用（或停用 + 卸载）丢掉一个，且写盘是各写各的整份 Map，落盘也会丢。
 - **[x] ① 已修复** — 缓存改存读盘的 Future（`_enabledLoad`，`plugin_manager.dart:101-113`），首读单飞，所有并发调用方拿到同一个 Map 对象，改动互相可见；读盘意外失败不缓存失败、照常抛错。`list()`（:144）也改走同一内存真相源，不再绕过缓存读盘。

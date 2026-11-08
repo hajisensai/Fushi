@@ -97,7 +97,7 @@ class MusicPluginManager {
   /// 存的是「读盘的 Future」而不是读完的 Map：首读是单飞的，所有并发的首读调用方
   /// 拿到同一个 Map 对象。以前是 `_cache ??= await _readEnabled()`，`??=` 在 await
   /// 之前判空，并发首读各读一份、各拿自己的 Map，后完成的覆盖缓存，先完成那份上的
-  /// 停用就丢了（BUG-4233）。
+  /// 停用就丢了（BUG-4239）。
   Future<Map<String, bool>>? _enabledLoad;
 
   /// 正在卸载的插件：卸载期间（删目录前后）不再开实例。
