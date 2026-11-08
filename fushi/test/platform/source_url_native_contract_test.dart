@@ -167,7 +167,7 @@ void main() {
         contains('target.rebase(FlashCardsContract.Note.CONTENT_URI)'),
       );
       // Same query literal as CardSourceLink.searchQueryForSourceId.
-      expect(body, contains('"sourceId=" + sourceId'));
+      expect(body, contains('"*:*sourceId=" + sourceId + "*"'));
       expect(body, contains('getColumnIndexOrThrow'));
       expect(body, contains('if (cursor == null)'));
       expect(body, contains('throw new IllegalStateException'));

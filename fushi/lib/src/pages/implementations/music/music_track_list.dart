@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -8,11 +9,14 @@ import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
+import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -29,6 +33,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// `mm:ss`。
 String formatMusicDuration(int? ms) {
@@ -49,18 +54,20 @@ void openMusicTrackDetail(BuildContext context, String trackUid) {
   );
 }
 
-/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情。
+/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情 / 加入歌单；[extra] 追加在
+/// 末尾（歌单页的「从这个歌单移除」）。
 MusicItemMenu musicLocalTrackMenu(
   BuildContext context,
   MusicTrackRow track, {
   required VoidCallback onPlay,
+  List<MusicMenuAction> extra = const <MusicMenuAction>[],
 }) => MusicItemMenu(
   buttonKey: ValueKey<String>('music-track-menu-${track.trackUid}'),
   open: (MusicMenuAnchor? anchor) => unawaited(
     showMusicActionMenu(
       context,
       anchor: anchor,
-      errorText: (Object e) => t.music_play_failed(error: '$e'),
+      errorText: (Object e) => t.music_action_failed(error: '$e'),
       actions: <MusicMenuAction>[
         MusicMenuAction(
           id: 'play',
@@ -75,31 +82,141 @@ MusicItemMenu musicLocalTrackMenu(
           run: (BuildContext c) async =>
               openMusicTrackDetail(c, track.trackUid),
         ),
+        if (_appOf(context) case final AppModel app when app.isDatabaseReady)
+          MusicMenuAction(
+            id: 'addToLocalPlaylist',
+            label: t.music_action_add_to_playlist,
+            icon: FushiIcons.playlist,
+            run: (BuildContext c) async {
+              await musicAddItemsToLocalPlaylist(
+                c,
+                app.database,
+                <MusicPlayItem>[musicPlayItemOf(track)],
+              );
+            },
+          ),
+        ...extra,
       ],
     ),
   ),
 );
 
-/// 曲目列表（歌曲分区 / 艺人 / 专辑碟内）：点一首 = 以该列表为队列从这首开始播；
+AppModel _appOf(BuildContext context) =>
+    ProviderScope.containerOf(context, listen: false).read(appProvider);
+
+/// 远程曲目（YouTube / 在线插件，v148）在曲库 / 歌单里的菜单：播放 / 移出音乐库（在库时）/
+/// 加入歌单；[extra] 追加在末尾（歌单页的「从这个歌单移除」）。
+MusicItemMenu musicRemoteEntryMenu(
+  BuildContext context,
+  MusicRemoteTrackRow track, {
+  required VoidCallback onPlay,
+  List<MusicMenuAction> extra = const <MusicMenuAction>[],
+}) => MusicItemMenu(
+  buttonKey: ValueKey<String>('music-remote-track-menu-${track.trackUid}'),
+  open: (MusicMenuAnchor? anchor) {
+    final AppModel app = _appOf(context);
+    final MusicPlayItem? item = musicPlayItemOfRemote(track);
+    unawaited(
+      showMusicActionMenu(
+        context,
+        anchor: anchor,
+        errorText: (Object e) => t.music_action_failed(error: '$e'),
+        actions: <MusicMenuAction>[
+          MusicMenuAction(
+            id: 'play',
+            label: t.music_play_all,
+            icon: FushiIcons.play,
+            run: (_) async => onPlay(),
+          ),
+          if (app.isDatabaseReady && item != null)
+            ...musicRemoteLibraryActions(
+              app.database,
+              item,
+              inLibrary: track.libraryAddedAt != null,
+            ),
+          ...extra,
+        ],
+      ),
+    );
+  },
+);
+
+/// 远程曲目行副标题里的来源名（YouTube / 插件 id）。
+String musicRemoteSourceLabel(MusicRemoteTrackRow track) =>
+    switch (MusicRemoteTrackKind.fromWire(track.kind)) {
+      MusicRemoteTrackKind.youtube => 'YouTube',
+      MusicRemoteTrackKind.plugin || null => track.sourceKey,
+    };
+
+/// 曲目列表所在的本地歌单：每行多出「从这个歌单移除」（按条目 id 删，同一首出现两次时只删
+/// 点的那一条）。[entryIds] 与列表条目一一对应。
+class MusicTrackListPlaylist {
+  const MusicTrackListPlaylist({
+    required this.playlist,
+    required this.entryIds,
+  });
+
+  final MusicPlaylistRow playlist;
+  final List<int> entryIds;
+}
+
+/// 曲目列表（歌曲分区 / 艺人 / 专辑碟内 / 本地歌单）：点一首 = 以该列表为队列从这首开始播；
 /// 长按 / 行尾「详情」= 曲目详情页。有没听完的断点（点开会接着放的，`music_resume.dart`）
 /// 的行：行尾显示剩余时间，副标题下一条细进度条。
+///
+/// 条目可以是本地曲库曲目，也可以是加入音乐库 / 歌单的远程曲目（[MusicLibraryEntry]，v148）：
+/// 两种排在同一条队列里，远程曲目行带封面缩略图与来源名、行尾是「更多」菜单。
 class MusicTrackList extends ConsumerStatefulWidget {
+  /// 只有本地曲库曲目的列表（专辑 / 艺人 / 歌曲分区）。
   const MusicTrackList({
     super.key,
-    required this.tracks,
+    required List<MusicTrackRow> tracks,
     required this.albums,
     required this.context,
     this.shrinkWrap = false,
     this.showTrackNumbers = false,
-  });
+  }) : _tracks = tracks,
+       _entries = null,
+       playlist = null,
+       source = null;
 
-  final List<MusicTrackRow> tracks;
+  /// 本地与远程曲目混排的列表（歌曲分区含远程曲目、本地歌单）。
+  const MusicTrackList.entries({
+    super.key,
+    required List<MusicLibraryEntry> entries,
+    required this.albums,
+    required this.context,
+    this.shrinkWrap = false,
+    this.showTrackNumbers = false,
+    this.playlist,
+    this.source,
+  }) : _entries = entries,
+       _tracks = null;
+
+  final List<MusicTrackRow>? _tracks;
+  final List<MusicLibraryEntry>? _entries;
+
+  /// 调用方传进来的那份列表（判断「列表换了没有」用身份，不逐项比）。
+  Object get _source => _entries ?? _tracks!;
+
+  /// 列表条目（本地构造时现包一层）。
+  List<MusicLibraryEntry> get entries =>
+      _entries ??
+      <MusicLibraryEntry>[
+        for (final MusicTrackRow t in _tracks!) MusicLocalEntry(t),
+      ];
   final Map<String, MusicAlbumRow> albums;
 
   /// 队列语境（决定 ReplayGain 模式）。
   final MusicQueueContext context;
   final bool shrinkWrap;
   final bool showTrackNumbers;
+
+  /// 列表所在的本地歌单（多出「从这个歌单移除」）；不在歌单页为 null。
+  final MusicTrackListPlaylist? playlist;
+
+  /// 起播时记进播放流的来源（歌单页 = 这个歌单）；null = 不记。
+  final MusicPlaySource? source;
 
   @override
   ConsumerState<MusicTrackList> createState() => _MusicTrackListState();
@@ -109,28 +226,29 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   /// 这一列曲目的断点：挂上时按块查齐，之后只吃这一列里那几首的改动。
   late final MusicResumePointsWatch _resume;
 
-  List<MusicTrackRow> get tracks => widget.tracks;
+  /// [MusicTrackList.entries] 的缓存：调用方的列表换了才重包。
+  late List<MusicLibraryEntry> _list = widget.entries;
 
-  static Iterable<String> _uids(List<MusicTrackRow> tracks) =>
-      tracks.map((MusicTrackRow t) => t.trackUid);
+  List<MusicLibraryEntry> get entries => _list;
+
+  static List<String> _uids(List<MusicLibraryEntry> entries) => <String>[
+    for (final MusicLibraryEntry e in entries) e.trackUid,
+  ];
 
   @override
   void initState() {
     super.initState();
-    _resume =
-        ref
-            .read(appProvider)
-            .musicSession
-            .watchResumePoints(_uids(widget.tracks))
-          ..addListener(_onResumeChanged);
+    _resume = ref.read(appProvider).musicSession.watchResumePoints(_uids(_list))
+      ..addListener(_onResumeChanged);
   }
 
   @override
   void didUpdateWidget(MusicTrackList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.tracks, widget.tracks)) {
-      _resume.watch(_uids(widget.tracks));
-    }
+    if (identical(oldWidget._source, widget._source)) return;
+    final List<MusicLibraryEntry> previous = _list;
+    _list = widget.entries;
+    if (!listEquals(_uids(previous), _uids(_list))) _resume.watch(_uids(_list));
   }
 
   @override
@@ -145,22 +263,64 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     if (mounted) setState(() {});
   }
 
-  List<MusicPlayItem> _items() => <MusicPlayItem>[
-    for (final MusicTrackRow t in tracks)
-      musicPlayItemOf(
-        t,
-        album: t.albumUid == null ? null : widget.albums[t.albumUid!],
+  /// 以整列为队列从第 [index] 条起播。换不成播放项的条目（将来版本写的远程种类）不进队列。
+  void _play(int index) {
+    final List<MusicPlayItem> items = <MusicPlayItem>[];
+    int start = 0;
+    for (int i = 0; i < entries.length; i++) {
+      final MusicPlayItem? item = entries[i].playItem(widget.albums);
+      if (item == null) continue;
+      if (i == index) start = items.length;
+      items.add(item);
+    }
+    unawaited(
+      ref
+          .read(appProvider)
+          .musicSession
+          .engine
+          .playQueue(
+            items,
+            startIndex: start,
+            context: widget.context,
+            source: widget.source,
+          ),
+    );
+  }
+
+  /// 歌单页每行的「从这个歌单移除」；不在歌单页回空。
+  List<MusicMenuAction> _playlistActions(int index) {
+    final MusicTrackListPlaylist? p = widget.playlist;
+    if (p == null || index >= p.entryIds.length) {
+      return const <MusicMenuAction>[];
+    }
+    return <MusicMenuAction>[
+      MusicMenuAction(
+        id: 'removeFromPlaylist',
+        label: t.music_action_remove_from_playlist,
+        icon: FushiIcons.close,
+        run: (_) async {
+          await ref
+              .read(appProvider)
+              .database
+              .removeMusicPlaylistEntry(
+                p.playlist.playlistUid,
+                p.entryIds[index],
+                at: DateTime.now().millisecondsSinceEpoch,
+              );
+          FushiToast.show(
+            msg: t.music_action_removed_from_playlist(name: p.playlist.name),
+            severity: ToastSeverity.success,
+          );
+        },
       ),
-  ];
+    ];
+  }
 
   @override
   Widget build(BuildContext buildContext) {
     final MusicResumeMode mode = watchMusicResumeMode(ref);
     final bool shrinkWrap = widget.shrinkWrap;
-    final bool showTrackNumbers = widget.showTrackNumbers;
-    final MusicQueueContext context = widget.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(buildContext);
-    final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
@@ -177,87 +337,179 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   tokens.spacing.section,
                 ),
               ),
-        itemCount: tracks.length,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext c, int i) {
-          final MusicTrackRow track = tracks[i];
-          final String badge = musicFormatBadge(
-            codec: track.codec,
-            isLossless: track.isLossless,
-            sampleRate: track.sampleRate,
-            bitDepth: track.bitDepth,
-            bitrateKbps: track.bitrate,
-          );
-          final Duration? resume = musicTrackResumeOf(
-            track,
-            _resume[track.trackUid],
-            mode,
-          );
-          final int? durationMs = track.durationMs;
-          final Text subtitle = Text(
-            <String>[
-              track.artistCredit ?? t.music_artist_unknown,
-              if (badge.isNotEmpty) badge,
-            ].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          );
-          void play() => unawaited(
-            engine.playQueue(_items(), startIndex: i, context: context),
-          );
-          return musicLocalTrackMenu(c, track, onPlay: play).contextMenu(
-            child: FushiPressScale(
-              child: FushiGroupedListItem(
-                key: ValueKey<String>('music-track-${track.trackUid}'),
-                index: i,
-                count: tracks.length,
-                onTap: play,
-                onLongPress: () => openMusicTrackDetail(c, track.trackUid),
-                child: FushiListItem(
-                  leading: showTrackNumbers
-                      ? SizedBox(
-                          width: 28,
-                          child: Text(
-                            track.trackNo?.toString() ?? '',
-                            textAlign: TextAlign.end,
-                            style: c.fushiType.bodySmall,
-                          ),
-                        )
-                      : const FushiListLeadingIcon(FushiIcons.music),
-                  title: Text(
-                    track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: musicTrackSubtitleWithResume(
-                    track,
-                    subtitle,
-                    resume,
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        musicTrackTimeLabel(durationMs, resume),
-                        style: c.fushiType.bodySmall,
-                      ),
-                      FushiIconButton(
-                        key: ValueKey<String>(
-                          'music-track-detail-${track.trackUid}',
-                        ),
-                        icon: FushiIcons.info,
-                        tooltip: t.music_track_detail,
-                        onTap: () => openMusicTrackDetail(c, track.trackUid),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+        itemCount: entries.length,
+        itemBuilder: fushiStaggeredItemBuilder(
+          (BuildContext c, int i) => switch (entries[i]) {
+            MusicLocalEntry(:final MusicTrackRow track) => _localRow(
+              c,
+              i,
+              track,
+              mode,
             ),
-          );
-        }),
+            MusicRemoteEntry(:final MusicRemoteTrackRow track) => _remoteRow(
+              c,
+              i,
+              track,
+              mode,
+            ),
+          },
+        ),
       ),
     );
   }
+
+  Widget _localRow(
+    BuildContext c,
+    int i,
+    MusicTrackRow track,
+    MusicResumeMode mode,
+  ) {
+    final String badge = musicFormatBadge(
+      codec: track.codec,
+      isLossless: track.isLossless,
+      sampleRate: track.sampleRate,
+      bitDepth: track.bitDepth,
+      bitrateKbps: track.bitrate,
+    );
+    final Duration? resume = musicTrackResumeOf(
+      track,
+      _resume[track.trackUid],
+      mode,
+    );
+    final Text subtitle = Text(
+      <String>[
+        track.artistCredit ?? t.music_artist_unknown,
+        if (badge.isNotEmpty) badge,
+      ].join(' · '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    void play() => _play(i);
+    return musicLocalTrackMenu(
+      c,
+      track,
+      onPlay: play,
+      extra: _playlistActions(i),
+    ).contextMenu(
+      child: FushiPressScale(
+        child: FushiGroupedListItem(
+          key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
+          index: i,
+          count: entries.length,
+          onTap: play,
+          onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+          child: FushiListItem(
+            leading: widget.showTrackNumbers
+                ? SizedBox(
+                    width: 28,
+                    child: Text(
+                      track.trackNo?.toString() ?? '',
+                      textAlign: TextAlign.end,
+                      style: c.fushiType.bodySmall,
+                    ),
+                  )
+                : const FushiListLeadingIcon(FushiIcons.music),
+            title: Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: musicTrackSubtitleWithResume(track, subtitle, resume),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  musicTrackTimeLabel(track.durationMs, resume),
+                  style: c.fushiType.bodySmall,
+                ),
+                FushiIconButton(
+                  key: ValueKey<String>(
+                    _rowKey('music-track-detail', i, track.trackUid),
+                  ),
+                  icon: FushiIcons.info,
+                  tooltip: t.music_track_detail,
+                  onTap: () => openMusicTrackDetail(c, track.trackUid),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _remoteRow(
+    BuildContext c,
+    int i,
+    MusicRemoteTrackRow track,
+    MusicResumeMode mode,
+  ) {
+    final MusicResumePointRow? point = _resume[track.trackUid];
+    final Duration? resume = point == null
+        ? null
+        : musicResumeDisplayStart(
+            mode: mode,
+            savedPositionMs: point.positionMs,
+            durationMs: track.durationMs ?? point.durationMs,
+          );
+    final Text subtitle = Text(
+      <String>[
+        track.artist ?? t.music_artist_unknown,
+        musicRemoteSourceLabel(track),
+      ].join(' · '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    void play() => _play(i);
+    final MusicItemMenu menu = musicRemoteEntryMenu(
+      c,
+      track,
+      onPlay: play,
+      extra: _playlistActions(i),
+    );
+    return menu.contextMenu(
+      child: FushiPressScale(
+        child: FushiGroupedListItem(
+          key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
+          index: i,
+          count: entries.length,
+          onTap: play,
+          child: FushiListItem(
+            leading: musicMaterialCover(
+              MusicCover(coverPath: track.coverUrl, size: 40),
+              size: 40,
+              compact: true,
+            ),
+            title: Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: musicSubtitleWithResume(
+              track.trackUid,
+              track.durationMs,
+              subtitle,
+              resume,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  musicTrackTimeLabel(track.durationMs, resume),
+                  style: c.fushiType.bodySmall,
+                ),
+                menu.button(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 行 key：歌单里同一首可以出现两次，歌单页的 key 带上行号免得撞。
+  String _rowKey(String prefix, int i, String uid) =>
+      widget.playlist == null ? '$prefix-$uid' : '$prefix-$i-$uid';
 }
 
 /// 当前的断点续播模式（设置 `music_resume_mode`）；设置里切档时调用方跟着重建。
@@ -294,8 +546,16 @@ Widget? musicTrackSubtitleWithResume(
   MusicTrackRow track,
   Widget? subtitle,
   Duration? resume,
+) =>
+    musicSubtitleWithResume(track.trackUid, track.durationMs, subtitle, resume);
+
+/// [musicTrackSubtitleWithResume] 的通用形（远程曲目也用：只要 uid 与曲长）。
+Widget? musicSubtitleWithResume(
+  String trackUid,
+  int? durationMs,
+  Widget? subtitle,
+  Duration? resume,
 ) {
-  final int? durationMs = track.durationMs;
   if (resume == null || durationMs == null) return subtitle;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -303,7 +563,7 @@ Widget? musicTrackSubtitleWithResume(
     children: <Widget>[
       if (subtitle != null) ...<Widget>[subtitle, const SizedBox(height: 4)],
       _MusicResumeBar(
-        key: ValueKey<String>('music-track-resume-${track.trackUid}'),
+        key: ValueKey<String>('music-track-resume-$trackUid'),
         fraction: resume.inMilliseconds / durationMs,
       ),
     ],
