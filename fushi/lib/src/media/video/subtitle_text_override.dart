@@ -8,7 +8,8 @@ library;
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:path/path.dart' as p;
+
+export 'package:fushi_engine/media/video/subtitle_text_override_keys.dart';
 
 /// 一个「视频 + 字幕源」下的全部手改：`(startMs, 原文) → 改后文本`。
 class SubtitleTextOverrides {
@@ -119,27 +120,4 @@ SubtitleMarkup? _markupForEditedText(SubtitleMarkup? markup, String edited) {
     shearX: markup.shearX,
     shearY: markup.shearY,
   );
-}
-
-/// 覆盖层的视频键：`bookUid`，播放列表第 2 集起 `bookUid#<集下标>`（与远端字幕偏好
-/// 键 `(uid, episodeIndex)` 同口径）。
-String subtitleTextOverrideVideoKey(String uid, int episodeIndex) =>
-    episodeIndex <= 0 ? uid : '$uid#$episodeIndex';
-
-/// 覆盖层的字幕源键：字幕源指针（`subtitleSource` 四态编码 / YouTube 轨键 / 在线轨键）
-/// 的归一化。
-///
-/// - 外挂字幕文件（绝对路径）→ `file:<文件名>`：不存绝对路径，换数据根 / 迁移设备不
-///   影响命中；ASR 每次产物文件名带时间戳，重新识别得到的是另一个源，旧改动不会误套
-///   到新识别结果上。
-/// - 其余（`embedded:<n>`、在线 / YouTube 轨键等）原样。
-/// - null / 空（没有显式选择的默认字幕）→ 空串。
-String subtitleTextOverrideSourceKey(String? source) {
-  if (source == null) return '';
-  final String trimmed = source.trim();
-  if (trimmed.isEmpty) return '';
-  if (p.windows.isAbsolute(trimmed) || p.posix.isAbsolute(trimmed)) {
-    return 'file:${p.windows.basename(p.posix.basename(trimmed))}';
-  }
-  return trimmed;
 }

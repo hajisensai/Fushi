@@ -46,7 +46,7 @@ void main() {
   Future<void> reopen(String path) async {
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
     try {
-      expect(db.schemaVersion, 147);
+      expect(db.schemaVersion, 148);
       expect(await db.getGalgame('g1'), isNotNull, reason: '游戏本身不受影响');
     } finally {
       await db.close();
@@ -62,7 +62,7 @@ void main() {
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     addTearDown(raw.dispose);
     expect(hasTable(raw), isFalse);
-    expect(userVersion(raw), 147);
+    expect(userVersion(raw), 148);
   });
 
   test('v146 → v147：带存量台词的表连数据一起删掉；重跑幂等', () async {
@@ -85,7 +85,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     expect(hasTable(probe), isFalse, reason: '表与存量台词一并删掉');
-    expect(userVersion(probe), 147);
+    expect(userVersion(probe), 148);
     // 表已经不在时重跑这一步（IF EXISTS）不报错。
     probe.execute('PRAGMA user_version = 146');
     probe.dispose();
@@ -94,7 +94,7 @@ void main() {
     final sqlite.Database again = sqlite.sqlite3.open(path);
     addTearDown(again.dispose);
     expect(hasTable(again), isFalse);
-    expect(userVersion(again), 147);
+    expect(userVersion(again), 148);
   });
 
   test('v133 → v147：v134 之前的库从没建过这张表，照常升级', () async {
@@ -111,6 +111,6 @@ void main() {
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
     expect(hasTable(probe), isFalse, reason: 'v134 步不再建，v147 也不必删');
-    expect(userVersion(probe), 147);
+    expect(userVersion(probe), 148);
   });
 }

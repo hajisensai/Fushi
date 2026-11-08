@@ -53,7 +53,7 @@ import 'package:fushi/src/platform/widget_progress.dart';
 import 'package:fushi/src/platform/widget_snapshot.dart';
 import 'package:fushi/src/platform/widget_snapshot_labels.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
