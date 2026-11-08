@@ -218,4 +218,12 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
         if (speed != null && speed > 0) await audio.setSpeed(speed);
     }
   }
+
+  /// The page's own counter ([BaseSourcePageState.recordCompanionLookup]:
+  /// per-book identity, skips source review), so companion lookups count for
+  /// this book.
+  @override
+  void countLookup() {
+    if (_state.mounted) _state.recordCompanionLookup();
+  }
 }

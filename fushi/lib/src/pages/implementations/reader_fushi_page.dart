@@ -15,6 +15,8 @@ import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
 import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_hook.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_schema.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
@@ -289,6 +291,7 @@ part 'reader_fushi/webview.part.dart';
 part 'reader_fushi/tts.part.dart';
 part 'reader_fushi/session_remote.part.dart';
 part 'reader_fushi/companion.part.dart';
+part 'reader_fushi/controller_lookup.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
@@ -1946,6 +1949,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   late final ReaderCompanionHook _companion = ReaderCompanionHook(
     _ReaderCompanionPageAdapter(this),
   );
+
+  /// Controller lookup mode adapter (S6, hold L1 / Select; see
+  /// `reader_fushi/controller_lookup.part.dart`).
+  _ReaderControllerLookupTarget? _controllerLookupTarget;
   // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
   // 树。只随 _book 失效，故这两个字段总是成对写。
   List<TtuTocEntry>? _ttuTocCache;
@@ -3050,6 +3057,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewWasActive = _sourceReviewActive;
     _suppressPositionPersist = _sourceReviewActive;
     _sourceReviewSession?.addListener(_onSourceReviewChanged);
+    _attachControllerLookup();
     // 阅读计时开始方式：打开书这一刻定初值（手动 / 翻页后开始 = 先暂停）。
     _studyClockStartGate = ReaderStudyClockStartGate(
       appModelNoUpdate.readerStudyClockStartMode,
@@ -3788,6 +3796,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 整段跳过。
     _studyClock?.detach();
     readerSessionRemotes.unregister(_sessionRemote);
+    _detachControllerLookup();
     _companion.dispose();
     // Kavita 绑定书：关书时限时 flush 待推进度（不阻塞 dispose，内部吞错）。
     // 防抖里还没落库的最后一章也要带上：dispose 之后 [_persistPosition] 的转发会撞

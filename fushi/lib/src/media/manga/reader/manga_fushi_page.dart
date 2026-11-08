@@ -90,6 +90,10 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
 import 'package:fushi/src/second_screen/companion/companion_cover_files.dart';
 import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+import 'package:fushi/src/media/manga/manga_controller_cursor_scripts.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarFab, FushiToolbarItem;
@@ -186,6 +190,7 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart'
 
 part 'manga_jump_history.part.dart';
 part 'manga_fushi/companion.part.dart';
+part 'manga_fushi/controller_lookup.part.dart';
 part 'manga_fushi/kavita.part.dart';
 part 'manga_fushi/page_curl.part.dart';
 
@@ -1493,6 +1498,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   late final MangaCompanionHook _companion = MangaCompanionHook(
     reader: _MangaCompanionReader(this),
   );
+
+  /// Controller lookup mode adapter (S6, hold L1 / Select; see
+  /// `manga_fushi/controller_lookup.part.dart`).
+  _MangaControllerLookupTarget? _controllerLookupTarget;
   bool _streamOcrStarting = false;
   bool _streamOcrBusy = false;
 
@@ -1626,6 +1635,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       (_) => _syncVolumeOcrJob(),
     );
     _pageNotifier.addListener(_onReaderPageChanged);
+    _attachControllerLookup();
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
         MangaReaderInputAction.previous,
@@ -1762,6 +1772,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     readerSessionRemotes.unregister(_sessionRemote);
+    _detachControllerLookup();
     _companion.dispose();
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -4549,6 +4560,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
     _companion.publishNow();
+    _controllerLookupTarget?.onPageChanged();
   }
 
   /// 在线直读章的边看边识别：从读者当前页起识别眼前这页与后面几页，识别完一页

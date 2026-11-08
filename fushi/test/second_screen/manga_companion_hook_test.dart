@@ -72,6 +72,11 @@ class _FakeReader implements MangaCompanionReader {
     infoLoads++;
     return info;
   }
+
+  int lookupsCounted = 0;
+
+  @override
+  void countLookup() => lookupsCounted++;
 }
 
 class _FakeBridge implements CompanionBridge {
@@ -113,6 +118,14 @@ void main() {
   Map<String, Object?> snapshot() => registry.currentSnapshot!;
 
   group('claim and snapshot', () {
+    test('companion lookups count through the page counter', () {
+      expect(registry.countLookup(), isFalse);
+      hook.claim('Series');
+      expect(registry.countLookup(), isTrue);
+      expect(registry.countLookup(), isTrue);
+      expect(reader.lookupsCounted, 2);
+    });
+
     test('inactive: claims the context but builds nothing, no timer', () {
       fakeAsync((FakeAsync async) {
         hook.claim('Series');

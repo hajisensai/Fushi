@@ -112,6 +112,11 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+
+part 'music_lyrics_controller_lookup.part.dart';
 
 /// 一次 ± 按钮调整的偏移步长。
 const int kMusicLyricsOffsetStepMs = 100;
@@ -360,8 +365,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       unawaited(_load(item));
     });
     _companion.startSnapshots(_companionSnapshot);
+    ControllerLookupMode.instance.attach(_controllerLookupTarget);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
   }
+
+  /// Controller lookup mode (S6, hold L1 / Select): cursor drawn by the
+  /// lyrics view, adapter in `music_lyrics_controller_lookup.part.dart`.
+  final KaraokeLyricsCursor _lookupCursor = KaraokeLyricsCursor();
+  late final _MusicControllerLookupTarget _controllerLookupTarget =
+      _MusicControllerLookupTarget(
+        this,
+        readPref: (String key) => appModelNoUpdate.prefsRepo.getPref(key),
+      );
 
   /// 把本页路由登记成「播放页」：底下的浏览页据此让网页别跟着播（BUG-4084）。
   final PlaybackRouteMark _playbackRouteMark = PlaybackRouteMark();
@@ -376,6 +391,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   @override
   void dispose() {
+    _controllerLookupTarget._detached = true;
+    ControllerLookupMode.instance.detach(_controllerLookupTarget);
+    _lookupCursor.dispose();
     _companion.dispose();
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
@@ -430,6 +448,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       CompanionContext(CompanionContextKind.music, title: item?.title),
       route: _companionRoute,
       onCommand: _onCompanionCommand,
+      onLookupCounted: recordCompanionLookup,
     );
   }
 
@@ -487,6 +506,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _lookupLine = null;
       _loopLines = null;
     });
+    // 换曲：旧歌词上的手柄查词光标作废（模式仍开着时下一次输入落到新歌词的当前行）。
+    _lookupCursor.clear();
     MusicLyricsResolution? r;
     Object? error;
     try {
@@ -1960,6 +1981,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       tapLooksUp: true,
       isSeekPointer: (int buttons) =>
           isMusicLyricsSeekPointer(appModel.shortcutRegistry, buttons),
+      cursor: _lookupCursor,
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     return Column(

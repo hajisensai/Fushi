@@ -39,6 +39,13 @@ class _MangaCompanionReader implements MangaCompanionReader {
 
   @override
   Future<MangaCompanionInfo?> loadInfo() => _state._companionLoadInfo();
+
+  /// The page's own counter ([BaseSourcePageState.recordCompanionLookup]),
+  /// so companion lookups count for this manga.
+  @override
+  void countLookup() {
+    if (_state.mounted) _state.recordCompanionLookup();
+  }
 }
 
 extension _MangaCompanion on _MangaFushiPageState {

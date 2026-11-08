@@ -105,6 +105,11 @@ class _FakeReaderPage implements ReaderCompanionPage {
     String action,
     Map<String, Object?> args,
   ) async => audioCommands.add((action, args));
+
+  int lookupsCounted = 0;
+
+  @override
+  void countLookup() => lookupsCounted++;
 }
 
 void main() {
@@ -184,6 +189,24 @@ void main() {
   });
 
   group('ReaderCompanionHook', () {
+    test('companion lookups count through the page counter (reader and '
+        'audiobook view)', () {
+      final ReaderCompanionHook hook = ReaderCompanionHook(
+        page,
+        registry: registry,
+      )..attach(null);
+      expect(registry.countLookup(), isTrue);
+      expect(page.lookupsCounted, 1);
+      page.audiobookView = true;
+      hook.attach(null);
+      expect(registry.current.kind, CompanionContextKind.audiobook);
+      expect(registry.countLookup(), isTrue);
+      expect(page.lookupsCounted, 2);
+      hook.dispose();
+      expect(registry.countLookup(), isFalse);
+      expect(page.lookupsCounted, 2);
+    });
+
     test('inactive: claims but builds and loads nothing', () {
       fakeAsync((FakeAsync async) {
         final ReaderCompanionHook hook = ReaderCompanionHook(

@@ -169,6 +169,10 @@ abstract interface class MangaCompanionReader {
   /// Cover file + cached rating (file / database reads; called once per
   /// title while the companion is up).
   Future<MangaCompanionInfo?> loadInfo();
+
+  /// Counts one lookup made on the companion for this manga, with the page's
+  /// own lookup counter (the one its in-page popup uses).
+  void countLookup();
 }
 
 /// "OCR this page" state: one page at a time, only ever started by [run]
@@ -359,6 +363,7 @@ class MangaCompanionHook {
       CompanionContext(CompanionContextKind.manga, title: title),
       route: nextRoute,
       onCommand: handleCommand,
+      onLookupCounted: _reader.countLookup,
     );
     if (!_started) {
       _started = true;

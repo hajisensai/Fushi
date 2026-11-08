@@ -77,6 +77,10 @@ abstract interface class ReaderCompanionPage {
   Future<void> runReaderCommand(String action, Map<String, Object?> args);
 
   Future<void> runAudiobookCommand(String action, Map<String, Object?> args);
+
+  /// Counts one lookup made on the companion for this book, with the page's
+  /// own lookup counter (the one its in-page popup uses).
+  void countLookup();
 }
 
 /// The reader page's end of the companion: claims `reader` (or `audiobook`
@@ -155,6 +159,7 @@ class ReaderCompanionHook {
       CompanionContext(kind, title: title),
       route: _route,
       onCommand: _onCommand,
+      onLookupCounted: _page.countLookup,
     );
   }
 
