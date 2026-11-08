@@ -161,7 +161,7 @@ libraries:
     enabled: true
   - id: "audiobooks"
     path: "/srv/media/audiobooks"
-    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝
+    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝；已导入的目录重扫时按音频清单 / 字幕变化就地更新（补章节、换字幕）
     enabled: true
 ```
 

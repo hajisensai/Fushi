@@ -25,6 +25,7 @@
 /// 视频永远规划不出作品、也就永远不会被刮削。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -40,6 +41,7 @@ import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
@@ -82,6 +84,9 @@ class ScanSummary {
   int audiobooksAdded = 0;
   int audiobooksSkipped = 0;
 
+  /// 已导入的有声书目录里音频 / 字幕变了、就地更新的书数（补章节、换字幕）。
+  int audiobooksUpdated = 0;
+
   /// 有声书根里只有音频、没有字幕的书数（没导入：服务端扫描不自动转录）。
   int audiobooksNeedSubtitle = 0;
 
@@ -105,7 +110,8 @@ class ScanSummary {
       'videos +$videosAdded (skipped $videosSkipped, pruned $videosPruned), '
       'books +$booksAdded (skipped $booksSkipped${booksPruned > 0 ? ', pruned $booksPruned' : ''}), '
       'manga +$mangaAdded (skipped $mangaSkipped${mangaPruned > 0 ? ', pruned $mangaPruned' : ''}), '
-      '${audiobooksAdded + audiobooksSkipped + audiobooksPruned + audiobooksNeedSubtitle > 0 ? 'audiobooks +$audiobooksAdded (skipped $audiobooksSkipped'
+      '${audiobooksAdded + audiobooksSkipped + audiobooksUpdated + audiobooksPruned + audiobooksNeedSubtitle > 0 ? 'audiobooks +$audiobooksAdded (skipped $audiobooksSkipped'
+                '${audiobooksUpdated > 0 ? ', updated $audiobooksUpdated' : ''}'
                 '${audiobooksPruned > 0 ? ', pruned $audiobooksPruned' : ''}'
                 '${audiobooksNeedSubtitle > 0 ? ', need subtitle $audiobooksNeedSubtitle' : ''}), ' : ''}'
       'errors ${errors.length}'
@@ -895,8 +901,10 @@ class LibraryScanner {
   }
 
   /// 有声书根：按 [planAudiobookFolders] 逐本导入并记进来源索引（键 = 书目录 / 散放
-  /// 音频文件的相对路径）。索引里已有、书还在库的不再导入；同名书已在库（别的库根 /
-  /// 手动导入 / 代下载）一律跳过、不认领——换音频换字幕是有损操作，交互入口在客户端。
+  /// 音频文件的相对路径）。索引里已有、书还在库的不再导入，而是按目录签名
+  /// （[_AudiobookFolderState]）判断音频 / 字幕变没变，变了就地更新
+  /// （[_refreshAudiobookFolder]）；同名书已在库（别的库根 / 手动导入 / 代下载）一律
+  /// 跳过、不认领——那本书不是这个库根导入的，库根不替用户改它。
   /// 单本失败只记错误，不中断整批。
   Future<_BookScan> _scanAudiobooks(
     Directory dir,
@@ -915,8 +923,25 @@ class LibraryScanner {
       final String rel = bookSourceRelPath(dir.path, folder.path);
       scan.found.add(rel);
       scan.present.add(rel);
-      if (scan.index.uidOf(rel) != null) {
-        summary.audiobooksSkipped++;
+      final String? trackedUid = scan.index.uidOf(rel);
+      if (trackedUid != null) {
+        try {
+          final bool updated = await _refreshAudiobookFolder(
+            dir,
+            folder,
+            rel,
+            trackedUid,
+            scan.index,
+          );
+          if (updated) {
+            summary.audiobooksUpdated++;
+          } else {
+            summary.audiobooksSkipped++;
+          }
+        } catch (err, stack) {
+          summary.errors.add('${folder.path}: $err');
+          engineLog.log('LibraryScanner.audiobookRefresh', err, stack);
+        }
         continue;
       }
       try {
@@ -928,10 +953,15 @@ class LibraryScanner {
         if (bookKey == null) continue;
         final String? uid = await bookUidForKey(db, bookKey);
         if (uid == null) {
-          // 字幕解析不出 cue 的独立字幕书没有正文行，认领不了，也就永远不会被对账删。
+          // 认领不上（没有正文行）：不记索引，也就永远不会被对账删。
           untracked++;
         } else {
-          scan.index.put(rel, uid);
+          scan.index
+            ..put(rel, uid)
+            ..putSignature(
+              rel,
+              _AudiobookFolderState.of(dir, folder, subtitleLanguage).signature,
+            );
         }
         summary.audiobooksAdded++;
       } catch (err, stack) {
@@ -1009,7 +1039,22 @@ class LibraryScanner {
           summary.audiobooksSkipped++;
           return null;
         }
-        if (book.bookKey.isEmpty) return '';
+        if (book.bookKey.isEmpty) {
+          // 字幕解析不出 cue：引擎照对话框的老规矩落一条没有正文的字幕书，但它没有
+          // 正文行、进不了来源索引，库根每扫一次就会再落一条。撤掉、记成错误，字幕
+          // 修好后下轮扫描照常导入。
+          await rollbackStandaloneSubtitleBook(
+            db: db,
+            repo: SrtBookRepository(db),
+            uid: book.uid,
+            bookKey: '',
+            savedBook: true,
+            persistDir: await AudiobookStorage.ensurePersistDir(book.uid),
+          );
+          throw FormatException(
+            'subtitle has no cues, not imported: ${plan.subtitlePath}',
+          );
+        }
         await (db.update(db.epubBooks)
               ..where(($EpubBooksTable t) => t.bookKey.equals(book.bookKey)))
             .write(EpubBooksCompanion(sourceId: Value<int?>(sourceId)));
@@ -1024,6 +1069,133 @@ class LibraryScanner {
       default:
         return null;
     }
+  }
+
+  /// 已导入的有声书目录重扫：签名（[_AudiobookFolderState.signature]）没变就什么都
+  /// 不做（只花目录枚举与字幕的一次 stat）；变了才去比库里的行、就地更新，返回是否
+  /// 真的改了库。写入一律走 app 同一组引擎入口，不另写服务端变体：
+  ///
+  /// - EPUB 有声书（有 `audiobooks` 行）：换字幕 = [alignAndPersistAudiobook]（app
+  ///   「换字幕」同一函数，连同当前音频清单重新对齐）；只换音频 =
+  ///   [replaceAudiobookAudio]（cue 不动）。
+  /// - 独立字幕书：[reimportSrtBook]（字幕书「重新导入」同一函数，换字幕连带按新 cue
+  ///   重建正文）。
+  ///
+  /// 音频一律引用导入（`copyAudio: false`）。删掉的分段随新清单一起消失（整本的音频
+  /// 都没了 = 目录不再算书，归对账回收）；进度键（bookKey / 字幕书 uid）不变，播放
+  /// 进度按 `replaceAudio` 的判据保留或归零（断点所在文件及其之前的没变就保留）。
+  /// 目录里的字幕被删掉时保留库里那份已导入的副本、只跟音频——删字幕不该把一本能读
+  /// 的书变哑。目录换了形态（独立字幕书的目录里新放了 EPUB）不转换：只按新清单更新
+  /// 音频 / 字幕，EPUB 忽略。
+  Future<bool> _refreshAudiobookFolder(
+    Directory root,
+    AudiobookFolder folder,
+    String rel,
+    String uid,
+    BookSourceIndex index,
+  ) async {
+    final _AudiobookFolderState state = _AudiobookFolderState.of(
+      root,
+      folder,
+      subtitleLanguage,
+    );
+    final String? recorded = index.signatureOf(rel);
+    if (recorded == state.signature) return false;
+
+    final EpubBookRow? body = await db.getEpubBookByUid(uid);
+    if (body == null) return false;
+    final String bookKey = body.bookKey;
+    final AudiobookRepository audiobookRepo = AudiobookRepository(db);
+    final SrtBookRepository srtRepo = SrtBookRepository(db);
+    final Audiobook? audiobook = await audiobookRepo.findByBookKey(bookKey);
+    final SrtBook? srt = audiobook == null
+        ? await srtRepo.findByBookKey(bookKey)
+        : null;
+    if (audiobook == null && srt == null) {
+      // 正文还在、有声书部分已被用户在客户端拆掉：不替用户再挂回去。
+      index.putSignature(rel, state.signature);
+      return false;
+    }
+    final List<String> storedAudio =
+        (audiobook != null ? audiobook.audioPaths : srt!.audioPaths) ??
+        const <String>[];
+    bool audioChanged = storedAudio.length != state.audioPaths.length;
+    for (int i = 0; !audioChanged && i < storedAudio.length; i++) {
+      audioChanged = !p.equals(storedAudio[i], state.audioPaths[i]);
+    }
+    final String? subtitle = state.subtitlePath;
+    final bool subtitleChanged =
+        subtitle != null &&
+        (recorded != null
+            ? !_AudiobookFolderState.sameSubtitle(recorded, state.signature)
+            : !await _sameFileBytes(
+                subtitle,
+                audiobook != null ? audiobook.alignmentPath : srt!.srtPath,
+              ));
+    if (subtitle == null) {
+      engineLog.logDiagnostic(
+        'LibraryScanner.audiobook',
+        '${folder.path}: no usable subtitle in the folder; '
+            'keeping the imported copy',
+      );
+    }
+
+    if (audiobook != null) {
+      if (subtitleChanged) {
+        await alignAndPersistAudiobook(
+          db: db,
+          repo: srtRepo,
+          audiobookRepo: audiobookRepo,
+          bookKey: bookKey,
+          title: body.title,
+          author: body.author,
+          subtitlePath: subtitle,
+          audioPaths: state.audioPaths,
+          copyAudio: false,
+        );
+      } else if (audioChanged) {
+        await replaceAudiobookAudio(
+          db: db,
+          bookKey: bookKey,
+          audioPaths: state.audioPaths,
+          copyAudio: false,
+        );
+      }
+    } else if (audioChanged || subtitleChanged) {
+      await reimportSrtBook(
+        db: db,
+        repo: srtRepo,
+        uid: srt!.uid,
+        audioPaths: audioChanged ? state.audioPaths : null,
+        subtitlePath: subtitleChanged ? subtitle : null,
+        copyAudio: false,
+      );
+    }
+    index.putSignature(rel, state.signature);
+    if (!audioChanged && !subtitleChanged) return false;
+    engineLog.logDiagnostic(
+      'LibraryScanner.audiobook',
+      '${folder.path}: updated in place (audio '
+          '${audioChanged ? '${storedAudio.length} -> ${state.audioPaths.length} file(s)' : 'unchanged'}'
+          ', subtitle ${subtitleChanged ? 'replaced' : 'unchanged'})',
+    );
+    return true;
+  }
+
+  /// 旧版索引（还没有签名）第一次重扫时判字幕变没变：源字幕与库里那份持久副本逐字节
+  /// 比。字幕是 KB～MB 级文本，且只在没有签名的那一次比，之后走签名。副本不在算变了。
+  static Future<bool> _sameFileBytes(String source, String copy) async {
+    if (copy.isEmpty) return false;
+    final File a = File(source);
+    final File b = File(copy);
+    if (!await a.exists() || !await b.exists()) return false;
+    if (await a.length() != await b.length()) return false;
+    final List<int> ba = await a.readAsBytes();
+    final List<int> bb = await b.readAsBytes();
+    for (int i = 0; i < ba.length; i++) {
+      if (ba[i] != bb[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _rollBackBook(String bookKey) async {
@@ -1142,6 +1314,75 @@ class LibraryScanner {
   static bool _isVideo(String path) {
     final String ext = p.extension(path).toLowerCase();
     return kVideoExtensions.contains(ext);
+  }
+}
+
+/// 一个有声书目录此刻的「入库形态」：引擎判据（`classifyDiscoveryDirectory`，与首次
+/// 导入同一套）挑出的音频清单（自然序）与字幕，外加廉价的目录签名。
+///
+/// 签名 = 音频相对路径清单 + 字幕相对路径 + 字幕的「字节数 + 修改时刻」。音频只比
+/// 路径、不比内容：音频是引用导入，同名文件被换掉库里本来就指着新文件，不需要动库，
+/// 也就不必为几百 MB 的音频算哈希。字幕是导入时拷进持久目录的副本，换了内容必须重新
+/// 解析，所以带上它的 stat（不读内容）。EPUB 不进签名：EPUB 有声书换正文是另一回事
+/// （重新导入书），重扫不碰。
+class _AudiobookFolderState {
+  const _AudiobookFolderState({
+    required this.audioPaths,
+    required this.subtitlePath,
+    required this.signature,
+  });
+
+  factory _AudiobookFolderState.of(
+    Directory root,
+    AudiobookFolder folder,
+    String subtitleLanguage,
+  ) {
+    final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
+      DiscoveryMediaKind.audiobook,
+      folder.files,
+      subtitleLangCode: subtitleLanguage,
+    );
+    final (List<String> audio, String? subtitle) = switch (plan) {
+      AlignAudiobookPlan() => (plan.audioPaths, plan.subtitlePath),
+      SubtitleAudiobookPlan() => (plan.audioPaths, plan.subtitlePath),
+      TranscribeAudiobookPlan() => (plan.audioPaths, null),
+      _ => (const <String>[], null),
+    };
+    return _AudiobookFolderState(
+      audioPaths: audio,
+      subtitlePath: subtitle,
+      signature: jsonEncode(<String, Object?>{
+        'audio': <String>[
+          for (final String a in audio) bookSourceRelPath(root.path, a),
+        ],
+        if (subtitle != null) 'sub': bookSourceRelPath(root.path, subtitle),
+        if (subtitle != null)
+          'subFp': localSourceContentFingerprint(subtitle) ?? '',
+      }),
+    );
+  }
+
+  /// 引擎挑出的音频（绝对路径，播放顺序）。
+  final List<String> audioPaths;
+
+  /// 引擎挑出的字幕；目录里没有可用字幕时为 null。
+  final String? subtitlePath;
+
+  /// 存进来源索引的签名（[BookSourceIndex.putSignature]）。
+  final String signature;
+
+  /// 两份签名里的字幕（路径 + stat）是否相同；读不懂的签名按「变了」处理。
+  static bool sameSubtitle(String a, String b) {
+    try {
+      final Object? ja = jsonDecode(a);
+      final Object? jb = jsonDecode(b);
+      if (ja is! Map<String, dynamic> || jb is! Map<String, dynamic>) {
+        return false;
+      }
+      return ja['sub'] == jb['sub'] && ja['subFp'] == jb['subFp'];
+    } on FormatException {
+      return false;
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/source_library/book_library_prune.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
@@ -206,5 +207,221 @@ void main() {
     expect(await db.getSrtBookByUid(dropSrt.uid), isNull);
     expect(Directory(persistRoot).listSync(), hasLength(persistDirsBefore - 1));
     expect(File(p.join(root.path, 'Keep', '01.mp3')).existsSync(), isTrue);
+  });
+
+  // ── 已导入目录的就地更新（补章节 / 换字幕 / 删分段 / 不变时零写入）──────────
+
+  const String srtV2 =
+      '1\n00:00:00,000 --> 00:00:02,000\n吾輩は猫である。\n\n'
+      '2\n00:00:02,000 --> 00:00:04,000\n名前はまだ無い。\n\n'
+      '3\n00:00:04,000 --> 00:00:06,000\nどこで生れたかとんと見当がつかぬ。\n';
+
+  Future<SrtBook> standalone(String title) async {
+    final SrtBookRow row = (await db.getAllSrtBooks()).singleWhere(
+      (SrtBookRow r) => r.title == title,
+    );
+    return (await SrtBookRepository(db).findByUid(row.uid))!;
+  }
+
+  Future<List<String>> persistedSubtitles(String key) async {
+    final Directory dir = await AudiobookStorage.ensurePersistDir(key);
+    return <String>[
+      for (final FileSystemEntity e in dir.listSync())
+        if (e is File && e.path.endsWith('.srt')) p.basename(e.path),
+    ];
+  }
+
+  test('独立字幕书目录补分段 → 重扫按自然序就地加进清单，进度与身份不变；删断点之后的分段'
+      '跟着删、进度保留，删掉断点所在的分段进度归零', () async {
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, 'Part 1.mp3'));
+    _write(p.join(book, 'Part 10.mp3'));
+    _writeText(p.join(book, 'neko.srt'), _kSrt);
+    expect((await scan()).audiobooksAdded, 1);
+    final SrtBook before = await standalone('Neko');
+    final AudiobookRepository positions = AudiobookRepository(db);
+    await positions.updatePositionMs(bookKey: before.uid, positionMs: 1500);
+
+    _write(p.join(book, 'Part 2.mp3'));
+    final ScanSummary added = await scan();
+
+    expect(added.errors, isEmpty);
+    expect(added.audiobooksUpdated, 1);
+    expect(added.audiobooksAdded, 0);
+    expect(added.audiobooksNeedSubtitle, 0, reason: '已导入的书补进没字幕的分段不算「缺字幕」');
+    SrtBook after = await standalone('Neko');
+    expect(after.uid, before.uid, reason: '就地更新，不是删了重导');
+    expect(after.importedAt, before.importedAt);
+    expect(after.audioPaths, <String>[
+      p.join(book, 'Part 1.mp3'),
+      p.join(book, 'Part 2.mp3'),
+      p.join(book, 'Part 10.mp3'),
+    ]);
+    expect(await db.getAllEpubBooks(), hasLength(1));
+    expect(await positions.readPositionMs(before.uid), 1500);
+
+    File(p.join(book, 'Part 10.mp3')).deleteSync();
+    expect((await scan()).audiobooksUpdated, 1);
+    after = await standalone('Neko');
+    expect(after.audioPaths, <String>[
+      p.join(book, 'Part 1.mp3'),
+      p.join(book, 'Part 2.mp3'),
+    ]);
+    expect(await positions.readPositionMs(before.uid), 1500);
+
+    File(p.join(book, 'Part 1.mp3')).deleteSync();
+    expect((await scan()).audiobooksUpdated, 1);
+    expect((await standalone('Neko')).audioPaths, <String>[
+      p.join(book, 'Part 2.mp3'),
+    ]);
+    expect(
+      await positions.readPositionMs(before.uid),
+      0,
+      reason: '断点所在的文件没了，同一个毫秒数指向别的声音（BUG-1679）',
+    );
+  });
+
+  test('独立字幕书目录换字幕 → 重扫换 cue、重建正文，持久目录只留新副本', () async {
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, '01.mp3'));
+    _writeText(p.join(book, 'neko.srt'), _kSrt);
+    await scan();
+    final SrtBook before = await standalone('Neko');
+    expect(await SrtBookRepository(db).cuesFor(before.uid), hasLength(2));
+
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.audiobooksUpdated, 1);
+    final List<AudioCue> cues = await SrtBookRepository(db).cuesFor(before.uid);
+    expect(cues.map((AudioCue c) => c.text), contains('どこで生れたかとんと見当がつかぬ。'));
+    expect(await persistedSubtitles(before.uid), hasLength(1));
+    expect((await standalone('Neko')).audioPaths, <String>[
+      p.join(book, '01.mp3'),
+    ]);
+    // 阅读器按文本相等把 cue 配回正文：正文必须按新 cue 重建。
+    final EpubBookRow body = (await db.getEpubBook(before.bookKey))!;
+    final String bodyText = <String>[
+      for (final FileSystemEntity e in Directory(
+        body.extractDir,
+      ).listSync(recursive: true))
+        if (e is File && e.path.endsWith('html')) e.readAsStringSync(),
+    ].join();
+    expect(bodyText, contains('どこで生れたかとんと見当がつかぬ。'));
+  });
+
+  test('EPUB 有声书目录补分段、再换字幕 → 有声书行与配对字幕书一起更新，旧字幕副本回收', () async {
+    final File txt = File(p.join(tmp.path, 'neko.txt'))
+      ..writeAsStringSync('吾輩は猫である。\n\n名前はまだ無い。\n\nどこで生れたかとんと見当がつかぬ。\n');
+    final Uint8List epub = await TextToEpub.convert(file: txt, title: 'Neko');
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, 'Neko.epub'), epub);
+    _writeText(p.join(book, 'neko.srt'), _kSrt);
+    _write(p.join(book, '01.mp3'));
+    expect((await scan()).audiobooksAdded, 1);
+    final String bookKey = (await db.getAllAudiobooks()).single.bookKey;
+
+    _write(p.join(book, '02.mp3'));
+    final ScanSummary added = await scan();
+    expect(added.errors, isEmpty);
+    expect(added.audiobooksUpdated, 1);
+    final List<String> both = <String>[
+      p.join(book, '01.mp3'),
+      p.join(book, '02.mp3'),
+    ];
+    expect(
+      (await AudiobookRepository(db).findByBookKey(bookKey))!.audioPaths,
+      both,
+    );
+    expect(
+      (await SrtBookRepository(db).findByBookKey(bookKey))!.audioPaths,
+      both,
+    );
+    expect(await AudiobookRepository(db).cuesForBook(bookKey), hasLength(2));
+
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+    final ScanSummary replaced = await scan();
+    expect(replaced.errors, isEmpty);
+    expect(replaced.audiobooksUpdated, 1);
+    expect(await AudiobookRepository(db).cuesForBook(bookKey), hasLength(3));
+    expect(
+      (await AudiobookRepository(db).findByBookKey(bookKey))!.audioPaths,
+      both,
+    );
+    expect(
+      await persistedSubtitles(bookKey),
+      hasLength(1),
+      reason: '换下的字幕副本不能越堆越多',
+    );
+    expect(await db.getAllEpubBooks(), hasLength(1));
+  });
+
+  test('目录没变：重扫不写库；旧版索引（没有签名）第一次重扫按字节比字幕、补记签名', () async {
+    final String book = p.join(root.path, 'Neko');
+    _write(p.join(book, '01.mp3'));
+    _writeText(p.join(book, 'neko.srt'), _kSrt);
+    await scan();
+    final SrtBook before = await standalone('Neko');
+    final int sourceId = (await LibraryScanner.findLocalSourceByMediaKind(
+      db,
+      root.path,
+      kAudiobookSourceMediaKind,
+    ))!.id;
+    const String rel = 'Neko';
+    expect(
+      (await BookSourceIndex.load(db, sourceId)).signatureOf(rel),
+      isNotNull,
+    );
+
+    final ScanSummary same = await scan();
+    expect(same.audiobooksUpdated, 0);
+    expect(same.audiobooksSkipped, 1);
+    expect((await standalone('Neko')).importedAt, before.importedAt);
+
+    // 模拟升级前导入的书：索引里只有认领、没有签名。
+    final String uid = (await BookSourceIndex.load(db, sourceId)).uidOf(rel)!;
+    Future<void> resetToLegacyIndex() async {
+      await BookSourceIndex.clear(db, sourceId);
+      await (BookSourceIndex.empty(sourceId)..put(rel, uid)).save(db);
+    }
+
+    await resetToLegacyIndex();
+    final ScanSummary firstAfterUpgrade = await scan();
+    expect(firstAfterUpgrade.audiobooksUpdated, 0, reason: '字幕与导入时的副本逐字节相同');
+    expect(firstAfterUpgrade.audiobooksSkipped, 1);
+    expect(
+      (await BookSourceIndex.load(db, sourceId)).signatureOf(rel),
+      isNotNull,
+    );
+
+    await resetToLegacyIndex();
+    _writeText(p.join(book, 'neko.srt'), srtV2);
+    expect((await scan()).audiobooksUpdated, 1);
+    expect(await SrtBookRepository(db).cuesFor(before.uid), hasLength(3));
+  });
+
+  test('只有音频的目录后来放进字幕 → 下次扫描照常导入', () async {
+    final String book = p.join(root.path, 'Later');
+    _write(p.join(book, '01.mp3'));
+    final ScanSummary first = await scan();
+    expect(first.audiobooksNeedSubtitle, 1);
+    expect(await db.getAllSrtBooks(), isEmpty);
+
+    _writeText(p.join(book, 'later.srt'), _kSrt);
+    final ScanSummary second = await scan();
+    expect(second.audiobooksAdded, 1);
+    expect(second.audiobooksNeedSubtitle, 0);
+  });
+
+  test('字幕解析不出 cue：记成错误、不落库，重扫不会一次次堆出空字幕书', () async {
+    _write(p.join(root.path, 'Empty', '01.mp3'));
+    _writeText(p.join(root.path, 'Empty', 'empty.srt'), 'not a subtitle\n');
+
+    final ScanSummary first = await scan();
+    expect(first.errors, hasLength(1));
+    expect(first.audiobooksAdded, 0);
+    await scan();
+    expect(await db.getAllSrtBooks(), isEmpty);
   });
 }

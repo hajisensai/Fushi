@@ -391,6 +391,31 @@ void main() {
       expect(loaded.rejected.keys, <String>['dict.zip']);
     });
 
+    test('内容签名表：随索引落库读回；条目被移除 / 书不在库时一并作废', () async {
+      final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+        ..put('BookA', 'uid-a')
+        ..putSignature('BookA', 'sig-a')
+        ..put('BookB', 'uid-b')
+        ..putSignature('BookB', 'sig-b');
+      await index.save(db);
+
+      final BookSourceIndex loaded = await BookSourceIndex.load(db, sourceId);
+      expect(loaded.signatureOf('BookA'), 'sig-a');
+      expect(loaded.signatureOf('BookB'), 'sig-b');
+
+      loaded.remove('BookA');
+      expect(loaded.signatureOf('BookA'), isNull);
+      loaded.retainUids(<String>{});
+      expect(loaded.signatureOf('BookB'), isNull, reason: '书没了签名也作废');
+
+      await indexOf(<String, String>{'c': 'uid-c'});
+      expect(
+        (await BookSourceIndex.load(db, sourceId)).signatureOf('c'),
+        isNull,
+        reason: '旧版没有签名表的索引读出来为空',
+      );
+    });
+
     test('指纹：ETag 优先；大小 / 时刻能拿几样拼几样；一样都没有为 null', () {
       expect(sourceContentFingerprint(etag: '"x"', sizeBytes: 1), 'e:"x"');
       expect(sourceContentFingerprint(sizeBytes: 3, modifiedAt: 4), 's:3|m:4');

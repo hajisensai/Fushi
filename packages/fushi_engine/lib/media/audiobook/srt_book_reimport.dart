@@ -1,15 +1,16 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
-    show parseCuesForFormat, throwIfAlignmentCancelled;
+    show
+        deletePersistedSubtitleCopy,
+        parseCuesForFormat,
+        throwIfAlignmentCancelled;
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 字幕书重新导入的进度回调（与 [AudiobookAlignmentProgress] 同形）。
 typedef SrtBookReimportProgress =
@@ -110,6 +111,12 @@ class SrtBookReimportOutcome {
 /// [subtitleOrigin]：换字幕后记到远端绑定上的字幕来源（只对绑在服务器上的书有效）。
 /// null = 用户选的本机文件（`local`）；从服务器条目取的传
 /// `RemoteAudioBinding.subtitleOriginServer(ino)`。
+///
+/// [copyAudio]：false = 引用导入（音频留在原处、库里记原始绝对路径），服务端有声书
+/// 库根重扫补音频用它；缺省 true（本机导入一律复制进持久目录）。
+///
+/// 本函数原在 app（`fushi/lib/src/media/import/`），为让无头服务端的库根重扫走同一条
+/// 写入路径而搬进引擎；app 的重新导入对话框与 ctl 路由直接调这里。
 Future<SrtBookReimportOutcome> reimportSrtBook({
   required FushiDatabase db,
   required SrtBookRepository repo,
@@ -117,6 +124,7 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
   List<String>? audioPaths,
   String? subtitlePath,
   String? subtitleOrigin,
+  bool copyAudio = true,
   SrtBookReimportProgress? onProgress,
   SrtBookReimportMessages messages = const SrtBookReimportMessages(),
   bool Function()? isCancelled,
@@ -191,7 +199,12 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     // 用户以为已经被替换掉的名字。
     report(0.6, messages.persisting);
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-    await _deleteOldSubtitle(persistDir: persistDir, oldPath: book.srtPath);
+    // keepPath：新字幕就是持久目录里那份旧副本（重新喂回自己）时不能先删掉源。
+    await deletePersistedSubtitleCopy(
+      persistDir: persistDir,
+      oldPath: book.srtPath,
+      keepPath: subtitlePath,
+    );
     final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
       File(subtitlePath),
       persistDir,
@@ -222,6 +235,7 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     await repo.replaceAudio(
       uid: uid,
       pickedPaths: audioPaths,
+      copy: copyAudio,
       onProgress: (int copied, int total) => report(0.85, messages.persisting),
     );
   }
@@ -253,22 +267,3 @@ Future<bool> _rebuildGeneratedBody({
   author: book.author,
   cues: cues,
 );
-
-/// 删掉持久目录里的旧字幕文件。只删**落在持久目录内**的（引用导入模式下
-/// `srtPath` 可能是用户原始文件，绝不能删用户的东西）。
-Future<void> _deleteOldSubtitle({
-  required Directory persistDir,
-  required String oldPath,
-}) async {
-  if (oldPath.isEmpty) return;
-  try {
-    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(oldPath))) {
-      return;
-    }
-    final File old = File(oldPath);
-    if (old.existsSync()) old.deleteSync();
-  } catch (e, stack) {
-    // 删不掉只是留了个孤儿文件，不该让重新导入失败。
-    ErrorLogService.instance.log('SrtBookReimport.deleteOldSrt', e, stack);
-  }
-}

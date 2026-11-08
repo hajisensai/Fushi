@@ -119,7 +119,9 @@ class AudiobookRepository {
   ///     钉在 EOF，按播放立刻结束 —— 用户看到的是「音频不响」；
   ///   * 落在时长内 → 起播点随机，followAudio 立刻把阅读器拽到那条 cue 所在的页
   ///     —— 用户看到的是「乱跳页」。
-  /// 判据是数据本身（新旧集合不等），所以重复导入同一组音频不会误伤「听到哪儿了」。
+  /// 判据是数据本身：重复导入同一组音频不会误伤「听到哪儿了」；集合变了但断点所在
+  /// 文件及其之前的文件都没变（追加章节、断点之后增删分段）也不归零——同一个毫秒数
+  /// 仍指向同一段声音（[audiobookPositionSurvivesAudioChange]）。
   /// 旧行不存在时也归零：bookKey 是 sanitize 后的书名，删书重导会拿到同一个 key，
   /// 而 preferences 不随书删除，上一世的进度会原样复活。
   Future<void> replaceAudio({
@@ -132,6 +134,21 @@ class AudiobookRepository {
         before == null ||
         before.audioRoot != null ||
         !AudiobookStorage.sameAudioPathList(_audioPathsOf(before), audioPaths);
+    // 只有断点所在文件及其之前的文件变了才归零（追加章节 / 断点之后的分段增删不丢
+    // 进度，判据见 [audiobookPositionSurvivesAudioChange]）。旧行不存在 / 目录模式
+    // 照旧归零：前者是上一世的残留进度，后者的文件列表没法逐个比。
+    final bool resetPosition =
+        audioChanged &&
+        (before == null ||
+            before.audioRoot != null ||
+            !audiobookPositionSurvivesAudioChange(
+              globalMs: await readPositionMs(bookKey),
+              durationsMs: audiobookFileDurationsFromCues(
+                await cuesForBook(bookKey),
+              ),
+              oldPaths: _audioPathsOf(before),
+              newPaths: audioPaths,
+            ));
 
     await _db.patchAudiobook(
       bookKey,
@@ -140,12 +157,13 @@ class AudiobookRepository {
         audioRoot: const Value<String?>(null),
       ),
     );
-    if (audioChanged) {
+    if (resetPosition) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
     fushiDebugPrint(
       '[fushi-audiobook] replaceAudio bookKey=$bookKey '
-      'files=${audioPaths.length} audioChanged=$audioChanged',
+      'files=${audioPaths.length} audioChanged=$audioChanged '
+      'resetPosition=$resetPosition',
     );
   }
 

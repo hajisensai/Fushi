@@ -59,12 +59,26 @@ String bookSourceAbsPath(String rootPath, String rel) =>
 /// 「不是这一类媒体」的源（漫画来源里的词典 `.zip`、文字 `.epub`）→ 当时的内容指纹。
 /// 指纹没变就不再开包 / 下载重判，变了（文件被换掉）才重判。同一个偏好键、同一份
 /// JSON，不升 schema。
+///
+/// 第三张**内容签名表**（[signatureOf] / [putSignature]）：已认领的源 → 入库时那组
+/// 文件的廉价签名（调用方定义，如有声书目录的音频清单 + 字幕「字节数 + 修改时刻」）。
+/// 重扫时签名没变就什么都不做，变了才去比库里的行、就地更新（有声书目录补章节 /
+/// 换字幕）。旧版索引没有这张表，读出来为空；只给有这种需求的来源用。
 class BookSourceIndex {
-  BookSourceIndex._(this.sourceId, this._uidByRel, this._rejectedByRel);
+  BookSourceIndex._(
+    this.sourceId,
+    this._uidByRel,
+    this._rejectedByRel,
+    this._signatureByRel,
+  );
 
   /// 空索引（测试 / 来源还没扫过）。
-  factory BookSourceIndex.empty(int sourceId) =>
-      BookSourceIndex._(sourceId, <String, String>{}, <String, String>{});
+  factory BookSourceIndex.empty(int sourceId) => BookSourceIndex._(
+    sourceId,
+    <String, String>{},
+    <String, String>{},
+    <String, String>{},
+  );
 
   final int sourceId;
   final Map<String, String> _uidByRel;
@@ -72,12 +86,16 @@ class BookSourceIndex {
   /// 源相对路径 → 判定「不是本类媒体」时的内容指纹（见 [sourceContentFingerprint]）。
   final Map<String, String> _rejectedByRel;
 
+  /// 源相对路径 → 上次入库 / 就地更新时的内容签名（见类注释）。
+  final Map<String, String> _signatureByRel;
+
   /// 读来源 [sourceId] 的索引；没有或损坏时返回空索引（损坏 = 当作没认领过，
   /// 只会少删、不会误删）。
   static Future<BookSourceIndex> load(FushiDatabase db, int sourceId) async {
     final String? raw = await db.getPref(bookSourceScanIndexPrefKey(sourceId));
     final Map<String, String> entries = <String, String>{};
     final Map<String, String> rejected = <String, String>{};
+    final Map<String, String> signatures = <String, String>{};
     void readMap(Object? map, Map<String, String> into) {
       if (map is! Map<String, dynamic>) return;
       map.forEach((String rel, Object? value) {
@@ -92,12 +110,13 @@ class BookSourceIndex {
           readMap(decoded['entries'], entries);
           // 旧版（只有 entries）读出来就是空负向表：最多多判一次，不会误跳。
           readMap(decoded['rejected'], rejected);
+          readMap(decoded['signatures'], signatures);
         }
       } on FormatException {
         // 损坏的索引按空处理。
       }
     }
-    return BookSourceIndex._(sourceId, entries, rejected);
+    return BookSourceIndex._(sourceId, entries, rejected, signatures);
   }
 
   /// 落库（认领与负向表都空时直接删键）。
@@ -114,6 +133,7 @@ class BookSourceIndex {
           'v': 1,
           'entries': _uidByRel,
           if (_rejectedByRel.isNotEmpty) 'rejected': _rejectedByRel,
+          if (_signatureByRel.isNotEmpty) 'signatures': _signatureByRel,
         }),
       ),
     );
@@ -135,7 +155,17 @@ class BookSourceIndex {
 
   void put(String rel, String uid) => _uidByRel[rel] = uid;
 
-  void remove(String rel) => _uidByRel.remove(rel);
+  void remove(String rel) {
+    _uidByRel.remove(rel);
+    _signatureByRel.remove(rel);
+  }
+
+  /// [rel] 上次记下的内容签名；没记过（旧索引 / 不用签名的来源）为 null。
+  String? signatureOf(String rel) => _signatureByRel[rel];
+
+  /// 记下 [rel] 当前的内容签名。
+  void putSignature(String rel, String signature) =>
+      _signatureByRel[rel] = signature;
 
   /// 源 [uid] 被哪些相对路径认领。
   List<String> relsOf(String uid) => <String>[
@@ -147,6 +177,10 @@ class BookSourceIndex {
   int retainUids(Set<String> liveUids) {
     final int before = _uidByRel.length;
     _uidByRel.removeWhere((String _, String uid) => !liveUids.contains(uid));
+    // 签名只对还认领着的源有意义：书没了，签名随条目一起作废（重新导入后重记）。
+    _signatureByRel.removeWhere(
+      (String rel, String _) => !_uidByRel.containsKey(rel),
+    );
     return before - _uidByRel.length;
   }
 

@@ -614,6 +614,9 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   throwIfAlignmentCancelled(isCancelled);
   step(AudiobookAlignmentStep.persisting, detail: p.basename(subtitlePath));
   report(0.8, messages.persisting);
+  // 换字幕时旧的持久副本：落库后回收（见函数尾）。
+  final String previousSrt =
+      (await audiobookRepo.findByBookKey(bookKey))?.alignmentPath ?? '';
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
   final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
     File(subtitlePath),
@@ -660,6 +663,14 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   );
   await audiobookRepo.saveCues(bookKey: bookKey, cues: cues);
   await audiobookRepo.updateHealthOverlay(bookKey: bookKey, health: health);
+  // 换了字幕：旧的持久副本已没有行指着它，删掉。不删的话 `persistFileWithProgress`
+  // 撞同名退让成 `<stem> _1.<ext>`，每换一次持久目录里就多一份。排在写库之后：
+  // 新副本落库前旧的仍是库里唯一指着的那份。只删持久目录里的（引用的原件不碰）。
+  await deletePersistedSubtitleCopy(
+    persistDir: persistDir,
+    oldPath: previousSrt,
+    keepPath: persistedSrt,
+  );
   step(AudiobookAlignmentStep.done);
   report(1, messages.done);
 
@@ -669,4 +680,55 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     persistedAudioPaths: persistedAudioPaths,
     coverage: coverage,
   );
+}
+
+/// 删掉持久目录 [persistDir] 里被换下的字幕副本 [oldPath]（与 [keepPath] 相同、为空、
+/// 或不在持久目录内时什么都不做——引用导入下字幕路径可能是用户原件，绝不能删）。
+/// 删不掉只记日志：留一个孤儿文件不该让已经落库的换字幕失败。
+Future<void> deletePersistedSubtitleCopy({
+  required Directory persistDir,
+  required String oldPath,
+  required String keepPath,
+}) async {
+  if (oldPath.isEmpty || p.equals(oldPath, keepPath)) return;
+  try {
+    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(oldPath))) {
+      return;
+    }
+    final File old = File(oldPath);
+    if (old.existsSync()) await old.delete();
+  } catch (e, stack) {
+    engineLog.log('AudiobookAlignmentService.deleteOldSubtitle', e, stack);
+  }
+}
+
+/// EPUB 有声书（有 `audiobooks` 行）**只换音频**：持久目录同步成 [audioPaths]
+/// （[copyAudio] 为 false 时引用原路径，不复制），写 `audiobooks` 的音频两列，并把
+/// 配对 SrtBook（[epubBackedSrtBookUid]）的音频一起换掉——互联导出打包两行的音频都
+/// 读（`exportAudioDatabasePackage`），只换一行就会把旧音频继续发给对端。
+///
+/// 不碰 cue、字幕与 `importedAt`：音频变了 cue 不变（单时间轴字幕的 cue 不随文件
+/// 列表变），也不该让这本书在对端书架上「变成刚导入的」。播放进度按
+/// [AudiobookRepository.replaceAudio] 的判据保留或归零。返回落地后的音频路径。
+Future<List<String>> replaceAudiobookAudio({
+  required FushiDatabase db,
+  required String bookKey,
+  required List<String> audioPaths,
+  bool copyAudio = true,
+  void Function(int copiedBytes, int totalBytes)? onProgress,
+}) async {
+  final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
+  final List<String> persisted = await AudiobookStorage.syncAudioFiles(
+    persistDir,
+    audioPaths,
+    copy: copyAudio,
+    onProgress: onProgress,
+  );
+  await AudiobookRepository(
+    db,
+  ).replaceAudio(bookKey: bookKey, audioPaths: persisted);
+  await SrtBookRepository(
+    db,
+  ).patchByUid(epubBackedSrtBookUid(bookKey), audioPaths: persisted);
+  return persisted;
 }

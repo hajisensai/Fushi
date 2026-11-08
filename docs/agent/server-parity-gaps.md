@@ -124,10 +124,13 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   `audiobook align --srt …` or drop the `.srt` next to the audio and rescan.
 - **Audiobook roots (limits of the first version)**: audio is imported by reference
   (`copyAudio: false`). It stays in the root and is never copied into the data dir. A book
-  is tracked by its folder (or by a loose audio file in the root). Files added to an
-  already-imported folder are not picked up again. Remove the book, or purge the root, to
-  re-import it. When a book title already exists in the library, the folder is skipped
-  and not adopted. Root folders are recorded in `media_sources` with
-  `mediaKind = 'audiobook'`. This value is server-only: it is not in the shared
-  `SourceLibraryKind` enum, because adding it would touch every exhaustive switch in the
-  app.
+  is tracked by its folder (or by a loose audio file in the root). When a book title
+  already exists in the library, the folder is skipped and not adopted. Two things a
+  rescan still does not do for an already-imported folder: it does not convert a book
+  to another form (an EPUB added later to a subtitle-only folder is ignored; re-import
+  the book for that), and it does not re-split a single-timeline subtitle across several
+  audio files by their real durations (all cues stay on file 0, as on first import;
+  the app's import dialog probes durations, the server path does not). Root folders are
+  recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
+  it is not in the shared `SourceLibraryKind` enum, because adding it would touch every
+  exhaustive switch in the app.

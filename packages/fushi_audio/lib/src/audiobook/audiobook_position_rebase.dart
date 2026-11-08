@@ -74,3 +74,37 @@ int rebaseAudiobookGlobalPositionMs(
   }
   return base + remaining;
 }
+
+/// 音频列表从 [oldPaths] 换成 [newPaths] 之后，存着的全书毫秒 [globalMs] 是否还指向
+/// **同一段声音**（BUG-1679 的精确判据）。
+///
+/// 全书毫秒按 [durationsMs]（[audiobookPositionDurationsMs]，与 cue 绑定、与音频列表
+/// 无关）拆成（文件下标, 文件内偏移），拆分口径与 [rebaseAudiobookGlobalPositionMs]
+/// 相同。换音频不换 cue 时编码不变，所以只要**这个文件以及它之前的每个文件**在新
+/// 列表里同一下标上还是同一个文件，同一个数字就仍落在同一处——章节追加在后面、
+/// 断点之后插入 / 删掉的分段都不该把「听到哪儿了」清零。前面任何一个文件变了
+/// （换了一套音频、断点之前插进 / 删掉一段），同一个数字就指向别的声音，必须归零。
+///
+/// [globalMs] ≤ 0（没听过）恒为 true：没有可丢的进度。
+bool audiobookPositionSurvivesAudioChange({
+  required int globalMs,
+  required List<int> durationsMs,
+  required List<String> oldPaths,
+  required List<String> newPaths,
+}) {
+  if (globalMs <= 0) return true;
+  int remaining = globalMs;
+  int fileIndex = 0;
+  for (; fileIndex < durationsMs.length - 1; fileIndex++) {
+    final int d = durationsMs[fileIndex];
+    if (remaining < d) break;
+    remaining -= d;
+  }
+  if (fileIndex >= oldPaths.length || fileIndex >= newPaths.length) {
+    return false;
+  }
+  for (int i = 0; i <= fileIndex; i++) {
+    if (oldPaths[i] != newPaths[i]) return false;
+  }
+  return true;
+}
