@@ -13,6 +13,10 @@ import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show remoteAudiobookRevisionKeyForBook;
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
+    show recordRemoteAudiobookPackageDownload;
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
@@ -1209,6 +1213,12 @@ Future<void> _downloadLiveAudiobookFor(
       packageFile: audioTmp,
       audioDatabaseRoot: audioRoot,
       bookKeyOverride: localBookKey,
+    );
+    await recordRemoteAudiobookPackageDownload(
+      db: db,
+      client: backend,
+      key: remoteAudiobookRevisionKeyForBook(localBookKey),
+      package: audioTmp,
     );
   } finally {
     try {

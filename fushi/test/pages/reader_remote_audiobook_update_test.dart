@@ -16,18 +16,21 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/audiobook_content_revision.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
 
-/// 互联有声书「对端有更新」：本机下载时记下 host 清单的 `contentRevision`，之后清单里
-/// 的值变了（host 上换过音频 / 字幕）→ 书卡副行提示「对端有更新」，菜单里「重新下载」
-/// 改叫「下载更新」排第一；点它整本重新拉取（`fresh`），落地后记下新版本、提示消失。
+/// 互联有声书「对端有更新」：本机整包下载时记下**包 manifest** 里的
+/// `contentRevision`，之后 host 清单里的值不同（host 上换过音频 / 字幕）→ 书卡副行
+/// 提示「对端有更新」，菜单里「重新下载」改叫「下载更新」排第一；点它整本重新拉取
+/// （`fresh`），落地后记下新版本、提示消失。只更新字幕不动记录，提示留着。
 const String _uid = 'srt-solo';
 
 void main() {
@@ -58,6 +61,8 @@ void main() {
   late PreferencesRepository prefs;
   late ProviderContainer container;
   late SrtBook localBook;
+  // host 那本此刻的真实内容版本（包 manifest 里会写的值）。
+  late String hostRevision;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
@@ -112,6 +117,10 @@ void main() {
         importedAt: 1,
       ),
     );
+    hostRevision = (await audiobookContentState(
+      audiobook: null,
+      srtBook: (await hostDb.getSrtBookByUid(_uid))!,
+    )).revision;
     await hostDb.replaceCuesForBook(_uid, <AudioCuesCompanion>[
       for (final (int i, String text) in <(int, String)>[
         (0, '一行目。'),
@@ -168,7 +177,7 @@ void main() {
       );
 
   Future<void> seedRecord(String revision) =>
-      prefs.setInterconnectAudiobookRevision(
+      RemoteAudiobookRevisionStore(db).put(
         remoteAudiobookRevisionKeyForSrt(_uid),
         // 测试 client 没有配对地址：对端身份为空串。
         RemoteAudiobookRevisionRecord(
@@ -180,6 +189,38 @@ void main() {
   final Finder updateMeta = find.byKey(
     const ValueKey<String>('shelf_meta_audiobook_update'),
   );
+
+  Future<String?> storedRevision(WidgetTester tester) async =>
+      (await tester.runAsync(
+        () => RemoteAudiobookRevisionStore(db).load(),
+      ))![remoteAudiobookRevisionKeyForSrt(_uid)]?.revision;
+
+  /// 长按书卡 → 点菜单项 [label] → 等下载任务结束。
+  Future<void> runMenuDownload(WidgetTester tester, String label) async {
+    await tester.longPress(
+      find.byKey(const ValueKey<String>('srt_entry_$_uid')),
+    );
+    await tester.pumpAndSettle();
+    final InterconnectDownloadManager manager = container.read(
+      interconnectDownloadManagerProvider,
+    );
+    final String taskId = InterconnectDownloadManager.srtAudiobookTaskId(_uid);
+    await tester.runAsync(() async {
+      await tester.tap(find.text(label));
+      for (int i = 0; i < 200; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final InterconnectDownloadStatus? status = manager
+            .taskFor(taskId)
+            ?.status;
+        if (status == InterconnectDownloadStatus.completed ||
+            status == InterconnectDownloadStatus.failed) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(manager.taskFor(taskId)?.error, isNull);
+  }
 
   testWidgets('host 版本与下载时相同：不提示更新', (WidgetTester tester) async {
     await seedRecord('r1-same');
@@ -199,7 +240,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await seedRecord('r1-old');
-    final _FakeHost client = _FakeHost(hostDb, revision: 'r1-new');
+    final _FakeHost client = _FakeHost(hostDb, revision: hostRevision);
 
     await tester.pumpWidget(host(buildPage(client)));
     await tester.pumpAndSettle();
@@ -248,14 +289,7 @@ void main() {
       '一行目。',
       '二行目。',
     ], reason: '本机拿到 host 的新字幕');
-    expect(
-      prefs
-          .interconnectAudiobookRevisions[remoteAudiobookRevisionKeyForSrt(
-            _uid,
-          )]
-          ?.revision,
-      'r1-new',
-    );
+    expect(await storedRevision(tester), hostRevision);
     // 落地后书架重算远端状态（真 IO：读库 / 偏好），在 runAsync 里让它跑完再看。
     for (int i = 0; i < 50 && updateMeta.evaluate().isNotEmpty; i++) {
       await tester.runAsync(
@@ -264,6 +298,72 @@ void main() {
       await tester.pump();
     }
     expect(updateMeta, findsNothing, reason: '落地后提示消失');
+  });
+
+  testWidgets('只更新字幕：不动下载记录，「对端有更新」留着直到整包下载', (WidgetTester tester) async {
+    await seedRecord('r1-old');
+    final _FakeHost client = _FakeHost(hostDb, revision: hostRevision);
+
+    await tester.pumpWidget(host(buildPage(client)));
+    await tester.pumpAndSettle();
+    expect(updateMeta, findsOneWidget);
+
+    await runMenuDownload(tester, t.remote_book_subtitles_refresh);
+
+    expect(client.subtitleFetches, 1);
+    expect(client.fetches, isEmpty, reason: '只拉了字幕侧包');
+    final List<AudioCueRow> cues =
+        await tester.runAsync(() => db.getCuesForBook(_uid))
+            as List<AudioCueRow>;
+    expect(cues.map((AudioCueRow r) => r.cueText), <String>[
+      '一行目。',
+      '二行目。',
+    ], reason: '字幕确实换成了 host 的新版');
+    expect(
+      await storedRevision(tester),
+      'r1-old',
+      reason: '字幕刷新没换音频：记 host 当前版本会把 host 换音频藏起来',
+    );
+    for (int i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(updateMeta, findsOneWidget, reason: '提示留着，直到整包下载更新');
+  });
+
+  testWidgets('记下的版本取自下载的包，不取（可能过期的）清单缓存', (WidgetTester tester) async {
+    await seedRecord('r1-old');
+    // 清单还是旧缓存（报的值既不是旧记录也不是包的真实版本）。
+    final _FakeHost client = _FakeHost(hostDb, revision: 'r1-stale-list');
+
+    await tester.pumpWidget(host(buildPage(client)));
+    await tester.pumpAndSettle();
+    await runMenuDownload(tester, t.remote_book_audiobook_update_download);
+
+    expect(client.fetches, <bool>[true]);
+    expect(await storedRevision(tester), hostRevision);
+    expect(hostRevision, isNot('r1-stale-list'));
+  });
+
+  test('并发记两本（书架下载与同步 sweep 同时）：两条都在，不互相覆盖', () async {
+    final FushiDatabase store = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
+    addTearDown(store.close);
+    const RemoteAudiobookRevisionRecord rec = RemoteAudiobookRevisionRecord(
+      sourceId: 'interconnect|',
+      revision: 'r1-a',
+    );
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < 8; i++)
+        RemoteAudiobookRevisionStore(store).put('book:k$i', rec),
+    ]);
+    expect(
+      (await RemoteAudiobookRevisionStore(store).load()).keys.toSet(),
+      <String>{for (int i = 0; i < 8; i++) 'book:k$i'},
+    );
   });
 
   test('判据：没记过 / 换了对端 / 旧 host 不报版本都不提示', () {
@@ -339,6 +439,7 @@ class _FakeHost extends InterconnectSyncBackend {
   final FushiDatabase hostDb;
   String revision;
   final List<bool> fetches = <bool>[];
+  int subtitleFetches = 0;
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async =>
@@ -367,6 +468,19 @@ class _FakeHost extends InterconnectSyncBackend {
     await SyncAssetPackageService(
       db: hostDb,
     ).exportAudioDatabasePackage(srtBookUid: bookKey, outputFile: dest);
+  }
+
+  @override
+  Future<void> getRemoteAudiobookSubtitles(
+    String identity,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) async {
+    subtitleFetches++;
+    dest.parent.createSync(recursive: true);
+    await SyncAssetPackageService(
+      db: hostDb,
+    ).exportAudioSubtitlePackage(srtBookUid: identity, outputFile: dest);
   }
 }
 

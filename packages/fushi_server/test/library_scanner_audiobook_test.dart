@@ -558,6 +558,15 @@ void main() {
         rev,
         reason: '包端点给导出缓存定版本用的值必须与清单同源',
       );
+      // 下载端从包 manifest 读版本记下来（不信可能过期的清单缓存）：包里的值必须
+      // 与此刻清单里的值相同。
+      final File package = await host.exportAudiobook(list.single.identity);
+      addTearDown(() => package.parent.deleteSync(recursive: true));
+      expect(
+        await SyncAssetPackageService.readAudioPackageContentRevision(package),
+        rev,
+        reason: '包 manifest 的 contentRevision 必须与清单同源',
+      );
       return rev;
     }
 

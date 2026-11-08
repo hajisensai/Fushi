@@ -327,6 +327,14 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
           audioDatabaseRoot: _audioDatabaseRoot,
           bookKeyOverride: key,
         );
+        // 与书架手动下载同一个记录入口：记下这份包是 host 哪一版，之后 host 换了
+        // 音频 / 字幕书架才会提示「对端有更新」。
+        await recordRemoteAudiobookPackageDownload(
+          db: _db,
+          client: backend,
+          key: remoteAudiobookRevisionKeyForBook(key),
+          package: tmp,
+        );
         report.audiobooksImported++;
       } catch (e) {
         report.noteError('live pull audiobook "$key"', e);

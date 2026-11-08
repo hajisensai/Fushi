@@ -1,14 +1,20 @@
-/// 从互联对端下载的有声书「下载时是哪个内容版本」：本机记下 host 清单里的
-/// `RemoteAudiobookInfo.contentRevision`，之后清单里的值不同 = host 上换过音频 /
-/// 字幕，书架提示「有更新」、可重新下载。
+/// 从互联对端下载的有声书「下载时是哪个内容版本」：本机记下那份包 manifest 里的
+/// `contentRevision`（host 打包时的内容版本），之后 host 清单里的
+/// `RemoteAudiobookInfo.contentRevision` 不同 = host 上换过音频 / 字幕，书架提示
+/// 「有更新」、可重新下载。
 ///
-/// 存在一个设备本地偏好（`interconnect_audiobook_revisions`，JSON）里：互联下载没有
-/// 落库的下载记录（`InterconnectDownloadManager` 的任务只在内存里），而加列是跨端
-/// schema 迁移。键是本机身份：EPUB 有声书按本机 bookKey，纯字幕书按 uid
+/// 存在一个设备本地偏好（[kInterconnectAudiobookRevisionsPrefKey]，JSON）里：互联
+/// 下载没有落库的下载记录（`InterconnectDownloadManager` 的任务只在内存里），而加列
+/// 是跨端 schema 迁移。键是本机身份：EPUB 有声书按本机 bookKey，纯字幕书按 uid
 /// （[remoteAudiobookRevisionKeyForBook] / [remoteAudiobookRevisionKeyForSrt]）。
+/// 读写见 `remote_audiobook_revision_store.dart`；本文件只放纯函数。
 library;
 
 import 'dart:convert';
+
+/// 偏好键（设备本地，`SyncRepository` 的设备本地键清单里登记）。
+const String kInterconnectAudiobookRevisionsPrefKey =
+    'interconnect_audiobook_revisions';
 
 /// 一条下载记录：从哪个来源下的（来源种类 + 互联对端身份，书架页拼好传进来）、
 /// 当时 host 报的内容版本。

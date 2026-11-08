@@ -26,6 +26,8 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show kInterconnectAudiobookRevisionsPrefKey;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
     show applyIssuedInterconnectToken;
@@ -2086,7 +2088,7 @@ class SyncRepository {
     PreferencesRepository.mineToServerTargetsKey,
     // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
     // 设备上会让它误报 / 漏报「对端有更新」。
-    PreferencesRepository.interconnectAudiobookRevisionsKey,
+    kInterconnectAudiobookRevisionsPrefKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

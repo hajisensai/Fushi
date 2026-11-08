@@ -79,10 +79,15 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   package, without `?fresh=1` and without waiting for the 15-minute TTL. A download that
   is streaming the old package finishes it; its resume (old ETag) gets a clean `200` of
   the new package.
-- The app records the revision it downloaded in the device-local pref
-  `interconnect_audiobook_revisions` and shows "Update on peer" on the shelf card plus a
-  "Download update from peer" action. Known blind spot: a subtitles-only refetch records
-  the revision even if the host also swapped audio files with the same count.
+- The package manifest carries the same `contentRevision` (computed just before packing).
+  After a full package download the app records that value, read from the package rather
+  than from the cached list, in the device-local pref `interconnect_audiobook_revisions`.
+  One shared entry point, `recordRemoteAudiobookPackageDownload` in
+  `fushi/lib/src/sync/remote_audiobook_revision_store.dart`, is used by shelf downloads,
+  the sync sweep's automatic audio pull and the sync compare page. When the list's value
+  differs, the shelf card shows "Update on peer" and the dialog offers "Download update
+  from peer". A subtitles-only refetch does not touch the record, so the flag stays until
+  the user downloads the full package.
 
 ## Other known gaps
 
