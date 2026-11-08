@@ -295,6 +295,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     required bool completed,
     bool audiobook = false,
     HealthKind health = HealthKind.notApplicable,
+    bool updateAvailable = false,
   }) {
     final String status = _readProgressLabel(fraction, completed: completed);
     final bool done = completed || fraction >= 1;
@@ -326,6 +327,20 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       case HealthKind.unrun:
       case HealthKind.running:
       case HealthKind.notApplicable:
+        // 从互联对端下载的有声书，host 上之后换过音频 / 字幕：提示可下载更新
+        // （对齐失败 / 部分对齐的提示更要紧，留给上面两支）。
+        if (updateAvailable) {
+          return _ShelfMetaSpec(
+            status:
+                '${t.section_audiobook} · '
+                '${t.remote_book_audiobook_update_available}',
+            icon: FushiIcons.cloudSync,
+            progress: fraction,
+            completed: done,
+            key: _kAudiobookUpdateMetaKey,
+            tooltip: t.remote_book_audiobook_update_download,
+          );
+        }
         return _ShelfMetaSpec(
           status: '${t.section_audiobook} · $status',
           icon: FushiIcons.audiobook,
@@ -335,6 +350,11 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     }
   }
 }
+
+/// 「对端有更新」副行的 key（widget 测试定位用）。
+const ValueKey<String> _kAudiobookUpdateMetaKey = ValueKey<String>(
+  'shelf_meta_audiobook_update',
+);
 
 /// 封面下副行的内容（[_ReaderHistoryCardWidgets._bookCardLayout] 的 `meta`）。
 ///

@@ -136,6 +136,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           ? (
               audiobooks: const <RemoteAudiobookInfo>[],
               refetch: const <String, RemoteAudiobookInfo>{},
+              revisions: const <String, String>{},
               failed: false,
             )
           : await _loadStandaloneRemoteSrtAudiobooks(
@@ -144,6 +145,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
             );
       // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。互联按对端身份区分：
       // 在 A 机隐藏的书换到 B 机不受牵连。
+      final Map<String, RemoteBookInfo> audiobookRefetch =
+          remoteAudiobookRefetchCandidates(
+            remote: withContent,
+            localBookKeys: localKeys,
+            localAudiobookKeys: localAudiobookKeys,
+            keyOf: sanitizeTtuFilename,
+          );
       final List<HiddenRemoteBook> hidden =
           appModelNoUpdate.prefsRepo.hiddenRemoteBooks;
       final String? sourceHost = hidden.isEmpty
@@ -174,15 +182,23 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           localAudiobookKeys: localAudiobookKeys,
           keyOf: sanitizeTtuFilename,
         ),
-        audiobookRefetch: remoteAudiobookRefetchCandidates(
-          remote: withContent,
-          localBookKeys: localKeys,
-          localAudiobookKeys: localAudiobookKeys,
-          keyOf: sanitizeTtuFilename,
-        ),
+        audiobookRefetch: audiobookRefetch,
         srtAudiobooks: remoteSrt.audiobooks,
         srtRefetch: remoteSrt.refetch,
         srtFailed: remoteSrt.failed,
+        audiobookRevisions: remoteSrt.revisions,
+        // 本机下载过、host 上之后换过音频 / 字幕的有声书：书卡副行与菜单提示有更新。
+        audiobookUpdates: remoteAudiobookUpdateKeys(
+          bookRefetch: <String, String>{
+            for (final MapEntry<String, RemoteBookInfo> e
+                in audiobookRefetch.entries)
+              e.key: e.value.downloadId,
+          },
+          srtRefetchUids: remoteSrt.refetch.keys,
+          remoteRevisions: remoteSrt.revisions,
+          stored: appModelNoUpdate.prefsRepo.interconnectAudiobookRevisions,
+          sourceId: await _remoteAudiobookRevisionSource(client),
+        ),
       );
     } catch (e) {
       // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
@@ -1315,6 +1331,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // (:getRemoteBook(book.downloadId)) 同源。书名重名/迁移时按书名重算 ttu 文件名
     // 会算出 host 不存在的 key 致 404（BUG-414），故复用 downloadId 消除不对称。
     final String remoteBookKey = book.downloadId;
+    final String? revision = _lastRemoteState?.audiobookRevisions[remoteBookKey];
     File? audioTmp;
     try {
       if (injectedFetch != null) {
@@ -1340,6 +1357,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           packageFile: audioTmp,
           audioDatabaseRoot: _audiobookDatabaseRoot(),
           bookKeyOverride: localBookKey,
+        );
+      }
+      if (localBookKey != null) {
+        await _recordRemoteAudiobookRevision(
+          client,
+          remoteAudiobookRevisionKeyForBook(localBookKey),
+          revision,
         );
       }
     } catch (e, stack) {
@@ -1455,6 +1479,67 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(FushiSnackBar(content: Text(t.remote_book_downloaded)));
+  }
+
+  /// 有声书下载 / 重新拉取成功后记下本机拿到的是 host 的哪一版内容（[revision] 取自
+  /// 对端清单的 `contentRevision`；旧 host 不报 → 不记，之后也就不提示更新）。
+  ///
+  /// 取的是清单里的值而不是包本身：清单在 TTL 内可能比包旧一点，最坏是刚下完又提示
+  /// 一次「有更新」，重下一次即消；反过来漏报不会发生（host 的导出缓存按同一个版本
+  /// 换代，包永远不比清单旧）。
+  Future<void> _recordRemoteAudiobookRevision(
+    RemoteBookClient client,
+    String key,
+    String? revision,
+  ) async {
+    if (revision == null || revision.isEmpty) return;
+    await appModelNoUpdate.prefsRepo.setInterconnectAudiobookRevision(
+      key,
+      RemoteAudiobookRevisionRecord(
+        sourceId: await _remoteAudiobookRevisionSource(client),
+        revision: revision,
+      ),
+    );
+  }
+
+  /// 下载记录里的「来源」：来源种类 + 互联对端身份（[remoteBookSourceHost]）。互联的
+  /// 来源 id 对所有对端都是同一个常量，换配对另一台 host 后同一本书的内容版本天然
+  /// 不同（路径不同），只按来源 id 比会误报「有更新」。
+  Future<String> _remoteAudiobookRevisionSource(RemoteBookClient client) async =>
+      '${client.remoteLibrarySourceId}|'
+      '${await remoteBookSourceHost(appModelNoUpdate.database, client) ?? ''}';
+
+  /// 本机这本有声书（记录键 [key]）在对端有更新：下载后 host 换过音频 / 字幕。
+  bool _remoteAudiobookHasUpdate(String key) =>
+      _shouldLoadRemoteBooks &&
+      (_lastRemoteState?.audiobookUpdates.contains(key) ?? false);
+
+  /// 书卡 / 纯字幕书详情里「从对端更新字幕」「重新下载有声书」两项。[updateAvailable]
+  /// （host 上下载之后换过内容）时重新下载那项改叫「下载更新」、换下载图标、排第一。
+  List<DialogAction> _remoteRefetchActions({
+    required bool updateAvailable,
+    required VoidCallback refreshSubtitles,
+    required VoidCallback redownload,
+  }) {
+    final DialogListAction subtitles = DialogListAction(
+      label: t.remote_book_subtitles_refresh,
+      icon: FushiIcons.subtitles,
+      group: DialogActionGroup.content,
+      onPressed: refreshSubtitles,
+    );
+    final DialogListAction whole = DialogListAction(
+      label: updateAvailable
+          ? t.remote_book_audiobook_update_download
+          : t.remote_book_audiobook_redownload,
+      icon: updateAvailable
+          ? Icons.cloud_download_outlined
+          : FushiIcons.cloudSync,
+      group: DialogActionGroup.content,
+      onPressed: redownload,
+    );
+    return updateAvailable
+        ? <DialogAction>[whole, subtitles]
+        : <DialogAction>[subtitles, whole];
   }
 
   /// 本机已有书**和**有声书时，从互联对端重新拉取它：[subtitlesOnly] 为 true 只拉
@@ -1574,6 +1659,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         audioDatabaseRoot: _audiobookDatabaseRoot(),
         bookKeyOverride: localBookKey,
       );
+      // 字幕侧换成了 host 当前那份。音频没动：host 若同时换了音频，条数不同时上面就
+      // 抛 audioMismatch、走不到这里；条数相同的换音频是已知盲区（音频条数相同、内容不同时仍会记成已更新）。
+      await _recordRemoteAudiobookRevision(
+        client,
+        remoteAudiobookRevisionKeyForBook(localBookKey),
+        _lastRemoteState?.audiobookRevisions[book.downloadId],
+      );
     } finally {
       try {
         if (package.existsSync()) package.deleteSync();
@@ -1602,6 +1694,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       return (
         audiobooks: const <RemoteAudiobookInfo>[],
         refetch: const <String, RemoteAudiobookInfo>{},
+        revisions: const <String, String>{},
         failed: false,
       );
     }
@@ -1619,6 +1712,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       return (
         audiobooks: const <RemoteAudiobookInfo>[],
         refetch: const <String, RemoteAudiobookInfo>{},
+        revisions: const <String, String>{},
         failed: true,
       );
     }
@@ -1661,6 +1755,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         localSrtUids: localUids,
         excludeUids: needsAudio,
       ),
+      revisions: <String, String>{
+        for (final RemoteAudiobookInfo ab in all)
+          if (ab.identity.isNotEmpty && ab.contentRevision != null)
+            ab.identity: ab.contentRevision!,
+      },
       failed: false,
     );
   }
@@ -1948,6 +2047,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         // 分支、忽略 bookKeyOverride，bookKey 保持空、身份=uid。二次导入同一 uid
         // 按 uid 原位更新（BUG-3098）。
       );
+      await _recordRemoteAudiobookRevision(
+        client,
+        remoteAudiobookRevisionKeyForSrt(book.identity),
+        book.contentRevision,
+      );
     } finally {
       // 临时音频包成功/失败都即删（导入已落盘到 audiobook 根目录，不依赖
       // 临时文件）。
@@ -2065,6 +2169,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         packageFile: package,
         audioDatabaseRoot: _audiobookDatabaseRoot(),
       );
+      await _recordRemoteAudiobookRevision(
+        client,
+        remoteAudiobookRevisionKeyForSrt(book.identity),
+        book.contentRevision,
+      );
     } finally {
       try {
         if (package.existsSync()) package.deleteSync();
@@ -2175,6 +2284,8 @@ class _RemoteCardTaskView {
 typedef _RemoteSrtLists = ({
   List<RemoteAudiobookInfo> audiobooks,
   Map<String, RemoteAudiobookInfo> refetch,
+  // 对端清单里每本有声书（含 EPUB 有声书）的内容版本，身份 → contentRevision。
+  Map<String, String> revisions,
   bool failed,
 });
 
@@ -2187,7 +2298,16 @@ class _RemoteBookState {
     this.srtRefetch = const <String, RemoteAudiobookInfo>{},
     this.failed = false,
     this.srtFailed = false,
+    this.audiobookRevisions = const <String, String>{},
+    this.audiobookUpdates = const <String>{},
   });
+
+  /// 对端清单里每本有声书的内容版本（身份 → `contentRevision`；旧 host 不报 → 空）。
+  /// 下载 / 重新拉取成功后据此记下本机拿到的是哪一版（[_recordRemoteAudiobookRevision]）。
+  final Map<String, String> audiobookRevisions;
+
+  /// 该提示「对端有更新」的本机有声书（记录键，见 `remote_audiobook_revision.dart`）。
+  final Set<String> audiobookUpdates;
 
   final List<RemoteBookInfo> books;
 

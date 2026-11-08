@@ -2084,6 +2084,9 @@ class SyncRepository {
     // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
     // 带到另一台设备上没有意义。
     PreferencesRepository.mineToServerTargetsKey,
+    // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
+    // 设备上会让它误报 / 漏报「对端有更新」。
+    PreferencesRepository.interconnectAudiobookRevisionsKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

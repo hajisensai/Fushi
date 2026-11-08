@@ -326,6 +326,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
   // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
   'home_dashboard_panels',
+  // String（JSON map，默认空）：从互联对端下载的有声书「下载时 host 报的内容版本」
+  // `{book:<本机 bookKey> | srt:<uid>: {source, rev}}`（sync/remote_audiobook_revision.dart）。
+  // 书架据此提示「对端有更新」。设备本地（SyncRepository 的设备本地清单）。
+  'interconnect_audiobook_revisions',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',

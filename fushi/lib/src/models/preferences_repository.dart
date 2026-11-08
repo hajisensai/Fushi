@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
@@ -3747,6 +3748,42 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMineToServer(bool value) async {
     await setPref('mine_to_server', value);
+    notifyListeners();
+  }
+
+  /// 从互联对端下载的有声书当时 host 报的内容版本（键 / 值见
+  /// `sync/remote_audiobook_revision.dart`）。设备本地（`SyncRepository.deviceLocalPrefKeys`）。
+  static const String interconnectAudiobookRevisionsKey =
+      'interconnect_audiobook_revisions';
+
+  Map<String, RemoteAudiobookRevisionRecord> get interconnectAudiobookRevisions {
+    final Object? raw = getPref(
+      interconnectAudiobookRevisionsKey,
+      defaultValue: '',
+    );
+    return raw is String
+        ? decodeRemoteAudiobookRevisions(raw)
+        : const <String, RemoteAudiobookRevisionRecord>{};
+  }
+
+  /// 记下（[record] 非空）或删掉（null）本机身份键 [key] 的下载版本。
+  Future<void> setInterconnectAudiobookRevision(
+    String key,
+    RemoteAudiobookRevisionRecord? record,
+  ) async {
+    final Map<String, RemoteAudiobookRevisionRecord> next =
+        Map<String, RemoteAudiobookRevisionRecord>.of(
+          interconnectAudiobookRevisions,
+        );
+    if (record == null) {
+      next.remove(key);
+    } else {
+      next[key] = record;
+    }
+    await setPref(
+      interconnectAudiobookRevisionsKey,
+      encodeRemoteAudiobookRevisions(next),
+    );
     notifyListeners();
   }
 

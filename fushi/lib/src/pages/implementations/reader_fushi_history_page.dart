@@ -147,6 +147,7 @@ import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/remote_download_temp_file.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
@@ -3322,6 +3323,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         completed: completed,
         audiobook: hasAudiobook,
         health: healthKind,
+        updateAvailable:
+            hasAudiobook &&
+            bookKey != null &&
+            _remoteAudiobookHasUpdate(
+              remoteAudiobookRevisionKeyForBook(bookKey),
+            ),
       ),
       tags: bookKey == null ? const <BookTagRow>[] : _bookTags(bookKey),
       // BUG-990：这本书的有声书包还在下载 → 本地 EPUB 卡继续显示加载覆盖层。
@@ -3577,29 +3584,25 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       // 本机已有有声书、对端也有：host 上重新转录 / 换了字幕之后，从这里把新字幕
       // （或整本有声书）重新拉回来。只更新字幕不动音频，进度 / 断点 / 统计都保留。
+      // host 上这本在本机下载之后换过音频 / 字幕时，「重新下载」改叫「下载更新」并排
+      // 到第一项（书卡副行同时提示「对端有更新」）。
       if (modules.isEnabled(ModuleId.listening) &&
-          _remoteAudiobookRefetchFor(bookKey) != null) ...<DialogAction>[
-        DialogListAction(
-          label: t.remote_book_subtitles_refresh,
-          icon: FushiIcons.subtitles,
-          group: DialogActionGroup.content,
-          onPressed: () => _refetchRemoteAudiobook(
+          _remoteAudiobookRefetchFor(bookKey) != null)
+        ..._remoteRefetchActions(
+          updateAvailable: _remoteAudiobookHasUpdate(
+            remoteAudiobookRevisionKeyForBook(bookKey),
+          ),
+          refreshSubtitles: () => _refetchRemoteAudiobook(
             _remoteAudiobookRefetchFor(bookKey)!,
             bookKey,
             subtitlesOnly: true,
           ),
-        ),
-        DialogListAction(
-          label: t.remote_book_audiobook_redownload,
-          icon: FushiIcons.cloudSync,
-          group: DialogActionGroup.content,
-          onPressed: () => _refetchRemoteAudiobook(
+          redownload: () => _refetchRemoteAudiobook(
             _remoteAudiobookRefetchFor(bookKey)!,
             bookKey,
             subtitlesOnly: false,
           ),
         ),
-      ],
       // 三库页对称：视频卡/游戏卡的菜单里「重命名」都排在列表项首位，书卡对齐。
       DialogListAction(
         label: t.book_rename,

@@ -7177,6 +7177,8 @@
   "remote_book_audiobook_download_failed": "无法下载这本书的有声书",
   "remote_book_audiobook_redownload": "从互联对端重新下载有声书",
   "remote_book_audiobook_redownloaded": "已从互联对端重新下载有声书",
+  "remote_book_audiobook_update_available": "对端有更新",
+  "remote_book_audiobook_update_download": "从互联对端下载更新",
   "remote_book_delete_cloud_confirm": "确定从云盘「$backend」删除「$name」吗？云盘上这本书的文件、封面、进度和有声书会被永久删除，本机没有副本，此操作不可撤销。其他设备下次同步时会确认是否一并删除。",
   "remote_book_delete_everywhere": "同时从远端删除",
   "remote_book_delete_everywhere_confirm": "确定在 host「$host」上删除「$name」吗？那台设备上的文件、阅读进度、书签和有声书会被永久删除，本机没有副本，此操作不可撤销。",
