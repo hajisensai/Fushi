@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -402,6 +405,198 @@ class CompanionLineTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// "★ 8.4" / "★ 8.4 · 1234 votes" for a cached rating (0..10) and its vote
+/// count (left out when unknown).
+String companionRatingLabel(double rating, {int? votes}) {
+  final String stars = '★ ${rating.toStringAsFixed(1)}';
+  return votes == null || votes <= 0
+      ? stars
+      : '$stars · ${t.second_screen_video_votes(n: votes)}';
+}
+
+/// Display-only tag chips (rating, genres) in a wrapping row.
+class CompanionTagChips extends StatelessWidget {
+  const CompanionTagChips({required this.chips, super.key});
+
+  final List<String> chips;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 6,
+    runSpacing: 6,
+    children: <Widget>[
+      for (final String chip in chips)
+        FushiTagChip(label: chip, tone: FushiTagChipTone.surface),
+    ],
+  );
+}
+
+/// One "label · value" line of a [CompanionInfoCard].
+@immutable
+class CompanionInfoFact {
+  const CompanionInfoFact({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+/// Info card of a Now panel, built from cached data only: a caption, tag
+/// chips (rating, genres), label / value facts and a description collapsed
+/// to [collapsedLines] with "More" / "Less". Pass only what is known; the
+/// card hides empty parts and [isEmpty] tells the caller to leave it out.
+class CompanionInfoCard extends StatelessWidget {
+  const CompanionInfoCard({
+    this.title,
+    this.chips = const <String>[],
+    this.facts = const <CompanionInfoFact>[],
+    this.description,
+    this.collapsedLines = 3,
+    super.key,
+  });
+
+  final String? title;
+  final List<String> chips;
+  final List<CompanionInfoFact> facts;
+  final String? description;
+  final int collapsedLines;
+
+  bool get isEmpty =>
+      chips.isEmpty &&
+      facts.isEmpty &&
+      (description == null || description!.trim().isEmpty);
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? meta = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final String? caption = title;
+    final String? about = description?.trim();
+    final List<Widget> parts = <Widget>[
+      if (caption != null) CompanionSectionLabel(caption),
+      if (chips.isNotEmpty) CompanionTagChips(chips: chips),
+      for (final CompanionInfoFact fact in facts)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SizedBox(
+              width: 112,
+              child: Text(
+                fact.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: meta,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                fact.value,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      if (about != null && about.isNotEmpty)
+        CompanionExpandableText(text: about, collapsedLines: collapsedLines),
+    ];
+    return FushiCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < parts.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(height: 8),
+            parts[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A text collapsed to [collapsedLines]; a focusable "More" / "Less" button
+/// (>= 48 dp) appears only when it is longer than that.
+class CompanionExpandableText extends StatefulWidget {
+  const CompanionExpandableText({
+    required this.text,
+    this.collapsedLines = 3,
+    super.key,
+  });
+
+  final String text;
+  final int collapsedLines;
+
+  @override
+  State<CompanionExpandableText> createState() =>
+      _CompanionExpandableTextState();
+}
+
+class _CompanionExpandableTextState extends State<CompanionExpandableText> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(CompanionExpandableText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) _expanded = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? style = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.4,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final TextPainter painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: widget.collapsedLines,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final bool long = painter.didExceedMaxLines;
+        painter.dispose();
+        final bool clipped = long && !_expanded;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiAnimatedSize(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              alignment: Alignment.topLeft,
+              child: Text(
+                widget.text,
+                maxLines: clipped ? widget.collapsedLines : null,
+                overflow: clipped ? TextOverflow.ellipsis : null,
+                style: style,
+              ),
+            ),
+            if (long)
+              FushiPressScale(
+                child: FushiTextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  child: Text(
+                    _expanded
+                        ? t.second_screen_info_less
+                        : t.second_screen_info_more,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

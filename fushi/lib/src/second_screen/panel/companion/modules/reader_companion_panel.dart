@@ -23,6 +23,44 @@ String _grouped(int n) {
   return out.toString();
 }
 
+/// "Series name · #3" (the index only when the book declares one).
+String _seriesLabel(String name, num? index) {
+  if (index == null) return name;
+  final String n = index == index.roundToDouble()
+      ? '${index.round()}'
+      : '$index';
+  return '$name · #$n';
+}
+
+/// Facts of the book info card: series and all-time reading of this book,
+/// only what is known (stats once loaded).
+List<CompanionInfoFact> _bookFacts(Map<String, Object?> snap) {
+  final String? series = snap.strOrNull(ReaderCompanionKeys.series);
+  final Map<String, Object?>? stats = snap.mapOrNull(ReaderCompanionKeys.stats);
+  final int? allMs = stats?.intOrNull(ReaderCompanionKeys.allMs);
+  final int? allChars = stats?.intOrNull(ReaderCompanionKeys.allChars);
+  return <CompanionInfoFact>[
+    if (series != null)
+      CompanionInfoFact(
+        label: t.second_screen_info_series,
+        value: _seriesLabel(
+          series,
+          snap.doubleOrNull(ReaderCompanionKeys.seriesIndex),
+        ),
+      ),
+    if (allMs != null)
+      CompanionInfoFact(
+        label: t.second_screen_info_total_time,
+        value: formatStatTime(allMs),
+      ),
+    if (allChars != null)
+      CompanionInfoFact(
+        label: t.second_screen_info_total_chars,
+        value: _grouped(allChars),
+      ),
+  ];
+}
+
 /// Now tab panel while an EPUB is open on top: book info, progress, page
 /// controls, bookmark + contents, today's reading of this book and the
 /// book's bookmarks (tap = jump). Schema: [ReaderCompanionKeys].
@@ -64,6 +102,11 @@ class ReaderCompanionPanel extends StatelessWidget {
     );
     final Map<String, Object?>? stats = snap.mapOrNull(
       ReaderCompanionKeys.stats,
+    );
+    final CompanionInfoCard bookCard = CompanionInfoCard(
+      key: const ValueKey<String>('reader-info'),
+      title: t.second_screen_info_book,
+      facts: _bookFacts(snap),
     );
     final List<Widget> sections = <Widget>[
       CompanionTitleBlock(
@@ -128,9 +171,13 @@ class ReaderCompanionPanel extends StatelessWidget {
         ],
       ),
       if (stats != null) _StatsRow(stats: stats),
+      if (!bookCard.isEmpty) bookCard,
       if (bookmarksEnabled)
         _Bookmarks(
           bookmarks: bookmarks,
+          count:
+              snap.intOrNull(ReaderCompanionKeys.bookmarkCount) ??
+              bookmarks.length,
           onJump: (int id) => _send(
             ReaderCompanionActions.jumpToBookmark,
             <String, Object?>{ReaderCompanionActions.id: id},
@@ -206,9 +253,14 @@ class _StatsRow extends StatelessWidget {
 }
 
 class _Bookmarks extends StatelessWidget {
-  const _Bookmarks({required this.bookmarks, required this.onJump});
+  const _Bookmarks({
+    required this.bookmarks,
+    required this.count,
+    required this.onJump,
+  });
 
   final List<Map<String, Object?>> bookmarks;
+  final int count;
   final void Function(int id) onJump;
 
   @override
@@ -217,7 +269,18 @@ class _Bookmarks extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        CompanionSectionLabel(t.second_screen_reader_bookmarks),
+        CompanionSectionLabel(
+          t.second_screen_reader_bookmarks,
+          trailing: count <= 0
+              ? null
+              : Text(
+                  _grouped(count),
+                  key: const ValueKey<String>('reader-bookmark-count'),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+        ),
         const SizedBox(height: 6),
         if (bookmarks.isEmpty)
           Text(

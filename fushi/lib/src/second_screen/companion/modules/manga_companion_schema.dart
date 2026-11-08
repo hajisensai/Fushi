@@ -20,6 +20,14 @@ abstract final class MangaCompanionKeys {
   /// Genre labels from the source (capped).
   static const String genres = 'genres';
 
+  /// Since S5 (absent when unknown; old panels ignore them): local cover
+  /// file path, and the cached rating (0..10) + vote count of the scrape
+  /// metadata (`CollectionScrapeMeta`, e.g. Bangumi) of the volume's
+  /// collection.
+  static const String cover = 'cover';
+  static const String rating = 'rating';
+  static const String votes = 'votes';
+
   /// Current page, 0-based.
   static const String page = 'page';
   static const String pageCount = 'pageCount';

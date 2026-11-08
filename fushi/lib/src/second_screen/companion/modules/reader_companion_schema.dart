@@ -12,9 +12,14 @@
 /// - [bookmarksEnabled] bool (the book has a stable id: bookmarks work),
 ///   [bookmarks] List of {[bookmarkId], [bookmarkLabel], [bookmarkChapter]
 ///   (1-based chapter number)}
-///   (newest first, capped at [maxBookmarks]).
+///   (newest first, capped at [maxBookmarks]); since S5 [bookmarkCount] int
+///   (all of the book's bookmarks, also beyond the cap).
 /// - [stats] Map? of this book's stats for today ([todayMs], [todayChars],
-///   [todayLookups], [todayCards]); null until loaded.
+///   [todayLookups], [todayCards]) and, since S5, all time ([allMs],
+///   [allChars]); null until loaded.
+/// - Since S5: [series] String? (the EPUB's declared series) and
+///   [seriesIndex] num? (its position in the series), both absent when the
+///   book declares none. Old panels ignore the new keys.
 abstract final class ReaderCompanionKeys {
   static const int maxToc = 400;
   static const int maxBookmarks = 100;
@@ -34,6 +39,7 @@ abstract final class ReaderCompanionKeys {
   static const String playing = 'playing';
   static const String bookmarksEnabled = 'bookmarksEnabled';
   static const String bookmarks = 'bookmarks';
+  static const String bookmarkCount = 'bookmarkCount';
   static const String bookmarkId = 'id';
   static const String bookmarkLabel = 'label';
   static const String bookmarkChapter = 'chapter';
@@ -42,6 +48,10 @@ abstract final class ReaderCompanionKeys {
   static const String todayChars = 'todayChars';
   static const String todayLookups = 'todayLookups';
   static const String todayCards = 'todayCards';
+  static const String allMs = 'allMs';
+  static const String allChars = 'allChars';
+  static const String series = 'series';
+  static const String seriesIndex = 'seriesIndex';
 }
 
 /// Reader commands (`session.command(action, args)`).

@@ -70,7 +70,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Series · Chapter 9'), findsOneWidget);
-    expect(find.text('Author · Comedy, Slice of life'), findsOneWidget);
+    // Author under the title; the source's genres as tag chips (S5).
+    expect(find.text('Author'), findsOneWidget);
+    expect(find.text('Comedy'), findsOneWidget);
+    expect(find.text('Slice of life'), findsOneWidget);
     expect(find.text(t.second_screen_manga_text_label), findsOneWidget);
     expect(find.text(_line1), findsOneWidget);
     expect(find.text(_line2), findsOneWidget);

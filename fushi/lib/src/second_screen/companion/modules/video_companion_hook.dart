@@ -39,9 +39,36 @@ class VideoCompanionTrack {
   int get hashCode => Object.hash(id, label, selected);
 }
 
+//// One cast / staff line of the cached credits: [name] as cached, [role] =
+/// the character (cast) or the job (staff), [kind] = the cached credit kind
+/// (`actor`, `voice_actor`, `director`, `writer`, ...).
+@immutable
+class VideoCompanionCredit {
+  const VideoCompanionCredit({required this.name, this.role, this.kind});
+
+  final String name;
+  final String? role;
+  final String? kind;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoCompanionCredit &&
+      other.name == name &&
+      other.role == role &&
+      other.kind == kind;
+
+  @override
+  int get hashCode => Object.hash(name, role, kind);
+}
+
+String? _infoText(String? v) {
+  final String t = v?.trim() ?? '';
+  return t.isEmpty ? null : t;
+}
+
 /// Cached scrape metadata of what plays (`VideoMetadataWorks` /
-/// `VideoMetadataEpisodes`). Every field is optional: missing = unknown, the
-/// panel hides it.
+/// `VideoMetadataEpisodes` + the work's terms and credits). Every field is
+/// optional: missing = unknown, the panel hides it.
 @immutable
 class VideoCompanionInfo {
   const VideoCompanionInfo({
@@ -52,6 +79,11 @@ class VideoCompanionInfo {
     this.episodeNumber,
     this.episodeTitle,
     this.episodeOverview,
+    this.year,
+    this.studios = const <String>[],
+    this.genres = const <String>[],
+    this.cast = const <VideoCompanionCredit>[],
+    this.staff = const <VideoCompanionCredit>[],
   });
 
   final String? workTitle;
@@ -61,23 +93,52 @@ class VideoCompanionInfo {
   final int? episodeNumber;
   final String? episodeTitle;
   final String? episodeOverview;
+  final int? year;
+  final List<String> studios;
+  final List<String> genres;
+
+  /// Billing order; [VideoCompanionCredit.role] = the character.
+  final List<VideoCompanionCredit> cast;
+
+  /// Directors / writers; [VideoCompanionCredit.role] = the job.
+  final List<VideoCompanionCredit> staff;
 
   bool get isEmpty => toJson().isEmpty;
 
-  /// JSON for the snapshot; missing / blank / non-positive values left out.
+  /// JSON for the snapshot; missing / blank / non-positive values left out,
+  /// lists capped ([VideoCompanionKeys.maxCast] / `maxStaff` / `maxTerms`).
   Map<String, Object?> toJson() {
-    String? text(String? v) {
-      final String t = v?.trim() ?? '';
-      return t.isEmpty ? null : t;
-    }
-
-    final String? work = text(workTitle);
-    final String? about = text(overview);
-    final String? epTitle = text(episodeTitle);
-    final String? epAbout = text(episodeOverview);
+    final String? work = _infoText(workTitle);
+    final String? about = _infoText(overview);
+    final String? epTitle = _infoText(episodeTitle);
+    final String? epAbout = _infoText(episodeOverview);
     final double? score = rating;
     final int? count = votes;
     final int? number = episodeNumber;
+    final int? released = year;
+    List<String> terms(List<String> values) => <String>[
+      for (final String v in values)
+        if (_infoText(v) case final String name) name,
+    ].take(VideoCompanionKeys.maxTerms).toList();
+    final List<String> studioNames = terms(studios);
+    final List<String> genreNames = terms(genres);
+    final List<Map<String, Object?>> castJson = <Map<String, Object?>>[
+      for (final VideoCompanionCredit c in cast)
+        if (_infoText(c.name) case final String name)
+          <String, Object?>{
+            VideoCompanionKeys.personName: name,
+            VideoCompanionKeys.personRole: ?_infoText(c.role),
+          },
+    ].take(VideoCompanionKeys.maxCast).toList();
+    final List<Map<String, Object?>> staffJson = <Map<String, Object?>>[
+      for (final VideoCompanionCredit c in staff)
+        if (_infoText(c.name) case final String name)
+          <String, Object?>{
+            VideoCompanionKeys.personName: name,
+            VideoCompanionKeys.staffKind: ?_infoText(c.kind),
+            VideoCompanionKeys.staffJob: ?_infoText(c.role),
+          },
+    ].take(VideoCompanionKeys.maxStaff).toList();
     return <String, Object?>{
       VideoCompanionKeys.workTitle: ?work,
       if (score != null && score > 0) VideoCompanionKeys.rating: score,
@@ -87,8 +148,69 @@ class VideoCompanionInfo {
         VideoCompanionKeys.episodeNumber: number,
       VideoCompanionKeys.episodeTitle: ?epTitle,
       VideoCompanionKeys.episodeOverview: ?epAbout,
+      if (released != null && released > 0) VideoCompanionKeys.year: released,
+      if (studioNames.isNotEmpty) VideoCompanionKeys.studios: studioNames,
+      if (genreNames.isNotEmpty) VideoCompanionKeys.genres: genreNames,
+      if (castJson.isNotEmpty) VideoCompanionKeys.cast: castJson,
+      if (staffJson.isNotEmpty) VideoCompanionKeys.staff: staffJson,
     };
   }
+}
+
+/// Cached credit kinds shown as cast.
+const Set<String> _castKinds = <String>{'actor', 'voice_actor'};
+
+/// Cached credit kinds shown as staff.
+const Set<String> _staffKinds = <String>{'director', 'writer'};
+
+/// Cast and staff of the work [workId] from the cached credits (each person
+/// read once). No network.
+Future<({List<VideoCompanionCredit> cast, List<VideoCompanionCredit> staff})>
+_loadVideoCompanionCredits(FushiDatabase db, int workId) async {
+  final List<VideoCompanionCredit> cast = <VideoCompanionCredit>[];
+  final List<VideoCompanionCredit> staff = <VideoCompanionCredit>[];
+  final Map<String, String?> names = <String, String?>{};
+  for (final VideoMetadataCreditRow c in await db.getVideoMetadataCredits(
+    workId: workId,
+  )) {
+    final bool isCast = _castKinds.contains(c.creditKind);
+    if (!isCast && !_staffKinds.contains(c.creditKind)) continue;
+    if (isCast && cast.length >= VideoCompanionKeys.maxCast) continue;
+    if (!isCast && staff.length >= VideoCompanionKeys.maxStaff) continue;
+    if (!names.containsKey(c.personKey)) {
+      names[c.personKey] = _infoText(
+        (await db.getVideoMetadataPerson(c.personKey))?.name,
+      );
+    }
+    final String? name = names[c.personKey];
+    if (name == null) continue;
+    if (isCast) {
+      final String? characterKey = c.characterKey;
+      final String? character = characterKey == null
+          ? null
+          : _infoText((await db.getVideoMetadataCharacter(characterKey))?.name);
+      cast.add(
+        VideoCompanionCredit(
+          name: name,
+          role: character ?? _infoText(c.roleName),
+          kind: c.creditKind,
+        ),
+      );
+    } else {
+      staff.add(
+        VideoCompanionCredit(
+          name: name,
+          role: _infoText(c.job),
+          kind: c.creditKind,
+        ),
+      );
+    }
+    if (cast.length >= VideoCompanionKeys.maxCast &&
+        staff.length >= VideoCompanionKeys.maxStaff) {
+      break;
+    }
+  }
+  return (cast: cast, staff: staff);
 }
 
 /// Reads the cached metadata of the video [bookUid] (opened from the
@@ -119,6 +241,25 @@ Future<VideoCompanionInfo?> loadVideoCompanionInfo(
     if (season != null) work = await db.getVideoMetadataWorkById(season.workId);
   }
   if (work == null && episode == null) return null;
+  final List<String> studios = <String>[];
+  final List<String> genres = <String>[];
+  List<VideoCompanionCredit> cast = const <VideoCompanionCredit>[];
+  List<VideoCompanionCredit> staff = const <VideoCompanionCredit>[];
+  if (work != null) {
+    for (final VideoMetadataTermRow term
+        in await db.getVideoMetadataTermsForWork(work.id)) {
+      switch (term.kind) {
+        case 'studio':
+          studios.add(term.name);
+        case 'genre':
+          genres.add(term.name);
+      }
+    }
+    final ({List<VideoCompanionCredit> cast, List<VideoCompanionCredit> staff})
+    credits = await _loadVideoCompanionCredits(db, work.id);
+    cast = credits.cast;
+    staff = credits.staff;
+  }
   final VideoCompanionInfo info = VideoCompanionInfo(
     workTitle: work?.title,
     rating: work?.rating,
@@ -127,6 +268,11 @@ Future<VideoCompanionInfo?> loadVideoCompanionInfo(
     episodeNumber: episode?.episodeNumber,
     episodeTitle: episode?.title,
     episodeOverview: episode?.overview,
+    year: work?.year ?? episode?.year,
+    studios: studios,
+    genres: genres,
+    cast: cast,
+    staff: staff,
   );
   return info.isEmpty ? null : info;
 }

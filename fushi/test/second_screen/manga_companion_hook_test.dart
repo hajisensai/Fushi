@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/reader/manga_companion_hook.dart';
@@ -9,6 +11,7 @@ import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart'
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
 import 'package:fushi/src/second_screen/companion/modules/manga_companion_schema.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// The reader side as the hook sees it: a mutable state + recorded calls.
 class _FakeReader implements MangaCompanionReader {
@@ -23,12 +26,15 @@ class _FakeReader implements MangaCompanionReader {
   final List<String> calls = <String>[];
   final List<int> recognized = <int>[];
   Completer<MangaCompanionOcrOutcome>? pending;
+  String title = 'Series';
+  MangaCompanionInfo? info;
+  int infoLoads = 0;
 
   @override
   MangaCompanionReadState? readState() {
     builds++;
     return MangaCompanionReadState(
-      title: 'Series',
+      title: title,
       pageKey: '$session/$page',
       page: page,
       pageCount: pageCount,
@@ -59,6 +65,12 @@ class _FakeReader implements MangaCompanionReader {
   Future<MangaCompanionOcrOutcome> recognizePage(int page) {
     recognized.add(page);
     return (pending = Completer<MangaCompanionOcrOutcome>()).future;
+  }
+
+  @override
+  Future<MangaCompanionInfo?> loadInfo() async {
+    infoLoads++;
+    return info;
   }
 }
 
@@ -453,6 +465,142 @@ void main() {
         await routeCompanionLookup(text: '読む', sentence: '本を読む。'),
         isFalse,
       );
+    });
+  });
+
+  group('info (cover + cached rating)', () {
+    test('loaded once per title, outside the tick; missing = no keys', () {
+      fakeAsync((FakeAsync async) {
+        hook.claim('Series');
+        registry.setActive(true);
+        async.flushMicrotasks();
+        expect(reader.infoLoads, 1);
+        expect(snapshot().containsKey(MangaCompanionKeys.cover), isFalse);
+        expect(snapshot().containsKey(MangaCompanionKeys.rating), isFalse);
+        expect(snapshot().containsKey(MangaCompanionKeys.votes), isFalse);
+        async.elapse(const Duration(seconds: 5));
+        reader.page = 9;
+        async.elapse(const Duration(seconds: 2));
+        // Page turns do not reload it.
+        expect(reader.infoLoads, 1);
+        registry.setActive(false);
+      });
+    });
+
+    test('published when it lands and reloaded for another title', () {
+      fakeAsync((FakeAsync async) {
+        reader.info = const MangaCompanionInfo(
+          cover: '/covers/series.jpg',
+          rating: 7.84,
+          votes: 1234,
+        );
+        hook.claim('Series');
+        registry.setActive(true);
+        async.flushMicrotasks();
+        expect(snapshot().str(MangaCompanionKeys.cover), '/covers/series.jpg');
+        expect(snapshot().doubleOrNull(MangaCompanionKeys.rating), 7.84);
+        expect(snapshot().intOrNull(MangaCompanionKeys.votes), 1234);
+        reader
+          ..title = 'Other'
+          ..info = const MangaCompanionInfo(rating: 6.5);
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(reader.infoLoads, 2);
+        expect(snapshot().containsKey(MangaCompanionKeys.cover), isFalse);
+        expect(snapshot().doubleOrNull(MangaCompanionKeys.rating), 6.5);
+        expect(snapshot().containsKey(MangaCompanionKeys.votes), isFalse);
+        registry.setActive(false);
+      });
+    });
+
+    test('a zero rating is not shown', () {
+      final Map<String, Object?> s = buildMangaCompanionSnapshot(
+        const MangaCompanionReadState(
+          title: 'T',
+          pageKey: 'k',
+          page: 0,
+          pageCount: 1,
+        ),
+        ocr: MangaCompanionOcrState.idle,
+        info: const MangaCompanionInfo(rating: 0, votes: 10, cover: ''),
+      );
+      expect(s.containsKey(MangaCompanionKeys.rating), isFalse);
+      expect(s.containsKey(MangaCompanionKeys.votes), isFalse);
+      expect(s.containsKey(MangaCompanionKeys.cover), isFalse);
+    });
+  });
+
+  group('loadMangaCompanionRating', () {
+    late FushiDatabase db;
+
+    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    test('not in a collection: null', () async {
+      expect(
+        await loadMangaCompanionRating(db, bookKey: 'manga_a', bookUid: 'u1'),
+        isNull,
+      );
+    });
+
+    test('primary collection scrape rating, by uid or key', () async {
+      final int first = await db.createMediaCollection('Series A');
+      final int second = await db.createMediaCollection('Series B');
+      await db.addToCollection(second, MediaKind.epub, 'u1');
+      await db.addToCollection(first, MediaKind.epub, 'manga_a');
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(first),
+          source: 'bangumi',
+          subjectId: '1',
+          title: 'Series A',
+          rating: const Value<double?>(7.6),
+          ratingCount: const Value<int?>(321),
+          scrapedAt: DateTime(2026),
+        ),
+      );
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(second),
+          source: 'bangumi',
+          subjectId: '2',
+          title: 'Series B',
+          rating: const Value<double?>(5.0),
+          scrapedAt: DateTime(2026),
+        ),
+      );
+      final ({double rating, int? votes})? r = await loadMangaCompanionRating(
+        db,
+        bookKey: 'manga_a',
+        bookUid: 'u1',
+      );
+      // Smallest collection id wins (the library's fold rule).
+      expect(r?.rating, 7.6);
+      expect(r?.votes, 321);
+      expect(
+        (await loadMangaCompanionRating(
+          db,
+          bookKey: 'x',
+          bookUid: 'u1',
+        ))?.rating,
+        5.0,
+      );
+      expect((await loadMangaCompanionRating(db, bookKey: 'x'))?.votes, null);
+    });
+
+    test('a collection without a rating: null', () async {
+      final int id = await db.createMediaCollection('Unrated');
+      await db.addToCollection(id, MediaKind.epub, 'manga_b');
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(id),
+          source: 'bangumi',
+          subjectId: '3',
+          title: 'Unrated',
+          scrapedAt: DateTime(2026),
+        ),
+      );
+      expect(await loadMangaCompanionRating(db, bookKey: 'manga_b'), isNull);
     });
   });
 }

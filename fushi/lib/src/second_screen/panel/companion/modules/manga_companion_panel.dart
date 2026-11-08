@@ -64,11 +64,16 @@ class _MangaPanelBody extends StatelessWidget {
     final int? chapterPosition = data.intOrNull(
       MangaCompanionKeys.chapterPosition,
     );
-    final String subtitle = <String>[
-      ?author,
-      if (genres.isNotEmpty) genres.join(', '),
-    ].join(' · ');
-
+    final double? rating = data.doubleOrNull(MangaCompanionKeys.rating);
+    // Rating first, then the source's genres: tag chips under the title.
+    final List<String> chips = <String>[
+      if (rating != null)
+        companionRatingLabel(
+          rating,
+          votes: data.intOrNull(MangaCompanionKeys.votes),
+        ),
+      ...genres,
+    ];
     final List<Widget> items = <Widget>[
       CompanionPanelHeader(
         label: t.second_screen_manga_header,
@@ -79,10 +84,18 @@ class _MangaPanelBody extends StatelessWidget {
       _padded(
         CompanionTitleBlock(
           title: chapter == null ? title : '$title · $chapter',
-          subtitle: subtitle.isEmpty ? null : subtitle,
+          subtitle: author,
+          coverPath: data.strOrNull(MangaCompanionKeys.cover),
           fallbackIcon: FushiIcons.manga,
         ),
       ),
+      if (chips.isNotEmpty)
+        _padded(
+          CompanionTagChips(
+            key: const ValueKey<String>('manga-info-chips'),
+            chips: chips,
+          ),
+        ),
       _padded(
         Row(
           children: <Widget>[

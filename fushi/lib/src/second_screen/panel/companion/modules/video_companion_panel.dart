@@ -44,6 +44,21 @@ class _Track {
   final bool selected;
 }
 
+/// A cast / staff line: [role] = character (cast) or job (staff).
+class _Credit {
+  const _Credit({required this.name, this.role});
+
+  final String name;
+  final String? role;
+}
+
+/// Label of a cached staff credit kind (null for kinds without one).
+String? _staffKindLabel(String? kind) => switch (kind) {
+  'director' => t.second_screen_info_director,
+  'writer' => t.second_screen_info_writer,
+  _ => null,
+};
+
 /// The snapshot read once per rebuild (missing values = unknown / hidden).
 class _VideoView {
   _VideoView(Map<String, Object?> s)
@@ -134,13 +149,48 @@ class _VideoView {
   /// "★ 8.4 · 1234 votes" / "★ 8.4"; null without a rating.
   String? get ratingText {
     final double? r = rating;
-    if (r == null) return null;
-    final int? v = votes;
-    final String stars = '★ ${r.toStringAsFixed(1)}';
-    return v == null ? stars : '$stars · ${t.second_screen_video_votes(n: v)}';
+    return r == null ? null : companionRatingLabel(r, votes: votes);
   }
 
-  bool get hasInfo => overview != null || episodeOverview != null;
+  int? get year => info.intOrNull(VideoCompanionKeys.year);
+  List<String> get studios => info.strings(VideoCompanionKeys.studios);
+  List<String> get genres => info.strings(VideoCompanionKeys.genres);
+  List<_Credit> get cast => <_Credit>[
+    for (final Map<String, Object?> c in info.maps(VideoCompanionKeys.cast))
+      if (c.strOrNull(VideoCompanionKeys.personName) case final String name)
+        _Credit(name: name, role: c.strOrNull(VideoCompanionKeys.personRole)),
+  ];
+  List<_Credit> get staff => <_Credit>[
+    for (final Map<String, Object?> c in info.maps(VideoCompanionKeys.staff))
+      if (c.strOrNull(VideoCompanionKeys.personName) case final String name)
+        _Credit(
+          name: name,
+          role:
+              c.strOrNull(VideoCompanionKeys.staffJob) ??
+              _staffKindLabel(c.strOrNull(VideoCompanionKeys.staffKind)),
+        ),
+  ];
+
+  /// Year / studio facts of the info card (only the known ones).
+  List<CompanionInfoFact> get facts => <CompanionInfoFact>[
+    if (year case final int y)
+      CompanionInfoFact(label: t.second_screen_info_year, value: '$y'),
+    if (studios.isNotEmpty)
+      CompanionInfoFact(
+        label: t.second_screen_info_studio,
+        value: studios.join(', '),
+      ),
+  ];
+
+  /// Something for the info page beyond the title row.
+  bool get hasInfo =>
+      overview != null ||
+      episodeOverview != null ||
+      year != null ||
+      studios.isNotEmpty ||
+      genres.isNotEmpty ||
+      info.maps(VideoCompanionKeys.cast).isNotEmpty ||
+      info.maps(VideoCompanionKeys.staff).isNotEmpty;
 
   String get audioLabel {
     for (final _Track a in audioTracks) {
@@ -652,6 +702,12 @@ class _VideoInfoPage extends StatelessWidget {
           final String? sub = view.subtitle;
           final String? overview = view.overview;
           final String? episodeOverview = view.episodeOverview;
+          final CompanionInfoCard card = CompanionInfoCard(
+            chips: view.genres,
+            facts: view.facts,
+          );
+          final List<_Credit> cast = view.cast;
+          final List<_Credit> staff = view.staff;
           final List<Widget> sections = <Widget>[
             if (rating != null)
               Text(
@@ -660,6 +716,7 @@ class _VideoInfoPage extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+            if (!card.isEmpty) card,
             if (overview != null) ...<Widget>[
               CompanionSectionLabel(t.second_screen_video_info_series),
               Text(overview, style: theme.textTheme.bodyMedium),
@@ -671,6 +728,14 @@ class _VideoInfoPage extends StatelessWidget {
                     : '${t.second_screen_video_info_episode} · $sub',
               ),
               Text(episodeOverview, style: theme.textTheme.bodyMedium),
+            ],
+            if (cast.isNotEmpty) ...<Widget>[
+              CompanionSectionLabel(t.second_screen_info_cast),
+              _CreditList(credits: cast),
+            ],
+            if (staff.isNotEmpty) ...<Widget>[
+              CompanionSectionLabel(t.second_screen_info_staff),
+              _CreditList(credits: staff),
             ],
           ];
           return Column(
@@ -700,6 +765,54 @@ class _VideoInfoPage extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Cast / staff lines: name, role on the right (when cached).
+class _CreditList extends StatelessWidget {
+  const _CreditList({required this.credits});
+
+  final List<_Credit> credits;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? meta = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (final _Credit c in credits)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    c.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                if (c.role case final String role) ...<Widget>[
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      role,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: meta,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// Audio or subtitle track picker (pushed page). Picking sends the command

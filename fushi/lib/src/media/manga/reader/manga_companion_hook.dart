@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm;
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_page_link.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
 import 'package:fushi/src/second_screen/companion/modules/manga_companion_schema.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// The manga reader's end of the dual-screen companion: claims the manga
@@ -74,6 +76,55 @@ class MangaCompanionReadState {
   final bool readerOcrBusy;
 }
 
+/// The manga's static info from local data only (loaded once per series /
+/// volume, outside the snapshot tick): [cover] = local file, [rating] /
+/// [votes] = cached scrape metadata of its collection. Null = unknown.
+@immutable
+class MangaCompanionInfo {
+  const MangaCompanionInfo({this.cover, this.rating, this.votes});
+
+  final String? cover;
+  final double? rating;
+  final int? votes;
+}
+
+/// The cached rating of the manga [bookKey] (local row uid [bookUid]): the
+/// `CollectionScrapeMeta` row of its primary collection (the smallest
+/// collection id it belongs to, as the library folds it). Null when it is in
+/// no collection or the collection has no rating. No network.
+Future<({double rating, int? votes})?> loadMangaCompanionRating(
+  FushiDatabase db, {
+  required String bookKey,
+  String? bookUid,
+}) async {
+  final List<String> keys = <String>[
+    if (bookUid != null && bookUid.isNotEmpty) bookUid,
+    if (bookKey.isNotEmpty) bookKey,
+  ];
+  if (keys.isEmpty) return null;
+  final MediaCollectionItemRow? member =
+      await (db.select(db.mediaCollectionItems)
+            ..where(
+              ($MediaCollectionItemsTable m) =>
+                  m.mediaType.equals(MediaKind.epub.dbValue) &
+                  m.entryKey.isIn(keys),
+            )
+            ..orderBy(<OrderingTerm Function($MediaCollectionItemsTable)>[
+              ($MediaCollectionItemsTable m) =>
+                  OrderingTerm(expression: m.collectionId),
+            ])
+            ..limit(1))
+          .getSingleOrNull();
+  if (member == null) return null;
+  final CollectionScrapeMetaRow? scrape = await db.getCollectionScrapeMeta(
+    member.collectionId,
+  );
+  final double? rating = scrape?.rating;
+  if (rating == null || rating <= 0) return null;
+  final int? votes = scrape?.ratingCount;
+  return (rating: rating, votes: votes != null && votes > 0 ? votes : null);
+}
+
 /// How one "OCR this page" request ended.
 enum MangaCompanionOcrResult {
   /// Recognised by this request ([MangaCompanionOcrOutcome.blocks] blocks).
@@ -114,6 +165,10 @@ abstract interface class MangaCompanionReader {
   /// Recognises page [page] (0-based) through the reader's existing OCR
   /// path and puts the result into the page.
   Future<MangaCompanionOcrOutcome> recognizePage(int page);
+
+  /// Cover file + cached rating (file / database reads; called once per
+  /// title while the companion is up).
+  Future<MangaCompanionInfo?> loadInfo();
 }
 
 /// "OCR this page" state: one page at a time, only ever started by [run]
@@ -195,6 +250,7 @@ Map<String, Object?> buildMangaCompanionSnapshot(
   MangaCompanionReadState s, {
   required MangaCompanionOcrState ocr,
   String? ocrError,
+  MangaCompanionInfo? info,
 }) {
   final int count = s.chapterNames.length;
   final bool hasChapter =
@@ -226,6 +282,10 @@ Map<String, Object?> buildMangaCompanionSnapshot(
         _cap(text.trim(), kMangaCompanionMaxLineChars),
   ];
   final String? description = s.description?.trim();
+  final String? cover = info?.cover;
+  final double? rating = info?.rating;
+  final int? votes = info?.votes;
+  final bool rated = rating != null && rating > 0;
   return <String, Object?>{
     MangaCompanionKeys.title: s.title,
     if (s.chapter != null && s.chapter!.isNotEmpty)
@@ -241,6 +301,9 @@ Map<String, Object?> buildMangaCompanionSnapshot(
       MangaCompanionKeys.genres: s.genres
           .take(kMangaCompanionMaxGenres)
           .toList(),
+    if (cover != null && cover.isNotEmpty) MangaCompanionKeys.cover: cover,
+    if (rated) MangaCompanionKeys.rating: rating,
+    if (rated && votes != null && votes > 0) MangaCompanionKeys.votes: votes,
     MangaCompanionKeys.page: s.page,
     MangaCompanionKeys.pageCount: s.pageCount,
     MangaCompanionKeys.rtl: s.rtl,
@@ -277,6 +340,11 @@ class MangaCompanionHook {
   String? _claimedTitle;
   Route<Object?>? _route;
   bool _started = false;
+  bool _disposed = false;
+
+  /// Title the static info was (or is being) loaded for.
+  String? _infoTitle;
+  MangaCompanionInfo? _info;
 
   /// The companion is up (cheap).
   bool get isActive => link.isActive;
@@ -308,12 +376,35 @@ class MangaCompanionHook {
   Map<String, Object?>? buildSnapshot() {
     final MangaCompanionReadState? s = _reader.readState();
     if (s == null) return null;
+    _ensureInfo(s.title);
     final ({MangaCompanionOcrState state, String? error}) box = ocr.stateFor(
       s.pageKey,
       hasText: s.pageTexts.any((String t) => t.trim().isNotEmpty),
       readerOcrBusy: s.readerOcrBusy,
     );
-    return buildMangaCompanionSnapshot(s, ocr: box.state, ocrError: box.error);
+    return buildMangaCompanionSnapshot(
+      s,
+      ocr: box.state,
+      ocrError: box.error,
+      info: _info,
+    );
+  }
+
+  /// Loads the cover / rating once per title (async, outside the tick; the
+  /// result is published when it lands).
+  void _ensureInfo(String title) {
+    if (title == _infoTitle) return;
+    _infoTitle = title;
+    _info = null;
+    unawaited(_loadInfo(title));
+  }
+
+  Future<void> _loadInfo(String title) async {
+    final MangaCompanionInfo? info = await _reader.loadInfo();
+    // Nothing known: the snapshot already says so (no re-send).
+    if (_disposed || title != _infoTitle || info == null) return;
+    _info = info;
+    link.publishNow();
   }
 
   /// A command from the panel.
@@ -346,5 +437,8 @@ class MangaCompanionHook {
     }
   }
 
-  void dispose() => link.dispose();
+  void dispose() {
+    _disposed = true;
+    link.dispose();
+  }
 }

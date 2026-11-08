@@ -26,6 +26,7 @@ class _FakeReaderPage implements ReaderCompanionPage {
   int bookmarkLoads = 0;
   int statsLoads = 0;
   int infoLoads = 0;
+  ReaderCompanionBookInfo info = const ReaderCompanionBookInfo(author: '夏目漱石');
   List<ReaderCompanionBookmark> bookmarks = <ReaderCompanionBookmark>[
     (id: 7, label: '先生と私', chapter: 3),
   ];
@@ -63,9 +64,9 @@ class _FakeReaderPage implements ReaderCompanionPage {
   };
 
   @override
-  Future<({String? author, String? cover})> loadBookInfo() async {
+  Future<ReaderCompanionBookInfo> loadBookInfo() async {
     infoLoads++;
-    return (author: '夏目漱石', cover: null);
+    return info;
   }
 
   @override
@@ -88,6 +89,8 @@ class _FakeReaderPage implements ReaderCompanionPage {
       todayChars: 9420,
       todayLookups: 14,
       todayCards: 2,
+      allMs: 5 * 3600000,
+      allChars: 123456,
     );
   }
 
@@ -221,6 +224,38 @@ void main() {
               .integer(ReaderCompanionKeys.todayChars),
           9420,
         );
+        // All-time totals and the bookmark count ride along (S5 info card);
+        // no series declared: no series keys.
+        expect(
+          snap
+              .mapOrNull(ReaderCompanionKeys.stats)!
+              .integer(ReaderCompanionKeys.allChars),
+          123456,
+        );
+        expect(snap.integer(ReaderCompanionKeys.bookmarkCount), 1);
+        expect(snap.containsKey(ReaderCompanionKeys.series), isFalse);
+        expect(snap.containsKey(ReaderCompanionKeys.seriesIndex), isFalse);
+        hook.dispose();
+      });
+    });
+
+    test('series from the book info, loaded once', () {
+      fakeAsync((FakeAsync async) {
+        page.info = const ReaderCompanionBookInfo(
+          author: '夏目漱石',
+          series: '漱石全集',
+          seriesIndex: 3,
+        );
+        final ReaderCompanionHook hook = ReaderCompanionHook(
+          page,
+          registry: registry,
+        )..attach(null);
+        registry.setActive(true);
+        async.elapse(const Duration(seconds: 5));
+        final Map<String, Object?> snap = registry.currentSnapshot!;
+        expect(snap.str(ReaderCompanionKeys.series), '漱石全集');
+        expect(snap.intOrNull(ReaderCompanionKeys.seriesIndex), 3);
+        expect(page.infoLoads, 1);
         hook.dispose();
       });
     });

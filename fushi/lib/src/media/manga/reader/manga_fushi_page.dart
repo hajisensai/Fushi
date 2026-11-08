@@ -86,6 +86,9 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout_editor.dart'
     show showMangaControlLayoutEditorSheet;
 import 'package:fushi/src/media/manga/reader/manga_reader_bookmarks.dart';
 import 'package:fushi/src/media/manga/reader/manga_companion_hook.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
+import 'package:fushi/src/second_screen/companion/companion_cover_files.dart';
 import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'

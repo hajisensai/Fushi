@@ -11,13 +11,33 @@ import 'package:material_ui/material_ui.dart';
 /// One bookmark as the companion lists it.
 typedef ReaderCompanionBookmark = ({int id, String label, int chapter});
 
-/// This book's reading today (the reader's statistics sheet numbers).
+/// This book's reading today and all time (the reader's statistics sheet
+/// numbers).
 typedef ReaderCompanionStats = ({
   int todayMs,
   int todayChars,
   int todayLookups,
   int todayCards,
+  int allMs,
+  int allChars,
 });
+
+/// The book's static info (resolved once per book): author, local cover
+/// file, the series the EPUB declares (null fields = unknown).
+@immutable
+class ReaderCompanionBookInfo {
+  const ReaderCompanionBookInfo({
+    this.author,
+    this.cover,
+    this.series,
+    this.seriesIndex,
+  });
+
+  final String? author;
+  final String? cover;
+  final String? series;
+  final num? seriesIndex;
+}
 
 /// What the EPUB reader page gives its companion hook. Getters are cheap
 /// (in-memory page state); the `load*` calls do I/O and run only while the
@@ -40,8 +60,9 @@ abstract interface class ReaderCompanionPage {
   /// author / cover.
   Map<String, Object?> audiobookState();
 
-  /// Author and local cover file (resolved once per book; file I/O).
-  Future<({String? author, String? cover})> loadBookInfo();
+  /// Author, local cover file and series (resolved once per book; file
+  /// I/O).
+  Future<ReaderCompanionBookInfo> loadBookInfo();
 
   /// Bookmarks are possible (the book has a stable id).
   bool get bookmarksEnabled;
@@ -87,7 +108,7 @@ class ReaderCompanionHook {
   bool _started = false;
   bool _disposed = false;
 
-  ({String? author, String? cover})? _info;
+  ReaderCompanionBookInfo? _info;
   bool _infoLoading = false;
   List<ReaderCompanionBookmark> _bookmarks = const <ReaderCompanionBookmark>[];
   ReaderCompanionStats? _stats;
@@ -146,7 +167,8 @@ class ReaderCompanionHook {
       _loadedForActivation = true;
       unawaited(_loadAll());
     }
-    final ({String? author, String? cover})? info = _info;
+    final ReaderCompanionBookInfo? info = _info;
+    final String? series = info?.series?.trim();
     if (_kind == CompanionContextKind.audiobook) {
       return <String, Object?>{
         ..._page.audiobookState(),
@@ -161,7 +183,12 @@ class ReaderCompanionHook {
       ReaderCompanionKeys.title: title,
       ReaderCompanionKeys.author: info?.author,
       ReaderCompanionKeys.cover: info?.cover,
+      if (series != null && series.isNotEmpty) ...<String, Object?>{
+        ReaderCompanionKeys.series: series,
+        ReaderCompanionKeys.seriesIndex: ?info?.seriesIndex,
+      },
       ReaderCompanionKeys.bookmarksEnabled: _page.bookmarksEnabled,
+      ReaderCompanionKeys.bookmarkCount: _bookmarks.length,
       ReaderCompanionKeys.bookmarks: <Map<String, Object?>>[
         for (final ReaderCompanionBookmark b in _bookmarks.take(
           ReaderCompanionKeys.maxBookmarks,
@@ -179,6 +206,8 @@ class ReaderCompanionHook {
               ReaderCompanionKeys.todayChars: stats.todayChars,
               ReaderCompanionKeys.todayLookups: stats.todayLookups,
               ReaderCompanionKeys.todayCards: stats.todayCards,
+              ReaderCompanionKeys.allMs: stats.allMs,
+              ReaderCompanionKeys.allChars: stats.allChars,
             },
     };
   }

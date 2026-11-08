@@ -36,6 +36,9 @@ class _MangaCompanionReader implements MangaCompanionReader {
   @override
   Future<MangaCompanionOcrOutcome> recognizePage(int page) =>
       _state._companionRecognizePage(page);
+
+  @override
+  Future<MangaCompanionInfo?> loadInfo() => _state._companionLoadInfo();
 }
 
 extension _MangaCompanion on _MangaFushiPageState {
@@ -47,6 +50,43 @@ extension _MangaCompanion on _MangaFushiPageState {
         ? entry.series.title
         : (_bookRow?.title ?? '');
     _companion.claim(title, route: ModalRoute.of(context));
+  }
+
+  /// Cover + cached rating for the companion's info card: the library's
+  /// cover (user override, else the item's own local image, else the shelf
+  /// row's cover file) and the `CollectionScrapeMeta` rating of the volume's
+  /// collection. Local data only.
+  Future<MangaCompanionInfo?> _companionLoadInfo() async {
+    if (!mounted) return null;
+    final FushiDatabase db = appModel.database;
+    final MediaItem? item = widget.item;
+    String cover = item == null
+        ? ''
+        : companionCoverFilePath(
+            override: () => item
+                .getMediaSource(appModel: appModel)
+                .resolveOverrideThumbnailFile(appModel: appModel, item: item),
+            imageUrl: item.imageUrl,
+          );
+    final String? rowCover = _bookRow?.coverPath;
+    if (cover.isEmpty && rowCover != null && rowCover.isNotEmpty) {
+      cover = companionCoverFilePath(
+        override: () => File(rowCover),
+        imageUrl: null,
+      );
+    }
+    final ({double rating, int? votes})? rating =
+        await loadMangaCompanionRating(
+          db,
+          bookKey: widget.bookKey,
+          bookUid: _bookRow?.uid,
+        );
+    if (cover.isEmpty && rating == null) return null;
+    return MangaCompanionInfo(
+      cover: cover.isEmpty ? null : cover,
+      rating: rating?.rating,
+      votes: rating?.votes,
+    );
   }
 
   MangaCompanionReadState? _companionReadState() {

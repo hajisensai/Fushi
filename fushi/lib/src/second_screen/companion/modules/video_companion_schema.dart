@@ -20,7 +20,12 @@
 ///   subtitle tracks that can be selected; [subtitlesOff] bool.
 /// - [info] Map? (cached scrape metadata, every field optional, missing =
 ///   unknown): [workTitle], [rating] double, [votes] int, [overview],
-///   [episodeNumber] int, [episodeTitle], [episodeOverview].
+///   [episodeNumber] int, [episodeTitle], [episodeOverview]; since S5 also
+///   [year] int, [studios] / [genres] List<String> (each at most
+///   [maxTerms]), [cast] List of {[personName], [personRole]?} (at most
+///   [maxCast], billing order) and [staff] List of {[personName],
+///   [staffKind] (`director` / `writer` / ... as cached), [staffJob]?} (at
+///   most [maxStaff]). Old panels ignore the new keys.
 ///
 /// Commands (`session.command(action, args)`): see [VideoCompanionActions].
 abstract final class VideoCompanionKeys {
@@ -60,12 +65,28 @@ abstract final class VideoCompanionKeys {
   static const String episodeNumber = 'episodeNumber';
   static const String episodeTitle = 'episodeTitle';
   static const String episodeOverview = 'episodeOverview';
+  static const String year = 'year';
+  static const String studios = 'studios';
+  static const String genres = 'genres';
+  static const String cast = 'cast';
+  static const String staff = 'staff';
+
+  // Cast / staff entries.
+  static const String personName = 'name';
+  static const String personRole = 'role';
+  static const String staffKind = 'kind';
+  static const String staffJob = 'job';
 
   // Command args.
   static const String ms = 'ms';
 
   /// Most cues sent in one snapshot (the window around the current cue).
   static const int maxCues = 80;
+
+  /// Most cast / staff entries and studio / genre names in [info].
+  static const int maxCast = 10;
+  static const int maxStaff = 6;
+  static const int maxTerms = 6;
 }
 
 /// Commands the video panel sends (args in brackets):

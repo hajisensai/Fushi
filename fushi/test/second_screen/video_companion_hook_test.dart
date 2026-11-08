@@ -671,5 +671,159 @@ void main() {
         );
       },
     );
+
+    test(
+      'terms and credits of the work: year, studio, genres, cast, staff',
+      () async {
+        await video('movie');
+        final int workId = await db.upsertVideoMetadataWork(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: const Value<String?>('movie'),
+            mediaType: 'movie',
+            title: 'Movie title',
+            year: const Value<int?>(2001),
+            updatedAt: 1,
+          ),
+        );
+        await db.replaceVideoMetadataTermsForWork(
+          workId: workId,
+          terms: <VideoMetadataTermsCompanion>[
+            VideoMetadataTermsCompanion.insert(
+              termKey: 'studio:ghibli',
+              kind: 'studio',
+              name: 'Studio Ghibli',
+              normalizedName: 'ghibli',
+            ),
+            VideoMetadataTermsCompanion.insert(
+              termKey: 'genre:fantasy',
+              kind: 'genre',
+              name: 'Fantasy',
+              normalizedName: 'fantasy',
+            ),
+            VideoMetadataTermsCompanion.insert(
+              termKey: 'keyword:spirits',
+              kind: 'keyword',
+              name: 'spirits',
+              normalizedName: 'spirits',
+            ),
+          ],
+          mappings: <VideoMetadataWorkTermsCompanion>[
+            for (final String key in <String>[
+              'studio:ghibli',
+              'genre:fantasy',
+              'keyword:spirits',
+            ])
+              VideoMetadataWorkTermsCompanion.insert(
+                workId: workId,
+                termKey: key,
+              ),
+          ],
+        );
+        await db.upsertVideoMetadataPeople(<VideoMetadataPeopleCompanion>[
+          for (final (String key, String name) p in <(String, String)>[
+            ('p1', 'Rumi Hiiragi'),
+            ('p2', 'Hayao Miyazaki'),
+            ('p3', 'Miyu Irino'),
+          ])
+            VideoMetadataPeopleCompanion.insert(
+              personKey: p.$1,
+              name: p.$2,
+              updatedAt: 1,
+            ),
+        ]);
+        await db
+            .upsertVideoMetadataCharacters(<VideoMetadataCharactersCompanion>[
+              VideoMetadataCharactersCompanion.insert(
+                characterKey: 'c1',
+                name: 'Chihiro',
+                updatedAt: 1,
+              ),
+            ]);
+        await db.replaceVideoMetadataCredits(
+          workId: workId,
+          credits: <VideoMetadataCreditsCompanion>[
+            VideoMetadataCreditsCompanion.insert(
+              personKey: 'p1',
+              creditKind: 'voice_actor',
+              characterKey: const Value<String?>('c1'),
+              sortOrder: const Value<int>(0),
+            ),
+            VideoMetadataCreditsCompanion.insert(
+              personKey: 'p3',
+              creditKind: 'voice_actor',
+              roleName: const Value<String>('Haku'),
+              sortOrder: const Value<int>(1),
+            ),
+            VideoMetadataCreditsCompanion.insert(
+              personKey: 'p2',
+              creditKind: 'director',
+              sortOrder: const Value<int>(2),
+            ),
+            VideoMetadataCreditsCompanion.insert(
+              personKey: 'p2',
+              creditKind: 'writer',
+              job: const Value<String?>('Screenplay'),
+              sortOrder: const Value<int>(3),
+            ),
+          ],
+        );
+        final VideoCompanionInfo info = (await loadVideoCompanionInfo(
+          db,
+          bookUid: 'movie',
+        ))!;
+        expect(info.toJson(), <String, Object?>{
+          VideoCompanionKeys.workTitle: 'Movie title',
+          VideoCompanionKeys.year: 2001,
+          VideoCompanionKeys.studios: <String>['Studio Ghibli'],
+          VideoCompanionKeys.genres: <String>['Fantasy'],
+          VideoCompanionKeys.cast: <Map<String, Object?>>[
+            <String, Object?>{
+              VideoCompanionKeys.personName: 'Rumi Hiiragi',
+              VideoCompanionKeys.personRole: 'Chihiro',
+            },
+            <String, Object?>{
+              VideoCompanionKeys.personName: 'Miyu Irino',
+              VideoCompanionKeys.personRole: 'Haku',
+            },
+          ],
+          VideoCompanionKeys.staff: <Map<String, Object?>>[
+            <String, Object?>{
+              VideoCompanionKeys.personName: 'Hayao Miyazaki',
+              VideoCompanionKeys.staffKind: 'director',
+            },
+            <String, Object?>{
+              VideoCompanionKeys.personName: 'Hayao Miyazaki',
+              VideoCompanionKeys.staffKind: 'writer',
+              VideoCompanionKeys.staffJob: 'Screenplay',
+            },
+          ],
+        });
+      },
+    );
+
+    test('lists are capped and blanks dropped', () {
+      final VideoCompanionInfo info = VideoCompanionInfo(
+        year: 0,
+        genres: <String>[' ', for (int i = 0; i < 9; i++) 'g$i'],
+        cast: <VideoCompanionCredit>[
+          for (int i = 0; i < 15; i++) VideoCompanionCredit(name: 'a$i'),
+        ],
+        staff: <VideoCompanionCredit>[
+          const VideoCompanionCredit(name: '  '),
+          for (int i = 0; i < 9; i++)
+            VideoCompanionCredit(name: 's$i', kind: 'director'),
+        ],
+      );
+      final Map<String, Object?> json = info.toJson();
+      expect(json.containsKey(VideoCompanionKeys.year), isFalse);
+      expect(json.strings(VideoCompanionKeys.genres), hasLength(6));
+      expect(json.strings(VideoCompanionKeys.genres).first, 'g0');
+      expect(json.maps(VideoCompanionKeys.cast), hasLength(10));
+      expect(json.maps(VideoCompanionKeys.staff), hasLength(6));
+      expect(json.maps(VideoCompanionKeys.staff).first, <String, Object?>{
+        VideoCompanionKeys.personName: 's0',
+        VideoCompanionKeys.staffKind: 'director',
+      });
+    });
   });
 }
