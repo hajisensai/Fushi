@@ -433,6 +433,58 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    // 同一个「125 = 前台服务，界面不一定在前台」的事实，ApplicationExitInfo 条目与会话
+    // 标记必须用同一个判定（androidDiedInForeground）：界面早退到后台、只剩前台服务在跑
+    // 时被 LOW_MEMORY 杀，旧实现条目仍按 125 判前台 → memoryKill + foreground → 弹闪退报告。
+    test('importance=125 + LOW_MEMORY + 标记停在 paused → 后台内存回收，不弹闪退报告', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'paused',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, reason: 'LOW_MEMORY'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.memoryKill);
+      expect(v.foreground, isFalse);
+      expect(v.worthReporting, isFalse);
+    });
+
+    test('importance=125 + LOW_MEMORY + 标记停在 resumed → 前台内存回收，照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, reason: 'LOW_MEMORY'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.memoryKill);
+      expect(v.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('androidDiedInForeground：两头是硬事实，101–125 看会话标记，对不上标记按前台', () {
+      expect(
+        androidDiedInForeground(100, sessionSaysForeground: false),
+        isTrue,
+      );
+      expect(
+        androidDiedInForeground(400, sessionSaysForeground: true),
+        isFalse,
+      );
+      expect(
+        androidDiedInForeground(125, sessionSaysForeground: false),
+        isFalse,
+      );
+      expect(androidDiedInForeground(125, sessionSaysForeground: true), isTrue);
+      expect(androidDiedInForeground(125, sessionSaysForeground: null), isTrue);
+      expect(
+        androidDiedInForeground(null, sessionSaysForeground: false),
+        isFalse,
+      );
+      expect(
+        androidDiedInForeground(null, sessionSaysForeground: null),
+        isTrue,
+      );
+    });
+
     test('后台时原生崩溃照样上报（平台崩溃原因优先）', () async {
       final PreviousExitVerdict? v = await verdictFor(
         lifecycle: 'inactive',

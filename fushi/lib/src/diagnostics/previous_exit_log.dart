@@ -117,7 +117,8 @@ enum PreviousExitKind {
   backgroundReclaim;
 
   /// 这种退出值得问用户要不要把日志发给开发者。内存回收只在发生在前台时算（用户眼里
-  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。
+  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。前后台按
+  /// [androidDiedInForeground]：前台服务（125）只在会话标记也说界面在前台时算前台。
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
@@ -436,17 +437,10 @@ ExitReportEntry? describeUncleanPreviousSession(
   int? androidImportanceAtDeath,
 }) {
   if (previous == null || previous.clean) return null;
-  // 重要性只在两头是硬事实：<= IMPORTANCE_FOREGROUND（界面在最上层）一定是前台；
-  // > IMPORTANCE_FOREGROUND_SERVICE 一定没在用户眼前。正好是前台服务（125：放歌 /
-  // 下载保活 / 悬浮窗）时界面可能早已退到后台，交给会话标记的生命周期判断
-  // （反馈 vJrUPZW9I8：标记停在 paused 48 分钟后被杀，却按 125 判成「停在前台时没了」，BUG-4243）。
-  final bool diedInForeground = switch (androidImportanceAtDeath) {
-    null => previous.diedInForeground,
-    final int i when i <= kAndroidForegroundUiImportance => true,
-    final int i when i <= kAndroidForegroundServiceImportance =>
-      previous.diedInForeground,
-    _ => false,
-  };
+  final bool diedInForeground = androidDiedInForeground(
+    androidImportanceAtDeath,
+    sessionSaysForeground: previous.diedInForeground,
+  );
   final StringBuffer b = StringBuffer()
     ..write('上次进程没有走正常退出（崩溃、被系统杀、或被强杀）：')
     ..write('pid=${previous.pid} version=${previous.version} ')
@@ -578,9 +572,42 @@ PreviousExitKind? androidExitKind(String reason) => switch (reason) {
 const int kAndroidForegroundUiImportance = 100;
 
 /// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE`（125）：进程在跑前台服务（放歌、
-/// 下载保活、悬浮窗），界面**不一定**在屏幕上。重要性不大于它 = 用户感知得到（被杀时
-/// 放着的歌会断）；是不是「停在前台时没了」另看会话标记（[describeUncleanPreviousSession]）。
+/// 下载保活、悬浮窗），界面**不一定**在屏幕上；落在它与 [kAndroidForegroundUiImportance]
+/// 之间时是不是「停在前台时没了」另看会话标记（[androidDiedInForeground]）。
 const int kAndroidForegroundServiceImportance = 125;
+
+/// Android 进程死时算不算「停在前台」——会话标记推断（[describeUncleanPreviousSession]）与
+/// `ApplicationExitInfo` 条目（[formatAndroidExitReports]）共用这一个判定，不另写阈值。
+///
+/// 重要性只在两头是硬事实：<= IMPORTANCE_FOREGROUND（界面在最上层）一定是前台；
+/// > IMPORTANCE_FOREGROUND_SERVICE 一定没在用户眼前。落在 101–125（前台服务：放歌 /
+/// 下载保活 / 悬浮窗）时界面可能早已退到后台，交给会话标记的生命周期判断（反馈
+/// vJrUPZW9I8：标记停在 paused 48 分钟后被杀，却按 125 判成「停在前台时没了」，BUG-4243）。
+///
+/// [sessionSaysForeground]：同一进程会话标记的 [PreviousSession.diedInForeground]；
+/// 这条记录对不上会话标记（别的进程 / pid、没有标记）时为 null，按前台算（平台没说清时
+/// 宁可多问一次，与 [ExitReportEntry.foreground] 的缺省一致）。
+bool androidDiedInForeground(
+  int? importance, {
+  required bool? sessionSaysForeground,
+}) => switch (importance) {
+  null => sessionSaysForeground ?? true,
+  final int i when i <= kAndroidForegroundUiImportance => true,
+  final int i when i <= kAndroidForegroundServiceImportance =>
+    sessionSaysForeground ?? true,
+  _ => false,
+};
+
+/// [record]（一条 `ApplicationExitInfo`）是不是会话标记 [previous] 那个进程的：pid 相同、
+/// 且死在它启动之后（pid 会被复用）；没有时间戳时只看 pid。
+bool _isExitRecordOfSession(
+  Map<Object?, Object?> record,
+  PreviousSession previous,
+) {
+  if (record['pid'] != previous.pid) return false;
+  final Object? timestamp = record['timestamp'];
+  return timestamp is! int || timestamp >= previous.startedAt;
+}
 
 /// `ComponentCallbacks2.TRIM_MEMORY_*` 的可读名。
 String androidTrimLevelName(int level) => switch (level) {
@@ -605,10 +632,9 @@ int? androidImportanceAtDeath(
   if (reasons is! List) return null;
   for (final Object? r in reasons) {
     if (r is! Map) continue;
-    final Object? recordPid = r['pid'];
     final Object? importance = r['importance'];
+    if (r['pid'] != pid || importance is! int) continue;
     final Object? timestamp = r['timestamp'];
-    if (recordPid != pid || importance is! int) continue;
     if (timestamp is int && timestamp < startedAtMs) continue;
     return importance;
   }
@@ -616,7 +642,13 @@ int? androidImportanceAtDeath(
 }
 
 /// 把 `ProcessExitChannel.consumeExitReports` 的返回值整理成摘要。
-List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
+///
+/// [previous]：上次会话标记。会话标记那个进程的记录，前后台按 [androidDiedInForeground]
+/// 结合标记的生命周期判（前台服务 125 时界面已退后台、被 LOW_MEMORY 杀，不算前台内存回收）。
+List<ExitReportEntry> formatAndroidExitReports(
+  Map<Object?, Object?> payload, {
+  PreviousSession? previous,
+}) {
   final List<ExitReportEntry> out = <ExitReportEntry>[];
   final Object? reasons = payload['reasons'];
   if (reasons is List) {
@@ -647,9 +679,13 @@ List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
           _cap(redactExitReportPaths(b.toString())),
           severe: kSevereAndroidExitReasons.contains(reason),
           kind: androidExitKind(reason),
-          foreground:
-              importance is! int ||
-              importance <= kAndroidForegroundServiceImportance,
+          foreground: androidDiedInForeground(
+            importance is int ? importance : null,
+            sessionSaysForeground:
+                previous != null && _isExitRecordOfSession(r, previous)
+                ? previous.diedInForeground
+                : null,
+          ),
           atMs: timestamp is int ? timestamp : null,
         ),
       );
@@ -1742,7 +1778,7 @@ abstract final class PreviousExitLog {
     final ExitReportEntry? forced = describeForcedPreviousExit(previous);
     if (forced != null) out.add(forced);
     if (androidPayload != null) {
-      out.addAll(formatAndroidExitReports(androidPayload));
+      out.addAll(formatAndroidExitReports(androidPayload, previous: previous));
     }
 
     if (isWindows ?? Platform.isWindows) {
