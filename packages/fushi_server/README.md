@@ -227,7 +227,8 @@ fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
 fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
 fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
 fushi_server ctl srs [status] | profiles | add|remove|default <uid> | off | sync [<uid>]
-fushi_server ctl srs ankiconnect on|off | config '<json>'   复习库（见下文「Fushi 复习」）
+fushi_server ctl srs ankiconnect on|off                  AnkiConnect 监听开关（复习库，见下文「Fushi 复习」）
+fushi_server ctl srs config '<json>'                     其余复习库配置，同 PUT /api/admin/srs，如 '{"ankiConnect":{"bind":"0.0.0.0","apiKey":"…"}}'
 fushi_server ctl upload <文件…> --lib <id> [--path 目录]   分块断点续传（传完 scan）
 fushi_server ctl logs -f                                 跟随日志
 fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
