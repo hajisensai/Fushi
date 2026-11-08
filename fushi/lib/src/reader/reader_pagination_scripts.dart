@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_page_turn_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
@@ -720,28 +721,118 @@ class ReaderPaginationScripts {
     return !isTrackpad || startsNewGesture;
   }
 
-  /// TODO-656 根治：触摸/指针边界手势跨章判据，替代 `_bEnd` 旧的瞬时 `scrollTop<=2`。
+  /// 反馈 R7k887yaJI ①：连续模式触摸手势「沿主轴」的最大偏离角（度）。拇指在手机上
+  /// 走的是弧线，斜着滑偏离书写轴三四十度很常见；旧判据 `|主轴| >= |交叉轴|` 等于 45°
+  /// 一刀切，偏一点就既不跨章也（因 Chromium 锁存交叉轴）不滚动。65° 以内都当主轴手势：
+  /// 连续模式里横向（交叉轴）滑动本来就不承担任何动作（见 [continuousSwipeShouldPaginate]），
+  /// 再往外才是「基本横着划」，不算阅读滚动。
+  static const double continuousGestureMaxOffAxisDegrees = 65;
+
+  /// [continuousGestureMaxOffAxisDegrees] 的正切：`|交叉轴| <= |主轴| * tan` 即在阈值内。
+  static final double continuousGestureMaxOffAxisTan = math.tan(
+    continuousGestureMaxOffAxisDegrees * math.pi / 180,
+  );
+
+  /// JS 侧逐字常量（四位小数足够：角度误差 < 0.01°）。
+  static String get _kContinuousOffAxisTanJs =>
+      continuousGestureMaxOffAxisTan.toStringAsFixed(4);
+
+  /// 斜滑补位接管前，手指至少要沿主轴走的距离（CSS px）。
+  static const int continuousPanAssistMinMainPx = 8;
+
+  /// 过了点击半径之后，至少再观察这么久（ms）原生滚动仍纹丝不动才接管：原生滚动的起步
+  /// 要一两帧才反映到主线程的 scrollTop，太早判会和原生滚动叠成双份。
+  static const int continuousPanAssistSettleMs = 48;
+
+  /// 补位惯性每毫秒的速度保留率（与 UIScrollView 默认 decelerationRate 0.998 同值）。
+  static const double continuousPanAssistFlingDecayPerMs = 0.998;
+
+  /// 补位惯性的最小起步 / 停止速度（px/ms）。
+  static const double continuousPanAssistFlingMinVelocity = 0.05;
+
+  /// 补位惯性的速度上限（px/ms），防一次采样抖动甩飞整章。
+  static const double continuousPanAssistFlingMaxVelocity = 8;
+
+  /// 反馈 R7k887yaJI ① 纯谓词：连续模式一次触摸手势的主轴方向（`'forward'` /
+  /// `'backward'`），不是主轴手势返回 null。JS 影子 = 连续 shell 触摸控制器 `_bEnd`。
   ///
-  /// 旧判据在 touchend 那一帧读 `scrollTop<=2`：用户从章中向上滚，momentum/回弹把
-  /// scrollPos 滑到边界的瞬态被误当「跨章意图」→ 没到章首就切上一章。新判据只看
-  /// **手势起点**（touchstart 时刻）是否已停在边界——从章中滚到边界的那一下起点不在
-  /// 边界，不跨章；只有「一开始就贴着章首/章末再发同向手势」才跨章（与移动端到边界
-  /// 再拉一下翻页的心智一致）。纯函数、无副作用，供单测。
-  ///
-  /// [gestureDir] 手势方向（`'forward'`/`'backward'`，由 swipe 位移符号定）；
-  /// [downScrollPos] touchstart 时沿内容轴的滚动量（横排 scrollTop、竖排 |scrollLeft|）；
-  /// [scrollMax] 该轴最大可滚量（横排 scrollHeight-innerHeight、竖排 scrollWidth-innerWidth）。
+  /// [dx]/[dy] 为手指净位移（CSS px）。主轴（书写轴）：横排为纵向，手指上推（dy<0）=
+  /// forward；竖排 vertical-rl 为横向，手指右移（dx>0）= forward。主轴位移不足
+  /// [minMainPx]，或偏离主轴超过 [continuousGestureMaxOffAxisDegrees]，返回 null。
   @visibleForTesting
-  static String? touchBoundaryCrossDir({
-    required String gestureDir,
-    required num downScrollPos,
-    required num scrollMax,
+  static String? continuousGestureDir({
+    required bool vertical,
+    required double dx,
+    required double dy,
+    required double minMainPx,
   }) {
-    final bool downAtStart = downScrollPos <= 2;
-    final bool downAtEnd = downScrollPos >= scrollMax - 2;
-    if (gestureDir == 'backward' && downAtStart) return 'backward';
-    if (gestureDir == 'forward' && downAtEnd) return 'forward';
+    final double main = vertical ? dx : -dy;
+    final double cross = vertical ? dy : dx;
+    if (main.abs() < minMainPx) return null;
+    if (cross.abs() > main.abs() * continuousGestureMaxOffAxisTan) return null;
+    return main > 0
+        ? ReaderNavigationDirection.forward.jsValue
+        : ReaderNavigationDirection.backward.jsValue;
+  }
+
+  /// 反馈 R7k887yaJI ③ / TODO-656 纯谓词：触摸边界拉动是否跨章（JS 影子 = `_bEnd`）。
+  ///
+  /// 坐标都是「手指沿前进方向的坐标」（横排 `-y`、竖排 `x`）。[pinnedForwardAt] /
+  /// [pinnedBackwardAt] = 正文贴到章末 / 章首那一刻的手指坐标（null = 本手势里没贴过；
+  /// 标准档只在 touchstart 记，低阻尼档 touchmove 中途贴上也记）。手指从贴边界处起再沿
+  /// [gestureDir] 拉 [pullPx] 以上才跨章。
+  @visibleForTesting
+  static String? continuousBoundaryCrossDir({
+    required String? gestureDir,
+    required double endFingerMain,
+    required double? pinnedForwardAt,
+    required double? pinnedBackwardAt,
+    required int pullPx,
+  }) {
+    if (gestureDir == ReaderNavigationDirection.forward.jsValue &&
+        pinnedForwardAt != null &&
+        endFingerMain - pinnedForwardAt >= pullPx) {
+      return gestureDir;
+    }
+    if (gestureDir == ReaderNavigationDirection.backward.jsValue &&
+        pinnedBackwardAt != null &&
+        pinnedBackwardAt - endFingerMain >= pullPx) {
+      return gestureDir;
+    }
     return null;
+  }
+
+  /// 反馈 R7k887yaJI ① 纯谓词：斜滑补位是否接管这次手势（JS 影子 = `_bMove`）。
+  ///
+  /// Chromium 对起手偏交叉轴（|交叉| > |主轴|）的触摸滚动按交叉轴锁存，而连续模式交叉轴
+  /// 无可滚范围，于是整段手势正文不动（真 Chromium 探针
+  /// `tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs`）。只有同时满足才接管：
+  /// 原生滚动自按下起没动过（[nativeMoved] 恒 false）、过点击半径后已观察
+  /// [continuousPanAssistSettleMs]、主轴走了 [continuousPanAssistMinMainPx]、起手偏交叉轴
+  /// （主轴占优的手势原生一定会滚，绝不碰）、且仍在 [continuousGestureMaxOffAxisDegrees] 内。
+  @visibleForTesting
+  static bool continuousPanAssistShouldEngage({
+    required double mainTravel,
+    required double crossTravel,
+    required bool nativeMoved,
+    required double sinceSlopMs,
+  }) {
+    if (nativeMoved) return false;
+    if (sinceSlopMs < continuousPanAssistSettleMs) return false;
+    final double main = mainTravel.abs();
+    final double cross = crossTravel.abs();
+    if (main < continuousPanAssistMinMainPx) return false;
+    if (cross <= main) return false;
+    return cross <= main * continuousGestureMaxOffAxisTan;
+  }
+
+  /// 斜滑补位惯性：[velocity]（px/ms）经过 [dtMs] 后的速度。指数衰减、单调趋零、不反向。
+  @visibleForTesting
+  static double continuousPanAssistFlingVelocity({
+    required double velocity,
+    required double dtMs,
+  }) {
+    return velocity * math.pow(continuousPanAssistFlingDecayPerMs, dtMs);
   }
 
   /// TODO-656 根治：滚轮跨章的「到边界」判据，替代 `atStart/atEnd` 瞬时几何。
@@ -4643,66 +4734,198 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
     }
   });
 };
+// 反馈 R7k887yaJI：连续模式触摸手势控制器（边界拉动跨章 + 斜滑补位）。一个文档只装一次
+// （同一文档可能先后装分页 / 连续 shell，重复注册会让补位滚动翻倍），事件时刻现读
+// window.__fushiReaderConfig（updateLive 热更新的同一个对象）与当前 shell。
+//  ① 判轴：手势沿主轴（书写轴）的偏离角不超过 MAX_OFF_AXIS_TAN 对应的角度即算主轴手势
+//     （纯函数影子 ReaderPaginationScripts.continuousGestureDir），不再是 45° 一刀切——
+//     拇指弧线斜着滑也能跨章。
+//  ② 斜滑补位：Chromium 对起手偏横向（|dx|>|dy|）的手势按交叉轴锁存，正文整段不滚（真
+//     Chromium 探针 tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs 实测：
+//     超过约 52° 一律不动）。原生滚动确实没动、手势又仍在角度阈值内时，由这里按主轴分量
+//     接管滚动，松手按速度做惯性（纯函数影子 continuousPanAssistShouldEngage /
+//     continuousPanAssistFlingVelocity）。原生已经在滚的手势一概不碰。
+//  ③ 跨章阻尼（设置 continuousChapterTurnResistance → C.continuousTurnPullPx /
+//     C.continuousTurnPinMidGesture）：正文贴在章首 / 章末之后，手指还要朝同一方向再拉
+//     continuousTurnPullPx 才跨章（纯函数影子 continuousBoundaryCrossDir）。标准档只认
+//     「手势起点就贴在边界」（TODO-656：从章中滚到边界的那一下不跨章）；低阻尼档允许
+//     同一手势里滚到边界后继续推，不必松手再滑一次。
 (function() {
+  if (window.__fushiContinuousTouchInstalled) return;
+  window.__fushiContinuousTouchInstalled = true;
   var TAP_SLOP = 12;
-  var SWIPE_THRESHOLD = 20;
+  var MAX_OFF_AXIS_TAN = $_kContinuousOffAxisTanJs;
+  var ASSIST_MIN_MAIN = $continuousPanAssistMinMainPx;
+  var ASSIST_SETTLE_MS = $continuousPanAssistSettleMs;
+  var FLING_DECAY_PER_MS = $continuousPanAssistFlingDecayPerMs;
+  var FLING_MIN_VELOCITY = $continuousPanAssistFlingMinVelocity;
+  var FLING_MAX_VELOCITY = $continuousPanAssistFlingMaxVelocity;
   var downX = 0, downY = 0, downSPos = 0, downSMax = 1, hasDown = false;
-  function _bStart(x, y) {
-    hasDown = true; downX = x; downY = y;
-    // TODO-656：记手势起点(touchstart)沿内容轴的滚动量 + 最大可滚量，跨章只看
-    // 起点是否已在边界（见 _bEnd / 纯函数 touchBoundaryCrossDir）。
+  var pinFwdAt = null, pinBackAt = null;
+  var slopAt = 0, nativeMovedSinceDown = false;
+  var assist = false, assistDecided = false, assistLastPos = 0, assistLastMain = 0;
+  var samples = [];
+  var flingRaf = 0;
+  function _reader() {
+    var r = window.fushiReader;
+    return (r && r._isContinuousShell && r._isContinuousShell()) ? r : null;
+  }
+  function _cfg() { return window.__fushiReaderConfig || {}; }
+  function _vertical() { var r = window.fushiReader; return !!(r && r.isVertical()); }
+  // 手指沿「前进」方向的坐标：横排前进 = 手指上推（-y），竖排 vertical-rl 前进 = 手指右移（+x）。
+  function _fingerMain(x, y, vertical) { return vertical ? x : -y; }
+  // 正文沿前进方向的滚动量（横排 scrollTop、竖排 |scrollLeft|）与最大可滚量。
+  function _axis(vertical) {
     var root = document.scrollingElement || document.documentElement;
-    var vertical = window.fushiReader && window.fushiReader.isVertical();
     if (vertical) {
-      downSPos = Math.abs(root.scrollLeft);
-      downSMax = Math.max(1, root.scrollWidth - window.innerWidth);
-    } else {
-      downSPos = root.scrollTop;
-      downSMax = Math.max(1, root.scrollHeight - window.innerHeight);
+      return {pos: Math.abs(root.scrollLeft), max: Math.max(1, root.scrollWidth - window.innerWidth)};
     }
+    return {pos: root.scrollTop, max: Math.max(1, root.scrollHeight - window.innerHeight)};
+  }
+  function _scrollMain(delta, vertical) {
+    // 前进 = 横排 scrollTop 增大；竖排 vertical-rl scrollLeft 减小（与 paginate forwardSign=-1 同约定）。
+    if (vertical) window.scrollBy({left: -delta, top: 0, behavior: 'auto'});
+    else window.scrollBy({left: 0, top: delta, behavior: 'auto'});
+  }
+  function _stopFling() {
+    if (flingRaf) { cancelAnimationFrame(flingRaf); flingRaf = 0; }
+  }
+  function _notePin(fingerMain, ax) {
+    if (pinFwdAt === null && ax.pos >= ax.max - 2) pinFwdAt = fingerMain;
+    if (pinBackAt === null && ax.pos <= 2) pinBackAt = fingerMain;
+  }
+  function _bStart(x, y) {
+    _stopFling();
+    hasDown = true; downX = x; downY = y;
+    var vertical = _vertical();
+    // TODO-656：记手势起点(touchstart)沿内容轴的滚动量 + 最大可滚量；起点已贴边界时
+    // 拉动距离从起点算起（标准档只认这种）。
+    var ax = _axis(vertical);
+    downSPos = ax.pos;
+    downSMax = ax.max;
+    pinFwdAt = null; pinBackAt = null;
+    _notePin(_fingerMain(x, y, vertical), ax);
+    slopAt = 0; nativeMovedSinceDown = false;
+    assist = false; assistDecided = false;
+    samples = [];
+  }
+  function _bMove(x, y, t) {
+    if (!hasDown || window.__fushiTextSelectDragActive) return;
+    var vertical = _vertical();
+    var fm = _fingerMain(x, y, vertical);
+    var ax = _axis(vertical);
+    var dx = x - downX, dy = y - downY;
+    var main = vertical ? dx : -dy;
+    var cross = vertical ? dy : dx;
+    if (Math.abs(ax.pos - downSPos) > 1 && !assist) nativeMovedSinceDown = true;
+    if (!slopAt && (Math.abs(dx) >= TAP_SLOP || Math.abs(dy) >= TAP_SLOP)) slopAt = t;
+    if (assist) {
+      // 原生滚动也动起来了（引擎晚一步接管）→ 立刻让出，绝不双份滚动。
+      if (Math.abs(ax.pos - assistLastPos) > 2) {
+        assist = false;
+      } else {
+        _scrollMain(fm - assistLastMain, vertical);
+        assistLastMain = fm;
+        assistLastPos = _axis(vertical).pos;
+        samples.push({t: t, m: fm});
+        while (samples.length > 1 && t - samples[0].t > 100) samples.shift();
+      }
+    } else if (!assistDecided && slopAt) {
+      var since = t - slopAt;
+      if (nativeMovedSinceDown) {
+        assistDecided = true;
+      } else if (since >= ASSIST_SETTLE_MS) {
+        assistDecided = true;
+        var r = _reader();
+        if (r && Math.abs(main) >= ASSIST_MIN_MAIN && Math.abs(cross) > Math.abs(main)
+            && Math.abs(cross) <= Math.abs(main) * MAX_OFF_AXIS_TAN) {
+          assist = true;
+          // 接管时补上手指已走过的主轴位移，正文与手指对齐。
+          _scrollMain(main, vertical);
+          assistLastMain = fm;
+          assistLastPos = _axis(vertical).pos;
+          samples = [{t: t, m: fm}];
+        }
+      }
+    }
+    if (_cfg().continuousTurnPinMidGesture === true) _notePin(fm, _axis(vertical));
+  }
+  function _fling(v, vertical) {
+    var last = 0;
+    function step(ts) {
+      if (!last) { last = ts; flingRaf = requestAnimationFrame(step); return; }
+      var dt = Math.min(48, ts - last);
+      last = ts;
+      var before = _axis(vertical).pos;
+      _scrollMain(v * dt, vertical);
+      v = v * Math.pow(FLING_DECAY_PER_MS, dt);
+      if (Math.abs(_axis(vertical).pos - before) < 0.5 || Math.abs(v) < FLING_MIN_VELOCITY) {
+        flingRaf = 0;
+        return;
+      }
+      flingRaf = requestAnimationFrame(step);
+    }
+    flingRaf = requestAnimationFrame(step);
   }
   function _bEnd(x, y, src) {
     if (!hasDown) return;
     hasDown = false;
+    var vertical = _vertical();
+    var fm = _fingerMain(x, y, vertical);
+    if (assist) {
+      assist = false;
+      if (samples.length > 1) {
+        var a = samples[0], b = samples[samples.length - 1];
+        var v = b.t > a.t ? (b.m - a.m) / (b.t - a.t) : 0;
+        v = Math.max(-FLING_MAX_VELOCITY, Math.min(FLING_MAX_VELOCITY, v));
+        if (Math.abs(v) >= FLING_MIN_VELOCITY) _fling(v, vertical);
+      }
+    }
     // TODO-1317: a mobile long-press drag-select owns this touch; never cross
     // chapters from a selection gesture.
     if (window.__fushiTextSelectDragActive) return;
+    if (!_reader()) return;
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
-    var vertical = window.fushiReader && window.fushiReader.isVertical();
+    var C = _cfg();
+    var pullPx = Number(C.continuousTurnPullPx) > 0 ? Number(C.continuousTurnPullPx) : ${ContinuousChapterTurnResistance.standard.pullPx};
+    var main = vertical ? dx : -dy;
+    var cross = vertical ? dy : dx;
     var gestureDir = null;
-    if (vertical) {
-      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
-      gestureDir = dx > 0 ? 'forward' : 'backward';
-    } else {
-      if (Math.abs(dy) < SWIPE_THRESHOLD || Math.abs(dy) < Math.abs(dx)) return;
-      gestureDir = dy < 0 ? 'forward' : 'backward';
+    if (Math.abs(main) >= pullPx && Math.abs(cross) <= Math.abs(main) * MAX_OFF_AXIS_TAN) {
+      gestureDir = main > 0 ? 'forward' : 'backward';
     }
-    // TODO-656 根治：跨章只看手势起点(touchstart 记的 downSPos)是否已停在边界，不再用
-    // touchend 瞬时 scrollTop<=2。从章中滚到边界的那一下起点不在边界 → 不跨章；到边界后
-    // 再发同向手势才跨（与纯函数 touchBoundaryCrossDir 同形）。消除「没到章首就跨章」。
+    if (C.continuousTurnPinMidGesture === true) _notePin(fm, _axis(vertical));
     var downAtStart = downSPos <= 2;
     var downAtEnd = downSPos >= downSMax - 2;
     var dir = null;
-    if (gestureDir === 'backward' && downAtStart) dir = 'backward';
-    else if (gestureDir === 'forward' && downAtEnd) dir = 'forward';
+    if (gestureDir === 'forward' && pinFwdAt !== null && fm - pinFwdAt >= pullPx) dir = 'forward';
+    else if (gestureDir === 'backward' && pinBackAt !== null && pinBackAt - fm >= pullPx) dir = 'backward';
     console.log('[xchapter] bEnd src=' + src + ' vertical=' + (vertical ? 1 : 0)
       + ' gestureDir=' + gestureDir + ' downSPos=' + Math.round(downSPos)
       + ' downSMax=' + Math.round(downSMax)
       + ' downAtStart=' + (downAtStart ? 1 : 0) + ' downAtEnd=' + (downAtEnd ? 1 : 0)
+      + ' pull=' + pullPx + ' mid=' + (C.continuousTurnPinMidGesture === true ? 1 : 0)
       + ' dir=' + dir);
     if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
     }
   }
   document.addEventListener('touchstart', function(e) {
-    if (!e.touches.length) return;
+    if (e.touches.length !== 1) { hasDown = false; assist = false; return; }
     _bStart(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (e.touches.length !== 1) { hasDown = false; assist = false; return; }
+    _bMove(e.touches[0].clientX, e.touches[0].clientY, e.timeStamp);
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
     if (!e.changedTouches.length) return;
     _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY, 'touch');
+  }, {passive: true});
+  document.addEventListener('touchcancel', function() {
+    hasDown = false; assist = false;
   }, {passive: true});
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
   // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
