@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -16,7 +15,6 @@ import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/second_screen/companion/companion_covers.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
-import 'package:fushi/src/second_screen/companion/companion_provider_read.dart';
 
 // The home dashboard's "continue" candidates in the main engine, shared by the
 // daily summary (one Continue entry, `companion_main_services.dart`) and the
@@ -68,34 +66,39 @@ Future<List<CompanionContinueCandidate>> collectCompanionContinueCandidates(
   final ModuleVisibility modules = appModel.moduleVisibility;
   return <CompanionContinueCandidate>[
     if (modules.isEnabled(ModuleId.books) || modules.isEnabled(ModuleId.manga))
-      ...await _bookCandidates(ref, appModel),
+      ...await _bookCandidates(appModel),
     if (modules.isEnabled(ModuleId.video))
       ...await _videoCandidates(appModel.database, facts),
   ];
 }
 
 /// Books and manga in progress ([isDashboardContinueBook], the home
-/// dashboard's rule), latest read time from [bookLastReadAtProvider].
+/// dashboard's rule), latest read time from `reader_positions`.
+///
+/// Read from the database on every collection, not through the home shelf's
+/// providers ([fushiBooksProvider], [bookLastReadAtProvider], ...): those are
+/// UI caches the reader refreshes in its exit hook (`closeMedia` ->
+/// `onSourceExit`), several awaits after the top context already went back to
+/// "none" and the summary was collected, so the summary showed the progress
+/// from before the reading session. Collections are triggered by the
+/// database's own change stream (`watchDashboardDataChanges`), so the data
+/// they read must come from the same place.
 Future<List<CompanionContinueCandidate>> _bookCandidates(
-  Ref ref,
   AppModel appModel,
 ) async {
-  final List<MediaItem> books = await readCompanionProviderFuture(
-    ref,
-    fushiBooksProvider(JapaneseLanguage.instance).future,
+  final FushiDatabase db = appModel.database;
+  final List<MediaItem> books = await ReaderFushiSource.instance.getBooksFromDb(
+    appModel: appModel,
   );
-  final Map<String, int> lastReadByUid = await readCompanionProviderFuture(
-    ref,
-    bookLastReadAtProvider.future,
-  );
-  final Map<String, String> uidByKey = await readCompanionProviderFuture(
-    ref,
-    epubBookUidByKeyProvider.future,
-  );
-  final Set<String> completed = await readCompanionProviderFuture(
-    ref,
-    completedEpubBookKeysProvider.future,
-  );
+  final Map<String, int> lastReadByUid = <String, int>{
+    for (final ReaderPositionRow r in await db.getAllReaderPositions())
+      r.bookUid: r.updatedAt,
+  };
+  final Map<String, String> uidByKey = <String, String>{
+    for (final EpubBookMeta r in await db.getEpubBookMetas())
+      if (r.uid.isNotEmpty) r.bookKey: r.uid,
+  };
+  final Set<String> completed = await db.getCompletedEpubBookKeys();
   final ModuleVisibility modules = appModel.moduleVisibility;
   final List<CompanionContinueCandidate> result =
       <CompanionContinueCandidate>[];
