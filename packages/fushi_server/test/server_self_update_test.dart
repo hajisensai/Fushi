@@ -3,11 +3,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDatabaseFileName;
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_server/src/cli.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/self_update/server_bundle_swap.dart';
 import 'package:fushi_server/src/self_update/server_release.dart';
 import 'package:fushi_server/src/self_update/server_self_updater.dart';
+import 'package:fushi_server/src/self_update/server_update_recovery.dart';
+import 'package:fushi_server/src/server_paths.dart';
+import 'package:fushi_server/src/server_runtime.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -370,6 +375,51 @@ void main() {
       expect(c.rolledBack, isTrue);
       expect(c.restartRequired, isFalse);
       expectOldInstall();
+    });
+
+    test('换包中断、拉起的是新 exe → 开库之前还原并以 75 退出，库不被迁移', () async {
+      // 实机复现（Windows，真发布包）：先开库再收尾时，新版把库迁到新 schema，还原后
+      // 拉起的旧版报 FushiDatabaseDowngradeException，服务端再也起不来。
+      writeNewBundle();
+      await swapKilledAfter(1);
+      final String exe = p.join(root.path, 'bin', 'fushi_server');
+      expect(_read(exe), 'new exe');
+      final File config = File(p.join(tmp.path, 'conf', 'fushi_server.yaml'));
+      expect(await runFushiServerCli(<String>['-c', config.path, 'init']), 0);
+      final String dataDir = (await ServerConfig.load(config)).dataDir;
+      Future<ServerUpdateRecovery> recover() =>
+          recoverServerSelfUpdate(installRoot: root, runningExecutable: exe);
+      bool opened = false;
+
+      final int code = await withServerRuntime(config, false, (
+        ServerRuntime rt,
+      ) async {
+        opened = true;
+        return 0;
+      }, recoverSelfUpdate: recover);
+      expect(code, kExitSelfUpdated);
+      expect(opened, isFalse);
+      expect(
+        File(
+          p.join(ServerPaths(dataDir).support.path, fushiDatabaseFileName),
+        ).existsSync(),
+        isFalse,
+      );
+      expectOldInstall();
+
+      // 服务管理器拉起的（已还原的）旧版：无事可做，照常开库；锁已放掉。
+      final int next = await withServerRuntime(config, false, (
+        ServerRuntime rt,
+      ) async {
+        opened = true;
+        return 0;
+      }, recoverSelfUpdate: recover);
+      expect(next, 0);
+      expect(opened, isTrue);
+    });
+
+    test('不是发布包（dart test 的可执行文件是 SDK 的 dart）→ 收尾什么都不做', () async {
+      expect(await recoverServerSelfUpdate(), ServerUpdateRecovery.proceed);
     });
 
     test('上次没删掉的陈旧 *.fushi-old 换前先删：还原不会放回更早的版本', () async {

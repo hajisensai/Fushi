@@ -14,6 +14,9 @@ import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_server/src/commands/command_io.dart' show kExitConflict;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/host_bindings.dart';
+import 'package:fushi_server/src/self_update/server_self_updater.dart'
+    show kExitSelfUpdated;
+import 'package:fushi_server/src/self_update/server_update_recovery.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_log.dart';
@@ -62,12 +65,18 @@ class ServerRuntime {
 ///
 /// [serve] 标明调用方是 `serve`（锁文件里记成 serve，被拒的离线命令据此提示改用
 /// `ctl`）；[command] 是写进锁文件的命令摘要。
+///
+/// 拿到锁后、碰数据库之前先做远程更新的启动收尾（[recoverSelfUpdate]，见
+/// `server_update_recovery.dart`）：换包中断、正在跑的是没换完的新版时以
+/// [kExitSelfUpdated] 退出，不让它把库迁移到旧版打不开的 schema。
 Future<int> withServerRuntime(
   File configFile,
   bool verbose,
   Future<int> Function(ServerRuntime rt) body, {
   bool serve = false,
   String? command,
+  Future<ServerUpdateRecovery> Function() recoverSelfUpdate =
+      recoverServerSelfUpdate,
 }) async {
   if (!await configFile.exists()) {
     stderr.writeln('找不到配置文件 ${configFile.path}；先跑 fushi_server init');
@@ -94,6 +103,14 @@ Future<int> withServerRuntime(
     return kExitConflict;
   }
   try {
+    if (await recoverSelfUpdate() == ServerUpdateRecovery.restartRequired) {
+      stderr.writeln(
+        '上次远程更新换包中断，已还原旧版文件；以退出码 $kExitSelfUpdated 退出，'
+        '由服务管理器拉起旧版（数据库未改动）',
+      );
+      await dataLock.release();
+      return kExitSelfUpdated;
+    }
     return await _withLockedRuntime(
       configFile,
       config,
