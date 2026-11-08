@@ -35,7 +35,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
     show srsFieldKindIcon;
 import 'package:fushi/src/srs/srs_field_catalog.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';

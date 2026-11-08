@@ -32,6 +32,9 @@ dependencies:
     path: ../fushi_dictionary
   fushi_engine:
     path: ../fushi_engine
+  # 复习内核（FSRS 排程 + SrsCore），服务端复习库用；原生库 fushi_fsrs 随包放 bin/../lib/。
+  fushi_srs:
+    path: ../fushi_srs
   # 操作目录（FushiOp / OpDescription / OpInvoker，纯 Dart）：服务端用它描述自己的
   # admin 操作，给远端 AI 助手会话当工具集（spec 2026-10-26 §6.5 / D8）。
   fushi_cli:

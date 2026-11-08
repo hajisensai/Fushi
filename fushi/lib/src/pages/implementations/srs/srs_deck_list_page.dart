@@ -26,7 +26,11 @@ import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
-    show SrsRemoteStoreError, SrsRemoteWire, SrsRemoteWireError;
+    show
+        SrsRemoteServedProfile,
+        SrsRemoteStoreError,
+        SrsRemoteWire,
+        SrsRemoteWireError;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -56,7 +60,10 @@ import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart'
-    show SrsRemoteBadResponse, SrsRemoteDeckSnapshot;
+    show
+        SrsRemoteBadResponse,
+        SrsRemoteDeckSnapshot,
+        SrsRemoteProfileChoiceCancelled;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;
 import 'package:fushi/src/sync/video_remote_targets.dart'
@@ -164,10 +171,18 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (has != _hasPaired && mounted) setState(() => _hasPaired = has);
   }
 
+  /// 连主机时「选哪份复习库」的对话框挂在当前显示的首页上（[_SrsPairedHosts.chooseProfile]）。
+  Future<String?> _chooseRemoteProfile(
+    List<SrsRemoteServedProfile> profiles,
+  ) async => mounted ? showSrsRemoteProfileChoice(context, profiles) : null;
+
   @override
   void dispose() {
-    // 只摘监听：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完照样落进缓存。
+    // 只摘监听与选库对话框：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完照样落进缓存。
     _paired.removeListener(_onPairedChanged);
+    if (_paired.chooseProfile == _chooseRemoteProfile) {
+      _paired.chooseProfile = null;
+    }
     super.dispose();
   }
 
@@ -175,7 +190,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   void initState() {
     super.initState();
     _hasPaired = _paired.hosts.isNotEmpty;
-    _paired.addListener(_onPairedChanged);
+    _paired
+      ..chooseProfile = _chooseRemoteProfile
+      ..addListener(_onPairedChanged);
     srsRunLogged('SrsPairedHosts.refresh', _paired.refresh);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_askedFirstSync || !mounted) return;

@@ -32,6 +32,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
@@ -69,6 +70,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -264,6 +267,19 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     }
   }
 
+  /// 正面（编辑框里的当前内容）与这个笔记类型的哪些别的模板完全相同：相同 = 同一道题，每条笔记出两张
+  /// 一样的卡、各自排期。
+  List<SrsTemplateDef> get _sameFront {
+    final SrsNoteTypeView? type = _type;
+    final SrsTemplateDef? tpl = _template;
+    if (type == null || tpl == null) return const <SrsTemplateDef>[];
+    return srsTemplatesWithSameFront(
+      type,
+      tpl.id,
+      front: templateNamesToIds(_front.text, _nameToId),
+    );
+  }
+
   bool get _dirty =>
       _front.text != _savedFront ||
       _back.text != _savedBack ||
@@ -455,11 +471,27 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
       return;
     }
+    final bool templateChanged =
+        _front.text != _savedFront || _back.text != _savedBack;
+    // 存下去会是重复模板：先说清楚后果，默认不存。
+    final SrsTemplateDef? twin = templateChanged
+        ? _sameFront.firstOrNull
+        : null;
+    if (twin != null) {
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_template_duplicate_save_title,
+        message: t.srs_template_duplicate_save_body(name: twin.name),
+        confirmLabel: t.srs_template_duplicate_save_anyway,
+        cancelLabel: t.cancel,
+        icon: FushiIcons.warning,
+        destructive: true,
+      );
+      if (!ok || !mounted) return;
+    }
     setState(() => _saving = true);
     try {
       final Map<String, String> nameToId = _nameToId;
-      final bool templateChanged =
-          _front.text != _savedFront || _back.text != _savedBack;
       // 模板 / CSS / 字段说明一次写入（一个事务、一次缓存刷新），见 saveTemplateEdits。
       final bool wrote = await store.saveTemplateEdits(
         type.id,
@@ -768,6 +800,28 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                   : t.srs_note_types_template_error(error: error),
             ),
     );
+    final SrsTemplateDef? twin = _sameFront.firstOrNull;
+    final Widget? duplicate = twin == null
+        ? null
+        : Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+            child: FushiCard(
+              key: const ValueKey<String>('srs-template-duplicate-warning'),
+              tone: FushiCardTone.error,
+              child: Row(
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  const FushiIcon(FushiIcons.warning),
+                  Expanded(
+                    child: Text(
+                      t.srs_template_duplicate_warning(name: twin.name),
+                      style: context.fushiType.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
     final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -783,6 +837,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
               ),
             ),
             children: <Widget>[
+              ?duplicate,
               tabs,
               SizedBox(height: tokens.spacing.gap * 1.5),
               editor(wide: false),
@@ -814,6 +869,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                         bottom.bottom,
                       ),
                       children: <Widget>[
+                        ?duplicate,
                         FushiStaggeredEntrance(index: 0, child: tabs),
                         SizedBox(height: tokens.spacing.gap * 1.5),
                         FushiStaggeredEntrance(

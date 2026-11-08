@@ -18,7 +18,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
 import 'package:fushi/src/srs/srs_field_markup.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsSoundNames;
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';

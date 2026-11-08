@@ -166,6 +166,10 @@ class _SrsPairedHosts extends ChangeNotifier {
 
   final SrsRemoteHostConnector connector;
 
+  /// 主机提供几份 profile 又没有本机这份时让用户选（见 [SrsRemoteHostConnector.open]）。本对象是 app 级的、
+  /// 没有界面上下文，由当前显示的复习首页挂上 / 摘下；没有页面时为 null（连接按主机默认 profile 打开）。
+  SrsRemoteProfileChooser? chooseProfile;
+
   List<_PairedHost> hosts = const <_PairedHost>[];
   bool _disposed = false;
 
@@ -343,6 +347,9 @@ class _SrsPairedHosts extends ChangeNotifier {
         ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
       }
       _fail(h, srsRemoteReviewErrorText(e));
+    } on SrsRemoteProfileChoiceCancelled {
+      // 没选复习库：组头提示去选，点组头重试时再问一次。
+      _fail(h, t.srs_remote_review_choose_profile);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
       _fail(h, t.srs_home_paired_error_load);
@@ -373,7 +380,10 @@ class _SrsPairedHosts extends ChangeNotifier {
         h.session = null;
       }
     }
-    final SrsRemoteSession session = await connector.open(h.target);
+    final SrsRemoteSession session = await connector.open(
+      h.target,
+      chooseProfile: chooseProfile,
+    );
     h.session = session;
     return session.store.deckSnapshot();
   }

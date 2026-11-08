@@ -10,6 +10,8 @@ export 'package:fushi/src/pages/implementations/srs/srs_load_error.dart'
     show srsRemoteReviewErrorText;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart'
+    show SrsRemoteServedProfile;
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -21,6 +23,9 @@ import 'package:fushi/src/srs/srs_remote_store_client.dart';
 import 'package:fushi/src/sync/interconnect_host_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 复习首页「已配对设备」的落盘缓存（String，JSON：`{v, hosts: [{id, at, probed, decks}]}`，`decks` 是
 /// [SrsRemoteWire.deckCache]）。写在 `srs_deck_home_paired.dart`。**设备本地**：描述的是这台设备配对的主机与
@@ -89,8 +94,25 @@ class SrsRemoteHostConnector {
   /// 首页缓存的时间戳与探测有效期用的时钟（测试换成可拨的）。
   DateTime now() => DateTime.now();
 
-  /// 连上 [target]：握手拿到主机的 profile，失败抛 [InterconnectHostError]。
-  Future<SrsRemoteSession> open(InterconnectHostTarget target) async {
+  /// 本机当前配置的 profile uid：主机提供几份 profile 时直接打开同一份（见 [SrsRemoteStore.connect]）。
+  Future<String?> _localProfileUid() async {
+    if (!app.isDatabaseOpen) return null;
+    try {
+      return await app.database.profileUidOf(
+        await app.database.resolveActiveProfileId(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsRemoteReview.localProfile', e, stack);
+      return null;
+    }
+  }
+
+  /// 连上 [target]：握手拿到主机的 profile，失败抛 [InterconnectHostError]。主机提供几份 profile 又没有
+  /// 本机这份时交给 [chooseProfile] 让用户选，用户取消抛 [SrsRemoteProfileChoiceCancelled]。
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) async {
     final SyncRepository? repository = this.repository;
     if (repository == null) {
       throw StateError('app database is closed');
@@ -108,10 +130,37 @@ class SrsRemoteHostConnector {
     );
     final SrsRemoteStore store = await SrsRemoteStore.connect(
       client,
+      preferProfile: await _localProfileUid(),
+      chooseProfile: chooseProfile,
       prefetchMedia: media.prefetch,
     );
     return SrsRemoteSession(client: client, store: store, media: media);
   }
+}
+
+/// 主机提供几份 profile 时让用户选一份；返回 null = 用户取消。
+typedef SrsRemoteProfileChooser =
+    Future<String?> Function(List<SrsRemoteServedProfile> profiles);
+
+/// 「选择复习库」对话框（[SrsRemoteProfileChooser] 的界面实现）。
+Future<String?> showSrsRemoteProfileChoice(
+  BuildContext context,
+  List<SrsRemoteServedProfile> profiles,
+) {
+  return showFushiChoiceDialog<String>(
+    context: context,
+    title: t.srs_remote_review_choose_profile,
+    message: t.srs_remote_review_choose_profile_hint,
+    icon: FushiIcons.profiles,
+    options: <FushiChoiceOption<String>>[
+      for (final SrsRemoteServedProfile p in profiles)
+        FushiChoiceOption<String>(
+          value: p.uid,
+          label: p.name.isEmpty ? t.srs_remote_review_profile_unnamed : p.name,
+          subtitle: t.srs_remote_review_profile_notes(n: p.notes),
+        ),
+    ],
+  );
 }
 
 final Provider<SrsRemoteHostConnector> srsRemoteHostConnectorProvider =

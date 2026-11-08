@@ -23,7 +23,7 @@ import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 const String _uid = '01928c3e-0000-7000-8000-0000000a5e02';
 
 Future<(SrsDbStore, SrsRemoteStoreService, String)> _setUp({
-  void Function()? onWrite,
+  void Function(String profileUid)? onWrite,
 }) async {
   int clock = DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch;
   final SrsDbStore store = await openTestStore(
@@ -278,7 +278,7 @@ void main() {
   test('写操作同一请求 id 重发只执行一次，成功后通知主机', () async {
     int writes = 0;
     final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
-        await _setUp(onWrite: () => writes++);
+        await _setUp(onWrite: (String _) => writes++);
     final String cardId = (await store.studyState(deck))!.next!;
     final int before = (await store.history(cardId)).all.length;
     final Map<String, Object?> args = <String, Object?>{
@@ -692,7 +692,7 @@ void main() {
   test('请求体里经线格式解码的结构不合契约：400 bad_request，不执行', () async {
     int writes = 0;
     final (_, SrsRemoteStoreService service, _) = await _setUp(
-      onWrite: () => writes++,
+      onWrite: (String _) => writes++,
     );
     for (final (String op, Map<String, Object?> args)
         in <(String, Map<String, Object?>)>[
@@ -732,5 +732,88 @@ void main() {
       expect(body['error'], SrsRemoteStoreError.badRequest, reason: op);
     }
     expect(writes, 0);
+  });
+
+  group('一台主机提供几份 profile（无头服务端：一门语言一份）', () {
+    const String other = '01928c3e-0000-7000-8000-0000000b0b02';
+
+    test('握手列出提供的 profile，点名的 uid 读那一份；不提供的 uid 回 profile_changed', () async {
+      final (SrsDbStore a, _, _) = await _setUp();
+      final SrsDbStore b = await openTestStore(
+        profileUid: other,
+        deviceId: 'host',
+        now: () => DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch,
+      );
+      final Map<String, SrsDbStore> served = <String, SrsDbStore>{
+        _uid: a,
+        other: b,
+      };
+      final SrsRemoteStoreService service = SrsRemoteStoreService(
+        readStore: () async => a,
+        readProfile: (String uid) async => served[uid],
+        profiles: () async => const <SrsRemoteServedProfile>[
+          SrsRemoteServedProfile(uid: _uid, name: 'Japanese', notes: 6),
+          SrsRemoteServedProfile(uid: other, name: 'Chinese'),
+        ],
+        readMedia: (String name) async => null,
+      );
+
+      final (int s0, Map<String, Object?> hello) = await _route(
+        service,
+        <String, Object?>{'op': 'hello'},
+      );
+      expect(s0, 200);
+      expect(hello['profile'], _uid, reason: '不点名 = 默认 profile');
+      expect(
+        (hello['profiles']! as List<Object?>)
+            .map(
+              (Object? e) => SrsRemoteServedProfile.fromJson(
+                (e! as Map).cast<String, Object?>(),
+              ).uid,
+            )
+            .toList(),
+        <String>[_uid, other],
+      );
+
+      final (int s1, Map<String, Object?> helloB) = await _route(
+        service,
+        <String, Object?>{'op': 'hello', 'profile': other},
+      );
+      expect(s1, 200);
+      expect(helloB['profile'], other);
+
+      // 牌组树缓存按 profile 分开：A 的树不会被当成 B 的回出去。
+      final (_, Map<String, Object?> treeA) = await _route(
+        service,
+        <String, Object?>{'op': 'deckSummaries', 'profile': _uid},
+      );
+      final (_, Map<String, Object?> treeB) = await _route(
+        service,
+        <String, Object?>{'op': 'deckSummaries', 'profile': other},
+      );
+      expect(treeA['tt'], isNot(treeB['tt']));
+      expect(
+        (treeA['result']! as List<Object?>).length,
+        greaterThan((treeB['result']! as List<Object?>).length),
+      );
+
+      final (int s2, Map<String, Object?> gone) = await _route(
+        service,
+        <String, Object?>{
+          'op': 'hello',
+          'profile': '01928c3e-0000-7000-8000-00000000dead',
+        },
+      );
+      expect((s2, gone['error']), (409, SrsRemoteStoreError.profileChanged));
+    });
+
+    test('桌面 host（不给 profiles）握手不带 profiles 字段', () async {
+      final (_, SrsRemoteStoreService service, _) = await _setUp();
+      final (_, Map<String, Object?> hello) = await _route(
+        service,
+        <String, Object?>{'op': 'hello'},
+      );
+      expect(hello.containsKey('profiles'), isFalse);
+    });
   });
 }

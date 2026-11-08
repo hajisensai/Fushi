@@ -918,23 +918,60 @@ class _Op {
   final bool write;
 }
 
+/// 主机提供的一份 profile（握手回包 `profiles` 里的一项）：[name] 是给人看的名字（取不到为空），[notes] 是用户笔记数。
+class SrsRemoteServedProfile {
+  const SrsRemoteServedProfile({
+    required this.uid,
+    this.name = '',
+    this.notes = 0,
+  });
+
+  factory SrsRemoteServedProfile.fromJson(Map<String, Object?> json) =>
+      SrsRemoteServedProfile(
+        uid: json['uid']! as String,
+        name: (json['name'] as String?) ?? '',
+        notes: (json['notes'] as num?)?.toInt() ?? 0,
+      );
+
+  final String uid;
+  final String name;
+  final int notes;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'uid': uid,
+    'name': name,
+    'notes': notes,
+  };
+}
+
 /// 主机侧服务：每个请求现取当前 profile 的 [SrsDbStore]（配置切换 / 模块开关即时生效）。
 class SrsRemoteStoreService {
+  ///
+  /// 一台主机可以同时提供几份 profile（无头服务端：一门语言一份）：[readProfile] 按客户端点名的 uid 取那份库
+  /// （没提供 = 只有 [readStore] 那一份，桌面 host 就是这样）；[profiles] 列出提供的全部 profile，随握手（`hello`）
+  /// 一起回给客户端（`profiles: [{uid, name, notes}]`），客户端据此直接打开自己那份或让用户选。[readStore] 是
+  /// 客户端不点名时的默认 profile。[onWrite] 收到写入落库的那份 profile uid。
   SrsRemoteStoreService({
     required Future<SrsDbStore?> Function() readStore,
     required Future<Uint8List?> Function(String name) readMedia,
-    void Function()? onWrite,
+    Future<SrsDbStore?> Function(String profileUid)? readProfile,
+    Future<List<SrsRemoteServedProfile>> Function()? profiles,
+    void Function(String profileUid)? onWrite,
     int idempotencyCapacity = 256,
   }) : _readStore = readStore,
        _readMedia = readMedia,
+       _readProfile = readProfile,
+       _profiles = profiles,
        _onWrite = onWrite,
        _capacity = idempotencyCapacity;
 
   final Future<SrsDbStore?> Function() _readStore;
   final Future<Uint8List?> Function(String name) _readMedia;
+  final Future<SrsDbStore?> Function(String profileUid)? _readProfile;
+  final Future<List<SrsRemoteServedProfile>> Function()? _profiles;
 
   /// 远程写入落库后调用：主机自己的界面重读、互联推送照常发出（与本机写入同一条信号）。
-  final void Function()? _onWrite;
+  final void Function(String profileUid)? _onWrite;
   final int _capacity;
 
   /// 写操作幂等缓存：客户端请求 id → 回包（最近 [_capacity] 次，按插入顺序淘汰）。
@@ -945,8 +982,13 @@ class SrsRemoteStoreService {
   final Map<String, Future<Map<String, Object?>>> _inFlight =
       <String, Future<Map<String, Object?>>>{};
 
-  /// 牌组树的线格式缓存（按 [SrsDbStore.deckTreeKey]）。
-  ({String key, String tag, List<Map<String, Object?>> decks})? _tree;
+  /// 牌组树的线格式缓存（每份 profile 一条，按 [SrsDbStore.deckTreeKey]）。
+  final Map<
+    String,
+    ({String key, String tag, List<Map<String, Object?>> decks})
+  >
+  _trees =
+      <String, ({String key, String tag, List<Map<String, Object?>> decks})>{};
 
   /// 卡面引用的媒体字节；名字不合法 / 不存在时 null。
   Future<Uint8List?> media(String name) => _readMedia(name);
@@ -968,7 +1010,7 @@ class SrsRemoteStoreService {
         const SrsRemoteStoreError(404, SrsRemoteStoreError.unknownOp),
       );
     }
-    if (!spec.write) return _run(spec, profile, args);
+    if (!spec.write) return _run(op, spec, profile, args);
     if (request == null ||
         request.isEmpty ||
         profile == null ||
@@ -981,7 +1023,7 @@ class SrsRemoteStoreService {
     if (done != null) return Future<Map<String, Object?>>.value(done);
     final Future<Map<String, Object?>>? running = _inFlight[request];
     if (running != null) return running;
-    final Future<Map<String, Object?>> future = _run(spec, profile, args);
+    final Future<Map<String, Object?>> future = _run(op, spec, profile, args);
     _inFlight[request] = future;
     return future
         .then((Map<String, Object?> out) {
@@ -989,19 +1031,30 @@ class SrsRemoteStoreService {
           while (_done.length > _capacity) {
             _done.remove(_done.keys.first);
           }
-          _onWrite?.call();
+          _onWrite?.call(out['profile']! as String);
           return out;
         })
         .whenComplete(() => _inFlight.remove(request));
   }
 
   Future<Map<String, Object?>> _run(
+    String op,
     _Op spec,
     String? profile,
     Map<String, Object?> args,
   ) async {
-    final SrsDbStore? store = await _readStore();
+    final Future<SrsDbStore?> Function(String)? byUid = _readProfile;
+    final SrsDbStore? store = profile != null && byUid != null
+        ? await byUid(profile)
+        : await _readStore();
     if (store == null) {
+      // 点名的 profile 主机不（再）提供了：与「主机切了 profile」同一个错误，客户端重新握手。
+      if (profile != null && byUid != null) {
+        throw const SrsRemoteStoreError(
+          409,
+          SrsRemoteStoreError.profileChanged,
+        );
+      }
       throw const SrsRemoteStoreError(503, SrsRemoteStoreError.unavailable);
     }
     if (profile != null && profile != store.profileUid) {
@@ -1031,6 +1084,10 @@ class SrsRemoteStoreService {
       'rwkv': store.rwkv?.ready ?? false,
       'dev': store.sync2Device,
       'result': result,
+      if (op == 'hello' && _profiles != null)
+        'profiles': <Map<String, Object?>>[
+          for (final SrsRemoteServedProfile p in await _profiles()) p.toJson(),
+        ],
     };
   }
 
@@ -1038,7 +1095,7 @@ class SrsRemoteStoreService {
   _treeWire(SrsDbStore store) async {
     final String key = store.deckTreeKey;
     final ({String key, String tag, List<Map<String, Object?>> decks})? c =
-        _tree;
+        _trees[store.profileUid];
     if (c != null && c.key == key) return c;
     final List<SrsEntitySource> sources = await store.entitySources(
       SrsEntityKind.deck,
@@ -1054,7 +1111,7 @@ class SrsRemoteStoreService {
         for (final SrsEntitySource s in sources) SrsRemoteWire.source(s),
       ],
     );
-    if (store.deckTreeKey == key) _tree = out;
+    if (store.deckTreeKey == key) _trees[store.profileUid] = out;
     return out;
   }
 
