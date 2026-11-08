@@ -16,12 +16,14 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -123,6 +125,97 @@ Future<_Host> _openHost(List<String> expressions) async {
   }
   await SyncRepository(db).setFushiClientUrls(const <FushiClientUrl>[_peer]);
   return _Host(db, store);
+}
+
+/// 首页「已配对设备」用的连接器：只有 [host] 一台主机，连它走 MockClient。
+class _FakeConnector extends SrsRemoteHostConnector {
+  const _FakeConnector(super.app, this.host, this.dir);
+
+  final _Host host;
+  final Directory dir;
+
+  @override
+  Future<List<InterconnectHostTarget>> probe() async =>
+      const <InterconnectHostTarget>[
+        InterconnectHostTarget(
+          hostId: 'host-1',
+          displayName: 'Host',
+          peer: _peer,
+        ),
+      ];
+
+  @override
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) async {
+    final SrsRemoteHostClient client = host.client();
+    final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
+    final SrsRemoteStore store = await SrsRemoteStore.connect(
+      client,
+      prefetchMedia: media.prefetch,
+    );
+    return SrsRemoteSession(client: client, store: store, media: media);
+  }
+}
+
+/// 主机提供两份 profile、没有本机这份：连接时问用户选哪份（[chosen] 记下每次的选择，null = 取消）。
+class _ChoosingConnector extends _FakeConnector {
+  _ChoosingConnector(super.app, super.host, super.dir);
+
+  final List<String?> chosen = <String?>[];
+
+  @override
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) async {
+    final String? pick = await chooseProfile!(const <SrsRemoteServedProfile>[
+      SrsRemoteServedProfile(uid: 'ja', name: 'Japanese'),
+      SrsRemoteServedProfile(uid: 'zh', name: 'Chinese'),
+    ]);
+    chosen.add(pick);
+    if (pick == null) throw const SrsRemoteProfileChoiceCancelled();
+    return super.open(target);
+  }
+}
+
+/// 首页（手机宽度：牌组行是窄屏排法，长按出菜单；高度放得下整页，懒列表把分区建出来）。
+Future<void> _pumpHome(
+  WidgetTester tester, {
+  required AppModel app,
+  required SrsDbStore local,
+  List<Override> overrides = const <Override>[],
+  GlobalKey<NavigatorState>? nav,
+}) async {
+  tester.view.physicalSize = const Size(412, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((Ref ref) => app),
+        srsStoreProvider.overrideWith((Ref ref) async => local),
+        srsRwkvServiceProvider.overrideWith((Ref ref) async => null),
+        ...overrides,
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: nav,
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: FushiDesignSystem.material,
+            glass: FushiGlassMaterial.off,
+            glassDesign: false,
+          ),
+          builder: (BuildContext context, Widget? child) =>
+              FushiGlassScope(child: child!),
+          home: const SrsDeckListPage(),
+        ),
+      ),
+    ),
+  );
 }
 
 void main() {
@@ -416,16 +509,23 @@ void main() {
 
     // 远程牌组列表压出的页面（复习 / 浏览 / 牌组设置 / 添加笔记）必须沿用远程作用域：路由建在导航器的
     // overlay 里，不经 srsPushPage 就会落回根作用域、读写本机库（PR #2767 审查的阻断项）。
-    testWidgets('远程牌组列表压出的复习 / 浏览 / 牌组设置 / 添加笔记都读写主机的库，不碰本机库', (
+    testWidgets('复习首页「已配对设备」：主机牌组是树（缩进、可折叠），复习 / 浏览 / 牌组设置 / 添加笔记都读写主机的库', (
       WidgetTester tester,
     ) async {
-      tester.view.physicalSize = const Size(1200, 1400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
       final _Host host = (await tester.runAsync(
         () => _openHost(<String>['犬', '猫']),
       ))!;
       addTearDown(() => tester.runAsync(host.db.close));
+      final (String parentId, String childId) = (await tester.runAsync(
+        () async {
+          final String parent = await host.store.createDeck('Parent');
+          final String child = await host.store.createDeck(
+            'Child',
+            parentId: parent,
+          );
+          return (parent, child);
+        },
+      ))!;
       // 根作用域里另有一份本机库（同一 profile、同 ID 的默认牌组，但没有卡）：页面若落回根作用域会读写它。
       final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
         () => openSrsTestStore(deviceId: 'local'),
@@ -433,51 +533,75 @@ void main() {
       addTearDown(() => tester.runAsync(localDb.close));
       final Directory dir = Directory.systemTemp.createTempSync('srs_rd_');
       addTearDown(() => dir.deleteSync(recursive: true));
-      final SrsRemoteHostClient client = host.client();
-      final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
-      final SrsRemoteStore remote = (await tester.runAsync(
-        () => SrsRemoteStore.connect(client, prefetchMedia: media.prefetch),
-      ))!;
       final int localRevision = local.revision;
-      final AppModel app = AppModel(testPlatformServices())
-        ..shortcutRegistry.loadDefaults(TargetPlatform.windows);
+      final AppModel app = SrsTestAppModel();
       final List<SrsCardFace> faces = <SrsCardFace>[];
       final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: <Override>[
-            appProvider.overrideWith((Ref ref) => app),
-            srsStoreProvider.overrideWith((Ref ref) async => local),
-            srsCardFaceBuilderProvider.overrideWithValue((
-              BuildContext context,
-              SrsCardFace face,
-            ) {
-              faces.add(face);
-              return SrsPlainCardFace(face: face);
-            }),
-          ],
-          child: TranslationProvider(
-            child: MaterialApp(
-              navigatorKey: nav,
-              theme: buildFushiThemeData(
-                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-                textTheme: Typography.material2021().black,
-                designSystem: FushiDesignSystem.material,
-                glass: FushiGlassMaterial.off,
-                glassDesign: false,
-              ),
-              builder: (BuildContext context, Widget? child) =>
-                  FushiGlassScope(child: child!),
-              home: SrsRemoteCollectionScope(
-                store: remote,
-                media: media,
-                child: const SrsRemoteDeckListPage(hostName: 'Host'),
-              ),
-            ),
+      await _pumpHome(
+        tester,
+        app: app,
+        local: local,
+        nav: nav,
+        overrides: <Override>[
+          srsRemoteHostConnectorProvider.overrideWithValue(
+            _FakeConnector(app, host, dir),
           ),
-        ),
+          srsCardFaceBuilderProvider.overrideWithValue((
+            BuildContext context,
+            SrsCardFace face,
+          ) {
+            faces.add(face);
+            return SrsPlainCardFace(face: face);
+          }),
+        ],
       );
       await settle(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-paired')),
+        findsOneWidget,
+        reason: '有可用主机：首页出现「已配对设备」分区',
+      );
+      final Finder header = find.byKey(
+        const ValueKey<String>('srs-paired-header-host-1'),
+      );
+      expect(
+        find.descendant(of: header, matching: find.text('Host')),
+        findsOneWidget,
+      );
+      Finder inRow(String deckId, Finder matching) => find.descendant(
+        of: find.byKey(ValueKey<String>('srs-paired-deck-host-1-$deckId')),
+        matching: matching,
+      );
+      expect(
+        inRow(parentId, find.text('Parent')),
+        findsNothing,
+        reason: '组默认收起',
+      );
+
+      // 展开：主机的牌组按树画，子牌组带层级竖线，父牌组能收起 / 展开子牌组。
+      await tester.tap(header);
+      await settle(tester);
+      expect(inRow(parentId, find.text('Parent')), findsOneWidget);
+      expect(inRow(childId, find.text('Child')), findsOneWidget);
+      expect(
+        inRow(
+          childId,
+          find.byKey(ValueKey<String>('srs-deck-indent-$childId')),
+        ),
+        findsOneWidget,
+        reason: '子牌组带层级缩进（树），不是平铺',
+      );
+      final Finder toggle = inRow(
+        parentId,
+        find.byKey(ValueKey<String>('srs-deck-toggle-$parentId')),
+      );
+      await tester.tap(toggle);
+      await settle(tester);
+      expect(inRow(childId, find.text('Child')), findsNothing, reason: '收起父牌组');
+      await tester.tap(toggle);
+      await settle(tester);
+      expect(inRow(childId, find.text('Child')), findsOneWidget, reason: '再展开');
 
       /// 压出的页面打开期间主机收到的操作（页面经远程库读数据才会有）。
       Future<List<String>> opsWhileOpen(Future<void> Function() open) async {
@@ -490,12 +614,11 @@ void main() {
         return during;
       }
 
-      // 复习：点牌组 → 出的是主机的卡，评分记在主机库。
-      final Finder deckRow = find.byKey(
-        ValueKey<String>('srs_remote_deck_${remote.defaultDeckId}'),
+      // 复习：点主机默认牌组的播放 → 出的是主机的卡，评分记在主机库。
+      final String deckId = local.defaultDeckId;
+      await tester.tap(
+        inRow(deckId, find.byKey(ValueKey<String>('srs-deck-review-$deckId'))),
       );
-      expect(deckRow, findsOneWidget);
-      await tester.tap(deckRow);
       await settle(tester);
       expect(find.byType(SrsReviewPage), findsOneWidget);
       expect(faces, isNotEmpty, reason: '复习页读到的是主机库的卡（本机库没有卡）');
@@ -512,25 +635,31 @@ void main() {
       nav.currentState!.pop();
       await settle(tester);
 
-      // 浏览、添加笔记（顶栏）与牌组设置（⋯）：页面打开期间的读取都打到主机。
+      // 组头菜单：浏览、添加笔记；牌组行菜单（窄屏长按）：牌组设置。页面打开期间的读取都打到主机。
+      Future<void> hostMenu(String label) async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs-paired-menu-host-1')),
+        );
+        await settle(tester, rounds: 6);
+        await tester.tap(find.text(label).last);
+      }
+
       final List<String> browseOps = await opsWhileOpen(
-        () =>
-            tester.tap(find.byKey(const ValueKey<String>('srs_remote_browse'))),
+        () => hostMenu(t.srs_browse_title),
       );
       expect(browseOps, contains('browseCommand'), reason: '浏览会话跑在主机库上');
       final List<String> addOps = await opsWhileOpen(
-        () => tester.tap(
-          find.byKey(const ValueKey<String>('srs_remote_add_note')),
-        ),
+        () => hostMenu(t.srs_note_add),
       );
       expect(addOps, isNotEmpty, reason: '添加笔记页读的是主机库');
       final List<String> settingsOps = await opsWhileOpen(() async {
-        await tester.tap(
-          find.byKey(
-            ValueKey<String>('srs_remote_deck_menu_${remote.defaultDeckId}'),
-          ),
-        );
+        await tester.longPress(inRow(deckId, find.text('Default')));
         await settle(tester, rounds: 6);
+        expect(
+          find.text(t.srs_deck_rename),
+          findsNothing,
+          reason: '远程牌组菜单不出改结构的项',
+        );
         await tester.tap(find.text(t.srs_deck_settings).last);
       });
       expect(settingsOps, isNotEmpty, reason: '牌组设置页读的是主机库');
@@ -538,6 +667,95 @@ void main() {
       expect(local.revision, localRevision, reason: '本机库没被写过');
       expect((await tester.runAsync(() => local.history(first)))!.all, isEmpty);
 
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('主机有几份复习库又没有本机这份：问用户选；取消后组头提示去选，点组头再问', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
+        () => openSrsTestStore(deviceId: 'local'),
+      ))!;
+      addTearDown(() => tester.runAsync(localDb.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rd_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final AppModel app = SrsTestAppModel();
+      final _ChoosingConnector connector = _ChoosingConnector(app, host, dir);
+      await _pumpHome(
+        tester,
+        app: app,
+        local: local,
+        overrides: <Override>[
+          srsRemoteHostConnectorProvider.overrideWithValue(connector),
+        ],
+      );
+      await settle(tester);
+
+      expect(
+        find.text(t.srs_remote_review_choose_profile_hint),
+        findsOneWidget,
+      );
+      expect(find.text('Japanese'), findsOneWidget);
+      Navigator.of(tester.element(find.text('Japanese'))).pop();
+      await settle(tester);
+      expect(connector.chosen, <String?>[null]);
+      final Finder header = find.byKey(
+        const ValueKey<String>('srs-paired-header-host-1'),
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.text(t.srs_remote_review_choose_profile),
+        ),
+        findsOneWidget,
+        reason: '取消后组头提示去选复习库',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-paired-retry-host-1')),
+      );
+      await settle(tester);
+      await tester.tap(find.text('Chinese'));
+      await settle(tester);
+      expect(connector.chosen, <String?>[null, 'zh']);
+      expect(
+        find.byKey(const ValueKey<String>('srs-paired-menu-host-1')),
+        findsOneWidget,
+        reason: '选好后连上主机（组头出主机菜单）',
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.text(t.srs_remote_review_choose_profile),
+        ),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('没有可用主机：首页不出「已配对设备」分区', (WidgetTester tester) async {
+      final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
+        () => openSrsTestStore(deviceId: 'local'),
+      ))!;
+      addTearDown(() => tester.runAsync(localDb.close));
+      // 测试用的 AppModel 没开 app 库：默认连接器找不到主机。
+      await _pumpHome(tester, app: SrsTestAppModel(), local: local);
+      await settle(tester);
+      expect(
+        find.byKey(ValueKey<String>('srs-deck-${local.defaultDeckId}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-paired')),
+        findsNothing,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
     });
