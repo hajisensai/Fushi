@@ -1316,6 +1316,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
   // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
   'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
+  // 读数胶囊的另两段「本次字数」「字每时」：与「阅读计时器」同一生效点——状态行组件
+  // 的 showChars / showSpeed 门控，以及 readerStatusFooterEnabled 的四段门控（计时 /
+  // 字数 / 字每时 / 进度都关时整条行连同底部预留一起消失）；不进 reader CSS 也不进
+  // 主题树，harness 的渲染输入观测不到。由专项纯函数真值表 + 「session readouts」
+  // widget 用例覆盖。
+  'reading/Show characters read this session':
+      'test/reader/reader_status_footer_test.dart',
+  'reading/Show characters per hour':
+      'test/reader/reader_status_footer_test.dart',
+  // 「收起控制栏时保留读数」：生效点在悬浮态下 readerStatusFooterReserve /
+  // readerStatusFooterVisible / readerStatusFooterResting 的 persistent 分支（常驻时
+  // 按挤压式占预留、控制栏收起后胶囊仍画、转静息态），同样只作用于状态行组件与
+  // 预留高，harness 观测不到；由这三个纯函数的 persistent 真值表 + 静息胶囊 widget
+  // 用例覆盖。
+  'reading/Keep readouts when controls hide':
+      'test/reader/reader_status_footer_test.dart',
   // 视觉小说模式的六个控件：只在 view_mode=vn 时显示——本 harness 驱动「翻页 /
   // 滚动」时会走到 VN，于是它们进入遍历。生效点在 VN 引擎（WebView 分屏 /
   // 逐字显现 / 点空白推进），reader CSS 探针看不到；仅 VN 可见性、每项写穿与

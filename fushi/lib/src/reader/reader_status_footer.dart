@@ -732,7 +732,7 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter>
                   child: AnimatedContainer(
                     key: const ValueKey<String>('fushi_status_footer_pill'),
                     duration: fushiMotionDuration(context, FushiMotion.short),
-                    curve: Curves.easeOutCubic,
+                    curve: FushiMotion.standard,
                     padding: const EdgeInsets.symmetric(
                       horizontal: _pillPadding,
                     ),
