@@ -66,6 +66,9 @@ class ScreenOcrOverlay {
               std::optional<std::string> message);
   // Closes without a callback (Dart stopScreenOcr, a new capture).
   void Close() noexcept;
+  // Closes as if the user pressed Esc: DismissCallback runs. Used by the Steam
+  // Deck back button that also opens the layer in Game Mode.
+  void DismissByUser();
   bool IsShowing() const { return window_ != nullptr; }
 
  private:

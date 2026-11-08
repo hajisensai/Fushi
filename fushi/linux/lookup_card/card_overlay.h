@@ -96,6 +96,8 @@ class CardOverlay {
                                   gpointer data);
   static gboolean OnWindowGrabBroken(GtkWidget* widget, GdkEvent* event,
                                      gpointer data);
+  static gboolean OnStagePress(GtkWidget* widget, GdkEventButton* event,
+                               gpointer data);
   static void OnLoadChanged(WebKitWebView* view, WebKitLoadEvent event,
                             gpointer data);
   static gboolean OnLoadFailed(WebKitWebView* view, WebKitLoadEvent event,
@@ -137,6 +139,8 @@ class CardOverlay {
   GdkMonitor* MonitorAtPhysical(double x, double y) const;
   Frame ClampToWorkArea(Frame frame) const;
   void MoveResize(const Frame& frame);
+  // Game Mode: the output the stage window covers (GDK logical px).
+  GdkRectangle StageArea() const;
   void SetMeasuring();
 
   // Dismissal monitors + side-button trigger (X11 only).
@@ -174,6 +178,11 @@ class CardOverlay {
 
   GtkWidget* window_ = nullptr;
   GtkWidget* web_view_ = nullptr;
+  // Steam Deck Game Mode only (../runner/gamescope_overlay.h): Gamescope draws
+  // an overlay window over the whole output and ignores its position, so the
+  // window covers the output and the web view sits at the card's place inside
+  // this GtkFixed. Null on a desktop.
+  GtkWidget* stage_ = nullptr;
   std::string assets_dir_;
   std::string assets_root_;  // realpath of assets_dir_
   bool web_view_ready_ = false;
