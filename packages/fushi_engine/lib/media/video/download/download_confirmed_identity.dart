@@ -16,6 +16,8 @@ import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.d
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show kManualVideoDownloadResourceProvider;
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show planBlurayDiscRoots;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
@@ -310,7 +312,7 @@ List<VideoDownloadJobDisc> videoDownloadJobDiscs(
   }
   discs.sort(
     (VideoDownloadJobDisc a, VideoDownloadJobDisc b) =>
-        a.rootPath.compareTo(b.rootPath),
+        naturalCompare(a.rootPath, b.rootPath),
   );
   return List<VideoDownloadJobDisc>.unmodifiable(discs);
 }

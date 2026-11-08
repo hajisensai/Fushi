@@ -11,6 +11,8 @@
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show planBlurayDiscRoots;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart'
@@ -125,10 +127,10 @@ List<DownloadDiscRoot> planDownloadDiscRoots(Iterable<String> relativePaths) {
         folderRoots.contains(image.path),
   );
   roots.sort(
-    (DownloadDiscRoot a, DownloadDiscRoot b) => a.path.compareTo(b.path),
+    (DownloadDiscRoot a, DownloadDiscRoot b) => naturalCompare(a.path, b.path),
   );
   images.sort(
-    (DownloadDiscRoot a, DownloadDiscRoot b) => a.path.compareTo(b.path),
+    (DownloadDiscRoot a, DownloadDiscRoot b) => naturalCompare(a.path, b.path),
   );
   return List<DownloadDiscRoot>.unmodifiable(<DownloadDiscRoot>[
     ...roots,

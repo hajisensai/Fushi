@@ -271,4 +271,17 @@ void main() {
     );
     expect(downloadDiscRootOf('Show/DISC1/scan.jpg', roots), isNull);
   });
+
+  test('卷序按自然序：MYGO_2 排在 MYGO_10 前面', () {
+    final List<DownloadDiscRoot> roots = planDownloadDiscRoots(<String>[
+      'MyGO/MYGO_10/BDMV/PLAYLIST/00001.mpls',
+      'MyGO/MYGO_2/BDMV/PLAYLIST/00001.mpls',
+      'MyGO/MYGO_1/BDMV/PLAYLIST/00001.mpls',
+    ]);
+    expect(roots.map((DownloadDiscRoot r) => r.path).toList(), <String>[
+      'MyGO/MYGO_1',
+      'MyGO/MYGO_2',
+      'MyGO/MYGO_10',
+    ]);
+  });
 }

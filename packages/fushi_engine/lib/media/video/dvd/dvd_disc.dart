@@ -29,6 +29,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show kBlurayMinimumTitleDuration, kBlurayRelativeTitleFloor;
 import 'package:fushi_engine/media/video/disc/disc_image_probe.dart';
@@ -126,7 +128,7 @@ int compareDvdDiscOrder(DvdDisc a, DvdDisc b) {
   if (parentA == parentB && a.volumeNumber != b.volumeNumber) {
     return a.volumeNumber.compareTo(b.volumeNumber);
   }
-  return a.rootPath.compareTo(b.rootPath);
+  return naturalCompare(a.rootPath, b.rootPath);
 }
 
 /// 一个 title 投影成筛选链要的形状。
