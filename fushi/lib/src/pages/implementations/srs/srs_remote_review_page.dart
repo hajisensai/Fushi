@@ -6,6 +6,9 @@
 /// 主机的 [SrsRemoteStore]，媒体换成按名字从主机补拉的缓存（[SrsRemoteMediaStore]）。所以功能与在本机复习一致。
 library;
 
+export 'package:fushi/src/pages/implementations/srs/srs_load_error.dart'
+    show srsRemoteReviewErrorText;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
     show SrsRemoteServedProfile;
@@ -25,17 +28,11 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 远程复习失败的提示文案（主机的机读码 / 连接层的码）。
-String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
-  InterconnectHostError.unreachableCode ||
-  InterconnectHostError.certificateMismatchCode =>
-    t.srs_remote_review_error_unreachable,
-  SrsRemoteStoreError.profileChanged =>
-    t.srs_remote_review_error_profile_changed,
-  SrsRemoteStoreError.unavailable => t.srs_remote_review_error_unavailable,
-  SrsRemoteStoreError.stale => t.srs_remote_review_card_changed,
-  _ => t.srs_remote_review_error_other(code: e.message),
-};
+/// 复习首页「已配对设备」的落盘缓存（String，JSON：`{v, hosts: [{id, at, probed, decks}]}`，`decks` 是
+/// [SrsRemoteWire.deckCache]）。写在 `srs_deck_home_paired.dart`。**设备本地**：描述的是这台设备配对的主机与
+/// 上次看到的数字，不随备份 / 同步 / Profile 走（已登记进 `kKnownPreferenceKeys` 与
+/// `SyncRepository.deviceLocalPrefKeys`）。不含凭据（只有 hostId）。
+const String kSrsHomePairedCachePrefKey = 'srs_home_paired_cache';
 
 /// 连上一台主机后的远程复习会话：转发到主机的库 + 按名字补拉的媒体缓存。
 class SrsRemoteSession {
@@ -57,15 +54,46 @@ class SrsRemoteHostConnector {
   final AppModel app;
 
   /// 互联配置在 app 库里；库还没开（启动早期 / 测试替身）时没有可用主机。
-  SyncRepository? get _repository =>
+  SyncRepository? get repository =>
       app.isDatabaseOpen ? SyncRepository(app.database) : null;
 
-  /// 声明了远程复习能力的已配对主机（没应答的不列）。
-  Future<List<InterconnectHostTarget>> probe() async {
-    final SyncRepository? repository = _repository;
-    if (repository == null) return const <InterconnectHostTarget>[];
-    return probeSrsRemoteStoreTargets(repository);
+  /// 本机互联配置此刻允许连的已配对主机（只读本地库，不走网络：总开关、服务端模式、启用且有凭据的条目）。
+  /// 缓存了主机列表的调用方每次复用前用它对账。
+  Future<List<InterconnectHostTarget>> configured() async {
+    final SyncRepository? repo = repository;
+    if (repo == null) return const <InterconnectHostTarget>[];
+    return configuredInterconnectHostTargets(repo);
   }
+
+  /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`，没应答的不列）。
+  Future<List<InterconnectHostTarget>> supporting(
+    List<InterconnectHostTarget> candidates,
+  ) async {
+    final SyncRepository? repo = repository;
+    if (repo == null || candidates.isEmpty) {
+      return const <InterconnectHostTarget>[];
+    }
+    return filterSrsRemoteStoreTargets(repo, candidates);
+  }
+
+  /// 复习首页「已配对设备」的落盘缓存（[kSrsHomePairedCachePrefKey]）；库还没开时 null（之后再读）。
+  String? readHomeCache() {
+    if (!app.isDatabaseOpen) return null;
+    final Object? raw = app.prefsRepo.getPref(
+      kSrsHomePairedCachePrefKey,
+      defaultValue: '',
+    );
+    return raw is String ? raw : '';
+  }
+
+  /// 写回 [readHomeCache] 读的那份；空串 = 没有缓存。库没开时不写。
+  Future<void> writeHomeCache(String value) async {
+    if (!app.isDatabaseOpen) return;
+    await app.prefsRepo.setPref(kSrsHomePairedCachePrefKey, value);
+  }
+
+  /// 首页缓存的时间戳与探测有效期用的时钟（测试换成可拨的）。
+  DateTime now() => DateTime.now();
 
   /// 本机当前配置的 profile uid：主机提供几份 profile 时直接打开同一份（见 [SrsRemoteStore.connect]）。
   Future<String?> _localProfileUid() async {
@@ -86,7 +114,7 @@ class SrsRemoteHostConnector {
     InterconnectHostTarget target, {
     SrsRemoteProfileChooser? chooseProfile,
   }) async {
-    final SyncRepository? repository = _repository;
+    final SyncRepository? repository = this.repository;
     if (repository == null) {
       throw StateError('app database is closed');
     }

@@ -8,21 +8,54 @@ part of 'srs_deck_list_page.dart';
 // - 卡组不下载：组里的行跑在 [SrsRemoteCollectionScope] 里，点行 / 播放 / 自定义学习 / 浏览 / 牌组设置压出的
 //   都是本机同一套页面，读写主机的库（见 srs_remote_review_page.dart）；
 // - 主机的数字只在它自己那组里显示，不并进本机的「今日计划」（用户同日拍板不要「另有 N 张在别的设备」那行）；
-// - 收起 / 展开子牌组只是本机界面状态：远程库不转发 setDeckCollapsed（改主机的牌组结构留给主机自己）。
+// - 收起 / 展开子牌组只是本机界面状态：远程库不转发 setDeckCollapsed（改主机的牌组结构留给主机自己）；
+// - 主机列表、会话与牌组摘要由 [_srsPairedHostsProvider] 在 app 级持有：再进复习页先画上次的结果（组头标明
+//   更新时间 / 刷新中），后台用已有会话重读牌组，不重新握手；加载失败只记错误，不清掉上次的牌组。
+//   缓存的只是界面要画的牌组摘要（主机的库仍在主机上，翻页 / 作答都实时打到主机）。
+// - 牌组摘要连同探测时刻落盘（[kSrsHomePairedCachePrefKey]，设备本地，格式是远程复习的线格式
+//   [SrsRemoteWire.deckCache]，读回经同一套校验）：冷启动第一次进复习页也先画上次的数字，再握手重读。
+// - 探测结果有效期 [kSrsPairedProbeTtl]：过期的已知主机下次进页面自动重探（关了远程复习 / 离线的去掉），
+//   不在分区里的主机（新配对、上次没应答）每次进页面都探，所以新上线的主机不用点「立即同步」也能出现。
+// - 缓存的是「网络探测」的结果，不是「本机配置门控」：每次进页面都先按本机互联配置（总开关、服务端模式、
+//   启用且有凭据的已配对条目，只读本地库）对账——配置里没有了的主机移除并作废会话，凭据变了的当新主机，
+//   新出现的只对它探能力 + 握手；配置没变的主机才复用会话。请求层只按 hostId + 凭据挑地址，不看总开关与
+//   服务端模式，所以这道门只能在这里。
+
+/// 已配对主机的能力探测结果多久内算数：超过就在下次进页面时重新探（主机关了远程复习 / 已离线的从分区去掉），
+/// 不必点「立即同步」。没进分区的主机（新配对 / 上次没应答）不受它限制，每次进页面都探。
+const Duration kSrsPairedProbeTtl = Duration(minutes: 15);
+
+/// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。
+const int _kPairedCacheVersion = 1;
 
 /// 一台已配对主机在首页上的状态。
 class _PairedHost {
   _PairedHost(this.target);
 
-  final InterconnectHostTarget target;
+  /// 最近一次对账时本机配置里的这台主机（显示名可能随配置更新；hostId 与凭据不变，变了就是另一个 [_PairedHost]）。
+  InterconnectHostTarget target;
 
-  /// 连上后的会话；连不上 / 出错后为 null（下次加载重新握手）。
+  /// [next] 是否还是这台主机的同一份配对：同 hostId、同凭据（请求层按这两项挑地址，会话据此仍然有效）。
+  bool sameAs(InterconnectHostTarget next) =>
+      next.hostId == target.hostId && next.peer.token == target.peer.token;
+
+  /// 连上后的会话（本次运行内复用，不每次进页面都握手）；出错后为 null（下次加载重新握手）。冷启动从落盘缓存
+  /// 恢复的主机也是 null。
   SrsRemoteSession? session;
 
-  /// 主机上的牌组（先序）；还没读到为 null。
+  /// 上次读到的主机牌组（先序），界面用的摘要缓存；还没读到过为 null。加载失败不清它。
   List<SrsDeckSummary>? decks;
 
-  /// 最近一次加载失败的提示。
+  /// [decks] 的落盘格式（[SrsRemoteWire.deckCache]）。
+  Map<String, Object?>? deckCache;
+
+  /// [decks] 读到的时刻。
+  DateTime? updatedAt;
+
+  /// 最近一次确认它声明了远程复习能力的时刻（超过 [kSrsPairedProbeTtl] 重新探）。
+  DateTime? probedAt;
+
+  /// 最近一次加载失败的提示（下次加载开始时清掉）。
   String? error;
   bool loading = false;
   bool expanded = false;
@@ -32,47 +65,271 @@ class _PairedHost {
 
   bool isCollapsed(SrsDeckSummary d) =>
       collapsed[d.deck.id] ?? d.deck.collapsed;
+
+  /// 探测结果是否过期（或从没探过）。
+  bool probeDue(DateTime now) {
+    final DateTime? at = probedAt;
+    return at == null || now.difference(at) >= kSrsPairedProbeTtl;
+  }
+
+  /// 落盘的一条；还没读到过牌组时没有（冷启动照常探测）。
+  Map<String, Object?>? toCache() {
+    final Map<String, Object?>? cache = deckCache;
+    final DateTime? at = updatedAt;
+    final DateTime? probed = probedAt;
+    if (cache == null || at == null || probed == null) return null;
+    return <String, Object?>{
+      'id': target.hostId,
+      'at': at.millisecondsSinceEpoch,
+      'probed': probed.millisecondsSinceEpoch,
+      'decks': cache,
+    };
+  }
 }
 
-/// 已配对主机列表与各自的连接 / 牌组。由牌组页持有，不放进懒建的列表项：分区滚出屏幕再滚回来不重连。
+/// 落盘缓存里的一台主机（[_PairedHost.toCache] 的读回）。
+class _CachedPairedHost {
+  const _CachedPairedHost({
+    required this.decks,
+    required this.deckCache,
+    required this.updatedAt,
+    required this.probedAt,
+  });
+
+  final List<SrsDeckSummary> decks;
+  final Map<String, Object?> deckCache;
+  final DateTime updatedAt;
+  final DateTime probedAt;
+
+  _PairedHost restore(InterconnectHostTarget target) => _PairedHost(target)
+    ..decks = decks
+    ..deckCache = deckCache
+    ..updatedAt = updatedAt
+    ..probedAt = probedAt;
+}
+
+/// 读回落盘缓存：hostId → 那台主机。格式对不上（版本 / 字段 / 牌组线格式）的条目记进错误日志后不用，
+/// 那台主机按冷启动探测；缓存只是先画的数字，主机的库仍以实时读到的为准。
+Map<String, _CachedPairedHost> _decodePairedCache(String raw) {
+  final Map<String, _CachedPairedHost> out = <String, _CachedPairedHost>{};
+  final Object? json;
+  try {
+    json = jsonDecode(raw);
+  } on FormatException catch (e, stack) {
+    ErrorLogService.instance.log('SrsPairedHosts.cache', e, stack);
+    return out;
+  }
+  if (json is! Map || json['v'] != _kPairedCacheVersion) return out;
+  final Object? hosts = json['hosts'];
+  if (hosts is! List) return out;
+  for (final Object? h in hosts) {
+    if (h case {
+      'id': final String id,
+      'at': final int at,
+      'probed': final int probed,
+      'decks': final Map<String, Object?> cache,
+    }) {
+      try {
+        out[id] = _CachedPairedHost(
+          decks: SrsRemoteWire.deckCacheFrom(cache),
+          deckCache: cache,
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(at),
+          probedAt: DateTime.fromMillisecondsSinceEpoch(probed),
+        );
+      } on SrsRemoteWireError catch (e, stack) {
+        ErrorLogService.instance.log('SrsPairedHosts.cache', e, stack);
+      }
+    } else {
+      ErrorLogService.instance.log(
+        'SrsPairedHosts.cache',
+        const SrsRemoteWireError('hosts[]'),
+        StackTrace.current,
+      );
+    }
+  }
+  return out;
+}
+
+/// 首页「已配对设备」的 app 级状态：跟着根容器活，复习页关掉再开不重新探测 / 握手。
+final Provider<_SrsPairedHosts> _srsPairedHostsProvider =
+    Provider<_SrsPairedHosts>((Ref ref) {
+      final _SrsPairedHosts hosts = _SrsPairedHosts(
+        connector: ref.read(srsRemoteHostConnectorProvider),
+      );
+      ref.onDispose(hosts.dispose);
+      return hosts;
+    });
+
+/// 已配对主机列表与各自的会话 / 牌组摘要缓存。
 class _SrsPairedHosts extends ChangeNotifier {
-  _SrsPairedHosts({required this.connector, this.chooseProfile});
+  _SrsPairedHosts({required this.connector});
 
   final SrsRemoteHostConnector connector;
 
-  /// 主机提供几份 profile 又没有本机这份时让用户选（见 [SrsRemoteHostConnector.open]）。
-  final SrsRemoteProfileChooser? chooseProfile;
+  /// 主机提供几份 profile 又没有本机这份时让用户选（见 [SrsRemoteHostConnector.open]）。本对象是 app 级的、
+  /// 没有界面上下文，由当前显示的复习首页挂上 / 摘下；没有页面时为 null（连接按主机默认 profile 打开）。
+  SrsRemoteProfileChooser? chooseProfile;
 
   List<_PairedHost> hosts = const <_PairedHost>[];
   bool _disposed = false;
-  int _probeSeq = 0;
+
+  /// 正在按本机配置对账（读本地库，还没开始重读各主机的牌组）：组头照样标「刷新中」。
+  bool reconciling = false;
+
+  /// 正在跑的一轮对账（同一时刻只跑一轮：页面重进 / 点刷新撞上时等同一轮）。
+  Future<void>? _syncing;
+
+  /// 跑完之后还要不要补一轮全量重探（对账进行中点了「立即同步」）。
+  bool _reprobeQueued = false;
+
+  /// 落盘缓存读回过没有（本次运行只读一次：之后内存里的就是最新的）。
+  bool _restored = false;
+
+  /// 最近一次写盘的内容（没变就不写，免得白白递增偏好版本号）。
+  String? _persisted;
 
   void _notify() {
     if (!_disposed) notifyListeners();
   }
 
-  /// 重新找一遍主机（已有的保留连接与展开状态），再并行读各自的牌组。
-  Future<void> probe() async {
-    final int seq = ++_probeSeq;
-    final List<InterconnectHostTarget> targets = await connector.probe();
-    if (_disposed || seq != _probeSeq) return;
+  /// 进复习首页时调：先按本机配置对账（关了互联 / 切成服务端就清空，取消配对或停用的移除），配置没变、探测
+  /// 结果没过期（[kSrsPairedProbeTtl]）的主机复用会话、只在后台重读牌组（界面先画缓存）；配置里新出现的、
+  /// 上次没应答的、探测结果过期的主机探能力（需要时握手）。冷启动第一次进来先从落盘缓存恢复上次的牌组。
+  Future<void> refresh() => _run(reprobeKnown: false);
+
+  /// 全量重探（「立即同步」）：对账后连已在列表里的主机也重新探能力（已有的保留会话、牌组缓存与展开状态），
+  /// 再并行读各自的牌组。
+  Future<void> probe() {
+    if (_syncing != null) {
+      _reprobeQueued = true;
+      return _syncing!;
+    }
+    return _run(reprobeKnown: true);
+  }
+
+  Future<void> _run({required bool reprobeKnown}) {
+    final Future<void>? running = _syncing;
+    if (running != null) return running;
+    final Future<void> run = _sync(reprobeKnown: reprobeKnown).whenComplete(() {
+      _syncing = null;
+      _notify();
+      _persist();
+      if (_reprobeQueued && !_disposed) {
+        _reprobeQueued = false;
+        srsRunLogged('SrsPairedHosts.probe', probe);
+      }
+    });
+    _syncing = run;
+    return run;
+  }
+
+  /// 冷启动第一次对账时：落盘缓存里、配置里还有、内存里还没有的主机恢复成上次的样子（没有会话）。
+  Map<String, _PairedHost> _restore(List<InterconnectHostTarget> configured) {
+    if (_restored) return const <String, _PairedHost>{};
+    final String? raw = connector.readHomeCache();
+    if (raw == null) return const <String, _PairedHost>{};
+    _restored = true;
+    _persisted = raw;
+    if (raw.isEmpty) return const <String, _PairedHost>{};
+    final Map<String, _CachedPairedHost> cached = _decodePairedCache(raw);
+    final Set<String> live = <String>{
+      for (final _PairedHost h in hosts) h.target.hostId,
+    };
+    return <String, _PairedHost>{
+      for (final InterconnectHostTarget c in configured)
+        if (!live.contains(c.hostId))
+          if (cached[c.hostId] case final _CachedPairedHost hit)
+            c.hostId: hit.restore(c),
+    };
+  }
+
+  Future<void> _sync({required bool reprobeKnown}) async {
+    final List<InterconnectHostTarget> configured;
+    reconciling = true;
+    _notify();
+    try {
+      configured = await connector.configured();
+    } finally {
+      reconciling = false;
+    }
+    if (_disposed) return;
+
+    // 第一步（纯本地）：配置里没有了 / 凭据变了的主机立刻移除并作废会话，配置门控关闭时清空；冷启动时
+    // 落盘缓存里的主机按已知主机接上（先画上次的牌组）。
     final Map<String, _PairedHost> old = <String, _PairedHost>{
       for (final _PairedHost h in hosts) h.target.hostId: h,
+      ..._restore(configured),
     };
-    hosts = <_PairedHost>[
-      for (final InterconnectHostTarget t in targets)
-        old.remove(t.hostId) ?? _PairedHost(t),
-    ];
+    final Map<String, _PairedHost> kept = <String, _PairedHost>{};
+    for (final InterconnectHostTarget c in configured) {
+      final _PairedHost? prev = old[c.hostId];
+      if (prev != null && prev.sameAs(c)) {
+        prev.target = c;
+        kept[c.hostId] = old.remove(c.hostId)!;
+      }
+    }
     for (final _PairedHost gone in old.values) {
       gone.session?.client.cancelPending();
     }
+    hosts = <_PairedHost>[
+      for (final InterconnectHostTarget c in configured) ?kept[c.hostId],
+    ];
+    _notify();
+
+    // 第二步（走网络）：只探需要探的——新出现的 / 凭据变了的 / 上次没应答的 / 探测结果过期的；全量重探时
+    // 连已有的一起。探测结果还算数的主机同时用已有会话重读牌组，不等探测。
+    final DateTime now = connector.now();
+    final Set<String> due = <String>{
+      for (final _PairedHost h in kept.values)
+        if (reprobeKnown || h.probeDue(now)) h.target.hostId,
+    };
+    final List<InterconnectHostTarget> candidates = <InterconnectHostTarget>[
+      for (final InterconnectHostTarget c in configured)
+        if (!kept.containsKey(c.hostId) || due.contains(c.hostId)) c,
+    ];
+    final Future<List<InterconnectHostTarget>> probing = connector.supporting(
+      candidates,
+    );
+    final List<Future<void>> loads = <Future<void>>[
+      for (final _PairedHost h in kept.values)
+        if (!due.contains(h.target.hostId)) load(h),
+    ];
+    final Set<String> supported = <String>{
+      for (final InterconnectHostTarget t in await probing) t.hostId,
+    };
+    if (_disposed) {
+      await Future.wait(loads);
+      return;
+    }
+
+    // 合并：探测期间本轮外没人改 [hosts]（同一时刻只跑一轮），按配置顺序排。重探了的已有主机没应答 / 不再
+    // 声明能力就去掉（与新主机同一个判据）。
+    final DateTime probedAt = connector.now();
+    final List<_PairedHost> reload = <_PairedHost>[];
+    final List<_PairedHost> next = <_PairedHost>[];
+    for (final InterconnectHostTarget c in configured) {
+      final _PairedHost? prev = kept[c.hostId];
+      if (prev != null && !due.contains(c.hostId)) {
+        next.add(prev);
+      } else if (supported.contains(c.hostId)) {
+        final _PairedHost h = (prev ?? _PairedHost(c))..probedAt = probedAt;
+        reload.add(h);
+        next.add(h);
+      } else {
+        prev?.session?.client.cancelPending();
+      }
+    }
+    hosts = next;
     _notify();
     await Future.wait(<Future<void>>[
-      for (final _PairedHost h in hosts) load(h),
+      ...loads,
+      for (final _PairedHost h in reload) load(h),
     ]);
   }
 
-  /// 连上 [h]（还没连时）并重读它的牌组。连接层 / 主机报的错显示在组头，其余异常照常抛给调用方留痕。
+  /// 重读 [h] 的牌组（还没连上时先握手）。任何失败都落成组头上可重试的错误态：会话作废（下次重新握手），
+  /// 上次的牌组缓存保留。连接层 / 主机报的错、回包不合契约（[SrsRemoteBadResponse]）按机读码出文案；其余
+  /// 异常记进错误日志，组头出通用的加载失败。
   Future<void> load(_PairedHost h) async {
     if (h.loading || _disposed) return;
     h
@@ -80,28 +337,72 @@ class _SrsPairedHosts extends ChangeNotifier {
       ..error = null;
     _notify();
     try {
-      final SrsRemoteSession session = h.session ??= await connector.open(
-        h.target,
-        chooseProfile: chooseProfile,
-      );
-      final List<SrsDeckSummary> decks = await session.store.deckSummaries();
-      if (_disposed) return;
-      h.decks = decks;
-    } on InterconnectHostError catch (e) {
+      final SrsRemoteDeckSnapshot snapshot = await _readDecks(h);
       h
-        ..error = srsRemoteReviewErrorText(e)
-        ..session = null
-        ..decks = null;
+        ..decks = snapshot.decks
+        ..deckCache = snapshot.cache
+        ..updatedAt = connector.now();
+    } on InterconnectHostError catch (e, stack) {
+      if (e is SrsRemoteBadResponse) {
+        ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
+      }
+      _fail(h, srsRemoteReviewErrorText(e));
     } on SrsRemoteProfileChoiceCancelled {
       // 没选复习库：组头提示去选，点组头重试时再问一次。
-      h
-        ..error = t.srs_remote_review_choose_profile
-        ..session = null
-        ..decks = null;
+      _fail(h, t.srs_remote_review_choose_profile);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
+      _fail(h, t.srs_home_paired_error_load);
     } finally {
       h.loading = false;
       _notify();
+      // 对账一轮里的加载由那一轮结束时统一落盘。
+      if (_syncing == null) _persist();
     }
+  }
+
+  void _fail(_PairedHost h, String error) {
+    h.session?.client.cancelPending();
+    h
+      ..error = error
+      ..session = null;
+  }
+
+  /// 用已有会话读牌组；没有会话、或主机回「已换配置」（这个会话绑定的 profile 作废）时握手开新会话再读。
+  Future<SrsRemoteDeckSnapshot> _readDecks(_PairedHost h) async {
+    final SrsRemoteSession? reused = h.session;
+    if (reused != null) {
+      try {
+        return await reused.store.deckSnapshot();
+      } on InterconnectHostError catch (e) {
+        if (e.message != SrsRemoteStoreError.profileChanged) rethrow;
+        reused.client.cancelPending();
+        h.session = null;
+      }
+    }
+    final SrsRemoteSession session = await connector.open(
+      h.target,
+      chooseProfile: chooseProfile,
+    );
+    h.session = session;
+    return session.store.deckSnapshot();
+  }
+
+  /// 把主机列表与牌组摘要写进 [kSrsHomePairedCachePrefKey]（没有主机时写空串，配置门控关掉后不留旧数据）。
+  void _persist() {
+    if (_disposed) return;
+    final String encoded = hosts.isEmpty
+        ? ''
+        : jsonEncode(<String, Object?>{
+            'v': _kPairedCacheVersion,
+            'hosts': <Object?>[for (final _PairedHost h in hosts) ?h.toCache()],
+          });
+    if (encoded == _persisted) return;
+    _persisted = encoded;
+    srsRunLogged(
+      'SrsPairedHosts.persist',
+      () => connector.writeHomeCache(encoded),
+    );
   }
 
   void toggleExpanded(_PairedHost h) {
@@ -302,6 +603,55 @@ class _SrsPairedDeviceGroup extends StatelessWidget {
 
 enum _PairedHostAction { addNote, browse, refresh }
 
+/// 一台主机牌组摘要的合计：顶层牌组行之和（顶层已含子牌组，与本机首页同一口径，见 [SrsDeckListData]）。
+class _PairedDeckTotals {
+  const _PairedDeckTotals({
+    required this.cards,
+    required this.newCount,
+    required this.learnCount,
+    required this.reviewCount,
+    required this.rwkvPending,
+  });
+
+  factory _PairedDeckTotals.of(List<SrsDeckSummary> decks) {
+    int cards = 0, newCount = 0, learnCount = 0, reviewCount = 0;
+    bool rwkvPending = false;
+    for (final SrsDeckSummary d in decks) {
+      if (d.depth != 0) continue;
+      cards += d.totalCards;
+      newCount += d.newCount;
+      learnCount += d.learnCount;
+      reviewCount += d.reviewCount;
+      rwkvPending = rwkvPending || d.rwkvPending;
+    }
+    return _PairedDeckTotals(
+      cards: cards,
+      newCount: newCount,
+      learnCount: learnCount,
+      reviewCount: reviewCount,
+      rwkvPending: rwkvPending,
+    );
+  }
+
+  final int cards;
+  final int newCount;
+  final int learnCount;
+  final int reviewCount;
+  final bool rwkvPending;
+}
+
+/// 组头副标题里「更新于 …」的时刻：今天只写钟点，更早的带上日期。
+String _srsPairedUpdatedText(BuildContext context, DateTime at) {
+  final String clock = TimeOfDay.fromDateTime(at).format(context);
+  final DateTime now = DateTime.now();
+  final bool today =
+      at.year == now.year && at.month == now.month && at.day == now.day;
+  final String when = today
+      ? clock
+      : '${MaterialLocalizations.of(context).formatShortMonthDay(at)} $clock';
+  return t.srs_home_paired_updated(time: when);
+}
+
 /// 组头：设备图标、名字、状态（连接中 / 出错 / N 张）、三色计数、菜单与展开箭头。点组头展开 / 收起；出错时
 /// 点组头重试。
 class _SrsPairedDeviceHeader extends StatelessWidget {
@@ -321,21 +671,38 @@ class _SrsPairedDeviceHeader extends StatelessWidget {
 
   void _retry() => srsRunLogged('SrsPairedHosts.load', () => paired.load(host));
 
+  /// 副标题：没有缓存时「连接中 / 错误」；有缓存时「N 张 · 更新于 … · 刷新中 / 错误」。
+  String _status(
+    BuildContext context,
+    _PairedDeckTotals? totals,
+    String? error,
+  ) {
+    final DateTime? at = host.updatedAt;
+    final bool loading = host.loading || paired.reconciling;
+    if (totals == null || at == null) {
+      return loading ? t.srs_home_paired_connecting : error ?? '';
+    }
+    return <String>[
+      t.srs_home_deck_cards(n: totals.cards),
+      _srsPairedUpdatedText(context, at),
+      if (loading) t.srs_home_paired_refreshing,
+      ?error,
+    ].join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<SrsDeckSummary>? decks = host.decks;
-    final SrsRemoteSession? session = host.session;
-    final SrsDeckListData? data = decks == null || session == null
+    final _PairedDeckTotals? totals = decks == null
         ? null
-        : SrsDeckListData(store: session.store, decks: decks);
+        : _PairedDeckTotals.of(decks);
     final String? error = host.error;
     final String hostId = host.target.hostId;
-    final String status = host.loading
-        ? t.srs_home_paired_connecting
-        : error ?? t.srs_home_deck_cards(n: data?.totalCards ?? 0);
+    final String status = _status(context, totals, error);
     final WidgetRef? scoped = ref;
-    final bool canExpand = data != null;
+    // 展开要有会话（牌组行压出的页面读写主机的库）；只有缓存、会话作废时组头仍画上次的数字，点了重试。
+    final bool canExpand = totals != null && host.session != null;
     return FushiPressScale(
       child: FushiGroupedListItem(
         key: ValueKey<String>('srs-paired-header-$hostId'),
@@ -357,14 +724,14 @@ class _SrsPairedDeviceHeader extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               spacing: tokens.spacing.gap / 2,
               children: <Widget>[
-                if (data != null && !host.loading)
+                if (totals != null)
                   SrsCountTriple(
                     dense: true,
                     tight: true,
-                    newCount: data.todayNew,
-                    learnCount: data.todayLearn,
-                    reviewCount: data.todayReview,
-                    reviewPending: data.rwkvPending,
+                    newCount: totals.newCount,
+                    learnCount: totals.learnCount,
+                    reviewCount: totals.reviewCount,
+                    reviewPending: totals.rwkvPending,
                   ),
                 if (error != null)
                   FushiIconButton(
