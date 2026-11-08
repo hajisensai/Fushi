@@ -8,18 +8,10 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_anki/fushi_anki_core.dart'
-    show
-        fushiCardBackLayoutOf,
-        fushiCardFrontLayoutOf,
-        kFushiCardBackTemplate,
-        kFushiCardFrontTemplate,
-        templateIdsToNames,
-        templateNamesToIds;
-import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart'
@@ -30,6 +22,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dar
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
     show srsFieldKindIcon;
 import 'package:fushi/src/srs/srs_field_catalog.dart';
+import 'package:fushi/src/srs/srs_template_presets.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart'
     show srsVisualTemplateWithoutField;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -56,33 +49,42 @@ import 'package:fushi/src/srs/srs_navigation.dart';
 
 enum _ItemAction { rename, moveUp, moveDown, delete }
 
-/// 新加模板的正面 / 背面（fieldId 引用形式）。与 Anki 一样从第一个模板复制正文，再按需修改；
-/// 内置 Fushi 卡片类型的第一个模板若已改到区块布局认不出（复习时是网页卡面），新模板改从
-/// 默认区块布局起步——反向卡等另加的模板同样能在模板编辑页的区块布局里调，复习时走原生卡面。
-({String front, String back}) srsNewTemplateBody(SrsNoteTypeView type) {
-  final SrsTemplateDef? first = type.templates.firstOrNull;
-  final ({String front, String back}) copy = (
-    front: first?.front ?? '',
-    back: first?.back ?? '',
-  );
-  if (type.builtinKey != kSrsBuiltinFushiCardKey) return copy;
-  final Map<String, String> idToName = <String, String>{
-    for (final SrsFieldDef f in type.fields) f.id: f.name,
+/// 预设在选择框里的名字。
+String srsTemplatePresetLabel(SrsTemplatePresetKind kind) => switch (kind) {
+  SrsTemplatePresetKind.reverse => t.srs_template_preset_reverse,
+  SrsTemplatePresetKind.listening => t.srs_template_preset_listening,
+  SrsTemplatePresetKind.blank => t.srs_template_preset_blank,
+};
+
+/// 预设在选择框里的说明：考什么（映射到哪几个字段），或为什么不可用。
+String srsTemplatePresetSubtitle(SrsTemplatePreset p) {
+  final SrsTemplateDef? dup = p.duplicateOf;
+  if (dup != null) return t.srs_template_preset_exists(name: dup.name);
+  String name(SrsFieldDef? f) => f == null ? '' : srsFieldDisplayName(f);
+  return switch (p.kind) {
+    SrsTemplatePresetKind.reverse =>
+      p.missingField
+          ? t.srs_template_preset_reverse_missing
+          : t.srs_template_preset_reverse_desc(
+              meaning: name(p.meaning),
+              term: name(p.term),
+            ),
+    SrsTemplatePresetKind.listening =>
+      p.missingField
+          ? t.srs_template_preset_listening_missing
+          : t.srs_template_preset_listening_desc(
+              audio: name(p.audio),
+              term: name(p.term),
+            ),
+    SrsTemplatePresetKind.blank => t.srs_template_preset_blank_desc,
   };
-  if (first != null &&
-      fushiCardFrontLayoutOf(templateIdsToNames(first.front, idToName)) !=
-          null &&
-      fushiCardBackLayoutOf(templateIdsToNames(first.back, idToName)) != null) {
-    return copy;
-  }
-  final Map<String, String> nameToId = <String, String>{
-    for (final SrsFieldDef f in type.fields) f.name: f.id,
-  };
-  return (
-    front: templateNamesToIds(kFushiCardFrontTemplate, nameToId),
-    back: templateNamesToIds(kFushiCardBackTemplate, nameToId),
-  );
 }
+
+IconData _presetIcon(SrsTemplatePresetKind kind) => switch (kind) {
+  SrsTemplatePresetKind.reverse => FushiIcons.swap,
+  SrsTemplatePresetKind.listening => FushiIcons.volumeUp,
+  SrsTemplatePresetKind.blank => FushiIcons.edit,
+};
 
 class SrsNoteTypeEditorPage extends ConsumerStatefulWidget {
   const SrsNoteTypeEditorPage({super.key, required this.noteTypeId});
@@ -388,24 +390,51 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     ]),
   );
 
+  /// 加模板：先选这张卡考什么（[srsTemplatePresets]：反向 / 听力 / 空白，按字段自动映射），再起名、确认
+  /// 会出多少张卡。不再照抄第一个模板：照抄 = 同一道题考两遍、两张卡各自排期（Discord 反馈）。
   Future<void> _addTemplate(SrsNoteTypeView type) async {
     if (type.isCloze) {
       FushiToast.show(msg: t.srs_note_types_template_cloze_single);
       return;
     }
+    final List<SrsTemplatePreset> presets = srsTemplatePresets(type);
+    final SrsTemplatePresetKind? kind =
+        await showFushiChoiceDialog<SrsTemplatePresetKind>(
+          context: context,
+          title: t.srs_template_preset_title,
+          message: t.srs_template_preset_message,
+          icon: FushiIcons.ankiCard,
+          options: <FushiChoiceOption<SrsTemplatePresetKind>>[
+            for (final SrsTemplatePreset p in presets)
+              FushiChoiceOption<SrsTemplatePresetKind>(
+                value: p.kind,
+                label: srsTemplatePresetLabel(p.kind),
+                subtitle: srsTemplatePresetSubtitle(p),
+                icon: _presetIcon(p.kind),
+                enabled: p.available,
+              ),
+          ],
+        );
+    if (kind == null || !mounted) return;
+    final SrsTemplatePreset preset = presets.firstWhere(
+      (SrsTemplatePreset p) => p.kind == kind,
+    );
     final String? name = await showFushiTextInputDialog(
       context: context,
       title: t.srs_note_types_template_add,
       labelText: t.srs_note_types_template_name,
-      initialValue: _nextCardName(type),
+      initialValue: _presetName(type, kind),
       icon: FushiIcons.ankiCard,
       validator: (String v) => _validateTemplate(type, v),
     );
     final SrsDbStore? store = _store;
     if (name == null || store == null) return;
     // 加模板 = 这个类型的每条笔记各多一张卡（缓存刷新时按笔记 × 模板确定性生成，正面为空的不出）。不先说清楚，
-    // 用户会在浏览里看到每个词两张卡、以为导入重复（Discord 反馈：10.9k 笔记、浏览里 21k 张卡）。
-    final int notes = (await store.noteCountsByType())[type.id] ?? 0;
+    // 用户会在浏览里看到每个词两张卡、以为导入重复（Discord 反馈：10.9k 笔记、浏览里 21k 张卡）。空白预设的
+    // 正面不引用字段，一张卡都不出，不用问。
+    final int notes = preset.makesCards
+        ? (await store.noteCountsByType())[type.id] ?? 0
+        : 0;
     if (!mounted) return;
     if (notes > 0) {
       final bool ok = await showFushiConfirmDialog(
@@ -421,13 +450,12 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
       );
       if (!ok || !mounted) return;
     }
-    final ({String front, String back}) body = srsNewTemplateBody(type);
     try {
       final String id = await store.addTemplate(
         type.id,
         name: name,
-        front: body.front,
-        back: body.back,
+        front: preset.front,
+        back: preset.back,
       );
       if (!mounted) return;
       bumpSrsRevision(ref);
@@ -445,6 +473,65 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
       if (_validateTemplate(type, n) == null) return n;
     }
     return '';
+  }
+
+  /// 预设的默认模板名（反向 / 听力）；被占用了或空白预设用 `Card N`。
+  String _presetName(SrsNoteTypeView type, SrsTemplatePresetKind kind) {
+    final String? n = switch (kind) {
+      SrsTemplatePresetKind.reverse => t.srs_template_preset_reverse_name,
+      SrsTemplatePresetKind.listening => t.srs_template_preset_listening_name,
+      SrsTemplatePresetKind.blank => null,
+    };
+    return n != null && _validateTemplate(type, n) == null
+        ? n
+        : _nextCardName(type);
+  }
+
+  /// 删除重复模板：保留 [keep]、删 [drop]。确认框写明删多少卡、其中多少张有复习记录（记录并入同一笔记保留
+  /// 模板那张卡，见 [SrsTemplateDuplicates.dedupeTemplates]），确认后同一次写入落库。
+  Future<void> _dedupe(
+    SrsNoteTypeView type, {
+    required SrsTemplateDef keep,
+    required List<SrsTemplateDef> drop,
+  }) async {
+    final SrsDbStore? store = _store;
+    if (store == null) return;
+    final SrsTemplateDedupePreview p = await store.previewTemplateDedupe(
+      type.id,
+      keepTemplateId: keep.id,
+      dropTemplateIds: <String>[for (final SrsTemplateDef d in drop) d.id],
+    );
+    if (!mounted) return;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_note_types_duplicate_fix,
+      message: t.srs_note_types_duplicate_fix_confirm(
+        keep: keep.name,
+        drop: <String>[
+          for (final SrsTemplateDef d in drop)
+            t.srs_note_types_template_quoted(name: d.name),
+        ].join(t.srs_list_separator),
+        n: p.droppedCards,
+        linked: p.linkedCards,
+        both: p.bothReviewed,
+      ),
+      confirmLabel: t.srs_note_types_duplicate_fix,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.merge,
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    _run('SrsNoteTypeEditor.dedupeTemplates', (SrsDbStore s) async {
+      await s.dedupeTemplates(
+        type.id,
+        keepTemplateId: keep.id,
+        dropTemplateIds: <String>[for (final SrsTemplateDef d in drop) d.id],
+      );
+      FushiToast.show(
+        msg: t.srs_note_types_duplicate_done,
+        severity: ToastSeverity.success,
+      );
+    });
   }
 
   Future<void> _onTemplateAction(
@@ -487,6 +574,15 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
         if (store == null) return;
         if (type.templates.length <= 1) {
           FushiToast.show(msg: t.srs_note_types_template_last);
+          return;
+        }
+        // 删的是重复模板：走删除重复模板（它的卡上的复习记录并入同一笔记另一个同正面模板那张卡，不白丢）。
+        final SrsTemplateDef? twin = srsTemplatesWithSameFront(
+          type,
+          tpl.id,
+        ).firstOrNull;
+        if (twin != null) {
+          await _dedupe(type, keep: twin, drop: <SrsTemplateDef>[tpl]);
           return;
         }
         final int n = await store.visibleCardsOfTemplate(tpl.id);
@@ -652,6 +748,8 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
       if (type.edits.conflicted.isNotEmpty)
         SrsSection(_buildConflicts(context, type)),
       SrsSection(_buildOverview(context, type)),
+      for (final List<SrsTemplateDef> g in srsDuplicateFrontGroups(type))
+        SrsSection(_buildDuplicates(context, type, g)),
       SrsSection(_buildTemplates(context, type)),
       SrsSection(pane: SrsPane.secondary, _buildFields(context, type, store)),
     ];
@@ -778,9 +876,64 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     );
   }
 
+  /// 一组正面相同的模板：说明它们考的是同一道题、复习量成倍，一键删掉组里除第一个以外的模板（复习记录
+  /// 并入第一个模板那张卡）。
+  Widget _buildDuplicates(
+    BuildContext context,
+    SrsNoteTypeView type,
+    List<SrsTemplateDef> group,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiCard(
+      key: ValueKey<String>('srs-note-type-duplicates-${group.first.id}'),
+      tone: FushiCardTone.error,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              const FushiIcon(FushiIcons.warning),
+              Expanded(
+                child: Text(
+                  t.srs_note_types_duplicate_banner(
+                    names: <String>[
+                      for (final SrsTemplateDef x in group)
+                        t.srs_note_types_template_quoted(name: x.name),
+                    ].join(t.srs_list_separator),
+                  ),
+                  style: context.fushiType.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: FushiFilledButton.tonalIcon(
+              key: ValueKey<String>(
+                'srs-note-type-duplicates-fix-${group.first.id}',
+              ),
+              onPressed: () => srsRunLogged(
+                'SrsNoteTypeEditor.dedupe',
+                () => _dedupe(type, keep: group.first, drop: group.sublist(1)),
+              ),
+              icon: const FushiIcon(FushiIcons.merge),
+              label: Text(t.srs_note_types_duplicate_fix),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 卡片模板：每种卡一行，副标题直接列出正面 / 背面放了哪些字段（看一眼就知道这张卡
-  /// 长什么样，不必点进去）；末尾是全部模板共用的样式入口。
+  /// 长什么样，不必点进去）；末尾是全部模板共用的样式入口；正面与别的模板相同的标「重复」。
   Widget _buildTemplates(BuildContext context, SrsNoteTypeView type) {
+    final Set<String> duplicated = <String>{
+      for (final List<SrsTemplateDef> g in srsDuplicateFrontGroups(type))
+        for (final SrsTemplateDef x in g) x.id,
+    };
     String sideText(String body) {
       final List<String> names = <String>[
         for (final SrsFieldDef f in srsFieldsShownOnSide(type, body))
@@ -825,6 +978,16 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
             ),
             icon: FushiIcons.ankiCard,
             title: type.templates[i].name,
+            tags: <Widget>[
+              if (duplicated.contains(type.templates[i].id))
+                FushiTag(
+                  key: ValueKey<String>(
+                    'srs-note-type-template-duplicate-${type.templates[i].name}',
+                  ),
+                  text: t.srs_note_types_duplicate_tag,
+                  tone: FushiTagTone.warning,
+                ),
+            ],
             subtitle: <String>[
               t.srs_note_types_template_front_fields(
                 fields: sideText(type.templates[i].front),

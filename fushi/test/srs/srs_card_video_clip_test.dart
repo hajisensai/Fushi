@@ -17,7 +17,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsPictureLimits, srsPictureLimits;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart' show SrsReviewImageSize;
 import 'package:fushi/src/srs/srs_review_gestures.dart'

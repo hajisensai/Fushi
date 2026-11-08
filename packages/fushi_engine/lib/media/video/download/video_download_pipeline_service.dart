@@ -3095,6 +3095,11 @@ class VideoDownloadPipelineService {
       defaultSeasonNumber: job.season ?? 1,
       sourceRoot: source.rootPath,
       pathMapping: mapping,
+      legacyUnderscoreNames: await _keepsLegacyOrganizationNames(
+        job,
+        rows,
+        source.rootPath,
+      ),
     );
     // 选择性任务（手动选文件 / 跳过特典）里没选的文件没下完或根本没下：
     // 不排布、不改名、不入库，否则半截文件会被当成已整理的正片或特典。
@@ -3458,6 +3463,38 @@ class VideoDownloadPipelineService {
     );
     _ensureLeaseHeld();
     return await database.getVideoDownloadJob(job.jobId) ?? job;
+  }
+
+  /// 这条任务的整理是否沿用旧的 `_` 替身（判据见
+  /// [videoOrganizationKeepsLegacyNames]）：已落过的整理意图（崩溃重放）优先，
+  /// 其次看来源库根下哪种规则的作品目录已经存在。
+  Future<bool> _keepsLegacyOrganizationNames(
+    VideoDownloadJobRow job,
+    List<VideoDownloadJobFileRow> rows,
+    String sourceRoot,
+  ) async {
+    Future<bool> rootExists({required bool legacy}) async {
+      try {
+        return await Directory(
+          p.join(
+            sourceRoot,
+            videoOrganizationDisplayRoot(job.title, job.year, legacy: legacy),
+          ),
+        ).exists();
+      } on FormatException {
+        return false;
+      }
+    }
+
+    return videoOrganizationKeepsLegacyNames(
+      title: job.title,
+      year: job.year,
+      persistedTargets: <String?>[
+        for (final VideoDownloadJobFileRow row in rows) row.targetRelativePath,
+      ],
+      legacyRootExists: await rootExists(legacy: true),
+      currentRootExists: await rootExists(legacy: false),
+    );
   }
 
   Future<void> _persistOrganizationIntent(

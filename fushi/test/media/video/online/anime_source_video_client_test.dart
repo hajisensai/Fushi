@@ -441,6 +441,41 @@ void main() {
       expect(fetched.single.toString(), 'https://cdn.example/ja.ass');
     });
 
+    test('扩展把字幕落在本机（file:// 链接）→ 直接拷文件，不走 HTTP（#o3voUUPYKz）', () async {
+      final File local = File('${root.path}/cache/subs751647215311001519.srt');
+      await local.parent.create(recursive: true);
+      await local.writeAsString('1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n');
+      final List<Uri> fetched = <Uri>[];
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep.m3u8',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{'url': local.uri.toString(), 'lang': 'Japanese'},
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = client(
+        httpClient: MockClient((http.Request request) async {
+          fetched.add(request.url);
+          return http.Response('', 404);
+        }),
+      );
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final File dest = File('${root.path}/out/episode_1.Japanese.srt');
+      double? progress;
+      await c.getRemoteVideoSubtitle(
+        id,
+        dest,
+        embeddedStreamIndex: 0,
+        onProgress: (double p) => progress = p,
+      );
+      expect(fetched, isEmpty);
+      expect(await dest.readAsString(), await local.readAsString());
+      expect(progress, 1.0);
+    });
+
     test('菜单选中某条轨 → 按下标下载那一条；下标失效如实报错', () async {
       final List<Uri> fetched = <Uri>[];
       runtime.videos = multiTrackVideos();

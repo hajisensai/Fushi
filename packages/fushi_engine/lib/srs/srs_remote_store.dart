@@ -58,6 +58,9 @@ class SrsRemoteStoreError implements Exception {
   /// 主机上执行时抛了异常（参数在主机上不成立，如卡已不存在）。
   static const String failed = 'failed';
 
+  /// 主机的回包不合契约（客户端判定，主机不发这个码）：多半是两端版本不一致。见 [SrsRemoteWireError]。
+  static const String badResponse = 'bad_response';
+
   @override
   String toString() =>
       'SrsRemoteStoreError($status, $code${detail == null ? '' : ', $detail'})';
@@ -95,8 +98,144 @@ abstract interface class SrsRemoteForwarding {
   Future<Map<String, String>> remoteDeviceNames();
 }
 
-/// 线格式（两端共用；编码在主机，解码在客户端）。
+/// 线格式解码失败：对端发来的 JSON 不合契约（缺字段、类型不对、认不得的枚举值）。[path] 指出是哪一处
+/// （如 `deckSummaries[3].b.limit`），[cause] 是下游解析器抛的原始异常（有的话）。
+///
+/// 两端共用同一批解码器：主机解请求体时它落成 400 [SrsRemoteStoreError.badRequest]
+/// （[SrsRemoteStoreService.call]），客户端解回包时落成 [SrsRemoteStoreError.badResponse]
+/// （`SrsRemoteStore`）。解码器里不留未校验的 `as`：不合契约一律走到这里，不漏成 `TypeError`。
+class SrsRemoteWireError implements Exception {
+  const SrsRemoteWireError(this.path, [this.cause]);
+
+  final String path;
+  final Object? cause;
+
+  @override
+  String toString() =>
+      'SrsRemoteWireError($path${cause == null ? '' : ': $cause'})';
+}
+
+/// 线格式的取值校验：类型不对一律抛 [SrsRemoteWireError]（带路径）。路径只在出错时拼。
+abstract final class _J {
+  static Never bad(String at, [Object? cause]) =>
+      throw SrsRemoteWireError(at, cause);
+
+  static Map<String, Object?> map(Object? v, String at) {
+    if (v is Map<String, Object?>) return v;
+    if (v is! Map) bad(at);
+    final Map<String, Object?> out = <String, Object?>{};
+    for (final MapEntry<Object?, Object?> e in v.entries) {
+      final Object? k = e.key;
+      if (k is! String) bad(at);
+      out[k] = e.value;
+    }
+    return out;
+  }
+
+  static List<Object?> list(Object? v, String at) =>
+      v is List<Object?> ? v : bad(at);
+
+  static String str(Object? v, String at) => v is String ? v : bad(at);
+
+  static String? optStr(Object? v, String at) => v == null ? null : str(v, at);
+
+  static int integer(Object? v, String at) => v is int ? v : bad(at);
+
+  static int? optInt(Object? v, String at) => v == null ? null : integer(v, at);
+
+  static List<String> strings(Object? v, String at) {
+    final List<Object?> l = list(v, at);
+    return <String>[for (int i = 0; i < l.length; i++) str(l[i], '$at[$i]')];
+  }
+
+  static Map<String, String> strMap(Object? v, String at) => <String, String>{
+    for (final MapEntry<String, Object?> e in map(v, at).entries)
+      e.key: str(e.value, '$at.${e.key}'),
+  };
+
+  /// 交给别处的解析器（`fromJson` / 物化内核）：它们按自己的契约读，读不了抛的类型 / 格式错误在这里
+  /// 归成 [SrsRemoteWireError]，带上路径与原始异常。只转换，不吞：调用方照常收到异常。
+  static T guard<T>(String at, T Function() parse) {
+    try {
+      return parse();
+    } on TypeError catch (e) {
+      bad(at, e);
+    } on FormatException catch (e) {
+      bad(at, e);
+    } on ArgumentError catch (e) {
+      bad(at, e);
+    } on StateError catch (e) {
+      bad(at, e);
+    }
+  }
+}
+
+/// 一次回包的信封（[SrsRemoteStoreService.call] 的回包里 `result` 之外的部分）。缺的字段为 null，
+/// 客户端沿用上次的值。
+typedef SrsRemoteEnvelope = ({
+  String? profile,
+  int? revision,
+  String? fingerprint,
+  String? treeTag,
+  bool canSchedule,
+  bool rwkvReady,
+  String? device,
+  int? nowMs,
+  String? timeSource,
+});
+
+/// 笔记类型引用 `{id, tag}`（客户端按 tag 判断缓存的视图还新不新）。
+typedef SrsRemoteTypeRef = ({String id, String tag});
+
+/// `cardDetail` 的回包（笔记与笔记类型按物化输入 / 引用搬，客户端物化）。
+typedef SrsRemoteCardDetail = ({
+  SrsCardCacheRow card,
+  SrsEntitySource note,
+  SrsRemoteTypeRef type,
+  String? templateId,
+  String deckName,
+});
+
+/// `previewNoteTypeChange` 的回包。
+typedef SrsRemoteNoteTypeChange = ({
+  SrsRemoteTypeRef from,
+  SrsRemoteTypeRef to,
+  List<SrsNoteTypeChangePlan> plans,
+});
+
+/// 线格式（两端共用；编码在主机，解码在客户端，请求体的几个结构反过来）。解码器只用 [_J] 取值：
+/// 不合契约抛 [SrsRemoteWireError]，参数 `at` 是出错时报告的路径前缀。
 abstract final class SrsRemoteWire {
+  // ---------------------------------------------------------------- 信封
+
+  static SrsRemoteEnvelope envelopeFrom(Map<String, Object?> m) => (
+    profile: _J.optStr(m['profile'], 'profile'),
+    revision: _J.optInt(m['rev'], 'rev'),
+    fingerprint: _J.optStr(m['fp'], 'fp'),
+    treeTag: _J.optStr(m['tt'], 'tt'),
+    canSchedule: m['sched'] == true,
+    rwkvReady: m['rwkv'] == true,
+    device: _J.optStr(m['dev'], 'dev'),
+    nowMs: _J.optInt(m['now'], 'now'),
+    timeSource: _J.optStr(m['ts'], 'ts'),
+  );
+
+  // ---------------------------------------------------------------- 标量
+
+  static String stringFrom(Object? json, [String at = 'result']) =>
+      _J.str(json, at);
+
+  static int intFrom(Object? json, [String at = 'result']) =>
+      _J.integer(json, at);
+
+  static List<String> stringsFrom(Object? json, [String at = 'result']) =>
+      _J.strings(json, at);
+
+  static Map<String, String> stringMapFrom(
+    Object? json, [
+    String at = 'result',
+  ]) => _J.strMap(json, at);
+
   // ---------------------------------------------------------------- 实体
 
   static List<Object?> editItems(List<SrsEditItem> items) => <Object?>[
@@ -104,13 +243,17 @@ abstract final class SrsRemoteWire {
       <Object?>[utf8.decode(e.json), e.serverTime],
   ];
 
-  static List<SrsEditItem> editItemsFrom(Object? json) => <SrsEditItem>[
-    for (final Object? e in (json as List<Object?>?) ?? const <Object?>[])
-      if (e case [final String item, final int? serverTime])
-        SrsEditItem.stored(Uint8List.fromList(utf8.encode(item)), serverTime)
-      else
-        throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest),
-  ];
+  static List<SrsEditItem> editItemsFrom(Object? json, [String at = 'edits']) {
+    if (json == null) return const <SrsEditItem>[];
+    final List<Object?> l = _J.list(json, at);
+    return <SrsEditItem>[
+      for (int i = 0; i < l.length; i++)
+        if (l[i] case [final String item, final int? serverTime])
+          SrsEditItem.stored(Uint8List.fromList(utf8.encode(item)), serverTime)
+        else
+          _J.bad('$at[$i]'),
+    ];
+  }
 
   static Map<String, Object?> source(SrsEntitySource s) => <String, Object?>{
     'id': s.id,
@@ -118,13 +261,23 @@ abstract final class SrsRemoteWire {
     'e': editItems(s.edits),
   };
 
-  static SrsEntitySource sourceFrom(Object? json) {
-    final Map<String, Object?> m = (json! as Map).cast<String, Object?>();
+  static SrsEntitySource sourceFrom(Object? json, [String at = 'source']) {
+    final Map<String, Object?> m = _J.map(json, at);
     return SrsEntitySource(
-      m['id']! as String,
-      m['p']! as String,
-      editItemsFrom(m['e']),
+      _J.str(m['id'], '$at.id'),
+      _J.str(m['p'], '$at.p'),
+      editItemsFrom(m['e'], '$at.e'),
     );
+  }
+
+  static List<SrsEntitySource> sourcesFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    final List<Object?> l = _J.list(json, at);
+    return <SrsEntitySource>[
+      for (int i = 0; i < l.length; i++) sourceFrom(l[i], '$at[$i]'),
+    ];
   }
 
   /// 物化输入的版本标签：身份记录不可变、修改记录只增不改，所以「条数 + 最后一条的 ID」变了视图才会变。
@@ -133,30 +286,71 @@ abstract final class SrsRemoteWire {
       '${s.payloadJson.length}:${s.edits.length}:'
       '${s.edits.isEmpty ? '' : s.edits.last.edit.id}';
 
+  static SrsRemoteTypeRef typeRefFrom(Object? json, [String at = 'type']) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return (id: _J.str(m['id'], '$at.id'), tag: _J.str(m['tag'], '$at.tag'));
+  }
+
+  /// 笔记类型引用列表；null = 空。
+  static List<SrsRemoteTypeRef> typeRefsFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    if (json == null) return const <SrsRemoteTypeRef>[];
+    final List<Object?> l = _J.list(json, at);
+    return <SrsRemoteTypeRef>[
+      for (int i = 0; i < l.length; i++) typeRefFrom(l[i], '$at[$i]'),
+    ];
+  }
+
   static List<SrsNoteView> notesFrom(List<SrsEntitySource> sources) =>
-      sources.isEmpty ? const <SrsNoteView>[] : srsMaterializeNotes(sources);
+      sources.isEmpty
+      ? const <SrsNoteView>[]
+      : _J.guard('notes', () => srsMaterializeNotes(sources));
 
   static List<SrsNoteTypeView> noteTypesFrom(
     String profileUid,
     List<SrsEntitySource> sources,
   ) => sources.isEmpty
       ? const <SrsNoteTypeView>[]
-      : srsMaterializeNoteTypes(<(SrsEntitySource, SrsBuiltinNoteType?)>[
-          for (final SrsEntitySource s in sources)
-            (
-              s,
-              srsBuiltinNoteTypeForKey(
-                profileUid,
-                (jsonDecode(s.payloadJson) as Map)['builtin'] as String?,
-              ),
-            ),
-        ]);
+      : _J.guard(
+          'noteTypes',
+          () =>
+              srsMaterializeNoteTypes(<(SrsEntitySource, SrsBuiltinNoteType?)>[
+                for (final SrsEntitySource s in sources)
+                  (s, srsBuiltinNoteTypeForKey(profileUid, _builtinKeyOf(s))),
+              ]),
+        );
+
+  /// 笔记类型身份记录里的内置标识（`builtin`）；没有为 null。
+  static String? _builtinKeyOf(SrsEntitySource s) {
+    final String at = 'noteType(${s.id}).p';
+    final Object? payload = _J.guard(at, () => jsonDecode(s.payloadJson));
+    return _J.optStr(_J.map(payload, at)['builtin'], '$at.builtin');
+  }
 
   static SrsDeckTree deckTreeFrom(List<SrsEntitySource> sources) =>
-      SrsDeckTree(srsMaterializeDecks(sources));
+      _J.guard('deckTree', () => SrsDeckTree(srsMaterializeDecks(sources)));
 
-  static SrsEntityEdits entityEditsFrom(Object? json) =>
-      srsEntityEditsOf(<List<SrsEditItem>>[editItemsFrom(json)]).single;
+  static SrsEntityEdits entityEditsFrom(Object? json, [String at = 'edits']) {
+    final List<SrsEditItem> items = editItemsFrom(json, at);
+    return _J
+        .guard(at, () => srsEntityEditsOf(<List<SrsEditItem>>[items]))
+        .single;
+  }
+
+  static SrsEntityRecord entityRecordFrom(Object? json, String at) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return _J.guard(at, () => SrsEntityRecord.fromJson(m));
+  }
+
+  static List<SrsEntityRecord> entityRecordsFrom(Object? json, String at) {
+    if (json == null) return const <SrsEntityRecord>[];
+    final List<Object?> l = _J.list(json, at);
+    return <SrsEntityRecord>[
+      for (int i = 0; i < l.length; i++) entityRecordFrom(l[i], '$at[$i]'),
+    ];
+  }
 
   // ---------------------------------------------------------------- 复习
 
@@ -165,23 +359,26 @@ abstract final class SrsRemoteWire {
     'roll': d.rolloverHour,
   };
 
-  static SrsDayContext dayContextFrom(Object? json) {
-    final Map<String, Object?> m = (json! as Map).cast<String, Object?>();
+  static SrsDayContext dayContextFrom(Object? json, [String at = 'result']) {
+    final Map<String, Object?> m = _J.map(json, at);
     return SrsDayContext(
-      utcOffsetMin: m['off']! as int,
-      rolloverHour: m['roll']! as int,
+      utcOffsetMin: _J.integer(m['off'], '$at.off'),
+      rolloverHour: _J.integer(m['roll'], '$at.roll'),
     );
   }
 
   static Map<String, Object?> todayReviews(SrsTodayReviewSummary s) =>
       <String, Object?>{'n': s.count, 'ms': s.durationMs, 'again': s.again};
 
-  static SrsTodayReviewSummary todayReviewsFrom(Object? json) {
-    final Map<String, Object?> m = (json! as Map).cast<String, Object?>();
+  static SrsTodayReviewSummary todayReviewsFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    final Map<String, Object?> m = _J.map(json, at);
     return SrsTodayReviewSummary(
-      count: m['n']! as int,
-      durationMs: m['ms']! as int,
-      again: m['again']! as int,
+      count: _J.integer(m['n'], '$at.n'),
+      durationMs: _J.integer(m['ms'], '$at.ms'),
+      again: _J.integer(m['again'], '$at.again'),
     );
   }
 
@@ -205,35 +402,75 @@ abstract final class SrsRemoteWire {
     'rs': s.rwkvScheduled,
   };
 
-  static SrsDeckSummary? summaryFrom(Object? json, SrsDeckTree tree) {
+  /// 牌组行；null = 没有这个牌组，或它不在 [tree] 里（树与摘要之间主机删了它）。
+  static SrsDeckSummary? summaryFrom(
+    Object? json,
+    SrsDeckTree tree, [
+    String at = 'result',
+  ]) {
     if (json == null) return null;
-    final Map<String, Object?> m = (json as Map).cast<String, Object?>();
-    final SrsDeckView? deck = tree[m['deck']! as String];
+    final Map<String, Object?> m = _J.map(json, at);
+    final SrsDeckView? deck = tree[_J.str(m['deck'], '$at.deck')];
     if (deck == null) return null;
-    final Map<String, Object?> b = (m['b']! as Map).cast<String, Object?>();
-    final String? why = b['why'] as String?;
+    final Map<String, Object?> b = _J.map(m['b'], '$at.b');
     return SrsDeckSummary(
       deck: deck,
-      fullName: m['name']! as String,
-      depth: m['depth']! as int,
-      parentId: m['parent'] as String?,
-      newCount: m['n']! as int,
-      learnCount: m['l']! as int,
-      reviewCount: m['r']! as int,
+      fullName: _J.str(m['name'], '$at.name'),
+      depth: _J.integer(m['depth'], '$at.depth'),
+      parentId: _J.optStr(m['parent'], '$at.parent'),
+      newCount: _J.integer(m['n'], '$at.n'),
+      learnCount: _J.integer(m['l'], '$at.l'),
+      reviewCount: _J.integer(m['r'], '$at.r'),
       newBudget: SrsNewCardBudget(
-        limit: b['limit']! as int,
-        allowed: b['allowed']! as int,
-        reviewBudget: b['rb']! as int,
-        reason: why == null
-            ? null
-            : SrsNewCardBudgetReason.values.firstWhere(
-                (SrsNewCardBudgetReason r) => r.name == why,
-              ),
+        limit: _J.integer(b['limit'], '$at.b.limit'),
+        allowed: _J.integer(b['allowed'], '$at.b.allowed'),
+        reviewBudget: _J.integer(b['rb'], '$at.b.rb'),
+        reason: _budgetReason(_J.optStr(b['why'], '$at.b.why'), '$at.b.why'),
       ),
-      totalCards: m['total']! as int,
+      totalCards: _J.integer(m['total'], '$at.total'),
       rwkvPending: m['rp'] == true,
       rwkvScheduled: m['rs'] == true,
     );
+  }
+
+  static SrsNewCardBudgetReason? _budgetReason(String? name, String at) {
+    if (name == null) return null;
+    for (final SrsNewCardBudgetReason r in SrsNewCardBudgetReason.values) {
+      if (r.name == name) return r;
+    }
+    _J.bad(at);
+  }
+
+  /// 牌组行列表（先序）。不在 [tree] 里的行跳过（见 [summaryFrom]）。
+  static List<SrsDeckSummary> summariesFrom(
+    Object? json,
+    SrsDeckTree tree, [
+    String at = 'result',
+  ]) {
+    final List<Object?> l = _J.list(json, at);
+    return <SrsDeckSummary>[
+      for (int i = 0; i < l.length; i++)
+        ?summaryFrom(_J.map(l[i], '$at[$i]'), tree, '$at[$i]'),
+    ];
+  }
+
+  /// 一台主机牌组摘要的本机缓存（复习首页「已配对设备」落盘的格式）：牌组树的物化输入 + 牌组行，
+  /// 与线格式同一套编码，读回时经同一套校验（[deckCacheFrom]）。
+  static Map<String, Object?> deckCache(
+    List<SrsEntitySource> tree,
+    List<SrsDeckSummary> decks,
+  ) => <String, Object?>{
+    'tree': <Object?>[for (final SrsEntitySource s in tree) source(s)],
+    'decks': <Object?>[for (final SrsDeckSummary d in decks) summary(d)],
+  };
+
+  static List<SrsDeckSummary> deckCacheFrom(
+    Object? json, [
+    String at = 'cache',
+  ]) {
+    final Map<String, Object?> m = _J.map(json, at);
+    final SrsDeckTree tree = deckTreeFrom(sourcesFrom(m['tree'], '$at.tree'));
+    return summariesFrom(m['decks'], tree, '$at.decks');
   }
 
   static Map<String, Object?> study(SrsStudyState s) => <String, Object?>{
@@ -247,16 +484,32 @@ abstract final class SrsRemoteWire {
       },
   };
 
-  static SrsStudyState? studyFrom(Object? json, SrsDeckTree tree) {
+  static SrsStudyState? studyFrom(
+    Object? json,
+    SrsDeckTree tree, [
+    String at = 'result',
+  ]) {
     if (json == null) return null;
-    final Map<String, Object?> m = (json as Map).cast<String, Object?>();
-    final SrsDeckSummary? sum = summaryFrom(m['sum'], tree);
+    final Map<String, Object?> m = _J.map(json, at);
+    final SrsDeckSummary? sum = summaryFrom(m['sum'], tree, '$at.sum');
     if (sum == null) return null;
+    final Object? custom = m['custom'];
     return SrsStudyState(
       summary: sum,
-      next: m['next'] as String?,
-      after: m['after'] as String?,
-      custom: SrsCustomStudyProgress.fromValue(m['custom']),
+      next: _J.optStr(m['next'], '$at.next'),
+      after: _J.optStr(m['after'], '$at.after'),
+      custom: custom == null
+          ? null
+          : SrsCustomStudyProgress(
+              left: _J.integer(
+                _J.map(custom, '$at.custom')['left'],
+                '$at.custom.left',
+              ),
+              learn: _J.integer(
+                _J.map(custom, '$at.custom')['learn'],
+                '$at.custom.learn',
+              ),
+            ),
     );
   }
 
@@ -274,26 +527,31 @@ abstract final class SrsRemoteWire {
           if (c.source != null) 'source': c.source,
         };
 
-  static SrsCustomStudy? customStudyFrom(Object? json) {
+  static SrsCustomStudy? customStudyFrom(Object? json, [String at = 'custom']) {
     if (json == null) return null;
-    final Map<String, Object?> m = (json as Map).cast<String, Object?>();
-    final List<Object?> states = (m['states'] as List<Object?>?) ?? const [];
+    final Map<String, Object?> m = _J.map(json, at);
+    final List<String> states = m['states'] == null
+        ? const <String>[]
+        : _J.strings(m['states'], '$at.states');
+    final String mode = _J.str(m['mode'], '$at.mode');
     return SrsCustomStudy(
-      mode: SrsCustomStudyMode.values.firstWhere(
-        (SrsCustomStudyMode x) => x.wire == m['mode'],
-      ),
-      sinceMs: m['since']! as int,
-      days: (m['days'] as int?) ?? 1,
-      limit: (m['limit'] as int?) ?? 100,
+      mode:
+          <SrsCustomStudyMode?>[
+            for (final SrsCustomStudyMode x in SrsCustomStudyMode.values)
+              if (x.wire == mode) x,
+          ].firstOrNull ??
+          _J.bad('$at.mode'),
+      sinceMs: _J.integer(m['since'], '$at.since'),
+      days: _J.optInt(m['days'], '$at.days') ?? 1,
+      limit: _J.optInt(m['limit'], '$at.limit') ?? 100,
       states: <SrsCustomStudyState>{
         for (final SrsCustomStudyState s in SrsCustomStudyState.values)
           if (states.contains(s.wire)) s,
       },
-      tags: <String>[
-        for (final Object? t in (m['tags'] as List<Object?>?) ?? const [])
-          t! as String,
-      ],
-      source: m['source'] as String?,
+      tags: m['tags'] == null
+          ? const <String>[]
+          : _J.strings(m['tags'], '$at.tags'),
+      source: _J.optStr(m['source'], '$at.source'),
     );
   }
 
@@ -309,24 +567,33 @@ abstract final class SrsRemoteWire {
     'ts': p.timeSource.wire,
   };
 
-  static SrsAnswerPreview previewFrom(Object? json) {
-    final Map<String, Object?> m = (json! as Map).cast<String, Object?>();
+  static SrsAnswerPreview previewFrom(Object? json, [String at = 'result']) {
+    final Map<String, Object?> m = _J.map(json, at);
+    final List<Object?> params = _J.list(m['params'], '$at.params');
     return SrsAnswerPreview(
       plan: SrsAnswerPlan(<int, SrsScheduleResult>{
         for (final MapEntry<String, Object?> e
-            in (m['plan']! as Map).cast<String, Object?>().entries)
-          int.parse(e.key): SrsScheduleResult.fromJson(
-            (e.value! as Map).cast<String, Object?>(),
+            in _J.map(m['plan'], '$at.plan').entries)
+          int.tryParse(e.key) ?? _J.bad('$at.plan.${e.key}'): _J.guard(
+            '$at.plan.${e.key}',
+            () => SrsScheduleResult.fromJson(
+              _J.map(e.value, '$at.plan.${e.key}'),
+            ),
           ),
       }),
-      memoryBefore: SrsMemory.fromJson(m['mem']),
-      algorithm: SrsAlgorithm.tryParse(m['alg'] as String?)!,
+      memoryBefore: _J.guard('$at.mem', () => SrsMemory.fromJson(m['mem'])),
+      algorithm:
+          SrsAlgorithm.tryParse(_J.optStr(m['alg'], '$at.alg')) ??
+          _J.bad('$at.alg'),
       params: <double>[
-        for (final Object? v in m['params']! as List<Object?>)
-          (v! as num).toDouble(),
+        for (int i = 0; i < params.length; i++)
+          switch (params[i]) {
+            final num v => v.toDouble(),
+            _ => _J.bad('$at.params[$i]'),
+          },
       ],
-      nowMs: m['now']! as int,
-      timeSource: SrsTimeSource.parse(m['ts'] as String?),
+      nowMs: _J.integer(m['now'], '$at.now'),
+      timeSource: SrsTimeSource.parse(_J.optStr(m['ts'], '$at.ts')),
     );
   }
 
@@ -345,78 +612,218 @@ abstract final class SrsRemoteWire {
     ],
   };
 
-  static SrsRenderedCard? renderedFrom(Object? json) {
+  static SrsRenderedCard? renderedFrom(Object? json, [String at = 'result']) {
     if (json == null) return null;
-    final Map<String, Object?> m = (json as Map).cast<String, Object?>();
+    final Map<String, Object?> m = _J.map(json, at);
     return SrsRenderedCard(
-      question: m['q']! as String,
-      answer: m['a']! as String,
-      css: m['css']! as String,
+      question: _J.str(m['q'], '$at.q'),
+      answer: _J.str(m['a'], '$at.a'),
+      css: _J.str(m['css'], '$at.css'),
       isEmpty: m['empty'] == true,
-      fields: (m['fields']! as Map).cast<String, String>(),
-      fushiCardDefinitions: m['defs'] as String?,
+      fields: _J.strMap(m['fields'], '$at.fields'),
+      fushiCardDefinitions: _J.optStr(m['defs'], '$at.defs'),
       // 旧对端不发布局（它只在模板与代码定义逐字一致时才给 defs，即默认布局）：两面都按默认。
-      // 认不得的布局项跳过。
-      fushiCardFront: m['front'] is List
-          ? <FushiCardItem>[
-              for (final Object? x in m['front']! as List)
-                ?FushiCardItem.fromJson(x),
-            ]
-          : kFushiCardDefaultFrontItems,
-      fushiCardBack: m['back'] is List
-          ? <FushiCardItem>[
-              for (final Object? x in m['back']! as List)
-                ?FushiCardItem.fromJson(x),
-            ]
-          : kFushiCardDefaultBackItems,
+      // 认不得的布局项跳过（[FushiCardItem.fromJson] 返回 null）。
+      fushiCardFront: m['front'] == null
+          ? kFushiCardDefaultFrontItems
+          : _layoutFrom(m['front'], '$at.front'),
+      fushiCardBack: m['back'] == null
+          ? kFushiCardDefaultBackItems
+          : _layoutFrom(m['back'], '$at.back'),
     );
   }
 
-  static SrsCardCacheRow? cardRowFrom(Object? json) => json == null
-      ? null
-      : SrsCardCacheRow.fromJson((json as Map).cast<String, dynamic>());
+  static List<FushiCardItem> _layoutFrom(Object? json, String at) {
+    final List<Object?> l = _J.list(json, at);
+    return <FushiCardItem>[
+      for (int i = 0; i < l.length; i++)
+        ?_J.guard('$at[$i]', () => FushiCardItem.fromJson(l[i])),
+    ];
+  }
 
-  static List<SrsCardCacheRow> cardRowsFrom(Object? json) => <SrsCardCacheRow>[
-    for (final Object? r in json! as List<Object?>) cardRowFrom(r)!,
-  ];
+  static SrsCardCacheRow? cardRowFrom(Object? json, [String at = 'result']) {
+    if (json == null) return null;
+    final Map<String, Object?> m = _J.map(json, at);
+    return _J.guard(at, () => SrsCardCacheRow.fromJson(m));
+  }
 
-  static SrsReviewLog logFrom(Object? json) =>
-      SrsReviewLog.fromJson((json! as Map).cast<String, Object?>());
+  static List<SrsCardCacheRow> cardRowsFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    final List<Object?> l = _J.list(json, at);
+    return <SrsCardCacheRow>[
+      for (int i = 0; i < l.length; i++)
+        cardRowFrom(l[i], '$at[$i]') ?? _J.bad('$at[$i]'),
+    ];
+  }
 
-  static List<SrsReviewLog> logsFrom(Object? json) => <SrsReviewLog>[
-    for (final Object? l in json! as List<Object?>) logFrom(l),
-  ];
+  static SrsRemoteCardDetail? cardDetailFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    if (json == null) return null;
+    final Map<String, Object?> m = _J.map(json, at);
+    return (
+      card: cardRowFrom(m['card'], '$at.card') ?? _J.bad('$at.card'),
+      note: sourceFrom(m['note'], '$at.note'),
+      type: typeRefFrom(m['type'], '$at.type'),
+      templateId: _J.optStr(m['tpl'], '$at.tpl'),
+      deckName: _J.str(m['deckName'], '$at.deckName'),
+    );
+  }
 
-  static SrsFieldEdit editFrom(Object? json) =>
-      SrsFieldEdit.fromJson((json! as Map).cast<String, Object?>());
+  static SrsReviewLog logFrom(Object? json, [String at = 'result']) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return _J.guard(at, () => SrsReviewLog.fromJson(m));
+  }
 
-  static List<SrsFieldEdit> editsFrom(Object? json) => <SrsFieldEdit>[
-    for (final Object? e in json! as List<Object?>) editFrom(e),
-  ];
+  static List<SrsReviewLog> logsFrom(Object? json, [String at = 'result']) {
+    final List<Object?> l = _J.list(json, at);
+    return <SrsReviewLog>[
+      for (int i = 0; i < l.length; i++) logFrom(l[i], '$at[$i]'),
+    ];
+  }
+
+  /// `answerAndStudy` 的回包：这次作答的日志 + 作答后重排的队。
+  static SrsAnswerOutcome answerFrom(
+    Object? json,
+    SrsDeckTree tree, [
+    String at = 'result',
+  ]) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return SrsAnswerOutcome(
+      logFrom(m['log'], '$at.log'),
+      studyFrom(m['study'], tree, '$at.study'),
+    );
+  }
+
+  static SrsCardHistory historyFrom(Object? json, [String at = 'result']) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return _J.guard(at, () => SrsCardHistory.fromWire(m));
+  }
+
+  /// 一个实体的修改历史；null = 空。
+  static List<SrsHistoryEntry> historyEntriesFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    if (json == null) return const <SrsHistoryEntry>[];
+    final List<Object?> l = _J.list(json, at);
+    return <SrsHistoryEntry>[
+      for (int i = 0; i < l.length; i++)
+        _J.guard(
+          '$at[$i]',
+          () => SrsHistoryEntry.fromJson(_J.map(l[i], '$at[$i]')),
+        ),
+    ];
+  }
+
+  static SrsFieldEdit editFrom(Object? json, [String at = 'result']) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return _J.guard(at, () => SrsFieldEdit.fromJson(m));
+  }
+
+  static List<SrsFieldEdit> editsFrom(Object? json, [String at = 'result']) {
+    final List<Object?> l = _J.list(json, at);
+    return <SrsFieldEdit>[
+      for (int i = 0; i < l.length; i++) editFrom(l[i], '$at[$i]'),
+    ];
+  }
 
   static List<Object?> editSpecs(List<SrsEditSpec> specs) => <Object?>[
     for (final SrsEditSpec s in specs)
       <Object?>[s.kind.wire, s.entityId, s.key, s.value],
   ];
 
-  static List<SrsEditSpec> editSpecsFrom(Object? json) => <SrsEditSpec>[
-    for (final Object? s in json! as List<Object?>)
-      if (s case [
-        final Object? kind,
-        final String id,
-        final String key,
-        final Object? value,
-      ])
-        SrsEditSpec(_kind(kind), id, key, value)
-      else
-        throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest),
-  ];
+  static List<SrsEditSpec> editSpecsFrom(Object? json, [String at = 'specs']) {
+    final List<Object?> l = _J.list(json, at);
+    return <SrsEditSpec>[
+      for (int i = 0; i < l.length; i++)
+        if (l[i] case [
+          final Object? kind,
+          final String id,
+          final String key,
+          final Object? value,
+        ])
+          SrsEditSpec(kindFrom(kind, '$at[$i][0]'), id, key, value)
+        else
+          _J.bad('$at[$i]'),
+    ];
+  }
 
-  static SrsEntityKind _kind(Object? wire) =>
-      SrsEntityKind.tryParse(wire as String?) ??
-      (throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest));
+  static SrsEntityKind kindFrom(Object? wire, [String at = 'kind']) =>
+      SrsEntityKind.tryParse(_J.optStr(wire, at)) ?? _J.bad(at);
 
-  static SrsEntityKind kindFrom(Object? wire) => _kind(wire);
+  /// `syncConflicts` 的回包：每个冲突 `[kind, id, key]` + 涉及实体的修改记录，寄存器在本机按同一个
+  /// 内核算出。修改记录里找不到该键寄存器的冲突跳过（期间已被解决）。
+  static List<(SrsEntityKind, String, SrsRegister)> syncConflictsFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    final Map<String, Object?> m = _J.map(json, at);
+    final Map<String, SrsEntityEdits> edits = <String, SrsEntityEdits>{
+      for (final MapEntry<String, Object?> e
+          in _J.map(m['edits'], '$at.edits').entries)
+        e.key: entityEditsFrom(e.value, '$at.edits.${e.key}'),
+    };
+    final List<Object?> items = _J.list(m['items'], '$at.items');
+    return <(SrsEntityKind, String, SrsRegister)>[
+      for (int i = 0; i < items.length; i++)
+        if (items[i] case [
+          final String kind,
+          final String id,
+          final String key,
+        ])
+          if (edits['$kind/$id']?[key] case final SrsRegister reg)
+            (kindFrom(kind, '$at.items[$i][0]'), id, reg)
+          else
+            ...const <(SrsEntityKind, String, SrsRegister)>[]
+        else
+          _J.bad('$at.items[$i]'),
+    ];
+  }
+
+  static SrsRemoteNoteTypeChange noteTypeChangeFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    final Map<String, Object?> m = _J.map(json, at);
+    final List<Object?> plans = _J.list(m['plans'], '$at.plans');
+    return (
+      from: typeRefFrom(m['from'], '$at.from'),
+      to: typeRefFrom(m['to'], '$at.to'),
+      plans: <SrsNoteTypeChangePlan>[
+        for (int i = 0; i < plans.length; i++)
+          _noteTypeChangePlanFrom(plans[i], '$at.plans[$i]'),
+      ],
+    );
+  }
+
+  static SrsNoteTypeChangePlan _noteTypeChangePlanFrom(
+    Object? json,
+    String at,
+  ) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return SrsNoteTypeChangePlan(
+      noteId: _J.str(m['note'], '$at.note'),
+      fieldValues: _J.strMap(m['fields'], '$at.fields'),
+      cardLinks: _J.strMap(m['links'], '$at.links'),
+      droppedCards: _J.strings(m['dropped'], '$at.dropped'),
+    );
+  }
+
+  /// `extendTodayLimits` 的回包：今天放宽后的新卡 / 复习上限。
+  static ({int newCards, int reviews}) extendedLimitsFrom(
+    Object? json, [
+    String at = 'result',
+  ]) {
+    final Map<String, Object?> m = _J.map(json, at);
+    return (
+      newCards: _J.integer(m['n'], '$at.n'),
+      reviews: _J.integer(m['r'], '$at.r'),
+    );
+  }
 
   static Map<String, Object?> sync2Result(SrsSync2Result r) =>
       <String, Object?>{
@@ -427,14 +834,17 @@ abstract final class SrsRemoteWire {
         ],
       };
 
-  static SrsSync2Result sync2ResultFrom(Object? json) {
-    final Map<String, Object?> m = (json! as Map).cast<String, Object?>();
+  static SrsSync2Result sync2ResultFrom(Object? json, [String at = 'result']) {
+    final Map<String, Object?> m = _J.map(json, at);
+    final List<Object?> files = m['files'] == null
+        ? const <Object?>[]
+        : _J.list(m['files'], '$at.files');
     return SrsSync2Result(m['json'], <(String, Uint8List)>[
-      for (final Object? f in (m['files'] as List<Object?>?) ?? const [])
-        if (f case [final String path, final String bytes])
-          (path, base64Decode(bytes))
+      for (int i = 0; i < files.length; i++)
+        if (files[i] case [final String path, final String bytes])
+          (path, _J.guard('$at.files[$i]', () => base64Decode(bytes)))
         else
-          throw const FormatException('bad sync2 file entry'),
+          _J.bad('$at.files[$i]'),
     ]);
   }
 }
@@ -495,10 +905,7 @@ class _Args {
     return out;
   }
 
-  Map<String, Object?> map(String key) {
-    final Object? v = _m[key];
-    return v is Map ? v.cast<String, Object?>() : _bad();
-  }
+  Map<String, Object?> map(String key) => _J.map(_m[key], key);
 }
 
 typedef _Run = Future<Object?> Function(SrsDbStore store, _Args a);
@@ -511,23 +918,60 @@ class _Op {
   final bool write;
 }
 
+/// 主机提供的一份 profile（握手回包 `profiles` 里的一项）：[name] 是给人看的名字（取不到为空），[notes] 是用户笔记数。
+class SrsRemoteServedProfile {
+  const SrsRemoteServedProfile({
+    required this.uid,
+    this.name = '',
+    this.notes = 0,
+  });
+
+  factory SrsRemoteServedProfile.fromJson(Map<String, Object?> json) =>
+      SrsRemoteServedProfile(
+        uid: json['uid']! as String,
+        name: (json['name'] as String?) ?? '',
+        notes: (json['notes'] as num?)?.toInt() ?? 0,
+      );
+
+  final String uid;
+  final String name;
+  final int notes;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'uid': uid,
+    'name': name,
+    'notes': notes,
+  };
+}
+
 /// 主机侧服务：每个请求现取当前 profile 的 [SrsDbStore]（配置切换 / 模块开关即时生效）。
 class SrsRemoteStoreService {
+  ///
+  /// 一台主机可以同时提供几份 profile（无头服务端：一门语言一份）：[readProfile] 按客户端点名的 uid 取那份库
+  /// （没提供 = 只有 [readStore] 那一份，桌面 host 就是这样）；[profiles] 列出提供的全部 profile，随握手（`hello`）
+  /// 一起回给客户端（`profiles: [{uid, name, notes}]`），客户端据此直接打开自己那份或让用户选。[readStore] 是
+  /// 客户端不点名时的默认 profile。[onWrite] 收到写入落库的那份 profile uid。
   SrsRemoteStoreService({
     required Future<SrsDbStore?> Function() readStore,
     required Future<Uint8List?> Function(String name) readMedia,
-    void Function()? onWrite,
+    Future<SrsDbStore?> Function(String profileUid)? readProfile,
+    Future<List<SrsRemoteServedProfile>> Function()? profiles,
+    void Function(String profileUid)? onWrite,
     int idempotencyCapacity = 256,
   }) : _readStore = readStore,
        _readMedia = readMedia,
+       _readProfile = readProfile,
+       _profiles = profiles,
        _onWrite = onWrite,
        _capacity = idempotencyCapacity;
 
   final Future<SrsDbStore?> Function() _readStore;
   final Future<Uint8List?> Function(String name) _readMedia;
+  final Future<SrsDbStore?> Function(String profileUid)? _readProfile;
+  final Future<List<SrsRemoteServedProfile>> Function()? _profiles;
 
   /// 远程写入落库后调用：主机自己的界面重读、互联推送照常发出（与本机写入同一条信号）。
-  final void Function()? _onWrite;
+  final void Function(String profileUid)? _onWrite;
   final int _capacity;
 
   /// 写操作幂等缓存：客户端请求 id → 回包（最近 [_capacity] 次，按插入顺序淘汰）。
@@ -538,8 +982,13 @@ class SrsRemoteStoreService {
   final Map<String, Future<Map<String, Object?>>> _inFlight =
       <String, Future<Map<String, Object?>>>{};
 
-  /// 牌组树的线格式缓存（按 [SrsDbStore.deckTreeKey]）。
-  ({String key, String tag, List<Map<String, Object?>> decks})? _tree;
+  /// 牌组树的线格式缓存（每份 profile 一条，按 [SrsDbStore.deckTreeKey]）。
+  final Map<
+    String,
+    ({String key, String tag, List<Map<String, Object?>> decks})
+  >
+  _trees =
+      <String, ({String key, String tag, List<Map<String, Object?>> decks})>{};
 
   /// 卡面引用的媒体字节；名字不合法 / 不存在时 null。
   Future<Uint8List?> media(String name) => _readMedia(name);
@@ -561,7 +1010,7 @@ class SrsRemoteStoreService {
         const SrsRemoteStoreError(404, SrsRemoteStoreError.unknownOp),
       );
     }
-    if (!spec.write) return _run(spec, profile, args);
+    if (!spec.write) return _run(op, spec, profile, args);
     if (request == null ||
         request.isEmpty ||
         profile == null ||
@@ -574,7 +1023,7 @@ class SrsRemoteStoreService {
     if (done != null) return Future<Map<String, Object?>>.value(done);
     final Future<Map<String, Object?>>? running = _inFlight[request];
     if (running != null) return running;
-    final Future<Map<String, Object?>> future = _run(spec, profile, args);
+    final Future<Map<String, Object?>> future = _run(op, spec, profile, args);
     _inFlight[request] = future;
     return future
         .then((Map<String, Object?> out) {
@@ -582,19 +1031,30 @@ class SrsRemoteStoreService {
           while (_done.length > _capacity) {
             _done.remove(_done.keys.first);
           }
-          _onWrite?.call();
+          _onWrite?.call(out['profile']! as String);
           return out;
         })
         .whenComplete(() => _inFlight.remove(request));
   }
 
   Future<Map<String, Object?>> _run(
+    String op,
     _Op spec,
     String? profile,
     Map<String, Object?> args,
   ) async {
-    final SrsDbStore? store = await _readStore();
+    final Future<SrsDbStore?> Function(String)? byUid = _readProfile;
+    final SrsDbStore? store = profile != null && byUid != null
+        ? await byUid(profile)
+        : await _readStore();
     if (store == null) {
+      // 点名的 profile 主机不（再）提供了：与「主机切了 profile」同一个错误，客户端重新握手。
+      if (profile != null && byUid != null) {
+        throw const SrsRemoteStoreError(
+          409,
+          SrsRemoteStoreError.profileChanged,
+        );
+      }
       throw const SrsRemoteStoreError(503, SrsRemoteStoreError.unavailable);
     }
     if (profile != null && profile != store.profileUid) {
@@ -605,6 +1065,8 @@ class SrsRemoteStoreService {
       result = await spec.run(store, _Args(args));
     } on SrsRemoteStoreError {
       rethrow;
+    } on SrsRemoteWireError catch (e) {
+      throw SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest, '$e');
     } on ArgumentError catch (e) {
       throw SrsRemoteStoreError(400, SrsRemoteStoreError.failed, '$e');
     } on StateError catch (e) {
@@ -622,6 +1084,10 @@ class SrsRemoteStoreService {
       'rwkv': store.rwkv?.ready ?? false,
       'dev': store.sync2Device,
       'result': result,
+      if (op == 'hello' && _profiles != null)
+        'profiles': <Map<String, Object?>>[
+          for (final SrsRemoteServedProfile p in await _profiles()) p.toJson(),
+        ],
     };
   }
 
@@ -629,7 +1095,7 @@ class SrsRemoteStoreService {
   _treeWire(SrsDbStore store) async {
     final String key = store.deckTreeKey;
     final ({String key, String tag, List<Map<String, Object?>> decks})? c =
-        _tree;
+        _trees[store.profileUid];
     if (c != null && c.key == key) return c;
     final List<SrsEntitySource> sources = await store.entitySources(
       SrsEntityKind.deck,
@@ -645,7 +1111,7 @@ class SrsRemoteStoreService {
         for (final SrsEntitySource s in sources) SrsRemoteWire.source(s),
       ],
     );
-    if (store.deckTreeKey == key) _tree = out;
+    if (store.deckTreeKey == key) _trees[store.profileUid] = out;
     return out;
   }
 
@@ -907,12 +1373,13 @@ class SrsRemoteStoreService {
     'setDueDays': _Op(write: true, (SrsDbStore s, _Args a) async {
       final Map<String, int> days = <String, int>{
         for (final MapEntry<String, Object?> e in a.map('days').entries)
-          e.key: e.value is int
-              ? e.value! as int
-              : (throw const SrsRemoteStoreError(
-                  400,
-                  SrsRemoteStoreError.badRequest,
-                )),
+          e.key: switch (e.value) {
+            final int v => v,
+            _ => throw const SrsRemoteStoreError(
+              400,
+              SrsRemoteStoreError.badRequest,
+            ),
+          },
       };
       return <Object?>[
         for (final SrsReviewLog l in await s.setDueDays(days)) l.toJson(),
@@ -1008,6 +1475,7 @@ class SrsRemoteStoreService {
         for (final SrsFieldEdit e in await s.editFieldsBatch(<SrsFieldChange>[
           for (final SrsEditSpec x in SrsRemoteWire.editSpecsFrom(
             a.raw('changes'),
+            'changes',
           ))
             SrsFieldChange(x.kind, x.entityId, x.key, x.value),
         ]))
@@ -1019,11 +1487,7 @@ class SrsRemoteStoreService {
       (SrsDbStore s, _Args a) async => <Object?>[
         for (final SrsFieldEdit e in await s.writeEdits(
           SrsRemoteWire.editSpecsFrom(a.raw('specs')),
-          records: <SrsEntityRecord>[
-            for (final Object? r
-                in (a.raw('records') as List<Object?>?) ?? const <Object?>[])
-              SrsEntityRecord.fromJson((r! as Map).cast<String, Object?>()),
-          ],
+          records: SrsRemoteWire.entityRecordsFrom(a.raw('records'), 'records'),
         ))
           e.toJson(),
       ],
@@ -1051,7 +1515,7 @@ class SrsRemoteStoreService {
       if (k is! String || (v != null && v is! String)) {
         throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
       }
-      out[k] = v as String?;
+      out[k] = v is String ? v : null;
     }
     return out;
   }
