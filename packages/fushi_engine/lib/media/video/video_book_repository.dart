@@ -734,9 +734,74 @@ class VideoBookRepository {
   /// - 该种子任务行的 `observed_save_path`（后端坐标）：移动后换成新保存位置；
   /// - 改名文件的 `current_relative_path`：换成新的种子内相对路径。
   /// 后两者不跟，任务删除 / 打开位置会把新相对路径拼回旧目录，指向不存在的文件。
-  Future<int> applyDownloadRelocation(DownloadRelocation relocation) async {
-    final MovedMediaFiles moved = relocation.movedFiles;
+  Future<int> applyDownloadRelocation(DownloadRelocation relocation) {
+    final int? renamedIndex = relocation.renamedFileIndex;
+    final String? renamedPath = relocation.renamedRelativePath?.trim();
+    return applyMediaFileMoves(
+      moved: relocation.movedFiles,
+      relocatedInfoHash: relocation.infoHash,
+      newBackendSavePath: relocation.newBackendSavePath,
+      torrentRenames: <TorrentFileRenameRecord>[
+        if (renamedIndex != null &&
+            renamedPath != null &&
+            renamedPath.isNotEmpty)
+          TorrentFileRenameRecord(
+            infoHash: relocation.infoHash,
+            fileIndex: renamedIndex,
+            newRelativePath: renamedPath,
+          ),
+      ],
+    );
+  }
+
+  /// 磁盘上一批文件**已经**改名 / 搬走（[moved]，本机坐标旧 → 新）之后，把库里
+  /// 所有按路径关联的列一次事务改过来，返回改动的**库行**（`video_books`）数。
+  ///
+  /// 下载改名 / 移动（[applyDownloadRelocation]）与视频库「整理文件名」
+  /// （反馈 ZDYNkAP3Ln）共用这一处，路径列只在这里枚举一次：
+  /// - `video_books`：`videoPath` / 两条字幕源 / `playlistJson` 各集 `path`
+  ///   （各集进度在同一 JSON 里，只换 `path` 键）/ `cover_path`（共享目录电影
+  ///   的封面就是刮削写在视频旁的 `<stem>-poster.jpg`）；
+  /// - 刮削图片的本地落点：`media_collections.cover_path`、`media_images.path`
+  ///   （分集缩略图 `<stem>.jpg` 作 titleCard）、`video_metadata_images.local_path`
+  ///   （之后的刮削经 existingLocalPaths 沿用）——不跟的话封面 / 缩略图指向不存在
+  ///   的文件，而 sidecar 所有权记录已换成新路径，重刮也不会再把封面改回来；
+  /// - `video_subtitle_text_overrides.source_key`：外挂字幕的源键只取文件名
+  ///   （`file:<文件名>`），字幕一改名旧键就对不上，用户手改的字幕会静默失效
+  ///   （范围见 [remapSubtitleOverrideSourceKeys]）；
+  /// - `video_download_job_files.final_absolute_path`、
+  ///   `video_download_job_subtitles.final_path`（下载补抓的字幕落点）；
+  /// - `video_file_specs.file_path`（探测缓存，主键）、
+  ///   `anidb_file_identities.file_path`（ED2K 缓存）、
+  ///   `video_sidecar_artifacts.path`（刮削写出的 nfo / 图，唯一键）——不跟的话
+  ///   改名后会重探测、重哈希，sidecar 所有权记录指着不存在的文件。
+  ///
+  /// 按 bookUid 关联的（观看进度、统计、制卡出处、合集归属、刮削资料）本就不随
+  /// 路径变，不在这里动。
+  ///
+  /// [torrentRenames] 是下载后端里同步改名的文件：按 (种子, 文件下标) 改任务文件
+  /// 行的 `current_relative_path`；[relocatedInfoHash] + [newBackendSavePath] 是
+  /// 整个种子换了保存位置（后端坐标），改任务行的 `observed_save_path`。
+  Future<int> applyMediaFileMoves({
+    required MovedMediaFiles moved,
+    Iterable<TorrentFileRenameRecord> torrentRenames =
+        const <TorrentFileRenameRecord>[],
+    String? relocatedInfoHash,
+    String? newBackendSavePath,
+  }) async {
     final Map<String, VideoPathRemap> pending = <String, VideoPathRemap>{};
+    final Map<String, String> pendingPlaylists = <String, String>{};
+    final Map<int, String> pendingJobFiles = <int, String>{};
+    final Map<String, String> pendingJobSubtitles = <String, String>{};
+    final Map<String, String> pendingSpecs = <String, String>{};
+    final Map<String, String> pendingAnidb = <String, String>{};
+    final Map<int, String> pendingArtifacts = <int, String>{};
+    final Map<String, String> pendingBookCovers = <String, String>{};
+    final Map<int, String> pendingCollectionCovers = <int, String>{};
+    final Map<int, String> pendingMediaImages = <int, String>{};
+    final Map<int, String> pendingMetadataImages = <int, String>{};
+    final Map<String, Map<String, String>> pendingOverrideKeys =
+        <String, Map<String, String>>{};
     if (!moved.isEmpty) {
       for (final VideoBookRow row in await _db.allVideoBooks()) {
         final VideoPathRemap remap = remapVideoBookPaths(
@@ -746,28 +811,98 @@ class VideoBookRepository {
           moved: moved,
         );
         if (!remap.isEmpty) pending[row.bookUid] = remap;
+        final String? playlist = remapPlaylistJson(row.playlistJson, moved);
+        if (playlist != null) pendingPlaylists[row.bookUid] = playlist;
+        final String? cover = moved.newPathFor(row.coverPath);
+        if (cover != null) pendingBookCovers[row.bookUid] = cover;
+        pendingOverrideKeys.addAll(
+          remapSubtitleOverrideSourceKeys(
+            bookUid: row.bookUid,
+            videoPath: row.videoPath,
+            playlistJson: row.playlistJson,
+            subtitleSource: row.subtitleSource,
+            secondarySubtitleSource: row.secondarySubtitleSource,
+            moved: moved,
+          ),
+        );
       }
-    }
-    final Map<int, String> pendingJobFiles = <int, String>{};
-    if (!moved.isEmpty) {
+      for (final MediaCollectionRow collection
+          in await _db.select(_db.mediaCollections).get()) {
+        final String? remapped = moved.newPathFor(collection.coverPath);
+        if (remapped != null) pendingCollectionCovers[collection.id] = remapped;
+      }
+      for (final MediaImageRow image
+          in await _db.select(_db.mediaImages).get()) {
+        final String? remapped = moved.newPathFor(image.path);
+        if (remapped != null) pendingMediaImages[image.id] = remapped;
+      }
+      for (final VideoMetadataImageRow image
+          in await _db.select(_db.videoMetadataImages).get()) {
+        final String? remapped = moved.newPathFor(image.localPath);
+        if (remapped != null) pendingMetadataImages[image.id] = remapped;
+      }
       for (final VideoDownloadJobFileRow file
           in await _db.select(_db.videoDownloadJobFiles).get()) {
         final String? remapped = moved.newPathFor(file.finalAbsolutePath);
         if (remapped != null) pendingJobFiles[file.id] = remapped;
       }
+      for (final VideoDownloadJobSubtitleRow subtitle
+          in await _db.select(_db.videoDownloadJobSubtitles).get()) {
+        final String? remapped = moved.newPathFor(subtitle.finalPath);
+        if (remapped != null) {
+          pendingJobSubtitles[subtitle.subtitleId] = remapped;
+        }
+      }
+      for (final VideoFileSpecRow spec
+          in await _db.select(_db.videoFileSpecs).get()) {
+        final String? remapped = moved.newPathFor(spec.filePath);
+        if (remapped != null) pendingSpecs[spec.filePath] = remapped;
+      }
+      for (final AnidbFileIdentityRow identity
+          in await _db.select(_db.anidbFileIdentities).get()) {
+        final String? remapped = moved.newPathFor(identity.filePath);
+        if (remapped != null) pendingAnidb[identity.filePath!] = remapped;
+      }
+      for (final VideoSidecarArtifactRow artifact
+          in await _db.select(_db.videoSidecarArtifacts).get()) {
+        final String? remapped = moved.newPathFor(artifact.path);
+        if (remapped != null) pendingArtifacts[artifact.id] = remapped;
+      }
     }
-    final String hash = relocation.infoHash.trim().toLowerCase();
-    final List<String> torrentJobIds = <String>[
-      if (hash.isNotEmpty)
-        for (final VideoDownloadJobRow job in await _db.getVideoDownloadJobs())
-          if (job.backendTaskId?.trim().toLowerCase() == hash ||
-              job.torrentHash?.trim().toLowerCase() == hash)
-            job.jobId,
-    ];
-    final String? newSavePath = relocation.newBackendSavePath?.trim();
-    final int? renamedIndex = relocation.renamedFileIndex;
-    final String? renamedPath = relocation.renamedRelativePath?.trim();
+    final String? relocatedHash = relocatedInfoHash?.trim().toLowerCase();
+    final Set<String> hashes = <String>{
+      if (relocatedHash != null && relocatedHash.isNotEmpty) relocatedHash,
+      for (final TorrentFileRenameRecord rename in torrentRenames)
+        rename.infoHash.trim().toLowerCase(),
+    };
+    final Map<String, Set<String>> jobIdsByHash = <String, Set<String>>{};
+    if (hashes.isNotEmpty) {
+      for (final VideoDownloadJobRow job in await _db.getVideoDownloadJobs()) {
+        for (final String? id in <String?>[
+          job.backendTaskId?.trim().toLowerCase(),
+          job.torrentHash?.trim().toLowerCase(),
+        ]) {
+          if (id != null && hashes.contains(id)) {
+            (jobIdsByHash[id] ??= <String>{}).add(job.jobId);
+          }
+        }
+      }
+    }
+    final String? newSavePath = newBackendSavePath?.trim();
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    final Set<String> touchedBooks = <String>{
+      ...pending.keys,
+      ...pendingPlaylists.keys,
+      ...pendingBookCovers.keys,
+    };
+    // 覆盖层行先读齐再整批换键（删旧 + 写新）：同一批里若有 a→b、b→a 这类互换，
+    // 逐条 UPDATE 会把两组行并成一组。
+    final List<VideoSubtitleTextOverrideRow> overrideRows =
+        pendingOverrideKeys.isEmpty
+        ? const <VideoSubtitleTextOverrideRow>[]
+        : await (_db.select(
+            _db.videoSubtitleTextOverrides,
+          )..where((tbl) => tbl.videoKey.isIn(pendingOverrideKeys.keys))).get();
     await _db.transaction(() async {
       for (final MapEntry<int, String> entry in pendingJobFiles.entries) {
         await (_db.update(
@@ -779,8 +914,22 @@ class VideoBookRepository {
           ),
         );
       }
-      for (final String jobId in torrentJobIds) {
-        if (newSavePath != null && newSavePath.isNotEmpty) {
+      for (final MapEntry<String, String> entry
+          in pendingJobSubtitles.entries) {
+        await (_db.update(
+          _db.videoDownloadJobSubtitles,
+        )..where((tbl) => tbl.subtitleId.equals(entry.key))).write(
+          VideoDownloadJobSubtitlesCompanion(
+            finalPath: Value<String?>(entry.value),
+            updatedAt: Value<int>(nowMs),
+          ),
+        );
+      }
+      if (relocatedHash != null &&
+          newSavePath != null &&
+          newSavePath.isNotEmpty) {
+        for (final String jobId
+            in jobIdsByHash[relocatedHash] ?? const <String>{}) {
           await (_db.update(
             _db.videoDownloadJobs,
           )..where((tbl) => tbl.jobId.equals(jobId))).write(
@@ -790,27 +939,109 @@ class VideoBookRepository {
             ),
           );
         }
-        if (renamedIndex != null &&
-            renamedPath != null &&
-            renamedPath.isNotEmpty) {
+      }
+      for (final TorrentFileRenameRecord rename in torrentRenames) {
+        final String relative = rename.newRelativePath.trim();
+        if (relative.isEmpty) continue;
+        for (final String jobId
+            in jobIdsByHash[rename.infoHash.trim().toLowerCase()] ??
+                const <String>{}) {
           await (_db.update(_db.videoDownloadJobFiles)..where(
                 (tbl) =>
                     tbl.jobId.equals(jobId) &
-                    tbl.backendFileIndex.equals(renamedIndex),
+                    tbl.backendFileIndex.equals(rename.fileIndex),
               ))
               .write(
                 VideoDownloadJobFilesCompanion(
-                  currentRelativePath: Value<String>(renamedPath),
+                  currentRelativePath: Value<String>(relative),
                   updatedAt: Value<int>(nowMs),
                 ),
               );
         }
       }
-      for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
-        final VideoPathRemap remap = entry.value;
+      for (final MapEntry<String, String> entry in pendingSpecs.entries) {
+        // 主键列：目标路径上残留的旧探测行先让位（它描述的是已不存在的文件）。
+        await (_db.delete(
+          _db.videoFileSpecs,
+        )..where((tbl) => tbl.filePath.equals(entry.value))).go();
+        await (_db.update(
+          _db.videoFileSpecs,
+        )..where((tbl) => tbl.filePath.equals(entry.key))).write(
+          VideoFileSpecsCompanion(filePath: Value<String>(entry.value)),
+        );
+      }
+      for (final MapEntry<String, String> entry in pendingAnidb.entries) {
+        await (_db.update(
+          _db.anidbFileIdentities,
+        )..where((tbl) => tbl.filePath.equals(entry.key))).write(
+          AnidbFileIdentitiesCompanion(filePath: Value<String?>(entry.value)),
+        );
+      }
+      for (final MapEntry<int, String> entry in pendingArtifacts.entries) {
+        // 唯一键列：同上，目标路径上的陈旧所有权记录先让位。
+        await (_db.delete(_db.videoSidecarArtifacts)..where(
+              (tbl) =>
+                  tbl.path.equals(entry.value) & tbl.id.equals(entry.key).not(),
+            ))
+            .go();
+        await (_db.update(
+          _db.videoSidecarArtifacts,
+        )..where((tbl) => tbl.id.equals(entry.key))).write(
+          VideoSidecarArtifactsCompanion(
+            path: Value<String>(entry.value),
+            updatedAt: Value<int>(nowMs),
+          ),
+        );
+      }
+      for (final MapEntry<int, String> entry
+          in pendingCollectionCovers.entries) {
+        await (_db.update(
+          _db.mediaCollections,
+        )..where((tbl) => tbl.id.equals(entry.key))).write(
+          MediaCollectionsCompanion(coverPath: Value<String?>(entry.value)),
+        );
+      }
+      for (final MapEntry<int, String> entry in pendingMediaImages.entries) {
+        await (_db.update(_db.mediaImages)
+              ..where((tbl) => tbl.id.equals(entry.key)))
+            .write(MediaImagesCompanion(path: Value<String>(entry.value)));
+      }
+      for (final MapEntry<int, String> entry in pendingMetadataImages.entries) {
+        await (_db.update(
+          _db.videoMetadataImages,
+        )..where((tbl) => tbl.id.equals(entry.key))).write(
+          VideoMetadataImagesCompanion(localPath: Value<String?>(entry.value)),
+        );
+      }
+      final List<VideoSubtitleTextOverrideRow> rekeyed =
+          <VideoSubtitleTextOverrideRow>[];
+      for (final VideoSubtitleTextOverrideRow row in overrideRows) {
+        final String? newKey =
+            pendingOverrideKeys[row.videoKey]?[row.sourceKey];
+        if (newKey == null) continue;
+        await (_db.delete(_db.videoSubtitleTextOverrides)..where(
+              (tbl) =>
+                  tbl.videoKey.equals(row.videoKey) &
+                  tbl.sourceKey.equals(row.sourceKey) &
+                  tbl.startMs.equals(row.startMs) &
+                  tbl.originalText.equals(row.originalText),
+            ))
+            .go();
+        rekeyed.add(row.copyWith(sourceKey: newKey));
+      }
+      for (final VideoSubtitleTextOverrideRow row in rekeyed) {
+        // 目标键上残留的旧行（描述的是已不存在的同名旧文件）让位给迁过来的改动。
+        await _db
+            .into(_db.videoSubtitleTextOverrides)
+            .insertOnConflictUpdate(row);
+      }
+      for (final String bookUid in touchedBooks) {
+        final VideoPathRemap remap = pending[bookUid] ?? const VideoPathRemap();
+        final String? playlist = pendingPlaylists[bookUid];
+        final String? cover = pendingBookCovers[bookUid];
         await (_db.update(
           _db.videoBooks,
-        )..where((tbl) => tbl.bookUid.equals(entry.key))).write(
+        )..where((tbl) => tbl.bookUid.equals(bookUid))).write(
           VideoBooksCompanion(
             videoPath: remap.videoPath == null
                 ? const Value.absent()
@@ -821,11 +1052,17 @@ class VideoBookRepository {
             secondarySubtitleSource: remap.secondarySubtitleSource == null
                 ? const Value.absent()
                 : Value<String?>(remap.secondarySubtitleSource),
+            playlistJson: playlist == null
+                ? const Value.absent()
+                : Value<String?>(playlist),
+            coverPath: cover == null
+                ? const Value.absent()
+                : Value<String?>(cover),
           ),
         );
       }
     });
-    return pending.length;
+    return touchedBooks.length;
   }
 
   /// 更新播放列表当前集索引（多集导航切集后持久化）。

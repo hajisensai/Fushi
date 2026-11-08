@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4232](bugs/BUG-4232-ldoce-mdx-sound-sandbox-swallowed.md) | ✅ | ✅ | LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击） |
+| [BUG-4232](bugs/BUG-4232-anki-source-link-mine-missing-original.md) | ✅ | ✅ | anki-source-link-mine-missing-original |
 | [BUG-4231](bugs/BUG-4231-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
 | [BUG-4230](bugs/BUG-4230-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |
 | [BUG-4229](bugs/BUG-4229-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |

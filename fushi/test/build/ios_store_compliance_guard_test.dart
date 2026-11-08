@@ -1008,6 +1008,62 @@ void main() {
     });
   });
 
+  group('音乐远程曲目入库 / 本地歌单（onlineMusicSource，v148，反馈 0tRY-D2JgG）', () {
+    test('门只写在 music_remote_tracks.dart；入口、曲库与歌单显示都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/music_remote_tracks.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetmusicRemoteTracksAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      final String actions = compactCode(
+        read(
+          'lib/src/pages/implementations/music/'
+          'music_local_playlist_actions.dart',
+        ),
+      );
+      expect(actions, isNot(contains('Platform.isIOS')));
+      // 「加入音乐库 / 本地歌单」菜单项与搜索结果菜单都在门后。
+      expect(
+        actions,
+        contains(
+          'if(!musicRemoteTracksAvailable||!musicItemIsRemoteTrack(item)){'
+          'returnconst<MusicMenuAction>[];}',
+        ),
+      );
+      expect(
+        actions,
+        contains(
+          'if(!musicRemoteTracksAvailable||!musicItemIsRemoteTrack(item)){'
+          'returnnull;}',
+        ),
+      );
+      // 曲库快照与歌单解析：门没过时不读远程曲目。
+      final String data = compactCode(
+        read('lib/src/media/music/music_library_data.dart'),
+      );
+      expect(
+        data,
+        contains(
+          'remoteTracks:(remoteAvailable??musicRemoteTracksAvailable)'
+          '?awaitdb.listMusicRemoteLibraryTracks()',
+        ),
+      );
+      expect(
+        data,
+        contains(
+          '(remoteAvailable??musicRemoteTracksAvailable)'
+          '?awaitdb.listMusicRemoteTracks(uids)',
+        ),
+      );
+    });
+  });
+
   group('音乐在线音源插件（onlineMusicSource）', () {
     test('门只写在 music_plugin_gate.dart，消费端都只问它', () {
       final String gate = compactCode(
