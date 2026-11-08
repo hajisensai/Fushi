@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4231](bugs/BUG-4231-continuous-diagonal-swipe-dropped.md) | ✅ | ✅ | 滚动模式斜着滑（拇指弧线）正文不动、也不跨章 |
+| [BUG-4231](bugs/BUG-4231-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
 | [BUG-4230](bugs/BUG-4230-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |
 | [BUG-4229](bugs/BUG-4229-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |
 | [BUG-4228](bugs/BUG-4228-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |
