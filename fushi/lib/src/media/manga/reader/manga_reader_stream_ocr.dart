@@ -377,6 +377,10 @@ class BytesMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
 /// [onPage]。一次只跑一页：手机上识别本身就是瓶颈，并发只会拖慢眼前这页。读者
 /// 翻走后窗口跟着走，旧窗口里没轮到的页不再识别（翻回来时再补）。
 ///
+/// [focus] 是读者翻页语义（窗口跟着眼前这页走、同一页原地不重试）；要某一页
+/// 文字的人（漫画朗读）走 [request]：按需插队，且这一页一定有结局
+/// （[onPage] 或 [onPageFailed]），不挪读者的窗口。
+///
 /// 有 [ai] 时是两段式（与整卷任务的跟随步骤同形）：本地结果照常立刻 [onPage]，
 /// 同时把该页排进一条**页级顺序**的大模型队列；重读回来后对同一页再 [onPage]
 /// 一次。大模型队列与本地识别互不阻塞——慢的是网络，不该拖住下一页的本地识别。
@@ -401,7 +405,8 @@ class MangaStreamPageOcr {
   final void Function(int pageIndex, MokuroImage page) onPage;
 
   /// 这一页这一轮没识别出来（取不到页图 / 识别抛错）。等这页文字的人（漫画朗读）
-  /// 据此落定，而不是一直等：失败页本轮不再重试，读者重新翻到它才再给一次机会。
+  /// 据此落定，而不是一直等：失败页本轮不再自动重试，读者重新翻到它（[focus]）
+  /// 或有人再 [request] 它才再给一次机会。
   final void Function(int pageIndex)? onPageFailed;
   final void Function(bool busy)? onBusyChanged;
   final void Function(Object error, StackTrace stack)? onError;
@@ -413,7 +418,12 @@ class MangaStreamPageOcr {
   /// 大模型第二段；null = 只用本地结果。
   final MangaStreamAiRefinement? ai;
 
-  final Set<int> _done = <int>{};
+  /// 已识别的页 → 最新结果（大模型重读回来后换成重读版）：[request] 已识别的页
+  /// 时同步交出。
+  final Map<int, MokuroImage> _results = <int, MokuroImage>{};
+
+  /// [request] 要的页（按要的先后），排在读者窗口之前识别；这一页有结局即移出。
+  final Set<int> _requested = <int>{};
 
   /// 大模型的页级顺序队列（链尾）。
   Future<void> _aiQueue = Future<void>.value();
@@ -422,6 +432,9 @@ class MangaStreamPageOcr {
   /// 读者重新翻到它时再给一次机会。
   final Set<int> _failed = <int>{};
   int _focus = -1;
+
+  /// 正在识别的页；空闲时为 null。
+  int? _runningPage;
   bool _running = false;
   bool _closed = false;
 
@@ -433,6 +446,29 @@ class MangaStreamPageOcr {
     final int page = pageIndex.clamp(0, pageCount - 1);
     if (page != _focus) _failed.remove(page);
     _focus = page;
+    _pump();
+  }
+
+  /// 有人要第 [pageIndex] 页的文字（漫画朗读的当前页 / 预取页）。
+  ///
+  /// 与 [focus] 不同：不挪读者的识别窗口；无条件给这一页一次机会（含本轮失败过
+  /// 的页——用户读到它 / 按重试就是要它）；保证这一页最终回调 [onPage] 或
+  /// [onPageFailed] 之一（已识别的页同步交出最新结果）。已 [close] 时不回调：
+  /// 关闭方自己负责落定等待者。
+  void request(int pageIndex) {
+    if (_closed) return;
+    if (pageIndex < 0 || pageIndex >= pageCount) {
+      onPageFailed?.call(pageIndex);
+      return;
+    }
+    final MokuroImage? done = _results[pageIndex];
+    if (done != null) {
+      onPage(pageIndex, done);
+      return;
+    }
+    _failed.remove(pageIndex);
+    // 正在跑的就是它：跑完自然有结局，不再排队。
+    if (_runningPage != pageIndex) _requested.add(pageIndex);
     _pump();
   }
 
@@ -454,6 +490,7 @@ class MangaStreamPageOcr {
       try {
         final MokuroImage? better = await stage.refine(local, file);
         if (better == null || _closed) return;
+        _results[pageIndex] = better;
         onPage(pageIndex, better);
       } on Object catch (error, stack) {
         // 大模型失败只是少了一次改进，读者手里的本地结果照常可用；不打扰读者，
@@ -464,10 +501,14 @@ class MangaStreamPageOcr {
   }
 
   int? _nextPage() {
+    // 有人点名要的页先跑（[request] 已清掉它的失败标记，且已识别的页不会进来）。
+    for (final int page in _requested) {
+      if (page != _runningPage) return page;
+    }
     if (_focus < 0) return null;
     final int last = (_focus + lookahead).clamp(0, pageCount - 1);
     for (int page = _focus; page <= last; page++) {
-      if (!_done.contains(page) && !_failed.contains(page)) return page;
+      if (!_results.containsKey(page) && !_failed.contains(page)) return page;
     }
     return null;
   }
@@ -477,6 +518,8 @@ class MangaStreamPageOcr {
     final int? page = _nextPage();
     if (page == null) return;
     _running = true;
+    _runningPage = page;
+    _requested.remove(page);
     onBusyChanged?.call(true);
     unawaited(_run(page));
   }
@@ -492,7 +535,7 @@ class MangaStreamPageOcr {
       }
       final MokuroImage page = await _recognizer.recognize(file);
       if (_closed) return;
-      _done.add(pageIndex);
+      _results[pageIndex] = page;
       onPage(pageIndex, page);
       _enqueueAi(pageIndex, page, file);
     } on Object catch (error, stack) {
@@ -502,6 +545,7 @@ class MangaStreamPageOcr {
       onError?.call(error, stack);
     } finally {
       _running = false;
+      _runningPage = null;
       if (!_closed) {
         final bool more = _nextPage() != null;
         if (!more) onBusyChanged?.call(false);

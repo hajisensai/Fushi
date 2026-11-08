@@ -21,6 +21,7 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -29,6 +30,8 @@ import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show readerVisibleForLifecycleState;
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_plan.dart';
 
 enum MangaReadAloudState {
@@ -265,6 +268,13 @@ class MangaReadAloudController extends ChangeNotifier {
     if (!_running) return;
     _interrupt();
     _setState(MangaReadAloudState.paused);
+  }
+
+  /// App 生命周期变化：阅读器看不见（hidden / paused / detached）时暂停；
+  /// inactive 时画面仍可见（下拉通知栏 / 控制中心 / 桌面失焦），照常读。判据与
+  /// 有声书共用 [readerVisibleForLifecycleState]。
+  void onAppLifecycleChanged(AppLifecycleState state) {
+    if (!readerVisibleForLifecycleState(state)) pause();
   }
 
   /// 继续（从当前句开头重读）；失败态下是「重试」。

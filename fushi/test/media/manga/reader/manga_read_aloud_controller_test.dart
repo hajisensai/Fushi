@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
@@ -404,6 +405,26 @@ void main() {
     c.resume();
     await _waitFor(() => player.played.length == 2 && player.playing);
     expect(playedTexts(all), <String>['あ。', 'あ。']);
+    c.stop();
+  });
+
+  test('App 生命周期：inactive 照常读，hidden / paused 才暂停', () async {
+    final _Host host = threePages();
+    final MangaReadAloudController c = controllerFor(host);
+    c.start(fromPage: 0);
+    await _waitFor(() => player.playing);
+    // 下拉通知栏 / 控制中心 / 桌面窗口失焦：画面仍可见，不打断。
+    c.onAppLifecycleChanged(AppLifecycleState.inactive);
+    expect(c.state, MangaReadAloudState.playing);
+    expect(player.stops, 0);
+    c.onAppLifecycleChanged(AppLifecycleState.hidden);
+    expect(c.state, MangaReadAloudState.paused);
+    expect(player.stops, 1);
+    c.resume();
+    await _waitFor(() => player.played.length == 2 && player.playing);
+    c.onAppLifecycleChanged(AppLifecycleState.paused);
+    expect(c.state, MangaReadAloudState.paused);
+    expect(player.stops, 2);
     c.stop();
   });
 

@@ -1952,12 +1952,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    // 朗读是音频播放，按「画面是否可见」暂停（inactive 不停），与学习计时的
+    // 判据不同，不能并进下面的分支。
+    _readAloud.onAppLifecycleChanged(state);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算部分窗口再封段落库。
       _studyClockGate.setLifecycleStopped(true);
-      // 朗读不做后台播放：切到后台即暂停（回来从当前句开头续）。
-      _readAloud.pause();
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
       // BUG-892 同款纪律：start() 只重锚 tick 起点并开新段，后台时长不会被计入。
@@ -4644,6 +4645,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           );
           _streamOcr = ocr;
           ocr.focus(_currentPage);
+          // 启动期间登记的朗读等待者（当时识别器还不存在）：逐页按需识别，
+          // 保证每一页都有结局，而不是只靠读者窗口碰巧覆盖到。
+          for (final int page in _readAloud.waitingPages.toList()) {
+            ocr.request(page);
+          }
         case MangaStreamOcrNoEngine():
           setState(() => _volumeOcrNoEngine = true);
           _readAloud._failWaiters(MangaPageTextUnavailableReason.noEngine);

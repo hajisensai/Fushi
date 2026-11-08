@@ -19,6 +19,9 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   /// 本章里 OCR 已落定的页（含识别结果为空的页）。
   final Set<int> _ocrSettledPages = <int>{};
+
+  /// 正在等文字的页（直读识别器起来后要逐一 request）。
+  Iterable<int> get waitingPages => _waiters.keys;
   final Map<int, Completer<MangaPageTextResult>> _waiters =
       <int, Completer<MangaPageTextResult>>{};
 
@@ -75,9 +78,13 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
       Completer<MangaPageTextResult>.new,
     );
     if (_s._streamingChapter) {
-      // 手动触发模式下也要起页级识别（朗读是用户主动发起的）。
+      // 手动触发模式下也要起页级识别（朗读是用户主动发起的）。识别器还在启动时
+      // 这里拿不到它，由启动完成处把在等的页逐一 request（_maybeStartStreamingOcr）。
       await _s._maybeStartStreamingOcr(userInitiated: true);
-      _s._streamOcr?.focus(pageIndex);
+      // 按需识别而不是 focus：focus 是读者翻页语义（挪识别窗口、同一页原地不重试），
+      // 预取下一页会把读者眼前的窗口挪走，失败过的页再要时也不会重跑。request 保证
+      // 这一页一定有结局（_pageTextArrived / _pageTextFailed）。
+      _s._streamOcr?.request(pageIndex);
     } else {
       await _s._maybeStartVolumeOcr(userInitiated: true);
       _s._observedOcrJob?.focusPage(pageIndex);
@@ -267,6 +274,12 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   void stop() => controller?.stop();
 
   void pause() => controller?.pause();
+
+  /// 朗读不做后台播放：阅读器看不见（hidden / paused / detached）才暂停，回来从
+  /// 当前句开头续。与有声书同一判据（[readerVisibleForLifecycleState]）：inactive
+  /// 时画面仍在（下拉通知栏 / 控制中心 / 系统弹窗、桌面窗口失焦），不打断。
+  void onAppLifecycleChanged(AppLifecycleState state) =>
+      controller?.onAppLifecycleChanged(state);
 
   void onPageChanged(int page) => controller?.onPageChanged(page);
 
