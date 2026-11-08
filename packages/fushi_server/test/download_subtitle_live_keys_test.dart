@@ -38,15 +38,24 @@ void main() {
   late List<_RecordingSubtitleProvider> built;
   Completer<void>? searchGate;
 
+  /// 当前配置（模拟 WebUI 经 applyConfig 换进来的那份；HeadlessHost 同样传
+  /// `() => config.subtitleLanguage`）。
+  late ServerConfig current;
+
+  /// 假来源搜索时给出的候选语言（空 = 搜不到）。
+  List<String> offered = const <String>[];
+
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('fushi_server_subs_live_');
     enginePaths = ServerPaths(p.join(tmp.path, 'data'));
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     built = <_RecordingSubtitleProvider>[];
     searchGate = null;
+    offered = const <String>[];
     final ServerConfig config = ServerConfig.defaults(
       dataDir: p.join(tmp.path, 'data'),
     );
+    current = config;
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     prefs = ServerPrefs(db);
@@ -82,6 +91,7 @@ void main() {
       ),
       backendOverride: _IdleTorrentBackend(),
       pollInterval: const Duration(milliseconds: 20),
+      subtitleLanguage: () => current.subtitleLanguage,
       // 生产装配（偏好 → 凭据 → 只装开着且有 key 的来源），只换掉出网的 provider；
       // 环境变量置空，凭据只来自偏好表。
       subtitleRegistryFactory: () => buildServerSubtitleRegistry(
@@ -97,6 +107,7 @@ void main() {
                   _ => credentials.openSubtitles.effectiveApiKey,
                 },
                 gate: () => searchGate?.future,
+                offered: () => offered,
               );
           built.add(provider);
           return provider;
@@ -258,17 +269,94 @@ void main() {
       reason: '这一轮按借到的来源正常跑完（假来源搜不到 → 记暂无字幕）',
     );
   });
+
+  test('运行中改了 subtitle_language：下一个任务的字幕阶段按新语言搜', () async {
+    await prefs.setPref(kJimakuApiKeyPref, 'k');
+    current = current.copyWith(subtitleLanguage: 'ja');
+    await waitPastSubtitleStage(await seedSubtitleStageJob('job-ja'));
+
+    current = current.copyWith(subtitleLanguage: 'en');
+    await waitPastSubtitleStage(await seedSubtitleStageJob('job-en'));
+
+    current = current.copyWith(subtitleLanguage: '');
+    await waitPastSubtitleStage(await seedSubtitleStageJob('job-any'));
+
+    expect(
+      <List<String>>[
+        for (final _RecordingSubtitleProvider p in searched())
+          ...p.requestedLanguages,
+      ],
+      <List<String>>[
+        <String>['ja'],
+        <String>['en'],
+        <String>[],
+      ],
+    );
+  });
+
+  test('运行中改了 default_content_language：下一个任务按新语言排候选', () async {
+    await prefs.setPref(kJimakuApiKeyPref, 'k');
+    current = current.copyWith(subtitleLanguage: '');
+    offered = const <String>['en', 'ja'];
+
+    await prefs.setPref(kDefaultContentLanguagePref, 'ja');
+    await waitPastSubtitleStage(await seedSubtitleStageJob('job-default-ja'));
+    await prefs.setPref(kDefaultContentLanguagePref, 'en');
+    await waitPastSubtitleStage(await seedSubtitleStageJob('job-default-en'));
+
+    expect(
+      searched().map(
+        (_RecordingSubtitleProvider p) => p.downloadAttempts.first,
+      ),
+      <String>['ja', 'en'],
+      reason: '默认内容语言决定先试哪条候选',
+    );
+  });
+
+  test('在飞的字幕阶段沿用开始时读到的语言：中途改设置不影响这一轮', () async {
+    await prefs.setPref(kJimakuApiKeyPref, 'k');
+    current = current.copyWith(subtitleLanguage: '');
+    offered = const <String>['en', 'ja'];
+    await prefs.setPref(kDefaultContentLanguagePref, 'ja');
+    searchGate = Completer<void>();
+    final String jobId = await seedSubtitleStageJob('job-lang-in-flight');
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (searched().isEmpty && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    await prefs.setPref(kDefaultContentLanguagePref, 'en');
+    current = current.copyWith(subtitleLanguage: 'en');
+    searchGate!.complete();
+    await waitPastSubtitleStage(jobId);
+
+    final _RecordingSubtitleProvider inFlight = searched().single;
+    expect(inFlight.requestedLanguages.single, isEmpty);
+    expect(inFlight.downloadAttempts.first, 'ja', reason: '这一轮开始时是 ja');
+  });
 }
 
 /// 记录调用、不出网的字幕来源；搜索永远空结果。
 class _RecordingSubtitleProvider implements VideoSubtitleProvider {
-  _RecordingSubtitleProvider(this.id, {required this.key, required this.gate});
+  _RecordingSubtitleProvider(
+    this.id, {
+    required this.key,
+    required this.gate,
+    required this.offered,
+  });
 
   @override
   final String id;
   final String key;
   final Future<void>? Function() gate;
+  final List<String> Function() offered;
   int searchCalls = 0;
+
+  /// 每次搜索请求里的硬过滤语言。
+  final List<List<String>> requestedLanguages = <List<String>>[];
+
+  /// 按尝试顺序记下载的候选语言（下载一律失败，管线会依次试下一条）。
+  final List<String> downloadAttempts = <String>[];
   bool closed = false;
 
   @override
@@ -282,8 +370,18 @@ class _RecordingSubtitleProvider implements VideoSubtitleProvider {
     VideoSubtitleSearchRequest request,
   ) async {
     searchCalls += 1;
+    requestedLanguages.add(List<String>.of(request.languages));
     await gate();
     if (closed) throw StateError('$id searched after close');
+    final List<String> languages = offered();
+    if (languages.isNotEmpty) {
+      return ProviderBatchResult<VideoSubtitleCandidate>.success(
+        <VideoSubtitleCandidate>[
+          for (final String language in languages)
+            _Candidate(providerId: id, language: language),
+        ],
+      );
+    }
     return ProviderBatchResult<VideoSubtitleCandidate>.failure(
       ExternalProviderFailure(
         providerId: id,
@@ -295,11 +393,26 @@ class _RecordingSubtitleProvider implements VideoSubtitleProvider {
   }
 
   @override
-  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) =>
-      throw UnimplementedError();
+  Future<VideoSubtitleDownload> download(
+    VideoSubtitleCandidate candidate,
+  ) async {
+    downloadAttempts.add(candidate.language);
+    throw StateError('download of ${candidate.language} refused');
+  }
 
   @override
   void close() => closed = true;
+}
+
+class _Candidate extends VideoSubtitleCandidate {
+  _Candidate({required super.providerId, required super.language})
+    : super(
+        remoteId: 'sub-$language',
+        fileName: 'Show.S01E02.$language.srt',
+        providerPriority: 0,
+        season: 1,
+        episode: 2,
+      );
 }
 
 /// 字幕阶段用不到后端；只让管线认为后端已配好。

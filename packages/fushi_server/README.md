@@ -386,7 +386,7 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 - 来源按当前偏好每次现读：下载管线每个任务进字幕阶段时读一次（运行中改了 key / 开关，下一个任务就用新的，
   不用重启；正在跑的那一轮用到结束），补字幕每次请求读一次。
 - 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
-  （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
+  （`default_content_language`）按 app 同一判据参与（这两项与来源一样每轮字幕阶段现读，WebUI 改完下一个任务生效）；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
 - Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
   整季压缩包按集号解包。AJATT 只在 app 里有。
 - 自动获取字幕（偏好 `video_subtitle_backfill_after_scrape`，与 app 同名，默认开；关了下面两条都不跑，

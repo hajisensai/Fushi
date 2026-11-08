@@ -32,6 +32,7 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
@@ -88,7 +89,7 @@ class ServerDownloadHost implements HostDownloadHost {
   /// 管线轮询间隔（测试缩短；生产 5 秒，与 app 同）。
   final Duration pollInterval;
 
-  /// 配置里的字幕语言（`subtitle_language`，现读：WebUI 改完下一次重建管线生效）。
+  /// 配置里的字幕语言（`subtitle_language`，每轮字幕阶段现读：WebUI 改完下一个任务生效）。
   final String Function() _subtitleLanguage;
 
   /// 字幕阶段的来源入口：每进一次字幕阶段按当前偏好 / 环境现建一份 registry（生产 =
@@ -240,10 +241,12 @@ class ServerDownloadHost implements HostDownloadHost {
       // 时借不到——管线按「本机没配字幕」处理（best-effort 直接入库，required 的
       // 任务如实报 needsAttention），而不是拿空 registry 白搜一轮。
       subtitleRegistrySource: _subtitleSource,
-      preferredSubtitleLanguages: serverPreferredSubtitleLanguages(
-        _subtitleLanguage(),
+      // 全局字幕语言（配置 `subtitle_language` + 偏好 `default_content_language`）：
+      // 每轮字幕阶段开头现读，WebUI / 互联改了下一个任务即生效，在飞的那一轮不变。
+      subtitleLanguages: () => VideoDownloadSubtitleLanguages(
+        preferred: serverPreferredSubtitleLanguages(_subtitleLanguage()),
+        defaultContentLanguage: serverDefaultContentLanguage(prefs),
       ),
-      defaultContentLanguage: serverDefaultContentLanguage(prefs),
       // 按作品的字幕语言：读每系列记忆（app 写、经互联同步过来的同一个偏好键）。
       subtitleLanguageResolver: serverDownloadSubtitleLanguageResolver(prefs),
       // 按内嵌字幕轨对时间轴（开关每次现读，默认开）。

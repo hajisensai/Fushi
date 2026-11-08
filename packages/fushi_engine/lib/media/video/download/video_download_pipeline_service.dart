@@ -987,12 +987,13 @@ class VideoDownloadPipelineService {
     VideoSubtitleRegistry? subtitleRegistry,
     VideoSubtitleRegistrySource? subtitleRegistrySource,
     this.subtitleAligner,
-    this.defaultContentLanguage,
+    String? defaultContentLanguage,
+    VideoDownloadSubtitleLanguagesReader? subtitleLanguages,
     this.subtitleLanguageResolver,
     this.discoveryImporter,
     this.onDownloadOnlyCompleted,
     this.manualTorrentDirectory,
-    Iterable<String> preferredSubtitleLanguages = const <String>[],
+    Iterable<String>? preferredSubtitleLanguages,
     String? workerId,
     this.pollInterval = const Duration(seconds: 5),
     this.leaseDuration = const Duration(minutes: 2),
@@ -1011,9 +1012,20 @@ class VideoDownloadPipelineService {
            (subtitleRegistry == null
                ? null
                : FixedVideoSubtitleRegistrySource(subtitleRegistry)),
-       preferredSubtitleLanguages = List<String>.unmodifiable(
-         preferredSubtitleLanguages,
+       assert(
+         subtitleLanguages == null ||
+             (preferredSubtitleLanguages == null &&
+                 defaultContentLanguage == null),
+         'pass either fixed subtitle languages or a subtitleLanguages reader',
        ),
+       _subtitleLanguages =
+           subtitleLanguages ??
+           _fixedSubtitleLanguages(
+             VideoDownloadSubtitleLanguages(
+               preferred: preferredSubtitleLanguages ?? const <String>[],
+               defaultContentLanguage: defaultContentLanguage,
+             ),
+           ),
        workerId = workerId ?? 'video-${generateVideoDownloadInstallationId()}',
        _coverExtractor = coverExtractor ?? extractVideoCover,
        _videoRepository = VideoBookRepository(database),
@@ -1031,17 +1043,20 @@ class VideoDownloadPipelineService {
   /// null = 不对齐。算法是确定性的，所以续跑时按内容认领已落盘文件照样成立。
   final AutomaticSubtitleAligner? subtitleAligner;
 
-  /// 用户在设置里**显式**选的字幕语言（`jimakuDefaultLanguage`）。非空即硬过滤
-  /// （进 `VideoSubtitleSearchRequest.languages`）——他自己说的。
-  final List<String> preferredSubtitleLanguages;
+  /// 全局字幕语言设置（显式字幕语言 `jimakuDefaultLanguage` + 默认内容语言），每轮
+  /// 字幕阶段开头读一次、整轮共用：构造时传固定值（app：设置改了整套重建管线），
+  /// 或传 `subtitleLanguages` 读取器（服务端：WebUI 改了下一轮即生效，在飞的那一轮
+  /// 不受影响）。见 [VideoDownloadSubtitleLanguages]。
+  final VideoDownloadSubtitleLanguagesReader _subtitleLanguages;
 
-  /// 设置·外观·排版里的默认内容语言。没有显式字幕语言、视频也没有可读语言时的
-  /// 最后一档；空/null = 不表态（**不猜**，见 subtitle_language_preference.dart）。
-  final String? defaultContentLanguage;
+  static VideoDownloadSubtitleLanguagesReader _fixedSubtitleLanguages(
+    VideoDownloadSubtitleLanguages value,
+  ) =>
+      () => value;
 
   /// 按作品的字幕语言（见 video_download_subtitle_language.dart）。字幕阶段先问它：
   /// 拿到语言码就当作用户对**这部作品**的显式选择（硬过滤 + 排序首选），压过
-  /// [preferredSubtitleLanguages]；null = 不表态，走原来的全局链。解析器抛异常
+  /// 全局的显式字幕语言；null = 不表态，走原来的全局链。解析器抛异常
   /// 与本阶段其它异常同等处理（任务按可重试 / needsAttention 落库），**不吞**：
   /// 它读的是本进程内的偏好，抛了就是偏好层坏了，不能伪装成「没记过语言」。
   final VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver;
@@ -3633,7 +3648,12 @@ class VideoDownloadPipelineService {
           '${lease.registry.providers.map((VideoSubtitleProvider p) => p.id).join('+')}',
     );
     try {
-      await _installSubtitlesWith(job, policy, lease.registry);
+      await _installSubtitlesWith(
+        job,
+        policy,
+        lease.registry,
+        _subtitleLanguages(),
+      );
     } finally {
       lease.release();
     }
@@ -3643,7 +3663,9 @@ class VideoDownloadPipelineService {
     VideoDownloadJobRow job,
     VideoDownloadSubtitlePolicy policy,
     VideoSubtitleRegistry subtitleRegistry,
+    VideoDownloadSubtitleLanguages languages,
   ) async {
+    final List<String> preferredSubtitleLanguages = languages.preferred;
     // 按作品的字幕语言一次性解析：整条任务的所有分集共用同一个答案。
     final String? perWorkLanguage = await _resolvePerWorkSubtitleLanguage(job);
     _ensureLeaseHeld();
@@ -3790,6 +3812,7 @@ class VideoDownloadPipelineService {
           final ({_VerifiedSubtitleBytes? picked, String? reason}) selection =
               await _selectVerifiedSubtitle(
                 subtitleRegistry: subtitleRegistry,
+                languages: languages,
                 candidates: result.items,
                 videoPath: video.path,
                 explicitLanguage: perWorkLanguage,
@@ -3961,6 +3984,7 @@ class VideoDownloadPipelineService {
   Future<({_VerifiedSubtitleBytes? picked, String? reason})>
   _selectVerifiedSubtitle({
     required VideoSubtitleRegistry subtitleRegistry,
+    required VideoDownloadSubtitleLanguages languages,
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
     String? explicitLanguage,
@@ -3979,9 +4003,9 @@ class VideoDownloadPipelineService {
     // 只是排在后面。
     final String? preferredLanguage = resolveSubtitleDownloadLanguage(
       explicitSubtitlePreference:
-          explicitLanguage ?? preferredSubtitleLanguages.firstOrNull,
+          explicitLanguage ?? languages.preferred.firstOrNull,
       contentMetadataLanguage: facts.primaryAudioLanguage,
-      globalDefaultContentLanguage: defaultContentLanguage,
+      globalDefaultContentLanguage: languages.defaultContentLanguage,
     );
     final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
       candidates,
