@@ -321,8 +321,6 @@ abstract interface class SrsExclusiveOuter {
   Future<T> run<T>(Future<T> Function() body);
 }
 
-/// 副本被 [SrsDbStore.retire] 作废之后，排着的与以后再来的写入抛它。[store] 是被作废的那份副本：在跑的同步 / 维护
-/// 据此认出「我用的副本被换掉了」（与写失败重读也失败的作废区分开，那种仍是普通 [StateError]）。
 /// 一条 Anki 导入的复习日志（[SrsDbStore.ankiImportedLogsAt]）：在哪张卡、对应哪条 revlog、内容，以及那张卡此刻
 /// 所属的笔记与是否可见（卡没有缓存行——笔记换了类型后不再属于它的旧卡——时 [noteId] 为 null、不可见）。
 class SrsAnkiLogAt {
@@ -347,6 +345,8 @@ class SrsAnkiLogAt {
   final bool visible;
 }
 
+/// 副本被 [SrsDbStore.retire] 作废之后，排着的与以后再来的写入抛它。[store] 是被作废的那份副本：在跑的同步 / 维护
+/// 据此认出「我用的副本被换掉了」（与写失败重读也失败的作废区分开，那种仍是普通 [StateError]）。
 class SrsStoreRetiredError extends StateError {
   SrsStoreRetiredError(this.store, super.message);
 
