@@ -14,16 +14,41 @@ const JellyfinServerConfig _config = JellyfinServerConfig(
   accessToken: 'tok',
 );
 
+/// Jellyfin 10.10.x 服务器的 `Move` 算法（全部可见时），照 v10.10.7 源码。
+void _jellyfin1010Move(List<String> list, String entryId, int n) {
+  final int from = list.indexOf(entryId);
+  if (from == n) return;
+  final int prior = n > from ? n : (n - 1 < 0 ? 0 : n - 1);
+  final int adjusted = prior + 1; // 移除前的下标 + 1
+  list.removeAt(from);
+  if (n >= list.length) {
+    list.add(entryId);
+  } else {
+    list.insert(adjusted, entryId);
+  }
+}
+
 void main() {
   late List<http.Request> requests;
+  late String serverVersion;
   late JellyfinMusicClient client;
 
   setUp(() {
     requests = <http.Request>[];
+    serverVersion = '10.9.11';
     client = JellyfinMusicClient(
       _config,
       httpClient: MockClient((http.Request req) async {
         requests.add(req);
+        if (req.url.path == '/System/Info/Public') {
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'ProductName': 'Jellyfin Server',
+              'Version': serverVersion,
+            }),
+            200,
+          );
+        }
         if (req.method == 'POST' && req.url.path == '/Playlists') {
           return http.Response(
             jsonEncode(<String, Object?>{'Id': 'new1'}),
@@ -138,6 +163,7 @@ void main() {
       <String>[
         'POST /Playlists/p1/Items',
         'DELETE /Playlists/p1/Items',
+        'GET /System/Info/Public',
         'POST /Playlists/p1/Items/e2/Move/0',
         'POST /Playlists/p1',
         'DELETE /Items/p1',
@@ -150,7 +176,49 @@ void main() {
     expect(requests[1].url.queryParameters, <String, String>{
       'EntryIds': 'e1,e2',
     });
-    expect(jsonDecode(requests[3].body), <String, Object?>{'Name': 'New name'});
+    expect(jsonDecode(requests[4].body), <String, Object?>{'Name': 'New name'});
+  });
+
+  test('Jellyfin 10.10 的挪位置补偿：任意起止都落在目标位（照 10.10 算法模拟）', () {
+    for (int count = 2; count <= 8; count++) {
+      final List<String> order = <String>[
+        for (int i = 0; i < count; i++) 'e$i',
+      ];
+      for (int from = 0; from < count; from++) {
+        for (int to = 0; to < count; to++) {
+          final List<String> expected = List<String>.of(order)
+            ..removeAt(from)
+            ..insert(to, order[from]);
+          final List<String> server = List<String>.of(order);
+          for (final (String id, int n) in jellyfin1010MoveSteps(
+            server,
+            from,
+            to,
+          )) {
+            _jellyfin1010Move(server, id, n);
+          }
+          expect(server, expected, reason: 'count=$count $from->$to');
+          expect(
+            jellyfin1010MoveSteps(order, from, to).length,
+            lessThanOrEqualTo(3),
+          );
+        }
+      }
+    }
+  });
+
+  test('服务器是 10.10.x 时按补偿序列发 Move（先取当前顺序）', () async {
+    serverVersion = '10.10.7';
+    await client.movePlaylistEntry('p1', 'e2', 0);
+    expect(
+      requests.map((http.Request r) => '${r.method} ${r.url.path}'),
+      <String>[
+        'GET /System/Info/Public',
+        'GET /Playlists/p1/Items',
+        // 两条的歌单：把原第一条挪到末尾。
+        'POST /Playlists/p1/Items/e1/Move/1',
+      ],
+    );
   });
 
   test('服务器拒绝（403）时抛错，不吞', () async {
