@@ -396,6 +396,39 @@ pub extern "C" fn ffsrs_call(request: *const c_char) -> *mut c_char {
 /// - `cancel`：调用方持有的 int32，任意线程写非 0 即请求取消；取消后返回 `{"error":"cancelled"}`，不留半成品。
 /// - `progress`：长度 2 的 int64 数组 [已处理, 总数]，参数优化运行中持续写入，可从别的 isolate 读。
 ///   两者都可为空指针，只对 `compute_parameters` 生效。
+/// `ffsrs_fit` / `ffsrs_predict_tss` 共用的训练集入口：校验缓冲指针、按长度切片并整体校验。
+/// 调用方自己的输出缓冲（`out`）由调用方先行检查。
+#[allow(clippy::too_many_arguments)]
+fn training_set_from_raw<'a>(
+    ratings: *const u8,
+    delta_days: *const f32,
+    n_reviews: usize,
+    card_offsets: *const u32,
+    card_ids: *const i64,
+    n_cards: usize,
+    item_cards: *const u32,
+    item_lengths: *const u32,
+    n_items: usize,
+) -> Result<TrainingSet<'a>, String> {
+    if card_offsets.is_null()
+        || item_cards.is_null()
+        || item_lengths.is_null()
+        || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
+    {
+        return Err("null buffer".into());
+    }
+    let set = TrainingSet {
+        ratings: bytes(ratings, n_reviews),
+        delta_days: bytes(delta_days, n_reviews),
+        card_offsets: bytes(card_offsets, n_cards + 1),
+        card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
+        item_cards: bytes(item_cards, n_items),
+        item_lengths: bytes(item_lengths, n_items),
+    };
+    set.validate()?;
+    Ok(set)
+}
+
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "C" fn ffsrs_fit(
@@ -421,22 +454,17 @@ pub extern "C" fn ffsrs_fit(
         if n_items == 0 {
             return Err("not enough data".into());
         }
-        if card_offsets.is_null()
-            || item_cards.is_null()
-            || item_lengths.is_null()
-            || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
-        {
-            return Err("null buffer".into());
-        }
-        let set = TrainingSet {
-            ratings: bytes(ratings, n_reviews),
-            delta_days: bytes(delta_days, n_reviews),
-            card_offsets: bytes(card_offsets, n_cards + 1),
-            card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
-            item_cards: bytes(item_cards, n_items),
-            item_lengths: bytes(item_lengths, n_items),
-        };
-        set.validate()?;
+        let set = training_set_from_raw(
+            ratings,
+            delta_days,
+            n_reviews,
+            card_offsets,
+            card_ids,
+            n_cards,
+            item_cards,
+            item_lengths,
+            n_items,
+        )?;
         match op {
             "compute_parameters" => {
                 let (items, card_ids) = set.expand(true);
@@ -558,23 +586,20 @@ pub extern "C" fn ffsrs_predict_tss(
         if n_items == 0 {
             return Err("not enough data".into());
         }
-        if out_addr == 0
-            || card_offsets.is_null()
-            || item_cards.is_null()
-            || item_lengths.is_null()
-            || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
-        {
+        if out_addr == 0 {
             return Err("null buffer".into());
         }
-        let set = TrainingSet {
-            ratings: bytes(ratings, n_reviews),
-            delta_days: bytes(delta_days, n_reviews),
-            card_offsets: bytes(card_offsets, n_cards + 1),
-            card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
-            item_cards: bytes(item_cards, n_items),
-            item_lengths: bytes(item_lengths, n_items),
-        };
-        set.validate()?;
+        let set = training_set_from_raw(
+            ratings,
+            delta_days,
+            n_reviews,
+            card_offsets,
+            card_ids,
+            n_cards,
+            item_cards,
+            item_lengths,
+            n_items,
+        )?;
         let (items, ids) = set.expand(true);
         let ids = ids.ok_or("card ids required")?;
         let out = unsafe { std::slice::from_raw_parts_mut(out_addr as *mut f32, n_items) };

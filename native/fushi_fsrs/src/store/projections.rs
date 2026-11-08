@@ -357,6 +357,55 @@ fn push_strings<'s>(out: &mut Vec<u8>, strings: impl Iterator<Item = &'s str>) {
     out.extend_from_slice(body.as_bytes());
 }
 
+/// 优化器 / 校准共用的训练集输出列（小端，全 8 字节字）。序列 = 一张进训练集的卡的完整评审，
+/// `seq_start` 是 CSR 式偏移（首位 0），`ratings` / `deltas` 按序列拼接。
+struct TrainingColumns {
+    seq_start: Vec<i64>,
+    seq_card: Vec<i64>,
+    ratings: Vec<i64>,
+    deltas: Vec<f64>,
+}
+
+impl TrainingColumns {
+    fn new() -> Self {
+        Self {
+            seq_start: vec![0],
+            seq_card: Vec::new(),
+            ratings: Vec::new(),
+            deltas: Vec::new(),
+        }
+    }
+
+    /// 收一张卡的完整评审，返回分配给它的序列号。
+    fn push_card(&mut self, card_id: i64, reviews: &[(i64, f64)]) -> i64 {
+        let seq = self.seq_card.len() as i64;
+        self.seq_card.push(card_id);
+        for (r, d) in reviews {
+            self.ratings.push(*r);
+            self.deltas.push(*d);
+        }
+        self.seq_start.push(self.ratings.len() as i64);
+        seq
+    }
+
+    /// 头段之后的字节容量估算：3 个计数 + `extra_words` 个条目列，全按 8 字节字。
+    fn capacity(&self, extra_words: usize) -> usize {
+        24 + (self.seq_start.len() + self.seq_card.len() + 2 * self.ratings.len() + extra_words) * 8
+    }
+
+    /// 头段打包：`[n_seq, n_reviews, n_items]`、`seq_start × (n_seq + 1)`、`seq_card × n_seq`、
+    /// `rating × n_reviews`、`delta(f64) × n_reviews`；条目列由调用方按自己的布局接在后面。
+    fn pack_prefix(&self, out: &mut Vec<u8>, n_items: usize) {
+        push_i64(out, self.seq_card.len() as i64);
+        push_i64(out, self.ratings.len() as i64);
+        push_i64(out, n_items as i64);
+        self.seq_start.iter().for_each(|&v| push_i64(out, v));
+        self.seq_card.iter().for_each(|&v| push_i64(out, v));
+        self.ratings.iter().for_each(|&v| push_i64(out, v));
+        self.deltas.iter().for_each(|&v| push_f64(out, v));
+    }
+}
+
 impl SrsCore {
     /// 读连接上一个读事务：多条语句看同一个 WAL 快照。
     fn read_snapshot<T>(
@@ -371,6 +420,18 @@ impl SrsCore {
         let out = out?;
         end?;
         Ok(out)
+    }
+
+    /// 优化器 / 校准共用的取数：同一快照里展开各组的全部前身，再取这些卡的复习日志。
+    fn fetch_training_groups(
+        &self,
+        groups: &[Vec<String>],
+    ) -> Result<(Vec<Vec<String>>, LogsByCard), String> {
+        self.read_snapshot(|r| {
+            let groups = expand_lineages(r, groups)?;
+            let logs = fetch_logs(r, &wanted_cards(&groups))?;
+            Ok((groups, logs))
+        })
     }
 
     /// 优化器训练集（`srsPrepareOptimization`）：`groups[g]` 是一张卡（调用方只给卡自己即可，全部前身由
@@ -389,15 +450,8 @@ impl SrsCore {
         if card_ids.len() != groups.len() {
             return Err("optimizer: card id count differs from group count".into());
         }
-        let (groups, logs) = self.read_snapshot(|r| {
-            let groups = expand_lineages(r, groups)?;
-            let logs = fetch_logs(r, &wanted_cards(&groups))?;
-            Ok((groups, logs))
-        })?;
-        let mut seq_start: Vec<i64> = vec![0];
-        let mut seq_card: Vec<i64> = Vec::new();
-        let mut ratings: Vec<i64> = Vec::new();
-        let mut deltas: Vec<f64> = Vec::new();
+        let (groups, logs) = self.fetch_training_groups(groups)?;
+        let mut cols = TrainingColumns::new();
         // (时刻, 序列, 前缀长度)；稳定排序保住输入顺序。
         let mut items: Vec<(i64, i64, i64)> = Vec::new();
         for (g, lineage) in groups.iter().enumerate() {
@@ -405,28 +459,14 @@ impl SrsCore {
             let Some((reviews, card_items)) = projection::optimizer_card(&eff, alg, day)? else {
                 continue;
             };
-            let seq = seq_card.len() as i64;
-            seq_card.push(card_ids[g]);
-            for (r, d) in &reviews {
-                ratings.push(*r);
-                deltas.push(*d);
-            }
-            seq_start.push(ratings.len() as i64);
+            let seq = cols.push_card(card_ids[g], &reviews);
             for (at, len) in card_items {
                 items.push((at, seq, len as i64));
             }
         }
         items.sort_by_key(|i| i.0);
-        let mut out = Vec::with_capacity(
-            24 + (seq_start.len() + seq_card.len() + 2 * ratings.len() + 2 * items.len()) * 8,
-        );
-        push_i64(&mut out, seq_card.len() as i64);
-        push_i64(&mut out, ratings.len() as i64);
-        push_i64(&mut out, items.len() as i64);
-        seq_start.iter().for_each(|&v| push_i64(&mut out, v));
-        seq_card.iter().for_each(|&v| push_i64(&mut out, v));
-        ratings.iter().for_each(|&v| push_i64(&mut out, v));
-        deltas.iter().for_each(|&v| push_f64(&mut out, v));
+        let mut out = Vec::with_capacity(cols.capacity(2 * items.len()));
+        cols.pack_prefix(&mut out, items.len());
         for (_, seq, len) in items {
             push_i64(&mut out, seq);
             push_i64(&mut out, len);
@@ -448,15 +488,8 @@ impl SrsCore {
         if card_ids.len() != groups.len() {
             return Err("calibration: card id count differs from group count".into());
         }
-        let (groups, logs) = self.read_snapshot(|r| {
-            let groups = expand_lineages(r, groups)?;
-            let logs = fetch_logs(r, &wanted_cards(&groups))?;
-            Ok((groups, logs))
-        })?;
-        let mut seq_start: Vec<i64> = vec![0];
-        let mut seq_card: Vec<i64> = Vec::new();
-        let mut ratings: Vec<i64> = Vec::new();
-        let mut deltas: Vec<f64> = Vec::new();
+        let (groups, logs) = self.fetch_training_groups(groups)?;
+        let mut cols = TrainingColumns::new();
         // (时刻, 序列, 前缀长度, 标签, 间隔天数)；稳定排序保住输入顺序（与 optimizer_items 相同）。
         let mut items: Vec<(i64, i64, i64, i64, i64)> = Vec::new();
         for (g, lineage) in groups.iter().enumerate() {
@@ -464,29 +497,15 @@ impl SrsCore {
             let Some((reviews, card_items)) = projection::calibration_card(&eff, alg, day)? else {
                 continue;
             };
-            let seq = seq_card.len() as i64;
-            seq_card.push(card_ids[g]);
-            for (r, d) in &reviews {
-                ratings.push(*r);
-                deltas.push(*d);
-            }
-            seq_start.push(ratings.len() as i64);
+            let seq = cols.push_card(card_ids[g], &reviews);
             for (at, len, log, elapsed) in card_items {
                 let tag = crate::store::schema::anki_numeric_id(&eff[log].id);
                 items.push((at, seq, len as i64, tag, elapsed));
             }
         }
         items.sort_by_key(|i| i.0);
-        let mut out = Vec::with_capacity(
-            24 + (seq_start.len() + seq_card.len() + 2 * ratings.len() + 5 * items.len()) * 8,
-        );
-        push_i64(&mut out, seq_card.len() as i64);
-        push_i64(&mut out, ratings.len() as i64);
-        push_i64(&mut out, items.len() as i64);
-        seq_start.iter().for_each(|&v| push_i64(&mut out, v));
-        seq_card.iter().for_each(|&v| push_i64(&mut out, v));
-        ratings.iter().for_each(|&v| push_i64(&mut out, v));
-        deltas.iter().for_each(|&v| push_f64(&mut out, v));
+        let mut out = Vec::with_capacity(cols.capacity(5 * items.len()));
+        cols.pack_prefix(&mut out, items.len());
         for &(_, seq, len, _, _) in &items {
             push_i64(&mut out, seq);
             push_i64(&mut out, len);
@@ -496,10 +515,10 @@ impl SrsCore {
         items.iter().for_each(|i| push_i64(&mut out, i.4));
         items
             .iter()
-            .for_each(|i| push_i64(&mut out, seq_card[i.1 as usize]));
+            .for_each(|i| push_i64(&mut out, cols.seq_card[i.1 as usize]));
         items.iter().for_each(|i| {
-            let target = seq_start[i.1 as usize] + i.2 - 1;
-            push_i64(&mut out, i64::from(ratings[target as usize] > 1));
+            let target = cols.seq_start[i.1 as usize] + i.2 - 1;
+            push_i64(&mut out, i64::from(cols.ratings[target as usize] > 1));
         });
         Ok(out)
     }

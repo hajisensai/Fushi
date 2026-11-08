@@ -730,9 +730,11 @@ fn group_count(args: &[i64]) -> Result<usize, String> {
     usize::try_from(arg(args, 0)?).map_err(|_| "negative group count".to_string())
 }
 
-/// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_optimizer_items(
+/// 只读训练集命令的公共壳（`ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items`）：
+/// 解析 `args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]` 与 lineage 页，
+/// 把 `body` 产出的训练集字节串打包返回。
+#[allow(clippy::too_many_arguments)]
+fn lineage_command(
     core: *const SrsCoreHandle,
     page: *const u8,
     page_len: usize,
@@ -741,6 +743,13 @@ pub extern "C" fn ffsrs_store_optimizer_items(
     out: *mut *mut u8,
     out_len: *mut usize,
     error_out: *mut *mut c_char,
+    body: impl FnOnce(
+        &SrsCore,
+        Vec<Vec<String>>,
+        &[i64],
+        crate::projection::Alg,
+        crate::projection::Day,
+    ) -> Result<Vec<u8>, String>,
 ) -> i32 {
     command(
         core,
@@ -756,8 +765,33 @@ pub extern "C" fn ffsrs_store_optimizer_items(
             let (lineages, _) = lineage_page(page, n)?;
             let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
             let ids = args.get(4..4 + n).ok_or("missing card ids")?;
-            c.optimizer_items(&lineages, ids, alg, &day_of(args, 2)?)
+            body(c, lineages, ids, alg, day_of(args, 2)?)
         },
+    )
+}
+
+/// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_optimizer_items(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    lineage_command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, lineages, ids, alg, day| c.optimizer_items(&lineages, ids, alg, &day),
     )
 }
 
@@ -773,7 +807,7 @@ pub extern "C" fn ffsrs_store_calibration_items(
     out_len: *mut usize,
     error_out: *mut *mut c_char,
 ) -> i32 {
-    command(
+    lineage_command(
         core,
         page,
         page_len,
@@ -782,13 +816,7 @@ pub extern "C" fn ffsrs_store_calibration_items(
         out,
         out_len,
         error_out,
-        |c, page, args| {
-            let n = group_count(args)?;
-            let (lineages, _) = lineage_page(page, n)?;
-            let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
-            let ids = args.get(4..4 + n).ok_or("missing card ids")?;
-            c.calibration_items(&lineages, ids, alg, &day_of(args, 2)?)
-        },
+        |c, lineages, ids, alg, day| c.calibration_items(&lineages, ids, alg, &day),
     )
 }
 
