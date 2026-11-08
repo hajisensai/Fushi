@@ -12,6 +12,7 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
+import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_commands.dart';
 import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_hook.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_schema.dart';

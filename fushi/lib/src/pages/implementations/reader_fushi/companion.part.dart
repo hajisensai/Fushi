@@ -194,29 +194,12 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
     final _ReaderFushiPageState s = _state;
     final AudiobookPlayerController? audio = s._audiobookController;
     if (audio == null) return;
-    switch (action) {
-      case AudiobookCompanionActions.playPause:
-        await audio.togglePlayPause();
-      case AudiobookCompanionActions.seekRelative:
-        final int? seconds = args.intOrNull(AudiobookCompanionActions.seconds);
-        if (seconds != null) await audio.seekRelative(seconds);
-      case AudiobookCompanionActions.seekLine:
-        final int? index = args.intOrNull(AudiobookCompanionActions.index);
-        if (index != null &&
-            index >= 0 &&
-            index < audio.chapterCuesSnapshot.length) {
-          await audio.skipToCueIndex(index);
-        }
-      case AudiobookCompanionActions.previousChapter:
-        await s._handleBoundarySkip(-1);
-      case AudiobookCompanionActions.nextChapter:
-        await s._handleBoundarySkip(1);
-      case AudiobookCompanionActions.setSpeed:
-        final double? speed = args.doubleOrNull(
-          AudiobookCompanionActions.speed,
-        );
-        if (speed != null && speed > 0) await audio.setSpeed(speed);
-    }
+    await runAudiobookCompanionCommand(
+      audio,
+      action,
+      args,
+      boundarySkip: s._handleBoundarySkip,
+    );
   }
 
   /// The page's own counter ([BaseSourcePageState.recordCompanionLookup]:
