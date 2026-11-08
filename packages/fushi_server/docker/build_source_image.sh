@@ -11,7 +11,8 @@ set -euo pipefail
 
 TAG="${1:-fushi-server:source}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../../.." && pwd)"
+# `pwd -W` gives C:/... on Git Bash: docker.exe cannot read /c/... paths.
+ROOT="$(cd "$HERE/../../.." && { pwd -W 2>/dev/null || pwd; })"
 TOOLCHAIN="fushi-linux-build:trixie"
 export MSYS_NO_PATHCONV=1 DOCKER_BUILDKIT=1
 
