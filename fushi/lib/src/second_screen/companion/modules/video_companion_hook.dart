@@ -292,6 +292,7 @@ class VideoCompanionFrame {
     required this.currentCueIndex,
     required this.audioTracks,
     required this.subtitleSource,
+    this.subtitleLoading = false,
     this.collectionId,
     this.series,
     this.coverPath,
@@ -326,6 +327,10 @@ class VideoCompanionFrame {
 
   /// The primary subtitle source's persisted value (null / `off:` = off).
   final String? subtitleSource;
+
+  /// A subtitle source is being extracted / loaded (the page's single loading
+  /// state; its subtitle rows are disabled meanwhile).
+  final bool subtitleLoading;
 
   /// Line study: pause after each line.
   final bool autoPause;
@@ -462,6 +467,7 @@ Map<String, Object?> buildVideoCompanionSnapshot(
     ],
     VideoCompanionKeys.subtitlesOff:
         source == null || source.isEmpty || SubtitleSource.isOff(source),
+    VideoCompanionKeys.subtitleLoading: frame.subtitleLoading,
     if (infoJson.isNotEmpty) VideoCompanionKeys.info: infoJson,
     VideoCompanionKeys.autoPause: frame.autoPause,
     VideoCompanionKeys.loop: <String, Object?>{

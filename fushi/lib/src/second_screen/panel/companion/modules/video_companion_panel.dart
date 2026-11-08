@@ -101,6 +101,7 @@ class _VideoView {
             ),
       ],
       subtitlesOff = s.flag(VideoCompanionKeys.subtitlesOff),
+      subtitleLoading = s.flag(VideoCompanionKeys.subtitleLoading),
       info = s.mapOrNull(VideoCompanionKeys.info) ?? const <String, Object?>{},
       autoPause = s.flag(VideoCompanionKeys.autoPause),
       loop = s.mapOrNull(VideoCompanionKeys.loop) ?? const <String, Object?>{},
@@ -119,6 +120,10 @@ class _VideoView {
   final List<_Track> audioTracks;
   final List<_Track> subtitleTracks;
   final bool subtitlesOff;
+
+  /// The page is extracting / loading a subtitle source (its own rows are
+  /// disabled meanwhile; the panel shows the progress and waits too).
+  final bool subtitleLoading;
   final Map<String, Object?> info;
   final bool autoPause;
   final Map<String, Object?> loop;
@@ -331,42 +336,11 @@ class _VideoBody extends ConsumerWidget {
             .read(companionLookupControllerProvider)
             .lookUp(text: cue.text, charIndex: charIndex, sentence: cue.text),
       ),
-      Row(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
-            child: _LabeledButton(
-              icon: FushiIcons.ankiCard,
-              label: t.second_screen_video_mine_line,
-              primary: true,
-              onPressed: view.cues.isEmpty
-                  ? null
-                  : () => _send(VideoCompanionActions.mineLine),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _LabeledButton(
-              icon: FushiIcons.audio,
-              label: t.second_screen_video_audio_label(
-                label: view.audioLabel.isEmpty ? '—' : view.audioLabel,
-              ),
-              onPressed: view.audioTracks.isEmpty
-                  ? null
-                  : () => _openTracks(context, audio: true),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _LabeledButton(
-              icon: view.subtitlesOff
-                  ? FushiIcons.subtitlesOff
-                  : FushiIcons.subtitles,
-              label: t.second_screen_video_subtitles_label(
-                label: view.subtitleLabel,
-              ),
-              onPressed: () => _openTracks(context, audio: false),
-            ),
-          ),
+          _trackButtons(context),
+          if (view.subtitleLoading) const _SubtitleLoadingRow(),
         ],
       ),
       CompanionSectionLabel(t.second_screen_video_line_study),
@@ -388,6 +362,49 @@ class _VideoBody extends ConsumerWidget {
       ),
     );
   }
+
+  /// Mine line + audio / subtitle track buttons (the subtitle picker waits
+  /// while a subtitle source is loading, like the page's own rows).
+  Widget _trackButtons(BuildContext context) => Row(
+    children: <Widget>[
+      Expanded(
+        child: _LabeledButton(
+          icon: FushiIcons.ankiCard,
+          label: t.second_screen_video_mine_line,
+          primary: true,
+          onPressed: view.cues.isEmpty
+              ? null
+              : () => _send(VideoCompanionActions.mineLine),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _LabeledButton(
+          icon: FushiIcons.audio,
+          label: t.second_screen_video_audio_label(
+            label: view.audioLabel.isEmpty ? '—' : view.audioLabel,
+          ),
+          onPressed: view.audioTracks.isEmpty
+              ? null
+              : () => _openTracks(context, audio: true),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _LabeledButton(
+          icon: view.subtitlesOff
+              ? FushiIcons.subtitlesOff
+              : FushiIcons.subtitles,
+          label: t.second_screen_video_subtitles_label(
+            label: view.subtitleLabel,
+          ),
+          onPressed: view.subtitleLoading
+              ? null
+              : () => _openTracks(context, audio: false),
+        ),
+      ),
+    ],
+  );
 
   void _openInfo(BuildContext context) => unawaited(
     Navigator.of(context).push<void>(
@@ -980,6 +997,38 @@ class _CreditList extends StatelessWidget {
   }
 }
 
+/// Progress of the page's subtitle extraction / loading (snapshot
+/// `subtitleLoading`, the page's single loading state).
+class _SubtitleLoadingRow extends StatelessWidget {
+  const _SubtitleLoadingRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final String label = t.second_screen_video_subtitles_loading;
+    return Semantics(
+      liveRegion: true,
+      label: label,
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+            const SizedBox(height: 6),
+            const FushiLinearProgressIndicator(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Audio or subtitle track picker (pushed page). Picking sends the command
 /// and goes back.
 class _VideoTrackPage extends StatelessWidget {
@@ -1018,21 +1067,28 @@ class _VideoTrackPage extends StatelessWidget {
                     ),
                 ]
               : <Widget>[
+                  if (view.subtitleLoading) const _SubtitleLoadingRow(),
                   CompanionLineTile(
                     text: t.second_screen_video_subtitles_off,
                     selected: view.subtitlesOff,
                     maxLines: 1,
-                    onTap: () => pick(VideoCompanionActions.subtitleOff),
+                    onTap: view.subtitleLoading
+                        ? null
+                        : () => pick(VideoCompanionActions.subtitleOff),
                   ),
                   for (final _Track s in view.subtitleTracks)
                     CompanionLineTile(
                       text: s.label,
                       selected: s.selected && !view.subtitlesOff,
                       maxLines: 1,
-                      onTap: () => pick(
-                        VideoCompanionActions.selectSubtitle,
-                        <String, Object?>{VideoCompanionKeys.source: s.id},
-                      ),
+                      onTap: view.subtitleLoading
+                          ? null
+                          : () => pick(
+                              VideoCompanionActions.selectSubtitle,
+                              <String, Object?>{
+                                VideoCompanionKeys.source: s.id,
+                              },
+                            ),
                     ),
                 ];
           return Column(

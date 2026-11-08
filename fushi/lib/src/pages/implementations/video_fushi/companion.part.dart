@@ -51,6 +51,7 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
           ),
       ],
       subtitleSource: _state._currentSubtitleSource,
+      subtitleLoading: _state._subtitleLoadingShown,
       autoPause: controller.autoPauseAtCueEnd,
       loopOn: controller.loopCurrentCue,
       loopTimes: controller.loopRepeatTimes,
@@ -148,10 +149,17 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
   Future<void> selectAudioTrack(String id) =>
       _remoteAction('selectAudio', () => _remote.selectAudioTrack(id));
 
+  /// Same executor as the remote's pick, with the companion as origin: the
+  /// extraction progress shows on the panel (snapshot `subtitleLoading`)
+  /// instead of opening the player's settings sheet on top.
   @override
   Future<void> selectSubtitle(String source) => _remoteAction(
     'selectSubtitle',
-    () => _remote.selectSubtitle(source, secondary: false),
+    () => _remote._selectSubtitleFrom(
+      source,
+      secondary: false,
+      origin: VideoSubtitlePickOrigin.companion,
+    ),
   );
 
   @override

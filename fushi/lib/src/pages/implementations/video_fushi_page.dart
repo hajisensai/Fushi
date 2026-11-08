@@ -174,6 +174,7 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_subtitle_pick_origin.dart';
 import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
 import 'package:fushi/src/second_screen/companion/modules/video_companion_hook.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';

@@ -431,6 +431,34 @@ void main() {
       );
       expect(s.maps(VideoCompanionKeys.cues), isEmpty);
     });
+
+    test('the page subtitle loading state is published as is', () {
+      VideoCompanionFrame loading(bool on) => VideoCompanionFrame(
+        bookUid: 'b',
+        title: 't',
+        playing: false,
+        positionMs: 0,
+        durationMs: 0,
+        speed: 1,
+        cues: const <AudioCue>[],
+        currentCueIndex: -1,
+        audioTracks: const <VideoCompanionTrack>[],
+        subtitleSource: 'embedded:0',
+        subtitleLoading: on,
+      );
+      expect(
+        buildVideoCompanionSnapshot(
+          loading(true),
+        ).flag(VideoCompanionKeys.subtitleLoading),
+        isTrue,
+      );
+      expect(
+        buildVideoCompanionSnapshot(
+          loading(false),
+        ).flag(VideoCompanionKeys.subtitleLoading),
+        isFalse,
+      );
+    });
   });
 
   group('commands', () {

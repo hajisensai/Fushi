@@ -7492,6 +7492,7 @@
   "second_screen_video_subtitle_tracks": "字幕轨",
   "second_screen_video_subtitles_hint": "字幕 · 点按跳转，长按查词",
   "second_screen_video_subtitles_label": "字幕：$label",
+  "second_screen_video_subtitles_loading": "正在加载字幕…",
   "second_screen_video_subtitles_off": "关闭字幕",
   "second_screen_video_votes": "$n 人评分",
   "second_screen_video_waiting": "正在等待视频加载",

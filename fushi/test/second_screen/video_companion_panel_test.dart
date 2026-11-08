@@ -6,6 +6,10 @@ import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/modules/video_companion_schema.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
 import 'package:fushi/src/second_screen/panel/companion/modules/video_companion_panel.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiFilledButton;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiSlider, FushiSwitch;
 import 'package:material_ui/material_ui.dart';
@@ -348,6 +352,72 @@ void main() {
       '/subs/ep03.en.srt',
     );
   });
+
+  testWidgets('subtitle loading shows progress on the panel and picks wait', (
+    WidgetTester tester,
+  ) async {
+    final RecordingCompanionSession rec = await _pump(tester, _sample());
+    final String subs = t.second_screen_video_subtitles_label(label: 'JP full');
+    await _tapButton(tester, subs);
+    await tester.tap(find.text('EN'));
+    await tester.pumpAndSettle();
+    expect(rec.commands.single.action, VideoCompanionActions.selectSubtitle);
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+
+    // The page reports its extraction in the next snapshot (indeterminate
+    // progress animates forever: pump frames, never settle).
+    rec.show(CompanionContextKind.video, <String, Object?>{
+      ..._sample(),
+      VideoCompanionKeys.subtitleLoading: true,
+    }, title: 'Series title');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final Finder progress = find.byType(FushiLinearProgressIndicator);
+    await tester.ensureVisible(progress);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(progress, findsOneWidget);
+    expect(find.text(t.second_screen_video_subtitles_loading), findsOneWidget);
+    final Finder subsButton = find.descendant(
+      of: find.byWidgetPredicate(
+        (Widget w) => w is Tooltip && w.message == subs,
+      ),
+      matching: find.byType(FushiFilledButton),
+    );
+    expect(tester.widget<FushiFilledButton>(subsButton).onPressed, isNull);
+    await tester.tap(subsButton, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text(t.second_screen_video_subtitle_tracks), findsNothing);
+    expect(rec.commands, hasLength(1));
+
+    // Done: the progress goes away and the picker opens again.
+    rec.show(CompanionContextKind.video, _sample(), title: 'Series title');
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+    expect(tester.widget<FushiFilledButton>(subsButton).onPressed, isNotNull);
+  });
+
+  testWidgets(
+    'subtitle picker opened while loading shows progress, rows wait',
+    (WidgetTester tester) async {
+      final RecordingCompanionSession rec = await _pump(tester, _sample());
+      await _tapButton(
+        tester,
+        t.second_screen_video_subtitles_label(label: 'JP full'),
+      );
+      rec.show(CompanionContextKind.video, <String, Object?>{
+        ..._sample(),
+        VideoCompanionKeys.subtitleLoading: true,
+      }, title: 'Series title');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text(t.second_screen_video_subtitle_tracks), findsOneWidget);
+      expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+      await tester.tap(find.text('EN'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(rec.commands, isEmpty);
+      expect(find.text(t.second_screen_video_subtitle_tracks), findsOneWidget);
+    },
+  );
 
   testWidgets('subtitles off shows Off on the picker button', (
     WidgetTester tester,

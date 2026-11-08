@@ -17,7 +17,9 @@
 ///   `VideoCompanionKeys.maxCues` cues around the current one.
 /// - [audioTracks] List of {[id], [label], [selected]}.
 /// - [subtitleTracks] List of {[source], [label], [selected]}: the primary
-///   subtitle tracks that can be selected; [subtitlesOff] bool.
+///   subtitle tracks that can be selected; [subtitlesOff] bool;
+///   [subtitleLoading] bool (a subtitle source is being extracted / loaded:
+///   the panel shows the progress and picks wait, as the page's rows do).
 /// - [info] Map? (cached scrape metadata, every field optional, missing =
 ///   unknown): [workTitle], [rating] double, [votes] int, [overview],
 ///   [episodeNumber] int, [episodeTitle], [episodeOverview]; since S5 also
@@ -49,6 +51,7 @@ abstract final class VideoCompanionKeys {
   static const String audioTracks = 'audioTracks';
   static const String subtitleTracks = 'subtitleTracks';
   static const String subtitlesOff = 'subtitlesOff';
+  static const String subtitleLoading = 'subtitleLoading';
   static const String info = 'info';
   static const String autoPause = 'autoPause';
   static const String loop = 'loop';
