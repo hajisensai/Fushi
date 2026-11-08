@@ -269,6 +269,43 @@ void main() {
       expect((await visibleCardsOfG0(s)).single.reps, 2);
     });
 
+    test('旧卡已由可见卡继承、再导入映射到另一张卡：不写也不接链（两张活卡不共享历史）', () async {
+      final SrsDbStore s = await open();
+      await imp(s, apkg(lapisModel(), notesOf(kLapisMid, 4)));
+      final String lapisCard = (await s.cardsOfNote(
+        SrsIds.note(kProfile, 'g0'),
+      )).single.id;
+      await convertLapis(s);
+      final String heir = (await visibleCardsOfG0(s)).single.id;
+      t += 3600000;
+      // 换了模板的 Fushi Card 合并导入：g0 多出一张卡，同一批 revlog 在旧 Lapis 卡上（已被 [heir] 继承）。
+      final SrsImportReport rep = await imp(
+        s,
+        apkg(fushiCardModel(tmplId: 4242), notesOf(kFushiMid, 23)),
+        merge: true,
+      );
+      expect(rep.revlogsAlreadyPresent, kSourceReviews);
+      expect(rep.reviewLogsImported, 0);
+      final String other = (await visibleCardsOfG0(s))
+          .map((SrsCardCacheRow c) => c.id)
+          .singleWhere((String id) => id != heir);
+      expect(
+        (await s.history(
+          other,
+        )).all.where((SrsReviewLog l) => l.cardId == lapisCard),
+        isEmpty,
+      );
+      expect(
+        (await s.history(
+          heir,
+        )).all.where((SrsReviewLog l) => l.cardId == lapisCard),
+        isNotEmpty,
+      );
+      expect(await effectiveAnkiReviews(s, heir), 2);
+      expect(await effectiveAnkiReviews(s, other), 0);
+      expect(await reviews(s), kSourceReviews);
+    });
+
     test('不同笔记上同一毫秒的 Anki 复习不被当成已有', () async {
       final SrsDbStore s = await open();
       await imp(s, apkg(lapisModel(), notesOf(kLapisMid, 4)));

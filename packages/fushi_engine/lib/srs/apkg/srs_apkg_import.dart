@@ -234,6 +234,7 @@ class _ExistingPrefetch {
     required this.cardEdits,
     required this.histories,
     required this.ankiLogsAt,
+    required this.oldCardHeirs,
   });
 
   static final _ExistingPrefetch empty = _ExistingPrefetch(
@@ -242,6 +243,7 @@ class _ExistingPrefetch {
     cardEdits: const <String, SrsEntityEdits>{},
     histories: const <String, SrsCardHistory>{},
     ankiLogsAt: const <int, List<SrsAnkiLogAt>>{},
+    oldCardHeirs: const <String, String>{},
   );
 
   final Map<String, SrsNoteView?> notes;
@@ -251,6 +253,9 @@ class _ExistingPrefetch {
 
   /// 本机已有的 Anki 导入日志，按 revlog id（这一块已有笔记的来源 revlog；见 [SrsDbStore.ankiImportedLogsAt]）。
   final Map<int, List<SrsAnkiLogAt>> ankiLogsAt;
+
+  /// [ankiLogsAt] 里不可见的卡此刻继承它历史的可见卡（见 [SrsDbStore.visibleHeirsOf]）；没有可见后继的不在里面。
+  final Map<String, String> oldCardHeirs;
 }
 
 /// 一个来源笔记类型映射到本机的结果。
@@ -1555,6 +1560,11 @@ class _Importer {
         (ankiLogsAt[l.revlogId] ??= <SrsAnkiLogAt>[]).add(l);
       }
     }
+    final Set<String> hiddenHits = <String>{
+      for (final List<SrsAnkiLogAt> ls in ankiLogsAt.values)
+        for (final SrsAnkiLogAt l in ls)
+          if (!l.visible) l.cardId,
+    };
     return _ExistingPrefetch(
       notes: await store.notes(noteIds),
       cards: <String, SrsCardCacheRow>{
@@ -1565,6 +1575,7 @@ class _Importer {
           ? await store.histories(cardIds)
           : const <String, SrsCardHistory>{},
       ankiLogsAt: ankiLogsAt,
+      oldCardHeirs: await store.visibleHeirsOf(hiddenHits),
     );
   }
 
@@ -1766,6 +1777,7 @@ class _Importer {
           isNew ? null : pre.histories[cardId] ?? await store.history(cardId),
           noteId: noteId,
           ankiLogsAt: pre.ankiLogsAt,
+          oldCardHeirs: pre.oldCardHeirs,
         );
       } else if (isNew && (c.type != 0 || c.queue < 0)) {
         report.cardsResetToNew++;
@@ -1883,13 +1895,14 @@ class _Importer {
     SrsCardHistory? existingHistory, {
     required String noteId,
     required Map<int, List<SrsAnkiLogAt>> ankiLogsAt,
+    required Map<String, String> oldCardHeirs,
   }) async {
     final List<_SrcRevlog> revlogs = c.revlogs;
     // 这条 revlog 已经在本 profile 里、只是落在另一张卡上（BUG-4242）：日志 ID 由本机卡 ID 派生，来源笔记换过
     // 模板 / 笔记类型（Lapis 迁到 Fushi 卡片、删光重导按来源类型恢复）后再导入，同一次复习会按新卡再写一份，
-    // 统计 ×2。在这张卡的血统里（前身卡上）的：不写。不在血统里、那张卡已不可见（旧卡）的：给这张卡接上
-    // `historyFrom/<旧卡>`，历史随血统过来，不再写一份；那张卡仍可见的：这次复习已经记在一张活卡上，同样不写
-    // （不让两张活卡共享一份历史）。别的笔记的卡不算；认不出笔记的旧卡（缓存行已没有）按评分 / 复习类型 / 用时都
+    // 统计 ×2。在这张卡的血统里（前身卡上）的：不写。不在血统里、那张卡已不可见（旧卡）且没有可见后继的：给这张卡
+    // 接上 `historyFrom/<旧卡>`，历史随血统过来，不再写一份；那张卡仍可见、或旧卡的历史已由另一张可见卡继承
+    // （[oldCardHeirs]）的：这次复习已经记在一张活卡上，同样不写也不接链（不让两张活卡共享一份历史）。别的笔记的卡不算；认不出笔记的旧卡（缓存行已没有）按评分 / 复习类型 / 用时都
     // 相同才认（不同集合恰好同一毫秒同评分同用时的复习不误认）。
     final Set<String> lineage = <String>{
       cardId,
@@ -1911,7 +1924,11 @@ class _Importer {
           continue;
         }
         found = true;
-        if (!lineage.contains(h.cardId) && !h.visible) linkedOld.add(h.cardId);
+        if (!lineage.contains(h.cardId) &&
+            !h.visible &&
+            !oldCardHeirs.containsKey(h.cardId)) {
+          linkedOld.add(h.cardId);
+        }
       }
       return found;
     }

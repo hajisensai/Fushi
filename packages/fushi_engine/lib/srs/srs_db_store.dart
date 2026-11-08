@@ -2861,6 +2861,36 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
+  /// [cardIds] 里各卡此刻继承它历史的可见卡（血统里含它的可见卡，不含它自己；几张时取 id 最小的，与
+  /// [historyOwnerIndex] 同一条规则）。没有可见后继的卡不在结果里。只沿 [cardIds] 的后继链接扩，不建全表归属。
+  Future<Map<String, String>> visibleHeirsOf(Iterable<String> cardIds) async {
+    final Set<String> wanted = cardIds.toSet();
+    if (wanted.isEmpty) return const <String, String>{};
+    final Map<String, List<String>> successors = await _successorIndex();
+    // 链接表是超集，这里只收候选；真正的血统下面按 [_lineages]（修改记录的生效值）判。
+    final Set<String> candidates = <String>{};
+    final List<String> frontier = wanted.toList();
+    while (frontier.isNotEmpty) {
+      for (final String next
+          in successors[frontier.removeLast()] ?? const <String>[]) {
+        if (candidates.add(next)) frontier.add(next);
+      }
+    }
+    if (candidates.isEmpty) return const <String, String>{};
+    final List<String> visible = <String>[
+      for (final SrsCardCacheRow c in await cardRows(candidates))
+        if (!c.hidden) c.id,
+    ]..sort();
+    final Map<String, String> out = <String, String>{};
+    final List<List<String>> lineages = await _lineages(visible);
+    for (int k = 0; k < visible.length; k++) {
+      for (final String id in lineages[k].skip(1)) {
+        if (wanted.contains(id)) out.putIfAbsent(id, () => visible[k]);
+      }
+    }
+    return out;
+  }
+
   /// 一组卡各自的复习历史（同 [history]；按输入顺序去重）。按块预读整条血统的修改记录、日志与
   /// 服务器时刻（每块几次往返），批量重置 / 设置到期 / 撤销 / 立即重排 / 导出 / 优化器取数不再每张卡
   /// 各查四五次（BUG-3543）。
