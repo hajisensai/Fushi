@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// The `:popup` / second-screen panel processes initialise through
 /// `AppModel.initialiseForDictionaryPopup`, not the main `initialise`. The
