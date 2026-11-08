@@ -175,6 +175,16 @@ void main() {
         'profile': kJa,
         'deck': 'Configured',
       });
+      // BUG-4246：每份 profile 报出不点名时落进的牌组，手机不再把它另列一遍。
+      final List<Object?> review =
+          (await mining.miningTargets())['review']! as List<Object?>;
+      expect((review.first! as Map)['defaultDeck'], 'Configured');
+      expect(
+        (review.last! as Map)['defaultDeck'],
+        (await srs.storeFor(kZh)!.deckTree()).fullName(
+          srs.storeFor(kZh)!.defaultDeckId,
+        ),
+      );
 
       final Map<String, dynamic> gone = await mine(
         '歌う',

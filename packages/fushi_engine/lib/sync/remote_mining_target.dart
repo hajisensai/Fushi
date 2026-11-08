@@ -83,7 +83,8 @@ class RemoteMineLanding {
 /// 才把请求里的 `target` 交进来、才挂 `POST /api/mine/targets`；没实现的主机行为与以前逐字节一致。
 abstract interface class FushiRemoteMiningTargetService {
   /// `POST /api/mine/targets` 的回包：
-  /// `{default: {kind, profile?, deck?}, review: [{profile, name, decks: [name]}], anki?: {decks: [name]}}`。
+  /// `{default: {kind, profile?, deck?}, review: [{profile, name, decks: [name], defaultDeck?}], anki?: {decks: [name]}}`。
+  /// `defaultDeck`：不点名牌组时卡落进的那个牌组全名（老主机不带）。
   Future<Map<String, Object?>> miningTargets();
 
   Future<RemoteMineLanding> mineEntryTo({

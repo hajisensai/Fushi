@@ -68,7 +68,7 @@ String mineToServerTargetKey(RemoteMiningTarget? target) {
   ].map((String? v) => v ?? '').join('\u0000');
 }
 
-/// 把主机的 `/api/mine/targets` 回包摊成选项：主机默认 → 各份复习 profile（默认牌组 + 各牌组）→ Anki
+/// 把主机的 `/api/mine/targets` 回包摊成选项：主机默认 → 各份复习 profile（默认牌组 + 其余牌组）→ Anki
 /// （默认牌组 + 各牌组，主机有 Anki 时）。
 List<MineToServerTargetOption> mineToServerTargetOptions(
   Map<String, dynamic> json,
@@ -100,11 +100,14 @@ List<MineToServerTargetOption> mineToServerTargetOptions(
           subtitle: t.anki_mine_to_server_target_deck_default,
         ),
       );
+      // 「默认牌组」那项已经代表主机不点名时落进的牌组，下面不再把它按名字列一遍（BUG-4246）。
+      // 老主机不报 defaultDeck：认不出是哪个，照旧全列。
+      final String? defaultDeck = text(entry['defaultDeck']);
       final Object? decks = entry['decks'];
       if (decks is List) {
         for (final Object? deck in decks) {
           final String? name = text(deck);
-          if (name == null) continue;
+          if (name == null || name == defaultDeck) continue;
           options.add(
             MineToServerTargetOption(
               target: RemoteMiningTarget(

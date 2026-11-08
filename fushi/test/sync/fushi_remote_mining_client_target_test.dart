@@ -179,6 +179,27 @@ void main() {
     );
   });
 
+  test('the review default deck is listed once when the host reports it '
+      '(BUG-4246)', () {
+    final List<MineToServerTargetOption> options = mineToServerTargetOptions(
+      <String, dynamic>{
+        'review': <Object?>[
+          <String, Object?>{
+            'profile': kUid,
+            'name': 'Japanese',
+            'decks': <Object?>['Default', 'Mining'],
+            'defaultDeck': 'Default',
+          },
+        ],
+      },
+    );
+    expect(options.map((MineToServerTargetOption o) => o.target), <Object?>[
+      null,
+      const RemoteMiningTarget(kind: 'review', profile: kUid),
+      const RemoteMiningTarget(kind: 'review', profile: kUid, deck: 'Mining'),
+    ]);
+  });
+
   test('主机不支持挑落点（404）→ null', () async {
     await pair();
     final FushiRemoteMiningClient c = FushiRemoteMiningClient(

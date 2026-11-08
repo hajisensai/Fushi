@@ -401,12 +401,23 @@ class ServerRemoteMiningService
       final SrsDbStore? store = prof.store;
       if (store == null) continue;
       final SrsDeckTree tree = await store.deckTree();
+      final List<String> decks = <String>[
+        for (final SrsDeckView d in tree.decks) tree.fullName(d.id),
+      ]..sort();
+      // 不点名牌组时卡实际落进的那个（配置给这份定的制卡牌组，不在了 / 没配 = 库的默认牌组，与
+      // resolveSrsMiningDestination 同口径）。手机据此不把它在「默认牌组」之外再列一遍（BUG-4246）。
+      final String? configured = _srsConfig().miningDecks[prof.uid];
+      final String? defaultDeck =
+          configured != null && decks.contains(configured)
+          ? configured
+          : tree[store.defaultDeckId] == null
+          ? null
+          : tree.fullName(store.defaultDeckId);
       review.add(<String, Object?>{
         'profile': prof.uid,
         'name': prof.name,
-        'decks': <String>[
-          for (final SrsDeckView d in tree.decks) tree.fullName(d.id),
-        ]..sort(),
+        'decks': decks,
+        'defaultDeck': ?defaultDeck,
       });
     }
     return <String, Object?>{
