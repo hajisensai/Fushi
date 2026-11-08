@@ -760,6 +760,122 @@ void main() {
     expect(subtitle.error, contains('sidecar already exists'));
   });
 
+  group('整理目标的非法字符替身：新任务全角，旧意图 / 已有作品目录沿用 _（ZDYNkAP3Ln）', () {
+    const String legacyTarget =
+        'Show_ Name (2026)/Season 01/Show_ Name (2026) - S01E01.mkv';
+    const String currentTarget =
+        'Show： Name (2026)/Season 01/Show： Name (2026) - S01E01.mkv';
+
+    Future<String?> organizedTarget(
+      Future<void> Function(_PipelineEnvironment environment, String jobId)
+      arrange,
+    ) async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        files: const <TorrentFileEntry>[
+          TorrentFileEntry(
+            name: 'Show.S01E01.mkv',
+            size: 4,
+            progress: 1,
+            index: 0,
+          ),
+        ],
+      );
+      late _PipelineEnvironment environment;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+          pathMappings: <VideoDownloadPathMapping>[
+            VideoDownloadPathMapping(
+              remoteRoot: '/media',
+              localRoot: environment.root.path,
+            ),
+          ],
+        ),
+      );
+      addTearDown(environment.close);
+      const String jobId = 'naming-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.organize,
+        observedSavePath: '/media',
+        subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+      );
+      await (environment.database.update(
+        environment.database.videoDownloadJobs,
+      )..where((tbl) => tbl.jobId.equals(jobId))).write(
+        const VideoDownloadJobsCompanion(title: Value<String>('Show: Name')),
+      );
+      await environment.insertDownloadedFile(
+        jobId: jobId,
+        name: 'Show.S01E01.mkv',
+        size: 4,
+      );
+      await arrange(environment, jobId);
+
+      environment.service.wake();
+      await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.completed ||
+            row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+      );
+      return (await environment.database.getVideoDownloadJobFiles(
+        jobId,
+      )).single.targetRelativePath;
+    }
+
+    test('新任务、来源库根下没有作品目录：全角替身', () async {
+      expect(
+        await organizedTarget((_PipelineEnvironment env, String id) async {}),
+        currentTarget,
+      );
+    });
+
+    test('来源库根下已有旧规则的作品目录（订阅追更）：新集跟着落进去', () async {
+      expect(
+        await organizedTarget((
+          _PipelineEnvironment environment,
+          String id,
+        ) async {
+          await Directory(
+            p.join(environment.root.path, 'Show_ Name (2026)'),
+          ).create(recursive: true);
+        }),
+        legacyTarget,
+      );
+    });
+
+    test('崩溃重放：旧版本落过的整理意图按旧规则重算，走向同一组目标', () async {
+      expect(
+        await organizedTarget((
+          _PipelineEnvironment environment,
+          String jobId,
+        ) async {
+          final VideoDownloadJobFileRow row =
+              (await environment.database.getVideoDownloadJobFiles(
+                jobId,
+              )).single;
+          await environment.database.updateVideoDownloadJobFile(
+            row.id,
+            VideoDownloadJobFilesCompanion(
+              targetRelativePath: const Value<String?>(legacyTarget),
+              finalAbsolutePath: Value<String?>(
+                p.joinAll(<String>[
+                  environment.root.path,
+                  ...legacyTarget.split('/'),
+                ]),
+              ),
+            ),
+          );
+        }),
+        legacyTarget,
+      );
+    });
+  });
+
   test(
     'source and observed roots can use different backend path mappings',
     () async {

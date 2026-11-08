@@ -14,9 +14,15 @@ import 'package:fushi/src/reader/reader_settings.dart';
 //           横排 contentSize 宽 418 > 402，左右拖 contentOffset.x 在 0..16 之间；
 //   修复后  内容尺寸 == 视口，上下 / 左右 / 斜拖交叉轴恒 0，主轴照常滚。
 //   只加 body clip 或只加 touch-action 各自都挡得住手指；clip 另外让程序化滚动
-//   （scrollBy / scrollIntoView）沿交叉轴无处可去，两层一起上。
+//   （scrollBy / scrollIntoView）沿交叉轴无处可去。
 //
-// 本测试钉生成器输出：滚动模式两种书写方向各带一条锁轴规则（touch-action 只放主轴
+// 反馈 R7k887yaJI：touch-action 不能只放主轴——Chromium 对起手偏交叉轴的手势在
+// `pan-y` / `pan-x` 下整段丢弃滚动，拇指斜着滑正文不动（真 Chromium 探针
+// tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs）。交叉轴由 body clip
+// 顶住（上面实测单靠 clip 就挡得住手指），touch-action 改成 `pan-x pan-y`（两轴平移
+// 放行、只关缩放）。
+//
+// 本测试钉生成器输出：滚动模式两种书写方向各带一条锁轴规则（touch-action 两轴平移
 // + body 交叉轴 clip），且 body 绝不能用 hidden（TODO-718：hidden 会让 body 另一轴变
 // auto、body 自成滚动容器）；翻页 / VN（html、body 两轴 hidden）不受影响。
 Future<String> _css({
@@ -34,7 +40,7 @@ Future<String> _css({
 
 void main() {
   group('BUG-3482 continuous mode locks the cross axis', () {
-    test('vertical-rl: pan-x only + body overflow-y: clip', () async {
+    test('vertical-rl: pan-x pan-y + body overflow-y: clip', () async {
       final String css = await _css(
         viewMode: 'continuous',
         writingMode: 'vertical-rl',
@@ -42,12 +48,16 @@ void main() {
       expect(
         css,
         contains(
-          'html, body {\n  touch-action: pan-x !important;\n}\n'
+          'html, body {\n  touch-action: pan-x pan-y !important;\n}\n'
           'body {\n  overflow-y: clip !important;\n}',
         ),
       );
       expect(css, contains('html {\n  overflow-y: hidden !important;\n}'));
-      expect(css, isNot(contains('touch-action: pan-y')));
+      expect(
+        css,
+        isNot(contains('touch-action: pan-x !important')),
+        reason: 'R7k887yaJI: single-axis pan drops diagonal thumb scrolls',
+      );
       expect(
         css,
         isNot(matches(RegExp(r'body \{[^}]*overflow-y: hidden'))),
@@ -55,7 +65,7 @@ void main() {
       );
     });
 
-    test('horizontal-tb: pan-y only + body overflow-x: clip', () async {
+    test('horizontal-tb: pan-x pan-y + body overflow-x: clip', () async {
       final String css = await _css(
         viewMode: 'continuous',
         writingMode: 'horizontal-tb',
@@ -63,12 +73,16 @@ void main() {
       expect(
         css,
         contains(
-          'html, body {\n  touch-action: pan-y !important;\n}\n'
+          'html, body {\n  touch-action: pan-x pan-y !important;\n}\n'
           'body {\n  overflow-x: clip !important;\n}',
         ),
       );
       expect(css, contains('html {\n  overflow-x: hidden !important;\n}'));
-      expect(css, isNot(contains('touch-action: pan-x')));
+      expect(
+        css,
+        isNot(contains('touch-action: pan-y !important')),
+        reason: 'R7k887yaJI: single-axis pan drops diagonal thumb scrolls',
+      );
       expect(
         css,
         isNot(matches(RegExp(r'body \{[^}]*overflow-x: hidden'))),
