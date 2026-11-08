@@ -26,7 +26,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import app.fushi.reader.constants.ChannelNames;
 import io.flutter.FlutterInjector;
@@ -36,12 +38,12 @@ import io.flutter.embedding.engine.dart.DartExecutor;
 import io.flutter.plugin.common.MethodChannel;
 
 /**
- * The game stream's lookup panel on the second display (process
- * {@code :companion}). It only renders: the stream page in the main process
- * owns every bit of state and pushes it here through
- * {@link GameStreamCompanionRelayService}.
+ * The panel on the second display (process {@code :second_screen}), in one of
+ * two modes chosen at launch ({@link #EXTRA_MODE}): the companion, or the game
+ * stream's lookup panel. It only renders: the main process owns every bit of
+ * state and pushes it here through {@link SecondScreenRelayService}.
  *
- * <p>Controller buttons always belong to the stream page. Touching this
+ * <p>Controller buttons always belong to the top screen. Touching this
  * display (or launching the panel) can make it Android's focused display, and
  * then keys arrive here; every key and controller motion is forwarded to the
  * main Activity instead of being handled. The window stays focusable on
@@ -50,27 +52,31 @@ import io.flutter.plugin.common.MethodChannel;
  * until it raises an ANR and kills the panel (seen on an API 37 emulator).
  * Nothing in the panel takes text input, so focus here never opens a keyboard.
  *
- * <p>Its lifetime belongs to the stream page: Back does nothing, and the panel
+ * <p>Its lifetime belongs to the main process: Back does nothing, and the panel
  * closes itself when it is not on the display it was launched for (its display
  * went away and Android moved it, possibly on top of the game).
  */
-public class GameStreamCompanionActivity extends FlutterActivity
+public class SecondScreenActivity extends FlutterActivity
         implements DisplayManager.DisplayListener {
-    private static final String TAG = "GameStreamCompanion";
-    private static final String ENTRYPOINT = "gameStreamCompanionMain";
+    private static final String TAG = "SecondScreen";
+    private static final String ENTRYPOINT = "secondScreenMain";
 
     /** Intent extra: the display this panel was launched for. */
-    static final String EXTRA_DISPLAY_ID = "app.fushi.reader.extra.COMPANION_DISPLAY_ID";
+    static final String EXTRA_DISPLAY_ID = "app.fushi.reader.extra.SECOND_SCREEN_DISPLAY_ID";
 
     /**
      * Intent extra: the launch this panel belongs to; sent back on register
-     * so the stream page can tell it from an earlier, replaced panel.
+     * so the host can tell it from an earlier, replaced panel.
      */
-    static final String EXTRA_LAUNCH_TOKEN = "app.fushi.reader.extra.COMPANION_LAUNCH_TOKEN";
+    static final String EXTRA_LAUNCH_TOKEN = "app.fushi.reader.extra.SECOND_SCREEN_LAUNCH_TOKEN";
+
+    /** Intent extra: the panel's mode ({@code companion} / {@code gameStream}). */
+    static final String EXTRA_MODE = "app.fushi.reader.extra.SECOND_SCREEN_MODE";
 
     /** The display this panel belongs on; anywhere else it closes. */
     private int targetDisplayId = Display.INVALID_DISPLAY;
-    private int launchToken = GameStreamCompanionLifecycle.NO_TOKEN;
+    private int launchToken = SecondScreenLifecycle.NO_TOKEN;
+    @Nullable private String mode;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Messenger inbox = new Messenger(new Handler(Looper.getMainLooper(), this::onRelayMessage));
@@ -88,7 +94,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
         public void onServiceConnected(ComponentName name, IBinder service) {
             relay = new Messenger(service);
             final Message register =
-                    Message.obtain(null, GameStreamCompanionRelayService.MSG_REGISTER);
+                    Message.obtain(null, SecondScreenRelayService.MSG_REGISTER);
             register.replyTo = inbox;
             register.arg1 = launchToken;
             if (!sendToRelay(register)) finish();
@@ -96,7 +102,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            // The main process died: there is no stream left to show.
+            // The main process died: there is nothing left to show.
             relay = null;
             finish();
         }
@@ -107,7 +113,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
 
     /**
      * The panel renders the dictionary in a flutter_inappwebview WebView inside
-     * the :companion process, while the main process (stream page, reader, ...)
+     * the :second_screen process, while the main process (reader, stream page, ...)
      * already uses WebView. Android forbids two processes sharing one WebView
      * data directory (crbug.com/558377): without its own suffix the panel's
      * WebView fails to create and the dictionary stays blank. Must run before
@@ -119,7 +125,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
         webViewDataDirConfigured = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
-                WebView.setDataDirectorySuffix("companion");
+                WebView.setDataDirectorySuffix("second_screen");
             } catch (IllegalStateException e) {
                 // WebView was already initialised in this process; it keeps the
                 // directory it started with.
@@ -134,7 +140,8 @@ public class GameStreamCompanionActivity extends FlutterActivity
         super.onCreate(savedInstanceState);
         targetDisplayId = getIntent().getIntExtra(EXTRA_DISPLAY_ID, Display.INVALID_DISPLAY);
         launchToken = getIntent().getIntExtra(
-                EXTRA_LAUNCH_TOKEN, GameStreamCompanionLifecycle.NO_TOKEN);
+                EXTRA_LAUNCH_TOKEN, SecondScreenLifecycle.NO_TOKEN);
+        mode = getIntent().getStringExtra(EXTRA_MODE);
         if (isOffTargetDisplay()) {
             finish();
             return;
@@ -142,7 +149,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
         displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
         if (displayManager != null) displayManager.registerDisplayListener(this, mainHandler);
         bound = bindService(
-                new Intent(this, GameStreamCompanionRelayService.class),
+                new Intent(this, SecondScreenRelayService.class),
                 connection,
                 Context.BIND_AUTO_CREATE);
         if (!bound) finish();
@@ -157,9 +164,19 @@ public class GameStreamCompanionActivity extends FlutterActivity
         FloatingDictPluginRegistrant.registerWith(engine, context.getApplicationContext());
         channel = new MethodChannel(
                 engine.getDartExecutor().getBinaryMessenger(),
-                ChannelNames.GAME_STREAM_COMPANION);
+                ChannelNames.SECOND_SCREEN);
         channel.setMethodCallHandler((call, result) -> {
             switch (call.method) {
+                case "launchInfo": {
+                    // Asked first by secondScreenMain to pick what to render.
+                    final Map<String, Object> info = new HashMap<>();
+                    info.put("mode", mode);
+                    final Display display = currentDisplay();
+                    info.put("display",
+                            display == null ? null : SecondScreenDisplay.describe(display));
+                    result.success(info);
+                    break;
+                }
                 case "listen": {
                     dartListening = true;
                     final List<String> backlog = new ArrayList<>(pendingForDart);
@@ -174,10 +191,11 @@ public class GameStreamCompanionActivity extends FlutterActivity
                         return;
                     }
                     final Message message =
-                            Message.obtain(null, GameStreamCompanionRelayService.MSG_TO_HOST);
+                            Message.obtain(null, SecondScreenRelayService.MSG_TO_HOST);
                     final Bundle data = new Bundle();
-                    data.putString(GameStreamCompanionRelayService.KEY_JSON, (String) json);
+                    data.putString(SecondScreenRelayService.KEY_JSON, (String) json);
                     message.setData(data);
+                    message.replyTo = inbox;
                     result.success(sendToRelay(message));
                     break;
                 }
@@ -199,9 +217,9 @@ public class GameStreamCompanionActivity extends FlutterActivity
 
     private boolean onRelayMessage(@NonNull Message message) {
         switch (message.what) {
-            case GameStreamCompanionRelayService.MSG_TO_COMPANION: {
+            case SecondScreenRelayService.MSG_TO_PANEL: {
                 final String json =
-                        message.getData().getString(GameStreamCompanionRelayService.KEY_JSON);
+                        message.getData().getString(SecondScreenRelayService.KEY_JSON);
                 if (json == null) return true;
                 if (!dartListening || channel == null) {
                     pendingForDart.add(json);
@@ -210,7 +228,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
                 }
                 return true;
             }
-            case GameStreamCompanionRelayService.MSG_FINISH:
+            case SecondScreenRelayService.MSG_FINISH:
                 finish();
                 return true;
             default:
@@ -234,11 +252,11 @@ public class GameStreamCompanionActivity extends FlutterActivity
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        // Back belongs to the stream page; the panel never closes itself on it.
+        // Back belongs to the top screen; the panel never closes itself on it.
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) return true;
-        final Message message = Message.obtain(null, GameStreamCompanionRelayService.MSG_KEY);
+        final Message message = Message.obtain(null, SecondScreenRelayService.MSG_KEY);
         final Bundle data = new Bundle();
-        data.putParcelable(GameStreamCompanionRelayService.KEY_EVENT, event);
+        data.putParcelable(SecondScreenRelayService.KEY_EVENT, event);
         message.setData(data);
         sendToRelay(message);
         return true;
@@ -246,16 +264,16 @@ public class GameStreamCompanionActivity extends FlutterActivity
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
-        // Controller sticks / triggers go to the game; mouse wheel and hover
+        // Controller sticks / triggers go to the top screen; mouse wheel and hover
         // stay with this panel's Flutter view.
         if (!event.isFromSource(InputDevice.SOURCE_JOYSTICK)
                 && !event.isFromSource(InputDevice.SOURCE_GAMEPAD)) {
             return super.dispatchGenericMotionEvent(event);
         }
         final Message message =
-                Message.obtain(null, GameStreamCompanionRelayService.MSG_MOTION);
+                Message.obtain(null, SecondScreenRelayService.MSG_MOTION);
         final Bundle data = new Bundle();
-        data.putParcelable(GameStreamCompanionRelayService.KEY_EVENT, event);
+        data.putParcelable(SecondScreenRelayService.KEY_EVENT, event);
         message.setData(data);
         sendToRelay(message);
         return true;
@@ -269,10 +287,15 @@ public class GameStreamCompanionActivity extends FlutterActivity
 
     // ---- Display: close instead of being moved to another display --------
 
-    private int currentDisplayId() {
-        final Display display = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    @Nullable
+    private Display currentDisplay() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                 ? getDisplay()
                 : getWindowManager().getDefaultDisplay();
+    }
+
+    private int currentDisplayId() {
+        final Display display = currentDisplay();
         return display == null ? Display.DEFAULT_DISPLAY : display.getDisplayId();
     }
 
@@ -310,7 +333,7 @@ public class GameStreamCompanionActivity extends FlutterActivity
         if (displayManager != null) displayManager.unregisterDisplayListener(this);
         if (bound) {
             final Message unregister =
-                    Message.obtain(null, GameStreamCompanionRelayService.MSG_UNREGISTER);
+                    Message.obtain(null, SecondScreenRelayService.MSG_UNREGISTER);
             unregister.replyTo = inbox;
             sendToRelay(unregister);
             unbindService(connection);

@@ -39,8 +39,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
-import 'package:fushi/game_stream_companion_main.dart'
-    as game_stream_companion_entrypoint;
+import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
@@ -285,12 +285,12 @@ void popupMain() {
   popup_entrypoint.popupMain();
 }
 
-/// The game stream's lookup panel on a second display (Android
-/// `GameStreamCompanionActivity`). Engines resolve entry points in the root
-/// library, so it is forwarded from here like [popupMain].
+/// The panel on a second display (Android `SecondScreenActivity`): the
+/// companion or the game stream's lookup panel. Engines resolve entry points
+/// in the root library, so it is forwarded from here like [popupMain].
 @pragma('vm:entry-point')
-void gameStreamCompanionMain() {
-  game_stream_companion_entrypoint.gameStreamCompanionMain();
+void secondScreenMain() {
+  second_screen_entrypoint.secondScreenMain();
 }
 
 /// Application execution starts here.
@@ -3366,7 +3366,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               ),
             );
             // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
-            return SmoothWheelScrollScope(child: gated);
+            // 第二块屏：新副屏出现时在主屏问一次「要用这块屏幕吗」（auto 策略）。
+            return SecondScreenApprovalHost(
+              child: SmoothWheelScrollScope(child: gated),
+            );
           },
         ),
       ),

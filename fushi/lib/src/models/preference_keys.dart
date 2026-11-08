@@ -693,6 +693,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'screen_ocr.card_image',
   // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
   'screen_ocr.keep_capture_session',
+  // String（JSON 数组）：auto 策略下用户已同意使用的副屏指纹 `名称|宽dpx高dp`。
+  // 读写见 SecondScreenController。设备本地（deviceLocalPrefKeys）。
+  'second_screen_approved_displays',
+  // String：第二块屏（双屏掌机下屏 / 外接显示器）副屏伴侣启动策略 `auto` / `always` /
+  // `off`，默认 auto。读写见 SecondScreenController。设备本地。
+  'second_screen_mode',
   // string（JSON 数组，最近的在前）：最近打开的设置一级分类（SettingsDestinationId.name），
   // 首页侧栏「设置」速览卡读它（settings_recent_destinations.dart，设备本地）。
   'settings_recent_destinations',

@@ -11,7 +11,7 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
-import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
+import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
@@ -181,7 +181,7 @@ class GameStreamPage extends StatefulWidget {
 
   /// The second display, where the lookup panel goes while one is connected
   /// (null where the platform has none). The caller owns and disposes it.
-  final GameStreamCompanionDisplay? companionDisplay;
+  final GameStreamPanelHost? companionDisplay;
 
   /// Whether to use a second display (persisted by the caller).
   final GameStreamSecondScreen secondScreen;
@@ -412,7 +412,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   // ---- Second display -----------------------------------------------------
 
   Future<void> _startCompanion() async {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     display.displays.addListener(_placeCompanion);
     display.attached.addListener(_onCompanionAttached);
@@ -435,7 +435,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   void _stopCompanion() {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     display.displays.removeListener(_placeCompanion);
     display.attached.removeListener(_onCompanionAttached);
@@ -448,10 +448,9 @@ class _GameStreamPageState extends State<GameStreamPage>
   /// Puts the panel on the first second display when the setting allows it,
   /// or takes it down when it does not (or the display went away).
   void _placeCompanion() {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null || !_companionStarted || !mounted) return;
-    final List<GameStreamCompanionDisplayInfo> displays =
-        display.displays.value;
+    final List<SecondScreenDisplayInfo> displays = display.displays.value;
     final int? target =
         _secondScreen == GameStreamSecondScreen.auto && displays.isNotEmpty
         ? displays.first.id
@@ -563,7 +562,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   /// Sends the panel whatever changed since the last push: the light state
   /// on any change, the result only when it (or its styles) changed.
   void _syncCompanion() {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null || !_companionActive || !mounted) return;
     final GameStreamCompanionState state = _companionState();
     if (state != _sentCompanionState) {
@@ -639,7 +638,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _answerCompanion(GameStreamCompanionRequest request) async {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     final GameStreamLookupController? controller = _lookupController;
     final DictionaryPopupResourceSource? resources = controller?.popupResources;
@@ -1683,7 +1682,7 @@ class _GameStreamPageState extends State<GameStreamPage>
           }
         : null;
     if (companionCommand != null) {
-      final GameStreamCompanionDisplay? display = widget.companionDisplay;
+      final GameStreamPanelHost? display = widget.companionDisplay;
       if (display != null) {
         await _runCompanionCall(
           'command',

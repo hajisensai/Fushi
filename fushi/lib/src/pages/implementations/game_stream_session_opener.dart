@@ -8,7 +8,7 @@ import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart'
     show FushiAppUiScaleNeutralizer;
-import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
+import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -56,7 +56,7 @@ Future<void> openGameStreamSession({
   GameStreamLookupController? lookup;
   FushiGameStreamReceiver? receiver;
   GameStreamInputComposer? input;
-  GameStreamCompanionDisplay? companion;
+  GameStreamPanelHost? companion;
   String? joinedClientId;
   Object? leaveError;
   try {
@@ -98,8 +98,8 @@ Future<void> openGameStreamSession({
       settings: settings,
     );
     // One handle for the whole session: the route builder may run again.
-    final GameStreamCompanionDisplay? activeCompanion =
-        GameStreamCompanionDisplay.forCurrentPlatform();
+    final GameStreamPanelHost? activeCompanion =
+        GameStreamPanelHost.forCurrentPlatform();
     companion = activeCompanion;
     await navigator.push<void>(
       MaterialPageRoute<void>(

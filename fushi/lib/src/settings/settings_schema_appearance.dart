@@ -12,6 +12,7 @@ import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -617,6 +618,36 @@ SettingsDestination buildAppearanceDestination() {
                         .setNavBarStyle(value)
                         .then((_) => settingsContext.refresh()),
             defaultValue: AdaptiveNavBarStyle.defaultStyle,
+          ),
+          // 第二块屏（双屏掌机下屏 / 外接显示器）：只在系统报告有可用副屏时出现。
+          SettingsSegmentedItem<SecondScreenMode>(
+            id: 'appearance.second_screen_mode',
+            title: t.second_screen_setting_title,
+            subtitle: t.second_screen_setting_hint,
+            icon: FushiIcons.devices,
+            visible: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).displayAvailable,
+            options: <SettingsSegmentOption<SecondScreenMode>>[
+              SettingsSegmentOption<SecondScreenMode>(
+                value: SecondScreenMode.auto,
+                label: t.second_screen_mode_auto,
+              ),
+              SettingsSegmentOption<SecondScreenMode>(
+                value: SecondScreenMode.always,
+                label: t.second_screen_mode_always,
+              ),
+              SettingsSegmentOption<SecondScreenMode>(
+                value: SecondScreenMode.off,
+                label: t.second_screen_mode_off,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).mode,
+            onChanged: (SettingsContext c, SecondScreenMode value) => c.ref
+                .read(secondScreenControllerProvider)
+                .setMode(value)
+                .then((_) => c.refresh()),
+            defaultValue: SecondScreenMode.auto,
           ),
           // 「启动页」(id 'appearance.startup_default_dictionary_tab'，前身是开关
           // 「启动时打开查词」) 在「系统 · 通用」分区（它管的是启动落地页/导航行为，

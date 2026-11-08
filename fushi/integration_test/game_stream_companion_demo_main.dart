@@ -12,20 +12,21 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/game_stream_companion_main.dart' as companion;
+import 'package:fushi/second_screen_main.dart' as second_screen;
 import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
-import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
+import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
-/// The companion engine resolves its entry point in the root library.
+/// The second-screen panel engine resolves its entry point in the root
+/// library.
 @pragma('vm:entry-point')
-void gameStreamCompanionMain() => companion.gameStreamCompanionMain();
+void secondScreenMain() => second_screen.secondScreenMain();
 
 void main() {
   if (!kDebugMode) {
@@ -71,8 +72,8 @@ class _DemoAppState extends State<_DemoApp> {
           timestampMs: 1,
         ),
       );
-  final GameStreamCompanionDisplay? _companion =
-      GameStreamCompanionDisplay.forCurrentPlatform();
+  final GameStreamPanelHost? _companion =
+      GameStreamPanelHost.forCurrentPlatform();
 
   @override
   void dispose() {

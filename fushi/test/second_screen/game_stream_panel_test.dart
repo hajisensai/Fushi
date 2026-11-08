@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -9,33 +8,35 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/game_stream_companion_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
-import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
+import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:material_ui/material_ui.dart';
 
-const GameStreamCompanionDisplayInfo _bottomScreen =
-    GameStreamCompanionDisplayInfo(
-      id: 2,
-      name: 'Bottom',
-      width: 1240,
-      height: 1080,
-    );
+const SecondScreenDisplayInfo _bottomScreen = SecondScreenDisplayInfo(
+  id: 2,
+  name: 'Bottom',
+  widthPx: 1240,
+  heightPx: 1080,
+  widthDp: 620,
+  heightDp: 540,
+  densityDpi: 320,
+);
 
-/// Stands in for the Android channel: show() brings the panel up at once.
-class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
-  _FakeCompanionDisplay({List<GameStreamCompanionDisplayInfo>? displays})
-    : _displays = ValueNotifier<List<GameStreamCompanionDisplayInfo>>(
-        displays ?? const <GameStreamCompanionDisplayInfo>[_bottomScreen],
+/// Stands in for the shared host: show() brings the panel up at once.
+class _FakeCompanionDisplay implements GameStreamPanelHost {
+  _FakeCompanionDisplay({List<SecondScreenDisplayInfo>? displays})
+    : _displays = ValueNotifier<List<SecondScreenDisplayInfo>>(
+        displays ?? const <SecondScreenDisplayInfo>[_bottomScreen],
       );
 
-  final ValueNotifier<List<GameStreamCompanionDisplayInfo>> _displays;
+  final ValueNotifier<List<SecondScreenDisplayInfo>> _displays;
   final ValueNotifier<bool> _attached = ValueNotifier<bool>(false);
   final StreamController<GameStreamCompanionMessage> _messages =
       StreamController<GameStreamCompanionMessage>.broadcast();
-  final GameStreamCompanionResets _resets = GameStreamCompanionResets();
+  final SecondScreenResets _resets = SecondScreenResets();
   final List<int> shown = <int>[];
 
   /// False: [show] only launches; the panel comes up on [attachPanel].
@@ -45,8 +46,7 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
       <GameStreamCompanionHostMessage>[];
 
   @override
-  ValueListenable<List<GameStreamCompanionDisplayInfo>> get displays =>
-      _displays;
+  ValueListenable<List<SecondScreenDisplayInfo>> get displays => _displays;
 
   @override
   ValueListenable<bool> get attached => _attached;
@@ -80,7 +80,7 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
   /// `companionReset`): nothing is up, the current displays are pushed.
   void reset() {
     _attached.value = false;
-    _displays.value = List<GameStreamCompanionDisplayInfo>.of(_displays.value);
+    _displays.value = List<SecondScreenDisplayInfo>.of(_displays.value);
     _resets.fire();
   }
 
@@ -99,7 +99,7 @@ class _FakeCompanionDisplay implements GameStreamCompanionDisplay {
   void fromCompanion(GameStreamCompanionMessage message) =>
       _messages.add(GameStreamCompanionMessage.decode(message.encode()));
 
-  void setDisplays(List<GameStreamCompanionDisplayInfo> displays) =>
+  void setDisplays(List<SecondScreenDisplayInfo> displays) =>
       _displays.value = displays;
 
   /// The panel went away on its own (crash, closed itself, Activity torn
@@ -366,15 +366,13 @@ void main() {
   ) async {
     final _Harness h = await _Harness.pump(tester);
     expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
-    h.display.setDisplays(const <GameStreamCompanionDisplayInfo>[]);
+    h.display.setDisplays(const <SecondScreenDisplayInfo>[]);
     await tester.pumpAndSettle();
     expect(h.display.dismissed, 1);
     expect(find.byKey(GameStreamPage.transcriptKey), findsOneWidget);
 
     // Plugged back in: the panel returns.
-    h.display.setDisplays(const <GameStreamCompanionDisplayInfo>[
-      _bottomScreen,
-    ]);
+    h.display.setDisplays(const <SecondScreenDisplayInfo>[_bottomScreen]);
     await tester.pumpAndSettle();
     expect(h.display.shown, <int>[_bottomScreen.id, _bottomScreen.id]);
     expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
@@ -403,7 +401,7 @@ void main() {
     expect(h.display.shown, <int>[_bottomScreen.id]);
     // The recreated Activity pushes the current displays (a new list, as the
     // channel decodes one per call).
-    h.display.setDisplays(<GameStreamCompanionDisplayInfo>[_bottomScreen]);
+    h.display.setDisplays(<SecondScreenDisplayInfo>[_bottomScreen]);
     await tester.pumpAndSettle();
     expect(h.display.shown, <int>[_bottomScreen.id, _bottomScreen.id]);
   });
@@ -441,7 +439,7 @@ void main() {
     final _Harness h = await _Harness.pump(
       tester,
       display: _FakeCompanionDisplay(
-        displays: const <GameStreamCompanionDisplayInfo>[],
+        displays: const <SecondScreenDisplayInfo>[],
       ),
     );
     expect(h.display.shown, isEmpty);
@@ -558,73 +556,6 @@ void main() {
           const GameStreamCompanionResult(revision: 2).encode(),
         );
         expect(controller.result, isNull);
-      },
-    );
-  });
-
-  group('MethodChannelGameStreamCompanionDisplay', () {
-    test(
-      'companionReset voids the placement even with no attached edge',
-      () async {
-        TestWidgetsFlutterBinding.ensureInitialized();
-        const MethodChannel channel = MethodChannel(
-          'test/game_stream_companion',
-        );
-        final TestDefaultBinaryMessenger messenger =
-            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-        messenger.setMockMethodCallHandler(
-          channel,
-          (MethodCall call) async => call.method == 'listDisplays'
-              ? <Object?>[
-                  <String, Object?>{
-                    'id': 2,
-                    'name': 'Bottom',
-                    'width': 1,
-                    'height': 1,
-                  },
-                ]
-              : null,
-        );
-        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-        final Directory spills = Directory.systemTemp.createTempSync(
-          'gs_spill',
-        );
-        addTearDown(() {
-          if (spills.existsSync()) spills.deleteSync(recursive: true);
-        });
-        final MethodChannelGameStreamCompanionDisplay display =
-            MethodChannelGameStreamCompanionDisplay(
-              channel: channel,
-              spillRoot: spills,
-            );
-        await display.start();
-        int resets = 0;
-        int attachedEdges = 0;
-        display.resets.addListener(() => resets++);
-        display.attached.addListener(() => attachedEdges++);
-
-        Future<void> fromPlatform(String method, Object? arguments) =>
-            messenger.handlePlatformMessage(
-              channel.name,
-              channel.codec.encodeMethodCall(MethodCall(method, arguments)),
-              (ByteData? _) {},
-            );
-
-        // A launch that never registered: nothing attached, same displays.
-        await fromPlatform('companionReset', <Object?>[
-          <String, Object?>{'id': 2, 'name': 'Bottom', 'width': 1, 'height': 1},
-        ]);
-        expect(resets, 1, reason: 'Fires without any attached edge');
-        expect(attachedEdges, 0);
-        expect(display.displays.value.single.id, 2);
-
-        // An attached panel is reported gone by the reset itself.
-        await fromPlatform('companionAttached', true);
-        expect(display.attached.value, isTrue);
-        await fromPlatform('companionReset', <Object?>[]);
-        expect(display.attached.value, isFalse);
-        expect(display.displays.value, isEmpty);
-        expect(resets, 2);
       },
     );
   });
