@@ -744,6 +744,11 @@ class AnotherPopupPart {
           'Library panorama glyph atlas: words are rasterized once at the atlas em size into GPU sprites (3D content scaled per frame by the Rust core), not page chrome.',
       'lib/src/media/panorama/panorama_book_flip.dart':
           'Library panorama book flip: the opened page lays out vertical body text sized from the page height (book content), not page chrome.',
+      'lib/src/pages/implementations/srs_calibration_charts.dart':
+          'SRS calibration / UM+ chart painters draw the low-emphasis data dots '
+          'with the tonal role directly on the plot canvas; the dots are chart '
+          'content (same class as the allowlisted reading/video statistics '
+          'pages), not page chrome.',
       'lib/src/pages/implementations/srs/srs_field_editors.dart':
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
@@ -1344,6 +1349,9 @@ class AnotherPopupPart {
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
       'lib/src/media/panorama/panorama_atlas.dart': <String>{'fontSize:'},
       'lib/src/media/panorama/panorama_book_flip.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/srs_calibration_charts.dart': <String>{
+        'surfaceContainerLow',
+      },
       'lib/src/pages/implementations/srs/srs_field_editors.dart': <String>{
         'fontSize:',
       },
