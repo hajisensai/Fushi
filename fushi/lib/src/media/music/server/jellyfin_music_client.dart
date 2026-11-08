@@ -13,7 +13,8 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 
-class JellyfinMusicClient implements MusicServerBrowser {
+class JellyfinMusicClient
+    implements MusicServerBrowser, MusicServerPlaylistEditing {
   JellyfinMusicClient(this.config, {http.Client? httpClient})
     : _api = JellyfinApi(
         serverUrl: config.effectiveServerUrl,
@@ -27,7 +28,7 @@ class JellyfinMusicClient implements MusicServerBrowser {
 
   static const String _albumFields = 'ChildCount,ProductionYear,AlbumArtist';
   static const String _trackFields = 'MediaStreams,MediaSources,Container';
-  static const String _playlistFields = 'ChildCount,Overview';
+  static const String _playlistFields = 'ChildCount,Overview,CanDelete';
 
   String get _userPath => '/Users/${config.userId}';
 
@@ -168,10 +169,105 @@ class JellyfinMusicClient implements MusicServerBrowser {
     // `/Playlists/{id}/Items` 按歌单自身顺序返回（不传 SortBy，Jellyfin / Emby 都如此）。
     final Object? json = await _api.getDecodedJson(
       '/Playlists/${Uri.encodeComponent(playlistId)}/Items',
-      <String, String>{'UserId': config.userId, 'Fields': _trackFields},
+      <String, String>{
+        'UserId': config.userId,
+        // Path：导出 .m3u8 用（服务器只对有权限的账号报）。
+        'Fields': '$_trackFields,Path',
+      },
     );
     return parseJellyfinPlaylistTracks(json);
   }
+
+  // ---------------------------------------------------------------------------
+  // 歌单编辑（[MusicServerPlaylistEditing]）。参数同时按查询串发（Emby 与旧版 Jellyfin
+  // 只认查询串），新建再带一份 JSON 体（新版 Jellyfin 优先读体）。
+  // ---------------------------------------------------------------------------
+
+  String _playlistPath(String playlistId) =>
+      '/Playlists/${Uri.encodeComponent(playlistId)}';
+
+  @override
+  Future<MusicServerPlaylist> createPlaylist(
+    String name, {
+    List<String> trackIds = const <String>[],
+  }) async {
+    final Object? json = await _api.sendJson(
+      'POST',
+      '/Playlists',
+      query: <String, String>{
+        'Name': name,
+        'UserId': config.userId,
+        'MediaType': 'Audio',
+        if (trackIds.isNotEmpty) 'Ids': trackIds.join(','),
+      },
+      body: <String, Object?>{
+        'Name': name,
+        'UserId': config.userId,
+        'MediaType': 'Audio',
+        'Ids': trackIds,
+      },
+    );
+    final String? id = json is Map<String, Object?>
+        ? json['Id'] as String?
+        : null;
+    if (id == null || id.isEmpty) {
+      throw StateError('server did not return the new playlist id');
+    }
+    return MusicServerPlaylist(
+      id: id,
+      title: name,
+      trackCount: trackIds.length,
+      editable: true,
+    );
+  }
+
+  @override
+  Future<void> addToPlaylist(String playlistId, List<String> trackIds) async {
+    if (trackIds.isEmpty) return;
+    await _api.sendJson(
+      'POST',
+      '${_playlistPath(playlistId)}/Items',
+      query: <String, String>{
+        'Ids': trackIds.join(','),
+        'UserId': config.userId,
+      },
+    );
+  }
+
+  @override
+  Future<void> removeFromPlaylist(
+    String playlistId,
+    List<String> entryIds,
+  ) async {
+    if (entryIds.isEmpty) return;
+    await _api.sendJson(
+      'DELETE',
+      '${_playlistPath(playlistId)}/Items',
+      query: <String, String>{'EntryIds': entryIds.join(',')},
+    );
+  }
+
+  @override
+  Future<void> movePlaylistEntry(
+    String playlistId,
+    String entryId,
+    int newIndex,
+  ) => _api.sendJson(
+    'POST',
+    '${_playlistPath(playlistId)}/Items/${Uri.encodeComponent(entryId)}'
+        '/Move/$newIndex',
+  );
+
+  @override
+  Future<void> renamePlaylist(String playlistId, String name) => _api.sendJson(
+    'POST',
+    _playlistPath(playlistId),
+    body: <String, Object?>{'Name': name},
+  );
+
+  @override
+  Future<void> deletePlaylist(String playlistId) =>
+      _api.sendJson('DELETE', '/Items/${Uri.encodeComponent(playlistId)}');
 
   @override
   Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {

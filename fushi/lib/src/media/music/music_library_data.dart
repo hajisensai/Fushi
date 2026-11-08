@@ -13,6 +13,7 @@ class MusicLibrarySnapshot {
     required this.artists,
     required this.playlists,
     List<MusicDiscSourceRow> discs = const <MusicDiscSourceRow>[],
+    this.playlistTrackCounts = const <String, int>{},
   }) : albumByUid = <String, MusicAlbumRow>{
          for (final MusicAlbumRow a in albums) a.albumUid: a,
        },
@@ -34,6 +35,9 @@ class MusicLibrarySnapshot {
   final List<MusicTrackRow> tracks;
   final List<MusicArtistRow> artists;
   final List<MusicPlaylistRow> playlists;
+
+  /// 各本地歌单的条目数（歌单 uid → 条数；没有条目的歌单不在里面）。
+  final Map<String, int> playlistTrackCounts;
   final Map<String, MusicAlbumRow> albumByUid;
 
   /// 光盘来源（`music_disc_sources`）：盘是一张带 `DVD` / `BD` 角标的专辑（§9.2）。
@@ -70,6 +74,7 @@ class MusicLibrarySnapshot {
         artists: await db.listMusicArtists(),
         playlists: await db.listMusicPlaylists(),
         discs: await db.listMusicDiscSources(),
+        playlistTrackCounts: await db.musicPlaylistEntryCounts(),
       );
 }
 

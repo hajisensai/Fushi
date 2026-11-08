@@ -21,6 +21,7 @@ pub mod fingerprint;
 pub mod legacy_text;
 pub mod lyrics;
 pub mod mp4_chapters;
+pub mod playlist;
 #[cfg(feature = "plugin")]
 pub mod plugin;
 pub mod remote;
@@ -32,7 +33,7 @@ pub mod wire;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
 /// 批次二进制格式（[wire::BATCH_FORMAT_VERSION]）变化也必须升这里。
-pub const ABI_VERSION: i32 = 2;
+pub const ABI_VERSION: i32 = 3;
 
 /// 各导出函数共用的返回码。
 pub mod status {
@@ -303,6 +304,43 @@ pub unsafe extern "C" fn ffm_remote_scan_close(handle: *mut remote::RemoteScanne
     if !handle.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(handle))));
     }
+}
+
+/// 解析一份播放列表文件（`.m3u` / `.m3u8`）的原始字节（[playlist::parse]）。`base` 是列表
+/// 文件所在目录（UTF-8，相对条目按它拼）；空串 = 没有目录（远程来源 / 只看名字），相对
+/// 条目原样交回。输出：`opt_str name | u32 count | str entry*count`（[playlist::write_parsed]）。
+///
+/// # Safety
+/// `bytes_ptr` 指向 `bytes_len` 字节、`base_ptr` 指向 `base_len` 字节；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_playlist_parse(
+    bytes_ptr: *const u8,
+    bytes_len: usize,
+    base_ptr: *const u8,
+    base_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (Some(bytes), Some(base)) = (
+            slice_arg(bytes_ptr, bytes_len),
+            slice_arg(base_ptr, base_len),
+        ) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Ok(base) = std::str::from_utf8(base) else {
+            return status::INVALID_ARGUMENT;
+        };
+        let base_dir = (!base.is_empty()).then(|| std::path::Path::new(base));
+        let parsed = playlist::parse(bytes, base_dir);
+        let mut w = wire::Writer::new();
+        playlist::write_parsed(&mut w, &parsed);
+        hand_over_bytes(w.into_bytes(), out_ptr, out_len);
+        status::OK
+    })
 }
 
 /// 取一个音频文件的内嵌封面（第一张 front cover，没有则第一张图）。没有封面时

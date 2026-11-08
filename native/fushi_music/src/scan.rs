@@ -10,6 +10,7 @@ use std::path::{Component, Path, PathBuf, Prefix};
 use std::time::UNIX_EPOCH;
 
 use crate::cue::{self, CueSheet, CueTrack};
+use crate::playlist;
 use crate::tags::{self, FileMeta};
 use crate::uid::{self, AudioFingerprint};
 use crate::wire::{self, Credit, KnownFiles, Record, TrackRecord};
@@ -33,6 +34,9 @@ enum Item {
         cue_path: PathBuf,
         cue_mtime_ms: i64,
         folder_cover: Option<String>,
+    },
+    Playlist {
+        path: PathBuf,
     },
     Error {
         path: PathBuf,
@@ -267,6 +271,10 @@ impl Scanner {
             }
         }
         for f in &files {
+            if playlist::is_playlist_extension(&ext_lower(f)) {
+                items.push(Item::Playlist { path: f.clone() });
+                continue;
+            }
             if covered.contains(f) || !tags::is_audio_extension(&ext_lower(f)) {
                 continue;
             }
@@ -290,6 +298,20 @@ impl Scanner {
                 path: path_str(&path),
                 message,
             }],
+            Item::Playlist { path } => {
+                let read = fs::read(&path).and_then(|b| fs::metadata(&path).map(|m| (b, m)));
+                match read {
+                    Ok((bytes, meta)) => vec![Record::Playlist {
+                        path: path_str(&path),
+                        mtime_ms: mtime_ms(&meta),
+                        playlist: playlist::parse(&bytes, path.parent()),
+                    }],
+                    Err(e) => vec![Record::Error {
+                        path: path_str(&path),
+                        message: e.to_string(),
+                    }],
+                }
+            }
             Item::Audio { path, folder_cover } => {
                 let ps = path_str(&path);
                 let fs_meta = match fs::metadata(&path) {
@@ -388,7 +410,7 @@ impl Scanner {
 
 fn item_path(i: &Item) -> &Path {
     match i {
-        Item::Audio { path, .. } | Item::Error { path, .. } => path,
+        Item::Audio { path, .. } | Item::Error { path, .. } | Item::Playlist { path } => path,
         Item::Cue { audio, .. } => audio,
     }
 }

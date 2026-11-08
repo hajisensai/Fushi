@@ -13,6 +13,8 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
+    show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -49,7 +51,8 @@ void openMusicTrackDetail(BuildContext context, String trackUid) {
   );
 }
 
-/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情。
+/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 加入歌单 / 曲目详情。触屏没有右键：
+/// 「加入歌单」在曲目详情页（长按进入）也有。
 MusicItemMenu musicLocalTrackMenu(
   BuildContext context,
   MusicTrackRow track, {
@@ -67,6 +70,13 @@ MusicItemMenu musicLocalTrackMenu(
           label: t.music_play_all,
           icon: FushiIcons.play,
           run: (_) async => onPlay(),
+        ),
+        MusicMenuAction(
+          id: 'addToPlaylist',
+          label: t.music_action_add_to_playlist,
+          icon: FushiIcons.playlist,
+          run: (BuildContext c) =>
+              musicAddLocalTracksToPlaylist(c, <String>[track.trackUid]),
         ),
         MusicMenuAction(
           id: 'detail',

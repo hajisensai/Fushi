@@ -1109,6 +1109,36 @@ class JellyfinApi {
   Future<Object?> getDecodedJson(String path, [Map<String, String>? query]) =>
       _getDecoded(path, query);
 
+  /// 写请求（POST / DELETE）：同一份认证头 / 超时 / 凭据脱敏，给音乐歌单编辑用
+  /// （`jellyfin_music_client.dart`）。[body] 非空时按 JSON 发；响应体是 JSON 时解码返回，
+  /// 空体（204）返回 null。非 2xx 抛 [JellyfinApiException]。
+  Future<Object?> sendJson(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Object? body,
+  }) async {
+    try {
+      final http.Request req = http.Request(method, _uri(path, query))
+        ..headers.addAll(_headers);
+      if (body != null) req.body = jsonEncode(body);
+      final http.Response res = await http.Response.fromStream(
+        await _client.send(req).timeout(kRequestTimeout),
+      ).timeout(kRequestTimeout);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw JellyfinApiException.fromResponse(res, path);
+      }
+      if (res.bodyBytes.isEmpty) return null;
+      try {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } on FormatException {
+        return null;
+      }
+    } on http.ClientException catch (e) {
+      throw Exception(redactCredentialsInText(e.toString()));
+    }
+  }
+
   /// [_getDecoded] 的「指定根地址」版（连接探测要在候选根地址之间试，见
   /// [probeServer]）。
   Future<Object?> _getDecodedAt(

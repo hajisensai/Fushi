@@ -312,7 +312,8 @@ void main() {
       expect(p1.trackCount, 3);
       expect(p1.durationMs, 540000);
       expect(p1.coverRef, 'p1');
-      expect(p1.editable, isFalse);
+      // 服务器没报 CanDelete（兼容层）时按可改处理，真没权限由服务器拒绝。
+      expect(p1.editable, isTrue);
 
       final MusicServerPage<MusicServerPlaylist> second = await mb
           .listPlaylists(offset: 2, limit: 2);

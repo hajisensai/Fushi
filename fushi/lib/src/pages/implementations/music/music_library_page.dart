@@ -33,6 +33,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicPlaylistTarget, musicCreatePlaylist;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicBarReserve, MusicFloatingBarHost;
@@ -71,6 +75,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
+    show FushiButtonSize;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -344,6 +350,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicTracks,
                 db.musicAlbums,
                 db.musicPlaylists,
+                db.musicPlaylistEntries,
                 db.musicDiscSources,
                 db.musicPlayEvents,
               ],
@@ -933,7 +940,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       );
     }
     if (accountPlaylists) {
-      return _playlistsWithAccounts(context, accountLists, snap.playlists);
+      return _playlistsWithAccounts(
+        context,
+        accountLists,
+        snap.playlists,
+        snap.playlistTrackCounts,
+      );
     }
     return _localSection(context, _section, snap);
   }
@@ -974,9 +986,13 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 child: FushiPlaceholderMessage(
                   icon: FushiIcons.playlist,
                   message: t.music_playlists_empty,
+                  action: const _LocalPlaylistActions(),
                 ),
               )
-            : _PlaylistList(playlists: snap.playlists),
+            : _PlaylistList(
+                playlists: snap.playlists,
+                counts: snap.playlistTrackCounts,
+              ),
     };
   }
 
@@ -996,6 +1012,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     BuildContext context,
     List<MusicPluginManifest> accounts,
     List<MusicPlaylistRow> local,
+    Map<String, int> localCounts,
   ) {
     final List<Widget> blocks = <Widget>[
       for (final MusicPluginManifest m in accounts)
@@ -1004,10 +1021,19 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           manifest: m,
         ),
       _groupTitle(context, t.music_playlists_local),
+      const Align(
+        alignment: Alignment.centerLeft,
+        child: _LocalPlaylistActions(),
+      ),
       if (local.isEmpty)
         Text(t.music_playlists_empty, style: context.fushiType.bodySmall)
       else
-        _PlaylistList(playlists: local, shrinkWrap: true),
+        _PlaylistList(
+          playlists: local,
+          counts: localCounts,
+          shrinkWrap: true,
+          showActions: false,
+        ),
     ];
     return FushiEntranceScope(
       child: ListView.builder(
@@ -1240,15 +1266,94 @@ class _ArtistList extends StatelessWidget {
   }
 }
 
+/// 打开一个本地歌单。
+void _openLocalPlaylist(BuildContext context, String uid, {String? title}) =>
+    unawaited(
+      Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) =>
+              MusicLocalPlaylistPage(playlistUid: uid, initialTitle: title),
+        ),
+      ),
+    );
+
+/// 本地歌单的「新建歌单」「导入歌单文件」：建好 / 导入后直接打开（曲库页跟着表变更流刷新）。
+class _LocalPlaylistActions extends ConsumerWidget {
+  const _LocalPlaylistActions();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiDatabase db = ref.read(appProvider).database;
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: <Widget>[
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('music-local-playlist-new'),
+            size: FushiButtonSize.s,
+            onPressed: () async {
+              try {
+                final MusicPlaylistTarget? p = await musicCreatePlaylist(
+                  context,
+                  LocalMusicPlaylistEditor(db),
+                );
+                if (p == null || !context.mounted) return;
+                FushiToast.show(
+                  msg: t.music_action_playlist_created(name: p.title),
+                  severity: ToastSeverity.success,
+                );
+                _openLocalPlaylist(context, p.id, title: p.title);
+              } on Object catch (e) {
+                FushiToast.show(
+                  msg: musicPlaylistErrorText(e),
+                  severity: ToastSeverity.error,
+                );
+              }
+            },
+            icon: const FushiIcon(FushiIcons.add),
+            label: Text(t.music_action_new_playlist),
+          ),
+        ),
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('music-local-playlist-import'),
+            size: FushiButtonSize.s,
+            onPressed: () async {
+              final String? uid = await musicImportPlaylistFile(db);
+              if (uid == null || !context.mounted) return;
+              _openLocalPlaylist(context, uid);
+            },
+            icon: const FushiIcon(FushiIcons.folderOpen),
+            label: Text(t.music_action_import_playlist),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _PlaylistList extends StatelessWidget {
-  const _PlaylistList({required this.playlists, this.shrinkWrap = false});
+  const _PlaylistList({
+    required this.playlists,
+    required this.counts,
+    this.shrinkWrap = false,
+    this.showActions = true,
+  });
 
   final List<MusicPlaylistRow> playlists;
+  final Map<String, int> counts;
   final bool shrinkWrap;
+
+  /// 列表顶部放「新建 / 导入」（和账号歌单混排时由外层放，这里不放）。
+  final bool showActions;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int head = showActions ? 1 : 0;
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
@@ -1265,17 +1370,33 @@ class _PlaylistList extends StatelessWidget {
                   tokens.spacing.section,
                 ),
               ),
-        itemCount: playlists.length,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+        itemCount: playlists.length + head,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int j) {
+          if (j < head) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: const Align(
+                alignment: Alignment.centerLeft,
+                child: _LocalPlaylistActions(),
+              ),
+            );
+          }
+          final int i = j - head;
           final MusicPlaylistRow p = playlists[i];
           return FushiPressScale(
             child: FushiGroupedListItem(
               key: ValueKey<String>('music-playlist-${p.playlistUid}'),
               index: i,
               count: playlists.length,
+              onTap: () =>
+                  _openLocalPlaylist(context, p.playlistUid, title: p.name),
               child: FushiListItem(
                 leading: const FushiListLeadingIcon(FushiIcons.playlist),
                 title: Text(p.name),
+                subtitle: Text(
+                  t.music_tracks_count(count: counts[p.playlistUid] ?? 0),
+                ),
+                trailing: const FushiIcon(FushiIcons.chevronRight),
               ),
             ),
           );
