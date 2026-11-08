@@ -339,6 +339,7 @@ class CompanionLibraryPage {
     this.total,
     this.hasMore = false,
     this.title,
+    this.nextOffset,
   });
 
   factory CompanionLibraryPage.fromJson(Map<String, Object?> json) =>
@@ -348,6 +349,7 @@ class CompanionLibraryPage {
         total: json.intOrNull('total'),
         hasMore: json.flag('hasMore'),
         title: json.strOrNull('title'),
+        nextOffset: json.intOrNull('nextOffset'),
       );
 
   final List<CompanionLibraryItem> items;
@@ -360,6 +362,14 @@ class CompanionLibraryPage {
   /// The container's title (for a `parent` list).
   final String? title;
 
+  /// The `offset` to ask for next when it is not `offset + items.length`:
+  /// media servers page by server rows (rows the app filters out still count)
+  /// and Audiobookshelf by whole pages. Null = `offset + items.length`.
+  final int? nextOffset;
+
+  /// The offset of the next page ([nextOffset] or `offset + items.length`).
+  int get followingOffset => nextOffset ?? offset + items.length;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'items': <Map<String, Object?>>[
       for (final CompanionLibraryItem i in items) i.toJson(),
@@ -368,6 +378,7 @@ class CompanionLibraryPage {
     if (total != null) 'total': total,
     if (hasMore) 'hasMore': true,
     if (title != null) 'title': title,
+    if (nextOffset != null) 'nextOffset': nextOffset,
   };
 }
 
