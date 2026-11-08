@@ -157,6 +157,8 @@ class CompanionBridge {
     if (_started || _disposed || _host == null) return;
     _started = true;
     _controller.addListener(_onControllerChanged);
+    _contexts.setActive(_controller.isActive);
+    _contexts.bindLookupSink(sendLookup);
     _contexts.addListener(_onContextChanged);
     _nowPlaying?.addListener(_onNowPlayingChanged);
     _messages = _host.messages.listen(_onHostMessage);
@@ -288,6 +290,7 @@ class CompanionBridge {
   }
 
   void _onControllerChanged() {
+    _contexts.setActive(_controller.isActive);
     if (_controller.isActive) return;
     // The panel is gone or the screen was taken: wait for the next "ready".
     _panelReady = false;
@@ -389,6 +392,8 @@ class CompanionBridge {
     _disposed = true;
     _dayTimer?.cancel();
     if (_started) {
+      _contexts.setActive(false);
+      _contexts.bindLookupSink(null);
       _controller.removeListener(_onControllerChanged);
       _contexts.removeListener(_onContextChanged);
       _nowPlaying?.removeListener(_onNowPlayingChanged);

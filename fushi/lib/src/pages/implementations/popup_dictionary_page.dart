@@ -49,6 +49,8 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.closeInApp,
     this.autoSearchOnOpen = true,
     this.showSearchBar = true,
+    this.embedded = false,
+    this.onMined,
     super.key,
   });
 
@@ -98,6 +100,15 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 「4.1」轻形态：点字直接出词卡、无搜索输入框；关闭按钮仍恒可用（独立渲染，不随
   /// 搜索栏隐藏）。源文本面板（[SourceLookupTextPanel]）不受此参数影响，保留点选重查。
   final bool showSearchBar;
+
+  /// Dual-screen companion: the card fills its host (the companion's Lookup
+  /// tab) instead of floating at the top of a transparent full-screen window;
+  /// there is no tap-outside-to-close layer (nothing is behind it).
+  final bool embedded;
+
+  /// Called with the outcome of every mining attempt made from this page
+  /// (the companion tells the main screen a card was mined).
+  final void Function(MinePopupResult result)? onMined;
 
   @override
   ConsumerState<PopupDictionaryPage> createState() =>
@@ -479,7 +490,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       );
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
-      onMineEntry(_withSourceSentence(fields));
+      _reportMined(onMineEntry(_withSourceSentence(fields)));
+
+  Future<MinePopupResult> _reportMined(Future<MinePopupResult> pending) async {
+    final MinePopupResult result = await pending;
+    widget.onMined?.call(result);
+    return result;
+  }
 
   Future<MinePopupResult> _updateBaseEntry(
     int noteId,
@@ -511,6 +528,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Widget _buildOuterContainer() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
+    if (widget.embedded) {
+      return Padding(padding: EdgeInsets.all(gap), child: _buildCard(tokens));
+    }
     return Stack(
       children: <Widget>[
         // 透明背景：点击卡片外部关闭弹窗（背后是触发查词的其它 app 画面）。
@@ -906,8 +926,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 嵌套层的词从释义正文点出来：例句是被点处那一句（反馈 TnKWBi4C-9）。
       onMineEntry: isBase
           ? _mineBaseEntry
-          : (Map<String, String> fields) => onMineEntry(
-              withFallbackMiningSentence(fields, entry.contextSentence),
+          : (Map<String, String> fields) => _reportMined(
+              onMineEntry(
+                withFallbackMiningSentence(fields, entry.contextSentence),
+              ),
             ),
       onUpdateEntry: isBase
           ? _updateBaseEntry

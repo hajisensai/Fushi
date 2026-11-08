@@ -1,5 +1,8 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_lookup_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_tabs.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
@@ -14,22 +17,35 @@ enum CompanionTab { now, library, lookup, settings }
 /// panel (gesture / nav bar of its display) pops the current tab; at a tab's
 /// root it does nothing (the panel's lifetime belongs to the main screen). A
 /// new context on top refreshes Now's content but never switches the tab.
-class CompanionShell extends StatefulWidget {
+///
+/// A lookup made on the main screen surfaces here (the top screen shows no
+/// popup): the shell switches to the Lookup tab, and closing that lookup
+/// goes back to the tab it came from (unless the user picked another tab
+/// meanwhile).
+class CompanionShell extends ConsumerStatefulWidget {
   const CompanionShell({
     this.contextPanels =
         const <CompanionContextKind, CompanionContextPanelBuilder>{},
+    this.lookupTab = const CompanionLookupTab(),
     super.key,
   });
+
+  /// The Lookup tab's root (tests pass one with a stand-in dictionary).
+  final Widget lookupTab;
 
   /// Now tab panels per media context (S3).
   final Map<CompanionContextKind, CompanionContextPanelBuilder> contextPanels;
 
   @override
-  State<CompanionShell> createState() => CompanionShellState();
+  ConsumerState<CompanionShell> createState() => CompanionShellState();
 }
 
-class CompanionShellState extends State<CompanionShell> {
+class CompanionShellState extends ConsumerState<CompanionShell> {
   CompanionTab _tab = CompanionTab.now;
+
+  /// The tab a main-screen lookup switched away from; null when the user
+  /// is where they chose to be.
+  CompanionTab? _beforeLookup;
 
   final Map<CompanionTab, GlobalKey<NavigatorState>> _navigators =
       <CompanionTab, GlobalKey<NavigatorState>>{
@@ -45,11 +61,43 @@ class CompanionShellState extends State<CompanionShell> {
 
   /// Switches to [next]; the current tab again goes back to its root.
   void select(CompanionTab next) {
+    _beforeLookup = null;
     if (next == _tab) {
       navigatorOf(next)?.popUntil((Route<Object?> route) => route.isFirst);
       return;
     }
     setState(() => _tab = next);
+  }
+
+  void _onLookupChanged(
+    CompanionLookupController? previous,
+    CompanionLookupController lookup,
+  ) {
+    if (lookup.arrivals != _seenArrivals) {
+      _seenArrivals = lookup.arrivals;
+      if (_tab != CompanionTab.lookup) {
+        final CompanionTab from = _tab;
+        navigatorOf(
+          CompanionTab.lookup,
+        )?.popUntil((Route<Object?> route) => route.isFirst);
+        setState(() => _tab = CompanionTab.lookup);
+        _beforeLookup = from;
+      }
+      return;
+    }
+    final CompanionTab? back = _beforeLookup;
+    if (lookup.current == null && back != null && _tab == CompanionTab.lookup) {
+      _beforeLookup = null;
+      setState(() => _tab = back);
+    }
+  }
+
+  int _seenArrivals = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _seenArrivals = ref.read(companionLookupControllerProvider).arrivals;
   }
 
   /// Back: pops the current tab's history (nothing at its root).
@@ -58,7 +106,7 @@ class CompanionShellState extends State<CompanionShell> {
   Widget _root(CompanionTab tab) => switch (tab) {
     CompanionTab.now => CompanionNowTab(contextPanels: widget.contextPanels),
     CompanionTab.library => const CompanionLibraryTab(),
-    CompanionTab.lookup => const CompanionLookupTab(),
+    CompanionTab.lookup => widget.lookupTab,
     CompanionTab.settings => const CompanionSettingsTab(),
   };
 
@@ -87,6 +135,10 @@ class CompanionShellState extends State<CompanionShell> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<CompanionLookupController>(
+      companionLookupControllerProvider,
+      _onLookupChanged,
+    );
     return PopScope<Object?>(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? _) {

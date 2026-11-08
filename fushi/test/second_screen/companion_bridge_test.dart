@@ -361,4 +361,17 @@ void main() {
     expect(bridge.lookupOpen.value, isFalse);
     expect(await bridge.sendLookup(text: '猫'), isFalse);
   });
+
+  test('pages route lookups through the registry: active mirrors the '
+      'controller, the sink is the bridge', () async {
+    await ready();
+    drain();
+    expect(contexts.active.value, isTrue);
+    expect(await contexts.routeLookup(text: '猫がいる', charIndex: 0), isTrue);
+    expect((drain().single as CompanionLookupMessage).text, '猫がいる');
+    platform.detach();
+    expect(contexts.active.value, isFalse);
+    expect(await contexts.routeLookup(text: '猫'), isFalse);
+    expect(drain(), isEmpty);
+  });
 }

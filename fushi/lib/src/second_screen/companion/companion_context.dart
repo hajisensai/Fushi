@@ -8,6 +8,15 @@ import 'package:material_ui/material_ui.dart';
 typedef CompanionCommandHandler =
     void Function(String action, Map<String, Object?> args);
 
+/// Shows a main-screen lookup on the companion (the bridge's `sendLookup`);
+/// false when the companion did not take it.
+typedef CompanionLookupSink =
+    Future<bool> Function({
+      required String text,
+      int charIndex,
+      String? sentence,
+    });
+
 class _Claim {
   _Claim({
     required this.owner,
@@ -18,7 +27,7 @@ class _Claim {
 
   final Object owner;
   CompanionContext context;
-  final Route<Object?>? route;
+  Route<Object?>? route;
   CompanionCommandHandler? onCommand;
   Map<String, Object?>? snapshot;
 }
@@ -54,6 +63,37 @@ class CompanionContextRegistry extends ChangeNotifier {
 
   late _Resolved _current;
   int _snapshotRevision = 0;
+  final ValueNotifier<bool> _active = ValueNotifier<bool>(false);
+
+  /// The companion panel is up and wanted (mirrored by the companion bridge
+  /// from `SecondScreenController.isActive`). Pages keep their snapshot
+  /// timers and lookup routing off while this is false, so single-screen
+  /// devices pay nothing.
+  ValueListenable<bool> get active => _active;
+
+  /// The companion bridge's mirror of `SecondScreenController.isActive`.
+  void setActive(bool value) => _active.value = value;
+
+  CompanionLookupSink? _lookupSink;
+
+  /// Where [routeLookup] sends lookups (the companion bridge binds its
+  /// `sendLookup` on start). Kept here so pages route lookups without
+  /// depending on the bridge / AppModel layer.
+  void bindLookupSink(CompanionLookupSink? sink) => _lookupSink = sink;
+
+  /// Sends a lookup made on the main screen to the companion's Lookup tab.
+  /// False when the companion is not in use (or did not take it): the page
+  /// shows its in-page popup exactly as on a single screen. The inactive
+  /// path is one synchronous check.
+  Future<bool> routeLookup({
+    required String text,
+    int charIndex = -1,
+    String? sentence,
+  }) async {
+    final CompanionLookupSink? sink = _lookupSink;
+    if (!_active.value || sink == null || text.trim().isEmpty) return false;
+    return sink(text: text, charIndex: charIndex, sentence: sentence);
+  }
 
   /// The top screen's context.
   CompanionContext get current => _current.context;
@@ -71,7 +111,8 @@ class CompanionContextRegistry extends ChangeNotifier {
 
   /// [owner] (a page) shows [context] on top. A new claim beats older ones;
   /// claiming again only updates the context and command handler (keeps the
-  /// claim's place). [route] is the owner's page route (null: always counts).
+  /// claim's place). [route] is the owner's page route (null: always counts);
+  /// a claim made before the route was known takes it on a later call.
   void claim(
     Object owner,
     CompanionContext context, {
@@ -83,6 +124,7 @@ class CompanionContextRegistry extends ChangeNotifier {
         if (existing.context != context) existing.snapshot = null;
         existing.context = context;
         existing.onCommand = onCommand;
+        if (route != null) existing.route = route;
         _recompute();
         return;
       }
@@ -178,6 +220,7 @@ class CompanionContextRegistry extends ChangeNotifier {
   @override
   void dispose() {
     _homeTab?.removeListener(_recompute);
+    _active.dispose();
     super.dispose();
   }
 }
