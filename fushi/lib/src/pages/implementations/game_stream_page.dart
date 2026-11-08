@@ -12,6 +12,7 @@ import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/shortcuts/key_event_device_type.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_virtual_button.dart';
@@ -148,8 +149,9 @@ class GameStreamPage extends StatefulWidget {
     this.companionDisplay,
     this.secondScreen = GameStreamSecondScreen.auto,
     this.onSecondScreenChanged,
+    ControllerLookupMode? controllerLookupMode,
     super.key,
-  });
+  }) : _controllerLookupMode = controllerLookupMode;
 
   final String sessionId;
   final String clientId;
@@ -183,6 +185,13 @@ class GameStreamPage extends StatefulWidget {
   /// The second display, where the lookup panel goes while one is connected
   /// (null where the platform has none). The caller owns and disposes it.
   final GameStreamPanelHost? companionDisplay;
+
+  final ControllerLookupMode? _controllerLookupMode;
+
+  /// Controller lookup mode / R1 panel drive the stream claims the raw
+  /// controller from (the shared instance unless a test injects one).
+  ControllerLookupMode get controllerLookupMode =>
+      _controllerLookupMode ?? ControllerLookupMode.instance;
 
   /// Whether to use a second display (persisted by the caller).
   final GameStreamSecondScreen secondScreen;
@@ -359,6 +368,10 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.addListener(_onReceiverChanged);
     widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     widget.inputComposer.addListener(_onReceiverChanged);
+    // Every controller button goes to the remote game: the companion's
+    // lookup mode (hold L1) and R1 panel drive must not take one, also when
+    // this stream leaves the second screen to the companion.
+    widget.controllerLookupMode.claimRawInput(this);
     unawaited(_startCompanion());
   }
 
@@ -403,6 +416,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
     widget.inputComposer.removeListener(_onReceiverChanged);
     _stopCompanion();
+    widget.controllerLookupMode.releaseRawInput(this);
     _statsTimer?.cancel();
     _videoFocus.dispose();
     _keyboardFocus.dispose();

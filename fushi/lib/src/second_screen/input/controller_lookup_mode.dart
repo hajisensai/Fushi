@@ -122,6 +122,25 @@ class ControllerLookupMode extends ChangeNotifier {
     _target = null;
   }
 
+  Object? _rawInputOwner;
+
+  /// A page that forwards the raw controller (the game stream sends every
+  /// button, L1 / R1 included, to the remote game) claims it while it is on
+  /// screen: neither lookup mode nor R1 panel drive may take a button then,
+  /// even when the companion is up. A later claim replaces an earlier one;
+  /// [releaseRawInput] only clears its own.
+  void claimRawInput(Object owner) {
+    _reset(notify: true);
+    _rawInputOwner = owner;
+  }
+
+  void releaseRawInput(Object owner) {
+    if (identical(_rawInputOwner, owner)) _rawInputOwner = null;
+  }
+
+  /// A page owns the raw controller ([claimRawInput]).
+  bool get rawInputClaimed => _rawInputOwner != null;
+
   bool get _lookupOpen {
     final CompanionControllerSink? c = _companionLookup;
     if (c != null) return c.lookupOpen;
@@ -132,6 +151,7 @@ class ControllerLookupMode extends ChangeNotifier {
 
   /// A button went down. True = consumed (the page must not see it).
   bool onPress(GamepadButton button) {
+    if (_rawInputOwner != null) return false;
     // Panel drive (R1 held, companion up).
     if (_rbHeld) {
       if (_isPanelButton(button)) {
@@ -188,6 +208,7 @@ class ControllerLookupMode extends ChangeNotifier {
 
   /// A button went up. True = consumed.
   bool onRelease(GamepadButton button) {
+    if (_rawInputOwner != null) return false;
     if (_repeating == button) _stopRepeat();
     if (button == GamepadButton.lb && _lbHeld) {
       final bool wasActive = _active;
@@ -216,6 +237,7 @@ class ControllerLookupMode extends ChangeNotifier {
   /// Left stick moved one step in [direction] (desktop poller). True =
   /// consumed (panel drive or lookup mode).
   bool onStickMove(TraversalDirection direction) {
+    if (_rawInputOwner != null) return false;
     final GamepadButton dpad = switch (direction) {
       TraversalDirection.up => GamepadButton.dpadUp,
       TraversalDirection.down => GamepadButton.dpadDown,
@@ -238,6 +260,7 @@ class ControllerLookupMode extends ChangeNotifier {
   /// Right stick vertical scroll amount in logical pixels (positive = down).
   /// True = consumed.
   bool onRightStick(double dy) {
+    if (_rawInputOwner != null) return false;
     if (!_active || !_lookupOpen) return false;
     final CompanionControllerSink? c = _companionLookup;
     if (c != null) {
@@ -253,9 +276,10 @@ class ControllerLookupMode extends ChangeNotifier {
   /// OS key-repeat of a held button (Android): swallowed while the mode owns
   /// it (the mode runs its own 400 ms / 150 ms repeat).
   bool swallowsRepeat(GamepadButton button) =>
-      (button == GamepadButton.lb && _lbHeld) ||
-      _rbHeld ||
-      ((_active || _lbHeld) && _isModeButton(button));
+      _rawInputOwner == null &&
+      ((button == GamepadButton.lb && _lbHeld) ||
+          _rbHeld ||
+          ((_active || _lbHeld) && _isModeButton(button)));
 
   bool _isPanelButton(GamepadButton b) =>
       b.isDpad || b == GamepadButton.a || b == GamepadButton.b;
@@ -428,6 +452,7 @@ class ControllerLookupMode extends ChangeNotifier {
   void debugReset() {
     _reset(notify: false);
     _target = null;
+    _rawInputOwner = null;
     redispatch = null;
     _wordGranularity = true;
     popupHooks = () => DictionaryPopupGamepadRegistry.current;

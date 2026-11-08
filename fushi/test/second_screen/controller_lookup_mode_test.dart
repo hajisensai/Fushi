@@ -1,5 +1,6 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show TraversalDirection;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
@@ -318,6 +319,74 @@ void main() {
     registry.setActive(false);
     expect(mode.onPress(GamepadButton.rb), isFalse);
     expect(mode.onRelease(GamepadButton.rb), isFalse);
+  });
+
+  test('a raw-input claim (game stream) leaves every button to the page, '
+      'companion up included', () {
+    fakeAsync((FakeAsync async) {
+      final Object stream = Object();
+      // R1 held when the stream takes over: panel drive ends.
+      expect(mode.onPress(GamepadButton.rb), isTrue);
+      mode.onPress(GamepadButton.dpadDown);
+      mode.claimRawInput(stream);
+      expect(mode.panelDriving, isFalse);
+      expect(mode.rawInputClaimed, isTrue);
+      sink.sent.clear();
+      for (final GamepadButton b in GamepadButton.values) {
+        expect(mode.onPress(b), isFalse, reason: '$b');
+        expect(mode.swallowsRepeat(b), isFalse, reason: '$b');
+        expect(mode.onRelease(b), isFalse, reason: '$b');
+      }
+      // Holding L1 / R1 is a game button now, not lookup mode / panel drive.
+      expect(mode.onPress(GamepadButton.lb), isFalse);
+      async.elapse(ControllerLookupMode.holdThreshold * 2);
+      expect(mode.active, isFalse);
+      expect(mode.onStickMove(TraversalDirection.down), isFalse);
+      expect(mode.onRightStick(40), isFalse);
+      expect(sink.sent, isEmpty);
+      expect(replayed, isEmpty);
+      expect(target.log, isEmpty);
+
+      // Only the owner's release counts; then R1 drives the panel again.
+      mode.releaseRawInput(Object());
+      expect(mode.rawInputClaimed, isTrue);
+      mode.releaseRawInput(stream);
+      expect(mode.rawInputClaimed, isFalse);
+      expect(mode.onPress(GamepadButton.rb), isTrue);
+      expect(mode.onRelease(GamepadButton.rb), isTrue);
+      expect(replayed, <GamepadButton>[GamepadButton.rb]);
+    });
+  });
+
+  test('a raw-input claim also bypasses the Android early key handler', () {
+    const KeyDownEvent r1 = KeyDownEvent(
+      physicalKey: PhysicalKeyboardKey.gameButtonRight1,
+      logicalKey: LogicalKeyboardKey.gameButtonRight1,
+      timeStamp: Duration.zero,
+    );
+    const KeyUpEvent r1Up = KeyUpEvent(
+      physicalKey: PhysicalKeyboardKey.gameButtonRight1,
+      logicalKey: LogicalKeyboardKey.gameButtonRight1,
+      timeStamp: Duration.zero,
+    );
+    // Companion up, no claim: R1 is panel drive.
+    expect(
+      interceptNativeControllerLookupKey(r1, mode, isAndroid: true),
+      isTrue,
+    );
+    expect(
+      interceptNativeControllerLookupKey(r1Up, mode, isAndroid: true),
+      isTrue,
+    );
+    mode.claimRawInput(Object());
+    expect(
+      interceptNativeControllerLookupKey(r1, mode, isAndroid: true),
+      isFalse,
+    );
+    expect(
+      interceptNativeControllerLookupKey(r1Up, mode, isAndroid: true),
+      isFalse,
+    );
   });
 
   test('detach while active exits the mode', () {
