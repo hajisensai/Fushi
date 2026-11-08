@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/modules/settings_companion_schema.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_shell.dart';
@@ -308,15 +309,33 @@ void main() {
     expect(tabButton(t.second_screen_now_playing_pause), findsNothing);
   });
 
-  testWidgets('lookup and settings tabs show their empty states', (
+  testWidgets('lookup shows its empty state; settings loads when opened', (
     WidgetTester tester,
   ) async {
     await pumpShell(tester);
     await tester.tap(tabButton(t.second_screen_tab_lookup));
     await tester.pumpAndSettle();
     expect(find.text(t.second_screen_lookup_empty), findsOneWidget);
+    // The hidden Settings tab asks nothing until it is shown.
+    expect(sent.whereType<CompanionRequestMessage>(), isEmpty);
     await tester.tap(tabButton(t.second_screen_tab_settings));
+    await tester.pump();
+    final CompanionRequestMessage list = sent
+        .whereType<CompanionRequestMessage>()
+        .single;
+    expect(list.method, CompanionRequestMethods.settingsList);
+    push(
+      CompanionReplyMessage(
+        id: list.id,
+        value: const CompanionSettingsOverview(
+          categories: <CompanionSettingsCategory>[
+            CompanionSettingsCategory(id: 'appearance', title: 'Appearance'),
+          ],
+        ).toJson(),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text(t.second_screen_settings_empty), findsOneWidget);
+    expect(find.text(t.second_screen_settings_all), findsOneWidget);
+    expect(find.text('Appearance'), findsOneWidget);
   });
 }

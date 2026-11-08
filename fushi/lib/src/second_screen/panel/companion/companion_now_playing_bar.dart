@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -21,7 +22,7 @@ class CompanionNowPlayingBar extends ConsumerWidget {
       companionPanelSessionProvider,
     );
     final CompanionNowPlaying? now = session.nowPlaying;
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.standard,
       alignment: Alignment.topCenter,

@@ -150,27 +150,3 @@ class _BrowseMode extends StatelessWidget {
     ),
   );
 }
-
-/// The Settings tab: the main screen's current settings first, then all of
-/// them (S4 fills it).
-class CompanionSettingsTab extends StatelessWidget {
-  const CompanionSettingsTab({super.key});
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      bottom: false,
-      child: FushiEntranceScope(
-        child: FushiStaggeredEntrance(
-          index: 0,
-          child: Center(
-            child: FushiPlaceholderMessage(
-              icon: FushiIcons.settings,
-              message: t.second_screen_settings_empty,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}

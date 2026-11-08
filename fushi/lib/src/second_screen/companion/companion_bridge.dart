@@ -104,6 +104,7 @@ class CompanionBridge {
 
   bool _prefsPingScheduled = false;
   bool _libraryPingScheduled = false;
+  bool _settingsPingScheduled = false;
 
   final ValueNotifier<bool> _lookupOpen = ValueNotifier<bool>(false);
 
@@ -176,6 +177,18 @@ class CompanionBridge {
     scheduleMicrotask(() {
       _prefsPingScheduled = false;
       _send(const CompanionPrefsChangedMessage());
+    });
+  }
+
+  /// A setting may have changed (a preference write, a write from the
+  /// companion): the Settings tab reloads what it shows. Several changes in
+  /// one turn send one ping.
+  void notifySettingsChanged() {
+    if (!_canSend || _settingsPingScheduled) return;
+    _settingsPingScheduled = true;
+    scheduleMicrotask(() {
+      _settingsPingScheduled = false;
+      _send(const CompanionSettingsChangedMessage());
     });
   }
 

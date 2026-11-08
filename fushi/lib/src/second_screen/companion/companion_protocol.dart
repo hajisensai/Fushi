@@ -35,6 +35,12 @@ abstract final class CompanionRequestMethods {
   /// Collect and push the daily summary again (the panel's retry). Replies
   /// null.
   static const String refreshSummary = 'summary.refresh';
+
+  /// The Settings tab (S4): see `modules/settings_companion_schema.dart`.
+  static const String settingsList = 'settings.list';
+  static const String settingsGet = 'settings.get';
+  static const String settingsSet = 'settings.set';
+  static const String settingsOpenOnMain = 'settings.openOnMain';
 }
 
 Map<String, Object?> _decodeObject(String raw) {
@@ -147,7 +153,12 @@ enum CompanionLibraryKind {
 /// The top screen's context.
 @immutable
 class CompanionContext {
-  const CompanionContext(this.kind, {this.library, this.title});
+  const CompanionContext(
+    this.kind, {
+    this.library,
+    this.title,
+    this.settingsCategory,
+  });
 
   static const CompanionContext none = CompanionContext(
     CompanionContextKind.none,
@@ -158,6 +169,7 @@ class CompanionContext {
         CompanionContextKind.fromWire(json['kind']),
         library: CompanionLibraryKind.fromWire(json['library']),
         title: _string(json, 'title'),
+        settingsCategory: _string(json, 'settingsCategory'),
       );
 
   final CompanionContextKind kind;
@@ -168,10 +180,15 @@ class CompanionContext {
   /// What is open (book / video / series title) when the page knows it.
   final String? title;
 
+  /// Only for [CompanionContextKind.settings]: the settings category open on
+  /// top (`SettingsDestinationId.name`); null on the category list.
+  final String? settingsCategory;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.wire,
     if (library != null) 'library': library!.wire,
     if (title != null) 'title': title,
+    if (settingsCategory != null) 'settingsCategory': settingsCategory,
   };
 
   @override
@@ -179,13 +196,15 @@ class CompanionContext {
       other is CompanionContext &&
       other.kind == kind &&
       other.library == library &&
-      other.title == title;
+      other.title == title &&
+      other.settingsCategory == settingsCategory;
 
   @override
-  int get hashCode => Object.hash(kind, library, title);
+  int get hashCode => Object.hash(kind, library, title, settingsCategory);
 
   @override
-  String toString() => 'CompanionContext($kind, $library, $title)';
+  String toString() =>
+      'CompanionContext($kind, $library, $title, $settingsCategory)';
 }
 
 /// Today's due cards in the built-in review (top-level deck counts, the same
@@ -501,6 +520,8 @@ sealed class CompanionHostMessage {
       CompanionPrefsChangedMessage.type => const CompanionPrefsChangedMessage(),
       CompanionLibraryChangedMessage.type =>
         const CompanionLibraryChangedMessage(),
+      CompanionSettingsChangedMessage.type =>
+        const CompanionSettingsChangedMessage(),
       CompanionReplyMessage.type => CompanionReplyMessage(
         id: _requireInt(json, 'id'),
         value: json['value'],
@@ -618,6 +639,17 @@ class CompanionLibraryChangedMessage extends CompanionHostMessage {
   const CompanionLibraryChangedMessage();
 
   static const String type = 'libraryChanged';
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{_typeKey: type};
+}
+
+/// A setting may have changed in the main process (a preference write, a
+/// write from the companion): the Settings tab reloads what it shows.
+class CompanionSettingsChangedMessage extends CompanionHostMessage {
+  const CompanionSettingsChangedMessage();
+
+  static const String type = 'settingsChanged';
 
   @override
   Map<String, Object?> toJson() => <String, Object?>{_typeKey: type};

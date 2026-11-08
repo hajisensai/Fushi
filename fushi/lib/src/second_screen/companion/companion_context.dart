@@ -48,13 +48,21 @@ class _Claim {
 /// The registry always tracks (cheap, no I/O); whether anything is sent is
 /// the bridge's call (`SecondScreenController.isActive`).
 class CompanionContextRegistry extends ChangeNotifier {
-  CompanionContextRegistry({ValueListenable<HomeTab>? homeTab})
-    : _homeTab = homeTab {
+  CompanionContextRegistry({
+    ValueListenable<HomeTab>? homeTab,
+    ValueListenable<String?>? settingsHomeCategory,
+  }) : _homeTab = homeTab,
+       _settingsHomeCategory = settingsHomeCategory {
     _homeTab?.addListener(_recompute);
+    _settingsHomeCategory?.addListener(_recompute);
     _current = _resolve();
   }
 
   final ValueListenable<HomeTab>? _homeTab;
+
+  /// The category the settings home tab shows beside its list (two-pane
+  /// layout); null on the plain category list.
+  final ValueListenable<String?>? _settingsHomeCategory;
   final List<_Claim> _claims = <_Claim>[];
 
   /// The page route on top (dialogs and sheets above it do not count); null
@@ -207,7 +215,18 @@ class CompanionContextRegistry extends ChangeNotifier {
     if (top != null && !top.isFirst) {
       return const _Resolved(CompanionContext.none, null);
     }
-    return _Resolved(companionContextForHomeTab(_homeTab?.value), null);
+    final CompanionContext home = companionContextForHomeTab(_homeTab?.value);
+    final String? category = _settingsHomeCategory?.value;
+    if (home.kind == CompanionContextKind.settings && category != null) {
+      return _Resolved(
+        CompanionContext(
+          CompanionContextKind.settings,
+          settingsCategory: category,
+        ),
+        null,
+      );
+    }
+    return _Resolved(home, null);
   }
 
   bool _counts(Route<Object?>? route) {
@@ -220,6 +239,7 @@ class CompanionContextRegistry extends ChangeNotifier {
   @override
   void dispose() {
     _homeTab?.removeListener(_recompute);
+    _settingsHomeCategory?.removeListener(_recompute);
     _active.dispose();
     super.dispose();
   }
@@ -266,7 +286,15 @@ CompanionContext companionContextForHomeTab(HomeTab? tab) => switch (tab) {
 /// and the home shell's tab.
 final CompanionContextRegistry companionContexts = CompanionContextRegistry(
   homeTab: homeShellTabNotifier,
+  settingsHomeCategory: companionSettingsHomeCategory,
 );
+
+/// The settings category the settings home tab shows in its detail pane
+/// (`SettingsDestinationId.name`, two-pane layout only; null otherwise). Set
+/// by the settings home page; makes the home route's `settings` context name
+/// that category, like a pushed settings page does with its claim.
+final ValueNotifier<String?> companionSettingsHomeCategory =
+    ValueNotifier<String?>(null);
 
 /// Goes into `MaterialApp.navigatorObservers`: tells the registry which page
 /// route is on top (dialogs / sheets above it do not change the context).

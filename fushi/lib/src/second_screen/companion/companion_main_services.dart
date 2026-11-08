@@ -5,6 +5,7 @@ import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlFailure;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
@@ -25,6 +26,9 @@ import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/ops/app_op_context.dart';
+import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/settings_index.dart' show settingsIndexContext;
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_snapshot.dart'
@@ -32,6 +36,7 @@ import 'package:fushi/src/platform/widget_snapshot.dart'
 import 'package:fushi/src/second_screen/companion/companion_bridge.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/companion_settings_service.dart';
 import 'package:fushi/src/second_screen/companion/modules/video_companion_now_playing.dart';
 import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
@@ -400,6 +405,19 @@ final Provider<CompanionBridge> companionBridgeProvider =
         nowPlaying.dispose();
       });
       if (host == null) return bridge;
+      registerCompanionSettingsHandlers(
+        bridge,
+        CompanionSettingsService(
+          settingsContext: () {
+            final OpContext? op = appOpContext;
+            if (op == null) {
+              throw const CtlFailure.conflict('the main screen is not ready');
+            }
+            return settingsIndexContext(appModel, op.ref);
+          },
+          currentContext: () => companionContexts.current,
+        ),
+      );
 
       final List<StreamSubscription<Object?>> subscriptions =
           <StreamSubscription<Object?>>[];
@@ -437,6 +455,16 @@ final Provider<CompanionBridge> companionBridgeProvider =
                   ),
                 )
                 .listen((_) => bridge.notifyPrefsChanged()),
+          )
+          ..add(
+            // Settings values live in preferences: the Settings tab reloads.
+            db
+                .tableUpdates(
+                  TableUpdateQuery.onAllTables(
+                    <ResultSetImplementation<dynamic, dynamic>>[db.preferences],
+                  ),
+                )
+                .listen((_) => bridge.notifySettingsChanged()),
           )
           ..add(
             db.watchDashboardDataChanges().listen(

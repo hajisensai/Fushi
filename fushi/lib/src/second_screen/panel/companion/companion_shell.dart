@@ -4,6 +4,7 @@ import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_tab.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_settings_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_tabs.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';

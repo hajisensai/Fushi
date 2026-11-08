@@ -42,6 +42,7 @@ class CompanionPanelSession extends ChangeNotifier {
   CompanionLookupMessage? _lookup;
   int _lookupGeneration = 0;
   int _libraryRevision = 0;
+  int _settingsRevision = 0;
   bool _disposed = false;
 
   final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
@@ -72,6 +73,10 @@ class CompanionPanelSession extends ChangeNotifier {
   /// Bumps when the main engine says library data changed; lists keyed on it
   /// reload.
   int get libraryRevision => _libraryRevision;
+
+  /// Bumps when the main engine says a setting may have changed; the
+  /// Settings tab reloads what it shows.
+  int get settingsRevision => _settingsRevision;
 
   /// Fires when the main process changed preferences.
   Stream<void> get prefsChanges => _prefsChanges.stream;
@@ -109,6 +114,8 @@ class CompanionPanelSession extends ChangeNotifier {
         return;
       case CompanionLibraryChangedMessage():
         _libraryRevision++;
+      case CompanionSettingsChangedMessage():
+        _settingsRevision++;
       case CompanionReplyMessage(
         :final int id,
         :final Object? value,
