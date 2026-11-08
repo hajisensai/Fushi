@@ -29,8 +29,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 /// * B: close the lookup, then leave the mode.
 ///
 /// The lookup goes to the companion's Lookup tab while the companion is up
-/// ([CompanionContextRegistry.controller]) and to the page's in-page popup
-/// otherwise (the page's own lookup path decides; the mode only routes the
+/// and the user wants lookups there ([CompanionContextRegistry.lookupController])
+/// and to the page's in-page popup otherwise (the page's own lookup path decides; the mode only routes the
 /// follow-up buttons to the same place).
 ///
 /// **Panel drive** (independent of lookup mode, companion up only): while R1 is
@@ -91,7 +91,13 @@ class ControllerLookupMode extends ChangeNotifier {
 
   ControllerLookupTarget? get target => _target;
 
+  /// The companion while it is up (R1 panel drive, the default style).
   CompanionControllerSink? get _companion => _registry.controller;
+
+  /// The companion when lookups open there; null when it is down or the user
+  /// wants lookups on the main screen ("Lookups open on: Top screen"), so the
+  /// follow-up buttons drive the in-page popup.
+  CompanionControllerSink? get _companionLookup => _registry.lookupController;
 
   ControllerLookupTarget? get _availableTarget {
     final ControllerLookupTarget? t = _target;
@@ -117,7 +123,7 @@ class ControllerLookupMode extends ChangeNotifier {
   }
 
   bool get _lookupOpen {
-    final CompanionControllerSink? c = _companion;
+    final CompanionControllerSink? c = _companionLookup;
     if (c != null) return c.lookupOpen;
     return popupHooks()?.hasVisiblePopup() ?? false;
   }
@@ -233,7 +239,7 @@ class ControllerLookupMode extends ChangeNotifier {
   /// True = consumed.
   bool onRightStick(double dy) {
     if (!_active || !_lookupOpen) return false;
-    final CompanionControllerSink? c = _companion;
+    final CompanionControllerSink? c = _companionLookup;
     if (c != null) {
       c.sendLookupAction(CompanionLookupActions.scroll, <String, Object?>{
         CompanionLookupActions.dy: dy,
@@ -335,10 +341,10 @@ class ControllerLookupMode extends ChangeNotifier {
     }
   }
 
-  /// Mine / audio / entry moves go to the companion's lookup when it is up,
-  /// else to the visible in-page popup.
+  /// Mine / audio / entry moves go to the companion's lookup when lookups
+  /// open there, else to the visible in-page popup.
   void _lookupAction(String action) {
-    final CompanionControllerSink? c = _companion;
+    final CompanionControllerSink? c = _companionLookup;
     if (c != null) {
       c.sendLookupAction(action);
       return;
@@ -356,7 +362,7 @@ class ControllerLookupMode extends ChangeNotifier {
   }
 
   void _closeLookup() {
-    final CompanionControllerSink? c = _companion;
+    final CompanionControllerSink? c = _companionLookup;
     if (c != null) {
       c.sendLookupAction(CompanionLookupActions.close);
     } else {

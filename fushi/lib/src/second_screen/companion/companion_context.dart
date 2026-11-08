@@ -103,6 +103,25 @@ class CompanionContextRegistry extends ChangeNotifier {
   /// The companion bridge's mirror of `SecondScreenController.isActive`.
   void setActive(bool value) => _active.value = value;
 
+  final ValueNotifier<bool> _lookupsOnCompanion = ValueNotifier<bool>(true);
+
+  /// The user's "Lookups open on" setting (mirrored by the companion bridge
+  /// from `SecondScreenController.lookupScreen`): true = the companion's
+  /// Lookup tab (default), false = the page's in-page popup on top while the
+  /// companion keeps its panels. Applies to every main-screen lookup that goes
+  /// through [routeLookup] and to the controller lookup mode
+  /// ([lookupController]). Lookups started on the panel itself (its
+  /// transcript / subtitle / lyric / OCR text) never come through here and
+  /// always open on the companion.
+  ValueListenable<bool> get lookupsOnCompanion => _lookupsOnCompanion;
+
+  void setLookupsOnCompanion(bool value) => _lookupsOnCompanion.value = value;
+
+  /// Main-screen lookups go to the companion right now (it is up and the
+  /// setting says so). One synchronous check for pages that want to skip
+  /// work when they will show their own popup anyway.
+  bool get routesLookups => _active.value && _lookupsOnCompanion.value;
+
   CompanionLookupSink? _lookupSink;
 
   /// Where [routeLookup] sends lookups (the companion bridge binds its
@@ -111,16 +130,17 @@ class CompanionContextRegistry extends ChangeNotifier {
   void bindLookupSink(CompanionLookupSink? sink) => _lookupSink = sink;
 
   /// Sends a lookup made on the main screen to the companion's Lookup tab.
-  /// False when the companion is not in use (or did not take it): the page
-  /// shows its in-page popup exactly as on a single screen. The inactive
-  /// path is one synchronous check.
+  /// False when the companion is not in use, the user wants lookups on the
+  /// main screen ([lookupsOnCompanion]) or the companion did not take it: the
+  /// page shows its in-page popup exactly as on a single screen. Those paths
+  /// are one synchronous check.
   Future<bool> routeLookup({
     required String text,
     int charIndex = -1,
     String? sentence,
   }) async {
     final CompanionLookupSink? sink = _lookupSink;
-    if (!_active.value || sink == null || text.trim().isEmpty) return false;
+    if (!routesLookups || sink == null || text.trim().isEmpty) return false;
     return sink(text: text, charIndex: charIndex, sentence: sentence);
   }
 
@@ -136,6 +156,14 @@ class CompanionContextRegistry extends ChangeNotifier {
   /// keeps its page binding).
   CompanionControllerSink? get controller =>
       _active.value ? _controllerSink : null;
+
+  /// The companion's controller side for **lookup** follow-ups (mine, audio,
+  /// entry moves, scroll, close): null when the companion is not up or the
+  /// user wants lookups on the main screen ([lookupsOnCompanion]), so the
+  /// controller lookup mode drives the in-page popup. R1 panel drive keeps
+  /// using [controller].
+  CompanionControllerSink? get lookupController =>
+      routesLookups ? _controllerSink : null;
 
   /// The companion started one lookup: counts it through the context owner's
   /// lookup counter (the one its in-page popup uses). False when the owner
@@ -290,6 +318,7 @@ class CompanionContextRegistry extends ChangeNotifier {
     _homeTab?.removeListener(_recompute);
     _settingsHomeCategory?.removeListener(_recompute);
     _active.dispose();
+    _lookupsOnCompanion.dispose();
     super.dispose();
   }
 }

@@ -462,6 +462,68 @@ void main() {
     },
   );
 
+  test('S7i: "Lookups open on" — Top keeps main-screen lookups on the page, '
+      'the panel stays up and its own lookups still count', () async {
+    await ready();
+    drain();
+    expect(contexts.lookupsOnCompanion.value, isTrue, reason: 'default');
+    expect(contexts.lookupController, same(bridge));
+
+    await controller.setLookupScreen(SecondScreenLookupScreen.top);
+    expect(prefs[kSecondScreenLookupScreenPrefKey], 'top');
+    expect(contexts.lookupsOnCompanion.value, isFalse);
+    expect(contexts.active.value, isTrue, reason: 'the panels stay');
+    expect(contexts.routesLookups, isFalse);
+    expect(await contexts.routeLookup(text: '猫がいる', charIndex: 0), isFalse);
+    expect(drain(), isEmpty, reason: 'the page shows its in-page popup');
+    expect(contexts.lookupController, isNull);
+    expect(contexts.controller, same(bridge), reason: 'R1 panel drive');
+
+    // A lookup started on the panel (its transcript / lyrics) is the panel's
+    // own: still counted by the page on top.
+    int pageCounts = 0;
+    final Object reader = Object();
+    contexts.claim(
+      reader,
+      const CompanionContext(CompanionContextKind.reader),
+      onLookupCounted: () => pageCounts++,
+    );
+    await fromPanel(const CompanionLookupCountedMessage());
+    expect(pageCounts, 1);
+
+    await controller.setLookupScreen(SecondScreenLookupScreen.bottom);
+    drain();
+    expect(contexts.routesLookups, isTrue);
+    expect(await contexts.routeLookup(text: '猫'), isTrue);
+    expect((drain().single as CompanionLookupMessage).text, '猫');
+  });
+
+  test('S7i: the lookup screen is read from the device-local preference', () {
+    expect(
+      SecondScreenLookupScreen.fromPref(null),
+      SecondScreenLookupScreen.bottom,
+    );
+    expect(
+      SecondScreenLookupScreen.fromPref('top'),
+      SecondScreenLookupScreen.top,
+    );
+    expect(
+      SecondScreenLookupScreen.fromPref('x'),
+      SecondScreenLookupScreen.bottom,
+    );
+    final SecondScreenController fresh = SecondScreenController(
+      readPref: (String k) =>
+          k == kSecondScreenLookupScreenPrefKey ? 'top' : null,
+      writePref: (String k, Object? v) async {},
+      host: null,
+    );
+    addTearDown(fresh.dispose);
+    expect(fresh.lookupScreen, SecondScreenLookupScreen.bottom);
+    return fresh.start().then((_) {
+      expect(fresh.lookupScreen, SecondScreenLookupScreen.top);
+    });
+  });
+
   test('pages route lookups through the registry: active mirrors the '
       'controller, the sink is the bridge', () async {
     await ready();

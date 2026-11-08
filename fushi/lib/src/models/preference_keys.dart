@@ -699,6 +699,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组）：auto 策略下用户已同意使用的副屏指纹 `名称|宽dpx高dp`。
   // 读写见 SecondScreenController。设备本地（deviceLocalPrefKeys）。
   'second_screen_approved_displays',
+  // String：副屏在用时主屏查词结果显示在哪 `bottom`（下屏查词页，默认）/ `top`
+  // （上屏页内弹窗）。读写见 SecondScreenController。设备本地。
+  'second_screen_lookup_screen',
   // String：第二块屏（双屏掌机下屏 / 外接显示器）副屏伴侣启动策略 `auto` / `always` /
   // `off`，默认 auto。读写见 SecondScreenController。设备本地。
   'second_screen_mode',

@@ -219,6 +219,49 @@ void main() {
     });
   });
 
+  test('S7i: "Lookups open on: Top screen": the mode stays on (hold L1), '
+      'follow-ups go to the in-page popup, R1 still drives the panel', () {
+    fakeAsync((FakeAsync async) {
+      registry.setLookupsOnCompanion(false);
+      expect(registry.lookupController, isNull);
+      expect(registry.controller, same(sink));
+      expect(mode.style, ControllerLookupStyle.holdL1);
+      // A lookup is open on the companion (made from the panel itself): the
+      // controller still works the popup on top.
+      sink.open = true;
+      final List<String> popup = <String>[];
+      mode.popupHooks = () => _hooks(popup);
+      mode.onPress(GamepadButton.lb);
+      mode.onPress(GamepadButton.a);
+      mode.onPress(GamepadButton.x);
+      mode.onPress(GamepadButton.rt);
+      expect(mode.onRightStick(24), isTrue);
+      mode.onPress(GamepadButton.b);
+      expect(popup, <String>['mine', 'audio', 'next', 'scroll24.0']);
+      expect(replayed, <GamepadButton>[GamepadButton.b]);
+      expect(sink.sent, isEmpty);
+      mode.onRelease(GamepadButton.lb);
+
+      expect(mode.onPress(GamepadButton.rb), isTrue);
+      mode.onPress(GamepadButton.dpadDown);
+      mode.onRelease(GamepadButton.dpadDown);
+      expect(mode.onRelease(GamepadButton.rb), isTrue);
+      expect(sink.sent, <String>[
+        'P:${CompanionPanelNav.begin}',
+        'P:${CompanionPanelNav.down}',
+        'P:${CompanionPanelNav.end}',
+      ]);
+
+      // Back to "Bottom screen": follow-ups reach the companion again.
+      registry.setLookupsOnCompanion(true);
+      sink.sent.clear();
+      mode.onPress(GamepadButton.lb);
+      mode.onPress(GamepadButton.a);
+      expect(sink.sent, <String>['L:${CompanionLookupActions.mine}']);
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
   test('the caret on the in-page popup keeps the page handling', () {
     fakeAsync((FakeAsync async) {
       mode.onPress(GamepadButton.lb);

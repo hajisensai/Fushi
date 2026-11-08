@@ -202,6 +202,7 @@ class CompanionBridge implements CompanionControllerSink {
     _started = true;
     _controller.addListener(_onControllerChanged);
     _contexts.setActive(_controller.isActive);
+    _contexts.setLookupsOnCompanion(_lookupsOnCompanion);
     _contexts.bindLookupSink(sendLookup);
     _contexts.bindControllerSink(this);
     _contexts.addListener(_onContextChanged);
@@ -359,8 +360,13 @@ class CompanionBridge implements CompanionControllerSink {
     );
   }
 
+  /// The "Lookups open on" setting, as the registry's routing flag.
+  bool get _lookupsOnCompanion =>
+      _controller.lookupScreen == SecondScreenLookupScreen.bottom;
+
   void _onControllerChanged() {
     _contexts.setActive(_controller.isActive);
+    _contexts.setLookupsOnCompanion(_lookupsOnCompanion);
     if (_controller.isActive) return;
     // The panel is gone or the screen was taken: wait for the next "ready".
     _panelReady = false;

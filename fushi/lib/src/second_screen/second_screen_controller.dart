@@ -26,9 +26,27 @@ enum SecondScreenMode {
   }
 }
 
+/// Where lookups made on the main screen open while the companion is up.
+enum SecondScreenLookupScreen {
+  /// The companion's Lookup tab (the default).
+  bottom,
+
+  /// The page's normal in-page popup on the main screen; the companion keeps
+  /// its panels.
+  top;
+
+  static SecondScreenLookupScreen fromPref(Object? value) {
+    for (final SecondScreenLookupScreen s in SecondScreenLookupScreen.values) {
+      if (s.name == value) return s;
+    }
+    return SecondScreenLookupScreen.bottom;
+  }
+}
+
 /// Preference keys (registered in `preference_keys.dart`, device-local).
 const String kSecondScreenModePrefKey = 'second_screen_mode';
 const String kSecondScreenApprovedPrefKey = 'second_screen_approved_displays';
+const String kSecondScreenLookupScreenPrefKey = 'second_screen_lookup_screen';
 
 /// Main-engine side of the companion on the second screen: the single source
 /// of truth for "is the second screen in use by the companion". Pages never
@@ -55,6 +73,7 @@ class SecondScreenController extends ChangeNotifier {
   bool _started = false;
   bool _disposed = false;
   SecondScreenMode _mode = SecondScreenMode.auto;
+  SecondScreenLookupScreen _lookupScreen = SecondScreenLookupScreen.bottom;
   Set<String> _approved = <String>{};
 
   /// Fingerprints the user said "not now" to in this run (asked again next
@@ -68,6 +87,11 @@ class SecondScreenController extends ChangeNotifier {
   String? _overrideFingerprint;
 
   SecondScreenMode get mode => _mode;
+
+  /// Where main-screen lookups open while the companion is up (every media
+  /// type and the controller lookup mode; the companion bridge mirrors it to
+  /// the context registry, the single routing point).
+  SecondScreenLookupScreen get lookupScreen => _lookupScreen;
 
   /// The screen the companion goes on: the first one the platform offers.
   SecondScreenDisplayInfo? get display {
@@ -112,6 +136,9 @@ class SecondScreenController extends ChangeNotifier {
     if (_started) return;
     _started = true;
     _mode = SecondScreenMode.fromPref(readPref(kSecondScreenModePrefKey));
+    _lookupScreen = SecondScreenLookupScreen.fromPref(
+      readPref(kSecondScreenLookupScreenPrefKey),
+    );
     _approved = _decodeApproved(readPref(kSecondScreenApprovedPrefKey));
     final SecondScreenHost? host = _host;
     if (host == null) return;
@@ -139,6 +166,13 @@ class SecondScreenController extends ChangeNotifier {
     _sessionOverride = null;
     await writePref(kSecondScreenModePrefKey, mode.name);
     await _apply();
+  }
+
+  Future<void> setLookupScreen(SecondScreenLookupScreen screen) async {
+    if (_lookupScreen == screen) return;
+    _lookupScreen = screen;
+    _notify();
+    await writePref(kSecondScreenLookupScreenPrefKey, screen.name);
   }
 
   /// Answer to the approval prompt for the current screen.

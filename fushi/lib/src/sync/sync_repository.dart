@@ -1861,10 +1861,11 @@ class SyncRepository {
     ...kWebBrowserDeviceLocalPrefKeys,
     // 页面背景的自定义图片文件路径与取色缓存：文件只在这台设备的数据目录里。
     ...kPageBackdropDeviceLocalPrefKeys,
-    // 第二块屏启动策略与已同意的副屏（SecondScreenController 的两个键）：描述的是
-    // 本机硬件，不跟去别的设备。
+    // 第二块屏启动策略、已同意的副屏与查词显示屏（SecondScreenController 的键）：
+    // 描述的是本机硬件，不跟去别的设备。
     'second_screen_mode',
     'second_screen_approved_displays',
+    'second_screen_lookup_screen',
     // 手柄查词模式的开启方式（ControllerLookupStyle）：跟这台设备的手柄走。
     'controller_lookup_style',
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，

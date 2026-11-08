@@ -554,7 +554,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     appModel.musicStudy.noteLearningAction();
     // 副屏在用：查词结果显示在副屏「查词」页，本页不弹窗；否则照常弹窗（未启用副屏
     // 时这里只是一次同步判断，不多等一拍）。
-    if (companionContexts.active.value) {
+    if (companionContexts.routesLookups) {
       if (await routeMusicLyricLookup(hit)) return;
       if (!mounted) return;
     }

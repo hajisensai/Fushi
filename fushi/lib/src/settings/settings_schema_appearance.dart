@@ -650,6 +650,35 @@ SettingsDestination buildAppearanceDestination() {
                 .then((_) => c.refresh()),
             defaultValue: SecondScreenMode.auto,
           ),
+          // 副屏在用时主屏查词结果显示在哪：下屏「查词」页（默认）/ 上屏页内弹窗。
+          // 所有媒体与手柄查词模式共用（路由点 CompanionContextRegistry）；在副屏面板
+          // 上长按 / 点字发起的查词始终在下屏。与上一行同样只在有副屏时出现。
+          SettingsSegmentedItem<SecondScreenLookupScreen>(
+            id: 'appearance.second_screen_lookup_screen',
+            title: t.second_screen_lookup_screen_title,
+            subtitle: t.second_screen_lookup_screen_hint,
+            icon: FushiIcons.dictionary,
+            visible: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).displayAvailable,
+            options: <SettingsSegmentOption<SecondScreenLookupScreen>>[
+              SettingsSegmentOption<SecondScreenLookupScreen>(
+                value: SecondScreenLookupScreen.bottom,
+                label: t.second_screen_lookup_screen_bottom,
+              ),
+              SettingsSegmentOption<SecondScreenLookupScreen>(
+                value: SecondScreenLookupScreen.top,
+                label: t.second_screen_lookup_screen_top,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).lookupScreen,
+            onChanged: (SettingsContext c, SecondScreenLookupScreen value) => c
+                .ref
+                .read(secondScreenControllerProvider)
+                .setLookupScreen(value)
+                .then((_) => c.refresh()),
+            defaultValue: SecondScreenLookupScreen.bottom,
+          ),
           // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
           // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
           SettingsSegmentedItem<ControllerLookupStyle>(
