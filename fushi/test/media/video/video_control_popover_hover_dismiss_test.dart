@@ -1,6 +1,6 @@
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_popover_hover_dismiss.dart';
+import 'package:test/test.dart';
 
 /// BUG-4227 续：音量 / 倍速浮层的 hover 收起必须认「按住」。
 ///
