@@ -356,7 +356,12 @@ pub fn calibration_card(
         .map(|(at, len)| {
             let log = ratings[len - 1];
             let prev = ratings[len - 2];
-            (at, len, log, day.index(eff[log].at) - day.index(eff[prev].at))
+            (
+                at,
+                len,
+                log,
+                day.index(eff[log].at) - day.index(eff[prev].at),
+            )
         })
         .collect();
     Ok(Some((reviews, items)))

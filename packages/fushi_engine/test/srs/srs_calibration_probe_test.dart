@@ -48,8 +48,7 @@ void main() {
       );
       final int prepMs = sw.elapsedMilliseconds;
       final SrsCalibrationReport r = srsCalibrationReport(engine, data);
-      Map<String, Object?> series(SrsCalibrationSeries? s) =>
-          s == null
+      Map<String, Object?> series(SrsCalibrationSeries? s) => s == null
           ? <String, Object?>{}
           : <String, Object?>{
               'count': s.count,

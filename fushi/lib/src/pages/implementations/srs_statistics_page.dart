@@ -1460,7 +1460,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   List<_Section> _calibrationSections(SrsStatColors colors) {
     final SrsCalibrationReport? report = _calibration;
-    final bool stale = report != null && _calibrationKey != _currentCalibrationKey();
+    final bool stale =
+        report != null && _calibrationKey != _currentCalibrationKey();
     final SrsUmPlus? um = report?.hasRwkv == true ? report?.umPlus : null;
     final bool hasUm = um != null && um.count > 0;
     return <_Section>[
@@ -1554,15 +1555,13 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
                 t.srs_stats_calibration_interval(lower: lower, upper: upper),
           ),
         );
-        for (final (String model, SrsCalibrationSeries s) in <(
-          String,
-          SrsCalibrationSeries,
-        )>[
-          if (report.fsrs != null)
-            (t.srs_stats_calibration_fsrs, report.fsrs!),
-          if (report.rwkv != null)
-            (t.srs_stats_calibration_rwkv, report.rwkv!),
-        ]) {
+        for (final (String model, SrsCalibrationSeries s)
+            in <(String, SrsCalibrationSeries)>[
+              if (report.fsrs != null)
+                (t.srs_stats_calibration_fsrs, report.fsrs!),
+              if (report.rwkv != null)
+                (t.srs_stats_calibration_rwkv, report.rwkv!),
+            ]) {
           body.add(
             Padding(
               padding: EdgeInsets.only(top: tokens.spacing.gap / 2),

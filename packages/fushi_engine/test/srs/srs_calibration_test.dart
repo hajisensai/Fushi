@@ -18,34 +18,37 @@ SrsUmPlusBin _umBin({
   rwkvError: rwkvError,
 );
 
-Map<String, Object?> _umJson(List<Map<String, Object?>> bins) => <String, Object?>{
-  'count': bins.fold<int>(
-    0,
-    (int s, Map<String, Object?> b) => s + (b['count']! as int),
-  ),
-  'fsrsScore': 0.1,
-  'rwkvScore': 0.05,
-  'bins': bins,
-};
+Map<String, Object?> _umJson(List<Map<String, Object?>> bins) =>
+    <String, Object?>{
+      'count': bins.fold<int>(
+        0,
+        (int s, Map<String, Object?> b) => s + (b['count']! as int),
+      ),
+      'fsrsScore': 0.1,
+      'rwkvScore': 0.05,
+      'bins': bins,
+    };
 
 void main() {
   group('SrsCalibrationSeries.fromJson', () {
     test('按位置补箱序，区间缺了就是 null', () {
-      final SrsCalibrationSeries? s = SrsCalibrationSeries.fromJson(<String, Object?>{
-        'count': 12,
-        'logLoss': 0.51,
-        'rmse': 0.052,
-        'bins': <Object?>[
-          <String, Object?>{
-            'count': 3,
-            'predicted': 0.2,
-            'actual': 0.5,
-            'lower': 0.1,
-            'upper': 0.8,
-          },
-          <String, Object?>{'count': 9, 'predicted': 0.7, 'actual': 0.6},
-        ],
-      });
+      final SrsCalibrationSeries? s = SrsCalibrationSeries.fromJson(
+        <String, Object?>{
+          'count': 12,
+          'logLoss': 0.51,
+          'rmse': 0.052,
+          'bins': <Object?>[
+            <String, Object?>{
+              'count': 3,
+              'predicted': 0.2,
+              'actual': 0.5,
+              'lower': 0.1,
+              'upper': 0.8,
+            },
+            <String, Object?>{'count': 9, 'predicted': 0.7, 'actual': 0.6},
+          ],
+        },
+      );
       expect(s, isNotNull);
       expect(s!.count, 12);
       expect(s.bins, hasLength(2));
@@ -155,8 +158,20 @@ void main() {
 
     test('分歧向外取整到 0.1', () {
       final (double lo, double hi) = srsUmPlusDisagreementDomain(<SrsUmPlusBin>[
-        _umBin(index: 0, count: 5, disagreement: 0.05, fsrsError: 0, rwkvError: 0),
-        _umBin(index: 1, count: 5, disagreement: 0.35, fsrsError: 0, rwkvError: 0),
+        _umBin(
+          index: 0,
+          count: 5,
+          disagreement: 0.05,
+          fsrsError: 0,
+          rwkvError: 0,
+        ),
+        _umBin(
+          index: 1,
+          count: 5,
+          disagreement: 0.35,
+          fsrsError: 0,
+          rwkvError: 0,
+        ),
       ]);
       expect(lo, closeTo(0.0, 1e-9));
       expect(hi, closeTo(0.4, 1e-9));
@@ -164,7 +179,13 @@ void main() {
 
     test('误差轴恒含 0，且 0 贴边时向外留一格', () {
       final (double lo, double hi) = srsUmPlusErrorDomain(<SrsUmPlusBin>[
-        _umBin(index: 0, count: 5, disagreement: 0, fsrsError: 0.22, rwkvError: 0.0),
+        _umBin(
+          index: 0,
+          count: 5,
+          disagreement: 0,
+          fsrsError: 0.22,
+          rwkvError: 0.0,
+        ),
       ]);
       expect(lo, closeTo(-0.1, 1e-9));
       expect(hi, closeTo(0.3, 1e-9));
@@ -174,9 +195,27 @@ void main() {
   group('srsUmPlusSlope', () {
     test('按条数加权，线性关系斜率就是系数', () {
       final List<SrsUmPlusBin> bins = <SrsUmPlusBin>[
-        _umBin(index: 0, count: 10, disagreement: -0.2, fsrsError: 0.6, rwkvError: 0),
-        _umBin(index: 1, count: 30, disagreement: 0.0, fsrsError: 1.0, rwkvError: 0),
-        _umBin(index: 2, count: 20, disagreement: 0.3, fsrsError: 1.6, rwkvError: 0),
+        _umBin(
+          index: 0,
+          count: 10,
+          disagreement: -0.2,
+          fsrsError: 0.6,
+          rwkvError: 0,
+        ),
+        _umBin(
+          index: 1,
+          count: 30,
+          disagreement: 0.0,
+          fsrsError: 1.0,
+          rwkvError: 0,
+        ),
+        _umBin(
+          index: 2,
+          count: 20,
+          disagreement: 0.3,
+          fsrsError: 1.6,
+          rwkvError: 0,
+        ),
       ];
       expect(
         srsUmPlusSlope(bins, (SrsUmPlusBin b) => b.fsrsError),
@@ -187,12 +226,27 @@ void main() {
     test('分歧几乎没有变化 / 没有条数 → null', () {
       expect(
         srsUmPlusSlope(<SrsUmPlusBin>[
-          _umBin(index: 0, count: 5, disagreement: 0.1, fsrsError: 0.1, rwkvError: 0),
-          _umBin(index: 1, count: 5, disagreement: 0.1, fsrsError: 0.2, rwkvError: 0),
+          _umBin(
+            index: 0,
+            count: 5,
+            disagreement: 0.1,
+            fsrsError: 0.1,
+            rwkvError: 0,
+          ),
+          _umBin(
+            index: 1,
+            count: 5,
+            disagreement: 0.1,
+            fsrsError: 0.2,
+            rwkvError: 0,
+          ),
         ], (SrsUmPlusBin b) => b.fsrsError),
         isNull,
       );
-      expect(srsUmPlusSlope(<SrsUmPlusBin>[], (SrsUmPlusBin b) => b.fsrsError), isNull);
+      expect(
+        srsUmPlusSlope(<SrsUmPlusBin>[], (SrsUmPlusBin b) => b.fsrsError),
+        isNull,
+      );
     });
   });
 }

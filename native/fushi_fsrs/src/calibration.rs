@@ -215,7 +215,8 @@ pub struct UmPlus {
 /// 分歧所在的 UM+ 箱：`clamp(Math.round(d · 20) + 20, 0, 40)`。JS `Math.round` 是「.5 往正无穷」（负数也一样，
 /// −2.5 → −2），Rust `round` 是远离零，所以写成 `floor(x + 0.5)`。
 pub fn um_plus_index(disagreement: f64) -> usize {
-    let k = (disagreement * UM_PLUS_BINS_PER_UNIT as f64 + 0.5).floor() as i64 + UM_PLUS_BINS_PER_UNIT;
+    let k =
+        (disagreement * UM_PLUS_BINS_PER_UNIT as f64 + 0.5).floor() as i64 + UM_PLUS_BINS_PER_UNIT;
     k.clamp(0, UM_PLUS_BIN_COUNT as i64 - 1) as usize
 }
 
@@ -372,7 +373,10 @@ mod tests {
         assert_eq!(bin_index(0.0), 0);
         assert_eq!(bin_index(1.0), CALIBRATION_BINS - 1);
         assert_eq!(bin_index(0.5), 3);
-        assert_eq!(bin_index(0.9), ((21f64.ln() * 0.9).exp().floor() - 1.0) as usize);
+        assert_eq!(
+            bin_index(0.9),
+            ((21f64.ln() * 0.9).exp().floor() - 1.0) as usize
+        );
         assert_eq!(bin_index(-0.1), 0);
         assert_eq!(bin_index(1.5), CALIBRATION_BINS - 1);
     }

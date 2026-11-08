@@ -663,11 +663,7 @@ fn spawn_fold_watcher(
                 }
                 if progress_addr != 0 {
                     let total = s.total().max(1) as i64;
-                    let current = if finished {
-                        total
-                    } else {
-                        s.current() as i64
-                    };
+                    let current = if finished { total } else { s.current() as i64 };
                     let p = progress_addr as *const AtomicI64;
                     unsafe {
                         (*p).store(fold as i64 * total + current, Ordering::SeqCst);
