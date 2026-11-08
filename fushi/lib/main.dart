@@ -40,6 +40,8 @@ import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/src/second_screen/companion/companion_context.dart'
+    show companionContextRouteObserver;
 import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
@@ -1729,6 +1731,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return false;
   }
 
+  /// The companion on the second screen asked to open a `fushi://widget/...`
+  /// link on this screen (continue an item, start reviews...).
+  Future<void> _openCompanionLink(String link) async {
+    await handleIncomingUrl(data: link, isInitial: false);
+  }
+
   void _queueAppShortcut(AppShortcut shortcut) {
     final bool ready = mounted && ref.read(appProvider).isInitialised;
     _appShortcuts.enqueue(shortcut, ready: ready);
@@ -3073,6 +3081,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,
+            // 第二块屏：顶屏当前是哪个页面（companion 的上下文）。
+            companionContextRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -3368,6 +3378,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
             // 第二块屏：新副屏出现时在主屏问一次「要用这块屏幕吗」（auto 策略）。
             return SecondScreenApprovalHost(
+              openLink: _openCompanionLink,
               child: SmoothWheelScrollScope(child: gated),
             );
           },

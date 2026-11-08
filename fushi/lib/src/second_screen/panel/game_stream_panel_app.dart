@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 Future<void> runGameStreamPanel(MethodChannel channel) async {
   // The relay answers whether it took each message: a lost one fails its
   // request instead of leaving it waiting forever.
-  final GameStreamCompanionPipe pipe = GameStreamCompanionPipe(
+  final SecondScreenPipe pipe = SecondScreenPipe(
     post: (String raw) => channel.invokeMethod<bool>('send', raw),
     spillDirectory: Directory(
       '${gameStreamCompanionSpillRoot().path}'

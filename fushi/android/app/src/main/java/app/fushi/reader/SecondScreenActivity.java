@@ -52,9 +52,12 @@ import io.flutter.plugin.common.MethodChannel;
  * until it raises an ANR and kills the panel (seen on an API 37 emulator).
  * Nothing in the panel takes text input, so focus here never opens a keyboard.
  *
- * <p>Its lifetime belongs to the main process: Back does nothing, and the panel
- * closes itself when it is not on the display it was launched for (its display
- * went away and Android moved it, possibly on top of the game).
+ * <p>Its lifetime belongs to the main process: Back never closes the panel, and
+ * the panel closes itself when it is not on the display it was launched for
+ * (its display went away and Android moved it, possibly on top of the game).
+ * In companion mode, Back from this display's own navigation (gesture / nav
+ * bar, not a controller) steps back in the companion's tab history; the game
+ * stream panel ignores it.
  */
 public class SecondScreenActivity extends FlutterActivity
         implements DisplayManager.DisplayListener {
@@ -72,6 +75,9 @@ public class SecondScreenActivity extends FlutterActivity
 
     /** Intent extra: the panel's mode ({@code companion} / {@code gameStream}). */
     static final String EXTRA_MODE = "app.fushi.reader.extra.SECOND_SCREEN_MODE";
+
+    /** {@link #EXTRA_MODE} of the companion (handles Back in its own history). */
+    static final String MODE_COMPANION = "companion";
 
     /** The display this panel belongs on; anywhere else it closes. */
     private int targetDisplayId = Display.INVALID_DISPLAY;
@@ -252,8 +258,18 @@ public class SecondScreenActivity extends FlutterActivity
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        // Back belongs to the top screen; the panel never closes itself on it.
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) return true;
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            // The panel never closes itself on Back. The companion steps back
+            // in its tab history on this display's own Back; a controller's
+            // Back belongs to the top screen.
+            if (handlesBackItself()
+                    && !isFromController(event)
+                    && event.getAction() == KeyEvent.ACTION_UP
+                    && !event.isCanceled()) {
+                popFlutterRoute();
+            }
+            return true;
+        }
         final Message message = Message.obtain(null, SecondScreenRelayService.MSG_KEY);
         final Bundle data = new Bundle();
         data.putParcelable(SecondScreenRelayService.KEY_EVENT, event);
@@ -282,7 +298,31 @@ public class SecondScreenActivity extends FlutterActivity
     @Override
     @SuppressWarnings("MissingSuperCall")
     public void onBackPressed() {
-        // See dispatchKeyEvent: a back gesture on this display does nothing.
+        // A back gesture (API 33: through the framework's back callback) steps
+        // back in the companion; otherwise it does nothing (see dispatchKeyEvent).
+        if (handlesBackItself()) popFlutterRoute();
+    }
+
+    @Override
+    public boolean popSystemNavigator() {
+        // The companion's Dart side found nothing to pop: stay up (the panel's
+        // lifetime belongs to the main process) instead of finishing.
+        return handlesBackItself() || super.popSystemNavigator();
+    }
+
+    private boolean handlesBackItself() {
+        return MODE_COMPANION.equals(mode);
+    }
+
+    private static boolean isFromController(KeyEvent event) {
+        return event.isFromSource(InputDevice.SOURCE_GAMEPAD)
+                || event.isFromSource(InputDevice.SOURCE_JOYSTICK);
+    }
+
+    /** Hands Back to the Flutter framework (the companion's root PopScope). */
+    private void popFlutterRoute() {
+        final FlutterEngine engine = getFlutterEngine();
+        if (engine != null) engine.getNavigationChannel().popRoute();
     }
 
     // ---- Display: close instead of being moved to another display --------

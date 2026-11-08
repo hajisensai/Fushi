@@ -63,7 +63,7 @@ abstract class GameStreamPanelHost {
 class SecondScreenGameStreamPanelHost implements GameStreamPanelHost {
   SecondScreenGameStreamPanelHost(this._host, {Directory? spillRoot})
     : _spillRoot = spillRoot ?? gameStreamCompanionSpillRoot() {
-    _pipe = GameStreamCompanionPipe(
+    _pipe = SecondScreenPipe(
       post: (String raw) => _host.post(_mode, raw),
       spillDirectory: Directory(
         '${_spillRoot.path}${Platform.pathSeparator}host',
@@ -77,7 +77,7 @@ class SecondScreenGameStreamPanelHost implements GameStreamPanelHost {
 
   /// Both ends' spilled messages; this session owns (and removes) it.
   final Directory _spillRoot;
-  late final GameStreamCompanionPipe _pipe;
+  late final SecondScreenPipe _pipe;
   final ValueNotifier<bool> _attached = ValueNotifier<bool>(false);
   final StreamController<GameStreamCompanionMessage> _messages =
       StreamController<GameStreamCompanionMessage>.broadcast();
@@ -105,7 +105,7 @@ class SecondScreenGameStreamPanelHost implements GameStreamPanelHost {
       _onPanel();
     }
     // Leftovers of a session that was killed before it could clean up.
-    await GameStreamCompanionPipe.clearSpills(_spillRoot);
+    await SecondScreenPipe.clearSpills(_spillRoot);
     await _host.start();
   }
 
@@ -156,6 +156,6 @@ class SecondScreenGameStreamPanelHost implements GameStreamPanelHost {
     );
     _attached.dispose();
     unawaited(_messages.close());
-    unawaited(GameStreamCompanionPipe.clearSpills(_spillRoot));
+    unawaited(SecondScreenPipe.clearSpills(_spillRoot));
   }
 }
