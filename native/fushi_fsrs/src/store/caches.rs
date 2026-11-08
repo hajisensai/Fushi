@@ -1261,7 +1261,7 @@ fn link_family(
 /// 同一条 Anki revlog 导入到两张**没有血统链接**的卡上（BUG-4242：删光重导时笔记按来源类型恢复，旧卡隐藏、新卡
 /// 可见，日志 ID 由卡派生而各有一份）时，两个归属组各投影一份，统计算两遍。所以 [expand] 时再把「有同一 Anki
 /// 复习时刻日志的卡」（[anki_partners]）及其连通分量一起重算（到不动点，结果与刷新顺序无关），投影后按
-/// [history::AnkiEvent] 只留一份（[dedupe_anki_rows]）。全量重建（`all_stats`）的种子已是全部有日志的卡，不必扩。
+/// [history::AnkiEvent] 只留一份（[anki_duplicate_log_ids]）。全量重建（`all_stats`）的种子已是全部有日志的卡，不必扩。
 fn refresh_stats(
     c: &Connection,
     profile: &str,
@@ -1376,11 +1376,13 @@ fn refresh_stats(
         )
         .map_err(sql)?;
     let empty: Vec<LogRow> = Vec::new();
-    let mut rows: Vec<(String, history::StatRow)> = Vec::new();
-    for owners in order.chunks(500) {
+    // 按归属卡分批边算边插（全量重建时分量就是整个 profile，不把全部投影行攒进内存）；去重只需要 Anki 行的
+    // 轻量键（事件、归属卡在 [order] 里的下标、日志 ID），插完再删掉落选的副本。
+    let mut anki_keys: Vec<AnkiStatKey> = Vec::new();
+    for (base, owners) in order.chunks(500).enumerate().map(|(k, o)| (k * 500, o)) {
         let batch: Vec<Vec<String>> = owners.iter().map(|o| groups[o].clone()).collect();
         let logs = logs_of(c, &batch)?;
-        for (o, g) in owners.iter().zip(&batch) {
+        for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {
                 for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
@@ -1388,30 +1390,52 @@ fn refresh_stats(
                 }
             }
             for r in history::stats_from_stored(&stored)? {
-                rows.push((o.clone(), r));
+                ins.execute(rusqlite::params![
+                    r.log_id,
+                    profile,
+                    o,
+                    r.occurred_at,
+                    r.utc_off,
+                    r.rating,
+                    r.kind,
+                    r.dur,
+                    r.prev_due_day,
+                    r.maturity_delta,
+                ])
+                .map_err(sql)?;
+                if let Some(event) = r.anki_event {
+                    anki_keys.push(AnkiStatKey {
+                        event,
+                        owner: base + k,
+                        log_id: r.log_id,
+                    });
+                }
             }
         }
     }
-    for (o, r) in dedupe_anki_rows(rows, &visible, &note_of) {
-        ins.execute(rusqlite::params![
-            r.log_id,
-            profile,
-            o,
-            r.occurred_at,
-            r.utc_off,
-            r.rating,
-            r.kind,
-            r.dur,
-            r.prev_due_day,
-            r.maturity_delta,
-        ])
-        .map_err(sql)?;
+    let losers = anki_duplicate_log_ids(&anki_keys, &order, &visible, &note_of);
+    for chunk in losers.chunks(500) {
+        let q = format!(
+            "DELETE FROM srs_stat_reviews WHERE log_id IN ({})",
+            marks(chunk.len())
+        );
+        c.prepare_cached(&q)
+            .map_err(sql)?
+            .execute(params_from_iter(chunk.iter()))
+            .map_err(sql)?;
     }
     Ok(())
 }
 
+/// [refresh_stats] 去重用的一条 Anki 投影行的轻量键：事件身份、归属卡（在归属组顺序里的下标）、日志 ID。
+struct AnkiStatKey {
+    event: history::AnkiEvent,
+    owner: usize,
+    log_id: String,
+}
+
 /// [cards] 上 Anki 导入日志的时刻（导入日志的发生时刻 = revlog id）在本 profile 里出现过的全部卡（含 [cards] 自己）。
-/// 只按落库列粗筛（走 `idx_srs_review_logs_profile_kind_time`），是否同一事件由 [dedupe_anki_rows] 判。
+/// 只按落库列粗筛（走 `idx_srs_review_logs_profile_kind_time`），是否同一事件由 [anki_duplicate_log_ids] 判。
 fn anki_partners(
     c: &Connection,
     profile: &str,
@@ -1457,32 +1481,34 @@ fn anki_partners(
 /// 按笔记收紧：组里认得出笔记的行（归属卡有缓存行）若分属不止一条笔记，只在同一笔记内合并，认不出笔记的行原样
 /// 保留（不同集合撞同一毫秒、同评分同用时的复习不误并）；只有一条或没有可认的笔记时整组是一次复习。留哪一份：
 /// 归属卡可见的优先，再取日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
-fn dedupe_anki_rows(
-    rows: Vec<(String, history::StatRow)>,
+///
+/// 返回落选副本的日志 ID（由调用方从投影里删掉）。
+fn anki_duplicate_log_ids(
+    keys: &[AnkiStatKey],
+    owners: &[String],
     visible: &HashSet<String>,
     note_of: &HashMap<String, String>,
-) -> Vec<(String, history::StatRow)> {
+) -> Vec<String> {
     let mut by_event: HashMap<history::AnkiEvent, Vec<usize>> = HashMap::new();
-    for (i, (_, r)) in rows.iter().enumerate() {
-        if let Some(e) = r.anki_event {
-            by_event.entry(e).or_default().push(i);
-        }
+    for (i, k) in keys.iter().enumerate() {
+        by_event.entry(k.event).or_default().push(i);
     }
+    let owner = |i: usize| -> &String { &owners[keys[i].owner] };
     let better = |a: usize, b: usize| -> bool {
-        let (va, vb) = (visible.contains(&rows[a].0), visible.contains(&rows[b].0));
+        let (va, vb) = (visible.contains(owner(a)), visible.contains(owner(b)));
         if va != vb {
             return va;
         }
-        cmp_utf16(&rows[a].1.log_id, &rows[b].1.log_id) == std::cmp::Ordering::Less
+        cmp_utf16(&keys[a].log_id, &keys[b].log_id) == std::cmp::Ordering::Less
     };
-    let mut drop: HashSet<usize> = HashSet::new();
+    let mut drop: Vec<String> = Vec::new();
     for members in by_event.values() {
         if members.len() < 2 {
             continue;
         }
         let notes: BTreeSet<&String> = members
             .iter()
-            .filter_map(|&i| note_of.get(&rows[i].0))
+            .filter_map(|&i| note_of.get(owner(i)))
             .collect();
         let clusters: Vec<Vec<usize>> = if notes.len() <= 1 {
             vec![members.clone()]
@@ -1493,7 +1519,7 @@ fn dedupe_anki_rows(
                     members
                         .iter()
                         .copied()
-                        .filter(|&i| note_of.get(&rows[i].0) == Some(*n))
+                        .filter(|&i| note_of.get(owner(i)) == Some(*n))
                         .collect()
                 })
                 .collect()
@@ -1506,14 +1532,15 @@ fn dedupe_anki_rows(
             else {
                 continue;
             };
-            drop.extend(cluster.into_iter().filter(|&i| i != keep));
+            drop.extend(
+                cluster
+                    .into_iter()
+                    .filter(|&i| i != keep)
+                    .map(|i| keys[i].log_id.clone()),
+            );
         }
     }
-    rows.into_iter()
-        .enumerate()
-        .filter(|(i, _)| !drop.contains(i))
-        .map(|(_, r)| r)
-        .collect()
+    drop
 }
 
 // ---------------------------------------------------------------- 读
