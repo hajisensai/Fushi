@@ -80,7 +80,7 @@ Future<void> runCompanionPanel(MethodChannel channel) async {
 /// Companion panel root: the user's theme and language, reloaded whenever the
 /// main process changes preferences.
 ///
-/// Nothing is painted before the AppModel has loaded them
+/// Only a plain surface is painted before the AppModel has loaded them
 /// ([AppModel.isAppearanceReady], early in its initialisation): painting the
 /// seed-colour fallback first showed the default blue for seconds after every
 /// panel start. Only when initialisation failed does the fallback theme show.
@@ -161,10 +161,11 @@ class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp> {
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
     );
     if (!ready && appModel.initError == null) {
-      // Preferences are still loading (a fraction of a second): paint
-      // nothing, the window background stays (no third colour between it
-      // and the app theme).
-      return const SizedBox.shrink();
+      // Preferences are still loading (a fraction of a second): a plain
+      // surface for the system brightness, which matches the starting
+      // window. An empty frame would show the Flutter view's black between
+      // the (light) starting window and the app theme.
+      return ColoredBox(color: fallback.colorScheme.surface);
     }
     final Locale? locale = ready ? appModel.appLocale : null;
     // Most strings read the global `t`, which does not rebuild on a language
