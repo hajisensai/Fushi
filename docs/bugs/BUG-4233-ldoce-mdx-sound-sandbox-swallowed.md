@@ -1,4 +1,4 @@
-## BUG-4232 · LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击）
+## BUG-4233 · LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击）
 - **报告**：2026-11-07（用户：「LDOCE5++ V 2-15 这个 mdx 的内置音频好像播放不了了」）
 - **真实性**：✅ 真 bug。词条发音是 `<a class="speaker …" href="sound://media/english/breProns/ld5_000.mp3">`，词条自带 `LM5Switch.js`。
   带脚本释义自 34eaa2e44d（2026-10-23）起跑在沙箱 iframe 里，沙箱辅助脚本 `DICT_SANDBOX_HELPER_JS`
