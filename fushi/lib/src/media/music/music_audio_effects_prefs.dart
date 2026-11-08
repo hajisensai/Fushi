@@ -4,7 +4,9 @@ import 'package:fushi/src/models/preferences_repository.dart';
 
 /// 偏好 ↔ [MusicAudioEffects]（总开关与增益沿用 `music_eq_enabled` / `music_eq_gains`，
 /// 其余是 `music_eq_preamp_db` / `music_eq_preset` 与 `music_effects_*`，见
-/// preference_keys.dart）。读时把越界值夹回范围、坏的增益串回平直。
+/// preference_keys.dart）。读时把越界值夹回范围、坏的增益串回平直、不在可选
+/// 档位里的转折频率回默认档——这是效果参数的唯一读入口，界面 / 控制通道 / 引擎
+/// 拿到的值都已合法，消费端不再各自兜底。
 MusicAudioEffects readMusicAudioEffectsPrefs(PreferencesRepository p) =>
     MusicAudioEffects(
       enabled: p.musicEqEnabled,
@@ -17,18 +19,30 @@ MusicAudioEffects readMusicAudioEffectsPrefs(PreferencesRepository p) =>
         -kMusicToneMaxGainDb,
         kMusicToneMaxGainDb,
       ),
-      bassHz: p.musicEffectsBassHz,
+      bassHz: _pickHz(
+        p.musicEffectsBassHz,
+        kMusicBassFrequenciesHz,
+        kMusicBassDefaultHz,
+      ),
       trebleDb: p.musicEffectsTrebleDb.clamp(
         -kMusicToneMaxGainDb,
         kMusicToneMaxGainDb,
       ),
-      trebleHz: p.musicEffectsTrebleHz,
+      trebleHz: _pickHz(
+        p.musicEffectsTrebleHz,
+        kMusicTrebleFrequenciesHz,
+        kMusicTrebleDefaultHz,
+      ),
       balance: p.musicEffectsBalance.clamp(-1, 1),
       width: p.musicEffectsWidth.clamp(0, kMusicStereoWidthMax),
       mono: p.musicEffectsMono,
       swapChannels: p.musicEffectsSwapChannels,
       limiter: p.musicEffectsLimiter,
     );
+
+/// [hz] 在 [allowed] 里就原样返回，否则回 [fallback]（偏好损坏 / 外部写入）。
+int _pickHz(int hz, List<int> allowed, int fallback) =>
+    allowed.contains(hz) ? hz : fallback;
 
 /// 当前显示的均衡预设（存的预设 + 当前增益，见 [MusicEqPreset.resolve]）。
 MusicEqPreset readMusicEqPresetPref(PreferencesRepository p) =>

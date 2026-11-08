@@ -138,7 +138,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 实例的 `af`，harness 里没有在播的 mpv。偏好 → 设置 → `af` 链由 music_audio_effects_test 咬住，真 libmpv 上的增益 / 关与全部
   // 中性时逐样本不变 / 与交叉淡入同链在 music_audio_effects_real_test，页面交互在
   // music_audio_effects_page_test。
-  'music/Enable audio effects': 'test/media/music/music_audio_effects_test.dart',
+  'music/Enable audio effects':
+      'test/media/music/music_audio_effects_test.dart',
   'music/Bass': 'test/media/music/music_audio_effects_test.dart',
   'music/Bass turnover': 'test/media/music/music_audio_effects_test.dart',
   'music/Treble': 'test/media/music/music_audio_effects_test.dart',
@@ -147,7 +148,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'music/Stereo width': 'test/media/music/music_audio_effects_test.dart',
   'music/Mono': 'test/media/music/music_audio_effects_test.dart',
   'music/Swap left and right': 'test/media/music/music_audio_effects_test.dart',
-  'music/Anti-clipping limiter': 'test/media/music/music_audio_effects_test.dart',
+  'music/Anti-clipping limiter':
+      'test/media/music/music_audio_effects_test.dart',
   'music/Preamp': 'test/media/music/music_audio_effects_test.dart',
   // ASS 卡拉 OK 字幕默认显示：生效点是卡拉 OK 字幕页打开时选哪种叠加
   // （musicKaraokeDefaultOverlay），harness 设置页没有在播的曲目与 mpv；设置值 → 默认

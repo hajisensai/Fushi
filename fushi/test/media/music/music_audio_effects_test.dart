@@ -379,6 +379,19 @@ void main() {
       await writeMusicAudioEffectsPrefs(prefs, const MusicAudioEffects());
       expect(prefs.musicEqGains, '');
     });
+
+    test('不在可选档位的转折频率读时回默认档', () async {
+      await prefs.setMusicEffectsBassHz(123);
+      await prefs.setMusicEffectsTrebleHz(7777);
+      final MusicAudioEffects fx = readMusicAudioEffectsPrefs(prefs);
+      expect(fx.bassHz, kMusicBassDefaultHz);
+      expect(fx.trebleHz, kMusicTrebleDefaultHz);
+      await prefs.setMusicEffectsBassHz(kMusicBassFrequenciesHz.first);
+      await prefs.setMusicEffectsTrebleHz(kMusicTrebleFrequenciesHz.last);
+      final MusicAudioEffects ok = readMusicAudioEffectsPrefs(prefs);
+      expect(ok.bassHz, kMusicBassFrequenciesHz.first);
+      expect(ok.trebleHz, kMusicTrebleFrequenciesHz.last);
+    });
   });
 
   test('信号路径：音效挂着即一环、判非 bit-perfect', () {

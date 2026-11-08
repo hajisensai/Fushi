@@ -9,6 +9,8 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 宽于此（逻辑像素）时浮起卡片；更窄时走底部弹层。
@@ -51,7 +53,7 @@ Future<void> showMusicFloatingPanel({
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.12),
     builder: (BuildContext c) {
-      final ColorScheme cs = Theme.of(c).colorScheme;
+      final FushiDesignTokens tokens = FushiDesignTokens.of(c);
       final Widget body = builder(c);
       return SafeArea(
         child: Padding(
@@ -61,10 +63,10 @@ Future<void> showMusicFloatingPanel({
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxWidth),
               child: Material(
-                color: cs.surfaceContainerLow,
+                color: tokens.surfaces.group,
                 elevation: 8,
                 shadowColor: Colors.black.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: FushiM3eShape.containerLargeRadius,
                 clipBehavior: Clip.antiAlias,
                 child: height != null
                     ? SizedBox(height: height, child: body)

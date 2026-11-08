@@ -224,10 +224,7 @@ SettingsSegmentedItem<int> _hz({
     for (final int hz in values)
       SettingsSegmentOption<int>(value: hz, label: musicHzLabel(hz)),
   ],
-  selected: (SettingsContext c) {
-    final int hz = read(c.appModel.musicAudioEffects);
-    return values.contains(hz) ? hz : defaultHz;
-  },
+  selected: (SettingsContext c) => read(c.appModel.musicAudioEffects),
   onChanged: (SettingsContext c, int v) =>
       _set(c, (MusicAudioEffects fx) => write(fx, v)),
 );

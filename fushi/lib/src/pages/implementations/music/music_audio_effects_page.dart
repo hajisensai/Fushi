@@ -25,18 +25,23 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_music.dart'
     show buildMusicAudioEffectsDestination;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show kFushiSettingsHomeTwoPaneMinWidth;
+    show HorizontalDragScrollable, kFushiSettingsHomeTwoPaneMinWidth;
 
 /// 推入独立的音效页（与设置里的子页同一个 destination）。
 Future<void> pushMusicAudioEffectsPage(BuildContext context) =>
@@ -321,8 +326,9 @@ class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
           value: fx.enabled,
           onChanged: (bool v) => _edit(fx.copyWith(enabled: v)),
         ),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
           child: fx.isActive
               ? _Note(
                   key: const ValueKey<String>('music-effects-active-banner'),
@@ -565,9 +571,7 @@ class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
                 label: musicHzLabel(hz),
               ),
           ],
-          selected: kMusicBassFrequenciesHz.contains(fx.bassHz)
-              ? fx.bassHz
-              : kMusicBassDefaultHz,
+          selected: fx.bassHz,
           onChanged: (int hz) => _edit(fx.copyWith(bassHz: hz)),
         ),
         AdaptiveSettingsSliderRow(
@@ -595,9 +599,7 @@ class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
                 label: musicHzLabel(hz),
               ),
           ],
-          selected: kMusicTrebleFrequenciesHz.contains(fx.trebleHz)
-              ? fx.trebleHz
-              : kMusicTrebleDefaultHz,
+          selected: fx.trebleHz,
           onChanged: (int hz) => _edit(fx.copyWith(trebleHz: hz)),
         ),
         if (includeLimiter) _limiterRow(),
@@ -885,7 +887,7 @@ class _MusicEqCurveState extends State<MusicEqCurve> {
                   effects: widget.effects,
                   line: cs.primary,
                   grid: cs.outlineVariant,
-                  background: cs.surfaceContainerHighest,
+                  background: tokens.surfaces.overlay,
                 ),
               ),
             ),
@@ -1105,24 +1107,25 @@ class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
     return Row(
       children: <Widget>[
         Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            primary: false,
-            child: Row(
-              spacing: 6,
-              children: <Widget>[
-                for (final MusicEqPreset p in MusicEqPreset.values)
-                  if (p != MusicEqPreset.custom || p == selected)
-                    FushiPressScale(
-                      child: FushiChoiceChip(
-                        key: ValueKey<String>('music-eq-preset-${p.wire}'),
-                        label: Text(musicEqPresetLabel(p)),
-                        selected: p == selected,
-                        visualDensity: VisualDensity.compact,
-                        onSelected: (bool _) => _pickPreset(p),
+          child: HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              primary: false,
+              child: Row(
+                spacing: 6,
+                children: <Widget>[
+                  for (final MusicEqPreset p in MusicEqPreset.values)
+                    if (p != MusicEqPreset.custom || p == selected)
+                      FushiPressScale(
+                        child: FushiChoiceChip(
+                          key: ValueKey<String>('music-eq-preset-${p.wire}'),
+                          label: Text(musicEqPresetLabel(p)),
+                          selected: p == selected,
+                          onSelected: (bool _) => _pickPreset(p),
+                        ),
                       ),
-                    ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1164,11 +1167,11 @@ class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
   }
 
   Widget _card(BuildContext context, Widget child) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
+        color: tokens.surfaces.card,
+        borderRadius: FushiM3eShape.cardRadius,
       ),
       child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
@@ -1255,7 +1258,6 @@ class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
           key: ValueKey<String>(key),
           label: Text(label),
           selected: on,
-          visualDensity: VisualDensity.compact,
           onSelected: (bool _) => tap(),
         ),
       );
@@ -1450,7 +1452,7 @@ class _SliderTile extends StatelessWidget {
             ),
             if (f != null) ...<Widget>[
               const SizedBox(width: 6),
-              Tooltip(
+              FushiTooltip(
                 message: freqTooltip ?? '',
                 child: FushiPressScale(
                   child: Material(
