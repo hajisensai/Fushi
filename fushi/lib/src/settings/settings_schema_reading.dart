@@ -768,6 +768,25 @@ SettingsDestination buildReadingDestination() {
                   notifyReaderSettingsChanged(c);
                 },
           ),
+          // 反馈 R7k887yaJI ③：滚动模式章节无缝衔接（默认关）。前后章挂在同一文档里一起
+          // 滚动；改值要重建文档（挂 / 卸邻章），走 notifyReaderLayoutChanged 整章重载。
+          SettingsSwitchItem(
+            id: 'reading_controls.continuous_seamless_chapters',
+            title: t.reader_continuous_seamless_chapters,
+            subtitle: t.reader_continuous_seamless_chapters_description,
+            icon: FushiIcons.link,
+            visible: isContinuous,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 17,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.continuousSeamlessChapters,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setContinuousSeamlessChapters(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
           // 翻页动画（View Transitions 快照翻页，见 reader_page_turn_script.dart）。只在
           // 翻页模式生效：滚动 / VN 模式下置灰并说明原因（不隐藏——让用户知道有这项、
           // 切回翻页模式就能用）。改值走 notifyReaderSettingsChanged → updateLive 热下发。

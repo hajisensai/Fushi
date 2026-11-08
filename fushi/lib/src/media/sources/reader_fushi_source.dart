@@ -1768,6 +1768,23 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 连续模式章节无缝衔接（落盘 key 与 [ReaderSettings.continuousSeamlessChapters]
+  /// 同一个，默认关）。
+  bool get continuousSeamlessChapters =>
+      readerSettings?.continuousSeamlessChapters ??
+      getPreference<bool>(
+        key: ReaderSettings.continuousSeamlessChaptersKey,
+        defaultValue: false,
+      );
+
+  Future<void> setContinuousSeamlessChapters(bool value) async {
+    await (readerSettings?.setContinuousSeamlessChapters(value) ??
+        setPreference<bool>(
+          key: ReaderSettings.continuousSeamlessChaptersKey,
+          value: value,
+        ));
+  }
+
   /// 点击翻页区域模板（落盘 key 与 [ReaderSettings.tapZoneLayout] 同一个）。
   ReaderTapZoneLayout get tapZoneLayout =>
       readerSettings?.tapZoneLayout ??

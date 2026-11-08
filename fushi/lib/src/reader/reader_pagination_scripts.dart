@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_page_turn_script.dart';
+import 'package:fushi/src/reader/reader_seamless_chapters_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
@@ -4973,6 +4974,10 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
     if (SCROLL_KEYS[e.key]) note();
   }, opts);
 })();
+// 反馈 R7k887yaJI ③：章节无缝衔接（只在 C.seamlessChapters === true 时安装，见
+// reader_seamless_chapters_script.dart）。必须在 boot 之前装：初次恢复可能同步完成，
+// 装饰过的 notifyRestoreComplete 要在那之前就位。
+$kSeamlessChaptersInstallJs
 $_sharedInitBoot
 };
 </script>''';

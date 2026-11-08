@@ -6914,6 +6914,8 @@
   "reader_bookmark_removed": "已移除书签",
   "reader_bookmarks_empty": "还没有书签。给当前页加个书签，之后可以随时跳回来。",
   "reader_content_timeout": "内容加载超时，如显示异常请重新打开",
+  "reader_continuous_seamless_chapters": "章节无缝衔接",
+  "reader_continuous_seamless_chapters_description": "前后章节同时加载，滚过章节边界时连续滚动，不再整章重新加载",
   "reader_continuous_turn_resistance": "切章阻尼",
   "reader_continuous_turn_resistance_description": "滚到章首或章末后还要再拉多远才切到相邻章节",
   "reader_continuous_turn_resistance_high": "高",

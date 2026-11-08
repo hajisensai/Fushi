@@ -6914,6 +6914,8 @@
   "reader_bookmark_removed": "Bookmark removed",
   "reader_bookmarks_empty": "No bookmarks yet. Bookmark a page to jump back to it later.",
   "reader_content_timeout": "콘텐츠 로딩 시간이 초과되었습니다. 표시가 비정상이면 다시 열어 주세요",
+  "reader_continuous_seamless_chapters": "Seamless chapters",
+  "reader_continuous_seamless_chapters_description": "Keep the previous and next chapters loaded so scrolling flows across chapter boundaries without reloading",
   "reader_continuous_turn_resistance": "Chapter turn resistance",
   "reader_continuous_turn_resistance_description": "How far you pull past the start or end of a chapter before scrolling turns to the next one",
   "reader_continuous_turn_resistance_high": "High",
