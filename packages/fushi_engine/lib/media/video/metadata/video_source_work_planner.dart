@@ -151,6 +151,19 @@ class VideoSourceWorkPlanner {
       final bool discWork = entry.value.every(
         (VideoBookRow book) => isDiscMemberPath(book.videoPath),
       );
+      if (discWork && entry.value.length == 1) {
+        // 电影盘：盘合集里除正片外的标题都是特典（[discMemberExtras] 已剔除），
+        // 剩下的唯一正片就是这部电影本身，与修前同形（书作品），特典挂在它下面。
+        final VideoBookRow book = entry.value.single;
+        result.add(
+          VideoSourceScrapeWork(
+            source: source,
+            title: book.title,
+            members: <VideoBookRow>[book],
+          ),
+        );
+        continue;
+      }
       entry.value.sort((VideoBookRow a, VideoBookRow b) {
         if (discWork) {
           final int byIndex = (sortIndex[(entry.key, a.bookUid)] ?? 0)
