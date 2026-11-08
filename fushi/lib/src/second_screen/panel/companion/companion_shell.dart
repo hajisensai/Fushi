@@ -5,6 +5,7 @@ import 'package:fushi/src/second_screen/panel/companion/companion_lookup_control
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_settings_tab.dart';
+import 'package:fushi/src/second_screen/panel/companion/library/companion_library_actions.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_tab.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -60,14 +61,24 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
   NavigatorState? navigatorOf(CompanionTab tab) =>
       _navigators[tab]!.currentState;
 
-  /// Switches to [next]; the current tab again goes back to its root.
+  final GlobalKey<CompanionLibraryTabState> _libraryTab =
+      GlobalKey<CompanionLibraryTabState>(debugLabel: 'companion-library-tab');
+
+  /// Switches to [next]; the current tab again goes back to its root (the
+  /// Library tab also to its visible mode's root).
   void select(CompanionTab next) {
     _beforeLookup = null;
     if (next == _tab) {
       navigatorOf(next)?.popUntil((Route<Object?> route) => route.isFirst);
+      if (next == CompanionTab.library) _libraryTab.currentState?.popToRoot();
       return;
     }
     setState(() => _tab = next);
+  }
+
+  /// After the companion opened something on top (Browse): the Now tab.
+  void _showNow() {
+    if (_tab != CompanionTab.now) select(CompanionTab.now);
   }
 
   void _onLookupChanged(
@@ -106,7 +117,7 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
 
   Widget _root(CompanionTab tab) => switch (tab) {
     CompanionTab.now => CompanionNowTab(contextPanels: widget.contextPanels),
-    CompanionTab.library => const CompanionLibraryTab(),
+    CompanionTab.library => CompanionLibraryTab(key: _libraryTab),
     CompanionTab.lookup => widget.lookupTab,
     CompanionTab.settings => const CompanionSettingsTab(),
   };
@@ -145,33 +156,36 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (!didPop) _back();
       },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        extendBody: true,
-        body: IndexedStack(
-          index: _tab.index,
-          children: <Widget>[
-            for (final CompanionTab tab in CompanionTab.values)
-              _TabBody(
-                active: tab == _tab,
-                child: Navigator(
-                  key: _navigators[tab],
-                  onGenerateRoute: (RouteSettings settings) =>
-                      MaterialPageRoute<void>(
-                        settings: settings,
-                        builder: (BuildContext context) => _root(tab),
-                      ),
+      child: CompanionShowNowScope(
+        showNow: _showNow,
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          extendBody: true,
+          body: IndexedStack(
+            index: _tab.index,
+            children: <Widget>[
+              for (final CompanionTab tab in CompanionTab.values)
+                _TabBody(
+                  active: tab == _tab,
+                  child: Navigator(
+                    key: _navigators[tab],
+                    onGenerateRoute: (RouteSettings settings) =>
+                        MaterialPageRoute<void>(
+                          settings: settings,
+                          builder: (BuildContext context) => _root(tab),
+                        ),
+                  ),
                 ),
-              ),
-          ],
-        ),
-        bottomNavigationBar: FocusTraversalGroup(
-          child: adaptiveBottomBar(
-            context: context,
-            currentIndex: _tab.index,
-            onTap: (int index) => select(CompanionTab.values[index]),
-            items: _items(),
-            showLabels: false,
+            ],
+          ),
+          bottomNavigationBar: FocusTraversalGroup(
+            child: adaptiveBottomBar(
+              context: context,
+              currentIndex: _tab.index,
+              onTap: (int index) => select(CompanionTab.values[index]),
+              items: _items(),
+              showLabels: false,
+            ),
           ),
         ),
       ),

@@ -8,6 +8,7 @@ import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_labels.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_playing_bar.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
+import 'package:fushi/src/second_screen/panel/companion/library/companion_library_actions.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
@@ -65,9 +66,18 @@ class CompanionNowTab extends ConsumerWidget {
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: AnimatedSwitcher(
-          duration: fushiMotionDuration(context, FushiMotion.medium),
-          child: KeyedSubtree(key: key, child: child),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // "Back to <previous>" after an open from the Library tab.
+            const CompanionBackToPreviousBar(),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                child: KeyedSubtree(key: key, child: child),
+              ),
+            ),
+          ],
         ),
       ),
     );

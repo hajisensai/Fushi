@@ -6,6 +6,7 @@ import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_browse.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_main.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Library tab modes: what the main screen's library shows (Main) or the
@@ -49,6 +50,11 @@ class CompanionLibraryTabState extends ConsumerState<CompanionLibraryTab> {
   /// Shows [mode] (Main only when available).
   void selectMode(CompanionLibraryMode mode) => setState(() => _picked = mode);
 
+  /// Back to the visible mode's root page (the Library tab selected again).
+  void popToRoot() => navigatorOf(
+    _mode(ref.read(companionPanelSessionProvider).context),
+  )?.popUntil((Route<Object?> route) => route.isFirst);
+
   @override
   Widget build(BuildContext context) {
     final CompanionPanelSession session = ref.watch(
@@ -91,7 +97,7 @@ class CompanionLibraryTabState extends ConsumerState<CompanionLibraryTab> {
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
                 child: mainAvailable
                     ? toggle
-                    : Tooltip(
+                    : FushiTooltip(
                         message: t.second_screen_library_main_unavailable,
                         child: toggle,
                       ),

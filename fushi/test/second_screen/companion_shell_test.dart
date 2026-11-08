@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/second_screen/companion/modules/settings_companion_schema.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_now_tab.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
@@ -252,6 +253,21 @@ void main() {
   ) async {
     await pumpShell(tester);
     await tester.tap(tabButton(t.second_screen_tab_library));
+    await tester.pumpAndSettle();
+    // Browse asks for its Home once shown; an empty library says so.
+    final CompanionRequestMessage home = sent
+        .whereType<CompanionRequestMessage>()
+        .single;
+    expect(home.method, CompanionRequestMethods.libraryHome);
+    push(
+      CompanionReplyMessage(
+        id: home.id,
+        value: const CompanionLibraryHome(
+          rows: <CompanionLibraryHomeRow>[],
+          sections: <CompanionLibrarySection>[CompanionLibrarySection.home],
+        ).toJson(),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text(t.second_screen_library_browse_empty), findsOneWidget);
     // Main is disabled: tapping it changes nothing.
