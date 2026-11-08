@@ -170,6 +170,22 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
   }
 
+  /// Sends a tapped word to the companion: the whole sentence with the tapped
+  /// index (so the Lookup tab can scan from it and mine the sentence), or the
+  /// selected text when the page reported no sentence.
+  Future<bool> _routeLookupToCompanion(ReaderSelectionData data) {
+    final String sentence = data.sentence.trim();
+    final bool hasSentence =
+        sentence.isNotEmpty &&
+        data.sentenceOffset >= 0 &&
+        data.sentenceOffset < data.sentence.length;
+    return routeCompanionLookup(
+      text: hasSentence ? data.sentence : data.text,
+      charIndex: hasSentence ? data.sentenceOffset : -1,
+      sentence: hasSentence ? data.sentence : data.text,
+    );
+  }
+
   /// 选词来源：JS 回传的 `fromHover`（Shift 悬停 / 悬停查词）是悬停，其余是明确的
   /// 点击 / 按键。
   LookupOrigin _lookupOriginOf(ReaderSelectionData data) =>
@@ -179,6 +195,13 @@ extension _ReaderLookup on _ReaderFushiPageState {
     if (data.text.isEmpty) {
       return;
     }
+    // Dual-screen companion: when it is up the lookup opens on the second
+    // screen's Lookup tab and the page shows no popup (no pause-for-popup,
+    // no popup highlight: their undo is tied to the popup closing). Same
+    // path for paginated, continuous and vn modes and the audiobook view.
+    // The synchronous check keeps the single-screen path free of an await.
+    if (_companion.isActive && await _routeLookupToCompanion(data)) return;
+    if (!mounted) return;
     _removeSelectionActionBar();
     // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃
     // 上一个词的「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，

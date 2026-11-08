@@ -8,6 +8,13 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+
+import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
+import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
+import 'package:fushi/src/second_screen/companion/modules/reader_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/reader_companion_schema.dart';
 import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
@@ -281,6 +288,7 @@ part 'reader_fushi/chrome.part.dart';
 part 'reader_fushi/webview.part.dart';
 part 'reader_fushi/tts.part.dart';
 part 'reader_fushi/session_remote.part.dart';
+part 'reader_fushi/companion.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
@@ -1931,6 +1939,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 桌面控制通道遥控面（见 `reader_fushi/session_remote.part.dart`）。
   late final _ReaderPageSessionRemote _sessionRemote = _ReaderPageSessionRemote(
     this,
+  );
+
+  /// Dual-screen companion: claims `reader` / `audiobook`, publishes the
+  /// snapshot only while the companion is up (see `companion.part.dart`).
+  late final ReaderCompanionHook _companion = ReaderCompanionHook(
+    _ReaderCompanionPageAdapter(this),
   );
   // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
   // 树。只随 _book 失效，故这两个字段总是成对写。
@@ -3774,6 +3788,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 整段跳过。
     _studyClock?.detach();
     readerSessionRemotes.unregister(_sessionRemote);
+    _companion.dispose();
     // Kavita 绑定书：关书时限时 flush 待推进度（不阻塞 dispose，内部吞错）。
     // 防抖里还没落库的最后一章也要带上：dispose 之后 [_persistPosition] 的转发会撞
     // 上已置空的会话，所以这里用页面缓存的最近 section 直接补报（纯内存，零 DB IO）。
@@ -4145,6 +4160,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _studyCoverWatch.attach(ModalRoute.of(context));
+    _companion.attach(ModalRoute.of(context));
     final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
     if (!identical(themeHost, _lyricsThemeHost)) {
       _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
