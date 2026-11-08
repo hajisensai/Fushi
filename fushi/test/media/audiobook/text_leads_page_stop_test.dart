@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 

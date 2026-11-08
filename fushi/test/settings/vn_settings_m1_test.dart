@@ -67,7 +67,7 @@ void main() {
     );
   }
 
-  testWidgets('all six VN controls are exposed only in VN mode', (
+  testWidgets('all seven VN controls are exposed only in VN mode', (
     WidgetTester tester,
   ) async {
     await pumpContext(tester);
@@ -78,6 +78,7 @@ void main() {
       'reading_vn.preserve_dialogue',
       'reading_vn.click_advance',
       'reading_vn.merge_spoken_sentence',
+      'listening.page_end_audio',
     ]);
     expect(vnSection.isVisible(settingsContext), isFalse);
     expect(
@@ -101,6 +102,7 @@ void main() {
         'reading_vn.screen_mode',
         'reading_vn.click_advance',
         'reading_vn.merge_spoken_sentence',
+        'listening.page_end_audio',
       ],
       reason: 'sentence-only controls stay hidden in block mode',
     );
