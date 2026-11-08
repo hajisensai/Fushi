@@ -159,11 +159,25 @@ void ReadGtkPrimary(FlMethodCall* call) {
 constexpr guint kFocusWaitMs = 1500;
 
 // A primary selection read that waits for one of Fushi's windows to become
-// active. Owns a ref on the call and on every window it watches.
+// active. Owns a ref on the call and on every window it watches; the
+// destructor drops the signal handlers, the timeout and those refs. While the
+// wait runs, the GLib callbacks own it (see CaptureGtkPrimary).
 struct FocusWait {
   FlMethodCall* call = nullptr;
   std::vector<std::pair<GtkWindow*, gulong>> watched;
   guint timeout_id = 0;
+
+  FocusWait() = default;
+  FocusWait(const FocusWait&) = delete;
+  FocusWait& operator=(const FocusWait&) = delete;
+  ~FocusWait() {
+    for (auto& [window, handler] : watched) {
+      g_signal_handler_disconnect(window, handler);
+      g_object_unref(window);
+    }
+    if (timeout_id != 0) g_source_remove(timeout_id);
+    if (call != nullptr) g_object_unref(call);
+  }
 };
 
 bool AnyToplevelActive() {
@@ -176,19 +190,14 @@ bool AnyToplevelActive() {
   return active;
 }
 
-void FinishFocusWait(FocusWait* wait) {
-  for (auto& [window, handler] : wait->watched) {
-    g_signal_handler_disconnect(window, handler);
-    g_object_unref(window);
-  }
-  if (wait->timeout_id != 0) g_source_remove(wait->timeout_id);
+// Takes back the ownership CaptureGtkPrimary handed to the callbacks.
+void FinishFocusWait(FocusWait* raw) {
+  std::unique_ptr<FocusWait> wait(raw);
   // The compositor sends the selection offer with keyboard focus, but in no
   // fixed order relative to the "activated" state GDK reports as is-active.
   // One round trip makes sure GDK has processed that offer before the read.
   gdk_display_sync(gdk_display_get_default());
   ReadGtkPrimary(wait->call);
-  g_object_unref(wait->call);
-  delete wait;
 }
 
 void OnWindowActive(GObject* window, GParamSpec*, gpointer data) {
@@ -219,19 +228,23 @@ void CaptureGtkPrimary(FlMethodCall* call) {
 #ifdef GDK_WINDOWING_WAYLAND
   if (GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default()) &&
       !AnyToplevelActive()) {
-    auto* wait = new FocusWait();
+    auto wait = std::make_unique<FocusWait>();
     wait->call = FL_METHOD_CALL(g_object_ref(call));
     GList* windows = gtk_window_list_toplevels();
     for (GList* l = windows; l != nullptr; l = l->next) {
-      GtkWindow* window = GTK_WINDOW(l->data);
+      auto* window = GTK_WINDOW(l->data);
       if (gtk_window_get_window_type(window) != GTK_WINDOW_TOPLEVEL) continue;
       g_object_ref(window);
       wait->watched.emplace_back(
           window, g_signal_connect(window, "notify::is-active",
-                                   G_CALLBACK(OnWindowActive), wait));
+                                   G_CALLBACK(OnWindowActive), wait.get()));
     }
     g_list_free(windows);
-    wait->timeout_id = g_timeout_add(kFocusWaitMs, OnFocusWaitTimeout, wait);
+    wait->timeout_id =
+        g_timeout_add(kFocusWaitMs, OnFocusWaitTimeout, wait.get());
+    // From here the handlers and the timeout own it; whichever fires first
+    // calls FinishFocusWait, which frees it and disconnects the others.
+    wait.release();
     return;
   }
 #endif
