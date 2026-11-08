@@ -10,7 +10,10 @@
 ///   `--help` → 0（EX_OK）；什么都不给 → 64；参数非法 → 64（EX_USAGE）。
 library;
 
+import 'dart:io';
+
 import 'package:fushi_server/src/cli.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -27,6 +30,44 @@ void main() {
     test('无法解析的参数 = 用法错误 64', () async {
       expect(await runFushiServerCli(<String>['--no-such-flag']), 64);
     });
+
+    // BUG-4242：backup 子命令自己定义过可取反的 `config` flag，盖住了顶层的 `--config <路径>`，
+    // 放在子命令后面的 `--config my.yaml` 被当成「还原配置」开关，路径成了多余的位置参数 → 64。
+    // 备份文件不存在时应走到「找不到备份文件」（66），说明参数已经被正确解析。
+    test(
+      '--config <path> after `backup restore` is the global option',
+      () async {
+        final Directory tmp = await Directory.systemTemp.createTemp(
+          'fushi_cli_',
+        );
+        addTearDown(() => tmp.delete(recursive: true));
+        final String missing = p.join(tmp.path, 'missing.zip');
+        final String config = p.join(tmp.path, 'fushi_server.yaml');
+        expect(
+          await runFushiServerCli(<String>[
+            'backup',
+            'restore',
+            missing,
+            '--yes',
+            '--config',
+            config,
+          ]),
+          66,
+        );
+        expect(
+          await runFushiServerCli(<String>[
+            'backup',
+            'restore',
+            missing,
+            '--yes',
+            '--no-config',
+            '--config',
+            config,
+          ]),
+          66,
+        );
+      },
+    );
 
     test('--help 与子命令同时给出时仍只打帮助并成功返回', () async {
       // help 优先于子命令：不得因为「有 command」就去执行 serve。
