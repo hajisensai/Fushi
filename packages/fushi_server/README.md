@@ -145,7 +145,9 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
   构建时 `check_bundle_libs.sh` 会直接报错而不是等到启动才崩）。
   `Dockerfile.source` 从本仓源码多阶段构建，用 `bash packages/fushi_server/docker/build_source_image.sh`
   （先构建 `tool/linux/Dockerfile` 工具链镜像，构建上下文只送 `git ls-files` 列出的源码）。首次冷编很慢
-  （静态 libtorrent 约 40 分钟），BuildKit 缓存让之后只重编改动部分。
+  （静态 libtorrent 约 40 分钟），BuildKit 缓存让之后只重编改动部分。产出镜像 `fushi-server:source`，
+  用 Compose 跑：`.env` 里设 `FUSHI_IMAGE=fushi-server:source`，再 `docker compose up -d`（**不加** `--build`，
+  否则会按发布包 Dockerfile 重建）。
 - **数据**：全部在 `/config` 卷：`fushi_server.yaml` 与 `data/`（数据库、配对与 TLS 身份、封面、日志）。
   首次启动由 `fushi_server init` 生成配置（`data_dir: /config/data`、随机 admin_token）。备份这一个目录即可。
 - **媒体库**：媒体目录挂到 `/media`（`FUSHI_MEDIA_DIR`），在 WebUI「库」里或 `libraries[]` 里按容器内

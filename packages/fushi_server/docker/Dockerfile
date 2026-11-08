@@ -3,14 +3,14 @@
 # Build context: this directory (packages/fushi_server/docker).
 #
 #   docker build -t fushi-server .                                   # newest release
-#   docker build -t fushi-server --build-arg FUSHI_SERVER_TAG=v0.1.0-beta.23883 .
+#   docker build -t fushi-server --build-arg FUSHI_SERVER_TAG=v0.1.0-beta.14880 .
 #   cp fushi_server-*-linux-x64.tar.gz dist/ && docker build -t fushi-server .   # local/CI tarball
 #
 # For unreleased code use Dockerfile.source (see README "Docker").
 # Keep the runtime stage in sync with Dockerfile.source.
 
 FROM debian:trixie-slim AS fetch
-ARG FUSHI_SERVER_REPO=samutw/fushi-server
+ARG FUSHI_SERVER_REPO=hajisensai/fushi-server
 ARG FUSHI_SERVER_TAG=
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl jq \

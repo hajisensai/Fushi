@@ -12,9 +12,12 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        FUSHI_SERVER_REPO: ${FUSHI_SERVER_REPO:-samutw/fushi-server}
+        FUSHI_SERVER_REPO: ${FUSHI_SERVER_REPO:-hajisensai/fushi-server}
         FUSHI_SERVER_TAG: ${FUSHI_SERVER_TAG:-}
-    image: fushi-server:local
+    # Prebuilt image to run; `docker compose up -d --build` rebuilds it from the
+    # release Dockerfile above. For the source image: build_source_image.sh, then
+    # FUSHI_IMAGE=fushi-server:source docker compose up -d   (no --build).
+    image: ${FUSHI_IMAGE:-fushi-server:local}
     container_name: fushi-server
     restart: unless-stopped
     hostname: fushi-server
