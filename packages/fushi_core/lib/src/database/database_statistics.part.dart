@@ -1342,32 +1342,37 @@ mixin _FushiDbStatistics
 
   // ── mining statistics ───────────────────────────────────────────
   /// 制卡成功计数 +[delta]：累加到 (sourceType, dateKey) 现有计数。
+  ///
+  /// 写在前（BUG-4244 跨进程查词计数丢失同一病）：事务第一条语句就是写，见
+  /// [_addLookupMiningCounter] 的说明。
   Future<void> addMiningCount({
     required String sourceType,
     required String dateKey,
     int delta = 1,
   }) => transaction(() async {
-    final existing =
-        await (select(miningStatistics)..where(
-              (t) =>
-                  t.sourceType.equals(sourceType) & t.dateKey.equals(dateKey),
-            ))
-            .getSingleOrNull();
-    if (existing != null) {
-      await (update(
-        miningStatistics,
-      )..where((t) => t.id.equals(existing.id))).write(
-        MiningStatisticsCompanion(count: Value(existing.count + delta)),
-      );
-    } else {
-      await into(miningStatistics).insert(
-        MiningStatisticsCompanion.insert(
-          sourceType: sourceType,
-          dateKey: dateKey,
-          count: Value(delta),
-        ),
-      );
-    }
+    final int inserted = await customUpdate(
+      'INSERT OR IGNORE INTO mining_statistics (source_type, date_key, count) '
+      'VALUES (?, ?, ?)',
+      variables: <Variable<Object>>[
+        Variable<String>(sourceType),
+        Variable<String>(dateKey),
+        Variable<int>(delta),
+      ],
+      updates: <TableInfo<Table, Object?>>{miningStatistics},
+      updateKind: UpdateKind.insert,
+    );
+    if (inserted == 1) return;
+    await customUpdate(
+      'UPDATE mining_statistics SET count = count + ? '
+      'WHERE source_type = ? AND date_key = ?',
+      variables: <Variable<Object>>[
+        Variable<int>(delta),
+        Variable<String>(sourceType),
+        Variable<String>(dateKey),
+      ],
+      updates: <TableInfo<Table, Object?>>{miningStatistics},
+      updateKind: UpdateKind.update,
+    );
   });
 
   /// MAX-union semantics: sets the (sourceType, dateKey) bucket to
@@ -1425,45 +1430,14 @@ mixin _FushiDbStatistics
     required String sourceType,
     required String dateKey,
     int delta = 1,
-  }) => transaction(() async {
-    // v76：匹配键含身份（null 归一 ''）——同名不同视频各记各行，不再互串。
-    // 遗留 '' 行与新带身份行并存时各自独立累加，读取端按身份分组归并
-    // （v39 的 NULL 遗留行共存语义，见 stat_shared）。
-    final String identity = bookKey ?? '';
-    final existing =
-        await (select(lookupMiningCounters)..where(
-              (t) =>
-                  t.bookKey.equals(identity) &
-                  t.title.equals(title) &
-                  t.sourceType.equals(sourceType) &
-                  t.dateKey.equals(dateKey),
-            ))
-            .getSingleOrNull();
-    if (existing != null) {
-      await (update(
-        lookupMiningCounters,
-      )..where((t) => t.id.equals(existing.id))).write(
-        LookupMiningCountersCompanion(
-          lookupCount: Value(existing.lookupCount + delta),
-        ),
-      );
-    } else {
-      await into(lookupMiningCounters).insert(
-        LookupMiningCountersCompanion.insert(
-          bookKey: Value(identity),
-          title: Value(title),
-          sourceType: sourceType,
-          dateKey: dateKey,
-          lookupCount: Value(delta),
-        ),
-      );
-      // 重新查该书/视频的词 = 新活动：清其统计删除墓碑（无书查词 title='' 不立碑
-      // 也无碑可清，跳过；TODO-1204 后续）。
-      if (title.isNotEmpty) {
-        await clearStatisticsTombstone(title, sourceType);
-      }
-    }
-  });
+  }) => _addLookupMiningCounter(
+    column: 'lookup_count',
+    bookKey: bookKey,
+    title: title,
+    sourceType: sourceType,
+    dateKey: dateKey,
+    delta: delta,
+  );
 
   /// 制卡计数 +[delta]（per-book）：累加到 (title, sourceType, dateKey) 现有行的
   /// [mineCount]。与全局 [addMiningCount] **并行**写（后者不动），只算成功制卡。
@@ -1473,42 +1447,79 @@ mixin _FushiDbStatistics
     required String sourceType,
     required String dateKey,
     int delta = 1,
-  }) => transaction(() async {
-    // v76：匹配键含身份（同 [addLookupCount]）。
+  }) => _addLookupMiningCounter(
+    column: 'mine_count',
+    bookKey: bookKey,
+    title: title,
+    sourceType: sourceType,
+    dateKey: dateKey,
+    delta: delta,
+  );
+
+  /// [addLookupCount] / [addMineCountPerBook] 的共同实现：给 [column]
+  /// （`lookup_count` / `mine_count`）+[delta]。
+  ///
+  /// BUG-4244（跨进程查词计数丢失）：同一个库还有别的进程在写（`:popup` 浮窗、
+  /// `:second_screen` 副屏面板写查词历史），旧实现是 deferred 事务里先 SELECT
+  /// 再 UPDATE / INSERT——SELECT 拿到的 WAL 快照一旦被别的进程的提交作废，升级
+  /// 写锁就立刻 `SqliteException(5) database is locked`，busy_timeout 不生效
+  /// （SQLite 对已持读事务的连接不调 busy handler，见
+  /// [insertPrefIfAbsent] 的同款说明）。所以事务的**第一条语句就是写**：
+  /// `INSERT OR IGNORE` 先拿写锁（受 busy_timeout 保护），存在性判断交给唯一键
+  /// {title, sourceType, dateKey, bookKey} 的冲突本身；没插进去才在已持写锁的
+  /// 事务里原地 `col = col + ?`。
+  ///
+  /// v76：匹配键含身份（null 归一 ''）——同名不同视频各记各行，不再互串。
+  /// 遗留 '' 行与新带身份行并存时各自独立累加，读取端按身份分组归并
+  /// （v39 的 NULL 遗留行共存语义，见 stat_shared）。
+  Future<void> _addLookupMiningCounter({
+    required String column,
+    required String? bookKey,
+    required String title,
+    required String sourceType,
+    required String dateKey,
+    required int delta,
+  }) {
+    assert(column == 'lookup_count' || column == 'mine_count');
     final String identity = bookKey ?? '';
-    final existing =
-        await (select(lookupMiningCounters)..where(
-              (t) =>
-                  t.bookKey.equals(identity) &
-                  t.title.equals(title) &
-                  t.sourceType.equals(sourceType) &
-                  t.dateKey.equals(dateKey),
-            ))
-            .getSingleOrNull();
-    if (existing != null) {
-      await (update(
-        lookupMiningCounters,
-      )..where((t) => t.id.equals(existing.id))).write(
-        LookupMiningCountersCompanion(
-          mineCount: Value(existing.mineCount + delta),
-        ),
+    return transaction(() async {
+      final int inserted = await customUpdate(
+        'INSERT OR IGNORE INTO lookup_mining_counters '
+        '(book_key, title, source_type, date_key, $column) '
+        'VALUES (?, ?, ?, ?, ?)',
+        variables: <Variable<Object>>[
+          Variable<String>(identity),
+          Variable<String>(title),
+          Variable<String>(sourceType),
+          Variable<String>(dateKey),
+          Variable<int>(delta),
+        ],
+        updates: <TableInfo<Table, Object?>>{lookupMiningCounters},
+        updateKind: UpdateKind.insert,
       );
-    } else {
-      await into(lookupMiningCounters).insert(
-        LookupMiningCountersCompanion.insert(
-          bookKey: Value(identity),
-          title: Value(title),
-          sourceType: sourceType,
-          dateKey: dateKey,
-          mineCount: Value(delta),
-        ),
-      );
-      // 重新在该书/视频制卡 = 新活动：清其统计删除墓碑（TODO-1204 后续）。
-      if (title.isNotEmpty) {
-        await clearStatisticsTombstone(title, sourceType);
+      if (inserted == 1) {
+        // 重新查词 / 制卡该书或视频 = 新活动：清其统计删除墓碑（无书 title=''
+        // 不立碑也无碑可清，跳过；TODO-1204 后续）。
+        if (title.isNotEmpty) {
+          await clearStatisticsTombstone(title, sourceType);
+        }
+        return;
       }
-    }
-  });
+      await customUpdate(
+        'UPDATE lookup_mining_counters SET $column = $column + ? '
+        'WHERE title = ? AND source_type = ? AND date_key = ? AND book_key = ?',
+        variables: <Variable<Object>>[
+          Variable<int>(delta),
+          Variable<String>(title),
+          Variable<String>(sourceType),
+          Variable<String>(dateKey),
+          Variable<String>(identity),
+        ],
+        updates: <TableInfo<Table, Object?>>{lookupMiningCounters},
+        updateKind: UpdateKind.update,
+      );
+    });
+  }
 
   /// P4 写侧收敛（2026-08 数据层重构）：一次成功制卡的**唯一记账入口**。
   ///
