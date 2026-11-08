@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 
 /// BUG-772 Task 3 源码守卫：DB probe-open 的 busy 超时必须先于 `journal_mode=WAL`。
 ///
-/// BUG-4240 起 busy 超时由 `installWallClockBusyTimeout(db)`（按墙钟计时）提供，
+/// BUG-4241 起 busy 超时由 `installWallClockBusyTimeout(db)`（按墙钟计时）提供，
 /// `applyPragmas` 里不许再出现 `PRAGMA busy_timeout`——它会覆盖该 handler，退回
 /// 按次数计时、在 Linux debug / 测试里被 SIGPROF 压成几十毫秒的内置实现。
 ///
@@ -32,7 +32,7 @@ void main() {
     expect(
       b.contains('PRAGMA busy_timeout'),
       isFalse,
-      reason: 'PRAGMA busy_timeout 会覆盖按墙钟计时的 busy handler（BUG-4240）',
+      reason: 'PRAGMA busy_timeout 会覆盖按墙钟计时的 busy handler（BUG-4241）',
     );
     expect(walAt, greaterThanOrEqualTo(0), reason: '必须设 journal_mode=WAL');
     expect(
