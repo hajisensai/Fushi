@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show immutable;
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 
 /// BUG-1140 第二阶段①：阅读器引擎 JS 的**每次导航参数**。
 ///
@@ -35,6 +36,8 @@ class ReaderEngineConfig {
     required this.swipeFastDistThreshold,
     required this.swipeFastVelocity,
     required this.wheelGestureQuietMs,
+    required this.continuousTurnPullPx,
+    required this.continuousTurnPinMidGesture,
     this.pageTurnAnimation = 'none',
     this.pageTurnDurationMs = 0,
     this.pageTurnFollowDrag = false,
@@ -95,6 +98,14 @@ class ReaderEngineConfig {
   /// [ReaderSettings.swipePageTurnDistThresholds]，随灵敏度一起缩放。
   final int swipeFastVelocity;
   final int wheelGestureQuietMs;
+
+  // ── 连续模式切章阻尼（只连续 shell 的触摸控制器读，反馈 R7k887yaJI）────────
+  /// 正文贴在章首 / 章末后，手指还要沿同方向拉动的距离（CSS px），取自
+  /// [ContinuousChapterTurnResistance.pullPx]。
+  final int continuousTurnPullPx;
+
+  /// 同一手势中途滚到边界后继续推是否也算（[ContinuousChapterTurnResistance.pinMidGesture]）。
+  final bool continuousTurnPinMidGesture;
 
   // ── 翻页动画（只分页 shell 读，见 reader_page_turn_script.dart）──────────
   /// 实际播放的效果 key（`none` / `slide` / `cover` / `fade`），Dart 侧已按墨水屏与
@@ -174,6 +185,8 @@ class ReaderEngineConfig {
     'swipeFastDistThreshold': swipeFastDistThreshold,
     'swipeFastVelocity': swipeFastVelocity,
     'wheelGestureQuietMs': wheelGestureQuietMs,
+    'continuousTurnPullPx': continuousTurnPullPx,
+    'continuousTurnPinMidGesture': continuousTurnPinMidGesture,
     'pageTurnAnimation': pageTurnAnimation,
     'pageTurnDurationMs': pageTurnDurationMs,
     'pageTurnFollowDrag': pageTurnFollowDrag,
@@ -232,6 +245,8 @@ class ReaderEngineConfig {
     int? pageTurnDurationMs,
     bool? pageTurnFollowDrag,
     bool? swipeLeftIsForward,
+    int? continuousTurnPullPx,
+    bool? continuousTurnPinMidGesture,
   }) {
     final String patch = jsonEncode(<String, Object?>{
       'marginTop': marginTop,
@@ -247,6 +262,10 @@ class ReaderEngineConfig {
       if (pageTurnDurationMs != null) 'pageTurnDurationMs': pageTurnDurationMs,
       if (pageTurnFollowDrag != null) 'pageTurnFollowDrag': pageTurnFollowDrag,
       if (swipeLeftIsForward != null) 'swipeLeftIsForward': swipeLeftIsForward,
+      if (continuousTurnPullPx != null)
+        'continuousTurnPullPx': continuousTurnPullPx,
+      if (continuousTurnPinMidGesture != null)
+        'continuousTurnPinMidGesture': continuousTurnPinMidGesture,
     });
     return '(window.__fushiEngine && window.__fushiEngine.updateLive) '
         '? window.__fushiEngine.updateLive($patch) : false;';

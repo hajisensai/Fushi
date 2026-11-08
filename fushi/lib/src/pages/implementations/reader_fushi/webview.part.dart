@@ -744,6 +744,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
       swipeFastVelocity: swipeThresholds.fastVelocity,
       wheelGestureQuietMs: ReaderFushiSource.instance.wheelPageTurnInterval
           .clamp(150, 800),
+      continuousTurnPullPx: s.continuousChapterTurnResistance.pullPx,
+      continuousTurnPinMidGesture:
+          s.continuousChapterTurnResistance.pinMidGesture,
       pageTurnAnimation: _effectivePageTurnAnimation.key,
       pageTurnDurationMs: s.pageTurnAnimationSpeed.durationMs,
       pageTurnFollowDrag: s.pageTurnFollowDrag,
@@ -807,6 +810,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
       pageTurnDurationMs: s.pageTurnAnimationSpeed.durationMs,
       pageTurnFollowDrag: s.pageTurnFollowDrag,
       swipeLeftIsForward: _readerSwipeLeftIsForward,
+      continuousTurnPullPx: s.continuousChapterTurnResistance.pullPx,
+      continuousTurnPinMidGesture:
+          s.continuousChapterTurnResistance.pinMidGesture,
     );
   }
 
