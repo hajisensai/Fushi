@@ -196,6 +196,81 @@ void main() {
       );
     });
 
+    // BUG-4238：对方已经选定把它的 profile 并入别处、只是并入暂缓着（还按旧 uid 同步），说明文件里写着 `mergingInto`。
+    // 本机不能再被问要不要并进那个旧 profile——选了就会把本机并进对方正在离开的 profile，两边从此分叉。
+    test('对方的写入者已选定并入别处（mergingInto，并入暂缓中）：它的旧 profile 不再是候选', () {
+      for (final String into in <String>[
+        kMine,
+        '01928c3e-0000-7000-8000-0000000000ff',
+      ]) {
+        final SrsProfileLinkDecision d = decide(
+          localHasNotes: true,
+          v2Device: 'phone-v2',
+          remote: <SrsRemoteProfile>[
+            const SrsRemoteProfile(
+              uid: kMine,
+              writers: <String>['v2:phone-v2'],
+            ),
+            SrsRemoteProfile(
+              uid: kOther,
+              writers: const <String>['v2:host'],
+              names: const <String>{'Default'},
+              hasNotes: true,
+              mergingInto: <String, String>{'v2:host': into},
+            ),
+          ],
+        );
+        expect(d, isA<SrsProfileLinkKeep>(), reason: 'merging into $into');
+        expect((d as SrsProfileLinkKeep).linked, isFalse);
+      }
+      // 本机没有笔记时也不自动采用它。
+      expect(
+        decide(
+          remote: const <SrsRemoteProfile>[
+            SrsRemoteProfile(
+              uid: kOther,
+              writers: <String>['v2:host'],
+              names: <String>{'Default'},
+              hasNotes: true,
+              mergingInto: <String, String>{'v2:host': kMine},
+            ),
+          ],
+        ),
+        isA<SrsProfileLinkKeep>(),
+      );
+    });
+
+    test('mergingInto 只让那一个写入者不算数：旧 profile 里还有留下的设备，照样是候选', () {
+      final SrsProfileLinkDecision d = decide(
+        localHasNotes: true,
+        remote: const <SrsRemoteProfile>[
+          SrsRemoteProfile(
+            uid: kOther,
+            writers: <String>['v2:host', 'v2:tablet'],
+            names: <String>{'Default'},
+            hasNotes: true,
+            mergingInto: <String, String>{'v2:host': kMine},
+          ),
+        ],
+      );
+      expect(d, isA<SrsProfileLinkChoose>());
+      expect((d as SrsProfileLinkChoose).candidates.single.uid, kOther);
+    });
+
+    test('本机 uid 目录里别的设备正在并入别处：不算已关联', () {
+      final SrsProfileLinkDecision d = decide(
+        remote: const <SrsRemoteProfile>[
+          SrsRemoteProfile(
+            uid: kMine,
+            writers: <String>['phone#1', 'v2:tablet'],
+            mergingInto: <String, String>{'v2:tablet': kOther},
+          ),
+        ],
+      );
+      expect(d, isA<SrsProfileLinkKeep>());
+      expect((d as SrsProfileLinkKeep).linked, isFalse);
+    });
+
     // 实测布局（三台设备各自随机生成 uid、都叫 Default）：电脑 PC（有笔记）、iPhone（有笔记）、平板（空）、一个旧版本留下
     // 的无说明文件目录。以前平板按名字匹配到两个就静默保持，永远按自己的空 profile 同步、拉不到任何数据。
     const String kPc = '01a13df1-0000-7000-8000-000000000001';
@@ -398,6 +473,47 @@ void main() {
       // 旧版本不报设备名与笔记数：未知，不瞎猜。
       expect(list.single.devices, isEmpty);
       expect(list.single.noteCount, isNull);
+    });
+
+    test('mergingInto 发布后按写入者列得出；指向自己 uid 的无效值与旧格式说明文件都当作没有', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'host',
+        name: 'Default',
+        hasNotes: true,
+        mergingInto: kMine,
+      );
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'tablet',
+        name: 'Default',
+        hasNotes: true,
+        mergingInto: kOther,
+      );
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'pc',
+        name: 'Default',
+        hasNotes: true,
+      );
+      final SrsRemoteProfile p = (await srsListRemoteProfiles(store)).single;
+      expect(p.mergingInto, <String, String>{srsV2WriterName('host'): kMine});
+      expect(p.stayingWriters.toSet(), <String>{
+        srsV2WriterName('tablet'),
+        srsV2WriterName('pc'),
+      });
+      // 写回不带 mergingInto（并入做完 / 不再暂缓）：再列就没有了。
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'host',
+        name: 'Default',
+        hasNotes: true,
+      );
+      expect((await srsListRemoteProfiles(store)).single.mergingInto, isEmpty);
     });
 
     test('多台设备的设备名按出现顺序去重，笔记数取最大的一份', () async {

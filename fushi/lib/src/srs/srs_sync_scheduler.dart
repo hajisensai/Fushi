@@ -1274,7 +1274,8 @@ class SrsSyncScheduler {
   ///
   /// [onAdopted]：改用 / 并入一结束（跑「立即同步」之前）就回调结果。并入暂缓（[SrsProfileAdoptDeferred]，undo 撤销
   /// 的日志还没同步到）不是失败、不抛：并入标记已写，冲突就此解决（不再弹），之后每一轮 [SrsProfileLinker.link] 续做；
-  /// 接着这一轮同步照跑，正是它把缺的日志送进来。
+  /// 接着这一轮同步照跑，正是它把缺的日志送进来。暂缓时马上在这个位置发布说明文件的 `mergingInto`
+  /// （[SrsProfileLinker.publish]），对方不再把本机还在用的旧 profile 当候选（BUG-4238）。
   Future<SrsSyncNowResult> adoptProfile(
     SrsProfileConflict conflict,
     String uid, {
@@ -1318,6 +1319,20 @@ class SrsSyncScheduler {
         within: channel ? backend : null,
       );
       adoptedResult = result;
+      if (result is SrsProfileAdoptDeferred) {
+        // 并入暂缓：本机还按旧 uid 同步，但用户已经选定离开它。马上（还在这把锁里）在冲突所在的位置上发布
+        // `mergingInto`，对方重判时就不再把这个旧 profile 当候选（BUG-4238）；不等之后那轮同步跑完才发布。
+        try {
+          await linker.publish(backend, store, conflict.directoryKey);
+        } catch (e, stack) {
+          // 写失败之后每一轮同步成功后的发布照常再写。
+          ErrorLogService.instance.log(
+            'SrsSyncScheduler.profileInfo',
+            e,
+            stack,
+          );
+        }
+      }
       if (identical(profileConflict, current)) profileConflict = null;
       // 本机换了（或排上了要换的）uid：之前按旧 uid 记的判定全部作废，之后的轮次重判（暂缓时同样）。
       _linkDecided.clear();

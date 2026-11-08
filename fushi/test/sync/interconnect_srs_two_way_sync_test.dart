@@ -397,6 +397,127 @@ void main() {
     expect(phone.scheduler.profileConflict, isNull);
     expect(host.store.profileUid, phone.store.profileUid);
   });
+
+  // BUG-4238 的暂缓变体：host 采用客户端的 profile，但 host 旧 profile 里有一条 undo 撤销的日志还没同步到（BUG-4217），
+  // 并入只能暂缓——host 期间仍按旧 uid 同步，同步位置上那个旧 profile 还在。host 的用户已经选定离开它：客户端重判时
+  // 不能再把它当候选（以前照样问，选了就把自己并进 host 正要离开的 profile，host 并入做完后两边分叉）。
+  test(
+    'host 采用客户端的 profile 但并入暂缓：期间客户端不再把 host 的旧 profile 当候选，拿旧冲突采用被拒；并入做完后两边同一 uid',
+    () async {
+      final SyncRepository repo = SyncRepository(clientAppDb);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: base, enabled: true),
+      ]);
+      await repo.setFushiClientToken(kToken);
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+        (String url, String tok) async => true,
+      );
+      expect(await backend.restoreAuth(repo), isTrue);
+      await backend.authenticate(repo: repo);
+      final String clientKey = (await srsDirectoryKeyOf(backend, repo))!;
+      final LocalDirectoryAssetStore hostDir = LocalDirectoryAssetStore(
+        Directory(p.join(server.syncDataDir, kSyncRootFolderName)),
+      );
+      final String hostKey = srsInterconnectDirectoryKey(kHostId);
+
+      final _LinkedDevice host = await _LinkedDevice.open(
+        'host',
+        localDirectory: hostDir,
+        localKey: hostKey,
+      );
+      final _LinkedDevice phone = await _LinkedDevice.open(
+        'phone',
+        channel: backend,
+        channelKey: clientKey,
+      );
+      final String hostOldUid = host.store.profileUid;
+      final String phoneUid = phone.store.profileUid;
+      final String hostNote = await _addNote(host.store, '雪');
+      final String fromPhone = await _addNote(phone.store, '雨');
+      // host 旧 profile 里一条撤销第三台设备复习的 undo，被撤销的那条还没同步到 host：并入 host 旧 profile 必须暂缓。
+      final String card = (await host.store.cardsOfNote(hostNote)).single.id;
+      const String revokedId = '019a3a0b-0000-7000-8000-00000000d0f2';
+      const String undoId = '019a3a0b-0000-7000-8000-00000000d0f3';
+      final int t0 = DateTime.now().millisecondsSinceEpoch - 60000;
+      await host.store.applyRemote(<SrsEvent>[
+        SrsLogEvent(
+          _tabletLog(hostOldUid, card, undoId, t0 + 10, revokes: revokedId),
+        ),
+      ]);
+
+      Future<void> rounds(int n) async {
+        for (int round = 0; round < n; round++) {
+          final SrsSyncNowResult h = await host.scheduler
+              .syncLocalDirectories();
+          expect(h.errors, isEmpty, reason: 'host round $round');
+          expect(
+            (await phone.scheduler.syncWithBackend(
+              backend,
+              directoryKey: clientKey,
+            )).error,
+            isNull,
+            reason: 'phone round $round',
+          );
+        }
+      }
+
+      await rounds(2);
+      final SrsProfileConflict hostConflict = host.scheduler.profileConflict!;
+      final SrsProfileConflict stale = phone.scheduler.profileConflict!;
+      expect(stale.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+        hostOldUid,
+      ]);
+
+      // host 选了客户端的 profile：并入暂缓（不是失败），host 留在旧 uid 上同步。
+      final List<SrsProfileAdoptResult> adopted = <SrsProfileAdoptResult>[];
+      await host.scheduler.adoptProfile(
+        hostConflict,
+        phoneUid,
+        onAdopted: adopted.add,
+      );
+      expect(adopted.single, isA<SrsProfileAdoptDeferred>());
+      expect(host.store.profileUid, hostOldUid);
+      await rounds(2);
+      expect(host.store.profileUid, hostOldUid, reason: 'merge still deferred');
+      expect(host.scheduler.profileConflict, isNull);
+      // host 的旧 profile 目录还在（host 还在用它同步），但客户端不再把它当候选。
+      expect(
+        Directory(
+          p.join(hostDir.root.path, kSrsSync2Namespace, hostOldUid),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(phone.scheduler.profileConflict, isNull);
+      expect(await phone.scheduler.recheckProfileConflict(stale), isNull);
+      await expectLater(
+        phone.scheduler.adoptProfile(stale, hostOldUid),
+        throwsA(isA<SrsProfileConflictStale>()),
+      );
+      expect(phone.store.profileUid, phoneUid);
+      expect(await phone.db.profileUidOf(phone.profileId), phoneUid);
+
+      // 被撤销的那条日志经旧 uid 的同步送到了 host：下一轮 host 做完并入，换到客户端的 uid。
+      await host.store.applyRemote(<SrsEvent>[
+        SrsLogEvent(_tabletLog(hostOldUid, card, revokedId, t0)),
+      ]);
+      await rounds(3);
+      expect(host.store.profileUid, phoneUid);
+      expect(await host.db.profileUidOf(host.profileId), phoneUid);
+      expect(phone.store.profileUid, phoneUid);
+      expect(host.scheduler.profileConflict, isNull);
+      expect(phone.scheduler.profileConflict, isNull);
+      expect(await phone.store.userNoteCount(), 2);
+      expect(await host.store.userNoteCount(), 2);
+      expect(_expressionOf(host.store, await host.store.note(fromPhone)), '雨');
+      // host 并入做完后离开的旧 profile 目录只有它自己写过：已清掉。
+      expect(
+        Directory(
+          p.join(hostDir.root.path, kSrsSync2Namespace, hostOldUid),
+        ).existsSync(),
+        isFalse,
+      );
+    },
+  );
 }
 
 Future<String> _addNote(SrsDbStore s, String expression) => s.createNote(
@@ -408,6 +529,27 @@ Future<String> _addNote(SrsDbStore s, String expression) => s.createNote(
 
 String? _expressionOf(SrsDbStore s, SrsNoteView? n) =>
     n?.field(srsLapisFieldId(s.profileUid, 'Expression'));
+
+/// 第三台设备（平板）在 [uid] 下写的一条复习日志；[revokes] 非 null 时是撤销那条日志的 undo。
+SrsReviewLog _tabletLog(
+  String uid,
+  String card,
+  String id,
+  int at, {
+  String? revokes,
+}) => SrsReviewLog(
+  id: id,
+  profileUid: uid,
+  cardId: card,
+  kind: revokes == null ? SrsLogKind.review : SrsLogKind.undo,
+  rating: revokes == null ? 3 : null,
+  revokesId: revokes,
+  hlc: Hlc(at, 0, 'tablet#1'),
+  occurredAt: at,
+  timeSource: SrsTimeSource.wall,
+  origin: SrsLogOrigin.fushi,
+  reviewType: revokes == null ? 'review' : SrsReviewType.manual,
+);
 
 /// 一台独立设备：自己的数据库、自己的 profile（名字相同、uid 各自随机生成）、真 [SrsDbProfileLinker]。
 class _LinkedDevice {
