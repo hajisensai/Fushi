@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/second_screen/companion/companion_covers.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/companion_provider_read.dart';
 
 // The home dashboard's "continue" candidates in the main engine, shared by the
 // daily summary (one Continue entry, `companion_main_services.dart`) and the
@@ -79,16 +80,20 @@ Future<List<CompanionContinueCandidate>> _bookCandidates(
   Ref ref,
   AppModel appModel,
 ) async {
-  final List<MediaItem> books = await ref.read(
+  final List<MediaItem> books = await readCompanionProviderFuture(
+    ref,
     fushiBooksProvider(JapaneseLanguage.instance).future,
   );
-  final Map<String, int> lastReadByUid = await ref.read(
+  final Map<String, int> lastReadByUid = await readCompanionProviderFuture(
+    ref,
     bookLastReadAtProvider.future,
   );
-  final Map<String, String> uidByKey = await ref.read(
+  final Map<String, String> uidByKey = await readCompanionProviderFuture(
+    ref,
     epubBookUidByKeyProvider.future,
   );
-  final Set<String> completed = await ref.read(
+  final Set<String> completed = await readCompanionProviderFuture(
+    ref,
     completedEpubBookKeysProvider.future,
   );
   final ModuleVisibility modules = appModel.moduleVisibility;

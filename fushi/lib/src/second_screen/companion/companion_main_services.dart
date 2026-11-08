@@ -27,6 +27,7 @@ import 'package:fushi/src/platform/widget_snapshot.dart'
 import 'package:fushi/src/second_screen/companion/companion_bridge.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/companion_provider_read.dart';
 import 'package:fushi/src/second_screen/companion/companion_settings_service.dart';
 import 'package:fushi/src/second_screen/companion/modules/video_companion_now_playing.dart';
 import 'package:fushi/src/second_screen/companion/companion_continue.dart';
@@ -85,7 +86,10 @@ Future<CompanionDailySummary> collectCompanionDailySummary(Ref ref) async {
 
   CompanionSrsDue? srsDue;
   if (ref.read(srsMiningToReviewProvider)) {
-    final SrsDeckListData? decks = await ref.read(srsDeckListProvider.future);
+    final SrsDeckListData? decks = await readCompanionProviderFuture(
+      ref,
+      srsDeckListProvider.future,
+    );
     if (decks != null) {
       srsDue = CompanionSrsDue(
         newCount: decks.todayNew,

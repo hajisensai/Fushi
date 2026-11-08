@@ -52,6 +52,7 @@ import 'package:fushi/src/second_screen/companion/companion_covers.dart';
 import 'package:fushi/src/second_screen/companion/companion_library_service.dart';
 import 'package:fushi/src/second_screen/companion/companion_continue.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/companion_provider_read.dart';
 import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/sync/remote_cover_cache.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -165,17 +166,24 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   @override
   Future<List<CompanionLibraryRecord>> books() async {
     final AppModel app = _app;
-    final List<MediaItem> items = await _ref.read(
+    final List<MediaItem> items = await readCompanionProviderFuture(
+      _ref,
       fushiBooksProvider(JapaneseLanguage.instance).future,
     );
-    final List<SrtBook> srtBooks = await _ref.read(srtBooksProvider.future);
-    final Set<String> completed = await _ref.read(
+    final List<SrtBook> srtBooks = await readCompanionProviderFuture(
+      _ref,
+      srtBooksProvider.future,
+    );
+    final Set<String> completed = await readCompanionProviderFuture(
+      _ref,
       completedEpubBookKeysProvider.future,
     );
-    final Map<String, int> lastRead = await _ref.read(
+    final Map<String, int> lastRead = await readCompanionProviderFuture(
+      _ref,
       bookLastReadAtProvider.future,
     );
-    final Map<String, String> uidByKey = await _ref.read(
+    final Map<String, String> uidByKey = await readCompanionProviderFuture(
+      _ref,
       epubBookUidByKeyProvider.future,
     );
     final Map<String, int> importedAt = <String, int>{
@@ -518,7 +526,10 @@ class AppCompanionLibraryData implements CompanionLibraryData {
           _ref,
           facts: await loadStatFacts(_db, activityLimit: 0),
         );
-    final List<SrtBook> srtBooks = await _ref.read(srtBooksProvider.future);
+    final List<SrtBook> srtBooks = await readCompanionProviderFuture(
+      _ref,
+      srtBooksProvider.future,
+    );
     final Set<String> audiobookIds = <String>{
       for (final SrtBook b in srtBooks)
         if (b.bookKey.isNotEmpty)
@@ -1466,7 +1477,8 @@ class AppCompanionLibraryData implements CompanionLibraryData {
     String mediaIdentifier, {
     required bool audiobook,
   }) async {
-    final List<MediaItem> items = await _ref.read(
+    final List<MediaItem> items = await readCompanionProviderFuture(
+      _ref,
       fushiBooksProvider(JapaneseLanguage.instance).future,
     );
     MediaItem? item;
