@@ -1,0 +1,62 @@
+name: fushi_server Docker image
+
+# Builds the fushi_server Docker image (packages/fushi_server/docker/Dockerfile,
+# from the newest published Linux release bundle) and smoke-tests it: first-start
+# init, PUID/PGID ownership, health check, WebUI/admin API. Build only, never
+# pushes to a registry. Dockerfile.source (multi-hour cold) is not built here.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'packages/fushi_server/docker/**'
+      - '.github/workflows/server-docker.yml'
+  push:
+    branches: ['develop']
+    paths:
+      - 'packages/fushi_server/docker/**'
+      - '.github/workflows/server-docker.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image
+        working-directory: packages/fushi_server/docker
+        run: docker build -t fushi-server:ci .
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cfg="$RUNNER_TEMP/fushi-config"
+          mkdir -p "$cfg"
+          docker run -d --name fushi-ci -e PUID=1234 -e PGID=1234 \
+            -v "$cfg:/config" -p 38765:38765 -p 38780:38780 fushi-server:ci
+          trap 'docker logs fushi-ci || true; docker rm -f fushi-ci >/dev/null 2>&1 || true' EXIT
+          health=starting
+          for _ in $(seq 1 60); do
+            health="$(docker inspect -f '{{.State.Health.Status}}' fushi-ci)"
+            [ "$health" = healthy ] && break
+            sleep 3
+          done
+          [ "$health" = healthy ] || { echo "::error::container not healthy ($health)"; exit 1; }
+          test -f "$cfg/fushi_server.yaml" || { echo "::error::first start did not write the config"; exit 1; }
+          owner="$(stat -c %u:%g "$cfg/fushi_server.yaml")"
+          [ "$owner" = 1234:1234 ] || { echo "::error::config owned by $owner, expected 1234:1234"; exit 1; }
+          ping="$(curl -fsSk https://127.0.0.1:38765/api/ping)"
+          case "$ping" in *'"app":"fushi"'*) ;; *) echo "::error::unexpected /api/ping: $ping"; exit 1 ;; esac
+          token="$(sed -n 's/^admin_token: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$cfg/fushi_server.yaml")"
+          status="$(curl -fsSk -H "Authorization: Bearer $token" https://127.0.0.1:38780/api/admin/status)"
+          case "$status" in *'"dataDir":"/config/data"'*) ;; *) echo "::error::unexpected admin status: $status"; exit 1 ;; esac
+          docker exec fushi-ci sh -c 'command -v ffmpeg && command -v ffprobe && command -v 7z'
+          echo "smoke ok"

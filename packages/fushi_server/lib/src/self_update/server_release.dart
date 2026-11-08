@@ -22,6 +22,20 @@ const String kServerReleaseRepo = 'hajisensai/fushi-server';
 /// 发布包根目录里的版本身份文件名。
 const String kServerReleaseInfoFile = 'release.json';
 
+/// 容器镜像标记：`packages/fushi_server/docker/` 的两份 Dockerfile 都设
+/// `FUSHI_CONTAINER=1`。镜像里的程序文件属于镜像层，更新靠拉新镜像重建容器；就地换包
+/// 会被下一次重建丢掉，退出码 75 也没有 systemd 去接。
+const String kServerContainerEnv = 'FUSHI_CONTAINER';
+
+/// 是否运行在 Fushi 容器镜像里（[kServerContainerEnv] 非空且不是 `0` / `false`）。
+bool serverRunsInContainerImage({Map<String, String>? environment}) {
+  final String? value =
+      (environment ?? Platform.environment)[kServerContainerEnv];
+  if (value == null) return false;
+  final String v = value.trim().toLowerCase();
+  return v.isNotEmpty && v != '0' && v != 'false';
+}
+
 /// 本机运行中的发布包的版本身份。
 class ServerReleaseInfo {
   const ServerReleaseInfo({

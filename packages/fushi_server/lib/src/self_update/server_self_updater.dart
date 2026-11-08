@@ -7,7 +7,8 @@
 /// 新版）。client 看到的是连接断开、重连后版本号变了（与桌面 host 同一种结局）。
 ///
 /// 平台门只有一处（[platformSupported]）：发布包（有 `release.json`）+ 有对应发布
-/// 包的平台（Linux / Windows x64）。用户开关是配置 `remote_update`（默认关）。
+/// 包的平台（Linux / Windows x64）+ 不在容器镜像里（[serverRunsInContainerImage]，
+/// 镜像靠拉新镜像更新）。用户开关是配置 `remote_update`（默认关）。
 library;
 
 import 'dart:async';
@@ -59,6 +60,7 @@ class ServerSelfUpdater implements HostSelfUpdater {
     ServerArchiveExtractor? extract,
     DateTime Function()? now,
     this.refreshThrottle = const Duration(minutes: 5),
+    this.containerImage = false,
     String? platform,
   }) : _isAllowed = isAllowed,
        _fetch = fetchReleases ?? fetchGitHubJson,
@@ -81,6 +83,7 @@ class ServerSelfUpdater implements HostSelfUpdater {
       assetSuffix: serverReleaseAssetSuffix(),
       isAllowed: isAllowed,
       onInstalled: onInstalled,
+      containerImage: serverRunsInContainerImage(),
     );
   }
 
@@ -97,6 +100,9 @@ class ServerSelfUpdater implements HostSelfUpdater {
   final void Function() onInstalled;
 
   final Duration refreshThrottle;
+
+  /// 运行在容器镜像里：程序文件归镜像管，不能就地换包（[platformSupported] 为假）。
+  final bool containerImage;
 
   final Future<bool> Function() _isAllowed;
   final ServerReleaseFetcher _fetch;
@@ -119,7 +125,10 @@ class ServerSelfUpdater implements HostSelfUpdater {
 
   @override
   bool get platformSupported =>
-      installRoot != null && current != null && assetSuffix != null;
+      !containerImage &&
+      installRoot != null &&
+      current != null &&
+      assetSuffix != null;
 
   @override
   Future<bool> isRemoteUpdateAllowed() => _isAllowed();

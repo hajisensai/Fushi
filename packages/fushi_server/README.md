@@ -127,6 +127,44 @@ WinSW（不写 `<onfailure>` 就不重启，必须显式配；它不分退出码
 
 直接在终端 / 计划任务里跑的 `serve` 退出后没人拉起，远程更新装完需要手动再起一次。
 
+### Docker
+
+[`docker/`](docker/) 里是镜像与 Compose 配置（Debian trixie-slim，带 `ffmpeg` / `ffprobe` / `7z`）：
+
+```bash
+cd packages/fushi_server/docker
+cp .env.example .env             # PUID / PGID、配置与媒体目录、可选 API key
+docker compose up -d --build
+docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PIN 也打在这里
+```
+
+- **两种镜像**：`Dockerfile` 把发布包装进运行时镜像（约 1 分钟）：默认取 `FUSHI_SERVER_REPO` 最新
+  一个带 linux-x64 包的 release，`FUSHI_SERVER_TAG` 钉版本，核对 GitHub 给的 SHA-256；
+  把 `fushi_server-*-linux-x64.tar.gz` 放进 `docker/dist/` 则改用这个本地包（`release-server.yml` 的包；
+  `build-multiplatform.yml` 的 `linux-server` 工件在 ubuntu-latest 上编，可能要比 trixie 新的 glibc，
+  构建时 `check_bundle_libs.sh` 会直接报错而不是等到启动才崩）。
+  `Dockerfile.source` 从本仓源码多阶段构建，用 `bash packages/fushi_server/docker/build_source_image.sh`
+  （先构建 `tool/linux/Dockerfile` 工具链镜像，构建上下文只送 `git ls-files` 列出的源码）。首次冷编很慢
+  （静态 libtorrent 约 40 分钟），BuildKit 缓存让之后只重编改动部分。
+- **数据**：全部在 `/config` 卷：`fushi_server.yaml` 与 `data/`（数据库、配对与 TLS 身份、封面、日志）。
+  首次启动由 `fushi_server init` 生成配置（`data_dir: /config/data`、随机 admin_token）。备份这一个目录即可。
+- **媒体库**：媒体目录挂到 `/media`（`FUSHI_MEDIA_DIR`），在 WebUI「库」里或 `libraries[]` 里按容器内
+  路径添加（如 `/media/anime`，kind `video`）。
+- **权限**：容器以 root 起动，只把 `/config` 的属主改成 `PUID:PGID`（属主不对时才递归），然后
+  `setpriv` 永久降权运行；媒体目录不改属主，只需对 `PUID` 可读（上传落盘的库根要可写）。
+  `docker compose exec fushi-server fushi_server ctl …` 同样以 `PUID:PGID` 运行。
+- **端口**：38765（互联，TLS）、38780（WebUI / admin API，`https://`）、6881 tcp+udp（内置 torrent）。
+  健康检查打无鉴权的 `GET /api/ping`（`/api/capabilities` 要已配对 token）。
+- **配对**：容器不做局域网 mDNS 广播（镜像里没有 avahi，默认 bridge 网络也传不出组播），Fushi 的
+  局域网列表里看不到它：在 Fushi 里手动输入 `<宿主机地址>:38765`。`network_mode: host`（仅 Linux 宿主）
+  省掉端口映射，但同样不广播。
+- **密钥**：`FUSHI_*` 环境变量（OpenSubtitles / SubDL / Jimaku / AniDB / Bangumi / Plex 等）写进 `.env`
+  （已 git-ignore），优先于服务端里存的值；不要写进镜像或 Dockerfile。
+- **更新**：拉新镜像 / 重新构建后 `docker compose up -d`。容器里的应用内远程更新被拒（见「远程更新」）。
+  新版升级过数据库后不能换回旧镜像（旧版拒开更高 schema 的库），换版前备份 `/config`。
+- CI：`server-docker.yml` 在改到 `docker/` 的 PR 上构建镜像并冒烟（首启 init、属主、健康检查、admin API），
+  **不推送**任何镜像仓库。
+
 ## 配置文件 `fushi_server.yaml`
 
 ```yaml
@@ -529,6 +567,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
   （`<onfailure action="restart"/>`，见上文「Windows 服务」）拉起新版；
   新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
+- **容器里不可用**：镜像设 `FUSHI_CONTAINER=1`，端点一律回 `platform_unsupported`（`remote_update: true`
+  也一样）。程序文件属于镜像层，就地换包会在下次重建容器时丢掉；更新靠拉新镜像（见「Docker」）。
 
 ### 跟随已配对设备登录（`leaderboard_link`）
 

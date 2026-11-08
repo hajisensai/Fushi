@@ -742,6 +742,44 @@ void main() {
       expect(s.supported, isFalse);
       expect(s.currentVersion, 'dev');
     });
+
+    test('container image: release bundle with remote_update on is still '
+        'unsupported and never queries GitHub', () async {
+      final ServerSelfUpdater boxed = ServerSelfUpdater(
+        installRoot: root,
+        current: _beta,
+        assetSuffix: _suffix,
+        platform: 'linux',
+        isAllowed: () async => true,
+        onInstalled: () => fail('container must not install'),
+        containerImage: true,
+        fetchReleases: (Uri _) => fail('container must not hit GitHub'),
+      );
+      final HostUpdateStatus s = await boxed.status(refresh: true);
+      expect(boxed.platformSupported, isFalse);
+      expect(s.supported, isFalse);
+      expect(s.remoteUpdateAllowed, isTrue);
+      expect(s.canTrigger, isFalse);
+    });
+  });
+
+  group('serverRunsInContainerImage', () {
+    test('reads FUSHI_CONTAINER', () {
+      bool run(Map<String, String> env) =>
+          serverRunsInContainerImage(environment: env);
+      expect(run(const <String, String>{}), isFalse);
+      expect(run(const <String, String>{kServerContainerEnv: ''}), isFalse);
+      expect(run(const <String, String>{kServerContainerEnv: '0'}), isFalse);
+      expect(
+        run(const <String, String>{kServerContainerEnv: 'False'}),
+        isFalse,
+      );
+      expect(run(const <String, String>{kServerContainerEnv: '1'}), isTrue);
+      expect(
+        run(const <String, String>{kServerContainerEnv: 'docker'}),
+        isTrue,
+      );
+    });
   });
 
   group('downloadServerPackage', () {

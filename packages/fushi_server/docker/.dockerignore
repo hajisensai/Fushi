@@ -1,0 +1,4 @@
+# Build context is this directory; keep it small.
+config/
+media/
+.env

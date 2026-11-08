@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1
+# fushi_server image built from this checkout (multi-stage). Slow the first time:
+# the static libtorrent bridge alone is ~40 min cold. BuildKit cache mounts keep
+# cargo / vcpkg / pub / native build trees between builds, so later builds only
+# redo what changed.
+#
+# Don't call `docker build` on this file directly: build_source_image.sh builds
+# the toolchain image (tool/linux/Dockerfile) and sends the git-tracked source
+# (git ls-files -co --exclude-standard) as the build context.
+#
+# Keep the runtime stage in sync with Dockerfile.
+
+ARG TOOLCHAIN_IMAGE=fushi-linux-build:trixie
+
+FROM ${TOOLCHAIN_IMAGE} AS build
+# The context has no .git: fushi-anki-sync records this commit in its SOURCE.txt.
+ARG FUSHI_SOURCE_COMMIT=unknown
+ENV FUSHI_SOURCE_COMMIT=${FUSHI_SOURCE_COMMIT}
+WORKDIR /src
+COPY . /src
+RUN --mount=type=cache,id=fushi-server-pub,target=/root/.pub-cache \
+    --mount=type=cache,id=fushi-server-cache,target=/root/.cache \
+    --mount=type=cache,id=fushi-server-cargo-registry,target=/opt/cargo/registry \
+    --mount=type=cache,id=fushi-server-cargo-git,target=/opt/cargo/git \
+    --mount=type=cache,id=fushi-server-t-torrent,target=/src/native/fushi_torrent/build-linux-x64 \
+    --mount=type=cache,id=fushi-server-t-dicts,target=/src/native/fushidicts/build-linux-x64 \
+    --mount=type=cache,id=fushi-server-t-p2p,target=/src/native/fushi_p2p/target \
+    --mount=type=cache,id=fushi-server-t-fsrs,target=/src/native/fushi_fsrs/target \
+    --mount=type=cache,id=fushi-server-t-compute,target=/src/native/fushi_compute/target \
+    --mount=type=cache,id=fushi-server-t-rwkv,target=/src/native/fushi_rwkv/target \
+    --mount=type=cache,id=fushi-server-t-anki,target=/src/native/fushi_anki_sync/target \
+    --mount=type=cache,id=fushi-server-anki-src,target=/src/native/fushi_anki_sync/.anki-src \
+    bash packages/fushi_server/docker/build_server_bundle.sh /opt/fushi_server
+
+FROM debian:trixie-slim AS runtime
+# ffmpeg/ffprobe: video, audiobook cue split, subtitles. 7zip: archive import.
+# curl: health check. util-linux (setpriv) is in the base image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata curl ffmpeg 7zip \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /opt/fushi_server /opt/fushi_server
+# Fail the build, not the first start, if the bundle needs a newer glibc.
+COPY --chmod=755 packages/fushi_server/docker/check_bundle_libs.sh /usr/local/bin/fushi-check-bundle-libs
+RUN fushi-check-bundle-libs /opt/fushi_server
+COPY --chmod=755 packages/fushi_server/docker/entrypoint.sh /usr/local/bin/fushi-entrypoint
+COPY --chmod=755 packages/fushi_server/docker/fushi_server.sh /usr/local/bin/fushi_server
+COPY --chmod=755 packages/fushi_server/docker/healthcheck.sh /usr/local/bin/fushi-healthcheck
+# FUSHI_CONTAINER=1: the in-app self-update refuses (pull a new image instead).
+ENV FUSHI_CONTAINER=1 \
+    HOME=/config \
+    LANG=C.UTF-8 \
+    PUID=1000 \
+    PGID=1000
+WORKDIR /config
+VOLUME ["/config"]
+# 38765 interconnect (pairing / sync, TLS), 38780 WebUI + admin API, 6881 torrent.
+EXPOSE 38765/tcp 38780/tcp 6881/tcp 6881/udp
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD ["fushi-healthcheck"]
+ENTRYPOINT ["fushi-entrypoint"]
+CMD ["serve"]

@@ -1,0 +1,42 @@
+# fushi_server with Docker Compose. Run from this directory:
+#
+#   cp .env.example .env      # set PUID/PGID, media path, optional API keys
+#   docker compose up -d --build
+#   docker compose logs fushi-server | grep admin_token   # WebUI login (first start)
+#
+# WebUI: https://<host>:38780 (self-signed certificate). Pair a device by entering <host>:38765 in the app
+# (the container does not advertise over mDNS; see README "Docker").
+services:
+  fushi-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FUSHI_SERVER_REPO: ${FUSHI_SERVER_REPO:-samutw/fushi-server}
+        FUSHI_SERVER_TAG: ${FUSHI_SERVER_TAG:-}
+    image: fushi-server:local
+    container_name: fushi-server
+    restart: unless-stopped
+    hostname: fushi-server
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      FUSHI_DEVICE_NAME: ${FUSHI_DEVICE_NAME:-Fushi Server}
+    ports:
+      - "38765:38765"       # interconnect: pairing, sync, streaming (TLS)
+      - "38780:38780"       # WebUI + admin API
+      - "6881:6881/tcp"     # embedded torrent engine
+      - "6881:6881/udp"
+    volumes:
+      # Config, database, pairing identity, covers, logs. Back this up.
+      - ${FUSHI_CONFIG_DIR:-./config}:/config
+      # Library roots: add them in the WebUI (Libraries) or in fushi_server.yaml
+      # as paths under /media, e.g. /media/anime with kind: video.
+      - ${FUSHI_MEDIA_DIR:-./media}:/media
+    # Host networking (Linux hosts only) instead of port mapping: drop `ports:`
+    # above. The container still does not advertise over mDNS; pair by address.
+    # network_mode: host
