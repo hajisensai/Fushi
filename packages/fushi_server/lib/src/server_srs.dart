@@ -81,7 +81,9 @@ class ServerSrsProfile {
   /// 同步位置里各设备报的名字（WebUI 与远程复习的选择列表显示）；没有时空。
   String name = '';
 
-  /// 各设备报的用户笔记数里最大的那个。
+  /// 用户笔记数。库打开前是同步位置里各设备报的最大值（只是个估计，设备报的是它上次发布时的数）；
+  /// 库打开后每轮同步成功都按这份库重数（服务端自己写库、设备写入都会触发一轮），WebUI / 远程复习的
+  /// 选择列表不会停在打开时的旧数上（BUG-4243）。
   int noteCount = 0;
 
   Timer? _debounce;
@@ -166,6 +168,7 @@ class ServerSrsProfile {
       }
       if (error == null) {
         lastError = null;
+        noteCount = await s.userNoteCount();
         if (state != ServerSrsProfileState.ready) {
           _setState(ServerSrsProfileState.ready, null);
         }
@@ -488,7 +491,8 @@ class ServerSrs {
       final SrsRemoteProfile? info = found[uid];
       if (info != null) {
         prof.name = info.names.isEmpty ? '' : info.names.first;
-        prof.noteCount = info.noteCount ?? 0;
+        // 库开着时数以库为准（每轮同步后重数），设备报的旧数不覆盖它。
+        if (prof._store == null) prof.noteCount = info.noteCount ?? 0;
       }
       if (prof._store != null) continue;
       try {

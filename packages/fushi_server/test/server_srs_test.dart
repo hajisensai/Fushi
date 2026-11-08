@@ -162,6 +162,34 @@ void main() {
     expect(await expressions(ja), <String>['食べる']);
   });
 
+  // BUG-4243：状态里的笔记数是打开时从同步位置读的设备报数，之后服务端加卡 / 设备再同步都不变。
+  test('note count follows the served store after server writes and device '
+      'uploads', () async {
+    final SrsDbStore ja = await phone(kJa, 'phone-ja');
+    await addNote(ja, '食べる');
+    expect((await phoneSync(ja)).error, isNull);
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.start();
+    await srs.syncNow();
+    int notes() => srs.profile(kJa)!.toJson(isDefault: true)['notes']! as int;
+    expect(notes(), 1);
+
+    // 服务端自己写（AnkiConnect / 互联制卡）。
+    await addNote(srs.storeFor(kJa)!, '飲む');
+    await srs.syncNow(kJa);
+    expect(notes(), 2);
+
+    // 设备又加一张同步进来。
+    await addNote(ja, '走る');
+    expect((await phoneSync(ja)).error, isNull);
+    await srs.syncNow(kJa);
+    expect(notes(), 3);
+
+    // 重新套用配置（WebUI 保存）：设备报的旧数不覆盖库里的数。
+    await srs.applyConfig();
+    expect(notes(), 3);
+  });
+
   test('已配对设备写进来的文件只叫醒对应那份 profile', () async {
     final SrsDbStore ja = await phone(kJa, 'phone-ja');
     expect((await phoneSync(ja)).error, isNull);
