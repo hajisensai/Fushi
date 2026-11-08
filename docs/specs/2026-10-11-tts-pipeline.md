@@ -178,3 +178,9 @@ class TtsResult {
 - 声音数超过 VPTTS 驻留上限（`vptts.toml` `[backends.voicebank] max_resident_voices`，按需模式 1–8，默认 2）时每次换声音要重新加载（十几秒）。驻留数应 ≥ 一本书实际用到的声音数；每个驻留音色约 540 MB 内存。
 - VPTTS 整体吞吐约 2.6× 实时封顶（CPU 吃满），每声音并发 2 不增吞吐、只加延迟，默认并发 1 合适。实时朗读 2× 可用，3× 会卡；更高倍速走制作台离线生成。
 - 首句等待 3.5～4.8 s。提前生成与 60 秒窗口在这里同样没有差别（吞吐不超过 3× 消耗，缓冲攒不起来）。
+
+### 自定义 HTTP 接口（2026-11-07，GitHub #2320）
+
+- 新引擎 `custom_http`（`custom_http_tts_provider.dart`）：用户配地址、方法（GET / POST）、query 模板、JSON 请求体模板、请求头、返回格式（音频字节 / JSON 字段 base64 / JSON 字段音频地址）。占位符 `{text}` `{lang}` `{speed}` `{api_key}`；query 按 URL 编码代入，JSON 模板先解析再只在字符串值里代入、整体重新编码（`"{speed}"` 整值代入数字）。
+- 凭据只走 secret 参数 `api_key`：模板里凭据型字段写明文校验不过、合成时也拒绝；代入后请求头含 CR/LF 拒绝；音频地址跨源时不带用户请求头。返回内容按字节嗅探，只认 WAV / MP3。缓存身份带 host + port + path 与模板，不带请求头 / 密钥 / 返回格式。
+- 起因：用户要接 AI-Hobbyist/GPT-SoVITS-Inference（`/infer_single` 返回 `audio_url`），所有者拍板「给个通用接口」而不是再写一个专用适配。示例配置见 [docs/tts-custom-http.md](../tts-custom-http.md)。

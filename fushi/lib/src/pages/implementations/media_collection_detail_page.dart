@@ -102,6 +102,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
+import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -158,6 +161,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
+    this.onOrganizeFilenames,
     this.collectionAiSettings,
     this.aiClientFactory,
     this.discMenuProbe,
@@ -236,6 +240,10 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 搜索要刮削 controller，详情页不自造。null = 菜单项不渲染。
   final Future<File?> Function(String workTitle)? onPickOnlineCover;
 
+  /// 单集菜单的「整理文件名」（反馈 ZDYNkAP3Ln）：由库页注入同一条实现（预览、
+  /// 做种联动、撤销都在那边）。null = 菜单项不渲染。
+  final Future<void> Function(List<String> bookUids)? onOrganizeFilenames;
+
   @override
   State<MediaCollectionDetailPage> createState() =>
       _MediaCollectionDetailPageState();
@@ -259,6 +267,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 本合集**有序**成员槽（本地行 + 只在对端的远端占位）——本页唯一的成员真相源。
   List<CollectionEpisodeSlot> _slots = const <CollectionEpisodeSlot>[];
+  bool _libraryRemoveBusy = false;
+  List<CollectionEpisodeSlot>? _mediaServerWorksSlots;
+  Set<MediaServerLibraryWork> _mediaServerWorksCache =
+      const <MediaServerLibraryWork>{};
   bool _loading = true;
 
   /// 成员里的**本地行**子集，保持落盘序。写本地库的管理动作（批量字幕 / 改集名 /
@@ -1617,6 +1629,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           remote: widget.remote,
           collectionAiSettings: widget.collectionAiSettings,
           aiClientFactory: widget.aiClientFactory,
+          onOrganizeFilenames: widget.onOrganizeFilenames,
           onOpenEpisode: (VideoBookRow episode) {
             Navigator.push<void>(
               context,
@@ -2200,7 +2213,75 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           label: t.collection_episode_fill_missing,
           onPressed: _slots.isEmpty ? null : _fillMissingEpisodes,
         ),
+      // 从媒体服务器加入的作品：「−」移出媒体库（与服务器详情页的移出同一动作）。
+      if (_mediaServerWorks.isNotEmpty)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-hero-library-remove'),
+          icon: FushiIcons.remove,
+          label: t.video_online_library_remove,
+          selected: true,
+          busy: _libraryRemoveBusy,
+          onPressed: () => unawaited(_removeMediaServerWorks()),
+        ),
     ];
+  }
+
+  /// 本合集里从媒体服务器加入的作品（剧名合集里的入库集）。按 [_slots] 实例
+  /// 记忆：每次 build 都要问，而判据要逐行解析规格 JSON。
+  Set<MediaServerLibraryWork> get _mediaServerWorks {
+    if (!identical(_mediaServerWorksSlots, _slots)) {
+      _mediaServerWorksSlots = _slots;
+      _mediaServerWorksCache = <MediaServerLibraryWork>{
+        for (final VideoBookRow row in _members) ?mediaServerWorkOfRow(row),
+      };
+    }
+    return _mediaServerWorksCache;
+  }
+
+  /// 移出这些作品的入库行；已下载到本机的集不动。合集被删空就退出详情页。
+  /// 失败也重读：批删可能删掉了一部分。
+  Future<void> _removeMediaServerWorks() async {
+    if (_libraryRemoveBusy) return;
+    // 删行不可撤销（观看进度 / 字幕 / 标签随行消失），先确认。
+    if (!await confirmMediaServerLibraryRemoval(
+          context,
+          title: t.video_online_library_remove,
+        ) ||
+        !mounted) {
+      return;
+    }
+    setState(() => _libraryRemoveBusy = true);
+    int removed = 0;
+    Object? failure;
+    try {
+      removed = await MediaServerVideoLibrary(
+        database: widget.database,
+      ).removeWorks(_mediaServerWorks);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MediaCollectionDetail.removeMediaServerWorks',
+        error,
+        stack,
+      );
+      failure = error;
+    }
+    if (!mounted) return;
+    setState(() => _libraryRemoveBusy = false);
+    widget.onChanged();
+    if (failure != null) {
+      FushiToast.show(msg: '$failure', severity: ToastSeverity.error);
+    } else if (removed > 0) {
+      FushiToast.show(msg: t.video_online_library_removed);
+    }
+    final bool emptied =
+        await widget.database.getMediaCollectionById(widget.collection.id) ==
+        null;
+    if (!mounted) return;
+    if (emptied) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    await _reload();
   }
 
   /// 元信息 chip：`2023` / `全 12 话` / `★ 8.1` / `1234 人评分` / `24 分钟` /
@@ -2898,6 +2979,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     onPressed: () =>
                         pick(_EpisodeMenuAction.clearWatchProgress),
                   ),
+                // 「整理文件名」（ZDYNkAP3Ln）：与库页单个视频同一条动作；门只挡本机
+                // 没有文件的集，未刮削 / 已是规范名由计划判出、给明确提示。
+                if (hasLocalFiles && widget.onOrganizeFilenames != null)
+                  DialogListAction(
+                    label: t.video_filename_organize_action,
+                    icon: FushiIcons.rename,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.organizeFilenames),
+                  ),
                 // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
                 // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
                 if (episode.local != null && _canonicalWork?.mediaType == 'tv')
@@ -2975,6 +3065,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _pinEpisodeBinding(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
+      case _EpisodeMenuAction.organizeFilenames:
+        await widget.onOrganizeFilenames?.call(<String>[local!.bookUid]);
+        if (mounted) await _reload();
       case null:
         break;
     }
@@ -3657,6 +3750,7 @@ enum _EpisodeMenuAction {
   clearWatchProgress,
   pinEpisode,
   removeFromCollection,
+  organizeFilenames,
 }
 
 enum _CollectionManageAction {

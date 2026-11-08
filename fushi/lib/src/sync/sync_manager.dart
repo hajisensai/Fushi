@@ -19,6 +19,7 @@ import 'package:fushi/src/sync/sync_progress_resolver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -318,17 +319,22 @@ class SyncManager {
         continue;
       }
 
-      final result = await syncBook(
-        book: book,
-        syncStats: syncStats,
-        statsSyncMode: statsSyncMode,
-        syncAudioBook: syncAudioBook,
-        syncContent: syncContent,
-        syncMangaContent: syncMangaContent,
-        importOnly: importOnly,
-        listing: listing,
-        observations: observations,
-        prefetchedSyncFiles: prefetched,
+      // 这本书的判定 + 落地与别的路径（互联通道上的退出书同步、对比弹窗应用）互斥：
+      // 那些路径不再等整轮 sweep 结束（BUG-1569③），只排这本书的锁。
+      final result = await syncResourceLocks.withResources(
+        <String>{syncBookResource(book.bookKey)},
+        () => syncBook(
+          book: book,
+          syncStats: syncStats,
+          statsSyncMode: statsSyncMode,
+          syncAudioBook: syncAudioBook,
+          syncContent: syncContent,
+          syncMangaContent: syncMangaContent,
+          importOnly: importOnly,
+          listing: listing,
+          observations: observations,
+          prefetchedSyncFiles: prefetched,
+        ),
       );
       results.add(result);
     }
@@ -1085,15 +1091,41 @@ class SyncManager {
       final String fileName = isManga
           ? cloudMangaContentFileName(book.title)
           : cloudEpubContentFileName(book.title);
+      final String legacyMangaName = cloudEpubContentFileName(book.title);
       final List<String> presentNames = <String>[
         fileName,
-        if (isManga) cloudEpubContentFileName(book.title),
+        if (isManga) legacyMangaName,
       ];
       final Set<String> listed = await remoteNames();
-      bool present = presentNames.any(listed.contains);
+      String? presentName;
       for (final String name in presentNames) {
-        if (present) break;
-        present = await _backend.findContentFile(folderId, name) != null;
+        if (listed.contains(name)) {
+          presentName = name;
+          break;
+        }
+      }
+      for (final String name in presentNames) {
+        if (presentName != null) break;
+        if (await _backend.findContentFile(folderId, name) != null) {
+          presentName = name;
+        }
+      }
+      final bool present = presentName != null;
+      // 远端只有旧名 `<title>.epub` 的漫画包：本机知道它是漫画，补写格式标记，让各端
+      // 远端清单把它归到漫画书架（ecNgkRQcTk）。不改名、不删旧包、不重传——还没升级
+      // 的客户端只按 `<title>.epub` 找内容，重传一份整包又白占一倍云盘空间。
+      if (isManga &&
+          presentName == legacyMangaName &&
+          !listed.contains(kCloudLegacyMangaMarkerAssetName)) {
+        await _backend.putJsonAsset(
+          folderId,
+          kCloudLegacyMangaMarkerAssetName,
+          <String, Object?>{
+            'schemaVersion': 1,
+            'format': BookFormat.manga.dbValue,
+            'contentFile': legacyMangaName,
+          },
+        );
       }
       if (!present) {
         final Directory tmpDir = Directory.systemTemp.createTempSync(

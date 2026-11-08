@@ -3,6 +3,7 @@
 // 修复前 Google Drive / OneDrive / Dropbox 账户还没认出来（currentEmail 为 null）时身份是
 // `googleDrive:`，认出来后变成 `googleDrive:<账户>`——同一个物理目录被当成两个目录，第二次重新起步、
 // 可能整库重发；两个不同账户都落成 `googleDrive:` 则互相套用进度。
+import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
 

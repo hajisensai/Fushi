@@ -171,6 +171,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// [InterconnectBookProgressSync]，与冲突弹窗的手动解决共用同一份。
   ///
   /// 逐本错误进 [report.errors] 不中断整体。
+  ///
+  /// 反馈 kM-Gb_Xnu-：host 端进度改为一次 `GET /api/library/book-progress` 取齐
+  /// （老 host 回落逐本 GET，4 路并发预取），不再每本书一次串行往返；判定与落地
+  /// 仍逐本、按书架顺序串行（[InterconnectBookProgressSync.syncOne]），本地写入
+  /// 顺序与改动前一致。
   Future<void> _syncBookProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -181,56 +186,73 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     );
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     if (localBooks.isEmpty) return;
+    // BUG-1569③：退出书的单本同步不再等整轮 sweep 结束，它在互联上只锁那本书。
+    // 下面的批量读与本端快照都是「此刻」的，若在本阶段跑到某本书之前它已被单本
+    // 同步改过（推了 host、或落了本地、记了新基线），拿这份旧快照去判定就会把 host
+    // 的旧值当成「远端改了」落回本机——进度倒退。所以先记下每本书锁的代数，轮到
+    // 这本书时代数变了就不信快照：重读 host、整套重新判定。必须在读快照**之前**记。
+    final Map<String, int> lockGenerations = <String, int>{
+      for (final EpubBookRow book in localBooks)
+        book.bookKey: syncResourceLocks.generationOf(
+          syncBookResource(book.bookKey),
+        ),
+    };
     // 本端进度 / 基线整轮一次读齐（三条查询）；两端已收敛的书在内存里判定后
     // 跳过，其余照旧逐本重读、判定、落地（快照只用来跳过，从不用来写）。
     final BookProgressSweepSnapshot snapshot = await sync.loadSweepSnapshot();
-    for (final EpubBookRow book in localBooks) {
+    final List<Future<RemoteBookProgressRead>> remotes;
+    try {
+      remotes = await sync.readRemoteForSweep(localBooks);
+    } catch (e) {
+      // 整批读不到（网络 / 鉴权 / 5xx）：本阶段整体失败，记一条，后续阶段照跑。
+      report.noteError('live book progress', e);
+      return;
+    }
+    for (int i = 0; i < localBooks.length; i++) {
+      final EpubBookRow book = localBooks[i];
+      _emit(
+        SyncPhase.readingData,
+        itemIndex: i,
+        itemTotal: localBooks.length,
+        title: book.title,
+        itemKind: SyncItemKind.book,
+      );
+      final String lockKey = syncBookResource(book.bookKey);
       try {
-        final RemoteBookProgress remote = await sync.remoteProgress(book);
-        if (InterconnectBookProgressSync.isSettled(
-          book: book,
-          local: InterconnectBookProgressSync.localProgressFromSnapshot(
+        // 判定 + 落地在这本书的锁里做，与退出书的单本同步互斥（见上）。
+        await syncResourceLocks.withResources(<String>{lockKey}, () async {
+          final bool touched =
+              syncResourceLocks.generationOf(lockKey) !=
+              lockGenerations[book.bookKey];
+          final RemoteBookProgress remote;
+          if (touched) {
+            remote = await sync.remoteProgress(book);
+          } else {
+            final RemoteBookProgressRead read = await remotes[i];
+            final Object? readError = read.error;
+            if (readError != null) {
+              Error.throwWithStackTrace(readError, read.stackTrace!);
+            }
+            remote = read.progress!;
+          }
+          final BookProgressSyncStep step = await sync.syncOne(
             book,
-            snapshot,
-          ),
-          remote: remote,
-          snapshot: snapshot,
-        )) {
-          continue;
-        }
-        final RemoteBookProgress local = await sync.localProgress(book);
-        final BookProgressSyncAction action = await sync.decide(
-          book,
-          local: local,
-          remote: remote,
-        );
-        switch (action) {
-          case BookProgressSyncAction.synced:
-            // BUG-686: a host-newer progress pull lands in reader_positions but
-            // writes no book content, so it must still flag the shelf for a
-            // refresh — the cached fushiBooksProvider otherwise keeps showing
-            // the pre-sync progress bar and the sync looks like it did nothing.
-            if (await sync.alignSynced(book, local: local, remote: remote)) {
-              report.localBookProgressPulled++;
-            }
-          case BookProgressSyncAction.pushLocal:
-            await sync.pushLocal(book, local: local, remote: remote);
-          case BookProgressSyncAction.applyRemote:
-            // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
-            if (await sync.applyRemote(book, remote, local: local)) {
-              report.localBookProgressPulled++;
-            }
-          case BookProgressSyncAction.conflict:
+            remote: remote,
+            snapshot: touched ? null : snapshot,
+          );
+          if (step.localChanged) report.localBookProgressPulled++;
+          if (step.action == BookProgressSyncAction.conflict) {
             report.conflicts.add(
               SyncConflict(
                 assetKey: book.bookKey,
                 dimension: kInterconnectBookProgressDimension,
                 title: book.title,
-                localVersion: local.updatedAtMs,
-                remoteVersion: remote.updatedAtMs,
+                localVersion: step.localUpdatedAtMs,
+                remoteVersion: step.remoteUpdatedAtMs,
               ),
             );
-        }
+          }
+        });
       } catch (e) {
         report.noteError('live book progress "${book.title}"', e);
       }
@@ -268,8 +290,24 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // 用来写）。
     final PlaybackBaselineSnapshot baselines = await sync
         .loadBaselineSnapshot();
-    for (final String key in localKeys) {
-      if (!hostKeys.contains(key)) continue; // host 无此条目：跳过。
+    final List<String> keys = <String>[
+      for (final String key in localKeys)
+        if (hostKeys.contains(key)) key, // host 无此条目：跳过。
+    ];
+    final SyncItemKind itemKind = switch (sync.kind) {
+      PlaybackPositionKind.video => SyncItemKind.video,
+      PlaybackPositionKind.audiobook => SyncItemKind.audiobook,
+    };
+    for (int i = 0; i < keys.length; i++) {
+      final String key = keys[i];
+      // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
+      _emit(
+        SyncPhase.readingData,
+        itemIndex: i,
+        itemTotal: keys.length,
+        title: titleOf(key),
+        itemKind: itemKind,
+      );
       try {
         final PlaybackPosition host = await readHost(key);
         if (InterconnectPlaybackPositionSync.isSettled(

@@ -69008,6 +69008,732 @@ class MusicPlaylistEntriesCompanion
   }
 }
 
+class $MusicRemoteTracksTable extends MusicRemoteTracks
+    with TableInfo<$MusicRemoteTracksTable, MusicRemoteTrackRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicRemoteTracksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceKeyMeta = const VerificationMeta(
+    'sourceKey',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKey = GeneratedColumn<String>(
+    'source_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _artistMeta = const VerificationMeta('artist');
+  @override
+  late final GeneratedColumn<String> artist = GeneratedColumn<String>(
+    'artist',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumMeta = const VerificationMeta('album');
+  @override
+  late final GeneratedColumn<String> album = GeneratedColumn<String>(
+    'album',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _coverUrlMeta = const VerificationMeta(
+    'coverUrl',
+  );
+  @override
+  late final GeneratedColumn<String> coverUrl = GeneratedColumn<String>(
+    'cover_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _libraryAddedAtMeta = const VerificationMeta(
+    'libraryAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> libraryAddedAt = GeneratedColumn<int>(
+    'library_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    kind,
+    sourceKey,
+    itemId,
+    title,
+    artist,
+    album,
+    durationMs,
+    coverUrl,
+    libraryAddedAt,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_remote_tracks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicRemoteTrackRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('source_key')) {
+      context.handle(
+        _sourceKeyMeta,
+        sourceKey.isAcceptableOrUnknown(data['source_key']!, _sourceKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKeyMeta);
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('artist')) {
+      context.handle(
+        _artistMeta,
+        artist.isAcceptableOrUnknown(data['artist']!, _artistMeta),
+      );
+    }
+    if (data.containsKey('album')) {
+      context.handle(
+        _albumMeta,
+        album.isAcceptableOrUnknown(data['album']!, _albumMeta),
+      );
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('cover_url')) {
+      context.handle(
+        _coverUrlMeta,
+        coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta),
+      );
+    }
+    if (data.containsKey('library_added_at')) {
+      context.handle(
+        _libraryAddedAtMeta,
+        libraryAddedAt.isAcceptableOrUnknown(
+          data['library_added_at']!,
+          _libraryAddedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid};
+  @override
+  MusicRemoteTrackRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicRemoteTrackRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      sourceKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_key'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      artist: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}artist'],
+      ),
+      album: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album'],
+      ),
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      ),
+      coverUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_url'],
+      ),
+      libraryAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}library_added_at'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicRemoteTracksTable createAlias(String alias) {
+    return $MusicRemoteTracksTable(attachedDatabase, alias);
+  }
+}
+
+class MusicRemoteTrackRow extends DataClass
+    implements Insertable<MusicRemoteTrackRow> {
+  final String trackUid;
+
+  /// 来源种类 wire 值（冻结）：`youtube` | `plugin`。
+  final String kind;
+
+  /// 来源宿主：YouTube 为 `youtube`；插件为插件 id。
+  final String sourceKey;
+
+  /// 来源内的条目 id：YouTube videoId / 插件曲目 id。
+  final String itemId;
+  final String title;
+  final String? artist;
+  final String? album;
+  final int? durationMs;
+
+  /// 封面的 http(s) 地址（来源给的缩略图）；没有为 NULL。
+  final String? coverUrl;
+
+  /// 加入音乐库的时刻（毫秒）；NULL = 不在曲库里（只被歌单引用）。
+  final int? libraryAddedAt;
+  final int createdAt;
+
+  /// 最后一次改动（元数据 / 入库 / 移出曲库）的时刻：备份合并按它 LWW。
+  final int updatedAt;
+  const MusicRemoteTrackRow({
+    required this.trackUid,
+    required this.kind,
+    required this.sourceKey,
+    required this.itemId,
+    required this.title,
+    this.artist,
+    this.album,
+    this.durationMs,
+    this.coverUrl,
+    this.libraryAddedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['kind'] = Variable<String>(kind);
+    map['source_key'] = Variable<String>(sourceKey);
+    map['item_id'] = Variable<String>(itemId);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || artist != null) {
+      map['artist'] = Variable<String>(artist);
+    }
+    if (!nullToAbsent || album != null) {
+      map['album'] = Variable<String>(album);
+    }
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    if (!nullToAbsent || coverUrl != null) {
+      map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || libraryAddedAt != null) {
+      map['library_added_at'] = Variable<int>(libraryAddedAt);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MusicRemoteTracksCompanion toCompanion(bool nullToAbsent) {
+    return MusicRemoteTracksCompanion(
+      trackUid: Value(trackUid),
+      kind: Value(kind),
+      sourceKey: Value(sourceKey),
+      itemId: Value(itemId),
+      title: Value(title),
+      artist: artist == null && nullToAbsent
+          ? const Value.absent()
+          : Value(artist),
+      album: album == null && nullToAbsent
+          ? const Value.absent()
+          : Value(album),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      coverUrl: coverUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverUrl),
+      libraryAddedAt: libraryAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(libraryAddedAt),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MusicRemoteTrackRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicRemoteTrackRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      kind: serializer.fromJson<String>(json['kind']),
+      sourceKey: serializer.fromJson<String>(json['sourceKey']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      title: serializer.fromJson<String>(json['title']),
+      artist: serializer.fromJson<String?>(json['artist']),
+      album: serializer.fromJson<String?>(json['album']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      libraryAddedAt: serializer.fromJson<int?>(json['libraryAddedAt']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'kind': serializer.toJson<String>(kind),
+      'sourceKey': serializer.toJson<String>(sourceKey),
+      'itemId': serializer.toJson<String>(itemId),
+      'title': serializer.toJson<String>(title),
+      'artist': serializer.toJson<String?>(artist),
+      'album': serializer.toJson<String?>(album),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'coverUrl': serializer.toJson<String?>(coverUrl),
+      'libraryAddedAt': serializer.toJson<int?>(libraryAddedAt),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MusicRemoteTrackRow copyWith({
+    String? trackUid,
+    String? kind,
+    String? sourceKey,
+    String? itemId,
+    String? title,
+    Value<String?> artist = const Value.absent(),
+    Value<String?> album = const Value.absent(),
+    Value<int?> durationMs = const Value.absent(),
+    Value<String?> coverUrl = const Value.absent(),
+    Value<int?> libraryAddedAt = const Value.absent(),
+    int? createdAt,
+    int? updatedAt,
+  }) => MusicRemoteTrackRow(
+    trackUid: trackUid ?? this.trackUid,
+    kind: kind ?? this.kind,
+    sourceKey: sourceKey ?? this.sourceKey,
+    itemId: itemId ?? this.itemId,
+    title: title ?? this.title,
+    artist: artist.present ? artist.value : this.artist,
+    album: album.present ? album.value : this.album,
+    durationMs: durationMs.present ? durationMs.value : this.durationMs,
+    coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+    libraryAddedAt: libraryAddedAt.present
+        ? libraryAddedAt.value
+        : this.libraryAddedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  MusicRemoteTrackRow copyWithCompanion(MusicRemoteTracksCompanion data) {
+    return MusicRemoteTrackRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      sourceKey: data.sourceKey.present ? data.sourceKey.value : this.sourceKey,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      title: data.title.present ? data.title.value : this.title,
+      artist: data.artist.present ? data.artist.value : this.artist,
+      album: data.album.present ? data.album.value : this.album,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      libraryAddedAt: data.libraryAddedAt.present
+          ? data.libraryAddedAt.value
+          : this.libraryAddedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicRemoteTrackRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('kind: $kind, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('itemId: $itemId, ')
+          ..write('title: $title, ')
+          ..write('artist: $artist, ')
+          ..write('album: $album, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('libraryAddedAt: $libraryAddedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackUid,
+    kind,
+    sourceKey,
+    itemId,
+    title,
+    artist,
+    album,
+    durationMs,
+    coverUrl,
+    libraryAddedAt,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicRemoteTrackRow &&
+          other.trackUid == this.trackUid &&
+          other.kind == this.kind &&
+          other.sourceKey == this.sourceKey &&
+          other.itemId == this.itemId &&
+          other.title == this.title &&
+          other.artist == this.artist &&
+          other.album == this.album &&
+          other.durationMs == this.durationMs &&
+          other.coverUrl == this.coverUrl &&
+          other.libraryAddedAt == this.libraryAddedAt &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
+  final Value<String> trackUid;
+  final Value<String> kind;
+  final Value<String> sourceKey;
+  final Value<String> itemId;
+  final Value<String> title;
+  final Value<String?> artist;
+  final Value<String?> album;
+  final Value<int?> durationMs;
+  final Value<String?> coverUrl;
+  final Value<int?> libraryAddedAt;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const MusicRemoteTracksCompanion({
+    this.trackUid = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.sourceKey = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.artist = const Value.absent(),
+    this.album = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.libraryAddedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicRemoteTracksCompanion.insert({
+    required String trackUid,
+    required String kind,
+    required String sourceKey,
+    required String itemId,
+    required String title,
+    this.artist = const Value.absent(),
+    this.album = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.libraryAddedAt = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       kind = Value(kind),
+       sourceKey = Value(sourceKey),
+       itemId = Value(itemId),
+       title = Value(title),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<MusicRemoteTrackRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? kind,
+    Expression<String>? sourceKey,
+    Expression<String>? itemId,
+    Expression<String>? title,
+    Expression<String>? artist,
+    Expression<String>? album,
+    Expression<int>? durationMs,
+    Expression<String>? coverUrl,
+    Expression<int>? libraryAddedAt,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (kind != null) 'kind': kind,
+      if (sourceKey != null) 'source_key': sourceKey,
+      if (itemId != null) 'item_id': itemId,
+      if (title != null) 'title': title,
+      if (artist != null) 'artist': artist,
+      if (album != null) 'album': album,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (coverUrl != null) 'cover_url': coverUrl,
+      if (libraryAddedAt != null) 'library_added_at': libraryAddedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicRemoteTracksCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? kind,
+    Value<String>? sourceKey,
+    Value<String>? itemId,
+    Value<String>? title,
+    Value<String?>? artist,
+    Value<String?>? album,
+    Value<int?>? durationMs,
+    Value<String?>? coverUrl,
+    Value<int?>? libraryAddedAt,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicRemoteTracksCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      kind: kind ?? this.kind,
+      sourceKey: sourceKey ?? this.sourceKey,
+      itemId: itemId ?? this.itemId,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      durationMs: durationMs ?? this.durationMs,
+      coverUrl: coverUrl ?? this.coverUrl,
+      libraryAddedAt: libraryAddedAt ?? this.libraryAddedAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (sourceKey.present) {
+      map['source_key'] = Variable<String>(sourceKey.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (artist.present) {
+      map['artist'] = Variable<String>(artist.value);
+    }
+    if (album.present) {
+      map['album'] = Variable<String>(album.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (coverUrl.present) {
+      map['cover_url'] = Variable<String>(coverUrl.value);
+    }
+    if (libraryAddedAt.present) {
+      map['library_added_at'] = Variable<int>(libraryAddedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicRemoteTracksCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('kind: $kind, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('itemId: $itemId, ')
+          ..write('title: $title, ')
+          ..write('artist: $artist, ')
+          ..write('album: $album, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('libraryAddedAt: $libraryAddedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MusicPlayEventsTable extends MusicPlayEvents
     with TableInfo<$MusicPlayEventsTable, MusicPlayEventRow> {
   @override
@@ -74812,321 +75538,6 @@ class AdaptationProgressAnchorsCompanion
   }
 }
 
-class $GalgameTextLinesTable extends GalgameTextLines
-    with TableInfo<$GalgameTextLinesTable, GalgameTextLineRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $GalgameTextLinesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-    'id',
-    aliasedName,
-    false,
-    hasAutoIncrement: true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
-  );
-  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
-  @override
-  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
-    'game_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES galgames (id) ON DELETE CASCADE',
-    ),
-  );
-  static const VerificationMeta _lineTextMeta = const VerificationMeta(
-    'lineText',
-  );
-  @override
-  late final GeneratedColumn<String> lineText = GeneratedColumn<String>(
-    'text',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
-    'receivedAt',
-  );
-  @override
-  late final GeneratedColumn<int> receivedAt = GeneratedColumn<int>(
-    'received_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [id, gameId, lineText, receivedAt];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'galgame_text_lines';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<GalgameTextLineRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('game_id')) {
-      context.handle(
-        _gameIdMeta,
-        gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_gameIdMeta);
-    }
-    if (data.containsKey('text')) {
-      context.handle(
-        _lineTextMeta,
-        lineText.isAcceptableOrUnknown(data['text']!, _lineTextMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_lineTextMeta);
-    }
-    if (data.containsKey('received_at')) {
-      context.handle(
-        _receivedAtMeta,
-        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_receivedAtMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-    {gameId, lineText},
-  ];
-  @override
-  GalgameTextLineRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return GalgameTextLineRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
-      gameId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}game_id'],
-      )!,
-      lineText: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}text'],
-      )!,
-      receivedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}received_at'],
-      )!,
-    );
-  }
-
-  @override
-  $GalgameTextLinesTable createAlias(String alias) {
-    return $GalgameTextLinesTable(attachedDatabase, alias);
-  }
-}
-
-class GalgameTextLineRow extends DataClass
-    implements Insertable<GalgameTextLineRow> {
-  final int id;
-
-  /// 所属游戏（`galgames.id`）。游戏从库里移除时台词跟着删（ON DELETE CASCADE）：
-  /// 台词是这个游戏的内容，不像游玩时长那样要留作统计。
-  final String gameId;
-
-  /// 台词正文（文本钩子管线处理后的那一份：注音已剥、折叠后的整行）。
-  final String lineText;
-
-  /// 第一次收到这句台词的时刻（毫秒时间戳）。
-  final int receivedAt;
-  const GalgameTextLineRow({
-    required this.id,
-    required this.gameId,
-    required this.lineText,
-    required this.receivedAt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['game_id'] = Variable<String>(gameId);
-    map['text'] = Variable<String>(lineText);
-    map['received_at'] = Variable<int>(receivedAt);
-    return map;
-  }
-
-  GalgameTextLinesCompanion toCompanion(bool nullToAbsent) {
-    return GalgameTextLinesCompanion(
-      id: Value(id),
-      gameId: Value(gameId),
-      lineText: Value(lineText),
-      receivedAt: Value(receivedAt),
-    );
-  }
-
-  factory GalgameTextLineRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return GalgameTextLineRow(
-      id: serializer.fromJson<int>(json['id']),
-      gameId: serializer.fromJson<String>(json['gameId']),
-      lineText: serializer.fromJson<String>(json['lineText']),
-      receivedAt: serializer.fromJson<int>(json['receivedAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'gameId': serializer.toJson<String>(gameId),
-      'lineText': serializer.toJson<String>(lineText),
-      'receivedAt': serializer.toJson<int>(receivedAt),
-    };
-  }
-
-  GalgameTextLineRow copyWith({
-    int? id,
-    String? gameId,
-    String? lineText,
-    int? receivedAt,
-  }) => GalgameTextLineRow(
-    id: id ?? this.id,
-    gameId: gameId ?? this.gameId,
-    lineText: lineText ?? this.lineText,
-    receivedAt: receivedAt ?? this.receivedAt,
-  );
-  GalgameTextLineRow copyWithCompanion(GalgameTextLinesCompanion data) {
-    return GalgameTextLineRow(
-      id: data.id.present ? data.id.value : this.id,
-      gameId: data.gameId.present ? data.gameId.value : this.gameId,
-      lineText: data.lineText.present ? data.lineText.value : this.lineText,
-      receivedAt: data.receivedAt.present
-          ? data.receivedAt.value
-          : this.receivedAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GalgameTextLineRow(')
-          ..write('id: $id, ')
-          ..write('gameId: $gameId, ')
-          ..write('lineText: $lineText, ')
-          ..write('receivedAt: $receivedAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, gameId, lineText, receivedAt);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is GalgameTextLineRow &&
-          other.id == this.id &&
-          other.gameId == this.gameId &&
-          other.lineText == this.lineText &&
-          other.receivedAt == this.receivedAt);
-}
-
-class GalgameTextLinesCompanion extends UpdateCompanion<GalgameTextLineRow> {
-  final Value<int> id;
-  final Value<String> gameId;
-  final Value<String> lineText;
-  final Value<int> receivedAt;
-  const GalgameTextLinesCompanion({
-    this.id = const Value.absent(),
-    this.gameId = const Value.absent(),
-    this.lineText = const Value.absent(),
-    this.receivedAt = const Value.absent(),
-  });
-  GalgameTextLinesCompanion.insert({
-    this.id = const Value.absent(),
-    required String gameId,
-    required String lineText,
-    required int receivedAt,
-  }) : gameId = Value(gameId),
-       lineText = Value(lineText),
-       receivedAt = Value(receivedAt);
-  static Insertable<GalgameTextLineRow> custom({
-    Expression<int>? id,
-    Expression<String>? gameId,
-    Expression<String>? lineText,
-    Expression<int>? receivedAt,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (gameId != null) 'game_id': gameId,
-      if (lineText != null) 'text': lineText,
-      if (receivedAt != null) 'received_at': receivedAt,
-    });
-  }
-
-  GalgameTextLinesCompanion copyWith({
-    Value<int>? id,
-    Value<String>? gameId,
-    Value<String>? lineText,
-    Value<int>? receivedAt,
-  }) {
-    return GalgameTextLinesCompanion(
-      id: id ?? this.id,
-      gameId: gameId ?? this.gameId,
-      lineText: lineText ?? this.lineText,
-      receivedAt: receivedAt ?? this.receivedAt,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (gameId.present) {
-      map['game_id'] = Variable<String>(gameId.value);
-    }
-    if (lineText.present) {
-      map['text'] = Variable<String>(lineText.value);
-    }
-    if (receivedAt.present) {
-      map['received_at'] = Variable<int>(receivedAt.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GalgameTextLinesCompanion(')
-          ..write('id: $id, ')
-          ..write('gameId: $gameId, ')
-          ..write('lineText: $lineText, ')
-          ..write('receivedAt: $receivedAt')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class $AiAgentSessionsTable extends AiAgentSessions
     with TableInfo<$AiAgentSessionsTable, AiAgentSessionRow> {
   @override
@@ -77480,6 +77891,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $MusicPlaylistsTable musicPlaylists = $MusicPlaylistsTable(this);
   late final $MusicPlaylistEntriesTable musicPlaylistEntries =
       $MusicPlaylistEntriesTable(this);
+  late final $MusicRemoteTracksTable musicRemoteTracks =
+      $MusicRemoteTracksTable(this);
   late final $MusicPlayEventsTable musicPlayEvents = $MusicPlayEventsTable(
     this,
   );
@@ -77499,9 +77912,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $PersonIdentityBridgesTable(this);
   late final $AdaptationProgressAnchorsTable adaptationProgressAnchors =
       $AdaptationProgressAnchorsTable(this);
-  late final $GalgameTextLinesTable galgameTextLines = $GalgameTextLinesTable(
-    this,
-  );
   late final $AiAgentSessionsTable aiAgentSessions = $AiAgentSessionsTable(
     this,
   );
@@ -77625,6 +78035,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicDiscSources,
     musicPlaylists,
     musicPlaylistEntries,
+    musicRemoteTracks,
     musicPlayEvents,
     musicResumePoints,
     videoThemeSongSpans,
@@ -77634,7 +78045,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     gameVoiceCasts,
     personIdentityBridges,
     adaptationProgressAnchors,
-    galgameTextLines,
     aiAgentSessions,
     aiAgentActions,
     remoteAudioBindings,
@@ -78142,13 +78552,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('music_playlist_entries', kind: UpdateKind.delete)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
-        'galgames',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('galgame_text_lines', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -95772,27 +96175,6 @@ final class $$GalgamesTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
-
-  static MultiTypedResultKey<$GalgameTextLinesTable, List<GalgameTextLineRow>>
-  _galgameTextLinesRefsTable(_$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.galgameTextLines,
-        aliasName: 'galgames__id__galgame_text_lines__game_id',
-      );
-
-  $$GalgameTextLinesTableProcessedTableManager get galgameTextLinesRefs {
-    final manager = $$GalgameTextLinesTableTableManager(
-      $_db,
-      $_db.galgameTextLines,
-    ).filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _galgameTextLinesRefsTable($_db),
-    );
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
 }
 
 class $$GalgamesTableFilterComposer
@@ -95900,31 +96282,6 @@ class $$GalgamesTableFilterComposer
           }) => $$GalgameSourcesTableFilterComposer(
             $db: $db,
             $table: $db.galgameSources,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
-
-  Expression<bool> galgameTextLinesRefs(
-    Expression<bool> Function($$GalgameTextLinesTableFilterComposer f) f,
-  ) {
-    final $$GalgameTextLinesTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.galgameTextLines,
-      getReferencedColumn: (t) => t.gameId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgameTextLinesTableFilterComposer(
-            $db: $db,
-            $table: $db.galgameTextLines,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -96122,31 +96479,6 @@ class $$GalgamesTableAnnotationComposer
     );
     return f(composer);
   }
-
-  Expression<T> galgameTextLinesRefs<T extends Object>(
-    Expression<T> Function($$GalgameTextLinesTableAnnotationComposer a) f,
-  ) {
-    final $$GalgameTextLinesTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.galgameTextLines,
-      getReferencedColumn: (t) => t.gameId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgameTextLinesTableAnnotationComposer(
-            $db: $db,
-            $table: $db.galgameTextLines,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
 }
 
 class $$GalgamesTableTableManager
@@ -96162,10 +96494,7 @@ class $$GalgamesTableTableManager
           $$GalgamesTableUpdateCompanionBuilder,
           (GalgameRow, $$GalgamesTableReferences),
           GalgameRow,
-          PrefetchHooks Function({
-            bool galgameSourcesRefs,
-            bool galgameTextLinesRefs,
-          })
+          PrefetchHooks Function({bool galgameSourcesRefs})
         > {
   $$GalgamesTableTableManager(_$FushiDatabase db, $GalgamesTable table)
     : super(
@@ -96262,63 +96591,37 @@ class $$GalgamesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({galgameSourcesRefs = false, galgameTextLinesRefs = false}) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (galgameSourcesRefs) db.galgameSources,
-                    if (galgameTextLinesRefs) db.galgameTextLines,
-                  ],
-                  addJoins: null,
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (galgameSourcesRefs)
-                        await $_getPrefetchedData<
-                          GalgameRow,
-                          $GalgamesTable,
-                          GalgameSourceRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$GalgamesTableReferences
-                              ._galgameSourcesRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$GalgamesTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).galgameSourcesRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.gameId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                      if (galgameTextLinesRefs)
-                        await $_getPrefetchedData<
-                          GalgameRow,
-                          $GalgamesTable,
-                          GalgameTextLineRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$GalgamesTableReferences
-                              ._galgameTextLinesRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$GalgamesTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).galgameTextLinesRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.gameId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
+          prefetchHooksCallback: ({galgameSourcesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (galgameSourcesRefs) db.galgameSources,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (galgameSourcesRefs)
+                    await $_getPrefetchedData<
+                      GalgameRow,
+                      $GalgamesTable,
+                      GalgameSourceRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$GalgamesTableReferences
+                          ._galgameSourcesRefsTable(db),
+                      managerFromTypedResult: (p0) => $$GalgamesTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).galgameSourcesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.gameId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -96335,10 +96638,7 @@ typedef $$GalgamesTableProcessedTableManager =
       $$GalgamesTableUpdateCompanionBuilder,
       (GalgameRow, $$GalgamesTableReferences),
       GalgameRow,
-      PrefetchHooks Function({
-        bool galgameSourcesRefs,
-        bool galgameTextLinesRefs,
-      })
+      PrefetchHooks Function({bool galgameSourcesRefs})
     >;
 typedef $$GalgameSourcesTableCreateCompanionBuilder =
     GalgameSourcesCompanion Function({
@@ -125582,6 +125882,356 @@ typedef $$MusicPlaylistEntriesTableProcessedTableManager =
       MusicPlaylistEntryRow,
       PrefetchHooks Function({bool playlistUid})
     >;
+typedef $$MusicRemoteTracksTableCreateCompanionBuilder =
+    MusicRemoteTracksCompanion Function({
+      required String trackUid,
+      required String kind,
+      required String sourceKey,
+      required String itemId,
+      required String title,
+      Value<String?> artist,
+      Value<String?> album,
+      Value<int?> durationMs,
+      Value<String?> coverUrl,
+      Value<int?> libraryAddedAt,
+      required int createdAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicRemoteTracksTableUpdateCompanionBuilder =
+    MusicRemoteTracksCompanion Function({
+      Value<String> trackUid,
+      Value<String> kind,
+      Value<String> sourceKey,
+      Value<String> itemId,
+      Value<String> title,
+      Value<String?> artist,
+      Value<String?> album,
+      Value<int?> durationMs,
+      Value<String?> coverUrl,
+      Value<int?> libraryAddedAt,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicRemoteTracksTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicRemoteTracksTable> {
+  $$MusicRemoteTracksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get artist => $composableBuilder(
+    column: $table.artist,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get album => $composableBuilder(
+    column: $table.album,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverUrl => $composableBuilder(
+    column: $table.coverUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get libraryAddedAt => $composableBuilder(
+    column: $table.libraryAddedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicRemoteTracksTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicRemoteTracksTable> {
+  $$MusicRemoteTracksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get artist => $composableBuilder(
+    column: $table.artist,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get album => $composableBuilder(
+    column: $table.album,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverUrl => $composableBuilder(
+    column: $table.coverUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get libraryAddedAt => $composableBuilder(
+    column: $table.libraryAddedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicRemoteTracksTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicRemoteTracksTable> {
+  $$MusicRemoteTracksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceKey =>
+      $composableBuilder(column: $table.sourceKey, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get artist =>
+      $composableBuilder(column: $table.artist, builder: (column) => column);
+
+  GeneratedColumn<String> get album =>
+      $composableBuilder(column: $table.album, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get coverUrl =>
+      $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<int> get libraryAddedAt => $composableBuilder(
+    column: $table.libraryAddedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MusicRemoteTracksTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicRemoteTracksTable,
+          MusicRemoteTrackRow,
+          $$MusicRemoteTracksTableFilterComposer,
+          $$MusicRemoteTracksTableOrderingComposer,
+          $$MusicRemoteTracksTableAnnotationComposer,
+          $$MusicRemoteTracksTableCreateCompanionBuilder,
+          $$MusicRemoteTracksTableUpdateCompanionBuilder,
+          (
+            MusicRemoteTrackRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicRemoteTracksTable,
+              MusicRemoteTrackRow
+            >,
+          ),
+          MusicRemoteTrackRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicRemoteTracksTableTableManager(
+    _$FushiDatabase db,
+    $MusicRemoteTracksTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicRemoteTracksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicRemoteTracksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MusicRemoteTracksTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> sourceKey = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String?> artist = const Value.absent(),
+                Value<String?> album = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<String?> coverUrl = const Value.absent(),
+                Value<int?> libraryAddedAt = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicRemoteTracksCompanion(
+                trackUid: trackUid,
+                kind: kind,
+                sourceKey: sourceKey,
+                itemId: itemId,
+                title: title,
+                artist: artist,
+                album: album,
+                durationMs: durationMs,
+                coverUrl: coverUrl,
+                libraryAddedAt: libraryAddedAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String kind,
+                required String sourceKey,
+                required String itemId,
+                required String title,
+                Value<String?> artist = const Value.absent(),
+                Value<String?> album = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<String?> coverUrl = const Value.absent(),
+                Value<int?> libraryAddedAt = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicRemoteTracksCompanion.insert(
+                trackUid: trackUid,
+                kind: kind,
+                sourceKey: sourceKey,
+                itemId: itemId,
+                title: title,
+                artist: artist,
+                album: album,
+                durationMs: durationMs,
+                coverUrl: coverUrl,
+                libraryAddedAt: libraryAddedAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicRemoteTracksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicRemoteTracksTable,
+      MusicRemoteTrackRow,
+      $$MusicRemoteTracksTableFilterComposer,
+      $$MusicRemoteTracksTableOrderingComposer,
+      $$MusicRemoteTracksTableAnnotationComposer,
+      $$MusicRemoteTracksTableCreateCompanionBuilder,
+      $$MusicRemoteTracksTableUpdateCompanionBuilder,
+      (
+        MusicRemoteTrackRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicRemoteTracksTable,
+          MusicRemoteTrackRow
+        >,
+      ),
+      MusicRemoteTrackRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MusicPlayEventsTableCreateCompanionBuilder =
     MusicPlayEventsCompanion Function({
       Value<int> id,
@@ -128432,313 +129082,6 @@ typedef $$AdaptationProgressAnchorsTableProcessedTableManager =
       AdaptationProgressAnchorRow,
       PrefetchHooks Function()
     >;
-typedef $$GalgameTextLinesTableCreateCompanionBuilder =
-    GalgameTextLinesCompanion Function({
-      Value<int> id,
-      required String gameId,
-      required String lineText,
-      required int receivedAt,
-    });
-typedef $$GalgameTextLinesTableUpdateCompanionBuilder =
-    GalgameTextLinesCompanion Function({
-      Value<int> id,
-      Value<String> gameId,
-      Value<String> lineText,
-      Value<int> receivedAt,
-    });
-
-final class $$GalgameTextLinesTableReferences
-    extends
-        BaseReferences<
-          _$FushiDatabase,
-          $GalgameTextLinesTable,
-          GalgameTextLineRow
-        > {
-  $$GalgameTextLinesTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
-
-  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
-      db.galgames.createAlias('galgame_text_lines__game_id__galgames__id');
-
-  $$GalgamesTableProcessedTableManager get gameId {
-    final $_column = $_itemColumn<String>('game_id')!;
-
-    final manager = $$GalgamesTableTableManager(
-      $_db,
-      $_db.galgames,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-}
-
-class $$GalgameTextLinesTableFilterComposer
-    extends Composer<_$FushiDatabase, $GalgameTextLinesTable> {
-  $$GalgameTextLinesTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get lineText => $composableBuilder(
-    column: $table.lineText,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get receivedAt => $composableBuilder(
-    column: $table.receivedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  $$GalgamesTableFilterComposer get gameId {
-    final $$GalgamesTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableFilterComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$GalgameTextLinesTableOrderingComposer
-    extends Composer<_$FushiDatabase, $GalgameTextLinesTable> {
-  $$GalgameTextLinesTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get lineText => $composableBuilder(
-    column: $table.lineText,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get receivedAt => $composableBuilder(
-    column: $table.receivedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  $$GalgamesTableOrderingComposer get gameId {
-    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableOrderingComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$GalgameTextLinesTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $GalgameTextLinesTable> {
-  $$GalgameTextLinesTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get lineText =>
-      $composableBuilder(column: $table.lineText, builder: (column) => column);
-
-  GeneratedColumn<int> get receivedAt => $composableBuilder(
-    column: $table.receivedAt,
-    builder: (column) => column,
-  );
-
-  $$GalgamesTableAnnotationComposer get gameId {
-    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableAnnotationComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$GalgameTextLinesTableTableManager
-    extends
-        RootTableManager<
-          _$FushiDatabase,
-          $GalgameTextLinesTable,
-          GalgameTextLineRow,
-          $$GalgameTextLinesTableFilterComposer,
-          $$GalgameTextLinesTableOrderingComposer,
-          $$GalgameTextLinesTableAnnotationComposer,
-          $$GalgameTextLinesTableCreateCompanionBuilder,
-          $$GalgameTextLinesTableUpdateCompanionBuilder,
-          (GalgameTextLineRow, $$GalgameTextLinesTableReferences),
-          GalgameTextLineRow,
-          PrefetchHooks Function({bool gameId})
-        > {
-  $$GalgameTextLinesTableTableManager(
-    _$FushiDatabase db,
-    $GalgameTextLinesTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$GalgameTextLinesTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$GalgameTextLinesTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$GalgameTextLinesTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<String> gameId = const Value.absent(),
-                Value<String> lineText = const Value.absent(),
-                Value<int> receivedAt = const Value.absent(),
-              }) => GalgameTextLinesCompanion(
-                id: id,
-                gameId: gameId,
-                lineText: lineText,
-                receivedAt: receivedAt,
-              ),
-          createCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                required String gameId,
-                required String lineText,
-                required int receivedAt,
-              }) => GalgameTextLinesCompanion.insert(
-                id: id,
-                gameId: gameId,
-                lineText: lineText,
-                receivedAt: receivedAt,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable(table),
-                  $$GalgameTextLinesTableReferences(db, table, e),
-                ),
-              )
-              .toList(),
-          prefetchHooksCallback: ({gameId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (gameId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.gameId,
-                                referencedTable:
-                                    $$GalgameTextLinesTableReferences
-                                        ._gameIdTable(db),
-                                referencedColumn:
-                                    $$GalgameTextLinesTableReferences
-                                        ._gameIdTable(db)
-                                        .id,
-                              )
-                              as T;
-                    }
-
-                    return state;
-                  },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ),
-      );
-}
-
-typedef $$GalgameTextLinesTableProcessedTableManager =
-    ProcessedTableManager<
-      _$FushiDatabase,
-      $GalgameTextLinesTable,
-      GalgameTextLineRow,
-      $$GalgameTextLinesTableFilterComposer,
-      $$GalgameTextLinesTableOrderingComposer,
-      $$GalgameTextLinesTableAnnotationComposer,
-      $$GalgameTextLinesTableCreateCompanionBuilder,
-      $$GalgameTextLinesTableUpdateCompanionBuilder,
-      (GalgameTextLineRow, $$GalgameTextLinesTableReferences),
-      GalgameTextLineRow,
-      PrefetchHooks Function({bool gameId})
-    >;
 typedef $$AiAgentSessionsTableCreateCompanionBuilder =
     AiAgentSessionsCompanion Function({
       required String id,
@@ -130047,6 +130390,8 @@ class $FushiDatabaseManager {
       $$MusicPlaylistsTableTableManager(_db, _db.musicPlaylists);
   $$MusicPlaylistEntriesTableTableManager get musicPlaylistEntries =>
       $$MusicPlaylistEntriesTableTableManager(_db, _db.musicPlaylistEntries);
+  $$MusicRemoteTracksTableTableManager get musicRemoteTracks =>
+      $$MusicRemoteTracksTableTableManager(_db, _db.musicRemoteTracks);
   $$MusicPlayEventsTableTableManager get musicPlayEvents =>
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
   $$MusicResumePointsTableTableManager get musicResumePoints =>
@@ -130071,8 +130416,6 @@ class $FushiDatabaseManager {
         _db,
         _db.adaptationProgressAnchors,
       );
-  $$GalgameTextLinesTableTableManager get galgameTextLines =>
-      $$GalgameTextLinesTableTableManager(_db, _db.galgameTextLines);
   $$AiAgentSessionsTableTableManager get aiAgentSessions =>
       $$AiAgentSessionsTableTableManager(_db, _db.aiAgentSessions);
   $$AiAgentActionsTableTableManager get aiAgentActions =>

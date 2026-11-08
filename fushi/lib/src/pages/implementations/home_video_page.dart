@@ -79,6 +79,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
     show DiscShareFile;
 import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
+import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/remote_video_subtitle_refetch.dart';
@@ -127,6 +130,7 @@ import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_filename_organize_dialog.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -4536,6 +4540,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               unawaited(_rescrapeVideo(book));
             },
           ),
+        // 「整理文件名」（ZDYNkAP3Ln）：按刮削资料改磁盘文件名。门只挡「本机根本
+        // 没有文件」的条目；未刮削 / 已是规范名由计划判出、给明确提示。
+        if (videoBookHasLocalFiles(book))
+          DialogListAction(
+            label: t.video_filename_organize_action,
+            icon: Icons.drive_file_rename_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_organizeVideoFilenames(<String>[book.bookUid]));
+            },
+          ),
+        // 从媒体服务器加入的作品：移出整部作品（电影 = 自身，剧 = 全部集），与
+        // 服务器详情页的「移出媒体库」同一动作。集卡上文案写明是整部剧。
+        if (mediaServerWorkOfRow(book) case final MediaServerLibraryWork work)
+          DialogListAction(
+            label: work.workId == book.bookUid
+                ? t.video_online_library_remove
+                : t.video_online_library_remove_series,
+            icon: FushiIcons.removeCircle,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(
+                _removeMediaServerWorks(
+                  <MediaServerLibraryWork>{work},
+                  confirmTitle: work.workId == book.bookUid
+                      ? t.video_online_library_remove
+                      : t.video_online_library_remove_series,
+                ),
+              );
+            },
+          ),
       ],
       dangerActions: <DialogDangerAction>[
         DialogDangerAction(
@@ -4547,6 +4582,56 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       ],
     );
+  }
+
+  /// 库页「移出媒体库」（卡片 / 合集菜单）：删这些媒体服务器作品的入库行，与服务器
+  /// 详情页的「移出」同一实现（[MediaServerVideoLibrary.removeWorks]），不联网。
+  /// 已下载到本机的集是普通本地视频，不跟着移出。失败也刷新：批删可能删掉了一部分。
+  /// 删行不可撤销（观看进度 / 字幕 / 标签随行消失），先经
+  /// [confirmMediaServerLibraryRemoval] 确认；与单删同一顺序：行删后先让卡片卸载、
+  /// 再回收封面等 app 资产（[_waitForVideoCardsToUnmount]）。
+  Future<void> _removeMediaServerWorks(
+    Set<MediaServerLibraryWork> works, {
+    required String confirmTitle,
+  }) async {
+    if (!await confirmMediaServerLibraryRemoval(context, title: confirmTitle) ||
+        !mounted) {
+      return;
+    }
+    int removed = 0;
+    Object? failure;
+    try {
+      removed =
+          await MediaServerVideoLibrary(
+            database: appModelNoUpdate.database,
+            repository: widget.repo,
+          ).removeWorks(
+            works,
+            afterDeleteBeforeReclaim: () async {
+              if (!mounted) return;
+              _refreshAfterTagChange();
+              ref.invalidate(collectionTagMapProvider);
+              ref.invalidate(filteredCollectionIdsProvider);
+              await _waitForVideoCardsToUnmount();
+            },
+          );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'HomeVideoPage.removeMediaServerWorks',
+        error,
+        stack,
+      );
+      failure = error;
+    }
+    if (!mounted) return;
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
+    _refresh();
+    if (failure != null) {
+      FushiToast.show(msg: '$failure', severity: ToastSeverity.error);
+    } else if (removed > 0) {
+      FushiToast.show(msg: t.video_online_library_removed);
+    }
   }
 
   /// [book] 若是从当前远端来源（互联 host / 媒体服务器）下载来的，返回服务端清单里
@@ -9660,6 +9745,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final ImageProvider? Function() coverOf =
         cover ??
         () => _collectionMenuCoverImage(collection, memberUidOrder, library);
+    // 「移出媒体库」：合集里有从媒体服务器加入的作品（剧名合集）时才出。
+    final Set<MediaServerLibraryWork> serverWorks = <MediaServerLibraryWork>{
+      for (final VideoBookRow b in library)
+        if (memberUids.contains(b.bookUid)) ?mediaServerWorkOfRow(b),
+    };
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
@@ -9796,6 +9886,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () => _rescrapeCollection(collection),
           ),
         DialogListAction(
+          label: t.video_filename_organize_action,
+          icon: Icons.drive_file_rename_outline,
+          onPressed: () => _organizeCollectionFilenames(collection),
+        ),
+        DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           group: DialogActionGroup.content,
@@ -9824,6 +9919,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               onPressed: () => unawaited(_scrapeCollectionForHost(collection)),
             ),
         ],
+        if (serverWorks.isNotEmpty)
+          DialogListAction(
+            label: t.video_online_library_remove,
+            icon: FushiIcons.removeCircle,
+            onPressed: () => unawaited(
+              _removeMediaServerWorks(
+                serverWorks,
+                confirmTitle: t.video_online_library_remove,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -9877,6 +9983,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collection.id,
     );
     _refresh();
+  }
+
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名（及同名字幕 /
+  /// 元数据），做种的文件走下载引擎改名；预览、做种联动查不清时的提示、撤销都在
+  /// [runVideoFilenameOrganize]。
+  Future<void> _organizeVideoFilenames(List<String> bookUids) async {
+    if (bookUids.isEmpty || !mounted) return;
+    await runVideoFilenameOrganize(
+      context,
+      service: ref.read(appProvider).videoFilenameOrganizeService,
+      bookUids: bookUids,
+      onLibraryChanged: () async {
+        if (mounted) _refresh();
+      },
+    );
+  }
+
+  /// 合集整体「整理文件名」：成员里的视频一次预览、一次确认。
+  Future<void> _organizeCollectionFilenames(
+    MediaCollectionRow collection,
+  ) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final List<String> uids = <String>[
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(
+        collection.id,
+      ))
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+    ];
+    await _organizeVideoFilenames(uids);
   }
 
   /// 合集右键「重新刮削资料与封面」：手动指定作品身份 → 走 canonical 来源刮削
@@ -10642,6 +10777,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           onPickOnlineCover: _onlineCoverController == null
               ? null
               : _pickOnlineCollectionCoverFile,
+          // 单集菜单「整理文件名」（ZDYNkAP3Ln）：与库页同一条实现。
+          onOrganizeFilenames: _organizeVideoFilenames,
         ),
       ),
     );

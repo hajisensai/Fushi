@@ -90,7 +90,7 @@ esac
 # Same crate set as tool/native_libs.ps1 / tool/bootstrap.sh: a crate missing here
 # leaves its dylib/so absent on mac/linux workers, and every test that loads it
 # goes red only there (fushi_music → op_undo_music_test, fushi_corpus →
-# backup_galgame_text_lines_test).
+# library_corpus_service_test).
 for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fushi_corpus; do
   key=$(git rev-parse "HEAD:native/$crate")
   stamp="$state/native-$crate.key"

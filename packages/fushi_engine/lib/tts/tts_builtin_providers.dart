@@ -4,6 +4,7 @@
 library;
 
 import 'package:fushi_engine/tts/providers/azure_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/custom_http_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
@@ -24,6 +25,8 @@ const List<TtsProviderDescriptor> kBuiltinTtsProviders =
       IrodoriServerTtsDescriptor(),
       // 通用 OpenAI 兼容语音接口（本机 VPTTS 等，默认 :8000）。
       OpenAiCompatibleTtsDescriptor(),
+      // 自定义 HTTP 接口（没有专门适配的自建服务：GPT-SoVITS 下游分支等）。
+      CustomHttpTtsDescriptor(),
       // VOICEVOX 兼容 HTTP API 的三家（默认端口不同；其它兼容引擎改地址即可）。
       VoicevoxTtsDescriptor(),
       AivisSpeechTtsDescriptor(),

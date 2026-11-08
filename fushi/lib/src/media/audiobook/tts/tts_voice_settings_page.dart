@@ -1070,8 +1070,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
         for (final String c in spec.choices)
           FushiChoiceOption<String>(
             value: c,
-            label: ttsLanguageLabel(c),
-            subtitle: ttsLanguageLabel(c) == c ? null : c,
+            label: ttsChoiceLabel(_preset.providerId, spec.key, c),
+            subtitle: ttsChoiceLabel(_preset.providerId, spec.key, c) == c
+                ? null
+                : c,
           ),
       ],
     );
@@ -1463,7 +1465,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             title: label,
             onTap: () => unawaited(_pickChoice(spec)),
             trailing: Text(
-              ttsLanguageLabel(
+              ttsChoiceLabel(
+                _preset.providerId,
+                spec.key,
                 _preset.param(spec.key, fallback: spec.defaultValue),
               ),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1501,6 +1505,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       case TtsParamKind.url:
       case TtsParamKind.text:
       case TtsParamKind.secret:
+      case TtsParamKind.multiline:
         return field(
           _textField(
             key: ValueKey<String>('tts-voice-param-${spec.key}'),
@@ -1513,9 +1518,12 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
                 ? t.audiobook_tts_param_invalid
                 : _localReferenceProblem(spec),
             obscureText: spec.kind == TtsParamKind.secret,
-            keyboardType: spec.kind == TtsParamKind.url
-                ? TextInputType.url
-                : null,
+            multiline: spec.kind == TtsParamKind.multiline,
+            keyboardType: switch (spec.kind) {
+              TtsParamKind.url => TextInputType.url,
+              TtsParamKind.multiline => TextInputType.multiline,
+              _ => null,
+            },
             suffixIcon: _canPickReferenceAudio(spec)
                 ? FushiIconButton(
                     key: const ValueKey<String>('tts-voice-ref-audio-pick'),
@@ -1561,12 +1569,16 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     String? hintText,
     String? errorText,
     bool obscureText = false,
+    bool multiline = false,
     TextInputType? keyboardType,
     Widget? suffixIcon,
   }) => FushiTextFormFieldControl(
     key: key,
     controller: controller,
     obscureText: obscureText,
+    // 多行（请求模板 / 请求头）：至少 3 行，随内容长到 10 行后滚动。
+    minLines: multiline ? 3 : null,
+    maxLines: multiline ? 10 : 1,
     enableSuggestions: !obscureText,
     autocorrect: !obscureText,
     keyboardType: keyboardType,
