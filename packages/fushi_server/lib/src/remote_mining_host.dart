@@ -164,8 +164,8 @@ class ServerRemoteMiningService
   }
 
   /// [target] → 实际落点（与桌面 host 同一套语义：[resolveRemoteMiningTarget]）。手机没点名牌组时复习用配置给
-  /// 那份 profile 定的制卡牌组（全名；空 = 默认牌组）。
-  RemoteMiningResolution? _resolve(RemoteMiningTarget? target) {
+  /// 那份 profile 定的制卡牌组（全名；空 = 默认牌组）。点名的牌组没有了 → 整个退回服务端默认。
+  Future<RemoteMiningResolution?> _resolve(RemoteMiningTarget? target) {
     final ServerSrs? srs = _srs;
     return resolveRemoteMiningTarget(
       target,
@@ -174,6 +174,17 @@ class ServerRemoteMiningService
       defaultReviewProfile: _reviewAvailable ? srs!.defaultProfile!.uid : null,
       servesReviewProfile: (String uid) => srs?.storeFor(uid) != null,
       configuredReviewDeck: (String uid) => _srsConfig().miningDecks[uid],
+      ankiDeckExists: (String deck) async {
+        final List<AnkiDeck> decks = _ankiSettings().availableDecks;
+        // 没拉到过牌组清单：无从判断，交给 Anki 落卡时自己回落（回包仍按实际牌组报）。
+        return decks.isEmpty || decks.any((AnkiDeck d) => d.name == deck);
+      },
+      reviewDeckExists: (String uid, String deck) async {
+        final SrsDbStore? store = srs?.storeFor(uid);
+        if (store == null) return false;
+        final SrsDeckTree tree = await store.deckTree();
+        return tree.decks.any((SrsDeckView d) => tree.fullName(d.id) == deck);
+      },
     );
   }
 
@@ -183,7 +194,7 @@ class ServerRemoteMiningService
     AnkiMiningContext context,
     String source,
   ) async {
-    final RemoteMiningResolution? to = _resolve(target);
+    final RemoteMiningResolution? to = await _resolve(target);
     if (to == null) {
       return RemoteMineLanding(
         RemoteMineResult(result: MineResult.notConfigured.name),
@@ -299,7 +310,7 @@ class ServerRemoteMiningService
   }) async {
     if (expression.isEmpty) return false;
     try {
-      final RemoteMiningResolution? to = _resolve(target);
+      final RemoteMiningResolution? to = await _resolve(target);
       if (to == null) return false;
       if (to.kind == kRemoteMiningKindReview) {
         final SrsMiner? miner = _srs!.minerFor(to.profile!);
@@ -316,7 +327,7 @@ class ServerRemoteMiningService
 
   @override
   Future<Map<String, Object?>> miningTargets() async {
-    final RemoteMiningResolution? def = _resolve(null);
+    final RemoteMiningResolution? def = await _resolve(null);
     final List<Map<String, Object?>> review = <Map<String, Object?>>[];
     for (final ServerSrsProfile prof
         in _srs?.readyProfiles ?? const <ServerSrsProfile>[]) {

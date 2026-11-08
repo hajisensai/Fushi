@@ -169,8 +169,52 @@ class RemoteMiningResolution {
 ///   profile 有意义（退了就不沿用）；
 /// - 只带 `{profile}`（手机自己的 uid，即「主机默认」）而主机没有那份不算退回；点名了类别或牌组才算。
 ///
+/// - 显式点名的牌组主机那一处没有（被删 / 改名）：**整个**退回真正的主机默认（与不带 `target` 同一落点，
+///   不是那份 profile 自己的默认牌组），报退回——卡、转发与查重都落在手机随后会用的同一个地方（拍板
+///   2026-11-08：此前卡进了点名 profile 的默认牌组，手机却已退回主机默认，那张卡查重看不见）。
+///
 /// [ankiAvailable]：Anki 这条路能不能写；[defaultReviewProfile] 为 null = 复习不可用。两者都不可用 → null。
-RemoteMiningResolution? resolveRemoteMiningTarget(
+/// [ankiDeckExists] / [reviewDeckExists]：点名的牌组在不在（Anki 全名；复习按那份 profile 的牌组树全名）；
+/// null = 不查（按存在处理）。
+Future<RemoteMiningResolution?> resolveRemoteMiningTarget(
+  RemoteMiningTarget? target, {
+  required String defaultKind,
+  required bool ankiAvailable,
+  required String? defaultReviewProfile,
+  required bool Function(String uid) servesReviewProfile,
+  String? Function(String uid)? configuredReviewDeck,
+  Future<bool> Function(String deck)? ankiDeckExists,
+  Future<bool> Function(String profileUid, String deck)? reviewDeckExists,
+}) async {
+  RemoteMiningResolution? resolve(RemoteMiningTarget? t) =>
+      _resolveRemoteMiningTarget(
+        t,
+        defaultKind: defaultKind,
+        ankiAvailable: ankiAvailable,
+        defaultReviewProfile: defaultReviewProfile,
+        servesReviewProfile: servesReviewProfile,
+        configuredReviewDeck: configuredReviewDeck,
+      );
+  final RemoteMiningResolution? to = resolve(target);
+  final String? asked = target?.deck;
+  // 只查点名的、确实被带进落点的牌组（退了类别 / profile 时牌组已经丢掉）。
+  if (to == null || asked == null || to.deck != asked) return to;
+  final bool exists = to.kind == kRemoteMiningKindAnki
+      ? await ankiDeckExists?.call(asked) ?? true
+      : await reviewDeckExists?.call(to.profile!, asked) ?? true;
+  if (exists) return to;
+  final RemoteMiningResolution? def = resolve(null);
+  return def == null
+      ? null
+      : RemoteMiningResolution(
+          kind: def.kind,
+          profile: def.profile,
+          deck: def.deck,
+          fellBack: true,
+        );
+}
+
+RemoteMiningResolution? _resolveRemoteMiningTarget(
   RemoteMiningTarget? target, {
   required String defaultKind,
   required bool ankiAvailable,

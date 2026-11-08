@@ -10,13 +10,15 @@ import 'package:test/test.dart';
 const String _a = 'uid-a';
 const String _b = 'uid-b';
 
-RemoteMiningResolution? _resolve(
+Future<RemoteMiningResolution?> _resolve(
   RemoteMiningTarget? target, {
   String defaultKind = kRemoteMiningKindAnki,
   bool ankiAvailable = true,
   String? defaultReviewProfile = _a,
   Set<String> served = const <String>{_a, _b},
   Map<String, String> configured = const <String, String>{},
+  Set<String>? ankiDecks,
+  Map<String, Set<String>>? reviewDecks,
 }) => resolveRemoteMiningTarget(
   target,
   defaultKind: defaultKind,
@@ -24,20 +26,27 @@ RemoteMiningResolution? _resolve(
   defaultReviewProfile: defaultReviewProfile,
   servesReviewProfile: served.contains,
   configuredReviewDeck: (String uid) => configured[uid],
+  ankiDeckExists: ankiDecks == null
+      ? null
+      : (String deck) async => ankiDecks.contains(deck),
+  reviewDeckExists: reviewDecks == null
+      ? null
+      : (String uid, String deck) async =>
+            reviewDecks[uid]?.contains(deck) ?? false,
 );
 
 void main() {
   group('resolveRemoteMiningTarget', () {
-    test('不带 target = 主机默认（Anki）', () {
+    test('不带 target = 主机默认（Anki）', () async {
       expect(
-        _resolve(null),
+        await _resolve(null),
         const RemoteMiningResolution(kind: kRemoteMiningKindAnki),
       );
     });
 
-    test('主机默认是复习：落默认 profile 与它配置的制卡牌组', () {
+    test('主机默认是复习：落默认 profile 与它配置的制卡牌组', () async {
       expect(
-        _resolve(
+        await _resolve(
           null,
           defaultKind: kRemoteMiningKindReview,
           configured: <String, String>{_a: 'Mining'},
@@ -50,9 +59,9 @@ void main() {
       );
     });
 
-    test('只带手机自己的 profile（= 主机默认）：主机有那份就落那份', () {
+    test('只带手机自己的 profile（= 主机默认）：主机有那份就落那份', () async {
       expect(
-        _resolve(
+        await _resolve(
           const RemoteMiningTarget(profile: _b),
           defaultKind: kRemoteMiningKindReview,
         ),
@@ -63,8 +72,8 @@ void main() {
       );
     });
 
-    test('只带 profile 而主机没有那份：落默认 profile，不算退回', () {
-      final RemoteMiningResolution? r = _resolve(
+    test('只带 profile 而主机没有那份：落默认 profile，不算退回', () async {
+      final RemoteMiningResolution? r = await _resolve(
         const RemoteMiningTarget(profile: 'phone-only'),
         defaultKind: kRemoteMiningKindReview,
       );
@@ -72,16 +81,16 @@ void main() {
       expect(r?.fellBack, isFalse);
     });
 
-    test('主机默认是 Anki 时只带 profile：落 Anki，不算退回', () {
+    test('主机默认是 Anki 时只带 profile：落 Anki，不算退回', () async {
       expect(
-        _resolve(const RemoteMiningTarget(profile: 'phone-only')),
+        await _resolve(const RemoteMiningTarget(profile: 'phone-only')),
         const RemoteMiningResolution(kind: kRemoteMiningKindAnki),
       );
     });
 
-    test('显式复习 + profile + 牌组：照办', () {
+    test('显式复习 + profile + 牌组：照办', () async {
       expect(
-        _resolve(
+        await _resolve(
           const RemoteMiningTarget(
             kind: kRemoteMiningKindReview,
             profile: _b,
@@ -96,9 +105,9 @@ void main() {
       );
     });
 
-    test('显式 Anki 牌组：照办', () {
+    test('显式 Anki 牌组：照办', () async {
       expect(
-        _resolve(
+        await _resolve(
           const RemoteMiningTarget(kind: kRemoteMiningKindAnki, deck: 'Core'),
           defaultKind: kRemoteMiningKindReview,
         ),
@@ -106,9 +115,9 @@ void main() {
       );
     });
 
-    test('显式复习但复习不可用：退到 Anki、不沿用复习牌组、报退回', () {
+    test('显式复习但复习不可用：退到 Anki、不沿用复习牌组、报退回', () async {
       expect(
-        _resolve(
+        await _resolve(
           const RemoteMiningTarget(
             kind: kRemoteMiningKindReview,
             profile: _b,
@@ -123,9 +132,9 @@ void main() {
       );
     });
 
-    test('显式 Anki 但 Anki 不可用：退到复习默认 profile、报退回', () {
+    test('显式 Anki 但 Anki 不可用：退到复习默认 profile、报退回', () async {
       expect(
-        _resolve(
+        await _resolve(
           const RemoteMiningTarget(kind: kRemoteMiningKindAnki, deck: 'Core'),
           defaultKind: kRemoteMiningKindReview,
           ankiAvailable: false,
@@ -138,9 +147,9 @@ void main() {
       );
     });
 
-    test('显式点名的 profile 主机没有：落默认 profile、不沿用牌组、报退回', () {
+    test('显式点名的 profile 主机没有：落默认 profile、不沿用牌组、报退回', () async {
       expect(
-        _resolve(
+        await _resolve(
           const RemoteMiningTarget(
             kind: kRemoteMiningKindReview,
             profile: 'gone',
@@ -155,10 +164,106 @@ void main() {
       );
     });
 
-    test('哪儿都写不了：null', () {
+    test('哪儿都写不了：null', () async {
       expect(
-        _resolve(null, ankiAvailable: false, defaultReviewProfile: null),
+        await _resolve(null, ankiAvailable: false, defaultReviewProfile: null),
         isNull,
+      );
+    });
+  });
+
+  group('点名的牌组没有了：整个退回主机默认', () {
+    test('复习牌组被删：不落那份 profile 的默认牌组，退到主机默认（Anki）并报退回', () async {
+      expect(
+        await _resolve(
+          const RemoteMiningTarget(
+            kind: kRemoteMiningKindReview,
+            profile: _b,
+            deck: 'Deck B',
+          ),
+          reviewDecks: <String, Set<String>>{
+            _b: <String>{'Default'},
+          },
+        ),
+        const RemoteMiningResolution(
+          kind: kRemoteMiningKindAnki,
+          fellBack: true,
+        ),
+      );
+    });
+
+    test('主机默认是复习：退到默认 profile 与它配置的制卡牌组', () async {
+      expect(
+        await _resolve(
+          const RemoteMiningTarget(
+            kind: kRemoteMiningKindReview,
+            profile: _b,
+            deck: 'Deck B',
+          ),
+          defaultKind: kRemoteMiningKindReview,
+          configured: <String, String>{_a: 'Mining'},
+          reviewDecks: <String, Set<String>>{
+            _a: <String>{'Mining'},
+            _b: <String>{'Default'},
+          },
+        ),
+        const RemoteMiningResolution(
+          kind: kRemoteMiningKindReview,
+          profile: _a,
+          deck: 'Mining',
+          fellBack: true,
+        ),
+      );
+    });
+
+    test('复习牌组还在：照办', () async {
+      expect(
+        await _resolve(
+          const RemoteMiningTarget(
+            kind: kRemoteMiningKindReview,
+            profile: _b,
+            deck: 'Deck B',
+          ),
+          reviewDecks: <String, Set<String>>{
+            _b: <String>{'Deck B'},
+          },
+        ),
+        const RemoteMiningResolution(
+          kind: kRemoteMiningKindReview,
+          profile: _b,
+          deck: 'Deck B',
+        ),
+      );
+    });
+
+    test('Anki 牌组不在主机清单里：退到主机默认（复习默认 profile）并报退回', () async {
+      expect(
+        await _resolve(
+          const RemoteMiningTarget(kind: kRemoteMiningKindAnki, deck: 'Gone'),
+          defaultKind: kRemoteMiningKindReview,
+          ankiDecks: <String>{'Mining'},
+        ),
+        const RemoteMiningResolution(
+          kind: kRemoteMiningKindReview,
+          profile: _a,
+          fellBack: true,
+        ),
+      );
+    });
+
+    test('配置给的默认牌组不查（只查手机点名的）', () async {
+      expect(
+        await _resolve(
+          null,
+          defaultKind: kRemoteMiningKindReview,
+          configured: <String, String>{_a: 'Mining'},
+          reviewDecks: <String, Set<String>>{_a: <String>{}},
+        ),
+        const RemoteMiningResolution(
+          kind: kRemoteMiningKindReview,
+          profile: _a,
+          deck: 'Mining',
+        ),
       );
     });
   });

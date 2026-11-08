@@ -142,12 +142,20 @@ class HostRemoteMiningTargets {
         catalog == null ||
         defaultKind == kRemoteMiningKindAnki ||
         (await _ankiDecks()).isNotEmpty;
-    final RemoteMiningResolution? to = resolveRemoteMiningTarget(
+    // 点名的牌组没有了（被删 / 改名）→ 整个退回主机默认（引擎同一规则，与服务端一致）。
+    final RemoteMiningResolution? to = await resolveRemoteMiningTarget(
       target,
       defaultKind: defaultKind,
       ankiAvailable: ankiAvailable,
       defaultReviewProfile: catalog?.activeProfile,
       servesReviewProfile: (String uid) => catalog?.serves(uid) ?? false,
+      ankiDeckExists: (String deck) async {
+        final List<String> decks = await _ankiDecks();
+        // 没拉到过牌组清单：无从判断，交给 Anki 落卡时自己回落（回包仍按实际牌组报）。
+        return decks.isEmpty || decks.contains(deck);
+      },
+      reviewDeckExists: (String uid, String deck) async =>
+          (await _reviewDecks(uid))?.decks.contains(deck) ?? false,
     );
     // 第三项是本机挖词目标本身（不是退到 Anki 后的那个）：主机默认那条链按它落卡，判断「落点是不是主机默认」
     // 必须拿它比。

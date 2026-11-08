@@ -365,7 +365,7 @@ void main() {
       );
     });
 
-    test('点名的 Anki 牌组主机没有：卡进默认牌组并报 targetUnavailable', () async {
+    test('点名的 Anki 牌组主机没有：整个退回主机默认（不写那个牌组覆盖）并报 targetUnavailable', () async {
       final Map<String, dynamic> out = await buildRemoteMineResponse(
         _mineBody(
           '魚',
@@ -378,6 +378,72 @@ void main() {
       expect(out['result'], MineResult.success.name);
       expect((out['landed'] as Map<String, Object?>)['deck'], 'Mining');
       expect(out['targetUnavailable'], isTrue);
+      expect(
+        MiningRequestOverrides.readFrom(
+          jsonDecode(anki.minedPayloads.single) as Map<String, dynamic>,
+        )?.deckName,
+        isNull,
+      );
+    });
+
+    test(
+      '点名的复习牌组被删（主机默认是 Anki）：卡进主机默认 Anki、不进那份 profile，报 targetUnavailable；查重同一落点',
+      () async {
+        const RemoteMiningTarget gone = RemoteMiningTarget(
+          kind: kRemoteMiningKindReview,
+          profile: _uidB,
+          deck: 'Deleted deck',
+        );
+        final Map<String, dynamic> out = await buildRemoteMineResponse(
+          _mineBody('鯨', 'くじら', gone),
+          mining: service(),
+        );
+
+        expect(out['result'], MineResult.success.name);
+        expect(out['targetUnavailable'], isTrue);
+        expect(out['landed'], <String, Object?>{
+          'kind': kRemoteMiningKindAnki,
+          'deck': 'Mining',
+        });
+        expect(anki.minedPayloads, hasLength(1));
+        expect(await hasTerm(_uidB, '鯨', 'くじら'), isFalse);
+
+        final int before = anki.duplicateChecks;
+        await buildRemoteDuplicateResponse(<String, dynamic>{
+          'expression': '鯨',
+          'reading': 'くじら',
+          'target': gone.toJson(),
+        }, mining: service());
+        expect(anki.duplicateChecks, before + 1, reason: '查重查的是主机默认（Anki）');
+      },
+    );
+
+    test('点名的复习牌组被删（主机默认是复习）：卡进激活配置复习，不进点名 profile；查重看得见', () async {
+      app.target = SrsMiningTarget.srs;
+      const RemoteMiningTarget gone = RemoteMiningTarget(
+        kind: kRemoteMiningKindReview,
+        profile: _uidB,
+        deck: 'Deleted deck',
+      );
+      final Map<String, dynamic> out = await buildRemoteMineResponse(
+        _mineBody('蛍', 'ほたる', gone),
+        mining: service(),
+      );
+
+      expect(out['result'], MineResult.success.name, reason: '$out');
+      expect(out['targetUnavailable'], isTrue);
+      expect((out['landed'] as Map<String, Object?>)['profile'], _uidA);
+      expect(await hasTerm(_uidA, '蛍', 'ほたる'), isTrue);
+      expect(await hasTerm(_uidB, '蛍', 'ほたる'), isFalse);
+      expect(anki.minedPayloads, isEmpty);
+      expect(
+        (await buildRemoteDuplicateResponse(<String, dynamic>{
+          'expression': '蛍',
+          'reading': 'ほたる',
+          'target': gone.toJson(),
+        }, mining: service()))['duplicate'],
+        isTrue,
+      );
     });
 
     test('点名的配置主机没有复习：落激活配置复习并报 targetUnavailable', () async {
