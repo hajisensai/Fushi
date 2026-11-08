@@ -299,6 +299,7 @@ class LanDiscoveryService {
             _localAddresses.contains(device.host)) {
           return;
         }
+        _evictSupersededBy(device, event.service.name);
         _discoveredDevices[device.deviceId] = device;
         // BUG-1693：登记 name → deviceId，lost 事件（多不带 TXT）靠它找回存储键。
         _serviceNameToDeviceId[event.service.name] = device.deviceId;
@@ -319,6 +320,37 @@ class LanDiscoveryService {
         // Started / stopped / updated / resolve-failed / unknown: no-op.
         break;
     }
+  }
+
+  /// Keeps one entry per reachable host before [device] is stored.
+  ///
+  /// The storage key (TXT `id`, else the service name) is not stable for one
+  /// host: a resolve that drops the TXT record keys the same service by its
+  /// name, and a host that re-registers under a new instance name ("Fushi (2)")
+  /// leaves the old record behind when its lost event never arrives. Either way
+  /// two entries pointed at the same `host:port` and the LAN devices list
+  /// rendered the host twice under one row key (BUG-4247). Only one server can
+  /// listen on a `host:port`, so the newest resolve owns it:
+  ///   * the entry this service name resolved to before (under another key),
+  ///   * any other entry for the same endpoint, and
+  ///   * name mappings to those entries or to [device]'s key from other names
+  /// are dropped, so a later lost event for a superseded name cannot remove
+  /// the live entry.
+  void _evictSupersededBy(FushiDevice device, String serviceName) {
+    final String key = device.deviceId;
+    final String? previousKey = _serviceNameToDeviceId[serviceName];
+    if (previousKey != null && previousKey != key) {
+      _discoveredDevices.remove(previousKey);
+    }
+    _discoveredDevices.removeWhere(
+      (String k, FushiDevice d) =>
+          k != key && d.host == device.host && d.port == device.port,
+    );
+    _serviceNameToDeviceId.removeWhere(
+      (String name, String k) =>
+          name != serviceName &&
+          (k == key || !_discoveredDevices.containsKey(k)),
+    );
   }
 
   Future<void> _resolve(
