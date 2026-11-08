@@ -141,6 +141,51 @@ void main() {
       expect(ranked.first.title, contains('S03'));
     });
 
+    test('作品的其它已知标题同样算贴合：首选词是英文副标题也不压掉正式名发布（BUG-4243）', () {
+      final List<VideoResourceCandidate> input = <VideoResourceCandidate>[
+        _candidate(
+          '[LoftMoon] BanG Dream! Ave Mujica - 01 (S01E01) - (WEB 1080p HEVC)',
+          seeders: 43,
+        ),
+        _candidate(
+          '[SubsPlease] BanG Dream! Ave Mujica - 13 (1080p) [05B83F4C].mkv',
+          seeders: 38,
+        ),
+        _candidate(
+          'Ave Mujica The Die is Cast S01E05 1080p CR WEB-DL AAC2.0 H 264-VARYG',
+          seeders: 1,
+        ),
+      ];
+
+      final List<String> withWork = rankVideoResourcesByRelevance(
+        input,
+        query: 'Ave Mujica - The Die is Cast -',
+        workTitles: const <String>['BanG Dream! Ave Mujica'],
+      ).map((VideoResourceCandidate c) => c.title).toList();
+      expect(withWork.last, contains('VARYG'), reason: '同分回到做种数次序');
+
+      // 反向锚：不给作品标题时仍只按查询词比（低种副标题发布排第一）。
+      final List<String> queryOnly = rankVideoResourcesByRelevance(
+        input,
+        query: 'Ave Mujica - The Die is Cast -',
+      ).map((VideoResourceCandidate c) => c.title).toList();
+      expect(queryOnly.first, contains('VARYG'));
+    });
+
+    test('作品标题只扩展标题集合，季号仍只认查询词 / 显式季号', () {
+      final List<VideoResourceCandidate> ranked = rankVideoResourcesByRelevance(
+        <VideoResourceCandidate>[
+          _candidate('[Group] Show S01 (Batch) [1080p]', seeders: 900),
+          _candidate('[Group] Show S02 (Batch) [1080p]', seeders: 1),
+        ],
+        query: 'Show 2',
+        // 别名里带别的季号也不能改写查询季号。
+        workTitles: const <String>['Show', 'Show 1'],
+      );
+
+      expect(ranked.first.title, contains('S02'));
+    });
+
     test('查询词不带季号时保持上游次序（providerPriority → seeders）', () {
       final List<VideoResourceCandidate> input = <VideoResourceCandidate>[
         _candidate('[Group] Show S03 [1080p]', seeders: 900),

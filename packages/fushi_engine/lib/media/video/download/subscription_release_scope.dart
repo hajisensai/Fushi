@@ -26,10 +26,20 @@ const String kBatchSubscriptionItemKey = 'batch';
 ///   要求区间由 第/括号/`E`/`EP` 引导**或**以 话/集/END/Fin/完 收尾，两端 1..300
 ///   且递增，避免把 `2023-08` 日期、分辨率误判成区间。
 ///
-/// 注意它**认不出**只带 `[Fin]`、`BDRip` 这类没有区间也没有关键词的整季包——那种
-/// 形态只能靠「解析不出集号」兜住，见 [subscriptionReleaseIsBatch]。
+/// - 季包记号：`S01` / `Season 2` / `2nd Season` / `第2季`，且标题里解析不出集号
+///   （`[cappybara] Show (2025) - S01 (BD 1080p …)`、`Show S01 VOSTFR`）。发布圈
+///   只写季号不写集号就是整季包；带集号的 `S01E05` / `S2 - 05` 仍是单集。
+///
+/// 注意它**认不出**只带 `[Fin]`、`BDRip` 这类没有区间、关键词也没有季号的整季包——
+/// 那种形态与「一集特典」（`Show Special`）长得一样，只能在订阅语义里靠「解析不出
+/// 集号」兜住，见 [subscriptionReleaseIsBatch]。
 bool looksLikeBatchVideoRelease(String title) {
   if (RegExp(r'\b(batch|complete)\b', caseSensitive: false).hasMatch(title)) {
+    return true;
+  }
+  // 季包：此前这条形态只有「没有集号」一个特征被订阅端兜住，下载规划（只认这里）
+  // 看不见它，做种最多的 BD 季包整张卡给不出计划、被静默跳过（BUG-4243）。
+  if (_seasonPackMarker.hasMatch(title) && !_hasEpisodeNumber(title)) {
     return true;
   }
   if (RegExp('season pack', caseSensitive: false).hasMatch(title)) return true;
@@ -66,7 +76,17 @@ bool looksLikeBatchVideoRelease(String title) {
 /// 季号存在与否不参与判断：整季包与单集都可能带季号。
 bool subscriptionReleaseIsBatch(String title) {
   if (looksLikeBatchVideoRelease(title)) return true;
-  final VideoNameInfo parsed = parseVideoFilename(title);
-  final int? episode = parsed.episode;
-  return episode == null || episode <= 0;
+  return !_hasEpisodeNumber(title);
+}
+
+/// 只写季号的记号：`S01`（后面不能紧跟 `E05`）、`Season 2`、`2nd Season`、`第2季`。
+final RegExp _seasonPackMarker = RegExp(
+  r'(?<![A-Za-z0-9])(?:S\d{1,2}|Season\s*\d{1,2}|\d{1,2}(?:st|nd|rd|th)\s+Season)'
+  r'(?![A-Za-z0-9])|第\s*(?:\d{1,2}|[一二三四五六七八九十])\s*季',
+  caseSensitive: false,
+);
+
+bool _hasEpisodeNumber(String title) {
+  final int? episode = parseVideoFilename(title).episode;
+  return episode != null && episode > 0;
 }

@@ -105,13 +105,32 @@ double _titleScore(
 ///
 /// [query] 是用户实际提交的搜索词；[season] 是调用方已知的季号（订阅链路会传），
 /// 传 null 时从 [query] 自己解析。
+///
+/// [workTitles] 是目标作品的全部已知标题（主标题 / 原名 / 别名）。一部作品在发布
+/// 圈常有好几种叫法，provider 也确实拿每个叫法各查一次（BUG-2794/2818），但此前
+/// 贴合度只拿 [query] 这**一个**词比：AniList 上《BanG Dream! Ave Mujica》的英文名
+/// 是副标题 `Ave Mujica - The Die is Cast -`，被选作首选查询词后，标题恰好写副标题
+/// 的低种逐集发布拿满分，写正式名的 BD 全集 / SubsPlease 合集反被当成「不相关」
+/// 沉到十名开外（BUG-4243）。所以作品自己的任一已知标题都算贴合，同分时回到上游
+/// 做种次序。季号**只**从 [season] / [query] 来——别名里的裸数字不参与，免得
+/// 系列别名把错季抬上来。
 List<VideoResourceCandidate> rankVideoResourcesByRelevance(
   List<VideoResourceCandidate> candidates, {
   required String query,
   int? season,
+  Iterable<String> workTitles = const <String>[],
 }) {
-  final VideoResourceTitleIdentity queryIdentity = parseVideoResourceIdentity(
+  final VideoResourceTitleIdentity parsedQuery = parseVideoResourceIdentity(
     query,
+  );
+  final VideoResourceTitleIdentity queryIdentity = VideoResourceTitleIdentity(
+    titles: <String>{
+      ...parsedQuery.titles,
+      for (final String title in workTitles)
+        if (title.trim().isNotEmpty)
+          ...parseVideoResourceIdentity(title).titles,
+    },
+    season: parsedQuery.season,
   );
   final int? querySeason = season ?? queryIdentity.season;
   if (candidates.length < 2) {

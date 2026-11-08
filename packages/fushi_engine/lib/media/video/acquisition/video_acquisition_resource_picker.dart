@@ -494,7 +494,7 @@ VideoAcquisitionResourcePlan? _planEpisodesDownload(
     case VideoAcquisitionAllEpisodes():
       // 发布形态是分组键的一维（BUG-4241）：逐集卡里没有整包，整包卡里没有单集，
       // 不会再拿 A 作品的整包去配 B 作品的逐集。整包卡里只认**写明是合集**的那几条
-      // （关键词 / 区间）：没有集号的单条（`Show Special`、没写 batch 的 BD 包）
+      // （关键词 / 区间 / 只写季号的 `S01` 季包，BUG-4243）：没有集号的单条（`Show Special`、没写 batch 的 BD 包）
       // 分不清是全集还是一集特典，当「全集」下错了比给不出计划更糟。
       final List<VideoResourceCandidate> batches = <VideoResourceCandidate>[
         for (final VideoResourceCandidate member in group.members)
