@@ -167,7 +167,7 @@ class CardSourceLink {
   /// Anki browser-syntax candidate query for [sourceId]: a substring match
   /// qualified with the `*` field-name wildcard, i.e. over every field of
   /// every note (AnkiConnect `findNotes` and the AnkiDroid notes
-  /// ContentProvider accept the same syntax). BUG-4231: an unqualified term
+  /// ContentProvider accept the same syntax). BUG-4232: an unqualified term
   /// skips fields marked "Exclude from unqualified searches", so a link field
   /// configured that way made the original note unfindable; field-qualified
   /// searches ignore that option. Hits are candidates only; identity is

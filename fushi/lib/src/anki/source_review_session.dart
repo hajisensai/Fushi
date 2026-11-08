@@ -204,7 +204,7 @@ class SourceReviewSession extends ChangeNotifier {
         return saved;
       }
 
-      // BUG-4231: ask for the original before persisting anything. A backend
+      // BUG-4232: ask for the original before persisting anything. A backend
       // that could not answer (offline peer, Anki closed) leaves an uncertain
       // state, so the work is kept as a resumable draft. A definitive "no such
       // note" can never be resumed against the same link, so it must not
