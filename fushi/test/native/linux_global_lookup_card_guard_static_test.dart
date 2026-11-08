@@ -235,7 +235,7 @@ void main() {
       expect(reader, contains('session->primary = offer;'));
       expect(reader, isNot(contains('OnSelection(void* data')));
       final int wayland = runner.indexOf('ReadWaylandPrimarySelection(');
-      final int fallback = runner.indexOf('CaptureX11Primary(call);', wayland);
+      final int fallback = runner.indexOf('CaptureGtkPrimary(call);', wayland);
       expect(wayland, greaterThan(0));
       expect(fallback, greaterThan(wayland));
       expect(
@@ -247,6 +247,40 @@ void main() {
       );
       expect(manifest, contains('- --socket=wayland'));
       expect(manifest, contains('- --env=GDK_BACKEND=x11'));
+    });
+
+    // GNOME has no data control, and on a native Wayland display the
+    // compositor offers the primary selection only to the focused client: the
+    // GTK read waits for a Fushi window to become active, syncs once so the
+    // offer has arrived, and is bounded. The no-overlay hotkey path raises
+    // the main window before it captures, or the wait could never end early.
+    test('native Wayland: read the primary selection once Fushi has focus', () {
+      final int body = runner.indexOf('void CaptureGtkPrimary(');
+      expect(body, greaterThan(0));
+      expect(
+        runner.indexOf('GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default())'),
+        greaterThan(body),
+      );
+      expect(runner, contains('"notify::is-active"'));
+      expect(runner, contains('g_timeout_add(kFocusWaitMs'));
+      final int sync = runner.indexOf('gdk_display_sync(');
+      expect(sync, greaterThan(0));
+      expect(runner.indexOf('ReadGtkPrimary(wait->call);'), greaterThan(sync));
+
+      final String controller = read(
+        'lib/src/lookup/global_lookup_controller.dart',
+      );
+      final int start = controller.indexOf(
+        'Future<void> _lookupSelectionInMainWindow(',
+      );
+      final int raise = controller.indexOf('bringMainWindowToFront()', start);
+      final int capture = controller.indexOf(
+        'captureForegroundSelection()',
+        start,
+      );
+      expect(start, greaterThan(0));
+      expect(raise, greaterThan(start));
+      expect(capture, greaterThan(raise));
     });
   });
 

@@ -634,7 +634,8 @@ class GlobalLookupController {
   /// binding is only the preferred-trigger hint; the desktop owns the key.
   /// Non-fatal on failure (the backends log every failure visibly).
   Future<void> _registerHotKeysFromRegistry() {
-    final GlobalHotKeyBackend backend = _hotKeyBackend ??= _createHotKeyBackend();
+    final GlobalHotKeyBackend backend = _hotKeyBackend ??=
+        _createHotKeyBackend();
     return backend.apply(_hotKeyRequests());
   }
 
@@ -754,19 +755,26 @@ class GlobalLookupController {
     glog('openLookupPage: main window fronted + dictionary tab requested');
   }
 
-  /// [triggerSelectionLookup] without an overlay: capture the foreground
-  /// selection, raise the main window and look it up on the dictionary page
-  /// ([AppModel.queueExternalLookup], the same exit `fushi://lookup` uses).
-  /// Nothing selected (or a desktop whose compositor offers no data control,
-  /// e.g. GNOME): open the lookup page with the search box focused instead —
-  /// [openLookupPageInMainWindow] — so the key press always does something
-  /// visible.
+  /// [triggerSelectionLookup] without an overlay (a native Wayland desktop):
+  /// raise the main window, read the primary selection and look it up on the
+  /// dictionary page ([AppModel.queueExternalLookup], the same exit
+  /// `fushi://lookup` uses). Nothing selected: the lookup page opens with the
+  /// search box focused, so the key press always does something visible.
+  ///
+  /// The raise comes FIRST on purpose. A compositor with data control (KDE,
+  /// wlroots) hands the selection to the runner at any time, but one without it
+  /// (GNOME) offers the primary selection only to the focused client; the
+  /// runner then waits for the main window to become active before reading
+  /// (linux/runner/global_lookup_channel.cc `CaptureGtkPrimary`). The other
+  /// app's selection stays primary after it loses focus. Raising never selects
+  /// anything in Fushi, so it cannot replace that selection.
   Future<void> _lookupSelectionInMainWindow(String source) async {
     final AppModel? model = _appModel;
     if (model == null) {
       glog('hotkey(main window): no AppModel (start() not run) — ignored');
       return;
     }
+    await DesktopLookupService.instance.bringMainWindowToFront();
     final String text =
         (await SelectionCapture.captureForegroundSelection())?.trim() ?? '';
     glog(
@@ -774,10 +782,9 @@ class GlobalLookupController {
       'selection=${text.isEmpty ? 'empty' : '${text.length} chars'}',
     );
     if (text.isEmpty) {
-      await openLookupPageInMainWindow();
+      model.requestHomeDictionaryTab(focusSearch: true);
       return;
     }
-    await DesktopLookupService.instance.bringMainWindowToFront();
     model.queueExternalLookup(text);
   }
 
