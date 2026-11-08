@@ -157,6 +157,10 @@ const double kReaderProgressEdgeLineHeight = 2;
 /// 状态读数并进底栏那一行所需的最小可用宽（逻辑 px）：五颗传输键（-10s / 上一句 /
 /// 播放 / 下一句 / +10s）加槽位按钮之后，还要塞得下「计时 · 字数 · 字每时 · 进度条
 /// 百分比」这一串（图标写法约 300；此前只有计时 + 进度时约 160、阈值 480）。
+///
+/// 这只是「并不并进底栏」的版式取舍，不是读数排得下的保证：并进之后读数拿的是
+/// 播放条尾部的真实剩余宽度（`AudiobookPlayBar.trailingStatus`），按实测宽度降级 /
+/// 缩放（[ReaderStatusInline]），字号放大 / 位数变多时不靠这个常量兜底。
 const double kReaderStatusInlineMinWidth = 620;
 
 /// 状态读数是否并进底栏那一行（横屏「同层」），而不是在底栏之下另占一行。
@@ -1066,24 +1070,29 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline>
 
   @override
   Widget build(BuildContext context) {
-    // 播放条尾部是一串 mainAxisSize.min 的 Row，拿不到有界宽度；内联形态只在
-    // [kReaderStatusInlineMinWidth] 以上出现，固定用图标档。
-    return ReaderStatusReadouts(
-      keyPrefix: 'fushi_bar_status',
-      totals: widget.sessionTotals(),
-      currentChars: widget.currentChars,
-      totalChars: widget.totalChars,
-      showTimer: widget.showTimer,
-      showChars: widget.showChars,
-      showSpeed: widget.showSpeed,
-      showProgress: widget.showProgress,
-      color: widget.textColor.withValues(alpha: 0.55),
-      clockSize: kReaderStatusInlineClockButtonSize,
-      rowHeight: kReaderStatusInlineClockButtonSize,
-      maxWidth: double.infinity,
-      allowLabeled: false,
-      onTapTracker: widget.onToggleTimer,
-      onTapStats: widget.onOpenStats,
+    // 播放条把读数放在 `AudiobookPlayBar.trailingStatus`，给的是条尾跟随键之前
+    // 那段的真实宽度上界：按实测宽度从图标档往下降级，最窄档仍放不下时
+    // [ReaderStatusReadouts] 的 FittedBox 等比缩小——系统字号放大 / 位数变多也不会
+    // 被挤出视口。无界宿主（maxWidth 无穷）下就是图标档原样排。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          ReaderStatusReadouts(
+            keyPrefix: 'fushi_bar_status',
+            totals: widget.sessionTotals(),
+            currentChars: widget.currentChars,
+            totalChars: widget.totalChars,
+            showTimer: widget.showTimer,
+            showChars: widget.showChars,
+            showSpeed: widget.showSpeed,
+            showProgress: widget.showProgress,
+            color: widget.textColor.withValues(alpha: 0.55),
+            clockSize: kReaderStatusInlineClockButtonSize,
+            rowHeight: kReaderStatusInlineClockButtonSize,
+            maxWidth: constraints.maxWidth,
+            allowLabeled: false,
+            onTapTracker: widget.onToggleTimer,
+            onTapStats: widget.onOpenStats,
+          ),
     );
   }
 }

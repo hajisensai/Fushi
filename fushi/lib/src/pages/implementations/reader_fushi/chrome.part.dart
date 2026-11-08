@@ -2194,8 +2194,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
             // 底栏槽位里的按钮并进播放条右端（播放条在场时底栏只有这一条），
-            // 状态读数仍在最右。
+            // 状态读数仍在最右——它单独走 trailingStatus，拿到条尾真实剩余宽度
+            // 按实测宽度降级 / 缩放，不进按钮那段横向滚动容器（那里宽度无界）。
             trailing: _buildAudiobookBarTrailing(),
+            trailingStatus: _playbackStatusInline
+                ? _buildBarStatusText()
+                : null,
             showSettingsButton: !_desktopChromeEnabled,
           ),
         );
@@ -2228,15 +2232,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
         ),
     ];
-    final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
-    if (buttons.isEmpty) return status;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        ...buttons,
-        if (status != null) ...<Widget>[const SizedBox(width: 8), status],
-      ],
-    );
+    if (buttons.isEmpty) return null;
+    return Row(mainAxisSize: MainAxisSize.min, children: buttons);
   }
 
   /// 2026-10 体验优化：[AudiobookPlayBar] 自带的传输键（上一句 / 播放暂停 /

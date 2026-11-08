@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -773,6 +775,91 @@ void main() {
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     });
 
+    // 评审：内联形态此前排在播放条按钮那段横向滚动容器里，拿到的是无界宽度，
+    // 只能按 kReaderStatusInlineMinWidth 这个静态估计排图标档——大字号 / 位数多时
+    // 读数被挤出视口。现在走 trailingStatus，按条尾真实宽度降级 / 缩放。
+    testWidgets('in the playback bar it fits the real tail width', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(kReaderStatusInlineMinWidth, 400);
+      addTearDown(tester.view.reset);
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(
+              body: Align(
+                alignment: Alignment.bottomCenter,
+                child: AudiobookPlayBar(
+                  controller: controller,
+                  onOpenSettings: () {},
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      for (int i = 0; i < 3; i++)
+                        IconButton(
+                          onPressed: () {},
+                          icon: const Icon(Icons.bookmark_outline),
+                        ),
+                    ],
+                  ),
+                  trailingStatus: ReaderStatusInline(
+                    sessionTotals: () => (
+                      durationMs: 123 * 3600 * 1000,
+                      chars: 1234567,
+                      active: true,
+                    ),
+                    currentChars: 64988,
+                    totalChars: 123962,
+                    showTimer: true,
+                    showProgress: true,
+                    showChars: true,
+                    showSpeed: true,
+                    textColor: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull, reason: '播放条这一行不溢出');
+      final Rect status = tester.getRect(
+        find.byKey(
+          const ValueKey<String>('audiobook_play_bar_trailing_status'),
+        ),
+      );
+      final Rect follow = tester.getRect(
+        find.byType(AudiobookFollowAudioButton),
+      );
+      expect(
+        status.right,
+        lessThanOrEqualTo(follow.left),
+        reason: '读数整串留在跟随键之前，不被挤出视口',
+      );
+      expect(status.left, greaterThanOrEqualTo(0));
+      final String density =
+          (tester
+                      .widget<Row>(
+                        find.byWidgetPredicate(
+                          (Widget w) =>
+                              w is Row &&
+                              w.key is ValueKey<String> &&
+                              (w.key! as ValueKey<String>).value.startsWith(
+                                'fushi_bar_status_readouts_',
+                              ),
+                        ),
+                      )
+                      .key!
+                  as ValueKey<String>)
+              .value
+              .substring('fushi_bar_status_readouts_'.length);
+      expect(density, isNot('icons'), reason: '2 倍字号下图标档放不下，必须按实测宽度往下降级');
+    });
+
     testWidgets('the toggle hides with the timer switch', (
       WidgetTester tester,
     ) async {
@@ -1154,15 +1241,15 @@ void main() {
         barBuild.contains('trailing: _buildAudiobookBarTrailing(),'),
         isTrue,
       );
-      final String trailing = _slice(
-        src,
-        '  Widget? _buildAudiobookBarTrailing() {',
-        '  /// 小说页的窗口全屏切换',
-      );
+      // 读数走 trailingStatus：播放条给它条尾的真实宽度上界，而不是塞进按钮那段
+      // 宽度无界的横向滚动容器（那里降级 / 缩放都不起作用）。
       expect(
-        trailing.contains(
-          '_playbackStatusInline ? _buildBarStatusText() : null',
-        ),
+        barBuild
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .contains(
+              'trailingStatus: _playbackStatusInline '
+              '? _buildBarStatusText() : null,',
+            ),
         isTrue,
         reason: '底栏右端仍是读数的唯一落点',
       );

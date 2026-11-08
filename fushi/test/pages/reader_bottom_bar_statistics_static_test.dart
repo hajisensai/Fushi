@@ -186,11 +186,15 @@ void main() {
         trailing,
         contains('_readerControlButton(_readerControlAction(item))'),
       );
+      // 状态读数单独走 trailingStatus（不进按钮的横向滚动容器，拿真实宽度）。
       expect(
-        trailing,
-        contains('_playbackStatusInline ? _buildBarStatusText()'),
+        bar.replaceAll(RegExp(r'\s+'), ' '),
+        contains(
+          'trailingStatus: _playbackStatusInline ? _buildBarStatusText() : null,',
+        ),
         reason: '状态读数仍是播放条右端的落点',
       );
+      expect(trailing, isNot(contains('_buildBarStatusText()')));
     });
   });
 }
