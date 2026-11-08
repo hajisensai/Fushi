@@ -39,6 +39,7 @@ import 'package:fushi_engine/media/video/download/video_download_path_mapping.da
 import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry_source.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -983,7 +984,8 @@ class VideoDownloadPipelineService {
     required this.backendResolver,
     required this.scrapeCoordinator,
     this.onBackendTaskAdded,
-    this.subtitleRegistry,
+    VideoSubtitleRegistry? subtitleRegistry,
+    VideoSubtitleRegistrySource? subtitleRegistrySource,
     this.subtitleAligner,
     this.defaultContentLanguage,
     this.subtitleLanguageResolver,
@@ -1000,7 +1002,16 @@ class VideoDownloadPipelineService {
     this.skipDownloadExtras,
     this.defaultTargetSourceId,
     DateTime Function()? now,
-  }) : preferredSubtitleLanguages = List<String>.unmodifiable(
+  }) : assert(
+         subtitleRegistry == null || subtitleRegistrySource == null,
+         'pass either subtitleRegistry or subtitleRegistrySource, not both',
+       ),
+       subtitleRegistrySource =
+           subtitleRegistrySource ??
+           (subtitleRegistry == null
+               ? null
+               : FixedVideoSubtitleRegistrySource(subtitleRegistry)),
+       preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
        workerId = workerId ?? 'video-${generateVideoDownloadInstallationId()}',
@@ -1010,7 +1021,11 @@ class VideoDownloadPipelineService {
 
   final FushiDatabase database;
   final VideoResourceRegistry resourceRegistry;
-  final VideoSubtitleRegistry? subtitleRegistry;
+
+  /// 字幕阶段的来源入口：每进一次字幕阶段借一份、阶段结束归还（见
+  /// video_subtitle_registry_source.dart）。构造时传 `subtitleRegistry` 等于固定一份
+  /// （[FixedVideoSubtitleRegistrySource]）；null = 本机没配字幕。
+  final VideoSubtitleRegistrySource? subtitleRegistrySource;
 
   /// 装 sidecar 前按视频内嵌字幕轨对时间轴（见 embedded_reference_subtitle_sync.dart）；
   /// null = 不对齐。算法是确定性的，所以续跑时按内容认领已落盘文件照样成立。
@@ -3600,7 +3615,10 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
-    if (subtitleRegistry == null) {
+    // 来源集合按「这一轮」借：宿主运行期间改了 key / 开关，下一轮字幕阶段就用新的；
+    // 这一轮借到的用到本阶段结束，期间配置再变也不会被拔掉。
+    final VideoSubtitleRegistryLease? lease = subtitleRegistrySource?.acquire();
+    if (lease == null) {
       if (policy == VideoDownloadSubtitlePolicy.required) {
         throw const VideoDownloadPipelineActionRequired(
           'Required subtitles are not configured on this device',
@@ -3609,6 +3627,23 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
+    engineLog.logDiagnostic(
+      'VideoDownloadPipeline',
+      'subtitle stage ${job.jobId}: sources '
+          '${lease.registry.providers.map((VideoSubtitleProvider p) => p.id).join('+')}',
+    );
+    try {
+      await _installSubtitlesWith(job, policy, lease.registry);
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<void> _installSubtitlesWith(
+    VideoDownloadJobRow job,
+    VideoDownloadSubtitlePolicy policy,
+    VideoSubtitleRegistry subtitleRegistry,
+  ) async {
     // 按作品的字幕语言一次性解析：整条任务的所有分集共用同一个答案。
     final String? perWorkLanguage = await _resolvePerWorkSubtitleLanguage(job);
     _ensureLeaseHeld();
@@ -3696,7 +3731,7 @@ class VideoDownloadPipelineService {
       try {
         final File video = File(file.finalAbsolutePath!);
         final ProviderBatchResult<VideoSubtitleCandidate> result =
-            await subtitleRegistry!.search(
+            await subtitleRegistry.search(
               VideoSubtitleSearchRequest(
                 media: _mediaReference(
                   job,
@@ -3715,7 +3750,7 @@ class VideoDownloadPipelineService {
             );
         _ensureLeaseHeld();
         if (result.items.isEmpty) {
-          final String message = subtitleRegistry!.describeEmptySearch(result);
+          final String message = subtitleRegistry.describeEmptySearch(result);
           await _recordUnavailableSubtitle(job, file, subtitleId, message);
           if (policy == VideoDownloadSubtitlePolicy.required) {
             throw VideoDownloadPipelineActionRequired(message);
@@ -3754,6 +3789,7 @@ class VideoDownloadPipelineService {
         if (candidate == null) {
           final ({_VerifiedSubtitleBytes? picked, String? reason}) selection =
               await _selectVerifiedSubtitle(
+                subtitleRegistry: subtitleRegistry,
                 candidates: result.items,
                 videoPath: video.path,
                 explicitLanguage: perWorkLanguage,
@@ -3808,7 +3844,7 @@ class VideoDownloadPipelineService {
         // 自动路径已经在校验时下过一次字节，直接复用——校验不该让每条字幕多下
         // 一遍。手动/续跑路径没验过，这里才真去下。
         final VideoSubtitleDownload download =
-            verified?.download ?? await subtitleRegistry!.download(candidate);
+            verified?.download ?? await subtitleRegistry.download(candidate);
         _ensureLeaseHeld();
         // 打包源（SubDL 的 zip）的候选名只是下载前的猜测 `<release>.srt`，真实扩展名
         // 要解包后才知道：sidecar 扩展名以 `download.fileName` 为准（空才回退候选名），
@@ -3924,6 +3960,7 @@ class VideoDownloadPipelineService {
   /// 探测失败就拒收**。
   Future<({_VerifiedSubtitleBytes? picked, String? reason})>
   _selectVerifiedSubtitle({
+    required VideoSubtitleRegistry subtitleRegistry,
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
     String? explicitLanguage,
@@ -3960,7 +3997,7 @@ class VideoDownloadPipelineService {
       final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
       try {
-        download = await subtitleRegistry!.download(candidate);
+        download = await subtitleRegistry.download(candidate);
       } on Object catch (error) {
         // 单条下载失败不该中断整轮筛选——下一条可能好好的。
         lastDownloadError = _safeError(error.toString());

@@ -383,7 +383,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 - 无人值守路径只用**偏好开关开着且有 key** 的来源：偏好里关掉的来源，设了环境变量也不自动用
   （环境变量只在 `subs` 命令里临时启用）。一家都没有时下载的字幕阶段跳过（`required` 的任务报 needsAttention），
   补字幕回 `unavailable`。
-- 下载管线的来源在管线（重）建时读一次（启动 / 资源索引器保存后）；补字幕每次请求现读。
+- 来源按当前偏好每次现读：下载管线每个任务进字幕阶段时读一次（运行中改了 key / 开关，下一个任务就用新的，
+  不用重启；正在跑的那一轮用到结束），补字幕每次请求读一次。
 - 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
   （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
 - Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
