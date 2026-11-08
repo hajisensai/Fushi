@@ -44,8 +44,9 @@
   超过 64K UTF-16 单元落盘、以 `@file:` 前缀传路径）。消息要粗粒度：一次状态变化 / 一次用户动作一条，绝不逐帧。
 - 定义在 `companion/companion_protocol.dart`（纯 Dart，未知 type 抛 `FormatException`）：
   - 主 → 面板：`context`、`snapshot`、`summary`、`nowPlaying`、`lookup`、`prefsChanged`、`libraryChanged`、
-    `settingsChanged`、`lookupAction`、`panelNav`、`reply`。
-  - 面板 → 主：`ready`（主侧重发全部状态）、`command`、`playback`、`openOnMain`、`request`、`lookupState`、`lookupCounted`。
+    `settingsChanged`、`lookupAction`、`panelNav`、`reply`、`uiRestore`（`ready` 后第一条：上一个面板的 UI 状态）。
+  - 面板 → 主：`ready`（主侧重发全部状态）、`command`、`playback`、`openOnMain`、`request`、`lookupState`、`lookupCounted`、
+    `uiState`（`CompanionPanelUiState`：页签、Library 模式 / Browse 分区 / 搜索、Settings 分类页 / 搜索）。
   - 通用请求 `request(id, method, args)` → `reply(id, value, error)`；方法名集中在 `CompanionRequestMethods`
     （`summary.refresh`、`settings.*`、`library.*`），主侧 `CompanionBridge.registerRequestHandler` 按方法注册。
 - 主侧 `companion_bridge.dart` + `companion_main_services.dart`（`companionBridgeProvider`）：伴屏未激活或面板未 `ready`
@@ -67,6 +68,9 @@
 
 `panel/companion/companion_shell.dart`：**Now / Library / Lookup / Settings**，`adaptiveBottomBar(showLabels: false)`，
 根 `PopScope` 先弹当前页签，重选页签弹回根。顶部换了新媒体只刷新 Now 的内容，不切页签。
+面板每次随主屏 stop 结束（文件选择器、Home），所以 UI 状态由主进程保管：面板每次变化发 `uiState`，主侧
+`CompanionBridge` 只在内存里留最新一份（不落盘），新面板 `ready` 时先收到 `uiRestore`，`CompanionPanelSession.uiState` /
+`uiRestores` 驱动壳、Library、Browse、Settings 各自恢复（恢复本身不回报）。
 
 - **Now**（`companion_now_tab.dart`）：按上下文渲染模块面板（注册在 `companion_context_panels.dart`）——阅读器、有声书、
   视频、漫画、音乐、SRS、串流；无媒体时是每日摘要（今天读 / 看 / 听的时长、SRS 到期数 +「在主屏复习」、一个继续项）。
@@ -78,7 +82,7 @@
   详情）；从这里打开 → 主屏先按正常离开方式保存位置再打开，副屏切到 Now，并显示 5 分钟的「回到 <上一个>」。
   在线源、统计、词典管理等 →「在主屏打开」。
 - **Lookup**（`companion_lookup_tab.dart`）：嵌入式 `PopupDictionaryPage(embedded: true)`（制卡、词音、条目切换都来自弹窗
-  本身）+ 内存里的查词历史（50 条）。主屏发来的查词自动切到本页签，关闭后回到原页签。
+  本身；embedded 不套自己的 SafeArea，insets 归页签管，否则底栏高度被算两次）+ 内存里的查词历史（50 条）。主屏发来的查词自动切到本页签，关闭后回到原页签。
 - **Settings**（`companion_settings_tab.dart`）：先列「当前屏幕」的分类，再是搜索 + 全部分类。
 
 ## 6. 设置索引共享
@@ -87,6 +91,8 @@
 - 主侧 `companion/companion_settings_service.dart`：overview / category / search / get / set / openOnMain；上下文 → 分类映射
   `companionSettingsCategoryFor`。写入在**主进程**、走与 ctl 相同的写路径；开关 / 分段 / 滑块 / 步进 / 数字在副屏直接改，
   文本 / 密钥 / 自定义 / 列表 / 动作行 →「在主屏打开」。
+- 选项与当前值的人读标签：`settingsIndexChoices` / `settingsIndexValueLabel`（设置页同一串文案，在主进程按主屏语言解析；
+  主题行显示主题名）。`fushi_cli config` 的 JSON 不变，仍只给 token。
 - 同步：`preferences` 表每次更新和每次伴屏写入后发 `settingsChanged`；`preferences` + `dictionaryMetadata` 更新还发
   `prefsChanged`，面板据此刷新 popup AppModel（主题、语言、词典设置），不留陈旧状态。
 
@@ -132,6 +138,7 @@
 - 伴屏查词时主屏不画词高亮；L1 / R1 单击在松开时才触发（翻页会感觉略迟）。
 - 标记已读只支持书、漫画、有声书、视频、视频合集；书 TOC / 在线漫画章节条目只打开到已存位置；音乐 Main 模式的搜索 /
   排序 / 筛选与游戏书库未接线。
-- 「回到 <上一个>」只存在面板内存里（面板重启即丢），固定 5 分钟。
+- 「回到 <上一个>」只存在面板内存里（面板重启即丢），固定 5 分钟。面板重启恢复页签 / 模式 / 分区 / 搜索 / Settings 分类页，
+  不恢复滚动位置、Library 详情页与 Now / Lookup 的子页。
 - 面板转发来的手柄 `KEYCODE_BACK` 在主屏到达时是 `goBack`，不是查词模式的 B。
 - 新文案（`second_screen_*`）除 en / zh 外均为英文。

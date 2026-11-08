@@ -103,6 +103,14 @@ class CompanionBridge implements CompanionControllerSink {
   /// companion stops being active: the next panel says it again).
   bool _panelReady = false;
 
+  /// The panel's last reported UI state; outlives the panel (it finishes on
+  /// every top-activity stop) and is handed to the next one on "ready".
+  CompanionPanelUiState _panelUi = const CompanionPanelUiState();
+
+  /// What a relaunched panel restores (tests).
+  @visibleForTesting
+  CompanionPanelUiState get panelUiState => _panelUi;
+
   CompanionContext? _sentContext;
   int _sentSnapshotRevision = -1;
   CompanionNowPlaying? _sentNowPlaying;
@@ -262,6 +270,8 @@ class CompanionBridge implements CompanionControllerSink {
     switch (message) {
       case CompanionReadyMessage():
         _panelReady = true;
+        // First, so the panel puts the user back before content arrives.
+        _send(CompanionUiRestoreMessage(_panelUi));
         _sentContext = null;
         _sentSnapshotRevision = -1;
         _sentNowPlaying = null;
@@ -298,6 +308,8 @@ class CompanionBridge implements CompanionControllerSink {
       ):
         _lookupOpen.value = open;
         if (mined) _onMined?.call(term);
+      case CompanionUiStateMessage(:final CompanionPanelUiState state):
+        _panelUi = state;
       case CompanionLookupCountedMessage():
         // The page that owns the context counts it with its own counter (its
         // book / video identity); a route-level context gets the plain count.

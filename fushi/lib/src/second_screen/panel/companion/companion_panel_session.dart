@@ -43,6 +43,8 @@ class CompanionPanelSession extends ChangeNotifier {
   int _lookupGeneration = 0;
   int _libraryRevision = 0;
   int _settingsRevision = 0;
+  CompanionPanelUiState _ui = const CompanionPanelUiState();
+  int _uiRestores = 0;
   bool _disposed = false;
 
   final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
@@ -79,6 +81,27 @@ class CompanionPanelSession extends ChangeNotifier {
   /// Bumps when the main engine says a setting may have changed; the
   /// Settings tab reloads what it shows.
   int get settingsRevision => _settingsRevision;
+
+  /// Where the user is on the panel (tab, Library mode / section / search,
+  /// Settings category / search): what this panel reported last, or what the
+  /// main engine handed back for a relaunched panel.
+  CompanionPanelUiState get uiState => _ui;
+
+  /// Bumps when the main engine hands back a saved [uiState] (once per panel,
+  /// right after [start]); the widgets that own those pieces apply it.
+  int get uiRestores => _uiRestores;
+
+  /// Records the panel's UI state and reports it to the main engine (which
+  /// keeps it for the next panel). Unchanged states are not sent.
+  void updateUi(
+    CompanionPanelUiState Function(CompanionPanelUiState current) change,
+  ) {
+    if (_disposed) return;
+    final CompanionPanelUiState next = change(_ui);
+    if (next == _ui) return;
+    _ui = next;
+    unawaited(_sendMessage(CompanionUiStateMessage(next)));
+  }
 
   /// Fires when the main process changed preferences.
   Stream<void> get prefsChanges => _prefsChanges.stream;
@@ -123,6 +146,9 @@ class CompanionPanelSession extends ChangeNotifier {
         _libraryRevision++;
       case CompanionSettingsChangedMessage():
         _settingsRevision++;
+      case CompanionUiRestoreMessage(:final CompanionPanelUiState state):
+        _ui = state;
+        _uiRestores++;
       case CompanionLookupActionMessage():
       case CompanionPanelNavMessage():
         _controllerInput.add(message);

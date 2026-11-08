@@ -11,12 +11,27 @@ import 'package:material_ui/material_ui.dart';
 
 /// Library tab modes: what the main screen's library shows (Main) or the
 /// companion's own library (Browse).
-enum CompanionLibraryMode { main, browse }
+enum CompanionLibraryMode {
+  main,
+  browse;
+
+  /// [CompanionPanelUiState.libraryMode].
+  String get wire => name;
+
+  /// null for an unknown / missing name.
+  static CompanionLibraryMode? fromWire(String? value) {
+    for (final CompanionLibraryMode mode in values) {
+      if (mode.wire == value) return mode;
+    }
+    return null;
+  }
+}
 
 /// The Library tab: Main | Browse. Main is only available while the top
 /// screen shows a library (and is the default then). Each mode has its own
 /// navigator, so its pages and back history survive switching modes; Back
-/// pops the visible mode's history.
+/// pops the visible mode's history. The picked mode survives a panel
+/// relaunch ([CompanionPanelSession.uiState]).
 class CompanionLibraryTab extends ConsumerStatefulWidget {
   const CompanionLibraryTab({super.key});
 
@@ -47,8 +62,26 @@ class CompanionLibraryTabState extends ConsumerState<CompanionLibraryTab> {
   NavigatorState? navigatorOf(CompanionLibraryMode mode) =>
       _navigators[mode]!.currentState;
 
+  @override
+  void initState() {
+    super.initState();
+    _picked = _savedMode();
+  }
+
+  CompanionLibraryMode? _savedMode() => CompanionLibraryMode.fromWire(
+    ref.read(companionPanelSessionProvider).uiState.libraryMode,
+  );
+
   /// Shows [mode] (Main only when available).
-  void selectMode(CompanionLibraryMode mode) => setState(() => _picked = mode);
+  void selectMode(CompanionLibraryMode mode) {
+    setState(() => _picked = mode);
+    ref
+        .read(companionPanelSessionProvider)
+        .updateUi(
+          (CompanionPanelUiState ui) =>
+              ui.copyWith(libraryMode: () => mode.wire),
+        );
+  }
 
   /// Back to the visible mode's root page (the Library tab selected again).
   void popToRoot() => navigatorOf(
@@ -57,6 +90,12 @@ class CompanionLibraryTabState extends ConsumerState<CompanionLibraryTab> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(
+      companionPanelSessionProvider.select(
+        (CompanionPanelSession s) => s.uiRestores,
+      ),
+      (int? _, int _) => setState(() => _picked = _savedMode()),
+    );
     final CompanionPanelSession session = ref.watch(
       companionPanelSessionProvider,
     );

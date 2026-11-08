@@ -112,7 +112,70 @@ class _CompanionSettingsTabState extends ConsumerState<CompanionSettingsTab>
     _overview = CompanionSettingsFeed.overview(_panel);
     _search = CompanionSettingsFeed.search(_panel);
     _context = _panel.context;
+    _query.text = _panel.uiState.settingsQuery;
     startLive(_panel);
+    if (_searching) {
+      _staleFeeds.remove(_search);
+      unawaited(_search.search(_query.text.trim()));
+    }
+  }
+
+  /// The category page pushed on this tab (its id); null on the overview.
+  String? _openCategory;
+
+  /// Reports the search and the open category page (a relaunched panel
+  /// shows them again).
+  void _reportUi() => _panel.updateUi(
+    (CompanionPanelUiState ui) => ui.copyWith(
+      settingsCategory: () => _openCategory,
+      settingsQuery: _query.text.trim(),
+    ),
+  );
+
+  /// The main engine handed back the last panel's state: its search and its
+  /// category page (unless one is open already). Not reported back (it is
+  /// what the session holds already).
+  void _restoreUi() {
+    final CompanionPanelUiState ui = _panel.uiState;
+    if (_query.text.trim() != ui.settingsQuery) {
+      _query.text = ui.settingsQuery;
+      _applyQuery();
+    }
+    final String? id = ui.settingsCategory;
+    if (id != null && _openCategory == null) {
+      final String title =
+          _overview.view?.categories
+              .where((CompanionSettingsCategory c) => c.id == id)
+              .firstOrNull
+              ?.title ??
+          '';
+      _showCategory(
+        CompanionSettingsCategory(id: id, title: title),
+        report: false,
+      );
+    }
+  }
+
+  void _showCategory(CompanionSettingsCategory category, {bool report = true}) {
+    _openCategory = category.id;
+    if (report) _reportUi();
+    unawaited(
+      Navigator.of(context)
+          .push<void>(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext context) => _CompanionSettingsCategoryPage(
+                session: _panel,
+                category: category,
+              ),
+            ),
+          )
+          .then((void _) {
+            if (!mounted || _openCategory != category.id) return;
+            _openCategory = null;
+            _reportUi();
+          }),
+    );
   }
 
   @override
@@ -144,6 +207,12 @@ class _CompanionSettingsTabState extends ConsumerState<CompanionSettingsTab>
   }
 
   void _onQueryChanged(String _) {
+    _applyQuery();
+    _reportUi();
+  }
+
+  /// Shows the overview or the search results for the field's text.
+  void _applyQuery() {
     final String query = _query.text.trim();
     if (query.isEmpty) {
       setState(() {});
@@ -164,6 +233,12 @@ class _CompanionSettingsTabState extends ConsumerState<CompanionSettingsTab>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(
+      companionPanelSessionProvider.select(
+        (CompanionPanelSession s) => s.uiRestores,
+      ),
+      (int? _, int _) => _restoreUi(),
+    );
     final bool searching = _searching;
     return Scaffold(
       body: SafeArea(
@@ -262,20 +337,7 @@ class _CompanionSettingsTabState extends ConsumerState<CompanionSettingsTab>
   Widget _categoryTile(
     BuildContext context,
     CompanionSettingsCategory category,
-  ) => _CategoryTile(
-    category: category,
-    onTap: () => unawaited(
-      Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (BuildContext context) => _CompanionSettingsCategoryPage(
-            session: _panel,
-            category: category,
-          ),
-        ),
-      ),
-    ),
-  );
+  ) => _CategoryTile(category: category, onTap: () => _showCategory(category));
 }
 
 /// One category's rows, grouped by section, with "Open on main screen".

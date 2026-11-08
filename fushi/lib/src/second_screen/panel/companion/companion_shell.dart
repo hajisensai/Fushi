@@ -21,7 +21,23 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// The companion's four destinations.
-enum CompanionTab { now, library, lookup, settings }
+enum CompanionTab {
+  now,
+  library,
+  lookup,
+  settings;
+
+  /// [CompanionPanelUiState.tab].
+  String get wire => name;
+
+  /// null for an unknown / missing name.
+  static CompanionTab? fromWire(String? value) {
+    for (final CompanionTab tab in values) {
+      if (tab.wire == value) return tab;
+    }
+    return null;
+  }
+}
 
 /// The companion panel: four icon-only tabs (Now / Library / Lookup /
 /// Settings), each with its own navigator and back history. Back on the
@@ -33,6 +49,10 @@ enum CompanionTab { now, library, lookup, settings }
 /// popup): the shell switches to the Lookup tab, and closing that lookup
 /// goes back to the tab it came from (unless the user picked another tab
 /// meanwhile).
+///
+/// The tab the user picked is reported to the main engine
+/// ([CompanionPanelSession.updateUi]); a panel relaunched after the top
+/// activity stopped opens on it again.
 class CompanionShell extends ConsumerStatefulWidget {
   const CompanionShell({
     this.contextPanels =
@@ -80,9 +100,37 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
     if (next == _tab) {
       navigatorOf(next)?.popUntil((Route<Object?> route) => route.isFirst);
       if (next == CompanionTab.library) _libraryTab.currentState?.popToRoot();
+      _reportTab();
       return;
     }
     setState(() => _tab = next);
+    _reportTab();
+  }
+
+  /// Reports the tab the user is on (a lookup's detour to the Lookup tab
+  /// counts as the tab it came from).
+  void _reportTab() {
+    final CompanionTab chosen = _beforeLookup ?? _tab;
+    ref
+        .read(companionPanelSessionProvider)
+        .updateUi(
+          (CompanionPanelUiState ui) => ui.copyWith(tab: () => chosen.wire),
+        );
+  }
+
+  /// The main engine handed back the last panel's state: back to its tab
+  /// (behind a lookup that is showing, if any: closing it returns there).
+  void _restoreUi() {
+    final CompanionTab saved =
+        CompanionTab.fromWire(
+          ref.read(companionPanelSessionProvider).uiState.tab,
+        ) ??
+        CompanionTab.now;
+    if (_beforeLookup != null) {
+      _beforeLookup = saved;
+      return;
+    }
+    if (saved != _tab) setState(() => _tab = saved);
   }
 
   /// After the companion opened something on top (Browse): the Now tab.
@@ -110,6 +158,7 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
     if (lookup.current == null && back != null && _tab == CompanionTab.lookup) {
       _beforeLookup = null;
       setState(() => _tab = back);
+      _reportTab();
     }
   }
 
@@ -128,12 +177,18 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
       companionLookupControllerProvider,
     );
     _seenArrivals = lookup.arrivals;
+    _tab =
+        CompanionTab.fromWire(
+          ref.read(companionPanelSessionProvider).uiState.tab,
+        ) ??
+        CompanionTab.now;
     // A main-screen lookup that arrived before the shell was up (it waited in
     // the panel's backlog and the lookup controller showed it on creation)
-    // surfaces like any other: open on the Lookup tab, closing returns to Now.
+    // surfaces like any other: open on the Lookup tab, closing returns to the
+    // tab the user was on (Now, or the restored one).
     if (lookup.arrivals > 0 && lookup.current != null) {
+      _beforeLookup = _tab;
       _tab = CompanionTab.lookup;
-      _beforeLookup = CompanionTab.now;
     }
     _controllerInput = ref
         .read(companionPanelSessionProvider)
@@ -310,10 +365,17 @@ class CompanionShellState extends ConsumerState<CompanionShell> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<CompanionLookupController>(
-      companionLookupControllerProvider,
-      _onLookupChanged,
-    );
+    ref
+      ..listen<CompanionLookupController>(
+        companionLookupControllerProvider,
+        _onLookupChanged,
+      )
+      ..listen<int>(
+        companionPanelSessionProvider.select(
+          (CompanionPanelSession s) => s.uiRestores,
+        ),
+        (int? _, int _) => _restoreUi(),
+      );
     return PopScope<Object?>(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? _) {

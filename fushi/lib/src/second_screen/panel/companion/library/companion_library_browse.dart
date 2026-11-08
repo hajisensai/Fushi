@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/library/companion_library_actions.dart';
@@ -121,8 +122,32 @@ class _CompanionLibraryBrowseRootState
     _session = ref.read(companionPanelSessionProvider);
     _home = CompanionLibraryValueFeed.home(_session);
     _search = CompanionLibraryListFeed.search(_session);
+    _readSavedUi();
     startLive(_session);
   }
+
+  /// Section and search from [CompanionPanelSession.uiState] (a relaunched
+  /// panel puts the user back where the last one was).
+  void _readSavedUi() {
+    final CompanionPanelUiState ui = _session.uiState;
+    _section = ui.librarySection == null
+        ? CompanionLibrarySection.home
+        : CompanionLibrarySection.fromWire(ui.librarySection);
+    _query.text = ui.libraryQuery;
+  }
+
+  void _restoreUi() {
+    setState(_readSavedUi);
+    _syncShown();
+  }
+
+  void _reportUi() => _session.updateUi(
+    (CompanionPanelUiState ui) => ui.copyWith(
+      librarySection: () =>
+          _section == CompanionLibrarySection.home ? null : _section.wire,
+      libraryQuery: _text,
+    ),
+  );
 
   @override
   void dispose() {
@@ -187,6 +212,7 @@ class _CompanionLibraryBrowseRootState
   void _onQueryChanged(String _) {
     setState(() {});
     _syncShown();
+    _reportUi();
   }
 
   void _clearQuery() {
@@ -198,6 +224,7 @@ class _CompanionLibraryBrowseRootState
     if (section == _section) return;
     setState(() => _section = section);
     _syncShown();
+    _reportUi();
   }
 
   List<CompanionLibrarySection> _chips() {
@@ -212,6 +239,12 @@ class _CompanionLibraryBrowseRootState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(
+      companionPanelSessionProvider.select(
+        (CompanionPanelSession s) => s.uiRestores,
+      ),
+      (int? _, int _) => _restoreUi(),
+    );
     final bool home = _section == CompanionLibrarySection.home;
     final CompanionLibraryListFeed? list = _shownList;
     final Widget body;

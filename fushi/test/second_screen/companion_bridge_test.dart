@@ -138,22 +138,57 @@ void main() {
     );
     await ready();
     final List<CompanionHostMessage> sent = drain();
-    expect(sent[0], isA<CompanionContextMessage>());
     expect(
-      (sent[0] as CompanionContextMessage).context.kind,
+      (sent[0] as CompanionUiRestoreMessage).state,
+      const CompanionPanelUiState(),
+    );
+    expect(sent[1], isA<CompanionContextMessage>());
+    expect(
+      (sent[1] as CompanionContextMessage).context.kind,
       CompanionContextKind.home,
     );
-    expect((sent[1] as CompanionNowPlayingMessage).nowPlaying?.title, 'song');
-    expect((sent[2] as CompanionSummaryMessage).summary, summaryFor(1));
-    expect(sent, hasLength(3));
+    expect((sent[2] as CompanionNowPlayingMessage).nowPlaying?.title, 'song');
+    expect((sent[3] as CompanionSummaryMessage).summary, summaryFor(1));
+    expect(sent, hasLength(4));
 
     // A second "ready" (a new panel) gets everything again.
     await ready();
     expect(drain().map((CompanionHostMessage m) => m.runtimeType), <Type>[
+      CompanionUiRestoreMessage,
       CompanionContextMessage,
       CompanionNowPlayingMessage,
       CompanionSummaryMessage,
     ]);
+  });
+
+  test('the panel UI state outlives the panel: kept from its reports, '
+      'handed to the next panel first on ready', () async {
+    await ready();
+    drain();
+    const CompanionPanelUiState state = CompanionPanelUiState(
+      tab: 'library',
+      libraryMode: 'browse',
+      librarySection: 'manga',
+      libraryQuery: 'ナルト',
+      settingsCategory: 'reading',
+      settingsQuery: 'font',
+    );
+    await fromPanel(
+      const CompanionUiStateMessage(CompanionPanelUiState(tab: 'settings')),
+    );
+    await fromPanel(const CompanionUiStateMessage(state));
+    expect(bridge.panelUiState, state);
+    expect(drain(), isEmpty, reason: 'nothing is echoed back');
+
+    // The top activity stopped: the panel finished; a new one starts.
+    await controller.setMode(SecondScreenMode.off);
+    await controller.setMode(SecondScreenMode.always);
+    await pumpEventQueue();
+    drain();
+    await ready();
+    final List<CompanionHostMessage> sent = drain();
+    expect((sent.first as CompanionUiRestoreMessage).state, state);
+    expect(sent[1], isA<CompanionContextMessage>());
   });
 
   test('context changes and the owner\'s snapshots follow', () async {
@@ -175,8 +210,9 @@ void main() {
     // A new panel gets the context and the last snapshot.
     await ready();
     final List<CompanionHostMessage> again = drain();
-    expect(again[0], isA<CompanionContextMessage>());
-    expect(again[1], isA<CompanionSnapshotMessage>());
+    expect(again[0], isA<CompanionUiRestoreMessage>());
+    expect(again[1], isA<CompanionContextMessage>());
+    expect(again[2], isA<CompanionSnapshotMessage>());
 
     tab.value = HomeTab.video;
     contexts.release(page);

@@ -9,12 +9,13 @@
 ///
 /// - Main → panel ([CompanionHostMessage]): the top screen's context, the
 ///   context's module snapshot (S3), the daily summary, what is playing, a
-///   lookup (S3), "preferences / library changed" pings, and replies to the
-///   panel's requests.
+///   lookup (S3), "preferences / library changed" pings, replies to the
+///   panel's requests, and on "ready" the panel's last UI state
+///   ([CompanionUiRestoreMessage]).
 /// - Panel → main ([CompanionPanelMessage]): ready (resend everything), module
 ///   commands (S3), playback toggles, "open this on the main screen" links,
-///   requests (settings / library queries, S4 / S5) and the lookup panel's
-///   state (S3 / S6).
+///   requests (settings / library queries, S4 / S5), the lookup panel's
+///   state (S3 / S6) and its UI state ([CompanionUiStateMessage]).
 ///
 /// Requests are generic ([CompanionRequestMessage] `method` + JSON args,
 /// answered by a [CompanionReplyMessage] with the same id), so later steps add
@@ -598,6 +599,9 @@ sealed class CompanionHostMessage {
         value: json['value'],
         error: _string(json, 'error'),
       ),
+      CompanionUiRestoreMessage.type => CompanionUiRestoreMessage(
+        CompanionPanelUiState.fromJson(_objectOf(json['state'])),
+      ),
       final Object? other => throw FormatException(
         'unknown companion host message "$other"',
       ),
@@ -782,6 +786,120 @@ class CompanionReplyMessage extends CompanionHostMessage {
   };
 }
 
+/// The panel's last UI state, handed back on "ready": the panel finishes
+/// whenever the top activity stops (file picker, Home) and a new one starts
+/// when it comes back; the main engine outlives it and keeps what the old
+/// one reported ([CompanionUiStateMessage]).
+class CompanionUiRestoreMessage extends CompanionHostMessage {
+  const CompanionUiRestoreMessage(this.state);
+
+  static const String type = 'uiRestore';
+
+  final CompanionPanelUiState state;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    _typeKey: type,
+    'state': state.toJson(),
+  };
+}
+
+/// Where the user is on the companion panel: what a relaunched panel
+/// restores. Values are wire names (`CompanionTab`, `CompanionLibraryMode`,
+/// `CompanionLibrarySection`, settings category ids); unknown names restore
+/// as the default. Kept in the main engine's memory only (not on disk).
+@immutable
+class CompanionPanelUiState {
+  const CompanionPanelUiState({
+    this.tab,
+    this.libraryMode,
+    this.librarySection,
+    this.libraryQuery = '',
+    this.settingsCategory,
+    this.settingsQuery = '',
+  });
+
+  factory CompanionPanelUiState.fromJson(Map<String, Object?> json) =>
+      CompanionPanelUiState(
+        tab: _string(json, 'tab'),
+        libraryMode: _string(json, 'libraryMode'),
+        librarySection: _string(json, 'librarySection'),
+        libraryQuery: _string(json, 'libraryQuery') ?? '',
+        settingsCategory: _string(json, 'settingsCategory'),
+        settingsQuery: _string(json, 'settingsQuery') ?? '',
+      );
+
+  /// The selected tab; null = Now.
+  final String? tab;
+
+  /// The Library mode the user picked; null = follow the top screen.
+  final String? libraryMode;
+
+  /// Browse mode's section chip; null = Home.
+  final String? librarySection;
+
+  /// Browse mode's search field.
+  final String libraryQuery;
+
+  /// The category page open on the Settings tab; null = its overview.
+  final String? settingsCategory;
+
+  /// The Settings tab's search field.
+  final String settingsQuery;
+
+  CompanionPanelUiState copyWith({
+    String? Function()? tab,
+    String? Function()? libraryMode,
+    String? Function()? librarySection,
+    String? libraryQuery,
+    String? Function()? settingsCategory,
+    String? settingsQuery,
+  }) => CompanionPanelUiState(
+    tab: tab == null ? this.tab : tab(),
+    libraryMode: libraryMode == null ? this.libraryMode : libraryMode(),
+    librarySection: librarySection == null
+        ? this.librarySection
+        : librarySection(),
+    libraryQuery: libraryQuery ?? this.libraryQuery,
+    settingsCategory: settingsCategory == null
+        ? this.settingsCategory
+        : settingsCategory(),
+    settingsQuery: settingsQuery ?? this.settingsQuery,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'tab': ?tab,
+    'libraryMode': ?libraryMode,
+    'librarySection': ?librarySection,
+    if (libraryQuery.isNotEmpty) 'libraryQuery': libraryQuery,
+    'settingsCategory': ?settingsCategory,
+    if (settingsQuery.isNotEmpty) 'settingsQuery': settingsQuery,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is CompanionPanelUiState &&
+      other.tab == tab &&
+      other.libraryMode == libraryMode &&
+      other.librarySection == librarySection &&
+      other.libraryQuery == libraryQuery &&
+      other.settingsCategory == settingsCategory &&
+      other.settingsQuery == settingsQuery;
+
+  @override
+  int get hashCode => Object.hash(
+    tab,
+    libraryMode,
+    librarySection,
+    libraryQuery,
+    settingsCategory,
+    settingsQuery,
+  );
+
+  @override
+  String toString() => 'CompanionPanelUiState(${toJson()})';
+}
+
 // ---------------------------------------------------------------------------
 // Panel → main engine
 // ---------------------------------------------------------------------------
@@ -820,6 +938,9 @@ sealed class CompanionPanelMessage {
         open: json['open'] == true,
         term: _string(json, 'term'),
         mined: json['mined'] == true,
+      ),
+      CompanionUiStateMessage.type => CompanionUiStateMessage(
+        CompanionPanelUiState.fromJson(_objectOf(json['state'])),
       ),
       final Object? other => throw FormatException(
         'unknown companion panel message "$other"',
@@ -969,4 +1090,21 @@ class CompanionLookupCountedMessage extends CompanionPanelMessage {
 
   @override
   Map<String, Object?> toJson() => <String, Object?>{_typeKey: type};
+}
+
+/// The panel's UI state changed (a tab, the Library mode / section / search,
+/// the Settings category / search): the main engine keeps the latest and
+/// hands it to the next panel ([CompanionUiRestoreMessage]).
+class CompanionUiStateMessage extends CompanionPanelMessage {
+  const CompanionUiStateMessage(this.state);
+
+  static const String type = 'uiState';
+
+  final CompanionPanelUiState state;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    _typeKey: type,
+    'state': state.toJson(),
+  };
 }
