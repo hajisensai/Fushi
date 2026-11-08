@@ -13,6 +13,7 @@
 >   或文字指引；手柄 / 鼠标视图不变。
 > - 热键不再依附查词卡覆盖窗：Wayland 会话没有覆盖窗时照样注册；选中文本查词改落到主窗查词页
 >   （`queueExternalLookup`），没取到选区就打开查词页；截屏识字需要覆盖窗，没有时不向 portal 声明。
+>   Flatpak（XWayland 下 GTK 走 X11）有覆盖窗，所以三个动作都向 portal 声明、查词仍出卡片。
 > - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
 >   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
 

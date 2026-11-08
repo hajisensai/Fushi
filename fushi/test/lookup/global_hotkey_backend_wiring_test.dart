@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -131,11 +130,11 @@ void main() {
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
     registry.updateBinding(
       ShortcutAction.globalExternalOpenLookupPage,
-      ShortcutBindingSet(
+      const ShortcutBindingSet(
         keyboardBindings: <InputBinding>[
           InputBinding(
             key: LogicalKeyboardKey.keyK,
-            modifiers: const <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
+            modifiers: <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
           ),
         ],
       ),
