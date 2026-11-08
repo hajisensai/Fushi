@@ -289,8 +289,10 @@ void main() {
         AdvancedMiningController(host.videoPage()),
       );
       expect(c.originalOf(SentenceContextSlot.prev, 0), isNull);
+      expect(c.clearKeepsAudio, isFalse);
       host.sendOriginals = true;
       await c.refreshSentences();
+      expect(c.clearKeepsAudio, isTrue);
       expect(c.originalOf(SentenceContextSlot.prev, 0), 'まえ0。');
       expect(c.originalOf(SentenceContextSlot.current, 0), isNull);
       expect(c.originalOf(SentenceContextSlot.prev, 5), isNull);

@@ -115,6 +115,12 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 时为空列表，[originalOf] 返回 null，「恢复原文」入口随之不显示。
   List<String> prevOriginal = const <String>[];
   List<String> nextOriginal = const <String>[];
+
+  /// 宿主是否支持「清空前文 / 后文只去文字、音频保留」语义。判据是预览里是否带
+  /// `prevOriginal` / `nextOriginal` 字段：这两个字段与该语义同一版宿主引入；旧宿主
+  /// （如手机远程连的旧版桌面）不给，其 `editSentence` 仍把空白当「还原原句」，此时
+  /// 既不能提示「清空保留音频」，也没有「恢复原文」入口（[originalOf] 返回 null）。
+  bool clearKeepsAudio = false;
   String current = '';
   int? currentOffset;
 
@@ -164,6 +170,8 @@ class AdvancedMiningController extends ChangeNotifier {
     next = _stringList(p['next']);
     prevRemoved = _boolList(p['prevRemoved'], prev.length);
     nextRemoved = _boolList(p['nextRemoved'], next.length);
+    clearKeepsAudio =
+        p.containsKey('prevOriginal') && p.containsKey('nextOriginal');
     prevOriginal = _stringList(p['prevOriginal']);
     nextOriginal = _stringList(p['nextOriginal']);
     current = p['current'] as String? ?? '';
@@ -274,8 +282,10 @@ class AdvancedMiningController extends ChangeNotifier {
     _notify();
   }
 
-  /// 某一句前文 / 后文的宿主原句；当前句、越界或宿主没给原句时返回 null。
+  /// 某一句前文 / 后文的宿主原句；当前句、越界或宿主不支持（[clearKeepsAudio] 为
+  /// false）时返回 null。
   String? originalOf(SentenceContextSlot slot, int index) {
+    if (!clearKeepsAudio) return null;
     final List<String> list = switch (slot) {
       SentenceContextSlot.prev => prevOriginal,
       SentenceContextSlot.next => nextOriginal,

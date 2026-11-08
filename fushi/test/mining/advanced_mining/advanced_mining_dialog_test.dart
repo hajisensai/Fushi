@@ -556,6 +556,19 @@ void main() {
       expect(find.byTooltip(t.popup_ctx_sentence_restore), findsNothing);
     });
 
+    // 旧宿主（不给 prevOriginal/nextOriginal）的 editSentence 把空白当「还原原句」，
+    // 不能提示「清空保留音频」——与「恢复原文」入口同一口径按宿主能力隐藏。
+    testWidgets('旧宿主清空前文：不提示保留音频，也没有恢复原文', (WidgetTester tester) async {
+      host.sendOriginals = false;
+      await open(tester, host.videoPage());
+      await tester.tap(find.byTooltip(t.popup_ctx_edit_start).first);
+      await tester.pumpAndSettle();
+      await tester.enterText(editorWith('まえ0。'), '');
+      await tester.pumpAndSettle();
+      expect(find.text(t.popup_ctx_edit_clear_keeps_audio_hint), findsNothing);
+      expect(find.text(t.popup_ctx_edit_restore_original), findsNothing);
+    });
+
     // 清空文字与移除正交：清空后再移除中间句，卡片仍显示占位（叠删除线），不能变成
     // 只剩「恢复」按钮的空白卡。
     for (final bool glass in <bool>[false, true]) {

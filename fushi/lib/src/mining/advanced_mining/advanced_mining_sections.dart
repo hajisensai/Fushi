@@ -534,8 +534,12 @@ class _SentenceEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextEditingController edit = controller.editController!;
     final SentenceContextSlot? slot = controller.editSlot;
-    final bool contextSlot =
-        slot != null && slot != SentenceContextSlot.current;
+    // 清空提示与「恢复原文」同一口径：只有宿主支持「清空保留音频」语义才提示；旧宿主
+    // 清空 = 还原原句，提示「音频仍会保留」会与实际结果不符。
+    final bool clearKeepsAudioSlot =
+        controller.clearKeepsAudio &&
+        slot != null &&
+        slot != SentenceContextSlot.current;
     final String? original = slot == null
         ? null
         : controller.originalOf(slot, controller.editIndex);
@@ -565,7 +569,7 @@ class _SentenceEditor extends StatelessWidget {
                   vertical: 8,
                 ),
                 // 正要清空前文 / 后文时提示：清空只去文字、音频保留，删整句走 ×。
-                helperText: contextSlot && empty
+                helperText: clearKeepsAudioSlot && empty
                     ? t.popup_ctx_edit_clear_keeps_audio_hint
                     : null,
                 helperMaxLines: 3,
