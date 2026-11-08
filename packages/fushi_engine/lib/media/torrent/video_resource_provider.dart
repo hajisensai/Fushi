@@ -45,6 +45,7 @@ abstract class VideoResourceCandidate {
     this.resolution,
     this.releaseGroup,
     this.trusted = false,
+    this.remake = false,
     this.detailsUrl,
     this.magnetUri,
   });
@@ -63,7 +64,17 @@ abstract class VideoResourceCandidate {
   final String? category;
   final String? resolution;
   final String? releaseGroup;
+
+  /// 索引器自己的信任标记（Nyaa 的 trusted 绿行）。没有这类信号的 provider 恒 false。
   final bool trusted;
+
+  /// 索引器自己的 remake 标记（Nyaa 的红行：非原发布者的重压 / 重封装 / 转载）。
+  /// 只降权不丢弃——合法重压很常见；没有这类信号的 provider 恒 false。
+  final bool remake;
+
+  /// 索引器信任档：2 = trusted，1 = 普通，0 = remake。只作相关度同档内的次序信号
+  /// （[rankVideoResourcesByRelevance]），不压过季号 / 标题贴合度。
+  int get indexerTrustTier => remake ? 0 : (trusted ? 2 : 1);
   final String? detailsUrl;
 
   /// 选择时刻就已在手的持久磁力链接（`magnet:` 前缀），入队时随任务落库

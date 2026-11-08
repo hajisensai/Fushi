@@ -95,7 +95,7 @@ bool isLikelyBatchVideoRelease(String title) =>
     looksLikeBatchVideoRelease(title);
 
 /// 一张资源「版本卡」：同来源实例、同发布组、同清晰度、同片源、同发布形态（逐集 /
-/// 整包）、同 trusted 的发布集合。
+/// 整包）、同索引器信任标记（trusted / remake）的发布集合。
 class VideoResourceVersionGroup {
   VideoResourceVersionGroup._({required this.key, required this.members});
 
@@ -106,6 +106,9 @@ class VideoResourceVersionGroup {
 
   String get providerId => members.first.providerId;
   bool get trusted => members.first.trusted;
+
+  /// 索引器标记的 remake 卡（信任标记是分组键的一维，所以全卡一致）。
+  bool get remake => members.first.remake;
 
   /// 这张卡是不是「整包」卡（成员没有单集身份，判据 [subscriptionReleaseIsBatch]，
   /// 与订阅侧同一份）。发布形态是分组键的一维，所以全卡一致。
@@ -190,6 +193,8 @@ String _groupKeyOf(VideoResourceCandidate candidate) {
     parseAnimeReleaseDescriptor(candidate.title).videoSource.name,
     subscriptionReleaseIsBatch(candidate.title) ? 'whole' : 'episode',
     candidate.trusted ? 'trusted' : '',
+    // remake 与原发布不同信任档：混成一张卡会让 remake 借原发布的名次 / 信任上位。
+    candidate.remake ? 'remake' : '',
   ].join('\u001f');
 }
 

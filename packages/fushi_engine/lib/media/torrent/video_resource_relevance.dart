@@ -1,5 +1,5 @@
 /// 资源搜索结果的相关度排序：先按「是不是用户要的那一季」，再按标题贴合度，
-/// 最后才是做种数。
+/// 再按索引器信任档（trusted > 普通 > remake），最后才是做种数。
 ///
 /// 为什么需要这一层：Nyaa 只做站内模糊词匹配，搜 `Hibike! Euphonium 2` 会把 S1、
 /// S3、剧场版、Ensemble Contest OVA 一起返回；而唯一的排序
@@ -158,6 +158,12 @@ List<VideoResourceCandidate> rankVideoResourcesByRelevance(
     if (bySeason != 0) return bySeason;
     final int byTitle = b.$3.compareTo(a.$3);
     if (byTitle != 0) return byTitle;
+    // 同等相关度内先看索引器自己的信任标记（trusted > 普通 > remake），再回到
+    // 上游做种次序：否则仿名的非 trusted / remake 逐集发布只要单集做种更多，就会
+    // 压过同标题的 trusted 原发布成为默认推荐。只在相关度同档内生效——信任标记
+    // 不能把错季 / 错标题的卡抬上来。
+    final int byTrust = b.$1.indexerTrustTier.compareTo(a.$1.indexerTrustTier);
+    if (byTrust != 0) return byTrust;
     // 同档内保持上游次序（providerPriority → seeders），并且是稳定的。
     return a.$4.compareTo(b.$4);
   });
