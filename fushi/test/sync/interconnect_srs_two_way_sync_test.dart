@@ -9,6 +9,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';

@@ -38,6 +38,15 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4227](bugs/BUG-4227-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
+> 共 3793 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4231](bugs/BUG-4231-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
+| [BUG-4230](bugs/BUG-4230-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |
+| [BUG-4229](bugs/BUG-4229-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |
+| [BUG-4228](bugs/BUG-4228-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |
+| [BUG-4227](bugs/BUG-4227-youtube-asr-caption-line-mismatch.md) | ✅ | ✅ | YouTube 自动字幕制卡错位：悬停上一行配了下一行的例句与片段、Dart 解析不截滚动重叠 |
 | [BUG-4226](bugs/BUG-4226-collection-detail-open-eager-grid.md) | ✅ | ✅ | collection-detail-open-eager-grid |
 | [BUG-4225](bugs/BUG-4225-cloud-manga-shelf-download-stuck-100.md) | 🚧 | 🚧 | 书架下载云盘漫画卡 100% 打不开（对比页正常） |
 | [BUG-4224](bugs/BUG-4224-manga-webtoon-zoom-scroll-toggles-chrome.md) | ✅ | ✅ | manga-webtoon-zoom-scroll-toggles-chrome |

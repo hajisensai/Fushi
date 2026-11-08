@@ -170,7 +170,10 @@ class _FakeConnector extends SrsRemoteHostConnector {
   ];
 
   @override
-  Future<SrsRemoteSession> open(InterconnectHostTarget target) async {
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) async {
     final SrsRemoteHostClient client = hosts[target.hostId]!.client();
     final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
     final SrsRemoteStore store = await SrsRemoteStore.connect(
@@ -203,8 +206,32 @@ class _CountingConnector extends _FakeConnector {
   }
 
   @override
-  Future<SrsRemoteSession> open(InterconnectHostTarget target) {
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) {
     opened.add(target.hostId);
+    return super.open(target, chooseProfile: chooseProfile);
+  }
+}
+
+/// 主机提供两份 profile、没有本机这份：连接时问用户选哪份（[chosen] 记下每次的选择，null = 取消）。
+class _ChoosingConnector extends _FakeConnector {
+  _ChoosingConnector(super.app, super.host, super.dir);
+
+  final List<String?> chosen = <String?>[];
+
+  @override
+  Future<SrsRemoteSession> open(
+    InterconnectHostTarget target, {
+    SrsRemoteProfileChooser? chooseProfile,
+  }) async {
+    final String? pick = await chooseProfile!(const <SrsRemoteServedProfile>[
+      SrsRemoteServedProfile(uid: 'ja', name: 'Japanese'),
+      SrsRemoteServedProfile(uid: 'zh', name: 'Chinese'),
+    ]);
+    chosen.add(pick);
+    if (pick == null) throw const SrsRemoteProfileChoiceCancelled();
     return super.open(target);
   }
 }
@@ -989,6 +1016,75 @@ void main() {
       );
       expect(header2, findsOneWidget);
       expect(host.ops.length, opsBefore, reason: '停用后不再向它发请求');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('主机有几份复习库又没有本机这份：问用户选；取消后组头提示去选，点组头再问', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
+        () => openSrsTestStore(deviceId: 'local'),
+      ))!;
+      addTearDown(() => tester.runAsync(localDb.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rd_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final AppModel app = SrsTestAppModel();
+      final _ChoosingConnector connector = _ChoosingConnector(app, host, dir);
+      await _pumpHome(
+        tester,
+        app: app,
+        local: local,
+        overrides: <Override>[
+          srsRemoteHostConnectorProvider.overrideWithValue(connector),
+        ],
+      );
+      await settle(tester);
+
+      expect(
+        find.text(t.srs_remote_review_choose_profile_hint),
+        findsOneWidget,
+      );
+      expect(find.text('Japanese'), findsOneWidget);
+      Navigator.of(tester.element(find.text('Japanese'))).pop();
+      await settle(tester);
+      expect(connector.chosen, <String?>[null]);
+      final Finder header = find.byKey(
+        const ValueKey<String>('srs-paired-header-host-1'),
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.textContaining(t.srs_remote_review_choose_profile),
+        ),
+        findsOneWidget,
+        reason: '取消后组头提示去选复习库',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-paired-retry-host-1')),
+      );
+      await settle(tester);
+      await tester.tap(find.text('Chinese'));
+      await settle(tester);
+      expect(connector.chosen, <String?>[null, 'zh']);
+      expect(
+        find.byKey(const ValueKey<String>('srs-paired-menu-host-1')),
+        findsOneWidget,
+        reason: '选好后连上主机（组头出主机菜单）',
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.textContaining(t.srs_remote_review_choose_profile),
+        ),
+        findsNothing,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

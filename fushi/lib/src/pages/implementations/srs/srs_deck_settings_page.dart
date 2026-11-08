@@ -16,7 +16,7 @@ import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_app_runtime.dart';
-import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';

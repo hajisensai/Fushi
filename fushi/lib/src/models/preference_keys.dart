@@ -78,6 +78,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
   // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
   'ai_key_health',
+  // String（JSON 列表）：AI 助手接入的外部 MCP server（spec
+  // docs/specs/2026-11-05-ai-mcp-client-design.md），编解码见 fushi_engine
+  // `mcp_client_config.dart`。请求头 / 环境变量值以 base64 存（可能是 token）→
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys；本地程序（stdio）的命令只对这台机器成立。
+  'ai_mcp_client_servers',
   // bool（默认 false）：外部 AI 访问（MCP）。打开后本机 MCP 客户端凭配对令牌可调
   // 操作目录；授权只对点它的这台设备成立（设备本地）。
   'ai_mcp_enabled',
@@ -461,6 +467,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （反馈 zNuGKLIhmT：阅读时挡住正文）。
   'mine_notice_success',
   'mine_to_server',
+  // JSON `{<hostId>: {kind?, profile?, deck?}}`：「制卡到已配对设备」每台主机的「保存到」
+  // （缺省 = 主机默认，docs/specs/2026-11-05-server-srs-design.md §4.8）。设备本地。
+  'mine_to_server_targets',
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',
@@ -1115,6 +1124,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'ai_providers',
   // 联网搜索配置 JSON 里的 Brave API key。
   'ai_web_search',
+  // 外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+  'ai_mcp_client_servers',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

@@ -31,7 +31,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
