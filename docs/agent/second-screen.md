@@ -36,7 +36,11 @@
   （`SyncRepository` 不同步）。
 - `SecondScreenController.isActive` 是唯一真相源：想要伴屏 **且** 当前挂着的面板模式是 `companion`（串流占屏时为 false）。
   重新请求只由屏幕事件 / reset / 策略变化触发，从不由面板事件触发（防崩溃循环）。
-- 设置行 `appearance.second_screen_mode`（只在有第二块屏时显示）、`appearance.controller_lookup_style`（始终显示）。
+- 设置行 `appearance.second_screen_mode` 与紧随其后的 `appearance.second_screen_lookup_screen`（两者只在有第二块屏时显示）、
+  `appearance.controller_lookup_style`（始终显示）。
+- 「查词结果显示在」`SecondScreenLookupScreen {bottom, top}`（偏好 `second_screen_lookup_screen`，设备本地，默认 bottom）：
+  `SecondScreenController.lookupScreen`，`CompanionBridge` 把它镜像成 `CompanionContextRegistry.lookupsOnCompanion`。
+  Top = 主屏查词一律走页内弹窗，伴屏照常显示面板（Now / Library / Settings 照用，Lookup 页签仍可手动打开看历史）。
 
 ## 3. 协议
 
@@ -63,6 +67,9 @@
   有棘轮）。
 - 查词路由：`companion_lookup_routing.dart` 的 `routeCompanionLookup(...)`，true = 伴屏 Lookup 页签接走，false = 页内弹窗
   照旧。阅读器在 `_handleTextSelected` 顶部统一路由（paginated / continuous / vn / 有声书视图共用一条路径）。
+  「查词结果显示在」只在这一个点生效（`CompanionContextRegistry.routeLookup` / `routesLookups`，手柄跟进键用
+  `lookupController`），页面里不写特例。**面板上发起的查词**（长按 / 点面板上的字幕、转写、歌词、OCR 文本）不经过这里，
+  无论设置如何都在下屏 Lookup 页签打开（用户此时就在看下屏）。
 
 ## 5. 面板（4 个纯图标页签，各自一个 Navigator）
 
@@ -84,6 +91,12 @@
 - **Lookup**（`companion_lookup_tab.dart`）：嵌入式 `PopupDictionaryPage(embedded: true)`（制卡、词音、条目切换都来自弹窗
   本身；embedded 不套自己的 SafeArea，insets 归页签管，否则底栏高度被算两次）+ 内存里的查词历史（50 条）。主屏发来的查词、模块面板上点 / 长按的行（查按下的那个字起的词，`CompanionLineTile.onLongPressChar` 给字下标）都自动切到本页签（词典只渲染在这里，留在 Now 上结果不可见），关闭后回到原页签；历史重查不切。历史标签显示词典匹配到的词头（`PopupDictionaryPage.onHeadword`），没有结果时才显示扫描文本。
 - **Settings**（`companion_settings_tab.dart`）：先列「当前屏幕」的分类，再是搜索 + 全部分类。
+
+- 启动配色：面板进程的 `AppModel.initialiseForDictionaryPopup` 在偏好加载后立刻建好界面语言、主题与壁纸色板并置
+  `isAppearanceReady`，`runCompanionPanel` 在 `runApp` 之前就开始初始化；`CompanionPanelApp` 在此之前只画一块纯表面色，
+  不先用默认种子色（蓝）画界面——之前要等整个初始化（词典、语言引擎、快捷键）完成，每次面板重启都蓝几秒。只有初始化失败
+  才用回退主题。守卫 `test/second_screen/panel_process_system_palette_guard_test.dart`、
+  `test/second_screen/companion_panel_startup_theme_test.dart`。
 
 ## 6. 设置索引共享
 
@@ -112,7 +125,8 @@
 - `input/controller_lookup_mode.dart`（`ControllerLookupMode.instance`）排在一切页面分派之前：桌面在
   `gamepad_service.dart` 的 `_dispatchButton`，Android 在 `FocusManager` 早期按键处理器。
   - **查词模式**（按住 L1 ≥250 ms）：方向键 / 左摇杆 ←/→ 词（Y 切字符）、↑/↓ 行；A 查词，弹窗开着再按 A 制卡；X 词音；
-    RT/LT 下 / 上一条；右摇杆滚动；B 先关弹窗再退出。查词走各页原路径（伴屏在就进 Lookup 页签，否则页内弹窗）。
+    RT/LT 下 / 上一条；右摇杆滚动；B 先关弹窗再退出。查词走各页原路径（伴屏在且「查词结果显示在」= 下屏就进 Lookup 页签，
+    否则页内弹窗；跟进键随之走 `CompanionContextRegistry.lookupController` 或页内弹窗钩子）。
   - **R1 驱动面板**（仅伴屏在时）：按住 R1，方向键 / 左摇杆 / A / B 驱动副屏焦点（`panelNav`），其余键吞掉。
   - 有 target 时的 L1、伴屏在时的 R1 单击在**松开时**补发。
 - 页面实现：`reader_fushi/controller_lookup.part.dart`、`video_fushi/controller_lookup.part.dart`、
