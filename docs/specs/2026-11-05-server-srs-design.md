@@ -365,7 +365,7 @@ Problems found:
 
 - Limitation: profiles whose sync location is end-to-end encrypted are not served in v1.
 - Wire additions are all optional and backward compatible: `profiles` in the remote-review handshake, `target` / `landed` / `targetUnavailable` on mining, `POST /api/mine/targets`.
-- Admin surface: `GET|PUT /api/admin/srs` (PUT also takes `addProfiles` / `removeProfiles`, so `ctl srs add|remove` is one request), `GET /api/admin/srs/profiles`, `POST /api/admin/srs/sync`, `ctl srs …`, WebUI 复习 page. AnkiConnect keys are never echoed. No server op-catalog entries in v1.
+- Admin surface: `GET|PUT /api/admin/srs` (PUT also takes `addProfiles` / `removeProfiles`, so `ctl srs add|remove` is one request, and `miningDecksPatch` next to the whole-map `miningDecks`, so one profile's deck changes in one request without a read-modify-write), `GET /api/admin/srs/profiles`, `POST /api/admin/srs/sync`, `ctl srs …`, WebUI 复习 page. AnkiConnect keys are never echoed. Server op-catalog entries: see §9 (`admin/admin_ops.dart`).
 - Server backups now carry a consistent `srs.db` snapshot instead of the raw file and its `-wal` / `-shm`.
 - CI: `server-gate.yml` builds `native/fushi_fsrs` and exports `FUSHI_FSRS_LIB` for the server tests.
 - App behaviour change: with "mine to paired device" on, duplicate checks and cards go to the host instead of the phone's own review copy.

@@ -42,6 +42,9 @@ void main() {
   late OpInvoker invoker;
   late List<String> requests;
 
+  /// 模拟并发：操作发出 `PUT /api/admin/srs` 之前先跑一下（管理员在 WebUI 里同时改）。
+  Future<void> Function()? beforeSrsPut;
+
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('fushi_admin_srs_ops_');
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -76,10 +79,18 @@ void main() {
       ),
     );
     requests = <String>[];
+    beforeSrsPut = null;
     invoker = OpInvoker(
       buildServerAdminOpCatalog(
-        () => (shelf.Request r) {
+        () => (shelf.Request r) async {
           requests.add('${r.method} /${r.url.path}');
+          final Future<void> Function()? hook = beforeSrsPut;
+          if (hook != null &&
+              r.method == 'PUT' &&
+              r.url.path == 'api/admin/srs') {
+            beforeSrsPut = null;
+            await hook();
+          }
           return api.handle(r);
         },
       ),
@@ -350,6 +361,43 @@ void main() {
     );
     expect(requests, <String>['GET /api/admin/srs']);
     expect(host.config.srs.miningDecks, <String, String>{kZh: 'Hand::Edit'});
+  });
+
+  test('制卡牌组：操作读完配置、写之前别人改了另一份的牌组 → 那份改动不丢（一次 patch，不读改写）', () async {
+    await adminPut(<String, Object?>{
+      'addProfiles': <String>[kJa, kZh],
+      'miningDecks': <String, String>{kZh: 'Chinese::Old'},
+    });
+    beforeSrsPut = () => adminPut(<String, Object?>{
+      'miningDecks': <String, String>{kZh: 'Chinese::Concurrent'},
+    });
+    requests.clear();
+    final OpUndoRecord rec = await runUndoable(
+      'server.srs.mining-deck.set',
+      const <String, Object?>{'profile': kJa, 'deck': 'Japanese::Mining'},
+    );
+    expect(beforeSrsPut, isNull, reason: '并发改动确实插在操作的写之前');
+    expect(host.config.srs.miningDecks, <String, String>{
+      kZh: 'Chinese::Concurrent',
+      kJa: 'Japanese::Mining',
+    });
+    expect(
+      requests.where((String r) => r == 'PUT /api/admin/srs'),
+      hasLength(1),
+    );
+
+    // 撤销同样只动这一份：撤销写之前别人又改了另一份，也不丢。
+    beforeSrsPut = () => adminPut(<String, Object?>{
+      'miningDecks': <String, String>{
+        kZh: 'Chinese::Later',
+        kJa: 'Japanese::Mining',
+      },
+    });
+    expect(await revert('server.srs.mining-deck.set', rec), OpUndoStatus.done);
+    expect(beforeSrsPut, isNull);
+    expect(host.config.srs.miningDecks, <String, String>{
+      kZh: 'Chinese::Later',
+    });
   });
 
   test('翻日时刻兜底：改 → 撤销写回；超范围 → 400；被手改过 → superseded', () async {

@@ -277,31 +277,18 @@ String _srsDeckOf(Map<String, Object?> config, String uid) {
   return deck is String ? deck : '';
 }
 
-/// 只改 [uid] 那一份的制卡牌组：`PUT /api/admin/srs` 的 `miningDecks` 是整份替换，
-/// 所以先读当前整份、只动这一项再写回，别的 profile 的牌组原样带上。空串 = 删掉
-/// 这一项（回到内置默认牌组）。
-Future<Object?> _srsSetDeck(
-  AdminDispatch dispatch,
-  Map<String, Object?> config,
-  String uid,
-  String deck,
-) {
-  final Object? raw = config['miningDecks'];
-  final Map<String, Object?> decks = raw is Map
-      ? Map<String, Object?>.from(raw)
-      : <String, Object?>{};
-  if (deck.isEmpty) {
-    decks.remove(uid);
-  } else {
-    decks[uid] = deck;
-  }
-  return adminCall(
-    dispatch,
-    'PUT',
-    _kSrsPath,
-    body: <String, Object?>{'miningDecks': decks},
-  );
-}
+/// 只改 [uid] 那一份的制卡牌组：一次 `PUT /api/admin/srs {miningDecksPatch: {uid: deck}}`，
+/// 服务端在同一次配置更新里合并，别的 profile 的牌组不经这里读写（`miningDecks` 是
+/// 整份替换，先读再写回会吞掉中间别人的改动）。空串 = 删掉这一项（回到内置默认牌组）。
+Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
+    adminCall(
+      dispatch,
+      'PUT',
+      _kSrsPath,
+      body: <String, Object?>{
+        'miningDecksPatch': <String, Object?>{uid: deck},
+      },
+    );
 
 /// 服务端操作目录的描述 + 路由（路由 handler 全是 [_forward]）。
 ({List<CtlRoute> routes, List<OpDescription> descriptions}) buildServerAdminOps(
@@ -1016,25 +1003,19 @@ Future<Object?> _srsSetDeck(
   );
 
   // 复习（SRS）配置：三条都落在同一个 `PUT /api/admin/srs` 上（admin API 只改给了的
-  // 字段），共用一个路由 handler，按参数分流——`deck` 只有 mining-deck.set 有，它要
-  // 读改写 `miningDecks`；其余两条的参数原样转发。选提供哪几份 profile / 默认那份、
+  // 字段），共用一个路由 handler，按参数分流——`deck` 只有 mining-deck.set 有，它换成
+  // 只改那一份的 `miningDecksPatch`；其余两条的参数原样转发。选提供哪几份 profile / 默认那份、
   // AnkiConnect 不在这里（见文件头「不描述」）。
   Future<Object?> srsPut(CtlCall call) async {
     final Map<String, Object?> body = Map<String, Object?>.of(call.body);
     if (body.containsKey('deck')) {
       final String uid = '${body['profile'] ?? ''}';
-      final Map<String, Object?> config = await _srsConfig(dispatch());
-      final Object? served = config['profiles'];
+      final Object? served = (await _srsConfig(dispatch()))['profiles'];
       if (served is! List || !served.contains(uid)) {
         throw CtlFailure.notFound('profile_not_served: $uid');
       }
       return srsAgentView(
-        await _srsSetDeck(
-          dispatch(),
-          config,
-          uid,
-          '${body['deck'] ?? ''}'.trim(),
-        ),
+        await _srsSetDeck(dispatch(), uid, '${body['deck'] ?? ''}'.trim()),
       );
     }
     return srsAgentView(
@@ -1131,14 +1112,13 @@ Future<Object?> _srsSetDeck(
         },
         revert: (Map<String, Object?> payload) async {
           final String uid = '${payload['profile']}';
-          final Map<String, Object?> config = await _srsConfig(dispatch());
-          final String current = _srsDeckOf(config, uid);
+          final String current = _srsDeckOf(await _srsConfig(dispatch()), uid);
           if (current != '${payload['new'] ?? ''}') {
             return const OpUndoOutcome.superseded();
           }
           final String old = '${payload['old'] ?? ''}';
           if (old != current) {
-            await _srsSetDeck(dispatch(), config, uid, old);
+            await _srsSetDeck(dispatch(), uid, old);
           }
           return const OpUndoOutcome.done();
         },
