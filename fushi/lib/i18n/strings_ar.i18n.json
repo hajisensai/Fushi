@@ -7392,6 +7392,7 @@
   "second_screen_lookup_clear_history": "Clear history",
   "second_screen_lookup_close": "Close",
   "second_screen_lookup_empty": "Look up a word on the main screen and the result shows up here.",
+  "second_screen_lookup_empty_top": "Lookups on the main screen open there right now (Lookups open on: Top screen). Words you tap on this screen still show up here.",
   "second_screen_lookup_from": "Lookup · from $title",
   "second_screen_lookup_loading": "Preparing the dictionary…",
   "second_screen_lookup_mined": "Card added: $term",

@@ -7392,6 +7392,7 @@
   "second_screen_lookup_clear_history": "清除记录",
   "second_screen_lookup_close": "关闭",
   "second_screen_lookup_empty": "在主屏查词，结果会显示在这里。",
+  "second_screen_lookup_empty_top": "主屏的查词目前在主屏打开（查词结果显示在：上屏）。在此屏点按的词仍会显示在这里。",
   "second_screen_lookup_from": "查词 · 来自 $title",
   "second_screen_lookup_loading": "正在准备词典…",
   "second_screen_lookup_mined": "已制卡：$term",

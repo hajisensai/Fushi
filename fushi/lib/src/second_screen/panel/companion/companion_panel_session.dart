@@ -43,6 +43,7 @@ class CompanionPanelSession extends ChangeNotifier {
   int _lookupGeneration = 0;
   int _libraryRevision = 0;
   int _settingsRevision = 0;
+  bool _lookupsOnCompanion = true;
   CompanionPanelUiState _ui = const CompanionPanelUiState();
   int _uiRestores = 0;
   bool _disposed = false;
@@ -81,6 +82,10 @@ class CompanionPanelSession extends ChangeNotifier {
   /// Bumps when the main engine says a setting may have changed; the
   /// Settings tab reloads what it shows.
   int get settingsRevision => _settingsRevision;
+
+  /// The "Lookups open on" setting as the main engine reported it: true =
+  /// main-screen lookups open on the Lookup tab (default), false = on top.
+  bool get lookupsOnCompanion => _lookupsOnCompanion;
 
   /// Where the user is on the panel (tab, Library mode / section / search,
   /// Settings category / search): what this panel reported last, or what the
@@ -146,6 +151,9 @@ class CompanionPanelSession extends ChangeNotifier {
         _libraryRevision++;
       case CompanionSettingsChangedMessage():
         _settingsRevision++;
+      case CompanionLookupRoutingMessage(:final bool onCompanion):
+        if (onCompanion == _lookupsOnCompanion) return;
+        _lookupsOnCompanion = onCompanion;
       case CompanionUiRestoreMessage(:final CompanionPanelUiState state):
         _ui = state;
         _uiRestores++;

@@ -587,6 +587,9 @@ sealed class CompanionHostMessage {
         const CompanionLibraryChangedMessage(),
       CompanionSettingsChangedMessage.type =>
         const CompanionSettingsChangedMessage(),
+      CompanionLookupRoutingMessage.type => CompanionLookupRoutingMessage(
+        onCompanion: json['onCompanion'] != false,
+      ),
       CompanionLookupActionMessage.type => CompanionLookupActionMessage(
         _requireString(json, 'action'),
         args: _objectOf(json['args']),
@@ -728,6 +731,24 @@ class CompanionSettingsChangedMessage extends CompanionHostMessage {
 
   @override
   Map<String, Object?> toJson() => <String, Object?>{_typeKey: type};
+}
+
+/// The "Lookups open on" setting: [onCompanion] true = main-screen lookups
+/// open on the companion's Lookup tab, false = in the page's popup on top
+/// (panel-originated lookups open on the companion either way). Sent when
+/// the panel is ready and on every change.
+class CompanionLookupRoutingMessage extends CompanionHostMessage {
+  const CompanionLookupRoutingMessage({required this.onCompanion});
+
+  static const String type = 'lookupRouting';
+
+  final bool onCompanion;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    _typeKey: type,
+    'onCompanion': onCompanion,
+  };
 }
 
 /// The top screen's controller acts on the companion's open lookup (S6

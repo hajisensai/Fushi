@@ -148,8 +148,10 @@ void main() {
       CompanionContextKind.home,
     );
     expect((sent[2] as CompanionNowPlayingMessage).nowPlaying?.title, 'song');
-    expect((sent[3] as CompanionSummaryMessage).summary, summaryFor(1));
-    expect(sent, hasLength(4));
+    // Where lookups open (the summary is collected asynchronously).
+    expect((sent[3] as CompanionLookupRoutingMessage).onCompanion, isTrue);
+    expect((sent[4] as CompanionSummaryMessage).summary, summaryFor(1));
+    expect(sent, hasLength(5));
 
     // A second "ready" (a new panel) gets everything again.
     await ready();
@@ -157,6 +159,7 @@ void main() {
       CompanionUiRestoreMessage,
       CompanionContextMessage,
       CompanionNowPlayingMessage,
+      CompanionLookupRoutingMessage,
       CompanionSummaryMessage,
     ]);
   });
@@ -472,6 +475,11 @@ void main() {
     await controller.setLookupScreen(SecondScreenLookupScreen.top);
     expect(prefs[kSecondScreenLookupScreenPrefKey], 'top');
     expect(contexts.lookupsOnCompanion.value, isFalse);
+    // S7j: the panel hears it (its Lookup tab's empty text says so).
+    expect(
+      (drain().single as CompanionLookupRoutingMessage).onCompanion,
+      isFalse,
+    );
     expect(contexts.active.value, isTrue, reason: 'the panels stay');
     expect(contexts.routesLookups, isFalse);
     expect(await contexts.routeLookup(text: '猫がいる', charIndex: 0), isFalse);
@@ -492,7 +500,11 @@ void main() {
     expect(pageCounts, 1);
 
     await controller.setLookupScreen(SecondScreenLookupScreen.bottom);
-    drain();
+    expect(
+      drain().whereType<CompanionLookupRoutingMessage>().single.onCompanion,
+      isTrue,
+      reason: 'besides the reader context claimed above',
+    );
     expect(contexts.routesLookups, isTrue);
     expect(await contexts.routeLookup(text: '猫'), isTrue);
     expect((drain().single as CompanionLookupMessage).text, '猫');

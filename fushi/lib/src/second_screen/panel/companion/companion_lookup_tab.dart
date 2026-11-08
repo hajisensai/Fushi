@@ -3,6 +3,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
+import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -38,11 +39,19 @@ class CompanionLookupTab extends ConsumerWidget {
       companionLookupControllerProvider,
     );
     final CompanionLookupEntry? current = lookup.current;
+    final bool lookupsOnCompanion = ref.watch(
+      companionPanelSessionProvider.select(
+        (CompanionPanelSession s) => s.lookupsOnCompanion,
+      ),
+    );
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: current == null
-            ? _HistoryView(controller: lookup)
+            ? _HistoryView(
+                controller: lookup,
+                lookupsOnCompanion: lookupsOnCompanion,
+              )
             : _LookupView(
                 entry: current,
                 controller: lookup,
@@ -230,9 +239,16 @@ class _RecentRow extends StatelessWidget {
 }
 
 class _HistoryView extends StatelessWidget {
-  const _HistoryView({required this.controller});
+  const _HistoryView({
+    required this.controller,
+    required this.lookupsOnCompanion,
+  });
 
   final CompanionLookupController controller;
+
+  /// False while "Lookups open on" is Top screen: main-screen lookups stay
+  /// on top, only the panel's own text lookups land here.
+  final bool lookupsOnCompanion;
 
   @override
   Widget build(BuildContext context) {
@@ -245,7 +261,9 @@ class _HistoryView extends StatelessWidget {
           child: Center(
             child: FushiPlaceholderMessage(
               icon: FushiIcons.lookup,
-              message: t.second_screen_lookup_empty,
+              message: lookupsOnCompanion
+                  ? t.second_screen_lookup_empty
+                  : t.second_screen_lookup_empty_top,
             ),
           ),
         ),

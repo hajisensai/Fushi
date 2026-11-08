@@ -114,6 +114,7 @@ class CompanionBridge implements CompanionControllerSink {
   CompanionContext? _sentContext;
   int _sentSnapshotRevision = -1;
   CompanionNowPlaying? _sentNowPlaying;
+  bool? _sentLookupsOnCompanion;
 
   bool _summaryRunning = false;
   bool _summaryRerun = false;
@@ -276,8 +277,10 @@ class CompanionBridge implements CompanionControllerSink {
         _sentContext = null;
         _sentSnapshotRevision = -1;
         _sentNowPlaying = null;
+        _sentLookupsOnCompanion = null;
         _syncContext();
         _syncNowPlaying(force: true);
+        _syncLookupRouting();
         _refreshSummary();
       case CompanionCommandMessage(
         :final CompanionContextKind kind,
@@ -367,12 +370,25 @@ class CompanionBridge implements CompanionControllerSink {
   void _onControllerChanged() {
     _contexts.setActive(_controller.isActive);
     _contexts.setLookupsOnCompanion(_lookupsOnCompanion);
-    if (_controller.isActive) return;
+    if (_controller.isActive) {
+      _syncLookupRouting();
+      return;
+    }
     // The panel is gone or the screen was taken: wait for the next "ready".
     _panelReady = false;
     _lookupOpen.value = false;
     _dayTimer?.cancel();
     _dayTimer = null;
+  }
+
+  /// Tells the panel where main-screen lookups open (its Lookup tab's
+  /// empty text says so).
+  void _syncLookupRouting() {
+    if (!_canSend || !_panelReady) return;
+    final bool onCompanion = _lookupsOnCompanion;
+    if (onCompanion == _sentLookupsOnCompanion) return;
+    _sentLookupsOnCompanion = onCompanion;
+    _send(CompanionLookupRoutingMessage(onCompanion: onCompanion));
   }
 
   void _onContextChanged() {

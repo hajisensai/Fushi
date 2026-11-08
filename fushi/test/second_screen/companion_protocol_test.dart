@@ -142,6 +142,15 @@ void main() {
               as CompanionReplyMessage;
       expect(failed.error, 'nope');
     });
+
+    test('S7j: lookup routing keeps where lookups open', () {
+      for (final bool onCompanion in <bool>[true, false]) {
+        final CompanionLookupRoutingMessage m =
+            _host(CompanionLookupRoutingMessage(onCompanion: onCompanion))
+                as CompanionLookupRoutingMessage;
+        expect(m.onCompanion, onCompanion);
+      }
+    });
   });
 
   group('panel -> main round trips', () {

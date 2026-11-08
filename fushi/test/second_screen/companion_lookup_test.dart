@@ -179,6 +179,27 @@ void main() {
       expect(find.text('dict:先生と呼んでいた:4'), findsOneWidget);
     });
 
+    testWidgets('S7j: the empty text follows "Lookups open on"', (
+      WidgetTester tester,
+    ) async {
+      await pumpCompanionPanel(
+        tester,
+        rec.session,
+        const CompanionLookupTab(dictionaryBuilder: _fakeDictionary),
+      );
+      expect(find.text(t.second_screen_lookup_empty), findsOneWidget);
+
+      rec.push(const CompanionLookupRoutingMessage(onCompanion: false));
+      await tester.pumpAndSettle();
+      expect(find.text(t.second_screen_lookup_empty), findsNothing);
+      expect(find.text(t.second_screen_lookup_empty_top), findsOneWidget);
+
+      rec.push(const CompanionLookupRoutingMessage(onCompanion: true));
+      await tester.pumpAndSettle();
+      expect(find.text(t.second_screen_lookup_empty), findsOneWidget);
+      expect(find.text(t.second_screen_lookup_empty_top), findsNothing);
+    });
+
     testWidgets('a main-screen lookup switches to the Lookup tab; closing it '
         'goes back to where the user was', (WidgetTester tester) async {
       final GlobalKey<CompanionShellState> shell =
