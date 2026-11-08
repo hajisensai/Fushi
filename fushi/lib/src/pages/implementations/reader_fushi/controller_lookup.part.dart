@@ -38,8 +38,9 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   @override
   bool get isAvailable {
     final _ReaderFushiPageState s = _s;
-    if (_detached || !s.mounted || s._book == null || !s._readerContentReady)
+    if (_detached || !s.mounted || s._book == null || !s._readerContentReady) {
       return false;
+    }
     if (s._lyricsMode && !s._lyricsPageReady) return false;
     if (s._sideSheetOpen ||
         s._appearanceSheetOpen ||
