@@ -49,10 +49,15 @@ public final class ProcessExitChannel {
     private static final String KEY_TRIMS = "trim_events";
     private static final int MAX_TRIMS = 8;
     private static final int MAX_REASONS = 5;
-    /** 读 trace 的字节上限（tombstone proto / ANR 文本都只取开头）。 */
+    /** 读 ANR 文本 trace 的字节上限（只要开头的 "main" 线程段）。 */
     private static final int TRACE_READ_BYTES = 64 * 1024;
+    /**
+     * 读 tombstone proto 的字节上限：线程表在 proto 中段、顺序与崩溃线程无关，一百多条线程
+     * （各带寄存器与栈内存片段）的 tombstone 常有几百 KB，只读开头会读不到崩溃线程。
+     */
+    private static final int TOMBSTONE_READ_BYTES = 8 * 1024 * 1024;
     /** 回传给 Dart 的 trace 摘要字符上限。 */
-    private static final int TRACE_SUMMARY_CHARS = 3000;
+    private static final int TRACE_SUMMARY_CHARS = 3400;
 
     private static boolean trimCallbacksRegistered;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
@@ -191,28 +196,35 @@ public final class ProcessExitChannel {
 
     /**
      * ANR trace 是文本：从 "main" 线程段开始取一截。native crash 的 tombstone 在 API 31+ 是
-     * protobuf：抽出其中长度 ≥ 6 的可打印 ASCII 串（信号、abort message、栈帧里的 .so 名与
-     * 符号都在里面），截到上限。
+     * protobuf：按 tombstone.proto 解出信号 / abort message / 崩溃线程完整栈（{@link
+     * TombstoneSummary}）。解不开（读到的不是 proto，或被截断）时如实标明，再退回抽可打印串，
+     * 好歹留下 abort message 与 .so 名。
      */
     @RequiresApi(api = Build.VERSION_CODES.R)
     private static String readTraceSummary(ApplicationExitInfo info, boolean text) {
+        final int limit = text ? TRACE_READ_BYTES : TOMBSTONE_READ_BYTES;
         try (InputStream in = info.getTraceInputStream()) {
             if (in == null) return null;
             final ByteArrayOutputStream buf = new ByteArrayOutputStream();
             final byte[] chunk = new byte[8192];
             int n;
-            while (buf.size() < TRACE_READ_BYTES && (n = in.read(chunk)) > 0) {
-                buf.write(chunk, 0, Math.min(n, TRACE_READ_BYTES - buf.size()));
+            while (buf.size() < limit && (n = in.read(chunk)) > 0) {
+                buf.write(chunk, 0, Math.min(n, limit - buf.size()));
             }
             final byte[] bytes = buf.toByteArray();
-            if (text) {
-                final String s = new String(bytes, StandardCharsets.UTF_8);
-                final int main = s.indexOf("\"main\"");
-                final String from = main >= 0 ? s.substring(main) : s;
-                return from.length() > TRACE_SUMMARY_CHARS
-                        ? from.substring(0, TRACE_SUMMARY_CHARS) : from;
+            if (!text) {
+                try {
+                    return TombstoneSummary.summarize(bytes, TRACE_SUMMARY_CHARS);
+                } catch (IllegalArgumentException e) {
+                    return "tombstone unparsed (" + e.getMessage() + ", " + bytes.length
+                            + " bytes):\n" + printableRuns(bytes, 6, TRACE_SUMMARY_CHARS);
+                }
             }
-            return printableRuns(bytes, 6, TRACE_SUMMARY_CHARS);
+            final String s = new String(bytes, StandardCharsets.UTF_8);
+            final int main = s.indexOf("\"main\"");
+            final String from = main >= 0 ? s.substring(main) : s;
+            return from.length() > TRACE_SUMMARY_CHARS
+                    ? from.substring(0, TRACE_SUMMARY_CHARS) : from;
         } catch (IOException | RuntimeException e) {
             return "trace unavailable: " + e;
         }

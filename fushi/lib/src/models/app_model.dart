@@ -22,6 +22,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -148,7 +149,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
@@ -259,7 +260,7 @@ import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart'
-    show kEmbeddedTorrentFastResumeDirName;
+    show kEmbeddedTorrentFastResumeDirName, kEmbeddedTorrentFastResumeExtension;
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -333,6 +334,10 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinato
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart'
+    show
+        VideoFilenameOrganizeService,
+        videoFilenameOrganizeShouldConsultBackend;
 import 'package:fushi_engine/media/video/video_path_migration.dart'
     show DownloadRelocation;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -472,6 +477,8 @@ import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
@@ -7852,6 +7859,56 @@ class AppModel with ChangeNotifier {
             VideoBookRepository(database).applyDownloadRelocation(relocation),
       );
 
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名，做种的文件
+  /// 走同一个下载后端（[_torrentBackendFor]）在引擎侧改名，路径映射与
+  /// [downloadRelocateService] 同一份契约。确定不可能有种子时不接后端（判据见
+  /// [videoFilenameOrganizeShouldConsultBackend]：商店合规无下载中心、内置引擎
+  /// 一个种子都没有、外接 qb 没配地址）。
+  VideoFilenameOrganizeService get videoFilenameOrganizeService {
+    final QbConnectionConfig config = effectiveTorrentConfig(
+      prefsRepo.qbConnectionConfig,
+    );
+    final bool consult = videoFilenameOrganizeShouldConsultBackend(
+      downloadsAvailable: StoreRestrictedCapability.downloads.isAvailable,
+      embeddedSelected:
+          config.resolveBackend(
+            embeddedSupported: _supportsEmbeddedTorrent(),
+          ) ==
+          QbConnectionConfig.backendEmbedded,
+      embeddedSessionAlive: _embeddedTorrentHost != null,
+      embeddedHasResumeFiles: _embeddedTorrentHasResumeFiles(),
+      qbBaseUrl: config.baseUrl,
+    );
+    return VideoFilenameOrganizeService(
+      database: database,
+      backendFactory: consult ? () => _torrentBackendFor(config) : null,
+      pathMappings: () async {
+        final VideoDownloadBackendIdentity identity =
+            await _currentVideoDownloadBackendIdentity(
+              effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+            );
+        return downloadPathMappingsForProfile(identity.profileId);
+      },
+    );
+  }
+
+  /// 内置引擎的 fast-resume 目录里有没有种子（同步、只看文件名，不建 session）。
+  bool _embeddedTorrentHasResumeFiles() {
+    final String? resumeDir = _embeddedTorrentResumeDir;
+    if (resumeDir == null) return false;
+    try {
+      return Directory(resumeDir)
+          .listSync(followLinks: false)
+          .any(
+            (FileSystemEntity e) =>
+                e is File &&
+                e.path.endsWith(kEmbeddedTorrentFastResumeExtension),
+          );
+    } on FileSystemException {
+      return false;
+    }
+  }
+
   /// 后端配置档 [profileId]（任务行 `backendProfileId`）的显式下载路径映射。
   /// 任务的后端坐标只能用它**自己那台后端**的映射解释，不能用当前设置的。
   List<VideoDownloadPathMapping> downloadPathMappingsForProfile(
@@ -10757,6 +10814,17 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
+  /// 「制卡到已配对设备」每台主机的「保存到」（hostId → 目标；没有条目 = 主机默认，§4.8）。
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      _prefsRepo?.mineToServerTargets ?? const <String, RemoteMiningTarget>{};
+  Map<String, String> get mineToServerTargetLabels =>
+      _prefsRepo?.mineToServerTargetLabels ?? const <String, String>{};
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
+
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
   // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
@@ -11707,10 +11775,23 @@ class AppModel with ChangeNotifier {
   /// 构造互联「制卡到服务端」的客户端发送器（供 [ankiRepositoryProvider] 在开关开启时包装
   /// [RemoteMiningAnkiRepository]）。复用与远程查词同一 keep-alive http client + 同一配对目标
   /// （enabled 的 FushiClientUrls），明文 http 候选走复用连接、https 带指纹候选走钉扎 client。
-  FushiRemoteMiningClient createRemoteMiningClient() {
+  ///
+  /// 卡落到主机的哪里（§4.8）：每台主机按用户的「保存到」，没选过 = 主机默认（带上本机当前 profile
+  /// 的 uid）。主机说所选的它没有时，这台主机的「保存到」退回主机默认，再交给 [onTargetUnavailable] 提示。
+  FushiRemoteMiningClient createRemoteMiningClient({
+    void Function(RemoteMiningTarget? landed)? onTargetUnavailable,
+  }) {
     return FushiRemoteMiningClient(
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
+      activeProfileUid: () async =>
+          _database.profileUidOf(await _database.resolveActiveProfileId()),
+      chosenTarget: (String hostId) => mineToServerTargets[hostId],
+      onTargetUnavailable: (String hostId, RemoteMiningTarget? landed) {
+        if (mineToServerTargets[hostId] == null) return;
+        unawaited(setMineToServerTarget(hostId, null));
+        onTargetUnavailable?.call(landed);
+      },
     );
   }
 
