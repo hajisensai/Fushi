@@ -45,6 +45,8 @@ class VideoGamepadSecondaryTapDeduper {
   }
 }
 
+void _noopShortcut() {}
+
 class VideoPlayerShortcutActions {
   const VideoPlayerShortcutActions({
     required this.togglePlayPause,
@@ -84,6 +86,9 @@ class VideoPlayerShortcutActions {
     required this.copyCurrentSubtitle,
     required this.copyCurrentSecondarySubtitle,
     required this.toggleLoopCurrentSubtitle,
+    this.replayCueThenPause = _noopShortcut,
+    this.toggleAutoPauseAtCueEnd = _noopShortcut,
+    this.toggleAbLoop = _noopShortcut,
     required this.previousChapter,
     required this.nextChapter,
     required this.openSubtitleAlign,
@@ -177,6 +182,13 @@ class VideoPlayerShortcutActions {
   /// 循环当前句开关（Ix4j5SKUth）：开着时自然播过句尾就回到句首，再按关闭。
   final VoidCallback toggleLoopCurrentSubtitle;
 
+  /// 逐句学习工具（副屏 S6，默认 Ctrl+Shift+R / P / B）：重播当前句并在句尾暂停 /
+  /// 开关「每句播完自动暂停」/ A-B 循环三态。可选、默认 no-op：没有这些能力的宿主
+  /// （网页视频页）和只关心别的动作的测试不必接线。
+  final VoidCallback replayCueThenPause;
+  final VoidCallback toggleAutoPauseAtCueEnd;
+  final VoidCallback toggleAbLoop;
+
   /// 内封章节上/下一章（TODO-424）：seek 到相邻章起点，无章节时 no-op。
   final VoidCallback previousChapter;
   final VoidCallback nextChapter;
@@ -242,6 +254,9 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoCopyCurrentSubtitle,
   ShortcutAction.videoCopyCurrentSecondarySubtitle,
   ShortcutAction.videoToggleLoopCurrentSubtitle,
+  ShortcutAction.videoReplayCueThenPause,
+  ShortcutAction.videoToggleAutoPauseAtCueEnd,
+  ShortcutAction.videoToggleAbLoop,
   // 章节
   ShortcutAction.videoPreviousChapter,
   ShortcutAction.videoNextChapter,
@@ -328,6 +343,10 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
         actions.copyCurrentSecondarySubtitle,
     ShortcutAction.videoToggleLoopCurrentSubtitle:
         actions.toggleLoopCurrentSubtitle,
+    ShortcutAction.videoReplayCueThenPause: actions.replayCueThenPause,
+    ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        actions.toggleAutoPauseAtCueEnd,
+    ShortcutAction.videoToggleAbLoop: actions.toggleAbLoop,
     ShortcutAction.videoPreviousChapter: actions.previousChapter,
     ShortcutAction.videoNextChapter: actions.nextChapter,
     ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,

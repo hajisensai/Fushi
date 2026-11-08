@@ -51,6 +51,12 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
           ),
       ],
       subtitleSource: _state._currentSubtitleSource,
+      autoPause: controller.autoPauseAtCueEnd,
+      loopOn: controller.loopCurrentCue,
+      loopTimes: controller.loopRepeatTimes,
+      loopRemaining: controller.loopRepeatsRemaining,
+      abAMs: controller.abLoopA?.inMilliseconds,
+      abBMs: controller.abLoopB?.inMilliseconds,
     );
   }
 
@@ -157,4 +163,51 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
     'mineLine',
     () => _remote.mineCurrentCue(const <String, String>{}),
   );
+
+  /// Line study: the same controller methods as the page's shortcuts
+  /// ([_VideoFushiPageState._replayCurrentCueThenPause] etc.), without the
+  /// on-top OSD (the state shows on the panel).
+  @override
+  Future<void> replayLineThenPause() async {
+    await _controller?.replayCurrentCueThenPause();
+  }
+
+  @override
+  Future<void> setAutoPause(bool on) async {
+    _controller?.setAutoPauseAtCueEnd(on);
+  }
+
+  @override
+  Future<void> loopLine(int times) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (times < 0) {
+      controller.stopCueLoop();
+    } else if (controller.cues.isNotEmpty) {
+      controller.startCueLoop(times: times);
+    }
+  }
+
+  @override
+  Future<void> abLoop(VideoCompanionAbStep step) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    switch (step) {
+      case VideoCompanionAbStep.setA:
+        controller.setAbLoopA();
+      case VideoCompanionAbStep.setB:
+        controller.setAbLoopB();
+      case VideoCompanionAbStep.clear:
+        controller.clearAbLoop();
+      case VideoCompanionAbStep.toggle:
+        controller.toggleAbLoop();
+    }
+  }
+
+  /// The page's own counter ([_VideoFushiPageState.recordLookup], which skips
+  /// source review), so companion lookups count for this video.
+  @override
+  void countLookup() {
+    if (_state.mounted) _state.recordLookup();
+  }
 }

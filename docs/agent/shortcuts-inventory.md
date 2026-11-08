@@ -1,5 +1,20 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
+>
+> - 新增三个 video scope 动作：`videoReplayCueThenPause`（重播当前句并在句尾暂停，默认
+>   Ctrl+Shift+R）、`videoToggleAutoPauseAtCueEnd`（开关「每句播完自动暂停」，默认 Ctrl+Shift+P）、
+>   `videoToggleAbLoop`（A-B 循环三态：标 A → 标 B 开始循环 → 清除，默认 Ctrl+Shift+B）。macOS 表
+>   自动换成 ⌘⇧R / P / B；**手柄留空**（video scope 手柄键位已占满，手柄用户走副屏视频面板的
+>   「逐句学习」区或自配）。持久化 key 依次为 `video_replay_cue_then_pause` /
+>   `video_toggle_auto_pause_at_cue_end` / `video_toggle_ab_loop`。全新动作不在老快照里，直接取默认，
+>   不需要 schema 迁移。
+> - 状态归 `VideoPlayerController`：自动暂停与「重播本句」走同一套句尾暂停判定；循环当前句开着时
+>   自动暂停让位；A-B 只在自然播放越过 B 时回到 A，显式 seek / 拖进度条撤武装，换片作废。开关类
+>   动作在画面左上 OSD 报新状态。网页视频页不接线（默认 no-op）。
+> - 副屏视频面板「逐句学习」区另有「循环当前句 ×1 / ×2 / ×3 / ×5 / 无限」（`startCueLoop(times:)`，
+>   与 `videoToggleLoopCurrentSubtitle` 同一个循环模式），没有对应快捷键。
+
 > **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
 >
 > - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、

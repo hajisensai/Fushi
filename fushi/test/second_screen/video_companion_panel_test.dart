@@ -6,7 +6,7 @@ import 'package:fushi/src/second_screen/companion/modules/video_companion_schema
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
 import 'package:fushi/src/second_screen/panel/companion/modules/video_companion_panel.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
-    show FushiSlider;
+    show FushiSlider, FushiSwitch;
 import 'package:material_ui/material_ui.dart';
 
 import 'companion_panel_harness.dart';
@@ -20,6 +20,7 @@ Map<String, Object?> _sample({
   bool withInfo = true,
   bool withCues = true,
   bool subtitlesOff = false,
+  Map<String, Object?> lineStudy = const <String, Object?>{},
 }) => <String, Object?>{
   VideoCompanionKeys.title: 'Episode file 03',
   VideoCompanionKeys.series: 'Playlist name',
@@ -84,7 +85,11 @@ Map<String, Object?> _sample({
       VideoCompanionKeys.episodeTitle: 'The walk',
       VideoCompanionKeys.episodeOverview: 'Episode overview text.',
     },
+  ...lineStudy,
 };
+
+List<String> _actions(RecordingCompanionSession rec) =>
+    rec.commands.map((CompanionCommandMessage c) => c.action).toList();
 
 Future<RecordingCompanionSession> _pump(
   WidgetTester tester,
@@ -103,11 +108,33 @@ Future<RecordingCompanionSession> _pump(
 ProviderContainer _container(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(VideoCompanionPanel)));
 
+/// Builds [finder]'s target when the panel's lazy list has not built it yet
+/// (sections below the first screen): scrolls the panel list (not the line
+/// window inside it) down until it exists, then brings it into view.
+Future<void> _reveal(WidgetTester tester, Finder finder) async {
+  if (finder.hitTestable().evaluate().isNotEmpty) return;
+  final ScrollPosition panel = tester
+      .state<ScrollableState>(find.byType(Scrollable).first)
+      .position;
+  if (finder.evaluate().isEmpty) {
+    panel.jumpTo(0);
+    await tester.pumpAndSettle();
+  }
+  for (int i = 0; i < 10 && finder.evaluate().isEmpty; i++) {
+    panel.jumpTo(
+      (panel.pixels + 200).clamp(0, panel.maxScrollExtent).toDouble(),
+    );
+    await tester.pumpAndSettle();
+  }
+  await tester.ensureVisible(finder.first);
+  await tester.pumpAndSettle();
+}
+
 Future<void> _tapButton(WidgetTester tester, String tooltip) async {
   final Finder f = find.byWidgetPredicate(
     (Widget w) => w is Tooltip && w.message == tooltip,
   );
-  await tester.ensureVisible(f.first);
+  await _reveal(tester, f);
   await tester.pumpAndSettle();
   await tester.tap(f.first);
   await tester.pumpAndSettle();
@@ -338,6 +365,146 @@ void main() {
     expect(find.text('Series overview text.'), findsNothing);
   });
 
+  testWidgets('following the current line scrolls only the line window', (
+    WidgetTester tester,
+  ) async {
+    final RecordingCompanionSession rec = await _pump(tester, _sample());
+    final Map<String, Object?> next = Map<String, Object?>.of(_sample())
+      ..[VideoCompanionKeys.cueStart] = 495000;
+    rec.show(CompanionContextKind.video, next, title: 'Series title');
+    await tester.pumpAndSettle();
+    final ScrollableState panelList = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    expect(panelList.position.pixels, 0);
+    expect(find.text('Series title').hitTestable(), findsOneWidget);
+  });
+
+  group('line study', () {
+    testWidgets('replay then pause and the A-B button send their commands', (
+      WidgetTester tester,
+    ) async {
+      final RecordingCompanionSession rec = await _pump(tester, _sample());
+      expect(find.text(t.second_screen_video_line_study), findsOneWidget);
+      await _tapButton(tester, t.second_screen_video_replay_line_pause);
+      await _tapButton(tester, t.second_screen_video_ab_set_a);
+      expect(_actions(rec), <String>[
+        VideoCompanionActions.replayLineThenPause,
+        VideoCompanionActions.abLoop,
+      ]);
+      expect(rec.commands.last.args, <String, Object?>{
+        VideoCompanionKeys.step: VideoCompanionAbSteps.a,
+      });
+    });
+
+    testWidgets('the A-B button follows the loop points', (
+      WidgetTester tester,
+    ) async {
+      final RecordingCompanionSession rec = await _pump(
+        tester,
+        _sample(
+          lineStudy: const <String, Object?>{VideoCompanionKeys.abA: 61000},
+        ),
+      );
+      await _tapButton(tester, t.second_screen_video_ab_set_b);
+      expect(rec.commands.single.args[VideoCompanionKeys.step], 'b');
+      expect(
+        find.text('${t.second_screen_video_ab_loop} · A 1:01'),
+        findsOneWidget,
+      );
+
+      rec.show(
+        CompanionContextKind.video,
+        _sample(
+          lineStudy: const <String, Object?>{
+            VideoCompanionKeys.abA: 61000,
+            VideoCompanionKeys.abB: 65000,
+          },
+        ),
+        title: 'Series title',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('${t.second_screen_video_ab_loop} · A 1:01 → B 1:05'),
+        findsOneWidget,
+      );
+      await _tapButton(tester, t.second_screen_video_ab_clear);
+      expect(rec.commands.last.args[VideoCompanionKeys.step], 'clear');
+    });
+
+    testWidgets('the auto-pause switch sends the new state', (
+      WidgetTester tester,
+    ) async {
+      final RecordingCompanionSession rec = await _pump(tester, _sample());
+      final Finder toggle = find.byType(FushiSwitch);
+      await _reveal(tester, toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(rec.commands.single.action, VideoCompanionActions.setAutoPause);
+      expect(rec.commands.single.args, <String, Object?>{
+        VideoCompanionKeys.on: true,
+      });
+    });
+
+    testWidgets('loop chooser: pick a count, forever or off', (
+      WidgetTester tester,
+    ) async {
+      final RecordingCompanionSession rec = await _pump(
+        tester,
+        _sample(
+          lineStudy: const <String, Object?>{
+            VideoCompanionKeys.loop: <String, Object?>{
+              VideoCompanionKeys.on: true,
+              VideoCompanionKeys.times: 2,
+              VideoCompanionKeys.remaining: 1,
+            },
+          },
+        ),
+      );
+      final Finder three = find.text(
+        t.second_screen_video_loop_count(count: 3),
+      );
+      await _reveal(tester, three);
+      expect(
+        find.text(t.second_screen_video_loop_remaining(count: 1)),
+        findsOneWidget,
+      );
+      await tester.tap(three);
+      await tester.pumpAndSettle();
+      await _tapButton(tester, t.second_screen_video_loop_forever);
+      await tester.tap(find.text(t.second_screen_video_off));
+      await tester.pumpAndSettle();
+      expect(_actions(rec), <String>[
+        VideoCompanionActions.loopLine,
+        VideoCompanionActions.loopLine,
+        VideoCompanionActions.loopLine,
+      ]);
+      expect(
+        rec.commands.map(
+          (CompanionCommandMessage c) => c.args[VideoCompanionKeys.times],
+        ),
+        <int>[3, 0, -1],
+      );
+    });
+
+    testWidgets('without subtitle lines replay and loop are disabled', (
+      WidgetTester tester,
+    ) async {
+      final RecordingCompanionSession rec = await _pump(
+        tester,
+        _sample(withCues: false),
+      );
+      await _tapButton(tester, t.second_screen_video_replay_line_pause);
+      final Finder three = find.text(
+        t.second_screen_video_loop_count(count: 3),
+      );
+      await _reveal(tester, three);
+      await tester.tap(three, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(rec.commands, isEmpty);
+    });
+  });
+
   testWidgets('every control is at least 48 dp tall', (
     WidgetTester tester,
   ) async {
@@ -349,7 +516,15 @@ void main() {
       t.second_screen_video_next_line,
       t.second_screen_video_forward_10,
       t.second_screen_video_info,
+      t.second_screen_video_replay_line_pause,
+      t.second_screen_video_ab_set_a,
     ]) {
+      await _reveal(
+        tester,
+        find.byWidgetPredicate(
+          (Widget w) => w is Tooltip && w.message == tooltip,
+        ),
+      );
       final Size size = tester.getSize(companionButton(tooltip));
       expect(size.height, greaterThanOrEqualTo(48), reason: tooltip);
       expect(size.width, greaterThanOrEqualTo(48), reason: tooltip);

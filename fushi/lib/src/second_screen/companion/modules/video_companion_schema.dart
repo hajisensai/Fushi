@@ -26,6 +26,11 @@
 ///   [maxCast], billing order) and [staff] List of {[personName],
 ///   [staffKind] (`director` / `writer` / ... as cached), [staffJob]?} (at
 ///   most [maxStaff]). Old panels ignore the new keys.
+/// - Line study (S6): [autoPause] bool (pause after each line); [loop] Map
+///   {[on] bool, [times] int? (the N of "loop N times", absent = forever),
+///   [remaining] int? (rewinds still to come, absent = forever)}, the loop
+///   being the player's "loop current line" mode; [abA] / [abB] int (A-B loop
+///   points, player position ms; absent = not set, both set = looping).
 ///
 /// Commands (`session.command(action, args)`): see [VideoCompanionActions].
 abstract final class VideoCompanionKeys {
@@ -45,6 +50,15 @@ abstract final class VideoCompanionKeys {
   static const String subtitleTracks = 'subtitleTracks';
   static const String subtitlesOff = 'subtitlesOff';
   static const String info = 'info';
+  static const String autoPause = 'autoPause';
+  static const String loop = 'loop';
+  static const String abA = 'abA';
+  static const String abB = 'abB';
+
+  // Loop entries.
+  static const String on = 'on';
+  static const String times = 'times';
+  static const String remaining = 'remaining';
 
   // Cue entries.
   static const String start = 'start';
@@ -79,6 +93,7 @@ abstract final class VideoCompanionKeys {
 
   // Command args.
   static const String ms = 'ms';
+  static const String step = 'step';
 
   /// Most cues sent in one snapshot (the window around the current cue).
   static const int maxCues = 80;
@@ -98,9 +113,10 @@ abstract final class VideoCompanionKeys {
 /// - [selectAudio] [`id`], [selectSubtitle] [`source`], [subtitleOff]
 /// - [mineLine]: mine the current subtitle line (the page's existing mining
 ///   path for the current cue).
-///
-/// Line-study tools (auto-pause, loop, A-B) are a later step and have no
-/// command here yet.
+/// - Line study: [replayLineThenPause] (replay the current line, pause at its
+///   end); [setAutoPause] [`on` bool]; [loopLine] [`times` int: 0 = forever,
+///   N > 0 = rewind N more times then play on, < 0 = stop looping]; [abLoop]
+///   [`step` String, one of [VideoCompanionAbSteps]].
 abstract final class VideoCompanionActions {
   static const String playPause = 'playPause';
   static const String previousCue = 'previousCue';
@@ -112,4 +128,22 @@ abstract final class VideoCompanionActions {
   static const String selectSubtitle = 'selectSubtitle';
   static const String subtitleOff = 'subtitleOff';
   static const String mineLine = 'mineLine';
+  static const String replayLineThenPause = 'replayLineThenPause';
+  static const String setAutoPause = 'setAutoPause';
+  static const String loopLine = 'loopLine';
+  static const String abLoop = 'abLoop';
 }
+
+/// `step` values of [VideoCompanionActions.abLoop]: [a] = set A here (drops
+/// B), [b] = set B here and loop (ignored without A or when not after A),
+/// [clear] = clear both, [toggle] = the shortcut's 3-state cycle.
+abstract final class VideoCompanionAbSteps {
+  static const String a = 'a';
+  static const String b = 'b';
+  static const String clear = 'clear';
+  static const String toggle = 'toggle';
+}
+
+/// Loop counts the panel offers (0 = forever); `times` of
+/// [VideoCompanionActions.loopLine].
+const List<int> kVideoCompanionLoopTimes = <int>[1, 2, 3, 5, 0];

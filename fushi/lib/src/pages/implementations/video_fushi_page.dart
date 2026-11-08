@@ -8603,6 +8603,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 循环当前句开关（Ix4j5SKUth，默认空绑定）：状态在画面右上角常驻标记上可见。
       toggleLoopCurrentSubtitle: () =>
           _runWhenImmersiveAllowsShortcuts(_toggleLoopCurrentCue),
+      // 逐句学习工具（副屏 S6，默认 Ctrl+Shift+R / P / B）：状态归控制器，副屏视频面板
+      // 走同一组方法；开关类动作以 OSD 反馈当前状态。
+      replayCueThenPause: () =>
+          _runWhenImmersiveAllowsShortcuts(_replayCurrentCueThenPause),
+      toggleAutoPauseAtCueEnd: () =>
+          _runWhenImmersiveAllowsShortcuts(_toggleAutoPauseAtCueEnd),
+      toggleAbLoop: () => _runWhenImmersiveAllowsShortcuts(_toggleAbLoop),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
@@ -11773,6 +11780,46 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     controller.setLoopCurrentCue(next);
+  }
+
+  /// 重播当前句并在句尾暂停（副屏 S6）。没有字幕时给出与循环当前句相同的提示。
+  void _replayCurrentCueThenPause() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (controller.cues.isEmpty) {
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
+      return;
+    }
+    _keepControlsAliveIfVisible();
+    unawaited(controller.replayCurrentCueThenPause());
+  }
+
+  /// 开 / 关「每句播完自动暂停」（副屏 S6），OSD 报新状态。
+  void _toggleAutoPauseAtCueEnd() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool next = !controller.autoPauseAtCueEnd;
+    controller.setAutoPauseAtCueEnd(next);
+    _showOsd(
+      next
+          ? t.video_line_study_auto_pause_on
+          : t.video_line_study_auto_pause_off,
+      icon: FushiIcons.pauseCircle,
+    );
+  }
+
+  /// A-B 循环三态切换（副屏 S6），OSD 报切换后的状态。B 不晚于 A 时控制器忽略，
+  /// 不报。
+  void _toggleAbLoop() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (!controller.toggleAbLoop()) return;
+    final String message = controller.abLoopActive
+        ? t.video_line_study_ab_on
+        : controller.abLoopA != null
+        ? t.video_line_study_ab_a_set
+        : t.video_line_study_ab_cleared;
+    _showOsd(message, icon: FushiIcons.repeatOne);
   }
 
   /// 重播当前句：回到本句开头**并起播**（Dbd86l4kA-：暂停态按重播也开始播放；

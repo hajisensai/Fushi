@@ -8,7 +8,7 @@ import 'package:fushi/src/second_screen/panel/companion/companion_lookup_control
 import 'package:fushi/src/second_screen/panel/companion/companion_panel_session.dart';
 import 'package:fushi/src/second_screen/panel/companion/modules/companion_module_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute;
+    show adaptivePageRoute, adaptiveSegmentedButton, adaptiveSwitch;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
@@ -101,7 +101,11 @@ class _VideoView {
             ),
       ],
       subtitlesOff = s.flag(VideoCompanionKeys.subtitlesOff),
-      info = s.mapOrNull(VideoCompanionKeys.info) ?? const <String, Object?>{};
+      info = s.mapOrNull(VideoCompanionKeys.info) ?? const <String, Object?>{},
+      autoPause = s.flag(VideoCompanionKeys.autoPause),
+      loop = s.mapOrNull(VideoCompanionKeys.loop) ?? const <String, Object?>{},
+      abA = s.intOrNull(VideoCompanionKeys.abA),
+      abB = s.intOrNull(VideoCompanionKeys.abB);
 
   final String title;
   final String? series;
@@ -116,6 +120,20 @@ class _VideoView {
   final List<_Track> subtitleTracks;
   final bool subtitlesOff;
   final Map<String, Object?> info;
+  final bool autoPause;
+  final Map<String, Object?> loop;
+  final int? abA;
+  final int? abB;
+
+  bool get loopOn => loop.flag(VideoCompanionKeys.on);
+
+  /// The selected loop count: -1 = off, 0 = forever, N = loop N times.
+  int get loopTimes =>
+      loopOn ? (loop.intOrNull(VideoCompanionKeys.times) ?? 0) : -1;
+
+  /// Rewinds still to come of a finite loop (null = off / forever).
+  int? get loopRemaining =>
+      loopOn ? loop.intOrNull(VideoCompanionKeys.remaining) : null;
 
   String? get workTitle => info.strOrNull(VideoCompanionKeys.workTitle);
   double? get rating => info.doubleOrNull(VideoCompanionKeys.rating);
@@ -351,6 +369,8 @@ class _VideoBody extends ConsumerWidget {
           ),
         ],
       ),
+      CompanionSectionLabel(t.second_screen_video_line_study),
+      _LineStudySection(view: view, send: _send),
     ];
     return FushiEntranceScope(
       child: ListView(
@@ -533,10 +553,14 @@ class _CueListState extends State<_CueList> {
     if (widget.currentStart < 0) return;
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
       final BuildContext? target = _currentKey.currentContext;
-      if (!mounted || target == null) return;
+      final RenderObject? line = target?.findRenderObject();
+      if (!mounted || target == null || line == null) return;
+      // Only the line window scrolls: `Scrollable.ensureVisible` would also
+      // scroll the panel's own list and pull the user away from the section
+      // they are on (line study, pickers) on every new line.
       unawaited(
-        Scrollable.ensureVisible(
-          target,
+        Scrollable.of(target).position.ensureVisible(
+          line,
           alignment: 0.3,
           duration: fushiMotionDuration(context, FushiMotion.medium),
           curve: FushiMotion.standard,
@@ -583,6 +607,147 @@ class _CueListState extends State<_CueList> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Line study tools: replay the line then pause, A-B loop (one button that
+/// walks set A -> set B -> clear, the points shown under it), pause after
+/// each line, loop the line N times. Plain focusable controls (controller
+/// drive); state comes back with the next snapshot (sent right after each
+/// command).
+class _LineStudySection extends StatelessWidget {
+  const _LineStudySection({required this.view, required this.send});
+
+  final _VideoView view;
+  final void Function(String action, [Map<String, Object?>? args]) send;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? labelStyle = theme.textTheme.bodyMedium;
+    final TextStyle? hintStyle = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final bool hasLines = view.cues.isNotEmpty;
+    final int? a = view.abA;
+    final int? b = view.abB;
+    final (String abLabel, String abStep) = a == null
+        ? (t.second_screen_video_ab_set_a, VideoCompanionAbSteps.a)
+        : b == null
+        ? (t.second_screen_video_ab_set_b, VideoCompanionAbSteps.b)
+        : (t.second_screen_video_ab_clear, VideoCompanionAbSteps.clear);
+    final String? abPoints = a == null
+        ? null
+        : '${t.second_screen_video_ab_loop} · A ${companionFormatClock(a)}'
+              '${b == null ? '' : ' → B ${companionFormatClock(b)}'}';
+    final int? remaining = view.loopRemaining;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _LabeledButton(
+                icon: FushiIcons.replay,
+                label: t.second_screen_video_replay_line_pause,
+                onPressed: hasLines
+                    ? () => send(VideoCompanionActions.replayLineThenPause)
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _LabeledButton(
+                icon: FushiIcons.repeatOne,
+                label: abLabel,
+                primary: a != null && b != null,
+                onPressed: () => send(
+                  VideoCompanionActions.abLoop,
+                  <String, Object?>{VideoCompanionKeys.step: abStep},
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (abPoints != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: Text(abPoints, style: hintStyle),
+          ),
+        const SizedBox(height: 4),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  t.second_screen_video_auto_pause,
+                  style: labelStyle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              adaptiveSwitch(
+                context: context,
+                value: view.autoPause,
+                onChanged: (bool on) => send(
+                  VideoCompanionActions.setAutoPause,
+                  <String, Object?>{VideoCompanionKeys.on: on},
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(t.second_screen_video_loop_line, style: labelStyle),
+              ),
+              if (remaining != null)
+                Text(
+                  t.second_screen_video_loop_remaining(count: remaining),
+                  style: hintStyle,
+                ),
+            ],
+          ),
+        ),
+        adaptiveSegmentedButton<int>(
+          context: context,
+          segments: <ButtonSegment<int>>[
+            ButtonSegment<int>(
+              value: -1,
+              label: Text(t.second_screen_video_off, maxLines: 1),
+              enabled: hasLines,
+            ),
+            for (final int times in kVideoCompanionLoopTimes)
+              times == 0
+                  ? ButtonSegment<int>(
+                      value: 0,
+                      icon: const FushiIcon(FushiIcons.repeat, size: 18),
+                      tooltip: t.second_screen_video_loop_forever,
+                      enabled: hasLines,
+                    )
+                  : ButtonSegment<int>(
+                      value: times,
+                      label: Text(
+                        t.second_screen_video_loop_count(count: times),
+                        maxLines: 1,
+                      ),
+                      enabled: hasLines,
+                    ),
+          ],
+          selected: <int>{view.loopTimes},
+          onSelectionChanged: (Set<int> next) {
+            if (next.isEmpty) return;
+            send(VideoCompanionActions.loopLine, <String, Object?>{
+              VideoCompanionKeys.times: next.first,
+            });
+          },
+        ),
+      ],
     );
   }
 }

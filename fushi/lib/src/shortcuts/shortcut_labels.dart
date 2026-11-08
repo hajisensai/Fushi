@@ -192,6 +192,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_replay_previous_subtitle;
       case ShortcutAction.videoToggleLoopCurrentSubtitle:
         return t.shortcut_action_video_toggle_loop_current_subtitle;
+      case ShortcutAction.videoReplayCueThenPause:
+        return t.shortcut_action_video_replay_cue_then_pause;
+      case ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        return t.shortcut_action_video_toggle_auto_pause_at_cue_end;
+      case ShortcutAction.videoToggleAbLoop:
+        return t.shortcut_action_video_toggle_ab_loop;
       case ShortcutAction.videoCopyCurrentSubtitle:
         return t.shortcut_action_video_copy_current_subtitle;
       case ShortcutAction.videoCopyCurrentSecondarySubtitle:
@@ -498,6 +504,12 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.replay5;
       case ShortcutAction.videoToggleLoopCurrentSubtitle:
         return FushiIcons.repeat;
+      case ShortcutAction.videoReplayCueThenPause:
+        return FushiIcons.replay;
+      case ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        return FushiIcons.pauseCircle;
+      case ShortcutAction.videoToggleAbLoop:
+        return FushiIcons.repeatOne;
       case ShortcutAction.videoCopyCurrentSubtitle:
         return FushiIcons.copy;
       case ShortcutAction.videoCopyCurrentSecondarySubtitle:

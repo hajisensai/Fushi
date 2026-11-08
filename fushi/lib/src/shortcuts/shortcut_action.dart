@@ -563,6 +563,17 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_loop_current_subtitle',
   ),
+  // 逐句学习工具（副屏 S6，2026-11-08）：重播当前句并在句尾暂停（精听）、开关「每句
+  // 播完自动暂停」、A-B 循环三态（标 A → 标 B 开始循环 → 清除）。默认键盘
+  // Ctrl+Shift+R / P / B，手柄留空。执行体在 video_player_shortcuts →
+  // VideoPlayerController（replayCurrentCueThenPause / setAutoPauseAtCueEnd /
+  // toggleAbLoop），副屏视频面板走同一组控制器方法。
+  videoReplayCueThenPause(ShortcutScope.video, 'video_replay_cue_then_pause'),
+  videoToggleAutoPauseAtCueEnd(
+    ShortcutScope.video,
+    'video_toggle_auto_pause_at_cue_end',
+  ),
+  videoToggleAbLoop(ShortcutScope.video, 'video_toggle_ab_loop'),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),

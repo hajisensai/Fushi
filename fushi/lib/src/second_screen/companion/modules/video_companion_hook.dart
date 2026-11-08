@@ -297,6 +297,12 @@ class VideoCompanionFrame {
     this.coverPath,
     this.episodeIndex = -1,
     this.episodeCount = 0,
+    this.autoPause = false,
+    this.loopOn = false,
+    this.loopTimes,
+    this.loopRemaining,
+    this.abAMs,
+    this.abBMs,
   });
 
   /// Identity of what plays (metadata / subtitle track lists reload when it
@@ -320,6 +326,40 @@ class VideoCompanionFrame {
 
   /// The primary subtitle source's persisted value (null / `off:` = off).
   final String? subtitleSource;
+
+  /// Line study: pause after each line.
+  final bool autoPause;
+
+  /// Line study: the player's "loop current line" mode; [loopTimes] = the N
+  /// of a finite loop, [loopRemaining] = rewinds still to come (both null =
+  /// forever).
+  final bool loopOn;
+  final int? loopTimes;
+  final int? loopRemaining;
+
+  /// Line study: A-B loop points (player position ms; null = not set).
+  final int? abAMs;
+  final int? abBMs;
+}
+
+/// What one A-B loop command does ([VideoCompanionAbSteps] on the wire).
+enum VideoCompanionAbStep {
+  setA(VideoCompanionAbSteps.a),
+  setB(VideoCompanionAbSteps.b),
+  clear(VideoCompanionAbSteps.clear),
+  toggle(VideoCompanionAbSteps.toggle);
+
+  const VideoCompanionAbStep(this.wire);
+
+  final String wire;
+
+  /// The step for a wire value; null for unknown values.
+  static VideoCompanionAbStep? fromWire(String? wire) {
+    for (final VideoCompanionAbStep step in values) {
+      if (step.wire == wire) return step;
+    }
+    return null;
+  }
 }
 
 /// Index of the cue to centre the window on: the current one, else the last
@@ -380,6 +420,10 @@ Map<String, Object?> buildVideoCompanionSnapshot(
   final String? series = frame.series?.trim();
   final String? cover = frame.coverPath;
   final String? cueText = current >= 0 ? cues[current].text : null;
+  final int? loopTimes = frame.loopTimes;
+  final int? loopRemaining = frame.loopRemaining;
+  final int? abA = frame.abAMs;
+  final int? abB = frame.abBMs;
   return <String, Object?>{
     VideoCompanionKeys.title: frame.title,
     if (series != null && series.isNotEmpty) VideoCompanionKeys.series: series,
@@ -419,6 +463,16 @@ Map<String, Object?> buildVideoCompanionSnapshot(
     VideoCompanionKeys.subtitlesOff:
         source == null || source.isEmpty || SubtitleSource.isOff(source),
     if (infoJson.isNotEmpty) VideoCompanionKeys.info: infoJson,
+    VideoCompanionKeys.autoPause: frame.autoPause,
+    VideoCompanionKeys.loop: <String, Object?>{
+      VideoCompanionKeys.on: frame.loopOn,
+      if (frame.loopOn && loopTimes != null)
+        VideoCompanionKeys.times: loopTimes,
+      if (frame.loopOn && loopRemaining != null)
+        VideoCompanionKeys.remaining: loopRemaining,
+    },
+    VideoCompanionKeys.abA: ?abA,
+    VideoCompanionKeys.abB: ?abB,
   };
 }
 
@@ -457,6 +511,24 @@ abstract interface class VideoCompanionPage {
 
   /// Mines the current subtitle line.
   Future<void> mineLine();
+
+  /// Line study: replays the current line (the last one before the playhead
+  /// between lines) and pauses at its end.
+  Future<void> replayLineThenPause();
+
+  /// Line study: pause after each line on / off.
+  Future<void> setAutoPause(bool on);
+
+  /// Line study: loop the current line [times] more times (0 = forever,
+  /// negative = stop looping).
+  Future<void> loopLine(int times);
+
+  /// Line study: one A-B loop step.
+  Future<void> abLoop(VideoCompanionAbStep step);
+
+  /// Counts one lookup made on the companion for this video, with the
+  /// page's own lookup counter (the one its in-page popup uses).
+  void countLookup();
 }
 
 /// The video page's end of the companion: claims the video context, publishes
@@ -531,6 +603,7 @@ class VideoCompanionHook {
       route: _fullscreenRoute ?? _pageRoute,
       onCommand: (String action, Map<String, Object?> args) =>
           unawaited(handleCommand(action, args)),
+      onLookupCounted: _page.countLookup,
     );
   }
 
@@ -636,6 +709,19 @@ class VideoCompanionHook {
         await _run(_page.subtitleOff);
       case VideoCompanionActions.mineLine:
         await _run(_page.mineLine);
+      case VideoCompanionActions.replayLineThenPause:
+        await _run(_page.replayLineThenPause);
+      case VideoCompanionActions.setAutoPause:
+        final Object? on = args[VideoCompanionKeys.on];
+        if (on is bool) await _run(() => _page.setAutoPause(on));
+      case VideoCompanionActions.loopLine:
+        final int? times = args.intOrNull(VideoCompanionKeys.times);
+        if (times != null) await _run(() => _page.loopLine(times));
+      case VideoCompanionActions.abLoop:
+        final VideoCompanionAbStep? step = VideoCompanionAbStep.fromWire(
+          args.strOrNull(VideoCompanionKeys.step),
+        );
+        if (step != null) await _run(() => _page.abLoop(step));
     }
   }
 

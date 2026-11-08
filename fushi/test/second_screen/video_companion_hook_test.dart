@@ -33,6 +33,13 @@ class _FakePage implements VideoCompanionPage {
   int currentCue = 5;
   String? subtitleSource = 'embedded:0';
   bool ready = true;
+  bool autoPause = false;
+  bool loopOn = false;
+  int? loopTimes;
+  int? loopRemaining;
+  int? abA;
+  int? abB;
+  int lookupsCounted = 0;
 
   int frames = 0;
   int infoLoads = 0;
@@ -73,6 +80,12 @@ class _FakePage implements VideoCompanionPage {
         VideoCompanionTrack(id: '2', label: 'English', selected: false),
       ],
       subtitleSource: subtitleSource,
+      autoPause: autoPause,
+      loopOn: loopOn,
+      loopTimes: loopTimes,
+      loopRemaining: loopRemaining,
+      abAMs: abA,
+      abBMs: abB,
     );
   }
 
@@ -142,6 +155,43 @@ class _FakePage implements VideoCompanionPage {
 
   @override
   Future<void> mineLine() async => calls.add('mine');
+
+  @override
+  Future<void> replayLineThenPause() async => calls.add('replayThenPause');
+
+  @override
+  Future<void> setAutoPause(bool on) async {
+    calls.add('autoPause $on');
+    autoPause = on;
+  }
+
+  @override
+  Future<void> loopLine(int times) async {
+    calls.add('loop $times');
+    loopOn = times >= 0;
+    loopTimes = times > 0 ? times : null;
+    loopRemaining = loopTimes;
+  }
+
+  @override
+  Future<void> abLoop(VideoCompanionAbStep step) async {
+    calls.add('ab ${step.name}');
+    switch (step) {
+      case VideoCompanionAbStep.setA:
+        abA = 1000;
+        abB = null;
+      case VideoCompanionAbStep.setB:
+        abB = 4000;
+      case VideoCompanionAbStep.clear:
+        abA = null;
+        abB = null;
+      case VideoCompanionAbStep.toggle:
+        break;
+    }
+  }
+
+  @override
+  void countLookup() => lookupsCounted++;
 }
 
 class _FakeBridge implements CompanionBridge {
@@ -448,6 +498,121 @@ void main() {
         registry.currentSnapshot!.flag(VideoCompanionKeys.subtitlesOff),
         isTrue,
       );
+    });
+
+    test(
+      'line-study commands run the page action and publish the state',
+      () async {
+        registry.setActive(true);
+        hook.attach(null);
+        Map<String, Object?> snap() => registry.currentSnapshot!;
+        await pumpEventQueue();
+        expect(snap().flag(VideoCompanionKeys.autoPause), isFalse);
+        expect(snap().mapOrNull(VideoCompanionKeys.loop), <String, Object?>{
+          VideoCompanionKeys.on: false,
+        });
+        expect(snap().containsKey(VideoCompanionKeys.abA), isFalse);
+
+        final List<(String, Map<String, Object?>)> sent =
+            <(String, Map<String, Object?>)>[
+              (
+                VideoCompanionActions.replayLineThenPause,
+                const <String, Object?>{},
+              ),
+              (
+                VideoCompanionActions.setAutoPause,
+                const <String, Object?>{VideoCompanionKeys.on: true},
+              ),
+              (
+                VideoCompanionActions.loopLine,
+                const <String, Object?>{VideoCompanionKeys.times: 3},
+              ),
+              (
+                VideoCompanionActions.abLoop,
+                const <String, Object?>{
+                  VideoCompanionKeys.step: VideoCompanionAbSteps.a,
+                },
+              ),
+              (
+                VideoCompanionActions.abLoop,
+                const <String, Object?>{
+                  VideoCompanionKeys.step: VideoCompanionAbSteps.b,
+                },
+              ),
+            ];
+        for (final (String action, Map<String, Object?> args) in sent) {
+          expect(
+            registry.dispatchCommand(CompanionContextKind.video, action, args),
+            isTrue,
+          );
+          await pumpEventQueue();
+        }
+        expect(page.calls, <String>[
+          'replayThenPause',
+          'autoPause true',
+          'loop 3',
+          'ab setA',
+          'ab setB',
+        ]);
+        expect(snap().flag(VideoCompanionKeys.autoPause), isTrue);
+        expect(snap().mapOrNull(VideoCompanionKeys.loop), <String, Object?>{
+          VideoCompanionKeys.on: true,
+          VideoCompanionKeys.times: 3,
+          VideoCompanionKeys.remaining: 3,
+        });
+        expect(snap().intOrNull(VideoCompanionKeys.abA), 1000);
+        expect(snap().intOrNull(VideoCompanionKeys.abB), 4000);
+
+        await hook.handleCommand(
+          VideoCompanionActions.loopLine,
+          const <String, Object?>{VideoCompanionKeys.times: 0},
+        );
+        expect(snap().mapOrNull(VideoCompanionKeys.loop), <String, Object?>{
+          VideoCompanionKeys.on: true,
+        });
+        await hook.handleCommand(
+          VideoCompanionActions.loopLine,
+          const <String, Object?>{VideoCompanionKeys.times: -1},
+        );
+        await hook.handleCommand(
+          VideoCompanionActions.abLoop,
+          const <String, Object?>{
+            VideoCompanionKeys.step: VideoCompanionAbSteps.clear,
+          },
+        );
+        expect(snap().mapOrNull(VideoCompanionKeys.loop), <String, Object?>{
+          VideoCompanionKeys.on: false,
+        });
+        expect(snap().containsKey(VideoCompanionKeys.abA), isFalse);
+        expect(snap().containsKey(VideoCompanionKeys.abB), isFalse);
+      },
+    );
+
+    test('malformed line-study args are ignored', () async {
+      registry.setActive(true);
+      hook.attach(null);
+      await hook.handleCommand(
+        VideoCompanionActions.setAutoPause,
+        const <String, Object?>{VideoCompanionKeys.on: 'yes'},
+      );
+      await hook.handleCommand(
+        VideoCompanionActions.loopLine,
+        const <String, Object?>{},
+      );
+      await hook.handleCommand(
+        VideoCompanionActions.abLoop,
+        const <String, Object?>{VideoCompanionKeys.step: 'c'},
+      );
+      expect(page.calls, isEmpty);
+    });
+
+    test('a companion lookup counts on the page that owns the claim', () {
+      hook.attach(null);
+      expect(registry.countLookup(), isTrue);
+      expect(page.lookupsCounted, 1);
+      hook.dispose();
+      expect(registry.countLookup(), isFalse);
+      expect(page.lookupsCounted, 1);
     });
 
     test('malformed args are ignored', () async {
