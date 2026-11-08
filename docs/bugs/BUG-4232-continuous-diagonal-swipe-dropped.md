@@ -1,4 +1,4 @@
-## BUG-4231 · 滚动模式斜着滑（拇指弧线）正文不动、也不跨章
+## BUG-4232 · 滚动模式斜着滑（拇指弧线）正文不动、也不跨章
 - **报告**：2026-11-06（用户反馈 R7k887yaJI，Android 3.3.0，Xiaomi 2407FRK8EC：「喜欢下滑读书，不灵敏；直线下滑可以，斜向上就不行；人手大拇指就是弧形斜向上滑」）
 - **真实性**：✅ 真 bug，两层根因：
   1. **原生滚动被整段丢弃**：BUG-3482 给连续模式加的 `html, body { touch-action: pan-y | pan-x }`（develop `fushi/lib/src/reader/reader_content_styles.dart:1677`）只放行主轴。Chromium `components/input/touch_action_filter.cc` `ShouldSuppressScrolling`：GestureScrollBegin 的起手位移提示 |dx| > |dy| 且 touch-action 不含该轴时 `drop_scroll_events_ = true`，这一手势后续所有 scroll update 全丢。真 Chromium 实测（`tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs`，CDP 真触摸）：`pan-y` 下偏离主轴 50° 的上推 scrollTop = 0，`pan-x pan-y` 下 = 216；偏离 ≥ ~55° 时 Chromium 无论 touch-action 都按交叉轴锁存、正文不动（`auto` 也一样）。
