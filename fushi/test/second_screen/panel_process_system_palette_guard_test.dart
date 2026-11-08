@@ -40,6 +40,60 @@ void main() {
     );
   });
 
+  test('appearance (language, theme, palette) is ready right after the '
+      'preferences load, before the slow part of the popup init', () {
+    final String source = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    final int start = source.indexOf(
+      'Future<void> initialiseForDictionaryPopup() async {',
+    );
+    final String body = source.substring(
+      start,
+      source.indexOf('\n  Future<', start + 1),
+    );
+    final int prefs = body.indexOf('await prefsRepo.loadFromDb();');
+    final int locales = body.indexOf('populateLocales();');
+    final int notifier = body.indexOf('themeNotifier = ThemeNotifier(');
+    final int palette = body.indexOf('await refreshSystemPalette();');
+    final int ready = body.indexOf('_appearanceReady = true;');
+    final int dictionaries = body.indexOf('await dictRepo.loadFromDb();');
+    expect(<int>[
+      prefs,
+      locales,
+      notifier,
+      palette,
+      ready,
+      dictionaries,
+    ], everyElement(isNonNegative));
+    // The theme's text style reads the UI locale: locales first.
+    expect(locales, allOf(greaterThan(prefs), lessThan(notifier)));
+    expect(ready, greaterThan(palette));
+    expect(
+      ready,
+      lessThan(dictionaries),
+      reason:
+          'the companion panel paints its first themed frame on '
+          'isAppearanceReady; it must not wait for dictionaries / engines',
+    );
+  });
+
+  test('the companion panel starts initialising before its first frame', () {
+    final String source = File(
+      'lib/src/second_screen/panel/companion_panel_app.dart',
+    ).readAsStringSync();
+    final int body = source.indexOf('Future<void> runCompanionPanel(');
+    final int init = source.indexOf('initialiseForDictionaryPopup()', body);
+    final int runApp = source.indexOf('runApp(', body);
+    expect(init, isNonNegative);
+    expect(
+      init,
+      lessThan(runApp),
+      reason: 'nothing may queue in front of loading the preferences',
+    );
+    expect(source, contains('appModel.isAppearanceReady'));
+  });
+
   test('the panel / popup engine registers the dynamic_color plugin', () {
     // Both secondary engines (SecondScreenActivity, the :popup engine) use
     // this hand-written registrant instead of GeneratedPluginRegistrant.

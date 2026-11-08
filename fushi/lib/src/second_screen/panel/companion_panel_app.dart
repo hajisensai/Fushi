@@ -58,6 +58,10 @@ Future<void> runCompanionPanel(MethodChannel channel) async {
       companionPanelSessionProvider.overrideWith((Ref ref) => session),
     ],
   );
+  // Start loading preferences (theme, palette, language) right away: the app
+  // paints its first themed frame once they are in
+  // ([AppModel.isAppearanceReady]), so nothing may queue in front of it.
+  unawaited(container.read(appProvider).initialiseForDictionaryPopup());
   runApp(
     UncontrolledProviderScope(
       container: container,
@@ -71,13 +75,15 @@ Future<void> runCompanionPanel(MethodChannel channel) async {
       await channel.invokeListMethod<String>('listen') ?? const <String>[];
   backlog.forEach(receive);
   await session.start();
-
-  unawaited(container.read(appProvider).initialiseForDictionaryPopup());
 }
 
-/// Companion panel root: the user's theme and language once the AppModel is
-/// up (the fallback theme until then), reloaded whenever the main process
-/// changes preferences.
+/// Companion panel root: the user's theme and language, reloaded whenever the
+/// main process changes preferences.
+///
+/// Nothing themed is painted before the AppModel has loaded them
+/// ([AppModel.isAppearanceReady], early in its initialisation): painting the
+/// seed-colour fallback first showed the default blue for seconds after every
+/// panel start. Only when initialisation failed does the fallback theme show.
 class CompanionPanelApp extends ConsumerStatefulWidget {
   const CompanionPanelApp({this.home, super.key});
 
@@ -150,10 +156,15 @@ class _CompanionPanelAppState extends ConsumerState<CompanionPanelApp> {
   @override
   Widget build(BuildContext context) {
     final AppModel appModel = ref.watch(appProvider);
-    final bool ready = appModel.isInitialised;
+    final bool ready = appModel.isAppearanceReady;
     final ThemeData fallback = buildFushiFallbackTheme(
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
     );
+    if (!ready && appModel.initError == null) {
+      // Preferences are still loading (a fraction of a second): a plain
+      // surface instead of the fallback palette.
+      return ColoredBox(color: fallback.colorScheme.surface);
+    }
     final Locale? locale = ready ? appModel.appLocale : null;
     // Most strings read the global `t`, which does not rebuild on a language
     // change: remount the app on one (like the main app's root).

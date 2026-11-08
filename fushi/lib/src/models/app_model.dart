@@ -2555,6 +2555,14 @@ class AppModel with ChangeNotifier {
 
   /// Non-null if [initialise] threw; UI should display this instead of spinning.
   String? get initError => _initError;
+
+  /// Theme (with the system palette) and UI language are loaded: true from
+  /// that point of [initialiseForDictionaryPopup] (before dictionaries and
+  /// language engines), and whenever [isInitialised]. Secondary processes that
+  /// paint before initialisation finishes wait for this instead of painting
+  /// the seed-colour fallback first.
+  bool get isAppearanceReady => _appearanceReady || _isInitialised;
+  bool _appearanceReady = false;
   String? _initError;
 
   /// Non-null when init was refused because the on-disk DB was created by a
@@ -4985,6 +4993,27 @@ class AppModel with ChangeNotifier {
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      // 外观（主题 + 壁纸色板 + 界面语言）只依赖偏好，紧跟偏好加载就位并通知
+      // [isAppearanceReady]：第二块屏面板等它再画第一帧带主题的界面，不先用默认
+      // 种子色画几秒（其余初始化——词典、语言引擎、快捷键——还要一两秒）。
+      populateLanguages();
+      populateLocales();
+      LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // The popup process always runs this full branch (separate :popup
+      // process, _isInitialised starts false). PopupDictApp.build() reads
+      // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
+      // so it MUST be constructed here exactly as in initialise() — otherwise
+      // the late final throws LateInitializationError (HBK-AUDIT-003).
+      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
+      themeNotifier.addListener(notifyListeners);
+      _themeListenerAdded = true;
+      // 默认主题 `system-theme` 取 Android 壁纸色板；这个进程（:popup / 第二块屏
+      // 面板）不跑主进程 initialise，不在这里取就退回种子色，副屏 / 弹窗和主屏
+      // 配色对不上。
+      await refreshSystemPalette();
+      _appearanceReady = true;
+      notifyListeners();
       // 同主进程：Anki 设置改读 Drift（:popup 与悬浮词典是另外的进程 / engine，
       // SP 缓存看不到主 app 的修改），之后才做读设置的后端选择。本进程绝不改 SP。
       await installDriftAnkiSettingsStore(() => _database);
@@ -5013,20 +5042,6 @@ class AppModel with ChangeNotifier {
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
-
-      // The popup process always runs this full branch (separate :popup
-      // process, _isInitialised starts false). PopupDictApp.build() reads
-      // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
-      // so it MUST be constructed here exactly as in initialise() — otherwise
-      // the late final throws LateInitializationError (HBK-AUDIT-003).
-      themeNotifier = ThemeNotifier(_database, () => textTheme);
-      themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
-      themeNotifier.addListener(notifyListeners);
-      _themeListenerAdded = true;
-      // 默认主题 `system-theme` 取 Android 壁纸色板；这个进程（:popup / 第二块屏
-      // 面板）不跑主进程 initialise，不在这里取就退回种子色，副屏 / 弹窗和主屏
-      // 配色对不上。
-      await refreshSystemPalette();
 
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory = Directory(
@@ -5062,9 +5077,6 @@ class AppModel with ChangeNotifier {
       );
       await _prepareLocalAudioForPlayback();
 
-      populateLanguages();
-      populateLocales();
-      LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
       // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
       // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
       unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
