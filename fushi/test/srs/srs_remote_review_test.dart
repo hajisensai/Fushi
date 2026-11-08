@@ -66,7 +66,7 @@ class _Host {
   late final SrsRemoteStoreService service = SrsRemoteStoreService(
     readStore: () async => store,
     readMedia: (String name) async => media[name],
-    onWrite: () => writes++,
+    onWrite: (String _) => writes++,
   );
 
   int writes = 0;
