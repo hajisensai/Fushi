@@ -28,6 +28,7 @@ import 'media_source_util.dart' show musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
+import 'sqlite_busy_timeout.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
@@ -289,10 +290,12 @@ Future<QueryExecutor> _openWithRecovery(
 }) async {
   final String path = dbFile.path;
   void applyPragmas(CommonDatabase db) {
-    // BUG-772：busy_timeout 前置，让下面的 journal_mode=WAL 切换本身也受 5s busy 超时
+    // BUG-772：busy 超时前置，让下面的 journal_mode=WAL 切换本身也受 5s busy 超时
     // 约束——视频硬崩留脏 -wal/-shm 时，probe-open 的 WAL 切换可能因锁争用长阻塞 UI
     // isolate（与主 raster 根因并存的独立同步冻结隐患）。
-    db.execute('PRAGMA busy_timeout = 5000');
+    // BUG-4241：不用 SQLite 内置的 busy_timeout pragma——它按调用次数算超时，Linux 上 VM
+    // profiler 的 SIGPROF 打断每次睡眠，5s 实际只剩几十毫秒；改装按墙钟计时的 handler。
+    installWallClockBusyTimeout(db);
     db.execute('PRAGMA journal_mode=WAL');
     db.execute('PRAGMA foreign_keys = ON');
   }
@@ -866,6 +869,7 @@ void _requireOneVideoMetadataOwner({
     MusicDiscSources,
     MusicPlaylists,
     MusicPlaylistEntries,
+    MusicRemoteTracks,
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
@@ -920,7 +924,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 147;
+  int get schemaVersion => 148;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2938,6 +2942,13 @@ class FushiDatabase extends _$FushiDatabase
         // 旧备份里带这张表时，恢复 / 合并导入都先用 FushiDatabase.atFile 把备份库迁到
         // 当前版本（restore.part.dart），走到这一步就删掉了，不会报错。
         await customStatement('DROP TABLE IF EXISTS galgame_text_lines');
+      }
+      if (from < 148) {
+        // v148：music_remote_tracks——只能串流的远程曲目（YouTube 内置音源 / 在线插件）
+        // 加入音乐库与本地歌单（反馈 0tRY-D2JgG）。纯新增、无回填；幂等守卫同 v146。
+        if (!await _tableExists('music_remote_tracks')) {
+          await m.createTable(musicRemoteTracks);
+        }
       }
     },
     onCreate: (m) async {

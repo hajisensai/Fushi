@@ -519,6 +519,17 @@ class AnimeSourceVideoClient
       return;
     }
     final Uri subtitleUri = Uri.parse(track.url);
+    // 扩展可以把字幕先落到宿主本机（Aniyomi 生态常见：解出 / 转换后写进
+    // `cacheDir`，回一条 `file:///data/user/0/…/cache/subs….srt`）。那是本机文件，
+    // 不是网络资源：直接拷，不交给 HTTP 客户端（BUG：`No host specified in URI
+    // file:///…`，#o3voUUPYKz）。
+    if (subtitleUri.isScheme('file')) {
+      final List<int> bytes = await File.fromUri(subtitleUri).readAsBytes();
+      await dest.parent.create(recursive: true);
+      await dest.writeAsBytes(bytes);
+      onProgress?.call(1.0);
+      return;
+    }
     final Uri streamUri = Uri.parse(video.resolvedUrl);
     final bool sameSite =
         subtitleUri.scheme == streamUri.scheme &&

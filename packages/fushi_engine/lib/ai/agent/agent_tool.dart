@@ -302,3 +302,10 @@ abstract interface class AgentSkillContext {
 abstract interface class AgentSkillProvider {
   List<AgentSkill> skills();
 }
+
+/// 工具箱可选实现：给 system prompt 末尾附一段说明（例如「接了哪些外部 MCP
+/// server、它们有哪些工具」，spec `docs/specs/2026-11-05-ai-mcp-client-design.md` §5）。
+/// 返回 null 或空串表示不附。每轮现取：server 连上 / 断开会变。
+abstract interface class AgentPromptNoteProvider {
+  String? promptNote();
+}

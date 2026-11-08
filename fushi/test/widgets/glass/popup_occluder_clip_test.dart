@@ -68,7 +68,23 @@ void main() {
       TargetPlatform.android,
     ]) {
       await tester.pumpWidget(host(p));
-      expect(find.byType(ClipPath), findsNothing, reason: '$p');
+      // ClipPath 恒在（祖先结构恒定，BUG-4230），但不裁：无 clipper、不推裁剪层。
+      final ClipPath clip = tester.widget<ClipPath>(find.byType(ClipPath));
+      expect(clip.clipper, isNull, reason: '$p');
+      expect(clip.clipBehavior, Clip.none, reason: '$p');
+      // 行为：上层覆盖区内的点照常命中下层（没被挖洞）。
+      final HitTestResult covered = tester.hitTestOnBinding(
+        const Offset(350, 400),
+      );
+      expect(
+        covered.path.any(
+          (HitTestEntry e) =>
+              e.target ==
+              tester.renderObject(find.byKey(const ValueKey<String>('lower'))),
+        ),
+        isTrue,
+        reason: '$p',
+      );
     }
   });
 
