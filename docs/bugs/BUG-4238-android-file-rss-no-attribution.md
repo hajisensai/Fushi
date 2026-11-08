@@ -1,4 +1,4 @@
-## BUG-4233 · Android 文件映射常驻暴涨时没有按文件分项
+## BUG-4238 · Android 文件映射常驻暴涨时没有按文件分项
 - **报告**：2026-11-07（崩溃报告 `#hw7f_pogDW`：Xiaomi 23113RKC6C，Android 16，3.3.0）
 - **真实性**：✅ 真 bug（取证端）。采样 `10:56:24 rss=2549MB anon=246MB file=2300MB malloc=72MB`（启动后 30 s，停在 `HomePage>HomeVideoPage`），之后 2.3 GB 文件页一直常驻；报告里只有 `file=` 一个总数，看不出是哪个文件被整段读进内存。
   - 根因：`fushi/lib/src/diagnostics/native_attribution_probe.dart` `maybeDumpNativeAttribution` 只在 **malloc** 越 800 / 1600 / 2400 MB 时读 `/proc/self/smaps` 按映射名记 Rss；文件页暴涨而 malloc 不高时永远不触发。另外 `describeSmapsRss` 把文件映射按**文件名**归组，词典 / 模型各自一个目录、文件名常相同，几本词典会并成一项。
