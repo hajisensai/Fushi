@@ -24,7 +24,9 @@ class AdminContext {
     required this.host,
     required this.startedAt,
     this.pruneOverride,
-  }) : _config = config;
+    Map<String, String>? environment,
+  }) : _config = config,
+       _environment = environment;
 
   ServerConfig _config;
   final File configFile;
@@ -38,6 +40,10 @@ class AdminContext {
   /// 启动参数 `serve --prune` / `--no-prune`（没给为 null）：本进程内**所有**扫描
   /// （启动扫描与 WebUI 触发的）都按它，优先于配置里的 `scan_prune`。
   final bool? pruneOverride;
+
+  /// 进程环境变量（`FUSHI_*` 凭据的先后判断用；测试注入）。
+  final Map<String, String>? _environment;
+  Map<String, String> get environment => _environment ?? Platform.environment;
 
   ServerConfig get config => _config;
 

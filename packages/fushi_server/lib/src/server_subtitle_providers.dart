@@ -5,8 +5,11 @@
 /// `FUSHI_OPENSUBTITLES_API_KEY` / `FUSHI_OPENSUBTITLES_USERNAME` /
 /// `FUSHI_OPENSUBTITLES_PASSWORD`、`FUSHI_SUBDL_API_KEY`、`FUSHI_JIMAKU_API_KEY`；
 /// 其次是与 app 同名的偏好键（`video_subtitle_opensubtitles_config` /
-/// `video_subtitle_subdl_api_key` / `jimaku_api_key` 及其 `*_enabled`），它们在
-/// 互联的「服务账号」共享清单里（`InterconnectServiceConfigSnapshot`）。
+/// `video_subtitle_subdl_api_key` / `jimaku_api_key` 及其 `*_enabled`）。服务端上写这些
+/// 偏好的入口是 WebUI「设置 → 在线字幕来源」/ `PUT /api/admin/settings` 的
+/// `subtitleProviders` / `ctl settings subtitle-key|subtitle-source`（见
+/// admin/subtitle_provider_settings.dart）；作为互联 host 时它们也在下发给已配对设备的
+/// 「服务账号」共享清单里（`InterconnectServiceConfigSnapshot`）。
 ///
 /// 两种用法的门控**有意不同**：
 /// - 命令行（[SubsCredentials.unavailableReason]）：人在场、点名要用，设了环境变量
@@ -103,18 +106,18 @@ class SubsCredentials {
           return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
         }
         if (openSubtitles.effectiveApiKey.isEmpty) {
-          return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或从已配好的 Fushi 经互联同步';
+          return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或在 WebUI「设置 → 在线字幕来源」/ `fushi_server ctl settings subtitle-key` 里存';
         }
         return null;
       case kSubdlSubtitleProviderId:
         if (subdlApiKey.isEmpty) {
-          return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
+          return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或在 WebUI「设置 → 在线字幕来源」/ `fushi_server ctl settings subtitle-key` 里存';
         }
         if (!subdlEnabled) return 'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）';
         return null;
       case 'jimaku':
         if (jimakuApiKey.isEmpty) {
-          return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
+          return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或在 WebUI「设置 → 在线字幕来源」/ `fushi_server ctl settings subtitle-key` 里存';
         }
         if (!jimakuEnabled) return 'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）';
         return null;
@@ -147,7 +150,7 @@ SubsCredentials resolveSubsCredentials(
   PrefStore prefs,
   Map<String, String> env,
 ) {
-  final OpenSubtitlesConfig fromPrefs = _openSubtitlesFromPrefs(prefs);
+  final OpenSubtitlesConfig fromPrefs = readStoredOpenSubtitlesConfig(prefs);
   OpenSubtitlesConfig openSubtitles = fromPrefs;
   final String osKey = _env(env, kOpenSubtitlesApiKeyEnv);
   final String osUser = _env(env, kOpenSubtitlesUsernameEnv);
@@ -199,9 +202,10 @@ bool prefBool(PrefStore prefs, String key, {required bool defaultValue}) {
   return value is bool ? value : defaultValue;
 }
 
-/// 与 app `PreferencesRepository.videoSubtitleOpenSubtitlesConfig` 同一解码口径：
+/// 偏好里存的 OpenSubtitles 配置（不叠环境变量）。与 app
+/// `PreferencesRepository.videoSubtitleOpenSubtitlesConfig` 同一解码口径：
 /// 没配置过 / 解不开 = [OpenSubtitlesConfig.unconfigured]。
-OpenSubtitlesConfig _openSubtitlesFromPrefs(PrefStore prefs) {
+OpenSubtitlesConfig readStoredOpenSubtitlesConfig(PrefStore prefs) {
   final String raw = prefString(prefs, kOpenSubtitlesConfigPref);
   if (raw.isEmpty) return OpenSubtitlesConfig.unconfigured();
   try {

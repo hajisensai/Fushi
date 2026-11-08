@@ -142,6 +142,10 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   subscriptions [ls] | add '<json>' | check [id] | enable|disable|rm <id>
   models [ls] | pull <语言 tag|ocr|ocr:key>
   settings [get] | set '<json>'
+  settings subtitle-key opensubtitles|subdl|jimaku [clear]
+                                           存 / 清在线字幕来源的 key（key 从 stdin 或
+                                           FUSHI_<来源>_API_KEY 读，不进 argv；不回显）
+  settings subtitle-source opensubtitles|subdl|jimaku on|off
   resource-indexers [get] | set '<json>'
   anki [status] | sync | refresh | run | retry | landing on|off | config '<json>'
        login --user u [--endpoint e] [--accept-ankiweb]   密码从 stdin 或 FUSHI_ANKI_PASSWORD 读
@@ -565,6 +569,13 @@ class _CtlRequest {
 
 const String _api = '/api/admin';
 
+/// `ctl settings subtitle-key <来源>` 读 key 的环境变量（与服务端同名）。
+const Map<String, String> _kCtlSubtitleKeyEnv = <String, String>{
+  'opensubtitles': 'FUSHI_OPENSUBTITLES_API_KEY',
+  'subdl': 'FUSHI_SUBDL_API_KEY',
+  'jimaku': 'FUSHI_JIMAKU_API_KEY',
+};
+
 /// 把动词 + 参数翻成一个请求；用法不对时写 [err] 并返回 null。
 _CtlRequest? _parseAction(
   List<String> rest,
@@ -751,8 +762,54 @@ _CtlRequest? _parseAction(
           return body == null
               ? null
               : _CtlRequest('PUT', '$_api/$action', body: body);
+        // 字幕来源的 key 不走 argv（会进 shell 历史 / 进程列表）：从 stdin 或同名环境变量读。
+        case 'subtitle-key'
+            when action == 'settings' &&
+                _kCtlSubtitleKeyEnv.containsKey(arg(0)) &&
+                (arg(1) == null || arg(1) == 'clear'):
+          final String id = arg(0)!;
+          final Map<String, Object?> change;
+          if (arg(1) == 'clear') {
+            change = <String, Object?>{'clearApiKey': true};
+          } else {
+            final String key = (readSecret(_kCtlSubtitleKeyEnv[id]!) ?? '')
+                .trim();
+            if (key.isEmpty) {
+              err.writeln('没有读到 key：经 stdin 传入，或设置 ${_kCtlSubtitleKeyEnv[id]}');
+              return null;
+            }
+            change = <String, Object?>{'apiKey': key};
+          }
+          return _CtlRequest(
+            'PUT',
+            '$_api/settings',
+            body: <String, Object?>{
+              'subtitleProviders': <String, Object?>{id: change},
+            },
+            render: _renderSubtitleProviders,
+          );
+        case 'subtitle-source'
+            when action == 'settings' &&
+                _kCtlSubtitleKeyEnv.containsKey(arg(0)) &&
+                (arg(1) == 'on' || arg(1) == 'off'):
+          return _CtlRequest(
+            'PUT',
+            '$_api/settings',
+            body: <String, Object?>{
+              'subtitleProviders': <String, Object?>{
+                arg(0)!: <String, Object?>{'enabled': arg(1) == 'on'},
+              },
+            },
+            render: _renderSubtitleProviders,
+          );
       }
-      return usage("$action [get] | $action set '<json>'");
+      return usage(
+        action == 'settings'
+            ? "settings [get] | settings set '<json>' | "
+                  'settings subtitle-key opensubtitles|subdl|jimaku [clear] | '
+                  'settings subtitle-source opensubtitles|subdl|jimaku on|off'
+            : "$action [get] | $action set '<json>'",
+      );
 
     case 'anki':
       switch (sub) {
@@ -996,6 +1053,22 @@ void _renderKeyValues(Map<dynamic, dynamic> map, StringSink out) {
 void _renderStatus(Object? response, StringSink out) {
   if (response is! Map) return _renderGeneric(response, out);
   _renderKeyValues(response, out);
+}
+
+/// 只打印字幕来源那一块（开关 / 设过没有 / 是否生效；凭据本来就不在响应里）。
+void _renderSubtitleProviders(Object? response, StringSink out) {
+  final Object? providers = response is Map
+      ? response['subtitleProviders']
+      : null;
+  if (providers is! Map) return _renderGeneric(response, out);
+  providers.forEach((Object? id, Object? state) {
+    if (state is! Map) return;
+    out.writeln(
+      '${'$id'.padRight(14)}enabled=${state['enabled']} '
+      'apiKeySet=${state['apiKeySet']} active=${state['active']}'
+      '${state['apiKeyFromEnv'] == true ? ' (env key wins)' : ''}',
+    );
+  });
 }
 
 void _renderLogs(Object? response, StringSink out) {

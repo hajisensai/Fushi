@@ -379,7 +379,17 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 （`lib/src/server_subtitle_providers.dart`，`subs` 命令也用它）：OpenSubtitles / SubDL / Jimaku。
 
 - 凭据：环境变量 `FUSHI_OPENSUBTITLES_API_KEY`（+ `_USERNAME` / `_PASSWORD`）、`FUSHI_SUBDL_API_KEY`、
-  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键（经互联「服务账号」同步过来的那份）。
+  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键。**环境变量给了 key 就压过偏好里存的 key**（偏好里的开关仍作数）。
+- 偏好键在这几处存（同一个接口 `PUT /api/admin/settings` 的 `subtitleProviders`，保存即生效）：
+  - WebUI「设置 → 在线字幕来源」：每家一个开关 + key（OpenSubtitles 另有用户名 / 密码）；
+  - `fushi_server ctl settings subtitle-key opensubtitles|subdl|jimaku`：key 从 stdin 或同名 `FUSHI_*_API_KEY`
+    环境变量读，不进 argv；末尾加 `clear` 清掉；`ctl settings subtitle-source <来源> on|off` 开关；
+  - `ctl settings set '{"subtitleProviders":{"jimaku":{"apiKey":"…"}}}'`（会进 shell 历史，能用上面那条就别用这条）。
+
+  规则与 TMDB key 同：key / 密码永不回显，`GET /api/admin/settings` 只报 `apiKeySet` / `passwordSet`，
+  外加 `active`（下一轮字幕阶段会不会用这一家）与 `apiKeyFromEnv`（存的 key 此刻被环境变量盖住）；
+  提交时留空 = 不改，`clearApiKey: true` / `clearPassword: true` 才清空；整批先校验，有一项不对就 400、什么都不写。
+  AI 助手的设置操作（`server.settings.set`）只能改字幕语言等几项白名单，碰不到任何凭据。
 - 无人值守路径只用**偏好开关开着且有 key** 的来源：偏好里关掉的来源，设了环境变量也不自动用
   （环境变量只在 `subs` 命令里临时启用）。一家都没有时下载的字幕阶段跳过（`required` 的任务报 needsAttention），
   补字幕回 `unavailable`。
