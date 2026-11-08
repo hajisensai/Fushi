@@ -10,6 +10,8 @@ import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -17,6 +19,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
 import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:fushi_engine/ai/web_knowledge.dart'
     show
@@ -3747,6 +3750,67 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「制卡到已配对设备」每台主机的「保存到」（按 hostId；没有条目 = 主机默认）。设备本地
+  /// （`SyncRepository.deviceLocalPrefKeys`）。值：`{<hostId>: {kind?, profile?, deck?, label?}}`，
+  /// `label` 是选的时候拼好的显示名（设置行副标题用，不必为它连主机）。
+  static const String mineToServerTargetsKey = 'mine_to_server_targets';
+
+  Map<String, Map<Object?, Object?>> _mineToServerTargetsRaw() {
+    final Object? raw = getPref(mineToServerTargetsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) {
+      return const <String, Map<Object?, Object?>>{};
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return const <String, Map<Object?, Object?>>{};
+    }
+    if (decoded is! Map) return const <String, Map<Object?, Object?>>{};
+    return <String, Map<Object?, Object?>>{
+      for (final MapEntry<Object?, Object?> e in decoded.entries)
+        if (e.key case final String host)
+          if (e.value case final Map<Object?, Object?> v) host: v,
+    };
+  }
+
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      <String, RemoteMiningTarget>{
+        for (final MapEntry<String, Map<Object?, Object?>> e
+            in _mineToServerTargetsRaw().entries)
+          if (RemoteMiningTarget.fromJson(e.value)
+              case final RemoteMiningTarget t)
+            e.key: t,
+      };
+
+  /// 选的时候存下的显示名（hostId → 名字）。
+  Map<String, String> get mineToServerTargetLabels => <String, String>{
+    for (final MapEntry<String, Map<Object?, Object?>> e
+        in _mineToServerTargetsRaw().entries)
+      if (e.value['label'] case final String label when label.isNotEmpty)
+        e.key: label,
+  };
+
+  /// [target] 为 null = 这台主机回到主机默认。
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) async {
+    final Map<String, Map<Object?, Object?>> next =
+        Map<String, Map<Object?, Object?>>.of(_mineToServerTargetsRaw());
+    if (target == null || target.isEmpty) {
+      next.remove(hostId);
+    } else {
+      next[hostId] = <String, Object?>{
+        ...target.toJson(),
+        if (label != null && label.isNotEmpty) 'label': label,
+      };
+    }
+    await setPref(mineToServerTargetsKey, next.isEmpty ? '' : jsonEncode(next));
+    notifyListeners();
+  }
+
   // 复习模块（SRS）的「挖词目标」：'anki' / 'srs'（见 SrsMiningTarget；存量 'both'
   // 读成 'anki'）。只有复习模块开着时才被读取；模块关着时制卡链路不看它。
   //
@@ -6523,6 +6587,30 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiMcpEnabled(bool value) async {
     await setPref('ai_mcp_enabled', value);
+    notifyListeners();
+  }
+
+  /// AI 助手接入的外部 MCP server（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`；设备本地，请求头 / 环境变量值
+  /// base64）。逐条容错在 [decodeMcpServerConfigs] 里；整串坏掉记日志并当空列表。
+  List<McpServerConfig> get aiMcpClientServers {
+    final String raw =
+        getPref('ai_mcp_client_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <McpServerConfig>[];
+    try {
+      return decodeMcpServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiMcpClientServers.decode',
+        error,
+        stack,
+      );
+      return const <McpServerConfig>[];
+    }
+  }
+
+  Future<void> setAiMcpClientServers(Iterable<McpServerConfig> servers) async {
+    await setPref('ai_mcp_client_servers', encodeMcpServerConfigs(servers));
     notifyListeners();
   }
 

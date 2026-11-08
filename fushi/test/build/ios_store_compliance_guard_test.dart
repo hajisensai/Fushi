@@ -613,6 +613,8 @@ void main() {
         'services.alist_sites',
         'services.kavita_servers',
         'services.audiobookshelf_servers',
+        // 音乐服务器曲库（OpenSubsonic 等用户自填地址的服务器）同理。
+        'services.music_servers',
       ]) {
         expect(resourcesSection, isNot(contains("id:'$id'")), reason: id);
         expect(mediaSection, contains("id:'$id'"), reason: id);
@@ -1002,6 +1004,62 @@ void main() {
       expect(
         StoreRestrictedCapability.onlineMusicSource.availableOn(isIOS: true),
         isFalse,
+      );
+    });
+  });
+
+  group('音乐远程曲目入库 / 本地歌单（onlineMusicSource，v148，反馈 0tRY-D2JgG）', () {
+    test('门只写在 music_remote_tracks.dart；入口、曲库与歌单显示都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/music_remote_tracks.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetmusicRemoteTracksAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      final String actions = compactCode(
+        read(
+          'lib/src/pages/implementations/music/'
+          'music_local_playlist_actions.dart',
+        ),
+      );
+      expect(actions, isNot(contains('Platform.isIOS')));
+      // 「加入音乐库 / 本地歌单」菜单项与搜索结果菜单都在门后。
+      expect(
+        actions,
+        contains(
+          'if(!musicRemoteTracksAvailable||!musicItemIsRemoteTrack(item)){'
+          'returnconst<MusicMenuAction>[];}',
+        ),
+      );
+      expect(
+        actions,
+        contains(
+          'if(!musicRemoteTracksAvailable||!musicItemIsRemoteTrack(item)){'
+          'returnnull;}',
+        ),
+      );
+      // 曲库快照与歌单解析：门没过时不读远程曲目。
+      final String data = compactCode(
+        read('lib/src/media/music/music_library_data.dart'),
+      );
+      expect(
+        data,
+        contains(
+          'remoteTracks:(remoteAvailable??musicRemoteTracksAvailable)'
+          '?awaitdb.listMusicRemoteLibraryTracks()',
+        ),
+      );
+      expect(
+        data,
+        contains(
+          '(remoteAvailable??musicRemoteTracksAvailable)'
+          '?awaitdb.listMusicRemoteTracks(uids)',
+        ),
       );
     });
   });

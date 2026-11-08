@@ -15,9 +15,10 @@ import '../helpers/source_guard.dart';
 
 const String _engine = '../packages/fushi_engine/lib/srs';
 
-/// 远程复习会话里可达的页面与它们调用的引擎流程。新页面能从复习页 / 远程牌组列表打开时加进来。
+/// 远程复习会话里可达的页面与它们调用的引擎流程。新页面能从复习页 / 首页「已配对设备」分区打开时加进来。
 const List<String> _reachable = <String>[
   'lib/src/pages/implementations/srs/srs_remote_review_page.dart',
+  'lib/src/pages/implementations/srs/srs_deck_home_paired.dart',
   'lib/src/pages/implementations/srs/srs_review_page.dart',
   'lib/src/pages/implementations/srs/srs_review_edit_bar.dart',
   'lib/src/pages/implementations/srs/srs_review_layout_sheet.dart',

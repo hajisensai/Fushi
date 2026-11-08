@@ -204,6 +204,11 @@ class SyncRepository {
 
   static const _keyRootFolderId = 'sync_root_folder_id';
   static const _keyFolderCache = 'sync_folder_cache';
+  // 云盘旧名 `<title>.epub` 内容资产的内容判型缓存（JSON：资产 id → {folder,
+  // revision, size, kind}，见 `CloudLegacyMangaSniffer`）。按通道分槽；设备本地
+  // （[_perChannelDeviceLocalBases]）：它是本机对远端字节的观测缓存，不是用户设置，
+  // 不进导出。条目按后端内容版本标记校验，带到别处也不会给出错的结论。
+  static const _keyContentSniffCache = 'sync_content_sniff_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
   // 废弃：词典与本地音频源数据库不再有「同步开关」，改成设置页的显式上传 / 下载
@@ -373,6 +378,41 @@ class SyncRepository {
           PreferencesCompanion.insert(
             key: scope.key(_keyFolderCache),
             value: jsonEncode(cache),
+          ),
+        );
+  }
+
+  /// [scope] 通道的云盘内容判型缓存（`CloudLegacyMangaSniffer`）；没有或损坏返回空表。
+  Future<Map<String, Object?>> getContentSniffCache(
+    SyncChannelScope scope,
+  ) async {
+    final row =
+        await (_db.select(_db.preferences)
+              ..where((t) => t.key.equals(scope.key(_keyContentSniffCache))))
+            .getSingleOrNull();
+    if (row == null) return <String, Object?>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(row.value);
+    } on FormatException {
+      // 缓存行坏了就当没有缓存：最坏是重新嗅探一遍，不影响任何用户数据。
+      return <String, Object?>{};
+    }
+    return decoded is Map<String, dynamic>
+        ? Map<String, Object?>.of(decoded)
+        : <String, Object?>{};
+  }
+
+  Future<void> setContentSniffCache(
+    SyncChannelScope scope,
+    Map<String, Object?> entries,
+  ) async {
+    await _db
+        .into(_db.preferences)
+        .insertOnConflictUpdate(
+          PreferencesCompanion.insert(
+            key: scope.key(_keyContentSniffCache),
+            value: jsonEncode(entries),
           ),
         );
   }
@@ -1807,6 +1847,7 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
+    _keyContentSniffCache,
   ];
 
   static const List<String> _deviceLocalFixedKeys = <String>[
@@ -1839,6 +1880,9 @@ class SyncRepository {
     PreferencesRepository.srsSync2MergeConfirmedKey,
     // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
     PreferencesRepository.srsLocationKeysKey,
+    // 复习首页「已配对设备」的牌组摘要缓存（kSrsHomePairedCachePrefKey）：描述的是这台设备配对的主机与
+    // 上次看到的数字，别的设备恢复备份带过来只会画出它没配对的主机。
+    'srs_home_paired_cache',
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
@@ -1966,6 +2010,9 @@ class SyncRepository {
     // 漂过去会让另一台设备静默对外开放、或让旧令牌在新设备上生效。
     'ai_mcp_enabled',
     'ai_mcp_token_sha256',
+    // AI 助手接入的外部 MCP server：请求头里可能有 token，本地程序的命令与路径只对
+    // 这台机器成立；漂到别的设备既泄凭据又会去拉起一个不存在的程序。
+    'ai_mcp_client_servers',
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',
@@ -2034,6 +2081,9 @@ class SyncRepository {
     'tts_gpt_sovits_local',
     // 本机 Irodori-TTS-Server 的专属目录与端口：同上。
     'tts_irodori_local',
+    // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
+    // 带到另一台设备上没有意义。
+    PreferencesRepository.mineToServerTargetsKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

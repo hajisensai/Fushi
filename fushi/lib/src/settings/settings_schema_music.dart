@@ -10,12 +10,10 @@ import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
-import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
-import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -36,8 +34,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// 都没有来源或扩展管理，它们只在模块页里（库页导航壳的「来源」「扩展」视图、浏览模块），
 /// 设置只管行为与凭据。音乐同理，来源管理只有曲库页顶栏「来源」这一个入口
 /// （`MusicSourcesPage`：本地文件夹 + 插件 / 服务器 / Apple Music + 歌词来源）。
-/// 服务器曲库那组留在这里，对应视频的媒体服务器配置在设置 › 在线服务（凭据 / 端点
-/// 属于设置）；歌词来源同理对应字幕来源。
+/// 服务器曲库（OpenSubsonic / Apple Music 增删、混排开关、串流音质）也不在这里：它和
+/// Jellyfin / Plex / Audiobookshelf 一样是用户自填地址的服务器凭据，住设置 › 在线服务 ›
+/// 媒体服务器（`services.music_servers`，`buildMusicServersDestination`）。歌词来源留在
+/// 这里，对应视频的字幕来源。
 SettingsDestination buildMusicDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.music,
@@ -301,47 +301,6 @@ SettingsDestination buildMusicDestination() {
                 };
               },
             ),
-          ),
-        ],
-      ),
-      // 服务器曲库（P5）：Jellyfin 家族复用视频的媒体服务器登录，OpenSubsonic 在子页里增删；
-      // 混排进曲库是每台服务器的显式开关（子页）。
-      SettingsSection(
-        title: t.music_servers_title,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.servers',
-            title: t.music_servers_manage,
-            subtitle: t.music_servers_settings_hint,
-            icon: FushiIcons.server,
-            showIcon: true,
-            child: () => SettingsDestination(
-              id: SettingsDestinationId.music,
-              title: t.music_servers_title,
-              icon: FushiIcons.server,
-              sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicServerSettingsBody(appModel: c.appModel),
-            ),
-          ),
-          SettingsSegmentedItem<int>(
-            id: 'music.server_bitrate',
-            title: t.music_server_bitrate_title,
-            subtitle: t.music_server_bitrate_hint,
-            icon: FushiIcons.highQuality,
-            defaultValue: 0,
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.music_server_bitrate_original,
-              ),
-              for (final int kbps in kMusicServerBitrateChoices)
-                SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
-            ],
-            selected: (SettingsContext c) =>
-                c.appModel.prefsRepo.musicServerMaxBitrate,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
           ),
         ],
       ),

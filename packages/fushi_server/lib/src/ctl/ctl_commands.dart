@@ -146,6 +146,10 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   anki [status] | sync | refresh | run | retry | landing on|off | config '<json>'
        login --user u [--endpoint e] [--accept-ankiweb]   密码从 stdin 或 FUSHI_ANKI_PASSWORD 读
        logout [--discard-unsynced]
+  srs [status] | profiles                  复习库：状态 / 同步目录里能选的 profile
+  srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
+  srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
+  srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、ankiConnect…）
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -802,6 +806,61 @@ _CtlRequest? _parseAction(
       return usage(
         'anki [status] | anki sync|refresh|run|retry | anki landing on|off | '
         "anki config '<json>' | anki login --user u | anki logout [--discard-unsynced]",
+      );
+
+    case 'srs':
+      Map<String, Object?>? uidBody(String key) {
+        final String? uid = arg(0);
+        return uid == null
+            ? null
+            : <String, Object?>{
+                key: key == 'defaultProfile' ? uid : <String>[uid],
+              };
+      }
+      switch (sub) {
+        case '' || 'status':
+          return const _CtlRequest('GET', '$_api/srs');
+        case 'profiles':
+          return _list('GET', '$_api/srs/profiles', 'profiles');
+        case 'add' || 'remove' || 'default' when arg(0) != null:
+          return _CtlRequest(
+            'PUT',
+            '$_api/srs',
+            body: uidBody(switch (sub) {
+              'add' => 'addProfiles',
+              'remove' => 'removeProfiles',
+              _ => 'defaultProfile',
+            }),
+          );
+        case 'off':
+          return const _CtlRequest(
+            'PUT',
+            '$_api/srs',
+            body: <String, Object?>{'profiles': <String>[]},
+          );
+        case 'sync':
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/sync',
+            body: <String, Object?>{'profile': ?arg(0)},
+          );
+        case 'ankiconnect' when arg(0) == 'on' || arg(0) == 'off':
+          return _CtlRequest(
+            'PUT',
+            '$_api/srs',
+            body: <String, Object?>{
+              'ankiConnect': <String, Object?>{'enabled': arg(0) == 'on'},
+            },
+          );
+        case 'config' when arg(0) != null:
+          final Object? body = _jsonArg(arg(0)!, err);
+          return body == null
+              ? null
+              : _CtlRequest('PUT', '$_api/srs', body: body);
+      }
+      return usage(
+        'srs [status] | srs profiles | srs add|remove|default <uid> | srs off | '
+        "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>'",
       );
 
     case 'profiles':
