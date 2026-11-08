@@ -5023,6 +5023,10 @@ class AppModel with ChangeNotifier {
       themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
+      // 默认主题 `system-theme` 取 Android 壁纸色板；这个进程（:popup / 第二块屏
+      // 面板）不跑主进程 initialise，不在这里取就退回种子色，副屏 / 弹窗和主屏
+      // 配色对不上。
+      await refreshSystemPalette();
 
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory = Directory(
