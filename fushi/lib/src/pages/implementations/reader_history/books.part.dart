@@ -76,8 +76,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
       dragLabel: displayTitle,
       onTap: () => _openSrtBook(book),
-      onLongPress: () =>
-          _showSrtBookDialog(book, removeFromCollection: removeFromCollection),
+      onLongPress: () => _companionPressed(
+        FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
+        () => _showSrtBookDialog(
+          book,
+          removeFromCollection: removeFromCollection,
+        ),
+      ),
       child: _bookCardLayout(
         title: displayTitle,
         cover: _buildSrtCover(book, epubCoverUri: epubCoverUri),
