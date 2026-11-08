@@ -70,15 +70,6 @@ RemoteMineResult serverRemoteMineResult(
   }
 }
 
-/// 落到哪：解析好的目标（[ServerRemoteMiningService._resolve]）。
-/// [fellBack]：手机点名的那一类 / profile 服务端没有，退回了默认。
-typedef _ServerLanding = ({
-  String kind,
-  String? profile,
-  String? deck,
-  bool fellBack,
-});
-
 /// 互联制卡在服务端的落点分派（docs/specs/2026-11-05-server-srs-design.md §4.8）：
 /// - Anki：[ServerAnkiLanding] 的同步客户端库（老行为）；
 /// - Fushi 复习：[ServerSrs] 里某份 profile 的复习库（[SrsMiner]）；
@@ -172,77 +163,18 @@ class ServerRemoteMiningService
     }
   }
 
-  /// [target] → 实际落点：所选的那一类没有就退到另一类；复习的 profile 没提供就落默认 profile。
-  _ServerLanding? _resolve(RemoteMiningTarget? target) {
-    String kind = target?.kind ?? _defaultKind();
-    final String? askedKind = target?.kind;
-    if (kind == kRemoteMiningKindReview && !_reviewAvailable) {
-      kind = kRemoteMiningKindAnki;
-    } else if (kind == kRemoteMiningKindAnki &&
-        !_ankiAvailable &&
-        _reviewAvailable) {
-      kind = kRemoteMiningKindReview;
-    }
-    if (kind == kRemoteMiningKindAnki) {
-      if (!_ankiAvailable) return null;
-      return (
-        kind: kind,
-        profile: null,
-        // 从复习退到 Anki 时不沿用复习的牌组名。
-        deck: askedKind == null || askedKind == kind ? target?.deck : null,
-        fellBack: askedKind != null && askedKind != kind,
-      );
-    }
-    final ServerSrs srs = _srs!;
-    final String? asked = target?.profile;
-    final String uid = asked != null && srs.storeFor(asked) != null
-        ? asked
-        : srs.defaultProfile!.uid;
-    // 牌组只对点名的那份 profile 有意义：退到默认 profile 时不沿用别人那份的牌组名。
-    final bool kindKept = askedKind == null || askedKind == kind;
-    final String? askedDeck = kindKept && (asked == null || asked == uid)
-        ? target?.deck
-        : null;
-    // 手机没点名牌组：用配置给这份定的制卡牌组（全名；空 = 默认牌组）。
-    final String? configured = _srsConfig().miningDecks[uid];
-    final String? deck =
-        askedDeck ??
-        (configured == null || configured.isEmpty ? null : configured);
-    return (
-      kind: kind,
-      profile: uid,
-      deck: deck,
-      // 手机默认带自己的 profile uid（不点名类别 / 牌组）：服务端没有那份就落默认，这是「服务端默认」的
-      // 本义，不算退回。点名了类别或牌组才算手机的显式选择。
-      fellBack:
-          !kindKept ||
-          (asked != null &&
-              asked != uid &&
-              (askedKind != null || target?.deck != null)),
+  /// [target] → 实际落点（与桌面 host 同一套语义：[resolveRemoteMiningTarget]）。手机没点名牌组时复习用配置给
+  /// 那份 profile 定的制卡牌组（全名；空 = 默认牌组）。
+  RemoteMiningResolution? _resolve(RemoteMiningTarget? target) {
+    final ServerSrs? srs = _srs;
+    return resolveRemoteMiningTarget(
+      target,
+      defaultKind: _defaultKind(),
+      ankiAvailable: _ankiAvailable,
+      defaultReviewProfile: _reviewAvailable ? srs!.defaultProfile!.uid : null,
+      servesReviewProfile: (String uid) => srs?.storeFor(uid) != null,
+      configuredReviewDeck: (String uid) => _srsConfig().miningDecks[uid],
     );
-  }
-
-  /// 把「落到哪个牌组」写进载荷的单卡覆盖（与「高级制卡」同一个键）；单卡已经选了牌组的不动。
-  /// [own] = 这张卡自己选了牌组（这时实际牌组与 [deck] 不同是预期内的）。
-  static ({String raw, bool own}) _withDeck(
-    String rawPayloadJson,
-    String? deck,
-  ) {
-    if (deck == null || deck.isEmpty) return (raw: rawPayloadJson, own: false);
-    final Object? decoded = jsonDecode(rawPayloadJson);
-    if (decoded is! Map) return (raw: rawPayloadJson, own: false);
-    final Map<String, dynamic> fields = Map<String, dynamic>.from(decoded);
-    final MiningRequestOverrides? existing = MiningRequestOverrides.readFrom(
-      fields,
-    );
-    if ((existing?.deckName ?? '').isNotEmpty) {
-      return (raw: rawPayloadJson, own: true);
-    }
-    fields[MiningRequestOverrides.wireKey] = jsonEncode(<String, Object?>{
-      ...?existing?.toJson(),
-      'deck': deck,
-    });
-    return (raw: jsonEncode(fields), own: false);
   }
 
   Future<RemoteMineLanding> _mineTo(
@@ -251,13 +183,13 @@ class ServerRemoteMiningService
     AnkiMiningContext context,
     String source,
   ) async {
-    final _ServerLanding? to = _resolve(target);
+    final RemoteMiningResolution? to = _resolve(target);
     if (to == null) {
       return RemoteMineLanding(
         RemoteMineResult(result: MineResult.notConfigured.name),
       );
     }
-    final ({String raw, bool own}) withDeck = _withDeck(
+    final ({String raw, bool own}) withDeck = withRemoteMiningDeck(
       rawPayloadJson,
       to.deck,
     );
@@ -278,22 +210,12 @@ class ServerRemoteMiningService
         _srs.notifyWrite(to.profile!);
       }
     }
-    return RemoteMineLanding(
+    return remoteMineLandingFor(
       serverRemoteMineResult(outcome, source: source),
-      landed: RemoteMiningTarget(
-        kind: to.kind,
-        profile: to.profile,
-        deck: outcome.deckName ?? to.deck,
-      ),
-      // 手机点名的牌组主机没有（被删 / 改名）：卡落进了默认牌组，如实说，手机据此退回主机默认。
-      targetUnavailable:
-          to.fellBack ||
-          (outcome.result == MineResult.success &&
-              !withDeck.own &&
-              target?.deck != null &&
-              to.deck == target!.deck &&
-              outcome.deckName != null &&
-              outcome.deckName != to.deck),
+      outcome: outcome,
+      to: to,
+      target: target,
+      ownDeck: withDeck.own,
     );
   }
 
@@ -377,7 +299,7 @@ class ServerRemoteMiningService
   }) async {
     if (expression.isEmpty) return false;
     try {
-      final _ServerLanding? to = _resolve(target);
+      final RemoteMiningResolution? to = _resolve(target);
       if (to == null) return false;
       if (to.kind == kRemoteMiningKindReview) {
         final SrsMiner? miner = _srs!.minerFor(to.profile!);
@@ -394,7 +316,7 @@ class ServerRemoteMiningService
 
   @override
   Future<Map<String, Object?>> miningTargets() async {
-    final _ServerLanding? def = _resolve(null);
+    final RemoteMiningResolution? def = _resolve(null);
     final List<Map<String, Object?>> review = <Map<String, Object?>>[];
     for (final ServerSrsProfile prof
         in _srs?.readyProfiles ?? const <ServerSrsProfile>[]) {
@@ -410,13 +332,7 @@ class ServerRemoteMiningService
       });
     }
     return <String, Object?>{
-      'default': def == null
-          ? null
-          : RemoteMiningTarget(
-              kind: def.kind,
-              profile: def.profile,
-              deck: def.deck,
-            ).toJson(),
+      'default': def?.landing.toJson(),
       'review': review,
       if (_ankiAvailable)
         'anki': <String, Object?>{

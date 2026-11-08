@@ -23,6 +23,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -229,6 +230,19 @@ class SrsProfileStores {
       media: SrsMediaStore(SrsMediaStore.directoryFor(support, profileUid)),
       destination: destination,
     );
+  }
+
+  /// [profileUid] 在本机 srs.db 里有没有复习数据（激活过 / 制过卡 / 同步来过的配置都有）。只读：不打开副本、
+  /// 不播种内置记录——互联主机列「保存到」时据此只列已有复习的配置，列表本身不该给每份配置建出一份复习。
+  /// 复习模块关着时为 false。
+  Future<bool> hasReviewData(String profileUid) async {
+    final SrsStorage? storage = await _deps.storage();
+    if (storage == null) return false;
+    final SrsDatabase db = storage.db;
+    final query = db.select(db.srsEntities)
+      ..where((t) => t.profileUid.equals(profileUid))
+      ..limit(1);
+    return await query.getSingleOrNull() != null;
   }
 
   /// [profileUid] 的副本（见 [minerFor]）；复习模块关着时为 null。

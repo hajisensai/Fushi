@@ -7,6 +7,10 @@
 /// 全是可选字段：老主机不认 `target` 照旧落到自己的默认，老客户端不发 `target` 照旧。
 library;
 
+import 'dart:convert';
+
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show MineOutcome, MineResult, MiningRequestOverrides;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
@@ -79,7 +83,7 @@ class RemoteMineLanding {
   final bool targetUnavailable;
 }
 
-/// 主机能让手机挑落点（服务端；桌面 host 之后也可以实现）。路由在 [FushiRemoteMiningService] 同时实现它时
+/// 主机能让手机挑落点（服务端 `ServerRemoteMiningService`、桌面 host `HostRemoteMiningTargets`）。路由在 [FushiRemoteMiningService] 同时实现它时
 /// 才把请求里的 `target` 交进来、才挂 `POST /api/mine/targets`；没实现的主机行为与以前逐字节一致。
 abstract interface class FushiRemoteMiningTargetService {
   /// `POST /api/mine/targets` 的回包：
@@ -117,3 +121,152 @@ FushiRemoteMiningService? activeRemoteMiningService(
   final FushiRemoteMiningAvailability a when !a.miningAvailable => null,
   _ => service,
 };
+
+/// 一次请求解析好的落点（[resolveRemoteMiningTarget]）。[fellBack]：手机**显式**点名的那一类 / profile / 牌组
+/// 主机给不了，落到了主机默认（回包据此带 `targetUnavailable: true`）。
+class RemoteMiningResolution {
+  const RemoteMiningResolution({
+    required this.kind,
+    this.profile,
+    this.deck,
+    this.fellBack = false,
+  });
+
+  /// [kRemoteMiningKindAnki] / [kRemoteMiningKindReview]。
+  final String kind;
+
+  /// 复习落进哪份 profile（uid）；Anki 恒 null。
+  final String? profile;
+
+  /// 写进单卡牌组覆盖的牌组全名；null = 那一处自己的默认牌组。
+  final String? deck;
+
+  final bool fellBack;
+
+  RemoteMiningTarget get landing =>
+      RemoteMiningTarget(kind: kind, profile: profile, deck: deck);
+
+  @override
+  bool operator ==(Object other) =>
+      other is RemoteMiningResolution &&
+      other.kind == kind &&
+      other.profile == profile &&
+      other.deck == deck &&
+      other.fellBack == fellBack;
+
+  @override
+  int get hashCode => Object.hash(kind, profile, deck, fellBack);
+
+  @override
+  String toString() =>
+      'RemoteMiningResolution(${landing.toJson()}, fellBack: $fellBack)';
+}
+
+/// 把请求里的 [target] 解析成主机实际的落点（服务端与桌面 host 同一套语义，§4.8）：
+/// - 缺项 = 主机默认：类别取 [defaultKind]；复习的 profile 取手机带来的 uid（主机有那份时），否则
+///   [defaultReviewProfile]；牌组取 [configuredReviewDeck]（null = 那份 profile 自己的制卡牌组）；
+/// - 所选的那一类主机没有就退到另一类；所点名的 profile 主机没有就落默认 profile，牌组只对点名的那份
+///   profile 有意义（退了就不沿用）；
+/// - 只带 `{profile}`（手机自己的 uid，即「主机默认」）而主机没有那份不算退回；点名了类别或牌组才算。
+///
+/// [ankiAvailable]：Anki 这条路能不能写；[defaultReviewProfile] 为 null = 复习不可用。两者都不可用 → null。
+RemoteMiningResolution? resolveRemoteMiningTarget(
+  RemoteMiningTarget? target, {
+  required String defaultKind,
+  required bool ankiAvailable,
+  required String? defaultReviewProfile,
+  required bool Function(String uid) servesReviewProfile,
+  String? Function(String uid)? configuredReviewDeck,
+}) {
+  final bool reviewAvailable = defaultReviewProfile != null;
+  final String? askedKind = target?.kind;
+  String kind = askedKind ?? defaultKind;
+  if (kind == kRemoteMiningKindReview && !reviewAvailable) {
+    kind = kRemoteMiningKindAnki;
+  } else if (kind == kRemoteMiningKindAnki &&
+      !ankiAvailable &&
+      reviewAvailable) {
+    kind = kRemoteMiningKindReview;
+  }
+  final bool kindKept = askedKind == null || askedKind == kind;
+  if (kind == kRemoteMiningKindAnki) {
+    if (!ankiAvailable) return null;
+    return RemoteMiningResolution(
+      kind: kind,
+      // 从复习退到 Anki 时不沿用复习的牌组名。
+      deck: kindKept ? target?.deck : null,
+      fellBack: !kindKept,
+    );
+  }
+  final String? asked = target?.profile;
+  final String uid = asked != null && servesReviewProfile(asked)
+      ? asked
+      : defaultReviewProfile!;
+  // 牌组只对点名的那份 profile 有意义：退到默认 profile 时不沿用别人那份的牌组名。
+  final String? askedDeck = kindKept && (asked == null || asked == uid)
+      ? target?.deck
+      : null;
+  final String? configured = configuredReviewDeck?.call(uid);
+  return RemoteMiningResolution(
+    kind: kind,
+    profile: uid,
+    deck:
+        askedDeck ??
+        (configured == null || configured.isEmpty ? null : configured),
+    // 手机默认带自己的 profile uid（不点名类别 / 牌组）：主机没有那份就落默认，这是「主机默认」的本义，
+    // 不算退回。点名了类别或牌组才算手机的显式选择。
+    fellBack:
+        !kindKept ||
+        (asked != null &&
+            asked != uid &&
+            (askedKind != null || target?.deck != null)),
+  );
+}
+
+/// 把「落到哪个牌组」写进载荷的单卡覆盖（与「高级制卡」同一个键 [MiningRequestOverrides.wireKey]）；
+/// 单卡已经选了牌组的不动。[own] = 这张卡自己选了牌组（这时实际牌组与 [deck] 不同是预期内的）。
+({String raw, bool own}) withRemoteMiningDeck(
+  String rawPayloadJson,
+  String? deck,
+) {
+  if (deck == null || deck.isEmpty) return (raw: rawPayloadJson, own: false);
+  final Object? decoded = jsonDecode(rawPayloadJson);
+  if (decoded is! Map) return (raw: rawPayloadJson, own: false);
+  final Map<String, dynamic> fields = Map<String, dynamic>.from(decoded);
+  final MiningRequestOverrides? existing = MiningRequestOverrides.readFrom(
+    fields,
+  );
+  if ((existing?.deckName ?? '').isNotEmpty) {
+    return (raw: rawPayloadJson, own: true);
+  }
+  fields[MiningRequestOverrides.wireKey] = jsonEncode(<String, Object?>{
+    ...?existing?.toJson(),
+    'deck': deck,
+  });
+  return (raw: jsonEncode(fields), own: false);
+}
+
+/// 一次按 [to] 落卡的回包：实际落点 + 是否退回。[target] 点名的牌组主机没有（被删 / 改名）、卡落进了
+/// 默认牌组时同样如实报 `targetUnavailable`（[ownDeck] = 这张卡自己选了牌组，不算）。
+RemoteMineLanding remoteMineLandingFor(
+  RemoteMineResult result, {
+  required MineOutcome outcome,
+  required RemoteMiningResolution to,
+  required RemoteMiningTarget? target,
+  required bool ownDeck,
+}) => RemoteMineLanding(
+  result,
+  landed: RemoteMiningTarget(
+    kind: to.kind,
+    profile: to.profile,
+    deck: outcome.deckName ?? to.deck,
+  ),
+  targetUnavailable:
+      to.fellBack ||
+      (outcome.result == MineResult.success &&
+          !ownDeck &&
+          target?.deck != null &&
+          to.deck == target!.deck &&
+          outcome.deckName != null &&
+          outcome.deckName != to.deck),
+);

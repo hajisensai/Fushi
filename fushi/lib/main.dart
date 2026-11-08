@@ -46,7 +46,8 @@ import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
-import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsProfileStoresProvider, srsRevisionProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -783,6 +784,10 @@ void main([List<String> args = const <String>[]]) {
             miner,
             noteId,
           );
+      // 互联对端「保存到」激活配置的复习时（主机挖词目标不是复习、不经 hostMiningAnkiRepositoryProvider），
+      // 写入后同样刷新牌组列表 / 首页复习条的计数。
+      appModel.srsCardsAddedNotifier = () =>
+          container.read(srsRevisionProvider.notifier).state++;
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
