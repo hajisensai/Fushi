@@ -73,6 +73,70 @@ void main() {
     );
   });
 
+  group('now playing priority', () {
+    CompanionNowPlaying np(CompanionNowPlayingKind kind, bool playing) =>
+        CompanionNowPlaying(kind: kind, title: kind.name, playing: playing);
+    const CompanionNowPlayingKind video = CompanionNowPlayingKind.video;
+    const CompanionNowPlayingKind music = CompanionNowPlayingKind.music;
+    const CompanionNowPlayingKind book = CompanionNowPlayingKind.audiobook;
+
+    test('nothing open: null', () {
+      expect(pickCompanionNowPlaying(const <CompanionNowPlaying?>[]), isNull);
+      expect(
+        pickCompanionNowPlaying(const <CompanionNowPlaying?>[null, null]),
+        isNull,
+      );
+    });
+
+    test('a playing video page wins', () {
+      expect(
+        pickCompanionNowPlaying(<CompanionNowPlaying?>[
+          np(video, true),
+          np(music, true),
+          np(book, true),
+        ])!.kind,
+        video,
+      );
+    });
+
+    test('playing music beats a paused video page', () {
+      expect(
+        pickCompanionNowPlaying(<CompanionNowPlaying?>[
+          np(video, false),
+          np(music, true),
+        ])!.kind,
+        music,
+      );
+    });
+
+    test('all paused: the open video page, then music, then audiobook', () {
+      expect(
+        pickCompanionNowPlaying(<CompanionNowPlaying?>[
+          np(video, false),
+          np(music, false),
+          np(book, false),
+        ])!.kind,
+        video,
+      );
+      expect(
+        pickCompanionNowPlaying(<CompanionNowPlaying?>[
+          null,
+          np(music, false),
+          np(book, false),
+        ])!.kind,
+        music,
+      );
+      expect(
+        pickCompanionNowPlaying(<CompanionNowPlaying?>[
+          null,
+          np(music, false),
+          np(book, true),
+        ])!.kind,
+        book,
+      );
+    });
+  });
+
   test('the review link opens the built-in review on the main screen', () {
     expect(WidgetLink.tryParse(kCompanionReviewLink), isA<WidgetSrsLink>());
   });

@@ -47,6 +47,21 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final String term = span.term;
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
+    // Second screen (companion up): the lookup shows on the companion's Lookup
+    // tab instead of the in-page popup. Nothing of the popup path runs then:
+    // no pause (its resume is tied to the popup closing, so the video would
+    // stay paused), no anchor sentence / cue / draft (they feed the popup's
+    // mining and favourite star; the companion mines from its own lookup),
+    // no highlight (it needs the popup's match length). The synchronous
+    // isActive check keeps the single-screen path free of an extra await.
+    if (_companionHook.isActive &&
+        await routeCompanionLookup(text: sentence,
+          charIndex: videoCompanionCharIndex(sentence, graphemeIndex),
+          sentence: sentence,
+        )) {
+      return;
+    }
+    if (!mounted) return;
     // 「高级制卡」的「查词时画面」就是这一刻；对话框试听挪走播放头后也据此放回。
     _lastLookupPositionMs = controller.positionMs;
     // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就

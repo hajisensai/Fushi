@@ -366,6 +366,8 @@ extension _VideoFullscreen on _VideoFushiPageState {
         context,
         rootNavigator: true,
       ).push<void>(fullscreenRoute).whenComplete(_onVideoFullscreenRouteClosed);
+      // The companion's claim follows the route the video is shown in.
+      _companionHook.setFullscreenRoute(fullscreenRoute);
       await enterNativeFullscreen();
     } finally {
       _videoFullscreenTransitioning = false;
@@ -385,6 +387,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 入口各补一次 refocus。
   void _onVideoFullscreenRouteClosed() {
     _videoFullscreenRoute = null;
+    _companionHook.setFullscreenRoute(null);
     if (!mounted) return;
     _rebuild(() => _videoFullscreenActive = false);
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.surfaceRemounted);

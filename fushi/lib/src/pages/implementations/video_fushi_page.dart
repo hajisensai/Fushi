@@ -174,6 +174,8 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/companion/modules/video_companion_hook.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -491,6 +493,7 @@ part 'video_fushi/web_source.part.dart';
 part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';
 part 'video_fushi/subtitle_text_edit.part.dart';
+part 'video_fushi/companion.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -1996,6 +1999,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final _VideoPagePlaybackRemote _playbackRemote =
       _VideoPagePlaybackRemote(this);
 
+  /// Second-screen companion (video panel on a dual-screen handheld's bottom
+  /// screen): claim, snapshots and panel commands, see companion.part.dart.
+  late final VideoCompanionHook _companionHook = VideoCompanionHook(
+    _VideoCompanionPageAdapter(this),
+  );
+
   /// BUG-772：首开时新建但尚未赋给 [_controller] 的「在途」controller。持有它，才能在
   /// 用户于 `await controller.load()` 完成前退出页时，于 [dispose] 主动 dispose 取消它
   /// （触发 `loadToken++` → 在途 load 的 `_isCurrentLoad` 判据翻假、干净放弃后续原生
@@ -2805,6 +2814,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     super.didChangeDependencies();
     _providerContainer = ProviderScope.containerOf(context, listen: false);
     _playbackRouteMark.attach(ModalRoute.of(context));
+    _companionHook.attach(ModalRoute.of(context));
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;
@@ -6793,6 +6803,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
     videoPlaybackRemotes.unregister(_playbackRemote);
+    _companionHook.dispose();
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。

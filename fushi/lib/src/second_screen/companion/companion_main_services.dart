@@ -32,6 +32,7 @@ import 'package:fushi/src/platform/widget_snapshot.dart'
 import 'package:fushi/src/second_screen/companion/companion_bridge.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/modules/video_companion_now_playing.dart';
 import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -269,14 +270,38 @@ Future<List<CompanionContinueCandidate>> _videoCandidates(
   ];
 }
 
-/// What plays in the background sessions (music engine, audiobook session),
-/// with the home widget's priority: playing music > playing audiobook >
-/// paused music > paused audiobook.
+/// The now-playing entry among [candidates] (in priority order): the first
+/// one that is playing, else the first one that exists. With the order
+/// video, music, audiobook this is: playing video > playing music > playing
+/// audiobook > paused video > paused music > paused audiobook.
+CompanionNowPlaying? pickCompanionNowPlaying(
+  List<CompanionNowPlaying?> candidates,
+) {
+  for (final CompanionNowPlaying? c in candidates) {
+    if (c != null && c.playing) return c;
+  }
+  for (final CompanionNowPlaying? c in candidates) {
+    if (c != null) return c;
+  }
+  return null;
+}
+
+/// What plays: an open video page ([CompanionVideoPlaybackRegistry], the
+/// page registers itself while open) and the background sessions (music
+/// engine, audiobook session), chosen by [pickCompanionNowPlaying]. A video
+/// page comes first: when one is open on top it is what the user watches
+/// (opening it pauses the other players), otherwise the home widget's
+/// priority applies (playing music > playing audiobook > paused music >
+/// paused audiobook).
 class AppCompanionNowPlayingSource extends ChangeNotifier
     implements CompanionNowPlayingSource {
-  AppCompanionNowPlayingSource(this._appModel);
+  AppCompanionNowPlayingSource(
+    this._appModel, {
+    CompanionVideoPlaybackRegistry? video,
+  }) : _video = video ?? companionVideoPlayback;
 
   final AppModel _appModel;
+  final CompanionVideoPlaybackRegistry _video;
   bool _attached = false;
 
   /// Starts following the sessions (they exist once the AppModel is up).
@@ -285,6 +310,19 @@ class AppCompanionNowPlayingSource extends ChangeNotifier
     _attached = true;
     _appModel.musicSession.addListener(notifyListeners);
     _appModel.audiobookSession.addListener(notifyListeners);
+    _video.addListener(notifyListeners);
+  }
+
+  CompanionNowPlaying? _videoNowPlaying() {
+    final CompanionVideoPlayback? video = _video.current;
+    if (video == null) return null;
+    final String title = video.title();
+    if (title.isEmpty) return null;
+    return CompanionNowPlaying(
+      kind: CompanionNowPlayingKind.video,
+      title: title,
+      playing: video.playing(),
+    );
   }
 
   @override
@@ -295,27 +333,23 @@ class AppCompanionNowPlayingSource extends ChangeNotifier
     final AudiobookPlayerController? book =
         _appModel.audiobookSession.controller;
     final SessionBookInfo? info = _appModel.audiobookSession.book;
-    CompanionNowPlaying music(MusicPlayItem item, bool playing) =>
+    return pickCompanionNowPlaying(<CompanionNowPlaying?>[
+      _videoNowPlaying(),
+      if (track != null)
         CompanionNowPlaying(
           kind: CompanionNowPlayingKind.music,
-          title: item.title,
-          subtitle: item.artist ?? '',
-          playing: playing,
-        );
-    CompanionNowPlaying audiobook(SessionBookInfo info, bool playing) =>
+          title: track.title,
+          subtitle: track.artist ?? '',
+          playing: engine.isPlaying,
+        ),
+      if (book != null && info != null)
         CompanionNowPlaying(
           kind: CompanionNowPlayingKind.audiobook,
           title: info.title,
           subtitle: info.author ?? '',
-          playing: playing,
-        );
-    if (track != null && engine.isPlaying) return music(track, true);
-    if (book != null && info != null && book.isPlaying) {
-      return audiobook(info, true);
-    }
-    if (track != null) return music(track, false);
-    if (book != null && info != null) return audiobook(info, false);
-    return null;
+          playing: book.isPlaying,
+        ),
+    ]);
   }
 
   @override
@@ -326,7 +360,9 @@ class AppCompanionNowPlayingSource extends ChangeNotifier
         await _appModel.musicSession.engine.togglePlayPause();
       case CompanionNowPlayingKind.audiobook:
         await _appModel.audiobookSession.controller?.togglePlayPause();
-      case CompanionNowPlayingKind.video || null:
+      case CompanionNowPlayingKind.video:
+        await _video.current?.toggle();
+      case null:
         return;
     }
   }
@@ -336,6 +372,7 @@ class AppCompanionNowPlayingSource extends ChangeNotifier
     if (_attached) {
       _appModel.musicSession.removeListener(notifyListeners);
       _appModel.audiobookSession.removeListener(notifyListeners);
+      _video.removeListener(notifyListeners);
     }
     super.dispose();
   }
