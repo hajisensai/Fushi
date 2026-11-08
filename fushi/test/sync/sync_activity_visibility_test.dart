@@ -382,14 +382,29 @@ void main() {
       );
     });
 
-    test('在飞标志与计数只在这一对 helper 里被写', () {
-      expect(
-        occurrences('syncInProgress.value = true'),
-        1,
-        reason: '各路径手写这行正是「合集/单本 finally 漏清 syncProgress」的来源',
-      );
-      expect(occurrences('_activeSyncs++'), 1);
-      expect(occurrences('_activeSyncs--'), 1);
+    // 反馈 kM-Gb_Xnu-：三个全局值改由任务表（sync_task_board.dart）从「在飞任务」
+    // 派生，同步路径只登记 / 结束任务，不再手写全局值，也就没有计数可漏减。
+    final String boardSrc = File(
+      'lib/src/sync/sync_task_board.dart',
+    ).readAsStringSync();
+
+    test('在飞标志与阶段只由任务表派生、只在一处写', () {
+      for (final String needle in <String>[
+        'syncInProgress.value =',
+        'syncProgress.value =',
+        'syncActivity.value =',
+      ]) {
+        expect(
+          occurrences(needle),
+          0,
+          reason: '各路径手写这行正是「合集/单本 finally 漏清 syncProgress」的来源',
+        );
+        expect(
+          needle.allMatches(boardSrc).length,
+          1,
+          reason: '$needle 只能在任务表的 _publish 里写',
+        );
+      }
     });
 
     test('设置页「立即同步」只拿全量同步的结局填副标题', () {
@@ -419,13 +434,14 @@ void main() {
     });
 
     test('最后一个在飞同步退出时同时清掉阶段与身份', () {
-      // 两者必须一起清：只清其一会把上一轮的残留文字带进下一轮开头。
-      expect(src, contains('syncProgress.value = null'));
-      expect(src, contains('syncActivity.value = null'));
+      // 两者必须一起清：只清其一会把上一轮的残留文字带进下一轮开头。阶段与身份都取自
+      // 同一个「主任务」，没有在飞任务时两者同时为 null。
+      expect(boardSrc, contains('syncProgress.value = primary?.progress'));
+      expect(boardSrc, contains('syncActivity.value = primary == null'));
       expect(
-        occurrences('if (_activeSyncs == 0)'),
+        occurrences('task.finish()'),
         1,
-        reason: '清理只能有一处（在 _endSyncActivity 内），不得散回各路径',
+        reason: '结束任务只能有一处（在 _endSyncActivity 内），不得散回各路径',
       );
     });
   });

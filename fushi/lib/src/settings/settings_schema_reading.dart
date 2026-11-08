@@ -7,6 +7,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -724,6 +725,66 @@ SettingsDestination buildReadingDestination() {
                 value,
               );
               notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // 反馈 R7k887yaJI：滚动模式拉过章首 / 章末切章的阻尼。只在滚动模式有意义
+          // （翻页 / VN 没有「拉过边界」这回事），其它模式不显示。改值经
+          // notifyReaderSettingsChanged → updateLive 热下发，不重载正文。
+          SettingsSegmentedItem<ContinuousChapterTurnResistance>(
+            id: 'reading_controls.continuous_chapter_turn_resistance',
+            title: t.reader_continuous_turn_resistance,
+            subtitle: t.reader_continuous_turn_resistance_description,
+            icon: FushiIcons.swipe,
+            visible: isContinuous,
+            defaultValue: ContinuousChapterTurnResistance.standard,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 16,
+            ),
+            options: <SettingsSegmentOption<ContinuousChapterTurnResistance>>[
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.low,
+                label: t.reader_continuous_turn_resistance_low,
+              ),
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.standard,
+                label: t.reader_continuous_turn_resistance_standard,
+              ),
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.high,
+                label: t.reader_continuous_turn_resistance_high,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.continuousChapterTurnResistance,
+            onChanged:
+                (
+                  SettingsContext c,
+                  ContinuousChapterTurnResistance value,
+                ) async {
+                  await c.readerSource.setContinuousChapterTurnResistance(
+                    value,
+                  );
+                  notifyReaderSettingsChanged(c);
+                },
+          ),
+          // 反馈 R7k887yaJI ③：滚动模式章节无缝衔接（默认关）。前后章挂在同一文档里一起
+          // 滚动；改值要重建文档（挂 / 卸邻章），走 notifyReaderLayoutChanged 整章重载。
+          SettingsSwitchItem(
+            id: 'reading_controls.continuous_seamless_chapters',
+            title: t.reader_continuous_seamless_chapters,
+            subtitle: t.reader_continuous_seamless_chapters_description,
+            icon: FushiIcons.link,
+            visible: isContinuous,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 17,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.continuousSeamlessChapters,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setContinuousSeamlessChapters(v);
+              notifyReaderLayoutChanged(c);
             },
           ),
           // 翻页动画（View Transitions 快照翻页，见 reader_page_turn_script.dart）。只在

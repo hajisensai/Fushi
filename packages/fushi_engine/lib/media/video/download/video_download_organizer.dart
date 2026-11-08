@@ -22,6 +22,7 @@ class VideoOrganizationRequest {
     required this.pathMapping,
     this.year,
     this.defaultSeasonNumber = 1,
+    this.legacyUnderscoreNames = false,
   });
 
   final String torrentId;
@@ -31,6 +32,68 @@ class VideoOrganizationRequest {
   final int defaultSeasonNumber;
   final String sourceRoot;
   final VideoDownloadPathMapping pathMapping;
+
+  /// 用旧的 `_` 替身（[safeWindowsFileName]）而不是全角替身命名。只给「旧规则
+  /// 已经落过盘 / 落过整理意图」的任务用，判据见
+  /// [videoOrganizationKeepsLegacyNames]。
+  final bool legacyUnderscoreNames;
+}
+
+/// 整理目标的作品目录名（`标题 (年份)`），与 [VideoDownloadOrganizer.plan] 同一
+/// 口径；标题安全化后为空抛 [FormatException]。
+///
+/// 非法字符替身默认是全角（`Re:` → `Re：`，[fullwidthSafeFileName]），与视频库
+/// 「整理文件名」同一套——下载落盘的名字和库里刮削后的名字读起来一致。
+/// [legacy] = 旧规则（逐个换成 `_`），只为旧任务的崩溃重放与已有作品目录保留。
+String videoOrganizationDisplayRoot(
+  String title,
+  int? year, {
+  bool legacy = false,
+}) {
+  final String safe = VideoDownloadOrganizer._safeSegment(
+    title,
+    legacy: legacy,
+  );
+  return year == null ? safe : '$safe ($year)';
+}
+
+/// 这条任务的整理要不要沿用旧的 `_` 替身（纯函数，IO 由调用方做）。
+///
+/// 换替身规则后，同一个 (标题, 年份) 在新旧规则下可能落到两个不同的目录名
+/// （`Re_Re_ (2024)` / `Re：Re： (2024)`）。两种情况必须沿用旧规则，否则同一作品
+/// 会被拆进两个目录：
+/// 1. **崩溃重放**：上一轮（可能是升级前的版本）已经把整理意图落进任务文件行
+///    （[persistedTargets] = `target_relative_path`），部分文件可能已按它改了名。
+///    重放必须走向**同一组**目标路径——意图的作品目录段按旧规则算出来的，就按
+///    旧规则重算；按新规则算出来的，就按新规则。
+/// 2. **作品目录已存在**：没有落过意图的新任务（订阅追更的新一集等），来源库根下
+///    已有旧规则的作品目录（[legacyRootExists]）而没有新规则的
+///    （[currentRootExists]）——新集跟着已有的集走，别另起一个目录。用户用
+///    「整理」把旧目录迁到新名字之后，新规则目录存在，自然切回新规则。
+/// 两种规则算出同一个名字（标题里没有非法字符）时恒为 false。
+bool videoOrganizationKeepsLegacyNames({
+  required String title,
+  required int? year,
+  required Iterable<String?> persistedTargets,
+  required bool legacyRootExists,
+  required bool currentRootExists,
+}) {
+  final String legacyRoot;
+  final String currentRoot;
+  try {
+    legacyRoot = videoOrganizationDisplayRoot(title, year, legacy: true);
+    currentRoot = videoOrganizationDisplayRoot(title, year);
+  } on FormatException {
+    return false;
+  }
+  if (legacyRoot == currentRoot) return false;
+  for (final String? target in persistedTargets) {
+    if (target == null || target.trim().isEmpty) continue;
+    final String root = target.replaceAll('\\', '/').split('/').first;
+    if (root == legacyRoot) return true;
+    if (root == currentRoot) return false;
+  }
+  return legacyRootExists && !currentRootExists;
 }
 
 class VideoOrganizationFilePlan {
@@ -112,10 +175,11 @@ class VideoDownloadOrganizer {
     if (files.isEmpty) {
       throw const FormatException('torrent has no files');
     }
-    final String title = _safeSegment(request.title);
-    final String displayRoot = request.year == null
-        ? title
-        : '$title (${request.year})';
+    final String displayRoot = videoOrganizationDisplayRoot(
+      request.title,
+      request.year,
+      legacy: request.legacyUnderscoreNames,
+    );
     final String? remoteRoot = request.pathMapping.localToRemote(
       request.sourceRoot,
     );
@@ -227,6 +291,7 @@ class VideoDownloadOrganizer {
             kind: VideoOrganizationKind.movie,
             sourceRoot: request.sourceRoot,
             pathMapping: request.pathMapping,
+            legacyUnderscoreNames: request.legacyUnderscoreNames,
           ),
           files,
         );
@@ -313,7 +378,11 @@ class VideoDownloadOrganizer {
         // [VideoOrganizationFilePlan.siblingWork]）。源路径唯一 ⇒ 目标唯一。
         relative = _portableJoin(<String>[
           displayRoot,
-          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+          ..._extraSegments(
+            file.name,
+            sharedRoot: sharedRoot,
+            legacy: request.legacyUnderscoreNames,
+          ),
         ]);
       } else if (episodeNumber != null) {
         recognizedEpisodes += 1;
@@ -343,13 +412,21 @@ class VideoDownloadOrganizer {
         // 「劇場版 X ～前編～」「～後編～」归约成同名，撞名后整条 job 硬失败。
         relative = _portableJoin(<String>[
           displayRoot,
-          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+          ..._extraSegments(
+            file.name,
+            sharedRoot: sharedRoot,
+            legacy: request.legacyUnderscoreNames,
+          ),
         ]);
       } else {
         relative = _portableJoin(<String>[
           displayRoot,
           'Extras',
-          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+          ..._extraSegments(
+            file.name,
+            sharedRoot: sharedRoot,
+            legacy: request.legacyUnderscoreNames,
+          ),
         ]);
       }
       final String targetKey = Platform.isWindows
@@ -647,10 +724,12 @@ class VideoDownloadOrganizer {
     '.wmv',
   }.contains(p.extension(value).toLowerCase());
 
-  static String _safeSegment(String value) {
-    final String safe = safeWindowsFileName(
-      value,
-    ).replaceAll(RegExp(r'[. ]+$'), '').trim();
+  /// 一个目标路径段的安全化：默认全角替身（[fullwidthSafeFileName]，与视频库
+  /// 「整理文件名」同一套）；[legacy] = 旧规则（`_` 替身），只为旧任务保留。
+  static String _safeSegment(String value, {required bool legacy}) {
+    final String safe = legacy
+        ? safeWindowsFileName(value).replaceAll(RegExp(r'[. ]+$'), '').trim()
+        : fullwidthSafeFileName(value);
     if (safe.isEmpty) throw const FormatException('empty media title');
     return safe;
   }
@@ -823,15 +902,23 @@ class VideoDownloadOrganizer {
 
   /// Extras 目标段：镜像种子内目录结构（剥共享根），路径天然唯一，不同子目录
   /// 里的同名特典不会互相顶掉。每段过 [_safeSegment]，末段扩展名统一小写。
-  static List<String> _extraSegments(String name, {String? sharedRoot}) {
+  static List<String> _extraSegments(
+    String name, {
+    required bool legacy,
+    String? sharedRoot,
+  }) {
     final List<String> segments = _segments(name);
     final List<String> inner = sharedRoot != null && segments.length > 1
         ? segments.sublist(1)
         : segments;
     final String extension = p.extension(inner.last).toLowerCase();
-    final String stem = _safeSegment(p.basenameWithoutExtension(inner.last));
+    final String stem = _safeSegment(
+      p.basenameWithoutExtension(inner.last),
+      legacy: legacy,
+    );
     return <String>[
-      ...inner.sublist(0, inner.length - 1).map(_safeSegment),
+      for (final String segment in inner.sublist(0, inner.length - 1))
+        _safeSegment(segment, legacy: legacy),
       '$stem$extension',
     ];
   }
