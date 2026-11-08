@@ -1,4 +1,4 @@
-## BUG-4227 · 高级制卡清空前文/后文被当成删句，最外侧那句的音频一起丢
+## BUG-4242 · 高级制卡清空前文/后文被当成删句，最外侧那句的音频一起丢
 - **报告**：2026-11-07（用户反馈 _RLnsVq_QZ：清空前文后确认，这句的音频也没了；再加一句音频又回来）
 - **真实性**：✅ 真 bug。根因两处：① `fushi/lib/src/mining/advanced_mining/advanced_mining_controller.dart:294-302`（旧 `commitEdit`）在前文 / 后文为空白且宿主支持移除时改调 `remove(slot, index, true)`，把「清空文字」变成「移除整句」；被移除的句子既不进 `composeText` 也不进 `composeAudioRange`（`fushi/lib/src/media/audiobook/mining_sentence_draft.dart:251/254/264/267`），删的是最外侧那句时合并区间随之收窄。加句后被移除的那句夹到中间，`mergeMiningAudioRanges` 取首尾又把它包回去——这是 `removed` 的设计内行为，症状看起来像「音频忽有忽无」。② 草稿层 `editSentence`（`mining_sentence_draft.dart:218`）把空白当成「还原原句」，与控制器的「空白 = 删句」两层语义互相矛盾，单改控制器会让清空直接无效。
 - **[x] ① 已修复** — 用户拍板 (a)：清空只删文字、保留音频，删整句改用 ×。草稿 `editSentence` 对前文 / 后文把空白写成合法编辑值 `''`（键仍是原句，加减句后跟着那一句走），`joinMinedSentences` 丢掉空句、`composeAudioRange` 只按 `removed` 过滤，故文字去掉、音频区间保留；当前句清空仍是还原。控制器 `commitEdit` 删掉 `removeInstead` 分支统一走 `edit`。预览新增 `prevOriginal` / `nextOriginal`，对话框新增「恢复原文」入口与清空时的提示、清空句卡片显示占位说明；× 视觉保持 32、命中区补到 48（MD3 `tapTargetSize: padded`，Apple 玻璃 `constraints` 48）。
