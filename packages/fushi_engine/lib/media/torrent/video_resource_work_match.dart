@@ -18,7 +18,7 @@
 /// * [VideoResourceWorkMismatch.collection]：标题写了跨多年的年份区间
 ///   （`Doraemon Movies 01-25 (1980-2004)`）——这是多部作品的合集包，不是这一部。
 ///   包内按部选文件尚未实现，整包给区间端点那一部只会把 25 部全下进一部的目录。
-/// * [VideoResourceWorkMismatch.sibling]：标题点名了**同系列的另一部**（BUG-4241）。
+/// * [VideoResourceWorkMismatch.sibling]：标题点名了**同系列的另一部**（BUG-4246）。
 ///   「ガルパ☆ピコ」2018 的候选里混着续作《ガルパ☆ピコ ふぃーばー！》的逐集发布
 ///   （`Garupa Pico: Fever! - 01`）和第二季《～大盛り～》的 BD 包——续作标题是「基础
 ///   标题 + 副标题词」，后面没有数字，序号判据看不出来；判别必须知道兄弟作品叫什么。

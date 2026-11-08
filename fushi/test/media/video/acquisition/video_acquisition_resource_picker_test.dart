@@ -252,7 +252,7 @@ void main() {
       );
     });
 
-    test('tv All 合集卡 → 只取做种最多的合集，usesBatch；逐集另成一张卡（BUG-4241）', () {
+    test('tv All 合集卡 → 只取做种最多的合集，usesBatch；逐集另成一张卡（BUG-4246）', () {
       final List<VideoResourceVersionGroup> groups =
           _groupsOf(<VideoResourceCandidate>[
             _episode('SubsPlease', '1080p', 1, seeders: 300),
@@ -730,7 +730,7 @@ void main() {
       );
     });
 
-    test('每集体积只数单集发布，合集另成一张卡、不参与估算（BUG-4241）', () {
+    test('每集体积只数单集发布，合集另成一张卡、不参与估算（BUG-4246）', () {
       final List<VideoResourceVersionGroup> groups =
           _groupsOf(<VideoResourceCandidate>[
             _FakeCandidate(

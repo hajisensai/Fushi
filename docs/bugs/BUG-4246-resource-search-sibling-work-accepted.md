@@ -1,4 +1,4 @@
-## BUG-4241 · AI 下视频把同系列续作 / 另一季的发布当成所选作品（ガルパ☆ピコ 下成 Fever）
+## BUG-4246 · AI 下视频把同系列续作 / 另一季的发布当成所选作品（ガルパ☆ピコ 下成 Fever）
 - **报告**：2026-11-08（用户：经 `fushi_cli aidl` 走「AI 下视频」，AI 额度用完走 chip 模式）
 - **真实性**：✅ 真 bug。选「BanG Dream! ガルパ☆ピコ」（AniList 101632，2018 TV_SHORT 26 集），计划卡显示「喵萌Production&LoliHouse · 1080p · BD · 26 · 291MB/集」，确认后入队的 26 个种子全是续作《ガルパ☆ピコ ふぃーばー！》（2021）的 `Garupa Pico: Fever! - 01..26 [WebRip]`。三处缺陷叠加：
   1. 剧集不做作品身份过滤：单作品路径 `packages/fushi_engine/lib/media/video/acquisition/video_acquisition_reducer.dart:1451`（修前 `_onResourcesLoaded` 只对电影传 `work`）、系列路径 `planFranchiseEntry`（:2317，修前剧集只在有同名剧集时按年份判）。Nyaa 模糊搜索把 Pico / 大盛 / Fever 全搜回来，相关度排序只重排不丢弃。

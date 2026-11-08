@@ -1,4 +1,4 @@
-// BUG-4241：选「BanG Dream! ガルパ☆ピコ」（AniList 101632，2018）却入队了续作
+// BUG-4246：选「BanG Dream! ガルパ☆ピコ」（AniList 101632，2018）却入队了续作
 // 《ガルパ☆ピコ ふぃーばー！》（2021）的 26 集，版本卡还把第二季《～大盛り～》的
 // BD 包算进片源 / 每集体积。下面的发布名是 nyaa 上的原样标题，作品标题取 AniList
 // 的原样 native / romaji / english。
@@ -397,7 +397,7 @@ void main() {
       );
     });
 
-    test('大盛条目不拿 Pico / Fever 的发布（没写 batch 的 BD 包不当全集，见 BUG-4241 剩余缺口）', () {
+    test('大盛条目不拿 Pico / Fever 的发布（没写 batch 的 BD 包不当全集，见 BUG-4246 剩余缺口）', () {
       final VideoAcquisitionFranchiseEntry entry = plan(
         _ohmori2020,
         <VideoMediaReference>[_pico2018, _fever2021],

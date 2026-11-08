@@ -825,7 +825,7 @@ class VideoAcquisitionState {
   final VideoDiscoveryItem? chosenItem;
 
   /// 选定作品时同一次作品搜索的其它候选（续作 / 前作 / 外传）：资源搜索是模糊词
-  /// 匹配，它们的发布会混进这一部的候选，按兄弟作品判据排掉（BUG-4241）。
+  /// 匹配，它们的发布会混进这一部的候选，按兄弟作品判据排掉（BUG-4246）。
   final List<VideoMediaReference> siblingWorks;
 
   /// `loadDetails` 之后的完整作品资料（TMDB 搜索项在这之前没有 status）。
