@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3805 条。点号进各自文件。
+> 共 3806 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4245](bugs/BUG-4245-download-organizer-splits-disc-structure.md) | ✅ | ✅ | 视频下载整理器拆散 BDMV/VIDEO_TS 原盘结构，盘按 m2ts 逐文件改名 |
 | [BUG-4244](bugs/BUG-4244-nyaa-trust-signals-ignored-by-ranking.md) | ✅ | ✅ | 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序 |
 | [BUG-4243](bugs/BUG-4243-resource-search-misses-best-batches.md) | ✅ | ✅ | 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划 |
 | [BUG-4242](bugs/BUG-4242-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |

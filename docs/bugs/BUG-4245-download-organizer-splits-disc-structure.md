@@ -1,6 +1,18 @@
 ## BUG-4245 · 视频下载整理器拆散 BDMV/VIDEO_TS 原盘结构，盘按 m2ts 逐文件改名
-- **报告**：2026-11-08（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
+- **报告**：2026-11-08（用户：下载 BanG Dream / MyGO 蓝光原盘后盘被拆坏）
+- **真实性**：✅ 真 bug。根因（修前 `12aff9770d`）：
+  - `packages/fushi_engine/lib/media/video/download/video_download_organizer.dart:192-194` 只按视频扩展名（`_isVideo`，:711-725 含 `.m2ts`、不含 `.vob` / `.iso`）挑文件，原盘里的每个 `.m2ts` 都当散装视频走解集号 / 抬正片 / 并列正片 / Extras 镜像（:251-315、:344-431）；`index.bdmv` / `.mpls` / `.clpi` / `CERTIFICATE` 不在计划里，`organize()` :570 `moveStorage` 整颗搬走后它们留在原相对路径，`.m2ts` 被改名搬进 `<作品>/`——盘被拆成两半，再也读不出来。
+  - 实测形态：TV 任务 + 多卷 BDMV → `parseVideoFilename('00001.m2ts')` 无集号、`_singleStandaloneFeature` 为 null → :307 抛 `unable to determine episode number`（needsAttention）；电影任务 → 最大 m2ts 改名成 `<标题>/<标题>.m2ts`，其余大 m2ts 当并列正片各自入库；`VIDEO_TS` 与单个 `.iso` → `torrent has no supported video files`；BDMV + `Extra/xx - 01.mkv` → :261-273 第二趟（不分特典）把真特典改名成 S01E01。
+  - 下游同病：`video_download_pipeline_service.dart` 「下载时跳过特典」逐文件判（特典目录里的盘被跳一半），入库只认 `kind == 'video'` 行逐文件建条目；`video_source_work_planner.dart:120-131` 把集号解不出的成员（`00001.mpls`）各拆成一部作品，下载任务的确认身份绑不回任何一部。
+- **[x] ① 已修复**（用户拍板方案 (a)：下载的一张盘 = 一部作品）—
+  - `a05ee5ec31` 整理器先认盘（新 `video_download_disc_payload.dart`，判据复用扫描器 `planBlurayDiscRoots` / `planDvdDiscRoots` + `.iso`），盘内文件整盘平移到 `<作品>/<盘根相对路径（剥发布根）>`、结构与文件名一字不改，不进解集号 / 抬正片 / Extras；有盘时不改判 kind、不硬失败；第二趟旧口径只在「全是特典且没有盘」时跑；跳过特典与手动选择按整盘判（`videoDownloadSkippableExtraIndexes` / `expandDownloadSelectionToWholeDiscs`）。
+  - `aaa5da5801` 扫描器的 `_importBlurayDiscs` / `_importDvdDiscs` 核心搬进引擎 `DiscLibraryImporter`（`disc/disc_library_import.dart`），扫描器与下载流水线共用同一份，建出的盘合集逐字节一致。
+  - `00da10c14f` 流水线：盘内文件行 `kind: 'other'`（不改 schema，盘由路径确证，`videoDownloadJobDiscs`）；字幕阶段只有盘时直接进入库；入库按盘走 `DiscLibraryImporter`（BD 镜像 / 选不出标题的盘「已落位、未入库」完成，IFO 损坏的 DVD 显式 needsAttention）；刮削按 `downloadJobWorks`（散装那一部 + 每张非特典盘的盘作品，多卷每卷一部）承接确认身份；`VideoSourceWorkPlanner` 把盘合集整体当一部作品、成员按合集顺序（盘上标题序；`f8f9ea4ad9`：特典剔除后只剩正片的电影盘仍是书作品，特典照旧挂在它下面）；任务删除按 `discMemberBackingFilePath` 连带删盘标题库行；库内补刮的身份查询带上盘行（`getPlacedDiscVideoDownloadJobFiles`）；app 经 `onDiscCollectionImported` 补盘面图（与扫描器同一个 `applyBlurayDiscCollectionArtwork`）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/video/download/video_download_organizer_disc_test.dart`（多卷 TV / 电影、单盘与顶层 BDMV、VIDEO_TS 与 .iso、BDMV + mkv 混合、特典目录里的盘、整盘跳过特典、选择扩成整盘、认盘判据）
+  - `fushi/test/media/video/download/video_download_pipeline_service_test.dart` 组「原盘下载整盘落位…（BUG-4245）」：真实可读的两卷盘走 organize → import → scrape，断言整盘平移、每卷一个 `.mpls` 成员的盘合集、刮削承接两卷盘作品、崩溃重放幂等
+  - `packages/fushi_engine/test/media/video/disc/disc_library_import_test.dart`（合集形状、幂等、墓碑、读不出的盘，`92a870e97e`）
 - **备注**：
+  - 多卷决策：每卷保持「一张盘一个盘合集」（与扫描器同形，重扫不会对出第二份合集），确认身份同时承接各卷盘作品；卷序由 `compareDvdDiscOrder`（DVD）/ 盘根路径（BD）决定。盘作品内成员不按序号编集号（播放列表号不是集号，选片链也可能留下长特典），集级绑定留给资料源 / 人工。
+  - 修前已被拆散的旧任务：没有廉价的「重整理」路径（元数据文件留在种子原目录、媒体文件已改名搬走，需要逐任务反向改名），未做迁移；受影响用户需删除任务后重新下载。
+  - 后端没有统一的「整目录改名」接口（`TorrentBackend` 只有逐文件 `renameFile`），整盘平移仍是逐文件改名 + 一次 `moveStorage`。
