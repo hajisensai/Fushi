@@ -12,6 +12,12 @@
 ///   管理员能力）、AnkiWeb 登录登出与资源索引器 / AI 提供商 / qBittorrent 等带凭据的
 ///   设置、监听地址 / 端口 / TLS 这类要重启的设置、上传、互联代调、配置方案寄存、日志
 ///   （可能含路径与令牌片段）。不追求与 app 的操作一一对应。
+/// - 复习（SRS，`/api/admin/srs*`）只描述状态 / profile 列表 / 立即同步 / 制卡落点 /
+///   每份的制卡牌组 / 翻日时刻兜底。**不描述**：AnkiConnect 整块（开关、监听地址、
+///   端口、共用 key 与每份 key、CORS——凭据 + 监听设置；状态回包里也收窄到开没开 /
+///   在不在监听 / 最近错误，见 [srsAgentView]）；选提供哪几份 profile、默认那份
+///   （spec `2026-11-05-server-srs-design.md` §9：选哪几份复习库给互联设备用是所有者
+///   的决定，不经已配对设备的 AI 会话改）。
 library;
 
 import 'dart:convert';
@@ -104,16 +110,24 @@ const List<String> kServerAgentSettingKeys = <String>[
 ];
 
 /// 把一次 [CtlCall] 原样转给 admin API。[gated] = 不可逆操作：body 里的 `confirm`
-/// 必须是 true（运行时只在用户点了确认卡片后注入），转发前剥掉。
+/// 必须是 true（运行时只在用户点了确认卡片后注入），转发前剥掉。[view] = 回给模型
+/// 之前把结果收窄（如 [srsAgentView]）。
 CtlRouteHandler _forward(
   AdminDispatch Function() dispatch, {
   bool gated = false,
+  Object? Function(Object? result)? view,
 }) => (CtlCall call) async {
   final Map<String, Object?> body = Map<String, Object?>.of(call.body);
   if (gated && body.remove(kServerOpConfirmGate) != true) {
     throw const CtlFailure.rejected('confirmation_required');
   }
-  return adminCall(dispatch(), call.method, call.path, body: body);
+  final Object? result = await adminCall(
+    dispatch(),
+    call.method,
+    call.path,
+    body: body,
+  );
+  return view == null ? result : view(result);
 };
 
 /// 进程内调一次 admin API，回 JSON；>= 400 抛 [CtlFailure]（短码按状态码，消息取
@@ -227,6 +241,68 @@ Future<Map<String, Object?>?> _library(
 
 String _enc(Object? id) => Uri.encodeComponent('$id');
 
+/// 复习（SRS）admin 端点。
+const String _kSrsPath = '/api/admin/srs';
+
+/// `GET /api/admin/srs` / `PUT` / `sync` 的回包收窄给模型：`ankiConnect` 段只留开没开、
+/// 在不在监听、最近的错误；地址 / 端口 / CORS / 「key 设没设」都不给（AnkiConnect
+/// 设置整块不描述，见文件头）。
+Object? srsAgentView(Object? result) {
+  if (result is! Map) return result;
+  final Map<String, Object?> out = Map<String, Object?>.from(result);
+  final Object? ac = out['ankiConnect'];
+  if (ac is Map) {
+    out['ankiConnect'] = <String, Object?>{
+      'enabled': ac['enabled'] == true,
+      'listening': ac['listening'] == true,
+      'lastError': ac['lastError'],
+    };
+  }
+  return out;
+}
+
+/// 当前复习配置（`GET /api/admin/srs` 的 `config` 段：profiles / defaultProfile /
+/// rolloverHour / miningTarget / miningDecks）。
+Future<Map<String, Object?>> _srsConfig(AdminDispatch dispatch) async {
+  final Object? config = (await _getMap(dispatch, _kSrsPath))['config'];
+  return config is Map
+      ? Map<String, Object?>.from(config)
+      : <String, Object?>{};
+}
+
+/// 一份 profile 当前的制卡牌组名（没设 = 空串 = 内置默认牌组）。
+String _srsDeckOf(Map<String, Object?> config, String uid) {
+  final Object? decks = config['miningDecks'];
+  final Object? deck = decks is Map ? decks[uid] : null;
+  return deck is String ? deck : '';
+}
+
+/// 只改 [uid] 那一份的制卡牌组：`PUT /api/admin/srs` 的 `miningDecks` 是整份替换，
+/// 所以先读当前整份、只动这一项再写回，别的 profile 的牌组原样带上。空串 = 删掉
+/// 这一项（回到内置默认牌组）。
+Future<Object?> _srsSetDeck(
+  AdminDispatch dispatch,
+  Map<String, Object?> config,
+  String uid,
+  String deck,
+) {
+  final Object? raw = config['miningDecks'];
+  final Map<String, Object?> decks = raw is Map
+      ? Map<String, Object?>.from(raw)
+      : <String, Object?>{};
+  if (deck.isEmpty) {
+    decks.remove(uid);
+  } else {
+    decks[uid] = deck;
+  }
+  return adminCall(
+    dispatch,
+    'PUT',
+    _kSrsPath,
+    body: <String, Object?>{'miningDecks': decks},
+  );
+}
+
 /// 服务端操作目录的描述 + 路由（路由 handler 全是 [_forward]）。
 ({List<CtlRoute> routes, List<OpDescription> descriptions}) buildServerAdminOps(
   AdminDispatch Function() dispatch,
@@ -274,6 +350,7 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
     String summary, {
     List<OpParam> params = const <OpParam>[],
     bool longRunning = false,
+    Object? Function(Object? result)? view,
   }) => op(
     OpDescription(
       id: id,
@@ -284,6 +361,7 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
       longRunning: longRunning,
       params: <OpParam>[...params, _confirmGate],
     ),
+    handler: view == null ? null : _forward(dispatch, gated: true, view: view),
     gated: true,
   );
 
@@ -345,6 +423,21 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
     'server.anki.status',
     '/api/admin/anki',
     'Anki landing status: account, sync state, pending / failed mined cards, deck and note type settings.',
+  );
+  op(
+    const OpDescription(
+      id: 'server.srs.status',
+      method: 'GET',
+      pattern: _kSrsPath,
+      summary:
+          'Fushi review (SRS) on the server: served profiles (name, note count, state, last sync, last error, which is the default), whether the scheduler runs, the review config (served profile uids, default profile, rollover hour, mining target, mining deck per profile) and whether the AnkiConnect listener is on and listening.',
+    ),
+    handler: _forward(dispatch, view: srsAgentView),
+  );
+  read(
+    'server.srs.profiles',
+    '$_kSrsPath/profiles',
+    'List the Fushi review (SRS) profiles found in the sync folder (uid, name, devices, note count, last update) and whether the server serves each one. Served profiles that vanished from the sync folder are listed with missing: true.',
   );
 
   // ── 可撤销的写 ─────────────────────────────────────────────────────
@@ -922,6 +1015,157 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
     ),
   );
 
+  // 复习（SRS）配置：三条都落在同一个 `PUT /api/admin/srs` 上（admin API 只改给了的
+  // 字段），共用一个路由 handler，按参数分流——`deck` 只有 mining-deck.set 有，它要
+  // 读改写 `miningDecks`；其余两条的参数原样转发。选提供哪几份 profile / 默认那份、
+  // AnkiConnect 不在这里（见文件头「不描述」）。
+  Future<Object?> srsPut(CtlCall call) async {
+    final Map<String, Object?> body = Map<String, Object?>.of(call.body);
+    if (body.containsKey('deck')) {
+      final String uid = '${body['profile'] ?? ''}';
+      final Map<String, Object?> config = await _srsConfig(dispatch());
+      final Object? served = config['profiles'];
+      if (served is! List || !served.contains(uid)) {
+        throw CtlFailure.notFound('profile_not_served: $uid');
+      }
+      return srsAgentView(
+        await _srsSetDeck(
+          dispatch(),
+          config,
+          uid,
+          '${body['deck'] ?? ''}'.trim(),
+        ),
+      );
+    }
+    return srsAgentView(
+      await adminCall(dispatch(), 'PUT', _kSrsPath, body: body),
+    );
+  }
+
+  /// 单个标量配置（miningTarget / rolloverHour）的撤销：执行前记旧值，撤销时当前值
+  /// 已不是这次写进去的就报 superseded。
+  OpUndo srsScalarUndo(String key) => OpUndo(
+    capture: (CtlCall call) async => <String, Object?>{
+      'old': (await _srsConfig(dispatch()))[key],
+    },
+    record: (CtlCall call, Map<String, Object?> before, Object? result) =>
+        OpUndoRecord(
+          payload: <String, Object?>{
+            'old': before['old'],
+            'new': call.body[key],
+          },
+          before: '${before['old']}',
+          after: '${call.body[key]}',
+        ),
+    revert: (Map<String, Object?> payload) async {
+      final Object? current = (await _srsConfig(dispatch()))[key];
+      if (current != payload['new']) return const OpUndoOutcome.superseded();
+      if (payload['old'] != null && payload['old'] != current) {
+        await adminCall(
+          dispatch(),
+          'PUT',
+          _kSrsPath,
+          body: <String, Object?>{key: payload['old']},
+        );
+      }
+      return const OpUndoOutcome.done();
+    },
+  );
+
+  op(
+    OpDescription(
+      id: 'server.srs.mining-target.set',
+      method: 'PUT',
+      pattern: _kSrsPath,
+      summary:
+          'Choose where cards mined on paired devices land on the server: auto (Fushi review when profiles are served and Anki landing is off, otherwise Anki), review (the Fushi review collection) or anki (the server Anki collection). Undo restores the previous choice.',
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'miningTarget',
+          description: 'auto, review or anki.',
+          required: true,
+          enumValues: <String>['auto', 'review', 'anki'],
+        ),
+      ],
+      undo: srsScalarUndo('miningTarget'),
+    ),
+    handler: srsPut,
+  );
+  op(
+    OpDescription(
+      id: 'server.srs.mining-deck.set',
+      method: 'PUT',
+      pattern: _kSrsPath,
+      summary:
+          "Set the deck that cards mined into one served Fushi review profile go to (other profiles' decks are kept). An empty deck name means the built-in default deck. Undo restores the previous deck.",
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'profile',
+          description: 'Uid of a served profile (from server.srs.status).',
+          required: true,
+        ),
+        OpParam.string(
+          'deck',
+          description:
+              'Full deck name; empty string = the built-in default deck.',
+          required: true,
+        ),
+      ],
+      undo: OpUndo(
+        capture: (CtlCall call) async {
+          final String uid = '${call.body['profile'] ?? ''}';
+          return <String, Object?>{
+            'profile': uid,
+            'old': _srsDeckOf(await _srsConfig(dispatch()), uid),
+          };
+        },
+        record: (CtlCall call, Map<String, Object?> before, Object? result) {
+          final String next = '${call.body['deck'] ?? ''}'.trim();
+          return OpUndoRecord(
+            payload: <String, Object?>{...before, 'new': next},
+            before: '${before['old']}',
+            after: next,
+          );
+        },
+        revert: (Map<String, Object?> payload) async {
+          final String uid = '${payload['profile']}';
+          final Map<String, Object?> config = await _srsConfig(dispatch());
+          final String current = _srsDeckOf(config, uid);
+          if (current != '${payload['new'] ?? ''}') {
+            return const OpUndoOutcome.superseded();
+          }
+          final String old = '${payload['old'] ?? ''}';
+          if (old != current) {
+            await _srsSetDeck(dispatch(), config, uid, old);
+          }
+          return const OpUndoOutcome.done();
+        },
+      ),
+    ),
+    addRoute: false,
+  );
+  op(
+    OpDescription(
+      id: 'server.srs.rollover-hour.set',
+      method: 'PUT',
+      pattern: _kSrsPath,
+      summary:
+          'Set the fallback hour (0-23) at which the Fushi review day rolls over on the server, used only for profiles whose own review settings carry no rollover hour. Undo restores the previous hour.',
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.integer(
+          'rolloverHour',
+          description: 'Hour of day, 0-23.',
+          required: true,
+        ),
+      ],
+      undo: srsScalarUndo('rolloverHour'),
+    ),
+    addRoute: false,
+  );
+
   // ── 不可逆（用户在确认卡片上点了才跑）──────────────────────────────
   irreversible(
     'server.scan',
@@ -996,6 +1240,20 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
     'POST',
     '/api/admin/anki/sync',
     'Sync the server Anki collection with AnkiWeb now.',
+  );
+  irreversible(
+    'server.srs.sync',
+    'POST',
+    '$_kSrsPath/sync',
+    'Sync the Fushi review (SRS) profiles the server serves with the sync folder now (merges review history both ways). Returns the review status afterwards.',
+    params: const <OpParam>[
+      OpParam.string(
+        'profile',
+        description:
+            'Uid of one served profile (from server.srs.status) to sync only that one; omit to sync all.',
+      ),
+    ],
+    view: srsAgentView,
   );
   irreversible(
     'server.model.pull',

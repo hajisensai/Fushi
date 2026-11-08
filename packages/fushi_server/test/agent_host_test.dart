@@ -137,9 +137,14 @@ void main() {
     final ({List<CtlRoute> routes, List<OpDescription> descriptions}) ops =
         buildServerAdminOps(() => admin.handle);
     final OpCatalog catalog = OpCatalog.build(ops.routes, ops.descriptions);
-    final String adminSource = File(
-      'lib/src/admin/admin_api.dart',
-    ).readAsStringSync();
+    // admin_srs.dart 的分支写成 `kAdminSrsPath`：展开成字面量再一起比对。
+    final String adminSource = <String>[
+      File('lib/src/admin/admin_api.dart').readAsStringSync(),
+      File('lib/src/admin/admin_srs.dart')
+          .readAsStringSync()
+          .replaceAll(r"'$kAdminSrsPath", "'/api/admin/srs")
+          .replaceAll('kAdminSrsPath', "'/api/admin/srs'"),
+    ].join('\n');
 
     test('id 唯一、点分小写、不含 __、server. 前缀、说明非空', () {
       final RegExp shape = RegExp(r'^[a-z][a-z0-9]*(\.[a-z][a-z0-9-]*)+$');
@@ -227,7 +232,7 @@ void main() {
           '/resource-indexers',
           '/upload',
           '/host/',
-          '/profiles',
+          '/api/admin/profiles',
           '/logs',
         ]) {
           expect(op.route.pattern.contains(banned), isFalse, reason: op.id);
@@ -235,7 +240,7 @@ void main() {
         for (final OpParam p in op.params) {
           expect(
             RegExp(
-              r'(api_?key|token|secret|password|port|bind|tls)',
+              r'(api_?key|token|secret|password|port|bind|tls|ankiconnect|cors)',
               caseSensitive: false,
             ).hasMatch(p.name),
             isFalse,

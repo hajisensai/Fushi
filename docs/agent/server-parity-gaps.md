@@ -78,8 +78,12 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
-  - The server op catalog (`admin_ops.dart`) has no SRS entries. The AnkiConnect keys are
-    credentials, the same reason the AnkiWeb settings are left out.
+  - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
+    `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
+    `.rollover-hour.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
+    credentials, bind / port are listen settings; the status the AI sees is cut down to
+    enabled / listening / last error), and choosing which profiles are served or the default
+    one (spec §9: an owner decision, not something a paired device's AI session changes).
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
   live in `fushi/lib/src/sync/`, not in the engine. The server only has read-only Plex
   browsing (`media-server plex`). It cannot register a media server as a library source.

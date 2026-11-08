@@ -281,7 +281,7 @@ Size: L (a bit larger than backup + self-update combined, because of several pro
   - `config/server_config.dart`: `srs`, `ankiconnect`;
   - `admin/admin_api.dart` and `admin/web_ui.dart`: 复习 card;
   - `ctl/ctl_commands.dart`;
-  - `admin/admin_ops.dart`: describe `srs status/profiles` read-only for the AI tool set; keep `add`/`remove`/`default`/`off` out of it, because choosing collections is an owner decision;
+  - `admin/admin_ops.dart`: describe `srs status/profiles` read-only for the AI tool set; keep `add`/`remove`/`default`/`off` out of it, because choosing collections is an owner decision. Added later: `server.srs.sync` (irreversible, user confirms) and undoable `mining-target.set` / `mining-deck.set` / `rollover-hour.set`; AnkiConnect settings stay out;
   - `remote_mining_host.dart`: §4.8 dispatch;
   - `backup/server_backup.dart`: §4.7, only once #2944 is merged;
   - `README.md`.
