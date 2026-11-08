@@ -169,6 +169,7 @@ class RemoteMiningResolution {
 ///   profile 有意义（退了就不沿用）；
 /// - 只带 `{profile}`（手机自己的 uid，即「主机默认」）而主机没有那份不算退回；点名了类别或牌组才算。
 ///
+/// - 点名的类别 / profile 主机给不了（拍板 2026-11-08）同样**整个**退回真正的主机默认，不保留所点的类别。
 /// - 显式点名的牌组主机那一处没有（被删 / 改名）：**整个**退回真正的主机默认（与不带 `target` 同一落点，
 ///   不是那份 profile 自己的默认牌组），报退回——卡、转发与查重都落在手机随后会用的同一个地方（拍板
 ///   2026-11-08：此前卡进了点名 profile 的默认牌组，手机却已退回主机默认，那张卡查重看不见）。
@@ -195,23 +196,31 @@ Future<RemoteMiningResolution?> resolveRemoteMiningTarget(
         servesReviewProfile: servesReviewProfile,
         configuredReviewDeck: configuredReviewDeck,
       );
+  // 主机默认 = 不带 target 的落点。显式选择里的 profile 是所选那份、不是手机自己的 uid，所以这里拿不到
+  // 「手机同名 profile」；手机重置后改发只带自己 uid 的请求，从下一张起落回那份。
+  Future<RemoteMiningResolution?> hostDefault() async {
+    final RemoteMiningResolution? def = resolve(null);
+    return def == null
+        ? null
+        : RemoteMiningResolution(
+            kind: def.kind,
+            profile: def.profile,
+            deck: def.deck,
+            fellBack: true,
+          );
+  }
+
   final RemoteMiningResolution? to = resolve(target);
+  if (to == null) return null;
+  // 点名的类别 / profile 主机给不了：整个退回主机默认（拍板 2026-11-08，与牌组被删同一口径）。
+  if (to.fellBack) return hostDefault();
   final String? asked = target?.deck;
-  // 只查点名的、确实被带进落点的牌组（退了类别 / profile 时牌组已经丢掉）。
-  if (to == null || asked == null || to.deck != asked) return to;
+  // 只查点名的、确实被带进落点的牌组。
+  if (asked == null || to.deck != asked) return to;
   final bool exists = to.kind == kRemoteMiningKindAnki
       ? await ankiDeckExists?.call(asked) ?? true
       : await reviewDeckExists?.call(to.profile!, asked) ?? true;
-  if (exists) return to;
-  final RemoteMiningResolution? def = resolve(null);
-  return def == null
-      ? null
-      : RemoteMiningResolution(
-          kind: def.kind,
-          profile: def.profile,
-          deck: def.deck,
-          fellBack: true,
-        );
+  return exists ? to : hostDefault();
 }
 
 RemoteMiningResolution? _resolveRemoteMiningTarget(

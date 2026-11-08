@@ -446,7 +446,7 @@ void main() {
       );
     });
 
-    test('点名的配置主机没有复习：落激活配置复习并报 targetUnavailable', () async {
+    test('点名的配置主机没有：整个退回主机默认（这里是 Anki）并报 targetUnavailable', () async {
       final Map<String, dynamic> out = await buildRemoteMineResponse(
         _mineBody(
           '馬',
@@ -460,9 +460,14 @@ void main() {
         mining: service(),
       );
 
+      // 拍板 2026-11-08：不保留所点的复习类别，落主机默认。
       expect(out['targetUnavailable'], isTrue);
-      expect((out['landed'] as Map<String, Object?>)['profile'], _uidA);
-      expect(await hasTerm(_uidA, '馬', 'うま'), isTrue);
+      expect(
+        (out['landed'] as Map<String, Object?>)['kind'],
+        kRemoteMiningKindAnki,
+      );
+      expect(anki.minedPayloads, hasLength(1));
+      expect(await hasTerm(_uidA, '馬', 'うま'), isFalse);
       expect(await hasTerm(_uidB, '馬', 'うま'), isFalse);
     });
 

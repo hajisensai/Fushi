@@ -147,7 +147,8 @@ void main() {
       );
     });
 
-    test('显式点名的 profile 主机没有：落默认 profile、不沿用牌组、报退回', () async {
+    test('显式点名的 profile 主机没有：整个退回主机默认（不保留所点的类别）、报退回', () async {
+      // 主机默认是 Anki：所点的复习类别不保留（拍板 2026-11-08）。
       expect(
         await _resolve(
           const RemoteMiningTarget(
@@ -155,6 +156,21 @@ void main() {
             profile: 'gone',
             deck: 'Core',
           ),
+        ),
+        const RemoteMiningResolution(
+          kind: kRemoteMiningKindAnki,
+          fellBack: true,
+        ),
+      );
+      // 主机默认是复习：落默认 profile，不沿用别人那份的牌组名。
+      expect(
+        await _resolve(
+          const RemoteMiningTarget(
+            kind: kRemoteMiningKindReview,
+            profile: 'gone',
+            deck: 'Core',
+          ),
+          defaultKind: kRemoteMiningKindReview,
         ),
         const RemoteMiningResolution(
           kind: kRemoteMiningKindReview,
