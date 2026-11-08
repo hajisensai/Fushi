@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.24681",
-  "tag": "v3.3.0-debug.24681+e25f5ea",
+  "version": "3.3.0-debug.24736",
+  "tag": "v3.3.0-debug.24736+cfe2f8b",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 24681,
-  "notes": "Automated release-signed debug-channel build from develop @ e25f5ea. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 24736,
+  "notes": "Automated desktop debug-channel build from develop @ cfe2f8b. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.24651-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "03306da82640af9c438668c46b613f9a056642477967823caffb2355447c4b63"
     },
     {
-      "name": "fushi-3.3.0-debug.24651-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.24651-windows-setup.exe",
-      "releaseSequence": 24651,
-      "tag": "v3.3.0-debug.24651+61a4ae2",
-      "version": "3.3.0-debug.24651",
-      "size": 296381864,
-      "sha256": "f2b36a16954de928109f45b9fede9c0459f30e4a54e1890dbffaa1efd1a6507d"
-    },
-    {
       "name": "fushi-3.3.0-debug.24681-e25f5ea-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.24681-e25f5ea-debug.apk",
       "releaseSequence": 24681,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.24681",
       "size": 268518021,
       "sha256": "4a62ce63535ea6aebd543e770b6b63c4dfc8e9c27a446823aca69f854a077fac"
+    },
+    {
+      "name": "fushi-3.3.0-debug.24736-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.24736-windows-setup.exe",
+      "releaseSequence": 24736,
+      "tag": "v3.3.0-debug.24736+cfe2f8b",
+      "version": "3.3.0-debug.24736",
+      "size": 296427496,
+      "sha256": "410d6770f823886da21cc25a16a071ecb299e24e176fae851163689cd6f1a425"
     }
   ]
 }
