@@ -37,13 +37,15 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     DictMediaByteLoader? dictMediaLoader,
     LocalFileByteLoader? fileByteLoader,
     RemoteMiningAuthReporter? onAuthRejected,
+    String Function()? targetResetNotice,
   }) : _local = local,
        _client = client,
        _payloadBuilder = ForwardedMinePayloadBuilder(
          dictMediaLoader: dictMediaLoader,
          fileByteLoader: fileByteLoader,
        ),
-       _onAuthRejected = onAuthRejected;
+       _onAuthRejected = onAuthRejected,
+       _targetResetNotice = targetResetNotice;
 
   /// 主机拒绝互联 token 时给用户看的话。制卡失败与查重失败共用同一句，
   /// 因为它们是同一个 token 被同一台主机拒绝。
@@ -61,6 +63,10 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   final RemoteMineSender _client;
   final ForwardedMinePayloadBuilder _payloadBuilder;
   final RemoteMiningAuthReporter? _onAuthRejected;
+
+  /// 主机回 `targetUnavailable`（手机点名的落点它没有、卡落进了它的默认，客户端同时把「保存到」退回
+  /// 主机默认）时附在成功结果上的那句话（BUG-4244）。注入本地化文案，本类保持无 Flutter 依赖。
+  final String Function()? _targetResetNotice;
 
   /// 同一个 repository 实例只报一次「token 被拒」——查重是每次查词都跑的高频路径，
   /// 逐次弹 toast 会刷屏。provider 在开关/配对变化时会重建实例，届时自然重新提示。
@@ -137,6 +143,10 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       return MineOutcome.success(
         deckName: json['deckName'] as String?,
         audioWarning: message,
+        // 只有手机显式选过落点时主机才回 targetUnavailable，所以这句话总是成立。
+        notice: json['targetUnavailable'] == true
+            ? _targetResetNotice?.call()
+            : null,
       );
     }
     if (result == MineResult.duplicate.name) {
@@ -184,6 +194,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
         noteId: outcome.noteId,
         deckName: localDeckName,
         audioWarning: outcome.audioWarning,
+        notice: outcome.notice,
       );
     } catch (_) {
       return outcome;

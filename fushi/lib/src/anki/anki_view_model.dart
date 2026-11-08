@@ -758,10 +758,10 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
-    client: appModel.createRemoteMiningClient(
-      onTargetUnavailable: (_) =>
-          FushiToast.show(msg: t.anki_mine_to_server_target_reset),
-    ),
+    // 「保存到」被主机退回默认时的提示跟着制卡结果走（RemoteMiningAnkiRepository 填
+    // MineOutcome.notice）：单独弹一条会被紧随其后的结果提示顶掉（BUG-4244）。
+    client: appModel.createRemoteMiningClient(),
+    targetResetNotice: () => t.anki_mine_to_server_target_reset,
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
     // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
     onAuthRejected: (String message) =>

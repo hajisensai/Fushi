@@ -395,6 +395,46 @@ void main() {
       expect(o.deckName, 'HostDeck');
     });
 
+    test('BUG-4244: a reset save location rides on the success outcome, '
+        'and on the local deck-name fallback', () async {
+      Future<MineOutcome> mine(Map<String, dynamic> response) =>
+          RemoteMiningAnkiRepository(
+            local: _FakeLocalWithSettings(
+              AnkiSettings(
+                selectedDeckId: 1,
+                availableDecks: const <AnkiDeck>[
+                  AnkiDeck(id: 1, name: 'LocalDeck'),
+                ],
+              ),
+            ),
+            client: _FakeSender(response),
+            fileByteLoader: (String p) async => null,
+            dictMediaLoader: (String d, String p) => null,
+            targetResetNotice: () => 'Save to was reset.',
+          ).mineEntry(
+            rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '猫'}),
+            context: const AnkiMiningContext(sentence: ''),
+          );
+
+      final MineOutcome reset = await mine(<String, dynamic>{
+        'result': 'success',
+        'deckName': 'HostDeck',
+        'targetUnavailable': true,
+      });
+      expect(reset.notice, 'Save to was reset.');
+      final MineOutcome oldHost = await mine(<String, dynamic>{
+        'result': 'success',
+        'targetUnavailable': true,
+      });
+      expect(oldHost.deckName, 'LocalDeck');
+      expect(oldHost.notice, 'Save to was reset.');
+      final MineOutcome plain = await mine(<String, dynamic>{
+        'result': 'success',
+        'deckName': 'HostDeck',
+      });
+      expect(plain.notice, isNull);
+    });
+
     test('BUG-1549 旧主机不回传 deckName → 降级本地设置牌组名', () async {
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocalWithSettings(

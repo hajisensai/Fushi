@@ -1922,6 +1922,7 @@ class MineOutcome {
     this.noteId,
     this.deckName,
     this.audioWarning,
+    this.notice,
     this.errorDetail,
     this.errorCode,
     this.error,
@@ -1945,18 +1946,27 @@ class MineOutcome {
   /// 成功 toast 的「已添加到『…』」只认它——此前调用点事后用
   /// `loadSettings().selectedDeckName` 猜，旧存档/旧 Profile 快照只有 id 没有
   /// name 时（AnkiConnect 按 id 照样落卡成功）toast 显示空引号。
-  const MineOutcome.success({this.noteId, this.deckName, this.audioWarning})
-    : result = MineResult.success,
-      errorDetail = null,
-      errorCode = null,
-      error = null,
-      stackTrace = null;
+  ///
+  /// [notice]：随成功结果一起告诉用户的另一件事（已本地化的整句），例如「保存到」所选的落点
+  /// 主机已不再提供、卡落进了它的默认（BUG-4244）。它必须跟结果走同一条提示：单独再弹一条
+  /// 会被紧随其后的结果提示顶掉。
+  const MineOutcome.success({
+    this.noteId,
+    this.deckName,
+    this.audioWarning,
+    this.notice,
+  }) : result = MineResult.success,
+       errorDetail = null,
+       errorCode = null,
+       error = null,
+       stackTrace = null;
 
   const MineOutcome.duplicate()
     : result = MineResult.duplicate,
       noteId = null,
       deckName = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -1971,6 +1981,7 @@ class MineOutcome {
     : result = MineResult.queued,
       noteId = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -1981,6 +1992,7 @@ class MineOutcome {
       noteId = null,
       deckName = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -1999,6 +2011,7 @@ class MineOutcome {
        noteId = null,
        deckName = null,
        audioWarning = null,
+       notice = null,
        errorDetail = detail,
        errorCode = errorCode,
        error = error,
@@ -2022,6 +2035,9 @@ class MineOutcome {
   /// 主 app 据它在成功 toast 后追加「音频获取失败」提示。`null` = 音频本就没有或
   /// 下载成功（TODO-779）。
   final String? audioWarning;
+
+  /// 仅成功时可能非空：随结果一起提示的另一件事（见 [MineOutcome.success]）。
+  final String? notice;
 
   /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因（回退文案）。
   final String? errorDetail;

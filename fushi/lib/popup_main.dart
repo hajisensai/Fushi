@@ -91,9 +91,17 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// 坐标系）。非空时作为弹窗避让锚（超集，覆盖被查字）；为 null 时回退只避让被查字。
   Rect? _subtitlePhysical;
 
+  /// 弹窗词卡页的 navigator。交给 [FushiToast] 后，弹窗里的提示（制卡结果、「保存到」退回
+  /// 主机默认等）画成应用自己的通知胶囊；此前没有 overlay，退回系统原生 toast，Android 12+
+  /// 把文字 toast 截成两行（BUG-4244）。只给 toast 用，不复用 [AppModel.navigatorKey]——
+  /// 那把挂着主 app 的全局弹窗入口，弹窗进程里不该被它们够到。
+  final GlobalKey<NavigatorState> _toastNavigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   void initState() {
     super.initState();
+    FushiToast.navigatorKey = _toastNavigatorKey;
 
     PopupChannel.instance.init(
       onNewProcessText:
@@ -227,6 +235,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
 
     return TranslationProvider(
       child: MaterialApp(
+        navigatorKey: _toastNavigatorKey,
         debugShowCheckedModeBanner: false,
         builder: _buildWithSpacing,
         theme: appModel.overrideDictionaryTheme ?? appModel.theme,

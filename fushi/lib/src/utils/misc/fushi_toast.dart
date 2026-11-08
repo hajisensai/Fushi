@@ -28,8 +28,9 @@ export 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
 /// Must be assigned to the MaterialApp's navigatorKey.
 GlobalKey<NavigatorState>? _toastNavigatorKey;
 
-/// 全局短时通知。有主 app 的 navigator overlay 时（桌面与移动）自绘
-/// [_FushiToastView]；没有 overlay 的独立弹窗 Activity 降级为原生 Fluttertoast。
+/// 全局短时通知。有 navigator overlay 时（主 app 桌面与移动、Android 查词弹窗进程）自绘
+/// [_FushiToastView]；没装 [navigatorKey] 的入口降级为原生 Fluttertoast——Android 12+
+/// 的系统文字 toast 最多两行，长句会被截断（BUG-4244），所以有界面的入口都该装 key。
 abstract final class FushiToast {
   /// Assign the app's navigator key so toasts can find the overlay.
   static set navigatorKey(GlobalKey<NavigatorState> key) =>

@@ -695,17 +695,23 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
           : t.card_exported(deck: deckName);
       final bool hasAudioWarning =
           audioWarning != null && audioWarning.isNotEmpty;
-      final String message = hasAudioWarning
-          ? '$baseMessage ${t.card_exported_audio_failed(reason: audioWarning)}'
-          : baseMessage;
+      // BUG-4244：结果附带的另一件事（如「保存到」被退回主机默认）接在同一条提示后面——单独弹会被
+      // 这条结果提示顶掉。
+      final String? notice = outcome.notice;
+      final bool hasNotice = notice != null && notice.isNotEmpty;
+      final String message = <String>[
+        baseMessage,
+        if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
+        if (hasNotice) notice,
+      ].join(' ');
       return (
         message: message,
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
         // 新制是绿色 added，覆盖已有卡是紫色 overwritten（此前两者同绿，用户分不出）。
-        // 带音频缺失提示的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
-        status: hasAudioWarning
+        // 带音频缺失提示 / 附带提醒的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
+        status: hasAudioWarning || hasNotice
             ? MineToastStatus.addedWithWarning
             : overwrite
             ? MineToastStatus.overwritten

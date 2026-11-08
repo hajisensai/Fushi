@@ -45,6 +45,26 @@ void main() {
       expect(r.message, isNot(t.card_exported(deck: 'Deck1')));
     });
 
+    test(
+      'BUG-4244 success + notice: one notice carries both, as a warning',
+      () {
+        final r = describeMineOutcome(
+          const MineOutcome.success(
+            deckName: 'Deck1',
+            notice: 'Save to was reset.',
+          ),
+        );
+        expect(r.success, isTrue);
+        expect(r.record, isTrue);
+        expect(
+          r.message,
+          '${t.card_exported(deck: 'Deck1')} Save to was reset.',
+        );
+        // 关掉「制卡成功提示」也要让用户知道落点变了。
+        expect(r.status, MineToastStatus.addedWithWarning);
+      },
+    );
+
     test('TODO-779 overwrite + audioWarning: 覆盖文案后追加音频失败提示', () {
       const reason = 'HTTP 500 for https://dict.example/a.mp3';
       final r = describeMineOutcome(
