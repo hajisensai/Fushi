@@ -2,7 +2,11 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-772 Task 3 源码守卫：DB probe-open 的 `busy_timeout` 必须先于 `journal_mode=WAL`。
+/// BUG-772 Task 3 源码守卫：DB probe-open 的 busy 超时必须先于 `journal_mode=WAL`。
+///
+/// BUG-4240 起 busy 超时由 `installWallClockBusyTimeout(db)`（按墙钟计时）提供，
+/// `applyPragmas` 里不许再出现 `PRAGMA busy_timeout`——它会覆盖该 handler，退回
+/// 按次数计时、在 Linux debug / 测试里被 SIGPROF 压成几十毫秒的内置实现。
 ///
 /// 与主 raster 根因并存的独立同步冻结隐患：视频硬崩（native UAF）留脏 `-wal`/`-shm`
 /// 时，`_openWithRecovery` Layer 0 的同步 probe-open（`sqlite3.open` + PRAGMA）里
@@ -11,7 +15,7 @@ import 'package:test/test.dart';
 ///
 /// `applyPragmas` 是 `_openWithRecovery` 内的局部函数，无法直接单测，故源码层钉死顺序。
 void main() {
-  test('applyPragmas 把 busy_timeout 置于 journal_mode=WAL 之前', () {
+  test('applyPragmas 把 busy 超时置于 journal_mode=WAL 之前', () {
     final String src = File(
       '../packages/fushi_core/lib/src/database/database.dart',
     ).readAsStringSync();
@@ -21,9 +25,15 @@ void main() {
     ).firstMatch(src);
     expect(body, isNotNull, reason: '找不到 applyPragmas 方法体');
     final String b = body!.group(1)!;
-    final int busyAt = b.indexOf('busy_timeout');
-    final int walAt = b.indexOf('journal_mode=WAL');
-    expect(busyAt, greaterThanOrEqualTo(0), reason: '必须设 busy_timeout');
+    final int busyAt = b.indexOf('installWallClockBusyTimeout(db)');
+    // 只认真正执行的语句，注释里提到的 journal_mode=WAL 不算。
+    final int walAt = b.indexOf("db.execute('PRAGMA journal_mode=WAL')");
+    expect(busyAt, greaterThanOrEqualTo(0), reason: '必须装按墙钟计时的 busy 超时');
+    expect(
+      b.contains('PRAGMA busy_timeout'),
+      isFalse,
+      reason: 'PRAGMA busy_timeout 会覆盖按墙钟计时的 busy handler（BUG-4240）',
+    );
     expect(walAt, greaterThanOrEqualTo(0), reason: '必须设 journal_mode=WAL');
     expect(
       busyAt,

@@ -48,4 +48,41 @@ void main() {
     );
     expect(await db.getPref('k'), 's:v');
   });
+
+  test('installWallClockBusyTimeout：锁一直不放时，等满墙钟超时才报 BUSY', () async {
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'busy_wall_clock_raw_',
+    );
+    addTearDown(() => cleanupTempDir(dir));
+    final String path = '${dir.path}/raw.db';
+    final sqlite3.Database holder = sqlite3.sqlite3.open(path);
+    addTearDown(holder.close);
+    holder.execute('PRAGMA journal_mode=WAL');
+    holder.execute('CREATE TABLE t (x INTEGER)');
+    final sqlite3.Database waiter = sqlite3.sqlite3.open(path);
+    addTearDown(waiter.close);
+    installWallClockBusyTimeout(
+      waiter,
+      timeout: const Duration(milliseconds: 300),
+    );
+
+    holder.execute('BEGIN IMMEDIATE');
+    final Stopwatch waited = Stopwatch()..start();
+    Object? error;
+    try {
+      waiter.execute('INSERT INTO t VALUES (1)');
+    } on sqlite3.SqliteException catch (e) {
+      error = e;
+    }
+    waited.stop();
+    holder.execute('COMMIT');
+
+    expect(error, isA<sqlite3.SqliteException>());
+    expect((error! as sqlite3.SqliteException).resultCode, 5);
+    // 按次数计时的内置实现在 Linux 测试进程里几十毫秒就放弃；这里必须等满。
+    expect(
+      waited.elapsed,
+      greaterThanOrEqualTo(const Duration(milliseconds: 300)),
+    );
+  });
 }

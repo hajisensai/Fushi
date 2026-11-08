@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3795 条。点号进各自文件。
+> 共 3796 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4240](bugs/BUG-4240-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
 | [BUG-4233](bugs/BUG-4233-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
 | [BUG-4232](bugs/BUG-4232-anki-source-link-mine-missing-original.md) | ✅ | ✅ | anki-source-link-mine-missing-original |
 | [BUG-4231](bugs/BUG-4231-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |

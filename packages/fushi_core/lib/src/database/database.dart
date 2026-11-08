@@ -28,6 +28,7 @@ import 'media_source_util.dart' show musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
+import 'sqlite_busy_timeout.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
@@ -289,10 +290,12 @@ Future<QueryExecutor> _openWithRecovery(
 }) async {
   final String path = dbFile.path;
   void applyPragmas(CommonDatabase db) {
-    // BUG-772：busy_timeout 前置，让下面的 journal_mode=WAL 切换本身也受 5s busy 超时
+    // BUG-772：busy 超时前置，让下面的 journal_mode=WAL 切换本身也受 5s busy 超时
     // 约束——视频硬崩留脏 -wal/-shm 时，probe-open 的 WAL 切换可能因锁争用长阻塞 UI
     // isolate（与主 raster 根因并存的独立同步冻结隐患）。
-    db.execute('PRAGMA busy_timeout = 5000');
+    // BUG-4240：不用 SQLite 内置的 busy_timeout pragma——它按调用次数算超时，Linux 上 VM
+    // profiler 的 SIGPROF 打断每次睡眠，5s 实际只剩几十毫秒；改装按墙钟计时的 handler。
+    installWallClockBusyTimeout(db);
     db.execute('PRAGMA journal_mode=WAL');
     db.execute('PRAGMA foreign_keys = ON');
   }
