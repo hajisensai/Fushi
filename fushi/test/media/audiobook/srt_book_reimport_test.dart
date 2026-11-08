@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 /// 用户报「有声书没办法重新导入 / 导入音频没用 / 导不了字幕文件」的写入侧回归。
 ///
