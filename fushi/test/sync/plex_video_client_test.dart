@@ -387,6 +387,53 @@ void main() {
       ]);
     });
 
+    // BUG-4243（VF5D4O_Tyx）：整季都没有集号时比较器全返回 0，List.sort 超过
+    // 32 个元素不稳定会打乱顺序；必须保住 PMS 原序。
+    test('集：超过 32 集都缺 index → 保持服务器原序（稳定排序）', () async {
+      final List<String> keys = <String>[
+        for (int i = 1; i <= 37; i++) 'ep-${i.toString().padLeft(2, '0')}',
+      ];
+      final PlexVideoClient c = PlexVideoClient(
+        api: PlexApi(
+          serverUrl: kServer,
+          token: kToken,
+          clientInfo: const PlexClientInfo(
+            clientIdentifier: 'client-uuid',
+            platform: 'Windows',
+          ),
+          client: MockClient(
+            (_) async => _mc(<String, Object?>{
+              'totalSize': keys.length,
+              'Metadata': <Object?>[
+                for (final String k in keys)
+                  <String, Object?>{
+                    'ratingKey': k,
+                    'type': 'episode',
+                    'title': k,
+                    'grandparentRatingKey': 'show-1',
+                    'grandparentTitle': 'Show A',
+                    'parentRatingKey': 'season-1',
+                    'parentIndex': 1,
+                  },
+              ],
+            }),
+          ),
+        ),
+        machineIdentifier: 'mid-1',
+        accountId: '42',
+        serverName: 'Home PMS',
+      );
+      final MediaServerPage page = await c.listEpisodes(
+        seriesId: 'show-1',
+        seasonId: 'season-1',
+      );
+      expect(
+        page.items.every((MediaServerItem e) => e.episodeNumber == null),
+        isTrue,
+      );
+      expect(page.items.map((MediaServerItem e) => e.id).toList(), keys);
+    });
+
     test('继续观看：新 hub 只留有断点的叶子', () async {
       final List<MediaServerItem> row = await _client(_FakePms()).listResume();
       expect(row.map((MediaServerItem i) => i.id), <String>['ep-5']);

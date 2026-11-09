@@ -19,6 +19,7 @@ void main() {
         MangaControlItem.spreadPreference,
         MangaControlItem.direction,
         MangaControlItem.quickSettings,
+        MangaControlItem.readAloud,
         MangaControlItem.ocrBoxes,
       ]);
       expect(d.itemsIn(MangaControlSlot.top), <MangaControlItem>[
@@ -101,6 +102,11 @@ void main() {
           MangaControlItem.chapters,
           MangaControlItem.pageGrid,
         ]),
+      );
+      // 加朗读键之前存下的布局：朗读键按出厂位置回填到底部工具栏。
+      expect(
+        decoded.itemsIn(MangaControlSlot.toolbar),
+        contains(MangaControlItem.readAloud),
       );
       final Set<MangaControlItem> all = <MangaControlItem>{
         for (final MangaControlSlot s in MangaControlSlot.values)
@@ -268,9 +274,10 @@ void main() {
         );
         final MangaChromePlan now = planMangaChrome(
           width: width,
-          // 旧版没有书签键，Material 下识别框是 FAB。
+          // 旧版没有书签键、朗读键，Material 下识别框是 FAB。
           groups: layoutGroups(<MangaControlItem>{
             MangaControlItem.bookmarks,
+            MangaControlItem.readAloud,
             MangaControlItem.ocrBoxes,
           }),
           hasFab: true,
