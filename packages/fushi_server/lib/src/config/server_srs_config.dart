@@ -17,6 +17,8 @@
 /// ```
 library;
 
+import 'package:fushi_server/src/server_language.dart';
+
 /// 互联制卡默认落到哪：[auto] = 选了复习库且没配 Anki 落地时进复习，否则进 Anki（老的 Anki 落地用户不变）。
 enum ServerMiningTarget {
   auto('auto'),
@@ -33,7 +35,10 @@ enum ServerMiningTarget {
     }
     if (raw == null || raw.isEmpty) return auto;
     throw FormatException(
-      'srs.mining_target 只能是 auto / anki / review，实际 "$raw"',
+      tr(
+        'srs.mining_target 只能是 auto / anki / review，实际 "$raw"',
+        'srs.mining_target must be auto / anki / review, got "$raw"',
+      ),
     );
   }
 }
@@ -51,7 +56,12 @@ class ServerSrsConfig {
     if (raw is! Map) return const ServerSrsConfig();
     final int hour = int.tryParse('${raw['rollover_hour'] ?? ''}') ?? 4;
     if (hour < 0 || hour > 23) {
-      throw FormatException('srs.rollover_hour 必须在 0–23，实际 $hour');
+      throw FormatException(
+        tr(
+          'srs.rollover_hour 必须在 0–23，实际 $hour',
+          'srs.rollover_hour must be 0-23, got $hour',
+        ),
+      );
     }
     return ServerSrsConfig(
       profiles: _strings(raw['profiles']),
@@ -122,7 +132,9 @@ class ServerAnkiConnectConfig {
     if (raw is! Map) return const ServerAnkiConnectConfig();
     final int port = int.tryParse('${raw['port'] ?? ''}') ?? 8765;
     if (port <= 0 || port > 65535) {
-      throw FormatException('ankiconnect.port 不合法：$port');
+      throw FormatException(
+        tr('ankiconnect.port 不合法：$port', 'Invalid ankiconnect.port: $port'),
+      );
     }
     final Object? enabled = raw['enabled'];
     return ServerAnkiConnectConfig(
@@ -160,8 +172,12 @@ class ServerAnkiConnectConfig {
   /// 不能起监听的原因（null = 可以起）：非回环却没有 key / key 重复。
   String? get startProblem {
     if (!isLoopback(bind) && !hasAnyKey) {
-      return 'ankiconnect.bind=$bind 不是本机地址，必须先设 api_key 或 profile_keys，'
-          '否则局域网里谁都能往复习库里加卡';
+      return tr(
+        'ankiconnect.bind=$bind 不是本机地址，必须先设 api_key 或 profile_keys，'
+            '否则局域网里谁都能往复习库里加卡',
+        'ankiconnect.bind=$bind is not a local address; set api_key or profile_keys first, '
+            'otherwise anyone on the LAN can add cards to the review library',
+      );
     }
     final List<String> keys = <String>[
       if (apiKey.isNotEmpty) apiKey,
@@ -169,7 +185,10 @@ class ServerAnkiConnectConfig {
         if (k.isNotEmpty) k,
     ];
     if (keys.toSet().length != keys.length) {
-      return 'ankiconnect 的 api_key / profile_keys 有重复的 key，没法分出是哪份 profile';
+      return tr(
+        'ankiconnect 的 api_key / profile_keys 有重复的 key，没法分出是哪份 profile',
+        'ankiconnect api_key / profile_keys contain duplicate keys, so the profile cannot be told apart',
+      );
     }
     return null;
   }

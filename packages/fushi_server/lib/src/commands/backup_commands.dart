@@ -14,6 +14,7 @@ import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
@@ -29,28 +30,56 @@ class BackupModule extends CliModule {
   @override
   void register(ArgParser parser) {
     parser.addCommand('backup')
-      ..addOption('out', abbr: 'o', help: 'create：输出文件路径（必填）')
+      ..addOption(
+        'out',
+        abbr: 'o',
+        help: tr('create：输出文件路径（必填）', 'create: output file path (required)'),
+      )
       ..addFlag(
         'documents',
         defaultsTo: true,
-        help: 'create：带上 documents/（书 / 封面 / 有声书 / 下载；--no-documents 只备份设置与状态）',
+        help: tr(
+          'create：带上 documents/（书 / 封面 / 有声书 / 下载；--no-documents 只备份设置与状态）',
+          'create: include documents/ (books / covers / audiobooks / downloads; --no-documents backs up only settings and state)',
+        ),
       )
-      ..addFlag('force', negatable: false, help: 'create：覆盖已存在的输出文件')
+      ..addFlag(
+        'force',
+        negatable: false,
+        help: tr(
+          'create：覆盖已存在的输出文件',
+          'create: overwrite an existing output file',
+        ),
+      )
       ..addFlag(
         'yes',
         negatable: false,
-        help: 'restore：确认用备份替换当前数据（旧数据挪到 <data_dir>.pre-restore-<时间>/）',
+        help: tr(
+          'restore：确认用备份替换当前数据（旧数据挪到 <data_dir>.pre-restore-<时间>/）',
+          'restore: confirm replacing the current data with the backup (old data is moved to <data_dir>.pre-restore-<time>/)',
+        ),
       )
-      ..addFlag('config', defaultsTo: true, help: 'restore：同时还原配置文件')
-      ..addFlag('json', negatable: false, help: '输出 JSON');
+      ..addFlag(
+        'config',
+        defaultsTo: true,
+        help: tr('restore：同时还原配置文件', 'restore: also restore the config file'),
+      )
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
   }
 
   @override
-  String get usage => '''
+  String get usage => tr(
+    '''
 backup create -o <file> [--no-documents] [--force] [--json]
     整机备份：数据库快照 + 配置 + 数据目录（serve 在跑时用 ctl backup create）
 backup restore <file> --yes [--no-config] [--json]
-    从备份还原（须先停服）；旧数据挪到 <data_dir>.pre-restore-<时间>/，不删除''';
+    从备份还原（须先停服）；旧数据挪到 <data_dir>.pre-restore-<时间>/，不删除''',
+    '''
+backup create -o <file> [--no-documents] [--force] [--json]
+    Full backup: database snapshot + config + data directory (use ctl backup create while serve is running)
+backup restore <file> --yes [--no-config] [--json]
+    Restore from a backup (stop the server first); old data is moved to <data_dir>.pre-restore-<time>/ and not deleted''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -64,7 +93,12 @@ backup restore <file> --yes [--no-config] [--json]
       case 'restore':
         return _restore(command, ctx, o, e);
       default:
-        e.writeln('用法: backup create -o <file> | backup restore <file> --yes');
+        e.writeln(
+          tr(
+            '用法: backup create -o <file> | backup restore <file> --yes',
+            'Usage: backup create -o <file> | backup restore <file> --yes',
+          ),
+        );
         return kExitUsage;
     }
   }
@@ -77,17 +111,32 @@ backup restore <file> --yes [--no-config] [--json]
   ) async {
     final String? outPath = command['out'] as String?;
     if (command.rest.length != 1 || outPath == null || outPath.isEmpty) {
-      e.writeln('用法: backup create -o <file> [--no-documents] [--force]');
+      e.writeln(
+        tr(
+          '用法: backup create -o <file> [--no-documents] [--force]',
+          'Usage: backup create -o <file> [--no-documents] [--force]',
+        ),
+      );
       return kExitUsage;
     }
     final File output = File(p.absolute(outPath));
     if (output.existsSync() && !(command['force'] as bool)) {
-      e.writeln('已存在: ${output.path}（加 --force 覆盖）');
+      e.writeln(
+        tr(
+          '已存在: ${output.path}（加 --force 覆盖）',
+          'Already exists: ${output.path} (add --force to overwrite)',
+        ),
+      );
       return kExitFailure;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
       if (p.isWithin(rt.config.dataDir, output.path)) {
-        e.writeln('输出文件不能放在数据目录里: ${output.path}');
+        e.writeln(
+          tr(
+            '输出文件不能放在数据目录里: ${output.path}',
+            'The output file cannot be inside the data directory: ${output.path}',
+          ),
+        );
         return kExitUsage;
       }
       final File written = await createServerBackup(
@@ -103,8 +152,18 @@ backup restore <file> --yes [--no-config] [--json]
           jsonEncode(<String, Object?>{'file': written.path, 'bytes': bytes}),
         );
       } else {
-        o.writeln('已备份 → ${written.path}（$bytes 字节）');
-        o.writeln('备份里有配置文件（admin_token / 凭据），请当密钥保管。');
+        o.writeln(
+          tr(
+            '已备份 → ${written.path}（$bytes 字节）',
+            'Backed up -> ${written.path} ($bytes bytes)',
+          ),
+        );
+        o.writeln(
+          tr(
+            '备份里有配置文件（admin_token / 凭据），请当密钥保管。',
+            'The backup contains the config file (admin_token / credentials); keep it as a secret.',
+          ),
+        );
       }
       return kExitOk;
     });
@@ -117,27 +176,49 @@ backup restore <file> --yes [--no-config] [--json]
     StringSink e,
   ) async {
     if (command.rest.length != 2) {
-      e.writeln('用法: backup restore <file> --yes [--no-config]');
+      e.writeln(
+        tr(
+          '用法: backup restore <file> --yes [--no-config]',
+          'Usage: backup restore <file> --yes [--no-config]',
+        ),
+      );
       return kExitUsage;
     }
     final File backup = File(p.absolute(command.rest[1]));
     if (!backup.existsSync()) {
-      e.writeln('找不到备份文件: ${backup.path}');
+      e.writeln(
+        tr('找不到备份文件: ${backup.path}', 'Backup file not found: ${backup.path}'),
+      );
       return kExitNoInput;
     }
     if (!(command['yes'] as bool)) {
-      e.writeln('还原会用备份替换当前数据目录与配置（旧的会挪到旁边保留）。确认无误后加 --yes 再跑。');
+      e.writeln(
+        tr(
+          '还原会用备份替换当前数据目录与配置（旧的会挪到旁边保留）。确认无误后加 --yes 再跑。',
+          'Restoring replaces the current data directory and config with the backup (the old ones are moved aside and kept). Re-run with --yes once you are sure.',
+        ),
+      );
       return kExitUsage;
     }
     if (!ctx.configFile.existsSync()) {
-      e.writeln('找不到配置文件 ${ctx.configFile.path}；先跑 fushi_server init');
+      e.writeln(
+        tr(
+          '找不到配置文件 ${ctx.configFile.path}；先跑 fushi_server init',
+          'Config file not found: ${ctx.configFile.path}; run fushi_server init first',
+        ),
+      );
       return kExitNoInput;
     }
     final ServerConfig config;
     try {
       config = await ServerConfig.load(ctx.configFile);
     } on FormatException catch (x) {
-      e.writeln('配置文件解析失败: ${x.message}');
+      e.writeln(
+        tr(
+          '配置文件解析失败: ${x.message}',
+          'Failed to parse the config file: ${x.message}',
+        ),
+      );
       return kExitDataError;
     }
     // 不走 withRuntime：那会打开数据库（还原期间库必须关着），只拿锁。
@@ -149,7 +230,12 @@ backup restore <file> --yes [--no-config] [--json]
         command: 'backup restore',
       );
     } on ServerDataLockedException catch (x) {
-      e.writeln('${x.describe()}\n还原前先停掉 serve。');
+      e.writeln(
+        tr(
+          '${x.describe()}\n还原前先停掉 serve。',
+          '${x.describe()}\nStop serve before restoring.',
+        ),
+      );
       return kExitConflict;
     }
     try {
@@ -169,20 +255,40 @@ backup restore <file> --yes [--no-config] [--json]
           }),
         );
       } else {
-        o.writeln('已还原（备份时间 ${r.manifest.createdAt.toLocal()}）。');
+        o.writeln(
+          tr(
+            '已还原（备份时间 ${r.manifest.createdAt.toLocal()}）。',
+            'Restored (backup time ${r.manifest.createdAt.toLocal()}).',
+          ),
+        );
         if (r.previousData != null) {
-          o.writeln('原数据保留在 ${r.previousData!.path}，确认无误后可删除。');
+          o.writeln(
+            tr(
+              '原数据保留在 ${r.previousData!.path}，确认无误后可删除。',
+              'The previous data is kept at ${r.previousData!.path}; delete it once you are sure.',
+            ),
+          );
         }
         if (r.previousConfig != null) {
-          o.writeln('原配置保留在 ${r.previousConfig!.path}。');
+          o.writeln(
+            tr(
+              '原配置保留在 ${r.previousConfig!.path}。',
+              'The previous config is kept at ${r.previousConfig!.path}.',
+            ),
+          );
         }
         if (!r.manifest.includesDocuments) {
-          o.writeln('这份备份不含 documents/：书 / 封面 / 下载需重新扫描或下载。');
+          o.writeln(
+            tr(
+              '这份备份不含 documents/：书 / 封面 / 下载需重新扫描或下载。',
+              'This backup does not contain documents/: books / covers / downloads need to be rescanned or downloaded again.',
+            ),
+          );
         }
       }
       return kExitOk;
     } on ServerBackupException catch (x) {
-      e.writeln('还原失败: ${x.message}');
+      e.writeln(tr('还原失败: ${x.message}', 'Restore failed: ${x.message}'));
       return kExitDataError;
     } finally {
       await lock.release();

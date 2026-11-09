@@ -28,6 +28,7 @@ import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/server_srs.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 落一张卡：未渲染的载荷 JSON + 制卡上下文 → 结果。
 typedef ServerMineCard =
@@ -37,8 +38,10 @@ typedef ServerMineCard =
     );
 
 /// 沉浸制卡在服务端不可用时回给对端的原因。
-const String kServerImmersionMiningUnsupported =
-    '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）';
+String get kServerImmersionMiningUnsupported => tr(
+  '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）',
+  'The server does not support immersive mining (screenshots / animations / sentence audio must be trimmed on the client and forwarded with "mine to server")',
+);
 
 /// 把一次 [MineOutcome] 映射成 wire 结果，失败写进服务端日志（与 app 的
 /// `remoteMineResultFromOutcome` 同一语义：error 带原因、success 带部分成功的音频警告与
@@ -343,7 +346,7 @@ class ServerRemoteMiningService
       return RemoteMineLanding(
         RemoteMineResult(
           result: MineResult.error.name,
-          message: '服务端制卡失败',
+          message: tr('服务端制卡失败', 'Server-side mining failed'),
           detail: '$e',
         ),
       );
