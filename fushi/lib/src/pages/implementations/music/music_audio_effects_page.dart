@@ -6,8 +6,10 @@
 /// 竖排预设 + 全部复位；右栏上方大号频响曲线（可直接拖曲线上的点）+ 竖向前级，下方音色
 /// （含限幅器）与声场两张卡。
 ///
-/// 数据只有一份：偏好 → [AppModel.musicAudioEffects]；本页拖动时持有草稿（曲线跟手），
-/// 停手 / 松手后经 [AppModel.setMusicAudioEffects] 写回并重新下发 mpv `af`。滤镜链与
+/// 数据只有一份：偏好 → [MusicAudioEffectsHost.musicAudioEffects]；本页拖动时持有草稿
+/// （曲线跟手），停手 / 松手后经 [MusicAudioEffectsHost.setMusicAudioEffects] 写回并重新
+/// 下发 mpv `af`。宿主只经窄接口 [MusicAudioEffectsHost] 注入（生产是 `AppModel`），本文件
+/// 不 import `AppModel` / 设置页，免得被拖进 `lib/` 的最大 import 环。滤镜链与
 /// bit-perfect 判据见 `music_audio_effects.dart`。MD3 / Apple 两套由 Adaptive* 行、
 /// [adaptiveSlider] / [adaptiveSwitch] / [FushiChoiceChip] 分派；块级错峰入场、按压缩放。
 library;
@@ -19,11 +21,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_audio_effects.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/music/music_audio_effects_host.dart';
 import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
-import 'package:fushi/src/settings/settings_schema_music.dart'
-    show buildMusicAudioEffectsDestination;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -42,16 +41,6 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable, kFushiSettingsHomeTwoPaneMinWidth;
-
-/// 推入独立的音效页（与设置里的子页同一个 destination）。
-Future<void> pushMusicAudioEffectsPage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext _) =>
-            const SettingsDetailPage.subPage(buildMusicAudioEffectsDestination),
-      ),
-    );
 
 /// 预设显示名。
 String musicEqPresetLabel(MusicEqPreset p) => switch (p) {
@@ -110,9 +99,9 @@ String musicBalanceLabel(double b) {
 }
 
 class MusicAudioEffectsBody extends StatefulWidget {
-  const MusicAudioEffectsBody({required this.appModel, super.key});
+  const MusicAudioEffectsBody({required this.host, super.key});
 
-  final AppModel appModel;
+  final MusicAudioEffectsHost host;
 
   @override
   State<MusicAudioEffectsBody> createState() => _MusicAudioEffectsBodyState();
@@ -128,18 +117,18 @@ mixin _EffectsEditing<W extends StatefulWidget> on State<W> {
   MusicEqPreset? _draftPreset;
   Timer? _commitTimer;
 
-  AppModel get _app;
+  MusicAudioEffectsHost get _app;
 
   @override
   void initState() {
     super.initState();
     _reload();
-    _app.prefsRepo.addListener(_onPrefs);
+    _app.musicAudioEffectsChanges.addListener(_onPrefs);
   }
 
   @override
   void dispose() {
-    _app.prefsRepo.removeListener(_onPrefs);
+    _app.musicAudioEffectsChanges.removeListener(_onPrefs);
     _flush();
     super.dispose();
   }
@@ -226,7 +215,7 @@ mixin _EffectsEditing<W extends StatefulWidget> on State<W> {
 class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
     with _EffectsEditing<MusicAudioEffectsBody> {
   @override
-  AppModel get _app => widget.appModel;
+  MusicAudioEffectsHost get _app => widget.host;
 
   @override
   Widget build(BuildContext context) {
@@ -316,7 +305,7 @@ class _MusicAudioEffectsBodyState extends State<MusicAudioEffectsBody>
   Widget _masterSection(BuildContext context) {
     final MusicAudioEffects fx = _view;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool unsupported = !_app.musicSession.engine.capabilities.signalPath;
+    final bool unsupported = !_app.musicAudioEffectsSupported;
     return AdaptiveSettingsSection(
       children: <Widget>[
         AdaptiveSettingsSwitchRow(
@@ -984,17 +973,17 @@ class MusicEqCurvePainter extends CustomPainter {
 /// 与音效页（设置里那一页）共用 [_EffectsEditing]，改动即时写回、即时下发。
 Future<void> showMusicAudioEffectsPanel(
   BuildContext context,
-  AppModel appModel,
+  MusicAudioEffectsHost host,
 ) => showMusicFloatingPanel(
   context: context,
   maxWidth: 920,
-  builder: (BuildContext _) => MusicAudioEffectsPanel(appModel: appModel),
+  builder: (BuildContext _) => MusicAudioEffectsPanel(host: host),
 );
 
 class MusicAudioEffectsPanel extends StatefulWidget {
-  const MusicAudioEffectsPanel({required this.appModel, super.key});
+  const MusicAudioEffectsPanel({required this.host, super.key});
 
-  final AppModel appModel;
+  final MusicAudioEffectsHost host;
 
   @override
   State<MusicAudioEffectsPanel> createState() => _MusicAudioEffectsPanelState();
@@ -1003,7 +992,7 @@ class MusicAudioEffectsPanel extends StatefulWidget {
 class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
     with _EffectsEditing<MusicAudioEffectsPanel> {
   @override
-  AppModel get _app => widget.appModel;
+  MusicAudioEffectsHost get _app => widget.host;
 
   @override
   Widget build(BuildContext context) {
@@ -1035,7 +1024,7 @@ class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
   Widget _header(BuildContext context) {
     final MusicAudioEffects fx = _view;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool unsupported = !_app.musicSession.engine.capabilities.signalPath;
+    final bool unsupported = !_app.musicAudioEffectsSupported;
     final String sub = unsupported
         ? t.music_effects_unsupported_backend
         : (fx.isActive

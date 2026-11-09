@@ -500,7 +500,7 @@ SettingsDestination buildMusicAudioEffectsDestination() => SettingsDestination(
   title: t.music_effects_title,
   icon: FushiIcons.barChart,
   sections: const <SettingsSection>[],
-  body: (SettingsContext c) => MusicAudioEffectsBody(appModel: c.appModel),
+  body: (SettingsContext c) => MusicAudioEffectsBody(host: c.appModel),
   bodySearchEntries: <SettingsBodySearchEntry>[
     SettingsBodySearchEntry(
       id: 'music.effects.enabled',

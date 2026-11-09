@@ -189,8 +189,8 @@ void main() {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: panel
-                      ? MusicAudioEffectsPanel(appModel: app)
-                      : MusicAudioEffectsBody(appModel: app),
+                      ? MusicAudioEffectsPanel(host: app)
+                      : MusicAudioEffectsBody(host: app),
                 ),
               ),
             ),
