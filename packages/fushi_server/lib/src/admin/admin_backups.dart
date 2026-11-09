@@ -140,6 +140,7 @@ class AdminBackups {
         configFile: ctx.configFile,
         output: File(p.join(_dir.path, name)),
         includeDocuments: includeDocuments,
+        snapshotSrs: ctx.host.srs?.snapshotFn,
       );
     } catch (e, stack) {
       _lastError = '$e';

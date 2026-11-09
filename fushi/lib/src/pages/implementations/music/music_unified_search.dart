@@ -48,6 +48,7 @@ import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart'
     show appleMusicTrackMenu;
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
@@ -461,7 +462,9 @@ class _SongTile extends ConsumerWidget {
           bitrateKbps: s.bitrateKbps,
         );
         id = 'server-${browser.serverId}-${s.id}';
-        menu = appleMusicTrackMenu(context, browser, s);
+        menu =
+            appleMusicTrackMenu(context, browser, s) ??
+            musicServerTrackLibraryMenu(context, browser, s);
         title = s.title;
         subtitle = <String>[
           s.artist ?? t.music_artist_unknown,

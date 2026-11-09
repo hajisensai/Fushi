@@ -23,6 +23,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart'
+    show SrsDeferredProfileMerge;
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
@@ -122,6 +124,7 @@ Future<void> _pump(
   _Env env, {
   required bool apple,
   Size size = const Size(1100, 2400),
+  Future<SrsDeferredProfileMerge?> Function()? deferredMerge,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -133,6 +136,10 @@ Future<void> _pump(
         srsStoreProvider.overrideWith((Ref ref) async => env.store),
         // 运行时（同步调度器 / AnkiConnect 端点）不在页面测试范围：保存文件夹位置后的那一轮同步跳过。
         srsAppRuntimeProvider.overrideWithValue(null),
+        if (deferredMerge != null)
+          srsDeferredProfileMergeReaderProvider.overrideWithValue(
+            deferredMerge,
+          ),
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -313,6 +320,61 @@ void main() {
         find.byKey(const ValueKey<String>('sync-progress-banner-srs')),
         findsNothing,
       );
+      expect(tester.takeException(), isNull);
+      await _close(tester, env);
+    });
+
+    testWidgets('[$ds] profile 合并暂缓中：状态卡显示暂缓与缺几条撤销目标，合并做完后（同步一轮后重读）自动消失', (
+      WidgetTester tester,
+    ) async {
+      addTearDown(() => srsSyncProgress.value = null);
+      final _Env env = await _open(tester);
+      SrsDeferredProfileMerge? deferred = const SrsDeferredProfileMerge(
+        profileId: 1,
+        oldUid: 'old-uid',
+        newUid: 'new-uid',
+        missingRevoked: <String>['a', 'b'],
+      );
+      await _pump(
+        tester,
+        env,
+        apple: apple,
+        deferredMerge: () async => deferred,
+      );
+      final Finder row = find.byKey(
+        const ValueKey<String>('srs_timeline_status_merge_deferred'),
+      );
+      await _pumpUntil(tester, row);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.srs_timeline_merge_deferred),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.srs_timeline_merge_deferred_hint(n: 2)),
+        ),
+        findsOneWidget,
+      );
+
+      // 合并在下一轮同步里做完：一轮跑完（进度回到 null）后页面重读，状态行消失。
+      deferred = null;
+      srsSyncProgress.value = const SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: 0,
+        total: 1,
+      );
+      await tester.pump();
+      srsSyncProgress.value = null;
+      await _pumpUntilTrue(
+        tester,
+        () async => row.evaluate().isEmpty,
+        reason: 'deferred row disappears after the merge completes',
+      );
+      expect(row, findsNothing);
       expect(tester.takeException(), isNull);
       await _close(tester, env);
     });

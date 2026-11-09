@@ -819,24 +819,20 @@ mixin _FushiDbStatistics
   /// 该游戏全部 Profile 的会话行（`game_title`），游戏行没了统计页仍有名字可显示。
   /// [sessionTitle] 是调用方握着的当前显示名（含用户改名 / 刮削名覆盖层）；为空
   /// 时回落 `galgames.name`（exe 推导的本地默认名）。
-  Future<int> deleteGalgame(String id, {String? sessionTitle}) => transaction(
-    () async {
-      final String? fallback = (sessionTitle == null || sessionTitle.isEmpty)
-          ? (await getGalgame(id))?.name
-          : sessionTitle;
-      if (fallback != null && fallback.isNotEmpty) {
-        await (update(galgameSessions)..where((t) => t.gameId.equals(id)))
-            .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
-      }
-      await deleteTagAssignmentsForHost(TagHostKind.game, id);
-      // v135 配音表缓存（设备本地、无外键）同事务清掉。
-      await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
-      // v134 游戏台词跟游戏走：外键 cascade 之外显式删一遍（连接没开 foreign_keys 的
-      // 场合——测试替身 / 临时连接——也不留悬空台词）。
-      await (delete(galgameTextLines)..where((t) => t.gameId.equals(id))).go();
-      return (delete(galgames)..where((t) => t.id.equals(id))).go();
-    },
-  );
+  Future<int> deleteGalgame(String id, {String? sessionTitle}) =>
+      transaction(() async {
+        final String? fallback = (sessionTitle == null || sessionTitle.isEmpty)
+            ? (await getGalgame(id))?.name
+            : sessionTitle;
+        if (fallback != null && fallback.isNotEmpty) {
+          await (update(galgameSessions)..where((t) => t.gameId.equals(id)))
+              .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
+        }
+        await deleteTagAssignmentsForHost(TagHostKind.game, id);
+        // v135 配音表缓存（设备本地、无外键）同事务清掉。
+        await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
+        return (delete(galgames)..where((t) => t.id.equals(id))).go();
+      });
 
   /// 只改游玩状态（0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑）。
   ///

@@ -27,7 +27,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';

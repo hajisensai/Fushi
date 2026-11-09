@@ -315,6 +315,34 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
     }
 }
 
+/// 被撤销的事件里还没被任何 undo 直接点名的那几份副本（输入下标，按排序键升序）。
+///
+/// 新规则（[select]）下组里任何一份被撤销整组就算撤销，这几份已经不算有效；但只按 ID 认撤销的旧版本客户端（BUG-4218
+/// 之前）仍把它们当有效复习——用户在旧客户端上撤销一份、另一份还在，表现为「撤销没生效」。给每一份补一条点名它的
+/// undo（srs.db v27，store/sync2/mod.rs `revoke_copies_of_revoked_events`）之后，新旧规则选出的有效集合相同。只取
+/// 「整组已撤销」的组：补的 undo 在新规则下不改变任何选取结果，在旧规则下只撤销本来就该撤销的副本。
+pub fn unnamed_revoked_copies(logs: &[Log<'_>]) -> Vec<usize> {
+    let sel = select(logs);
+    let named: Vec<&str> = sel
+        .order
+        .iter()
+        .filter_map(|&i| {
+            let l = &logs[i];
+            if l.kind == Kind::Undo {
+                l.revokes.as_deref()
+            } else {
+                None
+            }
+        })
+        .collect();
+    sel.order
+        .iter()
+        .zip(&sel.status)
+        .filter(|&(&i, &s)| s & STATUS_REVOKED != 0 && !named.iter().any(|r| *r == logs[i].id))
+        .map(|(&i, _)| i)
+        .collect()
+}
+
 /// [kept]（输入下标）里每条日志所在事件组的根：组里第一个成员在 [kept] 里的位置；不成组的日志是自己。
 fn event_groups(logs: &[Log<'_>], kept: &[usize]) -> Vec<usize> {
     let mut root: Vec<usize> = (0..kept.len()).collect();

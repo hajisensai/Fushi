@@ -16,7 +16,11 @@ import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart'
+    show buildMusicServersDestination;
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
@@ -196,6 +200,32 @@ void main() {
         );
   });
 
+  testWidgets('来源页「添加 › 服务器」推的是 设置 › 在线服务 › 媒体服务器 里那一页（同一棵树）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await _settle(tester);
+
+    await tester.tap(find.text(t.music_sources_add));
+    await _settle(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_sources_add_server')),
+    );
+    await _settle(tester);
+
+    final SettingsDetailPage page = tester.widget<SettingsDetailPage>(
+      find.byType(SettingsDetailPage),
+    );
+    expect(page.subPageBuilder, equals(buildMusicServersDestination));
+    expect(find.byType(MusicServerSettingsBody), findsOneWidget);
+    expect(find.text(t.music_server_bitrate_title), findsOneWidget);
+    await _teardown(tester);
+  });
+
   testWidgets('来源页：排序 / 开关写回时，停用中的服务器的顺序与隐藏原样保留', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 1600);
@@ -223,7 +253,7 @@ void main() {
       find.byKey(const ValueKey<String>('music-source-server:subsonic-b')),
       findsNothing,
     );
-    // a 下移一位：可见顺序 c, a, apple-music。
+    // a 下移一位：可见顺序 c, a, apple-music, youtube（后两者是关着时的占位行）。
     await tester.tap(
       find.byKey(const ValueKey<String>('music-source-down-server:subsonic-a')),
     );
@@ -235,6 +265,7 @@ void main() {
         'server:subsonic-c',
         'server:subsonic-a',
         kAppleMusicSourceKey,
+        kYoutubeMusicSourceKey,
       ],
     );
     expect(_stored(env.prefs).first.enabled, isFalse);
@@ -267,6 +298,46 @@ void main() {
     }))!;
     expect(back.first.source.key, 'server:subsonic-b');
     expect(back.first.enabled, isFalse);
+    await _teardown(tester);
+  });
+
+  testWidgets('来源页：YouTube 占位行的开关就是启用开关（反馈 0tRY-D2JgG）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    expect(env.prefs.musicYoutubeEnabled, isFalse, reason: '默认关（显式 opt-in）');
+    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await _settle(tester);
+
+    final Finder toggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('music-source-toggle-$kYoutubeMusicSourceKey'),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(toggle, findsOneWidget);
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(toggle);
+    await _settle(tester);
+    expect(env.prefs.musicYoutubeEnabled, isTrue);
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    final List<MusicOrderedSource> loaded = (await tester.runAsync(
+      () => loadOrderedMusicOnlineSources(env.app),
+    ))!;
+    final MusicOrderedSource yt = loaded.singleWhere(
+      (MusicOrderedSource o) => o.source.key == kYoutubeMusicSourceKey,
+    );
+    expect(yt.enabled, isTrue);
+    expect(
+      (yt.source as MusicServerOnlineSource).browser.kind,
+      MusicServerKind.youtube,
+    );
+    // 只有搜索、没有浏览树：不进「推荐」。
+    expect(musicSourceHasRecommend(yt.source), isFalse);
     await _teardown(tester);
   });
 

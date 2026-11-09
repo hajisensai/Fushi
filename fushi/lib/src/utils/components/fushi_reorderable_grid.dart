@@ -1,4 +1,6 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -55,6 +57,16 @@ typedef FushiReorderGridContextMenu =
 /// （`Positioned`，本地坐标），随子树被祖先 `Transform.scale` 统一缩放 → 视觉与其余
 /// 缩放界面一致；所有指针坐标都用本 [Stack] 的 `RenderBox.globalToLocal(globalPosition)`
 /// 转成本地坐标，自动消掉祖先缩放/平移，浮层任意缩放系数下都精确跟手、零偏移。
+///
+/// **只 build 视口附近的行**：本网格常挂在详情页 / 库页的整页滚动视图里（作为
+/// `SliverToBoxAdapter` / `SingleChildScrollView` 的一个盒子），自身不是 sliver，
+/// 拿不到 sliver 的懒构建。此前每格都进 [Stack]，合集 48 集的卡片、缩略图解码与
+/// 纹理上传全挤在详情页数据到达的那一帧（实测 build 66–200 ms + raster 44–85 ms，
+/// 推页过渡随之掉帧）。现在有纵向祖先 [Scrollable] 时只为视口上下各外扩
+/// [_kWindowCacheFraction] 屏的行建单元，滚动后按实际几何补建；格子等宽等高，
+/// 行号直接由偏移算出，总高与槽位几何不变。正在拖拽 / 触摸待命的单元无论在不在
+/// 窗口内都保留（它的 [RawGestureDetector] 持有活跃识别器，拆掉会中断拖拽）。
+/// 没有纵向祖先 [Scrollable] 时照旧全量构建。
 class FushiReorderableGrid extends StatefulWidget {
   const FushiReorderableGrid({
     required this.itemCount,
@@ -143,6 +155,16 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
   /// 自动滚动每帧步进（像素）。
   static const double _autoScrollStep = 16.0;
 
+  // ── 视口窗口：只 build 与「视口 ± [_kWindowCacheFraction] 屏」相交的行。──
+  /// 最近的纵向祖先 [Scrollable]；null = 不在滚动视图里，全量构建。
+  ScrollableState? _viewportScrollable;
+  ScrollPosition? _viewportPosition;
+  int _windowFirstRow = 0;
+
+  /// 已量到的窗口末行；null = 还没有布局几何（首帧），按「网格顶贴视口顶」估。
+  int? _windowLastRow;
+  bool _windowCheckScheduled = false;
+
   @override
   void initState() {
     super.initState();
@@ -158,6 +180,105 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
       _dragOriginal = null;
       _touchPendingOriginal = null;
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ScrollableState? scrollable = Scrollable.maybeOf(
+      context,
+      axis: Axis.vertical,
+    );
+    _viewportScrollable = scrollable;
+    final ScrollPosition? position = scrollable?.position;
+    if (!identical(position, _viewportPosition)) {
+      _viewportPosition?.removeListener(_scheduleWindowCheck);
+      _viewportPosition = position;
+      position?.addListener(_scheduleWindowCheck);
+    }
+  }
+
+  @override
+  void dispose() {
+    _viewportPosition?.removeListener(_scheduleWindowCheck);
+    super.dispose();
+  }
+
+  /// 布局 / 滚动之后（帧末，几何已是本帧的）重新量窗口，行区间变了才重建。
+  /// 滚动监听在像素变化时同步触发，此时视口尚未重新布局、变换还是旧的，所以
+  /// 一律挪到帧末量；滚动本身已排了帧，帧末回调一定会跑。
+  void _scheduleWindowCheck() {
+    if (_windowCheckScheduled) return;
+    _windowCheckScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      _windowCheckScheduled = false;
+      if (!mounted) return;
+      final (int, int)? rows = _measureWindowRows();
+      if (rows == null) return;
+      if (rows.$1 == _windowFirstRow && rows.$2 == _windowLastRow) return;
+      setState(() {
+        _windowFirstRow = rows.$1;
+        _windowLastRow = rows.$2;
+      });
+    });
+  }
+
+  /// 按本网格在祖先视口里的实际位置算出要建的行区间；几何未就绪返回 null。
+  /// 变换取「网格 → 视口」，两者同在祖先缩放之下，单位一致（BUG-778）。
+  (int, int)? _measureWindowRows() {
+    final RenderObject? grid = _rootKey.currentContext?.findRenderObject();
+    final RenderObject? viewport = _viewportScrollable?.context
+        .findRenderObject();
+    if (grid is! RenderBox ||
+        !grid.hasSize ||
+        !grid.attached ||
+        viewport is! RenderBox ||
+        !viewport.hasSize) {
+      return null;
+    }
+    final double top = MatrixUtils.transformPoint(
+      grid.getTransformTo(viewport),
+      Offset.zero,
+    ).dy;
+    final double height = viewport.size.height;
+    final double cache = height * _kWindowCacheFraction;
+    return _rowsIntersecting(-top - cache, -top + height + cache);
+  }
+
+  /// 与网格本地纵向区间 [top, bottom] 相交的行（夹到界内）。
+  (int, int) _rowsIntersecting(double top, double bottom) {
+    final int last = _rowCount - 1;
+    final double stride = _cellH + widget.mainAxisSpacing;
+    if (last < 0) return (0, -1);
+    if (stride <= 0) return (0, last);
+    // 区间整个在网格之上 / 之下（网格还在视口外）：一行都不建。
+    if (bottom < 0 || top > _totalHeight) return (0, -1);
+    return (
+      (top / stride).floor().clamp(0, last),
+      (bottom / stride).floor().clamp(0, last),
+    );
+  }
+
+  /// 本次 build 要建的行区间；没有纵向祖先 [Scrollable] 时为全部行。
+  (int, int) _rowsToBuild() {
+    final ScrollPosition? position = _viewportPosition;
+    if (_viewportScrollable == null || position == null) {
+      return (0, _rowCount - 1);
+    }
+    _scheduleWindowCheck();
+    final int? measuredLast = _windowLastRow;
+    if (measuredLast != null) {
+      final int last = _rowCount - 1;
+      return (
+        _windowFirstRow.clamp(0, last < 0 ? 0 : last),
+        measuredLast.clamp(-1, last),
+      );
+    }
+    // 首帧还没有几何：网格顶最多贴着视口顶，按一屏 + 缓存估，帧末再按实测校正。
+    final double height = position.hasViewportDimension
+        ? position.viewportDimension
+        : MediaQuery.sizeOf(context).height;
+    return _rowsIntersecting(0, height * (1 + _kWindowCacheFraction));
   }
 
   void _resetDisplay() {
@@ -438,36 +559,52 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
             ? _cellW
             : _cellW / widget.childAspectRatio;
         final int? dragged = _dragOriginal;
-        return SizedBox(
-          width: totalW,
-          height: _totalHeight,
-          child: Stack(
-            key: _rootKey,
-            children: <Widget>[
-              for (int di = 0; di < _display.length; di++)
-                // key 必须放在 Stack 的**直接**子节点 [Positioned] 上：`_display` 拖拽
-                // 重排时 Stack 据此按身份匹配元素、保留同一 RawGestureDetector 与其
-                // 活跃拖拽识别器（否则 Positioned 无 key → 按位置匹配 → 内层带 key 的
-                // 识别器被重建 → 活跃拖拽中断，第二次移动丢失）。
-                Positioned.fromRect(
-                  key: widget.keyForIndex(_display[di]),
-                  rect: _slotTopLeft(di) & Size(_cellW, _cellH),
-                  child: _buildCell(_display[di]),
-                ),
-              if (dragged != null)
-                Positioned.fromRect(
-                  key: const ValueKey<String>('__reorder_grid_feedback__'),
-                  rect: _feedbackTopLeft & Size(_cellW, _cellH),
-                  child: IgnorePointer(
-                    // 网格单元（封面卡）自带背景：浮层只抬阴影、不涂底色。
-                    child: FushiReorderDragProxy(
-                      transparent: true,
-                      borderRadius: widget.feedbackBorderRadius,
-                      child: widget.itemBuilder(context, dragged),
+        final int? touchPending = _touchPendingOriginal;
+        final (int firstRow, int lastRow) = _rowsToBuild();
+        bool built(int di) {
+          final int row = di ~/ _cols;
+          if (row >= firstRow && row <= lastRow) return true;
+          final int original = _display[di];
+          return original == dragged || original == touchPending;
+        }
+
+        return _PaintProbe(
+          // 网格每次被画（滚动、上方内容伸缩把它挪了位置等）都在帧末重量窗口：
+          // 只听滚动会漏掉「上方简介收起 → 网格上移 → 露出未建的行」这类不滚动
+          // 的位移。
+          onPaint: _viewportScrollable == null ? null : _scheduleWindowCheck,
+          child: SizedBox(
+            width: totalW,
+            height: _totalHeight,
+            child: Stack(
+              key: _rootKey,
+              children: <Widget>[
+                for (int di = 0; di < _display.length; di++)
+                  if (built(di))
+                    // key 必须放在 Stack 的**直接**子节点 [Positioned] 上：`_display` 拖拽
+                    // 重排时 Stack 据此按身份匹配元素、保留同一 RawGestureDetector 与其
+                    // 活跃拖拽识别器（否则 Positioned 无 key → 按位置匹配 → 内层带 key 的
+                    // 识别器被重建 → 活跃拖拽中断，第二次移动丢失）。
+                    Positioned.fromRect(
+                      key: widget.keyForIndex(_display[di]),
+                      rect: _slotTopLeft(di) & Size(_cellW, _cellH),
+                      child: _buildCell(_display[di]),
+                    ),
+                if (dragged != null)
+                  Positioned.fromRect(
+                    key: const ValueKey<String>('__reorder_grid_feedback__'),
+                    rect: _feedbackTopLeft & Size(_cellW, _cellH),
+                    child: IgnorePointer(
+                      // 网格单元（封面卡）自带背景：浮层只抬阴影、不涂底色。
+                      child: FushiReorderDragProxy(
+                        transparent: true,
+                        borderRadius: widget.feedbackBorderRadius,
+                        child: widget.itemBuilder(context, dragged),
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -595,3 +732,38 @@ class _ReorderGridDrag extends Drag {
   @override
   void cancel() => onCancel();
 }
+
+/// 被画时回调 [onPaint]（只做调度，不在 paint 里改状态）。
+class _PaintProbe extends SingleChildRenderObjectWidget {
+  const _PaintProbe({required this.onPaint, super.child});
+
+  final VoidCallback? onPaint;
+
+  @override
+  _RenderPaintProbe createRenderObject(BuildContext context) =>
+      _RenderPaintProbe(onPaint);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPaintProbe renderObject,
+  ) {
+    renderObject.onPaint = onPaint;
+  }
+}
+
+class _RenderPaintProbe extends RenderProxyBox {
+  _RenderPaintProbe(this.onPaint);
+
+  VoidCallback? onPaint;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    onPaint?.call();
+    super.paint(context, offset);
+  }
+}
+
+/// 视口上下各外扩多少屏的行也提前建好：快速滚动 / 方向键焦点移到下一行时，
+/// 新行在窗口帧末校正（滞后一帧）之前已经在树里。
+const double _kWindowCacheFraction = 0.5;

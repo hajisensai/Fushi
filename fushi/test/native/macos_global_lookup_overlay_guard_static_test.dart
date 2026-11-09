@@ -175,9 +175,6 @@ void main() {
         'srsTermStatus',
         'srsTermStatusBatch',
         'srsOpenCard',
-        // 「我库里的例句」（作品图谱 L4）。
-        'librarySentences',
-        'librarySentenceOpen',
       ]) {
         expect(
           cpp,

@@ -447,6 +447,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     studyDiag('ledger', 'arrive [$start,$end) $relation');
   }
 
+  /// 导航代际的唯一递增点：作废上一代的恢复回调 / 精确定位 / 章内异步续作。整章导航
+  /// （[_beginNavigation]）与连续模式无缝衔接的软换章（`seamless.part.dart`）共用。
+  int _advanceNavigationGeneration() {
+    _restoreExpectedGeneration = ++_navigateGeneration;
+    return _navigateGeneration;
+  }
+
   void _beginNavigation({
     required int chapter,
     required double progress,
@@ -455,7 +462,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     String? fragment,
     String? preciseLocateJs,
   }) {
-    _restoreExpectedGeneration = ++_navigateGeneration;
+    _advanceNavigationGeneration();
     // BUG-2225 / BUG-2226：所有导航都经过这里，所以这也是「离开当前单元」的唯一
     // 采样点——翻走即计：此刻把用户正读的那页结算进账本，跳过的区间从未成为当前
     // 单元、不计。放在 loadUrl 之前：装载失败 / 兜底超时走 [_failNavigation] 的

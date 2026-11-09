@@ -326,6 +326,53 @@ void main() {
       expect(await ctl(<String>['anki', 'landing', 'maybe']), 64);
     });
 
+    test('srs：状态 / 选 profile / 同步 / AnkiConnect', () async {
+      const String uid = '01928c3e-0000-7000-8000-00000000a0a0';
+      await ctl(<String>['srs']);
+      await ctl(<String>['srs', 'profiles']);
+      await ctl(<String>['srs', 'add', uid]);
+      await ctl(<String>['srs', 'remove', uid]);
+      await ctl(<String>['srs', 'default', uid]);
+      await ctl(<String>['srs', 'off']);
+      await ctl(<String>['srs', 'sync']);
+      await ctl(<String>['srs', 'sync', uid]);
+      await ctl(<String>['srs', 'ankiconnect', 'on']);
+      await ctl(<String>['srs', 'config', '{"rolloverHour":5}']);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs',
+          'GET /api/admin/srs/profiles',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+          'POST /api/admin/srs/sync',
+          'POST /api/admin/srs/sync',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+        ],
+      );
+      expect(admin.seen.skip(2).map((_Seen s) => s.body).toList(), <Object?>[
+        <String, Object?>{
+          'addProfiles': <Object?>[uid],
+        },
+        <String, Object?>{
+          'removeProfiles': <Object?>[uid],
+        },
+        <String, Object?>{'defaultProfile': uid},
+        <String, Object?>{'profiles': <Object?>[]},
+        <String, Object?>{},
+        <String, Object?>{'profile': uid},
+        <String, Object?>{
+          'ankiConnect': <String, Object?>{'enabled': true},
+        },
+        <String, Object?>{'rolloverHour': 5},
+      ]);
+      expect(await ctl(<String>['srs', 'add']), 64);
+      expect(await ctl(<String>['srs', 'ankiconnect', 'maybe']), 64);
+    });
+
     test('未知动作 / 空动作 = 用法错误，不发请求', () async {
       expect(await ctl(<String>[]), 64);
       expect(await ctl(<String>['nope']), 64);

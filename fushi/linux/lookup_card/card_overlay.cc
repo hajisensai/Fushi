@@ -61,7 +61,6 @@ const std::set<std::string>& DeferredHandlers() {
       "duplicateCheck",   "overwriteTargetNoteId", "updateEntry",
       "findMinedMatches", "openMinedNote",        "openInAnki",
       "srsTermStatus",    "srsTermStatusBatch",   "srsOpenCard",
-      "librarySentences", "librarySentenceOpen",
   };
   return handlers;
 }

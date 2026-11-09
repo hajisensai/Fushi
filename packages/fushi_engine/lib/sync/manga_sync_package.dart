@@ -57,6 +57,12 @@ Future<bool> repackageMangaBook(String extractDir, String outputPath) async {
   return true;
 }
 
+/// zip 条目路径 [entryName] 是不是漫画包的根级标记 [kMangaPackageMarker]（反斜杠
+/// 分隔的 Windows 打包工具产物同样认）。本地整包嗅探 [isMangaPackage] 与云端按区间
+/// 读中央目录的嗅探共用这一条判据。
+bool isMangaPackageMarkerEntry(String entryName) =>
+    entryName.replaceAll('\\', '/') == kMangaPackageMarker;
+
 /// 嗅探 [zipFile] 是否为漫画包（zip 根有 [kMangaPackageMarker] 条目）。
 ///
 /// 只经 [InputFileStream] 流式读中央目录，不解压任何条目数据（漫画包可达数百
@@ -67,10 +73,9 @@ Future<bool> isMangaPackage(File zipFile) async {
   try {
     input = InputFileStream(zipFile.path);
     final Archive archive = ZipDecoder().decodeBuffer(input);
-    for (final ArchiveFile f in archive.files) {
-      if (f.name.replaceAll('\\', '/') == kMangaPackageMarker) return true;
-    }
-    return false;
+    return archive.files.any(
+      (ArchiveFile f) => isMangaPackageMarkerEntry(f.name),
+    );
   } catch (_) {
     return false;
   } finally {

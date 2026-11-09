@@ -71,7 +71,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     super.initState();
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncCursor());
-    _mineToastAnchor = FushiToast.anchorMineToCorner(_lyricsRegionGlobal);
+    _mineToastAnchor = FushiToast.anchorMineToCorner(
+      _lyricsRegionGlobal,
+      textFlow: _lyricsTextFlow,
+    );
   }
 
   /// 光标复位并按当前条件重排（或撤掉）空闲隐藏计时。
@@ -115,7 +118,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   LyricsThemeHostState? _host;
 
   /// 歌词 WebView 的矩形（本组件坐标，即外观给的歌词矩形），每次布局刷新；
-  /// 制卡结果卡贴它的底部起始角（见 [FushiToast.anchorMineToCorner]）。
+  /// 制卡结果卡贴它的上角（行流收尾一侧）（见 [FushiToast.anchorMineToCorner]）。
   Rect? _lyricsRect;
 
   /// 本页当前是否在屏上可见：上面压了不透明路由（歌词模式上再推一个页面）时
@@ -127,6 +130,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   /// 歌词模式期间制卡结果改成角落小卡：正文铺满全屏，底部正中的大卡正好压在
   /// 正文上（群反馈 2026-11-01「字卡提示好大，还挡正文」）。
   late final FushiToastCornerAnchor _mineToastAnchor;
+
+  /// 歌词正文的行流方向：竖排右起左排 = rtl；横排跟页面书写方向（null）。
+  TextDirection? _lyricsTextFlow() =>
+      mounted && widget.data.verticalText ? TextDirection.rtl : null;
 
   Rect? _lyricsRegionGlobal() {
     final Rect? rect = _lyricsRect;

@@ -11,20 +11,11 @@
 
 mod common;
 
-use std::io::Read;
-
-use common::{model, small_package};
+use common::{model, small_weights};
 use fushi_rwkv::{ReviewInput, RwkvInference, SmallInference, SmallModel, StatePrecision};
 
 fn small_model() -> SmallModel {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(small_package())).unwrap();
-    let mut bytes = Vec::new();
-    archive
-        .by_name("sm56/weights.int8.bin")
-        .unwrap()
-        .read_to_end(&mut bytes)
-        .unwrap();
-    SmallModel::from_bytes(&bytes).unwrap()
+    SmallModel::from_bytes(small_weights()).unwrap()
 }
 
 fn history(cards: i64, days: i64) -> Vec<ReviewInput> {

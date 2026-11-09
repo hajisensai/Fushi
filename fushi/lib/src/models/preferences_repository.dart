@@ -10,6 +10,8 @@ import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -17,6 +19,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
 import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:fushi_engine/ai/web_knowledge.dart'
     show
@@ -3429,6 +3432,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频页「生成字幕」是否把字幕文件写到视频旁边（反馈 6Tj3ECtB0Q 合并两个入口后
+  /// 的选项）：开 = 走生成字幕管线（`<视频名>.<语言>.srt` 写在视频旁、可选专名表 AI
+  /// 校对）；关 = 只在 Fushi 里转录使用（转录弹层，语言 / 引擎更多，可再导出）。默认开。
+  bool get videoSubtitleSaveBesideVideo =>
+      getPref('video_subtitle_save_beside_video', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleSaveBesideVideo(bool enabled) async {
+    await setPref('video_subtitle_save_beside_video', enabled);
+    notifyListeners();
+  }
+
   /// 用户是否已看过并同意「AI 校对会发送什么」的说明（首次开启 AI 校对时弹一次；
   /// CLI 用 `--consent-ai` 写同一个键）。设备本地，理由同上。
   bool get videoSubtitleAiConsented =>
@@ -3733,6 +3747,67 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMineToServer(bool value) async {
     await setPref('mine_to_server', value);
+    notifyListeners();
+  }
+
+  /// 「制卡到已配对设备」每台主机的「保存到」（按 hostId；没有条目 = 主机默认）。设备本地
+  /// （`SyncRepository.deviceLocalPrefKeys`）。值：`{<hostId>: {kind?, profile?, deck?, label?}}`，
+  /// `label` 是选的时候拼好的显示名（设置行副标题用，不必为它连主机）。
+  static const String mineToServerTargetsKey = 'mine_to_server_targets';
+
+  Map<String, Map<Object?, Object?>> _mineToServerTargetsRaw() {
+    final Object? raw = getPref(mineToServerTargetsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) {
+      return const <String, Map<Object?, Object?>>{};
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return const <String, Map<Object?, Object?>>{};
+    }
+    if (decoded is! Map) return const <String, Map<Object?, Object?>>{};
+    return <String, Map<Object?, Object?>>{
+      for (final MapEntry<Object?, Object?> e in decoded.entries)
+        if (e.key case final String host)
+          if (e.value case final Map<Object?, Object?> v) host: v,
+    };
+  }
+
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      <String, RemoteMiningTarget>{
+        for (final MapEntry<String, Map<Object?, Object?>> e
+            in _mineToServerTargetsRaw().entries)
+          if (RemoteMiningTarget.fromJson(e.value)
+              case final RemoteMiningTarget t)
+            e.key: t,
+      };
+
+  /// 选的时候存下的显示名（hostId → 名字）。
+  Map<String, String> get mineToServerTargetLabels => <String, String>{
+    for (final MapEntry<String, Map<Object?, Object?>> e
+        in _mineToServerTargetsRaw().entries)
+      if (e.value['label'] case final String label when label.isNotEmpty)
+        e.key: label,
+  };
+
+  /// [target] 为 null = 这台主机回到主机默认。
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) async {
+    final Map<String, Map<Object?, Object?>> next =
+        Map<String, Map<Object?, Object?>>.of(_mineToServerTargetsRaw());
+    if (target == null || target.isEmpty) {
+      next.remove(hostId);
+    } else {
+      next[hostId] = <String, Object?>{
+        ...target.toJson(),
+        if (label != null && label.isNotEmpty) 'label': label,
+      };
+    }
+    await setPref(mineToServerTargetsKey, next.isEmpty ? '' : jsonEncode(next));
     notifyListeners();
   }
 
@@ -5263,6 +5338,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG）。默认关（显式 opt-in：开了统一搜索才会
+  /// 向 YouTube 发请求）；iOS 上不论取值都不存在（合规门 `isYoutubeMusicSourceAvailable`）。
+  bool get musicYoutubeEnabled =>
+      getPref('music_youtube_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicYoutubeEnabled(bool value) async {
+    await setPref('music_youtube_enabled', value);
+    notifyListeners();
+  }
+
   /// 本机已把 Apple Music 账号连接到 Fushi（整曲播放 + 资料库）。设备本地。
   bool get musicAppleMusicConnected =>
       getPref('music_apple_music_connected', defaultValue: false) == true;
@@ -6502,6 +6587,30 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiMcpEnabled(bool value) async {
     await setPref('ai_mcp_enabled', value);
+    notifyListeners();
+  }
+
+  /// AI 助手接入的外部 MCP server（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`；设备本地，请求头 / 环境变量值
+  /// base64）。逐条容错在 [decodeMcpServerConfigs] 里；整串坏掉记日志并当空列表。
+  List<McpServerConfig> get aiMcpClientServers {
+    final String raw =
+        getPref('ai_mcp_client_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <McpServerConfig>[];
+    try {
+      return decodeMcpServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiMcpClientServers.decode',
+        error,
+        stack,
+      );
+      return const <McpServerConfig>[];
+    }
+  }
+
+  Future<void> setAiMcpClientServers(Iterable<McpServerConfig> servers) async {
+    await setPref('ai_mcp_client_servers', encodeMcpServerConfigs(servers));
     notifyListeners();
   }
 

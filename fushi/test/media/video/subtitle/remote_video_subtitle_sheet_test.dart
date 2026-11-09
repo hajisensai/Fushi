@@ -22,6 +22,12 @@ class _Prefs implements VideoSubtitleGeneratePrefs {
   VideoSubtitleSegmenterMode segmenter = VideoSubtitleSegmenterMode.auto;
 
   @override
+  bool saveBesideVideo = true;
+
+  @override
+  Future<void> setSaveBesideVideo(bool value) async => saveBesideVideo = value;
+
+  @override
   MossBackendPreference get mossBackend => MossBackendPreference.auto;
 
   @override
@@ -76,7 +82,12 @@ void main() {
     subtitlesDir: () async => Directory.systemTemp,
   );
 
-  Future<void> pump(WidgetTester tester, RemoteVideoSubtitleService svc) async {
+  Future<void> pump(
+    WidgetTester tester,
+    RemoteVideoSubtitleService svc, {
+    _Prefs? prefs,
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
     tester.view
       ..physicalSize = const Size(900, 1400)
       ..devicePixelRatio = 1;
@@ -87,7 +98,8 @@ void main() {
           body: RemoteVideoSubtitleSheet(
             service: svc,
             target: target,
-            prefs: _Prefs(),
+            prefs: prefs ?? _Prefs(),
+            onTranscribeInApp: onTranscribeInApp,
           ),
         ),
       ),
@@ -114,6 +126,54 @@ void main() {
       findsOneWidget,
     );
     expect(startPressed(tester), isNull);
+  });
+
+  // 反馈 6Tj3ECtB0Q：合并入口下关掉保存 = 本机转录 host 裁回的音轨，不需要 host 支持
+  // video_subtitle 任务。
+  testWidgets('合并入口关掉保存：不看 host 任务能力，「开始」交给本机转录', (WidgetTester tester) async {
+    final _Prefs prefs = _Prefs();
+    final List<bool> handedOff = <bool>[];
+    await pump(
+      tester,
+      service(_Host(const <String>['asr'])),
+      prefs: prefs,
+      onTranscribeInApp: ({required bool proofread}) =>
+          handedOff.add(proofread),
+    );
+    expect(find.text(t.video_subtitle_ai_generate_title), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('remote-subtitle-unsupported')),
+      findsOneWidget,
+    );
+    expect(startPressed(tester), isNull);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('remote-subtitle-save-beside')),
+    );
+    await tester.pumpAndSettle();
+    expect(prefs.saveBesideVideo, isFalse);
+    expect(
+      find.byKey(const ValueKey<String>('remote-subtitle-unsupported')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote-subtitle-segmenter')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('remote-subtitle-transcribe-start')),
+    );
+    await tester.pumpAndSettle();
+    expect(handedOff, <bool>[false]);
+  });
+
+  testWidgets('不传回调（整季入口）：没有保存开关', (WidgetTester tester) async {
+    await pump(tester, service(_Host(const <String>['video_subtitle'])));
+    expect(
+      find.byKey(const ValueKey<String>('remote-subtitle-save-beside')),
+      findsNothing,
+    );
+    expect(find.text(t.video_subtitle_ai_title), findsOneWidget);
   });
 
   testWidgets('连不上 host：提示，「开始」不可点', (WidgetTester tester) async {

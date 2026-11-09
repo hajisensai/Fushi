@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/mining/adts_duration.dart';
 import 'package:fushi/src/mining/gal_game_exit_watch.dart';
 import 'package:fushi/src/mining/galgame_process_group.dart';
@@ -1599,8 +1598,7 @@ class GalHookSessionController extends ChangeNotifier {
       fallbackTitle: window.title,
     );
     if (generation != _operationGeneration) return;
-    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
-    _attachedCaptureExecutable = identity.executablePath;
+    _beginGameSession(identity, attachedExecutable: identity.executablePath);
     _noteKnifeTextServiceForAttach(identity.executablePath);
     // 计时与 hook 彻底解耦：附着时游戏**已经在跑**，注入成功与否、走哪条降级，都不
     // 改变「用户此刻正在玩」这个事实。所以计时起点就在这里，不挂在任何一条成功分支上。
@@ -1616,6 +1614,30 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
     );
     await _attachHooksToProcess(generation, pid: window.pid);
+  }
+
+  /// 会话的游戏身份确立后、注入开始前的**唯一**入口（launch 与 attach 共用）。
+  ///
+  /// 依次：开新的活动记账（同时复位上一游戏的捕获记忆会话）→ 写入本会话的捕获
+  /// exe 身份 → 按该身份恢复按游戏记忆的降级策略。三步必须在一处、按此顺序：记忆
+  /// key 由 [currentCaptureExecutable] 派生，身份没写入就恢复只会加载到空 key；而
+  /// 恢复散落在各条启动路径里时，附着已运行游戏的路径曾漏掉这一步，用户每次附着
+  /// 都得重新选「音频降级」。
+  ///
+  /// [attachedExecutable] 是附着时由 PID 反查出的 exe 全路径；launch 传 null（它的
+  /// 身份是 state.launchExe，调用前已写入）。
+  ///
+  /// 降级策略不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举音轨（native 只
+  /// 枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会在最需要它的资源
+  /// 模式游戏里静默失效。活动 mediaKey 的跨层契约统一为 galgames.id（历史版本写过
+  /// exePath，读取侧保留兼容；新写入不再延续一字段两种身份的歧义）。
+  void _beginGameSession(
+    GalHookSessionIdentity identity, {
+    required String? attachedExecutable,
+  }) {
+    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
+    _attachedCaptureExecutable = attachedExecutable;
+    _restoreAudioFallbackPolicy();
   }
 
   /// 按 PID 把 hook 挂到一个**已经在跑**的游戏进程上（附着与「接手进程」共用）：
@@ -1775,13 +1797,8 @@ class GalHookSessionController extends ChangeNotifier {
         GalHookLaunchFailureReason.superseded,
       );
     }
-    // 活动 mediaKey 的跨层契约统一为 galgames.id。历史版本写过 exePath，读取侧保留
-    // 兼容；新写入不再延续一字段两种身份的歧义。
-    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
-    // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
-    // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会
-    // 在最需要它的资源模式游戏里静默失效。
-    _restoreAudioFallbackPolicy();
+    // launch 的捕获身份是 state.launchExe（上面已写入），不需要附着反查的 exe。
+    _beginGameSession(identity, attachedExecutable: null);
     final bool? is32Bit = await _exe32BitProbe(executablePath);
     final String? injector = await _injectorResolver(is32Bit: is32Bit ?? false);
     if (injector == null) {
@@ -2371,8 +2388,6 @@ class GalHookSessionController extends ChangeNotifier {
     if (generation != _operationGeneration) return;
     // Preserve the author's awaited activity flush before releasing ownership.
     await _stopActivityClock();
-    // 停止捕获 = 这一局的终点：攒着的台词落进语料库（不等它，失败只记日志）。
-    unawaited(LibraryCorpusService.instance.flushGameLines());
     if (generation != _operationGeneration) return;
     _activityPendingChars = 0;
     _activityGameTitle = null;
@@ -4768,18 +4783,6 @@ class GalHookSessionController extends ChangeNotifier {
     required int atMs,
   }) {
     if (_activityGameTitle == null) return;
-    // 「我库里的例句」：有库内身份的游戏台词落进 galgame_text_lines（文本钩子历史只在
-    // 会话内存里，这张表是台词唯一的持久副本，随备份走），例句索引由它派生。同一行逐段
-    // 重绘按行 id 覆盖，外部通道按前缀续写覆盖。
-    final String? corpusGameId = _activityGameKey;
-    if (corpusGameId != null) {
-      LibraryCorpusService.instance.feedGameLine(
-        gameId: corpusGameId,
-        lineKey: lineId,
-        text: lineText,
-        atMs: atMs,
-      );
-    }
     if (fromEngineHook) {
       _engineTextCounted = true;
     } else if (_engineTextCounted) {

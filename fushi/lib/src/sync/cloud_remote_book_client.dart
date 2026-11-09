@@ -2,7 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, SyncTombstoneKind, TombstoneCloudFolderState;
+    show
+        BookFormat,
+        FushiDatabase,
+        SyncTombstoneKind,
+        TombstoneCloudFolderState;
 import 'package:fushi_engine/sync/deletion_propagation.dart'
     show
         deletionTombstoneAssetName,
@@ -10,14 +14,17 @@ import 'package:fushi_engine/sync/deletion_propagation.dart'
         kSyncTombstonesNamespace;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
+import 'package:fushi/src/sync/cloud_legacy_manga_sniffer.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show deleteCloudBookFolder, isReservedSyncFolderName;
 import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 
 /// 把任意云盘备份后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）
 /// 的远端书库适配成书架页的 [RemoteBookClient] 契约（TODO-665 阶段1）。
@@ -40,8 +47,20 @@ class CloudRemoteBookClient implements RemoteBookClient {
     this.contentProbeConcurrency = 4,
     this.contentProbeRetries = 1,
     this.contentProbeRetryBackoff = const Duration(milliseconds: 300),
+    SyncAssetRangeReader? contentRangeReader,
+    CloudContentSniffCacheStore? contentSniffCache,
   }) : assert(contentProbeConcurrency >= 1),
-       assert(contentProbeRetries >= 0);
+       assert(contentProbeRetries >= 0),
+       _contentRangeReader =
+           contentRangeReader ?? plainAssetRangeReaderOf(backend),
+       _contentSniffCache =
+           contentSniffCache ??
+           (database == null
+               ? null
+               : SyncRepositoryContentSniffCacheStore(
+                   SyncRepository(database),
+                   syncChannelScopeOf(backend),
+                 ));
 
   /// 远端存储后端；务必是 `resolveSyncBackend` 的产物（带解混淆装饰层）。
   final SyncBackend backend;
@@ -75,6 +94,13 @@ class CloudRemoteBookClient implements RemoteBookClient {
   /// 测试可置 [Duration.zero] 保持快速。
   final Duration contentProbeRetryBackoff;
 
+  /// [backend] 的明文区间读视图（Google Drive / OneDrive / Dropbox）；null = 只能整包
+  /// 下载（WebDAV / FTP / SFTP），旧名 `.epub` 漫画包不在列举时嗅探。
+  final SyncAssetRangeReader? _contentRangeReader;
+
+  /// 旧名内容资产判型结果的本机缓存；null（没有本机库的只读场景之外不会发生）时不嗅探。
+  final CloudContentSniffCacheStore? _contentSniffCache;
+
   /// 云盘备份后端：书架远端分区用通用「云端书」文案（非「互联/对端设备」）。
   @override
   RemoteBookSourceKind get remoteSourceKind => RemoteBookSourceKind.cloud;
@@ -89,7 +115,14 @@ class CloudRemoteBookClient implements RemoteBookClient {
     // 与对比弹窗一致：把书名→folderId 写进后端缓存（后续删除/上传按缓存定位）。
     backend.cacheBookFolderIds(bookFolders);
 
-    final List<bool> hasContent = await _probeContentBounded(bookFolders);
+    final CloudLegacyMangaSniffer? sniffer = await _openLegacyMangaSniffer();
+    final List<CloudBookContentKind?> contentKinds = await _probeContentBounded(
+      bookFolders,
+      sniffer,
+    );
+    await sniffer?.persist(<String>{
+      for (final SyncFileRef f in bookFolders) f.id,
+    });
 
     return <RemoteBookInfo>[
       for (int i = 0; i < bookFolders.length; i++)
@@ -99,7 +132,16 @@ class CloudRemoteBookClient implements RemoteBookClient {
           // 派生 key；直接给文件夹名会被二次 sanitize 成 `%253A`，与本地 bookKey
           // 永远对不上（BUG-2274）。互联 host 那条路本来就返回 raw title。
           title: unsanitizeTtuFilename(bookFolders[i].name),
-          hasContent: hasContent[i],
+          // 格式与内容位按 [RemoteBookInfo] 的分键契约给（与互联 host 同口径）：
+          // EPUB → hasContent；漫画包 `.manga.zip` → format=manga + hasMangaContent，
+          // hasContent 保持 false。书架据此分架——书籍书架只收 hasContent，漫画书架
+          // 只收 format=manga 的可读漫画；此前云盘一律只给 hasContent=true、format
+          // 缺省 epub，漫画包占位卡全落进书籍书架、漫画书架一张都没有（BUG-4223）。
+          hasContent: contentKinds[i] == CloudBookContentKind.epub,
+          format: contentKinds[i] == CloudBookContentKind.manga
+              ? BookFormat.manga.dbValue
+              : BookFormat.epub.dbValue,
+          hasMangaContent: contentKinds[i] == CloudBookContentKind.manga,
           // folderId 复用为 downloadId：getRemoteBook 据此 listChildren 取 .epub。
           // 去重按 title 进行（dedupeRemoteBooks），bookKey=folderId 不污染去重。
           bookKey: bookFolders[i].id,
@@ -110,14 +152,32 @@ class CloudRemoteBookClient implements RemoteBookClient {
     ];
   }
 
-  /// 并发（≤[contentProbeConcurrency]）探测每个书文件夹是否含 `.epub` 内容资产，
-  /// 返回与 [folders] 等长、同序的结果。
-  Future<List<bool>> _probeContentBounded(List<SyncFileRef> folders) async {
-    final List<bool> results = List<bool>.filled(
-      folders.length,
-      false,
-      growable: false,
+  /// 并发（≤[contentProbeConcurrency]）探测每个书文件夹的内容资产格式（无确证内容
+  /// 为 null），返回与 [folders] 等长、同序的结果。
+  /// 旧名 `.epub` 漫画包的内容判型器（[CloudLegacyMangaSniffer]）；后端不能区间读或
+  /// 没有缓存落点时返回 null（只按文件名判定）。
+  Future<CloudLegacyMangaSniffer?> _openLegacyMangaSniffer() async {
+    final SyncAssetRangeReader? reader = _contentRangeReader;
+    final CloudContentSniffCacheStore? cache = _contentSniffCache;
+    if (reader == null || cache == null) return null;
+    final CloudLegacyMangaSniffer sniffer = CloudLegacyMangaSniffer(
+      reader: reader,
+      store: cache,
     );
+    await sniffer.load();
+    return sniffer;
+  }
+
+  Future<List<CloudBookContentKind?>> _probeContentBounded(
+    List<SyncFileRef> folders,
+    CloudLegacyMangaSniffer? sniffer,
+  ) async {
+    final List<CloudBookContentKind?> results =
+        List<CloudBookContentKind?>.filled(
+          folders.length,
+          null,
+          growable: false,
+        );
     int next = 0;
 
     Future<void> worker() async {
@@ -125,7 +185,10 @@ class CloudRemoteBookClient implements RemoteBookClient {
         final int index = next;
         if (index >= folders.length) return;
         next += 1;
-        results[index] = await _remoteFolderHasContent(folders[index].id);
+        results[index] = await _remoteFolderContentKind(
+          folders[index].id,
+          sniffer,
+        );
       }
     }
 
@@ -138,25 +201,50 @@ class CloudRemoteBookClient implements RemoteBookClient {
     return results;
   }
 
-  /// 该书文件夹是否**确证**含可下载的 `.epub` 内容资产。
+  /// 该书文件夹**确证**含的可下载内容资产格式（`.manga.zip` → 漫画，`.epub` →
+  /// EPUB，判据 [cloudBookContentKindOf]）。
   ///
-  /// 保守语义（BUG-699 / TODO-1384）：只有 `listChildren` 成功**且**含 `.epub` 才返
-  /// true。「确定无内容」（列举成功但无 .epub）与「探测失败」（异常/超时——首启
-  /// autoSync 与书架并发多路打同一 WebDAV 时的超时/429 是主因）**都返 false**：宁可
+  /// 保守语义（BUG-699 / TODO-1384）：只有 `listChildren` 成功**且**含内容资产才返
+  /// 非 null。「确定无内容」（列举成功但无内容资产）与「探测失败」（异常/超时——首启
+  /// autoSync 与书架并发多路打同一 WebDAV 时的超时/429 是主因）**都返 null**：宁可
   /// 真书在网络抖动时暂时不显示、下次刷新/同步再出，也绝不 fail-open 放出无内容 /
   /// 探测不确定的幽灵书。
   ///
-  /// 失败时做至多 [contentProbeRetries] 次有界退避重试吸收瞬时抖动；仍失败即 false。
+  /// 失败时做至多 [contentProbeRetries] 次有界退避重试吸收瞬时抖动；仍失败即 null。
   /// 正确性不依赖重试成功——重试只降低把真书误藏的概率。
-  Future<bool> _remoteFolderHasContent(String folderId) async {
+  ///
+  /// 按文件名只能判成 EPUB 的（`.epub` 且没有旧名漫画标记），再交 [sniffer] 按 zip
+  /// 中央目录判一次（旧版本把漫画包也传成 `.epub`，反馈 ecNgkRQcTk）；判不出时维持
+  /// EPUB。
+  Future<CloudBookContentKind?> _remoteFolderContentKind(
+    String folderId,
+    CloudLegacyMangaSniffer? sniffer,
+  ) async {
+    final List<AssetEntry>? files = await _listFolderFiles(folderId);
+    if (files == null) return null;
+    final CloudBookContentKind? byName = cloudBookContentKindOf(<String>[
+      for (final AssetEntry e in files) e.name,
+    ]);
+    if (byName != CloudBookContentKind.epub || sniffer == null) return byName;
+    final AssetEntry content = pickRemoteBookContentEntry<AssetEntry>(
+      files,
+      (AssetEntry e) => e.name,
+    )!;
+    return await sniffer.kindOf(folderId: folderId, content: content) ??
+        CloudBookContentKind.epub;
+  }
+
+  /// 书文件夹里的文件（不含子文件夹）；有界重试后仍失败返回 null。
+  Future<List<AssetEntry>?> _listFolderFiles(String folderId) async {
     for (int attempt = 0; ; attempt++) {
       try {
         final List<AssetEntry> children = await backend.listChildren(folderId);
-        return children.any(
-          (AssetEntry e) => !e.isFolder && isRemoteBookContentName(e.name),
-        );
+        return <AssetEntry>[
+          for (final AssetEntry e in children)
+            if (!e.isFolder) e,
+        ];
       } catch (_) {
-        if (attempt >= contentProbeRetries) return false;
+        if (attempt >= contentProbeRetries) return null;
         if (contentProbeRetryBackoff > Duration.zero) {
           await Future<void>.delayed(contentProbeRetryBackoff);
         }

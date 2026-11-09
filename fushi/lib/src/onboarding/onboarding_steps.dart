@@ -5,7 +5,7 @@
 library;
 
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 
 /// 功能选择步骤里可勾选的项，分两类：
 ///

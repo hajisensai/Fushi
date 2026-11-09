@@ -1,15 +1,11 @@
 // Fushi 卡片区块布局的 app 侧判据：自定义区块（字段 / HTML 区块）原生画不画得了、卡面计划
-// 按区块选项取媒体、Fushi 卡片类型新加模板从区块布局起步。
+// 按区块选项取媒体（新加模板的起点见 srs_template_presets_test.dart）。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart'
-    show srsNewTemplateBody;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
-import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
-import 'package:fushi_srs/fushi_srs.dart';
 
 Map<String, String> _fields([Map<String, String> extra = const {}]) =>
     <String, String>{
@@ -164,71 +160,6 @@ void main() {
         FushiCardFieldItem(field: 'MiscInfo'),
         const FushiCardHtmlItem('<p>y</p>'),
       ]);
-    });
-  });
-
-  group('Fushi 卡片类型新加模板', () {
-    SrsNoteTypeView type({required String front, required String back}) {
-      final List<SrsFieldDef> fields = <SrsFieldDef>[
-        for (int i = 0; i < FushiCardNoteType.fields.length; i++)
-          SrsFieldDef(id: 'f$i', name: FushiCardNoteType.fields[i], ord: i),
-      ];
-      final Map<String, String> ids = <String, String>{
-        for (final SrsFieldDef f in fields) f.name: f.id,
-      };
-      return SrsNoteTypeView(
-        id: 'nt',
-        ankiNum: 1,
-        kind: SrsNoteTypeKind.standard,
-        name: 'Fushi Card',
-        termFieldId: null,
-        deletedAt: null,
-        edits: SrsEntityEdits(<String, SrsRegister>{}),
-        builtinKey: kSrsBuiltinFushiCardKey,
-        fields: fields,
-        templates: <SrsTemplateDef>[
-          SrsTemplateDef(
-            id: 't1',
-            name: 'Card 1',
-            ord: 0,
-            front: templateNamesToIds(front, ids),
-            back: templateNamesToIds(back, ids),
-          ),
-        ],
-        css: kFushiCardStylingCss,
-      );
-    }
-
-    test('第一个模板认得出区块布局：照 Anki 复制它', () {
-      final String back = fushiCardBackTemplateFor(<FushiCardItem>[
-        FushiCardBlockItem(FushiCardBlock.term),
-      ]);
-      final SrsNoteTypeView t = type(
-        front: kFushiCardFrontTemplate,
-        back: back,
-      );
-      final ({String front, String back}) body = srsNewTemplateBody(t);
-      expect(body.front, t.templates.single.front);
-      expect(body.back, t.templates.single.back);
-    });
-
-    test('第一个模板改到认不出：新模板从默认区块布局起步', () {
-      final SrsNoteTypeView t = type(
-        front: '<p>x</p>$kFushiCardFrontTemplate',
-        back: kFushiCardBackTemplate,
-      );
-      final ({String front, String back}) body = srsNewTemplateBody(t);
-      final Map<String, String> names = <String, String>{
-        for (final SrsFieldDef f in t.fields) f.id: f.name,
-      };
-      expect(
-        fushiCardFrontLayoutOf(templateIdsToNames(body.front, names)),
-        kFushiCardDefaultFrontItems,
-      );
-      expect(
-        fushiCardBackLayoutOf(templateIdsToNames(body.back, names)),
-        kFushiCardDefaultBackItems,
-      );
     });
   });
 }

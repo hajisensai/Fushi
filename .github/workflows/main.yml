@@ -286,13 +286,13 @@ jobs:
       with:
         android-abis: arm64-v8a
     # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip）。只读 native-rwkv-gate 写的
-    # 同一个缓存条目（key 是两个钉死的 SHA-256，与 fetch_model.sh 一致），不另占配额；未命中时
-    # fetch_model.sh 按钉死 URL 下载并校验（~16 MB）。
+    # 同一个缓存条目（key 是三个钉死的 SHA-256，与 fetch_model.sh 一致），不另占配额；未命中时
+    # fetch_model.sh 按钉死 URL 下载并校验（~13 MB）。
     - name: Restore RWKV weights cache
       uses: actions/cache/restore@v4
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-ff626af2e974346ed282615d190500148b22cfe05cbfd081b1e70d5a1dfa3cd9-db54656bc41a22a175d2b905304d45e6ae6b0bb4efd1af8dfce9185f40ee1a01
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       run: bash native/fushi_rwkv/fetch_model.sh
 

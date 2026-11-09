@@ -47,9 +47,9 @@ void main() {
     });
   });
 
-  // BUG-4220：真实 timedtext XML 是双重转义的（2026-11-06 抓 dQw4w9WgXcQ 的 en 轨：
+  // BUG-4228：真实 timedtext XML 是双重转义的（2026-11-06 抓 dQw4w9WgXcQ 的 en 轨：
   // `We&amp;#39;re`）。只解一层时内置播放器显示 `We&#39;re`；扩展走 json3 不受影响。
-  group('parseYoutubeTimedTextToCues double-escaped entities (BUG-4220)', () {
+  group('parseYoutubeTimedTextToCues double-escaped entities (BUG-4228)', () {
     test('format 3 <p>: &amp;#39; → apostrophe', () {
       const xml =
           '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>'
@@ -77,6 +77,123 @@ void main() {
       expect(cues[0].text, "it's");
       // 字幕作者真写的 `&amp;`（三层转义）只解两层，原样留下字面文本。
       expect(cues[1].text, '&amp; stays');
+    });
+  });
+
+  // json3（cueDownloadUrl 请求的主格式，与浏览器扩展同一格式）：`segs[].utf8` 是字幕原文，
+  // 无实体转义。fixtures 按 YouTube json3 真实结构写（wireMagic/pens/窗口定义事件/逐词 seg/
+  // aAppend 换行事件），对应上面 XML 用例的同一批行（dQw4w9WgXcQ 人工轨 + en ASR 轨）。
+  group('parseYoutubeTimedTextToCues json3', () {
+    test('manual track: utf8 原文直用，作者写的 <i> / &amp; 不被改写', () {
+      const String json = r'''
+{"wireMagic":"pb3","pens":[{}],"wsWinStyles":[{}],"wpWinPositions":[{}],"events":[
+{"tStartMs":1360,"dDurationMs":1680,"segs":[{"utf8":"[♪♪♪]"}]},
+{"tStartMs":18640,"dDurationMs":3240,"segs":[{"utf8":"♪ We're no strangers to love ♪"}]},
+{"tStartMs":22000,"dDurationMs":3000,"segs":[{"utf8":"<i>you</i> know &amp; \"rules\""}]}
+]}''';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:abc',
+      );
+      expect(cues.map((AudioCue c) => c.text).toList(), <String>[
+        '[♪♪♪]',
+        "♪ We're no strangers to love ♪",
+        '<i>you</i> know &amp; "rules"',
+      ]);
+      expect(cues[0].startMs, 1360);
+      expect(cues[0].endMs, 3040);
+      expect(cues[2].startMs, 22000);
+      expect(cues[2].endMs, 25000);
+      expect(cues.map((AudioCue c) => c.sentenceIndex).toList(), <int>[
+        0,
+        1,
+        2,
+      ]);
+      expect(cues[1].bookKey, 'yt:abc');
+      expect(cues[1].chapterHref, 'youtube://yt:abc');
+      expect(cues[1].textFragmentId, 'yt-1');
+    });
+
+    test('ASR track: 逐词 seg 拼成整行，跳窗口定义事件与 aAppend 换行事件', () {
+      const String json = r'''
+{"wireMagic":"pb3","pens":[{}],"wsWinStyles":[{},{"mhModeHint":2,"juJustifCode":0,"sdScrollDir":3}],
+"wpWinPositions":[{},{"apPoint":6,"ahHorPos":20,"avVerPos":100,"rcRows":2,"ccCols":40}],"events":[
+{"tStartMs":0,"dDurationMs":214310,"id":1,"wpWinPosId":1,"wsWinStyleId":1},
+{"tStartMs":18800,"dDurationMs":7160,"wWinId":1,"segs":[{"utf8":"We're","acAsrConf":0},{"utf8":" no","tOffsetMs":239,"acAsrConf":0},{"utf8":" strangers","tOffsetMs":559,"acAsrConf":0},{"utf8":" to","tOffsetMs":1040,"acAsrConf":0}]},
+{"tStartMs":21790,"dDurationMs":4170,"wWinId":1,"aAppend":1,"segs":[{"utf8":"\n"}]},
+{"tStartMs":21800,"dDurationMs":6640,"wWinId":1,"segs":[{"utf8":"love","acAsrConf":0},{"utf8":" you","tOffsetMs":400,"acAsrConf":0},{"utf8":" know","tOffsetMs":800,"acAsrConf":0}]}
+]}''';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:asr',
+      );
+      expect(cues.map((AudioCue c) => c.text).toList(), <String>[
+        "We're no strangers to",
+        'love you know',
+      ]);
+      // json3 只负责如实给出每行时间；滚动双行的前后重叠留给轨级收尾截断。
+      expect(cues[0].startMs, 18800);
+      expect(cues[0].endMs, 25960);
+      expect(cues[1].startMs, 21800);
+      expect(cues[1].endMs, 28440);
+    });
+
+    test('缺 dDurationMs：以下一事件起点为终点，末尾兜底 1500ms', () {
+      const String json = '''
+  {"events":[
+  {"tStartMs":1000,"segs":[{"utf8":"a"}]},
+  {"tStartMs":1000,"segs":[{"utf8":"b"}]},
+  {"tStartMs":4000,"segs":[{"utf8":"c"}]},
+  {"tStartMs":9000,"dDurationMs":0,"segs":[{"utf8":"d"}]}
+  ]}''';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:x',
+      );
+      expect(
+        cues.map((AudioCue c) => '${c.text}:${c.startMs}-${c.endMs}').toList(),
+        <String>['a:1000-1001', 'b:1000-4000', 'c:4000-9000', 'd:9000-10500'],
+      );
+    });
+
+    test('无 tStartMs / 无 segs / 空文本的事件跳过；无 events 回空', () {
+      const String json =
+          '{"events":[{"segs":[{"utf8":"no start"}]},'
+          '{"tStartMs":10,"dDurationMs":5},'
+          '{"tStartMs":20,"dDurationMs":5,"segs":[{"utf8":"  "},{}]},'
+          '{"tStartMs":30,"dDurationMs":5,"segs":[{"utf8":"kept"}]}]}';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: json,
+        bookKey: 'yt:x',
+      );
+      expect(cues.single.text, 'kept');
+      expect(cues.single.sentenceIndex, 0);
+      expect(
+        parseYoutubeTimedTextToCues(
+          content: '{"wireMagic":"pb3"}',
+          bookKey: 'yt:x',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('请求 json3 却回 XML（YouTube 无视 fmt）：按内容回退 XML 解析', () {
+      const String xml =
+          '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>'
+          '<p t="18640" d="3240">We&amp;#39;re here</p></body></timedtext>';
+      final List<AudioCue> cues = parseYoutubeTimedTextToCues(
+        content: xml,
+        bookKey: 'yt:x',
+      );
+      expect(cues.single.text, "We're here");
+      expect(cues.single.endMs, 21880);
+    });
+
+    test('json3 体损坏抛 FormatException（下载层当失败处理）', () {
+      expect(
+        () => parseYoutubeTimedTextToCues(content: '{"events":[', bookKey: 'x'),
+        throwsFormatException,
+      );
     });
   });
 
@@ -137,6 +254,67 @@ void main() {
 
   // A（浏览器扩展→server 抓 YouTube 真字幕）：server 端点把抓到的轨 + cue 序列化成
   // 扩展可消费的 JSON。纯函数守卫其形状（扩展面板 cue 形状 {text,startMs,endMs}）。
+  // 反馈 RvwGCEtAsd：自动字幕滚动双行，每行时长覆盖到滚走为止，下一行早已开口；
+  // 不截的话制卡片段尾部多带几秒下一句。样本是真实 androidVr format 3 ASR 轨的形状。
+  group('finishYoutubeCaptionCues (rolling ASR overlap)', () {
+    const String asrXml =
+        '<?xml version="1.0" encoding="utf-8" ?>'
+        '<timedtext format="3">\n<body>\n'
+        '<w t="0" id="1" wp="1" ws="1"/>\n'
+        '<p t="18800" d="7160" w="1">'
+        '<s ac="0">We&#39;re</s><s t="239" ac="0"> no</s>'
+        '<s t="559" ac="0"> strangers</s><s t="1040" ac="0"> to</s></p>\n'
+        '<p t="21790" d="4170" w="1" a="1">\n</p>\n'
+        '<p t="21800" d="6640" w="1">'
+        '<s ac="0">love</s><s t="400" ac="0"> you</s>'
+        '<s t="800" ac="0"> know</s></p>\n'
+        '<p t="25950" d="5000" w="1">'
+        '<s ac="0">the</s><s t="300" ac="0"> rules</s></p>\n'
+        '</body>\n</timedtext>';
+
+    test('ASR 轨：每条 cue 终点收到下一条起点，末条不动', () {
+      final List<AudioCue> cues = finishYoutubeCaptionCues(
+        parseYoutubeTimedTextToCues(content: asrXml, bookKey: 'yt:asr'),
+        isAutoGenerated: true,
+      );
+      expect(cues.map((AudioCue c) => c.text), <String>[
+        "We're no strangers to",
+        'love you know',
+        'the rules',
+      ]);
+      expect(cues[0].startMs, 18800);
+      expect(cues[0].endMs, 21800);
+      expect(cues[1].startMs, 21800);
+      expect(cues[1].endMs, 25950);
+      expect(cues[2].endMs, 30950);
+    });
+
+    test('人工轨：有意的重叠原样保留', () {
+      final List<AudioCue> cues = finishYoutubeCaptionCues(
+        parseYoutubeTimedTextToCues(content: asrXml, bookKey: 'yt:human'),
+        isAutoGenerated: false,
+      );
+      expect(cues[0].endMs, 25960);
+      expect(cues[1].endMs, 28440);
+    });
+
+    test('乱序输入按起点稳定排序后再截', () {
+      AudioCue cue(String text, int start, int end) => AudioCue()
+        ..text = text
+        ..startMs = start
+        ..endMs = end;
+      final List<AudioCue> cues = finishYoutubeCaptionCues(<AudioCue>[
+        cue('b', 2000, 5000),
+        cue('a', 0, 4000),
+        cue('c', 2000, 2500),
+      ], isAutoGenerated: true);
+      expect(cues.map((AudioCue c) => c.text), <String>['a', 'b', 'c']);
+      expect(cues[0].endMs, 2000);
+      // 同起点：下一条起点不晚于本条起点，不截（不把 cue 截成零长）。
+      expect(cues[1].endMs, 5000);
+    });
+  });
+
   group('serializeYoutubeCaptionTracks (extension bridge)', () {
     YoutubeCaptionTrack track(String code, String name, bool auto) =>
         YoutubeCaptionTrack(

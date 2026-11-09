@@ -156,6 +156,55 @@ void main() {
     expect(shown.opacity, 1);
   });
 
+  // 反馈 zFSpGHJI2b：阅读器底部 chrome 在歌词模式下同时被 `visible: false` 和
+  // `TickerMode(enabled: false)`（覆盖层盖住的阅读器层统一停 Ticker）包住，隐藏
+  // 弹簧的 Ticker 被静音，chrome 永远停在可见态、画在歌词覆盖层上面。
+  testWidgets('chrome reveal hides even when its tickers are muted', (
+    WidgetTester tester,
+  ) async {
+    Widget build({required bool visible, required bool tickers}) => _host(
+      TickerMode(
+        enabled: tickers,
+        child: FushiChromeReveal(
+          visible: visible,
+          from: AxisDirection.down,
+          child: const Text('bar'),
+        ),
+      ),
+    );
+    await tester.pumpWidget(build(visible: true, tickers: true));
+    expect(find.text('bar'), findsOneWidget);
+    // 同一帧：隐藏 + 停 Ticker（歌词模式进场）。
+    await tester.pumpWidget(build(visible: false, tickers: false));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('bar'), findsNothing);
+    // 退出：显示 + Ticker 恢复，照常弹入并落到完全可见。
+    await tester.pumpWidget(build(visible: true, tickers: true));
+    await tester.pumpAndSettle();
+    final Opacity shown = tester.widget<Opacity>(
+      find.ancestor(of: find.text('bar'), matching: find.byType(Opacity)),
+    );
+    expect(shown.opacity, closeTo(1, 0.01));
+  });
+
+  testWidgets('chrome reveal settles when tickers stop mid-animation', (
+    WidgetTester tester,
+  ) async {
+    Widget build({required bool visible, required bool tickers}) => _host(
+      TickerMode(
+        enabled: tickers,
+        child: FushiChromeReveal(visible: visible, child: const Text('bar')),
+      ),
+    );
+    await tester.pumpWidget(build(visible: true, tickers: true));
+    await tester.pumpWidget(build(visible: false, tickers: true));
+    await tester.pump(const Duration(milliseconds: 16));
+    // 隐藏动画进行中 Ticker 被停：不能冻在半透明中途。
+    await tester.pumpWidget(build(visible: false, tickers: false));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('bar'), findsNothing);
+  });
+
   testWidgets('morphing fab animates between round and rounded square', (
     WidgetTester tester,
   ) async {

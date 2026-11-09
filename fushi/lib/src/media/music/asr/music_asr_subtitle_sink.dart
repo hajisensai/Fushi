@@ -7,7 +7,7 @@
 /// - 登记：读导出的 SRT（样式参考不用：音乐只要 SRT），按这个文件下的每首曲目切片——
 ///   CUE 虚拟曲目按 `[cueStartMs, cueEndMs)` 截取并平移成曲内时间（Rust
 ///   `ffm_lyrics_slice`），普通文件整份——写成该曲的 `asr` 歌词行（[MusicLyricsService.
-///   saveGenerated]）。`music_lyrics` 一变，「我库里的例句」/ 曲库歌词搜索的语料自动对账，
+///   saveGenerated]）。`music_lyrics` 一变，曲库歌词搜索的语料自动对账，
 ///   正在播放的歌词页与桌面歌词经 [MusicLyricsService.generatedUpdates] 重载。
 /// - 远控镜像单独一种（[VideoRemoteJobKind.musicSubtitleGenerate]），主体是目标键，视频
 ///   遥控不会把它当成哪个视频的任务。

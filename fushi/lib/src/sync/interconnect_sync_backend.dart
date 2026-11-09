@@ -1696,6 +1696,46 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
+  /// host 全部书的阅读进度一次取齐（`GET` [kBookProgressBatchPath]，反馈
+  /// kM-Gb_Xnu-）：bookKey → 进度，没有进度的书不在表里（= [RemoteBookProgress.empty]，
+  /// 与逐本 [remoteBookProgress] 同口径）。
+  ///
+  /// 老 host 没有这个端点（落进 WebDAV 文件分支回 404 / 405）→ 返回 null，调用方
+  /// 回落逐本 GET。其它失败（网络、鉴权、5xx）照常抛，不降级成「全都没进度」——那会
+  /// 让本轮把每本书都当成 host 无记录来判。
+  Future<Map<String, RemoteBookProgress>?> remoteBookProgressSnapshot() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kBookProgressBatchPath',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $kBookProgressBatchPath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    if (decoded is! Map) {
+      throw FormatException(
+        'GET $kBookProgressBatchPath: expected a JSON object',
+      );
+    }
+    return <String, RemoteBookProgress>{
+      for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+        if (e.value is Map)
+          e.key.toString(): RemoteBookProgress.fromJson(
+            (e.value as Map).cast<String, Object?>(),
+          ),
+    };
+  }
+
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
   /// 拉取 host 端聚合快照原始 JSON（TODO-1056 phase C）。老 host 无该端点返回 404
