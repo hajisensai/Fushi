@@ -45,7 +45,7 @@ class ObfuscatingSyncBackend extends SyncBackend
   /// 暴露被包裹的真后端（测试 / 诊断用）。
   SyncBackend get inner => _inner;
 
-  // ── 混淆临时文件的归属与清理（BUG-4227） ─────────────────────────
+  // ── 混淆临时文件的归属与清理（BUG-4242） ─────────────────────────
   //
   // 上传 / 下载的混淆临时文件与原文件同尺寸（有声书可达数百 MB）。try/finally 只能
   // 覆盖进程活着时的异常路径；iOS 在上传途中挂起 / 内存压力杀进程时 finally 根本

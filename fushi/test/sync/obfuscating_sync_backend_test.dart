@@ -339,9 +339,9 @@ void main() {
     });
   });
 
-  // BUG-4227：iOS 日志里 tmp/ 残留 9 份 603MB 的 obf_up_*/blob。混淆临时目录必须在
+  // BUG-4242：iOS 日志里 tmp/ 残留 9 份 603MB 的 obf_up_*/blob。混淆临时目录必须在
   // 进程内任何失败路径上删掉，且上一个进程被杀留下的遗留要在启动时清掉。
-  group('ObfuscatingSyncBackend temp lifecycle (BUG-4227)', () {
+  group('ObfuscatingSyncBackend temp lifecycle (BUG-4242)', () {
     test('obfuscation failure still removes the temp dir', () async {
       final Directory root = _testTempRoot();
       final inner = _RecordingBackend();
@@ -449,9 +449,9 @@ void main() {
     });
   });
 
-  // BUG-4227 review：临时根不能是多用户共享的 systemTemp 固定子目录；清理只能删
+  // BUG-4242 review：临时根不能是多用户共享的 systemTemp 固定子目录；清理只能删
   // 已死进程的槽位，不能删活进程（别的用户 / 并行测试进程 / 另一个 Fushi 实例）的。
-  group('ObfuscatingSyncBackend temp ownership (BUG-4227 review)', () {
+  group('ObfuscatingSyncBackend temp ownership (BUG-4242 review)', () {
     test('default temp root lives under the app-private cache dir', () async {
       final TestWidgetsFlutterBinding binding =
           TestWidgetsFlutterBinding.ensureInitialized();
