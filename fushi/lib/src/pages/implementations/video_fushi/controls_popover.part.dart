@@ -33,7 +33,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
-        _controlPopoverAnchorHovered = true;
+        _controlPopoverHoverDismiss.setAnchorHovered(true);
         _showControlPopover(
           kind,
           popoverLink: link,
@@ -42,13 +42,10 @@ extension _VideoControlsPopover on _VideoFushiPageState {
         );
       },
       onHover: (_) {
-        _controlPopoverAnchorHovered = true;
+        _controlPopoverHoverDismiss.setAnchorHovered(true);
         _pokeControlsVisible();
       },
-      onExit: (_) {
-        _controlPopoverAnchorHovered = false;
-        _scheduleControlPopoverHide();
-      },
+      onExit: (_) => _controlPopoverHoverDismiss.setAnchorHovered(false),
       child: anchored,
     );
   }
@@ -278,7 +275,10 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     VideoControlItem? sourceItem,
   }) {
     if (!mounted) return;
-    _controlPopoverHideTimer?.cancel();
+    _controlPopoverHoverDismiss.opened(
+      kindChanged: _videoControlPopover.value != kind,
+      pinned: pinned,
+    );
     _activeControlPopoverLink = popoverLink;
     _activeControlPopoverPlacement = _controlPopoverPlacementFor(
       kind,
@@ -286,11 +286,6 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     );
     _activeControlPopoverSourceSlot = sourceSlot;
     _activeControlPopoverSourceItem = sourceItem;
-    if (_videoControlPopover.value != kind) {
-      _controlPopoverPinned = pinned;
-    } else if (pinned) {
-      _controlPopoverPinned = true;
-    }
     _hideVideoControlEditOverlay(revealControls: false);
     // BUG-792：不再关 push-aside 字幕列表。音量/倍速轻浮层由 [_controlPopoverAnchor]
     // 的 MouseRegion **hover**（onEnter）触发，且落点被 [resolveVideoControlPopoverPlacement]
@@ -314,8 +309,9 @@ extension _VideoControlsPopover on _VideoFushiPageState {
   }
 
   void _hideControlPopover() {
-    _controlPopoverHideTimer?.cancel();
-    _controlPopoverPinned = false;
+    // 按住时被关（Esc / 门控收起控制条）：浮层卸载后收不到抬起，这里收尾放开按住。
+    final bool wasPressed = _controlPopoverHoverDismiss.closed();
+    if (wasPressed) _syncControlPopoverPressHold();
     _activeControlPopoverLink = null;
     _activeControlPopoverPlacement = null;
     _activeControlPopoverSourceSlot = null;
@@ -325,31 +321,39 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     }
   }
 
-  void _scheduleControlPopoverHide() {
-    _controlPopoverHideTimer?.cancel();
-    if (_controlPopoverPinned) return;
-    _controlPopoverHideTimer = Timer(const Duration(milliseconds: 180), () {
-      if (_controlPopoverAnchorHovered || _controlPopoverPanelHovered) return;
-      _hideControlPopover();
-    });
+  /// 浮层里按住 / 松开（BUG-4227）：按住期间既按住控制条（[_controlsHeld]），也让
+  /// 浮层自己的 hover 收起不生效（拖滑条拖出浮层边界照样会 onExit）；松开后 fork 按
+  /// 一次 hover 重新倒计时，浮层若已不在悬停下按 hover 规则延迟收起。
+  void _setControlPopoverPressed(bool pressed) {
+    if (!_controlPopoverHoverDismiss.setPressed(pressed)) return;
+    _syncControlPopoverPressHold();
+  }
+
+  /// 把浮层按住状态并进控制条按住（[_syncControlsHold] 的一个来源）。
+  void _syncControlPopoverPressHold() {
+    if (!mounted) return;
+    _controlsHoldPopoverPress = _controlPopoverHoverDismiss.pressed;
+    _syncControlsHold();
   }
 
   Widget _controlPopoverHoverKeepAlive({required Widget child}) {
+    // 按住续命两端都要（移动端拖滑条同样没有 tap 去重排隐藏计时）；hover 续命只桌面。
+    child = VideoControlPopoverPressHold(
+      onPressedChanged: _setControlPopoverPressed,
+      child: child,
+    );
     if (!_isDesktopVideoControls) return child;
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
-        _controlPopoverPanelHovered = true;
+        _controlPopoverHoverDismiss.setPanelHovered(true);
         _pokeControlsVisible();
       },
       onHover: (_) {
-        _controlPopoverPanelHovered = true;
+        _controlPopoverHoverDismiss.setPanelHovered(true);
         _pokeControlsVisible();
       },
-      onExit: (_) {
-        _controlPopoverPanelHovered = false;
-        _scheduleControlPopoverHide();
-      },
+      onExit: (_) => _controlPopoverHoverDismiss.setPanelHovered(false),
       child: child,
     );
   }

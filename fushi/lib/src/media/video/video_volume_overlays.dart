@@ -78,8 +78,21 @@ class VideoControlPopoverFrame extends StatelessWidget {
       ? appleColorsOf(context).label
       : Theme.of(context).colorScheme.primary;
 
+  /// 外框整块是命中面（BUG-4227）：浮层压在进度条 / 控制条之上，落在外框内、却
+  /// 不在任何控件上的点按（内边距、控件间缝、百分比读数旁）必须被外框吃掉，不能
+  /// 下穿。Apple 玻璃底是 [VideoGlassSurface] 里的 `IgnorePointer` 兄弟层，内容
+  /// Row 的缝不命中，点按一路落到下面的 dismiss 层（translucent）与进度条的
+  /// 原始 Listener——点浮层空白处 = 关浮层 + 跳进度。MD3E 的 [DecoratedBox] 本就
+  /// 按装饰命中；两套统一由外框声明，不依赖底色的实现细节。
   @override
   Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      child: _buildSurface(context),
+    );
+  }
+
+  Widget _buildSurface(BuildContext context) {
     if (videoAppleChrome(context)) {
       return SizedBox(
         key: frameKey,
@@ -126,6 +139,60 @@ class VideoControlPopoverFrame extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 浮层内「按住」状态上报（BUG-4227）：有指针在浮层里按下时报 `true`，最后一个
+/// 指针抬起 / 取消时报 `false`。
+///
+/// 控制条的自动隐藏只靠 hover 续命：桌面 media_kit 的 MouseRegion 与浮层自己的
+/// hover keep-alive 都只收 [PointerHoverEvent]，按住拖滑条时发的是
+/// [PointerMoveEvent]，没有任何东西重置隐藏计时 → 拖音量 / 倍速滑条到一半控制条
+/// 淡出、浮层随之关掉。宿主据此在按住期间「按住控制条」（fork `holdVisible`），
+/// 与 hover 续命是两条独立的输入通道。
+///
+/// 只旁听原始指针事件（[HitTestBehavior.translucent]），不改命中、不进手势竞技。
+/// 浮层在按住期间被关掉（Esc / 控制条被门控收起）时本组件随之卸载、收不到抬起，
+/// 宿主必须在关浮层时自己清掉按住状态。
+class VideoControlPopoverPressHold extends StatefulWidget {
+  const VideoControlPopoverPressHold({
+    super.key,
+    required this.onPressedChanged,
+    required this.child,
+  });
+
+  final ValueChanged<bool> onPressedChanged;
+  final Widget child;
+
+  @override
+  State<VideoControlPopoverPressHold> createState() =>
+      _VideoControlPopoverPressHoldState();
+}
+
+class _VideoControlPopoverPressHoldState
+    extends State<VideoControlPopoverPressHold> {
+  final Set<int> _pointers = <int>{};
+
+  void _down(PointerDownEvent event) {
+    final bool wasPressed = _pointers.isNotEmpty;
+    _pointers.add(event.pointer);
+    if (!wasPressed) widget.onPressedChanged(true);
+  }
+
+  void _release(PointerEvent event) {
+    if (!_pointers.remove(event.pointer)) return;
+    if (_pointers.isEmpty) widget.onPressedChanged(false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _down,
+      onPointerUp: _release,
+      onPointerCancel: _release,
+      child: widget.child,
     );
   }
 }
