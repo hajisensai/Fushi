@@ -7,8 +7,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 // v92 统计域重构：观看时长不再由 VideoWatchTracker 自己计时 / 自己写活动行，而是
-// 交给注入的 [StudyClock]（活跃态 = 正在播放），字幕字数经 `clock.addChars` 记到
-// 同一段。因此本文件只剩三类断言：完成判定纯函数、字幕停留门（BUG-1763）、以及
+// 交给注入的 [StudyClock]（2026-11-07 起墙钟计时；起停归宿主计时门，tracker 只
+// 采样喂空闲门 / 报播放态），字幕字数经 `clock.addChars` 记到同一段。因此本文件只剩三类断言：完成判定纯函数、字幕停留门（BUG-1763）、以及
 // tracker 与时钟的接线（stop 落库 / 幂等 / 不播放不计时）。
 //
 // 已删除的用例（被测对象不存在了）：
@@ -98,7 +98,11 @@ class _Sink {
 
 /// 建一个全注入的时钟：DB 只是构造签名要求（sink / deviceId / uid 全部替身，
 /// 不会碰它）；`now` 不注入时走真实墙钟——接线用例靠真实 delay 制造窗口。
-StudyClock _clock(_Sink sink, {DateTime Function()? now}) {
+StudyClock _clock(
+  _Sink sink, {
+  DateTime Function()? now,
+  Duration? idleTimeout,
+}) {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   int seq = 0;
@@ -107,7 +111,7 @@ StudyClock _clock(_Sink sink, {DateTime Function()? now}) {
     mediaKind: kActivityMediaVideo,
     mediaKey: 'u1',
     title: 'A',
-    accrual: StudyAccrual.explicit,
+    idleTimeout: idleTimeout,
     sink: sink.call,
     deviceId: () async => 'dev',
     now: now,
@@ -136,7 +140,17 @@ class _Session {
   final _FakeSource src;
   final VideoWatchTracker tracker;
 
-  static Future<_Session> start(_Coverage cov) async {
+  /// 最近一次写入的段时长（flushNow 与 stop 写的是同一 uid 的绝对值）。
+  int get lastDurationMs => sink.writes.last.durationMs.value;
+
+  /// [startClock]：生产里 tracker.start() 只起采样、起表归宿主计时门；这里默认替门
+  /// 起表，测「tracker 不起表」时传 false。
+  static Future<_Session> start(
+    _Coverage cov, {
+    bool startClock = true,
+    Duration? idleTimeout,
+    void Function(bool playing)? onPlaying,
+  }) async {
     _fakeNow = DateTime(2026, 1, 1, 12);
     final _Sink sink = _Sink();
     final _FakeSource src = _FakeSource()
@@ -145,12 +159,14 @@ class _Session {
       ..durationMs = 100000;
     final VideoWatchTracker tracker = VideoWatchTracker(
       bookUid: 'u1',
-      clock: _clock(sink, now: () => _fakeNow),
+      clock: _clock(sink, now: () => _fakeNow, idleTimeout: idleTimeout),
       loadCoverage: cov.load,
       saveCoverage: cov.save,
+      onPlayingChanged: onPlaying,
     )..debugNowForTesting = () => _fakeNow;
     tracker.attach(src);
     await tracker.debugCoverageLoaded;
+    if (startClock) tracker.clock.start();
     tracker.start();
     addTearDown(tracker.stop);
     return _Session._(sink, src, tracker);
@@ -457,8 +473,10 @@ void main() {
         tracker.attach(src);
         await tracker.debugCoverageLoaded;
 
+        // 生产里起表归宿主计时门（tracker.start 只起采样）。
+        tracker.clock.start();
         tracker.start();
-        // 制造一段连续播放：位置与墙钟同步推进 30s（首次覆盖 → 记账）。
+        // 制造一段连续播放：位置与墙钟同步推进 30s。
         for (int i = 1; i <= 30; i++) {
           _advanceWall(1000);
           src.positionMs = i * 1000;
@@ -505,157 +523,138 @@ void main() {
     );
   });
 
-  group('观看时长 = 首次覆盖（BUG-2108：重听 / 拖回 / 重看不计）', () {
-    test('连续播放推进到没看过的区间：按墙钟记账，且覆盖并集随之增长', () async {
+  group('观看时长 = 墙钟（2026-11-07 取代 BUG-2108 首次覆盖：实际看了多久就计多久）', () {
+    test('tracker.start() 只起采样、不起表：时钟由宿主的计时门起停', () async {
+      final _Session s = await _Session.start(_Coverage(), startClock: false);
+      expect(s.tracker.isSampling, isTrue);
+      expect(s.tracker.clock.isRunning, isFalse, reason: '起表归计时门，不归 tracker');
+      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
+      await s.tracker.stop();
+      expect(s.tracker.isSampling, isFalse);
+      expect(s.sink.writes, isEmpty, reason: '没起表 → 一毫秒都不入账');
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[
+        (0, 10000),
+      ], reason: '覆盖并集照常增长（字幕字数要用）');
+    });
+
+    test('连续播放：按墙钟入账，覆盖并集随之增长并落盘', () async {
       final _Coverage cov = _Coverage();
       final _Session s = await _Session.start(cov);
       s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
       await s.tracker.stop();
-      expect(s.sink.writes, hasLength(1));
-      expect(s.sink.writes.single.durationMs.value, 30000);
+      expect(s.lastDurationMs, 30000);
       expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 30000)]);
       expect(cov.saved, '[[0,30000]]', reason: 'stop 落盘覆盖并集');
     });
 
-    test('回放上一句：位置退回已看过的区间再推进，不记账', () async {
+    test('回放上一句 / 拖回重听都是学习时间，照计（不再只计首次覆盖）', () async {
       final _Session s = await _Session.start(_Coverage());
       s.play(fromMs: 0, toMs: 20000, wallMs: 20000);
-      // 拖回 5s 重听（seek 本身不是连续推进，不计；之后推进的区间已覆盖，也不计）。
       s.seek(15000);
       s.play(fromMs: 15000, toMs: 20000, wallMs: 5000);
-      // 再往前看 3s 新内容：只有这 3s 计。
-      s.play(fromMs: 20000, toMs: 23000, wallMs: 3000);
       await s.tracker.stop();
-      expect(
-        s.sink.writes.single.durationMs.value,
-        23000,
-        reason: '20s 首看 + 3s 新内容；5s 重听不计',
-      );
-    });
-
-    test('向前 seek 跳过的内容不算看过，也不计时', () async {
-      final _Session s = await _Session.start(_Coverage());
-      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
-      s.seek(60000); // 跳过 50s
-      s.play(fromMs: 60000, toMs: 65000, wallMs: 5000);
-      await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 15000);
+      expect(s.lastDurationMs, 25000, reason: '20s 首看 + 5s 重听');
       expect(s.tracker.debugCoverage.ranges, <(int, int)>[
-        (0, 10000),
-        (60000, 65000),
-      ], reason: '跳过的 10000..60000 不在并集里，之后真看到时仍按首看计');
+        (0, 20000),
+      ], reason: '并集只记看过哪里（重听不扩大）');
     });
 
-    test('两次采样之间发生的 seek（墙钟走了 1s、位置跳了 10s）判为跳变：不覆盖、不计时', () async {
-      final _Session s = await _Session.start(_Coverage());
-      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
-      // 定时器采样节奏下 seek 不一定恰好有通知：上一采样 10000，1s 后采到 20000。
-      _advanceWall(1000);
-      s.src.positionMs = 20000;
-      s.src.emit();
-      s.play(fromMs: 20000, toMs: 25000, wallMs: 5000);
+    test('次日重看：覆盖并集只影响字幕字数，时长照计', () async {
+      final _Coverage cov = _Coverage(initial: '[[0,60000]]');
+      final _Session s = await _Session.start(cov);
+      s.play(fromMs: 0, toMs: 60000, wallMs: 60000);
       await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 15000);
-      expect(s.tracker.debugCoverage.ranges, <(int, int)>[
-        (0, 10000),
-        (20000, 25000),
-      ], reason: '10000..20000 是跳过去的，不在并集里');
+      expect(s.lastDurationMs, 60000);
+      expect(cov.saved, isNull, reason: '没看到新区间，并集不变、不重写');
     });
 
-    test('倍速播放：媒体推进 = 墙钟 × 倍速仍算连续，按墙钟记账', () async {
+    test('倍速播放：按墙钟计（不是按片长）', () async {
       final _Session s = await _Session.start(_Coverage());
       s.src.speed = 2.0;
       s.play(fromMs: 0, toMs: 20000, wallMs: 10000);
       await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 10000);
+      expect(s.lastDurationMs, 10000);
     });
 
-    test('暂停期间位置不动：不记账；两端播放态不一致的窗口整窗不计', () async {
+    test('向前 seek 跳过的内容不进覆盖并集（之后真看到时字幕照常计字）', () async {
       final _Session s = await _Session.start(_Coverage());
-      s.play(fromMs: 0, toMs: 5000, wallMs: 5000);
-      s.src.isPlaying = false;
-      s.tick(wallMs: 30000); // 暂停 30s
-      s.src.isPlaying = true;
-      s.tick(wallMs: 0);
-      s.play(fromMs: 5000, toMs: 8000, wallMs: 3000);
+      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
+      _advanceWall(1000);
+      s.src.positionMs = 20000; // 采样窗内的跳变：墙钟 1s、位置 10s
+      s.src.emit();
+      s.play(fromMs: 20000, toMs: 25000, wallMs: 5000);
       await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 8000);
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[
+        (0, 10000),
+        (20000, 25000),
+      ]);
+      expect(s.lastDurationMs, 16000, reason: '时长 = 墙钟（含跳变那 1s）');
     });
 
-    test('次日重看：attach 时加载持久化的覆盖并集，已看过的整段不计', () async {
-      final _Coverage cov = _Coverage(initial: '[[0,60000]]');
-      final _Session s = await _Session.start(cov);
-      s.play(fromMs: 0, toMs: 60000, wallMs: 60000);
-      s.play(fromMs: 60000, toMs: 61000, wallMs: 1000);
-      await s.tracker.stop();
-      expect(
-        s.sink.writes.single.durationMs.value,
-        1000,
-        reason: '前 60s 昨天看过 → 0；只有 60..61s 是首看',
+    test('暂停查词（短于空闲阈值）：暂停那段照计', () async {
+      final _Session s = await _Session.start(
+        _Coverage(),
+        idleTimeout: const Duration(seconds: 60),
       );
-      expect(cov.saved, '[[0,61000]]');
+      s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
+      s.src.isPlaying = false;
+      s.tick(wallMs: 40000); // 暂停 40s 查词
+      await s.tracker.stop();
+      expect(s.lastDurationMs, 70000);
     });
 
-    test('睡眠唤醒：墙钟跳 8 小时、位置只前进 1.5s → 只记那 1.5s', () async {
+    test('暂停超过空闲阈值：那一窗不再入账（挂机不计）', () async {
+      final _Session s = await _Session.start(
+        _Coverage(),
+        idleTimeout: const Duration(seconds: 60),
+      );
+      s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
+      await s.tracker.clock.flushNow(); // 结算到 30s（生产里是 60s tick）
+      s.src.isPlaying = false;
+      s.tick(wallMs: 90000); // 暂停 90s 不动
+      await s.tracker.stop();
+      expect(s.lastDurationMs, 30000, reason: '最后一次 touch 之后 > 60s，整窗拒');
+    });
+
+    test('播放中每个采样点 touch 空闲门：长段连续播放不被截断', () async {
+      final _Session s = await _Session.start(
+        _Coverage(),
+        idleTimeout: const Duration(seconds: 10),
+      );
+      // 100s 连续播放、期间没有任何用户输入，只有采样 touch。
+      s.play(fromMs: 0, toMs: 100000, wallMs: 100000);
+      await s.tracker.stop();
+      expect(s.lastDurationMs, 100000);
+    });
+
+    test('睡眠唤醒（墙钟跳 8 小时）：断档守卫整窗拒，不造跨小时段', () async {
       final _Session s = await _Session.start(_Coverage());
-      s.src.isPlaying = true;
       s.src.positionMs = 0;
       s.src.emit();
-      // 合盖睡眠：Flutter 桌面端 S3 唤醒不走 paused，sampler 全程没停。唤醒后
-      // mpv 刚恢复、位置只前进了一点点，而 isContinuousPlaybackAdvance 的容差是
-      // wallMs * rate * 1.25——wallMs 越大越松，恒判「连续」，于是这一窗会按墙钟
-      // 记满 8 小时，还会被 addActiveMs 塞进单个小时桶造出一条跨小时的段。
       _advanceWall(8 * 60 * 60 * 1000);
       s.src.positionMs = 1500;
       s.src.emit();
       await s.tracker.stop();
-      expect(
-        s.sink.writes.single.durationMs.value,
-        1500,
-        reason:
-            '只有这 1.5s 是真的新看到的内容；没有封顶会记满 8 小时，'
-            '还会被 addActiveMs 塞进单个小时桶造出一条跨小时的段',
+      expect(s.sink.writes, isEmpty);
+    });
+
+    test('onPlayingChanged：采样到播放 ↔ 暂停翻转才回调，同态不重复', () async {
+      final List<bool> flips = <bool>[];
+      final _Session s = await _Session.start(
+        _Coverage(),
+        onPlaying: flips.add,
       );
-      expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 1500)]);
-    });
-
-    test('网络流卡缓冲十分钟后位置前进 1.2s → 只记那 1.2s', () async {
-      final _Session s = await _Session.start(_Coverage());
+      expect(flips, <bool>[true], reason: 'start 的首个采样报一次初态');
+      s.tick(wallMs: 1000);
+      s.src.isPlaying = false;
+      s.tick(wallMs: 1000);
+      s.tick(wallMs: 1000);
       s.src.isPlaying = true;
-      s.src.positionMs = 0;
-      s.src.emit();
-      _advanceWall(10 * 60 * 1000);
-      s.src.positionMs = 1200;
-      s.src.emit();
-      await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 1200);
+      s.tick(wallMs: 1000);
+      expect(flips, <bool>[true, false, true]);
     });
 
-    test('记账不超过「这段内容按当前倍速播完所需的真实时间」', () async {
-      final _Session s = await _Session.start(_Coverage());
-      s.src.isPlaying = true;
-      s.src.positionMs = 0;
-      s.src.emit();
-      // 墙钟走得比内容多（短暂卡顿 / 机器忙）：位置前进 1600ms，墙钟走了 4000ms。
-      // 按 `wallMs * fresh / advanced` 会记 4000ms——比这段内容本身还长。封顶让
-      // 「时钟收到的记账永远对得上它声称看掉的内容」成为不变式。
-      _advanceWall(4000);
-      s.src.positionMs = 1600;
-      s.src.emit();
-      await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 1600);
-      expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 1600)]);
-    });
-
-    test('部分重叠：只按新增比例折算墙钟', () async {
-      final _Session s = await _Session.start(_Coverage(initial: '[[0,5000]]'));
-      // 一个采样窗口 0..10000 中前 5000 已覆盖 → 记 10000 × 5000/10000 = 5000。
-      s.play(fromMs: 0, toMs: 10000, wallMs: 10000, stepMs: 10000);
-      await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 5000);
-    });
-
-    test('本次会话前已整段看过的 cue 不再计字幕字数（字数与时长同律）', () async {
+    test('本次会话前已整段看过的 cue 不再计字幕字数（字数仍按首次覆盖）', () async {
       final _Session s = await _Session.start(
         _Coverage(initial: '[[0,10000]]'),
       );
@@ -675,8 +674,6 @@ void main() {
         ..currentCue = _cue('いい', startMs: 12000, endMs: 16000)
         ..positionMs = 12000;
       s.src.emit();
-      // 同句期间只走墙钟、不发通知：生产里同句不重复 notifyListeners，采样定时器
-      // 也不经 _onSourceChanged；多发一次通知会把停留观察窗重置。
       _advanceWall(4000);
       s.src.positionMs = 16000;
       s.src
@@ -709,17 +706,10 @@ void main() {
       await s.tracker.stop();
       expect(s.tracker.debugSubtitleChars, 2);
     });
-
-    test('从未推进位置（只是开着页面）不落段', () async {
-      final _Session s = await _Session.start(_Coverage());
-      s.tick(wallMs: 30000);
-      await s.tracker.stop();
-      expect(s.sink.writes, isEmpty);
-    });
   });
 
   group('观看时长接线（v92：经 StudyClock 落段，取代 recordActivity 活动行）', () {
-    test('一次观看 session 结束落一条段，携带净观看时长', () async {
+    test('一次观看 session 结束落一条段，携带墙钟观看时长', () async {
       final _Session s = await _Session.start(_Coverage());
       s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
       await s.tracker.stop();
@@ -728,7 +718,7 @@ void main() {
       expect(s.sink.writes.single.mediaKind.value, kActivityMediaVideo);
       expect(s.sink.writes.single.mediaKey.value, 'u1');
       expect(s.sink.writes.single.title.value, 'A');
-      expect(s.sink.writes.single.durationMs.value, 30000); // 净观看时长
+      expect(s.sink.writes.single.durationMs.value, 30000);
     });
 
     test('二次 stop 幂等：不重复写段（时钟已封段、无累计器可再结算）', () async {
@@ -737,14 +727,7 @@ void main() {
       await s.tracker.stop();
       await s.tracker.stop(); // 第二次不应再写（段已封、时钟已停）
       expect(s.sink.writes, hasLength(1));
-    });
-
-    test('从未播放（isPlaying=false）位置也不推进，不落段', () async {
-      final _Session s = await _Session.start(_Coverage());
-      s.src.isPlaying = false;
-      s.tick(wallMs: 30000);
-      await s.tracker.stop();
-      expect(s.sink.writes, isEmpty, reason: '没有位置推进就没有首次覆盖，不开段不写');
+      expect(s.tracker.clock.isRunning, isFalse, reason: 'stop 同时停表');
     });
   });
 
