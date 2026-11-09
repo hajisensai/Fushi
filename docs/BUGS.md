@@ -55,6 +55,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
+> 共 3807 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4243](bugs/BUG-4243-continue-hero-side-row-hover-clip.md) | ✅ | ✅ | 首页「继续」并排封面行：方向待探测的视频卡解出横图后悬停放大，左缘被视口裁掉 |
 | [BUG-4242](bugs/BUG-4242-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
