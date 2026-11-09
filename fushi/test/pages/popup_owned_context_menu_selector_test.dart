@@ -67,7 +67,7 @@ void main() {
       'if (await _secondaryClickHitsPopupOwnedMenu(globalPosition)) return;',
       menu,
     );
-    final int showMenu = src.indexOf('showMenu', menu);
+    final int showMenu = src.indexOf('await showFushiMenu<', menu);
     expect(yieldCheck, greaterThan(menu));
     expect(yieldCheck, lessThan(showMenu));
     expect(
