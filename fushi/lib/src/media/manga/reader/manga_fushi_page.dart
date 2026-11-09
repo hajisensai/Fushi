@@ -4976,9 +4976,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       },
       search: (String term, Rect selectionRect, bool verticalWriting) async {
         // Dual-screen: the companion's Lookup tab shows it when it is up.
-        if (await routeCompanionLookup(text: term,
-          sentence: _lastSentence,
-        )) {
+        if (await routeCompanionLookup(text: term, sentence: _lastSentence)) {
           return;
         }
         if (!mounted) return;
