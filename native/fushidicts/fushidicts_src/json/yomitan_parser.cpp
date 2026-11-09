@@ -9,7 +9,8 @@ struct glz::meta<Index> {
   static constexpr auto value =
       object("title", glz::raw_string<&T::title>, "revision", glz::raw_string<&T::revision>, "format", &T::format,
              "isUpdatable", &T::isUpdatable, "indexUrl", glz::raw_string<&T::indexUrl>, "downloadUrl",
-             glz::raw_string<&T::downloadUrl>);
+             glz::raw_string<&T::downloadUrl>, "sourceLanguage", &T::sourceLanguage, "targetLanguage",
+             &T::targetLanguage);
 };
 
 template <>
@@ -42,6 +43,19 @@ struct glz::meta<Tag> {
 };
 
 namespace internal {
+// 读侧的 Index：前六个键与 Index 同型（零拷贝 raw_string），语言字段先收原始 JSON，
+// 由 parse_index 只在它是非空字符串时落进 Index（Index 的 meta 只管写盘）。
+struct RawIndex {
+  std::string_view title;
+  int format = 3;
+  std::string_view revision;
+  bool isUpdatable = false;
+  std::string_view indexUrl;
+  std::string_view downloadUrl;
+  glz::raw_json_view sourceLanguage;
+  glz::raw_json_view targetLanguage;
+};
+
 struct FrequencyValue {
   int value;
   std::optional<std::string> display_value;
@@ -80,6 +94,16 @@ struct RawIPA {
   std::string_view reading;
   std::vector<TranscriptionsArray> transcriptions;
 };
+};
+
+template <>
+struct glz::meta<internal::RawIndex> {
+  using T = internal::RawIndex;
+  static constexpr auto value =
+      object("title", glz::raw_string<&T::title>, "revision", glz::raw_string<&T::revision>, "format", &T::format,
+             "isUpdatable", &T::isUpdatable, "indexUrl", glz::raw_string<&T::indexUrl>, "downloadUrl",
+             glz::raw_string<&T::downloadUrl>, "sourceLanguage", &T::sourceLanguage, "targetLanguage",
+             &T::targetLanguage);
 };
 
 template <>
@@ -125,9 +149,31 @@ struct glz::meta<internal::RawIPA> {
       object("reading", glz::raw_string<&T::reading>, "transcriptions", &T::transcriptions);
 };
 
+namespace {
+// 语言字段在源 index.json 里不是字符串（null / 数字 / 对象）时当缺席，不让整本导入
+// 失败——此前这两个键是未知键、直接忽略，这里保持同样的宽容。空串也当缺席。
+std::optional<std::string> optional_language(std::string_view raw) {
+  if (raw.empty() || raw.front() != '"') return std::nullopt;
+  std::string value;
+  if (glz::read_json(value, raw)) return std::nullopt;
+  if (value.empty()) return std::nullopt;
+  return value;
+}
+}  // namespace
+
 bool yomitan_parser::parse_index(std::string_view content, Index& out) {
-  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(out, content);
-  return !error;
+  internal::RawIndex raw;
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(raw, content);
+  if (error) return false;
+  out.title = raw.title;
+  out.format = raw.format;
+  out.revision = raw.revision;
+  out.isUpdatable = raw.isUpdatable;
+  out.indexUrl = raw.indexUrl;
+  out.downloadUrl = raw.downloadUrl;
+  out.sourceLanguage = optional_language(raw.sourceLanguage.str);
+  out.targetLanguage = optional_language(raw.targetLanguage.str);
+  return true;
 }
 
 bool yomitan_parser::parse_term_bank(std::string_view content, std::vector<Term>& out) {

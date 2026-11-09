@@ -141,6 +141,9 @@ add_fushi_test(chinese_simp_trad_lookup_test chinese_simp_trad_lookup_test.cpp
 # 按请求排除词典（LookupOptions::excluded_dictionaries）：被排除词典的释义 / 频率 /
 # 音调都不出现、不占 max_results 名额、不影响排序；空选项逐字不变。
 add_fushi_test(excluded_dictionaries_lookup_test excluded_dictionaries_lookup_test.cpp)
+# index.json 的 sourceLanguage / targetLanguage 写回导入输出目录（app / 服务端从输出目录读
+# 语言给词典管理按语言分组）；不带语言的源输出逐字节不变，非字符串 / 空串当缺席。
+add_fushi_test(index_language_roundtrip_test index_language_roundtrip_test.cpp)
 # BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
 # lemma at import) must collapse into the lemma at lookup time, so the popup
 # header / mined Anki term is the dictionary form, not the inflected surface.
