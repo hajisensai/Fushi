@@ -430,7 +430,9 @@ import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dar
     show appleMusicBackendRoute;
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_routing_backend.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
+import 'package:fushi/src/media/music/music_audio_effects_host.dart';
+import 'package:fushi/src/media/music/music_audio_effects_prefs.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -829,7 +831,7 @@ class HomeDictionaryTabRequest {
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
-class AppModel with ChangeNotifier {
+class AppModel with ChangeNotifier implements MusicAudioEffectsHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -2360,11 +2362,38 @@ class AppModel with ChangeNotifier {
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
       crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
-      equalizer: MusicEqualizerSettings(
-        enabled: prefsRepo.musicEqEnabled,
-        gainsDb: MusicEqualizerSettings.parseGains(prefsRepo.musicEqGains),
-      ),
+      effects: musicAudioEffects,
     );
+  }
+
+  @override
+  Listenable get musicAudioEffectsChanges => prefsRepo;
+
+  @override
+  bool get musicAudioEffectsSupported =>
+      musicSession.engine.capabilities.signalPath;
+
+  /// 音效设置（偏好 → 值对象；库没开时为默认 = 关）。
+  @override
+  MusicAudioEffects get musicAudioEffects => isPreferencesReady
+      ? readMusicAudioEffectsPrefs(prefsRepo)
+      : const MusicAudioEffects();
+
+  /// 当前显示的均衡预设（存的预设 + 当前增益，见 [MusicEqPreset.resolve]）。
+  @override
+  MusicEqPreset get musicEqPreset => isPreferencesReady
+      ? readMusicEqPresetPref(prefsRepo)
+      : MusicEqPreset.flat;
+
+  /// 写音效设置（只写变了的偏好），然后重新下发到引擎。[preset] 给了就一并记下（选预设 /
+  /// 手动拖推子落到自定义 / 复位回平直）。
+  @override
+  Future<void> setMusicAudioEffects(
+    MusicAudioEffects next, {
+    MusicEqPreset? preset,
+  }) async {
+    await writeMusicAudioEffectsPrefs(prefsRepo, next, preset: preset);
+    await musicSession.engine.reapplySettings();
   }
 
   double get musicReplayGainPreampDb => prefsRepo.musicReplayGainPreampDb;

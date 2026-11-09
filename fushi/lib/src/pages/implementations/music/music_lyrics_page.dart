@@ -73,6 +73,7 @@ import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
@@ -1462,6 +1463,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
+  Future<void> _openEffects() async {
+    await showMusicAudioEffectsPanel(_themedContext, appModelNoUpdate);
+    // 关掉后功能图标的高亮 / 预设名跟着刷新。
+    if (mounted) setState(() {});
+  }
+
   /// 波浪进度（自带位置监听与拖动，不随整页重建）。
   Widget _buildSeek() => FushiWavySeekBar(
     key: const ValueKey<String>('music_lyrics_seek'),
@@ -1483,9 +1490,22 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       appModelNoUpdate.prefsRepo,
     ]),
     builder: (BuildContext context, _) {
+      final String effects = appModelNoUpdate.musicAudioEffects.enabled
+          ? '${t.music_effects_title} · '
+                '${musicEqPresetLabel(appModelNoUpdate.musicEqPreset)}'
+          : '${t.music_effects_title} · ${t.music_eq_off}';
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // 音效（能处理信号的后端才有）：处理中时高亮。
+          if (_engine.capabilities.signalPath)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_lyrics_effects'),
+              icon: const FushiIcon(FushiIcons.barChart),
+              isSelected: appModelNoUpdate.musicAudioEffects.isActive,
+              tooltip: effects,
+              onPressed: () => unawaited(_openEffects()),
+            ),
           FushiIconButtonControl(
             key: const ValueKey<String>('music_lyrics_queue'),
             icon: const FushiIcon(FushiIcons.playlist),
@@ -1865,6 +1885,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_signal_path_title,
             icon: FushiIcons.highQuality,
           ),
+        // 音效：与信号路径同一道能力门（托管播放的后端拿不到信号）。
+        if (_engine.capabilities.signalPath)
+          FushiChoiceOption<int>(
+            value: 6,
+            label: t.music_effects_title,
+            icon: FushiIcons.barChart,
+          ),
         if (_canGenerateSubtitles)
           FushiChoiceOption<int>(
             value: 5,
@@ -1888,6 +1915,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         }
       case 5:
         if (mounted) await _generateSubtitles();
+      case 6:
+        if (mounted) await _openEffects();
       default:
     }
   }
