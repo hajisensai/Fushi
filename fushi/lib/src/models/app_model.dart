@@ -2382,14 +2382,17 @@ class AppModel with ChangeNotifier {
   MusicPluginQuality musicPluginQualityFor(String path) =>
       _musicPluginQualityOverrides[path] ?? musicPluginQuality;
 
-  /// 改默认音质；正在放的插件曲目按新档原位重取（进度、暂停态不变）。
+  /// 改默认音质；正在放的插件曲目按新档原位重取（进度、暂停态不变），当前曲不是插件曲目
+  /// 而预排的下一首是时只重排下一首。非插件的远程曲目不受影响。
   Future<void> setMusicPluginQuality(MusicPluginQuality quality) async {
     _musicPluginQualityOverrides.clear();
     await prefsRepo.setMusicPluginQualityWire(quality.wire);
-    await musicSession.engine.reopenCurrent();
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => isMusicPluginPath(item.path),
+    );
   }
 
-  /// 只对 [path] 这首换档（不改默认）；它正在放就原位重取。
+  /// 只对 [path] 这首换档（不改默认）；它正在放就原位重取，是预排的下一首就重排下一首。
   Future<void> setMusicPluginQualityOverride(
     String path,
     MusicPluginQuality quality,
@@ -2400,9 +2403,9 @@ class AppModel with ChangeNotifier {
       _musicPluginQualityOverrides[path] = quality;
     }
     notifyListeners();
-    if (musicSession.engine.current?.path == path) {
-      await musicSession.engine.reopenCurrent();
-    }
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => item.path == path,
+    );
   }
 
   double get musicReplayGainPreampDb => prefsRepo.musicReplayGainPreampDb;

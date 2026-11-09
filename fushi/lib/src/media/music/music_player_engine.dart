@@ -11,8 +11,6 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
-import 'package:fushi/src/media/music/music_remote_media.dart'
-    show musicItemResolvesStream;
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 
 /// 队列从哪来：决定 ReplayGain 模式（专辑语境用 album gain 保留曲间响度差）。
@@ -647,23 +645,31 @@ class MusicPlayerEngine extends ChangeNotifier {
     );
   }
 
-  /// 当前曲目原位重开：重新取流（在线插件换了音质档），进度、播放 / 暂停态保持不变，也不
-  /// 再记一次「开始播放」。只对起播时才取流的曲目做（本地文件重开拿到的还是同一份样本）；
-  /// 自管队列 / 不支持起点的后端（Apple Music）不做。
-  Future<void> reopenCurrent() async {
+  /// 按新的取流参数（在线插件换了音质档）重取 [where] 命中的曲目：当前曲命中就原位重开
+  /// （进度、播放 / 暂停态不变，也不再记一次「开始播放」，下一首随 openPair 一并重排）；
+  /// 当前曲不命中、但已预排的下一首命中，只重排下一首（[MusicOutputBackend.replaceNext]，
+  /// 当前曲不中断）。[where] 由调用方按触发原因给（改插件音质 = 插件曲目），引擎不泛化成
+  /// 「凡是起播才取流的都重开」，免得改插件音质把正在放的其他远程来源也重新缓冲。
+  /// 自管队列的后端不做；不支持起点的后端（Apple Music）不重开当前曲。
+  Future<void> reopenCurrent({
+    required bool Function(MusicPlayItem item) where,
+  }) async {
     final MusicPlayItem? item = current;
-    if (item == null ||
-        _ended ||
-        !musicItemResolvesStream(item) ||
-        capabilities.externalQueue ||
-        !capabilities.startAt) {
+    if (item == null || _ended || capabilities.externalQueue) return;
+    if (where(item)) {
+      if (!capabilities.startAt) return;
+      await _openCurrent(
+        play: _playing || _resolving,
+        startAt: _position,
+        announce: false,
+      );
       return;
     }
-    await _openCurrent(
-      play: _playing || _resolving,
-      startAt: _position,
-      announce: false,
-    );
+    final MusicOutputBackend? backend = _backend;
+    final MusicPlayItem? upcoming = _stopAfterCurrent ? null : next;
+    if (backend != null && upcoming != null && where(upcoming)) {
+      await _sendNext(backend);
+    }
   }
 
   /// 打开 [current]。[userInitiated] = 用户点的（换队列 / 切歌 / 跳转）：连续失败计数清零；

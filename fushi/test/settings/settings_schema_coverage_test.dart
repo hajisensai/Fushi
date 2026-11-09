@@ -88,6 +88,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 在线插件音质：生效点是插件曲目在 mpv 后端打开时经 musicPluginPlaybackHost.quality 取档，
+  // harness 里没有插件也没有在播的 mpv。设置值 → 持久化 → 取流装配点拿到新档、清掉「只对这首」
+  // 由 app_model_music_plugin_quality_test 咬住；只重开插件曲目 / 只重排下一首由
+  // music_engine_reopen_current_test 咬住。
+  'music/Online plugin quality':
+      'test/models/app_model_music_plugin_quality_test.dart + test/media/music/music_engine_reopen_current_test.dart',
   // 逐曲断点续播：行为型偏好（只影响之后打开的曲目从哪开始放，无渲染树效果）。
   'music/Resume playback':
       'test/media/music/music_resume_test.dart + test/media/music/music_resume_session_test.dart',

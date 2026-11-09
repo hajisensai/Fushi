@@ -23,7 +23,9 @@ import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart'
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart'
     show musicSourceLabel;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -116,7 +118,7 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicPlayItem? item = _engine.current;
     final String? path = musicItemQualitySelectable(item) ? item!.path : null;
     final MusicPluginQuality selected = path == null
@@ -173,38 +175,34 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
         },
       ),
       // 当前流：mpv 实际解出的规格。
-      DecoratedBox(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            children: <Widget>[
-              Text(
-                t.music_quality_current_stream,
-                style: context.fushiType.labelMedium.copyWith(
-                  color: cs.onSurfaceVariant,
+      FushiCard(
+        color: tokens.surfaces.card,
+        borderRadius: FushiM3eShape.smallRadius,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: <Widget>[
+            Text(
+              t.music_quality_current_stream,
+              style: context.fushiType.labelMedium.copyWith(
+                color: tokens.surfaces.onVariant,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                stream,
+                key: const ValueKey<String>('music_quality_stream'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: context.fushiType.labelLarge.copyWith(
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  stream,
-                  key: const ValueKey<String>('music_quality_stream'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: context.fushiType.labelLarge.copyWith(
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       Row(
@@ -221,7 +219,7 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
                 Text(
                   t.music_quality_set_default_hint,
                   style: context.fushiType.bodySmall.copyWith(
-                    color: cs.onSurfaceVariant,
+                    color: tokens.surfaces.onVariant,
                   ),
                 ),
               ],
@@ -236,7 +234,9 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
       ),
       Text(
         t.music_quality_note,
-        style: context.fushiType.bodySmall.copyWith(color: cs.onSurfaceVariant),
+        style: context.fushiType.bodySmall.copyWith(
+          color: tokens.surfaces.onVariant,
+        ),
       ),
     ];
     return Padding(
@@ -256,7 +256,8 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
   }
 }
 
-/// 一档：档名（选中带勾）+ 规格，选中填 primaryContainer。
+/// 一档：档名（选中带勾）+ 规格。外形、选中底色 / 前景、按压回弹与 Apple 下的强调色描边
+/// 都交给 [FushiCard]（全局唯一的卡片选中口径），这里只排内容。
 class _TierCard extends StatelessWidget {
   const _TierCard({
     required this.label,
@@ -273,58 +274,53 @@ class _TierCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final Color fg = selected ? cs.onPrimaryContainer : cs.onSurface;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Semantics(
       button: true,
       selected: selected,
-      child: FushiPressScale(
-        enabled: onTap != null,
-        child: Material(
-          color: selected
-              ? cs.primaryContainer
-              : cs.surfaceContainerHighest.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.fushiType.titleSmall.copyWith(
-                            color: fg,
-                            fontWeight: FontWeight.w700,
-                          ),
+      child: FushiCard(
+        selected: selected,
+        // 浮层底已是 surfaces.group：未选中的卡抬一档，选中交给 FushiCard 的选中底。
+        color: selected ? null : tokens.surfaces.card,
+        borderRadius: FushiM3eShape.smallRadius,
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+        onTap: onTap,
+        child: Builder(
+          builder: (BuildContext c) {
+            // FushiCard 把选中前景写进 DefaultTextStyle：显式样式也跟它走。
+            final Color? fg = DefaultTextStyle.of(c).style.color;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: c.fushiType.titleSmall.copyWith(
+                          color: fg,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      if (selected)
-                        FushiIcon(FushiIcons.check, size: 18, color: fg),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    hint,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.fushiType.bodySmall.copyWith(
-                      color: selected
-                          ? cs.onPrimaryContainer
-                          : cs.onSurfaceVariant,
                     ),
+                    if (selected)
+                      FushiIcon(FushiIcons.check, size: 18, color: fg),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  hint,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: c.fushiType.bodySmall.copyWith(
+                    color: selected ? fg : tokens.surfaces.onVariant,
                   ),
-                ],
-              ),
-            ),
-          ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

@@ -8,7 +8,7 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicPluginQuality;
 
-/// 只记 openPair（当前 / 下一首 / 播放态 / 起点）的后端替身。
+/// 只记 openPair（当前 / 下一首 / 播放态 / 起点）与 replaceNext 的后端替身。
 class _Backend implements MusicOutputBackend {
   final StreamController<MusicBackendEvent> controller =
       StreamController<MusicBackendEvent>.broadcast(sync: true);
@@ -35,11 +35,13 @@ class _Backend implements MusicOutputBackend {
     startAt: startAt,
   ));
 
+  final List<String?> replacedNext = <String?>[];
+
   @override
   Future<void> replaceNext(
     MusicPlayItem? next, {
     bool crossfadeNext = false,
-  }) async {}
+  }) async => replacedNext.add(next?.trackUid);
 
   @override
   Future<void> play() async {}
@@ -74,6 +76,8 @@ MusicPlayItem _plugin(String id) => MusicPlayItem(
   durationMs: 240000,
 );
 
+bool _isPlugin(MusicPlayItem item) => isMusicPluginPath(item.path);
+
 MusicPlayItem _local(String id) => MusicPlayItem(
   trackUid: 'l-$id',
   path: '/m/$id.flac',
@@ -100,7 +104,7 @@ void main() {
     backend.controller.add(
       const MusicBackendPosition(Duration(seconds: 83), null),
     );
-    await engine.reopenCurrent();
+    await engine.reopenCurrent(where: _isPlugin);
 
     expect(backend.opens, hasLength(2));
     expect(backend.opens.last.uid, 'p-a');
@@ -118,7 +122,7 @@ void main() {
       const MusicBackendPosition(Duration(seconds: 12), null),
     );
     await engine.pause();
-    await engine.reopenCurrent();
+    await engine.reopenCurrent(where: _isPlugin);
 
     expect(backend.opens.last.play, isFalse);
     expect(backend.opens.last.startAt, const Duration(seconds: 12));
@@ -127,8 +131,29 @@ void main() {
 
   test('本地文件不重开（重开拿到的是同一份样本）', () async {
     await engine.playQueue(<MusicPlayItem>[_local('a')]);
-    await engine.reopenCurrent();
+    await engine.reopenCurrent(where: _isPlugin);
     expect(backend.opens, hasLength(1));
+  });
+
+  test('当前是本地文件、预排的下一首是插件曲目：只重排下一首，当前不中断', () async {
+    await engine.playQueue(<MusicPlayItem>[_local('a'), _plugin('b')]);
+    await engine.reopenCurrent(where: _isPlugin);
+    expect(backend.opens, hasLength(1));
+    expect(backend.replacedNext, <String?>['p-b']);
+    expect(started, <String>['l-a']);
+  });
+
+  test('判定没命中的远程曲目（非插件）不重开、也不重排下一首', () async {
+    final MusicPlayItem remote = MusicPlayItem(
+      trackUid: 'r-a',
+      path: 'webdav://host/a.flac',
+      title: 'a',
+      durationMs: 240000,
+    );
+    await engine.playQueue(<MusicPlayItem>[remote, _local('b')]);
+    await engine.reopenCurrent(where: _isPlugin);
+    expect(backend.opens, hasLength(1));
+    expect(backend.replacedNext, isEmpty);
   });
 
   test('不支持起点的后端（托管播放）不重开', () async {
@@ -144,7 +169,7 @@ void main() {
     );
     addTearDown(e.dispose);
     await e.playQueue(<MusicPlayItem>[_plugin('a')]);
-    await e.reopenCurrent();
+    await e.reopenCurrent(where: _isPlugin);
     expect(managed.opens, hasLength(1));
   });
 
