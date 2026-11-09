@@ -62,7 +62,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <header><h1>fushi_server</h1><span id="devname" class="muted"></span><span class="sp"></span>
 <nav>
 <button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
-<button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
+<button data-s="upload">上传</button><button data-s="dictionaries">词典</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
 <button data-s="subscriptions">订阅</button><button data-s="ai">AI 助手</button><button data-s="anki">Anki</button><button data-s="srs">复习</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
 <form method="post" action="/logout" style="margin:0"><button class="b sec" type="submit">退出</button></form>
@@ -105,6 +105,20 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <div id="up-list"></div>
 <p class="small muted" id="up-quota"></p>
 </div>
+</section>
+
+<section id="s-dictionaries">
+<div class="card"><h2>查词引擎</h2><div class="grid" id="dict-engine"></div>
+<p class="small muted">已配对设备查词时只把要查的文字发过来，去屈折（「食べた」→「食べる」）在本机用本机的变形表做，所以变形表装在服务端即可，各设备无需自带。</p></div>
+<div class="card"><h2>导入词典</h2>
+<div class="row"><input type="file" id="dict-file" accept=".zip"><button class="b" id="btn-dict-up">导入</button><span class="small" id="dict-up-state"></span></div>
+<p class="small muted">Yomitan 格式的 zip（术语 / 频率 / 音调 / 汉字）。同名词典视为更新，保留排序与隐藏设置。导入完立即生效；也可以在 Fushi 的「词典 · 传输」推送过来。</p></div>
+<div class="card"><h2>词典</h2>
+<table><thead><tr><th>顺序</th><th>名称</th><th>类型</th><th>状态</th><th></th></tr></thead><tbody id="dicts"></tbody></table>
+<p class="small muted">顺序决定查词结果里各词典的排列。「隐藏」对应日语查词的隐藏标记（服务端引擎目前只认这一个）：隐藏的词典不装进引擎，查词时不出结果。</p></div>
+<div class="card"><h2>试查</h2>
+<div class="row"><input type="text" id="dict-q" placeholder="食べた" style="flex:1"><button class="b" id="btn-dict-q">查词</button></div>
+<div id="dict-results"></div></div>
 </section>
 
 <section id="s-jobs">
@@ -701,12 +715,63 @@ async function loadAiDetail(){
   $('#ai-entries').innerHTML = s.entries.map(e=>`<div class="row" style="align-items:flex-start"><span class="tag">${esc(AI_KIND[e.kind]||e.kind)}</span><div style="flex:1;white-space:pre-wrap">${esc(e.toolName?e.toolName+(e.text?' — '+e.text:''):(e.text||''))} ${e.status&&e.kind!=='user'&&e.kind!=='assistant'?stTag(e.status):''} ${e.errorCode?`<span class="small" style="color:var(--err)">${esc(e.errorCode)}</span>`:''}</div></div>`).join('') || '<p class="muted">无</p>';
 }
 
+// ── 词典 ──
+const DICT_TYPE = {term:'术语', frequency:'频率', pitch:'音调', kanji:'汉字'};
+let dictNames = [];
+async function loadDictionaries(){
+  const r = await api('dictionaries');
+  const e = r.engine || {};
+  const kv = [
+    ['引擎', e.available ? '已加载' : ('不可用' + (e.reason ? '：' + e.reason : ''))],
+    ['已装载', e.available ? e.loadedCount + ' 本' : '—'],
+    ['变形表（去屈折）', e.transformsLoaded ? '已加载' : '缺失：只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）'],
+    ['原生库', e.libraryPath || '默认搜索路径'],
+  ];
+  $('#dict-engine').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
+  const list = r.dictionaries || [];
+  dictNames = list.map(d=>d.name);
+  $('#dicts').innerHTML = list.map((d,i)=>`<tr><td class="row"><button class="b sec" data-mv="-1" data-i="${i}" ${i===0?'disabled':''} title="上移">↑</button><button class="b sec" data-mv="1" data-i="${i}" ${i===list.length-1?'disabled':''} title="下移">↓</button></td><td>${esc(d.displayName||d.name)}${d.displayName?` <span class="small muted">${esc(d.name)}</span>`:''}</td><td>${esc(DICT_TYPE[d.type]||d.type)}</td><td>${d.present?'':'<span class="tag err">文件缺失</span> '}${d.hidden?'<span class="tag">已隐藏</span>':'<span class="tag ok">显示</span>'}</td><td class="row"><button class="b sec" data-hide="${esc(d.name)}" data-on="${d.hidden?'0':'1'}">${d.hidden?'取消隐藏':'隐藏'}</button><button class="b danger" data-drm="${esc(d.name)}">删除</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有词典</td></tr>';
+  $('#dicts').querySelectorAll('[data-mv]').forEach(b=>b.onclick=guard(async()=>{ const i=Number(b.dataset.i), j=i+Number(b.dataset.mv); const names=dictNames.slice(); [names[i],names[j]]=[names[j],names[i]]; await put('dictionaries/order',{names}); loadDictionaries(); }));
+  $('#dicts').querySelectorAll('[data-hide]').forEach(b=>b.onclick=guard(async()=>{ await api('dictionaries/'+encodeURIComponent(b.dataset.hide),{method:'PATCH',body:JSON.stringify({hidden:b.dataset.on==='1'})}); loadDictionaries(); }));
+  $('#dicts').querySelectorAll('[data-drm]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('删除词典「'+b.dataset.drm+'」？（删除服务端上的词典文件，不影响各设备本地的词典）')) return; await del('dictionaries/'+encodeURIComponent(b.dataset.drm)); toast('已删除'); loadDictionaries(); }));
+}
+function uploadDictionary(file, onProgress){
+  return new Promise((resolve, reject)=>{
+    const x = new XMLHttpRequest();
+    x.open('PUT', '/api/admin/dictionaries');
+    x.setRequestHeader('Content-Type', 'application/zip');
+    x.upload.onprogress = (ev)=>{ if(ev.lengthComputable) onProgress(ev.loaded/ev.total); };
+    x.upload.onload = ()=>onProgress(1);
+    x.onload = ()=>{ if(x.status===401){ location.reload(); return; } let j={}; try{ j=JSON.parse(x.responseText); }catch(e){} if(x.status>=200&&x.status<300) resolve(j); else reject(new Error(j.error||('HTTP '+x.status))); };
+    x.onerror = ()=>reject(new Error('网络错误'));
+    x.send(file);
+  });
+}
+$('#btn-dict-up').onclick = guard(async()=>{
+  const f = $('#dict-file').files[0]; if(!f){ toast('先选择一个 zip'); return; }
+  const btn=$('#btn-dict-up'), st=$('#dict-up-state'); btn.disabled=true;
+  try{
+    const r = await uploadDictionary(f, (p)=>{ st.textContent = p<1 ? `上传中 ${Math.round(p*100)}%` : '导入中…（大词典要几分钟）'; });
+    st.textContent = `${r.replaced?'已更新':'已导入'}「${r.name}」（${DICT_TYPE[r.type]||r.type}，${r.termCount} 词条${r.kanjiCount?'，'+r.kanjiCount+' 汉字':''}）`;
+    $('#dict-file').value=''; loadDictionaries();
+  }catch(e){ st.textContent='导入失败：'+e.message; throw e; }
+  finally{ btn.disabled=false; }
+});
+async function dictLookup(){
+  const q = $('#dict-q').value.trim(); if(!q) return;
+  const r = await api('dictionaries/lookup?q='+encodeURIComponent(q));
+  const head = r.searchTerm && r.searchTerm!==q ? `<p class="small muted">按「${esc(r.searchTerm)}」查</p>` : '';
+  $('#dict-results').innerHTML = head + (r.entries.map(e=>`<div style="border-top:1px solid var(--line);padding:8px 0"><b>${esc(e.word)}</b>${e.reading&&e.reading!==e.word?` <span class="muted">【${esc(e.reading)}】</span>`:''} <span class="tag">${esc(e.dictionary)}</span><div class="small" style="white-space:pre-wrap;margin-top:4px">${esc(e.meaning)}</div></div>`).join('') || '<p class="muted">没有结果</p>');
+}
+$('#btn-dict-q').onclick = guard(dictLookup);
+$('#dict-q').onkeydown = (ev)=>{ if(ev.key==='Enter') guard(dictLookup)(); };
+
 // ── 日志 ──
 async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10; pre.textContent = r.lines.join('\n'); if(atBottom) pre.scrollTop=pre.scrollHeight; }
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, dictionaries:loadDictionaries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);
