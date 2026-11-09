@@ -138,6 +138,9 @@ add_fushi_test(ruby_reading_lookup_test ruby_reading_lookup_test.cpp
 add_fushi_test(chinese_simp_trad_lookup_test chinese_simp_trad_lookup_test.cpp
     "${FUSHI_SRC}/text_processor"
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
+# 按请求排除词典（LookupOptions::excluded_dictionaries）：被排除词典的释义 / 频率 /
+# 音调都不出现、不占 max_results 名额、不影响排序；空选项逐字不变。
+add_fushi_test(excluded_dictionaries_lookup_test excluded_dictionaries_lookup_test.cpp)
 # BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
 # lemma at import) must collapse into the lemma at lookup time, so the popup
 # header / mined Anki term is the dictionary form, not the inflected surface.

@@ -268,6 +268,30 @@ void main() {
     });
   });
 
+  group('excludedDictionariesCacheSuffix', () {
+    test('空集返回空串（旧键逐字不变）', () {
+      expect(excludedDictionariesCacheSuffix(const <String>{}), '');
+    });
+
+    test('与集合迭代顺序无关，名字带长度前缀', () {
+      expect(
+        excludedDictionariesCacheSuffix(<String>{'B', 'A'}),
+        excludedDictionariesCacheSuffix(<String>{'A', 'B'}),
+      );
+      expect(
+        excludedDictionariesCacheSuffix(<String>{'A', 'B'}),
+        '/ex:1.A:1.B',
+      );
+    });
+
+    test('名字里的分隔符不会让不同集合撞键', () {
+      expect(
+        excludedDictionariesCacheSuffix(<String>{'a:1.b'}),
+        isNot(excludedDictionariesCacheSuffix(<String>{'a', 'b'})),
+      );
+    });
+  });
+
   group('buildLookupEntryExtra（每个词头只编码一次共用段）', () {
     test('与旧实现逐字节一致', () {
       final List<FushiLookupResult> samples = <FushiLookupResult>[

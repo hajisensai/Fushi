@@ -49,6 +49,23 @@ String buildFfiLookupCacheKey({
   return '${window.length}:$window/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
+/// [excludedDictionaries]（交给引擎排除的词典）的缓存键后缀。引擎在截断前排除这些
+/// 词典，结果集随集合变化，必须单独成键；空集返回空串，旧键逐字不变。名字按码元排序
+/// 去掉集合迭代顺序的影响，每个名字带长度前缀，避免名字里的分隔符造成键碰撞。
+String excludedDictionariesCacheSuffix(Set<String> excludedDictionaries) {
+  if (excludedDictionaries.isEmpty) return '';
+  final List<String> names = excludedDictionaries.toList()..sort();
+  final StringBuffer out = StringBuffer('/ex');
+  for (final String name in names) {
+    out
+      ..write(':')
+      ..write(name.length)
+      ..write('.')
+      ..write(name);
+  }
+  return out.toString();
+}
+
 /// 粗估一次 FFI lookup 结果列表的常驻字节数（UTF-16 每字符 2 字节 + 每对象固定
 /// 开销，宁可高估），只服务缓存的字节封顶。
 int estimateFushiLookupResultsBytes(List<FushiLookupResult> results) {
@@ -119,7 +136,8 @@ class FushiLookupRequest {
   /// DictionaryEntry（BUG-1525）。
   final bool popupOnly;
 
-  /// 被用户关掉的词典名（结果构建期的源头过滤）。
+  /// 被用户关掉的词典名。同时交给引擎当排除集（截断前生效：不占 [maxResults] 名额、
+  /// 不影响排序），结果构建期的源头过滤保留为第二道网；原始结果缓存键带它的后缀。
   final Set<String> hiddenDictionaries;
 
   /// 词典管理页的 term 词典顺序。
@@ -172,8 +190,8 @@ class FushiLookupOutcome {
   /// popupOnly 模式：引擎有结果时的 popupJson；引擎无结果为 null。
   final String? popupJson;
 
-  /// popupOnly 模式：全部引擎结果里最长的 matched（UTF-16），与旧同步路径同口径
-  /// （不排除隐藏词典）。
+  /// popupOnly 模式：全部引擎结果里最长的 matched（UTF-16）。隐藏词典已在引擎里
+  /// 排除，只命中隐藏词典的词不贡献长度（与完整模式的 bestLength 同口径）。
   final int bestLength;
 
   final bool superseded;
@@ -194,14 +212,15 @@ FushiLookupOutcome _computeLookupOutcome({
   required FushiLookupFfiCache? cache,
 }) {
   final Stopwatch watch = Stopwatch()..start();
-  // ruby 改变引擎的排序与截断结果：带 ruby 的查询单独成键（无 ruby 时键逐字不变）。
+  // ruby 与排除词典都改变引擎的排序与截断结果：各自单独成键（都为空时键逐字不变）。
   final String cacheKey =
       buildFfiLookupCacheKey(
         term: request.text,
         maxResults: request.maxResults,
         chineseSimpToTrad: request.chineseSimpToTrad,
       ) +
-      rubySpansCacheSuffix(request.rubySpans);
+      rubySpansCacheSuffix(request.rubySpans) +
+      excludedDictionariesCacheSuffix(request.hiddenDictionaries);
   List<FushiLookupResult>? ffiResults = cache?.get(cacheKey);
   final int ffiCacheMicros = watch.elapsedMicroseconds;
   final bool ffiCacheHit = ffiResults != null;
@@ -226,6 +245,7 @@ FushiLookupOutcome _computeLookupOutcome({
       maxResults: request.maxResults,
       chineseSimpToTrad: request.chineseSimpToTrad,
       rubySpans: request.rubySpans,
+      excludedDictionaries: request.hiddenDictionaries,
     );
     ffiLookupMicros = watch.elapsedMicroseconds - lookupStart;
     if (ffiResults.isNotEmpty) {
@@ -312,7 +332,7 @@ FushiLookupOutcome _computeLookupOutcome({
 ///
 /// 按引擎实例代次（[FushiDicts] 的 `_serial`）整体失效：词典集合的任何变化（增删、
 /// 重排、开关、覆盖导入、释放映射）都会换一个新实例，旧实例的结果一条都不能再用。
-/// 隐藏 / 顺序 / 译文只作用在结果构建期，不进这份缓存。
+/// 顺序 / 译文只作用在结果构建期，不进这份缓存；隐藏词典进引擎（排除集），由缓存键后缀区分。
 ///
 /// 只在后台查词 isolate 里实例化；公开只为了单测它的淘汰与失效规则。
 @visibleForTesting

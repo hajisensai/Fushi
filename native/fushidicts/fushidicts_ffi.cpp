@@ -824,6 +824,10 @@ struct LookupOptionArgs {
   const int32_t* ruby_bounds = nullptr;
   const char* ruby_readings = nullptr;
   int32_t ruby_count = 0;
+  // 本次排除的词典名：excluded_count 个 NUL 结尾 UTF-8 串的指针数组。
+  // count<=0 / 指针为空 = 不排除；数组里的空指针 / 空串跳过。
+  const char* const* excluded_names = nullptr;
+  int32_t excluded_count = 0;
 };
 
 std::vector<RubyReading> parse_ruby_readings(const LookupOptionArgs& args) {
@@ -860,6 +864,13 @@ LookupOptions make_lookup_options(const LookupOptionArgs& args) {
   }
   options.chinese_simp_to_trad = (args.flags & kLookupFlagChineseSimpToTrad) != 0;
   options.ruby_readings = parse_ruby_readings(args);
+  if (args.excluded_count > 0 && args.excluded_names) {
+    options.excluded_dictionaries.reserve(static_cast<std::size_t>(args.excluded_count));
+    for (int32_t i = 0; i < args.excluded_count; ++i) {
+      const char* name = args.excluded_names[i];
+      if (name && name[0] != '\0') options.excluded_dictionaries.emplace_back(name);
+    }
+  }
   return options;
 }
 
@@ -908,6 +919,24 @@ FfiLookupResults fushidicts_lookup_with_ruby(void* handle, const char* text, int
     return lookup_with_option_args(
         handle, text, max_results, scan_length,
         LookupOptionArgs{freq_dict, freq_order, primary_reading, flags, ruby_bounds, ruby_readings, ruby_count});
+  });
+}
+
+// 带排除词典的 lookup（其余参数同 fushidicts_lookup_with_ruby；无 ruby 时
+// ruby_bounds / ruby_readings 传 NULL、ruby_count 传 0）。excluded_names：
+// excluded_count 个 NUL 结尾 UTF-8 词典名的指针数组，见
+// LookupOptions::excluded_dictionaries。老导出不动（Never break ABI）。
+FUSHI_EXPORT
+FfiLookupResults fushidicts_lookup_with_exclusions(void* handle, const char* text, int32_t max_results,
+                                                   int32_t scan_length, const char* freq_dict, int32_t freq_order,
+                                                   const char* primary_reading, int32_t flags,
+                                                   const int32_t* ruby_bounds, const char* ruby_readings,
+                                                   int32_t ruby_count, const char* const* excluded_names,
+                                                   int32_t excluded_count) {
+  return ffi_guard("fushidicts_lookup_with_exclusions", [&]() -> FfiLookupResults {
+    return lookup_with_option_args(handle, text, max_results, scan_length,
+                                   LookupOptionArgs{freq_dict, freq_order, primary_reading, flags, ruby_bounds,
+                                                    ruby_readings, ruby_count, excluded_names, excluded_count});
   });
 }
 

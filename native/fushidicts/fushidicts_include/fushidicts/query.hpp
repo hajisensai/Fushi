@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -151,9 +153,14 @@ class DictionaryQuery {
   // but SMALL win -- do not cite it as a cause of seconds-scale lookup latency.
   // The public query_freq/query_pitch keep enriching a whole vector so
   // query() -- the single-expression entry point -- is unchanged.
-  std::vector<TermResult> query_raw(const std::string& expression) const;
-  void enrich_freq(TermResult& term) const;
-  void enrich_pitch(TermResult& term) const;
+  //
+  // [excluded]：本次查词排除的词典名（LookupOptions::excluded_dictionaries 的查找表）。
+  // 名列其中的词典整本跳过——不读记录、不并入 rules / score、不出频率 / 音调，
+  // 与「没装这本词典」逐字一致。nullptr = 不排除（默认，行为不变）。
+  using ExcludedDictNames = std::unordered_set<std::string_view>;
+  std::vector<TermResult> query_raw(const std::string& expression, const ExcludedDictNames* excluded = nullptr) const;
+  void enrich_freq(TermResult& term, const ExcludedDictNames* excluded = nullptr) const;
+  void enrich_pitch(TermResult& term, const ExcludedDictNames* excluded = nullptr) const;
   void materialize(TermResult& term) const;
 
   struct DictionaryData;

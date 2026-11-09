@@ -987,6 +987,11 @@ class FushiDicts {
   // 词典命中繁體查询；一字多候选全展开、由词典认真词，原形结果照常在、同长度时排在
   // 前面。引擎语言无关，由调用方判定（AppModel.lookupChineseSimpToTradFor）；默认
   // false，日语等其它语言的查询一字不变。参数名沿用历史的 SimpToTrad。
+  //
+  // [excludedDictionaries]：本次查词当作没装这些词典（按词典名精确匹配）。引擎在并入
+  // 结果之前就摘掉它们的释义、频率与音调，所以不占 [maxResults] 名额、也不影响排序
+  // （见 lookup.hpp 的 LookupOptions::excluded_dictionaries）。服务端常驻全部词典、按
+  // 请求的启用集合查词用。默认空集 = 行为逐字不变。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
@@ -996,6 +1001,7 @@ class FushiDicts {
     String? primaryReading,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Set<String> excludedDictionaries = const <String>{},
   }) => _lookupWith(
     _bindings!,
     _handle!,
@@ -1007,6 +1013,7 @@ class FushiDicts {
     primaryReading: primaryReading,
     chineseSimpToTrad: chineseSimpToTrad,
     rubySpans: rubySpans,
+    excludedDictionaries: excludedDictionaries,
   );
 
   /// 同步路径（[lookup]）与后台查词共用的一次原生 lookup（同一份封送与转换）。
@@ -1021,6 +1028,7 @@ class FushiDicts {
     String? primaryReading,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Set<String> excludedDictionaries = const <String>{},
   }) {
     final bool useOptions =
         frequencyDictionary != null ||
@@ -1043,8 +1051,35 @@ class FushiDicts {
       rb.asTypedListOutOfLine(ruby.bounds.length).setAll(0, ruby.bounds);
     }
     final int flags = chineseSimpToTrad ? _lookupFlagChineseSimpToTrad : 0;
+    // 排除词典：一次 FFI 整批带过去（NUL 结尾 UTF-8 串的指针数组）。空串跳过。
+    final List<String> excluded = <String>[
+      for (final String name in excludedDictionaries)
+        if (name.isNotEmpty) name,
+    ];
+    final Pointer<Pointer<Utf8>> ex = excluded.isEmpty
+        ? nullptr
+        : calloc<Pointer<Utf8>>(excluded.length);
+    for (int i = 0; i < excluded.length; i++) {
+      ex[i] = excluded[i].toNativeUtf8(allocator: calloc);
+    }
     try {
-      final r = rubyCount > 0
+      final r = excluded.isNotEmpty
+          ? bindings.lookupWithExclusions(
+              handle,
+              tp,
+              maxResults,
+              scanLength,
+              fd,
+              frequencyOrder.index,
+              pr,
+              flags,
+              rb,
+              rr,
+              rubyCount,
+              ex,
+              excluded.length,
+            )
+          : rubyCount > 0
           ? bindings.lookupWithRuby(
               handle,
               tp,
@@ -1118,6 +1153,12 @@ class FushiDicts {
       if (rubyCount > 0) {
         calloc.free(rr);
         calloc.free(rb);
+      }
+      if (excluded.isNotEmpty) {
+        for (int i = 0; i < excluded.length; i++) {
+          calloc.free(ex[i]);
+        }
+        calloc.free(ex);
       }
     }
   }

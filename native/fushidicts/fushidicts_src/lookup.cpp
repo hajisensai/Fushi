@@ -115,6 +115,15 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                                          const LookupOptions& options) const {
   std::map<std::pair<std::string, std::string>, LookupResult> result_map;
 
+  // 本次查词排除的词典（LookupOptions::excluded_dictionaries）：在查库层整本跳过
+  //（query_raw / enrich_freq / enrich_pitch），所以它的释义、词性 rules、score、频率、
+  // 音调都不进来，重定向也不跟随——不占 max_results 名额、不影响排序，与没装它逐字
+  // 一致。空集时传 nullptr，查库路径与此前完全相同。
+  const DictionaryQuery::ExcludedDictNames excluded_set(options.excluded_dictionaries.begin(),
+                                                        options.excluded_dictionaries.end());
+  const DictionaryQuery::ExcludedDictNames* excluded = excluded_set.empty() ? nullptr : &excluded_set;
+  auto is_excluded = [excluded](std::string_view dict_name) { return excluded && excluded->contains(dict_name); };
+
   // BUG-3212：扫描窗口（前 scan_length 个码点）的字节视图，供关西方言保护结构判定。
   std::size_t window_bytes = 0;
   {
@@ -136,7 +145,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     if (inserted) {
       // 按「多少本词典把它列为该表记的读音」降序：常用读音排前，组合截断时先保留它们。
       std::map<std::string, int> votes;
-      for (const TermResult& term : query_.query_raw(run)) {
+      for (const TermResult& term : query_.query_raw(run, excluded)) {
         if (term.expression == run && !term.reading.empty()) {
           votes[mixed_orthography::to_hiragana(term.reading)] += static_cast<int>(term.glossaries.size());
         }
@@ -236,7 +245,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       // 用一个还原形去查库并并入结果。`query_text` 未必等于 `deinflection.text`
       // ——见下面的谚文重组。
       auto merge_query = [&](const std::string& query_text, const DeinflectionResult& deinflection) {
-        auto terms = query_.query_raw(query_text);
+        auto terms = query_.query_raw(query_text, excluded);
         filter_by_pos(terms, deinflection);
         merge_terms(terms, query_text, deinflection.trace, /*follow=*/true);
       };
@@ -265,7 +274,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           if (fresh) cand_it->second = mixed_orthography::reading_candidates(deinflection.text, run_readings);
           for (const std::string& candidate : cand_it->second) {
             auto [hit_it, uncached] = mixed_reading_hits.try_emplace(candidate);
-            if (uncached) hit_it->second = query_.query_raw(candidate);
+            if (uncached) hit_it->second = query_.query_raw(candidate, excluded);
             std::vector<TermResult> terms;
             for (const TermResult& term : hit_it->second) {
               if (mixed_orthography::matches_mixed_orthography(deinflection.text, term.expression, term.reading)) {
@@ -282,7 +291,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       // 词典重定向的目标不经词性过滤（Yomitan 给它的 deinflection 不带条件），
       // 也不再跟随第二层。匹配长度仍是本轮 search_str。
       for (auto& [form_of, trace] : redirect_targets) {
-        auto terms = query_.query_raw(form_of);
+        auto terms = query_.query_raw(form_of, excluded);
         merge_terms(terms, form_of, trace, /*follow=*/false);
       }
     }
@@ -338,7 +347,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // Enriching per (expression, reading) is what query_freq did all along, so
   // the surviving results carry byte-identical frequency data.
   for (auto& r : results) {
-    query_.enrich_freq(r.term);
+    query_.enrich_freq(r.term, excluded);
   }
 
   // 原文振假名一致度每条只算一次（比较器里会被反复比较）。
@@ -358,13 +367,16 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   switch (options.frequency_order) {
     case LookupFrequencyOrder::Auto:
       auto_frequency_dictionaries = query_.get_freq_dict_order();
+      // 被排除的频率词典不进比较器的词典序（它的条目本来也没被富化进来）。
+      std::erase_if(auto_frequency_dictionaries, [&](const std::string& name) { return is_excluded(name); });
       break;
     case LookupFrequencyOrder::Ascending:
     case LookupFrequencyOrder::Descending:
       if (options.frequency_dictionary.has_value()) {
         const auto selected =
             std::ranges::find(query_.freq_dicts_, *options.frequency_dictionary, &DictionaryQuery::Dictionary::name);
-        if (selected != query_.freq_dicts_.end()) {
+        // 指定的排序词典被排除 = 当作找不到（与上游「找不到则静默不排」同一语义）。
+        if (selected != query_.freq_dicts_.end() && !is_excluded(selected->name)) {
           frequency_dictionary = selected->name;
           frequency_descending = options.frequency_order == LookupFrequencyOrder::Descending;
         }
@@ -461,7 +473,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // (BUG-1304).
   if (!options.materialize) return results;
   for (auto& r : results) {
-    query_.enrich_pitch(r.term);
+    query_.enrich_pitch(r.term, excluded);
     query_.materialize(r.term);
   }
 

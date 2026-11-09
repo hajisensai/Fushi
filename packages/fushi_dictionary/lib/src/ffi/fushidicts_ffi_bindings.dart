@@ -256,6 +256,25 @@ typedef _LookupWithRubyDart =
       int rubyCount,
     );
 
+// 带排除词典的 lookup（其余参数同 [_LookupWithRubyDart]，无 ruby 时传 nullptr / 0）：
+// excludedNames = excludedCount 个 NUL 结尾 UTF-8 词典名的指针数组。
+typedef _LookupWithExclusionsDart =
+    FfiLookupResults Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> text,
+      int maxResults,
+      int scanLength,
+      Pointer<Utf8> freqDict,
+      int freqOrder,
+      Pointer<Utf8> primaryReading,
+      int flags,
+      Pointer<Int32> rubyBounds,
+      Pointer<Utf8> rubyReadings,
+      int rubyCount,
+      Pointer<Pointer<Utf8>> excludedNames,
+      int excludedCount,
+    );
+
 typedef _FreeLookupResultsDart = void Function(Pointer<FfiLookupResults> r);
 
 typedef _GetStylesDart = FfiDictStyles Function(Pointer<Void> handle);
@@ -430,6 +449,25 @@ class FushidictsFfiBindings {
           ),
           _LookupWithRubyDart
         >('fushidicts_lookup_with_ruby');
+    lookupWithExclusions = _lib
+        .lookupFunction<
+          FfiLookupResults Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Int32,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Int32>,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Pointer<Utf8>>,
+            Int32,
+          ),
+          _LookupWithExclusionsDart
+        >('fushidicts_lookup_with_exclusions');
     freeLookupResults = _lib
         .lookupFunction<
           Void Function(Pointer<FfiLookupResults>),
@@ -515,6 +553,7 @@ class FushidictsFfiBindings {
   late final _LookupWithOptionsDart lookupWithOptions;
   late final _LookupWithFlagsDart lookupWithFlags;
   late final _LookupWithRubyDart lookupWithRuby;
+  late final _LookupWithExclusionsDart lookupWithExclusions;
   late final _FreeLookupResultsDart freeLookupResults;
   late final _GetStylesDart getStyles;
   late final _FreeStylesDart freeStyles;
