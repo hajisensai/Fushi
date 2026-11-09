@@ -1370,59 +1370,63 @@ AttachedTextSurfaceWindow::UpdateMeasuredText(
       *error = "source_text_too_large";
     return RequestResult::kRejected;
   }
-  std::vector<fushi::attached_measured_layout::MeasuredGlyph> glyphs;
-  std::string decode_error;
-  if (!fushi::attached_measured_layout::DecodeGlyphs(
-          glyph_words.data(), glyph_words.size(), source_text, client_width,
-          client_height, &glyphs, &decode_error)) {
-    if (error != nullptr)
-      *error = decode_error;
-    return RequestResult::kRejected;
-  }
-  // The old line's boxes must never stay live once a different line (or a
-  // re-measurement) has been announced, whether or not this one is admitted.
+  // From here on the caller has announced this line.  The previous line's
+  // boxes must never stay live, whether or not this measurement is admitted:
+  // every rejection below is fail-closed and keeps the new identity so an
+  // equal-generation refresh is accepted.
   ClearInteractiveRegion();
   source_text_ = source_text;
   source_text_utf8_ = WideToUtf8(source_text);
   text_generation_ = text_generation;
   writing_mode_ = "horizontal";
   layout_dirty_ = true;
+  const auto reject = [&](const std::string &reason) {
+    InvalidateMeasuredGlyphs(reason.c_str());
+    SyncToTarget();
+    if (error != nullptr)
+      *error = reason;
+    return RequestResult::kRejected;
+  };
 
+  std::vector<fushi::attached_measured_layout::MeasuredGlyph> glyphs;
+  std::string decode_error;
+  if (!fushi::attached_measured_layout::DecodeGlyphs(
+          glyph_words.data(), glyph_words.size(), source_text, client_width,
+          client_height, &glyphs, &decode_error)) {
+    return reject(decode_error);
+  }
   RECT client{};
   ReferenceClient reference;
   std::string client_error;
   if (!source_text.empty() &&
       !RefreshTargetClient(&client, &reference, &client_error)) {
-    measured_glyphs_.clear();
-    measured_client_width_ = 0;
-    measured_client_height_ = 0;
-    SyncToTarget();
-    if (error != nullptr)
-      *error = client_error.empty() ? "target_client_unavailable"
-                                    : client_error;
-    return RequestResult::kRejected;
+    return reject(client_error.empty() ? "target_client_unavailable"
+                                       : client_error);
   }
   if (!source_text.empty() &&
       !fushi::attached_measured_layout::ClientSizeMatches(
           client_width, client_height,
           surface_geometry_.source_client_screen)) {
     // Never stretch: the DOM snapshot belongs to another client size (window
-    // mid-resize or snapshot older than the last resize).  Keep the line's
-    // identity so an equal-generation refresh is accepted, but publish
-    // nothing until it arrives.
-    measured_glyphs_.clear();
-    measured_client_width_ = 0;
-    measured_client_height_ = 0;
-    SyncToTarget();
-    if (error != nullptr)
-      *error = "measured_client_size_mismatch";
-    return RequestResult::kRejected;
+    // mid-resize or snapshot older than the last resize).
+    return reject("measured_client_size_mismatch");
   }
   measured_glyphs_ = std::move(glyphs);
   measured_client_width_ = client_width;
   measured_client_height_ = client_height;
+  measured_stale_reason_ = "measured_layout_refresh_required";
   SyncToTarget();
   return RequestResult::kApplied;
+}
+
+void AttachedTextSurfaceWindow::InvalidateMeasuredGlyphs(const char *reason) {
+  measured_glyphs_.clear();
+  measured_client_width_ = 0;
+  measured_client_height_ = 0;
+  measured_stale_reason_ =
+      reason != nullptr && reason[0] != '\0'
+          ? reason
+          : "measured_layout_refresh_required";
 }
 
 void AttachedTextSurfaceWindow::ResetMeasuredLayout() {
@@ -1431,6 +1435,7 @@ void AttachedTextSurfaceWindow::ResetMeasuredLayout() {
   measured_glyphs_.clear();
   measured_client_width_ = 0;
   measured_client_height_ = 0;
+  measured_stale_reason_ = "measured_layout_refresh_required";
 }
 
 AttachedTextSurfaceWindow::RequestResult
@@ -2001,13 +2006,14 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     if (!fushi::attached_measured_layout::ClientSizeMatches(
             measured_client_width_, measured_client_height_,
             surface_geometry_.source_client_screen)) {
+      // A resize invalidates the measurement for good: even if the window
+      // returns to the old size, only a fresh DOM measurement is trusted.
+      if (measured_client_width_ != 0)
+        InvalidateMeasuredGlyphs("measured_client_size_mismatch");
       HideSurface();
       ClearInteractiveRegion();
       layout_dirty_ = true;
-      SetState("suspended", "measuredLayoutStale",
-               measured_client_width_ == 0
-                   ? "measured_layout_refresh_required"
-                   : "measured_client_size_mismatch");
+      SetState("suspended", "measuredLayoutStale", measured_stale_reason_);
       EmitStateIfChanged();
       return;
     }

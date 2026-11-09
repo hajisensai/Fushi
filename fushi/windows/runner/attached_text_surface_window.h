@@ -344,6 +344,9 @@ private:
   // admission and the first SyncToTarget.
   RequestResult FinishConfigure(std::string *error);
   void ResetMeasuredLayout();
+  // Drops the stored glyph boxes so nothing is published until a fresh
+  // UpdateMeasuredText; |reason| is reported with measuredLayoutStale.
+  void InvalidateMeasuredGlyphs(const char *reason);
   bool MeasuredLayoutActive() const {
     return layout_source_ == LayoutSource::kMeasured;
   }
@@ -438,6 +441,7 @@ private:
   // surface hidden (measuredLayoutStale) until UpdateMeasuredText succeeds.
   int measured_client_width_ = 0;
   int measured_client_height_ = 0;
+  std::string measured_stale_reason_ = "measured_layout_refresh_required";
 
   std::wstring source_text_;
   std::string source_text_utf8_;
