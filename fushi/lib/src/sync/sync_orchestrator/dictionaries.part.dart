@@ -13,6 +13,18 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         .getAllDictionaryMetadata();
     final List<RemoteDictionaryInfo> remoteDicts = await backend
         .listRemoteDictionaries();
+    // 服务器托管词典目录（v149）：连接中这台 host 的清单已经拿在手上，顺手对账进
+    // `remote_dictionary_metadata`，不另发请求。对账失败只记进报告，不影响词典同步。
+    try {
+      await RemoteDictionaryCatalogService.reconcileHost(
+        _db,
+        hostId: await backend.connectedHostIdentity(),
+        infos: remoteDicts,
+        now: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      report.noteError('refresh server dictionary catalog', e);
+    }
 
     final SyncKeyDiff diff = computeKeyUnionDiff(
       localKeys: <String>{for (final DictionaryMetaRow d in localDicts) d.name},

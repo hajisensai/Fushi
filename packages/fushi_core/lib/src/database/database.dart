@@ -769,6 +769,7 @@ void _requireOneVideoMetadataOwner({
     ReadingHourlyLogs,
     Preferences,
     DictionaryMetadata,
+    RemoteDictionaryMetadata,
     DictionaryHistory,
     EpubBooks,
     BookTags,
@@ -924,7 +925,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 148;
+  int get schemaVersion => 149;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2948,6 +2949,14 @@ class FushiDatabase extends _$FushiDatabase
         // 加入音乐库与本地歌单（反馈 0tRY-D2JgG）。纯新增、无回填；幂等守卫同 v146。
         if (!await _tableExists('music_remote_tracks')) {
           await m.createTable(musicRemoteTracks);
+        }
+      }
+      if (from < 149) {
+        // v149：remote_dictionary_metadata——已配对服务器上托管的词典在本机的目录行，
+        // 每个配置按名字选用而不下载（顺序 / 开关是配置拥有的列）。纯新增、无回填：
+        // 目录由下一次刷新填；幂等守卫同 v148。
+        if (!await _tableExists('remote_dictionary_metadata')) {
+          await m.createTable(remoteDictionaryMetadata);
         }
       }
     },

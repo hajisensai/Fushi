@@ -49,6 +49,100 @@ mixin _FushiDbContentMisc
 
   Future<int> clearAllDictionaryMeta() => delete(dictionaryMetadata).go();
 
+  // ── remote dictionary metadata（v149，服务器托管词典的本机目录行）──────
+  Future<List<RemoteDictionaryMetaRow>> getAllRemoteDictionaryMetadata() =>
+      select(remoteDictionaryMetadata).get();
+
+  /// 目录刷新的写入：新行整行插入（[row] 须带 `order`，`hidden` 缺省 = 启用）；
+  /// 已有行**只**更新目录列（type / formatKey / revision / displayName /
+  /// sourceLanguage / lastSeenAt / missingSince 中 [row] 给出的那些），配置拥有的
+  /// `order` / `hidden` 一律不动——刷新目录绝不能把用户在某个配置里排好的顺序冲掉。
+  Future<void> upsertRemoteDictionaryCatalog(
+    RemoteDictionaryMetadataCompanion row,
+  ) => into(remoteDictionaryMetadata).insert(
+    row,
+    onConflict: DoUpdate(
+      (_) => RemoteDictionaryMetadataCompanion(
+        type: row.type,
+        formatKey: row.formatKey,
+        revision: row.revision,
+        displayName: row.displayName,
+        sourceLanguage: row.sourceLanguage,
+        lastSeenAt: row.lastSeenAt,
+        missingSince: row.missingSince,
+      ),
+      target: <Column<Object>>[
+        remoteDictionaryMetadata.hostId,
+        remoteDictionaryMetadata.name,
+      ],
+    ),
+  );
+
+  /// 写配置拥有的两列（顺序 / 开关），返回受影响行数。0 = 本机没有这条目录行：
+  /// 调用方跳过，**绝不**凭配置快照插一行（目录只由刷新建立）。
+  Future<int> setRemoteDictionaryProfileColumns({
+    required String hostId,
+    required String name,
+    required int order,
+    required bool hidden,
+  }) =>
+      (update(remoteDictionaryMetadata)
+            ..where((t) => t.hostId.equals(hostId) & t.name.equals(name)))
+          .write(
+            RemoteDictionaryMetadataCompanion(
+              order: Value<int>(order),
+              hidden: Value<bool>(hidden),
+            ),
+          );
+
+  /// 把 [hostId] 上的 [names] 标成「从 host 目录里消失」（已标过的保留最早时刻）。
+  Future<int> markRemoteDictionariesMissing(
+    String hostId,
+    Iterable<String> names,
+    int at,
+  ) {
+    final List<String> list = names.toList(growable: false);
+    if (list.isEmpty) return Future<int>.value(0);
+    return (update(remoteDictionaryMetadata)..where(
+          (t) =>
+              t.hostId.equals(hostId) &
+              t.name.isIn(list) &
+              t.missingSince.isNull(),
+        ))
+        .write(
+          RemoteDictionaryMetadataCompanion(missingSince: Value<int?>(at)),
+        );
+  }
+
+  /// 把 [hostId] 上的 [names] 标成「在 host 目录里」：清 `missingSince`、记 `lastSeenAt`。
+  Future<int> markRemoteDictionariesPresent(
+    String hostId,
+    Iterable<String> names,
+    int at,
+  ) {
+    final List<String> list = names.toList(growable: false);
+    if (list.isEmpty) return Future<int>.value(0);
+    return (update(remoteDictionaryMetadata)
+          ..where((t) => t.hostId.equals(hostId) & t.name.isIn(list)))
+        .write(
+          RemoteDictionaryMetadataCompanion(
+            missingSince: const Value<int?>(null),
+            lastSeenAt: Value<int>(at),
+          ),
+        );
+  }
+
+  /// 忘掉一台 host 的全部目录行（连同各配置在 live 表里的顺序 / 开关）。
+  Future<int> deleteRemoteDictionariesForHost(String hostId) => (delete(
+    remoteDictionaryMetadata,
+  )..where((t) => t.hostId.equals(hostId))).go();
+
+  /// 忘掉一条目录行（UI 的「忘掉」：host 上已经没有这本）。
+  Future<int> deleteRemoteDictionary(String hostId, String name) =>
+      (delete(remoteDictionaryMetadata)
+            ..where((t) => t.hostId.equals(hostId) & t.name.equals(name)))
+          .go();
+
   // ── dictionary history ──────────────────────────────────────────
   Future<List<DictionaryHistoryRow>> getAllDictionaryHistory() => (select(
     dictionaryHistory,

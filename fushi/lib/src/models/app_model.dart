@@ -476,7 +476,8 @@ import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart'
-    show kInterconnectConnectTimeout;
+    show InterconnectPostTransport, kInterconnectConnectTimeout;
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
@@ -2724,6 +2725,7 @@ class AppModel
         );
       }
       _databaseOpened = false;
+      _stopRemoteDictionaryCatalog();
       if (_dictionaryRepoReady) {
         dictRepo.dispose();
         _dictionaryRepoReady = false;
@@ -4511,6 +4513,8 @@ class AppModel
         dictRepo.loadFromDb(),
         mediaHistoryRepo.loadFromDb(),
       ]);
+      // v149：服务器托管词典目录（词典仓库已装载，目录对账后让它重读）。
+      _startRemoteDictionaryCatalog();
       prefsRepo.addListener(notifyListeners);
       navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
@@ -9314,6 +9318,7 @@ class AppModel
     bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
+    DictionaryLookupFilters? filtersOverride,
   }) async {
     final String rawSearchTerm = searchTerm;
     searchTerm = normalizeSearchTerm(
@@ -9356,6 +9361,7 @@ class AppModel
       requestedScriptVariants: requestedScriptVariants,
       rubySpans: rubySpans,
       profileView: profileView,
+      filtersOverride: filtersOverride,
     );
     if (remote != null) {
       final DictionarySearchResult? remoteResult = await remote;
@@ -9409,6 +9415,10 @@ class AppModel
   ///
   /// [profileView]（反馈 biLEesNqWb）：按某个非激活配置查——词典过滤 / 顺序、简繁回落
   /// 的默认内容语言都取它，缓存键带它的命名空间；null = App 当前生效的设置（键不变）。
+  ///
+  /// [filtersOverride]：替对端查词时按**请求方**的词典选择改写过的过滤
+  /// （[DictionaryLookupFilters.forRequesterConfig]）。给了就用它查，缓存键另加它的
+  /// 指纹命名空间（[_requesterFiltersNamespace]），不与本机 / 配置视图的结果串键。
   Future<_LocalDictionaryLookup> _searchLocalDictionary({
     required String searchTerm,
     required int effectiveMaxTerms,
@@ -9417,19 +9427,21 @@ class AppModel
     bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
+    DictionaryLookupFilters? filtersOverride,
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
     final bool simpToTrad = lookupChineseSimpToTradFor(
       lookupLanguage,
       prefs: profileView?.prefs,
-      filters: profileView?.lookupFilters,
+      filters: filtersOverride ?? profileView?.lookupFilters,
       requestedScriptVariants: requestedScriptVariants,
     );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
     final String cacheKey =
         (profileView?.lookupCacheNamespace ?? '') +
+        _requesterFiltersNamespace(filtersOverride) +
         buildSearchCacheKey(
           term: searchTerm,
           maxTerms: effectiveMaxTerms,
@@ -9447,7 +9459,7 @@ class AppModel
     }
 
     final DictionaryLookupFilters filters =
-        profileView?.lookupFilters ?? dictRepo.lookupFilters;
+        filtersOverride ?? profileView?.lookupFilters ?? dictRepo.lookupFilters;
     // 查询在飞期间词典集合可能变了、缓存已清：回来时代次不同就不写缓存。
     final int cacheEpoch = dictRepo.resultsCacheEpoch;
     final FushiLookupOutcome? outcome = await FushiDicts.instance
@@ -9475,6 +9487,11 @@ class AppModel
     }
     return _LocalDictionaryLookup(result);
   }
+
+  /// [_searchLocalDictionary] 的 `filtersOverride` 缓存键命名空间；没有覆盖时为空串
+  /// （键与此前逐字相同）。
+  static String _requesterFiltersNamespace(DictionaryLookupFilters? filters) =>
+      filters == null ? '' : 'xrequester:${filters.fingerprint}|';
 
   /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1302）；null = 不在冷却中。
   /// 只被 [_searchRemoteDictionary] 读写，单 isolate 内无并发写。
@@ -9510,6 +9527,56 @@ class AppModel
       httpClient: _remoteLookupClient,
       trackDictionaryStyles: true,
     );
+  }
+
+  /// 每台 host 最近一次是否套用了本端发去的词典选择（见
+  /// [FushiRemoteLookupClient.dictionaryConfigAppliedByHost]），UI 据此提示老 host。
+  Map<String, bool> get remoteDictionaryConfigAppliedByHost =>
+      _remoteDictionaryLookupClient?.dictionaryConfigAppliedByHost ??
+      const <String, bool>{};
+
+  /// 服务器托管词典目录的刷新者（主进程初始化后才有；弹窗进程没有）。
+  RemoteDictionaryCatalogService? get remoteDictionaryCatalog =>
+      _remoteDictionaryCatalog;
+  RemoteDictionaryCatalogService? _remoteDictionaryCatalog;
+  AppLifecycleListener? _remoteDictionaryCatalogLifecycle;
+
+  /// 建（或随数据库重建）服务器词典目录刷新者：跟随配对列表、回前台按 host 节流
+  /// 刷新，启动时先补一次。
+  void _startRemoteDictionaryCatalog() {
+    _remoteDictionaryCatalog?.dispose();
+    final SyncRepository syncRepository = SyncRepository(_database);
+    final RemoteDictionaryCatalogService catalog =
+        RemoteDictionaryCatalogService(
+          db: _database,
+          syncRepository: syncRepository,
+          transport: InterconnectPostTransport(
+            repo: syncRepository,
+            httpClient: _remoteLookupClient,
+          ),
+          dictionaries: dictRepo,
+        )..start();
+    _remoteDictionaryCatalog = catalog;
+    _remoteDictionaryCatalogLifecycle ??= AppLifecycleListener(
+      onResume: () {
+        final RemoteDictionaryCatalogService? current =
+            _remoteDictionaryCatalog;
+        if (current != null) _refreshRemoteDictionaryCatalog(current);
+      },
+    );
+    _refreshRemoteDictionaryCatalog(catalog);
+  }
+
+  /// 后台刷新（失败已由服务记进错误日志，这里不让它冒成未处理异常）。
+  static void _refreshRemoteDictionaryCatalog(
+    RemoteDictionaryCatalogService catalog,
+  ) => unawaited(
+    catalog.refreshOnResume().then<void>((_) {}, onError: (Object _) {}),
+  );
+
+  void _stopRemoteDictionaryCatalog() {
+    _remoteDictionaryCatalog?.dispose();
+    _remoteDictionaryCatalog = null;
   }
 
   Future<DictionarySearchResult?> _searchRemoteDictionary({
@@ -9550,6 +9617,14 @@ class AppModel
                 (profileView?.prefs ?? prefsRepo).lookupChineseScriptVariants,
             // 原文振假名（已对齐到清洗后的 searchTerm）；空时不发字段。
             rubySpans: rubySpans,
+            // 本端生效配置（作品 / 扩展所选配置视图，否则激活配置）对每台 host 的词典
+            // 选择：host 只按它排除与排序，不需要知道配置是什么。
+            dictionaryConfigFor: (FushiClientUrl candidate) {
+              final String hostId = remoteDictionaryHostIdOf(candidate);
+              return profileView != null
+                  ? profileView.filtersForHost(hostId)
+                  : dictRepo.filtersForHost(hostId);
+            },
           );
       // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
       _remoteDictionaryUnreachableUntil = null;
@@ -10857,6 +10932,9 @@ class AppModel
       dictRepo.dispose();
       mediaHistoryRepo.dispose();
     }
+    _stopRemoteDictionaryCatalog();
+    _remoteDictionaryCatalogLifecycle?.dispose();
+    _remoteDictionaryCatalogLifecycle = null;
     _remoteLookupHttpClient?.close();
     _remoteLookupHttpClient = null;
     _animeDownloadService?.stop();
@@ -13120,6 +13198,7 @@ class _AppModelRemoteLookupService
         FushiRemoteTimedPopupLookupService,
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService,
+        FushiRemoteFilteredLookupService,
         FushiRemoteMiningService,
         FushiRemoteDuplicatePolicyService,
         FushiRemoteSourceNoteService,
@@ -13751,10 +13830,61 @@ class _AppModelRemoteLookupService
     rubySpans: rubySpans,
   );
 
+  @override
+  Future<DictionarySearchResult?> searchDictionaryFiltered({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteLookupDictionaryConfig dictionaryConfig,
+    String? language,
+    bool? chineseScriptVariants,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+  }) => _searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    language: language,
+    chineseScriptVariants: chineseScriptVariants,
+    rubySpans: rubySpans,
+    dictionaryConfig: dictionaryConfig,
+  );
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupFiltered({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteLookupDictionaryConfig dictionaryConfig,
+    String? language,
+    bool? chineseScriptVariants,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteDictionaryPopupTiming? timing,
+  }) => _searchDictionaryPopup(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    timing: timing,
+    language: language,
+    chineseScriptVariants: chineseScriptVariants,
+    rubySpans: rubySpans,
+    dictionaryConfig: dictionaryConfig,
+  );
+
+  /// 请求方的词典选择 [config] 套在本机（或请求方所选配置视图）的过滤上；null = 请求
+  /// 没带选择，按原过滤。
+  DictionaryLookupFilters? _requesterFilters(
+    RemoteLookupDictionaryConfig? config,
+  ) => config == null
+      ? null
+      : (_view?.lookupFilters ?? _appModel.dictRepo.lookupFilters)
+            .forRequesterConfig(config);
+
   /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
   /// [chineseScriptVariants]：请求方用户的简繁互查开关；null = 用本机开关。
   /// [rubySpans]：请求方原文自带的振假名（以 [term] 为坐标系）；对齐与 ruby 缓存键由
   /// [AppModel._searchDictionaryInLanguage] 负责。
+  /// [dictionaryConfig]：请求方配置的词典选择（`dictionaries` 字段）；给了就按它排除与
+  /// 排序（[DictionaryLookupFilters.forRequesterConfig]），不叠本机开关。
   Future<DictionarySearchResult?> _searchDictionary({
     required String term,
     required bool wildcards,
@@ -13762,6 +13892,7 @@ class _AppModelRemoteLookupService
     String? language,
     bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? dictionaryConfig,
   }) async {
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
     // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
@@ -13781,6 +13912,7 @@ class _AppModelRemoteLookupService
           requestedScriptVariants: chineseScriptVariants,
           rubySpans: rubySpans,
           profileView: _view,
+          filtersOverride: _requesterFilters(dictionaryConfig),
         );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
@@ -13858,7 +13990,8 @@ class _AppModelRemoteLookupService
     rubySpans: rubySpans,
   );
 
-  /// [language] / [chineseScriptVariants] / [rubySpans] 同 [_searchDictionary]。
+  /// [language] / [chineseScriptVariants] / [rubySpans] / [dictionaryConfig] 同
+  /// [_searchDictionary]。
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
     required bool wildcards,
@@ -13867,6 +14000,7 @@ class _AppModelRemoteLookupService
     String? language,
     bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? dictionaryConfig,
   }) async {
     timing?.reset();
     final Stopwatch? serviceWatch = timing == null
@@ -13902,16 +14036,21 @@ class _AppModelRemoteLookupService
       if (searchTerm.trim().isEmpty) return null;
 
       final ProfileSettingsView? view = _view;
+      final DictionaryLookupFilters? requesterFilters = _requesterFilters(
+        dictionaryConfig,
+      );
       final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(
         language,
         prefs: view?.prefs,
-        filters: view?.lookupFilters,
+        filters: requesterFilters ?? view?.lookupFilters,
         requestedScriptVariants: chineseScriptVariants,
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
-      // 按配置视图查时带它的命名空间（App 自己的键不变）。
+      // 按配置视图查时带它的命名空间（App 自己的键不变），按请求方词典选择查时再加
+      // 它的指纹命名空间。
       final String searchCacheKey =
           (view?.lookupCacheNamespace ?? '') +
+          AppModel._requesterFiltersNamespace(requesterFilters) +
           buildSearchCacheKey(
             term: searchTerm,
             maxTerms: maximumTerms,
@@ -13960,7 +14099,9 @@ class _AppModelRemoteLookupService
       // 后台查词 isolate 只做 popupOnly：原始结果（后台缓存键带上限 maximumTerms，
       // BUG-1307）→ buildPopupJsonFromLookup，不物化 DictionaryEntry（BUG-1525）。
       final DictionaryLookupFilters filters =
-          view?.lookupFilters ?? _appModel.dictRepo.lookupFilters;
+          requesterFilters ??
+          view?.lookupFilters ??
+          _appModel.dictRepo.lookupFilters;
       final int cacheEpoch = _appModel.dictRepo.resultsCacheEpoch;
       final FushiLookupOutcome? outcome = await FushiDicts.instance
           .lookupInBackground(

@@ -381,6 +381,63 @@ class DictionaryMetadata extends Table {
   Set<Column> get primaryKey => {name};
 }
 
+// ── remote_dictionary_metadata ──────────────────────────────────────
+/// v149：已配对 `fushi_server`（或当 host 的 Fushi）上**托管的词典**在本机的目录行，
+/// 让每个配置（Profile）不下载也能选用服务器上的词典（设计：
+/// `.worktrees/coordination/briefs/server-dictionaries.md`）。
+///
+/// 与 [DictionaryMetadata] 同形但**刻意分表**：`dictionary_metadata` 的行存在性就是
+/// 「这本词典装在本机」（BUG-1994），服务器词典插进去会被当成已安装、被引擎去 load
+/// 一个不存在的目录。这里的行只代表「这台 host 上有这本」。
+///
+/// 两组列的写者不同：
+/// * 目录列（[type] / [formatKey] / [revision] / [displayName] / [sourceLanguage] /
+///   [lastSeenAt] / [missingSince]）只由目录刷新（`RemoteDictionaryCatalogService`
+///   拉 `/api/library/dictionaries` 后对账）写；
+/// * 配置列（[order] / [hidden]）属于激活配置，和 `dictionary_metadata.order` /
+///   `hiddenLanguagesJson` 同一套快照 / 应用（`remote_dictionary_meta` 类别）。目录
+///   刷新的 upsert 冲突时**不碰**它们。
+///
+/// 身份 = ([hostId], [name])：[name] 是 host 上的真名（冻结主键，查词请求的
+/// `dictionaries` 名单按它点名），[hostId] 是配对时记下的 host 稳定 id（老条目没有
+/// hostId 时用地址 origin 充当）。设备本地：hostId 只在本机的配对里有意义，不进备份。
+@DataClassName('RemoteDictionaryMetaRow')
+class RemoteDictionaryMetadata extends Table {
+  TextColumn get hostId => text()();
+  TextColumn get name => text()();
+
+  /// 与 `dictionary_metadata.type` 同值域（`term` / `frequency` / `pitch` / `kanji`）。
+  TextColumn get type => text().withDefault(const Constant('term'))();
+
+  /// host 报的导入格式（如 `yomichan`）；老 host 不报为 null。
+  TextColumn get formatKey => text().nullable()();
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`）；host 不报为 null。
+  TextColumn get revision => text().nullable()();
+
+  /// host 上用户起的显示名；没改过为 null。
+  TextColumn get displayName => text().nullable()();
+
+  /// 词头语言（BCP-47，host 侧 `languageOverride` 优先，其次 index.json）；未知为 null。
+  TextColumn get sourceLanguage => text().nullable()();
+
+  /// 最近一次在 host 目录里看见它的时刻（ms）。
+  IntColumn get lastSeenAt => integer()();
+
+  /// 从 host 目录里消失的时刻（ms）；null = 上次刷新时还在。行不删：配置的顺序 / 开关
+  /// 留着，词典回来时原样生效。
+  IntColumn get missingSince => integer().nullable()();
+
+  /// 配置拥有：与本机词典混排的管理页顺序（与 `dictionary_metadata.order` 同一数轴）。
+  IntColumn get order => integer()();
+
+  /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {hostId, name};
+}
+
 // ── dictionary_history ──────────────────────────────────────────────
 @DataClassName('DictionaryHistoryRow')
 class DictionaryHistory extends Table {

@@ -6,8 +6,12 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteLookupDictionaryConfig;
 
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/sync/sync_repository.dart'
+    show SyncRepository, remoteDictionaryLookupHostIdsOf;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/lru_cache.dart';
 
@@ -53,6 +57,12 @@ class DictionaryRepository {
   static const int popupSearchCacheMaxBytesLowMemory = 2 << 20; // 2 MB
 
   List<Dictionary> _dictionariesCache = [];
+
+  /// 服务器托管词典（`remote_dictionary_metadata`）里**此刻参与查词**的那些：所属
+  /// host 仍在配对列表里且开着「用这台服务器查词典」（[remoteDictionaryLookupHostIdsOf]）。
+  /// 按 `order` 排好。没配对 / 关掉的 host 的行留在库里（重新配对时设置还在），只是
+  /// 不进这里。
+  List<RemoteDictionary> _remoteDictionariesCache = const <RemoteDictionary>[];
 
   /// 查词热路径要的两样派生数据（被关掉的词典名、term 词典顺序）的缓存；null =
   /// 需要重算。凡是改动 [_dictionariesCache] 的地方都经 [_dictionariesChanged] 清掉它。
@@ -123,34 +133,147 @@ class DictionaryRepository {
   List<DictionarySearchResult> get dictionaryHistory =>
       List.unmodifiable(_dictionaryHistoryResults);
 
+  /// 参与查词的服务器托管词典（见 [_remoteDictionariesCache]），按管理页顺序。
+  /// [RemoteDictionary] 不可变，直接外借。
+  List<RemoteDictionary> get remoteDictionaries =>
+      List<RemoteDictionary>.unmodifiable(_remoteDictionariesCache);
+
+  /// 本端生效配置（App 激活配置）对 [hostId] 这台 host 的词典选择，随远端查词请求发出
+  /// （`dictionaries` 字段）。推导在 [remoteLookupConfigFor]；null = 没有可说的。
+  RemoteLookupDictionaryConfig? filtersForHost(String hostId) =>
+      remoteLookupConfigFor(
+        dictionaries: _dictionariesCache,
+        remoteDictionaries: _remoteDictionariesCache,
+        hostId: hostId,
+      );
+
   /// 查词用的过滤与排序快照（不拷贝 [Dictionary] 对象，按需重算一次后复用）。
   ///
   /// 被关掉的词典与管理页「显示 / 隐藏」开关同一个判据：
   /// `isHidden(JapaneseLanguage.instance)`（与 `AppModel.hiddenDictionaryNames` 一致）。
-  DictionaryLookupFilters get lookupFilters =>
-      _lookupFilters ??= lookupFiltersOf(_dictionariesCache);
+  DictionaryLookupFilters get lookupFilters => _lookupFilters ??=
+      lookupFiltersOf(_dictionariesCache, _remoteDictionariesCache);
 
   /// [lookupFilters] 的推导本身：[dictionaries] 须已按管理页顺序（`order`）排好。
   /// 反馈 biLEesNqWb：按某个非激活配置的词典元数据查词（浏览器扩展所选配置）与
   /// App 自己查词共用这一份判据，不各写一套。
+  ///
+  /// [remoteDictionaries]：参与查词的服务器托管词典。与本机词典按 `order` 混排进
+  /// [DictionaryLookupFilters.termDictionaryOrder]，关掉的进隐藏名单——管理页的一条
+  /// 混排列表就是这一份顺序。与本机词典同名的服务器词典被本机那本**遮住**（本机行的
+  /// 顺序 / 开关说了算，见 [_unshadowedRemote]）。
+  /// [DictionaryLookupFilters.hasChineseTermDictionary] 只看本机词典：它决定本机引擎
+  /// 这次查词要不要多产简繁变体，服务器词典不在本机引擎里。
   static DictionaryLookupFilters lookupFiltersOf(
-    List<Dictionary> dictionaries,
-  ) => DictionaryLookupFilters(
-    hiddenDictionaryNames: Set<String>.unmodifiable(<String>{
+    List<Dictionary> dictionaries, [
+    List<RemoteDictionary> remoteDictionaries = const <RemoteDictionary>[],
+  ]) {
+    final List<RemoteDictionary> remote = _unshadowedRemote(
+      dictionaries,
+      remoteDictionaries,
+    );
+    return DictionaryLookupFilters(
+      hiddenDictionaryNames: Set<String>.unmodifiable(<String>{
+        for (final Dictionary d in dictionaries)
+          if (d.isHidden(JapaneseLanguage.instance)) d.name,
+        for (final RemoteDictionary r in remote)
+          if (r.hidden) r.name,
+      }),
+      termDictionaryOrder: List<String>.unmodifiable(
+        _mixedTermOrder(dictionaries, remote),
+      ),
+      hasChineseTermDictionary: dictionaries.any(
+        (Dictionary d) =>
+            d.type == DictionaryType.term &&
+            !d.isHidden(JapaneseLanguage.instance) &&
+            isChineseLanguageTag(d.effectiveSourceLanguage),
+      ),
+    );
+  }
+
+  /// 本端配置对 [hostId] 这台 host 的词典选择（远端查词请求的 `dictionaries` 字段）：
+  /// * `order` = 本机词典 + 这台 host 的服务器词典按 `order` 混排的 term 顺序；
+  /// * `excluded` = 两边被关掉的（本机按管理页开关，服务器词典按 [RemoteDictionary.hidden]）。
+  ///
+  /// 本机词典也进名单：host 上常有同名的同一本词典（设备推上去的），本机配置对它的
+  /// 顺序 / 开关照样作数，目录还没刷新过时也是。host 没有的名字由 host 忽略。与本机
+  /// 同名的服务器行被遮住（本机行说了算）。两个名单都空时返回 null = 不发这个字段，
+  /// host 按它自己的默认（含管理员关掉的词典）——本端对这台 host 一无所知时不该替它
+  /// 把默认关掉的词典打开。
+  static RemoteLookupDictionaryConfig? remoteLookupConfigFor({
+    required List<Dictionary> dictionaries,
+    required List<RemoteDictionary> remoteDictionaries,
+    required String hostId,
+  }) {
+    final List<RemoteDictionary> hostRows = _unshadowedRemote(dictionaries, <
+      RemoteDictionary
+    >[
+      for (final RemoteDictionary r in remoteDictionaries)
+        if (r.hostId == hostId) r,
+    ]);
+    final Set<String> excluded = <String>{
       for (final Dictionary d in dictionaries)
         if (d.isHidden(JapaneseLanguage.instance)) d.name,
-    }),
-    termDictionaryOrder: List<String>.unmodifiable(<String>[
-      for (final Dictionary d in dictionaries)
-        if (d.type == DictionaryType.term) d.name,
-    ]),
-    hasChineseTermDictionary: dictionaries.any(
-      (Dictionary d) =>
-          d.type == DictionaryType.term &&
-          !d.isHidden(JapaneseLanguage.instance) &&
-          isChineseLanguageTag(d.effectiveSourceLanguage),
-    ),
-  );
+      for (final RemoteDictionary r in hostRows)
+        if (r.hidden) r.name,
+    };
+    final List<String> order = _mixedTermOrder(dictionaries, hostRows);
+    if (excluded.isEmpty && order.isEmpty) return null;
+    return RemoteLookupDictionaryConfig(
+      excluded: Set<String>.unmodifiable(excluded),
+      order: List<String>.unmodifiable(order),
+    );
+  }
+
+  /// [remote] 去掉与本机词典同名的行（本机那本遮住它），多台 host 同名时只留排得最前
+  /// 的一行（混排名单里一个名字只出现一次）。
+  static List<RemoteDictionary> _unshadowedRemote(
+    List<Dictionary> dictionaries,
+    List<RemoteDictionary> remote,
+  ) {
+    final Set<String> seen = <String>{
+      for (final Dictionary d in dictionaries) d.name,
+    };
+    final List<RemoteDictionary> sorted = List<RemoteDictionary>.of(remote)
+      ..sort(RemoteDictionary.compareByOrder);
+    return <RemoteDictionary>[
+      for (final RemoteDictionary r in sorted)
+        if (seen.add(r.name)) r,
+    ];
+  }
+
+  /// 本机 term 词典与服务器 term 词典按 `order` 混排后的真名顺序。两边序号相同时本机
+  /// 在前（稳定）：同一数轴上的序号由管理页一次重编号写出，相等只发生在刚刷新进来、
+  /// 还没被排过的服务器词典上。
+  static List<String> _mixedTermOrder(
+    List<Dictionary> dictionaries,
+    List<RemoteDictionary> remote,
+  ) {
+    final List<({int order, int source, int index, String name})> entries =
+        <({int order, int source, int index, String name})>[
+          for (int i = 0; i < dictionaries.length; i++)
+            if (dictionaries[i].type == DictionaryType.term)
+              (
+                order: dictionaries[i].order,
+                source: 0,
+                index: i,
+                name: dictionaries[i].name,
+              ),
+          for (int i = 0; i < remote.length; i++)
+            if (remote[i].type == DictionaryType.term)
+              (order: remote[i].order, source: 1, index: i, name: remote[i].name),
+        ]..sort((a, b) {
+          final int byOrder = a.order.compareTo(b.order);
+          if (byOrder != 0) return byOrder;
+          final int bySource = a.source.compareTo(b.source);
+          return bySource != 0 ? bySource : a.index.compareTo(b.index);
+        });
+    final Set<String> seen = <String>{};
+    return <String>[
+      for (final e in entries)
+        if (seen.add(e.name)) e.name,
+    ];
+  }
 
   /// `dictionary_metadata` 行 → 按管理页顺序排好的 [Dictionary] 列表（与
   /// [_applyMetadataRows] 装缓存同一套转换），供只读配置视图用。
@@ -178,6 +301,7 @@ class DictionaryRepository {
     // 先 flush pending 变更，保持「变更先于重载落库」的旧语义，防旧快照复活。
     await flushPendingWritesNow();
     _applyMetadataRows(await _db.getAllDictionaryMetadata());
+    _applyRemoteRows(await _readRemoteSnapshot());
 
     _dictionaryHistoryResults.clear();
     final histRows = await _db.getAllDictionaryHistory();
@@ -196,6 +320,53 @@ class DictionaryRepository {
   /// 上一次从 DB 整表装载 dictionary_metadata 时读到的行（按 name 排序），供
   /// [reloadMetadataIfChangedInDb] 判断「别的进程改过没有」。null = 还没装载过。
   List<DictionaryMetaRow>? _loadedMetadataRows;
+
+  /// 上一次装载服务器词典时的输入（全部目录行 + 参与查词的 host），同上用于判变。
+  _RemoteSnapshot? _loadedRemoteSnapshot;
+
+  /// 读服务器词典目录行与此刻参与查词的 host（配对列表是同一个库里的偏好，见
+  /// [remoteDictionaryLookupHostIdsOf]）。
+  Future<_RemoteSnapshot> _readRemoteSnapshot() async {
+    final List<RemoteDictionaryMetaRow> rows = List<RemoteDictionaryMetaRow>.of(
+      await _db.getAllRemoteDictionaryMetadata(),
+    )..sort(_compareRemoteRows);
+    final Set<String> hosts = remoteDictionaryLookupHostIdsOf(
+      await SyncRepository(_db).getFushiClientUrls(),
+    );
+    return (rows: rows, hosts: hosts);
+  }
+
+  static int _compareRemoteRows(
+    RemoteDictionaryMetaRow a,
+    RemoteDictionaryMetaRow b,
+  ) {
+    final int byHost = a.hostId.compareTo(b.hostId);
+    return byHost != 0 ? byHost : a.name.compareTo(b.name);
+  }
+
+  void _applyRemoteRows(_RemoteSnapshot snapshot) {
+    _loadedRemoteSnapshot = snapshot;
+    _remoteDictionariesCache = List<RemoteDictionary>.unmodifiable(
+      remoteDictionariesFromRows(snapshot.rows, snapshot.hosts),
+    );
+    _dictionariesChanged();
+  }
+
+  /// 目录行 → 参与查词的 [RemoteDictionary]（只留 [activeHostIds] 里的 host），按
+  /// 管理页顺序排好。[ProfileRepository.loadSettingsView] 与本仓库共用这一份转换。
+  static List<RemoteDictionary> remoteDictionariesFromRows(
+    List<RemoteDictionaryMetaRow> rows,
+    Set<String> activeHostIds,
+  ) => <RemoteDictionary>[
+    for (final RemoteDictionaryMetaRow r in rows)
+      if (activeHostIds.contains(r.hostId)) RemoteDictionary.fromRow(r),
+  ]..sort(RemoteDictionary.compareByOrder);
+
+  /// 重读服务器词典目录与配对列表（目录刷新落库后、配对 / 「用它查词典」开关变化后
+  /// 调）。排在元数据写入队列里，不会读到自己写到一半的状态。服务器词典不在本机
+  /// 引擎里，不重载引擎、不清查词缓存。
+  Future<void> reloadRemoteDictionaries() =>
+      _writeMetadata(() async => _applyRemoteRows(await _readRemoteSnapshot()));
 
   void _applyMetadataRows(List<DictionaryMetaRow> rows) {
     final List<DictionaryMetaRow> sorted = List<DictionaryMetaRow>.of(rows)
@@ -228,6 +399,15 @@ class DictionaryRepository {
       ..sort(
         (DictionaryMetaRow a, DictionaryMetaRow b) => a.name.compareTo(b.name),
       );
+    // 服务器词典的目录 / 配置列在主进程改了同样要跟上（它们只进过滤、不进本机引擎，
+    // 不影响返回值——返回值的语义是「本机引擎的词典集合变了」）。
+    final _RemoteSnapshot remote = await _readRemoteSnapshot();
+    final _RemoteSnapshot? loadedRemote = _loadedRemoteSnapshot;
+    if (loadedRemote == null ||
+        !listEquals(remote.rows, loadedRemote.rows) ||
+        !setEquals(remote.hosts, loadedRemote.hosts)) {
+      _applyRemoteRows(remote);
+    }
     if (_loadedMetadataRows != null &&
         listEquals(sorted, _loadedMetadataRows)) {
       return false;
@@ -361,15 +541,60 @@ class DictionaryRepository {
     }
   }
 
-  Future<void> _commitDictionaries(List<Dictionary> dictionaries) async {
-    if (dictionaries.isEmpty) return;
+  /// 元数据的唯一提交点：本机词典整行 upsert、服务器词典只写配置拥有的两列
+  /// （[remote]），**同一个事务**——管理页一次混排重编号要么两张表一起落，要么都不落。
+  /// 服务器词典不在本机引擎里：只有本机词典变了才重载引擎、清查词缓存。
+  Future<void> _commitDictionaries(
+    List<Dictionary> dictionaries, {
+    List<RemoteDictionary> remote = const <RemoteDictionary>[],
+  }) async {
+    if (dictionaries.isEmpty && remote.isEmpty) return;
     await _db.transaction(() async {
       for (final Dictionary dictionary in dictionaries) {
         await _db.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
       }
+      for (final RemoteDictionary r in remote) {
+        final int updated = await _db.setRemoteDictionaryProfileColumns(
+          hostId: r.hostId,
+          name: r.name,
+          order: r.order,
+          hidden: r.hidden,
+        );
+        if (updated == 0) {
+          throw StateError(
+            'Server dictionary is no longer in the catalog: '
+            '${r.hostId}/${r.name}',
+          );
+        }
+      }
     });
-    _publishDictionaries(dictionaries);
+    if (remote.isNotEmpty) _publishRemoteDictionaries(remote);
+    if (dictionaries.isNotEmpty) _publishDictionaries(dictionaries);
   }
+
+  void _publishRemoteDictionaries(List<RemoteDictionary> updated) {
+    final Map<String, RemoteDictionary> byKey = <String, RemoteDictionary>{
+      for (final RemoteDictionary r in updated) r.key: r,
+    };
+    _remoteDictionariesCache = List<RemoteDictionary>.unmodifiable(
+      <RemoteDictionary>[
+        for (final RemoteDictionary r in _remoteDictionariesCache)
+          byKey[r.key] ?? r,
+      ]..sort(RemoteDictionary.compareByOrder),
+    );
+    _dictionariesChanged();
+  }
+
+  /// [candidate] 在缓存里的那一行（按 host + 真名）；不在（host 已不参与查词 / 行被
+  /// 忘掉）抛 [StateError]，与本机词典「已卸载」同口径。
+  RemoteDictionary _cachedRemote(RemoteDictionary candidate) =>
+      _remoteDictionariesCache.firstWhere(
+        (RemoteDictionary r) => r.key == candidate.key,
+        orElse: () => throw StateError(
+          'Server dictionary is not available: '
+          '${candidate.hostId}/${candidate.name}',
+        ),
+      );
 
   Future<void> _editDictionary(
     Dictionary dictionary,
@@ -443,19 +668,61 @@ class DictionaryRepository {
     });
   }
 
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) {
+  /// 管理页重排的写入：[newDictionaries] 带着新的 [Dictionary.order]；
+  /// [remoteDictionaries] 是同一次混排里服务器词典的新 [RemoteDictionary.order]（与本机
+  /// 词典同一数轴）。两张表在 [_commitDictionaries] 的同一个事务里落库。
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    List<RemoteDictionary> remoteDictionaries = const <RemoteDictionary>[],
+  }) {
     final Map<String, int> orders = {
       for (final Dictionary dictionary in newDictionaries)
         dictionary.name: dictionary.order,
     };
+    final List<RemoteDictionary> remote = List<RemoteDictionary>.of(
+      remoteDictionaries,
+    );
     return _writeMetadata(
-      () => _commitDictionaries(<Dictionary>[
-        for (final Dictionary current in _dictionariesCache)
-          if (orders.containsKey(current.name))
-            _copyDictionary(current)..order = orders[current.name]!,
-      ]),
+      () => _commitDictionaries(
+        <Dictionary>[
+          for (final Dictionary current in _dictionariesCache)
+            if (orders.containsKey(current.name))
+              _copyDictionary(current)..order = orders[current.name]!,
+        ],
+        remote: <RemoteDictionary>[
+          for (final RemoteDictionary r in remote)
+            _cachedRemote(r).copyWith(order: r.order),
+        ],
+      ),
     );
   }
+
+  /// 开关一本服务器词典（激活配置拥有的 [RemoteDictionary.hidden]）。
+  Future<void> setRemoteDictionaryHidden(
+    RemoteDictionary dictionary,
+    bool hidden,
+  ) => _writeMetadata(
+    () => _commitDictionaries(
+      const <Dictionary>[],
+      remote: <RemoteDictionary>[
+        _cachedRemote(dictionary).copyWith(hidden: hidden),
+      ],
+    ),
+  );
+
+  /// 忘掉一条服务器词典目录行（host 上已经没有它时 UI 的「忘掉」）。
+  Future<void> forgetRemoteDictionary(String hostId, String name) =>
+      _writeMetadata(() async {
+        await _db.deleteRemoteDictionary(hostId, name);
+        _applyRemoteRows(await _readRemoteSnapshot());
+      });
+
+  /// 忘掉一台 host 的全部服务器词典目录行（解除配对时选「忘掉设置」）。
+  Future<void> forgetRemoteDictionaryHost(String hostId) =>
+      _writeMetadata(() async {
+        await _db.deleteRemoteDictionariesForHost(hostId);
+        _applyRemoteRows(await _readRemoteSnapshot());
+      });
 
   /// 「汉字」分区的重排写入：[newDictionaries] 是该分区的新顺序。纯 kanji 词典写
   /// [Dictionary.order]；混合词典只写汉字部分自己的 [kDictKanjiOrderKey]，不动它在
@@ -989,6 +1256,7 @@ class DictionaryRepository {
     _cancelPendingHistoryPersist();
     ExitFlushRegistry.instance.unregister(_exitFlush);
     _dictionariesCache = const [];
+    _remoteDictionariesCache = const <RemoteDictionary>[];
     _dictionariesChanged();
     _dictionaryHistoryResults.clear();
     _historyClearEpoch++;
@@ -1041,7 +1309,141 @@ class DictionaryLookupFilters {
   /// 简繁拼写才有意义；没有就一个变体都不多产。不用来过滤词典（所有者否决过按语言
   /// 过滤查词，见 dictionary_language_groups.dart 文件头）。
   final bool hasChineseTermDictionary;
+
+  /// 这份过滤的指纹（查词结果缓存键的命名空间用）：隐藏名单（排序后）+ term 顺序。
+  /// 同一个词按两套过滤查出的结果不能共用缓存键（配置视图、请求方词典选择都靠它）。
+  String get fingerprint {
+    final List<String> hidden = hiddenDictionaryNames.toList()..sort();
+    final String raw =
+        '${hidden.join('\u0000')}\u0001${termDictionaryOrder.join('\u0000')}';
+    // FNV-1a 32 位 + 原串长度 + 两个条目数：哈希冲突会让两套过滤共用一个缓存键，
+    // 拼上长度与条目数后要同时撞上四者才会串结果。
+    int hash = 0x811c9dc5;
+    for (final int unit in raw.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return '${hash.toRadixString(16)}.${raw.length}.'
+        '${hidden.length}.${termDictionaryOrder.length}';
+  }
+
+  /// 替对端查词时按**请求方**的词典选择（[config]，远端查词请求的 `dictionaries` 字段）
+  /// 改写本机这份过滤：
+  /// * 隐藏 = [RemoteLookupDictionaryConfig.excluded]（请求方说了算，不叠本机开关）；
+  /// * term 顺序 = `config.order` 里本机有的名字在前，其余本机 term 词典按本机顺序接在
+  ///   后面（本机有而请求方没提到的词典照常参与，Fushi 新词典默认启用）。
+  ///
+  /// 本机配置里关掉的词典根本没装进引擎（`dictionary_buckets.dart`），请求方要它也查
+  /// 不到——这是 App 当 host 的固有限制，服务端 host 装载全部词典没有这个问题。
+  DictionaryLookupFilters forRequesterConfig(
+    RemoteLookupDictionaryConfig config,
+  ) {
+    final Set<String> local = termDictionaryOrder.toSet();
+    final Set<String> seen = <String>{};
+    return DictionaryLookupFilters(
+      hiddenDictionaryNames: Set<String>.unmodifiable(config.excluded),
+      termDictionaryOrder: List<String>.unmodifiable(<String>[
+        for (final String name in config.order)
+          if (local.contains(name) && seen.add(name)) name,
+        for (final String name in termDictionaryOrder)
+          if (seen.add(name)) name,
+      ]),
+      hasChineseTermDictionary: hasChineseTermDictionary,
+    );
+  }
 }
+
+/// 服务器托管词典的一条目录行（`remote_dictionary_metadata`，见 `tables.dart` 的
+/// `RemoteDictionaryMetadata`）在 App 里的不可变视图。
+///
+/// 身份 = ([hostId], [name])。目录列由 `RemoteDictionaryCatalogService` 刷新；
+/// [order] / [hidden] 属于激活配置，经 [DictionaryRepository] 的元数据写入队列改。
+@immutable
+class RemoteDictionary {
+  const RemoteDictionary({
+    required this.hostId,
+    required this.name,
+    required this.type,
+    required this.order,
+    required this.lastSeenAt,
+    this.hidden = false,
+    this.formatKey,
+    this.revision,
+    this.displayName,
+    this.sourceLanguage,
+    this.missingSince,
+  });
+
+  factory RemoteDictionary.fromRow(RemoteDictionaryMetaRow row) =>
+      RemoteDictionary(
+        hostId: row.hostId,
+        name: row.name,
+        type: dictionaryTypeFromName(row.type),
+        order: row.order,
+        hidden: row.hidden,
+        lastSeenAt: row.lastSeenAt,
+        formatKey: row.formatKey,
+        revision: row.revision,
+        displayName: row.displayName,
+        sourceLanguage: row.sourceLanguage,
+        missingSince: row.missingSince,
+      );
+
+  final String hostId;
+
+  /// host 上的真名（查词请求按它点名）。
+  final String name;
+  final DictionaryType type;
+
+  /// 与本机词典同一数轴的管理页顺序（配置拥有）。
+  final int order;
+
+  /// 这个配置是否关掉了它（配置拥有）。
+  final bool hidden;
+  final int lastSeenAt;
+  final String? formatKey;
+  final String? revision;
+  final String? displayName;
+  final String? sourceLanguage;
+
+  /// 从 host 目录里消失的时刻；null = 上次刷新时还在。
+  final int? missingSince;
+
+  /// host 上已经没有它了（设置保留，回来时原样生效）。
+  bool get isMissing => missingSince != null;
+
+  /// `<hostId>/<name>`：缓存 / 快照里的键（name 是目录名，不含 `/`）。
+  String get key => '$hostId/$name';
+
+  RemoteDictionary copyWith({int? order, bool? hidden}) => RemoteDictionary(
+    hostId: hostId,
+    name: name,
+    type: type,
+    order: order ?? this.order,
+    hidden: hidden ?? this.hidden,
+    lastSeenAt: lastSeenAt,
+    formatKey: formatKey,
+    revision: revision,
+    displayName: displayName,
+    sourceLanguage: sourceLanguage,
+    missingSince: missingSince,
+  );
+
+  /// 管理页顺序；同序号按 host、真名稳定排开。
+  static int compareByOrder(RemoteDictionary a, RemoteDictionary b) {
+    final int byOrder = a.order.compareTo(b.order);
+    if (byOrder != 0) return byOrder;
+    final int byHost = a.hostId.compareTo(b.hostId);
+    return byHost != 0 ? byHost : a.name.compareTo(b.name);
+  }
+}
+
+/// [DictionaryRepository] 装载服务器词典的输入：全部目录行（按 host、真名排序）+
+/// 参与查词的 host。
+typedef _RemoteSnapshot = ({
+  List<RemoteDictionaryMetaRow> rows,
+  Set<String> hosts,
+});
 
 int estimateDictionaryPopupCacheEntryBytes(DictionaryPopupCacheEntry entry) =>
     entry.popupJson.length * 2 + _kObjectOverheadBytes;

@@ -10,7 +10,10 @@ import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart'
     show kBookSourceScanIndexPrefKeyPrefix;
 import 'package:fushi_engine/profile/profile_document.dart'
-    show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
+    show
+        kObsoleteGalgameUpscalingModePrefKey,
+        kProfileSettingCategoryPref,
+        kProfileSettingCategoryRemoteDictionaryMeta;
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
@@ -48,6 +51,13 @@ class ProfileKeys {
   /// profile_settings row per dictionary: key = dictionary name, value = the
   /// JSON blob produced by [ProfileRepository]'s dictionary-meta serializer.
   static const String categoryDictionaryMeta = 'dictionary_meta';
+
+  /// v149：服务器托管词典（`remote_dictionary_metadata`）里配置拥有的两列（顺序 /
+  /// 开关）的快照，与 [categoryDictionaryMeta] 同一次快照 / 同一个应用事务。一行一本：
+  /// key = `<hostId>/<真名>`，value = `{"order", "hidden"}`（格式见
+  /// [kProfileSettingCategoryRemoteDictionaryMeta]）。
+  static const String categoryRemoteDictionaryMeta =
+      kProfileSettingCategoryRemoteDictionaryMeta;
 
   // Legacy categories (pre-v2 snapshots stored dictionary/reader separately)
   static const String categoryDictionary = 'dictionary';

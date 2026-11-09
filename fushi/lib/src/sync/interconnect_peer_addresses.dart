@@ -574,6 +574,9 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       hostId: hostId,
       learned: true,
       addressKind: a.kind.name,
+      // 同一台 host 的「用它查词典」开关跟着锚点走：学到的新地址不能把关掉的 host
+      // 重新拉回查词候选。
+      lookupEnabled: anchor.lookupEnabled,
     );
     final int rank = interconnectAddressRank(a.kind);
     int insertAt = -1;

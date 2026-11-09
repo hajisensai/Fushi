@@ -10,7 +10,10 @@ import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show kRemoteDictionaryMediaMaxBytes, safeDictionaryMediaPath;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show
+        RemoteLookupDictionaryConfig,
         kRemoteLookupChineseScriptVariantsField,
+        kRemoteLookupDictionariesField,
+        kRemoteLookupDictionaryConfigAppliedField,
         kRemoteLookupLanguageField,
         kRemoteLookupRubyField;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -101,6 +104,16 @@ class FushiRemoteLookupClient {
   /// [hostDictionaryStyles] 对应的 host 指纹。
   String? get dictionaryStylesRevision => _dictionaryStylesRevision;
 
+  /// 每台 host（[remoteDictionaryHostIdOf]）最近一次**带了词典选择**的查词回执：
+  /// true = host 按请求方的选择查了（回包 `dictionaryConfigApplied: true`）；
+  /// false = host 收到了选择却没套用（老 host 不认这个字段）——UI 据此提示
+  /// 「这台服务器还不支持按配置选词典」。没发过选择的 host 不在表里。
+  final Map<String, bool> _dictionaryConfigAppliedByHost = <String, bool>{};
+
+  /// [_dictionaryConfigAppliedByHost] 的只读视图。
+  Map<String, bool> get dictionaryConfigAppliedByHost =>
+      Map<String, bool>.unmodifiable(_dictionaryConfigAppliedByHost);
+
   static Future<Directory> _defaultPinnedAudioCacheDirectory() async {
     final Directory supportRoot = await AppPaths.supportRootDirectory();
     return Directory(p.join(supportRoot.path, 'remote_lookup_audio_cache'));
@@ -125,6 +138,11 @@ class FushiRemoteLookupClient {
   ///
   /// [rubySpans]：原文自带振假名（以 [term] 为坐标系）。非空才发 `ruby` 字段，host 让引擎
   /// 把读音吻合的同长度候选排前面；空时请求体与旧版逐字相同（旧 host 本就忽略该字段）。
+  ///
+  /// [dictionaryConfigFor]：按候选（即按 host）给出本端生效配置对这台 host 的词典选择
+  /// （`DictionaryRepository.filtersForHost`）。返回非 null 才发 `dictionaries` 字段，
+  /// host 把它当这次请求的唯一真相；null / 不传时请求体与旧版逐字相同。只发给开着
+  /// [FushiClientUrl.lookupEnabled] 的地址。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
@@ -132,26 +150,56 @@ class FushiRemoteLookupClient {
     String? language,
     bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? Function(FushiClientUrl candidate)?
+    dictionaryConfigFor,
   }) async {
     final String? lookupLanguage = (language == null || language.trim().isEmpty)
         ? null
         : language.trim();
+    final Map<String, dynamic> body = <String, dynamic>{
+      'term': term,
+      'wildcards': wildcards,
+      'maximumTerms': maximumTerms,
+      if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
+      if (chineseScriptVariants != null)
+        kRemoteLookupChineseScriptVariantsField: chineseScriptVariants,
+      if (rubySpans.isNotEmpty)
+        kRemoteLookupRubyField: FushiRubySpan.listToWire(rubySpans),
+      // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
+      if (_trackDictionaryStyles)
+        'stylesRevision': _dictionaryStylesRevision ?? '',
+    };
+    // 每台 host 各自的选择：同一 host 的多条地址算出同一份，只算一次。
+    final Map<String, RemoteLookupDictionaryConfig?> configByHost =
+        <String, RemoteLookupDictionaryConfig?>{};
+    RemoteLookupDictionaryConfig? configFor(FushiClientUrl candidate) =>
+        configByHost.putIfAbsent(
+          remoteDictionaryHostIdOf(candidate),
+          () => dictionaryConfigFor!(candidate),
+        );
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/dictionary',
-      body: <String, dynamic>{
-        'term': term,
-        'wildcards': wildcards,
-        'maximumTerms': maximumTerms,
-        if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
-        if (chineseScriptVariants != null)
-          kRemoteLookupChineseScriptVariantsField: chineseScriptVariants,
-        if (rubySpans.isNotEmpty)
-          kRemoteLookupRubyField: FushiRubySpan.listToWire(rubySpans),
-        // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
-        if (_trackDictionaryStyles)
-          'stylesRevision': _dictionaryStylesRevision ?? '',
-      },
+      body: body,
+      bodyFor: dictionaryConfigFor == null
+          ? null
+          : (FushiClientUrl candidate) {
+              final RemoteLookupDictionaryConfig? config = configFor(candidate);
+              return config == null
+                  ? null
+                  : <String, dynamic>{
+                      ...body,
+                      kRemoteLookupDictionariesField: config.toJson(),
+                    };
+            },
     );
+    final FushiClientUrl? winner = outcome.candidate;
+    if (winner != null && outcome.json != null) {
+      final String hostId = remoteDictionaryHostIdOf(winner);
+      if (configByHost[hostId] != null) {
+        _dictionaryConfigAppliedByHost[hostId] =
+            outcome.json![kRemoteLookupDictionaryConfigAppliedField] == true;
+      }
+    }
     if (outcome.allUnreachable) {
       throw RemoteLookupUnreachableError(
         'all enabled paired candidates failed at the transport layer '
@@ -255,6 +303,7 @@ class FushiRemoteLookupClient {
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/audio',
       body: <String, dynamic>{'expression': expression, 'reading': reading},
+      dictionaryLookup: false,
     );
     if (outcome.allUnreachable) {
       throw RemoteLookupUnreachableError(
@@ -379,10 +428,15 @@ class FushiRemoteLookupClient {
     return RemoteDictionaryMedia(bytes: bytes, contentType: contentType);
   }
 
+  /// [dictionaryLookup]：词典端点（查词 / 词典样式 / 词典媒体）只发给开着
+  /// [FushiClientUrl.lookupEnabled] 的地址——关掉「用这台服务器查词典」的 host 既不该
+  /// 回答查词，样式与外字也不该从它那儿取。音频端点不受这个开关影响。
   Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,
     Duration? timeout,
+    bool dictionaryLookup = true,
+    Map<String, dynamic>? Function(FushiClientUrl candidate)? bodyFor,
   }) {
     return _transport.post(
       path: path,
@@ -390,6 +444,10 @@ class FushiRemoteLookupClient {
       timeout: timeout ?? _timeout,
       authErrorMessage: 'Fushi server rejected remote lookup token',
       onlyCandidate: _onlyCandidate,
+      bodyFor: bodyFor,
+      candidateFilter: dictionaryLookup
+          ? (FushiClientUrl candidate) => candidate.lookupEnabled
+          : null,
     );
   }
 }

@@ -394,6 +394,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v145：曲目 uid 别名，设备本地（见 _deviceLocalTables）。
   'music_track_uid_aliases': BackupTableRule.deviceLocal(),
   'remote_audio_bindings': BackupTableRule.deviceLocal(),
+  // v149：服务器托管词典的本机目录行，键是本机配对的 hostId（见 _deviceLocalTables）。
+  'remote_dictionary_metadata': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

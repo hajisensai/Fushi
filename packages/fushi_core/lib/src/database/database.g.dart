@@ -6517,6 +6517,709 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
   }
 }
 
+class $RemoteDictionaryMetadataTable extends RemoteDictionaryMetadata
+    with TableInfo<$RemoteDictionaryMetadataTable, RemoteDictionaryMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $RemoteDictionaryMetadataTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _hostIdMeta = const VerificationMeta('hostId');
+  @override
+  late final GeneratedColumn<String> hostId = GeneratedColumn<String>(
+    'host_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _typeMeta = const VerificationMeta('type');
+  @override
+  late final GeneratedColumn<String> type = GeneratedColumn<String>(
+    'type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('term'),
+  );
+  static const VerificationMeta _formatKeyMeta = const VerificationMeta(
+    'formatKey',
+  );
+  @override
+  late final GeneratedColumn<String> formatKey = GeneratedColumn<String>(
+    'format_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<String> revision = GeneratedColumn<String>(
+    'revision',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceLanguageMeta = const VerificationMeta(
+    'sourceLanguage',
+  );
+  @override
+  late final GeneratedColumn<String> sourceLanguage = GeneratedColumn<String>(
+    'source_language',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastSeenAtMeta = const VerificationMeta(
+    'lastSeenAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastSeenAt = GeneratedColumn<int>(
+    'last_seen_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _missingSinceMeta = const VerificationMeta(
+    'missingSince',
+  );
+  @override
+  late final GeneratedColumn<int> missingSince = GeneratedColumn<int>(
+    'missing_since',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _orderMeta = const VerificationMeta('order');
+  @override
+  late final GeneratedColumn<int> order = GeneratedColumn<int>(
+    'order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _hiddenMeta = const VerificationMeta('hidden');
+  @override
+  late final GeneratedColumn<bool> hidden = GeneratedColumn<bool>(
+    'hidden',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("hidden" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    hostId,
+    name,
+    type,
+    formatKey,
+    revision,
+    displayName,
+    sourceLanguage,
+    lastSeenAt,
+    missingSince,
+    order,
+    hidden,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'remote_dictionary_metadata';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<RemoteDictionaryMetaRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('host_id')) {
+      context.handle(
+        _hostIdMeta,
+        hostId.isAcceptableOrUnknown(data['host_id']!, _hostIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hostIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('type')) {
+      context.handle(
+        _typeMeta,
+        type.isAcceptableOrUnknown(data['type']!, _typeMeta),
+      );
+    }
+    if (data.containsKey('format_key')) {
+      context.handle(
+        _formatKeyMeta,
+        formatKey.isAcceptableOrUnknown(data['format_key']!, _formatKeyMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source_language')) {
+      context.handle(
+        _sourceLanguageMeta,
+        sourceLanguage.isAcceptableOrUnknown(
+          data['source_language']!,
+          _sourceLanguageMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_seen_at')) {
+      context.handle(
+        _lastSeenAtMeta,
+        lastSeenAt.isAcceptableOrUnknown(
+          data['last_seen_at']!,
+          _lastSeenAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lastSeenAtMeta);
+    }
+    if (data.containsKey('missing_since')) {
+      context.handle(
+        _missingSinceMeta,
+        missingSince.isAcceptableOrUnknown(
+          data['missing_since']!,
+          _missingSinceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('order')) {
+      context.handle(
+        _orderMeta,
+        order.isAcceptableOrUnknown(data['order']!, _orderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderMeta);
+    }
+    if (data.containsKey('hidden')) {
+      context.handle(
+        _hiddenMeta,
+        hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {hostId, name};
+  @override
+  RemoteDictionaryMetaRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return RemoteDictionaryMetaRow(
+      hostId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}host_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      type: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}type'],
+      )!,
+      formatKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}format_key'],
+      ),
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}revision'],
+      ),
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      ),
+      sourceLanguage: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_language'],
+      ),
+      lastSeenAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_seen_at'],
+      )!,
+      missingSince: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}missing_since'],
+      ),
+      order: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order'],
+      )!,
+      hidden: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}hidden'],
+      )!,
+    );
+  }
+
+  @override
+  $RemoteDictionaryMetadataTable createAlias(String alias) {
+    return $RemoteDictionaryMetadataTable(attachedDatabase, alias);
+  }
+}
+
+class RemoteDictionaryMetaRow extends DataClass
+    implements Insertable<RemoteDictionaryMetaRow> {
+  final String hostId;
+  final String name;
+
+  /// 与 `dictionary_metadata.type` 同值域（`term` / `frequency` / `pitch` / `kanji`）。
+  final String type;
+
+  /// host 报的导入格式（如 `yomichan`）；老 host 不报为 null。
+  final String? formatKey;
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`）；host 不报为 null。
+  final String? revision;
+
+  /// host 上用户起的显示名；没改过为 null。
+  final String? displayName;
+
+  /// 词头语言（BCP-47，host 侧 `languageOverride` 优先，其次 index.json）；未知为 null。
+  final String? sourceLanguage;
+
+  /// 最近一次在 host 目录里看见它的时刻（ms）。
+  final int lastSeenAt;
+
+  /// 从 host 目录里消失的时刻（ms）；null = 上次刷新时还在。行不删：配置的顺序 / 开关
+  /// 留着，词典回来时原样生效。
+  final int? missingSince;
+
+  /// 配置拥有：与本机词典混排的管理页顺序（与 `dictionary_metadata.order` 同一数轴）。
+  final int order;
+
+  /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
+  final bool hidden;
+  const RemoteDictionaryMetaRow({
+    required this.hostId,
+    required this.name,
+    required this.type,
+    this.formatKey,
+    this.revision,
+    this.displayName,
+    this.sourceLanguage,
+    required this.lastSeenAt,
+    this.missingSince,
+    required this.order,
+    required this.hidden,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['host_id'] = Variable<String>(hostId);
+    map['name'] = Variable<String>(name);
+    map['type'] = Variable<String>(type);
+    if (!nullToAbsent || formatKey != null) {
+      map['format_key'] = Variable<String>(formatKey);
+    }
+    if (!nullToAbsent || revision != null) {
+      map['revision'] = Variable<String>(revision);
+    }
+    if (!nullToAbsent || displayName != null) {
+      map['display_name'] = Variable<String>(displayName);
+    }
+    if (!nullToAbsent || sourceLanguage != null) {
+      map['source_language'] = Variable<String>(sourceLanguage);
+    }
+    map['last_seen_at'] = Variable<int>(lastSeenAt);
+    if (!nullToAbsent || missingSince != null) {
+      map['missing_since'] = Variable<int>(missingSince);
+    }
+    map['order'] = Variable<int>(order);
+    map['hidden'] = Variable<bool>(hidden);
+    return map;
+  }
+
+  RemoteDictionaryMetadataCompanion toCompanion(bool nullToAbsent) {
+    return RemoteDictionaryMetadataCompanion(
+      hostId: Value(hostId),
+      name: Value(name),
+      type: Value(type),
+      formatKey: formatKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(formatKey),
+      revision: revision == null && nullToAbsent
+          ? const Value.absent()
+          : Value(revision),
+      displayName: displayName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayName),
+      sourceLanguage: sourceLanguage == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceLanguage),
+      lastSeenAt: Value(lastSeenAt),
+      missingSince: missingSince == null && nullToAbsent
+          ? const Value.absent()
+          : Value(missingSince),
+      order: Value(order),
+      hidden: Value(hidden),
+    );
+  }
+
+  factory RemoteDictionaryMetaRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return RemoteDictionaryMetaRow(
+      hostId: serializer.fromJson<String>(json['hostId']),
+      name: serializer.fromJson<String>(json['name']),
+      type: serializer.fromJson<String>(json['type']),
+      formatKey: serializer.fromJson<String?>(json['formatKey']),
+      revision: serializer.fromJson<String?>(json['revision']),
+      displayName: serializer.fromJson<String?>(json['displayName']),
+      sourceLanguage: serializer.fromJson<String?>(json['sourceLanguage']),
+      lastSeenAt: serializer.fromJson<int>(json['lastSeenAt']),
+      missingSince: serializer.fromJson<int?>(json['missingSince']),
+      order: serializer.fromJson<int>(json['order']),
+      hidden: serializer.fromJson<bool>(json['hidden']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'hostId': serializer.toJson<String>(hostId),
+      'name': serializer.toJson<String>(name),
+      'type': serializer.toJson<String>(type),
+      'formatKey': serializer.toJson<String?>(formatKey),
+      'revision': serializer.toJson<String?>(revision),
+      'displayName': serializer.toJson<String?>(displayName),
+      'sourceLanguage': serializer.toJson<String?>(sourceLanguage),
+      'lastSeenAt': serializer.toJson<int>(lastSeenAt),
+      'missingSince': serializer.toJson<int?>(missingSince),
+      'order': serializer.toJson<int>(order),
+      'hidden': serializer.toJson<bool>(hidden),
+    };
+  }
+
+  RemoteDictionaryMetaRow copyWith({
+    String? hostId,
+    String? name,
+    String? type,
+    Value<String?> formatKey = const Value.absent(),
+    Value<String?> revision = const Value.absent(),
+    Value<String?> displayName = const Value.absent(),
+    Value<String?> sourceLanguage = const Value.absent(),
+    int? lastSeenAt,
+    Value<int?> missingSince = const Value.absent(),
+    int? order,
+    bool? hidden,
+  }) => RemoteDictionaryMetaRow(
+    hostId: hostId ?? this.hostId,
+    name: name ?? this.name,
+    type: type ?? this.type,
+    formatKey: formatKey.present ? formatKey.value : this.formatKey,
+    revision: revision.present ? revision.value : this.revision,
+    displayName: displayName.present ? displayName.value : this.displayName,
+    sourceLanguage: sourceLanguage.present
+        ? sourceLanguage.value
+        : this.sourceLanguage,
+    lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+    missingSince: missingSince.present ? missingSince.value : this.missingSince,
+    order: order ?? this.order,
+    hidden: hidden ?? this.hidden,
+  );
+  RemoteDictionaryMetaRow copyWithCompanion(
+    RemoteDictionaryMetadataCompanion data,
+  ) {
+    return RemoteDictionaryMetaRow(
+      hostId: data.hostId.present ? data.hostId.value : this.hostId,
+      name: data.name.present ? data.name.value : this.name,
+      type: data.type.present ? data.type.value : this.type,
+      formatKey: data.formatKey.present ? data.formatKey.value : this.formatKey,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      sourceLanguage: data.sourceLanguage.present
+          ? data.sourceLanguage.value
+          : this.sourceLanguage,
+      lastSeenAt: data.lastSeenAt.present
+          ? data.lastSeenAt.value
+          : this.lastSeenAt,
+      missingSince: data.missingSince.present
+          ? data.missingSince.value
+          : this.missingSince,
+      order: data.order.present ? data.order.value : this.order,
+      hidden: data.hidden.present ? data.hidden.value : this.hidden,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RemoteDictionaryMetaRow(')
+          ..write('hostId: $hostId, ')
+          ..write('name: $name, ')
+          ..write('type: $type, ')
+          ..write('formatKey: $formatKey, ')
+          ..write('revision: $revision, ')
+          ..write('displayName: $displayName, ')
+          ..write('sourceLanguage: $sourceLanguage, ')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('missingSince: $missingSince, ')
+          ..write('order: $order, ')
+          ..write('hidden: $hidden')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    hostId,
+    name,
+    type,
+    formatKey,
+    revision,
+    displayName,
+    sourceLanguage,
+    lastSeenAt,
+    missingSince,
+    order,
+    hidden,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RemoteDictionaryMetaRow &&
+          other.hostId == this.hostId &&
+          other.name == this.name &&
+          other.type == this.type &&
+          other.formatKey == this.formatKey &&
+          other.revision == this.revision &&
+          other.displayName == this.displayName &&
+          other.sourceLanguage == this.sourceLanguage &&
+          other.lastSeenAt == this.lastSeenAt &&
+          other.missingSince == this.missingSince &&
+          other.order == this.order &&
+          other.hidden == this.hidden);
+}
+
+class RemoteDictionaryMetadataCompanion
+    extends UpdateCompanion<RemoteDictionaryMetaRow> {
+  final Value<String> hostId;
+  final Value<String> name;
+  final Value<String> type;
+  final Value<String?> formatKey;
+  final Value<String?> revision;
+  final Value<String?> displayName;
+  final Value<String?> sourceLanguage;
+  final Value<int> lastSeenAt;
+  final Value<int?> missingSince;
+  final Value<int> order;
+  final Value<bool> hidden;
+  final Value<int> rowid;
+  const RemoteDictionaryMetadataCompanion({
+    this.hostId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.type = const Value.absent(),
+    this.formatKey = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.sourceLanguage = const Value.absent(),
+    this.lastSeenAt = const Value.absent(),
+    this.missingSince = const Value.absent(),
+    this.order = const Value.absent(),
+    this.hidden = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  RemoteDictionaryMetadataCompanion.insert({
+    required String hostId,
+    required String name,
+    this.type = const Value.absent(),
+    this.formatKey = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.sourceLanguage = const Value.absent(),
+    required int lastSeenAt,
+    this.missingSince = const Value.absent(),
+    required int order,
+    this.hidden = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : hostId = Value(hostId),
+       name = Value(name),
+       lastSeenAt = Value(lastSeenAt),
+       order = Value(order);
+  static Insertable<RemoteDictionaryMetaRow> custom({
+    Expression<String>? hostId,
+    Expression<String>? name,
+    Expression<String>? type,
+    Expression<String>? formatKey,
+    Expression<String>? revision,
+    Expression<String>? displayName,
+    Expression<String>? sourceLanguage,
+    Expression<int>? lastSeenAt,
+    Expression<int>? missingSince,
+    Expression<int>? order,
+    Expression<bool>? hidden,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (hostId != null) 'host_id': hostId,
+      if (name != null) 'name': name,
+      if (type != null) 'type': type,
+      if (formatKey != null) 'format_key': formatKey,
+      if (revision != null) 'revision': revision,
+      if (displayName != null) 'display_name': displayName,
+      if (sourceLanguage != null) 'source_language': sourceLanguage,
+      if (lastSeenAt != null) 'last_seen_at': lastSeenAt,
+      if (missingSince != null) 'missing_since': missingSince,
+      if (order != null) 'order': order,
+      if (hidden != null) 'hidden': hidden,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  RemoteDictionaryMetadataCompanion copyWith({
+    Value<String>? hostId,
+    Value<String>? name,
+    Value<String>? type,
+    Value<String?>? formatKey,
+    Value<String?>? revision,
+    Value<String?>? displayName,
+    Value<String?>? sourceLanguage,
+    Value<int>? lastSeenAt,
+    Value<int?>? missingSince,
+    Value<int>? order,
+    Value<bool>? hidden,
+    Value<int>? rowid,
+  }) {
+    return RemoteDictionaryMetadataCompanion(
+      hostId: hostId ?? this.hostId,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      formatKey: formatKey ?? this.formatKey,
+      revision: revision ?? this.revision,
+      displayName: displayName ?? this.displayName,
+      sourceLanguage: sourceLanguage ?? this.sourceLanguage,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      missingSince: missingSince ?? this.missingSince,
+      order: order ?? this.order,
+      hidden: hidden ?? this.hidden,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (hostId.present) {
+      map['host_id'] = Variable<String>(hostId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (type.present) {
+      map['type'] = Variable<String>(type.value);
+    }
+    if (formatKey.present) {
+      map['format_key'] = Variable<String>(formatKey.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<String>(revision.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (sourceLanguage.present) {
+      map['source_language'] = Variable<String>(sourceLanguage.value);
+    }
+    if (lastSeenAt.present) {
+      map['last_seen_at'] = Variable<int>(lastSeenAt.value);
+    }
+    if (missingSince.present) {
+      map['missing_since'] = Variable<int>(missingSince.value);
+    }
+    if (order.present) {
+      map['order'] = Variable<int>(order.value);
+    }
+    if (hidden.present) {
+      map['hidden'] = Variable<bool>(hidden.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RemoteDictionaryMetadataCompanion(')
+          ..write('hostId: $hostId, ')
+          ..write('name: $name, ')
+          ..write('type: $type, ')
+          ..write('formatKey: $formatKey, ')
+          ..write('revision: $revision, ')
+          ..write('displayName: $displayName, ')
+          ..write('sourceLanguage: $sourceLanguage, ')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('missingSince: $missingSince, ')
+          ..write('order: $order, ')
+          ..write('hidden: $hidden, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $DictionaryHistoryTable extends DictionaryHistory
     with TableInfo<$DictionaryHistoryTable, DictionaryHistoryRow> {
   @override
@@ -77708,6 +78411,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $PreferencesTable preferences = $PreferencesTable(this);
   late final $DictionaryMetadataTable dictionaryMetadata =
       $DictionaryMetadataTable(this);
+  late final $RemoteDictionaryMetadataTable remoteDictionaryMetadata =
+      $RemoteDictionaryMetadataTable(this);
   late final $DictionaryHistoryTable dictionaryHistory =
       $DictionaryHistoryTable(this);
   late final $MediaSourcesTable mediaSources = $MediaSourcesTable(this);
@@ -77935,6 +78640,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     readingHourlyLogs,
     preferences,
     dictionaryMetadata,
+    remoteDictionaryMetadata,
     dictionaryHistory,
     mediaSources,
     epubBooks,
@@ -81784,6 +82490,347 @@ typedef $$DictionaryMetadataTableProcessedTableManager =
         >,
       ),
       DictionaryMetaRow,
+      PrefetchHooks Function()
+    >;
+typedef $$RemoteDictionaryMetadataTableCreateCompanionBuilder =
+    RemoteDictionaryMetadataCompanion Function({
+      required String hostId,
+      required String name,
+      Value<String> type,
+      Value<String?> formatKey,
+      Value<String?> revision,
+      Value<String?> displayName,
+      Value<String?> sourceLanguage,
+      required int lastSeenAt,
+      Value<int?> missingSince,
+      required int order,
+      Value<bool> hidden,
+      Value<int> rowid,
+    });
+typedef $$RemoteDictionaryMetadataTableUpdateCompanionBuilder =
+    RemoteDictionaryMetadataCompanion Function({
+      Value<String> hostId,
+      Value<String> name,
+      Value<String> type,
+      Value<String?> formatKey,
+      Value<String?> revision,
+      Value<String?> displayName,
+      Value<String?> sourceLanguage,
+      Value<int> lastSeenAt,
+      Value<int?> missingSince,
+      Value<int> order,
+      Value<bool> hidden,
+      Value<int> rowid,
+    });
+
+class $$RemoteDictionaryMetadataTableFilterComposer
+    extends Composer<_$FushiDatabase, $RemoteDictionaryMetadataTable> {
+  $$RemoteDictionaryMetadataTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get hostId => $composableBuilder(
+    column: $table.hostId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get type => $composableBuilder(
+    column: $table.type,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get formatKey => $composableBuilder(
+    column: $table.formatKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceLanguage => $composableBuilder(
+    column: $table.sourceLanguage,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get missingSince => $composableBuilder(
+    column: $table.missingSince,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get order => $composableBuilder(
+    column: $table.order,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$RemoteDictionaryMetadataTableOrderingComposer
+    extends Composer<_$FushiDatabase, $RemoteDictionaryMetadataTable> {
+  $$RemoteDictionaryMetadataTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get hostId => $composableBuilder(
+    column: $table.hostId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get type => $composableBuilder(
+    column: $table.type,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get formatKey => $composableBuilder(
+    column: $table.formatKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceLanguage => $composableBuilder(
+    column: $table.sourceLanguage,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get missingSince => $composableBuilder(
+    column: $table.missingSince,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get order => $composableBuilder(
+    column: $table.order,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$RemoteDictionaryMetadataTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $RemoteDictionaryMetadataTable> {
+  $$RemoteDictionaryMetadataTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get hostId =>
+      $composableBuilder(column: $table.hostId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get type =>
+      $composableBuilder(column: $table.type, builder: (column) => column);
+
+  GeneratedColumn<String> get formatKey =>
+      $composableBuilder(column: $table.formatKey, builder: (column) => column);
+
+  GeneratedColumn<String> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceLanguage => $composableBuilder(
+    column: $table.sourceLanguage,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get missingSince => $composableBuilder(
+    column: $table.missingSince,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get order =>
+      $composableBuilder(column: $table.order, builder: (column) => column);
+
+  GeneratedColumn<bool> get hidden =>
+      $composableBuilder(column: $table.hidden, builder: (column) => column);
+}
+
+class $$RemoteDictionaryMetadataTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $RemoteDictionaryMetadataTable,
+          RemoteDictionaryMetaRow,
+          $$RemoteDictionaryMetadataTableFilterComposer,
+          $$RemoteDictionaryMetadataTableOrderingComposer,
+          $$RemoteDictionaryMetadataTableAnnotationComposer,
+          $$RemoteDictionaryMetadataTableCreateCompanionBuilder,
+          $$RemoteDictionaryMetadataTableUpdateCompanionBuilder,
+          (
+            RemoteDictionaryMetaRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $RemoteDictionaryMetadataTable,
+              RemoteDictionaryMetaRow
+            >,
+          ),
+          RemoteDictionaryMetaRow,
+          PrefetchHooks Function()
+        > {
+  $$RemoteDictionaryMetadataTableTableManager(
+    _$FushiDatabase db,
+    $RemoteDictionaryMetadataTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RemoteDictionaryMetadataTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$RemoteDictionaryMetadataTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$RemoteDictionaryMetadataTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> hostId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> type = const Value.absent(),
+                Value<String?> formatKey = const Value.absent(),
+                Value<String?> revision = const Value.absent(),
+                Value<String?> displayName = const Value.absent(),
+                Value<String?> sourceLanguage = const Value.absent(),
+                Value<int> lastSeenAt = const Value.absent(),
+                Value<int?> missingSince = const Value.absent(),
+                Value<int> order = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => RemoteDictionaryMetadataCompanion(
+                hostId: hostId,
+                name: name,
+                type: type,
+                formatKey: formatKey,
+                revision: revision,
+                displayName: displayName,
+                sourceLanguage: sourceLanguage,
+                lastSeenAt: lastSeenAt,
+                missingSince: missingSince,
+                order: order,
+                hidden: hidden,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String hostId,
+                required String name,
+                Value<String> type = const Value.absent(),
+                Value<String?> formatKey = const Value.absent(),
+                Value<String?> revision = const Value.absent(),
+                Value<String?> displayName = const Value.absent(),
+                Value<String?> sourceLanguage = const Value.absent(),
+                required int lastSeenAt,
+                Value<int?> missingSince = const Value.absent(),
+                required int order,
+                Value<bool> hidden = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => RemoteDictionaryMetadataCompanion.insert(
+                hostId: hostId,
+                name: name,
+                type: type,
+                formatKey: formatKey,
+                revision: revision,
+                displayName: displayName,
+                sourceLanguage: sourceLanguage,
+                lastSeenAt: lastSeenAt,
+                missingSince: missingSince,
+                order: order,
+                hidden: hidden,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$RemoteDictionaryMetadataTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $RemoteDictionaryMetadataTable,
+      RemoteDictionaryMetaRow,
+      $$RemoteDictionaryMetadataTableFilterComposer,
+      $$RemoteDictionaryMetadataTableOrderingComposer,
+      $$RemoteDictionaryMetadataTableAnnotationComposer,
+      $$RemoteDictionaryMetadataTableCreateCompanionBuilder,
+      $$RemoteDictionaryMetadataTableUpdateCompanionBuilder,
+      (
+        RemoteDictionaryMetaRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $RemoteDictionaryMetadataTable,
+          RemoteDictionaryMetaRow
+        >,
+      ),
+      RemoteDictionaryMetaRow,
       PrefetchHooks Function()
     >;
 typedef $$DictionaryHistoryTableCreateCompanionBuilder =
@@ -130129,6 +131176,11 @@ class $FushiDatabaseManager {
       $$PreferencesTableTableManager(_db, _db.preferences);
   $$DictionaryMetadataTableTableManager get dictionaryMetadata =>
       $$DictionaryMetadataTableTableManager(_db, _db.dictionaryMetadata);
+  $$RemoteDictionaryMetadataTableTableManager get remoteDictionaryMetadata =>
+      $$RemoteDictionaryMetadataTableTableManager(
+        _db,
+        _db.remoteDictionaryMetadata,
+      );
   $$DictionaryHistoryTableTableManager get dictionaryHistory =>
       $$DictionaryHistoryTableTableManager(_db, _db.dictionaryHistory);
   $$MediaSourcesTableTableManager get mediaSources =>
