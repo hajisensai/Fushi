@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
@@ -109,6 +110,8 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
     show normalizeAdvancedMiningAudioNudgeStepMs;
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -2104,6 +2107,26 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_subtitle_obscure_reveal', value);
     notifyListeners();
   }
+
+  /// 字幕遮布（盖住烧进画面的硬字幕，见 [VideoSubtitleMaskConfig]）。低频设置，
+  /// setter 照常广播：播放页遮布层与设置面板回显无条件同步。
+  VideoSubtitleMaskConfig get videoSubtitleMask =>
+      VideoSubtitleMaskConfig.fromJson(
+        getPref('video_subtitle_mask', defaultValue: '') as String?,
+      );
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) async {
+    await setPref('video_subtitle_mask', value.toJson());
+    notifyListeners();
+  }
+
+  /// [videoSubtitleMask] 的精确订阅：播放页的遮布层 / 编辑层据此跟随设置面板、控制
+  /// 通道（`mask_adjust`）与作品级配置切换，只在遮布配置真的变了时才重建。
+  late final ValueListenable<VideoSubtitleMaskConfig>
+  videoSubtitleMaskListenable = DerivedValueListenable<VideoSubtitleMaskConfig>(
+    this,
+    () => videoSubtitleMask,
+  );
 
   /// 副字幕的「临时显形」开关（用户要求主 / 副分开配置）。**未写过时继承主字幕的
   /// 值**：拆分前这是主副共用的一个总闸，关过它的老用户副字幕也得继续保持遮蔽。

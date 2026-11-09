@@ -346,6 +346,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -5938,6 +5939,16 @@ class AppModel
 
   Future<void> setVideoSubtitleObscureReveal(bool value) =>
       prefsRepo.setVideoSubtitleObscureReveal(value);
+
+  /// 字幕遮布。见 [PreferencesRepository.videoSubtitleMask]。
+  VideoSubtitleMaskConfig get videoSubtitleMask => prefsRepo.videoSubtitleMask;
+
+  /// 字幕遮布配置的精确订阅。见 [PreferencesRepository.videoSubtitleMaskListenable]。
+  ValueListenable<VideoSubtitleMaskConfig> get videoSubtitleMaskListenable =>
+      prefsRepo.videoSubtitleMaskListenable;
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) =>
+      prefsRepo.setVideoSubtitleMask(value);
 
   /// 副字幕的「临时显形」开关。见
   /// [PreferencesRepository.videoSecondarySubtitleObscureReveal]。
