@@ -117,7 +117,8 @@ enum PreviousExitKind {
   backgroundReclaim;
 
   /// 这种退出值得问用户要不要把日志发给开发者。内存回收只在发生在前台时算（用户眼里
-  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。
+  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。前后台按
+  /// [androidDiedInForeground]：前台服务（125）只在会话标记也说界面在前台时算前台。
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
@@ -321,10 +322,21 @@ class SessionMarker {
     return previous;
   }
 
+  /// 记一次生命周期变化。
+  ///
+  /// 无界面会话（[kSessionLifecycleHeadless]）只在收到 `resumed`（界面真的到了屏幕上、
+  /// 用户能看见）时才升级为普通前台状态：iOS 后台拉起时引擎的初始生命周期就是
+  /// `inactive`，[PreviousExitLog.foldIntoErrorLog] 补记它会把 headless 覆盖成「算前台」的
+  /// `inactive`，之后在后台被回收就被判成「启动即闪退」（反馈 1jhwtJQIZq、BUG-4242）。
+  /// `detached` 照常标 clean。
   void recordLifecycle(String state, {required int nowMs}) {
-    _lifecycle = state;
-    _lifecycleAt = nowMs;
     if (state == 'detached') _clean = true;
+    if (_lifecycle != kSessionLifecycleHeadless || state == 'resumed') {
+      _lifecycle = state;
+      _lifecycleAt = nowMs;
+    } else if (state != 'detached') {
+      return;
+    }
     _write();
   }
 
@@ -425,9 +437,10 @@ ExitReportEntry? describeUncleanPreviousSession(
   int? androidImportanceAtDeath,
 }) {
   if (previous == null || previous.clean) return null;
-  final bool diedInForeground = androidImportanceAtDeath != null
-      ? androidImportanceAtDeath <= kAndroidForegroundImportance
-      : previous.diedInForeground;
+  final bool diedInForeground = androidDiedInForeground(
+    androidImportanceAtDeath,
+    sessionSaysForeground: previous.diedInForeground,
+  );
   final StringBuffer b = StringBuffer()
     ..write('上次进程没有走正常退出（崩溃、被系统杀、或被强杀）：')
     ..write('pid=${previous.pid} version=${previous.version} ')
@@ -555,8 +568,46 @@ PreviousExitKind? androidExitKind(String reason) => switch (reason) {
   _ => null,
 };
 
-/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE`：重要性数值不大于它 = 用户看得见。
-const int kAndroidForegroundImportance = 125;
+/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND`（100）：界面在屏幕最上层、用户正在用。
+const int kAndroidForegroundUiImportance = 100;
+
+/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE`（125）：进程在跑前台服务（放歌、
+/// 下载保活、悬浮窗），界面**不一定**在屏幕上；落在它与 [kAndroidForegroundUiImportance]
+/// 之间时是不是「停在前台时没了」另看会话标记（[androidDiedInForeground]）。
+const int kAndroidForegroundServiceImportance = 125;
+
+/// Android 进程死时算不算「停在前台」——会话标记推断（[describeUncleanPreviousSession]）与
+/// `ApplicationExitInfo` 条目（[formatAndroidExitReports]）共用这一个判定，不另写阈值。
+///
+/// 重要性只在两头是硬事实：<= IMPORTANCE_FOREGROUND（界面在最上层）一定是前台；
+/// > IMPORTANCE_FOREGROUND_SERVICE 一定没在用户眼前。落在 101–125（前台服务：放歌 /
+/// 下载保活 / 悬浮窗）时界面可能早已退到后台，交给会话标记的生命周期判断（反馈
+/// vJrUPZW9I8：标记停在 paused 48 分钟后被杀，却按 125 判成「停在前台时没了」，BUG-4243）。
+///
+/// [sessionSaysForeground]：同一进程会话标记的 [PreviousSession.diedInForeground]；
+/// 这条记录对不上会话标记（别的进程 / pid、没有标记）时为 null，按前台算（平台没说清时
+/// 宁可多问一次，与 [ExitReportEntry.foreground] 的缺省一致）。
+bool androidDiedInForeground(
+  int? importance, {
+  required bool? sessionSaysForeground,
+}) => switch (importance) {
+  null => sessionSaysForeground ?? true,
+  final int i when i <= kAndroidForegroundUiImportance => true,
+  final int i when i <= kAndroidForegroundServiceImportance =>
+    sessionSaysForeground ?? true,
+  _ => false,
+};
+
+/// [record]（一条 `ApplicationExitInfo`）是不是会话标记 [previous] 那个进程的：pid 相同、
+/// 且死在它启动之后（pid 会被复用）；没有时间戳时只看 pid。
+bool _isExitRecordOfSession(
+  Map<Object?, Object?> record,
+  PreviousSession previous,
+) {
+  if (record['pid'] != previous.pid) return false;
+  final Object? timestamp = record['timestamp'];
+  return timestamp is! int || timestamp >= previous.startedAt;
+}
 
 /// `ComponentCallbacks2.TRIM_MEMORY_*` 的可读名。
 String androidTrimLevelName(int level) => switch (level) {
@@ -581,10 +632,9 @@ int? androidImportanceAtDeath(
   if (reasons is! List) return null;
   for (final Object? r in reasons) {
     if (r is! Map) continue;
-    final Object? recordPid = r['pid'];
     final Object? importance = r['importance'];
+    if (r['pid'] != pid || importance is! int) continue;
     final Object? timestamp = r['timestamp'];
-    if (recordPid != pid || importance is! int) continue;
     if (timestamp is int && timestamp < startedAtMs) continue;
     return importance;
   }
@@ -592,7 +642,13 @@ int? androidImportanceAtDeath(
 }
 
 /// 把 `ProcessExitChannel.consumeExitReports` 的返回值整理成摘要。
-List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
+///
+/// [previous]：上次会话标记。会话标记那个进程的记录，前后台按 [androidDiedInForeground]
+/// 结合标记的生命周期判（前台服务 125 时界面已退后台、被 LOW_MEMORY 杀，不算前台内存回收）。
+List<ExitReportEntry> formatAndroidExitReports(
+  Map<Object?, Object?> payload, {
+  PreviousSession? previous,
+}) {
   final List<ExitReportEntry> out = <ExitReportEntry>[];
   final Object? reasons = payload['reasons'];
   if (reasons is List) {
@@ -623,8 +679,13 @@ List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
           _cap(redactExitReportPaths(b.toString())),
           severe: kSevereAndroidExitReasons.contains(reason),
           kind: androidExitKind(reason),
-          foreground:
-              importance is! int || importance <= kAndroidForegroundImportance,
+          foreground: androidDiedInForeground(
+            importance is int ? importance : null,
+            sessionSaysForeground:
+                previous != null && _isExitRecordOfSession(r, previous)
+                ? previous.diedInForeground
+                : null,
+          ),
           atMs: timestamp is int ? timestamp : null,
         ),
       );
@@ -1064,6 +1125,42 @@ String? summarizeMacIpsReport(String content, {int maxFrames = 12}) {
     }
   }
   return _cap(redactExitReportPaths(out.toString()));
+}
+
+/// `.ips` 头部 JSON 的 `app_version`（`CFBundleShortVersionString`）；解析不了 / 没有返回 null。
+String? macIpsAppVersion(String content) {
+  final int newline = content.indexOf('\n');
+  try {
+    final Object? h = jsonDecode(
+      newline < 0 ? content : content.substring(0, newline),
+    );
+    final Object? v = h is Map ? h['app_version'] : null;
+    return v is String && v.trim().isNotEmpty ? v.trim() : null;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 版本号的数字主干（`3.3.0-debug.24438+24438` → `3.3.0`）；不是以数字开头的（`unknown`、
+/// 本地构建的占位）返回 null。Apple 包的 `CFBundleShortVersionString` 剥掉了预发布段，
+/// 会话标记里记的却是完整 build-name，所以只能比主干。
+String? _versionCore(String? version) => version == null
+    ? null
+    : RegExp(r'^\d+(?:\.\d+)*').stringMatch(version.trim());
+
+/// macOS 崩溃报告的版本 [reportVersion] 是否属于 [candidates]（上次会话 / 本次进程的版本）
+/// 之一。任一方不知道版本时无从判断，按属于处理（不丢真崩溃）。
+bool macCrashReportVersionMatches(
+  String? reportVersion,
+  Iterable<String?> candidates,
+) {
+  final String? report = _versionCore(reportVersion);
+  if (report == null) return true;
+  final Set<String> known = <String>{
+    for (final String? c in candidates)
+      if (_versionCore(c) case final String core) core,
+  };
+  return known.isEmpty || known.contains(report);
 }
 
 /// 列出 [dir] 里 [processName] 在 [sinceMs] 之后的 `.ips`，按修改时间升序。
@@ -1681,7 +1778,7 @@ abstract final class PreviousExitLog {
     final ExitReportEntry? forced = describeForcedPreviousExit(previous);
     if (forced != null) out.add(forced);
     if (androidPayload != null) {
-      out.addAll(formatAndroidExitReports(androidPayload));
+      out.addAll(formatAndroidExitReports(androidPayload, previous: previous));
     }
 
     if (isWindows ?? Platform.isWindows) {
@@ -1739,10 +1836,13 @@ abstract final class PreviousExitLog {
         File('${appDir.path}/previous_exit_state.json'),
       );
       final int seen = state.readMacSeenAt();
-      final int since = math.max(
+      // 只收上次会话启动之后的报告：更早的属于更早的进程，不是「上次怎么没的」
+      // （反馈 J1ZWNUeaCT、BUG-4244）。没有上次会话（首次启动 / 标记丢了）时退回回看窗口。
+      final int since = <int>[
         seen,
         now - kExitReportLookback.inMilliseconds,
-      );
+        previous?.startedAt ?? 0,
+      ].reduce(math.max);
       final List<File> reports = listMacCrashReports(
         dir,
         processName: processName,
@@ -1755,6 +1855,26 @@ abstract final class PreviousExitLog {
         try {
           final String raw = f.readAsStringSync();
           final String? summary = summarizeMacIpsReport(raw);
+          final String? reportVersion = macIpsAppVersion(raw);
+          if (summary != null &&
+              !macCrashReportVersionMatches(reportVersion, <String?>[
+                previous?.version,
+                version,
+              ])) {
+            // 同进程名、版本却对不上（别处留着的旧副本、旧安装启动失败）：不是上次那个
+            // 进程的崩溃，只作诊断，不判定退出方式（反馈 J1ZWNUeaCT：3.3.0 上报了
+            // 3.0.1 三天前的 dyld「Library missing」，BUG-4244）。
+            out.add(
+              ExitReportEntry(
+                kMacCrashReportSource,
+                '$summary\n（崩溃报告版本 $reportVersion 与上次会话 '
+                '${previous?.version ?? '?'} / 本次 $version 都不符，'
+                '不是上次进程的崩溃，只作诊断）',
+                severe: false,
+              ),
+            );
+            continue;
+          }
           out.add(
             summary != null
                 ? ExitReportEntry(
