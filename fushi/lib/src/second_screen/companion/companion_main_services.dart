@@ -33,7 +33,6 @@ import 'package:fushi/src/second_screen/companion/modules/video_companion_now_pl
 import 'package:fushi/src/second_screen/companion/companion_continue.dart';
 import 'package:fushi/src/second_screen/companion/companion_library_app_data.dart';
 import 'package:fushi/src/second_screen/companion/companion_library_service.dart';
-import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_window.dart';

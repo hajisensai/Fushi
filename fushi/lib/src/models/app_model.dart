@@ -146,6 +146,8 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
+import 'package:fushi/src/second_screen/second_screen_controller.dart';
+import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
@@ -567,6 +569,32 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
   return AppModel(ref.read(platformServicesProvider));
 });
+
+/// App-wide second-screen controller (main engine). Starts itself once the
+/// AppModel's preferences are loaded. Defined here rather than next to
+/// [SecondScreenController] so that file stays out of the AppModel import
+/// cycle (`test/build/import_cycle_guard_test.dart`): the controller only gets
+/// preference callbacks injected.
+final ChangeNotifierProvider<SecondScreenController>
+secondScreenControllerProvider = ChangeNotifierProvider<SecondScreenController>(
+  (Ref ref) {
+    final AppModel appModel = ref.read(appProvider);
+    final SecondScreenController controller = SecondScreenController(
+      readPref: (String key) => appModel.prefsRepo.getPref(key),
+      writePref: (String key, Object? value) =>
+          appModel.prefsRepo.setPref(key, value),
+      host: SecondScreenHost.forCurrentPlatform(),
+    );
+    void maybeStart() {
+      if (appModel.isInitialised) unawaited(controller.start());
+    }
+
+    appModel.addListener(maybeStart);
+    ref.onDispose(() => appModel.removeListener(maybeStart));
+    maybeStart();
+    return controller;
+  },
+);
 
 /// Provides color for all quick actions.
 final quickActionColorProvider = FutureProvider.autoDispose

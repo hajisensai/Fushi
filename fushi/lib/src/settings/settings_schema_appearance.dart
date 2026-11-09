@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';

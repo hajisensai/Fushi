@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -265,26 +263,3 @@ class SecondScreenController extends ChangeNotifier {
     super.dispose();
   }
 }
-
-/// App-wide second-screen controller (main engine). Starts itself once the
-/// AppModel's preferences are loaded.
-final ChangeNotifierProvider<SecondScreenController>
-secondScreenControllerProvider = ChangeNotifierProvider<SecondScreenController>(
-  (Ref ref) {
-    final AppModel appModel = ref.read(appProvider);
-    final SecondScreenController controller = SecondScreenController(
-      readPref: (String key) => appModel.prefsRepo.getPref(key),
-      writePref: (String key, Object? value) =>
-          appModel.prefsRepo.setPref(key, value),
-      host: SecondScreenHost.forCurrentPlatform(),
-    );
-    void maybeStart() {
-      if (appModel.isInitialised) unawaited(controller.start());
-    }
-
-    appModel.addListener(maybeStart);
-    ref.onDispose(() => appModel.removeListener(maybeStart));
-    maybeStart();
-    return controller;
-  },
-);
