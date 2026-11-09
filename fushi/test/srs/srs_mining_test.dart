@@ -1205,7 +1205,7 @@ void main() {
         AnkiDeckRepositionRunner.kSrsSnapshotFolder,
       );
       // 重排弹窗据此显示「读取 Fushi 复习的卡片」，不写「从 Anki 读取」（BUG-4242）。
-      expect(AnkiViewModel(repo).repositionTargetsSrs, isTrue);
+      expect(repositionTargetsSrsFor(repo), isTrue);
     });
 
     test('制卡到已配对设备：不套本机复习层，查重与落卡都交给主机（§4.8）', () {
@@ -1230,7 +1230,7 @@ void main() {
         repositionSnapshotFolderFor(repo),
         AnkiDeckRepositionRunner.kAnkiSnapshotFolder,
       );
-      expect(AnkiViewModel(repo).repositionTargetsSrs, isFalse);
+      expect(repositionTargetsSrsFor(repo), isFalse);
     });
   });
 
