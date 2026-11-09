@@ -113,10 +113,23 @@ void main() {
     expect(c.dataDir.replaceAll('\\', '/'), endsWith('/etc/fushi/data'));
   });
 
-  test('界面语言 language：缺省英文，往返一致，大小写不敏感，非法值报错', () {
+  test('界面语言 language：新装英文、旧配置没写保持中文，往返一致，大小写不敏感，非法值报错', () {
+    expect(
+      ServerConfig.defaults(dataDir: '/srv/d').language,
+      ServerConfig.languageEnglish,
+    );
     expect(
       ServerConfig.parse('port: 1\n', configDir: '/etc/fushi').language,
+      ServerConfig.languageChinese,
+      reason: '加 language 之前装的服务端一直是中文界面',
+    );
+    expect(
+      ServerConfig.parse(
+        ServerConfig.defaults(dataDir: '/srv/d').toYaml(),
+        configDir: '/etc/fushi',
+      ).language,
       ServerConfig.languageEnglish,
+      reason: 'init 写出的配置显式带 language: en',
     );
     final ServerConfig zh = ServerConfig.defaults(
       dataDir: '/srv/d',

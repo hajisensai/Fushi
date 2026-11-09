@@ -143,6 +143,10 @@ class ServerConfig {
   ];
   static const String defaultLanguage = languageEnglish;
 
+  /// 已有配置文件里没写 `language` 时用的语言：这些是加这个键之前装的服务端，
+  /// 界面一直是中文，升级后保持中文；新装（`init` 写出的配置）才是 [defaultLanguage]。
+  static const String legacyLanguage = languageChinese;
+
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
     dataDir: dataDir,
     port: defaultPort,
@@ -400,7 +404,7 @@ class ServerConfig {
       subtitleLanguage:
           map['subtitle_language']?.toString() ?? base.subtitleLanguage,
       metadataLocale: map['metadata_locale']?.toString() ?? base.metadataLocale,
-      language: parseLanguage(map['language']) ?? base.language,
+      language: parseLanguage(map['language']) ?? legacyLanguage,
       qbittorrentUrl: qbMap['url']?.toString(),
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),

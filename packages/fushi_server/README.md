@@ -94,7 +94,7 @@ port: 38765                   # 互联协议端口（客户端连这个）
 bind: "0.0.0.0"
 tls: true                     # 自签证书 + 指纹 TOFU；关掉只在可信内网
 device_name: "nas"
-language: "en"                # WebUI 界面语言：en（默认）/ zh；WebUI「设置」可改，保存后刷新页面
+language: "en"                # WebUI 界面语言：en / zh；init 写 en，旧配置没有这一行时按 zh；WebUI「设置」可改，保存后刷新页面
 lan_requires_pin: true        # 无头进程没有审批弹窗，PIN 是唯一人因；别关
 admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
