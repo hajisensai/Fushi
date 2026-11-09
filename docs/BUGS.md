@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3804 条。点号进各自文件。
+> 共 3807 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4242](bugs/BUG-4242-srs-anki-revlog-double-count.md) | ✅ | ✅ | 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次） |
-> 共 3806 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4249](bugs/BUG-4249-srs-anki-revlog-double-count.md) | ✅ | ✅ | 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次） |
 | [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
 | [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
