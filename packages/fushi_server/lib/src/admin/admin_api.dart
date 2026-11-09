@@ -377,7 +377,7 @@ class AdminApi {
       case ('POST', '/api/admin/dictionaries/reload'):
         return _reloadDictionaries();
       case ('PUT', _) when path.startsWith(_dictionariesPrefix):
-        return _setDictionaryDefaultEnabled(
+        return _updateDictionary(
           Uri.decodeComponent(path.substring(_dictionariesPrefix.length)),
           await _body(request),
         );
@@ -654,14 +654,7 @@ class AdminApi {
     final ServerDictionaryHost? host = ctx.host.dictionaries;
     final List<Map<String, Object?>> out = <Map<String, Object?>>[];
     for (final DictionaryMetaRow row in rows) {
-      final Directory dir = _dictionaryDirectory(row.name);
-      final bool present = await dir.exists();
-      out.add(<String, Object?>{
-        ...RemoteDictionaryInfo.fromMetadataRow(row).toJson(),
-        'order': row.order,
-        'sizeBytes': present ? await _directorySize(dir) : 0,
-        'present': present,
-      });
+      out.add(await _dictionaryEntry(row));
     }
     return _json(<String, Object?>{
       'engineAvailable': host?.available ?? false,
@@ -671,39 +664,141 @@ class AdminApi {
     });
   }
 
-  /// `PUT /api/admin/dictionaries/<name>` `{defaultEnabled: bool}`：改服务端默认开关
-  /// （`hiddenLanguagesJson` 里只增删 `ja`，其余语言保留，
-  /// [RemoteDictionaryInfo.withHiddenByDefault]）后重载引擎快照。读-改-写与重载都在
-  /// 库互斥锁里（与互联推送 / 删除词典同一把），不与它们交错。
-  Future<shelf.Response> _setDictionaryDefaultEnabled(
+  /// 清单里的一条：互联目录字段（`sourceLanguage` 是生效值，手动指定优先）外加管理页
+  /// 要分辨「自动 / 手动」的原始列——`languageOverride`（没指定为 null）、
+  /// `packageLanguage`（包内 index.json 声明的词头语言，没声明为 null）；`displayName`
+  /// 本来就是原始列。再加排序位、占用、资源目录在不在。
+  Future<Map<String, Object?>> _dictionaryEntry(DictionaryMetaRow row) async {
+    final Directory dir = _dictionaryDirectory(row.name);
+    final bool present = await dir.exists();
+    return <String, Object?>{
+      ...RemoteDictionaryInfo.fromMetadataRow(row).toJson(),
+      'languageOverride': _blankToNull(row.languageOverride),
+      'packageLanguage': _packageLanguageOf(row.metadataJson),
+      'order': row.order,
+      'sizeBytes': present ? await _directorySize(dir) : 0,
+      'present': present,
+    };
+  }
+
+  static String? _blankToNull(String? raw) {
+    final String trimmed = raw?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  static String? _packageLanguageOf(String metadataJson) {
+    try {
+      final Object? decoded = jsonDecode(metadataJson);
+      if (decoded is Map) {
+        final Object? lang = decoded['sourceLanguage'];
+        if (lang is String) return _blankToNull(lang);
+      }
+    } on FormatException {
+      // 畸形 metadataJson：当包内没声明。
+    }
+    return null;
+  }
+
+  /// 词头语言手动指定的宽松校验：BCP-47 形状（字母 / 数字 / 连字符，2–35 字符）。
+  static final RegExp _languageTagPattern = RegExp(r'^[A-Za-z0-9-]{2,35}$');
+
+  /// 显示名上限（字符）：只是给人看的覆盖名，防误粘一大段。
+  static const int _maxDisplayNameLength = 200;
+
+  /// 可清空的字符串字段：缺键 = 不改（返回 `null`）；`null` / 空串 / 纯空白 = 清掉
+  /// （`Value(null)`）；否则 trim 后写入。非字符串 400。
+  static Value<String?>? _clearableString(
+    Map<String, dynamic> body,
+    String key,
+  ) {
+    if (!body.containsKey(key)) return null;
+    final Object? raw = body[key];
+    if (raw != null && raw is! String) {
+      throw FormatException(
+        tr('$key 必须是字符串或 null', '$key must be a string or null'),
+      );
+    }
+    return Value<String?>(_blankToNull(raw as String?));
+  }
+
+  /// `PUT /api/admin/dictionaries/<name>`，请求体可带下面任意几项（至少一项）：
+  ///
+  /// - `defaultEnabled: bool`：服务端默认开关（`hiddenLanguagesJson` 里只增删 `ja`，
+  ///   其余语言保留，[RemoteDictionaryInfo.withHiddenByDefault]）；只管没带配置词典
+  ///   选择的请求。
+  /// - `languageOverride: string|null`：词头语言手动指定（同 app 的每词典语言设置，
+  ///   列 `languageOverride`）；trim 后空串 / null = 清掉、回到包内声明。
+  /// - `displayName: string|null`：显示名覆盖（列 `displayName`，真名不动），语义同上。
+  ///
+  /// 读-改-写与引擎重载都在库互斥锁里（与互联推送 / 删除词典同一把），不与它们交错。
+  /// 返回更新后的清单条目（同 `GET` 的一条）。客户端下次刷新目录就看到新值：互联
+  /// 词典目录读的是同一行。
+  Future<shelf.Response> _updateDictionary(
     String name,
     Map<String, dynamic> body,
   ) async {
-    final Object? enabled = body['defaultEnabled'];
-    if (enabled is! bool) {
-      throw const FormatException('defaultEnabled must be a boolean');
+    bool? enabled;
+    if (body.containsKey('defaultEnabled')) {
+      final Object? raw = body['defaultEnabled'];
+      if (raw is! bool) {
+        throw const FormatException('defaultEnabled must be a boolean');
+      }
+      enabled = raw;
     }
-    bool found = false;
+    final Value<String?>? language = _clearableString(body, 'languageOverride');
+    final String? tag = language?.value;
+    if (tag != null && !_languageTagPattern.hasMatch(tag)) {
+      throw FormatException(
+        tr(
+          '语言标签无效：「$tag」（应为 BCP-47 标签，如 ja、zh-Hant）',
+          'invalid language tag "$tag" (expected a BCP-47 tag such as ja or zh-Hant)',
+        ),
+      );
+    }
+    final Value<String?>? displayName = _clearableString(body, 'displayName');
+    final String? shown = displayName?.value;
+    if (shown != null && shown.length > _maxDisplayNameLength) {
+      throw FormatException(
+        tr(
+          '显示名太长（最多 $_maxDisplayNameLength 个字符）',
+          'display name is too long (at most $_maxDisplayNameLength characters)',
+        ),
+      );
+    }
+    if (enabled == null && language == null && displayName == null) {
+      throw FormatException(
+        tr(
+          '请求体要带 defaultEnabled、languageOverride 或 displayName',
+          'body must contain defaultEnabled, languageOverride or displayName',
+        ),
+      );
+    }
+    DictionaryMetaRow? updated;
     await ctx.host.runLibraryExclusive(() async {
       final DictionaryMetaRow? row = await _dictionaryRow(name);
       if (row == null) return;
-      found = true;
       await ctx.db.upsertDictionaryMeta(
         row
             .toCompanion(true)
             .copyWith(
-              hiddenLanguagesJson: Value<String>(
-                RemoteDictionaryInfo.withHiddenByDefault(
-                  row.hiddenLanguagesJson,
-                  !enabled,
-                ),
-              ),
+              hiddenLanguagesJson: enabled == null
+                  ? const Value<String>.absent()
+                  : Value<String>(
+                      RemoteDictionaryInfo.withHiddenByDefault(
+                        row.hiddenLanguagesJson,
+                        !enabled,
+                      ),
+                    ),
+              languageOverride: language ?? const Value<String?>.absent(),
+              displayName: displayName ?? const Value<String?>.absent(),
             ),
       );
       await ctx.host.dictionaries?.refresh();
+      updated = await _dictionaryRow(name);
     });
-    if (!found) return _err(404, 'dictionary "$name" not found');
-    return _json(<String, Object?>{'name': name, 'defaultEnabled': enabled});
+    final DictionaryMetaRow? row = updated;
+    if (row == null) return _err(404, 'dictionary "$name" not found');
+    return _json(await _dictionaryEntry(row));
   }
 
   /// `DELETE /api/admin/dictionaries/<name>`：与互联删除同一条路径（DB 元数据 + 引擎

@@ -304,4 +304,167 @@ void main() {
     expect(r.status, 503);
     expect(r.json['error'], isA<String>());
   });
+
+  test(
+    'GET：带原始 languageOverride / packageLanguage，sourceLanguage 是生效值',
+    () async {
+      final (:AdminApi api, paths: _) = await build();
+      await addDictionary(
+        'CEDICT',
+        metadataJson: '{"sourceLanguage":"ja"}',
+        languageOverride: 'zh-Hans',
+      );
+      await addDictionary('Plain', order: 1);
+      final ({int status, Map<String, dynamic> json}) r = await call(
+        api,
+        'GET',
+        'dictionaries',
+      );
+      final List<Map<String, dynamic>> list = <Map<String, dynamic>>[
+        for (final Object? e in r.json['dictionaries'] as List)
+          Map<String, dynamic>.from(e! as Map),
+      ];
+      expect(list[0]['sourceLanguage'], 'zh-Hans');
+      expect(list[0]['languageOverride'], 'zh-Hans');
+      expect(list[0]['packageLanguage'], 'ja');
+      expect(list[1].containsKey('sourceLanguage'), isFalse);
+      expect(list[1]['languageOverride'], isNull);
+      expect(list[1]['packageLanguage'], isNull);
+    },
+  );
+
+  test('PUT languageOverride：设置（trim）→ 返回更新后的条目；空串 / null 清掉', () async {
+    final (:AdminApi api, paths: _) = await build();
+    await addDictionary('JMdict', metadataJson: '{"sourceLanguage":"ja"}');
+
+    final ({int status, Map<String, dynamic> json}) set = await call(
+      api,
+      'PUT',
+      'dictionaries/JMdict',
+      <String, Object?>{'languageOverride': '  zh-Hant '},
+    );
+    expect(set.status, 200, reason: '${set.json}');
+    expect(set.json['name'], 'JMdict');
+    expect(set.json['languageOverride'], 'zh-Hant');
+    expect(set.json['sourceLanguage'], 'zh-Hant');
+    expect(set.json['packageLanguage'], 'ja');
+    expect(set.json['defaultEnabled'], isTrue);
+    expect(set.json.containsKey('sizeBytes'), isTrue);
+    expect((await rowOf('JMdict')).languageOverride, 'zh-Hant');
+    // 只改语言，不碰默认开关。
+    expect((await rowOf('JMdict')).hiddenLanguagesJson, '[]');
+
+    final ({int status, Map<String, dynamic> json}) cleared = await call(
+      api,
+      'PUT',
+      'dictionaries/JMdict',
+      <String, Object?>{'languageOverride': '   '},
+    );
+    expect(cleared.status, 200, reason: '${cleared.json}');
+    expect((await rowOf('JMdict')).languageOverride, isNull);
+    expect(cleared.json['languageOverride'], isNull);
+    expect(cleared.json['sourceLanguage'], 'ja');
+
+    await call(api, 'PUT', 'dictionaries/JMdict', <String, Object?>{
+      'languageOverride': 'ko',
+    });
+    expect((await rowOf('JMdict')).languageOverride, 'ko');
+    final ({int status, Map<String, dynamic> json}) nulled = await call(
+      api,
+      'PUT',
+      'dictionaries/JMdict',
+      <String, Object?>{'languageOverride': null},
+    );
+    expect(nulled.status, 200);
+    expect((await rowOf('JMdict')).languageOverride, isNull);
+  });
+
+  test('PUT displayName：设置 / 清掉；与 defaultEnabled 可同一次请求', () async {
+    final (:AdminApi api, paths: _) = await build();
+    await addDictionary('JMdict', languageOverride: 'ja');
+
+    final ({int status, Map<String, dynamic> json}) set = await call(
+      api,
+      'PUT',
+      'dictionaries/JMdict',
+      <String, Object?>{'displayName': ' 辞書 ', 'defaultEnabled': false},
+    );
+    expect(set.status, 200, reason: '${set.json}');
+    expect(set.json['displayName'], '辞書');
+    expect(set.json['defaultEnabled'], isFalse);
+    final DictionaryMetaRow row = await rowOf('JMdict');
+    expect(row.displayName, '辞書');
+    expect(row.hiddenLanguagesJson, '["ja"]');
+    // 没带的字段不动。
+    expect(row.languageOverride, 'ja');
+
+    final ({int status, Map<String, dynamic> json}) cleared = await call(
+      api,
+      'PUT',
+      'dictionaries/JMdict',
+      <String, Object?>{'displayName': ''},
+    );
+    expect(cleared.status, 200);
+    expect(cleared.json.containsKey('displayName'), isFalse);
+    expect((await rowOf('JMdict')).displayName, isNull);
+    expect((await rowOf('JMdict')).hiddenLanguagesJson, '["ja"]');
+  });
+
+  test('PUT 校验：坏语言标签 / 非字符串 / 空请求体 400，不落库；没有的词典 404', () async {
+    final (:AdminApi api, paths: _) = await build();
+    await addDictionary('JMdict', languageOverride: 'ja');
+
+    for (final Object? bad in <Object?>[
+      'j',
+      'ja_JP',
+      'zh Hans',
+      'x' * 36,
+      '日本語',
+      42,
+    ]) {
+      final ({int status, Map<String, dynamic> json}) r = await call(
+        api,
+        'PUT',
+        'dictionaries/JMdict',
+        <String, Object?>{'languageOverride': bad},
+      );
+      expect(r.status, 400, reason: '$bad → ${r.json}');
+      expect(r.json['error'], isA<String>());
+    }
+    expect(
+      (await call(api, 'PUT', 'dictionaries/JMdict', <String, Object?>{
+        'displayName': 7,
+      })).status,
+      400,
+    );
+    expect(
+      (await call(api, 'PUT', 'dictionaries/JMdict', <String, Object?>{
+        'displayName': 'x' * 201,
+      })).status,
+      400,
+    );
+    expect(
+      (await call(
+        api,
+        'PUT',
+        'dictionaries/JMdict',
+        <String, Object?>{},
+      )).status,
+      400,
+    );
+    expect((await rowOf('JMdict')).languageOverride, 'ja');
+
+    expect(
+      (await call(api, 'PUT', 'dictionaries/Nope', <String, Object?>{
+        'languageOverride': 'ja',
+      })).status,
+      404,
+    );
+    expect(
+      (await call(api, 'PUT', 'dictionaries/Nope', <String, Object?>{
+        'displayName': 'x',
+      })).status,
+      404,
+    );
+  });
 }
