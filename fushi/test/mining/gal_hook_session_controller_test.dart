@@ -5848,6 +5848,16 @@ void _tyranoDomVoiceTests() {
       final TexthookerLineEntry line = domLine('synthetic narration');
       expect(line.audioStatus, TexthookerLineAudioStatus.unavailable);
       expect(line.audioResourceId, isNull);
+      // 制卡取音同样不补猜：既不按时间戳找资源，也不拿无 resourceId 的原件。
+      final int pairingCalls = engine.findEventIds.length;
+      await controller.captureAudioBytes(
+        lineId: line.id,
+        sentence: line.text,
+        outputExtension: 'aac',
+      );
+      expect(engine.findEventIds.length, pairingCalls);
+      expect(engine.pairedResourceIds, isNot(contains(null)));
+      expect(domLine('synthetic narration').audioResourceId, isNull);
       await controller.close();
     });
 

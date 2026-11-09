@@ -981,6 +981,11 @@ class GalHookSessionController extends ChangeNotifier {
   final SplayTreeMap<int, _TyranoDomVoiceGroup> _tyranoDomVoiceGroups =
       SplayTreeMap<int, _TyranoDomVoiceGroup>();
   int _tyranoDomLastVoiceGroupId = 0;
+
+  /// 语音归属由 DOM 语音事件决定的行（页面声明了语音缓冲区时入库的 DOM 行）。制卡取音
+  /// 对它们只认已绑定的资源，不按时间戳去 native dump 里补猜（见 [_appendTyranoDomLine]）。
+  final LinkedHashSet<String> _tyranoDomVoiceOwnedLines =
+      LinkedHashSet<String>();
   Future<void> _tyranoDomVoiceQueue = Future<void>.value();
   final GalLoopbackSourceFactory _loopbackSourceFactory;
   final GalTargetWow64Probe _targetWow64Probe;
@@ -1928,6 +1933,10 @@ class GalHookSessionController extends ChangeNotifier {
     }
     if (voiceGroup != null) {
       voiceGroup.lineId = entry.id;
+      _tyranoDomVoiceOwnedLines.add(entry.id);
+      while (_tyranoDomVoiceOwnedLines.length > 2048) {
+        _tyranoDomVoiceOwnedLines.remove(_tyranoDomVoiceOwnedLines.first);
+      }
       if (voiceGroup.resourceIds.isNotEmpty) {
         _applyTyranoDomVoice(voiceGroup);
       } else if (voiceGroup.inFlight == 0 && voiceGroup.events > 0) {
@@ -4910,19 +4919,23 @@ class GalHookSessionController extends ChangeNotifier {
           _textService.entryById(lineId)?.eventOwnedVoice == true ||
           _pendingResourceMatches[lineId]?.eventOwnedOnly == true;
       String? resourceId = _resourceIdForLine(lineId);
+      // DOM 语音仲裁：这句的语音由引擎语音缓冲区事件决定，只认已绑定的 DOM 资源。
+      final bool domOwned = _tyranoDomVoiceOwnedLines.contains(lineId);
       // BUG-955：mine 阶段解析具体某行，绝不走「最新语音」兜底——历史行时间戳被淘汰后 timestamp=0，
       // 借最新语音会把当前语音错配给旧台词。晚附着 live 行的资源已在捕获期固化到 _resourceIdForLine，
       // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
-      resourceId ??= eventOnly
-          ? engine.findEventOwnedVoiceResourceId(
-              timestamp,
-              textEventId: _lineTextEventIdCache[lineId] ?? 0,
-            )
-          : engine.findPairedVoiceResourceId(
-              timestamp,
-              textEventId: _lineTextEventIdCache[lineId],
-              allowLatestSessionFallback: false,
-            );
+      if (!domOwned) {
+        resourceId ??= eventOnly
+            ? engine.findEventOwnedVoiceResourceId(
+                timestamp,
+                textEventId: _lineTextEventIdCache[lineId] ?? 0,
+              )
+            : engine.findPairedVoiceResourceId(
+                timestamp,
+                textEventId: _lineTextEventIdCache[lineId],
+                allowLatestSessionFallback: false,
+              );
+      }
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
         _textService.updateLineAudio(
           lineId,
@@ -4931,7 +4944,7 @@ class GalHookSessionController extends ChangeNotifier {
           resourceId: resourceId,
         );
       }
-      final Uint8List? bytes = eventOnly && resourceId == null
+      final Uint8List? bytes = (eventOnly || domOwned) && resourceId == null
           ? null
           : await engine.grabPairedVoiceBytes(
               timestamp,
@@ -4941,7 +4954,8 @@ class GalHookSessionController extends ChangeNotifier {
               allowLatestSessionFallback: false,
             );
       if (bytes != null && bytes.isNotEmpty) return bytes;
-      if (!engine.rawVoiceReady ||
+      // DOM 行的原件可能还在取（语音事件已到、asar 读写未完）：与 native 资源同一个等待窗。
+      if ((!engine.rawVoiceReady && !domOwned) ||
           waitUs <= 0 ||
           elapsed.elapsedMicroseconds >= waitUs) {
         return null;
