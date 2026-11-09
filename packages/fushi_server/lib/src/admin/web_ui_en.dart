@@ -142,10 +142,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
 
   // ── 库 ──
   '扫描根': 'Library roots',
-  'manga (mokuro / cbz / cbr / cb7 / zip / rar / 页图目录)':
-      'manga (mokuro / cbz / cbr / cb7 / zip / rar / image folder)',
-  'audiobook (音频目录，可带 epub / 字幕)':
-      'audiobook (audio folder, optionally with epub / subtitles)',
   'id（可空）': 'id (optional)',
   '加完记得在「状态」页点扫描；服务端进程要能读到该目录。':
       'After adding, run a scan from the Status page. The server process must be able to read the folder.',
@@ -471,4 +467,27 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '未找到随包库': 'No bundled library found',
   '未配全：{0}': 'Incomplete: {0}',
   '需重启': 'Restart needed',
+  '需要处理': 'Needs attention',
+  '漫画 OCR 模型缺失': 'Manga OCR models missing',
+  '在「模型」页下载后才能识别漫画文字。':
+      'Download them on the Models page to read text in manga.',
+  '下载后端未配置': 'Download backend not configured',
+  '下载与订阅不可用；在「设置 → 下载」里配置后重启。':
+      'Downloads and subscriptions are unavailable. Set one up in Settings → Downloads, then restart.',
+  '{0} 部作品待指定刮削结果': '{0} titles need a manual metadata pick',
+  '自动刮削拿不准，需要手动指定。':
+      'Automatic metadata matching was unsure; pick the right title manually.',
+  '未配置 TMDB key': 'No TMDB key set',
+  '自动补刮拿不到 TMDB 资料；在「设置 → 媒体与刮削」填写。':
+      "Automatic metadata can't use TMDB. Add a key in Settings → Media and metadata.",
+  '书籍': 'Books',
+  '含漫画与有声书': 'Includes manga and audiobooks',
+  '页图目录': 'image folders',
+  '音频目录，可带 epub / 字幕': 'Audio folder, optionally with an EPUB / subtitles',
+  '更多': 'More',
+  '放弃': 'Discard',
+  '{0} 项未保存': 'Unsaved changes: {0}',
+  '全部': 'All',
+  '仅错误': 'Errors only',
+  '没有错误': 'No errors',
 };

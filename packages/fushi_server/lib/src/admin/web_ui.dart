@@ -237,7 +237,37 @@ input.sw:disabled{opacity:.38;cursor:default}
 .srow .txt{cursor:default}
 .srow .ctl{width:min(320px,45%);flex:none;display:flex;justify-content:flex-end}
 .srow.swr .ctl{width:auto}
-.savebar{position:sticky;bottom:-48px;background:var(--surface);padding:12px 0 16px;margin:0;z-index:2}
+/* 有未保存的更改才浮出的保存条 */
+.savebar{position:sticky;bottom:0;z-index:5;margin:0;padding:10px 12px 10px 20px;border-radius:var(--r-group);background:var(--inverse-surface);color:var(--inverse-on-surface);box-shadow:0 4px 12px rgba(0,0,0,.25);animation:enter .3s var(--ease-decel)}
+.savebar[hidden]{display:none}
+.savebar .hint{color:inherit;opacity:.8}
+.savebar .count{font-weight:500;font-size:14px}
+.savebar .b.text{color:var(--inverse-primary)}
+/* 分段按钮（单选） */
+.seg{display:inline-flex;border:1px solid var(--outline);border-radius:20px;overflow:hidden;height:40px}
+.seg label{position:relative;display:inline-flex}
+.seg label + label{border-left:1px solid var(--outline)}
+.seg input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.seg span{display:inline-flex;align-items:center;gap:6px;padding:0 16px;font-size:14px;font-weight:500;color:var(--on-surface);transition:background-color .15s}
+.seg input:checked + span{background:var(--secondary-container);color:var(--on-secondary-container)}
+.seg input:checked + span::before{content:"✓"}
+.seg input:focus-visible + span{outline:2px solid var(--primary);outline-offset:-2px}
+.seg svg.i{width:18px;height:18px}
+.kind-seg{flex-wrap:wrap;height:auto;align-self:flex-start;max-width:100%}
+/* 「需要处理」 */
+.attn .lrow{color:var(--on-warn-container)}
+.attn .lead{background:var(--warn-container);color:var(--on-warn-container)}
+.chev{color:var(--on-surface-variant);flex:none}
+/* 溢出菜单 */
+.more{position:relative}
+.more-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:200px;padding:8px 0;border-radius:16px;background:var(--sc-high);box-shadow:0 4px 16px rgba(0,0,0,.2);animation:pop .2s var(--ease-decel)}
+.more-menu[hidden]{display:none}
+.more-menu button{display:flex;align-items:center;width:100%;height:48px;padding:0 16px;border:0;background:none;text-align:left;font-size:14px;cursor:pointer;color:var(--on-surface)}
+.more-menu button:hover,.more-menu button:focus-visible{background:color-mix(in srgb,var(--on-surface) 8%,transparent);outline:0}
+.more-menu button.danger{color:var(--error)}
+/* 日志分级 */
+.lv-error{color:var(--error)}
+.log-filter{margin:12px 0 0}
 /* 配对 PIN */
 .pin-card{background:var(--tertiary-container);color:var(--on-tertiary-container);border-radius:var(--r-group);padding:20px 24px;display:flex;gap:12px 24px;align-items:center;flex-wrap:wrap}
 .pin-card > div{flex:1 1 240px;min-width:0}
@@ -291,6 +321,8 @@ main{grid-column:1;padding:4px 16px 48px}
 .lrow,.srow{padding:12px 16px;gap:12px;flex-wrap:wrap}
 .lrow .trail{width:100%;justify-content:flex-start}
 .lrow .lead + .txt + .trail{padding-left:52px}
+.lrow .lead + .txt + .trail.more{width:auto;padding-left:0}
+.lrow .chev{margin-left:auto}
 .srow .ctl{width:100%}
 .srow.swr .ctl{width:auto}
 .pin{font-size:36px}
@@ -331,6 +363,8 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <symbol id="i-manga" viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/></symbol>
 <symbol id="i-audio" viewBox="0 0 24 24"><path d="M12 1a9 9 0 0 0-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7a9 9 0 0 0-9-9z"/></symbol>
 <symbol id="i-empty" viewBox="0 0 24 24"><path d="M19 3H4.99c-1.11 0-1.98.89-1.98 2L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5a2 2 0 0 0-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9.29 6.71a1 1 0 0 0 0 1.41L13.17 12l-3.88 3.88a1 1 0 1 0 1.41 1.41l4.59-4.59a1 1 0 0 0 0-1.41L10.7 6.7a1 1 0 0 0-1.41.01z"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></symbol>
 </defs></svg>
 <div class="app">
 <nav class="rail" id="rail">
@@ -363,6 +397,8 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 
 <section id="s-status" class="on">
 <div class="tiles" id="status-tiles"><div class="tile skel"></div><div class="tile skel"></div><div class="tile skel"></div><div class="tile skel"></div></div>
+<h3 class="sh" id="attn-h" hidden>需要处理</h3>
+<div class="list attn" id="status-attn"></div>
 <div class="card"><div class="card-head"><div><h2>扫描</h2><p class="sup" id="scan-state"></p></div><button class="b" id="btn-scan"><svg class="i"><use href="#i-refresh"/></svg>立即扫描库</button></div>
 <div class="bar indet" id="scan-bar" hidden><i></i></div></div>
 <h3 class="sh">运行状态</h3>
@@ -385,7 +421,11 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div class="card"><h2>添加</h2>
 <div class="grid">
 <label class="f" style="grid-column:1/-1">路径<input type="text" id="lib-path" placeholder="/srv/media/anime"></label>
-<label class="f">类型<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option><option value="manga">manga (mokuro / cbz / cbr / cb7 / zip / rar / 页图目录)</option><option value="audiobook">audiobook (音频目录，可带 epub / 字幕)</option></select></label>
+<div class="f" style="grid-column:1/-1;display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:500;color:var(--on-surface-variant)">类型<div class="seg kind-seg" id="lib-kind" role="radiogroup">
+<label><input type="radio" name="lib-kind" value="video" checked><span><svg class="i"><use href="#i-video"/></svg>视频</span></label>
+<label><input type="radio" name="lib-kind" value="book"><span><svg class="i"><use href="#i-book"/></svg>书</span></label>
+<label><input type="radio" name="lib-kind" value="manga"><span><svg class="i"><use href="#i-manga"/></svg>漫画</span></label>
+<label><input type="radio" name="lib-kind" value="audiobook"><span><svg class="i"><use href="#i-audio"/></svg>有声书</span></label></div><span class="muted" style="font-weight:400" id="lib-kind-hint"></span></div>
 <label class="f">id（可空）<input type="text" id="lib-id"></label></div>
 <div class="actions"><button class="b" id="btn-lib-add"><svg class="i"><use href="#i-add"/></svg>添加</button><span class="hint">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</span></div>
 </div>
@@ -483,7 +523,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 
 <section id="s-settings">
 <div id="settings-form"><div class="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></div>
-<div class="actions savebar"><button class="b" id="btn-settings-save">保存</button><span class="hint">端口 / TLS / 绑定 / qBittorrent / torrent / ffmpeg / onnxruntime 路径改后需重启 serve。</span></div>
+<div class="actions savebar" id="savebar" hidden><span class="count" id="dirty-count"></span><span class="hint">端口 / TLS / 绑定 / qBittorrent / torrent / ffmpeg / onnxruntime 路径改后需重启 serve。</span><button class="b text" id="btn-settings-discard">放弃</button><button class="b" id="btn-settings-save">保存</button></div>
 <h3 class="sh">远程访问</h3>
 <div class="card">
 <label class="f">公网地址（每行一个，http:// 或 https://；反代 / DDNS / 端口映射后的地址，已配对设备会自动学到）<textarea id="rr-public" rows="3" placeholder="https://nas.example.com:38765"></textarea></label>
@@ -502,7 +542,9 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 </section>
 
 <section id="s-logs">
-<div class="card"><div class="card-head"><div><h2 style="margin:0">最近日志</h2></div><label class="check"><span>自动刷新</span><input type="checkbox" class="sw" id="log-auto" checked></label><button class="b sec" id="btn-log-refresh"><svg class="i"><use href="#i-refresh"/></svg>刷新</button></div><pre id="logs"></pre></div>
+<div class="card"><div class="card-head"><div><h2 style="margin:0">最近日志</h2></div><label class="check"><span>自动刷新</span><input type="checkbox" class="sw" id="log-auto" checked></label><button class="b sec" id="btn-log-refresh"><svg class="i"><use href="#i-refresh"/></svg>刷新</button></div>
+<div class="seg log-filter" role="radiogroup"><label><input type="radio" name="log-lv" value="all" checked><span>全部</span></label><label><input type="radio" name="log-lv" value="problems"><span id="log-lv-problems">仅错误</span></label></div>
+<pre id="logs"></pre></div>
 </section>
 
 </main>
@@ -603,14 +645,28 @@ function scrapeSummary(sc){
   const last = r ? T(' · 上次 {0}/{1} 部成功', r.succeeded, r.totalWorks) + (r.pendingConfirmations ? T('，{0} 部待指定', r.pendingConfirmations) : '') : '';
   return (sc.enabled ? T('空闲') : T('自动补刮已关闭')) + last + tail;
 }
+// 运行状态里要人处理的项提到顶上，点一下去能修它的那一页。
+const P2P_BAD = new Set(['unavailable','start_failed','loopback_bind']);
+function renderAttention(s){
+  const items = [];
+  if (s.ocr && !s.ocr.ready) items.push(['models', T('漫画 OCR 模型缺失'), T('在「模型」页下载后才能识别漫画文字。')]);
+  if (s.downloads && !s.downloads.supported) items.push(['settings', T('下载后端未配置'), T('下载与订阅不可用；在「设置 → 下载」里配置后重启。')]);
+  if (s.p2p && !s.p2p.active && P2P_BAD.has(s.p2p.reason)) items.push(['settings', T('P2P 隧道'), p2pSummary(s.p2p)]);
+  const sc = s.scrape, r = sc && sc.lastReport;
+  if (r && r.pendingConfirmations) items.push(['', T('{0} 部作品待指定刮削结果', r.pendingConfirmations), T('自动刮削拿不准，需要手动指定。')]);
+  if (sc && sc.enabled && !sc.tmdbAvailable) items.push(['settings', T('未配置 TMDB key'), T('自动补刮拿不到 TMDB 资料；在「设置 → 媒体与刮削」填写。')]);
+  $('#attn-h').hidden = !items.length;
+  $('#status-attn').innerHTML = items.map(([to, t, sub])=>`<div class="lrow${to?' click':''}"${to?` data-go="${to}" tabindex="0" role="button"`:''}><div class="lead">${icon('warn')}</div><div class="txt"><div class="t">${esc(t)}</div><div class="s">${esc(sub)}</div></div>${to?`<svg class="i chev"><use href="#i-chevron"/></svg>`:''}</div>`).join('');
+  $('#status-attn').querySelectorAll('[data-go]').forEach(el=>{ el.onclick=()=>go(el.dataset.go, true); el.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(el.dataset.go, true); } }; });
+}
 async function loadStatus(){
   const s = await api('status');
   $('#devname').textContent = s.deviceName + ' · ' + s.listen + (s.tls?' · https':' · http');
   const quota = s.uploadQuotaBytes ? s.uploadUsedBytes / s.uploadQuotaBytes : 0;
   const tile = (cls, ic, k, v, sub, extra) => `<div class="tile${cls}"><span class="k">${icon(ic)}${esc(k)}</span><span class="v">${esc(v)}</span><span class="s">${esc(sub)}</span>${extra||''}</div>`;
   $('#status-tiles').innerHTML =
-    tile(' hero', 'video', T('视频'), s.videos, T('{0} 个库根', s.libraries)) +
-    tile('', 'book', T('书'), s.books, '') +
+    tile(' hero', 'video', T('视频'), s.videos, '') +
+    tile('', 'book', T('书籍'), s.books, T('含漫画与有声书')) +
     tile('', 'pairing', T('已配对'), s.peers, '') +
     tile('', 'upload', T('上传配额'), Math.round(quota*100)+'%', fmtBytes(s.uploadUsedBytes)+' / '+fmtBytes(s.uploadQuotaBytes), progress(quota));
   const okTag = (ok, a, b) => ok ? tag('ok', a) : tag('', b);
@@ -623,8 +679,9 @@ async function loadStatus(){
     [T('P2P 隧道'), p2pSummary(s.p2p)],
     [T('刮削'), scrapeSummary(s.scrape)],
   ]);
+  renderAttention(s);
   const notes = (s.lastScanNotes && s.lastScanNotes.length) ? ' — ' + s.lastScanNotes.join('; ') : '';
-  $('#scan-state').textContent = s.scanning ? T('扫描中…') : (s.lastScan ? T('上次 {0}: {1}', fmtTime(s.lastScanAt), s.lastScan + notes) : T('尚未扫描'));
+  $('#scan-state').textContent = T('{0} 个库根', s.libraries) + ' · ' + (s.scanning ? T('扫描中…') : (s.lastScan ? T('上次 {0}: {1}', fmtTime(s.lastScanAt), s.lastScan + notes) : T('尚未扫描')));
   $('#btn-scan').disabled = !!s.scanning;
   $('#scan-bar').hidden = !s.scanning;
 }
@@ -660,16 +717,29 @@ $('#btn-prof-toggle').onclick = guard(async()=>{ const on = $('#btn-prof-toggle'
 
 // ── 库 ──
 const KIND_ICON = {video:'video', book:'book', manga:'manga', audiobook:'audio'};
+const KIND_LABEL = {video:T('视频'), book:T('书'), manga:T('漫画'), audiobook:T('有声书')};
+const KIND_HINT = {video:'mkv / mp4 / avi / …', book:'EPUB', manga:'mokuro / cbz / cbr / cb7 / zip / rar / ' + T('页图目录'), audiobook:T('音频目录，可带 epub / 字幕')};
+const folderName = (p) => { const parts = String(p).split(/[\\/]+/).filter(Boolean); return parts.length ? parts[parts.length-1] : p; };
+const libKind = () => (document.querySelector('input[name="lib-kind"]:checked')||{}).value || 'video';
+const showKindHint = () => { $('#lib-kind-hint').textContent = KIND_HINT[libKind()]; };
+document.querySelectorAll('input[name="lib-kind"]').forEach(x=>x.onchange=showKindHint);
+showKindHint();
+function closeMenus(){ document.querySelectorAll('.more-menu').forEach(m=>{ if(!m.hidden){ m.hidden=true; const b=m.previousElementSibling; if(b) b.setAttribute('aria-expanded','false'); } }); }
+document.addEventListener('click', closeMenus);
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ const m=$('.more-menu:not([hidden])'); if(m){ closeMenus(); m.previousElementSibling.focus(); } } });
 async function loadLibraries(){
   const r = await api('libraries');
-  $('#libs').innerHTML = r.libraries.map(l=>`<div class="lrow"><div class="lead">${icon(KIND_ICON[l.kind]||'libraries')}</div><div class="txt"><div class="t">${esc(l.path)}</div><div class="s">${esc(l.id)} · ${esc(l.kind)}</div></div><div class="trail">${l.exists?tag('ok', T('存在')):tag('err', T('目录不存在'))}${l.enabled?'':tag('', T('禁用'))}<button class="b text" data-rm="${esc(l.id)}">${esc(T('移除'))}</button><button class="b text danger" data-purge="${esc(l.id)}">${esc(T('移除并清理'))}</button></div></div>`).join('') || empty(T('还没有扫描根'), 'libraries');
+  // 轮询重绘会关掉开着的菜单：菜单开着时跳过这一轮。
+  if ($('#libs .more-menu:not([hidden])')) return;
+  $('#libs').innerHTML = r.libraries.map(l=>`<div class="lrow"><div class="lead">${icon(KIND_ICON[l.kind]||'libraries')}</div><div class="txt"><div class="t">${esc(folderName(l.path))}${l.exists?tag('ok', T('存在')):tag('err', T('目录不存在'))}${l.enabled?'':tag('', T('禁用'))}</div><div class="s">${esc([KIND_LABEL[l.kind]||l.kind, l.id===folderName(l.path)?'':l.id].filter(Boolean).join(' · '))}</div><div class="s">${esc(l.path)}</div></div><div class="trail more"><button class="icon-btn" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false"><svg class="i"><use href="#i-more"/></svg></button><div class="more-menu" role="menu" hidden><button role="menuitem" data-rm="${esc(l.id)}">${esc(T('移除'))}</button><button role="menuitem" class="danger" data-purge="${esc(l.id)}">${esc(T('移除并清理'))}</button></div></div></div>`).join('') || empty(T('还没有扫描根'), 'libraries');
+  $('#libs').querySelectorAll('[data-more]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const m=b.nextElementSibling; const open=m.hidden; closeMenus(); if(open){ m.hidden=false; b.setAttribute('aria-expanded','true'); m.querySelector('button').focus(); } });
   $('#libs').querySelectorAll('[data-rm]').forEach(b=>b.onclick=guard(async()=>{ if(!await ask(T('从配置移除该库根？（不删文件、不删已入库条目）'), true)) return; await del('libraries/'+encodeURIComponent(b.dataset.rm)); toast(T('已移除')); loadLibraries(); }));
   $('#libs').querySelectorAll('[data-purge]').forEach(b=>b.onclick=guard(async()=>{ if(!await ask(T('移除该库根，并清理「文件已消失」的条目？\n只回收条目与其刮削资料 / 正文副本，不删任何源文件。\n注意：目录若只是没挂载，其下条目也会被当成已删除。'), true)) return; const r=await del('libraries/'+encodeURIComponent(b.dataset.purge)+'?purge=true'); const p=r&&r.purge; toast(p?(p.skipped?T('未清理：{0}', p.reason||T('被护栏拦下')):T('已清理 {0} 条', p.deleted)):T('已移除')); loadLibraries(); loadStatus(); }));
   const sel = $('#up-lib'); const cur = sel.value;
   sel.innerHTML = r.libraries.map(l=>`<option value="${esc(l.id)}">${esc(l.id)} — ${esc(l.path)}</option>`).join('');
   if (cur) sel.value = cur;
 }
-$('#btn-lib-add').onclick = guard(async()=>{ await post('libraries',{path:$('#lib-path').value, kind:$('#lib-kind').value, id:$('#lib-id').value}); $('#lib-path').value=''; $('#lib-id').value=''; toast(T('已添加')); loadLibraries(); });
+$('#btn-lib-add').onclick = guard(async()=>{ await post('libraries',{path:$('#lib-path').value, kind:libKind(), id:$('#lib-id').value}); $('#lib-path').value=''; $('#lib-id').value=''; toast(T('已添加')); loadLibraries(); });
 
 // ── 上传 ──
 const CHUNK = 8*1024*1024;
@@ -1011,7 +1081,7 @@ async function loadSrs(){
 // ── 设置 ──
 // 每项：[键, 文案, 类型, 分组]。文案里末尾括号部分显示成说明行；分组只管显示，保存时仍是一个请求体。
 const FIELDS = [
-  ['language',T('界面语言（Language）'),'select:en,zh','general'],['deviceName',T('设备名'),'text','general'],
+  ['language',T('界面语言（Language）'),'seg:en,zh','general'],['deviceName',T('设备名'),'text','general'],
   ['port',T('互联端口'),'number','network'],['bind',T('绑定地址'),'text','network'],['tls','TLS','bool','network'],['lanRequiresPin',T('局域网配对必须 PIN'),'bool','network'],['adminPort',T('WebUI 端口'),'number','network'],
   ['subtitleLanguage',T('字幕语言'),'text','media'],['metadataLocale',T('刮削资料语言（BCP-47，如 ja / zh-CN）'),'text','media'],
   ['scanScrape',T('扫描后自动补刮视频资料'),'bool','media'],['tmdbApiKey',T('TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）'),'secret:tmdbApiKeySet','media'],['scanPrune',T('扫描后清理文件已消失的视频条目'),'bool','media'],['uploadQuotaBytes',T('上传配额（字节）'),'number','media'],
@@ -1029,7 +1099,7 @@ const RESTART = new Set(['port','bind','tls','adminPort','ffmpeg','ffprobe','onn
 const LANGUAGE_NAMES = {en:'English', zh:'中文'};
 const LABEL_SPLIT = new RegExp('^(.+?)\\s*[(' + String.fromCharCode(0xFF08) + '](.+)[)' + String.fromCharCode(0xFF09) + ']$');
 const splitLabel = (l) => { const m = LABEL_SPLIT.exec(l); return m ? [m[1], m[2]] : [l, '']; };
-let settingsCache=null;
+let settingsCache=null, settingsBaseline=null;
 async function loadSettings(){
   const s = await api('settings'); const first=!settingsCache; settingsCache=s;
   // 远程访问卡片有自己的保存键：主表单保存后只刷新 P2P 状态，不冲掉它未保存的编辑。
@@ -1045,6 +1115,7 @@ async function loadSettings(){
     let ctl;
     if(type.startsWith('dyn:')) ctl = `<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
     else if(type==='bool') ctl = `<input type="checkbox" class="sw" id="${id}" ${v?'checked':''}>`;
+    else if(type.startsWith('seg:')) ctl = `<div class="seg" id="${id}" role="radiogroup">${type.slice(4).split(',').map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${o===v?'checked':''}><span>${esc(LANGUAGE_NAMES[o]||o)}</span></label>`).join('')}</div>`;
     else if(type.startsWith('select:')) ctl = `<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(k==='language'?LANGUAGE_NAMES[o]:o)}</option>`).join('')}</select>`;
     else if(type==='password'){ extra += setNote(s.qbittorrent.passwordSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
     else if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; extra += setNote(isSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
@@ -1053,10 +1124,31 @@ async function loadSettings(){
     return `<div class="srow${type==='bool'?' swr':''}"><label class="txt" for="${id}"><span class="t">${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</span>${sub?`<span class="s">${esc(sub)}</span>`:''}</label><div class="ctl">${ctl}</div></div>`;
   };
   $('#settings-form').innerHTML = SETTING_GROUPS.map(([g,name])=>`<h3 class="sh">${esc(name)}</h3><div class="list" style="margin-top:16px">${FIELDS.filter(f=>f[3]===g).map(field).join('')}</div>`).join('');
+  settingsBaseline = FIELDS.map(([k,,type])=>fieldValue(k,type));
+  updateDirty();
 }
+// 表单里一项的当前值（与保存请求体同一套换算）。
+function fieldValue(k, type){
+  const id='f-'+k.replace('.','-');
+  if(type.startsWith('seg:')) return (document.querySelector(`input[name="${id}"]:checked`)||{}).value;
+  const el=$('#'+id); let v=el.value;
+  if(type==='bool') v=el.checked; else if(type==='number') v=Number(v);
+  if(type!=='bool'&&type!=='number'&&v==='') v=null;
+  return v;
+}
+// 有未保存的更改才浮出保存条，并显示改了几项。
+function updateDirty(){
+  if(!settingsBaseline) return;
+  const n = FIELDS.filter(([k,,type],i)=>fieldValue(k,type)!==settingsBaseline[i]).length;
+  $('#savebar').hidden = n===0;
+  $('#dirty-count').textContent = T('{0} 项未保存', n);
+}
+$('#settings-form').addEventListener('input', updateDirty);
+$('#settings-form').addEventListener('change', updateDirty);
+$('#btn-settings-discard').onclick = guard(loadSettings);
 $('#btn-settings-save').onclick = guard(async()=>{
   const body={qbittorrent:{},torrent:{},ai:{}};
-  for(const [k,,type] of FIELDS){ const el=$('#f-'+k.replace('.','-')); let v=el.value; if(type==='bool') v=el.checked; else if(type==='number') v=Number(v); if(type!=='bool'&&type!=='number'&&v==='') v=null;
+  for(const [k,,type] of FIELDS){ const v=fieldValue(k,type);
     if(k.includes('.')) body[k.split('.')[0]][k.split('.')[1]]=v; else body[k]=v; }
   // 路径类字段：空串代表「清掉」——但 copyWith 的 null 是「不改」，所以传空串让服务端按空处理
   for(const k of ['ffmpeg','ffprobe','onnxruntimeLibrary']) if(body[k]===null) delete body[k];
@@ -1110,7 +1202,7 @@ const aiDevice = (s) => s.originPeerId ? (s.originDeviceName || s.originPeerId) 
 let aiOpen = null;
 async function loadAi(){
   const r = await api('ai/sessions');
-  $('#ai-sessions').innerHTML = r.sessions.map(s=>`<div class="lrow click${s.id===aiOpen?' sel':''}" data-ai="${esc(s.id)}" tabindex="0" role="button"><div class="lead">${icon('ai')}</div><div class="txt"><div class="t">${esc(s.title||T('新对话'))}</div><div class="s">${esc(aiDevice(s))} · ${esc(fmtTime(s.updatedAt))} · ${esc(s.tokens)} tokens</div></div></div>`).join('') || empty(T('还没有 AI 助手会话'), 'ai');
+  $('#ai-sessions').innerHTML = r.sessions.map(s=>`<div class="lrow click${s.id===aiOpen?' sel':''}" data-ai="${esc(s.id)}" tabindex="0" role="button"><div class="lead">${icon('ai')}</div><div class="txt"><div class="t">${esc(s.title||T('新对话'))}</div><div class="s">${esc(aiDevice(s))} · ${esc(fmtTime(s.updatedAt))} · ${esc(s.tokens)} tokens</div></div><svg class="i chev"><use href="#i-chevron"/></svg></div>`).join('') || empty(T('还没有 AI 助手会话'), 'ai');
   $('#ai-sessions').querySelectorAll('[data-ai]').forEach(el=>{ const open = guard(async()=>{ aiOpen=el.dataset.ai; await loadAiDetail(); $('#ai-sessions').querySelectorAll('[data-ai]').forEach(x=>x.classList.toggle('sel', x===el)); }); el.onclick=open; el.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); open(); } }; });
   if (aiOpen) await loadAiDetail();
 }
@@ -1123,7 +1215,25 @@ async function loadAiDetail(){
 }
 
 // ── 日志 ──
-async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10; pre.textContent = r.lines.join('\n'); if(atBottom) pre.scrollTop=pre.scrollHeight; }
+// 一条日志可能跨多行（堆栈 / ffmpeg 输出）：续行跟随它前面那条的级别。
+const LOG_HEAD = /^\d{4}-\d\d-\d\dT\S+ \[(\w+)\]/;
+let logLines = [];
+function logLevel(tag){ return tag==='error'||tag==='fatal' ? 'error' : ''; }
+function renderLogs(){
+  const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10;
+  const onlyProblems = (document.querySelector('input[name="log-lv"]:checked')||{}).value==='problems';
+  let lv='', problems=0; const out=[];
+  for(const line of logLines){
+    const m = LOG_HEAD.exec(line); if(m){ lv = logLevel(m[1]); if(lv) problems++; }
+    if(onlyProblems && !lv) continue;
+    out.push(lv ? `<span class="lv-${lv}">${esc(line)}</span>` : esc(line));
+  }
+  pre.innerHTML = out.join('\n') || esc(onlyProblems ? T('没有错误') : '');
+  $('#log-lv-problems').textContent = T('仅错误') + (problems ? ` (${problems})` : '');
+  if(atBottom) pre.scrollTop=pre.scrollHeight;
+}
+async function loadLogs(){ const r = await api('logs'); logLines = r.lines; renderLogs(); }
+document.querySelectorAll('input[name="log-lv"]').forEach(x=>x.onchange=renderLogs);
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
