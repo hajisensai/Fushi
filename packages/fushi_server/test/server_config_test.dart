@@ -112,4 +112,32 @@ void main() {
     expect(c.lanRequiresPin, isTrue);
     expect(c.dataDir.replaceAll('\\', '/'), endsWith('/etc/fushi/data'));
   });
+
+  test('界面语言 language：缺省英文，往返一致，大小写不敏感，非法值报错', () {
+    expect(
+      ServerConfig.parse('port: 1\n', configDir: '/etc/fushi').language,
+      ServerConfig.languageEnglish,
+    );
+    final ServerConfig zh = ServerConfig.defaults(
+      dataDir: '/srv/d',
+    ).copyWith(language: ServerConfig.languageChinese);
+    expect(
+      zh.toYaml(),
+      contains(RegExp(r'^language: "?zh"?$', multiLine: true)),
+    );
+    expect(
+      ServerConfig.parse(zh.toYaml(), configDir: '/etc/fushi').language,
+      ServerConfig.languageChinese,
+    );
+    expect(
+      ServerConfig.parse('language: " ZH "\n', configDir: '/e').language,
+      ServerConfig.languageChinese,
+    );
+    expect(ServerConfig.parseLanguage(null), isNull);
+    expect(ServerConfig.parseLanguage(''), isNull);
+    expect(
+      () => ServerConfig.parse('language: fr\n', configDir: '/e'),
+      throwsFormatException,
+    );
+  });
 }

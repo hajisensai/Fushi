@@ -90,6 +90,7 @@ class ServerConfig {
     required this.uploadQuotaBytes,
     required this.subtitleLanguage,
     required this.metadataLocale,
+    this.language = defaultLanguage,
     required this.qbittorrentUrl,
     required this.qbittorrentUsername,
     required this.qbittorrentPassword,
@@ -132,6 +133,15 @@ class ServerConfig {
   /// 实际行为（WebUI 本身只有中文），不是把中文当隐含常量——那种写死在引擎里、
   /// 用户无处可改的才是 BUG-2454 修掉的东西。
   static const String defaultMetadataLocale = 'zh-CN';
+
+  /// `language`：WebUI（以及服务端面向人的输出）用的界面语言。
+  static const String languageEnglish = 'en';
+  static const String languageChinese = 'zh';
+  static const List<String> supportedLanguages = <String>[
+    languageEnglish,
+    languageChinese,
+  ];
+  static const String defaultLanguage = languageEnglish;
 
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
     dataDir: dataDir,
@@ -183,6 +193,9 @@ class ServerConfig {
   /// 刮削资料语言（BCP-47，如 `ja` / `zh-CN`）：TMDB 文字与海报语言、简介语言
   /// 感知都由它派生。偏好表里显式设过 `video_metadata_locale` 时以偏好为准。
   final String metadataLocale;
+
+  /// 界面语言：[supportedLanguages] 之一（`en` / `zh`），缺省 `en`。
+  final String language;
   final String? qbittorrentUrl;
   final String? qbittorrentUsername;
   final String? qbittorrentPassword;
@@ -274,6 +287,7 @@ class ServerConfig {
     int? uploadQuotaBytes,
     String? subtitleLanguage,
     String? metadataLocale,
+    String? language,
     String? qbittorrentUrl,
     String? qbittorrentUsername,
     String? qbittorrentPassword,
@@ -311,6 +325,7 @@ class ServerConfig {
     uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
     subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
     metadataLocale: metadataLocale ?? this.metadataLocale,
+    language: language ?? this.language,
     qbittorrentUrl: qbittorrentUrl ?? this.qbittorrentUrl,
     qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
     qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
@@ -385,6 +400,7 @@ class ServerConfig {
       subtitleLanguage:
           map['subtitle_language']?.toString() ?? base.subtitleLanguage,
       metadataLocale: map['metadata_locale']?.toString() ?? base.metadataLocale,
+      language: parseLanguage(map['language']) ?? base.language,
       qbittorrentUrl: qbMap['url']?.toString(),
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),
@@ -446,6 +462,7 @@ class ServerConfig {
     b.writeln('bind: ${_q(bind)}');
     b.writeln('tls: $tls');
     b.writeln('device_name: ${_q(deviceName)}');
+    b.writeln('language: ${_q(language)}');
     b.writeln('lan_requires_pin: $lanRequiresPin');
     b.writeln('admin_port: $adminPort');
     b.writeln('admin_bind: ${_q(adminBind)}');
@@ -512,6 +529,18 @@ class ServerConfig {
   }
 
   static int? _int(Object? v) => v is int ? v : int.tryParse('${v ?? ''}');
+
+  /// `language`：缺省 / 空 = null（取默认）；不认识的值报错，不悄悄回落。
+  static String? parseLanguage(Object? v) {
+    final String s = '${v ?? ''}'.trim().toLowerCase();
+    if (s.isEmpty) return null;
+    if (!supportedLanguages.contains(s)) {
+      throw FormatException(
+        'language must be ${supportedLanguages.join(' / ')}, got "$v"',
+      );
+    }
+    return s;
+  }
 
   static bool? _bool(Object? v) {
     if (v is bool) return v;
