@@ -71,6 +71,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
@@ -305,6 +306,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 封面主题之下的一个节点：页内弹出的对话框 / 浮窗用它的 context 打开，
   /// [showDialog] 会把这里的主题捕获进弹窗路由。
   final GlobalKey _themedKey = GlobalKey();
+
   BuildContext get _themedContext => _themedKey.currentContext ?? context;
 
   /// build 里调：封面或明暗变了才重新取色。
@@ -1090,7 +1092,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                               const SizedBox(height: 12),
                               _buildTransport(context),
                               const SizedBox(height: 4),
-                              _buildTools(context),
+                              _buildTools(context, actions: true),
                             ],
                           ),
                         ),
@@ -1196,7 +1198,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[_buildSeek(), _buildTransport(context)],
+              children: <Widget>[
+                _buildSeek(),
+                _buildTransport(context),
+                _buildTools(context, actions: true),
+              ],
             ),
           ),
       ],
@@ -1247,7 +1253,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               _buildMeta(context, item),
               _buildSeek(),
               Center(child: _buildTransport(context)),
-              _buildTools(context),
+              _buildTools(context, actions: true),
             ],
           ),
         ),
@@ -1469,6 +1475,28 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     debugLabel: 'music-lyrics-seek',
   );
 
+  /// 功能图标（音质 / 音效 / 队列）：与偏移、AB 循环同款的裸图标按钮，无底色无文字，
+  /// 说明放 tooltip（用户 2026-11-08「有点突兀，无底色和其他选项并列」「无文字」）。
+  Widget _buildActionRow(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge(<Listenable>[
+      _engine,
+      appModelNoUpdate.prefsRepo,
+    ]),
+    builder: (BuildContext context, _) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIconButtonControl(
+            key: const ValueKey<String>('music_lyrics_queue'),
+            icon: const FushiIcon(FushiIcons.playlist),
+            tooltip: t.music_queue_button_count(count: _engine.queue.length),
+            onPressed: () => unawaited(showMusicQueue(_themedContext, _engine)),
+          ),
+        ],
+      );
+    },
+  );
+
   /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
   /// 收藏 · 音量，六格等宽、等距、同一行，图标同一尺寸，只有播放键是实心圆。音量与
   /// 迷你条同一枚按钮，点开弹滑杆（用户 2026-10-30「做成和底栏一样点击打开的，
@@ -1615,10 +1643,15 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     }
   }
 
-  /// 小工具：偏移 ± 与 AB 循环（只有带时间轴的歌词才有）。
-  Widget _buildTools(BuildContext context) {
+  /// 偏移 ± / AB 循环（有逐行时间轴才有）；[actions] 时同一行后面接功能图标
+  /// （[_buildActionRow]）。
+  Widget _buildTools(BuildContext context, {bool actions = false}) {
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    if (!synced) return const SizedBox.shrink();
+    if (!synced) {
+      return actions
+          ? Center(child: _buildActionRow(context))
+          : const SizedBox.shrink();
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1662,6 +1695,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   onPressed: () => unawaited(_extendLoop()),
                 ),
         ),
+        if (actions) _buildActionRow(context),
       ],
     );
   }
@@ -1704,7 +1738,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                       ),
                     ),
                     _buildTransport(context),
-                    const Expanded(child: SizedBox.shrink()),
+                    // 右侧放功能行（设计稿 W1：底栏右边是音效 / 队列）。
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _buildActionRow(context),
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1854,27 +1895,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   Widget _buildLyricsArea(BuildContext context, MusicPlayItem? item) {
     final MusicLyricsResolution? r = _lyrics;
     if (r == null || r.timeline.lines.isEmpty) {
-      // A / B 遇到没歌词的歌切到唱片态（与 C 同一个唱片），不再一行字挂在空处。
+      // 没歌词时歌词区只留提示与找歌词（用户 2026-11-08：歌词区再画一张唱片不合理，
+      // 封面已在左半 / 封面面）。
       if (_loading) {
         return const Center(child: FushiCircularProgressIndicator());
       }
-      return LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints c) => Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            _SpinningDisc(
-              coverPath: item?.coverPath,
-              size: (math.min(c.maxWidth, c.maxHeight) * 0.5).clamp(
-                140.0,
-                360.0,
-              ),
-              spinning: _engine.isPlaying,
-            ),
-            const SizedBox(height: 24),
-            _buildNoLyrics(context),
-          ],
-        ),
-      );
+      return Center(child: _buildNoLyrics(context));
     }
     final Widget view = KaraokeLyricsView(
       key: ValueKey<String>('karaoke_${_loadedUid}_${r.source}'),

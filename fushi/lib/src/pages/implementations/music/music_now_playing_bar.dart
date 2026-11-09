@@ -30,6 +30,7 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -305,7 +306,10 @@ class _CompactMusicBar extends StatelessWidget {
                   const SizedBox(width: 4),
                 ],
                 musicTransportGroup(session, playSize: 48),
-                if (roomy) _musicBarCloseButton(session),
+                if (roomy) ...<Widget>[
+                  musicQueueButton(context, engine),
+                  _musicBarCloseButton(session),
+                ],
               ],
             ],
           ),
@@ -356,6 +360,15 @@ class _CompactMusicBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            FushiListTileControl(
+              key: const ValueKey<String>('music_bar_menu_queue'),
+              leading: const FushiIcon(FushiIcons.playlist),
+              title: Text(t.music_queue_title),
+              onTap: () {
+                Navigator.of(sheet).pop();
+                unawaited(showMusicQueue(context, session.engine));
+              },
+            ),
             if (session.engine.capabilities.signalPath)
               FushiListTileControl(
                 leading: const FushiIcon(FushiIcons.highQuality),
@@ -491,7 +504,8 @@ class _DockedMusicBarState extends State<_DockedMusicBar> {
         SizedBox(width: 220, child: _BarTitle(item: widget.item)),
         const SizedBox(width: 12),
         musicTransportGroup(session, playSize: 52),
-        const SizedBox(width: 12),
+        musicQueueButton(context, engine),
+        const SizedBox(width: 8),
         // 展开态右侧只留循环与音量（用户 2026-10-29）；信号路径在歌词页「⋯」里，
         // 点条身进播放页。
         musicPlayModeButton(context, engine),
@@ -844,6 +858,18 @@ Widget musicPlayModeButton(
     ),
   );
 }
+
+/// 播放队列按钮（迷你条 / 停靠条，纯图标）：窄屏弹底部弹层、宽屏从右侧滑出侧栏
+/// （[showMusicQueue]）。
+Widget musicQueueButton(BuildContext context, MusicPlayerEngine engine) =>
+    FushiPressScale(
+      child: FushiIconButtonControl(
+        key: const ValueKey<String>('music_bar_queue'),
+        tooltip: t.music_queue_title,
+        onPressed: () => unawaited(showMusicQueue(context, engine)),
+        icon: const FushiIcon(FushiIcons.playlist),
+      ),
+    );
 
 /// 音量：点开一条横向滑杆（0–100，写偏好并即时下发给后端）。
 /// 关闭迷你条：停止音乐并释放媒体会话（条随之消失）。用户 2026-10-30「底部栏
