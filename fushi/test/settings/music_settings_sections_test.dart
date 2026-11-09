@@ -46,10 +46,9 @@ void main() {
       d.sections.map((SettingsSection s) => s.title),
       isNot(contains(t.music_plugins_title)),
     );
-    // 服务器凭据 / 端点与歌词来源仍是设置（对应视频的媒体服务器 / 字幕来源）。
-    expect(
-      ids,
-      containsAll(<String>['music.servers', 'music.lyrics_providers']),
-    );
+    // 歌词来源仍是音乐设置（对应视频的字幕来源）；服务器曲库搬去了 在线服务 › 媒体服务器
+    // （见 music_servers_media_servers_placement_test.dart）。
+    expect(ids, contains('music.lyrics_providers'));
+    expect(ids, isNot(contains('music.servers')));
   });
 }

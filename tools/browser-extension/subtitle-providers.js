@@ -167,6 +167,10 @@ function fushiCollectCueSegments(node, out) {
   return out;
 }
 
+// 站点原生字幕的采样选择器（按优先级）。Netflix: .player-timedtext；YouTube: .ytp-caption-segment /
+// .captions-text。屏上文本采样（fushiSubtitleSegmentsNow）与悬停行定位（fushiCaptionLineTextAt）共用。
+const FUSHI_CAPTION_SAMPLE_SELECTORS = ['.player-timedtext', '.ytp-caption-segment', '.captions-text'];
+
 // 屏上字幕按「行」分组：YouTube 自绘字幕每个 .caption-visual-line 是一行（一行里可能有多个
 // .ytp-caption-segment）；滚动自动字幕上下两行是**两句**，必须分开采，拼成一句的话每条 cue 都
 // 带着上一行，回拖后又对不上历史，live 轨只增不删地越叠越多。Netflix 的 .player-timedtext 是
@@ -189,9 +193,7 @@ function fushiCaptionLineGroups(sel, nodes) {
 // 当前屏幕上的字幕：{ text: 正文（不含读音，全部行拼接）, ruby: 段序列, lines: 每行 {text, ruby} }。
 // text / ruby 给制卡取词等「屏上现在是什么」的消费者；live 采样只看 lines（见 fushiSamplerView）。
 function fushiSubtitleSegmentsNow() {
-  // Netflix: .player-timedtext；YouTube: .ytp-caption-segment / .captions-text。
-  const sels = ['.player-timedtext', '.ytp-caption-segment', '.captions-text'];
-  for (const sel of sels) {
+  for (const sel of FUSHI_CAPTION_SAMPLE_SELECTORS) {
     const nodes = document.querySelectorAll(sel);
     if (!nodes.length) continue;
     const segments = [];
@@ -211,6 +213,30 @@ function fushiSubtitleSegmentsNow() {
 
 function fushiSubtitleTextNow() {
   return fushiSubtitleSegmentsNow().text;
+}
+
+// 查词命中点（通常是文本节点）所在的站点原生字幕**那一行**的正文（不含读音）；不在原生字幕里
+// 返回 ''。分行规则与 live 采样是同一份（fushiCaptionLineGroups）：YouTube 滚动自动字幕上下两行
+// 是两句，Shift 悬停查的是哪一行，制卡就该取哪一行（反馈 #RvwGCEtAsd）。
+/**
+ * @param {Node|null|undefined} node
+ * @returns {string}
+ */
+function fushiCaptionLineTextAt(node) {
+  let el = node || null;
+  if (el && el.nodeType !== 1) el = el.parentElement || el.parentNode || null;
+  if (!el || typeof el.closest !== 'function') return '';
+  for (const sel of FUSHI_CAPTION_SAMPLE_SELECTORS) {
+    if (!el.closest(sel)) continue;
+    for (const group of fushiCaptionLineGroups(sel, document.querySelectorAll(sel))) {
+      if (!group.some((n) => n && typeof n.contains === 'function' && n.contains(el))) continue;
+      const segments = [];
+      for (const n of group) fushiCollectCueSegments(n, segments);
+      return segments.map((seg) => seg.text).join('').trim();
+    }
+    return '';
+  }
+  return '';
 }
 const FUSHI_LIVE_CUE_MAX_MS = 12000;
 const FUSHI_LIVE_LANG = 'live';
@@ -605,6 +631,55 @@ function fushiFullTrackCueMatching(startMs, endMs) {
     if (cues[i].startMs === startMs && cues[i].endMs === endMs) return { cues: cues, idx: i };
   }
   return null;
+}
+/** @param {unknown} s @returns {string} 折叠空白（cue 文本可能带 '\n'，屏上同句按行排版）。 */
+function fushiCaptionTextNormalize(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
+}
+/**
+ * 站点原生字幕上被悬停的那一行在整轨里对应的 cue，与字幕面板行同形 {text,startMs,endMs}。
+ *
+ * 反馈 #RvwGCEtAsd：YouTube 滚动自动字幕屏上同时留着上一行 A 与当前行 B，ASR 轨截断后
+ * A.endMs == B.startMs；按播放时刻查整轨（fushiFullTrackCueAt）只会命中 B，而用户悬停的是 A。
+ * 屏上还留着的行一定是刚放过的句，所以只在起点不晚于当前时刻的最近 FUSHI_RECENT_LINES_MAX 条里
+ * 由近到远找：先认全文相等，再认文本相关（人工字幕一条 cue 折成两行显示时，每行是 cue 的一段）。
+ * 整轨缺席 / 行文本为空 / 对不上 → null，调用方保持按播放时刻取整轨的原行为。
+ * @param {string} lineText
+ * @returns {{text:string,startMs:number,endMs:number}|null}
+ */
+function fushiFullTrackCueForCaptionLine(lineText) {
+  const line = fushiCaptionTextNormalize(lineText);
+  if (!line) return null;
+  const cues = fushiActiveFullTrackCues();
+  if (!cues) return null;
+  const nowV = fushiVideoTimeMs();
+  if (nowV === null) return null;
+  let lo = 0;
+  let hi = cues.length - 1;
+  let last = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid].startMs <= nowV) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
+  }
+  if (last < 0) return null;
+  const floor = Math.max(0, last - FUSHI_RECENT_LINES_MAX + 1);
+  const pick = (related) => {
+    for (let i = last; i >= floor; i--) {
+      const text = fushiCaptionTextNormalize(cues[i].text);
+      if (related ? fushiCueTextRelated(text, line) : text === line) return cues[i];
+    }
+    return null;
+  };
+  const cue = pick(false) || pick(true);
+  return cue ? { text: cue.text || '', startMs: cue.startMs, endMs: cue.endMs } : null;
+}
+/**
+ * 查词命中点若在站点原生字幕里：该行的整轨精确窗；否则 null。
+ * @param {Node|null|undefined} node
+ * @returns {{text:string,startMs:number,endMs:number}|null}
+ */
+function fushiCaptionLineCueWindowAt(node) {
+  return fushiFullTrackCueForCaptionLine(fushiCaptionLineTextAt(node));
 }
 // 整轨 key 的语言段：Netflix 同一语言常有普通字幕与 CC / SDH 两条轨，只按语言会互相覆盖——带了
 // trackId（netflix-bridge）就拼成 `lang~trackId`，消费端按第一个 `~` 拆回语言与轨 id。

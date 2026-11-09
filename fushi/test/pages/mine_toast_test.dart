@@ -152,9 +152,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('角落锚点（歌词模式）：小号卡贴区域左下角、不压屏幕底部正中；撤销后复原', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('角落锚点（歌词模式）：小号卡贴正文区域右上角；撤销后复原', (WidgetTester tester) async {
     await _pumpToastHost(tester);
     const Rect region = Rect.fromLTRB(40, 60, 500, 520);
     final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
@@ -172,8 +170,9 @@ void main() {
         reason: '小号卡不画标题行',
       );
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
-      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      expect(box.bottom, moreOrLessEquals(region.bottom - 12, epsilon: 2));
+      // 反馈 OOZ-lrCsU0：贴正文区域上角，横排 LTR 落右上（行流收尾一侧）。
+      expect(box.right, moreOrLessEquals(region.right - 12, epsilon: 2));
+      expect(box.top, moreOrLessEquals(region.top + 12, epsilon: 2));
       expect(box.height, lessThanOrEqualTo(44));
       await tester.pump(const Duration(seconds: 3));
     } finally {
@@ -210,8 +209,9 @@ void main() {
       expect(card.compact, isTrue);
       expect(card.visibleFor, kMineNoticeActionVisibleFor);
       final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
-      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
-      expect(box.bottom, moreOrLessEquals(region.bottom - 12, epsilon: 2));
+      // 反馈 OOZ-lrCsU0：贴正文区域上角，横排 LTR 落右上（行流收尾一侧）。
+      expect(box.right, moreOrLessEquals(region.right - 12, epsilon: 2));
+      expect(box.top, moreOrLessEquals(region.top + 12, epsilon: 2));
 
       // 普通结果卡 2.4 秒就收；带按钮的小卡还在。
       await tester.pump(const Duration(seconds: 3));
@@ -273,6 +273,60 @@ void main() {
     expect(box.bottom, greaterThan(region.bottom));
     FushiToast.dismissCurrent();
     await tester.pump();
+  });
+
+  testWidgets('竖排正文（行流 rtl）：小卡落左上角，不压首列', (WidgetTester tester) async {
+    await _pumpToastHost(tester);
+    const Rect region = Rect.fromLTRB(40, 60, 500, 520);
+    final FushiToastCornerAnchor anchor = FushiToast.anchorMineToCorner(
+      () => region,
+      textFlow: () => TextDirection.rtl,
+    );
+    try {
+      await _show(tester, '卡片已导出到『日语单词』。', MineToastStatus.added);
+      final Rect box = tester.getRect(find.byType(FushiMineNoticeCard));
+      expect(box.left, moreOrLessEquals(region.left + 12, epsilon: 2));
+      expect(box.top, moreOrLessEquals(region.top + 12, epsilon: 2));
+      await tester.pump(const Duration(seconds: 3));
+    } finally {
+      anchor.release();
+    }
+  });
+
+  test('mineToastOffsetInRegion：行流收尾一侧的上角，夹在屏幕内', () {
+    const Size overlay = Size(1000, 700);
+    const Size card = Size(300, 40);
+    const Rect region = Rect.fromLTRB(40, 28, 960, 560);
+    // 横排 LTR：右上。
+    expect(
+      mineToastOffsetInRegion(
+        overlay: overlay,
+        region: region,
+        card: card,
+        textFlow: TextDirection.ltr,
+      ),
+      const Offset(960 - 12 - 300, 40),
+    );
+    // 竖排右起左排 / 横排 RTL：左上。
+    expect(
+      mineToastOffsetInRegion(
+        overlay: overlay,
+        region: region,
+        card: card,
+        textFlow: TextDirection.rtl,
+      ),
+      const Offset(52, 40),
+    );
+    // 区域伸出屏幕：夹回屏内。
+    expect(
+      mineToastOffsetInRegion(
+        overlay: overlay,
+        region: const Rect.fromLTRB(-100, 0, 1200, 700),
+        card: card,
+        textFlow: TextDirection.rtl,
+      ),
+      const Offset(12, 12),
+    );
   });
 
   testWidgets('角落锚点解析不出区域（页面被盖住 / 未布局）：退回默认大卡', (WidgetTester tester) async {

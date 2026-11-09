@@ -284,6 +284,7 @@ part 'reader_fushi/session_remote.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
+part 'reader_fushi/seamless.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与

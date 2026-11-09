@@ -186,6 +186,17 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     );
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     if (localBooks.isEmpty) return;
+    // BUG-1569③：退出书的单本同步不再等整轮 sweep 结束，它在互联上只锁那本书。
+    // 下面的批量读与本端快照都是「此刻」的，若在本阶段跑到某本书之前它已被单本
+    // 同步改过（推了 host、或落了本地、记了新基线），拿这份旧快照去判定就会把 host
+    // 的旧值当成「远端改了」落回本机——进度倒退。所以先记下每本书锁的代数，轮到
+    // 这本书时代数变了就不信快照：重读 host、整套重新判定。必须在读快照**之前**记。
+    final Map<String, int> lockGenerations = <String, int>{
+      for (final EpubBookRow book in localBooks)
+        book.bookKey: syncResourceLocks.generationOf(
+          syncBookResource(book.bookKey),
+        ),
+    };
     // 本端进度 / 基线整轮一次读齐（三条查询）；两端已收敛的书在内存里判定后
     // 跳过，其余照旧逐本重读、判定、落地（快照只用来跳过，从不用来写）。
     final BookProgressSweepSnapshot snapshot = await sync.loadSweepSnapshot();
@@ -204,30 +215,44 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         itemIndex: i,
         itemTotal: localBooks.length,
         title: book.title,
+        itemKind: SyncItemKind.book,
       );
+      final String lockKey = syncBookResource(book.bookKey);
       try {
-        final RemoteBookProgressRead read = await remotes[i];
-        final Object? readError = read.error;
-        if (readError != null) {
-          Error.throwWithStackTrace(readError, read.stackTrace!);
-        }
-        final BookProgressSyncStep step = await sync.syncOne(
-          book,
-          remote: read.progress!,
-          snapshot: snapshot,
-        );
-        if (step.localChanged) report.localBookProgressPulled++;
-        if (step.action == BookProgressSyncAction.conflict) {
-          report.conflicts.add(
-            SyncConflict(
-              assetKey: book.bookKey,
-              dimension: kInterconnectBookProgressDimension,
-              title: book.title,
-              localVersion: step.localUpdatedAtMs,
-              remoteVersion: step.remoteUpdatedAtMs,
-            ),
+        // 判定 + 落地在这本书的锁里做，与退出书的单本同步互斥（见上）。
+        await syncResourceLocks.withResources(<String>{lockKey}, () async {
+          final bool touched =
+              syncResourceLocks.generationOf(lockKey) !=
+              lockGenerations[book.bookKey];
+          final RemoteBookProgress remote;
+          if (touched) {
+            remote = await sync.remoteProgress(book);
+          } else {
+            final RemoteBookProgressRead read = await remotes[i];
+            final Object? readError = read.error;
+            if (readError != null) {
+              Error.throwWithStackTrace(readError, read.stackTrace!);
+            }
+            remote = read.progress!;
+          }
+          final BookProgressSyncStep step = await sync.syncOne(
+            book,
+            remote: remote,
+            snapshot: touched ? null : snapshot,
           );
-        }
+          if (step.localChanged) report.localBookProgressPulled++;
+          if (step.action == BookProgressSyncAction.conflict) {
+            report.conflicts.add(
+              SyncConflict(
+                assetKey: book.bookKey,
+                dimension: kInterconnectBookProgressDimension,
+                title: book.title,
+                localVersion: step.localUpdatedAtMs,
+                remoteVersion: step.remoteUpdatedAtMs,
+              ),
+            );
+          }
+        });
       } catch (e) {
         report.noteError('live book progress "${book.title}"', e);
       }
@@ -265,8 +290,24 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // 用来写）。
     final PlaybackBaselineSnapshot baselines = await sync
         .loadBaselineSnapshot();
-    for (final String key in localKeys) {
-      if (!hostKeys.contains(key)) continue; // host 无此条目：跳过。
+    final List<String> keys = <String>[
+      for (final String key in localKeys)
+        if (hostKeys.contains(key)) key, // host 无此条目：跳过。
+    ];
+    final SyncItemKind itemKind = switch (sync.kind) {
+      PlaybackPositionKind.video => SyncItemKind.video,
+      PlaybackPositionKind.audiobook => SyncItemKind.audiobook,
+    };
+    for (int i = 0; i < keys.length; i++) {
+      final String key = keys[i];
+      // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
+      _emit(
+        SyncPhase.readingData,
+        itemIndex: i,
+        itemTotal: keys.length,
+        title: titleOf(key),
+        itemKind: itemKind,
+      );
       try {
         final PlaybackPosition host = await readHost(key);
         if (InterconnectPlaybackPositionSync.isSettled(
