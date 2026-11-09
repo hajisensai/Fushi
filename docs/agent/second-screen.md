@@ -170,7 +170,9 @@
   不恢复滚动位置、Library 详情页与 Now / Lookup 的子页。
 - 面板转发来的手柄 `KEYCODE_BACK` 在主屏到达时是 `goBack`，不是查词模式的 B。
 - 新文案（`second_screen_*`）除 en / zh 外均为英文。
-- AYN Thor（Odin ROM）：只要本应用在副屏（display 4）有窗口，ROM 就按系统设置 `secondary_screen_volume_level`
-  （副屏有焦点时按音量键调的就是它）给**整个应用**的播放混音，主屏串流 / 视频的声音也跟着它走；主音量
-  `STREAM_MUSIC` 不变。窗口焦点在哪块屏都一样。应用侧没有办法退出这个分类，用户解法是点一下副屏再调大音量。
-  见 BUG-4243。
+- AYN Thor（Odin ROM）：ROM 把本应用当「副屏应用」时，按系统设置 `secondary_screen_volume_level`（副屏有焦点时按
+  音量键调的就是它）给**整个 uid** 的播放混音（AudioFlinger 按系统属性 `sys.audio.uids` 名单乘
+  `persist.sys.audio.value`），主屏串流 / 视频 / 有声书 / 音乐都跟着它走，主音量 `STREAM_MUSIC` 不变。判定：在副屏有
+  根任务就进名单，除非焦点栈顶是本应用、且它请求焦点那一刻全系统最近一次 focused-app 变化是本应用在主屏的 Activity
+  （面板每次随宿主 onStart 重新启动，正常流程下最近一次总是面板，所以几乎总被衰减）。应用侧没有干净的退出办法
+  （候选方案见 BUG-4243），用户解法是点一下副屏把音量调到最大（15 档 = 不衰减）。
