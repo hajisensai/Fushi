@@ -199,7 +199,7 @@ void main() {
         prefs,
         const <String, String>{},
       );
-      expect(none.unavailableReason(kSubsProviderIds[1]), contains('关闭'));
+      expect(none.unavailableReason(kSubsProviderIds[1]), contains('disabled'));
       expect(none.unavailableReason('jimaku'), contains(kJimakuApiKeyEnv));
 
       final SubsCredentials env =

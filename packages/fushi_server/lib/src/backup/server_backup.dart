@@ -36,6 +36,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// manifest 里的格式标记。
 const String kServerBackupFormat = 'fushi_server_backup';
@@ -118,16 +119,22 @@ class ServerBackupManifest {
     try {
       json = jsonDecode(raw);
     } on FormatException {
-      throw const ServerBackupException('manifest.json 不是 JSON');
+      throw ServerBackupException(
+        tr('manifest.json 不是 JSON', 'manifest.json is not JSON'),
+      );
     }
     if (json is! Map || json['format'] != kServerBackupFormat) {
-      throw const ServerBackupException('不是 fushi_server 备份包');
+      throw ServerBackupException(
+        tr('不是 fushi_server 备份包', 'Not a fushi_server backup archive'),
+      );
     }
     final Object? version = json['formatVersion'];
     final Object? schema = json['schemaVersion'];
     final DateTime? created = DateTime.tryParse('${json['createdAt']}');
     if (version is! int || schema is! int || created == null) {
-      throw const ServerBackupException('manifest.json 字段不全');
+      throw ServerBackupException(
+        tr('manifest.json 字段不全', 'manifest.json is missing fields'),
+      );
     }
     return ServerBackupManifest(
       formatVersion: version,
@@ -280,11 +287,13 @@ ServerBackupManifest readServerBackupManifest(File backup) {
     final Archive archive = ZipDecoder().decodeBuffer(input);
     final ArchiveFile? entry = archive.findFile(_manifestEntry);
     if (entry == null) {
-      throw const ServerBackupException('包里没有 manifest.json');
+      throw ServerBackupException(
+        tr('包里没有 manifest.json', 'The archive has no manifest.json'),
+      );
     }
     return ServerBackupManifest.parse(utf8.decode(entry.content as List<int>));
   } on FormatException {
-    throw const ServerBackupException('不是有效的 zip');
+    throw ServerBackupException(tr('不是有效的 zip', 'Not a valid zip'));
   } finally {
     input.closeSync();
   }
@@ -321,14 +330,21 @@ Future<ServerRestoreResult> restoreServerBackup({
   final ServerBackupManifest manifest = readServerBackupManifest(backup);
   if (manifest.formatVersion > kServerBackupFormatVersion) {
     throw ServerBackupException(
-      '备份包格式 v${manifest.formatVersion} 比本版本新，先升级 fushi_server',
+      tr(
+        '备份包格式 v${manifest.formatVersion} 比本版本新，先升级 fushi_server',
+        'Backup format v${manifest.formatVersion} is newer than this version; upgrade fushi_server first',
+      ),
     );
   }
   final int schema = currentServerSchemaVersion();
   if (manifest.schemaVersion > schema) {
     throw ServerBackupException(
-      '备份里的数据库 schema v${manifest.schemaVersion} 比本版本（v$schema）新，'
-      '先升级 fushi_server 再还原',
+      tr(
+        '备份里的数据库 schema v${manifest.schemaVersion} 比本版本（v$schema）新，'
+            '先升级 fushi_server 再还原',
+        'The database schema v${manifest.schemaVersion} in the backup is newer than this version (v$schema); '
+            'upgrade fushi_server before restoring',
+      ),
     );
   }
   final String stamp = _stamp(now ?? DateTime.now());
@@ -336,7 +352,12 @@ Future<ServerRestoreResult> restoreServerBackup({
   final Directory staging = Directory('$dataDir.restore-$stamp');
   final Directory previous = Directory('$dataDir.pre-restore-$stamp');
   if (staging.existsSync() || previous.existsSync()) {
-    throw ServerBackupException('目标已存在：${staging.path} / ${previous.path}');
+    throw ServerBackupException(
+      tr(
+        '目标已存在：${staging.path} / ${previous.path}',
+        'Target already exists: ${staging.path} / ${previous.path}',
+      ),
+    );
   }
   try {
     // 暂存目录先建好并收紧：解出来的凭据文件在恢复权限前不对其他用户可见。
@@ -358,7 +379,12 @@ Future<ServerRestoreResult> restoreServerBackup({
           configDir: configFile.parent.path,
         ).copyWith(dataDir: dataDir);
       } on FormatException catch (e) {
-        throw ServerBackupException('包里的配置文件无效：${e.message}');
+        throw ServerBackupException(
+          tr(
+            '包里的配置文件无效：${e.message}',
+            'Invalid config file in the archive: ${e.message}',
+          ),
+        );
       }
     }
     final List<String> moved = <String>[];
@@ -387,7 +413,9 @@ Future<ServerRestoreResult> restoreServerBackup({
       if (previous.existsSync() && previous.listSync().isEmpty) {
         await previous.delete();
       }
-      throw ServerBackupException('还原失败，已恢复原数据：$e');
+      throw ServerBackupException(
+        tr('还原失败，已恢复原数据：$e', 'Restore failed, original data recovered: $e'),
+      );
     }
     File? previousConfig;
     if (configFile != null && restored != null) {
@@ -451,7 +479,12 @@ _ExtractedBackup _extractBackup(String backupPath, String stagingPath) {
       final String rel = f.name.substring(_dataPrefix.length);
       final String? target = zipEntryOutputPath(stagingPath, rel);
       if (target == null) {
-        throw ServerBackupException('包里有越界路径：${f.name}');
+        throw ServerBackupException(
+          tr(
+            '包里有越界路径：${f.name}',
+            'The archive contains an out-of-bounds path: ${f.name}',
+          ),
+        );
       }
       final bool isDb = rel == 'support/$fushiDatabaseFileName';
       Directory(p.dirname(target)).createSync(recursive: true);
@@ -463,7 +496,9 @@ _ExtractedBackup _extractBackup(String backupPath, String stagingPath) {
       final int perm = f.mode & 0x1FF;
       if (perm != 0 && (perm & 0x3F) == 0) ownerOnly[target] = perm;
     }
-    if (!sawDb) throw const ServerBackupException('包里没有数据库');
+    if (!sawDb) {
+      throw ServerBackupException(tr('包里没有数据库', 'The archive has no database'));
+    }
     return _ExtractedBackup(config, ownerOnly);
   } finally {
     input.closeSync();
@@ -480,7 +515,12 @@ void _checkSqliteHeader(String path) {
   try {
     final List<int> head = raf.readSync(_sqliteHeader.length);
     if (String.fromCharCodes(head) != _sqliteHeader) {
-      throw const ServerBackupException('包里的数据库不是有效的 SQLite 文件');
+      throw ServerBackupException(
+        tr(
+          '包里的数据库不是有效的 SQLite 文件',
+          'The database in the archive is not a valid SQLite file',
+        ),
+      );
     }
   } finally {
     raf.closeSync();
@@ -494,7 +534,12 @@ Future<void> restrictServerBackupPath(String path, String mode) async {
   if (Platform.isWindows) return;
   final ProcessResult r = await Process.run('chmod', <String>[mode, path]);
   if (r.exitCode != 0) {
-    throw ServerBackupException('chmod $mode 失败（${r.stderr}）：$path');
+    throw ServerBackupException(
+      tr(
+        'chmod $mode 失败（${r.stderr}）：$path',
+        'chmod $mode failed (${r.stderr}): $path',
+      ),
+    );
   }
 }
 
@@ -512,7 +557,9 @@ Future<void> _restoreOwnerOnlyModes(Map<String, int> modes) async {
       ...e.value,
     ]);
     if (r.exitCode != 0) {
-      throw ServerBackupException('chmod $mode 失败（${r.stderr}）');
+      throw ServerBackupException(
+        tr('chmod $mode 失败（${r.stderr}）', 'chmod $mode failed (${r.stderr})'),
+      );
     }
   }
 }

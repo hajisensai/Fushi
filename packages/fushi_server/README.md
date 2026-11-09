@@ -94,7 +94,7 @@ port: 38765                   # 互联协议端口（客户端连这个）
 bind: "0.0.0.0"
 tls: true                     # 自签证书 + 指纹 TOFU；关掉只在可信内网
 device_name: "nas"
-language: "en"                # WebUI 界面语言：en / zh；init 写 en，旧配置没有这一行时按 zh；WebUI「设置」可改，保存后刷新页面
+language: "en"                # 界面语言（WebUI 与命令行输出）：en / zh；init 写 en，旧配置没有这一行时按 zh；WebUI「设置」可改，保存即生效；环境变量 FUSHI_LANGUAGE 优先
 lan_requires_pin: true        # 无头进程没有审批弹窗，PIN 是唯一人因；别关
 admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
@@ -176,8 +176,10 @@ WebUI「设置」页改的就是这个文件；端口 / TLS / 绑定 / torrent /
 
 ## CLI
 
+命令行的帮助、提示与报错按配置里的 `language` 出（新装英文，旧配置没写按中文）；一次性改用 `FUSHI_LANGUAGE=zh fushi_server …`。
+
 ```
-fushi_server init                      生成配置
+fushi_server init [--language en|zh]  生成配置（--language 写进配置，缺省 en）
 fushi_server serve [--scan] [--[no-]prune]   起服务（Ctrl-C / SIGTERM 优雅停）；--no-prune 对本进程所有扫描生效
 fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，随后同步补刮（不起服务）
 fushi_server status                    打印库/配对概况

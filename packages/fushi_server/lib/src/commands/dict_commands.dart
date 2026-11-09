@@ -19,6 +19,7 @@ import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
@@ -66,7 +67,7 @@ Future<DictImportOutcome> importDictionaryArchive({
         );
     if (!result.success) {
       throw DictImportException(
-        result.error.isNotEmpty ? result.error : '导入失败',
+        result.error.isNotEmpty ? result.error : tr('导入失败', 'Import failed'),
       );
     }
     final String name = sanitizeDictionaryTitle(result.title);
@@ -137,7 +138,12 @@ String sanitizeDictionaryTitle(String raw) {
       .basename(raw.trim())
       .replaceAll(RegExp(r'[/\\]'), '_');
   if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') {
-    throw const DictImportException('词典包里没有标题（index.json 的 title 为空）');
+    throw DictImportException(
+      tr(
+        '词典包里没有标题（index.json 的 title 为空）',
+        'The dictionary package has no title (the title in index.json is empty)',
+      ),
+    );
   }
   return cleaned;
 }
@@ -179,15 +185,28 @@ class DictCliModule extends CliModule {
 
   @override
   void register(ArgParser parser) {
-    parser.addCommand('dict').addFlag('json', negatable: false, help: '机器可读输出');
+    parser
+        .addCommand('dict')
+        .addFlag(
+          'json',
+          negatable: false,
+          help: tr('机器可读输出', 'Machine-readable output'),
+        );
   }
 
   @override
-  String get usage => '''
+  String get usage => tr(
+    '''
 词典（离线；改动在 serve 重启后进引擎）：
   dict ls [--json]                 列出服务端词典库
   dict add <词典包.zip> [--json]    导入一本词典（同名视为更新，保留排序与隐藏设置）
-  dict rm <词典名> [--json]         删除一本词典（元数据 + 资源目录）''';
+  dict rm <词典名> [--json]         删除一本词典（元数据 + 资源目录）''',
+    '''
+Dictionaries (offline; changes reach the engine after serve restarts):
+  dict ls [--json]                 list the server dictionary library
+  dict add <package.zip> [--json]  import a dictionary (the same name counts as an update, keeping sort order and hidden settings)
+  dict rm <name> [--json]          delete a dictionary (metadata + resource directory)''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -202,7 +221,12 @@ class DictCliModule extends CliModule {
         if (rest.length != 2) return _usageError();
         final File archive = File(rest[1]);
         if (!await archive.exists()) {
-          stderr.writeln('找不到词典包 ${archive.path}');
+          stderr.writeln(
+            tr(
+              '找不到词典包 ${archive.path}',
+              'Dictionary package not found: ${archive.path}',
+            ),
+          );
           return 66;
         }
         return ctx.withRuntime(
@@ -239,7 +263,7 @@ class DictCliModule extends CliModule {
       return 0;
     }
     if (rows.isEmpty) {
-      stdout.writeln('（没有词典）');
+      stdout.writeln(tr('（没有词典）', '(No dictionaries)'));
       return 0;
     }
     for (final DictionaryMetaRow r in rows) {
@@ -263,12 +287,16 @@ class DictCliModule extends CliModule {
       FushiDicts.probeDictContent(rt.paths.dictionaryResources.path);
     } catch (e) {
       stderr.writeln(
-        '词典引擎原生库不可用（${lib ?? 'libfushidicts_ffi 裸名'}）：$e\n'
-        '把 libfushidicts_ffi 放到 bin/../lib/，或设 $kFushiDictsLibEnv 指向它',
+        tr(
+          '词典引擎原生库不可用（${lib ?? 'libfushidicts_ffi 裸名'}）：$e\n'
+              '把 libfushidicts_ffi 放到 bin/../lib/，或设 $kFushiDictsLibEnv 指向它',
+          'The dictionary engine native library is unavailable (${lib ?? 'bare libfushidicts_ffi name'}): $e\n'
+              'Put libfushidicts_ffi in bin/../lib/, or set $kFushiDictsLibEnv to point to it',
+        ),
       );
       return 69;
     }
-    stderr.writeln('导入 ${archive.path} …');
+    stderr.writeln(tr('导入 ${archive.path} …', 'Importing ${archive.path} …'));
     final DictImportOutcome r;
     try {
       r = await importDictionaryArchive(
@@ -277,7 +305,7 @@ class DictCliModule extends CliModule {
         archive: archive,
       );
     } on DictImportException catch (e) {
-      stderr.writeln('导入失败：${e.message}');
+      stderr.writeln(tr('导入失败：${e.message}', 'Import failed: ${e.message}'));
       return 1;
     }
     if (json) {
@@ -292,8 +320,12 @@ class DictCliModule extends CliModule {
       );
     } else {
       stdout.writeln(
-        '${r.replaced ? '已更新' : '已导入'}「${r.name}」（${r.type}，${r.termCount} 词条'
-        '${r.kanjiCount > 0 ? '，${r.kanjiCount} 汉字' : ''}）；重启 serve 后生效',
+        tr(
+          '${r.replaced ? '已更新' : '已导入'}「${r.name}」（${r.type}，${r.termCount} 词条'
+              '${r.kanjiCount > 0 ? '，${r.kanjiCount} 汉字' : ''}）；重启 serve 后生效',
+          '${r.replaced ? 'Updated' : 'Imported'} "${r.name}" (${r.type}, ${r.termCount} terms'
+              '${r.kanjiCount > 0 ? ', ${r.kanjiCount} kanji' : ''}); takes effect after restarting serve',
+        ),
       );
     }
     return 0;
@@ -306,12 +338,12 @@ class DictCliModule extends CliModule {
   }) async {
     final List<DictionaryMetaRow> rows = await rt.db.getAllDictionaryMetadata();
     if (!rows.any((DictionaryMetaRow r) => r.name == name)) {
-      stderr.writeln('没有名为「$name」的词典');
+      stderr.writeln(tr('没有名为「$name」的词典', 'No dictionary named "$name"'));
       return 1;
     }
     final String safe = p.basename(name);
     if (safe != name || name == '.' || name == '..') {
-      stderr.writeln('非法词典名：$name');
+      stderr.writeln(tr('非法词典名：$name', 'Illegal dictionary name: $name'));
       return 64;
     }
     await rt.db.deleteDictionaryMeta(name);
@@ -324,7 +356,12 @@ class DictCliModule extends CliModule {
         jsonEncode(<String, Object?>{'name': name, 'files': outcome.name}),
       );
     } else {
-      stdout.writeln('已删除「$name」；重启 serve 后生效');
+      stdout.writeln(
+        tr(
+          '已删除「$name」；重启 serve 后生效',
+          'Deleted "$name"; takes effect after restarting serve',
+        ),
+      );
     }
     return 0;
   }

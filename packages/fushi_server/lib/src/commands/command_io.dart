@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 const int kExitOk = 0;
 const int kExitFailure = 1;
@@ -42,14 +43,18 @@ class CommandIo {
   /// 用法错误：消息 + 用法行打到 stderr，返回 64。
   int usage(String message, String usageLine) {
     err.writeln(message);
-    err.writeln('用法: $usageLine');
+    err.writeln(tr('用法: $usageLine', 'Usage: $usageLine'));
     return kExitUsage;
   }
 }
 
 /// 子命令（`import epub` 里的 `epub`）的叶子参数表上都挂同一个 `--json`。
-ArgParser addJsonFlag(ArgParser parser) =>
-    parser..addFlag('json', negatable: false, help: '输出机器可读 JSON（stdout）');
+ArgParser addJsonFlag(ArgParser parser) => parser
+  ..addFlag(
+    'json',
+    negatable: false,
+    help: tr('输出机器可读 JSON（stdout）', 'Output machine-readable JSON (stdout)'),
+  );
 
 /// 叶子命令有没有要 `--json`。
 bool wantsJson(ArgResults leaf) =>

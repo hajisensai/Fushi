@@ -227,9 +227,9 @@ void main() {
       reason: '${h.err}',
     );
     final String out = h.out.toString();
-    expect(out, contains('跳过  Show - 02.mkv'));
-    expect(out, contains('处理  Show - 01.mkv'));
-    expect(out, contains('处理  NCOP.mp4'));
+    expect(out, contains('skip  Show - 02.mkv'));
+    expect(out, contains('process  Show - 01.mkv'));
+    expect(out, contains('process  NCOP.mp4'));
     expect(recognizer.seen, isEmpty);
     expect(File(p.join(season.path, 'Show - 01.ja.srt')).existsSync(), isFalse);
   });
@@ -350,7 +350,7 @@ void main() {
       ]),
       kExitDataError,
     );
-    expect(h.err.toString(), contains('格式不对'));
+    expect(h.err.toString(), contains('invalid format'));
     expect(asked, isEmpty);
     expect(recognizer.seen, isEmpty);
 
@@ -366,7 +366,7 @@ void main() {
       ]),
       kExitDataError,
     );
-    expect(h.err.toString(), contains('第 1 条'));
+    expect(h.err.toString(), contains('entry 1'));
     expect(recognizer.seen, isEmpty);
   });
 
@@ -430,7 +430,7 @@ void main() {
       File(p.join(outDir, 'Show - 01.ja.srt')).readAsStringSync(),
       contains('唯ちゃん0'),
     );
-    expect(h.out.toString(), contains('AI 用量'));
+    expect(h.out.toString(), contains('AI usage'));
 
     final FushiDatabase db = h.openDb();
     addTearDown(db.close);
@@ -463,7 +463,7 @@ void main() {
     expect((group['usage']! as Map<Object?, Object?>)['input'], 21);
     expect(File('${group['glossaryCandidate']}').existsSync(), isTrue);
     expect((h.json()['usage']! as Map<Object?, Object?>)['calls'], 3);
-    expect(h.err.toString(), contains('失败前已调用 AI 3 次'));
+    expect(h.err.toString(), contains('AI called 3 times before the failure'));
   });
 }
 

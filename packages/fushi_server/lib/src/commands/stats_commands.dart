@@ -23,6 +23,7 @@ import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 
 const int _exitOk = 0;
@@ -243,35 +244,48 @@ void renderStatShowReport(Map<String, Object?> report, StringSink out) {
   final Map<String, Object?> totals = report['totals']! as Map<String, Object?>;
   final Object? from = report['from'];
   out.writeln(
-    '窗口: ${report['window']}（${from ?? '最早'} ~ ${report['to']}）  种类: ${report['kind']}',
+    tr(
+      '窗口: ${report['window']}（${from ?? '最早'} ~ ${report['to']}）  种类: ${report['kind']}',
+      'Window: ${report['window']} (${from ?? 'earliest'} ~ ${report['to']})  kind: ${report['kind']}',
+    ),
   );
   out.writeln(
-    '合计: ${_duration(totals['ms']! as int)}  ${totals['chars']} 字  ${totals['pages']} 页  '
-    '活跃 ${totals['activeDays']} 天  会话 ${totals['sessions']} 次',
+    tr(
+      '合计: ${_duration(totals['ms']! as int)}  ${totals['chars']} 字  ${totals['pages']} 页  '
+          '活跃 ${totals['activeDays']} 天  会话 ${totals['sessions']} 次',
+      'Total: ${_duration(totals['ms']! as int)}  ${totals['chars']} chars  ${totals['pages']} pages  '
+          '${totals['activeDays']} active days  ${totals['sessions']} sessions',
+    ),
   );
   final Map<String, Object?> byKind = report['byKind']! as Map<String, Object?>;
   for (final MapEntry<String, Object?> e in byKind.entries) {
     final Map<String, Object?> b = e.value! as Map<String, Object?>;
     out.writeln(
-      '  ${e.key.padRight(6)} ${_duration(b['ms']! as int)}  ${b['chars']} 字  ${b['pages']} 页',
+      tr(
+        '  ${e.key.padRight(6)} ${_duration(b['ms']! as int)}  ${b['chars']} 字  ${b['pages']} 页',
+        '  ${e.key.padRight(6)} ${_duration(b['ms']! as int)}  ${b['chars']} chars  ${b['pages']} pages',
+      ),
     );
   }
   final List<Object?> media = report['media']! as List<Object?>;
   if (media.isNotEmpty) {
-    out.writeln('按媒体:');
+    out.writeln(tr('按媒体:', 'By media:'));
     for (final Object? row in media) {
       final Map<String, Object?> m = row! as Map<String, Object?>;
       final String title = (m['title']! as String).isEmpty
           ? m['key']! as String
           : m['title']! as String;
       out.writeln(
-        '  [${m['kind']}] $title  ${_duration(m['ms']! as int)}  ${m['chars']} 字',
+        tr(
+          '  [${m['kind']}] $title  ${_duration(m['ms']! as int)}  ${m['chars']} 字',
+          '  [${m['kind']}] $title  ${_duration(m['ms']! as int)}  ${m['chars']} chars',
+        ),
       );
     }
   }
   final List<Object?> sessions = report['sessions']! as List<Object?>;
   if (sessions.isNotEmpty) {
-    out.writeln('最近会话:');
+    out.writeln(tr('最近会话:', 'Recent sessions:'));
     for (final Object? row in sessions) {
       final Map<String, Object?> s = row! as Map<String, Object?>;
       final String at = DateTime.fromMillisecondsSinceEpoch(
@@ -281,7 +295,10 @@ void renderStatShowReport(Map<String, Object?> report, StringSink out) {
           ? s['key']! as String
           : s['title']! as String;
       out.writeln(
-        '  $at [${s['kind']}] $title  ${_duration(s['ms']! as int)}  ${s['chars']} 字',
+        tr(
+          '  $at [${s['kind']}] $title  ${_duration(s['ms']! as int)}  ${s['chars']} 字',
+          '  $at [${s['kind']}] $title  ${_duration(s['ms']! as int)}  ${s['chars']} chars',
+        ),
       );
     }
   }
@@ -304,24 +321,44 @@ class StatsModule extends CliModule {
       ..addOption(
         'window',
         abbr: 'w',
-        help: '统计窗口：today | 7d | 30d | all',
+        help: tr(
+          '统计窗口：today | 7d | 30d | all',
+          'Stats window: today | 7d | 30d | all',
+        ),
         defaultsTo: '7d',
       )
       ..addOption(
         'kind',
         abbr: 'k',
-        help: '只看某一域：read（书 / 漫画 / PDF / 有声书）| watch | play',
+        help: tr(
+          '只看某一域：read（书 / 漫画 / PDF / 有声书）| watch | play',
+          'Only one domain: read (books / manga / PDF / audiobooks) | watch | play',
+        ),
       )
-      ..addOption('sessions', help: '最多列出几次会话', defaultsTo: '10')
-      ..addOption('media', help: '按媒体最多列出几条', defaultsTo: '20')
-      ..addFlag('json', negatable: false, help: '输出 JSON');
+      ..addOption(
+        'sessions',
+        help: tr('最多列出几次会话', 'Maximum number of sessions to list'),
+        defaultsTo: '10',
+      )
+      ..addOption(
+        'media',
+        help: tr('按媒体最多列出几条', 'Maximum number of media entries to list'),
+        defaultsTo: '20',
+      )
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
   }
 
   @override
-  String get usage => '''
+  String get usage => tr(
+    '''
 stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
     离线读学习统计（当前 Profile，口径同 app 统计中心）。有声书收听在事实表里与阅读
-    同记为 book，归入 --kind read，没有单独的 listen 档。''';
+    同记为 book，归入 --kind read，没有单独的 listen 档。''',
+    '''
+stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
+    Read learning stats offline (current profile, same definitions as the app stats center). Audiobook listening is recorded
+    as book in the fact table, same as reading, and falls under --kind read; there is no separate listen bucket.''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -330,7 +367,10 @@ stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
     final ArgResults? sub = command.command;
     if (sub == null || sub.name != 'show') {
       e.writeln(
-        '用法: stats show [--window 7d] [--kind read|watch|play] [--json]',
+        tr(
+          '用法: stats show [--window 7d] [--kind read|watch|play] [--json]',
+          'Usage: stats show [--window 7d] [--kind read|watch|play] [--json]',
+        ),
       );
       return _exitUsage;
     }
@@ -338,19 +378,34 @@ stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
       sub['window'] as String,
     );
     if (window == null) {
-      e.writeln('--window 只接受 today / 7d / 30d / all');
+      e.writeln(
+        tr(
+          '--window 只接受 today / 7d / 30d / all',
+          '--window only accepts today / 7d / 30d / all',
+        ),
+      );
       return _exitUsage;
     }
     StatShowKind? kind;
     final String? rawKind = sub['kind'] as String?;
     if (rawKind != null) {
       if (rawKind == 'listen') {
-        e.writeln('有声书收听在统计事实表里记为 book，与阅读不可区分；用 --kind read');
+        e.writeln(
+          tr(
+            '有声书收听在统计事实表里记为 book，与阅读不可区分；用 --kind read',
+            'Audiobook listening is recorded as book in the stats fact table and cannot be told apart from reading; use --kind read',
+          ),
+        );
         return _exitUsage;
       }
       kind = StatShowKind.parse(rawKind);
       if (kind == null) {
-        e.writeln('--kind 只接受 read / watch / play');
+        e.writeln(
+          tr(
+            '--kind 只接受 read / watch / play',
+            '--kind only accepts read / watch / play',
+          ),
+        );
         return _exitUsage;
       }
     }
@@ -360,7 +415,12 @@ stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
         sessionLimit < 0 ||
         mediaLimit == null ||
         mediaLimit < 0) {
-      e.writeln('--sessions / --media 需要非负整数');
+      e.writeln(
+        tr(
+          '--sessions / --media 需要非负整数',
+          '--sessions / --media need a non-negative integer',
+        ),
+      );
       return _exitUsage;
     }
     final bool json = sub['json'] as bool;

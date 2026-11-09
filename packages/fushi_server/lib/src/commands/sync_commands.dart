@@ -28,6 +28,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_v2_client.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/credential_http_proxy.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
@@ -109,7 +110,12 @@ class SyncPeerCredentialStore {
     if (!await file.exists()) return <SyncPeerCredential>[];
     final Object? decoded = jsonDecode(await file.readAsString());
     if (decoded is! Map || decoded['peers'] is! List) {
-      throw FormatException('凭据文件形状不对: ${file.path}');
+      throw FormatException(
+        tr(
+          '凭据文件形状不对: ${file.path}',
+          'Malformed credentials file: ${file.path}',
+        ),
+      );
     }
     return <SyncPeerCredential>[
       for (final Object? row in decoded['peers'] as List<Object?>)
@@ -144,7 +150,10 @@ class SyncPeerCredentialStore {
       ]);
       if (r.exitCode != 0) {
         await tmp.delete();
-        throw FileSystemException('chmod 600 失败: ${r.stderr}', tmp.path);
+        throw FileSystemException(
+          tr('chmod 600 失败: ${r.stderr}', 'chmod 600 failed: ${r.stderr}'),
+          tmp.path,
+        );
       }
     }
     await tmp.rename(file.path);
@@ -230,12 +239,21 @@ class HttpAggregateRemote implements AggregateRemote {
     } on TlsException catch (e) {
       throw SyncRemoteException(
         _exitUnavailable,
-        'TLS 握手失败（证书指纹不符或链路被拦）: ${e.message}',
+        tr(
+          'TLS 握手失败（证书指纹不符或链路被拦）: ${e.message}',
+          'TLS handshake failed (certificate fingerprint mismatch or the connection was intercepted): ${e.message}',
+        ),
       );
     } on SocketException catch (e) {
-      throw SyncRemoteException(_exitUnavailable, '连不上 $baseUrl: ${e.message}');
+      throw SyncRemoteException(
+        _exitUnavailable,
+        tr('连不上 $baseUrl: ${e.message}', 'Cannot reach $baseUrl: ${e.message}'),
+      );
     } on TimeoutException {
-      throw SyncRemoteException(_exitUnavailable, '请求 $baseUrl 超时');
+      throw SyncRemoteException(
+        _exitUnavailable,
+        tr('请求 $baseUrl 超时', 'Request to $baseUrl timed out'),
+      );
     }
   }
 
@@ -244,13 +262,19 @@ class HttpAggregateRemote implements AggregateRemote {
         res.statusCode == HttpStatus.forbidden) {
       throw SyncRemoteException(
         _exitUnavailable,
-        '$what 被拒（${res.statusCode}）：token 无效或已被吊销，重新 sync pair',
+        tr(
+          '$what 被拒（${res.statusCode}）：token 无效或已被吊销，重新 sync pair',
+          '$what was rejected (${res.statusCode}): the token is invalid or revoked, run sync pair again',
+        ),
       );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SyncRemoteException(
         _exitFailure,
-        '$what 失败: HTTP ${res.statusCode}',
+        tr(
+          '$what 失败: HTTP ${res.statusCode}',
+          '$what failed: HTTP ${res.statusCode}',
+        ),
       );
     }
   }
@@ -333,9 +357,12 @@ Future<Map<String, Object?>> runAggregatePull(
   }
   final Object? json = await remote.fetch();
   if (json == null) {
-    throw const SyncRemoteException(
+    throw SyncRemoteException(
       _exitUnavailable,
-      'host 没有 /api/library/aggregate 端点（版本过旧），无法拉取',
+      tr(
+        'host 没有 /api/library/aggregate 端点（版本过旧），无法拉取',
+        'The host has no /api/library/aggregate endpoint (version too old), cannot pull',
+      ),
     );
   }
   final AggregateSnapshot incoming = AggregateSnapshot.fromJson(
@@ -366,7 +393,10 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
     return (
       null,
       _exitUsage,
-      '不是合法的 host 根地址: $rawUrl（形如 https://192.168.1.5:38765）',
+      tr(
+        '不是合法的 host 根地址: $rawUrl（形如 https://192.168.1.5:38765）',
+        'Not a valid host root URL: $rawUrl (expected something like https://192.168.1.5:38765)',
+      ),
     );
   }
   final SyncPeerCredential? saved = await store.find(url.toString());
@@ -379,7 +409,10 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
       return (
         null,
         _exitUsage,
-        'https 互联端点是自签证书，必须用 --fingerprint <sha256> 钉扎（host 的配对页 / status 里有）',
+        tr(
+          'https 互联端点是自签证书，必须用 --fingerprint <sha256> 钉扎（host 的配对页 / status 里有）',
+          'The https interconnect endpoint uses a self-signed certificate, so it must be pinned with --fingerprint <sha256> (shown on the host pairing page / in status)',
+        ),
       );
     }
     final String? savedFp = saved?.fingerprint;
@@ -387,7 +420,10 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
       return (
         null,
         _exitFailure,
-        '--fingerprint 与已配对记录的指纹不符；确认 host 换过证书后先 sync forget 再重新配对',
+        tr(
+          '--fingerprint 与已配对记录的指纹不符；确认 host 换过证书后先 sync forget 再重新配对',
+          '--fingerprint does not match the paired record; if the host changed its certificate, run sync forget first and pair again',
+        ),
       );
     }
   } else {
@@ -395,11 +431,21 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
       return (
         null,
         _exitUsage,
-        '明文 http 会让 token 明文过线；确认在可信网络里再加 --allow-http',
+        tr(
+          '明文 http 会让 token 明文过线；确认在可信网络里再加 --allow-http',
+          'Plain http sends the token in cleartext; add --allow-http only on a trusted network',
+        ),
       );
     }
     if (fingerprintArg != null) {
-      return (null, _exitUsage, 'http 端点没有证书，--fingerprint 无意义');
+      return (
+        null,
+        _exitUsage,
+        tr(
+          'http 端点没有证书，--fingerprint 无意义',
+          'An http endpoint has no certificate, so --fingerprint is meaningless',
+        ),
+      );
     }
   }
   final String? token = (envToken != null && envToken.isNotEmpty)
@@ -409,7 +455,10 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
     return (
       null,
       _exitUnavailable,
-      '没有 $url 的凭据：先 sync pair $url --fingerprint …，或设置环境变量 $kSyncTokenEnv',
+      tr(
+        '没有 $url 的凭据：先 sync pair $url --fingerprint …，或设置环境变量 $kSyncTokenEnv',
+        'No credentials for $url: run sync pair $url --fingerprint … first, or set the environment variable $kSyncTokenEnv',
+      ),
     );
   }
   return (
@@ -425,14 +474,41 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
 
 /// 配对失败原因 → (退出码, 说明)。
 (int, String) describePairFailure(String reason) => switch (reason) {
-  'pin' => (_exitFailure, 'PIN 不对'),
-  'declined' => (_exitFailure, 'host 上拒绝了配对'),
-  'cancelled' => (_exitFailure, '已取消'),
-  'unavailable' => (_exitUnavailable, 'host 没有配对审批界面（无头 host / 旧版本），无法配对'),
-  'rate_limited' => (_exitUnavailable, 'PIN 连错太多次，host 暂时锁定了这个来源，稍后再试'),
-  'tls' => (_exitUnavailable, 'TLS 握手失败：证书指纹不符或链路被拦'),
-  'timeout' => (_exitUnavailable, '等待 host 应答超时（host 上的人没点同意？）'),
-  _ => (_exitUnavailable, '配对失败（$reason）'),
+  'pin' => (_exitFailure, tr('PIN 不对', 'Wrong PIN')),
+  'declined' => (
+    _exitFailure,
+    tr('host 上拒绝了配对', 'The host declined the pairing'),
+  ),
+  'cancelled' => (_exitFailure, tr('已取消', 'Cancelled')),
+  'unavailable' => (
+    _exitUnavailable,
+    tr(
+      'host 没有配对审批界面（无头 host / 旧版本），无法配对',
+      'The host has no pairing approval UI (headless host / old version), cannot pair',
+    ),
+  ),
+  'rate_limited' => (
+    _exitUnavailable,
+    tr(
+      'PIN 连错太多次，host 暂时锁定了这个来源，稍后再试',
+      'Too many wrong PINs; the host has temporarily locked this source, try again later',
+    ),
+  ),
+  'tls' => (
+    _exitUnavailable,
+    tr(
+      'TLS 握手失败：证书指纹不符或链路被拦',
+      'TLS handshake failed: certificate fingerprint mismatch or the connection was intercepted',
+    ),
+  ),
+  'timeout' => (
+    _exitUnavailable,
+    tr(
+      '等待 host 应答超时（host 上的人没点同意？）',
+      'Timed out waiting for the host to answer (did nobody approve on the host?)',
+    ),
+  ),
+  _ => (_exitUnavailable, tr('配对失败（$reason）', 'Pairing failed ($reason)')),
 };
 
 class SyncModule extends CliModule {
@@ -459,27 +535,66 @@ class SyncModule extends CliModule {
   void register(ArgParser parser) {
     final ArgParser sync = parser.addCommand('sync');
     sync.addCommand('pull')
-      ..addOption('fingerprint', help: 'host 证书 SHA-256 指纹（https 必填，已配对时可省）')
-      ..addFlag('allow-http', negatable: false, help: '允许明文 http 端点')
-      ..addFlag('push', negatable: false, help: '双向：合并结果再推回 host（缺省只拉）')
-      ..addFlag('stats', defaultsTo: true, help: '同步学习统计')
-      ..addFlag('favorites', defaultsTo: true, help: '同步收藏词 / 收藏句 / 浏览器书签')
+      ..addOption(
+        'fingerprint',
+        help: tr(
+          'host 证书 SHA-256 指纹（https 必填，已配对时可省）',
+          'Host certificate SHA-256 fingerprint (required for https, optional once paired)',
+        ),
+      )
+      ..addFlag(
+        'allow-http',
+        negatable: false,
+        help: tr('允许明文 http 端点', 'Allow plain http endpoints'),
+      )
+      ..addFlag(
+        'push',
+        negatable: false,
+        help: tr(
+          '双向：合并结果再推回 host（缺省只拉）',
+          'Two-way: push the merged result back to the host (default is pull only)',
+        ),
+      )
+      ..addFlag(
+        'stats',
+        defaultsTo: true,
+        help: tr('同步学习统计', 'Sync learning stats'),
+      )
+      ..addFlag(
+        'favorites',
+        defaultsTo: true,
+        help: tr(
+          '同步收藏词 / 收藏句 / 浏览器书签',
+          'Sync favorite words / sentences / browser bookmarks',
+        ),
+      )
       ..addFlag(
         'web-history',
         defaultsTo: false,
-        help: '同步浏览器历史（默认关：浏览轨迹须显式开启）',
+        help: tr(
+          '同步浏览器历史（默认关：浏览轨迹须显式开启）',
+          'Sync browser history (off by default: browsing traces must be enabled explicitly)',
+        ),
       )
-      ..addFlag('json', negatable: false, help: '输出 JSON');
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
     sync.addCommand('pair')
-      ..addOption('fingerprint', help: 'host 证书 SHA-256 指纹（必填，从 host 的配对页抄）')
-      ..addFlag('json', negatable: false, help: '输出 JSON');
-    sync.addCommand('peers').addFlag('json', negatable: false, help: '输出 JSON');
+      ..addOption(
+        'fingerprint',
+        help: tr(
+          'host 证书 SHA-256 指纹（必填，从 host 的配对页抄）',
+          'Host certificate SHA-256 fingerprint (required, copy it from the host pairing page)',
+        ),
+      )
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
+    sync
+        .addCommand('peers')
+        .addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
     sync.addCommand('forget');
   }
 
   @override
-  String get usage =>
-      '''
+  String get usage => tr(
+    '''
 sync pair <https://host:port> --fingerprint <sha256>
     以本服务端身份向另一台 host 配对（host 上需点同意；要 PIN 时从 stdin 读）
 sync pull <url> [--fingerprint <sha256>] [--allow-http] [--push] [--no-stats] [--no-favorites] [--web-history] [--json]
@@ -487,7 +602,17 @@ sync pull <url> [--fingerprint <sha256>] [--allow-http] [--push] [--no-stats] [-
     凭据取已配对记录，或环境变量 $kSyncTokenEnv。只覆盖聚合维度（书 / 视频 / 合集
     的互联同步编排在 app 侧，服务端没有）。serve 也在跑且本机同时是该 host 的对端时，
     两个进程会并发写统计表，建议先停 serve 或改在 app 侧发起。
-sync peers [--json] | sync forget <url>''';
+sync peers [--json] | sync forget <url>''',
+    '''
+sync pair <https://host:port> --fingerprint <sha256>
+    Pair with another host as this server (approve on the host; when a PIN is needed it is read from stdin)
+sync pull <url> [--fingerprint <sha256>] [--allow-http] [--push] [--no-stats] [--no-favorites] [--web-history] [--json]
+    Pull the host's learning stats + favorites and fold them into this machine (additive only); with --push the merged result is pushed back to the host.
+    Credentials come from the paired record or the environment variable $kSyncTokenEnv. Only the aggregate dimensions are covered (books / videos / collections:
+    their interconnect sync orchestration lives in the app, not in the server). If serve is also running and this machine is also a peer of that host,
+    the two processes write the stats table concurrently; stop serve first or run it from the app side.
+sync peers [--json] | sync forget <url>''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -515,7 +640,12 @@ sync peers [--json] | sync forget <url>''';
               ]),
             );
           } else if (peers.isEmpty) {
-            o.writeln('（尚未以 client 身份配对任何 host）');
+            o.writeln(
+              tr(
+                '（尚未以 client 身份配对任何 host）',
+                '(Not paired with any host as a client yet)',
+              ),
+            );
           } else {
             for (final SyncPeerCredential c in peers) {
               o.writeln(
@@ -528,23 +658,37 @@ sync peers [--json] | sync forget <url>''';
         });
       case 'forget':
         if (sub!.rest.length != 1) {
-          e.writeln('用法: sync forget <url>');
+          e.writeln(tr('用法: sync forget <url>', 'Usage: sync forget <url>'));
           return _exitUsage;
         }
         final Uri? url = normalizeSyncPeerUrl(sub.rest.single);
         if (url == null) {
-          e.writeln('不是合法的 host 根地址: ${sub.rest.single}');
+          e.writeln(
+            tr(
+              '不是合法的 host 根地址: ${sub.rest.single}',
+              'Not a valid host root URL: ${sub.rest.single}',
+            ),
+          );
           return _exitUsage;
         }
         return ctx.withRuntime((ServerRuntime rt) async {
           final bool removed = await SyncPeerCredentialStore.under(
             rt.paths.support,
           ).remove(url.toString());
-          (removed ? o : e).writeln(removed ? '已删除 $url 的凭据' : '没有 $url 的凭据');
+          (removed ? o : e).writeln(
+            removed
+                ? tr('已删除 $url 的凭据', 'Deleted the credentials for $url')
+                : tr('没有 $url 的凭据', 'No credentials for $url'),
+          );
           return removed ? _exitOk : _exitFailure;
         });
     }
-    e.writeln('用法: sync pair|pull|peers|forget …');
+    e.writeln(
+      tr(
+        '用法: sync pair|pull|peers|forget …',
+        'Usage: sync pair|pull|peers|forget …',
+      ),
+    );
     return _exitUsage;
   }
 
@@ -556,7 +700,10 @@ sync peers [--json] | sync forget <url>''';
   ) async {
     if (sub.rest.length != 1) {
       e.writeln(
-        '用法: sync pull <url> [--fingerprint <sha256>] [--push] [--json]',
+        tr(
+          '用法: sync pull <url> [--fingerprint <sha256>] [--push] [--json]',
+          'Usage: sync pull <url> [--fingerprint <sha256>] [--push] [--json]',
+        ),
       );
       return _exitUsage;
     }
@@ -564,7 +711,12 @@ sync peers [--json] | sync forget <url>''';
     final bool favorites = sub['favorites'] as bool;
     final bool webHistory = sub['web-history'] as bool;
     if (!stats && !favorites && !webHistory) {
-      e.writeln('--no-stats 与 --no-favorites 同时给出：没有要同步的东西');
+      e.writeln(
+        tr(
+          '--no-stats 与 --no-favorites 同时给出：没有要同步的东西',
+          '--no-stats and --no-favorites were both given: nothing to sync',
+        ),
+      );
       return _exitUsage;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
@@ -591,7 +743,7 @@ sync peers [--json] | sync forget <url>''';
             fingerprint: t.fingerprint,
           ))(target);
       try {
-        e.writeln('同步 ${target.url} …');
+        e.writeln(tr('同步 ${target.url} …', 'Syncing ${target.url} …'));
         final Map<String, Object?> result = await runAggregatePull(
           rt.db,
           remote,
@@ -609,9 +761,21 @@ sync peers [--json] | sync forget <url>''';
         } else {
           final Object? pulled = result['pulled'];
           o.writeln(
-            pulled == null ? 'host 无聚合端点，只推了本机快照' : '已拉取并折进本机: $pulled',
+            pulled == null
+                ? tr(
+                    'host 无聚合端点，只推了本机快照',
+                    'The host has no aggregate endpoint; only the local snapshot was pushed',
+                  )
+                : tr(
+                    '已拉取并折进本机: $pulled',
+                    'Pulled and merged into this machine: $pulled',
+                  ),
           );
-          if (result['pushed'] == true) o.writeln('合并结果已推回 host');
+          if (result['pushed'] == true) {
+            o.writeln(
+              tr('合并结果已推回 host', 'Merged result pushed back to the host'),
+            );
+          }
         }
         return _exitOk;
       } on SyncRemoteException catch (x) {
@@ -630,21 +794,41 @@ sync peers [--json] | sync forget <url>''';
     StringSink e,
   ) async {
     if (sub.rest.length != 1) {
-      e.writeln('用法: sync pair <https://host:port> --fingerprint <sha256>');
+      e.writeln(
+        tr(
+          '用法: sync pair <https://host:port> --fingerprint <sha256>',
+          'Usage: sync pair <https://host:port> --fingerprint <sha256>',
+        ),
+      );
       return _exitUsage;
     }
     final Uri? url = normalizeSyncPeerUrl(sub.rest.single);
     if (url == null || url.scheme != 'https') {
-      e.writeln('配对只走 https（v2 配对协议靠证书钉扎防中间人）: ${sub.rest.single}');
+      e.writeln(
+        tr(
+          '配对只走 https（v2 配对协议靠证书钉扎防中间人）: ${sub.rest.single}',
+          'Pairing only works over https (the v2 pairing protocol relies on certificate pinning against man-in-the-middle): ${sub.rest.single}',
+        ),
+      );
       return _exitUsage;
     }
     final String? fingerprint = (sub['fingerprint'] as String?)?.trim();
     if (fingerprint == null || fingerprint.isEmpty) {
-      e.writeln('必须给 --fingerprint（从 host 的配对页抄写证书指纹；不做盲 TOFU）');
+      e.writeln(
+        tr(
+          '必须给 --fingerprint（从 host 的配对页抄写证书指纹；不做盲 TOFU）',
+          '--fingerprint is required (copy the certificate fingerprint from the host pairing page; blind TOFU is not done)',
+        ),
+      );
       return _exitUsage;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
-      e.writeln('向 $url 发起配对，请在 host 上点同意 …');
+      e.writeln(
+        tr(
+          '向 $url 发起配对，请在 host 上点同意 …',
+          'Pairing with $url, please approve on the host …',
+        ),
+      );
       final FushiPairV2Outcome outcome =
           await FushiPairV2Client(
             baseUrl: url.toString(),
@@ -655,7 +839,12 @@ sync peers [--json] | sync forget <url>''';
             pinProvider:
                 readPin ??
                 () async {
-                  e.write('host 要求 PIN，输入 host 上显示的 6 位 PIN: ');
+                  e.write(
+                    tr(
+                      'host 要求 PIN，输入 host 上显示的 6 位 PIN: ',
+                      'The host requires a PIN, enter the 6-digit PIN shown on the host: ',
+                    ),
+                  );
                   return stdin.readLineSync()?.trim();
                 },
           );
@@ -670,7 +859,12 @@ sync peers [--json] | sync forget <url>''';
         ):
           if (hostFingerprint != null &&
               !fingerprintEquals(hostFingerprint, fingerprint)) {
-            e.writeln('host 回执的证书指纹与钉扎值不符，拒绝保存凭据');
+            e.writeln(
+              tr(
+                'host 回执的证书指纹与钉扎值不符，拒绝保存凭据',
+                'The certificate fingerprint reported by the host does not match the pinned value; refusing to save credentials',
+              ),
+            );
             return _exitFailure;
           }
           await SyncPeerCredentialStore.under(rt.paths.support).upsert(
@@ -689,7 +883,12 @@ sync peers [--json] | sync forget <url>''';
               }),
             );
           } else {
-            o.writeln('已配对 $url（凭据存在本机，可直接 sync pull $url）');
+            o.writeln(
+              tr(
+                '已配对 $url（凭据存在本机，可直接 sync pull $url）',
+                'Paired with $url (credentials stored locally, you can run sync pull $url directly)',
+              ),
+            );
           }
           return _exitOk;
       }

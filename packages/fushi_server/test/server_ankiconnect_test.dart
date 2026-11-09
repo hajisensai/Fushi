@@ -119,7 +119,7 @@ void main() {
     );
     await ac.apply();
     expect(ac.listening, isFalse);
-    expect(ac.lastError, contains('重复'));
+    expect(ac.lastError, contains('duplicate'));
   });
 
   test('本机监听：不带 key 的本机请求可用', () async {

@@ -25,6 +25,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:args/args.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 typedef _DupNative = Int32 Function(Int32 fd);
 typedef _DupDart = int Function(int fd);
@@ -135,7 +136,9 @@ class _FdStdout implements Stdout {
     while (offset < bytes.length) {
       final Uint8List rest = Uint8List.sublistView(bytes, offset);
       final int n = _posixWrite(_fd, rest.address, rest.length);
-      if (n < 0) throw const StdoutException('写 stdout 失败');
+      if (n < 0) {
+        throw StdoutException(tr('写 stdout 失败', 'Failed to write stdout'));
+      }
       offset += n;
     }
   }

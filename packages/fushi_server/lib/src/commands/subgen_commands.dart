@@ -58,15 +58,24 @@ import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/host_bindings.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
-const String _usage = '''
+String get _usage => tr(
+  '''
 subgen <视频或目录>... [--title T] [--no-ai] [--segmenter auto|moss|window]
        [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
        [--regen-glossary] [--glossary g.json] [--dry-run] [--season] [--out-dir D]
        [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
-  目录 = 递归找视频、默认整季（已有字幕的集跳过）；AI 用配置 ai: 段那一家''';
+  目录 = 递归找视频、默认整季（已有字幕的集跳过）；AI 用配置 ai: 段那一家''',
+  '''
+subgen <video-or-folder>... [--title T] [--no-ai] [--segmenter auto|moss|window]
+       [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
+       [--regen-glossary] [--glossary g.json] [--dry-run] [--season] [--out-dir D]
+       [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
+  A folder = find videos recursively, whole season by default (episodes that already have subtitles are skipped); AI uses the provider from the ai: section of the config''',
+);
 
 /// 解析后的 `subgen` 参数。
 class SubgenOptions {
@@ -111,11 +120,27 @@ class SubgenOptions {
 /// 给 `subgen` 登记参数表。
 void buildSubgenParser(ArgParser parser) {
   addJsonFlag(parser)
-    ..addOption('title', help: '作品名（库里没有刮削身份时用；缺省目录名）')
-    ..addFlag('ai', defaultsTo: true, help: 'AI 校对（--no-ai 只识别 + 拆分 + 导出）')
+    ..addOption(
+      'title',
+      help: tr(
+        '作品名（库里没有刮削身份时用；缺省目录名）',
+        'Work title (used when the library has no scraped identity; default: folder name)',
+      ),
+    )
+    ..addFlag(
+      'ai',
+      defaultsTo: true,
+      help: tr(
+        'AI 校对（--no-ai 只识别 + 拆分 + 导出）',
+        'AI proofreading (--no-ai only recognizes + splits + exports)',
+      ),
+    )
     ..addOption(
       'segmenter',
-      help: '分段：auto（能用 MOSS 就用）| moss（强制，不可用即失败）| window（滑窗）',
+      help: tr(
+        '分段：auto（能用 MOSS 就用）| moss（强制，不可用即失败）| window（滑窗）',
+        'Segmentation: auto (use MOSS when available) | moss (forced, fails if unavailable) | window (sliding window)',
+      ),
       allowed: <String>[
         for (final VideoSubtitleSegmenterMode m
             in VideoSubtitleSegmenterMode.values)
@@ -125,7 +150,7 @@ void buildSubgenParser(ArgParser parser) {
     )
     ..addOption(
       'moss-backend',
-      help: 'MOSS 的 audio.cpp 后端',
+      help: tr('MOSS 的 audio.cpp 后端', 'audio.cpp backend for MOSS'),
       allowed: <String>[
         for (final MossBackendPreference b in MossBackendPreference.values)
           b.name,
@@ -134,27 +159,86 @@ void buildSubgenParser(ArgParser parser) {
     )
     ..addOption(
       'language',
-      help: '字幕语言：ja（日语）| zh（普通话）',
+      help: tr(
+        '字幕语言：ja（日语）| zh（普通话）',
+        'Subtitle language: ja (Japanese) | zh (Mandarin)',
+      ),
       allowed: <String>[
         for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
           l.tag,
       ],
       defaultsTo: VideoSubtitleLanguage.japanese.tag,
     )
-    ..addOption('suffix', help: '输出 <视频名>.<后缀>.srt（缺省取 --language）')
-    ..addFlag('regen-glossary', negatable: false, help: '资料没变也重新生成专名表')
-    ..addOption('glossary', help: '导入 / 覆盖专名表的 JSON 文件')
-    ..addFlag('dry-run', negatable: false, help: '只列要处理 / 跳过的集与费用预估')
-    ..addFlag('season', negatable: false, help: '文件参数也按整季（跳过已有字幕的集）')
-    ..addOption('out-dir', help: '字幕写到这个目录（缺省视频旁）')
-    ..addOption('moss-cli', help: '直接用这个 audiocpp_cli（不走下载目录）')
-    ..addOption('moss-model', help: '直接用这个 MOSS GGUF（不走下载目录）');
+    ..addOption(
+      'suffix',
+      help: tr(
+        '输出 <视频名>.<后缀>.srt（缺省取 --language）',
+        'Output <video name>.<suffix>.srt (default: the --language value)',
+      ),
+    )
+    ..addFlag(
+      'regen-glossary',
+      negatable: false,
+      help: tr(
+        '资料没变也重新生成专名表',
+        'Regenerate the glossary even if the material is unchanged',
+      ),
+    )
+    ..addOption(
+      'glossary',
+      help: tr(
+        '导入 / 覆盖专名表的 JSON 文件',
+        'JSON file to import / overwrite the glossary with',
+      ),
+    )
+    ..addFlag(
+      'dry-run',
+      negatable: false,
+      help: tr(
+        '只列要处理 / 跳过的集与费用预估',
+        'Only list episodes to process / skip, with a cost estimate',
+      ),
+    )
+    ..addFlag(
+      'season',
+      negatable: false,
+      help: tr(
+        '文件参数也按整季（跳过已有字幕的集）',
+        'Treat file arguments as a whole season too (skip episodes that already have subtitles)',
+      ),
+    )
+    ..addOption(
+      'out-dir',
+      help: tr(
+        '字幕写到这个目录（缺省视频旁）',
+        'Write subtitles to this folder (default: next to the video)',
+      ),
+    )
+    ..addOption(
+      'moss-cli',
+      help: tr(
+        '直接用这个 audiocpp_cli（不走下载目录）',
+        'Use this audiocpp_cli directly (skip the download folder)',
+      ),
+    )
+    ..addOption(
+      'moss-model',
+      help: tr(
+        '直接用这个 MOSS GGUF（不走下载目录）',
+        'Use this MOSS GGUF directly (skip the download folder)',
+      ),
+    );
 }
 
 /// `ArgResults` → [SubgenOptions]；用法错误抛 [FormatException]。
 SubgenOptions parseSubgenOptions(ArgResults command) {
   if (command.rest.isEmpty) {
-    throw const FormatException('subgen: 至少给一个视频文件或目录');
+    throw FormatException(
+      tr(
+        'subgen: 至少给一个视频文件或目录',
+        'subgen: give at least one video file or folder',
+      ),
+    );
   }
   T pick<T extends Enum>(List<T> values, String name) =>
       values.firstWhere((T e) => e.name == command[name] as String);
@@ -163,7 +247,9 @@ SubgenOptions parseSubgenOptions(ArgResults command) {
   )!;
   final String suffix = command['suffix'] as String? ?? language.tag;
   if (!RegExp(r'^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$').hasMatch(suffix)) {
-    throw FormatException('subgen: 后缀不合法 "$suffix"');
+    throw FormatException(
+      tr('subgen: 后缀不合法 "$suffix"', 'subgen: invalid suffix "$suffix"'),
+    );
   }
   return SubgenOptions(
     inputs: <String>[for (final String a in command.rest) p.absolute(a)],
@@ -221,11 +307,11 @@ List<SubgenGroup> collectSubgenGroups(
       groups.add(SubgenGroup(videos: videos, folder: input, wholeSeason: true));
     } else if (File(input).existsSync()) {
       if (!isVideo(input)) {
-        throw FileSystemException('不是视频文件', input);
+        throw FileSystemException(tr('不是视频文件', 'Not a video file'), input);
       }
       files.add(input);
     } else {
-      throw FileSystemException('找不到', input);
+      throw FileSystemException(tr('找不到', 'Not found'), input);
     }
   }
   if (files.isNotEmpty) {
@@ -245,7 +331,12 @@ List<SubtitleGlossaryEntry> parseSubgenGlossaryFile(String text) {
   final Object? decoded = jsonDecode(text);
   final Object? list = decoded is Map ? decoded['entries'] : decoded;
   if (list is! List) {
-    throw const FormatException('专名表 JSON 要么是条目数组，要么是 {"entries": [...]}');
+    throw FormatException(
+      tr(
+        '专名表 JSON 要么是条目数组，要么是 {"entries": [...]}',
+        'The glossary JSON must be either an array of entries or {"entries": [...]}',
+      ),
+    );
   }
   final List<SubtitleGlossaryEntry> entries = <SubtitleGlossaryEntry>[];
   for (final (int i, Object? e) in list.indexed) {
@@ -255,7 +346,12 @@ List<SubtitleGlossaryEntry> parseSubgenGlossaryFile(String text) {
       entry = SubtitleGlossaryEntry.fromJson(e.cast<String, Object?>());
     } on TypeError catch (err) {
       // 字段类型不对（如 ja 写成数字）：按数据错误报出是第几条，而不是带堆栈崩掉。
-      throw FormatException('专名表第 ${i + 1} 条字段类型不对：$err');
+      throw FormatException(
+        tr(
+          '专名表第 ${i + 1} 条字段类型不对：$err',
+          'Glossary entry ${i + 1} has a field of the wrong type: $err',
+        ),
+      );
     }
     if (entry.ja.isNotEmpty) entries.add(entry.copyWith(userEdited: true));
   }
@@ -354,7 +450,7 @@ Future<int> runSubgen(
     return kExitNoInput;
   }
   if (groups.every((SubgenGroup g) => g.videos.isEmpty)) {
-    io.err.writeln('没有找到视频文件');
+    io.err.writeln(tr('没有找到视频文件', 'No video files found'));
     return kExitNoInput;
   }
 
@@ -363,7 +459,12 @@ Future<int> runSubgen(
   List<SubtitleGlossaryEntry>? glossaryEntries;
   if (options.glossaryFile != null) {
     if (groups.where((SubgenGroup g) => g.videos.isNotEmpty).length > 1) {
-      io.err.writeln('--glossary 只能用于一部作品；多个目录请分开运行');
+      io.err.writeln(
+        tr(
+          '--glossary 只能用于一部作品；多个目录请分开运行',
+          '--glossary can only be used with one work; run multiple folders separately',
+        ),
+      );
       return kExitUsage;
     }
     try {
@@ -371,10 +472,20 @@ Future<int> runSubgen(
         await File(options.glossaryFile!).readAsString(),
       );
     } on FileSystemException catch (e) {
-      io.err.writeln('读不了专名表 ${options.glossaryFile}: ${e.message}');
+      io.err.writeln(
+        tr(
+          '读不了专名表 ${options.glossaryFile}: ${e.message}',
+          'Cannot read glossary ${options.glossaryFile}: ${e.message}',
+        ),
+      );
       return kExitNoInput;
     } on FormatException catch (e) {
-      io.err.writeln('专名表 ${options.glossaryFile} 格式不对：${e.message}');
+      io.err.writeln(
+        tr(
+          '专名表 ${options.glossaryFile} 格式不对：${e.message}',
+          'Glossary ${options.glossaryFile} has an invalid format: ${e.message}',
+        ),
+      );
       return kExitDataError;
     }
   }
@@ -388,13 +499,22 @@ Future<int> runSubgen(
     );
     if (provider == null) {
       io.err.writeln(
-        '没有可用的 AI 提供商（配置文件 ai: 段${rt.config.ai?.problem() == null ? '未配置' : '：${rt.config.ai!.problem()}'}）；'
-        '配好后重试，或加 --no-ai 只识别不校对',
+        tr(
+          '没有可用的 AI 提供商（配置文件 ai: 段${rt.config.ai?.problem() == null ? '未配置' : '：${rt.config.ai!.problem()}'}）；'
+              '配好后重试，或加 --no-ai 只识别不校对',
+          'No usable AI provider (ai: section of the config file ${rt.config.ai?.problem() == null ? 'is not configured' : ': ${rt.config.ai!.problem()}'}); '
+              'configure it and retry, or add --no-ai to only recognize without proofreading',
+        ),
       );
       return kExitUnavailable;
     }
   } else if (options.glossaryFile != null) {
-    io.err.writeln('提示：--no-ai 时不校对，--glossary 只会存进库里、本次用不上');
+    io.err.writeln(
+      tr(
+        '提示：--no-ai 时不校对，--glossary 只会存进库里、本次用不上',
+        'Note: with --no-ai there is no proofreading; --glossary is only stored in the library and unused this run',
+      ),
+    );
   }
 
   final VideoSubtitleRecognizerChoice choice;
@@ -411,9 +531,14 @@ Future<int> runSubgen(
     return kExitUnavailable;
   }
   io.err.writeln(
-    '识别器: ${choice.recognizer.id}'
-    '${choice.mossBackend == null ? '' : '（MOSS ${choice.mossBackend!.cliValue}）'}'
-    '${choice.mossUnavailableReason == null ? '' : '；没用上 MOSS：${choice.mossUnavailableReason}'}',
+    tr(
+      '识别器: ${choice.recognizer.id}'
+          '${choice.mossBackend == null ? '' : '（MOSS ${choice.mossBackend!.cliValue}）'}'
+          '${choice.mossUnavailableReason == null ? '' : '；没用上 MOSS：${choice.mossUnavailableReason}'}',
+      'Recognizer: ${choice.recognizer.id}'
+          '${choice.mossBackend == null ? '' : ' (MOSS ${choice.mossBackend!.cliValue})'}'
+          '${choice.mossUnavailableReason == null ? '' : '; MOSS not used: ${choice.mossUnavailableReason}'}',
+    ),
   );
 
   final Directory jobsRoot = videoSubtitleJobsRootUnder(rt.paths.support);
@@ -439,8 +564,12 @@ Future<int> runSubgen(
       options.title,
     );
     io.err.writeln(
-      '作品: ${work.title}（${work.workKey}${work.hasScrapedData ? '，有刮削数据' : '，无刮削数据'}）'
-      ' ${group.videos.length} 集${group.wholeSeason ? '（整季）' : ''}',
+      tr(
+        '作品: ${work.title}（${work.workKey}${work.hasScrapedData ? '，有刮削数据' : '，无刮削数据'}）'
+            ' ${group.videos.length} 集${group.wholeSeason ? '（整季）' : ''}',
+        'Work: ${work.title} (${work.workKey}${work.hasScrapedData ? ', has scraped data' : ', no scraped data'})'
+            ' ${group.videos.length} episodes${group.wholeSeason ? ' (whole season)' : ''}',
+      ),
     );
     if (glossaryEntries != null && !options.dryRun) {
       await _importGlossary(
@@ -505,9 +634,14 @@ Future<int> runSubgen(
       total.addTally(result.usage);
       if (result.glossaryIdentityUnverified) {
         io.err.writeln(
-          '警告：专名表的人名大多没在识别稿里出现（作品身份来自刮削，照常校对）；'
-          '听到: ${result.glossaryHeardNames.join('、')}；'
-          '没听到: ${result.glossaryMissingNames.join('、')}',
+          tr(
+            '警告：专名表的人名大多没在识别稿里出现（作品身份来自刮削，照常校对）；'
+                '听到: ${result.glossaryHeardNames.join('、')}；'
+                '没听到: ${result.glossaryMissingNames.join('、')}',
+            'Warning: most names in the glossary do not appear in the transcript (the work identity comes from scraping; proofreading continues as usual); '
+                'heard: ${result.glossaryHeardNames.join(', ')}; '
+                'not heard: ${result.glossaryMissingNames.join(', ')}',
+          ),
         );
       }
       report.add(<String, Object?>{
@@ -540,12 +674,21 @@ Future<int> runSubgen(
         ],
       });
     } on SubtitlePipelineCancelled {
-      io.err.writeln('\n已取消（已落盘的阶段保留，重跑即续）');
+      io.err.writeln(
+        tr(
+          '\n已取消（已落盘的阶段保留，重跑即续）',
+          '\nCancelled (stages already saved are kept; rerun to resume)',
+        ),
+      );
       return kExitFailure;
     } on SubtitleAiRequestFailure catch (e) {
       io.err.writeln(
-        '\n暂停：AI 请求失败（${e.reason}${e.detail == null ? '' : '：${e.detail}'}）；'
-        '缓存已保留，处理后重跑即续',
+        tr(
+          '\n暂停：AI 请求失败（${e.reason}${e.detail == null ? '' : '：${e.detail}'}）；'
+              '缓存已保留，处理后重跑即续',
+          '\nPaused: AI request failed (${e.reason}${e.detail == null ? '' : ': ${e.detail}'}); '
+              'the cache is kept; fix the problem and rerun to resume',
+        ),
       );
       _reportFailedGroup(io, report, total, work, 'ai_request_failed', e.usage);
       failures++;
@@ -564,14 +707,39 @@ Future<int> runSubgen(
           for (final SubtitleGlossaryEntry entry in e.candidate) entry.toJson(),
         ]),
       );
-      io.err.writeln('\n专名表校验没通过：$e；可用 --glossary 手工给一份，或先刮削作品');
-      io.err.writeln('  候选表已写到 ${candidate.path}（改好后 --glossary 它重跑）');
+      io.err.writeln(
+        tr(
+          '\n专名表校验没通过：$e；可用 --glossary 手工给一份，或先刮削作品',
+          '\nGlossary validation failed: $e; supply one manually with --glossary, or scrape the work first',
+        ),
+      );
+      io.err.writeln(
+        tr(
+          '  候选表已写到 ${candidate.path}（改好后 --glossary 它重跑）',
+          '  Candidate glossary written to ${candidate.path} (edit it, then rerun with --glossary)',
+        ),
+      );
       if (e.heardNames.isNotEmpty || e.missingNames.isNotEmpty) {
-        io.err.writeln('  听到的人名: ${e.heardNames.join('、')}');
-        io.err.writeln('  没听到的人名: ${e.missingNames.join('、')}');
+        io.err.writeln(
+          tr(
+            '  听到的人名: ${e.heardNames.join('、')}',
+            '  Names heard: ${e.heardNames.join(', ')}',
+          ),
+        );
+        io.err.writeln(
+          tr(
+            '  没听到的人名: ${e.missingNames.join('、')}',
+            '  Names not heard: ${e.missingNames.join(', ')}',
+          ),
+        );
       }
       if (e.conflicts.isNotEmpty) {
-        io.err.writeln('  矛盾: ${e.conflicts.join(' / ')}');
+        io.err.writeln(
+          tr(
+            '  矛盾: ${e.conflicts.join(' / ')}',
+            '  Conflicts: ${e.conflicts.join(' / ')}',
+          ),
+        );
       }
       _reportFailedGroup(
         io,
@@ -584,7 +752,9 @@ Future<int> runSubgen(
       );
       failures++;
     } on VideoSubtitleRecognizeFailure catch (e) {
-      io.err.writeln('\n识别失败：${e.message}');
+      io.err.writeln(
+        tr('\n识别失败：${e.message}', '\nRecognition failed: ${e.message}'),
+      );
       failures++;
     } finally {
       client?.close();
@@ -622,8 +792,12 @@ void _reportFailedGroup(
   if (usage != null) {
     total.addTally(usage);
     io.err.writeln(
-      '  失败前已调用 AI ${usage.calls} 次：输入 ${usage.inputTokens}、输出 '
-      '${usage.outputTokens} token${usage.hasUnknown ? '（${usage.callsWithoutUsage} 次没带用量）' : ''}',
+      tr(
+        '  失败前已调用 AI ${usage.calls} 次：输入 ${usage.inputTokens}、输出 '
+            '${usage.outputTokens} token${usage.hasUnknown ? '（${usage.callsWithoutUsage} 次没带用量）' : ''}',
+        '  AI called ${usage.calls} times before the failure: input ${usage.inputTokens}, output '
+            '${usage.outputTokens} tokens${usage.hasUnknown ? ' (${usage.callsWithoutUsage} calls reported no usage)' : ''}',
+      ),
     );
   }
   report.add(<String, Object?>{
@@ -679,7 +853,12 @@ Future<void> _importGlossary(
       userEditedAt: now,
     ),
   );
-  io.err.writeln('已导入专名表 ${entries.length} 条 → $key');
+  io.err.writeln(
+    tr(
+      '已导入专名表 ${entries.length} 条 → $key',
+      'Imported ${entries.length} glossary entries -> $key',
+    ),
+  );
 }
 
 Future<Map<String, Object?>> _dryRun(
@@ -784,12 +963,21 @@ void _printReport(
   required bool dryRun,
 }) {
   for (final Map<String, Object?> g in groups) {
-    out.writeln('== ${g['work']}（${g['workKey']}）');
+    out.writeln(
+      tr(
+        '== ${g['work']}（${g['workKey']}）',
+        '== ${g['work']} (${g['workKey']})',
+      ),
+    );
     if (g['failure'] != null) {
       final Object? u = g['usage'];
       out.writeln(
-        '  失败：${g['failure']}'
-        '${u is Map ? '（已调用 AI ${u['calls']} 次）' : ''}',
+        tr(
+          '  失败：${g['failure']}'
+              '${u is Map ? '（已调用 AI ${u['calls']} 次）' : ''}',
+          '  Failed: ${g['failure']}'
+              '${u is Map ? ' (AI called ${u['calls']} times)' : ''}',
+        ),
       );
     }
     for (final Object? raw in g['episodes']! as List<Object?>) {
@@ -797,38 +985,67 @@ void _printReport(
       final String name = p.basename('${e['video']}');
       if (dryRun) {
         out.writeln(
-          '  ${e['action'] == 'skip' ? '跳过' : '处理'}  $name'
-          '${e['reason'] != null ? '  （${e['reason']}）' : ''}'
-          '${e['cache'] != null && e['cache'] != 'none' ? '  （缓存: ${e['cache']}）' : ''}',
+          tr(
+            '  ${e['action'] == 'skip' ? '跳过' : '处理'}  $name'
+                '${e['reason'] != null ? '  （${e['reason']}）' : ''}'
+                '${e['cache'] != null && e['cache'] != 'none' ? '  （缓存: ${e['cache']}）' : ''}',
+            '  ${e['action'] == 'skip' ? 'skip' : 'process'}  $name'
+                '${e['reason'] != null ? '  (${e['reason']})' : ''}'
+                '${e['cache'] != null && e['cache'] != 'none' ? '  (cache: ${e['cache']})' : ''}',
+          ),
         );
       } else {
         out.writeln(
-          '  ${e['status']}  $name  ${e['cues']} 条'
-          '${e['output'] != null ? '  → ${e['output']}' : ''}'
-          '${e['styledOutput'] != null ? '  + ${e['styledOutput']}（样式取自 ${e['styleReference']}）' : ''}'
-          '${e['styledError'] != null ? '  （ASS 未导出：${e['styledError']}）' : ''}'
-          '${e['reason'] != null ? '  （${e['reason']}）' : ''}',
+          tr(
+            '  ${e['status']}  $name  ${e['cues']} 条'
+                '${e['output'] != null ? '  → ${e['output']}' : ''}'
+                '${e['styledOutput'] != null ? '  + ${e['styledOutput']}（样式取自 ${e['styleReference']}）' : ''}'
+                '${e['styledError'] != null ? '  （ASS 未导出：${e['styledError']}）' : ''}'
+                '${e['reason'] != null ? '  （${e['reason']}）' : ''}',
+            '  ${e['status']}  $name  ${e['cues']} cues'
+                '${e['output'] != null ? '  → ${e['output']}' : ''}'
+                '${e['styledOutput'] != null ? '  + ${e['styledOutput']} (style taken from ${e['styleReference']})' : ''}'
+                '${e['styledError'] != null ? '  (ASS not exported: ${e['styledError']})' : ''}'
+                '${e['reason'] != null ? '  (${e['reason']})' : ''}',
+          ),
         );
       }
     }
     final Object? estimate = g['estimate'];
     if (estimate is Map) {
       out.writeln(
-        '  校对预估: ${estimate['batches']} 批，输入约 ${estimate['inputTokens']} token、'
-        '输出约 ${estimate['outputTokens']} token'
-        '${estimate['fromDuration'] == true ? '（部分按时长估）' : ''}；'
-        '专名表每作品另计一次，写法统一只送可疑行',
+        tr(
+          '  校对预估: ${estimate['batches']} 批，输入约 ${estimate['inputTokens']} token、'
+              '输出约 ${estimate['outputTokens']} token'
+              '${estimate['fromDuration'] == true ? '（部分按时长估）' : ''}；'
+              '专名表每作品另计一次，写法统一只送可疑行',
+          '  Proofreading estimate: ${estimate['batches']} batches, about ${estimate['inputTokens']} input tokens, '
+              'about ${estimate['outputTokens']} output tokens'
+              '${estimate['fromDuration'] == true ? ' (partly estimated from duration)' : ''}; '
+              'the glossary is counted once per work, and consistency checks only send suspicious lines',
+        ),
       );
     }
-    if (g['seconds'] != null) out.writeln('  耗时 ${g['seconds']} s');
+    if (g['seconds'] != null) {
+      out.writeln(tr('  耗时 ${g['seconds']} s', '  Took ${g['seconds']} s'));
+    }
   }
   if (!dryRun && total.calls > 0) {
     out.writeln(
-      'AI 用量: ${total.calls} 次调用，输入 ${total.inputTokens}、输出 ${total.outputTokens}、'
-      '缓存读 ${total.cacheReadTokens}、缓存写 ${total.cacheWriteTokens} token',
+      tr(
+        'AI 用量: ${total.calls} 次调用，输入 ${total.inputTokens}、输出 ${total.outputTokens}、'
+            '缓存读 ${total.cacheReadTokens}、缓存写 ${total.cacheWriteTokens} token',
+        'AI usage: ${total.calls} calls, input ${total.inputTokens}, output ${total.outputTokens}, '
+            'cache read ${total.cacheReadTokens}, cache write ${total.cacheWriteTokens} tokens',
+      ),
     );
     if (total.hasUnknown) {
-      out.writeln('  其中 ${total.callsWithoutUsage} 次应答没带用量（token 未知，未计入上面）');
+      out.writeln(
+        tr(
+          '  其中 ${total.callsWithoutUsage} 次应答没带用量（token 未知，未计入上面）',
+          '  ${total.callsWithoutUsage} responses reported no usage (tokens unknown, not counted above)',
+        ),
+      );
     }
   }
 }

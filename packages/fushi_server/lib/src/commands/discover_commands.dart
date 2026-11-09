@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 
 const int _exitOk = 0;
@@ -92,20 +93,49 @@ class DiscoverModule extends CliModule {
   @override
   void register(ArgParser parser) {
     parser.addCommand('discover').addCommand('search')
-      ..addOption('domain', help: '发现域（服务端只有 video）', defaultsTo: 'video')
-      ..addOption('category', help: 'movie | tv | anime（缺省不限）')
-      ..addOption('year', help: '年份过滤')
-      ..addOption('page', help: '页码（从 1 起）', defaultsTo: '1')
-      ..addOption('size', help: '每页条数', defaultsTo: '20')
-      ..addOption('locale', help: '资料语言（缺省读配置 metadata_locale / 偏好）')
-      ..addFlag('json', negatable: false, help: '输出 JSON');
+      ..addOption(
+        'domain',
+        help: tr(
+          '发现域（服务端只有 video）',
+          'Discovery domain (the server only has video)',
+        ),
+        defaultsTo: 'video',
+      )
+      ..addOption(
+        'category',
+        help: tr(
+          'movie | tv | anime（缺省不限）',
+          'movie | tv | anime (default: no filter)',
+        ),
+      )
+      ..addOption('year', help: tr('年份过滤', 'Year filter'))
+      ..addOption(
+        'page',
+        help: tr('页码（从 1 起）', 'Page number (starting at 1)'),
+        defaultsTo: '1',
+      )
+      ..addOption('size', help: tr('每页条数', 'Items per page'), defaultsTo: '20')
+      ..addOption(
+        'locale',
+        help: tr(
+          '资料语言（缺省读配置 metadata_locale / 偏好）',
+          'Metadata language (defaults to the metadata_locale config / preference)',
+        ),
+      )
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
   }
 
   @override
-  String get usage => '''
+  String get usage => tr(
+    '''
 discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--size N] [--json]
     在线发现搜索（TMDB / MAL / AniList 聚合，只读）。只支持 --domain video：书 / 漫画 /
-    游戏的发现源在桌面 app 里，服务端没有。TMDB 需要配置 tmdb_api_key。''';
+    游戏的发现源在桌面 app 里，服务端没有。TMDB 需要配置 tmdb_api_key。''',
+    '''
+discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--size N] [--json]
+    Online discovery search (TMDB / MAL / AniList aggregated, read-only). Only --domain video is supported: the discovery sources for
+    books / manga / games live in the desktop app, not in the server. TMDB needs tmdb_api_key to be configured.''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -117,13 +147,21 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
         sub.rest.isEmpty ||
         sub.rest.join(' ').trim().isEmpty) {
       e.writeln(
-        '用法: discover search <query> [--category movie|tv|anime] [--json]',
+        tr(
+          '用法: discover search <query> [--category movie|tv|anime] [--json]',
+          'Usage: discover search <query> [--category movie|tv|anime] [--json]',
+        ),
       );
       return _exitUsage;
     }
     final String domain = sub['domain'] as String;
     if (domain != 'video') {
-      e.writeln('服务端只有视频发现（--domain video）；$domain 域的发现源在桌面 app 里');
+      e.writeln(
+        tr(
+          '服务端只有视频发现（--domain video）；$domain 域的发现源在桌面 app 里',
+          'The server only supports video discovery (--domain video); discovery sources for the $domain domain live in the desktop app',
+        ),
+      );
       return domain == 'book' || domain == 'manga' || domain == 'game'
           ? _exitUnavailable
           : _exitUsage;
@@ -135,7 +173,12 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
           .where((VideoDiscoveryCategory c) => c.name == rawCategory)
           .firstOrNull;
       if (category == null) {
-        e.writeln('--category 只接受 movie / tv / anime');
+        e.writeln(
+          tr(
+            '--category 只接受 movie / tv / anime',
+            '--category only accepts movie / tv / anime',
+          ),
+        );
         return _exitUsage;
       }
     }
@@ -149,7 +192,12 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
         size < 1 ||
         size > 100 ||
         (rawYear != null && year == null)) {
-      e.writeln('--page 需 ≥1、--size 需 1..100、--year 需整数');
+      e.writeln(
+        tr(
+          '--page 需 ≥1、--size 需 1..100、--year 需整数',
+          '--page must be >= 1, --size must be 1..100, --year must be an integer',
+        ),
+      );
       return _exitUsage;
     }
     final String query = sub.rest.join(' ').trim();
@@ -179,13 +227,18 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
           result,
         );
         for (final ExternalProviderFailure f in result.failures) {
-          e.writeln('来源 ${f.providerId} 失败（${f.kind.name}）: ${f.message}');
+          e.writeln(
+            tr(
+              '来源 ${f.providerId} 失败（${f.kind.name}）: ${f.message}',
+              'Source ${f.providerId} failed (${f.kind.name}): ${f.message}',
+            ),
+          );
         }
         if (sub['json'] as bool) {
           o.writeln(const JsonEncoder.withIndent('  ').convert(report));
         } else {
           final List<Object?> items = report['items']! as List<Object?>;
-          if (items.isEmpty) o.writeln('（无结果）');
+          if (items.isEmpty) o.writeln(tr('（无结果）', '(No results)'));
           for (final Object? row in items) {
             final Map<String, Object?> i = row! as Map<String, Object?>;
             final Object? year = i['year'];

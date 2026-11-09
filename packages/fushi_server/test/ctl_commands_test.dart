@@ -443,7 +443,7 @@ void main() {
     test('连不上 → 69', () async {
       await admin.close();
       expect(await ctl(<String>['status']), 69);
-      expect(err.toString(), contains('连不上'));
+      expect(err.toString(), contains('Cannot connect to'));
     });
   });
 
@@ -499,7 +499,7 @@ void main() {
           isA<AdminApiException>().having(
             (AdminApiException e) => e.message,
             'message',
-            contains('TLS 证书'),
+            contains('TLS certificate'),
           ),
         ),
       );

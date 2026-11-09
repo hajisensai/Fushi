@@ -40,6 +40,7 @@ import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/json_stdout_isolation.dart';
 import 'package:fushi_server/src/library_scanner.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
@@ -55,47 +56,96 @@ ArgParser _buildParser() {
     ..addOption(
       'config',
       abbr: 'c',
-      help: '配置文件路径',
+      help: tr('配置文件路径', 'Config file path'),
       defaultsTo: kDefaultConfigFileName,
     )
-    ..addFlag('verbose', abbr: 'v', negatable: false, help: '调试日志')
+    ..addFlag(
+      'verbose',
+      abbr: 'v',
+      negatable: false,
+      help: tr('调试日志', 'Debug logging'),
+    )
     ..addFlag('help', abbr: 'h', negatable: false);
   parser.addCommand('init')
-    ..addOption('data-dir', help: '数据目录（默认配置文件旁的 data/）')
-    ..addOption('port', help: '监听端口', defaultsTo: '${ServerConfig.defaultPort}')
-    ..addOption('device-name', help: '广播给对端的设备名');
+    ..addOption(
+      'data-dir',
+      help: tr(
+        '数据目录（默认配置文件旁的 data/）',
+        'Data directory (default: data/ next to the config file)',
+      ),
+    )
+    ..addOption(
+      'port',
+      help: tr('监听端口', 'Listen port'),
+      defaultsTo: '${ServerConfig.defaultPort}',
+    )
+    ..addOption(
+      'device-name',
+      help: tr('广播给对端的设备名', 'Device name shown to peers'),
+    )
+    ..addOption(
+      'language',
+      help: tr('服务端界面语言（WebUI 与命令行）', 'Server language (WebUI and CLI)'),
+      allowed: ServerConfig.supportedLanguages,
+    );
   parser.addCommand('serve')
-    ..addFlag('scan', help: '启动后扫描一次库', defaultsTo: true)
+    ..addFlag(
+      'scan',
+      help: tr('启动后扫描一次库', 'Scan the libraries once after starting'),
+      defaultsTo: true,
+    )
     ..addFlag(
       'prune',
-      help: '扫描后回收「文件已消失」的条目（--no-prune 关闭，对本进程所有扫描生效；缺省读配置 scan_prune）',
+      help: tr(
+        '扫描后回收「文件已消失」的条目（--no-prune 关闭，对本进程所有扫描生效；缺省读配置 scan_prune）',
+        'Remove items whose files are gone after scans (--no-prune turns it off for every scan in this process; default: scan_prune in the config)',
+      ),
       negatable: true,
     );
   parser.addCommand('scan')
     ..addFlag(
       'prune',
-      help: '回收「文件已消失」的条目（--no-prune 关闭；缺省读配置 scan_prune）',
+      help: tr(
+        '回收「文件已消失」的条目（--no-prune 关闭；缺省读配置 scan_prune）',
+        'Remove items whose files are gone (--no-prune turns it off; default: scan_prune in the config)',
+      ),
       negatable: true,
     )
     ..addFlag(
       'scrape',
-      help: '扫描后补刮从未识别过的视频作品（--no-scrape 关闭；缺省读配置 scan_scrape）',
+      help: tr(
+        '扫描后补刮从未识别过的视频作品（--no-scrape 关闭；缺省读配置 scan_scrape）',
+        'Fetch metadata for videos never identified, after the scan (--no-scrape turns it off; default: scan_scrape in the config)',
+      ),
       negatable: true,
     );
   parser.addCommand('status');
   parser.addCommand('pair');
   parser.addCommand('admin');
   parser.addCommand('models')
-    ..addOption('language', abbr: 'l', help: 'ASR 语言 tag（ja / en / zh …）')
-    ..addOption('model', abbr: 'm', help: _kModelOptionHelp)
+    ..addOption(
+      'language',
+      abbr: 'l',
+      help: tr(
+        'ASR 语言 tag（ja / en / zh …）',
+        'ASR language tag (ja / en / zh …)',
+      ),
+    )
+    ..addOption('model', abbr: 'm', help: _modelOptionHelp)
     ..addOption(
       'profile',
-      help: '素材档位：cleanSpeech（有声书，默认）| mixedAudio（视频；同一语言可能是另一个模型包）',
+      help: tr(
+        '素材档位：cleanSpeech（有声书，默认）| mixedAudio（视频；同一语言可能是另一个模型包）',
+        'Audio profile: cleanSpeech (audiobooks, default) | mixedAudio (video; may be a different model pack for the same language)',
+      ),
       allowed: <String>['cleanSpeech', 'mixedAudio'],
     )
     ..addOption(
       'moss-backend',
-      help: 'models pull moss / status：MOSS 的 audio.cpp 后端',
+      help: tr(
+        'models pull moss / status：MOSS 的 audio.cpp 后端',
+        'models pull moss / status: audio.cpp backend for MOSS',
+      ),
       allowed: <String>[
         for (final MossBackendPreference b in MossBackendPreference.values)
           b.name,
@@ -103,15 +153,30 @@ ArgParser _buildParser() {
       defaultsTo: 'auto',
     );
   parser.addCommand('transcribe')
-    ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
-    ..addOption('model', abbr: 'm', help: _kModelOptionHelp)
+    ..addOption(
+      'language',
+      abbr: 'l',
+      help: tr('ASR 语言 tag', 'ASR language tag'),
+      defaultsTo: 'ja',
+    )
+    ..addOption('model', abbr: 'm', help: _modelOptionHelp)
     ..addOption(
       'profile',
-      help: '素材档位：cleanSpeech | mixedAudio；缺省按扩展名（视频 → mixedAudio）',
+      help: tr(
+        '素材档位：cleanSpeech | mixedAudio；缺省按扩展名（视频 → mixedAudio）',
+        'Audio profile: cleanSpeech | mixedAudio; default by file extension (video → mixedAudio)',
+      ),
       allowed: <String>['cleanSpeech', 'mixedAudio'],
     )
-    ..addOption('out', abbr: 'o', help: '输出 .srt 路径（默认与音频同名）')
-    ..addFlag('cpu', negatable: false, help: '只用 CPU');
+    ..addOption(
+      'out',
+      abbr: 'o',
+      help: tr(
+        '输出 .srt 路径（默认与音频同名）',
+        'Output .srt path (default: same name as the audio)',
+      ),
+    )
+    ..addFlag('cpu', negatable: false, help: tr('只用 CPU', 'CPU only'));
   parser.addCommand('ctl', buildCtlParser());
   for (final CliModule module in kCliModules) {
     module.register(parser);
@@ -134,6 +199,11 @@ void _usage(ArgParser parser) {
 }
 
 Future<int> runFushiServerCli(List<String> args) async {
+  // 帮助文案建 parser 时就按语言出，所以先定语言（只读配置里的 language 一行）。
+  serverLanguage = resolveServerLanguage(
+    args,
+    defaultConfigFileName: kDefaultConfigFileName,
+  );
   final ArgParser parser = _buildParser();
   final ArgResults results;
   try {
@@ -263,7 +333,12 @@ Future<int> _dispatch(
 
 Future<int> _init(File configFile, ArgResults command) async {
   if (await configFile.exists()) {
-    stderr.writeln('已存在: ${configFile.path}（不覆盖）');
+    stderr.writeln(
+      tr(
+        '已存在: ${configFile.path}（不覆盖）',
+        'Already exists: ${configFile.path} (not overwritten)',
+      ),
+    );
     return 1;
   }
   final String dataDir =
@@ -272,13 +347,25 @@ Future<int> _init(File configFile, ArgResults command) async {
   config = config.copyWith(
     port: int.tryParse(command['port'] as String) ?? ServerConfig.defaultPort,
     deviceName: command['device-name'] as String? ?? config.deviceName,
+    language: command['language'] as String? ?? serverLanguage,
     adminToken: FushiSyncServer.generateToken(),
   );
   await config.save(configFile);
-  stdout.writeln('已写入 ${configFile.path}');
+  serverLanguage = config.language;
+  stdout.writeln(tr('已写入 ${configFile.path}', 'Wrote ${configFile.path}'));
   stdout.writeln('data_dir: ${config.dataDir}');
-  stdout.writeln('admin_token: ${config.adminToken}（WebUI / admin API 凭据，别泄露）');
-  stdout.writeln('下一步：编辑 libraries[] 填扫描目录，然后 fushi_server serve');
+  stdout.writeln(
+    tr(
+      'admin_token: ${config.adminToken}（WebUI / admin API 凭据，别泄露）',
+      'admin_token: ${config.adminToken} (WebUI / admin API credential; keep it secret)',
+    ),
+  );
+  stdout.writeln(
+    tr(
+      '下一步：编辑 libraries[] 填扫描目录，然后 fushi_server serve',
+      'Next: add library folders to libraries[], then run fushi_server serve',
+    ),
+  );
   return 0;
 }
 
@@ -293,17 +380,26 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   try {
     await host.start();
   } on SyncServerPortInUseException catch (e) {
-    stderr.writeln('端口被占用: $e');
+    stderr.writeln(tr('端口被占用: $e', 'Port in use: $e'));
     return 75;
   }
   stdout.writeln(
-    'fushi_server 已启动: ${rt.config.bind}:${host.port} '
+    '${tr('fushi_server 已启动', 'fushi_server started')}: '
+    '${rt.config.bind}:${host.port} '
     '${rt.config.tls ? '(https, fingerprint ${host.hostFingerprint})' : '(http)'}',
   );
   stdout.writeln(
-    '设备名: ${rt.config.deviceName}   设备 id: ${rt.identity.deviceId}',
+    tr(
+      '设备名: ${rt.config.deviceName}   设备 id: ${rt.identity.deviceId}',
+      'Device name: ${rt.config.deviceName}   device id: ${rt.identity.deviceId}',
+    ),
   );
-  stdout.writeln('配对：在 Fushi 里添加互联设备，输入本机地址；PIN 会打印在这里。');
+  stdout.writeln(
+    tr(
+      '配对：在 Fushi 里添加互联设备，输入本机地址；PIN 会打印在这里。',
+      'Pairing: in Fushi, add an interconnect device and enter this server\'s address; the PIN is printed here.',
+    ),
+  );
   final AdminContext adminCtx = AdminContext(
     config: rt.config,
     configFile: rt.configFile,
@@ -337,11 +433,16 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
       );
       stdout.writeln(
         'WebUI: ${rt.config.tls ? 'https' : 'http'}://'
-        '${rt.config.adminBind == '0.0.0.0' ? '<本机地址>' : rt.config.adminBind}:${admin.port}/ '
-        '（admin_token 在配置文件里）',
+        '${rt.config.adminBind == '0.0.0.0' ? tr('<本机地址>', '<this host>') : rt.config.adminBind}:${admin.port}/ '
+        '${tr('（admin_token 在配置文件里）', '(admin_token is in the config file)')}',
       );
     } on SocketException catch (e) {
-      stderr.writeln('WebUI 端口 ${rt.config.adminPort} 起不来: ${e.message}');
+      stderr.writeln(
+        tr(
+          'WebUI 端口 ${rt.config.adminPort} 起不来: ${e.message}',
+          'WebUI port ${rt.config.adminPort} failed to start: ${e.message}',
+        ),
+      );
       admin = null;
     }
   }
@@ -365,7 +466,14 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     stop.future,
     host.selfUpdateInstalled.then((_) => selfUpdated = true),
   ]);
-  stdout.writeln(selfUpdated ? '已装好新版服务端，正在停止以便服务管理器重启…' : '正在停止…');
+  stdout.writeln(
+    selfUpdated
+        ? tr(
+            '已装好新版服务端，正在停止以便服务管理器重启…',
+            'New server version installed; stopping so the service manager restarts it…',
+          )
+        : tr('正在停止…', 'Stopping…'),
+  );
   await sigint.cancel();
   await sigterm?.cancel();
   await admin?.stop();
@@ -377,7 +485,7 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
 Future<void> _scanInBackground(AdminContext ctx) async {
   try {
     final ScanSummary summary = await ctx.scanLibraries();
-    stdout.writeln('库扫描完成: $summary');
+    stdout.writeln(tr('库扫描完成: $summary', 'Library scan done: $summary'));
   } catch (e, stack) {
     ctx.log.log('serve.scan', e, stack);
   }
@@ -385,7 +493,12 @@ Future<void> _scanInBackground(AdminContext ctx) async {
 
 Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
   if (rt.config.libraries.isEmpty) {
-    stderr.writeln('配置里没有 libraries[]，无事可扫。');
+    stderr.writeln(
+      tr(
+        '配置里没有 libraries[]，无事可扫。',
+        'No libraries[] in the config; nothing to scan.',
+      ),
+    );
     return 0;
   }
   final ScanSummary summary = await LibraryScanner(
@@ -394,7 +507,7 @@ Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
     pruneMissing: prune ?? rt.config.scanPrune,
     organizer: serverLibraryOrganizer(rt.db, rt.config.ai),
   ).scanAll(rt.config.libraries);
-  stdout.writeln('库扫描完成: $summary');
+  stdout.writeln(tr('库扫描完成: $summary', 'Library scan done: $summary'));
   for (final String err in summary.errors) {
     stdout.writeln('  ! $err');
   }
@@ -409,15 +522,28 @@ Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
       config: () => rt.config.copyWith(scanScrape: true),
     );
     try {
-      stdout.writeln('刮削中（只补刮从未识别过的作品）…');
+      stdout.writeln(
+        tr(
+          '刮削中（只补刮从未识别过的作品）…',
+          'Fetching metadata (only for titles never identified)…',
+        ),
+      );
       await videoScrape.sweep();
       final Map<String, Object?> st = videoScrape.status();
       stdout.writeln(
-        '刮削完成: ${st['lastReport'] ?? '没有需要刮削的作品'}'
-        '${st['tmdbAvailable'] == true ? '' : '（未配置 tmdb_api_key，TMDB 不可用）'}',
+        '${tr('刮削完成', 'Metadata done')}: '
+        '${st['lastReport'] ?? tr('没有需要刮削的作品', 'nothing to fetch')}'
+        '${st['tmdbAvailable'] == true ? '' : tr('（未配置 tmdb_api_key，TMDB 不可用）', ' (no tmdb_api_key set; TMDB unavailable)')}',
       );
       final int pending = await videoScrape.pendingCount();
-      if (pending > 0) stdout.writeln('  待人工指定身份: $pending 部（可在客户端经互联手动指定）');
+      if (pending > 0) {
+        stdout.writeln(
+          tr(
+            '  待人工指定身份: $pending 部（可在客户端经互联手动指定）',
+            '  Need a manual pick: $pending titles (pick them in the app over interconnect)',
+          ),
+        );
+      }
     } finally {
       videoScrape.close();
     }
@@ -448,7 +574,7 @@ Future<int> _pair(ServerRuntime rt, List<String> rest) async {
     case 'ls':
       final List<FushiPairedPeerRow> peers = await rt.db.getPairedPeers();
       if (peers.isEmpty) {
-        stdout.writeln('（尚无已配对设备）');
+        stdout.writeln(tr('（尚无已配对设备）', '(no paired devices yet)'));
         return 0;
       }
       final InterconnectOwnerDeviceStore ownerDevices =
@@ -465,21 +591,32 @@ Future<int> _pair(ServerRuntime rt, List<String> rest) async {
         stdout.writeln(
           '${peer.peerId}  ${peer.deviceName ?? '-'}  '
           '${peer.lastSeenIp ?? '-'}  paired $at'
-          '${owner ? '  [我的设备]' : ''}',
+          '${owner ? tr('  [我的设备]', '  [my device]') : ''}',
         );
       }
       return 0;
     case 'revoke':
       if (rest.length < 2) {
-        stderr.writeln('用法: pair revoke <peerId>');
+        stderr.writeln(
+          tr('用法: pair revoke <peerId>', 'Usage: pair revoke <peerId>'),
+        );
         return 64;
       }
       final int n = await rt.db.revokePairedPeer(rest[1]);
       await InterconnectOwnerDeviceStore(rt.db).forgetPeer(rest[1]);
-      stdout.writeln(n == 0 ? '没有这个对端' : '已吊销 ${rest[1]}');
+      stdout.writeln(
+        n == 0
+            ? tr('没有这个对端', 'No such peer')
+            : tr('已吊销 ${rest[1]}', 'Revoked ${rest[1]}'),
+      );
       return n == 0 ? 1 : 0;
     default:
-      stderr.writeln('用法: pair ls | pair revoke <peerId>');
+      stderr.writeln(
+        tr(
+          '用法: pair ls | pair revoke <peerId>',
+          'Usage: pair ls | pair revoke <peerId>',
+        ),
+      );
       return 64;
   }
 }
@@ -492,16 +629,23 @@ Future<int> _admin(ServerRuntime rt, List<String> rest) async {
         adminToken: FushiSyncServer.generateToken(),
       );
       await next.save(rt.configFile);
-      stdout.writeln('新的 admin_token: ${next.adminToken}');
+      stdout.writeln(
+        tr(
+          '新的 admin_token: ${next.adminToken}',
+          'New admin_token: ${next.adminToken}',
+        ),
+      );
       return 0;
     default:
-      stderr.writeln('用法: admin reset-token');
+      stderr.writeln(tr('用法: admin reset-token', 'Usage: admin reset-token'));
       return 64;
   }
 }
 
-const String _kModelOptionHelp =
-    '模型包 id（缺省按语言取内置包）；可选包如 kitsune-p0.1b（CC BY-NC 4.0，非商用）';
+String get _modelOptionHelp => tr(
+  '模型包 id（缺省按语言取内置包）；可选包如 kitsune-p0.1b（CC BY-NC 4.0，非商用）',
+  'Model pack id (default: the built-in pack for the language); optional packs such as kitsune-p0.1b (CC BY-NC 4.0, non-commercial)',
+);
 
 /// `--model <id>`：把选中的包排到注册表最前，让它接管所服务的语言。候选是当前
 /// 注册表 + 不进默认注册表的可选包（`kAsrOptionalModelPacks`）。返回 false =
@@ -519,12 +663,17 @@ bool _applyModelArg(ArgResults command) {
       asr.AsrModelRegistry(<asr.AsrModelPack>[pack]),
     );
     if (pack.license != null) {
-      stderr.writeln('模型 ${pack.displayName} 的许可为 ${pack.license}');
+      stderr.writeln(
+        tr(
+          '模型 ${pack.displayName} 的许可为 ${pack.license}',
+          'Model ${pack.displayName} is licensed under ${pack.license}',
+        ),
+      );
     }
     return true;
   }
   stderr.writeln(
-    '未知模型 "$id"；可用: '
+    '${tr('未知模型 "$id"；可用', 'Unknown model "$id"; available')}: '
     '${candidates.map((asr.AsrModelPack p) => p.id).toSet().join(', ')}',
   );
   return false;
@@ -535,7 +684,7 @@ asr.AsrLanguage? _languageArg(ArgResults command) {
   final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(tag);
   if (language == null) {
     stderr.writeln(
-      '未知语言 "$tag"；可用: '
+      '${tr('未知语言 "$tag"；可用', 'Unknown language "$tag"; available')}: '
       '${asr.AsrLanguage.registered.map((asr.AsrLanguage l) => l.tag).join(', ')}',
     );
   }
@@ -585,7 +734,9 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
       preference: asr.AsrAccelerationPreference.auto,
     );
     if (plan.modelReady) {
-      stdout.writeln('${language.tag}: 模型已就绪');
+      stdout.writeln(
+        tr('${language.tag}: 模型已就绪', '${language.tag}: model ready'),
+      );
       return 0;
     }
     String last = '';
@@ -600,11 +751,14 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
         last = line;
       }
     }
-    stdout.writeln('${language.tag}: 下载完成');
+    stdout.writeln(
+      tr('${language.tag}: 下载完成', '${language.tag}: download complete'),
+    );
     return 0;
   }
   stderr.writeln(
-    '用法: models status | models pull --language <tag> [--profile mixedAudio] '
+    '${tr('用法', 'Usage')}: '
+    'models status | models pull --language <tag> [--profile mixedAudio] '
     '| models pull moss [--moss-backend auto|cuda|vulkan|cpu]',
   );
   return 64;
@@ -627,11 +781,21 @@ Future<int> _pullMoss(MossBackendPreference backend) async {
     backend: backend,
   );
   if (!before.supported) {
-    stderr.writeln('MOSS 在本机不可用：${before.unavailableReason}');
+    stderr.writeln(
+      tr(
+        'MOSS 在本机不可用：${before.unavailableReason}',
+        'MOSS is unavailable on this machine: ${before.unavailableReason}',
+      ),
+    );
     return 69;
   }
   if (before.ready) {
-    stdout.writeln('moss: 已就绪（${before.decision.backend!.cliValue}）');
+    stdout.writeln(
+      tr(
+        'moss: 已就绪（${before.decision.backend!.cliValue}）',
+        'moss: ready (${before.decision.backend!.cliValue})',
+      ),
+    );
     return 0;
   }
   String last = '';
@@ -645,19 +809,29 @@ Future<int> _pullMoss(MossBackendPreference backend) async {
       last = line;
     }
   }
-  stdout.writeln('moss: 下载、校验、解压完成（${before.decision.backend!.cliValue}）');
+  stdout.writeln(
+    tr(
+      'moss: 下载、校验、解压完成（${before.decision.backend!.cliValue}）',
+      'moss: downloaded, verified and unpacked (${before.decision.backend!.cliValue})',
+    ),
+  );
   return 0;
 }
 
 /// 离线直转：不经 HTTP，方便脚本与排障（与 `/api/jobs` 的 asr runner 同一条链路）。
 Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   if (command.rest.isEmpty) {
-    stderr.writeln('用法: transcribe <audio> --language <tag> [--out x.srt]');
+    stderr.writeln(
+      tr(
+        '用法: transcribe <audio> --language <tag> [--out x.srt]',
+        'Usage: transcribe <audio> --language <tag> [--out x.srt]',
+      ),
+    );
     return 64;
   }
   final String audio = p.absolute(command.rest.first);
   if (!await File(audio).exists()) {
-    stderr.writeln('找不到文件: $audio');
+    stderr.writeln(tr('找不到文件: $audio', 'File not found: $audio'));
     return 66;
   }
   final asr.AsrLanguage? language = _languageArg(command);
@@ -679,7 +853,10 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   );
   if (!plan.modelReady) {
     stderr.writeln(
-      '${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag} --profile ${service.audioProfile.name}',
+      tr(
+        '${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag} --profile ${service.audioProfile.name}',
+        '${language.tag} model not downloaded: run fushi_server models pull -l ${language.tag} --profile ${service.audioProfile.name} first',
+      ),
     );
     return 69;
   }
@@ -711,7 +888,7 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   }
   stderr.writeln();
   if (result == null) {
-    stderr.writeln('转录未产生结果');
+    stderr.writeln(tr('转录未产生结果', 'Transcription produced no result'));
     return 1;
   }
   final String out = command['out'] as String? ?? p.setExtension(audio, '.srt');
@@ -722,6 +899,11 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   if (await tokens.exists()) {
     await tokens.copy(p.setExtension(out, '.tokens.jsonl'));
   }
-  stdout.writeln('已写入 $out（${result.cueCount} 条字幕）');
+  stdout.writeln(
+    tr(
+      '已写入 $out（${result.cueCount} 条字幕）',
+      'Wrote $out (${result.cueCount} subtitle lines)',
+    ),
+  );
   return 0;
 }

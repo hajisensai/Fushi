@@ -28,6 +28,7 @@ import 'package:fushi_server/src/commands/leaderboard_commands.dart'
     show kLeaderboardDefaultBaseUrl;
 import 'package:fushi_server/src/leaderboard_store.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi_server/src/server_language.dart';
 
 class ServerLeaderboardLinkHost implements InterconnectLeaderboardLinkHost {
   ServerLeaderboardLinkHost({
@@ -65,7 +66,10 @@ class ServerLeaderboardLinkHost implements InterconnectLeaderboardLinkHost {
     if (base == null) {
       engineLog.logDiagnostic(
         'ServerLeaderboardLinkHost',
-        '账户文件里的服务地址不是 http(s) 绝对地址，按无账户处理',
+        tr(
+          '账户文件里的服务地址不是 http(s) 绝对地址，按无账户处理',
+          'The server address in the account file is not an absolute http(s) URL; treating as no account',
+        ),
       );
       return null;
     }
@@ -76,7 +80,10 @@ class ServerLeaderboardLinkHost implements InterconnectLeaderboardLinkHost {
       // 只报类型：恢复码就是私钥，绝不回显。
       engineLog.logDiagnostic(
         'ServerLeaderboardLinkHost',
-        '账户文件里的恢复码解析失败，按无账户处理',
+        tr(
+          '账户文件里的恢复码解析失败，按无账户处理',
+          'Failed to parse the recovery code in the account file; treating as no account',
+        ),
       );
       return null;
     }
@@ -100,7 +107,10 @@ class ServerLeaderboardLinkHost implements InterconnectLeaderboardLinkHost {
     } on ServerLeaderboardStoreException catch (e) {
       engineLog.logDiagnostic(
         'ServerLeaderboardLinkHost',
-        '${e.message}；已配对设备的自动登录按无账户处理',
+        tr(
+          '${e.message}；已配对设备的自动登录按无账户处理',
+          '${e.message}; auto sign-in for paired devices treats this as no account',
+        ),
       );
       return null;
     }

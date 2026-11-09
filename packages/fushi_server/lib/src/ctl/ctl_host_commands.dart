@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_h
     show VideoSubtitleJobParams, kVideoSubtitleJobKind;
 import 'package:path/path.dart' as p;
 import 'package:fushi_server/src/ctl/admin_client.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// admin 代理前缀。
 const String kHostProxy = '/api/admin/host';
@@ -63,92 +64,179 @@ void addCtlHostOptions(ArgParser parser) {
   parser
     ..addOption(
       'set',
-      help: 'progress / position / delay / playback：写入的 JSON（不给则读取）',
+      help: tr(
+        'progress / position / delay / playback：写入的 JSON（不给则读取）',
+        'progress / position / delay / playback: JSON to write (read when omitted)',
+      ),
     )
-    ..addOption('query', abbr: 'q', help: 'scrape search：搜索词')
-    ..addOption('collection', help: 'scrape：按合集定位作品（合集名）')
-    ..addOption('collection-type', help: 'scrape：合集类型（配合 --collection）')
+    ..addOption(
+      'query',
+      abbr: 'q',
+      help: tr('scrape search：搜索词', 'scrape search: search term'),
+    )
+    ..addOption(
+      'collection',
+      help: tr(
+        'scrape：按合集定位作品（合集名）',
+        'scrape: locate the work by collection (collection name)',
+      ),
+    )
+    ..addOption(
+      'collection-type',
+      help: tr(
+        'scrape：合集类型（配合 --collection）',
+        'scrape: collection type (used with --collection)',
+      ),
+    )
     ..addOption(
       'provider',
-      help: 'scrape identify / downloads add：anidb | mal | tmdb',
+      help: tr(
+        'scrape identify / downloads add：anidb | mal | tmdb',
+        'scrape identify / downloads add: anidb | mal | tmdb',
+      ),
     )
     ..addOption(
       'external-id',
-      help: 'scrape identify / downloads add：该来源的作品 id',
+      help: tr(
+        'scrape identify / downloads add：该来源的作品 id',
+        'scrape identify / downloads add: the work id at that provider',
+      ),
     )
     ..addOption(
       'which',
-      help: 'videos subtitle clear：primary | secondary | all',
+      help: tr(
+        'videos subtitle clear：primary | secondary | all',
+        'videos subtitle clear: primary | secondary | all',
+      ),
       defaultsTo: 'primary',
     )
     ..addFlag(
       'all-sidecars',
       negatable: false,
-      help: 'videos subtitle clear：视频旁全部 sidecar 字幕都备份挪走',
+      help: tr(
+        'videos subtitle clear：视频旁全部 sidecar 字幕都备份挪走',
+        'videos subtitle clear: back up and move away all sidecar subtitles next to the video',
+      ),
     )
     ..addOption(
       'lang',
-      help: 'videos subtitle backfill：要的字幕语言（如 ja），缺省按 host 设置',
+      help: tr(
+        'videos subtitle backfill：要的字幕语言（如 ja），缺省按 host 设置',
+        'videos subtitle backfill: subtitle language wanted (e.g. ja), defaults to the host setting',
+      ),
     )
     ..addOption(
       'episode-group',
-      help: 'scrape identify / episode-group：TMDB 分集排序 id',
+      help: tr(
+        'scrape identify / episode-group：TMDB 分集排序 id',
+        'scrape identify / episode-group: TMDB episode group id',
+      ),
     )
-    ..addOption('feature', help: 'assistant start：功能名')
-    ..addOption('locale', help: 'assistant start：界面语言', defaultsTo: 'zh-CN')
-    ..addOption('after', help: 'assistant show：只要比这个 revision 新的视图')
+    ..addOption(
+      'feature',
+      help: tr('assistant start：功能名', 'assistant start: feature name'),
+    )
+    ..addOption(
+      'locale',
+      help: tr('assistant start：界面语言', 'assistant start: UI language'),
+      defaultsTo: 'zh-CN',
+    )
+    ..addOption(
+      'after',
+      help: tr(
+        'assistant show：只要比这个 revision 新的视图',
+        'assistant show: only views newer than this revision',
+      ),
+    )
     ..addFlag(
       'wait',
       negatable: false,
-      help: 'assistant show：长轮询等新视图；jobs submit：等任务结束',
+      help: tr(
+        'assistant show：长轮询等新视图；jobs submit：等任务结束',
+        'assistant show: long-poll for a new view; jobs submit: wait for the job to finish',
+      ),
     )
     ..addOption(
       'language',
       abbr: 'l',
-      help: 'jobs submit asr：语言 tag',
+      help: tr('jobs submit asr：语言 tag', 'jobs submit asr: language tag'),
       defaultsTo: 'ja',
     )
     ..addOption(
       'profile',
-      help:
-          'jobs submit asr：cleanSpeech | mixedAudio（缺省按文件扩展名，视频 → mixedAudio）',
+      help: tr(
+        'jobs submit asr：cleanSpeech | mixedAudio（缺省按文件扩展名，视频 → mixedAudio）',
+        'jobs submit asr: cleanSpeech | mixedAudio (defaults by file extension, video -> mixedAudio)',
+      ),
       allowed: <String>['cleanSpeech', 'mixedAudio'],
     )
-    ..addOption('out', abbr: 'o', help: 'jobs submit / result：产物写到这里')
+    ..addOption(
+      'out',
+      abbr: 'o',
+      help: tr(
+        'jobs submit / result：产物写到这里',
+        'jobs submit / result: write the output here',
+      ),
+    )
     ..addOption(
       'video-id',
-      help: 'jobs submit video_subtitle：host 库里的视频 id（不上传文件）',
+      help: tr(
+        'jobs submit video_subtitle：host 库里的视频 id（不上传文件）',
+        'jobs submit video_subtitle: video id in the host library (no file upload)',
+      ),
     )
-    ..addOption('collection-id', help: 'jobs submit video_subtitle：整季（合集 id）')
+    ..addOption(
+      'collection-id',
+      help: tr(
+        'jobs submit video_subtitle：整季（合集 id）',
+        'jobs submit video_subtitle: whole season (collection id)',
+      ),
+    )
     ..addFlag(
       'ai',
       defaultsTo: true,
-      help: 'jobs submit video_subtitle：AI 校对（--no-ai 关）',
+      help: tr(
+        'jobs submit video_subtitle：AI 校对（--no-ai 关）',
+        'jobs submit video_subtitle: AI proofreading (--no-ai turns it off)',
+      ),
     )
     ..addOption(
       'segmenter',
-      help: 'jobs submit video_subtitle：auto | moss | window',
+      help: tr(
+        'jobs submit video_subtitle：auto | moss | window',
+        'jobs submit video_subtitle: auto | moss | window',
+      ),
       defaultsTo: 'auto',
     )
     ..addOption(
       'moss-backend',
-      help: 'jobs submit video_subtitle：auto | cuda | vulkan | cpu',
+      help: tr(
+        'jobs submit video_subtitle：auto | cuda | vulkan | cpu',
+        'jobs submit video_subtitle: auto | cuda | vulkan | cpu',
+      ),
       defaultsTo: 'auto',
     )
     ..addOption(
       'suffix',
-      help: 'jobs submit video_subtitle：输出 <视频名>.<后缀>.srt',
+      help: tr(
+        'jobs submit video_subtitle：输出 <视频名>.<后缀>.srt',
+        'jobs submit video_subtitle: output <video name>.<suffix>.srt',
+      ),
       defaultsTo: 'ja',
     )
     ..addFlag(
       'regen-glossary',
       negatable: false,
-      help: 'jobs submit video_subtitle：重新生成专名表',
+      help: tr(
+        'jobs submit video_subtitle：重新生成专名表',
+        'jobs submit video_subtitle: regenerate the proper-noun glossary',
+      ),
     );
 }
 
 /// 用法说明片段。
-const String kCtlHostUsage = '''
+String get kCtlHostUsage => tr(
+  '''
   ── 经互联接口（admin 代理）──
   books [ls] | progress <bookKey> [--set '<json>']
   videos [ls] [--grep s] | rm <id> | position|playback <id> [--set '<json>']
@@ -167,7 +255,28 @@ const String kCtlHostUsage = '''
        submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
               [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary] [--title T] [-o 产物] [--wait]
   assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
-  host <GET|POST|PUT|DELETE> <互联路径，如 library/books> ['<json>']   直调任意互联接口''';
+  host <GET|POST|PUT|DELETE> <互联路径，如 library/books> ['<json>']   直调任意互联接口''',
+  '''
+  -- Via the interconnect API (admin proxy) --
+  books [ls] | progress <bookKey> [--set '<json>']
+  videos [ls] [--grep s] | rm <id> | position|playback <id> [--set '<json>']
+         | subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]
+         | subtitle backfill <id> [--lang ja]
+  audiobooks [ls] | position|delay <key> [--set '<json>']
+  manga manifest <bookKey>
+  dict [ls]
+  metadata [ls]
+  scrape search <bookUid> -q <term> | identify <bookUid> --provider anidb|mal|tmdb --external-id <id>
+         [--media-kind tv|movie] [--episode-group g] | episode-groups <bookUid>
+         | episode-group <bookUid> --episode-group <g>      (for collection works use --collection <name> --collection-type <type>)
+         | pending | sweep (scrape works that were never identified) | ai-identify <pending id>
+  activity | collections | tags | tombstones
+  jobs submit asr <audio> [-l ja] [--profile cleanSpeech|mixedAudio] [-o x.srt] [--wait] | get <id> | result <id> [output name] [-o file]
+       submit video_subtitle [<video>] [--video-id id | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
+              [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary] [--title T] [-o output] [--wait]
+  assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
+  host <GET|POST|PUT|DELETE> <interconnect path, e.g. library/books> ['<json>']   Call any interconnect endpoint directly''',
+);
 
 /// 把一个代理动作翻成请求；用法不对写 [err] 返回 null。
 CtlHostRequest? parseCtlHostAction(
@@ -184,7 +293,9 @@ CtlHostRequest? parseCtlHostAction(
   String seg(String v) => Uri.encodeComponent(v);
 
   CtlHostRequest? usage(String text) {
-    err.writeln('用法: fushi_server ctl $text');
+    err.writeln(
+      tr('用法: fushi_server ctl $text', 'Usage: fushi_server ctl $text'),
+    );
     return null;
   }
 
@@ -320,7 +431,12 @@ CtlHostRequest? parseCtlHostAction(
       }
       if (sub == 'ai-identify') {
         if (arg(0) == null) {
-          return usage('scrape ai-identify <待确认作品 id（scrape pending 的第一列）>');
+          return usage(
+            tr(
+              'scrape ai-identify <待确认作品 id（scrape pending 的第一列）>',
+              'scrape ai-identify <pending work id (first column of scrape pending)>',
+            ),
+          );
         }
         return CtlHostRequest(
           'POST',
@@ -333,7 +449,12 @@ CtlHostRequest? parseCtlHostAction(
         case 'search' when key != null:
           final String? query = command['query'] as String?;
           if (query == null || query.trim().isEmpty) {
-            return usage('scrape search <bookUid> -q <搜索词>');
+            return usage(
+              tr(
+                'scrape search <bookUid> -q <搜索词>',
+                'scrape search <bookUid> -q <search term>',
+              ),
+            );
           }
           return CtlHostRequest(
             'POST',
@@ -387,8 +508,12 @@ CtlHostRequest? parseCtlHostAction(
           );
       }
       return usage(
-        'scrape pending | scrape search <bookUid> -q <词> | scrape identify <bookUid> --provider p --external-id id '
-        '| scrape episode-groups <bookUid> | scrape episode-group <bookUid> --episode-group g',
+        tr(
+          'scrape pending | scrape search <bookUid> -q <词> | scrape identify <bookUid> --provider p --external-id id '
+              '| scrape episode-groups <bookUid> | scrape episode-group <bookUid> --episode-group g',
+          'scrape pending | scrape search <bookUid> -q <term> | scrape identify <bookUid> --provider p --external-id id '
+              '| scrape episode-groups <bookUid> | scrape episode-group <bookUid> --episode-group g',
+        ),
       );
 
     case 'assistant':
@@ -396,7 +521,12 @@ CtlHostRequest? parseCtlHostAction(
         case 'start':
           final String? feature = command['feature'] as String?;
           if (feature == null || feature.trim().isEmpty) {
-            return usage('assistant start --feature <功能名>');
+            return usage(
+              tr(
+                'assistant start --feature <功能名>',
+                'assistant start --feature <feature name>',
+              ),
+            );
           }
           return CtlHostRequest(
             'POST',
@@ -439,7 +569,12 @@ CtlHostRequest? parseCtlHostAction(
       final String? raw = arg(0);
       if (!const <String>{'GET', 'POST', 'PUT', 'DELETE'}.contains(method) ||
           raw == null) {
-        return usage("host <GET|POST|PUT|DELETE> <互联路径> ['<json>']");
+        return usage(
+          tr(
+            "host <GET|POST|PUT|DELETE> <互联路径> ['<json>']",
+            "host <GET|POST|PUT|DELETE> <interconnect path> ['<json>']",
+          ),
+        );
       }
       final Uri parsed = Uri.parse(raw.replaceFirst(RegExp(r'^/?(api/)?'), ''));
       Object? body;
@@ -528,16 +663,22 @@ Future<int> _submitJob(
   }
   if (args.length < 2 || args.first != 'asr') {
     err.writeln(
-      '用法: fushi_server ctl jobs submit asr <音频> [-l ja] [-o x.srt] [--wait]',
+      tr(
+        '用法: fushi_server ctl jobs submit asr <音频> [-l ja] [-o x.srt] [--wait]',
+        'Usage: fushi_server ctl jobs submit asr <audio> [-l ja] [-o x.srt] [--wait]',
+      ),
     );
     err.writeln(
-      '      fushi_server ctl jobs submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] …',
+      tr(
+        '      fushi_server ctl jobs submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] …',
+        '      fushi_server ctl jobs submit video_subtitle [<video>] [--video-id id | --collection-id n] [--no-ai] …',
+      ),
     );
     return 64;
   }
   final File audio = File(args[1]);
   if (!audio.existsSync()) {
-    err.writeln('找不到文件: ${audio.path}');
+    err.writeln(tr('找不到文件: ${audio.path}', 'File not found: ${audio.path}'));
     return 66;
   }
   return _guard(err, exitCodeFor, () async {
@@ -558,9 +699,19 @@ Future<int> _submitJob(
       },
     );
     final String? id = created is Map ? created['jobId']?.toString() : null;
-    if (id == null) throw AdminApiException(1, '服务端没返回 jobId: $created');
+    if (id == null) {
+      throw AdminApiException(
+        1,
+        tr(
+          '服务端没返回 jobId: $created',
+          'The server did not return a jobId: $created',
+        ),
+      );
+    }
     final String base = '$kHostProxy/jobs/${Uri.encodeComponent(id)}';
-    err.writeln('任务 $id：上传 ${audio.path}…');
+    err.writeln(
+      tr('任务 $id：上传 ${audio.path}…', 'Job $id: uploading ${audio.path}…'),
+    );
     await client.sendFile('PUT', '$base/input/audio', file: audio);
     await client.post('$base/start');
     final bool wait = command['wait'] as bool || command['out'] != null;
@@ -582,7 +733,10 @@ Future<int> _submitJob(
       }
       if (state == 'error' || state == 'cancelled') {
         err.writeln(
-          '\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+          tr(
+            '\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+            '\nJob $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+          ),
         );
         return 1;
       }
@@ -606,7 +760,7 @@ Future<int> _submitVideoSubtitleJob(
 }) async {
   final File? video = args.isEmpty ? null : File(args.first);
   if (video != null && !video.existsSync()) {
-    err.writeln('找不到文件: ${video.path}');
+    err.writeln(tr('找不到文件: ${video.path}', 'File not found: ${video.path}'));
     return 66;
   }
   final Map<String, Object?> params = <String, Object?>{
@@ -625,7 +779,10 @@ Future<int> _submitVideoSubtitleJob(
       command['video-id'] == null &&
       command['collection-id'] == null) {
     err.writeln(
-      '用法: fushi_server ctl jobs submit video_subtitle <视频> | --video-id <id> | --collection-id <n> …',
+      tr(
+        '用法: fushi_server ctl jobs submit video_subtitle <视频> | --video-id <id> | --collection-id <n> …',
+        'Usage: fushi_server ctl jobs submit video_subtitle <video> | --video-id <id> | --collection-id <n> …',
+      ),
     );
     return 64;
   }
@@ -641,10 +798,20 @@ Future<int> _submitVideoSubtitleJob(
       body: <String, Object?>{'kind': kVideoSubtitleJobKind, 'params': params},
     );
     final String? id = created is Map ? created['jobId']?.toString() : null;
-    if (id == null) throw AdminApiException(1, '服务端没返回 jobId: $created');
+    if (id == null) {
+      throw AdminApiException(
+        1,
+        tr(
+          '服务端没返回 jobId: $created',
+          'The server did not return a jobId: $created',
+        ),
+      );
+    }
     final String base = '$kHostProxy/jobs/${Uri.encodeComponent(id)}';
     if (video != null) {
-      err.writeln('任务 $id：上传 ${video.path}…');
+      err.writeln(
+        tr('任务 $id：上传 ${video.path}…', 'Job $id: uploading ${video.path}…'),
+      );
       await client.sendFile(
         'PUT',
         '$base/input/${Uri.encodeComponent(p.basename(video.path))}',
@@ -672,7 +839,10 @@ Future<int> _submitVideoSubtitleJob(
       }
       if (state == 'error' || state == 'cancelled') {
         err.writeln(
-          '\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+          tr(
+            '\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+            '\nJob $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+          ),
         );
         return 1;
       }
@@ -689,7 +859,7 @@ int _writeResult(Object? result, String? outPath, StringSink out) {
     out.writeln(text);
   } else {
     File(outPath).writeAsStringSync(text);
-    out.writeln('已写入 $outPath');
+    out.writeln(tr('已写入 $outPath', 'Written to $outPath'));
   }
   return 0;
 }
@@ -702,7 +872,7 @@ Future<int> _guard(
   try {
     return await body();
   } on AdminApiException catch (ex) {
-    err.writeln('\n失败: $ex');
+    err.writeln(tr('\n失败: $ex', '\nFailed: $ex'));
     return exitCodeFor(ex);
   }
 }
@@ -729,9 +899,11 @@ Object? _jsonObject(String text, StringSink err) {
   try {
     final Object? decoded = jsonDecode(text);
     if (decoded is Map) return decoded;
-    err.writeln('要求 JSON 对象: $text');
+    err.writeln(tr('要求 JSON 对象: $text', 'Expected a JSON object: $text'));
   } on FormatException catch (e) {
-    err.writeln('JSON 解析失败: ${e.message}');
+    err.writeln(
+      tr('JSON 解析失败: ${e.message}', 'Failed to parse JSON: ${e.message}'),
+    );
   }
   return null;
 }

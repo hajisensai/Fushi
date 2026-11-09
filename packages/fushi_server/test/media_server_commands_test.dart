@@ -185,7 +185,7 @@ void main() {
     expect(await plex(<String>['plex', 'login']), 0, reason: err.toString());
     expect(out.toString(), contains('https://app.plex.tv/auth#?'));
     expect(out.toString(), contains('code=ABCD'));
-    expect(out.toString(), contains('已登录 Plex: neko'));
+    expect(out.toString(), contains('Signed in to Plex: neko'));
     expect(pinChecks, 2);
     final File f = PlexCredentialStore.under(paths.support).file;
     final Map<String, Object?> saved =

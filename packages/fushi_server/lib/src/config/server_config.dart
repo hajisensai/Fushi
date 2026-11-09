@@ -11,6 +11,7 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 服务端扫描根支持的 kind：`fushi_server.yaml` 的 `libraries[].kind`、admin API 新增
 /// 库根与 WebUI 选择框共用这一份，与 `LibraryScanner.scanAll` 的分派一一对应。
@@ -39,11 +40,21 @@ class LibraryRootConfig {
 
   factory LibraryRootConfig.fromYaml(Object? raw, int index) {
     if (raw is! Map) {
-      throw FormatException('libraries[$index] 必须是映射（id/path/kind）');
+      throw FormatException(
+        tr(
+          'libraries[$index] 必须是映射（id/path/kind）',
+          'libraries[$index] must be a mapping (id/path/kind)',
+        ),
+      );
     }
     final String? path = raw['path']?.toString();
     if (path == null || path.trim().isEmpty) {
-      throw FormatException('libraries[$index].path 不能为空');
+      throw FormatException(
+        tr(
+          'libraries[$index].path 不能为空',
+          'libraries[$index].path must not be empty',
+        ),
+      );
     }
     final String kind = raw['kind']?.toString() ?? 'video';
     if (!kServerLibraryRootKinds.contains(kind)) {
@@ -386,7 +397,10 @@ class ServerConfig {
         engine != torrentEngineEmbedded &&
         engine != torrentEngineQbittorrent) {
       throw FormatException(
-        'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+        tr(
+          'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+          'torrent.engine must be auto / embedded / qbittorrent, got "$engine"',
+        ),
       );
     }
     return base.copyWith(
@@ -438,11 +452,14 @@ class ServerConfig {
   /// 宽松，不因手写的一条旧值拒绝启动。
   static String? remoteUrlProblem(String url) {
     final Uri? uri = Uri.tryParse(url);
-    if (uri == null) return '不是合法 URL';
+    if (uri == null) return tr('不是合法 URL', 'Not a valid URL');
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return '只支持 http:// 或 https://';
+      return tr(
+        '只支持 http:// 或 https://',
+        'Only http:// or https:// is supported',
+      );
     }
-    if (uri.host.isEmpty) return '缺少主机名';
+    if (uri.host.isEmpty) return tr('缺少主机名', 'Missing host name');
     return null;
   }
 

@@ -23,6 +23,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 词典引擎原生库路径的环境变量覆盖（与 `FUSHI_P2P_LIB` 同一约定）。
 const String kFushiDictsLibEnv = 'FUSHI_DICTS_LIB';
@@ -159,9 +160,12 @@ class ServerDictionaryHost {
       FushiDicts.initializeTyped();
     } catch (e, st) {
       _available = false;
-      _unavailableReason =
-          'fushidicts 原生库加载失败'
-          '（${_libraryPath ?? 'libfushidicts_ffi 裸名'}）：$e';
+      _unavailableReason = tr(
+        'fushidicts 原生库加载失败'
+            '（${_libraryPath ?? 'libfushidicts_ffi 裸名'}）：$e',
+        'Failed to load the fushidicts native library '
+            '(${_libraryPath ?? 'libfushidicts_ffi bare name'}): $e',
+      );
       engineLog.log('ServerDictionaryHost.start', e, st);
       return false;
     }
@@ -179,8 +183,12 @@ class ServerDictionaryHost {
     if (dir == null) {
       engineLog.logDiagnostic(
         'ServerDictionaryHost',
-        '没找到变形表目录（设 $kFushiTransformsDirEnv 或随包放 share/fushi/transforms），'
-            '查词不做去屈折',
+        tr(
+          '没找到变形表目录（设 $kFushiTransformsDirEnv 或随包放 share/fushi/transforms），'
+              '查词不做去屈折',
+          'Transforms directory not found (set $kFushiTransformsDirEnv or ship share/fushi/transforms); '
+              'lookups will not deinflect',
+        ),
       );
       return;
     }
@@ -380,7 +388,7 @@ class ServerDictionaryHost {
     } on FormatException catch (e) {
       engineLog.logDiagnostic(
         'ServerDictionaryHost.media',
-        'payload JSON 解析失败: $e',
+        tr('payload JSON 解析失败: $e', 'Failed to parse payload JSON: $e'),
       );
       return;
     }
@@ -400,7 +408,10 @@ class ServerDictionaryHost {
       if (bytes == null || bytes.isEmpty) {
         engineLog.logDiagnostic(
           'ServerDictionaryHost.media',
-          '词典「$dict」取不到媒体字节: $path',
+          tr(
+            '词典「$dict」取不到媒体字节: $path',
+            'Cannot read media bytes from dictionary "$dict": $path',
+          ),
         );
         continue;
       }

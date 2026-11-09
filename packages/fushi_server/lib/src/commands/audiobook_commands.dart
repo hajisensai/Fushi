@@ -20,12 +20,18 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart' show naturalCompare;
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
-const String kAudiobookUsage = '''
+String get kAudiobookUsage => tr(
+  '''
 audiobook align <bookKey> --audio <dir|file> [--audio …] [--srt <file>]
-                                                     给已在库的 EPUB 配音频 + 字幕并对齐（--json 可用）''';
+                                                     给已在库的 EPUB 配音频 + 字幕并对齐（--json 可用）''',
+  '''
+audiobook align <bookKey> --audio <dir|file> [--audio …] [--srt <file>]
+                                                     attach audio + subtitles to an EPUB already in the library and align them (--json supported)''',
+);
 
 const String _kAlignUsageLine =
     'audiobook align <bookKey> --audio <dir|file> [--audio …] [--srt <file>] [--json]';
@@ -71,10 +77,19 @@ class AudiobookCommands extends CliModule {
   @override
   void register(ArgParser parser) {
     addJsonFlag(parser.addCommand('audiobook').addCommand('align'))
-      ..addMultiOption('audio', help: '音频目录或文件（可重复；目录取其下一层的音频，自然序）')
+      ..addMultiOption(
+        'audio',
+        help: tr(
+          '音频目录或文件（可重复；目录取其下一层的音频，自然序）',
+          'Audio directory or file (repeatable; for a directory, the audio files one level below it are used, in natural order)',
+        ),
+      )
       ..addOption(
         'srt',
-        help: '字幕（srt / vtt / lrc / ass）；缺省在 --audio 目录里找唯一一份',
+        help: tr(
+          '字幕（srt / vtt / lrc / ass）；缺省在 --audio 目录里找唯一一份',
+          'Subtitle (srt / vtt / lrc / ass); by default the only one in the --audio directory is used',
+        ),
       );
   }
 
@@ -84,16 +99,23 @@ class AudiobookCommands extends CliModule {
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
     final ArgResults? leaf = command.command;
-    if (leaf == null) return _io.usage('缺少子命令', _kAlignUsageLine);
+    if (leaf == null) {
+      return _io.usage(tr('缺少子命令', 'Missing subcommand'), _kAlignUsageLine);
+    }
     if (leaf.rest.length != 1) {
-      return _io.usage('要且只要一个 bookKey', _kAlignUsageLine);
+      return _io.usage(
+        tr('要且只要一个 bookKey', 'Exactly one bookKey is required'),
+        _kAlignUsageLine,
+      );
     }
     final String bookKey = leaf.rest.single;
     final List<String> audioInputs = <String>[
       for (final String raw in leaf['audio'] as List<String>)
         p.normalize(p.absolute(raw)),
     ];
-    if (audioInputs.isEmpty) return _io.usage('缺少 --audio', _kAlignUsageLine);
+    if (audioInputs.isEmpty) {
+      return _io.usage(tr('缺少 --audio', 'Missing --audio'), _kAlignUsageLine);
+    }
     final String? srtArg = leaf['srt'] as String?;
     final String? srt = srtArg == null ? null : p.normalize(p.absolute(srtArg));
     final List<String> missing = <String>[
@@ -103,18 +125,24 @@ class AudiobookCommands extends CliModule {
     ];
     if (missing.isNotEmpty) {
       for (final String path in missing) {
-        _io.err.writeln('找不到: $path');
+        _io.err.writeln(tr('找不到: $path', 'Not found: $path'));
       }
       return kExitNoInput;
     }
     for (final String input in audioInputs) {
       if (!FileSystemEntity.isDirectorySync(input) && !_isAudio(input)) {
-        return _io.usage('不是音频文件: $input', _kAlignUsageLine);
+        return _io.usage(
+          tr('不是音频文件: $input', 'Not an audio file: $input'),
+          _kAlignUsageLine,
+        );
       }
     }
     if (srt != null && !_isSubtitle(srt)) {
       return _io.usage(
-        '不是字幕文件: $srt（支持 ${kDiscoverySubtitleExtensions.join(' / ')}）',
+        tr(
+          '不是字幕文件: $srt（支持 ${kDiscoverySubtitleExtensions.join(' / ')}）',
+          'Not a subtitle file: $srt (supported: ${kDiscoverySubtitleExtensions.join(' / ')})',
+        ),
         _kAlignUsageLine,
       );
     }
@@ -122,7 +150,10 @@ class AudiobookCommands extends CliModule {
         collectAudiobookInputs(audioInputs);
     if (inputs.audio.isEmpty) {
       _io.err.writeln(
-        '--audio 里没有音频文件（${AudiobookStorage.audioExtensions.join(' / ')}）',
+        tr(
+          '--audio 里没有音频文件（${AudiobookStorage.audioExtensions.join(' / ')}）',
+          'No audio files in --audio (${AudiobookStorage.audioExtensions.join(' / ')})',
+        ),
       );
       return kExitNoInput;
     }
@@ -133,12 +164,18 @@ class AudiobookCommands extends CliModule {
       subtitle = inputs.subtitles.single;
     } else if (inputs.subtitles.isEmpty) {
       _io.err.writeln(
-        '--audio 目录里没有字幕：用 --srt 指定（没有字幕可先跑 fushi_server transcribe 生成）',
+        tr(
+          '--audio 目录里没有字幕：用 --srt 指定（没有字幕可先跑 fushi_server transcribe 生成）',
+          'No subtitles in the --audio directory: specify one with --srt (without subtitles, run fushi_server transcribe first to generate them)',
+        ),
       );
       return kExitNoInput;
     } else {
       return _io.usage(
-        '--audio 目录里有 ${inputs.subtitles.length} 份字幕，用 --srt 指定用哪一份',
+        tr(
+          '--audio 目录里有 ${inputs.subtitles.length} 份字幕，用 --srt 指定用哪一份',
+          'The --audio directory has ${inputs.subtitles.length} subtitles; use --srt to pick one',
+        ),
         _kAlignUsageLine,
       );
     }
@@ -146,11 +183,18 @@ class AudiobookCommands extends CliModule {
     return ctx.withRuntime((ServerRuntime rt) async {
       final EpubBookRow? row = await rt.db.getEpubBook(bookKey);
       if (row == null) {
-        _io.err.writeln('库里没有这本书: $bookKey');
+        _io.err.writeln(
+          tr('库里没有这本书: $bookKey', 'No such book in the library: $bookKey'),
+        );
         return kExitNoInput;
       }
       if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
-        _io.err.writeln('$bookKey 不是 EPUB 文字书（format=${row.format}），不能配有声书');
+        _io.err.writeln(
+          tr(
+            '$bookKey 不是 EPUB 文字书（format=${row.format}），不能配有声书',
+            '$bookKey is not an EPUB text book (format=${row.format}), so it cannot take an audiobook',
+          ),
+        );
         return kExitFailure;
       }
       final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
@@ -178,9 +222,14 @@ class AudiobookCommands extends CliModule {
         });
       } else {
         _io.out.writeln(
-          '对齐完成: $bookKey  ${result.cueCount} 条 cue，${result.persistedAudioPaths.length} 个音频，'
-          '健康度 ${health.kind.name}${health.ratePct == null ? '' : ' ${health.ratePct}%'}'
-          '${health.reason == null ? '' : '（${health.reason}）'}',
+          tr(
+            '对齐完成: $bookKey  ${result.cueCount} 条 cue，${result.persistedAudioPaths.length} 个音频，'
+                '健康度 ${health.kind.name}${health.ratePct == null ? '' : ' ${health.ratePct}%'}'
+                '${health.reason == null ? '' : '（${health.reason}）'}',
+            'Alignment done: $bookKey  ${result.cueCount} cues, ${result.persistedAudioPaths.length} audio files, '
+                'health ${health.kind.name}${health.ratePct == null ? '' : ' ${health.ratePct}%'}'
+                '${health.reason == null ? '' : ' (${health.reason})'}',
+          ),
         );
       }
       // 已落库，但匹配全失败的有声书不能当成功：脚本据此去换字幕 / 正文。

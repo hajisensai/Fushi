@@ -305,7 +305,7 @@ void main() {
         ]),
         65,
       );
-      expect(h.err.toString(), contains('配置'));
+      expect(h.err.toString(), contains('config file'));
 
       expect(await getPref(), 'keep');
       expect(h.configFile.readAsStringSync(), config);

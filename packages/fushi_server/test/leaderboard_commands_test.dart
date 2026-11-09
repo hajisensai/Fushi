@@ -325,7 +325,7 @@ void main() {
       },
     );
     expect(code, 0, reason: '$err');
-    expect(prompted, contains('恢复码'));
+    expect(prompted, contains('Recovery code'));
     // 已有账户不覆盖。
     expect(
       await lb(
@@ -358,7 +358,7 @@ void main() {
       ),
       77,
     );
-    expect(err.toString(), contains('解绑'));
+    expect(err.toString(), contains('unlinked'));
     expect(accountFile(profileId).existsSync(), isFalse);
 
     expect(
@@ -394,7 +394,7 @@ void main() {
     final String deadUrl = server.url;
     await server.close();
     expect(await lb(<String>['sync', '--json']), 69);
-    expect(json()['error'], contains('连不上'));
+    expect(json()['error'], contains('Cannot reach'));
     expect(
       await lb(
         <String>['import', '--server', deadUrl, '--force'],
