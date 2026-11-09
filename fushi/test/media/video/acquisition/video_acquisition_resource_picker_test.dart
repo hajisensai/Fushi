@@ -329,7 +329,7 @@ void main() {
       );
     });
 
-    test('tv All 只写季号的 BD 季包给出整包计划（BUG-4243）', () {
+    test('tv All 只写季号的 BD 季包给出整包计划（BUG-4267）', () {
       final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
         _FakeCandidate(
           remoteId: 'cappy',
@@ -352,7 +352,7 @@ void main() {
       expect(plan.picks.single.remoteId, 'cappy');
     });
 
-    test('Ave Mujica 实测候选：首个可规划的版本卡是做种最多的 BD 季包（BUG-4243）', () {
+    test('Ave Mujica 实测候选：首个可规划的版本卡是做种最多的 BD 季包（BUG-4267）', () {
       // 输入次序 = registry 相关度重排后的次序（作品全部已知标题都算贴合 →
       // 同分按做种数），这里直接给做种降序。
       final List<VideoResourceCandidate> items = <VideoResourceCandidate>[

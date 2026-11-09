@@ -33,10 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3824 条。点号进各自文件。
+> 共 3832 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4270](bugs/BUG-4270-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
+| [BUG-4269](bugs/BUG-4269-nyaa-trust-signals-ignored-by-ranking.md) | ✅ | ✅ | 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序 |
+| [BUG-4268](bugs/BUG-4268-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
+| [BUG-4267](bugs/BUG-4267-resource-search-misses-best-batches.md) | ✅ | ✅ | 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划 |
+| [BUG-4266](bugs/BUG-4266-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
+| [BUG-4265](bugs/BUG-4265-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
 | [BUG-4264](bugs/BUG-4264-popup-mined-button-tip-rightclick.md) | ✅ | ✅ | Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢 |
 | [BUG-4263](bugs/BUG-4263-ios-video-import-tmp-copy-lost.md) | ✅ | ✅ | iOS 单个导入的视频过一阵「找不到文件」，重新导入后又失效 |
 | [BUG-4262](bugs/BUG-4262-onedrive-dropbox-json-latin1-decode.md) | ✅ | ✅ | OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀 |
@@ -55,27 +61,10 @@
 | [BUG-4249](bugs/BUG-4249-subtitle-list-filter-labels-truncated.md) | ✅ | ✅ | 视频字幕列表 M3E 侧栏「全部 / 收藏」分段文字消失（横屏手机） |
 | [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
 | [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
-| [BUG-4244](bugs/BUG-4244-onedrive-json-asset-upload-session.md) | ✅ | ✅ | OneDrive 大 JSON 资产（聚合快照）不走上传会话，>10MiB 单请求 PUT 一直 400 |
-| [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
-| [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
-> 共 3806 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4244](bugs/BUG-4244-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
-| [BUG-4243](bugs/BUG-4243-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
-| [BUG-4242](bugs/BUG-4242-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
-> 共 3811 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4249](bugs/BUG-4249-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
-| [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
-| [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
 | [BUG-4246](bugs/BUG-4246-resource-search-sibling-work-accepted.md) | ✅ | ✅ | AI 下视频把同系列续作 / 另一季的发布当成所选作品（ガルパ☆ピコ 下成 Fever） |
 | [BUG-4245](bugs/BUG-4245-download-organizer-splits-disc-structure.md) | ✅ | ✅ | 视频下载整理器拆散 BDMV/VIDEO_TS 原盘结构，盘按 m2ts 逐文件改名 |
-| [BUG-4244](bugs/BUG-4244-nyaa-trust-signals-ignored-by-ranking.md) | ✅ | ✅ | 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序 |
-| [BUG-4243](bugs/BUG-4243-resource-search-misses-best-batches.md) | ✅ | ✅ | 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划 |
+| [BUG-4244](bugs/BUG-4244-onedrive-json-asset-upload-session.md) | ✅ | ✅ | OneDrive 大 JSON 资产（聚合快照）不走上传会话，>10MiB 单请求 PUT 一直 400 |
+| [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
 | [BUG-4240](bugs/BUG-4240-music-plugin-enabled-state-concurrent-load.md) | ✅ | ✅ | 音乐插件启停状态并发首读各得一份副本，停用丢失 |

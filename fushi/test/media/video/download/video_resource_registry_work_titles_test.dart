@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
-/// BUG-4243：AniList 上《BanG Dream! Ave Mujica》的英文名是副标题
+/// BUG-4267：AniList 上《BanG Dream! Ave Mujica》的英文名是副标题
 /// `Ave Mujica - The Die is Cast -`，它被选成首选查询词后，registry 只拿这一个词算
 /// 标题贴合度，写正式名的高种 BD / SubsPlease 发布全沉到低种逐集发布后面。作品自己
 /// 的任一已知标题都该算贴合。

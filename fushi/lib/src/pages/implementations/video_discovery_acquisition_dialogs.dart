@@ -873,7 +873,7 @@ class _VideoResourceSearchSurfaceState
         // 变成一批竞态。首条失败直接抛给下面的 catch（后端不可用 / 没配好这类
         // 前置问题对整批都成立，逐条重复报 N 次没有意义）；后续条目的失败聚合成
         // 一句，不让一条挂掉把其余的也废掉。已有任务管着同一颗种子是管线的领域
-        // 结果（[VideoDownloadAlreadyQueued]，BUG-4249）：单独计「已在队列」，
+        // 结果（[VideoDownloadAlreadyQueued]，BUG-4270）：单独计「已在队列」，
         // 不算失败、也不让首条重复把整批判成失败。
         int queued = 0;
         int alreadyQueued = 0;

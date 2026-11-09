@@ -111,7 +111,7 @@ double _titleScore(
 /// 贴合度只拿 [query] 这**一个**词比：AniList 上《BanG Dream! Ave Mujica》的英文名
 /// 是副标题 `Ave Mujica - The Die is Cast -`，被选作首选查询词后，标题恰好写副标题
 /// 的低种逐集发布拿满分，写正式名的 BD 全集 / SubsPlease 合集反被当成「不相关」
-/// 沉到十名开外（BUG-4243）。所以作品自己的任一已知标题都算贴合，同分时回到上游
+/// 沉到十名开外（BUG-4267）。所以作品自己的任一已知标题都算贴合，同分时回到上游
 /// 做种次序。季号**只**从 [season] / [query] 来——别名里的裸数字不参与，免得
 /// 系列别名把错季抬上来。
 List<VideoResourceCandidate> rankVideoResourcesByRelevance(

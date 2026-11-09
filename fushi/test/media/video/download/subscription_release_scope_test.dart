@@ -35,7 +35,7 @@ void main() {
       );
     });
 
-    test('只写季号、没有集号的季包是显式合集形态（BUG-4243）', () {
+    test('只写季号、没有集号的季包是显式合集形态（BUG-4267）', () {
       // 下载规划只认 looksLikeBatchVideoRelease：此前它不认这一形态，做种最多的
       // BD 季包整张卡给不出「全集」计划，被静默跳过。
       for (final String title in <String>[

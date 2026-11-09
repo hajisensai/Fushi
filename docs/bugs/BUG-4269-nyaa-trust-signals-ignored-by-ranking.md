@@ -1,4 +1,4 @@
-## BUG-4244 · 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序
+## BUG-4269 · 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序
 - **报告**：2026-11-08（用户：AI 下视频 / `fushi_cli aidl` 搜《ガールズバンドクライ》默认推荐 `SobsPlease` 逐集 1080p，怀疑是仿冒 SubsPlease 的发布者）
 - **真实性**：⚠️ 报告的现象是**误报**，但沿代码路径查出了真实的结构缺陷：
   - 误报部分：2026-11-08 经代理实抓 `nyaa.si/?q=Girls+Band+Cry+1080p&f=0&s=seeders&o=desc`，`[SobsPlease] Girls Band Cry - 01..13` 与 `[SubsPlease] Girls Band Cry (01-13) (1080p) [Batch]` 的行 class 都是 `success`（trusted），没有 remake 行；详情页 /view/1806016 写 `Released by SobsPlease group.` 并附完整制作名单，是独立字幕组，不是冒名者。它排第一是因为单集做种 50-71 高于 SubsPlease 合集 29，相关度同档时保持上游做种次序。3.5GB/集是高码率压制，码率偏好默认 any 不按体积筛。

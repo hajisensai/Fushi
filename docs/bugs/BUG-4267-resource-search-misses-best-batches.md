@@ -1,4 +1,4 @@
-## BUG-4243 · 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划
+## BUG-4267 · 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划
 - **报告**：2026-11-08（用户：AI 下视频 / `fushi_cli aidl` 搜《BanG Dream! Ave Mujica》只给出 ToonsHub 7 集 2 种，nyaa 上 cappybara BD 54 种、DBD-Raws、SubsPlease Batch 全没给）
 - **真实性**：✅ 真 bug。nyaa 请求本身没问题（HTML 搜索、`s=seeders&o=desc`，`!` 不影响结果），高种发布都已返回到 app，丢在下游两处：
   - A：AniList 169295 的 title=native=romaji=`BanG Dream! Ave Mujica`，英文名 `Ave Mujica - The Die is Cast -` 进别名并被选成首选查询词；provider 用全部叫法各查一次，但 `VideoResourceRegistry.search` 重排时只拿 `request.effectiveQuery` 一个词算标题贴合度（`packages/fushi_engine/lib/media/video/download/video_resource_registry.dart:131` → `packages/fushi_engine/lib/media/torrent/video_resource_relevance.dart:117`），写正式名的 cappybara / LoftMoon / SubsPlease / DBD 被当成「不相关」沉到十名开外；版本卡把相关度名次当组间主键（`video_resource_version_groups.dart:237`）。

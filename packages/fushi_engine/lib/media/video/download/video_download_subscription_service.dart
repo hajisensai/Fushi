@@ -776,7 +776,7 @@ class VideoDownloadSubscriptionService {
     } on VideoDownloadLeaseLost {
       rethrow;
     } on VideoDownloadAlreadyQueued catch (error) {
-      // BUG-4249：并发竞态兜底——预扫描之后、enqueue 之前别处刚建了同种任务
+      // BUG-4270：并发竞态兜底——预扫描之后、enqueue 之前别处刚建了同种任务
       // （或命中同包多卷 / 选集重叠的兄弟任务）。按 existingJobId 读回任务，交给
       // 与预扫描同一段生命周期处理：仍算数才挂上去，failed / needsAttention 走
       // 恢复与重试预算，绝不无条件标 queued。

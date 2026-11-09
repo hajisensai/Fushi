@@ -38,7 +38,7 @@ bool looksLikeBatchVideoRelease(String title) {
     return true;
   }
   // 季包：此前这条形态只有「没有集号」一个特征被订阅端兜住，下载规划（只认这里）
-  // 看不见它，做种最多的 BD 季包整张卡给不出计划、被静默跳过（BUG-4243）。
+  // 看不见它，做种最多的 BD 季包整张卡给不出计划、被静默跳过（BUG-4267）。
   if (_seasonPackMarker.hasMatch(title) && !_hasEpisodeNumber(title)) {
     return true;
   }

@@ -158,7 +158,7 @@ Future<VideoDownloadSubscriptionRow> _waitForSubscription(
 }
 
 void main() {
-  // BUG-4249：同一 infohash 已被别的 provider / remoteId（AI 下视频、发现页、
+  // BUG-4270：同一 infohash 已被别的 provider / remoteId（AI 下视频、发现页、
   // 另一个索引器）建的任务管着。订阅认既有任务只有一套判据：预扫描按 infohash
   // 也能认出它，且 AlreadyQueued 只是并发竞态的兜底；两条路都走同一段生命周期
   // 处理——仍算数才挂上去，failed 按预算恢复，绝不无条件标 queued 挂在死任务上。

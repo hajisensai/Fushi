@@ -203,7 +203,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   String _sayText(VideoAcquisitionSay say) {
     final Map<String, Object?> a = say.args;
     String arg(String key) => '${a[key] ?? ''}';
-    // BUG-4249：已有任务管着同一颗种子的条目不算失败，单独补一句「已在队列」。
+    // BUG-4270：已有任务管着同一颗种子的条目不算失败，单独补一句「已在队列」。
     String withAlreadyQueued(String text) {
       final Object? n = a['alreadyQueued'];
       return n is int && n > 0

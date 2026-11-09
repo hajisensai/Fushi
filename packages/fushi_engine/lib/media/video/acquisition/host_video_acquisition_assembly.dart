@@ -97,7 +97,7 @@ Future<VideoLibraryPresence?> resolveAiAcquisitionPresence(
 
 /// AI 下视频一次「下载」提交的批量入队：串行、首条真正失败直接抛（后端 / 落地
 /// 问题对整批成立）、后续失败只记数并落诊断日志。同一颗种子已有任务管着时管线给
-/// [VideoDownloadAlreadyQueued]，这里按「已在队列」计数而不是失败（BUG-4249）。
+/// [VideoDownloadAlreadyQueued]，这里按「已在队列」计数而不是失败（BUG-4270）。
 Future<VideoAcquisitionDownloadSubmission> enqueueVideoAcquisitionPicks({
   required VideoDownloadPipelineService pipeline,
   required VideoMediaReference media,
@@ -110,7 +110,7 @@ Future<VideoAcquisitionDownloadSubmission> enqueueVideoAcquisitionPicks({
   // 串行入队、首条失败直接抛（后端 / 落地问题对整批成立）、后续失败只记数：
   // 与资源搜索页的批量提交同一口径。已有任务管着同一颗种子是领域结果
   // （[VideoDownloadAlreadyQueued]），按「已在队列」计数，不算失败、不抛
-  // （BUG-4249）。
+  // （BUG-4270）。
   int queued = 0;
   int alreadyQueued = 0;
   for (int i = 0; i < picks.length; i++) {

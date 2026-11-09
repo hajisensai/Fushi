@@ -327,7 +327,7 @@ class SessionMarker {
   /// 无界面会话（[kSessionLifecycleHeadless]）只在收到 `resumed`（界面真的到了屏幕上、
   /// 用户能看见）时才升级为普通前台状态：iOS 后台拉起时引擎的初始生命周期就是
   /// `inactive`，[PreviousExitLog.foldIntoErrorLog] 补记它会把 headless 覆盖成「算前台」的
-  /// `inactive`，之后在后台被回收就被判成「启动即闪退」（反馈 1jhwtJQIZq、BUG-4242）。
+  /// `inactive`，之后在后台被回收就被判成「启动即闪退」（反馈 1jhwtJQIZq、BUG-4265）。
   /// `detached` 照常标 clean。
   void recordLifecycle(String state, {required int nowMs}) {
     if (state == 'detached') _clean = true;
@@ -582,7 +582,7 @@ const int kAndroidForegroundServiceImportance = 125;
 /// 重要性只在两头是硬事实：<= IMPORTANCE_FOREGROUND（界面在最上层）一定是前台；
 /// > IMPORTANCE_FOREGROUND_SERVICE 一定没在用户眼前。落在 101–125（前台服务：放歌 /
 /// 下载保活 / 悬浮窗）时界面可能早已退到后台，交给会话标记的生命周期判断（反馈
-/// vJrUPZW9I8：标记停在 paused 48 分钟后被杀，却按 125 判成「停在前台时没了」，BUG-4243）。
+/// vJrUPZW9I8：标记停在 paused 48 分钟后被杀，却按 125 判成「停在前台时没了」，BUG-4266）。
 ///
 /// [sessionSaysForeground]：同一进程会话标记的 [PreviousSession.diedInForeground]；
 /// 这条记录对不上会话标记（别的进程 / pid、没有标记）时为 null，按前台算（平台没说清时
@@ -1837,7 +1837,7 @@ abstract final class PreviousExitLog {
       );
       final int seen = state.readMacSeenAt();
       // 只收上次会话启动之后的报告：更早的属于更早的进程，不是「上次怎么没的」
-      // （反馈 J1ZWNUeaCT、BUG-4244）。没有上次会话（首次启动 / 标记丢了）时退回回看窗口。
+      // （反馈 J1ZWNUeaCT、BUG-4268）。没有上次会话（首次启动 / 标记丢了）时退回回看窗口。
       final int since = <int>[
         seen,
         now - kExitReportLookback.inMilliseconds,
@@ -1863,7 +1863,7 @@ abstract final class PreviousExitLog {
               ])) {
             // 同进程名、版本却对不上（别处留着的旧副本、旧安装启动失败）：不是上次那个
             // 进程的崩溃，只作诊断，不判定退出方式（反馈 J1ZWNUeaCT：3.3.0 上报了
-            // 3.0.1 三天前的 dyld「Library missing」，BUG-4244）。
+            // 3.0.1 三天前的 dyld「Library missing」，BUG-4268）。
             out.add(
               ExitReportEntry(
                 kMacCrashReportSource,

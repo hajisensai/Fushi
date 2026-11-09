@@ -4859,7 +4859,7 @@ void main() {
       );
       await failJob(environment, oldJobId);
 
-      // BUG-4249：挡下来的是类型化的「已在队列」并指向旧任务，不是撞唯一索引的
+      // BUG-4270：挡下来的是类型化的「已在队列」并指向旧任务，不是撞唯一索引的
       // 原始数据库异常；旧任务不被偷偷复活。
       await expectLater(
         environment.service.enqueue(environment.enqueueRequest()),
@@ -4946,7 +4946,7 @@ void main() {
     );
   });
 
-  group('BUG-4249 re-enqueueing a managed torrent is a domain outcome', () {
+  group('BUG-4270 re-enqueueing a managed torrent is a domain outcome', () {
     Matcher alreadyQueuedBy(String jobId, String lifecycle) => throwsA(
       isA<VideoDownloadAlreadyQueued>()
           .having(

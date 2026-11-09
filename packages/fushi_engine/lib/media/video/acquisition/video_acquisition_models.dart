@@ -1105,7 +1105,7 @@ class VideoAcquisitionResourcesLoadedEvent extends VideoAcquisitionEvent {
 }
 
 /// 一次下载提交的结果：[queued] = 新建的任务条数，[alreadyQueued] = 已有任务管着
-/// 同一颗种子、没有重复入队的条数（BUG-4249：不算失败）。
+/// 同一颗种子、没有重复入队的条数（BUG-4270：不算失败）。
 typedef VideoAcquisitionDownloadSubmission = ({int queued, int alreadyQueued});
 
 /// 提交成功（[count] = 入队条数；订阅为 1；[alreadyQueued] = 已在队列的条数）。
@@ -1187,7 +1187,7 @@ class VideoAcquisitionFranchiseSubmittedEvent extends VideoAcquisitionEvent {
   /// 提交失败的作品数。
   final int failed;
 
-  /// 已有任务管着、没有重复入队的下载条数（BUG-4249）。
+  /// 已有任务管着、没有重复入队的下载条数（BUG-4270）。
   final int alreadyQueued;
 }
 

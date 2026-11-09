@@ -141,7 +141,7 @@ void main() {
       expect(ranked.first.title, contains('S03'));
     });
 
-    test('作品的其它已知标题同样算贴合：首选词是英文副标题也不压掉正式名发布（BUG-4243）', () {
+    test('作品的其它已知标题同样算贴合：首选词是英文副标题也不压掉正式名发布（BUG-4267）', () {
       final List<VideoResourceCandidate> input = <VideoResourceCandidate>[
         _candidate(
           '[LoftMoon] BanG Dream! Ave Mujica - 01 (S01E01) - (WEB 1080p HEVC)',
