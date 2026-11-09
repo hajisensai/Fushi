@@ -148,7 +148,9 @@ void main() {
     final Completer<void> started = Completer<void>();
     final StringBuffer err = StringBuffer();
     serve.stdout.transform(utf8.decoder).listen((String chunk) {
-      if (chunk.contains('fushi_server started') && !started.isCompleted) started.complete();
+      if (chunk.contains('fushi_server started') && !started.isCompleted) {
+        started.complete();
+      }
     });
     serve.stderr.transform(utf8.decoder).listen(err.write);
     unawaited(
