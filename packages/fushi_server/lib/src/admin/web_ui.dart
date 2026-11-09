@@ -61,7 +61,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 </style></head><body>
 <header><h1>fushi_server</h1><span id="devname" class="muted"></span><span class="sp"></span>
 <nav>
-<button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
+<button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button><button data-s="dictionaries">词典</button>
 <button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
 <button data-s="subscriptions">订阅</button><button data-s="ai">AI 助手</button><button data-s="anki">Anki</button><button data-s="srs">复习</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
@@ -95,6 +95,15 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <input type="text" id="lib-id" placeholder="id（可空）" style="min-width:120px">
 <button class="b" id="btn-lib-add">添加</button></div>
 <p class="small muted">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</p>
+</div>
+</section>
+
+<section id="s-dictionaries">
+<div class="card"><h2>托管词典</h2>
+<p id="dict-engine" class="small muted"></p>
+<table><thead><tr><th>名称</th><th>类型</th><th>语言</th><th>版本</th><th>大小</th><th>默认启用</th><th>操作</th></tr></thead><tbody id="dicts"></tbody></table>
+<div class="row" style="margin-top:12px"><button class="b sec" id="btn-dict-reload">重新装载引擎</button></div>
+<p class="small muted">「默认启用」只对不携带配置词典选择的请求生效（浏览器扩展、旧版 app）；Fushi app 每次查词都带自己配置的选择，会覆盖这里的默认值。</p>
 </div>
 </section>
 
@@ -705,8 +714,28 @@ async function loadAiDetail(){
 async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10; pre.textContent = r.lines.join('\n'); if(atBottom) pre.scrollTop=pre.scrollHeight; }
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
+// ── 词典 ──
+// 清单要统计每本词典目录的占用（遍历文件），不跟 2.5 秒轮询走：进页时拉一次，操作后重拉。
+let dictsLoaded=false;
+$('nav').addEventListener('click', (e)=>{ if(e.target.dataset && e.target.dataset.s==='dictionaries') dictsLoaded=false; }, true);
+async function loadDictionaries(force){
+  if(dictsLoaded && !force) return;
+  const r = await api('dictionaries'); dictsLoaded=true;
+  $('#dict-engine').innerHTML = r.engineAvailable
+    ? `<span class="tag ok">引擎运行中</span> 已装载 ${esc(r.loadedCount)} 本`
+    : `<span class="tag err">引擎不可用</span> ${esc(r.engineUnavailableReason||'')}`;
+  $('#dicts').innerHTML = (r.dictionaries||[]).map(d=>{
+    const label = d.displayName || d.name;
+    const title = label!==d.name ? ` title="${esc(d.name)}"` : '';
+    return `<tr><td${title}>${esc(label)}${d.present?'':' <span class="small muted">文件缺失</span>'}</td><td>${esc(d.type)}${d.formatKey?` <span class="small muted">${esc(d.formatKey)}</span>`:''}</td><td>${esc(d.sourceLanguage||'—')}</td><td class="small">${esc(d.revision||'—')}</td><td class="small">${d.present?fmtBytes(d.sizeBytes):'—'}</td><td><input type="checkbox" data-dict-default="${esc(d.name)}"${d.defaultEnabled?' checked':''}></td><td><button class="b danger" data-dict-del="${esc(d.name)}">删除</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="muted">服务端还没有词典</td></tr>';
+  $('#dicts').querySelectorAll('[data-dict-default]').forEach(c=>c.onchange=async()=>{ const on=c.checked; try{ await put('dictionaries/'+encodeURIComponent(c.dataset.dictDefault),{defaultEnabled:on}); toast(on?'已默认启用':'已默认停用'); }catch(e){ c.checked=!on; toast('失败: '+e.message); } });
+  $('#dicts').querySelectorAll('[data-dict-del]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('删除词典「'+b.dataset.dictDel+'」？会删掉服务端的词典文件，已配置它的设备将查不到它。')) return; await del('dictionaries/'+encodeURIComponent(b.dataset.dictDel)); toast('已删除'); await loadDictionaries(true); }));
+}
+$('#btn-dict-reload').onclick = guard(async()=>{ const r=await post('dictionaries/reload'); toast('已重新装载，'+r.loadedCount+' 本'); await loadDictionaries(true); });
+
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, dictionaries:()=>loadDictionaries(false), upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);
