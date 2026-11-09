@@ -59,6 +59,9 @@ class TyranoDomFrame {
     required this.clientWidth,
     required this.clientHeight,
     required this.vertical,
+    this.documentId = '',
+    this.lineSeq = 0,
+    this.voiceDeclared = false,
   });
 
   /// 台词正文：可见消息层（`messageN_fore`，display != none）里的字形按 DOM 顺序拼接，
@@ -88,6 +91,17 @@ class TyranoDomFrame {
 
   /// TyranoScript 纵排（`TYRANO.kag.config.vertical == "true"`）。
   final bool vertical;
+
+  /// 观察脚本实例的文档 id（页面重载 / 重注入后变化；[lineSeq] 只在同一 id 内可比）。
+  final String documentId;
+
+  /// 脚本侧句序号：正文从非空变成「不是上一份的延续」时 +1。语音事件带同一计数，
+  /// Dart 据此把语音归到它所属的那一句（见 tyrano_dom_observer_script.dart）。
+  final int lineSeq;
+
+  /// 引擎声明了语音缓冲区（`stat.map_vo.vobuf` 非空，即用了 `[voconfig]`）：此时
+  /// 「这句有没有语音、是哪条」由 DOM 语音事件权威给出。
+  final bool voiceDeclared;
 }
 
 /// 脚本推回的单个字形（CSS 像素、视口坐标），解析的中间结果。
@@ -132,7 +146,19 @@ class TyranoDomPayload {
     required this.viewportHeight,
     required this.speaker,
     required this.glyphs,
+    this.documentId = '',
+    this.lineSeq = 0,
+    this.voiceDeclared = false,
   });
+
+  /// 文档 id（`doc`）。
+  final String documentId;
+
+  /// 句序号（`ln`）。
+  final int lineSeq;
+
+  /// 声明了语音缓冲区（`vo`）。
+  final bool voiceDeclared;
 
   /// `TYRANO.kag.stat.is_adding_text`。
   final bool adding;
@@ -165,7 +191,14 @@ TyranoDomPayload? parseTyranoDomPayload(String payload) {
     return null;
   }
   if (decoded is! Map<String, Object?>) return null;
+  return parseTyranoDomPayloadMap(decoded);
+}
+
+/// [parseTyranoDomPayload] 的已解码版本（会话先解码一次再分派快照 / 语音消息）。
+TyranoDomPayload? parseTyranoDomPayloadMap(Map<String, Object?> decoded) {
   if (decoded['v'] != kTyranoDomPayloadVersion) return null;
+  // 带 `k` 的是别的消息（语音事件，见 parseTyranoDomVoicePayload），不是快照。
+  if (decoded.containsKey('k')) return null;
   final Object? rawGlyphs = decoded['glyphs'];
   if (rawGlyphs is! List<Object?>) return null;
   final List<TyranoDomRawGlyph> glyphs = <TyranoDomRawGlyph>[];
@@ -200,6 +233,11 @@ TyranoDomPayload? parseTyranoDomPayload(String payload) {
     viewportHeight: _number(decoded['vh']) ?? 0,
     speaker: decoded['speaker'] is String ? decoded['speaker']! as String : '',
     glyphs: glyphs,
+    documentId: decoded['doc'] is String ? decoded['doc']! as String : '',
+    lineSeq: decoded['ln'] is int && (decoded['ln']! as int) >= 0
+        ? decoded['ln']! as int
+        : 0,
+    voiceDeclared: decoded['vo'] == true,
   );
 }
 
@@ -270,6 +308,9 @@ class TyranoDomFrameAssembler {
       clientWidth: (payload.viewportWidth * dpr).round(),
       clientHeight: (payload.viewportHeight * dpr).round(),
       vertical: payload.vertical,
+      documentId: payload.documentId,
+      lineSeq: payload.lineSeq,
+      voiceDeclared: payload.voiceDeclared,
     );
   }
 }

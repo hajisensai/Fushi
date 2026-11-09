@@ -11,6 +11,21 @@
 //   * 半角空格是常驻 opacity:0 的 span.char，Dart 侧不让它阻塞完成判定。
 //
 // 重复注入（重连 / 新文档脚本 + 当前文档补注）时先 dispose 旧实例再装新的。
+//
+// 句序号 `ln`（与文档 id `doc` 一起随帧推送）：可见正文从非空变成「不是上一份正文的
+// 延续」（含被清空）时 +1。TyranoScript 在 `[p]` 之后执行下一个 tag 之前就同步清空消息层
+// （kag.tag.js nextOrder 的 flag_ref_page 分支），所以 `#名字`（chara_ptext）触发的
+// [vostart] 自动语音、以及显式 `[playse]` 语音播放时，旧句已经清掉 —— 播放挂钩里同步
+// 读一次正文、推进句序号，语音就落在它所属的新句上，不依赖 MutationObserver 的异步时序。
+// 若语音在 flag_ref_page 仍为 true（翻页清空还没发生）时播放，它属于下一句：ln + 1。
+// 同一句里的多条语音（多人同时配音、`[l]` 续行后的新语音）带同一个 ln。
+//
+// 语音判据（引擎级，见 kag.tag_audio.js）：`[playse]` / `[fadeinse]` / [vostart] 自动语音
+// 都经 `master_tag.playbgm.start`（target="se"）；引擎自己在 playbgm.play 里用
+// `!!stat.map_vo.vobuf[buf]` 判定 is_voice。挂钩用同一判据：buf 是 `[voconfig sebuf=N]`
+// 声明的语音缓冲区才推语音事件。没用 voconfig、直接 `[playse buf=N]` 播语音的游戏，引擎
+// 状态里没有「这是语音」的证据，按「只做引擎级判据」不猜，不推事件（不配对）。挂钩在
+// play_se=false / 跳过模式的早退之前，记录的是「这句的语音原件是哪个」，与是否真的出声无关。
 
 /// 观察脚本调用的绑定函数名（`Runtime.addBinding`）。
 const String kTyranoDomBindingName = '__fushiTyranoDomV1';
@@ -29,7 +44,11 @@ const String kTyranoDomObserverScript = r'''
   var BINDING = '__fushiTyranoDomV1';
   var previous = window.__fushiTyranoDomObserverV1;
   if (previous && typeof previous.dispose === 'function') previous.dispose();
-  var state = { timer: 0, settle: 0, wait: 0, last: '', observer: null, bound: [], waitTries: 0, disposed: false };
+  var state = {
+    timer: 0, settle: 0, wait: 0, last: '', observer: null, bound: [], waitTries: 0, disposed: false,
+    doc: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    seq: 0, seqText: '', hook: null
+  };
 
   function isVisible(el) {
     var cs = window.getComputedStyle(el);
@@ -41,6 +60,16 @@ const String kTyranoDomObserverScript = r'''
       if (tag === 'RT' || tag === 'RP') return true;
     }
     return false;
+  }
+  // 一个字形的正文（与 glyphOf 同一取法：.fill 优先，跳过 <rt>/<rp>）。
+  function glyphText(ch) {
+    var rep = ch.querySelector(':scope > .fill') || ch;
+    var walker = document.createTreeWalker(rep, NodeFilter.SHOW_TEXT);
+    var text = '';
+    for (var node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!inRubyText(node, rep)) text += node.data;
+    }
+    return text;
   }
   // 一个字形：.fill（描边 / 阴影装饰模式里真正的字）优先，否则 span.char 本身；
   // 正文与矩形都只取不在 <rt>/<rp> 里的文本节点（ruby 只取 rb 部分）。
@@ -88,22 +117,84 @@ const String kTyranoDomObserverScript = r'''
     }
     return '';
   }
+  // 当前可见正文（与 snapshot 的字形拼接结果逐字相同），播放挂钩同步调用。
+  function currentText() {
+    var text = '';
+    var layers = messageLayers();
+    for (var i = 0; i < layers.length; i++) {
+      if (!isVisible(layers[i])) continue;
+      var chars = layers[i].querySelectorAll('.message_inner span.char');
+      for (var j = 0; j < chars.length; j++) text += glyphText(chars[j]);
+    }
+    return text;
+  }
+  // 句序号推进：上一份正文非空、这一份不是它的延续（含清空）→ 新句。
+  function syncSeq(text) {
+    if (state.seqText && text.indexOf(state.seqText) !== 0) state.seq++;
+    state.seqText = text;
+  }
+  function voiceBuffersDeclared(stat) {
+    var vo = stat && stat.map_vo;
+    if (!vo || !vo.vobuf) return false;
+    for (var key in vo.vobuf) if (vo.vobuf[key]) return true;
+    return false;
+  }
+  function onPlay(pm) {
+    if (!pm || pm.target !== 'se') return;
+    var stat = window.TYRANO.kag.stat || {};
+    var vo = stat.map_vo;
+    // 不是 [voconfig] 声明的语音缓冲区：引擎不认为它是语音，不猜。
+    if (!vo || !vo.vobuf || !vo.vobuf[pm.buf]) return;
+    var storage = String(pm.storage || '');
+    if (!storage) return;
+    var text = currentText();
+    syncSeq(text);
+    var ln = state.seq + (stat.flag_ref_page === true && text ? 1 : 0);
+    var path = (window.$ && typeof window.$.parseStorage === 'function')
+      ? String(window.$.parseStorage(storage, 'sound'))
+      : './data/sound/' + storage;
+    var payload = { v: 1, k: 'voice', doc: state.doc, ln: ln, buf: String(pm.buf), path: path, b64: !!pm.base64 };
+    if (typeof window[BINDING] === 'function') window[BINDING](JSON.stringify(payload));
+  }
+  // 挂 master_tag.playbgm.start（幂等：同一个 tag 对象只挂一次；dispose 时若仍在最外层就
+  // 还原，被别人再包了一层则只把自己变成直通）。
+  function installVoiceHook() {
+    if (state.disposed) return;
+    var kag = window.TYRANO && window.TYRANO.kag;
+    var tag = kag && kag.ftag && kag.ftag.master_tag && kag.ftag.master_tag.playbgm;
+    if (!tag || typeof tag.start !== 'function') return;
+    if (state.hook && state.hook.tag === tag) return;
+    var orig = tag.start;
+    var wrapper = function () {
+      if (!state.disposed) {
+        try { onPlay(arguments[0]); } catch (e) { /* 观察失败绝不影响游戏播放 */ }
+      }
+      return orig.apply(this, arguments);
+    };
+    tag.start = wrapper;
+    state.hook = { tag: tag, wrapper: wrapper, orig: orig };
+  }
   function snapshot() {
     var kag = window.TYRANO && window.TYRANO.kag;
     var stat = (kag && kag.stat) || {};
     var config = (kag && kag.config) || {};
     var glyphs = [];
+    var text = '';
     var layers = messageLayers();
     for (var i = 0; i < layers.length; i++) {
       if (!isVisible(layers[i])) continue;
       var chars = layers[i].querySelectorAll('.message_inner span.char');
       for (var j = 0; j < chars.length; j++) {
         var g = glyphOf(chars[j]);
-        if (g.t) glyphs.push(g);
+        if (g.t) { glyphs.push(g); text += g.t; }
       }
     }
+    syncSeq(text);
     return {
       v: 1,
+      doc: state.doc,
+      ln: state.seq,
+      vo: voiceBuffersDeclared(stat),
       adding: stat.is_adding_text === true,
       vertical: String(config.vertical) === 'true',
       dpr: window.devicePixelRatio || 1,
@@ -144,6 +235,7 @@ const String kTyranoDomObserverScript = r'''
   }
   function flush(force) {
     state.timer = 0;
+    installVoiceHook();
     rebind();
     var snap = snapshot();
     var json = JSON.stringify(snap);
@@ -180,6 +272,7 @@ const String kTyranoDomObserverScript = r'''
     clearTimeout(state.timer); clearTimeout(state.settle); clearTimeout(state.wait);
     state.timer = state.settle = state.wait = 0;
     if (state.observer) state.observer.disconnect();
+    if (state.hook && state.hook.tag.start === state.hook.wrapper) state.hook.tag.start = state.hook.orig;
     window.removeEventListener('resize', schedule);
     window.removeEventListener('scroll', schedule, true);
     document.removeEventListener('animationend', schedule, true);

@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi/src/mining/tyrano_dom/tyrano_asar.dart';
 import 'package:path/path.dart' as p;
 
 /// TyranoScript 运行时在应用根目录下的固定目录名。
@@ -47,30 +48,8 @@ bool _isTyranoNwjsDirectory(String dir) {
 
 /// 读 asar 头（Chromium Pickle：`u32 4, u32 头大小, u32 载荷大小, u32 JSON 长度,
 /// JSON`），返回顶层条目名；不是合法 asar 返回 null。只读文件开头，不读整包。
-Set<String>? readAsarTopLevelEntries(String asarPath) {
-  RandomAccessFile? raf;
-  try {
-    raf = File(asarPath).openSync();
-    final Uint8List head = raf.readSync(16);
-    if (head.length < 16) return null;
-    final ByteData data = ByteData.sublistView(head);
-    if (data.getUint32(0, Endian.little) != 4) return null;
-    final int jsonLength = data.getUint32(12, Endian.little);
-    // 头 JSON 带全部文件索引，大游戏也就几 MB；超过 64 MB 视为不是 asar。
-    if (jsonLength <= 0 || jsonLength > 64 * 1024 * 1024) return null;
-    final Uint8List jsonBytes = raf.readSync(jsonLength);
-    if (jsonBytes.length != jsonLength) return null;
-    final Object? decoded = jsonDecode(utf8.decode(jsonBytes));
-    if (decoded is! Map<String, Object?>) return null;
-    final Object? files = decoded['files'];
-    if (files is! Map<String, Object?>) return null;
-    return files.keys.toSet();
-  } on Object {
-    return null;
-  } finally {
-    raf?.closeSync();
-  }
-}
+Set<String>? readAsarTopLevelEntries(String asarPath) =>
+    AsarArchive.openSync(asarPath)?.topLevelEntries;
 
 /// zip 的中央目录里有没有以 `<name>/` 开头的条目。只读文件尾部的中央目录，不解压。
 /// ZIP64 / 损坏的 zip 返回 false。

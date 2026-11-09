@@ -18,6 +18,7 @@ import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_launch.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_session.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_voice.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -5232,9 +5233,16 @@ void _gameExitWatchTests() {
 class _FakeTyranoDomSource implements TyranoDomFrameSource {
   final StreamController<TyranoDomFrame> _controller =
       StreamController<TyranoDomFrame>();
+  final StreamController<TyranoDomVoiceEvent> _voices =
+      StreamController<TyranoDomVoiceEvent>();
   final Completer<TyranoDomEndReason> _done = Completer<TyranoDomEndReason>();
   TyranoDomFrame? _latest;
   int closeCalls = 0;
+
+  @override
+  Stream<TyranoDomVoiceEvent> get voices => _voices.stream;
+
+  void emitVoice(TyranoDomVoiceEvent voice) => _voices.add(voice);
 
   @override
   Stream<TyranoDomFrame> get frames => _controller.stream;
@@ -5253,6 +5261,7 @@ class _FakeTyranoDomSource implements TyranoDomFrameSource {
   void disconnect() {
     if (!_done.isCompleted) _done.complete(TyranoDomEndReason.disconnected);
     unawaited(_controller.close());
+    unawaited(_voices.close());
   }
 
   @override
@@ -5260,6 +5269,7 @@ class _FakeTyranoDomSource implements TyranoDomFrameSource {
     closeCalls++;
     if (!_done.isCompleted) _done.complete(TyranoDomEndReason.closed);
     unawaited(_controller.close());
+    unawaited(_voices.close());
   }
 }
 
