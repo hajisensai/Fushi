@@ -26,6 +26,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
@@ -362,6 +363,8 @@ class PlexVideoClient
     MediaServerSort.communityRating => 'rating:desc',
   };
 
+  /// 季集号升序、缺号排最后；同号 / 都缺号返回 0，调用方必须用稳定排序
+  /// （[mergeSort]）保住服务器原序——[List.sort] 超过 32 个元素不稳定（BUG-4243）。
   static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
     final int sa = a.seasonNumber ?? 1 << 30;
     final int sb = b.seasonNumber ?? 1 << 30;
@@ -425,10 +428,12 @@ class PlexVideoClient
   @override
   Future<List<MediaServerItem>> listSeasons(String seriesId) async {
     final PlexMetadataPage page = await api.children(seriesId);
-    return <MediaServerItem>[
+    final List<MediaServerItem> seasons = <MediaServerItem>[
       for (final MediaServerItem s in mediaServerItemsFrom(page.items))
         if (s.type == MediaServerItemType.season) s,
-    ]..sort(_bySeasonThenEpisode);
+    ];
+    mergeSort<MediaServerItem>(seasons, compare: _bySeasonThenEpisode);
+    return seasons;
   }
 
   @override
@@ -442,11 +447,13 @@ class PlexVideoClient
         ? await api.children(seasonId, start: startIndex, size: limit)
         : await api.allLeaves(seriesId, start: startIndex, size: limit);
     final MediaServerPage out = _pageFrom(page, startIndex);
+    final List<MediaServerItem> episodes = <MediaServerItem>[
+      for (final MediaServerItem e in out.items)
+        if (e.type == MediaServerItemType.episode) e,
+    ];
+    mergeSort<MediaServerItem>(episodes, compare: _bySeasonThenEpisode);
     return MediaServerPage(
-      items: <MediaServerItem>[
-        for (final MediaServerItem e in out.items)
-          if (e.type == MediaServerItemType.episode) e,
-      ]..sort(_bySeasonThenEpisode),
+      items: episodes,
       totalCount: out.totalCount,
       startIndex: out.startIndex,
       nextStartIndex: out.nextStartIndex,
