@@ -1373,7 +1373,7 @@ void main() {
   );
 
   test(
-    'BUG-4227: audio fallback policy is restored when attaching to a running '
+    'BUG-4247: audio fallback policy is restored when attaching to a running '
     'game, sharing the per-game memory with launch',
     () async {
       final TexthookerService service = TexthookerService.test();
