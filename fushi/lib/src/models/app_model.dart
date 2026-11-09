@@ -9397,9 +9397,10 @@ class AppModel
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
     final bool tryRemoteFirst = allowRemoteLookup && remoteLookupEnabled;
-    // 远端优先（瘦客户端经已配对电脑查词）：远端与本地**并发**发起，语义不变——远端
-    // 给出结果就用远端，远端没有（null）才用本地。以前是先等远端（最坏 3s × 候选数
-    // 的传输超时）再开始本地，两段时间串起来。
+    // 远端（已配对电脑 / 服务器）与本地**并发**发起，两边都有结果时**合并**成一份
+    // （用户 2026-11-09 拍板，[mergeDictionarySearchResults]）：以前远端一给结果就只用
+    // 远端，本机装的词典（Jitendex、频率词典…）随之从弹窗里消失。以前是先等远端（最坏
+    // 3s × 候选数的传输超时）再开始本地，两段时间串起来。
     final Future<DictionarySearchResult?>? remote = tryRemoteFirst
         ? _searchRemoteDictionary(
             searchTerm: searchTerm,
@@ -9423,10 +9424,36 @@ class AppModel
     if (remote != null) {
       final DictionarySearchResult? remoteResult = await remote;
       if (remoteResult != null) {
-        // 远端赢：本地那份照常跑完（结果写进本地缓存，无害），这里不再等它；它的
-        // 失败与旧实现「远端命中就根本不跑本地」一样不影响本次结果。
-        local.ignore();
-        return remoteResult;
+        final _LocalDictionaryLookup localLookup;
+        try {
+          localLookup = await local;
+        } catch (e, stack) {
+          // 本机这份失败不拖垮远端已给出的结果（与以前「远端命中就不看本地」同口径），
+          // 但要留痕。
+          ErrorLogService.instance.log('localDictionaryLookup', e, stack);
+          return remoteResult;
+        }
+        final DictionarySearchResult? localResult = localLookup.result;
+        // 本机未命中 / 引擎未就绪：只有远端那份，原样返回。
+        if (localResult == null) return remoteResult;
+        // 合并结果不进缓存（远端结果本来就不缓存）；本机那份已在
+        // [_searchLocalDictionary] 里照旧写进本机缓存。
+        final DictionaryLookupFilters filters =
+            filtersOverride ??
+            profileView?.lookupFilters ??
+            dictRepo.lookupFilters;
+        return mergeDictionarySearchResults(
+          local: localResult,
+          remote: remoteResult,
+          dictionaryOrder: filters.termDictionaryOrder,
+          localDictionaryNames: <String>{
+            for (final Dictionary d
+                in profileView?.dictionaries ?? dictRepo.dictionaries)
+              if (!d.isHidden(JapaneseLanguage.instance)) d.name,
+          },
+          maximumTerms: effectiveMaxTerms,
+          localDictionaryStyles: FushiDicts.dictionaryStyles,
+        )!;
       }
     }
 
