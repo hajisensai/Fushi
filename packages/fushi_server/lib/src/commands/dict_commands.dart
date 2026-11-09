@@ -12,6 +12,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:args/args.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
@@ -101,7 +102,15 @@ Future<DictImportOutcome> importDictionaryArchive({
         type: Value<String>(type),
         metadataJson: Value<String>(
           jsonEncode(<String, String>{
-            if (result.kanjiCount > 0) 'hasKanji': 'true',
+            // 来源与内容语言（revision / sourceLanguage / …），见该函数注释。
+            ...await readImportedSourceMetadata(
+              importedDir: target,
+              archive: archive,
+            ),
+            if (result.kanjiCount > 0) kDictHasKanjiKey: 'true',
+            // 混合词典汉字部分的开关 / 位置是用户设置，同名重导继承（与 app 同口径）。
+            if (result.kanjiCount > 0 && previous != null)
+              ...kanjiPartSettingsIn(_decodeMetadata(previous.metadataJson)),
             // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
             'typeProbe': '1',
           }),
@@ -128,6 +137,97 @@ Future<DictImportOutcome> importDictionaryArchive({
     );
   } finally {
     if (staging.existsSync()) await staging.delete(recursive: true);
+  }
+}
+
+/// 这本词典来自 `index.json` 的来源与内容语言 metadata，键与取值规范和 app 导入一致
+/// （`fushi_dictionary` 的 `parseSourceMetadataFromIndexJson`：字符串字段 trim 后
+/// 非空才落；`isUpdatable` 是 bool 才落成 `'true'` / `'false'`）。
+///
+/// 两个来源，资源目录那份优先：
+/// - [importedDir] 下原生导入器写回的 `index.json`（MDX / DSL 等也写一份）——与 app
+///   读的是同一个文件，`revision` / `isUpdatable` / `indexUrl` / `downloadUrl` 取这里；
+/// - [archive] 里的原始 `index.json`（只认 zip 根目录）——原生写回时用的结构体
+///   （`native/fushidicts/fushidicts_src/json/yomitan_parser.hpp` 的 `Index`）不带
+///   `sourceLanguage` / `targetLanguage`，写回的文件里这两个字段丢了，只能从原包补。
+///
+/// 解析函数在带 dio 的 `fushi_dictionary.dart` 库里，服务端只许 import 零 Flutter 的
+/// `fushi_dictionary_core.dart`，所以这里按同一规范读，键集合见
+/// [kImportedSourceMetadataKeys]。缺文件 / 坏 JSON / 不是 zip → 那一侧为空。
+Future<Map<String, String>> readImportedSourceMetadata({
+  required Directory importedDir,
+  required File archive,
+}) async {
+  final File written = File(p.join(importedDir.path, 'index.json'));
+  final Map<String, String> fromWritten = await written.exists()
+      ? parseIndexSourceMetadata(await written.readAsString())
+      : <String, String>{};
+  return <String, String>{..._archiveIndexMetadata(archive), ...fromWritten};
+}
+
+Map<String, String> _archiveIndexMetadata(File archive) {
+  if (!archive.existsSync()) return <String, String>{};
+  InputFileStream? input;
+  try {
+    input = InputFileStream(archive.path);
+    final ArchiveFile? entry = ZipDecoder()
+        .decodeBuffer(input)
+        .findFile('index.json');
+    if (entry == null || !entry.isFile) return <String, String>{};
+    return parseIndexSourceMetadata(
+      utf8.decode(entry.content as List<int>, allowMalformed: true),
+    );
+  } on Object {
+    // 不是 zip（裸 MDX / DSL 文件）或包损坏：原生导入已成功，元数据缺省即可。
+    return <String, String>{};
+  } finally {
+    input?.closeSync();
+  }
+}
+
+/// `index.json` 文本 → 来源 metadata（[kImportedSourceMetadataKeys]）。坏 JSON /
+/// 顶层非对象 → 空 Map。
+Map<String, String> parseIndexSourceMetadata(String text) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException {
+    return <String, String>{};
+  }
+  if (decoded is! Map) return <String, String>{};
+  final Map<String, String> out = <String, String>{};
+  for (final String key in kImportedSourceMetadataKeys) {
+    final Object? v = decoded[key];
+    if (key == 'isUpdatable') {
+      if (v is bool) out[key] = v ? 'true' : 'false';
+    } else if (v is String && v.trim().isNotEmpty) {
+      out[key] = v.trim();
+    }
+  }
+  return out;
+}
+
+/// app 导入时从 `index.json` 落进 metadata 的键（与 `parseSourceMetadataFromIndexJson` 同集）。
+const List<String> kImportedSourceMetadataKeys = <String>[
+  'revision',
+  'indexUrl',
+  'downloadUrl',
+  'sourceLanguage',
+  'targetLanguage',
+  'isUpdatable',
+];
+
+Map<String, String> _decodeMetadata(String json) {
+  try {
+    final Object? decoded = jsonDecode(json);
+    if (decoded is! Map) return <String, String>{};
+    return <String, String>{
+      for (final MapEntry<Object?, Object?> e in decoded.entries)
+        if (e.key is String && e.value is String)
+          e.key! as String: e.value! as String,
+    };
+  } on FormatException {
+    return <String, String>{};
   }
 }
 
@@ -167,6 +267,8 @@ Map<String, Object?> dictionaryRowJson(
   'name': r.name,
   'type': r.type,
   'order': r.order,
+  'language':
+      r.languageOverride ?? _decodeMetadata(r.metadataJson)['sourceLanguage'],
   'hidden': r.hiddenLanguagesJson.contains('"ja"'),
   'present': Directory(p.join(resourceRoot.path, r.name)).existsSync(),
 };
@@ -248,7 +350,8 @@ class DictCliModule extends CliModule {
         rt.paths.dictionaryResources,
       );
       stdout.writeln(
-        '${r.order.toString().padLeft(3)}  ${r.type.padRight(9)} ${r.name}'
+        '${r.order.toString().padLeft(3)}  ${r.type.padRight(9)} '
+        '${((row['language'] as String?) ?? '-').padRight(5)} ${r.name}'
         '${row['hidden'] == true ? '  [hidden]' : ''}${row['present'] == true ? '' : '  [missing files]'}',
       );
     }
