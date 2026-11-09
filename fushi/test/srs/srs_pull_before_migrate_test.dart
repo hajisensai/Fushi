@@ -115,14 +115,18 @@ class _RecordingLinker implements SrsProfileLinker {
   ) async => SrsProfileLinkOutcome(store);
 
   @override
-  Future<SrsDbStore> adopt(
+  Future<SrsProfileAdoptResult> adopt(
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
   }) async {
     adoptedWithin.add(within);
-    return store;
+    return SrsProfileAdopted(store);
   }
+
+  @override
+  Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store) async =>
+      null;
 
   @override
   Future<void> publish(

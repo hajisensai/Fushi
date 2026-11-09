@@ -212,6 +212,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 正文滚动（窄屏整页 / 宽屏右栏）：快速滚动条与「跳到当前章节」都挂在它上。
   final ScrollController _scroll = ScrollController();
+
+  /// 章节行懒列表（[MangaChapterList.sliver]）的 key：「跳到当前章节」估位用。
+  final GlobalKey _chapterRowsKey = GlobalKey(
+    debugLabel: 'manga_series_chapter_rows',
+  );
   final GlobalKey _currentChapterAnchor = GlobalKey(
     debugLabel: 'manga_series_current_chapter',
   );
@@ -1668,23 +1673,28 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           slivers: <Widget>[
             SliverPadding(
               padding: EdgeInsets.symmetric(horizontal: page),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (ocrBanner != null) ...<Widget>[
-                      FushiStaggeredEntrance(index: 0, child: ocrBanner),
-                      const SizedBox(height: 12),
-                    ],
-                    if (_isLocal)
-                      FushiStaggeredEntrance(
+              sliver: SliverMainAxisGroup(
+                slivers: <Widget>[
+                  if (ocrBanner != null)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: FushiStaggeredEntrance(
+                          index: 0,
+                          child: ocrBanner,
+                        ),
+                      ),
+                    ),
+                  if (_isLocal)
+                    SliverToBoxAdapter(
+                      child: FushiStaggeredEntrance(
                         index: 1,
                         child: _buildLocalDetails(context),
-                      )
-                    else
-                      _buildChapterList(context),
-                  ],
-                ),
+                      ),
+                    )
+                  else
+                    _buildChapterList(context),
+                ],
               ),
             ),
             // 跨模块「同一作品」（作品图谱 media_links）：只对已入库的漫画（有 bookKey）。
@@ -1712,19 +1722,43 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
-  /// 章节区：刷新中顶一条波浪进度（原 AppBar 刷新钮的转圈挪进了「⋯」菜单，
-  /// 进行中的反馈落在被刷新的列表上）+ 共享的 [MangaChapterList]。
+  /// 「跳到当前章节」：当前章在懒列表里可能还没建出来，按它在显示顺序里的下标估位。
+  void _jumpToCurrentChapter(BuildContext context) {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final String? currentKey = entry?.currentChapter?.key;
+    if (entry == null || currentKey == null) return;
+    final int index = MangaChapterList.visibleChapters(
+      chapters: entry.chapters,
+      states: _states,
+      newestFirst: _newestFirst,
+      unreadOnly: _unreadOnly,
+    ).indexWhere((OnlineMangaChapter c) => c.key == currentKey);
+    if (index < 0) return;
+    scrollToMangaChapter(
+      anchor: _currentChapterAnchor,
+      rowsKey: _chapterRowsKey,
+      index: index,
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+    );
+  }
+
+  /// 章节区（sliver）：刷新中顶一条波浪进度（原 AppBar 刷新钮的转圈挪进了「⋯」菜单，
+  /// 进行中的反馈落在被刷新的列表上）+ 共享的 [MangaChapterList]（懒建 sliver 形态，
+  /// 见 [MangaChapterList.sliver]）。
   Widget _buildChapterList(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
         if (_refreshing)
-          const Padding(
-            key: ValueKey<String>('manga_series_refreshing'),
-            padding: EdgeInsets.only(bottom: 8),
-            child: FushiLinearProgressIndicator(),
+          const SliverToBoxAdapter(
+            child: Padding(
+              key: ValueKey<String>('manga_series_refreshing'),
+              padding: EdgeInsets.only(bottom: 8),
+              child: FushiLinearProgressIndicator(),
+            ),
           ),
         MangaChapterList(
+          sliver: true,
+          rowsKey: _chapterRowsKey,
           entry: _entry,
           states: _states,
           newestFirst: _newestFirst,
@@ -1734,10 +1768,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           onSortToggled: _toggleSort,
           onJumpToCurrent: _entry?.currentChapter == null
               ? null
-              : () => scrollToMangaChapterAnchor(
-                  _currentChapterAnchor,
-                  duration: fushiMotionDuration(context, FushiMotion.medium),
-                ),
+              : () => _jumpToCurrentChapter(context),
           onUnreadOnlyToggled: () => setState(() => _unreadOnly = !_unreadOnly),
           onChapterTap: (OnlineMangaChapter chapter) {
             final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;

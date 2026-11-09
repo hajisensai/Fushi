@@ -1552,10 +1552,20 @@ String _mangaGestureJs({
     // webtoon 纵向不回中（内容仍长于视口），由紧随其后的 scrollTo 保住锚点。
     if (ZOOM <= 1) _recenterPan();
     _applyCanvas();
-    if (IS_WEBTOON) window.scrollTo(0, Math.max(0, localY * ZOOM - ay));
+    if (IS_WEBTOON) _zoomAnchorScrollTo(Math.max(0, localY * ZOOM - ay));
     var b = _bridge();
     if (b && !silent) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
     return true;
+  }
+  // 条漫缩放的锚点回写：以手指 / 视口顶部为锚缩放时，靠改 scrollY 让锚点下的内容
+  // 不动。这次滚动是缩放的一部分，不是读者在滚条漫——滚动收起界面的监听（见
+  // lastReaderScroll）按「按下后 1200ms 内的滚动 = 用户滚动」判，旧实现把它当成
+  // 用户滚动回报 onMangaReaderHide：双击放大（scrollY 变大）收起界面、双击缩回
+  // （scrollY 变小）把界面弹出来，捏合同理（反馈 P2jQzOBBag 排查）。回写后把那条
+  // 监听的基线同步到新位置，这段位移就不计入用户滚动距离。
+  function _zoomAnchorScrollTo(y){
+    window.scrollTo(0, y);
+    lastReaderScroll = window.scrollY;
   }
   var doubleTapZoomFrame=null;
   function _cancelDoubleTapZoom(){
@@ -1656,7 +1666,7 @@ String _mangaGestureJs({
     ZOOM = _clampZoom(percent / 100);
     _recenterPan();
     _applyCanvas();
-    if (IS_WEBTOON) window.scrollTo(0, anchorLayout * ZOOM);
+    if (IS_WEBTOON) _zoomAnchorScrollTo(anchorLayout * ZOOM);
   };
   // Wide-page paging is a view transform, so OCR and selection remain in the
   // same page DOM.  Dart may ask this function before a turn; true means that
@@ -1926,23 +1936,24 @@ String _mangaGestureJs({
   window.__mangaCurlRevert = function(){
     _curlPlaceStrip(CURRENT);
   };
-  // 卷页的纸面：跨页 i 的页图（一页或两页）在视口里的外接框，按视口比例
-  // [l, t, r, b] 返回；黑边不是纸，不跟着卷。.manga-page 的盒子就是页图本身
-  // （_layoutSource 按页图比例定宽高，没有内部信箱留白）。量不到返回 null。
+  // 卷页的纸面：跨页 i 的每张页图（一页或两页）在视口里的矩形，按视口比例
+  // [[l, t, r, b], ...] 从左到右返回；黑边不是纸，不跟着卷。双页时 Dart 只翻外侧那张、
+  // 靠里那张当对面页。.manga-page 的盒子就是页图本身（_layoutSource 按页图比例定
+  // 宽高，没有内部信箱留白）。量不到返回 null。
   window.__mangaCurlPaperRect = function(i){
     var pages = document.querySelectorAll('.manga-page[data-spread="'+i+'"]');
     var w = window.innerWidth || 1, h = window.innerHeight || 1;
-    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    var out = [];
     for (var k = 0; k < pages.length; k++) {
       var rc = pages[k].getBoundingClientRect();
-      if (!(rc.width > 0 && rc.height > 0)) continue;
-      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
-      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+      var l = Math.max(0, rc.left), t = Math.max(0, rc.top);
+      var r = Math.min(w, rc.right), b = Math.min(h, rc.bottom);
+      if (!(r > l && b > t)) continue;
+      out.push([l / w, t / h, r / w, b / h]);
     }
-    l = Math.max(0, l); t = Math.max(0, t);
-    r = Math.min(w, r); b = Math.min(h, b);
-    if (!(r > l && b > t)) return null;
-    return [l / w, t / h, r / w, b / h];
+    if (!out.length || out.length > 2) return null;
+    out.sort(function(a, c){ return a[0] - c[0]; });
+    return out;
   };
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
@@ -3257,6 +3268,8 @@ String _mangaGestureJs({
     if(flashTimer) clearTimeout(flashTimer);
     flashTimer=setTimeout(function(){flash.style.opacity='0';flashTimer=null;},80);
   }
+  // 基线：上一次 scroll 事件时的 scrollY。缩放锚点回写（_zoomAnchorScrollTo）会
+  // 直接改它，让那段位移不算用户滚动。
   var lastReaderScroll = window.scrollY;
   var readerScrollDistance = 0;
   // 只有用户自己滚才收起工具栏：恢复位置、换窗、跳页、自动滚动都是程序滚动，

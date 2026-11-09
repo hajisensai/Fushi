@@ -122,15 +122,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/metadata/music_scrape_service_test.dart',
   // 开关值由 loadMusicServerBrowsers 读：开 = 来源清单里加 AppleMusicCatalogClient（带设置的
   // storefront），关 = 不加、不发请求。
-  'music/Apple Music catalog': 'test/media/music/server/music_server_test.dart',
+  // （服务器曲库 2026-11-07 起住 设置 › 在线服务 › 媒体服务器，所以记在 services 名下。）
+  'services/Apple Music catalog':
+      'test/media/music/server/music_server_test.dart',
   // storefront 同一条测试咬住：开着时 catalog 客户端用的就是设置里的区域。
-  'music/Storefront': 'test/media/music/server/music_server_test.dart',
+  'services/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。
-  'music/Server streaming quality':
+  'services/Server streaming quality':
       'test/media/music/server/music_server_test.dart',
   // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
   // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
@@ -194,6 +196,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // popup_dict_unified_style_test 咬住。
   'lookup/Unify dictionary styles':
       'test/pages/popup_dict_unified_style_test.dart',
+  // 简繁互查开关：生效点是引擎 flag（中文查词多出另一种字形的变体），harness 没有装
+  // 中文词典。开关→判据由 app_model_search_pure_logic_test 咬住，远端接线由
+  // remote_lookup_request_language_test，引擎 flag 关/开由
+  // native/fushidicts/tests/chinese_simp_trad_lookup_test.cpp。
+  'lookup/Match simplified and traditional Chinese':
+      'test/models/app_model_search_pure_logic_test.dart + test/sync/remote_lookup_request_language_test.dart',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
@@ -732,13 +740,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
-  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
-  // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
-  // 随后驱动 page_columns 时 reader 已非翻页态、T1 reader CSS 探针看不到 column-count
-  // 变化（多列模型只在 _paginatedLayoutCss）。page_columns 的 CSS 生效（翻页态发
-  // column-count、连续/VN 态不发）与 paginated-only 可见性由专项测试咬住。
-  'reading/Columns per page':
-      'test/settings/page_columns_paginated_only_test.dart',
+  // 「单双页」（reading_display.page_columns，旧「每页列数」改三档，id / 持久化键沿用）。
+  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区之前，覆盖
+  // harness 焦点遍历会先把 view_mode 从 paginated 切走，随后驱动单双页时 reader 已非
+  // 翻页态、T1 reader CSS 探针看不到 column-count 变化（多列模型只在
+  // _paginatedLayoutCss）。单双页的 CSS 生效（翻页态双页发 column-count、连续/VN 态
+  // 不发）与 paginated-only 可见性由专项测试咬住；「自动」按窗口 / 折痕的解析由
+  // reader_page_spread_test 咬住。
+  'reading/Page spread': 'test/settings/page_columns_paginated_only_test.dart',
   // 中缝折痕（reading_display.page_crease）：纯 CSS 键，只在翻页且一屏恰好两栏时发
   // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
   // 由专项纯函数测试咬住。
@@ -810,10 +819,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
-  // 「我库里的例句」开关：生效点是弹窗注入 window.__fushiLibrarySentencesEnabled（popup.js
-  // 据此不渲染 / 不发桥）与语料喂入门（LibraryCorpusService.enabled）。
-  'lookup/Sentences from your library':
-      'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   // 查词页两个开关（反馈 3D-JH966Kr / cczhbM7ZOI）：生效点在 HomeDictionaryPage
   // （结果顶部下拉是否清空、导航点进 / 清空后是否聚焦搜索框），开 / 关两态都有

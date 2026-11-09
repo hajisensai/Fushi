@@ -174,53 +174,18 @@ Future<void> showInterconnectPairQrDialog(
 Future<FushiPairLink?> promptInterconnectPairLinkPaste(
   BuildContext context,
 ) async {
-  final TextEditingController controller = TextEditingController();
   final String? raw = await showAppDialog<String>(
     context: context,
-    builder: (BuildContext ctx) {
-      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-      return FushiDialogFrame(
-        maxWidth: 460,
-        insetPadding: EdgeInsets.all(tokens.spacing.card),
-        scrollable: false,
-        child: FushiModalSheetFrame(
-          title: t.sync_pair_link_paste,
-          leadingIcon: FushiIcons.link,
-          scrollable: true,
-          bodyPadding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            0,
-            tokens.spacing.card,
-            tokens.spacing.gap,
-          ),
-          footerPadding: EdgeInsets.all(tokens.spacing.card),
-          body: FushiTextField(
-            controller: controller,
-            labelText: 'fushi://pair?…',
-            autofocus: true,
-          ),
-          footer: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: tokens.spacing.gap,
-            children: <Widget>[
-              adaptiveDialogAction(
-                context: ctx,
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: ctx,
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(ctx, controller.text),
-                child: Text(t.sync_pair_continue),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
+    builder: (BuildContext _) => _InterconnectTextPromptDialog(
+      title: t.sync_pair_link_paste,
+      leadingIcon: FushiIcons.link,
+      labelText: 'fushi://pair?…',
+      autofocus: true,
+      trim: false,
+      maxWidth: 460,
+      confirmLabel: t.sync_pair_continue,
+    ),
   );
-  controller.dispose();
   if (raw == null || !context.mounted) return null;
   final FushiPairLink? link = FushiPairLink.tryParse(raw);
   if (link == null) _showSnackBar(context, t.sync_pair_link_invalid);

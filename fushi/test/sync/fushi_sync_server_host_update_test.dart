@@ -252,13 +252,28 @@ void main() {
       expect(store.consume(nonce, 'peer'), isFalse);
     });
 
-    test('capacity evicts the oldest nonce', () {
+    test('capacity evicts the oldest peer\'s nonce', () {
       final HostUpdateNonceStore store = HostUpdateNonceStore(capacity: 2);
-      final String oldest = store.issue('peer');
-      store.issue('peer');
-      final String newest = store.issue('peer');
-      expect(store.consume(oldest, 'peer'), isFalse);
-      expect(store.consume(newest, 'peer'), isTrue);
+      final String oldest = store.issue('a');
+      final String middle = store.issue('b');
+      final String newest = store.issue('c');
+      expect(store.consume(oldest, 'a'), isFalse);
+      expect(store.consume(middle, 'b'), isTrue);
+      expect(store.consume(newest, 'c'), isTrue);
+    });
+
+    test('each peer holds only its latest nonce; others are untouched', () {
+      final HostUpdateNonceStore store = HostUpdateNonceStore(capacity: 2);
+      final String other = store.issue('other');
+      final String stale = store.issue('peer');
+      // 同一 peer 反复 GET 不占容量、也挤不掉别的 peer 的票。
+      for (int i = 0; i < 5; i++) {
+        store.issue('peer');
+      }
+      final String latest = store.issue('peer');
+      expect(store.consume(stale, 'peer'), isFalse);
+      expect(store.consume(latest, 'peer'), isTrue);
+      expect(store.consume(other, 'other'), isTrue);
     });
   });
 }

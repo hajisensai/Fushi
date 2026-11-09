@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/sync_backend_type.dart';
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
@@ -474,6 +475,51 @@ void main() {
 
     test('sync_device_id is in the device-local key catalog', () {
       expect(SyncRepository.deviceLocalPrefKeys, contains('sync_device_id'));
+    });
+  });
+
+  group('cloud content sniff cache (ecNgkRQcTk)', () {
+    test('round-trips per channel and stays out of other channels', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      final SyncChannelScope drive = SyncChannelScope.forBackendType(
+        SyncBackendType.googleDrive,
+      );
+      final SyncChannelScope dropbox = SyncChannelScope.forBackendType(
+        SyncBackendType.dropbox,
+      );
+
+      expect(await repo.getContentSniffCache(drive), isEmpty);
+      await repo.setContentSniffCache(drive, <String, Object?>{
+        'asset': <String, Object?>{'folder': 'f', 'kind': 'manga'},
+      });
+
+      expect(
+        (await repo.getContentSniffCache(drive))['asset'],
+        <String, Object?>{'folder': 'f', 'kind': 'manga'},
+      );
+      expect(await repo.getContentSniffCache(dropbox), isEmpty);
+    });
+
+    test('a corrupt row reads as an empty cache', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncChannelScope drive = SyncChannelScope.forBackendType(
+        SyncBackendType.googleDrive,
+      );
+      await db.setPref(drive.key('sync_content_sniff_cache'), '{not json');
+
+      expect(await SyncRepository(db).getContentSniffCache(drive), isEmpty);
+    });
+
+    test('is device-local in every channel slot', () {
+      for (final SyncChannelScope scope in SyncChannelScope.all) {
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(scope.key('sync_content_sniff_cache')),
+        );
+      }
     });
   });
 

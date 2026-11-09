@@ -26,6 +26,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
     show SrsStablePreviewFace;
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
@@ -34,7 +35,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
     show srsFieldKindIcon;
 import 'package:fushi/src/srs/srs_field_catalog.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -135,6 +136,14 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
   SrsFieldDef? get _field => _type?.fieldById(widget.fieldId);
 
   bool get _dirty => _description.text.trim() != _saved;
+
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
+  }
 
   Future<void> _load() async {
     try {
@@ -327,16 +336,10 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
     final SrsNoteTypeView? type = _type;
     final SrsFieldDef? field = _field;
     if (_error != null || type == null || field == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: _error == null ? null : '$_error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: _error,
+        retryKey: const ValueKey<String>('srs-field-info-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

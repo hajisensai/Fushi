@@ -1,0 +1,10 @@
+## BUG-4222 · 书库系列扇形卡悬停动画卡顿（后几本常驻旋转永不烘焙、3D 倾斜整摞实时重画）
+- **报告**：2026-11-07（反馈 67oB1YAz76，Windows 3.3.0+24434，窗口 1440×852@2.0：「单本封面悬停动画很流畅，多卷叠放的系列卡悬停时卡得厉害」，附录屏）
+- **真实性**：✅ 真 bug。分拣怀疑的 `series_shelf_card.dart:176` 的 `FushiHoverLift` / `liftedOf` 依赖**不是**根因：`liftedOf` 只在抬升位翻转时通知（`fushi_hover_lift.dart:107`），每帧变的只有 `Transform` 与倾斜补间，build 次数与单本卡同量级。根因在 GPU 侧的烘焙缓存：
+  - `fushi/lib/src/utils/components/baked_surface.dart:65`（`_Placement.of`）对带旋转 / 透视的变换返回 null，`:171-192`（`_endOfFrame`）对 null 位置既不烘焙、已烘焙的也 `_unbake()`（`:176`）——「只在可 1:1 贴图时才用纹理」。
+  - 扇形后面 3 本**常驻**旋转（`shelf_cover_material.dart:804` 静止角 `restMax`、`:818` `AnimatedRotation`），整摞又包在 `FushiTilt`（`:861`）里，悬停时是透视矩阵（`fushi_hover_lift.dart:474`）。于是：静止的合集卡 3 本后层永远烘焙不了；悬停中的合集卡 4 本全部掉回实时。
+  - 这些面的层里留的是矢量命令（两层模糊投影 + 圆角裁切 + 封面图 + 三层光泽渐变）。Dart 侧层被复用、不再 paint，但桌面 Impeller 没有 raster cache、每帧整窗重画，GPU 每帧都要重新栅格化——悬停倾斜跟手持续出帧时，页面上每张合集卡 3 套 + 悬停那张 4 套。单本卡只有悬停那 1 套。
+  - 实测（独立 profile 包复刻同一套面、直接用新旧两版 `BakedSurface`，RTX 4070 Ti、Impeller OpenGLES、1440×852、24 格其中 12 张合集卡，FrameTiming raster 均值）：旧逻辑悬停单本 5.3–6.3 ms、悬停合集 7.1–7.4 ms（p90 9.1–9.6 ms）；新逻辑两者都是 0.7–0.8 ms。用户是 2.0 倍缩放（像素数约本机测试的 4 倍）、显卡未知，悬停合集多出的那几套透视模糊投影把帧时间推过 16.7 ms、单本还在线内——这一段是推断，没有用户机器的帧数据。
+- **[x] ① 已修复** — `BakedSurface` 带旋转 / 斜切 / 透视时改贴**重采样纹理**：在本节点坐标系里按「屏幕上的最大放大倍数」（四条边映射后长度比，含透视除法）向上取整到设备像素比的 1/4 档烘焙（`OffsetLayer.toImageSync` 不含祖先变换，倾斜中也能烘），只要内容不变、倍数不超过纹理分辨率就一直贴同一张；轴对齐位置仍只认 1:1 纹理（静止卡逐像素等于实时绘制，重采样纹理回到轴对齐时重烘一张 1:1 的）；放大超过设备像素比两倍不烘焙。提交见 git log（`Feedback: 67oB1YAz76`）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/series_shelf_card_hover_bake_test.dart`：真 `SeriesShelfCard` + `ShelfCoverMaterialScope(glossyBook)`，① 静止扇形 4 本全部烘焙；② 鼠标悬停后指针来回移动 40 帧（倾斜每帧在变），每一帧每一本都是贴纹理，且纹理分辨率 ≥ 设备像素比 × 1.05。修复前实测红：静止未烘焙 `[0, 1, 2]`、倾斜 40 帧实时栅格化帧数 `[40, 40, 40, 40]`。`fushi/test/utils/components/baked_surface_test.dart` 改写旋转用例（旋转中保持烘焙、放大超分辨率重烘、回轴对齐重烘 1:1）并新增旋转态烘焙与实时绘制的像素近似对比。
+- **备注**：没在 Windows 真机跑完整 app 看帧率（本机只跑了复刻同套面的独立 profile 包）；用户机器显卡 / 帧数据未知。旋转 / 倾斜中的面现在是双线性贴图，与实时绘制不再逐字节一致（测试里平均通道差 < 1.5、明显差异 < 1%），轴对齐静止态仍逐像素一致。

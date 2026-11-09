@@ -91,6 +91,18 @@ Directory? currentBundleRoot({String? executablePath}) {
   return Directory(p.dirname(binDir));
 }
 
+/// 正在运行的是**发布包**时返回它的根目录：`bin/` 的上一级、且有 `release.json`。
+/// `dart run` / `dart test`（可执行文件是 SDK 的 `bin/dart`，上一级是 SDK 根）、自己
+/// `dart build cli` 出的 bundle → null。换包 / 启动清理只认这个，免得把 SDK 根当安装
+/// 目录去删东西。
+Directory? currentReleaseBundleRoot({String? executablePath}) {
+  final Directory? root = currentBundleRoot(executablePath: executablePath);
+  if (root == null) return null;
+  return File(p.join(root.path, kServerReleaseInfoFile)).existsSync()
+      ? root
+      : null;
+}
+
 /// 本机平台对应的发布包后缀；没有发布包的平台（macOS / arm64 …）→ null。
 String? serverReleaseAssetSuffix({Abi? abi}) => switch (abi ?? Abi.current()) {
   Abi.linuxX64 => '-linux-x64.tar.gz',

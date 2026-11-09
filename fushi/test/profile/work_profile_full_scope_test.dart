@@ -543,10 +543,19 @@ void main() {
       isTrue,
       reason: '替对端制卡链的复习侧不叠本机作品会话',
     );
+    // 「制卡到主机」开着时查重与落卡都在主机（docs/specs/2026-11-05-server-srs-design.md §4.8），
+    // 不再套本机复习层，只剩本地那条返回路径叠作品会话的复习侧。
     expect(
       'followWorkSession: true,'.allMatches(anki).length,
-      2,
-      reason: '本机制卡链（本地 / 制卡到主机）两条返回路径都跟着作品会话',
+      1,
+      reason: '本机制卡链只有本地那条返回路径套本机复习层并跟着作品会话',
+    );
+    expect(
+      anki.contains(
+        'return _withPendingQueue(ref, _withAutoReposition(ref, remote));',
+      ),
+      isTrue,
+      reason: '制卡到主机的返回路径不套本机复习层（§4.8）',
     );
     final String floating = File(
       'lib/src/pages/implementations/floating_dict_page.dart',

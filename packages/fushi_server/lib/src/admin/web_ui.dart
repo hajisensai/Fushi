@@ -63,7 +63,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <nav>
 <button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
 <button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
-<button data-s="subscriptions">订阅</button><button data-s="ai">AI 助手</button><button data-s="anki">Anki</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
+<button data-s="subscriptions">订阅</button><button data-s="ai">AI 助手</button><button data-s="anki">Anki</button><button data-s="srs">复习</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
 <form method="post" action="/logout" style="margin:0"><button class="b sec" type="submit">退出</button></form>
 </header>
@@ -158,6 +158,18 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 </div>
 <div class="card"><h2>Anki 同步账号</h2><div id="anki-account"></div></div>
 <div class="card"><h2>牌组 / 笔记类型 / 字段</h2><div id="anki-config"></div></div>
+</section>
+
+<section id="s-srs">
+<div class="card"><h2>Fushi 复习</h2>
+<p class="small muted">本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。</p>
+<div class="grid" id="srs-status"></div>
+<div id="srs-profiles" style="margin-top:12px"></div>
+</div>
+<div class="card"><h2>制卡落点</h2><div id="srs-mining"></div></div>
+<div class="card"><h2>AnkiConnect 兼容接口</h2>
+<p class="small muted">默认关闭。只监听本机时可以不设 key；监听局域网地址必须设 key。每份配置文件可以有自己的 key（Yomitan 里一门语言一个 key），共用 key 落到默认那份。</p>
+<div id="srs-ankiconnect"></div></div>
 </section>
 
 <section id="s-settings">
@@ -535,11 +547,77 @@ $('#anki-landing').onchange = guard(async()=>{ await post('anki/landing', {enabl
 $('#btn-anki-run').onclick = guard(async()=>{ await post('anki/run'); toast('已落地一轮'); loadAnki(); });
 $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry'); toast('已重试 ' + r.retried + ' 张'); loadAnki(); });
 
+// ── 复习 ──
+const SRS_STATE = {opening:'打开中', ready:'可用', encrypted:'同步位置已加密（暂不支持）', needs_upgrade:'数据来自更新版本的 Fushi，请升级服务端', failed:'出错'};
+let srsFormKey = null;
+async function loadSrs(){
+  const [st, found] = await Promise.all([api('srs'), api('srs/profiles')]);
+  const ac = st.ankiConnect || {};
+  const kv = [
+    ['状态', st.enabled ? '已开启' : '未开启（没有勾选配置文件）'],
+    ['调度器', st.scheduler ? 'FSRS 可用' : '没找到 fushi_fsrs（只能浏览 / 加卡）'],
+    ['AnkiConnect', ac.listening ? `监听 ${ac.bind}:${ac.listeningPort}` : (ac.enabled ? '未监听' + (ac.lastError ? '：' + ac.lastError : '') : '关闭')],
+  ];
+  $('#srs-status').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
+  const served = {}; (st.profiles||[]).forEach(p=>served[p.uid]=p);
+  const list = found.profiles || [];
+  const key = JSON.stringify([list.map(p=>[p.uid,p.name,p.served,p.missing]), st.config, ac.enabled, ac.bind, ac.port, ac.apiKeySet, ac.profileKeysSet]);
+  // 状态每轮刷新；表单只在内容变了时重画，不冲掉正在编辑的输入。
+  const statusOf = (uid)=>{ const p = served[uid]; if(!p) return ''; return `${SRS_STATE[p.state]||p.state}${p.notes!=null?' · '+p.notes+' 条笔记':''}${p.lastSyncAt?' · 同步于 '+fmtTime(p.lastSyncAt):''}${p.lastError?' · '+p.lastError:''}`; };
+  if (key === srsFormKey) { document.querySelectorAll('[data-srs-status]').forEach(el=>{ el.textContent = statusOf(el.dataset.srsStatus); }); return; }
+  srsFormKey = key;
+  const cfg = st.config;
+  const def = st.defaultProfile || cfg.defaultProfile;
+  $('#srs-profiles').innerHTML = list.length ? `<table><tr><th>提供</th><th>默认</th><th>配置文件</th><th>设备</th><th>状态</th><th></th></tr>${list.map(p=>`<tr>
+      <td><input type="checkbox" data-srs-serve="${esc(p.uid)}" ${p.served?'checked':''}></td>
+      <td><input type="radio" name="srs-def" data-srs-def="${esc(p.uid)}" ${p.uid===def?'checked':''} ${p.served?'':'disabled'}></td>
+      <td>${esc(p.name||p.uid)}<div class="small muted">${esc(p.uid)}${p.missing?' · 同步目录里已没有':''}</div></td>
+      <td class="small">${esc((p.devices||[]).join('、'))}${p.noteCount!=null?'<div class="muted">'+p.noteCount+' 条笔记</div>':''}</td>
+      <td class="small" data-srs-status="${esc(p.uid)}">${esc(statusOf(p.uid))}</td>
+      <td>${p.served?`<button class="b sec" data-srs-sync="${esc(p.uid)}">同步</button>`:''}</td></tr>`).join('')}</table>`
+    : '<p class="muted">同步目录里还没有任何配置文件：先让一台设备经互联同步一次复习数据。</p>';
+  document.querySelectorAll('[data-srs-serve]').forEach(el=>el.onchange = guard(async()=>{
+    await put('srs', el.checked ? {addProfiles:[el.dataset.srsServe]} : {removeProfiles:[el.dataset.srsServe]});
+    toast(el.checked ? '已开始提供' : '已停止提供'); srsFormKey=null; loadSrs();
+  }));
+  document.querySelectorAll('[data-srs-def]').forEach(el=>el.onchange = guard(async()=>{ await put('srs', {defaultProfile: el.dataset.srsDef}); toast('已设为默认'); srsFormKey=null; loadSrs(); }));
+  document.querySelectorAll('[data-srs-sync]').forEach(el=>el.onclick = guard(async()=>{ await post('srs/sync', {profile: el.dataset.srsSync}); toast('已同步'); loadSrs(); }));
+
+  const servedList = list.filter(p=>p.served);
+  $('#srs-mining').innerHTML = `<p class="small muted">已配对设备「制卡到已配对设备」时卡片落到哪。手机可以在自己的设置里另选；没选时，手机当前的配置文件本机有就落进那份，否则落进默认那份。</p>
+    <div class="grid"><label class="f">落到<select id="srs-target">${[['auto','自动（没配好 Anki 时进复习）'],['review','Fushi 复习'],['anki','Anki']].map(([v,l])=>`<option value="${v}" ${cfg.miningTarget===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+    <label class="f">换日时刻（0–23 点）<input type="number" min="0" max="23" id="srs-rollover" value="${cfg.rolloverHour}"></label>
+    ${servedList.map(p=>`<label class="f">${esc(p.name||p.uid)} 的制卡牌组（空 = 默认牌组）<input data-srs-deck="${esc(p.uid)}" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"></label>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><button class="b" id="btn-srs-save">保存</button></div>`;
+  $('#btn-srs-save').onclick = guard(async()=>{
+    const miningDecks = {}; document.querySelectorAll('[data-srs-deck]').forEach(el=>{ if(el.value.trim()) miningDecks[el.dataset.srsDeck]=el.value.trim(); });
+    await put('srs', {miningTarget: $('#srs-target').value, rolloverHour: parseInt($('#srs-rollover').value,10), miningDecks});
+    toast('已保存'); srsFormKey=null; loadSrs();
+  });
+
+  $('#srs-ankiconnect').innerHTML = `<div class="grid">
+    <label class="f">开关<select id="ac-enabled"><option value="true" ${ac.enabled?'selected':''}>开</option><option value="false" ${!ac.enabled?'selected':''}>关</option></select></label>
+    <label class="f">监听地址（127.0.0.1 = 只限本机）<input id="ac-bind" value="${esc(ac.bind||'127.0.0.1')}"></label>
+    <label class="f">端口<input type="number" id="ac-port" value="${ac.port||8765}"></label>
+    <label class="f">共用 key（落到默认配置文件） ${ac.apiKeySet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="ac-key" value=""></label>
+    ${servedList.map(p=>`<label class="f">${esc(p.name||p.uid)} 专用 key ${(ac.profileKeysSet||{})[p.uid]?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" data-ac-key="${esc(p.uid)}" value=""></label>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><button class="b" id="btn-ac-save">保存</button>${ac.apiKeySet?'<button class="b sec" id="btn-ac-clear">清除共用 key</button>':''}</div>`;
+  $('#btn-ac-save').onclick = guard(async()=>{
+    const body = {enabled: $('#ac-enabled').value==='true', bind: $('#ac-bind').value.trim(), port: parseInt($('#ac-port').value,10)};
+    if ($('#ac-key').value) body.apiKey = $('#ac-key').value;
+    const profileKeys = {}; document.querySelectorAll('[data-ac-key]').forEach(el=>{ if(el.value) profileKeys[el.dataset.acKey]=el.value; });
+    if (Object.keys(profileKeys).length) body.profileKeys = profileKeys;
+    await put('srs', {ankiConnect: body}); toast('已保存'); srsFormKey=null; loadSrs();
+  });
+  const clear = $('#btn-ac-clear');
+  if (clear) clear.onclick = guard(async()=>{ await put('srs', {ankiConnect:{apiKey:''}}); toast('已清除'); srsFormKey=null; loadSrs(); });
+}
+
 // ── 设置 ──
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
   ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],
-  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['remoteUpdate','允许已配对设备远程更新本服务端（仅发布包；装完退出码 75，由服务管理器重启）','bool'],['leaderboardLink','允许「我的设备」跟随本机 Fushi 排行榜账户自动登录','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['remoteUpdate','允许已配对设备远程更新本服务端（仅发布包；装完退出码 75，由服务管理器重启）','bool'],['leaderboardLink','允许「我的设备」跟随本机 Fushi 排行榜账户自动登录','bool'],['lookupChineseScriptVariants','中文查词简繁互查（只管不自带开关的浏览器扩展 / 旧客户端；新版 app 用自己的开关）','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
   ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],
@@ -628,7 +706,7 @@ async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); co
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

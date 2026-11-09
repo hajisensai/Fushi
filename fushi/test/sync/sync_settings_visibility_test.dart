@@ -569,9 +569,10 @@ void main() {
         );
         // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
         // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）+ 配置文件
-        // （Profile）双向搬运的两个一次性动作。
+        // （Profile）双向搬运的两个一次性动作。制卡开关下面是它的「保存到」（§4.8，开关开着才显示）。
         expect(idsOf(dest.sections[4]), <String>[
           'interconnect.mine_to_server',
+          'interconnect.mine_to_server_target',
           'interconnect.backup_backend',
           'interconnect.service_config_sync',
           // 跟随已配对设备自动登录 Fushi 账户（client 侧开关，默认开）。

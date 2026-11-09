@@ -6,6 +6,7 @@ export 'src/database/collection_order.dart';
 export 'src/database/collection_organize.dart';
 export 'src/database/collection_book_identity.dart';
 export 'src/database/database.dart';
+export 'src/database/sqlite_busy_timeout.dart';
 export 'src/database/epub_book_meta.dart';
 export 'src/database/media_image_kind.dart';
 export 'src/database/media_kind.dart';

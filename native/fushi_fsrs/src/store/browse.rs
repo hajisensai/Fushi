@@ -2002,7 +2002,7 @@ impl Session {
     }
 
     /// 结果的一段行（`from..to`）：字符串列走 JSON（`[卡 id, 笔记 id, 排序字段, 牌组名, 笔记类型名, 牌组 id, 模板名, 标签,
-    /// 字段摘要, 图片, 音频, 出处键, 出处 kind, 出处 JSON, 字段摘要各自的字段名]`），整数列每行 11 个 i64（小端）放进 `rows.i64`：`[队列 (0 新 /
+    /// 字段摘要, 图片, 音频, 出处键, 出处 kind, 出处 JSON, 字段摘要各自的字段名, 笔记类型的模板数]`；模板数 > 1 时浏览页在卡片行上标出模板名），整数列每行 11 个 i64（小端）放进 `rows.i64`：`[队列 (0 新 /
     /// 1 学习 / 2 复习 / 3 重学；-1 = 卡已不在), 到期天数 (i64::MIN = 没有), 旗标, 位 (1 暂停 / 2 搁置 / 4 待裁决), 该行
     /// 卡数, 复习次数, 遗忘次数, 间隔 (新卡 i64::MIN), 添加时刻, 修改时刻, 上次复习时刻 (i64::MIN = 没有)]`，小数列每行
     /// 2 个 f64 放进 `rows.f64`：`[难度, 保持率]`（NaN = 没有）。行的数据取会话里**此刻**的值（结果之后的写入已重读
@@ -2048,7 +2048,8 @@ impl Session {
                     null,
                     null,
                     null,
-                    []
+                    [],
+                    0
                 ]));
                 for v in [-1i64, DUE_NONE, 0, 0, 0, 0, 0, DUE_NONE, 0, 0, DUE_NONE] {
                     ints.extend_from_slice(&v.to_le_bytes());
@@ -2094,6 +2095,7 @@ impl Session {
                 key.as_ref().map(|k| &k.1),
                 key.as_ref().and(source).map(Value::to_string),
                 preview_fields,
+                ty.map_or(0, |t| t.tpls.len()),
             ]));
             let bits = i64::from(c.suspended)
                 | (i64::from(r.ctx.is_buried(c)) << 1)
@@ -3373,6 +3375,75 @@ mod tests {
             )
             .unwrap();
         card
+    }
+
+    /// 笔记类型有多个模板（卡片类型）时，每张卡一行：行带模板名（`s[6]`）与该笔记类型的模板数（`s[15]`），浏览页据此
+    /// 在卡片行上标出是哪个卡片类型（Discord 反馈：给 Fushi 卡片加了第二个卡片类型，浏览里每个词两张卡、看不出区别）。
+    /// 笔记模式一条笔记一行、卡数 2；`card:` 按序号 / 模板名筛。
+    #[test]
+    fn browse_rows_carry_template_count_for_multi_card_note_types() {
+        let (d, cfg, deck) = rich_library();
+        write(
+            &d,
+            &cfg,
+            T0 + 20,
+            vec![edit(
+                "notetype",
+                "C",
+                "tmplDef/t4",
+                json!({"name": "Reverse 2", "ord": 1, "front": "{{Back}}"}),
+            )],
+        );
+        let types = json!({"types": [
+            {"id": "A", "name": "Basic", "fields": [["fa", "Front"], ["fb", "Back"]], "tpls": [["t1", "C", 0]]},
+            {"id": "B", "name": "Word", "fields": [["x", "Word"]], "tpls": [["t2", "C", 0]]},
+            {"id": "C", "name": "Reverse", "fields": [["c1", "Front"], ["c2", "Back"]],
+             "tpls": [["t3", "C", 0], ["t4", "Reverse 2", 1]]},
+        ]});
+        let with = |extra: Value| {
+            let mut v = types.clone();
+            for (k, x) in extra.as_object().unwrap() {
+                v[k] = x.clone();
+            }
+            v
+        };
+        let (_, rows) = query_rows(
+            &d,
+            &deck,
+            with(json!({"sort": {"col": "created", "asc": true}})),
+        );
+        assert_eq!(rows.s.len(), 6, "N5 now has one card per template");
+        let mut n5: Vec<(Value, Value)> = rows
+            .s
+            .iter()
+            .filter(|r| r[1] == json!(N5))
+            .map(|r| (r[6].clone(), r[15].clone()))
+            .collect();
+        n5.sort_by_key(|x| x.0.to_string());
+        assert_eq!(
+            n5,
+            vec![(json!("C"), json!(2)), (json!("Reverse 2"), json!(2))]
+        );
+        assert_eq!(
+            rows.s[rows.by_note(N1)][15],
+            json!(1),
+            "single-template type"
+        );
+
+        let (_, notes) = query_rows(&d, &deck, with(json!({"mode": "notes"})));
+        let n = notes.by_note(N5);
+        assert_eq!(notes.int(n, 4), 2, "notes mode: one row, two cards");
+
+        let (_, second) = query_rows(&d, &deck, with(json!({"node": {"t": "cardord", "v": 2}})));
+        assert_eq!(second.s.len(), 1);
+        assert_eq!(second.s[0][6], json!("Reverse 2"));
+        let (_, named) = query_rows(
+            &d,
+            &deck,
+            with(json!({"node": {"t": "cardname", "v": "reverse 2"}})),
+        );
+        assert_eq!(named.s.len(), 1);
+        assert_eq!(named.s[0][1], json!(N5));
     }
 
     /// `browse_rows` 的新列：字段摘要、首个图片 / 音频、出处键 / kind / 原文、间隔、添加 / 修改 / 上次复习时刻、难度、

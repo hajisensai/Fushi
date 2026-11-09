@@ -68,6 +68,7 @@ class _LegacyPopupLookup extends _LegacyLookup
 class _LanguageLookup extends _LegacyPopupLookup
     implements FushiRemoteLanguageLookupService {
   final List<String?> languages = <String?>[];
+  final List<bool?> scriptVariants = <bool?>[];
   RemoteDictionaryPopupTiming? lastTiming;
 
   @override
@@ -75,10 +76,12 @@ class _LanguageLookup extends _LegacyPopupLookup
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
   }) async {
     calls.add('full-lang');
     languages.add(language);
+    scriptVariants.add(chineseScriptVariants);
     return DictionarySearchResult(searchTerm: term, bestLength: 2);
   }
 
@@ -87,11 +90,13 @@ class _LanguageLookup extends _LegacyPopupLookup
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) async {
     calls.add('popup-lang');
     languages.add(language);
+    scriptVariants.add(chineseScriptVariants);
     lastTiming = timing;
     return const RemoteDictionaryPopupLookup(popupJson: '[]', bestLength: 2);
   }
@@ -113,6 +118,69 @@ void main() {
         isNull,
       );
       expect(remoteLookupLanguageOf(<String, dynamic>{'language': 3}), isNull);
+    });
+  });
+
+  group('remoteLookupChineseScriptVariantsOf', () {
+    test('bool 照取，缺省 / 非 bool 当没给', () {
+      expect(
+        remoteLookupChineseScriptVariantsOf(<String, dynamic>{
+          'zhScriptVariants': true,
+        }),
+        isTrue,
+      );
+      expect(
+        remoteLookupChineseScriptVariantsOf(<String, dynamic>{
+          'zhScriptVariants': false,
+        }),
+        isFalse,
+      );
+      expect(remoteLookupChineseScriptVariantsOf(<String, dynamic>{}), isNull);
+      expect(
+        remoteLookupChineseScriptVariantsOf(<String, dynamic>{
+          'zhScriptVariants': 'true',
+        }),
+        isNull,
+      );
+    });
+  });
+
+  group('请求方的简繁互查开关（zhScriptVariants）原样交给 host', () {
+    test('带语言 + 开关 ⇒ InLanguage 收到两者', () async {
+      final _LanguageLookup lookup = _LanguageLookup();
+      await buildRemoteDictionaryLookupResponse(<String, dynamic>{
+        'term': '之間',
+        'language': 'zh-TW',
+        'zhScriptVariants': false,
+      }, lookup: lookup);
+      expect(lookup.calls, <String>['full-lang']);
+      expect(lookup.languages, <String?>['zh-TW']);
+      expect(lookup.scriptVariants, <bool?>[false]);
+    });
+
+    test('只带开关不带语言 ⇒ 仍走 InLanguage（language 为 null），popup 同理', () async {
+      final _LanguageLookup lookup = _LanguageLookup();
+      await buildRemoteDictionaryLookupResponse(<String, dynamic>{
+        'term': '之間',
+        'zhScriptVariants': true,
+      }, lookup: lookup);
+      await buildRemoteDictionaryLookupResponse(<String, dynamic>{
+        'term': '之間',
+        'popupOnly': true,
+        'zhScriptVariants': true,
+      }, lookup: lookup);
+      expect(lookup.calls, <String>['full-lang', 'popup-lang']);
+      expect(lookup.languages, <String?>[null, null]);
+      expect(lookup.scriptVariants, <bool?>[true, true]);
+    });
+
+    test('只带语言（浏览器扩展 / 旧客户端）⇒ 开关为 null，host 用自己的开关', () async {
+      final _LanguageLookup lookup = _LanguageLookup();
+      await buildRemoteDictionaryLookupResponse(<String, dynamic>{
+        'term': '之間',
+        'language': 'zh',
+      }, lookup: lookup);
+      expect(lookup.scriptVariants, <bool?>[null]);
     });
   });
 
@@ -215,7 +283,10 @@ void main() {
     });
     tearDown(() async => db.close());
 
-    Future<Map<String, dynamic>> sentBody(String? language) async {
+    Future<Map<String, dynamic>> sentBody(
+      String? language, {
+      bool? chineseScriptVariants,
+    }) async {
       Map<String, dynamic>? body;
       final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
@@ -241,9 +312,33 @@ void main() {
         wildcards: false,
         maximumTerms: 5,
         language: language,
+        chineseScriptVariants: chineseScriptVariants,
       );
       return body!;
     }
+
+    test('简繁互查开关非 null 才发 zhScriptVariants', () async {
+      expect(
+        (await sentBody(
+          'zh',
+          chineseScriptVariants: true,
+        ))[kRemoteLookupChineseScriptVariantsField],
+        isTrue,
+      );
+      expect(
+        (await sentBody(
+          'zh',
+          chineseScriptVariants: false,
+        ))[kRemoteLookupChineseScriptVariantsField],
+        isFalse,
+      );
+      expect(
+        (await sentBody(
+          'zh',
+        )).containsKey(kRemoteLookupChineseScriptVariantsField),
+        isFalse,
+      );
+    });
 
     test('有语言 ⇒ body 带 language（裁掉空白）', () async {
       final Map<String, dynamic> body = await sentBody(' zh-CN ');

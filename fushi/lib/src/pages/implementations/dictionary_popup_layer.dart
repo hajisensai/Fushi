@@ -658,13 +658,18 @@ Widget parkedPopupLayer({
           visible: visible,
           startProgress: entranceStartProgress,
           onSettledChanged: onEntranceSettled,
-          child: visible && occluders.isNotEmpty
-              ? PopupOccluderClip(
-                  layerRect: pos,
-                  occluders: occluders,
-                  child: child,
-                )
-              : child,
+          // 恒包一层、只改参数（反馈 5hnsRtTrQj）：子层入场就位 / 关闭会让本层的
+          // [occluders] 在空与非空之间翻转。若按条件增删这一层，[child] 里的查词
+          // WebView（带 GlobalKey）会被搬家，Android 平台视图的 RenderBox 在 detach
+          // 里 `_gestureRecognizer.reset()` 直接丢掉正在转发的指针、不补 cancel——
+          // controller 的指针表里留下一根「幽灵手指」，此后每次触摸都被当成第二根
+          // 手指（捏合）：弹窗滑不动、点词不触发、选区菜单关不掉，热槽复用到
+          // 退出视频页为止。平台视图上方的祖先结构在层的生命周期内必须恒定。
+          child: PopupOccluderClip(
+            layerRect: pos,
+            occluders: visible ? occluders : const <Rect>[],
+            child: child,
+          ),
         ),
       ),
     ),
@@ -705,14 +710,19 @@ class PopupOccluderClip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!fushiPopupBackdropSampleable(context)) return child;
     final List<Rect> local = <Rect>[
-      for (final Rect r in occluders)
-        if (r.overlaps(layerRect)) r.shift(-layerRect.topLeft),
+      if (fushiPopupBackdropSampleable(context))
+        for (final Rect r in occluders)
+          if (r.overlaps(layerRect)) r.shift(-layerRect.topLeft),
     ];
-    if (local.isEmpty) return child;
+    // 不论裁不裁都是同一个 [ClipPath]：增删这一层会把 [child] 里的平台视图搬家、
+    // 丢掉正在转发的指针（见 [parkedPopupLayer]）。不裁时 clipper 为 null（命中
+    // 不受限）+ [Clip.none]（不推裁剪层，iOS / macOS 原生材质不受影响）。
     return ClipPath(
-      clipper: _PopupOccluderClipper(local, occluderRadius),
+      clipper: local.isEmpty
+          ? null
+          : _PopupOccluderClipper(local, occluderRadius),
+      clipBehavior: local.isEmpty ? Clip.none : Clip.antiAlias,
       child: child,
     );
   }

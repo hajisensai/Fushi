@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 26;
+pub const SCHEMA_VERSION: i64 = 27;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -725,6 +725,17 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 的库、与对端逐位相同（摘要前缀同时换成 `4:`，digest.rs `VV_PREFIX`）。只改投影行，操作日志不动；新建的库
         // 没有日志，不跑。可重放。
         super::sync2::replay_event_copies(&tx)?;
+    }
+    if (1..27).contains(&current) {
+        // V27（BUG-4218 后续）：整组已撤销、但还没被 undo 直接点名的事件副本各补一条确定性 undo（ID / HLC / 内容只由副本
+        // 决定，各设备独立升级写出同一条），让只按 ID 认撤销的旧版本客户端经同步也看到撤销生效
+        // （store/sync2/mod.rs [super::sync2::revoke_copies_of_revoked_events]）。在 v26 重放之后：读的是新规则的投影。
+        // 新建的库没有日志，不跑。可重放。
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        super::sync2::revoke_copies_of_revoked_events(&tx, now)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

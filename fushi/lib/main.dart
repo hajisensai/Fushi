@@ -7,9 +7,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/ai/agent/ai_agent_entry.dart'
     show openAiAgentFromShortcut;
 import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart' show buildAiMcpHttpEndpoint;
-import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
-import 'package:fushi/src/corpus/library_corpus_service.dart';
-import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
 import 'package:fushi/src/platform/desktop/windows_owned_file_picker.dart';
 import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
@@ -48,7 +45,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
-import 'package:fushi/src/srs/srs_mining.dart' show SrsMiner;
+import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
@@ -60,6 +57,7 @@ import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
@@ -102,6 +100,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
 import 'package:fushi/src/diagnostics/native_attribution_probe.dart';
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
@@ -707,6 +706,9 @@ void main([List<String> args = const <String>[]]) {
           processRssBreakdownProbe,
           nativeHeapProbe,
           processThreadCountProbe,
+          // Windows 没有 anon/file/malloc 分项：私有提交 + 系统内存 / 提交余量；解码图缓存各平台都记。
+          windowsMemoryProbe,
+          imageCacheProbe,
           srsMemoryProbe,
           srsOpLedgerProbe,
           UiActivityProbe.probe,
@@ -804,6 +806,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
+      // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
+      // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
+      // 系统临时目录根下的 obf_*。失败由 sweepStaleTemps 自己记错误日志。
+      unawaited(
+        ObfuscatingSyncBackend.sweepStaleTemps().then((int removed) {
+          if (removed > 0) {
+            debugPrint('[startup] removed $removed stale sync obf temp dirs');
+          }
+        }),
+      );
 
       // ── 预热 WebView 引擎 ──────────────────────────────────────────────
       // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
@@ -1160,10 +1173,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _pendingMineArrivals = PendingMineRelay.arrivals.listen(
       (_) => _flushPendingMines(),
     );
-    // 「我库里的例句」点击回到出处：打开书要 openMedia(ref:)，app 内 / app 外两类查词弹窗都
-    // 经根状态这个始终活着的 ref 落地（LibraryCorpusService.openHit）。
-    LibraryCorpusService.openHitHandler = (CorpusHit hit) =>
-        openCorpusHitOrigin(ref: ref, hit: hit);
     // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
     // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
     // libmpv/ANGLE/WGC churn 污染进程共享 D3D device），落盘取证 + 一次性自动重启。

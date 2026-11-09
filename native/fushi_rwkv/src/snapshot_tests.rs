@@ -7,38 +7,23 @@ use std::path::PathBuf;
 
 fn model(small: bool) -> Model {
     let (filename, expected) = if small {
-        ("sm56-package.zip", SMALL_MODEL_PACKAGE_SHA256)
+        ("sm72e25_weights.int8.bin", SMALL_MODEL_INT8_SHA256)
     } else {
         ("RWKV_trained_on_5000_10000.bin", MODEL_SHA256)
     };
-    let variable = if small {
-        "FUSHI_RWKV_SMALL_PACKAGE"
+    let default_dir = || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("model");
+    let path = if small {
+        std::env::var_os("FUSHI_RWKV_SMALL_DIR")
+            .map_or_else(default_dir, PathBuf::from)
+            .join(filename)
     } else {
-        "FUSHI_RWKV_MODEL"
+        std::env::var_os("FUSHI_RWKV_MODEL")
+            .map_or_else(|| default_dir().join(filename), PathBuf::from)
     };
-    let path = std::env::var_os(variable)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("model")
-                .join(filename)
-        });
     let bytes = std::fs::read(&path)
         .unwrap_or_else(|error| panic!("missing model {}: {error}", path.display()));
     assert_eq!(format!("{:x}", Sha256::digest(&bytes)), expected);
-    if small {
-        use std::io::Read;
-        let mut archive = zip::ZipArchive::new(io::Cursor::new(bytes)).unwrap();
-        let mut weights = Vec::new();
-        archive
-            .by_name("sm56/weights.int8.bin")
-            .unwrap()
-            .read_to_end(&mut weights)
-            .unwrap();
-        Model::from_bytes(&weights).unwrap()
-    } else {
-        Model::from_bytes(&bytes).unwrap()
-    }
+    Model::from_bytes(&bytes).unwrap()
 }
 
 fn row(card: i64, day: i64, query: bool) -> ReviewInput {

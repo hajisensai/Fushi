@@ -220,7 +220,9 @@ extension _FushiSyncServerLookup on FushiSyncServer {
     shelf.Request request,
     String path,
   ) async {
-    final FushiRemoteMiningService? svc = _miningService;
+    final FushiRemoteMiningService? svc = activeRemoteMiningService(
+      _miningService,
+    );
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');

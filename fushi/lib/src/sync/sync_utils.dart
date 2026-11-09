@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_engine/sync/sync_asset_store.dart'
     show SyncTransferProgress;
 
+export 'package:fushi_engine/sync/sync_root_folder.dart';
+
 /// 云盘 API 的 RFC 3339 / ISO 8601 时间戳（OneDrive `lastModifiedDateTime`、Dropbox
 /// `server_modified` 等）换成 UTC 毫秒。
 ///
@@ -20,15 +22,6 @@ int? syncIsoTimestampMs(Object? raw) {
 }
 
 final RegExp _kIsoZoneSuffix = RegExp(r'(?:[zZ]|[+-]\d{2}:?\d{2})$');
-
-/// The single sync root folder name used by every backend (cloud + LAN).
-///
-/// Historically `ttu-reader-data` (the app began life as a ttu-ebook-reader
-/// fork), then `hibiki-data` (no cloud users yet, so no migration), now
-/// `fushi-data` (migrated from the old root, see [kLegacySyncRootFolderName]).
-/// One library must sync identically across all backends, so every
-/// backend MUST derive its root from this constant — never hardcode the literal.
-const String kSyncRootFolderName = 'fushi-data';
 
 /// 改名前的云端根文件夹名（Fushi 改名迁移用）：各 backend 首次连接时若新根不存在
 /// 而旧根存在，把旧根**远端改名**成新根（数据原地不动，只换目录名）。

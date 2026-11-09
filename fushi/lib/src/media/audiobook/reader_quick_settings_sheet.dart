@@ -23,6 +23,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/lyrics_cue_search.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/reader_navigation_widgets.dart';
@@ -598,8 +599,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       case 'marginRight':
         await src.setReaderMarginRight((value as num).toDouble());
         widget.onPageMarginChanged?.call();
-      case 'pageColumns':
-        await src.setReaderPageColumns((value as num).toInt());
+      case 'pageSpread':
+        await src.setReaderPageSpread(value as ReaderPageSpread);
       case 'spreadMode':
         await src.setReaderSpreadMode(value as String);
       case 'spreadDirection':
@@ -619,7 +620,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       const layoutKeys = {
         'writingMode',
         'viewMode',
-        'pageColumns',
+        'pageSpread',
         'spreadMode',
         'spreadDirection',
         'prioritizeReaderStyles',

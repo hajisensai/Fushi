@@ -17,6 +17,7 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         VideoSubtitleGeneratePrefs,
+        VideoSubtitleInAppTranscribe,
         videoSubtitleEpisodeStatusLabel,
         videoSubtitleStageLabel;
 import 'package:fushi/src/sync/interconnect_job_client.dart' show HostJobTarget;
@@ -68,12 +69,14 @@ Future<void> showRemoteVideoSubtitleSheet({
   required RemoteVideoSubtitleTarget target,
   required VideoSubtitleGeneratePrefs prefs,
   void Function(RemoteVideoSubtitleJob job)? onJobStarted,
+  VideoSubtitleInAppTranscribe? onTranscribeInApp,
 }) {
   Widget build(BuildContext ctx) => RemoteVideoSubtitleSheet(
     service: service,
     target: target,
     prefs: prefs,
     onJobStarted: onJobStarted,
+    onTranscribeInApp: onTranscribeInApp,
   );
   if (isDesktopPlatform) {
     return showAppDialog<void>(
@@ -100,12 +103,17 @@ class RemoteVideoSubtitleSheet extends StatefulWidget {
     required this.target,
     required this.prefs,
     this.onJobStarted,
+    this.onTranscribeInApp,
   });
 
   final RemoteVideoSubtitleService service;
   final RemoteVideoSubtitleTarget target;
   final VideoSubtitleGeneratePrefs prefs;
   final void Function(RemoteVideoSubtitleJob job)? onJobStarted;
+
+  /// 非 null 时多一项「保存字幕文件」开关：关掉后「开始」不在 host 上跑管线，改由视频页
+  /// 在本机转录 host 裁回的整集音轨（见 [VideoSubtitleInAppTranscribe]）。
+  final VideoSubtitleInAppTranscribe? onTranscribeInApp;
 
   @override
   State<RemoteVideoSubtitleSheet> createState() =>
@@ -115,6 +123,11 @@ class RemoteVideoSubtitleSheet extends StatefulWidget {
 class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   late bool _proofread = widget.prefs.proofread;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
+
+  /// 在 host 上跑管线、字幕写在 host 的视频旁；false = 本机转录。没有
+  /// [RemoteVideoSubtitleSheet.onTranscribeInApp] 时恒为 true，接回已有任务时也强制 true。
+  late bool _saveBeside =
+      widget.onTranscribeInApp == null || widget.prefs.saveBesideVideo;
   bool _probing = true;
   HostJobTarget? _host;
   RemoteVideoSubtitleJob? _job;
@@ -126,7 +139,10 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     final RemoteVideoSubtitleJob? latest = widget.service.latestJobFor(
       widget.target,
     );
-    if (latest != null) _attach(latest);
+    if (latest != null) {
+      _attach(latest);
+      _saveBeside = true;
+    }
     unawaited(_probe());
   }
 
@@ -179,6 +195,23 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     }
     setState(() => _proofread = on);
     await widget.prefs.setProofread(on);
+  }
+
+  Future<void> _setSaveBeside(bool on) async {
+    setState(() {
+      _saveBeside = on;
+      _startError = null;
+    });
+    await widget.prefs.setSaveBesideVideo(on);
+  }
+
+  /// 本机转录：关面板，交给视频页（面板总在自己的路由里，maybePop 掉的就是它）。
+  Future<void> _transcribeInApp() async {
+    final VideoSubtitleInAppTranscribe? transcribe = widget.onTranscribeInApp;
+    if (transcribe == null) return;
+    final bool proofread = _proofread;
+    await Navigator.of(context).maybePop();
+    transcribe(proofread: proofread);
   }
 
   Future<void> _setSegmenter(VideoSubtitleSegmenterMode mode) async {
@@ -264,10 +297,9 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final RemoteVideoSubtitleTarget target = widget.target;
-    final List<Widget> sections = <Widget>[
-      _section(
-        0,
-        3,
+    // 本机转录时 host 状态、分段方式都不相干（转录弹层自己选语言 / 引擎）。
+    final List<(String, Widget)> parts = <(String, Widget)>[
+      (
         t.video_subtitle_ai_target_label,
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,52 +313,57 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
                   skipped: target.skippedExisting.length,
                 ),
               ),
-            _hostLine(),
+            if (_saveBeside) _hostLine(),
           ],
         ),
       ),
-      _section(
-        1,
-        3,
-        t.video_subtitle_ai_segmenter_label,
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiSegmentedButton<VideoSubtitleSegmenterMode>(
-              key: const ValueKey<String>('remote-subtitle-segmenter'),
-              segments: <ButtonSegment<VideoSubtitleSegmenterMode>>[
-                ButtonSegment<VideoSubtitleSegmenterMode>(
-                  value: VideoSubtitleSegmenterMode.auto,
-                  label: Text(t.video_subtitle_ai_segmenter_auto),
-                ),
-                ButtonSegment<VideoSubtitleSegmenterMode>(
-                  value: VideoSubtitleSegmenterMode.moss,
-                  label: Text(t.video_subtitle_ai_segmenter_moss),
-                ),
-                ButtonSegment<VideoSubtitleSegmenterMode>(
-                  value: VideoSubtitleSegmenterMode.window,
-                  label: Text(t.video_subtitle_ai_segmenter_window),
-                ),
-              ],
-              selected: <VideoSubtitleSegmenterMode>{_segmenter},
-              showSelectedIcon: false,
-              onSelectionChanged: _running
-                  ? null
-                  : (Set<VideoSubtitleSegmenterMode> s) =>
-                        unawaited(_setSegmenter(s.first)),
-            ),
-            const SizedBox(height: 8),
-            _hint(t.video_subtitle_ai_remote_segmenter_hint),
-          ],
+      if (widget.onTranscribeInApp != null)
+        (t.video_subtitle_save_label, _saveControl()),
+      if (_saveBeside)
+        (
+          t.video_subtitle_ai_segmenter_label,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              FushiSegmentedButton<VideoSubtitleSegmenterMode>(
+                key: const ValueKey<String>('remote-subtitle-segmenter'),
+                segments: <ButtonSegment<VideoSubtitleSegmenterMode>>[
+                  ButtonSegment<VideoSubtitleSegmenterMode>(
+                    value: VideoSubtitleSegmenterMode.auto,
+                    label: Text(t.video_subtitle_ai_segmenter_auto),
+                  ),
+                  ButtonSegment<VideoSubtitleSegmenterMode>(
+                    value: VideoSubtitleSegmenterMode.moss,
+                    label: Text(t.video_subtitle_ai_segmenter_moss),
+                  ),
+                  ButtonSegment<VideoSubtitleSegmenterMode>(
+                    value: VideoSubtitleSegmenterMode.window,
+                    label: Text(t.video_subtitle_ai_segmenter_window),
+                  ),
+                ],
+                selected: <VideoSubtitleSegmenterMode>{_segmenter},
+                showSelectedIcon: false,
+                onSelectionChanged: _running
+                    ? null
+                    : (Set<VideoSubtitleSegmenterMode> s) =>
+                          unawaited(_setSegmenter(s.first)),
+              ),
+              const SizedBox(height: 8),
+              _hint(t.video_subtitle_ai_remote_segmenter_hint),
+            ],
+          ),
         ),
-      ),
-      _section(
-        2,
-        3,
+      (
         t.video_subtitle_ai_proofread_label,
         Row(
           children: <Widget>[
-            Expanded(child: _hint(t.video_subtitle_ai_remote_proofread_hint)),
+            Expanded(
+              child: _hint(
+                _saveBeside
+                    ? t.video_subtitle_ai_remote_proofread_hint
+                    : t.video_subtitle_transcribe_proofread_hint,
+              ),
+            ),
             SizedBox(width: tokens.spacing.gap),
             KeyedSubtree(
               key: const ValueKey<String>('remote-subtitle-proofread'),
@@ -342,10 +379,17 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         ),
       ),
     ];
+    final List<Widget> sections = <Widget>[
+      for (int i = 0; i < parts.length; i++)
+        _section(i, parts.length, parts[i].$1, parts[i].$2),
+    ];
     final RemoteVideoSubtitleJob? job = _job;
     return FushiModalSheetFrame(
+      // 合并入口（带本机转录）的单集面板与本机面板同名「生成字幕」。
       title: target.wholeSeason
           ? t.video_subtitle_ai_season_title
+          : widget.onTranscribeInApp != null
+          ? t.video_subtitle_ai_generate_title
           : t.video_subtitle_ai_title,
       leadingIcon: FushiIcons.subtitles,
       scrollable: true,
@@ -360,7 +404,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
               duration: context.fushiMotion.spatialDefault.duration,
               curve: context.fushiMotion.spatialDefault.curve,
               alignment: Alignment.topCenter,
-              child: job == null
+              child: job == null || !_saveBeside
                   ? const SizedBox(width: double.infinity)
                   : Padding(
                       padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
@@ -385,6 +429,37 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         runSpacing: tokens.spacing.gap,
         children: _footer(job),
       ),
+    );
+  }
+
+  Widget _saveControl() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _hint(
+            _saveBeside
+                ? t.video_subtitle_save_remote_hint
+                : t.video_subtitle_save_off_hint,
+            key: ValueKey<String>(
+              _saveBeside
+                  ? 'remote-subtitle-save-beside-hint'
+                  : 'remote-subtitle-save-off-hint',
+            ),
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        KeyedSubtree(
+          key: const ValueKey<String>('remote-subtitle-save-beside'),
+          child: adaptiveSwitch(
+            context: context,
+            value: _saveBeside,
+            onChanged: _running
+                ? null
+                : (bool v) => unawaited(_setSaveBeside(v)),
+          ),
+        ),
+      ],
     );
   }
 
@@ -489,6 +564,20 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
       ),
     ];
+    if (!_saveBeside) {
+      // 本机转录不需要 host 支持 video_subtitle 任务，只要能裁回音轨（入口已判）。
+      buttons.add(
+        FushiPressScale(
+          child: FushiFilledButton.icon(
+            key: const ValueKey<String>('remote-subtitle-transcribe-start'),
+            icon: const FushiIcon(FushiIcons.play, size: 18),
+            label: Text(t.video_subtitle_ai_start),
+            onPressed: _running ? null : () => unawaited(_transcribeInApp()),
+          ),
+        ),
+      );
+      return buttons;
+    }
     if (job != null && job.isRunning) {
       buttons.add(
         FushiFilledButton.icon(

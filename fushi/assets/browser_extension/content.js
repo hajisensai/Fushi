@@ -680,7 +680,8 @@ window.fushiToast = function (text, sticky, openSettings) {
 
 // TODO-1219 P3：面板行「精确窗」制卡——从字幕面板行查词时带上该行整集拦截的精确 [startMs,endMs]
 // 窗（胜过 fushiCurrentCueWindowV 的 DOM 采样窗，DOM 采样在暂停/回放/字幕未渲染时不稳）。契约：
-// 每次查词都刷新此变量——面板行查词（fushiLookupAtPoint 带 cueWindow）设精确窗；mousemove 划词
+// 每次查词都刷新此变量——面板行查词（fushiLookupAtPoint 带 cueWindow）设精确窗；Shift 悬停站点
+// 原生字幕时设被悬停那一行的整轨窗（fushiCaptionLineCueWindowAt）；其余 mousemove 划词
 // （无 cueWindow）清成 null 回落 DOM 采样。制卡入口 fushiEnqueue 优先消费它。null 表示无精确窗。
 let fushiPendingCueWindow = null;
 
@@ -2620,7 +2621,12 @@ function fushiShiftScanAt(x, y) {
   const lookupKey = fushiLookupKey(term, termRuby);
   if (lookupKey === fushiLastLookupKey) return;
   fushiLastLookupKey = lookupKey;
-  fushiSendLookup(term, fushiAnchorRect, null, false, hit, true, termRuby);
+  // 反馈 #RvwGCEtAsd：命中站点原生字幕时带上**被悬停那一行**的整轨精确窗。YouTube 滚动自动字幕
+  // 屏上同时有上下两行，按播放时刻只能取到下面那行；不带窗，悬停上一行的词就会配上下一行的
+  // 例句与片段。不在原生字幕里 / 整轨对不上该行 → null，制卡照旧按播放时刻取整轨。
+  const cueWindow = typeof fushiCaptionLineCueWindowAt === 'function'
+    ? fushiCaptionLineCueWindowAt(hit.node) : null;
+  fushiSendLookup(term, fushiAnchorRect, cueWindow, false, hit, true, termRuby);
 }
 // ── canvas 阅读器抓图取词（canvas-ocr.js）────────────────────────────────────────────
 let fushiCanvasOcr = null;

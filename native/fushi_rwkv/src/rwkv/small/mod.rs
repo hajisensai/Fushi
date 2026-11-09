@@ -1,14 +1,16 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: runtime for the small RWKV model (331,511 parameters, d_model 64,
-//! JSchoreels/anki-rwkv release `small-model-sm56-2026-10-24`, package
-//! sm56). Not upstream code: written for Fushi from the INTEGRATION.md and
-//! NumPy reference of package sm40v2; sm56 retrains the same architecture
-//! (identical `architecture.json` and reference code, new weights).
+//! Fushi: runtime for the small RWKV model (331,511 parameters, d_model 64;
+//! the bundled weights are the leak-free SM72 cool-down from epoch 25,
+//! `sm72e25`, from JSchoreels/anki `qt/aqt/rwkv_inference/sm72e25/`). Not
+//! upstream code: written for Fushi from the INTEGRATION.md and NumPy
+//! reference of package sm40v2; SM56 and the SM72 releases retrain the same
+//! architecture (identical `architecture.json`, new weights).
 //!
 //! It shares the input side with the big model unchanged (the 92 features of
-//! [FeatureState], ID codes and all; the model ignores feature 22) and keeps
+//! [FeatureState], ID codes and all; the model ignores feature 22 and, by the
+//! SM72 leak-free rule, the missing-id flags 13–15) and keeps
 //! the same contract: answered reviews are replayed in order, queries read
 //! the states without changing them.
 

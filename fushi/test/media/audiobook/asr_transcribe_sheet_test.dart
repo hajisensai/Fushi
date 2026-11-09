@@ -307,6 +307,7 @@ void main() {
     ThemeData? theme,
     AsrTranscriptionService Function()? cloudService,
     AsrProofreadHost? proofreadHost,
+    bool autoProofread = false,
   }) {
     return ProviderScope(
       child: TranslationProvider(
@@ -335,6 +336,7 @@ void main() {
                       directoryPicker: directoryPicker,
                       cloudService: cloudService,
                       proofreadHost: proofreadHost,
+                      autoProofread: autoProofread,
                     );
                     onResult(r);
                   },
@@ -1143,6 +1145,7 @@ void main() {
       Future<String?> Function()? directoryPicker,
       AsrTranscriptionService Function()? cloudService,
       AsrProofreadHost? proofreadHost,
+      bool autoProofread = false,
     }) => wrap(
       service,
       (String? _) {},
@@ -1151,6 +1154,7 @@ void main() {
       directoryPicker: directoryPicker,
       cloudService: cloudService,
       proofreadHost: proofreadHost,
+      autoProofread: autoProofread,
     );
 
     /// M3E 分段选项卡让弹层 body 变高，800x600 测试窗下模型行落在 body 可滚
@@ -1408,6 +1412,96 @@ void main() {
           find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
           findsOneWidget,
         );
+      });
+
+      // 反馈 6Tj3ECtB0Q：视频页「生成字幕」关了保存、开了 AI 校对 → 转录完自动校对一次。
+      AsrProofreadHost countingHost(List<String> ranOn) => AsrProofreadHost(
+        providerName: () => 'DeepSeek',
+        run:
+            ({
+              required String srtPath,
+              required String languageTag,
+              required SubtitleCancelToken cancel,
+              void Function(int doneBatches, int totalBatches)? onProgress,
+            }) async {
+              ranOn.add(srtPath);
+              return AsrTranscriptProofreadFileOutcome(
+                result: AsrTranscriptProofreadOutcome(
+                  cues: const <AsrCue>[],
+                  totalBatches: 1,
+                  appliedBatches: 1,
+                  skippedBatches: 0,
+                  changedCues: 2,
+                  usage: SubtitleAiUsageTally(),
+                ),
+                tokenSidecarWritten: true,
+              );
+            },
+      );
+
+      testWidgets('autoProofread：完成态的转录稿不用点按钮就校对一次', (
+        WidgetTester tester,
+      ) async {
+        final File srt = File(p.join(tmp.path, 'transcript.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nはい\n\n');
+        final _FakeService service = _FakeService(
+          ready: true,
+          jobsDir: tmp,
+          existingSrt: srt.path,
+        );
+        final List<String> ranOn = <String>[];
+        await tester.pumpWidget(
+          wrapWithCatalog(
+            service,
+            proofreadHost: countingHost(ranOn),
+            autoProofread: true,
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+
+        expect(ranOn, <String>[srt.path]);
+        expect(
+          _statusText(tester),
+          contains(
+            t.audiobook_transcribe_proofread_done(changed: 2, skipped: 0),
+          ),
+        );
+      });
+
+      testWidgets('autoProofread：接回的稿已有校对备份就不再校对；默认不自动校对', (
+        WidgetTester tester,
+      ) async {
+        final File srt = File(p.join(tmp.path, 'transcript.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nはい\n\n');
+        File(
+          p.join(tmp.path, kAsrRawTranscriptFileName),
+        ).writeAsStringSync(srt.readAsStringSync());
+        final _FakeService service = _FakeService(
+          ready: true,
+          jobsDir: tmp,
+          existingSrt: srt.path,
+        );
+        final List<String> ranOn = <String>[];
+        await tester.pumpWidget(
+          wrapWithCatalog(
+            service,
+            proofreadHost: countingHost(ranOn),
+            autoProofread: true,
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+        expect(ranOn, isEmpty);
+
+        File(p.join(tmp.path, kAsrRawTranscriptFileName)).deleteSync();
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(
+          wrapWithCatalog(service, proofreadHost: countingHost(ranOn)),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+        expect(ranOn, isEmpty);
       });
 
       testWidgets('没指派「字幕校对」提供商：不发请求，说清去哪里配', (WidgetTester tester) async {

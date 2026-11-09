@@ -24,7 +24,17 @@ import '../../../helpers/fake_ai_text_completer.dart';
 import '../../../helpers/fake_video_subtitle.dart';
 
 class _FakePrefs implements VideoSubtitleGeneratePrefs {
-  _FakePrefs({this.proofread = false, this.consented = false});
+  _FakePrefs({
+    this.proofread = false,
+    this.consented = false,
+    this.saveBesideVideo = true,
+  });
+
+  @override
+  bool saveBesideVideo;
+
+  @override
+  Future<void> setSaveBesideVideo(bool value) async => saveBesideVideo = value;
 
   @override
   bool proofread;
@@ -171,8 +181,9 @@ void main() {
   Future<int> pumpSheet(
     WidgetTester tester,
     AppVideoSubtitleService service,
-    _FakePrefs prefs,
-  ) async {
+    _FakePrefs prefs, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
     int openedSettings = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -184,6 +195,7 @@ void main() {
               target: target,
               prefs: prefs,
               openAiSettings: (BuildContext _) async => openedSettings++,
+              onTranscribeInApp: onTranscribeInApp,
             ),
           ),
         ),
@@ -304,6 +316,106 @@ void main() {
       findsOneWidget,
     );
     expect(startPressed(tester), isNotNull);
+  });
+
+  // 反馈 6Tj3ECtB0Q：视频页单集入口合并后，面板里「保存字幕文件」决定走哪条原流程。
+  group('保存字幕文件（合并入口）', () {
+    Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+
+    testWidgets('整季 / 音乐入口不传回调：没有保存开关，照旧是管线面板', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpSheet(
+        tester,
+        buildService(),
+        _FakePrefs(saveBesideVideo: false),
+      );
+      expect(byKey('video-subtitle-save-beside'), findsNothing);
+      expect(byKey('video-subtitle-ai-language'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-start'), findsOneWidget);
+      expect(byKey('video-subtitle-transcribe-start'), findsNothing);
+    });
+
+    testWidgets('默认开着保存：管线全部选项都在，「开始」起管线任务', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final List<bool> handedOff = <bool>[];
+      final AppVideoSubtitleService service = buildService();
+      await pumpSheet(
+        tester,
+        service,
+        _FakePrefs(),
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(byKey('video-subtitle-save-beside'), findsOneWidget);
+      expect(byKey('video-subtitle-save-beside-hint'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-language'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-segmenter'), findsOneWidget);
+      expect(byKey('video-subtitle-transcribe-start'), findsNothing);
+      await tester.tap(byKey('video-subtitle-ai-start'));
+      await tester.pump();
+      expect(handedOff, isEmpty);
+      expect(service.latestJobFor(target), isNotNull);
+    });
+
+    testWidgets('关掉保存：只剩 AI 校对，「开始」交给本机转录并带上校对开关', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      settings.provider = testProvider();
+      final _FakePrefs prefs = _FakePrefs(proofread: true, consented: true);
+      final List<bool> handedOff = <bool>[];
+      final AppVideoSubtitleService service = buildService();
+      await pumpSheet(
+        tester,
+        service,
+        prefs,
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(byKey('video-subtitle-ai-glossary'), findsOneWidget);
+
+      await tester.tap(byKey('video-subtitle-save-beside'));
+      await tester.pumpAndSettle();
+      expect(prefs.saveBesideVideo, isFalse);
+      expect(byKey('video-subtitle-save-off-hint'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-language'), findsNothing);
+      expect(byKey('video-subtitle-ai-segmenter'), findsNothing);
+      expect(byKey('video-subtitle-ai-glossary'), findsNothing);
+      expect(byKey('video-subtitle-ai-estimate'), findsNothing);
+      expect(byKey('video-subtitle-ai-proofread'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-start'), findsNothing);
+
+      await tester.tap(byKey('video-subtitle-transcribe-start'));
+      await tester.pumpAndSettle();
+      expect(handedOff, <bool>[true]);
+      expect(service.latestJobFor(target), isNull);
+    });
+
+    testWidgets('记住上次关了保存；不开 AI 时交出的校对开关为 false', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final List<bool> handedOff = <bool>[];
+      await pumpSheet(
+        tester,
+        buildService(),
+        _FakePrefs(saveBesideVideo: false),
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(byKey('video-subtitle-save-off-hint'), findsOneWidget);
+      await tester.tap(byKey('video-subtitle-transcribe-start'));
+      await tester.pumpAndSettle();
+      expect(handedOff, <bool>[false]);
+    });
   });
 
   testWidgets('开 AI 时「开始」先过联网搜索抓页确认', (WidgetTester tester) async {

@@ -206,6 +206,30 @@ Future<Object?> ttsPostJson({
   Map<String, String> headers = const <String, String>{},
   int maxResponseBytes = kTtsMaxResponseBytes,
   bool sendBody = true,
+}) => ttsSendForJson(
+  client: client,
+  method: 'POST',
+  uri: uri,
+  cancel: cancel,
+  headers: <String, String>{
+    if (sendBody)
+      HttpHeaders.contentTypeHeader: 'application/json; charset=utf-8',
+    ...headers,
+  },
+  body: sendBody ? utf8.encode(jsonEncode(body)) : const <int>[],
+  maxResponseBytes: maxResponseBytes,
+);
+
+/// 发一个任意方法的请求并把 2xx 响应体解析成 JSON（合成接口返回 JSON 包装的音频时用）。
+/// 与 [ttsSendToFile] 同一套取消 / 时限 / 错误归一；[body] 为 null 时不写请求体。
+Future<Object?> ttsSendForJson({
+  required HttpClient client,
+  required String method,
+  required Uri uri,
+  required TtsCancelToken cancel,
+  Map<String, String> headers = const <String, String>{},
+  List<int>? body,
+  int maxResponseBytes = kTtsMaxResponseBytes,
 }) async {
   cancel.throwIfCancelled();
   HttpClientRequest? request;
@@ -213,22 +237,15 @@ Future<Object?> ttsPostJson({
     request?.abort(const TtsFailure(TtsFailureCode.cancelled));
   });
   try {
-    final HttpClientRequest req = await client.postUrl(uri);
+    final HttpClientRequest req = await client.openUrl(method, uri);
     request = req;
     cancel.throwIfCancelled();
     req.followRedirects = false;
-    if (sendBody) {
-      req.headers.set(
-        HttpHeaders.contentTypeHeader,
-        'application/json; charset=utf-8',
-      );
-    }
     headers.forEach(req.headers.set);
-    final List<int> bytes = sendBody
-        ? utf8.encode(jsonEncode(body))
-        : const <int>[];
-    req.contentLength = bytes.length;
-    if (bytes.isNotEmpty) req.add(bytes);
+    if (body != null) {
+      req.contentLength = body.length;
+      if (body.isNotEmpty) req.add(body);
+    }
     final HttpClientResponse response = await req.close().timeout(
       kTtsRequestTimeout,
     );

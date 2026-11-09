@@ -92,7 +92,7 @@ void main() {
         'selected_custom_theme_id',
         'custom_themes',
         'hover_lookup_modifier',
-        'lookup_library_sentences',
+        'lookup_page_auto_show_keyboard',
         'theme_tint_app_logo',
         'reader_settings_panel_side',
         'invert_swipe_direction',

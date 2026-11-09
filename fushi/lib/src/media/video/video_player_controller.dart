@@ -2635,7 +2635,7 @@ class VideoPlayerController extends ChangeNotifier
   SubtitleTextOverrides get cueTextOverrides => _cueTextOverrides;
 
   /// 主字幕 cue 列表整体换成了一份非空的新列表（加载 / 换轨 / 换集）。页面接到
-  /// 「我库里的例句」的语料喂入（LibraryCorpusService.feedVideoCues）；null = 不关心。
+  /// 手改字幕覆盖的重读；null = 不关心。
   void Function(List<AudioCue> cues)? onCuesReplaced;
 
   /// TODO-1312：设置**副字幕** cue 列表：拷贝并按 startMs 升序排序，复位副字幕活动集。

@@ -100,6 +100,7 @@ const List<String> kServerAgentSettingKeys = <String>[
   'metadataLocale',
   'scanPrune',
   'scanScrape',
+  'lookupChineseScriptVariants',
 ];
 
 /// 把一次 [CtlCall] 原样转给 admin API。[gated] = 不可逆操作：body 里的 `confirm`
@@ -333,7 +334,7 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
   read(
     'server.settings.get',
     '/api/admin/settings',
-    'Read server settings. Secrets are reported only as "set or not". Only subtitleLanguage, metadataLocale, scanPrune and scanScrape can be changed via server.settings.set.',
+    'Read server settings. Secrets are reported only as "set or not". Only subtitleLanguage, metadataLocale, scanPrune, scanScrape and lookupChineseScriptVariants can be changed via server.settings.set.',
   );
   read(
     'server.model.list',
@@ -783,7 +784,7 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
       method: 'PUT',
       pattern: '/api/admin/settings',
       summary:
-          'Change server settings: subtitleLanguage, metadataLocale (restart required), scanPrune, scanScrape. Undo writes the old values back.',
+          'Change server settings: subtitleLanguage, metadataLocale (restart required), scanPrune, scanScrape, lookupChineseScriptVariants. Undo writes the old values back.',
       risk: OpRisk.write,
       params: const <OpParam>[
         OpParam.string(
@@ -803,6 +804,11 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
         OpParam.boolean(
           'scanScrape',
           description: 'Scrape metadata for new works after each scan.',
+        ),
+        OpParam.boolean(
+          'lookupChineseScriptVariants',
+          description:
+              'Look up Simplified and Traditional Chinese forms of a term against each other. Applies only to clients that do not send their own setting (browser extension, older apps).',
         ),
       ],
       undo: OpUndo(

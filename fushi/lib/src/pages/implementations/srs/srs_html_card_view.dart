@@ -38,7 +38,7 @@ import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart'
     show kSrsHtmlFragmentHostCss;
 import 'package:fushi/src/srs/srs_html_card.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsCardAppearanceProvider, srsMediaStoreProvider, srsRunLogged;
 import 'package:fushi/src/srs/srs_review_edit.dart' show SrsCardSelection;

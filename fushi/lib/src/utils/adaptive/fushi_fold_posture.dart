@@ -21,7 +21,8 @@ enum FushiFoldPosture { flat, book, tabletop }
 /// 本地坐标（区域不铺满窗口、上方有标题栏等）用 [fushiFoldRectToLocal]。
 @immutable
 class FushiFoldState {
-  const FushiFoldState({required this.posture, this.hinge});
+  const FushiFoldState({required this.posture, this.hinge, Rect? spine})
+    : _spine = spine;
 
   static const FushiFoldState flat = FushiFoldState(
     posture: FushiFoldPosture.flat,
@@ -32,6 +33,17 @@ class FushiFoldState {
   /// 折痕矩形（MediaQuery 坐标空间的逻辑像素，见类注释）。普通折叠屏的折痕宽度为 0（一条线），带物理
   /// 铰链的双屏设备有实际宽度；[posture] 为 [FushiFoldPosture.flat] 时为 null。
   final Rect? hinge;
+
+  final Rect? _spine;
+
+  /// 横贯整个窗口的**竖向**折痕 / 铰链（MediaQuery 坐标空间），不论开合状态：书本姿态
+  /// 下就是 [hinge]；完全展开平放的折叠屏（[posture] 为 [FushiFoldPosture.flat]）折痕
+  /// 不遮挡内容，但它仍是屏幕天然的「装订线」——阅读器双页时把两页之间的缝对到它上面，
+  /// 「自动」也据此排成双页。没有竖向折痕（普通屏、横向折痕、只碰到窗口一角）时为 null。
+  Rect? get spine => _spine ?? (isBook ? hinge : null);
+
+  /// 窗口里有一条竖向折痕 / 铰链（见 [spine]）。
+  bool get hasSpine => spine != null;
 
   bool get isBook => posture == FushiFoldPosture.book;
   bool get isTabletop => posture == FushiFoldPosture.tabletop;
@@ -47,13 +59,14 @@ class FushiFoldState {
   bool operator ==(Object other) =>
       other is FushiFoldState &&
       other.posture == posture &&
-      other.hinge == hinge;
+      other.hinge == hinge &&
+      other.spine == spine;
 
   @override
-  int get hashCode => Object.hash(posture, hinge);
+  int get hashCode => Object.hash(posture, hinge, spine);
 
   @override
-  String toString() => 'FushiFoldState($posture, $hinge)';
+  String toString() => 'FushiFoldState($posture, $hinge, spine: $spine)';
 }
 
 /// 由窗口的 [displayFeatures] 推出折叠状态（纯函数，单测直接喂 [DisplayFeature]）。
@@ -67,19 +80,20 @@ class FushiFoldState {
 /// 折痕必须**横贯整个窗口**才算把窗口分成两半（分屏 / 自由窗口只盖住折痕一部分时
 /// Android 不会上报，这里再按窗口边界复核一次，防止把只碰到窗口一角的折痕当分隔）。
 /// 竖向折痕 → [FushiFoldPosture.book]，横向折痕 → [FushiFoldPosture.tabletop]。
+///
+/// 完全展开（不分隔）的竖向折痕不改姿态（仍是 [FushiFoldPosture.flat]），只记进
+/// [FushiFoldState.spine]，供阅读器把双页的中缝对到折痕上。
 FushiFoldState resolveFushiFoldState({
   required List<DisplayFeature> displayFeatures,
   required Size windowSize,
 }) {
   if (windowSize.isEmpty) return FushiFoldState.flat;
+  Rect? flatSpine;
   for (final DisplayFeature feature in displayFeatures) {
-    final bool separating = switch (feature.type) {
-      DisplayFeatureType.hinge => true,
-      DisplayFeatureType.fold =>
-        feature.state == DisplayFeatureState.postureHalfOpened,
-      _ => false,
-    };
-    if (!separating) continue;
+    final bool isFold = feature.type == DisplayFeatureType.fold;
+    if (feature.type != DisplayFeatureType.hinge && !isFold) continue;
+    final bool separating =
+        !isFold || feature.state == DisplayFeatureState.postureHalfOpened;
     final Rect bounds = feature.bounds;
     // 按条带长边判方向：宽 < 高 = 竖向折痕，否则按横向处理。
     final bool vertical = bounds.width < bounds.height;
@@ -88,10 +102,13 @@ FushiFoldState resolveFushiFoldState({
       final bool spans =
           bounds.top <= slack && bounds.bottom >= windowSize.height - slack;
       final bool inside = bounds.left > 0 && bounds.right < windowSize.width;
-      if (spans && inside) {
+      if (!spans || !inside) continue;
+      if (separating) {
         return FushiFoldState(posture: FushiFoldPosture.book, hinge: bounds);
       }
+      flatSpine ??= bounds;
     } else {
+      if (!separating) continue;
       final bool spans =
           bounds.left <= slack && bounds.right >= windowSize.width - slack;
       final bool inside = bounds.top > 0 && bounds.bottom < windowSize.height;
@@ -99,27 +116,32 @@ FushiFoldState resolveFushiFoldState({
         return FushiFoldState(
           posture: FushiFoldPosture.tabletop,
           hinge: bounds,
+          spine: flatSpine,
         );
       }
     }
   }
+  if (flatSpine != null) {
+    return FushiFoldState(posture: FushiFoldPosture.flat, spine: flatSpine);
+  }
   return FushiFoldState.flat;
 }
 
-/// 书本姿态下，左右两页之间至少要留多宽的缝（逻辑像素），内容才不会落在折痕 /
+/// 窗口有竖向折痕（[FushiFoldState.spine]：书本姿态，或完全展开的折叠屏）时，左右
+/// 两页之间至少要留多宽的缝（逻辑像素），内容才不会落在折痕 /
 /// 铰链下面——对齐指南「内容放在铰链两侧、不放在铰链下」（`occlusionType == FULL`
 /// 的物理铰链会真的遮住像素）。
 ///
 /// 两页之间的缝以 [contentCenterX]（窗口坐标）为中线对称展开。缝要盖住整条铰链，
 /// 所以 = 铰链宽 + 2 × |铰链中线 − 内容中线|：铰链不在内容正中（左右页边距不等、
-/// 铰链偏心）时，缝向两边多放出偏差量。非书本姿态返回 0；宽度为 0 的柔性折痕且中线
+/// 铰链偏心）时，缝向两边多放出偏差量。没有竖向折痕返回 0；宽度为 0 的柔性折痕且中线
 /// 已对齐时也是 0（折痕本来就落在缝正中，不必加宽）。
 double fushiHingeGutterPx({
   required FushiFoldState fold,
   required double contentCenterX,
 }) {
-  final Rect? hinge = fold.hinge;
-  if (!fold.isBook || hinge == null) return 0;
+  final Rect? hinge = fold.spine;
+  if (hinge == null) return 0;
   final double offset = (hinge.center.dx - contentCenterX).abs();
   return hinge.width + 2 * offset;
 }

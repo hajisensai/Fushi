@@ -642,6 +642,10 @@ class _Cascade {
     for (final SrsCssRule r in rules) {
       if (!r.selector.matches(e)) continue;
       for (final SrsCssDeclaration d in r.declarations) {
+        // 样式表里原生画不了的声明（解析期留的占位）：命中元素才算数。
+        if (d.property == kSrsCssUnsupportedProperty) {
+          srsHtmlUnsupported(d.value);
+        }
         found.add((d.important ? 1 : 0, 2, r.selector.specificity, r.order, d));
       }
     }

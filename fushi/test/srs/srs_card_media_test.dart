@@ -7,7 +7,7 @@ import 'dart:ui' show Color;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 
 void main() {
   late Directory tmp;
@@ -69,6 +69,14 @@ void main() {
       expect(out, contains('src="data:image/png;base64,AA"'));
       expect(out, contains('src="/abs.png"'));
       expect(out, contains('url("${prefix}_bg.png")'));
+    });
+
+    test('不带引号的 src（<img src=x.jpg>）同样改写并补上引号、算进引用', () {
+      const String html = '<img src=b9.jpg><img src=https://x.org/y.png>';
+      final String out = srsLocalizeCardHtml(html, urlPrefix: prefix);
+      expect(out, contains('src="${prefix}b9.jpg"'));
+      expect(out, contains('src=https://x.org/y.png'));
+      expect(srsCardReferencedMedia(html), <String>{'b9.jpg'});
     });
 
     test('[sound:x] → 播放按钮（data-sound 原名）', () {

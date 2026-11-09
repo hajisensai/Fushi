@@ -8,9 +8,11 @@ import 'package:fushi_engine/media/media_pref_keys.dart'
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/profile/work_profile_scope.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -566,8 +568,12 @@ class ReaderSettings {
   Future<void> setMarginRight(double v) =>
       _set<double>('margin_right', normalizeMarginPercent(v));
 
-  int get pageColumns => _get<int>('page_columns', 0);
-  Future<void> setPageColumns(int v) => _set<int>('page_columns', v);
+  /// 单双页（[ReaderPageSpread]）。持久化键沿用旧「每页列数」的 `page_columns`
+  /// （冻结不改名）：0 = 自动、1 = 单页、≥ 2 = 双页（旧版的 3、4 栏读出来是双页）。
+  ReaderPageSpread get pageSpread =>
+      ReaderPageSpread.fromStored(_get<int>('page_columns', 0));
+  Future<void> setPageSpread(ReaderPageSpread v) =>
+      _set<int>('page_columns', v.storedValue);
 
   /// 「中缝折痕」显示风格：翻页模式一屏两栏时在两页之间画书脊阴影（见
   /// [ReaderContentStyles.pageCreaseCss]）。默认关：不改变既有书面观感。
@@ -816,6 +822,30 @@ class ReaderSettings {
       ReaderTapZoneLayout.fromKey(_cache[tapZoneLayoutKey]?.toString());
   Future<void> setTapZoneLayout(ReaderTapZoneLayout v) =>
       _set<String>(tapZoneLayoutKey, v.key);
+
+  /// 连续（滚动）模式拉过章首 / 章末切章的阻尼档（反馈 R7k887yaJI）。语义见
+  /// [ContinuousChapterTurnResistance]；只在连续模式的触摸手势上生效。
+  static const String continuousChapterTurnResistanceKey =
+      'continuous_chapter_turn_resistance';
+
+  ContinuousChapterTurnResistance get continuousChapterTurnResistance =>
+      ContinuousChapterTurnResistance.fromKey(
+        _cache[continuousChapterTurnResistanceKey]?.toString(),
+      );
+  Future<void> setContinuousChapterTurnResistance(
+    ContinuousChapterTurnResistance v,
+  ) => _set<String>(continuousChapterTurnResistanceKey, v.key);
+
+  /// 连续（滚动）模式章节无缝衔接（反馈 R7k887yaJI ③，默认关）：前后章挂在同一文档里
+  /// 一起滚动，滚过章界不再整章重载。设计见
+  /// `docs/specs/2026-11-07-continuous-seamless-chapters-design.md`。
+  static const String continuousSeamlessChaptersKey =
+      'continuous_seamless_chapters';
+
+  bool get continuousSeamlessChapters =>
+      _get<bool>(continuousSeamlessChaptersKey, false);
+  Future<void> setContinuousSeamlessChapters(bool v) =>
+      _set<bool>(continuousSeamlessChaptersKey, v);
 
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
