@@ -574,6 +574,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
   // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
   'music_online_sources',
+  // String（MusicPluginQuality.wire：standard / high / lossless / hires；缺省 = 没单独
+  // 设过，由 music_server_max_bitrate 反推）：在线插件取流音质档。跨设备。
+  'music_plugin_quality',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',

@@ -12,6 +12,9 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart'
+    show musicPluginQualityLabel;
+import 'package:fushi_music/fushi_music.dart' show MusicPluginQuality;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -251,6 +254,31 @@ SettingsDestination buildMusicDestination() {
             selected: (SettingsContext c) => c.appModel.musicDsdPcmRate,
             onChanged: (SettingsContext c, int v) =>
                 c.appModel.setMusicDsdPcmRate(v),
+          ),
+        ],
+      ),
+      // 在线插件取流音质（插件音源；iOS 商店合规门没过时整组不出现）。媒体服务器的转码码率
+      // 是另一回事，在设置 › 在线服务 › 媒体服务器。
+      SettingsSection(
+        title: t.music_quality_title,
+        visible: (SettingsContext c) => isMusicPluginSourcesAvailable,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'music.plugin_quality',
+            title: t.music_quality_plugin_default_title,
+            subtitle: t.music_quality_plugin_default_hint,
+            icon: FushiIcons.highQuality,
+            defaultValue: MusicPluginQuality.lossless.wire,
+            options: <SettingsSegmentOption<String>>[
+              for (final MusicPluginQuality q in MusicPluginQuality.values)
+                SettingsSegmentOption<String>(
+                  value: q.wire,
+                  label: musicPluginQualityLabel(q),
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.musicPluginQuality.wire,
+            onChanged: (SettingsContext c, String v) => c.appModel
+                .setMusicPluginQuality(MusicPluginQuality.fromWire(v)),
           ),
         ],
       ),

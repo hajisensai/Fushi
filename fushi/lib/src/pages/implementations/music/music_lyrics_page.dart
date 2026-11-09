@@ -75,6 +75,7 @@ import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
+import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
@@ -1490,6 +1491,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       appModelNoUpdate.prefsRepo,
     ]),
     builder: (BuildContext context, _) {
+      final MusicPlayItem? item = _engine.current;
+      final String? quality = item != null && musicItemQualitySelectable(item)
+          ? musicPluginQualityLabel(
+              appModelNoUpdate.musicPluginQualityFor(item.path),
+            )
+          : null;
       final String effects = appModelNoUpdate.musicAudioEffects.enabled
           ? '${t.music_effects_title} · '
                 '${musicEqPresetLabel(appModelNoUpdate.musicEqPreset)}'
@@ -1497,6 +1504,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // 音质（在线插件曲目才有）：点开换档、原位重取。
+          if (quality != null)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_lyrics_quality'),
+              icon: const FushiIcon(FushiIcons.highQuality),
+              tooltip: t.music_quality_chip_semantics(quality: quality),
+              onPressed: () => unawaited(
+                showMusicQualitySheet(_themedContext, appModelNoUpdate),
+              ),
+            ),
           // 音效（能处理信号的后端才有）：处理中时高亮。
           if (_engine.capabilities.signalPath)
             FushiIconButtonControl(

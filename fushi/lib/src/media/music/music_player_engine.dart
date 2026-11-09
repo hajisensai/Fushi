@@ -699,13 +699,43 @@ class MusicPlayerEngine extends ChangeNotifier {
     );
   }
 
+  /// 按新的取流参数（在线插件换了音质档）重取 [where] 命中的曲目：当前曲命中就原位重开
+  /// （进度、播放 / 暂停态不变，也不再记一次「开始播放」，下一首随 openPair 一并重排）；
+  /// 当前曲不命中、但已预排的下一首命中，只重排下一首（[MusicOutputBackend.replaceNext]，
+  /// 当前曲不中断）。[where] 由调用方按触发原因给（改插件音质 = 插件曲目），引擎不泛化成
+  /// 「凡是起播才取流的都重开」，免得改插件音质把正在放的其他远程来源也重新缓冲。
+  /// 自管队列的后端不做；不支持起点的后端（Apple Music）不重开当前曲。
+  Future<void> reopenCurrent({
+    required bool Function(MusicPlayItem item) where,
+  }) async {
+    final MusicPlayItem? item = current;
+    if (item == null || _ended || capabilities.externalQueue) return;
+    if (where(item)) {
+      if (!capabilities.startAt) return;
+      await _openCurrent(
+        play: _playing || _resolving,
+        startAt: _position,
+        announce: false,
+      );
+      return;
+    }
+    final MusicOutputBackend? backend = _backend;
+    final MusicPlayItem? upcoming = _stopAfterCurrent ? null : next;
+    if (backend != null && upcoming != null && where(upcoming)) {
+      await _sendNext(backend);
+    }
+  }
+
   /// 打开 [current]。[userInitiated] = 用户点的（换队列 / 切歌 / 跳转）：连续失败计数清零；
   /// false = 拿不到流后的自动跳过。[startIntent] = 断点续播按什么意图定起点（null = 从头，
-  /// 见 [resolveStartPosition]）。
+  /// 见 [resolveStartPosition]）；[startAt] 给了就直接从那儿开始（原位重开），不再查断点。
+  /// [announce] = 是否记一次「开始播放」（原位重开不记）。
   Future<void> _openCurrent({
     required bool play,
     bool userInitiated = true,
     EpisodeStartIntent? startIntent,
+    Duration? startAt,
+    bool announce = true,
   }) async {
     _restoreExternalRoot();
     final MusicPlayItem? item = current;
@@ -731,19 +761,20 @@ class MusicPlayerEngine extends ChangeNotifier {
     try {
       final Future<Duration> Function(MusicPlayItem, EpisodeStartIntent)?
       resolver = resolveStartPosition;
-      Duration startAt = Duration.zero;
-      if (play &&
+      Duration startFrom = startAt ?? Duration.zero;
+      if (startAt == null &&
+          play &&
           startIntent != null &&
           resolver != null &&
           !external &&
           capabilities.startAt) {
-        startAt = await resolver(item, startIntent);
+        startFrom = await resolver(item, startIntent);
         // 读断点期间用户又切了别的：这次作废（读到的断点不套到别的曲目上）。
         if (gen != _openGen) return;
       }
-      if (startAt > Duration.zero) {
-        _position = startAt;
-        _resumeTarget = startAt;
+      if (startFrom > Duration.zero) {
+        _position = startFrom;
+        _resumeTarget = startFrom;
       }
       await backend.applySettings(currentSettings);
       if (gen != _openGen) return;
@@ -754,7 +785,7 @@ class MusicPlayerEngine extends ChangeNotifier {
         _recordSentNext(_stopAfterCurrent ? null : next, reset: true),
         play: play,
         crossfadeNext: crossfade,
-        startAt: startAt,
+        startAt: startFrom,
       );
     } on MusicTrackOpenException catch (e) {
       if (gen != _openGen) return;
@@ -777,7 +808,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       if (external) {
         // 后端还没报（或在打开期间才报了）在放哪首：第一条 NowPlayingChanged 时再记「开始播」。
         _externalStartPending = true;
-      } else {
+      } else if (announce) {
         _announceStarted(item);
       }
       if (_pauseAfterOpen) {

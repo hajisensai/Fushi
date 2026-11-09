@@ -435,6 +435,7 @@ import 'package:fushi/src/media/music/music_audio_effects_host.dart';
 import 'package:fushi/src/media/music/music_audio_effects_prefs.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_plugin_quality_host.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
@@ -447,7 +448,7 @@ import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
-    show InstalledMusicPlugin, MusicPluginManager;
+    show InstalledMusicPlugin, MusicPluginManager, MusicPluginQuality;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
@@ -831,7 +832,8 @@ class HomeDictionaryTabRequest {
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
-class AppModel with ChangeNotifier implements MusicAudioEffectsHost {
+class AppModel with ChangeNotifier
+    implements MusicAudioEffectsHost, MusicPluginQualityHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -2001,9 +2003,9 @@ class AppModel with ChangeNotifier implements MusicAudioEffectsHost {
     if (isMusicPluginSourcesAvailable) {
       musicPluginPlaybackHost = MusicPluginPlaybackHost(
         manager: () => musicPluginManager,
-        quality: () => musicPluginQualityForBitrate(
-          isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 320,
-        ),
+        quality: (String path) => isPreferencesReady
+            ? musicPluginQualityFor(path)
+            : MusicPluginQuality.high,
       );
     }
     // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
@@ -2394,6 +2396,56 @@ class AppModel with ChangeNotifier implements MusicAudioEffectsHost {
   }) async {
     await writeMusicAudioEffectsPrefs(prefsRepo, next, preset: preset);
     await musicSession.engine.reapplySettings();
+  }
+
+  @override
+  MusicPlayerEngine get musicPlayerEngine => musicSession.engine;
+
+  /// 在线插件默认取流音质。没单独设过时沿用旧行为：由服务器码率上限反推。
+  @override
+  MusicPluginQuality get musicPluginQuality {
+    final String? wire = prefsRepo.musicPluginQualityWire;
+    return wire == null
+        ? musicPluginQualityForBitrate(prefsRepo.musicServerMaxBitrate)
+        : MusicPluginQuality.fromWire(wire);
+  }
+
+  /// 播放器里「只对这首」选的音质（插件占位路径 → 档位）。只活在本次进程里：它是一次性的
+  /// 试听选择，不是设置；改默认档时一并清掉（默认档说了算）。
+  final Map<String, MusicPluginQuality> _musicPluginQualityOverrides =
+      <String, MusicPluginQuality>{};
+
+  /// 这首插件曲目实际按哪一档取流。
+  @override
+  MusicPluginQuality musicPluginQualityFor(String path) =>
+      _musicPluginQualityOverrides[path] ?? musicPluginQuality;
+
+  /// 改默认音质；正在放的插件曲目按新档原位重取（进度、暂停态不变），当前曲不是插件曲目
+  /// 而预排的下一首是时只重排下一首。非插件的远程曲目不受影响。
+  @override
+  Future<void> setMusicPluginQuality(MusicPluginQuality quality) async {
+    _musicPluginQualityOverrides.clear();
+    await prefsRepo.setMusicPluginQualityWire(quality.wire);
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => isMusicPluginPath(item.path),
+    );
+  }
+
+  /// 只对 [path] 这首换档（不改默认）；它正在放就原位重取，是预排的下一首就重排下一首。
+  @override
+  Future<void> setMusicPluginQualityOverride(
+    String path,
+    MusicPluginQuality quality,
+  ) async {
+    if (quality == musicPluginQuality) {
+      _musicPluginQualityOverrides.remove(path);
+    } else {
+      _musicPluginQualityOverrides[path] = quality;
+    }
+    notifyListeners();
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => item.path == path,
+    );
   }
 
   double get musicReplayGainPreampDb => prefsRepo.musicReplayGainPreampDb;
