@@ -683,14 +683,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// （[_clearSearchFromResultPull]，手势的真实来源是结果 WebView 内的 JS），再叠一层
   /// 刷新就是两个手势抢同一个下拉。
   Future<void> _pullToRefreshDictionary() async {
-    await runManualSyncWithFeedback(
-      context: context,
-      appModel: appModel,
-      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-      announceNotConfigured: false,
-      announceBusy: false,
-    );
+    // 同步模块门在 [runPullToRefreshSync] 里：模块关掉时只剩重读本地列表。
+    await runPullToRefreshSync(context: context, appModel: appModel);
     if (!mounted) return;
     setState(() {});
   }
