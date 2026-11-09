@@ -858,6 +858,32 @@ class MangaFushiPage extends BaseSourcePage {
     );
   }
 
+  /// 在线直读章第 [index] 页（0-based）在 payload 里的占位 url。带章目录名一段：
+  /// 各章页名同形，URL 不能在章与章之间撞（WebView 缓存）。不带扩展名、也不对应
+  /// 盘上文件——页字节由会话按页序给（见 [cachedMangaPageImage]）。
+  static String streamingPageUrl(String chapterDirName, int index) =>
+      '${MangaStorage.kImagesDirName}/$chapterDirName/'
+      'page-${(index + 1).toString().padLeft(6, '0')}';
+
+  /// 第 [pageIndex] 页此刻已在盘上的页图路径（同步，不发请求）。
+  ///
+  /// 在线直读章（[session] 是 [OnlineMangaReaderSession]）的 payload url 只是
+  /// 不带扩展名的占位名（`images/<章目录>/page-000001`），真文件是会话缓存目录里
+  /// 带扩展名的 `page-000001.jpg`，按 url 拼路径永远落空——只认会话已落盘的那份，
+  /// 没取到 → null。其余（本地卷 / 已下载章）按 manga.json 解析。
+  static String? cachedMangaPageImage(
+    MokuroPayload payload,
+    String imagesRoot,
+    MangaReaderSession? session,
+    int pageIndex,
+  ) {
+    if (pageIndex < 0 || pageIndex >= payload.images.length) return null;
+    if (session is OnlineMangaReaderSession) {
+      return session.cachedFilePath(pageIndex);
+    }
+    return resolveMangaPageImage(payload, imagesRoot, pageIndex);
+  }
+
   /// 纯函数：manga.json 的相对 url → WebView 可加载的拦截器 URL。逐段
   /// percent-encode（保留 `/` 结构），与拦截器侧 `Uri.decodeComponent` 对称
   /// （镜像 epubUrl 的 HBK-AUDIT-127 编解码对称纪律）。
@@ -2674,11 +2700,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         images: <MokuroImage>[
           for (int index = 0; index < pages.length; index++)
             MokuroImage(
-              // 带章摘要一段：各章页名同形，URL 不能在章与章之间撞（WebView 缓存）。
-              url:
-                  '${MangaStorage.kImagesDirName}/'
-                  '${p.basename(chapterDir.path)}/'
-                  'page-${(index + 1).toString().padLeft(6, '0')}',
+              url: MangaFushiPage.streamingPageUrl(
+                p.basename(chapterDir.path),
+                index,
+              ),
               size: placeholder,
               blocks: const <MokuroBlock>[],
             ),
@@ -4322,15 +4347,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentPageImagePath = null;
       return;
     }
-    final MangaReaderSession? session = _pageSession;
-    // 在线直读章的页名不带扩展名、只在会话缓存里：按页序问会话（还没取到 → null，
-    // 制卡时再经 [_currentMangaPageFile] 现取）。
-    _currentPageImagePath = session is OnlineMangaReaderSession
-        ? session.cachedFilePath(page)
-        : MangaFushiPage.resolveMangaResource(
-            imagesDir,
-            MangaFushiPage.mangaImageRelativePath(payload.images[page].url),
-          );
+    // 在线直读章还没取到的页 → null，制卡时再经 [_currentMangaPageFile] 现取。
+    _currentPageImagePath = MangaFushiPage.cachedMangaPageImage(
+      payload,
+      imagesDir,
+      _pageSession,
+      page,
+    );
   }
 
   /// 视口里的页（连续模式按 JS 报告的视口，分页模式按当前 entry）。窗口就绪时据此
@@ -6180,15 +6203,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   // ── 2026-10 重设计的 chrome 入口（页面一览 / 快捷设置 / 章节按钮 / 章末卡片）──
 
   /// 第 [pageIndex] 页的本地缩略图（拖动气泡 / 页面一览）。只认已经在盘上的页图
-  /// （本地卷 / 已下载章）：在线直读的页不为了缩略图去发请求，取不到就返回
-  /// null，调用方画页码占位。
+  /// （本地卷 / 已下载章 / 在线直读会话已缓存的页）：在线直读的页不为了缩略图去
+  /// 发请求，取不到就返回 null，调用方画页码占位。
   ImageProvider? _pageThumbnail(int pageIndex) {
     final MokuroPayload? payload = _payload;
     final String? imagesDir = _imagesDir;
     if (payload == null || imagesDir == null) return null;
-    final String? path = MangaFushiPage.resolveMangaPageImage(
+    final String? path = MangaFushiPage.cachedMangaPageImage(
       payload,
       imagesDir,
+      _pageSession,
       pageIndex,
     );
     if (path == null || !File(path).existsSync()) return null;
