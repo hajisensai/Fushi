@@ -677,6 +677,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       furiganaPlain: payload.furiganaPlain,
       frequenciesHtml: payload.frequenciesHtml,
       freqHarmonicRank: payload.freqHarmonicRank,
+      singleFrequencyNumbers: payload.singleFrequencyNumbers,
+      singleFrequenciesHtml: payload.singleFrequenciesHtml,
       glossary: compactAnkiGlossaryHtml(
         cssSlimmer.slim(payload.glossary),
         enabled: compactGlossaries,
