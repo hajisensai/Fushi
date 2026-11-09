@@ -1770,9 +1770,14 @@ void main() {
       },
     );
 
-    test('新卡计划：按复习量多出（increased）与关掉调整都在内核计数里生效', () async {
+    test('新卡计划：FSRS 牌组按复习量多出（increased）与关掉调整都在内核计数里生效', () async {
       final String id = f.store.defaultDeckId;
       await f.store.editFields(SrsEntityKind.deck, id, <String, Object?>{
+        // 按复习量调整只对 FSRS 牌组生效（RWKV 牌组见下一条）。
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': false,
+        },
         SrsFieldKeys.deckLimits: <String, Object?>{'new': 4, 'review': 200},
         SrsFieldKeys.deckNewPlan: const SrsNewCardPlan(
           boostPercent: 50,
@@ -1794,6 +1799,39 @@ void main() {
       expect(s.newBudget.reason, isNull);
       expect(s.newBudget.allowed, 4);
       expect(s.newBudget.reviewBudget, 0);
+    });
+
+    test('新卡计划：RWKV 牌组写了 boost=50 也不按复习量调整，切回 FSRS 恢复', () async {
+      final String id = f.store.defaultDeckId;
+      // 缺省算法就是 RWKV：只写上限与新卡计划。
+      await f.store.editFields(SrsEntityKind.deck, id, <String, Object?>{
+        SrsFieldKeys.deckLimits: <String, Object?>{'new': 4, 'review': 200},
+        SrsFieldKeys.deckNewPlan: const SrsNewCardPlan(
+          boostPercent: 50,
+        ).toValue(),
+      });
+      expect(
+        (await f.store.deckTree()).schedulingConfig(id).algorithm,
+        SrsAlgorithm.rwkv,
+      );
+      SrsDeckSummary s = (await f.store.deckSummaries()).firstWhere(
+        (SrsDeckSummary d) => d.deck.id == id,
+      );
+      expect(s.newBudget.reason, isNull);
+      expect(s.newBudget.allowed, 4);
+      expect(s.newBudget.reviewBudget, 0);
+      // 寄存器值照存：切回 FSRS 后同一份新卡计划立即生效。
+      await f.store.editFields(SrsEntityKind.deck, id, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': false,
+        },
+      });
+      s = (await f.store.deckSummaries()).firstWhere(
+        (SrsDeckSummary d) => d.deck.id == id,
+      );
+      expect(s.newBudget.reason, SrsNewCardBudgetReason.increased);
+      expect(s.newBudget.allowed, greaterThan(4));
     });
 
     test('没写过步长的 RWKV 牌组不用步长；写过的照用；FSRS 牌组仍是默认步长', () async {
