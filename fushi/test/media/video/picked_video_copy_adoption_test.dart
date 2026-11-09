@@ -7,7 +7,7 @@
 // `adoptPickedVideoCopy` 把临时副本挪进 `<support>/imported_videos/<bookUid>/`。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show adoptPickedVideoCopy, isPickerImportCopyPath;
