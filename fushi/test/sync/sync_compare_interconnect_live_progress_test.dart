@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
@@ -76,9 +80,56 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
     );
   }
 
+  /// host 有声书清单与断点（bookKey → 断点）。
+  final List<RemoteAudiobookInfo> hostAudiobooks = <RemoteAudiobookInfo>[];
+  final Map<String, ({int positionMs, int updatedAtMs})> hostAudioPositions =
+      <String, ({int positionMs, int updatedAtMs})>{};
+  final Map<String, ({int positionMs, int updatedAtMs})> putAudioPositions =
+      <String, ({int positionMs, int updatedAtMs})>{};
+
+  /// host 聚合快照（null = 老 host 无端点）；PUT 上来的合并结果。
+  AggregateSnapshot? hostAggregate;
+  int aggregatePuts = 0;
+  int aggregateGets = 0;
+
+  /// 文件箱被列举的次数（互联对比不得再碰文件箱，反馈 kM-Gb_Xnu-）。
+  int listBooksCalls = 0;
+
   @override
   Future<List<RemoteAudiobookInfo>> listRemoteAudiobooks() async =>
-      const <RemoteAudiobookInfo>[];
+      hostAudiobooks;
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteAudiobookPosition(
+    String bookKey,
+  ) async => hostAudioPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putRemoteAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    putAudioPositions[bookKey] = (
+      positionMs: positionMs,
+      updatedAtMs: updatedAtMs,
+    );
+    hostAudioPositions[bookKey] = putAudioPositions[bookKey]!;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getRemoteAggregate() async {
+    aggregateGets++;
+    final AggregateSnapshot? snapshot = hostAggregate;
+    return snapshot == null
+        ? null
+        : Map<String, dynamic>.from(snapshot.toJson());
+  }
+
+  @override
+  Future<void> putRemoteAggregate(Object? json) async {
+    aggregatePuts++;
+  }
 
   // ── 弹窗 _load / Apply 路径会碰到的 WebDAV 文件箱面（全部就地 no-op）──
   @override
@@ -86,11 +137,14 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
   @override
   Future<String> findOrCreateRootFolder() async => 'root';
   @override
-  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
-      <SyncFileRef>[
-        for (final String title in fileBoxProgress.keys)
-          SyncFileRef(id: 'folder-$title', name: title),
-      ];
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
+    listBooksCalls++;
+    return <SyncFileRef>[
+      for (final String title in fileBoxProgress.keys)
+        SyncFileRef(id: 'folder-$title', name: title),
+    ];
+  }
+
   @override
   void cacheBookFolderIds(List<SyncFileRef> folders) {}
   @override
@@ -441,8 +495,8 @@ void main() {
   );
 
   testWidgets(
-    'live GET failing at load degrades the row to the file box, but Apply '
-    '"use local" still pushes to host DB',
+    'live GET failing at load: no file-box fallback, Apply "use local" still '
+    'pushes to host DB and never writes the file box',
     (WidgetTester tester) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -451,35 +505,155 @@ void main() {
       final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
         hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
       );
-      // 文件箱里 client 自己上次导出的旧进度（ts 500）；文件箱基线 100 → 与本机
-      // (1000) 两边都偏离 → 文件箱口径也是冲突，这一行才会在 conflictsOnly 下出现。
+      // 文件箱里 client 自己上次导出的旧进度：反馈 kM-Gb_Xnu- 之后互联对比完全不看它。
       fake.fileBoxProgress['BookA'] = TtuProgress(
         dataId: 0,
         exploredCharCount: 900,
         progress: 0.9,
         lastBookmarkModified: 500,
       );
-      await db.setSyncBaseline('BookA', 'progress__fushiServer', 100);
-      // 加载期那一次 live GET 失败 → 这一行被静默降级成文件箱行（liveAction null）。
+      // 加载期那一次 live GET 失败 → 这一行没有 liveAction，远端显示无数据。
       fake.failRemoteProgressReads = 1;
-      await pumpDialog(tester, db, fake, conflictsOnly: true);
-      expect(find.text(t.sync_compare_conflicts), findsOneWidget);
+      await pumpDialog(tester, db, fake);
       expect(find.text('BookA'), findsOneWidget);
+      expect(fake.listBooksCalls, 0, reason: '互联不列文件箱');
 
-      await tester.tap(find.text(t.sync_compare_use_local).last);
-      await tester.pumpAndSettle();
       await tester.tap(find.text(t.sync_compare_apply(count: 1)));
       await tester.pumpAndSettle();
 
-      // 此前这里只写了 host 上谁都不读的文件箱，host DB 原样不动 → 下一轮 sweep 的
-      // live 三方判定照旧报同一条冲突。现在 host 有这本书就推。
-      expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+      // 只要 host 有这本书就推（门槛是 remoteLiveTitle，不是加载期 GET 成功）。
       final RemoteBookProgress? pushed = fake.putProgress['BookA'];
-      expect(pushed, isNotNull, reason: '选本机必须推到 host DB，不能只写文件箱');
+      expect(pushed, isNotNull, reason: '选本机必须推到 host DB');
       expect(pushed!.normCharOffset, 3000);
       expect(fake.hostProgress['BookA']!.normCharOffset, 3000);
+      expect(
+        fake.exportedByFolder,
+        isEmpty,
+        reason: '互联「应用」不再经 SyncManager 写 host 上没人读的文件箱',
+      );
     },
   );
+
+  test('互联对比：统计数与有声书断点取 host 真相，不读文件箱（反馈 kM-Gb_Xnu-）', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    await _seedBook(db, 'BookA');
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
+    );
+    // 文件箱里有一本 host 书库没有的「书」：以前会被当成远端独有书列出来。
+    fake.fileBoxProgress['Ghost'] = TtuProgress(
+      dataId: 0,
+      exploredCharCount: 1,
+      progress: 0.1,
+      lastBookmarkModified: 1,
+    );
+    fake.hostAggregate = const AggregateSnapshot(
+      readingStats: <ReadingStatRecord>[
+        ReadingStatRecord(
+          title: 'BookA',
+          dateKey: '2026-11-01',
+          charactersRead: 10,
+          readingTimeMs: 1,
+          lastStatisticModified: 1,
+        ),
+        ReadingStatRecord(
+          title: 'BookA',
+          dateKey: '2026-11-02',
+          charactersRead: 10,
+          readingTimeMs: 1,
+          lastStatisticModified: 1,
+        ),
+        ReadingStatRecord(
+          title: 'Other',
+          dateKey: '2026-11-02',
+          charactersRead: 10,
+          readingTimeMs: 1,
+          lastStatisticModified: 1,
+        ),
+      ],
+    );
+    fake.hostAudiobooks.add(
+      const RemoteAudiobookInfo(
+        bookKey: 'BookA',
+        title: 'BookA',
+        positionMs: 12500,
+        positionUpdatedAtMs: 777,
+      ),
+    );
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      fake,
+    );
+    expect(fake.listBooksCalls, 0);
+    expect(entries.map((SyncCompareEntry e) => e.title), <String>['BookA']);
+    final SyncCompareEntry row = entries.single;
+    expect(row.remoteStatsCount, 2, reason: 'host reading_statistics 里这本书的行数');
+    expect(row.remoteAudioPosSec, 12.5);
+    expect(row.remoteLiveAudiobookKey, 'BookA');
+    expect(row.remoteFolderId, isNull);
+  });
+
+  test('互联「应用」：有声书断点按选择经 live 端点落地，统计与 host 合并', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    await SyncRepository(db).setInterconnectSyncStatsEnabled(true);
+    await db.setPrefTyped<int>(audiobookPositionPrefKey('BookA'), 4000);
+    await db.setPrefTyped<int>(audiobookPositionAtPrefKey('BookA'), 2000);
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(3000, 1000)},
+    );
+    fake.hostAggregate = const AggregateSnapshot();
+    fake.hostAudiobooks.add(
+      const RemoteAudiobookInfo(bookKey: 'BookA', title: 'BookA'),
+    );
+    fake.hostAudioPositions['BookA'] = (positionMs: 9000, updatedAtMs: 5000);
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      fake,
+    );
+    final SyncCompareEntry row = entries.single;
+    expect(row.remoteAudioPosSec, 9, reason: '老 host 清单不内联断点时逐本 GET');
+
+    // 选「用远端」：host 断点落回本机。
+    final Directory tmp = Directory.systemTemp.createTempSync('cmp_live_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final int getsBeforeApply = fake.aggregateGets;
+    SyncCompareApplyResult result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useRemote},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty);
+    expect(
+      await db.getPrefTyped<int>(audiobookPositionPrefKey('BookA'), 0),
+      9000,
+    );
+    // 两端都没有统计：合并结果为空不 PUT（syncOverClient 的空合并短路），但必须向
+    // host 取过一次聚合做并集。
+    expect(fake.aggregateGets, getsBeforeApply + 1, reason: '统计按并集与 host 合并一次');
+    expect(fake.aggregatePuts, 0);
+
+    // 本机又听到 15000，选「用本地」：推给 host。
+    await db.setPrefTyped<int>(audiobookPositionPrefKey('BookA'), 15000);
+    await db.setPrefTyped<int>(audiobookPositionAtPrefKey('BookA'), 9000);
+    result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useLocal},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty);
+    expect(fake.putAudioPositions['BookA']?.positionMs, 15000);
+    expect(fake.exportedByFolder, isEmpty, reason: '文件箱一次都没写');
+  });
 
   testWidgets('Apply "use remote" lands host DB progress locally and records '
       'the baseline', (WidgetTester tester) async {

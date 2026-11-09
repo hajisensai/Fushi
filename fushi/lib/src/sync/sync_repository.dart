@@ -1880,6 +1880,9 @@ class SyncRepository {
     PreferencesRepository.srsSync2MergeConfirmedKey,
     // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
     PreferencesRepository.srsLocationKeysKey,
+    // 复习首页「已配对设备」的牌组摘要缓存（kSrsHomePairedCachePrefKey）：描述的是这台设备配对的主机与
+    // 上次看到的数字，别的设备恢复备份带过来只会画出它没配对的主机。
+    'srs_home_paired_cache',
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
@@ -2007,6 +2010,9 @@ class SyncRepository {
     // 漂过去会让另一台设备静默对外开放、或让旧令牌在新设备上生效。
     'ai_mcp_enabled',
     'ai_mcp_token_sha256',
+    // AI 助手接入的外部 MCP server：请求头里可能有 token，本地程序的命令与路径只对
+    // 这台机器成立；漂到别的设备既泄凭据又会去拉起一个不存在的程序。
+    'ai_mcp_client_servers',
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',

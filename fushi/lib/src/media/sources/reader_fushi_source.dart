@@ -30,6 +30,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
@@ -1742,6 +1743,44 @@ class ReaderFushiSource extends ReaderMediaSource {
     await (readerSettings?.setPageTurnFollowDrag(value) ??
         setPreference<bool>(
           key: ReaderSettings.pageTurnFollowDragKey,
+          value: value,
+        ));
+  }
+
+  /// 连续模式切章阻尼（落盘 key 与 [ReaderSettings.continuousChapterTurnResistance]
+  /// 同一个），`readerSettings` 为 null 的旁路 entry point 走偏好表兜底。
+  ContinuousChapterTurnResistance get continuousChapterTurnResistance =>
+      readerSettings?.continuousChapterTurnResistance ??
+      ContinuousChapterTurnResistance.fromKey(
+        getPreference<String?>(
+          key: ReaderSettings.continuousChapterTurnResistanceKey,
+          defaultValue: null,
+        ),
+      );
+
+  Future<void> setContinuousChapterTurnResistance(
+    ContinuousChapterTurnResistance value,
+  ) async {
+    await (readerSettings?.setContinuousChapterTurnResistance(value) ??
+        setPreference<String>(
+          key: ReaderSettings.continuousChapterTurnResistanceKey,
+          value: value.key,
+        ));
+  }
+
+  /// 连续模式章节无缝衔接（落盘 key 与 [ReaderSettings.continuousSeamlessChapters]
+  /// 同一个，默认关）。
+  bool get continuousSeamlessChapters =>
+      readerSettings?.continuousSeamlessChapters ??
+      getPreference<bool>(
+        key: ReaderSettings.continuousSeamlessChaptersKey,
+        defaultValue: false,
+      );
+
+  Future<void> setContinuousSeamlessChapters(bool value) async {
+    await (readerSettings?.setContinuousSeamlessChapters(value) ??
+        setPreference<bool>(
+          key: ReaderSettings.continuousSeamlessChaptersKey,
           value: value,
         ));
   }
