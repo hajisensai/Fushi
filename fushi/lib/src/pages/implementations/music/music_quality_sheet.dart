@@ -1,6 +1,7 @@
 /// 播放器里的音质快切（在线插件曲目）：四档（标准 / 高品 / 无损 / Hi-Res）+ 当前流实际规格
-/// + 「设为默认音质」。选了就按新档原位重取（[AppModel.setMusicPluginQuality] /
-/// [AppModel.setMusicPluginQualityOverride] → [MusicPlayerEngine.reopenCurrent]），进度与
+/// + 「设为默认音质」。选了就按新档原位重取（[MusicPluginQualityHost.setMusicPluginQuality] /
+/// [MusicPluginQualityHost.setMusicPluginQualityOverride] →
+/// [MusicPlayerEngine.reopenCurrent]），进度与
 /// 暂停态不变。插件拿不到所选档时由它给出能提供的最高档，「当前流」一行以 mpv 实际解出的
 /// 规格为准（[musicSourceLabel]），不信插件自报。
 ///
@@ -18,9 +19,9 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/music/music_plugin_quality_host.dart';
 import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
-import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart'
+import 'package:fushi/src/pages/implementations/music/music_signal_path_labels.dart'
     show musicSourceLabel;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -55,17 +56,19 @@ bool musicItemQualitySelectable(MusicPlayItem? item) =>
     parseMusicPluginTrackPath(item.path) != null;
 
 /// 打开音质快切。
-Future<void> showMusicQualitySheet(BuildContext context, AppModel appModel) =>
-    showMusicFloatingPanel(
-      context: context,
-      maxWidth: 640,
-      builder: (BuildContext _) => MusicQualitySheet(appModel: appModel),
-    );
+Future<void> showMusicQualitySheet(
+  BuildContext context,
+  MusicPluginQualityHost host,
+) => showMusicFloatingPanel(
+  context: context,
+  maxWidth: 640,
+  builder: (BuildContext _) => MusicQualitySheet(host: host),
+);
 
 class MusicQualitySheet extends StatefulWidget {
-  const MusicQualitySheet({required this.appModel, super.key});
+  const MusicQualitySheet({required this.host, super.key});
 
-  final AppModel appModel;
+  final MusicPluginQualityHost host;
 
   @override
   State<MusicQualitySheet> createState() => _MusicQualitySheetState();
@@ -76,7 +79,7 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
   Timer? _refresh;
   bool _setDefault = true;
 
-  MusicPlayerEngine get _engine => widget.appModel.musicSession.engine;
+  MusicPlayerEngine get _engine => widget.host.musicPlayerEngine;
 
   @override
   void initState() {
@@ -107,7 +110,7 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
   }
 
   Future<void> _pick(String path, MusicPluginQuality q) async {
-    final AppModel app = widget.appModel;
+    final MusicPluginQualityHost app = widget.host;
     if (_setDefault) {
       await app.setMusicPluginQuality(q);
     } else {
@@ -122,8 +125,8 @@ class _MusicQualitySheetState extends State<MusicQualitySheet> {
     final MusicPlayItem? item = _engine.current;
     final String? path = musicItemQualitySelectable(item) ? item!.path : null;
     final MusicPluginQuality selected = path == null
-        ? widget.appModel.musicPluginQuality
-        : widget.appModel.musicPluginQualityFor(path);
+        ? widget.host.musicPluginQuality
+        : widget.host.musicPluginQualityFor(path);
     final MusicSignalPathSnapshot? s = _snapshot;
     final String stream = _engine.resolving
         ? t.music_quality_fetching

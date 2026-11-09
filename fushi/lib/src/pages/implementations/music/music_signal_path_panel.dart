@@ -15,6 +15,7 @@ import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_signal_path_labels.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -49,29 +50,6 @@ String musicSignalStageLabel(MusicSignalStage stage) => switch (stage) {
   MusicSignalStage.equalizer => t.music_signal_stage_equalizer,
   MusicSignalStage.crossfade => t.music_signal_stage_crossfade,
 };
-
-String _khz(int hz) {
-  final double k = hz / 1000;
-  return k == k.roundToDouble()
-      ? '${k.round()} kHz'
-      : '${k.toStringAsFixed(1)} kHz';
-}
-
-/// 纯函数：mpv 格式 → 一行（`s32 · 96 kHz · stereo`）。
-String musicAudioFormatLabel(MusicAudioFormat f) =>
-    '${f.packedFormat} · ${_khz(f.sampleRate)} · ${f.channels ?? '${f.channelCount} ch'}';
-
-/// 纯函数：源一行（容器 / 编码 / 采样率 / 位深 / 声道 / 码率），缺的项不写。
-String musicSourceLabel(MusicSignalPathSnapshot s) => <String>[
-  if (s.codecDescription != null || s.codec != null)
-    (s.codec ?? s.codecDescription)!,
-  if (s.fileFormat != null) s.fileFormat!,
-  if (s.sourceSampleRate != null) _khz(s.sourceSampleRate!),
-  if (s.sourceBitDepth != null) '${s.sourceBitDepth} bit',
-  if (s.sourceChannelCount != null) '${s.sourceChannelCount} ch',
-  if (s.bitrate != null && s.bitrate! > 0)
-    '${(s.bitrate! / 1000).round()} kbps',
-].join(' · ');
 
 class MusicSignalPathPanel extends StatefulWidget {
   const MusicSignalPathPanel({required this.appModel, super.key});
@@ -252,7 +230,8 @@ class _MusicSignalPathPanelState extends State<MusicSignalPathPanel> {
           color: scheme.onSurfaceVariant,
           text: <String>[
             t.music_signal_path_ios_mixer,
-            if (s.iosSampleRate != null) _khz(s.iosSampleRate!.actual.round()),
+            if (s.iosSampleRate != null)
+              musicKhzLabel(s.iosSampleRate!.actual.round()),
           ].join(' · '),
         ),
       if (s.platform == MusicOutputPlatform.android &&

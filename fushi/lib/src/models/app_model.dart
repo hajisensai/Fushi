@@ -431,6 +431,7 @@ import 'package:fushi/src/media/music/music_routing_backend.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_plugin_quality_host.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
@@ -827,7 +828,7 @@ class HomeDictionaryTabRequest {
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
-class AppModel with ChangeNotifier {
+class AppModel with ChangeNotifier implements MusicPluginQualityHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -2365,7 +2366,11 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  @override
+  MusicPlayerEngine get musicPlayerEngine => musicSession.engine;
+
   /// 在线插件默认取流音质。没单独设过时沿用旧行为：由服务器码率上限反推。
+  @override
   MusicPluginQuality get musicPluginQuality {
     final String? wire = prefsRepo.musicPluginQualityWire;
     return wire == null
@@ -2379,11 +2384,13 @@ class AppModel with ChangeNotifier {
       <String, MusicPluginQuality>{};
 
   /// 这首插件曲目实际按哪一档取流。
+  @override
   MusicPluginQuality musicPluginQualityFor(String path) =>
       _musicPluginQualityOverrides[path] ?? musicPluginQuality;
 
   /// 改默认音质；正在放的插件曲目按新档原位重取（进度、暂停态不变），当前曲不是插件曲目
   /// 而预排的下一首是时只重排下一首。非插件的远程曲目不受影响。
+  @override
   Future<void> setMusicPluginQuality(MusicPluginQuality quality) async {
     _musicPluginQualityOverrides.clear();
     await prefsRepo.setMusicPluginQualityWire(quality.wire);
@@ -2393,6 +2400,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// 只对 [path] 这首换档（不改默认）；它正在放就原位重取，是预排的下一首就重排下一首。
+  @override
   Future<void> setMusicPluginQualityOverride(
     String path,
     MusicPluginQuality quality,
