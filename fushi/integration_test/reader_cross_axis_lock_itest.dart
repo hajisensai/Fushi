@@ -188,7 +188,7 @@ Future<void> _dumpVariants(String wm) async {
   final Map<String, dynamic> d = await _eval(_dumpJs);
   final bool v = wm.startsWith('vertical');
   final String lock =
-      'html, body {\n  touch-action: ${v ? 'pan-x' : 'pan-y'} !important;\n}\n'
+      'html, body {\n  touch-action: pan-x pan-y !important;\n}\n'
       'body {\n  ${v ? 'overflow-y' : 'overflow-x'}: clip !important;\n}\n';
   final String fixed = d['styles'] as String;
   expect(fixed, contains(lock), reason: 'live reader CSS lacks the lock rule');

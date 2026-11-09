@@ -1,4 +1,5 @@
-/// 设置 › 音乐 › 服务器曲库（音乐方案 §13 P5）：Jellyfin 家族（凭据就是视频的媒体服务器
+/// 设置 › 在线服务 › 媒体服务器 › 服务器曲库（音乐方案 §13 P5；与 Jellyfin / Plex /
+/// Audiobookshelf 同一节，树在 `buildMusicServersDestination`）：Jellyfin 家族（凭据就是视频的媒体服务器
 /// 配置，这里只列出、不另登录）与 OpenSubsonic（这里增删），每台一个「显示在曲库里」开关
 /// （显式 opt-in 混排）。
 library;

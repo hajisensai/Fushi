@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
 import 'package:fushi/src/srs/srs_fushi_card_items.dart'
     show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -136,6 +137,11 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
     }
   }
 
+  void _retryLoad() {
+    setState(() => _error = null);
+    unawaited(_load());
+  }
+
   /// 载入一张卡。换卡期间旧卡面留在原位（上面压一条进度条），不把卡面换成加载视图：卡面是平台视图，
   /// 从树上摘下再挂回去就是销毁重建 WebView（首帧前整块空白）。出错显示错误态，不永远转圈。
   Future<void> _load() async {
@@ -228,13 +234,11 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
     // 压在卡面上的一层：首次载入转圈 / 出错 / 没有这张卡。卡面始终是 Stack 第 0 格（结构恒定）。
     final Widget? overlay;
     if (_error != null) {
-      overlay = Center(
-        child: FushiPlaceholderMessage(
-          key: const ValueKey<String>('srs-browse-preview-error'),
-          icon: FushiIcons.error,
-          tone: FushiPlaceholderTone.error,
-          message: t.error_load_failed,
-        ),
+      overlay = SrsLoadErrorView(
+        key: const ValueKey<String>('srs-browse-preview-error'),
+        error: _error,
+        retryKey: const ValueKey<String>('srs-browse-preview-retry'),
+        onRetry: _retryLoad,
       );
     } else if (!hasFace) {
       overlay = _loading

@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -47,6 +48,7 @@ import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
@@ -257,6 +259,12 @@ class SyncConflict {
 /// they are neither failures nor transfers, so they never feed `booksImported`
 /// nor `errors`.
 class SyncRunReport {
+  /// [onError]：每记下一条 [errors] 就同步回调一次（同步任务面板据此实时显示每项的
+  /// 失败，反馈 kM-Gb_Xnu-）。不论错误是经 [noteError] 还是直接 `errors.add` 进来的
+  /// 都会回调——观察点在列表本身，漏不掉。
+  SyncRunReport({void Function(String error)? onError})
+    : errors = _ObservedErrorList(onError);
+
   int booksImported = 0;
   int dictionariesImported = 0;
   int dictionariesExported = 0;
@@ -323,7 +331,7 @@ class SyncRunReport {
   /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
   int pendingMinesReceived = 0;
 
-  final List<String> errors = <String>[];
+  final List<String> errors;
 
   /// XVEF3huDTF：本轮各阶段耗时（毫秒，按执行顺序）。慢同步的反馈只附带错误日志，
   /// 看不出时间花在哪一步；[SyncOrchestrator.run] 跑完把它连同最慢的几本书写进
@@ -577,6 +585,39 @@ enum SyncAssetKind {
 /// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
 /// 开关反推。互联通道的词典也一样：原来的「上传词典到互联对端」自动 union 开关已删除
 /// （BUG-2762）。
+/// [SyncRunReport.errors] 的实现：普通列表，外加「每加一条就回调」。
+class _ObservedErrorList extends ListBase<String> {
+  _ObservedErrorList(this._onAdd);
+
+  final void Function(String error)? _onAdd;
+  final List<String> _items = <String>[];
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => _items.length = value;
+
+  @override
+  String operator [](int index) => _items[index];
+
+  @override
+  void operator []=(int index, String value) => _items[index] = value;
+
+  @override
+  void add(String element) {
+    _items.add(element);
+    _onAdd?.call(element);
+  }
+
+  @override
+  void addAll(Iterable<String> iterable) {
+    for (final String e in iterable) {
+      add(e);
+    }
+  }
+}
+
 class SyncOrchestrator {
   SyncOrchestrator({
     required FushiDatabase db,
@@ -600,6 +641,7 @@ class SyncOrchestrator {
     this.fontSync,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
+    this.onError,
     this.pendingMineRelay,
     AggregatePeerSnapshotCache? remoteManifestMirror,
   }) : _db = db,
@@ -720,6 +762,9 @@ class SyncOrchestrator {
   /// which keeps its old silent behaviour.
   final SyncProgressCallback? onProgress;
 
+  /// 本轮每记下一条失败就回调一次（见 [SyncRunReport.new] 的 onError）。
+  final void Function(String error)? onError;
+
   void _emit(
     SyncPhase phase, {
     required int itemIndex,
@@ -727,6 +772,7 @@ class SyncOrchestrator {
     String? title,
     double? fileFraction,
     int? fileBytes,
+    SyncItemKind? itemKind,
   }) {
     final cb = onProgress;
     if (cb == null) return;
@@ -736,6 +782,7 @@ class SyncOrchestrator {
         itemIndex: itemIndex,
         itemTotal: itemTotal,
         title: title,
+        itemKind: itemKind,
         fileFraction: fileFraction,
         bytesPerSecond: fileBytes == null
             ? null
@@ -786,7 +833,7 @@ class SyncOrchestrator {
   /// Existing local books still go through [SyncManager], so progress,
   /// statistics, and audiobook-position conflicts remain visible.
   Future<SyncRunReport> run() async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     // XVEF3huDTF：分阶段计时。每个 [mark] 把「上一个 mark 到此刻」记成一个阶段。
     final Stopwatch total = Stopwatch()..start();
     int lastMarkMs = 0;
@@ -909,6 +956,7 @@ class SyncOrchestrator {
                 itemIndex: readingDone,
                 itemTotal: readingTotal,
                 title: readingTitle,
+                itemKind: SyncItemKind.book,
                 fileFraction: f,
                 fileBytes: b,
               ),
@@ -932,6 +980,7 @@ class SyncOrchestrator {
                   itemIndex: done,
                   itemTotal: itemTotal,
                   title: title,
+                  itemKind: SyncItemKind.book,
                 );
               },
             );
@@ -1149,7 +1198,7 @@ class SyncOrchestrator {
   /// 自捕获异常进 [SyncRunReport.errors]。**不写** lastSyncMs 冷却戳——那是完整
   /// sweep 的语义（TODO-1332），轻量路径不得压制下一次 app-open 全量同步。
   Future<SyncRunReport> runCollectionsOnly() async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     final SyncBackend b = _backend;
     if (b is InterconnectSyncBackend) {
       // 合集防抖轻量路径同步合集 + 标签（标签增删同一个观察者触发，见
@@ -1179,7 +1228,7 @@ class SyncOrchestrator {
     required SyncAssetKind kind,
     required SyncAssetDirection direction,
   }) async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     // 字体两条通道都走同步根下的 `__fonts__` 命名空间（互联 host 的 WebDAV 存储同样
     // 提供它），所以不论通道都要先解析根；词典 / 本地音频的互联路径直打 live 端点、
     // 不需要根。

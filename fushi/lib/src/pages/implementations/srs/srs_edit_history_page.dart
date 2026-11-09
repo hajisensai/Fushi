@@ -12,6 +12,7 @@ import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -24,6 +25,7 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class SrsEditHistoryPage extends ConsumerStatefulWidget {
   const SrsEditHistoryPage({super.key, required this.noteId});
@@ -47,6 +49,7 @@ class _Row {
 
 class _SrsEditHistoryPageState extends ConsumerState<SrsEditHistoryPage> {
   bool _loading = true;
+  Object? _error;
   List<_Row> _rows = const <_Row>[];
   Map<String, String> _fieldNames = const <String, String>{};
   Map<String, String> _deviceNames = const <String, String>{};
@@ -58,9 +61,32 @@ class _SrsEditHistoryPageState extends ConsumerState<SrsEditHistoryPage> {
     unawaited(_load());
   }
 
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
+  }
+
+  /// 读笔记、它每张卡的修改历史与设备名。远程库连不上 / 回包不合契约时抛出的错误落成可重试的错误态，
+  /// 不让页面停在转圈。
   Future<void> _load() async {
+    try {
+      await _loadRows();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsEditHistory.load', e, stack);
+      if (!mounted) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadRows() async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) throw StateError('srs store unavailable');
     final SrsNoteView? note = await store.note(widget.noteId);
     final SrsNoteTypeView? type = note == null
         ? null
@@ -92,6 +118,7 @@ class _SrsEditHistoryPageState extends ConsumerState<SrsEditHistoryPage> {
       };
       _deviceNames = devices;
       _self = store.sync2Device;
+      _error = null;
       _loading = false;
     });
   }
@@ -167,6 +194,13 @@ class _SrsEditHistoryPageState extends ConsumerState<SrsEditHistoryPage> {
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    if (_error != null) {
+      return SrsLoadErrorView(
+        error: _error,
+        retryKey: const ValueKey<String>('srs-edit-history-load-retry'),
+        onRetry: _retryLoad,
+      );
     }
     if (_rows.isEmpty) {
       return SafeArea(

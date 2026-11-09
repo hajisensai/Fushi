@@ -5,8 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/background_tasks_indicator.dart';
-import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_task_board.dart';
+import 'package:fushi_engine/sync/sync_backend_type.dart';
+import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -18,9 +21,7 @@ Widget _host(Widget child) => TranslationProvider(
 );
 
 void _reset() {
-  syncInProgress.value = false;
-  syncProgress.value = null;
-  syncActivity.value = null;
+  resetSyncTasksForTest();
   srsSyncProgress.value = null;
   srsMigrationProgress.value = null;
 }
@@ -36,12 +37,14 @@ void main() {
     });
 
     test('常规同步与复习同步并存 → 两项，各带自己的进度', () {
-      syncInProgress.value = true;
-      syncProgress.value = const SyncProgress(
-        phase: SyncPhase.dictionaries,
-        itemIndex: 1,
-        itemTotal: 4,
-        title: 'Dict',
+      final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+      sweep.progress(
+        const SyncProgress(
+          phase: SyncPhase.dictionaries,
+          itemIndex: 1,
+          itemTotal: 4,
+          title: 'Dict',
+        ),
       );
       srsSyncProgress.value = const SrsSyncProgress(
         stage: SrsSyncStage.downloading,
@@ -50,12 +53,89 @@ void main() {
       );
       final List<BackgroundTask> tasks = syncBackgroundTasks();
       expect(hasActiveSyncTasks(), isTrue);
-      expect(tasks.map((BackgroundTask t) => t.id), <String>['sync', 'srs']);
+      expect(tasks.map((BackgroundTask t) => t.id), <String>[
+        'sync-${sweep.id}',
+        'srs',
+      ]);
       expect(tasks.first.line, contains('Dict'));
       expect(tasks.first.fraction, syncProgress.value!.fraction);
+      expect(
+        tasks.first.icon,
+        FushiIcons.dictionary,
+        reason: '条目种类决定图标：在同步的是词典',
+      );
       expect(tasks.last.fraction, 0.25);
       expect(backgroundTasksIcon(tasks), FushiIcons.sync);
       expect(backgroundTasksTooltip(tasks).split('\n'), hasLength(2));
+    });
+
+    test('全量 sweep 与退出书同步并发 → 各占一项；全局三值取 sweep（主任务）', () {
+      final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+      sweep
+        ..setChannel(
+          SyncChannelScope.forBackendType(SyncBackendType.fushiServer),
+        )
+        ..progress(
+          const SyncProgress(
+            phase: SyncPhase.readingData,
+            itemIndex: 2,
+            itemTotal: 9,
+            title: 'Movie',
+            itemKind: SyncItemKind.video,
+          ),
+        );
+      final SyncTaskHandle book = beginSyncTask(SyncActivityKind.singleBook)
+        ..setTitle('BookA')
+        ..waiting(<Object?>[sweep]);
+      final List<BackgroundTask> tasks = syncBackgroundTasks();
+      expect(tasks, hasLength(2));
+      expect(tasks.first.icon, FushiIcons.video, reason: '说清在同步的是视频');
+      expect(tasks.first.line, contains('Movie'));
+      expect(tasks.first.detail, t.sync_task_channel_interconnect);
+      expect(tasks.last.line, t.sync_progress_book_titled(title: 'BookA'));
+      expect(
+        tasks.last.detail,
+        t.sync_task_waiting_for(what: t.sync_task_kind_full_sweep),
+        reason: '排队中的那轮要说清在等谁',
+      );
+      expect(syncActivity.value?.kind, SyncActivityKind.fullSweep);
+      expect(syncProgress.value?.title, 'Movie');
+      expect(syncInProgress.value, isTrue);
+      book.finish();
+      sweep.finish();
+      expect(syncInProgress.value, isFalse);
+      expect(syncProgress.value, isNull);
+    });
+
+    test('每项的失败带着阶段与条目种类；有失败的那轮结束后留在明细里', () {
+      int now = 1000;
+      resetSyncTasksForTest(now: () => now);
+      final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+      sweep.progress(
+        const SyncProgress(
+          phase: SyncPhase.audiobooks,
+          itemIndex: 0,
+          itemTotal: 2,
+          title: 'AB',
+        ),
+      );
+      now = 5000;
+      sweep.error('live push audiobook "AB": boom');
+      final SyncTask live = syncTasks.value.single;
+      expect(live.errors.single.phase, SyncPhase.audiobooks);
+      expect(live.errors.single.itemKind, SyncItemKind.audiobook);
+      expect(live.stageSince, 1000, reason: '记错误不算换步，「这一步已多久」不重置');
+      sweep.finish();
+      expect(hasActiveSyncTasks(), isFalse);
+      final BackgroundTask kept = syncBackgroundTasks().single;
+      expect(kept.finished, isTrue);
+      expect(kept.errors, <String>['live push audiobook "AB": boom']);
+      expect(kept.detail, t.sync_task_finished_with_errors(count: 1));
+      expect(
+        backgroundTasksTooltip(syncBackgroundTasks()),
+        isEmpty,
+        reason: '已结束的不进入口气泡 / 进度环',
+      );
     });
 
     test('没有复习同步一轮在跑时显示旧文件迁移', () {
@@ -71,8 +151,8 @@ void main() {
     });
 
     test('常规同步还没有阶段 tick 时也有文字（BUG-1260）', () {
-      syncInProgress.value = true;
-      expect(syncBackgroundTasks().single.line, isNotEmpty);
+      beginSyncTask(SyncActivityKind.fullSweep);
+      expect(syncBackgroundTasks().single.line, t.sync_progress_preparing);
     });
   });
 
@@ -133,7 +213,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Scrape 3/9'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('background-task-sync')),
+      find.byKey(const ValueKey<String>('background-task-sync-1')),
       findsNothing,
     );
 
@@ -152,6 +232,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(opened, 1);
     expect(find.text('Scrape 3/9'), findsNothing);
+  });
+
+  testWidgets('明细行显示通道 / 这一步已多久，失败可展开逐项查看（反馈 kM-Gb_Xnu-）', (
+    WidgetTester tester,
+  ) async {
+    final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep)
+      ..setChannel(SyncChannelScope.forBackendType(SyncBackendType.webDav))
+      ..progress(
+        const SyncProgress(
+          phase: SyncPhase.readingData,
+          itemIndex: 0,
+          itemTotal: 3,
+          title: 'BookA',
+          itemKind: SyncItemKind.book,
+        ),
+      )
+      ..error('books: BookA: SocketException');
+    addTearDown(sweep.finish);
+    await tester.pumpWidget(
+      _host(
+        Builder(
+          builder: (BuildContext context) => TextButton(
+            onPressed: () => showBackgroundTasksSheet(
+              context: context,
+              listenable: syncBackgroundTasksListenable,
+              tasks: syncBackgroundTasks,
+            ),
+            child: const Text('show'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('show'));
+    await tester.pumpAndSettle();
+    final String id = 'sync-${sweep.id}';
+    final Text detail = tester.widget(
+      find.byKey(ValueKey<String>('background-task-detail-$id')),
+    );
+    expect(detail.data, startsWith(t.sync_task_channel_cloud));
+    expect(detail.data, contains(t.sync_task_stage_elapsed(elapsed: '0:00')));
+    expect(find.text('books: BookA: SocketException'), findsNothing);
+    await tester.tap(
+      find.byKey(ValueKey<String>('background-task-errors-$id')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('books: BookA: SocketException'), findsOneWidget);
+    expect(find.text(t.sync_task_errors_count(count: 1)), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(ValueKey<String>('background-task-errors-$id')))
+          .height,
+      greaterThanOrEqualTo(48),
+      reason: '展开开关命中区 ≥48dp',
+    );
+    expect(tester.takeException(), isNull);
   });
 
   // 用户 2026-11-06 截图：任务行贴着弹层左右边缘、进度条画出圆角、末行压底边
