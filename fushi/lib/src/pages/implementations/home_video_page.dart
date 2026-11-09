@@ -1199,19 +1199,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
   ///
   /// 同步排在重读列表**之前**：同步会往本地库里落新视频和观看进度，先刷列表就会漏掉
-  /// 本次同步的产物。没配同步后端时 [runManualSyncWithFeedback] 直接返回 notConfigured
+  /// 本次同步的产物。没配同步后端或同步模块关掉时 [runPullToRefreshSync] 直接返回 notConfigured
   /// 且不弹提示，退化成纯列表刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起
   /// （客户端 [listRemoteVideos] 已用 listTimeout 封顶，host 卡响应也不会无限转圈）。
   /// 显式刷新失败时给一个可见 SnackBar（带原因），避免「看不到远端视频却不知为何」。
   Future<void> _pullToRefresh() async {
-    await runManualSyncWithFeedback(
+    // 同步模块门在 [runPullToRefreshSync] 里：模块关掉时只剩重拉列表。
+    await runPullToRefreshSync(
       context: context,
       appModel: ref.read(appProvider),
-      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-      announceNotConfigured: false,
-      announceBusy: false,
     );
     if (!mounted) return;
     // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1180）。
