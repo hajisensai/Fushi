@@ -209,4 +209,14 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
   void countLookup() {
     if (_state.mounted) _state.recordCompanionLookup();
   }
+
+  /// The same "pause on lookup" as the in-page popup.
+  @override
+  void lookupOpened() {
+    if (_state.mounted) _state._pauseForLookup();
+  }
+
+  @override
+  void lookupClosed({required bool resume}) =>
+      _state._companionLookupClosed(resume: resume);
 }

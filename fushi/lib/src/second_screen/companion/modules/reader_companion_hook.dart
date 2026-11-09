@@ -81,6 +81,14 @@ abstract interface class ReaderCompanionPage {
   /// Counts one lookup made on the companion for this book, with the page's
   /// own lookup counter (the one its in-page popup uses).
   void countLookup();
+
+  /// The companion shows a lookup for this book: the page's "pause on
+  /// lookup" (as when its in-page popup opens).
+  void lookupOpened();
+
+  /// That lookup closed ([resume]: by the user) or went away with the
+  /// companion: the page's popup-close resume.
+  void lookupClosed({required bool resume});
 }
 
 /// The reader page's end of the companion: claims `reader` (or `audiobook`
@@ -127,6 +135,9 @@ class ReaderCompanionHook {
   /// The companion is up (cheap; gate companion-only work on it).
   bool get isActive => _link.isActive;
 
+  /// A lookup the companion shows is open for this page.
+  bool get lookupOpen => _link.lookupOpen;
+
   /// Call from the page's `didChangeDependencies` (route known) and when the
   /// book loads or the view changes.
   void attach(Route<Object?>? route) {
@@ -160,6 +171,8 @@ class ReaderCompanionHook {
       route: _route,
       onCommand: _onCommand,
       onLookupCounted: _page.countLookup,
+      onLookupOpened: _page.lookupOpened,
+      onLookupClosed: _page.lookupClosed,
     );
   }
 

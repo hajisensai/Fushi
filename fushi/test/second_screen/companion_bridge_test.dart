@@ -434,6 +434,43 @@ void main() {
     expect(mined, <String?>['猫']);
   });
 
+  test('pause on lookup: the panel lookup state drives the page popup '
+      'open / close path; the panel going away never resumes', () async {
+    await ready();
+    drain();
+    final List<String> log = <String>[];
+    final Object reader = Object();
+    contexts.claim(
+      reader,
+      const CompanionContext(CompanionContextKind.audiobook),
+      onLookupOpened: () => log.add('opened'),
+      onLookupClosed: ({required bool resume}) => log.add('closed:$resume'),
+    );
+    // A lookup started on the panel (its transcript) or arriving from top.
+    await fromPanel(const CompanionLookupStateMessage(open: true, term: '猫'));
+    expect(contexts.isLookupOpenFor(reader), isTrue);
+    // A mined card re-reports "open": not a new lookup.
+    await fromPanel(
+      const CompanionLookupStateMessage(open: true, term: '猫', mined: true),
+    );
+    await fromPanel(const CompanionLookupStateMessage(open: false));
+    expect(log, <String>['opened', 'closed:true']);
+    expect(contexts.isLookupOpenFor(reader), isFalse);
+
+    // A new panel (restart) starts without the lookup: hold dropped, no play.
+    await fromPanel(const CompanionLookupStateMessage(open: true, term: '犬'));
+    await ready();
+    expect(log, <String>['opened', 'closed:true', 'opened', 'closed:false']);
+
+    // The panel goes away (screen removed / top stopped) with a lookup open.
+    await fromPanel(const CompanionLookupStateMessage(open: true, term: '鳥'));
+    platform.detach();
+    await pumpEventQueue();
+    expect(log.last, 'closed:false');
+    expect(bridge.lookupOpen, isFalse);
+    expect(contexts.isLookupOpenFor(reader), isFalse);
+  });
+
   test(
     'S6: the controller sink reaches the panel only while it is up',
     () async {

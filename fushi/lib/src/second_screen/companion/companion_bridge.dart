@@ -272,6 +272,8 @@ class CompanionBridge implements CompanionControllerSink {
     switch (message) {
       case CompanionReadyMessage():
         _panelReady = true;
+        // A new panel starts without a lookup (it does not restore one).
+        _dropLookup();
         // First, so the panel puts the user back before content arrives.
         _send(CompanionUiRestoreMessage(_panelUi));
         _sentContext = null;
@@ -311,6 +313,14 @@ class CompanionBridge implements CompanionControllerSink {
         :final bool mined,
       ):
         _lookupOpen.value = open;
+        // Every lookup the panel shows (main screen, its own transcript /
+        // subtitle / lyric / OCR text, history) reaches the context owner's
+        // popup open / close path: "pause on lookup" and resume.
+        if (!open) {
+          _contexts.lookupClosed(resume: true);
+        } else if (!mined) {
+          _contexts.lookupOpened();
+        }
         if (mined) _onMined?.call(term);
       case CompanionUiStateMessage(:final CompanionPanelUiState state):
         _panelUi = state;
@@ -376,9 +386,17 @@ class CompanionBridge implements CompanionControllerSink {
     }
     // The panel is gone or the screen was taken: wait for the next "ready".
     _panelReady = false;
-    _lookupOpen.value = false;
+    _dropLookup();
     _dayTimer?.cancel();
     _dayTimer = null;
+  }
+
+  /// The panel's lookup is gone without the user closing it: the page that
+  /// paused for it keeps playback paused (no unasked start, e.g. while the
+  /// top screen is stopped).
+  void _dropLookup() {
+    _lookupOpen.value = false;
+    _contexts.lookupClosed(resume: false);
   }
 
   /// Tells the panel where main-screen lookups open (its Lookup tab's
@@ -484,6 +502,7 @@ class CompanionBridge implements CompanionControllerSink {
     _disposed = true;
     _dayTimer?.cancel();
     if (_started) {
+      _contexts.lookupClosed(resume: false);
       _contexts.setActive(false);
       _contexts.bindLookupSink(null);
       _contexts.bindControllerSink(null);

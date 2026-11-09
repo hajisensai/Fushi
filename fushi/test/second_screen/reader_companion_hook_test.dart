@@ -110,6 +110,14 @@ class _FakeReaderPage implements ReaderCompanionPage {
 
   @override
   void countLookup() => lookupsCounted++;
+
+  final List<String> lookupHold = <String>[];
+
+  @override
+  void lookupOpened() => lookupHold.add('opened');
+
+  @override
+  void lookupClosed({required bool resume}) => lookupHold.add('closed:$resume');
 }
 
 void main() {
@@ -205,6 +213,33 @@ void main() {
       hook.dispose();
       expect(registry.countLookup(), isFalse);
       expect(page.lookupsCounted, 2);
+    });
+
+    test('pause on lookup: companion lookups reach the popup open / '
+        'close path (reader and audiobook view)', () {
+      final ReaderCompanionHook hook = ReaderCompanionHook(
+        page,
+        registry: registry,
+      )..attach(null);
+      expect(hook.lookupOpen, isFalse);
+      registry.lookupOpened();
+      expect(hook.lookupOpen, isTrue);
+      registry.lookupClosed(resume: true);
+      expect(hook.lookupOpen, isFalse);
+      page.audiobookView = true;
+      hook.attach(null);
+      registry.lookupOpened();
+      registry.lookupClosed(resume: false);
+      expect(page.lookupHold, <String>[
+        'opened',
+        'closed:true',
+        'opened',
+        'closed:false',
+      ]);
+      registry.lookupOpened();
+      hook.dispose();
+      registry.lookupClosed(resume: true);
+      expect(page.lookupHold.length, 5, reason: 'disposed page: no close');
     });
 
     test('inactive: claims but builds and loads nothing', () {

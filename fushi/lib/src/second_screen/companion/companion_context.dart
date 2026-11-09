@@ -17,6 +17,13 @@ typedef CompanionLookupSink =
       String? sentence,
     });
 
+/// A lookup the companion showed for a page ended. [resume]: the user closed
+/// it, so media the page paused for it plays again (as when its in-page popup
+/// closes); false when the companion went away with the lookup still open
+/// (screen removed, panel finished because the top stopped): the page drops
+/// its hold but leaves playback paused instead of starting it unasked.
+typedef CompanionLookupClosedHandler = void Function({required bool resume});
+
 /// The controller side of the companion (S6), bound by the companion bridge:
 /// lets the main engine's controller lookup mode drive the companion's lookup
 /// and focus without depending on the bridge / AppModel layer.
@@ -43,6 +50,8 @@ class _Claim {
     required this.route,
     required this.onCommand,
     required this.onLookupCounted,
+    required this.onLookupOpened,
+    required this.onLookupClosed,
   });
 
   final Object owner;
@@ -50,6 +59,8 @@ class _Claim {
   Route<Object?>? route;
   CompanionCommandHandler? onCommand;
   VoidCallback? onLookupCounted;
+  VoidCallback? onLookupOpened;
+  CompanionLookupClosedHandler? onLookupClosed;
   Map<String, Object?>? snapshot;
 }
 
@@ -141,7 +152,15 @@ class CompanionContextRegistry extends ChangeNotifier {
   }) async {
     final CompanionLookupSink? sink = _lookupSink;
     if (!routesLookups || sink == null || text.trim().isEmpty) return false;
-    return sink(text: text, charIndex: charIndex, sentence: sentence);
+    final bool taken = await sink(
+      text: text,
+      charIndex: charIndex,
+      sentence: sentence,
+    );
+    // Pause right at the tap, like the in-page popup; the panel's own
+    // "lookup open" report repeats it (pages pause idempotently).
+    if (taken) lookupOpened();
+    return taken;
   }
 
   CompanionControllerSink? _controllerSink;
@@ -175,6 +194,45 @@ class CompanionContextRegistry extends ChangeNotifier {
     return true;
   }
 
+  /// The claim a companion lookup is open for ([lookupOpened]); its owner
+  /// holds whatever it paused for the lookup until [lookupClosed].
+  _Claim? _lookupHolder;
+
+  /// A lookup the companion shows is open for [owner]'s page (it paused its
+  /// media for it). Pages check it before resuming after their own popup
+  /// closes, and their popup check before resuming when this one closes.
+  bool isLookupOpenFor(Object owner) {
+    final _Claim? holder = _lookupHolder;
+    return holder != null && identical(holder.owner, owner);
+  }
+
+  /// The companion shows a lookup (made on the main screen or on the panel
+  /// itself; every new one, not just the first): the context owner reacts as
+  /// its in-page popup opening does ([claim]'s `onLookupOpened`, e.g. "pause
+  /// on lookup"). The single place where companion lookups reach the pages'
+  /// pause path. A lookup held by another page (the context changed while it
+  /// stayed open) was replaced: that page drops its hold without starting
+  /// playback (it is no longer on top).
+  void lookupOpened() {
+    final _Claim? claim = _current.claim;
+    if (!identical(_lookupHolder, claim)) _endHeldLookup(resume: false);
+    _lookupHolder = claim;
+    claim?.onLookupOpened?.call();
+  }
+
+  /// The companion's lookup closed ([resume] true: the user closed it) or
+  /// the companion went away with it open ([resume] false). The page that
+  /// held it gets `onLookupClosed`, as when its in-page popup closes.
+  void lookupClosed({required bool resume}) => _endHeldLookup(resume: resume);
+
+  void _endHeldLookup({required bool resume}) {
+    final _Claim? holder = _lookupHolder;
+    if (holder == null) return;
+    // Cleared first: the owner's handler reads [isLookupOpenFor] as false.
+    _lookupHolder = null;
+    holder.onLookupClosed?.call(resume: resume);
+  }
+
   /// The top screen's context.
   CompanionContext get current => _current.context;
 
@@ -195,12 +253,17 @@ class CompanionContextRegistry extends ChangeNotifier {
   /// a claim made before the route was known takes it on a later call.
   /// [onLookupCounted] counts one lookup made on the companion for this page
   /// ([countLookup]); pages pass the counter their in-page popup uses.
+  /// [onLookupOpened] / [onLookupClosed]: what the page does when its in-page
+  /// popup opens / closes (pause on lookup, resume), run for companion
+  /// lookups ([lookupOpened] / [lookupClosed]).
   void claim(
     Object owner,
     CompanionContext context, {
     Route<Object?>? route,
     CompanionCommandHandler? onCommand,
     VoidCallback? onLookupCounted,
+    VoidCallback? onLookupOpened,
+    CompanionLookupClosedHandler? onLookupClosed,
   }) {
     for (final _Claim existing in _claims) {
       if (identical(existing.owner, owner)) {
@@ -208,6 +271,8 @@ class CompanionContextRegistry extends ChangeNotifier {
         existing.context = context;
         existing.onCommand = onCommand;
         existing.onLookupCounted = onLookupCounted;
+        existing.onLookupOpened = onLookupOpened;
+        existing.onLookupClosed = onLookupClosed;
         if (route != null) existing.route = route;
         _recompute();
         return;
@@ -220,6 +285,8 @@ class CompanionContextRegistry extends ChangeNotifier {
         route: route,
         onCommand: onCommand,
         onLookupCounted: onLookupCounted,
+        onLookupOpened: onLookupOpened,
+        onLookupClosed: onLookupClosed,
       ),
     );
     _recompute();
@@ -228,6 +295,8 @@ class CompanionContextRegistry extends ChangeNotifier {
   /// [owner]'s page closed: its claim (and snapshot) is gone.
   void release(Object owner) {
     final int before = _claims.length;
+    // The page is gone: nothing left to resume.
+    if (isLookupOpenFor(owner)) _lookupHolder = null;
     _claims.removeWhere((_Claim c) => identical(c.owner, owner));
     if (_claims.length != before) _recompute();
   }

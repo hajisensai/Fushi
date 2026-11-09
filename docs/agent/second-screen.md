@@ -71,6 +71,12 @@
   「查词结果显示在」只在这一个点生效（`CompanionContextRegistry.routeLookup` / `routesLookups`，手柄跟进键用
   `lookupController`），页面里不写特例。**面板上发起的查词**（长按 / 点面板上的字幕、转写、歌词、OCR 文本）不经过这里，
   无论设置如何都在下屏 Lookup 页签打开（用户此时就在看下屏）。
+- 查词时暂停：伴屏显示的每次查词（主屏路由过来的、面板上发起的、历史重查）都经 `CompanionContextRegistry.lookupOpened`
+  交给持有上下文的页面，走它页内弹窗打开时的同一个暂停入口（阅读器 / 有声书 `_pauseForLookup` 读 `pause_on_lookup`，
+  音乐读 `music_lyrics_lookup_pause`，视频与弹窗一样只要在播就停）；`lookupState(open: false)` → `lookupClosed(resume: true)`
+  走弹窗关闭的同一个恢复判据。页内弹窗与伴屏查词谁还开着谁持有暂停（`CompanionPageLink.lookupOpen` /
+  `dictionaryPopupShown`）。面板消失（拔屏、顶屏 stop、面板重启 `ready`）= `resume: false`：只撤标记、保持暂停，
+  不在无人操作时自己播起来。claim 参数 `onLookupOpened` / `onLookupClosed`。
 
 ## 5. 面板（4 个纯图标页签，各自一个 Navigator）
 

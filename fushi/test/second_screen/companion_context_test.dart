@@ -219,4 +219,121 @@ void main() {
       expect(registry.currentOwner, isNull);
     });
   });
+
+  // Pause on lookup with the companion: every lookup it shows reaches the
+  // context owner's popup-open path, its close the popup-close path.
+  group('companion lookup hold', () {
+    late List<String> log;
+
+    void claimLogged(Object owner, CompanionContext context, String name) =>
+        registry.claim(
+          owner,
+          context,
+          onLookupOpened: () => log.add('$name:opened'),
+          onLookupClosed: ({required bool resume}) =>
+              log.add('$name:closed:$resume'),
+        );
+
+    setUp(() => log = <String>[]);
+
+    test('opened / closed reach the owner; the holder is known', () {
+      final Object reader = Object();
+      claimLogged(reader, _reader, 'reader');
+      expect(registry.isLookupOpenFor(reader), isFalse);
+      registry.lookupOpened();
+      expect(registry.isLookupOpenFor(reader), isTrue);
+      // Every new lookup, not just the first (pages pause idempotently).
+      registry.lookupOpened();
+      registry.lookupClosed(resume: true);
+      expect(registry.isLookupOpenFor(reader), isFalse);
+      // Nothing open any more: a second close is a no-op.
+      registry.lookupClosed(resume: true);
+      expect(log, <String>[
+        'reader:opened',
+        'reader:opened',
+        'reader:closed:true',
+      ]);
+    });
+
+    test('the holder reads "not open" inside its close handler', () {
+      final Object reader = Object();
+      final List<bool> seen = <bool>[];
+      registry.claim(
+        reader,
+        _reader,
+        onLookupClosed: ({required bool resume}) =>
+            seen.add(registry.isLookupOpenFor(reader)),
+      );
+      registry.lookupOpened();
+      registry.lookupClosed(resume: true);
+      expect(seen, <bool>[false]);
+    });
+
+    test('companion gone: the holder drops its hold without resuming', () {
+      final Object video = Object();
+      claimLogged(video, _video, 'video');
+      registry.lookupOpened();
+      registry.lookupClosed(resume: false);
+      expect(log, <String>['video:opened', 'video:closed:false']);
+    });
+
+    test('route-level context: no owner, nothing to pause', () {
+      registry.lookupOpened();
+      registry.lookupClosed(resume: true);
+      expect(log, isEmpty);
+    });
+
+    test('a lookup for another page replaces the hold without resuming', () {
+      final Object reader = Object();
+      final Object video = Object();
+      claimLogged(reader, _reader, 'reader');
+      registry.lookupOpened();
+      claimLogged(video, _video, 'video');
+      registry.lookupOpened();
+      expect(registry.isLookupOpenFor(reader), isFalse);
+      expect(registry.isLookupOpenFor(video), isTrue);
+      registry.lookupClosed(resume: true);
+      expect(log, <String>[
+        'reader:opened',
+        'reader:closed:false',
+        'video:opened',
+        'video:closed:true',
+      ]);
+    });
+
+    test('a released page is forgotten (no callback on close)', () {
+      final Object reader = Object();
+      claimLogged(reader, _reader, 'reader');
+      registry.lookupOpened();
+      registry.release(reader);
+      registry.lookupClosed(resume: true);
+      expect(log, <String>['reader:opened']);
+    });
+
+    test('a routed lookup pauses at once; a refused one does not', () async {
+      final Object reader = Object();
+      claimLogged(reader, _reader, 'reader');
+      bool accept = true;
+      registry.bindLookupSink(
+        ({required String text, int charIndex = -1, String? sentence}) async =>
+            accept,
+      );
+      // Companion not up: the page shows its popup (its own pause path).
+      expect(await registry.routeLookup(text: '猫'), isFalse);
+      expect(log, isEmpty);
+      registry.setActive(true);
+      expect(await registry.routeLookup(text: '猫'), isTrue);
+      expect(log, <String>['reader:opened']);
+      accept = false;
+      expect(await registry.routeLookup(text: '犬'), isFalse);
+      expect(log, <String>['reader:opened']);
+      // "Lookups open on: Top screen": the popup path, no companion hold.
+      registry.lookupClosed(resume: true);
+      log.clear();
+      accept = true;
+      registry.setLookupsOnCompanion(false);
+      expect(await registry.routeLookup(text: '猫'), isFalse);
+      expect(log, isEmpty);
+    });
+  });
 }

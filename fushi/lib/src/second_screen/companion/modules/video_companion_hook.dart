@@ -535,6 +535,14 @@ abstract interface class VideoCompanionPage {
   /// Counts one lookup made on the companion for this video, with the
   /// page's own lookup counter (the one its in-page popup uses).
   void countLookup();
+
+  /// The companion shows a lookup for this video: the page's pause on lookup
+  /// (as when its in-page popup opens).
+  void lookupOpened();
+
+  /// That lookup closed ([resume]: by the user) or went away with the
+  /// companion: the page's popup-close resume.
+  void lookupClosed({required bool resume});
 }
 
 /// The video page's end of the companion: claims the video context, publishes
@@ -574,6 +582,9 @@ class VideoCompanionHook {
   /// The companion is up (one synchronous check).
   bool get isActive => _link.isActive;
 
+  /// A lookup the companion shows is open for this video.
+  bool get lookupOpen => _link.lookupOpen;
+
   /// Claims the video context for the page in [pageRoute] and starts
   /// publishing (call from `didChangeDependencies`).
   void attach(Route<Object?>? pageRoute) {
@@ -610,6 +621,8 @@ class VideoCompanionHook {
       onCommand: (String action, Map<String, Object?> args) =>
           unawaited(handleCommand(action, args)),
       onLookupCounted: _page.countLookup,
+      onLookupOpened: _page.lookupOpened,
+      onLookupClosed: _page.lookupClosed,
     );
   }
 

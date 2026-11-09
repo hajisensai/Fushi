@@ -192,6 +192,14 @@ class _FakePage implements VideoCompanionPage {
 
   @override
   void countLookup() => lookupsCounted++;
+
+  final List<String> lookupHold = <String>[];
+
+  @override
+  void lookupOpened() => lookupHold.add('opened');
+
+  @override
+  void lookupClosed({required bool resume}) => lookupHold.add('closed:$resume');
 }
 
 class _FakeBridge implements CompanionBridge {
@@ -641,6 +649,17 @@ void main() {
       hook.dispose();
       expect(registry.countLookup(), isFalse);
       expect(page.lookupsCounted, 1);
+    });
+
+    test('pause on lookup: companion lookups reach the popup open / '
+        'close path', () {
+      hook.attach(null);
+      expect(hook.lookupOpen, isFalse);
+      registry.lookupOpened();
+      expect(hook.lookupOpen, isTrue);
+      registry.lookupClosed(resume: true);
+      expect(hook.lookupOpen, isFalse);
+      expect(page.lookupHold, <String>['opened', 'closed:true']);
     });
 
     test('malformed args are ignored', () async {

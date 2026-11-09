@@ -40,6 +40,10 @@ class CompanionPageLink {
   /// The companion is up (cheap; check it before doing companion-only work).
   bool get isActive => _registry.active.value;
 
+  /// A lookup the companion shows is open for this page (it holds what it
+  /// paused for it until the lookup closes).
+  bool get lookupOpen => _registry.isLookupOpenFor(this);
+
   /// This page owns the companion context right now.
   bool get isCurrent => _claimed && identical(_registry.currentOwner, this);
 
@@ -47,12 +51,17 @@ class CompanionPageLink {
   /// [route] once it is known (`didChangeDependencies`), and whenever the
   /// context changes (title, kind). [onLookupCounted]: the page's lookup
   /// counter (the one its in-page popup uses), run for each lookup made on the
-  /// companion while this page owns the context.
+  /// companion while this page owns the context. [onLookupOpened] /
+  /// [onLookupClosed]: the page's own popup open / close reactions (pause on
+  /// lookup, resume), run for the companion's lookups
+  /// ([CompanionContextRegistry.lookupOpened]).
   void claim(
     CompanionContext context, {
     Route<Object?>? route,
     CompanionCommandHandler? onCommand,
     VoidCallback? onLookupCounted,
+    VoidCallback? onLookupOpened,
+    CompanionLookupClosedHandler? onLookupClosed,
   }) {
     if (_disposed) return;
     // A new kind drops the stored snapshot (the registry does the same).
@@ -65,6 +74,8 @@ class CompanionPageLink {
       route: route,
       onCommand: onCommand,
       onLookupCounted: onLookupCounted,
+      onLookupOpened: onLookupOpened,
+      onLookupClosed: onLookupClosed,
     );
     _ensureListening();
     _syncTimer();

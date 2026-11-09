@@ -218,4 +218,14 @@ class _VideoCompanionPageAdapter implements VideoCompanionPage {
   void countLookup() {
     if (_state.mounted) _state.recordLookup();
   }
+
+  /// The same pause as the in-page popup ([_VideoLookupFavorite]).
+  @override
+  void lookupOpened() {
+    if (_state.mounted) _state._pauseForLookup();
+  }
+
+  @override
+  void lookupClosed({required bool resume}) =>
+      _state._companionLookupClosed(resume: resume);
 }

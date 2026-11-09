@@ -48,14 +48,17 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
     // Second screen (companion up): the lookup shows on the companion's Lookup
-    // tab instead of the in-page popup. Nothing of the popup path runs then:
-    // no pause (its resume is tied to the popup closing, so the video would
-    // stay paused), no anchor sentence / cue / draft (they feed the popup's
-    // mining and favourite star; the companion mines from its own lookup),
-    // no highlight (it needs the popup's match length). The synchronous
-    // isActive check keeps the single-screen path free of an extra await.
+    // tab instead of the in-page popup. The pause still happens, through the
+    // same [_pauseForLookup] (the companion registry runs it when it takes the
+    // lookup; the companion's close resumes via [_companionLookupClosed]).
+    // The rest of the popup path does not run: no anchor sentence / cue /
+    // draft (they feed the popup's mining and favourite star; the companion
+    // mines from its own lookup), no highlight (it needs the popup's match
+    // length). The synchronous isActive check keeps the single-screen path
+    // free of an extra await.
     if (_companionHook.isActive &&
-        await routeCompanionLookup(text: sentence,
+        await routeCompanionLookup(
+          text: sentence,
           charIndex: videoCompanionCharIndex(sentence, graphemeIndex),
           sentence: sentence,
         )) {
@@ -64,15 +67,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     if (!mounted) return;
     // 「高级制卡」的「查词时画面」就是这一刻；对话框试听挪走播放头后也据此放回。
     _lastLookupPositionMs = controller.positionMs;
-    // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
-    // 暂停 / 递归查词（已暂停）时 isPlaying==false，不暂停也不覆写标记。
-    // 性能（弹窗弹出慢）：暂停是副作用，不该卡住弹窗推送。media_kit/libmpv 的
-    // pause() 在桌面有 IPC 往返延迟，原先 `await` 把第一次查词的弹窗整整推迟一个
-    // 暂停耗时。改为先置标记、fire-and-forget 暂停，弹窗立刻推。
-    if (controller.isPlaying) {
-      _pausedForLookup = true;
-      unawaited(controller.pause());
-    }
+    _pauseForLookup();
     _lastLookupSentence = sentence;
     // TODO-393 / BUG-缓存串味：每次新查词都从「只制当前句」起步，丢弃上一个词的
     // 「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，草稿若不
@@ -125,6 +120,39 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     }
     // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
     unawaited(_refreshVideoSentenceFavorite());
+  }
+
+  /// 查词暂停（浮层与副屏查词页同一入口）：仅当视频正在播放才暂停并标记，浮层全关 /
+  /// 副屏查词关闭后据此恢复（BUG-072）。查词前本就暂停 / 递归查词（已暂停）时
+  /// isPlaying==false，不暂停也不覆写标记，故重复调用无副作用（副屏接手查词时调一次，
+  /// 副屏回报「查词已打开」再调一次）。
+  /// 性能（弹窗弹出慢）：暂停是副作用，不该卡住弹窗推送。media_kit/libmpv 的
+  /// pause() 在桌面有 IPC 往返延迟，原先 `await` 把第一次查词的弹窗整整推迟一个
+  /// 暂停耗时。改为先置标记、fire-and-forget 暂停，弹窗立刻推。
+  void _pauseForLookup() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (controller.isPlaying) {
+      _pausedForLookup = true;
+      unawaited(controller.pause());
+    }
+  }
+
+  /// 副屏查词页上为本页打开的查词关闭了（[resume]：用户关的）或随副屏一起消失
+  /// （[resume] 为 false：屏幕被拔 / 顶屏 stop 让副屏退出）。与 [_popNestedPopupAt]
+  /// 关栈同一判据：页内浮层还开着或选词光标仍激活时由它们继续持有暂停；否则
+  /// 用户关闭则续播，副屏消失只撤标记、保持暂停（不在无人操作时自己播起来）。
+  void _companionLookupClosed({required bool resume}) {
+    if (!mounted) return;
+    if (!VideoFushiPage.shouldResumeAfterLookupDismiss(
+      stackEmpty: !_hasVisiblePopup,
+      pausedForLookup: _pausedForLookup,
+      caretHoldsPause: _videoCaretActive,
+    )) {
+      return;
+    }
+    _pausedForLookup = false;
+    if (resume) unawaited(_controller?.resumePlayback());
   }
 
   /// 当前查词字幕句的收藏键：视频句子把 cue.startMs 兼容写入

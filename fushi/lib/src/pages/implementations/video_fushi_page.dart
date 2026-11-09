@@ -965,11 +965,16 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 光标会话接管，退出光标时按同一 [pausedForLookup] 标记恢复（单一恢复真相源）。
   /// 纯函数：与 [_VideoFushiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
   @visibleForTesting
+  ///
+  /// [companionHoldsPause]：双屏副屏的查词页上为本页打开的查词还开着——暂停归它，
+  /// 关它时再恢复（副屏与页内浮层共用同一个 [pausedForLookup] 标记）。
   static bool shouldResumeAfterLookupDismiss({
     required bool stackEmpty,
     required bool pausedForLookup,
     bool caretHoldsPause = false,
-  }) => stackEmpty && pausedForLookup && !caretHoldsPause;
+    bool companionHoldsPause = false,
+  }) =>
+      stackEmpty && pausedForLookup && !caretHoldsPause && !companionHoldsPause;
 
   /// BUG-2544：真进后台（`paused`）时是否由本页把播放暂停下来。
   ///
@@ -7885,6 +7890,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pausedForLookup: _pausedForLookup,
       // 光标仍激活 = 用户还在选词，暂停由光标会话接管（退出光标时恢复）。
       caretHoldsPause: _videoCaretActive,
+      companionHoldsPause: _companionHook.lookupOpen,
     )) {
       _pausedForLookup = false;
       unawaited(_controller?.resumePlayback());

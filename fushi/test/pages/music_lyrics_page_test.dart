@@ -26,6 +26,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
+import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -193,8 +194,11 @@ class _LyricsAppModel extends AppModel {
   @override
   MusicStudyTracker get musicStudy => _study;
 
+  /// 「查词时暂停」设置（用例可关）。
+  bool lookupPause = true;
+
   @override
-  bool get musicLyricsLookupPause => true;
+  bool get musicLyricsLookupPause => lookupPause;
 
   @override
   bool get popupBottomDocked => false;
@@ -550,6 +554,99 @@ void main() {
     expect(mined.single.noteId, 77);
 
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 双屏副屏：查词显示在副屏「查词」页时，「查词时暂停」仍按设置生效（与页内弹窗同一入口），
+  // 副屏关掉查词时续播；副屏随屏幕 / 顶屏 stop 消失时只撤标记、不自己播起来。
+  group('pause on lookup with the dual-screen companion', () {
+    late List<String> routed;
+
+    setUp(() {
+      routed = <String>[];
+      companionContexts
+        ..setLookupsOnCompanion(true)
+        ..bindLookupSink(({
+          required String text,
+          int charIndex = -1,
+          String? sentence,
+        }) async {
+          routed.add(text);
+          return true;
+        })
+        ..setActive(true);
+    });
+
+    tearDown(() {
+      companionContexts
+        ..lookupClosed(resume: false)
+        ..setActive(false)
+        ..bindLookupSink(null)
+        ..setLookupsOnCompanion(true);
+    });
+
+    Future<void> playAndLongPressLine(WidgetTester tester) async {
+      await pumpPage(tester);
+      await app.musicSession.engine.play();
+      await tester.pump();
+      backend.log.clear();
+      final Rect row = tester.getRect(find.bySemanticsLabel('沈むように'));
+      await tester.longPressAt(row.centerLeft + const Offset(14, 0));
+      await tester.pump();
+    }
+
+    testWidgets('setting on: a routed lookup pauses, closing it on the '
+        'companion resumes', (WidgetTester tester) async {
+      await playAndLongPressLine(tester);
+      expect(routed, <String>['沈むように']);
+      expect(app.searches, isEmpty, reason: '副屏接手，本页不弹窗');
+      expect(backend.log, <String>['pause']);
+      // The panel reports the lookup open (repeats the pause: idempotent).
+      companionContexts.lookupOpened();
+      await tester.pump();
+      expect(backend.log, <String>['pause']);
+
+      companionContexts.lookupClosed(resume: true);
+      await tester.pump();
+      expect(backend.log, <String>['pause', 'play']);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('setting off: a routed lookup neither pauses nor resumes', (
+      WidgetTester tester,
+    ) async {
+      app.lookupPause = false;
+      await playAndLongPressLine(tester);
+      expect(routed, hasLength(1));
+      companionContexts.lookupClosed(resume: true);
+      await tester.pump();
+      expect(backend.log, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('a lookup started on the panel (its lyrics) pauses too; the '
+        'companion going away keeps it paused', (WidgetTester tester) async {
+      await pumpPage(tester);
+      await app.musicSession.engine.play();
+      await tester.pump();
+      backend.log.clear();
+      companionContexts.lookupOpened();
+      await tester.pump();
+      expect(backend.log, <String>['pause']);
+      companionContexts.lookupClosed(resume: false);
+      await tester.pump();
+      expect(backend.log, <String>['pause'], reason: '无人操作时不自己播起来');
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('"Lookups open on: Top screen": the in-page popup path pauses '
+        'as before', (WidgetTester tester) async {
+      companionContexts.setLookupsOnCompanion(false);
+      await playAndLongPressLine(tester);
+      expect(routed, isEmpty);
+      expect(app.searches, isNotEmpty);
+      expect(backend.log, <String>['pause']);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   });
 
   // 音乐库生成字幕（Feedback QAondMh4M5）：没歌词的本机曲目就地给「生成日语字幕」，入口按
