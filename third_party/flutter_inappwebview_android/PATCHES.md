@@ -164,3 +164,25 @@ Known limit: a selection inside an opaque-origin (sandboxed) iframe is not
 visible to the top frame, so the top document's own selection ending can still
 close that frame's menu, as upstream's texture-mode poll already did.
 Guard: `fushi/test/build/inappwebview_android_context_menu_close_guard_test.dart`.
+
+## No cookie flush in onPageFinished (BUG-4243)
+
+Upstream's `onPageFinished` (both `InAppWebViewClient` and
+`InAppWebViewClientCompat`) called `CookieManager.getInstance().flush()`
+(`CookieSyncManager.getInstance().sync()` before API 21) after every page load,
+on the UI thread. `flush()` blocks until Chromium's cookie-store IO thread has
+written the store; under memory / IO pressure or while the process sits in the
+background cgroup that took 5-10 s and produced input-dispatch ANRs (main
+thread parked in `CookieManagerAdapter.flush` <- `onPageFinished`; feedback
+TxKJb9CbRy, JNfbCRiL4C).
+
+The call is removed (not deferred): Chromium persists cookies on its own
+schedule and when the app goes to the background, and page-set cookies are
+readable through `CookieManager.getCookie` immediately either way. The explicit
+cookie-write paths in `MyCookieManager` (`setCookie`, `deleteCookie`,
+`deleteCookies`, `deleteAllCookies`, `removeSessionCookies`) keep their flush.
+
+Known limit: a cookie set by a page (e.g. a Cloudflare clearance cookie) can be
+lost if the process is killed before Chromium's next periodic write; it is
+re-obtained on the next visit.
+Guard: `fushi/test/build/inappwebview_android_page_finished_no_cookie_flush_guard_test.dart`.
