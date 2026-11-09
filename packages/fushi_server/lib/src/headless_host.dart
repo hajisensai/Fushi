@@ -897,6 +897,11 @@ class HeadlessHost {
 
   /// 互联 host 的库服务装配（[start] 用；测试也直接拿它挂到自建的 TLS
   /// [FushiSyncServer] 上驱动端点，免得起整套下载 / ASR / 局域网广播）。
+  /// 在库互斥锁里跑 [body]（与 [buildLibraryService] 的导入 / 删除同一把锁）。给
+  /// 不经库服务、但要改词典 / 书库行的入口用（admin API 改词典默认开关）。
+  Future<void> runLibraryExclusive(Future<void> Function() body) =>
+      _mutex.run(body);
+
   LocalLibraryHostService buildLibraryService() => LocalLibraryHostService(
     db: db,
     dictionaryResourceRoot: paths.dictionaryResources,

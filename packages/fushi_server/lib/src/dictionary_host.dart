@@ -20,6 +20,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteDictionaryInfo;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:path/path.dart' as p;
@@ -351,10 +353,10 @@ class ServerDictionaryHost {
     );
   }
 
-  /// 服务端自己的「默认关掉」判据：`hiddenLanguagesJson` 含 `ja`（与 app 推送时写入的
-  /// 形状、admin API 的 `defaultEnabled` 写入同一口径）。
+  /// 服务端自己的「默认关掉」判据：与清单下发的 `defaultEnabled` 同一份
+  /// （[RemoteDictionaryInfo.isDictionaryHiddenByDefault]）。
   static bool isServerDictionaryHiddenByDefault(DictionaryMetaRow row) =>
-      _decodeStringList(row.hiddenLanguagesJson).contains('ja');
+      RemoteDictionaryInfo.isDictionaryHiddenByDefault(row);
 
   /// 服务端默认的 term 词典顺序（没带词典选择的请求按它排）。
   List<String> get defaultTermOrder => _snapshot.termOrder;
@@ -377,25 +379,11 @@ class ServerDictionaryHost {
   /// [_DictionarySnapshot.kanjiDictionaries]）。
   List<FushiKanjiResult> _kanjiFor(String term, Set<String> excluded) {
     if (!isSingleKanjiTerm(term)) return const <FushiKanjiResult>[];
-    final List<FushiKanjiResult> all = FushiDicts.instance.queryKanji(term);
-    if (excluded.isEmpty) return all;
-    final Set<String> kanjiDicts = _snapshot.kanjiDictionaries;
-    return <FushiKanjiResult>[
-      for (final FushiKanjiResult k in all)
-        if (!(kanjiDicts.contains(k.dictName) && excluded.contains(k.dictName)))
-          k,
-    ];
-  }
-
-  static List<String> _decodeStringList(String raw) {
-    try {
-      final Object? v = jsonDecode(raw);
-      return v is List
-          ? <String>[for (final Object? e in v) '$e']
-          : const <String>[];
-    } on FormatException {
-      return const <String>[];
-    }
+    // 只按名剔除纯汉字型词典；混合词典的汉字部分按 kanjiHidden 在装载时生效。
+    return withoutExcludedKanjiDictionaries(
+      FushiDicts.instance.queryKanji(term),
+      excluded.intersection(_snapshot.kanjiDictionaries),
+    );
   }
 
   static Map<String, String> _decodeStringMap(String raw) {

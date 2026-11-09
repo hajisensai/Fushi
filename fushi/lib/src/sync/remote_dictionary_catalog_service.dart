@@ -23,7 +23,8 @@ class RemoteDictionaryCatalogDiff {
     this.reappeared = const <String>[],
   });
 
-  /// 目录里第一次出现的词典（新行，默认启用，排在已有词典之后）。
+  /// 目录里第一次出现的词典（新行，开关取 host 的默认开关、老 host 默认启用，排在
+  /// 已有词典之后）。
   final List<String> added;
 
   /// 这次从 host 目录里消失的词典（记 `missingSince`，行与配置保留）。
@@ -39,7 +40,8 @@ class RemoteDictionaryCatalogDiff {
 ///
 /// 对每台开着「用这台服务器查词典」（[FushiClientUrl.lookupEnabled]）的已配对 host
 /// 拉一次 [kRemoteDictionaryCatalogPath]，与本机目录行对账（[reconcileHost]）：
-/// * 新出现 → 插一行，默认启用，顺序接在全部已有词典（本机 + 服务器）之后；
+/// * 新出现 → 插一行，开关取 host 的默认开关（[RemoteDictionaryInfo.defaultEnabled]，
+///   缺省 = 启用），顺序接在全部已有词典（本机 + 服务器）之后；
 /// * 消失 → 记 `missingSince`，行与各配置的顺序 / 开关都留着；
 /// * 消失后又回来 → 清 `missingSince`；
 /// * 目录字段（版本 / 显示名 / 语言 …）变化 → 只更新目录列，配置列不动；
@@ -266,6 +268,11 @@ class RemoteDictionaryCatalogService {
             missingSince: const Value<int?>(null),
             // 只在插入新行时生效；已有行的顺序 / 开关属于配置，upsert 不碰。
             order: Value<int>(row?.order ?? nextOrder++),
+            // 新行的开关按 host 自己的默认开关初始化（host 默认关 ⇒ 本机也先关）；
+            // 老 host 不发 defaultEnabled ⇒ 启用。已有行绝不改。
+            hidden: row == null
+                ? Value<bool>(info.defaultEnabled == false)
+                : const Value<bool>.absent(),
           ),
         );
       }

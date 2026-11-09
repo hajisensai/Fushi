@@ -2305,6 +2305,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v137：字幕书与远端音频的绑定。服务器配置 id 只在本机设置里有意义，合并进来
       // 只会造出指向不存在服务器的绑定。
       'remote_audio_bindings',
+      // v149：服务器托管词典的本机目录。键含本机配对的 hostId（老配对是本机记的服务器
+      // 地址），目录列由本机刷新建立；顺序 / 开关随配置快照走，不靠备份合并。
+      'remote_dictionary_metadata',
     ]);
 
 /// 把备份 [source] 里的 SRS 数据按 `profiles.uid` 归位并入本机（铁律 E，规则见

@@ -108,6 +108,22 @@ int estimateFushiLookupResultsBytes(List<FushiLookupResult> results) {
   return chars * 2 + overhead;
 }
 
+/// 去掉 [excluded] 点名的词典给出的汉字条目（[FushiKanjiResult.dictName] 按真名比）。
+///
+/// [excluded] 只能放**纯汉字型**词典：混合词典的汉字部分有自己的开关，按术语名单
+/// 剔除会误删。App 当 host（[FushiLookupRequest.hiddenKanjiDictionaries]）与无头
+/// 服务端（`ServerDictionaryHost`）共用这一份。[excluded] 为空时原样返回。
+List<FushiKanjiResult> withoutExcludedKanjiDictionaries(
+  List<FushiKanjiResult> results,
+  Set<String> excluded,
+) {
+  if (excluded.isEmpty) return results;
+  return <FushiKanjiResult>[
+    for (final FushiKanjiResult k in results)
+      if (!excluded.contains(k.dictName)) k,
+  ];
+}
+
 /// 一次后台查词的输入。全部字段都能跨 isolate 发送。
 class FushiLookupRequest {
   const FushiLookupRequest({
@@ -116,6 +132,7 @@ class FushiLookupRequest {
     this.includeKanji = false,
     this.popupOnly = false,
     this.hiddenDictionaries = const <String>{},
+    this.hiddenKanjiDictionaries = const <String>{},
     this.dictionaryOrder = const <String>[],
     this.ffiCacheMaxBytes = kDefaultLookupFfiCacheMaxBytes,
     this.supersedeLane,
@@ -139,6 +156,15 @@ class FushiLookupRequest {
   /// 被用户关掉的词典名。同时交给引擎当排除集（截断前生效：不占 [maxResults] 名额、
   /// 不影响排序），结果构建期的源头过滤保留为第二道网；原始结果缓存键带它的后缀。
   final Set<String> hiddenDictionaries;
+
+  /// 汉字结果按名剔除的**纯汉字型**词典（[withoutExcludedKanjiDictionaries]）。
+  ///
+  /// 与 [hiddenDictionaries] 分开：本机关掉的纯汉字词典根本没装进汉字桶，混合词典的
+  /// 汉字部分按自己的 `kanjiHidden` 装载、与术语开关无关（BUG-3573）——按
+  /// [hiddenDictionaries] 过滤汉字结果会把「术语关、汉字开」的混合词典的汉字条目误删。
+  /// 替对端查词时请求方的排除名单只按名字，其中的纯汉字词典由调用方挑出来放这里
+  /// （与服务端 host 的 `ServerDictionaryHost` 同一判据）。
+  final Set<String> hiddenKanjiDictionaries;
 
   /// 词典管理页的 term 词典顺序。
   final List<String> dictionaryOrder;
@@ -287,7 +313,10 @@ FushiLookupOutcome _computeLookupOutcome({
   // 汉字桶与 term 索引正交：单个汉字既可能是词头也可能是汉字条目，两边各查各的，
   // 汉字结果挂到词条结果上；没有词条命中时单独成一个纯汉字结果（TODO-094 S4）。
   final List<FushiKanjiResult> kanjiResults = request.includeKanji
-      ? FushiDicts._queryKanjiWith(bindings, handle, request.text)
+      ? withoutExcludedKanjiDictionaries(
+          FushiDicts._queryKanjiWith(bindings, handle, request.text),
+          request.hiddenKanjiDictionaries,
+        )
       : const <FushiKanjiResult>[];
 
   DictionarySearchResult? result;

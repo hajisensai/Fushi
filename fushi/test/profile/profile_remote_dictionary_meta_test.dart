@@ -192,7 +192,7 @@ void main() {
     );
   });
 
-  test('分享 JSON 带上该类别，导入原样保留', () async {
+  test('分享 JSON 带上该类别（地址充当 hostId 的行剔掉），导入原样保留', () async {
     await setLive('h1', 'Daijirin', 4, true);
     await repo.snapshotCurrentSettings(profileB);
     final String json = await repo.exportProfileToJson(profileB);
@@ -207,6 +207,16 @@ void main() {
       ),
       hasLength(1),
     );
+    // 老配对的伪 hostId 就是服务器地址：这类行不进分享 JSON，地址不出本机。
+    expect(
+      settings.whereType<Map<String, Object?>>().where(
+        (Map<String, Object?> e) =>
+            e['category'] == kProfileSettingCategoryRemoteDictionaryMeta &&
+            '${e['key']}'.startsWith('http://old-host:8765/'),
+      ),
+      isEmpty,
+    );
+    expect(json.contains('old-host'), isFalse);
 
     final int imported = await repo.importProfileFromJson(json);
     final List<ProfileSettingRow> importedRows = await db.getProfileSettings(
@@ -220,7 +230,20 @@ void main() {
           )
           .map((ProfileSettingRow r) => r.key)
           .toSet(),
-      <String>{'h1/Daijirin', 'h1/Meikyo', 'http://old-host:8765/Kojien'},
+      <String>{'h1/Daijirin', 'h1/Meikyo'},
     );
+  });
+
+  test('isRemoteDictionaryPseudoHostId：只有地址形的 id 算伪 id', () {
+    expect(isRemoteDictionaryPseudoHostId('http://old-host:8765'), isTrue);
+    expect(isRemoteDictionaryPseudoHostId('https://h.example/x'), isTrue);
+    expect(isRemoteDictionaryPseudoHostId('h1'), isFalse);
+    expect(isRemoteDictionaryPseudoHostId('3f2a-device-id'), isFalse);
+    expect(
+      remoteDictionaryHostIdOfProfileKey('http://old-host:8765/Kojien'),
+      'http://old-host:8765',
+    );
+    expect(remoteDictionaryHostIdOfProfileKey('/Kojien'), isNull);
+    expect(remoteDictionaryHostIdOfProfileKey('h1/'), isNull);
   });
 }

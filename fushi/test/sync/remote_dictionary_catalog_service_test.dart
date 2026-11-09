@@ -29,13 +29,17 @@ void main() {
           '${r.hostId}/${r.name}': r,
       };
 
-  RemoteDictionaryInfo info(String name, {String? revision}) =>
-      RemoteDictionaryInfo(
-        name: name,
-        type: 'term',
-        formatKey: 'yomichan',
-        revision: revision,
-      );
+  RemoteDictionaryInfo info(
+    String name, {
+    String? revision,
+    bool? defaultEnabled,
+  }) => RemoteDictionaryInfo(
+    name: name,
+    type: 'term',
+    formatKey: 'yomichan',
+    revision: revision,
+    defaultEnabled: defaultEnabled,
+  );
 
   group('reconcileHost', () {
     test('新词典默认启用、接在全部已有词典之后（按 host 清单顺序）', () async {
@@ -88,6 +92,45 @@ void main() {
       expect(row.lastSeenAt, 2);
       expect(row.order, 42);
       expect(row.hidden, isTrue);
+    });
+
+    test('新行按 host 默认开关初始化 hidden；已有行的开关从不被它改', () async {
+      await RemoteDictionaryCatalogService.reconcileHost(
+        db,
+        hostId: 'h1',
+        infos: <RemoteDictionaryInfo>[
+          info('Off', defaultEnabled: false),
+          info('On', defaultEnabled: true),
+          info('Old'),
+        ],
+        now: 1,
+      );
+      Map<String, RemoteDictionaryMetaRow> live = await rows();
+      expect(live['h1/Off']!.hidden, isTrue);
+      expect(live['h1/On']!.hidden, isFalse);
+      expect(live['h1/Old']!.hidden, isFalse, reason: '老 host 不发 = 启用');
+
+      // 本机配置改了开关之后，host 的默认开关再怎么变都不回写已有行。
+      await db.setRemoteDictionaryProfileColumns(
+        hostId: 'h1',
+        name: 'Off',
+        order: live['h1/Off']!.order,
+        hidden: false,
+      );
+      await RemoteDictionaryCatalogService.reconcileHost(
+        db,
+        hostId: 'h1',
+        infos: <RemoteDictionaryInfo>[
+          info('Off', defaultEnabled: false),
+          info('On', defaultEnabled: false),
+          info('Old', defaultEnabled: false),
+        ],
+        now: 2,
+      );
+      live = await rows();
+      expect(live['h1/Off']!.hidden, isFalse);
+      expect(live['h1/On']!.hidden, isFalse);
+      expect(live['h1/Old']!.hidden, isFalse);
     });
 
     test('消失记 missingSince（行与设置保留）；回来清掉；别的 host 不受影响', () async {

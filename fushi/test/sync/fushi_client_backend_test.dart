@@ -84,6 +84,32 @@ void main() {
     },
   );
 
+  test(
+    'connectedHostIdentity 与 remoteDictionaryHostIdOf 同口径（空串 hostId 当没有）',
+    () async {
+      for (final FushiClientUrl url in const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://lan:8765/', hostId: ''),
+        FushiClientUrl(url: 'http://lan:8765'),
+        FushiClientUrl(url: 'http://lan:8765', hostId: 'host-1'),
+      ]) {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
+        await _seed(repo, urls: <FushiClientUrl>[url]);
+        final InterconnectSyncBackend backend =
+            InterconnectSyncBackend.withProbe(
+              (String u, String t) async => true,
+            );
+        await backend.restoreAuth(repo);
+        expect(
+          await backend.connectedHostIdentity(),
+          remoteDictionaryHostIdOf(url),
+          reason: 'hostId=${url.hostId}',
+        );
+      }
+    },
+  );
+
   test('ensureResolved keeps cache when the first url is reachable', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);

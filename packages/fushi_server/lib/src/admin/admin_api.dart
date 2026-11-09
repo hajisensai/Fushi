@@ -638,9 +638,9 @@ class AdminApi {
   // 只是**没带选择**的请求（浏览器扩展 / 旧客户端）的默认开关，落在服务端行的
   // `hiddenLanguagesJson`（与 app 推送写入的口径一致：含 `ja` = 默认关）。
 
-  /// 词典清单：目录字段与互联 `/api/library/dictionaries` 同源
-  /// （[RemoteDictionaryInfo.fromMetadataRow]），外加占用、默认开关、资源目录在不在、
-  /// 服务端排序位。
+  /// 词典清单：目录字段（含默认开关 `defaultEnabled`）与互联
+  /// `/api/library/dictionaries` 同源（[RemoteDictionaryInfo.fromMetadataRow]），外加
+  /// 占用、资源目录在不在、服务端排序位。
   Future<shelf.Response> _dictionaries() async {
     final List<DictionaryMetaRow> rows = await ctx.db.getAllDictionaryMetadata()
       ..sort(
@@ -656,8 +656,6 @@ class AdminApi {
         ...RemoteDictionaryInfo.fromMetadataRow(row).toJson(),
         'order': row.order,
         'sizeBytes': present ? await _directorySize(dir) : 0,
-        'defaultEnabled':
-            !ServerDictionaryHost.isServerDictionaryHiddenByDefault(row),
         'present': present,
       });
     }
@@ -670,7 +668,9 @@ class AdminApi {
   }
 
   /// `PUT /api/admin/dictionaries/<name>` `{defaultEnabled: bool}`：改服务端默认开关
-  /// （`hiddenLanguagesJson` 写 `[]` / `["ja"]`）后重载引擎快照。
+  /// （`hiddenLanguagesJson` 里只增删 `ja`，其余语言保留，
+  /// [RemoteDictionaryInfo.withHiddenByDefault]）后重载引擎快照。读-改-写与重载都在
+  /// 库互斥锁里（与互联推送 / 删除词典同一把），不与它们交错。
   Future<shelf.Response> _setDictionaryDefaultEnabled(
     String name,
     Map<String, dynamic> body,
@@ -679,18 +679,26 @@ class AdminApi {
     if (enabled is! bool) {
       throw const FormatException('defaultEnabled must be a boolean');
     }
-    final DictionaryMetaRow? row = await _dictionaryRow(name);
-    if (row == null) return _err(404, 'dictionary "$name" not found');
-    await ctx.db.upsertDictionaryMeta(
-      row
-          .toCompanion(true)
-          .copyWith(
-            hiddenLanguagesJson: Value<String>(
-              jsonEncode(enabled ? const <String>[] : const <String>['ja']),
+    bool found = false;
+    await ctx.host.runLibraryExclusive(() async {
+      final DictionaryMetaRow? row = await _dictionaryRow(name);
+      if (row == null) return;
+      found = true;
+      await ctx.db.upsertDictionaryMeta(
+        row
+            .toCompanion(true)
+            .copyWith(
+              hiddenLanguagesJson: Value<String>(
+                RemoteDictionaryInfo.withHiddenByDefault(
+                  row.hiddenLanguagesJson,
+                  !enabled,
+                ),
+              ),
             ),
-          ),
-    );
-    await ctx.host.dictionaries?.refresh();
+      );
+      await ctx.host.dictionaries?.refresh();
+    });
+    if (!found) return _err(404, 'dictionary "$name" not found');
     return _json(<String, Object?>{'name': name, 'defaultEnabled': enabled});
   }
 

@@ -268,6 +268,46 @@ void main() {
     });
   });
 
+  group('withoutExcludedKanjiDictionaries', () {
+    FushiKanjiResult kanji(String dict) => FushiKanjiResult(
+      character: '日',
+      onyomi: 'ニチ',
+      kunyomi: 'ひ',
+      radical: '日',
+      strokes: 4,
+      meanings: const <String>['sun'],
+      dictName: dict,
+    );
+
+    test('按真名剔除被排除的纯汉字词典，其余原序保留', () {
+      final List<FushiKanjiResult> out = withoutExcludedKanjiDictionaries(
+        <FushiKanjiResult>[kanji('KANJIDIC'), kanji('Mixed'), kanji('KD2')],
+        const <String>{'KANJIDIC', 'NotLoaded'},
+      );
+      expect(out.map((FushiKanjiResult k) => k.dictName), <String>[
+        'Mixed',
+        'KD2',
+      ]);
+    });
+
+    test('空排除集原样返回（同一实例）', () {
+      final List<FushiKanjiResult> all = <FushiKanjiResult>[kanji('KANJIDIC')];
+      expect(
+        identical(withoutExcludedKanjiDictionaries(all, const <String>{}), all),
+        isTrue,
+      );
+    });
+
+    test('FushiLookupRequest.hiddenKanjiDictionaries 默认空，与 hiddenDictionaries 分开', () {
+      const FushiLookupRequest request = FushiLookupRequest(
+        text: '日',
+        maxResults: 8,
+        hiddenDictionaries: <String>{'Mixed'},
+      );
+      expect(request.hiddenKanjiDictionaries, isEmpty);
+    });
+  });
+
   group('excludedDictionariesCacheSuffix', () {
     test('空集返回空串（旧键逐字不变）', () {
       expect(excludedDictionariesCacheSuffix(const <String>{}), '');

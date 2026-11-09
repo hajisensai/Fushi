@@ -19,7 +19,10 @@ import 'package:fushi/src/sync/backup_path_rebase.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart'
-    show SyncRepository, remoteDictionaryLookupHostIdsOf;
+    show
+        SyncRepository,
+        isRemoteDictionaryPseudoHostId,
+        remoteDictionaryLookupHostIdsOf;
 
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
@@ -557,6 +560,12 @@ class ProfileRepository {
           _isCredentialOrDeviceLocalPref(row.key)) {
         continue;
       }
+      // 服务器词典的配置行 key 是 `<hostId>/<真名>`；老配对没有 hostId 时 hostId 是
+      // 服务器地址（伪 id），导出会把地址带出本机——剔掉。真 hostId 不透明，照常导出。
+      if (row.category == ProfileKeys.categoryRemoteDictionaryMeta) {
+        final String? hostId = remoteDictionaryHostIdOfProfileKey(row.key);
+        if (hostId == null || isRemoteDictionaryPseudoHostId(hostId)) continue;
+      }
       settings.add(
         ProfileSettingEntry(
           category: row.category,
@@ -735,8 +744,8 @@ class ProfileRepository {
     String key,
     String value,
   ) {
-    final int slash = key.lastIndexOf('/');
-    if (slash <= 0 || slash == key.length - 1) return null;
+    final String? hostId = remoteDictionaryHostIdOfProfileKey(key);
+    if (hostId == null) return null;
     final Object? decoded;
     try {
       decoded = jsonDecode(value);
@@ -748,8 +757,8 @@ class ProfileRepository {
     final Object? hidden = decoded['hidden'];
     if (order is! int || hidden is! bool) return null;
     return (
-      hostId: key.substring(0, slash),
-      name: key.substring(slash + 1),
+      hostId: hostId,
+      name: key.substring(hostId.length + 1),
       order: order,
       hidden: hidden,
     );
@@ -1025,3 +1034,11 @@ typedef _RemoteDictionaryProfileColumns = ({
 /// [ProfileKeys.categoryRemoteDictionaryMeta] 快照行的 key：`<hostId>/<真名>`。
 /// 真名是目录名、不含 `/`，解码按最后一个 `/` 切（hostId 可能是带 `/` 的 origin）。
 String remoteDictionaryProfileKey(String hostId, String name) => '$hostId/$name';
+
+/// [remoteDictionaryProfileKey] 的反向：切出 hostId；切不出（无 `/`、host 或真名为空）
+/// 返回 null。
+String? remoteDictionaryHostIdOfProfileKey(String key) {
+  final int slash = key.lastIndexOf('/');
+  if (slash <= 0 || slash == key.length - 1) return null;
+  return key.substring(0, slash);
+}

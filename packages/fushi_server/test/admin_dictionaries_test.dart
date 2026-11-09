@@ -17,7 +17,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
 /// admin API 的词典端点（`/api/admin/dictionaries*`）：清单（目录字段 + 占用 + 默认开关 +
-/// 资源目录在不在）、改服务端默认开关（`hiddenLanguagesJson` `[]` / `["ja"]`）、删除、
+/// 资源目录在不在）、改服务端默认开关（`hiddenLanguagesJson` 里增删 `ja`）、删除、
 /// 重载。这里不起原生引擎（host 未 start），只验 DB / 目录 / 响应形状。
 void main() {
   late Directory tmp;
@@ -196,6 +196,49 @@ void main() {
       expect((await rowOf('JMdict')).hiddenLanguagesJson, '[]');
     },
   );
+
+  test('PUT defaultEnabled：只增删 ja，hiddenLanguagesJson 里别的语言原样保留', () async {
+    final (:AdminApi api, paths: _) = await build();
+    await addDictionary('Oxford', hidden: '["en","zh"]');
+
+    expect(
+      (await call(api, 'PUT', 'dictionaries/Oxford', <String, Object?>{
+        'defaultEnabled': false,
+      })).status,
+      200,
+    );
+    expect((await rowOf('Oxford')).hiddenLanguagesJson, '["en","zh","ja"]');
+    // 重复关闭不叠第二个 ja。
+    await call(api, 'PUT', 'dictionaries/Oxford', <String, Object?>{
+      'defaultEnabled': false,
+    });
+    expect((await rowOf('Oxford')).hiddenLanguagesJson, '["en","zh","ja"]');
+
+    expect(
+      (await call(api, 'PUT', 'dictionaries/Oxford', <String, Object?>{
+        'defaultEnabled': true,
+      })).status,
+      200,
+    );
+    expect((await rowOf('Oxford')).hiddenLanguagesJson, '["en","zh"]');
+  });
+
+  test('PUT defaultEnabled 并发：都在库锁里串行，最后一次写入生效', () async {
+    final (:AdminApi api, paths: _) = await build();
+    await addDictionary('JMdict', hidden: '["en"]');
+    await Future.wait(<Future<Object?>>[
+      call(api, 'PUT', 'dictionaries/JMdict', <String, Object?>{
+        'defaultEnabled': false,
+      }),
+      call(api, 'PUT', 'dictionaries/JMdict', <String, Object?>{
+        'defaultEnabled': true,
+      }),
+      call(api, 'PUT', 'dictionaries/JMdict', <String, Object?>{
+        'defaultEnabled': false,
+      }),
+    ]);
+    expect((await rowOf('JMdict')).hiddenLanguagesJson, '["en","ja"]');
+  });
 
   test('PUT：名字要 URL 编码（含空格 / 非 ASCII）；没有的词典 404；非 bool 400', () async {
     final (:AdminApi api, paths: _) = await build();

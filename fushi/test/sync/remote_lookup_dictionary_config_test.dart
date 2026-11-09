@@ -65,6 +65,37 @@ void main() {
   });
   tearDown(() => db.close());
 
+  test('addFushiClientUrl：同一 host 的地址全关了查词时，新加的地址继承关', () async {
+    // 老配对没有 hostId：身份是去掉结尾 `/` 的地址，带 `/` 的写法是同一台 host。
+    await repo.setFushiClientUrls(const <FushiClientUrl>[
+      FushiClientUrl(url: 'http://old:1', lookupEnabled: false),
+      FushiClientUrl(url: 'http://lan:2', hostId: 'h1', lookupEnabled: false),
+      FushiClientUrl(url: 'http://wan:2', hostId: 'h1', lookupEnabled: false),
+    ]);
+    List<FushiClientUrl> urls = await repo.addFushiClientUrl('http://old:1/');
+    expect(urls.last.url, 'http://old:1/');
+    expect(urls.last.lookupEnabled, isFalse);
+
+    // 别的 host 的新地址照常默认开。
+    urls = await repo.addFushiClientUrl('http://other:3');
+    expect(urls.last.lookupEnabled, isTrue);
+
+    // 新地址随后被地址学习归到 h1（h1 的地址全关）⇒ 跟着关。
+    urls = await repo.addFushiClientUrl('http://p2p:2');
+    expect(urls.last.lookupEnabled, isTrue);
+    urls = await repo.updateFushiClientUrls(
+      (List<FushiClientUrl> current) => <FushiClientUrl>[
+        for (final FushiClientUrl u in current)
+          u.url == 'http://p2p:2' ? u.copyWith(hostId: 'h1') : u,
+      ],
+    );
+    final FushiClientUrl p2p = urls.firstWhere(
+      (FushiClientUrl u) => u.url == 'http://p2p:2',
+    );
+    expect(p2p.lookupEnabled, isFalse);
+    expect((await repo.getFushiClientUrls()).length, 6);
+  });
+
   test('FushiClientUrl.lookupEnabled：默认 true 不落盘，false 往返保留', () {
     const FushiClientUrl on = FushiClientUrl(url: 'http://a');
     expect(on.toJson().containsKey('lookupEnabled'), isFalse);

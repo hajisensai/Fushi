@@ -352,10 +352,12 @@ void main() {
         revision: 'jmdict4',
         displayName: '辞書',
         sourceLanguage: 'ja',
+        defaultEnabled: false,
       );
       final RemoteDictionaryInfo back = RemoteDictionaryInfo.fromJson(
         full.toJson(),
       );
+      expect(back.defaultEnabled, isFalse);
       expect(back.name, 'JMdict');
       expect(back.type, 'term');
       expect(back.formatKey, 'yomichan');
@@ -378,6 +380,7 @@ void main() {
       expect(old.revision, isNull);
       expect(old.displayName, isNull);
       expect(old.sourceLanguage, isNull);
+      expect(old.defaultEnabled, isNull);
       final RemoteDictionaryInfo weird = RemoteDictionaryInfo.fromJson(
         const <String, Object?>{
           'name': 'W',
@@ -386,8 +389,10 @@ void main() {
           'revision': '  ',
           'displayName': null,
           'sourceLanguage': <String>['ja'],
+          'defaultEnabled': 'false',
         },
       );
+      expect(weird.defaultEnabled, isNull);
       expect(weird.formatKey, isNull);
       expect(weird.revision, isNull);
       expect(weird.displayName, isNull);
@@ -398,13 +403,14 @@ void main() {
       String metadataJson = '{}',
       String? languageOverride,
       String? displayName,
+      String hiddenLanguagesJson = '[]',
     }) => DictionaryMetaRow(
       name: 'JMdict',
       formatKey: 'yomichan',
       order: 0,
       type: 'term',
       metadataJson: metadataJson,
-      hiddenLanguagesJson: '[]',
+      hiddenLanguagesJson: hiddenLanguagesJson,
       collapsedLanguagesJson: '[]',
       expandedLanguagesJson: '[]',
       languageOverride: languageOverride,
@@ -457,6 +463,25 @@ void main() {
       expect(info.sourceLanguage, isNull);
       expect(info.displayName, isNull);
       expect(info.toJson().containsKey('revision'), isFalse);
+    });
+
+    test('fromMetadataRow：defaultEnabled = hiddenLanguagesJson 不含 ja', () {
+      bool? enabledOf(String hidden) => RemoteDictionaryInfo.fromMetadataRow(
+        row(hiddenLanguagesJson: hidden),
+      ).defaultEnabled;
+      expect(enabledOf('[]'), isTrue);
+      expect(enabledOf('["ja"]'), isFalse);
+      expect(enabledOf('["en","ja"]'), isFalse);
+      expect(enabledOf('["en"]'), isTrue);
+      // 畸形 / 非数组当没关（与服务端装载时的默认过滤同一判据）。
+      expect(enabledOf('{oops'), isTrue);
+      expect(enabledOf('"ja"'), isTrue);
+      expect(
+        RemoteDictionaryInfo.isDictionaryHiddenByDefault(
+          row(hiddenLanguagesJson: '["ja"]'),
+        ),
+        isTrue,
+      );
     });
   });
 }

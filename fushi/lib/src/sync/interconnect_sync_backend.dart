@@ -568,7 +568,9 @@ class InterconnectSyncBackend extends SyncBackend
       clearCache();
     }
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
-    _activeHostIdentity = chosen.hostId ?? normalized;
+    // 与词典目录 / 查词过滤同一口径（[remoteDictionaryHostIdOf]：空串 hostId 当没有，
+    // 退到去掉结尾 `/` 的地址），同步编排的词典阶段拿到的身份才能与目录行对上。
+    _activeHostIdentity = remoteDictionaryHostIdOf(chosen);
     _activeCandidate = chosen;
     _sessionResolved = true;
     final SyncRepository? repo = _learnRepo;
