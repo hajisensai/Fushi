@@ -24,6 +24,14 @@
 ///   日语对白不会被套上招牌的位置 / 旋转 / 裁剪。
 /// - 时间上找不到普通参考事件的日语行用参考里最常用的对白样式、不加覆盖标签。
 /// - 参考本身含日语（双语字幕）时优先继承日语那一行的样式。
+/// - **歌词行逐字卡拉 OK**：日语行时间上落在参考的歌词事件里（`\k` 系标签、Effect 为
+///   `fx` / `karaoke` / `template`、样式名像歌，见 [isAssSongEvent]），或本身就是
+///   歌词（[AssStyledCue.lyricsHint]），且带逐字时间（[AssStyledCue.charTimes]，来自
+///   日语音频的 ASR 逐 token 时间，**不是**从参考的罗马音 / 英文卡拉 OK 搬过来的）时，
+///   正文写成 `{\kfNN}字` 扫光，标点粘在前一个字上。唱歌时有人说话（参考的主对白
+///   样式事件覆盖这行 ≥ [kAssKaraokeMaxSpeechRatio]）不算歌词行。改用克隆样式 `<样式名> Kara`：
+///   SecondaryColour（未唱部分）= PrimaryColour 加半透明（[kAssKaraokeUnsungAlpha]），
+///   不沿用字幕组默认的红色副色。克隆行追加在样式段末尾，原样式行一字不改。
 ///
 /// 纯函数，不碰文件系统；读文件 / 抽内嵌轨见 `subtitle_ass_style_reference_loader.dart`。
 library;
@@ -33,6 +41,12 @@ const int kAssStyleReferenceMinEvents = 10;
 
 /// 日语行与参考事件的重叠至少占日语行时长的这个比例，才继承那条事件。
 const double kAssStyleMinOverlapRatio = 0.3;
+
+/// 歌词行未唱部分（SecondaryColour）的透明度：主色加这个 alpha（`&H90` ≈ 56% 透明）。
+const int kAssKaraokeUnsungAlpha = 0x90;
+
+/// 一个字的唱时段（相对 cue 起点的毫秒）。
+typedef AssCharTime = ({int startMs, int endMs});
 
 /// 一条参考对白事件（`Dialogue:` 行）。
 class AssReferenceEvent {
@@ -101,11 +115,21 @@ class AssStyledCue {
     required this.startMs,
     required this.endMs,
     required this.text,
+    this.charTimes,
+    this.lyricsHint = false,
   });
 
   final int startMs;
   final int endMs;
   final String text;
+
+  /// [text] 每个码点的唱时段（相对 [startMs]，单调不减）；长度必须等于
+  /// `text.runes.length`，不等时当作没有。只有歌词行会用到（输出 `\kf`）。
+  final List<AssCharTime>? charTimes;
+
+  /// 这一行本身就是歌词（换成了查到的歌词、或正文以 ♪ 开头）：不看参考事件也按
+  /// 歌词行处理。
+  final bool lyricsHint;
 }
 
 /// 解析参考 ASS 原文。不是 ASS、没有样式段或可读对白不足
@@ -206,8 +230,61 @@ String renderAssWithReferenceStyle({
 }) {
   final Map<String, int> styleCounts = _styleCounts(reference.events);
   final Set<String> italicStyles = _italicStyles(reference.headerSections);
+  final _KaraStyles kara = _KaraStyles(reference.headerSections);
+  final List<String> dialogue = <String>[];
+  for (final AssStyledCue cue in cues) {
+    final String text = _escapeAssText(cue.text);
+    if (text.isEmpty) continue;
+    final AssReferenceEvent? ref = pickAssReferenceEvent(
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      events: reference.events,
+      styleCounts: styleCounts,
+    );
+    final String baseStyle = ref?.style ?? reference.defaultStyle;
+    String style = baseStyle;
+    String body = text;
+    final List<AssCharTime>? times = cue.charTimes;
+    if (times != null &&
+        times.length == cue.text.runes.length &&
+        (cue.lyricsHint ||
+            isAssSongSpan(
+              startMs: cue.startMs,
+              endMs: cue.endMs,
+              events: reference.events,
+              dialogueStyle: reference.defaultStyle,
+            ))) {
+      final String? karaoke = _karaokeText(cue.text, times);
+      final String? karaStyle = karaoke == null
+          ? null
+          : kara.cloneOf(baseStyle);
+      if (karaoke != null && karaStyle != null) {
+        body = karaoke;
+        style = karaStyle;
+      }
+    }
+    final List<String> lineTags = ref == null
+        ? const <String>[]
+        : <String>[
+            for (final String t in lineLevelLeadingTags(ref.text))
+              // 卡拉 OK 行的未唱色只认克隆样式的副色，不让参考行的 `\2c` 改回去。
+              if (style == baseStyle || !_secondaryColourTag.hasMatch(t)) t,
+          ];
+    // 样式本身是斜体（字幕组的 Italics / 内心独白样式）：日语行显式关掉（BUG-4091）。
+    final String tags =
+        '${_inheritableTags(lineTags)}'
+        '${italicStyles.contains(baseStyle) ? r'\i0' : ''}';
+    dialogue.add(
+      'Dialogue: ${ref?.layer ?? '0'},'
+      '${formatAssTime(cue.startMs)},${formatAssTime(cue.endMs)},'
+      '$style,${ref?.name ?? ''},'
+      '${ref?.marginL ?? '0'},${ref?.marginR ?? '0'},${ref?.marginV ?? '0'},'
+      '${ref?.effect ?? ''},'
+      '${tags.isEmpty ? '' : '{$tags}'}$body',
+    );
+  }
   final StringBuffer out = StringBuffer();
-  for (final String section in reference.headerSections) {
+  for (final String section in kara.sections()) {
     out
       ..writeln(section)
       ..writeln();
@@ -218,30 +295,90 @@ String renderAssWithReferenceStyle({
       'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, '
       'Effect, Text',
     );
-  for (final AssStyledCue cue in cues) {
-    final String text = _escapeAssText(cue.text);
-    if (text.isEmpty) continue;
-    final AssReferenceEvent? ref = pickAssReferenceEvent(
-      startMs: cue.startMs,
-      endMs: cue.endMs,
-      events: reference.events,
-      styleCounts: styleCounts,
-    );
-    final String style = ref?.style ?? reference.defaultStyle;
-    // 样式本身是斜体（字幕组的 Italics / 内心独白样式）：日语行显式关掉（BUG-4091）。
-    final String tags =
-        '${ref == null ? '' : _inheritableTags(lineLevelLeadingTags(ref.text))}'
-        '${italicStyles.contains(style) ? r'\i0' : ''}';
-    out.writeln(
-      'Dialogue: ${ref?.layer ?? '0'},'
-      '${formatAssTime(cue.startMs)},${formatAssTime(cue.endMs)},'
-      '$style,${ref?.name ?? ''},'
-      '${ref?.marginL ?? '0'},${ref?.marginR ?? '0'},${ref?.marginV ?? '0'},'
-      '${ref?.effect ?? ''},'
-      '${tags.isEmpty ? '' : '{$tags}'}$text',
-    );
-  }
+  dialogue.forEach(out.writeln);
   return out.toString();
+}
+
+/// 样式名 / Name / Effect 命中这些就是歌（OP / ED / 插曲 / 卡拉 OK）。
+final RegExp assSongStylePattern = RegExp(
+  r'(^|[^a-z])(op|ed|song|songs|insert|ins|karaoke|kara|lyric|lyrics|opening|ending|theme)([^a-z]|$)|歌|曲|歌词|歌詞|op[0-9]|ed[0-9]',
+  caseSensitive: false,
+);
+
+/// 卡拉 OK 计时标签（`\k` `\kf` `\ko` `\K`）。
+final RegExp assKaraokeTagPattern = RegExp(r'\\(k|kf|ko|K)\d');
+
+/// kara-templater 的产物 / 模板行的 Effect 列。
+final RegExp _karaokeEffect = RegExp(
+  r'^(fx|karaoke|template\b.*)$',
+  caseSensitive: false,
+);
+
+/// 参考事件是不是歌词（卡拉 OK 计时、模板生成的 fx、样式 / Name / Effect 像歌）。
+///
+/// 不管是否定位：歌词特效行几乎都带 `\pos` / `\move`，这里只用来判定「这段时间在
+/// 唱歌」，日语行的样式照旧从普通事件继承（[pickAssReferenceEvent]）。
+bool isAssSongEvent(AssReferenceEvent event) =>
+    assKaraokeTagPattern.hasMatch(event.text) ||
+    _karaokeEffect.hasMatch(event.effect.trim()) ||
+    assSongStylePattern.hasMatch(event.style) ||
+    assSongStylePattern.hasMatch(event.name) ||
+    assSongStylePattern.hasMatch(event.effect);
+
+/// 歌词时段里，参考的主对白样式（[AssStyleReference.defaultStyle]）事件覆盖日语行
+/// 达到这个比例，就当这行是**唱歌时的说话**，不加卡拉 OK。
+///
+/// 实测 BanG Dream! S2E13 7:16–7:50：演唱会场景里观众在歌声上聊天，英文轨把台词
+/// 写成 `{\pos(960,990)}` 的 Dialogue 行压在 Poppin' Party 歌词上；只看「这段时间
+/// 在唱歌」会把整段聊天扫成卡拉 OK。阈值偏低：错过一句歌词只是少了扫光，把台词
+/// 扫成歌词是错的。
+const double kAssKaraokeMaxSpeechRatio = 0.15;
+
+/// `[startMs, endMs)` 是不是一句歌词：与歌词事件（[isAssSongEvent]）重叠的并集至少
+/// 占这段时长的 [kAssStyleMinOverlapRatio]（逐音节特效每条都很短，单条重叠不够，
+/// 按并集算）；且给了 [dialogueStyle] 时，该样式的非歌词事件（含定位的）重叠并集
+/// 不到 [kAssKaraokeMaxSpeechRatio]（唱歌时有人说话，那行是台词）。
+bool isAssSongSpan({
+  required int startMs,
+  required int endMs,
+  required List<AssReferenceEvent> events,
+  String? dialogueStyle,
+}) {
+  final int duration = endMs - startMs;
+  if (duration <= 0) return false;
+  final int sung = _coveredMs(startMs, endMs, events, isAssSongEvent);
+  if (sung < duration * kAssStyleMinOverlapRatio) return false;
+  if (dialogueStyle == null) return true;
+  final int spoken = _coveredMs(
+    startMs,
+    endMs,
+    events,
+    (AssReferenceEvent e) => e.style == dialogueStyle && !isAssSongEvent(e),
+  );
+  return spoken < duration * kAssKaraokeMaxSpeechRatio;
+}
+
+/// `[startMs, endMs)` 被满足 [test] 的事件覆盖的毫秒数（重叠取并集）。
+int _coveredMs(
+  int startMs,
+  int endMs,
+  List<AssReferenceEvent> events,
+  bool Function(AssReferenceEvent) test,
+) {
+  int covered = 0;
+  int cursor = startMs;
+  // events 按开始时间排序：重叠段起点单调不减，并集只需一个游标。
+  for (final AssReferenceEvent e in events) {
+    if (e.startMs >= endMs) break;
+    if (e.endMs <= cursor || !test(e)) continue;
+    final int a = e.startMs > cursor ? e.startMs : cursor;
+    final int b = e.endMs < endMs ? e.endMs : endMs;
+    if (b > a) {
+      covered += b - a;
+      cursor = b;
+    }
+  }
+  return covered;
 }
 
 /// 给 `[startMs, endMs)` 的日语行挑要继承的参考事件；没有足够重叠的返回 null。
@@ -507,4 +644,186 @@ String _dominantStyle(List<AssReferenceEvent> events) {
     }
   }
   return best;
+}
+
+// ---------------------------------------------------------------------------
+// 歌词行逐字卡拉 OK
+// ---------------------------------------------------------------------------
+
+final RegExp _secondaryColourTag = RegExp(r'^\\2c');
+
+/// 不单独计时的字（空白、标点、符号）：粘到前一个字上，不单独占一个 `\kf`。
+final RegExp _karaokeGlue = RegExp(r'[\s\p{P}\p{S}]', unicode: true);
+
+/// 一个码点写进 ASS 正文：换行 → `\N`，花括号换全角，`\r` 丢掉。
+String _escapeAssChar(String ch) => switch (ch) {
+  '\n' => r'\N',
+  '\r' => '',
+  '{' => '｛',
+  '}' => '｝',
+  _ => ch,
+};
+
+/// 一个 `\kf` 音节：计时字 + 后面粘着的标点 / 空白。
+typedef _KaraUnit = ({String text, int startMs, int endMs});
+
+/// 把 [text] 按逐字时间 [times]（相对 cue 起点）写成 `{\kfNN}字…`。
+///
+/// 单位是厘秒，按累计时刻取整（不逐字取整，长行不漂移）；字与字之间没唱的空档
+/// 写成空音节 `{\kNN}`，扫光在空档里停住。标点 / 空白粘在前一个字后面（行首的粘
+/// 到第一个字前面）。去掉首尾空白后没有可计时的字时返回 null。
+String? _karaokeText(String text, List<AssCharTime> times) {
+  final List<int> runes = text.runes.toList(growable: false);
+  bool space(int r) => String.fromCharCode(r).trim().isEmpty;
+  int from = 0;
+  int to = runes.length;
+  while (from < to && space(runes[from])) {
+    from++;
+  }
+  while (to > from && space(runes[to - 1])) {
+    to--;
+  }
+  final List<_KaraUnit> units = <_KaraUnit>[];
+  final StringBuffer lead = StringBuffer();
+  for (int i = from; i < to; i++) {
+    final String ch = String.fromCharCode(runes[i]);
+    final String escaped = _escapeAssChar(ch);
+    if (_karaokeGlue.hasMatch(ch)) {
+      if (units.isEmpty) {
+        lead.write(escaped);
+      } else {
+        final _KaraUnit last = units.removeLast();
+        units.add((
+          text: '${last.text}$escaped',
+          startMs: last.startMs,
+          endMs: last.endMs,
+        ));
+      }
+      continue;
+    }
+    units.add((
+      text: units.isEmpty ? '$lead$escaped' : escaped,
+      startMs: times[i].startMs,
+      endMs: times[i].endMs,
+    ));
+  }
+  if (units.isEmpty) return null;
+  final StringBuffer out = StringBuffer();
+  int cursorCs = 0;
+  for (final _KaraUnit u in units) {
+    final int startCs = (u.startMs / 10).round();
+    final int endCs = (u.endMs / 10).round();
+    if (startCs > cursorCs) {
+      out.write('{\\k${startCs - cursorCs}}');
+      cursorCs = startCs;
+    }
+    final int dur = endCs > cursorCs ? endCs - cursorCs : 0;
+    out.write('{\\kf$dur}${u.text}');
+    cursorCs += dur;
+  }
+  return out.toString();
+}
+
+final RegExp _stylesHeader = RegExp(
+  r'^\s*\[v4\+? styles\]',
+  caseSensitive: false,
+);
+
+/// 参考样式段 + 按需追加的 `<样式名> Kara` 克隆样式（同一样式只追加一次，原有
+/// 样式行一字不改）。
+class _KaraStyles {
+  _KaraStyles(this._sections);
+
+  final List<String> _sections;
+
+  /// 原样式名 → 克隆样式名（null = 找不到原样式行 / 认不出主色，不克隆）。
+  final Map<String, String?> _clones = <String, String?>{};
+
+  /// 克隆出来的样式行，按所在段下标分组、按追加顺序。
+  final Map<int, List<String>> _added = <int, List<String>>{};
+
+  /// [style] 的卡拉 OK 克隆样式名；第一次调用时追加克隆行。
+  String? cloneOf(String style) {
+    if (_clones.containsKey(style)) return _clones[style];
+    String? result;
+    for (int s = 0; s < _sections.length && result == null; s++) {
+      result = _cloneIn(s, style);
+    }
+    _clones[style] = result;
+    return result;
+  }
+
+  String? _cloneIn(int section, String style) {
+    final List<String> lines = _sections[section].split(RegExp(r'\r?\n'));
+    if (lines.isEmpty || !_stylesHeader.hasMatch(lines.first)) return null;
+    List<String>? format;
+    final Set<String> names = <String>{
+      for (final String added in _added[section] ?? const <String>[])
+        added.substring(added.indexOf(':') + 1).split(',').first.trim(),
+    };
+    String? source;
+    for (final String line in lines.skip(1)) {
+      final int colon = line.indexOf(':');
+      if (colon < 0) continue;
+      final String key = line.substring(0, colon).trim().toLowerCase();
+      final List<String> values = line.substring(colon + 1).split(',');
+      if (key == 'format') {
+        format = <String>[
+          for (final String v in values) v.trim().toLowerCase(),
+        ];
+      } else if (key == 'style' && format != null) {
+        final int nameAt = format.indexOf('name');
+        if (nameAt < 0 || nameAt >= values.length) continue;
+        final String name = values[nameAt].trim();
+        names.add(name);
+        if (name == style) source ??= line;
+      }
+    }
+    if (source == null || format == null) return null;
+    final List<String> values = source
+        .substring(source.indexOf(':') + 1)
+        .trimLeft()
+        .split(',');
+    final int nameAt = format.indexOf('name');
+    final int primaryAt = format.indexOf('primarycolour');
+    final int secondaryAt = format.indexOf('secondarycolour');
+    if (primaryAt < 0 ||
+        secondaryAt < 0 ||
+        primaryAt >= values.length ||
+        secondaryAt >= values.length) {
+      return null;
+    }
+    final String? unsung = _unsungColour(values[primaryAt].trim());
+    if (unsung == null) return null;
+    String name = '$style Kara';
+    for (int n = 2; names.contains(name); n++) {
+      name = '$style Kara $n';
+    }
+    values[nameAt] = name;
+    values[secondaryAt] = unsung;
+    (_added[section] ??= <String>[]).add('Style: ${values.join(',')}');
+    return name;
+  }
+
+  /// 输出用的头部各段：克隆行追加在所在样式段末尾。
+  List<String> sections() => <String>[
+    for (int s = 0; s < _sections.length; s++)
+      _added[s] == null
+          ? _sections[s]
+          : '${_sections[s].trimRight()}\n${_added[s]!.join('\n')}',
+  ];
+}
+
+/// `&HAABBGGRR` 主色 → 同色、alpha 至少 [kAssKaraokeUnsungAlpha] 的副色。认不出 → null。
+String? _unsungColour(String primary) {
+  final RegExpMatch? m = RegExp(
+    r'^&H([0-9A-Fa-f]{1,8})&?$',
+  ).firstMatch(primary);
+  if (m == null) return null;
+  final int v = int.parse(m.group(1)!, radix: 16);
+  final int alpha = (v >> 24) & 0xFF;
+  final int a = alpha > kAssKaraokeUnsungAlpha ? alpha : kAssKaraokeUnsungAlpha;
+  String hex(int x, int width) =>
+      x.toRadixString(16).padLeft(width, '0').toUpperCase();
+  return '&H${hex(a, 2)}${hex(v & 0xFFFFFF, 6)}';
 }

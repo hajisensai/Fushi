@@ -10,15 +10,10 @@ import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
-import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
-import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
-    show showMusicSourcesDialog;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
-import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
-import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -29,12 +24,20 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 「音乐」一级设置分类（音乐模块，docs/specs/2026-10-23-music-module-design.md §11.1）：
-/// 曲库入口 + 播放（无缝 / ReplayGain）。与 music 顶层 tab 同一个模块门。
+/// 与 music 顶层 tab 同一个模块门。
 ///
-/// 音乐来源（文件夹）的管理是库页共用的来源管理对话框（[MediaSourcesDialog]，
-/// 曲库页顶栏同一个入口）；这里只是又一条路进同一间屋子，不另做一份。「曲库」那行
-/// 只是跳到音乐页，副标题照实说，不再写成「来源」（用户 2026-10-30：点了直接跳页、
-/// 文案却像能管理来源）。
+/// 每个分区都有标题（与视频 / 有声书等分类一致；反馈 983broef-P：前三组无标题，
+/// 第一个有标题的「识别」要滚下去才看到）。不放「打开曲库」这种跳页捷径——它不是
+/// 设置，其他媒体分类也没有，进曲库走底栏 / 侧栏的音乐 tab 这一个主入口。
+///
+/// 也不放**来源管理**（本地文件夹、插件音源）：视频 / 书 / 漫画 / 有声书的设置分类里
+/// 都没有来源或扩展管理，它们只在模块页里（库页导航壳的「来源」「扩展」视图、浏览模块），
+/// 设置只管行为与凭据。音乐同理，来源管理只有曲库页顶栏「来源」这一个入口
+/// （`MusicSourcesPage`：本地文件夹 + 插件 / 服务器 / Apple Music + 歌词来源）。
+/// 服务器曲库（OpenSubsonic / Apple Music 增删、混排开关、串流音质）也不在这里：它和
+/// Jellyfin / Plex / Audiobookshelf 一样是用户自填地址的服务器凭据，住设置 › 在线服务 ›
+/// 媒体服务器（`services.music_servers`，`buildMusicServersDestination`）。歌词来源留在
+/// 这里，对应视频的字幕来源。
 SettingsDestination buildMusicDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.music,
@@ -48,28 +51,7 @@ SettingsDestination buildMusicDestination() {
     ),
     sections: <SettingsSection>[
       SettingsSection(
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.library',
-            title: t.music_open_library,
-            subtitle: t.music_open_library_hint,
-            icon: FushiIcons.music,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) {
-              homeShellTabNotifier.value = HomeTab.music;
-            },
-          ),
-          SettingsNavigationItem(
-            id: 'music.sources',
-            title: t.music_sources_manage,
-            icon: FushiIcons.libraryAdd,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) =>
-                showMusicSourcesDialog(settingsContext.context),
-          ),
-        ],
-      ),
-      SettingsSection(
+        title: t.music_playback_section,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.gapless',
@@ -204,6 +186,7 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
       SettingsSection(
+        title: t.music_output_section,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.exclusive',
@@ -321,70 +304,6 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
-      // 服务器曲库（P5）：Jellyfin 家族复用视频的媒体服务器登录，OpenSubsonic 在子页里增删；
-      // 混排进曲库是每台服务器的显式开关（子页）。
-      SettingsSection(
-        title: t.music_servers_title,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.servers',
-            title: t.music_servers_manage,
-            subtitle: t.music_servers_settings_hint,
-            icon: FushiIcons.server,
-            showIcon: true,
-            child: () => SettingsDestination(
-              id: SettingsDestinationId.music,
-              title: t.music_servers_title,
-              icon: FushiIcons.server,
-              sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicServerSettingsBody(appModel: c.appModel),
-            ),
-          ),
-          SettingsSegmentedItem<int>(
-            id: 'music.server_bitrate',
-            title: t.music_server_bitrate_title,
-            subtitle: t.music_server_bitrate_hint,
-            icon: FushiIcons.highQuality,
-            defaultValue: 0,
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.music_server_bitrate_original,
-              ),
-              for (final int kbps in kMusicServerBitrateChoices)
-                SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
-            ],
-            selected: (SettingsContext c) =>
-                c.appModel.prefsRepo.musicServerMaxBitrate,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
-          ),
-        ],
-      ),
-      // 插件音源（docs/specs/2026-10-28-music-plugins.md）：iOS 整节不渲染（合规门，
-      // section 级 visible 同时管住分类正文 / 主从详情 / 设置搜索索引三条渲染路径）。
-      SettingsSection(
-        title: t.music_plugins_title,
-        visible: (_) => isMusicPluginSourcesAvailable,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.plugins',
-            title: t.music_plugins_title,
-            subtitle: t.music_plugins_hint,
-            icon: FushiIcons.browserExtension,
-            showIcon: true,
-            child: () => SettingsDestination(
-              id: SettingsDestinationId.music,
-              title: t.music_plugins_title,
-              icon: FushiIcons.browserExtension,
-              sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicPluginSettingsBody(appModel: c.appModel),
-            ),
-          ),
-        ],
-      ),
       // 歌词（P1，设计 §5.4 / §6.1）。
       SettingsSection(
         title: t.music_lyrics_title,
@@ -407,7 +326,7 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_lyrics_providers_hint,
             icon: FushiIcons.lyrics,
             showIcon: true,
-            // 与「插件音源」同一道合规门（iOS 不渲染）。
+            // 与插件音源同一道合规门（music_plugin_gate，iOS 不渲染）。
             visible: (_) => isMusicPluginSourcesAvailable,
             child: () => SettingsDestination(
               id: SettingsDestinationId.music,

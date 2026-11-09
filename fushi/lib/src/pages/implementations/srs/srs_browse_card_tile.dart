@@ -183,6 +183,8 @@ class SrsBrowseCardTile extends StatelessWidget {
       else
         t.srs_browse_count_cards(n: c.cardCount),
       if (c.lapses >= 4) t.srs_browse_lapses(n: c.lapses),
+      // 笔记类型有多个卡片类型时同一个词有多行：标出这一行是哪个卡片类型。
+      if (cardsMode && c.showsTemplateName) c.templateName,
       if (c.deckName.isNotEmpty) c.deckName,
     ];
     final Widget front = Text(

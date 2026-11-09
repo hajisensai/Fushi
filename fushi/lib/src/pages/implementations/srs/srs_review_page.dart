@@ -107,6 +107,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -427,6 +428,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _bottomBarInset.dispose();
     _swipeHint.dispose();
     super.dispose();
+  }
+
+  /// 加载失败后重试：还没拿到库就从头来（[_start]），拿到了就重新排队出卡（远程库连不上 / 回包不合契约后，
+  /// 主机恢复了点这里接着复习）。
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_store == null ? _start() : _loadNext());
   }
 
   Future<void> _start() async {
@@ -2231,13 +2242,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (_loading) return _buildCard(context);
     final Object? error = _error;
     if (error != null) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.error,
-          tone: FushiPlaceholderTone.error,
-          message: t.error_load_failed,
-          detail: '$error',
-        ),
+      return SrsLoadErrorView(
+        error: error,
+        retryKey: const ValueKey<String>('srs-review-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     if (_finished && _rwkvPending) return _buildRwkvPending(context);

@@ -23,14 +23,14 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show FsrsEngine;
 
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 
 /// [SrsProfileStores] 的依赖（测试注入真实存储）。
 class SrsProfileStoresDeps {

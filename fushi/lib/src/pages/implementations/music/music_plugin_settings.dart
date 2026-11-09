@@ -1,4 +1,4 @@
-/// 设置 › 音乐 › 插件音源（docs/specs/2026-10-28-music-plugins.md）：从 `.fushiplug` 文件
+/// 插件音源管理（曲库「来源」页添加菜单 / 服务器曲库页进，docs/specs/2026-10-28-music-plugins.md）：从 `.fushiplug` 文件
 /// 安装（先校验、展示清单 / 权限 / 网络域名 / 签名，用户确认后按确认时的摘要安装）、启停、卸载。
 library;
 

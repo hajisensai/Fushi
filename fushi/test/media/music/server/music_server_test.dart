@@ -12,6 +12,9 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
+import 'package:fushi/src/media/music/music_online_sources.dart';
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
@@ -452,6 +455,60 @@ void main() {
     expect(musicServerSupportsLibraryMix(MusicServerKind.appleMusic), isFalse);
     expect(musicServerSupportsLibraryMix(MusicServerKind.jellyfin), isTrue);
     expect(musicServerSupportsLibraryMix(MusicServerKind.subsonic), isTrue);
+    expect(musicServerSupportsLibraryMix(MusicServerKind.youtube), isFalse);
+  });
+
+  test('YouTube 内置音源：只有搜索（不混排、无浏览树），排序 key 固定、iOS 上不存在', () {
+    expect(musicServerHasBrowse(MusicServerKind.youtube), isFalse);
+    expect(musicServerHasBrowse(MusicServerKind.appleMusic), isTrue);
+    expect(musicServerHasBrowse(MusicServerKind.jellyfin), isTrue);
+    expect(
+      musicServerSourceKey(YoutubeMusicClient(displayName: 'YouTube')),
+      kYoutubeMusicSourceKey,
+    );
+    expect(youtubeMusicSourceAvailableOn(isIOS: true), isFalse);
+    expect(youtubeMusicSourceAvailableOn(isIOS: false), isTrue);
+  });
+
+  test('YouTube 开关生效：开 = 来源清单里有 YouTube 浏览器；默认 / 关 = 没有', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    final Directory dir = await Directory.systemTemp.createTemp('fushi_yt_');
+    addTearDown(() => dir.delete(recursive: true));
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dir)
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+
+    expect(
+      (await loadMusicServerBrowsers(app)).whereType<YoutubeMusicClient>(),
+      isEmpty,
+    );
+    await prefs.setMusicYoutubeEnabled(true);
+    final List<YoutubeMusicClient> on = (await loadMusicServerBrowsers(
+      app,
+    )).whereType<YoutubeMusicClient>().toList();
+    expect(on, hasLength(1));
+    expect(on.single.serverId, kYoutubeMusicServerId);
+    // 服务器曲目 → 播放项：路径是占位 URI，起播时才取流。
+    final MusicPlayItem item = musicServerPlayItem(
+      on.single,
+      const MusicServerTrack(
+        id: 'dQw4w9WgXcQ',
+        title: 'Song',
+        artist: 'Artist',
+        coverRef: 'dQw4w9WgXcQ',
+      ),
+    );
+    expect(item.path, 'fushi-music-youtube://video/dQw4w9WgXcQ');
+    expect(item.coverPath, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    await prefs.setMusicYoutubeEnabled(false);
+    expect(
+      (await loadMusicServerBrowsers(app)).whereType<YoutubeMusicClient>(),
+      isEmpty,
+    );
   });
 
   test(

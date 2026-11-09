@@ -145,6 +145,8 @@ void main() {
         swipeFastDistThreshold: 22,
         swipeFastVelocity: 300,
         wheelGestureQuietMs: 450,
+        continuousTurnPullPx: 20,
+        continuousTurnPinMidGesture: false,
         furiganaMode: 'toggle',
         caretColor: 'rgba(0,0,0,0.5)',
         caretInsetTop: 0,

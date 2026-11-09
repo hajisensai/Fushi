@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

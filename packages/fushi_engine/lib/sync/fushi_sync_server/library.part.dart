@@ -201,6 +201,29 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     );
   }
 
+  /// `GET` [kBookProgressBatchPath]：host 全部书的阅读进度一次下发（反馈
+  /// kM-Gb_Xnu-）。body 是 `{bookKey: RemoteBookProgress.toJson()}`；没有进度的书
+  /// 不出现（与逐本端点回 empty 同义）。host 不实现 [BookProgressBatchHost] → 404，
+  /// client 回落逐本 GET。只读：写入仍走逐本 `PUT /books/<bookKey>/progress`。
+  Future<shelf.Response> _handleLibraryBookProgressBatch(String method) async {
+    final Object? svc = _libraryService;
+    if (svc is! BookProgressBatchHost) {
+      return shelf.Response.notFound('Book progress batch unsupported');
+    }
+    if (method != 'GET') return shelf.Response(405);
+    final Map<String, RemoteBookProgress> all = await svc.getAllBookProgress();
+    return shelf.Response.ok(
+      jsonEncode(<String, Object?>{
+        for (final MapEntry<String, RemoteBookProgress> e in all.entries)
+          e.key: e.value.toJson(),
+      }),
+      // bookKey 含 CJK：charset 必带（同 _handleLibraryAggregate）。
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    );
+  }
+
   Future<shelf.Response> _handleLibraryBooks(
     shelf.Request request,
     String method,

@@ -92,6 +92,11 @@ class AppHostSelfUpdater implements HostSelfUpdater {
   DateTime? _lastResolvedAt;
   Future<void>? _resolving;
   HostUpdatePhase _phase = HostUpdatePhase.idle;
+
+  /// [startUpdate] 已过 busy 检查、正在重查更新源（还没进 downloading）。检查与
+  /// 占位之间隔着一次 await：不同步占位，两台已配对设备同时触发都能过检查，各跑
+  /// 一遍下载安装。
+  bool _starting = false;
   double? _progress;
   String? _error;
 
@@ -111,26 +116,34 @@ class AppHostSelfUpdater implements HostSelfUpdater {
 
   @override
   Future<HostUpdateStatus> startUpdate() async {
-    if (_phase.isBusy) throw const HostUpdateRejected(HostUpdateDenial.busy);
-    // 触发时一定按此刻的更新源重查（不吃节流缓存）：客户端看到的「有新版」可能已过时。
-    await _refreshLatest(force: true);
-    final ({String version, UpdateAsset? asset})? latest = _latest;
-    final UpdateAsset? asset = latest?.asset;
-    if (latest == null || asset == null) {
-      throw const HostUpdateRejected(HostUpdateDenial.noUpdate);
-    }
-    if (HeadlessUpdateFlow.isActive(latest.version)) {
+    if (_starting || _phase.isBusy) {
       throw const HostUpdateRejected(HostUpdateDenial.busy);
     }
-    _phase = HostUpdatePhase.downloading;
-    _progress = 0;
-    _error = null;
-    _onRemoteUpdateStarted?.call();
-    // 先取快照再启动：_run 同步跑到第一个 await 之前就可能已经推进阶段，响应应当
-    // 描述「刚接受触发」那一刻，而不是被后台进度抢先改掉的状态。
-    final HostUpdateStatus accepted = _snapshot(true);
-    unawaited(_run(asset, latest.version));
-    return accepted;
+    _starting = true;
+    try {
+      // 触发时一定按此刻的更新源重查（不吃节流缓存）：客户端看到的「有新版」可能已过时。
+      await _refreshLatest(force: true);
+      final ({String version, UpdateAsset? asset})? latest = _latest;
+      final UpdateAsset? asset = latest?.asset;
+      if (latest == null || asset == null) {
+        throw const HostUpdateRejected(HostUpdateDenial.noUpdate);
+      }
+      if (HeadlessUpdateFlow.isActive(latest.version)) {
+        throw const HostUpdateRejected(HostUpdateDenial.busy);
+      }
+      // 与上面的检查之间不再有 await：占位（_starting → downloading）不留空档。
+      _phase = HostUpdatePhase.downloading;
+      _progress = 0;
+      _error = null;
+      _onRemoteUpdateStarted?.call();
+      // 先取快照再启动：_run 同步跑到第一个 await 之前就可能已经推进阶段，响应应当
+      // 描述「刚接受触发」那一刻，而不是被后台进度抢先改掉的状态。
+      final HostUpdateStatus accepted = _snapshot(true);
+      unawaited(_run(asset, latest.version));
+      return accepted;
+    } finally {
+      _starting = false;
+    }
   }
 
   Future<void> _run(UpdateAsset asset, String version) async {

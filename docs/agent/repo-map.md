@@ -14,7 +14,7 @@
 - reader source：`fushi/lib/src/media/sources/reader_fushi_source.dart`（`ReaderFushiSource`）。
 - 阅读器 JS/CSS：`fushi/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.fushiReader`（hoshi 前缀运行时符号已全部清零，守卫 `fushi/test/tools/fushi_rename_guard_test.dart`）。
 - 全局状态：`fushi/lib/src/models/app_model.dart`（`AppModel`，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v136，120 张表，WAL；音乐表在同目录 `music_tables.dart`，音乐刮削三表在 `music_scrape_tables.dart`，OP/ED 声纹缓存在 `theme_song_span_tables.dart`，人物聚合 / 原作进度对应点在 `people_tables.dart`，游戏台词（v134）在 `galgame_text_line_tables.dart`；AI 助手对话 / 操作记录（v136）在 `tables.dart`）。
+- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v136，120 张表，WAL；音乐表在同目录 `music_tables.dart`，音乐刮削三表在 `music_scrape_tables.dart`，OP/ED 声纹缓存在 `theme_song_span_tables.dart`，人物聚合 / 原作进度对应点在 `people_tables.dart`（v134 的游戏台词表 `galgame_text_lines` 已在 v147 删除）；AI 助手对话 / 操作记录（v136）在 `tables.dart`）。
 - 词典：Dart 封装 `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/fushidicts/`（包内已无 C++），`fushidicts_external/` 是 vendored 第三方，上游同步基线见 `native/fushidicts/UPSTREAM.md`。
 - 有声书 / ASR：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`；设备端转录算法在上游 [`hajisensai/fushi-subtitles`](https://github.com/hajisensai/fushi-subtitles)，**改 ASR 算法一律去那个仓库改，本仓只改装配与 UI**。七处 git 依赖钉同一 sha、`archive` override + 兼容补丁、`asr_host.dart` 装配点与 isolate 边界、token 时间 sidecar 等见 [docs/agent/asr-assembly.md](asr-assembly.md)。
 - 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）；远程可达、hostId 归组、选路与配对票据规则见 [docs/agent/subsystem-map.md](subsystem-map.md)。

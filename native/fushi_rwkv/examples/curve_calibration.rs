@@ -18,27 +18,7 @@ use std::path::Path;
 use fushi_rwkv::{FrwkvReview, SmallInference, SmallModel, StatePrecision};
 
 fn read_rows(path: &Path) -> Vec<FrwkvReview> {
-    let bytes = std::fs::read(path).unwrap();
-    bytes
-        .chunks_exact(80)
-        .map(|b| {
-            let i = |k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
-            FrwkvReview {
-                card_id: i(0),
-                note_id: i(1),
-                deck_id: i(2),
-                preset_id: i(3),
-                duration_millis: i(4),
-                card_type: i(5),
-                day_offset: i(6),
-                elapsed_days: i(7),
-                elapsed_seconds: i(8),
-                present: u32::from_le_bytes(b[72..76].try_into().unwrap()),
-                ease: b[76],
-                reserved: [0; 3],
-            }
-        })
-        .collect()
+    FrwkvReview::parse_rows(&std::fs::read(path).unwrap()).unwrap()
 }
 
 const BUCKETS: [(&str, f64); 7] = [

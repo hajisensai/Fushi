@@ -110,12 +110,14 @@ class InterconnectPostTransport {
   /// [onRejectedResponse] observes reachable but unusable responses without
   /// changing fallback or 401 semantics. Callers may surface the last rejection
   /// if no later candidate succeeds. Response text is never passed through.
+  /// [bodyFor] 按候选改写请求体（制卡带每台主机各自的「保存到」，§4.8）；返回 null 用 [body]。
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
     required Duration timeout,
     required String authErrorMessage,
     FushiClientUrl? onlyCandidate,
+    Map<String, dynamic>? Function(FushiClientUrl candidate)? bodyFor,
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
   }) async {
@@ -180,7 +182,7 @@ class InterconnectPostTransport {
                     'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
                 'Content-Type': 'application/json',
               },
-              body: jsonEncode(body),
+              body: jsonEncode(bodyFor?.call(candidate) ?? body),
             )
             .timeout(timeout);
         // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；

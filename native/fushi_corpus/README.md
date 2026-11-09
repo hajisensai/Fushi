@@ -1,5 +1,8 @@
 # fushi_corpus
 
+> 2026-11-07：查词弹窗「我库里的例句」已按反馈 4S2_J80DfK 下架，app 现在只喂**歌词**（曲库「歌词命中」
+> 搜索），书 / 字幕 / 游戏台词的存量文档在启动时由 `LibraryCorpusService` 删掉。下文是原设计。
+
 「我库里的例句」的 Rust 胖核心（作品图谱 L4，设计：`docs/specs/2026-10-24-cross-media-links.md` §3）：
 用户库里的书 / 字幕 / 歌词 / 游戏台词按句喂进来，每句带 fushidicts 给出的**词典形**词元
 （`fushidicts_corpus_terms`，按已加载词典的词形还原归一，不分语言）；查词弹窗用词头一次查询拿回

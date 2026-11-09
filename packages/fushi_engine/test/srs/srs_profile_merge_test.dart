@@ -1275,6 +1275,82 @@ void main() {
     );
   });
 
+  // 用户在冲突弹窗里主动选择并入（adopt）遇到暂缓：不是失败，adopt 返回暂缓（不抛）、store 不变、并入标记已写，
+  // 暂缓状态从 linker 查得到（同步状态页显示）；之后的 link 不再重判冲突、按旧 uid 续同步；目标日志到了下一轮
+  // link 把并入做完，暂缓状态随之消失。
+  test('主动并入遇暂缓：adopt 返回暂缓不抛、标记已写、状态可查且 link 不再重判；目标到了做完并入、状态消失', () async {
+    const String c = '01900000-0000-7000-8000-0000000000e7';
+    final _Device b = await seededChain('host', withRevoked: false);
+    final String bOld = b.store.profileUid;
+    // 目录里有另一台设备的 profile c（有笔记）：本机也有笔记，判定是让用户选。
+    await srsPublishProfileInfo(
+      dir,
+      profileUid: c,
+      writerId: 'other-device',
+      name: 'Other',
+      hasNotes: true,
+      noteCount: 1,
+    );
+    final List<(String, Object)> errors = <(String, Object)>[];
+    final SrsDbProfileLinker linker = SrsDbProfileLinker(
+      db: b.db,
+      activeProfileId: () async => b.profileId,
+      reopenStore: () async => b.reopen(),
+      onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
+    );
+    final SrsProfileLinkOutcome asked = await linker.link(dir, b.store);
+    expect(asked.choose?.map((SrsRemoteProfile r) => r.uid), <String>[c]);
+    expect(await linker.deferredMerge(b.store), isNull);
+
+    final SrsProfileAdoptResult adopted = await linker.adopt(b.store, c);
+    expect(adopted, isA<SrsProfileAdoptDeferred>());
+    expect(adopted.store, same(b.store), reason: 'keeps the old store');
+    final SrsDeferredProfileMerge d =
+        (adopted as SrsProfileAdoptDeferred).deferred;
+    expect(d.profileId, b.profileId);
+    expect(d.oldUid, bOld);
+    expect(d.newUid, c);
+    expect(d.missingRevoked, <String>[_kChainR2.toLowerCase()]);
+    expect(await b.db.profileUidOf(b.profileId), bOld);
+    final List<SrsPendingProfileMerge> pending = await srsPendingProfileMerges(
+      b.srs.db,
+    );
+    expect(pending, hasLength(1), reason: 'merge marker written');
+    expect(pending.single.oldUid, bOld);
+    expect(pending.single.newUid, c);
+    expect((await linker.deferredMerge(b.store))?.newUid, c);
+    expect(errors, hasLength(1));
+    expect(errors.single.$1, allOf(contains('deferred'), contains(c)));
+    expect(errors.single.$2, isA<SrsProfileMergeDeferred>());
+
+    for (int i = 1; i <= 2; i++) {
+      final SrsProfileLinkOutcome out = await linker.link(dir, b.store);
+      expect(out.store, same(b.store), reason: 'round $i keeps the old uid');
+      expect(out.choose, isNull, reason: 'round $i does not ask again');
+      expect(out.linked, isFalse, reason: 'round $i: link reruns next round');
+      expect(errors, hasLength(1), reason: 'the same gap is logged once');
+      final SrsDeferredProfileMerge? still = await linker.deferredMerge(
+        b.store,
+      );
+      expect(still?.missingRevoked, <String>[_kChainR2.toLowerCase()]);
+      expect((await b.round(dir)).error, isNull, reason: 'sync still runs');
+    }
+
+    final String card = (await b.store.cardsOfNote(
+      SrsIds.note(bOld, 'anki-guid-chain'),
+    )).single.id;
+    await b.store.applyRemote(<SrsEvent>[
+      SrsLogEvent(chainLog(bOld, card, _kChainR2, _kChainT0 + 20)),
+    ]);
+    final SrsProfileLinkOutcome done = await linker.link(dir, b.store);
+    expect(done.linked, isTrue);
+    expect(done.store.profileUid, c);
+    expect(await b.db.profileUidOf(b.profileId), c);
+    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    expect(await linker.deferredMerge(done.store), isNull);
+    expect(errors, hasLength(1));
+  });
+
   // 第 9 步的身份断言：两条身份不同的旧日志按规则映射到同一个新 ID（这里：同一张卡上两条「原始导入」revlog 同一个
   // Anki revlog id、评分不同）。静默只留一份会丢掉其中一次复习，所以并入中止、旧 profile 一行不动。
   Future<(_Device, int)> conflictingImports(String deviceId) async {

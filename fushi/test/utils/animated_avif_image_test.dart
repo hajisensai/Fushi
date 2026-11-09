@@ -13,7 +13,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show srsCardImageProvider;
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/animated_avif_image.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:visibility_detector/visibility_detector.dart';

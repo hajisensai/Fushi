@@ -60,7 +60,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 146);
+    expect(migrated.schemaVersion, 148);
     await migrated.upsertVideoSubtitleTextOverride(row('直した字幕'));
     // 同一句再改一次是覆盖，不是第二行。
     await migrated.upsertVideoSubtitleTextOverride(row('もう一度直した'));
@@ -108,7 +108,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 146);
+    expect(probe.select('PRAGMA user_version').first.values.first, 148);
     expect(hasTable(probe), isTrue);
   });
 
@@ -147,6 +147,6 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 146);
+    expect(probe.select('PRAGMA user_version').first.values.first, 148);
   });
 }

@@ -13,7 +13,7 @@ enum RwkvModelKind {
   /// 2,762,884 参数的上游模型（质量优先）。
   large(1),
 
-  /// 331,511 参数的 SM56 小模型（省内存）。
+  /// 331,511 参数的小模型（sm72e25，省内存）。
   small(2);
 
   const RwkvModelKind(this.code);

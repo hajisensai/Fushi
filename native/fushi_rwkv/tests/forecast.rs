@@ -10,20 +10,11 @@
 
 mod common;
 
-use std::io::Read;
-
-use common::{model, small_package};
+use common::{model, small_weights};
 use fushi_rwkv::{Model, ReviewInput, RwkvRuntime, StatePrecision, forecast_query};
 
 fn small_model() -> Model {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(small_package())).unwrap();
-    let mut bytes = Vec::new();
-    archive
-        .by_name("sm56/weights.int8.bin")
-        .unwrap()
-        .read_to_end(&mut bytes)
-        .unwrap();
-    Model::from_bytes(&bytes).unwrap()
+    Model::from_bytes(small_weights()).unwrap()
 }
 
 /// 120 天、60 张卡（两卡一笔记）的确定性小历史；返回历史与「今天」的一条作答。
