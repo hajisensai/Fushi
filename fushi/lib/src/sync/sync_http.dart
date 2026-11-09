@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:meta/meta.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 
@@ -62,6 +64,23 @@ Future<http.Client> obtainSyncHttpClient() {
 }
 
 Future<http.Client>? _sharedClient;
+
+/// 测试注入：让 [obtainSyncHttpClient] 返回 [client]（传 null 恢复惰性构造）。
+@visibleForTesting
+void debugSetSyncHttpClient(http.Client? client) {
+  _sharedClient = client == null ? null : Future<http.Client>.value(client);
+}
+
+/// 把**下载到的文件内容**按 UTF-8 解成 JSON。
+///
+/// 不能用 `jsonDecode(resp.body)`：OneDrive 的 downloadUrl、Dropbox 的
+/// `/files/download` 回的是 `Content-Type: application/octet-stream` 且不带 charset，
+/// `package:http` 此时把 `Response.body` 按 **latin1** 解码。上传端是
+/// `utf8.encode(jsonEncode(...))`，于是每一轮「下载 → 合并 → 上传」都把所有非 ASCII
+/// 字符再多编一层，标题键越滚越长、聚合快照与本地库膨胀（反馈 hbIHtWi2Q7）。
+/// 同步 JSON 一律是本端用 UTF-8 写的，这里按 UTF-8 严格解码（坏字节直接报错，不静默替换）。
+Object? decodeSyncJsonFileBody(http.Response resp) =>
+    jsonDecode(utf8.decode(resp.bodyBytes));
 
 /// 丢弃共享 client，让下次调用按**当前**代理设置重建。
 ///

@@ -1,0 +1,6 @@
+## BUG-4244 · OneDrive 大 JSON 资产（聚合快照）不走上传会话，>10MiB 单请求 PUT 一直 400
+- **报告**：2026-11-09（用户：应用内反馈 UHkG_OhDxQ，macOS 26.4.1 / 3.3.0-debug.24555）
+- **真实性**：✅ 真 bug。`fushi/lib/src/sync/onedrive_sync_backend.dart:630-640`（`_uploadJson`，`putJsonAsset` :511 调它）把整份 JSON 一次 `_graphPut` 到 `:/content`，没有任何大小判断；只有 `uploadContentFile`（:398）在超过 `kOneDriveSimpleUploadMaxBytes`（10 MiB，`onedrive_upload_session.dart:15`）时改走 `createUploadSession`（BUG-3690）。聚合快照超过 10 MiB 后（BUG-4243 的膨胀让它更快到这里），日志 10 次 `PUT …fushiaggregate:/content` 全部 HTTP 400 "IO error during request payload read"，本端聚合从未上传。
+- **[x] ① 已修复** — `onedrive_upload_session.dart` 会话主循环抽成按「字节来源」驱动的 `_uploadToOneDriveSession`，文件版 `uploadFileToOneDriveSession` 与新增内存版 `uploadBytesToOneDriveSession` 共用同一协议（分片、按 nextExpectedRanges 续传）；`_uploadJson` 编码一次得 bytes，超过 10 MiB 时 `_createUploadSession` + `uploadBytesToOneDriveSession`，否则仍单请求 PUT。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/cloud_json_asset_transport_test.dart`（>10 MiB JSON 资产：不发 `:/content`、一次 createUploadSession、两片 Content-Range、远端字节一致；小 JSON 仍单 PUT）。修复前红、修复后绿；`onedrive_upload_session_test.dart` 无回归。
+- **备注**：`aggregate_sync_service.dart` 为算哈希 `jsonEncode` 一次、`putJsonAsset` 又编码一次的重复编码只是开销，未改。失败只进 SyncRunReport 日志、不提示用户属 UX 决策，未改。
