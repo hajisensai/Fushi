@@ -452,7 +452,7 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '文件': 'Files',
   '磁力链接': 'Magnet link',
   '站点地址': 'Site address',
-  '{0} 个库根': '{0} library roots',
+  '{0} 个库根': 'Library roots: {0}',
   '取消我的设备': 'Unmark as my device',
   '还没有已配对设备': 'No paired devices yet',
   '已吊销': 'Revoked',

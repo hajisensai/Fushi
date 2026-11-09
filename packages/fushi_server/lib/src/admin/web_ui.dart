@@ -590,7 +590,7 @@ function go(s, push){
   closeNav(); refresh();
 }
 navButtons.forEach(b=>b.onclick=()=>go(b.dataset.s, true));
-$('#btn-menu').onclick = ()=>{ $('#rail').classList.add('open'); $('#scrim-nav').classList.add('on'); const on=$('.rail button.on'); if(on) on.focus(); };
+$('#btn-menu').onclick = ()=>{ $('#rail').classList.add('open'); $('#scrim-nav').classList.add('on'); $('#rail').scrollTop=0; const on=$('.rail button.on'); if(on) on.focus({preventScroll:true}); };
 $('#scrim-nav').onclick = closeNav;
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && $('#rail').classList.contains('open')) closeNav(); });
 
