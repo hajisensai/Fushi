@@ -90,14 +90,16 @@ void main() {
       );
     });
 
-    test('外部悬浮查词窗宽度统一到 popupMaxWidth（不再硬编码 480）', () {
+    test('外部悬浮查词窗宽高读 overlayLookupEffectiveSize（不再硬编码 480）', () {
       final String src = File(
         'lib/src/pages/implementations/popup_dictionary_page.dart',
       ).readAsStringSync();
+      // 反馈 K9YPrjtZE1：宽高统一读「app 外覆盖窗有效最大宽高」（未解锁独立尺寸时即
+      // 跟随 popupMaxWidth / popupMaxHeight），不再只读 app 内宽度、高度写死比例。
       expect(
-        src.contains('appModel.popupMaxWidth'),
+        src.contains('appModel.overlayLookupEffectiveSize'),
         isTrue,
-        reason: 'TODO-1352：外部悬浮查词窗应读用户的 popupMaxWidth',
+        reason: 'TODO-1352 / K9YPrjtZE1：外部悬浮查词窗应读用户的最大宽高设置',
       );
       expect(
         src.contains('maxCardWidth = 480'),

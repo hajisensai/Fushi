@@ -8,6 +8,8 @@
 // 「按位置」新卡顺序。
 //
 // 重新生成（只在有意改变排队语义时）：SRS_STUDY_VECTORS_WRITE=1 跑本文件。
+// 2026-11-07 重新生成：RWKV 牌组不再按复习量调整新卡，RWKV 牌组行的复习预算列变成 0（新卡配额、调整原因与 FSRS 的
+// Root::B / Root::B1 行逐项不变，脚本逐值核对过）。
 import 'dart:convert';
 import 'dart:io';
 
