@@ -166,6 +166,10 @@ class GamesLibraryPage extends ConsumerStatefulWidget {
 
 class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     with LibraryReorderHost<GamesLibraryPage> {
+  /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
+  final CollectionDisplayCounts _collectionDisplayCounts =
+      CollectionDisplayCounts();
+
   /// 缓存 [AppModel]（`appProvider` 单例，实例不变）。
   late final AppModel _appModel = ref.read(appProvider);
 
@@ -236,6 +240,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
 
   @override
   void dispose() {
+    _collectionDisplayCounts.dispose();
     _appModel.prefsRepo.removeListener(_onPrefsChanged);
     _repo.removeListener(_refresh);
     _appModel.discoveryDownloadQueue.removeListener(_refresh);
@@ -1882,6 +1887,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           collectionsById: _collectionsById,
           memberSortIndex: _memberSortIndex,
         );
+    _collectionDisplayCounts.publish<GalgameEntry>(groups);
     if (_view.sortField == GalgameSortField.manual) {
       groups.sort(_compareManualUnits);
     }
@@ -2039,6 +2045,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           domain: CollectionShelfDomain.games,
           onOpenCollection: _openCollectionDetail,
           onShowCollectionMenu: _showCollectionMenu,
+          displayCounts: _collectionDisplayCounts,
         ),
       ),
     );

@@ -369,6 +369,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
 
+  /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
+  final CollectionDisplayCounts _collectionDisplayCounts =
+      CollectionDisplayCounts();
+
   /// 合集格子里折进去的远端占位成员（合集 id → 成员槽，组内序），与
   /// [_visibleCollectionIds] 同帧、同一份 shelfGroups 推出（BUG-3337）：多选里勾了
   /// 合集再点「下载」，下的就是这个合集格子里画着的那些云端成员——此前批量下载只认
@@ -884,6 +888,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   void dispose() {
+    _collectionDisplayCounts.dispose();
     _memberInfoRevision.dispose();
     _headerSearch.dispose();
     _searchController.dispose();
@@ -2180,6 +2185,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           collectionsById: _collectionsById,
           memberSortIndex: memberSortIndex,
         );
+    // 管理合集页的成员数取这里（标签筛选摘组之前），与合集卡同一份折叠结果。
+    _collectionDisplayCounts.publish<_ShelfBookSlot>(shelfGroups);
     // 每组的键只算一次：键要聚合成员并解析显示名，放进比较器会被重算 O(n log n) 次。
     final Map<CollectionGroup<_ShelfBookSlot>, ShelfSortKey> sortKeys =
         <CollectionGroup<_ShelfBookSlot>, ShelfSortKey>{
@@ -2815,6 +2822,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               : CollectionShelfDomain.books,
           onOpenCollection: _openCollectionDetail,
           onShowCollectionMenu: _showCollectionContextMenu,
+          displayCounts: _collectionDisplayCounts,
         ),
       ),
     );

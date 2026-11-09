@@ -619,6 +619,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
 
+  /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
+  final CollectionDisplayCounts _collectionDisplayCounts =
+      CollectionDisplayCounts();
+
   /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
   /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
   /// 全页 spinner，用户报「一直在刷新」）。仅首载（缓存空）才显示加载圈。
@@ -1000,6 +1004,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    _collectionDisplayCounts.dispose();
     _coverExists.dispose();
     _remoteCoverExists.dispose();
     _coverExistsRevision.dispose();
@@ -7652,6 +7657,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           collectionsById: _collectionsById,
           memberSortIndex: memberSortIndex,
         );
+    _collectionDisplayCounts.publish<_VideoSlot>(groups);
     groups.sort(
       (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
           compareShelfSortKeys(
@@ -10710,6 +10716,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           domain: CollectionShelfDomain.video,
           onOpenCollection: _openCollectionDetail,
           onShowCollectionMenu: _showCollectionContextMenu,
+          displayCounts: _collectionDisplayCounts,
         ),
       ),
     );
