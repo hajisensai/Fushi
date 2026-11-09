@@ -34,8 +34,23 @@ class TyranoDomConnectException implements Exception {
   String toString() => 'TyranoDomConnectException: $message';
 }
 
+/// DOM 数据源会话的消费面（会话控制器只依赖它，测试可替换）。
+abstract interface class TyranoDomFrameSource {
+  /// 快照流（单订阅）；会话结束时关闭。
+  Stream<TyranoDomFrame> get frames;
+
+  /// 最近一帧。
+  TyranoDomFrame? get latest;
+
+  /// 会话结束时完成。
+  Future<TyranoDomEndReason> get done;
+
+  /// 断开并卸载观察脚本。
+  Future<void> close();
+}
+
 /// 一个游戏页面的 DOM 数据源会话。
-class TyranoDomSession {
+class TyranoDomSession implements TyranoDomFrameSource {
   TyranoDomSession._(this._connection) {
     _eventSubscription = _connection.events.listen(_onEvent);
     unawaited(
@@ -96,12 +111,15 @@ class TyranoDomSession {
   TyranoDomFrame? _latest;
 
   /// 快照流（单订阅，订阅前的帧会缓冲）；会话结束时关闭。
+  @override
   Stream<TyranoDomFrame> get frames => _frames.stream;
 
   /// 最近一帧。
+  @override
   TyranoDomFrame? get latest => _latest;
 
   /// 会话结束时完成。
+  @override
   Future<TyranoDomEndReason> get done => _done.future;
 
   /// 会话是否已结束。
@@ -149,6 +167,7 @@ class TyranoDomSession {
   }
 
   /// 卸载观察脚本并断开。游戏已退出时直接结束。
+  @override
   Future<void> close() async {
     if (_done.isCompleted) return;
     if (!_connection.isClosed) {
