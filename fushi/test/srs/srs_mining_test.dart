@@ -1204,7 +1204,7 @@ void main() {
         repositionSnapshotFolderFor(repo),
         AnkiDeckRepositionRunner.kSrsSnapshotFolder,
       );
-      // 重排弹窗据此显示「读取 Fushi 复习的卡片」，不写「从 Anki 读取」（BUG-4242）。
+      // 重排弹窗据此显示「读取 Fushi 复习的卡片」，不写「从 Anki 读取」（BUG-4249）。
       expect(repositionTargetsSrsFor(repo), isTrue);
     });
 
