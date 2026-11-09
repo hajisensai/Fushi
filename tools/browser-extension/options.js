@@ -1315,7 +1315,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadPalette();
 loadSubtitleStyle();
-loadSubtitleMask();
+void loadSubtitleMask();
 
 // ── 节导航：左侧（窄屏为顶部横条）链接随滚动高亮当前节（aria-current="true"）。
 // 只是锚点 + 视觉提示，键盘 Tab 到链接回车即跳；没有 IntersectionObserver 的环境（vm 测试）跳过。

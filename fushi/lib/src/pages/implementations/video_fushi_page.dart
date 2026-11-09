@@ -363,6 +363,7 @@ import 'package:fushi/src/media/video/video_jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -6778,11 +6779,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void dispose() {
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
-    _subtitleMaskDraft.dispose();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
     _playbackRouteMark.dispose();
+    _subtitleMaskDraft.dispose();
     _themeSongTracker.dispose();
     _themeSongChapters.dispose();
     sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);

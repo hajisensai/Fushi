@@ -499,12 +499,22 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 字幕之下——不糊按钮，Fushi 字幕仍压在遮布上可读可查词。
                         // IgnorePointer；关闭时零尺寸。
                         Positioned.fill(
-                          child: VideoSubtitleMaskLayer(
-                            controller: controller,
-                            fit: videoFitModeToBoxFit(_videoFitMode),
-                            config: appModel.videoSubtitleMask,
-                            draftRect: _subtitleMaskDraft,
-                          ),
+                          child:
+                              ValueListenableBuilder<VideoSubtitleMaskConfig>(
+                                valueListenable:
+                                    appModel.videoSubtitleMaskListenable,
+                                builder:
+                                    (
+                                      BuildContext context,
+                                      VideoSubtitleMaskConfig config,
+                                      Widget? _,
+                                    ) => VideoSubtitleMaskLayer(
+                                      controller: controller,
+                                      fit: videoFitModeToBoxFit(_videoFitMode),
+                                      config: config,
+                                      draftRect: _subtitleMaskDraft,
+                                    ),
+                              ),
                         ),
                         // Apple（iOS / macOS 26）：控制条背后的很淡的顶 / 底暗化 + 底栏液态
                         // 玻璃胶囊。必须排在 media_kit 控制条**之前**（画在按钮 / 进度条
@@ -1379,12 +1389,20 @@ extension _VideoLayout on _VideoFushiPageState {
       Positioned.fill(
         child: Theme(
           data: Theme.of(context).copyWith(colorScheme: cs),
-          child: VideoSubtitleMaskEditLayer(
-            controller: controller,
-            fit: videoFitModeToBoxFit(_videoFitMode),
-            config: appModel.videoSubtitleMask,
-            draftRect: _subtitleMaskDraft,
-            onCommit: _commitSubtitleMaskRect,
+          child: ValueListenableBuilder<VideoSubtitleMaskConfig>(
+            valueListenable: appModel.videoSubtitleMaskListenable,
+            builder:
+                (
+                  BuildContext context,
+                  VideoSubtitleMaskConfig config,
+                  Widget? _,
+                ) => VideoSubtitleMaskEditLayer(
+                  controller: controller,
+                  fit: videoFitModeToBoxFit(_videoFitMode),
+                  config: config,
+                  draftRect: _subtitleMaskDraft,
+                  onCommit: _commitSubtitleMaskRect,
+                ),
           ),
         ),
       ),
@@ -1409,7 +1427,7 @@ extension _VideoLayout on _VideoFushiPageState {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       FushiIcon(
-                        Icons.texture_outlined,
+                        FushiIcons.subtitleMask,
                         size: 18,
                         color: cs.primary,
                       ),

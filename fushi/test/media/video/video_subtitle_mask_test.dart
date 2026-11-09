@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 
 VideoPlayerController _controller() => VideoPlayerController()
   ..debugVideoWidthOverride = 1920

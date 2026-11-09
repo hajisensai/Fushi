@@ -17,7 +17,7 @@ import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_settings_cli.dart';
 import 'package:fushi/src/media/video/video_settings_cli_ops.dart'
     show videoSubtitlePositionForCli;
-import 'package:fushi/src/media/video/video_subtitle_mask.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
@@ -1326,7 +1326,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.subtitle.mask_enabled',
             title: t.video_setting_subtitle_mask,
             subtitle: t.video_setting_subtitle_mask_hint,
-            icon: Icons.texture_outlined,
+            icon: FushiIcons.subtitleMask,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
               order: 151,
@@ -1346,7 +1346,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoSubtitleMaskStyle>(
             id: 'video.subtitle.mask_style',
             title: t.video_setting_subtitle_mask_style,
-            icon: Icons.blur_on_outlined,
+            icon: FushiIcons.blur,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
               order: 152,
@@ -1380,7 +1380,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSliderItem(
             id: 'video.subtitle.mask_strength',
             title: t.video_setting_subtitle_mask_strength,
-            icon: Icons.opacity_outlined,
+            icon: FushiIcons.opacity,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
               order: 153,
@@ -1406,7 +1406,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.subtitle.mask_adjust',
             title: t.video_setting_subtitle_mask_adjust,
             subtitle: t.video_subtitle_mask_edit_hint,
-            icon: Icons.open_with_outlined,
+            icon: FushiIcons.move,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
               order: 154,
