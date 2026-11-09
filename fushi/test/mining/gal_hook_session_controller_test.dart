@@ -14,6 +14,10 @@ import 'package:fushi/src/mining/gal_voice_dump_index.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_launch.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_session.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -27,6 +31,7 @@ void main() {
   // listAudioTracks——必须先初始化 binding，让调用以 MissingPluginException 收敛为
   // 空列表而不是在无 binding 下直接抛错。
   TestWidgetsFlutterBinding.ensureInitialized();
+  _tyranoDomSessionTests();
 
   for (final String scenario in <String>[
     'already exported',
@@ -5218,5 +5223,330 @@ void _gameExitWatchTests() {
 
     await controller.close();
     endpoints.dispose();
+  });
+}
+
+// ── TyranoScript（Electron / NW.js）DOM 源接线 ─────────────────────────────────
+// 文本一律是合成串，不含任何游戏台词。
+
+class _FakeTyranoDomSource implements TyranoDomFrameSource {
+  final StreamController<TyranoDomFrame> _controller =
+      StreamController<TyranoDomFrame>();
+  final Completer<TyranoDomEndReason> _done = Completer<TyranoDomEndReason>();
+  TyranoDomFrame? _latest;
+  int closeCalls = 0;
+
+  @override
+  Stream<TyranoDomFrame> get frames => _controller.stream;
+
+  @override
+  TyranoDomFrame? get latest => _latest;
+
+  @override
+  Future<TyranoDomEndReason> get done => _done.future;
+
+  void emit(TyranoDomFrame frame) {
+    _latest = frame;
+    _controller.add(frame);
+  }
+
+  void disconnect() {
+    if (!_done.isCompleted) _done.complete(TyranoDomEndReason.disconnected);
+    unawaited(_controller.close());
+  }
+
+  @override
+  Future<void> close() async {
+    closeCalls++;
+    if (!_done.isCompleted) _done.complete(TyranoDomEndReason.closed);
+    unawaited(_controller.close());
+  }
+}
+
+TyranoDomFrame _domFrame(
+  String text, {
+  required int generation,
+  bool complete = true,
+}) => TyranoDomFrame(
+  text: text,
+  generation: generation,
+  complete: complete,
+  speaker: '',
+  glyphs: const <TyranoDomGlyph>[],
+  devicePixelRatio: 1,
+  clientWidth: 1280,
+  clientHeight: 720,
+  vertical: false,
+);
+
+Future<void> _until(bool Function() condition) async {
+  for (int i = 0; i < 200 && !condition(); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
+void _tyranoDomSessionTests() {
+  group('TyranoScript DOM source wiring', () {
+    late TexthookerService service;
+    late ChangeNotifier endpoints;
+    late List<List<String>> launchedArguments;
+    late List<int> connectedPorts;
+    late List<_FakeTyranoDomSource> sources;
+    late _FakeEngineSource engine;
+    late int tick;
+
+    GalHookSessionController buildController({
+      bool tyrano = true,
+      int? attachDebugPort,
+      List<GalHookedLine>? polledLines,
+      String? runningImagePath,
+    }) {
+      engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        replayBufferedLines: true,
+        polledLines: polledLines ?? <GalHookedLine>[],
+      );
+      return GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => false,
+        targetWow64Probe: (_) async => false,
+        // 默认游戏进程查不到映像 = 已不在：断开后不重连。
+        targetImagePathProbe: (_) => runningImagePath,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory:
+            ({
+              required int targetPid,
+              required String? launchExe,
+              required String injectorPath,
+              required bool lunaPcHooks,
+              int? lunaCodepage,
+              List<String> launchArguments = const <String>[],
+              String launchWorkdir = '',
+              GalJapaneseLocaleMode japaneseLocaleMode =
+                  kGalDefaultJapaneseLocaleMode,
+              String? contentLanguage,
+            }) {
+              launchedArguments.add(launchArguments);
+              return engine;
+            },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        textPollInterval: const Duration(milliseconds: 5),
+        resourceAudioWait: Duration.zero,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+        tyranoDomLaunchPlanner:
+            (String exe, {required List<String> userArgs}) =>
+                planTyranoDomLaunch(
+                  exe,
+                  userArgs: userArgs,
+                  isTyranoGame: (_) => tyrano,
+                  pickPort: () async => 9333,
+                ),
+        tyranoDomConnector:
+            ({required int port, required Duration timeout}) async {
+              connectedPorts.add(port);
+              final _FakeTyranoDomSource source = _FakeTyranoDomSource();
+              sources.add(source);
+              return source;
+            },
+        isTyranoGame: (_) => tyrano,
+        remoteDebuggingPortProbe: (_) => attachDebugPort,
+        tickNow: () => tick,
+      );
+    }
+
+    setUp(() {
+      service = TexthookerService.test();
+      endpoints = ChangeNotifier();
+      launchedArguments = <List<String>>[];
+      connectedPorts = <int>[];
+      sources = <_FakeTyranoDomSource>[];
+      tick = 0;
+    });
+
+    tearDown(() => endpoints.dispose());
+
+    test('launch 只给这一次启动追加调试端口，不改用户参数、不叠两份', () async {
+      final GalHookSessionController controller = buildController();
+      final List<String> userArgs = <String>['-windowed'];
+      expect(
+        (await controller.launchGame(
+          r'D:\games\tyrano\game.exe',
+          launchArguments: userArgs,
+        )).launched,
+        isTrue,
+      );
+      expect(launchedArguments.single, <String>[
+        '-windowed',
+        '--remote-debugging-port=9333',
+      ]);
+      expect(userArgs, <String>['-windowed'], reason: '用户保存的参数不能被改');
+      await _until(() => controller.tyranoDomFeed != null);
+      expect(connectedPorts, <int>[9333]);
+
+      // 用户自己已经带了端口：沿用它，不再追加第二份。
+      expect(
+        (await controller.launchGame(
+          r'D:\games\tyrano\game.exe',
+          launchArguments: const <String>['--remote-debugging-port=9555'],
+        )).launched,
+        isTrue,
+      );
+      expect(launchedArguments.last, <String>['--remote-debugging-port=9555']);
+      expect(sources.first.closeCalls, 1, reason: '换一次启动必须关掉上一场的 DOM 连接');
+      await _until(() => connectedPorts.length == 2);
+      expect(connectedPorts.last, 9555);
+      await controller.close();
+      expect(sources.last.closeCalls, 1);
+      expect(controller.tyranoDomFeed, isNull);
+    });
+
+    test('非 Tyrano 游戏零影响：不追加参数、不连接', () async {
+      final GalHookSessionController controller = buildController(
+        tyrano: false,
+      );
+      await controller.launchGame(
+        r'D:\games\other\game.exe',
+        launchArguments: const <String>['-a'],
+      );
+      expect(launchedArguments.single, <String>['-a']);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(connectedPorts, isEmpty);
+      expect(controller.tyranoDomFeed, isNull);
+      await controller.close();
+    });
+
+    test('DOM complete 帧作为正文进 texthooker，在线后引擎文本道被仲裁掉', () async {
+      final List<GalHookedLine> lunaLines = <GalHookedLine>[];
+      final GalHookSessionController controller = buildController(
+        polledLines: lunaLines,
+      );
+      await controller.launchGame(r'D:\games\tyrano\game.exe');
+      await _until(() => controller.tyranoDomFeed != null);
+      await controller.selectTextThread(5);
+
+      // DOM 还没产出正文：引擎文本照常进来（DOM 观察不到消息层时不能两头落空）。
+      lunaLines.add(
+        const GalHookedLine(
+          seq: 1,
+          timestampMs: 100,
+          text: 'synthetic engine line one',
+          threadId: 5,
+        ),
+      );
+      await _until(() => service.entries.isNotEmpty);
+      expect(service.entries.single.text, 'synthetic engine line one');
+      expect(controller.tyranoDomTextOnline, isFalse);
+
+      final List<TyranoDomFrame> forwarded = <TyranoDomFrame>[];
+      final StreamSubscription<TyranoDomFrame> sub = controller
+          .tyranoDomFeed!
+          .frames
+          .listen(forwarded.add);
+      // 句子开始（逐字显示中）记下开始时刻；完成帧才入库，时间戳取开始时刻。
+      tick = 7000;
+      sources.single.emit(
+        _domFrame('synthetic dom', generation: 1, complete: false),
+      );
+      await pumpEventQueue();
+      tick = 7400;
+      sources.single.emit(
+        _domFrame('synthetic dom line', generation: 2, complete: false),
+      );
+      await pumpEventQueue();
+      tick = 9000;
+      sources.single.emit(_domFrame('synthetic dom line', generation: 2));
+      await pumpEventQueue();
+      // 同一句的重排帧（尺寸变化等）不重复入库。
+      sources.single.emit(_domFrame('synthetic dom line', generation: 2));
+      await _until(() => service.entries.length == 2);
+      final TexthookerLineEntry dom = service.entries.last;
+      expect(dom.text, 'synthetic dom line');
+      expect(dom.source, TexthookerLineSource.engineHook);
+      expect(dom.sourceLabel, kTyranoDomLineSourceLabel);
+      expect(dom.sourceSequence, isNull);
+      expect(dom.hookTimestampMs, 7000, reason: '逐字显示是同一句的延续，时间戳取句子开始');
+      expect(controller.tyranoDomTextOnline, isTrue);
+      await _until(() => forwarded.length == 4);
+      expect(forwarded, hasLength(4), reason: '每一帧都要转给查词几何');
+
+      // 在线后 LunaHook 文本道的正文不再进 texthooker。
+      lunaLines.add(
+        const GalHookedLine(
+          seq: 2,
+          timestampMs: 200,
+          text: 'synthetic engine line two',
+          threadId: 5,
+        ),
+      );
+      await _until(() => engine.pollCursors.contains(2));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        service.entries.map((TexthookerLineEntry e) => e.text),
+        isNot(contains('synthetic engine line two')),
+      );
+
+      // 新一句（不是上一句的延续）重新取开始时刻。
+      tick = 12000;
+      sources.single.emit(_domFrame('another dom line', generation: 3));
+      await _until(() => service.entries.length == 3);
+      expect(service.entries.last.hookTimestampMs, 12000);
+
+      await sub.cancel();
+      await controller.close();
+    });
+
+    test('DOM 断开：撤 feed、记事件；游戏已不在就不重连', () async {
+      final GalHookSessionController controller = buildController();
+      await controller.launchGame(r'D:\games\tyrano\game.exe');
+      await _until(() => controller.tyranoDomFeed != null);
+      final TyranoDomFeed feed = controller.tyranoDomFeed!;
+      bool feedDone = false;
+      feed.frames.listen((_) {}, onDone: () => feedDone = true);
+
+      sources.single.disconnect();
+      await _until(() => controller.tyranoDomFeed == null);
+      await _until(() => feedDone);
+      expect(feedDone, isTrue, reason: 'feed 结束 = 查词几何收到 detach 信号');
+      final List<String> codes = controller.events
+          .map((GalHookEvent e) => e.code)
+          .toList();
+      expect(codes, contains('tyrano_dom.disconnected'));
+      expect(codes, contains('tyrano_dom.game_gone'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(connectedPorts, hasLength(1));
+      await controller.close();
+    });
+
+    test('attach：命令行有调试端口就复用，没有就记诊断、不连接', () async {
+      final GalHookSessionController withPort = buildController(
+        attachDebugPort: 9444,
+        runningImagePath: r'D:\games\tyrano\game.exe',
+      );
+      await withPort.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 9, pid: 4242, title: 'synthetic'),
+      );
+      await _until(() => withPort.tyranoDomFeed != null);
+      expect(connectedPorts, <int>[9444]);
+      await withPort.close();
+
+      connectedPorts.clear();
+      final GalHookSessionController withoutPort = buildController(
+        runningImagePath: r'D:\games\tyrano\game.exe',
+      );
+      await withoutPort.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 9, pid: 4242, title: 'synthetic'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(connectedPorts, isEmpty);
+      expect(
+        withoutPort.events.map((GalHookEvent e) => e.code),
+        contains('tyrano_dom.attach_no_debug_port'),
+      );
+      await withoutPort.close();
+    });
   });
 }
