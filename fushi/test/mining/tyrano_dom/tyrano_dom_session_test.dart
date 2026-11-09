@@ -186,6 +186,20 @@ void main() {
       );
       expect(kTyranoDomDisposeExpression, contains(kTyranoDomObserverGlobal));
     });
+
+    test('语音判据是引擎状态（vobuf），不是文件名；挂在 playbgm.start、dispose 还原', () {
+      // 实测 Tyrano 5.20：[playse] / [fadeinse] / [vostart] 自动语音都经 playbgm.start，
+      // 引擎在 playbgm.play 里以 !!stat.map_vo.vobuf[buf] 判 is_voice。
+      expect(kTyranoDomObserverScript, contains('kag.ftag.master_tag.playbgm'));
+      expect(kTyranoDomObserverScript, contains("pm.target !== 'se'"));
+      expect(kTyranoDomObserverScript, contains('vo.vobuf[pm.buf]'));
+      expect(kTyranoDomObserverScript, isNot(contains('v_')));
+      expect(
+        kTyranoDomObserverScript,
+        contains('state.hook.tag.start = state.hook.orig'),
+      );
+      expect(kTyranoDomObserverScript, contains("k: 'voice'"));
+    });
   });
 
   group('TyranoDomSession（假 CDP 端点）', () {

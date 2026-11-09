@@ -33,6 +33,7 @@ void main() {
   // 空列表而不是在无 binding 下直接抛错。
   TestWidgetsFlutterBinding.ensureInitialized();
   _tyranoDomSessionTests();
+  _tyranoDomVoiceTests();
 
   for (final String scenario in <String>[
     'already exported',
@@ -5557,6 +5558,365 @@ void _tyranoDomSessionTests() {
         contains('tyrano_dom.attach_no_debug_port'),
       );
       await withoutPort.close();
+    });
+  });
+}
+
+// ── TyranoScript DOM 语音：句序号归属与仲裁 ───────────────────────────────────
+// 字节是合成的 OggS 头，文本是合成串。
+
+TyranoDomFrame _voicedFrame(
+  String text, {
+  required int generation,
+  required int lineSeq,
+  String documentId = 'doc1',
+  bool voiceDeclared = true,
+  bool complete = true,
+}) => TyranoDomFrame(
+  text: text,
+  generation: generation,
+  complete: complete,
+  speaker: '',
+  glyphs: const <TyranoDomGlyph>[],
+  devicePixelRatio: 1,
+  clientWidth: 1280,
+  clientHeight: 720,
+  vertical: false,
+  documentId: documentId,
+  lineSeq: lineSeq,
+  voiceDeclared: voiceDeclared,
+);
+
+TyranoDomVoiceEvent _voiceEvent(
+  String storage, {
+  required int lineSeq,
+  String documentId = 'doc1',
+  String buffer = '1',
+}) => TyranoDomVoiceEvent(
+  documentId: documentId,
+  lineSeq: lineSeq,
+  buffer: buffer,
+  storagePath: storage,
+  pageUrl: 'file:///D:/games/tyrano/resources/app.asar/index.html',
+);
+
+void _tyranoDomVoiceTests() {
+  // 语音 dump 目录与资源取文件只在 Windows 上存在（galgame 只做 Windows 端）。
+  group('TyranoScript DOM voice pairing', skip: !Platform.isWindows, () {
+    late TexthookerService service;
+    late ChangeNotifier endpoints;
+    late List<_FakeTyranoDomSource> sources;
+    late _FakeEngineSource engine;
+    late Directory dumpDir;
+    late GalVoiceDumpIndex index;
+    late List<String> fetched;
+    late Set<String> unreadable;
+    late int tick;
+
+    GalHookSessionController buildController() {
+      engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        replayBufferedLines: true,
+        rawReady: true,
+        // 时间戳配对「总能命中」：用来证明声明了语音缓冲区的 DOM 行不走这条路。
+        pairedCandidate: true,
+        voiceDumpIndex: index,
+      );
+      return GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => false,
+        targetWow64Probe: (_) async => false,
+        targetImagePathProbe: (_) => null,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory:
+            ({
+              required int targetPid,
+              required String? launchExe,
+              required String injectorPath,
+              required bool lunaPcHooks,
+              int? lunaCodepage,
+              List<String> launchArguments = const <String>[],
+              String launchWorkdir = '',
+              GalJapaneseLocaleMode japaneseLocaleMode =
+                  kGalDefaultJapaneseLocaleMode,
+              String? contentLanguage,
+            }) => engine,
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        textPollInterval: const Duration(milliseconds: 5),
+        resourceAudioWait: Duration.zero,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+        tyranoDomLaunchPlanner:
+            (String exe, {required List<String> userArgs}) =>
+                planTyranoDomLaunch(
+                  exe,
+                  userArgs: userArgs,
+                  isTyranoGame: (_) => true,
+                  pickPort: () async => 9333,
+                ),
+        tyranoDomConnector:
+            ({required int port, required Duration timeout}) async {
+              final _FakeTyranoDomSource source = _FakeTyranoDomSource();
+              sources.add(source);
+              return source;
+            },
+        tyranoDomVoiceFetcher: (TyranoDomVoiceEvent event) async {
+          fetched.add(event.storagePath);
+          if (unreadable.contains(event.storagePath)) {
+            return (voice: null, skip: TyranoDomVoiceSkip.badSignature);
+          }
+          return (
+            voice: TyranoDomVoiceBytes(
+              bytes: Uint8List.fromList(<int>[
+                0x4f,
+                0x67,
+                0x67,
+                0x53,
+                ...utf8.encode(event.storagePath),
+              ]),
+              container: TyranoVoiceContainer.ogg,
+              sourcePath:
+                  r'D:\games\tyrano\resources\app.asar\'
+                  '${event.storagePath.substring(2).replaceAll('/', r'\')}',
+              asarPath: r'D:\games\tyrano\resources\app.asar',
+              asarMember: event.storagePath.substring(2),
+            ),
+            skip: null,
+          );
+        },
+        isTyranoGame: (_) => true,
+        remoteDebuggingPortProbe: (_) => null,
+        tickNow: () => tick,
+      );
+    }
+
+    setUp(() async {
+      service = TexthookerService.test();
+      endpoints = ChangeNotifier();
+      sources = <_FakeTyranoDomSource>[];
+      fetched = <String>[];
+      unreadable = <String>{};
+      tick = 1000;
+      dumpDir = await Directory.systemTemp.createTemp('tyrano_dom_voice_');
+      index = GalVoiceDumpIndex(directory: dumpDir);
+    });
+
+    tearDown(() async {
+      endpoints.dispose();
+      await index.stopSession();
+      await dumpDir.delete(recursive: true);
+    });
+
+    Future<GalHookSessionController> started() async {
+      final GalHookSessionController controller = buildController();
+      await controller.launchGame(r'D:\games\tyrano\game.exe');
+      await _until(() => controller.tyranoDomFeed != null);
+      return controller;
+    }
+
+    TexthookerLineEntry domLine(String text) => service.entries.lastWhere(
+      (TexthookerLineEntry e) =>
+          e.sourceLabel == kTyranoDomLineSourceLabel && e.text == text,
+    );
+
+    test('语音先到（vostart 自动语音）：原件落盘，行入库即绑定，不走时间戳配对', () async {
+      final GalHookSessionController controller = await started();
+      final _FakeTyranoDomSource dom = sources.single;
+      final int pairingCallsBefore = engine.findEventIds.length;
+      tick = 2000;
+      dom.emitVoice(_voiceEvent('./data/sound/vo/lily/1.ogg', lineSeq: 1));
+      await _until(() => fetched.isNotEmpty);
+      tick = 2010;
+      dom.emit(
+        _voicedFrame(
+          'synthetic one',
+          generation: 1,
+          lineSeq: 1,
+          complete: false,
+        ),
+      );
+      tick = 3000;
+      dom.emit(_voicedFrame('synthetic one', generation: 1, lineSeq: 1));
+      await _until(
+        () =>
+            service.entries.isNotEmpty &&
+            domLine('synthetic one').audioStatus ==
+                TexthookerLineAudioStatus.matched,
+      );
+      final TexthookerLineEntry line = domLine('synthetic one');
+      expect(line.audioBackend, 'game_resource');
+      final String resourceId = line.audioResourceId!;
+      expect(resourceId, startsWith('2000_fushi_domvoice'));
+      expect(resourceId, endsWith('_vo-lily-1.ogg'));
+      expect(
+        File(p.join(dumpDir.path, resourceId)).readAsBytesSync().sublist(0, 4),
+        <int>[0x4f, 0x67, 0x67, 0x53],
+      );
+      expect(
+        engine.findEventIds.length,
+        pairingCallsBefore,
+        reason: '声明了语音缓冲区的 DOM 行不按时间戳去 native dump 里猜',
+      );
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('tyrano_dom.voice_stored'),
+      );
+      await controller.close();
+    });
+
+    test('正文先到、语音后到：行先 unavailable，语音落盘后改绑', () async {
+      final GalHookSessionController controller = await started();
+      final _FakeTyranoDomSource dom = sources.single;
+      dom.emit(_voicedFrame('synthetic two', generation: 1, lineSeq: 2));
+      await _until(() => service.entries.isNotEmpty);
+      expect(
+        domLine('synthetic two').audioStatus,
+        TexthookerLineAudioStatus.unavailable,
+      );
+      expect(domLine('synthetic two').audioResourceId, isNull);
+      dom.emitVoice(_voiceEvent('./data/sound/vo/alice/7.ogg', lineSeq: 2));
+      await _until(
+        () =>
+            domLine('synthetic two').audioStatus ==
+            TexthookerLineAudioStatus.matched,
+      );
+      expect(
+        domLine('synthetic two').audioResourceId,
+        endsWith('vo-alice-7.ogg'),
+      );
+      await controller.close();
+    });
+
+    test('同一句多条语音：主语音为最先播放的一条，全部落进同一组', () async {
+      final GalHookSessionController controller = await started();
+      final _FakeTyranoDomSource dom = sources.single;
+      tick = 5000;
+      dom.emitVoice(_voiceEvent('./data/sound/vo/lily/3.ogg', lineSeq: 3));
+      tick = 5001;
+      dom.emitVoice(
+        _voiceEvent('./data/sound/vo/alice/3.ogg', lineSeq: 3, buffer: '2'),
+      );
+      // 同一原件在同一句里重放不算第二条语音。
+      dom.emitVoice(_voiceEvent('./data/sound/vo/lily/3.ogg', lineSeq: 3));
+      dom.emit(_voicedFrame('synthetic three', generation: 1, lineSeq: 3));
+      await _until(
+        () =>
+            service.entries.isNotEmpty &&
+            controller.events
+                    .where(
+                      (GalHookEvent e) => e.code == 'tyrano_dom.voice_stored',
+                    )
+                    .length ==
+                2 &&
+            domLine('synthetic three').audioStatus ==
+                TexthookerLineAudioStatus.matched,
+      );
+      expect(fetched, hasLength(2));
+      final String primary = domLine('synthetic three').audioResourceId!;
+      expect(primary, endsWith('vo-lily-3.ogg'));
+      final List<String> names =
+          dumpDir
+              .listSync()
+              .whereType<File>()
+              .map((File f) => p.basename(f.path))
+              .toList()
+            ..sort();
+      final int group = parseGalVoiceResourceName(primary)!.domVoiceGroup!;
+      for (final String name in names) {
+        expect(parseGalVoiceResourceName(name)!.domVoiceGroup, group);
+      }
+      expect(
+        companionVoiceResourceNames(
+          primaryName: primary,
+          candidateNames: names,
+        ),
+        <String>[names.firstWhere((String n) => n.endsWith('alice-3.ogg'))],
+      );
+      await controller.close();
+    });
+
+    test('仲裁：声明了语音缓冲区但这句没有语音事件 → 无语音，不借时间邻近的 native 资源', () async {
+      final GalHookSessionController controller = await started();
+      sources.single.emit(
+        _voicedFrame('synthetic narration', generation: 1, lineSeq: 4),
+      );
+      await _until(() => service.entries.isNotEmpty);
+      await pumpEventQueue();
+      final TexthookerLineEntry line = domLine('synthetic narration');
+      expect(line.audioStatus, TexthookerLineAudioStatus.unavailable);
+      expect(line.audioResourceId, isNull);
+      await controller.close();
+    });
+
+    test('没声明语音缓冲区的游戏保持按时间戳配对（旧路径不变）', () async {
+      final GalHookSessionController controller = await started();
+      tick = 7000;
+      sources.single.emit(
+        _voicedFrame(
+          'synthetic legacy',
+          generation: 1,
+          lineSeq: 0,
+          voiceDeclared: false,
+        ),
+      );
+      await _until(
+        () =>
+            service.entries.isNotEmpty &&
+            domLine('synthetic legacy').audioResourceId != null,
+      );
+      expect(domLine('synthetic legacy').audioResourceId, 'fake-7000.ogg');
+      await controller.close();
+    });
+
+    test('原件取不到（签名不符等）：不配对、记诊断', () async {
+      final GalHookSessionController controller = await started();
+      unreadable.add('./data/sound/vo/bad.ogg');
+      sources.single.emitVoice(
+        _voiceEvent('./data/sound/vo/bad.ogg', lineSeq: 5),
+      );
+      sources.single.emit(
+        _voicedFrame('synthetic bad', generation: 1, lineSeq: 5),
+      );
+      await _until(
+        () => controller.events.any(
+          (GalHookEvent e) => e.code == 'tyrano_dom.voice_unpaired',
+        ),
+      );
+      await pumpEventQueue();
+      final TexthookerLineEntry line = domLine('synthetic bad');
+      expect(line.audioResourceId, isNull);
+      expect(line.audioStatus, isNot(TexthookerLineAudioStatus.matched));
+      expect(dumpDir.listSync(), isEmpty);
+      await controller.close();
+    });
+
+    test('页面重载（文档 id 变了）后旧句序号的语音不会绑到新页面同号的句子上', () async {
+      final GalHookSessionController controller = await started();
+      final _FakeTyranoDomSource dom = sources.single;
+      dom.emitVoice(
+        _voiceEvent('./data/sound/vo/old.ogg', lineSeq: 0, documentId: 'old'),
+      );
+      await _until(() => fetched.isNotEmpty);
+      await _until(
+        () => controller.events.any(
+          (GalHookEvent e) => e.code == 'tyrano_dom.voice_stored',
+        ),
+      );
+      dom.emit(
+        _voicedFrame(
+          'synthetic reloaded',
+          generation: 1,
+          lineSeq: 0,
+          documentId: 'new',
+        ),
+      );
+      await _until(() => service.entries.isNotEmpty);
+      await pumpEventQueue();
+      expect(domLine('synthetic reloaded').audioResourceId, isNull);
+      await controller.close();
     });
   });
 }

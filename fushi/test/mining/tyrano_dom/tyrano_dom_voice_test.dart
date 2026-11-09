@@ -236,7 +236,8 @@ void main() {
     });
   });
 
-  group('TyranoDomVoiceReader', () {
+  // 解析按 Windows 路径语义（galgame 只做 Windows 端），读盘用例只在 Windows 上跑。
+  group('TyranoDomVoiceReader', skip: !Platform.isWindows, () {
     String pageUrlFor(String indexPath) => Uri.file(indexPath).toString();
 
     test('Electron：从 app.asar 取成员原件，字节与写入一致', () async {
