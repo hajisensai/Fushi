@@ -363,6 +363,9 @@ void main() {
         greaterThanOrEqualTo(FushiContinueCardRow.minInfoWidth),
       );
       expect(cover.width / cover.height, closeTo(16 / 9, 0.01));
+      // 卡高跟着缩小的封面走，不按 120 高封面留出空白（用户 2026-11-08 iPhone
+      // 截图：封面约 70 高、卡 150 多高，下半截空着）。
+      expect(card.height - cover.height, lessThan(48));
     });
   });
 
