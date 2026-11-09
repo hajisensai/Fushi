@@ -745,11 +745,8 @@ class DictionaryImportManager {
 
   // ── private helpers ──────────────────────────────────────────────────
 
-  int _nextOrder() {
-    final dicts = _dictRepo.dictionaries;
-    if (dicts.isEmpty) return 1;
-    return dicts.map((d) => d.order).reduce((a, b) => a > b ? a : b) + 1;
-  }
+  /// 本机与服务器托管词典共用一条 `order` 数轴：新导入的排在两表最大值之后。
+  int _nextOrder() => _dictRepo.nextDictionaryOrder;
 
   void _validatePath(Directory dir) {
     if (!path.isWithin(_resourceDirectory.path, dir.path)) {

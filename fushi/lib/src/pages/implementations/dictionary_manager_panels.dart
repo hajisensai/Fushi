@@ -3,7 +3,7 @@ import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
-    show RemoteDictionary;
+    show DictionaryRepository, RemoteDictionary;
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1023,24 +1023,18 @@ List<DictionaryManagerRow> mixDictionaryManagerRows({
   required DictionaryType sectionType,
   required int Function(Dictionary dictionary) localOrder,
 }) {
-  final Set<String> localNames = <String>{
-    for (final Dictionary d in allLocal) d.name,
-  };
   final Map<String, Set<String>> hostsByName = <String, Set<String>>{};
   for (final RemoteDictionary r in remote) {
     if (r.isMissing) continue;
     hostsByName.putIfAbsent(r.name, () => <String>{}).add(r.hostId);
   }
-  final List<RemoteDictionary> sorted = List<RemoteDictionary>.of(remote)
-    ..sort(RemoteDictionary.compareByOrder);
-  final Set<String> seen = <String>{};
-  final List<RemoteDictionary> serverOnly = <RemoteDictionary>[
-    for (final RemoteDictionary r in sorted)
-      if (r.type == sectionType &&
-          !localNames.contains(r.name) &&
-          seen.add(r.name))
-        r,
-  ];
+  // 成员规则与仓库的分区重编号同一份：列表上画出来的服务器行就是写回时重编号的行。
+  final List<RemoteDictionary> serverOnly =
+      DictionaryRepository.serverOnlySectionRows(
+        allLocal: allLocal,
+        remote: remote,
+        type: sectionType,
+      );
   final List<DictionaryManagerRow> out = <DictionaryManagerRow>[];
   int i = 0;
   int j = 0;

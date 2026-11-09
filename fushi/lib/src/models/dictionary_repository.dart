@@ -184,6 +184,10 @@ class DictionaryRepository {
         for (final RemoteDictionary r in remote)
           if (r.hidden) r.name,
       }),
+      kanjiDictionaryNames: Set<String>.unmodifiable(<String>{
+        for (final Dictionary d in dictionaries)
+          if (d.type == DictionaryType.kanji) d.name,
+      }),
       termDictionaryOrder: List<String>.unmodifiable(
         _mixedTermOrder(dictionaries, remote),
       ),
@@ -248,8 +252,11 @@ class DictionaryRepository {
   }
 
   /// 本机 term 词典与服务器 term 词典按 `order` 混排后的真名顺序。两边序号相同时本机
-  /// 在前（稳定）：同一数轴上的序号由管理页一次重编号写出，相等只发生在刚刷新进来、
-  /// 还没被排过的服务器词典上。
+  /// 在前（稳定）。两张表在同一数轴上，任何改分区顺序的写入都经
+  /// [_renumberSection] 把整个混排分区一起重编号，写过之后不会撞号；撞号只出现在
+  /// 还没被这样写过的数据上（服务器词典刚刷新进来时 host 给的初始序号、旧版本只给
+  /// 本机词典重编号留下的序号等）——本机在前与管理页 `mixDictionaryManagerRows` 的
+  /// 归并规则一致，列表顺序仍是查词顺序。
   static List<String> _mixedTermOrder(
     List<Dictionary> dictionaries,
     List<RemoteDictionary> remote,
@@ -278,6 +285,41 @@ class DictionaryRepository {
       for (final e in entries)
         if (seen.add(e.name)) e.name,
     ];
+  }
+
+  /// 一个分区里单独成行的服务器词典（按管理页顺序）：类型是 [type]、不与**任何**本机
+  /// 词典同名（本机那本遮住它）、多台 host 同名只留排得最前的一行。词典管理页的混排
+  /// 列表（`mixDictionaryManagerRows`）与分区重编号（[_renumberSection]）共用这一份
+  /// 成员规则——列表上画出来的行就是重编号写回的行。
+  static List<RemoteDictionary> serverOnlySectionRows({
+    required Iterable<Dictionary> allLocal,
+    required List<RemoteDictionary> remote,
+    required DictionaryType type,
+  }) {
+    final Set<String> localNames = <String>{
+      for (final Dictionary d in allLocal) d.name,
+    };
+    final List<RemoteDictionary> sorted = List<RemoteDictionary>.of(remote)
+      ..sort(RemoteDictionary.compareByOrder);
+    final Set<String> seen = <String>{};
+    return <RemoteDictionary>[
+      for (final RemoteDictionary r in sorted)
+        if (r.type == type && !localNames.contains(r.name) && seen.add(r.name))
+          r,
+    ];
+  }
+
+  /// 本机与服务器两张表里最大的 `order` + 1（两表都空为 1）：新导入的本机词典排在
+  /// 混排分区最后，不会插到已有的服务器词典前面。
+  int get nextDictionaryOrder {
+    int? maxOrder;
+    for (final Dictionary d in _dictionariesCache) {
+      if (maxOrder == null || d.order > maxOrder) maxOrder = d.order;
+    }
+    for (final RemoteDictionary r in _remoteDictionariesCache) {
+      if (maxOrder == null || r.order > maxOrder) maxOrder = r.order;
+    }
+    return maxOrder == null ? 1 : maxOrder + 1;
   }
 
   /// `dictionary_metadata` 行 → 按管理页顺序排好的 [Dictionary] 列表（与
@@ -704,6 +746,170 @@ class DictionaryRepository {
     );
   }
 
+  /// 一个分区（术语 / 频率 / 音调；「汉字」分区见 [updateKanjiSectionOrder]）里本机
+  /// 词典的新相对顺序 [newLocalOrder]，由仓库连同这个分区里的服务器词典一起重编号
+  /// （[_renumberSection]），两张表同一事务落库。只取 [newLocalOrder] 的真名与先后，
+  /// 词典的其它字段一律以缓存为准（调用方手里可能是旧快照）。
+  ///
+  /// [moved]：这次是把这一本挪了位置（ctl `position` / 单本移动）。给了它，挪动的
+  /// 就只算这一本：服务器词典守在没动的本机词典旁边，不会被它带走。
+  Future<void> reorderDictionarySection(
+    List<Dictionary> newLocalOrder, {
+    String? moved,
+  }) {
+    if (newLocalOrder.isEmpty) return Future<void>.value();
+    final DictionaryType type = newLocalOrder.first.type;
+    if (newLocalOrder.any((Dictionary d) => d.type != type)) {
+      throw ArgumentError.value(
+        newLocalOrder.map((Dictionary d) => d.name).toList(),
+        'newLocalOrder',
+        'must all be of one section type ($type)',
+      );
+    }
+    final List<String> names = <String>[
+      for (final Dictionary d in newLocalOrder) d.name,
+    ];
+    return _writeMetadata(() async {
+      final _SectionWrites writes = _renumberSection(
+        type,
+        names,
+        moved: moved,
+      );
+      await _commitDictionaries(writes.locals, remote: writes.remotes);
+    });
+  }
+
+  /// 分区重编号的**唯一推导**：本机词典与服务器词典共用一条 `order` 数轴
+  /// （[_mixedTermOrder]），只给本机词典重编号会让服务器词典在查词序里漂移
+  /// （例：A0 B1 R2 C3 D4 里 A 改语言后本机重编成 B0 C1 D2 A3、R 还是 2，R 就从 C
+  /// 之前跑到了 D 之后）。所以任何改分区顺序的写入（管理页 / ctl 重排、改语言换组）
+  /// 都从这里出写入清单：
+  ///
+  /// 1. 现有混排分区 = 本机 [type] 词典 + [serverOnlySectionRows]，按 `order` 归并、
+  ///    同序号本机在前（与管理页列表、[_mixedTermOrder] 同一规则）；
+  /// 2. [newLocalOrder] 点名的本机词典按给定先后排；**没点名的行**（服务器词典、
+  ///    没点名的本机词典）守在原来紧跟其后的那本点名词典之前（排在最后一本点名
+  ///    词典之后的守在它之后）；[moved] 那本真的换了邻居时它不当锚点，落在新顺序里
+  ///    它的前一本正后方（排第一则在分区最前）；
+  /// 3. 整个混排分区按语言组首尾相接规范化（[concatenateLanguageGroupsOf]，与管理页
+  ///    分组同一规则），按下标 0..n-1 重编号。
+  ///
+  /// 分区里没有服务器词典时结果与改造前逐字相同（= [newLocalOrder] 的规范顺序）。
+  /// [replacing]：用它代替缓存里同名那本（改语言：分组按改完的语言算）。
+  /// 只返回序号真的变了的行；「汉字」分区不混服务器词典（混合词典的汉字部分在那里
+  /// 有独立序号），[type] 为 kanji 时只有本机词典。
+  _SectionWrites _renumberSection(
+    DictionaryType type,
+    List<String> newLocalOrder, {
+    String? moved,
+    Dictionary? replacing,
+  }) {
+    final List<Dictionary> localSection = <Dictionary>[
+      for (final Dictionary d in _dictionariesCache)
+        if (d.type == type) d.name == replacing?.name ? replacing! : d,
+    ];
+    final Map<String, Dictionary> byName = <String, Dictionary>{
+      for (final Dictionary d in localSection) d.name: d,
+    };
+    final Set<String> named = <String>{};
+    final List<Dictionary> order = <Dictionary>[
+      for (final String name in newLocalOrder)
+        if (byName.containsKey(name) && named.add(name)) byName[name]!,
+    ];
+    if (order.isEmpty) {
+      return (locals: const <Dictionary>[], remotes: const <RemoteDictionary>[]);
+    }
+    final List<RemoteDictionary> serverRows = type == DictionaryType.kanji
+        ? const <RemoteDictionary>[]
+        : serverOnlySectionRows(
+            allLocal: _dictionariesCache,
+            remote: _remoteDictionariesCache,
+            type: type,
+          );
+
+    // 1. 现有混排分区（两边都已按 order 排好，同序号本机在前）。
+    final List<_SectionRow> current = <_SectionRow>[];
+    int i = 0;
+    int j = 0;
+    while (i < localSection.length || j < serverRows.length) {
+      final bool takeLocal =
+          j >= serverRows.length ||
+          (i < localSection.length &&
+              localSection[i].order <= serverRows[j].order);
+      current.add(
+        takeLocal
+            ? _SectionRow.local(localSection[i++])
+            : _SectionRow.remote(serverRows[j++]),
+      );
+    }
+
+    // 2. [moved] 只在它真的换了邻居（点名词典之间的前后）时才不当锚点：没挪动的
+    // 写回（ctl 位置不变只做规范化）不该把旁边的服务器词典挤开。只点名一本时它就是
+    // 唯一的锚点。
+    final List<String> namedBefore = <String>[
+      for (final _SectionRow r in current)
+        if (r.local != null && named.contains(r.local!.name)) r.local!.name,
+    ];
+    final List<String> namedAfter = <String>[
+      for (final Dictionary d in order) d.name,
+    ];
+    String? at(List<String> list, int k) =>
+        k >= 0 && k < list.length ? list[k] : null;
+    String? relocated;
+    if (moved != null && namedAfter.length > 1) {
+      final int from = namedBefore.indexOf(moved);
+      final int to = namedAfter.indexOf(moved);
+      if (from >= 0 &&
+          to >= 0 &&
+          (at(namedBefore, from - 1) != at(namedAfter, to - 1) ||
+              at(namedBefore, from + 1) != at(namedAfter, to + 1))) {
+        relocated = moved;
+      }
+    }
+    final Map<String, List<_SectionRow>> leading =
+        <String, List<_SectionRow>>{};
+    List<_SectionRow> pending = <_SectionRow>[];
+    String? lastAnchor;
+    for (final _SectionRow r in current) {
+      final String? name = r.local?.name;
+      if (name != null && named.contains(name)) {
+        if (name == relocated) continue;
+        leading[name] = pending;
+        pending = <_SectionRow>[];
+        lastAnchor = name;
+      } else {
+        pending.add(r);
+      }
+    }
+    // order 非空且 relocated 之外至少还有一本点名词典，lastAnchor 一定有。
+    final List<_SectionRow> trailing = pending;
+    final List<_SectionRow> next = <_SectionRow>[
+      for (final Dictionary d in order) ...<_SectionRow>[
+        ...?leading[d.name],
+        _SectionRow.local(d),
+        if (d.name == lastAnchor) ...trailing,
+      ],
+    ];
+
+    // 3. 语言组规范化 + 重编号；只出序号变了的行（[replacing] 的其它字段由调用方写）。
+    final List<_SectionRow> canonical = concatenateLanguageGroupsOf<_SectionRow>(
+      next,
+      (_SectionRow r) => r.languageGroup,
+    );
+    final List<Dictionary> locals = <Dictionary>[];
+    final List<RemoteDictionary> remotes = <RemoteDictionary>[];
+    for (int k = 0; k < canonical.length; k++) {
+      final _SectionRow r = canonical[k];
+      final Dictionary? local = r.local;
+      if (local != null) {
+        if (local.order != k) locals.add(_copyDictionary(local)..order = k);
+      } else if (r.remote!.order != k) {
+        remotes.add(r.remote!.copyWith(order: k));
+      }
+    }
+    return (locals: locals, remotes: remotes);
+  }
+
   /// 开关一本服务器词典（激活配置拥有的 [RemoteDictionary.hidden]）。
   Future<void> setRemoteDictionaryHidden(
     RemoteDictionary dictionary,
@@ -804,6 +1010,7 @@ class DictionaryRepository {
       final Map<String, Dictionary> writes = <String, Dictionary>{
         updated.name: updated,
       };
+      final List<RemoteDictionary> remoteWrites = <RemoteDictionary>[];
       if (dictionaryLanguageGroupOf(updated) !=
           dictionaryLanguageGroupOf(current)) {
         // 分区成员与顺序取改之前的缓存（已按 order 排好），只把这本换成改完的。
@@ -813,13 +1020,25 @@ class DictionaryRepository {
         ];
         // 两个分区都先按改之前的序号算好，再动任何序号（混合词典没有
         // kDictKanjiOrderKey 时汉字分区序号退回 order，先改 order 会带偏）。
-        final List<Dictionary>? typeSection =
-            updated.type == DictionaryType.kanji
+        // 自身类型的分区与服务器词典混排：经 [_renumberSection] 连同服务器词典一起
+        // 重编号（这本挪到新组最后），服务器词典守在原来的邻居旁边。
+        final _SectionWrites? typeSection = updated.type == DictionaryType.kanji
             ? null
-            : sectionAfterLanguageChange(<Dictionary>[
-                for (final Dictionary d in after)
-                  if (d.type == updated.type) d,
-              ], updated);
+            : _renumberSection(
+                updated.type,
+                <String>[
+                  for (final Dictionary d in sectionAfterLanguageChange(
+                    <Dictionary>[
+                      for (final Dictionary d in after)
+                        if (d.type == updated.type) d,
+                    ],
+                    updated,
+                  ))
+                    d.name,
+                ],
+                moved: updated.name,
+                replacing: updated,
+              );
         final List<Dictionary>? kanjiSection = updated.isInKanjiSection
             ? sectionAfterLanguageChange(
                 kanjiSectionDictionariesOf(after),
@@ -829,9 +1048,11 @@ class DictionaryRepository {
         Dictionary writable(Dictionary d) =>
             writes.putIfAbsent(d.name, () => _copyDictionary(d));
         if (typeSection != null) {
-          for (int i = 0; i < typeSection.length; i++) {
-            writable(typeSection[i]).order = i;
+          // 本机行是 [updated] / 缓存那本的拷贝（已带新序号），直接顶替。
+          for (final Dictionary d in typeSection.locals) {
+            writes[d.name] = d;
           }
+          remoteWrites.addAll(typeSection.remotes);
         }
         if (kanjiSection != null) {
           // 「汉字」分区：纯 kanji 词典写 order，混合词典只写汉字部分的
@@ -855,7 +1076,7 @@ class DictionaryRepository {
       await _commitDictionaries(<Dictionary>[
         for (final Dictionary d in writes.values)
           if (d.name == updated.name || _orderChanged(d)) d,
-      ]);
+      ], remote: remoteWrites);
       final Dictionary committed = writes[updated.name]!;
       // 与 [_editDictionary] 同理：只在写入成功后把结果回填给调用方手里的快照。
       dictionary
@@ -1300,10 +1521,24 @@ class DictionaryLookupFilters {
     required this.hiddenDictionaryNames,
     required this.termDictionaryOrder,
     this.hasChineseTermDictionary = false,
+    this.kanjiDictionaryNames = const <String>{},
+    this.hiddenKanjiDictionaryNames = const <String>{},
   });
 
-  /// 被用户关掉的词典名。
+  /// 被用户关掉的词典名（术语开关：引擎排除集 + 结果源头过滤）。
   final Set<String> hiddenDictionaryNames;
+
+  /// 本机的**纯汉字型**词典（`type == kanji`）真名。[forRequesterConfig] 据此从请求方
+  /// 的排除名单里挑出要剔汉字结果的那些。
+  final Set<String> kanjiDictionaryNames;
+
+  /// 汉字结果要按名剔除的纯汉字型词典（交给 `FushiLookupRequest.hiddenKanjiDictionaries`）。
+  ///
+  /// 不能拿 [hiddenDictionaryNames] 过滤汉字结果：它是**术语**开关，混合词典可以
+  /// 「术语关、汉字开」（BUG-3573），按它剔会误删那本的汉字条目。所以纯汉字词典的
+  /// 排除单独成一个集合。App 自己查词时为空：本机关掉的纯汉字词典根本没装进汉字桶；
+  /// 替对端查词时 = 请求方排除名单 ∩ [kanjiDictionaryNames]（[forRequesterConfig]）。
+  final Set<String> hiddenKanjiDictionaryNames;
 
   /// term 词典的管理页顺序（真名）。
   final List<String> termDictionaryOrder;
@@ -1321,8 +1556,10 @@ class DictionaryLookupFilters {
   /// 同一个词按两套过滤查出的结果不能共用缓存键（配置视图、请求方词典选择都靠它）。
   String get fingerprint {
     final List<String> hidden = hiddenDictionaryNames.toList()..sort();
+    final List<String> hiddenKanji = hiddenKanjiDictionaryNames.toList()..sort();
     final String raw =
-        '${hidden.join('\u0000')}\u0001${termDictionaryOrder.join('\u0000')}';
+        '${hidden.join('\u0000')}\u0001${termDictionaryOrder.join('\u0000')}'
+        '\u0001${hiddenKanji.join('\u0000')}';
     // FNV-1a 32 位 + 原串长度 + 两个条目数：哈希冲突会让两套过滤共用一个缓存键，
     // 拼上长度与条目数后要同时撞上四者才会串结果。
     int hash = 0x811c9dc5;
@@ -1331,14 +1568,15 @@ class DictionaryLookupFilters {
       hash = (hash * 0x01000193) & 0xffffffff;
     }
     return '${hash.toRadixString(16)}.${raw.length}.'
-        '${hidden.length}.${termDictionaryOrder.length}';
+        '${hidden.length}.${termDictionaryOrder.length}.${hiddenKanji.length}';
   }
 
   /// 替对端查词时按**请求方**的词典选择（[config]，远端查词请求的 `dictionaries` 字段）
   /// 改写本机这份过滤：
   /// * 隐藏 = [RemoteLookupDictionaryConfig.excluded]（请求方说了算，不叠本机开关）；
   /// * term 顺序 = `config.order` 里本机有的名字在前，其余本机 term 词典按本机顺序接在
-  ///   后面（本机有而请求方没提到的词典照常参与，Fushi 新词典默认启用）。
+  ///   后面（本机有而请求方没提到的词典照常参与，Fushi 新词典默认启用）；
+  /// * 汉字结果剔除 = 排除名单里本机的纯汉字型词典（[hiddenKanjiDictionaryNames]）。
   ///
   /// 本机配置里关掉的词典根本没装进引擎（`dictionary_buckets.dart`），请求方要它也查
   /// 不到——这是 App 当 host 的固有限制，服务端 host 装载全部词典没有这个问题。
@@ -1356,6 +1594,10 @@ class DictionaryLookupFilters {
           if (seen.add(name)) name,
       ]),
       hasChineseTermDictionary: hasChineseTermDictionary,
+      kanjiDictionaryNames: kanjiDictionaryNames,
+      hiddenKanjiDictionaryNames: Set<String>.unmodifiable(
+        config.excluded.intersection(kanjiDictionaryNames),
+      ),
     );
   }
 }
@@ -1442,6 +1684,29 @@ class RemoteDictionary {
     if (byOrder != 0) return byOrder;
     final int byHost = a.hostId.compareTo(b.hostId);
     return byHost != 0 ? byHost : a.name.compareTo(b.name);
+  }
+}
+
+/// [DictionaryRepository._renumberSection] 的写入清单：序号变了的本机词典与服务器词典。
+typedef _SectionWrites = ({
+  List<Dictionary> locals,
+  List<RemoteDictionary> remotes,
+});
+
+/// 混排分区里的一行：本机词典或单独成行的服务器词典。
+class _SectionRow {
+  const _SectionRow.local(Dictionary this.local) : remote = null;
+  const _SectionRow.remote(RemoteDictionary this.remote) : local = null;
+
+  final Dictionary? local;
+  final RemoteDictionary? remote;
+
+  /// 归哪个语言组：与管理页 `DictionaryManagerRow.languageGroup` 同一判据（本机按
+  /// [dictionaryLanguageGroupOf]，服务器行按 host 报的 `sourceLanguage`）。
+  String? get languageGroup {
+    final Dictionary? l = local;
+    if (l != null) return dictionaryLanguageGroupOf(l);
+    return canonicalDictionaryLanguageTag(remote!.sourceLanguage);
   }
 }
 

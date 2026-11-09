@@ -4009,14 +4009,20 @@ class AppModel
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
-    // dictRepo.updateDictionaryOrder persists the new order, fires
+  /// 一个分区里本机词典的新相对顺序（只取真名与先后）。同分区的服务器托管词典由
+  /// 仓库一起重编号（[DictionaryRepository.reorderDictionarySection]），不会因为只给
+  /// 本机词典重编号而在查词序里漂移。[moved]：这次只挪了这一本（ctl `position`）。
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
+    // dictRepo.reorderDictionarySection persists the new order, fires
     // _onCacheRebuild (_rebuildDictPathsCache → engine reload) and drops the
     // search result caches so the next lookup re-merges in the new order. We
     // still have to nudge any already-open lookup page to re-query — otherwise
     // its current result keeps the old order until it is reopened or the app
     // restarts. Mirrors the delete paths (BUG-355).
-    await dictRepo.updateDictionaryOrder(newDictionaries);
+    await dictRepo.reorderDictionarySection(newDictionaries, moved: moved);
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
@@ -9520,6 +9526,9 @@ class AppModel
             maxResults: effectiveMaxTerms,
             includeKanji: isSingleKanji(searchTerm),
             hiddenDictionaries: filters.hiddenDictionaryNames,
+            // 纯汉字词典的排除单独一个集合：hiddenDictionaries 是术语开关，混合
+            // 词典可以「术语关、汉字开」（BUG-3573），按它剔汉字结果会误删。
+            hiddenKanjiDictionaries: filters.hiddenKanjiDictionaryNames,
             dictionaryOrder: filters.termDictionaryOrder,
             ffiCacheMaxBytes: dictRepo.ffiLookupCacheBudgetBytes,
             chineseSimpToTrad: simpToTrad,

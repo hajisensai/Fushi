@@ -108,7 +108,10 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
     orderWrites++;
     for (final Dictionary updated in newDictionaries) {
       store.firstWhere((Dictionary d) => d.name == updated.name).order =
