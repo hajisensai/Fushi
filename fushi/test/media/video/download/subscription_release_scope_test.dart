@@ -35,6 +35,36 @@ void main() {
       );
     });
 
+    test('只写季号、没有集号的季包是显式合集形态（BUG-4243）', () {
+      // 下载规划只认 looksLikeBatchVideoRelease：此前它不认这一形态，做种最多的
+      // BD 季包整张卡给不出「全集」计划，被静默跳过。
+      for (final String title in <String>[
+        '[cappybara] BanG Dream! Ave Mujica (2025) - S01 (BD 1080p HEVC x265 '
+            'Opus 2.0) | Ave Mujica: The Die is Cast',
+        'Ave Mujica - The Die is Cast S01 VOSTFR 1080p WEB x264 AAC '
+            '-Tsundere-Raws (CR)',
+        '[Group] Example Show Season 2 [1080p]',
+        '[Group] Example Show 2nd Season [BDRip 1080p]',
+        '[Group] 某番 第二季 [1080p]',
+      ]) {
+        expect(looksLikeBatchVideoRelease(title), isTrue, reason: title);
+        // 与订阅端同一答案（BUG-2619 同型：两端判据不许分叉）。
+        expect(subscriptionReleaseIsBatch(title), isTrue, reason: title);
+      }
+    });
+
+    test('带集号的季号写法仍是单集；没有季号的无集号单条不算显式合集', () {
+      for (final String title in <String>[
+        'Example Show S01E05 1080p WEB-DL',
+        '[SubsPlease] Example Show S2 - 05 (1080p)',
+        '[Group] Example Show Season 2 - 05 [1080p]',
+      ]) {
+        expect(looksLikeBatchVideoRelease(title), isFalse, reason: title);
+      }
+      // 与一集特典长得一样，下载规划不能当「全集」下。
+      expect(looksLikeBatchVideoRelease('[G] Show Special (1080p)'), isFalse);
+    });
+
     test('单集发布不算整包', () {
       expect(
         subscriptionReleaseIsBatch('[SubsPlease] Example Show - 05 [1080p]'),

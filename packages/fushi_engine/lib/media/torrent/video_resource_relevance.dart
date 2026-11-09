@@ -1,5 +1,5 @@
 /// 资源搜索结果的相关度排序：先按「是不是用户要的那一季」，再按标题贴合度，
-/// 最后才是做种数。
+/// 再按索引器信任档（trusted > 普通 > remake），最后才是做种数。
 ///
 /// 为什么需要这一层：Nyaa 只做站内模糊词匹配，搜 `Hibike! Euphonium 2` 会把 S1、
 /// S3、剧场版、Ensemble Contest OVA 一起返回；而唯一的排序
@@ -105,13 +105,32 @@ double _titleScore(
 ///
 /// [query] 是用户实际提交的搜索词；[season] 是调用方已知的季号（订阅链路会传），
 /// 传 null 时从 [query] 自己解析。
+///
+/// [workTitles] 是目标作品的全部已知标题（主标题 / 原名 / 别名）。一部作品在发布
+/// 圈常有好几种叫法，provider 也确实拿每个叫法各查一次（BUG-2794/2818），但此前
+/// 贴合度只拿 [query] 这**一个**词比：AniList 上《BanG Dream! Ave Mujica》的英文名
+/// 是副标题 `Ave Mujica - The Die is Cast -`，被选作首选查询词后，标题恰好写副标题
+/// 的低种逐集发布拿满分，写正式名的 BD 全集 / SubsPlease 合集反被当成「不相关」
+/// 沉到十名开外（BUG-4243）。所以作品自己的任一已知标题都算贴合，同分时回到上游
+/// 做种次序。季号**只**从 [season] / [query] 来——别名里的裸数字不参与，免得
+/// 系列别名把错季抬上来。
 List<VideoResourceCandidate> rankVideoResourcesByRelevance(
   List<VideoResourceCandidate> candidates, {
   required String query,
   int? season,
+  Iterable<String> workTitles = const <String>[],
 }) {
-  final VideoResourceTitleIdentity queryIdentity = parseVideoResourceIdentity(
+  final VideoResourceTitleIdentity parsedQuery = parseVideoResourceIdentity(
     query,
+  );
+  final VideoResourceTitleIdentity queryIdentity = VideoResourceTitleIdentity(
+    titles: <String>{
+      ...parsedQuery.titles,
+      for (final String title in workTitles)
+        if (title.trim().isNotEmpty)
+          ...parseVideoResourceIdentity(title).titles,
+    },
+    season: parsedQuery.season,
   );
   final int? querySeason = season ?? queryIdentity.season;
   if (candidates.length < 2) {
@@ -139,6 +158,12 @@ List<VideoResourceCandidate> rankVideoResourcesByRelevance(
     if (bySeason != 0) return bySeason;
     final int byTitle = b.$3.compareTo(a.$3);
     if (byTitle != 0) return byTitle;
+    // 同等相关度内先看索引器自己的信任标记（trusted > 普通 > remake），再回到
+    // 上游做种次序：否则仿名的非 trusted / remake 逐集发布只要单集做种更多，就会
+    // 压过同标题的 trusted 原发布成为默认推荐。只在相关度同档内生效——信任标记
+    // 不能把错季 / 错标题的卡抬上来。
+    final int byTrust = b.$1.indexerTrustTier.compareTo(a.$1.indexerTrustTier);
+    if (byTrust != 0) return byTrust;
     // 同档内保持上游次序（providerPriority → seeders），并且是稳定的。
     return a.$4.compareTo(b.$4);
   });

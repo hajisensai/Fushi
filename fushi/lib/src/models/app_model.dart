@@ -14,6 +14,8 @@ import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -7673,6 +7675,13 @@ class AppModel with ChangeNotifier {
       updateFeed: updateFeedService,
       // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
       defaultTargetSourceId: _defaultVideoDownloadSourceId,
+      // 下载的原盘入库后补盘面图，与扫描导入同一份（BUG-4245）。
+      onDiscCollectionImported: (int collectionId, String discRootPath) =>
+          applyBlurayDiscCollectionArtwork(
+            database,
+            collectionId,
+            discRootPath,
+          ),
     )..start();
     _videoDownloadPipelineService = pipeline;
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的

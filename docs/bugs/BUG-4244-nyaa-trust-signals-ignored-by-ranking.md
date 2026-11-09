@@ -1,0 +1,10 @@
+## BUG-4244 · 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序
+- **报告**：2026-11-08（用户：AI 下视频 / `fushi_cli aidl` 搜《ガールズバンドクライ》默认推荐 `SobsPlease` 逐集 1080p，怀疑是仿冒 SubsPlease 的发布者）
+- **真实性**：⚠️ 报告的现象是**误报**，但沿代码路径查出了真实的结构缺陷：
+  - 误报部分：2026-11-08 经代理实抓 `nyaa.si/?q=Girls+Band+Cry+1080p&f=0&s=seeders&o=desc`，`[SobsPlease] Girls Band Cry - 01..13` 与 `[SubsPlease] Girls Band Cry (01-13) (1080p) [Batch]` 的行 class 都是 `success`（trusted），没有 remake 行；详情页 /view/1806016 写 `Released by SobsPlease group.` 并附完整制作名单，是独立字幕组，不是冒名者。它排第一是因为单集做种 50-71 高于 SubsPlease 合集 29，相关度同档时保持上游做种次序。3.5GB/集是高码率压制，码率偏好默认 any 不按体积筛。
+  - 真 bug：真遇到非 trusted / remake 的仿名发布时，代码挡不住——
+    - remake 在 provider 边界丢失：`packages/fushi_engine/lib/media/torrent/nyaa_client.dart:969` 读出了 `danger` = remake，但 `VideoResourceCandidate`（`packages/fushi_engine/lib/media/torrent/video_resource_provider.dart:31`）没有该字段，`_NyaaResourceCandidate`（`packages/fushi_engine/lib/media/torrent/nyaa_resource_provider.dart:279`）只传 trusted。
+    - trusted 不参与任何排序：`rankVideoResourcesByRelevance`（`packages/fushi_engine/lib/media/torrent/video_resource_relevance.dart:160`，修前）同档只回到上游 seeders 次序；版本卡组间主键是相关度名次（`video_resource_version_groups.dart:237`），picker `rankResourceGroups` 也没有信任键——同标题的非 trusted / remake 逐集发布只要单集做种更多就会成为默认推荐。
+- **[x] ① 已修复** — `VideoResourceCandidate` 补 `remake` 字段与 `indexerTrustTier`（trusted 2 > 普通 1 > remake 0），Nyaa candidate 传 `torrent.remake`；`rankVideoResourcesByRelevance` 在季号 / 标题贴合度**同档内**先按信任档、再按上游做种次序（信任档不压过季号与标题，错季的 trusted 卡不会上位），版本卡与 picker 的输入次序天然带上它；版本卡分组键加 remake 维度（remake 不借原发布的名次 / 信任），`VideoResourceVersionGroup.remake`；AI 资源重排提示词带 `remake`。没有组名名单、不改 provider 的 `f` 过滤参数（remake 只降权不丢弃，合法重压很常见）；没有信任信号的 provider 一律普通档。
+- **[x] ② 已加自动化测试** — `fushi/test/torrent/video_resource_indexer_trust_test.dart`（Nyaa HTML danger/success → candidate remake/trusted；同档 trusted > 普通 > remake；信任档不压过季号；remake 分卡；picker 默认首选 trusted、remake 殿后；现场回归：SobsPlease 与 SubsPlease 同为 trusted 时仍按做种选 SobsPlease，钉住「不按组名降权」）
+- **备注**：nyaa HTML 里 trusted 用户发的 remake 只显示 `danger`，信任档按 remake 计（与站点自身的显示优先级一致）。torznab / apibay / knaben 等无信任信号的源在混排时相对 nyaa trusted 结果下沉一档，属预期。
