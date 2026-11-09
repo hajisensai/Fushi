@@ -387,7 +387,7 @@ void main() {
       ]);
     });
 
-    // BUG-4243（VF5D4O_Tyx）：整季都没有集号时比较器全返回 0，List.sort 超过
+    // BUG-4257（VF5D4O_Tyx）：整季都没有集号时比较器全返回 0，List.sort 超过
     // 32 个元素不稳定会打乱顺序；必须保住 PMS 原序。
     test('集：超过 32 集都缺 index → 保持服务器原序（稳定排序）', () async {
       final List<String> keys = <String>[

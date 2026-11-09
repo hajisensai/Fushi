@@ -1,4 +1,4 @@
-// BUG-4243（反馈 hbIHtWi2Q7）：OneDrive downloadUrl / Dropbox `/files/download` 回
+// BUG-4262（反馈 hbIHtWi2Q7）：OneDrive downloadUrl / Dropbox `/files/download` 回
 // `application/octet-stream` 不带 charset，`resp.body` 按 latin1 解码，上传端却是 UTF-8，
 // 每轮「下载 → 合并 → 上传」把非 ASCII 再多编一层。这里钉死：下载到的 JSON 按 UTF-8
 // 还原，且多轮往返后内容不变；旧解码器写下的对端快照副本作废。

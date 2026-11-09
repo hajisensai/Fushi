@@ -2,7 +2,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:fushi/src/media/video/video_control_popover_hover_dismiss.dart';
 import 'package:test/test.dart';
 
-/// BUG-4227 续：音量 / 倍速浮层的 hover 收起必须认「按住」。
+/// BUG-4250 续：音量 / 倍速浮层的 hover 收起必须认「按住」。
 ///
 /// Flutter 在 PointerMoveEvent 时重做鼠标命中测试，按住拖滑条拖出浮层边界照样触发
 /// 浮层 `MouseRegion.onExit`。修前收起计时只看悬停 → 180 ms 后浮层连同滑条被卸载。

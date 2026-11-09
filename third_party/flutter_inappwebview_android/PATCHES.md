@@ -165,7 +165,7 @@ visible to the top frame, so the top document's own selection ending can still
 close that frame's menu, as upstream's texture-mode poll already did.
 Guard: `fushi/test/build/inappwebview_android_context_menu_close_guard_test.dart`.
 
-## No cookie flush in onPageFinished (BUG-4243)
+## No cookie flush in onPageFinished (BUG-4261)
 
 Upstream's `onPageFinished` (both `InAppWebViewClient` and
 `InAppWebViewClientCompat`) called `CookieManager.getInstance().flush()`

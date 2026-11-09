@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4243：Android WebView 的 `onPageFinished` 不许在 UI 线程同步刷 cookie。
+/// BUG-4261：Android WebView 的 `onPageFinished` 不许在 UI 线程同步刷 cookie。
 ///
 /// 上游在两个 WebViewClient 的 `onPageFinished` 里每次页面加载完都调
 /// `CookieManager.getInstance().flush()`（API<21 走 `CookieSyncManager.sync()`）。

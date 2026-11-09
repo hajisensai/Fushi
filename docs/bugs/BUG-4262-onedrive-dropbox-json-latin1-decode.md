@@ -1,4 +1,4 @@
-## BUG-4243 · OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀
+## BUG-4262 · OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀
 - **报告**：2026-11-09（用户：应用内反馈 hbIHtWi2Q7，macOS 26.4.1 / 3.3.0-debug.24555）
 - **真实性**：✅ 真 bug。`fushi/lib/src/sync/onedrive_sync_backend.dart:627`（`_downloadItemJson`）与 `fushi/lib/src/sync/dropbox_sync_backend.dart:635`（`_downloadFileJson`）都是 `jsonDecode(resp.body)`；OneDrive downloadUrl / Dropbox `/files/download` 回 `application/octet-stream` 不带 charset，`package:http` 1.6.0 的 `Response.body` 此时按 latin1 解码（`http-1.6.0/lib/src/response.dart` `_encodingForHeaders`，只有 `application/json` 才默认 UTF-8）。上传端是 `utf8.encode(jsonEncode(...))`，于是每轮「下载 → 合并 → 上传」都把所有非 ASCII 字符多编一层；聚合快照按 `{title,dateKey}` 等键合并（`packages/fushi_engine/lib/sync/aggregate_snapshot.dart:357`），错码键与正确键并存、越滚越多，对端快照副本缓存（`aggregate_peer_snapshot_cache.dart`）也把错码内容按 revision 钉住反复命中。
 - **[x] ① 已修复** — `sync_http.dart` 新增 `decodeSyncJsonFileBody`（`jsonDecode(utf8.decode(resp.bodyBytes))`，严格 UTF-8），OneDrive / Dropbox 两处文件内容下载改用它；`DirectoryAggregatePeerSnapshotCache` 副本加 `format: 2` 代号，修复前写下的（错码）副本一律未命中、重新下载一次。

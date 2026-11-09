@@ -351,11 +351,11 @@ void main() {
     );
   });
 
-  // BUG-4243（反馈 G5xYgLcp4p）：音画同步偏移 delayMs 定义 cue 在音频里真实出现于
+  // BUG-4259（反馈 G5xYgLcp4p）：音画同步偏移 delayMs 定义 cue 在音频里真实出现于
   // `startMs + delayMs`（tick 侧 `effectiveMs = pos - delayMs` 的逆变换）。点句跳转、
   // 单句试听的起止点、按位置查上/下一句都必须在同一时基里换算，否则设了偏移后
   // 高亮对得上、点句却落在偏移前的位置。
-  group('cue navigation honours the A/V sync offset (BUG-4243)', () {
+  group('cue navigation honours the A/V sync offset (BUG-4259)', () {
     test('cue -> audio position mapping adds the offset and clamps at 0', () {
       expect(
         AudiobookPlayerController.positionMsForCueForTesting(

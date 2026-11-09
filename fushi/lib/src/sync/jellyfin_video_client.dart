@@ -2958,7 +2958,7 @@ class JellyfinVideoClient
 
   /// 季集号升序；缺号的排最后（别让特典插到正片中间）。比较器对同号 / 都缺号
   /// 的条目返回 0，调用方必须用稳定排序（[mergeSort]）保住服务器原序——Dart
-  /// 的 [List.sort] 超过 32 个元素走不稳定的快排，会把无集号的整季打乱（BUG-4243）。
+  /// 的 [List.sort] 超过 32 个元素走不稳定的快排，会把无集号的整季打乱（BUG-4257）。
   static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
     final int sa = a.seasonNumber ?? 1 << 30;
     final int sb = b.seasonNumber ?? 1 << 30;

@@ -586,7 +586,7 @@ void main() {
       },
     );
 
-    // BUG-4243（VF5D4O_Tyx）：整季都没有 IndexNumber 时比较器全返回 0，
+    // BUG-4257（VF5D4O_Tyx）：整季都没有 IndexNumber 时比较器全返回 0，
     // List.sort 超过 32 个元素走不稳定快排，把 E13 排到第一。必须保住服务器原序。
     test('超过 32 集都缺 IndexNumber → 保持服务器原序（稳定排序）', () async {
       final List<String> ids = <String>[

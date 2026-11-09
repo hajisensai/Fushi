@@ -1,4 +1,4 @@
-## BUG-4243 · Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢
+## BUG-4264 · Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢
 - **报告**：2026-11-09（应用内反馈 3UHYaFPP8g，windows 3.3.0-debug.24478：已制卡 ✓ 的提示飘到上一个词条上方；右键 ✓ 弹出「搜索 / 复制」；鼠标长按无效）
 - **真实性**：✅ 真 bug（两处）：① `fushi/assets/popup/popup.js:5629`（修前）`setMineState` 直接写 `mineButton.title`，走 WebView2 原生提示；② `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:4148`（修前）Windows 宿主右键让位清单只有 `'.audio-button, .fushi-audio-menu'`，漏了已制卡 ✓
 - **[x] ① 已修复** — popup.js 改走 `setInlineButtonTip(mineButton, …)`（三镜像同步）；宿主让位清单抽成 `kPopupOwnedContextMenuSelector`，加入 `.mine-button[data-mined="1"]:not([data-mining="1"])`

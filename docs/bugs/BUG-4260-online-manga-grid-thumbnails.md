@@ -1,4 +1,4 @@
-## BUG-4243 · 在线漫画「全部页面」网格不显示缩略图，已看过的页也没有
+## BUG-4260 · 在线漫画「全部页面」网格不显示缩略图，已看过的页也没有
 - **报告**：2026-11-09（用户：应用内反馈 3VwZimDVBE，Android 3.3.0-debug.24478）
 - **真实性**：✅ 真 bug。在线直读章打开时 payload 的 url 是不带扩展名的占位名
   `images/<章目录名>/page-000001`（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart` 原 :2645-2656），

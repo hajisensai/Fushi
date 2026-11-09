@@ -33,102 +33,31 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3806 条。点号进各自文件。
-> 共 3789 条。点号进各自文件。
+> 共 3824 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4227](bugs/BUG-4227-video-popover-click-through-and-drag-hide.md) | ✅ | ✅ | 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏 |
-> 共 3803 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4264](bugs/BUG-4264-popup-mined-button-tip-rightclick.md) | ✅ | ✅ | Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢 |
+| [BUG-4263](bugs/BUG-4263-ios-video-import-tmp-copy-lost.md) | ✅ | ✅ | iOS 单个导入的视频过一阵「找不到文件」，重新导入后又失效 |
+| [BUG-4262](bugs/BUG-4262-onedrive-dropbox-json-latin1-decode.md) | ✅ | ✅ | OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀 |
+| [BUG-4261](bugs/BUG-4261-webview-page-finished-cookie-flush-anr.md) | ✅ | ✅ | Android WebView 每次页面加载完在 UI 线程同步 CookieManager.flush 致 ANR |
+| [BUG-4260](bugs/BUG-4260-online-manga-grid-thumbnails.md) | ✅ | ✅ | 在线漫画「全部页面」网格不显示缩略图，已看过的页也没有 |
+| [BUG-4259](bugs/BUG-4259-audiobook-delay-not-applied-to-cue-seek.md) | ✅ | ✅ | 有声书音画同步偏移未作用于点句跳转 / 单句试听停止点 / 上下句导航 |
+| [BUG-4258](bugs/BUG-4258-ios-background-launch-inactive-gate-full-init.md) | ✅ | ✅ | iOS 后台拉起时 inactive 被精简入口当成有界面，完整初始化在后台照跑并被判闪退 |
+| [BUG-4257](bugs/BUG-4257-media-server-episode-unstable-sort.md) | ✅ | ✅ | 媒体服务器剧集无集号时 List.sort 不稳定，超过 32 集顺序被打乱 |
+| [BUG-4256](bugs/BUG-4256-continue-hero-side-row-hover-clip.md) | ✅ | ✅ | 首页「继续」并排封面行：方向待探测的视频卡解出横图后悬停放大，左缘被视口裁掉 |
+| [BUG-4255](bugs/BUG-4255-srs-reposition-progress-says-anki.md) | ✅ | ✅ | srs-reposition-progress-says-anki |
+| [BUG-4254](bugs/BUG-4254-srs-anki-revlog-double-count.md) | ✅ | ✅ | 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次） |
+| [BUG-4253](bugs/BUG-4253-ldoce-mdx-sound-sandbox-swallowed.md) | ✅ | ✅ | LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击） |
+| [BUG-4252](bugs/BUG-4252-lyrics-unread-symbol-paragraph.md) | ✅ | ✅ | lyrics-unread-symbol-paragraph |
+| [BUG-4251](bugs/BUG-4251-advanced-mining-clear-keeps-audio.md) | ✅ | ✅ | 高级制卡清空前文/后文被当成删句，最外侧那句的音频一起丢 |
+| [BUG-4250](bugs/BUG-4250-video-popover-click-through-and-drag-hide.md) | ✅ | ✅ | 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏 |
+| [BUG-4249](bugs/BUG-4249-subtitle-list-filter-labels-truncated.md) | ✅ | ✅ | 视频字幕列表 M3E 侧栏「全部 / 收藏」分段文字消失（横屏手机） |
 | [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
 | [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
-| [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
-> 共 3804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4242](bugs/BUG-4242-advanced-mining-clear-keeps-audio.md) | ✅ | ✅ | 高级制卡清空前文/后文被当成删句，最外侧那句的音频一起丢 |
-> 共 3804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4242](bugs/BUG-4242-lyrics-unread-symbol-paragraph.md) | ✅ | ✅ | lyrics-unread-symbol-paragraph |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-continue-hero-side-row-hover-clip.md) | ✅ | ✅ | 首页「继续」并排封面行：方向待探测的视频卡解出横图后悬停放大，左缘被视口裁掉 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-media-server-episode-unstable-sort.md) | ✅ | ✅ | 媒体服务器剧集无集号时 List.sort 不稳定，超过 32 集顺序被打乱 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-ios-background-launch-inactive-gate-full-init.md) | ✅ | ✅ | iOS 后台拉起时 inactive 被精简入口当成有界面，完整初始化在后台照跑并被判闪退 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-audiobook-delay-not-applied-to-cue-seek.md) | ✅ | ✅ | 有声书音画同步偏移未作用于点句跳转 / 单句试听停止点 / 上下句导航 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-online-manga-grid-thumbnails.md) | ✅ | ✅ | 在线漫画「全部页面」网格不显示缩略图，已看过的页也没有 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-webview-page-finished-cookie-flush-anr.md) | ✅ | ✅ | Android WebView 每次页面加载完在 UI 线程同步 CookieManager.flush 致 ANR |
-> 共 3808 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4244](bugs/BUG-4244-onedrive-json-asset-upload-session.md) | ✅ | ✅ | OneDrive 大 JSON 资产（聚合快照）不走上传会话，>10MiB 单请求 PUT 一直 400 |
-| [BUG-4243](bugs/BUG-4243-onedrive-dropbox-json-latin1-decode.md) | ✅ | ✅ | OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-ios-video-import-tmp-copy-lost.md) | ✅ | ✅ | iOS 单个导入的视频过一阵「找不到文件」，重新导入后又失效 |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4249](bugs/BUG-4249-subtitle-list-filter-labels-truncated.md) | ✅ | ✅ | 视频字幕列表 M3E 侧栏「全部 / 收藏」分段文字消失（横屏手机） |
-> 共 3807 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4243](bugs/BUG-4243-popup-mined-button-tip-rightclick.md) | ✅ | ✅ | Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢 |
-| [BUG-4242](bugs/BUG-4242-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
+| [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
-> 共 3804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4242](bugs/BUG-4242-ldoce-mdx-sound-sandbox-swallowed.md) | ✅ | ✅ | LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击） |
-> 共 3804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4242](bugs/BUG-4242-srs-anki-revlog-double-count.md) | ✅ | ✅ | 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次） |
-> 共 3805 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4242](bugs/BUG-4242-srs-reposition-progress-says-anki.md) | ✅ | ✅ | srs-reposition-progress-says-anki |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
 | [BUG-4240](bugs/BUG-4240-music-plugin-enabled-state-concurrent-load.md) | ✅ | ✅ | 音乐插件启停状态并发首读各得一份副本，停用丢失 |
 | [BUG-4239](bugs/BUG-4239-continuous-diagonal-swipe-dropped.md) | ✅ | ✅ | 滚动模式斜着滑（拇指弧线）正文不动、也不跨章 |
@@ -144,7 +73,6 @@
 | [BUG-4229](bugs/BUG-4229-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |
 | [BUG-4228](bugs/BUG-4228-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |
 | [BUG-4227](bugs/BUG-4227-youtube-asr-caption-line-mismatch.md) | ✅ | ✅ | YouTube 自动字幕制卡错位：悬停上一行配了下一行的例句与片段、Dart 解析不截滚动重叠 |
-| [BUG-4227](bugs/BUG-4227-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
 | [BUG-4226](bugs/BUG-4226-collection-detail-open-eager-grid.md) | ✅ | ✅ | collection-detail-open-eager-grid |
 | [BUG-4225](bugs/BUG-4225-cloud-manga-shelf-download-stuck-100.md) | 🚧 | 🚧 | 书架下载云盘漫画卡 100% 打不开（对比页正常） |
 | [BUG-4224](bugs/BUG-4224-manga-webtoon-zoom-scroll-toggles-chrome.md) | ✅ | ✅ | manga-webtoon-zoom-scroll-toggles-chrome |

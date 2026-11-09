@@ -364,7 +364,7 @@ class PlexVideoClient
   };
 
   /// 季集号升序、缺号排最后；同号 / 都缺号返回 0，调用方必须用稳定排序
-  /// （[mergeSort]）保住服务器原序——[List.sort] 超过 32 个元素不稳定（BUG-4243）。
+  /// （[mergeSort]）保住服务器原序——[List.sort] 超过 32 个元素不稳定（BUG-4257）。
   static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
     final int sa = a.seasonNumber ?? 1 << 30;
     final int sb = b.seasonNumber ?? 1 << 30;

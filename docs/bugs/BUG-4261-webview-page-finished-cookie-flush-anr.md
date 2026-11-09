@@ -1,4 +1,4 @@
-## BUG-4243 · Android WebView 每次页面加载完在 UI 线程同步 CookieManager.flush 致 ANR
+## BUG-4261 · Android WebView 每次页面加载完在 UI 线程同步 CookieManager.flush 致 ANR
 - **报告**：2026-11-09（应用内反馈 TxKJb9CbRy：Samsung SM-F731B / 3.3.0-debug.24478；JNfbCRiL4C：vivo V2417A Android 16 / 3.3.0）
 - **真实性**：✅ 真 bug。两份 ANR（Input dispatching timed out）主线程栈都停在 `CookieManagerAdapter.flush`（native `pthread_cond_wait`）← `InAppWebViewClientCompat.onPageFinished`。根因：vendored `third_party/flutter_inappwebview_android/android/src/main/java/com/pichillilorenzo/flutter_inappwebview_android/webview/in_app_webview/InAppWebViewClientCompat.java:244-248`（`InAppWebViewClient.java:244-248` 同款）每次 `onPageFinished` 都在 UI 线程同步 `CookieManager.getInstance().flush()`，要等 Chromium cookie 存储 IO 线程写完；内存 / IO 压力大或进程在后台 cgroup 时一等 5~10 秒。
 - **[x] ① 已修复** — 两个 client 的 `onPageFinished` 删掉这次 flush（API<21 的 `CookieSyncManager.sync()` 分支一起删），不改成延迟 / 后台投递：Chromium 自己定时落盘、进后台时也落盘，`getCookie` 读的是内存存储不受影响。`MyCookieManager` 显式写 cookie 的 `setCookie` / `deleteCookie` / `deleteCookies` / `deleteAllCookies` / `removeSessionCookies` 保留 flush。补丁记在 `third_party/flutter_inappwebview_android/PATCHES.md`「No cookie flush in onPageFinished」。

@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-/// BUG-4243：在线直读章的「全部页面」网格 / 拖动气泡缩略图全是页码占位，连已经
+/// BUG-4260：在线直读章的「全部页面」网格 / 拖动气泡缩略图全是页码占位，连已经
 /// 看过（会话已落盘）的页也没有。payload 的 url 是不带扩展名的占位名，按 url 拼路径
 /// 永远落空；缩略图必须认会话缓存里已落盘的那份。
 void main() {
