@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 /// TODO-1133 / BUG-805 源码守卫：缺失的本地视频除「删除」外必须提供真实的重链/重导入
 /// 路径。
 ///
-/// 断言 `_relinkMissingResource` 存在且：① 经既有统一拾取 [pickRealFilePath]
+/// 断言 `_relinkMissingResource` 存在且：① 经既有统一拾取 [pickRealFilePathDetailed]
 /// （TODO-1112 的真实路径拾取：安卓 SAF 真实路径 / 桌面 file_picker）拿新路径，不新造
 /// 第二套文件通道；② 经 `updateLocalMediaPaths(..., videoPath:` 持久化重链。
 ///
@@ -32,16 +32,24 @@ void main() {
     expect(end, greaterThan(start), reason: '_relinkMissingResource 方法体边界解析失败');
     final String body = source.substring(start, end);
 
-    final int pickAt = body.indexOf('pickRealFilePath(');
+    // BUG-4243 起用带出处的同一统一入口 pickRealFilePathDetailed（pickRealFilePath
+    // 只是丢出处的薄封装），临时副本经 adoptPickedVideoCopy 挪进持久目录后才落库。
+    final int pickAt = body.indexOf('pickRealFilePathDetailed(');
     expect(
       pickAt,
       greaterThanOrEqualTo(0),
-      reason: '必须复用 pickRealFilePath（TODO-1112 真实路径拾取），不新造文件通道',
+      reason: '必须复用 pickRealFilePathDetailed（TODO-1112 真实路径拾取），不新造文件通道',
+    );
+    final int adoptAt = body.indexOf('newPath = await adoptPickedVideoCopy(');
+    expect(
+      adoptAt,
+      greaterThan(pickAt),
+      reason: '拾取到的路径必须先经 adoptPickedVideoCopy 处理临时副本再作为 newPath',
     );
     final int persistAt = body.indexOf('updateLocalMediaPaths(');
     expect(
       persistAt,
-      greaterThan(pickAt),
+      greaterThan(adoptAt),
       reason: '拾取到新路径后必须经 updateLocalMediaPaths 持久化重链',
     );
     // 只重链 videoPath（不动进度 / 字幕 / 音轨等其它列）。
