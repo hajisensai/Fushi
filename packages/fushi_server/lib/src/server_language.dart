@@ -34,7 +34,8 @@ final RegExp _languageLine = RegExp(
   multiLine: true,
 );
 
-/// 定 CLI 的输出语言：`FUSHI_LANGUAGE` > 配置文件里的 `language` > 默认英文。
+/// 定 CLI 的输出语言：`FUSHI_LANGUAGE` > 配置文件里的 `language`（文件在但没写这一行
+/// = 旧配置，按 [ServerConfig.legacyLanguage]）> 默认英文（还没有配置文件，如 `init`）。
 ///
 /// 在参数解析之前调用，所以自己从 [args] 里找 `--config` / `-c`（缺省
 /// [defaultConfigFileName]），只读 `language:` 一行：配置文件不存在、读不了或写坏了
@@ -52,7 +53,8 @@ String resolveServerLanguage(
     final File file = File(path);
     if (file.existsSync()) {
       final Match? m = _languageLine.firstMatch(file.readAsStringSync());
-      final String v = (m?.group(1) ?? '').toLowerCase();
+      if (m == null) return ServerConfig.legacyLanguage; // 加这个键之前的旧配置
+      final String v = m.group(1)!.toLowerCase();
       if (ServerConfig.supportedLanguages.contains(v)) return v;
     }
   } on FileSystemException {

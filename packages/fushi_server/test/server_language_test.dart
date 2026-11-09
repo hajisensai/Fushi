@@ -80,6 +80,18 @@ void main() {
     expect(resolve(const <String>[]), ServerConfig.languageEnglish);
   });
 
+  test('旧配置（文件在、没有 language 行）→ 中文，与 ServerConfig.parse 一致', () {
+    final String cfg = writeConfig('fushi_server.yaml', 'port: 1\n');
+    expect(resolve(const <String>[]), ServerConfig.languageChinese);
+    expect(
+      ServerConfig.parse(
+        File(cfg).readAsStringSync(),
+        configDir: dir.path,
+      ).language,
+      ServerConfig.languageChinese,
+    );
+  });
+
   test('init --language 写进配置，之后的命令按它出', () async {
     final String cfg = p.join(dir.path, 'fushi_server.yaml');
     final int code = await runFushiServerCli(<String>[
