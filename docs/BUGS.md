@@ -53,6 +53,7 @@
 | [BUG-4228](bugs/BUG-4228-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |
 | [BUG-4227](bugs/BUG-4227-youtube-asr-caption-line-mismatch.md) | ✅ | ✅ | YouTube 自动字幕制卡错位：悬停上一行配了下一行的例句与片段、Dart 解析不截滚动重叠 |
 | [BUG-4226](bugs/BUG-4226-collection-detail-open-eager-grid.md) | ✅ | ✅ | collection-detail-open-eager-grid |
+| [BUG-4227](bugs/BUG-4227-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
 | [BUG-4225](bugs/BUG-4225-cloud-manga-shelf-download-stuck-100.md) | 🚧 | 🚧 | 书架下载云盘漫画卡 100% 打不开（对比页正常） |
 | [BUG-4224](bugs/BUG-4224-manga-webtoon-zoom-scroll-toggles-chrome.md) | ✅ | ✅ | manga-webtoon-zoom-scroll-toggles-chrome |
 | [BUG-4223](bugs/BUG-4223-cloud-manga-placeholder-on-books-shelf.md) | ✅ | ✅ | 云盘漫画远端占位卡落在书籍书架 |
