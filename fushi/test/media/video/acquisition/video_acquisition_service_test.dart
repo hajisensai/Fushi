@@ -151,7 +151,7 @@ void main() {
     },
   );
 
-  // BUG-4242：写入类效果失败时对话只给脱敏短文（超长异常只剩类型名），真实原因
+  // BUG-4249：写入类效果失败时对话只给脱敏短文（超长异常只剩类型名），真实原因
   // 必须落诊断日志；旧实现 _guard 一行日志都不写，error_log 里查无此事。
   test(
     'a failing write effect logs the raw error to the diagnostic log',

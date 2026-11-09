@@ -95,7 +95,7 @@ class VideoAcquisitionPorts {
   )
   setSeriesSubtitleLanguage;
 
-  /// 入队；返回新建条数与「已有任务管着、未重复入队」的条数（BUG-4242）。
+  /// 入队；返回新建条数与「已有任务管着、未重复入队」的条数（BUG-4249）。
   final Future<VideoAcquisitionDownloadSubmission> Function(
     VideoAcquisitionSubmitDownloadEffect effect,
   )
@@ -485,7 +485,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
 
   /// 效果失败 → 记住原始异常、把原始错误与栈写进诊断日志、回灌 failed 事件、
   /// 返回 false；绝不让异常冲出 dispatch。对话里只给脱敏短文（[_describe]），
-  /// 真实原因必须落日志，否则写入类效果的失败无从排查（BUG-4242）。
+  /// 真实原因必须落日志，否则写入类效果的失败无从排查（BUG-4249）。
   Future<bool> _guard(
     VideoAcquisitionEffect effect,
     Future<void> Function() body,

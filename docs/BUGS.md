@@ -33,21 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3808 条。点号进各自文件。
+> 共 3811 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4249](bugs/BUG-4249-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
+| [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
+| [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
 | [BUG-4246](bugs/BUG-4246-resource-search-sibling-work-accepted.md) | ✅ | ✅ | AI 下视频把同系列续作 / 另一季的发布当成所选作品（ガルパ☆ピコ 下成 Fever） |
 | [BUG-4245](bugs/BUG-4245-download-organizer-splits-disc-structure.md) | ✅ | ✅ | 视频下载整理器拆散 BDMV/VIDEO_TS 原盘结构，盘按 m2ts 逐文件改名 |
 | [BUG-4244](bugs/BUG-4244-nyaa-trust-signals-ignored-by-ranking.md) | ✅ | ✅ | 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序 |
 | [BUG-4243](bugs/BUG-4243-resource-search-misses-best-batches.md) | ✅ | ✅ | 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划 |
-| [BUG-4242](bugs/BUG-4242-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
-> 共 3806 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
-| [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
 | [BUG-4240](bugs/BUG-4240-music-plugin-enabled-state-concurrent-load.md) | ✅ | ✅ | 音乐插件启停状态并发首读各得一份副本，停用丢失 |

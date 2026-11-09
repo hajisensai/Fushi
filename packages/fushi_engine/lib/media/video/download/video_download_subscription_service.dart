@@ -794,7 +794,7 @@ class VideoDownloadSubscriptionService {
     } on VideoDownloadLeaseLost {
       rethrow;
     } on VideoDownloadAlreadyQueued catch (error) {
-      // BUG-4242：同一 infohash 已有任务（来自别的 provider / remoteId，或 AI
+      // BUG-4249：同一 infohash 已有任务（来自别的 provider / remoteId，或 AI
       // 下视频 / 发现页先建的任务），上面按 provider+remoteId 的预扫描认不出来。
       // 管线判重后给出既有任务 —— 这一集就挂到它上面，与预扫描命中同一语义，
       // 不标 failed、不再派一份。

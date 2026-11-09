@@ -158,7 +158,7 @@ Future<VideoDownloadSubscriptionRow> _waitForSubscription(
 }
 
 void main() {
-  // BUG-4242：同一 infohash 已被别的 provider / remoteId（AI 下视频、发现页、
+  // BUG-4249：同一 infohash 已被别的 provider / remoteId（AI 下视频、发现页、
   // 另一个索引器）建的任务管着时，按 provider+remoteId 的预扫描认不出来；管线
   // 判重给出的「已在队列」必须让这一集挂到既有任务，而不是标 failed。
   test(

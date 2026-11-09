@@ -908,7 +908,7 @@ class VideoDownloadScrapeProviderUnavailable implements Exception {
 /// 要下载的内容已经有任务管着：同一后端 fingerprint 下同一颗 torrent 已有任务
 /// （[VideoDownloadPipelineService.enqueue]），或同一卷的文件已被另一个未完成
 /// 手动任务选中。与别的「需要处理」区分开，调用方据此提示「已在队列」、按已入队
-/// 计数，而不是当成失败（BUG-4242）。[existingJobId] / [existingLifecycle] 指向
+/// 计数，而不是当成失败（BUG-4249）。[existingJobId] / [existingLifecycle] 指向
 /// 管着它的那条任务，调用方可据此挂接（订阅）或提示去下载页处理。
 class VideoDownloadAlreadyQueued extends VideoDownloadPipelineActionRequired {
   const VideoDownloadAlreadyQueued(
@@ -1160,7 +1160,7 @@ class VideoDownloadPipelineService {
     final String? hash = rawHash == null || rawHash.isEmpty ? null : rawHash;
     final String fingerprint = request.backendTarget.fingerprint;
     // 查重与插入同一事务：`(fingerprint, torrent_hash)` 部分唯一索引只当最后一道
-    // 一致性护栏，重复入队在这里变成领域结果（BUG-4242），并发提交也不会在查完
+    // 一致性护栏，重复入队在这里变成领域结果（BUG-4249），并发提交也不会在查完
     // 与插入之间撞索引冒出原始 SqliteException / DriftRemoteException。
     final ({String jobId, bool revived}) claim = await database.transaction(
       () async {
