@@ -5626,9 +5626,11 @@ function createEntryHeader(entry, idx) {
         const queued = isEntryQueued();
         mineButton.dataset.queued = queued ? '1' : '';
         // 已制卡的 ✓ 提示「管理」手势（右键 / 长按）在哪——单击在「允许重复」开着时会直接新增。
-        mineButton.title = queued
+        // BUG-842 / 反馈 3UHYaFPP8g：走 DOM 自绘提示，不用原生 title——离屏 WebView2 上
+        // 原生提示按未拉伸坐标定位，会飘到上一个词条上方。
+        setInlineButtonTip(mineButton, queued
             ? (window.i18nMineQueued || '已加入制卡队列')
-            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : '');
+            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : ''));
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only

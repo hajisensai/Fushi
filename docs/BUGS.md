@@ -101,6 +101,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4249](bugs/BUG-4249-subtitle-list-filter-labels-truncated.md) | ✅ | ✅ | 视频字幕列表 M3E 侧栏「全部 / 收藏」分段文字消失（横屏手机） |
+> 共 3807 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4243](bugs/BUG-4243-popup-mined-button-tip-rightclick.md) | ✅ | ✅ | Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢 |
 | [BUG-4242](bugs/BUG-4242-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
