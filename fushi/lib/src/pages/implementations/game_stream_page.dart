@@ -1827,10 +1827,13 @@ class _GameStreamPageState extends State<GameStreamPage>
         initial: _settings,
       );
       if (next == null || !mounted) return;
+      final GameStreamVideoSettings previous = _settings;
       setState(() => _settings = next);
       widget.onSettingsChanged?.call(next);
-      if (!_supports(GameStreamFeature.videoSettings)) {
-        widget.receiver?.setAudioEnabled(next.audio);
+      // Mute / volume only change local playback: no join for the host.
+      if (!_supports(GameStreamFeature.videoSettings) ||
+          next.sameHostParameters(previous)) {
+        widget.receiver?.applyLocalSettings(next);
         return;
       }
       final GameStreamVideoSettings? applied = await widget.receiver

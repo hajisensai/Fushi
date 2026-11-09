@@ -102,6 +102,69 @@ void main() {
       expect(restored.degradation, GameStreamDegradation.maintainResolution);
     });
 
+    test('stream volume is receiver-only and persisted locally', () {
+      const GameStreamVideoSettings defaults = GameStreamVideoSettings();
+      expect(defaults.volumePercent, 100);
+      expect(defaults.volumeGain, 1.0);
+      // A payload from an older receiver / save has no volume field.
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'maxHeight': 720,
+          'audio': false,
+        }).volumePercent,
+        100,
+      );
+      final GameStreamVideoSettings boosted = defaults.copyWith(
+        volumePercent: 250,
+      );
+      expect(boosted.volumeGain, 2.5);
+      // Never on the wire: hosts get exactly what they got before.
+      expect(boosted.toJson().containsKey('volumePercent'), isFalse);
+      expect(boosted.toJson(), defaults.toJson());
+      // Local persistence round-trips it.
+      expect(boosted.toOverridesJson(), <String, Object?>{
+        'volumePercent': 250,
+      });
+      expect(
+        GameStreamVideoSettings.fromJson(boosted.toOverridesJson()),
+        boosted,
+      );
+      // Clamped into 100–400 %.
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'volumePercent': 9000,
+        }).volumePercent,
+        GameStreamVideoSettings.maxVolumePercent,
+      );
+      expect(
+        defaults.copyWith(volumePercent: 10).volumePercent,
+        GameStreamVideoSettings.minVolumePercent,
+      );
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'volumePercent': 'loud',
+        }).volumePercent,
+        100,
+      );
+    });
+
+    test('only host-side fields need a new join', () {
+      const GameStreamVideoSettings base = GameStreamVideoSettings();
+      expect(
+        base
+            .copyWith(volumePercent: 300, audio: false)
+            .sameHostParameters(base),
+        isTrue,
+      );
+      expect(base.copyWith(maxFps: 30).sameHostParameters(base), isFalse);
+      expect(
+        base
+            .copyWith(volumePercent: 300, bitrateKbps: 5000)
+            .sameHostParameters(base),
+        isFalse,
+      );
+    });
+
     test('unknown values fall back to defaults instead of failing', () {
       final GameStreamVideoSettings settings =
           GameStreamVideoSettings.fromJson(<String, Object?>{

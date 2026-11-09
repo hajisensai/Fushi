@@ -139,6 +139,59 @@ void main() {
     );
   });
 
+  testWidgets('settings sheet edits the receiver-only stream volume', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    GameStreamVideoSettings? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => TextButton(
+            onPressed: () async {
+              saved = await showGameStreamSettingsSheet(
+                context,
+                initial: const GameStreamVideoSettings(),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final Finder row = find.byKey(GameStreamSettingsSheet.volumeKey);
+    await tester.scrollUntilVisible(
+      row,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(GameStreamSettingsSheet),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('100%'), findsOneWidget);
+    final Slider slider = tester.widget<Slider>(
+      find.descendant(of: row, matching: find.byType(Slider)),
+    );
+    expect(slider.min, GameStreamVideoSettings.minVolumePercent);
+    expect(slider.max, GameStreamVideoSettings.maxVolumePercent);
+    expect(slider.divisions, 12);
+    slider.onChanged!(250);
+    await tester.pumpAndSettle();
+    expect(find.text('250%'), findsOneWidget);
+    await tester.tap(find.byKey(GameStreamSettingsSheet.saveKey));
+    await tester.pumpAndSettle();
+    expect(saved?.volumePercent, 250);
+    expect(saved?.sameHostParameters(const GameStreamVideoSettings()), isTrue);
+  });
+
   testWidgets('two-finger tap right-clicks on a host that supports it', (
     WidgetTester tester,
   ) async {

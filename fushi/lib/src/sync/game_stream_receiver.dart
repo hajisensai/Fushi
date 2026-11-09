@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 enum GameStreamReceiverState {
@@ -17,6 +18,12 @@ enum GameStreamReceiverState {
 }
 
 typedef GameStreamPeerFactory = Future<RTCPeerConnection> Function();
+
+/// Sets the playback gain of a remote audio track (WebRTC accepts 0–10).
+/// Production uses [Helper.setVolume], supported by the plugin on Android,
+/// iOS/macOS and Windows/Linux.
+typedef GameStreamTrackVolumeSetter =
+    Future<void> Function(double gain, MediaStreamTrack track);
 
 /// Codec list with [codec]'s entries first, the rest in their original order
 /// (so RTX/RED/FEC stay available). Null when the device cannot decode it.
@@ -197,10 +204,12 @@ class FushiGameStreamReceiver extends ChangeNotifier
     GameStreamPeerFactory? peerFactory,
     Future<RTCRtpCapabilities> Function()? codecCapabilities,
     Future<void> Function()? prepareAudio,
+    GameStreamTrackVolumeSetter? setTrackVolume,
   }) : _client = client,
        renderer = videoRenderer ?? RTCVideoRenderer(),
        _peerFactory = peerFactory ?? _createPeer,
        _prepareAudio = prepareAudio ?? prepareGameStreamMediaAudio,
+       _setTrackVolume = setTrackVolume ?? Helper.setVolume,
        _codecCapabilities =
            codecCapabilities ?? (() => getRtpReceiverCapabilities('video')) {
     WidgetsBinding.instance.addObserver(this);
@@ -227,6 +236,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   final FushiGameStreamClient _client;
   final GameStreamPeerFactory _peerFactory;
   final Future<void> Function() _prepareAudio;
+  final GameStreamTrackVolumeSetter _setTrackVolume;
   final Future<RTCRtpCapabilities> Function() _codecCapabilities;
   final ValueChanged<GameStreamTextEvent>? onTextEvent;
   final ValueChanged<GameStreamInputAck>? onInputAck;
@@ -335,8 +345,13 @@ class FushiGameStreamReceiver extends ChangeNotifier
           return;
         }
         renderer.srcObject = event.streams.first;
-        // Remote tracks arrive enabled; only a muted receiver has to touch them.
-        if (!_settings.audio) _applyAudioEnabled();
+        // Remote tracks arrive enabled at unity gain; only a muted or boosted
+        // receiver has to touch them.
+        if (!_settings.audio ||
+            _settings.volumePercent !=
+                const GameStreamVideoSettings().volumePercent) {
+          _applyAudio();
+        }
         _notify();
       };
       connection.onDataChannel = (RTCDataChannel channel) {
@@ -574,7 +589,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
     final String? sessionId = _sessionId;
     final String? clientId = _clientId;
     _settings = next;
-    _applyAudioEnabled();
+    _applyAudio();
     _notify();
     if (sessionId == null || clientId == null || _hasTerminated) return null;
     final GameStreamSession? session = await _client.join(
@@ -588,15 +603,35 @@ class FushiGameStreamReceiver extends ChangeNotifier
   /// Unmutes/mutes the host's loopback audio locally.
   void setAudioEnabled(bool enabled) {
     _settings = _settings.copyWith(audio: enabled);
-    _applyAudioEnabled();
+    _applyAudio();
     _notify();
   }
 
-  void _applyAudioEnabled() {
+  /// Applies the receiver-only fields of [next] (mute, volume) to the running
+  /// stream without asking the host for anything.
+  void applyLocalSettings(GameStreamVideoSettings next) {
+    _settings = _settings.copyWith(
+      audio: next.audio,
+      volumePercent: next.volumePercent,
+    );
+    _applyAudio();
+    _notify();
+  }
+
+  /// Mute wins: a disabled track plays nothing whatever its gain; the gain is
+  /// (re)applied whenever the track plays.
+  void _applyAudio() {
     final MediaStream? stream = renderer.srcObject;
     if (stream == null) return;
     for (final MediaStreamTrack track in stream.getAudioTracks()) {
       track.enabled = _settings.audio;
+      if (!_settings.audio) continue;
+      unawaited(
+        _setTrackVolume(_settings.volumeGain, track).catchError(
+          (Object error, StackTrace stack) =>
+              engineLog.log('GameStream.volume', error, stack),
+        ),
+      );
     }
   }
 

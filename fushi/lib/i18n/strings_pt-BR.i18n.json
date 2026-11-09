@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "Nunca amplia além do tamanho da janela do host",
   "game_stream_settings_save": "Salvar",
   "game_stream_settings_title": "Configurações da transmissão",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "Iniciar transmissão",
   "game_stream_stats_codec_fallback": "Codec preferido indisponível; usando o padrão",
   "game_stream_stats_dropped": "Quadros perdidos",

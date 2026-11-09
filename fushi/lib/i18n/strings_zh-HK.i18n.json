@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "不會超過主機窗口尺寸放大",
   "game_stream_settings_save": "儲存",
   "game_stream_settings_title": "串流設定",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "開始串流",
   "game_stream_stats_codec_fallback": "首選編碼不可用，已使用預設編碼",
   "game_stream_stats_dropped": "丟幀",

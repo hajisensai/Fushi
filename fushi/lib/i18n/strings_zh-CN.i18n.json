@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "不会超过主机窗口尺寸放大",
   "game_stream_settings_save": "保存",
   "game_stream_settings_title": "串流设置",
+  "game_stream_settings_volume": "串流音量",
+  "game_stream_settings_volume_hint": "仅在本设备上放大偏小的游戏声音",
   "game_stream_start": "开始串流",
   "game_stream_stats_codec_fallback": "首选编码不可用，已使用默认编码",
   "game_stream_stats_dropped": "丢帧",

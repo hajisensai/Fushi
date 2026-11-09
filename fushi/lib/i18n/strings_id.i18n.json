@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "Tidak pernah di-upscale melebihi ukuran jendela host",
   "game_stream_settings_save": "Simpan",
   "game_stream_settings_title": "Pengaturan stream",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "Mulai streaming",
   "game_stream_stats_codec_fallback": "Codec pilihan tidak tersedia; menggunakan default",
   "game_stream_stats_dropped": "Frame terlewat",

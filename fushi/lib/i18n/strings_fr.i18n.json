@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "Ne dépasse jamais la taille de la fenêtre de l'hôte",
   "game_stream_settings_save": "Enregistrer",
   "game_stream_settings_title": "Réglages de diffusion",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "Démarrer la diffusion",
   "game_stream_stats_codec_fallback": "Codec préféré indisponible ; utilisation du codec par défaut",
   "game_stream_stats_dropped": "Images perdues",

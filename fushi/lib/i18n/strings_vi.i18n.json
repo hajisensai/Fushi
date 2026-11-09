@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "Không bao giờ phóng to quá kích thước cửa sổ của máy chủ",
   "game_stream_settings_save": "Lưu",
   "game_stream_settings_title": "Cài đặt luồng",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "Bắt đầu phát trực tiếp",
   "game_stream_stats_codec_fallback": "Codec ưa thích không khả dụng; đang dùng mặc định",
   "game_stream_stats_dropped": "Khung hình bị rớt",

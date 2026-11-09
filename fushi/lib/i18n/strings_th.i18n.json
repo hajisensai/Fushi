@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "ไม่เคยอัปสเกลเกินขนาดหน้าต่างของโฮสต์",
   "game_stream_settings_save": "บันทึก",
   "game_stream_settings_title": "การตั้งค่าสตรีม",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "เริ่มสตรีม",
   "game_stream_stats_codec_fallback": "ไม่มีตัวแปลงรหัสที่ต้องการ ใช้ค่าเริ่มต้น",
   "game_stream_stats_dropped": "เฟรมที่ตก",

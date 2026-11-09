@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "Schaalt nooit op voorbij de venstergrootte van de host",
   "game_stream_settings_save": "Opslaan",
   "game_stream_settings_title": "Streaminstellingen",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "Streamen starten",
   "game_stream_stats_codec_fallback": "Voorkeurscodec niet beschikbaar; de standaard wordt gebruikt",
   "game_stream_stats_dropped": "Verloren frames",

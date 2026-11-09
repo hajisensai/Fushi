@@ -3953,6 +3953,8 @@
   "game_stream_settings_resolution_hint": "Skaliert nie über die Fenstergröße des Hosts hinaus",
   "game_stream_settings_save": "Speichern",
   "game_stream_settings_title": "Stream-Einstellungen",
+  "game_stream_settings_volume": "Stream volume",
+  "game_stream_settings_volume_hint": "Boosts quiet game audio on this device only",
   "game_stream_start": "Streaming starten",
   "game_stream_stats_codec_fallback": "Bevorzugter Codec nicht verfügbar; Standard wird verwendet",
   "game_stream_stats_dropped": "Verworfene Frames",

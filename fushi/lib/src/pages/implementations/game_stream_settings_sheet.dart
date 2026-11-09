@@ -30,6 +30,7 @@ class GameStreamSettingsSheet extends StatefulWidget {
   final GameStreamVideoSettings initial;
 
   static const Key saveKey = ValueKey<String>('game-stream-settings-save');
+  static const Key volumeKey = ValueKey<String>('game-stream-settings-volume');
 
   @override
   State<GameStreamSettingsSheet> createState() =>
@@ -186,6 +187,22 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
         value: _settings.audio,
         onChanged: (bool value) =>
             setState(() => _settings = _settings.copyWith(audio: value)),
+      ),
+      AdaptiveSettingsSliderRow(
+        key: GameStreamSettingsSheet.volumeKey,
+        title: t.game_stream_settings_volume,
+        subtitle: t.game_stream_settings_volume_hint,
+        readout: '${_settings.volumePercent}%',
+        min: GameStreamVideoSettings.minVolumePercent.toDouble(),
+        max: GameStreamVideoSettings.maxVolumePercent.toDouble(),
+        divisions:
+            (GameStreamVideoSettings.maxVolumePercent -
+                GameStreamVideoSettings.minVolumePercent) ~/
+            GameStreamVideoSettings.volumePercentStep,
+        value: _settings.volumePercent.toDouble(),
+        onChanged: (double value) => setState(
+          () => _settings = _settings.copyWith(volumePercent: value.round()),
+        ),
       ),
     ];
     // M3E 底部弹层：共享弹层框（标题 + 底部动作区靠右），设置行沿用设置
