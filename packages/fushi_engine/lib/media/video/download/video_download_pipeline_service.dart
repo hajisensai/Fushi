@@ -722,7 +722,8 @@ Future<void> prepareVideoDownloadJobsForLocalDelete({
 /// 的反方向。
 ///
 /// 命中的任务分两档，判据是**归属**而不是存在性检查：
-/// - **这个任务记录过的 kind=video 文件被本次删除全部覆盖**（且任务已终态）→ 任务
+/// - **这个任务记录过的视频产物（kind=video 文件 + 已落位原盘）被本次删除全部覆盖**
+///   （且任务已终态）→ 任务
 ///   已经没有任何视频产物，删任务行 + 删本任务显式记录过的其余文件（字幕/附件），
 ///   并**只摘种子、不让下载引擎删数据**（`deleteBackendPayload: false`）：引擎删的
 ///   是它自己记账的整个 save_path，范围远超本任务记录过的文件。
@@ -763,17 +764,24 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
         job.lifecycle == VideoDownloadJobLifecycle.failed ||
         job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
     final Set<int> hitIds = <int>{for (final f in hit) f.id};
-    final List<VideoDownloadJobFileRow> videoRows = <VideoDownloadJobFileRow>[
+    // 任务的视频产物 = 每条 kind=video 行各算一件，加上每张已落位的原盘各算一件
+    // （盘内文件行是 kind=other，靠 [videoDownloadJobDiscs] 从路径认回盘，
+    // BUG-4245）。只数 video 行的话，纯原盘任务的产物清单永远是空的，库里把它的
+    // 内容全删了任务也不会整删（gfaUPNp-EI）。
+    final List<Set<int>> products = <Set<int>>[
       for (final VideoDownloadJobFileRow file in files)
-        if (file.kind == 'video') file,
+        if (file.kind == 'video') <int>{file.id},
+      for (final VideoDownloadJobDisc disc in videoDownloadJobDiscs(files))
+        disc.fileIds,
     ];
-    // 「这个任务的视频产物全没了」= 它记过的每一条 video 行都在本次删除里。没记
-    // 路径的 video 行不算被覆盖——判不出它指向哪，就不能拿它当整删的依据。
-    final bool allVideoRowsDeleted =
-        videoRows.isNotEmpty &&
-        videoRows.every((VideoDownloadJobFileRow f) => hitIds.contains(f.id));
+    // 「这个任务的视频产物全没了」= 至少有一件产物，且每件都被本次删除覆盖：
+    // video 行要在命中里，原盘要整张盘的文件行都在命中里。没记路径的 video 行
+    // 不算被覆盖——判不出它指向哪，就不能拿它当整删的依据。
+    final bool allVideoProductsDeleted =
+        products.isNotEmpty &&
+        products.every((Set<int> ids) => hitIds.containsAll(ids));
     try {
-      if (terminal && allVideoRowsDeleted) {
+      if (terminal && allVideoProductsDeleted) {
         if (pipeline != null) {
           await pipeline.deleteJob(
             job.jobId,
@@ -3682,10 +3690,12 @@ class VideoDownloadPipelineService {
     }
     // 只有原盘、没有散装视频（BUG-4245）：外挂字幕没有挂靠对象——盘的字幕是盘上
     // 自带的 PGS 轨，库里的成员是 `.mpls` / DVD title。不搜、不按 required 判失败。
-    if (!(await database.getVideoDownloadJobFiles(job.jobId)).any(
-      (VideoDownloadJobFileRow row) =>
-          row.kind == 'video' && row.finalAbsolutePath != null,
-    )) {
+    // 判据是显式的「有原盘且没有 video 行」：没有原盘、video 行又恰好没落盘路径
+    // 的任务不在此列，仍走下面的 required 语义，不静默推进。
+    final List<VideoDownloadJobFileRow> stageRows = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    if (!stageRows.any((VideoDownloadJobFileRow row) => row.kind == 'video') &&
+        videoDownloadJobDiscs(stageRows).isNotEmpty) {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }

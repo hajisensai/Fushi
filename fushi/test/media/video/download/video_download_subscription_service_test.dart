@@ -159,11 +159,11 @@ Future<VideoDownloadSubscriptionRow> _waitForSubscription(
 
 void main() {
   // BUG-4249：同一 infohash 已被别的 provider / remoteId（AI 下视频、发现页、
-  // 另一个索引器）建的任务管着时，按 provider+remoteId 的预扫描认不出来；管线
-  // 判重给出的「已在队列」必须让这一集挂到既有任务，而不是标 failed。
-  test(
-    'an already-queued torrent attaches the episode to the existing job',
-    () async {
+  // 另一个索引器）建的任务管着。订阅认既有任务只有一套判据：预扫描按 infohash
+  // 也能认出它，且 AlreadyQueued 只是并发竞态的兜底；两条路都走同一段生命周期
+  // 处理——仍算数才挂上去，failed 按预算恢复，绝不无条件标 queued 挂在死任务上。
+  group('same-infohash job from another provider', () {
+    Future<(FushiDatabase, int)> seedDup() async {
       final FushiDatabase database = await _openDatabase();
       final int sourceId = await _insertVideoSource(database);
       await _insertSubscription(
@@ -183,23 +183,43 @@ void main() {
           'nyaaCategory': '1_2',
         },
       );
-      final VideoResourceCandidate candidate = _candidate(
-        remoteId: 'episode-1',
-        episode: 1,
-      );
-      await database.upsertVideoDownloadJob(
-        VideoDownloadJobsCompanion.insert(
-          jobId: 'foreign-job',
-          resourceProvider: 'other-indexer',
-          selectedResourceId: 'elsewhere-1',
-          torrentHash: Value<String?>(candidate.infoHash),
-          mediaKind: 'tv',
-          title: 'Example Show',
-          backendKind: 'embedded',
-          fingerprint: 'backend-fingerprint',
-          createdAt: _nowAt,
-          updatedAt: _nowAt,
-        ),
+      return (database, sourceId);
+    }
+
+    Future<void> insertForeignJob(
+      FushiDatabase database, {
+      required int sourceId,
+      required String? infoHash,
+      required String lifecycle,
+    }) => database.upsertVideoDownloadJob(
+      VideoDownloadJobsCompanion.insert(
+        jobId: 'foreign-job',
+        resourceProvider: 'other-indexer',
+        selectedResourceId: 'elsewhere-1',
+        torrentHash: Value<String?>(infoHash),
+        mediaKind: 'tv',
+        title: 'Example Show',
+        backendKind: 'embedded',
+        fingerprint: 'backend-fingerprint',
+        targetSourceId: Value<int?>(sourceId),
+        lifecycle: Value<String>(lifecycle),
+        createdAt: _nowAt,
+        updatedAt: _nowAt,
+      ),
+    );
+
+    final VideoResourceCandidate candidate = _candidate(
+      remoteId: 'episode-1',
+      episode: 1,
+    );
+
+    test('active job is recognised by infohash without enqueueing', () async {
+      final (FushiDatabase database, int sourceId) = await seedDup();
+      await insertForeignJob(
+        database,
+        sourceId: sourceId,
+        infoHash: candidate.infoHash,
+        lifecycle: VideoDownloadJobLifecycle.active,
       );
       int enqueueCalls = 0;
       final VideoDownloadSubscriptionService service = _service(
@@ -210,25 +230,109 @@ void main() {
         ),
         enqueue: (VideoDownloadEnqueueRequest request) async {
           enqueueCalls++;
-          throw const VideoDownloadAlreadyQueued(
-            'This torrent is already queued by job foreign-job (active)',
-            existingJobId: 'foreign-job',
-            existingLifecycle: VideoDownloadJobLifecycle.active,
-          );
+          return 'unexpected';
         },
       );
 
       await service.checkNow();
 
-      expect(enqueueCalls, 1);
+      expect(enqueueCalls, 0);
       final VideoDownloadSubscriptionItemRow item =
           (await database.getVideoDownloadSubscriptionItems('dup')).single;
       expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
       expect(item.jobId, 'foreign-job');
       expect(item.error, isNull);
       expect(await database.getVideoDownloadJobs(), hasLength(1));
-    },
-  );
+    });
+
+    test(
+      'failed job with a usable source is revived, not attached as queued',
+      () async {
+        final (FushiDatabase database, int sourceId) = await seedDup();
+        await insertForeignJob(
+          database,
+          sourceId: sourceId,
+          infoHash: candidate.infoHash,
+          lifecycle: VideoDownloadJobLifecycle.failed,
+        );
+        int enqueueCalls = 0;
+        final VideoDownloadSubscriptionService service = _service(
+          database: database,
+          provider: _FakeResourceProvider(
+            id: _nyaaProviderId,
+            candidates: <VideoResourceCandidate>[candidate],
+          ),
+          enqueue: (VideoDownloadEnqueueRequest request) async {
+            enqueueCalls++;
+            throw const VideoDownloadAlreadyQueued(
+              'This torrent is already queued by job foreign-job (failed)',
+              existingJobId: 'foreign-job',
+              existingLifecycle: VideoDownloadJobLifecycle.failed,
+            );
+          },
+        );
+
+        await service.checkNow();
+
+        expect(enqueueCalls, 0, reason: '预扫描按 infohash 认出既有任务');
+        final VideoDownloadJobRow job = (await database.getVideoDownloadJob(
+          'foreign-job',
+        ))!;
+        expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+        final VideoDownloadSubscriptionItemRow item =
+            (await database.getVideoDownloadSubscriptionItems('dup')).single;
+        expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+        expect(item.jobId, 'foreign-job');
+      },
+    );
+
+    test(
+      'AlreadyQueued race fallback runs the same lifecycle handling',
+      () async {
+        final (FushiDatabase database, int sourceId) = await seedDup();
+        int enqueueCalls = 0;
+        final VideoDownloadSubscriptionService service = _service(
+          database: database,
+          provider: _FakeResourceProvider(
+            id: _nyaaProviderId,
+            candidates: <VideoResourceCandidate>[candidate],
+          ),
+          enqueue: (VideoDownloadEnqueueRequest request) async {
+            enqueueCalls++;
+            // 预扫描之后别处刚建了同种任务，且它已停在 failed。
+            await insertForeignJob(
+              database,
+              sourceId: sourceId,
+              infoHash: null,
+              lifecycle: VideoDownloadJobLifecycle.failed,
+            );
+            throw const VideoDownloadAlreadyQueued(
+              'This torrent is already queued by job foreign-job (failed)',
+              existingJobId: 'foreign-job',
+              existingLifecycle: VideoDownloadJobLifecycle.failed,
+            );
+          },
+        );
+
+        await service.checkNow();
+
+        expect(enqueueCalls, 1);
+        final VideoDownloadJobRow job = (await database.getVideoDownloadJob(
+          'foreign-job',
+        ))!;
+        expect(
+          job.lifecycle,
+          VideoDownloadJobLifecycle.active,
+          reason: 'failed 任务走恢复，不是无条件标 queued 挂在死任务上',
+        );
+        final VideoDownloadSubscriptionItemRow item =
+            (await database.getVideoDownloadSubscriptionItems('dup')).single;
+        expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+        expect(item.jobId, 'foreign-job');
+        expect(await database.getVideoDownloadJobs(), hasLength(1));
+      },
+    );
+  });
 
   test(
     'Nyaa strict rules include the selected first episode and persist outbox',
