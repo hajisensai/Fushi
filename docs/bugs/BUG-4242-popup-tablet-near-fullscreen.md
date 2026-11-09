@@ -1,4 +1,4 @@
-## BUG-4227 · Android 平板外部查词浮卡近乎全屏、调最大宽高无效
+## BUG-4242 · Android 平板外部查词浮卡近乎全屏、调最大宽高无效
 - **报告**：2026-11-07（用户反馈 K9YPrjtZE1：Xiaomi KPad，Android 16 / HyperOS，窗口 668×1070@2.81；系统文本选择菜单 PROCESS_TEXT 与悬浮球两条入口都复现，调「查词窗口最大宽度 / 最大高度」无效）
 - **真实性**：✅ 真 bug，与分诊一致。app 外独立查词窗 `PopupDictionaryPage` 的卡片尺寸在 `fushi/lib/src/pages/implementations/popup_dictionary_page.dart` `_buildPositionedCard`（修复前 :558 贴顶分支、:585 贴字分支）：高度写死 `(可用高 − 2·gap) × 0.72` 且是**固定** `SizedBox` 高度，完全不读最大高度设置；宽度读 app 内 `popupMaxWidth`（:537 `_externalPopupMaxWidth`），无视「app 外覆盖窗独立尺寸」（`AppModel.overlayLookupEffectiveSize`）。平板竖屏 1070 高时卡片高 758.88（71%），宽 480/668，于是近乎占满屏幕。
 - **[x] ① 已修复** — `effective_lookup_size.dart` 新增纯函数 `resolveExternalPopupCardBounds`（宽高上界 = `overlayLookupEffectiveSize`，再以可用空间封顶：宽 ≤ 可用宽，高 ≤ 可用高 × `kExternalPopupMaxHeightFraction`(0.72，原屏幕比例天花板保留，任何屏幕都不比修复前大)）与 `resolveExternalPopupCardHeight`（按内容收缩、不超上界）。`PopupDictionaryPage` 两个分支都走它们；最上面可见层的 `layoutAutoFitHeight` 驱动外壳高度，`onContentMetrics` 经 `resolveAutoFitPopupHeight` 写 `setAutoFitHeight`，WebView 仍按上界高度布局、超出裁掉（`webViewOverflowHeight`），与 app 内弹窗同一机制；卡片包 `ListenableBuilder(_popup)` 跟随重算。提交 `41bfe28807`。
