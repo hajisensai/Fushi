@@ -100,7 +100,7 @@ Future<AnkiViewModel> _pumpDialog(
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  test('BUG-4222：挖词目标 = Fushi 复习时进度不写「从 Anki 读取」', () {
+  test('BUG-4242：挖词目标 = Fushi 复习时进度不写「从 Anki 读取」', () {
     const AnkiRepositionProgress fetch = AnkiRepositionProgress(
       stage: AnkiRepositionStage.fetch,
     );
