@@ -2,6 +2,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show RemoteDictionary;
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -138,8 +143,6 @@ class DictionaryManagerDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
-    final bool first = position <= 0;
-    final bool last = position >= count - 1;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -189,58 +192,11 @@ class DictionaryManagerDetail extends StatelessWidget {
           ],
         ),
         SizedBox(height: gap),
-        AdaptiveSettingsSection(
-          title: t.dict_detail_order_section,
-          children: <Widget>[
-            AdaptiveSettingsRow(
-              key: const ValueKey<String>('dict-detail-position'),
-              title: t.dict_detail_order_position(n: position + 1, m: count),
-              icon: Icons.low_priority,
-              showIcon: true,
-              // 点「第 n / m 位」本身也是「移到第几位」。
-              onTap: count > 1 ? onMoveToPrompt : null,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  FushiIconButton(
-                    key: const ValueKey<String>('dict-detail-move-top'),
-                    icon: Icons.vertical_align_top,
-                    tooltip: t.dict_order_top_move,
-                    enabled: !first,
-                    onTap: () => onMoveTo(0),
-                  ),
-                  FushiIconButton(
-                    key: const ValueKey<String>('dict-detail-move-up'),
-                    icon: Icons.keyboard_arrow_up,
-                    tooltip: t.move_up,
-                    enabled: !first,
-                    onTap: () => onMoveTo(position - 1),
-                  ),
-                  FushiIconButton(
-                    key: const ValueKey<String>('dict-detail-move-down'),
-                    icon: Icons.keyboard_arrow_down,
-                    tooltip: t.move_down,
-                    enabled: !last,
-                    onTap: () => onMoveTo(position + 1),
-                  ),
-                  FushiIconButton(
-                    key: const ValueKey<String>('dict-detail-move-bottom'),
-                    icon: Icons.vertical_align_bottom,
-                    tooltip: t.dict_order_bottom_move,
-                    enabled: !last,
-                    onTap: () => onMoveTo(count - 1),
-                  ),
-                ],
-              ),
-            ),
-            AdaptiveSettingsRow(
-              key: const ValueKey<String>('dict-detail-move-to'),
-              title: t.dict_order_position_move,
-              icon: Icons.format_list_numbered,
-              showIcon: true,
-              onTap: count > 1 ? onMoveToPrompt : null,
-            ),
-          ],
+        DictionaryOrderSection(
+          position: position,
+          count: count,
+          onMoveTo: onMoveTo,
+          onMoveToPrompt: onMoveToPrompt,
         ),
         SizedBox(height: gap),
         AdaptiveSettingsSection(
@@ -379,6 +335,83 @@ class DictionaryManagerDetail extends StatelessWidget {
   }
 }
 
+/// 「排序」分组：第 n / m 位 + 置顶 / 上移 / 下移 / 置底 + 移到第几位。本机词典与
+/// 服务器词典的详情共用这一份（排序在同一条混排列表里进行）。
+class DictionaryOrderSection extends StatelessWidget {
+  const DictionaryOrderSection({
+    required this.position,
+    required this.count,
+    required this.onMoveTo,
+    required this.onMoveToPrompt,
+    super.key,
+  });
+
+  /// 在语言组里的下标（0 起）与组内本数。
+  final int position;
+  final int count;
+  final ValueChanged<int> onMoveTo;
+  final VoidCallback onMoveToPrompt;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool first = position <= 0;
+    final bool last = position >= count - 1;
+    return AdaptiveSettingsSection(
+      title: t.dict_detail_order_section,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('dict-detail-position'),
+          title: t.dict_detail_order_position(n: position + 1, m: count),
+          icon: Icons.low_priority,
+          showIcon: true,
+          // 点「第 n / m 位」本身也是「移到第几位」。
+          onTap: count > 1 ? onMoveToPrompt : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiIconButton(
+                key: const ValueKey<String>('dict-detail-move-top'),
+                icon: Icons.vertical_align_top,
+                tooltip: t.dict_order_top_move,
+                enabled: !first,
+                onTap: () => onMoveTo(0),
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('dict-detail-move-up'),
+                icon: Icons.keyboard_arrow_up,
+                tooltip: t.move_up,
+                enabled: !first,
+                onTap: () => onMoveTo(position - 1),
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('dict-detail-move-down'),
+                icon: Icons.keyboard_arrow_down,
+                tooltip: t.move_down,
+                enabled: !last,
+                onTap: () => onMoveTo(position + 1),
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('dict-detail-move-bottom'),
+                icon: Icons.vertical_align_bottom,
+                tooltip: t.dict_order_bottom_move,
+                enabled: !last,
+                onTap: () => onMoveTo(count - 1),
+              ),
+            ],
+          ),
+        ),
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('dict-detail-move-to'),
+          title: t.dict_order_position_move,
+          icon: Icons.format_list_numbered,
+          showIcon: true,
+          onTap: count > 1 ? onMoveToPrompt : null,
+        ),
+      ],
+    );
+  }
+}
+
 /// 详情顶部的动作块：可点的 tonal 卡（按下下沉 / 悬停轻抬），图标在上文字在下。
 class _QuickActionTile extends StatelessWidget {
   const _QuickActionTile({
@@ -435,13 +468,22 @@ class DictionaryTypeCount {
     required this.icon,
     required this.total,
     required this.enabled,
+    this.onServer = 0,
   });
 
   final DictionaryType type;
   final String label;
   final IconData icon;
+
+  /// 列表里这一类的行数（本机词典 + 只在服务器上的词典）。
   final int total;
   final int enabled;
+
+  /// 其中只在服务器上的行数（与本机同名的服务器词典算本机那一行，不重复计）。
+  final int onServer;
+
+  /// 其中本机已安装的行数。
+  int get onDevice => total - onServer;
 }
 
 /// 宽屏详情侧板在「还没选中任何词典」时的内容：四类词典的计数格（点一下切到
@@ -578,6 +620,20 @@ class _DictionaryTypeTile extends StatelessWidget {
                 color: scheme.onSurfaceVariant,
               ),
             ),
+            // 有服务器词典时才分开计：没配服务器的用户这一行纯属噪音。
+            if (count.onServer > 0)
+              Text(
+                '${t.dictionary_overview_on_device(n: count.onDevice)} · '
+                '${t.dictionary_overview_on_server(n: count.onServer)}',
+                key: ValueKey<String>(
+                  'dict-overview-sources-${count.type.name}',
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
           ],
         ),
       ),
@@ -867,3 +923,632 @@ class _DictionaryPositionDialogState extends State<DictionaryPositionDialog> {
     );
   }
 }
+
+// ── 服务器托管词典：与本机词典同一条按语言分组的混排列表 ─────────────────
+//
+// 服务器词典（[RemoteDictionary]，`remote_dictionary_metadata`）不下载到本机，
+// 但与本机词典共用一条查词优先级（同一数轴的 `order`，见
+// `DictionaryRepository.lookupFiltersOf`）。管理页因此只有一条列表：每行是本机
+// 词典或服务器词典，按「有效语言」分组、组内可拖动，来源只在行内的标签里说明
+// ——不分「已安装 / 服务器上」两段。
+
+/// 一行词典的来源（行副标题里的来源标签）。
+enum DictionarySourceKind {
+  /// 只在本机。
+  thisDevice,
+
+  /// 只在服务器上（查词时由那台服务器查）。
+  server,
+
+  /// 本机装了，服务器上也有同名的一本：本机这行说了算，标签只是告知。
+  both,
+
+  /// 服务器目录里已经没有了（设置保留，回来时原样生效）。
+  missing,
+}
+
+/// 服务器行 [DictionaryManagerRow.key] 的前缀。
+const String kDictionaryManagerServerKeyPrefix = 'server:';
+
+/// 词典管理页列表里的一行：一本本机词典，或一本只在服务器上的词典。
+@immutable
+class DictionaryManagerRow {
+  /// 本机词典行；[alsoOnHosts] 是目录里也有同名词典（且没缺席）的 host。
+  const DictionaryManagerRow.local(
+    Dictionary this.local, {
+    this.alsoOnHosts = const <String>{},
+  }) : remote = null;
+
+  /// 只在服务器上的词典行。
+  const DictionaryManagerRow.remote(RemoteDictionary this.remote)
+    : local = null,
+      alsoOnHosts = const <String>{};
+
+  final Dictionary? local;
+  final RemoteDictionary? remote;
+  final Set<String> alsoOnHosts;
+
+  bool get isRemote => remote != null;
+
+  /// 列表 / 焦点 / 详情里的身份。本机行用真名（与改造前逐字一致），服务器行加前缀
+  /// 带上 host，免得与本机真名或另一台 host 的同名词典撞键。
+  String get key {
+    final Dictionary? l = local;
+    if (l != null) return l.name;
+    return '$kDictionaryManagerServerKeyPrefix${remote!.key}';
+  }
+
+  /// 用户可见的名字：本机走 effectiveDisplayName，服务器行用 host 报的展示名。
+  String get displayName {
+    final Dictionary? l = local;
+    if (l != null) return l.effectiveDisplayName;
+    final String shown = remote!.displayName?.trim() ?? '';
+    return shown.isNotEmpty ? shown : remote!.name;
+  }
+
+  DictionarySourceKind get source {
+    final RemoteDictionary? r = remote;
+    if (r != null) {
+      return r.isMissing
+          ? DictionarySourceKind.missing
+          : DictionarySourceKind.server;
+    }
+    return alsoOnHosts.isEmpty
+        ? DictionarySourceKind.thisDevice
+        : DictionarySourceKind.both;
+  }
+
+  /// 归哪个语言组：本机行同 [dictionaryLanguageGroupOf]（手动指定优先），服务器
+  /// 行按 host 报的 `sourceLanguage`，同一套规范化（[canonicalDictionaryLanguageTag]）。
+  String? get languageGroup {
+    final Dictionary? l = local;
+    if (l != null) return dictionaryLanguageGroupOf(l);
+    return canonicalDictionaryLanguageTag(remote!.sourceLanguage);
+  }
+}
+
+/// 一个分区（某一类词典）的混排行：本机分区（已按分区顺序排好）与参与查词的服务器
+/// 词典按 `order` 归并，同序号本机在前——与 `DictionaryRepository` 的查词混排同一
+/// 规则，所以列表顺序就是查词顺序。
+///
+/// * 服务器行只取类型是 [sectionType] 的；
+/// * 与**任何**本机词典同名的服务器行不单独成行（本机那本遮住它，本机行标「两者」）；
+/// * 多台 host 同名只留排得最前的一行（查词名单里一个名字只出现一次）。
+///
+/// [localOrder] 给出本机行在这个分区里的序号。
+List<DictionaryManagerRow> mixDictionaryManagerRows({
+  required List<Dictionary> localSection,
+  required Iterable<Dictionary> allLocal,
+  required List<RemoteDictionary> remote,
+  required DictionaryType sectionType,
+  required int Function(Dictionary dictionary) localOrder,
+}) {
+  final Set<String> localNames = <String>{
+    for (final Dictionary d in allLocal) d.name,
+  };
+  final Map<String, Set<String>> hostsByName = <String, Set<String>>{};
+  for (final RemoteDictionary r in remote) {
+    if (r.isMissing) continue;
+    hostsByName.putIfAbsent(r.name, () => <String>{}).add(r.hostId);
+  }
+  final List<RemoteDictionary> sorted = List<RemoteDictionary>.of(remote)
+    ..sort(RemoteDictionary.compareByOrder);
+  final Set<String> seen = <String>{};
+  final List<RemoteDictionary> serverOnly = <RemoteDictionary>[
+    for (final RemoteDictionary r in sorted)
+      if (r.type == sectionType &&
+          !localNames.contains(r.name) &&
+          seen.add(r.name))
+        r,
+  ];
+  final List<DictionaryManagerRow> out = <DictionaryManagerRow>[];
+  int i = 0;
+  int j = 0;
+  while (i < localSection.length || j < serverOnly.length) {
+    final bool takeLocal =
+        j >= serverOnly.length ||
+        (i < localSection.length &&
+            localOrder(localSection[i]) <= serverOnly[j].order);
+    if (takeLocal) {
+      final Dictionary d = localSection[i++];
+      out.add(
+        DictionaryManagerRow.local(
+          d,
+          alsoOnHosts: hostsByName[d.name] ?? const <String>{},
+        ),
+      );
+    } else {
+      out.add(DictionaryManagerRow.remote(serverOnly[j++]));
+    }
+  }
+  return out;
+}
+
+/// 一组混排行（同一「有效语言」）。
+class DictionaryManagerLanguageGroup {
+  const DictionaryManagerLanguageGroup({
+    required this.language,
+    required this.rows,
+  });
+
+  /// 规范化语言标签；null = 「未标注语言」组。
+  final String? language;
+  final List<DictionaryManagerRow> rows;
+}
+
+/// 混排行按语言分组：与 [groupDictionariesByLanguage] 同一规则（组序按首次出现、
+/// 「未标注语言」组放最后、组内保持分区顺序），服务器行按 `sourceLanguage` 参与。
+List<DictionaryManagerLanguageGroup> groupDictionaryManagerRowsByLanguage(
+  List<DictionaryManagerRow> section,
+) {
+  final Map<String, List<DictionaryManagerRow>> labelled =
+      <String, List<DictionaryManagerRow>>{};
+  final List<DictionaryManagerRow> unlabelled = <DictionaryManagerRow>[];
+  for (final DictionaryManagerRow row in section) {
+    final String? language = row.languageGroup;
+    if (language == null) {
+      unlabelled.add(row);
+    } else {
+      labelled.putIfAbsent(language, () => <DictionaryManagerRow>[]).add(row);
+    }
+  }
+  return <DictionaryManagerLanguageGroup>[
+    for (final MapEntry<String, List<DictionaryManagerRow>> e
+        in labelled.entries)
+      DictionaryManagerLanguageGroup(language: e.key, rows: e.value),
+    if (unlabelled.isNotEmpty)
+      DictionaryManagerLanguageGroup(language: null, rows: unlabelled),
+  ];
+}
+
+/// [section] 里与 [row] 同语言组的全部行（分区顺序）。
+List<DictionaryManagerRow> dictionaryManagerLanguageGroupOf(
+  List<DictionaryManagerRow> section,
+  DictionaryManagerRow row,
+) {
+  final String? language = row.languageGroup;
+  return <DictionaryManagerRow>[
+    for (final DictionaryManagerRow r in section)
+      if (r.languageGroup == language) r,
+  ];
+}
+
+/// 把 [section] 里键为 [key] 的行挪到它所在语言组的最终下标 [to]（钳到组两端），
+/// 返回整个分区的新规范顺序（各组首尾相接，同 [moveDictionaryWithinLanguageGroup]）。
+/// null = 不用写（行已不在分区里，或位置不变）。调用方按返回下标重编号。
+List<DictionaryManagerRow>? moveDictionaryManagerRowWithinLanguageGroup(
+  List<DictionaryManagerRow> section,
+  String key,
+  int to,
+) {
+  final int index = section.indexWhere(
+    (DictionaryManagerRow r) => r.key == key,
+  );
+  if (index < 0) return null;
+  final DictionaryManagerRow moved = section[index];
+  final List<DictionaryManagerRow> group = dictionaryManagerLanguageGroupOf(
+    section,
+    moved,
+  );
+  final int from = group.indexOf(moved);
+  final int target = to.clamp(0, group.length - 1);
+  if (target == from) return null;
+  group
+    ..removeAt(from)
+    ..insert(target, moved);
+  final String? language = moved.languageGroup;
+  return <DictionaryManagerRow>[
+    for (final DictionaryManagerLanguageGroup g
+        in groupDictionaryManagerRowsByLanguage(section))
+      ...(g.language == language ? group : g.rows),
+  ];
+}
+
+/// 列表上方来源筛选的种类。
+enum DictionarySourceFilterKind { all, thisDevice, server, hidden }
+
+/// 来源筛选的一个选项：全部 / 本机 / 某台服务器 / 已隐藏。
+@immutable
+class DictionarySourceFilter {
+  const DictionarySourceFilter._(this.kind) : hostId = null;
+
+  /// 某台服务器（`remoteDictionaryHostIdOf` 口径的 host 身份）。
+  const DictionarySourceFilter.server(String this.hostId)
+    : kind = DictionarySourceFilterKind.server;
+
+  static const DictionarySourceFilter all = DictionarySourceFilter._(
+    DictionarySourceFilterKind.all,
+  );
+  static const DictionarySourceFilter thisDevice = DictionarySourceFilter._(
+    DictionarySourceFilterKind.thisDevice,
+  );
+  static const DictionarySourceFilter hidden = DictionarySourceFilter._(
+    DictionarySourceFilterKind.hidden,
+  );
+
+  final DictionarySourceFilterKind kind;
+  final String? hostId;
+
+  /// 这一行在这个筛选下是否显示。[enabled] 是这一行在当前分区的开关状态。
+  bool matches(DictionaryManagerRow row, {required bool enabled}) =>
+      switch (kind) {
+        DictionarySourceFilterKind.all => true,
+        DictionarySourceFilterKind.thisDevice => !row.isRemote,
+        // 「两者」行也在那台服务器上：按服务器筛时一并列出。
+        DictionarySourceFilterKind.server =>
+          row.remote?.hostId == hostId || row.alsoOnHosts.contains(hostId),
+        DictionarySourceFilterKind.hidden => !enabled,
+      };
+
+  /// 筛选键（ValueKey 后缀）。
+  String get id => kind == DictionarySourceFilterKind.server
+      ? 'server-$hostId'
+      : kind.name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DictionarySourceFilter &&
+      other.kind == kind &&
+      other.hostId == hostId;
+
+  @override
+  int get hashCode => Object.hash(kind, hostId);
+}
+
+/// 行副标题里的来源标签。[hostName] 是服务器行所在 host 的展示名；「两者」行的
+/// [hostName] 进 tooltip（说明查词用的是本机这份）。
+class DictionarySourceChip extends StatelessWidget {
+  const DictionarySourceChip({
+    required this.kind,
+    required this.hostName,
+    super.key,
+  });
+
+  final DictionarySourceKind kind;
+  final String hostName;
+
+  @override
+  Widget build(BuildContext context) {
+    final (String text, IconData icon, FushiTagTone tone) = switch (kind) {
+      DictionarySourceKind.thisDevice => (
+        t.dictionary_source_this_device,
+        FushiIcons.devices,
+        FushiTagTone.neutral,
+      ),
+      DictionarySourceKind.server => (
+        t.dictionary_source_server(name: hostName),
+        FushiIcons.server,
+        FushiTagTone.accent,
+      ),
+      DictionarySourceKind.both => (
+        t.dictionary_source_both,
+        FushiIcons.cloudSync,
+        FushiTagTone.neutral,
+      ),
+      DictionarySourceKind.missing => (
+        t.dictionary_source_missing,
+        FushiIcons.cloudOff,
+        FushiTagTone.warning,
+      ),
+    };
+    return FushiTag(
+      text: text,
+      icon: icon,
+      tone: tone,
+      dense: true,
+      message: kind == DictionarySourceKind.both
+          ? t.dictionary_source_both_tooltip(name: hostName)
+          : null,
+    );
+  }
+}
+
+/// 列表上方的来源筛选条：全部 / 本机 / 每台服务器一枚 / 已隐藏，行尾是「刷新服务器
+/// 词典」。单选 chip（按下下沉），放不下时横向滚动。
+class DictionarySourceFilterBar extends StatelessWidget {
+  const DictionarySourceFilterBar({
+    required this.hosts,
+    required this.selected,
+    required this.onSelected,
+    required this.onRefresh,
+    required this.refreshing,
+    super.key,
+  });
+
+  /// host 身份 → 展示名，按显示顺序。
+  final Map<String, String> hosts;
+  final DictionarySourceFilter selected;
+  final ValueChanged<DictionarySourceFilter> onSelected;
+
+  /// 「刷新服务器词典」；null = 没有可刷新的（弹窗进程没有目录服务）。
+  final VoidCallback? onRefresh;
+  final bool refreshing;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<(DictionarySourceFilter, String)> options =
+        <(DictionarySourceFilter, String)>[
+          (DictionarySourceFilter.all, t.dictionary_filter_all),
+          (DictionarySourceFilter.thisDevice, t.dictionary_source_this_device),
+          for (final MapEntry<String, String> h in hosts.entries)
+            (
+              DictionarySourceFilter.server(h.key),
+              t.dictionary_source_server(name: h.value),
+            ),
+          (DictionarySourceFilter.hidden, t.dictionary_filter_hidden),
+        ];
+    final VoidCallback? refresh = onRefresh;
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (final (DictionarySourceFilter filter, String label)
+                      in options)
+                    Padding(
+                      padding: EdgeInsetsDirectional.only(
+                        end: tokens.spacing.gap / 2,
+                      ),
+                      child: FushiPressScale(
+                        child: FushiChoiceChip(
+                          key: ValueKey<String>(
+                            'dict-source-filter-${filter.id}',
+                          ),
+                          label: Text(label),
+                          selected: filter == selected,
+                          onSelected: (bool _) {
+                            if (filter != selected) onSelected(filter);
+                          },
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('dict-server-refresh'),
+            icon: FushiIcons.refresh,
+            tooltip: t.dictionary_server_refresh,
+            enabled: refresh != null && !refreshing,
+            onTap: () => refresh?.call(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 一台服务器的状态提示（列表底部）：最近在线时刻；老版本 host 不认本端的词典
+/// 选择时补一句。
+class DictionaryServerHostNotice extends StatelessWidget {
+  const DictionaryServerHostNotice({
+    required this.hostName,
+    required this.lastSeen,
+    required this.olderHost,
+    super.key,
+  });
+
+  final String hostName;
+  final String lastSeen;
+
+  /// 这台 host 上次查词没有套用本端发去的词典选择（老版本）。
+  final bool olderHost;
+
+  @override
+  Widget build(BuildContext context) {
+    final String seen = t.dictionary_server_last_seen(
+      name: hostName,
+      time: lastSeen,
+    );
+    return Padding(
+      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
+      child: FushiInlineNotice(
+        icon: FushiIcons.server,
+        severity: olderHost
+            ? FushiNoticeSeverity.warning
+            : FushiNoticeSeverity.info,
+        message: olderHost
+            ? '$seen\n${t.dictionary_server_older_host(name: hostName)}'
+            : seen,
+      ),
+    );
+  }
+}
+
+/// 远程查词关着时的提示：服务器词典照常列出，但查词不会用到；带一个直接开启的动作。
+class DictionaryRemoteLookupOffNotice extends StatelessWidget {
+  const DictionaryRemoteLookupOffNotice({required this.onTurnOn, super.key});
+
+  final VoidCallback onTurnOn;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
+      child: FushiInlineNotice(
+        key: const ValueKey<String>('dict-remote-lookup-off'),
+        icon: FushiIcons.cloudOff,
+        severity: FushiNoticeSeverity.warning,
+        message: t.dictionary_remote_lookup_off_notice,
+        actions: <Widget>[
+          FushiTextButton(
+            key: const ValueKey<String>('dict-remote-lookup-turn-on'),
+            onPressed: onTurnOn,
+            child: Text(t.dictionary_remote_lookup_turn_on),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 只在服务器上的词典的详情（宽屏侧板 / 窄屏 sheet）：开关、排序、来源 / host /
+/// 类型 / 版本 / 最近在线；服务器上已没有的词典多一个「忘掉」。改名、内容语言、
+/// 更新、删除文件、CSS 这些要本机目录的动作一律不给。
+class RemoteDictionaryDetail extends StatelessWidget {
+  const RemoteDictionaryDetail({
+    required this.row,
+    required this.hostName,
+    required this.enabled,
+    required this.typeLabel,
+    required this.lastSeenLabel,
+    required this.position,
+    required this.count,
+    required this.showHeader,
+    required this.onEnabledChanged,
+    required this.onMoveTo,
+    required this.onMoveToPrompt,
+    required this.onForget,
+    super.key,
+  });
+
+  final DictionaryManagerRow row;
+  final String hostName;
+  final bool enabled;
+  final String typeLabel;
+  final String lastSeenLabel;
+  final int position;
+  final int count;
+  final bool showHeader;
+  final ValueChanged<bool> onEnabledChanged;
+  final ValueChanged<int> onMoveTo;
+  final VoidCallback onMoveToPrompt;
+
+  /// 「忘掉」（只对服务器上已没有的词典给；null = 不给）。
+  final VoidCallback? onForget;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final double gap = tokens.spacing.gap;
+    final RemoteDictionary remote = row.remote!;
+    final String revision = remote.revision?.trim() ?? '';
+    final String language = remote.sourceLanguage?.trim() ?? '';
+    final VoidCallback? forget = onForget;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (showHeader) ...<Widget>[
+          Text(
+            row.displayName,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
+            ),
+          ),
+          SizedBox(height: gap),
+          Wrap(
+            spacing: gap / 2,
+            runSpacing: gap / 2,
+            children: <Widget>[
+              FushiTag(text: typeLabel, tone: FushiTagTone.accent, dense: true),
+              DictionarySourceChip(kind: row.source, hostName: hostName),
+              if (!enabled)
+                FushiTag(
+                  text: t.dict_status_disabled,
+                  tone: FushiTagTone.warning,
+                  dense: true,
+                ),
+            ],
+          ),
+          SizedBox(height: gap * 2),
+        ],
+        AdaptiveSettingsSection(
+          title: t.dict_detail_lookup_section,
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('dict-detail-enabled-${row.key}'),
+              title: t.options_show,
+              icon: FushiIcons.visibility,
+              showIcon: true,
+              value: enabled,
+              onChanged: onEnabledChanged,
+            ),
+          ],
+        ),
+        SizedBox(height: gap),
+        DictionaryOrderSection(
+          position: position,
+          count: count,
+          onMoveTo: onMoveTo,
+          onMoveToPrompt: onMoveToPrompt,
+        ),
+        SizedBox(height: gap),
+        AdaptiveSettingsSection(
+          title: t.dict_detail_info_section,
+          children: <Widget>[
+            _remoteInfoRow(
+              context,
+              t.dict_detail_source_label,
+              row.source == DictionarySourceKind.missing
+                  ? t.dictionary_source_missing
+                  : t.dictionary_source_server(name: hostName),
+            ),
+            _remoteInfoRow(context, t.dictionary_detail_host_label, hostName),
+            _remoteInfoRow(context, t.dict_detail_type_label, typeLabel),
+            if (revision.isNotEmpty)
+              _remoteInfoRow(context, t.dict_detail_version_label, revision),
+            if (language.isNotEmpty)
+              _remoteInfoRow(context, t.dict_language_tooltip, language),
+            _remoteInfoRow(
+              context,
+              t.dictionary_detail_last_seen_label,
+              lastSeenLabel,
+            ),
+          ],
+        ),
+        if (forget != null) ...<Widget>[
+          SizedBox(height: gap * 2),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FushiFilledButton.tonalIcon(
+              key: ValueKey<String>('dict-detail-forget-${row.key}'),
+              onPressed: forget,
+              style: FilledButton.styleFrom(
+                foregroundColor: fushiStatusColor(
+                  context,
+                  FushiStatusTone.error,
+                ),
+              ),
+              icon: const FushiIcon(FushiIcons.delete, size: 18),
+              label: Text(t.dictionary_server_forget),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _remoteInfoRow(BuildContext context, String label, String value) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return AdaptiveSettingsRow(
+      title: label,
+      trailingFlexible: true,
+      trailing: Text(
+        value,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.end,
+        style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+/// 毫秒时间戳的本地时间文案（与「上次成功检查」同一格式）。
+String dictionaryManagerTimestampLabel(int millisecondsSinceEpoch) =>
+    DateTime.fromMillisecondsSinceEpoch(
+      millisecondsSinceEpoch,
+    ).toLocal().toString().split('.').first;

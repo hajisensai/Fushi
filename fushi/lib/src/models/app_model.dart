@@ -4020,6 +4020,57 @@ class AppModel
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
+  /// 参与查词的服务器托管词典（见 [DictionaryRepository.remoteDictionaries]）。
+  List<RemoteDictionary> get remoteDictionaries => dictRepo.remoteDictionaries;
+
+  /// 词典管理页一次混排重编号：本机词典与服务器词典同一数轴，两张表同一事务落库
+  /// （[DictionaryRepository.updateDictionaryOrder] 的 `remoteDictionaries`）。
+  Future<void> updateMixedDictionaryOrder(
+    List<Dictionary> newDictionaries,
+    List<RemoteDictionary> remoteDictionaries,
+  ) async {
+    await dictRepo.updateDictionaryOrder(
+      newDictionaries,
+      remoteDictionaries: remoteDictionaries,
+    );
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
+
+  /// 开关一本服务器词典（激活配置拥有的 hidden）。
+  Future<void> setRemoteDictionaryHidden(
+    RemoteDictionary dictionary,
+    bool hidden,
+  ) async {
+    await dictRepo.setRemoteDictionaryHidden(dictionary, hidden);
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
+
+  /// 忘掉一条服务器上已没有的词典的目录行与设置。
+  Future<void> forgetRemoteDictionary(String hostId, String name) =>
+      dictRepo.forgetRemoteDictionary(hostId, name);
+
+  /// 忘掉一台 host 的全部服务器词典设置（解除配对时可选）。
+  Future<void> forgetRemoteDictionaryHost(String hostId) =>
+      dictRepo.forgetRemoteDictionaryHost(hostId);
+
+  /// 配对列表里每台 host（[remoteDictionaryHostIdOf] 口径）的展示名：配对记下的
+  /// 设备名，没有时用地址。词典管理页的来源标签与 host 提示用它。
+  Future<Map<String, String>> remoteDictionaryHostNames() async {
+    final Map<String, String> names = <String, String>{};
+    for (final FushiClientUrl u in await SyncRepository(
+      _database,
+    ).getFushiClientUrls()) {
+      final String id = remoteDictionaryHostIdOf(u);
+      final String? device = u.deviceName?.trim();
+      if (device != null && device.isNotEmpty) {
+        names[id] = device;
+      } else {
+        names.putIfAbsent(id, () => Uri.tryParse(u.url)?.host ?? u.url);
+      }
+    }
+    return names;
+  }
+
   /// 「汉字」分区的重排（混合词典只动汉字部分的位置），其余同 [updateDictionaryOrder]。
   Future<void> updateKanjiSectionOrder(List<Dictionary> newDictionaries) async {
     await dictRepo.updateKanjiSectionOrder(newDictionaries);

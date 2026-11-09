@@ -178,6 +178,46 @@ String remoteDictionaryHostIdOf(FushiClientUrl candidate) {
   return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 }
 
+/// [remoteDictionaryHostIdOf] 给出的是不是**地址充当的伪 id**（老条目没有 hostId，
+/// 拿 URL 顶上）。伪 id 是服务器地址，配置导出时必须剔掉（不把用户的服务器地址带出
+/// 本机）；真 hostId 是不透明的设备 id，照常导出。
+bool isRemoteDictionaryPseudoHostId(String hostId) => hostId.contains('://');
+
+/// 「用这台服务器查词典」是按 host 的设置：一台 host 原有的地址全都关掉了它时，
+/// 这次写入里**新加入**这台 host 的地址（新 URL，或原有 URL 新归到这台 host）也跟着
+/// 关掉——否则配对学到一条新地址 / 手动加一条地址后，用户关掉的 host 会悄悄重新
+/// 参与查词。原有地址的值（含用户刚在设置页整组打开）一律不动。没有任何变化时原样
+/// 返回 [after]（调用方靠 `identical` 判断要不要落库）。
+List<FushiClientUrl> inheritInterconnectLookupDisabled(
+  List<FushiClientUrl> before,
+  List<FushiClientUrl> after,
+) {
+  final Map<String, bool> allOffByHost = <String, bool>{};
+  final Set<String> knownMembership = <String>{};
+  for (final FushiClientUrl u in before) {
+    final String host = remoteDictionaryHostIdOf(u);
+    allOffByHost[host] = (allOffByHost[host] ?? true) && !u.lookupEnabled;
+    knownMembership.add('$host\u0000${u.url}');
+  }
+  if (!allOffByHost.containsValue(true)) return after;
+  bool changed = false;
+  final List<FushiClientUrl> out = <FushiClientUrl>[
+    for (final FushiClientUrl u in after)
+      if (u.lookupEnabled &&
+          allOffByHost[remoteDictionaryHostIdOf(u)] == true &&
+          !knownMembership.contains(
+            '${remoteDictionaryHostIdOf(u)}\u0000${u.url}',
+          ))
+        () {
+          changed = true;
+          return u.copyWith(lookupEnabled: false);
+        }()
+      else
+        u,
+  ];
+  return changed ? out : after;
+}
+
 /// [urls] 里此刻承担远端词典查词的 host 身份集合（[FushiClientUrl.isDictionaryLookupCandidate]
 /// 的地址按 [remoteDictionaryHostIdOf] 归组）。词典仓库只把这些 host 的目录行混进查词过滤。
 Set<String> remoteDictionaryLookupHostIdsOf(Iterable<FushiClientUrl> urls) =>
@@ -1640,7 +1680,10 @@ class SyncRepository {
   ) {
     final Future<List<FushiClientUrl>> result = _urlsWriteChain.then((_) async {
       final List<FushiClientUrl> before = await getFushiClientUrls();
-      final List<FushiClientUrl> after = transform(before);
+      final List<FushiClientUrl> after = inheritInterconnectLookupDisabled(
+        before,
+        transform(before),
+      );
       if (!identical(after, before)) await setFushiClientUrls(after);
       return after;
     });

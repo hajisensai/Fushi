@@ -194,6 +194,13 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   final Map<String, String> _failureReason = <String, String>{};
   bool _isTesting = false;
   bool _loaded = false;
+
+  /// 每台 host 的服务器词典目录摘要（托管本数 / 上次刷新），配对行下的查词设置用。
+  Map<String, InterconnectHostDictionarySummary> _dictionarySummaries =
+      const <String, InterconnectHostDictionarySummary>{};
+
+  /// 正在刷新服务器词典目录的 host。
+  final Set<String> _refreshingDictionaryHosts = <String>{};
   // BUG-1562：「已连接 ✓」那一行的判据是 token 非空，而 token 活在
   // [_tokenController] 里。build 直接读 controller.text 却没人监听它 —— 手贴/清空
   // token（[_saveToken] 只落库不 setState）后本行状态原地不动，直到别的原因触发
@@ -218,6 +225,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     ).clientConfigRevision.addListener(_onClientConfigRevision);
     // 后台地址学习也会写候选列表：跟着真值重载，免得下次编辑把学到的地址整份覆盖。
     SyncRepository.fushiClientUrlsRevision.addListener(_onClientConfigRevision);
+    // 服务器词典目录刷新后更新「可用词典 / 上次刷新」。
+    RemoteDictionaryCatalogService.catalogRevision.addListener(
+      _onDictionaryCatalogRevision,
+    );
     // Rebuild when the server-enabled flag flips so "add connection" re-gates.
     _syncSettings(
       widget.settingsContext,
@@ -231,6 +242,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     ).clientConfigRevision.removeListener(_onClientConfigRevision);
     SyncRepository.fushiClientUrlsRevision.removeListener(
       _onClientConfigRevision,
+    );
+    RemoteDictionaryCatalogService.catalogRevision.removeListener(
+      _onDictionaryCatalogRevision,
     );
     _syncSettings(
       widget.settingsContext,
@@ -267,10 +281,76 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     _syncSettings(
       widget.settingsContext,
     ).setHasClientConnection(urls.isNotEmpty);
+    await _loadDictionarySummaries();
   }
 
   void _onClientConfigRevision() {
     unawaited(_reloadFromStore());
+  }
+
+  void _onDictionaryCatalogRevision() {
+    unawaited(_loadDictionarySummaries());
+  }
+
+  Future<void> _loadDictionarySummaries() async {
+    final Map<String, InterconnectHostDictionarySummary> summaries;
+    try {
+      summaries = await loadInterconnectHostDictionarySummaries(
+        widget.settingsContext.appModel.database,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.dictionarySummaries', e, stack);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _dictionarySummaries = summaries);
+  }
+
+  /// 「用这台服务器查词典」：同一台 host 的全部地址一起改（经 [_mutateUrls] 串行写）。
+  /// 词典仓库与目录服务跟随配对列表广播，各自重算参与查词的 host。
+  Future<void> _setHostLookupEnabled(String hostId, bool enabled) =>
+      _mutateUrls(
+        (List<FushiClientUrl> current) =>
+            withInterconnectHostLookupEnabled(current, hostId, enabled),
+      );
+
+  Future<void> _refreshHostDictionaries(String hostId) async {
+    final RemoteDictionaryCatalogService? catalog =
+        widget.settingsContext.appModel.remoteDictionaryCatalog;
+    if (catalog == null || _refreshingDictionaryHosts.contains(hostId)) return;
+    setState(() => _refreshingDictionaryHosts.add(hostId));
+    try {
+      await catalog.refreshHost(hostId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.refreshDictionaries', e, stack);
+    } finally {
+      if (mounted) {
+        setState(() => _refreshingDictionaryHosts.remove(hostId));
+      }
+    }
+    await _loadDictionarySummaries();
+  }
+
+  /// 解除配对后：这台 host 在本机还留着服务器词典设置（目录行的排序 / 开关）时，
+  /// 问要不要一起忘掉。默认保留——重新配对时原样恢复。
+  Future<void> _offerForgetHostDictionaries(String hostId, String name) async {
+    if (!_dictionarySummaries.containsKey(hostId) || !mounted) return;
+    final bool forget = await showFushiConfirmDialog(
+      context: context,
+      title: t.interconnect_unpair_forget_dictionaries,
+      message: t.interconnect_unpair_forget_dictionaries_desc(name: name),
+      confirmLabel: t.dictionary_server_forget,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.dictionary,
+      destructive: true,
+    );
+    if (!forget || !mounted) return;
+    try {
+      await widget.settingsContext.appModel.forgetRemoteDictionaryHost(hostId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.forgetDictionaries', e, stack);
+    }
+    await _loadDictionarySummaries();
   }
 
   /// Reload the persisted client config after an external mutation (LAN
@@ -494,6 +574,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               enabled: edited.enabled,
               deviceName: edited.deviceName,
               token: edited.token,
+              // 「用它查词典」是用户的选择，改地址不该把关掉的 host 重新打开。指纹 /
+              // hostId / learned 故意不带（改指另一台机器，见上）。
+              lookupEnabled: edited.lookupEnabled,
             );
       return copy;
     });
@@ -624,6 +707,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Future<void> _deleteUrl(int index) async {
     final String url = _urls[index].url;
     final String? hostId = _urls[index].hostId;
+    final String dictionaryHostId = remoteDictionaryHostIdOf(_urls[index]);
+    final String hostName = (_urls[index].deviceName?.trim().isNotEmpty ?? false)
+        ? _urls[index].deviceName!.trim()
+        : url;
     final int removed =
         _urls.length -
         withoutInterconnectHost(_urls, url: url, hostId: hostId).length;
@@ -643,6 +730,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       (List<FushiClientUrl> current) =>
           withoutInterconnectHost(current, url: url, hostId: hostId),
     );
+    // 这台 host 的地址删光了（真解除配对）才问服务器词典设置要不要一起忘掉。
+    if (!_urls.any(
+      (FushiClientUrl u) => remoteDictionaryHostIdOf(u) == dictionaryHostId,
+    )) {
+      await _offerForgetHostDictionaries(dictionaryHostId, hostName);
+    }
   }
 
   /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
@@ -883,6 +976,28 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               icon: FushiIcons.lock,
               message: t.sync_role_locked_by_server,
             ),
+          // 设计稿 3：每台已配对 host 的「用这台服务器查词典」+ 可用词典 / 刷新。
+          if (_urls.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              t.interconnect_lookup_section_title,
+              style: _interconnectSubheadStyle(context),
+            ),
+            const SizedBox(height: 8),
+            InterconnectDictionaryLookupSection(
+              urls: _urls,
+              summaries: _dictionarySummaries,
+              refreshingHosts: _refreshingDictionaryHosts,
+              onLookupChanged: (String hostId, bool enabled) =>
+                  unawaited(_setHostLookupEnabled(hostId, enabled)),
+              onRefresh:
+                  widget.settingsContext.appModel.remoteDictionaryCatalog ==
+                      null
+                  ? null
+                  : (String hostId) =>
+                        unawaited(_refreshHostDictionaries(hostId)),
+            ),
+          ],
           const SizedBox(height: 4),
           Wrap(
             spacing: 8,

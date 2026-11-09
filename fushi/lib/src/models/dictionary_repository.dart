@@ -64,6 +64,11 @@ class DictionaryRepository {
   /// 不进这里。
   List<RemoteDictionary> _remoteDictionariesCache = const <RemoteDictionary>[];
 
+  /// [remoteDictionaries] 换了内容就 +1（重读目录 / 配置写入）。词典管理页据此重建；
+  /// 静态是因为换库 / 切配置时 AppModel 会换掉仓库实例，页面监听不该跟着丢。
+  static final ValueNotifier<int> remoteDictionariesRevision =
+      ValueNotifier<int>(0);
+
   /// 查词热路径要的两样派生数据（被关掉的词典名、term 词典顺序）的缓存；null =
   /// 需要重算。凡是改动 [_dictionariesCache] 的地方都经 [_dictionariesChanged] 清掉它。
   ///
@@ -350,6 +355,7 @@ class DictionaryRepository {
       remoteDictionariesFromRows(snapshot.rows, snapshot.hosts),
     );
     _dictionariesChanged();
+    remoteDictionariesRevision.value++;
   }
 
   /// 目录行 → 参与查词的 [RemoteDictionary]（只留 [activeHostIds] 里的 host），按
@@ -583,6 +589,7 @@ class DictionaryRepository {
       ]..sort(RemoteDictionary.compareByOrder),
     );
     _dictionariesChanged();
+    remoteDictionariesRevision.value++;
   }
 
   /// [candidate] 在缓存里的那一行（按 host + 真名）；不在（host 已不参与查词 / 行被

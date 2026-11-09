@@ -57,6 +57,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart';
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
+    show RemoteDictionaryCatalogService;
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart'
     show InterconnectP2pRuntime, parseInterconnectP2pUrl;

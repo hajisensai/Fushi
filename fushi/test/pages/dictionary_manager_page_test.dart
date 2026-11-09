@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show RemoteDictionary;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
@@ -42,6 +44,10 @@ class _FakeAppModel extends AppModel {
   List<Dictionary> get freqDictionaries => _ofType(DictionaryType.frequency);
   @override
   List<Dictionary> get pitchDictionaries => _ofType(DictionaryType.pitch);
+
+  // 没配服务器：服务器托管词典为空（真 AppModel 的 dictRepo 在这里没初始化）。
+  @override
+  List<RemoteDictionary> get remoteDictionaries => const <RemoteDictionary>[];
 
   @override
   Map<String, DictionaryFormat> get dictionaryFormats =>
