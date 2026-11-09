@@ -1021,25 +1021,30 @@ class MusicPlayerEngine extends ChangeNotifier {
     await _afterQueueEdit();
   }
 
-  /// 把 [item] 放回队列第 [index] 格（撤销 [removeFromQueue] 用；[playNext] = 它原来带着
-  /// 「下一首播放」标记）。[index] 夹到 `[0, 队列长度]`；队列里已经有同一首、不能编辑时
-  /// 无操作。放在当前曲之前（含当前曲那格）时 [index] 跟着后移，当前曲不变。
-  Future<void> insertIntoQueue(
-    int index,
+  /// 撤销 [removeFromQueue]：把 [item] 放回到锚点 [after]（移除时它前一格的那个对象，按
+  /// `identical` 认）之后；[playNext] = 它原来带着「下一首播放」标记。
+  ///
+  /// 存锚点而不是绝对下标：撤销窗口里当前曲可能已经推进、别处也可能插队 / 追加，下标会
+  /// 整体漂移。锚点不在队列里、或已经不在当前曲之后（已播 / 正在播）时，放到当前曲之后，
+  /// 保证放回的曲目仍在待播区。判重按对象身份：电台续播的队列里同一首可以有好几格，
+  /// 另一格还在不妨碍撤销这一格；同一个对象已经在队列里（重复撤销）时无操作。
+  /// 不能编辑时无操作。
+  Future<void> restoreToQueue(
     MusicPlayItem item, {
+    MusicPlayItem? after,
     bool playNext = false,
   }) async {
     if (!canEditQueue) return;
-    if (_queue.any((MusicPlayItem x) => x.trackUid == item.trackUid)) return;
+    if (_queue.any((MusicPlayItem x) => identical(x, item))) return;
     _restoreExternalRoot();
-    final int at = index.clamp(0, _queue.length);
-    final MusicPlayItem? before = at > 0 ? _queue[at - 1] : null;
+    final int anchorAt = after == null
+        ? -1
+        : _queue.indexWhere((MusicPlayItem x) => identical(x, after));
+    final int at = anchorAt >= _index ? anchorAt + 1 : _index + 1;
+    final MusicPlayItem before = _queue[at - 1];
     _queue = List<MusicPlayItem>.of(_queue)..insert(at, item);
-    if (at <= _index) _index++;
     if (!_shuffled) {
       _original = List<MusicPlayItem>.of(_queue);
-    } else if (before == null) {
-      _original = <MusicPlayItem>[item, ..._original];
     } else {
       _insertIntoOriginalAfter(before, <MusicPlayItem>[item]);
     }

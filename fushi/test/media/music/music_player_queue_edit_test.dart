@@ -360,23 +360,56 @@ void main() {
       final bool mark = engine.isPlayNextAt(1);
       await engine.removeFromQueue(1);
       expect(backend.log.last, 'next:b');
-      await engine.insertIntoQueue(1, removed, playNext: mark);
+      await engine.restoreToQueue(
+        removed,
+        after: engine.queue[0],
+        playNext: mark,
+      );
       expect(_uids(engine.queue), 'axbc');
       expect(engine.isPlayNextAt(1), isTrue);
       expect(backend.log.last, 'next:x');
     });
 
-    test('放回当前曲之前：index 后移，当前曲不变；已在队列里的不重复放', () async {
-      await engine.playQueue(_items('abc'), startIndex: 1);
+    test('撤销按锚点放回：前面插队让下标漂移，仍紧跟原来的前一格', () async {
+      await engine.playQueue(_items('abcd'));
+      final MusicPlayItem b = engine.queue[1];
+      final MusicPlayItem c = engine.queue[2];
+      await engine.removeFromQueue(2);
+      await engine.playNext(_items('x'));
+      expect(_uids(engine.queue), 'axbd');
+      await engine.restoreToQueue(c, after: b);
+      expect(_uids(engine.queue), 'axbcd');
+      expect(engine.current?.trackUid, 'a');
+    });
+
+    test('撤销期间当前曲推进过锚点：放到当前曲之后，不落进已播区', () async {
+      await engine.playQueue(_items('abcd'));
       final MusicPlayItem a = engine.queue[0];
-      await engine.removeFromQueue(0);
-      expect(engine.index, 0);
-      await engine.insertIntoQueue(0, a);
-      expect(_uids(engine.queue), 'abc');
+      final MusicPlayItem b = engine.queue[1];
+      await engine.removeFromQueue(1);
+      await engine.skipNext();
+      expect(engine.current?.trackUid, 'c');
+      await engine.restoreToQueue(b, after: a);
+      expect(_uids(engine.queue), 'acbd');
       expect(engine.index, 1);
-      expect(engine.current?.trackUid, 'b');
-      await engine.insertIntoQueue(3, a);
-      expect(_uids(engine.queue), 'abc');
+      expect(engine.current?.trackUid, 'c');
+      expect(backend.log.last, 'next:b');
+    });
+
+    test('同一首有多格：另一格还在也能撤销；同一个对象不重复放', () async {
+      await engine.playQueue(_items('ab'));
+      await engine.appendToQueue(_items('b'));
+      expect(_uids(engine.queue), 'abb');
+      final MusicPlayItem first = engine.queue[0];
+      final MusicPlayItem dup = engine.queue[2];
+      final MusicPlayItem anchor = engine.queue[1];
+      await engine.removeFromQueue(2);
+      expect(_uids(engine.queue), 'ab');
+      await engine.restoreToQueue(dup, after: anchor);
+      expect(_uids(engine.queue), 'abb');
+      expect(identical(engine.queue[2], dup), isTrue);
+      await engine.restoreToQueue(dup, after: first);
+      expect(_uids(engine.queue), 'abb');
     });
   });
 

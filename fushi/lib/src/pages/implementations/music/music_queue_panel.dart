@@ -23,6 +23,8 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
     show kMineNoticeActionVisibleFor;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -30,6 +32,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -89,8 +92,9 @@ class MusicQueuePanel extends StatefulWidget {
   State<MusicQueuePanel> createState() => _MusicQueuePanelState();
 }
 
-/// 刚移出、可撤销的那一首。
-typedef _Removed = ({MusicPlayItem item, int index, bool playNext});
+/// 刚移出、可撤销的那一首；[after] 是移出时它前一格的对象（撤销按它插回，见
+/// [MusicPlayerEngine.restoreToQueue]）。
+typedef _Removed = ({MusicPlayItem item, MusicPlayItem after, bool playNext});
 
 class _MusicQueuePanelState extends State<MusicQueuePanel> {
   final ScrollController _scroll = ScrollController();
@@ -113,10 +117,11 @@ class _MusicQueuePanelState extends State<MusicQueuePanel> {
 
   Future<void> _remove(int index) async {
     final List<MusicPlayItem> q = _engine.queue;
-    if (index < 0 || index >= q.length || index == _engine.index) return;
+    // 面板只列待播区（当前曲之后），移出 / 撤销都只针对这一段。
+    if (index <= _engine.index || index >= q.length) return;
     final _Removed removed = (
       item: q[index],
-      index: index,
+      after: q[index - 1],
       playNext: _engine.isPlayNextAt(index),
     );
     _undoTimer?.cancel();
@@ -132,9 +137,9 @@ class _MusicQueuePanelState extends State<MusicQueuePanel> {
     _undoTimer?.cancel();
     setState(() => _undo = null);
     if (removed == null) return;
-    await _engine.insertIntoQueue(
-      removed.index,
+    await _engine.restoreToQueue(
       removed.item,
+      after: removed.after,
       playNext: removed.playNext,
     );
   }
@@ -587,7 +592,7 @@ class _DragHandle extends StatelessWidget {
     );
   }
 
-  Widget _icon(ColorScheme cs) => Tooltip(
+  Widget _icon(ColorScheme cs) => FushiTooltip(
     message: t.music_queue_reorder,
     child: Semantics(
       label: t.music_queue_reorder,
@@ -616,14 +621,16 @@ class _CurrentRow extends StatelessWidget {
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: cs.secondaryContainer,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: const BorderRadius.all(
+          Radius.circular(FushiM3eShape.listActive),
+        ),
       ),
       child: Row(
         children: <Widget>[
           MusicCover(
             coverPath: item.coverPath,
             size: 48,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: FushiM3eShape.smallRadius,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -706,7 +713,7 @@ class _PlayNextTag extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: cs.tertiaryContainer,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: FushiBorderRadius.chip,
       ),
       child: Text(
         t.music_queue_play_next,
@@ -802,9 +809,9 @@ class _QueueRowState extends State<_QueueRow> {
     final Widget line = Container(
       height: 3,
       margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: cs.primary,
-        borderRadius: BorderRadius.circular(2),
+        shape: const StadiumBorder(),
       ),
     );
     final Widget body = AnimatedContainer(
@@ -816,13 +823,15 @@ class _QueueRowState extends State<_QueueRow> {
       constraints: const BoxConstraints(minHeight: 60),
       decoration: BoxDecoration(
         color: widget.floating
-            ? cs.surfaceContainerHighest
+            ? FushiDesignTokens.of(context).surfaces.overlay
             : (_focused
                   ? cs.onSurface.withValues(alpha: 0.08)
                   : (_hovered
                         ? cs.onSurface.withValues(alpha: 0.04)
                         : Colors.transparent)),
-        borderRadius: BorderRadius.circular(widget.floating ? 18 : 0),
+        borderRadius: widget.floating
+            ? const BorderRadius.all(Radius.circular(FushiM3eShape.listActive))
+            : BorderRadius.zero,
         boxShadow: widget.floating
             ? <BoxShadow>[
                 BoxShadow(
@@ -838,7 +847,7 @@ class _QueueRowState extends State<_QueueRow> {
           MusicCover(
             coverPath: widget.item.coverPath,
             size: 44,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: FushiM3eShape.smallRadius,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -916,7 +925,7 @@ class _UndoBar extends StatelessWidget {
       key: const ValueKey<String>('music_queue_undo_bar'),
       color: cs.inverseSurface,
       elevation: 3,
-      borderRadius: BorderRadius.circular(26),
+      shape: const StadiumBorder(),
       child: Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(18, 4, 6, 4),
         child: Row(
