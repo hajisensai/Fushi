@@ -329,8 +329,9 @@ import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/video/theme_song/video_theme_song_tracker.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart' show enginePaths;
 import 'package:fushi_engine/media/video/video_local_files.dart'
-    show isLocalVideoFilePath;
+    show adoptPickedVideoCopy, isLocalVideoFilePath;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
@@ -6476,17 +6477,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 泛化（好品味）：对**任意**缺失的本地视频都提供此动作，不对 app cache 目录加特例
   /// 分支——cache 被系统清空只是「文件失联」的一个子集。
   ///
-  /// 拾取复用 [pickRealFilePath]（TODO-1112 已建的统一真实路径拾取：安卓有全文件访问
-  /// 时走真实路径浏览器拿 content 之外的绝对路径、不复制到 cache；桌面 / iOS 及安卓降级
-  /// 走 file_picker）。不新造第二套文件通道。
+  /// 拾取复用 [pickRealFilePathDetailed]（TODO-1112 已建的统一真实路径拾取：安卓有全
+  /// 文件访问时走真实路径浏览器拿 content 之外的绝对路径、不复制到 cache；桌面 / iOS 及
+  /// 安卓降级走 file_picker）。不新造第二套文件通道。出处为临时副本（iOS import 模式 /
+  /// 安卓 cache）时先经 [adoptPickedVideoCopy] 挪进持久目录再落库——否则重链后的
+  /// 路径过一阵又会失效（反馈 HfXM-ECaE8）。
   ///
   /// 只处理单视频（非播放列表、非远端）；调用点已用 canDelete 判据门控。
   Future<void> _relinkMissingResource(VideoBookRow row) async {
-    final String? newPath = await pickRealFilePath(
-      context: context,
-      appModel: appModel,
+    final PickedFilePath? picked;
+    try {
+      picked = await pickRealFilePathDetailed(
+        context: context,
+        appModel: appModel,
+      );
+    } on PickedFileWithoutPathException {
+      // 与改动前 pickRealFilePath 的契约一致：平台没给 path 时按未选处理。
+      return;
+    }
+    if (picked == null || picked.path.isEmpty || !mounted) return;
+    final String newPath = await adoptPickedVideoCopy(
+      pickedPath: picked.path,
+      isRealPath: picked.isRealPath,
+      bookUid: row.bookUid,
+      copiesRoot: await enginePaths.pickedVideoCopiesDirectory(),
     );
-    if (newPath == null || newPath.isEmpty || !mounted) return;
+    if (!mounted) return;
     // 持久化新路径（只写 videoPath，进度 / 字幕 / 音轨 / 倍速等其它列不动，
     // updateLocalMediaPaths 用 Value.absent() 保持未触及）。
     await widget.repo.updateLocalMediaPaths(row.bookUid, videoPath: newPath);
