@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -31,6 +32,8 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteDictionaryInfo;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
@@ -45,6 +48,7 @@ import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
@@ -367,6 +371,19 @@ class AdminApi {
               ),
         );
         return _json(<String, Object?>{'started': true, 'id': id});
+      case ('GET', '/api/admin/dictionaries'):
+        return _dictionaries();
+      case ('POST', '/api/admin/dictionaries/reload'):
+        return _reloadDictionaries();
+      case ('PUT', _) when path.startsWith(_dictionariesPrefix):
+        return _setDictionaryDefaultEnabled(
+          Uri.decodeComponent(path.substring(_dictionariesPrefix.length)),
+          await _body(request),
+        );
+      case ('DELETE', _) when path.startsWith(_dictionariesPrefix):
+        return _deleteDictionary(
+          Uri.decodeComponent(path.substring(_dictionariesPrefix.length)),
+        );
       case (_, _) when path.startsWith(_hostProxyPrefix):
         return _hostProxy(request, path.substring(_hostProxyPrefix.length));
     }
@@ -374,6 +391,7 @@ class AdminApi {
   }
 
   static const String _hostProxyPrefix = '/api/admin/host/';
+  static const String _dictionariesPrefix = '/api/admin/dictionaries/';
   static const String _btSitesPrefix = '/api/admin/resource-indexers/bt-sites/';
 
   /// `/api/admin/host/<rest>` → 互联的 `/api/<rest>`，以 host 身份进程内调用。
@@ -611,6 +629,117 @@ class AdminApi {
     await _ownerDevices.forgetPeer(peerId);
     ctx.host.invalidatePeerTokens();
     return _json(<String, Object?>{'ok': n > 0});
+  }
+
+  // ── 词典 ───────────────────────────────────────────────────────────
+  //
+  // 服务端托管的词典（经互联推送或 `dict import` 落 DB + 资源目录）。引擎装全部词典，
+  // 每个已配对设备按自己的配置（Profile）在请求里带词典选择；这里的 `defaultEnabled`
+  // 只是**没带选择**的请求（浏览器扩展 / 旧客户端）的默认开关，落在服务端行的
+  // `hiddenLanguagesJson`（与 app 推送写入的口径一致：含 `ja` = 默认关）。
+
+  /// 词典清单：目录字段与互联 `/api/library/dictionaries` 同源
+  /// （[RemoteDictionaryInfo.fromMetadataRow]），外加占用、默认开关、资源目录在不在、
+  /// 服务端排序位。
+  Future<shelf.Response> _dictionaries() async {
+    final List<DictionaryMetaRow> rows = await ctx.db.getAllDictionaryMetadata()
+      ..sort(
+        (DictionaryMetaRow a, DictionaryMetaRow b) =>
+            a.order.compareTo(b.order),
+      );
+    final ServerDictionaryHost? host = ctx.host.dictionaries;
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    for (final DictionaryMetaRow row in rows) {
+      final Directory dir = _dictionaryDirectory(row.name);
+      final bool present = await dir.exists();
+      out.add(<String, Object?>{
+        ...RemoteDictionaryInfo.fromMetadataRow(row).toJson(),
+        'order': row.order,
+        'sizeBytes': present ? await _directorySize(dir) : 0,
+        'defaultEnabled':
+            !ServerDictionaryHost.isServerDictionaryHiddenByDefault(row),
+        'present': present,
+      });
+    }
+    return _json(<String, Object?>{
+      'engineAvailable': host?.available ?? false,
+      'engineUnavailableReason': host?.unavailableReason,
+      'loadedCount': host?.loadedCount ?? 0,
+      'dictionaries': out,
+    });
+  }
+
+  /// `PUT /api/admin/dictionaries/<name>` `{defaultEnabled: bool}`：改服务端默认开关
+  /// （`hiddenLanguagesJson` 写 `[]` / `["ja"]`）后重载引擎快照。
+  Future<shelf.Response> _setDictionaryDefaultEnabled(
+    String name,
+    Map<String, dynamic> body,
+  ) async {
+    final Object? enabled = body['defaultEnabled'];
+    if (enabled is! bool) {
+      throw const FormatException('defaultEnabled must be a boolean');
+    }
+    final DictionaryMetaRow? row = await _dictionaryRow(name);
+    if (row == null) return _err(404, 'dictionary "$name" not found');
+    await ctx.db.upsertDictionaryMeta(
+      row
+          .toCompanion(true)
+          .copyWith(
+            hiddenLanguagesJson: Value<String>(
+              jsonEncode(enabled ? const <String>[] : const <String>['ja']),
+            ),
+          ),
+    );
+    await ctx.host.dictionaries?.refresh();
+    return _json(<String, Object?>{'name': name, 'defaultEnabled': enabled});
+  }
+
+  /// `DELETE /api/admin/dictionaries/<name>`：与互联删除同一条路径（DB 元数据 + 引擎
+  /// 重载 + 资源目录，串行于库互斥锁）。名字含路径穿越字符时 400。
+  Future<shelf.Response> _deleteDictionary(String name) async {
+    if (await _dictionaryRow(name) == null) {
+      return _err(404, 'dictionary "$name" not found');
+    }
+    await ctx.host.buildLibraryService().deleteDictionary(name);
+    return _json(const <String, Object?>{'ok': true});
+  }
+
+  /// `POST /api/admin/dictionaries/reload`：按 DB 重载引擎（手工改过资源目录后用）。
+  Future<shelf.Response> _reloadDictionaries() async {
+    final ServerDictionaryHost? host = ctx.host.dictionaries;
+    if (host == null || !host.available) {
+      return _err(
+        503,
+        host?.unavailableReason ?? 'the dictionary engine is not running',
+      );
+    }
+    await host.refresh();
+    return _json(<String, Object?>{
+      'ok': true,
+      'loadedCount': host.loadedCount,
+    });
+  }
+
+  Future<DictionaryMetaRow?> _dictionaryRow(String name) async {
+    for (final DictionaryMetaRow row
+        in await ctx.db.getAllDictionaryMetadata()) {
+      if (row.name == name) return row;
+    }
+    return null;
+  }
+
+  Directory _dictionaryDirectory(String name) =>
+      Directory(p.join(ctx.paths.dictionaryResources.path, name));
+
+  static Future<int> _directorySize(Directory dir) async {
+    int total = 0;
+    await for (final FileSystemEntity e in dir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (e is File) total += await e.length();
+    }
+    return total;
   }
 
   // ── 库 ─────────────────────────────────────────────────────────────

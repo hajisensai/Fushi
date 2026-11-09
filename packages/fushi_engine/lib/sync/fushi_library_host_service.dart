@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
@@ -452,21 +453,83 @@ SyncKeyDiff computeAudiobookSyncDiff({
 
 /// host 实时词典的清单条目（不含 contentHash：Phase 1 按名 union，与现有暂存
 /// 路径同语义，避免引入跨设备哈希一致性的新风险；overwrite-by-hash 列为 follow-up）。
+///
+/// [name] 是真名（`dictionary_metadata` 主键，冻结标识）。其余目录字段给客户端的
+/// 「服务端词典」目录用，全部可空：老 host 不发、值缺省时 [toJson] 不写该键，
+/// [fromJson] 对缺键 / 非字符串 / 空串一律当 null（旧客户端只读 name / type，不受影响）。
 class RemoteDictionaryInfo {
-  const RemoteDictionaryInfo({required this.name, required this.type});
+  const RemoteDictionaryInfo({
+    required this.name,
+    required this.type,
+    this.formatKey,
+    this.revision,
+    this.displayName,
+    this.sourceLanguage,
+  });
   final String name;
   final String type;
+
+  /// 导入格式（`dictionary_metadata.formatKey`，如 `yomichan`）。
+  final String? formatKey;
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`，落在 metadataJson 里）。
+  final String? revision;
+
+  /// host 上用户起的显示名（`dictionary_metadata.displayName`）；没改过为 null。
+  final String? displayName;
+
+  /// 词头语言：host 上的 `languageOverride` 优先，其次 index.json 的 `sourceLanguage`
+  /// （与 `Dictionary.effectiveSourceLanguage` 同判据）；都没有为 null。
+  final String? sourceLanguage;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
     'type': type,
+    if (formatKey != null) 'formatKey': formatKey,
+    if (revision != null) 'revision': revision,
+    if (displayName != null) 'displayName': displayName,
+    if (sourceLanguage != null) 'sourceLanguage': sourceLanguage,
   };
 
   static RemoteDictionaryInfo fromJson(Map<String, Object?> json) =>
       RemoteDictionaryInfo(
         name: json['name']?.toString() ?? '',
         type: json['type']?.toString() ?? '',
+        formatKey: _optionalString(json['formatKey']),
+        revision: _optionalString(json['revision']),
+        displayName: _optionalString(json['displayName']),
+        sourceLanguage: _optionalString(json['sourceLanguage']),
       );
+
+  /// 由一条 `dictionary_metadata` 行生成清单条目（app 当 host 与无头服务端同一份）：
+  /// `revision` / `sourceLanguage` 取 metadataJson（导入时由 index.json 落进去），
+  /// 词头语言 `languageOverride` 优先（`Dictionary.effectiveSourceLanguage` 同判据），
+  /// 显示名取 `displayName` 列；空串 / 纯空白当没有。metadataJson 畸形时这两项为 null。
+  factory RemoteDictionaryInfo.fromMetadataRow(DictionaryMetaRow row) {
+    Map<Object?, Object?> metadata = const <Object?, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(row.metadataJson);
+      if (decoded is Map) metadata = decoded;
+    } on FormatException {
+      // 畸形 metadataJson：目录字段缺省，name / type 照发。
+    }
+    return RemoteDictionaryInfo(
+      name: row.name,
+      type: row.type,
+      formatKey: _optionalString(row.formatKey),
+      revision: _optionalString(metadata['revision']),
+      displayName: _optionalString(row.displayName),
+      sourceLanguage:
+          _optionalString(row.languageOverride) ??
+          _optionalString(metadata['sourceLanguage']),
+    );
+  }
+
+  static String? _optionalString(Object? raw) {
+    if (raw is! String) return null;
+    final String trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 }
 
 /// 旧名兼容：词典 diff 已并入 [SyncKeyDiff]。

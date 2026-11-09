@@ -6,6 +6,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:path/path.dart' as p;
@@ -102,6 +103,113 @@ void main() {
     test('未知类型名按术语词典装', () {
       expect(dictionaryTypeFromName('???'), DictionaryType.term);
       expect(dictionaryTypeFromName('kanji'), DictionaryType.kanji);
+    });
+  });
+
+  group('resolveServerDictionarySelection（请求方词典选择 → 本次生效的排序 / 排除）', () {
+    const List<String> serverOrder = <String>['A', 'B', 'C'];
+    const Set<String> serverHidden = <String>{'C', 'Freq'};
+
+    test('没带选择 ⇒ 服务端自己的顺序与关掉名单（旧输出）', () {
+      final ServerDictionarySelection s = resolveServerDictionarySelection(
+        serverTermOrder: serverOrder,
+        serverHidden: serverHidden,
+      );
+      expect(s.order, serverOrder);
+      expect(s.excluded, serverHidden);
+    });
+
+    test('带选择 ⇒ order ∩ 服务端 term 词典在前，其余按服务端顺序追加；排除只认请求方', () {
+      final ServerDictionarySelection s = resolveServerDictionarySelection(
+        serverTermOrder: serverOrder,
+        serverHidden: serverHidden,
+        config: const RemoteLookupDictionaryConfig(
+          excluded: <String>{'B', 'LocalOnly'},
+          order: <String>['C', 'LocalOnly', 'A', 'C'],
+        ),
+      );
+      // 服务端没有的名字丢掉、重复去重；B 没提到 ⇒ 追加在后（默认启用）。
+      expect(s.order, <String>['C', 'A', 'B']);
+      // 服务端的隐藏（C / Freq）不叠加：请求方的选择是唯一真相。
+      expect(s.excluded, <String>{'B', 'LocalOnly'});
+    });
+
+    test('空选择 ⇒ 服务端顺序、什么都不排除（不是「没带」）', () {
+      final ServerDictionarySelection s = resolveServerDictionarySelection(
+        serverTermOrder: serverOrder,
+        serverHidden: serverHidden,
+        config: const RemoteLookupDictionaryConfig(
+          excluded: <String>{},
+          order: <String>[],
+        ),
+      );
+      expect(s.order, serverOrder);
+      expect(s.excluded, isEmpty);
+    });
+  });
+
+  group('withoutExcludedDictionaryMeta', () {
+    FushiLookupResult result() => const FushiLookupResult(
+      matched: '食べる',
+      deinflected: '食べる',
+      trace: <FushiTransformGroup>[],
+      preprocessorSteps: 0,
+      term: FushiTermResult(
+        expression: '食べる',
+        reading: 'たべる',
+        rules: 'v1',
+        glossaries: <FushiGlossaryEntry>[
+          FushiGlossaryEntry(
+            dictName: 'D',
+            glossary: 'to eat',
+            definitionTags: '',
+            termTags: '',
+          ),
+        ],
+        frequencies: <FushiFrequencyEntry>[
+          FushiFrequencyEntry(
+            dictName: 'F1',
+            frequencies: <FushiFrequency>[
+              FushiFrequency(value: 1, displayValue: '1'),
+            ],
+          ),
+          FushiFrequencyEntry(
+            dictName: 'F2',
+            frequencies: <FushiFrequency>[
+              FushiFrequency(value: 2, displayValue: '2'),
+            ],
+          ),
+        ],
+        pitches: <FushiPitchEntry>[
+          FushiPitchEntry(dictName: 'P1', pitchPositions: <int>[2]),
+        ],
+      ),
+    );
+
+    test('剔掉被排除词典的频率 / 音调，其余原样', () {
+      final List<FushiLookupResult> out = withoutExcludedDictionaryMeta(
+        <FushiLookupResult>[result()],
+        <String>{'F1', 'P1'},
+      );
+      expect(
+        out.single.term.frequencies.map((FushiFrequencyEntry f) => f.dictName),
+        <String>['F2'],
+      );
+      expect(out.single.term.pitches, isEmpty);
+      expect(out.single.term.glossaries.single.dictName, 'D');
+      expect(out.single.matched, '食べる');
+    });
+
+    test('没有要剔的 ⇒ 原列表（同一实例）', () {
+      final List<FushiLookupResult> input = <FushiLookupResult>[result()];
+      expect(
+        identical(withoutExcludedDictionaryMeta(input, <String>{}), input),
+        isTrue,
+      );
+      expect(
+        identical(withoutExcludedDictionaryMeta(input, <String>{'X'}), input),
+        isTrue,
+      );
     });
   });
 
@@ -347,6 +455,36 @@ void main() {
         );
         expect(await host.start(), isTrue, reason: host.unavailableReason);
         await importTestDictionary(db, resources, tmp, title: 'ServerTestDict');
+        // 第二本：同一个 食べる 的另一条释义，外加更长的 食べたい（最长匹配排第一）。
+        await importTestDictionary(
+          db,
+          resources,
+          tmp,
+          title: 'SecondDict',
+          order: 1,
+          terms: <List<Object>>[
+            <Object>[
+              '食べる',
+              'たべる',
+              'v1',
+              'v1',
+              100,
+              <String>['second eat'],
+              1,
+              '',
+            ],
+            <Object>[
+              '食べたい',
+              'たべたい',
+              '',
+              '',
+              100,
+              <String>['want to eat'],
+              2,
+              '',
+            ],
+          ],
+        );
         await host.refresh();
       });
 
@@ -370,6 +508,10 @@ void main() {
         expect(r!.searchTerm, '食べた');
         expect(r.entries.map((DictionaryEntry e) => e.word), contains('食べる'));
         expect(r.entries.first.dictionaryName, 'ServerTestDict');
+        expect(
+          r.entries.map((DictionaryEntry e) => e.dictionaryName).toSet(),
+          <String>{'ServerTestDict', 'SecondDict'},
+        );
         expect(r.bestLength, 3);
         expect(r.popupJson, contains('to eat'));
         final RemoteDictionaryPopupLookup? popup = await lookup
@@ -386,25 +528,163 @@ void main() {
         );
       });
 
-      test('隐藏的 term 词典不进引擎、查不到；删掉元数据后重载即查不到', () async {
-        final DictionaryMetaRow row = (await db.getAllDictionaryMetadata())
-            .firstWhere((DictionaryMetaRow r) => r.name == 'ServerTestDict');
+      Future<DictionaryMetaRow> rowOf(String name) async =>
+          (await db.getAllDictionaryMetadata()).firstWhere(
+            (DictionaryMetaRow r) => r.name == name,
+          );
+
+      Future<void> setHidden(DictionaryMetaRow row, bool hidden) async {
         await db.upsertDictionaryMeta(
           row
               .toCompanion(true)
-              .copyWith(hiddenLanguagesJson: const Value<String>('["ja"]')),
+              .copyWith(
+                hiddenLanguagesJson: Value<String>(hidden ? '["ja"]' : '[]'),
+              ),
         );
         await host.refresh();
-        // BUG-3454：隐藏词典根本不装进引擎——唯一的词典被关掉就是「无结果」，而不是
-        // 引擎命中后再在 popupJson 里滤空（那样它的长匹配仍占 top-N 与高亮长度）。
+      }
+
+      test('服务端关掉的词典是「没带选择」时的默认排除：全部关掉 ⇒ 无结果；删掉元数据后重载即查不到', () async {
+        final DictionaryMetaRow a = await rowOf('ServerTestDict');
+        final DictionaryMetaRow b = await rowOf('SecondDict');
+        await setHidden(a, true);
+        await setHidden(b, true);
+        // BUG-3454 的语义不变：全部关掉就是「无结果」，而不是引擎命中后再在 popupJson
+        // 里滤空（排除在引擎截断前生效，见 excludedDictionaries）。
         expect(host.search('食べる', maximumTerms: 10), isNull);
-        await db.upsertDictionaryMeta(row.toCompanion(true));
+        expect(host.searchPopup('食べる', maximumTerms: 10), isNull);
+        await setHidden(a, false);
+        await setHidden(b, false);
         await db.deleteDictionaryMeta('ServerTestDict');
+        await db.deleteDictionaryMeta('SecondDict');
         await host.refresh();
         expect(host.search('食べる', maximumTerms: 10), isNull);
         // 恢复给后续用例。
-        await db.upsertDictionaryMeta(row.toCompanion(true));
+        await db.upsertDictionaryMeta(a.toCompanion(true));
+        await db.upsertDictionaryMeta(b.toCompanion(true));
         await host.refresh();
+      });
+
+      test('引擎装全部词典；没带选择时的输出与服务端开关一致（关掉的那本不出现）', () async {
+        final DictionaryMetaRow b = await rowOf('SecondDict');
+        await setHidden(b, true);
+        addTearDown(() => setHidden(b, false));
+        // 关掉的那本也在引擎里（装全部），只是默认排除。
+        expect(host.loadedCount, 2);
+        final DictionarySearchResult? r = host.search('食べたい', maximumTerms: 10);
+        expect(r, isNotNull);
+        expect(
+          r!.entries.map((DictionaryEntry e) => e.dictionaryName).toSet(),
+          <String>{'ServerTestDict'},
+        );
+        expect(r.popupJson, isNot(contains('SecondDict')));
+        // 请求方的选择是唯一真相：带了选择就不叠加服务端的隐藏。
+        final DictionarySearchResult? withConfig = host.search(
+          '食べたい',
+          maximumTerms: 10,
+          config: const RemoteLookupDictionaryConfig(
+            excluded: <String>{},
+            order: <String>[],
+          ),
+        );
+        expect(
+          withConfig!.entries.map((DictionaryEntry e) => e.dictionaryName),
+          contains('SecondDict'),
+        );
+      });
+
+      test('被排除的词典即使本该排第一也不出现、不挤占名额（截断前排除）', () async {
+        const RemoteLookupDictionaryConfig excludeSecond =
+            RemoteLookupDictionaryConfig(
+              excluded: <String>{'SecondDict'},
+              order: <String>[],
+            );
+        // 不排除时 top-1 是 SecondDict 的 食べたい（最长匹配）。
+        final DictionarySearchResult? plain = host.search(
+          '食べたい',
+          maximumTerms: 1,
+          config: const RemoteLookupDictionaryConfig(
+            excluded: <String>{},
+            order: <String>[],
+          ),
+        );
+        expect(plain!.entries.first.word, '食べたい');
+        expect(plain.entries.first.dictionaryName, 'SecondDict');
+        // 排除后名额给了 ServerTestDict 的 食べる（去屈折），而不是被滤空。
+        final DictionarySearchResult? r = host.search(
+          '食べたい',
+          maximumTerms: 1,
+          config: excludeSecond,
+        );
+        expect(r, isNotNull);
+        expect(r!.entries.map((DictionaryEntry e) => e.word).toSet(), <String>{
+          '食べる',
+        });
+        expect(
+          r.entries.map((DictionaryEntry e) => e.dictionaryName).toSet(),
+          <String>{'ServerTestDict'},
+        );
+        expect(r.popupJson, isNot(contains('want to eat')));
+        expect(r.popupJson, isNot(contains('second eat')));
+        final RemoteDictionaryPopupLookup? popup = host.searchPopup(
+          '食べたい',
+          maximumTerms: 1,
+          config: excludeSecond,
+        );
+        expect(popup, isNotNull);
+        expect(popup!.popupJson, contains('to eat'));
+        expect(popup.popupJson, isNot(contains('SecondDict')));
+        expect(popup.bestLength, 4);
+      });
+
+      test('排序：请求方 order 在前，没提到 / 不认识的名字照服务端顺序追加', () async {
+        List<String> dictsOf(DictionarySearchResult? r) => <String>[
+          for (final DictionaryEntry e in r!.entries)
+            if (e.word == '食べる') e.dictionaryName,
+        ];
+        expect(
+          dictsOf(
+            host.search(
+              '食べる',
+              maximumTerms: 10,
+              config: const RemoteLookupDictionaryConfig(
+                excluded: <String>{},
+                order: <String>['Unknown', 'SecondDict'],
+              ),
+            ),
+          ),
+          <String>['SecondDict', 'ServerTestDict'],
+        );
+        expect(dictsOf(host.search('食べる', maximumTerms: 10)), <String>[
+          'ServerTestDict',
+          'SecondDict',
+        ]);
+      });
+
+      test('ServerRemoteLookupService 经 handler：带选择回执 true 且按选择查', () async {
+        final ServerRemoteLookupService lookup = ServerRemoteLookupService(
+          host,
+        );
+        final Map<String, dynamic> resp =
+            await buildRemoteDictionaryLookupResponse(<String, dynamic>{
+              'term': '食べたい',
+              'popupOnly': true,
+              kRemoteLookupDictionariesField: <String, Object?>{
+                'excluded': <String>['SecondDict'],
+              },
+            }, lookup: lookup);
+        expect(resp[kRemoteLookupDictionaryConfigAppliedField], isTrue);
+        expect(resp['popupJson'] as String, isNot(contains('SecondDict')));
+        final Map<String, dynamic> legacy =
+            await buildRemoteDictionaryLookupResponse(<String, dynamic>{
+              'term': '食べたい',
+              'popupOnly': true,
+            }, lookup: lookup);
+        expect(
+          legacy.containsKey(kRemoteLookupDictionaryConfigAppliedField),
+          isFalse,
+        );
+        expect(legacy['popupJson'] as String, contains('SecondDict'));
       });
     },
     skip: haveLib
@@ -420,6 +700,8 @@ Future<void> importTestDictionary(
   Directory resources,
   Directory tmp, {
   required String title,
+  int order = 0,
+  List<List<Object>>? terms,
 }) async {
   final Archive archive = Archive();
   void add(String name, Object json) {
@@ -433,37 +715,42 @@ Future<void> importTestDictionary(
     'format': 3,
     'sequenced': true,
   });
-  add('term_bank_1.json', <Object>[
-    <Object>[
-      '食べる',
-      'たべる',
-      'v1',
-      'v1',
-      100,
-      <String>['to eat'],
-      1,
-      '',
-    ],
-    <Object>[
-      '飲む',
-      'のむ',
-      'v5',
-      'v5',
-      90,
-      <String>['to drink'],
-      2,
-      '',
-    ],
-  ]);
+  add(
+    'term_bank_1.json',
+    terms ??
+        <Object>[
+          <Object>[
+            '食べる',
+            'たべる',
+            'v1',
+            'v1',
+            100,
+            <String>['to eat'],
+            1,
+            '',
+          ],
+          <Object>[
+            '飲む',
+            'のむ',
+            'v5',
+            'v5',
+            90,
+            <String>['to drink'],
+            2,
+            '',
+          ],
+        ],
+  );
   final File zip = File(p.join(tmp.path, '$title.zip'))
     ..writeAsBytesSync(ZipEncoder().encode(archive)!);
-  final Directory out = Directory(p.join(tmp.path, 'import_out'))..createSync();
+  final Directory out = Directory(p.join(tmp.path, 'import_out_$title'))
+    ..createSync();
   final FushiImportResult result = await FushiDicts.importDictionary(
     zip.path,
     out.path,
   );
   expect(result.success, isTrue, reason: result.error);
-  expect(result.termCount, 2);
+  expect(result.termCount, terms?.length ?? 2);
   final Directory inner = Directory(p.join(out.path, result.title));
   final Directory source = inner.existsSync() ? inner : out;
   source.renameSync(p.join(resources.path, title));
@@ -471,7 +758,7 @@ Future<void> importTestDictionary(
     DictionaryMetadataCompanion.insert(
       name: title,
       formatKey: 'yomichan',
-      order: 0,
+      order: order,
       type: const Value<String>('term'),
     ),
   );
