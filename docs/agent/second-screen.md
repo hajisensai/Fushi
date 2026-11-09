@@ -164,3 +164,7 @@
   不恢复滚动位置、Library 详情页与 Now / Lookup 的子页。
 - 面板转发来的手柄 `KEYCODE_BACK` 在主屏到达时是 `goBack`，不是查词模式的 B。
 - 新文案（`second_screen_*`）除 en / zh 外均为英文。
+- AYN Thor（Odin ROM）：只要本应用在副屏（display 4）有窗口，ROM 就按系统设置 `secondary_screen_volume_level`
+  （副屏有焦点时按音量键调的就是它）给**整个应用**的播放混音，主屏串流 / 视频的声音也跟着它走；主音量
+  `STREAM_MUSIC` 不变。窗口焦点在哪块屏都一样。应用侧没有办法退出这个分类，用户解法是点一下副屏再调大音量。
+  见 BUG-4243。
