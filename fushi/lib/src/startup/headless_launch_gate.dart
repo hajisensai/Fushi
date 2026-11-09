@@ -15,7 +15,8 @@
 /// 3. 无界面进程常驻后台却开着数据库、词典、同步、WebView 预热，白占内存。
 ///
 /// 精简入口：原生说「这次没有界面」时，`main()` 只做 binding 初始化然后停在这里，等到
-/// 第一个前台生命周期（resumed / inactive）才放行，后面的完整初始化原样跑。不 runApp、
+/// 第一个前台生命周期（Android：resumed / inactive；iOS：只认 resumed，见
+/// [lifecycleHasUi]）才放行，后面的完整初始化原样跑。不 runApp、
 /// 不碰会话标记 / 闪退报告 / 日志插件 / 数据库——这一关之前的东西就是无界面引擎的全部开销。
 ///
 /// 媒体会话不需要在这里装任何 Dart 服务：audio handler 一直是按需起的
@@ -49,10 +50,24 @@ enum LaunchEntry {
   deferUntilUi,
 }
 
-/// 视为「界面已接上」的生命周期：resumed 与 inactive 都意味着有窗口挂在引擎上。
-/// hidden / paused / detached 与 null（从没收到过）都不算。
-bool lifecycleHasUi(AppLifecycleState? state) =>
-    state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
+/// 视为「界面已接上」的生命周期。hidden / paused / detached 与 null（从没收到过）都不算。
+///
+/// [inactiveMeansUi]：`inactive` 算不算有界面，按平台不同——
+/// * Android（true）：`inactive` 只在 Activity 已接管引擎后才发（onPause、多窗口里失焦），
+///   界面确实在；
+/// * iOS（false）：后台拉起时 scene 已连接、但不在前台（`applicationState=background
+///   foregroundScene=false`），引擎照样在启动后几毫秒报 `inactive`。把它当界面会让完整
+///   初始化在后台照跑、在 open-database 处被挂起（反馈 wlUi86UBfd，BUG 见 docs/bugs）。
+///   用户真看见界面时一定会到 `resumed`，所以 iOS 只认 `resumed`。
+bool lifecycleHasUi(
+  AppLifecycleState? state, {
+  required bool inactiveMeansUi,
+}) =>
+    state == AppLifecycleState.resumed ||
+    (inactiveMeansUi && state == AppLifecycleState.inactive);
+
+/// 本平台 `inactive` 算不算有界面（[lifecycleHasUi]）：只有 iOS 不算。
+bool get platformInactiveMeansUi => !Platform.isIOS;
 
 /// 纯判定：这次启动走哪个入口。
 ///
@@ -64,32 +79,50 @@ LaunchEntry chooseLaunchEntry({
   required bool mobile,
   required LaunchPresence? presence,
   required AppLifecycleState? lifecycle,
+  required bool inactiveMeansUi,
 }) {
   if (!mobile) return LaunchEntry.full;
   if (presence == null || presence.hasUi) return LaunchEntry.full;
-  if (lifecycleHasUi(lifecycle)) return LaunchEntry.full;
+  if (lifecycleHasUi(lifecycle, inactiveMeansUi: inactiveMeansUi)) {
+    return LaunchEntry.full;
+  }
   return LaunchEntry.deferUntilUi;
 }
 
 /// 等到 [binding] 的生命周期进入前台（[lifecycleHasUi]）。已经在前台则立即完成。
 ///
 /// 先查当前值再挂观察者，两步之间没有 await，不会漏掉中间到达的生命周期消息。
-Future<void> waitForUiLifecycle(WidgetsBinding binding) {
-  if (lifecycleHasUi(binding.lifecycleState)) return Future<void>.value();
-  final _UiLifecycleWaiter waiter = _UiLifecycleWaiter(binding);
+Future<void> waitForUiLifecycle(
+  WidgetsBinding binding, {
+  required bool inactiveMeansUi,
+}) {
+  if (lifecycleHasUi(
+    binding.lifecycleState,
+    inactiveMeansUi: inactiveMeansUi,
+  )) {
+    return Future<void>.value();
+  }
+  final _UiLifecycleWaiter waiter = _UiLifecycleWaiter(
+    binding,
+    inactiveMeansUi: inactiveMeansUi,
+  );
   binding.addObserver(waiter);
   return waiter.done.future;
 }
 
 class _UiLifecycleWaiter with WidgetsBindingObserver {
-  _UiLifecycleWaiter(this.binding);
+  _UiLifecycleWaiter(this.binding, {required this.inactiveMeansUi});
 
   final WidgetsBinding binding;
+  final bool inactiveMeansUi;
   final Completer<void> done = Completer<void>();
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (done.isCompleted || !lifecycleHasUi(state)) return;
+    if (done.isCompleted ||
+        !lifecycleHasUi(state, inactiveMeansUi: inactiveMeansUi)) {
+      return;
+    }
     binding.removeObserver(this);
     done.complete();
   }
@@ -131,16 +164,19 @@ const String kHeadlessLaunchLogSource = 'Startup.headlessLeanEntry';
 
 /// `main()` 在 binding 初始化之后、任何完整初始化之前 await 这一关。
 ///
-/// [mobile] / [channel] / [nowMs] 供测试注入；生产用平台判断、正式通道与墙钟。
+/// [mobile] / [inactiveMeansUi] / [channel] / [nowMs] 供测试注入；生产用平台判断
+/// （[platformInactiveMeansUi]）、正式通道与墙钟。
 Future<HeadlessLaunchOutcome> holdHeadlessLaunchUntilUi({
   required WidgetsBinding binding,
   bool? mobile,
+  bool? inactiveMeansUi,
   MethodChannel channel = launchPresenceChannel,
   int Function()? nowMs,
 }) async {
   final int Function() clock =
       nowMs ?? () => DateTime.now().millisecondsSinceEpoch;
   final bool isMobile = mobile ?? (Platform.isAndroid || Platform.isIOS);
+  final bool inactiveIsUi = inactiveMeansUi ?? platformInactiveMeansUi;
   final LaunchPresence? presence = isMobile
       ? await queryLaunchPresence(channel: channel)
       : null;
@@ -148,6 +184,7 @@ Future<HeadlessLaunchOutcome> holdHeadlessLaunchUntilUi({
     mobile: isMobile,
     presence: presence,
     lifecycle: binding.lifecycleState,
+    inactiveMeansUi: inactiveIsUi,
   );
   final String? detail = presence == null || presence.detail.isEmpty
       ? null
@@ -156,7 +193,7 @@ Future<HeadlessLaunchOutcome> holdHeadlessLaunchUntilUi({
   if (entry == LaunchEntry.deferUntilUi) {
     final int start = clock();
     debugPrint('[Fushi] headless launch: lean entry, waiting for UI ($detail)');
-    await waitForUiLifecycle(binding);
+    await waitForUiLifecycle(binding, inactiveMeansUi: inactiveIsUi);
     waited = clock() - start;
   }
   return _lastOutcome = HeadlessLaunchOutcome(
