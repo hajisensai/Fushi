@@ -256,6 +256,7 @@ import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
+import 'package:fushi/src/media/video/video_control_popover_hover_dismiss.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_density.dart';
 import 'package:fushi/src/media/video/video_push_aside_column.dart';
@@ -329,8 +330,9 @@ import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/video/theme_song/video_theme_song_tracker.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart' show enginePaths;
 import 'package:fushi_engine/media/video/video_local_files.dart'
-    show isLocalVideoFilePath;
+    show adoptPickedVideoCopy, isLocalVideoFilePath;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
@@ -1663,10 +1665,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
   ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
   /// - [_controlsHoldJumpPanel]：「跳转记录」面板开着——面板期间控制条保持显示
-  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）。
+  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）；
+  /// - [_controlsHoldPopoverPress]：音量 / 倍速轻浮层里有指针按着（拖滑条，BUG-4250）
+  ///   ——拖动发的是 move 不是 hover，没有任何东西续命，控制条到点淡出、浮层随之关掉。
   final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
   bool _controlsHoldMenuOpen = false;
   bool _controlsHoldJumpPanel = false;
+  bool _controlsHoldPopoverPress = false;
 
   static const double _volumeStep = 5.0;
 
@@ -2203,10 +2208,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   _VideoControlPopoverPlacement? _activeControlPopoverPlacement;
   VideoControlSlot? _activeControlPopoverSourceSlot;
   VideoControlItem? _activeControlPopoverSourceItem;
-  bool _controlPopoverAnchorHovered = false;
-  bool _controlPopoverPanelHovered = false;
-  bool _controlPopoverPinned = false;
-  Timer? _controlPopoverHideTimer;
+
+  /// 浮层收起判据（固定 / 悬停 / 按住三条来源，BUG-4250）：hover 关闭也认按住，
+  /// 拖滑条拖出浮层边界时不收。
+  late final VideoControlPopoverHoverDismiss _controlPopoverHoverDismiss =
+      VideoControlPopoverHoverDismiss(onDismiss: _hideControlPopover);
+  bool get _controlPopoverPinned => _controlPopoverHoverDismiss.pinned;
 
   /// 画面内控制布局编辑模式（TODO-440）。用 [ValueNotifier] 而非普通 setState：
   /// 叠层渲染在 media_kit controls builder 里，全屏路由同样需要即时开关。
@@ -6476,17 +6483,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 泛化（好品味）：对**任意**缺失的本地视频都提供此动作，不对 app cache 目录加特例
   /// 分支——cache 被系统清空只是「文件失联」的一个子集。
   ///
-  /// 拾取复用 [pickRealFilePath]（TODO-1112 已建的统一真实路径拾取：安卓有全文件访问
-  /// 时走真实路径浏览器拿 content 之外的绝对路径、不复制到 cache；桌面 / iOS 及安卓降级
-  /// 走 file_picker）。不新造第二套文件通道。
+  /// 拾取复用 [pickRealFilePathDetailed]（TODO-1112 已建的统一真实路径拾取：安卓有全
+  /// 文件访问时走真实路径浏览器拿 content 之外的绝对路径、不复制到 cache；桌面 / iOS 及
+  /// 安卓降级走 file_picker）。不新造第二套文件通道。出处为临时副本（iOS import 模式 /
+  /// 安卓 cache）时先经 [adoptPickedVideoCopy] 挪进持久目录再落库——否则重链后的
+  /// 路径过一阵又会失效（反馈 HfXM-ECaE8）。
   ///
   /// 只处理单视频（非播放列表、非远端）；调用点已用 canDelete 判据门控。
   Future<void> _relinkMissingResource(VideoBookRow row) async {
-    final String? newPath = await pickRealFilePath(
-      context: context,
-      appModel: appModel,
+    final PickedFilePath? picked;
+    try {
+      picked = await pickRealFilePathDetailed(
+        context: context,
+        appModel: appModel,
+      );
+    } on PickedFileWithoutPathException {
+      // 与改动前 pickRealFilePath 的契约一致：平台没给 path 时按未选处理。
+      return;
+    }
+    if (picked == null || picked.path.isEmpty || !mounted) return;
+    final String newPath = await adoptPickedVideoCopy(
+      pickedPath: picked.path,
+      isRealPath: picked.isRealPath,
+      bookUid: row.bookUid,
+      copiesRoot: await enginePaths.pickedVideoCopiesDirectory(),
     );
-    if (newPath == null || newPath.isEmpty || !mounted) return;
+    if (!mounted) return;
     // 持久化新路径（只写 videoPath，进度 / 字幕 / 音轨 / 倍速等其它列不动，
     // updateLocalMediaPaths 用 Value.absent() 保持未触及）。
     await widget.repo.updateLocalMediaPaths(row.bookUid, videoPath: newPath);
@@ -6898,7 +6920,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleSearchRequests.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
-    _controlPopoverHideTimer?.cancel();
+    _controlPopoverHoverDismiss.dispose();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _controlLayoutNotifier.dispose();
@@ -9293,7 +9315,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
   void _syncControlsHold() {
-    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPanel;
+    _controlsHeld.value =
+        _controlsHoldMenuOpen ||
+        _controlsHoldJumpPanel ||
+        _controlsHoldPopoverPress;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
