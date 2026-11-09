@@ -258,7 +258,9 @@ class MethodChannelSecondScreenPlatform implements SecondScreenPlatform {
 /// lets go. Only Android has a platform side ([forCurrentPlatform] is null
 /// elsewhere, so single-screen platforms run today's code path).
 class SecondScreenHost {
-  SecondScreenHost(this._platform);
+  SecondScreenHost(this._platform) {
+    _displays.addListener(_syncAvailable);
+  }
 
   static SecondScreenHost? _shared;
 
@@ -296,6 +298,15 @@ class SecondScreenHost {
 
   /// Displays the panel could go on (never the app's own display).
   ValueListenable<List<SecondScreenDisplayInfo>> get displays => _displays;
+
+  /// This device has a usable second display: at least one display passed the
+  /// native capability check ([displays] is not empty). The one "dual-screen
+  /// device" signal for the app (second-screen settings rows, the game
+  /// stream's volume boost); follows displays appearing / going away.
+  ValueListenable<bool> get available => _available;
+  final ValueNotifier<bool> _available = ValueNotifier<bool>(false);
+
+  void _syncAvailable() => _available.value = _displays.value.isNotEmpty;
 
   /// The panel that is up and can receive messages; null when none is.
   ValueListenable<SecondScreenPanelPlacement?> get panel => _panel;
@@ -412,7 +423,9 @@ class SecondScreenHost {
   @visibleForTesting
   void dispose() {
     _platform.setEventHandler(null);
+    _displays.removeListener(_syncAvailable);
     _displays.dispose();
+    _available.dispose();
     _panel.dispose();
     _resets.dispose();
     unawaited(_messages.close());

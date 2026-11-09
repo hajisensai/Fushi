@@ -350,6 +350,7 @@ void main() {
     });
 
     test('a boosted receiver applies the gain on track arrival', () async {
+      receiver.setVolumeBoostAllowed(true);
       await receiver.connect(
         sessionId: 'session',
         clientId: 'phone',
@@ -377,6 +378,7 @@ void main() {
         );
       };
       await receiver.connect(sessionId: 'session', clientId: 'phone');
+      receiver.setVolumeBoostAllowed(true);
       final _AudioTrack track = _AudioTrack('a1');
       renderer.stream = _AudioStream(<MediaStreamTrack>[track]);
       receiver.applyLocalSettings(
@@ -394,12 +396,13 @@ void main() {
     });
 
     test('mute wins over the boost and unmuting restores the gain', () async {
+      receiver.setVolumeBoostAllowed(true);
       await receiver.connect(
         sessionId: 'session',
         clientId: 'phone',
         settings: const GameStreamVideoSettings(
           audio: false,
-          volumePercent: 400,
+          volumePercent: 500,
         ),
       );
       final _AudioTrack track = _AudioTrack('a1');
@@ -415,8 +418,66 @@ void main() {
       expect(volumeCalls, isEmpty);
       receiver.setAudioEnabled(true);
       expect(track.enabled, isTrue);
-      expect(volumeCalls, <(String, double)>[('a1', 4.0)]);
+      expect(volumeCalls, <(String, double)>[('a1', 5.0)]);
+      // Muting again while boosted: silent, no gain call.
+      receiver.setAudioEnabled(false);
+      expect(track.enabled, isFalse);
+      expect(volumeCalls, hasLength(1));
     });
+
+    test(
+      'without the boost (single screen) a stored 500 % plays at unity',
+      () async {
+        expect(receiver.volumeBoostAllowed, isFalse);
+        await receiver.connect(
+          sessionId: 'session',
+          clientId: 'phone',
+          settings: const GameStreamVideoSettings(volumePercent: 500),
+        );
+        final _AudioTrack track = _AudioTrack('a1');
+        peer.onTrack?.call(
+          RTCTrackEvent(
+            streams: <MediaStream>[
+              _AudioStream(<MediaStreamTrack>[track]),
+            ],
+            track: track,
+          ),
+        );
+        expect(volumeCalls, isEmpty, reason: 'Unity gain needs no call');
+        expect(track.enabled, isTrue);
+        // A live change of the stored value still applies unity only.
+        receiver.applyLocalSettings(
+          receiver.settings.copyWith(volumePercent: 400),
+        );
+        expect(volumeCalls, <(String, double)>[('a1', 1.0)]);
+        expect(receiver.settings.volumePercent, 400);
+      },
+    );
+
+    test(
+      'a second display appearing / going away recomputes the gain',
+      () async {
+        await receiver.connect(
+          sessionId: 'session',
+          clientId: 'phone',
+          settings: const GameStreamVideoSettings(volumePercent: 500),
+        );
+        final _AudioTrack track = _AudioTrack('a1');
+        renderer.stream = _AudioStream(<MediaStreamTrack>[track]);
+        receiver.setVolumeBoostAllowed(true);
+        expect(volumeCalls, <(String, double)>[('a1', 5.0)]);
+        receiver.setVolumeBoostAllowed(true);
+        expect(volumeCalls, hasLength(1), reason: 'No change, no call');
+        receiver.setVolumeBoostAllowed(false);
+        expect(volumeCalls.last, ('a1', 1.0));
+        // Muted: toggling the boost never re-enables or boosts the track.
+        receiver.setAudioEnabled(false);
+        final int calls = volumeCalls.length;
+        receiver.setVolumeBoostAllowed(true);
+        expect(track.enabled, isFalse);
+        expect(volumeCalls, hasLength(calls));
+      },
+    );
   });
 
   test('ready requires the first rendered video frame', () async {

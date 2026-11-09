@@ -233,7 +233,7 @@ class GameStreamVideoSettings {
   static const int minHeight = 360;
   static const int maxHeightLimit = 2160;
   static const int minVolumePercent = 100;
-  static const int maxVolumePercent = 400;
+  static const int maxVolumePercent = 500;
   static const int volumePercentStep = 25;
 
   /// Height cap of the encoded picture; width follows the window aspect.
@@ -253,14 +253,21 @@ class GameStreamVideoSettings {
   /// Receiver-side playback of the loopback audio track.
   final bool audio;
 
-  /// Receiver-side gain on the loopback audio track, 100–400 %. Process
+  /// Receiver-side gain on the loopback audio track, 100–500 %. Process
   /// loopback captures the game mix before the host's endpoint volume, so the
   /// decoded stream is often far below full scale. Local only: never part of
   /// the wire form ([toJson]); [audio] off still silences the track.
   final int volumePercent;
 
-  /// [volumePercent] as the linear gain WebRTC applies to a remote track.
+  /// [volumePercent] as the linear gain WebRTC applies to a remote track
+  /// (WebRTC accepts 0–10, so 5.0 is in range).
   double get volumeGain => volumePercent / 100;
+
+  /// The gain a receiver actually applies: [volumeGain] only where the boost
+  /// is offered ([boostAllowed], decided by the app), unity everywhere else,
+  /// so a stored / synced value cannot boost a device that hides the slider.
+  double effectiveVolumeGain({required bool boostAllowed}) =>
+      boostAllowed ? volumeGain : 1.0;
 
   /// Width cap matching [maxHeight] at 16:9, rounded to even pixels.
   int get maxWidth => ((maxHeight * 16 / 9) / 2).round() * 2;

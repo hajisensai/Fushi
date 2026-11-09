@@ -175,4 +175,11 @@
   `persist.sys.audio.value`），主屏串流 / 视频 / 有声书 / 音乐都跟着它走，主音量 `STREAM_MUSIC` 不变。判定：在副屏有
   根任务就进名单，除非焦点栈顶是本应用、且它请求焦点那一刻全系统最近一次 focused-app 变化是本应用在主屏的 Activity
   （面板每次随宿主 onStart 重新启动，正常流程下最近一次总是面板，所以几乎总被衰减）。应用侧没有干净的退出办法
-  （候选方案见 BUG-4243），用户解法是点一下副屏把音量调到最大（15 档 = 不衰减）。15 档时串流仍偏小是主机采集的源电平问题（各接收端实测相同，见 BUG-4243 备注），接收端可用串流设置里的「串流音量」（100–400%）补偿。
+  （候选方案见 BUG-4243），用户解法是点一下副屏把音量调到最大（15 档 = 不衰减）。15 档时串流仍偏小是主机采集的源电平问题，见下一条。
+- 游戏串流音频在**每台接收端**都偏小：根因是主机采集电平（Windows process loopback 取端点音量之前的游戏混音），
+  同一场景下 Thor 与 Galaxy S23 Ultra 的 WebRTC playout 电平实测相同（S23 听感更大来自它机内的音效 / 功放链路）。
+  当前缓解只有接收端串流设置里的「串流音量」（100–500%，默认 100%，`GameStreamVideoSettings.volumePercent`，
+  不上线），且**只在双屏设备上出现**：判据是 `SecondScreenHost.available`（宿主的显示列表非空，即原生能力检查通过的
+  副屏存在），串流页从 `GameStreamPanelHost.displays` 取同一信号，库页走 `GameStreamLibraryServices.volumeBoostAvailable`；
+  单屏设备上滑块隐藏，接收端增益恒为 1.0（`effectiveVolumeGain(boostAllowed: false)`），同步 / 备份过来的存值不会放大；
+  副屏出现 / 消失时实时重算。未做（用户叫停）：主机端按端点音量补偿采集电平；Windows 前台输入「input was rejected」修复。

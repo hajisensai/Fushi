@@ -335,6 +335,13 @@ class _GameStreamPageState extends State<GameStreamPage>
   GameStreamTouchMode _touchMode = GameStreamTouchMode.direct;
   Offset _trackpadCursor = const Offset(.5, .5);
   late GameStreamVideoSettings _settings = widget.settings;
+
+  /// The receiver-only "Stream volume" boost is offered (slider shown, gain
+  /// applied) only on a device with a usable second display: the host's
+  /// display list is not empty, i.e. the same signal as
+  /// `SecondScreenHost.available` (the native capability check); followed
+  /// live.
+  final ValueNotifier<bool> _volumeBoostAvailable = ValueNotifier<bool>(false);
   late GameStreamLookupLayout _lookupLayout = widget.lookupLayout;
   late GameStreamLookupLayout _committedLookupLayout = widget.lookupLayout;
 
@@ -372,6 +379,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     // lookup mode (hold L1) and R1 panel drive must not take one, also when
     // this stream leaves the second screen to the companion.
     widget.controllerLookupMode.claimRawInput(this);
+    _syncVolumeBoost();
     unawaited(_startCompanion());
   }
 
@@ -403,6 +411,7 @@ class _GameStreamPageState extends State<GameStreamPage>
       );
       widget.receiver?.addListener(_onReceiverChanged);
       widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
+      _syncVolumeBoost();
     }
   }
 
@@ -416,6 +425,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
     widget.inputComposer.removeListener(_onReceiverChanged);
     _stopCompanion();
+    _volumeBoostAvailable.dispose();
     widget.controllerLookupMode.releaseRawInput(this);
     _statsTimer?.cancel();
     _videoFocus.dispose();
@@ -430,6 +440,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     display.displays.addListener(_placeCompanion);
+    display.displays.addListener(_syncVolumeBoost);
     display.attached.addListener(_onCompanionAttached);
     display.resets.addListener(_onCompanionReset);
     _companionMessages = display.messages.listen(_onCompanionMessage);
@@ -446,6 +457,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     }
     if (!mounted) return;
     _companionStarted = true;
+    _syncVolumeBoost();
     _placeCompanion();
   }
 
@@ -453,11 +465,22 @@ class _GameStreamPageState extends State<GameStreamPage>
     final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     display.displays.removeListener(_placeCompanion);
+    display.displays.removeListener(_syncVolumeBoost);
     display.attached.removeListener(_onCompanionAttached);
     display.resets.removeListener(_onCompanionReset);
     unawaited(_companionMessages?.cancel());
     if (_companionDisplayId != null) unawaited(display.dismiss());
     _companionDisplayId = null;
+  }
+
+  /// Re-evaluates whether this device offers the stream volume boost (a
+  /// display appeared / went away) and hands the result to the receiver, which
+  /// falls back to unity gain when it is false.
+  void _syncVolumeBoost() {
+    final bool available =
+        widget.companionDisplay?.displays.value.isNotEmpty ?? false;
+    _volumeBoostAvailable.value = available;
+    widget.receiver?.setVolumeBoostAllowed(available);
   }
 
   /// Puts the panel on the first second display when the setting allows it,
@@ -1822,9 +1845,11 @@ class _GameStreamPageState extends State<GameStreamPage>
   Future<void> _openSettings() async {
     setState(() => _lookupSuspended = true);
     try {
+      _syncVolumeBoost();
       final GameStreamVideoSettings? next = await showGameStreamSettingsSheet(
         context,
         initial: _settings,
+        volumeAvailable: _volumeBoostAvailable,
       );
       if (next == null || !mounted) return;
       final GameStreamVideoSettings previous = _settings;

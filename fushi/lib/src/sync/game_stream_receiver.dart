@@ -347,11 +347,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
         renderer.srcObject = event.streams.first;
         // Remote tracks arrive enabled at unity gain; only a muted or boosted
         // receiver has to touch them.
-        if (!_settings.audio ||
-            _settings.volumePercent !=
-                const GameStreamVideoSettings().volumePercent) {
-          _applyAudio();
-        }
+        if (!_settings.audio || _effectiveVolumeGain != 1.0) _applyAudio();
         _notify();
       };
       connection.onDataChannel = (RTCDataChannel channel) {
@@ -618,6 +614,22 @@ class FushiGameStreamReceiver extends ChangeNotifier
     _notify();
   }
 
+  /// Whether the stored [GameStreamVideoSettings.volumePercent] may boost
+  /// playback here. The app decides (the stream page allows it only on a
+  /// device with a usable second display); until then, and whenever it is
+  /// false, the track plays at unity gain whatever value is stored.
+  bool get volumeBoostAllowed => _volumeBoostAllowed;
+  bool _volumeBoostAllowed = false;
+
+  void setVolumeBoostAllowed(bool allowed) {
+    if (allowed == _volumeBoostAllowed) return;
+    _volumeBoostAllowed = allowed;
+    _applyAudio();
+  }
+
+  double get _effectiveVolumeGain =>
+      _settings.effectiveVolumeGain(boostAllowed: _volumeBoostAllowed);
+
   /// Mute wins: a disabled track plays nothing whatever its gain; the gain is
   /// (re)applied whenever the track plays.
   void _applyAudio() {
@@ -627,7 +639,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
       track.enabled = _settings.audio;
       if (!_settings.audio) continue;
       unawaited(
-        _setTrackVolume(_settings.volumeGain, track).catchError(
+        _setTrackVolume(_effectiveVolumeGain, track).catchError(
           (Object error, StackTrace stack) =>
               engineLog.log('GameStream.volume', error, stack),
         ),

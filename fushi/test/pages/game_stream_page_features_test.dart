@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -139,57 +140,125 @@ void main() {
     );
   });
 
-  testWidgets('settings sheet edits the receiver-only stream volume', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(900, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    GameStreamVideoSettings? saved;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (BuildContext context) => TextButton(
-            onPressed: () async {
-              saved = await showGameStreamSettingsSheet(
-                context,
-                initial: const GameStreamVideoSettings(),
-              );
-            },
-            child: const Text('open'),
+  group('stream volume slider', () {
+    Future<void> openSheet(
+      WidgetTester tester, {
+      required ValueChanged<GameStreamVideoSettings?> onSaved,
+      GameStreamVideoSettings initial = const GameStreamVideoSettings(),
+      ValueListenable<bool>? volumeAvailable,
+    }) async {
+      tester.view.physicalSize = const Size(900, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () async {
+                onSaved(
+                  await showGameStreamSettingsSheet(
+                    context,
+                    initial: initial,
+                    volumeAvailable: volumeAvailable,
+                  ),
+                );
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    final Finder row = find.byKey(GameStreamSettingsSheet.volumeKey);
-    await tester.scrollUntilVisible(
-      row,
-      200,
-      scrollable: find
-          .descendant(
-            of: find.byType(GameStreamSettingsSheet),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('100%'), findsOneWidget);
-    final Slider slider = tester.widget<Slider>(
-      find.descendant(of: row, matching: find.byType(Slider)),
-    );
-    expect(slider.min, GameStreamVideoSettings.minVolumePercent);
-    expect(slider.max, GameStreamVideoSettings.maxVolumePercent);
-    expect(slider.divisions, 12);
-    slider.onChanged!(250);
-    await tester.pumpAndSettle();
-    expect(find.text('250%'), findsOneWidget);
-    await tester.tap(find.byKey(GameStreamSettingsSheet.saveKey));
-    await tester.pumpAndSettle();
-    expect(saved?.volumePercent, 250);
-    expect(saved?.sameHostParameters(const GameStreamVideoSettings()), isTrue);
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> scrollToEnd(WidgetTester tester) async {
+      await tester.drag(
+        find
+            .descendant(
+              of: find.byType(GameStreamSettingsSheet),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+        const Offset(0, -2000),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('dual screen: 100–500 %, default 100 %, edits are saved', (
+      WidgetTester tester,
+    ) async {
+      GameStreamVideoSettings? saved;
+      await openSheet(
+        tester,
+        onSaved: (GameStreamVideoSettings? value) => saved = value,
+        volumeAvailable: ValueNotifier<bool>(true),
+      );
+      await scrollToEnd(tester);
+      final Finder row = find.byKey(GameStreamSettingsSheet.volumeKey);
+      expect(row, findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+      final Slider slider = tester.widget<Slider>(
+        find.descendant(of: row, matching: find.byType(Slider)),
+      );
+      expect(slider.min, 100);
+      expect(slider.max, 500);
+      expect(slider.value, 100);
+      expect(slider.divisions, 16);
+      slider.onChanged!(500);
+      await tester.pumpAndSettle();
+      expect(find.text('500%'), findsOneWidget);
+      await tester.tap(find.byKey(GameStreamSettingsSheet.saveKey));
+      await tester.pumpAndSettle();
+      expect(saved?.volumePercent, 500);
+      expect(saved?.volumeGain, 5.0);
+      expect(
+        saved?.sameHostParameters(const GameStreamVideoSettings()),
+        isTrue,
+      );
+    });
+
+    testWidgets('single screen: hidden, and a stored value is kept as is', (
+      WidgetTester tester,
+    ) async {
+      GameStreamVideoSettings? saved;
+      await openSheet(
+        tester,
+        onSaved: (GameStreamVideoSettings? value) => saved = value,
+        initial: const GameStreamVideoSettings(volumePercent: 300),
+        volumeAvailable: ValueNotifier<bool>(false),
+      );
+      await scrollToEnd(tester);
+      expect(find.byKey(GameStreamSettingsSheet.volumeKey), findsNothing);
+      expect(find.text(t.game_stream_settings_volume), findsNothing);
+      await tester.tap(find.byKey(GameStreamSettingsSheet.saveKey));
+      await tester.pumpAndSettle();
+      expect(saved?.volumePercent, 300);
+    });
+
+    testWidgets('no capability passed: hidden', (WidgetTester tester) async {
+      await openSheet(tester, onSaved: (_) {});
+      await scrollToEnd(tester);
+      expect(find.byKey(GameStreamSettingsSheet.volumeKey), findsNothing);
+    });
+
+    testWidgets('follows a display appearing / going away while open', (
+      WidgetTester tester,
+    ) async {
+      final ValueNotifier<bool> available = ValueNotifier<bool>(false);
+      addTearDown(available.dispose);
+      await openSheet(tester, onSaved: (_) {}, volumeAvailable: available);
+      await scrollToEnd(tester);
+      expect(find.byKey(GameStreamSettingsSheet.volumeKey), findsNothing);
+      available.value = true;
+      await tester.pumpAndSettle();
+      await scrollToEnd(tester);
+      expect(find.byKey(GameStreamSettingsSheet.volumeKey), findsOneWidget);
+      available.value = false;
+      await tester.pumpAndSettle();
+      expect(find.byKey(GameStreamSettingsSheet.volumeKey), findsNothing);
+    });
   });
 
   testWidgets('two-finger tap right-clicks on a host that supports it', (

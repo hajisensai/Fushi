@@ -8,9 +8,12 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/game_stream_companion_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
+import 'package:fushi/src/sync/game_stream_receiver.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:material_ui/material_ui.dart';
@@ -153,6 +156,49 @@ class _Transport implements GameStreamTransport {
   );
 }
 
+/// A renderer that never touches the plugin, holding one remote audio track.
+class _Renderer extends RTCVideoRenderer {
+  MediaStream? stream;
+
+  @override
+  MediaStream? get srcObject => stream;
+
+  @override
+  set srcObject(MediaStream? value) => stream = value;
+}
+
+class _AudioTrack implements MediaStreamTrack {
+  @override
+  String get id => 'a1';
+
+  @override
+  bool enabled = true;
+
+  @override
+  String get kind => 'audio';
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _AudioStream implements MediaStream {
+  _AudioStream(this.track);
+
+  final MediaStreamTrack track;
+
+  @override
+  List<MediaStreamTrack> getAudioTracks() => <MediaStreamTrack>[track];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Future<void> _pumpFrames(WidgetTester tester) async {
+  for (int i = 0; i < 10; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 class _Harness {
   _Harness(this.tester, this.display, this.lookup, this.controller, this.sent);
 
@@ -167,6 +213,8 @@ class _Harness {
     WidgetTester tester, {
     _FakeCompanionDisplay? display,
     GameStreamSecondScreen secondScreen = GameStreamSecondScreen.auto,
+    FushiGameStreamReceiver? receiver,
+    GameStreamVideoSettings settings = const GameStreamVideoSettings(),
   }) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
@@ -207,6 +255,8 @@ class _Harness {
           inputComposer: composer,
           lookupController: controller,
           videoPlaceholder: const Text('frame'),
+          receiver: receiver,
+          settings: settings,
           companionDisplay: fake,
           secondScreen: secondScreen,
           onSecondScreenChanged: (GameStreamSecondScreen value) =>
@@ -214,7 +264,13 @@ class _Harness {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    // A receiver that never connects keeps the "waiting for video" progress
+    // bar running, so those pages never settle: pump fixed frames instead.
+    if (receiver == null) {
+      await tester.pumpAndSettle();
+    } else {
+      await _pumpFrames(tester);
+    }
     return harness;
   }
 
@@ -445,6 +501,91 @@ void main() {
     expect(h.display.shown, isEmpty);
     expect(find.byKey(GameStreamPage.transcriptKey), findsOneWidget);
     expect(h.display.sent, isEmpty);
+  });
+
+  group('stream volume boost follows the second display', () {
+    late List<double> gains;
+    late _AudioTrack track;
+    late FushiGameStreamReceiver receiver;
+
+    setUp(() {
+      gains = <double>[];
+      track = _AudioTrack();
+      receiver = FushiGameStreamReceiver(
+        client: FushiGameStreamClient(transport: _Transport()),
+        videoRenderer: _Renderer()..stream = _AudioStream(track),
+        setTrackVolume: (double gain, MediaStreamTrack track) async =>
+            gains.add(gain),
+      );
+      // The session opener connects the receiver with the stored settings.
+      receiver.applyLocalSettings(
+        const GameStreamVideoSettings(volumePercent: 500),
+      );
+    });
+
+    tearDown(() => receiver.dispose());
+
+    Future<bool> sliderShown(WidgetTester tester) async {
+      await tester.tap(find.byTooltip(t.game_stream_settings_title));
+      await _pumpFrames(tester);
+      await tester.drag(
+        find
+            .descendant(
+              of: find.byType(GameStreamSettingsSheet),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+        const Offset(0, -2000),
+      );
+      await _pumpFrames(tester);
+      final bool shown = find
+          .byKey(GameStreamSettingsSheet.volumeKey)
+          .evaluate()
+          .isNotEmpty;
+      await tester.tapAt(const Offset(10, 10));
+      await _pumpFrames(tester);
+      return shown;
+    }
+
+    testWidgets('dual screen: a stored 500 % plays at 5.0, slider shown', (
+      WidgetTester tester,
+    ) async {
+      final _Harness h = await _Harness.pump(
+        tester,
+        receiver: receiver,
+        settings: const GameStreamVideoSettings(volumePercent: 500),
+      );
+      expect(receiver.volumeBoostAllowed, isTrue);
+      expect(gains.last, 5.0);
+      expect(await sliderShown(tester), isTrue);
+
+      // The display goes away: unity gain, no slider; back: boosted again.
+      h.display.setDisplays(const <SecondScreenDisplayInfo>[]);
+      await _pumpFrames(tester);
+      expect(receiver.volumeBoostAllowed, isFalse);
+      expect(gains.last, 1.0);
+      expect(await sliderShown(tester), isFalse);
+      h.display.setDisplays(const <SecondScreenDisplayInfo>[_bottomScreen]);
+      await _pumpFrames(tester);
+      expect(gains.last, 5.0);
+    });
+
+    testWidgets('single screen: no slider and unity gain', (
+      WidgetTester tester,
+    ) async {
+      await _Harness.pump(
+        tester,
+        receiver: receiver,
+        settings: const GameStreamVideoSettings(volumePercent: 500),
+        display: _FakeCompanionDisplay(
+          displays: const <SecondScreenDisplayInfo>[],
+        ),
+      );
+      expect(receiver.volumeBoostAllowed, isFalse);
+      expect(gains.where((double gain) => gain != 1.0), isEmpty);
+      expect(track.enabled, isTrue);
+      expect(await sliderShown(tester), isFalse);
+    });
   });
 
   testWidgets('setting Off keeps everything on this screen and is saved', (

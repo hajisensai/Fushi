@@ -100,7 +100,7 @@ class SecondScreenController extends ChangeNotifier {
   }
 
   /// A second screen exists (whatever the setting says).
-  bool get displayAvailable => display != null;
+  bool get displayAvailable => _host?.available.value ?? false;
 
   /// The companion is up on the second screen: route lookups and controls
   /// there. False means today's single-screen behaviour.

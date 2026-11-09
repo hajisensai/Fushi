@@ -39,6 +39,21 @@ void main() {
     expect(platform.calls, hasLength(1), reason: 'already placed');
   });
 
+  test('available follows the capability-checked display list', () async {
+    expect(host.available.value, isTrue);
+    platform.setDisplays(const <SecondScreenDisplayInfo>[]);
+    expect(host.available.value, isFalse);
+    platform.setDisplays(const <SecondScreenDisplayInfo>[thorBottomScreen]);
+    expect(host.available.value, isTrue);
+    final SecondScreenHost unstarted = SecondScreenHost(
+      FakeSecondScreenPlatform(
+        displays: <SecondScreenDisplayInfo>[thorBottomScreen],
+      ),
+    );
+    addTearDown(unstarted.dispose);
+    expect(unstarted.available.value, isFalse, reason: 'Nothing listed yet');
+  });
+
   test('the game stream takes the screen and gives it back', () async {
     await host.request(_companion, 4);
     await host.request(_stream, 4);

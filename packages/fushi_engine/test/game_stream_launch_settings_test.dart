@@ -129,7 +129,9 @@ void main() {
         GameStreamVideoSettings.fromJson(boosted.toOverridesJson()),
         boosted,
       );
-      // Clamped into 100–400 %.
+      // Clamped into 100–500 %.
+      expect(GameStreamVideoSettings.minVolumePercent, 100);
+      expect(GameStreamVideoSettings.maxVolumePercent, 500);
       expect(
         GameStreamVideoSettings.fromJson(<String, Object?>{
           'volumePercent': 9000,
@@ -145,6 +147,20 @@ void main() {
           'volumePercent': 'loud',
         }).volumePercent,
         100,
+      );
+    });
+
+    test('the boost applies only where the app allows it', () {
+      const GameStreamVideoSettings loudest = GameStreamVideoSettings(
+        volumePercent: 500,
+      );
+      expect(loudest.volumeGain, 5.0);
+      expect(loudest.effectiveVolumeGain(boostAllowed: true), 5.0);
+      // Single-screen device: a stored / synced value never boosts.
+      expect(loudest.effectiveVolumeGain(boostAllowed: false), 1.0);
+      expect(
+        const GameStreamVideoSettings().effectiveVolumeGain(boostAllowed: true),
+        1.0,
       );
     });
 
