@@ -1575,6 +1575,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         );
       });
       unawaited(_watchTracker?.stop());
+      // 采样已同步停下：计时门再落定一次，时钟读口给 null → 回报 running=false，
+      // 跨面仲裁里的登记随之让出，重放期间浏览器扩展视频照常入账。
+      _studyClockGate.sync();
       if (_popup.hasVisiblePopup) _popNestedPopupAt(0);
       // 封面不带站点控制栏（Dart 驱动的 seek/pause 会让控件浮出来）；字幕轨关掉、音轨对齐。
       await _setPlayerChromeHidden(true);

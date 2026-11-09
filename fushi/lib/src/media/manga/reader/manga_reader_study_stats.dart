@@ -1,7 +1,7 @@
 /// 漫画阅读器的学习计时 / 统计侧栏用的纯函数（无 widget 依赖，便于定向测试）。
 library;
 
-import 'package:fushi/src/reader/reader_statistics_sheet.dart'
+import 'package:fushi/src/reader/reader_stats_position.dart'
     show ReaderPositionSnapshot;
 
 /// 统计侧栏（`ReaderStatisticsSheet(media: ReaderStatsMedia.manga)`）的位置读口：

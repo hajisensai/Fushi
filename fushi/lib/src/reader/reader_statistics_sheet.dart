@@ -42,6 +42,7 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
+import 'package:fushi/src/reader/reader_stats_position.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart'
     show
@@ -70,13 +71,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
-/// 侧栏服务的学习面。决定位置卡 / 预计读完 / 指标卡的单位与文案，账本与骨架不变。
-///
-/// - [book]：EPUB——本章 / 全书字数位置，按字速预计读完；
-/// - [manga]：漫画——本章页位置 + 章序，按页速预计本章读完，指标以页数为主；
-/// - [video]：视频——本集播放位置 + 集序，本集剩余片长（按倍速），指标里的字数是
-///   字幕字数。
-enum ReaderStatsMedia { book, manga, video }
+export 'package:fushi/src/reader/reader_stats_position.dart';
 
 /// 本书某个统计日的阅读量（迷你柱状图的一根柱子）。
 typedef ReaderBookDayStat = ({String dateKey, int chars, int ms});
@@ -109,14 +104,6 @@ const ReaderBookStatTotals kEmptyReaderBookStatTotals = (
   allPages: 0,
   last7Days: <ReaderBookDayStat>[],
 );
-
-/// 阅读位置读口：本章 / 全书的已读与总字数（任一未知为 null）。
-typedef ReaderPositionSnapshot = ({
-  int? chapterCurrent,
-  int? chapterTotal,
-  int? bookCurrent,
-  int? bookTotal,
-});
 
 /// 从阅读域日面事实里切出**本书**的今日 / 累计。身份优先 `mediaKey == bookKey`；
 /// legacy 无身份行按 title 回退（与阅读统计页的按书分组同一规则）。

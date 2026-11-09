@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
 
 /// 视频学习时长跨面去重：app 内视频与浏览器扩展视频同时在播时只一边入账。

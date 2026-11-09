@@ -8,7 +8,7 @@
 //    （libmpv / WebView），只能钉源码。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 
 String _read(String path) =>
