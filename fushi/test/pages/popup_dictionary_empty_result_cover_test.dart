@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -32,6 +33,11 @@ class _EmptyResultAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 300;
+
+  // 外部查词卡宽高读「app 外覆盖窗有效最大宽高」（K9YPrjtZE1），本桩没有 prefsRepo。
+  @override
+  LookupSize get overlayLookupEffectiveSize =>
+      LookupSize(popupMaxWidth, kLookupPopupDefaultHeight);
 
   @override
   double get dictionaryFontSize => 16;
