@@ -113,15 +113,15 @@ void main() {
 
   tearDown(() {
     debugSetSyncHttpClient(null);
-    OneDriveSyncBackend.instance.accessToken = null;
-    DropboxSyncBackend.instance.accessToken = null;
+    OneDriveSyncBackend.instance.debugSetAccessToken(null);
+    DropboxSyncBackend.instance.debugSetAccessToken(null);
   });
 
   test('OneDrive：octet-stream 下载的 JSON 按 UTF-8 还原，多轮往返不再多编一层', () async {
     final _FakeOneDrive drive = _FakeOneDrive();
     debugSetSyncHttpClient(MockClient(drive.handle));
     final OneDriveSyncBackend backend = OneDriveSyncBackend.instance
-      ..accessToken = 't';
+      ..debugSetAccessToken('t');
 
     await backend.putJsonAsset('ns', 'agg.json', payload);
     Object? current = payload;
@@ -142,7 +142,7 @@ void main() {
       }),
     );
     final DropboxSyncBackend backend = DropboxSyncBackend.instance
-      ..accessToken = 't';
+      ..debugSetAccessToken('t');
 
     expect(await backend.getJsonAsset('/fushi/agg.json'), payload);
   });
@@ -151,7 +151,7 @@ void main() {
     final _FakeOneDrive drive = _FakeOneDrive();
     debugSetSyncHttpClient(MockClient(drive.handle));
     final OneDriveSyncBackend backend = OneDriveSyncBackend.instance
-      ..accessToken = 't';
+      ..debugSetAccessToken('t');
     final Map<String, Object?> big = <String, Object?>{
       'blob': '字' * (kOneDriveSimpleUploadMaxBytes ~/ 3 + 1024),
     };
@@ -176,7 +176,7 @@ void main() {
     final _FakeOneDrive drive = _FakeOneDrive();
     debugSetSyncHttpClient(MockClient(drive.handle));
     final OneDriveSyncBackend backend = OneDriveSyncBackend.instance
-      ..accessToken = 't';
+      ..debugSetAccessToken('t');
 
     await backend.putJsonAsset('ns', 'small.json', payload);
 
