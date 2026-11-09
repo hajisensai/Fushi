@@ -55,6 +55,44 @@ void main() {
       expect(payload.viewportWidth, 1904);
     });
 
+    test('句序号 / 文档 id / 语音缓冲区声明透传到帧；旧载荷缺字段按默认', () {
+      final Map<String, Object?> withSeq =
+          jsonDecode(_payload()) as Map<String, Object?>
+            ..['doc'] = 'dabc'
+            ..['ln'] = 7
+            ..['vo'] = true;
+      final TyranoDomFrame frame = _frame(
+        TyranoDomFrameAssembler(),
+        jsonEncode(withSeq),
+      );
+      expect(frame.documentId, 'dabc');
+      expect(frame.lineSeq, 7);
+      expect(frame.voiceDeclared, isTrue);
+      final TyranoDomFrame legacy = _frame(
+        TyranoDomFrameAssembler(),
+        _payload(),
+      );
+      expect(legacy.documentId, '');
+      expect(legacy.lineSeq, 0);
+      expect(legacy.voiceDeclared, isFalse);
+    });
+
+    test('带 k 的语音消息不是快照', () {
+      expect(
+        parseTyranoDomPayload(
+          jsonEncode(<String, Object?>{
+            'v': 1,
+            'k': 'voice',
+            'doc': 'd',
+            'ln': 1,
+            'path': './data/sound/v.ogg',
+            'glyphs': <Object?>[],
+          }),
+        ),
+        isNull,
+      );
+    });
+
     test('版本不符 / 非 JSON / 字段缺失返回 null', () {
       expect(parseTyranoDomPayload('not json'), isNull);
       expect(parseTyranoDomPayload('[]'), isNull);

@@ -6,6 +6,7 @@ import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_cdp.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_observer_script.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_session.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_voice.dart';
 import 'package:test/test.dart';
 
 /// /json/list 实测响应的结构（Electron 24），URL 与标题为自造。
@@ -229,6 +230,43 @@ void main() {
       expect(await frames.moveNext(), isFalse);
       expect(await session.done, TyranoDomEndReason.disconnected);
       expect(session.isEnded, isTrue);
+    });
+
+    test('语音消息走 voices 流：页面 URL 由会话按 CDP 目标填，不进帧流', () async {
+      final _FakeCdp fake = await _FakeCdp.start(emptyPolls: 0);
+      addTearDown(() => fake.server.close(force: true));
+      final TyranoDomSession session = await TyranoDomSession.connect(
+        port: fake.port,
+        pollInterval: const Duration(milliseconds: 20),
+        timeout: const Duration(seconds: 10),
+      );
+      await fake.installed.future;
+      final StreamIterator<TyranoDomFrame> frames =
+          StreamIterator<TyranoDomFrame>(session.frames);
+      final StreamIterator<TyranoDomVoiceEvent> voices =
+          StreamIterator<TyranoDomVoiceEvent>(session.voices);
+      fake.pushBinding(
+        kTyranoDomBindingName,
+        jsonEncode(<String, Object?>{
+          'v': 1,
+          'k': 'voice',
+          'doc': 'd1',
+          'ln': 2,
+          'buf': '1',
+          'path': './data/sound/vo/a/1.ogg',
+          'b64': false,
+        }),
+      );
+      // 正文里出现 "k" 字样的快照仍是快照。
+      fake.pushBinding(kTyranoDomBindingName, _framePayload('k'));
+      expect(await voices.moveNext(), isTrue);
+      expect(voices.current.lineSeq, 2);
+      expect(voices.current.storagePath, './data/sound/vo/a/1.ogg');
+      expect(voices.current.pageUrl, 'file:///C:/game/index.html');
+      expect(await frames.moveNext(), isTrue);
+      expect(frames.current.text, 'k');
+      await session.close();
+      expect(await voices.moveNext(), isFalse);
     });
 
     test('close() 卸载脚本、移除绑定与新文档脚本', () async {
