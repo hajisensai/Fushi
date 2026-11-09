@@ -70,6 +70,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4243](bugs/BUG-4243-ios-background-launch-inactive-gate-full-init.md) | ✅ | ✅ | iOS 后台拉起时 inactive 被精简入口当成有界面，完整初始化在后台照跑并被判闪退 |
+> 共 3807 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4243](bugs/BUG-4243-audiobook-delay-not-applied-to-cue-seek.md) | ✅ | ✅ | 有声书音画同步偏移未作用于点句跳转 / 单句试听停止点 / 上下句导航 |
 | [BUG-4242](bugs/BUG-4242-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
 | [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
