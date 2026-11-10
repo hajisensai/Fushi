@@ -789,7 +789,7 @@ void main() {
     expect(await db.getAllMediaCollections(), isEmpty);
   });
 
-  group('BUG-4349 按文件夹改按作品后系列页散成每集（反馈 YUH015QaF2）', () {
+  group('BUG-4353 按文件夹改按作品后系列页散成每集（反馈 YUH015QaF2）', () {
     Future<Map<String, int>> folded() async => applyVideoFolderCollectionPolicy(
       primary: await db.getPrimaryCollectionIdByEntry(),
       collections: await db.getAllMediaCollections(),
