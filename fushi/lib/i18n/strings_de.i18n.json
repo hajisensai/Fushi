@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "Keine aktivierten Videoquellen. Installieren und aktivieren Sie zuerst eine Erweiterung.",
   "video_online_sources_hint": "Aniyomi-Erweiterungen von Drittanbietern (extensions-lib 14). Die Inhalte stammen von der Website der jeweiligen Erweiterung und werden im integrierten Player abgespielt.",
   "video_online_stream_none": "Für diese Folge wurde kein abspielbarer Stream geliefert.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Leer lassen, um den enthaltenen API-Schlüssel der App zu verwenden.",
   "video_opensubtitles_endpoint": "API-Endpunkt",
   "video_opensubtitles_languages_hint": "Kommagetrennte Sprachcodes, z. B. zh-CN,en,ja",

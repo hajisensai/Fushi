@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "没有已启用的视频源。请先安装并启用视频扩展。",
   "video_online_sources_hint": "第三方 Aniyomi 扩展（extensions-lib 14）。内容来自各扩展对应的站点，在内置播放器中播放。",
   "video_online_stream_none": "该集没有可播放的流。",
+  "video_online_stream_torrent": "该源返回的是种子（磁力链接），无法直接在线播放。请先下载再观看。",
+  "video_online_stream_torrent_download": "用种子下载",
   "video_opensubtitles_app_key_hint": "留空使用应用内置 API 密钥。",
   "video_opensubtitles_endpoint": "API 端点",
   "video_opensubtitles_languages_hint": "用逗号分隔语言代码，例如 zh-CN,en,ja",

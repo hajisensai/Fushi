@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "Etkin video kaynağı yok. Önce bir eklenti yükleyip etkinleştirin.",
   "video_online_sources_hint": "Üçüncü taraf Aniyomi eklentileri (extensions-lib 14). İçerik her eklentinin web sitesinden gelir ve yerleşik oynatıcıda oynatılır.",
   "video_online_stream_none": "Bu bölüm oynatılabilir bir akış döndürmedi.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Uygulamayla gelen API anahtarını kullanmak için boş bırakın.",
   "video_opensubtitles_endpoint": "API uç noktası",
   "video_opensubtitles_languages_hint": "Virgülle ayrılmış dil kodları, örneğin zh-CN,en,ja",

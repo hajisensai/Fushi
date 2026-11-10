@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "No enabled video sources. Install and enable an extension first.",
   "video_online_sources_hint": "Third-party Aniyomi extensions (extensions-lib 14). Content comes from each extension's website and plays in the built-in player.",
   "video_online_stream_none": "This episode returned no playable stream.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Leave blank to use the bundled app API key.",
   "video_opensubtitles_endpoint": "API endpoint",
   "video_opensubtitles_languages_hint": "Comma-separated language codes, for example zh-CN,en,ja",

@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "ไม่มีแหล่งวิดีโอที่เปิดใช้งาน ติดตั้งและเปิดใช้งานส่วนขยายก่อน",
   "video_online_sources_hint": "ส่วนขยาย Aniyomi จากบุคคลที่สาม (extensions-lib 14) เนื้อหามาจากเว็บไซต์ของแต่ละส่วนขยายและเล่นในเครื่องเล่นในตัว",
   "video_online_stream_none": "ตอนนี้ไม่มีสตรีมที่เล่นได้",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "เว้นว่างไว้เพื่อใช้คีย์ API ที่มีอยู่ในแอป",
   "video_opensubtitles_endpoint": "จุดเชื่อมต่อ API",
   "video_opensubtitles_languages_hint": "รหัสภาษาคั่นด้วยเครื่องหมายจุลภาค เช่น zh-CN,en,ja",

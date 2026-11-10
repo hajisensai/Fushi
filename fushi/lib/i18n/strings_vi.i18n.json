@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "Chưa có nguồn video nào được bật. Hãy cài đặt và bật tiện ích trước.",
   "video_online_sources_hint": "Tiện ích Aniyomi của bên thứ ba (extensions-lib 14). Nội dung lấy từ trang web của từng tiện ích và phát trong trình phát tích hợp.",
   "video_online_stream_none": "Tập này không trả về luồng phát được.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Để trống để dùng khóa API tích hợp trong ứng dụng.",
   "video_opensubtitles_endpoint": "Điểm cuối API",
   "video_opensubtitles_languages_hint": "Mã ngôn ngữ phân cách bằng dấu phẩy, ví dụ zh-CN,en,ja",

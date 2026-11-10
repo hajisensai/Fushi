@@ -11076,6 +11076,8 @@
   "video_online_sources_empty": "有効な動画ソースがありません。先に拡張機能をインストールして有効にしてください。",
   "video_online_sources_hint": "サードパーティの Aniyomi 拡張機能（extensions-lib 14）。コンテンツは各拡張機能の配信元サイトから取得し、内蔵プレーヤーで再生します。",
   "video_online_stream_none": "このエピソードには再生可能なストリームがありません。",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "空欄の場合、アプリ内蔵の API キーを使用します。",
   "video_opensubtitles_endpoint": "APIエンドポイント",
   "video_opensubtitles_languages_hint": "カンマ区切りの言語コード（例: zh-CN,en,ja）",
