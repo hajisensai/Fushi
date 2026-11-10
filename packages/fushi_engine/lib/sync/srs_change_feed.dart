@@ -20,7 +20,7 @@ const String kSrsSyncStatusPath = '/api/srs/sync-status';
 const Duration kSrsChangeWait = Duration(seconds: 25);
 
 /// 一次长轮询的回答：[token] 是 host 此刻的令牌；[ownOnly] = 从客户端记的令牌到 [token] 之间的每一次推进都是提问的
-/// 这台设备自己写 head 引起的（BUG-4378）。客户端据此不为自己刚发出去的 head 再跑一轮——那一轮什么也收不到，只会
+/// 这台设备自己写 head 引起的（BUG-4379）。客户端据此不为自己刚发出去的 head 再跑一轮——那一轮什么也收不到，只会
 /// 让「立即同步」报完「已同步」之后同步状态行又从「准备」走一遍。认不出写者（共享口令 / host 自己发布 / 记录已滚
 /// 出窗口 / 老 host）一律为 false，照常同步，宁可多跑一轮也不漏。
 @immutable
