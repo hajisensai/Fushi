@@ -854,6 +854,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 每个副本一把锁（嵌套打开的另一个副本不会误认成持锁）。
   final Object _writeZoneKey = Object();
 
+  /// [withDeviceOffset] 的 Zone 键（每个副本一个：只换本副本的时区）。
+  final Object _deviceOffsetZoneKey = Object();
+
   // ------------------------------------------------------------------ 本机状态
 
   Future<bool> _hasAnyEvent() async =>
@@ -986,11 +989,28 @@ class SrsDbStore implements SrsSync2Host {
   /// - 时区：恒为本机此刻的偏移（[SrsDayContext.localOffsetMin]）。时区不随同步：人带着设备换时区时「今天」跟着
   ///   本机走；每条复习日志自带作答时的偏移与翻日时刻，重放不读这里。旧版本库里可能有的 profile 键
   ///   `utcOffsetMin` 从没有写入方，现在也不再读。
+  ///   「本机」是用户手上那台设备：远程复习时主机替另一台设备跑这次调用，时区取那台设备报来的偏移
+  ///   （[withDeviceOffset]）。
   Future<SrsDayContext> dayContext() async {
     final int rollover =
         (await syncedDayRollover())?.hour ?? _fallbackRollover().clamp(0, 23);
-    return SrsDayContext(utcOffsetMin: _localOffset(), rolloverHour: rollover);
+    final Object? device = Zone.current[_deviceOffsetZoneKey];
+    return SrsDayContext(
+      utcOffsetMin: device is int ? device : _localOffset(),
+      rolloverHour: rollover,
+    );
   }
+
+  /// 在 [body] 这条异步调用链里，本副本「今天」的时区改取 [utcOffsetMin]（分钟），翻日时刻不变。
+  ///
+  /// 远程复习用（[SrsRemoteStoreService]）：手机连电脑上的库复习时，主机上的这次调用替手机执行，每日上限 /
+  /// 到期计数 / 作答日志记下的偏移都应按手机所在的时区算，而不是主机的。只作用于本副本，别的副本与 [body]
+  /// 之外的调用照旧取宿主给的 `localOffsetMin`。偏移的合法性由调用方先校验（远程端点只放行现实时区范围）。
+  Future<T> withDeviceOffset<T>(int utcOffsetMin, Future<T> Function() body) =>
+      runZoned(
+        body,
+        zoneValues: <Object, Object>{_deviceOffsetZoneKey: utcOffsetMin},
+      );
 
   /// profile 里显式写过的翻日时刻（0–23）与生效的那条修改记录 ID；从没写过为 null（[dayContext] 用宿主的回落值）。
   /// 修改记录 ID 让宿主分辨「同步带来了新的修改」与「还是本机见过的那条」。
