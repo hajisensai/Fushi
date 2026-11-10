@@ -414,7 +414,7 @@ class _VideoPlayerCtl {
       'succeeded': summary.succeeded,
       'failed': summary.failed,
       if (summary.firstError != null) 'firstError': summary.firstError,
-      // 写入的卡带回的提示（如「保存到」被主机退回默认，BUG-4276）。
+      // 写入的卡带回的提示（如「保存到」被主机退回默认，BUG-4281）。
       'notice': ?summary.notice,
     };
   }

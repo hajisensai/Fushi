@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining_runner.dart';
 import 'package:fushi_anki/fushi_anki.dart' show MineOutcome;
 
-/// BUG-4276：收藏夹批量制卡不弹逐张结果提示，「保存到」被主机退回默认的提示
+/// BUG-4281：收藏夹批量制卡不弹逐张结果提示，「保存到」被主机退回默认的提示
 /// （[MineOutcome.notice]）只能挂在批量列表那一行上；此前只带音频缺失原因，提示被丢掉。
 void main() {
   test('plain success carries no message', () {

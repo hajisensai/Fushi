@@ -32,7 +32,7 @@ class FavoriteBatchMineOutcome {
 }
 
 /// 成功写入的一条在批量列表里附的那句话：音频缺失原因，加上结果带回的提示
-/// （[MineOutcome.notice]，如「保存到」被主机退回默认，BUG-4276）。批量制卡不弹逐张的结果
+/// （[MineOutcome.notice]，如「保存到」被主机退回默认，BUG-4281）。批量制卡不弹逐张的结果
 /// 提示，这一行就是用户唯一能看到的地方；都没有时 null。
 @visibleForTesting
 String? favoriteBatchAddedMessage(MineOutcome outcome) {

@@ -57,7 +57,7 @@ String pendingFlushMessage(PendingFlushReport report) {
     else
       t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop)),
     if (!report.unreachable && failure != null) _pendingFailureReason(failure),
-    // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4276）跟着同一条走。
+    // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4281）跟着同一条走。
     ?report.notice,
   ].join('\n');
 }

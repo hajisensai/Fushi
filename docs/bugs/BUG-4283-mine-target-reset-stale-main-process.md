@@ -1,4 +1,4 @@
-## BUG-4278 · Save to reset written by the lookup popup process is invisible to the main process
+## BUG-4283 · Save to reset written by the lookup popup process is invisible to the main process
 - **报告**：2026-11-08（服务端 Fushi 复习端到端测试，Android 模拟器 + `fushi_server`）
 - **真实性**：✅ 真 bug。复现：「制卡到已配对设备」开着、「保存到」选了主机的某个牌组；主机上这个牌组被改名后，在 Android app 外查词弹窗里制卡——主机回 `targetUnavailable`，卡落进默认牌组，弹窗提示「已退回主机默认」，库里 `mine_to_server_targets` 也确实清空了；但回到 app 里，设置页「保存到」仍显示旧牌组，主进程下一张卡还会发这个旧目标。
   - 根因：查词弹窗是独立的 `:popup` 进程，退回默认由它写库（`fushi/lib/src/models/app_model.dart:11800` `setMineToServerTarget(hostId, null)`）。主进程的偏好缓存只在启动时装一次；跨进程对账只有「弹窗按 `prefs_version` 重载主进程改动」这一个方向（`app_model.dart` `refreshPrefCacheIfChanged` 只在 `popup_main.dart` 调），弹窗写的值主进程看不见。另外 `setMineToServerTarget` 拿本进程缓存做读改写（`fushi/lib/src/models/preferences_repository.dart` `_mineToServerTargetsRaw()`），陈旧的主进程给别的主机选目标时会把弹窗刚清掉的条目写回库。

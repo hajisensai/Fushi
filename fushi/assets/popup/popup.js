@@ -5920,7 +5920,7 @@ function createEntryHeader(entry, idx) {
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
-                    // BUG-4276：成功结果带回的提示（如「保存到」被主机退回默认）。只有 app 外
+                    // BUG-4281：成功结果带回的提示（如「保存到」被主机退回默认）。只有 app 外
                     // 浮窗的宿主会在成功回包里放 message（它那边没有结果 toast）；应用内表面
                     // 成功不带 message，由宿主 toast 说，这里不会重复。
                     if (result.message) showInlineHint(mineButton, result.message);

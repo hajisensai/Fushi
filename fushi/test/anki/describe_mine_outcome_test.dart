@@ -46,7 +46,7 @@ void main() {
     });
 
     test(
-      'BUG-4276 success + notice: one notice carries both, as a warning',
+      'BUG-4281 success + notice: one notice carries both, as a warning',
       () {
         final r = describeMineOutcome(
           const MineOutcome.success(

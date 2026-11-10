@@ -243,7 +243,7 @@ void main() {
     expect(queue.bundleDir(a).existsSync(), isFalse);
   });
 
-  test('BUG-4276：写入的卡带回的提示（「保存到」被退回主机默认）进汇总与汇总提示', () async {
+  test('BUG-4281：写入的卡带回的提示（「保存到」被退回主机默认）进汇总与汇总提示', () async {
     await stageOne('走る');
     await stageOne('泳ぐ');
     final VideoMineCommitSummary summary = await queue.commitAll(

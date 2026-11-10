@@ -417,7 +417,7 @@ Map<String, Object?> ctlFlushReportJson(PendingFlushReport report) =>
       'stopError': report.stopOutcome?.errorDetail,
       'failureErrorCode': report.failureOutcome?.errorCode,
       'failureError': report.failureOutcome?.errorDetail,
-      // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4276）。
+      // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4281）。
       'notice': ?report.notice,
     };
 

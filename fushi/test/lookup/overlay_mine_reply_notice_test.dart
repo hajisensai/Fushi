@@ -5,7 +5,7 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-// BUG-4276：「保存到」被主机退回默认的提示从客户端级 toast 挪到了 MineOutcome.notice，
+// BUG-4281：「保存到」被主机退回默认的提示从客户端级 toast 挪到了 MineOutcome.notice，
 // 只有 describeMineOutcome 的结果 toast 会说它。app 外浮窗（全局查词 / 剪贴板面板 /
 // 截屏识字）成功时宿主不弹结果 toast，提示必须随回包回到浮窗、由 popup.js 就地说出来。
 void main() {

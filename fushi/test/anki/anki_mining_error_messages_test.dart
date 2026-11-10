@@ -40,7 +40,7 @@ void main() {
       );
     });
 
-    test('BUG-4276：送达的卡带回的提示接在汇总后面', () {
+    test('BUG-4281：送达的卡带回的提示接在汇总后面', () {
       final String msg = pendingFlushMessage(
         const PendingFlushReport(delivered: 1, notice: 'Save to was reset.'),
       );
