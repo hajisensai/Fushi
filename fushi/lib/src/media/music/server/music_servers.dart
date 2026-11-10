@@ -23,7 +23,6 @@ import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
-import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show MusicServerBinding;
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
