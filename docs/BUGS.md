@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4373](bugs/BUG-4373-remote-cover-cache-dir-deleted-at-runtime.md) | ✅ | ✅ | 远端封面磁盘缓存：运行中缓存目录被删（存储页清缓存 / iOS 系统清理）后写入静默失败到重启 |
+| [BUG-4373](bugs/BUG-4373-manga-command-keys-dead-under-webview-focus.md) | ✅ | ✅ | 漫画：WebView2 持键盘焦点时切换界面 / 统计 / 计时（及新书签）快捷键收不到，改键也不生效 |
 | [BUG-4372](bugs/BUG-4372-android-asr-memory-gate.md) | ✅ | ✅ | Android 低内存机跑 ASR 被系统杀（无内存门槛） |
 | [BUG-4371](bugs/BUG-4371-video-mine-popup-blocks-playback.md) | ✅ | ✅ | 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成 |
 | [BUG-4370](bugs/BUG-4370-coloros-ostop-exit-misreport.md) | ✅ | ✅ | ColorOS / OnePlus 的 o-stop 停应用被误报为闪退 |
