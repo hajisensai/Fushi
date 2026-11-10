@@ -1,4 +1,4 @@
-// BUG-4247: one LAN host listed twice under the same row key.
+// BUG-4276: one LAN host listed twice under the same row key.
 //
 // The discovery map was keyed by the TXT `id`, falling back to the service
 // name. A resolve that dropped the TXT record, or a host that re-registered
@@ -66,7 +66,7 @@ Widget _lanDevicesList(List<FushiDevice> devices) => MaterialApp(
 );
 
 void main() {
-  group('LanDiscoveryService keeps one entry per host (BUG-4247)', () {
+  group('LanDiscoveryService keeps one entry per host (BUG-4276)', () {
     test(
       'a re-resolve that drops the TXT record does not add a second row',
       () {
@@ -80,7 +80,10 @@ void main() {
         service.debugHandleEvent(_resolvedEvent(name: 'Fushi PC'));
 
         expect(service.currentDevices, hasLength(1));
-        expect(_urls(service), <String>['http://192.168.1.50:38765']);
+        // The TXT-less resolve only lacks information: the row keeps the id
+        // and the advertised TLS scheme instead of degrading to http.
+        expect(_urls(service), <String>['https://192.168.1.50:38765']);
+        expect(service.currentDevices.single.deviceId, 'host-pc');
 
         // The single remaining entry is still removable by its lost event.
         service.debugHandleEvent(_lostEvent('Fushi PC'));
@@ -138,6 +141,34 @@ void main() {
 
       service.debugHandleEvent(_lostEvent('Fushi PC (2)'));
       expect(service.currentDevices, isEmpty);
+    });
+
+    test('a TXT-less resolve under a new name keeps the endpoint id and TLS '
+        'and the newest name owns the row', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      service.debugHandleEvent(
+        _resolvedEvent(name: 'Fushi PC', attributes: _tlsWithId),
+      );
+      service.debugHandleEvent(_resolvedEvent(name: 'Fushi PC (2)'));
+
+      expect(service.currentDevices, hasLength(1));
+      final FushiDevice row = service.currentDevices.single;
+      expect(row.deviceId, 'host-pc');
+      expect(row.name, 'Fushi PC (2)');
+      expect(row.webDavUrl, 'https://192.168.1.50:38765');
+
+      service.debugHandleEvent(_lostEvent('Fushi PC'));
+      expect(service.currentDevices, hasLength(1));
+      service.debugHandleEvent(_lostEvent('Fushi PC (2)'));
+      expect(service.currentDevices, isEmpty);
+    });
+
+    test('a TXT-less record on an endpoint never seen with TXT stays keyed '
+        'by its name over plain http', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      service.debugHandleEvent(_resolvedEvent(name: 'Fushi PC'));
+      expect(_urls(service), <String>['http://192.168.1.50:38765']);
+      expect(service.currentDevices.single.deviceId, 'Fushi PC');
     });
 
     test('different hosts and different ports stay separate rows', () {

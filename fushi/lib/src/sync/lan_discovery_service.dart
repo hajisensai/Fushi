@@ -291,14 +291,15 @@ class LanDiscoveryService {
       // A service finished resolving: map it and add it (unless it is us — by
       // advertised id, or by host address when the id attribute didn't survive).
       case BonsoirDiscoveryServiceResolvedEvent():
-        final FushiDevice? device = FushiDevice.fromResolvedService(
+        final FushiDevice? resolved = FushiDevice.fromResolvedService(
           event.service,
         );
-        if (device == null ||
-            device.deviceId == deviceId ||
-            _localAddresses.contains(device.host)) {
+        if (resolved == null ||
+            resolved.deviceId == deviceId ||
+            _localAddresses.contains(resolved.host)) {
           return;
         }
+        final FushiDevice device = _withKnownTxtFacts(resolved, event.service);
         _evictSupersededBy(device, event.service.name);
         _discoveredDevices[device.deviceId] = device;
         // BUG-1693：登记 name → deviceId，lost 事件（多不带 TXT）靠它找回存储键。
@@ -322,6 +323,32 @@ class LanDiscoveryService {
     }
   }
 
+  /// A resolve whose TXT record did not come through (no `id` attribute) only
+  /// lacks information: it must not erase the `id` / `tls` that the same
+  /// `host:port` already advertised. Otherwise the endpoint's single row would
+  /// fall back to the name key and an `http://` URL for a TLS host, which the
+  /// v1 pairing fallback stores as-is (BUG-1693). The newest name still wins.
+  ///
+  /// An entry carries TXT facts when its key is not the service-name fallback
+  /// of [FushiDevice.fromResolvedService] (`deviceId != name`).
+  FushiDevice _withKnownTxtFacts(FushiDevice device, BonsoirService service) {
+    if (service.attributes.containsKey(attributeId)) return device;
+    for (final FushiDevice known in _discoveredDevices.values) {
+      if (known.host == device.host &&
+          known.port == device.port &&
+          known.deviceId != known.name) {
+        return FushiDevice(
+          name: device.name,
+          host: device.host,
+          port: device.port,
+          deviceId: known.deviceId,
+          tlsEnabled: known.tlsEnabled,
+        );
+      }
+    }
+    return device;
+  }
+
   /// Keeps one entry per reachable host before [device] is stored.
   ///
   /// The storage key (TXT `id`, else the service name) is not stable for one
@@ -329,7 +356,7 @@ class LanDiscoveryService {
   /// name, and a host that re-registers under a new instance name ("Fushi (2)")
   /// leaves the old record behind when its lost event never arrives. Either way
   /// two entries pointed at the same `host:port` and the LAN devices list
-  /// rendered the host twice under one row key (BUG-4247). Only one server can
+  /// rendered the host twice under one row key (BUG-4276). Only one server can
   /// listen on a `host:port`, so the newest resolve owns it:
   ///   * the entry this service name resolved to before (under another key),
   ///   * any other entry for the same endpoint, and
