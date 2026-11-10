@@ -1055,7 +1055,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   Future<void> _handleBoundarySkip(int delta) async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
-    final int targetSec = _currentChapter + delta;
+    // 「当前章」取阅读位置所在章：歌词模式下正文停在进歌词那一刻的章
+    // （`_currentChapter` 不再跟随音频），越界目标要从当前句所在章算，否则在全书
+    // 首 / 末句按上一句 / 下一句会把音频甩到正文停着的那一章旁边。
+    final int targetSec = _readingChapter + delta;
     if (_book == null || targetSec < 0 || targetSec >= _book!.chapters.length) {
       return;
     }
@@ -1063,6 +1066,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       targetSec,
     );
     if (targetCues.isEmpty) {
+      // 歌词模式下正文面脱开：没有句子的章在歌词里不存在，不去挪停着的正文。
+      if (_lyricsMode) return;
       await _navigateToChapter(targetSec);
       return;
     }

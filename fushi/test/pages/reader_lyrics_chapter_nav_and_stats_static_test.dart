@@ -438,4 +438,46 @@ void main() {
       );
     });
   });
+
+  group('歌词模式下「当前章」取当前句所在章（正文停着，_currentChapter 不跟随音频）', () {
+    test('_handleBoundarySkip 从 _readingChapter 算越界目标，歌词模式不挪正文', () {
+      final String body = methodBody(
+        src,
+        '  Future<void> _handleBoundarySkip(int delta)',
+      );
+      expect(
+        containsCodeLine(
+          body,
+          'final int targetSec = _readingChapter + delta;',
+        ),
+        isTrue,
+        reason: '全书首 / 末句按上一句 / 下一句时，目标章要从当前句所在章算',
+      );
+      expect(containsIdentifier(body, '_currentChapter'), isFalse);
+      final int gate = body.indexOf('if (_lyricsMode) return;');
+      final int nav = body.indexOf('_navigateToChapter(');
+      expect(gate, greaterThan(0));
+      expect(nav, greaterThan(gate), reason: '歌词模式下正文面脱开，没有句子的章不去挪停着的正文');
+    });
+
+    test('副屏 / 远端会话快照的章号与章名同源（_readingChapter）', () {
+      for (final String sig in <String>[
+        '  Map<String, Object?> readerState() {',
+        '  Map<String, Object?> audiobookState() {',
+        '  ReaderSessionSnapshot? snapshot() {',
+      ]) {
+        final String body = methodBody(src, sig);
+        expect(
+          containsIdentifier(body, '_readingChapter'),
+          isTrue,
+          reason: '$sig 的章号要跟阅读位置走',
+        );
+        expect(
+          containsIdentifier(body, '_currentChapter'),
+          isFalse,
+          reason: '$sig 不得再读正文挂载章（歌词模式下它停在进歌词那一刻）',
+        );
+      }
+    });
+  });
 }
