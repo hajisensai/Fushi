@@ -1,4 +1,4 @@
-## BUG-4370 · Jellyfin 服务器标为默认的内嵌字幕起播不显示
+## BUG-4383 · Jellyfin 服务器标为默认的内嵌字幕起播不显示
 - **报告**：2026-11-07（用户：应用内反馈 wCQIR4Pvz9，iOS 3.0.0+19763，iPad）
 - **真实性**：✅ 真 bug。根因（develop `b765ac68f1` 行号）：
   1. `fushi/lib/src/sync/jellyfin_video_client.dart:2343` `parseMediaSource` 构造 `JellyfinSubtitleStream` 不读 `IsDefault`（同函数音轨 :2337 读了），服务器默认标记在入口就丢了；

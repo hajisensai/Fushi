@@ -217,11 +217,33 @@ fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
 
 // ------------------------------------------------------------------ 出处 / 行详情
 
-/// 出处分组键（spec docs/specs/2026-11-04-srs-browser-redesign.md §2.1）：`<kind>:<作品身份>`，身份按 kind 取
+/// 出处分组键（spec docs/specs/2026-11-04-srs-browser-redesign.md §2.1）：出处带系列（[source_series]，反馈
+/// MCJLSBR5Wg）时是系列键 `<kind>::<系列名>`，否则是作品键（[source_item_key]）。出处视图 / `src:` / 按作品出卡 /
+/// 笔记缓存行 `source_key` 都按它分组；带系列的出处在系列下再按作品键分第二级（「系列 → 集」）。
+///
+/// 系列键与作品键不会撞：作品键是 `<kind>:<身份>`，`::` 要求身份以 `:` 开头，而各 kind 的身份（内容哈希、库 uid、
+/// 净化过的书名键、网址…）都不以 `:` 开头。返回 (键, kind)。
+pub(crate) fn source_key(v: &Value) -> Option<(String, String)> {
+    let item = source_item_key(v)?;
+    Some(match source_series(v) {
+        Some(series) => (format!("{}::{series}", item.1), item.1),
+        None => item,
+    })
+}
+
+/// 出处的系列名（`SrsSourceRef.seriesTitle`：字符串、去两侧空白后非空；否则没有系列）。
+pub(crate) fn source_series(v: &Value) -> Option<&str> {
+    v.get("seriesTitle")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+}
+
+/// 作品键（集这一级）：`<kind>:<作品身份>`，身份按 kind 取
 /// （书 `bookKey`、漫画 `mangaKey`、视频 / 有声书 / 音乐 `mediaKey`、在线小说 `sourceId` + 0x1f + `novelUrl`、在线视频
 /// `sourceId` + 0x1f + `animeUrl`、游戏 `gameId`、网页 `url`），取不到退回 `title`，再没有就只有 `<kind>`。章节、页码、
-/// 时间、偏移不进键。不是带字符串 kind 的对象 = 没有出处（Dart `SrsSourceRef.fromJson`）。返回 (键, kind)。
-pub(crate) fn source_key(v: &Value) -> Option<(String, String)> {
+/// 时间、偏移、系列不进键。不是带字符串 kind 的对象 = 没有出处（Dart `SrsSourceRef.fromJson`）。返回 (键, kind)。
+pub(crate) fn source_item_key(v: &Value) -> Option<(String, String)> {
     let kind = v.get("kind")?.as_str()?;
     let s = |k: &str| v.get(k).and_then(Value::as_str).filter(|x| !x.is_empty());
     let pair = |a: &str, b: &str| Some(format!("{}\u{1f}{}", s(a)?, s(b)?));
@@ -240,6 +262,82 @@ pub(crate) fn source_key(v: &Value) -> Option<(String, String)> {
         identity.map_or_else(|| kind.to_owned(), |id| format!("{kind}:{id}")),
         kind.to_owned(),
     ))
+}
+
+/// 出处视图的一组（[Session::sources]）：系列组、系列下的一集、没有系列的作品组同一个口径。
+struct SourceGroup<'a> {
+    kind: Option<String>,
+    /// 组里最近添加那条笔记的出处（有出处键时）。
+    data: Option<&'a Value>,
+    count: usize,
+    due: usize,
+    preview: Vec<usize>,
+    latest: i64,
+    decks: Vec<&'a str>,
+}
+
+impl<'a> SourceGroup<'a> {
+    fn new(kind: Option<String>) -> Self {
+        SourceGroup {
+            kind,
+            data: None,
+            count: 0,
+            due: 0,
+            preview: Vec::new(),
+            latest: i64::MIN,
+            decks: Vec::new(),
+        }
+    }
+
+    /// 记一行（结果里第 `i` 行）：`decks` = 这一行的卡所在的牌组，`data` = 这一行笔记的出处。
+    fn add(
+        &mut self,
+        i: usize,
+        due: bool,
+        decks: &[&'a str],
+        created: i64,
+        data: Option<&'a Value>,
+    ) {
+        self.count += 1;
+        for &d in decks {
+            if !self.decks.contains(&d) {
+                self.decks.push(d);
+            }
+        }
+        if due {
+            self.due += 1;
+        }
+        if self.preview.len() < 8 {
+            self.preview.push(i);
+        }
+        if created > self.latest {
+            self.latest = created;
+            self.data = data;
+        }
+    }
+
+    fn json(&self, key: &Option<String>) -> Value {
+        json!({
+            "key": key,
+            "kind": self.kind,
+            "data": self.data.map(Value::to_string),
+            "count": self.count,
+            "due": self.due,
+            "preview": self.preview,
+            "latestAddedAt": self.latest,
+            "decks": self.decks,
+        })
+    }
+}
+
+/// 出处组的顺序：最近添加的在前（同值按键），没有出处的（None）最后。
+fn sort_source_keys(order: &mut [Option<String>], latest: impl Fn(&Option<String>) -> i64) {
+    order.sort_by(|a, b| match (a, b) {
+        (None, None) => Ordering::Equal,
+        (None, _) => Ordering::Greater,
+        (_, None) => Ordering::Less,
+        (Some(x), Some(y)) => latest(b).cmp(&latest(a)).then_with(|| cmp16(x, y)),
+    });
 }
 
 /// 取行时才要的笔记内容（这一页的笔记从修改记录读一次，写入后按笔记失效）。只存 [Session::rows] 用到的派生投影，
@@ -1978,11 +2076,18 @@ impl Session {
             Column::Lapses => Key::Num(cards().map(|c| c.lapses).sum::<i64>() as f64),
             Column::Deck => Key::Str(dart_lower(&ctx.deck(&p.deck).0)),
             Column::NoteType => Key::Str(dart_lower(&ctx.types[&note.ty].name)),
-            Column::Source => note
-                .source
-                .as_ref()
-                .and_then(source_key)
-                .map_or(Key::None, |k| Key::Str(k.0)),
+            // 带系列的行按「系列键 + 作品键」排：同一系列挨着，系列里同一集挨着。
+            Column::Source => match note.source.as_ref() {
+                Some(s) => match (source_key(s), source_series(s)) {
+                    (Some(k), Some(_)) => {
+                        let item = source_item_key(s).map_or_else(String::new, |i| i.0);
+                        Key::Str(format!("{}\u{1}{item}", k.0))
+                    }
+                    (Some(k), None) => Key::Str(k.0),
+                    (None, _) => Key::None,
+                },
+                None => Key::None,
+            },
         }
     }
 
@@ -2130,93 +2235,83 @@ impl Session {
         Ok(json!({"s": strings}))
     }
 
-    /// `browse_sources`：结果按出处键分组（出处视图）。组 `{key, kind, data, count, due, preview, latestAddedAt, decks}`：
-    /// `decks` = 组里各行的卡所在的牌组 id（去重，首次出现的顺序；「只复习这一作」据此定复习的牌组范围）；`data`
-    /// 是组里最近添加那条笔记的出处 JSON，`due` = 有卡今天到期的行数，`preview` = 组内按结果顺序的前 8 个行号；按
-    /// `latestAddedAt` 降序（同值按键），没有出处的一组（`key` = null）放最后。
+    /// `browse_sources`：结果按出处键分组（出处视图）。组 `{key, kind, data, count, due, preview, latestAddedAt, decks,
+    /// series, children}`：`decks` = 组里各行的卡所在的牌组 id（去重，首次出现的顺序；「只复习这一作」据此定复习的牌组
+    /// 范围）；`data` 是组里最近添加那条笔记的出处 JSON，`due` = 有卡今天到期的行数，`preview` = 组内按结果顺序的前 8 个
+    /// 行号；按 `latestAddedAt` 降序（同值按键），没有出处的一组（`key` = null）放最后。
+    ///
+    /// 系列组（键是系列键，[source_series]，反馈 MCJLSBR5Wg）：`series` = 系列名，`children` = 按作品键
+    /// （[source_item_key]）分的第二级（「系列 → 集」），每项 `{key, kind, data, count, due, preview, latestAddedAt,
+    /// decks}`，口径与组相同、排序同组。不是系列的组 `series` = null、`children` = []。
     fn sources(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
         self.result(req)?;
         self.ensure_sources(c, profile)?;
         let r = self.result(req)?;
-        struct Group<'a> {
-            kind: Option<String>,
-            data: Option<&'a Value>,
-            count: usize,
-            due: usize,
-            preview: Vec<usize>,
-            latest: i64,
-            decks: Vec<&'a str>,
-        }
         let mut order: Vec<Option<String>> = Vec::new();
-        let mut groups: HashMap<Option<String>, Group<'_>> = HashMap::new();
+        let mut groups: HashMap<Option<String>, SourceGroup<'_>> = HashMap::new();
+        // 系列键 → (系列名, 集的出现顺序, 集键 → 集)。
+        type Items<'a> = HashMap<Option<String>, SourceGroup<'a>>;
+        let mut series: HashMap<String, (String, Vec<Option<String>>, Items<'_>)> = HashMap::new();
         for (i, row) in r.rows.iter().enumerate() {
             let Some(n) = self.notes[row.note as usize].as_ref() else {
                 continue;
             };
             let source = n.source.as_ref();
-            let key = source.and_then(source_key);
-            let (k, kind) = match key {
+            let (k, kind) = match source.and_then(source_key) {
                 Some((k, kind)) => (Some(k), Some(kind)),
                 None => (None, None),
             };
-            let g = groups.entry(k.clone()).or_insert_with(|| {
-                order.push(k.clone());
-                Group {
-                    kind,
-                    data: None,
-                    count: 0,
-                    due: 0,
-                    preview: Vec::new(),
-                    latest: i64::MIN,
-                    decks: Vec::new(),
-                }
-            });
-            g.count += 1;
-            for &slot in &row.cards {
-                if let Some(card) = self.cards[slot as usize].as_ref() {
-                    if !g.decks.contains(&card.deck.as_str()) {
-                        g.decks.push(card.deck.as_str());
-                    }
-                }
-            }
-            if row.cards.iter().any(|&slot| {
+            let decks: Vec<&str> = row
+                .cards
+                .iter()
+                .filter_map(|&slot| self.cards[slot as usize].as_ref().map(|c| c.deck.as_str()))
+                .collect();
+            let due = row.cards.iter().any(|&slot| {
                 self.cards[slot as usize]
                     .as_ref()
                     .is_some_and(|c| r.ctx.is_due(c))
-            }) {
-                g.due += 1;
+            });
+            let data = source.filter(|_| k.is_some());
+            if let (Some(sk), Some(s)) = (&k, source) {
+                if let Some(title) = source_series(s) {
+                    let (_, item_order, items) = series
+                        .entry(sk.clone())
+                        .or_insert_with(|| (title.to_owned(), Vec::new(), HashMap::new()));
+                    let ik = source_item_key(s).map(|x| x.0);
+                    items
+                        .entry(ik.clone())
+                        .or_insert_with(|| {
+                            item_order.push(ik.clone());
+                            SourceGroup::new(kind.clone())
+                        })
+                        .add(i, due, &decks, n.created, data);
+                }
             }
-            if g.preview.len() < 8 {
-                g.preview.push(i);
-            }
-            if n.created > g.latest {
-                g.latest = n.created;
-                g.data = source.filter(|_| k.is_some());
-            }
+            groups
+                .entry(k.clone())
+                .or_insert_with(|| {
+                    order.push(k.clone());
+                    SourceGroup::new(kind)
+                })
+                .add(i, due, &decks, n.created, data);
         }
-        order.sort_by(|a, b| match (a, b) {
-            (None, None) => Ordering::Equal,
-            (None, _) => Ordering::Greater,
-            (_, None) => Ordering::Less,
-            (Some(x), Some(y)) => groups[b]
-                .latest
-                .cmp(&groups[a].latest)
-                .then_with(|| cmp16(x, y)),
-        });
+        sort_source_keys(&mut order, |k| groups[k].latest);
         let out: Vec<Value> = order
             .iter()
             .map(|k| {
-                let g = &groups[k];
-                json!({
-                    "key": k,
-                    "kind": g.kind,
-                    "data": g.data.map(Value::to_string),
-                    "count": g.count,
-                    "due": g.due,
-                    "preview": g.preview,
-                    "latestAddedAt": g.latest,
-                    "decks": g.decks,
-                })
+                let mut v = groups[k].json(k);
+                let (title, children) = match k.as_ref().and_then(|k| series.get_mut(k)) {
+                    Some((title, item_order, items)) => {
+                        sort_source_keys(item_order, |c| items[c].latest);
+                        let children: Vec<Value> =
+                            item_order.iter().map(|c| items[c].json(c)).collect();
+                        (Some(title.clone()), children)
+                    }
+                    None => (None, Vec::new()),
+                };
+                v["series"] = json!(title);
+                v["children"] = Value::Array(children);
+                v
             })
             .collect();
         Ok(json!({"groups": out}))
@@ -2342,11 +2437,12 @@ impl Session {
                 let v = node.get("v").and_then(Value::as_str).unwrap_or("");
                 match v {
                     "none" => notes_where(&|n| n.source.as_ref().and_then(source_key).is_none()),
+                    // 系列键（整个系列）或作品键（系列里的一集；没有系列的出处两者相同）。
                     _ if v.contains(':') => notes_where(&|n| {
-                        n.source
-                            .as_ref()
-                            .and_then(source_key)
-                            .is_some_and(|k| k.0 == v)
+                        n.source.as_ref().is_some_and(|s| {
+                            source_key(s).is_some_and(|k| k.0 == v)
+                                || source_item_key(s).is_some_and(|k| k.0 == v)
+                        })
                     }),
                     _ => notes_where(&|n| {
                         n.source
@@ -3800,5 +3896,137 @@ mod tests {
         assert_eq!(k(json!({"kind": "anki"})), Some("anki".into()));
         assert_eq!(k(json!({"kind": 3})), None);
         assert_eq!(k(json!("book")), None);
+    }
+
+    /// 带系列的出处（反馈 MCJLSBR5Wg）：分组键是系列键 `<kind>::<系列名>`（系列名去两侧空白），作品键（集）不变；系列名
+    /// 空白或不是字符串 = 没有系列，分组键就是作品键。
+    #[test]
+    fn series_keys_sit_above_work_keys() {
+        let k = |v: Value| super::source_key(&v).map(|x| x.0);
+        let item = |v: Value| super::source_item_key(&v).map(|x| x.0);
+        let ep = json!({"kind": "video", "mediaKey": "sha", "startMs": 5, "title": "RWBY - E1", "seriesTitle": " RWBY "});
+        assert_eq!(k(ep.clone()), Some("video::RWBY".into()));
+        assert_eq!(item(ep.clone()), Some("video:sha".into()));
+        assert_eq!(super::source_series(&ep), Some("RWBY"));
+        assert_eq!(
+            k(
+                json!({"kind": "onlineVideo", "sourceId": "s", "animeUrl": "", "episodeUrl": "/e", "title": "Ep 2", "seriesTitle": "Show"})
+            ),
+            Some("onlineVideo::Show".into()),
+            "online episodes without an anime URL still share their series"
+        );
+        assert_eq!(
+            k(json!({"kind": "video", "mediaKey": "sha", "seriesTitle": "  "})),
+            Some("video:sha".into())
+        );
+        assert_eq!(
+            k(json!({"kind": "video", "mediaKey": "sha", "seriesTitle": 3})),
+            Some("video:sha".into())
+        );
+    }
+
+    /// 出处视图的「系列 → 集」：同一系列的几集合成一组（`series` = 系列名），组里 `children` 按集分第二级（行数 / 代表
+    /// 出处各自算）；没有系列的作品组 `children` 为空。`src:` 认系列键（整个系列）也认作品键（一集），按出处排序时同一
+    /// 系列的行挨着。
+    #[test]
+    fn browse_sources_nest_episodes_under_their_series() {
+        let (d, cfg, deck) = rich_library();
+        write(
+            &d,
+            &cfg,
+            T0 + 30,
+            vec![
+                edit(
+                    "note",
+                    N3,
+                    "source",
+                    json!({"kind": "video", "mediaKey": "e1", "startMs": 5, "title": "RWBY - E1", "seriesTitle": "RWBY"}),
+                ),
+                edit(
+                    "note",
+                    N4,
+                    "source",
+                    json!({"kind": "video", "mediaKey": "e2", "startMs": 0, "title": "RWBY - E2", "seriesTitle": "RWBY"}),
+                ),
+                edit(
+                    "note",
+                    N5,
+                    "source",
+                    json!({"kind": "video", "mediaKey": "e3", "startMs": 0, "title": "Solo"}),
+                ),
+            ],
+        );
+        let (gen, rows) = query_rows(&d, &deck, json!({"sort": {"col": "created", "asc": true}}));
+        let g = call(
+            &d,
+            "browse_sources",
+            json!({"owner": "page:test", "gen": gen}),
+        )["groups"]
+            .clone();
+        let keys: Vec<Value> = g
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["key"].clone())
+            .collect();
+        // 全部笔记 createdAt 相同：同值按键排。
+        assert_eq!(
+            keys,
+            vec![json!("book:bk1"), json!("video::RWBY"), json!("video:e3")]
+        );
+        assert_eq!(g[0]["series"], Value::Null);
+        assert_eq!(g[0]["children"], json!([]));
+        assert_eq!(g[1]["series"], json!("RWBY"));
+        assert_eq!(g[1]["kind"], json!("video"));
+        assert_eq!(g[1]["count"], json!(2));
+        assert_eq!(g[1]["decks"], json!([deck]));
+        let children = g[1]["children"].as_array().unwrap();
+        let child_keys: Vec<&Value> = children.iter().map(|c| &c["key"]).collect();
+        assert_eq!(child_keys, vec![&json!("video:e1"), &json!("video:e2")]);
+        for (c, note) in children.iter().zip([N3, N4]) {
+            assert_eq!(c["count"], json!(1));
+            assert_eq!(c["kind"], json!("video"));
+            let preview: Vec<usize> = c["preview"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as usize)
+                .collect();
+            assert_eq!(preview, vec![rows.by_note(note)]);
+        }
+        assert!(children[0]["data"].as_str().unwrap().contains("\"e1\""));
+        assert!(children[1]["data"].as_str().unwrap().contains("\"e2\""));
+        assert_eq!(g[2]["series"], Value::Null);
+        assert_eq!(g[2]["children"], json!([]));
+
+        // `src:` 认系列键与作品键。
+        let count = |v: &str| {
+            call(
+                &d,
+                "browse_query",
+                browse_req(&deck, json!({"node": {"t": "src", "v": v}})),
+            )["count"]
+                .clone()
+        };
+        assert_eq!(count("video::RWBY"), json!(2));
+        assert_eq!(count("video:e1"), json!(1));
+        assert_eq!(count("video:e3"), json!(1));
+        assert_eq!(count("video"), json!(3));
+
+        // 按出处排序：同一系列挨着，系列里按集排。
+        let (_, rows) = query_rows(&d, &deck, json!({"sort": {"col": "source", "asc": true}}));
+        let notes: Vec<Value> = rows.s.iter().map(|r| r[1].clone()).collect();
+        assert_eq!(&notes[2..], &[json!(N3), json!(N4), json!(N5)]);
+        let keys: Vec<Value> = rows.s.iter().map(|r| r[11].clone()).collect();
+        assert_eq!(
+            keys,
+            vec![
+                json!("book:bk1"),
+                json!("book:bk1"),
+                json!("video::RWBY"),
+                json!("video::RWBY"),
+                json!("video:e3"),
+            ]
+        );
     }
 }

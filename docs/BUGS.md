@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4383](bugs/BUG-4383-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
+> 共 3928 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
+| [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
+| [BUG-4382](bugs/BUG-4382-srs-sync-now-trailing-rounds.md) | ✅ | ✅ | 复习「立即同步」报完已同步后同步状态行仍空跑几轮（推送残留 + host 长轮询叫醒写者自己） |
+| [BUG-4381](bugs/BUG-4381-interconnect-pdf-books.md) | ✅ | ✅ | 互联看不到对端导入的 PDF 书（PDF 没有互联内容通道） |
 | [BUG-4380](bugs/BUG-4380-windows-a11y-engine-tree-never-half-applied.md) | ✅ | ✅ | Windows 无障碍树：引擎在语义更新被 AXTree 拒收后不自愈（半应用、委托悬空），且框架违约更新直接交给 AXTree |
 | [BUG-4379](bugs/BUG-4379-manga-mine-source-tag-book.md) | ✅ | ✅ | 漫画制卡的来源分类标签写成 book 而非 manga |
 | [BUG-4378](bugs/BUG-4378-srs-card-remote-tts-audio.md) | ✅ | ✅ | eggrolls 卡组例句在线 TTS 键点了没声音（WebKit 播不了不支持 Range 的远程音频） |
@@ -294,7 +302,7 @@
 | [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | ✅ | ✅ | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
 | [BUG-4071](bugs/BUG-4071-android-exit-importance-overrides-marker.md) | ✅ | ✅ | Android 后台被厂商杀进程仍被判「停在前台时没了」弹闪退报告 |
 | [BUG-4070](bugs/BUG-4070-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
-| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
+| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | ✅ | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
 | [BUG-4068](bugs/BUG-4068-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
 | [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | ✅ | ✅ | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
 | [BUG-4066](bugs/BUG-4066-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |

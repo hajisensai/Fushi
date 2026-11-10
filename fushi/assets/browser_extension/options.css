@@ -1195,6 +1195,8 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   --fushi-sub-radius: 8px;
   --fushi-sub-padding: 6px 12px 7px;
   --fushi-sub-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+  /* 真描边（粗细×2 + 颜色，subtitle-style.js toCssVars）；默认不描边。 */
+  --fushi-sub-stroke: 0 transparent;
   box-sizing: border-box;
   display: grid;
   align-content: center;
@@ -1214,6 +1216,9 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   letter-spacing: var(--fushi-sub-spacing);
   text-align: var(--fushi-sub-align);
   text-shadow: var(--fushi-sub-shadow);
+  -webkit-text-stroke: var(--fushi-sub-stroke);
+  /* 描边画在填充之下：只露出字形外侧那一圈，笔画不被吃细（与 app 底层 stroke + 上层 fill 同构）。 */
+  paint-order: stroke fill;
   white-space: pre-wrap;
 }
 

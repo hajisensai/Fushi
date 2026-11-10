@@ -230,43 +230,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
           _currentVideoPath != null &&
           canRelistPickedDirectoryInPlace)
         _subtitleFolderTile(controller),
-      // 生成字幕：原「语音识别生成字幕」与「生成日语字幕」合并成这一个入口（反馈
-      // 6Tj3ECtB0Q），两条路由面板里的「保存字幕文件」选项分流，见
-      // [_openSubtitleGeneration]。与上面两行同属「拿到一份字幕」，所以并在同一组。
-      if (_canTranscribeVideoSpeech || _canRunSubtitlePipeline)
+      // 字幕工作台（反馈 E1pq561P2q）：原「生成字幕」入口改成工作台——生成字幕（管线 /
+      // 本机转录分流不变，见 [_openSubtitleGeneration]）、拆出双语字幕中的日语、按每句
+      // 语音逐句对轴（模型重定时）、按内嵌字幕对齐都收进去，并带画面截图与其它语言
+      // 字幕的逐句对照。与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
+      if (_subtitleStudioAvailable(controller))
         FushiListTileControl(
-          key: const ValueKey<String>('video-subtitle-generate'),
+          key: const ValueKey<String>('video-subtitle-studio'),
           leading: const FushiIcon(Icons.transcribe_outlined),
-          title: Text(t.video_subtitle_ai_generate_title),
-          subtitle: Text(t.video_subtitle_generate_entry_hint),
+          title: Text(t.video_subtitle_studio_title),
+          subtitle: Text(t.video_subtitle_studio_entry_hint),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
-              : () => unawaited(_openSubtitleGeneration(controller)),
-        ),
-      // 模型重定时：它要把整条音轨喂给设备端转录（判据同上面的本机转录）。
-      // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
-      if (_canTranscribeVideoSpeech)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.model_training_outlined),
-          title: Text(t.video_subtitle_retime_action),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
-        ),
-      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。参考轨要从本机容器文件里
-      // 抽，判据就是「有没有本机视频文件」：远端 / 流视频的 _currentVideoPath 恒为 null
-      // （见 _applyLoad 的 TODO-1000），不另按 _isRemote 身份判。当前不是外挂
-      // 字幕时点了会说明原因，不隐藏入口。
-      if (_currentVideoPath != null)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.sync_alt_outlined),
-          title: Text(t.video_subtitle_reference_sync_action),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_alignSubtitleToEmbeddedTracks(controller)),
+              : () => unawaited(_openSubtitleStudio(controller)),
         ),
       const FushiDividerControl(height: 1),
       FushiListTileControl(
@@ -3156,6 +3133,148 @@ extension _VideoSubtitle on _VideoFushiPageState {
           _discBookUid == null &&
           isAsrSupported) ||
       (_isRemote && _remoteHostVideoTarget() != null);
+
+  /// 字幕工作台里至少有一项能用：能生成（有音轨 / 能跑管线）、能对内嵌轨（本机文件）、
+  /// 或已经有一条文本字幕可拆分 / 对照。
+  bool _subtitleStudioAvailable(VideoPlayerController controller) =>
+      _canTranscribeVideoSpeech ||
+      _canRunSubtitlePipeline ||
+      _currentVideoPath != null ||
+      controller.cues.isNotEmpty;
+
+  /// 打开字幕工作台（[showVideoSubtitleStudioSheet]）。参考区读的都是播放器的现值
+  /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），面板开着时随播放实时
+  /// 刷新；工具全部复用本页既有路径，面板只负责分派。
+  Future<void> _openSubtitleStudio(VideoPlayerController controller) async {
+    final List<AudioCue> cues = controller.cues;
+    final SubtitleContentLanguage language = detectSubtitleContentLanguage(
+      <String>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly) c.text,
+      ].join('\n'),
+    );
+    final bool canGenerate =
+        _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
+    await showVideoSubtitleStudioSheet(
+      context: context,
+      reference: VideoSubtitleStudioReference(
+        listenable: controller.positionMsListenable,
+        primaryCues: () => controller.cues,
+        secondaryCues: () => controller.secondaryCues,
+        primaryPositionMs: () => effectiveSubtitlePositionMs(
+          controller.positionMs ?? 0,
+          controller.delayMs,
+        ),
+        secondaryPositionMs: () => effectiveSubtitlePositionMs(
+          controller.positionMs ?? 0,
+          controller.effectiveSecondaryDelayMs,
+        ),
+        primaryLanguage: language,
+        captureFrame: controller.screenshot,
+        jumpToCue: (AudioCue cue) => unawaited(controller.skipToCue(cue)),
+      ),
+      actions: VideoSubtitleStudioActions(
+        generate: canGenerate
+            ? () => _openSubtitleGeneration(controller)
+            : null,
+        splitBilingual: cues.isEmpty
+            ? null
+            : () => _extractJapaneseFromBilingualSubtitle(controller),
+        retime: _canTranscribeVideoSpeech
+            ? () => _retimeSubtitleWithSpeechModel(controller)
+            : null,
+        alignEmbedded: _currentVideoPath != null
+            ? () => _alignSubtitleToEmbeddedTracks(controller)
+            : null,
+      ),
+    );
+  }
+
+  /// 拆出双语字幕中的日语（反馈 E1pq561P2q）：当前主字幕的 cue 交给
+  /// [extractJapaneseFromBilingual]（只删行、不改字、不动时间轴），结果另存一份新的
+  /// SRT 并走既有外挂字幕链路选中——原字幕一个字节都不动，字幕轨列表里随时切回去。
+  /// 远端视频走远端导入同一条链路（内存应用 + 按集记住选择），再上传给 host。
+  Future<void> _extractJapaneseFromBilingualSubtitle(
+    VideoPlayerController controller,
+  ) async {
+    final List<SubtitleTextCue> input = <SubtitleTextCue>[
+      for (final AudioCue c in controller.cues)
+        if (!c.isRenderOnly && c.text.trim().isNotEmpty)
+          SubtitleTextCue(startMs: c.startMs, endMs: c.endMs, text: c.text),
+    ];
+    if (input.isEmpty) {
+      _showOsd(
+        t.video_subtitle_retime_no_track,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final BilingualSplitResult split = extractJapaneseFromBilingual(input);
+    if (split.cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_studio_split_failed,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final int loadSeq = _episodeLoadSeq;
+    final String? videoPath = _currentVideoPath;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _currentVideoPath == videoPath;
+    // 远端片名直接拼进档名：「Re:Zero」这类带 `:` / `/` 的标题在 Windows 上写不出
+    // 文件（或被当成子目录），先按全仓唯一的文件名安全化规则清洗。
+    final String rawBaseName = _isRemote
+        ? (_title ?? _effectiveRemoteInfo?.title ?? '')
+        : p.basenameWithoutExtension(videoPath ?? '');
+    final String safeBaseName = safeWindowsFileName(rawBaseName).trim();
+    final String baseName = safeBaseName.isEmpty ? 'subtitle' : safeBaseName;
+    final String videoKey = sha256
+        .convert(utf8.encode('$_activeBookUid|$videoPath|$_currentEpisode'))
+        .toString()
+        .substring(0, 8);
+    try {
+      final Directory directory = await AppPaths.videoSubtitlesDirectory();
+      await directory.create(recursive: true);
+      final String target = p.join(
+        directory.path,
+        '$baseName.ja-split-$videoKey.srt',
+      );
+      await File(
+        target,
+      ).writeAsString(subtitleTextCuesToSrt(split.cues), flush: true);
+      if (!isCurrent()) return;
+      if (_isRemote) {
+        _registerImportedSubtitleSource(target);
+        if (await _applyRemoteSubtitle(controller, target)) {
+          if (!isCurrent()) return;
+          unawaited(_uploadRemoteSubtitleToHost(target));
+        }
+      } else {
+        await _importExternalSubtitle(controller, target);
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'video.subtitleBilingualSplit',
+        error,
+        stack,
+      );
+      if (isCurrent()) {
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
+      }
+      return;
+    }
+    if (!isCurrent()) return;
+    _showOsd(
+      t.video_subtitle_studio_split_done(
+        kept: split.cues.length,
+        dropped: split.droppedCues,
+      ),
+      severity: ToastSeverity.success,
+    );
+  }
 
   /// 「生成字幕」入口（反馈 6Tj3ECtB0Q：原来两个入口功能重叠）。管线能跑时打开管线
   /// 面板，面板里多一项「保存字幕文件」：开 = 管线（原「生成日语字幕」），关 = 本机

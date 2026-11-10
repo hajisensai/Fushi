@@ -73,6 +73,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_companion.dart';
@@ -1582,6 +1583,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           : MainAxisAlignment.start,
       children: <Widget>[
         for (final Widget w in parts) w is _LinkText ? Flexible(child: w) : w,
+        // 试听片段（未接整曲的 Apple Music）：进度条约 30 秒就到头，这里说明为什么。
+        MusicPreviewBadgeSwitcher(visible: item.isPreview),
       ],
     );
   }
