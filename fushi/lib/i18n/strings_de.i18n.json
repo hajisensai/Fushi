@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "Reduziert Cache- und Speicherverbrauch für leistungsschwache Geräte. Einige Änderungen werden nach Neustart wirksam.",
   "low_memory_mode_suggestion": "Versuchen Sie, den Speichersparmodus unter Einstellungen → Verschiedenes zu aktivieren.",
   "lyrics_artist": "Künstler",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Liedtext unscharf",
   "lyrics_blur_hint": "Die aktuelle Zeile für Hörimmersion unscharf stellen; darüber fahren oder tippen zum Aufdecken",
   "lyrics_control_item_position_jump": "Jump to position",

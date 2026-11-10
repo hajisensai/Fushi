@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "减少缓存和内存使用，适合低端设备。部分更改需重启后生效。",
   "low_memory_mode_suggestion": "可尝试在 设置 → 其他设置 中开启小内存模式。",
   "lyrics_artist": "艺术家",
+  "lyrics_av_sync_hint": "＋ 让高亮推后，− 让高亮提前；按住按钮可连续调整，点数值归零。",
   "lyrics_blur": "模糊歌词",
   "lyrics_blur_hint": "听力沉浸：模糊当前句，悬停或点击显形",
   "lyrics_control_item_position_jump": "进度跳转",

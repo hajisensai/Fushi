@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "ลดการใช้แคชและหน่วยความจำสำหรับอุปกรณ์สเปคต่ำ บางการเปลี่ยนแปลงจะมีผลหลังรีสตาร์ท",
   "low_memory_mode_suggestion": "ลองเปิดโหมดประหยัดหน่วยความจำในการตั้งค่า → เบ็ดเตล็ด",
   "lyrics_artist": "ศิลปิน",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "เบลอเนื้อเพลง",
   "lyrics_blur_hint": "เบลอบรรทัดปัจจุบันเพื่อฝึกการฟัง; เลื่อนเมาส์หรือแตะเพื่อเปิดเผย",
   "lyrics_control_item_position_jump": "Jump to position",

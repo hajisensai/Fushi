@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "Reduce cache and memory usage for low-end devices. Some changes take effect after restart.",
   "low_memory_mode_suggestion": "Try enabling Low Memory Mode in Settings → Miscellaneous.",
   "lyrics_artist": "Artist",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Blur lyrics",
   "lyrics_blur_hint": "Blur the current line for listening immersion; hover or tap to reveal",
   "lyrics_control_item_position_jump": "Jump to position",

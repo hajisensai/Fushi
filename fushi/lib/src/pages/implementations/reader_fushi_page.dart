@@ -104,6 +104,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_av_sync_panel.dart'
+    show showLyricsAvSyncPanel;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart'
     show showLyricsSpeedPanel;
 import 'package:fushi/src/asr_host/asr_host.dart';

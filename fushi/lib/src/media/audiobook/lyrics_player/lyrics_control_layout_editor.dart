@@ -45,6 +45,7 @@ IconData lyricsControlItemIcon(LyricsControlItem item) => switch (item) {
   LyricsControlItem.swapSides => FushiIcons.swap,
   LyricsControlItem.positionJump => FushiIcons.myLocation,
   LyricsControlItem.jumpHistory => FushiIcons.history,
+  LyricsControlItem.avSync => FushiIcons.sync,
 };
 
 /// 歌词按钮的名称（编辑器 chip / 菜单 / 无障碍语义）。
@@ -59,6 +60,7 @@ String lyricsControlItemLabel(LyricsControlItem item) => switch (item) {
   LyricsControlItem.swapSides => t.lyrics_layout_swap_sides,
   LyricsControlItem.positionJump => t.lyrics_control_item_position_jump,
   LyricsControlItem.jumpHistory => t.media_jump_history_title,
+  LyricsControlItem.avSync => t.av_sync,
 };
 
 String _zoneLabel(LyricsControlSlot slot) => switch (slot) {

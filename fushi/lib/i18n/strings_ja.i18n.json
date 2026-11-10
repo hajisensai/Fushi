@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "キャッシュとメモリ使用量を削減します。一部の変更は再起動後に反映されます。",
   "low_memory_mode_suggestion": "設定 → その他の設定で省メモリモードを有効にしてみてください。",
   "lyrics_artist": "アーティスト",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "歌詞をぼかす",
   "lyrics_blur_hint": "リスニングに集中するため現在の行をぼかします。ホバーまたはタップで表示",
   "lyrics_control_item_position_jump": "Jump to position",

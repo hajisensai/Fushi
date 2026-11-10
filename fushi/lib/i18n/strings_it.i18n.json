@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "Riduce l'uso di cache e memoria per dispositivi di fascia bassa. Alcune modifiche richiedono il riavvio.",
   "low_memory_mode_suggestion": "Prova ad attivare la modalità memoria ridotta in Impostazioni → Varie.",
   "lyrics_artist": "Artista",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Sfoca testi",
   "lyrics_blur_hint": "Sfoca la riga corrente per immersione nell'ascolto; passa sopra o tocca per rivelare",
   "lyrics_control_item_position_jump": "Jump to position",

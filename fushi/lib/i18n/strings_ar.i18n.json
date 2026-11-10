@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "تقليل استخدام الذاكرة والتخزين المؤقت للأجهزة منخفضة المواصفات. بعض التغييرات تتطلب إعادة التشغيل.",
   "low_memory_mode_suggestion": "جرب تفعيل وضع الذاكرة المنخفضة في الإعدادات ← إعدادات متنوعة.",
   "lyrics_artist": "الفنان",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "تمويه كلمات الأغاني",
   "lyrics_blur_hint": "تمويه السطر الحالي للانغماس في الاستماع؛ مرر المؤشر أو انقر للكشف",
   "lyrics_control_item_position_jump": "Jump to position",

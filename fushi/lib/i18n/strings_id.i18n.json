@@ -4799,6 +4799,7 @@
   "low_memory_mode_hint": "Mengurangi penggunaan cache dan memori untuk perangkat kelas bawah. Beberapa perubahan berlaku setelah mulai ulang.",
   "low_memory_mode_suggestion": "Coba aktifkan Mode Memori Rendah di Pengaturan → Lain-lain.",
   "lyrics_artist": "Artis",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Buramkan lirik",
   "lyrics_blur_hint": "Buramkan baris saat ini untuk imersi mendengarkan; arahkan kursor atau ketuk untuk menampilkan",
   "lyrics_control_item_position_jump": "Jump to position",
