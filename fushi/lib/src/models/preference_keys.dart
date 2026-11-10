@@ -178,6 +178,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'collapse_dictionaries',
   'collapsed_collection_ids',
   'compress_mining_media',
+  // String：手柄查词模式开启方式 `holdL1` / `selectToggle` / `off`；未设 = 副屏伴侣在用时
+  // 按住 L1、否则关（ControllerLookupStyle.resolve）。设备本地。
+  'controller_lookup_style',
   'current_home_tab_index',
   'custom_dict_css',
   'deduplicate_pitch_accents',
@@ -336,6 +339,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
   // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
   'home_dashboard_panels',
+  // String（JSON map，默认空）：从互联对端下载的有声书「下载时 host 报的内容版本」
+  // `{book:<本机 bookKey> | srt:<uid>: {source, rev}}`（sync/remote_audiobook_revision.dart）。
+  // 书架据此提示「对端有更新」。设备本地（SyncRepository 的设备本地清单）。
+  'interconnect_audiobook_revisions',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',
@@ -723,6 +730,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'screen_ocr.card_image',
   // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
   'screen_ocr.keep_capture_session',
+  // String（JSON 数组）：auto 策略下用户已同意使用的副屏指纹 `名称|宽dpx高dp`。
+  // 读写见 SecondScreenController。设备本地（deviceLocalPrefKeys）。
+  'second_screen_approved_displays',
+  // String：副屏在用时主屏查词结果显示在哪 `bottom`（下屏查词页，默认）/ `top`
+  // （上屏页内弹窗）。读写见 SecondScreenController。设备本地。
+  'second_screen_lookup_screen',
+  // String：第二块屏（双屏掌机下屏 / 外接显示器）副屏伴侣启动策略 `auto` / `always` /
+  // `off`，默认 auto。读写见 SecondScreenController。设备本地。
+  'second_screen_mode',
   // string（JSON 数组，最近的在前）：最近打开的设置一级分类（SettingsDestinationId.name），
   // 首页侧栏「设置」速览卡读它（settings_recent_destinations.dart，设备本地）。
   'settings_recent_destinations',

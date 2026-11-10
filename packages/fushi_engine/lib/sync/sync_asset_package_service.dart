@@ -12,6 +12,8 @@ import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
         importGeneratedSubtitleBody,
         rebuildGeneratedSubtitleBody;
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/sync/audiobook_content_revision.dart'
+    show audiobookContentState;
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -202,6 +204,20 @@ class SyncAssetPackageService {
     );
   }
 
+  /// 读 `.fushiaudio` 包 manifest 里的 `contentRevision`（打包时 host 的内容版本，
+  /// 见 [exportAudioDatabasePackage]）。旧 host 打的包没有这个键 → null。只读中央
+  /// 目录与 manifest，不解压资源。包不是合法 zip / 没有 manifest 时照抛。
+  static Future<String?> readAudioPackageContentRevision(
+    File packageFile,
+  ) async {
+    final Object? manifest = jsonDecode(
+      await _readManifestInIsolate(packageFile.path),
+    );
+    if (manifest is! Map) return null;
+    final Object? revision = manifest['contentRevision'];
+    return revision is String && revision.isNotEmpty ? revision : null;
+  }
+
   /// 打包一本有声书为 `.fushiaudio`。支持两类：
   /// - **srt-backed**（EPUB 配对）：[bookKey] 非空、host 有 Audiobooks 行 → manifest
   ///   带 `audiobook` 段、cue 走 bookKey 命名空间（原行为，逐字节不变）。
@@ -295,9 +311,17 @@ class SyncAssetPackageService {
       }
     }
 
+    // 这份包是 host 哪一版内容打的（与互联清单的 `contentRevision`、导出缓存的
+    // 版本同一个值）。在打包前算：文件若在打包途中又变了，记下的只会比包旧——下载端
+    // 最多多提示一次「有更新」，不会漏报。旧导入端忽略未知键。
+    final String contentRevision = (await audiobookContentState(
+      audiobook: audiobook,
+      srtBook: srtBook,
+    )).revision;
     final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
       'kind': 'audioDatabase',
+      'contentRevision': contentRevision,
       // 纯 SRT 有声书无 Audiobooks 行 → audiobook 段为 null，导入端据此走纯 SRT 分支。
       'audiobook': audiobook != null
           ? _audiobookManifest(audiobook, audiobookAudio.paths)
