@@ -332,6 +332,7 @@ import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/waveform_envelope_cache.dart';
 import 'package:fushi/src/media/video/subtitle_auto_align.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_segments.dart';
 import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
@@ -2091,9 +2092,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_armNetworkOpenDiagnosis] 的定时器：新一次 load / dispose 取消。
   Timer? _networkOpenDiagnoseTimer;
 
-  /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
-  /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
-  /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
+  /// TODO-1244：字幕对轴波形包络缓存（按段，反馈 EUvw-RjUE4）。每段 ffmpeg 逐帧能量包络
+  /// 抽一次后按「音源|音轨 + 段区间」记住，之后重开波形对轴视图、滚回看过的段直接复用，
+  /// 不再重跑 ffmpeg（切视频/切音轨时音源 key 变化整槽失效，见 [WaveformEnvelopeCache]）。
   final WaveformEnvelopeCache _subtitleWaveformCache = WaveformEnvelopeCache();
 
   /// 互联远端视频的对轴 / 重定时音轨：host 在本地裁出整集音轨，落到本机临时文件后喂给
@@ -12124,11 +12125,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
       subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
       videoDurationMs: _controller?.durationMs ?? 0,
-      subtitleProbeLimitMs: _subtitleAlignProbeLimitMs,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
               _canResolveSubtitleAlignAudio
-          ? _loadSubtitleWaveformEnvelope
+          ? _loadSubtitleWaveformSegment
           : null,
       subtitlePositionListenable: _controller,
       currentSubtitlePositionMs: () => _controller?.subtitleClockMs ?? -1,

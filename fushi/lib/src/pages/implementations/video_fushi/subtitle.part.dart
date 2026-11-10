@@ -4072,14 +4072,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
   bool get _canResolveSubtitleAlignAudio =>
       _canResolveSubtitleTimingAudio || _streamAlignAudioSource != null;
 
-  /// 本次波形 / 自动对轴的探测上界：整集音源（本地文件 / 互联 host）读
+  /// 本次**自动对轴**的探测上界：整集音源（本地文件 / 互联 host）读
   /// [kSubtitleAutoAlignProbeLimitMs]；只能读流时只拉前 [kStreamSubtitleAlignProbeLimitMs]，
-  /// 抽音、`-t`、cue 栅格化上界与波形时间窗都取它（见 [subtitleAlignProbeLimitMs]）。
+  /// 抽音、`-t` 与 cue 栅格化上界都取它（见 [subtitleAlignProbeLimitMs]）。人工波形视图
+  /// **不**用它：时间窗是片长全程、按段懒抽（[_loadSubtitleWaveformSegment]，反馈 EUvw-RjUE4）。
   int get _subtitleAlignProbeLimitMs =>
       subtitleAlignProbeLimitMs(fromStream: !_canResolveSubtitleTimingAudio);
 
-  /// 波形 / 自动对轴的音频输入。整集音源优先；否则从流里只裁出这两者实际会看的
-  /// 前 [_subtitleAlignProbeLimitMs]（时间轴与本地视频完全同源），不必拉整集。按「流 + 音轨」缓存，失败不缓存。
+  /// 自动对轴的音频输入。整集音源优先；否则从流里只裁出它实际会看的前
+  /// [_subtitleAlignProbeLimitMs]（时间轴与本地视频完全同源），不必拉整集。按「流 + 音轨」缓存，失败不缓存。
   Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio() async {
     if (_canResolveSubtitleTimingAudio) return _resolveSubtitleTimingAudio();
     final VideoPlayerController? controller = _controller;
@@ -4093,6 +4094,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       () => _fetchStreamAlignAudio(
         controller,
         source,
+        startMs: 0,
         endMs: math.min(durationMs, _subtitleAlignProbeLimitMs),
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: controller.realAudioStreamCount,
@@ -4108,14 +4110,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return (path: path, audioStreamIndex: null, audioStreamCount: null);
   }
 
+  /// 从流里裁出 `[startMs, endMs)` 的音频到临时文件（自动对轴的前 N 分钟 / 波形视图的
+  /// 一段）。[announce] = 弹「正在拉取远端音频」OSD（波形视图按段抽时不弹：视图里有段级
+  /// 加载遮罩，且 OSD 会被对轴弹窗盖住）。
   Future<String?> _fetchStreamAlignAudio(
     VideoPlayerController controller,
     String source, {
+    required int startMs,
     required int endMs,
     required int? audioStreamIndex,
     required int audioStreamCount,
+    bool announce = true,
   }) async {
-    if (mounted) {
+    if (announce && mounted) {
       _showOsd(
         t.video_subtitle_remote_audio_fetching,
         icon: FushiIcons.audio,
@@ -4135,7 +4142,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     await dir.create(recursive: true);
     return extractAudioSegmentViaFfmpeg(
       inputPath: ffmpegRemoteInputFor(relayed.url),
-      startMs: 0,
+      startMs: startMs,
       endMs: endMs,
       outputPath: p.join(
         dir.path,
@@ -4145,7 +4152,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       audioStreamCount: audioStreamCount,
       httpHeaders: headers,
       // 读流至多与实时播放一样慢；再留两分钟连接 / 收尾余量。
-      timeout: Duration(milliseconds: endMs + 120000),
+      timeout: Duration(milliseconds: endMs - startMs + 120000),
     );
   }
 
@@ -4296,34 +4303,94 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
-  /// TODO-1051 阶段B：为字幕对轴波形面板抽当前视频的逐帧音频能量包络（原始 dB 序列）。
+  /// TODO-1051 阶段B / 反馈 EUvw-RjUE4：为字幕对轴波形视图抽一段 `[startMs, endMs)` 的
+  /// 逐帧音频能量包络（原始 dB 序列）。
   ///
-  /// 复用与 [_autoAlignSubtitle] 同一探测入口 [extractAudioEnergyEnvelope]（同音轨、同前
-  /// N 分钟截断），返回原始逐帧包络交给面板降采样成 0..1 波形桶（降采样在面板层随宽度算，
-  /// 不在此处、不在 paint 里跑 ffmpeg）。无 controller / 无视频路径 / ffmpeg 抽不出音轨时
-  /// 返回空列表，面板据此退化成纯 stepper（不崩不空白）。
-  Future<List<double>> _loadSubtitleWaveformEnvelope() async {
+  /// 波形视图的时间窗是**片长全程**、按段懒抽（[SubtitleWaveformSegments]：视口滚到哪段才
+  /// 请求哪段），这里只抽被请求的那一段：整集音源（本地文件 / 互联 host 裁好的整集音轨）
+  /// 用输入端 `-ss`/`-t` 从文件里切；只能读流时只从流里拉这一段音频再抽——不会一打开就把
+  /// 整集拉下来。历史上这里沿用自动对轴的探测上界 [_subtitleAlignProbeLimitMs]（本地 20
+  /// 分钟），24 分钟的一集 20:00 之后无波形、拖不过去；该上界只属于互相关，这里**不再**用。
+  ///
+  /// 按「音源 + 当前音轨 + 段区间」缓存非空结果（[WaveformEnvelopeCache]）：重开视图、滚回
+  /// 看过的段不再重跑 ffmpeg；切视频 / 切音轨换音源 key 即清空。无 controller / 无音源 /
+  /// ffmpeg 抽不出时返回空列表，视图按段降级（首段为空则入口提示不可用、不崩不空白）。
+  Future<List<double>> _loadSubtitleWaveformSegment(
+    int startMs,
+    int endMs,
+  ) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return const <double>[];
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
-    if (audio == null) return const <double>[];
-    final String videoPath = audio.path;
-    // TODO-1244：按「视频路径 + 当前音轨」缓存已抽出的波形包络。同一视频/音轨重复打开
-    // 快速设置面板或波形对轴视图时直接复用，不再重跑 ffmpeg（抽整轨对大 REMUX 要数十秒）。
-    // 切视频或切音轨时 key 变化 → miss → 重抽（不显示旧音频波形），只缓存非空结果。
-    final String cacheKey = '$videoPath|${controller.currentAudioStreamIndex}';
+    if (controller == null || endMs <= startMs) return const <double>[];
+    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    if (_canResolveSubtitleTimingAudio) {
+      final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+      if (audio == null) return const <double>[];
+      return _subtitleWaveformCache.resolve(
+        '${audio.path}|$audioStreamIndex',
+        startMs,
+        endMs,
+        // TODO-1244：波形显示走更细的 [kSubtitleWaveformWindowMs]（20ms=50 帧/秒），密度接近
+        // 成熟波形工具、句间静音可辨；自动对轴仍用 100ms 采样，两者互不影响（独立探测/缓存）。
+        () => extractAudioEnergyEnvelope(
+          videoPath: audio.path,
+          windowMs: kSubtitleWaveformWindowMs,
+          audioStreamIndex: audio.audioStreamIndex,
+          audioStreamCount: audio.audioStreamCount,
+          startMs: startMs,
+          limitMs: endMs - startMs,
+        ),
+      );
+    }
+    final String? source = _streamAlignAudioSource;
+    if (source == null) return const <double>[];
     return _subtitleWaveformCache.resolve(
-      cacheKey,
-      // TODO-1244：波形显示走更细的 [kSubtitleWaveformWindowMs]（20ms=50 帧/秒），密度接近
-      // 成熟波形工具、句间静音可辨；自动对轴仍用 100ms 采样，两者互不影响（独立探测/缓存）。
-      () => extractAudioEnergyEnvelope(
-        videoPath: videoPath,
-        windowMs: kSubtitleWaveformWindowMs,
-        audioStreamIndex: audio.audioStreamIndex,
-        audioStreamCount: audio.audioStreamCount,
-        limitMs: _subtitleAlignProbeLimitMs,
+      'stream|$source|$audioStreamIndex',
+      startMs,
+      endMs,
+      () => _extractStreamWaveformSegment(
+        controller,
+        source,
+        startMs: startMs,
+        endMs: endMs,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
       ),
     );
+  }
+
+  /// 流音源的一段波形：只从流里裁出 `[startMs, endMs)` 的音频到临时文件，抽完包络即删。
+  Future<List<double>> _extractStreamWaveformSegment(
+    VideoPlayerController controller,
+    String source, {
+    required int startMs,
+    required int endMs,
+    required int? audioStreamIndex,
+    required int audioStreamCount,
+  }) async {
+    final String? path = await _fetchStreamAlignAudio(
+      controller,
+      source,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      announce: false,
+    );
+    if (path == null) return const <double>[];
+    try {
+      // 裁出的文件时间轴从 0 起、只含这一段（单音轨），按段长截断即可。
+      return await extractAudioEnergyEnvelope(
+        videoPath: path,
+        windowMs: kSubtitleWaveformWindowMs,
+        limitMs: endMs - startMs,
+      );
+    } finally {
+      try {
+        await File(path).delete();
+      } on FileSystemException catch (e) {
+        debugPrint('[subtitle-waveform] temp segment cleanup failed: $e');
+      }
+    }
   }
 
   /// 字幕对轴/匹配快捷键（用户请求，默认 Shift+A）：从键盘一键弹波形对轴放大视图，
@@ -4345,74 +4412,84 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
-    final List<double> env = await _loadSubtitleWaveformEnvelope();
-    if (!mounted) return;
-    if (env.isEmpty) {
-      _showOsd(
-        t.video_subtitle_waveform_unavailable,
-        severity: ToastSeverity.warning,
-      );
+    // 波形时间窗 = 片长全程（与面板入口 _SubtitleWaveformAlignPanelState 同一算式
+    // [subtitleWaveformWindowEndMs]），包络按段懒抽：先抽播放头所在那段，非空才弹窗。
+    final SubtitleWaveformSegments segments = SubtitleWaveformSegments(
+      durationMs: subtitleWaveformWindowEndMs(
+        durationMs: controller.durationMs ?? 0,
+        cues: cues,
+      ),
+      loadSegment: _loadSubtitleWaveformSegment,
+    );
+    final int anchorMs = controller.subtitleClockMs ?? 0;
+    final bool ready = await segments.ensureSegmentAt(anchorMs);
+    if (!mounted || !ready) {
+      segments.dispose();
+      if (mounted) {
+        _showOsd(
+          t.video_subtitle_waveform_unavailable,
+          severity: ToastSeverity.warning,
+        );
+      }
       return;
     }
-    // 波形时间窗上界：与 extractAudioEnergyEnvelope 探测上界同源（前 N 分钟截断），
-    // 与 _SubtitleWaveformAlignPanelState._windowEndMs 同一算式，保证键盘直达路径与
-    // 面板入口路径画出的时间轴一致。
-    final int durationMs = controller.durationMs ?? 0;
-    final int probeLimitMs = _subtitleAlignProbeLimitMs;
-    final int windowEndMs = (durationMs > 0 && durationMs < probeLimitMs)
-        ? durationMs
-        : probeLimitMs;
     final bool canAutoAlign = cues.isNotEmpty;
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      segments.dispose();
+      return;
+    }
     // guardOverlay：对轴弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
     // （Esc / 点外部 / 抛异常）都必须归还——此前这里漏了归还，关掉弹窗后视频快捷键
     // 直到下次点画面才恢复，与同文件 Jimaku 对话框 / FilePicker 的既有范式不一致。
-    await _focusOwnership.guardOverlay(
-      () => showAppDialog<void>(
-        context: context,
-        useRootNavigator: true,
-        builder: (BuildContext _) => SubtitleWaveformZoomView(
-          rawEnvelope: env,
-          cues: cues,
-          windowEndMs: windowEndMs,
-          initialDelayMs: _delayMs,
-          onCommitDelay: _setDelayMs,
-          onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
-          // 「上/下一句对齐到当前时间」：本弹窗必然有 cue（进入前已判空并降级），故直接
-          // 接上执行体，与快速设置面板路径同源。
-          onSnapDelayToCue: _snapSubtitleDelayToCue,
-          onPlayCue: (int startMs) async {
-            await controller.seekMs(startMs);
-            await controller.play();
-          },
-          isPlaying: () => controller.isPlaying,
-          onTogglePlayPause: () async {
-            await controller.togglePlayPause();
-          },
-          // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
-          // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
-          keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
-            appModel.shortcutRegistry,
-            _buildVideoShortcutActions(controller),
-            exclude: const <ShortcutAction>{
-              ShortcutAction.globalBack,
-              ShortcutAction.videoToggleFullscreen,
-              // BUG-2462：F11 也是视频全屏了，同样不在弹窗里切路由。
-              ShortcutAction.globalToggleFullscreen,
-              ShortcutAction.videoToggleSubtitleList,
-              ShortcutAction.videoToggleImmersiveLock,
-              ShortcutAction.videoOpenSubtitleAlign,
+    try {
+      await _focusOwnership.guardOverlay(
+        () => showAppDialog<void>(
+          context: context,
+          useRootNavigator: true,
+          builder: (BuildContext _) => SubtitleWaveformZoomView(
+            segments: segments,
+            cues: cues,
+            initialDelayMs: _delayMs,
+            onCommitDelay: _setDelayMs,
+            onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+            // 「上/下一句对齐到当前时间」：本弹窗必然有 cue（进入前已判空并降级），故直接
+            // 接上执行体，与快速设置面板路径同源。
+            onSnapDelayToCue: _snapSubtitleDelayToCue,
+            onPlayCue: (int startMs) async {
+              await controller.seekMs(startMs);
+              await controller.play();
             },
+            isPlaying: () => controller.isPlaying,
+            onTogglePlayPause: () async {
+              await controller.togglePlayPause();
+            },
+            // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
+            // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
+            keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
+              appModel.shortcutRegistry,
+              _buildVideoShortcutActions(controller),
+              exclude: const <ShortcutAction>{
+                ShortcutAction.globalBack,
+                ShortcutAction.videoToggleFullscreen,
+                // BUG-2462：F11 也是视频全屏了，同样不在弹窗里切路由。
+                ShortcutAction.globalToggleFullscreen,
+                ShortcutAction.videoToggleSubtitleList,
+                ShortcutAction.videoToggleImmersiveLock,
+                ShortcutAction.videoOpenSubtitleAlign,
+              },
+            ),
+            onSeek: (int ms) async {
+              await controller.seekMs(ms);
+            },
+            positionListenable: controller,
+            // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
+            currentPositionMs: () => controller.subtitleClockMs ?? -1,
           ),
-          onSeek: (int ms) async {
-            await controller.seekMs(ms);
-          },
-          positionListenable: controller,
-          // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
-          currentPositionMs: () => controller.subtitleClockMs ?? -1,
         ),
-      ),
-    );
+      );
+    } finally {
+      segments.dispose();
+    }
   }
 }
 

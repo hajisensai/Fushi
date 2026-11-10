@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4357](bugs/BUG-4357-android-startup-webview-prewarm-anr.md) | ✅ | ✅ | Android 低端机冷启动 8s ANR：WebView 预热在首帧前于主线程初始化 chromium |
+| [BUG-4357](bugs/BUG-4357-subtitle-waveform-truncated-at-probe-limit.md) | ✅ | ✅ | 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去 |
 | [BUG-4356](bugs/BUG-4356-online-manga-completion-per-book.md) | ✅ | ✅ | online-manga-completion-per-book |
 | [BUG-4355](bugs/BUG-4355-gal-direct-nested-flip-up-layer-reset.md) | ✅ | ✅ | 游戏内卡嵌套子卡向上翻出后两张卡下方出现透明区 |
 | [BUG-4354](bugs/BUG-4354-alist-download-gateway-pow-required.md) | ✅ | ✅ | 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手 |
