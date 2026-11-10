@@ -1,5 +1,5 @@
 // 复习翻日时刻的待写标记（`srs_day_rollover_pending::<uid>`）与已见修改记录（`srs_day_rollover_seen::<uid>`）
-// 是这台设备自己的状态（BUG-4296 / PR #3130）：按前缀登记进 [PrefRedactionPolicy.deviceLocalKeyPrefixes]，
+// 是这台设备自己的状态（BUG-4297 / PR #3130）：按前缀登记进 [PrefRedactionPolicy.deviceLocalKeyPrefixes]，
 // 于是与其它设备本地键走同一个谓词——备份导出剔除、恢复保留本机值、不进 Profile 快照 / 分享、不经设置同步出境。
 //
 // 走真实的 BackupService.createBackup → BackupRestoreService.restoreBackup。
