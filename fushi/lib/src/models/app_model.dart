@@ -1092,7 +1092,7 @@ class AppModel
     // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
     // 复习远程刷卡：已配对设备在本机复习上出卡 / 作答（复习模块关着时 SrsAppHost.current 为 null）。
     srsRemoteStore: () => SrsAppHost.current?.remoteStore,
-    // 已配对设备一轮复习同步跑完问本机加入了没有（BUG-4279）：与本机目录那一轮的闸门同一个判据
+    // 已配对设备一轮复习同步跑完问本机加入了没有（BUG-4286）：与本机目录那一轮的闸门同一个判据
     // （srs_app_runtime.dart `firstSyncConfirmed`）。
     srsSync2Joined: () => srsSync2MergeConfirmed,
     leaderboardLinkHost: () => AppLeaderboardLinkHost(
@@ -9353,7 +9353,7 @@ class AppModel
         );
 
   /// 控制通道（fushi_cli / AI 助手）替**本机用户**查词：`dict search`、`anki mine`、`video mine`、`game mine`
-  /// （BUG-4280）。与查词页同一条链（[searchDictionary]：远端优先、本机作品级配置），多一个调用方声明的
+  /// （BUG-4287）。与查词页同一条链（[searchDictionary]：远端优先、本机作品级配置），多一个调用方声明的
   /// [lookupLanguage]（null = 本机当前查词语言，与 [searchDictionary] 完全等价）。
   ///
   /// 不能用 [createRemoteLookupService]：那是**替对端 / 浏览器扩展**查词的服务，只查本机词典、不再转问

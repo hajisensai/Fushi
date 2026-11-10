@@ -1066,7 +1066,7 @@ class InterconnectSyncBackend extends SyncBackend
     return decoded is Map ? (decoded['token'] as num?)?.toInt() : null;
   }
 
-  /// host 自己是否已加入复习同步 v2（BUG-4279，[kSrsSyncStatusPath]）。host 没确认首次 v2 同步前既不发布自己的
+  /// host 自己是否已加入复习同步 v2（BUG-4286，[kSrsSyncStatusPath]）。host 没确认首次 v2 同步前既不发布自己的
   /// 复习数据、也不并入本机写过去的段：本机这一轮「成功」却收不到任何东西，调度器据此提示而不是说「全部已同步」。
   /// null = host 不报告（无头服务端 / 老 host 没有首次确认这一步，端点 404）。网络 / 鉴权失败照常抛。
   Future<bool?> hostSrsSyncJoined() async {

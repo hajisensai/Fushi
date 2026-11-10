@@ -256,7 +256,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       // 与查词页同一条查词链（AppModel.searchDictionaryForUser：同一套清洗 / 缓存 /
       // 隐藏词典过滤，开着「远端查词」时远端优先），只是不要 popupJson。不走替对端
       // 查词的 createRemoteLookupService：它只查本机词典，瘦客户端上永远是空的
-      // （BUG-4280）。`language`（可选）：调用方的查词语言；缺省按本机当前查词语言。
+      // （BUG-4287）。`language`（可选）：调用方的查词语言；缺省按本机当前查词语言。
       final DictionarySearchResult result = await app().searchDictionaryForUser(
         searchTerm: term,
         searchWithWildcards: call.optBool('wildcards') ?? false,
@@ -377,7 +377,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       final bool lookup = call.optBool('lookup') ?? true;
       DictionarySearchResult? found;
       if (lookup && (reading == null || glossary == null)) {
-        // 与查词页同一条查词链（远端优先，BUG-4280）：瘦客户端靠电脑的词典补释义。
+        // 与查词页同一条查词链（远端优先，BUG-4287）：瘦客户端靠电脑的词典补释义。
         found = await app().searchDictionaryForUser(
           searchTerm: word,
           maximumTerms: 10,

@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3843 条。点号进各自文件。
+> 共 3849 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4281](bugs/BUG-4281-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
-| [BUG-4280](bugs/BUG-4280-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
-| [BUG-4279](bugs/BUG-4279-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |
-> 共 3846 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4288](bugs/BUG-4288-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
+| [BUG-4287](bugs/BUG-4287-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
+| [BUG-4286](bugs/BUG-4286-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |
 | [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 | [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
 | [BUG-4282](bugs/BUG-4282-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |
