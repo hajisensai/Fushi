@@ -1591,6 +1591,13 @@
     return true;
   };
 
+  // 当前轨的 cue（**已套读取侧偏移**，与覆盖层 / 侧边栏看到的同一份）。自动对轴（subtitle-align.js）
+  // 拿它与听到的声音做互相关，算出的是「在当前偏移上再平移多少」。没有轨返回 []。
+  window.fushiSubtitleActiveCues = function () {
+    recomputeShortcutCues();
+    return st.cues.slice();
+  };
+
   // ── 手机视频遥控（Fushi app 内浏览器宿主专用）──────────────────────────────
   // app 内浏览器把「前台标签页的正片」登记成手机遥控的播放器（`fushiRemote*` 消息，app 侧
   // web_browser_video_remote.dart）。浏览器扩展本身从不发这三条消息，所以扩展里这一节不会

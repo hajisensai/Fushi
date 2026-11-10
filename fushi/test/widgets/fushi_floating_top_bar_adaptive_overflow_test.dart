@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
+    show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
@@ -501,6 +503,218 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(more, findsNothing);
       expect(subtitleTruncated(tester), isFalse);
+    });
+  });
+
+  group('阅读器顶栏统一（反馈 -JpWlEuH5N）', () {
+    Widget readerBar({
+      double width = 720,
+      bool apple = false,
+      bool titleBacking = true,
+      Widget? titleTrailing,
+      List<FushiToolbarItem> pinned = const <FushiToolbarItem>[],
+      List<FushiToolbarItem> menu = const <FushiToolbarItem>[],
+      List<FushiToolbarItem>? items,
+      Key overflowKey = kFushiToolbarOverflowKey,
+    }) => MaterialApp(
+      theme: apple
+          ? buildFushiThemeData(
+              scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+              textTheme: Typography.material2021().black,
+              glass: FushiGlassMaterial.off,
+              glassDesign: true,
+            )
+          : null,
+      builder: apple
+          ? (BuildContext context, Widget? child) =>
+                FushiGlassScope(child: child!)
+          : null,
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: _outerWidth(width),
+            child: FushiFloatingTopBar(
+              leading: <FushiToolbarItem>[
+                FushiToolbarItem(
+                  icon: Icons.arrow_back,
+                  label: 'Back',
+                  onPressed: () {},
+                ),
+              ],
+              title: 'Chapter 12',
+              subtitle: 'Series',
+              titleBacking: titleBacking,
+              titleTrailing: titleTrailing,
+              pinnedActions: pinned,
+              actions: <List<FushiToolbarItem>>[items ?? actions],
+              menu: menu,
+              overflowKey: overflowKey,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    const ValueKey<String> titleKey = ValueKey<String>(
+      'fushi_floating_top_bar_title',
+    );
+
+    testWidgets('Apple：titleBacking 时标题装进实色悬浮胶囊；不开时仍是无底内联标题', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(readerBar(apple: true));
+      await tester.pumpAndSettle();
+      expect(
+        isGlassDesign(tester.element(find.byType(FushiFloatingTopBar))),
+        isTrue,
+      );
+      expect(tester.widget(find.byKey(titleKey)), isA<FushiFloatingPill>());
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(readerBar(apple: true, titleBacking: false));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget(find.byKey(titleKey)),
+        isNot(isA<FushiFloatingPill>()),
+      );
+    });
+
+    testWidgets('Material：标题本来就是胶囊，titleBacking 不改形态', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(readerBar());
+      await tester.pumpAndSettle();
+      expect(tester.widget(find.byKey(titleKey)), isA<FushiFloatingPill>());
+      await tester.pumpWidget(readerBar(titleBacking: false));
+      await tester.pumpAndSettle();
+      expect(tester.widget(find.byKey(titleKey)), isA<FushiFloatingPill>());
+    });
+
+    for (final bool apple in <bool>[false, true]) {
+      testWidgets('titleTrailing 画在标题胶囊里（apple=$apple）', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          readerBar(
+            apple: apple,
+            titleTrailing: const Text('Panel 3', key: ValueKey<String>('st')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(titleKey),
+            matching: find.byKey(const ValueKey<String>('st')),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('pinnedActions 恒平铺、排在最前；窄宽时普通动作收进 ⋯', (
+      WidgetTester tester,
+    ) async {
+      final List<FushiToolbarItem> pinned = <FushiToolbarItem>[
+        FushiToolbarItem(
+          key: const ValueKey<String>('p0'),
+          icon: Icons.undo,
+          label: 'Back jump',
+          onPressed: () {},
+        ),
+        FushiToolbarItem(
+          key: const ValueKey<String>('p1'),
+          icon: Icons.redo,
+          label: 'Forward jump',
+          onPressed: () {},
+        ),
+      ];
+      final List<FushiToolbarItem> keyed = <FushiToolbarItem>[
+        for (int i = 0; i < 6; i++)
+          FushiToolbarItem(
+            key: ValueKey<String>('a$i'),
+            icon: Icons.settings,
+            label: 'Action $i',
+            onPressed: () {},
+          ),
+      ];
+      // 300 宽：标题保底之后一颗按钮都放不下，恒平铺的两颗照样在。
+      await tester.pumpWidget(
+        readerBar(width: 300, pinned: pinned, items: keyed),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey<String>('p0')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('p1')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('a5')), findsNothing);
+      expect(more, findsOneWidget);
+
+      await tester.pumpWidget(
+        readerBar(width: 1400, pinned: pinned, items: keyed),
+      );
+      await tester.pumpAndSettle();
+      final double p1 = tester
+          .getCenter(find.byKey(const ValueKey<String>('p1')))
+          .dx;
+      final double a0 = tester
+          .getCenter(find.byKey(const ValueKey<String>('a0')))
+          .dx;
+      expect(p1, lessThan(a0), reason: '恒平铺的那组排在普通动作之前');
+    });
+
+    testWidgets('overflowKey 换 ⋯ 的键；菜单项键 = <动作键>_menu_item', (
+      WidgetTester tester,
+    ) async {
+      int hits = 0;
+      await tester.pumpWidget(
+        readerBar(
+          overflowKey: const ValueKey<String>('host_overflow'),
+          menu: <FushiToolbarItem>[
+            FushiToolbarItem(
+              key: const ValueKey<String>('jump'),
+              icon: Icons.history,
+              label: 'Jump history',
+              onPressed: () => hits++,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(more, findsNothing);
+      await tester.tap(find.byKey(const ValueKey<String>('host_overflow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('jump_menu_item')));
+      await tester.pumpAndSettle();
+      expect(hits, 1);
+    });
+
+    testWidgets('busy 动作的图标位换成 Expressive 加载指示，仍可点', (
+      WidgetTester tester,
+    ) async {
+      int hits = 0;
+      await tester.pumpWidget(
+        readerBar(
+          items: <FushiToolbarItem>[
+            FushiToolbarItem(
+              key: const ValueKey<String>('ocr'),
+              icon: Icons.document_scanner,
+              label: 'OCR',
+              busy: true,
+              onPressed: () => hits++,
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('ocr')),
+          matching: find.byType(FushiExpressiveLoadingIndicator),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('ocr')));
+      expect(hits, 1);
     });
   });
 }

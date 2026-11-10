@@ -48,8 +48,9 @@ final RegExp _multipartSuffix = RegExp(r'^[\s._\-]|^\d');
 const Set<String> _sidecarAudioExcludeExts = <String>{'.mp4'};
 
 /// sidecar 音频判定：复用 [AudiobookStorage.isAudioFile] 的音频扩展集，但剔除
-/// [_sidecarAudioExcludeExts]（视频容器）。
-bool _isSidecarAudio(String name) {
+/// [_sidecarAudioExcludeExts]（视频容器）。书架文件夹导入的有声书配对（R2–R5，
+/// `source_library_scanner.dart`）收「没被同名规则认领的音频」也用这一条，不另抄。
+bool isSidecarAudioName(String name) {
   if (_sidecarAudioExcludeExts.contains(p.extension(name).toLowerCase())) {
     return false;
   }
@@ -96,7 +97,7 @@ bool _isSidecarAudio(String name) {
     }
 
     // 音频：完全同名 或 同前缀多段。
-    if (wantAudio && _isSidecarAudio(name)) {
+    if (wantAudio && isSidecarAudioName(name)) {
       if (base == stem) {
         audio.add(name);
       } else if (base.startsWith(stem) &&

@@ -62,7 +62,7 @@ import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
-    show MusicPluginStreamResolver, resolveMusicPluginStream;
+    show isMusicPluginPath, MusicPluginStreamResolver, resolveMusicPluginStream;
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart'
@@ -79,6 +79,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_companion.dart';
@@ -1238,15 +1239,24 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     if (mounted) await _load(item);
   }
 
-  /// 当前曲目能不能出「生成日语字幕」（本机有转录能力、是本机文件）。
+  /// 当前曲目能不能出「生成日语字幕」（本机有转录能力，且是本机文件或在线音源插件曲目）。
   bool get _canGenerateSubtitles {
     final MusicPlayItem? item = _engine.current;
-    return item != null && musicSubtitleGenerationAvailable(item.path);
+    return item != null && musicSubtitleGenerationAvailableForItem(item);
   }
 
   Future<void> _generateSubtitles() async {
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
+    // 插件曲目没有本机文件：先把音频取到本机再开同一个面板（反馈 NXOjldMQZd）。
+    if (isMusicPluginPath(item.path)) {
+      await openMusicPluginSubtitleGenerateSheet(
+        context: _themedContext,
+        appModel: appModelNoUpdate,
+        item: item,
+      );
+      return;
+    }
     await openMusicSubtitleGenerateSheet(
       context: _themedContext,
       appModel: appModelNoUpdate,
@@ -1821,6 +1831,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           : MainAxisAlignment.start,
       children: <Widget>[
         for (final Widget w in parts) w is _LinkText ? Flexible(child: w) : w,
+        // 试听片段（未接整曲的 Apple Music）：进度条约 30 秒就到头，这里说明为什么。
+        MusicPreviewBadgeSwitcher(visible: item.isPreview),
       ],
     );
   }

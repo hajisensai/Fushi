@@ -26,6 +26,8 @@ import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/media/video/video_simultaneous_cues.dart'
+    show subtitleAuthoredVerticalFraction;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
@@ -4552,31 +4554,6 @@ List<(String, List<AudioCue>)> sortCueGroupsForPaint(
   return <(String, List<AudioCue>)>[for (final int i in idx) groups[i]];
 }
 
-/// 一条 cue 在**作者排版**里的竖直位置（0=画面顶，1=画面底），供纯字幕模式排行序用
-/// （BUG-3608）。\pos 取 y 分数、\move 取起点 y；无显式位置按 \an 竖直锚点 + MarginV
-/// （有 PlayResY 才折算）近似：底部 `1 - MarginV/PlayResY`、顶部 `MarginV/PlayResY`、中部
-/// 0.5。无 markup（srt/vtt）视作底部（1.0）。
-double _authoredVerticalFraction(SubtitleMarkup? m) {
-  if (m == null) return 1.0;
-  final SubtitlePos? pos = m.posFraction;
-  if (pos != null) return pos.yFraction;
-  final SubtitleMove? move = m.move;
-  if (move != null) return move.y1Fraction;
-  final double? playResY = m.playResY;
-  final double mv = m.cueStyle?.marginV ?? 0;
-  final double mvFraction = (playResY != null && playResY > 0 && mv > 0)
-      ? (mv / playResY).clamp(0.0, 1.0).toDouble()
-      : 0.0;
-  switch (m.anchor?.vertical ?? SubtitleVAlign.bottom) {
-    case SubtitleVAlign.top:
-      return mvFraction;
-    case SubtitleVAlign.middle:
-      return 0.5;
-    case SubtitleVAlign.bottom:
-      return 1.0 - mvFraction;
-  }
-}
-
 /// 纯字幕模式（respectAssStyle 关，BUG-915）把整层 cue 折进**一个**锚定堆叠组、位置
 /// 语义归零后，组内行序按**作者排版的竖直次序**排（BUG-3608）：返回「锚点侧在前」的
 /// 顺序（与 `_syncGroupSlots` 的槽位次序同构）——[anchorBottom] 时最靠下的在前（slot0
@@ -4596,7 +4573,7 @@ List<AudioCue> orderPlainCuesByAuthoredPosition(
 }) {
   if (cues.length < 2) return cues;
   final List<double> ys = <double>[
-    for (final AudioCue c in cues) _authoredVerticalFraction(c.markup),
+    for (final AudioCue c in cues) subtitleAuthoredVerticalFraction(c.markup),
   ];
   final List<int> idx = List<int>.generate(cues.length, (int i) => i)
     ..sort((int a, int b) {

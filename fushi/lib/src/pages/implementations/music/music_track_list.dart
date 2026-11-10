@@ -171,7 +171,7 @@ class MusicPlaylistDragHandle extends StatelessWidget {
   const MusicPlaylistDragHandle({super.key});
 
   @override
-  Widget build(BuildContext context) => Tooltip(
+  Widget build(BuildContext context) => FushiTooltip(
     message: t.music_action_reorder,
     child: const FushiReorderableDragHandle(
       child: SizedBox(

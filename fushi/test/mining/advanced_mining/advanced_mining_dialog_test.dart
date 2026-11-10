@@ -8,6 +8,8 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout_editor.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart'
     show formatAdvancedMiningStepSize;
@@ -164,6 +166,179 @@ void main() {
       final MiningImageCrop crop = host.confirms.single.crop!;
       expect(crop.left, closeTo(0.55, 1e-9));
       expect(crop.pageIndex, 46);
+    });
+  });
+
+  group('自定义布局（反馈 aZ99bm9R6K）', () {
+    const AdvancedMiningPanelId deckId = AdvancedMiningPanelId.deck;
+    const AdvancedMiningPanelId audioId = AdvancedMiningPanelId.sentenceAudio;
+    const AdvancedMiningPanelId imageId = AdvancedMiningPanelId.image;
+    final Set<AdvancedMiningPanelId> videoPresent = <AdvancedMiningPanelId>{
+      deckId,
+      audioId,
+      imageId,
+    };
+
+    Offset topLeftOf(WidgetTester tester, String title) =>
+        tester.getTopLeft(find.text(title));
+
+    Future<void> openEditor(WidgetTester tester) async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('advanced-mining-layout-button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AdvancedMiningLayoutEditor), findsOneWidget);
+    }
+
+    Future<void> closeEditor(WidgetTester tester) async {
+      await tester.tap(find.text(t.popup_advanced_mining_crop_done).last);
+      await tester.pumpAndSettle();
+      expect(find.byType(AdvancedMiningLayoutEditor), findsNothing);
+    }
+
+    testWidgets('默认：句子音频在左栏、紧跟句子，卡组仍在右栏', (WidgetTester tester) async {
+      await open(tester, host.videoPage());
+      final Offset sentence = topLeftOf(
+        tester,
+        t.popup_advanced_mining_sentence_section,
+      );
+      final Offset audio = topLeftOf(
+        tester,
+        t.popup_advanced_mining_audio_section,
+      );
+      final Offset deck = topLeftOf(
+        tester,
+        t.popup_advanced_mining_deck_section,
+      );
+      expect(audio.dx, closeTo(sentence.dx, 1));
+      expect(audio.dy, greaterThan(sentence.dy));
+      expect(deck.dx, greaterThan(sentence.dx + 300));
+    });
+
+    testWidgets('记住的布局：句子音频放回右栏', (WidgetTester tester) async {
+      host.layout = AdvancedMiningLayout.defaults.withColumn(
+        audioId,
+        AdvancedMiningColumn.right,
+      );
+      await open(tester, host.videoPage());
+      final double sentenceX = topLeftOf(
+        tester,
+        t.popup_advanced_mining_sentence_section,
+      ).dx;
+      final double audioX = topLeftOf(
+        tester,
+        t.popup_advanced_mining_audio_section,
+      ).dx;
+      expect(audioX, greaterThan(sentenceX + 300));
+    });
+
+    testWidgets('隐藏卡组：不渲染卡组分区，照常进默认卡组、不带覆盖项', (WidgetTester tester) async {
+      host.layout = AdvancedMiningLayout.defaults.withHidden(deckId, true);
+      await open(tester, host.videoPage());
+      expect(find.text(t.popup_advanced_mining_deck_section), findsNothing);
+      await confirm(tester);
+      expect(host.confirms.single.isEmpty, isTrue);
+    });
+
+    testWidgets('分区全摆到左栏：退回单栏摘要行，不留空右栏', (WidgetTester tester) async {
+      host.layout = AdvancedMiningLayout.defaults
+          .withColumn(deckId, AdvancedMiningColumn.left)
+          .withColumn(imageId, AdvancedMiningColumn.left);
+      await open(tester, host.videoPage());
+      expect(chevrons(), findsNWidgets(3));
+    });
+
+    testWidgets('窄屏摘要行跟布局的顺序与显隐', (WidgetTester tester) async {
+      host.layout = AdvancedMiningLayout.defaults
+          .reorderAmong(videoPresent, 1, 0)
+          .withHidden(imageId, true);
+      await open(tester, host.videoPage(), size: const Size(800, 900));
+      expect(chevrons(), findsNWidgets(2));
+      expect(
+        topLeftOf(tester, t.popup_advanced_mining_audio_section).dy,
+        lessThan(topLeftOf(tester, t.popup_advanced_mining_deck_section).dy),
+      );
+    });
+
+    testWidgets('编辑器：隐藏卡组即时生效并记住，恢复默认布局一键回去', (WidgetTester tester) async {
+      await open(tester, host.videoPage());
+      await openEditor(tester);
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('advanced-mining-layout-visibility-deck'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(host.setLayoutCalls.last.isHidden(deckId), isTrue);
+      await closeEditor(tester);
+      expect(find.text(t.popup_advanced_mining_deck_section), findsNothing);
+      await openEditor(tester);
+      await tester.tap(find.text(t.popup_advanced_mining_layout_reset));
+      await tester.pumpAndSettle();
+      expect(host.setLayoutCalls.last, AdvancedMiningLayout.defaults);
+      await closeEditor(tester);
+      expect(find.text(t.popup_advanced_mining_deck_section), findsOneWidget);
+    });
+
+    for (final bool glass in <bool>[false, true]) {
+      testWidgets('编辑器：句子音频切到右栏即时换栏（${glass ? 'Apple' : 'MD3'}）', (
+        WidgetTester tester,
+      ) async {
+        await open(tester, host.videoPage(), glass: glass);
+        await openEditor(tester);
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>(
+                'advanced-mining-layout-column-sentenceAudio',
+              ),
+            ),
+            matching: find.text(t.popup_advanced_mining_layout_right),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          host.setLayoutCalls.last.slotOf(audioId).column,
+          AdvancedMiningColumn.right,
+        );
+        await closeEditor(tester);
+        final double sentenceX = topLeftOf(
+          tester,
+          t.popup_advanced_mining_sentence_section,
+        ).dx;
+        final double audioX = topLeftOf(
+          tester,
+          t.popup_advanced_mining_audio_section,
+        ).dx;
+        expect(audioX, greaterThan(sentenceX + 300));
+      });
+    }
+
+    testWidgets('编辑器：把手菜单「下移」重排（键盘 / 读屏路径）', (WidgetTester tester) async {
+      await open(tester, host.videoPage());
+      await openEditor(tester);
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('advanced-mining-layout-handle-deck'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.move_down).last);
+      await tester.pumpAndSettle();
+      expect(
+        host.setLayoutCalls.last.visible(videoPresent),
+        <AdvancedMiningPanelId>[audioId, deckId, imageId],
+      );
+    });
+
+    testWidgets('手机底部面板的编辑器不给栏位选择', (WidgetTester tester) async {
+      await open(tester, host.videoPage(), size: const Size(390, 844));
+      await openEditor(tester);
+      expect(find.text(t.popup_advanced_mining_layout_right), findsNothing);
+      expect(
+        find.text(t.popup_advanced_mining_layout_hint_single),
+        findsOneWidget,
+      );
     });
   });
 
@@ -331,7 +506,12 @@ void main() {
 
     testWidgets('不要音频：视频片段置灰 + 提示，确认带 omitAudio', (WidgetTester tester) async {
       await open(tester, host.videoPage());
-      // 英文下音频与图片的「不要」同为 None；音频分区在上。
+      // 英文下音频与图片的「不要」同为 None；音频分区（默认左栏、句子卡下方）先建，
+      // 先滚到可见再点。
+      await tester.ensureVisible(
+        find.text(t.popup_advanced_mining_audio_none).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text(t.popup_advanced_mining_audio_none).first);
       await tester.pumpAndSettle();
       expect(
@@ -450,6 +630,11 @@ void main() {
       await open(tester, host.videoPage());
       await tester.tap(find.text(t.popup_ctx_next_plus));
       await tester.pumpAndSettle();
+      // 句子音频区默认挪到左栏（24b3690ddc）后，试听按钮在测试视口下方，先滚进视口再点。
+      await tester.ensureVisible(
+        find.byTooltip(t.popup_ctx_preview_audio).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.popup_ctx_cancel));
@@ -463,6 +648,11 @@ void main() {
       WidgetTester tester,
     ) async {
       await open(tester, host.videoPage());
+      // 句子音频区默认挪到左栏（24b3690ddc）后，试听按钮在测试视口下方，先滚进视口再点。
+      await tester.ensureVisible(
+        find.byTooltip(t.popup_ctx_preview_audio).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
       await tester.pumpAndSettle();
       expect(find.byTooltip(t.popup_ctx_preview_stop), findsWidgets);
@@ -471,6 +661,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip(t.popup_ctx_preview_stop), findsNothing);
 
+      // 句子音频区默认挪到左栏（24b3690ddc）后，试听按钮在测试视口下方，先滚进视口再点。
+      await tester.ensureVisible(
+        find.byTooltip(t.popup_ctx_preview_audio).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
       await tester.pumpAndSettle();
       expect(host.previewCalls, hasLength(2), reason: '一次点击就重新试听');

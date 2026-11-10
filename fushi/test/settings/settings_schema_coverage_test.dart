@@ -774,6 +774,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
   // 由专项纯函数测试咬住。
   'reading/Page crease': 'test/reader/reader_page_crease_css_test.dart',
+  // 反馈 sYPkmtitOM「跟随原书排版」（reading_display.follow_book_layout）：只在有打开
+  // 的书登记了书本排版时才改生效值，harness 设置页里没有打开的书，渲染输入不变属
+  // 预期。OPF 元数据解析、覆盖 / 回落 / 多阅读器叠放与设置项置灰由专项测试咬住。
+  "reading/Follow the book's layout":
+      'test/reader/reader_follow_book_layout_test.dart + '
+      'test/epub/epub_original_layout_test.dart',
   // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
   // notifyReaderLayoutChanged 需活 reader/WebView 重排），无适用 T4 探针；合并语义/
@@ -836,6 +842,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Add screenshot to cards':
       'test/floating_ball/screen_ocr_card_image_test.dart + '
       'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
+  // 截屏识字引擎（反馈 Eemf0HOZhj / BUG-4069，仅桌面）：生效点是宿主截屏识字那一刻按
+  // 设置解析识别器，设置页里没有截屏面。解析表与宿主选识别器由专项测试钉住。
+  'floatingBall/Screen OCR engine':
+      'test/ocr/screen_ocr_engine_test.dart + '
+      'test/floating_ball/app_floating_ball_host_test.dart: 反馈 Eemf0HOZhj 截屏识字引擎三条',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
@@ -1317,7 +1328,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread direction': 'DEVICE: spread page order in WebView',
-  'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
+  // 标题随 BUG-4368（#3088）改成「单击查词」，持久化 key highlight_on_tap 不变。
+  'reading/Look up words on tap':
+      'test/reader/reader_tap_zones_test.dart + test/reader/tap_gate_mirror_guard_test.dart'
+      ' + DEVICE: WebView onTap lookup',
+  // galgame 句子音频长度策略：生效点在 Hook 制卡采集链裁剪音频，harness 设置页没有 Hook 会话。
+  'cardCreation/Game card sentence audio':
+      'test/mining/gal_mining_settings_test.dart（不裁 / 上限 / 定长 / 关）'
+      ' + test/mining/gal_hook_mining_coordinator_test.dart（limit 透传到采集）',
+  'cardCreation/Game card audio length':
+      'test/mining/gal_mining_settings_test.dart（秒数夹到 1..60、按帧截断 / 补静音）'
+      ' + test/mining/gal_hook_mining_coordinator_test.dart（limit 透传到采集）',
   // TODO-1029：开关显示名改为「悬浮控制栏」(en: 'Floating control bar')，覆盖 map
   // 的 key 按渲染英文标签命名，故同步改名。生效=WebView onTapEmpty 收 chrome（设备）
   // + TODO-975 决策#3 底栏切悬浮模式（reader_chrome_floating_test 覆盖）。

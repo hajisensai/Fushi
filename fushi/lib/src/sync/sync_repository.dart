@@ -1877,6 +1877,10 @@ class SyncRepository {
     kWorkProfileSessionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
+    // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
+    // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
+    // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
+    PreferencesRepository.audiobookFolderImportTranscribeKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,
@@ -2044,6 +2048,9 @@ class SyncRepository {
     'library_organize_consented',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
+    // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
+    // 是本库自增的合集 id——换台设备路径不存在、id 指向别的合集。
+    'video_subtitle_series_dirs',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是
     // 设备本地的计费同意，留在清单里免得旧备份把它漂到别的设备。
     'lookup_ai_context_auto',

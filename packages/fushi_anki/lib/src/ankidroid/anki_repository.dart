@@ -484,6 +484,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 不必再经通道回读一次），否则 Lapis 的 `SentenceFurigana` 这类别的工具填过、
   /// 模板又优先读的字段会让卡面停在旧句子。`tags` 是新制会打的那组标签，native
   /// 与现有标签取并集——覆盖后的卡与新制的卡在字段与标签上都一样。
+  ///
+  /// 反馈 nWWjBp3Clo：用户给当前笔记类型选了「只覆写这些字段」时只点名选中的字段
+  /// （没映射到的选中字段写空串），`clearUnspecified: false` 让 native 保留其余字段。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -524,17 +527,27 @@ class AnkiRepository extends BaseAnkiRepository {
         context: context,
         keepEmpty: true,
       );
-      final Map<String, String> fields = rendered.fields;
+      final AnkiNoteType? noteType = settings.selectedNoteType;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        noteType?.name ?? settings.selectedNoteTypeName,
+      );
+      // 整卡覆写：只发映射字段，其余由 native 的 clearUnspecified 按位置写空（它握着
+      // 整条 note，不必经通道回读）。只覆写选中字段：只点名选中字段，其余保留。
+      final Map<String, String> fields = onlyFields == null
+          ? rendered.fields
+          : BaseAnkiRepository.fieldsForOverwrite(
+              existingFieldNames: noteType?.fields ?? const <String>[],
+              rendered: rendered.fields,
+              onlyFields: onlyFields,
+            );
 
-      // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
-      // 有内容时按覆盖语义整体替换（空字段随之清空，见 BUG-858）。
-      if (fields.values.every((String v) => v.trim().isEmpty)) {
-        return MineOutcome.failure(
-          'All fields are empty — refusing to clear an existing card. '
-          'Check your note type field mappings.',
-          errorCode: AnkiErrorCode.allFieldsEmpty,
-        );
-      }
+      // 要写的字段渲染皆空白说明会把它们（整卡覆写时 = 整卡）清空——拒绝。部分字段
+      // 有内容时按覆盖语义替换（空字段随之清空，见 BUG-858）。
+      final MineOutcome? empty = BaseAnkiRepository.rejectEmptyOverwrite(
+        fields,
+        onlyFields: onlyFields,
+      );
+      if (empty != null) return empty;
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper。
       final List<String> tags = buildNoteTags(
@@ -551,7 +564,7 @@ class AnkiRepository extends BaseAnkiRepository {
         await _channel.invokeMethod('updateNoteFields', <String, dynamic>{
           'noteId': noteId,
           'fieldValues': fields,
-          'clearUnspecified': true,
+          'clearUnspecified': onlyFields == null,
           'tags': tags,
         });
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
@@ -760,7 +773,15 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 等价于 [AnkiDuplicateScope.collection]。设置项的说明里已写明「仅 AnkiConnect
   /// 生效」——这里不是漏接线。
   @override
-  Future<bool> isDuplicate(String expression, String reading) async {
+  Future<bool> isDuplicate(String expression, String reading) async =>
+      (await probeDuplicate(expression, reading)) ?? false;
+
+  /// 反馈 JAEwvc6Lmr：provider 出错（AnkiDroid 后台进程被杀后 collection 打不开、
+  /// API 被关、未授权）回 `null`「没问到」，不再折成 `false`——离线缓存据此退回本地
+  /// 已制卡词表，而不是把 ✓ 全部擦掉。native 的 `checkForDuplicates` 在未授权时同样
+  /// 报错（`PERMISSION_DENIED`），不再回 `false` 冒充「查过了、没有」。
+  @override
+  Future<bool?> probeDuplicate(String expression, String reading) async {
     final settings = await loadSettings();
     final noteType = settings.selectedNoteType;
     if (noteType == null) return false;
@@ -774,9 +795,36 @@ class AnkiRepository extends BaseAnkiRepository {
       });
       return result == true;
     } catch (e, stack) {
-      debugPrint('AnkiRepository.isDuplicate: $e\n$stack');
-      return false;
+      debugPrint('AnkiRepository.probeDuplicate: $e\n$stack');
+      return null;
     }
+  }
+
+  /// AnkiDroid 的 `findDuplicateNotes` 按笔记类型在**整库**查（没有卡组维度，见
+  /// [isDuplicate] 上方说明），所以作用域只有笔记类型。
+  @override
+  Future<String?> minedCacheScope() async {
+    final AnkiNoteType? noteType = (await loadSettings()).selectedNoteType;
+    if (noteType == null) return null;
+    return 'ankidroid|model:${noteType.name}';
+  }
+
+  /// native `listFirstFields`：该笔记类型下全部笔记的第一字段原文。
+  @override
+  Future<List<String>?> listMinedFirstFields() async {
+    final AnkiNoteType? noteType = (await loadSettings()).selectedNoteType;
+    if (noteType == null) return null;
+    final List<Object?>? raw = await _channel.invokeListMethod<Object?>(
+      'listFirstFields',
+      <String, dynamic>{'model': noteType.name},
+    );
+    if (raw == null) {
+      throw StateError('AnkiDroid listFirstFields returned no result');
+    }
+    return <String>[
+      for (final Object? value in raw)
+        if (value is String) value,
+    ];
   }
 
   /// BUG-2380：存在性判断**只在 native 一处**（`AnkiChannelHandler.createNoteType`

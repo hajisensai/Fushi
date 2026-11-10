@@ -67,8 +67,22 @@ typedef _RenameExclusiveNative =
 typedef _RenameExclusiveDart =
     int Function(Pointer<Utf8> oldPath, Pointer<Utf8> newPath, int flags);
 
+/// 「清理全部刮削记录」的两种方式（Feedback 7NBVwW-6Qc，用户拍板「两种方式都要」）。
+enum VideoScrapeCleanupMode {
+  /// 只清数据库里的刮削记录，磁盘上一个文件都不动：Fushi 生成的 NFO / 图片、
+  /// 应用内旧版自动封面原样保留，它们的所有权证据（sidecar ledger、
+  /// `CoverOrigin.autoScraped` 标记）也一并保留——之后再选「连同生成文件」清理，
+  /// 仍能按 SHA 精确认出并删除它们，不会把它们降级成无法判断归属的用户文件。
+  recordsOnly,
+
+  /// 清记录，并删除有所有权证据、内容未被改动过的 Fushi 生成文件（NFO 与图片）。
+  /// 用户自己的 / 改动过的 / 无 ledger 的文件一律保留。
+  recordsAndGeneratedFiles,
+}
+
 class VideoScrapeCleanupResult {
   const VideoScrapeCleanupResult({
+    required this.mode,
     required this.clearedRecords,
     required this.clearedSeries,
     required this.deletedGeneratedFiles,
@@ -76,8 +90,10 @@ class VideoScrapeCleanupResult {
     required this.protectedGeneratedFiles,
     required this.protectedLegacyCoverFiles,
     required this.missingGeneratedFiles,
+    required this.retainedGeneratedFiles,
   });
 
+  final VideoScrapeCleanupMode mode;
   final int clearedRecords;
   final int clearedSeries;
   final int deletedGeneratedFiles;
@@ -85,6 +101,19 @@ class VideoScrapeCleanupResult {
   final int protectedGeneratedFiles;
   final int protectedLegacyCoverFiles;
   final int missingGeneratedFiles;
+
+  /// [VideoScrapeCleanupMode.recordsOnly] 下按用户选择原样保留的生成文件
+  /// （sidecar ledger 条目数）；另一种方式恒为 0。
+  final int retainedGeneratedFiles;
+
+  /// 诊断日志用的一行摘要：生成文件没被删时，靠它区分「被保护（改过 / 路径不安全）」
+  /// 与「ledger 记的路径已不存在」（例如 iOS 容器路径漂移）。
+  String get diagnosticSummary =>
+      'mode=${mode.name} records=$clearedRecords series=$clearedSeries '
+      'generated(deleted=$deletedGeneratedFiles protected=$protectedGeneratedFiles '
+      'missing=$missingGeneratedFiles retained=$retainedGeneratedFiles) '
+      'legacyCovers(deleted=$deletedLegacyCoverFiles '
+      'protected=$protectedLegacyCoverFiles)';
 
   bool get preservedFiles =>
       protectedGeneratedFiles > 0 || protectedLegacyCoverFiles > 0;
@@ -171,13 +200,17 @@ class VideoScrapeCleanupService {
   static _RenameAt2Dart? _renameAt2;
   static _RenameExclusiveDart? _renameExclusive;
 
-  Future<VideoScrapeCleanupResult> clearAll() async {
+  /// [mode] 默认连同生成文件一起删（此前唯一的行为）；只清记录时磁盘零改动。
+  Future<VideoScrapeCleanupResult> clearAll({
+    VideoScrapeCleanupMode mode =
+        VideoScrapeCleanupMode.recordsAndGeneratedFiles,
+  }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterMaintenance();
     if (lease == null) throw const VideoScrapeCleanupBusyException();
     try {
       final _VideoScrapeCleanupTransactionResult committed = await database
-          .transaction(_clearAllExclusive);
+          .transaction(() => _clearAllExclusive(mode));
       // provenance 只能在 SQLite 成功提交之后清。若 commit 失败，旧标记仍会让
       // 下一次清理识别已删/缺失的 legacy 文件并收敛 coverPath；不会永久失去证据。
       try {
@@ -199,7 +232,9 @@ class VideoScrapeCleanupService {
     }
   }
 
-  Future<_VideoScrapeCleanupTransactionResult> _clearAllExclusive() async {
+  Future<_VideoScrapeCleanupTransactionResult> _clearAllExclusive(
+    VideoScrapeCleanupMode mode,
+  ) async {
     if (await database.hasRunningVideoSourceScrapeRun()) {
       throw const VideoScrapeCleanupBusyException();
     }
@@ -255,6 +290,32 @@ class VideoScrapeCleanupService {
       );
     } on VideoScrapeRecordsBusyException {
       throw const VideoScrapeCleanupBusyException();
+    }
+
+    if (mode == VideoScrapeCleanupMode.recordsOnly) {
+      // 上面那一次删除已经清掉全部刮削记录，且 preserveAllSidecarArtifacts 保住了
+      // 整份 sidecar ledger；文件与封面指针都没动，旧版自动封面的 coverMeta 标记
+      // 也不清——磁盘上的生成物与其所有权证据保持一致，留给以后的另一种清理方式。
+      return _VideoScrapeCleanupTransactionResult(
+        result: VideoScrapeCleanupResult(
+          mode: mode,
+          clearedRecords:
+              works.length +
+              videoMeta.length +
+              collectionMeta.length +
+              runs.length,
+          clearedSeries: scrapedCollections.length + scrapedBooks.length,
+          deletedGeneratedFiles: 0,
+          deletedLegacyCoverFiles: 0,
+          protectedGeneratedFiles: 0,
+          protectedLegacyCoverFiles: 0,
+          missingGeneratedFiles: 0,
+          retainedGeneratedFiles: artifacts.length,
+        ),
+        coverMetaStore: coverMetaStore,
+        clearAutoScrapedMetaUids: const <String>{},
+        clearCleanupPendingMetaUids: const <String>{},
+      );
     }
 
     final Set<String> protectedCoverPathKeys = <String>{
@@ -320,6 +381,7 @@ class VideoScrapeCleanupService {
 
     return _VideoScrapeCleanupTransactionResult(
       result: VideoScrapeCleanupResult(
+        mode: mode,
         clearedRecords:
             works.length +
             videoMeta.length +
@@ -333,6 +395,7 @@ class VideoScrapeCleanupService {
         protectedGeneratedFiles: artifactSummary.protected,
         protectedLegacyCoverFiles: legacySummary.protected,
         missingGeneratedFiles: artifactSummary.missing,
+        retainedGeneratedFiles: 0,
       ),
       coverMetaStore: coverMetaStore,
       clearAutoScrapedMetaUids: legacySummary.clearAutoScrapedMetaUids,
