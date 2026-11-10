@@ -396,9 +396,14 @@ class FushiMarquee extends StatelessWidget {
     // 量字与真正画字的 Text 用同一套样式 / 缩放：列表行的标题样式来自祖先
     // DefaultTextStyle（FushiListItem 的 listTitle），只拿 [style] 量会按 14px 默认字
     // 判溢出、给滚动版定错行高（BUG-4284）。
-    final TextStyle effectiveStyle = DefaultTextStyle.of(
-      context,
-    ).style.merge(style);
+    // 系统「粗体文字」开着时 Text 会再并上 FontWeight.bold，量字也照做，否则
+    // 粗体更宽、按细体量会把放不下误判成放得下。
+    TextStyle effectiveStyle = DefaultTextStyle.of(context).style.merge(style);
+    if (MediaQuery.boldTextOf(context)) {
+      effectiveStyle = effectiveStyle.merge(
+        const TextStyle(fontWeight: FontWeight.bold),
+      );
+    }
     final TextPainter painter = TextPainter(
       text: TextSpan(text: text, style: effectiveStyle),
       textDirection: textDirection,
