@@ -34,7 +34,8 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
-import 'package:fushi_engine/sync/srs_change_feed.dart' show kSrsSyncStatusPath;
+import 'package:fushi_engine/sync/srs_change_feed.dart'
+    show SrsChangePoll, kSrsSyncStatusPath;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
@@ -1047,8 +1048,9 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// 复习同步快速通道（设计 §6.3）：长轮询 host 的 `GET /api/srs/changes?after=<令牌>`，host 那边有新的复习数据
   /// 落地（别的设备写了 head / host 自己发布了）就立刻返回新令牌，否则最多挂 25 s 回原令牌。老 host 没有这个
-  /// 端点（404）返回 null，调用方退回只靠定时同步。
-  Future<int?> waitSrsChanges(int? after) async {
+  /// 端点（404）返回 null，调用方退回只靠定时同步。回答里的 `own`（BUG-4382）：这段推进全是本机自己写 head 引起的；
+  /// 老 host 不给就按 false（照常同步）。
+  Future<SrsChangePoll?> waitSrsChanges(int? after) async {
     await _ensureResolved();
     final Uri uri = Uri.parse('$_apiBase/api/srs/changes').replace(
       queryParameters: after == null
@@ -1076,7 +1078,10 @@ class InterconnectSyncBackend extends SyncBackend
       );
     }
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
-    return decoded is Map ? (decoded['token'] as num?)?.toInt() : null;
+    if (decoded is! Map) return null;
+    final int? token = (decoded['token'] as num?)?.toInt();
+    if (token == null) return null;
+    return SrsChangePoll(token, ownOnly: decoded['own'] == true);
   }
 
   /// host 自己是否已加入复习同步 v2（BUG-4320，[kSrsSyncStatusPath]）。host 没确认首次 v2 同步前既不发布自己的
