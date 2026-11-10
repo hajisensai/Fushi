@@ -7,7 +7,7 @@ import 'package:fushi_p2p/fushi_p2p.dart';
 import 'package:meta/meta.dart';
 
 export 'package:fushi_p2p/fushi_p2p.dart'
-    show FushiP2pConnStatus, FushiP2pInfo, FushiP2pPathKind;
+    show FushiP2pConnStatus, FushiP2pException, FushiP2pInfo, FushiP2pPathKind;
 
 /// 互联 P2P 隧道（iroh，dumbpipe 形态）的进程级运行时
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §6）。
@@ -46,11 +46,23 @@ String interconnectP2pUrl(
   return 'p2p://$nodeId${q.isEmpty ? '' : '?${q.join('&')}'}';
 }
 
-/// 解析 [interconnectP2pUrl]；不是 P2P 地址 → null。
+/// NodeId 的合法形态，与原生 `EndpointId::from_str`（iroh-base 1.2
+/// `decode_base32_hex`）同口径：64 位十六进制，或 52 位 RFC4648 base32（无填充、
+/// 不区分大小写）。[Uri.host] 已转成小写，原生 hex 分支也只认小写。
+///
+/// 这是必要条件：形态合法但不在曲线上的公钥仍会在原生侧被拒，调用方照旧要接住
+/// [FushiP2pException]。
+final RegExp _nodeIdPattern = RegExp(r'^(?:[0-9a-f]{64}|[a-z2-7]{52})$');
+
+/// 解析 [interconnectP2pUrl]；不是 P2P 地址、或 NodeId 形态不合法 → null。
+///
+/// NodeId 在解析阶段就校验：畸形链接里的 `p2p://xyz` 不会被当成 P2P 地址一路
+/// 传到原生 `conn_status` / `client_forward` 才抛。
 ({String nodeId, bool tls, String? relayUrl, List<String> directAddrs})?
 parseInterconnectP2pUrl(String url) {
   final Uri? uri = Uri.tryParse(url);
-  if (uri == null || uri.scheme != 'p2p' || uri.host.isEmpty) return null;
+  if (uri == null || uri.scheme != 'p2p') return null;
+  if (!_nodeIdPattern.hasMatch(uri.host)) return null;
   final Map<String, List<String>> q = uri.queryParametersAll;
   final String? relay = q['relay']?.first;
   return (
@@ -229,9 +241,10 @@ class InterconnectP2pNode {
     return port;
   }
 
-  /// 到 [remoteNodeId] 的路径状态（direct / relay / mixed / none）。
-  FushiP2pConnStatus status(String remoteNodeId) =>
-      _endpoint.status(remoteNodeId);
+  /// 到 [remoteNodeId] 的路径状态（direct / relay / mixed / none）。节点已关闭
+  /// → null（与 [hostPeer] 同口径）；原生调用失败照旧抛 [FushiP2pException]。
+  FushiP2pConnStatus? status(String remoteNodeId) =>
+      _closed ? null : _endpoint.status(remoteNodeId);
 
   Future<void> close() async {
     if (_closed) return;

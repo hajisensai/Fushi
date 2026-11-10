@@ -293,10 +293,7 @@ void main() {
         url: 'https://[2408::5]:38765',
         kind: InterconnectAddressKind.ipv6,
       ),
-      InterconnectHostAddress(
-        url: 'p2p://node',
-        kind: InterconnectAddressKind.p2p,
-      ),
+      InterconnectHostAddress(url: _p2pNode, kind: InterconnectAddressKind.p2p),
     ];
 
     test('锚点标 hostId；新地址按优先级插入，继承 token 与指纹；p2p 默认不收', () {
@@ -415,7 +412,7 @@ void main() {
           kind: InterconnectAddressKind.public,
         ),
         InterconnectHostAddress(
-          url: 'p2p://node',
+          url: _p2pNode,
           kind: InterconnectAddressKind.p2p,
         ),
       ];
@@ -650,7 +647,7 @@ void main() {
         hostId: 'A',
         addresses: published,
       );
-      expect(merged.last.url, 'p2p://node');
+      expect(merged.last.url, _p2pNode);
     });
 
     test('组网私网段按 host 标注的种类排在物理 LAN 之后', () {
@@ -944,3 +941,7 @@ final class _FakeP2pPort implements InterconnectP2pEndpointPort {
   @override
   Future<void> closeAsync() async {}
 }
+
+/// 合法 p2p 地址（iroh 口径的 64 位 hex NodeId）。
+const String _p2pNode =
+    'p2p://0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
