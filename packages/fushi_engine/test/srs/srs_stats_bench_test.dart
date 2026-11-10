@@ -4,7 +4,7 @@
 //
 // 每条笔记两张卡、每卡 3 条导入 revlog + 1 条导入锚点：25000 条笔记 = 20 万条日志 / 15 万条复习。
 // phases 是旧装载路径（全量读日志 → jsonDecode）与按卡在 Rust 里算投影（`SrsCore.statProjection`）各段的
-// 耗时，作对照；loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3772）。
+// 耗时，作对照；loadSrsStats + report 是现在的路径（内核读有效复习投影 srs_stat_reviews 并就地聚合，store/stats.rs）。
 // 库开在临时 srs.db 上、走后台 isolate（与 app 同一种连接）。
 import 'dart:convert';
 import 'dart:io';
@@ -56,7 +56,6 @@ void main() {
           .customSelect('SELECT COUNT(*) AS c FROM srs_review_logs')
           .map((QueryRow r) => r.read<int>('c'))
           .getSingle();
-      final SrsDayContext day = await store.dayContext();
 
       final Stopwatch sw = Stopwatch()..start();
       final List<SrsReviewLogRow> rows = await (db.select(
@@ -81,20 +80,9 @@ void main() {
           for (final String c in byCard.keys) <String>[c],
         ]),
       );
-      final int reviews = srsStatsFromProjection(<SrsStatProjection>[
-        for (final List<Object?> r in projected)
-          SrsStatProjection(
-            logId: r[1]! as String,
-            cardId: byCard.keys.elementAt(r[0]! as int),
-            occurredAt: r[2]! as int,
-            utcOffsetMin: r[3]! as int,
-            rating: r[4] as int?,
-            kind: SrsStatReviewKind.values[r[5]! as int],
-            durationMs: r[6]! as int,
-            prevDueDay: r[7] as int?,
-            maturityDelta: r[8]! as int,
-          ),
-      ], day).reviews.length;
+      final int reviews = projected
+          .where((List<Object?> r) => r[4] != null)
+          .length;
       final int historyMs = sw.elapsedMilliseconds;
       sw.reset();
       final $SrsReviewLogsTable t = db.srsReviewLogs;
@@ -154,18 +142,22 @@ void main() {
 
       sw.reset();
       final int rss0 = ProcessInfo.currentRss;
-      final SrsStatsBundle b = await loadSrsStats(store);
+      final SrsStatsReport b = await (await loadSrsStats(
+        store,
+      )).report(range: SrsStatsRange.all);
       final int loadMs = sw.elapsedMilliseconds;
       final int rssDelta = ProcessInfo.currentRss - rss0;
       sw.reset();
-      final SrsStatsBundle b2 = await loadSrsStats(store);
+      final SrsStatsReport b2 = await (await loadSrsStats(
+        store,
+      )).report(range: SrsStatsRange.all);
       final int warmMs = sw.elapsedMilliseconds;
       // ignore: avoid_print
       print(
-        'BENCH notes=$notes logs=$logCount reviews=$reviews/${b.data.reviews.length} '
-        'cards=${b.data.cards.length} | phases: rows=${rowsMs}ms '
+        'BENCH notes=$notes logs=$logCount reviews=$reviews/${b.rangeTotals.count} '
+        'cards=${b.cardCounts.total} | phases: rows=${rowsMs}ms '
         'decode=${decodeMs}ms history=${historyMs}ms narrowCols($narrow)=${narrowMs}ms | '
-        'loadSrsStats cold=${loadMs}ms warm=${warmMs}ms(${b2.data.reviews.length}) '
+        'loadSrsStats cold=${loadMs}ms warm=${warmMs}ms(${b2.rangeTotals.count}) '
         'rssDelta=${rssDelta ~/ (1 << 20)}MB maxRss=${ProcessInfo.maxRss ~/ (1 << 20)}MB',
       );
     },

@@ -163,26 +163,24 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
   }),
   CtlRoute.get('$kSrsCtlRoot/stats', (CtlCall call) async {
     final SrsDbStore store = await requireSrsCtlStore(deps);
-    final SrsStatsBundle bundle = await loadSrsStats(store);
+    final SrsStatsLoad bundle = await loadSrsStats(store);
     final String? deckArg = call.optString('deck');
     String? deckId;
     if (deckArg != null) {
-      deckId = _resolveDeck(bundle.index.tree, deckArg);
+      deckId = _resolveDeck(bundle.tree, deckArg);
     }
-    // 与统计页的牌组筛选同一个子集（[SrsStatsData.subset]）。
-    final SrsStatsData data = deckId == null
-        ? bundle.data
-        : bundle.data.subset(bundle.index.cardIdsInDeck(deckId));
-    final SrsTodayStats today = data.todayStats();
-    final SrsFutureDue due = data.futureDue(7);
-    final SrsCardCounts counts = data.cardCounts();
-    final SrsRetention month = data.retentionBetween(
-      data.firstDayOf(SrsStatsRange.month),
-      data.today,
+    // 与统计页的牌组筛选同一个子集（牌组子树里的卡）。
+    final SrsStatsReport data = await bundle.report(
+      decks: deckId == null ? null : bundle.subtree(deckId),
+      futureDays: 7,
     );
-    final SrsStreak streak = data.streak();
+    final SrsTodayStats today = data.todayStats;
+    final SrsFutureDue due = data.future;
+    final SrsCardCounts counts = data.cardCounts;
+    final SrsRetention month = data.rangeRetention;
+    final SrsStreak streak = data.streak;
     return <String, Object?>{
-      if (deckId != null) 'deck': bundle.index.tree.fullName(deckId),
+      if (deckId != null) 'deck': bundle.tree.fullName(deckId),
       'today': <String, Object?>{
         'reviews': today.count,
         'timeMs': today.durationMs,
@@ -215,7 +213,7 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
         'mature': month.matureRate,
         'reviews': month.total,
       },
-      'desiredRetention': data.desiredRetention(),
+      'desiredRetention': data.desiredRetention,
       'streak': <String, Object?>{
         'current': streak.current,
         'longest': streak.longest,

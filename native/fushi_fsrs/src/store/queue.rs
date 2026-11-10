@@ -150,6 +150,8 @@ struct Touched {
 #[derive(Default)]
 pub(crate) struct StudyHub {
     touched: Mutex<Touched>,
+    /// 统计原料的缓存与写入代数（store/stats.rs）：同一组触发器每记一次就推进代数。
+    pub(crate) stats: crate::store::stats::StatsCache,
     sessions: Mutex<HashMap<String, Session>>,
     /// 测试：整份重建过几次。
     #[cfg(test)]
@@ -211,6 +213,7 @@ impl StudyHub {
                 // ID 列存编码后的值（store/ids.rs）：这里要文本。
                 let profile = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
                 let id = crate::store::ids::text(ctx.get_raw(2)).unwrap_or_default();
+                h.stats.touch();
                 let mut t = lock(&h.touched);
                 // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
                 if kind != TOUCH_NOTE {
@@ -235,6 +238,8 @@ impl StudyHub {
         let mut t = lock(&self.touched);
         t.study.settle();
         t.browse.settle();
+        drop(t);
+        self.stats.settle();
     }
 
     /// 浏览会话（store/browse.rs）取走 [profile] 待重读的卡 / 笔记 id，并上未提交的（只读不清）：口径同

@@ -14,8 +14,6 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
-import 'package:fushi_engine/srs/srs_stats.dart';
-import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -23,6 +21,7 @@ import 'package:test/test.dart';
 
 import 'apkg_test_support.dart';
 import '../support/srs_sync2_peers.dart';
+import '../support/srs_stats_rows.dart';
 import '../support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
@@ -2407,16 +2406,16 @@ void main() {
         now: () => t,
       );
       await importInto(s, newCardsApkg());
-      final int before = (await loadSrsStats(s)).data.reviews.length;
+      final int before = (await statsRowsOf(s)).reviews.length;
       expect(before, 2);
       await changeType(s, <String>['rev']);
-      final SrsStatsData data = (await loadSrsStats(s)).data;
+      final StatsRows data = await statsRowsOf(s);
       expect(data.reviews, hasLength(before), reason: '不重复计数');
       final Set<String> visible = <String>{
-        for (final SrsStatCard c in data.cards) c.id,
+        for (final StatCardRow c in data.cards) c.id,
       };
       expect(
-        data.reviews.every((SrsStatReview r) => visible.contains(r.cardId)),
+        data.reviews.every((StatReviewRow r) => visible.contains(r.cardId)),
         isTrue,
         reason: '复习记在可见的新卡上，牌组筛选时不丢',
       );

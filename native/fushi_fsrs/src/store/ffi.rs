@@ -1193,7 +1193,10 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "history",
     "study",
     "card_columns",
-    "stats_bundle",
+    "stats_report",
+    "stats_recall",
+    "stats_rows",
+    "stats_release",
     "anki_resolve",
     "anki_notes_info",
     "lineages",
@@ -1334,8 +1337,13 @@ fn sync2_command(
             ));
             json!({})
         }
-        "stats_bundle" => {
-            c.read_visible(|conn| crate::store::bulk::stats_bundle(conn, profile, files))?
+        // 复习统计（store/stats.rs）：原料按 profile + 统计指纹缓存在内核，换范围 / 牌组只重算聚合。
+        "stats_report" => c.stats_report(profile, req)?,
+        "stats_recall" => c.stats_recall(profile, req)?,
+        "stats_rows" => c.stats_rows(profile, req)?,
+        "stats_release" => {
+            c.stats_release();
+            json!({})
         }
         "anki_resolve" => {
             c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?

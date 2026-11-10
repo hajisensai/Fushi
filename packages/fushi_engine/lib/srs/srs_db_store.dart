@@ -138,7 +138,7 @@ class SrsDeckSummary {
 }
 
 /// 今天（[SrsDbStore.dayContext] 的日界）已做的复习：首页复习条的「今日」一行。口径与复习统计页
-/// 「今天」一节（`SrsStatsData.todayStats`，不按牌组筛选）相同：有效复习投影里的评分复习。
+/// 「今天」一节（内核 `stats_report` 的 `todayStats`，不按牌组筛选）相同：有效复习投影里的评分复习。
 class SrsTodayReviewSummary {
   const SrsTodayReviewSummary({
     required this.count,
@@ -577,7 +577,7 @@ class SrsDbStore implements SrsSync2Host {
   /// native/fushi_fsrs/src/store/caches.rs 的卡片行计算写出）。老库这一列是空的，升级时全部笔记缓存重算一遍。
   ///
   /// 7（srs.db schema v13）：srs_notes_cache.source_kind / source_title（笔记出处，统计页的「制卡来源」由内核直接读，
-  /// 见 store/bulk.rs `stats_bundle`）。老库这两列是空的，升级时全部笔记缓存重算一遍（`anki_id` 由 v13 迁移回填）。
+  /// 见 store/stats.rs `Snapshot::load`）。老库这两列是空的，升级时全部笔记缓存重算一遍（`anki_id` 由 v13 迁移回填）。
   ///
   /// 8（srs.db schema v15）：srs_notes_cache.dupe_norm（首字段的 AnkiConnect 查重规范形，canAddNotes 的库内查重
   /// 直接按它的索引查，见 store/browse.rs `anki_dupes`）。老行这一列是 NULL，升级时内核只补这一列
@@ -5599,12 +5599,22 @@ class SrsDbStore implements SrsSync2Host {
     if (visibleOnly) 'visibleOnly': true,
   })).tables['columns']!;
 
-  /// 统计页的三张表（内核 `stats_bundle`：可见卡的统计列、出处字典、有效复习投影，另有复习归属到的不可见卡 ID），
-  /// 见 `loadSrsStats`。
-  Future<Map<String, SrsColumns>> statsColumns() async =>
-      (await _columnsCommand(const <String, Object?>{
-        'op': 'stats_bundle',
-      })).tables;
+  /// 统计命令（内核 native/fushi_fsrs/src/store/stats.rs）：`stats_report` 一次范围 / 牌组的全部聚合、
+  /// `stats_recall` 按 RWKV 回忆率排队的复习卡、`stats_rows` 归一化后的逐卡视图（只给回归向量）、`stats_release`
+  /// 丢掉内核缓存的统计原料。在后台 isolate 跑；口径与用法见 `loadSrsStats`。
+  Future<Map<String, Object?>> statsCommand(Map<String, Object?> request) {
+    if (!_kStatsOps.contains(request['op'])) {
+      throw ArgumentError.value(request['op'], 'op', 'not a stats command');
+    }
+    return _sync2(request);
+  }
+
+  static const Set<String> _kStatsOps = <String>{
+    'stats_report',
+    'stats_recall',
+    'stats_rows',
+    'stats_release',
+  };
 
   /// 本 profile 的全部卡片缓存行（含隐藏）。由 [cardColumns] 组装；只要几列的调用方直接用 [cardColumns]。
   Future<List<SrsCardCacheRow>> allCardRows() async {

@@ -15,10 +15,9 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
-import 'package:fushi_engine/srs/srs_stats.dart'
-    show SrsStatCard, SrsStatCardState, SrsStatsData, SrsStreak;
+import 'package:fushi_engine/srs/srs_stats.dart' show SrsStatsReport;
 import 'package:fushi_engine/srs/srs_stats_loader.dart'
-    show SrsStatsBundle, loadSrsStats;
+    show SrsStatsLoad, loadSrsStats;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -679,48 +678,30 @@ class WidgetSnapshotSource {
           cached.day == day) {
         return cached;
       }
-      final SrsStatsBundle bundle = await loadSrsStats(store);
-      final SrsStatsData data = bundle.data;
-      final Map<int, int> counts = data.countsByDay();
-      final SrsStreak streak = data.streak();
-      // 到期预排的原料：学习 / 重学卡的精确到期时刻；明天（SRS 日序号 +1）到期的复习卡。
-      // 只算 Fushi 排程、没暂停、今天没搁置的卡（与 [SrsStatsData.futureDue] 同口径）。
+      final SrsStatsLoad load = await loadSrsStats(store);
+      // 到期预排的原料（内核按同一口径算好）：学习 / 重学卡的精确到期时刻；明天（SRS 日序号 +1）到期的复习卡。
+      // 只算 Fushi 排程、没暂停、今天没搁置的卡（与统计页「未来到期」同口径）。
       // 换日点的增量是近似值：① 没套每日复习上限，明天到期卡多于上限时会多估；
       // ② 没算次日重新放出的新卡额度，也没算今天没复习完、明天仍到期的积压，会少估。
       // 用户打开 app 或下一次采集时由牌组汇总（含上限）给出准确的 `srs.due`。
-      final List<int> learningDueAts = <int>[];
-      int reviewsNextDay = 0;
-      for (final SrsStatCard card in data.cards) {
-        if (!card.fushiScheduled || card.suspended || card.buried) continue;
-        switch (card.state) {
-          case SrsStatCardState.learning || SrsStatCardState.relearning:
-            final int? at = card.dueAt;
-            if (at != null && at > data.nowMs) learningDueAts.add(at);
-          case SrsStatCardState.young || SrsStatCardState.mature:
-            if (!card.byRecall && card.dueDay == data.today + 1) {
-              reviewsNextDay++;
-            }
-          case SrsStatCardState.newCard:
-            break;
-        }
-      }
+      final SrsStatsReport data = await load.report(futureDays: 2);
       return _srsStatsCache = _SrsStatsDigest(
         store: store,
         revision: revision,
         day: day,
-        reviewedToday: data.todayStats().count,
-        dueTomorrow: data.futureDue(2).dueTomorrow,
-        streakCurrent: streak.current,
-        streakLongest: streak.longest,
+        reviewedToday: data.todayStats.count,
+        dueTomorrow: data.future.dueTomorrow,
+        streakCurrent: data.streak.current,
+        streakLongest: data.streak.longest,
         // SRS 的日序号与统计日各有各的日界（SRS 默认凌晨 4 点翻日），这里按「SRS
         // 今天往前数 i 天」取，对齐到小组件的「最近 35 天，最旧 → 今天」。
         reviewsByDay: <int>[
           for (int i = kWidgetMonthDays - 1; i >= 0; i--)
-            counts[data.today - i] ?? 0,
+            data.countsByDay[data.today - i] ?? 0,
         ],
-        learningDueAts: learningDueAts,
-        reviewsNextDay: reviewsNextDay,
-        dayIndexOf: data.day.dayIndexOf,
+        learningDueAts: data.learningDueAts,
+        reviewsNextDay: data.reviewsNextDay,
+        dayIndexOf: load.day.dayIndexOf,
       );
     } on Object catch (error) {
       debugPrint('WidgetSnapshotSource: srs stats failed: $error');
