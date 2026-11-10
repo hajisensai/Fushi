@@ -10,7 +10,7 @@ import java.util.Set;
 /// 系统的 pinned 列表是整个 app 共用的：长按图标菜单（[AppShortcutsHelper]）和自定义
 /// 应用图标（[IconSwitchHelper] 的 `hibiki_custom_icon`）都往里放。[AppShortcutsHelper]
 /// 只能处置**自己发布过**的 id——Dart 本次下发的、模块被关掉的、以及曾经发布过后下线的
-/// （[RETIRED_IDS]）。不认识的 id 一律不碰（BUG-4325：此前把不在本次下发列表里的
+/// （[RETIRED_IDS]）。不认识的 id 一律不碰（BUG-4326：此前把不在本次下发列表里的
 /// pinned 全当「已下线」置灰，连自定义图标也一起禁掉了）。
 final class AppShortcutOwnership {
     private AppShortcutOwnership() {}

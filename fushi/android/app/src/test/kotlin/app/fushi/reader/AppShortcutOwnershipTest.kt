@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * BUG-4325：长按图标菜单同步只能处置自己发布过的固定快捷方式，自定义应用图标
+ * BUG-4326：长按图标菜单同步只能处置自己发布过的固定快捷方式，自定义应用图标
  * （IconSwitchHelper 的 hibiki_custom_icon）等其它模块的 pinned 项一律不碰。
  */
 class AppShortcutOwnershipTest {

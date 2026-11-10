@@ -185,7 +185,7 @@ public class IconSwitchHelper {
 
         try {
             if (findPinnedCustomShortcut(context) != null) {
-                // 同 id 已固定在桌面（含被旧版 AppShortcutsHelper 误置灰的，BUG-4325）：
+                // 同 id 已固定在桌面（含被旧版 AppShortcutsHelper 误置灰的，BUG-4326）：
                 // 对它 requestPinShortcut 会抛「already exists but disabled」，启动器也不会
                 // 再放第二个。就地恢复并换上新图标。updateShortcuts 不改 enabled 状态，
                 // 所以先 enable 再 update。
@@ -208,7 +208,7 @@ public class IconSwitchHelper {
         return null;
     }
 
-    /// 恢复被旧版 AppShortcutsHelper 误置灰的自定义图标快捷方式（BUG-4325）。
+    /// 恢复被旧版 AppShortcutsHelper 误置灰的自定义图标快捷方式（BUG-4326）。
     ///
     /// 本 app 里只有那段旧逻辑会禁用这个 id（IconSwitchHelper 自己从不禁用它），所以已
     /// 固定在桌面的一律重新启用；对已启用的再 enable 是 no-op。启动时调一次。

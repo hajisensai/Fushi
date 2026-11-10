@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3874 条。点号进各自文件。
+> 共 3875 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4325](bugs/BUG-4325-android-custom-icon-shortcut-disabled-by-app-shortcuts.md) | ✅ | ✅ | android-custom-icon-shortcut-disabled-by-app-shortcuts |
+| [BUG-4326](bugs/BUG-4326-android-custom-icon-shortcut-disabled-by-app-shortcuts.md) | ✅ | ✅ | android-custom-icon-shortcut-disabled-by-app-shortcuts |
 | [BUG-4325](bugs/BUG-4325-collection-member-cover-no-tilt.md) | ✅ | ✅ | collection-member-cover-no-tilt |
 | [BUG-4324](bugs/BUG-4324-ext-popup-page-backdrop.md) | ✅ | ✅ | app 外查词 / 悬浮词典浮窗卡片外铺了页面底色和 M3E 形状背景 |
 | [BUG-4323](bugs/BUG-4323-android-exit-permission-kill-misreport.md) | ✅ | ✅ | Android 权限变更导致的系统杀进程被误报为闪退 |

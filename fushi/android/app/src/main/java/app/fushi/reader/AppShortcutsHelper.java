@@ -82,7 +82,7 @@ public final class AppShortcutsHelper {
     ///
     /// pinned 列表是全 app 共用的命名空间：只处置归长按图标菜单所有的 id（判定在
     /// [AppShortcutOwnership.classifyPinned]），自定义应用图标等其它模块的固定快捷
-    /// 方式不碰（BUG-4325）。
+    /// 方式不碰（BUG-4326）。
     private static void disableRemovedPinned(
         Context context,
         Set<String> offered,
