@@ -546,6 +546,13 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
         // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
         'tags': _libraryService is TagSyncHost,
+        // 能否收下对端推来的 PDF 书（反馈 Jq1_ujHa4t）。app host 接了 PDF 导入器 →
+        // true；无头服务端没有 PDF 渲染引擎 → false。老 host 无此字段 → client
+        // 不推 PDF（老 host 会把 PDF 当 EPUB 导入、必然失败）。
+        kLiveLibraryPdfBooksCapability: switch (_libraryService) {
+          final PdfBookImportHost host => host.acceptsPdfBooks,
+          _ => false,
+        },
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,
@@ -562,6 +569,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
+        // 列出一集的全部外挂字幕（`/streamurl` 的 `sidecarSubtitles`）+ 按名下载
+        // （`GET .../subtitle?sidecar=`，反馈 -CaVsioFhG）。老 host 无此字段 →
+        // `/streamurl` 也不带列表，client 只有默认那一条。
+        kVideoSidecarSubtitlesCapability:
+            _libraryService is VideoSidecarSubtitleListHost,
         // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
         // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
         // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。

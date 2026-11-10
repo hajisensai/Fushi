@@ -5,7 +5,7 @@
 //   - 全局日预算（budgets 表，UTC 日）：写入行数 / 媒体上传次数 / 注册数。超了返回 503，次日自动恢复。
 //   - R2 总存储配额（media_usage 单行）：超了拒收新图片（507），删除图片时归还。总配额分两池：
 //     反馈视频单独一池（media_usage.video_bytes，默认 1 GiB），其余（头像 / 封面 / 反馈截图与日志）
-//     用剩下的（media_usage.bytes）。视频单个 50 MB、能匿名上传，同一池的话几个 IP 就能把总配额
+//     用剩下的（media_usage.bytes）。视频单个 100 MB、能匿名上传，同一池的话几个 IP 就能把总配额
 //     打满、让全站头像封面一起 507 上一个月；分池后视频满了只拒视频。
 // 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK / BUDGET_PING /
 // MEDIA_QUOTA_BYTES / VIDEO_QUOTA_BYTES。

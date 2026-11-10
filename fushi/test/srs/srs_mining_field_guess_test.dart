@@ -1,3 +1,4 @@
+import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:test/test.dart';
 
@@ -24,6 +25,26 @@ void main() {
     expect(srsGuessFieldMapping('読み'), '{reading}');
     expect(srsGuessFieldMapping('意味'), '{glossary-first}');
     expect(srsGuessFieldMapping('Picture'), '{card-image}');
+  });
+
+  test('来源 / MiscInfo 等价字段与 Anki 侧共用同一份默认值（反馈 GNiu1BuCKw）', () {
+    for (final String name in <String>[
+      'MiscInfo',
+      'misc_info',
+      'Source',
+      '来源',
+      '來源',
+      '出典',
+      '出处',
+      '出處',
+      '출처',
+    ]) {
+      expect(
+        srsGuessFieldMapping(name),
+        FushiCardFields.sourceDefaultMapping,
+        reason: name,
+      );
+    }
   });
 
   test('拿不准的名字不猜', () {

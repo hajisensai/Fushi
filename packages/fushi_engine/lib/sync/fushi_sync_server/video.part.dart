@@ -191,6 +191,17 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             streamUrlId,
             episodeIndex,
           );
+      // 这一集的全部外挂字幕（反馈 -CaVsioFhG）：旧单值 `subtitleUrl` /
+      // `subtitleFileName` 照发给老 client，新 client 优先读这份列表。
+      final List<RemoteVideoSidecarSubtitle> sidecarSubtitles =
+          await _sidecarSubtitlesForRequest(
+            svc,
+            request,
+            streamUrlId,
+            episodeIndex,
+            videoStem: p.basenameWithoutExtension(file.path),
+            defaultSubtitle: sub,
+          );
       // 源文件平均码率：client「自动」档拿它和实测链路带宽比，决定原画直传还是转码
       // （反馈 uaBRMzK_WM）。只在本机能转码时才算——转不了就没有可选的，client 也
       // 不会去比。蓝光标题的 `file` 是 `.mpls`，大小不代表视频，不报。
@@ -225,6 +236,11 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           'embeddedSubtitleTracks': <Map<String, Object?>>[
             for (final RemoteVideoEmbeddedSubtitleTrack track in embeddedTracks)
               track.toJson(),
+          ],
+        if (sidecarSubtitles.isNotEmpty)
+          'sidecarSubtitles': <Map<String, Object?>>[
+            for (final RemoteVideoSidecarSubtitle sidecar in sidecarSubtitles)
+              sidecar.toJson(),
           ],
       });
     }
@@ -479,7 +495,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final int episodeIndex = _episodeIndexFromRequest(request);
       final String? embeddedIndexText =
           request.url.queryParameters['embeddedStreamIndex'];
-      final File? sub = embeddedIndexText == null
+      // `?sidecar=<文件名>`：这一集的某一条外挂字幕（反馈 -CaVsioFhG）。只在
+      // host 自己枚举出的 sidecar 里按 basename 精确匹配，不拼路径。
+      final String? sidecarName =
+          request.url.queryParameters[kVideoSidecarSubtitleQueryParam];
+      final File? sub = sidecarName != null
+          ? await _resolveSidecarVideoSubtitle(
+              svc,
+              subtitleId,
+              sidecarName,
+              episodeIndex,
+            )
+          : embeddedIndexText == null
           ? await svc.resolveVideoSubtitle(
               subtitleId,
               episodeIndex: episodeIndex,
@@ -874,6 +901,93 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           ? '${_safeDownloadStem(videoStem)}.embedded.${track.streamIndex}$extension'
           : null,
     );
+  }
+
+  /// 这一集可下发的全部外挂字幕文件：host 的同目录 sidecar
+  /// （[VideoSidecarSubtitleListHost.listVideoSidecarSubtitles]）并上默认字幕
+  /// [defaultSubtitle]（host 用户选定的字幕可能住在别处，此时排第一）。按路径去重。
+  /// host 不支持该能力 → 空表（client 只有旧单值字段那一条）。
+  Future<List<File>> _sidecarSubtitleFiles(
+    FushiLibraryHostService service,
+    String id,
+    int episodeIndex, {
+    required File? defaultSubtitle,
+  }) async {
+    if (service is! VideoSidecarSubtitleListHost) return const <File>[];
+    final List<File> listed = await (service as VideoSidecarSubtitleListHost)
+        .listVideoSidecarSubtitles(id, episodeIndex: episodeIndex);
+    final File? def = defaultSubtitle;
+    if (def == null ||
+        listed.any((File f) => p.equals(f.path, def.path)) ||
+        !isSidecarSubtitleSuffix(p.extension(def.path))) {
+      return listed;
+    }
+    return <File>[def, ...listed];
+  }
+
+  /// `/streamurl` 的 `sidecarSubtitles[]`（反馈 -CaVsioFhG）。
+  Future<List<RemoteVideoSidecarSubtitle>> _sidecarSubtitlesForRequest(
+    FushiLibraryHostService service,
+    shelf.Request request,
+    String videoId,
+    int episodeIndex, {
+    required String videoStem,
+    required File? defaultSubtitle,
+  }) async {
+    final List<File> files = await _sidecarSubtitleFiles(
+      service,
+      videoId,
+      episodeIndex,
+      defaultSubtitle: defaultSubtitle,
+    );
+    final String encodedId = Uri.encodeFull(videoId);
+    final File? def = defaultSubtitle;
+    return <RemoteVideoSidecarSubtitle>[
+      for (final File file in files)
+        RemoteVideoSidecarSubtitle(
+          fileName: p.basename(file.path),
+          format: p.extension(file.path).replaceFirst('.', '').toLowerCase(),
+          language: sidecarSubtitleLanguageTag(
+            videoStem,
+            p.basename(file.path),
+          ),
+          sizeBytes: await _regularFileLength(file),
+          isDefault: def != null && p.equals(file.path, def.path),
+          url: request.requestedUri
+              .replace(
+                path: '/api/library/videos/$encodedId/subtitle',
+                queryParameters: <String, String>{
+                  kVideoSidecarSubtitleQueryParam: p.basename(file.path),
+                  if (episodeIndex > 0) 'episode': '$episodeIndex',
+                },
+              )
+              .toString(),
+        ),
+    ];
+  }
+
+  /// `GET .../subtitle?sidecar=<name>` 的解析：只在 [_sidecarSubtitleFiles] 里按
+  /// basename 精确匹配（[name] 带路径分隔符 / 穿越时自然匹配不到），找不到 → null。
+  Future<File?> _resolveSidecarVideoSubtitle(
+    FushiLibraryHostService service,
+    String id,
+    String name,
+    int episodeIndex,
+  ) async {
+    if (name.isEmpty || service is! VideoSidecarSubtitleListHost) return null;
+    final List<File> files = await _sidecarSubtitleFiles(
+      service,
+      id,
+      episodeIndex,
+      defaultSubtitle: await service.resolveVideoSubtitle(
+        id,
+        episodeIndex: episodeIndex,
+      ),
+    );
+    for (final File file in files) {
+      if (p.basename(file.path) == name) return file;
+    }
+    return null;
   }
 
   Future<File?> _resolveEmbeddedVideoSubtitle(

@@ -224,6 +224,30 @@ void main() {
     // `if (charPositionText != null) 'charPositionText': charPositionText`
     // 或 fromJson 的 `charPositionText: json['charPositionText'] as String?`
     // 任一行，这几条里就有红的。
+    test('系列名（出处「系列 → 集」，反馈 MCJLSBR5Wg）：往返原样；旧对端不发 = null；null 不写键', () {
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{"expression":"猫"}',
+        sentence: '猫がいる',
+        seriesTitle: 'RWBY',
+      );
+      final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
+        jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>,
+      );
+      expect(r.seriesTitle, 'RWBY');
+      expect(
+        ForwardedMinePayload.fromJson(<String, dynamic>{
+          'rawPayloadJson': '{}',
+          'sentence': 'x',
+        }).seriesTitle,
+        isNull,
+      );
+      const ForwardedMinePayload none = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: '',
+      );
+      expect(none.toJson().containsKey('seriesTitle'), isFalse);
+    });
+
     test('制卡位置：round-trip 原样往返', () {
       const ForwardedMinePayload p = ForwardedMinePayload(
         rawPayloadJson: '{"expression":"猫"}',

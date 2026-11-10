@@ -1465,6 +1465,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "media_bind_unbound",
     "media_doomed",
     "resolve",
+    "trust",
     "purge",
     "checkpoint",
     "plan_restore",
@@ -1485,6 +1486,7 @@ const PROJECTING_OPS: &[&str] = &[
     "replay_pending",
     "import",
     "resolve",
+    "trust",
     "purge",
     "checkpoint",
     "restore",
@@ -1964,6 +1966,13 @@ fn sync2_command(
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,
+        // 信任 / 拒绝一台待确认的设备（store/sync2/trust.rs）：信任时扣着的删除 / 彻底清除放行进投影。
+        "trust" => c.sync2_trust(
+            profile,
+            s("device")?,
+            req["trust"] != Value::Bool(false),
+            i("now")?,
+        )?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
         // 预览恢复到还原点 / 某个时刻（只读；恢复本身是本机写命令，见 [local_write_body]）。

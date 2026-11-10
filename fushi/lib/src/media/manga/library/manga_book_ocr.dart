@@ -20,7 +20,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
-import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -245,14 +244,7 @@ Future<int> enqueueMangaOcrTargets({
     // 刻意不 await 启动：同书上一章还在识别时 enqueue 要等它结束。
     unawaited(
       registry.enqueue(
-        job: MangaOcrBackgroundJob(
-          bookKey: target.bookKey,
-          managedDirectory: target.directory,
-          engine: engine,
-          events: mangaOcrBackgroundEvents(spec),
-          focus: focus,
-          follower: mangaOcrJobFollower(spec),
-        ),
+        job: mangaOcrBackgroundJob(bookKey: target.bookKey, spec: spec),
         mangaJsonPath: target.mangaJsonPath,
       ),
     );

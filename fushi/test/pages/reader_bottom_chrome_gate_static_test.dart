@@ -107,7 +107,7 @@ void main() {
       final String spread = _functionSource(
         src,
         "handlerName: 'spreadReady'",
-        "handlerName: 'onCueTap'",
+        "handlerName: 'onPointerSeek'",
       );
       expect(
         spread,

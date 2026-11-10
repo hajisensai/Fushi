@@ -1,5 +1,5 @@
 // 处理台视频页的资源所有权（review of PR #2103）：
-// 取视频要先在系统临时目录落一份 ≤ 50 MB 的文件，再开 media_kit 的 Player。原实现只在
+// 取视频要先在系统临时目录落一份 ≤ 100 MB 的文件，再开 media_kit 的 Player。原实现只在
 // 一切顺利之后才把文件 / 播放器记进 State，`player.open` 抛错时临时目录与 Player 都没人
 // 释放；open 成功但页面已卸载时只 dispose 了 Player、临时目录留在盘上。
 //
@@ -45,7 +45,7 @@ void main() {
     expect(
       tail.contains('_deleteTempDir(dir)'),
       isTrue,
-      reason: 'open 抛错 / 已卸载时临时目录（≤ 50 MB）要删',
+      reason: 'open 抛错 / 已卸载时临时目录（≤ 100 MB）要删',
     );
   });
 

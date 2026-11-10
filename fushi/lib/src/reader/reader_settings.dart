@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_original_layout.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
@@ -430,8 +431,56 @@ class ReaderSettings {
   double get lineHeight => _get<double>('line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('line_height', v);
 
-  String get writingMode => _get<String>('writing_mode', 'vertical-rl');
+  /// **生效**的排版方向：「跟随原书」开着且当前打开的书声明了方向时取书本的
+  /// （[bookWritingModeOverride]），否则取用户设置（[storedWritingMode]）。
+  /// 渲染 / 分页 / 查词等所有消费点都读这一个 getter，书本覆盖只在这里决定一次。
+  String get writingMode => bookWritingModeOverride ?? storedWritingMode;
+
+  /// 用户设置的排版方向（持久化值，不含书本覆盖）。
+  String get storedWritingMode => _get<String>('writing_mode', 'vertical-rl');
   Future<void> setWritingMode(String v) => _set<String>('writing_mode', v);
+
+  // ── 跟随原书（反馈 sYPkmtitOM）──────────────────────────────────────
+
+  static const String followBookLayoutKey = 'follow_book_layout';
+  static const bool defaultFollowBookLayout = true;
+
+  /// 「跟随原书排版」：开着时，书本元数据（EPUB `page-progression-direction` /
+  /// `primary-writing-mode`）声明的排版方向与翻页方向优先于全局设置；书没声明的项
+  /// 照旧用全局设置。默认开。
+  bool get followBookLayout =>
+      _get<bool>(followBookLayoutKey, defaultFollowBookLayout);
+  Future<void> setFollowBookLayout(bool v) =>
+      _set<bool>(followBookLayoutKey, v);
+
+  /// 打开中的书各自登记的书本排版（不持久化）。按登记顺序排，最后登记的生效；
+  /// 一本书关闭时只撤自己那条，叠在下面的阅读器（若有）自动恢复它的书本排版。
+  final Map<Object, BookOriginalLayout> _bookLayouts =
+      <Object, BookOriginalLayout>{};
+
+  /// 阅读器打开一本书时登记它的 [BookOriginalLayout]；同一 [owner] 重复登记会移到
+  /// 最上层并替换旧值。
+  void enterBookLayout(Object owner, BookOriginalLayout layout) {
+    _bookLayouts.remove(owner);
+    _bookLayouts[owner] = layout;
+  }
+
+  /// 撤销 [owner] 的登记（阅读器关闭时调用）。不是自己登记的不受影响。
+  void leaveBookLayout(Object owner) {
+    _bookLayouts.remove(owner);
+  }
+
+  /// 当前生效的书本排版（最后登记的那本）；没有打开的书为 null。
+  BookOriginalLayout? get activeBookLayout =>
+      _bookLayouts.isEmpty ? null : _bookLayouts.values.last;
+
+  /// 「跟随原书」开着且当前书声明了排版方向时为书本值，否则 null。
+  String? get bookWritingModeOverride =>
+      followBookLayout ? activeBookLayout?.writingMode : null;
+
+  /// 「跟随原书」开着且当前书声明了翻页方向时为书本值，否则 null。
+  String? get bookSpreadDirectionOverride =>
+      followBookLayout ? activeBookLayout?.spreadDirection : null;
 
   String get viewMode => _get<String>('view_mode', 'paginated');
   Future<void> setViewMode(String v) => _set<String>('view_mode', v);
@@ -590,8 +639,14 @@ class ReaderSettings {
   String get spreadMode => _get<String>('spread_mode', 'off');
   Future<void> setSpreadMode(String v) => _set<String>('spread_mode', v);
 
-  /// `ltr` or `rtl`.
-  String get spreadDirection => _get<String>('spread_direction', 'rtl');
+  /// **生效**的页序，`ltr` or `rtl`：「跟随原书」开着且书声明了
+  /// `page-progression-direction` 时取书本的（[bookSpreadDirectionOverride]），
+  /// 否则取用户设置（[storedSpreadDirection]）。
+  String get spreadDirection =>
+      bookSpreadDirectionOverride ?? storedSpreadDirection;
+
+  /// 用户设置的页序（持久化值，不含书本覆盖）。
+  String get storedSpreadDirection => _get<String>('spread_direction', 'rtl');
   Future<void> setSpreadDirection(String v) =>
       _set<String>('spread_direction', v);
 
@@ -863,13 +918,14 @@ class ReaderSettings {
   Future<void> toggleShowReadingTimer() =>
       _set<bool>('show_reading_timer', !showReadingTimer);
 
-  /// 读数胶囊里的「本次字数」段是否显示（per-reader）。默认 true。
-  bool get showSessionChars => _get<bool>('show_session_chars', true);
+  /// 读数胶囊里的「本次字数」段是否显示（per-reader）。默认 false（反馈 9BZA2runry
+  /// 拍板：字数 / 阅读速度读数做成开关、默认关，想看的人在阅读设置里打开）。
+  bool get showSessionChars => _get<bool>('show_session_chars', false);
   Future<void> toggleShowSessionChars() =>
       _set<bool>('show_session_chars', !showSessionChars);
 
-  /// 读数胶囊里的「本次字每时」段是否显示（per-reader）。默认 true。
-  bool get showCharsPerHour => _get<bool>('show_chars_per_hour', true);
+  /// 读数胶囊里的「本次字每时」段是否显示（per-reader）。默认 false（同上，9BZA2runry）。
+  bool get showCharsPerHour => _get<bool>('show_chars_per_hour', false);
   Future<void> toggleShowCharsPerHour() =>
       _set<bool>('show_chars_per_hour', !showCharsPerHour);
 
@@ -883,6 +939,8 @@ class ReaderSettings {
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
+  Future<void> setKeepScreenAwake(bool value) =>
+      _set<bool>('keep_screen_awake', value);
 
   // TODO-728②：有声书底栏是否显示「当前句子」cue 文本（per-reader，每本书各自
   // 记忆）。默认 true = 现状（始终显示）；false = 隐藏 cue 文本但保留布局占位，

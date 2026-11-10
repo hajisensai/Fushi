@@ -172,6 +172,7 @@ void main() {
       );
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
         folderAccess: access(ios: true),
       ).scan(row, fs: _RecordingFs(log));
 
@@ -192,6 +193,7 @@ void main() {
       );
       await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
         folderAccess: access(ios: true),
       ).scan(row, fs: _RecordingFs(log));
 
@@ -214,6 +216,7 @@ void main() {
         );
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
           folderAccess: access(ios: true),
         ).scan(row, fs: _RecordingFs(log));
 
@@ -232,6 +235,7 @@ void main() {
       final MediaSourceRow row = await _insertLocal(db, root: root);
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
         folderAccess: access(ios: true),
       ).scan(row, fs: _RecordingFs(log));
 
@@ -255,6 +259,7 @@ void main() {
         final SourceFolderAccess folderAccess = access(ios: true);
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
           folderAccess: folderAccess,
         ).scan(row, fs: _RecordingFs(log));
 
@@ -292,6 +297,7 @@ void main() {
     final SourceFolderAccess folderAccess = access(ios: false);
     final SourceScanSummary summary = await SourceLibraryScanner(
       db,
+      transcribeAudiobook: null,
       folderAccess: folderAccess,
     ).scan(row, fs: _RecordingFs(log));
     await folderAccess.release(row.id);
@@ -395,6 +401,7 @@ void main() {
     test('addLocalFolderAsSource stores the bookmark in configJson', () async {
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: db,
+        transcribeAudiobook: null,
         mediaKind: 'book',
         path: tmp.path,
         bookmark: 'Ym9va21hcms=',
@@ -408,6 +415,7 @@ void main() {
     test('without a bookmark a local source keeps configJson NULL', () async {
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: db,
+        transcribeAudiobook: null,
         mediaKind: 'book',
         path: tmp.path,
       );
@@ -425,6 +433,7 @@ void main() {
 
       final SourceScanSummary? summary = await importLocalFolderOnceAt(
         db: db,
+        transcribeAudiobook: null,
         mediaKind: 'book',
         path: tmp.path,
         bookmark: 'path:$root',

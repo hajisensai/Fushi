@@ -126,4 +126,5 @@ Map<String, String> buildWidgetGoalLabels() => <String, String>{
   'reviews': t.widget_goal_reviews,
   'mined': t.widget_goal_mined,
   'chars': t.widget_goal_chars,
+  'chars_weekly': t.widget_goal_chars_weekly,
 };

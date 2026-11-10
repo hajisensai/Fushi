@@ -18,6 +18,8 @@ import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/base_tab_page.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
+    show lookupEntryMatchedText;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -1765,6 +1767,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               entry.word,
               entry.reading,
               popupState: _resultWebViewKey.currentState,
+              matched: lookupEntryMatchedText(entry),
             );
           }
         }

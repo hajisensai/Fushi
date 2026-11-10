@@ -22,6 +22,20 @@ class FushiCardFields {
   static const String frequencyRank = 'FrequencyRank';
   static const String source = 'Source';
 
+  /// 来源字段（Fushi 卡片 `Source` / Lapis·Kiku `MiscInfo` / Senren `miscInfo`，以及
+  /// 任意笔记类型里按名字认出的 MiscInfo 等价字段）的默认映射——**全仓只此一份**。
+  ///
+  /// 作品标题本身就是回跳链接（`{source-link}`：视频 = 剧集名 / 「系列名 - 剧集名」，
+  /// 本地视频即入库时由文件名得到的标题；无定位时退回纯标题），后接片段时间窗
+  /// （`{clip-timestamp}`，`HH:MM:SS - HH:MM:SS`；书籍等无时间轴来源渲染为空，字段
+  /// 写入时 trim 掉多余分隔）。反馈 GNiu1BuCKw：视频制卡要把文件名与时间点写进
+  /// MiscInfo——内置预设早就是这个值，但通用笔记类型的按名默认映射与 Fushi 复习的
+  /// 字段名猜测各自抄了一份只有 `{source-link}` 的旧值，所以那些笔记类型的 MiscInfo
+  /// 拿不到时间点。各处一律引用本常量，不再各写字面量。
+  ///
+  /// 存量设置的迁移目标（`BaseAnkiRepository.upgradeMiscInfoMapping`）也是它。
+  static const String sourceDefaultMapping = '{source-link} {clip-timestamp}';
+
   /// 新名 → 旧名（= Lapis 字段名）。只列改过名的字段。
   static const Map<String, String> legacyNames = <String, String>{
     term: 'Expression',

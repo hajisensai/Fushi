@@ -249,6 +249,32 @@ void main() {
       expect(r['error'], 'Missing filename/content');
     });
 
+    // 反馈 0wkJImhZUp：app 内浏览器里同一份扩展脚本的自动对轴走同一个核心端点，只透传契约字段。
+    test('subtitleAlign → 核心 /api/subtitle/align，只透传契约字段', () async {
+      final Map<String, Object?> r = await routeWebBrowserExtensionMessage(
+        <String, dynamic>{
+          'type': 'subtitleAlign',
+          'binMs': 100,
+          'startMs': 600000,
+          'rmsDb': <Object?>[-20.0, null],
+          'cues': <Object?>[
+            <String, Object?>{'startMs': 600000, 'endMs': 600100},
+          ],
+          'extra': 'drop me',
+        },
+        services,
+      );
+      expect(apiCalls.single.$1, FushiExtensionApiCore.subtitleAlignPath);
+      expect(apiCalls.single.$2.keys.toSet(), <String>{
+        'binMs',
+        'startMs',
+        'rmsDb',
+        'cues',
+      });
+      expect(apiCalls.single.$2['startMs'], 600000);
+      expect(r['ok'], isTrue);
+    });
+
     // 反馈 KGC1ifR1a3：app 内浏览器宿主同一份扩展脚本，网页视频收藏走同一个核心端点。
     test('videoFavorite → 核心 video-favorite 端点，只透传契约字段', () async {
       final Map<String, Object?> r =

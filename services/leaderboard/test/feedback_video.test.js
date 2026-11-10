@@ -1,4 +1,5 @@
 // 反馈视频附件（槽位 v0）：流式写 R2、魔数嗅探、长度封口、开发者 Range 播放 / 下载、到期清理。
+import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/worker.js';
@@ -94,6 +95,20 @@ describe('视频上传', () => {
     // 反馈人详情只看到条目元数据。
     const d = await withTicket(env, 'GET', `/v1/feedback/${f.id}`, f.ticket);
     expect(d.data.attachments).toEqual([{ slot: 'v0', kind: 'video', bytes: MP4.length, type: 'video/mp4' }]);
+  });
+
+  it('上限 100 MB（1e8 字节，压在 Cloudflare Free / Pro 的 100 MB 请求体上限内），与客户端常量同值', async () => {
+    expect(FEEDBACK_LIMITS.videoMaxBytes).toBe(100 * 1000 * 1000);
+    // 客户端 FeedbackLimits.videoMaxBytes 必须同值：客户端按它决定原样上传还是压缩，不一致就会把服务端拒收的原件传上来。
+    const dart = readFileSync(new URL('../../../packages/fushi_engine/lib/feedback/feedback_models.dart', import.meta.url), 'utf8');
+    expect(dart).toMatch(/static const int videoMaxBytes = 100 \* 1000 \* 1000;/);
+    // 恰好等于上限的声明长度过了读体前的检查（实际只发 64 字节，所以是封口失败 400，不是 413）。
+    const env = makeEnv();
+    const f = (await submit(env)).data;
+    const atLimit = await putVideo(env, f, MP4, { length: FEEDBACK_LIMITS.videoMaxBytes });
+    expect(atLimit.status).toBe(400);
+    expect(atLimit.data.error).toBe('bad_length');
+    expect(videoBytes(env)).toBe(0); // 封口失败归还预占
   });
 
   it('读体之前就拒：缺 Content-Length 411、超限 413、类型不在白名单 415——都不扣预算不占配额', async () => {

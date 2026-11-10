@@ -32,6 +32,8 @@ import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -609,7 +611,71 @@ class GlobalLookupController {
         ShortcutAction.globalExternalOpenLookupPage: openLookupPageInMainWindow,
         // 截屏识字：执行体在悬浮球宿主（与桌面应用外球的同名按钮共用）。
         ShortcutAction.globalExternalScreenOcr: triggerScreenOcr,
+        // 有声书悬浮字幕（反馈 uvIcQB5gPG）：显隐 + 悬浮窗按钮同款播放控制。
+        ShortcutAction.globalExternalFloatingLyricToggle:
+            toggleAudiobookFloatingLyric,
+        ShortcutAction.globalExternalAudiobookPlayPause: () =>
+            _runAudiobookHotKey(
+              'playPause',
+              (AudiobookPlayerController c) => c.togglePlayPause(),
+            ),
+        ShortcutAction.globalExternalAudiobookPrevSentence: () =>
+            _runAudiobookHotKey(
+              'prevSentence',
+              (AudiobookPlayerController c) => c.skipToPrevCue(),
+            ),
+        ShortcutAction.globalExternalAudiobookNextSentence: () =>
+            _runAudiobookHotKey(
+              'nextSentence',
+              (AudiobookPlayerController c) => c.skipToNextCue(),
+            ),
+        ShortcutAction.globalExternalAudiobookReplaySentence: () =>
+            _runAudiobookHotKey(
+              'replaySentence',
+              (AudiobookPlayerController c) => c.replayCurrentCue(),
+            ),
       };
+
+  /// 有声书全局热键的播放控制执行体：落到 app 级会话的控制器——悬浮字幕窗的
+  /// 「上一句 / 播放暂停 / 下一句」按钮（`AudiobookSession._setupFloatingLyricHandlers`）
+  /// 调的就是同一个控制器，热键与按钮行为一致。没有活动会话（没在听书）时按键
+  /// 没有可作用的对象，记一条日志后返回。
+  Future<void> _runAudiobookHotKey(
+    String what,
+    Future<void> Function(AudiobookPlayerController controller) run,
+  ) async {
+    final AudiobookPlayerController? controller =
+        _appModel?.audiobookSession.controller;
+    if (controller == null) {
+      glog('audiobookHotKey: $what — no active audiobook session, ignored');
+      return;
+    }
+    await run(controller);
+  }
+
+  /// [ShortcutAction.globalExternalFloatingLyricToggle] 的执行体：显示 / 隐藏有声书
+  /// 悬浮字幕。走 [AppModel.setFloatingLyricEnabled]——设置页开关的同一个「置位」
+  /// 入口，原生窗显隐与意图 pref 原子同步（书内翻转与设置页不会再反相，TODO-1069）。
+  ///
+  /// 只在有活动会话时动作：没在听书时悬浮窗本来就不在，热键若只悄悄翻转意图 pref，
+  /// 用户按下去什么都看不到，下次进书却发现悬浮窗开关被改了。开启失败（缺悬浮窗
+  /// 权限 / 原生窗建不出来）记错误日志，不静默吞掉。
+  Future<void> toggleAudiobookFloatingLyric() async {
+    final AppModel? model = _appModel;
+    if (model == null || !model.audiobookSession.isActive) {
+      glog('audiobookHotKey: floatingLyric — no active audiobook session');
+      return;
+    }
+    final bool target = !model.showFloatingLyric;
+    final bool ok = await model.setFloatingLyricEnabled(target);
+    if (!ok) {
+      ErrorLogService.instance.log(
+        'GlobalLookupController.toggleAudiobookFloatingLyric',
+        StateError('floating subtitles could not be shown (target=$target)'),
+        StackTrace.current,
+      );
+    }
+  }
 
   /// 桌面截屏识字的执行体，由常驻的 `AppFloatingBallHost` 装上 / 卸下（截屏、冻结
   /// 层、点字查词的整套状态都在那边，与应用外悬浮球的「截屏识字」按钮同一条路径）。
@@ -721,11 +787,19 @@ class GlobalLookupController {
     return requests;
   }
 
-  /// Screen OCR needs the overlay (freeze layer + lookup card); the other two
-  /// actions work without it ([triggerSelectionLookup] falls back to the main
-  /// window, [openLookupPageInMainWindow] never needed it).
+  /// Screen OCR needs the overlay (freeze layer + lookup card); showing /
+  /// hiding the audiobook floating subtitles needs a native floating-lyric
+  /// window (none on Linux, see [floatingLyricBackendAvailableOn]). The other
+  /// actions work without either ([triggerSelectionLookup] falls back to the
+  /// main window, [openLookupPageInMainWindow] never needed it, the audiobook
+  /// playback controls only drive the player).
   static bool osHotKeyActionWorksHere(ShortcutAction action) =>
-      action != ShortcutAction.globalExternalScreenOcr || isSupported;
+      switch (action) {
+        ShortcutAction.globalExternalScreenOcr => isSupported,
+        ShortcutAction.globalExternalFloatingLyricToggle =>
+          FloatingLyricChannel.supported,
+        _ => true,
+      };
 
   /// Settings page: bind the hotkeys again after the user dismissed the
   /// desktop's shortcut dialog or the desktop closed the session.

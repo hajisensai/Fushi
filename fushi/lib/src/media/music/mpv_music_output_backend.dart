@@ -452,7 +452,17 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await native.setProperty(e.key, e.value);
     }
     native.onLoadHooks.add(_onLoadHook);
+    native.onUnloadHooks.add(_onUnloadHook);
     await native.observePropertyChanges('audio-pts', _onAudioPts);
+    // 暂停态下设备开起来 / 音轨选中（不起播的打开、暂停早于加载完成）：独占时交还。
+    await native.observePropertyChanges(
+      'current-ao',
+      (String _) => _syncPausedDevice(),
+    );
+    await native.observePropertyChanges(
+      'current-tracks/audio/id',
+      (String _) => _syncPausedDevice(),
+    );
   }
 
   Future<void> _setIfChanged(String key, String value) async {
@@ -716,6 +726,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
         ? null
         : await _mediaFor(separate);
     if (gen != _openGen) return false;
+    // 不起播的打开（暂停态换曲 / 恢复会话）：加载完成后由 [_syncPausedDevice] 交还独占设备。
+    // 上一个文件暂停时取消选中的音轨是逐文件选项，随它卸载自动还原，这里不用管。
+    _pauseWanted = !play;
+    _releasedForPause = false;
     _rewiring = true;
     _entryProducedAudio = false;
     try {
@@ -930,9 +944,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       _pending = _next;
       _next = null;
       _entryProducedAudio = false;
-      _pendingFromDuration = _audible?.durationMs == null
-          ? null
-          : Duration(milliseconds: _audible!.durationMs!);
+      _pendingFromDuration = _audible?.playbackDuration;
       _lastIndex = playlist.index;
       return;
     }
@@ -1343,11 +1355,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     final MusicPlayItem? item = _audible;
     // 取流期间没有出声曲目：mpv 卸掉旧曲时报的位置不上报。
     if (item == null) return;
-    final Duration? duration = item.durationMs == null
-        ? (_player.state.duration > Duration.zero
-              ? _player.state.duration
-              : null)
-        : Duration(milliseconds: item.durationMs!);
+    final Duration? duration =
+        item.playbackDuration ??
+        (_player.state.duration > Duration.zero
+            ? _player.state.duration
+            : null);
     final Duration relative = absolute - _originOf(item);
     final Duration clamped = relative < Duration.zero
         ? Duration.zero
@@ -1356,11 +1368,95 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     _emit(MusicBackendPosition(clamped, duration));
   }
 
-  @override
-  Future<void> play() => _player.play();
+  // ── 独占输出：暂停即交还设备（反馈 WY8uvL1Vfy）─────────────────────────────
+  //
+  // mpv 的暂停只让 AO 停止消耗缓冲，WASAPI 独占流 / macOS hog mode 一直占着设备，暂停期间
+  // 别的程序放不出声。交还方式是取消选中音轨：mpv `mp_switch_track_n` 在没有音轨时
+  // `uninit_audio_chain` + `uninit_audio_out`（`player/loadfile.c`），设备立刻关闭（已暂停时
+  // `uninit_audio_out` 不 drain）；文件不卸载、播放位置不动，也不会因此判成播完（两条链都
+  // 没有时 `handle_eof` 不结束文件，`player/playloop.c`）。恢复时 [play] 先把音轨选回来
+  // （mpv 按当前位置重建音频链，下一帧到达时重开设备；那时设备被别的程序独占着，就走
+  // [_recoverOutput] 照常退共享），再取消暂停。不用 `stop` + 重开：那要卸载文件，切换期 /
+  // 预排下一首 / CD 同文件续播的状态都得重建。
+  //
+  // 取消选中写的是 `file-local-options/aid`，不是全局 `aid`：全局选项会带进下一次 loadfile，
+  // 让下一个文件「没有可播的流」直接结束；逐文件选项在这个文件卸载时由 mpv 还原。
+  //
+  // 只能对**已经初始化好**的文件取消选中（初始化前写进去会作用到正在加载的文件上）。所以
+  // 「要不要交还」是一个状态（[_pauseWanted] 且独占），由 [_syncPausedDevice] 在每次暂停、
+  // 以及 `current-ao` / 当前音轨变化时（不起播的打开、暂停早于加载完成）对照 mpv 现状收敛，
+  // 而不是在暂停那一刻赌文件已经加载好。
+
+  /// 用户要的播放态是「暂停」（[pause] / 不起播的打开）。
+  bool _pauseWanted = false;
+
+  /// 当前文件的音轨是我们为暂停交还设备而取消选中的（恢复播放时要选回来）。
+  bool _releasedForPause = false;
+
+  /// mpv `on_unload` 钩子计数：[_syncPausedDevice] 读完 mpv 状态到下发之间文件换了就作废。
+  int _mpvUnloads = 0;
+
+  /// 播放 / 暂停的代次：每次 [play] / [pause] 加一。选回音轨途中用户又按了暂停，就不再
+  /// 按旧的那次 [play] 起播。
+  int _transportGen = 0;
+
+  /// 当前是不是以独占方式占着设备（Windows WASAPI 独占 / macOS hog mode；退回共享后不算）。
+  bool get _holdsExclusiveDevice => _applied['audio-exclusive'] == 'yes';
+
+  Future<void> _onUnloadHook() async {
+    _mpvUnloads++;
+    _releasedForPause = false;
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> play() async {
+    final int gen = ++_transportGen;
+    _pauseWanted = false;
+    await _reacquireDevice();
+    // 选回音轨途中用户又暂停了：不再起播。
+    if (gen != _transportGen) return;
+    await _player.play();
+  }
+
+  @override
+  Future<void> pause() async {
+    ++_transportGen;
+    _pauseWanted = true;
+    await _player.pause();
+    await _syncPausedDevice();
+  }
+
+  /// 要暂停 + 独占 + 当前文件已初始化且设备开着 → 取消选中音轨交还设备。其余情况什么都
+  /// 不做（还没加载好的，等 `current-ao` / 当前音轨变化时再来）。幂等：已交还的读出来
+  /// `aid=no`，不再下发。
+  Future<void> _syncPausedDevice() async {
+    final NativePlayer? native = _native;
+    if (native == null || !_initialised || _disposed) return;
+    if (!_pauseWanted || !_holdsExclusiveDevice || _mpvItems.isEmpty) return;
+    final int unloads = _mpvUnloads;
+    // 播放初始化完成后 `aid` 读出的是选中音轨的编号；加载途中读出的是选项值（auto），
+    // 已取消选中读出 no。
+    if (int.tryParse(await native.getPropertyAsync('aid')) == null) return;
+    if ((await native.getPropertyAsync('current-ao')).isEmpty) return;
+    // 读属性期间状态变了：用户按了播放 / 已释放 / mpv 开始卸载这个文件（`on_unload` 钩子
+    // 在我们的回调跑完之前不放行，所以计数没变 = 下发时 mpv 还停在读到的那个文件上）。
+    if (_disposed || !_pauseWanted || unloads != _mpvUnloads) return;
+    _releasedForPause = true;
+    await native.setProperty('file-local-options/aid', 'no');
+  }
+
+  /// 暂停时交还过设备 → 把这个文件的音轨选回来。
+  Future<void> _reacquireDevice() async {
+    if (!_releasedForPause) return;
+    _releasedForPause = false;
+    final NativePlayer? native = _native;
+    if (native == null) return;
+    await native.setProperty('file-local-options/aid', 'auto');
+  }
+
+  /// 测试：当前文件的音轨是否为暂停交还设备而取消选中。
+  @visibleForTesting
+  bool get debugDeviceReleasedForPause => _releasedForPause;
 
   @override
   Future<void> seek(Duration position) async {
@@ -1544,7 +1640,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     if (_isCd(_audible)) return ms == null ? null : Duration(milliseconds: ms);
     final Duration d = _player.state.duration;
     if (d > Duration.zero) return d;
-    return ms == null ? null : Duration(milliseconds: ms);
+    return _audible?.playbackDuration;
   }
 
   @override

@@ -32,8 +32,10 @@ import 'epub_srt_matcher.dart';
 /// kagami 实测 32 条词中边界里 24 条是这么来的）。规则只有一条：**缝归缝隙期间
 /// 正在发声的 cue**——中间有未命中 cue 就按发声时长比例切给它们（0 字的缝 =
 /// ASR 幻觉，也认领，token 折进前一片后幻觉 cue 自然消失）；没有就在缝内第一个
-/// 标点/空白边界处切开分给两侧（那一刀有一侧认领不下时，改试缝内其它边界，
-/// 按两侧「没出字的发声时长」与引号挑切点，见 `_fallbackCut`）。判据是朗读
+/// 标点/空白边界处切开分给两侧——但前一条末 token 之后「没出字的发声时长」明显
+/// 多于后一条开头时，第一个切点之后的整句 / 整段台词归前一条（ASR 漏听在它尾巴
+/// 里，BUG-4182）；那一刀有一侧认领不下时，改试缝内其它边界，按同一时长证据与
+/// 引号挑切点，见 `_fallbackCut`。判据是朗读
 /// 速度：认领后该 cue 的「正文字数 / 时长」不得超过本次结果命中 cue 密度中位数
 /// 的 [maxDensityRatio] 倍，旁白真跳过一段时缝仍留着（行为与合缝前相同）。中位数是自适应的，日语（3–4 字/s）与英语
 /// （空格已剥、~12 字母/s）都不用配常量。
@@ -272,9 +274,22 @@ class CueSentenceResegmenter {
             (cut == gapStart || affordable(cues[i], lenI + cut - gapStart)) &&
             (cut == gapEnd || affordable(cues[j], lenJ + gapEnd - cut));
         final int first = _firstBoundary(gaps, gapStart, gapEnd);
-        // 第一个切点两侧都认领得起：照旧（原有行为不变）。否则改试缝内其它
+        // 前一条在末 token 之后还有明显多于后一条开头的「没出字的发声时长」
+        // （[_unheardSide]）：缝里第一个切点之后的整句台词是在前一条尾巴里念的、
+        // ASR 漏听了（BUG-4182：「お手伝いしましょうか？」「いーらーん」，末 token 后
+        // 1.9 s 没出字，后一条首 token 紧贴起点）。缝起点就是句界时第一个切点会把
+        // 整段推给后一条——它的音频里根本没有这句，导出片段与高亮都错开一句。
+        // 只按**整句 / 整段引号**往前一条挪（[_lastUtteranceBoundary]）：没出字的
+        // 时长也可能只是末字拖长音（「んー……」），缝尾若是下一句的开头半截
+        // （「ま、｜いっか」）就不该被拆过去。
+        final int toPrev = _unheardSide(cues[i], cues[j]) > 0
+            ? _lastUtteranceBoundary(gaps, first, gapEnd)
+            : first;
+        // 否则第一个切点两侧都认领得起：照旧（原有行为不变）。再否则改试缝内其它
         // 边界（含整段给前一条 / 整段给后一条），见 [_fallbackCut]。
-        final int? cut = fits(first)
+        final int? cut = toPrev > first && fits(toPrev)
+            ? toPrev
+            : fits(first)
             ? first
             : _fallbackCut(
                 gaps: gaps,
@@ -393,6 +408,7 @@ class CueSentenceResegmenter {
     final int gapLen = gapEnd - gapStart;
     final int tail = _unheardTailMs(prev);
     final int head = _unheardHeadMs(next);
+    final int side = _unheardSide(prev, next);
     final int prevQuote = gaps.quoteIdAt(gapStart - 1);
     final int nextQuote = gaps.quoteIdAt(gapEnd);
     final bool inPrevQuote =
@@ -404,9 +420,9 @@ class CueSentenceResegmenter {
         gaps.quoteIdAt(gapStart) == nextQuote &&
         gaps.quoteIdAt(gapEnd - 1) == nextQuote;
     final double f;
-    if (tail - head >= forwardPauseMs) {
+    if (side > 0) {
       f = 1;
-    } else if (head - tail >= forwardPauseMs) {
+    } else if (side < 0) {
       f = 0;
     } else if (inPrevQuote && !inNextQuote) {
       f = 1;
@@ -433,6 +449,17 @@ class CueSentenceResegmenter {
     return best;
   }
 
+  /// 两条相邻锚点之间的缝是在哪一侧的语音里念的（只看时间证据）：前一条末 token
+  /// 之后（[_unheardTailMs]）比后一条首 token 之前（[_unheardHeadMs]）多出至少
+  /// [forwardPauseMs] → 1（前一条）；反过来 → -1（后一条）；不明确 → 0。
+  int _unheardSide(AudioCue prev, AudioCue next) {
+    final int tail = _unheardTailMs(prev);
+    final int head = _unheardHeadMs(next);
+    if (tail - head >= forwardPauseMs) return 1;
+    if (head - tail >= forwardPauseMs) return -1;
+    return 0;
+  }
+
   /// cue 末 token 之后到收声还有多久（扣掉 [densitySlackMs] 的发声容差）：
   /// 这段时间里有语音、ASR 没吐字。
   int _unheardTailMs(AudioCue cue) {
@@ -456,6 +483,15 @@ class CueSentenceResegmenter {
       if (gaps.kindAt(p) != _GapKind.none) return p;
     }
     return to;
+  }
+
+  /// `(from, to]` 内最后一个**整句 / 整段引号**的边界（[_SectionGaps.endsUtteranceAt]），
+  /// 没有就 [from]。
+  static int _lastUtteranceBoundary(_SectionGaps gaps, int from, int to) {
+    for (int p = to; p > from; p--) {
+      if (gaps.endsUtteranceAt(p)) return p;
+    }
+    return from;
   }
 
   static CueMatch _withRange(CueMatch m, int start, int end) => CueMatch(
@@ -966,6 +1002,13 @@ class _SectionGaps {
 
   /// 位置 [p] 前的间隙里有开引号/开括号：[p] 起是一句新台词的开头。
   bool opensAt(int p) => p > 0 && p < _opens.length && _opens[p];
+
+  /// 位置 [p] 前的间隙是一句 / 一段台词的分界：夹着句末标点，或引号在这里开、
+  /// 合、换对（`」「`）。逗号这类句中停顿（「ま、｜いっか」）不算。
+  bool endsUtteranceAt(int p) =>
+      kindAt(p) == _GapKind.sentence ||
+      (kindAt(p) != _GapKind.none &&
+          (opensAt(p) || quoteIdAt(p - 1) != quoteIdAt(p)));
 }
 
 class _Token {

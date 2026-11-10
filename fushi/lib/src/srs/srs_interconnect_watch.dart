@@ -11,11 +11,17 @@ library;
 import 'dart:async';
 import 'dart:math';
 
+import 'package:fushi_engine/sync/srs_change_feed.dart' show SrsChangePoll;
+
 /// 长轮询循环。[wait] 返回 host 的当前令牌（老 host 不支持返回 null）；[ready] 为假时（互联没开 / 没配对 /
 /// app 在后台 / 复习模块关着）不发请求，隔一会儿再看。
+///
+/// 令牌的推进全是本机自己写 head 引起的（[SrsChangePoll.ownOnly]，BUG-4382）就只记下新令牌、不跑一轮：本机刚发
+/// 出去的东西不用再收回来，以前每次「立即同步」/ 推送写完 head 都经 host 把自己叫醒再空跑一轮，同步状态行在
+/// 「已同步」之后又从「准备」走一遍。
 class SrsInterconnectWatcher {
   SrsInterconnectWatcher({
-    required Future<int?> Function(int? after) wait,
+    required Future<SrsChangePoll?> Function(int? after) wait,
     required Future<bool> Function() ready,
     required Future<void> Function() onChange,
     void Function()? onReachable,
@@ -27,7 +33,7 @@ class SrsInterconnectWatcher {
        _onChange = onChange,
        _onReachable = onReachable;
 
-  final Future<int?> Function(int? after) _wait;
+  final Future<SrsChangePoll?> Function(int? after) _wait;
 
   /// 长轮询成功回了一次（host 此刻可达）：app 据此清掉本机推送的失败退避（[SrsLocalPush.resetBackoff]）。
   final void Function()? _onReachable;
@@ -87,17 +93,18 @@ class SrsInterconnectWatcher {
         continue;
       }
       try {
-        final int? t = await _wait(token);
+        final SrsChangePoll? poll = await _wait(token);
         if (!_running) break;
         failures = 0;
         _onReachable?.call();
-        if (t == null) {
+        if (poll == null) {
           await _sleep(unsupportedRecheck);
           continue;
         }
-        // 第一次只是拿基线；之后令牌变了才同步。
-        final bool changed = token != null && t != token;
-        token = t;
+        // 第一次只是拿基线；之后令牌变了、且不全是本机自己写的才同步。
+        final bool changed =
+            token != null && poll.token != token && !poll.ownOnly;
+        token = poll.token;
         if (changed) await _onChange();
       } on Object {
         // 断网 / host 重启 / 换路：退避后重来，令牌作废（重新拿基线，重连后先补一轮）。
@@ -122,6 +129,37 @@ class SrsInterconnectWatcher {
       }
     }
   }
+}
+
+/// 跑一轮覆盖 [pushes] 全部通道的同步 [fullSync]（「立即同步」，BUG-4382）：先撤掉此刻排着的推送并清掉退避
+/// （用户明说「现在就同步」），由这一轮一并带上；这一轮没同步成功（[synced] 为假或抛错）就把撤掉的推送排回去。
+Future<T> srsSyncSupersedingPushes<T>(
+  List<SrsLocalPush> pushes,
+  Future<T> Function() fullSync, {
+  required bool Function(T result) synced,
+}) async {
+  final List<SrsLocalPush> taken = <SrsLocalPush>[
+    for (final SrsLocalPush p in pushes)
+      if (p.takePending()) p,
+  ];
+  for (final SrsLocalPush p in pushes) {
+    p.resetBackoff();
+  }
+  void restore() {
+    for (final SrsLocalPush p in taken) {
+      p.trigger();
+    }
+  }
+
+  final T result;
+  try {
+    result = await fullSync();
+  } catch (_) {
+    restore();
+    rethrow;
+  }
+  if (!synced(result)) restore();
+  return result;
 }
 
 /// 不在复习页时本机变动后的去抖（设计 §6.2：防抖 10 s）。
@@ -202,6 +240,19 @@ class SrsLocalPush {
       return;
     }
     _schedule(now: true);
+  }
+
+  /// 一轮覆盖全部通道的同步（「立即同步」）马上就要跑（BUG-4382）：此刻排着的推送由它一并带上，撤掉不再单独推；
+  /// 返回撤掉前有没有待推的。正在跑的那次推送照常跑完（它已经在同步队列里）；之后再来的触发照常排。那一轮没同步
+  /// 成功时调用方把撤掉的待推 [trigger] 回来——推送本身也会失败退避，但本机改动不能因为被撤掉而等不到下一次推送。
+  /// 以前「立即同步」报完「已同步」后，排着的推送在去抖到期时又各跑一轮（什么都不用推），同步状态行再走一遍。
+  bool takePending() {
+    final bool had = pending;
+    _timer?.cancel();
+    _timer = null;
+    _again = false;
+    _againNow = false;
+    return had;
   }
 
   /// 网络恢复 / 用户手动同步：清掉退避；有待推的就按普通去抖重新排。
