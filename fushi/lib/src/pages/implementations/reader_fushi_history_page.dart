@@ -420,6 +420,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   // 供 SRT 卡按 bookKey 复用同一进度，无需重复读 DB / 重算。
   Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
 
+  // 反馈 Ndnxy3mNdG：SRT 卡打开哪个阅读器、原书卡要不要被它顶替，都取决于配对书的
+  // [BookFormat]。这里收录全量书架行的 format（由卡上已派生的
+  // `mediaSourceIdentifier` 经 [ReaderFushiSource.formatForMediaSourceKey] 反查，
+  // 不再读库），与 [_epubProgressByBookKey] 同源同时机。
+  Map<String, BookFormat> _bookFormatByBookKey = const {};
+
   Future<_RemoteBookState?>? _remoteBooksFuture;
   // BUG-992：上次成功的远端书态，自动刷新重拉（future→waiting）时沿用，避免闪屏。
   _RemoteBookState? _lastRemoteState;
@@ -2113,10 +2119,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // BUG-728：过滤前先收 EPUB 卡已算好的进度，供只以 SRT 卡出现的有声书复用。
     final Map<String, ({int position, int duration})> epubProgressByBookKey =
         {};
+    final Map<String, BookFormat> bookFormatByBookKey = {};
     for (final MediaItem item in allEpubBooksForBorrow) {
       final String? key = _parseBookKey(item.mediaIdentifier);
       if (key != null) {
         epubBackedBookKeys.add(key);
+        final BookFormat? format = ReaderFushiSource.formatForMediaSourceKey(
+          item.mediaSourceIdentifier,
+        );
+        if (format != null) bookFormatByBookKey[key] = format;
         epubProgressByBookKey[key] = (
           position: item.position,
           duration: item.duration,
@@ -2127,10 +2138,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         epubCoverUrisByBookKey[key] = imageUrl;
       }
     }
-    final Set<String> srtBookKeys = {
-      for (final b in allSrtBooks)
-        if (b.bookKey.isNotEmpty) b.bookKey,
-    };
+    // BUG-728 隐藏规则：有声书配对行顶替原书卡——只对能挂有声书的格式成立
+    // （反馈 Ndnxy3mNdG：存量「PDF + 有声书」不再把 PDF 卡藏掉）。
+    final Set<String> srtBookKeys = ReaderFushiSource.audiobookShadowedBookKeys(
+      allSrtBooks,
+      formatOf: (String key) => bookFormatByBookKey[key],
+    );
+    // SRT 卡在本帧 build 里就会读 format 派生阅读器，必须在 build 前就位。
+    _bookFormatByBookKey = bookFormatByBookKey;
     // 阅读状态筛选在这里而不在搜索那一层：读完判据 [_completedBookKeys] 由
     // [_loadShelfMaps] 异步预取，只有本函数（_shelfMapsFuture 完成后）读得到真值。
     // 继续阅读 hero 也吃这份列表——筛「未读」时不该再顶着一本在读的书。
@@ -3631,6 +3646,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 逐条按模块过滤：被关掉的模块不留可点位置。
     final ModuleVisibility modules = _moduleVisibility;
     final bool isManga = _isMangaItem(item);
+    // 反馈 Ndnxy3mNdG：「导入有声书 / 有声书工作室」只给能挂有声书的书（EPUB）。
+    // 以前按 `!isManga` 判，PDF 卡也露出入口，挂上后被写死的 EPUB 阅读器打开成白屏；
+    // ctl 挂音频的拒绝分支与这里共用 [BookFormat.supportsAudiobook]。
+    final bool canAttachAudiobook =
+        ReaderFushiSource.mediaItemSupportsAudiobook(item) &&
+        modules.isEnabled(ModuleId.listening);
     return <DialogAction>[
       DialogDangerAction(
         label: t.dialog_delete,
@@ -3650,13 +3671,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.document_scanner_outlined,
           onPressed: () => _ocrMangaBooks(<String>[bookKey], dialog: true),
         ),
-      if (!isManga && modules.isEnabled(ModuleId.listening))
+      if (canAttachAudiobook)
         DialogQuickAction(
           label: t.audiobook_import,
           icon: Icons.headphones_outlined,
           onPressed: () => _openAudiobookImport(item, bookKey),
         ),
-      if (!isManga && modules.isEnabled(ModuleId.listening))
+      if (canAttachAudiobook)
         DialogQuickAction(
           label: t.audiobook_studio_title,
           icon: FushiIcons.voice,

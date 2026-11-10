@@ -623,7 +623,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
-      'きたくない',
+      'Hatarakitakunai',
     );
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
@@ -658,6 +658,69 @@ void main() {
     expect(find.textContaining('T04:55'), findsNothing);
   });
 
+  // 反馈 80S7Esbdec：真红小站后端是字符级模糊匹配，搜「ユリアリス」会把零散命中
+  // リ / ア / ス 的条目一起返回。发现页按统一相关度判据把它们折进计数行。
+  testWidgets('搜索结果里疑似不相关的条目折进计数行，点开才显示，不重新请求', (WidgetTester tester) async {
+    final _FakeSource fuzzy = _FakeSource(
+      id: 'fuzzy',
+      displayName: 'Fuzzy',
+      priority: 1,
+      capabilities: DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+      ),
+      searchEntries: <DiscoveryEntry>[
+        for (final String title in <String>['天文時計のアリア', 'ユリアリス.7z', 'ユニオリズム'])
+          DiscoveryResourceItem(
+            sourceId: 'fuzzy',
+            title: title,
+            id: title,
+            kind: DiscoveryMediaKind.game,
+            payloadKind: DiscoveryPayloadKind.httpFile,
+          ),
+      ],
+    );
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[fuzzy]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_fuzzy')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'ユリアリス',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(fuzzy.searchCalls, 1);
+
+    expect(find.widgetWithText(FushiListItem, 'ユリアリス.7z'), findsOneWidget);
+    expect(find.widgetWithText(FushiListItem, '天文時計のアリア'), findsNothing);
+    expect(find.widgetWithText(FushiListItem, 'ユニオリズム'), findsNothing);
+    final Finder notice = find.byKey(
+      const ValueKey<String>('discovery_hidden_reveal'),
+    );
+    expect(notice, findsOneWidget);
+    expect(
+      find.textContaining(t.discovery_hidden_irrelevant_count(n: 2)),
+      findsOneWidget,
+    );
+
+    await tester.tap(notice);
+    await tester.pumpAndSettle();
+    expect(notice, findsNothing);
+    expect(find.widgetWithText(FushiListItem, '天文時計のアリア'), findsOneWidget);
+    expect(find.widgetWithText(FushiListItem, 'ユニオリズム'), findsOneWidget);
+    // 命中的仍排在最前。
+    expect(
+      tester.getTopLeft(find.widgetWithText(FushiListItem, 'ユリアリス.7z')).dy,
+      lessThan(
+        tester.getTopLeft(find.widgetWithText(FushiListItem, '天文時計のアリア')).dy,
+      ),
+    );
+    expect(fuzzy.searchCalls, 1, reason: '折叠是客户端行为，不重新请求');
+  });
+
   // 阶段 3：与视频发现页同一套交互（共享件 discovery/discovery_widgets.dart）。
   testWidgets('输入停顿 350ms 自动搜索，停顿前不发请求', (WidgetTester tester) async {
     await pumpPage(tester);
@@ -668,13 +731,13 @@ void main() {
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
-      'wh',
+      'se',
     );
     await tester.pump(const Duration(milliseconds: 349));
     // 停顿不足又改了一次：计时从头算。
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
-      'white',
+      'search',
     );
     await tester.pump(const Duration(milliseconds: 349));
     expect(searchOnly.searchCalls, 0, reason: '防抖期内一个请求都不发');
@@ -690,7 +753,7 @@ void main() {
     // 回车立即搜，并吃掉尚未触发的防抖（不会过 350ms 再重复打一次）。
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
-      'white album',
+      'search only',
     );
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
@@ -790,7 +853,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
-      'x',
+      'hit',
     );
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
@@ -898,7 +961,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey<String>('discovery_search_field')),
-        'novel',
+        // 五条 fixture 标题都含 v01：搜索词要与结果相关，否则整页会被折进
+        // 「疑似不相关」（反馈 80S7Esbdec），干扰本组的做种 / 漫画过滤断言。
+        'v01',
       );
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pumpAndSettle();
