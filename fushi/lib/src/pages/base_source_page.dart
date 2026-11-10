@@ -510,7 +510,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final expression = entry.word;
         final reading = entry.reading;
         if (expression.isNotEmpty) {
-          _autoReadWord(expression, reading);
+          _autoReadWord(
+            expression,
+            reading,
+            matched: lookupEntryMatchedText(entry),
+          );
         }
       }
 
@@ -625,7 +629,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           result.entries.isNotEmpty) {
         final DictionaryEntry entry = result.entries.first;
         if (entry.word.isNotEmpty) {
-          _autoReadWord(entry.word, entry.reading);
+          _autoReadWord(
+            entry.word,
+            entry.reading,
+            matched: lookupEntryMatchedText(entry),
+          );
         }
       }
     } finally {
@@ -806,15 +814,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
-  Future<void> _autoReadWord(String expression, String reading) async {
+  /// [matched] 是查词命中原文：词头带替换写法时 TTS 兜底念它（反馈 WJFhjUGaTn）。
+  Future<void> _autoReadWord(
+    String expression,
+    String reading, {
+    String matched = '',
+  }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading),
+      play: () => _playAutoReadWord(expression, reading, matched: matched),
     );
   }
 
-  Future<bool> _playAutoReadWord(String expression, String reading) {
+  Future<bool> _playAutoReadWord(
+    String expression,
+    String reading, {
+    String matched = '',
+  }) {
     // Prefer the popup's own <audio> (unified fast path); fall back to the Dart
     // player when the popup WebView is not ready. Capture the state once so the
     // callback does not re-evaluate the getter mid-play.
@@ -824,6 +841,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       expression,
       reading,
       playInWebView: popup?.playWordAudioUrl,
+      matched: matched,
     );
   }
 
@@ -1429,6 +1447,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                       await webViewKey.currentState?.listWordAudioChoices(
                         expression,
                         reading.isEmpty ? expression : reading,
+                        matched: matched,
                       ) ??
                       const <Map<String, String>>[],
                   refreshSource: (int sourceIndex) async =>
