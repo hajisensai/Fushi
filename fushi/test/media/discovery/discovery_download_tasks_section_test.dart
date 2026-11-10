@@ -425,5 +425,24 @@ void main() {
         t.download_status_cancelled,
       );
     });
+
+    // BUG-4323：网关人机验证没过时说「站点要求人机验证」，不甩异常文本 / 403。
+    test('失败且带挑战 URL → 人机验证文案；普通失败仍显示错误原文', () {
+      final DiscoveryDownloadTask challenged =
+          task(status: DiscoveryDownloadStatus.failed)
+            ..error = 'DownloadGatewayChallengeRequired(pow_required): gate'
+            ..challengeUrl = Uri.parse('https://gate.example.net/f.rar');
+      expect(
+        discoveryDownloadStatusLabel(challenged, 3),
+        '${t.manga_online_failed}: ${t.discovery_download_challenge_required}',
+      );
+      final DiscoveryDownloadTask plain = task(
+        status: DiscoveryDownloadStatus.failed,
+      )..error = 'HttpException: download failed (403)';
+      expect(
+        discoveryDownloadStatusLabel(plain, 3),
+        '${t.manga_online_failed}: HttpException: download failed (403)',
+      );
+    });
   });
 }
