@@ -82,6 +82,7 @@ import 'package:fushi_server/src/server_subtitle_backfill.dart';
 import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 当前待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。
 class PendingPairing {
@@ -373,8 +374,12 @@ class HeadlessHost {
     if (!await dictionaries.start()) {
       engineLog.logDiagnostic(
         'HeadlessHost',
-        '${dictionaries.unavailableReason}；互联查词不可用（放 libfushidicts_ffi 到 bin/../lib/ 或设 '
-            '$kFushiDictsLibEnv）',
+        tr(
+          '${dictionaries.unavailableReason}；互联查词不可用（放 libfushidicts_ffi 到 bin/../lib/ 或设 '
+              '$kFushiDictsLibEnv）',
+          '${dictionaries.unavailableReason}; interconnect lookups unavailable (put libfushidicts_ffi in bin/../lib/ or set '
+              '$kFushiDictsLibEnv)',
+        ),
       );
     }
 
@@ -618,7 +623,10 @@ class HeadlessHost {
     if (!_p2pAvailable()) {
       engineLog.logDiagnostic(
         'HeadlessHost',
-        'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+        tr(
+          'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+          'p2p: true but libfushi_p2p was not found (put it in bin/../lib/ or set FUSHI_P2P_LIB); P2P tunnel not enabled',
+        ),
       );
       return;
     }
@@ -633,7 +641,10 @@ class HeadlessHost {
     );
     final InterconnectP2pNode? node = await runtime.ensure();
     if (node == null) {
-      _p2pLastError = 'P2P 端点启动失败（详见日志）';
+      _p2pLastError = tr(
+        'P2P 端点启动失败（详见日志）',
+        'Failed to start the P2P endpoint (see the log)',
+      );
       return;
     }
     final int port = await server.startP2pListener();

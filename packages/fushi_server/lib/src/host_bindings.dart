@@ -24,6 +24,7 @@ import 'package:fushi_server/src/ocr_session_factory.dart';
 import 'package:fushi_server/src/server_gpu_budget.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 void installServerHostBindings({
   required ServerConfig config,
@@ -79,7 +80,10 @@ Future<String?> validateFfmpeg(ServerConfig config) async {
   ]) {
     if (configured == null || configured.trim().isEmpty) continue;
     if (!await File(configured.trim()).exists()) {
-      return '$label 路径不存在: $configured';
+      return tr(
+        '$label 路径不存在: $configured',
+        '$label path does not exist: $configured',
+      );
     }
   }
   return null;
