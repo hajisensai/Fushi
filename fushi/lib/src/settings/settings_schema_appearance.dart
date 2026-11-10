@@ -14,9 +14,12 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -648,6 +651,99 @@ SettingsDestination buildAppearanceDestination() {
                         .setNavBarStyle(value)
                         .then((_) => settingsContext.refresh()),
             defaultValue: AdaptiveNavBarStyle.defaultStyle,
+          ),
+          // 第二块屏（双屏掌机下屏 / 外接显示器）：只在系统报告有可用副屏时出现。
+          SettingsSegmentedItem<SecondScreenMode>(
+            id: 'appearance.second_screen_mode',
+            title: t.second_screen_setting_title,
+            subtitle: t.second_screen_setting_hint,
+            icon: FushiIcons.devices,
+            visible: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).displayAvailable,
+            options: <SettingsSegmentOption<SecondScreenMode>>[
+              SettingsSegmentOption<SecondScreenMode>(
+                value: SecondScreenMode.auto,
+                label: t.second_screen_mode_auto,
+              ),
+              SettingsSegmentOption<SecondScreenMode>(
+                value: SecondScreenMode.always,
+                label: t.second_screen_mode_always,
+              ),
+              SettingsSegmentOption<SecondScreenMode>(
+                value: SecondScreenMode.off,
+                label: t.second_screen_mode_off,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).mode,
+            onChanged: (SettingsContext c, SecondScreenMode value) => c.ref
+                .read(secondScreenControllerProvider)
+                .setMode(value)
+                .then((_) => c.refresh()),
+            defaultValue: SecondScreenMode.auto,
+          ),
+          // 副屏在用时主屏查词结果显示在哪：下屏「查词」页（默认）/ 上屏页内弹窗。
+          // 所有媒体与手柄查词模式共用（路由点 CompanionContextRegistry）；在副屏面板
+          // 上长按 / 点字发起的查词始终在下屏。与上一行同样只在有副屏时出现。
+          SettingsSegmentedItem<SecondScreenLookupScreen>(
+            id: 'appearance.second_screen_lookup_screen',
+            title: t.second_screen_lookup_screen_title,
+            subtitle: t.second_screen_lookup_screen_hint,
+            icon: FushiIcons.dictionary,
+            visible: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).displayAvailable,
+            options: <SettingsSegmentOption<SecondScreenLookupScreen>>[
+              SettingsSegmentOption<SecondScreenLookupScreen>(
+                value: SecondScreenLookupScreen.bottom,
+                label: t.second_screen_lookup_screen_bottom,
+              ),
+              SettingsSegmentOption<SecondScreenLookupScreen>(
+                value: SecondScreenLookupScreen.top,
+                label: t.second_screen_lookup_screen_top,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.ref.read(secondScreenControllerProvider).lookupScreen,
+            onChanged: (SettingsContext c, SecondScreenLookupScreen value) => c
+                .ref
+                .read(secondScreenControllerProvider)
+                .setLookupScreen(value)
+                .then((_) => c.refresh()),
+            defaultValue: SecondScreenLookupScreen.bottom,
+          ),
+          // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
+          // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
+          SettingsSegmentedItem<ControllerLookupStyle>(
+            id: 'appearance.controller_lookup_style',
+            title: t.second_screen_controller_lookup_title,
+            subtitle: t.second_screen_controller_lookup_hint,
+            icon: FushiIcons.lookup,
+            options: <SettingsSegmentOption<ControllerLookupStyle>>[
+              SettingsSegmentOption<ControllerLookupStyle>(
+                value: ControllerLookupStyle.holdL1,
+                label: t.second_screen_controller_lookup_hold_l1,
+              ),
+              SettingsSegmentOption<ControllerLookupStyle>(
+                value: ControllerLookupStyle.selectToggle,
+                label: t.second_screen_controller_lookup_select,
+              ),
+              SettingsSegmentOption<ControllerLookupStyle>(
+                value: ControllerLookupStyle.off,
+                label: t.second_screen_controller_lookup_off,
+              ),
+            ],
+            selected: (SettingsContext c) => ControllerLookupStyle.resolve(
+              c.appModel.prefsRepo.getPref(kControllerLookupStylePrefKey),
+              companionActive: c.ref
+                  .read(secondScreenControllerProvider)
+                  .isActive,
+            ),
+            onChanged: (SettingsContext c, ControllerLookupStyle value) => c
+                .appModel
+                .prefsRepo
+                .setPref(kControllerLookupStylePrefKey, value.name)
+                .then((_) => c.refresh()),
+            defaultValue: ControllerLookupStyle.off,
           ),
           // 「启动页」(id 'appearance.startup_default_dictionary_tab'，前身是开关
           // 「启动时打开查词」) 在「系统 · 通用」分区（它管的是启动落地页/导航行为，

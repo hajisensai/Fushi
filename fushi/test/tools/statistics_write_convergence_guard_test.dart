@@ -113,6 +113,9 @@ const List<String> kStatPages = <String>[
   // 桌面 / 安卓小组件快照（#2819）：今日 / 近 7 / 35 天按 StatWindow 切 loadStatFacts，
   // 与首页「今日」卡同口径；属窗口统计消费方，受 ④ 管辖。
   'lib/src/platform/widget_snapshot_source.dart',
+  // 副屏伴侣「今日」摘要：今日阅读 / 观看 / 收听按 StatWindow 切 loadStatFacts，与
+  // 首页「今日」卡同口径。
+  'lib/src/second_screen/companion/companion_main_services.dart',
 ];
 
 void main() {

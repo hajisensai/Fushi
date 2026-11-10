@@ -52,6 +52,8 @@ import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceKindIcon, cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/second_screen/companion/companion_page_link.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -59,6 +61,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_companion.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
@@ -413,11 +416,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _focusNode.addListener(_onPageFocusChanged);
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
     srsActiveReviewSessions.value++;
+    _companion.startSnapshots(_companionSnapshot);
     unawaited(_start());
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _companionRoute = ModalRoute.of(context);
+    _claimCompanion(force: true);
+  }
+
+  @override
   void dispose() {
+    _companion.dispose();
     unawaited(_rwkvSubscription?.cancel());
     srsActiveReviewSessions.value--;
     WidgetsBinding.instance.removeObserver(this);
@@ -1045,6 +1057,73 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _loadNext(usePrefetch: true, planned: out.study);
       }),
     );
+  }
+
+  // ---- 副屏（双屏掌机）伴侣：复习中认领 srs 上下文，发计数 / 阶段 / 评分间隔，收翻面 / 评分 / 撤销 ----
+
+  final CompanionPageLink _companion = CompanionPageLink();
+  Route<Object?>? _companionRoute;
+  String? _companionTitle;
+
+  /// 认领（或更新标题）。标题随牌组改名变，没变就不重复认领。
+  void _claimCompanion({bool force = false}) {
+    final String title = _title;
+    if (!force && title == _companionTitle) return;
+    _companionTitle = title;
+    _companion.claim(
+      CompanionContext(CompanionContextKind.srs, title: title),
+      route: _companionRoute,
+      onCommand: _onCompanionCommand,
+    );
+  }
+
+  /// 复习状态的每次变化（翻面、评分、撤销、计数、加载）都走 setState：在这里顺手
+  /// 把快照推给副屏（未启用副屏时 [CompanionPageLink.publishNow] 只是两次布尔判断）。
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _claimCompanion();
+    _companion.publishNow();
+  }
+
+  Map<String, Object?> _companionSnapshot() {
+    final bool showIntervals = ref.read(srsReviewShowIntervalsProvider);
+    return buildSrsCompanionSnapshot(
+      deck: _title,
+      phase: srsCompanionPhase(
+        loading: _loading,
+        hasError: _error != null,
+        finished: _finished,
+        rwkvPending: _rwkvPending,
+        canSchedule: _store?.canSchedule ?? true,
+        hasCard: _detail != null,
+        showingAnswer: _showingAnswer,
+      ),
+      newCount: _newCount,
+      learnCount: _learnCount,
+      reviewCount: _reviewCount,
+      // 与评分按钮上显示的同一份间隔文案（关了「显示间隔」就是空串）。
+      intervals: <String>[
+        for (int rating = 1; rating <= 4; rating++)
+          showIntervals ? _ratingInterval(rating) : '',
+      ],
+      canUndo: _canUndo,
+      busy: _busy,
+      twoButtons: ref.read(srsReviewHideHardEasyProvider),
+    );
+  }
+
+  void _onCompanionCommand(String action, Map<String, Object?> args) {
+    if (!mounted) return;
+    handleSrsCompanionCommand(
+      action,
+      args,
+      busy: _busy,
+      showAnswer: _showAnswer,
+      rate: _rate,
+      undo: _undoLast,
+    );
+    _companion.publishNow();
   }
 
   void _undoLast() {

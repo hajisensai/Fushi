@@ -524,6 +524,27 @@ class VideoPlayerController extends ChangeNotifier
   /// 下一拍「位置已越过句尾」会被误判成自然播完、把人拽回原句；回绕自己也走
   /// [skipToCue]，于是落回句首、真正进入句内才重新武装，滞后的旧位置 tick 不会连发回绕。
   int? _loopArmedCueIndex;
+
+  /// 「循环当前句」还要回绕的次数；null = 无限循环（或循环没开）。只由 [startCueLoop]
+  /// 置有限次数：每回绕一次减一，减到 0 的那次回绕同时关掉循环模式——最后一遍照常播完、
+  /// 往下走（自动暂停开着时就停在这句尾，见 [_holdEnabledForCue]）。
+  int? _loopRepeatsRemaining;
+
+  /// [startCueLoop] 给的次数 N（null = 无限或循环没开），只供界面显示「×N」。
+  int? _loopRepeatsChosen;
+
+  /// 「每句播完自动暂停」（学习工具，默认关，随会话；见 [setAutoPauseAtCueEnd]）。
+  /// 与一次性 [_oneShotHoldCueIndex] 走同一套句尾暂停（[_holdEnabledForCue]）。
+  bool _autoPauseAtCueEnd = false;
+
+  /// A-B 循环端点（播放器轴毫秒）。两点都有才循环；只有 A 时是「已标起点」。
+  int? _abLoopAMs;
+  int? _abLoopBMs;
+
+  /// A-B 循环武装：位置落在 [A, B) 内时置位，自然播放越过 B 才回绕到 A。任何显式 seek
+  /// （[_noteSeekIssued] / 进度条开始拖动 [clearSeekTargetSnap]）都撤武装——与
+  /// [_loopArmedCueIndex] 同口径：用户把进度拖到 B 之后不会被拽回，回到区间内才重新生效。
+  bool _abLoopArmed = false;
   int? _lastSubtitleEndPauseCueIndex;
 
   /// 「只播这一句就停」的一次性目标 cue 下标（[replayCue] 置，句尾停下即消耗）；
@@ -1244,8 +1265,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
-    // 显式 seek 撤掉「循环当前句」的武装（见 [_loopArmedCueIndex]）。
+    // 显式 seek 撤掉「循环当前句」与 A-B 循环的武装（见 [_loopArmedCueIndex] /
+    // [_abLoopArmed]）。
     _loopArmedCueIndex = null;
+    _abLoopArmed = false;
     // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）；句尾自动停下的
     // 落点 seek 不是（见 [_automaticSubtitleEndHold]）。
     if (!_automaticSubtitleEndHold) _remoteControlRevision++;
@@ -3265,6 +3288,10 @@ class VideoPlayerController extends ChangeNotifier
     final int loadToken = ++_loadToken;
     // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
     _audioOutputRecovery.reset();
+    // 换片：A-B 端点是旧片的时间轴，作废；有限次数循环数的是旧片那一句，连模式一起关
+    // （只清次数会把「循环 N 次」变成无限循环）。无限循环模式与自动暂停是会话级开关，保留。
+    _resetAbLoop();
+    if (_loopRepeatsRemaining != null) setLoopCurrentCue(false);
     // 上一片的外挂音轨判定作废（见 [externalAudioTrackFailed]）。
     _externalAudioNativeUri = null;
     _externalAudioTrackFailed = false;
@@ -4453,6 +4480,7 @@ class VideoPlayerController extends ChangeNotifier
     // [_plainSeekTargetMs] / [_reconcileSeekInFlightPosition]），避免旧字幕被反复确认。
     final int reconciledMs = _reconcileSeekInFlightPosition(posMs);
     _maybeStopAtPlayRangeEnd(reconciledMs);
+    if (_maybeWrapAbLoop(reconciledMs)) return;
     _syncCueForPosition(reconciledMs, persistPosition: true);
   }
 
@@ -4559,6 +4587,7 @@ class VideoPlayerController extends ChangeNotifier
     // Ix4j5SKUth：循环当前句——武装的那句被自然播过句尾就回到它的句首（一次性「播完
     // 就停」的 hold 优先，它已在上面返回或在 gap 路径停下）。
     if (_shouldLoopCurrentCue(effectiveMs)) {
+      _consumeLoopRepeat();
       _rewindLoopCue(_cues[_currentCueIndex]);
       return;
     }
@@ -4785,8 +4814,9 @@ class VideoPlayerController extends ChangeNotifier
   void clearSeekTargetSnap() {
     _clearSeekTargetSnap();
     // 进度条开始拖动：之后的 seek 在 fork 内部直发、不经 [_noteSeekIssued]，循环武装
-    // 在这里撤（见 [_loopArmedCueIndex]）。
+    // 在这里撤（见 [_loopArmedCueIndex]）；A-B 循环同理（见 [_abLoopArmed]）。
     _loopArmedCueIndex = null;
+    _abLoopArmed = false;
   }
 
   /// 外部 seek（media_kit 进度条拖动 / 点击，绕过 [seekMs] 直接 `player.seek`）**落点**通知：
@@ -5909,8 +5939,12 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 第 [cueIndex] 句是否该在句尾停：只有一次性 [replayCue] 的目标句会停。
-  bool _holdEnabledForCue(int cueIndex) => _oneShotHoldCueIndex == cueIndex;
+  /// 第 [cueIndex] 句是否该在句尾停：一次性 [replayCue] 的目标句，或「每句播完自动
+  /// 暂停」开着时的每一句——但循环当前句开着时让位给循环（有限次数用完、循环关掉后
+  /// 才轮到暂停）。
+  bool _holdEnabledForCue(int cueIndex) =>
+      _oneShotHoldCueIndex == cueIndex ||
+      (_autoPauseAtCueEnd && !_loopCurrentCue.value);
 
   /// 消耗一次性 hold（仅当它正指向 [cueIndex]）。停下即用完，避免用户之后自然播回
   /// 同一句时被再停一次。
@@ -5923,6 +5957,10 @@ class VideoPlayerController extends ChangeNotifier
   void _pauseForSubtitleEnd() {
     final int endedCueIndex = _currentCueIndex;
     if (!_holdEnabledForCue(endedCueIndex)) return;
+    // 这句刚被相邻路径停过（[_pauseAndSeekForSubtitleEnd] 落点 = 句尾，续播再落进 gap）：
+    // 常开的自动暂停不能对同一句停第二次。一次性 hold 停过即消耗，本判定对它是空操作。
+    if (_lastSubtitleEndPauseCueIndex == endedCueIndex) return;
+    _lastSubtitleEndPauseCueIndex = endedCueIndex;
     _consumeOneShotHold(endedCueIndex);
     unawaited(_runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause));
   }
@@ -5936,9 +5974,160 @@ class VideoPlayerController extends ChangeNotifier
   /// 开 / 关「循环当前句」。武装目标随播放位置一直在跟踪（与模式开关无关），所以
   /// 句中开启，这一句播完就开始回绕。
   void setLoopCurrentCue(bool enabled) {
-    if (_loopCurrentCue.value == enabled) return;
+    // 开 / 关都回到「无限」：有限次数只由 [startCueLoop] 显式给。
+    final bool hadRepeats = _loopRepeatsRemaining != null;
+    _loopRepeatsRemaining = null;
+    _loopRepeatsChosen = null;
+    if (_loopCurrentCue.value == enabled) {
+      if (hadRepeats) notifyListeners();
+      return;
+    }
     _loopCurrentCue.value = enabled;
     notifyListeners();
+  }
+
+  /// 开始循环当前句：[times] <= 0 无限循环；n > 0 = 再回绕 n 次，之后继续往下播。
+  /// 与 [setLoopCurrentCue] 是同一个循环机制（模式 + 武装），只多一个次数。
+  ///
+  /// 命名说明：`loopCurrentCue` 已是 bool getter，同名方法不合法，故叫 `startCueLoop`。
+  void startCueLoop({int times = 0}) {
+    final int? repeats = times > 0 ? times : null;
+    if (_loopCurrentCue.value && _loopRepeatsRemaining == repeats) return;
+    _loopRepeatsRemaining = repeats;
+    _loopRepeatsChosen = repeats;
+    _loopCurrentCue.value = true;
+    notifyListeners();
+  }
+
+  /// 停止循环当前句（等价 `setLoopCurrentCue(false)`）。
+  void stopCueLoop() => setLoopCurrentCue(false);
+
+  /// 有限次数循环还要回绕的次数；null = 无限循环或循环没开。
+  int? get loopRepeatsRemaining =>
+      _loopCurrentCue.value ? _loopRepeatsRemaining : null;
+
+  /// 当前有限次数循环的 N（[startCueLoop] 的 `times`）；null = 无限循环或循环没开。
+  int? get loopRepeatTimes => _loopCurrentCue.value ? _loopRepeatsChosen : null;
+
+  /// 句尾回绕一次的记账（调用方随后回绕）：无限循环不记；有限次数减一，减到 0 的这次
+  /// 回绕就是最后一遍，同时关掉循环模式。
+  void _consumeLoopRepeat() {
+    final int? left = _loopRepeatsRemaining;
+    if (left == null) return;
+    if (left <= 1) {
+      setLoopCurrentCue(false);
+      return;
+    }
+    _loopRepeatsRemaining = left - 1;
+    notifyListeners();
+  }
+
+  /// 「每句播完自动暂停」是否开着。
+  bool get autoPauseAtCueEnd => _autoPauseAtCueEnd;
+
+  /// 开 / 关「每句播完自动暂停」。停下时进度落在本句尾（[_pauseAndSeekForSubtitleEnd]），
+  /// 继续播放会自然越过、走到下一句句尾再停。
+  void setAutoPauseAtCueEnd(bool enabled) {
+    if (_autoPauseAtCueEnd == enabled) return;
+    _autoPauseAtCueEnd = enabled;
+    _lastSubtitleEndPauseCueIndex = null;
+    notifyListeners();
+  }
+
+  /// 重播当前句并在句尾暂停（[replayCue] 的一次性 hold）。句间空隙里没有当前句时取
+  /// 位置之前最近的一句；早于首句取首句。无字幕时 no-op。
+  Future<void> replayCurrentCueThenPause() async {
+    if (_cues.isEmpty) return;
+    int index = _currentCueIndex;
+    if (index < 0 || index >= _cues.length) {
+      final int effectiveMs = effectiveSubtitlePositionMs(
+        resumePositionMs ?? 0,
+        _delayMs,
+      );
+      index = 0;
+      for (int i = 0; i < _cues.length; i++) {
+        if (_cues[i].startMs > effectiveMs) break;
+        index = i;
+      }
+    }
+    await replayCue(_cues[index]);
+  }
+
+  /// A-B 循环起点（播放器轴）；null = 未标。
+  Duration? get abLoopA {
+    final int? a = _abLoopAMs;
+    return a == null ? null : Duration(milliseconds: a);
+  }
+
+  /// A-B 循环终点（播放器轴）；null = 未标（只有 A 时尚未开始循环）。
+  Duration? get abLoopB {
+    final int? b = _abLoopBMs;
+    return b == null ? null : Duration(milliseconds: b);
+  }
+
+  /// A、B 都已标、正在循环。
+  bool get abLoopActive => _abLoopAMs != null && _abLoopBMs != null;
+
+  /// A-B 循环三态切换：无端点 → 在当前位置标 A；只有 A → 标 B 开始循环（B 不晚于 A 时
+  /// 忽略、仍等 B）；A、B 都有 → 清除。返回状态是否改变。
+  bool toggleAbLoop() {
+    if (_abLoopAMs == null) return setAbLoopA();
+    if (_abLoopBMs == null) return setAbLoopB();
+    return clearAbLoop();
+  }
+
+  /// 在当前位置标 A（清掉旧 B，重新等 B）。无位置时返回 false。
+  bool setAbLoopA() {
+    final int? now = resumePositionMs;
+    if (now == null) return false;
+    _abLoopAMs = now;
+    _abLoopBMs = null;
+    _abLoopArmed = false;
+    notifyListeners();
+    return true;
+  }
+
+  /// 在当前位置标 B 并开始循环。没有 A、无位置或 B 不晚于 A 时返回 false。
+  bool setAbLoopB() {
+    final int? a = _abLoopAMs;
+    final int? now = resumePositionMs;
+    if (a == null || now == null || now <= a) return false;
+    _abLoopBMs = now;
+    // 此刻就在 [A, B) 的尾部：直接武装，下一拍越过 B 即回绕。
+    _abLoopArmed = true;
+    notifyListeners();
+    return true;
+  }
+
+  /// 清除 A-B 循环。本来就没有端点时返回 false。
+  bool clearAbLoop() {
+    if (_abLoopAMs == null && _abLoopBMs == null) return false;
+    _resetAbLoop();
+    notifyListeners();
+    return true;
+  }
+
+  void _resetAbLoop() {
+    _abLoopAMs = null;
+    _abLoopBMs = null;
+    _abLoopArmed = false;
+  }
+
+  /// A-B 回绕判定（位置 tick 里，与句尾判定同一个时钟、用调和过 seek 在途的位置）。
+  /// 返回 true = 本拍已回绕，调用方不再同步这拍的字幕（[seekMs] 会按 A 权威同步）。
+  bool _maybeWrapAbLoop(int positionMs) {
+    final int? a = _abLoopAMs;
+    final int? b = _abLoopBMs;
+    if (a == null || b == null) return false;
+    if (positionMs >= a && positionMs < b) {
+      _abLoopArmed = true;
+      return false;
+    }
+    if (!_abLoopArmed || positionMs < b) return false;
+    if (!_isPlayingForSubtitleEnd()) return false;
+    _abLoopArmed = false;
+    unawaited(_runSubtitleEndHold(() => seekMs(a)));
+    return true;
   }
 
   /// 武装的那句正被**播放中**越过句尾（[_loopArmedCueIndex] 只在位置落在句内时置、

@@ -21,6 +21,7 @@ import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -33,6 +34,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// `mm:ss`。
@@ -155,16 +157,37 @@ String musicRemoteSourceLabel(MusicRemoteTrackRow track) =>
       MusicRemoteTrackKind.plugin || null => track.sourceKey,
     };
 
+/// 行尾拖拽把手（48dp 命中区，只从这里起拖；整行仍可点、可右键）。必须放在
+/// [FushiReorderableColumn]（`useDragHandles: true`）的行里。
+class MusicPlaylistDragHandle extends StatelessWidget {
+  const MusicPlaylistDragHandle({super.key});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: t.music_action_reorder,
+    child: const FushiReorderableDragHandle(
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Center(child: FushiIcon(FushiIcons.dragIndicator)),
+      ),
+    ),
+  );
+}
+
 /// 曲目列表所在的本地歌单：每行多出「从这个歌单移除」（按条目 id 删，同一首出现两次时只删
-/// 点的那一条）。[entryIds] 与列表条目一一对应。
+/// 点的那一条）。[entryIds] 与列表条目一一对应。[onReorder] 非空时每行行尾有拖拽把手
+/// （只从把手起拖），回调「第 from 条挪到最终下标 to」。
 class MusicTrackListPlaylist {
   const MusicTrackListPlaylist({
     required this.playlist,
     required this.entryIds,
+    this.onReorder,
   });
 
   final MusicPlaylistRow playlist;
   final List<int> entryIds;
+  final FushiReorderCallback? onReorder;
 }
 
 /// 曲目列表（歌曲分区 / 艺人 / 专辑碟内 / 本地歌单）：点一首 = 以该列表为队列从这首开始播；
@@ -323,11 +346,52 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     ];
   }
 
+  /// 歌单页且可重排时的回调（行尾出拖拽把手）；否则 null。
+  FushiReorderCallback? get _onReorder {
+    final MusicTrackListPlaylist? p = widget.playlist;
+    if (p == null || p.entryIds.length != entries.length) return null;
+    return p.onReorder;
+  }
+
+  Widget _row(BuildContext c, int i, MusicResumeMode mode) =>
+      switch (entries[i]) {
+        MusicLocalEntry(:final MusicTrackRow track) => _localRow(
+          c,
+          i,
+          track,
+          mode,
+        ),
+        MusicRemoteEntry(:final MusicRemoteTrackRow track) => _remoteRow(
+          c,
+          i,
+          track,
+          mode,
+        ),
+      };
+
   @override
   Widget build(BuildContext buildContext) {
     final MusicResumeMode mode = watchMusicResumeMode(ref);
     final bool shrinkWrap = widget.shrinkWrap;
     final FushiDesignTokens tokens = FushiDesignTokens.of(buildContext);
+    final FushiReorderCallback? onReorder = _onReorder;
+    if (onReorder != null) {
+      // 可重排的歌单：整列一次排好（[FushiReorderableColumn] 不是惰性列表），只用在外层
+      // 已经负责滚动的 shrinkWrap 场景（本地歌单页）。
+      assert(shrinkWrap, 'reorderable playlist track list must be shrinkWrap');
+      final List<int> ids = widget.playlist!.entryIds;
+      return FushiEntranceScope(
+        child: FushiReorderableColumn(
+          itemCount: entries.length,
+          useDragHandles: true,
+          keyForIndex: (int i) =>
+              ValueKey<String>('music-playlist-reorder-${ids[i]}'),
+          onReorder: onReorder,
+          itemBuilder: (BuildContext c, int i) =>
+              FushiStaggeredEntrance(index: i, child: _row(c, i, mode)),
+        ),
+      );
+    }
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
@@ -346,20 +410,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               ),
         itemCount: entries.length,
         itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext c, int i) => switch (entries[i]) {
-            MusicLocalEntry(:final MusicTrackRow track) => _localRow(
-              c,
-              i,
-              track,
-              mode,
-            ),
-            MusicRemoteEntry(:final MusicRemoteTrackRow track) => _remoteRow(
-              c,
-              i,
-              track,
-              mode,
-            ),
-          },
+          (BuildContext c, int i) => _row(c, i, mode),
         ),
       ),
     );
@@ -437,6 +488,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   tooltip: t.music_track_detail,
                   onTap: () => openMusicTrackDetail(c, track.trackUid),
                 ),
+                if (_onReorder != null) const MusicPlaylistDragHandle(),
               ],
             ),
           ),
@@ -506,6 +558,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   style: c.fushiType.bodySmall,
                 ),
                 menu.button(),
+                if (_onReorder != null) const MusicPlaylistDragHandle(),
               ],
             ),
           ),
