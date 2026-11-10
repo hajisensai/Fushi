@@ -11821,6 +11821,7 @@
   "video_subtitle_waveform_open": "Wellenform-Ausrichtung",
   "video_subtitle_waveform_open_hint": "Tippen zum Vergrößern und Ausrichten",
   "video_subtitle_waveform_scroll_hint": "Ziehen, um die Zeitleiste zu durchsuchen; verwenden Sie die Steuerelemente unten zum Ausrichten",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Wellenform auf diesem Gerät nicht verfügbar",
   "video_subtitle_waveform_zoom_in": "Vergrößern",
   "video_subtitle_waveform_zoom_out": "Verkleinern",
