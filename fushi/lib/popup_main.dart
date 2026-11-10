@@ -9,6 +9,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show withoutFushiPageBackdrop;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -190,7 +192,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       // 是贴顶的 M3E 面板（错误色块图标 + 原因 + 关闭），点外面也能关窗。
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(brightness),
+      );
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -211,7 +215,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(brightness),
+      );
       final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
@@ -238,10 +244,13 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         navigatorKey: _toastNavigatorKey,
         debugShowCheckedModeBanner: false,
         builder: _buildWithSpacing,
-        theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+        // 透明浮窗不垫页面背景层（底色 + 形状），见 [withoutFushiPageBackdrop]。
+        theme: withoutFushiPageBackdrop(
+          appModel.overrideDictionaryTheme ?? appModel.theme,
+        ),
         darkTheme: appModel.overrideDictionaryTheme != null
             ? null
-            : appModel.darkTheme,
+            : withoutFushiPageBackdrop(appModel.darkTheme),
         themeMode: appModel.overrideDictionaryTheme != null
             ? ThemeMode.light
             : appModel.themeMode,
