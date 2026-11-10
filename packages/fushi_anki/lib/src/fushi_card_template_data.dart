@@ -1698,7 +1698,7 @@ body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading
    卡面能认出外字的只剩这个 data-sc 属性——导出（Yomitan 与现行 Fushi 都一样）把 gloss-* class
    剥掉、几何全写成内联样式，而那份几何是制卡端算的：Yomitan 给没有固有尺寸的 SVG（明鏡的外字
    只有 viewBox）填媒体加载器的默认 150×150，导出成 `font-size:1px;width:150em` 的 150px 方块，
-   复习卡上一个外字占半个卡面（BUG-4329）。旧版 Fushi 导出还带 class，词典 CSS 的
+   复习卡上一个外字占半个卡面（BUG-4331）。旧版 Fushi 导出还带 class，词典 CSS 的
    `span[data-sc-img][data-sc-class="gaiji"] .gloss-image-container{width:15em!important}`
    （特异度 0,5,1）会在卡面上命中。这里只压图片盒（图片链接下的第一个 span；现行导出是 <a>，
    旧版是 .gloss-image-link 的 <span>）：sizer / img 在各种导出形态里都是内联的绝对定位、铺满
