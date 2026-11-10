@@ -151,6 +151,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 关 = 没有正文的任务停在「缺字幕」。
   'audiobook_auto_transcribe_without_text',
   'audiobook_background_play',
+  // bool：子开关。书架「导入文件夹」/ 本地来源扫描时，书配上了有声书音频但没有
+  // 字幕就排转录、转完对齐到这本书。默认关；只在总开关开时生效。设备本地（不进
+  // 备份 / 同步 / Profile 快照）。见 media/audiobook/audiobook_auto_transcribe.dart。
+  'audiobook_folder_import_transcribe',
   // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
   // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
   'audiobook_import_reference_original',
