@@ -313,7 +313,9 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     } else if (initialMagnet.isNotEmpty) {
       // 外部交来的磁链：直接落进磁力框（不读剪贴板——框里已经有内容了）。
       _magnetController.text = initialMagnet;
-      _prefillTitle(widget.initialTitle ?? parseMagnetDisplayName(initialMagnet));
+      _prefillTitle(
+        widget.initialTitle ?? parseMagnetDisplayName(initialMagnet),
+      );
     } else {
       unawaited(_detectClipboardMagnet());
     }
