@@ -14,7 +14,9 @@
 //   里的前台内存耗尽闪退（BUG-4075 `Eg5thU2wox`）也留得下崩前的内存曲线。
 // - Android 11+：`ActivityManager.getHistoricalProcessExitReasons`（原生
 //   `ProcessExitChannel.java`）：reason / description / importance / pss / rss / 时间，
-//   native crash 与 ANR 附 trace 摘要；外加进程级 `onTrimMemory` 级别记录。
+//   native crash 与 ANR 附 trace 摘要；Java 层崩溃（`CRASH`）系统不给 trace，由原生
+//   `JavaCrashCapture` 的链式未捕获异常处理器落盘、按 pid + 时间窗并进同一个 trace 字段；
+//   外加进程级 `onTrimMemory` 级别记录。
 // - Windows：`crash_dump.cpp` 的未处理异常过滤器在写 minidump 的同时追加一行
 //   `crash_summary.log`（异常码、模块+偏移、线程、x64 栈前若干帧）。不上传 minidump。
 //   过滤器接不到的死法（`__fastfail` / 堆损坏 / 栈溢出）与卡死被结束，从「应用程序」
