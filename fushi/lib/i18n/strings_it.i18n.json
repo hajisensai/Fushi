@@ -7863,6 +7863,7 @@
   "shortcut_action_manga_pan_left": "Scorri a sinistra",
   "shortcut_action_manga_pan_right": "Scorri a destra",
   "shortcut_action_manga_pan_up": "Scorri su",
+  "shortcut_action_manga_toggle_bookmark": "Bookmark current page (add / remove)",
   "shortcut_action_manga_toggle_chrome": "Attiva/disattiva interfaccia manga",
   "shortcut_action_music_next_track": "Next track",
   "shortcut_action_music_previous_track": "Previous track",

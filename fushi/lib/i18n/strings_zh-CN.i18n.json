@@ -7863,6 +7863,7 @@
   "shortcut_action_manga_pan_left": "向左平移",
   "shortcut_action_manga_pan_right": "向右平移",
   "shortcut_action_manga_pan_up": "向上平移",
+  "shortcut_action_manga_toggle_bookmark": "添加 / 移除当前页书签",
   "shortcut_action_manga_toggle_chrome": "切换漫画界面",
   "shortcut_action_music_next_track": "下一首",
   "shortcut_action_music_previous_track": "上一首",

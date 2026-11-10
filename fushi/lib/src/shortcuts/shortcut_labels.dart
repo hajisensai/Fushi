@@ -40,6 +40,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_statistics;
       case ShortcutAction.mangaToggleStudyClock:
         return t.shortcut_action_reader_toggle_study_clock;
+      case ShortcutAction.mangaToggleBookmark:
+        return t.shortcut_action_manga_toggle_bookmark;
       case ShortcutAction.readerPageForward:
         return t.shortcut_action_reader_page_forward;
       case ShortcutAction.readerPageBackward:
