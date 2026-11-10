@@ -31,6 +31,7 @@ import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
 import 'package:fushi/src/media/collections/collection_episode_slot.dart'
     show videoCollectionMemberVisibility;
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart'
@@ -177,12 +178,18 @@ class LibraryCtlShelf {
     final Set<String> srtUids = <String>{
       for (final SrtBook book in srtBooks) book.uid,
     };
-    final Set<String> srtBookKeys = <String>{
-      for (final SrtBook book in srtBooks)
-        if (book.bookKey.isNotEmpty) book.bookKey,
+    final List<EpubBookRow> bookRows = await _db.getAllEpubBooks();
+    final Map<String, BookFormat> formatByBookKey = <String, BookFormat>{
+      for (final EpubBookRow row in bookRows)
+        row.bookKey: BookFormat.parseOrEpub(row.format),
     };
+    // 与书架同一隐藏规则：有声书配对行只顶替能挂有声书的书（反馈 Ndnxy3mNdG）。
+    final Set<String> srtBookKeys = ReaderFushiSource.audiobookShadowedBookKeys(
+      srtBooks,
+      formatOf: (String key) => formatByBookKey[key],
+    );
     final Set<String> epubEntryKeys = <String>{
-      for (final EpubBookRow row in await _db.getAllEpubBooks())
+      for (final EpubBookRow row in bookRows)
         if (!srtBookKeys.contains(row.bookKey)) ...<String>[
           row.uid,
           row.bookKey,
