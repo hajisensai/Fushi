@@ -4214,6 +4214,7 @@
   "icon_custom_hint": "Tap an icon to switch, or pick a custom image below.",
   "icon_default": "Default",
   "icon_shortcut_created": "Home screen shortcut created.",
+  "icon_shortcut_failed": "Could not set the home screen icon: ${error}",
   "icon_shortcut_unsupported": "Shortcuts are not supported on this device.",
   "icon_switch_success": "App icon changed successfully.",
   "image_pause": "Pause on image",
