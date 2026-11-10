@@ -12,7 +12,7 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4323（反馈 bsbJ4OVa8o）：合集里的书 / 视频卡没有库页那种 3D 倾斜视差。
+/// BUG-4325（反馈 bsbJ4OVa8o）：合集里的书 / 视频卡没有库页那种 3D 倾斜视差。
 ///
 /// 根因：合集详情的成员卡 / 集卡整张包在 `IgnorePointer` 里（手势归外层网格），
 /// 卡里 [FushiHoverLift] 自己的 MouseRegion 收不到事件；外层 [FushiHoverLiftHost]
