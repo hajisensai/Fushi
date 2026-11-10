@@ -20,7 +20,7 @@ void main() {
     expect(await w2, t0 + 1);
   });
 
-  // BUG-4379：「立即同步」/ 推送写完 head，host 推进令牌，写的设备自己的长轮询也被叫醒、再空跑一轮。
+  // BUG-4380：「立即同步」/ 推送写完 head，host 推进令牌，写的设备自己的长轮询也被叫醒、再空跑一轮。
   test('这段推进全是提问者自己写的：ownOnly；夹着别人 / 认不出的写者：不是', () async {
     final SrsChangeFeed f = SrsChangeFeed();
     final int t0 = f.token;

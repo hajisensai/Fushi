@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3923 条。点号进各自文件。
+> 共 3924 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4379](bugs/BUG-4379-srs-sync-now-trailing-rounds.md) | ✅ | ✅ | 复习「立即同步」报完已同步后同步状态行仍空跑几轮（推送残留 + host 长轮询叫醒写者自己） |
+| [BUG-4380](bugs/BUG-4380-srs-sync-now-trailing-rounds.md) | ✅ | ✅ | 复习「立即同步」报完已同步后同步状态行仍空跑几轮（推送残留 + host 长轮询叫醒写者自己） |
 | [BUG-4379](bugs/BUG-4379-manga-mine-source-tag-book.md) | ✅ | ✅ | 漫画制卡的来源分类标签写成 book 而非 manga |
 | [BUG-4378](bugs/BUG-4378-srs-card-remote-tts-audio.md) | ✅ | ✅ | eggrolls 卡组例句在线 TTS 键点了没声音（WebKit 播不了不支持 Range 的远程音频） |
 | [BUG-4377](bugs/BUG-4377-remote-cover-cache-dir-deleted-at-runtime.md) | ✅ | ✅ | 远端封面磁盘缓存：运行中缓存目录被删（存储页清缓存 / iOS 系统清理）后写入静默失败到重启 |

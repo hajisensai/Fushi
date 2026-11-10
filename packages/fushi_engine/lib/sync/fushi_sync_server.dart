@@ -996,7 +996,7 @@ class FushiSyncServer {
       return _handlePing();
     }
     // 复习同步快速通道（设计 §6.3）：令牌变了立刻回，没变挂到下一次写入或超时。鉴权走上方 middleware。
-    // `own`：这段推进全是提问的这台设备自己写 head 引起的（BUG-4379，见 [SrsChangePoll.ownOnly]）。
+    // `own`：这段推进全是提问的这台设备自己写 head 引起的（BUG-4380，见 [SrsChangePoll.ownOnly]）。
     if (reqPath == '/api/srs/changes') {
       if (method != 'GET') return shelf.Response(405);
       final SrsChangePoll poll = await srsChanges.poll(
@@ -1242,7 +1242,7 @@ class FushiSyncServer {
     }
   }
 
-  /// 已配对设备的身份（它的专属口令，BUG-4379 长轮询分辨「是不是自己写的」）：没带鉴权、或用的是共享口令（多台设备
+  /// 已配对设备的身份（它的专属口令，BUG-4380 长轮询分辨「是不是自己写的」）：没带鉴权、或用的是共享口令（多台设备
   /// 共用，分不出是谁）时为 null。只在内存里比对，不落盘、不进日志。
   String? _pairedIdentity(String? authHeader) {
     if (authHeader == null) return null;
