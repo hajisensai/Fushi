@@ -1,4 +1,4 @@
-// BUG-4353：WebView 解题页的「解完」判据。网关脚本解完题后写一次性 cookie
+// BUG-4354：WebView 解题页的「解完」判据。网关脚本解完题后写一次性 cookie
 // （或拼 `__ct` 查询参数）并 `location.replace` 回原资源 URL；脚本自己的
 // 「题目过期 → reload」也回跳同一 URL，但不会多出任何凭据。判据必须分得开。
 import 'package:flutter_test/flutter_test.dart';
