@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "Demande d'appairage",
   "sync_pair_scan": "Scanner le QR code",
   "sync_pair_scan_failed": "Impossible d'ouvrir l'appareil photo",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Appairé — jeton renseigné",
   "sync_pair_timeout": "Le pair n'a pas répondu à temps.",
   "sync_pair_tls_failed": "Vérification du certificat échouée. Le certificat du pair ne correspond pas à celui épinglé.",

@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "페어링 요청",
   "sync_pair_scan": "QR 코드 스캔",
   "sync_pair_scan_failed": "카메라를 열 수 없습니다",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "페어링 완료 — 토큰이 입력되었습니다",
   "sync_pair_timeout": "상대 기기가 시간 내에 응답하지 않았습니다.",
   "sync_pair_tls_failed": "인증서 확인 실패. 상대방의 인증서가 고정된 인증서와 일치하지 않습니다.",

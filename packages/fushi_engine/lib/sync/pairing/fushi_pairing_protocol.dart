@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show InternetAddress, InternetAddressType;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -378,4 +379,116 @@ class _PinFailureRecord {
 
   /// 锁定退避到期时刻；null 表示尚未触发锁定。
   final DateTime? lockedUntil;
+}
+
+/// 配对请求的来源类别（BUG-4279）。决定是否免 PIN（只有 [lan] 可能免）。
+///
+/// - [lan]：TCP 对端是私网地址、请求不带任何转发头（无头端另要求对端不是回环）。
+/// - [p2p]：经 P2P 隧道监听口进来（`fushi.zone = p2p`），恒按公网要 PIN / 票据。
+/// - [public]：其余一切——公网对端、带转发头（经反代 / 穿透）、无头端的回环对端、
+///   拿不到对端地址。
+enum FushiPairOriginClass { lan, p2p, public }
+
+/// 一组 IP / CIDR（`a.b.c.d`、`a.b.c.d/n`、IPv6 及 `/n`）。用于无头端
+/// `trusted_proxies`：对端命中时才读转发头里的真实来源（只影响限速键与展示，
+/// **不**影响 LAN 判定）。IPv4 映射的 IPv6 地址（`::ffff:a.b.c.d`）两侧都先还原成 v4。
+class FushiAddressRangeSet {
+  const FushiAddressRangeSet._(this._ranges);
+
+  /// 空集合：什么都不包含。
+  static const FushiAddressRangeSet empty = FushiAddressRangeSet._(
+    <_AddressRange>[],
+  );
+
+  final List<_AddressRange> _ranges;
+
+  bool get isEmpty => _ranges.isEmpty;
+
+  /// 解析一组条目；任一条非法即抛 [FormatException]，消息里带出那一项原文。
+  static FushiAddressRangeSet parse(List<String> cidrsOrIps) {
+    final List<_AddressRange> ranges = <_AddressRange>[];
+    for (final String raw in cidrsOrIps) {
+      ranges.add(_AddressRange.parse(raw));
+    }
+    return FushiAddressRangeSet._(List<_AddressRange>.unmodifiable(ranges));
+  }
+
+  bool contains(InternetAddress address) {
+    final List<int> bytes = fushiUnmapIPv4MappedRaw(address.rawAddress);
+    for (final _AddressRange r in _ranges) {
+      if (r.matches(bytes)) return true;
+    }
+    return false;
+  }
+}
+
+class _AddressRange {
+  const _AddressRange(this.bytes, this.prefixBits);
+
+  final List<int> bytes;
+  final int prefixBits;
+
+  static _AddressRange parse(String raw) {
+    final String entry = raw.trim();
+    FormatException bad() =>
+        FormatException('Invalid IP address or CIDR: "$raw"', raw);
+    if (entry.isEmpty) throw bad();
+    final int slash = entry.indexOf('/');
+    final String addrText = slash < 0 ? entry : entry.substring(0, slash);
+    final InternetAddress? addr = InternetAddress.tryParse(addrText);
+    if (addr == null) throw bad();
+    final List<int> rawBytes = addr.rawAddress;
+    final List<int> bytes = fushiUnmapIPv4MappedRaw(rawBytes);
+    final int fullBits = rawBytes.length * 8;
+    int prefix = fullBits;
+    if (slash >= 0) {
+      final int? n = int.tryParse(entry.substring(slash + 1));
+      if (n == null || n < 0 || n > fullBits) throw bad();
+      prefix = n;
+    }
+    // 写成 v4 映射形式的条目还原成 v4：前缀也要扣掉 96 位映射头。
+    if (bytes.length != rawBytes.length) {
+      if (prefix < 96) throw bad();
+      prefix -= 96;
+    }
+    return _AddressRange(bytes, prefix);
+  }
+
+  bool matches(List<int> other) {
+    if (other.length != bytes.length) return false;
+    int remaining = prefixBits;
+    for (int i = 0; i < bytes.length && remaining > 0; i++) {
+      final int bits = remaining >= 8 ? 8 : remaining;
+      final int mask = (0xff << (8 - bits)) & 0xff;
+      if ((bytes[i] & mask) != (other[i] & mask)) return false;
+      remaining -= bits;
+    }
+    return true;
+  }
+}
+
+/// IPv4 映射的 IPv6 原始地址（16 字节，`::ffff:a.b.c.d`）还原成 4 字节 v4；
+/// 其余原样返回。
+List<int> fushiUnmapIPv4MappedRaw(List<int> raw) {
+  if (raw.length != 16) return raw;
+  for (int i = 0; i < 10; i++) {
+    if (raw[i] != 0) return raw;
+  }
+  if (raw[10] != 0xff || raw[11] != 0xff) return raw;
+  return raw.sublist(12);
+}
+
+/// 限速 / 会话分桶用的来源键（步骤 5 消费）：v4（含 v4 映射还原后）→
+/// `ip:<点分地址>`；v6 → `ip6:<前 64 位规范化>/64`（同一 /64 内换地址仍是同一来源）。
+String fushiRateKeyForAddress(InternetAddress address) {
+  final List<int> raw = fushiUnmapIPv4MappedRaw(address.rawAddress);
+  if (raw.length == 4) {
+    return 'ip:${InternetAddress.fromRawAddress(Uint8List.fromList(raw), type: InternetAddressType.IPv4).address}';
+  }
+  final Uint8List prefix = Uint8List(16)..setRange(0, 8, raw);
+  final String net = InternetAddress.fromRawAddress(
+    prefix,
+    type: InternetAddressType.IPv6,
+  ).address;
+  return 'ip6:$net/64';
 }

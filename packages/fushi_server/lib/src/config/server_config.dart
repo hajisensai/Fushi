@@ -7,6 +7,8 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
+    show FushiAddressRangeSet;
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:path/path.dart' as p;
@@ -112,6 +114,7 @@ class ServerConfig {
     required this.torrentLibraryPath,
     required this.torrentListen,
     this.publicUrls = const <String>[],
+    this.trustedProxies = const <String>[],
     this.p2p = false,
     this.p2pRelays = const <String>[],
     this.scanPrune = true,
@@ -232,6 +235,11 @@ class ServerConfig {
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
 
+  /// 可信反代地址（IP / CIDR，YAML `trusted_proxies`，缺省空）。TCP 对端命中时才读
+  /// 转发头里的真实来源，**只**用于配对限速键与展示 IP；不让任何请求变回局域网——
+  /// 带转发头的配对请求恒按公网要 PIN（BUG-4279）。
+  final List<String> trustedProxies;
+
   /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
   ///
   /// 库行不记源文件路径的书 / 漫画根不受影响；关闭只停清理，导入行为不变。
@@ -313,6 +321,7 @@ class ServerConfig {
     String? torrentLibraryPath,
     String? torrentListen,
     List<String>? publicUrls,
+    List<String>? trustedProxies,
     bool? p2p,
     List<String>? p2pRelays,
     bool? scanPrune,
@@ -351,6 +360,7 @@ class ServerConfig {
     torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
     torrentListen: torrentListen ?? this.torrentListen,
     publicUrls: publicUrls ?? this.publicUrls,
+    trustedProxies: trustedProxies ?? this.trustedProxies,
     p2p: p2p ?? this.p2p,
     p2pRelays: p2pRelays ?? this.p2pRelays,
     scanPrune: scanPrune ?? this.scanPrune,
@@ -429,6 +439,7 @@ class ServerConfig {
       torrentLibraryPath: torrentMap['library']?.toString(),
       torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
       publicUrls: _strings(map['public_urls']),
+      trustedProxies: _trustedProxies(map['trusted_proxies']),
       p2p: _bool(map['p2p']) ?? base.p2p,
       p2pRelays: _strings(map['p2p_relays']),
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
@@ -461,6 +472,23 @@ class ServerConfig {
     }
     if (uri.host.isEmpty) return tr('缺少主机名', 'Missing host name');
     return null;
+  }
+
+  /// `trusted_proxies`：每条必须是 IP 或 CIDR，非法条目拒绝启动并点名那一项——
+  /// 写错的可信代理会静默退回「按 TCP 对端」，用户很难察觉。
+  static List<String> _trustedProxies(Object? v) {
+    final List<String> entries = _strings(v);
+    try {
+      FushiAddressRangeSet.parse(entries);
+    } on FormatException catch (e) {
+      throw FormatException(
+        tr(
+          'trusted_proxies 条目不是合法的 IP / CIDR：${e.source}',
+          'trusted_proxies entry is not a valid IP / CIDR: ${e.source}',
+        ),
+      );
+    }
+    return entries;
   }
 
   static List<String> _strings(Object? v) => <String>[
@@ -506,6 +534,10 @@ class ServerConfig {
     b.writeln('upload_quota_bytes: $uploadQuotaBytes');
     b.writeln('public_urls:${publicUrls.isEmpty ? ' []' : ''}');
     for (final String u in publicUrls) {
+      b.writeln('  - ${_q(u)}');
+    }
+    b.writeln('trusted_proxies:${trustedProxies.isEmpty ? ' []' : ''}');
+    for (final String u in trustedProxies) {
       b.writeln('  - ${_q(u)}');
     }
     b.writeln('p2p: $p2p');

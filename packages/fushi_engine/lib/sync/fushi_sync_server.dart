@@ -544,6 +544,16 @@ class FushiSyncServer {
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
   Future<bool> Function()? lanRequiresPinProvider;
 
+  /// BUG-4279：回环 TCP 对端（127/8、::1）是否算局域网来源。app 保持 true（同机
+  /// 多实例 / 本机联调）；无头端设 false——经回环进来的几乎都是本机反代 / 穿透
+  /// （frp TCP 模式不加转发头），把它当 LAN 会让公网请求免 PIN。
+  bool loopbackPeerIsLan = true;
+
+  /// BUG-4279：可信反代地址（IP / CIDR）供给器，每请求现读；null = 没有。TCP 对端
+  /// 命中时才读转发头里的真实来源，**只**用于限速键与展示 IP，不让任何请求变回局域网
+  /// （带转发头的请求恒按公网）。条目非法时按空集处理——校验在配置加载处做。
+  List<String> Function()? trustedProxiesProvider;
+
   /// TODO-1330 / BUG：pinRequired 会话的 client 提交了 confirm（PIN 已被对方读到并
   /// 用于算 proof）时回调一次，让 host UI 关掉那个「一直显示 PIN、等对方输入」的审批
   /// 弹窗。修的是「host 点允许即关窗抹掉 PIN → client 还没输就看不到 PIN」的时序死锁：

@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "配對要求",
   "sync_pair_scan": "掃碼配對",
   "sync_pair_scan_failed": "無法開啟相機",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "配對成功，已自動填入 token",
   "sync_pair_timeout": "對端沒有及時響應。",
   "sync_pair_tls_failed": "證書校驗失敗：對端證書與已記錄的指紋不符。",

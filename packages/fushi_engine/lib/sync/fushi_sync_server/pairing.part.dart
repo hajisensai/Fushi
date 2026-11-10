@@ -4,6 +4,27 @@ part of '../fushi_sync_server.dart';
 /// 配对会话 TTL 与上限。公开回调（onPairRequest 等）留在 [FushiSyncServer] 本体；
 /// 方法逐字搬自 FushiSyncServer。
 extension _FushiSyncServerPairing on FushiSyncServer {
+  /// 本请求的来源分类（BUG-4279），见 [_classifyRequestOrigin]。
+  _RequestOrigin _requestOrigin(shelf.Request request) {
+    final List<String> proxies =
+        trustedProxiesProvider?.call() ?? const <String>[];
+    FushiAddressRangeSet trusted = FushiAddressRangeSet.empty;
+    if (proxies.isNotEmpty) {
+      try {
+        trusted = FushiAddressRangeSet.parse(proxies);
+      } on FormatException {
+        // 配置加载处已校验；万一漏进非法条目，按「没有可信代理」处理——只会让
+        // 展示 / 限速键退回 TCP 对端，不影响 LAN 判定（带转发头恒按公网）。
+        trusted = FushiAddressRangeSet.empty;
+      }
+    }
+    return _classifyRequestOrigin(
+      request,
+      loopbackPeerIsLan: loopbackPeerIsLan,
+      trustedProxies: trusted,
+    );
+  }
+
   Future<shelf.Response> _handlePair(shelf.Request request) async {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
@@ -21,9 +42,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 旧客户端继续可配对；变的只是「本就该要 PIN 的会话」——那些会话以前能拿到
     // 共享 token 本身就是漏洞，现在必须走 v2（Fushi 自己的 client 早已先试 v2，
     // 只在对端不支持 v2 时才回落 v1）。
-    final String? pairRemote = _remoteAddress(request);
+    final _RequestOrigin origin = _requestOrigin(request);
+    final String? pairRemote = origin.display;
     final bool v1PinRequired = FushiPairingProtocol.computePinRequired(
-      isLanPeer: _isLanPeerRequest(request, pairRemote),
+      isLanPeer: origin.isLanPeer,
       lanRequiresPin:
           await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false)),
     );
@@ -102,7 +124,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
             interconnectDeviceKeyFingerprint(reportedPubkey) != null)
         ? reportedPubkey
         : null;
-    final String? remote = _remoteAddress(request);
+    final _RequestOrigin origin = _requestOrigin(request);
+    final String? remote = origin.display;
     final String? tunnelPeer = request.context[kFushiP2pPeer] as String?;
 
     // 扫码 / 复制链接配对：凭 host 签发的一次性票据
@@ -120,7 +143,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       );
     }
 
-    final bool isLanPeer = _isLanPeerRequest(request, remote);
+    final bool isLanPeer = origin.isLanPeer;
     final bool lanRequiresPin =
         await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false));
     final bool pinRequired = FushiPairingProtocol.computePinRequired(
@@ -683,25 +706,157 @@ String? _pinRateLimitSourceKey(FushiPairSession session) {
   return null;
 }
 
-/// 配对的「局域网对端」判据：P2P 隧道进来的请求来源永远是 127.0.0.1，必须按
-/// 公网处理（强制 PIN / 票据），否则拿到 NodeId 的任何人都能免 PIN 配上。
-bool _isLanPeerRequest(shelf.Request request, String? remote) =>
-    request.context[kFushiRequestZone] != 'p2p' &&
-    FushiPairingProtocol.isPrivateLanAddress(remote);
+/// 转发层会附带的来源头（BUG-4279）。带任一个就说明请求经过了反代 / 穿透 / CDN，
+/// TCP 对端只是转发者，不能据它判局域网。
+const List<String> _kForwardingHeaders = <String>[
+  'x-forwarded-for',
+  'forwarded',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+];
 
-/// Source IP of the request's TCP connection, or null when shelf_io did not
-/// attach connection info (e.g. some test harnesses).
-String? _remoteAddress(shelf.Request request) {
-  // P2P 隧道进来的连接在 TCP 层恒为 127.0.0.1：原样上屏会让 host 审批框里的公网
-  // 陌生人看起来像「本机」（审查问题 4）。如实标成隧道。
+/// 一次配对请求的来源（BUG-4279）：类别（是否局域网）、展示串、限速来源键。
+/// 由 [_classifyRequestOrigin] 一处算出，配对 v1 / v2 / 票据会话都只读它。
+class _RequestOrigin {
+  const _RequestOrigin({
+    required this.originClass,
+    required this.display,
+    required this.sourceKey,
+    required this.sourceKeyTrusted,
+  });
+
+  final FushiPairOriginClass originClass;
+
+  bool get isLanPeer => originClass == FushiPairOriginClass.lan;
+
+  /// 审批框 / 落库 lastSeenIp / 无头 pending 展示用。
+  final String? display;
+
+  /// 限速与会话分桶用的来源键（步骤 5 消费）；null = 无法识别。
+  final String? sourceKey;
+
+  /// [sourceKey] 能否区分不同的真实来源：P2P NodeId、非回环 TCP 对端、经可信代理
+  /// 解析出的转发 IP 为 true；回环对端（未经可信代理解析）与 `p2p:?` 为 false。
+  final bool sourceKeyTrusted;
+}
+
+/// 请求来源分类（BUG-4279）。判定顺序：
+/// 1. P2P 区域 → `p2p`；**不读任何转发头**（隧道里的头全是对端自填的）。
+/// 2. 拿不到 TCP 对端 → `public`。
+/// 3. 带任一转发头 → `public`，不论对端是否可信——伪造这些头只会让请求方自己被要 PIN。
+/// 4. 回环对端且 `!loopbackPeerIsLan`（无头端）→ `public`。
+/// 5. 否则对端是私网地址 → `lan`，不是 → `public`。
+///
+/// [trustedProxies] 只影响 [_RequestOrigin.sourceKey] / [_RequestOrigin.display]：对端
+/// 命中且带转发头时取 `X-Forwarded-For` / `Forwarded: for=` 的最后一跳作真实来源。
+_RequestOrigin _classifyRequestOrigin(
+  shelf.Request request, {
+  required bool loopbackPeerIsLan,
+  required FushiAddressRangeSet trustedProxies,
+}) {
   if (request.context[kFushiRequestZone] == 'p2p') {
-    return kFushiP2pRemoteAddress;
-  }
-  final Object? info = request.context['shelf.io.connection_info'];
-  if (info is HttpConnectionInfo) {
-    return FushiPairingProtocol.unmapIPv4MappedAddress(
-      info.remoteAddress.address,
+    final String? node = (request.context[kFushiP2pPeer] as String?)?.trim();
+    final bool known = node != null && node.isNotEmpty;
+    return _RequestOrigin(
+      originClass: FushiPairOriginClass.p2p,
+      // P2P 隧道进来的连接在 TCP 层恒为 127.0.0.1：原样上屏会让 host 审批框里的公网
+      // 陌生人看起来像「本机」（审查问题 4）。如实标成隧道。
+      display: kFushiP2pRemoteAddress,
+      sourceKey: known ? 'p2p:$node' : 'p2p:?',
+      sourceKeyTrusted: known,
     );
   }
-  return null;
+  final Object? info = request.context['shelf.io.connection_info'];
+  if (info is! HttpConnectionInfo) {
+    return const _RequestOrigin(
+      originClass: FushiPairOriginClass.public,
+      display: null,
+      sourceKey: null,
+      sourceKeyTrusted: false,
+    );
+  }
+  final InternetAddress peer = _unmappedAddress(info.remoteAddress);
+  final String peerText = peer.address;
+  final bool peerIsLoopback = peer.isLoopback;
+  final bool forwarded = _kForwardingHeaders.any(request.headers.containsKey);
+
+  final FushiPairOriginClass originClass;
+  if (forwarded) {
+    originClass = FushiPairOriginClass.public;
+  } else if (peerIsLoopback && !loopbackPeerIsLan) {
+    originClass = FushiPairOriginClass.public;
+  } else {
+    originClass = FushiPairingProtocol.isPrivateLanAddress(peerText)
+        ? FushiPairOriginClass.lan
+        : FushiPairOriginClass.public;
+  }
+
+  if (forwarded && trustedProxies.contains(peer)) {
+    final InternetAddress? client = _forwardedClientAddress(request.headers);
+    if (client != null) {
+      final InternetAddress real = _unmappedAddress(client);
+      return _RequestOrigin(
+        originClass: originClass,
+        display: '${real.address} (via $peerText)',
+        sourceKey: fushiRateKeyForAddress(real),
+        sourceKeyTrusted: true,
+      );
+    }
+  }
+  return _RequestOrigin(
+    originClass: originClass,
+    display: forwarded ? '$peerText (proxied)' : peerText,
+    sourceKey: fushiRateKeyForAddress(peer),
+    sourceKeyTrusted: !peerIsLoopback,
+  );
+}
+
+/// v4 映射的 v6 地址还原成 v4（来源地址的唯一规范化口径，见
+/// [FushiPairingProtocol.unmapIPv4MappedAddress]）。
+InternetAddress _unmappedAddress(InternetAddress address) {
+  final List<int> raw = fushiUnmapIPv4MappedRaw(address.rawAddress);
+  if (raw.length == address.rawAddress.length) return address;
+  return InternetAddress.fromRawAddress(
+    Uint8List.fromList(raw),
+    type: InternetAddressType.IPv4,
+  );
+}
+
+/// 可信代理附带的真实来源：`X-Forwarded-For` 的最后一个条目，没有时取 RFC 7239
+/// `Forwarded` 最后一个 `for=`。取不到或解析不了 → null（按对端处理）。
+InternetAddress? _forwardedClientAddress(Map<String, String> headers) {
+  final String? xff = headers['x-forwarded-for'];
+  if (xff != null && xff.trim().isNotEmpty) {
+    return _parseForwardedNode(xff.split(',').last);
+  }
+  final String? fwd = headers['forwarded'];
+  if (fwd == null) return null;
+  String? last;
+  for (final String element in fwd.split(',')) {
+    for (final String pair in element.split(';')) {
+      final int eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      if (pair.substring(0, eq).trim().toLowerCase() == 'for') {
+        last = pair.substring(eq + 1);
+      }
+    }
+  }
+  return last == null ? null : _parseForwardedNode(last);
+}
+
+/// 一跳节点值：去引号；`[v6]:port` 取方括号内；`v4:port` 去端口。
+InternetAddress? _parseForwardedNode(String raw) {
+  String v = raw.trim();
+  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+    v = v.substring(1, v.length - 1).trim();
+  }
+  if (v.startsWith('[')) {
+    final int close = v.indexOf(']');
+    if (close < 0) return null;
+    v = v.substring(1, close);
+  } else if (':'.allMatches(v).length == 1) {
+    v = v.substring(0, v.indexOf(':'));
+  }
+  return InternetAddress.tryParse(v);
 }

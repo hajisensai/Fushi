@@ -42,7 +42,7 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
       final HostUpdateStatus status = await updater.startUpdate();
       engineLog.logDiagnostic(
         'HostUpdate',
-        'remote update started by ${_remoteAddress(request) ?? '?'} '
+        'remote update started by ${_requestOrigin(request).display ?? '?'} '
             '(${status.currentVersion} -> ${status.latestVersion})',
       );
       return _hostUpdateJson(status);
@@ -89,7 +89,7 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
   ) {
     engineLog.logDiagnostic(
       'HostUpdate',
-      'denied ${request.method} from ${_remoteAddress(request) ?? '?'}: '
+      'denied ${request.method} from ${_requestOrigin(request).display ?? '?'}: '
           '${denial.code}',
     );
     return shelf.Response(

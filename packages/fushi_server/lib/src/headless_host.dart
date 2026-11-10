@@ -490,6 +490,10 @@ class HeadlessHost {
           ..onPairSessionResolved = _clearPendingPairing
           // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
           ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
+          // BUG-4279：无头端经回环进来的几乎都是本机反代 / 穿透，不算局域网；
+          // 可信代理只影响限速键与展示 IP。
+          ..loopbackPeerIsLan = false
+          ..trustedProxiesProvider = (() => config.trustedProxies)
           ..onPeerPaired = _persistPairedPeer
           ..pairedPeerTokensProvider = _loadPairedPeerTokens
           // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。

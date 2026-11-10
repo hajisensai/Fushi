@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "Solicitação de pareamento",
   "sync_pair_scan": "Escanear QR code",
   "sync_pair_scan_failed": "Não foi possível abrir a câmera",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Pareado — token preenchido",
   "sync_pair_timeout": "O par não respondeu a tempo.",
   "sync_pair_tls_failed": "Verificação de certificado falhou. O certificado do par não corresponde ao fixado.",

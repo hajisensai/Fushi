@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "ペアリング要求",
   "sync_pair_scan": "QR コードをスキャン",
   "sync_pair_scan_failed": "カメラを開けませんでした",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "ペアリング完了 — トークンを入力しました",
   "sync_pair_timeout": "ピアが時間内に応答しませんでした。",
   "sync_pair_tls_failed": "証明書の検証に失敗しました。ピアの証明書がピン留めされたものと一致しません。",

@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "Kopplungsanfrage",
   "sync_pair_scan": "QR-Code scannen",
   "sync_pair_scan_failed": "Die Kamera konnte nicht geöffnet werden",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Gekoppelt – Token eingetragen",
   "sync_pair_timeout": "Das Gegenüber hat nicht rechtzeitig geantwortet.",
   "sync_pair_tls_failed": "Zertifikatsprüfung fehlgeschlagen. Das Zertifikat des Gegenübers stimmt nicht mit dem gespeicherten überein.",

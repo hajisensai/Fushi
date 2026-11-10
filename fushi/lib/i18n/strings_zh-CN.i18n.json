@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "配对请求",
   "sync_pair_scan": "扫码配对",
   "sync_pair_scan_failed": "无法打开相机",
+  "sync_pair_source_loopback_hint": "这个请求来自本机。如果本机运行着反向代理或内网穿透，它可能来自外网。",
   "sync_pair_success": "配对成功，已自动填入 token",
   "sync_pair_timeout": "对端没有及时响应。",
   "sync_pair_tls_failed": "证书校验失败：对端证书与已记录的指纹不符。",

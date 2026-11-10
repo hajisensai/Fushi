@@ -1419,6 +1419,19 @@ class FushiSyncServerController extends ChangeNotifier {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      // BUG-4279：app 端回环对端仍算局域网（同机多实例 / 本机联调），
+                      // 但本机跑着反代 / 穿透时它可能是外网来的——如实提醒。
+                      if (_isLoopbackPairSource(
+                        request.remoteAddress,
+                      )) ...<Widget>[
+                        SizedBox(height: tokens.spacing.gap),
+                        Text(
+                          t.sync_pair_source_loopback_hint,
+                          style: Theme.of(c).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(c).colorScheme.error,
+                          ),
+                        ),
+                      ],
                       if (showPin) ...<Widget>[
                         SizedBox(height: tokens.spacing.gap),
                         Text(t.sync_pair_pin_label),
@@ -1497,6 +1510,16 @@ class FushiSyncServerController extends ChangeNotifier {
     );
 
     return approval.future;
+  }
+
+  /// 配对来源是否本机回环（BUG-4279）。[remote] 是引擎的展示串：裸地址、
+  /// `<地址> (proxied)` / `<地址> (via <代理>)` 或隧道标记，只看第一段地址。
+  static bool _isLoopbackPairSource(String? remote) {
+    final String first = (remote ?? '').trim().split(' ').first;
+    final InternetAddress? addr = InternetAddress.tryParse(
+      FushiPairingProtocol.unmapIPv4MappedAddress(first),
+    );
+    return addr != null && addr.isLoopback;
   }
 
   /// "<name> · <ip>" when both are known, else whichever is present, else a

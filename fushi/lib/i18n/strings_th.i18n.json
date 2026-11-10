@@ -9641,6 +9641,7 @@
   "sync_pair_request_title": "คำขอจับคู่",
   "sync_pair_scan": "สแกนคิวอาร์โค้ด",
   "sync_pair_scan_failed": "เปิดกล้องไม่ได้",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "จับคู่แล้ว — กรอกโทเค็นให้อัตโนมัติ",
   "sync_pair_timeout": "อุปกรณ์คู่ไม่ตอบสนองทันเวลา",
   "sync_pair_tls_failed": "ตรวจสอบใบรับรองล้มเหลว ใบรับรองของอุปกรณ์คู่ไม่ตรงกับที่ปักหมุดไว้",
