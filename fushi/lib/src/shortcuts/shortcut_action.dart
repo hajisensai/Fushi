@@ -976,9 +976,7 @@ enum ShortcutAction {
     ShortcutAction.globalExternalAudiobookPrevSentence ||
     ShortcutAction.globalExternalAudiobookNextSentence ||
     ShortcutAction.globalExternalAudiobookReplaySentence =>
-      const <ShortcutChannel>{
-      ShortcutChannel.keyboard,
-    },
+      const <ShortcutChannel>{ShortcutChannel.keyboard},
     _ => scope.channels,
   };
 

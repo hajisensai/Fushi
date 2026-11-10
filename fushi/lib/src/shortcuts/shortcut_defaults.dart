@@ -747,7 +747,8 @@ class ShortcutDefaults {
     // 反馈 uvIcQB5gPG：有声书悬浮字幕的全局热键，默认**不绑键**（native 后端无绑定
     // 即不注册，零常驻代价；portal 后端只声明快捷键、由桌面让用户分配）。OS 级热键
     // 全系统吞键，不听书的用户不该被偷走任何组合键，理由见 ShortcutAction 声明处。
-    ShortcutAction.globalExternalFloatingLyricToggle: const ShortcutBindingSet(),
+    ShortcutAction.globalExternalFloatingLyricToggle:
+        const ShortcutBindingSet(),
     ShortcutAction.globalExternalAudiobookPlayPause: const ShortcutBindingSet(),
     ShortcutAction.globalExternalAudiobookPrevSentence:
         const ShortcutBindingSet(),
