@@ -479,8 +479,62 @@ List<String> parseGameLaunchArguments(String raw) {
   return tokens;
 }
 
-/// 从一批拖入的文件路径里筛出**可新增**的游戏 exe：只认 `.exe` 扩展名
-/// （大小写无关），去掉批内重复与已在 [existing] 库里的路径。保序。纯函数。
+/// 「这是不是一个游戏入口候选」的唯一判据：`.exe` 扩展名（大小写无关）。
+///
+/// 「添加游戏」（文件选择器 / 拖放）与游戏来源扫描（`game_source_scanner.dart`）
+/// 共用这一处，两条入口认的游戏文件必须是同一个集合。纯函数。
+bool isGameExePath(String path) =>
+    path.isNotEmpty && path.toLowerCase().endsWith('.exe');
+
+/// 一个游戏目录里多个 exe 时，按「最像主程序」排序取第一个（游戏来源扫描用）。
+///
+/// [exes] 是该目录**直接**含有的 exe（路径 → 字节数，拿不到为 null）。排序键依次：
+/// 1. 文件名（去扩展名）与目录名 [dirName] 相同（大小写无关）——发行商最常见的约定；
+/// 2. 不是安装 / 卸载 / 设置 / 崩溃上报这类辅助程序（[isAuxiliaryGameExeName]）；
+/// 3. 字节数大的在前（主程序通常最大；拿不到大小的排最后）；
+/// 4. 文件名字典序（结果确定）。
+///
+/// 选错了用户在详情页改 exe 即可；重扫不会改回来（已认领的目录不再重选）。
+/// [exes] 为空返回 null。纯函数。
+String? pickGameDirectoryExe(String dirName, Map<String, int?> exes) {
+  if (exes.isEmpty) return null;
+  final String dirKey = dirName.trim().toLowerCase();
+  String stemOf(String path) =>
+      galgameNameFromExe(path).trim().toLowerCase();
+  int rank(String path) {
+    final String stem = stemOf(path);
+    if (dirKey.isNotEmpty && stem == dirKey) return 0;
+    return isAuxiliaryGameExeName(stem) ? 2 : 1;
+  }
+
+  final List<String> sorted = exes.keys.toList()
+    ..sort((String a, String b) {
+      final int byRank = rank(a).compareTo(rank(b));
+      if (byRank != 0) return byRank;
+      final int sizeA = exes[a] ?? -1;
+      final int sizeB = exes[b] ?? -1;
+      if (sizeA != sizeB) return sizeB.compareTo(sizeA);
+      return stemOf(a).compareTo(stemOf(b));
+    });
+  return sorted.first;
+}
+
+/// 游戏目录里常见的**非游戏**辅助程序（文件名去扩展名后小写比较）：安装器 / 卸载器
+/// （Inno Setup 的 `unins000`、NSIS 的 `uninstall`）、设置工具、崩溃上报、运行库安装器。
+///
+/// 只用来给 [pickGameDirectoryExe] **降权**，不排除——目录里只有它时照样选它，
+/// 用户能在详情页改。纯函数。
+bool isAuxiliaryGameExeName(String stem) =>
+    _auxiliaryGameExePattern.hasMatch(stem.trim().toLowerCase());
+
+final RegExp _auxiliaryGameExePattern = RegExp(
+  r'^(unins\d*|uninst(all)?.*|setup.*|install(er)?|config(ure|uration)?.*|'
+  r'settings?|.*crashhandler.*|.*crashreport.*|vc_?redist.*|dxsetup|'
+  r'dxwebsetup|directx.*)$',
+);
+
+/// 从一批拖入的文件路径里筛出**可新增**的游戏 exe：只认 [isGameExePath]
+/// （`.exe` 扩展名，大小写无关），去掉批内重复与已在 [existing] 库里的路径。保序。纯函数。
 List<String> filterOutDuplicateGameExes(
   List<GalgameEntry> existing,
   List<String> dropped,
@@ -490,7 +544,7 @@ List<String> filterOutDuplicateGameExes(
   };
   final List<String> out = <String>[];
   for (final String path in dropped) {
-    if (path.isEmpty || !path.toLowerCase().endsWith('.exe')) {
+    if (!isGameExePath(path)) {
       continue;
     }
     if (seen.add(_exePathKey(path))) {
