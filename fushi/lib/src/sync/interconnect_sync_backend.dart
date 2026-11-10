@@ -223,6 +223,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoClient,
         RemoteVideoGraphicSubtitleTrackFetch,
         RemoteVideoPlaybackSync,
+        RemoteVideoPlaybackStop,
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
@@ -2752,23 +2753,112 @@ class InterconnectSyncBackend extends SyncBackend
   /// 或不肯转（用户关了开关 / 跑不了 ffmpeg）时会照旧回直传 URL，client 无需分支。
   ///
   /// 「自动」档对一个新的源起播时先按链路定起点（[_startAutoQuality]）。
+  ///
+  /// 每次调用开一个**播放会话**（BUG-4285）：本次签的流票记在会话名下，页面报播放
+  /// 停止（[stopRemoteVideoPlayback]）时一并释放。会话在入口**同步**登记，不等任何
+  /// await——页面在换集 / 换档 / 退出边界上先同步发起停止、再起新的播放，两者顺序与
+  /// 调用顺序一致。同一 [id] 的新会话顶替旧会话的登记但不释放旧票：旧会话若是另一个
+  /// 仍在播的页面（例如在播放页之上打开同一视频的卡片回看），释放会掐断它的流；没人
+  /// 停的旧票按 host 的 TTL 过期，与此前相同。
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
     int episodeIndex = 0,
   }) async {
+    final _PlaybackTicketSession session = _PlaybackTicketSession();
+    _playbackSessions[id] = session;
     await _ensureResolved();
     if (_isAutoQuality) {
       final String scope = _adaptiveScopeFor(id, episodeIndex);
       if (adaptiveQualityIndex == null || adaptiveQualityScope != scope) {
-        return _startAutoQuality(id, episodeIndex: episodeIndex, scope: scope);
+        return _startAutoQuality(
+          id,
+          episodeIndex: episodeIndex,
+          scope: scope,
+          session: session,
+        );
       }
     }
-    return _fetchVideoStreamUrls(
+    return _fetchPlaybackStreamUrls(
+      session,
       id,
       episodeIndex: episodeIndex,
       preset: effectiveQualityPreset(hostUrl: _apiBase),
     );
+  }
+
+  /// 各视频 id 当前的播放会话（BUG-4285）。只在进程内存，不持久化。
+  final Map<String, _PlaybackTicketSession> _playbackSessions =
+      <String, _PlaybackTicketSession>{};
+
+  /// 播放会话结束（退出 / 换集 / 换档前）：释放这次播放签的流票，host 立刻停掉它们
+  /// 排队与在跑的转码（BUG-4285）。老 host 不回 ticket，这里没有可释放的，什么也不发。
+  ///
+  /// 会话在第一个 await 之前就摘下并标记为已释放：之后才签回来的票（停止时取流还在
+  /// 途中）由 [_fetchPlaybackStreamUrls] 收到即释放。[positionMs] 不用——位置照旧
+  /// 走 [putRemoteVideoPosition]。
+  @override
+  Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
+    final _PlaybackTicketSession? session = _playbackSessions.remove(id);
+    if (session == null) return;
+    session.released = true;
+    final List<({String base, String ticket})> tickets =
+        List<({String base, String ticket})>.of(session.tickets);
+    session.tickets.clear();
+    for (final ({String base, String ticket}) t in tickets) {
+      await _releaseVideoTicket(id, t);
+    }
+  }
+
+  /// 向签发 [t] 的那个 host 基址发 `/streamrelease`。尽力清理：失败只记日志，
+  /// host 的 TTL 兜底，不影响离开 / 换集。
+  Future<void> _releaseVideoTicket(
+    String id,
+    ({String base, String ticket}) t,
+  ) async {
+    final WebDavOps? ops = _ops;
+    if (ops == null) return;
+    try {
+      final HttpClientRequest req = await ops.buildRequest(
+        'POST',
+        '${t.base}/api/library/videos/${_encodeVideoId(id)}/streamrelease'
+            '?ticket=${Uri.encodeQueryComponent(t.ticket)}',
+      );
+      final HttpClientResponse res = await _sendBounded(req);
+      await res.drain<void>();
+      if (res.statusCode >= 300) {
+        debugPrint('[InterconnectVideo] stream release HTTP ${res.statusCode}');
+      }
+    } on Object catch (e) {
+      debugPrint('[InterconnectVideo] stream release failed: $e');
+    }
+  }
+
+  /// 为播放会话 [session] 取流并记下流票。会话已在途中被停掉时，这张票收到即释放
+  /// （调用方的这次载入已作废），URL 照常返回。
+  Future<RemoteVideoStreamUrls> _fetchPlaybackStreamUrls(
+    _PlaybackTicketSession session,
+    String id, {
+    int episodeIndex = 0,
+    required MediaServerQualityPreset? preset,
+  }) async {
+    final String base = _apiBase;
+    final ({RemoteVideoStreamUrls urls, String? ticket}) result =
+        await _fetchVideoStreamTicket(
+          id,
+          episodeIndex: episodeIndex,
+          preset: preset,
+        );
+    final String? ticket = result.ticket;
+    if (ticket != null) {
+      final ({String base, String ticket}) entry = (base: base, ticket: ticket);
+      if (session.released) {
+        await _releaseVideoTicket(id, entry);
+      } else {
+        session.tickets.add(entry);
+      }
+    }
+    return result.urls;
   }
 
   /// 「自动」档对 [scope] 这个源的起点（反馈 uaBRMzK_WM：内网应能看 BD 满码率）。
@@ -2787,18 +2877,22 @@ class InterconnectSyncBackend extends SyncBackend
     String id, {
     required int episodeIndex,
     required String scope,
+    required _PlaybackTicketSession session,
   }) async {
     final String base = _apiBase;
     if (privateNetworkHostJudge(base)) {
       adaptiveQualityIndex = -1;
       adaptiveQualityScope = scope;
-      return _fetchVideoStreamUrls(
+      return _fetchPlaybackStreamUrls(
+        session,
         id,
         episodeIndex: episodeIndex,
         preset: null,
       );
     }
-    final RemoteVideoStreamUrls original = await _fetchVideoStreamUrls(
+    // 测链路用的原画票也记进会话：撑得住原片时它就是播放流本身。
+    final RemoteVideoStreamUrls original = await _fetchPlaybackStreamUrls(
+      session,
       id,
       episodeIndex: episodeIndex,
       preset: null,
@@ -2825,7 +2919,8 @@ class InterconnectSyncBackend extends SyncBackend
     adaptiveQualityIndex = start;
     adaptiveQualityScope = scope;
     if (start < 0) return original;
-    return _fetchVideoStreamUrls(
+    return _fetchPlaybackStreamUrls(
+      session,
       id,
       episodeIndex: episodeIndex,
       preset: kInterconnectQualityPresets[start],
@@ -2906,7 +3001,21 @@ class InterconnectSyncBackend extends SyncBackend
   /// 向 host 签发 stream URL；[preset] 为 null = 不报画质档，host 回原文件直传。
   /// 下载入库恒走 null（画质档是**播放**的弱网策略，下载要的是原片，见
   /// [downloadRemoteVideo]）。
+  ///
+  /// 不记流票（BUG-4285）：下载不是播放会话，播放停止不该作废下载正在用的票。
   Future<RemoteVideoStreamUrls> _fetchVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+    required MediaServerQualityPreset? preset,
+  }) async => (await _fetchVideoStreamTicket(
+    id,
+    episodeIndex: episodeIndex,
+    preset: preset,
+  )).urls;
+
+  /// [_fetchVideoStreamUrls] 连同 host 回的流票（`ticket`，老 host 不回 → null）。
+  Future<({RemoteVideoStreamUrls urls, String? ticket})>
+  _fetchVideoStreamTicket(
     String id, {
     int episodeIndex = 0,
     required MediaServerQualityPreset? preset,
@@ -2934,7 +3043,11 @@ class InterconnectSyncBackend extends SyncBackend
     _hostTranscodeAvailable = json['transcodeAvailable'] == true;
     final Object? bitrate = json['sourceBitrate'];
     _sourceBitrate = bitrate is int && bitrate > 0 ? bitrate : null;
-    return RemoteVideoStreamUrls.fromJson(json);
+    final Object? ticket = json['ticket'];
+    return (
+      urls: RemoteVideoStreamUrls.fromJson(json),
+      ticket: ticket is String && ticket.isNotEmpty ? ticket : null,
+    );
   }
 
   /// media_kit 兼容接口：当前协议走 token URL，因此无需额外 HTTP headers。
@@ -3609,4 +3722,11 @@ class InterconnectSyncBackend extends SyncBackend
       ops.close(force: true);
     }
   }
+}
+
+/// 一次远端播放会话签下的流票（BUG-4285）。[released] 之后再签回来的票收到即释放。
+final class _PlaybackTicketSession {
+  bool released = false;
+  final List<({String base, String ticket})> tickets =
+      <({String base, String ticket})>[];
 }

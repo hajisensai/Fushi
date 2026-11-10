@@ -5559,17 +5559,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required int? positionMs,
     required int generation,
   }) async {
+    // 停止上报先于落库**同步发起**（BUG-4285）：互联 backend 按视频 id 释放本次播放
+    // 的流票，若排在落库的 await 之后，同一视频紧接着起的新播放会话会被它一并释放。
+    // [_reportRemotePlaybackStopped] 自己吞掉失败，这里只在最后等它。
+    final Future<void>? stopped = positionMs == null
+        ? null
+        : _reportRemotePlaybackStopped(
+            info: info,
+            client: client,
+            positionMs: positionMs,
+            generation: generation,
+          );
     try {
       await controller?.flushPosition();
     } finally {
-      if (positionMs != null) {
-        await _reportRemotePlaybackStopped(
-          info: info,
-          client: client,
-          positionMs: positionMs,
-          generation: generation,
-        );
-      }
+      await stopped;
     }
   }
 
@@ -5582,15 +5586,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required RemoteVideoClient? client,
     required int generation,
   }) async {
+    // 换集：停止上报必须在新集起播（同一视频 id 的新播放会话）之前同步发起，见
+    // [_flushPositionAndReportRemotePlaybackStopped]（BUG-4285）。
+    final Future<void> stopped = _reportRemotePlaybackStopped(
+      info: info,
+      client: client,
+      positionMs: positionMs,
+      generation: generation,
+    );
     try {
       await _persistRemotePosition(uid, positionMs);
     } finally {
-      await _reportRemotePlaybackStopped(
-        info: info,
-        client: client,
-        positionMs: positionMs,
-        generation: generation,
-      );
+      await stopped;
     }
   }
 

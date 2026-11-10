@@ -154,6 +154,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           episodeIndex: episodeIndex,
           transcodeProfile: _kDiscMiningTranscodeProfile,
           transcodeDurationMs: disc!.playlist.duration.inMilliseconds,
+          ticket: tokenValue,
         );
         miningUri = request.requestedUri.replace(
           path: '/api/library/videos/$encodedId/hls.m3u8',
@@ -202,6 +203,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
         // 逐段过本地 TLS 中继后自己拼。
         'url': discTitle?.edlUri() ?? streamUri.toString(),
+        // 流票（BUG-4285）：client 播放会话结束时拿它调 `/streamrelease`，host 立刻
+        // 作废这次签的全部 token（含上面的制卡 token）并停掉它们的转码。旧 client
+        // 不读，token 照旧按 TTL 过期。
+        'ticket': tokenValue,
         if (discTitle != null) 'discTitle': discTitle.toJson(),
         if (miningUri != null) ...<String, dynamic>{
           'miningVideoUrl': miningUri.toString(),
@@ -227,6 +232,19 @@ extension _FushiSyncServerVideo on FushiSyncServer {
               track.toJson(),
           ],
       });
+    }
+
+    // POST /api/library/videos/<id>/streamrelease?ticket=<t> — 释放流票（BUG-4285，
+    // 需 Basic 鉴权：路径不以任何豁免后缀结尾）。幂等：票已不在也 204。
+    final String? releaseId = _extractVideoId(reqPath, 'streamrelease');
+    if (releaseId != null) {
+      if (method != 'POST') return shelf.Response(405);
+      final String? ticket = request.url.queryParameters['ticket'];
+      if (ticket == null || ticket.isEmpty) {
+        return shelf.Response(400, body: 'Missing ticket');
+      }
+      _releaseVideoTicket(releaseId, ticket);
+      return shelf.Response(204);
     }
 
     // GET /api/library/videos/<id>/stream — 流式传输（豁免 Basic，靠 token 鉴权）
@@ -995,6 +1013,27 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     return base64UrlEncode(bytes);
   }
 
+  /// 释放流票 [ticket]（BUG-4285）：作废它本身与随它签发的 token（光盘制卡 token），
+  /// 并取消它们名下排队 / 在跑的转码分段。只认 [videoId] 下的 token——拿别的视频
+  /// 的路径释放不动这张票。全程同步：作废 token 与 [cancelTranscodeWork] 之间没有
+  /// await，与分段请求「登记 → 判存活」的同步段互斥，不存在漏网窗口。
+  ///
+  /// TTL / 数量上限淘汰 token 时**不**走这里（不 kill 在跑的分段），排队中的分段
+  /// 在拿到名额后的存活判定处放弃。
+  void _releaseVideoTicket(String videoId, String ticket) {
+    final List<String> keys = <String>[
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries)
+        if (e.value.videoId == videoId &&
+            (e.key == ticket || e.value.ticket == ticket))
+          e.key,
+    ];
+    for (final String key in keys) {
+      _videoStreamTokens.remove(key);
+      cancelTranscodeWork(key);
+    }
+  }
+
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
     final DateTime cutoff = _now().subtract(const Duration(hours: 6));
@@ -1122,15 +1161,29 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (index == null || index < 0 || index >= count) {
       return shelf.Response.notFound('Segment out of range');
     }
-    final Uint8List? segment = await _runTranscode(
-      () => transcodeSegment(
-        inputPath: file.path,
-        profile: profile,
-        index: index,
-        durationMs: durationMs,
-        audioStreamIndex: tok.transcodeAudioStreamIndex,
-      ),
-    );
+    // 分段工作挂在签发它的 token 名下（BUG-4285）：流票被释放时
+    // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
+    // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
+    final Uint8List? segment;
+    try {
+      segment = await _runTranscode(
+        () => transcodeSegment(
+          inputPath: file.path,
+          profile: profile,
+          index: index,
+          durationMs: durationMs,
+          audioStreamIndex: tok.transcodeAudioStreamIndex,
+          workKey: tokenValue,
+          isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+        ),
+      );
+    } on TranscodeCancelled {
+      return shelf.Response(
+        410,
+        body: 'Stream released',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
+    }
     if (segment == null) {
       return shelf.Response(503, body: 'Transcoder unavailable');
     }
