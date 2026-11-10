@@ -1232,6 +1232,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         focusMainWindow: _isDesktop ? _focusMainWindowForCtl : null,
         ingestExternalVideo: _ingestExternalVideo,
       ),
+      buildInProcessInvoker: buildInProcessOpInvoker,
     );
     if (_isDesktop) {
       unawaited(_startCtlServer());
