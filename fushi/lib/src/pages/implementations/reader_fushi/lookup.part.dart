@@ -85,7 +85,16 @@ extension _ReaderLookup on _ReaderFushiPageState {
         // 已请求停止）时撤掉——不能等 `play()` 的 Future：原生后端上它挂到下一次
         // 暂停才完成，会把恢复后的整段播放都记成「按住」（见 lookupResumeHoldReleased）。
         _lookupResumeInFlight = true;
-        final Future<void> resume = ctrl.play();
+        final AudioCue? restartCue = lookupRestartCue(
+          restartEnabled: ReaderFushiSource.instance.restartSentenceAfterLookup,
+          alreadyPlaying: ctrl.isPlaying,
+          lookupCue: _lookupRestartCue,
+          currentCue: ctrl.currentCue,
+        );
+        _lookupRestartCue = null;
+        final Future<void> resume = restartCue == null
+            ? ctrl.play()
+            : _resumeLookupFromSentence(ctrl, restartCue);
         unawaited(
           resume.catchError((Object e, StackTrace stack) {
             ErrorLogService.instance.log('ReaderFushi.lookupResume', e, stack);
@@ -107,6 +116,20 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // BUG-1344：DOM/CSS 选区由整栈关闭的异步收尾显式 await；不能在这里
     // fire-and-forget 后马上 reclaim 焦点，否则 macOS WKWebView 会把失焦灰选区绘在
     // 清理完成之前并残帧。
+  }
+
+  /// 查词后「从句首重播」：先跳到 [cue] 句首，再走与原地续播同一个 `play()`。
+  /// 不用 `playCueAndContinue`：它的 Future 在起播之前就完成，查词按住
+  /// （[lookupResumeHoldReleased]）会提前撤掉；这里返回的仍是 `play()` 的 Future。
+  /// 跳句定位失败（对齐数据无效）时 `skipToCue` 原地不动，照常原地续播。
+  Future<void> _resumeLookupFromSentence(
+    AudiobookPlayerController ctrl,
+    AudioCue cue,
+  ) async {
+    await ctrl.skipToCue(cue);
+    // await 期间用户可能退出有声书（控制器被换掉 / dispose）。
+    if (!mounted || !identical(_audiobookController, ctrl)) return;
+    await ctrl.play();
   }
 
   /// 清除 WebView 内的选区高亮（[ReaderSelectionScripts.clearInvocation]）。
@@ -288,6 +311,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
         ErrorLogService.instance.log('ReaderFushi.lyricsCueContext', e, stack);
       }
       _lookupCue ??= _audiobookController?.currentCue;
+      if (_pausedForLookup) _lookupRestartCue = _lookupCue;
       _syncCueSentence();
       await _runLookupAndHighlight(
         data.text,
@@ -318,6 +342,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
     if (_lookupCue == null && _srtBookUid != null) {
       _lookupCue = _findCueForSentence(data.sentence);
     }
+    if (_pausedForLookup) _lookupRestartCue = _lookupCue;
     _syncCueSentence();
 
     await _runLookupAndHighlight(
