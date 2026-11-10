@@ -84,14 +84,16 @@ void main() {
         'core=${e.value.core}',
       );
     }
+    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；createNote / applyRemote 剩下的 1 条是发命令前的
+    // Drift 预读，不属于这一步。
     expect(costs, <String, _Cost>{
-      'createNote': (statements: 4, core: 1),
-      'answer': (statements: 3, core: 2),
-      'checkpoint': (statements: 3, core: 1),
-      'purge': (statements: 3, core: 1),
-      'import': (statements: 3, core: 2),
-      'sched': (statements: 3, core: 1),
-      'applyRemote': (statements: 4, core: 1),
+      'createNote': (statements: 1, core: 1),
+      'answer': (statements: 0, core: 2),
+      'checkpoint': (statements: 0, core: 1),
+      'purge': (statements: 0, core: 1),
+      'import': (statements: 0, core: 2),
+      'sched': (statements: 0, core: 1),
+      'applyRemote': (statements: 1, core: 1),
     });
   });
 }
