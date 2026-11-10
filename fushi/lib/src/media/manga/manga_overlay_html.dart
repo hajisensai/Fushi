@@ -2690,9 +2690,13 @@ String _mangaGestureJs({
       orientation: charEl.getAttribute('data-ocr-orientation') || '',
       x: x, y: y, zoom: ZOOM
     };
+    // BUG-4361：「同一个词」按归一后的词首判定（与 fushiSelection.selectText 的去重同一
+    // 判据）。拉丁词首回退会跨字格，点 WELL 的 E 时选区起点是 W 字格——只比被点字格
+    // 本身，悬停在同词别的字母上会重复查词、再点同词也不再是「取消」。
+    var tapStart = selection.selectionStartFor(node, 0);
     if (selection.selection &&
-        selection.selection.startNode === node &&
-        selection.selection.startOffset === 0) {
+        selection.selection.startNode === tapStart.node &&
+        selection.selection.startOffset === tapStart.offset) {
       if (fromHover) return 'same';
       selection.clearSelection();
       return 'same';
