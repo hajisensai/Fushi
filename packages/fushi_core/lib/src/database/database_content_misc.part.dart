@@ -1136,17 +1136,41 @@ mixin _FushiDbContentMisc
   Future<void> clearMangaChapterRead({
     required String bookUid,
     required String chapterKey,
+  }) => clearMangaChaptersRead(
+    bookUid: bookUid,
+    chapterKeys: <String>[chapterKey],
+  );
+
+  /// 批量把多章标回未读（作品页章节多选「标为未读」）：一个事务，按块
+  /// `IN (...)` 更新（块大小远低于 SQLite 绑定变量上限）。
+  Future<void> clearMangaChaptersRead({
+    required String bookUid,
+    required List<String> chapterKeys,
   }) async {
-    if (bookUid.isEmpty || chapterKey.isEmpty) return;
-    await (update(mangaChapterStates)..where(
-          (t) => t.bookUid.equals(bookUid) & t.chapterKey.equals(chapterKey),
-        ))
-        .write(
-          MangaChapterStatesCompanion(
-            readAt: const Value<int?>(null),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
-          ),
+    final List<String> keys = <String>[
+      for (final String key in chapterKeys)
+        if (key.isNotEmpty) key,
+    ];
+    if (bookUid.isEmpty || keys.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    const int chunk = 500;
+    await transaction(() async {
+      for (int start = 0; start < keys.length; start += chunk) {
+        final List<String> part = keys.sublist(
+          start,
+          start + chunk > keys.length ? keys.length : start + chunk,
         );
+        await (update(mangaChapterStates)..where(
+              (t) => t.bookUid.equals(bookUid) & t.chapterKey.isIn(part),
+            ))
+            .write(
+              MangaChapterStatesCompanion(
+                readAt: const Value<int?>(null),
+                updatedAt: Value<int>(now),
+              ),
+            );
+      }
+    });
   }
 
   /// 批量标记已读（作品页的「标记此章及更早为已读」）。

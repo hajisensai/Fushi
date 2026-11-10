@@ -68,10 +68,14 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   ///
   /// [undo]（反馈 JNyykxvuY9）：新制成功时卡片上出「撤销」，点下收起 OSD、删卡，
   /// 结局再用一条普通 OSD 说出来（视频页不走底部 toast，BUG-931）。
+  ///
+  /// [retry]（反馈 OeS0m8tLHc）：不陪等的制卡失败时卡片上出「重试」，点下收起 OSD、
+  /// 用那一次冻结的输入重跑。与 [undo] 互斥（成功才有撤销、失败才有重试）。
   void _showMineOsd(
     String message,
     MineToastStatus status, [
     MinedCardUndo? undo,
+    VoidCallback? retry,
   ]) {
     if (!MineNotices.shown(status)) return;
     _showOsd(
@@ -79,7 +83,16 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       prominent: true,
       severity: mineToastSeverity(status),
       mineStatus: status,
-      mineAction: undo == null
+      mineAction: retry != null
+          ? MineNoticeAction(
+              label: t.card_notice_retry,
+              onPressed: () {
+                _osdTimer?.cancel();
+                _osdNotifier.value = null;
+                retry();
+              },
+            )
+          : undo == null
           ? null
           : MineNoticeAction(
               label: t.card_notice_undo,
