@@ -63,6 +63,8 @@ import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show hasExportablePdfContent, isPdfFile, pdfBookFilePath;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
@@ -146,6 +148,7 @@ abstract class _LocalLibraryHostBase
         FushiLibraryHostService,
         BookProgressBatchHost,
         MangaLibraryHost,
+        PdfBookImportHost,
         DeletionTombstoneHost,
         PeerPushDeletionGate,
         VideoDeletionHost,
@@ -182,6 +185,8 @@ abstract class _LocalLibraryHostBase
   })?
   get _adoptOverrideTitle;
   Future<String?> Function(File epubFile)? get _importBookFromFile;
+  Future<String?> Function(File pdfFile, String title)?
+  get _importPdfBookFromFile;
   Future<void> Function(EpubBookRow row)? get _cleanupBookOnDisk;
   List<LocalAudioDbEntry> get _localAudioEntries;
   Directory? get _localAudioStagingDir;
@@ -211,6 +216,7 @@ abstract class _LocalLibraryHostBase
 /// | 参数 | 用途 | 生产传值 |
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
+/// | [importPdfBookFromFile] | 把对端推来的 PDF 原件导入书库（null = 本 host 收不了 PDF，能力位 `liveLibrary.pdfBooks=false`）| app：`PdfImporter.importFromPath`；无头服务端不传 |
 /// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
 /// | [localAudioEntriesProvider] | 现读已注册的本地音频来源列表（T3.1 / BUG-2815；[localAudioEntries] 是旧的快照形态）| `() => AppModel.localAudioDbs` / 服务端 `LocalAudioLibraryStore.entries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
@@ -238,6 +244,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     required Future<void> Function(Future<void> Function() body) runExclusive,
     Future<void> Function(Future<void> Function() body)? runSyncStateExclusive,
     Future<String?> Function(File epubFile)? importBookFromFile,
+    Future<String?> Function(File pdfFile, String title)? importPdfBookFromFile,
     Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
     List<LocalAudioDbEntry> Function()? localAudioEntriesProvider,
@@ -271,6 +278,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
        _runExclusive = runExclusive,
        _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
        _importBookFromFile = importBookFromFile,
+       _importPdfBookFromFile = importPdfBookFromFile,
        _cleanupBookOnDisk = cleanupBookOnDisk,
        _localAudioEntriesSnapshot = localAudioEntries,
        _localAudioEntriesProvider = localAudioEntriesProvider,
@@ -342,6 +350,17 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// 供 [importBook] 把推送方随行的显示名挂到正确的书上。
   @override
   final Future<String?> Function(File epubFile)? _importBookFromFile;
+
+  /// PDF 书导入回调（反馈 Jq1_ujHa4t；可选）。[importBook] 嗅探到 PDF 原件时调用，
+  /// `title` = 推送方 URL 里的书名（host 端 bookKey 由它派生，与 EPUB / 漫画同口径）。
+  /// null = 本 host 没有 PDF 引擎（无头服务端）：[acceptsPdfBooks] 为 false，能力位
+  /// 据此不对外宣称，推来的 PDF 如实抛 [UnsupportedError]。
+  @override
+  final Future<String?> Function(File pdfFile, String title)?
+  _importPdfBookFromFile;
+
+  @override
+  bool get acceptsPdfBooks => _importPdfBookFromFile != null;
 
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
   /// 生产传 ReaderFushiSource 实例的磁盘清理部分。

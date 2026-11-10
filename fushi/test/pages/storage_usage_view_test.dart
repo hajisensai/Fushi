@@ -13,6 +13,8 @@ import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiAlertDialog;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
@@ -681,6 +683,133 @@ void main() {
     expect(deleted, <List<String>>[
       <String>[cover],
     ]);
+  });
+
+  testWidgets('一键清除全部缓存（jg3XoDVISk）：确认框列出类目与大小，只删缓存明细，不碰封面等用户数据', (
+    WidgetTester tester,
+  ) async {
+    final String coverCache = p.join(cache.path, 'remote_cover_cache');
+    final String imageCache = p.join(cache.path, 'libCachedImageData');
+    writeFile(p.join(coverCache, 'c_a'), 1024);
+    writeFile(p.join(imageCache, 'img'), 2048);
+    // 用户数据对照组：手动封面（covers 可逐条删，但不是缓存）。
+    final String manualCover = p.join(docs.path, 'video_covers', 'mine.jpg');
+    writeFile(manualCover, 4096);
+    final List<List<String>> deleted = <List<String>>[];
+
+    await tester.pumpWidget(
+      wrap(
+        view(
+          service: service(),
+          deleteFiles: (List<String> paths) async {
+            deleted.add(paths);
+            for (final String path in paths) {
+              Directory(path).deleteSync(recursive: true);
+            }
+            return null;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder row = find.byKey(
+      const ValueKey<String>('storage_clear_cache'),
+    );
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.text(t.storage_clear_cache_subtitle(size: '3.0 KB')),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    // 确认框：总量说明 + 类目名与大小 + 逐条明细与大小。
+    expect(find.text(t.storage_clear_cache_confirm_title), findsOneWidget);
+    expect(
+      find.text(t.storage_clear_cache_confirm_body(size: '3.0 KB')),
+      findsOneWidget,
+    );
+    final Finder dialog = find.byType(FushiAlertDialog);
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text(t.storage_category_cache),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('cache/libCachedImageData'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('cache/remote_cover_cache'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('video_covers/mine.jpg')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.storage_clear_cache_confirm),
+    );
+    for (int i = 0; i < 20; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+      if (deleted.length == 2 &&
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
+    }
+
+    expect(
+      deleted,
+      unorderedEquals(<List<String>>[
+        <String>[coverCache],
+        <String>[imageCache],
+      ]),
+    );
+    expect(File(manualCover).existsSync(), isTrue, reason: '用户数据不许动');
+    expect(Directory(coverCache).existsSync(), isFalse);
+    expect(Directory(imageCache).existsSync(), isFalse);
+  });
+
+  testWidgets('一键清缓存：没有缓存时提示为空，点了也不弹确认框', (WidgetTester tester) async {
+    writeFile(p.join(docs.path, 'video_covers', 'mine.jpg'), 4096);
+
+    await tester.pumpWidget(wrap(view(service: service())));
+    await tester.pumpAndSettle();
+
+    final Finder row = find.byKey(
+      const ValueKey<String>('storage_clear_cache'),
+    );
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.text(t.storage_clear_cache_empty),
+      ),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    await tester.tap(row, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text(t.storage_clear_cache_confirm_title), findsNothing);
   });
 
   testWidgets('有引用的类目（自定义字体）仍然不给明细删除按钮', (WidgetTester tester) async {

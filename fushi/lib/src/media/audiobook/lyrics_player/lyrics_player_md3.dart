@@ -1169,6 +1169,15 @@ Widget? _md3ControlButton(
         onPressed: onAvSync,
         tonal: tonal,
       );
+    case LyricsControlItem.exportSubtitle:
+      final VoidCallback? onExport = callbacks.onExportSubtitle;
+      if (onExport == null) return null;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_export_subtitle_button'),
+        tooltip: t.lyrics_control_item_export_subtitle,
+        onPressed: onExport,
+        icon: FushiIcons.subtitles,
+      );
   }
 }
 
