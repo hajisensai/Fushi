@@ -2950,6 +2950,37 @@ String _mangaGestureJs({
   function _cancelLongPress(){
     if (longPress) { clearTimeout(longPress.timer); longPress = null; }
   }
+  // 复制 OCR 文本（反馈 hjUlprxxKI）：长按 / 右键落点所在 OCR 文本块的句子分组号
+  // （data-manga-sentence-group，与 Dart 侧 mangaBlockSentenceGroups 同一次分组），
+  // 只认属于 [page] 那页的块；没点中文本块返回 null。字格优先走查词同一套命中
+  // （_hitOcrChar，4px 余量），带字格的块整块 pointer-events:none，所以从字格向上
+  // 找所属文本块；无字格的块直接是命中元素。
+  function _ocrSentenceGroupAt(x, y, page){
+    var hits = [];
+    var charEl = typeof _hitOcrChar === 'function' ? _hitOcrChar(x, y) : null;
+    if (charEl) hits.push(charEl);
+    var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+    for (var i = 0; i < stack.length; i++) hits.push(stack[i]);
+    for (var j = 0; j < hits.length; j++) {
+      var box = hits[j].closest ? hits[j].closest('.ocr-box') : null;
+      if (!box) continue;
+      var owner = box.closest ? box.closest('.manga-page') : null;
+      if (!owner || Number(owner.getAttribute('data-page')) !== page) continue;
+      var group = Number(box.getAttribute('data-manga-sentence-group'));
+      if (isFinite(group) && group >= 0) return group;
+    }
+    return null;
+  }
+  // 长按 / 右键上报给 Dart 的落点信息：页号（命中不到页为 null）与文本块分组号
+  // （没点中文本块时不带 group 字段）。
+  function _ocrHitPayload(x, y, page){
+    var payload = {page: page};
+    if (page !== null) {
+      var group = _ocrSentenceGroupAt(x, y, page);
+      if (group !== null) payload.group = group;
+    }
+    return payload;
+  }
   function _armLongPress(e){
     _cancelLongPress();
     longPressFired = null;
@@ -2978,7 +3009,8 @@ String _mangaGestureJs({
     _cancelPendingEmptyTap();
     dblArmed = false;
     var b = _bridge();
-    if (b) b.callHandler('onMangaPageLongPress', JSON.stringify({page: page}));
+    if (b) b.callHandler('onMangaPageLongPress',
+        JSON.stringify(_ocrHitPayload(lp.x, lp.y, page)));
   }
   // 松手时：本指已触发长按就吞掉这次松手（返回 true）。
   function _consumeLongPressRelease(id){
@@ -3112,9 +3144,13 @@ String _mangaGestureJs({
       e.preventDefault();
       if (drag && !drag.moved) {
         var b = _bridge();
-        if (b) b.callHandler('onMangaContextMenu', JSON.stringify({
-          x:e.clientX, y:e.clientY
-        }));
+        if (b) {
+          var hit = _ocrHitPayload(e.clientX, e.clientY,
+              _mangaPageIndexAt(e.clientX, e.clientY));
+          hit.x = e.clientX;
+          hit.y = e.clientY;
+          b.callHandler('onMangaContextMenu', JSON.stringify(hit));
+        }
       }
       return;
     }

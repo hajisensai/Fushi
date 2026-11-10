@@ -13,7 +13,9 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 /// - 按住 500ms 不动 → 上报被按住那页的 `data-page`，松手不再当单击 / swipe；
 /// - 移动超过阈值、第二指落下（捏合）、提前松手、系统夺走指针 → 不触发；
 /// - 鼠标右键仍走 `onMangaContextMenu`，鼠标左键按住不触发长按；
-/// - 翻页动画克隆层（无 data-page）与加载失败页不触发。
+/// - 翻页动画克隆层（无 data-page）与加载失败页不触发；
+/// - 长按 / 右键落在 OCR 文本块上时带上该块的句子分组号 `group`（Dart 据此
+///   给出「复制文字」，反馈 hjUlprxxKI），别页的块不算。
 void main() {
   String buildDocument() => mangaWindowDocument(
     const <MokuroImage>[
@@ -56,11 +58,23 @@ function pageEl(index){ return {
   hasAttribute:(k)=>k==='data-page'&&index!==null,
   getAttribute:(k)=>k==='data-page'?String(index):(k==='data-load-failed'&&failed?'1':null),
 }; }
+// ocrBox 非 null 时落点压在一个 OCR 文本块的字格上：{page, group}。
+let ocrBox=null;
+function boxEl(spec){ return {
+  getAttribute:(k)=>k==='data-manga-sentence-group'?String(spec.group):null,
+  closest:(sel)=>sel==='.manga-page'?pageEl(spec.page):null,
+}; }
 const document={
   addEventListener(type,fn){ listeners[type]=fn; },
   elementsFromPoint(x,y){
     const page=y>800?pageEl(null):pageEl(x<206?3:2);
-    return [{closest:(sel)=>sel==='.manga-page'?page:null}];
+    const box=ocrBox?boxEl(ocrBox):null;
+    const stack=[];
+    // 字格层只回答 .ocr-box；页号由下面的页元素给出，块的归属页单独由 box 给，
+    // 好构造「块属于别页」（双页接缝处 4px 余量命中邻页字格）的情形。
+    if(box) stack.push({closest:(sel)=>sel==='.ocr-box'?box:null});
+    stack.push({closest:(sel)=>sel==='.manga-page'?page:null});
+    return stack;
   },
 };
 let timers=[];
@@ -196,7 +210,40 @@ assert.deepEqual(longPresses(),[]);
 ev('pointerup',{pointerType:'mouse'});
 ev('pointerdown',{pointerType:'mouse',button:2,clientX:50,clientY:60});
 ev('pointerup',{pointerType:'mouse',button:2,clientX:50,clientY:60});
-assert.deepEqual(calls,['onMangaContextMenu:{"x":50,"y":60}']);
+assert.deepEqual(calls,['onMangaContextMenu:{"page":3,"x":50,"y":60}']);
+'''),
+    );
+  });
+
+  test('长按落在 OCR 文本块上：带上该块的句子分组号', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:5};
+ev('pointerdown',{clientX:100});
+elapse();
+assert.deepEqual(longPresses(),['onMangaPageLongPress:{"page":3,"group":5}']);
+'''),
+    );
+  });
+
+  test('右键落在 OCR 文本块上：右键菜单 payload 带页号与分组号', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:0};
+ev('pointerdown',{pointerType:'mouse',button:2,clientX:50,clientY:60});
+ev('pointerup',{pointerType:'mouse',button:2,clientX:50,clientY:60});
+assert.deepEqual(calls,['onMangaContextMenu:{"page":3,"group":0,"x":50,"y":60}']);
+'''),
+    );
+  });
+
+  test('文本块属于别的页（双页另一侧）：不带分组号', () async {
+    await runJs(
+      harness('''
+ocrBox={page:2,group:1};
+ev('pointerdown',{clientX:100});
+elapse();
+assert.deepEqual(longPresses(),['onMangaPageLongPress:{"page":3}']);
 '''),
     );
   });
