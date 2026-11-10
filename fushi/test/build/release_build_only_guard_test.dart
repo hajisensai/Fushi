@@ -12,8 +12,8 @@ import 'package:test/test.dart';
 ///
 /// 1. 两条 workflow 都声明了这个输入，且默认 false（默认发布，保持既有行为）。
 /// 2. 摁掉的是 `PUBLISH_MANAGED_RELEASE` 与 `PUBLISH_MANIFEST` 两个开关，且
-///    release-desktop 的**四份** channel 解析块都摁到了——它有 windows / macos /
-///    ios 等多个 job，每个 job 自带一份完整的通道解析，漏一份就是「那个平台照发」。
+///    release-desktop 的**五份** channel 解析块都摁到了——它有 windows / macos /
+///    linux / ios 等多个 job，每个 job 自带一份完整的通道解析，漏一份就是「那个平台照发」。
 /// 3. iOS 的 TestFlight 上传也被挡住：那是不可回收的外发（构建号必须单调）。
 /// 4. 正式版桥包硬门加了 `publish_manifest` 门之后**仍然**由 formal 发布触发——
 ///    这条最容易在「让 build_only 跑通」的过程中被顺手改松。
@@ -55,7 +55,7 @@ void main() {
     }
   });
 
-  test('build_only 摁掉的是发布与清单两个开关，desktop 的四份解析块一份不漏', () {
+  test('build_only 摁掉的是发布与清单两个开关，desktop 的五份解析块一份不漏', () {
     final String release = _releaseYaml().readAsStringSync();
     expect(
       release.contains(r'if [ "$INPUT_BUILD_ONLY" = "true" ]; then'),
@@ -76,7 +76,7 @@ void main() {
         .length;
     expect(
       branches,
-      4,
+      5,
       reason:
           'release-desktop.yml 有 4 份独立的 channel 解析（每个 job 一份），'
           'build_only 必须每份都摁。当前只有 $branches 份——少的那些 job 会照常发布。'
