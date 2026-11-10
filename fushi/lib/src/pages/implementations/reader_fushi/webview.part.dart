@@ -723,6 +723,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
     _paginatedWidth = screenSize.width;
     _paginatedHeight = screenSize.height;
+    // 反馈 R7k887yaJI ③：章节无缝衔接只在连续模式 + 开关开 + 非双页文档时下发。
+    final ({bool active, int index, List<ReaderSeamlessChapterEntry> order})
+    seamless = _seamlessEngineConfig(continuousMode: continuousMode);
     return ReaderEngineConfig(
       navigationGeneration: navigationGeneration,
       continuousMode: continuousMode,
@@ -784,6 +787,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
       vnMergeCrossScreenSentenceAudioCues:
           s.visualNovelMergeCrossScreenSentenceAudioCues,
       sentenceAudioCuesJson: sentenceAudioCuesJson,
+      seamlessChapters: seamless.active,
+      seamlessChapterIndex: seamless.index,
+      seamlessChapterOrder: seamless.order,
     );
   }
 
@@ -2437,6 +2443,14 @@ updateLive: function(patch) {
         // 放行 / begin 采不到锚 / 已有别处重锚在飞等**所有**清旗路径都会通知，进度不再
         // 依赖轮询猜测清旗时机。图片/封面章的 null 稳态仍由 _refreshProgress 内的
         // _applyImagePageProgressFallback 兜底，不受影响。
+        // 反馈 R7k887yaJI ③：连续模式章节无缝衔接——JS 已把邻章晋升为活动章（DOM 与
+        // 引擎索引都已换好），这里把阅读器状态换到新章并 ack。args = [to, from, seq]。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSeamlessChapterActivated',
+          callback: (List<dynamic> args) =>
+              _handleSeamlessChapterActivated(args),
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onReanchorSettled',
           callback: (_) {

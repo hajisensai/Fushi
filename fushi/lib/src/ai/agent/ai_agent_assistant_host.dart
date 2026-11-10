@@ -28,7 +28,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/src/ops/op_routes.dart';
 
 export 'package:fushi/src/ai/agent/ai_agent_session_archive.dart'
     show kAiAgentRemoteScene;
@@ -60,7 +59,7 @@ AgentAssistantHost createAppAgentAssistantHost(AppModel appModel) {
       if (cached != null && identical(cachedFor, ctx)) return cached;
       cachedFor = ctx;
       // 不带 buildAiAgentInProcessOps：那些操作作用在这台电脑的界面上。
-      return cached = buildInProcessOpInvoker(ctx);
+      return cached = buildAppInProcessOpInvoker(ctx);
     },
   );
 }

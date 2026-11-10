@@ -242,6 +242,97 @@ void main() {
       );
     });
 
+    Future<void> insertDiscFile(String jobId, File file, String target) {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      return db.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          originalRelativePath: target,
+          currentRelativePath: target,
+          targetRelativePath: Value<String?>(target),
+          finalAbsolutePath: Value<String?>(file.path),
+          status: const Value<String>(VideoDownloadJobFileStatus.imported),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    File touchAt(List<String> segments) {
+      final File file = File(p.joinAll(<String>[tmp.path, ...segments]));
+      file.parent.createSync(recursive: true);
+      return file..writeAsStringSync(segments.last);
+    }
+
+    test('纯原盘任务（.iso，kind=other）内容全删 → 任务整条删除（gfaUPNp-EI）', () async {
+      // 盘内文件行是 kind=other，以前只数 video 行，产物清单为空，任务永远删不掉。
+      final File iso = touch('Show.iso');
+      await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
+      await insertDiscFile('job', iso, 'Show/Show.iso');
+      iso.deleteSync();
+
+      await reconcileVideoDownloadJobsAfterLocalDelete(
+        database: db,
+        deletedPaths: <String>{iso.path},
+      );
+
+      expect(await db.getVideoDownloadJob('job'), isNull);
+    });
+
+    test('文件夹原盘只删了部分盘内文件 → 不算被覆盖，任务保留', () async {
+      final File mpls = touchAt(<String>[
+        'Disc',
+        'BDMV',
+        'PLAYLIST',
+        '00000.mpls',
+      ]);
+      final File m2ts = touchAt(<String>[
+        'Disc',
+        'BDMV',
+        'STREAM',
+        '00000.m2ts',
+      ]);
+      await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
+      await insertDiscFile('job', mpls, 'Show/Disc/BDMV/PLAYLIST/00000.mpls');
+      await insertDiscFile('job', m2ts, 'Show/Disc/BDMV/STREAM/00000.m2ts');
+      m2ts.deleteSync();
+
+      await reconcileVideoDownloadJobsAfterLocalDelete(
+        database: db,
+        deletedPaths: <String>{m2ts.path},
+      );
+
+      expect(await db.getVideoDownloadJob('job'), isNotNull);
+      expect(mpls.existsSync(), isTrue);
+    });
+
+    test('文件夹原盘整张盘的文件都删了 → 任务整条删除', () async {
+      final File mpls = touchAt(<String>[
+        'Disc',
+        'BDMV',
+        'PLAYLIST',
+        '00000.mpls',
+      ]);
+      final File m2ts = touchAt(<String>[
+        'Disc',
+        'BDMV',
+        'STREAM',
+        '00000.m2ts',
+      ]);
+      await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
+      await insertDiscFile('job', mpls, 'Show/Disc/BDMV/PLAYLIST/00000.mpls');
+      await insertDiscFile('job', m2ts, 'Show/Disc/BDMV/STREAM/00000.m2ts');
+      mpls.deleteSync();
+      m2ts.deleteSync();
+
+      await reconcileVideoDownloadJobsAfterLocalDelete(
+        database: db,
+        deletedPaths: <String>{mpls.path, m2ts.path},
+      );
+
+      expect(await db.getVideoDownloadJob('job'), isNull);
+    });
+
     test('路径不命中任何任务 → 无副作用', () async {
       final File e1 = touch('e1.mkv');
       await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
