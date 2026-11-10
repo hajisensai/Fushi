@@ -4821,6 +4821,7 @@
   "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "تمويه كلمات الأغاني",
   "lyrics_blur_hint": "تمويه السطر الحالي للانغماس في الاستماع؛ مرر المؤشر أو انقر للكشف",
+  "lyrics_control_item_export_subtitle": "Export current subtitles",
   "lyrics_control_item_position_jump": "Jump to position",
   "lyrics_control_item_study_timer": "Study timer",
   "lyrics_control_layout": "Button layout",

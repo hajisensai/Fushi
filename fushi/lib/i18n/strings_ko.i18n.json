@@ -4821,6 +4821,7 @@
   "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "가사 흐리게",
   "lyrics_blur_hint": "듣기 몰입을 위해 현재 줄을 흐리게 합니다. 마우스를 올리거나 탭하면 표시됩니다",
+  "lyrics_control_item_export_subtitle": "Export current subtitles",
   "lyrics_control_item_position_jump": "Jump to position",
   "lyrics_control_item_study_timer": "Study timer",
   "lyrics_control_layout": "Button layout",

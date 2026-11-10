@@ -4821,6 +4821,7 @@
   "lyrics_av_sync_hint": "＋ 让高亮推后，− 让高亮提前；按住按钮可连续调整，点数值归零。",
   "lyrics_blur": "模糊歌词",
   "lyrics_blur_hint": "听力沉浸：模糊当前句，悬停或点击显形",
+  "lyrics_control_item_export_subtitle": "导出当前字幕",
   "lyrics_control_item_position_jump": "进度跳转",
   "lyrics_control_item_study_timer": "统计计时",
   "lyrics_control_layout": "按钮布局",
