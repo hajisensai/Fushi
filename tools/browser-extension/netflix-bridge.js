@@ -6,6 +6,28 @@
 // **之前**装好 JSON.parse hook，拦到整集字幕轨。seek 路径不受影响：nfSeek 里 videoPlayer 是收到
 // seek 消息时才惰性解析（非脚本加载时），document_start 只是提前注册 listener + hook，安全。
 (function () {
+  // BUG-4186：同一文档只装一份。本文件改的是页面全局（JSON.parse / XHR / Response 原型、message
+  // 监听、2 s 一拍的状态遍历），而 seek 的「同一时刻最多一次 player.seek 在途」是**实例内**的状态
+  // （nfSeekInFlight / nfSeekQueued）——装了两份就是两套互不知情的在途状态：同一条 seek 消息被两份
+  // 各自发一次 player.seek（正是要避免的叠发重定位），钩子套两层、每份各回一次 seekDone。
+  // 扩展 manifest、app 扩展宿主整栈与网页播放器 document-start 注入都可能把它送进页面；判据只在
+  // 这里写一次。重复注入不静默：计数进诊断（nfDiag 的 dup）并告警。
+  var priorBridge = window.__fushiNetflixBridge;
+  if (priorBridge && typeof priorBridge === 'object') {
+    priorBridge.duplicateInjections = (priorBridge.duplicateInjections || 0) + 1;
+    try {
+      console.warn('[Fushi][BUG-4186] netflix-bridge injected again into the same document (bridge ' +
+        priorBridge.id + ', duplicate #' + priorBridge.duplicateInjections + '); second copy skipped');
+    } catch (_) {}
+    return;
+  }
+  var bridgeState = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), duplicateInjections: 0 };
+  try {
+    Object.defineProperty(window, '__fushiNetflixBridge', { value: bridgeState, configurable: false, enumerable: false, writable: false });
+  } catch (_) {
+    window.__fushiNetflixBridge = bridgeState;
+  }
+
   // BUG-769：跨世界自投消息全部用 targetOrigin '/'（仅同源同窗才投递），而非 location.origin。
   // file:// 页 opaque origin 序列化成 'null'，但 location.origin 返回 'file://' → 二者不匹配，
   // postMessage 直接抛异常/静默丢弃。'/' 对不透明源同样成立（同窗自投恒同源），且不做 URL 解析。
@@ -503,6 +525,53 @@
     });
   }
 
+  // ── BUG-4186 诊断：跳转后黑屏只有声音 / 多次跳转越来越卡 ──
+  // 现有日志区分不了「bridge 多份」「页面主线程被堵后一次性投递」「站点自己的会话 / <video> 在累积」
+  // 「PlayReady 解码卡住（有声无帧）」。每条 seek 回执带一份页面侧快照（nfDiag），消费端限流写日志。
+  // EME 会话计数：MediaKeys.createSession 纯透传 hook（与上面的钩子同一红线：先原样拿到站点自己的
+  // 结果，计数异常绝不外泄），会话的 closed promise 兑现（站点 close / CDM 自己关）才算关掉。
+  var keySessions = { created: 0, closed: 0 };
+  if (typeof MediaKeys !== 'undefined' && MediaKeys.prototype && typeof MediaKeys.prototype.createSession === 'function') {
+    var origCreateSession = MediaKeys.prototype.createSession;
+    MediaKeys.prototype.createSession = function () {
+      var session = origCreateSession.apply(this, arguments);
+      try {
+        keySessions.created++;
+        if (session && session.closed && typeof session.closed.then === 'function') {
+          var markClosed = function () { keySessions.closed++; };
+          session.closed.then(markClosed, markClosed);
+        }
+      } catch (_) {}
+      return session;
+    };
+  }
+  // 一行 key=value：bridge 实例 id 与重复注入次数、页面 <video> 数，主 <video>（与 nfVideoSettled
+  // 同一个元素）的 readyState / networkState / seeking / paused / 画面尺寸 / 解码帧（丢帧/总帧），
+  // 未关的 EME 会话数（/累计），JS 堆（MB，Chromium 才有）。读不到的项省略，不抛。
+  function nfDiag() {
+    var parts = ['bridge=' + bridgeState.id, 'dup=' + bridgeState.duplicateInjections];
+    try {
+      if (typeof document !== 'undefined' && document.querySelectorAll) {
+        parts.push('videos=' + document.querySelectorAll('video').length);
+        var v = document.querySelector('video');
+        if (v) {
+          parts.push('rs=' + v.readyState, 'ns=' + v.networkState, 'seeking=' + (v.seeking ? 1 : 0),
+            'paused=' + (v.paused ? 1 : 0), 'size=' + v.videoWidth + 'x' + v.videoHeight);
+          if (typeof v.getVideoPlaybackQuality === 'function') {
+            var q = v.getVideoPlaybackQuality();
+            if (q) parts.push('frames=' + q.droppedVideoFrames + '/' + q.totalVideoFrames);
+          }
+        }
+      }
+    } catch (_) {}
+    parts.push('keySessions=' + (keySessions.created - keySessions.closed) + '/' + keySessions.created);
+    try {
+      var mem = typeof performance !== 'undefined' && performance.memory;
+      if (mem && typeof mem.usedJSHeapSize === 'number') parts.push('heapMB=' + Math.round(mem.usedJSHeapSize / 1048576));
+    } catch (_) {}
+    return parts.join(' ');
+  }
+
   // TODO-1217：player.seek(ms) **返回 ≠ 视频真正重定位完成**。若调完就立刻回 seekDone，content 侧
   // seekTo 会在 Netflix 实际跳转**前**就 resolve → 先 play/录、Netflix 随后才跳 → 用户看到「跳过去又
   // 秒挑回来」的二次跳动。故这里 seek 后轮询 getCurrentTime 逼近目标 ms 再回 seekDone（带超时兜底，
@@ -621,10 +690,18 @@
     }
     if (d.__fushiNf !== 'seek') return;
     var replied = false;
+    var receivedAt = Date.now();
     // id 原样回显：同时有多次 seek 在途（拖进度条）时，调用方只认最后一次的回执。
+    // diag 带页面侧时间：at = 回执时刻、waitMs = 收到请求到回执（含排队）——多条回执在 Dart 侧
+    // 同一时刻落日志时，据此分清是页面真同时回的，还是页面早就回了、消息被堵后才一起送到。
     var reply = function (ok, err) {
       if (replied) return; replied = true;
-      try { window.postMessage({ __fushiNf: 'seekDone', ok: ok, err: err || '', id: d.id }, '/'); } catch (_) {}
+      var diag = '';
+      try {
+        var at = Date.now();
+        diag = nfDiag() + ' waitMs=' + (at - receivedAt) + ' at=' + at;
+      } catch (_) {}
+      try { window.postMessage({ __fushiNf: 'seekDone', ok: ok, err: err || '', id: d.id, diag: diag }, '/'); } catch (_) {}
     };
     try { nfSeek(d.ms, reply); }
     catch (x) { reply(false, String(x)); }
