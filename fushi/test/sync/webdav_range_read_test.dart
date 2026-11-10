@@ -22,7 +22,8 @@ import 'package:fushi/src/sync/webdav_sync_backend.dart';
 /// noContentRange = 回 206 却不带 Content-Range。
 enum _Mode { honor, ignore, noContentRange }
 
-/// 忽略 Range 时整份响应是文件的多少遍（见 [_FakeDavServer._handle]）。
+/// 忽略 Range、回答**部分区间**请求时整份响应是文件的多少遍（见
+/// [_FakeDavServer._handle]）：远大于任何平台回环套接字的收发缓冲。
 const int _ignoredRepeats = 64;
 
 class _FakeDavServer {
@@ -59,29 +60,45 @@ class _FakeDavServer {
         ? null
         : RegExp(r'^bytes=(\d+)-(\d*)$').firstMatch(range);
     if (mode == _Mode.ignore || m == null) {
-      // 忽略 Range 的 200：声明并写出远大于内核套接字缓冲的整份响应（文件重复
-      // [_ignoredRepeats] 遍）。4 MB 一份时 macOS 回环的发送 / 接收缓冲就能整份吞下，
-      // 客户端早已断开、服务端照样「写完」——判据随平台缓冲大小飘。体量拉到缓冲装不下后，
-      // 客户端断开必然让后续写入失败；客户端若真把整份读完（回归），这里如实报 true。
-      final int repeats = mode == _Mode.ignore ? _ignoredRepeats : 1;
+      // 忽略 Range 的 200。`bytes=0-`（整文件）请求按原样回整份文件；部分区间请求
+      // 回文件重复 [_ignoredRepeats] 遍——客户端若真把它读完（回归）就是下了远超
+      // 所需的数据，客户端断开时也必然有写入落空（缓冲装不下）。
+      //
+      // 结局判定走摘下来的原始套接字：HttpResponse 对「对端已断」的写错误是吞掉的
+      // （dart:io 忽略响应输出上的 SocketException，close() 照常完成），据它判会把
+      // 断开报成「交付完」，结果随平台缓冲与时序飘。原始 Socket 的写错误会如实抛出，
+      // 对端断开也会结束读侧。
+      final bool wholeFile =
+          m != null && m.group(1) == '0' && m.group(2)!.isEmpty;
+      final int repeats = wholeFile ? 1 : _ignoredRepeats;
       final int total = file.length * repeats;
       response.statusCode = HttpStatus.ok;
       response.contentLength = total;
+      final Socket socket = await response.detachSocket();
+      bool peerGone = false;
+      socket.listen(
+        (_) {},
+        onDone: () => peerGone = true,
+        onError: (Object _) => peerGone = true,
+        cancelOnError: true,
+      );
       // 分块写，客户端取消后后续写入会失败：据此确认没把整文件读完。
       const int chunk = 64 * 1024;
       try {
         for (int i = 0; i < total; i += chunk) {
+          if (peerGone) throw const SocketException('client disconnected');
           final int at = i % file.length;
           final int endExclusive = at + chunk > file.length
               ? file.length
               : at + chunk;
-          response.add(Uint8List.sublistView(file, at, endExclusive));
-          await response.flush();
+          socket.add(Uint8List.sublistView(file, at, endExclusive));
+          await socket.flush();
         }
-        await response.close();
-        fullBodyDelivered.complete(true);
+        await socket.close();
+        fullBodyDelivered.complete(!peerGone);
       } on Object {
         // 客户端断开。
+        socket.destroy();
         fullBodyDelivered.complete(false);
       }
       return;

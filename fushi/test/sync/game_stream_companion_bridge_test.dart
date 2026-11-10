@@ -345,7 +345,8 @@ void main() {
       // 线上只走文件引用、不带正文。不比长度：引用里是溢出文件的绝对路径，macOS 的
       // systemTemp（/var/folders/…/T/）比这 88 个字符的正文还长。
       expect(wire[1], isNot(contains('猫')));
-      expect(wire[1], contains('${spill.path}${Platform.pathSeparator}host'));
+      expect(wire[1], startsWith('@file:${spill.path}'));
+      expect(wire[1], endsWith('.json'));
       expect(Directory('${spill.path}/host').listSync(), hasLength(1));
 
       final SecondScreenPipe receiver = SecondScreenPipe(

@@ -22,6 +22,11 @@ import 'package:flutter/gestures.dart' show kSecondaryButton;
 /// tooltip 自己 `excludeFromSemantics: true`；`find.byTooltip` 只认 flutter 自带
 /// `Tooltip` 的 message 或 `RawTooltip` 的语义 tooltip，而这里的气泡是 material_ui 的
 /// `Tooltip`（另一个类），语义又被关掉，于是一枚都找不到。
+/// 状态图标的显式语义标签（[Semantics] 组件，按 label 找）。
+Finder _statusSemantics(String label) => find.byWidgetPredicate(
+  (Widget w) => w is Semantics && w.properties.label == label,
+);
+
 Finder _statusTooltip(String message) => find.byWidgetPredicate(
   (Widget w) => w is FushiTooltip && w.message == message,
 );
@@ -368,16 +373,12 @@ void main() {
     expect(_statusTooltip(t.manga_chapter_status_read), findsOneWidget);
     expect(_statusTooltip(t.media_detail_status_downloaded), findsOneWidget);
     expect(_statusTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
-    // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。
-    expect(find.bySemanticsLabel(t.manga_chapter_status_read), findsOneWidget);
-    expect(
-      find.bySemanticsLabel(t.media_detail_status_downloaded),
-      findsOneWidget,
-    );
-    expect(
-      find.bySemanticsLabel(t.manga_chapter_status_ocr_done),
-      findsOneWidget,
-    );
+    // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。按 Semantics 组件
+    // 认，不用 find.bySemanticsLabel：图标的 Semantics 不是容器，标签并进整行那个
+    // 语义节点（读屏读「Chapter 3 … Read …」），没有单独一个标签恰为「Read」的节点。
+    expect(_statusSemantics(t.manga_chapter_status_read), findsOneWidget);
+    expect(_statusSemantics(t.media_detail_status_downloaded), findsOneWidget);
+    expect(_statusSemantics(t.manga_chapter_status_ocr_done), findsOneWidget);
 
     final BuildContext ctx = tester.element(find.byType(MangaChapterList));
     final ColorScheme cs = Theme.of(ctx).colorScheme;

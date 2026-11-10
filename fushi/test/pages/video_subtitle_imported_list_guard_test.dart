@@ -389,9 +389,15 @@ void main() {
             '远端换集必须整体替换导入档（远端 _currentVideoPath 恒 null，走不到本地'
             '换源分支的那次清空；BUG-3984 起按集重建而不是清空）',
       );
+      // 本集起播字幕重放会把那条档前插进列表（`..._importedSubtitleSources`），那时列表
+      // 已是本集的；只要求替换先于任何展开——展开出现在替换之前才是把上一集的档并进来。
+      final int replaced = remote.indexOf(
+        '_importedSubtitleSources = restoredLocalSubtitles;',
+      );
+      final int firstSpread = remote.indexOf('..._importedSubtitleSources');
       expect(
-        remote.contains('..._importedSubtitleSources'),
-        isFalse,
+        firstSpread < 0 || firstSpread > replaced,
+        isTrue,
         reason: '换集不得把上一集的导入档并进新列表',
       );
 
