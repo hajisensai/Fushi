@@ -40,7 +40,9 @@ on:
       - 'tool/check_release_policy.ps1'
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
+      - 'tool/publish_debug_pulse.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
       - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
@@ -158,6 +160,9 @@ jobs:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 标题 / 作者 / 标签；没列出的
+      # scope 会被置 none，缺它 PR 元数据整批退回 #N 占位。
+      pull-requests: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -167,6 +172,21 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: windows galgame mihon
+      # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
+      # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
+      # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
+      # latest-*.json；continue-on-error + 3 分钟超时，失败绝不让发布变红。脚本见 tool/publish_debug_pulse.sh。
+      # 桌面 run 只在 windows job 里刷新开头（三个平台 job 并行起跑，一次就够）。
+      # 排在 vendored 二进制拉取之后：那一步必须紧跟 checkout（vendored_binaries_manifest_guard_test）。
+      - name: Debug pulse (run start)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash tool/publish_debug_pulse.sh
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1
@@ -3718,6 +3738,8 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 元数据，理由同 windows job。
+      pull-requests: read
       # Linux Flatpak repo on GitHub Pages (actions/deploy-pages).
       pages: write
       id-token: write
@@ -4122,6 +4144,18 @@ jobs:
           ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh
+      # 调试版流水线收尾刷新（出包结果）：紧跟清单发布，always()——前面任何一步失败也刷新，
+      # 让 debug 用户看到「失败」而不是一直「构建中」。同上只对 develop push、continue-on-error。
+      # publish job 本身 always()：三个平台 job 失败时它照样跑到这里。
+      - name: Debug pulse (publish result)
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash tool/publish_debug_pulse.sh
       # 反馈发布回填：三个平台并行构建、失败的平台不出产物（上面 download-artifact 的
       # 注释），所以按产物是否真的在本次发布里逐平台回填，不能一刀切记三个平台。
       # 判据用 shell 的 compgen 而不是 hashFiles()：路径过滤守卫要求 hashFiles 模式
