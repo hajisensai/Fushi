@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3846 条。点号进各自文件。
+> 共 3848 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4284](bugs/BUG-4284-electron-game-launch-crash-noaccess-section.md) | ✅ | ✅ | Electron/Chromium 打包游戏经 Fushi 启动即崩（不可读 PE 节被扫描） |
-> 共 3847 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4286](bugs/BUG-4286-electron-game-launch-crash-noaccess-section.md) | ✅ | ✅ | Electron/Chromium 打包游戏经 Fushi 启动即崩（不可读 PE 节被扫描） |
 | [BUG-4285](bugs/BUG-4285-srs-conflict-dialog-marquee-intrinsic.md) | ✅ | ✅ | SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic） |
 | [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 | [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
