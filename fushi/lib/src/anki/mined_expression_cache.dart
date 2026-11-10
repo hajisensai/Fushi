@@ -79,7 +79,10 @@ class MinedExpressionCache {
   Future<void> recordAnswer(String scope, String expression, bool mined) async {
     final String key = keyOf(expression);
     if (key.isEmpty) return;
-    final Set<String> entries = await _load(scope);
+    await _load(scope);
+    // 等载入期间 [completeRefresh] 可能已把词表整份换掉：必须改**当前**那份，
+    // 而不是 await 之前拿到的旧引用，否则这条答案会落进被丢弃的旧集合里丢失。
+    final Set<String> entries = _entries[scope]!;
     _liveDuringRefresh[scope]?[key] = mined;
     final bool changed = mined ? entries.add(key) : entries.remove(key);
     if (changed) await _persist(scope, entries);
@@ -104,6 +107,9 @@ class MinedExpressionCache {
     String scope,
     Iterable<String> firstFields,
   ) async {
+    // 先载入、再同步地「收走实时答案 → 换词表」：两步之间不能有 await，否则这段空隙里
+    // 到达的实时答案既不在 live 里、也会写进马上被替换掉的旧词表，直接丢失。
+    await _load(scope);
     final Map<String, bool> live =
         _liveDuringRefresh.remove(scope) ?? const <String, bool>{};
     final Set<String> next = <String>{};
@@ -118,7 +124,6 @@ class MinedExpressionCache {
         next.remove(key);
       }
     });
-    await _load(scope);
     _entries[scope] = next;
     await _persist(scope, next, throwOnFailure: true);
     return next.length;

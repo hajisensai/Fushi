@@ -111,6 +111,26 @@ void main() {
     expect(await repo.isDuplicate('走る', ''), isFalse);
   });
 
+  test('整份替换与实时答案交错到达：答案落在替换后的词表上，不丢', () async {
+    const String scope = 'ankidroid|model:Fushi';
+    await cache.count(scope); // 先载入，复现「词表已在内存」时的交错
+    cache.beginRefresh(scope);
+    final Future<int> refreshing = cache.completeRefresh(scope, <String>['走る']);
+    final Future<void> answering = cache.recordAnswer(scope, '読む', true);
+    await Future.wait(<Future<Object?>>[refreshing, answering]);
+
+    expect(await cache.contains(scope, '走る'), isTrue);
+    expect(await cache.contains(scope, '読む'), isTrue);
+    final MinedExpressionCache reopened = MinedExpressionCache(
+      directory: () async => tmp,
+    );
+    expect(
+      await reopened.contains(scope, '読む'),
+      isTrue,
+      reason: '落盘的也得是合并后的词表',
+    );
+  });
+
   test('拉取期间作用域变了：快照丢弃，不写进新旧任何一份', () async {
     final Completer<List<String>?> pending = Completer<List<String>?>();
     final _FakeBackend backend = _FakeBackend()

@@ -1285,14 +1285,6 @@ bool ankiConnectHostIsLoopback(String host) {
   return InternetAddress.tryParse(unbracketed)?.isLoopback ?? false;
 }
 
-/// 由查重范围 [scope] 解析出的 Anki 搜索卡组子句；空串 = 不限卡组（整个收藏集）。
-///
-/// Anki 的 `deck:X` **本来就包含** X 的子卡组，但不含父卡组与兄弟子卡组——这正是
-/// 「目标选了 `Lapis::Vocab` 就查不到 `Lapis` 其它子卡组里的同词卡」的原因。
-/// [AnkiDuplicateScope.deckRoot] 把卡组名截到第一段（`Lapis::Vocab::N5` → `Lapis`），
-/// 于是整棵 Lapis 树都在范围内。
-///
-/// 纯函数（不碰网络/设置），供单测直接钉查询语义。
 /// 离线已制卡缓存整份刷新时单次 `notesInfo` 的笔记数上限：`notesInfo` 回的是全部
 /// 字段正文（释义 HTML 动辄几 KB），不能把整库塞进一次响应。
 const int kAnkiMinedFirstFieldsBatchSize = 100;
@@ -1310,6 +1302,14 @@ String ankiMinedFirstFieldsQuery({
   return deckFilter.isEmpty ? modelTerm : '$deckFilter $modelTerm';
 }
 
+/// 由查重范围 [scope] 解析出的 Anki 搜索卡组子句；空串 = 不限卡组（整个收藏集）。
+///
+/// Anki 的 `deck:X` **本来就包含** X 的子卡组，但不含父卡组与兄弟子卡组——这正是
+/// 「目标选了 `Lapis::Vocab` 就查不到 `Lapis` 其它子卡组里的同词卡」的原因。
+/// [AnkiDuplicateScope.deckRoot] 把卡组名截到第一段（`Lapis::Vocab::N5` → `Lapis`），
+/// 于是整棵 Lapis 树都在范围内。
+///
+/// 纯函数（不碰网络/设置），供单测直接钉查询语义。
 String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
   switch (scope) {
     case AnkiDuplicateScope.collection:
