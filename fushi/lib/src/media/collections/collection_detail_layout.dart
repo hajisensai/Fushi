@@ -1323,12 +1323,14 @@ class CollectionEpisodeCard extends StatelessWidget {
     // 整卡 IgnorePointer（手势归外层网格 / InkWell）挡掉了卡里 [FushiHoverLift]
     // 自己的 MouseRegion；悬停与指针位置由外面的 [FushiHoverLiftRelay] 代收，
     // 缩略图（材质封面框）照常走库页同一套抬升扫光 + 3D 倾斜视差 + 镜面高光
-    // （反馈 bsbJ4OVa8o）。整卡不放大（scale 1）：宽卡在 12px 间距的网格里按
-    // 1.05 放大会压到相邻卡，倾斜 / 扫光只作用在缩略图上。
+    // （反馈 bsbJ4OVa8o）。整卡悬停放大与合集成员卡 / 库页卡同一个
+    // [FushiHoverLift]（PR #3151 拍板：集卡也整卡抬起，不同地方不用不同逻辑），
+    // 倍数取宽卡档 [kFushiWideCardHoverLiftScale]：库页的 1.05 在 12px 间距的
+    // 网格里会让宽卡压到相邻卡，宽卡档每侧溢出不超过间距。
     return FushiHoverLiftRelay(
       builder: (BuildContext context, bool _) => IgnorePointer(
         child: FushiHoverLift(
-          scale: 1,
+          scale: kFushiWideCardHoverLiftScale,
           builder: (BuildContext context, bool _) => Material(
             color: container,
             borderRadius: FushiM3eShape.cardRadius,
