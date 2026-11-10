@@ -340,6 +340,71 @@ void main() {
     expect(srsActiveReviewSessions.value, before);
   });
 
+  const ValueKey<String> finishedKey = ValueKey<String>('srs-review-finished');
+  const ValueKey<String> moreDueKey = ValueKey<String>('srs-review-more-due');
+
+  testWidgets('复习完之后同步拉入了新卡：停在「复习完」页并出现入口，点入口回到复习', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    final List<SrsCardFace> faces = <SrsCardFace>[];
+    await _pumpReview(
+      tester,
+      store: () async => store,
+      faces: faces,
+      deckId: store.defaultDeckId,
+    );
+    expect(find.byKey(finishedKey), findsOneWidget);
+    expect(find.byKey(moreDueKey), findsNothing);
+
+    await _addLapis(tester, store, '食べる');
+    _bumpPulled(tester);
+    await _settle(tester);
+
+    expect(find.byKey(finishedKey), findsOneWidget, reason: '不自动把卡塞到用户眼前');
+    expect(faces, isEmpty);
+    expect(find.byKey(moreDueKey), findsOneWidget, reason: '库里又有能出的卡：给入口');
+
+    await tester.tap(find.byKey(moreDueKey));
+    await _settle(tester);
+
+    expect(find.byKey(finishedKey), findsNothing);
+    expect(faces, isNotEmpty);
+    expect(faces.last.cardId, isNotEmpty);
+    await _unmount(tester);
+  });
+
+  testWidgets('复习完之后别处取消暂停：出现入口；又暂停回去：入口收起', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addLapis(tester, store, '食べる');
+    final String card = (await tester.runAsync(
+      () => store.cardIdsInDecks(<String>{store.defaultDeckId}),
+    ))!.single;
+    await tester.runAsync(() => store.setSuspended(card, true));
+    final List<SrsCardFace> faces = <SrsCardFace>[];
+    await _pumpReview(
+      tester,
+      store: () async => store,
+      faces: faces,
+      deckId: store.defaultDeckId,
+    );
+    expect(find.byKey(finishedKey), findsOneWidget);
+    expect(find.byKey(moreDueKey), findsNothing);
+
+    await tester.runAsync(() => store.setSuspended(card, false));
+    _bumpLocal(tester);
+    await _settle(tester);
+    expect(find.byKey(moreDueKey), findsOneWidget);
+
+    await tester.runAsync(() => store.setSuspended(card, true));
+    _bumpLocal(tester);
+    await _settle(tester);
+    expect(find.byKey(finishedKey), findsOneWidget);
+    expect(find.byKey(moreDueKey), findsNothing, reason: '入口跟着库走，没有能出的卡就不留');
+    expect(faces, isEmpty);
+    await _unmount(tester);
+  });
+
   group('readSrsStore：打开失败原样抛出', () {
     testWidgets('复习页：打开失败显示真实错误（可重试），不报「排程内核不可用」', (WidgetTester tester) async {
       await _pumpReview(

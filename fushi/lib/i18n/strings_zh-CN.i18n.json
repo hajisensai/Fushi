@@ -9043,6 +9043,7 @@
   "srs_review_layout_title": "复习选项",
   "srs_review_layout_volume": "音频音量",
   "srs_review_layout_volume_hint": "卡面音频的音量，点播和自动播放都按它",
+  "srs_review_more_due_continue": "有新的到期卡，继续复习",
   "srs_review_pending_decision": "待你决定",
   "srs_review_rated": "已评：${rating}",
   "srs_review_rated_interval": "已评：${rating} · ${interval}后到期",
