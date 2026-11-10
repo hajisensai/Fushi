@@ -37,7 +37,8 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, ValueNotifier, setEquals, visibleForTesting;
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
@@ -241,10 +242,18 @@ class SrsSyncReportError implements Exception {
 /// 「立即同步」的结果：[ran] = 同步成功的目录数，[errors] = 没同步成的目录各自的原因。
 /// 两者都为空 = 没配置任何同步后端、本机也没开互联服务。
 class SrsSyncNowResult {
-  const SrsSyncNowResult({required this.ran, this.errors = const <Object>[]});
+  const SrsSyncNowResult({
+    required this.ran,
+    this.errors = const <Object>[],
+    this.peersNotJoined = 0,
+  });
 
   final int ran;
   final List<Object> errors;
+
+  /// 跑成了、但那头的设备（互联 host）报告还没加入复习同步的位置数（BUG-4320，[SrsSync2Report.peerNotJoined]）：
+  /// 本机的改动发出去了，对端既没并入也没发布它的数据，不能说「已同步」。
+  final int peersNotJoined;
 
   bool get unconfigured => ran == 0 && errors.isEmpty;
 }
@@ -390,7 +399,9 @@ class SrsSyncScheduler {
     Future<bool> Function()? autoSyncEnabled,
     bool Function(String locationId)? locationDisabled,
     Duration migratePullBudget = kSrsPullBeforeMigrateBudget,
+    Future<bool?> Function(SyncAssetStore backend)? peerJoined,
   }) : _profileLinker = profileLinker,
+       _peerJoined = peerJoined,
        _migratePullBudget = migratePullBudget,
        _locationDisabled = locationDisabled,
        _autoSyncEnabled = autoSyncEnabled,
@@ -426,6 +437,18 @@ class SrsSyncScheduler {
 
   /// 每个文件夹位置最近一次的错误（同步与历史页显示；成功一轮即清掉）。
   final Map<String, Object> folderErrors = <String, Object>{};
+
+  /// 位置那头自己也跑复习同步的设备（互联 host）此刻加入了没有（BUG-4320；见 srs_directory_key.dart
+  /// `srsChannelPeerJoined`）；null = 不问（测试 / 没有这类后端）。
+  final Future<bool?> Function(SyncAssetStore backend)? _peerJoined;
+
+  final ValueNotifier<Set<String>> _peersNotJoined = ValueNotifier<Set<String>>(
+    const <String>{},
+  );
+
+  /// 最近一轮里那头的设备报告「还没加入复习同步」的位置（directoryKey）。同步与历史页的摘要据此说「已配对设备还没
+  /// 开启复习同步」，而不是按本机未上传条数说「所有改动都已同步」。那台设备报告已加入后即移除。
+  ValueListenable<Set<String>> get peersNotJoined => _peersNotJoined;
   final void Function() _onDataChanged;
   final void Function(SrsSyncNotice notice) _onNotice;
 
@@ -1004,6 +1027,7 @@ class SrsSyncScheduler {
       return SrsSync2Report()..error = kSrsSyncDirectoryIdentityUnavailable;
     }
     if (_isLocationDisabled(key)) {
+      _markPeerNotJoined(key, false);
       return SrsSync2Report()..error = kSrsSyncLocationDisabled;
     }
     final SrsProfileLinker? linker = _profileLinker;
@@ -1044,9 +1068,13 @@ class SrsSyncScheduler {
     if (_isLocationDisabled(key)) {
       // 一轮跑到一半用户关掉了这个位置：在下一个检查点收了手（[kSrsSync2Stopped]）或恰好跑完。之后的发布 / 媒体对账
       // 都不做，按「关掉」交回——立即同步不把它算成失败，也不算这个位置同步成功。
+      _markPeerNotJoined(key, false);
       return report..error = kSrsSyncLocationDisabled;
     }
     await _noteCrypto(key, report);
+    if (report.error == null && !_halted) {
+      report.peerNotJoined = await _notePeerJoined(backend, key);
+    }
     if (linker != null && report.error == null && !_halted) {
       try {
         await linker.publish(backend, store, key);
@@ -1128,6 +1156,44 @@ class SrsSyncScheduler {
       _onDataChanged();
     }
     return report;
+  }
+
+  /// 一轮成功后问 [backend] 那头的设备加入复习同步了没有（BUG-4320），记进 [peersNotJoined]；返回「没加入」。
+  /// 问不到（网络抖动）时沿用上一次的结论并记日志：这一轮本身已经成功，不因状态探测失败改判。
+  Future<bool> _notePeerJoined(SyncAssetStore backend, String key) async {
+    final Future<bool?> Function(SyncAssetStore backend)? ask = _peerJoined;
+    if (ask == null) return false;
+    final bool? joined;
+    try {
+      joined = await ask(backend);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsSyncScheduler.peerJoined', e, stack);
+      return _peersNotJoined.value.contains(key);
+    }
+    final bool notJoined = joined == false;
+    _markPeerNotJoined(key, notJoined);
+    return notJoined;
+  }
+
+  /// [peersNotJoined] 里记上 / 去掉 [key]。用户关掉的位置也去掉：它不再同步，摘要不该再为它说「对端没加入」。
+  void _markPeerNotJoined(String key, bool notJoined) {
+    final Set<String> next = <String>{..._peersNotJoined.value};
+    if (notJoined) {
+      next.add(key);
+    } else {
+      next.remove(key);
+    }
+    if (!setEquals(next, _peersNotJoined.value)) {
+      _peersNotJoined.value = Set<String>.unmodifiable(next);
+    }
+  }
+
+  /// [peersNotJoined] 只留 [live] 里的位置（一轮全部通道跑完后调，见 [_syncAll]）。
+  void _retainPeersNotJoined(Set<String> live) {
+    final Set<String> next = _peersNotJoined.value.intersection(live);
+    if (!setEquals(next, _peersNotJoined.value)) {
+      _peersNotJoined.value = Set<String>.unmodifiable(next);
+    }
   }
 
   /// 在位置 [key]（[backend]）上做一次 profile 关联判定（[SrsProfileLinker.link]），按结果更新 [profileConflict] 与
@@ -1415,19 +1481,31 @@ class SrsSyncScheduler {
     );
     // 通道跑完、但报告带错的轮次（runner 已把它记成跑成功）：关掉的位置只扣数、不算错。
     int notSynced = 0;
+    int peersNotJoined = 0;
     final List<Object> errors = <Object>[];
+    // 这一轮还在的通道位置：[peersNotJoined] 只为它们留着（只有通道会报告「对端没加入」）。
+    final Set<String> liveChannels = <String>{};
     final ({int ran, List<Object> errors}) channels = await _channels((
       SyncAssetStore backend,
     ) async {
-      final String? error = (await syncWithBackend(backend)).error;
+      // 不把 key 传给 syncWithBackend：排队合并按 (backend, directoryKey) 认，自动轮次传的是 null，传了就合并不上。
+      final String? key = await _directoryKeyOf(backend);
+      if (key != null) liveChannels.add(key);
+      final SrsSync2Report report = await syncWithBackend(backend);
+      final String? error = report.error;
       if (error != null) {
         notSynced++;
         if (error != kSrsSyncLocationDisabled) {
           errors.add(SrsSyncReportError(error));
         }
+      } else if (report.peerNotJoined) {
+        peersNotJoined++;
       }
     });
     errors.addAll(channels.errors);
+    // 取消配对 / 删掉的通道不会再跑它那一轮，记下的「对端没加入」也就没人去掉：不在这一轮通道里的位置一并移除，
+    // 摘要不为已经不存在的对端继续警告。
+    _retainPeersNotJoined(liveChannels);
     final SrsSyncNowResult local = await syncLocalDirectories();
     errors.addAll(local.errors);
     final SrsSyncNowResult folders = await syncFolderLocations();
@@ -1435,6 +1513,7 @@ class SrsSyncScheduler {
     return SrsSyncNowResult(
       ran: channels.ran - notSynced + local.ran + folders.ran,
       errors: errors,
+      peersNotJoined: peersNotJoined,
     );
   }
 
