@@ -276,12 +276,8 @@ class _VideoPagePlaybackRemote
             kind: local == null
                 ? VideoRemoteSubtitleKind.host
                 : VideoRemoteSubtitleKind.external,
-            primary: local == null
-                ? primary == path
-                : subtitleSourceMatchesPersistedForMenu(local, primary),
-            secondary: local == null
-                ? secondary == path
-                : subtitleSourceMatchesPersistedForMenu(local, secondary),
+            primary: entry.isSelectedBy(primary),
+            secondary: entry.isSelectedBy(secondary),
             ocrAvailable: false,
           ),
           // host 外挂字幕行（反馈 -CaVsioFhG）的 path 是选择编码，选中时才下载：

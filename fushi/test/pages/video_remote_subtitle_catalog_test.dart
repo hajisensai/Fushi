@@ -137,6 +137,35 @@ void main() {
         expect(remoteHostSidecarForSource(null, sidecars), isNull);
       });
 
+      test('默认档下好后并进默认行：选中态仍认 host 默认外挂字幕的选择编码', () {
+        final List<RemoteSubtitleFileEntry> rows = remoteSubtitleFileEntries(
+          backendDefaultPath: '/tmp/fushi_remote_ep01.ja.srt',
+          localFiles: const <SubtitleSource>[],
+          hostSidecars: sidecars,
+        );
+        final RemoteSubtitleFileEntry def = rows.first;
+        expect(def.kind, RemoteSubtitleFileKind.backendDefault);
+        expect(def.isSelectedBy('/tmp/fushi_remote_ep01.ja.srt'), isTrue);
+        expect(
+          def.isSelectedBy(remoteHostSidecarSubtitleSource('ep01.ja.srt')),
+          isTrue,
+        );
+        expect(
+          def.isSelectedBy(remoteHostSidecarSubtitleSource('ep01.zh.ass')),
+          isFalse,
+        );
+        expect(def.isSelectedBy(null), isFalse);
+        final RemoteSubtitleFileEntry zh = rows[1];
+        expect(
+          zh.isSelectedBy(remoteHostSidecarSubtitleSource('ep01.zh.ass')),
+          isTrue,
+        );
+        expect(
+          zh.isSelectedBy(remoteHostSidecarSubtitleSource('ep01.ja.srt')),
+          isFalse,
+        );
+      });
+
       test('选择编码不是本机文件路径：不会被当成导入档去按路径重放', () {
         final String key = remoteHostSidecarSubtitleSource('ep01.ja.srt');
         expect(isExternalSubtitleFilePathForMenu(key), isFalse);

@@ -305,12 +305,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             context,
             controller,
             entry,
-            selected: entry.local == null
-                ? _currentSubtitleSource == entry.path
-                : subtitleSourceMatchesPersistedForMenu(
-                    entry.local!,
-                    _currentSubtitleSource,
-                  ),
+            selected: entry.isSelectedBy(_currentSubtitleSource),
             selectedColor: selectedFg,
             onTap: _subtitleLoadingShown
                 ? null
@@ -492,12 +487,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             context,
             controller,
             entry,
-            selected: entry.local == null
-                ? _currentSecondarySubtitleSource == entry.path
-                : subtitleSourceMatchesPersistedForMenu(
-                    entry.local!,
-                    _currentSecondarySubtitleSource,
-                  ),
+            selected: entry.isSelectedBy(_currentSecondarySubtitleSource),
             selectedColor: selectedFg,
             onTap: _subtitleLoadingShown
                 ? null
@@ -1049,7 +1039,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     RemoteSubtitleFileEntry entry, {
     VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
   }) async {
-    final RemoteVideoSidecarSubtitle? sidecar = entry.hostSidecar;
+    final RemoteVideoSidecarSubtitle? sidecar =
+        entry.kind == RemoteSubtitleFileKind.hostSidecar
+        ? entry.hostSidecar
+        : null;
     if (sidecar != null) {
       await _applyRemoteHostSidecarSubtitle(
         controller,
@@ -1071,7 +1064,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
     RemoteSubtitleFileEntry entry,
   ) async {
-    final RemoteVideoSidecarSubtitle? sidecar = entry.hostSidecar;
+    final RemoteVideoSidecarSubtitle? sidecar =
+        entry.kind == RemoteSubtitleFileKind.hostSidecar
+        ? entry.hostSidecar
+        : null;
     if (sidecar != null) {
       await _applyRemoteHostSidecarSecondarySubtitle(controller, sidecar);
       return;

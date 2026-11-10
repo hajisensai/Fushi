@@ -2,7 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
-    show SubtitleSource, sameExternalSubtitlePathForMenu, sameSubtitleFilePath;
+    show
+        SubtitleSource,
+        sameExternalSubtitlePathForMenu,
+        sameSubtitleFilePath,
+        subtitleSourceMatchesPersistedForMenu;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoSidecarSubtitle;
 
@@ -73,8 +77,28 @@ class RemoteSubtitleFileEntry {
   /// [RemoteSubtitleFileKind.localFile] 时是它的 [SubtitleSource]（删除菜单用）。
   final SubtitleSource? local;
 
-  /// [RemoteSubtitleFileKind.hostSidecar] 时是 host 报的那一条（选中时按它下载）。
+  /// [RemoteSubtitleFileKind.hostSidecar] 时是 host 报的那一条（选中时按它下载）；
+  /// [RemoteSubtitleFileKind.backendDefault] 时是并进这一行的 host 默认外挂字幕
+  /// （[RemoteVideoSidecarSubtitle.isDefault]，可能为 null），只用于选中态比对。
   final RemoteVideoSidecarSubtitle? hostSidecar;
+
+  /// 这一行是不是当前选择 [current]（主 / 副字幕菜单与手机遥控共用的唯一判据）。
+  ///
+  /// 后端默认行除了自己的临时档路径，也认 host 默认外挂字幕的选择编码：默认档还没
+  /// 下到本地时用户从「host 外挂字幕」行选了它（或上次这样选、重进按名重下），之后
+  /// 默认档下好、那一行并进默认行——选中态不能因此丢掉。
+  bool isSelectedBy(String? current) {
+    final SubtitleSource? source = local;
+    if (source != null) {
+      return subtitleSourceMatchesPersistedForMenu(source, current);
+    }
+    if (current == null) return false;
+    if (current == path) return true;
+    final RemoteVideoSidecarSubtitle? merged = hostSidecar;
+    return kind == RemoteSubtitleFileKind.backendDefault &&
+        merged != null &&
+        current == remoteHostSidecarSubtitleSource(merged.fileName);
+  }
 
   /// 这一行来自后端（互联 host 的默认字幕或其它外挂字幕），按后端来源标注。
   bool get fromBackend => kind != RemoteSubtitleFileKind.localFile;
@@ -101,6 +125,13 @@ List<RemoteSubtitleFileEntry> remoteSubtitleFileEntries({
 }) {
   final List<RemoteSubtitleFileEntry> entries = <RemoteSubtitleFileEntry>[];
   final String? backend = backendDefaultPath;
+  RemoteVideoSidecarSubtitle? defaultSidecar;
+  for (final RemoteVideoSidecarSubtitle sidecar in hostSidecars) {
+    if (sidecar.isDefault) {
+      defaultSidecar = sidecar;
+      break;
+    }
+  }
   if (backend != null &&
       !localFiles.any(
         (SubtitleSource s) => sameExternalSubtitlePathForMenu(s, backend),
@@ -110,6 +141,7 @@ List<RemoteSubtitleFileEntry> remoteSubtitleFileEntries({
         path: backend,
         label: p.basename(backend),
         kind: RemoteSubtitleFileKind.backendDefault,
+        hostSidecar: defaultSidecar,
       ),
     );
   }
