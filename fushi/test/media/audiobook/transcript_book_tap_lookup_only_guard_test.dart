@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 反馈 C9wcnKaPq_：纯转录（合成）有声书里点一下句子既弹词典又跳到这句播放。
 ///
@@ -25,9 +25,12 @@ void main() {
 
   group('左键 / 单击不再跳句（只查词）', () {
     test('有声书桥脚本不再给 [data-cue-id] 挂 click → onCueTap', () {
-      final String bridge = read(
-        'lib/src/media/audiobook/audiobook_bridge.dart',
-      );
+      // 只判代码：桥里留有解释删掉 `_cueClickFn` / `onCueTap` 的 `//` 注释。
+      final String bridge =
+          read('lib/src/media/audiobook/audiobook_bridge.dart')
+              .split('\n')
+              .where((String line) => !line.trimLeft().startsWith('//'))
+              .join('\n');
       expect(
         bridge.contains("callHandler('onCueTap'"),
         isFalse,
