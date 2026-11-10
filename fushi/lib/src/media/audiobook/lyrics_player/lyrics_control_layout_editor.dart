@@ -609,8 +609,11 @@ class _LyricsControlsPreview extends StatelessWidget {
 
   List<FushiToolbarItem> _items(LyricsControlSlot slot) => <FushiToolbarItem>[
     for (final LyricsControlItem i in layout.itemsIn(slot))
-      // 左右互换只在宽屏双栏渲染：窄屏预览与运行时一致，不画它。
-      if (!(compact && i == LyricsControlItem.swapSides))
+      // 左右互换只在宽屏双栏渲染、书籍模式在窄屏是顶栏固定件：窄屏预览与
+      // 运行时一致，不画它们。
+      if (!(compact &&
+          (i == LyricsControlItem.swapSides ||
+              i == LyricsControlItem.bookMode)))
         FushiToolbarItem(
           icon: lyricsControlItemIcon(i),
           label: lyricsControlItemLabel(i),

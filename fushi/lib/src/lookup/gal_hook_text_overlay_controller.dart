@@ -31,6 +31,7 @@ import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -409,6 +410,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     String sourceText,
     String launchExePath,
     bool inspectOnly,
+    TyranoDomFeed? measuredFeed,
   })?
   _attachedSyncDesiredRequest;
   bool _attachedSyncNeedsReconcile = false;
@@ -894,7 +896,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
     return '${state.sessionStartedAt?.microsecondsSinceEpoch}:'
         '${state.phase.index}:${state.externalWindowMode}:'
         '${state.gamePid}:${state.boundWindow?.pid}:'
-        '${state.boundWindow?.hwnd}:${state.launchExe}';
+        '${state.boundWindow?.hwnd}:${state.launchExe}:'
+        // DOM 源换代（连上 / 断开 / 重连）是查词几何的生命周期边。
+        '${identityHashCode(_session.tyranoDomFeed)}';
   }
 
   String get _currentAttachedRoutingKey =>
@@ -1055,6 +1059,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     required String? launchExePath,
     required bool inspectOnly,
     required int syncRevision,
+    required TyranoDomFeed? measuredFeed,
   }) async {
     final request = (
       active: active,
@@ -1064,6 +1069,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       sourceText: sourceText ?? '',
       launchExePath: launchExePath ?? '',
       inspectOnly: inspectOnly,
+      measuredFeed: measuredFeed,
     );
     _attachedSyncDesiredRequest = request;
     final Future<void>? activeOperation = _attachedSyncInFlight;
@@ -1081,6 +1087,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       sourceText: sourceText,
       launchExePath: launchExePath,
       inspectOnly: inspectOnly,
+      measuredFeed: measuredFeed,
       stillCurrent: () =>
           _started &&
           _attachedSyncDesiredRequest == request &&
@@ -1125,6 +1132,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       String sourceText,
       String launchExePath,
       bool inspectOnly,
+      TyranoDomFeed? measuredFeed,
     })
     request,
   ) {
@@ -1353,6 +1361,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       launchExePath: state.launchExe,
       inspectOnly: true,
       syncRevision: syncRevision,
+      // TyranoScript DOM 源在线时 attached surface 走实测排版路线（不要校准 profile）。
+      measuredFeed: _session.tyranoDomFeed,
     );
     if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) return;
 
@@ -1386,6 +1396,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
           launchExePath: state.launchExe,
           inspectOnly: false,
           syncRevision: syncRevision,
+          measuredFeed: _session.tyranoDomFeed,
         );
     if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) return;
     final bool forceAttached =

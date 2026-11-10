@@ -6,7 +6,7 @@
 // 本文件守住结构：不许再长出只认触屏的私有长按计时。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 截取 popup.js 里名为 [name] 的顶层函数体（到下一个顶层 `function` 为止）。
 String _functionBody(String js, String name) {

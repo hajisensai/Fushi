@@ -755,6 +755,93 @@ class GalAttachedLookupHitV19 {
   }
 }
 
+/// Allow-listed measured-layout sources accepted by the runner
+/// (`attached_measured_layout.h`). `tyrano_dom` is the TyranoScript DOM source;
+/// its registry identity elsewhere is runtime_layout (1, 6), but the attached
+/// surface itself always owns geometry as the attached provider (4, 11).
+const String galAttachedMeasuredSourceTyranoDom = 'tyrano_dom';
+
+/// `layoutSource` values reported in attached surface snapshots.
+const String galAttachedLayoutSourceCalibrated = 'calibrated';
+const String galAttachedLayoutSourceMeasured = 'measured';
+
+/// One glyph measured by the game itself, for the attached surface's measured
+/// layout mode.
+///
+/// Coordinates are physical pixels relative to the top-left of the game's
+/// top-level (source) window client area — the same origin as Win32
+/// `ClientToScreen(hwnd, (0,0))` under per-monitor DPI awareness — with
+/// exclusive [right]/[bottom]. Under Magpie these are still source-client
+/// pixels; the runner applies the presentation mapping. [start]/[length] are a
+/// UTF-16 range of the line's source text and must not split a surrogate pair.
+@immutable
+class GalAttachedMeasuredGlyph {
+  const GalAttachedMeasuredGlyph({
+    required this.start,
+    required this.length,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  final int start;
+  final int length;
+  final int left;
+  final int top;
+  final int right;
+  final int bottom;
+
+  /// Number of Int32 words per glyph in the wire encoding.
+  static const int wordsPerGlyph = 6;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalAttachedMeasuredGlyph &&
+      other.start == start &&
+      other.length == length &&
+      other.left == left &&
+      other.top == top &&
+      other.right == right &&
+      other.bottom == bottom;
+
+  @override
+  int get hashCode => Object.hash(start, length, left, top, right, bottom);
+}
+
+const int _int32Min = -0x80000000;
+const int _int32Max = 0x7fffffff;
+
+bool _fitsInt32(int value) => value >= _int32Min && value <= _int32Max;
+
+/// Encodes [glyphs] as the runner's compact wire list
+/// `[start, length, left, top, right, bottom] * n`. Returns null when any value
+/// does not fit an Int32 (the runner would otherwise see a truncated value).
+/// Semantic validation (ranges, rect inside client) is the runner's job so the
+/// rejection reason is reported from one place.
+Int32List? encodeGalAttachedMeasuredGlyphs(
+  List<GalAttachedMeasuredGlyph> glyphs,
+) {
+  final Int32List words = Int32List(
+    glyphs.length * GalAttachedMeasuredGlyph.wordsPerGlyph,
+  );
+  int offset = 0;
+  for (final GalAttachedMeasuredGlyph glyph in glyphs) {
+    for (final int value in <int>[
+      glyph.start,
+      glyph.length,
+      glyph.left,
+      glyph.top,
+      glyph.right,
+      glyph.bottom,
+    ]) {
+      if (!_fitsInt32(value)) return null;
+      words[offset++] = value;
+    }
+  }
+  return words;
+}
+
 @immutable
 class GalAttachedSurfaceStateEvent {
   const GalAttachedSurfaceStateEvent({
@@ -774,6 +861,8 @@ class GalAttachedSurfaceStateEvent {
     this.probeMiddleObservedIndex,
     this.probeEndObservedIndex,
     this.calibrationProbeMask = 0,
+    this.layoutSource = galAttachedLayoutSourceCalibrated,
+    this.measuredSource,
   });
 
   final GalAttachedSurfaceTarget target;
@@ -792,6 +881,15 @@ class GalAttachedSurfaceStateEvent {
   final int? probeMiddleObservedIndex;
   final int? probeEndObservedIndex;
   final int calibrationProbeMask;
+
+  /// [galAttachedLayoutSourceCalibrated] or [galAttachedLayoutSourceMeasured].
+  final String layoutSource;
+
+  /// Measured source identity (e.g. [galAttachedMeasuredSourceTyranoDom]);
+  /// null for the calibrated route.
+  final String? measuredSource;
+
+  bool get isMeasured => layoutSource == galAttachedLayoutSourceMeasured;
 
   static GalAttachedSurfaceStateEvent? fromMap(Map<Object?, Object?> map) {
     final GalAttachedSurfaceTarget? target = GalAttachedSurfaceTarget.fromMap(
@@ -828,9 +926,19 @@ class GalAttachedSurfaceStateEvent {
       probeMiddleObservedIndex: _finiteWireInt(map['probeMiddleObservedIndex']),
       probeEndObservedIndex: _finiteWireInt(map['probeEndObservedIndex']),
       calibrationProbeMask: _finiteWireInt(map['calibrationProbeMask']) ?? 0,
+      layoutSource: _attachedLayoutSourceOf(map['layoutSource']),
+      measuredSource: _nonEmptyWireString(map['measuredSource']),
     );
   }
 }
+
+String _attachedLayoutSourceOf(Object? value) =>
+    value == galAttachedLayoutSourceMeasured
+    ? galAttachedLayoutSourceMeasured
+    : galAttachedLayoutSourceCalibrated;
+
+String? _nonEmptyWireString(Object? value) =>
+    value is String && value.isNotEmpty ? value : null;
 
 @immutable
 class GalAttachedCalibrationEvent {
@@ -927,6 +1035,8 @@ class GalAttachedCallResult {
     this.probeMiddleObservedIndex,
     this.probeEndObservedIndex,
     this.calibrationProbeMask = 0,
+    this.layoutSource = galAttachedLayoutSourceCalibrated,
+    this.measuredSource,
   });
 
   static const GalAttachedCallResult unsupported = GalAttachedCallResult(
@@ -950,6 +1060,12 @@ class GalAttachedCallResult {
   final int? probeMiddleObservedIndex;
   final int? probeEndObservedIndex;
   final int calibrationProbeMask;
+
+  /// [galAttachedLayoutSourceCalibrated] or [galAttachedLayoutSourceMeasured].
+  final String layoutSource;
+
+  /// Measured source identity; null for the calibrated route.
+  final String? measuredSource;
 
   bool get ok => error == null;
 
@@ -1003,6 +1119,8 @@ class GalAttachedCallResult {
       probeMiddleObservedIndex: _finiteWireInt(map['probeMiddleObservedIndex']),
       probeEndObservedIndex: _finiteWireInt(map['probeEndObservedIndex']),
       calibrationProbeMask: _finiteWireInt(map['calibrationProbeMask']) ?? 0,
+      layoutSource: _attachedLayoutSourceOf(map['layoutSource']),
+      measuredSource: _nonEmptyWireString(map['measuredSource']),
     );
   }
 }
@@ -1735,6 +1853,54 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'textGeneration': textGeneration,
       'writingMode': writingMode,
     });
+  }
+
+  /// Switches the attached surface to measured layout: no body rect,
+  /// reference client or text layout; glyph geometry comes from
+  /// [attachedUpdateMeasuredText]. Call after [attachedInspectTarget] and the
+  /// attachedOnly geometry admission, exactly where [attachedConfigure] would
+  /// be called. Rejected while a calibration session is open.
+  static Future<GalAttachedCallResult> attachedConfigureMeasured({
+    required GalAttachedSurfaceTarget target,
+    String measuredSource = galAttachedMeasuredSourceTyranoDom,
+  }) => _invokeAttached('attachedConfigureMeasured', target, <String, Object?>{
+    'measuredSource': measuredSource,
+    'inputMode': GalLookupSurfaceProfileV1.inputMode,
+  });
+
+  /// Publishes the current line and its measured glyph boxes.
+  ///
+  /// [clientWidth] x [clientHeight] is the source client size (physical px)
+  /// the glyphs were measured against. When it differs from the live client the
+  /// runner rejects with `measured_client_size_mismatch`, revokes the previous
+  /// line's catch boxes and reports `measuredLayoutStale` until a fresh
+  /// measurement for the same (or a newer) [textGeneration] arrives. An empty
+  /// [sourceText] with no glyphs clears the line.
+  static Future<GalAttachedCallResult> attachedUpdateMeasuredText({
+    required GalAttachedSurfaceTarget target,
+    required String sourceText,
+    required int textGeneration,
+    required List<GalAttachedMeasuredGlyph> glyphs,
+    required int clientWidth,
+    required int clientHeight,
+  }) {
+    final Int32List? words = encodeGalAttachedMeasuredGlyphs(glyphs);
+    if (words == null) {
+      return Future<GalAttachedCallResult>.value(
+        const GalAttachedCallResult(error: 'measured_glyphs_malformed'),
+      );
+    }
+    return _invokeAttached(
+      'attachedUpdateMeasuredText',
+      target,
+      <String, Object?>{
+        'sourceText': sourceText,
+        'textGeneration': textGeneration,
+        'glyphs': words,
+        'clientWidth': clientWidth,
+        'clientHeight': clientHeight,
+      },
+    );
   }
 
   static Future<GalAttachedCallResult> attachedUpdateStyle({
