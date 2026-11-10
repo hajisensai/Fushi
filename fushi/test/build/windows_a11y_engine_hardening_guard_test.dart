@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// Windows 无障碍树引擎加固（BUG-4376，`engine-a11y-tree-hardening.patch`）的源码守卫。
+/// Windows 无障碍树引擎加固（BUG-4377，`engine-a11y-tree-hardening.patch`）的源码守卫。
 ///
 /// 补丁打进的是 `flutter_windows.dll`，本仓 CI 不编引擎：补丁漏打、被改回「拒收即
 /// return」或丢了委托判空都不会让任何 Dart 测试变红，只会在用户机器上重新变成 UIA
