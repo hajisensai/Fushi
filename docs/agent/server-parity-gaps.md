@@ -99,11 +99,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   downloads that finished without a subtitle (`download_subtitle_retry.dart`, now in the
   engine), AI reordering of candidates (the `ai:` provider is also assigned to
   `AiFeature.videoSearch`), and the app's Jimaku provider (search by AniList / TMDB id,
-  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Still missing:
-  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only;
-  - the download pipeline reads subtitle providers when the pipeline is (re)built (start,
-    or after resource indexers are saved). A key pushed later over interconnect needs one
-    of those, or a restart. Backfill reads them per request.
+  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Provider keys
+  and switches are set in the WebUI / `PUT /api/admin/settings` (`subtitleProviders`) /
+  `ctl settings subtitle-key|subtitle-source`, and the download pipeline and backfill read
+  them (and the subtitle languages) on each use, so no restart is needed. Still missing:
+  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only.
 - **Audiobooks with audio only (no subtitle)**: these are not imported, either from an
   `audiobook` library root (counted as `audiobooksNeedSubtitle` in the scan summary) or
   from a download (`buildServerDiscoveryImporters` in `discovery_import_host.dart` blocks
