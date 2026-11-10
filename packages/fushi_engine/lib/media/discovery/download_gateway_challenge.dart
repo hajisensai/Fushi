@@ -1,6 +1,6 @@
 /// 下载网关的人机验证挑战（工作量证明 / 验证码门）：识别、上浮、拿到放行凭据后续下。
 ///
-/// BUG-4349：内置 AList（alist.erogame.space）`/api/fs/get` 给的 `raw_url` 302 到
+/// BUG-4352：内置 AList（alist.erogame.space）`/api/fs/get` 给的 `raw_url` 302 到
 /// 一台下载网关，网关对**任何**不带放行凭据的请求一律回
 /// `403 {"code":"pow_required"}`（浏览器请求则回一页 Equihash 解题脚本），下载器
 /// 以前只把它当普通 403 报错。站点只给浏览器留了路：页面 JS 解完题后 POST
