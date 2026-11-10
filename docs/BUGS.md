@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4328](bugs/BUG-4328-video-cue-nav-same-start.md) | ✅ | ✅ | 视频 ASS 同起止多条 Dialogue：上/下一句要按两次 |
+| [BUG-4328](bugs/BUG-4328-video-seek-tail-unreachable.md) | ✅ | ✅ | 视频进度条显示还有时间（23:39/24:02）但拖不到后面：mkv 容器时长被字幕轨拉长 |
 | [BUG-4327](bugs/BUG-4327-android-java-uncaught-crash-no-stack.md) | ✅ | ✅ | Android Java 层崩溃退出报告没有异常栈 |
 | [BUG-4326](bugs/BUG-4326-android-custom-icon-shortcut-disabled-by-app-shortcuts.md) | ✅ | ✅ | android-custom-icon-shortcut-disabled-by-app-shortcuts |
 | [BUG-4325](bugs/BUG-4325-collection-member-cover-no-tilt.md) | ✅ | ✅ | collection-member-cover-no-tilt |
