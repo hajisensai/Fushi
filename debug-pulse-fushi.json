@@ -1,12 +1,200 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T20:10:52Z",
+ "generatedAt": "2026-11-10T21:13:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "1d268edc8af8b8928b71529e8704e35cbd3c2e00",
-  "seq": 26409
+  "sha": "4396e7338435b6f5b49176b776516c24b20d3443",
+  "seq": 26434
  },
  "builds": [
+  {
+   "seq": 26365,
+   "version": "3.3.0",
+   "sha": "b68172e92620e0abb2c9c26fd5299c500869de89",
+   "unknown": false,
+   "publishedAt": "2026-11-10T21:13:18Z",
+   "testflight": false,
+   "baseSeq": 25115,
+   "prs": [
+    3282,
+    3276,
+    3270,
+    3275,
+    3238,
+    3265,
+    3267,
+    3243,
+    3259,
+    3266,
+    3268,
+    3263,
+    3264,
+    3258,
+    3256,
+    3222,
+    3251,
+    3261,
+    3253,
+    3260,
+    3262,
+    3255,
+    3254,
+    3252,
+    3245,
+    3249,
+    3242,
+    3257,
+    3212,
+    3235,
+    3240,
+    3239,
+    3234,
+    3231,
+    3269,
+    3233,
+    3229,
+    3228,
+    3232,
+    3237,
+    3218,
+    3227,
+    3224,
+    3221,
+    3226,
+    3225,
+    3230,
+    3214,
+    3220,
+    3206,
+    3219,
+    3210,
+    3217,
+    3215,
+    3211,
+    3208,
+    3204,
+    3202,
+    3205,
+    3207,
+    3203,
+    3201,
+    3200,
+    3199,
+    3193,
+    3183,
+    3182,
+    3196,
+    3195,
+    3180,
+    3188,
+    3197,
+    3192,
+    3190,
+    3191,
+    3194,
+    3185,
+    3170,
+    3178,
+    3189,
+    3187,
+    3186,
+    3184,
+    3168,
+    3181,
+    3179,
+    3174,
+    3172,
+    3177,
+    3175,
+    3171,
+    3169,
+    3173,
+    3159,
+    3162,
+    3166,
+    3167,
+    3163,
+    3164,
+    3165,
+    3158,
+    3160,
+    3161,
+    3154,
+    3157,
+    3156,
+    3153,
+    3155,
+    3152,
+    3151,
+    3150,
+    3149,
+    3137,
+    3136,
+    3075,
+    3143,
+    3074,
+    3144,
+    3146,
+    3139,
+    3130,
+    3140,
+    3142,
+    3145,
+    3141,
+    3135,
+    3133,
+    3079,
+    3128,
+    3132,
+    3129,
+    3131,
+    3127,
+    3084,
+    3121,
+    3078,
+    3134,
+    3093,
+    3071,
+    3077,
+    3080,
+    3126,
+    3076,
+    3104,
+    3099
+   ],
+   "direct": [
+    {
+     "sha": "0d93e2e13f1a5a224d15379c02ea9d1a78f7e9f6",
+     "subject": "chore(bugs): settle BUG number collisions on 8c8153ca3"
+    },
+    {
+     "sha": "b765ac68f103d7c8907d07c130ace2741c237490",
+     "subject": "chore(bugs): settle BUG number collisions on 17d2964e1"
+    },
+    {
+     "sha": "86232cd1e4aa91186c96e97afb9844aefcdc88e3",
+     "subject": "chore(bugs): settle BUG number collisions on f5aaf74fe"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42875515665"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42875515665"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42875515665"
+    }
+   }
+  },
   {
    "seq": 25115,
    "version": "3.3.0",
@@ -50,41 +238,6 @@
    "unknown": false,
    "publishedAt": "2026-11-10T04:03:51Z",
    "testflight": true,
-   "baseSeq": 25005,
-   "prs": [
-    3103,
-    3102,
-    3096,
-    3090,
-    3092,
-    3091,
-    3123,
-    3073
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 25005,
-   "version": "3.3.0",
-   "sha": "d7f923fb4a25c5b4f974492703c52f0c84d84435",
-   "unknown": false,
-   "publishedAt": "2026-11-10T02:39:59Z",
-   "testflight": false,
    "baseSeq": null,
    "prs": [],
    "direct": [],
@@ -94,21 +247,22 @@
      "state": "ok"
     },
     "windows": {
-     "state": "none"
+     "state": "ok"
     },
     "macos": {
-     "state": "none"
+     "state": "ok"
     },
     "ios": {
-     "state": "none"
+     "state": "ok"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "1d268edc8af8b8928b71529e8704e35cbd3c2e00",
-  "headSeq": 26409,
+  "headSha": "4396e7338435b6f5b49176b776516c24b20d3443",
+  "headSeq": 26434,
   "prs": [
+   3281,
    3293,
    3223,
    3209,
@@ -118,184 +272,26 @@
    3213,
    3244,
    3288,
-   3283,
-   3282,
-   3276,
-   3270,
-   3275,
-   3238,
-   3265,
-   3267,
-   3243,
-   3259,
-   3266,
-   3268,
-   3263,
-   3264,
-   3258,
-   3256,
-   3222,
-   3251,
-   3261,
-   3253,
-   3260,
-   3262,
-   3255,
-   3254,
-   3252,
-   3245,
-   3249,
-   3242,
-   3257,
-   3212,
-   3235,
-   3240,
-   3239,
-   3234,
-   3231,
-   3269,
-   3233,
-   3229,
-   3228,
-   3232,
-   3237,
-   3218,
-   3227,
-   3224,
-   3221,
-   3226,
-   3225,
-   3230,
-   3214,
-   3220,
-   3206,
-   3219,
-   3210,
-   3217,
-   3215,
-   3211,
-   3208,
-   3204,
-   3202,
-   3205,
-   3207,
-   3203,
-   3201,
-   3200,
-   3199,
-   3193,
-   3183,
-   3182,
-   3196,
-   3195,
-   3180,
-   3188,
-   3197,
-   3192,
-   3190,
-   3191,
-   3194,
-   3185,
-   3170,
-   3178,
-   3189,
-   3187,
-   3186,
-   3184,
-   3168,
-   3181,
-   3179,
-   3174,
-   3172,
-   3177,
-   3175,
-   3171,
-   3169,
-   3173,
-   3159,
-   3162,
-   3166,
-   3167,
-   3163,
-   3164,
-   3165,
-   3158,
-   3160,
-   3161,
-   3154,
-   3157,
-   3156,
-   3153,
-   3155,
-   3152,
-   3151,
-   3150,
-   3149,
-   3137,
-   3136,
-   3075,
-   3143,
-   3074,
-   3144,
-   3146,
-   3139,
-   3130,
-   3140,
-   3142,
-   3145,
-   3141,
-   3135,
-   3133,
-   3079,
-   3128,
-   3132,
-   3129,
-   3131,
-   3127,
-   3084,
-   3121,
-   3078,
-   3134,
-   3093,
-   3071,
-   3077,
-   3080,
-   3126,
-   3076,
-   3104,
-   3099
+   3283
   ],
-  "direct": [
-   {
-    "sha": "0d93e2e13f1a5a224d15379c02ea9d1a78f7e9f6",
-    "subject": "chore(bugs): settle BUG number collisions on 8c8153ca3"
-   },
-   {
-    "sha": "b765ac68f103d7c8907d07c130ace2741c237490",
-    "subject": "chore(bugs): settle BUG number collisions on 17d2964e1"
-   },
-   {
-    "sha": "86232cd1e4aa91186c96e97afb9844aefcdc88e3",
-    "subject": "chore(bugs): settle BUG number collisions on f5aaf74fe"
-   }
-  ],
+  "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536538"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895013954"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536558"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536558"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536558"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
    }
   }
  },
@@ -310,15 +306,6 @@
    "labels": [
     "merge-approved"
    ]
-  },
-  "3073": {
-   "number": 3073,
-   "title": "feat(reader): option to restart the looked-up sentence after closing the dictionary / 查词后从句首重播",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:10:09Z",
-   "additions": 654,
-   "deletions": 2,
-   "labels": []
   },
   "3074": {
    "number": 3074,
@@ -441,39 +428,6 @@
     "merge-approved"
    ]
   },
-  "3090": {
-   "number": 3090,
-   "title": "feat(interconnect): desktop host answers Save to (mine targets); missing choices fall back to the host default",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:35:51Z",
-   "additions": 1820,
-   "deletions": 124,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3091": {
-   "number": 3091,
-   "title": "i18n: translate the mine-to-paired-device hint and Save to strings in 15 languages",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:33:21Z",
-   "additions": 135,
-   "deletions": 135,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3092": {
-   "number": 3092,
-   "title": "feat(server): Fushi review (SRS) ops for the remote AI assistant",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:35:48Z",
-   "additions": 818,
-   "deletions": 16,
-   "labels": [
-    "merge-approved"
-   ]
-  },
   "3093": {
    "number": 3093,
    "title": "fix(srs): fixes from the server SRS emulator run — Save to reset, backup --config, note count, notice, deck list",
@@ -492,17 +446,6 @@
    "mergedAt": "2026-11-10T13:00:59Z",
    "additions": 297,
    "deletions": 5,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3096": {
-   "number": 3096,
-   "title": "fix(server): AI assistant can only change its whitelisted server settings, not credentials or the port",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:36:16Z",
-   "additions": 161,
-   "deletions": 0,
    "labels": [
     "merge-approved"
    ]
@@ -562,28 +505,6 @@
     "merge-approved"
    ]
   },
-  "3102": {
-   "number": 3102,
-   "title": "feat(server): WebUI dictionaries tab / WebUI 词典页",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:37:08Z",
-   "additions": 770,
-   "deletions": 49,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3103": {
-   "number": 3103,
-   "title": "fix(interconnect): show peer device name in connection rows; test only enabled peers",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T02:44:37Z",
-   "additions": 244,
-   "deletions": 6,
-   "labels": [
-    "merge-approved"
-   ]
-  },
   "3104": {
    "number": 3104,
    "title": "feat(second-screen): dual-screen companion for Android second displays / 安卓双屏伴侣",
@@ -611,15 +532,6 @@
    "mergedAt": "2026-11-10T13:28:31Z",
    "additions": 7629,
    "deletions": 89,
-   "labels": []
-  },
-  "3123": {
-   "number": 3123,
-   "title": "fix(webview): 界面隐藏时在后台线程 flush WebView cookie（#3111 遗留）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T02:29:20Z",
-   "additions": 241,
-   "deletions": 13,
    "labels": []
   },
   "3126": {
@@ -1862,6 +1774,15 @@
    "mergedAt": "2026-11-10T17:36:26Z",
    "additions": 44,
    "deletions": 25,
+   "labels": []
+  },
+  "3281": {
+   "number": 3281,
+   "title": "fix: 批量合并后统一验证——analyze / 守卫 / 测试真红按根因修",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T20:24:38Z",
+   "additions": 788,
+   "deletions": 506,
    "labels": []
   },
   "3282": {
