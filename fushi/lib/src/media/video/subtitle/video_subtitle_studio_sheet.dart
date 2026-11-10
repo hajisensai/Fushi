@@ -403,7 +403,7 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(tokens.radii.control),
               child: ColoredBox(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: tokens.surfaces.overlay,
                 child: frame != null
                     ? Image.memory(
                         frame,
@@ -486,7 +486,7 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
   ) {
     final void Function(AudioCue cue)? jump = _ref.jumpToCue;
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final TextStyle? primaryStyle = row.current
+    final TextStyle primaryStyle = row.current
         ? context.fushiType.titleSmallEmphasized
         : context.fushiType.bodyMedium;
     final Widget content = Column(

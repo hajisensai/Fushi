@@ -7339,7 +7339,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       docked: style == MangaOcrProgressBadgeStyle.edge,
     );
     final Widget? error = _buildOcrErrorNotice();
-    final double inset = kMangaChromeEdgeInset + 4;
+    const double inset = kMangaChromeEdgeInset + 4;
     final EdgeInsets badgePadding = style == MangaOcrProgressBadgeStyle.edge
         ? EdgeInsets.only(right: MediaQuery.paddingOf(context).right)
         : EdgeInsets.only(left: inset, right: inset);
