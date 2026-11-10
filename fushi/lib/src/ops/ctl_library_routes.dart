@@ -200,10 +200,12 @@ class _LibraryCtlHandlers {
         meta.bookKey: meta,
     };
     final List<SrtBook> srtBooks = await SrtBookRepository(_db).listAll();
-    final Set<String> pairedBookKeys = <String>{
-      for (final SrtBook srt in srtBooks)
-        if (srt.bookKey.isNotEmpty) srt.bookKey,
-    };
+    // 与书架同一隐藏规则：有声书配对行只顶替能挂有声书的书（反馈 Ndnxy3mNdG）。
+    final Set<String> pairedBookKeys =
+        ReaderFushiSource.audiobookShadowedBookKeys(
+          srtBooks,
+          formatOf: (String key) => BookFormat.tryParse(metas[key]?.format),
+        );
     final Map<String, int> percentByBookKey = <String, int>{};
     final List<LibraryCtlEntry> out = <LibraryCtlEntry>[];
     for (final MediaItem item in books) {
@@ -220,7 +222,7 @@ class _LibraryCtlHandlers {
       final LibraryCtlKind kind = LibraryCtlKind.forBookFormat(
         BookFormat.parseOrEpub(meta?.format),
       );
-      if (kind == LibraryCtlKind.book && pairedBookKeys.contains(bookKey)) {
+      if (pairedBookKeys.contains(bookKey)) {
         continue;
       }
       out.add(

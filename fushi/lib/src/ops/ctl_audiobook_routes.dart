@@ -272,7 +272,7 @@ class _AudiobookHandlers {
 
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
     if (row == null) throw CtlFailure.notFound('书架里没有 book:$bookKey');
-    if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
+    if (!BookFormat.parseOrEpub(row.format).supportsAudiobook) {
       throw const CtlFailure.rejected('有声书只支持 EPUB 书（PDF / 漫画不能挂音频）');
     }
 
@@ -569,7 +569,7 @@ class _AudiobookHandlers {
     }
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
     if (row == null) throw CtlFailure.notFound('书架里没有 book:$bookKey');
-    if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
+    if (!BookFormat.parseOrEpub(row.format).supportsAudiobook) {
       throw const CtlFailure.rejected('有声书只支持 EPUB 书（PDF / 漫画不能挂音频）');
     }
     return (bookKey, row.title);
