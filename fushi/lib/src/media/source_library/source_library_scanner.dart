@@ -68,11 +68,10 @@ import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc_artwork.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_library_import.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
-import 'package:fushi_engine/media/video/disc/disc_format.dart'
-    show discRootForMemberPath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ifo.dart'
@@ -2530,100 +2529,25 @@ class SourceLibraryScanner {
   }) async {
     if (plan.blurayDiscs.isEmpty) return 0;
 
-    final Map<String, int> existingCollectionIds = <String, int>{
-      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
-        if (c.collectionType == 'playlist') c.name: c.id,
-    };
-
-    // 用户单独删掉的特典：挂在盘合集自然键下的成员墓碑（见
-    // [planBlurayExtraDeletionTombstones]）。整轮一次查询。
-    final Map<String, Set<String>> deletedExtras =
-        await deletedBlurayExtraKeysByCollection(_db);
-
+    // 入库规则（合集名候选、重扫对齐、墓碑守卫、特典不进盘合集）与下载流水线的
+    // 原盘导入同一份实现，见 [BlurayDiscLibraryImporter]。这里只多做一件只有 app
+    // 能做的事：盘面图（依赖界面语言与封面服务）。
+    final BlurayDiscLibraryImporter importer =
+        await BlurayDiscLibraryImporter.load(_db);
     int count = 0;
     for (final ScanBlurayDiscItem item in plan.blurayDiscs) {
       final BlurayDisc? disc = await readBlurayDisc(item.discRootPath);
       // 半张盘 / 一条标题都选不出来：跳过而不是记错。盘里的文件已经在规划层被摘出
       // 散装视频，这里再报错只会把整次扫描标红。
       if (disc == null) continue;
-
-      final List<PlaylistEntry> entries = <PlaylistEntry>[
-        for (final BlurayTitle title in disc.titles)
-          PlaylistEntry(title: title.name, path: title.playlistPath),
-      ];
-
-      // 合集名不能只按盘名全局对号：`S1/DISC1` 与 `S2/DISC1` 同名不同盘，对到一起
-      // 会互相吞成员（见 [blurayCollectionNameCandidates]）。撞上别的盘 / 别的
-      // 清单的合集就换下一个候选名，直到找到本盘的或一个空位。
-      String collectionName = disc.name;
-      int? existingId;
-      for (final String candidate in blurayCollectionNameCandidates(
-        disc.name,
-        disc.rootPath,
-      )) {
-        collectionName = candidate;
-        existingId = existingCollectionIds[candidate];
-        if (existingId == null) break;
-        if (await _collectionBelongsToDisc(existingId, disc.rootPath)) break;
-        existingId = null;
-      }
-      int? collectionId = existingId;
-      if (existingId != null) {
-        await _videoRepo.reconcileSplitPlaylist(
-          collectionId: existingId,
-          entries: entries,
-          sourceId: sourceId,
-        );
-      } else {
-        // BUG-1739 同款守卫：用户删过同名合集，重扫不复活——整张盘都不复活，
-        // 特典也不例外（它们挂在这张盘的正片下，盘都删了特典没有归处）。
-        if (!restoreDissolvedGroups &&
-            await _db.hasCollectionDeletionTombstone(
-              collectionName,
-              'playlist',
-            )) {
-          continue;
-        }
-
-        final SplitPlaylistImportResult result = await _videoRepo
-            .importSplitPlaylist(
-              collectionName: collectionName,
-              entries: entries,
-              sourceId: sourceId,
-              reuseExistingPaths: true,
-            );
-        existingCollectionIds[collectionName] = result.collectionId;
-        collectionId = result.collectionId;
-        await _videoRepo.recordVideoImportActivity(
-          bookUid: result.episodeUids.first,
-          title: collectionName,
-        );
-        count++;
-      }
-      if (collectionId != null) {
-        await _applyBlurayDiscArtwork(collectionId, disc.rootPath);
-      }
-
-      // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
-      // 挂到正片作品下，作品资料页的特典区就能看到、点开就播。排在合集墓碑守卫
-      // 之后，且跳过用户单独删掉的那几条（PR #2058 审查：原先排在守卫之前，删掉
-      // 整盘合集后重扫特典照样复活）。盘已读好，整盘一次入库。
-      final Set<String> deleted =
-          deletedExtras[collectionName] ?? const <String>{};
-      final List<String> extras = <String>[
-        for (final BlurayTitle extra in disc.extras)
-          if (!deleted.contains(blurayExtraTombstoneKey(extra.playlistPath)))
-            extra.playlistPath,
-      ];
-      if (extras.isNotEmpty) {
-        await ensureBlurayDiscTitlesInLibrary(
-          _db,
-          discRoot: disc.rootPath,
-          playlistPaths: extras,
-          disc: disc,
-          sourceId: sourceId,
-        );
-      }
+      final BlurayDiscImportOutcome? outcome = await importer.importDisc(
+        disc,
+        sourceId: sourceId,
+        restoreDissolvedGroups: restoreDissolvedGroups,
+      );
+      if (outcome == null) continue;
+      if (outcome.created) count++;
+      await _applyBlurayDiscArtwork(outcome.collectionId, disc.rootPath);
     }
     return count;
   }
@@ -2823,17 +2747,7 @@ class SourceLibraryScanner {
   Future<bool> _collectionBelongsToDisc(
     int collectionId,
     String discRootPath,
-  ) async {
-    final String root = p.normalize(discRootPath);
-    for (final MediaCollectionItemRow item
-        in await _videoRepo.getCollectionItems(collectionId)) {
-      final VideoBookRow? row = await _videoRepo.getByBookUid(item.entryKey);
-      if (row == null) continue;
-      final String? owner = discRootForMemberPath(row.videoPath);
-      if (owner == null || p.normalize(owner) != root) return false;
-    }
-    return true;
-  }
+  ) => collectionBelongsToDisc(_db, collectionId, discRootPath);
 }
 
 /// BUG-2979：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行。

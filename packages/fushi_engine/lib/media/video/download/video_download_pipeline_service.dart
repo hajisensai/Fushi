@@ -41,6 +41,9 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show BlurayDisc, planBlurayDiscRoots, readBlurayDisc;
+import 'package:fushi_engine/media/video/bluray/bluray_disc_library_import.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -459,6 +462,21 @@ bool isVideoDownloadSiblingWorkRow(
     job.organizationPolicy != 'legacy' &&
     row.kind == 'video' &&
     row.episode == null;
+
+/// 任务里整理落位好的蓝光原盘盘根（本机绝对路径，排序去重）。
+///
+/// 只看选中、已落位的文件行（[VideoDownloadJobFileRow.finalAbsolutePath]），识别
+/// 直接用来源库扫描器的 [planBlurayDiscRoots]（`<盘根>/BDMV/PLAYLIST/*.mpls`）——
+/// 导入阶段与扫描入库对「这里有一张盘」必须是同一个判据，不另写一份。不靠文件行
+/// 的 kind：`video_download_job_files.kind` 有 CHECK 约束，整理器把盘成员记成
+/// `other`（见 `_persistOrganizationIntent`），盘的形状本身就是证据。
+List<String> videoDownloadBlurayDiscRoots(
+  Iterable<VideoDownloadJobFileRow> rows,
+) => planBlurayDiscRoots(<String>[
+  for (final VideoDownloadJobFileRow row in rows)
+    if (row.selected && (row.finalAbsolutePath?.trim().isNotEmpty ?? false))
+      row.finalAbsolutePath!.trim(),
+]);
 
 /// 「下载时跳过特典」自动取消选择的文件行：`selected: false` + `kind: 'extra'`。
 ///
@@ -4360,18 +4378,45 @@ class VideoDownloadPipelineService {
     }
     final bool legacy = job.organizationPolicy == 'legacy';
     final MediaSourceRow? source = legacy ? null : await _managedSource(job);
+    final List<VideoDownloadJobFileRow> allRows = await database
+        .getVideoDownloadJobFiles(job.jobId);
     final List<VideoDownloadJobFileRow> files =
-        (await database.getVideoDownloadJobFiles(job.jobId))
+        allRows
             .where(
               (VideoDownloadJobFileRow row) =>
                   row.kind == 'video' && row.finalAbsolutePath != null,
             )
             .toList()
           ..sort(_compareJobFiles);
-    if (files.isEmpty) {
+    // 蓝光原盘（整理器整棵原样落位的 BDMV 树）按原盘入库：一张盘一个盘合集，
+    // 与来源库扫描器同一套识别与入库规则。legacy 任务不经整理器，不在此列。
+    final List<String> discRoots = legacy
+        ? const <String>[]
+        : videoDownloadBlurayDiscRoots(allRows);
+    if (files.isEmpty && discRoots.isEmpty) {
       throw const VideoDownloadPipelineActionRequired(
         'No organized video files are available for import',
       );
+    }
+    final List<VideoDownloadJobFileRow> discRows = await _importBlurayDiscs(
+      discRoots,
+      allRows,
+      source,
+    );
+    if (files.isEmpty) {
+      // 纯原盘任务：盘合集已入库，没有逐集视频可配字幕 / 刮削——盘的规范身份
+      // 交给媒体库的原盘识别（来源索引器认 `BDMV` 成员），与扫描入库的盘一致。
+      final int now = _now().millisecondsSinceEpoch;
+      await _markRowsImported(discRows, now);
+      database.notifyVideoLibraryChanged();
+      await _releaseLeaseWith(
+        () => database.completeVideoDownloadJob(
+          jobId: job.jobId,
+          workerId: workerId,
+          completedAt: now,
+        ),
+      );
+      return;
     }
     final Map<int, String> bookUidByFileId = <int, String>{};
     int? collectionId;
@@ -4501,15 +4546,10 @@ class VideoDownloadPipelineService {
       }
     }
     final int now = _now().millisecondsSinceEpoch;
-    for (final VideoDownloadJobFileRow file in files) {
-      await database.updateVideoDownloadJobFile(
-        file.id,
-        VideoDownloadJobFilesCompanion(
-          status: const Value<String>(VideoDownloadJobFileStatus.imported),
-          updatedAt: Value<int>(now),
-        ),
-      );
-    }
+    await _markRowsImported(<VideoDownloadJobFileRow>[
+      ...files,
+      ...discRows,
+    ], now);
     if (collectionId != null) {
       await database.updateVideoDownloadJob(
         job.jobId,
@@ -4532,6 +4572,64 @@ class VideoDownloadPipelineService {
       return;
     }
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
+  }
+
+  /// 任务里整理落位好的蓝光原盘（[discRoots]，见 [videoDownloadBlurayDiscRoots]）
+  /// 逐张按原盘入库，返回属于这些盘的文件行（调用方与视频行一起标 imported）。
+  ///
+  /// 入库走 [BlurayDiscLibraryImporter]——与来源库扫描器同一份实现（盘合集、
+  /// 标题行的 `videoPath` 是 `.mpls`、特典入库不进盘合集），入库后 `fushi_cli
+  /// disc ls` / 原盘会话就能用；随后的来源重扫按合集名对齐到同一个合集，不会
+  /// 再建一份。这是用户明确发起的下载，所以即使同名盘合集删过（墓碑）也照常入库。
+  /// 读不出任何可播标题的盘显式要求处理，不静默当成功。
+  Future<List<VideoDownloadJobFileRow>> _importBlurayDiscs(
+    List<String> discRoots,
+    List<VideoDownloadJobFileRow> rows,
+    MediaSourceRow? source,
+  ) async {
+    if (discRoots.isEmpty) return const <VideoDownloadJobFileRow>[];
+    _ensureLeaseHeld();
+    final BlurayDiscLibraryImporter importer =
+        await BlurayDiscLibraryImporter.load(database);
+    for (final String root in discRoots) {
+      _ensureLeaseHeld();
+      final BlurayDisc? disc = await readBlurayDisc(root);
+      if (disc == null) {
+        throw VideoDownloadPipelineActionRequired(
+          'Blu-ray disc has no playable titles: $root',
+        );
+      }
+      await importer.importDisc(
+        disc,
+        sourceId: source?.id,
+        restoreDissolvedGroups: true,
+      );
+    }
+    return <VideoDownloadJobFileRow>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if (row.selected &&
+            row.kind != 'video' &&
+            row.finalAbsolutePath != null &&
+            discRoots.any(
+              (String root) => p.isWithin(root, row.finalAbsolutePath!),
+            ))
+          row,
+    ];
+  }
+
+  Future<void> _markRowsImported(
+    List<VideoDownloadJobFileRow> rows,
+    int now,
+  ) async {
+    for (final VideoDownloadJobFileRow file in rows) {
+      await database.updateVideoDownloadJobFile(
+        file.id,
+        VideoDownloadJobFilesCompanion(
+          status: const Value<String>(VideoDownloadJobFileStatus.imported),
+          updatedAt: Value<int>(now),
+        ),
+      );
+    }
   }
 
   /// 合集包里的并列作品（[isVideoDownloadSiblingWorkRow]，kg41f2PGdC）入库：
