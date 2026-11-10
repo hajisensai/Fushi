@@ -1467,11 +1467,17 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 与 binding 序列化完全解耦（[GamepadButton.serialize] 恒定）。以 token 字符串持久化，
   /// 未知/缺省回退 Xbox。
   GamepadBrand get gamepadGlyphBrand => GamepadBrand.fromToken(
-    getPreference<String?>(key: 'gamepad_glyph_brand', defaultValue: null),
+    getPreference<String?>(
+      key: pref_keys.kGamepadGlyphBrandPrefShortKey,
+      defaultValue: null,
+    ),
   );
 
   Future<void> setGamepadGlyphBrand(GamepadBrand brand) async {
-    await setPreference<String>(key: 'gamepad_glyph_brand', value: brand.token);
+    await setPreference<String>(
+      key: pref_keys.kGamepadGlyphBrandPrefShortKey,
+      value: brand.token,
+    );
   }
 
   bool get volumePageTurningEnabled => getPreference<bool>(
