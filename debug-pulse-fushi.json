@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T22:37:52Z",
+ "generatedAt": "2026-11-10T22:51:06Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "3ada4d9dfb9bac5e8bd77001b7599b5bedf08e0a",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "4396e7338435b6f5b49176b776516c24b20d3443",
    "unknown": false,
-   "publishedAt": "2026-11-10T22:36:07Z",
+   "publishedAt": "2026-11-10T22:50:54Z",
    "testflight": false,
    "baseSeq": 26407,
    "prs": [
@@ -26,16 +26,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+     "state": "ok"
     },
     "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+     "state": "ok"
     }
    }
   },
@@ -271,49 +268,13 @@
    "unknown": false,
    "publishedAt": "2026-11-10T15:00:39Z",
    "testflight": true,
-   "baseSeq": 25034,
-   "prs": [
-    3087,
-    3083,
-    3097,
-    3119,
-    3098,
-    3082,
-    3094,
-    3101,
-    3100
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 25034,
-   "version": "3.3.0",
-   "sha": "4760a9fdd9c916eae6679dee524b71bc80c701f4",
-   "unknown": false,
-   "publishedAt": "2026-11-10T04:03:51Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "none"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -443,28 +404,6 @@
     "merge-approved"
    ]
   },
-  "3082": {
-   "number": 3082,
-   "title": "fix(server): restore files before opening the DB after an interrupted self-update; e2e test and restart docs",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T13:01:15Z",
-   "additions": 597,
-   "deletions": 60,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3083": {
-   "number": 3083,
-   "title": "fix(interconnect): 能力探测 / GET 与选路缓存走 P2P 隧道，直连不通时远程复习、视频遥控仍能找到主机（BUG-4241）",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T13:05:43Z",
-   "additions": 543,
-   "deletions": 109,
-   "labels": [
-    "merge-approved"
-   ]
-  },
   "3084": {
    "number": 3084,
    "title": "feat(linux): Wayland 全局热键走 XDG GlobalShortcuts portal",
@@ -472,17 +411,6 @@
    "mergedAt": "2026-11-10T13:28:44Z",
    "additions": 4235,
    "deletions": 179,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3087": {
-   "number": 3087,
-   "title": "feat(srs): 复习统计页新增模型校准与 UM+ 图表",
-   "author": "zitons",
-   "mergedAt": "2026-11-10T13:05:53Z",
-   "additions": 3884,
-   "deletions": 74,
    "labels": [
     "merge-approved"
    ]
@@ -498,39 +426,6 @@
     "merge-approved"
    ]
   },
-  "3094": {
-   "number": 3094,
-   "title": "fix(interconnect): one LAN-devices row per host address; no red screen after pairing (BUG-4247)",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T13:00:59Z",
-   "additions": 297,
-   "deletions": 5,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3097": {
-   "number": 3097,
-   "title": "feat(server): subtitle providers and languages apply without restart; set subtitle keys from WebUI / admin / ctl",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T13:05:09Z",
-   "additions": 1845,
-   "deletions": 84,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3098": {
-   "number": 3098,
-   "title": "feat(linux): Steam Deck Game Mode screen OCR over the game, and Add to Steam",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T13:01:34Z",
-   "additions": 2300,
-   "deletions": 21,
-   "labels": [
-    "merge-approved"
-   ]
-  },
   "3099": {
    "number": 3099,
    "title": "fix(server): audiobook rescan updates imported folders in place; peers see an \"Update on peer\" marker",
@@ -538,28 +433,6 @@
    "mergedAt": "2026-11-10T13:08:44Z",
    "additions": 3089,
    "deletions": 153,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3100": {
-   "number": 3100,
-   "title": "feat(server): English WebUI, CLI and logs, selected by a new `language` setting",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T03:32:16Z",
-   "additions": 4940,
-   "deletions": 1088,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3101": {
-   "number": 3101,
-   "title": "feat(server): redesign the admin WebUI to match the Fushi app",
-   "author": "samutw",
-   "mergedAt": "2026-11-10T03:42:35Z",
-   "additions": 830,
-   "deletions": 285,
    "labels": [
     "merge-approved"
    ]
@@ -574,15 +447,6 @@
    "labels": [
     "merge-approved"
    ]
-  },
-  "3119": {
-   "number": 3119,
-   "title": "fix(collections): 管理合集页成员数与库页合集卡对齐（BUG-4277）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-10T13:03:42Z",
-   "additions": 432,
-   "deletions": 137,
-   "labels": []
   },
   "3121": {
    "number": 3121,
