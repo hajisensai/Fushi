@@ -842,6 +842,9 @@ class SrsSyncScheduler {
         ok = failed.isEmpty;
         if (!ok) {
           _noteAutoPushSkipped(lane, 'push failed: ${failed.join('; ')}');
+        } else if (ticket.isCancelled) {
+          // 途中关了模块：后面的通道没跑（通道运行器照样把它们算进 ran），不能说成推成了。
+          _noteAutoPushSkipped(lane, 'sync module off', steady: true);
         } else if (r.ran == 0) {
           _noteAutoPushSkipped(
             lane,

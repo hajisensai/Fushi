@@ -86,7 +86,6 @@ class _NoTimeStore implements SyncAssetStore {
       inner.deleteAsset(id, isFolder: isFolder);
 }
 
-/// 假同步通道后端：资产存取委托给本地目录，鉴权可配；其余成员被碰到就炸。
 /// 只有 [backend] 这一条已认证通道的通道运行器（[SrsSyncScheduler.autoPush] 用）。
 SrsChannelRunner _oneChannel(SyncAssetStore backend) =>
     (Future<void> Function(SyncAssetStore) body) async {
@@ -94,6 +93,7 @@ SrsChannelRunner _oneChannel(SyncAssetStore backend) =>
       return (ran: 1, errors: const <Object>[]);
     };
 
+/// 假同步通道后端：资产存取委托给本地目录，鉴权可配；其余成员被碰到就炸。
 class _AssetBackend extends _NoTimeStore implements SyncBackend {
   _AssetBackend(super.inner, {this.authenticated = true});
 
@@ -1383,6 +1383,11 @@ void main() {
         isTrue,
       );
       expect(keys, <String>['first'], reason: '门在第一条通道途中关上：第二条通道与本机目录都不再开跑');
+      expect(
+        s.autoPushSkipReason('cloud'),
+        'sync module off',
+        reason: '途中关门没推完，不能当成推成清掉原因',
+      );
       expect(syncModuleGate.liveCount, 0, reason: '推送结束交回模块门的票');
     });
 
