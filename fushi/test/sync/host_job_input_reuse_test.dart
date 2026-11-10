@@ -10,6 +10,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show debugInterconnectAddressProbeOverride, resetInterconnectRaceCache;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
@@ -25,6 +27,24 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
 const String _host = 'http://host-a.invalid:8080';
+
+/// 工厂建出的明文 client：转发给 [_inner]，记下是否被关。
+class _OwnedClient extends http.BaseClient {
+  _OwnedClient(this._inner);
+
+  final http.Client _inner;
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request);
+
+  @override
+  void close() {
+    closed = true;
+    _inner.close();
+  }
+}
 
 /// 按输入名顺序把全部输入拼起来；记下每次看到的输入（路径 / 是否 host 本地）。
 class _ConcatRunner implements HostJobRunner {
@@ -122,10 +142,20 @@ class _HostWire {
       if (r.startsWith('POST ') && r.endsWith('/inputs/match')) r.split('/')[3],
   };
 
+  /// 这些主机名的请求一律建连失败（模拟关掉的端口 / 不通的旧地址）。
+  final Set<String> deadHosts = <String>{};
+
+  /// 每条请求实际发往的主机名（含被 [deadHosts] 拒掉的）。
+  final List<String> requestHosts = <String>[];
+
   http.Client client() => MockClient.streaming((
     http.BaseRequest request,
     http.ByteStream body,
   ) async {
+    requestHosts.add(request.url.host);
+    if (deadHosts.contains(request.url.host)) {
+      throw const SocketException('connection refused');
+    }
     final String path = request.url.path;
     requests.add('${request.method} $path');
     _changed.add(null);
@@ -260,7 +290,7 @@ void main() {
   }) async {
     final InterconnectJobClient client = InterconnectJobClient(
       repo: repo,
-      httpClient: wire.client(),
+      plainClientFactory: wire.client,
       requestTimeout: requestTimeout,
       pollDelay: (int _) => const Duration(milliseconds: 5),
       hashCache: FileContentHashCache(),
@@ -580,7 +610,7 @@ void main() {
     }) async {
       final InterconnectJobClient client = InterconnectJobClient(
         repo: repo,
-        httpClient: wire.client(),
+        plainClientFactory: wire.client,
         requestTimeout: requestTimeout,
         pollDelay: (int _) => const Duration(milliseconds: 5),
         hashCache: FileContentHashCache(),
@@ -695,6 +725,139 @@ void main() {
 
       expect(error, isNull);
       expect(events.last, isA<HostJobDone>());
+    });
+  });
+
+  // BUG-4392（remote-tasks 步骤 13）：job client 的传输走共享 host 通道——每次 run
+  // 一条通道，工厂建出的明文 client 归这次 run、用完必关；按 host 选路，不钉死
+  // target.baseUrl 那一条地址。
+  group('共享 host 通道（interconnect-client-no-shared-host-channel）', () {
+    setUp(resetInterconnectRaceCache);
+    tearDown(() {
+      debugInterconnectAddressProbeOverride = null;
+      resetInterconnectRaceCache();
+    });
+
+    Future<void> eventually(bool Function() condition, String reason) async {
+      for (int i = 0; i < 500 && !condition(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(condition(), isTrue, reason: reason);
+    }
+
+    InterconnectJobClient ownedClient(List<_OwnedClient> made) =>
+        InterconnectJobClient(
+          repo: repo,
+          plainClientFactory: () {
+            final _OwnedClient c = _OwnedClient(wire.client());
+            made.add(c);
+            return c;
+          },
+          pollDelay: (int _) => const Duration(milliseconds: 5),
+          hashCache: FileContentHashCache(),
+        );
+
+    Future<HostJobTarget> target({String baseUrl = _host}) async =>
+        HostJobTarget(
+          baseUrl: baseUrl,
+          deviceName: 'Desk PC',
+          kinds: const <String>['asr'],
+          capability: await jobs.capability(),
+        );
+
+    test('完整跑完：工厂建出的每个明文 client 都在清理之后被关掉', () async {
+      final List<_OwnedClient> made = <_OwnedClient>[];
+      final InterconnectJobClient client = ownedClient(made);
+
+      final List<HostJobEvent> events = await client
+          .run(
+            target: await target(),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .toList()
+          .timeout(const Duration(seconds: 10));
+
+      expect(events.last, isA<HostJobDone>());
+      expect(made, isNotEmpty);
+      await eventually(
+        () => made.every((_OwnedClient c) => c.closed),
+        '一次 run 建出的明文 client 必须在 run 收尾时关掉',
+      );
+      // 关 client 不能掐掉在途的尽力清理：DELETE 照样到了 host。
+      expect(wire.count('DELETE', (String _) => true), 1);
+    });
+
+    test('中途取消：DELETE 发出后通道与明文 client 一并关掉', () async {
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      runner.duringFirstRun = () => release.future;
+      final List<_OwnedClient> made = <_OwnedClient>[];
+      final InterconnectJobClient client = ownedClient(made);
+
+      final Completer<void> running = Completer<void>();
+      final StreamSubscription<HostJobEvent> sub = client
+          .run(
+            target: await target(),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .listen((HostJobEvent e) {
+            if (e is HostJobRunning && !running.isCompleted) running.complete();
+          }, onError: (Object _) {});
+      await running.future.timeout(const Duration(seconds: 10));
+      await sub.cancel();
+      release.complete();
+
+      await wire.seen('DELETE', (String _) => true);
+      await eventually(
+        () => made.isNotEmpty && made.every((_OwnedClient c) => c.closed),
+        '取消后的 run 也必须关掉它建出的明文 client',
+      );
+      expect(wire.count('DELETE', (String _) => true), 1);
+    });
+
+    test('target 记的是同一台 host 已不通的旧地址：经通道换到可达地址跑完', () async {
+      const String dead = 'http://host-a-old-lan.invalid:8080';
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        // 关掉的旧地址排在前面；两条同属一台 host。
+        FushiClientUrl(url: dead, hostId: 'host-job-route', deviceName: 'PC'),
+        FushiClientUrl(url: _host, hostId: 'host-job-route'),
+      ]);
+      wire.deadHosts.add(Uri.parse(dead).host);
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => c.url == _host;
+
+      final InterconnectJobClient client = InterconnectJobClient(
+        repo: repo,
+        plainClientFactory: wire.client,
+        pollDelay: (int _) => const Duration(milliseconds: 5),
+        hashCache: FileContentHashCache(),
+      );
+      final List<HostJobEvent> events = await client
+          .run(
+            target: await target(baseUrl: dead),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .toList()
+          .timeout(const Duration(seconds: 10));
+
+      expect(events.last, isA<HostJobDone>());
+      final HostJobDone done = events.last as HostJobDone;
+      expect(
+        done.outputs['out.txt']!.readAsStringSync(),
+        '$cd1Content$cd2Content',
+      );
+      expect(wire.requestHosts, isNot(contains(Uri.parse(dead).host)));
     });
   });
 

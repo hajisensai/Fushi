@@ -105,11 +105,12 @@ class _FaultClient extends http.BaseClient {
     return _inner.send(request);
   }
 
+  /// 同一个实例经 `plainClientFactory` 交给 probe 与 run，各自用完会调 [close]：
+  /// 这里不关底层 client，由测试的 tearDown 调 [shutdown] 关。
   @override
-  void close() {
-    _inner.close();
-    super.close();
-  }
+  void close() {}
+
+  void shutdown() => _inner.close();
 }
 
 void main() {
@@ -171,10 +172,10 @@ void main() {
             )
           : null,
     );
-    addTearDown(wire.close);
+    addTearDown(wire.shutdown);
     final InterconnectMangaOcrClient client = InterconnectMangaOcrClient(
       repo: repo,
-      httpClient: wire,
+      plainClientFactory: () => wire,
       pollDelay: (int attempt) => const Duration(milliseconds: 10),
     );
     final MangaOcrRemoteTarget target = (await client.probe())!;
@@ -201,10 +202,10 @@ void main() {
         const SocketException('link dropped'),
       );
     });
-    addTearDown(wire.close);
+    addTearDown(wire.shutdown);
     final InterconnectMangaOcrClient client = InterconnectMangaOcrClient(
       repo: repo,
-      httpClient: wire,
+      plainClientFactory: () => wire,
       pollDelay: (int attempt) => const Duration(milliseconds: 10),
       linkLossTolerance: const Duration(minutes: 10),
       now: () => clock,

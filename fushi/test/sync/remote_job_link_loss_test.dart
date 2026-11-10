@@ -106,7 +106,7 @@ void main() {
         ..writeAsStringSync('audio');
       final InterconnectJobClient client = InterconnectJobClient(
         repo: repo,
-        httpClient: mock,
+        plainClientFactory: () => mock,
         pollDelay: (int _) => Duration.zero,
         linkLossTolerance: const Duration(minutes: 10),
         now: () => clock,
