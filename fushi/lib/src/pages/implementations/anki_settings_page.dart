@@ -55,6 +55,8 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_mining_settings_text.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
@@ -131,16 +133,6 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   @override
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
-
-/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
-/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
-/// 用户自带的外部 ffmpeg 兜底。
-@visibleForTesting
-String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
-  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
-  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
-  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
-};
 
 class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
@@ -1290,6 +1282,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             id: 'card_creation.anki.gal_mining_still_format',
             child: _buildGalMiningStillFormatPicker(),
           ),
+          // 反馈 II3jOBIhT5：无配音游戏截到的只有 BGM，可限长 / 定长 / 不截。
+          // 秒数行常显（理由同上面按模式不抽行的守卫约定），说明里写清只对两档生效。
+          SettingsSearchTarget(
+            id: 'card_creation.anki.gal_mining_audio_mode',
+            child: _buildGalMiningAudioModePicker(),
+          ),
+          SettingsSearchTarget(
+            id: 'card_creation.anki.gal_mining_audio_seconds',
+            child: _buildGalMiningAudioSecondsSlider(),
+          ),
         ],
       ],
     );
@@ -1659,6 +1661,50 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     selected: appModel.galMiningClipFormat,
     onChanged: appModel.setGalMiningClipFormat,
   );
+
+  /// galgame 制卡句子音频长度策略（全局默认；单游戏在游戏详情页「本游戏制卡设置」
+  /// 覆盖）。选项文案与详情页共用 [galMiningAudioModeLabel]。
+  Widget _buildGalMiningAudioModePicker() {
+    return AdaptiveSettingsPickerRow<GalMiningAudioMode>(
+      title: t.gal_mining_audio_mode,
+      subtitle: t.gal_mining_audio_mode_hint,
+      icon: FushiIcons.audio,
+      controlBelow: true,
+      selected: appModel.galMiningAudioMode,
+      options: <AdaptiveSettingsPickerOption<GalMiningAudioMode>>[
+        for (final GalMiningAudioMode mode in GalMiningAudioMode.values)
+          AdaptiveSettingsPickerOption<GalMiningAudioMode>(
+            value: mode,
+            label: galMiningAudioModeLabel(mode),
+          ),
+      ],
+      onChanged: (GalMiningAudioMode mode) async {
+        await appModel.setGalMiningAudioMode(mode);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  Widget _buildGalMiningAudioSecondsSlider() {
+    final int seconds = appModel.galMiningAudioSeconds;
+    final String readout = t.gal_mining_audio_seconds_readout(seconds: seconds);
+    return AdaptiveSettingsSliderRow(
+      title: t.gal_mining_audio_seconds,
+      subtitle: t.gal_mining_audio_seconds_hint,
+      icon: FushiIcons.timer,
+      value: seconds.toDouble(),
+      min: kGalMiningAudioSecondsMin.toDouble(),
+      max: kGalMiningAudioSecondsMax.toDouble(),
+      divisions: kGalMiningAudioSecondsMax - kGalMiningAudioSecondsMin,
+      step: 1,
+      label: readout,
+      readout: readout,
+      onChanged: (double value) async {
+        await appModel.setGalMiningAudioSeconds(value.round());
+        if (mounted) setState(() {});
+      },
+    );
+  }
 
   Widget _buildAnkiBackupImportRow() {
     return AdaptiveSettingsRow(

@@ -81,6 +81,20 @@ void main() {
     ], contains('merge_notes'));
 
     await srsSyncPeers(<SrsDbStore>[a, b], loc);
+    // 两台设备第一次互相认识时都已有内容，彼此待确认（BUG-4276）：A 合并时删掉被吸收笔记的那条删除
+    // 在 B 上扣到确认，被吸收的笔记在 B 上还在；B 确认 A 之后才落地、两端收敛。
+    final SrsNoteView? beforeTrust = (await b.notes(<String>[nb]))[nb];
+    expect(beforeTrust?.deletedAt, isNull);
+    final Map<String, Object?> pending = <Map<String, Object?>>[
+      for (final Object? d
+          in (await b.sync2Status())['devices']! as List<Object?>)
+        d! as Map<String, Object?>,
+    ].singleWhere((Map<String, Object?> d) => d['device'] == a.sync2Device);
+    expect(pending['trust'], 'pending');
+    expect(pending['heldDeletes'], greaterThanOrEqualTo(1));
+    await b.sync2Trust(a.sync2Device!, trust: true);
+    await a.sync2Trust(b.sync2Device!, trust: true);
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
     final SrsNoteView? absorbed = (await b.notes(<String>[nb]))[nb];
     expect(
       absorbed == null || absorbed.deletedAt != null,

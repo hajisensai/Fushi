@@ -17,6 +17,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
@@ -54,6 +55,7 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
     required this.outRoot,
     required this.lyrics,
     required Map<String, List<MusicAsrTrackSlot>> slotsByPath,
+    this.stagedAudio = const <String>{},
     MusicAsrSubtitleParse? parse,
   }) : _slots = slotsByPath,
        _parse = parse ?? _defaultParse;
@@ -64,6 +66,11 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
   /// 音频路径 → 该文件下要写字幕的曲目（解析目标时按文件去重得到）。
   final Map<String, List<MusicAsrTrackSlot>> _slots;
   final MusicAsrSubtitleParse _parse;
+
+  /// 只为这次转写临时取到本机的音频（在线音源插件曲目，见 `music_plugin_asr_audio.dart`）：
+  /// 歌词登记成功后删掉——它只是转写的输入，识别稿与导出都在各自的任务 / 导出目录里。
+  /// 登记失败（抛异常）时留着，下次生成直接复用、不重新下载。
+  final Set<String> stagedAudio;
 
   /// 这个文件下要写字幕的曲目（测试 / 面板用）。
   List<MusicAsrTrackSlot> slotsOf(String path) =>
@@ -103,12 +110,19 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
     final String? output = result.outputPath;
     final List<MusicAsrTrackSlot> slots = slotsOf(episode.videoPath);
     if (output == null || slots.isEmpty) return const <String>[];
-    return saveGeneratedSubtitleForTracks(
+    final List<String> wrote = await saveGeneratedSubtitleForTracks(
       lyrics,
       await File(output).readAsBytes(),
       slots,
       parse: _parse,
     );
+    if (stagedAudio.contains(episode.videoPath)) {
+      // 暂存的整文件音频是真实磁盘文件（非 DVD 虚拟路径），按「路径本身是不是文件」判。
+      if (await videoPathFileExists(episode.videoPath)) {
+        await File(episode.videoPath).delete();
+      }
+    }
+    return wrote;
   }
 }
 

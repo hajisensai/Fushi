@@ -747,9 +747,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     final MusicOutputBackend backend = _ensureBackend();
     _dropAbLoopForTrackChange();
     _zeroPosition();
-    _duration = item.durationMs == null
-        ? null
-        : Duration(milliseconds: item.durationMs!);
+    _duration = item.playbackDuration;
     _lastError = null;
     _ended = false;
     _needsReopen = false;
@@ -1331,9 +1329,7 @@ class MusicPlayerEngine extends ChangeNotifier {
         _needsReopen = false;
         _lastError = null;
         _zeroPosition(completed: true);
-        _duration = item?.durationMs == null
-            ? null
-            : Duration(milliseconds: item!.durationMs!);
+        _duration = item?.playbackDuration;
         if (item != null) _announceStarted(item);
         notifyListeners();
         final MusicOutputBackend? backend = _backend;
@@ -1353,9 +1349,7 @@ class MusicPlayerEngine extends ChangeNotifier {
             _unmarkCurrent();
             final MusicPlayItem? item = current;
             _zeroPosition();
-            _duration = item?.durationMs == null
-                ? null
-                : Duration(milliseconds: item!.durationMs!);
+            _duration = item?.playbackDuration;
           }
         }
         notifyListeners();
@@ -1457,9 +1451,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     }
     _needsReopen = false;
     _lastError = null;
-    _duration = item.durationMs == null
-        ? null
-        : Duration(milliseconds: item.durationMs!);
+    _duration = item.playbackDuration;
     if (start) _announceStarted(item);
     notifyListeners();
   }
@@ -1513,9 +1505,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       _dropAbLoopForTrackChange();
       _zeroPosition();
       final MusicPlayItem? item = current;
-      _duration = item?.durationMs == null
-          ? null
-          : Duration(milliseconds: item!.durationMs!);
+      _duration = item?.playbackDuration;
       _onTrackFailed(event, autoSkip: wanted);
     }
   }

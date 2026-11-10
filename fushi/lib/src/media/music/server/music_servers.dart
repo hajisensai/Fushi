@@ -257,6 +257,7 @@ MusicPlayItem musicServerPlayItem(
     sampleRate: stream.transcoded ? null : track.sampleRate,
     bitDepth: stream.transcoded ? null : track.bitDepth,
     channels: track.channels,
+    isPreview: stream.isPreview,
   );
 }
 
