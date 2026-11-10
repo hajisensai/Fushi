@@ -903,6 +903,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
             : null,
+        seriesTitle: _playlistTitle,
         statBookKey: statIdentity.bookKey,
         statTitle: statIdentity.title,
         recordHistory: historySnapshot != null,
@@ -1045,6 +1046,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
         // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
         collectionTag: collectionTag,
+        // 出处的上一级（反馈 MCJLSBR5Wg）：SRS 出处按「系列 → 集」两级分组。与 collectionTag 同一个来源
+        // （本地播放列表的合集名 / 远端作品名），但不看标签开关、不清洗。单视频为 null，出处只有集这一级。
+        seriesTitle: _playlistTitle,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
         // 高级制卡「不要音频 / 不要图片」（只对这一张卡）：引擎跳过对应抽取，两者都

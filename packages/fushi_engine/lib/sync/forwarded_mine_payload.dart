@@ -32,6 +32,7 @@ class ForwardedMinePayload {
     this.sourceUrl,
     this.bookTitleTag,
     this.collectionTag,
+    this.seriesTitle,
     this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
@@ -61,6 +62,10 @@ class ForwardedMinePayload {
   final String? sourceUrl;
   final String? bookTitleTag;
   final String? collectionTag;
+
+  /// `AnkiMiningContext.seriesTitle`：出处的上一级（系列原名）。可空 = 不属系列，或对端是尚未带这个键的旧版本
+  /// ——出处只有集这一级，卡照建。
+  final String? seriesTitle;
 
   /// `AnkiMiningContext.charPositionText`：发送端按其界面语言格式化好的制卡位置文本，
   /// 服务端写进 MiscInfo（等价）字段。可空 = 非小说来源、开关关闭、锚点取不到，或对端是
@@ -102,6 +107,7 @@ class ForwardedMinePayload {
     if (sourceUrl != null) 'sourceUrl': sourceUrl,
     if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
     if (collectionTag != null) 'collectionTag': collectionTag,
+    if (seriesTitle != null) 'seriesTitle': seriesTitle,
     if (charPositionText != null) 'charPositionText': charPositionText,
     if (clipStartMs != null) 'clipStartMs': clipStartMs,
     if (clipEndMs != null) 'clipEndMs': clipEndMs,
@@ -152,6 +158,7 @@ class ForwardedMinePayload {
       sourceUrl: json['sourceUrl'] as String?,
       bookTitleTag: json['bookTitleTag'] as String?,
       collectionTag: json['collectionTag'] as String?,
+      seriesTitle: json['seriesTitle'] as String?,
       charPositionText: json['charPositionText'] as String?,
       clipStartMs: (json['clipStartMs'] as num?)?.toInt(),
       clipEndMs: (json['clipEndMs'] as num?)?.toInt(),

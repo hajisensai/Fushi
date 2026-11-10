@@ -21,11 +21,15 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
 /// 制卡上下文 → 笔记出处（拿不到定位时为 manual）。
+///
+/// 书 / 有声书 / 视频 / 在线视频带上 [AnkiMiningContext.seriesTitle]（系列 / 合集名）：出处按「系列 → 集」两级
+/// 分组（反馈 MCJLSBR5Wg），定位字段不受影响。漫画的作品身份（mangaKey）本身就是系列、章节是下一级，不另带。
 SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
   final CardSourceLink? link = context.sourceLink;
   final String? title = (context.documentTitle?.trim().isEmpty ?? true)
       ? null
       : context.documentTitle!.trim();
+  final String? series = context.seriesTitle;
   if (link != null) {
     switch (link.kind) {
       case CardSourceKind.book:
@@ -40,6 +44,7 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
             startMs: link.startMs!,
             endMs: link.endMs,
             title: title,
+            seriesTitle: series,
           );
         }
         return SrsSourceRef.book(
@@ -48,6 +53,7 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
           charStart: link.charOffset ?? 0,
           charLength: link.charLength,
           title: title,
+          seriesTitle: series,
         );
       case CardSourceKind.manga:
         return SrsSourceRef.manga(
@@ -64,6 +70,7 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
           start,
           end,
           title,
+          series,
         );
         if (online != null) return online;
         return SrsSourceRef.media(
@@ -73,6 +80,7 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
           startMs: start,
           endMs: end,
           title: title,
+          seriesTitle: series,
         );
       case CardSourceKind.game:
         return SrsSourceRef(SrsSourceKind.game, <String, Object?>{
@@ -105,7 +113,13 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
 }
 
 /// Aniyomi 在线视频的库 uid：`anime-source:<扩展包>:<源 id>:<源内集 URL>`。
-SrsSourceRef? _onlineVideoRef(String uid, int start, int? end, String? title) {
+SrsSourceRef? _onlineVideoRef(
+  String uid,
+  int start,
+  int? end,
+  String? title,
+  String? series,
+) {
   const String prefix = 'anime-source:';
   if (!uid.startsWith(prefix)) return null;
   final List<String> parts = uid.substring(prefix.length).split(':');
@@ -118,6 +132,7 @@ SrsSourceRef? _onlineVideoRef(String uid, int start, int? end, String? title) {
     startMs: start,
     endMs: end,
     title: title,
+    seriesTitle: series,
   );
 }
 

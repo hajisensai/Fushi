@@ -33,12 +33,14 @@ class SrsSourceRef {
     required int charStart,
     int? charLength,
     String? title,
+    String? seriesTitle,
   }) => SrsSourceRef(SrsSourceKind.book, <String, Object?>{
     'bookKey': bookKey,
     'section': sectionIndex,
     'start': charStart,
     if (charLength != null) 'len': charLength,
     if (title != null) 'title': title,
+    ...seriesEntry(seriesTitle),
   });
 
   /// 漫画（本地或在线下载）：作品身份 + 章节身份 + 页码（从 0 起）+ 可选 OCR 框。
@@ -63,11 +65,13 @@ class SrsSourceRef {
     required int startMs,
     int? endMs,
     String? title,
+    String? seriesTitle,
   }) => SrsSourceRef(kind, <String, Object?>{
     'mediaKey': mediaKey,
     'startMs': startMs,
     if (endMs != null) 'endMs': endMs,
     if (title != null) 'title': title,
+    ...seriesEntry(seriesTitle),
   });
 
   /// LNReader 在线小说：源 + 小说 URL + 章节 URL + 字符偏移。
@@ -93,6 +97,7 @@ class SrsSourceRef {
     required int startMs,
     int? endMs,
     String? title,
+    String? seriesTitle,
   }) => SrsSourceRef(SrsSourceKind.onlineVideo, <String, Object?>{
     'sourceId': sourceId,
     'animeUrl': animeUrl,
@@ -100,6 +105,7 @@ class SrsSourceRef {
     'startMs': startMs,
     if (endMs != null) 'endMs': endMs,
     if (title != null) 'title': title,
+    ...seriesEntry(seriesTitle),
   });
 
   factory SrsSourceRef.web(String url, {String? title}) => SrsSourceRef(
@@ -111,6 +117,26 @@ class SrsSourceRef {
   final Map<String, Object?> data;
 
   String? get title => data['title'] as String?;
+
+  /// 出处的上一级（系列 / 合集名，反馈 MCJLSBR5Wg）：有它时出处按「系列 → 集」两级分组——浏览页出处视图、
+  /// `src:` 查询与按作品出卡的分组键是系列（内核 store/browse.rs `source_key`），集（[title]，按
+  /// mediaKey / bookKey 等作品身份区分）是系列下的第二级（`source_item_key`）；统计页「制卡来源」按系列计。
+  /// 定位字段（mediaKey / startMs / 章节…）不变，「回到出处」仍到具体的集与时间。没有 = 只有集这一级。
+  String? get seriesTitle {
+    final Object? v = data[seriesKey];
+    return v is String && v.trim().isNotEmpty ? v : null;
+  }
+
+  /// [seriesTitle] 的 JSON 键（持久化名，新加后冻结；内核 store/browse.rs / caches.rs 按同名读）。
+  static const String seriesKey = 'seriesTitle';
+
+  /// 工厂共用：系列名去两侧空白后非空才写键（空白名 = 不属系列，不写空串进出处）。
+  static Map<String, Object?> seriesEntry(String? seriesTitle) {
+    final String? t = seriesTitle?.trim();
+    return t == null || t.isEmpty
+        ? const <String, Object?>{}
+        : <String, Object?>{seriesKey: t};
+  }
 
   Map<String, Object?> toJson() => <String, Object?>{'kind': kind, ...data};
 
