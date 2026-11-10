@@ -40,6 +40,7 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -778,7 +779,11 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   return _srsMemoByContent(_conflictCountMemo, store, () async {
     final int conflicts = (await store.syncConflicts()).length;
     final int held = (await store.sync2Conflicts()).length;
-    return conflicts + held + await store.pendingDecisionCount();
+    // 待确认的设备（删除 / 彻底清除扣着等本机确认，store/sync2/trust.rs）与冲突同级进角标。
+    final int untrusted = srsDeviceViewsOf(
+      await store.sync2Status(),
+    ).where((SrsDeviceView d) => d.needsTrust).length;
+    return conflicts + held + untrusted + await store.pendingDecisionCount();
   });
 });
 

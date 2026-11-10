@@ -27,9 +27,11 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
@@ -970,8 +972,18 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                   srsRunLogged('SrsHistory.retireDevice', () => _retire(d)),
               onUnretire: (SrsDeviceView d) =>
                   srsRunLogged('SrsHistory.unretireDevice', () => _unretire(d)),
+              onReviewTrust: (SrsDeviceView d) =>
+                  srsRunLogged('SrsHistory.reviewTrust', _openConflicts),
             ),
       );
+
+  /// 去冲突中心确认 / 拒绝一台还没信任的设备；回来时重读状态。
+  Future<void> _openConflicts() async {
+    await srsPushPage<void>(context, (_) => const SrsConflictsPage());
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
+  }
 
   String _deviceName(SrsDeviceView d) =>
       d.displayName(formatTime: (DateTime x) => srsTimeLabel(context, x));

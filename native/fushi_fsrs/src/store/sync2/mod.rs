@@ -22,6 +22,7 @@ pub(crate) mod semantics;
 pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
+pub(crate) mod trust;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -1063,6 +1064,10 @@ pub(crate) fn project_body(
             semantics::evaluate_holds(conn, profile, "note", &n, now, t)?;
         }
         Body::Purge { kind, entity } => {
+            // 不可信设备的彻底清除先扣住（trust.rs）：本机确认这台设备之前不改写日志、不删投影。
+            if trust::hold_purge(conn, profile, op, kind, &entity.text())? {
+                return Ok(());
+            }
             let own = self_device(conn, profile)?;
             semantics::purge_entity(conn, profile, kind, &entity.text(), op, &own, t)?;
         }
@@ -1295,6 +1300,10 @@ pub(crate) fn project_edit_noted(
     project: bool,
     t: &mut Touched,
 ) -> Result<(), String> {
+    // 不可信设备的删除先扣住（trust.rs）：不投影、不进实体 → 操作索引，本机确认这台设备后由 trust::release 放行。
+    if project && trust::hold_edit(conn, profile, op, e)? {
+        return Ok(());
+    }
     let ent = e.entity.text();
     index_edit(conn, profile, op, e, &ent)?;
     // 标签是 OR-Set：整列表的 `tags` 写入（迁移进来的旧记录）按「添加其中每个标签」并入。迁移时也要做：
@@ -2533,6 +2542,8 @@ mod tests_perf;
 mod tests_replay_pending;
 #[cfg(test)]
 mod tests_synthetic_ctx;
+#[cfg(test)]
+mod tests_trust;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
