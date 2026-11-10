@@ -42,6 +42,11 @@
 | [BUG-4281](bugs/BUG-4281-popup-toast-truncated-two-lines.md) | ✅ | ✅ | 「保存到」退回主机默认的提示被截断 / 被结果提示顶掉 |
 | [BUG-4280](bugs/BUG-4280-server-srs-note-count-stale.md) | ✅ | ✅ | 服务端复习状态的笔记数不随写入刷新 |
 | [BUG-4279](bugs/BUG-4279-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
+| [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
+| [BUG-4282](bugs/BUG-4282-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |
+| [BUG-4281](bugs/BUG-4281-game-stream-companion-r1-takes-controller.md) | ✅ | ✅ | Game stream: companion R1 panel drive takes the controller when the stream leaves the second screen to the companion |
+| [BUG-4280](bugs/BUG-4280-android-controller-dpad-device-type.md) | ✅ | ✅ | Android controller D-pad reaches Dart as keyboard arrows (lookup mode / panel drive ignore it) |
+| [BUG-4279](bugs/BUG-4279-audiobook-multifile-cues-stay-on-file0.md) | ✅ | ✅ | 服务端 / 发现页 / 书+字幕+音频导入的多文件有声书 cue 全落在第 0 个文件 |
 | [BUG-4278](bugs/BUG-4278-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
 | [BUG-4277](bugs/BUG-4277-collection-manage-count-mismatch.md) | ✅ | ✅ | collection-manage-count-mismatch |
 | [BUG-4276](bugs/BUG-4276-lan-devices-duplicate-host.md) | ✅ | ✅ | 互联「局域网设备」列表把同一台 host 列两遍，配对后红屏 `_dependents.isEmpty` |

@@ -42,7 +42,7 @@ import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/import/srt_book_attach_epub.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
@@ -132,6 +132,11 @@ import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_cover_files.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart'
+    show CompanionLibraryKind;
+import 'package:fushi/src/second_screen/companion/modules/library_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
@@ -147,6 +152,8 @@ import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/remote_download_temp_file.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
@@ -201,6 +208,7 @@ part 'reader_history/remote.part.dart';
 part 'reader_history/video.part.dart';
 part 'reader_history/books.part.dart';
 part 'reader_history/dialogs.part.dart';
+part 'reader_history/companion.part.dart';
 
 /// Stable gamepad/keyboard focus ids for the shelf chrome, used both to place
 /// [FushiFocusTarget]s and to wire directional anchors (see
@@ -316,6 +324,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
   /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
   void _rebuild(VoidCallback fn) => setState(fn);
+
+  /// Dual-screen companion (Library tab, Main mode): see
+  /// `reader_history/companion.part.dart`.
+  late final LibraryCompanionHook _companion = _createShelfCompanion();
+
+  /// The card whose long-press menu is open (companion highlight).
+  FushiFocusId? _companionPressedId;
+
+  /// The "continue reading" hero's book (its card has a fixed focus id).
+  MediaItem? _companionHero;
+
+  /// The companion highlight's cover, probed once per item.
+  String? _companionCoverKey;
+  String _companionCoverPath = '';
 
   /// 「功能模块」可见性快照（书架与它全部 part 共用的唯一读取口）。
   ///
@@ -887,7 +909,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _companion.attach(
+      context,
+      focusChanges: FushiFocusRoot.maybeControllerOf(context),
+    );
+  }
+
+  @override
   void dispose() {
+    _companion.dispose();
     _collectionDisplayCounts.dispose();
     _memberInfoRevision.dispose();
     _headerSearch.dispose();
@@ -1859,6 +1891,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ) ??
         0;
     final MediaItem? hero = mostRecentlyReadCandidate(tally.inProgress, readAt);
+    _companionHero = hero;
     if (hero == null) return const SizedBox.shrink();
     return Padding(
       // 顶上不再另加 gap：列表顶部已留「工具区高度 + gap」，再叠一层会让 hero
@@ -2597,7 +2630,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       selected: selected,
       onSelectionToggle: () => _toggleCollectionSelection(collection.id),
       onTap: openOrSelect,
-      onLongPress: () => _showCollectionContextMenu(collection),
+      onLongPress: () => _companionPressed(
+        FushiFocusId('reader-shelf-collection-${collection.id}'),
+        () => _showCollectionContextMenu(collection),
+      ),
       onSecondaryTap: () => _showCollectionContextMenu(collection),
     );
     final SelectionSlot slot = SelectionSlot.collection(collection.id);
@@ -3371,6 +3407,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         completed: completed,
         audiobook: hasAudiobook,
         health: healthKind,
+        updateAvailable:
+            hasAudiobook &&
+            bookKey != null &&
+            _remoteAudiobookHasUpdate(
+              remoteAudiobookRevisionKeyForBook(bookKey),
+            ),
       ),
       tags: bookKey == null ? const <BookTagRow>[] : _bookTags(bookKey),
       // BUG-990：这本书的有声书包还在下载 → 本地 EPUB 卡继续显示加载覆盖层。
@@ -3416,34 +3458,44 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               entryKey: _epubUidByKey[bookKey] ?? bookKey,
             ),
       dragLabel: displayTitleForBook(item: item, rawTitle: item.title),
-      onTap: () async {
-        // 漫画先进作品页，不直接开书。
-        //
-        // 作品页**刻意不走 `openMedia`**：那条路是「媒体会话」语义——沉浸模式、
-        // wakelock、audio handler、_currentMediaSource 全在里面开。作品页是个可
-        // 浏览的库页面（章节列表、已读标记、刷新），当媒体会话打开会让它顶着
-        // 隐藏的系统 UI、亮着屏。真正的会话由作品页内部再 `openMedia` 开阅读器
-        // 时启动，语义与 v88 前逐字相同。
-        if (_isMangaItem(item) && bookKey != null) {
-          await Navigator.of(context).push(
-            adaptivePageRoute<void>(
-              context: context,
-              builder: (BuildContext context) =>
-                  MangaSeriesPage(target: _mangaSeriesTarget(bookKey, item)),
-            ),
-          );
-          return;
-        }
-        final MediaSource source = item.getMediaSource(appModel: appModel);
-        await appModel.openMedia(ref: ref, mediaSource: source, item: item);
-      },
-      onLongPress: () =>
-          _showEpubItemMenu(item, removeFromCollection: removeFromCollection),
+      onTap: () => _openEpubCard(item),
+      onLongPress: () => _companionPressed(
+        FushiFocusId(
+          '${focusIdPrefix}reader-shelf-book-${item.mediaIdentifier}',
+        ),
+        () =>
+            _showEpubItemMenu(item, removeFromCollection: removeFromCollection),
+      ),
       child: buildMediaItemContent(item),
     );
     // 仅 EPUB 书卡作为字幕/音频拖放目标；SRT 卡/视频卡不在 books 表面范围内。
     if (bookKey == null) return card;
     return CardDropZone<String>(meta: bookKey, child: card);
+  }
+
+  /// Activating an EPUB / PDF / manga card (tap, Enter, the companion's
+  /// Continue).
+  Future<void> _openEpubCard(MediaItem item) async {
+    final String? bookKey = _parseBookKey(item.mediaIdentifier);
+    // 漫画先进作品页，不直接开书。
+    //
+    // 作品页**刻意不走 `openMedia`**：那条路是「媒体会话」语义——沉浸模式、
+    // wakelock、audio handler、_currentMediaSource 全在里面开。作品页是个可
+    // 浏览的库页面（章节列表、已读标记、刷新），当媒体会话打开会让它顶着
+    // 隐藏的系统 UI、亮着屏。真正的会话由作品页内部再 `openMedia` 开阅读器
+    // 时启动，语义与 v88 前逐字相同。
+    if (_isMangaItem(item) && bookKey != null) {
+      await Navigator.of(context).push(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext context) =>
+              MangaSeriesPage(target: _mangaSeriesTarget(bookKey, item)),
+        ),
+      );
+      return;
+    }
+    final MediaSource source = item.getMediaSource(appModel: appModel);
+    await appModel.openMedia(ref: ref, mediaSource: source, item: item);
   }
 
   /// EPUB / 漫画 / PDF 书卡的长按 / 右键菜单（书架卡与合集详情页成员卡**同一个**
@@ -3626,29 +3678,25 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       // 本机已有有声书、对端也有：host 上重新转录 / 换了字幕之后，从这里把新字幕
       // （或整本有声书）重新拉回来。只更新字幕不动音频，进度 / 断点 / 统计都保留。
+      // host 上这本在本机下载之后换过音频 / 字幕时，「重新下载」改叫「下载更新」并排
+      // 到第一项（书卡副行同时提示「对端有更新」）。
       if (modules.isEnabled(ModuleId.listening) &&
-          _remoteAudiobookRefetchFor(bookKey) != null) ...<DialogAction>[
-        DialogListAction(
-          label: t.remote_book_subtitles_refresh,
-          icon: FushiIcons.subtitles,
-          group: DialogActionGroup.content,
-          onPressed: () => _refetchRemoteAudiobook(
+          _remoteAudiobookRefetchFor(bookKey) != null)
+        ..._remoteRefetchActions(
+          updateAvailable: _remoteAudiobookHasUpdate(
+            remoteAudiobookRevisionKeyForBook(bookKey),
+          ),
+          refreshSubtitles: () => _refetchRemoteAudiobook(
             _remoteAudiobookRefetchFor(bookKey)!,
             bookKey,
             subtitlesOnly: true,
           ),
-        ),
-        DialogListAction(
-          label: t.remote_book_audiobook_redownload,
-          icon: FushiIcons.cloudSync,
-          group: DialogActionGroup.content,
-          onPressed: () => _refetchRemoteAudiobook(
+          redownload: () => _refetchRemoteAudiobook(
             _remoteAudiobookRefetchFor(bookKey)!,
             bookKey,
             subtitlesOnly: false,
           ),
         ),
-      ],
       // 三库页对称：视频卡/游戏卡的菜单里「重命名」都排在列表项首位，书卡对齐。
       DialogListAction(
         label: t.book_rename,

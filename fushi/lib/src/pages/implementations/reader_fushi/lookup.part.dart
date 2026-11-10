@@ -74,44 +74,84 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
   }
 
+  /// "Pause on lookup": a lookup opened, from the in-page popup path
+  /// ([_handleTextSelected]) or on the dual-screen companion (any lookup it
+  /// shows while this page owns the context, incl. ones started on its
+  /// transcript). Pauses a playing audiobook and remembers it, so the lookup
+  /// closing resumes it ([_releaseLookupPause]). Idempotent: an already
+  /// paused audiobook is left alone and keeps its mark.
+  void _pauseForLookup() {
+    if (!ReaderFushiSource.instance.pauseOnLookup) return;
+    final AudiobookPlayerController? abc = _audiobookController;
+    if (abc != null && abc.isPlaying) {
+      abc.pause();
+      _pausedForLookup = true;
+    }
+  }
+
+  /// The in-page popup stack closed (from [onAllPopupsDismissed]). A
+  /// companion lookup still open for this page keeps the pause: its close
+  /// resumes ([_companionLookupClosed]).
   void _clearLookupState() {
-    if (_pausedForLookup) {
-      _pausedForLookup = false;
-      final AudiobookPlayerController? ctrl = _audiobookController;
-      if (ctrl != null) {
-        // 恢复是异步的（激活链 + 等播放器真正起播）：在途期间仍算查词「按住」，
-        // 否则歌词覆盖层会在「已不按住、还没在播」的间隙里把它当成用户暂停、复位
-        // 底栏并重排（awLXfD49Ep）。播放器真的起播、或这次激活不会起播（被拒 /
-        // 已请求停止）时撤掉——不能等 `play()` 的 Future：原生后端上它挂到下一次
-        // 暂停才完成，会把恢复后的整段播放都记成「按住」（见 lookupResumeHoldReleased）。
-        _lookupResumeInFlight = true;
-        final AudioCue? restartCue = lookupRestartCue(
-          restartEnabled: ReaderFushiSource.instance.restartSentenceAfterLookup,
-          alreadyPlaying: ctrl.isPlaying,
-          lookupCue: _lookupRestartCue,
-          currentCue: ctrl.currentCue,
-        );
-        _lookupRestartCue = null;
-        final Future<void> resume = restartCue == null
-            ? ctrl.play()
-            : _resumeLookupFromSentence(ctrl, restartCue);
-        unawaited(
-          resume.catchError((Object e, StackTrace stack) {
-            ErrorLogService.instance.log('ReaderFushi.lookupResume', e, stack);
-          }),
-        );
-        unawaited(
-          lookupResumeHoldReleased(
-            playback: ctrl,
-            isPlaying: () => ctrl.isPlaying,
-            resume: resume,
-          ).then((_) {
-            if (!mounted || !_lookupResumeInFlight) return;
-            // 覆盖层读 playbackHeldForLookup：撤掉按住要重建，不靠控制器之后碰巧 notify。
-            _rebuild(() => _lookupResumeInFlight = false);
-          }),
-        );
-      }
+    if (_companion.lookupOpen) return;
+    _releaseLookupPause(resume: true);
+  }
+
+  /// The companion's lookup for this page closed ([resume]: the user closed
+  /// it) or went away with it ([resume] false). An in-page popup still open
+  /// keeps the pause: its close resumes.
+  void _companionLookupClosed({required bool resume}) {
+    if (!mounted || dictionaryPopupShown) return;
+    _releaseLookupPause(resume: resume);
+  }
+
+  /// Ends the lookup's hold on the audiobook: plays it again when [resume]
+  /// (the lookup was closed), else only drops the mark and leaves it paused.
+  void _releaseLookupPause({required bool resume}) {
+    if (!_pausedForLookup) return;
+    if (!resume) {
+      _lookupRestartCue = null;
+      // The lyrics overlay reads playbackHeldForLookup: rebuild for it.
+      _rebuild(() => _pausedForLookup = false);
+      return;
+    }
+    _pausedForLookup = false;
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl != null) {
+      // 恢复是异步的（激活链 + 等播放器真正起播）：在途期间仍算查词「按住」，
+      // 否则歌词覆盖层会在「已不按住、还没在播」的间隙里把它当成用户暂停、复位
+      // 底栏并重排（awLXfD49Ep）。播放器真的起播、或这次激活不会起播（被拒 /
+      // 已请求停止）时撤掉——不能等 `play()` 的 Future：原生后端上它挂到下一次
+      // 暂停才完成，会把恢复后的整段播放都记成「按住」（见 lookupResumeHoldReleased）。
+      _lookupResumeInFlight = true;
+      // 查词后从句首重播：页内弹窗查词记下了 [_lookupRestartCue]；副屏伴侣查词不走
+      // 选区解析，没有它，退到暂停时正在播的句子（lookupRestartCue 的 currentCue）。
+      final AudioCue? restartCue = lookupRestartCue(
+        restartEnabled: ReaderFushiSource.instance.restartSentenceAfterLookup,
+        alreadyPlaying: ctrl.isPlaying,
+        lookupCue: _lookupRestartCue,
+        currentCue: ctrl.currentCue,
+      );
+      _lookupRestartCue = null;
+      final Future<void> resumed = restartCue == null
+          ? ctrl.play()
+          : _resumeLookupFromSentence(ctrl, restartCue);
+      unawaited(
+        resumed.catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('ReaderFushi.lookupResume', e, stack);
+        }),
+      );
+      unawaited(
+        lookupResumeHoldReleased(
+          playback: ctrl,
+          isPlaying: () => ctrl.isPlaying,
+          resume: resumed,
+        ).then((_) {
+          if (!mounted || !_lookupResumeInFlight) return;
+          // 覆盖层读 playbackHeldForLookup：撤掉按住要重建，不靠控制器之后碰巧 notify。
+          _rebuild(() => _lookupResumeInFlight = false);
+        }),
+      );
     }
     // BUG-1344：DOM/CSS 选区由整栈关闭的异步收尾显式 await；不能在这里
     // fire-and-forget 后马上 reclaim 焦点，否则 macOS WKWebView 会把失焦灰选区绘在
@@ -193,6 +233,22 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
   }
 
+  /// Sends a tapped word to the companion: the whole sentence with the tapped
+  /// index (so the Lookup tab can scan from it and mine the sentence), or the
+  /// selected text when the page reported no sentence.
+  Future<bool> _routeLookupToCompanion(ReaderSelectionData data) {
+    final String sentence = data.sentence.trim();
+    final bool hasSentence =
+        sentence.isNotEmpty &&
+        data.sentenceOffset >= 0 &&
+        data.sentenceOffset < data.sentence.length;
+    return routeCompanionLookup(
+      text: hasSentence ? data.sentence : data.text,
+      charIndex: hasSentence ? data.sentenceOffset : -1,
+      sentence: hasSentence ? data.sentence : data.text,
+    );
+  }
+
   /// 选词来源：JS 回传的 `fromHover`（Shift 悬停 / 悬停查词）是悬停，其余是明确的
   /// 点击 / 按键。
   LookupOrigin _lookupOriginOf(ReaderSelectionData data) =>
@@ -202,18 +258,23 @@ extension _ReaderLookup on _ReaderFushiPageState {
     if (data.text.isEmpty) {
       return;
     }
+    // Dual-screen companion: when it is up the lookup opens on the second
+    // screen's Lookup tab and the page shows no popup (no popup highlight:
+    // its undo is tied to the popup closing). "Pause on lookup" still
+    // applies: the companion registry runs [_pauseForLookup] when it takes
+    // the lookup and the panel's close resumes ([_companionLookupClosed]).
+    // Same path for paginated, continuous and vn modes and the audiobook
+    // view. The synchronous check keeps the single-screen path free of an
+    // await.
+    if (_companion.isActive && await _routeLookupToCompanion(data)) return;
+    if (!mounted) return;
     _removeSelectionActionBar();
     // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃
     // 上一个词的「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，
     // 草稿若不在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
     _miningDraft.clear();
 
-    final bool shouldPause = ReaderFushiSource.instance.pauseOnLookup;
-    final AudiobookPlayerController? abc = _audiobookController;
-    if (shouldPause && abc != null && abc.isPlaying) {
-      abc.pause();
-      _pausedForLookup = true;
-    }
+    _pauseForLookup();
 
     final Map<String, double>? rect = data.rect;
     final Rect selectionRect = rect != null
