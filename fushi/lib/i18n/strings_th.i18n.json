@@ -1067,6 +1067,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "เลือกไฟล์การจัดตำแหน่ง",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "อ้างอิงไฟล์ต้นฉบับ",
   "audiobook_reference_original_desc": "เก็บเสียงไว้ที่เดิมและเล่นจากเส้นทางต้นฉบับ; หนังสือจะเสียหายหากไฟล์ถูกย้ายหรือลบ",
   "audiobook_relocate": "ย้ายไฟล์",

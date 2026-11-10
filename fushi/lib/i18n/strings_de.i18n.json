@@ -1067,6 +1067,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "Ausrichtungsdatei auswählen",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "Originaldateien referenzieren",
   "audiobook_reference_original_desc": "Audio am Originalort belassen und von dort abspielen; das Buch funktioniert nicht mehr, wenn die Datei verschoben oder gelöscht wird.",
   "audiobook_relocate": "Datei verschieben",

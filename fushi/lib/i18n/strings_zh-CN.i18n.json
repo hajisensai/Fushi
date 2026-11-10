@@ -1067,6 +1067,7 @@
   "audiobook_page_end_pause": "暂停",
   "audiobook_page_end_title": "页末时音频",
   "audiobook_pick_alignment": "选择对齐文件",
+  "audiobook_play_from_selection_no_cue": "这句没有对应的音频",
   "audiobook_reference_original": "引用原文件（不复制）",
   "audiobook_reference_original_desc": "音频保留在原位置、按原路径播放；原文件被移动或删除后这本书会失效。",
   "audiobook_relocate": "重新定位文件",

@@ -1067,6 +1067,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "Выбрать файл выравнивания",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "Ссылаться на исходные файлы",
   "audiobook_reference_original_desc": "Оставить аудио на месте и воспроизводить по исходному пути; книга сломается, если файл будет перемещён или удалён.",
   "audiobook_relocate": "Переместить файл",
