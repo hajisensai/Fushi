@@ -1,6 +1,4 @@
 // 反馈 E1pq561P2q：字幕工作台（生成 / 拆分双语 / 逐句对轴 / 参考面板）。
-import 'dart:typed_data';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
@@ -131,7 +129,7 @@ void main() {
                       primaryPositionMs: () => pos.value,
                       secondaryPositionMs: () => pos.value,
                       primaryLanguage: language,
-                      captureFrame: () async => Uint8List(0),
+                      captureFrame: () async => null,
                       jumpToCue: (AudioCue c) => calls.add('jump ${c.text}'),
                     ),
                     actions: VideoSubtitleStudioActions(
