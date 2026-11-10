@@ -280,7 +280,9 @@ void main() {
       epubCard,
       matches(
         RegExp(
-          r'onLongPress: \(\) =>\s*_showEpubItemMenu\(item, removeFromCollection: removeFromCollection\),',
+          // 副屏「库」模式（S5）起长按先经 _companionPressed（副屏接管时转成焦点驱动），
+          // 本机仍落到 _showEpubItemMenu。
+          r'onLongPress: \(\) =>[\s\S]{0,240}?_showEpubItemMenu\(\s*item,\s*removeFromCollection: removeFromCollection\s*\),',
         ),
       ),
     );
