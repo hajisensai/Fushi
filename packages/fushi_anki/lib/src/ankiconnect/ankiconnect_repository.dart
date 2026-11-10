@@ -718,6 +718,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// `SentenceFurigana` 这类别的工具填过、模板又优先读的字段会让卡面停在旧句子。
   /// 同时把新制会打的那组标签（`fushi` / 分类 / 书名…）经 `addTags` 并进去——覆盖
   /// 后的卡与新制的卡在字段与标签上都一样，用户原有的其它标签保留。
+  ///
+  /// 反馈 nWWjBp3Clo：用户给这种笔记类型选了「只覆写这些字段」
+  /// （[AnkiSettings.overwriteFieldsFor]）时，只点名选中的字段，其余字段原样保留。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -782,17 +785,22 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         keepEmpty: true,
       );
       final RenderedMinedFields rendered = prepared.rendered;
-      final Map<String, String> fields = rendered.fields;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        existing.modelName ?? targetModel,
+      );
+      final Map<String, String> toWrite = BaseAnkiRepository.fieldsForOverwrite(
+        existingFieldNames: existingFields.keys,
+        rendered: rendered.fields,
+        onlyFields: onlyFields,
+      );
 
-      // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
-      // 有内容时按覆盖语义整体替换（空字段随之清空，Never break userspace 见 BUG-858）。
-      if (fields.values.every((String v) => v.trim().isEmpty)) {
-        return MineOutcome.failure(
-          'All fields are empty — refusing to clear an existing card. '
-          'Check your note type field mappings.',
-          errorCode: AnkiErrorCode.allFieldsEmpty,
-        );
-      }
+      // 要写的字段渲染皆空白说明会把它们（整卡覆写时 = 整卡）清空——拒绝。部分字段
+      // 有内容时按覆盖语义替换（空字段随之清空，Never break userspace 见 BUG-858）。
+      final MineOutcome? empty = BaseAnkiRepository.rejectEmptyOverwrite(
+        toWrite,
+        onlyFields: onlyFields,
+      );
+      if (empty != null) return empty;
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper——覆盖后的卡不该比新制
       // 的少 `fushi` / 分类 / 书名标签。
@@ -807,13 +815,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
 
       try {
-        await service.updateNoteFields(
-          noteId,
-          BaseAnkiRepository.fieldsForOverwrite(
-            existingFieldNames: existingFields.keys,
-            rendered: fields,
-          ),
-        );
+        await service.updateNoteFields(noteId, toWrite);
         await service.addTags(noteId, tags);
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
         // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
@@ -1135,6 +1137,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       debugPrint('$stack');
       return null;
     }
+  }
+
+  /// 反馈 nWWjBp3Clo：选择器与 [updateMinedNote] 必须按**同一个**笔记类型名存取
+  /// 「只覆写这些字段」。[updateMinedNote] 按这张卡自己的 `modelName` 取选择，所以
+  /// 这里也回读卡的 `modelName`——否则命中卡是别的笔记类型（首字段同名也会命中）时，
+  /// 选择器列的是那张卡的字段、却存进当前笔记类型的条目里。读不到时退回基类口径。
+  @override
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    try {
+      final AnkiConnectService service = await _getService();
+      final AnkiConnectNoteInfo? info = await service.noteInfo(noteId);
+      final String? modelName = info?.modelName;
+      if (modelName != null && modelName.isNotEmpty) return modelName;
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.overwriteNoteTypeName: $e');
+      debugPrint('$stack');
+    }
+    return super.overwriteNoteTypeName(noteId);
   }
 
   // BUG-1799：复核哪些 note 已被用户在 Anki 里删掉。一次 `notesInfo` 批量往返

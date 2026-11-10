@@ -672,8 +672,46 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static Map<String, String> fieldsForOverwrite({
     required Iterable<String> existingFieldNames,
     required Map<String, String> rendered,
+    Set<String>? onlyFields,
   }) => AnkiNoteComposer.fieldsForOverwrite(
     existingFieldNames: existingFieldNames,
     rendered: rendered,
+    onlyFields: onlyFields,
   );
+
+  /// 反馈 nWWjBp3Clo：覆写结果里**要写的那部分**是否全空。
+  ///
+  /// [onlyFields] 为 null（覆写全部字段）时沿用 BUG-858 的空卡门（错误码
+  /// [AnkiErrorCode.allFieldsEmpty]，提示查字段映射）；用户只选了部分字段、而这次
+  /// 这些字段渲染全空（或选中的字段一个都不在这张卡上）时，写下去只会把它们清空，
+  /// 用 [AnkiErrorCode.overwriteFieldsEmpty] 拒绝。不拒绝时返回 null。
+  static MineOutcome? rejectEmptyOverwrite(
+    Map<String, String> toWrite, {
+    required Set<String>? onlyFields,
+  }) {
+    if (toWrite.values.any((String v) => v.trim().isNotEmpty)) return null;
+    if (onlyFields == null) {
+      return MineOutcome.failure(
+        'All fields are empty — refusing to clear an existing card. '
+        'Check your note type field mappings.',
+        errorCode: AnkiErrorCode.allFieldsEmpty,
+      );
+    }
+    return MineOutcome.failure(
+      'The fields chosen for overwriting are all empty for this card — '
+      'nothing was changed.',
+      errorCode: AnkiErrorCode.overwriteFieldsEmpty,
+    );
+  }
+
+  /// 反馈 nWWjBp3Clo：覆写 [noteId] 时按哪种笔记类型取「只覆写这些字段」的选择
+  /// （[AnkiSettings.overwriteFieldsFor] 的键）。
+  ///
+  /// 默认 = 当前选中的笔记类型：Anki 后端只覆写这个类型的卡（AnkiConnect 对别的
+  /// 类型直接拒绝，AnkiDroid 按它的字段渲染）。卡按**自己的**笔记类型渲染的后端
+  /// （Fushi 复习）覆写本方法。取不到返回 null。
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    final AnkiSettings settings = await loadSettings();
+    return settings.selectedNoteType?.name ?? settings.selectedNoteTypeName;
+  }
 }

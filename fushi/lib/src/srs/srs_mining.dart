@@ -335,6 +335,15 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     return id == null ? null : miner.fieldsByName(id);
   }
 
+  /// 复习卡按**它自己的**笔记类型覆写（[SrsMiner.overwrite]），覆写字段选择也按它记。
+  @override
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    final SrsMiner? miner = await _miner();
+    if (miner == null) return null;
+    final String? id = await _noteIdOf(miner, noteId);
+    return id == null ? null : miner.noteTypeNameOf(id);
+  }
+
   /// 复习是本机库，能回读：用户在复习里删掉的卡下次查词就变回「可制卡」。
   @override
   bool get canVerifyExistingCards => true;
