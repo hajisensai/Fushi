@@ -430,7 +430,11 @@ class _BoxSelectGestureRecognizer extends PanGestureRecognizer {
   _BoxSelectGestureRecognizer({super.debugOwner})
     : super(
         supportedDevices: const <PointerDeviceKind>{PointerDeviceKind.mouse},
-      );
+      ) {
+    // 竞技场里只剩它一个成员时（按在没有任何点击目标的空白处），按下就会被
+    // 默认判胜；不设这一位的话，没移动也会立刻 onStart，单击空白闪一个空框。
+    onlyAcceptDragOnThreshold = true;
+  }
 
   @override
   bool hasSufficientGlobalDistanceToAccept(

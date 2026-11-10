@@ -347,7 +347,8 @@ void main() {
         blank(tester),
         kind: PointerDeviceKind.mouse,
       );
-      await gesture.moveTo(cardRect(tester, 2).center);
+      // 横向也拉开一段：纯竖线的框面积为零，不画。
+      await gesture.moveTo(cardRect(tester, 2).center + const Offset(40, 0));
       await tester.pump();
       // 拖动中：前景层画着选框（卡片自身也是 drawRect，按选框填充色区分）。
       expect(find.byType(SelectionDragArea), paints..rect(color: fill));
