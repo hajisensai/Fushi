@@ -10,7 +10,7 @@
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
 - 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
-- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条列成待决策清单（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
+- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
 - 函数和新增 Dart helper 要有明确类型签名。
 
 ## UI 硬规则
@@ -35,6 +35,7 @@
 
 - **自动注音（机器推断读音的振假名 / furigana）——全仓绝对不可**：不 100% 准确会误导学习者。来源自带的 ruby（EPUB `<ruby>`、歌词源文件注音）照常显示。
 - **音乐歌词编辑界面**（改字、编辑翻译 / 注音、单行偏移）。整首偏移、选来源 / 恢复自动来源、导出 TTML 保留。
+- **AI 翻译字幕**（用 AI provider 给单语字幕生成译文当副字幕）。拍板台「永远不做」，2026-11-10。
 
 ## 领域硬边界
 
@@ -96,4 +97,5 @@
 | `fushi_server` 相对 app 当 host 的能力缺口（未接的 host 钩子、音乐库刻意延后等） | [server-parity-gaps.md](docs/agent/server-parity-gaps.md) |
 | material_ui 升级 | [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md) |
 | 拍板原文（起因、日期、例外、实测数据） | [rules-detail.md](docs/agent/rules-detail.md) |
+| 往拍板台写待决策项、按拍板结果执行 | [decision-board.md](docs/agent/decision-board.md) |
 | `fushi/` 主应用模块说明 | [fushi-app-module.md](docs/agent/fushi-app-module.md) |
