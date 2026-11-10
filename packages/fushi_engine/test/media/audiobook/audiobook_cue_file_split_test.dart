@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// BUG-4278：「单时间轴字幕 + 多个音频文件」的 cue 归文件只有一个入口
+/// BUG-4279：「单时间轴字幕 + 多个音频文件」的 cue 归文件只有一个入口
 /// [splitSingleTimelineCuesAcrossAudioFiles]，导入 / 重新导入路径都经它。
 const String _kSrt =
     '1\n00:00:00,000 --> 00:00:01,500\nA\n\n'

@@ -428,7 +428,7 @@ void main() {
     expect(await db.getAllSrtBooks(), isEmpty);
   });
 
-  // ── 多文件 + 一份单时间轴字幕：cue 按各文件实测时长分配（BUG-4278）──────────
+  // ── 多文件 + 一份单时间轴字幕：cue 按各文件实测时长分配（BUG-4279）──────────
 
   /// 换掉服务端装配的 ffprobe 探测：测试里的 mp3 是假字节，按文件名给时长。
   void fakeDurations(Map<String, int> byName) {
