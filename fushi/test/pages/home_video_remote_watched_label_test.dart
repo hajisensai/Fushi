@@ -185,7 +185,7 @@ void main() {
     expect(
       client.listCalls,
       listCallsBefore,
-      reason: '清单仍走缓存（TTL 内），刷新只重读本机断点',
+      reason: '断点变化只把本机断点叠回卡片，不重列 host 清单',
     );
   });
 }
