@@ -1,4 +1,4 @@
-## BUG-4300 · 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新
+## BUG-4303 · 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新
 - **报告**：2026-11-07（Linux Phase 4 互联测试，Docker 客户端 + Windows host；实测截图与日志（未入库）：客户端库里已是 host 的 50 s，视频页继续观看卡仍是「Watched to 0:40」）
 - **真实性**：✅ 真 bug。
   - 根因①：卡片断点只认 host 清单条目的 `RemoteVideoInfo.positionMs`（`fushi/lib/src/pages/implementations/home_video_page.dart:2024-2025` `_loadRemoteVideos` 把清单原样交给卡片，`:6720` 等处直接 `formatVideoPosition(video.positionMs)`；合集详情的远端上下文 `:10241` 同样）。清单经 `RemoteLibraryCache` 取（`:2077`，TTL 60 s，`fushi/lib/src/sync/remote_library_cache.dart:45`），视频页又是保活 tab，快照可以是几分钟前的。本机库里的远端断点（互联 sweep / 冲突弹窗 / 播放页 / 本机作为 host 收到的对端 PUT 写入）完全不参与显示，而开播位置早已认它（BUG-4301 `resolveRemoteVideoResumeMs`）——卡片和实际续播对不上。

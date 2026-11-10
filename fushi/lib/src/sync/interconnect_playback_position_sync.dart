@@ -38,7 +38,7 @@ Future<PlaybackPosition> readLocalRemoteVideoPosition(
 /// [readLocalRemoteVideoPosition] 的批量版：从一次读齐的 `video_remote_position_*`
 /// 偏好快照（[FushiDatabase.getPrefsByPrefix]）里取 [uid] 的本机断点，解码与
 /// [FushiDatabase.getPrefTyped] 同口径。列表展示一次给几十上百条远端条目用，
-/// 免逐条两次查询（BUG-4300）。
+/// 免逐条两次查询（BUG-4303）。
 PlaybackPosition localRemoteVideoPositionFromPrefs(
   Map<String, String> prefs,
   String uid, {

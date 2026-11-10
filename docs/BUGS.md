@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3864 条。点号进各自文件。
+> 共 3865 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4303](bugs/BUG-4303-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
+| [BUG-4302](bugs/BUG-4302-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
 | [BUG-4301](bugs/BUG-4301-interconnect-video-resume-stale-pref-cache.md) | ✅ | ✅ | 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库） |
-| [BUG-4300](bugs/BUG-4300-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
-| [BUG-4299](bugs/BUG-4299-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
-> 共 3862 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4300](bugs/BUG-4300-srs-day-rollover-not-synced.md) | ✅ | ✅ | 复习的「今天」日界不随同步、profile 时区字段从没有写入方 |
 | [BUG-4299](bugs/BUG-4299-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |
 | [BUG-4298](bugs/BUG-4298-srs-kernel-reads-share-one-connection.md) | ✅ | ✅ | SRS 内核只读命令共用一条读连接：全库统计读着时复习排队等它跑完 |
