@@ -1,0 +1,6 @@
+## BUG-4273 · 媒体服务器缺集号的集被显示成列表位置并排到最前
+- **报告**：2026-11-10（用户：应用内反馈 VF5D4O_Tyx 遗留，BUG-4257 / PR #3107 备注里未改的两处，用户要求根本性修复）
+- **真实性**：✅ 真 bug。Jellyfin `IndexNumber` / Plex `index` 为空时：① 集卡编号回落 `episode.episodeNumber ?? index + 1`（`fushi/lib/src/pages/implementations/media_server/media_server_detail_view.dart:1075`），把列表位置当集号画进集号胶囊，误导；② `mediaServerCollectionOf`（`fushi/lib/src/media/video/media_server/media_server_browser.dart:166`）的 `sortIndex` 把缺集号当 0、缺季号也当 0，入库后的剧合集里没编号的集排到全季最前，与客户端集清单比较器（缺号排在有号之后）口径相反；③ 从库里起播时成员按 `sortIndex` 用不稳定的 `List.sort` 重排且无平局键（`fushi/lib/src/media/video/media_server/media_server_library.dart:446`），同槽的集超过 32 条会乱。
+- **[x] ① 已修复** — 集号在模型里保持可空：`CollectionEpisodeCard.number` 改成 `String?`，null 不画集号胶囊，媒体服务器详情页缺号时传 null（只靠集名区分）；槽位由 `mediaServerEpisodeSortIndex` 唯一计算：缺集号落本季最后一格（季×10000+9999）、缺季号落所有季之后，有号的槽位口径不变；起播成员排序加 `entryKey` 平局，与 `getCollectionItems` / 库页 / 继续观看同口径。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/media_server/media_server_library_test.dart`（槽位口径；40 个缺号集 + 缺季号集入库后起播成员顺序）、`fushi/test/pages/media_server/media_server_detail_view_test.dart`（缺号的集不画集号胶囊）。
+- **备注**：已入库行的 `sortIndex` 不回写（收养只插不改，避免覆盖用户手排），旧行要移出再加入媒体库才换到新槽位。持久化合集里同槽的缺号集按条目 id 平局，不是服务器原序（单条目纯函数拿不到列表位置）；服务器原序只在会话内集清单保留（BUG-4257）。未在真实 Jellyfin / Plex 上复测。

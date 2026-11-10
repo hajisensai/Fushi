@@ -87,7 +87,48 @@ MediaServerItem _episode(String id, int season, int number) => MediaServerItem(
   episodeNumber: number,
 );
 
+/// 服务器没给集号（Jellyfin `IndexNumber` / Plex `index` 为空）的集。
+MediaServerItem _unnumbered(String id, int? season) => MediaServerItem(
+  id: id,
+  name: 'Special $id',
+  type: MediaServerItemType.episode,
+  seriesId: 'show',
+  seriesName: 'The Show',
+  seasonNumber: season,
+);
+
 void main() {
+  group('VF5D4O_Tyx：缺号的集不占 0 号槽', () {
+    test('缺集号排在本季有号的集之后、下一季之前；缺季号排在所有季之后', () {
+      int slot(MediaServerItem item) =>
+          mediaServerCollectionOf(item)!.sortIndex;
+      final int s1e1 = slot(_episode('a', 1, 1));
+      final int s1e24 = slot(_episode('b', 1, 24));
+      final int s1none = slot(_unnumbered('c', 1));
+      final int s2e1 = slot(_episode('d', 2, 1));
+      final int s2none = slot(_unnumbered('e', 2));
+      final int noSeasonE1 = slot(
+        const MediaServerItem(
+          id: 'f',
+          name: 'f',
+          type: MediaServerItemType.episode,
+          seriesName: 'The Show',
+          episodeNumber: 1,
+        ),
+      );
+      final int nothing = slot(_unnumbered('g', null));
+      expect(s1e1, 1 * 10000 + 1, reason: '有号的槽位口径不变（已入库行不漂移）');
+      expect(s1e1 < s1e24 && s1e24 < s1none && s1none < s2e1, isTrue);
+      expect(s2e1 < s2none && s2none < noSeasonE1, isTrue);
+      expect(noSeasonE1 < nothing, isTrue);
+      expect(
+        mediaServerEpisodeSortIndex(seasonNumber: 0, episodeNumber: 3),
+        3,
+        reason: '特别篇（第 0 季）仍在最前',
+      );
+    });
+  });
+
   const MediaServerItem series = MediaServerItem(
     id: 'show',
     name: 'The Show',
@@ -383,6 +424,40 @@ void main() {
       ),
       throwsA(isA<MediaServerLaunchUnavailable>()),
     );
+  });
+
+  test('VF5D4O_Tyx：入库后从库里起播，缺集号的集排在本季有号的集之后，同槽按条目 '
+      'id 稳定（超过 32 条也不乱）', () async {
+    // 服务器给的缺号集故意乱序：同槽平局只认条目身份，与 getCollectionItems /
+    // 库页 / 继续观看同口径。
+    final List<String> unnumberedIds = <String>[
+      for (int i = 0; i < 40; i++) 'u${i.toString().padLeft(2, '0')}',
+    ];
+    browser.episodes['show|'] = <MediaServerItem>[
+      _unnumbered('zz-no-season', null),
+      for (final String id in unnumberedIds.reversed) _unnumbered(id, 1),
+      _episode('e3', 2, 1),
+      _episode('e2', 1, 2),
+      _episode('e1', 1, 1),
+    ];
+    expect(await library.addToLibrary(browser, series), 44);
+    final MediaCollectionRow collection = (await database
+        .getMediaCollectionByNaturalKey('The Show', 'playlist'))!;
+    final launch = await buildMediaServerLaunch(
+      row: (await repository.getByBookUid('e2'))!,
+      database: database,
+      repository: repository,
+      loadConfigs: () async => <MediaServerConfig>[_FakeConfig(browser)],
+      playlistCollectionId: collection.id,
+    );
+    expect(launch.members.map((RemoteVideoInfo i) => i.id), <String>[
+      'e1',
+      'e2',
+      ...unnumberedIds,
+      'e3',
+      'zz-no-season',
+    ]);
+    expect(launch.startIndex, 1);
   });
 
   test('background probe fills new episodes of in-library series and '

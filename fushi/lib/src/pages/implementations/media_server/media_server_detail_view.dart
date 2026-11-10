@@ -1015,7 +1015,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                   (BuildContext context, int index) => _buildEpisodeCard(
                     context,
                     _episodes[index],
-                    index,
                     isContinue: index == continueIndex,
                   ),
                 ),
@@ -1040,8 +1039,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 放在最外层。
   Widget _buildEpisodeCard(
     BuildContext context,
-    MediaServerItem episode,
-    int index, {
+    MediaServerItem episode, {
     required bool isContinue,
   }) {
     final String duration = formatMediaServerDuration(episode.durationMs);
@@ -1072,7 +1070,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                       : MediaServerImageKind.primary,
                 ),
               ),
-              number: '${episode.episodeNumber ?? index + 1}',
+              // 缺集号就不画集号：列表位置不是集号（VF5D4O_Tyx）。
+              number: episode.episodeNumber?.toString(),
               title: episode.name,
               summary: episode.overview,
               meta: <String>[
