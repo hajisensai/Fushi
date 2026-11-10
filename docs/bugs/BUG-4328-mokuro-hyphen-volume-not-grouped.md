@@ -1,4 +1,4 @@
-## BUG-4323 · mokuro.moe 连字符卷号不归组、本地改名不参与归组
+## BUG-4328 · mokuro.moe 连字符卷号不归组、本地改名不参与归组
 - **报告**：2026-11-09（应用内反馈 vECncM6f8Y，macOS 3.3.0-debug.24997）
 - **真实性**：✅ 真 bug，沿代码路径确认，两个独立根因：
   - 连字符卷号不认：mokuro.moe 内置下载的卷名是连字符 slug（`Karakai-Jouzu-Takagi-san-02`），`fushi/lib/src/media/manga/online/mokuro_moe_volume_downloader.dart:138-144` `volumeTitle` 在卷名不含系列名时拼成 `Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san-02`。`packages/fushi_engine/lib/media/collections/book_series_key.dart:36-41` `_volumeSuffix` 的卷号分隔只有空白 / `第` / `vol` / `v` / `#` / `(` / 非 ASCII 后贴数字，单独一个 `-` 后跟数字一项都不匹配，整串当系列名，每卷系列键各不相同，`BookSeriesGrouper` 不归组。
