@@ -138,6 +138,11 @@ void main() {
     return res.statusCode;
   }
 
+  Future<(int, String)> statusAndBody(String method, String url) async {
+    final HttpClientResponse res = await send(method, url);
+    return (res.statusCode, await res.transform(utf8.decoder).join());
+  }
+
   Future<Map<String, dynamic>> jsonOf(HttpClientResponse res) async {
     expect(res.statusCode, 200);
     return jsonDecode(await res.transform(utf8.decoder).join())
@@ -160,10 +165,42 @@ void main() {
 
     revokePeer();
 
-    expect(await statusOf('GET', url), 403);
-    // 已作废的派生凭据不留在表里。
-    expect(await statusOf('GET', url), 403);
+    // 第一次命中吊销分支（签发者不在快照里）；它要把这张 token 从表里删掉，于是第二次
+    // 落到「未知 token」分支——比响应体才分得清（两条都是 403，评审 tests-1）。
+    expect(await statusAndBody('GET', url), (403, 'Token revoked'));
+    expect(await statusAndBody('GET', url), (
+      403,
+      'Invalid or expired token',
+    ), reason: '已作废的派生凭据不留在表里');
   });
+
+  // 评审 tests-3：HLS playlist / 分段与蓝光分段各自校验签发者。用直传 token 去点这几条
+  // 路径：吊销前 token 被认（落到「不是转码流 / 不是蓝光标题」的 404），吊销后必须在
+  // 那之前就回 403 Token revoked——少了哪个 handler 的签发者校验，它就仍回 404。
+  for (final String suffix in <String>[
+    'hls.m3u8',
+    'hlsseg.ts?n=0',
+    'bdclip.m2ts?n=0',
+  ]) {
+    test('peer 签出的 token 在吊销后取 $suffix 回 403 Token revoked', () async {
+      final String token = Uri.parse(
+        await streamUrl(peerToken),
+      ).queryParameters['token']!;
+      final String path = suffix.split('?').first;
+      final String extra = suffix.contains('?')
+          ? '&${suffix.split('?').last}'
+          : '';
+      final String url =
+          '$base/api/library/videos/vid-1/$path'
+          '?token=${Uri.encodeQueryComponent(token)}$extra';
+      final (int before, _) = await statusAndBody('GET', url);
+      expect(before, 404, reason: '吊销前 token 被认，只是这条流不是转码 / 蓝光');
+
+      revokePeer();
+
+      expect(await statusAndBody('GET', url), (403, 'Token revoked'));
+    });
+  }
 
   test('共享 token 签出的流 URL 不受吊销 peer 株连', () async {
     final String url = await streamUrl(sharedToken);
