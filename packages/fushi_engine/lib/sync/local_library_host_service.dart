@@ -145,6 +145,7 @@ abstract class _LocalLibraryHostBase
         FushiLibraryHostService,
         BookProgressBatchHost,
         MangaLibraryHost,
+        LivePositionWriteHost,
         DeletionTombstoneHost,
         PeerPushDeletionGate,
         VideoDeletionHost,

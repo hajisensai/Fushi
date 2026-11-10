@@ -441,30 +441,37 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
   }
 
   /// 把 client 上报的书 [bookKey] 进度写入 host 自己的 `reader_positions`
-  /// （TODO-767）。
-  ///
-  /// 冲突解决「取较新时间戳」（[resolveBookProgressSync]）：仅当 [progress] 严格
-  /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。胜出方等于 host 已存
-  /// 进度时 no-op（不写库）。负 normCharOffset clamp 0。
+  /// （TODO-767）。旧口径（无前置条件、丢弃回执），等价于
+  /// [putBookProgressChecked]`(expected: null)`。
   @override
   Future<void> putBookProgress(
     String bookKey,
     RemoteBookProgress progress,
   ) async {
-    // host 书库不存在该 bookKey → no-op，不写孤儿 `reader_positions` 行。
+    await putBookProgressChecked(bookKey, progress);
+  }
+
+  /// 带回执与可选前置条件的书进度写入（BUG-4278，[LivePositionWriteHost]）。判定口径
+  /// 只在 [resolveLiveBookProgressWrite] 一处。
+  @override
+  Future<LiveBookProgressWriteOutcome> putBookProgressChecked(
+    String bookKey,
+    RemoteBookProgress progress, {
+    List<BookProgressBaseline>? expected,
+  }) async {
+    // host 书库不存在该 bookKey → missing，不写孤儿 `reader_positions` 行。
     // （reader_positions 无外键也无 GC，任意 client 上报任意 bookKey 都会落库；
     // 之后 host 若导入同名 sanitize bookKey 的书，恢复时会取到来自别处设备、host
     // 从没读过的陈旧位置 = 进度污染。与视频 `updateVideoBookPosition`「UPDATE
     // 不存在即 no-op」语义对齐。syncContent 开时 client 独有书已先经
     // `_syncBooksContentLive` importBook 推成 host 书，故正常同步不被此闸门误挡。）
     final EpubBookRow? hostBook = await _db.getEpubBook(bookKey);
-    if (hostBook == null || hostBook.uid.isEmpty) return;
-    final RemoteBookProgress incoming = RemoteBookProgress(
-      sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
-      normCharOffset: progress.normCharOffset < 0 ? 0 : progress.normCharOffset,
-      charOffset: progress.charOffset,
-      updatedAtMs: progress.updatedAtMs,
-    );
+    if (hostBook == null || hostBook.uid.isEmpty) {
+      return const LiveBookProgressWriteOutcome(
+        result: LiveWriteResult.missing,
+        current: RemoteBookProgress.empty,
+      );
+    }
     // 窄锁而非 _runExclusive：后者在 app 里罩着整个自动同步轮（含云备份，动辄
     // 几分钟），对端这条单行 PUT 排在后面拿不到响应头，15s 判超时——而 host 等锁
     // 放开后照样落库，对端便漏记「已对齐」，下一轮误报进度冲突。读-比较-写整段在
@@ -474,43 +481,39 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 这把锁，前者改用 `upsertReaderPositionIfUnchanged` 在事务里比较后写入
     // （BUG-3537）。这里的读-比较-写也放进同一个 DB 事务，两边才互不插队：否则
     // 出站落地正好写在本端「读 current」与「写 winner」之间时，会被这里按旧的
-    // current 算出的 winner 盖掉。
+    // current 算出的 winner 盖掉。前置条件也在同一事务里比较，才是原子的。
+    late LiveBookProgressWriteOutcome outcome;
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final RemoteBookProgress current = await getBookProgress(bookKey);
-        // 未来时间戳防护（与视频 / 有声书 PUT 同口径）：上报戳截到 host 当前时刻 +
-        // 余量；已存的超限毒戳按 0 比较——否则一台时钟走快的设备写下的戳在 LWW 里
-        // 永远胜出，之后任何端的正常上报都被 no-op 掉。
-        final int nowMs = DateTime.now().millisecondsSinceEpoch;
-        final RemoteBookProgress trustedCurrent = withTrustedStoredStamp(
-          current,
-          nowMs: nowMs,
-        );
-        final RemoteBookProgress winner = resolveBookProgressSync(
-          local: trustedCurrent,
-          remote: withCappedStamp(incoming, nowMs: nowMs),
-        );
-        // 胜者是 host 已存那份（可信戳视图）就不写：不能把毒戳视图的 0 戳写回库。
-        // 胜者是上报那份时仍与**原始** current 逐字段比较（含原始戳），所以毒戳行
-        // 只要被上报胜过就一定会被覆盖。
-        if (identical(winner, trustedCurrent)) return;
-        if (winner.sectionIndex == current.sectionIndex &&
-            winner.normCharOffset == current.normCharOffset &&
-            winner.charOffset == current.charOffset &&
-            winner.updatedAtMs == current.updatedAtMs) {
-          return; // host 已存更新或相等，no-op。
+        // 未来时间戳防护在判定函数里：上报戳截到 host 当前时刻 + 余量，已存的
+        // 超限毒戳按 0 比较。
+        final ({LiveWriteResult result, RemoteBookProgress next}) decision =
+            resolveLiveBookProgressWrite(
+              current: current,
+              incoming: progress,
+              expected: expected,
+              nowMs: DateTime.now().millisecondsSinceEpoch,
+            );
+        if (decision.result == LiveWriteResult.applied) {
+          final RemoteBookProgress next = decision.next;
+          await _db.upsertReaderPosition(
+            ReaderPositionsCompanion(
+              bookUid: Value(hostBook.uid),
+              sectionIndex: Value(next.sectionIndex),
+              normCharOffset: Value(next.normCharOffset),
+              charOffset: Value(next.charOffset),
+              updatedAt: Value(next.updatedAtMs),
+            ),
+          );
         }
-        await _db.upsertReaderPosition(
-          ReaderPositionsCompanion(
-            bookUid: Value(hostBook.uid),
-            sectionIndex: Value(winner.sectionIndex),
-            normCharOffset: Value(winner.normCharOffset),
-            charOffset: Value(winner.charOffset),
-            updatedAt: Value(winner.updatedAtMs),
-          ),
+        outcome = LiveBookProgressWriteOutcome(
+          result: decision.result,
+          current: decision.next,
         );
       }),
     );
+    return outcome;
   }
 
   /// 按 [id]（downloadId：bookKey 或 title）单查书封面磁盘路径（对称

@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3839 条。点号进各自文件。
+> 共 3840 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4278](bugs/BUG-4278-interconnect-live-put-unconfirmed-baseline.md) | 🚧 | 🚧 | 互联 live 进度 PUT 不回结果，client 无条件记基线 |
 | [BUG-4277](bugs/BUG-4277-host-video-manifest-position-stamp-diverges.md) | ✅ | ✅ | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
 | [BUG-4276](bugs/BUG-4276-interconnect-book-progress-future-stamp-unguarded.md) | ✅ | ✅ | 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端 |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |

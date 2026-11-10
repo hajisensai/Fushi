@@ -623,10 +623,8 @@ mixin _LocalLibraryHostVideos
     );
   }
 
-  /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。
-  ///
-  /// 冲突解决「取较新时间戳」（[resolvePositionLww]）：仅当 [updatedAtMs] 严格
-  /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。负位置 clamp 0。
+  /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。旧口径（无前置条件、
+  /// 丢弃回执），等价于 [putVideoPositionChecked]`(expectedPositionsMs: null)`。
   @override
   Future<void> putVideoPosition(
     String id,
@@ -634,33 +632,58 @@ mixin _LocalLibraryHostVideos
     int updatedAtMs, {
     int episodeIndex = 0,
   }) async {
+    await putVideoPositionChecked(
+      id,
+      positionMs,
+      updatedAtMs,
+      episodeIndex: episodeIndex,
+    );
+  }
+
+  /// 带回执与可选前置条件的视频断点写入（BUG-4278，[LivePositionWriteHost]）。判定
+  /// 口径只在 [resolveLivePositionWrite] 一处；host 当前值取 [getVideoPosition]
+  /// （与清单同一派生函数，BUG-4277）。存在性闸门在端点（404），这里不重复。
+  @override
+  Future<LivePositionWriteOutcome> putVideoPositionChecked(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    List<int>? expectedPositionsMs,
+  }) async {
     // 读-比较-写在同步状态窄锁内（与 [putBookProgress] 同纪律）：两个对端并发上报
     // 不会互相用旧值盖掉对方；不用 _runExclusive，免得排在本机整轮同步后面超时。
     // 同时放进一个 DB 事务（BUG-3537）：本机出站同步落地在事务里比较后写入，这里
     // 的读-比较-写也须原子，否则出站落地插在「读 current」与「写 winner」之间会被
-    // 按旧 current 算出的 winner 盖掉。
+    // 按旧 current 算出的 winner 盖掉。前置条件也在同一事务里比较。
+    late LivePositionWriteOutcome outcome;
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final ({int positionMs, int updatedAtMs}) current =
             await getVideoPosition(id, episodeIndex: episodeIndex);
         // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
-        final int nowMs = DateTime.now().millisecondsSinceEpoch;
-        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-          localPositionMs: current.positionMs,
-          localUpdatedAtMs: trustedStoredSyncStamp(
-            current.updatedAtMs,
-            nowMs: nowMs,
-          ),
-          remotePositionMs: positionMs < 0 ? 0 : positionMs,
-          remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
+        final ({
+          LiveWriteResult result,
+          ({int positionMs, int updatedAtMs}) next,
+        })
+        decision = resolveLivePositionWrite(
+          current: current,
+          positionMs: positionMs,
+          updatedAtMs: updatedAtMs,
+          expectedPositionsMs: expectedPositionsMs,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
         );
-        if (winner.updatedAtMs == current.updatedAtMs &&
-            winner.positionMs == current.positionMs) {
-          return; // host 已存更新或相等，no-op。
+        if (decision.result == LiveWriteResult.applied) {
+          await _writeVideoPositionWinner(id, episodeIndex, decision.next);
         }
-        await _writeVideoPositionWinner(id, episodeIndex, winner);
+        outcome = LivePositionWriteOutcome(
+          result: decision.result,
+          positionMs: decision.next.positionMs,
+          updatedAtMs: decision.next.updatedAtMs,
+        );
       }),
     );
+    return outcome;
   }
 
   Future<void> _writeVideoPositionWinner(
