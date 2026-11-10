@@ -34,16 +34,21 @@ void main() {
     expect(selection.submission, isNull);
   });
 
-  test('filter is case-insensitive and every term must match', () {
+  test('filter is a case-insensitive, trimmed substring match', () {
     final TorrentFileSelection selection = TorrentFileSelection(pack);
+    // 「book b」不能因为 `b` 命中 `.m4b` 就把 Book A 也筛进来。
     expect(
       selection.filter('book b').map((InspectedTorrentFile f) => f.index),
       <int>[2, 3],
     );
     expect(
       selection
-          .filter('  OPENING  a ')
+          .filter('  OPENING.M4B ')
           .map((InspectedTorrentFile f) => f.index),
+      <int>[0, 2],
+    );
+    expect(
+      selection.filter('a/01').map((InspectedTorrentFile f) => f.index),
       <int>[0],
     );
     expect(selection.filter(''), hasLength(4));

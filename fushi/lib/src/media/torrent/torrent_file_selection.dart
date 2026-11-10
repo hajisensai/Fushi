@@ -70,18 +70,17 @@ class TorrentFileSelection {
     }
   }
 
-  /// 按文件名（种子内相对路径，不分大小写）筛选；空白分隔的多个词须全部命中。
-  /// 空查询 = 全部文件。
+  /// 按文件名（种子内相对路径，不分大小写）筛选：去掉首尾空白后整串作子串匹配
+  /// （与 qBittorrent 的内容筛选同一口径）。空查询 = 全部文件。
+  ///
+  /// 不拆成「多个词都命中」：书名 / 卷号里的短词（`Book B`、`Vol 3`）拆开后
+  /// 会命中扩展名与音轨号（`.m4b`、`.mp3`、`03`），筛出整颗种子。
   List<InspectedTorrentFile> filter(String query) {
-    final List<String> terms = query
-        .toLowerCase()
-        .split(RegExp(r'\s+'))
-        .where((String term) => term.isNotEmpty)
-        .toList(growable: false);
-    if (terms.isEmpty) return files;
+    final String needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return files;
     return <InspectedTorrentFile>[
       for (final InspectedTorrentFile file in files)
-        if (terms.every(file.path.toLowerCase().contains)) file,
+        if (file.path.toLowerCase().contains(needle)) file,
     ];
   }
 
