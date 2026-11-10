@@ -60,6 +60,48 @@ class KaraokeLookupHit {
   final Rect globalRect;
 }
 
+/// A controller cursor on one character of the lyrics (controller lookup mode,
+/// S6 of the dual-screen companion). The page moves it ([moveTo] / [clear]);
+/// the attached [KaraokeLyricsView] keeps the cursor's row in view (instead of
+/// the playing row), un-dims it and outlines the character, and resolves
+/// [hitAtCursor] (the same [KaraokeLookupHit] a tap on that character gives).
+class KaraokeLyricsCursor extends ChangeNotifier {
+  int? _line;
+  int _charIndex = 0;
+  KaraokeLookupHit? Function(int line, int charIndex)? _resolve;
+
+  /// [LyricTimeline.lines] index of the cursor; null while it is hidden.
+  int? get line => _line;
+
+  /// UTF-16 index in that line's text.
+  int get charIndex => _charIndex;
+
+  /// A lyrics view is showing this cursor.
+  bool get attached => _resolve != null;
+
+  void moveTo(int line, int charIndex) {
+    if (_line == line && _charIndex == charIndex) return;
+    _line = line;
+    _charIndex = charIndex;
+    notifyListeners();
+  }
+
+  void clear() {
+    if (_line == null) return;
+    _line = null;
+    _charIndex = 0;
+    notifyListeners();
+  }
+
+  /// The hit for the cursor's character (global rect of its glyph); null when
+  /// hidden, no view is attached or the row is not laid out.
+  KaraokeLookupHit? hitAtCursor() {
+    final int? line = _line;
+    if (line == null) return null;
+    return _resolve?.call(line, _charIndex);
+  }
+}
+
 class KaraokeLyricsView extends StatefulWidget {
   const KaraokeLyricsView({
     super.key,
@@ -72,6 +114,7 @@ class KaraokeLyricsView extends StatefulWidget {
     this.onLookup,
     this.tapLooksUp = false,
     this.isSeekPointer,
+    this.cursor,
   });
 
   final LyricTimeline timeline;
@@ -94,6 +137,9 @@ class KaraokeLyricsView extends StatefulWidget {
   /// 这次鼠标按下（Flutter 按钮位掩码）是不是「跳到点中的这一行」。null = 只有点按
   /// 跳转。命中即派发并认领这次按下（[dispatchClaimedMouseAction]，外层不再派发）。
   final bool Function(int buttons)? isSeekPointer;
+
+  /// Controller lookup cursor (null: none).
+  final KaraokeLyricsCursor? cursor;
 
   @override
   State<KaraokeLyricsView> createState() => _KaraokeLyricsViewState();
@@ -146,6 +192,90 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
     _rows = karaokeRows(widget.timeline);
     _position.value = widget.clock.position.inMilliseconds;
     _current = _computeCurrent();
+    _bindCursor(widget.cursor);
+  }
+
+  void _bindCursor(KaraokeLyricsCursor? cursor) {
+    if (cursor == null) return;
+    cursor._resolve = _hitForCursor;
+    cursor.addListener(_onCursor);
+  }
+
+  void _unbindCursor(KaraokeLyricsCursor? cursor) {
+    if (cursor == null) return;
+    cursor.removeListener(_onCursor);
+    if (cursor._resolve == _hitForCursor) cursor._resolve = null;
+  }
+
+  void _onCursor() {
+    if (!mounted) return;
+    setState(() {});
+    _scheduleAutoScroll();
+  }
+
+  /// Row (line group) holding the cursor's line; null without a cursor.
+  int? get _cursorRow {
+    final int? line = widget.cursor?.line;
+    if (line == null) return null;
+    for (int i = 0; i < _rows.length; i++) {
+      final KaraokeRowSpan span = _rows[i];
+      if (span.main == line || span.backgrounds.contains(line)) return i;
+    }
+    return null;
+  }
+
+  /// The cursor's glyph in row-local coordinates of [row].
+  Rect? _cursorRectIn(int row) {
+    final int? line = widget.cursor?.line;
+    if (line == null || row >= _layouts.length) return null;
+    final _RowLayout layout = _layouts[row];
+    if (layout.span.main == line) {
+      return layout.main.charRect(widget.cursor!.charIndex);
+    }
+    for (int k = 0; k < layout.backgrounds.length; k++) {
+      if (layout.span.backgrounds[k] != line) continue;
+      final (KaraokeLineLayout l, double dy) = layout.backgrounds[k];
+      return l.charRect(widget.cursor!.charIndex)?.shift(Offset(0, dy));
+    }
+    return null;
+  }
+
+  KaraokeLookupHit? _hitForCursor(int line, int charIndex) {
+    final int? row = _cursorRow;
+    if (row == null || row >= _layouts.length || row >= _tops.length) {
+      return null;
+    }
+    final _RowLayout layout = _layouts[row];
+    final KaraokeLineLayout l = layout.span.main == line
+        ? layout.main
+        : layout.backgrounds[layout.span.backgrounds.indexOf(line)].$1;
+    final Rect? local = _cursorRectIn(row);
+    int syllable = 0;
+    for (int i = 0; i < l.syllables.length; i++) {
+      if (charIndex >= l.syllables[i].start && charIndex < l.syllables[i].end) {
+        syllable = i;
+        break;
+      }
+    }
+    final RenderBox? box = context.findRenderObject() as RenderBox?;
+    Rect global = Rect.zero;
+    if (local != null && box != null && box.hasSize) {
+      final Offset origin = Offset(
+        widget.appearance.horizontalPadding,
+        _tops[row] - _scroll.value,
+      );
+      global = Rect.fromPoints(
+        box.localToGlobal(origin + local.topLeft),
+        box.localToGlobal(origin + local.bottomRight),
+      );
+    }
+    return KaraokeLookupHit(
+      lineIndex: line,
+      syllableIndex: syllable,
+      charIndexInLine: charIndex,
+      lineText: l.line.text,
+      globalRect: global,
+    );
   }
 
   @override
@@ -158,6 +288,10 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
   @override
   void didUpdateWidget(covariant KaraokeLyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.cursor, widget.cursor)) {
+      _unbindCursor(oldWidget.cursor);
+      _bindCursor(widget.cursor);
+    }
     if (!identical(oldWidget.timeline, widget.timeline)) {
       _rows = karaokeRows(widget.timeline);
       _layoutKey = null;
@@ -211,8 +345,16 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
   }
 
   void _autoScroll({bool jump = false}) {
-    if (_holdAutoScroll || _tops.isEmpty || !widget.timeline.isSynced) return;
-    final double target = _targetFor(_current < 0 ? 0 : _current);
+    final int? cursorRow = _cursorRow;
+    if (_holdAutoScroll ||
+        _tops.isEmpty ||
+        (!widget.timeline.isSynced && cursorRow == null)) {
+      return;
+    }
+    // 手柄查词光标在场时停在光标所在行（不跟播放行走）。
+    final double target = _targetFor(
+      cursorRow ?? (_current < 0 ? 0 : _current),
+    );
     if (_lastTarget == target && !jump) return;
     final bool first = _lastTarget == null;
     _lastTarget = target;
@@ -420,6 +562,7 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
 
   @override
   void dispose() {
+    _unbindCursor(widget.cursor);
     _resumeTimer?.cancel();
     _ticker.dispose();
     _scroll.dispose();
@@ -446,7 +589,7 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
             : 600;
         _ensureLayouts(width, style);
         final bool synced = widget.timeline.isSynced;
-        final int focus = _preview ?? _current;
+        final int focus = _preview ?? _cursorRow ?? _current;
         final List<Widget> children = <Widget>[
           for (int i = 0; i < _layouts.length; i++)
             _buildRow(
@@ -524,6 +667,8 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
                 lineLevelSweep: widget.appearance.lineLevelSweep,
                 liftPx: widget.appearance.liftPx,
                 sungStatic: !synced,
+                cursorRect: _cursorRectIn(i),
+                cursorColor: Theme.of(context).colorScheme.primary,
               ),
             ),
           ),
@@ -558,7 +703,13 @@ class _KaraokeRowPainter extends CustomPainter {
     required this.lineLevelSweep,
     required this.liftPx,
     required this.sungStatic,
+    this.cursorRect,
+    this.cursorColor = const Color(0x00000000),
   }) : super(repaint: position);
+
+  /// Controller cursor glyph (row-local); null when the cursor is elsewhere.
+  final Rect? cursorRect;
+  final Color cursorColor;
 
   final _RowLayout layout;
   final bool active;
@@ -598,6 +749,16 @@ class _KaraokeRowPainter extends CustomPainter {
       one(layout.span.backgrounds[k], l);
       canvas.restore();
     }
+    final Rect? cursor = cursorRect;
+    if (cursor != null) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(cursor.inflate(3), const Radius.circular(4)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = cursorColor,
+      );
+    }
   }
 
   @override
@@ -609,7 +770,9 @@ class _KaraokeRowPainter extends CustomPainter {
       old.motion != motion ||
       old.lineLevelSweep != lineLevelSweep ||
       old.liftPx != liftPx ||
-      old.sungStatic != sungStatic;
+      old.sungStatic != sungStatic ||
+      old.cursorRect != cursorRect ||
+      old.cursorColor != cursorColor;
 }
 
 class _KaraokeFlowDelegate extends FlowDelegate {
