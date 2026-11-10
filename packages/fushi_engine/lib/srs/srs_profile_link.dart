@@ -7,10 +7,10 @@
 /// 此前只在备份恢复里做了，同步路径上没有。
 ///
 /// 本文件补上同步路径的关联：
-/// - 每个写入者在自己的目录里放一份 [kSrsProfileInfoName]（profile 名 + 有没有用户笔记），
+/// - 每个写入者在自己的目录里放一份 [kSrsProfileInfoName]（profile 名 + 有没有用户数据），
 ///   别的设备据此认出「同一个 profile」；
 /// - [srsDecideProfileLink] 是纯函数：给定本机 profile 与目录里已有的 profile，决定保持 / 自动采用
-///   对方 uid / 交给用户选。自动采用只在答案唯一时发生：本机 profile **没有用户笔记**（只有内置行，
+///   对方 uid / 交给用户选。自动采用只在答案唯一时发生：本机 profile **没有用户数据**（只有内置行，
 ///   内置行 ID 由 uid 派生、换 uid 后随新 uid 重新生成），且目录里恰好一个有数据的同一 profile；
 /// - 答案不唯一时**不静默保持**（以前那样做，三台设备各自随机生成 uid、都叫「Default」时，新设备永远按
 ///   自己的空 profile 同步，复习数据从不互通、也没有任何提示）：目录里有多个有数据的候选，或本机与对方都有
@@ -135,6 +135,8 @@ String srsV2WriterName(String device) => 'v2:$device';
 
 /// 决定本机 profile 与同步目录的关联（纯函数，规则见库注释）。
 ///
+/// - [localHasNotes]：本机 profile 有没有用户数据（[SrsDbStore.hasUserData]：笔记、自建牌组、改过的预设…，不只是
+///   笔记；参数名沿用旧名）。为假时可能判成采用，采用会删掉本机旧 uid 的全部行。
 /// - [localProfileCount]：本机 profile 总数。目录里的 profile 都没有说明文件（旧版本写的）、
 ///   名字对不上时，只有「两边都只有一个 profile」才把唯一那个当成同一个。
 SrsProfileLinkDecision srsDecideProfileLink({
@@ -444,7 +446,7 @@ class SrsProfileLinkOutcome {
   /// 非 null = 没法自动关联，要用户在这些候选里选（[SrsProfileLinkChoose]）。
   final List<SrsRemoteProfile>? choose;
 
-  /// 判定时本机 profile 有没有用户笔记（有 = 选定后要并入，而不是直接改用）。
+  /// 判定时本机 profile 有没有用户数据（[SrsDbStore.hasUserData]，不只是笔记；有 = 选定后要并入，而不是直接改用）。
   final bool localHasNotes;
 
   /// 判定时本机 profile 的用户笔记数（只在 [choose] 非 null 时数，给用户对比本机与候选）。
@@ -687,7 +689,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     if (await deferredMerge(store) != null) return SrsProfileLinkOutcome(store);
     final List<SrsRemoteProfile> remote = await srsListRemoteProfiles(backend);
     await _removeRetiredFolders(backend, store, remote);
-    final bool localHasNotes = await store.hasUserNotes();
+    // 「本机有数据」看的是全部用户数据（[SrsDbStore.hasUserData]），不只是笔记：判成采用就会经 [_switchUid]
+    // 删掉本机旧 uid 的全部行，只建了牌组 / 改了预设、还没有笔记的 profile 以前会被当成空的删掉。
+    final bool localHasNotes = await store.hasUserData();
     final SrsProfileLinkDecision decision = srsDecideProfileLink(
       localUid: store.profileUid,
       localName: await _nameOf(store.profileUid),
@@ -792,7 +796,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         await _switchUid(
           store,
           uid,
-          merge: await store.hasUserNotes(),
+          merge: await store.hasUserData(),
           within: within,
         ),
       );
@@ -1004,7 +1008,10 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final String? device = store.sync2Device;
     if (device == null) return;
     final int noteCount = await store.userNoteCount();
-    final bool hasNotes = noteCount > 0;
+    // 说明文件的 `hasNotes` 报的是「有没有用户数据」（[SrsDbStore.hasUserData]）：只建了牌组 / 改了预设的设备也要
+    // 被别的设备当成有数据的候选，否则对方（空的）按「双方都空、收敛到最小 uid」判，这边又因为有数据不采用，两边
+    // 就各自保持、悄悄分叉。键名沿用旧名（旧版本读到 true 同样当作有数据）。
+    final bool hasNotes = noteCount > 0 || await store.hasUserData();
     // 设备人读名（昵称或型号，devices.rs）：别的设备遇到 profile 冲突时靠它认出这份数据是哪台设备的。
     final Object? label = (await store.sync2DeviceInfo())['name'];
     final String? deviceLabel = label is String && label.isNotEmpty
@@ -1014,8 +1021,8 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     // 里的持久状态，进程重启、离线多久都还在；并入做完标记删掉、本设备换到新 uid，旧 uid 下的目录随后由 [link] 清掉。
     final String? mergingInto = await _mergingInto(store);
     final String sig =
-        '${store.profileUid}|$device|$name|$noteCount|${deviceLabel ?? ''}|'
-        '${mergingInto ?? ''}';
+        '${store.profileUid}|$device|$name|$noteCount|$hasNotes|'
+        '${deviceLabel ?? ''}|${mergingInto ?? ''}';
     if (_published[directoryKey] == sig) return;
     await srsPublishProfileInfo(
       backend,
