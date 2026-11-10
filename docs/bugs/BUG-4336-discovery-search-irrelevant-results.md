@@ -1,4 +1,4 @@
-## BUG-4323 · 游戏发现页搜索结果混入大量无关条目（真红小站模糊搜索透传）
+## BUG-4336 · 游戏发现页搜索结果混入大量无关条目（真红小站模糊搜索透传）
 - **报告**：2026-11-09（开发者自提，应用内反馈 80S7Esbdec，Windows 3.3.0-debug.24790，附截图）
 - **真实性**：✅ 真 bug，已沿代码路径确认。游戏发现页搜「ユリアリス」，只有 AList（erogame）那一条真命中，真红小站返回的「天文時計のアリア」「ユニオリズム」「デリシャスらんちぱっく」等 6 条以上都与查询无关。
   - 根因：`fushi/lib/src/media/discovery/sources/shinnku_discovery_source.dart:56-140` `ShinnkuDiscoverySource.search` 把站点 `/search?q=` RSC `answer` 数组逐条原样转成 `DiscoveryResourceItem`，不过滤也不排序；站点后端是字符级模糊匹配，零散命中 リ / ア / ス 的条目都会返回。聚合层 `fushi/lib/src/media/discovery/media_discovery_service.dart`（`load` → `_invoke` → `_assemble`）与发现页 `media_discovery_page.dart` 的 `_visible` 都没有任何相关度判据，于是最松的那个源的噪声整页透出。不是 shinnku 一家的问题：Nyaa / AList / OPDS / Audiobookshelf 的后端口径同样不可控。
