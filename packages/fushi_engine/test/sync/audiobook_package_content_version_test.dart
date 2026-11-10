@@ -124,6 +124,17 @@ void main() {
       gate.complete();
       expect(await (await old).readAsBytes(), <int>[1]);
       expect(calls, 2);
+      // 旧版本那次后打完：不得把缓存顶回旧版本，也不得删掉新版本那份（它的请求方
+      // 可能还没开流）。
+      expect(fresh.existsSync(), isTrue, reason: '后打完的旧导出删掉了新版本的包');
+      final File again = await cache.obtain(
+        'audiobook',
+        'x',
+        export,
+        version: 'v2',
+      );
+      expect(again.path, fresh.path, reason: '缓存被旧版本顶掉，v2 请求又重导出了一次');
+      expect(calls, 2);
     });
   });
 

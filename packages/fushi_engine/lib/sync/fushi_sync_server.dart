@@ -1605,6 +1605,12 @@ class ExportPackageCache {
   /// 项不在表里）。
   final Map<String, String> _versions = <String, String>{};
 
+  /// key → 当前 [_latest] 那份出自第几次开始的导出（[_produce] 的启动序号）。
+  /// 按版本去重后同一 key 可能有两次导出并行（内容刚换过）：后开始的那次代表更新的
+  /// 内容，先开始、后打完的旧导出不得把它顶掉。
+  final Map<String, int> _installedStart = <String, int>{};
+  int _startSeq = 0;
+
   /// 缓存文件路径 → `Repr-Digest` 头值（`sha-256=:<base64>:`）。
   final Map<String, String> _reprDigests = <String, String>{};
   int _seq = 0;
@@ -1708,6 +1714,7 @@ class ExportPackageCache {
     Future<File> Function() export,
     String? version,
   ) async {
+    final int start = ++_startSeq;
     final File exported = await export();
     // 保留原始文件名（扩展名决定 Content-Type，如 .epub → application/epub+zip），
     // 前缀序号防同名不同 key 撞车。
@@ -1733,6 +1740,12 @@ class ExportPackageCache {
       // 只损失整体校验（client 退回长度校验），不影响下载本身。
       engineLog.log('ExportPackageCache.reprDigest', e, stack);
     }
+    // 比这次晚开始的导出已经装进缓存：那份是更新的内容（版本换过之后才开始的），
+    // 这份更旧。不能把它顶回 [_latest]——那会让缓存退回旧版本，还会删掉新那份，而
+    // 新那份的请求方可能还没打开它（拿到 File 与开流之间还有 await）。这份照常交给
+    // 本次请求方发完；文件留在缓存目录，[dispose] 整目录回收。
+    if ((_installedStart[key] ?? 0) > start) return target;
+    _installedStart[key] = start;
     final File? old = _latest[key];
     _latest[key] = target;
     _lastUsed[key] = DateTime.now();
@@ -1758,6 +1771,7 @@ class ExportPackageCache {
     _inFlight.clear();
     _lastUsed.clear();
     _versions.clear();
+    _installedStart.clear();
     _reprDigests.clear();
     final Directory? root = _root;
     _root = null;
