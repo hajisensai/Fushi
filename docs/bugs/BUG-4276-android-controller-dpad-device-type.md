@@ -1,4 +1,4 @@
-## BUG-4245 · Android controller D-pad reaches Dart as keyboard arrows (lookup mode / panel drive ignore it)
+## BUG-4276 · Android controller D-pad reaches Dart as keyboard arrows (lookup mode / panel drive ignore it)
 - **报告**：2026-11-08（双屏副屏真机巡检：AYN Thor，按住 L1 查词模式 / 按住 R1 驱动副屏时方向键照常翻页，L1 / R1 / A / B / Y 都正常被截获）
 - **真实性**：✅ 真 bug，三处：
   - 设备类型丢失（develop 同样存在）：真机日志 `MainActivity.dispatchKeyEvent` 把手柄 source 0x501 收窄成 0x401（`ControllerKeySource`），引擎 `KeyEmbedderResponder` 也把 kGamepad 写进 key data 包，但 Flutter 3.47.6 dart:ui `PlatformDispatcher._unpackKeyData`（`bin/cache/pkg/sky_engine/lib/ui/platform_dispatcher.dart`，上游 master 2026-11 同样）根本不读这个字段，Dart 侧每个 `KeyEvent.deviceType` 都是 keyboard。`GamepadButton.fromKeyEvent`（`fushi/lib/src/shortcuts/input_binding.dart`）只在手柄类设备上认方向键 → `interceptNativeControllerLookupKey`（`gamepad_service.dart`）放行，页面的方向键绑定翻页。A / L1 等是 `gameButton*` 逻辑键、不看设备类型，所以正常。游戏串流页 `_isControllerSource(event.deviceType)` 同病。

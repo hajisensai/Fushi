@@ -1343,7 +1343,7 @@ mixin _FushiDbStatistics
   // ── mining statistics ───────────────────────────────────────────
   /// 制卡成功计数 +[delta]：累加到 (sourceType, dateKey) 现有计数。
   ///
-  /// 写在前（BUG-4244 跨进程查词计数丢失同一病）：事务第一条语句就是写，见
+  /// 写在前（BUG-4275 跨进程查词计数丢失同一病）：事务第一条语句就是写，见
   /// [_addLookupMiningCounter] 的说明。
   Future<void> addMiningCount({
     required String sourceType,
@@ -1459,7 +1459,7 @@ mixin _FushiDbStatistics
   /// [addLookupCount] / [addMineCountPerBook] 的共同实现：给 [column]
   /// （`lookup_count` / `mine_count`）+[delta]。
   ///
-  /// BUG-4244（跨进程查词计数丢失）：同一个库还有别的进程在写（`:popup` 浮窗、
+  /// BUG-4275（跨进程查词计数丢失）：同一个库还有别的进程在写（`:popup` 浮窗、
   /// `:second_screen` 副屏面板写查词历史），旧实现是 deferred 事务里先 SELECT
   /// 再 UPDATE / INSERT——SELECT 拿到的 WAL 快照一旦被别的进程的提交作废，升级
   /// 写锁就立刻 `SqliteException(5) database is locked`，busy_timeout 不生效

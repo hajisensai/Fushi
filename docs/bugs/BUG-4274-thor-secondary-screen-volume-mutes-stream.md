@@ -1,4 +1,4 @@
-## BUG-4243 · AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen
+## BUG-4274 · AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen
 - **报告**：2026-11-08（用户：Thor 上「Fushi Dual」串流无声；同一游戏串流到不带副屏面板的 `app.fushi.reader` 3.3.0-debug.23080 有声但小）
 - **真实性**：✅ 真问题，根因在设备 ROM（外部不可控），不在接收端代码：
   - 接收端音频路径在用户那版（develop `a22b42685a`，release seq 23080）、本分支基线 `1060c38945` 与 HEAD 完全一致（`fushi/lib/src/sync/game_stream_receiver.dart` `prepareGameStreamMediaAudio` / `_applyAudioEnabled`，flutter_webrtc 钉 1.6.2+hotfix.3）；两包的 AudioTrack 创建参数相同（usage MEDIA / content SPEECH / flags 0x900、单声道 48 kHz、frameCount 3844，`dumpsys media.metrics`），WebRTC 输出音量 1.0（logcat `WRVMC::SetOutputVolume ... 1.00`）、播放电平非零。
