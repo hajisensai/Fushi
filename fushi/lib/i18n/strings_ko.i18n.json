@@ -2626,6 +2626,7 @@
   "download_rate_limit_lan_included": "로컬 네트워크에도 적용됩니다.",
   "download_remote_delete_files_host_default": "This host runs an older version, so deleting a task can't choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.",
   "download_remote_jobs_empty": "호스트에 아직 작업이 없습니다",
+  "download_remote_jobs_stale": "Can't reach the host right now; showing the last known progress",
   "download_remote_jobs_title": "$device의 작업",
   "download_request_failed": "다운로드를 만들 수 없습니다. 다운로드 설정과 작업 목록을 확인한 다음 다시 시도하세요.",
   "download_resource_resolve_failed": "다운로드 리소스를 가져올 수 없습니다. 네트워크와 프록시 설정을 확인한 다음 다시 시도하세요.",

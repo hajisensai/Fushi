@@ -5,6 +5,8 @@ library;
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:http/http.dart' as http;
 
 class HostDownloadTarget {
@@ -69,8 +71,10 @@ class HostDownloadJob {
     required this.stage,
     required this.stageProgress,
     required this.updatedAt,
+    int? createdAt,
+    this.discoveryKind,
     this.lastError,
-  });
+  }) : createdAt = createdAt ?? updatedAt;
 
   factory HostDownloadJob.fromJson(Map<String, dynamic> json) =>
       HostDownloadJob(
@@ -80,6 +84,12 @@ class HostDownloadJob {
         stage: (json['stage'] ?? '').toString(),
         stageProgress: (json['stageProgress'] as num?)?.toDouble() ?? 0,
         updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
+        createdAt: (json['createdAt'] as num?)?.toInt(),
+        // host 对非视频任务写的是 `DiscoveryMediaKind.name`，视频任务是
+        // movie / tv（不在枚举里 → null = 视频）。
+        discoveryKind: DiscoveryMediaKind.values
+            .asNameMap()[json['mediaKind']]
+            ?.name,
         lastError: json['lastError']?.toString(),
       );
 
@@ -89,6 +99,12 @@ class HostDownloadJob {
   final String stage;
   final double stageProgress;
   final int updatedAt;
+
+  /// 任务创建时间；老 host 不下发时退回 [updatedAt]。
+  final int createdAt;
+
+  /// 内容域（`DiscoveryMediaKind.name`）；null = 视频。
+  final String? discoveryKind;
   final String? lastError;
 }
 
