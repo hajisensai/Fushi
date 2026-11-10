@@ -12,4 +12,12 @@
   - client 所有权：`DownloadExecutionRemote.ownsClient` + `release()`，`resolveDownloadExecution` 自建的 client 在 Local / Unreachable 出口关闭；`download_actions` / `home_page`（两处）/ `manual_download_task_dialog` / ctl（`CtlDownloadDeviceRemote.release()`、`dl targets`、五条远端任务路由与添加任务）用完关闭。
   - 订阅（步骤 8）、AI 助手（步骤 10）、`InterconnectHostClient`（步骤 11）迁移后在步骤 11 合入时关闭本条；job / manga_ocr 两个 client 由 remote-tasks 包迁移。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_host_channel_test.dart`（整段超时、POST 在 send / 读响应体阶段失败都不重发、GET 换地址、流式上传只打开一次且失败不重试、证书不符分型、close 生命周期、per-peer 凭据、钉扎闸、401、非 401 状态码原样返回、会话绑定、能力探测分型、ref 认法）；`fushi/test/sync/interconnect_download_failure_surface_test.dart`「代下载 client 走共享 host 通道」两条（listJobs 响应体卡住在超时内报 unreachable；死 LAN + 活 https 时 probe() 直接选中活地址）——修复前两条均红（前者 3 s 超时、后者死 LAN 吃掉 30 s 探测超时）。
+- **[x] ① 步骤 11（收尾，本条关闭）** — `61f609375d1`：
+  - 根因（基准 94317ab6295）：`fushi/lib/src/sync/interconnect_host_client.dart:185-232` 的 `getFromHost` 按存储顺序逐条试、不选路（死 LAN 先吃满超时，未核对 hostId 的明文地址也拿凭据），`:131-162` 的 `postJson` 经 post transport 另走一套候选筛选 / 钉扎 / 鉴权；`cancelPending` 只关 client 不收尾在途请求；`interconnect_post_transport.dart:46-59` 自称「唯一」实现。
+  - `InterconnectHostClient` 内部持有 `InterconnectHostChannel(host: InterconnectHostRef.ofRow(peer), binding: (token, fingerprint))`：`postJson` / `getFromHost` 都走 `channel.send`，错误映射保持原形状（非 2xx → host 的 `error` / `message`；authRejected → `SyncAuthError(pairingRejected)`；certificateMismatch → `certificate_mismatch`；notPaired / unreachable / cancelled → `unreachable`；GET 非 200 / 不可达 → null）；`cancelPending()` 关通道（在途请求以 cancelled 收尾、自建 client 全关）后重建；`guardPlaintext` / `pinnedClientFactory` 仍对外暴露（伴随查词 client），判据改用 `interconnectPlaintextAllowed`。
+  - 通道在会话绑定了指纹时以它作钉扎（同组另一张证书的地址本地拒绝）。
+  - 候选来源抽成 `interconnectRankedCandidates(repo, {onlyCandidate, member, probe})`（`interconnect_host_channel.dart`），通道与 `InterconnectPostTransport.post` 共用；post transport 类注释改为「跨 host 的 JSON POST fallback」。
+  - 能力探测（视频遥控、远程复习、AI 中继）用完即 `cancelPending()`；`interconnect_host_client.dart` 不再裸建 client，出站守卫撤掉它的登记（31 条）。
+  - `docs/specs/2026-09-28-interconnect-remote-reach.md` §2 / §5 / §9 对齐实现。
+- **[x] ② 步骤 11 测试** — `fushi/test/sync/interconnect_host_client_channel_test.dart`（同组 [死明文 LAN, 活 https] 的 getFromHost 走活地址且死地址零请求；重新配对把 URL 改归另一台 host 后旧会话抛 unreachable、新 host 零请求；cancelPending 收尾在途请求、关掉自建钉扎 client、之后可继续请求）；`fushi/test/sync/interconnect_p2p_forward_lifecycle_test.dart`「InterconnectHostClient 经选路走 P2P 转发口」。本机重活队列让给别的会话，这些测试已写好**未运行**，修复前红也未实跑确认。
 - **备注**：`remote_download_tasks_section.dart` 自建的 client 仍未在 dispose 时关闭，归步骤 9 一并改。
