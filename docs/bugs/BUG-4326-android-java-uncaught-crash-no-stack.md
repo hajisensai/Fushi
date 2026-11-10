@@ -1,4 +1,4 @@
-## BUG-4323 · Android Java 层崩溃退出报告没有异常栈
+## BUG-4326 · Android Java 层崩溃退出报告没有异常栈
 - **报告**：2026-11-10（应用内反馈 TlyH9HAD9T、E5IZOyVcbm、Z624TCPsBP、fS-G9X36Xc；决策项 t6Zi0U_K8d、Gm4gfBykd- 问的同一件事）
 - **真实性**：✅ 真 bug（诊断缺口）。4 条反馈（小米 23049RAD8C x28、三星 SM-A366B、Flex 3、小米 23113RKC6C，均 3.3.0）的退出报告只有 `reason=CRASH status=0 … description: crash`。根因：`ApplicationExitInfo.getTraceInputStream()` 只对 native crash / ANR 有内容，`fushi/android/app/src/main/java/app/fushi/reader/ProcessExitChannel.java:187-190` 也只给 `CRASH_NATIVE` / `ANR` 读 trace；而 `fushi/` 下没有任何 `UncaughtExceptionHandler`，Java / Kotlin 未捕获异常的类型与栈在进程死后就没了。
 - **[x] ① 已修复** — 新增 `FushiApplication`（manifest `android:name`）在所有进程的 `onCreate` 最早处装 `JavaCrashCapture`：链式默认未捕获异常处理器把异常类、message、完整 cause 链栈、线程、pid、进程名、时间写进预分配 64KB 的 `JavaCrashRecord.Utf8Sink`（OOM 时不再大块分配），落到 `noBackupFilesDir/java_crashes/jcrash-<ms>-<pid>-<进程>.txt`，只留最近 8 份；落盘失败只截在自己这层，之后一定调用原处理器，不改变崩溃行为。`ProcessExitChannel.readExitReasons` 对 `REASON_CRASH` 按 pid + 时间窗（退出前 60s ~ 后 5s）匹配记录，摘要后作为 `trace` 并入、消费后删除；Dart `formatAndroidExitReports` 复用既有 trace 显示路径。只采集，不对 OCR / Cloudflare / OOM 嫌疑下结论，拿到栈后另开。
