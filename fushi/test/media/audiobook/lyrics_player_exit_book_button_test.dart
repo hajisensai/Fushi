@@ -98,19 +98,45 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('narrow: back returns to text, × exits the book', (
-    WidgetTester tester,
-  ) async {
+  // 2026-11-10 用户：窄屏左上角返回键改成与宽屏同款的「书籍模式」键，和 ×
+  // 一起放在右上角。
+  testWidgets('narrow: book-mode button sits left of × in the top-right, '
+      'no top-left back', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpWidget(app(withExit: true));
     await tester.pump(const Duration(milliseconds: 50));
 
-    await tester.tap(find.byKey(const ValueKey<String>('lyrics_player_back')));
+    expect(
+      find.byKey(const ValueKey<String>('lyrics_player_back')),
+      findsNothing,
+    );
+    expect(book, findsOneWidget);
+    final Rect bookRect = tester.getRect(book);
+    final Rect closeRect = tester.getRect(close);
+    expect(bookRect.right, lessThanOrEqualTo(closeRect.left));
+    expect(bookRect.center.dy, moreOrLessEquals(closeRect.center.dy));
+    expect(bookRect.left, greaterThan(390 / 2));
+    await tester.tap(book);
     await tester.tap(close);
     expect(calls, <String>['book', 'exit']);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('narrow without onExitBook: × alone returns to text', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpWidget(app(withExit: false));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(book, findsNothing);
+    await tester.tap(close);
+    expect(calls, <String>['book']);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -2116,7 +2116,7 @@ void main() {
       // 两条会在窄行渲染成菜单的分段项必须真的被驱动；只数总行数无法发现
       // 菜单按键串错行后遍历缩水（此前57行仍能越过>40门）。
       for (final String id in <String>[
-        'reading/Page / scroll',
+        'reading/Reading mode',
         'reading/Hide furigana',
       ]) {
         final List<ItemVerdict> rows = verdicts

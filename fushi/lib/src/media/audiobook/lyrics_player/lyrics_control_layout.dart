@@ -63,7 +63,7 @@ enum LyricsControlItem implements ControlItemSpec<LyricsControlSlot> {
   /// 阅读统计侧栏。
   statistics('statistics'),
 
-  /// 回到书籍模式（正文）。窄屏左上角已有返回键，出厂只在宽屏摆出。
+  /// 回到书籍模式（正文）。窄屏顶栏 × 前固定摆着它，布局里只在宽屏渲染。
   bookMode('bookMode'),
 
   /// 宽屏左右互换（窄屏单栏时不渲染）。
@@ -148,7 +148,7 @@ class LyricsControlLayout {
   );
 
   /// 窄屏出厂布局 = 布局化之前 MD3 窄屏的摆法：顶栏胶囊 遮罩 / Aa / 统计，播放卡
-  /// 头行 倍速 / 计时 / 重播。书籍模式（左上角已有返回键）与左右互换（单栏无意义）
+  /// 头行 倍速 / 计时 / 重播。书籍模式（顶栏固定件）与左右互换（单栏无意义）
   /// 出厂移出。
   static final LyricsControlLayout compactDefaults = LyricsControlLayout._(
     ControlLayout<LyricsControlSlot, LyricsControlItem>.fromSlots(
