@@ -574,7 +574,7 @@ class HeadlessHost {
           // 上限淘汰保护（否则谁都能刷出一堆占住位置）。
           ..pinApprovalIsManual = false
           ..onPeerPaired = _persistPairedPeer
-          ..pairedPeerTokensProvider = _loadPairedPeerTokens
+          ..pairedPeerCredentialsProvider = _loadPairedPeerCredentials
           // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
           ..hostId = identity.deviceId
           ..publicUrlsProvider = (() async => config.publicUrls)
@@ -955,9 +955,13 @@ class HeadlessHost {
     }());
   }
 
-  Future<Set<String>> _loadPairedPeerTokens() async {
+  /// 全部未吊销的已配对设备凭据（peerId → token）；server 按 `legacy-` 前缀区分
+  /// 旧 client 的行（BUG-4282）。
+  Future<Map<String, String>> _loadPairedPeerCredentials() async {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
-    return peers.map((FushiPairedPeerRow r) => r.token).toSet();
+    return <String, String>{
+      for (final FushiPairedPeerRow r in peers) r.peerId: r.token,
+    };
   }
 
   /// 补字幕（单视频 / 刮削后 / 下载后缺字幕重试）的装配，见 server_subtitle_backfill.dart。

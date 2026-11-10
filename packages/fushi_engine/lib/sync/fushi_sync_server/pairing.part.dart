@@ -72,7 +72,16 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       ),
     );
     if (!approved) return _pairDenied('declined');
-    return jsonResponse(<String, dynamic>{'token': _token});
+    // BUG-4282：v1 没有稳定 deviceId——接了落库回调时发 legacy- 行 token（能单独吊销，
+    // 权限同共享 token），不再把共享 token 本身交出去。
+    final String issued = await _issueAccessToken(
+      clientDeviceId: null,
+      deviceName: name,
+      remoteAddress: pairRemote,
+      ownerDevice: false,
+      deviceKeyFingerprint: null,
+    );
+    return jsonResponse(<String, dynamic>{'token': issued});
   }
 
   /// A 403 carrying a machine-readable [reason] ('declined' | 'unavailable' |
@@ -461,12 +470,13 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       _pairTicket = null;
     }
 
-    // TODO-961 M1b：per-peer token 派发。仅当 host 接线了落库回调（onPeerPaired）
-    // **且** client 上报了稳定 deviceId 时，才生成本设备专属 token 并写库、回给该
-    // client。任一缺失（纯协议单测无 DB / 旧 client 不上报 deviceId）则回退共享
-    // [_token]——既有行为零变化、老设备继续可配对（Never break userspace）。
-    final String issuedToken = await _issuePeerTokenOrFallback(
-      session,
+    // TODO-961 M1b / BUG-4282：host 接线了落库回调（onPeerPaired）时一律派发可单独
+    // 吊销的 per-peer token：带稳定 deviceId 的按 deviceId 落行，旧 client 不上报
+    // deviceId 的落一行 legacy-（权限同共享 token）。没接线（纯协议单测）回共享 token。
+    final String issuedToken = await _issueAccessToken(
+      clientDeviceId: session.clientDeviceId,
+      deviceName: session.deviceName,
+      remoteAddress: session.remoteAddress,
       ownerDevice: ownerDeviceGrant?.granted ?? false,
       deviceKeyFingerprint: deviceKeyFingerprint,
     );
@@ -477,29 +487,35 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// confirm 成功后派发访问 token：有 [onPeerPaired] 回调且会话带 clientDeviceId
-  /// 时生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效），返回该
-  /// token；否则回退共享 [_token]（无 DB 接线 / 旧 client 无 deviceId 的兼容路径）。
-  Future<String> _issuePeerTokenOrFallback(
-    FushiPairSession session, {
+  /// 配对成功后派发访问 token。没接 [onPeerPaired]（纯协议单测）→ 共享 [_token]。
+  /// 否则生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效）：
+  /// 有稳定 [clientDeviceId] 的以它为 peerId；没有的（v1 / 旧 v2 client）落一行
+  /// [kFushiLegacyPeerIdPrefix] 开头的随机 peerId——恒非「我的设备」、不记设备钥匙，
+  /// 只过普通鉴权（BUG-4282）。落库失败把异常抛出（500），绝不回退共享 token。
+  Future<String> _issueAccessToken({
+    required String? clientDeviceId,
+    required String? deviceName,
+    required String? remoteAddress,
     required bool ownerDevice,
     required String? deviceKeyFingerprint,
   }) async {
     final Future<void> Function(FushiPairedPeerRegistration)? persist =
         onPeerPaired;
-    final String? peerId = session.clientDeviceId?.trim();
-    if (persist == null || peerId == null || peerId.isEmpty) {
-      return _token;
-    }
+    if (persist == null) return _token;
+    final String? deviceId = clientDeviceId?.trim();
+    final bool legacy = deviceId == null || deviceId.isEmpty;
+    final String peerId = legacy
+        ? '$kFushiLegacyPeerIdPrefix${FushiPairingProtocol.generateNonce()}'
+        : deviceId;
     final String peerToken = FushiSyncServer.generateToken();
     await persist(
       FushiPairedPeerRegistration(
         peerId: peerId,
         token: peerToken,
-        deviceName: session.deviceName,
-        remoteAddress: session.remoteAddress,
-        ownerDevice: ownerDevice && deviceKeyFingerprint != null,
-        deviceKeyFingerprint: deviceKeyFingerprint,
+        deviceName: deviceName,
+        remoteAddress: remoteAddress,
+        ownerDevice: !legacy && ownerDevice && deviceKeyFingerprint != null,
+        deviceKeyFingerprint: legacy ? null : deviceKeyFingerprint,
       ),
     );
     // 新 token 立即受理：清缓存促下次 auth 从 provider 重载（含刚写入的这行）。

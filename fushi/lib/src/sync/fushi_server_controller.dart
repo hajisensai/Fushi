@@ -849,7 +849,7 @@ class FushiSyncServerController extends ChangeNotifier {
           // 复习同步：已配对设备写进同步目录后，host 自己的 SRS 同步去抖跟一轮（srs_app_runtime.dart）。
           ..onClientWrite = _onClientWrite
           ..onClientUpload = _onClientUpload
-          ..pairedPeerTokensProvider = _loadPairedPeerTokens
+          ..pairedPeerCredentialsProvider = _loadPairedPeerCredentials
           // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
           // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
           ..hostId = hostId
@@ -1147,11 +1147,14 @@ class FushiSyncServerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer token 集合。
-  /// 吊销 = 删行，故只需读全表 token。
-  Future<Set<String>> _loadPairedPeerTokens() async {
+  /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer 凭据
+  /// （peerId → token）。吊销 = 删行，故只需读全表；server 按 peerId 的 `legacy-`
+  /// 前缀区分旧 client 的行（BUG-4282）。
+  Future<Map<String, String>> _loadPairedPeerCredentials() async {
     final List<FushiPairedPeerRow> peers = await _database().getPairedPeers();
-    return peers.map((FushiPairedPeerRow p) => p.token).toSet();
+    return <String, String>{
+      for (final FushiPairedPeerRow p in peers) p.peerId: p.token,
+    };
   }
 
   /// 被标记为「我的设备」的已配对 peer（peerId）。只有它们能跟随本机账户自动登录。

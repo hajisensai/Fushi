@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:http/http.dart' as http;
 
 /// TODO-961 M1b: per-peer token 派发 / 鉴权 / 吊销的 server 行为测试。
@@ -10,9 +11,30 @@ import 'package:http/http.dart' as http;
 /// 用一个内存态的 fake「peer 表」（Map<peerId, token>）代替真 DB，验证：
 /// (1) confirm 携带 clientDeviceId + 接线 onPeerPaired -> 派发 per-peer token（!= 共享
 ///     token）并经回调落库；
-/// (2) auth：per-peer token（经 pairedPeerTokensProvider 供给）与共享 token 都受理；
+/// (2) auth：per-peer token（经 pairedPeerCredentialsProvider 供给）与共享 token 都受理；
 /// (3) 吊销（从 fake 表删行 + invalidatePeerTokenCache）后该 token 立即被 401 拒绝；
-/// (4) 向后兼容：confirm 不带 clientDeviceId（旧 client）-> 回退共享 token，不落 per-peer 行。
+/// (4) BUG-4282：confirm 不带 clientDeviceId（旧 client）/ v1 配对 -> 派发 `legacy-` 行
+///     token（能单独吊销，权限同共享 token：不过敏感服务门）。
+class _FakeUpdater implements HostSelfUpdater {
+  @override
+  bool get platformSupported => true;
+
+  @override
+  Future<bool> isRemoteUpdateAllowed() async => true;
+
+  @override
+  Future<HostUpdateStatus> status({bool refresh = false}) async =>
+      const HostUpdateStatus(
+        currentVersion: '1.0.0',
+        platform: 'windows',
+        supported: true,
+        remoteUpdateAllowed: true,
+      );
+
+  @override
+  Future<HostUpdateStatus> startUpdate() => status();
+}
+
 void main() {
   late Directory tempDir;
   late FushiSyncServer server;
@@ -36,7 +58,8 @@ void main() {
         ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
           peerTable[reg.peerId] = reg.token;
         })
-        ..pairedPeerTokensProvider = (() async => peerTable.values.toSet());
+        ..pairedPeerCredentialsProvider = (() async =>
+            Map<String, String>.of(peerTable));
     }
     await server.start();
   }
@@ -164,15 +187,69 @@ void main() {
   });
 
   test(
-    'confirm without clientDeviceId falls back to shared token (compat)',
+    'BUG-4282: confirm without clientDeviceId mints a revocable legacy- token',
     () async {
       await startServer();
       final String sid = await startSession('cn-4'); // 无 clientDeviceId
       final String issued = await confirm(sid);
 
-      // 旧 client 无稳定身份 -> 回退共享 token，不落 per-peer 行。
-      expect(issued, 'shared-token');
-      expect(peerTable, isEmpty);
+      // 旧 client 无稳定身份 -> 不再拿共享 token，而是一行 legacy- per-peer token。
+      expect(issued, isNot('shared-token'));
+      expect(peerTable.length, 1);
+      expect(peerTable.keys.single, startsWith(kFushiLegacyPeerIdPrefix));
+      expect(peerTable.values.single, issued);
+      expect(await authProbe(issued), 200);
+
+      // 能单独吊销。
+      peerTable.clear();
+      server.invalidatePeerTokenCache();
+      expect(await authProbe(issued), 401);
+    },
+  );
+
+  test('BUG-4282: v1 /api/pair mints a revocable legacy- token', () async {
+    await startServer();
+    final http.Response resp = await http.post(
+      Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{'name': 'Old Phone'}),
+    );
+    expect(resp.statusCode, 200);
+    final String issued =
+        (jsonDecode(resp.body) as Map<String, dynamic>)['token'] as String;
+
+    expect(issued, isNot('shared-token'));
+    expect(peerTable.length, 1);
+    expect(peerTable.keys.single, startsWith(kFushiLegacyPeerIdPrefix));
+    expect(peerTable.values.single, issued);
+    expect(await authProbe(issued), 200);
+
+    peerTable.clear();
+    server.invalidatePeerTokenCache();
+    expect(await authProbe(issued), 401);
+  });
+
+  test(
+    'BUG-4282: legacy token passes ordinary auth but not the peer-token gate',
+    () async {
+      await startServer();
+      server.hostSelfUpdater = _FakeUpdater();
+      final String legacy = await confirm(await startSession('cn-legacy'));
+      final String peer = await confirm(
+        await startSession('cn-peer', clientDeviceId: 'device-gate'),
+      );
+      Future<int> hostUpdate(String token) async => (await http.get(
+        Uri.parse('http://127.0.0.1:${server.port}$kHostUpdatePath'),
+        headers: <String, String>{
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+        },
+      )).statusCode;
+
+      // legacy token 与共享 token 同权：过普通鉴权、不过敏感服务门。
+      expect(await hostUpdate('shared-token'), 403);
+      expect(await hostUpdate(legacy), 403);
+      expect(await hostUpdate(peer), 200);
     },
   );
 

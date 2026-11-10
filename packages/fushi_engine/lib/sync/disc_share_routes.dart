@@ -39,12 +39,17 @@ class DiscShareSession {
     required this.discRoot,
     required this.manifest,
     required this.createdAt,
+    this.issuer,
   }) : lastUsedAt = createdAt;
 
   /// host 本机盘根（目录或 `.iso`）。只在 host 进程内存里，从不下发。
   final String discRoot;
   final DiscShareManifest manifest;
   final DateTime createdAt;
+
+  /// 签发请求所用凭据的指纹（BUG-4282）；host 据此在凭据被吊销后连带作废本会话。
+  /// null = 签发方不记（没有可吊销的凭据模型）。
+  final String? issuer;
   DateTime lastUsedAt;
 }
 
@@ -76,6 +81,7 @@ class DiscShareTokenStore {
   String issue({
     required String discRoot,
     required DiscShareManifest manifest,
+    String? issuer,
   }) {
     _prune();
     while (_sessions.length >= capacity) {
@@ -96,6 +102,7 @@ class DiscShareTokenStore {
       discRoot: discRoot,
       manifest: manifest,
       createdAt: _now(),
+      issuer: issuer,
     );
     return token;
   }
@@ -123,6 +130,9 @@ class DiscShareTokenStore {
       (String _, DiscShareSession session) => _expired(session, now),
     );
   }
+
+  /// 作废 [token]（签发凭据已被吊销，BUG-4282）。
+  void revoke(String token) => _sessions.remove(token);
 
   void clear() => _sessions.clear();
 }
@@ -164,12 +174,16 @@ Uri discShareBaseUri(Uri requestedUri, String token) => Uri(
 );
 
 /// 处理 `/api/library/disc/<token>/...`。[reqPath] 已 URL 解码、带前导 `/`。
+///
+/// [issuerValid] 给了时，每次请求都用它核对会话的签发凭据仍有效；不再有效即删会话、
+/// 回 403（BUG-4282：吊销已配对设备连带作废它签出的原盘会话）。
 Future<shelf.Response> handleDiscShareRequest(
   DiscShareTokenStore store,
   shelf.Request request,
   String method,
-  String reqPath,
-) async {
+  String reqPath, {
+  Future<bool> Function(String? issuer)? issuerValid,
+}) async {
   if (method != 'GET') return shelf.Response(405);
   final String rest = reqPath.substring(kDiscShareRoutePrefix.length);
   final int slash = rest.indexOf('/');
@@ -181,6 +195,14 @@ Future<shelf.Response> handleDiscShareRequest(
     return shelf.Response(
       401,
       body: 'Disc share session expired',
+      headers: const <String, String>{'Content-Type': 'text/plain'},
+    );
+  }
+  if (issuerValid != null && !await issuerValid(session.issuer)) {
+    store.revoke(token);
+    return shelf.Response(
+      403,
+      body: 'Disc share session revoked',
       headers: const <String, String>{'Content-Type': 'text/plain'},
     );
   }

@@ -118,6 +118,11 @@ const String kFushiP2pRemoteAddress = 'P2P tunnel';
 /// [FushiSyncServer.p2pPeerResolver] 查得到时存在）。
 const String kFushiP2pPeer = 'fushi.p2p.peer';
 
+/// 没有稳定 deviceId 的配对（v1 `/api/pair`、不带 `clientDeviceId` 的 v2 confirm）
+/// 落库时 peerId 的前缀。这类 token 能单独吊销，但权限与共享 token 相同：只过普通
+/// 鉴权，不过只认已配对设备 token 的敏感服务门（BUG-4282）。
+const String kFushiLegacyPeerIdPrefix = 'legacy-';
+
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
 class FushiPairRequest {
@@ -286,7 +291,8 @@ class _CredentialSnapshot {
   /// 带稳定 deviceId 配上的设备 token：过 `_validateAuth` 也过 `_validatePeerAuth`。
   final Set<String> peerTokens;
 
-  /// `legacy-` 行的 token：只过 `_validateAuth`。尚无来源，恒为空集。
+  /// `legacy-` 行的 token（[kFushiLegacyPeerIdPrefix]）：只过 `_validateAuth`。
+  /// 只有 [FushiSyncServer.pairedPeerCredentialsProvider] 能区分出来。
   final Set<String> legacyPeerTokens;
 
   /// sha256hex(utf8(token))：共享 + peer + legacy。供派生凭据记签发者用。
@@ -506,6 +512,9 @@ class FushiSyncServer {
     audioTokens: _audioTokens,
     lookup: _remoteLookupService,
     mining: _miningService,
+    // BUG-4282：音频 id 记签发凭据，取字节时对照当前快照（吊销即连带作废）。
+    issuerOf: _requestCredentialFingerprint,
+    issuerValid: _issuerStillValid,
   );
 
   final Map<String, _VideoStreamToken> _videoStreamTokens =
@@ -639,6 +648,12 @@ class FushiSyncServer {
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
+
+  /// BUG-4282：供给全部未吊销的已配对设备凭据（peerId → token）。优先于
+  /// [pairedPeerTokensProvider]：peerId 以 [kFushiLegacyPeerIdPrefix] 开头的 token
+  /// 只过普通鉴权（与共享 token 同权），其余还过只认已配对设备的敏感服务门。
+  /// 缓存 / 失效语义同 [pairedPeerTokensProvider]。
+  Future<Map<String, String>> Function()? pairedPeerCredentialsProvider;
 
   /// 「跟随已配对设备自动登录 Fushi 账户」的 host 能力（app 装配，见
   /// `interconnect_leaderboard_link.dart`）。null（旧调用方 / 无头服务端 / 单测）→
@@ -1255,7 +1270,13 @@ class FushiSyncServer {
       if (_libraryService is! VideoDiscShareHost) {
         return shelf.Response.notFound('Disc share off');
       }
-      return handleDiscShareRequest(_discShares, request, method, reqPath);
+      return handleDiscShareRequest(
+        _discShares,
+        request,
+        method,
+        reqPath,
+        issuerValid: _issuerStillValid,
+      );
     }
     if (reqPath == '/api/library/aggregate') {
       return _handleLibraryAggregate(request, method, reqPath);
@@ -1875,6 +1896,7 @@ class _DavEntry {
 class _VideoStreamToken {
   const _VideoStreamToken({
     required this.videoId,
+    required this.issuer,
     required this.createdAt,
     this.episodeIndex = 0,
     this.transcodeProfile,
@@ -1884,6 +1906,10 @@ class _VideoStreamToken {
 
   /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
   final String videoId;
+
+  /// 签发请求所用凭据的指纹（`_credentialFingerprint`）。每次取流都对照当前凭据
+  /// 快照，签发凭据被吊销即作废（BUG-4282）。
+  final String issuer;
   final DateTime createdAt;
 
   /// 远端播放列表集下标（TODO-885）；单视频 / 当前集恒 0。

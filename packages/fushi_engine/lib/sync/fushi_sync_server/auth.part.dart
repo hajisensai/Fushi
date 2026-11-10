@@ -59,11 +59,15 @@ extension _FushiSyncServerAuth on FushiSyncServer {
       )) {
         return true;
       }
-      // TODO-961 M1b：再比对任一未吊销的 per-peer token。惰性加载 + 缓存，避免每请求
-      // 打库；配对/吊销经 [invalidatePeerTokenCache] 清缓存促重载。
+      // TODO-961 M1b：再比对任一未吊销的 per-peer token（含 legacy- 行，BUG-4282）。
+      // 惰性加载 + 缓存，避免每请求打库；配对/吊销经 [invalidatePeerTokenCache]
+      // 清缓存促重载。
       final _CredentialSnapshot credentials = await _credentialSnapshot();
       final Uint8List pw = Uint8List.fromList(utf8.encode(password));
-      for (final String peerToken in credentials.peerTokens) {
+      for (final String peerToken in <String>[
+        ...credentials.peerTokens,
+        ...credentials.legacyPeerTokens,
+      ]) {
         if (_constantTimeEquals(
           pw,
           Uint8List.fromList(utf8.encode(peerToken)),
@@ -79,7 +83,8 @@ extension _FushiSyncServerAuth on FushiSyncServer {
 
   /// Sensitive service configuration is stricter than ordinary library APIs:
   /// it accepts only a currently paired device token, never the legacy shared
-  /// server token.
+  /// server token nor a `legacy-` row token (BUG-4282: same rights as the
+  /// shared token it replaces).
   Future<bool> _validatePeerAuth(String? header) async {
     if (header == null) return false;
     final String? password = _basicPassword(header);
@@ -125,17 +130,44 @@ extension _FushiSyncServerAuth on FushiSyncServer {
     }
   }
 
+  /// 优先 [FushiSyncServer.pairedPeerCredentialsProvider]（按 peerId 前缀把 legacy-
+  /// 行分出去）；没接它时退回 [FushiSyncServer.pairedPeerTokensProvider]，全部当
+  /// 已配对设备 token。
   Future<_CredentialSnapshot> _loadCredentials() async {
-    final Future<Set<String>> Function()? provider = pairedPeerTokensProvider;
-    final Set<String> peerTokens = provider == null
-        ? <String>{}
-        : await provider();
+    final Future<Map<String, String>> Function()? credentials =
+        pairedPeerCredentialsProvider;
+    final Set<String> peerTokens = <String>{};
+    final Set<String> legacyPeerTokens = <String>{};
+    if (credentials != null) {
+      for (final MapEntry<String, String> e in (await credentials()).entries) {
+        (e.key.startsWith(kFushiLegacyPeerIdPrefix)
+                ? legacyPeerTokens
+                : peerTokens)
+            .add(e.value);
+      }
+    } else {
+      final Future<Set<String>> Function()? provider = pairedPeerTokensProvider;
+      if (provider != null) peerTokens.addAll(await provider());
+    }
     return _CredentialSnapshot(
       sharedToken: _token,
       peerTokens: peerTokens,
-      legacyPeerTokens: const <String>{},
+      legacyPeerTokens: legacyPeerTokens,
     );
   }
+
+  /// 本请求 Basic 凭据的指纹；没有 / 解不出密码时 null。派生凭据（视频流 token、
+  /// 原盘会话、查词音频 id）据此记签发者（BUG-4282）。
+  String? _requestCredentialFingerprint(shelf.Request request) {
+    final String? header = request.headers['authorization'];
+    final String? password = header == null ? null : _basicPassword(header);
+    return password == null ? null : _credentialFingerprint(password);
+  }
+
+  /// 签发者指纹仍在当前凭据快照里（共享 token 恒在；peer / legacy 行被吊销即不在）。
+  Future<bool> _issuerStillValid(String? issuer) async =>
+      issuer != null &&
+      (await _credentialSnapshot()).fingerprints.contains(issuer);
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到

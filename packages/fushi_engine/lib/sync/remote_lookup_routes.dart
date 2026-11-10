@@ -19,10 +19,14 @@ class RemoteAudioToken {
     required this.bytes,
     required this.contentType,
     required this.createdAt,
+    this.issuer,
   });
 
   final Uint8List bytes;
   final String contentType;
+
+  /// 签发请求所用凭据的指纹（BUG-4282）；null = 签发方不记。
+  final String? issuer;
   DateTime createdAt;
 }
 
@@ -49,7 +53,7 @@ class RemoteAudioTokenStore {
   int get count => _tokens.length;
 
   /// 签发一个不可猜的 id 并存入字节；先 prune 再收束上限。
-  String mint(Uint8List bytes, String contentType) {
+  String mint(Uint8List bytes, String contentType, {String? issuer}) {
     prune();
     _enforceCap();
     final String id = _generateId();
@@ -57,9 +61,13 @@ class RemoteAudioTokenStore {
       bytes: bytes,
       contentType: contentType,
       createdAt: _now(),
+      issuer: issuer,
     );
     return id;
   }
+
+  /// 作废 [id]（签发凭据已被吊销，BUG-4282）。
+  void revoke(String id) => _tokens.remove(id);
 
   /// 取 [id] 对应的 token；命中即续期。未命中 / [id] 为空返回 null。
   RemoteAudioToken? take(String? id) {
@@ -193,9 +201,18 @@ class RemoteLookupRoutes {
     required this.audioTokens,
     this.lookup,
     FushiRemoteMiningService? mining,
+    this.issuerOf,
+    this.issuerValid,
   }) : _mining = mining;
 
   final RemoteAudioTokenStore audioTokens;
+
+  /// 签发音频 id 时取本请求凭据的指纹（BUG-4282）。null = 不记签发者
+  /// （[FushiApiServer] 的 key 模型独立，不接）。
+  final String? Function(shelf.Request request)? issuerOf;
+
+  /// 取音频字节时核对签发凭据仍有效；不再有效即作废该 id、回 403。null = 不核对。
+  final Future<bool> Function(String? issuer)? issuerValid;
   final FushiRemoteLookupService? lookup;
   final FushiRemoteMiningService? _mining;
 
@@ -220,7 +237,11 @@ class RemoteLookupRoutes {
     );
     if (found == null) return _audioMissResponse();
 
-    final String id = audioTokens.mint(found.bytes, found.contentType);
+    final String id = audioTokens.mint(
+      found.bytes,
+      found.contentType,
+      issuer: issuerOf?.call(request),
+    );
     final Uri url = request.requestedUri.replace(
       path: '/api/lookup/audio/file',
       queryParameters: <String, String>{'id': id},
@@ -278,6 +299,7 @@ class RemoteLookupRoutes {
                     'id': audioTokens.mint(
                       choice.audio.bytes,
                       choice.audio.contentType,
+                      issuer: issuerOf?.call(request),
                     ),
                   },
                 )
@@ -288,14 +310,18 @@ class RemoteLookupRoutes {
   }
 
   /// 单词音频②：GET/HEAD `?id=` 取字节（免鉴权，靠不可猜 id）；命中即续期。
-  shelf.Response handleAudioFile(
+  Future<shelf.Response> handleAudioFile(
     shelf.Request request, {
     required bool headOnly,
-  }) {
-    final RemoteAudioToken? token = audioTokens.take(
-      request.url.queryParameters['id'],
-    );
+  }) async {
+    final String? id = request.url.queryParameters['id'];
+    final RemoteAudioToken? token = audioTokens.take(id);
     if (token == null) return shelf.Response.notFound('Not found');
+    final Future<bool> Function(String? issuer)? valid = issuerValid;
+    if (valid != null && !await valid(token.issuer)) {
+      audioTokens.revoke(id!);
+      return shelf.Response.forbidden('Token revoked');
+    }
     return shelf.Response.ok(
       headOnly ? null : token.bytes,
       headers: <String, String>{
