@@ -1,4 +1,4 @@
-## BUG-4274 · SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic）
+## BUG-4279 · SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic）
 - **报告**：2026-11-07（用户：phase4 互联实测，Windows debug host 进复习页只见变暗遮罩、弹窗不出来，`nav go home --pop` 才清掉，每次进复习页又回来；同一弹窗在 Linux release 构建正常显示）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/utils/components/fushi_marquee.dart:394`（旧 `build` 直接返回 `LayoutBuilder`）。
   冲突弹窗 `showSrsProfileConflictDialog`（`fushi/lib/src/pages/implementations/srs/srs_sync_settings.dart:160`）的候选行是

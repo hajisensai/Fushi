@@ -12,7 +12,7 @@ import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsProfileConflict;
 import 'package:marquee/marquee.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4274：SRS「复习同步冲突」弹窗在 debug 构建里不显示，只剩遮罩挡住复习页。
+/// BUG-4279：SRS「复习同步冲突」弹窗在 debug 构建里不显示，只剩遮罩挡住复习页。
 ///
 /// 根因：候选行 [FushiListTile] 的标题 / 副标题是 [FushiMarquee]，它靠
 /// `LayoutBuilder` 判断放不放得下；对话框（MD3 的 AlertDialog、Apple 表单式面板）
