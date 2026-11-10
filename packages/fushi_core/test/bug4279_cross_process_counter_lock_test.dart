@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as raw;
 import 'package:test/test.dart';
 
-/// BUG-4275：另一个进程（`:second_screen` 副屏面板写查词历史、`:popup` 浮窗）
+/// BUG-4279：另一个进程（`:second_screen` 副屏面板写查词历史、`:popup` 浮窗）
 /// 正持有写锁时，主进程的查词 / 制卡计数不得丢。
 ///
 /// 旧实现是 deferred 事务里先 SELECT 再 UPDATE / INSERT：SELECT 开了读事务，
@@ -21,7 +21,7 @@ void main() {
   late String path;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('fushi_bug4275_');
+    tmp = await Directory.systemTemp.createTemp('fushi_bug4279_');
     path = p.join(tmp.path, 'fushi.db');
     db = FushiDatabase.atFile(path);
   });
@@ -42,7 +42,7 @@ void main() {
     outsider.execute('BEGIN IMMEDIATE');
     outsider.execute(
       'INSERT OR REPLACE INTO preferences (key, value, updated_at) '
-      "VALUES ('bug4275.outsider', '1', 0)",
+      "VALUES ('bug4279.outsider', '1', 0)",
     );
     await Future<void>.delayed(hold);
     outsider.execute('COMMIT');
