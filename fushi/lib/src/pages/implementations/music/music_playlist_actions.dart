@@ -20,6 +20,8 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart' show XFile;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart'
+    show pickRealFilePath;
 import 'package:fushi/src/media/music/music_local_playlists.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart'
@@ -178,22 +180,22 @@ Future<bool> musicDeletePlaylist(
 
 /// 选一个 `.m3u` / `.m3u8` 导入成本地歌单（条目对曲库，见 music_local_playlists.dart）。
 /// 回新歌单的 uid；取消 / 没导入回 null（原因已提示）。
-Future<String?> musicImportPlaylistFile(FushiDatabase db) async {
-  // 不传 FileType.custom 扩展名过滤（部分平台的选择器把 .m3u 认成音频 MIME 后灰掉，
-  // BUG-2099 同一纪律），选了别的文件在下面按扩展名拒。
-  final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-    dialogTitle: t.music_action_import_playlist,
+///
+/// 走统一入口 [pickRealFilePath]，不裸调 `FilePicker.pickFiles`：列表里的**相对条目**
+/// 按列表文件所在目录拼（`baseDir`），安卓裸 `pickFiles` 交回的是 app cache 里的副本，
+/// 目录成了 cache，相对条目全部拼错、对不上曲库。统一入口在安卓走 SAF 解析真实路径；
+/// 移动端扩展名过滤是选后在 Dart 端校验并提示（BUG-2099，`.m3u` 不会被灰掉）。
+Future<String?> musicImportPlaylistFile({
+  required BuildContext context,
+  required AppModel appModel,
+  required FushiDatabase db,
+}) async {
+  final String? path = await pickRealFilePath(
+    context: context,
+    appModel: appModel,
+    allowedExtensions: kMusicPlaylistFileExtensions.toSet(),
   );
-  final String? path = picked?.files.single.path;
   if (path == null) return null;
-  final String ext = p.extension(path).replaceFirst('.', '').toLowerCase();
-  if (!kMusicPlaylistFileExtensions.contains(ext)) {
-    FushiToast.show(
-      msg: t.music_action_playlist_import_no_matches,
-      severity: ToastSeverity.warning,
-    );
-    return null;
-  }
   try {
     final MusicPlaylistFile file = parseMusicPlaylistFile(
       await File(path).readAsBytes(),

@@ -1326,7 +1326,11 @@ class _ImportLocalPlaylistButton extends ConsumerWidget {
         if (!app.isDatabaseReady) return;
         final FushiDatabase db = app.database;
         unawaited(() async {
-          final String? uid = await musicImportPlaylistFile(db);
+          final String? uid = await musicImportPlaylistFile(
+            context: context,
+            appModel: app,
+            db: db,
+          );
           if (uid == null || !context.mounted) return;
           await _openLocalPlaylistByUid(context, db, uid);
         }());

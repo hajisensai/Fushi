@@ -23,6 +23,14 @@ function method(source, name, occurrence = 0) {
   let start = -1;
   for (let i = 0; i <= occurrence; i++) start = source.indexOf(marker, start + 1);
   assert(start >= 0, `missing production method ${name} #${occurrence}`);
+  // 单行方法（`  claimBoundaryTurn: function(direction) { return false; },`）整段在
+  // 标记所在行里收口：按行内花括号配平判定，取到行内最后一个 `}`。
+  const lineEnd = source.indexOf('\n', start);
+  const line = source.slice(start, lineEnd < 0 ? source.length : lineEnd);
+  const opens = (line.match(/\{/g) || []).length;
+  if (opens > 0 && opens === (line.match(/\}/g) || []).length) {
+    return line.slice(`  ${name}: `.length, line.lastIndexOf('}') + 1);
+  }
   const end = source.indexOf('\n  }', start);
   assert(end > start, `missing end of ${name}`);
   return source.slice(start + `  ${name}: `.length, end + 4);
@@ -115,7 +123,10 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     '_onContinuousViewportScroll',
     // 上游 2026-10-05 起 paginate 会调几何重锚收口；漏掉它 harness 会在第一次翻页就
     // TypeError（this._settleGeometryReanchor is not a function）。
-    '_settleGeometryReanchor', '_reanchorFrame']) reader[name] = fn('pagination', name);
+    '_settleGeometryReanchor', '_reanchorFrame',
+    // BUG-4325 起连续 shell 的 paginate 在报 limit 前先问 claimBoundaryTurn（无缝衔接
+    // 模块认领文档内换章）；默认实现恒 false，取生产原文，漏掉同样第一次 limit 就 TypeError。
+    'claimBoundaryTurn', 'chapterTurnEpoch']) reader[name] = fn('pagination', name);
   if (continuous) reader.scrollToChapterEnd = () => {};
   const start = html.appendChild(new Element('start-grip'));
   const end = html.appendChild(new Element('end-grip'));
