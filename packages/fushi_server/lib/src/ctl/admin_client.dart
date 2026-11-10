@@ -22,6 +22,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/credential_http_proxy.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// admin API 返回了非 2xx。[status] 为 0 表示根本没连上（服务没起 / 端口不对）。
 class AdminApiException implements Exception {
@@ -79,13 +80,19 @@ class AdminClient {
         !<String>{'http', 'https'}.contains(baseUri.scheme)) {
       throw AdminApiException(
         0,
-        '无效的 --interconnect: $url（要写成 http(s)://host:port）',
+        tr(
+          '无效的 --interconnect: $url（要写成 http(s)://host:port）',
+          'Invalid --interconnect: $url (must look like http(s)://host:port)',
+        ),
       );
     }
     if (password.isEmpty) {
-      throw const AdminApiException(
+      throw AdminApiException(
         0,
-        '缺 host 密码：用 --password 或环境变量 FUSHI_HOST_PASSWORD',
+        tr(
+          '缺 host 密码：用 --password 或环境变量 FUSHI_HOST_PASSWORD',
+          'Missing host password: use --password or the FUSHI_HOST_PASSWORD environment variable',
+        ),
       );
     }
     final HttpClient http = HttpClient();
@@ -120,22 +127,34 @@ class AdminClient {
     final String? resolvedToken =
         _nonEmpty(token) ?? _nonEmpty(config.adminToken);
     if (resolvedToken == null) {
-      throw const AdminApiException(
+      throw AdminApiException(
         0,
-        '配置里没有 admin_token；先跑 fushi_server admin reset-token',
+        tr(
+          '配置里没有 admin_token；先跑 fushi_server admin reset-token',
+          'The config has no admin_token; run fushi_server admin reset-token first',
+        ),
       );
     }
     final Uri baseUri;
     if (_nonEmpty(url) != null) {
       baseUri = Uri.parse(url!.trim());
       if (!baseUri.hasScheme || baseUri.host.isEmpty) {
-        throw AdminApiException(0, '无效的 --url: $url（要写成 http(s)://host:port）');
+        throw AdminApiException(
+          0,
+          tr(
+            '无效的 --url: $url（要写成 http(s)://host:port）',
+            'Invalid --url: $url (must look like http(s)://host:port)',
+          ),
+        );
       }
     } else {
       if (config.adminPort <= 0) {
-        throw const AdminApiException(
+        throw AdminApiException(
           0,
-          '配置里 admin_port 为 0（WebUI / admin API 已关闭），ctl 无处可连',
+          tr(
+            '配置里 admin_port 为 0（WebUI / admin API 已关闭），ctl 无处可连',
+            'admin_port is 0 in the config (WebUI / admin API disabled); ctl has nowhere to connect',
+          ),
         );
       }
       baseUri = Uri(
@@ -269,13 +288,25 @@ class AdminClient {
       response = await request.close().timeout(timeout);
       text = await response.transform(utf8.decoder).join().timeout(timeout);
     } on TimeoutException {
-      throw AdminApiException(0, '请求超时: $method $uri');
+      throw AdminApiException(
+        0,
+        tr('请求超时: $method $uri', 'Request timed out: $method $uri'),
+      );
     } on HandshakeException catch (e) {
-      throw AdminApiException(0, 'TLS 握手失败（证书指纹不符？）: $uri ${e.message}');
+      throw AdminApiException(
+        0,
+        tr(
+          'TLS 握手失败（证书指纹不符？）: $uri ${e.message}',
+          'TLS handshake failed (certificate fingerprint mismatch?): $uri ${e.message}',
+        ),
+      );
     } on SocketException catch (e) {
       throw AdminApiException(
         0,
-        '连不上 $uri（${interconnect ? 'Fushi 的互联服务开着吗？' : 'fushi_server serve 在跑吗？'}）: ${e.message}',
+        tr(
+          '连不上 $uri（${interconnect ? 'Fushi 的互联服务开着吗？' : 'fushi_server serve 在跑吗？'}）: ${e.message}',
+          'Cannot connect to $uri (${interconnect ? 'is the Fushi interconnect service running?' : 'is fushi_server serve running?'}): ${e.message}',
+        ),
       );
     }
     final Object? decoded = _tryDecode(text);
@@ -320,8 +351,12 @@ String interconnectPathFor(String adminPath) {
   }
   throw AdminApiException(
     kCtlUsageErrorStatus,
-    '$adminPath 只有 fushi_server 的 admin 面有；--interconnect 模式支持 downloads / videos / books / '
-    'audiobooks / manga / dict / metadata / scrape search|identify / collections / tags / host <METHOD> <path>',
+    tr(
+      '$adminPath 只有 fushi_server 的 admin 面有；--interconnect 模式支持 downloads / videos / books / '
+          'audiobooks / manga / dict / metadata / scrape search|identify / collections / tags / host <METHOD> <path>',
+      '$adminPath exists only on the fushi_server admin surface; --interconnect mode supports downloads / videos / books / '
+          'audiobooks / manga / dict / metadata / scrape search|identify / collections / tags / host <METHOD> <path>',
+    ),
   );
 }
 
@@ -340,7 +375,10 @@ Future<String> _localFingerprint(ServerConfig config) async {
   if (!await cert.exists()) {
     throw AdminApiException(
       0,
-      '找不到服务端 TLS 证书 ${cert.path}；先启动一次 serve，或用 --fingerprint 指定',
+      tr(
+        '找不到服务端 TLS 证书 ${cert.path}；先启动一次 serve，或用 --fingerprint 指定',
+        'Server TLS certificate not found: ${cert.path}; start serve once, or specify --fingerprint',
+      ),
     );
   }
   return FushiTlsIdentityStore.fingerprintOf(await cert.readAsString());
