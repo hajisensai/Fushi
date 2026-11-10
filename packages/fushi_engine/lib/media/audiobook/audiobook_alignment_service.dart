@@ -639,7 +639,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
         },
       );
 
-  // 单时间轴字幕 + 多个音频文件：按实测时长把 cue 分到各文件（BUG-4248）。没传音频
+  // 单时间轴字幕 + 多个音频文件：按实测时长把 cue 分到各文件（BUG-4273）。没传音频
   // （只换字幕）时按这本书现有的音频分。
   final List<String> cueAudio = persistedAudioPaths.isNotEmpty
       ? persistedAudioPaths
@@ -727,7 +727,7 @@ Future<void> deletePersistedSubtitleCopy({
 ///
 /// cue：对齐文件自带文件映射（SMIL / JSON），或换前换后都只有一个音频文件时，cue 不
 /// 随音频变，原样保留。对齐文件是单时间轴字幕、且换前或换后有多个文件时，cue 归哪个
-/// 文件取决于每个文件的时长（BUG-4248），只能用这份字幕按新音频重新对齐：走
+/// 文件取决于每个文件的时长（BUG-4273），只能用这份字幕按新音频重新对齐：走
 /// [alignAndPersistAudiobook]（字幕就是持久目录里那份，不会被再复制一次）。
 ///
 /// 不碰字幕文件与 `importedAt`：不该让这本书在对端书架上「变成刚导入的」。播放进度按

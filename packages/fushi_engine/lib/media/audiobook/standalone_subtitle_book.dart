@@ -88,7 +88,7 @@ Future<SrtBook> importStandaloneSubtitleBook({
       ? const <AudioCue>[]
       : await parseCuesForFormat(File(subtitlePath), uid, 0);
   // 有 cueTransform 的调用方（Audiobookshelf：按服务器音轨偏移切）自己管 cue 归哪
-  // 条轨；其余按本机音频的实测时长切（BUG-4248，单时间轴字幕 + 多个音频文件）。
+  // 条轨；其余按本机音频的实测时长切（BUG-4273，单时间轴字幕 + 多个音频文件）。
   final List<AudioCue> cues =
       cueTransform?.call(parsed) ??
       (subtitlePath == null
