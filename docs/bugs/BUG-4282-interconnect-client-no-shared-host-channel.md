@@ -1,0 +1,15 @@
+## BUG-4282 · 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移
+- **报告**：2026-11-10（用户：互联审查 R8 / C12 / C13）
+- **真实性**：✅ 真 bug（代码路径核实；步骤 7 的两条核心断言修复前确认红）。行号指基准 94317ab6295：
+  - `fushi/lib/src/sync/interconnect_download_client.dart:290-384`：代下载 client 自带一份传输实现（`_call` / `_tokenForBaseUrl` / `_clientFor`），与订阅、AI 助手、任务、漫画 OCR client 各抄一份，筛候选、取 token、选钉扎、解析错误各自漂移。
+  - `:314-316`：`.timeout` 只包住 `client.send`，`http.Response.fromStream` 读响应体不受超时约束——响应头到了、响应体卡住时请求永不返回。
+  - `:105`：`httpClient ?? http.Client()` 自建的 client 没有任何关闭路径；各调用点（`download_execution_target.dart`、`download_actions.dart`、`home_page.dart`、`manual_download_task_dialog.dart`、`ctl_download_support.dart`）也都不关。
+  - `:120-126`：`probe()` 按存储顺序逐条探测、不选路：同一台 host 的死 LAN 地址排在前面时，先吃掉整段探测超时。
+  - `:197`：`HostDownloadTarget.baseUrl` 存的是本次探测走的那条地址（可能是 P2P 临时转发口）。
+- **[x] ① 已修复（步骤 7：通道本体 + 代下载 client）** — `6794bd53352`：
+  - 新文件 `fushi/lib/src/sync/interconnect_host_channel.dart`：`InterconnectHostRef`（按 hostId；老条目按持久 URL）、`InterconnectHostBinding`、`InterconnectHostChannel.send`（成员筛选 + 会话绑定 → `rankInterconnectCandidatesDetailed` 选路 → per-peer token → 本地钉扎闸 → 「建连到读完响应体」整段 deadline；非幂等请求传输失败直接抛 `unreachable(mayHaveDelivered: true)`、不换地址重发；401 换下一条；其它状态码原样返回；证书回调拒绝 / `InterconnectPinRefused` 判 certificateMismatch，其它握手失败判传输失败）、`InterconnectRequestBody.json / bytes / stream`（流在真正写出时才打开，打开后不再换地址）、`close()` 关掉通道建的 client、在途与之后的请求抛 cancelled（借用的 client 不关）；能力探测 `probeInterconnectCapability` 返回带原因的 `InterconnectCapabilityOutcome`。`InterconnectPinRefused` 从 `interconnect_host_client.dart` 挪来（那边 import + export，下游不变）。
+  - `interconnect_download_client.dart`：传输全部走通道（每台 host 一条、复用到 `close()`）；`probeHost` / `probeAllOutcomes`（并发、保持组序）；`probe()` / `probeAll()` / `probeUrl()` 签名不变；target 带 `host`，`baseUrl` 取持久代表地址。
+  - client 所有权：`DownloadExecutionRemote.ownsClient` + `release()`，`resolveDownloadExecution` 自建的 client 在 Local / Unreachable 出口关闭；`download_actions` / `home_page`（两处）/ `manual_download_task_dialog` / ctl（`CtlDownloadDeviceRemote.release()`、`dl targets`、五条远端任务路由与添加任务）用完关闭。
+  - 订阅（步骤 8）、AI 助手（步骤 10）、`InterconnectHostClient`（步骤 11）迁移后在步骤 11 合入时关闭本条；job / manga_ocr 两个 client 由 remote-tasks 包迁移。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_host_channel_test.dart`（整段超时、POST 在 send / 读响应体阶段失败都不重发、GET 换地址、流式上传只打开一次且失败不重试、证书不符分型、close 生命周期、per-peer 凭据、钉扎闸、401、非 401 状态码原样返回、会话绑定、能力探测分型、ref 认法）；`fushi/test/sync/interconnect_download_failure_surface_test.dart`「代下载 client 走共享 host 通道」两条（listJobs 响应体卡住在超时内报 unreachable；死 LAN + 活 https 时 probe() 直接选中活地址）——修复前两条均红（前者 3 s 超时、后者死 LAN 吃掉 30 s 探测超时）。
+- **备注**：`remote_download_tasks_section.dart` 自建的 client 仍未在 dispose 时关闭，归步骤 9 一并改。
