@@ -392,6 +392,7 @@ Future<void> _verifyWhileTextAdvances({required bool wrongPicture}) async {
     lineId: lineA.lineId,
     sentence: lineA.text,
     outputExtension: 'wav',
+    limit: GalMiningAudioLimit.unlimited,
   );
   final Future<void> verifying = evidence.verifyMine(
     lineA,

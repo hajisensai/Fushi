@@ -397,8 +397,11 @@ void main() {
         scrapedAt: DateTime.fromMillisecondsSinceEpoch(100),
       ),
     );
+    // 作品行必须归属合集或单集（upsertVideoMetadataWork 的冲突键与 DB CHECK）：
+    // 这里没有合集，挂在 ep01 上。
     await database.upsertVideoMetadataWork(
       VideoMetadataWorksCompanion.insert(
+        bookUid: const Value<String?>('ep01'),
         mediaType: 'tv',
         title: 'canonical work',
         updatedAt: 100,

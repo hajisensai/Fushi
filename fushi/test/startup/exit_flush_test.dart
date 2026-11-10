@@ -238,10 +238,18 @@ void main() {
           'void didChangeAppLifecycleState(AppLifecycleState state)',
         );
         expect(lifecycleAt, greaterThanOrEqualTo(0));
-        final int androidAt = main.indexOf(
-          'if (Platform.isAndroid)',
+        // resumed 分支里另有 Android 专属的偏好重读（BUG-4289），所以不能取方法里第一个
+        // `if (Platform.isAndroid)`：以 view lifecycle 交接为锚，回找它所在的早返回块。
+        final int handoffAt = main.indexOf(
+          '_androidViewLifecycle.handleState(state)',
           lifecycleAt,
         );
+        expect(handoffAt, greaterThan(lifecycleAt));
+        final int androidAt = main.lastIndexOf(
+          'if (Platform.isAndroid)',
+          handoffAt,
+        );
+        expect(androidAt, greaterThan(lifecycleAt));
         final int androidEnd = main.indexOf('\n    }', androidAt);
         final String android = main.substring(androidAt, androidEnd);
         expect(android, contains('_androidViewLifecycle.handleState(state)'));

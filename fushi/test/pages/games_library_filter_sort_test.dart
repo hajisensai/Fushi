@@ -110,7 +110,13 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            home: FushiFocusRoot(child: GamesLibraryPage(embedded: embedded)),
+            // 嵌入版不自带 Scaffold：生产里由游戏 tab（home_game_page）的 Material 托着，
+            // harness 照样给一层，页头搜索框的 TextField 才有 Material 祖先。
+            home: FushiFocusRoot(
+              child: embedded
+                  ? const Material(child: GamesLibraryPage(embedded: true))
+                  : const GamesLibraryPage(),
+            ),
           ),
         ),
       ),

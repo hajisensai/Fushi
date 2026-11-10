@@ -266,7 +266,7 @@ class _FakeBackend implements BaseAnkiRepository {
   Future<List<String>?> listMinedFirstFields() async {
     listCalls++;
     final Object? error = listError;
-    if (error != null) throw error;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
     final Future<List<String>?>? pending = listResult;
     if (pending != null) return await pending;
     return snapshot ??
