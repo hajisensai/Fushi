@@ -2928,10 +2928,10 @@ updateLive: function(patch) {
             // 同时成立，两条退出通道一起死——所以本轮先修这一条。
             //
             // 口径更正：onImageTap **不是**「全阅读器唯一没 reclaim 的手势入口」。
-            // 同族至今仍有 7 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
-            // onImageContextMenu、onImageLongPress、onCueTap、onPointerSeek、
+            // 同族至今仍有 6 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
+            // onImageContextMenu、onImageLongPress、onPointerSeek、
             // onLyricsPointerSeek。其中 onImageRevealed / onImageContextMenu /
-            // onImageLongPress / onCueTap 连兄弟桥兜底都没有。本轮只修 spread 退出
+            // onImageLongPress 连兄弟桥兜底都没有。本轮只修 spread 退出
             // 路径必经的这一条，其余未覆盖——别把这里当作「此族已清干净」的证据。
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _openImageViewer(args[0] as String);
@@ -3018,24 +3018,9 @@ updateLive: function(patch) {
           },
         );
 
-        controller.addJavaScriptHandler(
-          handlerName: 'onCueTap',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty || _audiobookController == null) return;
-            // BUG-2276：抽屉压着正文时，点句子是「点遮罩关抽屉」，不是跳播。
-            if (_closeSideSheetForWebViewPointer()) return;
-            final int sentenceIndex = (args[0] as num).toInt();
-            final List<AudioCue>? allCues = _cachedAllCues;
-            if (allCues == null) return;
-            final int idx = allCues.indexWhere(
-              (AudioCue c) => c.sentenceIndex == sentenceIndex,
-            );
-            if (idx >= 0) {
-              _audiobookController!.playCueAndContinue(allCues[idx]);
-            }
-          },
-        );
-
+        // 反馈 C9wcnKaPq_：合成书左键点句跳播的 `onCueTap` 桥已删（左键只查词，与
+        // EPUB 书一致）；跳到点击句只走下面的位置型 `onPointerSeek`（中键）与触屏
+        // 长按选区操作条「从此句播放」（chrome.part.dart `_playFromSelectionSentence`）。
         controller.addJavaScriptHandler(
           handlerName: 'onPointerSeek',
           callback: (List<dynamic> args) async {
