@@ -19,6 +19,7 @@
 //   经 fs/get 换签名直链，SFTP 起播时登记进回环中继按偏移读，见
 //   sftp_stream_source.dart；FTP 没有按偏移读、拖不了进度条，扫描器也会拒绝）；
 // - 'music'：与视频同一组 SFTP / WebDAV / AList（标签按区间读、起播期取流）。
+// - 'game'：只收本地文件夹（exe 要在本机拉起；[addSource] 直达本地分支，反馈 9Rm_8JEkGM）。
 // WebDAV 的 rootPath 即完整集合 URL（scheme/host/端口/路径都在里面），无需单独存
 // host/port（见 NetworkSourceFileSystem）。
 
@@ -33,6 +34,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/source_library/game_source_scanner.dart'
+    show countGamesOfSource;
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
@@ -103,7 +106,7 @@ class MediaSourcesView extends ConsumerStatefulWidget {
     this.onLibraryChanged,
   });
 
-  /// 'video' | 'book' | 'manga' | 'music' —— 决定统计文案与 mediaKind 过滤。
+  /// 'video' | 'book' | 'manga' | 'music' | 'game' —— 决定统计文案与 mediaKind 过滤。
   final String mediaKind;
 
   /// true = 自带纵向滚动（页面语境，外层给的是 Expanded 无界高度）；
@@ -339,17 +342,21 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   ) async {
     final Map<int, int> counts = <int, int>{};
     for (final SourceLibraryRow row in rows) {
-      counts[row.id] = await _db.countMediaBySourceId(row.id, widget.mediaKind);
+      counts[row.id] = await _countOwnedMedia(row.id);
     }
     return counts;
   }
 
+  /// 来源 [sourceId] 累计拥有的条目数。游戏行不挂来源外键，归属记在来源扫描索引里
+  /// （`game_source_scanner.dart`），走 [countGamesOfSource]；其余按 mediaKind 选表。
+  Future<int> _countOwnedMedia(int sourceId) =>
+      widget.mediaKind == SourceLibraryKind.game.dbValue
+      ? countGamesOfSource(_db, sourceId)
+      : _db.countMediaBySourceId(sourceId, widget.mediaKind);
+
   /// 重读单个来源的累计计数（重新扫描后刷新该行用）。
   Future<void> _refreshCount(int sourceId) async {
-    final int count = await _db.countMediaBySourceId(
-      sourceId,
-      widget.mediaKind,
-    );
+    final int count = await _countOwnedMedia(sourceId);
     if (!mounted) return;
     setState(() => _cumulativeCount[sourceId] = count);
   }
@@ -552,8 +559,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             : null,
       ),
       // 隐私开关（v140）：只对会进排行榜 / Bangumi 的书、漫画、视频来源有意义；
-      // 音乐不上传任何公开路径，不给入口。
-      if (widget.mediaKind != 'music')
+      // 音乐不上传任何公开路径，不给入口。游戏行不挂来源外键，来源级私密
+      // （`MediaPrivacySnapshot` 按 source_id 判）管不到它们，给了入口也是空开关。
+      if (widget.mediaKind != 'music' && widget.mediaKind != 'game')
         _SourceRowMenuAction(
           key: ValueKey<String>('media_source_privacy_${row.id}'),
           label: t.media_source_privacy_action,
@@ -814,6 +822,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       'book' => t.media_source_count_book(n: total),
       'manga' => t.media_source_count_manga(n: total),
       'music' => t.media_source_count_music(n: total),
+      'game' => t.media_source_count_game(n: total),
       _ => t.media_source_count_video(n: total),
     };
     final DateTime? scannedAt = row.lastScannedAt;
@@ -902,6 +911,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
     if (isBusy) return;
+    // 游戏来源只收本地文件夹（exe 要在本机拉起），不给本地 / 网络二选一。
+    if (widget.mediaKind == SourceLibraryKind.game.dbValue) {
+      await addLocalFolder();
+      return;
+    }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
       builder: (BuildContext ctx) => FushiSimpleDialog(
@@ -1186,6 +1200,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   n: summary.importedMediaCount,
                 ),
                 'music' => t.media_source_count_music(
+                  n: summary.importedMediaCount,
+                ),
+                'game' => t.media_source_count_game(
                   n: summary.importedMediaCount,
                 ),
                 _ => t.media_source_count_video(n: summary.importedMediaCount),
