@@ -2966,39 +2966,54 @@ async function queueOverwrite(expression, reading, frequencies, pitches, rules, 
 
 const MINED_ACTION_OPEN_CLASS = 'mined-action-open';
 
-// 反馈 E0sdqm4h-F / PR #2980 审查：已制卡 ✓ 的「管理」手势——桌面右键、触屏长按（Android
-// 长按也会派发 contextmenu）、按钮聚焦时 ContextMenu 键 / Shift+F10。永远弹覆写 / 新增 /
-// 查看的选择单。单击在「允许重复」开着时直接新增，覆写指定旧卡 / 查看就只剩这条入口，
-// 所以它对所有宿主、不论设置都在。未制卡（+）时不拦，原生菜单照常。与 ♪ 的选源菜单
-// （bindAudioSourceMenuTriggers）同一套触发与「长按后吞掉补发 click」的约定。
-const MINED_MANAGE_LONG_PRESS_MS = 450;
-const MINED_MANAGE_MOVE_TOLERANCE_PX = 10;
-function bindMinedCardManageTriggers(button, openManage) {
+// ── 弹窗内联按钮的「次级动作」手势：唯一的绑定口 ─────────────────────────────────
+// 已制卡 ✓ 的管理选择单、♪ 的选源菜单都是「单击做主动作、长按 / 右键 / 菜单键打开次级
+// 菜单」。这套手势以前在两处各抄一份，而且长按只认 touch / pen：桌面鼠标按住不放什么都
+// 不发生，可两处的提示（「右键或长按」）对所有平台都这么写（反馈 3UHYaFPP8g）。现在
+// 只在这里定义一次，三种输入同一语义：
+//   - 长按：触屏 / 触控笔 / **鼠标主键**按住 ≥ POPUP_LONG_PRESS_MS 且未移出容差 → 打开；
+//     随后内核补发的那次 click 由按钮自己的 onclick 按 data-fushi-suppress-click 吞掉；
+//   - 右键：contextmenu（Android 长按也会派发它：长按计时已打开过时只吞原生菜单）；
+//   - 键盘：按钮聚焦时 ContextMenu 键 / Shift+F10（打开后焦点进菜单首项）。
+// [isActive]：此刻是否提供次级菜单（未制卡的「+」不提供，原生菜单与单击照常）。
+// [isOpen]：菜单已开着时右键只吞原生菜单、不重复打开。
+// [open]({focusFirst})：打开次级菜单。
+// 新增「长按 / 右键」次级动作的弹窗按钮一律走这里，不再自己挂 pointerdown 计时。
+const POPUP_LONG_PRESS_MS = 450;
+const POPUP_LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+function isPopupLongPressPointer(e) {
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') return true;
+    // 鼠标只认主键（button 0）；右键走 contextmenu，中键 / 侧键不归这里。
+    return e.pointerType === 'mouse' && e.button === 0;
+}
+function bindPopupSecondaryActionTriggers(button, { isActive, isOpen, open }) {
+    const active = typeof isActive === 'function' ? isActive : () => true;
+    const alreadyOpen = typeof isOpen === 'function' ? isOpen : () => false;
     let pressTimer = 0;
     let pressStart = null;
-    const isMined = () => button.dataset.mined === '1' && button.dataset.mining !== '1';
     const cancelPress = () => {
         if (pressTimer) clearTimeout(pressTimer);
         pressTimer = 0;
         pressStart = null;
     };
     button.addEventListener('pointerdown', (e) => {
+        // 长按后有的内核不再派发 click：残留的吞点击标记在下一次按下时作废。
         delete button.dataset.fushiSuppressClick;
-        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
         cancelPress();
-        if (!isMined()) return;
+        if (!isPopupLongPressPointer(e) || !active()) return;
         pressStart = { x: e.clientX, y: e.clientY };
         pressTimer = setTimeout(() => {
             pressTimer = 0;
             pressStart = null;
+            if (!active()) return;
             button.dataset.fushiSuppressClick = '1';
-            openManage();
-        }, MINED_MANAGE_LONG_PRESS_MS);
+            open({ focusFirst: false });
+        }, POPUP_LONG_PRESS_MS);
     });
     button.addEventListener('pointermove', (e) => {
         if (!pressStart) return;
-        if (Math.abs(e.clientX - pressStart.x) > MINED_MANAGE_MOVE_TOLERANCE_PX ||
-            Math.abs(e.clientY - pressStart.y) > MINED_MANAGE_MOVE_TOLERANCE_PX) {
+        if (Math.abs(e.clientX - pressStart.x) > POPUP_LONG_PRESS_MOVE_TOLERANCE_PX ||
+            Math.abs(e.clientY - pressStart.y) > POPUP_LONG_PRESS_MOVE_TOLERANCE_PX) {
             cancelPress();
         }
     });
@@ -3006,23 +3021,34 @@ function bindMinedCardManageTriggers(button, openManage) {
     button.addEventListener('pointercancel', cancelPress);
     button.addEventListener('pointerleave', cancelPress);
     button.addEventListener('contextmenu', (e) => {
-        if (!isMined()) return;
+        if (!active()) return;
         e.preventDefault();
         e.stopPropagation();
-        // 长按计时已经打开过：只吞掉原生菜单，不重复打开。
-        if (button.dataset.fushiSuppressClick === '1') return;
+        // 长按计时已经打开过 / 菜单正开着：只吞掉原生菜单，不重复打开。
+        if (button.dataset.fushiSuppressClick === '1' || alreadyOpen()) return;
         cancelPress();
         if (e.pointerType === 'touch' || e.pointerType === 'pen') {
             button.dataset.fushiSuppressClick = '1';
         }
-        openManage();
+        open({ focusFirst: false });
     });
     button.addEventListener('keydown', (e) => {
         const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
-        if (!isMenuKey || !isMined()) return;
+        if (!isMenuKey || !active()) return;
         e.preventDefault();
         e.stopPropagation();
-        openManage();
+        open({ focusFirst: true });
+    });
+}
+
+// 反馈 E0sdqm4h-F / PR #2980 审查：已制卡 ✓ 的「管理」手势（右键 / 长按 / 菜单键，手势本身
+// 见 bindPopupSecondaryActionTriggers）永远弹覆写 / 新增 / 查看的选择单。单击在「允许重复」
+// 开着时直接新增，覆写指定旧卡 / 查看就只剩这条入口，所以它对所有宿主、不论设置都在。
+// 未制卡（+）时不拦，原生菜单照常。
+function bindMinedCardManageTriggers(button, openManage) {
+    bindPopupSecondaryActionTriggers(button, {
+        isActive: () => button.dataset.mined === '1' && button.dataset.mining !== '1',
+        open: () => { openManage(); },
     });
 }
 
@@ -4945,8 +4971,8 @@ function createAudioButton(expression, reading, entryIndex) {
 }
 
 // ── 「选择音频源」菜单 ────────────────────────────────────────────────────────────
-// 单击 ♪ 播默认源（首个解析出的源，与原行为一致）；触屏长按 ~450ms / 桌面右键 /
-// 按钮聚焦时 Shift+F10 或 ContextMenu 键 → 在按钮旁弹出菜单，列出当前词每个启用
+// 单击 ♪ 播默认源（首个解析出的源，与原行为一致）；长按 ~450ms（触屏 / 触控笔 / 鼠标
+// 主键）/ 右键 / 按钮聚焦时 Shift+F10 或 ContextMenu 键 → 在按钮旁弹出菜单，列出当前词每个启用
 // 音频源各自解析出的候选（源名 + 变体），点项即播并关菜单。列表经宿主桥
 // `listWordAudioSources({expression, reading})` → `[{name, variant, url}]` 取得：
 // app 内 / app 外由 Dart 逐源解析（listWordAudioWebViewChoices），扩展经 background
@@ -4955,61 +4981,17 @@ function createAudioButton(expression, reading, entryIndex) {
 // （没有「制卡用指定音频」的既有桥，不在这里发明）。
 // 菜单挂在 __fushiOverlayParent() 顶层（与 .audio-hint 同一套 fixed 定位），开着时
 // 记一层 __fushiPopupModalDepth，让宿主键桥（BUG-1347）把方向键 / Esc 让给菜单。
-const AUDIO_MENU_LONG_PRESS_MS = 450;
-const AUDIO_MENU_MOVE_TOLERANCE_PX = 10;
 let __fushiAudioMenu = null; // { menu, button, modal, onDocPointerDown, generation }
 let __fushiAudioMenuGeneration = 0;
 
 function bindAudioSourceMenuTriggers(button, expression, reading) {
-    let pressTimer = 0;
-    let pressStart = null;
-    const cancelPress = () => {
-        if (pressTimer) clearTimeout(pressTimer);
-        pressTimer = 0;
-        pressStart = null;
-    };
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('pointerdown', (e) => {
-        // 长按后有的内核不再派发 click：残留的吞点击标记在下一次按下时作废。
-        delete button.dataset.fushiSuppressClick;
-        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-        cancelPress();
-        pressStart = { x: e.clientX, y: e.clientY };
-        pressTimer = setTimeout(() => {
-            pressTimer = 0;
-            pressStart = null;
-            button.dataset.fushiSuppressClick = '1';
-            openAudioSourceMenu(button, expression, reading, { focusFirst: false });
-        }, AUDIO_MENU_LONG_PRESS_MS);
-    });
-    button.addEventListener('pointermove', (e) => {
-        if (!pressStart) return;
-        if (Math.abs(e.clientX - pressStart.x) > AUDIO_MENU_MOVE_TOLERANCE_PX ||
-            Math.abs(e.clientY - pressStart.y) > AUDIO_MENU_MOVE_TOLERANCE_PX) {
-            cancelPress();
-        }
-    });
-    button.addEventListener('pointerup', cancelPress);
-    button.addEventListener('pointercancel', cancelPress);
-    button.addEventListener('pointerleave', cancelPress);
-    // 桌面右键（Android 长按同样会派发 contextmenu：菜单已由长按打开时只吞掉原生菜单）。
-    button.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (__fushiAudioMenu && __fushiAudioMenu.button === button) return;
-        cancelPress();
-        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-            button.dataset.fushiSuppressClick = '1';
-        }
-        openAudioSourceMenu(button, expression, reading, { focusFirst: false });
-    });
-    button.addEventListener('keydown', (e) => {
-        const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
-        if (!isMenuKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-        openAudioSourceMenu(button, expression, reading, { focusFirst: true });
+    bindPopupSecondaryActionTriggers(button, {
+        isOpen: () => !!(__fushiAudioMenu && __fushiAudioMenu.button === button),
+        open: ({ focusFirst }) => {
+            openAudioSourceMenu(button, expression, reading, { focusFirst });
+        },
     });
 }
 

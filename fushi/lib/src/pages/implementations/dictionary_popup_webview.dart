@@ -80,7 +80,8 @@ const Duration kPopupNativeSelectLongPressDuration = Duration(
 /// （[DictionaryPopupWebViewState] 的搜索 / 复制 showMenu）命中它们时必须让位，否则两张
 /// 菜单叠在一起、宿主那张还抢在前面（反馈 3UHYaFPP8g：右键已制卡 ✓ 弹出的是「搜索 /
 /// 复制」而不是覆写 / 查看选择单）。与 popup.js 的 contextmenu 处理器一一对应：
-///   - `.audio-button` / `.fushi-audio-menu`：`bindAudioSourceMenuTriggers` 弹选源菜单，
+///   - `.audio-button` / `.fushi-audio-menu`：`bindAudioSourceMenuTriggers`（手势走共享的
+///     `bindPopupSecondaryActionTriggers`）弹选源菜单，
 ///     菜单本身吞 contextmenu；
 ///   - 已制卡的 `.mine-button`：`bindMinedCardManageTriggers` 只在
 ///     `data-mined === '1' && data-mining !== '1'` 时拦截（未制卡 + 不拦，宿主菜单照常），
