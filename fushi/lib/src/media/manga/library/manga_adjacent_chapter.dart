@@ -70,7 +70,7 @@ int? resolveAdjacentMangaChapter({
 /// 不另推「最新章 = 下标几」；同一话的多个汉化版本照阅读器 skipDuplicate 的口径
 /// 算同一话，读完最新一话的任一版本即算读完整部。
 ///
-/// BUG-4323：此前阅读器拿**当前章**的页数判末页、却对整本写 completedAt，读完
+/// BUG-4348：此前阅读器拿**当前章**的页数判末页、却对整本写 completedAt，读完
 /// 任意一章的末页整部就被标「读完」。
 bool mangaChapterCompletesSeries({
   required List<OnlineMangaChapter> chapters,

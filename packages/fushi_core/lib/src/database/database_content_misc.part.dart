@@ -1086,7 +1086,7 @@ mixin _FushiDbContentMisc
 
   /// 全部书的章状态：书 uid → (chapterKey → 行)。书架列书一次取完（同
   /// `ReaderPositionRepository.findAllByBookUid` 的理由：逐本查是 N 次串行往返）。
-  /// 在线漫画的书架进度按章 `readAt` 算（BUG-4323），所以书架需要它。
+  /// 在线漫画的书架进度按章 `readAt` 算（BUG-4348），所以书架需要它。
   Future<Map<String, Map<String, MangaChapterStateRow>>>
   getAllMangaChapterStatesByBook() async {
     final List<MangaChapterStateRow> rows = await select(
@@ -1105,7 +1105,7 @@ mixin _FushiDbContentMisc
   /// 「哪些章已读」集合的响应式来源（`bookUid` + U+0000 + `chapterKey`，按
   /// 书 uid、章 key 排序）。
   ///
-  /// 书架在线漫画进度由章 `readAt` 决定（BUG-4323），作品页「标记已读 / 未读」、
+  /// 书架在线漫画进度由章 `readAt` 决定（BUG-4348），作品页「标记已读 / 未读」、
   /// Kavita 对齐、阅读器读到章末都只写这张表、不碰书行；书架订阅这条流才能在
   /// 任一写入点之后即时重算，而不靠每个写入点各自记得 invalidate。只投影两列、
   /// 只取已读行：翻页写 lastPage 也会让表级 watch 重跑，结果集不变由消费端
