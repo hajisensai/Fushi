@@ -33,24 +33,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3847 条。点号进各自文件。
+> 共 3922 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4285](bugs/BUG-4285-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
-| [BUG-4284](bugs/BUG-4284-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
-| [BUG-4283](bugs/BUG-4283-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
-| [BUG-4282](bugs/BUG-4282-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
-| [BUG-4281](bugs/BUG-4281-host-update-tracking-null-loops.md) | ✅ | ✅ | 主机更新跟踪中 host 回 404 时无限每 2 秒轮询、界面卡在进行中 |
-| [BUG-4280](bugs/BUG-4280-manga-ocr-client-error-orphan.md) | 🚧 | 🚧 | 漫画 OCR client 出错时只报错不清理、host 任务成孤儿（未复现） |
-| [BUG-4279](bugs/BUG-4279-remote-job-client-lifecycle.md) | ✅ | ✅ | 远端任务客户端不区分观测失败与任务失败：瞬时断网即删除 host 任务、清理失败当任务失败、观测可被卡住的响应体永久挂起 |
-| [BUG-4278](bugs/BUG-4278-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
-| [BUG-4277](bugs/BUG-4277-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
-| [BUG-4276](bugs/BUG-4276-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
-> 共 3912 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4379](bugs/BUG-4379-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
+| [BUG-4378](bugs/BUG-4378-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
+| [BUG-4377](bugs/BUG-4377-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
+| [BUG-4376](bugs/BUG-4376-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
+| [BUG-4375](bugs/BUG-4375-host-update-tracking-null-loops.md) | ✅ | ✅ | 主机更新跟踪中 host 回 404 时无限每 2 秒轮询、界面卡在进行中 |
+| [BUG-4374](bugs/BUG-4374-manga-ocr-client-error-orphan.md) | 🚧 | 🚧 | 漫画 OCR client 出错时只报错不清理、host 任务成孤儿（未复现） |
+| [BUG-4373](bugs/BUG-4373-remote-job-client-lifecycle.md) | ✅ | ✅ | 远端任务客户端不区分观测失败与任务失败：瞬时断网即删除 host 任务、清理失败当任务失败、观测可被卡住的响应体永久挂起 |
+| [BUG-4372](bugs/BUG-4372-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
+| [BUG-4371](bugs/BUG-4371-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
+| [BUG-4370](bugs/BUG-4370-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
 | [BUG-4369](bugs/BUG-4369-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
 | [BUG-4367](bugs/BUG-4367-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
 | [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |

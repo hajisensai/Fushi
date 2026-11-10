@@ -1,4 +1,4 @@
-## BUG-4283 · 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档
+## BUG-4377 · 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档
 - **报告**：2026-11-10（互联远程长任务审查 R11(a)）
 - **真实性**：✅ 真 bug。`fushi/lib/src/sync/interconnect_adaptive_quality.dart:126-129`（修复前）`noteSeek()` 每次把 `_seekGraceTicksLeft` 无条件重置为 10，由 `fushi/lib/src/pages/implementations/video_fushi/quality.part.dart:388-392` 在每次 seek 时调用；`tick()` 在宽限内的缓冲一律不入卡顿窗口。差网上句子循环 / 反复 seek 时宽限不断续命，`kAdaptiveStallTicksToDrop` 永远凑不齐（文件头 `:82-87` 自认未修的盲区）。修复前新用例「每次 seek 缓冲 8 拍、循环 4 轮」全程不降档。
 - **[x] ① 已修复** — `c18bab1b8dd` `interconnect_adaptive_quality.dart`：`List<bool> _stalls` 改为按拍分类的观察窗（clear / stalled / graced，graced 记归属 seek），`noteSeek()` 登记 seek 拍序号，降档判据 = 窗口内 stalled + max(0, graced − seek 次数 × 5)（seek ≥2 时）；`reset` / `_markSwitched` 清空窗口与 seek 登记；文件头删掉已修的盲区。

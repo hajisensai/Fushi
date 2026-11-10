@@ -3723,7 +3723,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _remotePlaybackGeneration = 0;
   final Set<int> _remotePlaybackStopGenerations = <int>{};
 
-  /// 已释放服务端资源的远端播放 generation（[_releaseRemotePlayback]，BUG-4285）。
+  /// 已释放服务端资源的远端播放 generation（[_releaseRemotePlayback]，BUG-4379）。
   final Set<int> _remotePlaybackReleaseGenerations = <int>{};
 
   /// 有效远端 info/client：合集连播优先返回当前成员 [_activeRemoteMember]（换成员即跟随）；
@@ -5600,7 +5600,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 本页丢掉第 [generation] 次远端播放的流（退出 / 换集 / 换档、换线路重载之前）：
-  /// 让来源释放这次播放在服务端占着的资源（BUG-4285，互联 host 的流票与转码）。
+  /// 让来源释放这次播放在服务端占着的资源（BUG-4379，互联 host 的流票与转码）。
   ///
   /// 与 [_reportRemotePlaybackStopped] 分开：停止上报在自然播完时也发，那时页面
   /// 还开着、可回拖重看，流不能作废。这里**同步**调用、不等结果——来源在第一个
@@ -8549,7 +8549,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (_webWindowFullscreen) await _toggleWebWindowFullscreen();
       if (!mounted) return true;
       if (!route.isCurrent) return false;
-      // 导航到此才确定要关本页：上面任一处取消导航，本页留下且流仍可用（BUG-4285）。
+      // 导航到此才确定要关本页：上面任一处取消导航，本页留下且流仍可用（BUG-4379）。
       _releaseRemotePlayback(
         info: _effectiveRemoteInfo,
         client: _effectiveRemoteClient,

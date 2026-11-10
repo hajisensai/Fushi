@@ -214,7 +214,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
         // 逐段过本地 TLS 中继后自己拼。
         'url': discTitle?.edlUri() ?? streamUri.toString(),
-        // 流票（BUG-4285）：client 播放会话结束时拿它调 `/streamrelease`，host 立刻
+        // 流票（BUG-4379）：client 播放会话结束时拿它调 `/streamrelease`，host 立刻
         // 作废这次签的全部 token（含上面的制卡 token）并停掉它们的转码。旧 client
         // 不读，token 照旧按 TTL 过期。
         'ticket': tokenValue,
@@ -250,7 +250,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       });
     }
 
-    // POST /api/library/videos/<id>/streamrelease?ticket=<t> — 释放流票（BUG-4285，
+    // POST /api/library/videos/<id>/streamrelease?ticket=<t> — 释放流票（BUG-4379，
     // 需 Basic 鉴权：路径不以任何豁免后缀结尾）。幂等：票已不在也 204。
     final String? releaseId = _extractVideoId(reqPath, 'streamrelease');
     if (releaseId != null) {
@@ -1127,7 +1127,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     return base64UrlEncode(bytes);
   }
 
-  /// 释放流票 [ticket]（BUG-4285）：作废它本身与随它签发的 token（光盘制卡 token），
+  /// 释放流票 [ticket]（BUG-4379）：作废它本身与随它签发的 token（光盘制卡 token），
   /// 并取消它们名下排队 / 在跑的转码分段。只认 [videoId] 下的 token——拿别的视频
   /// 的路径释放不动这张票。全程同步：作废 token 与 [cancelTranscodeWork] 之间没有
   /// await，与分段请求「登记 → 判存活」的同步段互斥，不存在漏网窗口。
@@ -1275,7 +1275,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (index == null || index < 0 || index >= count) {
       return shelf.Response.notFound('Segment out of range');
     }
-    // 分段工作挂在签发它的 token 名下（BUG-4285）：流票被释放时
+    // 分段工作挂在签发它的 token 名下（BUG-4379）：流票被释放时
     // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
     // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
     final Uint8List? segment;
