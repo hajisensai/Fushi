@@ -398,7 +398,7 @@ void main() {
     expect(host.store.profileUid, phone.store.profileUid);
   });
 
-  // BUG-4279 的暂缓变体：host 采用客户端的 profile，但 host 旧 profile 里有一条 undo 撤销的日志还没同步到（BUG-4217），
+  // BUG-4280 的暂缓变体：host 采用客户端的 profile，但 host 旧 profile 里有一条 undo 撤销的日志还没同步到（BUG-4217），
   // 并入只能暂缓——host 期间仍按旧 uid 同步，同步位置上那个旧 profile 还在。host 的用户已经选定离开它：客户端重判时
   // 不能再把它当候选（以前照样问，选了就把自己并进 host 正要离开的 profile，host 并入做完后两边分叉）。
   test(
