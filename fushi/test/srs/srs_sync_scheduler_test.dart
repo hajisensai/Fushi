@@ -166,12 +166,22 @@ class _RecordingLinker implements SrsProfileLinker {
   /// 非 null：[adopt] 时转成 [deferred]（像真实 linker：并入暂缓是采用那一刻才发生的）。
   SrsDeferredProfileMerge? deferOnAdopt;
 
+  /// 非 null：link 像真实 linker 自动采用（唯一剩下的候选）/ 续做完并入那样，交回换过 uid 的这个 store。
+  SrsDbStore? relinkTo;
+
+  /// 非 null：link 抛它（位置这一刻连不上 / 列目录出错）。
+  Object? linkError;
+
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
     SrsDbStore store,
   ) async {
     linkedUids.add(store.profileUid);
+    final Object? error = linkError;
+    if (error != null) throw error;
+    final SrsDbStore? relinked = relinkTo;
+    if (relinked != null) return SrsProfileLinkOutcome(relinked, linked: true);
     if (deferred != null) return SrsProfileLinkOutcome(store);
     if (conflictFor.contains(store.profileUid)) {
       return SrsProfileLinkOutcome(
@@ -561,6 +571,81 @@ void main() {
       notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
       hasLength(1),
       reason: '同一个冲突重判不重复通知',
+    );
+  });
+
+  test('弹窗前重判 / 采用前复核时 link 换了 store（自动采用唯一剩下的候选）：与轮次里一样通知界面重读', () async {
+    final SrsDbStore other = await SrsDbStore.open(
+      db: store.db,
+      core: store.core,
+      profileUid: 'remote-uid',
+      deviceId: 'dev',
+    );
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(root));
+    final SrsProfileConflict conflict = s.profileConflict!;
+    changed = 0;
+
+    // 另一个候选的设备采用了别人的 profile：只剩一个候选，本机（这里由假 linker 代演）自动采用了它。
+    linker.relinkTo = other;
+    expect(await s.recheckProfileConflict(conflict), isNull);
+    expect(changed, 1, reason: '重判里换了 uid：界面要重读，不能等下一轮拉到数据');
+
+    changed = 0;
+    await expectLater(
+      s.adoptProfile(conflict, 'remote-uid'),
+      throwsA(isA<SrsProfileConflictStale>()),
+    );
+    expect(changed, 1, reason: '采用前复核里换了 uid：同样通知界面重读');
+    expect(linker.adopted, isEmpty);
+  });
+
+  test('弹窗前重判失败（位置连不上）：忘掉通知状态，下一轮判出同一个冲突立刻再通知', () async {
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () {},
+      onNotice: notices.add,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    final SrsProfileConflict conflict = s.profileConflict!;
+    Iterable<SrsSyncNotice> conflictNotices() =>
+        notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked);
+    expect(conflictNotices(), hasLength(1));
+
+    linker.linkError = const SocketException('unreachable');
+    await expectLater(
+      s.recheckProfileConflict(conflict),
+      throwsA(isA<SocketException>()),
+    );
+    linker.linkError = null;
+    await s.syncWithBackend(dir);
+    expect(
+      conflictNotices(),
+      hasLength(2),
+      reason: 'app 侧弹窗前已取走待弹的冲突、重判又失败：下一轮判出来必须再通知，不能等满复用间隔',
     );
   });
 

@@ -1234,29 +1234,43 @@ class SrsSyncScheduler {
 
   /// 弹窗之前按同步位置的现状重判 [conflict]：检出之后另一边可能已经解决了它（采用了本机的 profile），候选和笔记数
   /// 也会变。返回此刻仍成立的冲突（候选与笔记数都是现在的）；已经不成立、本机已经切到别的 profile、或那个位置此刻
-  /// 不可用时返回 null——位置不可用时忘掉这个冲突的通知状态，等能连上的那一轮判出来再通知。
+  /// 不可用时返回 null——位置不可用时忘掉这个冲突的通知状态，等能连上的那一轮判出来再通知。重判本身失败（位置这一
+  /// 刻连不上 / 列目录出错）时同样忘掉通知状态再原样抛：调用方弹窗前已经取走了待弹的冲突，不忘掉的话下一轮判出同一
+  /// 个冲突要等满 [kSrsProfileConflictRecheck] 才会再通知。重判里自动采用 / 续做并入换了 store 时与轮次里一样通知
+  /// 界面重读（[SrsSyncScheduler] 的 `onDataChanged`）。
   Future<SrsProfileConflict?> recheckProfileConflict(
     SrsProfileConflict conflict,
   ) async {
     final SrsProfileLinker? linker = _profileLinker;
     if (linker == null || _halted) return null;
     SrsProfileConflict? current;
-    final bool found = await _onLocation(conflict.directoryKey, (
-      SyncAssetStore backend,
-      bool _,
-    ) async {
-      final SrsDbStore? store = await _readStore();
-      if (store == null ||
-          _halted ||
-          store.isWindingDown ||
-          store.profileUid != conflict.localUid) {
-        return;
+    bool found = false;
+    try {
+      found = await _onLocation(conflict.directoryKey, (
+        SyncAssetStore backend,
+        bool _,
+      ) async {
+        final SrsDbStore? store = await _readStore();
+        if (store == null ||
+            _halted ||
+            store.isWindingDown ||
+            store.profileUid != conflict.localUid) {
+          return;
+        }
+        final SrsDbStore linked = await _link(
+          linker,
+          backend,
+          store,
+          conflict.directoryKey,
+        );
+        if (!identical(linked, store)) _onDataChanged();
+        current = _conflictAt(conflict.directoryKey, conflict.localUid);
+      });
+    } finally {
+      // 位置不可用或重判抛错：这一次没判成，忘掉通知状态（见上）。
+      if (!found) {
+        _linkDecided.remove(_linkKey(conflict.directoryKey, conflict.localUid));
       }
-      await _link(linker, backend, store, conflict.directoryKey);
-      current = _conflictAt(conflict.directoryKey, conflict.localUid);
-    });
-    if (!found) {
-      _linkDecided.remove(_linkKey(conflict.directoryKey, conflict.localUid));
     }
     return current;
   }
@@ -1308,6 +1322,8 @@ class SrsSyncScheduler {
         conflict.directoryKey,
         conflict.localUid,
       );
+      // 复核里自动采用 / 续做并入换了 store：本机已经换了 uid，与轮次里一样通知界面重读，再按「已经不成立」交回。
+      if (!identical(linked, store)) _onDataChanged();
       if (!identical(linked, store) ||
           current == null ||
           !current.candidates.any((SrsRemoteProfile c) => c.uid == uid)) {
