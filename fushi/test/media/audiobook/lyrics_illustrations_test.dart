@@ -403,6 +403,120 @@ void main() {
     });
   });
 
+  // 反馈 VaaRL9s3Tg：缩略图「新插图」提示点看过也不消失。旧实现提示点条件只有
+  // 「插图位不是封面」，控制器没有「已看过」状态。
+  group('LyricsIllustrationController 已看过（新插图提示点）', () {
+    List<LyricsIllustration> items() => <LyricsIllustration>[
+      _item('a', 1, 0),
+      _item('b', 2, 0),
+      _item('c', 5, 1200),
+    ];
+
+    LyricsIllustrationController dotMode() => LyricsIllustrationController()
+      // 「红点」提示方式：不弹卡，只换缩略图 + 提示点。
+      ..autoOpenCard = false
+      ..load(
+        items(),
+        position: const LyricsBookPosition(1, 10),
+        audioPosition: const Duration(minutes: 30),
+      );
+
+    test('换上新插图时未看过，打开大图（markSeen）后已看过，再换新插图又未看过', () {
+      final LyricsIllustrationController c = dotMode();
+      expect(c.shownUnseen, isFalse, reason: '封面没有提示点');
+      expect(
+        c.observe(
+          const LyricsBookPosition(2, 10),
+          audioPosition: const Duration(minutes: 30, seconds: 5),
+        ),
+        isTrue,
+      );
+      expect(c.shown, 1);
+      expect(c.shownUnseen, isTrue);
+
+      int notified = 0;
+      c.addListener(() => notified++);
+      c
+        ..showAt(1)
+        ..markSeen(1);
+      expect(c.isSeen(1), isTrue);
+      expect(c.shownUnseen, isFalse, reason: '打开过大图：提示点消失');
+      expect(notified, 1);
+      c.markSeen(1);
+      expect(notified, 1, reason: '重复记已看过不再通知');
+
+      expect(
+        c.observe(
+          const LyricsBookPosition(5, 1300),
+          audioPosition: const Duration(minutes: 30, seconds: 9),
+        ),
+        isTrue,
+      );
+      expect(c.shown, 2);
+      expect(c.shownUnseen, isTrue, reason: '换上新插图：提示点重新出现');
+
+      c.showAt(1);
+      expect(c.shownUnseen, isFalse, reason: '翻回看过的那张不带提示点');
+    });
+
+    test('大图里翻页：showAt + markSeen 把翻到的页记为已看过', () {
+      final LyricsIllustrationController c = dotMode()
+        ..observe(
+          const LyricsBookPosition(5, 1300),
+          audioPosition: const Duration(minutes: 30, seconds: 5),
+        );
+      expect(c.reached, 2);
+      expect(c.isSeen(0), isFalse);
+      c
+        ..showAt(0)
+        ..markSeen(0);
+      expect(c.isSeen(0), isTrue);
+      expect(c.isSeen(1), isFalse);
+      c.markSeen(99);
+      expect(c.isSeen(99), isFalse, reason: '越界下标忽略');
+    });
+
+    test('插图卡完整展示后自动收起：记为已看过，缩略图不再带提示点', () {
+      fakeAsync((FakeAsync async) {
+        final LyricsIllustrationController c = LyricsIllustrationController()
+          ..load(
+            items(),
+            position: const LyricsBookPosition(3, 10),
+            audioPosition: const Duration(minutes: 30),
+          );
+        c.observe(
+          const LyricsBookPosition(5, 1300),
+          audioPosition: const Duration(minutes: 30, seconds: 9),
+        );
+        expect(c.cardVisible, isTrue);
+        expect(c.shownUnseen, isTrue, reason: '卡还没展示完');
+        async.elapse(c.cardAutoCloseAfter + const Duration(milliseconds: 1));
+        expect(c.cardVisible, isFalse);
+        expect(c.shown, 2, reason: '插图位仍留缩略图');
+        expect(c.isSeen(2), isTrue);
+        expect(c.shownUnseen, isFalse);
+      });
+    });
+
+    test('点 ✕ 回封面不算看过；重新装入同一批插图时看过的仍算看过', () {
+      final LyricsIllustrationController c = dotMode()
+        ..observe(
+          const LyricsBookPosition(2, 10),
+          audioPosition: const Duration(minutes: 30, seconds: 5),
+        );
+      c.dismiss();
+      expect(c.isSeen(1), isFalse);
+      c
+        ..markSeen(0)
+        ..load(
+          items(),
+          position: const LyricsBookPosition(1, 10),
+          audioPosition: const Duration(minutes: 31),
+        );
+      expect(c.isSeen(0), isTrue);
+    });
+  });
+
   test('selectLyricsIllustrations：封面（含同图另一份）与小图屏蔽，按书中顺序', () {
     EpubImageRef ref(
       String key,
