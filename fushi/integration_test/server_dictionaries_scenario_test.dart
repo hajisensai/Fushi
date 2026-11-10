@@ -16,6 +16,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
@@ -228,6 +229,9 @@ Future<ObserveShot> _shot(WidgetTester tester, String name) async {
   return shot;
 }
 
+/// 最近一次 [_focus] 是否真由 Tab 走到（false = 走不到、用了 requestFocusInside 兜底）。
+bool _lastFocusByTab = false;
+
 /// 焦点移进 [target]（Tab 遍历，走不到时用 requestFocusInside 兜底并记一笔），返回是否成功。
 Future<bool> _focus(
   WidgetTester tester,
@@ -236,6 +240,7 @@ Future<bool> _focus(
   String label, {
   int maxSteps = 160,
 }) async {
+  _lastFocusByTab = false;
   if (target.evaluate().isEmpty) {
     _log('focus $label: target not in tree');
     return false;
@@ -248,6 +253,7 @@ Future<bool> _focus(
     () => _focusInside(driver, target),
     maxSteps: maxSteps,
   );
+  _lastFocusByTab = ok;
   if (!ok) {
     ok = await driver.requestFocusInside(target.first);
     await tester.pump(const Duration(milliseconds: 200));
@@ -359,6 +365,38 @@ void _printManager(WidgetTester tester, String step, Finder page) {
     const ValueKey<String>('dict-profile-subtitle'),
   );
   _log('$step subtitle: ${_textsIn(tester, subtitle).join(' / ')}');
+}
+
+/// 来源卡状态行：(文字, 是否完整放下——没被省略号截断)。
+(String, bool) _statusLine(WidgetTester tester, String hostId) {
+  final Finder f = find.byKey(
+    ValueKey<String>('dict-server-source-status-$hostId'),
+  );
+  if (f.evaluate().isEmpty) return ('(absent)', false);
+  final Text text = tester.widget<Text>(f.first);
+  final Finder para = find.descendant(
+    of: f.first,
+    matching: find.byType(RichText),
+  );
+  final bool fits =
+      para.evaluate().isNotEmpty &&
+      !tester.renderObject<RenderParagraph>(para.first).didExceedMaxLines;
+  return (text.data ?? text.textSpan?.toPlainText() ?? '', fits);
+}
+
+/// 行开关当前值（本机行 key = 词典名，服务器行 key = `server:<host>/<名>`）。
+bool? _switchValue(WidgetTester tester, String rowKey) {
+  final Finder f = find.byKey(ValueKey<String>('dict-row-switch-$rowKey'));
+  if (f.evaluate().isEmpty) return null;
+  return (f.evaluate().first.widget as dynamic).value as bool;
+}
+
+int _rowIndex(List<String> rows, String name) {
+  for (int i = 0; i < rows.length; i++) {
+    final String key = rows[i].split(' => ').first;
+    if (key == name || key.endsWith('/$name')) return i;
+  }
+  return -1;
 }
 
 Future<bool> _setTypeSegment(
@@ -840,6 +878,12 @@ void main() {
               rows.every((String r) => r.contains('=> server')),
               '1 every row is a server-source row',
             );
+            final (String st1, bool fit1) = _statusLine(tester, hostId);
+            _check(
+              st1 == 'Online' && fit1,
+              '1 source card status "Online" fits (not ellipsized)',
+              'text="$st1" fits=$fit1',
+            );
             await _shot(tester, '01-thin-manager');
 
             final bool kanjiSeg = await _setTypeSegment(
@@ -856,6 +900,29 @@ void main() {
             _check(
               kanjiNote.evaluate().isNotEmpty,
               '1 kanji section note dict-kanji-server-note-<host> present',
+            );
+            final Finder kanjiTile = find.byKey(
+              const ValueKey<String>('dict-overview-sources-kanji'),
+            );
+            final String kanjiTileText = kanjiTile.evaluate().isEmpty
+                ? '(absent)'
+                : (tester.widget<Text>(kanjiTile.first).data ?? '');
+            _check(
+              kanjiTileText == '0 on this device · 1 on server',
+              '1 Kanji overview tile reads "0 on this device · 1 on server"',
+              kanjiTileText,
+            );
+            final bool emptyStateShown = find
+                .descendant(
+                  of: page,
+                  matching: find.text('Import a dictionary for use'),
+                )
+                .evaluate()
+                .isNotEmpty;
+            _check(
+              kanjiNote.evaluate().isNotEmpty && !emptyStateShown,
+              '1 Kanji: no "Import a dictionary" empty state while the server note shows',
+              'note=${kanjiNote.evaluate().isNotEmpty} emptyState=$emptyStateShown',
             );
             await _shot(tester, '02-thin-kanji-note');
             final bool freqSeg = await _setTypeSegment(
@@ -980,6 +1047,12 @@ void main() {
               moveTop,
               'move-top Games',
             );
+            final bool moveTopByTab = _lastFocusByTab;
+            _check(
+              moveTopByTab && _remoteOrderFirst(appModel, hostId) == _kGames,
+              '2 Priority: Tab reaches move-top on a server row and Enter moves it first',
+              'tab=$moveTopByTab first=${_remoteOrderFirst(appModel, hostId)}',
+            );
             if (_remoteOrderFirst(appModel, hostId) != _kGames) {
               final Finder gamesTitle = find.descendant(
                 of: page,
@@ -1010,6 +1083,51 @@ void main() {
               cfgAfterMove?.order,
             );
             await _shot(tester, '04-games-detail-moved');
+
+            // 「优先级」行的上移按钮：Tab 可达、Enter 上移一位（服务器行 Test Local JA）。
+            final List<String> orderBeforeUp =
+                appModel.dictRepo.filtersForHost(hostId)?.order ??
+                const <String>[];
+            final int upBefore = orderBeforeUp.indexOf(_kLocalJa);
+            final bool localDetail = await _openDetail(
+              tester,
+              driver,
+              page,
+              _kLocalJa,
+            );
+            final Finder moveUp = find.descendant(
+              of: find.byKey(
+                ValueKey<String>('dict-detail-server:$hostId/$_kLocalJa'),
+              ),
+              matching: find.byKey(
+                const ValueKey<String>('dict-detail-move-up'),
+              ),
+            );
+            final bool upFocused = await _focus(
+              tester,
+              driver,
+              moveUp,
+              'move-up Local JA',
+            );
+            final bool upByTab = _lastFocusByTab;
+            if (upFocused && upByTab) {
+              await driver.activate();
+              await _pumpFor(tester, const Duration(seconds: 1));
+            }
+            final List<String> orderAfterUp =
+                appModel.dictRepo.filtersForHost(hostId)?.order ??
+                const <String>[];
+            final int upAfter = orderAfterUp.indexOf(_kLocalJa);
+            _log(
+              '2 move-up Local JA detail=$localDetail tab=$upByTab '
+              'before=$orderBeforeUp after=$orderAfterUp',
+            );
+            _check(
+              upByTab && upBefore > 0 && upAfter == upBefore - 1,
+              '2 Priority: Tab reaches move-up on a server row (Test Local JA) and Enter moves it up one',
+              'tab=$upByTab index $upBefore → $upAfter',
+            );
+            await _shot(tester, '04b-local-detail-moved-up');
             for (final String n in <String>[_kZh, _kKo]) {
               final RemoteDictionary? r = _remote(appModel, n);
               if (r != null) await appModel.setRemoteDictionaryHidden(r, true);
@@ -1266,12 +1384,44 @@ void main() {
               '3 Test General JA row = Both',
               _rowKind(tester, page, _kGeneral),
             );
+            final List<String> rows3 = _managerRows(tester, page);
+            _check(
+              _rowIndex(rows3, _kGeneral) == 0 &&
+                  rows3.first.startsWith('$_kGeneral => both'),
+              '3 imported Test General JA keeps server position #1 (Both, not moved to the end)',
+              rows3,
+            );
+            _log(
+              '3 General order: remote=${_remote(appModel, _kGeneral)?.order} '
+              'local=${_local(appModel, _kGeneral)?.order} '
+              'request=${appModel.dictRepo.filtersForHost(hostId)?.order}',
+            );
             _check(
               _rowKind(tester, page, _kPush) == DictionarySourceKind.thisDevice,
               '3 Test Push JA row = This device',
               _rowKind(tester, page, _kPush),
             );
             await _shot(tester, '10-mixed-manager');
+
+            // 推送前先关掉本机 Test Push JA 的开关（焦点 + Enter），推送后服务器行应沿用
+            // 本机的位置与开关。
+            final bool pushSwitchFocused = await _focus(
+              tester,
+              driver,
+              find.byKey(ValueKey<String>('dict-row-switch-$_kPush')),
+              'Push local switch',
+            );
+            if (pushSwitchFocused) {
+              await driver.activate();
+              await _pumpFor(tester, const Duration(seconds: 1));
+            }
+            final bool? pushEnabledBefore = _switchValue(tester, _kPush);
+            final List<String> rowsBeforePush = _managerRows(tester, page);
+            final int pushIdxBefore = _rowIndex(rowsBeforePush, _kPush);
+            _log(
+              '3 before push: switch=$pushEnabledBefore index=$pushIdxBefore '
+              'rows=$rowsBeforePush',
+            );
 
             // 推送 Test Push JA。
             await _openDetail(tester, driver, page, _kPush);
@@ -1331,7 +1481,44 @@ void main() {
               '3 Test Push JA row = Both after push',
               _rowKind(tester, page, _kPush),
             );
+            final List<String> rowsAfterPush = _managerRows(tester, page);
+            final int pushIdxAfter = _rowIndex(rowsAfterPush, _kPush);
+            final RemoteDictionary? pushedRemote = _remote(appModel, _kPush);
+            _log(
+              '3 after push: index=$pushIdxAfter rows=$rowsAfterPush '
+              'remote=${pushedRemote == null ? 'absent' : _remoteSummary(<RemoteDictionary>[pushedRemote])} '
+              'request=${appModel.dictRepo.filtersForHost(hostId)?.order}',
+            );
+            _check(
+              pushIdxBefore >= 0 && pushIdxAfter == pushIdxBefore,
+              '3 pushed Test Push JA keeps the local row position',
+              '$pushIdxBefore → $pushIdxAfter',
+            );
+            _check(
+              pushEnabledBefore == false && pushedRemote?.hidden == true,
+              '3 pushed server row takes the local switch state (off → hidden)',
+              'localEnabled=$pushEnabledBefore remoteHidden=${pushedRemote?.hidden}',
+            );
             await _shot(tester, '13-push-done');
+            // 恢复开关（焦点 + Enter），服务器那份若仍关着也打开。
+            if (await _focus(
+              tester,
+              driver,
+              find.byKey(ValueKey<String>('dict-row-switch-$_kPush')),
+              'Push switch restore',
+            )) {
+              await driver.activate();
+              await _pumpFor(tester, const Duration(seconds: 1));
+            }
+            final RemoteDictionary? pr = _remote(appModel, _kPush);
+            _log(
+              '3 after re-enable: switch=${_switchValue(tester, _kPush)} '
+              'remoteHidden=${pr?.hidden}',
+            );
+            if (pr != null && pr.hidden) {
+              await appModel.setRemoteDictionaryHidden(pr, false);
+              await _pumpFor(tester, const Duration(seconds: 1));
+            }
 
             // 下载 Test KO。
             page = find.byType(DictionaryDialogPage);
@@ -1475,6 +1662,22 @@ void main() {
               '4 local-only Test Push JA (server copy deleted) offers Push again',
               _textsIn(tester, pushAgain),
             );
+            final Finder koTitle = find.descendant(
+              of: page,
+              matching: find.text(_kKo),
+            );
+            if (koTitle.evaluate().isNotEmpty) {
+              try {
+                await tester.ensureVisible(koTitle.first);
+                await tester.pump(const Duration(milliseconds: 300));
+              } catch (_) {}
+            }
+            final List<String> pageTexts = _textsIn(tester, page);
+            final List<String> koHeaders = pageTexts
+                .where((String s) => s.contains('ko'))
+                .toList();
+            // KO 此刻是「两者」行，按本机那份的语言（ko）分组；服务器覆盖只管服务器那份。
+            _log('4 texts mentioning ko (KO is a Both row here): $koHeaders');
             await _openDetail(tester, driver, page, _kKo);
             _log(
               '4 KO detail texts: ${_textsIn(tester, find.byKey(ValueKey<String>('dict-detail-$_kKo')))}',
@@ -1488,6 +1691,11 @@ void main() {
             if (localPush != null) {
               await _awaitPumping(tester, appModel.deleteDictionary(localPush));
             }
+            // 也删本机 Test KO：只剩服务器那份（语言被管理员覆盖成 ko-KR）。
+            final Dictionary? localKo = _local(appModel, _kKo);
+            if (localKo != null) {
+              await _awaitPumping(tester, appModel.deleteDictionary(localKo));
+            }
             await _pumpFor(tester, const Duration(seconds: 1));
             page = await _openManager(tester, appModel);
             _printManager(tester, '4-after-local-delete', page);
@@ -1500,6 +1708,40 @@ void main() {
               pushRows.isEmpty,
               '4 no ghost Test Push JA row after deleting the local copy',
               pushRows,
+            );
+            final List<RemoteDictionaryMetaRow> afterDel = await _dbRows(
+              appModel,
+            );
+            _check(
+              afterDel.every((RemoteDictionaryMetaRow r) => r.name != _kPush),
+              '4 missing Test Push JA catalog row forgotten (DB) after deleting the local copy',
+              _dbSummary(afterDel),
+            );
+            final Finder koTitle2 = find.descendant(
+              of: page,
+              matching: find.text(_kKo),
+            );
+            if (koTitle2.evaluate().isNotEmpty) {
+              try {
+                await tester.ensureVisible(koTitle2.first);
+                await tester.pump(const Duration(milliseconds: 300));
+              } catch (_) {}
+            }
+            final List<String> pageTexts2 = _textsIn(tester, page);
+            final List<String> koHeaders2 = pageTexts2
+                .where((String s) => s.contains('ko'))
+                .toList();
+            _log(
+              '4 KO server-only row kind=${_rowKind(tester, page, 'server:$hostId/$_kKo')} '
+              'texts mentioning ko: $koHeaders2',
+            );
+            _check(
+              _rowKind(tester, page, 'server:$hostId/$_kKo') ==
+                      DictionarySourceKind.server &&
+                  pageTexts2.any((String s) => s.contains('한국어 (ko-KR)')) &&
+                  !pageTexts2.any((String s) => s.startsWith('ko-KR')),
+              '4 server-only KO group header reads "한국어 (ko-KR)" after admin override (not raw)',
+              koHeaders2,
             );
             await _shot(tester, '17-after-local-delete');
             await _closeManager(tester);
@@ -1551,6 +1793,10 @@ void main() {
             _log(
               '5 paired addresses for the host: ${paired.where((FushiClientUrl u) => remoteDictionaryHostIdOf(u) == hostId).map((FushiClientUrl u) => '${u.url}(enabled=${u.enabled},lookup=${u.lookupEnabled},learned=${u.learned})').toList()}',
             );
+            bool? reachable() =>
+                appModel.remoteDictionaryHostReachability[hostId]?.reachable;
+
+            // 5a. 停服务器 → 目录刷新（判死）→ 首次查词应直接跳过远端。
             await _stopServer(tester);
             serverStopped = true;
             final Stopwatch rsw = Stopwatch()..start();
@@ -1571,8 +1817,9 @@ void main() {
               remoteCount,
             );
             _log(
-              '5 reachability=${appModel.remoteDictionaryHostReachability[hostId]?.reachable} '
-              'failingSince=${appModel.remoteDictionaryHostReachability[hostId]?.failingSince}',
+              '5 reachability=${reachable()} '
+              'failingSince=${appModel.remoteDictionaryHostReachability[hostId]?.failingSince} '
+              'cooldown=${appModel.isRemoteDictionaryInFailureCooldown}',
             );
             final Finder page = await _openManager(tester, appModel);
             _printManager(tester, '5', page);
@@ -1590,6 +1837,12 @@ void main() {
               ),
               '5 source card shows unreachable / last seen',
               card,
+            );
+            final (String st5, bool fit5) = _statusLine(tester, hostId);
+            _check(
+              st5.startsWith('Unreachable · ') && fit5,
+              '5 offline status uses relative time and is not cut off',
+              'text="$st5" fits=$fit5',
             );
             await _shot(tester, '19-offline-strip');
 
@@ -1641,10 +1894,14 @@ void main() {
               '5 offline 猫 returns local dictionaries only',
               o1.dicts,
             );
-            _check(o1.ms < 5000, '5 offline lookup does not hang (<5s)', o1.ms);
+            _check(
+              o1.ms < 1500,
+              '5 first offline lookup after the failed refresh is fast (<1.5s)',
+              '${o1.ms}ms',
+            );
 
-            // 恢复。
-            final bool up = await _startServer(tester);
+            // 5b. 恢复 → 目录刷新成功 → 下一次查词立刻合并。
+            bool up = await _startServer(tester);
             serverStopped = !up;
             _check(up, '5 server restarted');
             final Stopwatch r2 = Stopwatch()..start();
@@ -1654,17 +1911,17 @@ void main() {
             );
             _log(
               '5 online refresh ${r2.elapsedMilliseconds}ms diffs=$diffs2 '
-              'reachable=${appModel.remoteDictionaryHostReachability[hostId]?.reachable}',
+              'reachable=${reachable()}',
             );
             _check(
-              appModel.remoteDictionaryHostReachability[hostId]?.reachable ==
-                  true,
+              reachable() == true,
               '5 host reachable again after restart + refresh',
             );
             final Finder page2 = await _openManager(tester, appModel);
             _printManager(tester, '5-online', page2);
             await _shot(tester, '21-online-again');
             await _closeManager(tester);
+            final Stopwatch sinceRefresh = Stopwatch()..start();
             final _Lookup b1 = await _lookup(
               tester,
               appModel,
@@ -1674,25 +1931,83 @@ void main() {
             final bool mergedImmediately = b1.dicts.any(
               (String d) => _local(appModel, d) == null,
             );
+            _log(
+              '5 first lookup after successful refresh: ${b1.ms}ms '
+              '(${sinceRefresh.elapsedMilliseconds}ms after refresh) merged=$mergedImmediately',
+            );
             _check(
               mergedImmediately,
               '5 first lookup right after a successful catalog refresh merges server results again',
-              'cooldown=${appModel.isRemoteDictionaryInFailureCooldown} dicts=${b1.dicts}',
+              'ms=${b1.ms} cooldown=${appModel.isRemoteDictionaryInFailureCooldown} dicts=${b1.dicts}',
             );
-            if (!mergedImmediately) {
-              final Stopwatch cw = Stopwatch()..start();
-              await _pumpUntil(
-                tester,
-                () => !appModel.isRemoteDictionaryInFailureCooldown,
-                timeout: const Duration(seconds: 60),
-              );
-              _log('5 waited ${cw.elapsedMilliseconds}ms for lookup cooldown');
-            }
+
+            // 5c. 后台再探测：停服务器、不手动刷新；一次失败查词后卡片自己翻成连不上；
+            // 重启服务器后不做任何操作，卡片自己翻回在线。
+            await _stopServer(tester);
+            serverStopped = true;
+            final Stopwatch failSw = Stopwatch()..start();
+            final _Lookup f1 = await _lookup(
+              tester,
+              appModel,
+              '猫',
+              '5-bg-fail-1',
+            );
+            final Stopwatch afterFail = Stopwatch()..start();
+            _log(
+              '5 bg: first failed lookup ${f1.ms}ms dicts=${f1.dicts} '
+              'reachable=${reachable()}',
+            );
+            final Finder page3 = await _openManager(tester, appModel);
+            final bool wentDown = await _pumpUntil(
+              tester,
+              () =>
+                  reachable() == false &&
+                  _statusLine(tester, hostId).$1.startsWith('Unreachable'),
+              timeout: const Duration(seconds: 60),
+            );
+            final int downMs = afterFail.elapsedMilliseconds;
+            _log(
+              '5 bg: strip flipped to unreachable=$wentDown after ${downMs}ms '
+              '(${failSw.elapsedMilliseconds}ms since lookup start) '
+              'status="${_statusLine(tester, hostId).$1}"',
+            );
+            _check(
+              wentDown && downMs <= 50000,
+              '5 strip flips to unreachable on its own within ~50s of the first failed lookup',
+              '${downMs}ms',
+            );
+            _printManager(tester, '5-bg-down', page3);
+            await _shot(tester, '21b-bg-unreachable');
+
+            up = await _startServer(tester);
+            serverStopped = !up;
+            final Stopwatch afterUp = Stopwatch()..start();
+            final bool cameBack = await _pumpUntil(
+              tester,
+              () =>
+                  reachable() == true &&
+                  _statusLine(tester, hostId).$1 == 'Online',
+              timeout: const Duration(seconds: 90),
+            );
+            final int backMs = afterUp.elapsedMilliseconds;
+            _log(
+              '5 bg: strip flipped back online=$cameBack ${backMs}ms after the '
+              'server port opened status="${_statusLine(tester, hostId).$1}"',
+            );
+            _check(
+              up && cameBack && backMs <= 50000,
+              '5 strip flips back online on its own within ~50s of the server restart',
+              '${backMs}ms',
+            );
+            _printManager(tester, '5-bg-up', page3);
+            await _shot(tester, '21c-bg-online');
+            await _closeManager(tester);
+
             final _Lookup b2 = await _lookup(tester, appModel, '猫', '5-back');
             _check(
               b2.dicts.any((String d) => _local(appModel, d) == null),
-              '5 lookup merges server results after reconnect',
-              b2.dicts,
+              '5 lookup merges server results after the background re-probe',
+              '${b2.ms}ms ${b2.dicts}',
             );
           });
 
