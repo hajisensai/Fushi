@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4334 / 反馈 Ndnxy3mNdG：PDF 书挂上有声书后，书架只剩一张写死 EPUB 阅读器的
+/// BUG-4345 / 反馈 Ndnxy3mNdG：PDF 书挂上有声书后，书架只剩一张写死 EPUB 阅读器的
 /// SRT 卡，打开是有声书工具栏 + 白屏正文。
 ///
 /// 三处一起钉：

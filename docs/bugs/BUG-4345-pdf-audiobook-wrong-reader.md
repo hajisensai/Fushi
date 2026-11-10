@@ -1,4 +1,4 @@
-## BUG-4334 · PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」）
+## BUG-4345 · PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」）
 - **报告**：2026-11-09（应用内反馈 Ndnxy3mNdG，Windows）
 - **真实性**：✅ 真 bug（沿代码路径验证）。三处叠加：
   1. `fushi/lib/src/pages/implementations/reader_fushi_history_page.dart:3653-3663`（修前）书卡菜单「导入有声书 / 有声书工作室」按 `!isManga` 门控，PDF 卡也露出入口；而 ctl 契约 `fushi/lib/src/ops/ctl_audiobook_routes.dart:275-276` / `:572` 明确「有声书只支持 EPUB 书（PDF / 漫画不能挂音频）」——两份判据漂移。
