@@ -2497,6 +2497,27 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 「跟随原书排版」（反馈 sYPkmtitOM），见 [ReaderSettings.followBookLayout]。
+  bool get readerFollowBookLayout =>
+      readerSettings?.followBookLayout ??
+      getPreference<bool>(
+        key: ReaderSettings.followBookLayoutKey,
+        defaultValue: ReaderSettings.defaultFollowBookLayout,
+      );
+  Future<void> setReaderFollowBookLayout(bool v) async {
+    await (readerSettings?.setFollowBookLayout(v) ??
+        setPreference<bool>(key: ReaderSettings.followBookLayoutKey, value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  /// 当前打开的书正按「跟随原书」决定排版方向（设置里的排版方向此刻不生效）。
+  bool get readerWritingModeFromBook =>
+      readerSettings?.bookWritingModeOverride != null;
+
+  /// 当前打开的书正按「跟随原书」决定页序（设置里的页序此刻不生效）。
+  bool get readerSpreadDirectionFromBook =>
+      readerSettings?.bookSpreadDirectionOverride != null;
+
   String get readerWritingMode =>
       readerSettings?.writingMode ??
       getPreference<String>(key: 'writing_mode', defaultValue: 'vertical-rl');

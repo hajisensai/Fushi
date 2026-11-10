@@ -3354,6 +3354,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
 
     _openTrace.mark('parsed');
+    // 反馈 sYPkmtitOM「跟随原书」：书一解析完就登记它自带的排版 / 翻页方向，必须在
+    // spread map 与首屏 HTML 读 writingMode / spreadDirection 之前。是否采用由
+    // ReaderSettings 按「跟随原书」开关现算，开关拨动后随布局重载即时生效。
+    _settings?.enterBookLayout(this, _book!.originalLayout);
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));
 
@@ -3803,6 +3807,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _lyricsMenuDismiss.detach();
     // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
     WorkProfileScope.instance.leave(this);
+    // 离开这本书 = 撤掉它登记的书本排版（全局设置从未被改写）。
+    _settings?.leaveBookLayout(this);
     _studyCoverWatch.dispose();
     _pageCurlDrag = null;
     _pageCurl?.dispose();
