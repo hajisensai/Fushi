@@ -148,6 +148,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
@@ -1341,6 +1342,21 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setScreenOcrKeepCaptureSession(bool value) async {
     await setPref('screen_ocr.keep_capture_session', value);
+    notifyListeners();
+  }
+
+  /// 桌面截屏识字的 OCR 引擎设置（反馈 Eemf0HOZhj）：出厂跟随全局 OCR 引擎偏好
+  /// （[mangaOcrEnginePreference]），解析见 [resolveScreenOcrEngine]。
+  ScreenOcrEngineSetting get screenOcrEngine =>
+      ScreenOcrEngineSetting.fromStorage(
+        getPref(
+          'screen_ocr.engine',
+          defaultValue: ScreenOcrEngineSetting.followGlobal.storageValue,
+        ),
+      );
+
+  Future<void> setScreenOcrEngine(ScreenOcrEngineSetting value) async {
+    await setPref('screen_ocr.engine', value.storageValue);
     notifyListeners();
   }
 

@@ -296,7 +296,7 @@
 | [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | ✅ | ✅ | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
 | [BUG-4071](bugs/BUG-4071-android-exit-importance-overrides-marker.md) | ✅ | ✅ | Android 后台被厂商杀进程仍被判「停在前台时没了」弹闪退报告 |
 | [BUG-4070](bugs/BUG-4070-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
-| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
+| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | ✅ | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
 | [BUG-4068](bugs/BUG-4068-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
 | [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | ✅ | ✅ | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
 | [BUG-4066](bugs/BUG-4066-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |

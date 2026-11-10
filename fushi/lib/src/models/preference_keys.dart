@@ -747,6 +747,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'scan_non_japanese_text',
   // bool：截屏识字 / 拍照查词制卡带所点文本块的截图（默认 true）。
   'screen_ocr.card_image',
+  // String：桌面截屏识字的 OCR 引擎（'' 跟随全局 / local_onnx / system_ocr /
+  // google_lens，默认 ''）。见 ocr/screen_ocr_engine.dart。
+  'screen_ocr.engine',
   // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
   'screen_ocr.keep_capture_session',
   // String（JSON 数组）：auto 策略下用户已同意使用的副屏指纹 `名称|宽dpx高dp`。

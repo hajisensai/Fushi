@@ -842,6 +842,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Add screenshot to cards':
       'test/floating_ball/screen_ocr_card_image_test.dart + '
       'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
+  // 截屏识字引擎（反馈 Eemf0HOZhj / BUG-4069，仅桌面）：生效点是宿主截屏识字那一刻按
+  // 设置解析识别器，设置页里没有截屏面。解析表与宿主选识别器由专项测试钉住。
+  'floatingBall/Screen OCR engine':
+      'test/ocr/screen_ocr_engine_test.dart + '
+      'test/floating_ball/app_floating_ball_host_test.dart: 反馈 Eemf0HOZhj 截屏识字引擎三条',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
