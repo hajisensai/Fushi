@@ -52,7 +52,8 @@ class ForwardedMinePayload {
   final String? documentTitle;
   final int? sentenceOffset;
 
-  /// `AnkiMiningSource.name`（`'book'` / `'video'` / `'game'`）；null = 不追加分类标签。
+  /// `AnkiMiningSource.name`（`'book'` / `'video'` / `'game'` / `'music'` / `'manga'`）；
+  /// null 或接收端不认识的名字 = 不追加分类标签。
   final String? source;
   final CardSourceLink? sourceLink;
 

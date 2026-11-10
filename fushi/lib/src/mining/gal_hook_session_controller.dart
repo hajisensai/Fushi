@@ -21,6 +21,7 @@ import 'package:fushi/src/mining/galgame_line_voice_window.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/gal_hook_tick_clock.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/knife_text_websocket.dart';
 import 'package:fushi/src/mining/gal_voice_resource_name.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_attach_probe.dart';
@@ -4491,6 +4492,7 @@ class GalHookSessionController extends ChangeNotifier {
   Future<Uint8List?> captureAudioForOccurrence({
     required GalIngameMiningBinding occurrence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     bool current() =>
         occurrence.resolve(
@@ -4516,6 +4518,7 @@ class GalHookSessionController extends ChangeNotifier {
         lineId: original.id,
         sentence: row!.text,
         outputExtension: outputExtension,
+        limit: limit,
       );
       if (!current()) return null;
       if (_textService.entryById(original.id)?.sourceSequence == seq) {
@@ -4556,10 +4559,14 @@ class GalHookSessionController extends ChangeNotifier {
     return null;
   }
 
+  /// [limit] 是本次制卡生效的句子音频长度策略（全局 + 本游戏覆盖，反馈
+  /// II3jOBIhT5）：只裁截取出来的 PCM，资源原件与用户裁决不受影响，见
+  /// [GalMiningAudioMode]。不带音频（off）由协调器在调用前短路，不会走到这里。
   Future<Uint8List?> captureAudioBytes({
     required String lineId,
     required String sentence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     if (entry == null ||
@@ -4579,6 +4586,7 @@ class GalHookSessionController extends ChangeNotifier {
         lineId: lineId,
         sentence: sentence,
         outputExtension: outputExtension,
+        limit: limit,
       ),
       buildFailure: (Object error, StackTrace stack) => null,
       onError: (Object error, StackTrace stack) => _record(
@@ -4663,6 +4671,7 @@ class GalHookSessionController extends ChangeNotifier {
     required String lineId,
     required String sentence,
     required String outputExtension,
+    required GalMiningAudioLimit limit,
   }) async {
     final GalAudioSource? source = _audioSource;
     final EngineHookGalAudioSource? engine = _engineSource;
@@ -4814,14 +4823,33 @@ class GalHookSessionController extends ChangeNotifier {
       _markLineAudioMissing(lineId, reason);
       return null;
     }
+    // 长度策略只裁这里——自动截取的 PCM。上面的用户裁决分支与资源原件分支不经过它。
+    // 缓存里留的仍是完整切片：工作台试听 / 换策略再制卡都要拿到原始捕获。
+    final GalAudioSlice limited = applyGalMiningAudioLimit(slice, limit);
+    if (!identical(limited, slice)) {
+      _record(
+        GalHookEventSeverity.info,
+        'encode',
+        'audio.mining_length_limited',
+        'Captured slice length adjusted by the mining audio length setting',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'mode': limit.mode.wireName,
+          'limitMs': limit.limitMs,
+          'capturedMs': (slice.pcm.length * 1000) ~/ slice.format.byteRate,
+        },
+      );
+    }
     return _encodeLineSlice(
       lineId: lineId,
-      slice: slice,
+      slice: limited,
       backend: identical(source, engine) ? 'engine_pcm' : 'system_loopback',
       outputExtension: outputExtension,
       fallbackReason: timestamp > 0
           ? 'paired_voice_not_found'
           : 'no_engine_timestamp',
+      // 用户定了时长（最长 / 固定），这段长度就是他要的，不再按「单句超长」亮黄。
+      lengthChosenByUser: limit.limitMs != null,
     );
   }
 
@@ -4852,12 +4880,15 @@ class GalHookSessionController extends ChangeNotifier {
     required String backend,
     required String outputExtension,
     required String? fallbackReason,
+    bool lengthChosenByUser = false,
   }) async {
     final int durationMs = (slice.pcm.length * 1000) ~/ slice.format.byteRate;
-    final String? effectiveReason = sliceFallbackReasonFor(
-      durationMs: durationMs,
-      fallbackReason: fallbackReason,
-    );
+    final String? effectiveReason = lengthChosenByUser
+        ? fallbackReason
+        : sliceFallbackReasonFor(
+            durationMs: durationMs,
+            fallbackReason: fallbackReason,
+          );
     if (effectiveReason != fallbackReason) {
       _record(
         GalHookEventSeverity.warning,

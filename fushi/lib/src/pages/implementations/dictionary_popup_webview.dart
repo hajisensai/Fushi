@@ -1736,10 +1736,12 @@ JSON.stringify((function(){
 
   /// 「选择音频源」的候选 `[{name, variant, url}]`：弹窗 ♪ 菜单（`listWordAudioSources`
   /// 桥）与「高级制卡」的单词音频分区共用这一处，两边列出来的永远是同一份。
+  /// [matched] 是查词命中原文，只影响 TTS 兜底念的字（`wordAudioTtsText`）。
   Future<List<Map<String, String>>> listWordAudioChoices(
     String expression,
-    String reading,
-  ) async {
+    String reading, {
+    String matched = '',
+  }) async {
     if (widget.resourceSource != null) {
       // 别的设备的结果：「选择音频源」只剩那台设备给的默认一条。
       final String? url = await _resolveWordAudio(expression, reading);
@@ -1752,6 +1754,7 @@ JSON.stringify((function(){
       ref.read(appProvider),
       expression,
       reading,
+      matched: matched,
     );
   }
 
@@ -1995,13 +1998,18 @@ JSON.stringify((function(){
   String _dictionaryMediaForLocalMining(Map<String, String> fields) =>
       widget.resourceSource == null ? (fields['dictionaryMedia'] ?? '') : '';
 
-  Future<String?> _resolveWordAudio(String expression, String reading) async {
+  Future<String?> _resolveWordAudio(
+    String expression,
+    String reading, {
+    String matched = '',
+  }) async {
     final DictionaryPopupResourceSource? resources = widget.resourceSource;
     if (resources == null) {
       return resolveWordAudioWebViewUrl(
         ref.read(appProvider),
         expression,
         reading,
+        matched: matched,
       );
     }
     // 结果来自别的设备：♪ 也问那台设备（本机音频源未必有、也不是同一份配置）。
@@ -3870,8 +3878,10 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
+                // 查词命中原文（反馈 WJFhjUGaTn）：词头带替换写法时 TTS 兜底念它。
+                final matched = data['matched']?.toString() ?? '';
                 if (expression.isEmpty) return null;
-                return _resolveWordAudio(expression, reading);
+                return _resolveWordAudio(expression, reading, matched: matched);
               },
             );
           },
@@ -3889,8 +3899,10 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
+                // 查词命中原文（反馈 WJFhjUGaTn）：词头带替换写法时 TTS 兜底念它。
+                final matched = data['matched']?.toString() ?? '';
                 if (expression.isEmpty) return null;
-                return _resolveWordAudio(expression, reading);
+                return _resolveWordAudio(expression, reading, matched: matched);
               },
             );
           },
@@ -3912,8 +3924,13 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
+                final matched = data['matched']?.toString() ?? '';
                 if (expression.isEmpty) return const <Map<String, String>>[];
-                return listWordAudioChoices(expression, reading);
+                return listWordAudioChoices(
+                  expression,
+                  reading,
+                  matched: matched,
+                );
               },
             );
           },

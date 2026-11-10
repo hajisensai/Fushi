@@ -348,6 +348,165 @@ void main() {
     );
   });
 
+  // Feedback 7NBVwW-6Qc：用户拍板清理要两种方式——只清记录 / 连同生成文件。
+  test('只清记录：清掉全部刮削记录，生成 NFO / 图片、封面指针与所有权证据原样保留', () async {
+    final int sourceId = await _insertLocalVideoSource(
+      database,
+      sourceDirectory.path,
+    );
+    final File media = File(p.join(sourceDirectory.path, 'ep01.mkv'));
+    await media.writeAsBytes(<int>[0x10, 0x20]);
+    final File poster = File(p.join(sourceDirectory.path, 'ep01-poster.jpg'));
+    final List<int> posterBytes = <int>[1, 3, 5, 7];
+    await poster.writeAsBytes(posterBytes);
+    final File legacyCover = File(p.join(coversDirectory.path, 'legacy.jpg'));
+    final List<int> legacyCoverBytes = <int>[2, 4, 6, 8];
+    await legacyCover.writeAsBytes(legacyCoverBytes);
+    await database.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'ep01',
+        title: 'ep01',
+        videoPath: media.path,
+        coverPath: Value<String?>(poster.path),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
+    await database.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'legacy',
+        title: 'legacy',
+        videoPath: p.join(sourceDirectory.path, 'legacy.mkv'),
+        coverPath: Value<String?>(legacyCover.path),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
+    final CoverMetaStore coverMetaStore = CoverMetaStore(coversDirectory);
+    await coverMetaStore.set(
+      'legacy',
+      CoverMeta(
+        origin: CoverOrigin.autoScraped,
+        contentSha256: sha256.convert(legacyCoverBytes).toString(),
+      ),
+    );
+    await database.upsertVideoScrapeMeta(
+      VideoScrapeMetaCompanion.insert(
+        bookUid: 'ep01',
+        source: 'anidb',
+        subjectId: '1',
+        title: '刮削标题',
+        scrapedAt: DateTime.fromMillisecondsSinceEpoch(100),
+      ),
+    );
+    await database.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        mediaType: 'tv',
+        title: 'canonical work',
+        updatedAt: 100,
+      ),
+    );
+    final int runId = await _insertRun(
+      database,
+      sourceId: sourceId,
+      status: 'completed',
+    );
+    final File generatedNfo = File(p.join(sourceDirectory.path, 'ep01.nfo'));
+    final List<int> nfoBytes = '<episodedetails>gen</episodedetails>'.codeUnits;
+    await generatedNfo.writeAsBytes(nfoBytes);
+    await _insertArtifact(
+      database,
+      sourceId: sourceId,
+      runId: runId,
+      file: generatedNfo,
+      recordedBytes: nfoBytes,
+    );
+    await _insertArtifact(
+      database,
+      sourceId: sourceId,
+      runId: runId,
+      file: poster,
+      recordedBytes: posterBytes,
+      artifactKind: 'cover',
+    );
+
+    final VideoScrapeCleanupResult recordsOnly =
+        await VideoScrapeCleanupService(
+          database: database,
+          coversDirectory: coversDirectory,
+        ).clearAll(mode: VideoScrapeCleanupMode.recordsOnly);
+
+    expect(recordsOnly.mode, VideoScrapeCleanupMode.recordsOnly);
+    expect(recordsOnly.deletedGeneratedFiles, 0);
+    expect(recordsOnly.deletedLegacyCoverFiles, 0);
+    expect(recordsOnly.retainedGeneratedFiles, 2);
+    expect(recordsOnly.preservedFiles, isFalse);
+    expect(await database.getAllVideoScrapeMeta(), isEmpty);
+    expect(await database.getAllVideoMetadataWorks(), isEmpty);
+    expect(await database.getVideoSourceScrapeRuns(), isEmpty);
+    expect(
+      await generatedNfo.readAsBytes(),
+      nfoBytes,
+      reason: '只清记录时磁盘上的生成 NFO 一个字节都不能动',
+    );
+    expect(await poster.readAsBytes(), posterBytes);
+    expect(await legacyCover.readAsBytes(), legacyCoverBytes);
+    expect(await media.exists(), isTrue);
+    expect(
+      await database.getVideoSidecarArtifacts(),
+      hasLength(2),
+      reason: '保留 ledger，以后选「连同生成文件」仍能按 SHA 认出它们',
+    );
+    final Map<String, VideoBookRow> books = <String, VideoBookRow>{
+      for (final VideoBookRow row in await database.allVideoBooks())
+        row.bookUid: row,
+    };
+    expect(books['ep01']!.coverPath, poster.path);
+    expect(books['legacy']!.coverPath, legacyCover.path);
+    expect(
+      (await CoverMetaStore(coversDirectory).get('legacy'))!.origin,
+      CoverOrigin.autoScraped,
+    );
+
+    // 之后改选「连同生成文件」：保留下来的所有权证据让它们照常被精确删除。
+    final VideoScrapeCleanupResult withFiles = await VideoScrapeCleanupService(
+      database: database,
+      coversDirectory: coversDirectory,
+    ).clearAll();
+
+    expect(withFiles.mode, VideoScrapeCleanupMode.recordsAndGeneratedFiles);
+    expect(withFiles.deletedGeneratedFiles, 2);
+    expect(withFiles.deletedLegacyCoverFiles, 1);
+    expect(withFiles.retainedGeneratedFiles, 0);
+    expect(await generatedNfo.exists(), isFalse);
+    expect(await poster.exists(), isFalse);
+    expect(await legacyCover.exists(), isFalse);
+    expect(await media.exists(), isTrue);
+    expect(await database.getVideoSidecarArtifacts(), isEmpty);
+    expect(
+      await database.customSelect('PRAGMA foreign_key_check').get(),
+      isEmpty,
+    );
+  });
+
+  test('只清记录遇到 running scrape 同样 fail closed', () async {
+    final int sourceId = await _insertLocalVideoSource(
+      database,
+      sourceDirectory.path,
+    );
+    final int runId = await _insertRun(
+      database,
+      sourceId: sourceId,
+      status: 'running',
+    );
+    await expectLater(
+      VideoScrapeCleanupService(
+        database: database,
+        coversDirectory: coversDirectory,
+      ).clearAll(mode: VideoScrapeCleanupMode.recordsOnly),
+      throwsA(isA<VideoScrapeCleanupBusyException>()),
+    );
+    expect((await database.getVideoSourceScrapeRun(runId))!.status, 'running');
+  });
+
   test('存在 running scrape 时 fail closed 且不触碰记录或文件', () async {
     final int sourceId = await _insertLocalVideoSource(
       database,
