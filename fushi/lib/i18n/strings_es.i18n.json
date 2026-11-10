@@ -2540,6 +2540,8 @@
   "download_airing_calendar_week_next": "Semana siguiente",
   "download_airing_calendar_week_prev": "Semana anterior",
   "download_backend_embedded_hint": "Recomendado. Las descargas se ejecutan dentro de Fushi: no hay que instalar nada más.",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "A esta instalación le falta el entorno de ejecución del motor integrado. Reinstala el paquete completo o usa qBittorrent externo.",
   "download_backend_not_configured": "El motor de descarga aún no está configurado.",
   "download_backend_qb_hint": "Conecta Fushi a una WebUI de qBittorrent que ya tengas en marcha.",
