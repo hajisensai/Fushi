@@ -196,6 +196,42 @@ void main() {
     );
   });
 
+  test('用户关掉对端没加入的那个位置：提示随之消失，不残留在摘要里', () async {
+    server.srsSync2Joined = () => false;
+    final SyncRepository repo = SyncRepository(clientAppDb);
+    final InterconnectSyncBackend backend = await connectClient(repo);
+    final SrsDbStore phone = await device('phone');
+    await addNote(phone, '雨');
+    final Set<String> disabled = <String>{};
+    final SrsSyncScheduler phoneSync = SrsSyncScheduler(
+      readStore: () async => phone,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(backend);
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) => srsDirectoryKeyOf(b, repo),
+      locationDisabled: disabled.contains,
+      peerJoined: srsChannelPeerJoined,
+      onDataChanged: () {},
+      onNotice: (_) {},
+    );
+    addTearDown(phoneSync.dispose);
+    final String? phoneKey = await srsDirectoryKeyOf(backend, repo);
+    expect(phoneKey, isNotNull);
+
+    expect((await phoneSync.syncNow()).peersNotJoined, 1);
+    expect(phoneSync.peersNotJoined.value, <String>{phoneKey!});
+
+    disabled.add(phoneKey);
+    final SrsSyncNowResult off = await phoneSync.syncNow();
+    expect(off.peersNotJoined, 0);
+    expect(
+      phoneSync.peersNotJoined.value,
+      isEmpty,
+      reason: '关掉的位置不再同步，摘要不该还为它说「对端没加入」',
+    );
+  });
+
   test('没有首次确认这一步的 host（无头服务端 / 老 host）：端点 404，客户端按「不报告」处理', () async {
     // 未注入 srsSync2Joined。
     final InterconnectSyncBackend backend = await connectClient(

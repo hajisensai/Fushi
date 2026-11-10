@@ -1008,6 +1008,7 @@ class SrsSyncScheduler {
       return SrsSync2Report()..error = kSrsSyncDirectoryIdentityUnavailable;
     }
     if (_isLocationDisabled(key)) {
+      _markPeerNotJoined(key, false);
       return SrsSync2Report()..error = kSrsSyncLocationDisabled;
     }
     final SrsProfileLinker? linker = _profileLinker;
@@ -1073,6 +1074,7 @@ class SrsSyncScheduler {
     if (_isLocationDisabled(key)) {
       // 一轮跑到一半用户关掉了这个位置：在下一个检查点收了手（[kSrsSync2Stopped]）或恰好跑完。之后的发布 / 媒体对账
       // 都不做，按「关掉」交回——立即同步不把它算成失败，也不算这个位置同步成功。
+      _markPeerNotJoined(key, false);
       return report..error = kSrsSyncLocationDisabled;
     }
     await _noteCrypto(key, report);
@@ -1175,6 +1177,12 @@ class SrsSyncScheduler {
       return _peersNotJoined.value.contains(key);
     }
     final bool notJoined = joined == false;
+    _markPeerNotJoined(key, notJoined);
+    return notJoined;
+  }
+
+  /// [peersNotJoined] 里记上 / 去掉 [key]。用户关掉的位置也去掉：它不再同步，摘要不该再为它说「对端没加入」。
+  void _markPeerNotJoined(String key, bool notJoined) {
     final Set<String> next = <String>{..._peersNotJoined.value};
     if (notJoined) {
       next.add(key);
@@ -1184,7 +1192,6 @@ class SrsSyncScheduler {
     if (!setEquals(next, _peersNotJoined.value)) {
       _peersNotJoined.value = Set<String>.unmodifiable(next);
     }
-    return notJoined;
   }
 
   /// 用户在冲突弹窗里选了 [uid]（[conflict] 的候选）：本机 profile 改用它（本机有笔记时并入，见
