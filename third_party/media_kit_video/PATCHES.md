@@ -999,7 +999,7 @@ its own `CopyResource` out of the texture into an engine-owned copy (it never
 samples the shared texture), so the wait is bounded by one copy call. On a
 stock engine nothing changes: legacy shared texture, `CopyResource` + `Flush`.
 
-## BUG-4323: Windows `VideoOutput` teardown order
+## BUG-4330: Windows `VideoOutput` teardown order
 
 `windows/video_output.{h,cc}`, `windows/video_output_manager.{h,cc}`,
 `windows/media_kit_video_plugin.cc`, `windows/angle_surface_manager.{h,cc}`.
@@ -1036,7 +1036,10 @@ Fork:
   only run after the render context is freed.
 - `ANGLESurfaceManager` keeps the texture `eglBindTexImage` binds the pbuffer
   to (`bound_texture_`), releases and deletes it in `CleanUp` (upstream leaked
-  one per `Create`), and releases the current context before
+  one per `Create`; the texture is now generated with the manager's own
+  context current, surfaceless, so the name `CleanUp` deletes is never one of
+  another output's context that the render thread happened to leave current),
+  and releases the current context before
   `eglDestroyContext` so the context and surface are freed instead of only
   marked for deletion.
 

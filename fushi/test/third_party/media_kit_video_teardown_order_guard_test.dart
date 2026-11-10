@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart' show maskComments;
 
-/// BUG-4323 source-scan guard: the Windows `VideoOutput` teardown order of the
+/// BUG-4330 source-scan guard: the Windows `VideoOutput` teardown order of the
 /// vendored media_kit_video.
 ///
 /// Field crashes (3.3.0, Windows): `libmpv-2.dll` abort (0x40000015) after the
@@ -140,7 +140,19 @@ void main() {
       manager,
       'ANGLESurfaceManager::CreateAndBindEGLSurface',
     );
-    expect(bind, contains('glGenTextures(1, &bound_texture_)'));
+    final int gen = bind.indexOf('glGenTextures(1, &bound_texture_)');
+    expect(gen, isNonNegative);
+    // The name must live in this manager's own context, the one CleanUp
+    // deletes it with.
+    final int ownContext = bind.lastIndexOf(
+      'eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, context_)',
+      gen,
+    );
+    expect(
+      ownContext,
+      greaterThan(bind.indexOf('FAIL("eglCreatePbufferFromClientBuffer")')),
+      reason: 'glGenTextures must run with context_ current',
+    );
     final String cleanUp = functionBody(
       manager,
       'ANGLESurfaceManager::CleanUp',
