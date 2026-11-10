@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import '../helpers/glass_unwrap.dart';
+import '../helpers/rendered_line_count.dart';
 
 class _FakeCandidate extends VideoSubtitleCandidate {
   _FakeCandidate({
@@ -170,7 +171,7 @@ void main() {
       expect(paragraph.maxLines, isNull, reason: '文件名不应设行数上限');
       expect(paragraph.didExceedMaxLines, isFalse, reason: '区分版本的末尾段不能被截掉');
       expect(
-        paragraph.computeLineMetrics().length,
+        renderedLineCount(paragraph),
         greaterThan(2),
         reason: '这么长的文件名在横屏手机宽度下应超过旧上限 2 行，证明没被截断',
       );

@@ -29,6 +29,7 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
@@ -254,14 +255,14 @@ class _DownloadGatewayChallengePageState
       appBar: FushiAppBar(
         title: Text(t.discovery_download_challenge_required),
         leading: FushiIconButtonControl(
-          icon: const FushiIcon(Icons.close),
+          icon: const FushiIcon(FushiIcons.close),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: <Widget>[
           FushiIconButtonControl(
             key: const ValueKey<String>('download-gateway-challenge-browser'),
-            icon: const FushiIcon(Icons.open_in_browser),
+            icon: const FushiIcon(FushiIcons.openInNew),
             tooltip: t.discovery_download_challenge_open_browser,
             onPressed: () => unawaited(_openInBrowser()),
           ),

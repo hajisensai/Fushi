@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
 import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
 import 'package:fushi/src/second_screen/panel/companion/companion_lookup_controller.dart';
@@ -48,7 +49,7 @@ class _AudiobookCompanionPanelState
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
       final BuildContext? line = _currentLine.currentContext;
       if (line == null || !line.mounted) return;
-      Scrollable.ensureVisible(
+      FushiFocusScroll.ensureVisible(
         line,
         alignment: 0.3,
         duration: fushiMotionDuration(context, FushiMotion.medium),

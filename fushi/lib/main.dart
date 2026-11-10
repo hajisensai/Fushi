@@ -1429,6 +1429,24 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     );
   }
 
+  /// BUG-4289：安卓的查词弹窗是另一个进程，它写进库的偏好（「保存到」被主机退回默认）
+  /// 主进程缓存看不见，回前台时重读。其它平台弹窗与主界面同进程，无需重读。
+  void _reloadPopupWrittenPrefs() {
+    if (!Platform.isAndroid) return;
+    unawaited(
+      ref
+          .read(appProvider)
+          .reloadPopupWrittenPrefs()
+          .catchError(
+            (Object e, StackTrace s) => ErrorLogService.instance.log(
+              'main.reloadPopupWrittenPrefs',
+              e,
+              s,
+            ),
+          ),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 小组件快照：进后台前补发一次最新数字（读完一本书 / 刷完卡回桌面就是最常见的
@@ -1439,21 +1457,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
-      // BUG-4289：查词弹窗是另一个进程，它写进库的偏好（「保存到」被主机退回默认）主进程缓存看不见。
-      if (Platform.isAndroid) {
-        unawaited(
-          ref
-              .read(appProvider)
-              .reloadPopupWrittenPrefs()
-              .catchError(
-                (Object e, StackTrace s) => ErrorLogService.instance.log(
-                  'main.reloadPopupWrittenPrefs',
-                  e,
-                  s,
-                ),
-              ),
-        );
-      }
+      _reloadPopupWrittenPrefs();
       _flushPendingMines();
       if (ref.read(appProvider).isInitialised) {
         unawaited(_checkFeedbackReplies());

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart';
@@ -303,7 +304,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
             FushiIconButton(
               key: ValueKey<String>('$rowKey-challenge-browser'),
               tooltip: t.discovery_download_challenge_open_browser,
-              icon: Icons.open_in_browser,
+              icon: FushiIcons.openInNew,
               size: 20,
               onTap: () => _openChallenge(context, challengeUrl),
             ),

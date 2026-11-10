@@ -188,7 +188,7 @@ class _RecordingLinker implements SrsProfileLinker {
   ) async {
     linkedUids.add(store.profileUid);
     final Object? error = linkError;
-    if (error != null) throw error;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
     final SrsDbStore? relinked = relinkTo;
     if (relinked != null) return SrsProfileLinkOutcome(relinked, linked: true);
     if (deferred != null) return SrsProfileLinkOutcome(store);

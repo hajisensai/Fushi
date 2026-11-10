@@ -21,6 +21,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 import 'package:material_ui/material_ui.dart';
 
 /// The library page on top's Main-mode snapshot; null while the top is not a
@@ -336,14 +338,16 @@ class _SortFilterRow extends StatelessWidget {
     return SizedBox(
       height: 56,
       child: FocusTraversalGroup(
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          itemCount: chips.length,
-          separatorBuilder: (BuildContext context, int index) =>
-              const SizedBox(width: 6),
-          itemBuilder: (BuildContext context, int index) =>
-              Center(child: chips[index]),
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            itemCount: chips.length,
+            separatorBuilder: (BuildContext context, int index) =>
+                const SizedBox(width: 6),
+            itemBuilder: (BuildContext context, int index) =>
+                Center(child: chips[index]),
+          ),
         ),
       ),
     );

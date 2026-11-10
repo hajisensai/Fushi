@@ -18,6 +18,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 import 'package:material_ui/material_ui.dart';
 
 /// The section a container's list belongs to (`library.list {section,
@@ -306,24 +308,26 @@ class _SectionChips extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(
     height: 48,
     child: FocusTraversalGroup(
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: sections.length,
-        separatorBuilder: (BuildContext context, int index) =>
-            const SizedBox(width: 6),
-        itemBuilder: (BuildContext context, int index) {
-          final CompanionLibrarySection s = sections[index];
-          return Center(
-            child: FushiChoiceChip(
-              key: ValueKey<String>('companion-library-section-${s.wire}'),
-              label: Text(companionLibrarySectionLabel(s)),
-              selected: s == selected,
-              showCheckmark: false,
-              onSelected: (bool _) => onSelected(s),
-            ),
-          );
-        },
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: sections.length,
+          separatorBuilder: (BuildContext context, int index) =>
+              const SizedBox(width: 6),
+          itemBuilder: (BuildContext context, int index) {
+            final CompanionLibrarySection s = sections[index];
+            return Center(
+              child: FushiChoiceChip(
+                key: ValueKey<String>('companion-library-section-${s.wire}'),
+                label: Text(companionLibrarySectionLabel(s)),
+                selected: s == selected,
+                showCheckmark: false,
+                onSelected: (bool _) => onSelected(s),
+              ),
+            );
+          },
+        ),
       ),
     ),
   );
@@ -423,40 +427,42 @@ class _HomeRow extends ConsumerWidget {
         SizedBox(
           height: kCompanionLibraryCardHeight,
           child: FocusTraversalGroup(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: row.items.length,
-              separatorBuilder: (BuildContext context, int index) =>
-                  const SizedBox(width: 10),
-              itemBuilder: (BuildContext context, int index) {
-                final CompanionLibraryItem item = row.items[index];
-                final bool opens =
-                    continues &&
-                    !item.kind.isContainer &&
-                    item.kind != CompanionLibraryItemKind.mainOnly;
-                void show() => companionLibraryShowItem(
-                  context,
-                  ref,
-                  item,
-                  section: CompanionLibrarySection.home,
-                );
-                return SizedBox(
-                  width: kCompanionLibraryCardWidth,
-                  child: CompanionLibraryCard(
-                    item: item,
-                    onTap: opens
-                        ? () => unawaited(
-                            companionLibraryOpen(
-                              context,
-                              ref,
-                              itemRef: item.ref,
-                            ),
-                          )
-                        : show,
-                    onDetails: opens ? show : null,
-                  ),
-                );
-              },
+            child: HorizontalDragScrollable(
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: row.items.length,
+                separatorBuilder: (BuildContext context, int index) =>
+                    const SizedBox(width: 10),
+                itemBuilder: (BuildContext context, int index) {
+                  final CompanionLibraryItem item = row.items[index];
+                  final bool opens =
+                      continues &&
+                      !item.kind.isContainer &&
+                      item.kind != CompanionLibraryItemKind.mainOnly;
+                  void show() => companionLibraryShowItem(
+                    context,
+                    ref,
+                    item,
+                    section: CompanionLibrarySection.home,
+                  );
+                  return SizedBox(
+                    width: kCompanionLibraryCardWidth,
+                    child: CompanionLibraryCard(
+                      item: item,
+                      onTap: opens
+                          ? () => unawaited(
+                              companionLibraryOpen(
+                                context,
+                                ref,
+                                itemRef: item.ref,
+                              ),
+                            )
+                          : show,
+                      onDetails: opens ? show : null,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ),

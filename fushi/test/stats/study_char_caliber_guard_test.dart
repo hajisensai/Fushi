@@ -191,6 +191,12 @@ void main() {
         // 复习卡面点词查词：点击位置的码元偏移折成字素下标（查词高亮定位），以及
         // 查词串的长度上限（100 字素）保护；是定位 / 校验不是记账。
         'lib/src/pages/implementations/srs/srs_card_lookup.dart': 2,
+        // 截屏识字诊断日志：每个识别框报一次原文字素数（反馈 Eemf0HOZhj），只进诊断
+        // 文本，不进统计。
+        'lib/src/floating_ball/app_floating_ball_host.dart': 1,
+        // 发现页搜索相关度：查询分词按码点数加权（补充平面汉字与基本区同权），是排序
+        // 权重不是学习计数。
+        'lib/src/media/discovery/discovery_search_relevance.dart': 1,
       };
 
       final RegExp naked = RegExp(r'\.(runes|characters)\.length\b');

@@ -110,6 +110,10 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
   'packages/fushi_engine/lib/tts/local/irodori_local_server.dart':
       '本机 Irodori-TTS-Server 探活：只打本进程拉起的 http://127.0.0.1:<port>/health 与 '
       '/v1/models；走用户代理会把回环请求送进代理，服务永远判不就绪。',
+  'fushi/lib/src/mining/tyrano_dom/tyrano_dom_cdp.dart':
+      'TyranoScript 游戏的 Chrome DevTools 端点（`/json/list` + CDP WebSocket）：只打本机游戏进程'
+      '自己开的 127.0.0.1:<--remote-debugging-port>；走用户代理会把回环调试请求送进代理，'
+      'DOM 取词整条连不上。',
   'packages/fushi_server/lib/src/ctl/admin_client.dart':
       '`fushi_server ctl` 打本机正在运行的 serve 管理 API：通配绑定改写成 127.0.0.1，'
       'TLS 按本地证书指纹钉死；走用户代理会把带 admin_token 的本机请求送进代理。',
@@ -148,7 +152,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 31;
+const int kRegisteredOutboundFileCount = 32;
 
 /// 裸出站构造的判据。
 ///

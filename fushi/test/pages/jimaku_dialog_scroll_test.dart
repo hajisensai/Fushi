@@ -6,6 +6,8 @@ import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
+import '../helpers/rendered_line_count.dart';
+
 /// 矮屏（手机横屏 / 软键盘弹起时的可视高度）下验证 Jimaku 自动获取字幕对话框候选列表区。
 ///
 /// 旧根因：候选列表放在 `AlertDialog.content` 的 `Column(mainAxisSize: min)` 里的
@@ -281,7 +283,7 @@ void main() {
       expect(paragraph.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
       expect(paragraph.didExceedMaxLines, isFalse, reason: '文件名不应有任何一行被截掉');
       expect(
-        paragraph.computeLineMetrics().length,
+        renderedLineCount(paragraph),
         greaterThan(1),
         reason: '360 宽下长文件名应换成多行而不是单行截断',
       );
