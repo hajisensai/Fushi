@@ -323,10 +323,11 @@ class DesktopSystemBallActionTarget {
       hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.desktopScreens);
 
   /// 弹截屏上传 Google Lens 的同意框（在主窗里）。
-  Future<bool> askLensConsent(BuildContext context) => ensureGoogleLensDisclosure(
-    context,
-    scene: GoogleLensDisclosureScene.desktopScreens,
-  );
+  Future<bool> askLensConsent(BuildContext context) =>
+      ensureGoogleLensDisclosure(
+        context,
+        scene: GoogleLensDisclosureScene.desktopScreens,
+      );
 
   Future<void> bringMainWindowToFront() =>
       DesktopLookupService.instance.bringMainWindowToFront();

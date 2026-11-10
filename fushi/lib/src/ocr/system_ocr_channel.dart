@@ -335,8 +335,10 @@ abstract interface class SystemOcrModelSetup {
 
 /// 生产实现：走平台通道。
 class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
-  const MethodChannelSystemOcr({MethodChannel? channel, this.screenText = false})
-    : _channel = channel ?? kSystemOcrChannel;
+  const MethodChannelSystemOcr({
+    MethodChannel? channel,
+    this.screenText = false,
+  }) : _channel = channel ?? kSystemOcrChannel;
 
   final MethodChannel _channel;
 

@@ -1956,30 +1956,28 @@ void main() {
           );
         });
 
-        testWidgets(
-          '反馈 Eemf0HOZhj：引擎跟随全局（出厂本机模型）而模型没下载 → 设备自带、按屏幕截图识别',
-          (WidgetTester tester) async {
-            target.modelReady = false;
-            await startOcr(tester);
-            final SystemOcrPlatform? engine = target.recognizeEngines.single;
-            expect(engine, isA<MethodChannelSystemOcr>());
-            expect(
-              (engine! as MethodChannelSystemOcr).screenText,
-              isTrue,
-              reason: 'Apple 据此走行识别 + 逐字框，不对整屏做文档版面分析',
-            );
-            expect(
-              ErrorLogService.instance.diagnosticEntries
-                  .lastWhere(
-                    (ErrorLogEntry e) =>
-                        e.source == 'floating_ball.screen_ocr_timing',
-                  )
-                  .error,
-              startsWith('engine=systemOcr '),
-            );
-          },
-          skip: !screenOcrHasSystemEngine,
-        );
+        testWidgets('反馈 Eemf0HOZhj：引擎跟随全局（出厂本机模型）而模型没下载 → 设备自带、按屏幕截图识别', (
+          WidgetTester tester,
+        ) async {
+          target.modelReady = false;
+          await startOcr(tester);
+          final SystemOcrPlatform? engine = target.recognizeEngines.single;
+          expect(engine, isA<MethodChannelSystemOcr>());
+          expect(
+            (engine! as MethodChannelSystemOcr).screenText,
+            isTrue,
+            reason: 'Apple 据此走行识别 + 逐字框，不对整屏做文档版面分析',
+          );
+          expect(
+            ErrorLogService.instance.diagnosticEntries
+                .lastWhere(
+                  (ErrorLogEntry e) =>
+                      e.source == 'floating_ball.screen_ocr_timing',
+                )
+                .error,
+            startsWith('engine=systemOcr '),
+          );
+        }, skip: !screenOcrHasSystemEngine);
 
         testWidgets('反馈 Eemf0HOZhj：截屏识字单独选了 Google Lens → 交给 Lens 识别器', (
           WidgetTester tester,
@@ -2309,9 +2307,8 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   bool modelReady = false;
 
   @override
-  Future<bool> localModelReady(
-    SystemOcrPlatform Function() localModel,
-  ) async => modelReady;
+  Future<bool> localModelReady(SystemOcrPlatform Function() localModel) async =>
+      modelReady;
 
   /// 本设备是否已同意把截屏发给 Google Lens。
   bool lensConsent = true;

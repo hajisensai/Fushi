@@ -1343,12 +1343,13 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 桌面截屏识字的 OCR 引擎设置（反馈 Eemf0HOZhj）：出厂跟随全局 OCR 引擎偏好
   /// （[mangaOcrEnginePreference]），解析见 [resolveScreenOcrEngine]。
-  ScreenOcrEngineSetting get screenOcrEngine => ScreenOcrEngineSetting.fromStorage(
-    getPref(
-      'screen_ocr.engine',
-      defaultValue: ScreenOcrEngineSetting.followGlobal.storageValue,
-    ),
-  );
+  ScreenOcrEngineSetting get screenOcrEngine =>
+      ScreenOcrEngineSetting.fromStorage(
+        getPref(
+          'screen_ocr.engine',
+          defaultValue: ScreenOcrEngineSetting.followGlobal.storageValue,
+        ),
+      );
 
   Future<void> setScreenOcrEngine(ScreenOcrEngineSetting value) async {
     await setPref('screen_ocr.engine', value.storageValue);
