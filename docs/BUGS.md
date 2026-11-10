@@ -33,19 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3839 条。点号进各自文件。
+> 共 3842 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4280](bugs/BUG-4280-server-srs-note-count-stale.md) | ✅ | ✅ | 服务端复习状态的笔记数不随写入刷新 |
+| [BUG-4279](bugs/BUG-4279-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
+| [BUG-4278](bugs/BUG-4278-mine-target-reset-stale-main-process.md) | ✅ | ✅ | Save to reset written by the lookup popup process is invisible to the main process |
 | [BUG-4277](bugs/BUG-4277-save-to-default-deck-listed-twice.md) | ✅ | ✅ | 保存到列表里默认牌组出现两次 |
 | [BUG-4276](bugs/BUG-4276-popup-toast-truncated-two-lines.md) | ✅ | ✅ | 「保存到」退回主机默认的提示被截断 / 被结果提示顶掉 |
-| [BUG-4275](bugs/BUG-4275-server-srs-note-count-stale.md) | ✅ | ✅ | 服务端复习状态的笔记数不随写入刷新 |
-| [BUG-4274](bugs/BUG-4274-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
-| [BUG-4273](bugs/BUG-4273-mine-target-reset-stale-main-process.md) | ✅ | ✅ | Save to reset written by the lookup popup process is invisible to the main process |
-> 共 3837 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
 | [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
 | [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |

@@ -561,7 +561,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 跨进程对账原本只有一个方向：弹窗按 `prefs_version` 重载主进程的改动
   /// （[readPrefsVersionFromDb]）；主进程的缓存只在启动时装一次，弹窗写进库的值它看不见。
   /// 这里列出的键由主进程回到前台时按行重读（[reloadPopupWrittenPrefs]），它们的读改写也先从
-  /// 库里取当前行（[_freshRaw]），陈旧缓存不会把另一个进程清掉的条目写回去（BUG-4273）。
+  /// 库里取当前行（[_freshRaw]），陈旧缓存不会把另一个进程清掉的条目写回去（BUG-4278）。
   ///
   /// - [mineToServerTargetsKey]：弹窗里制卡时主机回 `targetUnavailable`，弹窗把这台主机的
   ///   「保存到」退回主机默认。
@@ -3860,7 +3860,7 @@ class PreferencesRepository extends ChangeNotifier
     RemoteMiningTarget? target, {
     String? label,
   }) async {
-    // 另一个进程（查词弹窗）可能刚改过这一行：从库里取当前值再改，不拿陈旧缓存覆盖（BUG-4273）。
+    // 另一个进程（查词弹窗）可能刚改过这一行：从库里取当前值再改，不拿陈旧缓存覆盖（BUG-4278）。
     await _freshRaw(mineToServerTargetsKey);
     final Map<String, Map<Object?, Object?>> next =
         Map<String, Map<Object?, Object?>>.of(_mineToServerTargetsRaw());

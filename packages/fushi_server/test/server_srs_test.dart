@@ -162,7 +162,7 @@ void main() {
     expect(await expressions(ja), <String>['食べる']);
   });
 
-  // BUG-4275：状态里的笔记数是打开时从同步位置读的设备报数，之后服务端加卡 / 设备再同步都不变。
+  // BUG-4280：状态里的笔记数是打开时从同步位置读的设备报数，之后服务端加卡 / 设备再同步都不变。
   test('note count follows the served store after server writes and device '
       'uploads', () async {
     final SrsDbStore ja = await phone(kJa, 'phone-ja');

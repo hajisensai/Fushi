@@ -10933,7 +10933,7 @@ class AppModel
     String? label,
   }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
 
-  /// 主进程回到前台时重读查词弹窗（`:popup` 进程）会写的偏好行（BUG-4273，见
+  /// 主进程回到前台时重读查词弹窗（`:popup` 进程）会写的偏好行（BUG-4278，见
   /// [PreferencesRepository.popupWrittenKeys]）。偏好还没装配时什么都不做。
   Future<void> reloadPopupWrittenPrefs() async {
     final PreferencesRepository? prefs = _prefsRepo;
