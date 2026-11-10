@@ -1,4 +1,4 @@
-## BUG-4284 · 没写 batch / 季号的 BD 整包给不出「全集」下载计划
+## BUG-4297 · 没写 batch / 季号的 BD 整包给不出「全集」下载计划
 - **报告**：2026-11-08（用户：应用内反馈 rCT8Ms0AIe，PR #3085 / BUG-4246 / BUG-4243 遗留）
 - **真实性**：✅ 真 bug。nyaa「[喵萌Production&LoliHouse] BanG Dream! 少女乐团派对!☆PICO～大盛～ / Garupa☆PICO～OHMORI～ [BDRip 1080p HEVC-10bit FLAC]」、「[Moozzi2] BanG Dream! Ave Mujica (BD …) - TV + SP」这类 BD 整包标题里既没有 batch / complete / 集数区间，也没有季号。下载规划判「整包」只看标题（`packages/fushi_engine/lib/media/video/download/subscription_release_scope.dart:36` `looksLikeBatchVideoRelease`，经 `video_acquisition_resource_picker.dart` `_planEpisodesDownload` 的 All 分支调用），它故意保守——这类标题与「Show Special」这类无集号单条特典从标题上分不开。于是整包卡给不出「全集」计划：单作品路径 `no_plannable_version`，整套下载路径这一部 `noResource`。根因不在阈值，而在**判据只有标题这一种证据**：种子里实际装了什么从来没进过规划。
 - **[x] ① 已修复** — 见 PR（分支 claude/batch-release-evidence）：
