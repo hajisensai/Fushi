@@ -349,25 +349,86 @@ void main() {
       expect(draft.composeText('現在。'), '前二。\n前一（改）。\n現在。');
     });
 
-    test(
-      'blank text restores the original instead of writing an empty line',
-      () {
-        final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
-        draft.editSentence(
-          slot: SentenceContextSlot.prev,
-          index: 0,
-          text: '前一（改）。',
+    // 反馈 _RLnsVq_QZ：清空前文 / 后文 = 只去掉文字、保留这句音频（删整句走 ×）。
+    test('blank context text clears the text but keeps the audio range', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft()
+        ..setContext(
+          prev: <MiningDraftSentence>[s('前一。', file: 0, start: 100, end: 200)],
         );
+      expect(
         draft.editSentence(
           slot: SentenceContextSlot.prev,
           index: 0,
           text: '   ',
+        ),
+        isTrue,
+      );
+      expect(draft.prevSentences.single.editedSentence, '');
+      expect(draft.prevSentences.single.removed, isFalse);
+      expect(draft.composeText('現在。'), '現在。');
+      final AudioPlaybackRange? range = draft.composeAudioRange(
+        const AudioPlaybackRange(audioFileIndex: 0, startMs: 300, endMs: 400),
+      );
+      expect(range?.startMs, 100);
+      expect(range?.endMs, 400);
+      expect(draft.keptLength, 1);
+      expect(draft.hasEdits, isTrue);
+    });
+
+    test('cleared text follows the sentence across setContext and the '
+        'range still starts at the new outermost sentence', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft()
+        ..setContext(
+          prev: <MiningDraftSentence>[s('前一。', file: 0, start: 100, end: 200)],
         );
-        expect(draft.prevSentences.single.editedSentence, isNull);
-        expect(draft.composeText('現在。'), '前一。\n現在。');
-        expect(draft.hasEdits, isFalse);
-      },
-    );
+      draft.editSentence(slot: SentenceContextSlot.prev, index: 0, text: '');
+      // 用户接着「前加一句」：被清空的那句后移到中间。
+      draft.setContext(
+        prev: <MiningDraftSentence>[
+          s('前二。', file: 0, start: 20, end: 90),
+          s('前一。', file: 0, start: 100, end: 200),
+        ],
+      );
+      expect(draft.prevSentences[1].editedSentence, '');
+      expect(draft.composeText('現在。'), '前二。\n現在。');
+      final AudioPlaybackRange? range = draft.composeAudioRange(
+        const AudioPlaybackRange(audioFileIndex: 0, startMs: 300, endMs: 400),
+      );
+      expect(range?.startMs, 20);
+      expect(range?.endMs, 400);
+    });
+
+    test('committing the original text after clearing restores it', () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      draft.editSentence(slot: SentenceContextSlot.prev, index: 0, text: '');
+      draft.editSentence(slot: SentenceContextSlot.prev, index: 0, text: '前一。');
+      expect(draft.prevSentences.single.editedSentence, isNull);
+      expect(draft.hasEdits, isFalse);
+      expect(draft.composeText('現在。'), '前一。\n現在。');
+    });
+
+    test('preview exposes the original sentences alongside effective text', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <String>['前一。'],
+        next: <String>['後一。', '後二。'],
+      );
+      draft.editSentence(slot: SentenceContextSlot.prev, index: 0, text: '');
+      draft.editSentence(
+        slot: SentenceContextSlot.next,
+        index: 1,
+        text: '後二（改）。',
+      );
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '現在。',
+      );
+      expect(p['prev'], <String>['']);
+      expect(p['next'], <String>['後一。', '後二（改）。']);
+      expect(p['prevOriginal'], <String>['前一。']);
+      expect(p['nextOriginal'], <String>['後一。', '後二。']);
+      // 清空文字的句子音频仍在卡上，照样计数。
+      expect(p['total'], 3);
+    });
 
     test('editing back to the original text clears the edit', () {
       final MiningSentenceDraft draft = draftWith(next: <String>['後一。']);

@@ -32,9 +32,16 @@ import 'package:test/test.dart';
 /// 里 develop 把整条浏览器扩展 sync API 经图形字幕 OCR 接进环的那条边已拆掉
 /// （值类型挪到 `graphic_subtitle_ocr_types.dart`），没靠上限放过。
 ///
+/// 2026-11-10 develop 实测涨到 714（几个 PR 单独都 ≤713，合在一起超了）。根子是
+/// AI 助手（`ai_agent_controller` / `ai_agent_assistant_host` / `ai_mcp_ui`）直接
+/// import `ops/op_routes.dart`：路由表依赖全部 `ctl_<域>_routes.dart`，后者又读
+/// AppModel，整个操作目录（约 78 个文件，含 20 多个 `ctl_settings_body_*`）都被拖进
+/// 大环。改成 app 根组件经 `registerAppOpContext(buildInProcessInvoker:)` 注入组装
+/// 函数、AI 助手只依赖 `app_op_context.dart` 的窄接口后，最大环降到 636，上限随之下调。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 713;
+const int kMaxCycleFiles = 636;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

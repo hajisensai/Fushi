@@ -528,6 +528,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
   bool get supportsDeckReposition => _repository.supportsDeckReposition;
 
+  /// 重排读写的是 Fushi 复习（挖词目标 = Fushi 复习，装饰链里有 SRS 层）而不是 Anki：
+  /// 弹窗据此选文案，别把「从 Anki 读取」显示给没装 Anki 的复习用户。
+  bool get repositionTargetsSrs => repositionTargetsSrsFor(_repository);
+
   /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
   bool get supportsAutoReposition => _repository.supportsAutoReposition;
 
@@ -887,6 +891,12 @@ String ankiRepositoryChainLabel(BaseAnkiRepository repo) {
   names.add('${cur.runtimeType}');
   return names.join(' > ');
 }
+
+/// 重排读写的是不是 Fushi 复习：与 [repositionSnapshotFolderFor] 同一个判据（装饰链里
+/// 有 [SrsMiningAnkiRepository] 层），纯函数，不需要构造 [AnkiViewModel]。
+bool repositionTargetsSrsFor(BaseAnkiRepository repo) =>
+    repositionSnapshotFolderFor(repo) ==
+    AnkiDeckRepositionRunner.kSrsSnapshotFolder;
 
 String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   BaseAnkiRepository cur = repo;

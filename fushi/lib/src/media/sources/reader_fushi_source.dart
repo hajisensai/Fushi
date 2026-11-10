@@ -1768,6 +1768,23 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 连续模式章节无缝衔接（落盘 key 与 [ReaderSettings.continuousSeamlessChapters]
+  /// 同一个，默认关）。
+  bool get continuousSeamlessChapters =>
+      readerSettings?.continuousSeamlessChapters ??
+      getPreference<bool>(
+        key: ReaderSettings.continuousSeamlessChaptersKey,
+        defaultValue: false,
+      );
+
+  Future<void> setContinuousSeamlessChapters(bool value) async {
+    await (readerSettings?.setContinuousSeamlessChapters(value) ??
+        setPreference<bool>(
+          key: ReaderSettings.continuousSeamlessChaptersKey,
+          value: value,
+        ));
+  }
+
   /// 点击翻页区域模板（落盘 key 与 [ReaderSettings.tapZoneLayout] 同一个）。
   ReaderTapZoneLayout get tapZoneLayout =>
       readerSettings?.tapZoneLayout ??
@@ -1854,6 +1871,45 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(
           key: 'show_reading_timer',
           value: !showReadingTimer,
+        ));
+  }
+
+  /// 读数胶囊「本次字数」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showSessionChars =>
+      readerSettings?.showSessionChars ??
+      getPreference<bool>(key: 'show_session_chars', defaultValue: true);
+
+  void toggleShowSessionChars() async {
+    await (readerSettings?.toggleShowSessionChars() ??
+        setPreference<bool>(
+          key: 'show_session_chars',
+          value: !showSessionChars,
+        ));
+  }
+
+  /// 读数胶囊「本次字每时」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showCharsPerHour =>
+      readerSettings?.showCharsPerHour ??
+      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: true);
+
+  void toggleShowCharsPerHour() async {
+    await (readerSettings?.toggleShowCharsPerHour() ??
+        setPreference<bool>(
+          key: 'show_chars_per_hour',
+          value: !showCharsPerHour,
+        ));
+  }
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（分层同 [showTopProgressBar]）。
+  bool get statusFooterPersistent =>
+      readerSettings?.statusFooterPersistent ??
+      getPreference<bool>(key: 'status_footer_persistent', defaultValue: true);
+
+  void toggleStatusFooterPersistent() async {
+    await (readerSettings?.toggleStatusFooterPersistent() ??
+        setPreference<bool>(
+          key: 'status_footer_persistent',
+          value: !statusFooterPersistent,
         ));
   }
 

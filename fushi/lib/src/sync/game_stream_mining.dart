@@ -314,6 +314,8 @@ const Set<String> kGameStreamHostMineFieldKeys = <String>{
   'furiganaPlain',
   'frequenciesHtml',
   'freqHarmonicRank',
+  'singleFrequencyNumbers',
+  'singleFrequenciesHtml',
   'glossary',
   'glossaryFirst',
   'singleGlossaries',

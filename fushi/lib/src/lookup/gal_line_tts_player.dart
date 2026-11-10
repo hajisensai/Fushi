@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_text_split.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 
@@ -289,7 +290,7 @@ class GalLineTtsPlayer {
     required String? presetId,
     required TtsCancelToken cancel,
   }) async {
-    final List<String> chunks = splitGalLineTtsText(
+    final List<String> chunks = splitTtsTextForInputLimit(
       text,
       maxLength: _maxInputLength(presetId),
     );
@@ -356,44 +357,6 @@ class GalLineTtsPlayer {
     if (current.playing) unawaited(_stopPlayback());
     speaking.value = false;
   }
-}
-
-/// 按引擎单次输入上限切句：先按句末标点切，单句仍超长再硬切。
-List<String> splitGalLineTtsText(String text, {required int maxLength}) {
-  final String trimmed = text.trim();
-  if (trimmed.isEmpty) return const <String>[];
-  if (maxLength <= 0 || trimmed.length <= maxLength) return <String>[trimmed];
-  final List<String> sentences = <String>[
-    for (final Match m in RegExp(
-      r'[^。！？!?…\n]+[。！？!?…」』]*|[。！？!?…]+',
-    ).allMatches(trimmed))
-      if (m.group(0)!.trim().isNotEmpty) m.group(0)!.trim(),
-  ];
-  final List<String> out = <String>[];
-  final StringBuffer buffer = StringBuffer();
-  void flush() {
-    if (buffer.isNotEmpty) out.add(buffer.toString());
-    buffer.clear();
-  }
-
-  for (final String sentence in sentences) {
-    if (sentence.length > maxLength) {
-      flush();
-      for (int i = 0; i < sentence.length; i += maxLength) {
-        out.add(
-          sentence.substring(
-            i,
-            i + maxLength > sentence.length ? sentence.length : i + maxLength,
-          ),
-        );
-      }
-      continue;
-    }
-    if (buffer.length + sentence.length > maxLength) flush();
-    buffer.write(sentence);
-  }
-  flush();
-  return out;
 }
 
 /// 解析这次要用的声音：[presetId] 指定的预设，否则「朗读声音」的当前声音。

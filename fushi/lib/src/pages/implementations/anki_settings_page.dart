@@ -2451,6 +2451,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
     final options = AnkiHandlebarOptions.optionsForField(
       dictionaryNames: dictionaryNames,
+      frequencyDictionaryNames: appModel.dictRepo.freqDictionaries
+          .map((d) => d.name)
+          .toList(),
       currentValue: currentValue,
     );
 

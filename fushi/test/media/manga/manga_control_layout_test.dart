@@ -19,6 +19,7 @@ void main() {
         MangaControlItem.spreadPreference,
         MangaControlItem.direction,
         MangaControlItem.quickSettings,
+        MangaControlItem.readAloud,
         MangaControlItem.ocrBoxes,
       ]);
       expect(d.itemsIn(MangaControlSlot.top), <MangaControlItem>[
@@ -27,15 +28,25 @@ void main() {
         MangaControlItem.bookmarks,
         MangaControlItem.settings,
         MangaControlItem.ocrVolume,
+        MangaControlItem.statistics,
+        MangaControlItem.studyTimer,
         MangaControlItem.backToStart,
         MangaControlItem.ocrRerun,
         MangaControlItem.hideChrome,
       ]);
       expect(d.itemsIn(MangaControlSlot.overflow), isEmpty);
+      // 暂停 / 继续计时出厂在右上角、紧挨统计键（小说的对等入口是状态行里恒可见的
+      // 计时键；漫画收在托盘就只剩统计侧栏里一个可见入口）。出厂不移出任何键。
       expect(d.core.removedItems, isEmpty);
+      final List<MangaControlItem> top = d.itemsIn(MangaControlSlot.top);
+      expect(
+        top.indexOf(MangaControlItem.studyTimer),
+        top.indexOf(MangaControlItem.statistics) + 1,
+      );
       final Set<MangaControlItem> placed = <MangaControlItem>{
         ...d.itemsIn(MangaControlSlot.toolbar),
         ...d.itemsIn(MangaControlSlot.top),
+        ...d.core.removedItems,
       };
       expect(placed, MangaControlItem.values.toSet());
       // 右上角出厂顺序就是按收起优先级从高到低（旧版「按优先级排序」的结果）。
@@ -102,12 +113,64 @@ void main() {
           MangaControlItem.pageGrid,
         ]),
       );
+      // 加朗读键之前存下的布局：朗读键按出厂位置回填到底部工具栏。
+      expect(
+        decoded.itemsIn(MangaControlSlot.toolbar),
+        contains(MangaControlItem.readAloud),
+      );
       final Set<MangaControlItem> all = <MangaControlItem>{
         for (final MangaControlSlot s in MangaControlSlot.values)
           if (s != MangaControlSlot.hidden) ...decoded.itemsIn(s),
         ...decoded.core.removedItems,
       };
       expect(all, MangaControlItem.values.toSet());
+    });
+
+    test('计时键出厂位置只改默认：存量布局里移进托盘 / 拖走的照旧，没这一项的旧布局回填到右上角', () {
+      // 用户已把计时键移进托盘（removed）：照用户的放。
+      final MangaControlLayout removed = MangaControlLayout.decode(
+        '{"version":1,"slots":{"top":["settings","statistics"]},'
+        '"removed":["studyTimer"]}',
+      );
+      expect(removed.core.removedItems, contains(MangaControlItem.studyTimer));
+      expect(removed.core.isOnPlayer(MangaControlItem.studyTimer), isFalse);
+      // 用户已把它拖去底栏：照用户的放。
+      final MangaControlLayout moved = MangaControlLayout.decode(
+        '{"version":1,"slots":{"top":["settings"],'
+        '"toolbar":["quickSettings","studyTimer"]}}',
+      );
+      expect(
+        moved.itemsIn(MangaControlSlot.toolbar),
+        contains(MangaControlItem.studyTimer),
+      );
+      expect(
+        moved.itemsIn(MangaControlSlot.top),
+        isNot(contains(MangaControlItem.studyTimer)),
+      );
+      // 有计时键之前存下的布局（JSON 里没有这一项）：按出厂位置回填到右上角，可见；
+      // 用户排好的既有顺序不动。
+      final MangaControlLayout legacy = MangaControlLayout.decode(
+        '{"version":1,"slots":{"top":["settings","statistics","hideChrome"],'
+        '"toolbar":["quickSettings"]}}',
+      );
+      final List<MangaControlItem> legacyTop = legacy.itemsIn(
+        MangaControlSlot.top,
+      );
+      expect(legacyTop, contains(MangaControlItem.studyTimer));
+      expect(
+        legacyTop.where(
+          (MangaControlItem i) => <MangaControlItem>{
+            MangaControlItem.settings,
+            MangaControlItem.statistics,
+            MangaControlItem.hideChrome,
+          }.contains(i),
+        ),
+        <MangaControlItem>[
+          MangaControlItem.settings,
+          MangaControlItem.statistics,
+          MangaControlItem.hideChrome,
+        ],
+      );
     });
 
     test('坏 JSON / 空串 / 结构不对 → 回落出厂布局（窄窗回落窄窗出厂）', () {
@@ -268,9 +331,12 @@ void main() {
         );
         final MangaChromePlan now = planMangaChrome(
           width: width,
-          // 旧版没有书签键，Material 下识别框是 FAB。
+          // 旧版没有书签 / 朗读 / 统计 / 计时键，Material 下识别框是 FAB。
           groups: layoutGroups(<MangaControlItem>{
             MangaControlItem.bookmarks,
+            MangaControlItem.readAloud,
+            MangaControlItem.statistics,
+            MangaControlItem.studyTimer,
             MangaControlItem.ocrBoxes,
           }),
           hasFab: true,

@@ -5,15 +5,18 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:media_kit/media_kit.dart';
 
-/// 均衡器对**真 libmpv** 的验收（P5「不达质量就不上线开关」）：
-///  * 关：`af` 为空，送出的 PCM 与 FFmpeg 直接解码逐样本相同（bit-perfect 链不受影响）；
+/// 音效对**真 libmpv** 的验收（P5「不达质量就不上线开关」）：
+///  * 关、或开着但全部中性（含单开限幅器）：`af` 为空，送出的 PCM 与 FFmpeg 直接解码逐样本
+///    相同（bit-perfect 链不受影响）；
 ///  * 开、1 kHz +6 dB：1 kHz 正弦的电平不变（+6 dB 段 − 6 dB 余量），125 Hz 正弦降 6 dB
 ///    （只有余量），误差 ≤ 0.3 dB；满幅信号不削波；
+///  * 全部效果同开（pan / volume / bass / treble / equalizer / alimiter）：这台 libmpv 的
+///    FFmpeg 认得整条链、正常出声且不削波；平衡推满一侧时另一侧全零；
 ///  * 与交叉淡入同时开：逐文件 `af` 里两段都在。
 ///
 /// 需要 `FUSHI_TEST_LIBMPV` 指向 libmpv-2.dll（其 FFmpeg DLL 所在目录在 PATH 里）。
@@ -95,7 +98,7 @@ int _peak(Uint8List pcm) {
 Future<Uint8List> _play(
   String file,
   String out,
-  MusicEqualizerSettings eq, {
+  MusicAudioEffects eq, {
   bool crossfadeFilters = false,
   void Function(String af)? onAf,
 }) async {
@@ -122,7 +125,7 @@ Future<Uint8List> _play(
       MusicOutputSettings(
         gapless: true,
         replayGain: MusicReplayGainMode.off,
-        equalizer: eq,
+        effects: eq,
       ),
     );
     // 读逐文件 `af` 要在文件还加载着的时候：先暂停着打开（on_load 钩子照样跑），等时长报上来
@@ -160,7 +163,7 @@ void main() {
   late Directory dir;
   setUpAll(() {
     if (libmpv != null) MediaKit.ensureInitialized(libmpv: libmpv);
-    dir = Directory.systemTemp.createTempSync('music_eq_real_');
+    dir = Directory.systemTemp.createTempSync('music_fx_real_');
   });
   tearDownAll(() {
     try {
@@ -182,7 +185,7 @@ void main() {
       final Uint8List out = await _play(
         tone,
         '${dir.path}/off.raw',
-        MusicEqualizerSettings(enabled: false, gainsDb: at(1000, 6)),
+        MusicAudioEffects(enabled: false, gainsDb: at(1000, 6)),
       );
       expect(out.length, ref.length);
       expect(out, ref);
@@ -192,9 +195,93 @@ void main() {
   );
 
   test(
+    '开着但全部中性（含单开限幅器）：逐样本与 FFmpeg 直接解码相同',
+    () async {
+      final String tone = await _tone(dir, 'k1n.flac', 1000, -20);
+      final Uint8List ref = await _decode(tone, '${dir.path}/refn.raw');
+      final Uint8List out = await _play(
+        tone,
+        '${dir.path}/neutral.raw',
+        const MusicAudioEffects(
+          enabled: true,
+          limiter: true,
+          bassHz: 60,
+          trebleHz: 12000,
+        ),
+      );
+      expect(out.length, ref.length);
+      expect(out, ref);
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    '全部效果同开：整条链被这台 libmpv 接受、出声、不削波；平衡推满一侧另一侧静音',
+    () async {
+      final String loud = await _tone(dir, 'allfx.flac', 1000, -0.1);
+      final MusicAudioEffects fx = MusicAudioEffects(
+        enabled: true,
+        gainsDb: at(1000, 6),
+        preampDb: 3,
+        bassDb: 4,
+        trebleDb: 2,
+        balance: 0.1,
+        width: 1.5,
+        limiter: true,
+      );
+      final String af = musicAudioEffectsAf(fx)!;
+      for (final String f in <String>[
+        'pan=',
+        'volume=',
+        'bass=',
+        'treble=',
+        'equalizer=',
+        'alimiter=',
+      ]) {
+        expect(af, contains(f));
+      }
+      String? applied;
+      final Uint8List out = await _play(
+        loud,
+        '${dir.path}/allfx.raw',
+        fx,
+        onAf: (String v) => applied = v,
+      );
+      expect(applied, contains('@$kMusicEffectsLabel:'));
+      final double ref = _rmsDb(await _decode(loud, '${dir.path}/allref.raw'));
+      // 出声（滤镜图没被拒成静音）且被限幅器压在满幅以下。
+      expect(_rmsDb(out), greaterThan(ref - 12));
+      expect(_peak(out), lessThan(32767));
+
+      // 平衡推到最右：pan 矩阵真的作用到声道上——左声道全零、右声道照常。
+      final String tone = await _tone(dir, 'bal.flac', 440, -12);
+      final Uint8List bal = await _play(
+        tone,
+        '${dir.path}/bal.raw',
+        const MusicAudioEffects(enabled: true, balance: 1),
+      );
+      final Int16List s = bal.buffer.asInt16List(
+        bal.offsetInBytes,
+        bal.lengthInBytes ~/ 2,
+      );
+      int leftPeak = 0;
+      int rightPeak = 0;
+      for (int i = 0; i + 1 < s.length; i += 2) {
+        leftPeak = math.max(leftPeak, s[i].abs());
+        rightPeak = math.max(rightPeak, s[i + 1].abs());
+      }
+      expect(leftPeak, 0);
+      expect(rightPeak, greaterThan(1000));
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
+  test(
     '开：中心频率按设定、其余只剩余量；满幅不削波',
     () async {
-      final MusicEqualizerSettings eq = MusicEqualizerSettings(
+      final MusicAudioEffects eq = MusicAudioEffects(
         enabled: true,
         gainsDb: at(1000, 6),
       );
@@ -232,11 +319,11 @@ void main() {
       await _play(
         k1,
         '${dir.path}/xf.raw',
-        MusicEqualizerSettings(enabled: true, gainsDb: at(1000, 3)),
+        MusicAudioEffects(enabled: true, gainsDb: at(1000, 3)),
         crossfadeFilters: true,
         onAf: (String v) => af = v,
       );
-      expect(af, contains('@$kMusicEqualizerLabel:'));
+      expect(af, contains('@$kMusicEffectsLabel:'));
       expect(af, contains('afade'));
     },
     skip: skip,

@@ -67,6 +67,9 @@ class ReaderEngineConfig {
     required this.vnPreserveDialogue,
     required this.vnMergeCrossScreenSentenceAudioCues,
     this.sentenceAudioCuesJson,
+    this.seamlessChapters = false,
+    this.seamlessChapterIndex = -1,
+    this.seamlessChapterOrder = const <ReaderSeamlessChapterEntry>[],
   });
 
   /// Immutable token identifying the document/navigation that owns this
@@ -168,6 +171,18 @@ class ReaderEngineConfig {
   /// 产物）。原样嵌进 config 字面量，避免「解码再编码」多走一遍。`null` = 本章无 cue。
   final String? sentenceAudioCuesJson;
 
+  // ── 连续模式章节无缝衔接（反馈 R7k887yaJI ③，只连续 shell 读）────────────
+  /// 是否在本文档里挂邻章（`reader_seamless_chapters_script.dart`）。只在「连续模式 +
+  /// 开关开 + 非双页文档」时为 true（[readerSeamlessChaptersActive]）；false 时 JS 侧
+  /// 模块整段不装，连续 shell 行为与没有这项功能时逐字一致。
+  final bool seamlessChapters;
+
+  /// 本文档加载的章号（JS 侧活动章的初值）。
+  final int seamlessChapterIndex;
+
+  /// 阅读序里的章节（去掉被图片合并吸收的单图章）及其文档 URL。
+  final List<ReaderSeamlessChapterEntry> seamlessChapterOrder;
+
   /// 除 [sasayakiCuesJson] 外的全部字段（它是已编码的 JSON 片段，见 [toJsLiteral]）。
   Map<String, Object?> toJson() => <String, Object?>{
     'navigationGeneration': navigationGeneration,
@@ -215,6 +230,12 @@ class ReaderEngineConfig {
     'vnSentencesPerScreen': vnSentencesPerScreen,
     'vnPreserveDialogue': vnPreserveDialogue,
     'vnMergeCrossScreenSentenceAudioCues': vnMergeCrossScreenSentenceAudioCues,
+    'seamlessChapters': seamlessChapters,
+    'seamlessChapterIndex': seamlessChapterIndex,
+    'seamlessChapterOrder': <Map<String, Object?>>[
+      for (final ReaderSeamlessChapterEntry e in seamlessChapterOrder)
+        <String, Object?>{'index': e.index, 'url': e.url},
+    ],
   };
 
   /// 运行时可**热更新**的那一小份（BUG-2471）：`window.__fushiEngine.updateLive(patch)`
@@ -283,3 +304,33 @@ class ReaderEngineConfig {
     return '{$body,"sentenceAudioCues":$cues}';
   }
 }
+
+/// 无缝衔接章序里的一项：章号 + 该章文档 URL（与 `loadUrl` 用的同一个）。
+@immutable
+class ReaderSeamlessChapterEntry {
+  const ReaderSeamlessChapterEntry({required this.index, required this.url});
+
+  final int index;
+  final String url;
+}
+
+/// 本次文档是否启用章节无缝衔接（反馈 R7k887yaJI ③）。三个条件缺一不可：
+/// 连续模式（翻页 / VN 不挂邻章）、用户开了开关、当前不是双页图片文档（spread 是
+/// 独立文档，没有正文引擎）。
+bool readerSeamlessChaptersActive({
+  required bool continuousMode,
+  required bool settingEnabled,
+  required bool spreadDocument,
+}) => continuousMode && settingEnabled && !spreadDocument;
+
+/// 阅读序：全书章号去掉被「图片合并」吸收的单图章（它们的图已内联到宿主文本章顶部，
+/// 与 `_resolveNavChapter` 同口径）。[isAbsorbed] 为 null 表示没有合并。
+List<ReaderSeamlessChapterEntry> readerSeamlessChapterOrder({
+  required int chapterCount,
+  required String Function(int index) urlOf,
+  bool Function(int index)? isAbsorbed,
+}) => <ReaderSeamlessChapterEntry>[
+  for (int i = 0; i < chapterCount; i++)
+    if (isAbsorbed == null || !isAbsorbed(i))
+      ReaderSeamlessChapterEntry(index: i, url: urlOf(i)),
+];

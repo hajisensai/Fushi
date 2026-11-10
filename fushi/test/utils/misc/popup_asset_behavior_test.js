@@ -2991,7 +2991,15 @@ async function testAppExternalManageGestureAlwaysOpensChooser() {
   stubDupesAwareExternalHost(context, calls, true);
   const mineButton = buildMineHeader(context);
   await flush();
-  assert.ok(mineButton.title, 'a mined ✓ advertises the manage gesture in its tooltip');
+  // 反馈 3UHYaFPP8g / BUG-842: the hint is the DOM-drawn .fushi-btn-tip (via
+  // setInlineButtonTip), never the native `title` — on the off-screen WebView2
+  // the native tooltip is positioned in unscaled coordinates and lands over the
+  // previous entry.
+  assert.ok(!mineButton.title, 'a mined ✓ must not use the native title tooltip');
+  assert.ok(!mineButton.hasAttribute('title'), 'a mined ✓ must not carry a title attribute');
+  assert.ok(mineButton.dataset.fushiTip, 'a mined ✓ advertises the manage gesture in its DOM tooltip');
+  assert.equal(mineButton.getAttribute('aria-label'), mineButton.dataset.fushiTip,
+    'the manage hint stays accessible via aria-label');
 
   let prevented = false;
   mineButton.dispatchEvent({
@@ -3557,7 +3565,8 @@ async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
   assert.equal(button.textContent, '✓');
   assert.ok(button.classList.contains('duplicate'), 'queued mark must hide the CSS plus');
   assert.notEqual(button.dataset.mined, '1', 'queued is not an Anki card');
-  assert.equal(button.title, '已加入制卡队列');
+  assert.equal(button.dataset.fushiTip, '已加入制卡队列');
+  assert.ok(!button.title, 'queued hint is the DOM tooltip, not the native title');
   assert.equal(duplicates, before, 'queue success must not probe Anki');
   await button.onclick();
   assert.equal(mines, 1, 'repeated click must not enqueue again');

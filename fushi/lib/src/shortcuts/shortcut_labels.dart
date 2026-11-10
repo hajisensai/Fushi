@@ -34,6 +34,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_manga_pan_left;
       case ShortcutAction.mangaPanRight:
         return t.shortcut_action_manga_pan_right;
+      // 文案与小说同名动作完全相同（「打开阅读统计」/「暂停 / 继续阅读计时」），
+      // 复用同一条译文，不另立 key（设置页按 scope 分组，组名已标明「漫画」）。
+      case ShortcutAction.mangaOpenStatistics:
+        return t.shortcut_action_reader_open_statistics;
+      case ShortcutAction.mangaToggleStudyClock:
+        return t.shortcut_action_reader_toggle_study_clock;
       case ShortcutAction.readerPageForward:
         return t.shortcut_action_reader_page_forward;
       case ShortcutAction.readerPageBackward:
@@ -186,6 +192,10 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_toggle_secondary_subtitle_hide;
       case ShortcutAction.videoToggleFavoriteSentence:
         return t.shortcut_action_video_toggle_favorite_sentence;
+      case ShortcutAction.videoOpenStatistics:
+        return t.shortcut_action_video_open_statistics;
+      case ShortcutAction.videoToggleStudyClock:
+        return t.shortcut_action_video_toggle_study_clock;
       case ShortcutAction.videoReplayCurrentSubtitle:
         return t.shortcut_action_video_replay_current_subtitle;
       case ShortcutAction.videoReplayPreviousSubtitle:
@@ -566,6 +576,10 @@ extension ShortcutActionIcon on ShortcutAction {
       // 学习
       case ShortcutAction.videoToggleFavoriteSentence:
         return FushiIcons.star;
+      case ShortcutAction.videoOpenStatistics:
+        return FushiIcons.barChart;
+      case ShortcutAction.videoToggleStudyClock:
+        return FushiIcons.timer;
       case ShortcutAction.videoEnterCaret:
         return FushiIcons.textFields;
       // 扫词：同一根「逐词移动」的语义，用前后向的小三角图标区分方向。
