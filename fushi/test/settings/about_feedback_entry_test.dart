@@ -11,6 +11,8 @@ import 'package:fushi/src/settings/settings_schema_system.dart';
 /// 放在「通用」分区（版本 / 官网 / GitHub 那一组，即关于区），不挂任何显隐谓词，
 /// 无论首页、悬浮球开关如何都在；「首页入口」分区不再重复放一行。
 void main() {
+  // LocaleSettings.setLocale 经 slang_flutter 碰 WidgetsBinding.instance。
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
   });
