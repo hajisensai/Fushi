@@ -1,4 +1,4 @@
-## BUG-4378 · 漫画制卡的来源分类标签写成 book 而非 manga
+## BUG-4379 · 漫画制卡的来源分类标签写成 book 而非 manga
 - **报告**：2026-11-07（应用内反馈 uOanUXUIDt，iPad / iOS）
 - **真实性**：✅ 真 bug（拍板项 manga-mine-source-tag）。分类标签由 `AnkiMiningSource` 决定，枚举只有 book/video/game/music（`packages/fushi_anki/lib/src/anki_models.dart:936`），漫画阅读器制卡显式传 `AnkiMiningSource.book`（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:5453`），收藏夹批量制卡把漫画句也落到默认 `book`（`fushi/lib/src/media/favorites/favorite_batch_mining_plan.dart:218`）。
 - **[x] ① 已修复** — 枚举加 `manga`，`BaseAnkiRepository.mangaTag = 'manga'` 进分类标签映射（AnkiConnect / AnkiDroid / SRS 共用 `buildNoteTags`，层级标签同样变成 `manga::<作品名>`）；漫画阅读器制卡与收藏夹漫画句改传 `AnkiMiningSource.manga`；设置里「来源分类标签」说明文案 17 语补上 manga。只决定新卡，旧卡的 `book` 标签不迁移不重写；统计桶不变（仍归书籍）。
