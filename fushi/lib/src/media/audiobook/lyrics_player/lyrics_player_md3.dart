@@ -1109,7 +1109,13 @@ Widget? _md3ControlButton(
       final ValueChanged<LyricsMenuAnchor>? onTypography =
           callbacks.onTypography;
       if (onTypography == null) return null;
-      return _TypographyButton(onTypography: onTypography, tonal: tonal);
+      return _AnchoredIconButton(
+        buttonKey: const ValueKey<String>('lyrics_typography_button'),
+        icon: FushiIcons.textFields,
+        tooltip: t.lyrics_typography_title,
+        onPressed: onTypography,
+        tonal: tonal,
+      );
     case LyricsControlItem.statistics:
       return iconButton(
         key: const ValueKey<String>('lyrics_statistics_button'),
@@ -1153,6 +1159,16 @@ Widget? _md3ControlButton(
         onPressed: callbacks.onOpenJumpHistory,
         icon: FushiIcons.history,
       );
+    case LyricsControlItem.avSync:
+      final ValueChanged<LyricsMenuAnchor>? onAvSync = callbacks.onAvSyncPanel;
+      if (onAvSync == null) return null;
+      return _AnchoredIconButton(
+        buttonKey: const ValueKey<String>('lyrics_av_sync_button'),
+        icon: FushiIcons.sync,
+        tooltip: t.av_sync,
+        onPressed: onAvSync,
+        tonal: tonal,
+      );
   }
 }
 
@@ -1175,11 +1191,21 @@ class _MaskButton extends StatelessWidget {
   }
 }
 
-/// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
-class _TypographyButton extends StatelessWidget {
-  const _TypographyButton({required this.onTypography, this.tonal = false});
+/// 弹锚定面板的图标键（Aa 文字面板 / 音画同步面板）：把按钮的全局矩形与 context
+/// 交给页面，面板从它取歌词模式主题。
+class _AnchoredIconButton extends StatelessWidget {
+  const _AnchoredIconButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.tonal = false,
+  });
 
-  final ValueChanged<LyricsMenuAnchor> onTypography;
+  final Key buttonKey;
+  final IconData icon;
+  final String tooltip;
+  final ValueChanged<LyricsMenuAnchor> onPressed;
   final bool tonal;
 
   @override
@@ -1188,23 +1214,22 @@ class _TypographyButton extends StatelessWidget {
       builder: (BuildContext anchor) {
         void open() {
           final LyricsMenuAnchor? at = _anchorOf(anchor);
-          if (at != null) onTypography(at);
+          if (at != null) onPressed(at);
         }
 
-        const Key key = ValueKey<String>('lyrics_typography_button');
-        const Widget icon = FushiIcon(FushiIcons.textFields);
+        final Widget glyph = FushiIcon(icon);
         return tonal
             ? FushiIconButtonControl.filledTonal(
-                key: key,
-                tooltip: t.lyrics_typography_title,
+                key: buttonKey,
+                tooltip: tooltip,
                 onPressed: open,
-                icon: icon,
+                icon: glyph,
               )
             : FushiIconButtonControl(
-                key: key,
-                tooltip: t.lyrics_typography_title,
+                key: buttonKey,
+                tooltip: tooltip,
                 onPressed: open,
-                icon: icon,
+                icon: glyph,
               );
       },
     );

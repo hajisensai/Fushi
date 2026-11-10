@@ -1266,6 +1266,19 @@ List<Widget> _appleControlButtons(
           tooltip: t.media_jump_history_title,
           onPressed: callbacks.onOpenJumpHistory,
         );
+      case LyricsControlItem.avSync:
+        final ValueChanged<LyricsMenuAnchor>? onAvSync =
+            callbacks.onAvSyncPanel;
+        if (onAvSync == null) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_av_sync_button'),
+          icon: CupertinoIcons.slider_horizontal_3,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.av_sync,
+          onPressedWithRect: onAvSync,
+        );
     }
   }
 
