@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -46,6 +47,8 @@ class AdminContext {
   /// 生效（返回时 P2P 起停已落地）。
   Future<void> updateConfig(ServerConfig next) async {
     _config = next;
+    // 界面语言即时生效：之后的日志 / admin API 错误文案按新语言出。
+    serverLanguage = next.language;
     await next.save(configFile);
     await host.applyConfig(next);
   }

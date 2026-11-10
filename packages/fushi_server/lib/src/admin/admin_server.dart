@@ -109,7 +109,9 @@ class AdminServer {
 
     if (method == 'GET' && (path == '/' || path == '/index.html')) {
       return shelf.Response.ok(
-        _authorized(request) ? adminWebUiHtml : adminLoginHtml,
+        _authorized(request)
+            ? renderAdminWebUi(ctx.config.language)
+            : renderAdminLogin(ctx.config.language),
         headers: const <String, String>{
           'Content-Type': 'text/html; charset=utf-8',
         },
@@ -126,10 +128,7 @@ class AdminServer {
       // 失败故意慢一拍：单管理员 token 没有锁定策略，靠这一点抬高暴力成本。
       await Future<void>.delayed(const Duration(milliseconds: 800));
       return shelf.Response.ok(
-        adminLoginHtml.replaceFirst(
-          '<!--error-->',
-          '<p class="err">Token 不正确</p>',
-        ),
+        renderAdminLogin(ctx.config.language, tokenError: true),
         headers: const <String, String>{
           'Content-Type': 'text/html; charset=utf-8',
         },

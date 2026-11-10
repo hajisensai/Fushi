@@ -835,10 +835,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
             : null);
     // 统计 / 历史归属在点击当下冻结：后台落卡时页面可能已经关了。
     final FushiDatabase mineDb = appModel.database;
-    final ({String bookKey, String title}) statIdentity = (
-      bookKey: _activeBookUid,
-      title: _title ?? '',
-    );
+    final ({String bookKey, String title}) statIdentity = _studyStatsIdentity;
     // 看完再制卡：媒体照常备好，但交给暂存队列而不是 Anki（见 [VideoMineQueue]）。
     Future<MineOutcome> Function({
       required String rawPayloadJson,

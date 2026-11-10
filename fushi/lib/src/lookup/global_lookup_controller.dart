@@ -1269,7 +1269,9 @@ class GlobalLookupController {
   /// 桌面查词窗上是否有一次查词在途或在场：当前路由是 desktop 且仍有效（真正关窗
   /// [_onOverlayHidden]、下一次查词与查词中止 [_endAbortedRoute] 都会作废它）。查词入口在
   /// 第一个 await 之前就 [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
-  @visibleForTesting
+  ///
+  /// 生产读者：视频页学习计时门——焦点在查词窗里时主窗报 `inactive`，这不算失焦
+  /// （`StudyClockRunGate` 的 `focusHeldByOwnWindow`）。
   bool get desktopLookupInFlight {
     final GlobalLookupRoute? active = _activeRoute;
     return active != null &&

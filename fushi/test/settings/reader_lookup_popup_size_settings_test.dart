@@ -143,6 +143,8 @@ void main() {
         // 既有投影项仍在。
         'lookup.auto_read_on_lookup',
         'lookup.pause_on_lookup',
+        // 「查词时暂停」默认开 → 「查词后从句首重播」可见。
+        'lookup.restart_sentence_after_lookup',
         'reading_controls.enable_swipe_to_close',
       ]) {
         expect(ids, contains(id));

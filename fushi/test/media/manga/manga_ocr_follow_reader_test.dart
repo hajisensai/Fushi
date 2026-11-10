@@ -282,6 +282,73 @@ void main() {
       expect(recognizer.started, <String>['p1.jpg', 'p2.jpg', 'p1.jpg']);
     });
 
+    test('request：预取页失败后再要（读到这页 / 失败态重试）必定重跑并有结局', () async {
+      // 复现路径：读者在第 1 页，朗读预取第 2 页；第 2 页识别失败。读到第 2 页时
+      // 再要一次——以前借 focus 预取，_focus 已停在第 2 页，失败标记不清、也不再
+      // 回调，等待者永久挂起。
+      final _ControlledRecognizer recognizer = _ControlledRecognizer();
+      final List<int> delivered = <int>[];
+      final List<int> failed = <int>[];
+      final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+        pageCount: 5,
+        pageFile: pageFile,
+        recognizer: recognizer,
+        onPage: (int index, MokuroImage _) => delivered.add(index),
+        onPageFailed: failed.add,
+        lookahead: 0,
+      );
+      ocr.focus(1);
+      await _settle();
+      ocr.request(2);
+      recognizer.finish('p1.jpg');
+      await _settle();
+      expect(recognizer.started, <String>['p1.jpg', 'p2.jpg']);
+      recognizer.fail('p2.jpg');
+      await _settle();
+      expect(failed, <int>[2]);
+      // 读到第 2 页：再要一次，必须重跑并回报。
+      ocr.request(2);
+      await _settle();
+      expect(recognizer.started, <String>['p1.jpg', 'p2.jpg', 'p2.jpg']);
+      recognizer.fail('p2.jpg');
+      await _settle();
+      expect(failed, <int>[2, 2]);
+      // 失败态按「重试」：同一页再要，依旧重跑。
+      ocr.request(2);
+      await _settle();
+      recognizer.finish('p2.jpg');
+      await _settle();
+      expect(delivered, <int>[1, 2]);
+      expect(recognizer.maxActive, 1);
+    });
+
+    test('request 不挪读者窗口；已识别的页同步交出最新结果', () async {
+      final _ControlledRecognizer recognizer = _ControlledRecognizer();
+      final List<int> delivered = <int>[];
+      final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+        pageCount: 10,
+        pageFile: pageFile,
+        recognizer: recognizer,
+        onPage: (int index, MokuroImage _) => delivered.add(index),
+        lookahead: 1,
+      );
+      ocr.focus(0);
+      await _settle();
+      // 预取远处一页：插队跑，但跑完回到读者窗口 [0, 1]，不是 [7, 8]。
+      ocr.request(7);
+      recognizer.finish('p0.jpg');
+      await _settle();
+      recognizer.finish('p7.jpg');
+      await _settle();
+      recognizer.finish('p1.jpg');
+      await _settle();
+      expect(recognizer.started, <String>['p0.jpg', 'p7.jpg', 'p1.jpg']);
+      expect(ocr.isBusy, isFalse, reason: '读者窗口没被挪走，第 8 页不识别');
+      ocr.request(7);
+      expect(delivered, <int>[0, 7, 1, 7], reason: '已识别的页同步回报');
+      expect(recognizer.started, hasLength(3), reason: '不重复识别');
+    });
+
     test('close：在跑那页的结果丢弃、不再调度，识别器被释放', () async {
       final _ControlledRecognizer recognizer = _ControlledRecognizer();
       final List<int> delivered = <int>[];
