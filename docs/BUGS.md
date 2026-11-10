@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3845 条。点号进各自文件。
+> 共 3846 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4284](bugs/BUG-4284-headless-bind-ignored-listens-all.md) | ✅ | ✅ | 无头服务端 bind 配成具体地址或 ::1 仍监听全部网卡 |
 | [BUG-4283](bugs/BUG-4283-dictionary-media-url-carries-master-token.md) | ✅ | ✅ | 扩展词典图片 URL 只能携带主机主凭据原值，且不认可吊销的设备凭据 |
 | [BUG-4282](bugs/BUG-4282-interconnect-derived-tokens-survive-revoke.md) | ✅ | ✅ | 吊销已配对设备后，它签出的视频流 / 原盘 / 音频链接仍可用，老客户端拿到的共享 token 也无法单独吊销 |
 | [BUG-4281](bugs/BUG-4281-pairing-pin-shared-slot-overwritten.md) | ✅ | ✅ | 配对 PIN 存在全局单槽，另一个配对请求会把审批框上的 PIN 换成别人的 |
