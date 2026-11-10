@@ -1289,6 +1289,135 @@ Future<SyncRunReport?> _runAssetTransferChannel({
   }
 }
 
+/// 一次按 host 的单本词典传输的结果（[runHostDictionaryTransfer]）。
+typedef HostDictionaryTransferResult = ({
+  SingleDictionaryTransferOutcome outcome,
+  SyncRunReport report,
+});
+
+/// 按 host 建一次性互联后端（[InterconnectSyncBackend.scopedToHost]）。测试注入
+/// 带假探测的实例；生产恒用默认探测。
+typedef ScopedInterconnectBackendFactory =
+    InterconnectSyncBackend Function(String hostId);
+
+/// 这台 host 没配对（配对列表里没有这个身份的已启用地址 / 拿不出凭据）。
+class HostDictionaryTransferNotPaired implements Exception {
+  const HostDictionaryTransferNotPaired(this.hostId);
+  final String hostId;
+
+  @override
+  String toString() => 'HostDictionaryTransferNotPaired($hostId)';
+}
+
+/// 词典管理页「推送到 <服务器>」/「下载到本机」：把**一本**词典传给 / 取自**一台**
+/// 指定 host（[hostId] 按 [remoteDictionaryHostIdOf] 口径）。
+///
+/// 与 [runManualAssetTransfer] 同一套锁与在飞登记：同一个 `__asset_transfer__`
+/// 忙闸（另一次资产传输在跑 → 返回 null，不排队）、整轮资源、互联通道资源（与
+/// 单例互联后端同一把，[syncChannelScopeOf] 按类型给槽位），[activeAssetTransfer]
+/// 照样标「互联 · 词典」。不同的只有后端：用 [InterconnectSyncBackend.scopedToHost]
+/// 只连这一台，连不上就失败，绝不改投别的 host。
+///
+/// 包代码、导入、目录对账都在 [SyncOrchestrator.runSingleDictionaryTransfer]；
+/// 导入了词典时 [onPostRun] 收到报告（AppModel 的 `refreshAfterSyncRun`：从库重载
+/// 词典 + 重建引擎）。传输失败原样抛出（[SyncAuthError] / [SyncPeerUnreachableError] /
+/// 文件系统错误 …），没配对抛 [HostDictionaryTransferNotPaired]。
+Future<HostDictionaryTransferResult?> runHostDictionaryTransfer({
+  required FushiDatabase db,
+  required String hostId,
+  required String dictionaryName,
+  required SyncAssetDirection direction,
+  required Directory dictionaryResourceRoot,
+  required Directory tempDir,
+  SyncPostRunCallback? onPostRun,
+  SyncProgressCallback? onProgress,
+  void Function()? onImporting,
+  ScopedInterconnectBackendFactory? backendFor,
+}) async {
+  if (!_syncingIds.add('__asset_transfer__')) return null;
+  final SyncTaskHandle task = _beginSyncActivity(
+    const SyncActivity(SyncActivityKind.assetTransfer),
+  );
+  activeAssetTransfer.value = const SyncAssetTransferTarget(
+    SyncAssetKind.dictionary,
+    SyncAssetChannelScope.interconnect,
+  );
+  SyncOutcomeReason reason = SyncOutcomeReason.failed;
+  int channelsRun = 0;
+  final InterconnectSyncBackend backend = backendFor != null
+      ? backendFor(hostId)
+      : InterconnectSyncBackend.scopedToHost(hostId);
+  try {
+    return await _inRound(task, () async {
+      final SyncRepository repo = SyncRepository(db);
+      final SyncChannel channel = SyncChannel(
+        backend,
+        type: SyncBackendType.fushiServer,
+        isInterconnect: true,
+      );
+      final HostDictionaryTransferResult result = await _onChannel(
+        task,
+        channel,
+        () async {
+          if (!await backend.restoreAuth(repo)) {
+            reason = SyncOutcomeReason.noChannels;
+            throw HostDictionaryTransferNotPaired(hostId);
+          }
+          final SyncRunReport report = SyncRunReport(onError: task.error);
+          final SyncOrchestrator orchestrator = SyncOrchestrator(
+            db: db,
+            backend: backend,
+            dictionaryResourceRoot: dictionaryResourceRoot,
+            audioDatabaseRoot: tempDir,
+            tempDir: tempDir,
+            deviceId: await repo.getOrCreateDeviceId(),
+            // 只传这一本词典，其余维度一个都不跑（与资产传输同纪律）。
+            syncStats: false,
+            syncFavorites: false,
+            syncAudioBookPosition: false,
+            syncContent: false,
+            syncMangaContent: false,
+            syncAudioBookFiles: false,
+            syncVideoFiles: false,
+            syncDictionary: false,
+            onProgress: (SyncProgress p) {
+              task.progress(p);
+              onProgress?.call(p);
+            },
+            onError: task.error,
+          );
+          final SingleDictionaryTransferOutcome outcome = await orchestrator
+              .runSingleDictionaryTransfer(
+                name: dictionaryName,
+                direction: direction,
+                report: report,
+                onImporting: onImporting,
+              );
+          channelsRun = 1;
+          logSyncReportErrors(report);
+          await onPostRun?.call(report);
+          return (outcome: outcome, report: report);
+        },
+      );
+      reason = SyncOutcomeReason.completed;
+      return result;
+    });
+  } finally {
+    backend.closeScopedSession();
+    _syncingIds.remove('__asset_transfer__');
+    activeAssetTransfer.value = null;
+    _endSyncActivity(
+      task,
+      SyncRunOutcome(
+        kind: SyncActivityKind.assetTransfer,
+        reason: reason,
+        channelsRun: channelsRun,
+        finishedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+}
+
 Timer? _collectionsSyncDebounce;
 StreamSubscription<void>? _collectionsWatchSub;
 Duration _collectionsSyncDebounceDuration = const Duration(seconds: 8);

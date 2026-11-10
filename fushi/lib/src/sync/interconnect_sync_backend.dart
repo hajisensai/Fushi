@@ -230,12 +230,32 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteCoverFetcher,
         RemoteListingCapable {
   InterconnectSyncBackend._({FushiProbe? probe})
-    : _probe = probe ?? _defaultFushiProbe;
+    : _probe = probe ?? _defaultFushiProbe,
+      _candidateFilter = null;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
 
   /// Test seam: inject a fake reachability probe.
   @visibleForTesting
-  InterconnectSyncBackend.withProbe(FushiProbe probe) : _probe = probe;
+  InterconnectSyncBackend.withProbe(FushiProbe probe)
+    : _probe = probe,
+      _candidateFilter = null;
+
+  /// 只连**一台** host 的会话（[hostId] 按 [remoteDictionaryHostIdOf] 口径：配对记下的
+  /// hostId，老条目退到地址）。
+  ///
+  /// [instance] 是进程级单例，选路跟着「哪台先答」走（[_ensureResolved]），所以它
+  /// 回答不了「把这本词典推到**那台**服务器」。这里与 [InterconnectPostTransport]
+  /// 的 `candidateFilter` 同一个办法：候选在 [_loadConfig] 里先按 host 身份筛掉，
+  /// 选路 / 钉扎 / 凭据 / 断线换路 / 端点代码一字不改地复用。筛完一个候选都不剩 =
+  /// 这台没配对（[restoreAuth] 返回 false）；这台的地址全连不上就抛
+  /// [SyncPeerUnreachableError]，**绝不**落到别的 host 上。
+  ///
+  /// 实例不共享、用完即弃（调用方负责 [dispose]）；它与单例在同一把互联通道锁下
+  /// 跑（[syncChannelScopeOf] 按类型给槽位）。
+  InterconnectSyncBackend.scopedToHost(String hostId, {FushiProbe? probe})
+    : _probe = probe ?? _defaultFushiProbe,
+      _candidateFilter = ((FushiClientUrl candidate) =>
+          remoteDictionaryHostIdOf(candidate) == hostId);
 
   /// How long to wait for a single address probe before treating it as
   /// unreachable and trying the next candidate. Short so LAN-first failover
@@ -324,6 +344,10 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration packageFirstByteTimeout = Duration(minutes: 5);
 
   final FushiProbe _probe;
+
+  /// 已启用之外再筛一道候选（[InterconnectSyncBackend.scopedToHost]）；null = 全部
+  /// 已启用地址都是候选（单例）。
+  final bool Function(FushiClientUrl candidate)? _candidateFilter;
   List<FushiClientUrl> _candidates = const <FushiClientUrl>[];
   String? _token;
   bool _sessionResolved = false;
@@ -417,8 +441,9 @@ class InterconnectSyncBackend extends SyncBackend
   Future<String?> get currentEmail async => 'hibiki';
 
   Future<void> _loadConfig(SyncRepository repo) async {
+    final bool Function(FushiClientUrl candidate)? filter = _candidateFilter;
     final List<FushiClientUrl> candidates = (await repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
+        .where((FushiClientUrl u) => u.enabled && (filter == null || filter(u)))
         .toList();
     final String? token = await repo.getFushiClientToken();
     // BUG-1183：这里原本无条件 `_sessionResolved = false`，而 [restoreAuth] 又是每个
@@ -669,6 +694,19 @@ class InterconnectSyncBackend extends SyncBackend
 
   @override
   Future<void> refreshAuth() async {}
+
+  /// 关掉连接句柄。只给 [InterconnectSyncBackend.scopedToHost] 的一次性实例用——
+  /// 单例与进程同寿，从不调它。
+  void closeScopedSession() {
+    assert(
+      _candidateFilter != null,
+      'closeScopedSession is only for scopedToHost instances',
+    );
+    _ops?.close();
+    _ops = null;
+    _sessionResolved = false;
+    _activeCandidate = null;
+  }
 
   // ── Folder operations ─────────────────────────────────────────────
 

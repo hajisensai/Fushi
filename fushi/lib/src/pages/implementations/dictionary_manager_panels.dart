@@ -159,6 +159,7 @@ class DictionaryManagerDetail extends StatelessWidget {
     this.showHeader = true,
     this.headerTags = const <Widget>[],
     this.serverCopySection,
+    this.transferSection,
     super.key,
   });
 
@@ -198,11 +199,16 @@ class DictionaryManagerDetail extends StatelessWidget {
   /// 「两者」行：服务器上那一份的信息分组（host、两边版本），null = 不画。
   final Widget? serverCopySection;
 
+  /// 「推送到 <服务器>」分组（见 [DictionaryTransferSection]），null = 不画（没有
+  /// 还缺这本的查词 host）。
+  final Widget? transferSection;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
     final Widget? serverCopy = serverCopySection;
+    final Widget? transfer = transferSection;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -277,6 +283,7 @@ class DictionaryManagerDetail extends StatelessWidget {
           ],
         ),
         if (serverCopy != null) ...<Widget>[SizedBox(height: gap), serverCopy],
+        if (transfer != null) ...<Widget>[SizedBox(height: gap), transfer],
         SizedBox(height: gap * 2),
         Align(
           alignment: AlignmentDirectional.centerStart,
@@ -1722,6 +1729,43 @@ class _SourceCardNote extends StatelessWidget {
 /// 只在服务器上的词典的详情（宽屏侧板 / 窄屏 sheet）：开关、排序、来源 / host /
 /// 类型 / 版本 / 最近在线；服务器上已没有的词典多一个「忘掉」。改名、内容语言、
 /// 更新、删除文件、CSS 这些要本机目录的动作一律不给。
+/// 本机词典详情里的「推送到 <服务器>」分组：每台还缺这本词典的查词 host 一行，
+/// 整行可聚焦、Enter / 点按即推送。host 已有同名词典（「两者」行）的不列。
+class DictionaryTransferSection extends StatelessWidget {
+  const DictionaryTransferSection({
+    required this.dictionaryName,
+    required this.hosts,
+    required this.onPush,
+    super.key,
+  });
+
+  /// 词典真名（行 key 用）。
+  final String dictionaryName;
+
+  /// host 身份 → 展示名，按要列的顺序。
+  final Map<String, String> hosts;
+  final ValueChanged<String> onPush;
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsSection(
+      title: t.dict_transfer_section,
+      children: <Widget>[
+        for (final MapEntry<String, String> host in hosts.entries)
+          AdaptiveSettingsRow(
+            key: ValueKey<String>(
+              'dict-detail-push-${host.key}-$dictionaryName',
+            ),
+            title: t.dict_transfer_push_to(name: host.value),
+            icon: Icons.upload_outlined,
+            showIcon: true,
+            onTap: () => onPush(host.key),
+          ),
+      ],
+    );
+  }
+}
+
 class RemoteDictionaryDetail extends StatelessWidget {
   const RemoteDictionaryDetail({
     required this.row,
@@ -1740,6 +1784,7 @@ class RemoteDictionaryDetail extends StatelessWidget {
     required this.onRename,
     this.olderHost = false,
     this.shadowedOnHosts = const <String>[],
+    this.onDownload,
     super.key,
   });
 
@@ -1770,6 +1815,9 @@ class RemoteDictionaryDetail extends StatelessWidget {
   /// 「忘掉」（只对服务器上已没有的词典给；null = 不给）。
   final VoidCallback? onForget;
 
+  /// 「下载到本机」（只对服务器上还在、本机没有的词典给；null = 不给）。
+  final VoidCallback? onDownload;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1779,6 +1827,7 @@ class RemoteDictionaryDetail extends StatelessWidget {
     final RemoteDictionary remote = row.remote!;
     final String revision = remote.revision?.trim() ?? '';
     final VoidCallback? forget = onForget;
+    final VoidCallback? download = onDownload;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -1822,14 +1871,24 @@ class RemoteDictionaryDetail extends StatelessWidget {
           ),
           SizedBox(height: gap * 2),
         ],
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: FushiFilledButton.tonalIcon(
-            key: ValueKey<String>('dict-detail-rename-${row.key}'),
-            onPressed: onRename,
-            icon: const FushiIcon(FushiIcons.rename, size: 18),
-            label: Text(t.dict_rename),
-          ),
+        Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: <Widget>[
+            FushiFilledButton.tonalIcon(
+              key: ValueKey<String>('dict-detail-rename-${row.key}'),
+              onPressed: onRename,
+              icon: const FushiIcon(FushiIcons.rename, size: 18),
+              label: Text(t.dict_rename),
+            ),
+            if (download != null)
+              FushiFilledButton.tonalIcon(
+                key: ValueKey<String>('dict-detail-download-${row.key}'),
+                onPressed: download,
+                icon: const FushiIcon(Icons.download_outlined, size: 18),
+                label: Text(t.dict_transfer_download),
+              ),
+          ],
         ),
         SizedBox(height: gap),
         AdaptiveSettingsSection(

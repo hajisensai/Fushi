@@ -478,6 +478,7 @@ import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart'
     show InterconnectPostTransport, kInterconnectConnectTimeout;
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
+import 'package:fushi/src/sync/dictionary_transfer_service.dart';
 import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
     show applyInterconnectHostLookupIntent;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -4149,6 +4150,26 @@ class AppModel
   Future<void> refreshRemoteDictionaryHost(String hostId) async {
     await _remoteDictionaryCatalog?.refreshHost(hostId);
   }
+
+  /// 词典管理页「推送到 <服务器>」的候选 host：已配对、开着「用它查词典」的 host
+  /// （[remoteDictionaryHostIdOf] 口径）。
+  Future<Set<String>> remoteDictionaryPushHostIds() async =>
+      remoteDictionaryLookupHostIdsOf(
+        await SyncRepository(_database).getFushiClientUrls(),
+      );
+
+  /// 按 host 推送 / 下载单本词典的服务（与目录服务同在主进程；弹窗进程没有 = null，
+  /// 管理页不给这两个动作）。导入后走与同步一样的 [refreshAfterSyncRun]。
+  DictionaryTransferService? get dictionaryTransferService =>
+      _remoteDictionaryCatalog == null
+      ? null
+      : (_dictionaryTransferService ??= DictionaryTransferService(
+          db: _database,
+          dictionaryResourceRoot: dictionaryResourceDirectory,
+          tempDir: temporaryDirectory,
+          onPostRun: refreshAfterSyncRun,
+        ));
+  DictionaryTransferService? _dictionaryTransferService;
 
   /// 本机给一本服务器词典起显示名（设备本地，见
   /// [DictionaryRepository.setRemoteDictionaryLocalDisplayName]）。

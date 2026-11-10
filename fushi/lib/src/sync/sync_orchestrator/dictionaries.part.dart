@@ -41,74 +41,112 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     int index = 0;
 
     for (final String name in pulls) {
-      _emit(
-        SyncPhase.dictionaries,
-        itemIndex: index,
-        itemTotal: total,
-        title: name,
-      );
-      File? tmp;
       try {
-        tmp = resumableTmpFile('dictionary', name, _dictionaryAssetSuffix);
-        await backend.getRemoteDictionary(
+        await _pullLiveDictionary(
+          backend,
           name,
-          tmp,
-          onProgress: (double f, [int? b]) => _emit(
-            SyncPhase.dictionaries,
-            itemIndex: index,
-            itemTotal: total,
-            title: name,
-            fileFraction: f,
-            fileBytes: b,
-          ),
-        );
-        await _packages.importDictionaryPackage(
-          packageFile: tmp,
-          dictionaryResourceRoot: _dictionaryResourceRoot,
+          itemIndex: index,
+          itemTotal: total,
         );
         report.dictionariesImported++;
       } catch (e) {
         report.noteError('pull dictionary "$name"', e);
-      } finally {
-        _safeDelete(tmp);
       }
       index++;
     }
 
     for (final String name in pushes) {
-      _emit(
-        SyncPhase.dictionaries,
-        itemIndex: index,
-        itemTotal: total,
-        title: name,
-      );
-      File? tmp;
       try {
-        tmp = _tmpFile(_dictionaryAssetSuffix);
-        await _packages.exportDictionaryPackage(
-          dictionaryName: name,
-          dictionaryResourceRoot: _dictionaryResourceRoot,
-          outputFile: tmp,
-        );
-        await backend.putRemoteDictionary(
+        await _pushLiveDictionary(
+          backend,
           name,
-          tmp,
-          onProgress: (double f, [int? b]) => _emit(
-            SyncPhase.dictionaries,
-            itemIndex: index,
-            itemTotal: total,
-            title: name,
-            fileFraction: f,
-            fileBytes: b,
-          ),
+          itemIndex: index,
+          itemTotal: total,
         );
         report.dictionariesExported++;
       } catch (e) {
         report.noteError('push dictionary "$name"', e);
-      } finally {
-        _safeDelete(tmp);
       }
       index++;
+    }
+  }
+
+  /// 从互联对端拉一本词典包并导入本机（同步阶段与按 host 的单本下载共用这一份）。
+  /// 失败原样抛出，由调用方决定记账还是上屏。
+  Future<void> _pullLiveDictionary(
+    InterconnectSyncBackend backend,
+    String name, {
+    required int itemIndex,
+    required int itemTotal,
+    void Function()? onImporting,
+  }) async {
+    _emit(
+      SyncPhase.dictionaries,
+      itemIndex: itemIndex,
+      itemTotal: itemTotal,
+      title: name,
+    );
+    File? tmp;
+    try {
+      tmp = resumableTmpFile('dictionary', name, _dictionaryAssetSuffix);
+      await backend.getRemoteDictionary(
+        name,
+        tmp,
+        onProgress: (double f, [int? b]) => _emit(
+          SyncPhase.dictionaries,
+          itemIndex: itemIndex,
+          itemTotal: itemTotal,
+          title: name,
+          fileFraction: f,
+          fileBytes: b,
+        ),
+      );
+      onImporting?.call();
+      await _packages.importDictionaryPackage(
+        packageFile: tmp,
+        dictionaryResourceRoot: _dictionaryResourceRoot,
+      );
+    } finally {
+      _safeDelete(tmp);
+    }
+  }
+
+  /// 把本机一本词典打包推到互联对端（同步阶段与按 host 的单本推送共用这一份）。
+  /// 失败原样抛出。
+  Future<void> _pushLiveDictionary(
+    InterconnectSyncBackend backend,
+    String name, {
+    required int itemIndex,
+    required int itemTotal,
+  }) async {
+    _emit(
+      SyncPhase.dictionaries,
+      itemIndex: itemIndex,
+      itemTotal: itemTotal,
+      title: name,
+    );
+    File? tmp;
+    try {
+      tmp = _tmpFile(_dictionaryAssetSuffix);
+      await _packages.exportDictionaryPackage(
+        dictionaryName: name,
+        dictionaryResourceRoot: _dictionaryResourceRoot,
+        outputFile: tmp,
+      );
+      await backend.putRemoteDictionary(
+        name,
+        tmp,
+        onProgress: (double f, [int? b]) => _emit(
+          SyncPhase.dictionaries,
+          itemIndex: itemIndex,
+          itemTotal: itemTotal,
+          title: name,
+          fileFraction: f,
+          fileBytes: b,
+        ),
+      );
+    } finally {
+      _safeDelete(tmp);
     }
   }
 

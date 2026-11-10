@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/sync/dictionary_transfer_service.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
     show DictionaryRepository, RemoteDictionary, RemoteDictionaryHostSource;
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
@@ -15,6 +17,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart' show ToastSeverity;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -187,6 +190,27 @@ class _FakeAppModel extends AppModel {
     ];
   }
 
+  /// 「推送到 / 下载到本机」的假服务；null = 弹窗进程（没有这两个动作）。
+  _FakeTransferService? transfer = _FakeTransferService();
+
+  @override
+  DictionaryTransferService? get dictionaryTransferService => transfer;
+
+  @override
+  Future<Set<String>> remoteDictionaryPushHostIds() async => <String>{
+    'h1',
+    'h2',
+  };
+
+  final List<DictionaryDownloadOutcome> outcomes =
+      <DictionaryDownloadOutcome>[];
+
+  late final DictionaryDownloadController _downloads =
+      DictionaryDownloadController(showOutcome: outcomes.add);
+
+  @override
+  DictionaryDownloadController get dictionaryDownloadController => _downloads;
+
   @override
   Map<String, DictionaryFormat> get dictionaryFormats =>
       <String, DictionaryFormat>{'yomichan': YomichanFormat.instance};
@@ -198,6 +222,43 @@ class _FakeAppModel extends AppModel {
       DictionaryUpdateInterval.weekly;
   @override
   DateTime? get lastDictionaryUpdateAt => null;
+}
+
+class _FakeTransferService implements DictionaryTransferService {
+  final List<(String, String)> pushes = <(String, String)>[];
+  final List<(String, String)> downloads = <(String, String)>[];
+  DictionaryTransferResult result = const DictionaryTransferDone();
+
+  @override
+  Future<DictionaryTransferResult> pushToHost(
+    String hostId,
+    String dictionaryName, {
+    void Function(DictionaryTransferProgress progress)? onProgress,
+  }) async {
+    pushes.add((hostId, dictionaryName));
+    onProgress?.call(
+      const DictionaryTransferProgress(
+        stage: DictionaryTransferStage.transferring,
+        fraction: 0.5,
+      ),
+    );
+    return result;
+  }
+
+  @override
+  Future<DictionaryTransferResult> downloadFromHost(
+    String hostId,
+    String dictionaryName, {
+    void Function(DictionaryTransferProgress progress)? onProgress,
+  }) async {
+    downloads.add((hostId, dictionaryName));
+    onProgress?.call(
+      const DictionaryTransferProgress(
+        stage: DictionaryTransferStage.importing,
+      ),
+    );
+    return result;
+  }
 }
 
 const int _seenAt = 1762646400000;
@@ -694,6 +755,104 @@ void main() {
       find.descendant(of: section, matching: find.text('Box')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('local detail offers Push per host that lacks it; Enter pushes', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    // 「Local only」只在本机：两台查词 host 都缺它，各给一行。
+    Focus.of(tester.element(find.text('Local only'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-push-h1-Local only')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-push-h2-Local only')),
+      findsOneWidget,
+    );
+    expect(find.text('Push to Laptop'), findsOneWidget);
+
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-detail-push-h2-Local only')),
+    );
+    await _pressEnter(tester);
+    await _settle(tester);
+    expect(model.transfer!.pushes, <(String, String)>[('h2', 'Local only')]);
+    expect(model.outcomes.single.message, 'Local only is now on Laptop');
+    expect(model.outcomes.single.severity, ToastSeverity.success);
+  });
+
+  testWidgets('Both row hides Push for the host that already has it', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPage(tester);
+    Focus.of(tester.element(find.text('JMdict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    // h1 已有 JMdict（「两者」），只剩 h2。
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-push-h1-JMdict')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-push-h2-JMdict')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('no transfer service: no Push and no Download actions', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    model.transfer = null;
+    Focus.of(tester.element(find.text('Server Dict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-download-$_serverKey')),
+      findsNothing,
+    );
+    Focus.of(tester.element(find.text('Local only'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-transfer-Local only')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('server-only detail: Download to this device; errors toast', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    Focus.of(tester.element(find.text('Server Dict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    final Finder download = find.byKey(
+      const ValueKey<String>('dict-detail-download-$_serverKey'),
+    );
+    expect(download, findsOneWidget);
+    // 已缺席的行不给下载。
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-download-$_goneKey')),
+      findsNothing,
+    );
+
+    model.transfer!.result = const DictionaryTransferFailed(
+      DictionaryTransferFailureKind.unreachable,
+    );
+    await _focusInside(tester, download);
+    await _pressEnter(tester);
+    await _settle(tester);
+    expect(model.transfer!.downloads, <(String, String)>[
+      ('h1', 'Server Dict'),
+    ]);
+    expect(model.outcomes.single.message, 'Could not reach Box');
+    expect(model.outcomes.single.severity, ToastSeverity.error);
   });
 
   testWidgets('server row detail: Source label, language label, local rename', (

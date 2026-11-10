@@ -28,6 +28,7 @@ import 'package:fushi/src/models/dictionary_repository.dart'
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryCatalogService, RemoteDictionaryHostReachability;
+import 'package:fushi/src/sync/dictionary_transfer_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show showFushiConfirmDialog;
@@ -412,6 +413,9 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 来源卡片上正在单独刷新的 host。
   final Set<String> _refreshingHosts = <String>{};
 
+  /// 「推送到 <服务器>」的候选 host（已配对、开着「用它查词典」）。
+  Set<String> _pushHostIds = const <String>{};
+
   /// 顶栏副标题里的激活配置名；null = 还没读到 / 读不到（不画副标题）。
   String? _profileName;
 
@@ -507,9 +511,11 @@ class _DictionaryDialogPageState extends BasePageState {
   Future<void> _loadServerSources() async {
     final Map<String, String> names;
     final List<RemoteDictionaryHostSource> sources;
+    final Set<String> pushHosts;
     try {
       names = await appModel.remoteDictionaryHostNames();
       sources = await appModel.remoteDictionaryHostSources();
+      pushHosts = await appModel.remoteDictionaryPushHostIds();
     } catch (e, stack) {
       ErrorLogService.instance.log('DictionaryDialog.serverSources', e, stack);
       return;
@@ -518,6 +524,7 @@ class _DictionaryDialogPageState extends BasePageState {
     setState(() {
       _hostNames = names;
       _hostSources = sources;
+      _pushHostIds = pushHosts;
     });
   }
 
@@ -3145,7 +3152,148 @@ class _DictionaryDialogPageState extends BasePageState {
               unawaited(_confirmForgetRemote(remote));
             }
           : null,
+      // 服务器上还在、本机没有同名（服务器行的定义）才给下载；弹窗进程没有传输服务。
+      onDownload: remote.isMissing || appModel.dictionaryTransferService == null
+          ? null
+          : () => unawaited(_downloadDictionaryFromHost(remote)),
     );
+  }
+
+  /// 本机词典可以推去的 host：候选 host 里目录上还没有同名词典（没缺席）的那些，
+  /// 按配对列表顺序。已有的就是「两者」行，不给推送。
+  Map<String, String> _pushTargetsFor(Dictionary dictionary) {
+    if (appModel.dictionaryTransferService == null) {
+      return const <String, String>{};
+    }
+    final Set<String> hasIt = <String>{
+      for (final RemoteDictionary r in _serverCopiesOf(dictionary.name))
+        r.hostId,
+    };
+    return <String, String>{
+      for (final String id in _hostNames.keys)
+        if (_pushHostIds.contains(id) && !hasIt.contains(id)) id: _hostName(id),
+    };
+  }
+
+  Future<void> _pushDictionaryToHost(Dictionary dictionary, String hostId) =>
+      _runDictionaryTransfer(
+        push: true,
+        hostId: hostId,
+        name: dictionary.name,
+        displayName: dictionary.effectiveDisplayName,
+      );
+
+  Future<void> _downloadDictionaryFromHost(RemoteDictionary remote) =>
+      _runDictionaryTransfer(
+        push: false,
+        hostId: remote.hostId,
+        name: remote.name,
+        displayName: remote.effectiveDisplayName,
+      );
+
+  /// 按 host 推送 / 下载一本词典：任务挂在与下载 / 更新同一个
+  /// [DictionaryDownloadController] 上（同一把词典写侧互斥、同一个进度框与回程条、
+  /// 结局由 controller 统一 toast）。传输本身走 [DictionaryTransferService]（同步锁 +
+  /// 只连这一台 host 的互联后端），dio 取消令牌够不着它，所以一开始就切到不可取消
+  /// 的阶段，不给一个按了没反应的取消钮。
+  Future<void> _runDictionaryTransfer({
+    required bool push,
+    required String hostId,
+    required String name,
+    required String displayName,
+  }) async {
+    final DictionaryTransferService? service =
+        appModel.dictionaryTransferService;
+    if (service == null) return;
+    final String host = _hostName(hostId);
+    await _runWithDownloadProgressDialog(
+      initialMessage: push
+          ? t.dict_transfer_pushing(name: displayName, host: host)
+          : t.dict_downloading(name: displayName),
+      body: (DictionaryDownloadJob job) async {
+        job.markImportPhase();
+        void onProgress(DictionaryTransferProgress progress) {
+          if (progress.stage == DictionaryTransferStage.importing) {
+            enterDictionaryImportStage(
+              name: displayName,
+              progressNotifier: job.message,
+              downloadProgress: job.progress,
+              job: job,
+            );
+            return;
+          }
+          job.progress.value = progress.fraction ?? 0;
+        }
+
+        final DictionaryTransferResult result = push
+            ? await service.pushToHost(hostId, name, onProgress: onProgress)
+            : await service.downloadFromHost(
+                hostId,
+                name,
+                onProgress: onProgress,
+              );
+        return _dictionaryTransferOutcome(
+          result,
+          push: push,
+          name: displayName,
+          host: host,
+        );
+      },
+    );
+    await _loadServerSources();
+  }
+
+  DictionaryDownloadOutcome _dictionaryTransferOutcome(
+    DictionaryTransferResult result, {
+    required bool push,
+    required String name,
+    required String host,
+  }) {
+    switch (result) {
+      case DictionaryTransferDone():
+        return DictionaryDownloadOutcome(
+          message: push
+              ? t.dict_transfer_push_done(name: name, host: host)
+              : t.dict_transfer_download_done(name: name),
+          severity: ToastSeverity.success,
+        );
+      case DictionaryTransferAlreadyPresent():
+        return DictionaryDownloadOutcome(
+          message: push
+              ? t.dict_transfer_already_on_host(name: name, host: host)
+              : t.dict_transfer_already_installed(name: name),
+          severity: ToastSeverity.info,
+        );
+      case DictionaryTransferFailed(:final DictionaryTransferFailureKind kind):
+        if (kind == DictionaryTransferFailureKind.failed) {
+          ErrorLogService.instance.log(
+            'DictionaryDialog.transfer',
+            result.error ?? 'unknown',
+            StackTrace.current,
+          );
+        }
+        return DictionaryDownloadOutcome(
+          message: switch (kind) {
+            DictionaryTransferFailureKind.notPaired =>
+              t.dict_transfer_error_not_paired(host: host),
+            DictionaryTransferFailureKind.unreachable =>
+              t.dict_transfer_error_unreachable(host: host),
+            DictionaryTransferFailureKind.unauthorized =>
+              t.dict_transfer_error_unauthorized(host: host),
+            DictionaryTransferFailureKind.notFound =>
+              t.dict_transfer_error_not_found(name: name),
+            DictionaryTransferFailureKind.outOfDisk =>
+              t.dict_transfer_error_out_of_disk,
+            DictionaryTransferFailureKind.busy => t.dict_transfer_error_busy,
+            DictionaryTransferFailureKind.failed =>
+              t.dict_transfer_error_failed(error: '${result.error}'),
+          },
+          severity: kind == DictionaryTransferFailureKind.busy
+              ? ToastSeverity.info
+              : ToastSeverity.error,
+          toastLength: Toast.LENGTH_LONG,
+        );
+    }
   }
 
   /// 服务器词典的本机显示名：与本机词典同一个改名对话框，写设备本地的
@@ -3312,6 +3460,20 @@ class _DictionaryDialogPageState extends BasePageState {
               ),
             ],
       serverCopySection: _buildServerCopySection(dictionary),
+      transferSection: _buildTransferSection(dictionary),
+    );
+  }
+
+  /// 「推送到 <服务器>」分组；没有还缺这本的查词 host 时不画。
+  Widget? _buildTransferSection(Dictionary dictionary) {
+    final Map<String, String> targets = _pushTargetsFor(dictionary);
+    if (targets.isEmpty) return null;
+    return DictionaryTransferSection(
+      key: ValueKey<String>('dict-detail-transfer-${dictionary.name}'),
+      dictionaryName: dictionary.name,
+      hosts: targets,
+      onPush: (String hostId) =>
+          unawaited(_pushDictionaryToHost(dictionary, hostId)),
     );
   }
 

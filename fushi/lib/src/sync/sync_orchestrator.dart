@@ -556,6 +556,18 @@ enum SyncAssetDirection {
   bool get pushes => this != SyncAssetDirection.download;
 }
 
+/// 按 host 的单本词典传输（[SyncOrchestrator.runSingleDictionaryTransfer]）的结局。
+enum SingleDictionaryTransferOutcome {
+  /// 传完了（推送：host 已导入；下载：本机已导入）。
+  transferred,
+
+  /// 目标一侧已有同名词典，什么都没传（下载 = 本机已装；推送 = host 已有）。
+  alreadyPresent,
+
+  /// 来源一侧没有这本（下载 = host 清单里没有；推送 = 本机没装）。
+  notFound,
+}
+
 /// 显式传输的资产类别（[SyncOrchestrator.runAssetTransferOnly]）。
 enum SyncAssetKind {
   /// 词典包（含导入的词典资源）。
@@ -2212,6 +2224,83 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncAudiobooksLive(report, backend);
+
+  /// 按 host 的单本词典传输（词典管理页「推送到 <服务器>」/「下载到本机」）。
+  ///
+  /// 与词典同步阶段同一份包代码（[_pullLiveDictionary] / [_pushLiveDictionary]）
+  /// 与同一个后端：本编排器必须建在 [InterconnectSyncBackend.scopedToHost] 上，选
+  /// 哪台 host 由后端的候选筛选决定，这里不再选路。[direction] 只能是
+  /// [SyncAssetDirection.upload] 或 [SyncAssetDirection.download]。
+  ///
+  /// 先读两边清单：同名已在目标一侧 → [SingleDictionaryTransferOutcome.alreadyPresent]
+  /// （下载时本机同名 = 已装，不覆盖），来源一侧没有 →
+  /// [SingleDictionaryTransferOutcome.notFound]。传完后把这台 host 的清单对账进
+  /// 服务器词典目录（推送后重新取一次清单），管理页的行随之从「本机」/「服务器」
+  /// 翻成「两者」。导入计数写进 [report]，调用方的同步后置钩子据此重载词典与引擎。
+  /// 传输失败原样抛出；对账失败只记进 [report]（词典已经传成了）。
+  Future<SingleDictionaryTransferOutcome> runSingleDictionaryTransfer({
+    required String name,
+    required SyncAssetDirection direction,
+    required SyncRunReport report,
+    void Function()? onImporting,
+  }) async {
+    assert(
+      direction != SyncAssetDirection.both,
+      'single dictionary transfer has one direction',
+    );
+    final SyncBackend b = _backend;
+    if (b is! InterconnectSyncBackend) {
+      throw StateError('single dictionary transfer needs an interconnect host');
+    }
+    final bool installed = (await _db.getAllDictionaryMetadata()).any(
+      (DictionaryMetaRow d) => d.name == name,
+    );
+    List<RemoteDictionaryInfo> remote = await b.listRemoteDictionaries();
+    final bool onHost = remote.any((RemoteDictionaryInfo d) => d.name == name);
+    final SingleDictionaryTransferOutcome outcome;
+    if (direction == SyncAssetDirection.download) {
+      if (installed) {
+        outcome = SingleDictionaryTransferOutcome.alreadyPresent;
+      } else if (!onHost) {
+        outcome = SingleDictionaryTransferOutcome.notFound;
+      } else {
+        await _pullLiveDictionary(
+          b,
+          name,
+          itemIndex: 0,
+          itemTotal: 1,
+          onImporting: onImporting,
+        );
+        report.dictionariesImported++;
+        outcome = SingleDictionaryTransferOutcome.transferred;
+      }
+    } else {
+      if (!installed) {
+        outcome = SingleDictionaryTransferOutcome.notFound;
+      } else if (onHost) {
+        outcome = SingleDictionaryTransferOutcome.alreadyPresent;
+      } else {
+        await _pushLiveDictionary(b, name, itemIndex: 0, itemTotal: 1);
+        report.dictionariesExported++;
+        outcome = SingleDictionaryTransferOutcome.transferred;
+      }
+    }
+    try {
+      if (direction == SyncAssetDirection.upload &&
+          outcome == SingleDictionaryTransferOutcome.transferred) {
+        remote = await b.listRemoteDictionaries();
+      }
+      await RemoteDictionaryCatalogService.reconcileHost(
+        _db,
+        hostId: await b.connectedHostIdentity(),
+        infos: remote,
+        now: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      report.noteError('refresh server dictionary catalog', e);
+    }
+    return outcome;
+  }
 
   /// Union-syncs dictionaries. 互联（InterconnectSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
