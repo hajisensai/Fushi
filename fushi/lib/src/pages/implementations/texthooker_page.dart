@@ -837,7 +837,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           }
           return png;
         });
-    final VideoMiningImageMode mode = mixinAppModel.galMiningImageMode;
+    // 与制卡同一个解析入口（全局 + 本游戏覆盖，反馈 3dRZdakRdJ）：本游戏覆盖成静态截图
+    // 时，这里若读全局值会误报「打码会强制改成静态图」。
+    final VideoMiningImageMode mode = mixinAppModel
+        .galMiningSettingsForGame(_session.activityGameKey)
+        .imageMode;
     // 与协调器 staleScene 同一判据：不是最新一行，截到的就不是那句台词当时的画面。
     final List<TexthookerLineEntry> live = TexthookerService.instance.entries;
     final bool historical = live.isEmpty || live.last.id != lineId;
