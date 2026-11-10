@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4284](bugs/BUG-4284-srs-conflict-dialog-marquee-intrinsic.md) | ✅ | ✅ | SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic） |
+| [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 | [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
 | [BUG-4282](bugs/BUG-4282-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |
 | [BUG-4281](bugs/BUG-4281-game-stream-companion-r1-takes-controller.md) | ✅ | ✅ | Game stream: companion R1 panel drive takes the controller when the stream leaves the second screen to the companion |
