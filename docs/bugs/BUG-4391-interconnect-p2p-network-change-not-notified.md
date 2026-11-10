@@ -1,4 +1,4 @@
-## BUG-4281 · P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通
+## BUG-4391 · P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通
 - **报告**：2026-11-10（用户：互联审查 C7）
 - **真实性**：✅ 真 bug（代码路径核实，未在真机复现）。
   - `native/fushi_p2p/src/lib.rs:626-769`（基准 94317ab6295）：C ABI 没有任何入口调用 iroh 的 `Endpoint::network_change`（iroh 1.2.0 `endpoint.rs:1657`，`pub async fn`）。

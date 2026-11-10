@@ -1,4 +1,4 @@
-## BUG-4277 · 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编
+## BUG-4387 · 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编
 - **报告**：2026-11-10（用户：互联审查 V-A2 / C6 / C14）
 - **真实性**：✅ 真 bug。
   - `fushi/lib/src/sync/interconnect_peer_addresses.dart:473-498`（基准 94317ab6295）`applyIssuedInterconnectToken`：按 URL 找到一行后，这一行已带 hostId=A 而签发方是 B（或 v1 没报 hostId）时，不改标签却把 B 签发的 token 写进 A 的整组（V-A2），A 从此一直 401。调用方 `SyncRepository.setFushiClientTokenForUrl`（`sync_repository.dart:1722`）、设置页 v2 / v1 配对（`interconnect.part.dart:1267`、`:2100`）、链接配对（`interconnect_link_pairing.dart:157`）都不核对归属。

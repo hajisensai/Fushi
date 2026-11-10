@@ -1,4 +1,4 @@
-## BUG-4276 · 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收
+## BUG-4386 · 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收
 - **报告**：2026-11-10（用户：互联审查 C10）
 - **真实性**：✅ 真 bug。
   - `fushi/lib/src/sync/lan_discovery_service.dart:302-305`（基准 94317ab6295）：`_discoveredDevices[device.deviceId] = device`，主键是对端自报、未经认证的 TXT `id`；局域网里任一设备广播同一 id，后到的条目覆盖先到的（冒名顶掉真设备）。lost 分支 `:311-314` 还会在服务名未登记时回落按 TXT id 删除，同样可被冒名。

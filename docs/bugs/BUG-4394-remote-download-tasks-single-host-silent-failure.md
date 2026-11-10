@@ -1,4 +1,4 @@
-## BUG-4284 · 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错
+## BUG-4394 · 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错
 - **报告**：2026-11-10（用户：互联审查 R6）
 - **真实性**：✅ 真 bug（代码路径核实；新测试 4 条修复前全红）。行号指基准 94317ab6295：
   - `fushi/lib/src/pages/implementations/remote_download_tasks_section.dart:48-81`：只在 initState 探一次，`probeUrl(偏好) ?? probe()` 取**单个** `_target` 当常量，其余已配对 host 的任务永远不显示；探测失败（`:72` `catch (_)`）后不再重探。

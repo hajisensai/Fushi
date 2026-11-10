@@ -1,7 +1,7 @@
-## BUG-4280 · p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常
+## BUG-4390 · p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常
 - **报告**：2026-11-10（用户：互联审查 C11）
 - **真实性**：✅ 真 bug。
-  - `packages/fushi_engine/lib/sync/interconnect_p2p.dart:49-61`（基准 94317ab6295；BUG-4279 后行号未变）`parseInterconnectP2pUrl`：只检查 scheme 与 host 非空，`p2p://xyz` 这类畸形 NodeId 被当成 P2P 地址，一路传到原生 `conn_status` / `client_forward` 的 `EndpointId::from_str`（`native/fushi_p2p/src/lib.rs:227, 261`）才抛。
+  - `packages/fushi_engine/lib/sync/interconnect_p2p.dart:49-61`（基准 94317ab6295；BUG-4389 后行号未变）`parseInterconnectP2pUrl`：只检查 scheme 与 host 非空，`p2p://xyz` 这类畸形 NodeId 被当成 P2P 地址，一路传到原生 `conn_status` / `client_forward` 的 `EndpointId::from_str`（`native/fushi_p2p/src/lib.rs:227, 261`）才抛。
   - `fushi/lib/src/sync/interconnect_p2p_path_badge.dart:32-64`：initState 与 `Timer.periodic` 回调里同步调用 `node.status()`，`FushiP2pEndpoint._call` 抛的 `FushiP2pException`（非法 NodeId、端点被 restart 关掉的竞态）没人接：initState 里抛进 build，定时器里成为未捕获异常。
   - `InterconnectP2pNode.status`（同文件 :233-234）在节点已关闭后仍调原生端点，必抛 `endpoint is closed`，与 `hostPeer` 的「已关闭 → null」口径不一致。
   - 新测试修复前 8 条中 4 条红：`parseInterconnectP2pUrl('p2p://xyz')` 返回记录而非 null；关闭后 `status` 仍返回 / 调原生；徽章 initState 抛 `FushiP2pException`；`p2p://not-a-node` 仍调用 `status` 4 次。

@@ -1,7 +1,7 @@
-## BUG-4279 · P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址
+## BUG-4389 · P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址
 - **报告**：2026-11-10（用户：互联审查 C8）
 - **真实性**：✅ 真 bug。
-  - `fushi/lib/src/sync/interconnect_peer_addresses.dart:392-407`（BUG-4278 修复后的行号；基准 94317ab6295 为 `:291-312`）：`_p2pOrigins`（转发口 URL → `p2p://`）只在 `_resolveTransport` 成功时写入，全仓没有删除的地方。
+  - `fushi/lib/src/sync/interconnect_peer_addresses.dart:392-407`（BUG-4388 修复后的行号；基准 94317ab6295 为 `:291-312`）：`_p2pOrigins`（转发口 URL → `p2p://`）只在 `_resolveTransport` 成功时写入，全仓没有删除的地方。
   - `packages/fushi_engine/lib/sync/interconnect_p2p.dart:134-141, 157-163`（基准）：换拨号提示撤口、关端点时只回收 engine 的 `_tunnelPorts`，app 侧映射与之脱节。旧口被撤后 `interconnectPersistedUrl` 仍把它换回 `p2p://`：`_credentialSafe` 视其为带密码学身份的地址，`InterconnectHostClient._plaintextAllowed`（`interconnect_host_client.dart:96-101`）对钉扎 host 照样放行这条回环明文地址（该口可能已被本机别的进程占用）。
   - 同文件学习器 `refresh(anchor)`（基准 `:636-662`）：拿到的锚点是本地转发口 URL。明文隧道被「非 https 不学」拒掉；tls=1 隧道取到地址集后按转发口 URL 在列表里找锚点，找不到 → 原样返回，host 换 home relay / 新增地址永远学不到。节流键也是临时 URL。
   - 新测试 `interconnect_p2p_forward_lifecycle_test.dart` 修复前 5 条中 4 条红：撤口后旧口仍映射到 `p2p://…?relay=r1`；钉扎守卫放行旧口；两条学习器用例 `changed == false`。
