@@ -122,14 +122,14 @@ class _GalLineTtsVoiceOverridesPageState
     final String? current = _settings.languageVoices[key];
     final String? next = await _pickOverrideVoice(current);
     if (!mounted || next == current) return;
-    _update(_settings.withLanguageVoice(key, next));
+    _update(_controller.lineTtsSettings.withLanguageVoice(key, next));
   }
 
   Future<void> _editGame(String gameId) async {
     final String? current = _settings.gameVoices[gameId];
     final String? next = await _pickOverrideVoice(current);
     if (!mounted || next == current) return;
-    _update(_settings.withGameVoice(gameId, next));
+    _update(_controller.lineTtsSettings.withGameVoice(gameId, next));
   }
 
   Future<void> _addLanguage() async {
@@ -159,7 +159,7 @@ class _GalLineTtsVoiceOverridesPageState
     if (key == null || !mounted) return;
     final String? presetId = await _pickOverrideVoice(null);
     if (presetId == null || !mounted) return;
-    _update(_settings.withLanguageVoice(key, presetId));
+    _update(_controller.lineTtsSettings.withLanguageVoice(key, presetId));
   }
 
   Future<void> _addGame() async {
@@ -194,7 +194,7 @@ class _GalLineTtsVoiceOverridesPageState
     if (gameId == null || !mounted) return;
     final String? presetId = await _pickOverrideVoice(null);
     if (presetId == null || !mounted) return;
-    _update(_settings.withGameVoice(gameId, presetId));
+    _update(_controller.lineTtsSettings.withGameVoice(gameId, presetId));
   }
 
   Widget _secondary(String text) => Text(
