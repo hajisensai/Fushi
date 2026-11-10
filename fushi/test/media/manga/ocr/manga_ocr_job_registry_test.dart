@@ -30,12 +30,16 @@ class _FakeSource {
     String bookKey,
     String dir, {
     MangaOcrPageFocus? focus,
+    MangaOcrBackgroundJob Function()? resume,
+    String? title,
   }) => MangaOcrBackgroundJob(
     bookKey: bookKey,
     managedDirectory: dir,
     engine: MangaOcrEngineId.localOnnx,
     events: controller.stream,
     focus: focus,
+    resume: resume,
+    title: title,
   );
 }
 
@@ -502,6 +506,231 @@ void main() {
         isNotNull,
       );
       await registry.cancelAll();
+    });
+  });
+
+  group('暂停 / 继续（OCR 任务管理页，反馈 iuv4-jWC8S）', () {
+    test('暂停排队中的任务：摘出队列不启动，原任务原样留着；继续后照常排到并启动', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      expect(
+        await registry.enqueue(
+          job: first.job('book', dirA),
+          mangaJsonPath: mangaJsonPath,
+        ),
+        isNotNull,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book', dirB, title: 'Ch 2'),
+        mangaJsonPath: mangaJsonPath,
+      );
+
+      expect(await registry.pause('book', dirB), isTrue);
+      expect(registry.queuedDirectories('book'), isEmpty);
+      final MangaOcrJobEntry paused = registry.entries().singleWhere(
+        (MangaOcrJobEntry e) => e.status == MangaOcrJobStatus.paused,
+      );
+      expect(paused.directory, dirB);
+      expect(paused.title, 'Ch 2');
+      expect(paused.canPause, isFalse);
+
+      await first.controller.close();
+      expect(await startedB, isNull, reason: '暂停的排队者轮到时不启动');
+      await Future<void>.delayed(Duration.zero);
+      expect(second.controller.hasListener, isFalse, reason: '订阅即启动');
+
+      expect(registry.resume('book', dirB), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.running('book')?.job.managedDirectory, dirB);
+      expect(second.controller.hasListener, isTrue, reason: '继续用的是原任务');
+      expect(
+        registry.entries().where(
+          (MangaOcrJobEntry e) => e.status == MangaOcrJobStatus.paused,
+        ),
+        isEmpty,
+      );
+      await registry.cancelAll();
+    });
+
+    test('暂停运行中的任务：真停底层流、释放名额给下一个；继续用重建的新任务', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => 1,
+      );
+      final _FakeSource first = _FakeSource();
+      final _FakeSource rebuilt = _FakeSource();
+      final _FakeSource other = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      int rebuilds = 0;
+      final MangaOcrRunningJob? a = await registry.enqueue(
+        job: first.job(
+          'book-a',
+          dirA,
+          resume: () {
+            rebuilds += 1;
+            return rebuilt.job('book-a', dirA);
+          },
+        ),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(a, isNotNull);
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: other.job('book-b', dirB),
+        mangaJsonPath: mangaJsonPath,
+      );
+      first.controller.add(_progress(3, 10));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        registry.entries().first.canPause,
+        isTrue,
+        reason: '有重建口的运行中任务可暂停',
+      );
+
+      expect(await registry.pause('book-a', dirA), isTrue);
+      expect(first.cancelled, isTrue, reason: '暂停 = 真停执行器（逐页缓存保留）');
+      expect(rebuilds, 1);
+      expect(registry.running('book-a'), isNull);
+      expect(await startedB, isNotNull, reason: '名额让给排队的下一本');
+      final MangaOcrJobEntry paused = registry.entries().singleWhere(
+        (MangaOcrJobEntry e) => e.status == MangaOcrJobStatus.paused,
+      );
+      expect(paused.lastEvent?.pagesDone, 3, reason: '暂停那一刻的进度快照');
+      expect(rebuilt.controller.hasListener, isFalse);
+
+      expect(registry.resume('book-a', dirA), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(rebuilt.controller.hasListener, isFalse, reason: '名额被 B 占着');
+      await other.controller.close();
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(registry.running('book-a')?.job.managedDirectory, dirA);
+      expect(rebuilt.controller.hasListener, isTrue, reason: '继续跑的是重建的任务');
+      await registry.cancelAll();
+    });
+
+    test('没有重建口的运行中任务不能暂停', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource source = _FakeSource();
+      registry.start(
+        job: source.job('book', tmp.path),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(registry.entries().single.canPause, isFalse);
+      expect(await registry.pause('book', tmp.path), isFalse);
+      expect(source.cancelled, isFalse);
+      expect(registry.running('book'), isNotNull);
+      await registry.cancelAll();
+    });
+
+    test('批量暂停先摘排队的再停运行中的：停掉 A 不会放出同批的 B', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      await registry.enqueue(
+        job: first.job(
+          'book',
+          dirA,
+          resume: () => _FakeSource().job('book', dirA),
+        ),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book', dirB),
+        mangaJsonPath: mangaJsonPath,
+      );
+
+      final int paused = await registry.pauseAll(<MangaOcrJobRef>[
+        (bookKey: 'book', directory: dirA),
+        (bookKey: 'book', directory: dirB),
+      ]);
+      expect(paused, 2);
+      expect(await startedB, isNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(second.controller.hasListener, isFalse);
+      expect(registry.running('book'), isNull);
+      expect(
+        registry.entries().map((MangaOcrJobEntry e) => e.status),
+        everyElement(MangaOcrJobStatus.paused),
+      );
+
+      expect(
+        registry.resumeAll(<MangaOcrJobRef>[
+          (bookKey: 'book', directory: dirA),
+          (bookKey: 'book', directory: dirB),
+        ]),
+        2,
+      );
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(registry.running('book')?.job.managedDirectory, dirA);
+      expect(registry.queuedDirectories('book'), <String>[dirB]);
+      await registry.cancelAll();
+    });
+
+    test('别处重新排上同一目录：暂停项作废，不会出现两份', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      await registry.enqueue(
+        job: first.job(
+          'book',
+          dirA,
+          resume: () => _FakeSource().job('book', dirA),
+        ),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await registry.pause('book', dirA), isTrue);
+
+      final _FakeSource again = _FakeSource();
+      expect(
+        await registry.enqueue(
+          job: again.job('book', dirA),
+          mangaJsonPath: mangaJsonPath,
+        ),
+        isNotNull,
+      );
+      expect(registry.entries(), hasLength(1));
+      expect(registry.entries().single.status, MangaOcrJobStatus.running);
+      expect(registry.resume('book', dirA), isFalse);
+      await registry.cancelAll();
+    });
+
+    test('cancel(bookKey)（删书）连暂停项一起作废', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      await registry.enqueue(
+        job: first.job('book', dirA),
+        mangaJsonPath: mangaJsonPath,
+      );
+      unawaited(
+        registry.enqueue(
+          job: second.job('book', dirB),
+          mangaJsonPath: mangaJsonPath,
+        ),
+      );
+      expect(await registry.pause('book', dirB), isTrue);
+      int changes = 0;
+      final StreamSubscription<void> watch = registry.changes.listen(
+        (_) => changes += 1,
+      );
+
+      await registry.cancel('book');
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.entries(), isEmpty);
+      expect(registry.resume('book', dirB), isFalse);
+      expect(changes, greaterThan(0));
+      await watch.cancel();
     });
   });
 
