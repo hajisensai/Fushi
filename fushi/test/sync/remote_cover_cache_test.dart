@@ -100,7 +100,7 @@ void main() {
     );
   });
 
-  test('BUG-4367：运行中缓存目录被整个删掉（清缓存 / 系统回收）后，下一次写入照常落盘', () async {
+  test('BUG-4368：运行中缓存目录被整个删掉（清缓存 / 系统回收）后，下一次写入照常落盘', () async {
     final Uint8List first = Uint8List.fromList(<int>[1, 2, 3]);
     await RemoteCoverCache.write('before', first);
     expect(await RemoteCoverCache.read('before'), first);
