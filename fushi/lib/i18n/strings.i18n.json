@@ -936,7 +936,7 @@
   "anki_sync_client_username_title": "Username",
   "anki_tag_default_section": "Default tags",
   "anki_tag_include_category": "Add source category tag",
-  "anki_tag_include_category_hint": "Books get \"book\", videos get \"video\", games get \"game\", music gets \"music\"",
+  "anki_tag_include_category_hint": "Books get \"book\", videos get \"video\", games get \"game\", music gets \"music\", manga gets \"manga\"",
   "anki_tag_include_fushi": "Add \"fushi\" tag",
   "anki_tag_include_fushi_hint": "Mark every card mined by Fushi",
   "anki_tag_nest_title_under_category": "Nest title tags under the category tag",
