@@ -1,4 +1,4 @@
-## BUG-4352 · 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手
+## BUG-4353 · 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手
 - **报告**：2026-11-09（开发者自提，应用内反馈 fDlzXDp6h9：游戏发现页内置 AList（alist.erogame.space）下载报 HttpException 403）
 - **真实性**：✅ 真 bug（2026-11-10 实探）。`AListDiscoverySource.resolvePayload`
   （`fushi/lib/src/media/discovery/sources/alist_discovery_source.dart:163`）把 `/api/fs/get` 的 `raw_url`
