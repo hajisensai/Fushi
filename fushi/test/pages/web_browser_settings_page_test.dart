@@ -373,6 +373,19 @@ void main() {
       expect(n['boxWidth'], 20);
       expect(n['fontWeight'], 600);
       expect(n['textColor'], '#aabbcc');
+      // 反馈 0wkJImhZUp：描边粗细取 0.5 步长并夹进 [0, 8]；颜色与其它颜色字段同一规整。
+      final Map<String, Object> o = normalizeWebBrowserSubtitleStyle(
+        <String, Object?>{'outlineWidth': 2.3, 'outlineColor': 'F00'},
+      );
+      expect(o['outlineWidth'], 2.5);
+      expect(o['outlineColor'], '#ff0000');
+      expect(
+        normalizeWebBrowserSubtitleStyle(<String, Object?>{
+          'outlineWidth': 99,
+        })['outlineWidth'],
+        8,
+      );
+      expect(normalizeWebBrowserSubtitleStyle(null)['outlineWidth'], 0);
 
       await writeWebBrowserSubtitleStyleField(storage, 'fontScale', 150);
       expect(
