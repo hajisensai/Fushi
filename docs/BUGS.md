@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3872 条。点号进各自文件。
+> 共 3877 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4323](bugs/BUG-4323-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
-> 共 3876 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4328](bugs/BUG-4328-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
 | [BUG-4327](bugs/BUG-4327-android-java-uncaught-crash-no-stack.md) | ✅ | ✅ | Android Java 层崩溃退出报告没有异常栈 |
 | [BUG-4326](bugs/BUG-4326-android-custom-icon-shortcut-disabled-by-app-shortcuts.md) | ✅ | ✅ | android-custom-icon-shortcut-disabled-by-app-shortcuts |
 | [BUG-4325](bugs/BUG-4325-collection-member-cover-no-tilt.md) | ✅ | ✅ | collection-member-cover-no-tilt |
