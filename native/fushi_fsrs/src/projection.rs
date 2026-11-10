@@ -1,6 +1,6 @@
 //! 卡片历史的投影（P6，docs/specs/2026-10-23-srs-rust-store.md §7）：记忆状态输入（铁律 A）、优化器训练集、
-//! RWKV 回放行。规则只在这里写一份；store/mod.rs 的直读命令在 srs.db 上取日志后调用它们，排程（Dart
-//! `SrsCardOps`）经列模式入口 [memory_input_columns] 调用同一份记忆状态规则。
+//! RWKV 回放行。规则只在这里写一份；store/mod.rs 的直读命令在 srs.db 上取日志后调用它们，排程预览 / 恢复计划（Dart
+//! 侧）经列模式入口 [memory_input_columns] 调用同一份记忆状态规则。
 //!
 //! 与删除前的 Dart 实现逐条对应（固定向量 packages/fushi_srs/test/memory/fixtures/ 与
 //! packages/fushi_engine/test/srs/fixtures/p6_vectors.json.gz 由删除前的 Dart 实现生成）：
