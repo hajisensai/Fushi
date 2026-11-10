@@ -2834,12 +2834,14 @@ class _HomePageState extends BasePageState<HomePage>
             o.target,
       ];
       if (!context.mounted) return;
-      // 一台可用 host 都没有时，先把能动手解决的原因说出来（重新配对、证书变了、
-      // 版本旧 / 能力没开），而不是只剩一句「去配置下载后端」。
-      if (remoteTargets.isEmpty) {
-        final String? reason = interconnectFirstTellableFailureLine(outcomes);
-        if (reason != null) FushiToast.show(msg: reason);
-      }
+      // 本机跑不了、一台可用 host 也没有时，先把能动手解决的原因说出来（重新配对、
+      // 证书变了、版本旧 / 能力没开），而不是只剩一句「去配置下载后端」；本机能下
+      // 时远端用不了不是故障，不说。
+      final String? reason = interconnectRemoteOnlyFailureNotice(
+        outcomes,
+        localRunnable: registry != null && pipeline != null,
+      );
+      if (reason != null) FushiToast.show(msg: reason);
       if (registry == null || (pipeline == null && remoteTargets.isEmpty)) {
         unawaited(_promptDownloadBackendSetup(context));
         return;
@@ -2965,15 +2967,17 @@ class _HomePageState extends BasePageState<HomePage>
               if (o is InterconnectCapabilityAvailable<HostSubscriptionTarget>)
                 o.target,
           ];
-      if (remoteTargets.isEmpty) {
-        final String? reason = interconnectFirstTellableFailureLine(outcomes);
-        if (reason != null && context.mounted) FushiToast.show(msg: reason);
-      }
       if (!context.mounted) return;
       final bool localRunnable =
           registry != null &&
           appModelNoUpdate.videoDownloadPipelineService != null &&
           appModelNoUpdate.videoDownloadSubscriptionService != null;
+      // 同资源搜索：只在远端是唯一出路时说出远端为什么用不了。
+      final String? reason = interconnectRemoteOnlyFailureNotice(
+        outcomes,
+        localRunnable: localRunnable,
+      );
+      if (reason != null) FushiToast.show(msg: reason);
       if (registry == null || (!localRunnable && remoteTargets.isEmpty)) {
         unawaited(_promptDownloadBackendSetup(context));
         return;

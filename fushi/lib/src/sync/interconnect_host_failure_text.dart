@@ -67,3 +67,21 @@ String? interconnectFirstTellableFailureLine<T>(
   }
   return null;
 }
+
+/// 发现页下载 / 订阅这类「本机或远端都能跑」的入口，打开前要不要先说一句远端为
+/// 什么用不了：只在本机跑不了（[localRunnable] 为 false，远端是唯一出路）且一台
+/// 可用 host 都没有时，取第一条值得说的原因（[interconnectFirstTellableFailureLine]）。
+/// 本机能跑时，已配对 host 不提供这项功能 / 没配好不是用户此刻要处理的事 → null。
+String? interconnectRemoteOnlyFailureNotice<T>(
+  Iterable<InterconnectCapabilityOutcome<T>> outcomes, {
+  required bool localRunnable,
+}) {
+  if (localRunnable) return null;
+  if (outcomes.any(
+    (InterconnectCapabilityOutcome<T> o) =>
+        o is InterconnectCapabilityAvailable<T>,
+  )) {
+    return null;
+  }
+  return interconnectFirstTellableFailureLine<T>(outcomes);
+}
