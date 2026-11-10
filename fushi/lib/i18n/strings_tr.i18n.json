@@ -4804,6 +4804,7 @@
   "low_memory_mode_hint": "Düşük donanımlı cihazlar için önbellek ve bellek kullanımını azaltır. Bazı değişiklikler yeniden başlatma gerektirir.",
   "low_memory_mode_suggestion": "Ayarlar → Çeşitli bölümünden Düşük Bellek Modunu etkinleştirmeyi deneyin.",
   "lyrics_artist": "Sanatçı",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Sözleri bulanıklaştır",
   "lyrics_blur_hint": "Dinleme deneyimi için geçerli satırı bulanıklaştır; görmek için üzerine gelin veya dokunun",
   "lyrics_control_item_position_jump": "Jump to position",

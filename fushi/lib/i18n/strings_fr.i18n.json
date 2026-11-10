@@ -4804,6 +4804,7 @@
   "low_memory_mode_hint": "Réduit l'utilisation du cache et de la mémoire pour les appareils bas de gamme. Certains changements nécessitent un redémarrage.",
   "low_memory_mode_suggestion": "Essayez d'activer le mode mémoire réduite dans Paramètres → Divers.",
   "lyrics_artist": "Artiste",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Flouter les paroles",
   "lyrics_blur_hint": "Flouter la ligne actuelle pour l'immersion à l'écoute ; survolez ou appuyez pour révéler",
   "lyrics_control_item_position_jump": "Jump to position",

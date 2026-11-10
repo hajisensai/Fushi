@@ -4804,6 +4804,7 @@
   "low_memory_mode_hint": "減少快取和記憶體使用，適合低階裝置。部分變更需重啟後生效。",
   "low_memory_mode_suggestion": "可嘗試在 設定 → 其他設定 中開啟低記憶體模式。",
   "lyrics_artist": "演出者",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "模糊歌詞",
   "lyrics_blur_hint": "聽力沉浸：模糊當前句，懸停或點擊顯形",
   "lyrics_control_item_position_jump": "Jump to position",

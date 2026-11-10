@@ -4804,6 +4804,7 @@
   "low_memory_mode_hint": "Vermindert cache- en geheugengebruik voor low-end apparaten. Sommige wijzigingen worden na herstart doorgevoerd.",
   "low_memory_mode_suggestion": "Probeer de geheugenspaarmodus in te schakelen via Instellingen → Diversen.",
   "lyrics_artist": "Artiest",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Songtekst vervagen",
   "lyrics_blur_hint": "Vervaag de huidige regel voor luisterimmersie; beweeg erover of tik om te onthullen",
   "lyrics_control_item_position_jump": "Jump to position",

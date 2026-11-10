@@ -4804,6 +4804,7 @@
   "low_memory_mode_hint": "Уменьшает использование кеша и памяти для слабых устройств. Некоторые изменения вступают в силу после перезапуска.",
   "low_memory_mode_suggestion": "Попробуйте включить режим экономии памяти в Настройки → Разное.",
   "lyrics_artist": "Исполнитель",
+  "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Размытие текста песен",
   "lyrics_blur_hint": "Размывает текущую строку для погружения в аудирование; наведите курсор или нажмите, чтобы показать",
   "lyrics_control_item_position_jump": "Jump to position",
