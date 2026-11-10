@@ -797,6 +797,16 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
 Future<SrsDbStore?> readSrsStore(WidgetRef ref) =>
     ref.read(srsStoreProvider.future);
 
+/// 错误态「重试」前调：上次打开失败时 [srsStoreProvider]（及它等的 [srsStorageProvider]）缓存着那个错误，
+/// 不作废的话之后的 [readSrsStore] 只会原样拿回同一个失败。只作废失败了的那一层；已经打开好的库不动
+/// （作废会让全 app 重开一遍库）。
+void retrySrsStoreOpen(WidgetRef ref) {
+  if (ref.exists(srsStorageProvider) && ref.read(srsStorageProvider).hasError) {
+    ref.invalidate(srsStorageProvider);
+  }
+  if (ref.read(srsStoreProvider).hasError) ref.invalidate(srsStoreProvider);
+}
+
 /// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。
 ///
 /// 用 `then(onError:)` 而不是 `catchError`：[body] 实际返回的可能是 `Future<bool>` 之类（`Future<void>`

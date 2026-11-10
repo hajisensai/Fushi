@@ -470,7 +470,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _loading = true;
       _error = null;
     });
-    unawaited(_store == null ? _start() : _loadNext());
+    if (_store == null) {
+      // 库没打开成：作废缓存着失败的 provider，[_start] 才会真的重开一次。
+      retrySrsStoreOpen(ref);
+      unawaited(_start());
+    } else {
+      unawaited(_loadNext());
+    }
   }
 
   Future<void> _start() async {
