@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4377](bugs/BUG-4377-srs-card-remote-tts-audio.md) | ✅ | ✅ | eggrolls 卡组例句在线 TTS 键点了没声音（WebKit 播不了不支持 Range 的远程音频） |
+| [BUG-4377](bugs/BUG-4377-remote-cover-cache-dir-deleted-at-runtime.md) | ✅ | ✅ | 远端封面磁盘缓存：运行中缓存目录被删（存储页清缓存 / iOS 系统清理）后写入静默失败到重启 |
 | [BUG-4376](bugs/BUG-4376-ai-agent-landscape-sheet-too-short.md) | ✅ | ✅ | 横屏打开 AI 助手只剩标题和输入框 |
 | [BUG-4375](bugs/BUG-4375-manga-image-epub-folder-import.md) | ✅ | ✅ | 漫画导入框选纯图 EPUB 文件夹识别不到；批量导入不归合集 |
 | [BUG-4374](bugs/BUG-4374-srs-conflicts-bulk-dropped.md) | 🚧 | 🚧 | 同步冲突页批量处理被删成只剩逐条 |

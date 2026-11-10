@@ -7,7 +7,12 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart'
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiToolbarFab, kFushiFloatingToolbarExtent;
+    show
+        FushiFloatingTopBar,
+        FushiToolbarFab,
+        FushiToolbarItem,
+        kFushiFloatingToolbarExtent;
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   group('mangaChromeTopInset', () {
@@ -419,6 +424,35 @@ void main() {
   }
 
   group('MangaReaderTopBar（悬浮胶囊）', () {
+    // 顶栏右侧动作胶囊（底部工具栏也是同一个组件、同一个键，按顶栏子树找）。
+    Finder topActionPill() => find.descendant(
+      of: find.byKey(const ValueKey<String>('top')),
+      matching: find.byKey(const ValueKey<String>('fushi_floating_toolbar')),
+    );
+    const ValueKey<String> titlePillKey = ValueKey<String>(
+      'fushi_floating_top_bar_title',
+    );
+
+    testWidgets('与小说阅读器同一条顶栏组件（反馈 -JpWlEuH5N）；标题胶囊垫底', (
+      WidgetTester tester,
+    ) async {
+      setSize(tester, 1600);
+      await tester.pumpWidget(chromeHost(width: 1600));
+      final FushiFloatingTopBar bar = tester.widget<FushiFloatingTopBar>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('top')),
+          matching: find.byType(FushiFloatingTopBar),
+        ),
+      );
+      expect(bar.titleBacking, isTrue, reason: '顶栏压在页图上，标题必须垫底');
+      expect(bar.overflowKey, kMangaChromeOverflowKey);
+      expect(bar.titleTrailing, isNotNull, reason: '分镜状态胶囊挂在标题胶囊尾部');
+      expect(
+        bar.leading.single.key,
+        const ValueKey<String>('manga_reader_back_button'),
+      );
+    });
+
     testWidgets('返回 / 标题 / 动作三块独立胶囊；栏高与让位量同源；点标题 = 导航', (
       WidgetTester tester,
     ) async {
@@ -427,32 +461,32 @@ void main() {
       await tester.pumpWidget(
         chromeHost(width: 1600, onTitle: () => titleTaps++),
       );
-      for (final String k in <String>[
-        'manga_reader_back_pill',
-        'manga_reader_title_pill',
-        'manga_reader_action_pill',
-      ]) {
-        expect(find.byKey(ValueKey<String>(k)), findsOneWidget, reason: k);
-      }
+      expect(
+        find.byKey(const ValueKey<String>('manga_reader_back_button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(titlePillKey), findsOneWidget);
+      expect(topActionPill(), findsOneWidget);
       final Rect back = tester.getRect(
-        find.byKey(const ValueKey<String>('manga_reader_back_pill')),
+        find.byKey(const ValueKey<String>('manga_reader_back_button')),
       );
-      final Rect title = tester.getRect(
-        find.byKey(const ValueKey<String>('manga_reader_title_pill')),
-      );
-      final Rect action = tester.getRect(
-        find.byKey(const ValueKey<String>('manga_reader_action_pill')),
-      );
+      final Rect title = tester.getRect(find.byKey(titlePillKey));
+      final Rect action = tester.getRect(topActionPill());
       expect(back.right, lessThan(title.left), reason: '胶囊之间留缝，正文露出来');
       expect(title.right, lessThan(action.left));
-      expect(find.byKey(const ValueKey<String>('chip')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(titlePillKey),
+          matching: find.byKey(const ValueKey<String>('chip')),
+        ),
+        findsOneWidget,
+        reason: '状态件在标题胶囊里',
+      );
       expect(
         tester.getSize(find.byKey(const ValueKey<String>('top'))).height,
         20 + kMangaChromeBarHeight,
       );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('manga_reader_title_button')),
-      );
+      await tester.tap(find.byKey(titlePillKey));
       expect(titleTaps, 1);
     });
 
@@ -470,9 +504,7 @@ void main() {
           findsNothing,
           reason: '空间够时不收起',
         );
-        final Rect pill = tester.getRect(
-          find.byKey(const ValueKey<String>('manga_reader_action_pill')),
-        );
+        final Rect pill = tester.getRect(topActionPill());
         for (final String k in <String>['fullscreen', 'start', 'hide']) {
           final Finder f = find.byKey(ValueKey<String>(k));
           expect(f, findsOneWidget, reason: '$k 平铺在右上角');
@@ -500,34 +532,33 @@ void main() {
         chromeHost(width: 400, onStart: () => starts++, onHide: () => hides++),
       );
       expect(tester.takeException(), isNull);
-      // 400dp：标题保底 160 之后只放得下一颗 + ⋯；平铺的是优先级最高的全屏。
-      expect(find.byKey(const ValueKey<String>('fullscreen')), findsOneWidget);
-      for (final String k in <String>['direction', 'start', 'hide']) {
+      // 400dp：与小说顶栏同一套测宽（MD3 胶囊整行按 kFushiFloatingCapsuleScale
+      // 缩、标题带状态件按保底 160 预留）→ 平铺优先级最高的两颗 + ⋯。
+      for (final String k in <String>['fullscreen', 'direction']) {
+        expect(find.byKey(ValueKey<String>(k)), findsOneWidget, reason: k);
+      }
+      for (final String k in <String>['start', 'hide']) {
         expect(
           find.byKey(ValueKey<String>(k)),
           findsNothing,
           reason: '$k 收进 ⋯',
         );
       }
-      final Finder overflow = find.byKey(
-        const ValueKey<String>('manga_chrome_overflow'),
-      );
+      final Finder overflow = find.byKey(kMangaChromeOverflowKey);
       expect(overflow, findsOneWidget);
-      final Rect action = tester.getRect(
-        find.byKey(const ValueKey<String>('manga_reader_action_pill')),
-      );
+      final Rect action = tester.getRect(topActionPill());
       expect(action.right, lessThanOrEqualTo(400));
       await tester.tap(overflow);
       await tester.pumpAndSettle();
       final List<Object?> items = <Object?>[
-        for (final PopupMenuItem<MangaChromeAction> item
-            in tester.widgetList<PopupMenuItem<MangaChromeAction>>(
-              find.byType(PopupMenuItem<MangaChromeAction>),
+        for (final PopupMenuItem<FushiToolbarItem> item
+            in tester.widgetList<PopupMenuItem<FushiToolbarItem>>(
+              find.byType(PopupMenuItem<FushiToolbarItem>),
             ))
           (item.value!.key! as ValueKey<String>).value,
       ];
-      expect(items, <Object?>['direction', 'start', 'hide']);
-      expect(find.byIcon(Icons.check), findsOneWidget, reason: '开关项带勾');
+      expect(items, <Object?>['start', 'hide']);
+      expect(find.byIcon(FushiIcons.check), findsOneWidget, reason: '开关项带勾');
       await tester.tap(find.byKey(const ValueKey<String>('start_menu_item')));
       await tester.pumpAndSettle();
       expect(starts, 1, reason: '「⋯」菜单项能触发动作');
@@ -564,16 +595,14 @@ void main() {
         setSize(tester, 412);
         await tester.pumpWidget(chromeHost(width: 412, textScale: scale));
         expect(tester.takeException(), isNull);
-        final Rect title = tester.getRect(
-          find.byKey(const ValueKey<String>('manga_reader_title_pill')),
-        );
-        final Rect action = tester.getRect(
-          find.byKey(const ValueKey<String>('manga_reader_action_pill')),
-        );
+        final Rect title = tester.getRect(find.byKey(titlePillKey));
+        final Rect action = tester.getRect(topActionPill());
         expect(title.right, lessThanOrEqualTo(action.left));
         expect(action.right, lessThanOrEqualTo(412));
         final RenderParagraph p = tester.renderObject<RenderParagraph>(
-          find.byKey(const ValueKey<String>('manga_reader_title')),
+          find.byKey(
+            const ValueKey<String>('fushi_floating_top_bar_title_text'),
+          ),
         );
         expect(p.size.width, greaterThan(0));
       });
@@ -735,7 +764,7 @@ void main() {
         visited,
         containsAll(<String>[
           'manga_reader_back_button',
-          'manga_reader_title_button',
+          'fushi_floating_top_bar_title',
           'manga_chrome_overflow',
           'fullscreen',
           'chapters',
