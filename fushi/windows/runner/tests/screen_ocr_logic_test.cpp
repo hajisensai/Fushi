@@ -42,8 +42,8 @@ int main() {
     {
       std::vector<int> offsets;
       const std::wstring joined = JoinOcrWordsWithOffsets(
-          {L"これは", L"OCR", L"", L"です", L"𠮷"}, &offsets);
-      assert(joined == L"これは OCR です𠮷");
+          {L"これは", L"OCR", L"", L"です", L"\U00020BB7"}, &offsets);
+      assert(joined == L"これは OCR です\U00020BB7");
       assert(offsets.size() == 5);
       assert(offsets[0] == 0);
       assert(offsets[1] == 4);
@@ -51,7 +51,7 @@ int main() {
       assert(offsets[3] == 8);
       assert(offsets[4] == 10);
       // 每个词从起点起逐码元与原词一致（代理对占两个码元）。
-      assert(joined.compare(10, 2, L"𠮷") == 0);
+      assert(joined.compare(10, 2, L"\U00020BB7") == 0);
     }
   }
 
