@@ -1,4 +1,4 @@
-## BUG-4323 · iOS 漫画分页模式双击缩放几乎总是先弹控制层：WebView 触摸经 Flutter 手势竞技场延后投递
+## BUG-4358 · iOS 漫画分页模式双击缩放几乎总是先弹控制层：WebView 触摸经 Flutter 手势竞技场延后投递
 - **报告**：2026-11-06（应用内反馈 P2jQzOBBag，重新提交自 IDF2uWUvlf；录屏 C-y5hM-wnz。iOS 27.2 / iPhone19,2 / 分页模式 / TestFlight 3.3.0 (24555)）。关联 BUG-3682（第二击按下即武装双击）、BUG-4224（只修条漫的缩放锚点滚动）。
 - **真实性**：✅ 真 bug（结构性根因由代码路径 + 引擎源码推定，未在 iOS 设备上打时间戳实测）。
   - 双击判据全在页内 JS：空白单击挂 `DBL_MS`=300ms 定时器再发 `onTapEmpty`（→ `_toggleFloatingChrome`），第二击 **pointerdown** 落在窗口内才取消（`fushi/lib/src/media/manga/manga_overlay_html.dart:2784-2858`，按下武装 `:3036`）。判据测的是 **DOM pointer 事件之间**的时间。
