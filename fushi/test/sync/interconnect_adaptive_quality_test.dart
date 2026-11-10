@@ -83,6 +83,86 @@ void main() {
       }
       expect(decision, isNotNull);
     });
+
+    // 频繁 seek 时宽限不能每次续命（R11(a)）：判据是「窗口内平均 seek 代价」是否
+    // 超出健康链路的正常代价 [kAdaptiveSeekCostBaselineTicks]。
+    List<AdaptiveQualityDecision> runSeekLoop(
+      AdaptiveQualityController c, {
+      required int rounds,
+      required int bufferTicksPerSeek,
+    }) {
+      final List<AdaptiveQualityDecision> decisions =
+          <AdaptiveQualityDecision>[];
+      int index = -1;
+      void feed(bool buffering) {
+        final AdaptiveQualityDecision? d = c.tick(
+          currentIndex: index,
+          buffering: buffering,
+          cacheSeconds: buffering ? 0 : 5,
+        );
+        if (d != null) {
+          decisions.add(d);
+          index = d.targetIndex;
+        }
+      }
+
+      for (int r = 0; r < rounds; r++) {
+        c.noteSeek();
+        for (int i = 0; i < bufferTicksPerSeek; i++) {
+          feed(true);
+        }
+        feed(false);
+      }
+      return decisions;
+    }
+
+    test('差网句子循环：每次 seek 缓冲 8 拍 → 降档', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: -1);
+      final List<AdaptiveQualityDecision> decisions = runSeekLoop(
+        c,
+        rounds: 4,
+        bufferTicksPerSeek: 8,
+      );
+      expect(
+        decisions.any(
+          (AdaptiveQualityDecision d) =>
+              d.reason == AdaptiveQualityReason.stall,
+        ),
+        isTrue,
+        reason: '每次 seek 都缓冲 8 拍，超出正常 seek 代价，宽限不该不断续命',
+      );
+    });
+
+    test('局域网原画 20 秒内 seek 4 次、每次缓冲 4 拍 → 不降档', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: -1);
+      expect(runSeekLoop(c, rounds: 4, bufferTicksPerSeek: 4), isEmpty);
+    });
+
+    test('连续拖动：缓冲中多次 seek → 不降档', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: -1);
+      final List<AdaptiveQualityDecision?> decisions =
+          <AdaptiveQualityDecision?>[];
+      void feed(bool buffering) => decisions.add(
+        c.tick(currentIndex: -1, buffering: buffering, cacheSeconds: 0),
+      );
+      c.noteSeek();
+      feed(true);
+      feed(true);
+      c.noteSeek();
+      feed(true);
+      feed(true);
+      c.noteSeek();
+      for (int i = 0; i < 4; i++) {
+        feed(true);
+      }
+      for (int i = 0; i < 10; i++) {
+        feed(false);
+      }
+      expect(decisions.whereType<AdaptiveQualityDecision>(), isEmpty);
+    });
   });
 
   group('降档（卡了）', () {

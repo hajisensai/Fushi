@@ -1,0 +1,6 @@
+## BUG-4283 · 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档
+- **报告**：2026-11-10（互联远程长任务审查 R11(a)）
+- **真实性**：✅ 真 bug。`fushi/lib/src/sync/interconnect_adaptive_quality.dart:126-129`（修复前）`noteSeek()` 每次把 `_seekGraceTicksLeft` 无条件重置为 10，由 `fushi/lib/src/pages/implementations/video_fushi/quality.part.dart:388-392` 在每次 seek 时调用；`tick()` 在宽限内的缓冲一律不入卡顿窗口。差网上句子循环 / 反复 seek 时宽限不断续命，`kAdaptiveStallTicksToDrop` 永远凑不齐（文件头 `:82-87` 自认未修的盲区）。修复前新用例「每次 seek 缓冲 8 拍、循环 4 轮」全程不降档。
+- **[ ] ① 未修复** —
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_adaptive_quality_test.dart` group「seek 引起的缓冲不算网况（BUG-2731）」新增三例：差网句子循环每次 seek 缓冲 8 拍 → 降档（修复前红）；局域网 20 秒内 seek 4 次每次 4 拍 → 不降档；缓冲中连续拖动 → 不降档。原 4 个 BUG-2731 用例保持绿。
+- **备注**：判据按「窗口内平均 seek 代价」：窗口内 ≥2 次 seek 时，被豁免的缓冲拍超过「seek 次数 × `kAdaptiveSeekCostBaselineTicks`(5)」的部分按卡顿计；单次 seek 宽限（≤10 拍）不变。参与平均的 seek 除登记在窗口内的，还包括豁免拍仍在窗口内的那次（seek 本身已滑出窗口时不能只算缓冲不算 seek）。平均每次 3～5 拍的高频循环仍不降档（与局域网 seek 无法区分，取舍 T4）。未在真机复测（纯判据，按拍单测钉死）。

@@ -5,6 +5,8 @@
 /// 所以判据全部收在这里，能被单测按拍钉死。
 library;
 
+import 'dart:math' show max;
+
 import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 
@@ -77,17 +79,48 @@ const double kAdaptiveHeadroomCacheSeconds = 25;
 /// 宽限是**有上限**的：seek 之后一直缓冲超过 10 秒，那就是真的跟不上了，照常计入。
 /// 一出现不缓冲的一拍（seek 已落地起播）宽限立即结束。
 ///
+/// 频繁 seek（句子循环、反复拖动）时宽限不能每次无条件续命，否则差网上缓冲永远不入
+/// 卡顿窗口、永不降档。但 seek 本身有与网况无关的固定代价（局域网平板 3～4 拍），
+/// 也不能给宽限设总额（那会让局域网连续拖动降档，BUG-2731 回归）。所以判据是「窗口
+/// 内平均每次 seek 的代价」是否超出健康链路的正常代价
+/// [kAdaptiveSeekCostBaselineTicks]：窗口内有 ≥2 次 seek 时，被豁免的缓冲拍数超过
+/// 「seek 次数 × 正常代价」的部分按卡顿计。
+///
 /// 已知盲区（审查记录，未修，改判据前先读）：
 /// - **1 Hz 采样的空档**：宽限靠「采到一拍不缓冲」结束。seek 落地后若是「短暂起播
 ///   零点几秒又卡住」，这段起播可能正好落在两次采样之间，采样看到的仍是连续缓冲，
 ///   宽限一直延续到 10 拍上限——真卡顿被多吞最多 10 秒才开始计入；反过来若起播恰好
 ///   被采到，宽限立即结束、紧随其后的卡顿照常计入，行为取决于采样相位。
-/// - **循环重播 / 频繁 seek 让差网永不降档**：每次 seek 都把宽限重新拉满。用户在
-///   差网上反复 seek（例如句子循环每几秒 seek 回句首），宽限不断续命，缓冲几乎永远
-///   不入卡顿窗口，[kAdaptiveStallTicksToDrop] 永远凑不齐，该降档时不降。要修得让
-///   宽限只抵扣「seek 本身的那一段」（例如按连续 seek 的累计宽限设上限），而不是每次
-///   seek 无条件重置。
+/// - **平均代价落在正常范围内的高频 seek**：每次 seek 平均缓冲 3～5 拍的高频循环
+///   不降档——这类代价与局域网 seek 无法区分，且降到转码档后 HLS seek 并不更快。
 const int kAdaptiveSeekGraceTicks = 10;
+
+/// 一次 seek 在健康链路上的正常代价（拍）。BUG-2731 实测局域网平板 3～4 拍，取 5。
+/// 窗口内有 ≥2 次 seek、且豁免的缓冲拍数超过「seek 次数 × 本值」时，超出部分按卡顿计
+/// （见 [kAdaptiveSeekGraceTicks]）。
+const int kAdaptiveSeekCostBaselineTicks = 5;
+
+/// 观察窗里一拍的分类。
+enum _TickKind {
+  /// 没在缓冲。
+  clear,
+
+  /// 缓冲且不在 seek 宽限内：按卡顿计。
+  stalled,
+
+  /// 缓冲但在 seek 宽限内：先按 seek 代价豁免。
+  graced,
+}
+
+/// 观察窗里的一拍。
+class _WindowTick {
+  const _WindowTick(this.kind, this.graceSeekSerial);
+
+  final _TickKind kind;
+
+  /// [_TickKind.graced] 拍归属的那次 seek（登记时的拍序号），其他拍为 null。
+  final int? graceSeekSerial;
+}
 
 /// 「自动」档的自适应控制器。
 ///
@@ -99,8 +132,18 @@ class AdaptiveQualityController {
 
   final List<MediaServerQualityPreset> _presets;
 
-  /// 最近若干拍是否在缓冲（环形窗口，新的在末尾）。
-  final List<bool> _stalls = <bool>[];
+  /// 最近若干拍的分类（环形窗口，新的在末尾）。
+  final List<_WindowTick> _window = <_WindowTick>[];
+
+  /// 已喂的拍数（单调递增，给 seek 登记定位用）。
+  int _tickSerial = 0;
+
+  /// 落在观察窗内的 seek（登记时的 [_tickSerial]，即它之后第一拍是第
+  /// `serial + 1` 拍）。
+  final List<int> _seekSerials = <int>[];
+
+  /// 当前宽限归属的 seek（[_seekSerials] 里的值）。
+  int? _graceSeekSerial;
 
   /// 连续没卡过的拍数。
   int _quietTicks = 0;
@@ -116,7 +159,9 @@ class AdaptiveQualityController {
 
   /// 起播/换集后重置：新的一条流，过去的观察不再作数。
   void reset() {
-    _stalls.clear();
+    _window.clear();
+    _seekSerials.clear();
+    _graceSeekSerial = null;
     _quietTicks = 0;
     _healthyCacheTicks = 0;
     _ticksSinceSwitch = 0;
@@ -126,6 +171,8 @@ class AdaptiveQualityController {
   /// 用户发起了一次 seek：随后的缓冲先按 seek 代价处理（见 [kAdaptiveSeekGraceTicks]）。
   void noteSeek() {
     _seekGraceTicksLeft = kAdaptiveSeekGraceTicks;
+    _graceSeekSerial = _tickSerial;
+    _seekSerials.add(_tickSerial);
   }
 
   /// 喂一拍（1 Hz）。
@@ -140,22 +187,27 @@ class AdaptiveQualityController {
     double? cacheSeconds,
   }) {
     _ticksSinceSwitch++;
+    _tickSerial++;
 
-    // seek 引起的缓冲不是网况：宽限内不入卡顿窗口；一旦起播（不缓冲）宽限立即结束。
-    bool stalled = buffering;
-    if (_seekGraceTicksLeft > 0) {
-      if (buffering) {
-        _seekGraceTicksLeft--;
-        stalled = false;
-      } else {
-        _seekGraceTicksLeft = 0;
-      }
+    // seek 引起的缓冲先按 seek 代价豁免；一旦起播（不缓冲）宽限立即结束。
+    final _WindowTick sample;
+    if (!buffering) {
+      _seekGraceTicksLeft = 0;
+      sample = const _WindowTick(_TickKind.clear, null);
+    } else if (_seekGraceTicksLeft > 0) {
+      _seekGraceTicksLeft--;
+      sample = _WindowTick(_TickKind.graced, _graceSeekSerial);
+    } else {
+      sample = const _WindowTick(_TickKind.stalled, null);
     }
 
-    _stalls.add(stalled);
-    while (_stalls.length > kAdaptiveStallWindowTicks) {
-      _stalls.removeAt(0);
+    _window.add(sample);
+    while (_window.length > kAdaptiveStallWindowTicks) {
+      _window.removeAt(0);
     }
+    // 窗口第一拍的序号；登记在它之前的 seek（之后第一拍已滑出窗口）不再计入。
+    final int windowFirstSerial = _tickSerial - _window.length + 1;
+    _seekSerials.removeWhere((int s) => s + 1 < windowFirstSerial);
     if (buffering) {
       _quietTicks = 0;
     } else {
@@ -169,8 +221,7 @@ class AdaptiveQualityController {
 
     if (_ticksSinceSwitch < kAdaptiveCooldownTicks) return null;
 
-    final int stallTicks = _stalls.where((bool s) => s).length;
-    if (stallTicks >= kAdaptiveStallTicksToDrop) {
+    if (_stallScore() >= kAdaptiveStallTicksToDrop) {
       final int target = _nextLowerIndex(currentIndex);
       if (target == currentIndex) return null;
       _markSwitched();
@@ -193,9 +244,36 @@ class AdaptiveQualityController {
     return null;
   }
 
+  /// 窗口内按卡顿计的拍数：真卡顿 + 超出正常 seek 代价的那部分豁免拍
+  /// （见 [kAdaptiveSeekCostBaselineTicks]）。
+  int _stallScore() {
+    int stalled = 0;
+    int graced = 0;
+    // 参与平均的 seek：登记在窗口内的，加上豁免拍仍在窗口内的（seek 本身已滑出窗口、
+    // 它的缓冲还在窗口里时，不能只算缓冲不算 seek）。
+    final Set<int> seeks = <int>{..._seekSerials};
+    for (final _WindowTick t in _window) {
+      switch (t.kind) {
+        case _TickKind.clear:
+          break;
+        case _TickKind.stalled:
+          stalled++;
+        case _TickKind.graced:
+          graced++;
+          final int? owner = t.graceSeekSerial;
+          if (owner != null) seeks.add(owner);
+      }
+    }
+    final int excess = seeks.length >= 2
+        ? max(0, graced - seeks.length * kAdaptiveSeekCostBaselineTicks)
+        : 0;
+    return stalled + excess;
+  }
+
   void _markSwitched() {
     _ticksSinceSwitch = 0;
-    _stalls.clear();
+    _window.clear();
+    _seekSerials.clear();
     _quietTicks = 0;
     _healthyCacheTicks = 0;
   }
