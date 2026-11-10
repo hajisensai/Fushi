@@ -1,5 +1,34 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6）：**
+>
+> - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
+>   `GamepadService._dispatchButton`，Android 在 `FocusManager` 早期按键处理器
+>   （`interceptNativeControllerLookupKey`）。不进注册表，开启方式是设备本地偏好
+>   `controller_lookup_style`（设置「外观」：按住 L1 / Select 切换 / 关）。**未设时：副屏伴侣在用 =
+>   按住 L1，否则关**——单屏手柄行为在用户自己打开前完全不变。
+> - 查词模式内（阅读器 / 视频字幕 / 漫画 OCR / 歌词页挂了目标时）：十字键 / 左摇杆左右 = 按词（Y 切按字）
+>   移光标，上下 = 上 / 下一行；A 查词（有查词结果时 A = 制卡）；X 发音；RT / LT 下 / 上一词条；右摇杆
+>   滚结果；B 先关查词、再退出模式。结果去副屏「查词」页，副屏不在时走页内弹窗。
+> - 副屏伴侣在用时**按住 R1** = 十字键 / 左摇杆 / A / B 驱动副屏面板的焦点（其它键吞掉），松开回到上屏。
+> - 行为变化（仅副屏伴侣在用、或用户打开了查词模式时）：L1（有查词目标时）与 R1 的**轻点**改在**松开**时
+>   按原绑定补发（按住期间没有别的输入才算轻点）。阅读器 RB/LB 翻页等因此在松开时触发。
+
+> **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
+>
+> - 新增三个 video scope 动作：`videoReplayCueThenPause`（重播当前句并在句尾暂停，默认
+>   Ctrl+Shift+R）、`videoToggleAutoPauseAtCueEnd`（开关「每句播完自动暂停」，默认 Ctrl+Shift+P）、
+>   `videoToggleAbLoop`（A-B 循环三态：标 A → 标 B 开始循环 → 清除，默认 Ctrl+Shift+B）。macOS 表
+>   自动换成 ⌘⇧R / P / B；**手柄留空**（video scope 手柄键位已占满，手柄用户走副屏视频面板的
+>   「逐句学习」区或自配）。持久化 key 依次为 `video_replay_cue_then_pause` /
+>   `video_toggle_auto_pause_at_cue_end` / `video_toggle_ab_loop`。全新动作不在老快照里，直接取默认，
+>   不需要 schema 迁移。
+> - 状态归 `VideoPlayerController`：自动暂停与「重播本句」走同一套句尾暂停判定；循环当前句开着时
+>   自动暂停让位；A-B 只在自然播放越过 B 时回到 A，显式 seek / 拖进度条撤武装，换片作废。开关类
+>   动作在画面左上 OSD 报新状态。网页视频页不接线（默认 no-op）。
+> - 副屏视频面板「逐句学习」区另有「循环当前句 ×1 / ×2 / ×3 / ×5 / 无限」（`startCueLoop(times:)`，
+>   与 `videoToggleLoopCurrentSubtitle` 同一个循环模式），没有对应快捷键。
+
 > **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
 >
 > - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、

@@ -403,6 +403,19 @@ class ShortcutDefaults {
     ShortcutAction.videoLookupPrevWord: const ShortcutBindingSet(),
     // 循环当前句开关（Ix4j5SKUth）：默认空绑定，用户自配（见 shortcut_action）。
     ShortcutAction.videoToggleLoopCurrentSubtitle: const ShortcutBindingSet(),
+    // 逐句学习工具（副屏 S6）：键盘 Ctrl+Shift+R / P / B（video 组内空闲：裸 R /
+    // Shift+R 是重播当前 / 上一句，Ctrl+Shift 只占了 ← / →）；macOS 表自动换成
+    // ⌘⇧R / P / B。手柄**留空**——video scope 的手柄键位已占满，手柄用户走副屏视频
+    // 面板的逐句学习按钮，或在快捷键设置里自配。
+    ShortcutAction.videoReplayCueThenPause: _kb([
+      _key(LogicalKeyboardKey.keyR, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleAutoPauseAtCueEnd: _kb([
+      _key(LogicalKeyboardKey.keyP, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleAbLoop: _kb([
+      _key(LogicalKeyboardKey.keyB, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
     // 复制当前台词主 / 副（_Eb0txdN4H）：默认空绑定，用户自配（见 shortcut_action）。
     ShortcutAction.videoCopyCurrentSubtitle: const ShortcutBindingSet(),
     ShortcutAction.videoCopyCurrentSecondarySubtitle:

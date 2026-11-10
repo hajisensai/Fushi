@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -11,25 +12,40 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Moonlight-style stream settings. Returns the edited settings, or null when
-/// dismissed without saving.
+/// dismissed without saving. [volumeAvailable] shows the receiver-only
+/// "Stream volume" slider while true (the app passes whether this device has a
+/// usable second display); null or false hides it.
 Future<GameStreamVideoSettings?> showGameStreamSettingsSheet(
   BuildContext context, {
   required GameStreamVideoSettings initial,
+  ValueListenable<bool>? volumeAvailable,
 }) {
   return adaptiveModalSheet<GameStreamVideoSettings>(
     context: context,
     showDragHandle: true,
-    builder: (BuildContext context) =>
-        GameStreamSettingsSheet(initial: initial),
+    builder: (BuildContext context) => GameStreamSettingsSheet(
+      initial: initial,
+      volumeAvailable: volumeAvailable,
+    ),
   );
 }
 
 class GameStreamSettingsSheet extends StatefulWidget {
-  const GameStreamSettingsSheet({required this.initial, super.key});
+  const GameStreamSettingsSheet({
+    required this.initial,
+    this.volumeAvailable,
+    super.key,
+  });
 
   final GameStreamVideoSettings initial;
 
+  /// Shows the "Stream volume" slider while its value is true; followed live,
+  /// so a display that appears / goes away while the sheet is open adds /
+  /// removes the row. A hidden slider keeps the stored value untouched.
+  final ValueListenable<bool>? volumeAvailable;
+
   static const Key saveKey = ValueKey<String>('game-stream-settings-save');
+  static const Key volumeKey = ValueKey<String>('game-stream-settings-volume');
 
   @override
   State<GameStreamSettingsSheet> createState() =>
@@ -38,6 +54,31 @@ class GameStreamSettingsSheet extends StatefulWidget {
 
 class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
   late GameStreamVideoSettings _settings = widget.initial;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.volumeAvailable?.addListener(_onVolumeAvailableChanged);
+  }
+
+  @override
+  void didUpdateWidget(GameStreamSettingsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.volumeAvailable != widget.volumeAvailable) {
+      oldWidget.volumeAvailable?.removeListener(_onVolumeAvailableChanged);
+      widget.volumeAvailable?.addListener(_onVolumeAvailableChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.volumeAvailable?.removeListener(_onVolumeAvailableChanged);
+    super.dispose();
+  }
+
+  void _onVolumeAvailableChanged() {
+    if (mounted) setState(() {});
+  }
 
   /// Bitrate follows the Moonlight table until the user moves the slider.
   late bool _bitrateTouched =
@@ -187,6 +228,23 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
         onChanged: (bool value) =>
             setState(() => _settings = _settings.copyWith(audio: value)),
       ),
+      if (widget.volumeAvailable?.value ?? false)
+        AdaptiveSettingsSliderRow(
+          key: GameStreamSettingsSheet.volumeKey,
+          title: t.game_stream_settings_volume,
+          subtitle: t.game_stream_settings_volume_hint,
+          readout: '${_settings.volumePercent}%',
+          min: GameStreamVideoSettings.minVolumePercent.toDouble(),
+          max: GameStreamVideoSettings.maxVolumePercent.toDouble(),
+          divisions:
+              (GameStreamVideoSettings.maxVolumePercent -
+                  GameStreamVideoSettings.minVolumePercent) ~/
+              GameStreamVideoSettings.volumePercentStep,
+          value: _settings.volumePercent.toDouble(),
+          onChanged: (double value) => setState(
+            () => _settings = _settings.copyWith(volumePercent: value.round()),
+          ),
+        ),
     ];
     // M3E 底部弹层：共享弹层框（标题 + 底部动作区靠右），设置行沿用设置
     // kit 的自适应行，逐行错峰进场。

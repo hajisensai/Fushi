@@ -254,21 +254,21 @@
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
         <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
              防止切到后台后进程被杀、下载随之中断。 -->
-        <!-- 串流第二块屏（双屏掌机下屏 / 外接显示器）上的查词面板：独立进程（与 :popup
-             同理，里面跑完整的查词 AppModel），由主进程 GameStreamCompanionDisplay 用
-             ActivityOptions.setLaunchDisplayId 拉到那块屏上。落到这块屏上的按键 / 手柄
-             事件一律转发给串流页，按钮始终操作游戏。 -->
+        <!-- 第二块屏（双屏掌机下屏 / 外接显示器）上的面板：唯一的副屏宿主，两种模式
+             （副屏伴侣 / 串流查词面板）共用一个独立进程（与 :popup 同理，里面跑完整的查词
+             AppModel），由主进程 SecondScreenDisplay 用 ActivityOptions.setLaunchDisplayId
+             拉到那块屏上。落到这块屏上的按键 / 手柄事件一律转发给主屏，按钮始终操作上屏。 -->
         <activity
-            android:name=".GameStreamCompanionActivity"
-            android:process=":companion"
+            android:name=".SecondScreenActivity"
+            android:process=":second_screen"
             android:theme="@style/NormalTheme"
-            android:taskAffinity="app.fushi.reader.companion"
+            android:taskAffinity="app.fushi.reader.second_screen"
             android:excludeFromRecents="true"
             android:exported="false"
             android:resizeableActivity="true"
             android:hardwareAccelerated="true"
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"/>
-        <service android:name=".GameStreamCompanionRelayService"
+        <service android:name=".SecondScreenRelayService"
             android:exported="false"/>
         <service android:name=".DownloadKeepAliveService"
             android:exported="false"
