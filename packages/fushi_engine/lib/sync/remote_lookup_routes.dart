@@ -6,6 +6,7 @@ import 'package:fushi_anki/fushi_anki_core.dart' show AnkiOpenWordOutcome;
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 /// 单词音频短命 token：`/api/lookup/audio` 存字节、返回免鉴权的
@@ -98,18 +99,66 @@ class RemoteAudioTokenStore {
   }
 }
 
+/// 互联 host / 扩展 API 已鉴权 JSON 请求体的默认上限。已知最大的合法体是
+/// `PUT /api/library/aggregate` 的整库快照，64 MiB 留足余量。
+const int kInterconnectJsonBodyMaxBytes = 64 * 1024 * 1024;
+
+/// 免鉴权配对端点（`/api/pair`、`/api/pair/v2`、`/api/pair/v2/confirm`）的请求体
+/// 上限。合法体只有 name / nonce / deviceId / pubkey / ticket，远小于 1 KiB。
+const int kPairingBodyMaxBytes = 16 * 1024;
+
+/// 有界读取请求体并按请求声明的字符集（缺省 UTF-8）解码。声明的 Content-Length
+/// 或实际累计字节超过 [maxBytes] 抛 [BodyTooLargeException]，由
+/// [bodyLimitMiddleware] 统一回 413——绝不先整读进内存再比长度。
+Future<String> readBoundedBodyString(
+  shelf.Request request, {
+  int maxBytes = kInterconnectJsonBodyMaxBytes,
+}) async {
+  final Uint8List bytes = await readBoundedRequestBody(
+    request.read(),
+    declaredLength: request.contentLength,
+    maxBytes: maxBytes,
+  );
+  return (request.encoding ?? utf8).decode(bytes);
+}
+
 /// 读请求体为 JSON object；非法 JSON / 空体 / 非 object 一律 null，由调用方回 400。
-Future<Map<String, dynamic>?> readJsonObjectBody(shelf.Request request) async {
+/// 超过 [maxBytes] 抛 [BodyTooLargeException]（不吞，交给 [bodyLimitMiddleware]）。
+Future<Map<String, dynamic>?> readJsonObjectBody(
+  shelf.Request request, {
+  int maxBytes = kInterconnectJsonBodyMaxBytes,
+}) async {
   try {
-    final String raw = await request.readAsString();
+    final String raw = await readBoundedBodyString(request, maxBytes: maxBytes);
     if (raw.isEmpty) return null;
     final dynamic decoded = jsonDecode(raw);
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
+  } on BodyTooLargeException {
+    rethrow;
   } catch (_) {
     // 客户端请求体非法 JSON：当作无 body 处理。
   }
   return null;
+}
+
+/// 把处理链里任何一处有界读取抛出的 [BodyTooLargeException] 统一翻成
+/// 413 `{"reason":"body_too_large"}`。互联 host 与扩展 API 的 pipeline 都挂它，
+/// 路由只管抛、不各自拼 413。
+shelf.Middleware bodyLimitMiddleware() {
+  return (shelf.Handler inner) {
+    return (shelf.Request request) async {
+      try {
+        return await inner(request);
+      } on BodyTooLargeException {
+        return shelf.Response(
+          413,
+          body: jsonEncode(<String, String>{'reason': 'body_too_large'}),
+          headers: const <String, String>{'Content-Type': 'application/json'},
+        );
+      }
+    };
+  };
 }
 
 /// 200 + `application/json; charset=utf-8`。

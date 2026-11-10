@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
@@ -55,6 +58,94 @@ Future<int> _post(
     if (apiKey != null) req.headers.set('x-api-key', apiKey);
     req.headers.contentType = ContentType.json;
     req.write('{}');
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    return res.statusCode;
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// 未带 key、正文按 chunked 分块流式发送 [totalBytes]（不一次性占内存）。返回
+/// 读到的响应状态码（读不到为 null）与发完前服务端是否已断开连接。服务端整读正文时
+/// 要等全部发完才会回 401。
+Future<({int? status, bool cutOffEarly})> _postChunkedWithoutKey(
+  int port,
+  String path, {
+  required int totalBytes,
+}) async {
+  final Socket socket = await Socket.connect(
+    InternetAddress.loopbackIPv4,
+    port,
+  );
+  final Completer<int?> status = Completer<int?>();
+  final BytesBuilder received = BytesBuilder();
+  socket.listen(
+    (Uint8List data) {
+      received.add(data);
+      final RegExpMatch? m = RegExp(
+        r'^HTTP/1\.1 (\d{3})',
+      ).firstMatch(latin1.decode(received.toBytes()));
+      if (m != null && !status.isCompleted) {
+        status.complete(int.parse(m.group(1)!));
+      }
+    },
+    onError: (Object _) {},
+    onDone: () {
+      if (!status.isCompleted) status.complete(null);
+    },
+  );
+  socket.add(
+    latin1.encode(
+      'POST $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n'
+      'Content-Type: application/json\r\n'
+      'Transfer-Encoding: chunked\r\n\r\n',
+    ),
+  );
+  const int chunkSize = 256 * 1024;
+  final Uint8List chunk = Uint8List(chunkSize)..fillRange(0, chunkSize, 0x20);
+  final List<int> chunkHead = latin1.encode(
+    '${chunkSize.toRadixString(16)}\r\n',
+  );
+  final List<int> crlf = latin1.encode('\r\n');
+  bool sentAll = false;
+  try {
+    for (int sent = 0; sent < totalBytes && !status.isCompleted;) {
+      socket
+        ..add(chunkHead)
+        ..add(chunk)
+        ..add(crlf);
+      await socket.flush();
+      sent += chunkSize;
+    }
+    if (!status.isCompleted) {
+      socket.add(latin1.encode('0\r\n\r\n'));
+      await socket.flush();
+      sentAll = true;
+    }
+  } on Object {
+    // 服务端回完 413 后断开：写端报错。
+  }
+  try {
+    final int? code = await status.future.timeout(const Duration(seconds: 20));
+    return (status: code, cutOffEarly: !sentAll);
+  } finally {
+    socket.destroy();
+  }
+}
+
+/// 未带 header / query key，把 key 放在 JSON body 里（yomitan-api 兼容路径）。
+Future<int> _postBodyKey(int port, String path, String key) async {
+  final HttpClient client = HttpClient()..findProxy = (Uri _) => 'DIRECT';
+  try {
+    final HttpClientRequest req = await client.open(
+      'POST',
+      InternetAddress.loopbackIPv4.address,
+      port,
+      path,
+    );
+    req.headers.contentType = ContentType.json;
+    req.write(jsonEncode(<String, Object?>{'key': key, 'pad': 'p' * 4096}));
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     return res.statusCode;
@@ -167,5 +258,28 @@ void main() {
       _post(lan, s.port, '/serverVersion', apiKey: 'k1'),
       throwsA(isA<SocketException>()),
     );
+  });
+
+  test('未带 key 发 70 MiB chunked 正文 → 413，鉴权失败分支不整读正文', () async {
+    final FushiApiServer s = await start(lanPolicy, apiKey: 'k1');
+    final ({int? status, bool cutOffEarly}) r = await _postChunkedWithoutKey(
+      s.port,
+      '/api/lookup/dictionary',
+      totalBytes: 70 * 1024 * 1024,
+    );
+    // 服务端读满 64 KiB 就回 413 并关连接。客户端还在猛发时，有的平台（macOS）
+    // 关连接的 RST 会冲掉对端尚未读到的 413——那时至少要看到「没发完就被断开」。
+    // 修复前服务端整读 70 MiB 后回 401，两条都不成立。
+    expect(
+      r.status == 413 || (r.status == null && r.cutOffEarly),
+      isTrue,
+      reason: 'status=${r.status} cutOffEarly=${r.cutOffEarly}',
+    );
+  });
+
+  test('未带 header key、body 里带正确 key（< 64 KiB）→ 照常放行', () async {
+    final FushiApiServer s = await start(lanPolicy, apiKey: 'k1');
+    expect(await _postBodyKey(s.port, '/serverVersion', 'k1'), 200);
+    expect(await _postBodyKey(s.port, '/serverVersion', 'wrong'), 401);
   });
 }

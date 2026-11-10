@@ -29,7 +29,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     );
     if (v1PinRequired) return _pairDenied('upgrade_required');
     String? name;
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(
+      request,
+      maxBytes: kPairingBodyMaxBytes,
+    );
     final String? reported = body?['name']?.toString().trim();
     // Reject a "localhost"/loopback advertisement so it is never stored as this
     // peer's device name — the paired-devices list would otherwise show
@@ -66,7 +69,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     // No approval UI wired → never start a pairing handshake unattended.
     if (onPairRequest == null) return _pairDenied('unavailable');
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(
+      request,
+      maxBytes: kPairingBodyMaxBytes,
+    );
     final String? clientNonce = body?['clientNonce']?.toString();
     if (clientNonce == null || clientNonce.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing clientNonce');
@@ -267,7 +273,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     if (approve == null) return _pairDenied('unavailable');
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(
+      request,
+      maxBytes: kPairingBodyMaxBytes,
+    );
     final String? sessionId = body?['sessionId']?.toString();
     if (sessionId == null || sessionId.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing sessionId');

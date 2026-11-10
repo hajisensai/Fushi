@@ -287,7 +287,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
             headers: <String, String>{'Content-Type': 'application/json'},
           );
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -616,7 +616,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
             headers: <String, String>{'Content-Type': 'application/json'},
           );
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -667,7 +667,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
             'delayUpdatedAtMs': d.updatedAtMs,
           });
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;

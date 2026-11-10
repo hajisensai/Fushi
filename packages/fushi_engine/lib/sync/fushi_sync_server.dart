@@ -751,6 +751,7 @@ class FushiSyncServer {
 
   shelf.Handler _buildHandler() => const shelf.Pipeline()
       .addMiddleware(_gzipTextMiddleware())
+      .addMiddleware(bodyLimitMiddleware())
       .addMiddleware(_authMiddleware())
       .addHandler(_handleRequest);
 

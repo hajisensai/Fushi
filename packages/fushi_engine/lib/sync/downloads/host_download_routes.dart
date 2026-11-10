@@ -20,6 +20,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
@@ -49,7 +51,9 @@ Future<shelf.Response> handleHostDownloadRequest(
         });
       }
       if (method == 'POST') {
-        final Object? decoded = jsonDecode(await request.readAsString());
+        final Object? decoded = jsonDecode(
+          await readBoundedBodyString(request),
+        );
         if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
         }

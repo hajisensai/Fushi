@@ -31,7 +31,10 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_core/fushi_core.dart' show fnv1a64Hex;
 
 /// 任务状态机（wire 值即枚举名）。pending → uploading → running →
@@ -457,6 +460,12 @@ class MangaOcrHostJobManager {
   }
 }
 
+/// `POST /api/ocr/job` 建任务的请求体上限：只有 volumeTitle / pageCount / model。
+const int kMangaOcrJobBodyMaxBytes = 64 * 1024;
+
+/// `PUT /api/ocr/job/<id>/page/<index>` 单页图片的上限（扫描页通常几 MB）。
+const int kMangaOcrPageBodyMaxBytes = 64 * 1024 * 1024;
+
 /// `/api/ocr/*` 的 shelf 路由处理（由 [FushiSyncServer._handleRequest] 分发进来，
 /// 鉴权已在其 middleware 完成）。[reqPath] 是已解码、带前导 `/` 的路径。
 Future<shelf.Response> handleMangaOcrRequest(
@@ -469,8 +478,15 @@ Future<shelf.Response> handleMangaOcrRequest(
     if (method != 'POST') return shelf.Response(405);
     Map<String, dynamic> body = const <String, dynamic>{};
     try {
-      final dynamic decoded = jsonDecode(await request.readAsString());
+      final dynamic decoded = jsonDecode(
+        await readBoundedBodyString(
+          request,
+          maxBytes: kMangaOcrJobBodyMaxBytes,
+        ),
+      );
       if (decoded is Map<String, dynamic>) body = decoded;
+    } on BodyTooLargeException {
+      rethrow;
     } catch (_) {
       // 空 body 也允许（volumeTitle/pageCount 均可选）。
     }
@@ -545,10 +561,13 @@ Future<shelf.Response> handleMangaOcrRequest(
     final int? index = int.tryParse(parts[2]);
     if (index == null || index < 0) return _ocrError(400, 'bad_index');
     final String name = request.url.queryParameters['name'] ?? '';
-    // 整页图片（MB 级）按块攒进 BytesBuilder，不展开成逐字节装箱的 List<int>。
-    final BytesBuilder body = BytesBuilder(copy: false);
-    await request.read().forEach(body.add);
-    final Uint8List bytes = body.takeBytes();
+    // 整页图片（MB 级）按块累计、超 [kMangaOcrPageBodyMaxBytes] 立即抛（host
+    // pipeline 回 413），不展开成逐字节装箱的 List<int>。
+    final Uint8List bytes = await readBoundedRequestBody(
+      request.read(),
+      declaredLength: request.contentLength,
+      maxBytes: kMangaOcrPageBodyMaxBytes,
+    );
     if (bytes.isEmpty) return _ocrError(400, 'empty_body');
     final String? refusal = await manager.uploadPage(
       job,

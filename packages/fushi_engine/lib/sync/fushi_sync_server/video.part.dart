@@ -332,7 +332,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         return shelf.Response(501, body: 'Subtitle backfill not available');
       }
       String? language;
-      final String body = await request.readAsString();
+      final String body = await readBoundedBodyString(request);
       if (body.trim().isNotEmpty) {
         final Object? decoded;
         try {
@@ -542,7 +542,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             'positionUpdatedAtMs': p.updatedAtMs,
           });
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -589,7 +589,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           );
           return jsonResponse(s.toJson());
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;

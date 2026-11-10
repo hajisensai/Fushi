@@ -74,7 +74,7 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
   Future<String?> _readHostUpdateNonce(shelf.Request request) async {
     if (request.mimeType != 'application/json') return null;
     try {
-      final Object? decoded = jsonDecode(await request.readAsString());
+      final Object? decoded = jsonDecode(await readBoundedBodyString(request));
       if (decoded is! Map) return null;
       final Object? nonce = decoded['nonce'];
       return nonce is String ? nonce : null;
