@@ -34,7 +34,7 @@ void main() {
       expect(_seps(s), 2);
     });
 
-    // BUG-4296：进度 / 断点改动各成一类，不再算进「无变化」。
+    // BUG-4299：进度 / 断点改动各成一类，不再算进「无变化」。
     test('progress / position changes are categories of their own', () {
       final SyncRunReport r = SyncRunReport()
         ..bookProgressReceived = 2
