@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
@@ -4529,6 +4530,55 @@ class PreferencesRepository extends ChangeNotifier
 
   void setGalMiningClipFormat(MiningClipFormat format) async {
     await setPref('gal_mining_clip_format', format.wireName);
+    notifyListeners();
+  }
+
+  // galgame 制卡句子音频长度策略（反馈 II3jOBIhT5）：无配音游戏的兜底链只能截到
+  // 整机混音，停在一句上越久卡里的 BGM 越长。全局默认；单游戏可在游戏详情页覆盖
+  // （[galMiningOverrides]）。默认 auto = 现状（按捕获窗口原样入卡）。
+  GalMiningAudioMode get galMiningAudioMode =>
+      GalMiningAudioMode.tryParse(
+        getPref('gal_mining_audio_mode', defaultValue: null) as String?,
+      ) ??
+      GalMiningAudioMode.auto;
+
+  Future<void> setGalMiningAudioMode(GalMiningAudioMode mode) async {
+    await setPref('gal_mining_audio_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  /// 最长 / 固定时长两档共用的秒数（int，默认 [kGalMiningAudioSecondsDefault]）。
+  int get galMiningAudioSeconds {
+    final Object? raw = getPref(
+      'gal_mining_audio_seconds',
+      defaultValue: kGalMiningAudioSecondsDefault,
+    );
+    return clampGalMiningAudioSeconds(
+      raw is num ? raw.round() : kGalMiningAudioSecondsDefault,
+    );
+  }
+
+  Future<void> setGalMiningAudioSeconds(int seconds) async {
+    await setPref(
+      'gal_mining_audio_seconds',
+      clampGalMiningAudioSeconds(seconds),
+    );
+    notifyListeners();
+  }
+
+  /// 单个游戏的 gal 制卡设置覆盖层（反馈 3dRZdakRdJ）；没设过 = 全部跟随全局。
+  /// 键 `gal_mining_overrides::<galgames.id>`，值是 [GalGameMiningOverrides] 的 JSON。
+  GalGameMiningOverrides galMiningOverrides(String gameId) =>
+      GalGameMiningOverrides.decode(
+        getPref(galMiningOverridesPrefKey(gameId), defaultValue: ''),
+      );
+
+  /// 写回覆盖层；全部清空时写空串（= 这个游戏完全跟随全局）。
+  Future<void> setGalMiningOverrides(
+    String gameId,
+    GalGameMiningOverrides overrides,
+  ) async {
+    await setPref(galMiningOverridesPrefKey(gameId), overrides.encode());
     notifyListeners();
   }
 

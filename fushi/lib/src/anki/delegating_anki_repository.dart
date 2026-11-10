@@ -77,6 +77,10 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
       inner.noteFields(noteId);
 
   @override
+  Future<String?> overwriteNoteTypeName(int noteId) =>
+      inner.overwriteNoteTypeName(noteId);
+
+  @override
   Future<bool> openNoteInAnki(int noteId) => inner.openNoteInAnki(noteId);
 
   @override
