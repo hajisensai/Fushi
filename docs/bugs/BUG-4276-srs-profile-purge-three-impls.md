@@ -36,13 +36,25 @@
     不会被撤销——旧 uid 的收段会话被作废，下一轮同步重开，无数据影响。
   - `srs_backup_merge.dart`：删掉 `_kSrsProfileTables` 与 `_deleteProfileRows`；采用是整体删除（旧 uid 没有要带过去的
     行，新 uid 的内置行与同步身份按新 uid 重建），不是改写 uid，所以直接调 `profile_purge`。`srsAdoptProfileUid`
-    第二个参数由 `SrsDatabase` 改为 `SrsCore`（调用方 srs_profile_link.dart 两处、测试同步改）。以前经 Drift 事务删，
-    由 Drift 的事务锁与旧副本开着的事务排队；内核命令直接上共用写连接，所以 `_switchUid` 的采用改在旧副本的
-    `runExclusive` 里跑（与删 profile 走 `retire` / `runExclusive` 同一规矩），不夹进它开着的 Drift 事务随之回滚。
+    第二个参数由 `SrsDatabase` 改为 `SrsCore`（调用方 srs_profile_link.dart 两处、测试同步改）。
+  - **排队**（以前经 Drift 事务删，由 Drift 的事务锁排在别的 Drift 事务后面；内核命令直接上共用写连接，开着的别人的
+    事务会把它吞进去、随之回滚）：
+    - 保护共用写连接的是**激活副本的独占区**：所有副本的写都在 `SrsDbStore.runExclusive` 里（srs_db_store.dart），
+      扩展副本的独占区经 `SrsExclusiveOuter` 套在激活副本的独占区里（fushi/lib/src/srs/srs_profile_stores.dart
+      `_underActive` / `_ActiveStoreOuter`，激活副本交接时等交接做完、拿新的那把）。`SrsProfileStores.writeLock` 把它
+      暴露出来，`SrsDbProfileLinker` 新增必填 `writeLock`（app 在 srs_app_runtime.dart 接上）。
+    - `_switchUid` 的采用与**失败回退**的那次采用都在 `writeLock.run` 里删；回退时旧副本可能已在重开时交接作废、
+      新 uid 的副本活着，拿的是此刻有效的那把，不拿旧副本的锁。
+    - 备份合并采用（`mergeSrsFromBackup`）不加锁：合并导入（restore.part.dart:1682）与覆盖恢复（:762）都在 app 的
+      SRS 存储关掉后**另开一份 `SrsStorage`**（`SrsCore.openInBackground` 每次新开一条连接），这条连接只有这次
+      合并顺序 await 着用；别的 `SrsCore` 是另一条 SQLite 连接，不可能共用事务。契约写进了它的文档注释。
   - 不升 srs.db SCHEMA_VERSION、不改同步协议。
 - **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_profile_purge_single_test.dart`（并入 / 采用后旧 uid 在
   `sqlite_master` 现查的每张带 `profile_uid` 的表、`…/<uid>` 与 `…/<uid>/…` meta 键里为零，没人引用的 `sync2_deps` 不增；
-  调用方 Drift 事务回滚时 purge 一起回滚）；Rust `profile_data.rs` `purge_removes_every_row_of_the_profile_and_keeps_the_other`
+  调用方 Drift 事务回滚时 purge 一起回滚；采用失败回退时连接上另一个写入者开着 Drift 事务，回退的删除在写锁里等它
+  回滚后才跑、结果留下——去掉回退的写锁时这条红：新 uid 的 `srs_entities` / `sync2_ops` 等行随那笔事务回滚复活）；Rust `profile_data.rs` `purge_removes_every_row_of_the_profile_and_keeps_the_other`
   补中间带 uid 的 meta 键断言。
-- **备注**：存量库里已经留下的残留：采用留下的会被一次性无主扫描（若还没跑）清掉；已跑过扫描的设备、以及并入留下的
+- **备注**：`_underActive` 在没有激活副本（或它已作废）时直接跑 body，此时扩展副本只拿自己的锁——这个窗口里
+  回退删除与扩展副本的事务没有共同的锁（`SrsProfileStores` 的既有设计，本修复未改）。
+  存量库里已经留下的残留：采用留下的会被一次性无主扫描（若还没跑）清掉；已跑过扫描的设备、以及并入留下的
   meta 键 / `sync2_deps` 不在任何清理路径上，本修复不回收（需要的话另做一次性清扫，待拍板）。

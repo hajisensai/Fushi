@@ -242,6 +242,11 @@ String srsBackupProfileName(String original, Set<String> taken) {
 ///
 /// 幂等：同一份备份合并两次，第二次全部走「同 uid」且不新增事件。两个文件不能一起原子提交：
 /// 改 uid 时先删 [localSrs] 里旧 uid 的行、再写主库的 `profiles.uid`，两步都幂等，中途失败重跑即收敛。
+///
+/// 前提：[localSrs] 的写连接只归这次合并用（调用方自己开的存储：合并导入与覆盖恢复都在 app 的 SRS 存储关掉
+/// 之后另开一份，backup_service/restore.part.dart）。删旧 uid 是内核命令、直接在写连接上跑，不经任何副本的
+/// 独占区；这里一路顺序 await，连接上没有别的写入者开着事务，它就不会夹进别人的事务里随之回滚。别的 [SrsCore]
+/// 是另一条连接，不会共用事务。
 Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
   required SrsBackupSource source,
   required FushiDatabase local,
