@@ -1093,7 +1093,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   final Map<String, List<_GroupSlot>> _groupSlots =
       <String, List<_GroupSlot>>{};
 
-  /// 显式定位 cue（`\pos` / `\move`）的**身份序号**（BUG-4350）：显式定位事件各自成组，
+  /// 显式定位 cue（`\pos` / `\move`）的**身份序号**（BUG-4351）：显式定位事件各自成组，
   /// 分组键要能区分同一位置上的不同事件，且跨帧稳定（[KeyedSubtree] 与 [_groupSlots]
   /// 的身份）。按 cue 对象身份发号，cue 被回收即随 [Expando] 一起消失。
   final Expando<int> _explicitCueIds = Expando<int>('explicitCueId');
@@ -1755,7 +1755,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final List<(String, List<AudioCue>)> order = <(String, List<AudioCue>)>[];
     for (final AudioCue cue in cues) {
       final String posKey = _positionKey(cue.markup, isSecondary: isSecondary);
-      // BUG-4350：显式定位（`\pos` / `\move`）事件**各自成组**，同位也不进同一个 Column。
+      // BUG-4351：显式定位（`\pos` / `\move`）事件**各自成组**，同位也不进同一个 Column。
       // libass 对显式定位事件不做碰撞检测（`detect_collisions = !explicit`）：同一 `\pos`
       // 上的多条事件按 Layer / 事件序原地叠画。卡拉 OK 特效正是靠这个出效果——整行底字一条、
       // 逐音节高亮 / 光晕拷贝若干条，全部钉在同一个 `\pos`。旧实现按位置键把它们塞进一个
@@ -4509,7 +4509,7 @@ Matrix4 assShearMatrix(double fax, double fay) {
   return m;
 }
 
-/// 这条 cue 是否**显式定位**（BUG-4350）：带 `\pos`，或在尊重 ASS 样式时带 `\move`。
+/// 这条 cue 是否**显式定位**（BUG-4351）：带 `\pos`，或在尊重 ASS 样式时带 `\move`。
 ///
 /// 与 libass `explicit` 同义：显式定位事件不参与碰撞避让，同一位置上的多条事件原地叠画，
 /// 不竖排堆叠。overlay 据此让它们各自成组（见 `_groupMainCuesByPosition`）。
