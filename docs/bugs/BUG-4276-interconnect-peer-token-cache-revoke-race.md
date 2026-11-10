@@ -1,0 +1,6 @@
+## BUG-4276 · 吊销已配对设备时若恰逢 token 集合加载，旧 token 被写回缓存继续有效
+- **报告**：2026-11-10（用户：互联 host 安全审查 V-E3）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/sync/fushi_sync_server/auth.part.dart:115-122`（94317ab6295）的 `_peerTokens()` 在 `await provider()` 之后无条件 `_cachedPeerTokens = loaded`；`fushi_sync_server.dart:911-915` 的 `invalidatePeerTokenCache()` 只把缓存置 null。吊销（app `fushi/lib/src/sync/fushi_server_controller.dart:1191-1196`、无头 `admin_api.dart` 同序：先删库再 invalidate）落在一次在飞加载的 await 里时，吊销前读到的旧集合被写回缓存，被吊销的 token 一直有效到下一次 invalidate。新测试修复前实测：吊销后再用该 token 请求得 200（应为 401）。
+- **[x] ① 已修复**（`7841205456b`）— 缓存改为带代际的 `_CredentialSnapshot`（`fushi_sync_server.dart` 新增类、`_credentialGeneration`、单飞槽 `_credentialsLoading`）；`invalidatePeerTokenCache()` 推进代际并清缓存与单飞槽（`fushi_sync_server.dart:953`）；`auth.part.dart:120` 的 `_credentialSnapshot()` 在加载完成时代际已变就丢弃结果按新代际重读，不写回；加载失败抛给调用方且不留在单飞槽里。`_validateAuth` / `_validatePeerAuth` 改读快照，判定逻辑不变。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/fushi_sync_server_peer_token_cache_race_test.dart`：真 `FushiSyncServer`（loopback、port 0）上，provider 第一次返回受控 Completer，在飞时 invalidate 再放出旧集合，断言吊销后该 token 401 且 provider 被调 2 次（修复前红：得 200）；另一例钉住加载失败不被缓存、下一请求重读成功。
+- **备注**：快照的 `legacyPeerTokens` / `dictionaryMediaKeys` 本修复内恒为空集，留给后续 legacy token 与词典媒体作用域 key 使用；`fingerprints` 已含共享 + peer token 指纹。
