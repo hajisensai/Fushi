@@ -128,44 +128,81 @@ VideoOutput::VideoOutput(int64_t handle,
   future.wait();
 }
 
+// FUSHI FORK (BUG-4323): teardown order.
+//
+// Upstream unregistered the texture, destroyed |ANGLESurfaceManager| (the
+// EGLContext libmpv renders with and -- for the last instance -- the shared
+// EGLDisplay plus the Direct3D 11 device libmpv decodes on) and only then
+// *posted* |mpv_render_context_free| without waiting for it. Three defects:
+//
+// 1. libmpv's renderer (GL objects, the d3d11-egl hwdec interop and its
+//    decoder frames) was released with no GL context current, after its
+//    context and possibly its display were already gone, so its ANGLE calls
+//    ran against destroyed state instead of releasing what they referenced
+//    (field: libGLESv2 read AV under media_kit_video_plugin -> libmpv).
+// 2. The method-channel reply (see |VideoOutputManager::Dispose|) did not wait
+//    for any of this, so |Player.dispose| scheduled |mpv_terminate_destroy|
+//    on a 5 s timer racing the free; libmpv aborts when the core dies with a
+//    render context alive (field: libmpv-2.dll abort, 0x40000015).
+// 3. The unregister callback was the only place the promise was fulfilled, so
+//    a |VideoOutput| without a registered texture deadlocked the manager
+//    thread forever (and with it every later Create / Dispose).
+//
+// Now: stop libmpv's update callback, then on the render thread (after every
+// |Render| / |CheckAndResize| already queued for this output) unregister the
+// texture and wait until Flutter stopped sampling it, free the render context
+// with its own GL context current, and only then drop the textures and the
+// surface manager. The destructor returns after all of it has run.
 VideoOutput::~VideoOutput() {
   destroyed_ = true;
-  auto promise = std::promise<void>();
-  if (texture_id_) {
-    registrar_->texture_registrar()->UnregisterTexture(
-        texture_id_, [&, texture_id = texture_id_]() {
-          // Add one more task into the thread pool queue & exit the destructor
-          // only when it gets executed. This will ensure that all the tasks
-          // posted to the thread pool i.e. render or resize before this are
-          // executed (and won't reference the dead object anymore), most
-          // notably |CheckAndResize| & |Render|.
-          auto future = thread_pool_ref_->Post([&, id = texture_id]() {
-            std::cout << "media_kit: VideoOutput: Free Texture: " << id
-                      << std::endl;
-            std::cout << "VideoOutput::~VideoOutput: "
-                      << reinterpret_cast<int64_t>(handle_) << std::endl;
-            std::lock_guard<std::mutex> lock(textures_mutex_);
-            texture_variants_.clear();
-            // H/W
-            textures_.clear();
-            // S/W
-            pixel_buffer_textures_.clear();
-            // Free (call destructor) |ANGLESurfaceManager| through the thread
-            // pool. This will ensure synchronized EGL or ANGLE usage & won't
-            // conflict with |Render| or |CheckAndResize| of other
-            // |VideoOutput|s.
-            surface_manager_.reset(nullptr);
-            promise.set_value();
-          });
-        });
+  // libmpv takes the same lock around invoking the callback, so once this
+  // returns no |NotifyRender| is in flight and none will start: nothing can
+  // queue a |Render| of this object behind the teardown task below.
+  if (render_context_ != nullptr) {
+    mpv_render_context_set_update_callback(render_context_, nullptr, nullptr);
   }
 
-  promise.get_future().wait();
-  texture_id_ = 0;
-
-  thread_pool_ref_->Post([render_context = render_context_]() {
-    mpv_render_context_free(render_context);
+  // Everything below runs on the render thread: |texture_id_| is only ever
+  // changed there (|Resize|), and queued |CheckAndResize| / |Render| tasks of
+  // this output return early now that |destroyed_| is set, so none of them can
+  // register a fresh texture behind the unregister.
+  auto torn_down = thread_pool_ref_->Post([this]() {
+    std::cout << "VideoOutput::~VideoOutput: "
+              << reinterpret_cast<int64_t>(handle_) << std::endl;
+    if (texture_id_) {
+      // Flutter's raster thread never waits on this thread (BUG-3888), so
+      // waiting here for its unregister callback cannot deadlock. Earlier
+      // |Resize| unregister callbacks run before this one.
+      auto unregistered = std::promise<void>();
+      registrar_->texture_registrar()->UnregisterTexture(
+          texture_id_, [&unregistered]() { unregistered.set_value(); });
+      unregistered.get_future().wait();
+    }
+    if (render_context_ != nullptr) {
+      // All mpv_render_* calls use the GL context implicitly (render_gl.h);
+      // the free must see the context it rendered with.
+      if (surface_manager_ != nullptr) {
+        surface_manager_->MakeCurrent(true);
+      }
+      mpv_render_context_free(render_context_);
+      render_context_ = nullptr;
+      if (surface_manager_ != nullptr) {
+        surface_manager_->MakeCurrent(false);
+      }
+    }
+    std::lock_guard<std::mutex> lock(textures_mutex_);
+    texture_id_ = 0;
+    texture_variants_.clear();
+    // H/W
+    textures_.clear();
+    // S/W
+    pixel_buffer_textures_.clear();
+    // Free (call destructor) |ANGLESurfaceManager| through the thread pool.
+    // This will ensure synchronized EGL or ANGLE usage & won't conflict with
+    // |Render| or |CheckAndResize| of other |VideoOutput|s.
+    surface_manager_.reset(nullptr);
   });
+  torn_down.wait();
 }
 
 void VideoOutput::NotifyRender() {
@@ -177,6 +214,10 @@ void VideoOutput::NotifyRender() {
 }
 
 void VideoOutput::Render() {
+  // FUSHI FORK (BUG-4323): tasks queued before |~VideoOutput| started.
+  if (destroyed_) {
+    return;
+  }
   if (texture_id_) {
     // H/W
     if (surface_manager_ != nullptr) {
@@ -319,6 +360,11 @@ void VideoOutput::SetHdrOutput(bool enabled,
 }
 
 void VideoOutput::CheckAndResize() {
+  // FUSHI FORK (BUG-4323): never register a new texture once teardown began;
+  // it would outlive this object in Flutter's registrar.
+  if (destroyed_) {
+    return;
+  }
   // Check if a new texture with different dimensions is needed.
   auto required_width = GetVideoWidth(), required_height = GetVideoHeight();
   if (required_width < 1 || required_height < 1) {

@@ -153,6 +153,11 @@ class ANGLESurfaceManager {
   Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex_;
   // ANGLE
   EGLSurface surface_ = EGL_NO_SURFACE;
+  // FUSHI FORK (BUG-4323): the GL texture |surface_| is bound to through
+  // |eglBindTexImage| (|CreateAndBindEGLSurface|). Upstream generated one per
+  // surface and never deleted or unbound it, so every |Create| (resize, HDR
+  // toggle) leaked one texture object for the lifetime of the context.
+  GLuint bound_texture_ = 0;
   EGLDisplay display_ = EGL_NO_DISPLAY;
   EGLContext context_ = nullptr;
   EGLConfig config_ = nullptr;

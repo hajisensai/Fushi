@@ -175,7 +175,7 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
   // are about to be released; drop them with the context current (the
   // destructor path reaches here without one).
   if ((output_image_ != EGL_NO_IMAGE_KHR || linear_texture_ != 0 ||
-       encode_program_ != 0) &&
+       encode_program_ != 0 || bound_texture_ != 0) &&
       display_ != EGL_NO_DISPLAY && context_ != EGL_NO_CONTEXT &&
       surface_ != EGL_NO_SURFACE) {
     MakeCurrent(true);
@@ -186,9 +186,21 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
     glDeleteProgram(encode_program_);
     encode_program_ = 0;
   }
-  if (release_context) {
+  // FUSHI FORK (BUG-4323): unbind and delete the texture bound to |surface_|
+  // before the surface goes (both paths), with the context current.
+  if (bound_texture_ != 0) {
     if (display_ != EGL_NO_DISPLAY && surface_ != EGL_NO_SURFACE) {
       eglReleaseTexImage(display_, surface_, EGL_BACK_BUFFER);
+    }
+    glDeleteTextures(1, &bound_texture_);
+    bound_texture_ = 0;
+  }
+  if (release_context) {
+    // FUSHI FORK (BUG-4323): a context (and its surface) that is still current
+    // on this thread is only marked for deletion by eglDestroyContext /
+    // eglDestroySurface; release it first so both are really freed now.
+    if (display_ != EGL_NO_DISPLAY) {
+      MakeCurrent(false);
     }
     if (display_ != EGL_NO_DISPLAY && context_ != EGL_NO_CONTEXT) {
       eglDestroyContext(display_, context_);
@@ -578,9 +590,8 @@ bool ANGLESurfaceManager::CreateAndBindEGLSurface() {
   if (surface_ == EGL_NO_SURFACE) {
     FAIL("eglCreatePbufferFromClientBuffer");
   }
-  GLuint t;
-  glGenTextures(1, &t);
-  glBindTexture(GL_TEXTURE_2D, t);
+  glGenTextures(1, &bound_texture_);
+  glBindTexture(GL_TEXTURE_2D, bound_texture_);
   eglBindTexImage(display_, surface_, EGL_BACK_BUFFER);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
