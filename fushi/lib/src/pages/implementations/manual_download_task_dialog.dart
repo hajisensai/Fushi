@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
+import 'package:fushi/src/media/torrent/torrent_file_selection.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -31,6 +32,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -251,6 +253,12 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   InspectedTorrentMetainfo? _metainfo;
   String? _metainfoFileName;
 
+  /// 多文件种子的勾选状态（只下载选中的文件）；单文件种子 / 磁力为 null。
+  /// 磁力在拿到元数据前没有文件清单，选文件只能在 `.torrent` 上做。
+  TorrentFileSelection? _fileSelection;
+  final TextEditingController _fileFilterController = TextEditingController();
+  final FocusNode _fileFilterFocus = FocusNode();
+
   /// null = 视频（默认）；其余按域入库。
   DiscoveryMediaKind? _discoveryKind;
   VideoMetadataMediaKind _mediaKind = VideoMetadataMediaKind.movie;
@@ -299,6 +307,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   void dispose() {
     _magnetController.dispose();
     _titleController.dispose();
+    _fileFilterController.dispose();
+    _fileFilterFocus.dispose();
     super.dispose();
   }
 
@@ -319,7 +329,10 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
           ? _metainfo == null &&
                 _magnetHash != null &&
                 widget.remoteTarget?.supportsKind(_discoveryKind?.name) == true
-          : widget.pipeline != null && (!_isVideo || _sourceId != null));
+          : widget.pipeline != null &&
+                (!_isVideo || _sourceId != null) &&
+                // 一个文件都没勾 = 没有可下载的东西。
+                _fileSelection?.noneSelected != true);
 
   /// 剪贴板里有磁力链接就记下来，给一枚「使用剪贴板中的磁力链接」chip——不自动
   /// 填进去：剪贴板内容是用户别处复制的，静默改写输入框会让人以为是自己粘的。
@@ -376,6 +389,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         // 磁力与 .torrent 文件互斥：以最后编辑的一方为准。
         _metainfo = null;
         _metainfoFileName = null;
+        _fileSelection = null;
       }
       _prefillTitle(parseMagnetDisplayName(value));
     });
@@ -437,6 +451,11 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       _source = _ManualTaskSource.torrent;
       _metainfo = parsed;
       _metainfoFileName = fileName;
+      // 换种子 = 换文件清单：勾选与筛选词都从「全选、不筛」重新开始。
+      _fileSelection = parsed.files.length > 1
+          ? TorrentFileSelection(parsed.files)
+          : null;
+      _fileFilterController.clear();
       _magnetController.clear();
       // 远端只收磁链：手里有本机后端时自动切回本机，否则用户得自己发现
       // 「提交按钮为什么灰着」。没有本机后端时保持远端，让 _canSubmit 挡住。
@@ -473,6 +492,10 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
           backendTarget: target,
           magnetUri: _metainfo == null ? _magnetController.text.trim() : null,
           metainfo: _metainfo,
+          // 全选 = null（整颗 torrent）；否则只下勾选的文件。
+          selectedFileIndexes: _metainfo == null
+              ? null
+              : _fileSelection?.submission,
           discoveryKind: _discoveryKind,
           mediaKind: _mediaKind,
           targetSourceId: _isVideo ? _sourceId : null,
@@ -705,8 +728,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     );
   }
 
-  /// 种子解析后的元信息预览：名称、总大小、文件数 + 文件列表（只读：选文件
-  /// 在任务详情里做，这里不改提交参数）。
+  /// 种子解析后的元信息预览：名称、总大小、文件数；多文件种子再接文件勾选区
+  /// （[_buildFileSelection]，提交时只下载勾选的文件）。
   Widget _buildPreview(BuildContext context, InspectedTorrentMetainfo info) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiTypography type = context.fushiType;
@@ -714,7 +737,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       0,
       (int sum, InspectedTorrentFile file) => sum + file.length,
     );
-    const int shown = 6;
+    final TorrentFileSelection? selection = _fileSelection;
     final String? name = info.suggestedName;
     return FushiCard(
       key: const ValueKey<String>('manual-task-preview'),
@@ -769,41 +792,151 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
               ),
             ],
           ),
-          if (info.files.length > 1) ...<Widget>[
-            const SizedBox(height: 10),
-            FushiGroupedList(
-              children: <Widget>[
-                for (final InspectedTorrentFile file in info.files.take(shown))
-                  FushiListItem(
-                    key: ValueKey<String>('manual-task-file-${file.index}'),
-                    density: FushiListDensity.compact,
-                    title: Text(
-                      p.basename(file.path),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: Text(
-                      FushiByteFormat.bytes(file.length),
-                      style: type.labelMedium.tabular.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                if (info.files.length > shown)
-                  FushiListItem(
-                    density: FushiListDensity.compact,
-                    title: Text(
-                      '+${info.files.length - shown}',
-                      style: type.labelLarge.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          if (selection != null) ...<Widget>[
+            const SizedBox(height: 12),
+            _buildFileSelection(context, selection),
           ],
         ],
       ),
+    );
+  }
+
+  /// 多文件种子的文件勾选区（qBittorrent 式）：按文件名筛选、逐个勾选、对**当前
+  /// 筛选结果**全选 / 全不选，顶部汇总已选数量与大小。列表是懒加载的
+  /// [ListView.builder]（有声书合集动辄几百个文件），高度封顶，整张表单仍可滚。
+  Widget _buildFileSelection(
+    BuildContext context,
+    TorrentFileSelection selection,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<InspectedTorrentFile> visible = selection.filter(
+      _fileFilterController.text,
+    );
+    final bool enabled = !_submitting;
+    return Column(
+      key: const ValueKey<String>('manual-task-file-selection'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(
+          t.download_file_selection_summary(
+            selected: selection.selectedCount,
+            total: selection.files.length,
+            size: FushiByteFormat.bytes(selection.selectedBytes),
+          ),
+          key: const ValueKey<String>('manual-task-files-summary'),
+          style: type.labelLarge.tabular.copyWith(color: cs.onSurfaceVariant),
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        FushiSearchField(
+          fieldKey: const ValueKey<String>('manual-task-file-filter'),
+          controller: _fileFilterController,
+          focusNode: _fileFilterFocus,
+          hintText: t.download_file_selection_search_hint,
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) {},
+          onClear: () => setState(_fileFilterController.clear),
+        ),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('manual-task-files-select-all'),
+              onPressed: enabled && visible.isNotEmpty
+                  ? () => setState(
+                      () => selection.setAll(visible, selected: true),
+                    )
+                  : null,
+              child: Text(t.download_file_selection_select_all),
+            ),
+            FushiTextButton(
+              key: const ValueKey<String>('manual-task-files-select-none'),
+              onPressed: enabled && visible.isNotEmpty
+                  ? () => setState(
+                      () => selection.setAll(visible, selected: false),
+                    )
+                  : null,
+              child: Text(t.download_file_selection_select_none),
+            ),
+          ],
+        ),
+        if (visible.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              t.download_file_selection_no_match,
+              key: const ValueKey<String>('manual-task-files-no-match'),
+              textAlign: TextAlign.center,
+              style: type.bodyMedium.copyWith(color: cs.onSurfaceVariant),
+            ),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: FushiEntranceScope(
+              replayKey: _metainfo,
+              child: ListView.builder(
+                key: const ValueKey<String>('manual-task-file-list'),
+                shrinkWrap: true,
+                itemCount: visible.length,
+                itemBuilder: fushiStaggeredItemBuilder(
+                  (BuildContext context, int i) =>
+                      _buildFileRow(context, selection, visible[i], enabled),
+                ),
+              ),
+            ),
+          ),
+        if (selection.noneSelected) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          FushiInlineNotice(
+            key: const ValueKey<String>('manual-task-files-none-selected'),
+            severity: FushiNoticeSeverity.warning,
+            icon: FushiIcons.warning,
+            message: t.download_file_selection_none_selected,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFileRow(
+    BuildContext context,
+    TorrentFileSelection selection,
+    InspectedTorrentFile file,
+    bool enabled,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final bool checked = selection.isSelected(file.index);
+    // metainfo 的相对路径恒以 `/` 分段（inspectTorrentMetainfo 按 path 列表拼）。
+    final String folder = p.posix.dirname(file.path);
+    void toggle() =>
+        setState(() => selection.setSelected(file.index, selected: !checked));
+    return FushiListItem(
+      key: ValueKey<String>('manual-task-file-${file.index}'),
+      density: FushiListDensity.compact,
+      selected: checked,
+      leading: FushiCheckbox(
+        key: ValueKey<String>('manual-task-file-check-${file.index}'),
+        value: checked,
+        onChanged: enabled ? (_) => toggle() : null,
+      ),
+      title: Text(
+        p.basename(file.path),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: folder == '.' || folder.isEmpty
+          ? null
+          : Text(folder, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Text(
+        FushiByteFormat.bytes(file.length),
+        style: type.labelMedium.tabular.copyWith(color: cs.onSurfaceVariant),
+      ),
+      onTap: enabled ? toggle : null,
     );
   }
 

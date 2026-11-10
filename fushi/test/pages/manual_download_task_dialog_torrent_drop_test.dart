@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:path/path.dart' as p;
@@ -26,6 +27,7 @@ void main() {
   late String validTorrent;
   late String otherTorrent;
   late String brokenTorrent;
+  late String packTorrent;
 
   setUpAll(() {
     tmp = Directory.systemTemp.createTempSync('fushi-torrent-drop-');
@@ -44,6 +46,20 @@ void main() {
     );
     brokenTorrent = p.join(tmp.path, 'broken.torrent');
     File(brokenTorrent).writeAsStringSync('this is not bencode');
+    // 多文件 v1 metainfo（反馈 pR-icPGMJD 的有声书合集缩影）：三本书各一个文件。
+    String bstr(String value) => '${utf8.encode(value).length}:$value';
+    String file(String dir, String name, int length) =>
+        'd6:lengthi${length}e4:pathl${bstr(dir)}${bstr(name)}ee';
+    packTorrent = p.join(tmp.path, 'pack.torrent');
+    File(packTorrent).writeAsBytesSync(
+      utf8.encode(
+        'd4:infod5:filesl'
+        '${file('Book A', '01 a.m4b', 100)}'
+        '${file('Book B', '01 b.m4b', 200)}'
+        '${file('Book C', '01 c.m4b', 400)}'
+        'e4:name4:pack6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+      ),
+    );
   });
 
   tearDownAll(() => tmp.deleteSync(recursive: true));
@@ -244,6 +260,148 @@ void main() {
     expect(find.text(t.download_task_add_invalid), findsOneWidget);
     expect(find.text('broken.torrent'), findsNothing);
     expect(titleText(tester), isEmpty);
+  });
+
+  group('multi-file torrent file selection (feedback pR-icPGMJD)', () {
+    Finder summary(int selected, int bytes) => find.text(
+      t.download_file_selection_summary(
+        selected: selected,
+        total: 3,
+        size: FushiByteFormat.bytes(bytes),
+      ),
+    );
+
+    Future<void> tapKey(WidgetTester tester, String key) async {
+      final Finder target = find.byKey(ValueKey<String>(key));
+      await tester.ensureVisible(target);
+      await tester.pump();
+      await tester.tap(target);
+      await tester.pump(const Duration(milliseconds: 800));
+    }
+
+    testWidgets('lists every file, starts fully selected', (
+      WidgetTester tester,
+    ) async {
+      await pumpDialog(
+        tester,
+        dialog(initialTorrentPath: packTorrent),
+        until: find.text('pack.torrent'),
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-file-selection')),
+        findsOneWidget,
+      );
+      expect(summary(3, 700), findsOneWidget);
+      for (final int index in <int>[0, 1, 2]) {
+        expect(
+          find.byKey(ValueKey<String>('manual-task-file-$index')),
+          findsOneWidget,
+        );
+      }
+      // 不再是「前 6 个 + +N」的只读预览。
+      expect(find.textContaining('+'), findsNothing);
+    });
+
+    testWidgets('filter + select none/all act on the filtered rows', (
+      WidgetTester tester,
+    ) async {
+      await pumpDialog(
+        tester,
+        dialog(initialTorrentPath: packTorrent),
+        until: find.text('pack.torrent'),
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+
+      await tapKey(tester, 'manual-task-files-select-none');
+      expect(summary(0, 0), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-files-none-selected')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        glassUnwrap<EditableText>(
+          find.byKey(const ValueKey<String>('manual-task-file-filter')),
+        ),
+        'book b',
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-file-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-file-0')),
+        findsNothing,
+      );
+
+      await tapKey(tester, 'manual-task-files-select-all');
+      expect(summary(1, 200), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-files-none-selected')),
+        findsNothing,
+      );
+
+      await tester.enterText(
+        glassUnwrap<EditableText>(
+          find.byKey(const ValueKey<String>('manual-task-file-filter')),
+        ),
+        'no such book',
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-files-no-match')),
+        findsOneWidget,
+      );
+      // 筛选只改「显示哪些」，不动勾选。
+      expect(summary(1, 200), findsOneWidget);
+    });
+
+    testWidgets('tapping a row toggles that file', (WidgetTester tester) async {
+      await pumpDialog(
+        tester,
+        dialog(initialTorrentPath: packTorrent),
+        until: find.text('pack.torrent'),
+      );
+      await tester.pump(const Duration(milliseconds: 800));
+
+      await tapKey(tester, 'manual-task-file-2');
+      expect(summary(2, 300), findsOneWidget);
+      await tapKey(tester, 'manual-task-file-2');
+      expect(summary(3, 700), findsOneWidget);
+    });
+
+    testWidgets('single-file torrents show no selection UI', (
+      WidgetTester tester,
+    ) async {
+      await pumpDialog(
+        tester,
+        dialog(initialTorrentPath: validTorrent),
+        until: find.text('first.torrent'),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('manual-task-file-selection')),
+        findsNothing,
+      );
+    });
+  });
+
+  test('submit hands the selection to the pipeline (source guard)', () {
+    final String src = File(
+      'lib/src/pages/implementations/manual_download_task_dialog.dart',
+    ).readAsStringSync();
+    expect(
+      src.contains('selectedFileIndexes: _metainfo == null'),
+      isTrue,
+      reason: 'enqueueManual must receive the checked torrent files',
+    );
+    expect(
+      src.contains('_fileSelection?.submission'),
+      isTrue,
+      reason: 'the submitted indexes come from TorrentFileSelection',
+    );
   });
 
   group('drop surfaces route importTorrent into the dialog (source guard)', () {
