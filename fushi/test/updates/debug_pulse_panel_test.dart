@@ -155,6 +155,26 @@ void main() {
     );
   });
 
+  testWidgets('本机平台没有调试包（Linux 等）：不给更新按钮', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      host(
+        DebugPulsePanel(
+          service: DebugPulseService(fetchBody: () async => body),
+          installedSeq: 25010,
+          platform: null,
+          onUpdate: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 仍如实告诉用户后面出了新包，只是没有本机能装的那一个。
+    expect(find.text(t.updates_pulse_new_tag), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('debug_pulse_update')),
+      findsNothing,
+    );
+  });
+
   testWidgets('拉取失败：说失败，不崩', (WidgetTester tester) async {
     await tester.pumpWidget(
       host(

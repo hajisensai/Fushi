@@ -186,8 +186,13 @@ class _SummaryCard extends StatelessWidget {
     final DebugPulseReport? report = this.report;
     final DebugPulseBuild? target = report?.latestAvailableFor(platform);
     final int newerBuilds = report?.newerThan(installedSeq).length ?? 0;
+    // 本机平台没有调试包（platform == null，如 Linux）时，[target] 只是「最新一个包」
+    // 的展示用标题，不是本机能装的包：不给更新按钮，也不把卡片染成「可更新」。
     final bool canUpdate =
-        installedSeq != null && target != null && target.seq > installedSeq!;
+        platform != null &&
+        installedSeq != null &&
+        target != null &&
+        target.seq > installedSeq!;
 
     final String status;
     if (report == null) {
@@ -574,7 +579,11 @@ class _PrRow extends StatelessWidget {
               DebugPulsePrKind.other => FushiTagTone.neutral,
             },
           ),
-          if (scope != null) FushiTag(text: scope, tone: FushiTagTone.neutral),
+          const SizedBox(width: 6),
+          if (scope != null) ...<Widget>[
+            FushiTag(text: scope, tone: FushiTagTone.neutral),
+            const SizedBox(width: 6),
+          ],
           Expanded(
             child: Text(
               pr.displayTitle,
