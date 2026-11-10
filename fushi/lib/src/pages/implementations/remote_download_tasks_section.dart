@@ -2,12 +2,14 @@
 ///
 /// 与 `DiscoveryDownloadTasksSection` / `MangaDownloadTasksSection` 同一链式注入形状：
 /// 探测**每一台**已配对 host 的 downloads 能力，把各自 `/api/downloads` 的任务映射成
-/// [DownloadTaskEntry] 交给下游 `tasksBuilder` 混进统一列表；没有已配对 host 就是
-/// 空段，页面零变化。列表按固定周期轮询（远端没有 watch 流）。
+/// [DownloadTaskEntry] 交给下游 `tasksBuilder` 混进统一列表；没有可代下载的 host
+/// 就是空段，页面零变化。列表按固定周期轮询（远端没有 watch 流）。
 ///
-/// 状态按 host 维护（BUG-R6）：轮询失败保留上次的任务并标「过期」；探不到 / 凭据
-/// 失效的 host 产出一条 attention 条目说明原因（可点重试）；连不上的 host 每拍重探、
-/// 永久性失败只在用户点重试时重探；同一台 host 上一拍的请求没回来时本拍不叠加。
+/// 状态按 host 维护（BUG-R6）：轮询失败保留上次的任务并标「过期」；失效的 host
+/// 产出一条 attention 条目说明原因（可点重试，见 [_RemoteHostState.showsFailure]：
+/// 只为「用户在用它代下载」的 host 说，只配对来同步 / 查词、本就不提供代下载的
+/// host 保持静默）；连不上的 host 每拍重探、永久性失败只在用户点重试时重探；同一台
+/// host 上一拍的请求没回来时本拍不叠加。
 library;
 
 import 'dart:async';
@@ -49,9 +51,32 @@ class RemoteDownloadTasksSection extends ConsumerStatefulWidget {
 
 /// 一台 host 在本段里的状态。
 class _RemoteHostState {
-  _RemoteHostState(this.outcome);
+  _RemoteHostState(this._outcome, {required bool preferred})
+    : _inUse =
+          preferred ||
+          _outcome is InterconnectCapabilityAvailable<HostDownloadTarget>;
 
-  InterconnectCapabilityOutcome<HostDownloadTarget> outcome;
+  InterconnectCapabilityOutcome<HostDownloadTarget> _outcome;
+
+  /// 用户在用这台 host 代下载：它是「下载执行设备」，或本段生命周期里宣告过
+  /// downloads 能力。
+  bool _inUse;
+
+  InterconnectCapabilityOutcome<HostDownloadTarget> get outcome => _outcome;
+  set outcome(InterconnectCapabilityOutcome<HostDownloadTarget> value) {
+    _outcome = value;
+    if (value is InterconnectCapabilityAvailable<HostDownloadTarget>) {
+      _inUse = true;
+    }
+  }
+
+  /// 这台 host 的探测失败要不要在段里出一条 attention 条目。在用的 host 什么原因
+  /// 都说；其余 host 只说配对已坏（凭据被拒 / 证书不符）——没宣告能力
+  /// （iOS、没配下载后端、只用来查词）、未配对、关机都是常态，不是故障。
+  bool showsFailure(InterconnectHostFailure failure) =>
+      _inUse ||
+      failure == InterconnectHostFailure.authRejected ||
+      failure == InterconnectHostFailure.certificateMismatch;
 
   /// 最近一次成功取到的任务；之后的轮询失败不清它（[stale] 标识）。
   List<HostDownloadJob> jobs = const <HostDownloadJob>[];
@@ -147,7 +172,10 @@ class _RemoteDownloadTasksSectionState
     setState(() {
       for (final InterconnectCapabilityOutcome<HostDownloadTarget> o
           in ordered) {
-        _hosts[o.host.key] = _RemoteHostState(o);
+        _hosts[o.host.key] = _RemoteHostState(
+          o,
+          preferred: o.host == preferred,
+        );
       }
     });
     if (_hosts.isEmpty) return;
@@ -412,7 +440,9 @@ class _RemoteDownloadTasksSectionState
               for (final HostDownloadJob job in s.jobs) _entry(s, target, job),
             ],
           final InterconnectCapabilityUnavailable<HostDownloadTarget> o =>
-            <DownloadTaskEntry>[_unavailableEntry(o)],
+            <DownloadTaskEntry>[
+              if (s.showsFailure(o.failure)) _unavailableEntry(o),
+            ],
         },
     ];
     return widget.tasksBuilder(context, entries);

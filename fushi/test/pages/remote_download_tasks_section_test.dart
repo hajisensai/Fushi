@@ -282,6 +282,50 @@ void main() {
     expect(ofHost(entries(), 3).single.id, 'remote:host:h3:c');
   });
 
+  testWidgets(
+    '不提供代下载 / 连不上的 host 不是在用的下载设备：段里不出条目（评审 correctness-1 / compat-2）',
+    (WidgetTester tester) async {
+      final _FakeHosts hosts = _FakeHosts()
+        ..capabilities[1] = ((_) => _supported())
+        // 只配对来同步 / 查词：能力表里没有 downloads。
+        ..capabilities[2] = ((_) => http.Response('{}', 200))
+        // 关机。
+        ..capabilities[3] = ((_) => throw http.ClientException('refused'))
+        ..jobs[1] = ((_) async => _jobs(<Map<String, Object?>>[_job('a')]));
+      final List<DownloadTaskEntry> Function() entries = await pumpSection(
+        tester,
+        hosts,
+      );
+      expect(ofHost(entries(), 1), hasLength(1));
+      expect(ofHost(entries(), 2), isEmpty, reason: '修复前常驻一条「不提供这项功能」');
+      expect(ofHost(entries(), 3), isEmpty, reason: '修复前常驻一条「连不上」');
+      expect(
+        find.textContaining(t.interconnect_host_failure_unsupported),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('「下载执行设备」那台不提供代下载：照样出 attention 条目说明原因', (
+    WidgetTester tester,
+  ) async {
+    final _FakeHosts hosts = _FakeHosts()
+      ..capabilities[1] = ((_) => http.Response('{}', 200));
+    final List<DownloadTaskEntry> Function() entries = await pumpSection(
+      tester,
+      hosts,
+      preferred: _url(1),
+      hostCount: 1,
+    );
+    final List<DownloadTaskEntry> h1 = ofHost(entries(), 1);
+    expect(h1, hasLength(1));
+    expect(h1.single.status, DownloadTaskStatus.attention);
+    expect(
+      find.textContaining(t.interconnect_host_failure_unsupported),
+      findsWidgets,
+    );
+  });
+
   testWidgets('上一拍的请求还没回来：本拍不对该 host 叠加请求；挂起中 dispose 不抛', (
     WidgetTester tester,
   ) async {
