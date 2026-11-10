@@ -926,22 +926,43 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                         final ({String title, String? url}) labels =
                             interconnectPeerRowLabels(u);
                         final String? urlLine = labels.url;
-                        final Widget? status = urlLine != null
+                        // BUG-4274：列表逐地址成行（排序 = 选路优先级，开关 / 测试 /
+                        // 重新配对都按地址），同一台 host 的几条地址标题是同一个设备
+                        // 名；注记标出第几条、什么网络、是否自动学到，免得看成重复配对。
+                        final String? addressNote = interconnectPeerAddressNote(
+                          _urls,
+                          u,
+                        );
+                        final TextStyle? detailStyle = theme.textTheme.bodySmall
+                            ?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            );
+                        final Widget? status =
+                            urlLine != null || addressNote != null
                             ? Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
-                                  Text(
-                                    urlLine,
-                                    key: ValueKey<String>(
-                                      'interconnect-peer-url-${u.url}',
+                                  if (urlLine != null)
+                                    Text(
+                                      urlLine,
+                                      key: ValueKey<String>(
+                                        'interconnect-peer-url-${u.url}',
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: detailStyle,
                                     ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                  if (addressNote != null)
+                                    Text(
+                                      addressNote,
+                                      key: ValueKey<String>(
+                                        'interconnect-peer-address-note-${u.url}',
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: detailStyle,
                                     ),
-                                  ),
                                   ?reachStatus,
                                 ],
                               )

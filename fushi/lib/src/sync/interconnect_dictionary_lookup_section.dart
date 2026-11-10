@@ -84,6 +84,33 @@ String remoteDictionaryServersSummary(List<FushiClientUrl> urls) {
       : (title: device, url: peer.url);
 }
 
+/// 「已添加的设备」一行的地址注记：这台 host 在列表里有多条地址时，标出本行是第几条、
+/// 走什么网络、是否由 host 公布自动学到——同一设备名的几行才认得出是同一台机器的
+/// 不同路径，而不是重复配对（BUG-4274）。只有一条地址 → null（不加行）。
+String? interconnectPeerAddressNote(
+  List<FushiClientUrl> urls,
+  FushiClientUrl peer,
+) {
+  final InterconnectPeerAddressSlot? slot = interconnectPeerAddressSlotOf(
+    urls,
+    peer,
+  );
+  if (slot == null) return null;
+  final String kind = switch (slot.rank) {
+    0 => t.interconnect_peer_address_kind_lan,
+    1 => t.interconnect_peer_address_kind_ipv6,
+    2 => t.interconnect_peer_address_kind_overlay,
+    4 => t.interconnect_peer_address_kind_p2p,
+    _ => t.interconnect_peer_address_kind_public,
+  };
+  final String note = t.interconnect_peer_address_note(
+    index: slot.index,
+    count: slot.count,
+    kind: kind,
+  );
+  return slot.learned ? '$note · ${t.interconnect_peer_address_learned}' : note;
+}
+
 /// [hostId] 这台 host 此刻是否参与查词：任一地址开着即算开（设置页总是整组写，
 /// 混合态只来自升级前的手改数据，宁可显示为开、让用户能一键关掉）。
 bool interconnectHostLookupEnabled(List<FushiClientUrl> urls, String hostId) =>

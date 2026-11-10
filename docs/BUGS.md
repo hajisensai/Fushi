@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3835 条。点号进各自文件。
+> 共 3836 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4274](bugs/BUG-4274-interconnect-peer-rows-look-duplicated.md) | ✅ | ✅ | 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对 |
 | [BUG-4273](bugs/BUG-4273-focus-repair-steals-dialog-autofocus.md) | ✅ | ✅ | 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框 |
 | [BUG-4272](bugs/BUG-4272-yomitan-per-dict-frequency-unmappable.md) | ✅ | ✅ | yomitan-per-dict-frequency-unmappable |
 | [BUG-4271](bugs/BUG-4271-background-engine-kills-flutter-logs-startup-hang.md) | ✅ | ✅ | 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉） |

@@ -1,0 +1,6 @@
+## BUG-4274 · 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对
+- **报告**：2026-11-09（集成测试 win-itest-20261109-205840-037415f0 截图 `09b`；用户桌面端同样复现）
+- **真实性**：✅ 真 bug（展示回归，数据正确）。配对一台服务器（`https://192.0.2.10:38865`）后，地址学习按设计把 host 公布的第二条地址 `https://192.0.2.11:38865` 以 `learned: true` 并进同一 hostId 组（`fushi/lib/src/sync/interconnect_peer_addresses.dart` `mergeLearnedHostAddresses`）。「已添加的设备」列表按设计**逐地址成行**：列表顺序就是组内选路优先级（`_rankGroup` / spec §2「按列表顺序依次 await」），开关、连通性结果、P2P 路径徽标、重新配对、编辑都按地址（`interconnect.part.dart` `_toggleUrl` / `_reachable[u.url]` / `_urlRowSubtitle`；0e6a3b063c 注释明写「同一台 host 的地址在列表里是平铺的多行」并为此加了删除确认）。本分支 53b1ea5136 把行标题从 URL 改成设备名（`interconnectPeerRowLabels`，`interconnect_dictionary_lookup_section.dart:80`，渲染于 `interconnect.part.dart` 地址行 `labels.title`），同组多行从此标题完全相同，却没有任何标识说明它们是同一台机器的不同路径——看起来就是重复配对。
+- **[x] ① 已修复** — 保留逐地址行（不折叠：折叠会丢掉组内优先级排序、单路径开关与逐地址测试结果），给多地址 host 的每行加注记「本设备第 i/n 个地址 · 网络种类 [· 自动获取]」：纯函数 `interconnectPeerAddressSlotOf`（`interconnect_peer_addresses.dart`）+ 文案 `interconnectPeerAddressNote`（`interconnect_dictionary_lookup_section.dart`），地址行渲染在 `interconnect.part.dart`。单地址 host 与无 hostId 的老条目不加注记。（未提交）
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_peer_rows_address_note_test.dart`：纯函数（序号 / 种类 / 学到标记 / 单地址与无 hostId 不注记）+ 真实「配对与设备」页 widget 测试（两行同名各带注记、单地址设备无注记、焦点驱动「上移」回车后注记随优先级更新且落库顺序正确）。
+- **备注**：未在真机 / 真实 app 截图复测注记显示。

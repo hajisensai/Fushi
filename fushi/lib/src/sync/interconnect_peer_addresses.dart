@@ -73,6 +73,40 @@ List<FushiClientUrl> interconnectPeerAddressesOf(
   return const <FushiClientUrl>[];
 }
 
+/// 设置页一条地址行在所属 host 里的位置：[index] 从 1 起、按列表顺序（也就是组内
+/// 选路的优先顺序），[count] 是这台 host 的地址总数，[rank] 同 [interconnectEntryRank]，
+/// [learned] 表示由 host 公布自动学到。
+typedef InterconnectPeerAddressSlot = ({
+  int index,
+  int count,
+  int rank,
+  bool learned,
+});
+
+/// [entry] 在 [urls] 里所属 host 的位置；这台 host 只有一条地址（含全部无 hostId 的
+/// 老条目）或 [entry] 不在列表里 → null。
+///
+/// 「已添加的设备」逐地址成行（排序 = 选路优先级、开关 / 测试结果 / 重新配对都按
+/// 地址），同一台 host 的多条地址标题都是同一个设备名；靠它给每行标出「第几条、
+/// 什么网络、是不是自动学到的」，两行才不会看起来像重复配对（BUG-4274）。
+InterconnectPeerAddressSlot? interconnectPeerAddressSlotOf(
+  List<FushiClientUrl> urls,
+  FushiClientUrl entry,
+) {
+  final List<FushiClientUrl> group = interconnectPeerAddressesOf(
+    urls,
+    entry.url,
+  );
+  if (group.length < 2) return null;
+  final int at = group.indexWhere((FushiClientUrl u) => u.url == entry.url);
+  return (
+    index: at + 1,
+    count: group.length,
+    rank: interconnectEntryRank(group[at]),
+    learned: group[at].learned,
+  );
+}
+
 /// 「忘记这台 host」：去掉 [url] 那一行；它带 [hostId] 时删的是**那台 host** 的全部
 /// 地址——同组其余地址都带着它的 token，只删一行等于没解绑（剩下的照常同步，被删的
 /// learned 地址 10 分钟内还会被学回来）。老条目（无 hostId）只删那一行。
