@@ -38,6 +38,8 @@ import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart'
     show kSrsHtmlFragmentHostCss;
 import 'package:fushi/src/srs/srs_html_card.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show srsForcedNativeHtmlCard, srsTemplateIsNative;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsCardAppearanceProvider, srsMediaStoreProvider, srsRunLogged;
@@ -61,6 +63,9 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// 卡面（[SrsFushiCardView]，见 `srsFushiCardNative`）；改到原生混合卡面画不了的（改了正面 /
 /// 样式 / 区块内部），模板本身带脚本、媒体查询与定位，原生 HTML 子集也画不了，仍走 WebView
 /// 外壳（它还要注入外观设置：`--fushi-srs-*` 变量、类名、字体）。
+///
+/// 正面模板标了「原生渲染」（[srsTemplateIsNative]）的卡一律原生：画不了的块在卡面上换成
+/// 提示（[srsForcedNativeHtmlCard]），不静默回退整面 WebView。
 SrsHtmlCard? srsNativeHtmlCardFor({
   required bool fushiCard,
   required String question,
@@ -69,15 +74,29 @@ SrsHtmlCard? srsNativeHtmlCardFor({
   required String? languageCode,
 }) {
   if (fushiCard) return null;
-  return srsHtmlCardOf(
+  final String? lang = languageCode == null || languageCode.isEmpty
+      ? null
+      : languageCode;
+  final SrsHtmlCard? plain = srsHtmlCardOf(
     question: question,
     answer: answer,
     css: css,
-    languageCode: languageCode == null || languageCode.isEmpty
-        ? null
-        : languageCode,
+    languageCode: lang,
   );
+  // 模板标了「原生渲染」（srs_native_template.dart）：画不了的部分就地提示，不回退 WebView。
+  if (plain != null || !srsTemplateIsNative(question)) return plain;
+  return srsForcedNativeHtmlCard(
+    question: question,
+    answer: answer,
+    css: css,
+    languageCode: lang,
+    notice: srsNativeUnsupportedNotice,
+  ).card;
 }
+
+/// 原生渲染标记的卡面上，画不了的部分换成的提示文字。
+String srsNativeUnsupportedNotice(String reason) =>
+    t.srs_template_native_unsupported(reason: reason);
 
 /// 卡面上的链接：`fushi://` 来源链接跳回原处（[onSourceLink]），http(s) 外链系统浏览器打开，
 /// 其余不处理。
