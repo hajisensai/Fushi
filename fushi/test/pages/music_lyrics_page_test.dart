@@ -642,9 +642,8 @@ void main() {
     final AdvancedMiningAudioSection audio = sections.audio!;
 
     // 单行：区间就是这一行（前后各扩 0.5 s）。
-    AdvancedMiningAudioWindow? window = await tester.runAsync(
-      () => audio.describe(0, 0),
-    );
+    AdvancedMiningAudioWindow? window = await tester
+        .runAsync<AdvancedMiningAudioWindow?>(() => audio.describe(0, 0));
     expect((window!.startMs, window.endMs), (3500, 8500));
 
     // 上 1 行 + 下 1 行。
@@ -656,12 +655,14 @@ void main() {
     expect(preview['current'], '沈むように');
     expect(preview['next'], <String>['溶けていく']);
     // 合并 [1 s, 12 s) → 留白 [0.5 s, 12.5 s) → 微调 [0.3 s, 12.8 s)。
-    window = await tester.runAsync(() => audio.describe(-200, 300));
+    window = await tester.runAsync<AdvancedMiningAudioWindow?>(
+      () => audio.describe(-200, 300),
+    );
     expect((window!.startMs, window.endMs), (300, 12800));
 
     // 试听与写卡同一段；关窗停试听、播放头回到查词时的位置（打开时没在播：保持暂停）。
     backend.log.clear();
-    final RangePlayback? playback = await tester.runAsync(
+    final RangePlayback? playback = await tester.runAsync<RangePlayback?>(
       () => audio.preview(-200, 300),
     );
     expect(playback, isNotNull);

@@ -10,7 +10,6 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
-import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
@@ -338,7 +337,7 @@ void main() {
           .first;
 
       // 横排只到第 12 张；网格里第 20 张（超出横排上限的那部分）也在。
-      final String lastId = 'album-a${_albumCount - 1}';
+      const String lastId = 'album-a${_albumCount - 1}';
       await tester.scrollUntilVisible(
         gridCard(lastId),
         300,
