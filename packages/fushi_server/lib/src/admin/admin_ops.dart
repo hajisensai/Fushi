@@ -149,25 +149,6 @@ CtlRouteHandler _forwardOnly(
   return _forward(dispatch)(call);
 };
 
-/// 同 [_forward]，但 body 只许出现 [allowed] 里的键；别的键（凭据、要重启的项…）
-/// 一律 400 拒绝、不转发——拒绝消息只列键名，不带值。
-CtlRouteHandler _forwardOnly(
-  AdminDispatch Function() dispatch,
-  List<String> allowed,
-) => (CtlCall call) async {
-  final List<String> refused = <String>[
-    for (final String key in call.body.keys)
-      if (!allowed.contains(key)) key,
-  ];
-  if (refused.isNotEmpty) {
-    throw CtlFailure.badRequest(
-      'not changeable via this operation: ${refused.join(', ')} '
-      '(allowed: ${allowed.join(', ')})',
-    );
-  }
-  return _forward(dispatch)(call);
-};
-
 /// 进程内调一次 admin API，回 JSON；>= 400 抛 [CtlFailure]（短码按状态码，消息取
 /// 错误体的 `error`）。GET / DELETE 的参数走 query。
 Future<Object?> adminCall(
