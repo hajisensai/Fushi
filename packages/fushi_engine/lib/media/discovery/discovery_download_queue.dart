@@ -129,7 +129,7 @@ class DiscoveryDownloadTask {
   /// 失败原因（status == failed / waitingRetry 时非空）。
   String? error;
 
-  /// 失败是因为下载网关要求人机验证且没能通过（BUG-4339）：回挑战的网关 URL。
+  /// 失败是因为下载网关要求人机验证且没能通过（BUG-4346）：回挑战的网关 URL。
   /// UI 据此显示「站点要求人机验证」并提供「在浏览器中打开」，而不是只报 403。
   Uri? challengeUrl;
 
@@ -433,7 +433,7 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
   }
 
   /// 下载一个 payload；网关回人机验证挑战时交给 [_challengeSolver] 解一次，
-  /// 带着放行凭据重开同一资源（BUG-4339）。
+  /// 带着放行凭据重开同一资源（BUG-4346）。
   ///
   /// 只解**一次**：放行后仍被挡（凭据过期 / 出口 IP 与解题时不同 / 站点改了
   /// 协议）原样上浮挑战，由 UI 给出「在浏览器中打开」，不在这里循环弹页。
