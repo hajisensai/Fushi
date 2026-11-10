@@ -209,12 +209,14 @@ class ServerDownloadHost implements HostDownloadHost {
     // 资源索引器：与 app 同一份用户 BT 站清单 + 同一个 Torznab 偏好键（同一张
     // preferences 表）。订阅服务的在场校验看它，客户端搜到的 provider id 才对得上。
     _startPipeline(_buildRegistry());
+    // getter 每次现建一份 registry（见 [subtitleProviderIds]），这里只算一次。
+    final List<String> subtitleIds = subtitleProviderIds;
     engineLog.logDiagnostic(
       'ServerDownloadHost',
       'pipeline started (backend=$_resolvedBackend'
           '${_resolvedBackend == ServerConfig.torrentEngineQbittorrent ? ' ${config.qbittorrentUrl}' : ''}, '
           'root ${downloadRoot.path}, '
-          'subtitles ${subtitleProviderIds.isEmpty ? 'none' : subtitleProviderIds.join('+')})',
+          'subtitles ${subtitleIds.isEmpty ? 'none' : subtitleIds.join('+')})',
     );
   }
 
