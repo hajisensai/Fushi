@@ -52,7 +52,7 @@ pub(crate) fn in_savepoint<T>(
 ) -> Result<T, String> {
     conn.execute_batch("SAVEPOINT sync2").map_err(sql)?;
     // panic 时这里不 ROLLBACK TO：SAVEPOINT 留在写连接上，由取写锁时的恢复整笔回滚（store/mod.rs
-    // `SrsCore::recover_writer`，BUG-4284）。
+    // `SrsCore::recover_writer`，BUG-4293）。
     let out = f(conn);
     #[cfg(test)]
     if out.is_ok() {
@@ -75,7 +75,7 @@ pub(crate) fn in_savepoint<T>(
     }
 }
 
-/// 测试用的 panic 注入点（BUG-4284）：[arm] 之后，本线程下一次走到同名注入点时 panic 一次。
+/// 测试用的 panic 注入点（BUG-4293）：[arm] 之后，本线程下一次走到同名注入点时 panic 一次。
 #[cfg(test)]
 pub(crate) mod test_panic {
     use std::cell::Cell;
