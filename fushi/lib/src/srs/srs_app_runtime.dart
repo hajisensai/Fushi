@@ -101,6 +101,8 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier));
       // BUG-4075 取证：修订号「同步拉入」的一跳（本机写入的一跳在下面 listenSrsLocalWrites 里记）。
       SrsOpLedger.mark('rev:pulled');
+      // 别的设备可能改了复习翻日时刻：本机统计日界跟上（单向，不写回复习）。
+      unawaited(runtime.adoptSyncedDayRollover());
     },
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
@@ -189,6 +191,26 @@ class SrsAppRuntime {
 
   /// 本机写入（自动优化应用了新参数）：界面重读 + 推给别的设备。
   final void Function() _bumpRevision;
+
+  /// 同步拉入之后：生效的翻日时刻是本机没见过的修改（别的设备的用户改了日界）就让本机统计日界跟上；还是本机
+  /// 写下 / 采纳过的那条就不动（[AppModel.adoptSyncedDayRollover]）。复习自己的「今天」不靠这一步，
+  /// `SrsDbStore.dayContext` 直接读字段。
+  Future<void> adoptSyncedDayRollover() async {
+    try {
+      final SrsDbStore? store = await _readStore();
+      if (store == null) return;
+      await app.adoptSyncedDayRollover(
+        store.profileUid,
+        store.syncedDayRollover,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'SrsAppRuntime.adoptSyncedDayRollover',
+        e,
+        stack,
+      );
+    }
+  }
 
   /// 同步拉进了别的设备的变更：界面重读，不再推送（[SrsRevisionOrigin]）。
   final void Function() _bumpPulledRevision;

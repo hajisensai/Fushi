@@ -1620,7 +1620,7 @@ fn sync2_command(
         // 的设备的补充名（互联 host 认出上传者）。
         "device_info" => c.sync2_device_info(profile, req, i("now")?)?,
         "device_hint" => c.sync2_device_hint(s("device")?, s("hint")?)?,
-        // 位置「见过加密」的本机记账（store/sync2/sealed.rs，BUG-4293）：读；记（带这一刻见到的 kdf，或段 / 转发件的开头字节）。
+        // 位置「见过加密」的本机记账（store/sync2/sealed.rs，BUG-4299）：读；记（带这一刻见到的 kdf，或段 / 转发件的开头字节）。
         "location_sealed" => c.sync2_location_sealed(profile, s("location")?)?,
         "location_seal" => c.sync2_location_seal(
             profile,

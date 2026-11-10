@@ -61,6 +61,11 @@ class SrsProfileStores {
 
   final SrsProfileStoresDeps _deps;
 
+  /// 新打开的副本成为激活副本之后调用（就地复用同一份副本时不调）。由 main.dart 挂上
+  /// `AppModel.flushPendingDayRollover`：复习模块关着时用户改的日界，在这份配置的复习库下次激活时补写。
+  /// 不等它做完，激活不被它拖慢。
+  void Function(SrsDbStore store)? onActivated;
+
   /// App 激活配置的副本。切配置时保留旧的那份直到交接完成（[_handOver]：它已排队的写入写完、
   /// 新副本在它最后一段独占区里打开、随后它作废）。
   SrsDbStore? _active;
@@ -176,7 +181,9 @@ class SrsProfileStores {
           return current;
         }
         await release(profileUid);
-        return (await _handOver(open))!;
+        final SrsDbStore store = (await _handOver(open))!;
+        onActivated?.call(store);
+        return store;
       } finally {
         if (identical(_activating, marker)) _activating = null;
         settled.complete();
