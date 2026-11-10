@@ -122,11 +122,13 @@ void main() {
     );
     expect(
       RegExp(
-        r'if \(!isManga && modules\.isEnabled\(ModuleId\.listening\)\)\s*'
+        r'if \(canAttachAudiobook\)\s*'
         r'DialogQuickAction\(\s*label: t\.audiobook_import,',
       ).hasMatch(shelf),
       isTrue,
-      reason: '漫画阅读器不播有声书，「导入有声书」不得出现在漫画卡上',
+      reason:
+          '漫画阅读器不播有声书，「导入有声书」只按共享判据 '
+          'mediaItemSupportsAudiobook 出现（漫画 / PDF 卡都不出现）',
     );
     expect(
       books.contains("ValueKey<String>('reader_shelf_batch_ocr')"),
