@@ -549,6 +549,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   void dispose() {
     if (identical(_current, this)) _current = null;
     unawaited(_screenOcrLocal?.dispose());
+    _screenOcrLens?.close();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_pictureInPictureSub?.cancel());
     _registry.removeListener(_onChanged);
@@ -1164,14 +1165,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           screenText: true,
         ),
         ScreenOcrEngine.googleLens => GoogleLensScreenOcr(
-          runner: _screenOcrLens,
+          runner: _screenOcrLens ??= GoogleLensMangaOcrService(),
           lensLanguage: _prefs?.mangaOcrLensLanguage ?? _ocrLanguage,
         ),
       };
 
-  /// 截屏识字的 Lens 客户端（常驻，复用 HTTP 连接）。
-  late final GoogleLensMangaOcrService _screenOcrLens =
-      GoogleLensMangaOcrService();
+  /// 截屏识字的 Lens 客户端：第一次用 Lens 时才建，之后常驻复用 HTTP 连接，宿主
+  /// 销毁时关掉（[dispose]）。
+  GoogleLensMangaOcrService? _screenOcrLens;
 
   /// 截屏识字要用 Lens 但本设备还没同意上传：在主窗里问。不管同意与否这次都不截——
   /// 同意框在主窗里、主窗此刻在最前，接着截会把主窗截进去；同意后用户回到要识别的
