@@ -70,11 +70,17 @@ void main() {
     );
   });
 
-  test('重建缓存的 Drift 事务里发的 rebuild_caches 记为 Join', () async {
+  // 收掉 Dart 写路径第 4 步：重建缓存连同缓存版本号由内核在一个 SAVEPOINT 里做完，不再套 Drift 事务。
+  test('重建缓存不开 Drift 事务（不计）；外层开着时照样嵌进去、记为 Join', () async {
     final SrsDbStore s = await open();
     await s.debugDriftTxGuardHits(reset: true);
     await s.rebuildCaches();
-    final Map<String, Map<String, int>> hits = await s.debugDriftTxGuardHits();
+    Map<String, Map<String, int>> hits = await s.debugDriftTxGuardHits(
+      reset: true,
+    );
+    expect(hits['join'], isEmpty, reason: '$hits');
+    await s.db.transaction(s.rebuildCaches);
+    hits = await s.debugDriftTxGuardHits();
     expect(hits['join'], <String, int>{'rebuild_caches': 1});
     expect(hits['reject'], isEmpty);
   });

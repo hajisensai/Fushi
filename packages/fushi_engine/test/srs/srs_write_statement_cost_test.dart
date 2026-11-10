@@ -133,6 +133,15 @@ void main() {
       r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 1)",
     );
     costs['open(cacheRev 1)'] = await openCost();
+    // 旧版本号的那次打开确实由内核补跑了升级、记下了当前版本号（同一条命令里，语句数不多一条）。
+    final int rev =
+        (await f.db
+                .customSelect(
+                  r"SELECT json_extract(json, '$.cacheRev') AS v FROM srs_local_state",
+                )
+                .getSingle())
+            .read<int>('v');
+    expect(rev, s.debugCacheRevision);
     for (final MapEntry<String, _Cost> e in costs.entries) {
       // ignore: avoid_print
       print(
@@ -142,8 +151,8 @@ void main() {
     }
     expect(costs, <String, _Cost>{
       'rebuildCaches': (statements: 0, core: 1),
-      'open(current)': (statements: -1, core: -1),
-      'open(cacheRev 1)': (statements: -1, core: -1),
+      'open(current)': (statements: 4, core: 2),
+      'open(cacheRev 1)': (statements: 4, core: 2),
     });
   });
 
