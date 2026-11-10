@@ -409,8 +409,9 @@ class SubtitleWaveformSegments extends ChangeNotifier {
     _explicit.remove(index);
     final Completer<bool>? completer = _pending.remove(index);
     if (_disposed) {
-      if (completer != null && !completer.isCompleted)
+      if (completer != null && !completer.isCompleted) {
         completer.complete(false);
+      }
       return;
     }
     if (frames.isEmpty) {
