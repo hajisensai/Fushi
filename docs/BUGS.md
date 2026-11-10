@@ -33,20 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3915 条。点号进各自文件。
-> 共 3909 条。点号进各自文件。
+> 共 3916 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4368](bugs/BUG-4368-reader-tap-lookup-off-swallows-taps.md) | ✅ | ✅ | 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查） |
-> 共 3914 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4373](bugs/BUG-4373-manga-command-keys-dead-under-webview-focus.md) | ✅ | ✅ | 漫画：WebView2 持键盘焦点时切换界面 / 统计 / 计时（及新书签）快捷键收不到，改键也不生效 |
 | [BUG-4371](bugs/BUG-4371-video-mine-popup-blocks-playback.md) | ✅ | ✅ | 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成 |
 | [BUG-4370](bugs/BUG-4370-coloros-ostop-exit-misreport.md) | ✅ | ✅ | ColorOS / OnePlus 的 o-stop 停应用被误报为闪退 |
 | [BUG-4369](bugs/BUG-4369-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
-| [BUG-4368](bugs/BUG-4368-manga-command-keys-dead-under-webview-focus.md) | ✅ | ✅ | 漫画：WebView2 持键盘焦点时切换界面 / 统计 / 计时（及新书签）快捷键收不到，改键也不生效 |
+| [BUG-4368](bugs/BUG-4368-reader-tap-lookup-off-swallows-taps.md) | ✅ | ✅ | 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查） |
 | [BUG-4367](bugs/BUG-4367-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
 | [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
 | [BUG-4365](bugs/BUG-4365-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |
