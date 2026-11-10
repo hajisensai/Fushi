@@ -4843,6 +4843,7 @@
   "lyrics_av_sync_hint": "+ shows the highlight later, − earlier. Hold a button to keep adjusting; tap the value to reset.",
   "lyrics_blur": "Liedtext unscharf",
   "lyrics_blur_hint": "Die aktuelle Zeile für Hörimmersion unscharf stellen; darüber fahren oder tippen zum Aufdecken",
+  "lyrics_control_item_export_subtitle": "Export current subtitles",
   "lyrics_control_item_position_jump": "Jump to position",
   "lyrics_control_item_study_timer": "Study timer",
   "lyrics_control_layout": "Button layout",
