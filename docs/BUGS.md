@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3899 条。点号进各自文件。
+> 共 3900 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4354](bugs/BUG-4354-subtitle-waveform-truncated-at-probe-limit.md) | ✅ | ✅ | 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去 |
+| [BUG-4355](bugs/BUG-4355-subtitle-waveform-truncated-at-probe-limit.md) | ✅ | ✅ | 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去 |
 | [BUG-4354](bugs/BUG-4354-alist-download-gateway-pow-required.md) | ✅ | ✅ | 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手 |
 | [BUG-4353](bugs/BUG-4353-cloud-legacy-manga-sniff-webdav-sftp.md) | ✅ | ✅ | WebDAV / SFTP 同步后端没有区间读，云端旧名漫画包无法判型 |
 | [BUG-4352](bugs/BUG-4352-video-explicit-pos-cues-stacked-karaoke.md) | ✅ | ✅ | ASS 卡拉 OK 歌词（同一 \pos 多条事件）被竖排成多行、光晕残影；渲染活动集只按 125ms 刷新 |
