@@ -434,6 +434,11 @@ class RemoteDictionaryMetadata extends Table {
   /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
   BoolColumn get hidden => boolean().withDefault(const Constant(false))();
 
+  /// v150：本机给这本服务器词典起的显示名（词典管理页详情里改名）；null = 用 host 的
+  /// [displayName] / [name]。**设备本地**：既不归配置（不进 `remote_dictionary_meta`
+  /// 快照），也不由目录刷新写（upsert 冲突时不碰），不导出。
+  TextColumn get localDisplayName => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {hostId, name};
 }

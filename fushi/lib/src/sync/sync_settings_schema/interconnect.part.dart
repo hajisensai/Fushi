@@ -306,13 +306,20 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     setState(() => _dictionarySummaries = summaries);
   }
 
-  /// 「用这台服务器查词典」：同一台 host 的全部地址一起改（经 [_mutateUrls] 串行写）。
+  /// 「用这台服务器查词典」：同一台 host 的全部地址一起改（经 [_mutateUrls] 串行写），
+  /// 打开时全局远程查词关着就一并打开（[applyInterconnectHostLookupIntent]）。
   /// 词典仓库与目录服务跟随配对列表广播，各自重算参与查词的 host。
-  Future<void> _setHostLookupEnabled(String hostId, bool enabled) =>
-      _mutateUrls(
-        (List<FushiClientUrl> current) =>
-            withInterconnectHostLookupEnabled(current, hostId, enabled),
-      );
+  Future<void> _setHostLookupEnabled(String hostId, bool enabled) async {
+    final AppModel appModel = widget.settingsContext.appModel;
+    await applyInterconnectHostLookupIntent(
+      hostId: hostId,
+      enabled: enabled,
+      mutateUrls: _mutateUrls,
+      remoteLookupEnabled: appModel.remoteLookupEnabled,
+      setRemoteLookupEnabled: appModel.setRemoteLookupEnabled,
+    );
+    if (mounted) setState(() {});
+  }
 
   Future<void> _refreshHostDictionaries(String hostId) async {
     final RemoteDictionaryCatalogService? catalog =
@@ -913,11 +920,35 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                       builder: (BuildContext context, BoxConstraints box) {
                         final bool compact =
                             box.maxWidth < _kInterconnectPeerRowWideMinWidth;
-                        final Widget? status = _urlRowSubtitle(
+                        final Widget? reachStatus = _urlRowSubtitle(
                           theme,
                           u.url,
                           ok,
                         );
+                        // 已知设备名时标题是设备名、地址退到副标题首行（认设备先认名字）。
+                        final ({String title, String? url}) labels =
+                            interconnectPeerRowLabels(u);
+                        final String? urlLine = labels.url;
+                        final Widget? status = urlLine != null
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    urlLine,
+                                    key: ValueKey<String>(
+                                      'interconnect-peer-url-${u.url}',
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  ?reachStatus,
+                                ],
+                              )
+                            : reachStatus;
                         return FushiListItem(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           leading: FushiListLeadingIcon(
@@ -932,7 +963,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                           // 在窄屏上只显示得到 `http…`，等于认不出是哪台设备。放宽两行。
                           titleMaxLines: 2,
                           title: Text(
-                            u.url,
+                            labels.title,
+                            key: ValueKey<String>(
+                              'interconnect-peer-title-${u.url}',
+                            ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -988,6 +1022,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               urls: _urls,
               summaries: _dictionarySummaries,
               refreshingHosts: _refreshingDictionaryHosts,
+              remoteLookupEnabled:
+                  widget.settingsContext.appModel.remoteLookupEnabled,
               onLookupChanged: (String hostId, bool enabled) =>
                   unawaited(_setHostLookupEnabled(hostId, enabled)),
               onRefresh:

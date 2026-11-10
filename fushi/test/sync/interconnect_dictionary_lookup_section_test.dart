@@ -238,4 +238,115 @@ void main() {
       expect(refreshed, <String>['h2']);
     },
   );
+
+  group('one intent, one switch (applyInterconnectHostLookupIntent)', () {
+    Future<({List<FushiClientUrl> urls, List<bool> globalWrites})> run({
+      required List<FushiClientUrl> start,
+      required String hostId,
+      required bool enabled,
+      required bool global,
+    }) async {
+      List<FushiClientUrl> urls = start;
+      final List<bool> globalWrites = <bool>[];
+      await applyInterconnectHostLookupIntent(
+        hostId: hostId,
+        enabled: enabled,
+        mutateUrls:
+            (List<FushiClientUrl> Function(List<FushiClientUrl>) transform) async {
+              urls = transform(urls);
+            },
+        remoteLookupEnabled: global,
+        setRemoteLookupEnabled: (bool value) async => globalWrites.add(value),
+      );
+      return (urls: urls, globalWrites: globalWrites);
+    }
+
+    test('turning a host on also turns on remote lookup when it is off', () async {
+      final List<FushiClientUrl> off = withInterconnectHostLookupEnabled(
+        _urls,
+        'h1',
+        false,
+      );
+      final r = await run(start: off, hostId: 'h1', enabled: true, global: false);
+      expect(interconnectHostLookupEnabled(r.urls, 'h1'), isTrue);
+      expect(r.globalWrites, <bool>[true]);
+    });
+
+    test('global setting already on: only the pairing is written', () async {
+      final List<FushiClientUrl> off = withInterconnectHostLookupEnabled(
+        _urls,
+        'h1',
+        false,
+      );
+      final r = await run(start: off, hostId: 'h1', enabled: true, global: true);
+      expect(interconnectHostLookupEnabled(r.urls, 'h1'), isTrue);
+      expect(r.globalWrites, isEmpty);
+    });
+
+    test('switching the last host off leaves the global setting alone', () async {
+      List<FushiClientUrl> urls = withInterconnectHostLookupEnabled(
+        _urls,
+        'h2',
+        false,
+      );
+      final r = await run(start: urls, hostId: 'h1', enabled: false, global: true);
+      urls = r.urls;
+      expect(interconnectHostLookupEnabled(urls, 'h1'), isFalse);
+      expect(interconnectHostLookupEnabled(urls, 'h2'), isFalse);
+      expect(r.globalWrites, isEmpty);
+    });
+  });
+
+  test('added peers: device name is the title, the URL the subtitle', () {
+    expect(interconnectPeerRowLabels(_urls.first), (
+      title: 'Box',
+      url: 'https://192.168.1.10:38765',
+    ));
+    expect(
+      interconnectPeerRowLabels(
+        const FushiClientUrl(url: 'http://10.0.0.9:38765', deviceName: '  '),
+      ),
+      (title: 'http://10.0.0.9:38765', url: null),
+    );
+  });
+
+  testWidgets('switch subtitle says it also turns on remote lookup when off', (
+    WidgetTester tester,
+  ) async {
+    Future<void> pump({required bool remoteLookupEnabled}) =>
+        tester.pumpWidget(
+          TranslationProvider(
+            child: MaterialApp(
+              theme: buildFushiFallbackTheme(
+                Brightness.light,
+              ).copyWith(platform: TargetPlatform.windows),
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: InterconnectDictionaryLookupSection(
+                    urls: _urls.take(1).toList(),
+                    summaries: const <String, InterconnectHostDictionarySummary>{},
+                    refreshingHosts: const <String>{},
+                    remoteLookupEnabled: remoteLookupEnabled,
+                    onLookupChanged: (String hostId, bool enabled) {},
+                    onRefresh: null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+    await pump(remoteLookupEnabled: false);
+    await tester.pump();
+    expect(
+      find.textContaining('Also turns on remote dictionary lookup'),
+      findsOneWidget,
+    );
+    await pump(remoteLookupEnabled: true);
+    await tester.pump();
+    expect(
+      find.textContaining('Also turns on remote dictionary lookup'),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

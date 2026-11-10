@@ -6639,6 +6639,17 @@ class $RemoteDictionaryMetadataTable extends RemoteDictionaryMetadata
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _localDisplayNameMeta = const VerificationMeta(
+    'localDisplayName',
+  );
+  @override
+  late final GeneratedColumn<String> localDisplayName = GeneratedColumn<String>(
+    'local_display_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     hostId,
@@ -6652,6 +6663,7 @@ class $RemoteDictionaryMetadataTable extends RemoteDictionaryMetadata
     missingSince,
     order,
     hidden,
+    localDisplayName,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6751,6 +6763,15 @@ class $RemoteDictionaryMetadataTable extends RemoteDictionaryMetadata
         hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
       );
     }
+    if (data.containsKey('local_display_name')) {
+      context.handle(
+        _localDisplayNameMeta,
+        localDisplayName.isAcceptableOrUnknown(
+          data['local_display_name']!,
+          _localDisplayNameMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6807,6 +6828,10 @@ class $RemoteDictionaryMetadataTable extends RemoteDictionaryMetadata
         DriftSqlType.bool,
         data['${effectivePrefix}hidden'],
       )!,
+      localDisplayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_display_name'],
+      ),
     );
   }
 
@@ -6848,6 +6873,11 @@ class RemoteDictionaryMetaRow extends DataClass
 
   /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
   final bool hidden;
+
+  /// v150：本机给这本服务器词典起的显示名（词典管理页详情里改名）；null = 用 host 的
+  /// [displayName] / [name]。**设备本地**：既不归配置（不进 `remote_dictionary_meta`
+  /// 快照），也不由目录刷新写（upsert 冲突时不碰），不导出。
+  final String? localDisplayName;
   const RemoteDictionaryMetaRow({
     required this.hostId,
     required this.name,
@@ -6860,6 +6890,7 @@ class RemoteDictionaryMetaRow extends DataClass
     this.missingSince,
     required this.order,
     required this.hidden,
+    this.localDisplayName,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6885,6 +6916,9 @@ class RemoteDictionaryMetaRow extends DataClass
     }
     map['order'] = Variable<int>(order);
     map['hidden'] = Variable<bool>(hidden);
+    if (!nullToAbsent || localDisplayName != null) {
+      map['local_display_name'] = Variable<String>(localDisplayName);
+    }
     return map;
   }
 
@@ -6911,6 +6945,9 @@ class RemoteDictionaryMetaRow extends DataClass
           : Value(missingSince),
       order: Value(order),
       hidden: Value(hidden),
+      localDisplayName: localDisplayName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localDisplayName),
     );
   }
 
@@ -6931,6 +6968,7 @@ class RemoteDictionaryMetaRow extends DataClass
       missingSince: serializer.fromJson<int?>(json['missingSince']),
       order: serializer.fromJson<int>(json['order']),
       hidden: serializer.fromJson<bool>(json['hidden']),
+      localDisplayName: serializer.fromJson<String?>(json['localDisplayName']),
     );
   }
   @override
@@ -6948,6 +6986,7 @@ class RemoteDictionaryMetaRow extends DataClass
       'missingSince': serializer.toJson<int?>(missingSince),
       'order': serializer.toJson<int>(order),
       'hidden': serializer.toJson<bool>(hidden),
+      'localDisplayName': serializer.toJson<String?>(localDisplayName),
     };
   }
 
@@ -6963,6 +7002,7 @@ class RemoteDictionaryMetaRow extends DataClass
     Value<int?> missingSince = const Value.absent(),
     int? order,
     bool? hidden,
+    Value<String?> localDisplayName = const Value.absent(),
   }) => RemoteDictionaryMetaRow(
     hostId: hostId ?? this.hostId,
     name: name ?? this.name,
@@ -6977,6 +7017,9 @@ class RemoteDictionaryMetaRow extends DataClass
     missingSince: missingSince.present ? missingSince.value : this.missingSince,
     order: order ?? this.order,
     hidden: hidden ?? this.hidden,
+    localDisplayName: localDisplayName.present
+        ? localDisplayName.value
+        : this.localDisplayName,
   );
   RemoteDictionaryMetaRow copyWithCompanion(
     RemoteDictionaryMetadataCompanion data,
@@ -7001,6 +7044,9 @@ class RemoteDictionaryMetaRow extends DataClass
           : this.missingSince,
       order: data.order.present ? data.order.value : this.order,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      localDisplayName: data.localDisplayName.present
+          ? data.localDisplayName.value
+          : this.localDisplayName,
     );
   }
 
@@ -7017,7 +7063,8 @@ class RemoteDictionaryMetaRow extends DataClass
           ..write('lastSeenAt: $lastSeenAt, ')
           ..write('missingSince: $missingSince, ')
           ..write('order: $order, ')
-          ..write('hidden: $hidden')
+          ..write('hidden: $hidden, ')
+          ..write('localDisplayName: $localDisplayName')
           ..write(')'))
         .toString();
   }
@@ -7035,6 +7082,7 @@ class RemoteDictionaryMetaRow extends DataClass
     missingSince,
     order,
     hidden,
+    localDisplayName,
   );
   @override
   bool operator ==(Object other) =>
@@ -7050,7 +7098,8 @@ class RemoteDictionaryMetaRow extends DataClass
           other.lastSeenAt == this.lastSeenAt &&
           other.missingSince == this.missingSince &&
           other.order == this.order &&
-          other.hidden == this.hidden);
+          other.hidden == this.hidden &&
+          other.localDisplayName == this.localDisplayName);
 }
 
 class RemoteDictionaryMetadataCompanion
@@ -7066,6 +7115,7 @@ class RemoteDictionaryMetadataCompanion
   final Value<int?> missingSince;
   final Value<int> order;
   final Value<bool> hidden;
+  final Value<String?> localDisplayName;
   final Value<int> rowid;
   const RemoteDictionaryMetadataCompanion({
     this.hostId = const Value.absent(),
@@ -7079,6 +7129,7 @@ class RemoteDictionaryMetadataCompanion
     this.missingSince = const Value.absent(),
     this.order = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.localDisplayName = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RemoteDictionaryMetadataCompanion.insert({
@@ -7093,6 +7144,7 @@ class RemoteDictionaryMetadataCompanion
     this.missingSince = const Value.absent(),
     required int order,
     this.hidden = const Value.absent(),
+    this.localDisplayName = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : hostId = Value(hostId),
        name = Value(name),
@@ -7110,6 +7162,7 @@ class RemoteDictionaryMetadataCompanion
     Expression<int>? missingSince,
     Expression<int>? order,
     Expression<bool>? hidden,
+    Expression<String>? localDisplayName,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -7124,6 +7177,7 @@ class RemoteDictionaryMetadataCompanion
       if (missingSince != null) 'missing_since': missingSince,
       if (order != null) 'order': order,
       if (hidden != null) 'hidden': hidden,
+      if (localDisplayName != null) 'local_display_name': localDisplayName,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -7140,6 +7194,7 @@ class RemoteDictionaryMetadataCompanion
     Value<int?>? missingSince,
     Value<int>? order,
     Value<bool>? hidden,
+    Value<String?>? localDisplayName,
     Value<int>? rowid,
   }) {
     return RemoteDictionaryMetadataCompanion(
@@ -7154,6 +7209,7 @@ class RemoteDictionaryMetadataCompanion
       missingSince: missingSince ?? this.missingSince,
       order: order ?? this.order,
       hidden: hidden ?? this.hidden,
+      localDisplayName: localDisplayName ?? this.localDisplayName,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -7194,6 +7250,9 @@ class RemoteDictionaryMetadataCompanion
     if (hidden.present) {
       map['hidden'] = Variable<bool>(hidden.value);
     }
+    if (localDisplayName.present) {
+      map['local_display_name'] = Variable<String>(localDisplayName.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -7214,6 +7273,7 @@ class RemoteDictionaryMetadataCompanion
           ..write('missingSince: $missingSince, ')
           ..write('order: $order, ')
           ..write('hidden: $hidden, ')
+          ..write('localDisplayName: $localDisplayName, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -82505,6 +82565,7 @@ typedef $$RemoteDictionaryMetadataTableCreateCompanionBuilder =
       Value<int?> missingSince,
       required int order,
       Value<bool> hidden,
+      Value<String?> localDisplayName,
       Value<int> rowid,
     });
 typedef $$RemoteDictionaryMetadataTableUpdateCompanionBuilder =
@@ -82520,6 +82581,7 @@ typedef $$RemoteDictionaryMetadataTableUpdateCompanionBuilder =
       Value<int?> missingSince,
       Value<int> order,
       Value<bool> hidden,
+      Value<String?> localDisplayName,
       Value<int> rowid,
     });
 
@@ -82584,6 +82646,11 @@ class $$RemoteDictionaryMetadataTableFilterComposer
 
   ColumnFilters<bool> get hidden => $composableBuilder(
     column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localDisplayName => $composableBuilder(
+    column: $table.localDisplayName,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -82651,6 +82718,11 @@ class $$RemoteDictionaryMetadataTableOrderingComposer
     column: $table.hidden,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get localDisplayName => $composableBuilder(
+    column: $table.localDisplayName,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RemoteDictionaryMetadataTableAnnotationComposer
@@ -82702,6 +82774,11 @@ class $$RemoteDictionaryMetadataTableAnnotationComposer
 
   GeneratedColumn<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => column);
+
+  GeneratedColumn<String> get localDisplayName => $composableBuilder(
+    column: $table.localDisplayName,
+    builder: (column) => column,
+  );
 }
 
 class $$RemoteDictionaryMetadataTableTableManager
@@ -82761,6 +82838,7 @@ class $$RemoteDictionaryMetadataTableTableManager
                 Value<int?> missingSince = const Value.absent(),
                 Value<int> order = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String?> localDisplayName = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RemoteDictionaryMetadataCompanion(
                 hostId: hostId,
@@ -82774,6 +82852,7 @@ class $$RemoteDictionaryMetadataTableTableManager
                 missingSince: missingSince,
                 order: order,
                 hidden: hidden,
+                localDisplayName: localDisplayName,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -82789,6 +82868,7 @@ class $$RemoteDictionaryMetadataTableTableManager
                 Value<int?> missingSince = const Value.absent(),
                 required int order,
                 Value<bool> hidden = const Value.absent(),
+                Value<String?> localDisplayName = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RemoteDictionaryMetadataCompanion.insert(
                 hostId: hostId,
@@ -82802,6 +82882,7 @@ class $$RemoteDictionaryMetadataTableTableManager
                 missingSince: missingSince,
                 order: order,
                 hidden: hidden,
+                localDisplayName: localDisplayName,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -635,23 +635,30 @@ class FushiChoiceChip extends StatelessWidget {
         tooltip: tooltip,
       );
     }
-    // 有前导图标且要画对勾时：对勾原位替换图标，不走 RawChip 自带对勾（深色
-    // 圆形 scrim，见 [fushiChipLeadingCheckSwap]）。全局 chipTheme 关了对勾时
-    // 维持原样（选中只靠填充）。
+    // 选中态必须一眼可辨（用户 2026-11-09，词典管理页来源筛选条「看不出选了哪个」）：
+    // MD3 下单选 chip 也按 M3 filter chip 画——tonal 填充（chipTheme 的
+    // secondaryContainer）+ **前导对勾**。全局 chipTheme 的 `showCheckmark: false`
+    // 只管裸 ChoiceChip；这里调用方没显式传 `showCheckmark: false` 就画对勾——只靠
+    // secondaryContainer 与未选的 surfaceContainerHigh 两块浅色区分，在多数配色下几乎
+    // 分不出来。Apple 设计系统走上面的强调色实底胶囊（iOS 不画对勾），不受影响。
+    //
+    // 有前导图标时：对勾原位替换图标，不走 RawChip 自带对勾（深色圆形 scrim，见
+    // [fushiChipLeadingCheckSwap]）；没有前导图标时由 RawChip 在前导槽画对勾（M3 规范
+    // 的展开动画）。墨水屏选中是反色填充（onSurface 底），对勾跟着反色。
     final Widget? leading = avatar;
-    final bool wantsCheckmark =
-        showCheckmark ?? ChipTheme.of(context).showCheckmark ?? true;
+    final bool wantsCheckmark = showCheckmark ?? true;
+    final Color? checkColor =
+        checkmarkColor ??
+        (isEinkTheme(context) ? Theme.of(context).colorScheme.surface : null);
     final Widget? effectiveAvatar = leading != null && wantsCheckmark
         ? fushiChipLeadingCheckSwap(
             context,
             avatar: leading,
             selected: selected,
-            checkColor: checkmarkColor ?? labelStyle?.color,
+            checkColor: checkColor ?? labelStyle?.color,
           )
         : leading;
-    final bool? effectiveShowCheckmark = leading != null && wantsCheckmark
-        ? false
-        : showCheckmark;
+    final bool effectiveShowCheckmark = leading == null && wantsCheckmark;
     if (_elevated) {
       return ChoiceChip.elevated(
         avatar: effectiveAvatar,
@@ -680,7 +687,7 @@ class FushiChoiceChip extends StatelessWidget {
         iconTheme: iconTheme,
         selectedShadowColor: selectedShadowColor,
         showCheckmark: effectiveShowCheckmark,
-        checkmarkColor: checkmarkColor,
+        checkmarkColor: checkColor,
         avatarBorder: avatarBorder,
         avatarBoxConstraints: avatarBoxConstraints,
         chipAnimationStyle: chipAnimationStyle,
@@ -714,7 +721,7 @@ class FushiChoiceChip extends StatelessWidget {
       iconTheme: iconTheme,
       selectedShadowColor: selectedShadowColor,
       showCheckmark: effectiveShowCheckmark,
-      checkmarkColor: checkmarkColor,
+      checkmarkColor: checkColor,
       avatarBorder: avatarBorder,
       avatarBoxConstraints: avatarBoxConstraints,
       chipAnimationStyle: chipAnimationStyle,

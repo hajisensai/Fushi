@@ -35,6 +35,40 @@ List<FushiClientUrl> withInterconnectHostLookupEnabled(
   ];
 }
 
+/// 「用这台服务器查词典」的唯一写入口（配对设置页与词典管理页的来源卡片共用）：
+/// 一个意图、一个开关。打开某台 host 时，全局「远程查词」（`remote_lookup_enabled`）
+/// 若关着就在**同一个动作**里一起打开——否则用户开了 host 开关、查词却仍不走服务器，
+/// 只能靠词典管理页底下那条「远程查词已关闭」提示才发现。关掉最后一台 host 时全局
+/// 设置原样不动（它还管别的远端查词入口，不能替用户关）。
+///
+/// [mutateUrls] 是调用方串行写配对列表的通道（设置页要同步自己的列表状态）；
+/// 配对列表先落库，再开全局开关。
+Future<void> applyInterconnectHostLookupIntent({
+  required String hostId,
+  required bool enabled,
+  required Future<void> Function(
+    List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
+  )
+  mutateUrls,
+  required bool remoteLookupEnabled,
+  required Future<void> Function(bool value) setRemoteLookupEnabled,
+}) async {
+  await mutateUrls(
+    (List<FushiClientUrl> current) =>
+        withInterconnectHostLookupEnabled(current, hostId, enabled),
+  );
+  if (enabled && !remoteLookupEnabled) await setRemoteLookupEnabled(true);
+}
+
+/// 「已添加的设备」一行的标题与地址行：配对记下了设备名时标题是设备名、地址退到
+/// 副标题（[url] 非 null）；不知道设备名时标题就是地址、不再重复一行（[url] 为 null）。
+({String title, String? url}) interconnectPeerRowLabels(FushiClientUrl peer) {
+  final String device = peer.deviceName?.trim() ?? '';
+  return device.isEmpty
+      ? (title: peer.url, url: null)
+      : (title: device, url: peer.url);
+}
+
 /// [hostId] 这台 host 此刻是否参与查词：任一地址开着即算开（设置页总是整组写，
 /// 混合态只来自升级前的手改数据，宁可显示为开、让用户能一键关掉）。
 bool interconnectHostLookupEnabled(List<FushiClientUrl> urls, String hostId) =>
@@ -93,8 +127,13 @@ class InterconnectDictionaryLookupSection extends StatelessWidget {
     required this.refreshingHosts,
     required this.onLookupChanged,
     required this.onRefresh,
+    this.remoteLookupEnabled = true,
     super.key,
   });
+
+  /// 全局「远程查词」此刻是否开着。关着时开关副标题补一句「也会打开远程查词」
+  /// （见 [applyInterconnectHostLookupIntent]）。
+  final bool remoteLookupEnabled;
 
   /// 配对列表（全部地址）。按 host 归组后每台一组。
   final List<FushiClientUrl> urls;
@@ -144,7 +183,10 @@ class InterconnectDictionaryLookupSection extends StatelessWidget {
         AdaptiveSettingsSwitchRow(
           key: ValueKey<String>('interconnect-lookup-switch-$hostId'),
           title: t.interconnect_lookup_use_server,
-          subtitle: t.interconnect_lookup_use_server_desc,
+          subtitle: remoteLookupEnabled
+              ? t.interconnect_lookup_use_server_desc
+              : '${t.interconnect_lookup_use_server_desc}\n'
+                    '${t.interconnect_lookup_also_turns_on_remote}',
           icon: FushiIcons.dictionary,
           showIcon: true,
           value: interconnectHostLookupEnabled(urls, hostId),

@@ -118,7 +118,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 149);
+      expect(probe.select('PRAGMA user_version').first.values.first, 150);
       expect(
         hasColumn(probe, 'media_collections', 'subtitle_language'),
         isTrue,

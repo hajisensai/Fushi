@@ -102,7 +102,15 @@ void main() {
 
     test('null', () {
       expect(identical(merge(local: only), only), isTrue);
-      expect(identical(merge(remote: only), only), isTrue);
+      // 只有服务器那份：副本，释义带 remote 标记，词条原样。
+      final DictionarySearchResult remoteOnly = merge(remote: only);
+      expect(identical(remoteOnly.entries, only.entries), isTrue);
+      expect(
+        popup(remoteOnly).single['glossaries'].every(
+          (dynamic g) => (g as Map<String, dynamic>)['remote'] == true,
+        ),
+        isTrue,
+      );
       expect(
         mergeDictionarySearchResults(
           local: null,
@@ -119,7 +127,10 @@ void main() {
       final DictionarySearchResult empty = DictionarySearchResult(
         searchTerm: '食べる',
       );
-      expect(identical(merge(local: empty, remote: only), only), isTrue);
+      expect(
+        identical(merge(local: empty, remote: only).entries, only.entries),
+        isTrue,
+      );
       expect(identical(merge(local: only, remote: empty), only), isTrue);
     });
   });
@@ -476,6 +487,90 @@ void main() {
         <String>['S', 'L'],
       );
       expect(merged.entries.last.extra, '{oops');
+    });
+  });
+
+  group('弹窗释义的服务器来源标记', () {
+    test('合并后只有服务器那份的释义带 remote: true，本机的不带', () {
+      final DictionarySearchResult local = side(<FushiLookupResult>[
+        row(expression: '食べる', reading: 'たべる', dicts: <String>['Jitendex']),
+      ]);
+      final DictionarySearchResult remote = side(<FushiLookupResult>[
+        row(
+          expression: '食べる',
+          reading: 'たべる',
+          dicts: <String>['Jitendex', '大辞林'],
+        ),
+      ]);
+      final DictionarySearchResult merged = merge(
+        local: local,
+        remote: remote,
+        order: const <String>['大辞林', 'Jitendex'],
+        localNames: const <String>{'Jitendex'},
+      );
+      final Map<String, Object?> flags = <String, Object?>{
+        for (final dynamic g
+            in popup(merged).single['glossaries'] as List<dynamic>)
+          (g as Map<String, dynamic>)['dictionary'] as String: g['remote'],
+      };
+      expect(flags, <String, Object?>{'大辞林': true, 'Jitendex': null});
+      expect(
+        (popup(merged).single['glossaries'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .firstWhere(
+              (Map<String, dynamic> g) => g['dictionary'] == 'Jitendex',
+            )
+            .containsKey('remote'),
+        isFalse,
+        reason: '本机释义不带键：浏览器扩展与旧弹窗渲染不变',
+      );
+      // DictionaryEntry 不变：词条上没有任何来源标记。
+      for (final DictionaryEntry e in merged.entries) {
+        expect(e.extra.contains('"remote"'), isFalse);
+      }
+    });
+
+    test('服务器一组只有一份 popup 时同样带标记；输入不被改写', () {
+      final DictionarySearchResult local = side(<FushiLookupResult>[
+        row(expression: '食べる', reading: 'たべる', dicts: <String>['Jitendex']),
+      ]);
+      final DictionarySearchResult remote = side(<FushiLookupResult>[
+        row(
+          expression: '食',
+          reading: 'しょく',
+          matched: '食',
+          dicts: <String>['大辞林'],
+        ),
+      ]);
+      final String remoteBefore = remote.popupJson!;
+      final DictionarySearchResult merged = merge(local: local, remote: remote);
+      final Map<String, dynamic> serverGroup = popup(
+        merged,
+      ).firstWhere((Map<String, dynamic> g) => g['expression'] == '食');
+      expect(
+        (serverGroup['glossaries'] as List<dynamic>).single['remote'],
+        isTrue,
+      );
+      expect(remote.popupJson, remoteBefore);
+    });
+
+    test('popupJson 为 null 时只有服务器那份原样返回', () {
+      final DictionarySearchResult remote = DictionarySearchResult(
+        searchTerm: '食べる',
+        entries: <DictionaryEntry>[
+          DictionaryEntry(
+            dictionaryName: 'S',
+            word: '食べる',
+            reading: 'たべる',
+            meaning: 'y',
+            extra: '[]',
+          ),
+        ],
+      );
+      expect(
+        identical(markRemoteDictionarySearchResult(remote), remote),
+        isTrue,
+      );
     });
   });
 }

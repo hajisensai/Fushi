@@ -923,6 +923,26 @@ class DictionaryRepository {
     ),
   );
 
+  /// 本机给一本服务器词典起显示名（v150，设备本地：不进配置快照、目录刷新不碰）。
+  /// [displayName] 为空白或等于 host 上的显示名 / 真名时清掉，回到 host 的名字——
+  /// 与本机词典 [setDictionaryDisplayName]「改回真名 = 清掉」同口径。
+  Future<void> setRemoteDictionaryLocalDisplayName(
+    RemoteDictionary dictionary,
+    String? displayName,
+  ) => _writeMetadata(() async {
+    final RemoteDictionary current = _cachedRemote(dictionary);
+    final String trimmed = displayName?.trim() ?? '';
+    final String hostName = current.displayName?.trim() ?? '';
+    final bool clear =
+        trimmed.isEmpty || trimmed == current.name || trimmed == hostName;
+    await _db.setRemoteDictionaryLocalDisplayName(
+      hostId: current.hostId,
+      name: current.name,
+      localDisplayName: clear ? null : trimmed,
+    );
+    _applyRemoteRows(await _readRemoteSnapshot());
+  });
+
   /// 忘掉一条服务器词典目录行（host 上已经没有它时 UI 的「忘掉」）。
   Future<void> forgetRemoteDictionary(String hostId, String name) =>
       _writeMetadata(() async {
@@ -1621,6 +1641,7 @@ class RemoteDictionary {
     this.displayName,
     this.sourceLanguage,
     this.missingSince,
+    this.localDisplayName,
   });
 
   factory RemoteDictionary.fromRow(RemoteDictionaryMetaRow row) =>
@@ -1636,6 +1657,7 @@ class RemoteDictionary {
         displayName: row.displayName,
         sourceLanguage: row.sourceLanguage,
         missingSince: row.missingSince,
+        localDisplayName: row.localDisplayName,
       );
 
   final String hostId;
@@ -1658,6 +1680,17 @@ class RemoteDictionary {
   /// 从 host 目录里消失的时刻；null = 上次刷新时还在。
   final int? missingSince;
 
+  /// 本机给它起的显示名（v150，设备本地、不归配置）；null = 用 host 的 [displayName]。
+  final String? localDisplayName;
+
+  /// 用户可见的名字：本机起的名 > host 的显示名 > 真名。
+  String get effectiveDisplayName {
+    final String local = localDisplayName?.trim() ?? '';
+    if (local.isNotEmpty) return local;
+    final String host = displayName?.trim() ?? '';
+    return host.isNotEmpty ? host : name;
+  }
+
   /// host 上已经没有它了（设置保留，回来时原样生效）。
   bool get isMissing => missingSince != null;
 
@@ -1676,6 +1709,7 @@ class RemoteDictionary {
     displayName: displayName,
     sourceLanguage: sourceLanguage,
     missingSince: missingSince,
+    localDisplayName: localDisplayName,
   );
 
   /// 管理页顺序；同序号按 host、真名稳定排开。
@@ -1685,6 +1719,29 @@ class RemoteDictionary {
     final int byHost = a.hostId.compareTo(b.hostId);
     return byHost != 0 ? byHost : a.name.compareTo(b.name);
   }
+}
+
+/// 一台已配对、本机有它词典目录的 host（词典管理页「来源」条的一张卡片）。
+@immutable
+class RemoteDictionaryHostSource {
+  const RemoteDictionaryHostSource({
+    required this.hostId,
+    required this.name,
+    required this.lookupEnabled,
+    required this.catalog,
+  });
+
+  /// [remoteDictionaryHostIdOf] 口径的 host 身份。
+  final String hostId;
+
+  /// 展示名（配对记下的设备名，没有时用地址）。
+  final String name;
+
+  /// 「用这台服务器查词典」此刻是否开着。
+  final bool lookupEnabled;
+
+  /// 这台 host 的全部目录行（各类型、含已缺席的），按管理页顺序。
+  final List<RemoteDictionary> catalog;
 }
 
 /// [DictionaryRepository._renumberSection] 的写入清单：序号变了的本机词典与服务器词典。

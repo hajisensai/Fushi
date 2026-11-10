@@ -14,8 +14,8 @@ import '../models/dictionary_search_result.dart';
 
 /// 把本机结果 [local] 与服务器结果 [remote] 合并成一份。
 ///
-/// * 一边为 null、或没有词条也没有汉字结果：原样返回另一边（同一个对象）；两边都是
-///   null 时返回 null。
+/// * 一边为 null、或没有词条也没有汉字结果：返回另一边——本机那份原样（同一个对象），
+///   服务器那份是打过 `remote` 标记的副本（见下）；两边都是 null 时返回 null。
 /// * 去重按词典名：服务器结果里属于 [localDictionaryNames]（本机已装且启用的词典）的
 ///   释义 / 词条丢掉，留本机那份；服务器侧因此变空的词头整组丢掉。
 /// * 分组 key = 表记 + 有效读音（空读音 = 表记，BUG-791）；空读音组若该表记在两边合起来
@@ -35,6 +35,10 @@ import '../models/dictionary_search_result.dart';
 ///   的话本机词典的样式会丢。合并表按两份输入的实例身份缓存，同输入返回同一实例
 ///   （弹窗靠 identical 判断要不要重发样式）。
 /// * `scrollPosition` 恒 0。
+/// * 弹窗 JSON 里来自服务器那份的释义对象带 `remote: true`（[kRemoteGlossaryKey]），
+///   `popup.js` 据此在词典标题旁画一枚服务器小图标；本机释义不带这个键（浏览器扩展
+///   与旧弹窗见不到它，渲染不变）。[DictionaryEntry] 不变。只有服务器一边有结果时
+///   返回的是打过标记的副本（[markRemoteDictionarySearchResult]）。
 ///
 /// 全函数不抛：任一边的 `popupJson` 解析不了（不是 JSON 数组 / 组不是对象 / 缺表记）
 /// 时退化成**不去重的拼接**——词条两边直接相接、`popupJson` 置 null（弹窗按词条现场
@@ -48,7 +52,11 @@ DictionarySearchResult? mergeDictionarySearchResults({
   required int maximumTerms,
   Map<String, String>? localDictionaryStyles,
 }) {
-  if (_isEmptyResult(local)) return remote ?? local;
+  if (_isEmptyResult(local)) {
+    return remote == null || _isEmptyResult(remote)
+        ? remote ?? local
+        : markRemoteDictionarySearchResult(remote);
+  }
   if (_isEmptyResult(remote)) return local;
   final DictionarySearchResult l = local!;
   final DictionarySearchResult r = remote!;
@@ -71,7 +79,9 @@ DictionarySearchResult? mergeDictionarySearchResults({
   final List<Map<String, dynamic>> remoteGroups = <Map<String, dynamic>>[
     for (final Map<String, dynamic> g
         in remotePopup.groups ?? const <Map<String, dynamic>>[])
-      ?_withoutDictionaries(g, localDictionaryNames),
+      if (_withoutDictionaries(g, localDictionaryNames)
+          case final Map<String, dynamic> kept)
+        _withRemoteMarks(kept),
   ];
   final List<Map<String, dynamic>> localGroups =
       localPopup.groups ?? const <Map<String, dynamic>>[];
@@ -216,6 +226,55 @@ DictionarySearchResult? mergeDictionarySearchResults({
   result.popupJson = popupJson;
   result.remoteDictionaryStyles = styles;
   return result;
+}
+
+/// 弹窗释义对象上「来自服务器」的标记键（值恒为 `true`；本机释义不带）。
+const String kRemoteGlossaryKey = 'remote';
+
+/// 只有服务器结果时的那份：弹窗 JSON 的每条释义打上 [kRemoteGlossaryKey]，其余字段
+/// （词条、样式、截断、计数）原样。`popupJson` 为 null 或解析不了时原样返回 [remote]。
+DictionarySearchResult markRemoteDictionarySearchResult(
+  DictionarySearchResult remote,
+) {
+  final ({bool ok, List<Map<String, dynamic>>? groups}) parsed = _parsePopup(
+    remote.popupJson,
+  );
+  final List<Map<String, dynamic>>? groups = parsed.groups;
+  if (!parsed.ok || groups == null) return remote;
+  final String? marked = _encodeOrNull(<Map<String, dynamic>>[
+    for (final Map<String, dynamic> g in groups) _withRemoteMarks(g),
+  ]);
+  if (marked == null) return remote;
+  final DictionarySearchResult copy = DictionarySearchResult(
+    searchTerm: remote.searchTerm,
+    entries: remote.entries,
+    bestLength: remote.bestLength,
+    scrollPosition: remote.scrollPosition,
+    kanjiResults: remote.kanjiResults,
+    truncated: remote.truncated,
+    headwordCount: remote.headwordCount,
+  );
+  copy.popupJson = marked;
+  copy.remoteDictionaryStyles = remote.remoteDictionaryStyles;
+  return copy;
+}
+
+/// 组里每条释义对象加 `remote: true`（非对象项原样）。
+Map<String, dynamic> _withRemoteMarks(Map<String, dynamic> group) {
+  final List<Object?> glossaries = _list(group['glossaries']);
+  if (glossaries.isEmpty) return group;
+  return <String, dynamic>{
+    ...group,
+    'glossaries': <Object?>[
+      for (final Object? g in glossaries)
+        g is Map
+            ? <String, dynamic>{
+                ...g.cast<String, dynamic>(),
+                kRemoteGlossaryKey: true,
+              }
+            : g,
+    ],
+  };
 }
 
 bool _isEmptyResult(DictionarySearchResult? result) =>

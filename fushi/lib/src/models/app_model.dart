@@ -478,6 +478,8 @@ import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart'
     show InterconnectPostTransport, kInterconnectConnectTimeout;
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
+import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
+    show applyInterconnectHostLookupIntent;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
@@ -4076,6 +4078,82 @@ class AppModel
     }
     return names;
   }
+
+  /// 词典管理页「来源」条的数据：配对列表里每台**有目录行**的 host（含关掉「用它查
+  /// 词典」的——卡片上要能把它打开），带全部目录行（各类型、含已缺席的）。按配对
+  /// 列表里首次出现排。
+  Future<List<RemoteDictionaryHostSource>> remoteDictionaryHostSources() async {
+    final List<FushiClientUrl> urls = await SyncRepository(
+      _database,
+    ).getFushiClientUrls();
+    final Map<String, List<RemoteDictionary>> catalogs =
+        <String, List<RemoteDictionary>>{};
+    for (final RemoteDictionaryMetaRow row
+        in await _database.getAllRemoteDictionaryMetadata()) {
+      catalogs
+          .putIfAbsent(row.hostId, () => <RemoteDictionary>[])
+          .add(RemoteDictionary.fromRow(row));
+    }
+    final Map<String, String> names = await remoteDictionaryHostNames();
+    final List<RemoteDictionaryHostSource> out = <RemoteDictionaryHostSource>[];
+    final Set<String> seen = <String>{};
+    for (final FushiClientUrl u in urls) {
+      final String id = remoteDictionaryHostIdOf(u);
+      if (!seen.add(id)) continue;
+      final List<RemoteDictionary>? catalog = catalogs[id];
+      if (catalog == null || catalog.isEmpty) continue;
+      out.add(
+        RemoteDictionaryHostSource(
+          hostId: id,
+          name: names[id] ?? id,
+          lookupEnabled: urls.any(
+            (FushiClientUrl c) =>
+                remoteDictionaryHostIdOf(c) == id && c.lookupEnabled,
+          ),
+          catalog: List<RemoteDictionary>.unmodifiable(
+            catalog..sort(RemoteDictionary.compareByOrder),
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 「用这台服务器查词典」（词典管理页来源卡片的开关）：与配对设置页同一个写入口，
+  /// 打开时全局远程查词关着就一并打开（[applyInterconnectHostLookupIntent]）。
+  Future<void> setRemoteDictionaryHostLookupEnabled(
+    String hostId,
+    bool enabled,
+  ) => applyInterconnectHostLookupIntent(
+    hostId: hostId,
+    enabled: enabled,
+    mutateUrls:
+        (List<FushiClientUrl> Function(List<FushiClientUrl>) transform) =>
+            SyncRepository(_database).updateFushiClientUrls(transform),
+    remoteLookupEnabled: remoteLookupEnabled,
+    setRemoteLookupEnabled: setRemoteLookupEnabled,
+  );
+
+  /// 每台 host 本次运行里最近一次拉目录的结果（来源卡片的在线 / 连不上）。
+  Map<String, RemoteDictionaryHostReachability>
+  get remoteDictionaryHostReachability =>
+      _remoteDictionaryCatalog?.hostReachability ??
+      const <String, RemoteDictionaryHostReachability>{};
+
+  /// 有没有服务器词典目录服务（主进程才有；弹窗进程没有，来源卡片不给刷新钮）。
+  bool get canRefreshRemoteDictionaries => _remoteDictionaryCatalog != null;
+
+  /// 只刷新一台 host 的服务器词典目录（来源卡片的刷新）；没有目录服务时什么也不做。
+  Future<void> refreshRemoteDictionaryHost(String hostId) async {
+    await _remoteDictionaryCatalog?.refreshHost(hostId);
+  }
+
+  /// 本机给一本服务器词典起显示名（设备本地，见
+  /// [DictionaryRepository.setRemoteDictionaryLocalDisplayName]）。
+  Future<void> setRemoteDictionaryLocalDisplayName(
+    RemoteDictionary dictionary,
+    String? displayName,
+  ) => dictRepo.setRemoteDictionaryLocalDisplayName(dictionary, displayName);
 
   /// 「汉字」分区的重排（混合词典只动汉字部分的位置），其余同 [updateDictionaryOrder]。
   Future<void> updateKanjiSectionOrder(List<Dictionary> newDictionaries) async {
@@ -8875,6 +8953,16 @@ class AppModel
     dictionaryMenuNotifier.notifyListeners();
   }
 
+  /// 当前激活配置（Profile）的名字：词典管理页顶栏副标题「配置 · 名字」。读不到
+  /// （还没有配置行）为 null。
+  Future<String?> activeProfileName() async {
+    final ProfileRepository repo = interconnectProfileRepository();
+    final ProfileRow? row = await repo.getProfileById(
+      await repo.getActiveProfileId(),
+    );
+    return row?.name;
+  }
+
   /// Show the profiles management page.
   Future<void> showProfilesMenu() async {
     final ctx = _ctx;
@@ -9431,11 +9519,14 @@ class AppModel
           // 本机这份失败不拖垮远端已给出的结果（与以前「远端命中就不看本地」同口径），
           // 但要留痕。
           ErrorLogService.instance.log('localDictionaryLookup', e, stack);
-          return remoteResult;
+          return markRemoteDictionarySearchResult(remoteResult);
         }
         final DictionarySearchResult? localResult = localLookup.result;
-        // 本机未命中 / 引擎未就绪：只有远端那份，原样返回。
-        if (localResult == null) return remoteResult;
+        // 本机未命中 / 引擎未就绪：只有远端那份——弹窗释义照样打上服务器来源标记
+        // （与合并结果同一口径，popup.js 画服务器小图标）。
+        if (localResult == null) {
+          return markRemoteDictionarySearchResult(remoteResult);
+        }
         // 合并结果不进缓存（远端结果本来就不缓存）；本机那份已在
         // [_searchLocalDictionary] 里照旧写进本机缓存。
         final DictionaryLookupFilters filters =

@@ -24,7 +24,10 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
-    show DictionaryRepository, RemoteDictionary;
+    show DictionaryRepository, RemoteDictionary, RemoteDictionaryHostSource;
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
+    show RemoteDictionaryCatalogService, RemoteDictionaryHostReachability;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show showFushiConfirmDialog;
@@ -402,6 +405,16 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 「刷新服务器词典」进行中。
   bool _refreshingServer = false;
 
+  /// 「来源」条的数据：每台有目录行的已配对 host（含关掉「用它查词典」的）。
+  List<RemoteDictionaryHostSource> _hostSources =
+      const <RemoteDictionaryHostSource>[];
+
+  /// 来源卡片上正在单独刷新的 host。
+  final Set<String> _refreshingHosts = <String>{};
+
+  /// 顶栏副标题里的激活配置名；null = 还没读到 / 读不到（不画副标题）。
+  String? _profileName;
+
   /// 每次 setState 自增：窄屏底部 sheet 是另一条路由，页面 setState 重建不到它，
   /// sheet 内容监听这个计数跟着刷新（开关 / 改名 / 排序后 sheet 立刻反映）。
   final ValueNotifier<int> _revision = ValueNotifier<int>(0);
@@ -423,6 +436,12 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     SyncRepository.fushiClientUrlsRevision.removeListener(
       _onRemoteDictionariesChanged,
+    );
+    RemoteDictionaryCatalogService.catalogRevision.removeListener(
+      _onRemoteDictionariesChanged,
+    );
+    RemoteDictionaryCatalogService.reachabilityRevision.removeListener(
+      _onReachabilityChanged,
     );
     _revision.dispose();
     for (final FocusNode node in _rowFocusNodes.values) {
@@ -446,8 +465,17 @@ class _DictionaryDialogPageState extends BasePageState {
     SyncRepository.fushiClientUrlsRevision.addListener(
       _onRemoteDictionariesChanged,
     );
+    // 关掉「用它查词典」的 host 不在仓库的服务器行里，它的目录变化只走目录广播。
+    RemoteDictionaryCatalogService.catalogRevision.addListener(
+      _onRemoteDictionariesChanged,
+    );
+    RemoteDictionaryCatalogService.reachabilityRevision.addListener(
+      _onReachabilityChanged,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _hasServerRows) unawaited(_loadHostNames());
+      if (!mounted) return;
+      unawaited(_loadServerSources());
+      unawaited(_loadProfileName());
     });
     if (widget is DictionaryDialogPage) {
       final List<String> paths =
@@ -466,19 +494,86 @@ class _DictionaryDialogPageState extends BasePageState {
   void _onRemoteDictionariesChanged() {
     if (!mounted) return;
     setState(() {});
-    if (_hasServerRows) unawaited(_loadHostNames());
+    unawaited(_loadServerSources());
+    // 切换配置会重载词典仓库（服务器行随之广播），顶栏的配置名跟着重读。
+    unawaited(_loadProfileName());
   }
 
-  Future<void> _loadHostNames() async {
+  void _onReachabilityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 读配对 host 的展示名与「来源」条数据（页面不存镜像：每次广播都整份重读）。
+  Future<void> _loadServerSources() async {
     final Map<String, String> names;
+    final List<RemoteDictionaryHostSource> sources;
     try {
       names = await appModel.remoteDictionaryHostNames();
+      sources = await appModel.remoteDictionaryHostSources();
     } catch (e, stack) {
-      ErrorLogService.instance.log('DictionaryDialog.hostNames', e, stack);
+      ErrorLogService.instance.log('DictionaryDialog.serverSources', e, stack);
       return;
     }
     if (!mounted) return;
-    setState(() => _hostNames = names);
+    setState(() {
+      _hostNames = names;
+      _hostSources = sources;
+    });
+  }
+
+  Future<void> _loadProfileName() async {
+    final String? name;
+    try {
+      name = await appModel.activeProfileName();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictionaryDialog.profileName', e, stack);
+      return;
+    }
+    if (!mounted || name == _profileName) return;
+    setState(() => _profileName = name);
+  }
+
+  /// 顶栏副标题「配置 · 名字」：焦点 + Enter 打开现有的配置管理页（切换 / 管理配置都
+  /// 在那里），回来后重读名字。
+  Future<void> _openProfiles() async {
+    await appModel.showProfilesMenu();
+    await _loadProfileName();
+  }
+
+  /// 顶栏标题：「词典」+ 激活配置名副标题（可聚焦、Enter 打开配置管理）。本页的开关 /
+  /// 顺序都属于激活配置，不写明是哪一份配置，用户分不清改的是谁。
+  Widget _buildTitle() {
+    final String? profile = _profileName;
+    final Widget title = Text(
+      t.dictionaries,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    if (profile == null) return title;
+    final String label = t.dictionary_manager_profile_subtitle(name: profile);
+    final Widget subtitle = FushiTooltip(
+      message: t.dictionary_manager_profile_tooltip,
+      child: FushiTextButton(
+        key: const ValueKey<String>('dict-profile-subtitle'),
+        onPressed: () => unawaited(_openProfiles()),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 24),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: textTheme.labelSmall,
+        ),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+    );
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[title, subtitle],
+      ),
+    );
   }
 
   /// 有参与查词的服务器词典（来源标签、筛选条、host 提示只在这时出现——没配服务器
@@ -489,6 +584,43 @@ class _DictionaryDialogPageState extends BasePageState {
   bool get _hasAnyRows => appModel.dictionaries.isNotEmpty || _hasServerRows;
 
   String _hostName(String hostId) => _hostNames[hostId] ?? hostId;
+
+  /// 开着「用它查词典」的已配对 host 数：两台及以上时来源 chip 才写设备名。
+  int get _lookupHostCount => <String>{
+    for (final RemoteDictionaryHostSource h in _hostSources)
+      if (h.lookupEnabled) h.hostId,
+    for (final RemoteDictionary r in appModel.remoteDictionaries) r.hostId,
+  }.length;
+
+  /// [hostId] 上次查词没有套用本端发去的词典选择（老版本 host）。
+  bool _olderHost(String hostId) =>
+      appModel.remoteDictionaryConfigAppliedByHost[hostId] == false;
+
+  /// 参与查词、目录里也有 [name]（没缺席）的服务器词典，按管理页顺序。「两者」行
+  /// 详情与版本对比用排在最前的那份（查词名单里同名只认一份）。
+  List<RemoteDictionary> _serverCopiesOf(String name) => <RemoteDictionary>[
+    for (final RemoteDictionary r in appModel.remoteDictionaries)
+      if (r.name == name && !r.isMissing) r,
+  ];
+
+  /// 本机词典的版本号（与行副标题同一来源）；没有为空串。
+  String _localRevision(Dictionary dictionary) =>
+      (dictionary.metadata['revision'] ??
+              dictionary.metadata['version'] ??
+              dictionary.metadata['formatVersion'] ??
+              '')
+          .trim();
+
+  /// 内容语言文案：本机与服务器词典同一个格式（手动指定 > 「自动 · 语言」> 「自动」）。
+  String _languageLabel({String? override, String? source}) {
+    final String o = override?.trim() ?? '';
+    final String src = source?.trim() ?? '';
+    if (o.isNotEmpty) return contentLanguageLabelOf(o);
+    if (src.isNotEmpty) {
+      return '${t.dict_language_auto} · ${contentLanguageLabelOf(src)}';
+    }
+    return t.dict_language_auto;
+  }
 
   /// 来源标签上的 host 名：服务器行是它所在的 host，「两者」行是也有它的那些 host。
   String _sourceHostName(DictionaryManagerRow row) {
@@ -585,8 +717,11 @@ class _DictionaryDialogPageState extends BasePageState {
         for (final String id in _serverHostIds) id: _hostName(id),
       },
       selected: _effectiveSourceFilter,
-      onSelected: (DictionarySourceFilter filter) =>
-          setState(() => _sourceFilter = filter),
+      // 换筛选收回详情：侧板不能停在一本此刻列表里看不见的词典上。
+      onSelected: (DictionarySourceFilter filter) => setState(() {
+        _sourceFilter = filter;
+        _detailName = null;
+      }),
       onRefresh: appModel.remoteDictionaryCatalog == null
           ? null
           : _refreshServerDictionaries,
@@ -594,32 +729,110 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 列表底部：每台服务器最近在线的时刻（老版本 host 补一句它不认本端的词典选择），
-  /// 远程查词关着时再提示服务器词典只显示、不参与查词。
-  List<Widget> _buildServerNotices() {
-    final List<RemoteDictionary> remote = appModel.remoteDictionaries;
-    if (remote.isEmpty) return const <Widget>[];
-    final Map<String, int> lastSeen = <String, int>{};
-    for (final RemoteDictionary r in remote) {
-      final int? seen = lastSeen[r.hostId];
-      if (seen == null || r.lastSeenAt > seen) lastSeen[r.hostId] = r.lastSeenAt;
+  /// 一台 host 的状态行：本次运行里连不上 → 「自 <时刻> 起连不上」；拉到过 → 「在线」；
+  /// 还没试过 → 目录行里最近一次见到它的时刻。
+  String _hostStatusLabel(RemoteDictionaryHostSource host) {
+    final RemoteDictionaryHostReachability? reach =
+        appModel.remoteDictionaryHostReachability[host.hostId];
+    final int? failing = reach?.failingSince;
+    if (failing != null) {
+      return t.dictionary_source_status_unreachable(
+        time: dictionaryManagerTimestampLabel(failing),
+      );
     }
-    final Map<String, bool> applied =
-        appModel.remoteDictionaryConfigAppliedByHost;
-    return <Widget>[
-      for (final MapEntry<String, int> e in lastSeen.entries)
-        DictionaryServerHostNotice(
-          key: ValueKey<String>('dict-server-notice-${e.key}'),
-          hostName: _hostName(e.key),
-          lastSeen: dictionaryManagerTimestampLabel(e.value),
-          olderHost: applied[e.key] == false,
-        ),
-      if (!appModel.remoteLookupEnabled)
-        DictionaryRemoteLookupOffNotice(
-          onTurnOn: () => unawaited(
-            _saveDictionaryChange(() => appModel.setRemoteLookupEnabled(true)),
+    if (reach?.lastOkAt != null) return t.dictionary_source_status_online;
+    int seen = 0;
+    for (final RemoteDictionary r in host.catalog) {
+      if (r.lastSeenAt > seen) seen = r.lastSeenAt;
+    }
+    return t.dictionary_source_status_last_seen(
+      time: dictionaryManagerTimestampLabel(seen),
+    );
+  }
+
+  /// 列表上方的「来源」条（有任何一台 host 的目录时才出现）。
+  Widget _buildServerSourcesStrip() {
+    return DictionaryServerSourcesStrip(
+      key: const ValueKey<String>('dict-server-sources'),
+      cards: <DictionaryServerSourceCard>[
+        for (final RemoteDictionaryHostSource host in _hostSources)
+          DictionaryServerSourceCard(
+            hostId: host.hostId,
+            name: host.name,
+            status: _hostStatusLabel(host),
+            enabled: host.catalog
+                .where(
+                  (RemoteDictionary r) =>
+                      r.type == _selectedType && !r.isMissing && !r.hidden,
+                )
+                .length,
+            total: host.catalog
+                .where(
+                  (RemoteDictionary r) =>
+                      r.type == _selectedType && !r.isMissing,
+                )
+                .length,
+            lookupEnabled: host.lookupEnabled,
+            olderHost: _olderHost(host.hostId),
+            refreshing: _refreshingHosts.contains(host.hostId),
           ),
+      ],
+      remoteLookupOff: !appModel.remoteLookupEnabled,
+      onLookupChanged: (String hostId, bool enabled) => unawaited(
+        _saveDictionaryChange(
+          () => appModel.setRemoteDictionaryHostLookupEnabled(hostId, enabled),
         ),
+      ),
+      onRefresh: appModel.canRefreshRemoteDictionaries
+          ? (String hostId) => unawaited(_refreshServerHost(hostId))
+          : null,
+      onTurnOnRemoteLookup: () => unawaited(
+        _saveDictionaryChange(() => appModel.setRemoteLookupEnabled(true)),
+      ),
+    );
+  }
+
+  Future<void> _refreshServerHost(String hostId) async {
+    if (_refreshingHosts.contains(hostId)) return;
+    setState(() => _refreshingHosts.add(hostId));
+    try {
+      await appModel.refreshRemoteDictionaryHost(hostId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictionaryDialog.refreshHost', e, stack);
+    } finally {
+      if (mounted) setState(() => _refreshingHosts.remove(hostId));
+    }
+    await _loadServerSources();
+  }
+
+  /// 「汉字」分区：服务器上的汉字词典暂时不在这里管理（与本机汉字部分的独立序号不在
+  /// 一条数轴上，见 [_rowsForType]），按 host 各说一行有几本，免得用户以为它们丢了。
+  List<Widget> _buildKanjiServerNotes() {
+    if (_selectedType != DictionaryType.kanji) return const <Widget>[];
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    return <Widget>[
+      for (final RemoteDictionaryHostSource host in _hostSources)
+        if (host.catalog.any(
+          (RemoteDictionary r) =>
+              r.type == DictionaryType.kanji && !r.isMissing,
+        ))
+          Padding(
+            padding: EdgeInsets.only(bottom: gap),
+            child: FushiInlineNotice(
+              key: ValueKey<String>('dict-kanji-server-note-${host.hostId}'),
+              icon: FushiIcons.info,
+              severity: FushiNoticeSeverity.info,
+              message: t.dictionary_server_kanji_unmanaged(
+                n: host.catalog
+                    .where(
+                      (RemoteDictionary r) =>
+                          r.type == DictionaryType.kanji && !r.isMissing,
+                    )
+                    .length,
+                name: host.name,
+              ),
+            ),
+          ),
     ];
   }
 
@@ -642,6 +855,9 @@ class _DictionaryDialogPageState extends BasePageState {
       // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
       _buildDownloadStatusRow(),
       if (_hasAnyRows) _buildCategorySelector(),
+      // 「来源」条：每台有目录的服务器一张卡片（状态 / 本数 / 用于查词 / 刷新），
+      // 取代以前列表底部的按 host 提示。
+      if (_hostSources.isNotEmpty) _buildServerSourcesStrip(),
       // 服务器词典的来源筛选：与类型分段同属「筛列表」，紧跟其后。
       if (_hasServerRows) _buildSourceFilterBar(),
       buildContent(),
@@ -657,12 +873,12 @@ class _DictionaryDialogPageState extends BasePageState {
       onDrop: _handleDictionaryDrop,
       child: split
           ? FushiToolScaffold.customTitle(
-              title: Text(t.dictionaries),
+              title: _buildTitle(),
               actions: actions,
               body: _buildSplitBody(listChildren),
             )
           : AdaptiveSettingsScaffold(
-              title: Text(t.dictionaries),
+              title: _buildTitle(),
               // Cupertino (iOS/macOS) keeps its native nav-bar icon actions.
               // Material (Android/Windows/Linux) empties the app bar and
               // surfaces the same actions as labeled buttons in an in-page
@@ -1912,18 +2128,25 @@ class _DictionaryDialogPageState extends BasePageState {
     }
   }
 
+  /// 当前分区在当前来源筛选下看得见的行（列表与详情侧板共用）。
+  List<DictionaryManagerRow> _visibleRows() {
+    final DictionarySourceFilter filter = _effectiveSourceFilter;
+    return <DictionaryManagerRow>[
+      for (final DictionaryManagerRow row in _rowsForType(_selectedType))
+        if (filter.matches(row, enabled: _rowEnabled(row))) row,
+    ];
+  }
+
   Widget buildContent() {
     if (!_hasAnyRows) return buildEmptyMessage();
     final List<DictionaryManagerRow> rows = _rowsForType(_selectedType);
     final DictionarySourceFilter filter = _effectiveSourceFilter;
-    final List<DictionaryManagerRow> visible = <DictionaryManagerRow>[
-      for (final DictionaryManagerRow row in rows)
-        if (filter.matches(row, enabled: _rowEnabled(row))) row,
-    ];
+    final List<DictionaryManagerRow> visible = _visibleRows();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildListHeader(rows),
+        _buildListHeader(rows, visible: visible),
+        ..._buildKanjiServerNotes(),
         if (visible.isEmpty)
           _buildEmptyCategoryRow()
         else
@@ -1933,7 +2156,6 @@ class _DictionaryDialogPageState extends BasePageState {
             replayKey: '${_selectedType.name}|${filter.id}',
             child: _buildLanguageGroups(visible),
           ),
-        ..._buildServerNotices(),
       ],
     );
   }
@@ -2018,10 +2240,18 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 列表头：分类标题 + 「共 N 本 · 已启用 M 本」，右侧是排序方式提示（桌面
   /// 「拖动 / Alt+↑↓」，触屏「长按拖动」）——以前排序全靠用户自己发现。
-  Widget _buildListHeader(List<DictionaryManagerRow> dictionaries) {
+  Widget _buildListHeader(
+    List<DictionaryManagerRow> dictionaries, {
+    required List<DictionaryManagerRow> visible,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final int enabledCount = dictionaries.where(_rowEnabled).length;
+    // 有来源筛选时计数跟着筛后的行走（「显示 2 / 5 本 · 已启用 2 本」），不然标题说
+    // 5 本、下面只有 2 行，像是丢了词典。
+    final bool filtered = visible.length != dictionaries.length;
+    final int enabledCount = (filtered ? visible : dictionaries)
+        .where(_rowEnabled)
+        .length;
     final TargetPlatform platform = theme.platform;
     final bool desktop =
         platform == TargetPlatform.windows ||
@@ -2052,10 +2282,17 @@ class _DictionaryDialogPageState extends BasePageState {
                   padding: EdgeInsets.zero,
                 ),
                 Text(
-                  t.dict_manager_summary(
-                    n: dictionaries.length,
-                    m: enabledCount,
-                  ),
+                  filtered
+                      ? t.dict_manager_summary_filtered(
+                          shown: visible.length,
+                          n: dictionaries.length,
+                          m: enabledCount,
+                        )
+                      : t.dict_manager_summary(
+                          n: dictionaries.length,
+                          m: enabledCount,
+                        ),
+                  key: const ValueKey<String>('dict-list-summary'),
                   style: textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -2167,6 +2404,13 @@ class _DictionaryDialogPageState extends BasePageState {
     setState(() {
       _selectedType = type;
       _selectedNames.clear();
+      // 换分区时详情侧板只留在新分区里也看得见的那本（混合词典的术语 / 汉字两部分
+      // 是同一行键，BUG-3573 要求停留）；别的分区的词典收回概览（本机行同样适用）。
+      final String? detail = _detailName;
+      if (detail != null &&
+          !_visibleRows().any((DictionaryManagerRow r) => r.key == detail)) {
+        _detailName = null;
+      }
     });
   }
 
@@ -2235,7 +2479,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     final String baseSubtitle = _isKanjiPart(dictionary)
         ? '${_subtitleForDictionary(dictionary)} · ${t.dict_mixed_kanji_part}'
-        : _subtitleForDictionary(dictionary);
+        : (_bothRevisionsLabel(row) ?? _subtitleForDictionary(dictionary));
     final Widget subtitle = _rowSubtitle(
       row,
       enabled ? baseSubtitle : '$baseSubtitle · ${t.dict_status_disabled}',
@@ -2305,17 +2549,39 @@ class _DictionaryDialogPageState extends BasePageState {
       style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
     );
     if (!_hasServerRows) return label;
+    final RemoteDictionary? remote = row.remote;
+    final bool older = remote != null && _olderHost(remote.hostId);
+    final bool showsChip = DictionarySourceChip.shows(
+      row.source,
+      olderHost: older,
+    );
     return Row(
       children: <Widget>[
         DictionarySourceChip(
           key: ValueKey<String>('dict-row-source-${row.key}'),
           kind: row.source,
           hostName: _sourceHostName(row),
+          showHostName: _lookupHostCount >= 2,
+          olderHost: older,
         ),
-        SizedBox(width: FushiDesignTokens.of(context).spacing.gap / 2),
+        if (showsChip)
+          SizedBox(width: FushiDesignTokens.of(context).spacing.gap / 2),
         Flexible(child: label),
       ],
     );
+  }
+
+  /// 「两者」行：服务器那份与本机这份版本不同时的副标题（「服务器版本 7，本机版本 6」）；
+  /// 相同 / 任一边没有版本号时为 null（照常显示本机版本）。
+  String? _bothRevisionsLabel(DictionaryManagerRow row) {
+    final Dictionary? local = row.local;
+    if (local == null || row.alsoOnHosts.isEmpty) return null;
+    final List<RemoteDictionary> copies = _serverCopiesOf(local.name);
+    if (copies.isEmpty) return null;
+    final String server = copies.first.revision?.trim() ?? '';
+    final String mine = _localRevision(local);
+    if (server.isEmpty || mine.isEmpty || server == mine) return null;
+    return t.dictionary_both_revisions(server: server, local: mine);
   }
 
   /// 只在服务器上的词典一行：与本机行同一外壳（序号徽标 / 名字 / 来源标签 / 开关），
@@ -2378,6 +2644,7 @@ class _DictionaryDialogPageState extends BasePageState {
             leading: DictionaryOrderBadge(
               position: index + 1,
               enabled: enabled && !missing,
+              serverHostName: _hostName(remote.hostId),
             ),
             title: Text(
               row.displayName,
@@ -2842,6 +3109,14 @@ class _DictionaryDialogPageState extends BasePageState {
       enabled: !remote.hidden,
       typeLabel: _typeLabel(remote.type),
       lastSeenLabel: dictionaryManagerTimestampLabel(remote.lastSeenAt),
+      languageLabel: _languageLabel(source: remote.sourceLanguage),
+      onRename: () => unawaited(_renameRemoteDictionary(remote)),
+      olderHost: _olderHost(remote.hostId),
+      // 别的 host 上同名、被这一行遮住的那几份（列表只列排得最前的一份）。
+      shadowedOnHosts: <String>[
+        for (final RemoteDictionary other in _serverCopiesOf(remote.name))
+          if (other.hostId != remote.hostId) _hostName(other.hostId),
+      ],
       position: position < 0 ? 0 : position,
       count: siblings.length,
       showHeader: showHeader,
@@ -2855,6 +3130,62 @@ class _DictionaryDialogPageState extends BasePageState {
               unawaited(_confirmForgetRemote(remote));
             }
           : null,
+    );
+  }
+
+  /// 服务器词典的本机显示名：与本机词典同一个改名对话框，写设备本地的
+  /// `remote_dictionary_metadata.local_display_name`（不进配置、不导出）。
+  Future<void> _renameRemoteDictionary(RemoteDictionary remote) async {
+    final String current = remote.effectiveDisplayName;
+    final String? name = await showNameInputDialog(
+      context: context,
+      title: t.dict_rename,
+      labelText: t.dict_rename_label,
+      initialName: current,
+      leadingIcon: FushiIcons.rename,
+    );
+    if (!mounted || name == null || name == current) return;
+    await _saveDictionaryChange(
+      () => appModel.setRemoteDictionaryLocalDisplayName(remote, name),
+    );
+  }
+
+  /// 「两者」行详情里服务器那一份：所在 host、服务器版本、本机版本（设计稿 6）。
+  Widget? _buildServerCopySection(Dictionary dictionary) {
+    final List<RemoteDictionary> copies = _serverCopiesOf(dictionary.name);
+    if (copies.isEmpty) return null;
+    final RemoteDictionary copy = copies.first;
+    final String serverRevision = copy.revision?.trim() ?? '';
+    final String localRevision = _localRevision(dictionary);
+    final ColorScheme scheme = theme.colorScheme;
+    Widget info(String label, String value) => AdaptiveSettingsRow(
+      title: label,
+      trailingFlexible: true,
+      trailing: Text(
+        value,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.end,
+        style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
+    return AdaptiveSettingsSection(
+      key: ValueKey<String>('dict-detail-server-copy-${dictionary.name}'),
+      title: t.dictionary_detail_server_copy_section,
+      children: <Widget>[
+        info(
+          t.dictionary_detail_host_label,
+          copies.map((RemoteDictionary r) => _hostName(r.hostId)).join(', '),
+        ),
+        info(
+          t.dictionary_detail_server_revision_label,
+          serverRevision.isEmpty ? '—' : serverRevision,
+        ),
+        info(
+          t.dictionary_detail_local_revision_label,
+          localRevision.isEmpty ? '—' : localRevision,
+        ),
+      ],
     );
   }
 
@@ -2917,13 +3248,13 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     final DictionaryFormat? format =
         appModel.dictionaryFormats[dictionary.formatKey];
-    final String override = dictionary.languageOverride ?? '';
-    final String source = dictionary.sourceLanguage;
-    final String languageLabel = override.isNotEmpty
-        ? contentLanguageLabelOf(override)
-        : source.isNotEmpty
-        ? '${t.dict_language_auto} · ${contentLanguageLabelOf(source)}'
-        : t.dict_language_auto;
+    final String languageLabel = _languageLabel(
+      override: dictionary.languageOverride,
+      source: dictionary.sourceLanguage,
+    );
+    final List<RemoteDictionary> serverCopies = _serverCopiesOf(
+      dictionary.name,
+    );
     return DictionaryManagerDetail(
       key: ValueKey<String>('dict-detail-${dictionary.name}'),
       dictionary: dictionary,
@@ -2954,6 +3285,18 @@ class _DictionaryDialogPageState extends BasePageState {
       onMoveTo: (int to) => _moveRowTo(row, to),
       onMoveToPrompt: () => _promptMoveRow(row),
       onDelete: onDeleteRequested,
+      // 「两者」行：标题下挂来源 chip，详情多一组服务器那份的信息（host + 两边版本）。
+      headerTags: serverCopies.isEmpty
+          ? const <Widget>[]
+          : <Widget>[
+              DictionarySourceChip(
+                kind: DictionarySourceKind.both,
+                hostName: serverCopies
+                    .map((RemoteDictionary r) => _hostName(r.hostId))
+                    .join(', '),
+              ),
+            ],
+      serverCopySection: _buildServerCopySection(dictionary),
     );
   }
 
@@ -2970,7 +3313,15 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 切换时淡入 + 轻微上移（时长取 FushiMotion，减弱动态效果下归零）。
   Widget _buildDetailPane() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String? detailKey = _detailName;
+    // 只认此刻列表里看得见的行（当前分区 + 当前来源筛选）：换分区 / 换筛选 / 那本被
+    // 筛掉时侧板回到概览，不停在一本看不见的词典上。
+    final String? detailKey =
+        _detailName != null &&
+            _visibleRows().any(
+              (DictionaryManagerRow r) => r.key == _detailName,
+            )
+        ? _detailName
+        : null;
     final RemoteDictionary? remote = detailKey == null
         ? null
         : _findRemote(detailKey);

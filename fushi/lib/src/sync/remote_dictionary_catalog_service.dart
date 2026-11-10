@@ -53,6 +53,22 @@ class RemoteDictionaryCatalogDiff {
 ///
 /// 写库后经 [catalogRevision] 广播；本实例收到后让 [DictionaryRepository] 重读，
 /// 跨实例写入（同步编排）也走这一条，不靠每个写入点记得通知。
+/// 一台 host 在本进程里最近一次拉目录的结果（词典管理页的来源卡片显示「在线 /
+/// 自某时起连不上」）。只记本次运行看到的：重启后为空，界面退回目录行的
+/// `lastSeenAt`（「最近在线」）。
+@immutable
+class RemoteDictionaryHostReachability {
+  const RemoteDictionaryHostReachability({this.lastOkAt, this.failingSince});
+
+  /// 最近一次成功拉到清单的时刻（ms）。
+  final int? lastOkAt;
+
+  /// 自这一刻起连续拉不到清单（ms）；null = 最近一次是成功的（或还没试过）。
+  final int? failingSince;
+
+  bool get reachable => failingSince == null && lastOkAt != null;
+}
+
 class RemoteDictionaryCatalogService {
   RemoteDictionaryCatalogService({
     required FushiDatabase db,
@@ -83,6 +99,29 @@ class RemoteDictionaryCatalogService {
 
   /// 每台 host 上次成功拉到清单的时刻（[refreshOnResume] 节流用）。
   final Map<String, DateTime> _lastFetched = <String, DateTime>{};
+
+  /// 每台 host 最近一次拉目录的结果（见 [hostReachability]）。
+  final Map<String, RemoteDictionaryHostReachability> _reachability =
+      <String, RemoteDictionaryHostReachability>{};
+
+  /// [hostReachability] 变了就 +1（词典管理页据此重建来源卡片）。
+  static final ValueNotifier<int> reachabilityRevision = ValueNotifier<int>(0);
+
+  /// 每台 host（[remoteDictionaryHostIdOf] 口径）本次运行里最近一次拉目录的结果。
+  Map<String, RemoteDictionaryHostReachability> get hostReachability =>
+      Map<String, RemoteDictionaryHostReachability>.unmodifiable(_reachability);
+
+  void _noteReachability(String hostId, {required bool ok}) {
+    final int now = _now().millisecondsSinceEpoch;
+    final RemoteDictionaryHostReachability? previous = _reachability[hostId];
+    _reachability[hostId] = ok
+        ? RemoteDictionaryHostReachability(lastOkAt: now)
+        : RemoteDictionaryHostReachability(
+            lastOkAt: previous?.lastOkAt,
+            failingSince: previous?.failingSince ?? now,
+          );
+    reachabilityRevision.value++;
+  }
 
   /// [start] 之后看见过的查词 host；配对列表变化时与它比出「新来的」。
   Set<String>? _knownLookupHosts;
@@ -172,7 +211,14 @@ class RemoteDictionaryCatalogService {
   /// 拉 [hostId] 的清单并对账；拉不到（不可达 / 老 host / 凭据被拒 / 回包畸形）返回
   /// null 且不改任何行。
   Future<RemoteDictionaryCatalogDiff?> _refreshHostNow(String hostId) async {
-    final List<RemoteDictionaryInfo>? infos = await _fetch(hostId);
+    final List<RemoteDictionaryInfo>? infos;
+    try {
+      infos = await _fetch(hostId);
+    } catch (_) {
+      _noteReachability(hostId, ok: false);
+      rethrow;
+    }
+    _noteReachability(hostId, ok: infos != null);
     if (infos == null) return null;
     _lastFetched[hostId] = _now();
     return reconcileHost(

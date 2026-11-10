@@ -94,6 +94,108 @@ void main() {
     });
   });
 
+  group('MD3 choice chip selected state is unmistakable', () {
+    testWidgets('selected = tonal fill + leading check; opt-out respected', (
+      WidgetTester tester,
+    ) async {
+      await _pump(
+        tester,
+        Wrap(
+          children: <Widget>[
+            FushiChoiceChip(
+              key: const ValueKey<String>('selected'),
+              label: const Text('selected'),
+              selected: true,
+              onSelected: (_) {},
+            ),
+            FushiChoiceChip(
+              key: const ValueKey<String>('unselected'),
+              label: const Text('unselected'),
+              selected: false,
+              onSelected: (_) {},
+            ),
+            FushiChoiceChip(
+              key: const ValueKey<String>('opt-out'),
+              label: const Text('opt-out'),
+              selected: true,
+              showCheckmark: false,
+              onSelected: (_) {},
+            ),
+            FushiChoiceChip(
+              key: const ValueKey<String>('avatar'),
+              avatar: const Icon(Icons.star),
+              label: const Text('avatar'),
+              selected: true,
+              onSelected: (_) {},
+            ),
+          ],
+        ),
+        glass: false,
+      );
+      ChoiceChip chip(String key) => tester.widget<ChoiceChip>(
+        find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.byType(ChoiceChip),
+        ),
+      );
+      // 全局 chipTheme 关了对勾，FushiChoiceChip 仍按 M3 filter chip 画前导对勾。
+      expect(chip('selected').showCheckmark, isTrue);
+      expect(chip('unselected').showCheckmark, isTrue);
+      expect(chip('opt-out').showCheckmark, isFalse);
+      // 有前导图标：对勾原位替换图标（不走 RawChip 的深色 scrim）。
+      expect(chip('avatar').showCheckmark, isFalse);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('avatar')),
+          matching: find.byKey(const ValueKey<String>('fushi-chip-leading-check')),
+        ),
+        findsOneWidget,
+      );
+      // 选中底是 tonal 容器（chipTheme.selectedColor = secondaryContainer）。
+      final BuildContext ctx = tester.element(find.text('selected'));
+      expect(
+        ChipTheme.of(ctx).selectedColor,
+        Theme.of(ctx).colorScheme.secondaryContainer,
+      );
+      // 选中时 RawChip 真把对勾画进前导槽：选中项比未选项宽出对勾槽。
+      final double selectedWidth = tester
+          .getSize(find.byKey(const ValueKey<String>('selected')))
+          .width;
+      final double optOutWidth = tester
+          .getSize(find.byKey(const ValueKey<String>('opt-out')))
+          .width;
+      expect(selectedWidth, greaterThan(optOutWidth));
+    });
+
+    testWidgets('Tab + Enter selects with the check shown', (
+      WidgetTester tester,
+    ) async {
+      bool selected = false;
+      await _pump(
+        tester,
+        StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) =>
+              FushiChoiceChip(
+                label: const Text('toggle'),
+                selected: selected,
+                onSelected: (bool value) => setState(() => selected = value),
+              ),
+        ),
+        glass: false,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(selected, isTrue);
+      expect(tester.widget<ChoiceChip>(find.byType(ChoiceChip)).selected, isTrue);
+      expect(
+        tester.widget<ChoiceChip>(find.byType(ChoiceChip)).showCheckmark,
+        isTrue,
+      );
+    });
+  });
+
   group('glass', () {
     testWidgets('renders solid Cupertino capsules, no Material chip / glass', (
       WidgetTester tester,

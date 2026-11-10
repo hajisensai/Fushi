@@ -1288,6 +1288,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMinedActionCancel = ${jsonEncode(t.dialog_cancel)};
     window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
     window.i18nMinedOpenNoCard = ${jsonEncode(t.anki_open_no_card)};
+    // 释义来自已配对服务器时词典名旁小图标的说明（popup.js __fushiRemoteDictGlyph）。
+    window.i18nRemoteDictionarySource = ${jsonEncode(t.dictionary_popup_remote_source)};
     window.i18nMinedActionFailed = ${jsonEncode(t.anki_card_action_failed)};
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。

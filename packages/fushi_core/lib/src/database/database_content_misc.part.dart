@@ -95,6 +95,25 @@ mixin _FushiDbContentMisc
             ),
           );
 
+  /// 写本机显示名（v150，设备本地）；[localDisplayName] 为 null 或空白 = 清掉、回到
+  /// host 的显示名。返回受影响行数（0 = 没有这条目录行）。
+  Future<int> setRemoteDictionaryLocalDisplayName({
+    required String hostId,
+    required String name,
+    required String? localDisplayName,
+  }) {
+    final String? trimmed = localDisplayName?.trim();
+    return (update(remoteDictionaryMetadata)
+          ..where((t) => t.hostId.equals(hostId) & t.name.equals(name)))
+        .write(
+          RemoteDictionaryMetadataCompanion(
+            localDisplayName: Value<String?>(
+              trimmed == null || trimmed.isEmpty ? null : trimmed,
+            ),
+          ),
+        );
+  }
+
   /// 把 [hostId] 上的 [names] 标成「从 host 目录里消失」（已标过的保留最早时刻）。
   Future<int> markRemoteDictionariesMissing(
     String hostId,

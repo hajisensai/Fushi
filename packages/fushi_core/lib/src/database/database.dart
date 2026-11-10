@@ -925,7 +925,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 149;
+  int get schemaVersion => 150;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2957,6 +2957,20 @@ class FushiDatabase extends _$FushiDatabase
         // 目录由下一次刷新填；幂等守卫同 v148。
         if (!await _tableExists('remote_dictionary_metadata')) {
           await m.createTable(remoteDictionaryMetadata);
+        }
+      }
+      if (from < 150) {
+        // v150：remote_dictionary_metadata.local_display_name——本机给服务器词典起的
+        // 显示名（设备本地，不归配置）。v149 刚建的表已经由 createTable 带上这一列，
+        // 所以按列存在性守卫，幂等。
+        if (!await _columnExists(
+          'remote_dictionary_metadata',
+          'local_display_name',
+        )) {
+          await m.addColumn(
+            remoteDictionaryMetadata,
+            remoteDictionaryMetadata.localDisplayName,
+          );
         }
       }
     },

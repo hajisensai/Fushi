@@ -5,10 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
-    show RemoteDictionary;
+    show RemoteDictionary, RemoteDictionaryHostSource;
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
+    show RemoteDictionaryHostReachability;
+import 'package:fushi/src/utils/components/content_language_picker.dart'
+    show contentLanguageLabelOf;
+import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -17,10 +23,22 @@ import '../helpers/test_platform_services.dart';
 /// 每行一个来源标签，列表上方来源筛选，服务器行的开关写配置的 hidden，服务器上
 /// 已没有的行才有「忘掉」，混排重排两张表一起写。全部用焦点 + 按键驱动。
 class _FakeAppModel extends AppModel {
-  _FakeAppModel(this.store, this.remote) : super(testPlatformServices());
+  _FakeAppModel(this.store, this.remote, {List<RemoteDictionary>? catalog})
+    : catalogRows = catalog,
+      super(testPlatformServices());
 
   final List<Dictionary> store;
   List<RemoteDictionary> remote;
+
+  /// 来源条用的全部目录行（含参与查词以外的类型）；null = 与 [remote] 相同。
+  final List<RemoteDictionary>? catalogRows;
+  final Map<String, bool> hostLookup = <String, bool>{'h1': true, 'h2': true};
+  final List<(String, bool)> hostLookupWrites = <(String, bool)>[];
+  final List<String> refreshedHosts = <String>[];
+  final List<(String, String?)> localNameWrites = <(String, String?)>[];
+  Map<String, RemoteDictionaryHostReachability> reachability =
+      const <String, RemoteDictionaryHostReachability>{};
+  int profilesOpened = 0;
   final List<(String, bool)> hiddenWrites = <(String, bool)>[];
   final List<(String, String)> forgotten = <(String, String)>[];
   final List<(List<Dictionary>, List<RemoteDictionary>)> mixedOrderWrites =
@@ -54,7 +72,79 @@ class _FakeAppModel extends AppModel {
 
   @override
   Future<Map<String, String>> remoteDictionaryHostNames() async =>
-      <String, String>{'h1': 'Box'};
+      <String, String>{'h1': 'Box', 'h2': 'Laptop'};
+
+  @override
+  Future<List<RemoteDictionaryHostSource>> remoteDictionaryHostSources() async {
+    final List<RemoteDictionary> rows = catalogRows ?? remote;
+    final Map<String, String> names = await remoteDictionaryHostNames();
+    return <RemoteDictionaryHostSource>[
+      for (final String host in <String>{
+        for (final RemoteDictionary r in rows) r.hostId,
+      })
+        RemoteDictionaryHostSource(
+          hostId: host,
+          name: names[host]!,
+          lookupEnabled: hostLookup[host] ?? true,
+          catalog: <RemoteDictionary>[
+            for (final RemoteDictionary r in rows)
+              if (r.hostId == host) r,
+          ],
+        ),
+    ];
+  }
+
+  @override
+  Future<void> setRemoteDictionaryHostLookupEnabled(
+    String hostId,
+    bool enabled,
+  ) async {
+    hostLookupWrites.add((hostId, enabled));
+    hostLookup[hostId] = enabled;
+    if (enabled && !lookupOn) lookupOn = true;
+  }
+
+  @override
+  Future<void> refreshRemoteDictionaryHost(String hostId) async =>
+      refreshedHosts.add(hostId);
+
+  @override
+  Map<String, RemoteDictionaryHostReachability>
+  get remoteDictionaryHostReachability => reachability;
+
+  @override
+  bool get canRefreshRemoteDictionaries => true;
+
+  @override
+  Future<String?> activeProfileName() async => 'Default';
+
+  @override
+  Future<void> showProfilesMenu() async => profilesOpened++;
+
+  @override
+  Future<void> setRemoteDictionaryLocalDisplayName(
+    RemoteDictionary dictionary,
+    String? displayName,
+  ) async {
+    localNameWrites.add((dictionary.name, displayName));
+    remote = <RemoteDictionary>[
+      for (final RemoteDictionary r in remote)
+        r.key == dictionary.key
+            ? RemoteDictionary(
+                hostId: r.hostId,
+                name: r.name,
+                type: r.type,
+                order: r.order,
+                lastSeenAt: r.lastSeenAt,
+                hidden: r.hidden,
+                revision: r.revision,
+                sourceLanguage: r.sourceLanguage,
+                missingSince: r.missingSince,
+                localDisplayName: displayName,
+              )
+            : r,
+    ];
+  }
 
   @override
   Map<String, bool> get remoteDictionaryConfigAppliedByHost =>
@@ -121,7 +211,12 @@ class _FakeAppModel extends AppModel {
 const int _seenAt = 1762646400000;
 
 List<Dictionary> _local() => <Dictionary>[
-  Dictionary(name: 'JMdict', formatKey: 'yomichan', order: 0),
+  Dictionary(
+    name: 'JMdict',
+    formatKey: 'yomichan',
+    order: 0,
+    metadata: const <String, String>{'revision': '6'},
+  ),
   Dictionary(name: 'Local only', formatKey: 'yomichan', order: 2),
 ];
 
@@ -133,6 +228,7 @@ List<RemoteDictionary> _remote() => const <RemoteDictionary>[
     type: DictionaryType.term,
     order: 5,
     lastSeenAt: _seenAt,
+    revision: '7',
   ),
   RemoteDictionary(
     hostId: 'h1',
@@ -157,11 +253,17 @@ const String _goneKey = 'server:h1/Gone Dict';
 Future<_FakeAppModel> _pumpPage(
   WidgetTester tester, {
   Size size = const Size(1280, 800),
+  List<RemoteDictionary>? remote,
+  List<RemoteDictionary>? catalog,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
   addTearDown(tester.view.reset);
-  final _FakeAppModel model = _FakeAppModel(_local(), _remote());
+  final _FakeAppModel model = _FakeAppModel(
+    _local(),
+    remote ?? _remote(),
+    catalog: catalog,
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [appProvider.overrideWith((ref) => model)],
@@ -194,6 +296,21 @@ Future<void> _focusInside(WidgetTester tester, Finder target) async {
   );
   Focus.of(leaf).requestFocus();
   await tester.pump();
+}
+
+/// 焦点驱动换分区：分区条是单个焦点停靠点（FushiAdjustableSegmented），
+/// 方向键 Right 前进一个分区。
+Future<void> _stepSection(WidgetTester tester, int steps) async {
+  final Finder stop = find.descendant(
+    of: find.byType(FushiAdjustableSegmented<DictionaryType>),
+    matching: find.byType(ExcludeFocus),
+  );
+  Focus.of(tester.element(stop.first)).requestFocus();
+  await tester.pump();
+  for (int i = 0; i < steps; i++) {
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _pressEnter(WidgetTester tester) async {
@@ -286,18 +403,73 @@ void main() {
     expect(chipText('Local only'), 'thisDevice');
     expect(chipText(_serverKey), 'server');
     expect(chipText(_goneKey), 'missing');
-    expect(find.text('Both'), findsWidgets);
-    expect(find.text('This device'), findsWidgets);
-    expect(find.text('Server · Box'), findsWidgets);
-    expect(find.text('Not on server'), findsOneWidget);
+    Finder chipIn(String key) => find.descendant(
+      of: find.byKey(ValueKey<String>('dict-row-source-$key')),
+      matching: find.byType(FushiTag),
+    );
+    // 文字 chip 只给例外状态：两者 / 服务器上已没有 / 旧版服务器（h1 上次没套用
+    // 本端选择）；只在本机的行与普通服务器行不画文字 chip。
+    expect(chipIn('Local only'), findsNothing);
+    expect(
+      find.descendant(of: chipIn('JMdict'), matching: find.text('Both')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chipIn(_goneKey),
+        matching: find.text('Not on server'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chipIn(_serverKey),
+        matching: find.text('Older server'),
+      ),
+      findsOneWidget,
+    );
+    // 只有一台参与查词的 host：chip 不写设备名。
+    expect(find.text('Both · Box'), findsNothing);
+    // 服务器行改由序号徽标上的服务器小图标说明，设备名进 tooltip / Semantics。
+    expect(
+      find.byKey(const ValueKey<String>('dict-row-server-glyph')),
+      findsNWidgets(2),
+    );
+    expect(
+      tester
+          .widgetList<DictionaryOrderBadge>(find.byType(DictionaryOrderBadge))
+          .map((DictionaryOrderBadge b) => b.serverHostName)
+          .toList(),
+      <String?>[null, 'Box', null, 'Box'],
+    );
+    expect(find.bySemanticsLabel('Server · Box'), findsWidgets);
+    // 「两者」行版本不同：副标题写明两边版本。
+    expect(find.text('Server rev 7, this device rev 6'), findsOneWidget);
     // 同名服务器词典不单独成行：JMdict 只出现一次。
     expect(find.text('JMdict'), findsOneWidget);
-    // 底部 host 提示：最近在线 + 老版本说明。
+    // 来源条（取代列表底部的 host 提示）：状态 / 本数 / 老版本警告。
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-source-h1')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('dict-server-notice-h1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-source-older-h1')),
       findsOneWidget,
     );
     expect(find.textContaining('runs an older version'), findsOneWidget);
+    expect(find.text('2 of 2 enabled'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('dict-server-source-status-h1')),
+          )
+          .data,
+      startsWith('Last seen '),
+    );
     // 概览格：本机 / 服务器分开计（术语 4 行：2 本机 + 2 服务器）。
     expect(find.text('2 on this device · 2 on server'), findsOneWidget);
   });
@@ -313,6 +485,13 @@ void main() {
     await _pressEnter(tester);
     expect(_rowNames(tester), <String>['JMdict', 'Local only']);
     expect(find.text('Server Dict'), findsNothing);
+    // 列表头跟着筛后的行计数。
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey<String>('dict-list-summary')))
+          .data,
+      '2 of 4 shown · 2 enabled',
+    );
 
     await _focusInside(
       tester,
@@ -433,5 +612,246 @@ void main() {
       find.byKey(const ValueKey<String>('dict-remote-lookup-off')),
       findsNothing,
     );
+  });
+
+  testWidgets('app bar names the active profile; Enter opens profiles', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    expect(find.text('Profile · Default'), findsOneWidget);
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-profile-subtitle')),
+    );
+    await _pressEnter(tester);
+    expect(model.profilesOpened, 1);
+  });
+
+  testWidgets('sources strip: lookup switch, refresh, unreachable status', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-server-source-lookup-h1')),
+    );
+    await _pressEnter(tester);
+    expect(model.hostLookupWrites, <(String, bool)>[('h1', false)]);
+
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-server-source-refresh-h1')),
+    );
+    await _pressEnter(tester);
+    expect(model.refreshedHosts, <String>['h1']);
+
+    model.reachability = const <String, RemoteDictionaryHostReachability>{
+      'h1': RemoteDictionaryHostReachability(failingSince: _seenAt),
+    };
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-thisDevice')),
+    );
+    await _pressEnter(tester);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('dict-server-source-status-h1')),
+          )
+          .data,
+      startsWith('Unreachable since '),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('detail pane clears when the section or the filter changes', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPage(tester);
+    Focus.of(tester.element(find.text('Server Dict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-$_serverKey')),
+      findsOneWidget,
+    );
+    // 换筛选：侧板回到概览。
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-thisDevice')),
+    );
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-$_serverKey')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey<String>('dict-overview')), findsOneWidget);
+
+    // 换分区：本机行的详情同样收回。
+    Focus.of(tester.element(find.text('Local only'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-Local only')),
+      findsOneWidget,
+    );
+    await _stepSection(tester, 2);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-Local only')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Both row detail shows the server copy and both revisions', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPage(tester);
+    Focus.of(tester.element(find.text('JMdict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    final Finder section = find.byKey(
+      const ValueKey<String>('dict-detail-server-copy-JMdict'),
+    );
+    expect(section, findsOneWidget);
+    expect(
+      find.descendant(of: section, matching: find.text('Version on server')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: section, matching: find.text('7')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: section, matching: find.text('6')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: section, matching: find.text('Box')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('server row detail: Source label, language label, local rename', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      remote: const <RemoteDictionary>[
+        RemoteDictionary(
+          hostId: 'h1',
+          name: 'Server Dict',
+          type: DictionaryType.term,
+          order: 1,
+          lastSeenAt: _seenAt,
+          sourceLanguage: 'ja',
+        ),
+      ],
+    );
+    Focus.of(tester.element(find.text('Server Dict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    final Finder detail = find.byKey(
+      const ValueKey<String>('dict-detail-$_serverKey'),
+    );
+    expect(detail, findsOneWidget);
+    expect(
+      find.descendant(of: detail, matching: find.text('Source')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text('Updates')),
+      findsNothing,
+    );
+    // 内容语言与本机词典同一格式。
+    expect(
+      find.descendant(
+        of: detail,
+        matching: find.text(
+          '${t.dict_language_auto} · ${contentLanguageLabelOf('ja')}',
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-detail-rename-$_serverKey')),
+    );
+    await _pressEnter(tester);
+    await tester.enterText(find.byType(EditableText), 'My server dict');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    expect(model.localNameWrites, <(String, String?)>[
+      ('Server Dict', 'My server dict'),
+    ]);
+    expect(find.text('My server dict'), findsWidgets);
+  });
+
+  testWidgets('kanji note and shadowed copies across two servers', (
+    WidgetTester tester,
+  ) async {
+    const List<RemoteDictionary> remote = <RemoteDictionary>[
+      RemoteDictionary(
+        hostId: 'h1',
+        name: 'Server Dict',
+        type: DictionaryType.term,
+        order: 1,
+        lastSeenAt: _seenAt,
+      ),
+      RemoteDictionary(
+        hostId: 'h2',
+        name: 'Server Dict',
+        type: DictionaryType.term,
+        order: 4,
+        lastSeenAt: _seenAt,
+      ),
+      RemoteDictionary(
+        hostId: 'h1',
+        name: 'Gone Dict',
+        type: DictionaryType.term,
+        order: 3,
+        lastSeenAt: _seenAt,
+        missingSince: _seenAt,
+      ),
+    ];
+    await _pumpPage(
+      tester,
+      remote: remote,
+      catalog: <RemoteDictionary>[
+        ...remote,
+        const RemoteDictionary(
+          hostId: 'h1',
+          name: 'KANJIDIC',
+          type: DictionaryType.kanji,
+          order: 9,
+          lastSeenAt: _seenAt,
+        ),
+      ],
+    );
+    // 两台参与查词的 host：例外 chip 写上设备名。
+    expect(find.text('Not on server · Box'), findsOneWidget);
+    // 同名只列排得最前的一份；详情说明另一台上也有。
+    expect(find.text('Server Dict'), findsOneWidget);
+    Focus.of(tester.element(find.text('Server Dict'))).requestFocus();
+    await tester.pump();
+    await _pressEnter(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-detail-shadowed-$_serverKey')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Also on Laptop; only the first copy is listed'),
+      findsOneWidget,
+    );
+
+    await _stepSection(tester, 1);
+    expect(
+      find.text(
+        'Server kanji dictionaries are not managed here yet (1 on Box)',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 }
