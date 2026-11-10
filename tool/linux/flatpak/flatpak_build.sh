@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds and publishes the Fushi Flatpak. Runs on a Linux host with flatpak and
-# flatpak-builder: natively in CI (release-desktop.yml, flatpak-baseapp.yml), or
-# inside the tool/linux/flatpak/Dockerfile container (build_flatpak.sh).
+# flatpak-builder: inside the tool/linux/flatpak/Dockerfile container, both in CI
+# (release-desktop.yml flatpak-baseapp / linux / publish jobs) and locally
+# (build_flatpak.sh).
 #
 #   flatpak_build.sh baseapp-key
 #       Print the cache key of the BaseApp (hash of its manifest + patches).
@@ -118,8 +119,15 @@ cmd_publish() {
   ostree --repo="$repo" init --mode=archive-z2
   # The live repo is the only state: mirror its branches (newest commit plus
   # PRUNE_DEPTH parents) so branches this run did not build survive the deploy.
+  # Every mirrored commit must carry our signature: the summary is re-signed
+  # below, so an unverified mirror would republish whatever the live site
+  # serves under our key.
   if curl -fsSL -o /dev/null "$url/repo/summary"; then
-    ostree --repo="$repo" remote add --if-not-exists --no-gpg-verify live "$url/repo"
+    local live_key
+    live_key="$(mktemp)"
+    gpg --homedir="${FLATPAK_GPG_HOMEDIR:-$HOME/.gnupg}" --export "$FLATPAK_GPG_KEY_ID" > "$live_key"
+    ostree --repo="$repo" remote add --if-not-exists --gpg-import="$live_key" live "$url/repo"
+    rm -f "$live_key"
     ostree --repo="$repo" pull --mirror --depth="$PRUNE_DEPTH" live
     ostree --repo="$repo" remote delete live
   else

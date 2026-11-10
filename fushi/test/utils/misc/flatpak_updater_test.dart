@@ -47,12 +47,30 @@ class _FakePortal implements FlatpakPortal {
 
   final _FakeMonitor monitor;
   final List<List<String>> spawned = <List<String>>[];
+  int closeCalls = 0;
 
   @override
   Future<FlatpakUpdateMonitor> createUpdateMonitor() async => monitor;
 
   @override
   Future<void> spawnLatest(List<String> argv) async => spawned.add(argv);
+
+  @override
+  Future<void> close() async => closeCalls++;
+}
+
+/// Stage against a portal that answers Update with [signals]; returns the error.
+Future<Object?> _stageError(List<FlatpakUpdateProgress> signals) async {
+  final FlatpakUpdater u = FlatpakUpdater(
+    installation: _stable,
+    portal: () => _FakePortal(_FakeMonitor(() => signals)),
+  );
+  try {
+    await u.stage('3.4.0', onProgress: (_) {});
+  } catch (e) {
+    return e;
+  }
+  return null;
 }
 
 const FlatpakInstallation _stable = FlatpakInstallation(
@@ -198,30 +216,85 @@ branch=ignored
       expect(monitor.closed, isTrue);
     });
 
+    // The error names below are the ones flatpak-portal.c really emits: a
+    // permission increase is G_DBUS_ERROR_NOT_SUPPORTED from transaction_ready
+    // (after the transaction resolved, so n_ops >= 1); the same name with no
+    // operations is "No portal support found".
     test('new permissions are refused by the portal and say so', () async {
-      final _FakeMonitor monitor = _FakeMonitor(
-        () => const <FlatpakUpdateProgress>[
-          FlatpakUpdateProgress(
-            status: FlatpakUpdateStatus.error,
-            error: 'org.freedesktop.portal.Error.NotAllowed',
-            errorMessage: 'new permissions',
-          ),
-        ],
+      final Object? error = await _stageError(const <FlatpakUpdateProgress>[
+        FlatpakUpdateProgress(
+          status: FlatpakUpdateStatus.error,
+          nOps: 1,
+          error: 'org.freedesktop.DBus.Error.NotSupported',
+          errorMessage:
+              'Self update not supported, new version requires new permissions',
+        ),
+      ]);
+      expect(
+        error,
+        isA<FlatpakUpdateException>().having(
+          (FlatpakUpdateException e) => e.needsNewPermissions,
+          'needsNewPermissions',
+          isTrue,
+        ),
+      );
+      expect(
+        describeManagedInstallFailure(error!),
+        contains('flatpak update app.fushi.reader'),
+      );
+    });
+
+    test('no Access portal backend is not a permission increase', () async {
+      final Object? error = await _stageError(const <FlatpakUpdateProgress>[
+        FlatpakUpdateProgress(
+          status: FlatpakUpdateStatus.error,
+          error: 'org.freedesktop.DBus.Error.NotSupported',
+          errorMessage: 'No portal support found',
+        ),
+      ]);
+      expect(
+        error,
+        isA<FlatpakUpdateException>().having(
+          (FlatpakUpdateException e) => e.needsNewPermissions,
+          'needsNewPermissions',
+          isFalse,
+        ),
+      );
+    });
+
+    test('a denied update dialog (stored by the portal) says how to allow '
+        'it', () async {
+      final Object? error = await _stageError(const <FlatpakUpdateProgress>[
+        FlatpakUpdateProgress(
+          status: FlatpakUpdateStatus.error,
+          error: 'org.freedesktop.DBus.Error.AccessDenied',
+          errorMessage: 'Application update not allowed',
+        ),
+      ]);
+      expect(error, isA<FlatpakUpdateDeniedException>());
+      expect(
+        describeManagedInstallFailure(error!),
+        contains('flatpak update app.fushi.reader'),
+      );
+    });
+
+    test('the portal connection is released after every stage', () async {
+      final _FakePortal portal = _FakePortal(
+        _FakeMonitor(
+          () => const <FlatpakUpdateProgress>[
+            FlatpakUpdateProgress(status: FlatpakUpdateStatus.empty),
+          ],
+        ),
       );
       final FlatpakUpdater u = FlatpakUpdater(
         installation: _stable,
-        portal: () => _FakePortal(monitor),
+        portal: () => portal,
       );
       await expectLater(
         u.stage('3.4.0', onProgress: (_) {}),
-        throwsA(
-          isA<FlatpakUpdateException>().having(
-            (FlatpakUpdateException e) => e.needsNewPermissions,
-            'needsNewPermissions',
-            isTrue,
-          ),
-        ),
+        throwsA(isA<FlatpakUpdateNotPublishedException>()),
       );
+      expect(portal.closeCalls, 1);
     });
 
     test('cancelling stops waiting', () async {
@@ -265,6 +338,7 @@ branch=ignored
       <String>['fushi', '--fushi-restarted'],
     ]);
     expect(order, <String>['exit']);
+    expect(portal.closeCalls, 1);
   });
 
   test('a package-managed updater has no file to apply', () {

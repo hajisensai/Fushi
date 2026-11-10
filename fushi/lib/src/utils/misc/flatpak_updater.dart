@@ -169,20 +169,61 @@ FlatpakUpdateProgress parseFlatpakUpdateProgress(Map<String, Object?> info) {
 
 /// The update could not be installed through the portal.
 class FlatpakUpdateException implements Exception {
-  const FlatpakUpdateException(this.message, {this.error});
+  const FlatpakUpdateException(
+    this.message, {
+    this.error,
+    this.needsNewPermissions = false,
+  });
+
+  /// The error of a `Progress` signal with status `error`.
+  ///
+  /// The names are what flatpak-portal really sends (`portal/flatpak-portal.c`):
+  ///   * the new version asks for more permissions: `transaction_ready` sets
+  ///     `G_DBUS_ERROR_NOT_SUPPORTED` once the transaction is resolved, so the
+  ///     signal carries the operation count (`n_ops` >= 1, the app update
+  ///     itself). The same error name without operations is "No portal support
+  ///     found" (no Access portal backend to ask the user), a different failure;
+  ///   * the user (now, or earlier: the portal stores the answer) denied the
+  ///     "Update Fushi?" dialog: `G_DBUS_ERROR_ACCESS_DENIED`, see
+  ///     [FlatpakUpdateDeniedException].
+  factory FlatpakUpdateException.fromProgress(FlatpakUpdateProgress p) {
+    final String message = p.errorMessage ?? p.error ?? 'update failed';
+    if (p.error == kDBusErrorAccessDenied) {
+      return FlatpakUpdateDeniedException(message);
+    }
+    return FlatpakUpdateException(
+      message,
+      error: p.error,
+      needsNewPermissions: p.error == kDBusErrorNotSupported && p.nOps > 0,
+    );
+  }
 
   final String message;
 
-  /// Flatpak's error name (e.g. `org.freedesktop.portal.Error.NotAllowed`).
+  /// Flatpak's error name (e.g. `org.freedesktop.DBus.Error.NotSupported`).
   final String? error;
 
   /// The new version needs permissions the installed one lacks. The portal
   /// refuses those on purpose; the user has to accept them in a package manager.
-  bool get needsNewPermissions =>
-      error == 'org.freedesktop.portal.Error.NotAllowed';
+  final bool needsNewPermissions;
 
   @override
   String toString() => 'FlatpakUpdateException: $message';
+}
+
+/// `G_DBUS_ERROR_NOT_SUPPORTED` as flatpak-portal encodes it.
+const String kDBusErrorNotSupported = 'org.freedesktop.DBus.Error.NotSupported';
+
+/// `G_DBUS_ERROR_ACCESS_DENIED` as flatpak-portal encodes it.
+const String kDBusErrorAccessDenied = 'org.freedesktop.DBus.Error.AccessDenied';
+
+/// Self-update is not allowed for this app: the user answered "Deny" to the
+/// portal's update dialog. The portal keeps that answer in its permission store,
+/// so every later attempt fails the same way until it is allowed again in the
+/// desktop's privacy settings.
+class FlatpakUpdateDeniedException extends FlatpakUpdateException {
+  const FlatpakUpdateDeniedException(super.message)
+    : super(error: kDBusErrorAccessDenied);
 }
 
 /// The repo has nothing newer than what is installed (release seen on GitHub,
@@ -207,6 +248,9 @@ abstract interface class FlatpakPortal {
 
   /// Start [argv] in a new sandbox of the newest installed deploy of this app.
   Future<void> spawnLatest(List<String> argv);
+
+  /// Release the bus connection. One portal serves one update step.
+  Future<void> close();
 }
 
 /// Production portal over the session bus.
@@ -229,6 +273,8 @@ class DBusFlatpakPortal implements FlatpakPortal {
 
   @override
   Future<FlatpakUpdateMonitor> createUpdateMonitor() async {
+    // The call activates the portal if it is not running yet, so its unique
+    // name is looked up after it.
     final DBusMethodSuccessResponse reply = await _client.callMethod(
       destination: _busName,
       path: _path,
@@ -238,8 +284,15 @@ class DBusFlatpakPortal implements FlatpakPortal {
       replySignature: DBusSignature('o'),
     );
     final DBusObjectPath handle = reply.returnValues.first.asObjectPath();
-    return _DBusFlatpakUpdateMonitor(_client, handle);
+    final String? owner = await _client.getNameOwner(_busName);
+    if (owner == null) {
+      throw const FlatpakUpdateException('the Flatpak portal went away');
+    }
+    return _DBusFlatpakUpdateMonitor(_client, handle, owner);
   }
+
+  @override
+  Future<void> close() => _client.close();
 
   @override
   Future<void> spawnLatest(List<String> argv) async {
@@ -268,10 +321,13 @@ class DBusFlatpakPortal implements FlatpakPortal {
 }
 
 class _DBusFlatpakUpdateMonitor implements FlatpakUpdateMonitor {
-  _DBusFlatpakUpdateMonitor(this._client, this._handle)
+  // Signals are matched on the portal's unique name, not its well-known name:
+  // package:dbus resolves a well-known sender asynchronously after the first
+  // listen and drops matching signals until it has.
+  _DBusFlatpakUpdateMonitor(this._client, this._handle, this._owner)
     : progress = DBusSignalStream(
         _client,
-        sender: DBusFlatpakPortal._busName,
+        sender: _owner,
         interface: DBusFlatpakPortal._monitorInterface,
         name: 'Progress',
         path: _handle,
@@ -280,6 +336,9 @@ class _DBusFlatpakUpdateMonitor implements FlatpakUpdateMonitor {
 
   final DBusClient _client;
   final DBusObjectPath _handle;
+
+  /// Unique bus name of the portal process that created this monitor.
+  final String _owner;
 
   @override
   final Stream<FlatpakUpdateProgress> progress;
@@ -293,18 +352,32 @@ class _DBusFlatpakUpdateMonitor implements FlatpakUpdateMonitor {
     return parseFlatpakUpdateProgress(info);
   }
 
+  /// Ordering: listening to [progress] sent `AddMatch` on this connection; the
+  /// `GetNameOwner` below goes out after it on the same connection and the bus
+  /// answers in order, so once it returns the match rule is in place and no
+  /// Progress signal of this Update can be missed. It also catches a portal
+  /// restart since [DBusFlatpakPortal.createUpdateMonitor] (the monitor died
+  /// with the old process, no signal would ever come).
   @override
-  Future<void> update() => _client.callMethod(
-    destination: DBusFlatpakPortal._busName,
-    path: _handle,
-    interface: DBusFlatpakPortal._monitorInterface,
-    name: 'Update',
-    values: <DBusValue>[
-      const DBusString(''),
-      DBusDict.stringVariant(<String, DBusValue>{}),
-    ],
-    replySignature: DBusSignature(''),
-  );
+  Future<void> update() async {
+    final String? owner = await _client.getNameOwner(
+      DBusFlatpakPortal._busName,
+    );
+    if (owner != _owner) {
+      throw const FlatpakUpdateException('the Flatpak portal restarted');
+    }
+    await _client.callMethod(
+      destination: DBusFlatpakPortal._busName,
+      path: _handle,
+      interface: DBusFlatpakPortal._monitorInterface,
+      name: 'Update',
+      values: <DBusValue>[
+        const DBusString(''),
+        DBusDict.stringVariant(<String, DBusValue>{}),
+      ],
+      replySignature: DBusSignature(''),
+    );
+  }
 
   @override
   Future<void> close() async {
@@ -364,7 +437,20 @@ class FlatpakUpdater extends PackageManagedUpdater {
     required void Function(double progress) onProgress,
     UpdateDownloadCancellation? cancellation,
   }) async {
-    final FlatpakUpdateMonitor monitor = await _portal().createUpdateMonitor();
+    final FlatpakPortal portal = _portal();
+    try {
+      await _stageThrough(portal, onProgress, cancellation);
+    } finally {
+      await portal.close();
+    }
+  }
+
+  Future<void> _stageThrough(
+    FlatpakPortal portal,
+    void Function(double progress) onProgress,
+    UpdateDownloadCancellation? cancellation,
+  ) async {
+    final FlatpakUpdateMonitor monitor = await portal.createUpdateMonitor();
     final Completer<void> finished = Completer<void>();
     final StreamSubscription<FlatpakUpdateProgress> sub = monitor.progress
         .listen((FlatpakUpdateProgress p) {
@@ -380,12 +466,7 @@ class FlatpakUpdater extends PackageManagedUpdater {
                 const FlatpakUpdateNotPublishedException(),
               );
             case FlatpakUpdateStatus.error:
-              finished.completeError(
-                FlatpakUpdateException(
-                  p.errorMessage ?? p.error ?? 'update failed',
-                  error: p.error,
-                ),
-              );
+              finished.completeError(FlatpakUpdateException.fromProgress(p));
           }
         });
     // The portal transaction itself cannot be cancelled. Cancelling stops
@@ -398,12 +479,11 @@ class FlatpakUpdater extends PackageManagedUpdater {
     });
     try {
       // Wait on the result from the start: a cancel or an early Progress error
-      // can arrive while the Update call is still in flight. The Update call
-      // goes out after a timer tick so the Progress match rule (added when
-      // [sub] started listening) reaches the bus first.
+      // can arrive while the Update call is still in flight. [sub] listens
+      // already, which is what [FlatpakUpdateMonitor.update] requires.
       await Future.wait(<Future<void>>[
         finished.future,
-        Future<void>.delayed(Duration.zero, monitor.update),
+        monitor.update(),
       ], eagerError: true);
     } finally {
       cancellation?.clearAbort();
@@ -416,10 +496,15 @@ class FlatpakUpdater extends PackageManagedUpdater {
   Future<void> restartIntoStagedUpdate(String version) async {
     // `command: fushi` in the manifest; the marker makes the new process wait
     // for this one to release the single-instance bus name (linux/runner).
-    await _portal().spawnLatest(<String>[
-      'fushi',
-      DesktopLifecycleService.restartMarkerArg,
-    ]);
+    final FlatpakPortal portal = _portal();
+    try {
+      await portal.spawnLatest(<String>[
+        'fushi',
+        DesktopLifecycleService.restartMarkerArg,
+      ]);
+    } finally {
+      await portal.close();
+    }
     await _exitForRestart();
   }
 }
@@ -428,6 +513,9 @@ class FlatpakUpdater extends PackageManagedUpdater {
 String describeManagedInstallFailure(Object error) {
   if (error is FlatpakUpdateNotPublishedException) {
     return t.update_flatpak_not_published;
+  }
+  if (error is FlatpakUpdateDeniedException) {
+    return t.update_flatpak_update_denied;
   }
   if (error is FlatpakUpdateException && error.needsNewPermissions) {
     return t.update_flatpak_needs_permissions;

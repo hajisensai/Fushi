@@ -1139,13 +1139,14 @@ class UpdateChecker {
     String version,
     PackageManagedUpdater updater,
   ) async {
-    final _UpdateDownloadSession session = _UpdateDownloadSession()
-      ..showIn(Overlay.of(context));
+    final _UpdateDownloadSession session = _UpdateDownloadSession();
     try {
-      await updater.stage(
-        version,
-        onProgress: session.onProgress,
-        cancellation: session.cancellation,
+      await HeadlessUpdateFlow._stageInSession(
+        session,
+        version: version,
+        updater: updater,
+        overlay: Overlay.of(context),
+        onProgress: (_) {},
       );
       session.status.value = t.update_installing;
       await updater.restartIntoStagedUpdate(version);

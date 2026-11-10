@@ -48,6 +48,7 @@ class AppUpdateCliBackend {
     required this.updater,
     required this.check,
     required this.download,
+    required this.stage,
   });
 
   final PlatformUpdater updater;
@@ -59,6 +60,17 @@ class AppUpdateCliBackend {
     void Function(double progress) onProgress,
   )
   download;
+
+  /// [PackageManagedUpdater] 平台的「下载」= 包管理器拉取并部署（生产 =
+  /// [HeadlessUpdateFlow.stage]，与 [download] 同一把版本级互斥锁、同一个浮层）。
+  final Future<void> Function(
+    AppModel appModel,
+    HeadlessUpdateCheck update,
+    PackageManagedUpdater updater,
+    UpdateDownloadCancellation cancellation,
+    void Function(double progress) onProgress,
+  )
+  stage;
 }
 
 AppUpdateCliBackend _productionBackend() {
@@ -84,6 +96,20 @@ AppUpdateCliBackend _productionBackend() {
           version: update.version,
           updater: updater,
           customProxy: appModel.updateCustomProxy,
+          overlay: appModel.navigatorKey.currentState?.overlay,
+          cancellation: cancellation,
+          onProgress: onProgress,
+        ),
+    stage:
+        (
+          AppModel appModel,
+          HeadlessUpdateCheck update,
+          PackageManagedUpdater managed,
+          UpdateDownloadCancellation cancellation,
+          void Function(double progress) onProgress,
+        ) => HeadlessUpdateFlow.stage(
+          version: update.version,
+          updater: managed,
           overlay: appModel.navigatorKey.currentState?.overlay,
           cancellation: cancellation,
           onProgress: onProgress,
@@ -191,10 +217,12 @@ SettingsCliTask startAppUpdateDownloadForCli(
       final PlatformUpdater updater = backend.updater;
       if (updater is PackageManagedUpdater) {
         // Flatpak：「下载」= 包管理器拉取并部署，新版下次启动生效。
-        await updater.stage(
-          update.version,
-          onProgress: (double value) => task.report(progress: value),
-          cancellation: cancellation,
+        await backend.stage(
+          appModel,
+          update,
+          updater,
+          cancellation,
+          (double value) => task.report(progress: value),
         );
         _downloaded = AppUpdateDownloaded(version: update.version, file: null);
         return <String, Object?>{
