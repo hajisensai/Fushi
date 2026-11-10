@@ -1,6 +1,7 @@
 /// 「从互联对端下载的有声书是哪一版」的读写，以及**唯一**的记录入口
 /// [recordRemoteAudiobookPackageDownload]：书架手动下载 / 重新下载、同步 sweep 自动
-/// 补拉、同步对比页补拉，整包下载导入成功后都经它记一次。
+/// 补拉、同步对比页补拉，整包下载导入成功后都经它记一次。本机把自己那份推给 host
+/// 后经 [forgetRemoteAudiobookRevisionAfterPush] 作废旧记录。
 ///
 /// 只读写数据库里的偏好行（同 `DeletePromptPreferenceStore`），不经
 /// `PreferencesRepository` 的内存缓存：同步编排没有那个实例，绕开它写 DB 会让缓存
@@ -88,6 +89,29 @@ Future<void> recordRemoteAudiobookPackageDownload({
   } catch (e, stack) {
     ErrorLogService.instance.log(
       'recordRemoteAudiobookPackageDownload',
+      e,
+      stack,
+    );
+  }
+}
+
+/// 本机把自己的有声书整包**推给** host 成功后，作废这本书的下载版本记录。
+///
+/// 推完 host 上那份就是本机这份；若这台设备以前从 host 下载过这本（记过 host 当时
+/// 的版本），旧记录与 host 新算出的版本必然不同，书架会把本机自己的推送误报成
+/// 「对端有更新」。推送包的 manifest 版本由 host 落盘后重算（路径 / mtime 都换了），
+/// 本机算不出来，所以只能删掉：没有记录 = 不提示，与旧 host 下载的书同语义。
+///
+/// 失败不让已成功的推送变失败：记进错误日志，最多多一次误报提示。
+Future<void> forgetRemoteAudiobookRevisionAfterPush({
+  required FushiDatabase db,
+  required String key,
+}) async {
+  try {
+    await RemoteAudiobookRevisionStore(db).put(key, null);
+  } catch (e, stack) {
+    ErrorLogService.instance.log(
+      'forgetRemoteAudiobookRevisionAfterPush',
       e,
       stack,
     );
