@@ -105,8 +105,11 @@ const Set<String> kMangaCarrierFileExtensions = <String>{
 /// - [isImageArchive]：真读包判定，只在扩展名二义（`.zip` / `.epub`）时才被调用。
 ///   `.zip` 同时是 Yomitan 词典包扩展名，`.epub` 也可能是扫描版漫画——光看扩展名
 ///   分不出，必须开包看里面装的是不是页图。
-/// - [directoryHasPageImages]：目录里有没有页图，判据必须与真正执行导入的枚举
-///   同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」。
+/// - [directoryHasPageImages]：目录里有没有**成卷的**页图，判据必须与真正执行导入的
+///   枚举同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」；
+///   页图全是直接子层整卷文件的附属图（封面）时答 false，让位判据与来源库扫描同一个
+///   引擎函数（`mangaImageDirsClaimedByCarriers`），两条导入路径对同一个文件夹给出
+///   同一种解释。
 /// - [directoryCarrierFileCount]：目录**直接子层**里有几个 [kMangaCarrierFileExtensions]
 ///   文件。只看扩展名（便宜），真定性推迟到逐卷导入时——那时反正要开包。
 /// - [directoryMokuroFileCount]：目录**直接子层**里有几个 mokuro manifest（`.mokuro`
@@ -133,8 +136,10 @@ ImportCarrier classifyImportCarrier(
     final int mokuroCount = directoryMokuroFileCount(path);
     if (mokuroCount == 1) return ImportCarrier.mangaMokuro;
     if (mokuroCount > 1) return ImportCarrier.mangaBatchFolder;
-    // 页图优先：有页图就是一卷页图目录，与改动前的行为逐字节一致。目录里
-    // 同时躺着页图和整卷文件时，页图这条解释更贴近用户点「选文件夹」的意图。
+    // 有**成卷的**页图就是一卷页图目录。只是整卷文件附属图（封面 / 目录图）的散图
+    // 不算——那由 [directoryHasPageImages] 按与来源库扫描同一个让位判据回答
+    // （iycDWb7ys6：`卷01.epub` + `cover.jpg` 的文件夹此前被判成一卷只有封面的页图
+    // 目录，导入框里一卷都认不出来，「导入文件夹」却能逐卷导入）。
     if (directoryHasPageImages(path)) return ImportCarrier.mangaFolder;
     if (directoryCarrierFileCount(path) > 0) {
       return ImportCarrier.mangaBatchFolder;
