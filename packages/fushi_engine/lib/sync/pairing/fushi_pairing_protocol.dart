@@ -100,6 +100,12 @@ class FushiPairSession {
   /// 「每来源会话数」限额——否则所有经本机反代进来的人共用一个名额。
   final bool sourceKeyTrusted;
 
+  /// 能区分真实来源时的 [sourceKey]，否则 null（BUG-4280 评审 correctness-1）。按来源的
+  /// PIN 限速 / 锁定与宿主「同源取代审批框」只认它：不可信键（经本机反代 / 穿透进来的
+  /// 共用 `ip:127.0.0.1`、`p2p:?`）背后是所有人，按它锁会让一个攻击者把全体（含票据
+  /// 配对）一起锁住，只计入来源类别预算。
+  String? get trustedSourceKey => sourceKeyTrusted ? sourceKey : null;
+
   /// 来源类别：决定 PIN 失败计入哪一份总预算、会话占哪一个分区（BUG-4280）。
   final FushiPairOriginClass originClass;
 

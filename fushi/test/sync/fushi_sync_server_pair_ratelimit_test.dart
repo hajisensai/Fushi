@@ -4,13 +4,33 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
-import 'package:http/http.dart' as http;
+import 'package:shelf/shelf.dart' as shelf;
+
+/// 进程内请求的 TCP 对端（[FushiSyncServer.handleInProcess] 没有真连接）。
+class _FakeConnectionInfo implements HttpConnectionInfo {
+  _FakeConnectionInfo(String address)
+    : remoteAddress = InternetAddress(address);
+
+  @override
+  final InternetAddress remoteAddress;
+
+  @override
+  int get remotePort => 40000;
+
+  @override
+  int get localPort => 8765;
+}
+
+/// 本组用例的来源：无转发头的局域网对端，来源键可信（`ip:192.168.1.20`）。回环对端
+/// 的来源键不可信（经本机反代 / 穿透进来的所有人共用），不进按来源的限速，见
+/// fushi_sync_server_pair_bruteforce_test.dart 例 9。
+const String _peer = '192.168.1.20';
 
 // TODO-961 M3: PIN brute-force rate limiting end-to-end over /api/pair/v2/confirm.
 // Attack shape: attacker repeatedly opens pair/v2 sessions, confirms each once
-// guessing a different PIN. Failures aggregate per source (loopback tests use
-// remoteAddress 127.0.0.1); on threshold the source is locked out (429) for a
-// backoff window; success and the legitimate single-shot flow are unaffected.
+// guessing a different PIN. Failures aggregate per source (here the LAN peer
+// 192.168.1.20); on threshold the source is locked out (429) for a backoff
+// window; success and the legitimate single-shot flow are unaffected.
 void main() {
   late Directory tempDir;
   late FushiSyncServer server;
@@ -30,7 +50,6 @@ void main() {
           ..onPairRequest = ((FushiPairRequest _) async => approve)
           ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
           ..lanRequiresPinProvider = (() async => true);
-    await server.start();
   }
 
   tearDown(() async {
@@ -40,67 +59,68 @@ void main() {
     shownPin = '482913';
   });
 
-  Uri v2Uri() => Uri.parse('http://127.0.0.1:${server.port}/api/pair/v2');
-  Uri confirmUri() =>
-      Uri.parse('http://127.0.0.1:${server.port}/api/pair/v2/confirm');
+  Future<({int statusCode, String body})> post(
+    String path,
+    Map<String, Object?> body,
+  ) async {
+    final shelf.Response resp = await server.handleInProcess(
+      shelf.Request(
+        'POST',
+        Uri.parse('http://fushi.test$path'),
+        headers: <String, String>{'content-type': 'application/json'},
+        body: jsonEncode(body),
+        context: <String, Object>{
+          'shelf.io.connection_info': _FakeConnectionInfo(_peer),
+        },
+      ),
+    );
+    return (statusCode: resp.statusCode, body: await resp.readAsString());
+  }
 
   Future<Map<String, dynamic>> startSession(String clientNonce) async {
-    final http.Response resp = await http.post(
-      v2Uri(),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{
-        'name': 'Attacker',
-        'clientNonce': clientNonce,
-      }),
+    final ({int statusCode, String body}) resp = await post(
+      '/api/pair/v2',
+      <String, String>{'name': 'Attacker', 'clientNonce': clientNonce},
     );
     expect(resp.statusCode, 200);
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  Future<http.Response> confirmWrongPin(int attempt) async {
-    final String clientNonce = 'cn-wrong-$attempt';
-    final Map<String, dynamic> start = await startSession(clientNonce);
-    final String wrongProof = FushiPairingProtocol.computePinProof(
-      pin: '000000',
-      clientNonce: clientNonce,
-      hostNonce: start['hostNonce'] as String,
-    );
-    return http.post(
-      confirmUri(),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{
-        'sessionId': start['sessionId'] as String,
-        'pinProof': wrongProof,
-      }),
-    );
+  Future<({int statusCode, String body})> confirmWith(
+    Map<String, dynamic> start,
+    String clientNonce,
+    String pin,
+  ) {
+    return post('/api/pair/v2/confirm', <String, String>{
+      'sessionId': start['sessionId'] as String,
+      'pinProof': FushiPairingProtocol.computePinProof(
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: start['hostNonce'] as String,
+      ),
+    });
   }
 
-  Future<http.Response> confirmCorrectPin(String tag) async {
+  Future<({int statusCode, String body})> confirmWrongPin(int attempt) async {
+    final String clientNonce = 'cn-wrong-$attempt';
+    final Map<String, dynamic> start = await startSession(clientNonce);
+    return confirmWith(start, clientNonce, '000000');
+  }
+
+  Future<({int statusCode, String body})> confirmCorrectPin(String tag) async {
     final String clientNonce = 'cn-ok-$tag';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    final String proof = FushiPairingProtocol.computePinProof(
-      pin: shownPin,
-      clientNonce: clientNonce,
-      hostNonce: start['hostNonce'] as String,
-    );
-    return http.post(
-      confirmUri(),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{
-        'sessionId': start['sessionId'] as String,
-        'pinProof': proof,
-      }),
-    );
+    return confirmWith(start, clientNonce, shownPin);
   }
 
   test('threshold failures lock out: 401 pin then 429 rate_limited', () async {
     await startServer();
     for (int i = 1; i <= 4; i++) {
-      final http.Response r = await confirmWrongPin(i);
+      final ({int statusCode, String body}) r = await confirmWrongPin(i);
       expect(r.statusCode, 401, reason: 'attempt $i should be 401 pin');
       expect((jsonDecode(r.body) as Map<String, dynamic>)['reason'], 'pin');
     }
-    final http.Response fifth = await confirmWrongPin(5);
+    final ({int statusCode, String body}) fifth = await confirmWrongPin(5);
     expect(fifth.statusCode, 429, reason: '5th attempt hits threshold');
     expect(
       (jsonDecode(fifth.body) as Map<String, dynamic>)['reason'],
@@ -117,15 +137,39 @@ void main() {
       for (int i = 1; i <= 5; i++) {
         await confirmWrongPin(i);
       }
-      final http.Response r = await http.post(
-        v2Uri(),
-        headers: <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode(<String, String>{
+      final ({int statusCode, String body}) r = await post(
+        '/api/pair/v2',
+        <String, String>{
           'name': 'Attacker',
           'clientNonce': 'cn-during-lockout',
-        }),
+        },
       );
       expect(r.statusCode, 429);
+      expect(
+        (jsonDecode(r.body) as Map<String, dynamic>)['reason'],
+        'rate_limited',
+      );
+    },
+  );
+
+  test(
+    'session opened before lockout: correct PIN confirm is still 429',
+    () async {
+      // 评审 tests-2：锁定之前就开好的会话，锁定后只靠 confirm 里比对 PIN 之前的
+      // 锁定预检拦住。没有这道预检，猜对的会照常拿到 token，锁定期间仍在回答
+      // 「是否猜中」。
+      await startServer();
+      const String earlyNonce = 'cn-opened-before-lockout';
+      final Map<String, dynamic> early = await startSession(earlyNonce);
+      for (int i = 1; i <= 5; i++) {
+        await confirmWrongPin(i);
+      }
+      final ({int statusCode, String body}) r = await confirmWith(
+        early,
+        earlyNonce,
+        shownPin,
+      );
+      expect(r.statusCode, 429, reason: '锁定中的来源拿正确 PIN 也不放行');
       expect(
         (jsonDecode(r.body) as Map<String, dynamic>)['reason'],
         'rate_limited',
@@ -139,7 +183,9 @@ void main() {
       await confirmWrongPin(i);
     }
     fakeNow = fakeNow.add(const Duration(minutes: 16));
-    final http.Response r = await confirmCorrectPin('after-lockout');
+    final ({int statusCode, String body}) r = await confirmCorrectPin(
+      'after-lockout',
+    );
     expect(r.statusCode, 200, reason: 'recovers after backoff');
     expect(
       (jsonDecode(r.body) as Map<String, dynamic>)['token'],
@@ -150,13 +196,13 @@ void main() {
   test('success clears count: later failures start fresh', () async {
     await startServer();
     for (int i = 1; i <= 4; i++) {
-      final http.Response r = await confirmWrongPin(i);
+      final ({int statusCode, String body}) r = await confirmWrongPin(i);
       expect(r.statusCode, 401);
     }
-    final http.Response ok = await confirmCorrectPin('reset');
+    final ({int statusCode, String body}) ok = await confirmCorrectPin('reset');
     expect(ok.statusCode, 200);
     for (int i = 5; i <= 8; i++) {
-      final http.Response r = await confirmWrongPin(i);
+      final ({int statusCode, String body}) r = await confirmWrongPin(i);
       expect(
         r.statusCode,
         401,
@@ -167,7 +213,7 @@ void main() {
 
   test('legitimate single-shot flow zero regression', () async {
     await startServer();
-    final http.Response r = await confirmCorrectPin('single');
+    final ({int statusCode, String body}) r = await confirmCorrectPin('single');
     expect(r.statusCode, 200);
     expect(
       (jsonDecode(r.body) as Map<String, dynamic>)['token'],
@@ -188,15 +234,11 @@ void main() {
           ..onPairRequest = ((FushiPairRequest _) async => true)
           ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
           ..lanRequiresPinProvider = (() async => false);
-    await server.start();
     for (int i = 0; i < 10; i++) {
       final Map<String, dynamic> start = await startSession('cn-free-$i');
-      final http.Response r = await http.post(
-        confirmUri(),
-        headers: <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode(<String, String>{
-          'sessionId': start['sessionId'] as String,
-        }),
+      final ({int statusCode, String body}) r = await post(
+        '/api/pair/v2/confirm',
+        <String, String>{'sessionId': start['sessionId'] as String},
       );
       expect(r.statusCode, 200, reason: 'free confirm $i should succeed');
     }

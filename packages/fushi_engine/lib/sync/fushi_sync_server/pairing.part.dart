@@ -68,7 +68,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       FushiPairRequest(
         deviceName: name,
         remoteAddress: pairRemote,
-        sourceKey: origin.sourceKey,
+        sourceKey: origin.trustedSourceKey,
       ),
     );
     if (!approved) return _pairDenied('declined');
@@ -167,7 +167,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
     // BUG-4280：本来源或本来源类别因 PIN 失败过多锁定中 → 不建会话、不生成 PIN、
     // 不弹审批 / 不刷无头日志。免 PIN 会话不猜 PIN，不受锁定影响。
-    if (pinRequired && _pinLockedOut(origin.originClass, origin.sourceKey)) {
+    if (pinRequired &&
+        _pinLockedOut(origin.originClass, origin.trustedSourceKey)) {
       return _pairRateLimited();
     }
     // 人工批准过的 PIN 会话受淘汰保护（攻击者不经主人点头占不住它们）。
@@ -233,7 +234,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           ownerDeviceGrant: ownerDeviceGrant,
           sessionId: sessionId,
           pin: shownPin,
-          sourceKey: origin.sourceKey,
+          sourceKey: origin.trustedSourceKey,
         ),
       );
       if (!approved) return _pairDenied('declined');
@@ -388,9 +389,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     }
 
     // TODO-961 M3 / BUG-4280：来源标识在建会话时由 [_requestOrigin] 算好存进会话
-    // （IP，IPv6 按 /64；隧道按 NodeId；**不**认自报 deviceId）。为 null 时不按来源
-    // 限速，只受来源类别预算约束（单会话本就被 session.consumed 限成只撞一次）。
-    final String? sourceKey = session.sourceKey;
+    // （IP，IPv6 按 /64；隧道按 NodeId；**不**认自报 deviceId）。只取能区分真实来源的
+    // 键（[FushiPairSession.trustedSourceKey]）：经本机反代 / 穿透进来的共用键背后是
+    // 所有人，按它锁会株连全体（含票据配对）。为 null 时不按来源限速，只受来源类别
+    // 预算约束（单会话本就被 session.consumed 限成只撞一次）。
+    final String? sourceKey = session.trustedSourceKey;
     final bool isTicket = session.ticketId != null;
     if (session.pinRequired) {
       // 先查锁定态（再触碰 PIN 比对）：锁定则直接拒，杜绝继续撞。锁定判定只看来源与
@@ -453,7 +456,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           clientDeviceId: session.clientDeviceId,
           ownerDeviceGrant: ownerDeviceGrant,
           sessionId: session.sessionId,
-          sourceKey: session.sourceKey,
+          sourceKey: session.trustedSourceKey,
         ),
       );
       if (!approved) return _pairDenied('declined');
@@ -738,7 +741,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     bool evictable(FushiPairSession s) =>
         s.originClass == cls && !s.protectedFromEviction;
 
-    // 1. 每来源限额：只对能区分真实来源的键做（回环未经可信代理、`p2p:?` 跳过——
+    // 1. 每来源限额：只对能区分真实来源的键做（回环未经可信代理、带转发头却不是可信
+    //    代理的对端、`p2p:?` 跳过——
     //    否则经本机反代进来的所有人共用一个名额）。
     if (origin.sourceKeyTrusted && sourceKey != null) {
       while (true) {
@@ -855,9 +859,14 @@ class _RequestOrigin {
   /// 限速与会话分桶用的来源键（步骤 5 消费）；null = 无法识别。
   final String? sourceKey;
 
-  /// [sourceKey] 能否区分不同的真实来源：P2P NodeId、非回环 TCP 对端、经可信代理
-  /// 解析出的转发 IP 为 true；回环对端（未经可信代理解析）与 `p2p:?` 为 false。
+  /// [sourceKey] 能否区分不同的真实来源：P2P NodeId、无转发头的非回环 TCP 对端、经
+  /// 可信代理解析出的转发 IP 为 true；回环对端、带转发头却没经可信代理解析的对端
+  /// （它只是转发者，背后可能是任意多人）与 `p2p:?` 为 false。
   final bool sourceKeyTrusted;
+
+  /// 能区分真实来源时的 [sourceKey]，否则 null：按来源的 PIN 限速 / 锁定与宿主同源
+  /// 判定只认它（见 [FushiPairSession.trustedSourceKey]）。
+  String? get trustedSourceKey => sourceKeyTrusted ? sourceKey : null;
 }
 
 /// 请求来源分类（BUG-4279）。判定顺序：
@@ -927,7 +936,9 @@ _RequestOrigin _classifyRequestOrigin(
     originClass: originClass,
     display: forwarded ? '$peerText (proxied)' : peerText,
     sourceKey: fushiRateKeyForAddress(peer),
-    sourceKeyTrusted: !peerIsLoopback,
+    // 带转发头而对端不是可信代理：对端只是转发者（局域网里另一台反代背后可以是任意
+    // 多人），它的 IP 不能区分真实来源（评审 compat-3）。
+    sourceKeyTrusted: !peerIsLoopback && !forwarded,
   );
 }
 

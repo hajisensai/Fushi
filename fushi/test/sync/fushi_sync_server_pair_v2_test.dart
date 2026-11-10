@@ -305,7 +305,9 @@ void main() {
     final FushiPairRequest req = approvalRequests.single;
     expect(req.pin, '482913');
     expect(req.sessionId, start['sessionId']);
-    expect(req.sourceKey, 'ip:127.0.0.1');
+    // 回环对端的来源键分不出真实来源（经本机反代 / 穿透进来的人共用），不交给宿主
+    // 判同源（评审 compat-3）。
+    expect(req.sourceKey, isNull);
     final http.Response resp = await http.post(
       confirmUri(),
       headers: <String, String>{'Content-Type': 'application/json'},

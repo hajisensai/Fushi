@@ -59,13 +59,17 @@ void main() {
   Future<(int, Map<String, dynamic>)> post(
     String path,
     String peer,
-    Map<String, Object?> body,
-  ) async {
+    Map<String, Object?> body, {
+    Map<String, String> headers = const <String, String>{},
+  }) async {
     final shelf.Response resp = await server.handleInProcess(
       shelf.Request(
         'POST',
         Uri.parse('http://fushi.test$path'),
-        headers: <String, String>{'content-type': 'application/json'},
+        headers: <String, String>{
+          'content-type': 'application/json',
+          ...headers,
+        },
         body: jsonEncode(body),
         context: <String, Object>{
           'shelf.io.connection_info': _FakeConnectionInfo(peer),
@@ -85,6 +89,7 @@ void main() {
     String peer, {
     String? deviceId,
     String? ticket,
+    Map<String, String> headers = const <String, String>{},
   }) async {
     final String cn = 'cn-${nonceSeq++}';
     final (
@@ -95,7 +100,7 @@ void main() {
       'clientNonce': cn,
       'clientDeviceId': ?deviceId,
       'ticket': ?ticket,
-    });
+    }, headers: headers);
     return (
       code,
       json['sessionId'] as String?,
@@ -109,8 +114,9 @@ void main() {
     String sessionId,
     String cn,
     String hostNonce,
-    String pin,
-  ) async {
+    String pin, {
+    Map<String, String> headers = const <String, String>{},
+  }) async {
     final (
       int code,
       _,
@@ -121,7 +127,7 @@ void main() {
         clientNonce: cn,
         hostNonce: hostNonce,
       ),
-    });
+    }, headers: headers);
     return code;
   }
 
@@ -130,13 +136,15 @@ void main() {
     String peer, {
     String? deviceId,
     String pin = _wrongPin,
+    Map<String, String> headers = const <String, String>{},
   }) async {
     final (int code, String? sid, String cn, String? hn) = await open(
       peer,
       deviceId: deviceId,
+      headers: headers,
     );
     if (code != 200) return code;
-    return confirm(peer, sid!, cn, hn!, pin);
+    return confirm(peer, sid!, cn, hn!, pin, headers: headers);
   }
 
   test(
@@ -258,5 +266,77 @@ void main() {
     }
     final (int code, _, _, _) = await open('198.51.100.33');
     expect(code, 429);
+  });
+
+  // 评审 correctness-1：VPS 典型部署——只听本机、前面是本机 nginx（带 X-Forwarded-For），
+  // trusted_proxies 保持默认空。所有公网请求的 TCP 对端都是 127.0.0.1，来源键
+  // `ip:127.0.0.1` 不可信：不进按来源的限速 / 锁定，只计入公网类别预算。
+  const Map<String, String> viaLocalNginx = <String, String>{
+    'x-forwarded-for': '203.0.113.99',
+  };
+
+  test('例 9：经本机反代（未配可信代理）的失败不按共用的回环键锁来源，只计公网类别预算', () async {
+    final List<int> codes = <int>[
+      for (int i = 1; i <= 10; i++)
+        await guess('127.0.0.1', headers: viaLocalNginx),
+    ];
+    expect(
+      codes.take(9),
+      everyElement(401),
+      reason: '第 5 次不因共用键 ip:127.0.0.1 锁定（否则一个攻击者株连代理后的所有人）',
+    );
+    expect(codes.last, 429, reason: '第 10 次失败锁住公网类别');
+    expect(server.pinRateLimitTrackedSourceCount, 0, reason: '不可信键不进按来源的限速器');
+    expect(server.pairingLockouts.keys, contains(FushiPairOriginClass.public));
+  });
+
+  test('例 10：公网类别被锁时，经同一本机反代进来的票据配对仍能配上', () async {
+    for (int i = 1; i <= 10; i++) {
+      await guess('127.0.0.1', headers: viaLocalNginx);
+    }
+    expect(server.pairingLockouts.keys, contains(FushiPairOriginClass.public));
+    // 攻击者在类别锁定期间继续撞：pair/v2 直接 429，不再记账。
+    expect(await guess('127.0.0.1', headers: viaLocalNginx), 429);
+
+    final FushiPairTicket ticket = server.issuePairTicket();
+    final (int code, String? sid, String cn, String? hn) = await open(
+      '127.0.0.1',
+      ticket: ticket.id,
+      headers: viaLocalNginx,
+    );
+    expect(code, 200);
+    expect(
+      await confirm(
+        '127.0.0.1',
+        sid!,
+        cn,
+        hn!,
+        ticket.secret,
+        headers: viaLocalNginx,
+      ),
+      200,
+      reason: '票据配对是公网 PIN 被锁时的出路，不能被共用回环键上的失败拦下',
+    );
+  });
+
+  test('例 11：局域网另一台反代（不在可信名单）后的来源不按它的 IP 分桶', () async {
+    // 评审 compat-3：带转发头而对端不是可信代理时，对端 IP 背后可能是任意多人。
+    const Map<String, String> viaLanProxy = <String, String>{
+      'x-forwarded-for': '198.51.100.50',
+    };
+    final List<int> codes = <int>[
+      for (int i = 1; i <= 6; i++)
+        await guess('192.168.1.5', headers: viaLanProxy),
+    ];
+    expect(codes, everyElement(401), reason: '不按代理 IP 做来源锁定');
+    expect(server.pinRateLimitTrackedSourceCount, 0);
+
+    // 也不受「每来源 4 个会话」的限额：代理后一个人挤不掉别人等着 confirm 的会话。
+    final int before = server.pendingPairSessionCount;
+    for (int i = 0; i < 6; i++) {
+      final (int c, _, _, _) = await open('192.168.1.5', headers: viaLanProxy);
+      expect(c, 200);
+    }
+    expect(server.pendingPairSessionCount - before, 6);
   });
 }

@@ -203,6 +203,59 @@ void main() {
     expect(remote, isNot(contains('192.168.1.9')));
   });
 
+  test('审批请求只带能区分真实来源的 sourceKey（评审 compat-3）', () async {
+    // 宿主拿 sourceKey 判「同源取代常驻 PIN 框」：共用键（回环、不可信转发者、`p2p:?`）
+    // 判成同源会让陌生人顶掉别人的框，必须给 null。
+    server.lanRequiresPinProvider = () async => true;
+    Future<String?> keyFor({
+      required String peer,
+      Map<String, String> headers = const <String, String>{},
+      Map<String, Object> extraContext = const <String, Object>{},
+    }) async {
+      approvals.clear();
+      await pairV2(peer: peer, headers: headers, extraContext: extraContext);
+      return approvals.single.sourceKey;
+    }
+
+    expect(await keyFor(peer: '192.168.1.20'), 'ip:192.168.1.20');
+    expect(await keyFor(peer: '127.0.0.1'), isNull, reason: '回环对端');
+    expect(
+      await keyFor(
+        peer: '192.168.1.5',
+        headers: <String, String>{'x-forwarded-for': '203.0.113.9'},
+      ),
+      isNull,
+      reason: '带转发头、不在可信名单的局域网反代',
+    );
+    expect(
+      await keyFor(
+        peer: '127.0.0.1',
+        extraContext: <String, Object>{kFushiRequestZone: 'p2p'},
+      ),
+      isNull,
+      reason: '查不到 NodeId 的隧道对端',
+    );
+    expect(
+      await keyFor(
+        peer: '127.0.0.1',
+        extraContext: <String, Object>{
+          kFushiRequestZone: 'p2p',
+          kFushiP2pPeer: 'node1',
+        },
+      ),
+      'p2p:node1',
+    );
+    server.trustedProxiesProvider = () => <String>['127.0.0.1'];
+    expect(
+      await keyFor(
+        peer: '127.0.0.1',
+        headers: <String, String>{'x-forwarded-for': '203.0.113.9'},
+      ),
+      'ip:203.0.113.9',
+      reason: '可信代理解析出的真实来源',
+    );
+  });
+
   test('拿不到 TCP 对端：按公网要 PIN', () async {
     final Map<String, dynamic> body = await pairV2(peer: null);
     expect(body['pinRequired'], isTrue);
