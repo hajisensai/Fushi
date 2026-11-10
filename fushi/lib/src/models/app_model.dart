@@ -425,7 +425,7 @@ import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
-    show appleMusicTokenSource;
+    show appleMusicTokenSource, loadMusicServerBindings;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -463,6 +463,8 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicServerBindingLoader;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -2057,6 +2059,8 @@ class AppModel
     // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
     // 这个进程级装配点里（交叉淡入的两个 mpv 实例共用一份连接）。
     musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
+    // 曲库 / 本地歌单里的服务器曲目（v149）：起播 / 取封面的地址按当前服务器配置现算。
+    musicServerBindingLoader ??= () => loadMusicServerBindings(this);
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。

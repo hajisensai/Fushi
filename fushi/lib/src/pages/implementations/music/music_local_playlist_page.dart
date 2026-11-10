@@ -269,8 +269,7 @@ class _MusicLocalPlaylistPageState
           final String? cover = <String?>[
             for (final MusicPlaylistItem i in items)
               switch (i.entry) {
-                MusicRemoteEntry(:final MusicRemoteTrackRow track) =>
-                  track.coverUrl,
+                final MusicRemoteEntry e => e.coverUrl,
                 MusicLocalEntry(:final MusicTrackRow track) =>
                   d.albums[track.albumUid]?.coverPath,
               },
