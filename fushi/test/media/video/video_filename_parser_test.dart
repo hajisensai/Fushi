@@ -313,6 +313,20 @@ void main() {
       expect(groups[1].isPlaylist, isFalse);
     });
 
+    test('4 位补零集号 S01E0005 归同一系列（BUG-4335 / H0K31TjWub）', () {
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '/v/Show.S01E0006.mkv',
+        '/v/Show.S01E0005.mkv',
+        '/v/Show.S01E1000.mkv',
+      ]);
+      expect(groups, hasLength(1), reason: '不得每集各成一个系列');
+      expect(groups.single.series, 'Show');
+      expect(
+        groups.single.episodes.map((VideoEpisode e) => e.episode).toList(),
+        <int>[5, 6, 1000],
+      );
+    });
+
     test('跨季 SxxEyy 按 季→集 排序', () {
       final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
         '/v/Show.S02E01.mkv',
