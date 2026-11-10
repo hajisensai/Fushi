@@ -14,6 +14,22 @@ const String _sha =
 
 class _RiskPendingSurfacePort implements GalAttachedTextSurfacePort {
   @override
+  Future<GalAttachedCallResult> configureMeasured({
+    required GalAttachedSurfaceTarget target,
+    required String measuredSource,
+  }) async => const GalAttachedCallResult(error: 'measured_not_used');
+
+  @override
+  Future<GalAttachedCallResult> updateMeasuredText({
+    required GalAttachedSurfaceTarget target,
+    required String sourceText,
+    required int textGeneration,
+    required List<GalAttachedMeasuredGlyph> glyphs,
+    required int clientWidth,
+    required int clientHeight,
+  }) async => const GalAttachedCallResult(error: 'measured_not_used');
+
+  @override
   Future<GalAttachedCallResult> inspectTarget(
     GalAttachedSurfaceTarget target, {
     String? launchExePath,

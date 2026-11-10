@@ -247,9 +247,19 @@ inline bool OpenLoadedPeImage(
       *image = {};
       return false;
     }
-    image->sections[index] = {
-        base + section.VirtualAddress, span, section.VirtualAddress,
-        section.Characteristics};
+    // 节头声明的范围不等于能读：Chromium / Electron 的 exe 带 `.retplne` 节
+    // （Characteristics = 0，无 IMAGE_SCN_MEM_READ），加载器把它映射成
+    // PAGE_NOACCESS；加壳 exe 也会在解包前把节留成不可读。所有 adapter 都按
+    // bytes/size 直接扫节，把这种节的指针交出去就是一次进程内 AV——在游戏主线程
+    // 恢复前打死游戏（TyranoScript / Electron 启动即退出，0xC0000005）。不可读的
+    // 节保留 rva 与属性，但不交出字节：bytes = nullptr、size = 0，FindSectionForRva
+    // 不会命中它，按节扫描的循环零次迭代；需要「可执行节必须完整可读」的调用方
+    // （Siglus、FindUniquePatternInExecutableSections）照旧见到不可读而 fail closed。
+    const uint8_t* const bytes = base + section.VirtualAddress;
+    const bool readable = IsReadableSpan(bytes, span);
+    image->sections[index] = {readable ? bytes : nullptr,
+                              readable ? span : 0u, section.VirtualAddress,
+                              section.Characteristics};
   }
   return true;
 }
