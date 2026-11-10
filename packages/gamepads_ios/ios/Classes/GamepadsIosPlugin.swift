@@ -100,13 +100,17 @@ public class GamepadsIosPlugin: NSObject, FlutterPlugin {
       self?.sendEvent(gamepadId: gamepadId, key: "rightStick - yAxis", value: yValue, isAnalog: true)
     }
 
-    // Triggers (ANALOG)
-    gamepad.leftTrigger.valueChangedHandler = { [weak self] _, value, _ in
-      self?.sendEvent(gamepadId: gamepadId, key: "leftTrigger", value: value, isAnalog: true)
+    // Triggers. Fushi fork: reported as DIGITAL button events (GameController's
+    // own `pressed` threshold). Upstream sent them as analog "leftTrigger" /
+    // "rightTrigger", but the gamepads IosMapping only knows those keys in its
+    // BUTTON map (its axis map has no trigger entry), so every analog trigger
+    // event normalized to nothing and LT/RT were dead on iOS.
+    gamepad.leftTrigger.valueChangedHandler = { [weak self] _, _, pressed in
+      self?.sendEvent(gamepadId: gamepadId, key: "leftTrigger", value: pressed ? 1.0 : 0.0, isAnalog: false)
     }
 
-    gamepad.rightTrigger.valueChangedHandler = { [weak self] _, value, _ in
-      self?.sendEvent(gamepadId: gamepadId, key: "rightTrigger", value: value, isAnalog: true)
+    gamepad.rightTrigger.valueChangedHandler = { [weak self] _, _, pressed in
+      self?.sendEvent(gamepadId: gamepadId, key: "rightTrigger", value: pressed ? 1.0 : 0.0, isAnalog: false)
     }
 
     // Digital buttons
@@ -148,26 +152,26 @@ public class GamepadsIosPlugin: NSObject, FlutterPlugin {
   }
 
   /// Standard button elements of a [GCPhysicalInputProfile] -> the raw key the
-  /// extended path uses, and whether the extended path reports it as analog
-  /// (triggers) or digital. The per-direction buttons a d-pad also lists under
-  /// `buttons` ("Direction Pad Up", ...) are deliberately absent: the d-pad is
-  /// already reported once through [profileDpadKey].
+  /// extended path uses (all reported as digital button events, triggers
+  /// included — see setupExtendedGamepad). The per-direction buttons a d-pad
+  /// also lists under `buttons` ("Direction Pad Up", ...) are deliberately
+  /// absent: the d-pad is already reported once through [profileDpadKey].
   @available(iOS 14.0, *)
-  static func profileButtonKey(for element: String) -> (key: String, isAnalog: Bool)? {
+  static func profileButtonKey(for element: String) -> String? {
     switch element {
-    case GCInputButtonA: return ("buttonA", false)
-    case GCInputButtonB: return ("buttonB", false)
-    case GCInputButtonX: return ("buttonX", false)
-    case GCInputButtonY: return ("buttonY", false)
-    case GCInputLeftShoulder: return ("leftShoulder", false)
-    case GCInputRightShoulder: return ("rightShoulder", false)
-    case GCInputLeftTrigger: return ("leftTrigger", true)
-    case GCInputRightTrigger: return ("rightTrigger", true)
-    case GCInputLeftThumbstickButton: return ("leftThumbstickButton", false)
-    case GCInputRightThumbstickButton: return ("rightThumbstickButton", false)
-    case GCInputButtonMenu: return ("buttonMenu", false)
-    case GCInputButtonOptions: return ("buttonOptions", false)
-    case GCInputButtonHome: return ("buttonHome", false)
+    case GCInputButtonA: return "buttonA"
+    case GCInputButtonB: return "buttonB"
+    case GCInputButtonX: return "buttonX"
+    case GCInputButtonY: return "buttonY"
+    case GCInputLeftShoulder: return "leftShoulder"
+    case GCInputRightShoulder: return "rightShoulder"
+    case GCInputLeftTrigger: return "leftTrigger"
+    case GCInputRightTrigger: return "rightTrigger"
+    case GCInputLeftThumbstickButton: return "leftThumbstickButton"
+    case GCInputRightThumbstickButton: return "rightThumbstickButton"
+    case GCInputButtonMenu: return "buttonMenu"
+    case GCInputButtonOptions: return "buttonOptions"
+    case GCInputButtonHome: return "buttonHome"
     default: return nil
     }
   }
@@ -183,16 +187,9 @@ public class GamepadsIosPlugin: NSObject, FlutterPlugin {
     }
 
     for (name, button) in profile.buttons {
-      guard let mapped = GamepadsIosPlugin.profileButtonKey(for: name) else { continue }
-      let key = mapped.key
-      if mapped.isAnalog {
-        button.valueChangedHandler = { [weak self] _, value, _ in
-          self?.sendEvent(gamepadId: gamepadId, key: key, value: value, isAnalog: true)
-        }
-      } else {
-        button.valueChangedHandler = { [weak self] _, _, pressed in
-          self?.sendEvent(gamepadId: gamepadId, key: key, value: pressed ? 1.0 : 0.0, isAnalog: false)
-        }
+      guard let key = GamepadsIosPlugin.profileButtonKey(for: name) else { continue }
+      button.valueChangedHandler = { [weak self] _, _, pressed in
+        self?.sendEvent(gamepadId: gamepadId, key: key, value: pressed ? 1.0 : 0.0, isAnalog: false)
       }
     }
   }
