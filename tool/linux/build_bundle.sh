@@ -9,6 +9,11 @@
 #   /out/fushi-<version>-linux-x64.tar.gz
 #
 # Usage: build_bundle.sh [--skip-native]   (--skip-native reuses existing prebuilt/)
+#
+# FUSHI_BUILD_NAME / FUSHI_BUILD_NUMBER: the release channel's version name and
+# release sequence (release-desktop.yml passes them, as for Windows / macOS) so the
+# app reports e.g. 3.4.0-debug.7001 and the update check compares the right thing.
+# Default: the pubspec version.
 set -euo pipefail
 
 SKIP_NATIVE=0
@@ -38,7 +43,11 @@ step "bootstrap (pub get, pub-cache patches, vendored binaries, required Rust li
 bash tool/bootstrap.sh
 
 step "flutter build linux --release"
-(cd fushi && rm -rf build/linux && flutter build linux --release --no-pub)
+pubspec_version="$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' fushi/pubspec.yaml)"
+version="${FUSHI_BUILD_NAME:-$pubspec_version}"
+build_args=(--build-name "$version" --dart-define="FUSHI_BUILD_VERSION=$version")
+[[ -n "${FUSHI_BUILD_NUMBER:-}" ]] && build_args+=(--build-number "$FUSHI_BUILD_NUMBER")
+(cd fushi && rm -rf build/linux && flutter build linux --release --no-pub "${build_args[@]}")
 
 BUNDLE=/src/fushi/build/linux/x64/release/bundle
 
@@ -75,7 +84,6 @@ find "$BUNDLE" -maxdepth 2 -type f \( -name 'fushi' -o -name '*.so*' \) -print0 
   | sort -u || true
 echo "required glibc: $(objdump -T "$BUNDLE/fushi" "$BUNDLE"/lib/*.so 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n1)"
 
-version="$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' fushi/pubspec.yaml)"
 mkdir -p /out
 tarball="/out/fushi-${version}-linux-x64.tar.gz"
 step "package $tarball"

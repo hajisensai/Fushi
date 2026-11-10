@@ -2115,6 +2115,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (old != null) {
       old.removeListener(_onChromePlaybackChanged);
       old.followAudio.removeListener(_onChromePlaybackChanged);
+      _detachAudiobookTextLeads(old);
     }
     _chromePlaybackListened = ctrl;
     if (ctrl != null) {
@@ -2122,6 +2123,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ctrl.followAudio.addListener(_onChromePlaybackChanged);
       _chromeLastPlaying = ctrl.isPlaying;
       _chromeLastFollow = ctrl.followAudio.value;
+      _syncAudiobookTextLeads();
     }
   }
 
