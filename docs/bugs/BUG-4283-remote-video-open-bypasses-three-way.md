@@ -12,3 +12,4 @@
   - 每一集载入多一次 GET + 可能一次 PUT；旧 host 走 BUG-4278 兼容层。
   - 未运行：两份测试文件本轮未跑（重活队列让给别的会话），修复前红只由源码检视确认（守卫的三条断言对原页面不成立），合入前须跑一次。
   - 需真机复测：两台设备互联、一台播到中途另一台开同一视频 / 合集切成员，看开播位置与冲突弹窗。
+- **评审修正（af3281328dd，2026-11-10，评审 tests-2）**：补上此前无测试守住的分支——`interconnect_remote_playback_session_test.dart` 新增：applyRemote 判定后本机断点在比较后写入前被改写（`FushiDatabase.runIfIntPrefUnchanged` 子类钩子）→ 从重读的本机位置起播、不记基线；开播时会话已换 host → 返回回退值并换绑，下一次开播按新 host 作用域判定落地。页面开播判据抽成纯函数 `remoteEpisodeStartUsesThreeWay`（`interconnect_playback_position_sync.dart`；集号 > 0、`explicitCue`、卡片回看不判），页面改调它，直测五种判 / 三种不判；页面守卫改为钉「`client is InterconnectSyncBackend && remoteEpisodeStartUsesThreeWay(...) ? await _remoteSessionFor(`」整段调用形态。仍未运行。
