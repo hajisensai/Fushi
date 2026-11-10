@@ -161,9 +161,6 @@ void main() {
     final String chapter = reader['OEBPS/chapter-1.xhtml']!;
     expect(chapter, contains('<p>一行目<br/>二行目</p>'));
     expect(chapter, contains('<p>&lt;タグ&gt; &amp; 次</p>'));
-    expect(
-      reader['OEBPS/content.opf'],
-      contains('<dc:title>貼り付け</dc:title>'),
-    );
+    expect(reader['OEBPS/content.opf'], contains('<dc:title>貼り付け</dc:title>'));
   });
 }
