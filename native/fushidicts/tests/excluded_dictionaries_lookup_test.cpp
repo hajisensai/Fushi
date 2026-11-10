@@ -93,12 +93,12 @@ std::string digest(const std::vector<LookupResult>& rs) {
     out += std::format("[{}/{} m={} d={}", r.term.expression, r.term.reading, r.matched, r.deinflected);
     for (const GlossaryEntry& g : r.term.glossaries) out += std::format(" g:{}={}", g.dict_name, g.glossary);
     for (const FrequencyEntry& fe : r.term.frequencies) {
-      out += " f:" + fe.dict_name;
-      for (const Frequency& v : fe.frequencies) out += "=" + std::to_string(v.value);
+      out += std::format(" f:{}", fe.dict_name);
+      for (const Frequency& v : fe.frequencies) out += std::format("={}", v.value);
     }
     for (const PitchEntry& pe : r.term.pitches) {
-      out += " p:" + pe.dict_name;
-      for (const Pitch& p : pe.pitches) out += "=" + std::to_string(p.position);
+      out += std::format(" p:{}", pe.dict_name);
+      for (const Pitch& p : pe.pitches) out += std::format("={}", p.position);
     }
     out += "]";
   }
