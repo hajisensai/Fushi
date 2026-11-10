@@ -10,7 +10,7 @@
 ///   上的 `kdf` 不见了（被删 / 被别的版本整份重写）一律报 [kSrsSync2EncryptionMissing] 停下，绝不降级成明文**；
 ///   `meta.json` 读不到但位置上已经有数据（最终一致的网盘暂时列不到）也不重写它（[kSrsSync2MetaUnavailable]）。
 ///   本机没有密钥的设备同样：**本机一旦见过这个位置是加密的**（[SrsLocationSeal]：读到过 `kdf`、用密钥收发过、拉到过
-///   密封的段 / 位置上有密封媒体），之后 `kdf` 不见了、`meta.json` 列不到、密钥被清掉都不再写明文（BUG-4284）。
+///   密封的段 / 位置上有密封媒体），之后 `kdf` 不见了、`meta.json` 列不到、密钥被清掉都不再写明文（BUG-4292）。
 /// - 上传进度按「位置 + 密钥指纹」记（[srsLocationProgressId]）：两台设备同时开加密、后写的 `kdf` 胜出时，先开的那台
 ///   换上正确口令后密钥指纹变了，进度归零、全部段按新密钥重传；加密媒体同理按指纹分目录（[SrsMediaCipher.folder]）。
 /// - KDF 参数来自不可信的 `meta.json`：越界（[kSrsKdfMinMemoryKib] 等）报 [kSrsSync2BadKdf]，不派生。
@@ -197,7 +197,7 @@ Future<SrsLocationKey> srsDeriveLocationKey(
   );
 }
 
-/// 本机记下的「这个位置是加密的」（内核 native/fushi_fsrs/src/store/sync2/sealed.rs，BUG-4284）：本机一旦见过就
+/// 本机记下的「这个位置是加密的」（内核 native/fushi_fsrs/src/store/sync2/sealed.rs，BUG-4292）：本机一旦见过就
 /// 持久记住，此后不论位置上的 `meta.json` 怎么样（被整份重写丢了 `kdf` / 暂时读不到 / 本机密钥被清掉），都不向它
 /// 写明文。
 class SrsLocationSeal {
@@ -317,7 +317,7 @@ class SrsLocationHandshake {
 /// - 没有 `kdf`：本机没开加密 = 明文；本机刚开（[SrsLocationKey.pendingEnable]）= 写上 `kdf`；本机已经开过 =
 ///   [kSrsSync2EncryptionMissing] 停下，绝不降级成明文。
 ///
-/// 本机见过加密（[SrsLocationSeal]，BUG-4284）是第二道闸：单看这一刻的 `meta.json` 不够——它是多设备可改写的单文件，
+/// 本机见过加密（[SrsLocationSeal]，BUG-4292）是第二道闸：单看这一刻的 `meta.json` 不够——它是多设备可改写的单文件，
 /// 被旧版本整份重写丢了 `kdf`、在最终一致的网盘上暂时读不到、或本机密钥被清掉时，没有密钥的设备会把它当明文位置。
 /// 所以握手读到 `kdf` / 本机用密钥收发时都记下来，此后本机没有可用密钥就一律不写（[_refuseSealed]），`meta.json`
 /// 不见了也不替它重建明文 meta。[locationId] 是位置的稳定身份（记账按它，不按带密钥指纹的进度身份）。
