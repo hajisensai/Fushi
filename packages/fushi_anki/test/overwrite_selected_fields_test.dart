@@ -198,6 +198,21 @@ void main() {
       expect(outcome.errorCode, AnkiErrorCode.overwriteFieldsEmpty);
       expect(service.updateCalls, isEmpty);
     });
+
+    test('选择器取键 = 覆写取键：按这张卡自己的 modelName，不是当前选中的笔记类型', () async {
+      final _RecordingService service = _RecordingService()
+        ..noteModelName = 'Basic'
+        ..existingFields = <String, String>{'Front': '仕業', 'Back': 'x'};
+      final _ConfiguredConnectRepo repo = _ConfiguredConnectRepo(
+        service: service,
+        settings: settings(),
+      );
+      expect(await repo.overwriteNoteTypeName(888), 'Basic');
+
+      // 卡读不到 → 退回当前选中的笔记类型。
+      service.existingFields = null;
+      expect(await repo.overwriteNoteTypeName(888), 'Lapis');
+    });
   });
 
   group('AnkiDroid 只覆写勾选的字段', () {

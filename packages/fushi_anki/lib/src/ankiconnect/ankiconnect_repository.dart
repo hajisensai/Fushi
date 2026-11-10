@@ -1073,6 +1073,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  /// 反馈 nWWjBp3Clo：选择器与 [updateMinedNote] 必须按**同一个**笔记类型名存取
+  /// 「只覆写这些字段」。[updateMinedNote] 按这张卡自己的 `modelName` 取选择，所以
+  /// 这里也回读卡的 `modelName`——否则命中卡是别的笔记类型（首字段同名也会命中）时，
+  /// 选择器列的是那张卡的字段、却存进当前笔记类型的条目里。读不到时退回基类口径。
+  @override
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    try {
+      final AnkiConnectService service = await _getService();
+      final AnkiConnectNoteInfo? info = await service.noteInfo(noteId);
+      final String? modelName = info?.modelName;
+      if (modelName != null && modelName.isNotEmpty) return modelName;
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.overwriteNoteTypeName: $e');
+      debugPrint('$stack');
+    }
+    return super.overwriteNoteTypeName(noteId);
+  }
+
   // BUG-1799：复核哪些 note 已被用户在 Anki 里删掉。一次 `notesInfo` 批量往返
   // （常数 1 次，不随 id 数增长），把「应答里没出现」的 id 当作已删除。
   //
