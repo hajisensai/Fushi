@@ -27,6 +27,7 @@ pub mod ffi;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
+pub(crate) mod local_state;
 mod mem_budget;
 #[cfg(test)]
 mod panic_recovery_tests;
@@ -470,6 +471,8 @@ fn configure_as(conn: &Connection, role: MmapRole) -> Result<(), String> {
     // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
     ids::register(conn).map_err(|e| e.to_string())?;
     slim::register(conn).map_err(|e| e.to_string())?;
+    // 本机状态行的合并（store/local_state.rs）：Dart 的 `_saveLocal` 与内核写这一行共用。
+    local_state::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
     // 上限 256 MB；WAL 模式下 SQLite 照常处理。哪些连接映射见 [MmapRole]。

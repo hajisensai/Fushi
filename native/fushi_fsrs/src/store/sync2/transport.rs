@@ -1766,12 +1766,8 @@ fn persist_local_state(
         .as_object_mut()
         .ok_or("sync2 ingest: localState must be a JSON object")?
         .insert("revision".to_owned(), json!(revision));
-    c.prepare_cached(
-        "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2) ON CONFLICT(profile_uid) DO UPDATE SET json = excluded.json",
-    )
-    .map_err(sql)?
-    .execute(params![profile, state.to_string()])
-    .map_err(sql)?;
+    // 与 Dart `_saveLocal` 同一个合并（store/local_state.rs）：内核持有的键保留库里的值。
+    crate::store::local_state::upsert(c, profile, &state.to_string())?;
     r["localRevision"] = json!(revision);
     Ok(r.to_string())
 }

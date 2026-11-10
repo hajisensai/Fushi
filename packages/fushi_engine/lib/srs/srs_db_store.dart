@@ -922,16 +922,27 @@ class SrsDbStore implements SrsSync2Host {
 
   Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
 
+  /// 写本机状态行。和内核共用一条合并 upsert（native/fushi_fsrs/src/store/local_state.rs `UPSERT_SQL`）：交来的整行
+  /// 去掉内核持有的键、保留库里这些键的原值（白名单 `KERNEL_HELD_KEYS`，首版为空），所以 Dart 整行重写不会抹掉内核
+  /// 写下的字段。
   Future<void> _saveLocal() async {
-    await db
-        .into(db.srsLocalState)
-        .insertOnConflictUpdate(
-          SrsLocalStateCompanion.insert(
-            profileUid: profileUid,
-            json: jsonEncode(_localStateJson()),
-          ),
-        );
+    await db.customInsert(
+      kSrsLocalStateUpsertSql,
+      variables: <Variable>[
+        Variable<String>(profileUid),
+        Variable<String>(jsonEncode(_localStateJson())),
+      ],
+      updates: {db.srsLocalState},
+    );
   }
+
+  /// 本机状态行的合并 upsert，与内核 `local_state::UPSERT_SQL` 逐字相同（测试钉住）。
+  @visibleForTesting
+  static const String kSrsLocalStateUpsertSql =
+      'INSERT INTO srs_local_state (profile_uid, json) '
+      'VALUES (srs_id(?1), srs_local_state_merge(NULL, ?2)) '
+      'ON CONFLICT(profile_uid) DO UPDATE SET '
+      'json = srs_local_state_merge(json, excluded.json)';
 
   /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）。收段的一步把它交给内核、在投递的同一笔事务里写
   /// （[_sync2IngestStep]）。
