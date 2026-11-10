@@ -752,7 +752,7 @@ class _AppGameCtlHost implements GameCtlHost {
   }) async {
     DictionarySearchResult? found;
     if (lookup && (reading == null || glossary == null)) {
-      // 与查词页同一条查词链（远端优先，BUG-4287）：瘦客户端靠电脑的词典补释义。
+      // 与查词页同一条查词链（远端优先，BUG-4292）：瘦客户端靠电脑的词典补释义。
       found = await _app.searchDictionaryForUser(
         searchTerm: word,
         maximumTerms: 10,
@@ -1187,7 +1187,7 @@ class _GameCtl {
       if (outcome?.deckName != null) 'deckName': outcome!.deckName,
       if (outcome?.errorDetail != null) 'errorDetail': outcome!.errorDetail,
       if (outcome?.audioWarning != null) 'audioWarning': outcome!.audioWarning,
-      // BUG-4287：落地结果带回的提示（如「保存到」被主机退回默认），同 ctl dictionary / video 路由。
+      // BUG-4292：落地结果带回的提示（如「保存到」被主机退回默认），同 ctl dictionary / video 路由。
       if (outcome?.notice != null) 'notice': outcome!.notice,
       if (result.failureReason != null) 'failureReason': result.failureReason,
       'duplicate': result.duplicate,
