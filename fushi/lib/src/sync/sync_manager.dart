@@ -597,7 +597,8 @@ class SyncManager {
             0,
           )
         : 0;
-    final chapters = parseChaptersJson(book.chaptersJson);
+    // BUG-4323：页式书（含在线扩展源漫画）不解析 chaptersJson，见 [syncChapterCharTable]。
+    final chapters = syncChapterCharTable(book);
 
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
     // can be broken by actual content instead of silently declaring 'synced'.
