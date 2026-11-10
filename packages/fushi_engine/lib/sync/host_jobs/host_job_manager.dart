@@ -3,7 +3,11 @@
 /// 与远程 OCR 的 `MangaOcrHostJobManager` 同一形状（客户端已经会按这套状态机
 /// 轮询），差异只有两点：任务类型经 [HostJobRunner] 注册表可插拔；记录落
 /// `job.json`，进程重启后 `pending/uploading` 保留、`running` 降级为 `error`
-/// （runner 的中间态没法续，客户端看到 error 会重投）。
+/// （runner 的中间态没法续）。客户端看到 error 即报失败并 DELETE，不自动重投。
+///
+/// 过期回收：每次 API 触达经 [HostJobManager.housekeep]（节流到 `pruneInterval`
+/// 一次）按 `updatedAt` 删掉超过 `jobTtl` 的非 running 记录——终态与被遗弃的
+/// `pending/uploading` 都算；running 不按 TTL 清，它自己会走到终态。
 library;
 
 import 'dart:async';
@@ -46,6 +50,7 @@ class HostJobManager {
     required List<HostJobRunner> runners,
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 24),
+    Duration pruneInterval = const Duration(minutes: 10),
     Random? random,
     HostInputMatcher? inputMatcher,
   }) : _jobRoot = jobRoot,
@@ -55,6 +60,7 @@ class HostJobManager {
        },
        _now = now ?? DateTime.now,
        _jobTtl = jobTtl,
+       _pruneInterval = pruneInterval,
        _random = random ?? Random.secure();
 
   final Directory _jobRoot;
@@ -64,6 +70,7 @@ class HostJobManager {
   final Map<String, HostJobRunner> _runners;
   final DateTime Function() _now;
   final Duration _jobTtl;
+  final Duration _pruneInterval;
   final Random _random;
   final Map<String, HostJobRecord> _jobs = <String, HostJobRecord>{};
   final Map<String, HostJobCancelToken> _cancels =
@@ -75,7 +82,10 @@ class HostJobManager {
   /// 就已可被轮询方看到，看到 done 立刻 DELETE 会把目录连同 `job.json.tmp` 一起
   /// 删掉，随后 rename 抛 PathNotFound（CI 慢盘上稳定复现）。删除前先等它落完。
   final Map<String, Future<void>> _persisting = <String, Future<void>>{};
-  bool _loaded = false;
+
+  /// 读盘只做一次；并发的首批调用方都等同一个 future，不会在表还没读完时放行。
+  Future<void>? _loading;
+  DateTime? _lastPruneAt;
 
   Iterable<String> get kinds => _runners.keys;
 
@@ -99,12 +109,23 @@ class HostJobManager {
 
   Directory dirFor(String id) => Directory(p.join(_jobRoot.path, id));
 
-  /// 进程启动时把磁盘上的记录读回来（running → error）。幂等。
-  Future<void> load() async {
-    if (_loaded) return;
-    _loaded = true;
+  /// 进程启动时把磁盘上的记录读回来（running → error）。幂等，并发调用共享同一次读盘。
+  Future<void> load() => _loading ??= _loadOnce();
+
+  /// 每次 API 触达时调用：先等读盘完成，再（节流到 `pruneInterval` 一次）回收过期记录。
+  Future<void> housekeep() async {
+    await load();
+    final DateTime now = _now();
+    final DateTime? last = _lastPruneAt;
+    if (last != null && now.difference(last) < _pruneInterval) return;
+    _lastPruneAt = now;
+    await pruneExpired();
+  }
+
+  Future<void> _loadOnce() async {
     if (!await _jobRoot.exists()) {
       await _jobRoot.create(recursive: true);
+      _lastPruneAt = _now();
       return;
     }
     // 必须是 listSync，不能是 `await for (… in _jobRoot.list())`。
@@ -132,6 +153,7 @@ class HostJobManager {
         engineLog.log('HostJobManager.load(${e.path})', err, stack);
       }
     }
+    _lastPruneAt = _now();
     await pruneExpired();
   }
 
@@ -309,10 +331,11 @@ class HostJobManager {
       _runners[get(id).kind]?.contentTypeFor(name) ??
       'application/octet-stream';
 
+  /// 删掉 `updatedAt` 早于 TTL 的非 running 记录（终态 + 被遗弃的 pending/uploading）。
   Future<void> pruneExpired() async {
     final DateTime cutoff = _now().subtract(_jobTtl);
     for (final HostJobRecord rec in list()) {
-      if (rec.isTerminal && rec.updatedAt.isBefore(cutoff)) {
+      if (rec.state != HostJobState.running && rec.updatedAt.isBefore(cutoff)) {
         await delete(rec.id);
       }
     }
