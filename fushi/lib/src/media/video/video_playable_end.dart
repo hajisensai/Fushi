@@ -179,9 +179,12 @@ class VideoPlayableEndCorrection {
 
   void _publish(Duration duration) {
     _platform.state = _platform.state.copyWith(duration: duration);
-    if (!_platform.durationController.isClosed) {
-      _platform.durationController.add(duration);
-    }
+    // media_kit 只让 [PlatformPlayer] 子类写时长流（`@protected`）；libmpv 的 `duration`
+    // 只读、pub.dev 上的 media_kit 不归本仓改，这里是唯一能让所有时长消费方一致的写入点
+    // （写法与 NativePlayer 处理 `duration` 属性事件相同：先改 state 再推流）。
+    // ignore: invalid_use_of_protected_member
+    final StreamController<Duration> controller = _platform.durationController;
+    if (!controller.isClosed) controller.add(duration);
   }
 
   void _cancel() {
