@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_download_inline_status.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/discovery/discovery_search_relevance.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -269,13 +270,22 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   static int _seedersOf(DiscoveryEntry e) =>
       e is DiscoveryResourceItem ? (e.seeders ?? -1) : -1;
 
-  /// 源内按做种降序**稳定**排序；跨源仍按 service 给出的 priority 顺序串接。
+  /// 当前这批结果对应的搜索词：只有「搜索」请求的结果才谈得上相关度。下钻进
+  /// 某个目录时 [_query] 仍保留（返回要回到那次搜索），但那时列表是目录内容，
+  /// 拿搜索词去判它们只会把整个目录误折叠掉。
+  String? get _activeSearchQuery =>
+      _pathStack.isEmpty && _query.isNotEmpty ? _query : null;
+
+  /// 源内**稳定**排序：先相关度（搜索时），再做种降序；跨源仍按 service 给出的
+  /// priority 顺序串接。
   ///
-  /// 服务端已经按做种排过（`s=seeders&o=desc`），这里是本地兜底：翻页追加的
-  /// 条目要能插回正确位置，多个源混排时各自内部也要有序。只对含做种数的源
-  /// 分组动手，OPDS / 直链源原序不动。`List.sort` 不稳定，用 [mergeSort]。
-  static List<DiscoveryEntry> _sortBySeedersWithinSource(
+  /// 服务层已经按相关度重排、Nyaa 服务端已经按做种排过（`s=seeders&o=desc`），
+  /// 这里是本地兜底：翻页追加的条目要能插回正确位置，多个源混排时各自内部也要
+  /// 有序。做种只对含做种数的源分组参与比较，OPDS / 直链源同档原序不动。
+  /// `List.sort` 不稳定，用 [mergeSort]。
+  static List<DiscoveryEntry> _sortWithinSource(
     List<DiscoveryEntry> entries,
+    Map<DiscoveryEntry, DiscoverySearchRelevance>? relevance,
   ) {
     final Map<String, List<DiscoveryEntry>> groups =
         <String, List<DiscoveryEntry>>{};
@@ -284,11 +294,19 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     }
     final List<DiscoveryEntry> out = <DiscoveryEntry>[];
     for (final List<DiscoveryEntry> group in groups.values) {
-      if (group.any((DiscoveryEntry e) => _seedersOf(e) >= 0)) {
+      final bool bySeeders = group.any(
+        (DiscoveryEntry e) => _seedersOf(e) >= 0,
+      );
+      if (bySeeders || relevance != null) {
         mergeSort<DiscoveryEntry>(
           group,
-          compare: (DiscoveryEntry a, DiscoveryEntry b) =>
-              _seedersOf(b).compareTo(_seedersOf(a)),
+          compare: (DiscoveryEntry a, DiscoveryEntry b) {
+            if (relevance != null) {
+              final int byRelevance = relevance[b]!.compareTo(relevance[a]!);
+              if (byRelevance != 0) return byRelevance;
+            }
+            return bySeeders ? _seedersOf(b).compareTo(_seedersOf(a)) : 0;
+          },
         );
       }
       out.addAll(group);
@@ -304,20 +322,47 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       e is DiscoveryResourceItem &&
       e.contentHint == DiscoveryContentHint.manga;
 
-  /// 最终渲染集合 + 两类被隐藏的计数（一条只计一次：先算无人做种，再算疑似漫画）。
-  ({List<DiscoveryEntry> entries, int hiddenZeroSeeders, int hiddenManga})
+  /// 最终渲染集合 + 三类被隐藏的计数（一条只计一次：先算疑似不相关，再算无人
+  /// 做种，最后疑似漫画）。
+  ///
+  /// 疑似不相关（反馈 80S7Esbdec）：源后端的匹配口径不可控（shinnku 是字符级
+  /// 模糊匹配），判据见 `discovery_search_relevance.dart`。**折叠而不删**——源可能
+  /// 按作者 / 系列这类聚合层看不到的字段命中，用户点计数行即可展开。不设偏好开关：
+  /// 与死种 / 疑似漫画不同，它没有「我就是想看不相关结果」的长期需求。
+  ({
+    List<DiscoveryEntry> entries,
+    int hiddenIrrelevant,
+    int hiddenZeroSeeders,
+    int hiddenManga,
+  })
   get _visible {
-    final List<DiscoveryEntry> sorted = _sortBySeedersWithinSource(
-      _gameFilteredEntries,
-    );
-    if (_revealHidden) {
-      return (entries: sorted, hiddenZeroSeeders: 0, hiddenManga: 0);
+    final List<DiscoveryEntry> filtered = _gameFilteredEntries;
+    final String? query = _activeSearchQuery;
+    // 按条目身份记分（条目没有值相等语义），每条只算一次，排序比较直接查表。
+    Map<DiscoveryEntry, DiscoverySearchRelevance>? relevance;
+    if (query != null) {
+      relevance = Map<DiscoveryEntry, DiscoverySearchRelevance>.identity();
+      for (final DiscoveryEntry e in filtered) {
+        relevance[e] = discoveryEntryRelevance(query, e);
+      }
     }
+    final List<DiscoveryEntry> sorted = _sortWithinSource(filtered, relevance);
+    if (_revealHidden) {
+      return (
+        entries: sorted,
+        hiddenIrrelevant: 0,
+        hiddenZeroSeeders: 0,
+        hiddenManga: 0,
+      );
+    }
+    int hiddenIrrelevant = 0;
     int hiddenZeroSeeders = 0;
     int hiddenManga = 0;
     final List<DiscoveryEntry> shown = <DiscoveryEntry>[];
     for (final DiscoveryEntry e in sorted) {
-      if (_isHiddenZeroSeeders(e)) {
+      if (relevance != null && !relevance[e]!.isRelevant) {
+        hiddenIrrelevant++;
+      } else if (_isHiddenZeroSeeders(e)) {
         hiddenZeroSeeders++;
       } else if (_isHiddenSuspectedManga(e)) {
         hiddenManga++;
@@ -327,6 +372,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     }
     return (
       entries: shown,
+      hiddenIrrelevant: hiddenIrrelevant,
       hiddenZeroSeeders: hiddenZeroSeeders,
       hiddenManga: hiddenManga,
     );
@@ -784,13 +830,17 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     );
   }
 
-  /// 「已隐藏 N 条无人做种 / M 条疑似漫画」提示行，点一下临时显示全部。
+  /// 「已隐藏 K 条疑似不相关 / N 条无人做种 / M 条疑似漫画」提示行，点一下临时
+  /// 显示全部。
   Widget _buildHiddenNotice(
     BuildContext context,
+    int hiddenIrrelevant,
     int hiddenZeroSeeders,
     int hiddenManga,
   ) {
     final String text = <String>[
+      if (hiddenIrrelevant > 0)
+        t.discovery_hidden_irrelevant_count(n: hiddenIrrelevant),
       if (hiddenZeroSeeders > 0)
         t.discovery_hidden_zero_seeders_count(n: hiddenZeroSeeders),
       if (hiddenManga > 0)
@@ -1116,6 +1166,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
     final ({
       List<DiscoveryEntry> entries,
+      int hiddenIrrelevant,
       int hiddenZeroSeeders,
       int hiddenManga,
     })
@@ -1158,7 +1209,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                       ),
                     ),
                   ),
-                if (visible.hiddenZeroSeeders + visible.hiddenManga > 0)
+                if (visible.hiddenIrrelevant +
+                        visible.hiddenZeroSeeders +
+                        visible.hiddenManga >
+                    0)
                   SliverToBoxAdapter(
                     child: FushiGroupedList(
                       padding: EdgeInsets.fromLTRB(
@@ -1170,6 +1224,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                       children: <Widget>[
                         _buildHiddenNotice(
                           context,
+                          visible.hiddenIrrelevant,
                           visible.hiddenZeroSeeders,
                           visible.hiddenManga,
                         ),
