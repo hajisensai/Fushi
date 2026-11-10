@@ -106,12 +106,21 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   bool _reviewsTime = false;
   _MemoryView _memory = _MemoryView.interval;
 
-  /// 校准图算出来的那份结果（[srsCalibrationReport]）。空 = 还没算；不自动跑，由用户点按钮触发
-  /// （FSRS 留出预测要按参数组逐组训练，RWKV 还要全量回放，几秒到几分钟）。
+  /// 校准原料（[srsCalibrationData]：FSRS 留出预测 + RWKV 回放，与牌组无关）。空 = 还没算；不自动跑，由用户点
+  /// 按钮触发（FSRS 留出预测要按参数组逐组训练，RWKV 还要全量回放，几秒到几分钟）。换牌组只用它重出报告。
+  SrsCalibrationData? _calibrationData;
+
+  /// [_calibrationData] 算的是哪份历史（[SrsStatsBundle.fingerprint]）；与当前不一致就是「算完之后又有复习」。
+  String _calibrationFingerprint = '';
+
+  /// 按 [_calibrationDeck] 出的那份报告（[srsCalibrationReportInBackground]）。
   SrsCalibrationReport? _calibration;
 
-  /// [_calibration] 对应哪份历史与哪个牌组；与当前不一致就是「算完之后又有复习」。
-  String _calibrationKey = '';
+  /// [_calibration] 对应的牌组；与 [_deckId] 不同 = 新牌组的报告还在出（不把上一个牌组的图当成这个牌组的）。
+  String _calibrationDeck = '';
+
+  /// 每次出报告递增；后台 isolate 回来时序号已过期（期间又换了牌组 / 重算了原料）就丢弃。
+  int _calibrationReportSeq = 0;
   bool _calibrationBusy = false;
   bool _calibrationFailed = false;
   SrsCalibrationPhase _calibrationPhase = SrsCalibrationPhase.fsrs;
@@ -197,6 +206,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         }
         _applyFilter();
       });
+      // 报告 = f(原料, 牌组的卡集)：重读后牌组可能被删（回落到全部）或卡换了牌组，按新的卡集重出。
+      unawaited(_refreshCalibrationReport());
     } catch (error, stack) {
       ErrorLogService.instance.log('SrsStatisticsTab.load', error, stack);
       if (mounted) {
@@ -508,10 +519,14 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
                               orElse: () => (id, id),
                             )
                             .$2,
-                        onChanged: (String? id) => setState(() {
-                          _deckId = id ?? '';
-                          _applyFilter();
-                        }),
+                        onChanged: (String? id) {
+                          setState(() {
+                            _deckId = id ?? '';
+                            _applyFilter();
+                          });
+                          // 原料与牌组无关：只按新牌组重出报告（不重跑训练 / 回放）。
+                          unawaited(_refreshCalibrationReport());
+                        },
                       ),
                     ),
                 ],
@@ -1418,18 +1433,15 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 模型校准
 
-  /// 这次计算对应哪份历史与哪个牌组（换牌组或复习记录变了都要重算）。
-  String _currentCalibrationKey() => '$_deckId|${_bundle?.fingerprint ?? ''}';
-
-  /// 校准图 + UM+（只在算出来之后出现）。两个模型都要同一批复习：FSRS 留出预测、
-  /// RWKV 从头回放，取两者都有预测的那些条（见 `srs_calibration.dart`）。
+  /// 校准原料（训练 / 回放）。两个模型都要同一批复习：FSRS 留出预测、RWKV 从头回放，取两者都有预测的那些条
+  /// （见 `srs_calibration.dart`）。原料与牌组无关，算完按当前牌组出报告（[_refreshCalibrationReport]）。
   Future<void> _computeCalibration() async {
     if (_calibrationBusy) return;
     final SrsStatsBundle? bundle = _bundle;
     final SrsDbStore? store = _loadedStore;
     if (bundle == null || store == null) return;
     final NativeSrsOptimizerControl control = NativeSrsOptimizerControl();
-    final String key = _currentCalibrationKey();
+    final String fingerprint = bundle.fingerprint;
     setState(() {
       _calibrationBusy = true;
       _calibrationFailed = false;
@@ -1449,6 +1461,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       }
 
       final SrsCalibrationLoader? loader = widget.debugCalibrationLoader;
+      // 范围：整段历史（校准要每张卡的完整复习史，切成 30 天会饿死训练集），牌组在出报告时按当前筛选走。
       final SrsCalibrationData data = loader != null
           ? await loader(store, control, onProgress)
           : await srsCalibrationData(
@@ -1458,25 +1471,11 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
               control: control,
               onProgress: onProgress,
             );
-      final List<String>? scope = _deckId.isEmpty
-          ? null
-          : bundle.index.cardIdsInDeck(_deckId).toList();
-      final SrsCalibrationReporter? reporter = widget.debugCalibrationReporter;
-      final SrsCalibrationReport report;
-      if (reporter != null) {
-        report = await reporter(data, scope);
-      } else {
-        final FfiFsrsEngine? engine = FfiFsrsEngine.tryCreate(
-          libraryPath: srsFsrsLibraryPath(),
-        );
-        if (engine == null) throw StateError('scheduling engine unavailable');
-        // 范围：整段历史（校准要每张卡的完整复习史，切成 30 天会饿死训练集），牌组跟当前筛选走。
-        report = srsCalibrationReport(engine, data, scopeCardIds: scope);
-      }
       if (!mounted) return;
       setState(() {
-        _calibration = report;
-        _calibrationKey = key;
+        _calibrationData = data;
+        _calibrationFingerprint = fingerprint;
+        _calibration = null;
       });
     } catch (error, stack) {
       ErrorLogService.instance.log(
@@ -1485,21 +1484,78 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         stack,
       );
       if (mounted) setState(() => _calibrationFailed = true);
+      return;
     } finally {
       _calibrationControl = null;
       control.dispose();
       if (mounted) setState(() => _calibrationBusy = false);
     }
+    await _refreshCalibrationReport();
+  }
+
+  /// 第 3 步：按**当前**牌组用 [_calibrationData] 出一份报告（后台 isolate，自助法不占 UI isolate）。
+  /// 换牌组 / 重读统计 / 原料算完都走这里；回来时序号过期（期间又换了牌组）就丢弃，只认最后一次。
+  Future<void> _refreshCalibrationReport() async {
+    final SrsCalibrationData? data = _calibrationData;
+    final SrsStatsBundle? bundle = _bundle;
+    if (data == null || bundle == null || !mounted) return;
+    final int seq = ++_calibrationReportSeq;
+    final String deck = _deckId;
+    final List<String>? scope = deck.isEmpty
+        ? null
+        : bundle.index.cardIdsInDeck(deck).toList();
+    setState(() => _calibrationFailed = false);
+    try {
+      final SrsCalibrationReporter? reporter = widget.debugCalibrationReporter;
+      final SrsCalibrationReport report = reporter != null
+          ? await reporter(data, scope)
+          : await srsCalibrationReportInBackground(
+              data,
+              fsrsLibraryPath: srsFsrsLibraryPath(),
+              scopeCardIds: scope,
+            );
+      if (!mounted || seq != _calibrationReportSeq) return;
+      setState(() {
+        _calibration = report;
+        _calibrationDeck = deck;
+      });
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'SrsStatisticsTab.calibrationReport',
+        error,
+        stack,
+      );
+      if (mounted && seq == _calibrationReportSeq) {
+        setState(() {
+          _calibration = null;
+          _calibrationFailed = true;
+        });
+      }
+    }
   }
 
   List<_Section> _calibrationSections(SrsStatColors colors) {
-    final SrsCalibrationReport? report = _calibration;
+    // 只显示当前牌组的报告：换牌组后新报告出来之前不把上一个牌组的图挂在这个牌组名下。
+    final SrsCalibrationReport? report = _calibrationDeck == _deckId
+        ? _calibration
+        : null;
+    final bool pending =
+        _calibrationData != null && report == null && !_calibrationFailed;
     final bool stale =
-        report != null && _calibrationKey != _currentCalibrationKey();
+        report != null &&
+        _calibrationFingerprint != (_bundle?.fingerprint ?? '');
     final SrsUmPlus? um = report?.hasRwkv == true ? report?.umPlus : null;
     final bool hasUm = um != null && um.count > 0;
     return <_Section>[
-      _Section(_calibrationSection(report, stale: stale, colors: colors), 4),
+      _Section(
+        _calibrationSection(
+          report,
+          stale: stale,
+          pending: pending,
+          colors: colors,
+        ),
+        4,
+      ),
       if (hasUm) _Section(_umPlusSection(um, colors), 3.6),
       if (report != null && !report.hasRwkv && report.eligible > 0)
         _Section(_noRwkvSection(), 2),
@@ -1509,12 +1565,23 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   Widget _calibrationSection(
     SrsCalibrationReport? report, {
     required bool stale,
+    required bool pending,
     required SrsStatColors colors,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle small = context.fushiType.bodySmall;
     final List<Widget> body = <Widget>[];
-    if (_calibrationBusy) {
+    if (pending && !_calibrationBusy) {
+      // 原料已有、正在按当前牌组出报告（自助法，通常不到一秒）：不定进度条。
+      body.add(
+        FushiLinearProgressIndicator(
+          key: const ValueKey<String>('srs-stats-calibration-reporting'),
+          minHeight: 6,
+          color: colors.accent,
+          backgroundColor: colors.empty,
+        ),
+      );
+    } else if (_calibrationBusy) {
       final int percent = _calibrationTotal <= 0
           ? 0
           : (_calibrationDone * 100 ~/ _calibrationTotal).clamp(0, 100);

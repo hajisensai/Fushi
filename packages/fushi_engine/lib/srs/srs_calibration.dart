@@ -303,8 +303,43 @@ Future<SrsRwkvPredictions> srsRwkvReplayPredictions(
   }
 }
 
+/// [srsCalibrationReport] 放后台 isolate（自助法 500 次随卡数线性增长，不占 UI isolate）。[fsrsLibraryPath] 同
+/// [srsCalibrationData]（iOS 静态链接为 null，子 isolate 按默认规则解析）。
+Future<SrsCalibrationReport> srsCalibrationReportInBackground(
+  SrsCalibrationData data, {
+  String? fsrsLibraryPath,
+  List<String>? scopeCardIds,
+  int? fromMs,
+  int? toMs,
+}) => Isolate.run<SrsCalibrationReport>(
+  _reportBody(data, fsrsLibraryPath, scopeCardIds, fromMs, toMs),
+);
+
+/// 后台 isolate 的入口（顶层函数：只捕获可跨 isolate 发送的值）。
+SrsCalibrationReport Function() _reportBody(
+  SrsCalibrationData data,
+  String? libraryPath,
+  List<String>? scopeCardIds,
+  int? fromMs,
+  int? toMs,
+) => () {
+  final FfiFsrsEngine? engine = FfiFsrsEngine.tryCreate(
+    libraryPath: libraryPath,
+  );
+  if (engine == null) {
+    throw const SrsFsrsException('scheduling engine unavailable');
+  }
+  return srsCalibrationReport(
+    engine,
+    data,
+    scopeCardIds: scopeCardIds,
+    fromMs: fromMs,
+    toMs: toMs,
+  );
+};
+
 /// 第 3 步：按牌组（[scopeCardIds]，null = 全部）与时间范围 `[fromMs, toMs)` 出一份校准图 + UM+。阻塞（自助法
-/// 500 次），大集合放后台 isolate。
+/// 500 次），界面上走 [srsCalibrationReportInBackground]。
 SrsCalibrationReport srsCalibrationReport(
   FfiFsrsEngine engine,
   SrsCalibrationData data, {
