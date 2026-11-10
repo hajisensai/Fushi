@@ -1,4 +1,4 @@
-## BUG-4379 · Windows 无障碍树：引擎在语义更新被 AXTree 拒收后不自愈（半应用、委托悬空），且框架违约更新直接交给 AXTree
+## BUG-4380 · Windows 无障碍树：引擎在语义更新被 AXTree 拒收后不自愈（半应用、委托悬空），且框架违约更新直接交给 AXTree
 - **报告**：2026-11-10（崩溃报告 `GUbS2C2ukc`，Windows 3.3.0+24434，同一进程 02:32 连续两次 native AV；用户拍板「改自维护引擎加固 Windows 无障碍树，应该怎么做就怎么做」）。
 - **真实性**：✅ 真原生崩溃，根因在引擎（`flutter_windows.dll`），框架侧失步来源只是触发条件。
   - 现场：`GUbS2C2ukc` 的日志先记到生产哨兵 `A11y.axTreeDesync`「Nodes left pending by the update: 5824 / 5825 / 5826 (child of 5563)」（与 [BUG-4333](BUG-4333-windows-axtree-desync-pending-children-recur.md) 同一形态：父节点列出从未下发的子节点），几分钟后平台线程崩在 `flutter_windows.dll+0x1001334` = `memmove ← vector::erase ← AccessibilityBridge::CreateRemoveReparentedNodesUpdate`（与 [BUG-3796](BUG-3796-windows-nav-switch-freeze-a11y-reparent.md) 同崩点），光栅线程随后在 `ContainerLayer` 析构里写 AV（堆已被前一次越界 memmove 写坏）。
