@@ -18,6 +18,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
+import 'package:fushi/src/media/music/music_local_playlists.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 
@@ -32,6 +33,7 @@ class MusicScanSummary {
     required this.unchangedFileCount,
     required this.removedTrackCount,
     required this.errors,
+    this.importedPlaylistCount = 0,
   });
 
   /// 扫描后本来源的在库曲目数。
@@ -48,6 +50,9 @@ class MusicScanSummary {
 
   /// 读不了的文件 / 目录（路径 → 原因）。
   final List<MusicScanError> errors;
+
+  /// 本次新导入的播放列表文件数（`.m3u` / `.m3u8`，见 music_local_playlists.dart）。
+  final int importedPlaylistCount;
 
   /// 给来源行 `lastScanError` 的摘要；全部成功为 null。
   String? get errorSummary => errors.isEmpty
@@ -255,6 +260,10 @@ String _imageExtensionOf(Uint8List b) {
 typedef MusicDiscRegistrar =
     Future<Map<String, String>> Function(String root, {bool recursive});
 
+/// 播放列表文件字节 → 条目（真 app = Rust [parseMusicPlaylistFile]；测试注入替身）。
+typedef MusicPlaylistParser =
+    MusicPlaylistFile Function(Uint8List bytes, {String? baseDir});
+
 class MusicLibraryScanner {
   MusicLibraryScanner(
     this._db, {
@@ -262,7 +271,9 @@ class MusicLibraryScanner {
     MusicDiscRegistrar? discRegistrar,
     MusicListingScanner? listingScanner,
     Future<Directory> Function()? coverDirectory,
-  }) : _scanner = scanner ?? _nativeScanner,
+    MusicPlaylistParser? playlistParser,
+  }) : _playlistParser = playlistParser ?? parseMusicPlaylistFile,
+       _scanner = scanner ?? _nativeScanner,
        _discRegistrar =
            discRegistrar ?? MusicDiscImportService(_db).registerDiscsUnder,
        _listingScanner = listingScanner ?? _nativeListingScanner,
@@ -273,6 +284,7 @@ class MusicLibraryScanner {
   final MusicDiscRegistrar _discRegistrar;
   final MusicListingScanner _listingScanner;
   final Future<Directory> Function() _coverDirectory;
+  final MusicPlaylistParser _playlistParser;
 
   /// 扫一个**远程**音乐来源（SFTP / WebDAV / AList）：[entries] 是来源访问层列出的条目
   /// （SFTP 已换进 `sftp://` 命名空间，与视频行、播放期解析同一口径），[bytes] 按区间
@@ -294,6 +306,19 @@ class MusicLibraryScanner {
         if (f.path.toLowerCase().endsWith('.cue'))
           f.path: await bytes.readBytes(f.path),
     };
+    // 播放列表文件：Rust 远程游标不认它们，这里读字节、解析、按远程路径拼相对条目。
+    final List<MusicScanPlaylist> playlists = <MusicScanPlaylist>[
+      for (final MusicListedFile f in files)
+        if (_isPlaylistFile(f.path))
+          MusicScanPlaylist(
+            f.path,
+            mtimeMs: f.mtimeMs ?? 0,
+            playlist: resolveRemoteMusicPlaylistEntries(
+              f.path,
+              _playlistParser(await bytes.readBytes(f.path)),
+            ),
+          ),
+    ];
     final Map<String, String> coverCache = <String, String>{};
     Directory? coverDir;
     Future<String> cacheCover(String remotePath, Uint8List data) async {
@@ -339,6 +364,7 @@ class MusicLibraryScanner {
         return coverCache[t.path];
       },
       embeddedCoverReadable: false,
+      extraPlaylists: playlists,
     );
   }
 
@@ -354,6 +380,7 @@ class MusicLibraryScanner {
     Future<void> Function(List<MusicScannedTrack> tracks)? prepareBatch,
     String? Function(MusicScannedTrack track)? coverPathOf,
     bool embeddedCoverReadable = true,
+    List<MusicScanPlaylist> extraPlaylists = const <MusicScanPlaylist>[],
   }) async {
     final List<({String path, int mtimeAt, int size, String trackUid})> known =
         await _db.musicTrackFilesOfSource(sourceId);
@@ -375,6 +402,9 @@ class MusicLibraryScanner {
 
     final Set<String> seen = <String>{};
     final List<MusicScanError> errors = <MusicScanError>[];
+    final List<MusicScanPlaylist> playlists = <MusicScanPlaylist>[
+      ...extraPlaylists,
+    ];
     int parsed = 0;
     int unchanged = 0;
     final int now = DateTime.now().millisecondsSinceEpoch;
@@ -394,6 +424,8 @@ class MusicLibraryScanner {
           case MusicScanCover():
             // 远程曲目的内嵌封面：本地扫描不会产出这种记录（封面之后按路径现读）。
             await onCover?.call(r);
+          case MusicScanPlaylist():
+            playlists.add(r);
         }
       }
       if (tracks.isNotEmpty) {
@@ -419,13 +451,55 @@ class MusicLibraryScanner {
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    final int imported = await _importPlaylists(playlists, errors);
     return MusicScanSummary(
       trackCount: seen.length,
       parsedTrackCount: parsed,
       unchangedFileCount: unchanged,
       removedTrackCount: removed,
       errors: errors,
+      importedPlaylistCount: imported,
     );
+  }
+
+  static bool _isPlaylistFile(String path) {
+    final int dot = path.lastIndexOf('.');
+    return dot >= 0 &&
+        kMusicPlaylistFileExtensions.contains(
+          path.substring(dot + 1).toLowerCase(),
+        );
+  }
+
+  /// 曲目落库之后再导入本次见到的播放列表文件（条目要对上刚扫进来的曲目）。导入过的文件
+  /// 跳过；一条都没对上的不建歌单，下次扫描再试。单份列表出错记进 [errors]，不影响其余。
+  Future<int> _importPlaylists(
+    List<MusicScanPlaylist> playlists,
+    List<MusicScanError> errors,
+  ) async {
+    if (playlists.isEmpty) return 0;
+    final List<MusicTrackRow> library = await _db.listMusicTracks();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    int imported = 0;
+    for (final MusicScanPlaylist pl in playlists) {
+      try {
+        final ({
+          MusicPlaylistImportOutcome outcome,
+          String playlistUid,
+          int matched,
+        })
+        r = await importMusicPlaylistFile(
+          _db,
+          path: pl.path,
+          file: pl.playlist,
+          now: now,
+          libraryTracks: library,
+        );
+        if (r.outcome == MusicPlaylistImportOutcome.imported) imported++;
+      } on Object catch (e) {
+        errors.add(MusicScanError(pl.path, '$e'));
+      }
+    }
+    return imported;
   }
 
   /// 扫一个音乐来源（本地目录）。原生库缺失（[FushiMusicUnavailableError]）与根不可读
@@ -455,6 +529,7 @@ class MusicLibraryScanner {
       unchangedFileCount: summary.unchangedFileCount,
       removedTrackCount: summary.removedTrackCount,
       errors: <MusicScanError>[...summary.errors, ...discErrors],
+      importedPlaylistCount: summary.importedPlaylistCount,
     );
   }
 }
