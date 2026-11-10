@@ -220,7 +220,17 @@ class _MiscellaneousSettingsBodyState
     final String iconPath = cropped.path;
 
     // Android 建快捷方式 / Windows 换窗口图标 + 落盘，与控制通道共用。
-    final bool ok = await applyCustomAppIcon(iconPath);
+    final bool ok;
+    try {
+      ok = await applyCustomAppIcon(iconPath);
+    } on AppIconApplyException catch (e) {
+      // 原生侧报错（BUG-4326）：给出可见失败，不漏到 UncaughtZone。
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(content: Text(t.icon_shortcut_failed(error: e.message))),
+      );
+      return;
+    }
     if (ok && Platform.isWindows && mounted) setState(() {});
 
     if (!mounted) return;
