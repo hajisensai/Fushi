@@ -5492,6 +5492,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 onDragUpdate: (SelectionSlot slot) =>
                     setState(() => _selection.updateRangeDrag(slot)),
                 onDragEnd: () => setState(_selection.endRangeDrag),
+                // 鼠标按下即拖 = 拉框框选（反馈 bFtYB0_Arl）；触屏仍是长按扫选。
+                onBoxSelectBegin: () => setState(_selection.beginBoxSelect),
+                onBoxSelectUpdate: (Set<SelectionSlot> slots) =>
+                    setState(() => _selection.updateBoxSelect(slots)),
                 child: _buildVideoLibraryBody(),
               ),
             ),
