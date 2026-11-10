@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T16:18:14Z",
+ "generatedAt": "2026-11-10T17:18:35Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "b765ac68f103d7c8907d07c130ace2741c237490",
-  "seq": 26013
+  "sha": "e770544072db07b158583aa1d32722a61bcb441d",
+  "seq": 26350
  },
  "builds": [
   {
@@ -50,7 +50,7 @@
    "unknown": false,
    "publishedAt": "2026-11-10T04:03:51Z",
    "testflight": true,
-   "baseSeq": 25010,
+   "baseSeq": 25005,
    "prs": [
     3103,
     3102,
@@ -58,42 +58,14 @@
     3090,
     3092,
     3091,
-    3123
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 25010,
-   "version": "3.3.0",
-   "sha": "6b11ee4768b7f2360caaa4a584bf23442f7de93b",
-   "unknown": false,
-   "publishedAt": "2026-11-10T03:04:56Z",
-   "testflight": true,
-   "baseSeq": 25005,
-   "prs": [
+    3123,
     3073
    ],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42740863071"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -113,11 +85,8 @@
    "unknown": false,
    "publishedAt": "2026-11-10T02:39:59Z",
    "testflight": false,
-   "baseSeq": 24999,
-   "prs": [
-    3124,
-    3125
-   ],
+   "baseSeq": null,
+   "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
@@ -125,24 +94,80 @@
      "state": "ok"
     },
     "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42739598671"
+     "state": "none"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42739598671"
+     "state": "none"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42739598671"
+     "state": "none"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "b765ac68f103d7c8907d07c130ace2741c237490",
-  "headSeq": 26013,
+  "headSha": "e770544072db07b158583aa1d32722a61bcb441d",
+  "headSeq": 26350,
   "prs": [
+   3238,
+   3265,
+   3267,
+   3243,
+   3259,
+   3266,
+   3268,
+   3263,
+   3264,
+   3258,
+   3256,
+   3222,
+   3251,
+   3261,
+   3253,
+   3260,
+   3262,
+   3255,
+   3254,
+   3252,
+   3245,
+   3249,
+   3242,
+   3257,
+   3212,
+   3235,
+   3240,
+   3239,
+   3234,
+   3231,
+   3269,
+   3233,
+   3229,
+   3228,
+   3232,
+   3237,
+   3218,
+   3227,
+   3224,
+   3221,
+   3226,
+   3225,
+   3230,
+   3214,
+   3220,
+   3206,
+   3219,
+   3210,
+   3217,
+   3215,
+   3211,
+   3208,
+   3204,
+   3202,
+   3205,
+   3207,
+   3203,
+   3201,
+   3200,
    3199,
    3193,
    3183,
@@ -228,6 +253,10 @@
   ],
   "direct": [
    {
+    "sha": "0d93e2e13f1a5a224d15379c02ea9d1a78f7e9f6",
+    "subject": "chore(bugs): settle BUG number collisions on 8c8153ca3"
+   },
+   {
     "sha": "b765ac68f103d7c8907d07c130ace2741c237490",
     "subject": "chore(bugs): settle BUG number collisions on 17d2964e1"
    },
@@ -240,19 +269,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844908100"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447620"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844907675"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447751"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844907675"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447751"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844907675"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447751"
    }
   }
  },
@@ -577,24 +606,6 @@
    "mergedAt": "2026-11-10T02:29:20Z",
    "additions": 241,
    "deletions": 13,
-   "labels": []
-  },
-  "3124": {
-   "number": 3124,
-   "title": "修复媒体服务器缺集号的集被显示成列表位置并排到最前（BUG-4273）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T01:59:26Z",
-   "additions": 181,
-   "deletions": 17,
-   "labels": []
-  },
-  "3125": {
-   "number": 3125,
-   "title": "fix(popup): 已制卡 ✓ / ♪ 次级菜单支持鼠标长按，手势收进共享绑定",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T01:56:17Z",
-   "additions": 360,
-   "deletions": 219,
    "labels": []
   },
   "3126": {
@@ -1216,6 +1227,537 @@
    "mergedAt": "2026-11-10T15:29:43Z",
    "additions": 3,
    "deletions": 1,
+   "labels": []
+  },
+  "3200": {
+   "number": 3200,
+   "title": "feat(settings): 关于区常驻反馈入口",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:28:52Z",
+   "additions": 74,
+   "deletions": 9,
+   "labels": []
+  },
+  "3201": {
+   "number": 3201,
+   "title": "feat(video): 已看完的分集同样变淡（详情页集卡 + 播放器选集轨道）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:29:29Z",
+   "additions": 248,
+   "deletions": 53,
+   "labels": []
+  },
+  "3202": {
+   "number": 3202,
+   "title": "fix(diagnostics): ColorOS/OnePlus o-stop 停应用不再误报闪退（BUG-4365）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:32:19Z",
+   "additions": 155,
+   "deletions": 10,
+   "labels": []
+  },
+  "3203": {
+   "number": 3203,
+   "title": "feat(collections): 视频集卡悬停整卡放大（宽卡档 1.025）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:30:39Z",
+   "additions": 75,
+   "deletions": 10,
+   "labels": []
+  },
+  "3204": {
+   "number": 3204,
+   "title": "i18n(video): 视频制卡重试文案补齐 15 种语言 + 补记 BUG-4367（#3140 收尾）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:33:35Z",
+   "additions": 40,
+   "deletions": 31,
+   "labels": []
+  },
+  "3205": {
+   "number": 3205,
+   "title": "feat(collections): 自动合集名里的网址 slug 规整成可读名",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:32:15Z",
+   "additions": 231,
+   "deletions": 5,
+   "labels": []
+  },
+  "3206": {
+   "number": 3206,
+   "title": "feat(manga): 当前页书签快捷键（默认 B）+ 命令键 WebView 键桥",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:43:09Z",
+   "additions": 365,
+   "deletions": 9,
+   "labels": []
+  },
+  "3207": {
+   "number": 3207,
+   "title": "feat(manga): 漫画设置面板全局作用域可改「保持屏幕常亮」",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:32:04Z",
+   "additions": 98,
+   "deletions": 6,
+   "labels": []
+  },
+  "3208": {
+   "number": 3208,
+   "title": "feat(appearance): crop custom page backdrop image after picking",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:34:18Z",
+   "additions": 206,
+   "deletions": 3,
+   "labels": []
+  },
+  "3210": {
+   "number": 3210,
+   "title": "fix(asr): Android 按设备可用内存给设备端 ASR 设门槛（BUG-4367）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:39:41Z",
+   "additions": 674,
+   "deletions": 7,
+   "labels": []
+  },
+  "3211": {
+   "number": 3211,
+   "title": "feat(reader): 单击查词开关可找到且关闭后点正文等同点空白 (#3088)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:36:27Z",
+   "additions": 367,
+   "deletions": 83,
+   "labels": []
+  },
+  "3212": {
+   "number": 3212,
+   "title": "feat(storage): 存储页一键清除全部缓存（列出类别与大小、确认后清、不碰用户数据）+ fix BUG-4368",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:53:31Z",
+   "additions": 862,
+   "deletions": 13,
+   "labels": []
+  },
+  "3214": {
+   "number": 3214,
+   "title": "feat(video): ASS 同时显示的多行字幕复制 / 制卡合成一句",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:44:29Z",
+   "additions": 798,
+   "deletions": 82,
+   "labels": []
+  },
+  "3215": {
+   "number": 3215,
+   "title": "fix(video): 字幕字号上限随视口逻辑短边放大，高 DPI 屏不再卡在 48（CcT_7VQIQr）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:37:29Z",
+   "additions": 221,
+   "deletions": 26,
+   "labels": []
+  },
+  "3217": {
+   "number": 3217,
+   "title": "feat(download): 添加种子时可筛选、勾选文件，只下载选中的",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:39:29Z",
+   "additions": 646,
+   "deletions": 35,
+   "labels": []
+  },
+  "3218": {
+   "number": 3218,
+   "title": "feat(pdf): PDF 阅读器支持有声书——播放 + 文本层字幕高亮（拍板 pdf-audiobook-support）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:48:04Z",
+   "additions": 951,
+   "deletions": 70,
+   "labels": []
+  },
+  "3219": {
+   "number": 3219,
+   "title": "feat(book): 粘贴文本直接阅读（导入视图快速入口）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:41:48Z",
+   "additions": 640,
+   "deletions": 2,
+   "labels": []
+  },
+  "3220": {
+   "number": 3220,
+   "title": "feat(anki): 待发卡片批量删除（全部删除 / 删除发送失败的）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:43:14Z",
+   "additions": 456,
+   "deletions": 23,
+   "labels": []
+  },
+  "3221": {
+   "number": 3221,
+   "title": "feat(srs): 同步冲突页恢复批量处理，覆盖设置 / 扣住的删除 / 重复笔记 (BUG-4370)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:45:55Z",
+   "additions": 473,
+   "deletions": 49,
+   "labels": []
+  },
+  "3222": {
+   "number": 3222,
+   "title": "fix(a11y): 引擎补丁加固 Windows 无障碍树（AXTree 由保留的语义数据推出、拒收即整树重建，BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:59:05Z",
+   "additions": 1293,
+   "deletions": 8,
+   "labels": []
+  },
+  "3224": {
+   "number": 3224,
+   "title": "fix(manga): 纯图 EPUB 文件夹导入统一判定并归合集（BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:47:16Z",
+   "additions": 365,
+   "deletions": 25,
+   "labels": []
+  },
+  "3225": {
+   "number": 3225,
+   "title": "feat(anki): 离线也能显示已制卡 ✓（本地缓存 Anki 已有词，联网时刷新）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:45:30Z",
+   "additions": 1129,
+   "deletions": 21,
+   "labels": []
+  },
+  "3226": {
+   "number": 3226,
+   "title": "feat(audiobook): 播放页导出当前字幕；导出的 M4B 内嵌字幕与封面",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:45:48Z",
+   "additions": 979,
+   "deletions": 96,
+   "labels": []
+  },
+  "3227": {
+   "number": 3227,
+   "title": "feat(srs): 自定义出卡顺序——复习顺序与新卡混排（Rust 内核规则 + 牌组设置）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:47:36Z",
+   "additions": 1975,
+   "deletions": 81,
+   "labels": []
+  },
+  "3228": {
+   "number": 3228,
+   "title": "feat(library): 书架文件夹导入时配套导入有声书音频与字幕，缺字幕可选转录",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:49:36Z",
+   "additions": 2437,
+   "deletions": 154,
+   "labels": []
+  },
+  "3229": {
+   "number": 3229,
+   "title": "feat(anki): 覆写已有卡时可选择只覆盖哪些字段（按笔记类型记住）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:49:54Z",
+   "additions": 1091,
+   "deletions": 55,
+   "labels": []
+  },
+  "3230": {
+   "number": 3230,
+   "title": "feat(reader): 读数胶囊「本次字数」「字/时」默认关闭（9BZA2runry）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:45:21Z",
+   "additions": 69,
+   "deletions": 6,
+   "labels": []
+  },
+  "3231": {
+   "number": 3231,
+   "title": "feat(gal-mining): 制卡句子音频最长/固定时长/不截取 + 本游戏制卡设置覆盖",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:50:32Z",
+   "additions": 1772,
+   "deletions": 47,
+   "labels": []
+  },
+  "3232": {
+   "number": 3232,
+   "title": "fix(ai): 横屏打开 AI 助手改用吃满高度的靠边侧栏（BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:49:30Z",
+   "additions": 261,
+   "deletions": 42,
+   "labels": []
+  },
+  "3233": {
+   "number": 3233,
+   "title": "feat(audiobook): 有声书悬浮字幕全局快捷键（显隐 / 播放暂停 / 上下句 / 重播）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:50:07Z",
+   "additions": 380,
+   "deletions": 7,
+   "labels": []
+  },
+  "3234": {
+   "number": 3234,
+   "title": "feat(video): 按系列记住字幕文件夹，之后各集按集号自动匹配字幕（0PZAhFd1RO）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:51:44Z",
+   "additions": 1163,
+   "deletions": 3,
+   "labels": []
+  },
+  "3235": {
+   "number": 3235,
+   "title": "feat(stats): 字数目标日 / 周二选一（CjIr9RGSCe）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:53:20Z",
+   "additions": 688,
+   "deletions": 84,
+   "labels": []
+  },
+  "3237": {
+   "number": 3237,
+   "title": "feat(anki): MiscInfo 等价字段统一复用来源默认值（标题 + 片段时间）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:49:17Z",
+   "additions": 171,
+   "deletions": 10,
+   "labels": []
+  },
+  "3238": {
+   "number": 3238,
+   "title": "fix(music): 独占输出暂停时交还设备，恢复时重新获取",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:06:16Z",
+   "additions": 338,
+   "deletions": 3,
+   "labels": []
+  },
+  "3239": {
+   "number": 3239,
+   "title": "feat(gal-tts): 游戏台词 TTS 按语言 / 按游戏指定声音",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:52:37Z",
+   "additions": 1081,
+   "deletions": 10,
+   "labels": []
+  },
+  "3240": {
+   "number": 3240,
+   "title": "feat(reader): 漫画顶栏改用小说同款 FushiFloatingTopBar，阅读器 Apple 标题垫底",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:52:40Z",
+   "additions": 526,
+   "deletions": 453,
+   "labels": []
+  },
+  "3242": {
+   "number": 3242,
+   "title": "feat(game-stream): 串流时可只静音主机（串流音频照常）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:55:05Z",
+   "additions": 1133,
+   "deletions": 236,
+   "labels": []
+  },
+  "3243": {
+   "number": 3243,
+   "title": "fix(srs): 立即同步报完已同步后不再空跑几轮（BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:04:07Z",
+   "additions": 456,
+   "deletions": 28,
+   "labels": []
+  },
+  "3245": {
+   "number": 3245,
+   "title": "feat(manga): OCR 进度浮标可完整/贴边/隐藏，OCR 报错改为独立提示",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:55:25Z",
+   "additions": 577,
+   "deletions": 87,
+   "labels": []
+  },
+  "3249": {
+   "number": 3249,
+   "title": "feat(music): 插件音源曲目在歌词页用本机 ASR 生成日语字幕",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:55:13Z",
+   "additions": 710,
+   "deletions": 5,
+   "labels": []
+  },
+  "3251": {
+   "number": 3251,
+   "title": "fix(video): 远端起播字幕按 app 偏好 > 服务器默认标记挑轨（Jellyfin 默认内嵌字幕不显示）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:58:37Z",
+   "additions": 433,
+   "deletions": 26,
+   "labels": []
+  },
+  "3252": {
+   "number": 3252,
+   "title": "fix(srs): 卡面页面的远程音频经宿主取回、以 blob: 播放——eggrolls 例句在线 TTS 键不再无声（BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:55:30Z",
+   "additions": 838,
+   "deletions": 3,
+   "labels": []
+  },
+  "3253": {
+   "number": 3253,
+   "title": "fix(anki): 漫画制卡分类标签改为 manga（BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:58:07Z",
+   "additions": 80,
+   "deletions": 26,
+   "labels": []
+  },
+  "3254": {
+   "number": 3254,
+   "title": "feat(tts): 词头带替换写法时 TTS 兜底念查词命中原文",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:56:11Z",
+   "additions": 473,
+   "deletions": 109,
+   "labels": []
+  },
+  "3255": {
+   "number": 3255,
+   "title": "feat(audiobook): 纯转录有声书左键只查词，触屏长按「从此句播放」跳句",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:57:17Z",
+   "additions": 242,
+   "deletions": 80,
+   "labels": []
+  },
+  "3256": {
+   "number": 3256,
+   "title": "feat(manga-ocr): OCR 任务管理页——逐项 / 批量暂停与继续",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:59:45Z",
+   "additions": 1384,
+   "deletions": 51,
+   "labels": []
+  },
+  "3257": {
+   "number": 3257,
+   "title": "docs(agent): 功能黑名单加「给单语字幕加 AI 翻译」",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:54:12Z",
+   "additions": 1,
+   "deletions": 0,
+   "labels": []
+  },
+  "3258": {
+   "number": 3258,
+   "title": "feat(reader): 跟随原书排版——排版方向 / 翻页方向取 EPUB 元数据（默认开）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:00:17Z",
+   "additions": 792,
+   "deletions": 3,
+   "labels": []
+  },
+  "3259": {
+   "number": 3259,
+   "title": "feat(music): Apple Music 试听曲目打「试听」角标，进度按片段实际长度（BUG-4370）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:03:57Z",
+   "additions": 389,
+   "deletions": 47,
+   "labels": []
+  },
+  "3260": {
+   "number": 3260,
+   "title": "feat(icon): 应用图标加深色 / 着色 / 主题图标变体（iOS / macOS / Android）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:57:58Z",
+   "additions": 598,
+   "deletions": 1,
+   "labels": []
+  },
+  "3261": {
+   "number": 3261,
+   "title": "feat(mining): 高级制卡句子音频默认挪到左栏，分区布局可自定义",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:58:23Z",
+   "additions": 1444,
+   "deletions": 150,
+   "labels": []
+  },
+  "3262": {
+   "number": 3262,
+   "title": "feat(video): 清理全部刮削记录提供「只清记录 / 连同生成 NFO」两种方式",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:57:22Z",
+   "additions": 398,
+   "deletions": 48,
+   "labels": []
+  },
+  "3263": {
+   "number": 3263,
+   "title": "feat(storage): 设置里加「检查数据库」（integrity_check + 修乱码统计 + VACUUM，先备份、可回滚）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:01:10Z",
+   "additions": 1917,
+   "deletions": 12,
+   "labels": []
+  },
+  "3264": {
+   "number": 3264,
+   "title": "feat(srs): 出处按「系列 → 集」两级分组（MCJLSBR5Wg）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:00:31Z",
+   "additions": 1069,
+   "deletions": 122,
+   "labels": []
+  },
+  "3265": {
+   "number": 3265,
+   "title": "feat(video): 字幕工作台——生成 / 拆出双语中的日语 / 逐句对轴 / 画面与其它语言字幕参考（拍板 subtitle-workbench）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:04:36Z",
+   "additions": 1817,
+   "deletions": 37,
+   "labels": []
+  },
+  "3266": {
+   "number": 3266,
+   "title": "fix(sync): PDF books get an interconnect content channel (BUG-4372)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:02:02Z",
+   "additions": 1033,
+   "deletions": 88,
+   "labels": []
+  },
+  "3267": {
+   "number": 3267,
+   "title": "feat(screen-ocr): 截屏识字引擎设置默认跟随全局，修 macOS 慢与点字「ー」（BUG-4069）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:04:10Z",
+   "additions": 1276,
+   "deletions": 53,
+   "labels": []
+  },
+  "3268": {
+   "number": 3268,
+   "title": "feat(browser-ext): 字幕描边自定义同步 app + 自动对轴 / 波形对轴（反馈 0wkJImhZUp）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T17:01:25Z",
+   "additions": 3498,
+   "deletions": 56,
+   "labels": []
+  },
+  "3269": {
+   "number": 3269,
+   "title": "docs(bugs): BUG-4375 撞号改为 BUG-4376",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T16:50:22Z",
+   "additions": 4,
+   "deletions": 4,
    "labels": []
   }
  }
