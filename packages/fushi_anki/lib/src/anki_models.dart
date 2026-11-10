@@ -1033,6 +1033,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.seriesTitle,
     this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
@@ -1072,6 +1073,11 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 出处的上一级（系列 / 合集 / 播放列表的**原样名字**，不清洗）：SRS 出处按「系列 → 集」两级分组
+  /// （`SrsSourceRef.seriesTitle`，反馈 MCJLSBR5Wg）。与 [collectionTag] 是同一个来源，但不受「自动添加书名到
+  /// 标签」开关影响、也不做标签清洗——它是出处层级，不是标签。不属任何系列时 null。
+  final String? seriesTitle;
 
   /// 「制卡位置写入 MiscInfo」开关（冻结偏好键 `auto_add_char_position_to_tags`）开启时，
   /// 调用方（小说阅读器）按界面语言格式化好的**制卡位置文本**（如「制卡位置：第 12345 字」）：
@@ -1124,6 +1130,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
@@ -1155,6 +1162,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,

@@ -295,7 +295,7 @@ pub(crate) struct NoteInfo {
     deck: Option<String>,
     pub(crate) deleted_at: Option<i64>,
     pending: bool,
-    /// 出处（`SrsSourceRef`）：kind 与原样 title；没有出处（或不是带 kind 的对象）时按 Fushi 制卡标签认
+    /// 出处（`SrsSourceRef`）：kind 与原样 title（带系列的出处是系列名）；没有出处（或不是带 kind 的对象）时按 Fushi 制卡标签认
     /// （[source_from_tags]），也认不出 = 两个空串。
     source_kind: String,
     source_title: String,
@@ -379,8 +379,10 @@ impl NoteInfo {
         match v["s"]["kind"].as_str().filter(|k| !k.is_empty()) {
             Some(kind) => {
                 n.source_kind = kind.to_owned();
-                n.source_title = v["s"]["title"]
-                    .as_str()
+                // 带系列的出处（反馈 MCJLSBR5Wg）记系列名：统计页「制卡来源」按「系列 → 集」的上一级计，与
+                // `source_key` 的系列键同一个判据（store/browse.rs `source_series`）。
+                n.source_title = super::browse::source_series(&v["s"])
+                    .or_else(|| v["s"]["title"].as_str())
                     .map(str::to_owned)
                     .unwrap_or_default();
             }
@@ -2280,6 +2282,60 @@ mod tests {
         assert!(filled >= 3, "filled {filled}");
         assert_eq!(keys(&d), expect);
         assert_eq!(backfill(&d), 0);
+    }
+
+    /// 带系列的出处（反馈 MCJLSBR5Wg）：缓存行的 `source_key` 是系列键、`source_title` 是系列名（统计页「制卡来源」
+    /// 按系列计）；系列名全是空白 = 没有系列，照旧按集（作品键 + 集标题）。
+    #[test]
+    fn series_sources_key_and_title_the_cache_row_by_series() {
+        let d = Device::new("series-sources");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let video = |media: &str, title: &str, series: &str| json!({"kind": "video", "mediaKey": media, "startMs": 0, "title": title, "seriesTitle": series});
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
+                note(N1, "NT"),
+                edit("note", N1, "source", video("e1", "RWBY - E1", "RWBY")),
+                note(N2, "NT"),
+                edit("note", N2, "source", video("e2", "RWBY - E2", "RWBY")),
+                note(N3, "NT"),
+                edit("note", N3, "source", video("e3", "Solo", "  ")),
+            ],
+        );
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_notes: true,
+                ..Dirty::default()
+            },
+        );
+        let rows: Vec<Vec<String>> = d
+            .rows(
+                "SELECT srs_idt(id), source_kind, source_title, source_key FROM srs_notes_cache ORDER BY id",
+            )
+            .into_iter()
+            .skip(1)
+            .collect();
+        let row = |id: &str, title: &str, key: &str| {
+            vec![
+                id.to_owned(),
+                "video".to_owned(),
+                title.to_owned(),
+                key.to_owned(),
+            ]
+        };
+        assert_eq!(
+            rows,
+            vec![
+                row(N1, "RWBY", "video::RWBY"),
+                row(N2, "RWBY", "video::RWBY"),
+                row(N3, "Solo", "video:e3"),
+            ]
+        );
     }
 
     /// 每条笔记的卡的 freq_rank（NULL 记成 "null"）。
