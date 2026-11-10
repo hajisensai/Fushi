@@ -799,7 +799,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 回执无论成败都必须发，否则守卫卡住、句子不再推进（BUG-2529）。
   @override
   Future<void> onCueCrossChapter(int sectionIndex) async {
-    final AudiobookPlayerController? controller = _audiobookController;
+    // attachReader 先于本页记下控制器（setState 在其后），回执对象以会话为准。
+    final AudiobookPlayerController? controller =
+        _audiobookController ?? appModel.audiobookSession.controller;
     bool landed = false;
     try {
       if (mounted &&
