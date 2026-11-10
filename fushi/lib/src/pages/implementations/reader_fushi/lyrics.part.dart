@@ -496,10 +496,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       defaultValue: false,
     );
     if (shown || !mounted) return;
-    src.setPreference<bool>(
-      key: kLyricsModeHintShownPrefShortKey,
-      value: true,
-    );
+    src.setPreference<bool>(key: kLyricsModeHintShownPrefShortKey, value: true);
     unawaited(
       _withStudyClockPaused(
         () => showAppDialog<void>(
