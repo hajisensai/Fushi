@@ -1,4 +1,4 @@
-## BUG-4291 · 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库）
+## BUG-4294 · 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库）
 - **报告**：2026-11-07（Linux Phase 4 互联测试，Docker 客户端 + Windows host；证据为实测日志与截图，未入库：客户端开播用了旧断点，随后把 host 的断点从 3000 改回 8700）
 - **真实性**：✅ 真 bug，复现两次（host_long：host 50 s 被客户端 22 s 覆盖；host_clip：3000 ms 被 8700 ms 覆盖）。客户端看过一次 host 的视频后，host 端更新的断点在下次打开时被忽略：sweep 后客户端库里已是 host 的新断点（新时间戳），播放器却从客户端自己的旧断点续播，随后实时上报把旧位置写回 host。
   - 根因①：开播位置读 `PreferencesRepository` 的内存缓存（`fushi/lib/src/pages/implementations/video_fushi_page.dart:5121-5145` `_readPersistedRemotePositionForEpisode` / `...AtForEpisode` → `fushi/lib/src/models/preferences_repository.dart:454` `getPref` 读 `_prefCache`），而互联 sweep / 冲突弹窗落地只写库（`fushi/lib/src/sync/interconnect_playback_position_sync.dart:328-338` `_writeLocal` → `FushiDatabase.setPrefTyped`），本机作为 host 收到的对端 PUT 也只写库。缓存里留着本机上次自己写的旧断点。

@@ -149,7 +149,7 @@ void main() {
     );
 
     test(
-      'BUG-4291: episode switch / auto-advance resolves against the live host',
+      'BUG-4294: episode switch / auto-advance resolves against the live host',
       () {
         // 换集 / 连播走 _loadRemoteEpisode 不带 override：必须与首开同一条判定
         // （本机库断点 vs 清单 vs 互联 host 此刻断点），不能只读本机断点——否则合集
@@ -215,7 +215,7 @@ void main() {
         ),
         reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );
-      // 读侧用 helper 结果元组读按集断点（BUG-4291：经 resolveRemoteVideoResumeMs →
+      // 读侧用 helper 结果元组读按集断点（BUG-4294：经 resolveRemoteVideoResumeMs →
       // readLocalRemoteVideoPosition 直接读库，键由它按 videoRemotePositionEpisodePrefKey
       // 构造）。
       expect(
