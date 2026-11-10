@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/download_gateway_challenge.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -128,6 +129,10 @@ class DiscoveryDownloadTask {
   /// 失败原因（status == failed / waitingRetry 时非空）。
   String? error;
 
+  /// 失败是因为下载网关要求人机验证且没能通过（BUG-4323）：回挑战的网关 URL。
+  /// UI 据此显示「站点要求人机验证」并提供「在浏览器中打开」，而不是只报 403。
+  Uri? challengeUrl;
+
   /// 已消耗的自动重试次数；手动 retry 归零。
   int autoRetries = 0;
 
@@ -165,14 +170,20 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
   DiscoveryDownloadQueue({
     required DiscoveryPayloadResolver resolvePayload,
     required DiscoveryDownloadImporter importer,
+    DownloadGatewayChallengeSolver? challengeSolver,
     @visibleForTesting DiscoveryDownloadOpen? openOverride,
     @visibleForTesting List<Duration>? retryBackoffOverride,
   }) : _resolvePayload = resolvePayload,
        _importer = importer,
+       _challengeSolver = challengeSolver,
        _openOverride = openOverride,
        _retryBackoff = retryBackoffOverride ?? kDiscoveryDownloadRetryBackoff;
 
   final DiscoveryPayloadResolver _resolvePayload;
+
+  /// 下载网关回人机验证挑战时的解题器（app 层注入 WebView 解题页；null = 无从
+  /// 解题，挑战直接按失败上浮）。见 `download_gateway_challenge.dart`。
+  final DownloadGatewayChallengeSolver? _challengeSolver;
   final DiscoveryDownloadImporter _importer;
   final DiscoveryDownloadOpen? _openOverride;
   final List<Duration> _retryBackoff;
@@ -304,6 +315,7 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
     task.status = DiscoveryDownloadStatus.queued;
     task.autoRetries = 0;
     task.error = null;
+    task.challengeUrl = null;
     task.receivedBytes = 0;
     task.totalBytes = null;
     task.importOutcome = null;
@@ -420,16 +432,69 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
     return paths;
   }
 
+  /// 下载一个 payload；网关回人机验证挑战时交给 [_challengeSolver] 解一次，
+  /// 带着放行凭据重开同一资源（BUG-4323）。
+  ///
+  /// 只解**一次**：放行后仍被挡（凭据过期 / 出口 IP 与解题时不同 / 站点改了
+  /// 协议）原样上浮挑战，由 UI 给出「在浏览器中打开」，不在这里循环弹页。
   Future<File> _download(
     DiscoveryDownloadTask task,
     DiscoveryHttpPayload payload,
     File destination, {
     bool trackProgress = true,
   }) async {
+    try {
+      return await _downloadOnce(
+        task,
+        payload,
+        destination,
+        trackProgress: trackProgress,
+      );
+    } on DownloadGatewayChallengeRequired catch (challenge) {
+      final DownloadGatewayChallengeSolver? solver = _challengeSolver;
+      if (solver == null || task._cancelRequested) rethrow;
+      final DownloadGatewayClearance? clearance = await solver(
+        challenge.challengeUrl,
+      );
+      if (task._cancelRequested) throw const _DiscoveryDownloadCancelled();
+      if (clearance == null) rethrow;
+      // 原 payload 的凭据头属于原始 origin：按重定向同一套规则决定能否带去
+      // 放行 URL（跨 origin 剥掉），再叠上解题拿到的放行头。
+      final Map<String, String> headers = <String, String>{
+        ...headersForRedirectHop(
+          payload.headers,
+          from: Uri.parse(payload.url),
+          to: clearance.url,
+        ),
+        ...clearance.headers,
+      };
+      return _downloadOnce(
+        task,
+        DiscoveryHttpPayload(
+          url: clearance.url.toString(),
+          headers: headers,
+          fileName: payload.fileName,
+          sizeBytes: payload.sizeBytes,
+        ),
+        destination,
+        trackProgress: trackProgress,
+      );
+    }
+  }
+
+  Future<File> _downloadOnce(
+    DiscoveryDownloadTask task,
+    DiscoveryHttpPayload payload,
+    File destination, {
+    required bool trackProgress,
+  }) async {
     final DiscoveryDownloadOpen open;
     HttpClient? client;
-    if (_openOverride != null) {
-      open = _openOverride;
+    final DiscoveryDownloadOpen? override = _openOverride;
+    if (override != null) {
+      // 测试桩没有重定向，请求的 URL 就是回响应的那一跳。
+      open = (Uri uri, Map<String, String> headers) async =>
+          guardDownloadGatewayChallenge(await override(uri, headers), uri);
     } else {
       client = createAppHttpClient();
       task._client = client;
@@ -510,10 +575,15 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
         (String name, List<String> values) =>
             responseHeaders[name] = values.join(', '),
       );
-      return ResumableDownloadResponse(
-        statusCode: response.statusCode,
-        headers: responseHeaders,
-        stream: response,
+      // 挑战由重定向终点那一跳回出来（AList raw_url → 网关），解题页要开的正是
+      // [current]，不是最初的 raw_url。
+      return guardDownloadGatewayChallenge(
+        ResumableDownloadResponse(
+          statusCode: response.statusCode,
+          headers: responseHeaders,
+          stream: response,
+        ),
+        current,
       );
     }
   }
@@ -561,6 +631,9 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
       task.status = DiscoveryDownloadStatus.cancelled;
     } else if (error != null) {
       task.error = '$error';
+      task.challengeUrl = error is DownloadGatewayChallengeRequired
+          ? error.challengeUrl
+          : null;
       task.status = retryable && _scheduleAutoRetry(task, error)
           ? DiscoveryDownloadStatus.waitingRetry
           : DiscoveryDownloadStatus.failed;
