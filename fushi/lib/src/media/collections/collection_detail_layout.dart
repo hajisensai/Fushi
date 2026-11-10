@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -1164,7 +1165,10 @@ String collectionEpisodeWatchedLabel({
 ///
 /// - 续播那一集整卡 primaryContainer 高亮（Apple 抬一阶 raised 底）；
 /// - 手动标记看完：tertiary 实心对勾、集名降为 onSurfaceVariant；有断点时对勾旁
-///   照样给「看到 mm:ss」；
+///   照样给「看到 mm:ss」；缩略图、集号与文字整体降透明度
+///   （[kMediaDetailCompletedOpacity]，与漫画章节已读行同一口径，PR #3142 拍板
+///   「已看完的分集同样变淡」）；状态行、云 / 下载角标与进度条不降，保持可读；
+///   续播那一集不降；
 /// - 有断点（BUG-3491，所有者 2026-10-17 拍板：播放不再自动打勾，一律保留时间
 ///   进度）：状态行「看到 mm:ss」，知道总时长（[progress]）时再接观看百分比
 ///   「· 81%」并在底部画 primary 进度条（看完的集也画）；算不出百分比时不造假条、
@@ -1256,6 +1260,17 @@ class CollectionEpisodeCard extends StatelessWidget {
         if (part.trim().isNotEmpty) part.trim(),
     ];
     final String? summary = this.summary?.trim();
+    // 已看完的集：缩略图、集号与文字整体降透明度（只降集名颜色时与未看几乎
+    // 一样，PR #3142 拍板已读变淡同样作用到视频分集）。状态行（对勾 / 看到
+    // mm:ss / 规格）、云 / 下载角标与进度条不降；续播那一集保持高亮不降。
+    final bool dimmed = completed && !isContinue;
+    final Duration motion = fushiMotionDuration(context, FushiMotion.short);
+    Widget dim(Widget child, String key) => AnimatedOpacity(
+      key: ValueKey<String>(key),
+      opacity: dimmed ? kMediaDetailCompletedOpacity : 1,
+      duration: motion,
+      child: child,
+    );
     // 「观看至 xx」与规格摘要（1080p · HEVC…）同处一行时，规格若是 Expanded 会把
     // 观看进度压成省略号。状态行改成 Wrap：两者放得下就同一行（观看在起始侧、规格
     // 在末端），放不下规格才折到下一行。规格未探到时 [VideoSpecsInlineLine] 是零尺寸，
@@ -1327,14 +1342,17 @@ class CollectionEpisodeCard extends StatelessWidget {
                     children: <Widget>[
                       Stack(
                         children: <Widget>[
-                          thumb,
+                          dim(thumb, 'collection-episode-thumb'),
                           if (number case final String number)
                             PositionedDirectional(
                               start: 6,
                               top: 6,
-                              child: CollectionEpisodeNumberPill(
-                                number: number,
-                                current: isContinue,
+                              child: dim(
+                                CollectionEpisodeNumberPill(
+                                  number: number,
+                                  current: isContinue,
+                                ),
+                                'collection-episode-number',
                               ),
                             ),
                           // 进行中 → 铺满缩略图的压暗 + 进度环；失败 → 右下角标。
@@ -1357,44 +1375,52 @@ class CollectionEpisodeCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text(
-                              title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  (isContinue
-                                          ? type.titleMediumEmphasized
-                                          : type.titleMedium)
-                                      .copyWith(
-                                        color: completed && !isContinue
-                                            ? fgVariant
-                                            : fg,
-                                        height: 1.3,
-                                      ),
-                            ),
-                            if (identityLabel case final String label
-                                when label.isNotEmpty)
-                              Text(
-                                label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: type.labelSmall.copyWith(
-                                  height: 1.3,
-                                  color: fgVariant,
-                                ),
-                              ),
-                            if (meta.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  meta.join('  ·  '),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: type.labelMedium.tabular.copyWith(
-                                    color: fgVariant,
+                            dim(
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        (isContinue
+                                                ? type.titleMediumEmphasized
+                                                : type.titleMedium)
+                                            .copyWith(
+                                              color: completed && !isContinue
+                                                  ? fgVariant
+                                                  : fg,
+                                              height: 1.3,
+                                            ),
                                   ),
-                                ),
+                                  if (identityLabel case final String label
+                                      when label.isNotEmpty)
+                                    Text(
+                                      label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: type.labelSmall.copyWith(
+                                        height: 1.3,
+                                        color: fgVariant,
+                                      ),
+                                    ),
+                                  if (meta.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        meta.join('  ·  '),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: type.labelMedium.tabular
+                                            .copyWith(color: fgVariant),
+                                      ),
+                                    ),
+                                ],
                               ),
+                              'collection-episode-content',
+                            ),
                             // 底部区吃剩余高度：状态行贴底，简介用状态行剩下的
                             // 高度（放不下就省略），状态行折成两行仍放不下时裁掉
                             // 第二行（规格）——卡高钳死，任何字号都不溢出。
@@ -1406,19 +1432,22 @@ class CollectionEpisodeCard extends StatelessWidget {
                                     if (summary != null && summary.isNotEmpty)
                                       LayoutId(
                                         id: _EpisodeCardBottomLayout.summary,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 4,
-                                          ),
-                                          child: Text(
-                                            summary,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: type.bodySmall.copyWith(
-                                              color: fgVariant,
-                                              height: 1.3,
+                                        child: dim(
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Text(
+                                              summary,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: type.bodySmall.copyWith(
+                                                color: fgVariant,
+                                                height: 1.3,
+                                              ),
                                             ),
                                           ),
+                                          'collection-episode-summary',
                                         ),
                                       ),
                                     LayoutId(

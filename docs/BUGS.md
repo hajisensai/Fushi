@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4365](bugs/BUG-4365-coloros-ostop-exit-misreport.md) | ✅ | ✅ | ColorOS / OnePlus 的 o-stop 停应用被误报为闪退 |
+> 共 3912 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4369](bugs/BUG-4369-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
+| [BUG-4367](bugs/BUG-4367-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
+| [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
+| [BUG-4365](bugs/BUG-4365-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |
 | [BUG-4364](bugs/BUG-4364-browse-installed-sources-not-lazy.md) | ✅ | ✅ | 浏览页已装在线源整组非懒建：上千行全绘进合成树 |
 | [BUG-4363](bugs/BUG-4363-seamless-slow-drag-double-chapter-skip.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加） |
 | [BUG-4362](bugs/BUG-4362-video-grouping-mode-switch-scatter.md) | ✅ | ✅ | 视频来源从「按文件夹」改「按作品」后，系列页整部剧散成每集一张卡、刮削逐集当作品 |
@@ -59,7 +67,6 @@
 | [BUG-4346](bugs/BUG-4346-srs-card-synthetic-bold.md) | ✅ | ✅ | 复习卡词头 / 加粗段在单字重用户字体上被合成假粗体糊字 |
 | [BUG-4345](bugs/BUG-4345-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
 | [BUG-4339](bugs/BUG-4339-windows-video-output-teardown-order.md) | ✅ | ✅ | Windows 视频输出拆除顺序错：mpv 渲染上下文在 GL 上下文/共享显示销毁之后、且晚于 Dispose 回复才释放，卡面视频反复开关内存上涨后 libmpv abort / ANGLE AV |
-| [BUG-4339](bugs/BUG-4339-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
 | [BUG-4338](bugs/BUG-4338-discovery-search-irrelevant-results.md) | ✅ | ✅ | 游戏发现页搜索结果混入大量无关条目（真红小站模糊搜索透传） |
 | [BUG-4337](bugs/BUG-4337-online-manga-sync-chapters-json-crash.md) | ✅ | ✅ | 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见 |
 | [BUG-4336](bugs/BUG-4336-md3-floating-bar-stranded-on-lookup.md) | ✅ | ✅ | MD3 悬浮底栏在查词页收起后回不来，用户离不开查词页 |
