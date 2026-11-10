@@ -309,7 +309,7 @@ test('menuModel：总开关关掉时从属项置灰，隐藏字幕不受影响',
   const on = PC.menuModel({ overlayOn: true });
   assert.deepStrictEqual(
     on.map((i) => i.id),
-    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'style', 'settings'],
+    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'mask', 'maskEdit', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'style', 'settings'],
   );
   // 「收藏当前句」只在有当前句时可点（KGC1ifR1a3），其余项开总开关时全可用。
   assert.ok(on.every((i) => i.id === 'favLine' || !i.disabled));

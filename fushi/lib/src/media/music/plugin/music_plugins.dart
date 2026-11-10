@@ -79,7 +79,8 @@ MusicPlayItem musicPluginPlayItem(
   sourceAlbumId: track.albumId,
 );
 
-/// 设置里的服务器码率上限（kbps，0 = 原样）→ 插件取流音质档：同一个「流媒体音质」设置。
+/// 服务器码率上限（kbps，0 = 原样）→ 插件取流音质档。只用于「在线插件音质」没单独设过时的
+/// 缺省值（[AppModel.musicPluginQuality]）：在它独立出来之前两者共用一个设置，升级后听到的不变。
 MusicPluginQuality musicPluginQualityForBitrate(int maxKbps) =>
     switch (maxKbps) {
       <= 0 => MusicPluginQuality.lossless,
@@ -112,7 +113,9 @@ class MusicPluginPlaybackHost {
   const MusicPluginPlaybackHost({required this.manager, required this.quality});
 
   final MusicPluginManager Function() manager;
-  final MusicPluginQuality Function() quality;
+
+  /// 这首（插件占位路径）按哪一档取流：播放器里「只对这首」的临时选择优先，其次是默认档。
+  final MusicPluginQuality Function(String path) quality;
 }
 
 MusicPluginPlaybackHost? musicPluginPlaybackHost;
@@ -130,7 +133,7 @@ Future<MusicPluginStream> resolveMusicPluginStream(String path) async {
     final MusicPluginStream s = await host
         .manager()
         .source(ref.pluginId)
-        .stream(ref.trackId, quality: host.quality());
+        .stream(ref.trackId, quality: host.quality(path));
     if (s.isTrial) {
       throw const MusicPluginStreamUnavailable('该曲目只能试听片段');
     }

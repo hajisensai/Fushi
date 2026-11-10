@@ -8,6 +8,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -769,6 +770,66 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 反馈 R7k887yaJI：滚动模式拉过章首 / 章末切章的阻尼。只在滚动模式有意义
+          // （翻页 / VN 没有「拉过边界」这回事），其它模式不显示。改值经
+          // notifyReaderSettingsChanged → updateLive 热下发，不重载正文。
+          SettingsSegmentedItem<ContinuousChapterTurnResistance>(
+            id: 'reading_controls.continuous_chapter_turn_resistance',
+            title: t.reader_continuous_turn_resistance,
+            subtitle: t.reader_continuous_turn_resistance_description,
+            icon: FushiIcons.swipe,
+            visible: isContinuous,
+            defaultValue: ContinuousChapterTurnResistance.standard,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 16,
+            ),
+            options: <SettingsSegmentOption<ContinuousChapterTurnResistance>>[
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.low,
+                label: t.reader_continuous_turn_resistance_low,
+              ),
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.standard,
+                label: t.reader_continuous_turn_resistance_standard,
+              ),
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.high,
+                label: t.reader_continuous_turn_resistance_high,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.continuousChapterTurnResistance,
+            onChanged:
+                (
+                  SettingsContext c,
+                  ContinuousChapterTurnResistance value,
+                ) async {
+                  await c.readerSource.setContinuousChapterTurnResistance(
+                    value,
+                  );
+                  notifyReaderSettingsChanged(c);
+                },
+          ),
+          // 反馈 R7k887yaJI ③：滚动模式章节无缝衔接（默认关）。前后章挂在同一文档里一起
+          // 滚动；改值要重建文档（挂 / 卸邻章），走 notifyReaderLayoutChanged 整章重载。
+          SettingsSwitchItem(
+            id: 'reading_controls.continuous_seamless_chapters',
+            title: t.reader_continuous_seamless_chapters,
+            subtitle: t.reader_continuous_seamless_chapters_description,
+            icon: FushiIcons.link,
+            visible: isContinuous,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 17,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.continuousSeamlessChapters,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setContinuousSeamlessChapters(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
           // 翻页动画（View Transitions 快照翻页，见 reader_page_turn_script.dart）。只在
           // 翻页模式生效：滚动 / VN 模式下置灰并说明原因（不隐藏——让用户知道有这项、
           // 切回翻页模式就能用）。改值走 notifyReaderSettingsChanged → updateLive 热下发。
@@ -1017,6 +1078,66 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
+          // 读数胶囊（底部右下角）的各段开关 + 常驻开关。开关段数会改变读数是否整条
+          // 不画（四段都关时回收预留），常驻会改变悬浮态预留 → 都走重锚通道。
+          SettingsSwitchItem(
+            id: 'reading_controls.show_reading_timer',
+            title: t.reader_timer_show,
+            icon: FushiIcons.timer,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 26,
+            ),
+            value: (SettingsContext c) => c.readerSource.showReadingTimer,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowReadingTimer();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.show_session_chars',
+            title: t.reader_status_show_session_chars,
+            icon: FushiIcons.textFields,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 27,
+            ),
+            value: (SettingsContext c) => c.readerSource.showSessionChars,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowSessionChars();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.show_chars_per_hour',
+            title: t.reader_status_show_chars_per_hour,
+            icon: FushiIcons.speed,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 28,
+            ),
+            value: (SettingsContext c) => c.readerSource.showCharsPerHour,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowCharsPerHour();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.status_footer_persistent',
+            title: t.reader_status_persistent,
+            subtitle: t.reader_status_persistent_subtitle,
+            icon: FushiIcons.pin,
+            visible: (SettingsContext c) => c.readerSource.tapEmptyToHideChrome,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 29,
+            ),
+            value: (SettingsContext c) => c.readerSource.statusFooterPersistent,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleStatusFooterPersistent();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
           // TODO-975 决策#2：顶部进度悬浮开关（点击唤出 + 自动收起 + 不占正文位置）。
           // 仅当进度本身开启时显示。切换改变预留高 → 走重锚通道。
           // TODO-1029：「悬浮控制栏」开关（原「点击空白处隐藏控制栏」）紧挨「悬浮阅读
@@ -1201,8 +1322,8 @@ SettingsDestination buildReadingDestination() {
           // 悬浮球不在这里：唯一入口是 设置 → 悬浮球（阅读器场景的按钮在那里勾选）。
         ],
       ),
-      // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
-      // 下次打开书生效（时钟在建书时读一次）。
+      // v92 统计域：学习空闲门。小说 / PDF / 漫画 / 视频共用（2026-11-07 起视频
+      // 也走墙钟 + 空闲门，播放中由采集器喂门、始终计时）；运行中的时钟随设置刷新。
       SettingsSection(
         id: 'reading.section.statistics',
         presentation: SettingsSectionPresentation.alwaysExpanded,

@@ -64,6 +64,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
+    this.onOrganizeFilenames,
     this.collectionAiSettings,
     super.key,
   });
@@ -109,6 +110,9 @@ class VideoWorkDetailPage extends StatefulWidget {
 
   /// 透传给合集详情页的「在线搜索封面」（BUG-2999）。null = 不渲染该菜单项。
   final Future<File?> Function(String workTitle)? onPickOnlineCover;
+
+  /// 透传给合集详情页单集菜单的「整理文件名」。null = 不渲染该菜单项。
+  final Future<void> Function(List<String> bookUids)? onOrganizeFilenames;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -208,6 +212,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                 onRescrapeCollection: widget.onRescrapeCollection,
                 onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
                 onPickOnlineCover: widget.onPickOnlineCover,
+                onOrganizeFilenames: widget.onOrganizeFilenames,
               );
             },
       );

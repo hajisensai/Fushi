@@ -78,6 +78,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
   // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
   'ai_key_health',
+  // String（JSON 列表）：AI 助手接入的外部 MCP server（spec
+  // docs/specs/2026-11-05-ai-mcp-client-design.md），编解码见 fushi_engine
+  // `mcp_client_config.dart`。请求头 / 环境变量值以 base64 存（可能是 token）→
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys；本地程序（stdio）的命令只对这台机器成立。
+  'ai_mcp_client_servers',
   // bool（默认 false）：外部 AI 访问（MCP）。打开后本机 MCP 客户端凭配对令牌可调
   // 操作目录；授权只对点它的这台设备成立（设备本地）。
   'ai_mcp_enabled',
@@ -519,10 +525,27 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_desktop_lyrics',
   // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
   'music_dsd_pcm_rate',
-  // bool（默认 false）：图示均衡器开关（P5，可选；开且不平直即非 bit-perfect）。
+  // 音效（P5，均衡之外的各项；总开关仍是 music_eq_enabled）：低音 / 高音搁架增益 double
+  // dB（默认 0）与转折频率 int Hz（默认 100 / 8000），声道平衡 double（−1…1，默认 0），
+  // 立体声宽度 double（0…2，默认 1），单声道 / 左右互换 / 限幅器 bool（默认 false）。
+  'music_effects_balance',
+  'music_effects_bass_db',
+  'music_effects_bass_hz',
+  'music_effects_limiter',
+  'music_effects_mono',
+  'music_effects_swap_channels',
+  'music_effects_treble_db',
+  'music_effects_treble_hz',
+  'music_effects_width',
+  // bool（默认 false）：音效总开关（P5，可选；开且不全部中性即非 bit-perfect）。键名沿用
+  // 图示均衡器时代，冻结。
   'music_eq_enabled',
   // String（逗号分隔 10 段 dB，默认 '' = 平直）：图示均衡器各段增益（31 Hz … 16 kHz）。
   'music_eq_gains',
+  // double（默认 0）：音效前级 dB（±12）。
+  'music_eq_preamp_db',
+  // String（默认 '' = 没选过）：选中的均衡预设（MusicEqPreset.wire）。
+  'music_eq_preset',
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
@@ -555,6 +578,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
   // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
   'music_online_sources',
+  // String（MusicPluginQuality.wire：standard / high / lossless / hires；缺省 = 没单独
+  // 设过，由 music_server_max_bitrate 反推）：在线插件取流音质档。跨设备。
+  'music_plugin_quality',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
@@ -718,6 +744,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_card_appearance',
   // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
   'srs_goal_daily_reviews',
+  // String（JSON）：复习首页「已配对设备」的落盘缓存——每台主机上次读到的牌组摘要（远程复习线格式）、
+  // 读到的时刻与能力探测时刻（kSrsHomePairedCachePrefKey，srs_remote_review_page.dart）。设备本地，不含凭据。
+  'srs_home_paired_cache',
   'srs_import_anki_options',
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
@@ -983,6 +1012,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
+  // string（JSON，默认空 = 关）：字幕遮布（盖住烧进画面的硬字幕），见
+  // VideoSubtitleMaskConfig：开关 + 画面比例矩形 + 外观 + 强度。
+  'video_subtitle_mask',
   // string（默认 auto）：生成日语字幕的 MOSS 后端 auto/cuda/vulkan/cpu；设备本地。
   'video_subtitle_moss_backend',
   'video_subtitle_obscure_hide',
@@ -1122,6 +1154,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'ai_providers',
   // 联网搜索配置 JSON 里的 Brave API key。
   'ai_web_search',
+  // 外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+  'ai_mcp_client_servers',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

@@ -16,56 +16,31 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 /// 滚不动」才到边界。触摸看手势起点是否已在边界，滚轮看相邻拍位置是否无变化 / 竖排
 /// 缓动 target 是否被 clamp 卡死。本测试锁纯函数判据 + JS 接线（防回退到瞬时几何）。
 void main() {
-  group('touchBoundaryCrossDir：手势起点在边界才跨章', () {
+  // TODO-656 语义（标准档）：只有 touchstart 时正文已贴边界，才记下贴边界处的手指坐标；
+  // 从章中滚到边界的手势两个 pinned 都是 null。手指坐标 = 沿前进方向（横排 -y）。
+  group('continuousBoundaryCrossDir：手势起点在边界才跨章（标准档）', () {
+    String? cross(String dir, {double? fwd, double? back, double end = 0}) =>
+        ReaderPaginationScripts.continuousBoundaryCrossDir(
+          gestureDir: dir,
+          endFingerMain: end,
+          pinnedForwardAt: fwd,
+          pinnedBackwardAt: back,
+          pullPx: 20,
+        );
     test('从章中向上滑到顶：起点不在边界 → 不跨章（消除提前跨章）', () {
-      expect(
-        ReaderPaginationScripts.touchBoundaryCrossDir(
-          gestureDir: 'backward',
-          downScrollPos: 400,
-          scrollMax: 2000,
-        ),
-        isNull,
-      );
+      expect(cross('backward', end: -300), isNull);
     });
     test('已在章首再向上滑：起点在边界 → 跨上一章', () {
-      expect(
-        ReaderPaginationScripts.touchBoundaryCrossDir(
-          gestureDir: 'backward',
-          downScrollPos: 1,
-          scrollMax: 2000,
-        ),
-        'backward',
-      );
+      expect(cross('backward', back: 0, end: -120), 'backward');
     });
     test('已在章末再向前滑：起点在边界 → 跨下一章', () {
-      expect(
-        ReaderPaginationScripts.touchBoundaryCrossDir(
-          gestureDir: 'forward',
-          downScrollPos: 1999,
-          scrollMax: 2000,
-        ),
-        'forward',
-      );
+      expect(cross('forward', fwd: 0, end: 120), 'forward');
     });
     test('在章末向后滑回看：方向与边界不匹配 → 不跨章', () {
-      expect(
-        ReaderPaginationScripts.touchBoundaryCrossDir(
-          gestureDir: 'backward',
-          downScrollPos: 1999,
-          scrollMax: 2000,
-        ),
-        isNull,
-      );
+      expect(cross('backward', fwd: 0, end: -120), isNull);
     });
     test('在章首向前滑：方向与边界不匹配 → 不跨章', () {
-      expect(
-        ReaderPaginationScripts.touchBoundaryCrossDir(
-          gestureDir: 'forward',
-          downScrollPos: 1,
-          scrollMax: 2000,
-        ),
-        isNull,
-      );
+      expect(cross('forward', back: 0, end: 120), isNull);
     });
   });
 

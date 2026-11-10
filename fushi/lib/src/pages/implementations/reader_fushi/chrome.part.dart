@@ -2196,8 +2196,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
             // 底栏槽位里的按钮并进播放条右端（播放条在场时底栏只有这一条），
-            // 状态读数仍在最右。
+            // 状态读数仍在最右——它单独走 trailingStatus，拿到条尾真实剩余宽度
+            // 按实测宽度降级 / 缩放，不进按钮那段横向滚动容器（那里宽度无界）。
             trailing: _buildAudiobookBarTrailing(),
+            trailingStatus: _playbackStatusInline
+                ? _buildBarStatusText()
+                : null,
             showSettingsButton: !_desktopChromeEnabled,
           ),
         );
@@ -2230,15 +2234,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
         ),
     ];
-    final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
-    if (buttons.isEmpty) return status;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        ...buttons,
-        if (status != null) ...<Widget>[const SizedBox(width: 8), status],
-      ],
-    );
+    if (buttons.isEmpty) return null;
+    return Row(mainAxisSize: MainAxisSize.min, children: buttons);
   }
 
   /// 2026-10 体验优化：[AudiobookPlayBar] 自带的传输键（上一句 / 播放暂停 /
@@ -3725,6 +3722,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     totalChars: _progressTotalChars,
     showTimer: ReaderFushiSource.instance.showReadingTimer,
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    showChars: ReaderFushiSource.instance.showSessionChars,
+    showSpeed: ReaderFushiSource.instance.showCharsPerHour,
     textColor: _themeTextColor(),
     // 悬浮工具栏样式：读数是一枚浮在正文上的小胶囊（与悬浮工具栏同色），整条
     // 带透明，竖排 / 横排都没有实体底栏。
@@ -3732,10 +3731,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ? _floatingToolbarColors().container!
         : _chromeSurfaceColor(),
     floating: _floatingToolbars,
+    resting: readerStatusFooterResting(
+      floating: _bottomBarFloating,
+      persistent: _statusFooterPersistent,
+      transientVisible: _chromeTransientVisible,
+    ),
     onTap: _anyChromeFloating
         ? () => _handleFloatingChromeReveal()
         : _toggleChrome,
-    // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
+    // 计时段 = 手动暂停 / 继续；字数 / 字每时 / 进度 = 打开统计浮层。
     onTapTracker: _toggleStudyClockManualPause,
     onTapProgress: _openReadingStatistics,
   );
@@ -3812,8 +3816,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     totalChars: _progressTotalChars,
     showTimer: ReaderFushiSource.instance.showReadingTimer,
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    showChars: ReaderFushiSource.instance.showSessionChars,
+    showSpeed: ReaderFushiSource.instance.showCharsPerHour,
     textColor: _themeTextColor(),
     onToggleTimer: _toggleStudyClockManualPause,
+    onOpenStats: _openReadingStatistics,
   );
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建

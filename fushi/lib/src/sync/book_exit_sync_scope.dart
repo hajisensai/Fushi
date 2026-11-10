@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 /// 背景与根因：退出书走 [BaseSourcePageState.onWillPop] →
 /// `triggerAutoSyncAfterClose`（fire-and-forget，返回 void）→ 内部 `_runAutoSync`
 /// 是一个**游离的 async Future**。它跑在事件循环里、由 `sync_auto_trigger.dart` 的
-/// 进程级 `_autoSyncMutex` 串行化，本身不阻塞 `onWillPop` 返回，也与触发它的页面
+/// 资源锁表 `syncResourceLocks` 按「通道 + 这本书」排队，本身不阻塞 `onWillPop` 返回，也与触发它的页面
 /// 实例无关——页面 widget `dispose()` 之后它照样继续跑（Dart Future 不随 widget
 /// 销毁取消）。这正是 HSA（Hoshi-Reader-Android）的契约：退出书 fire-and-forget，
 /// export 与页面生命周期解耦，页面销毁后仍跑完。
@@ -19,7 +19,7 @@ import 'package:flutter/foundation.dart';
 /// 冲突」；但内容/统计/有声书等**尾随传输**仍可能被进程终止打成半截）。
 ///
 /// 本注册表把每个在飞的关书同步 Future 登记到一处 app-scope（进程级单例，等同于
-/// `_autoSyncMutex` 那样的顶层所有权——不依赖任何页面）。退出路径在 flush 数据后、
+/// `syncResourceLocks` 那样的顶层所有权——不依赖任何页面）。退出路径在 flush 数据后、
 /// `exit(0)` 前调用 [drain] **有界等待**这些 Future 落定，使关书同步要么跑完、要么
 /// 在上限内放行（绝不无限阻塞退出）。这与 `ExitFlushRegistry` 互补：后者 flush 的是
 /// 本地 Drift 写（≤2s、不碰网络），本表 drain 的是网络 export（容许更长上限）。
