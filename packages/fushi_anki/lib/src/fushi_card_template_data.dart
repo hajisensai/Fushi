@@ -74,6 +74,7 @@ const String kFushiCardFrontTemplate = r'''<!--
     }
   })();
 </script>
+<!--fushi-card-skeleton:02aa6ce886f04ad68f9842fbb47745fc8c46903241096b1ef49b948795203390-->
 ''';
 
 /// Fushi 卡片模板 · 背面。
@@ -415,6 +416,7 @@ const String kFushiCardBackTemplate = r'''<!--
     });
   })();
 </script>
+<!--fushi-card-skeleton:072345094542c604a65621d22635b9aa329a1de139e0db673281b244a28a7298-->
 ''';
 
 /// Fushi 卡片模板 · 样式。

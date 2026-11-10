@@ -80,6 +80,7 @@ bool ScreenOcrOverlay::CaptureMonitor(HMONITOR monitor,
       out->width = width;
       out->height = height;
       out->diagnostic = std::move(frame.detail);
+      out->via_dxgi = true;
       return true;
     }
     out->diagnostic = "dxgi path failed, fell back to gdi: " + frame.detail;
