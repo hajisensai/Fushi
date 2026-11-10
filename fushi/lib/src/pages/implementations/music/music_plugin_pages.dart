@@ -751,6 +751,49 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+/// 推荐页歌单 / 专辑栏目横排里最多直接列出的卡数；完整列表进「查看全部」网格页
+/// （[MusicPluginHomeSectionPage]）。与服务器来源那一排（`_ServerShelf`）同一上限。
+const int kMusicPluginShelfPreview = 12;
+
+/// 栏目横排要显示的条目：前 [kMusicPluginShelfPreview] 个。
+List<Object> musicPluginShelfPreview(List<Object> items) =>
+    items.length <= kMusicPluginShelfPreview
+    ? items
+    : items.take(kMusicPluginShelfPreview).toList();
+
+/// 歌单 / 专辑卡的展示要素与点开后的详情页。
+typedef _PluginCoverTarget = ({
+  String id,
+  String title,
+  String? cover,
+  String? subtitle,
+  Widget page,
+});
+
+/// [item] 是歌单 / 专辑时给出卡片要素；其它类型返回 null（不画卡）。
+_PluginCoverTarget? _pluginCoverTarget(
+  MusicPluginManifest manifest,
+  Object item,
+) => switch (item) {
+  MusicPluginPlaylist p => (
+    id: 'playlist-${p.id}',
+    title: p.title,
+    cover: p.coverUrl,
+    subtitle: p.owner,
+    page: MusicPluginCollectionPage.playlist(manifest: manifest, playlist: p),
+  ),
+  MusicPluginAlbum a => (
+    id: 'album-${a.id}',
+    title: a.title,
+    cover: a.coverUrl,
+    subtitle: a.artists.isEmpty
+        ? null
+        : a.artists.map((MusicPluginArtistRef r) => r.name).join(' / '),
+    page: MusicPluginCollectionPage.album(manifest: manifest, album: a),
+  ),
+  _ => null,
+};
+
 /// 横向一排封面卡（推荐歌单 / 榜单 / 新碟）。
 class _CoverCarousel extends ConsumerWidget {
   const _CoverCarousel({
@@ -780,29 +823,15 @@ class _CoverCarousel extends ConsumerWidget {
               int i,
             ) {
               final Object item = items[i];
-              final (
-                String id,
-                String title,
-                String? cover,
-                Widget page,
-              ) = switch (item) {
-                MusicPluginPlaylist p => (
-                  'playlist-${p.id}',
-                  p.title,
-                  p.coverUrl,
-                  MusicPluginCollectionPage.playlist(
-                    manifest: manifest,
-                    playlist: p,
-                  ),
-                ),
-                MusicPluginAlbum a => (
-                  'album-${a.id}',
-                  a.title,
-                  a.coverUrl,
-                  MusicPluginCollectionPage.album(manifest: manifest, album: a),
-                ),
-                _ => ('', '', null, const SizedBox.shrink()),
-              };
+              final _PluginCoverTarget? target = _pluginCoverTarget(
+                manifest,
+                item,
+              );
+              if (target == null) return const SizedBox.shrink();
+              final String id = target.id;
+              final String title = target.title;
+              final String? cover = target.cover;
+              final Widget page = target.page;
               return musicWithContextMenu(
                 musicPluginEntityMenu(context, ref, manifest, item),
                 SizedBox(
@@ -835,6 +864,115 @@ class _CoverCarousel extends ConsumerWidget {
                 ),
               );
             }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 推荐页歌单 / 专辑栏目的「查看全部」：该栏目全部条目的封面网格，点卡片进专辑 /
+/// 歌单详情（与横排卡同一个去处、同一份右键 / 长按菜单）。几何与服务器曲库专辑
+/// 网格同一套（[musicAlbumGridDelegate]）。
+class MusicPluginHomeSectionPage extends StatelessWidget {
+  const MusicPluginHomeSectionPage({
+    super.key,
+    required this.manifest,
+    required this.section,
+  });
+
+  final MusicPluginManifest manifest;
+  final MusicPluginHomeSection section;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Object> items = section.items
+        .where((Object o) => _pluginCoverTarget(manifest, o) != null)
+        .toList();
+    return musicBrowseScaffold(
+      context,
+      title: section.title,
+      // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
+      body: Builder(
+        builder: (BuildContext context) {
+          final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+          if (items.isEmpty) {
+            return Center(
+              child: FushiPlaceholderMessage(
+                icon: FushiIcons.music,
+                message: t.music_plugin_home_empty,
+              ),
+            );
+          }
+          return ShelfCoverMaterialScope(
+            material: ShelfCoverMaterial.glossyAlbum,
+            child: FushiEntranceScope(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    GridView.builder(
+                      key: ValueKey<String>(
+                        'music-plugin-section-grid-${manifest.id}-${section.id}',
+                      ),
+                      padding: withBottomSafeInset(
+                        context,
+                        EdgeInsets.fromLTRB(
+                          tokens.spacing.page,
+                          MediaQuery.paddingOf(context).top +
+                              tokens.spacing.gap,
+                          tokens.spacing.page,
+                          tokens.spacing.section,
+                        ),
+                      ),
+                      gridDelegate: musicAlbumGridDelegate(
+                        context,
+                        constraints.maxWidth,
+                      ),
+                      itemCount: items.length,
+                      itemBuilder: fushiStaggeredItemBuilder(
+                        (BuildContext context, int i) =>
+                            _PluginGridCard(manifest: manifest, item: items[i]),
+                      ),
+                    ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 「查看全部」网格里的一张歌单 / 专辑卡：唱片封面 + [ShelfCardMeta]（与服务器专辑卡
+/// [MusicServerAlbumCard] 同一构成，网格行高按同一份文字块算）。
+class _PluginGridCard extends ConsumerWidget {
+  const _PluginGridCard({required this.manifest, required this.item});
+
+  final MusicPluginManifest manifest;
+  final Object item;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final _PluginCoverTarget? target = _pluginCoverTarget(manifest, item);
+    if (target == null) return const SizedBox.shrink();
+    return musicWithContextMenu(
+      musicPluginEntityMenu(context, ref, manifest, item),
+      FushiHoverLift(
+        key: ValueKey<String>('music-plugin-grid-card-${target.id}'),
+        scale: kMusicHoverLiftScale,
+        builder: (BuildContext context, bool _) => shelfCoverCard(
+          onTap: () => unawaited(_push(context, target.page)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              AspectRatio(
+                aspectRatio: kShelfAlbumAspectRatio,
+                child: ShelfCoverFrame(
+                  child: MusicCover(coverPath: target.cover),
+                ),
+              ),
+              ShelfCardMeta(title: target.title, subtitle: target.subtitle),
+            ],
           ),
         ),
       ),
@@ -1092,6 +1230,23 @@ class _MusicPluginRecommendViewState
                   icon: const FushiIcon(FushiIcons.play),
                   label: Text(t.music_play_all),
                 ),
+              )
+            else
+              // 歌单 / 专辑栏目：与服务器来源那一排（`_ServerShelf`）同一个出口，
+              // 进网格页看该栏目的完整列表（含被主卡 / 榜单卡占去的条目）。
+              FushiPressScale(
+                child: FushiTextButton(
+                  key: ValueKey<String>(
+                    'music-plugin-home-view-all-${m.id}-${sec.id}',
+                  ),
+                  onPressed: () => unawaited(
+                    _push(
+                      context,
+                      MusicPluginHomeSectionPage(manifest: m, section: sec),
+                    ),
+                  ),
+                  child: Text(t.music_sources_view_all),
+                ),
               ),
           ],
         ),
@@ -1106,7 +1261,7 @@ class _MusicPluginRecommendViewState
         MusicPluginHomeKind.albums => _CoverCarousel(
           key: ValueKey<String>('music-plugin-home-${m.id}-${sec.id}'),
           manifest: m,
-          items: items,
+          items: musicPluginShelfPreview(items),
         ),
       });
     }
