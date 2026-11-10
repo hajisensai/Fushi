@@ -13,7 +13,8 @@ import 'package:test/test.dart';
 ///
 /// 守卫两件事：
 /// 1) 三个导入字幕/对齐选择器走 `pickSystemFilePath`，且不再走 `pickRealFilePath`。
-/// 2) 视频本体 `_pickVideo` **仍**走 `pickRealFilePath`（它以绝对路径引用、不复制，SAF
+/// 2) 视频本体 `_pickVideo` **仍**走真实路径入口（BUG-4243 起是带出处的
+///    `pickRealFilePathDetailed`）（它以绝对路径引用、不复制，SAF
 ///    cache 路径会悬空——这是 board 1112/TODO-949 的真实修复，不能连同字幕一起回退）。
 void main() {
   group('BUG-677 subtitle import reverts to system file picker', () {
@@ -33,7 +34,7 @@ void main() {
           reason: '视频外挂字幕导入必须走系统文件选择器（board 1360）',
         );
         expect(
-          body.contains('pickRealFilePath('),
+          RegExp(r'pickRealFilePath(Detailed)?\(').hasMatch(body),
           isFalse,
           reason: '不得再走真实路径浏览器（board 1360 回退）',
         );
@@ -56,7 +57,7 @@ void main() {
           reason: '书籍/有声书字幕导入必须走系统文件选择器（board 1360）',
         );
         expect(
-          body.contains('pickRealFilePath('),
+          RegExp(r'pickRealFilePath(Detailed)?\(').hasMatch(body),
           isFalse,
           reason: '不得再走真实路径浏览器（board 1360 回退）',
         );
@@ -79,7 +80,7 @@ void main() {
           reason: '有声书对齐字幕/SMIL/JSON 导入必须走系统文件选择器（board 1360）',
         );
         expect(
-          body.contains('pickRealFilePath('),
+          RegExp(r'pickRealFilePath(Detailed)?\(').hasMatch(body),
           isFalse,
           reason: '不得再走真实路径浏览器（board 1360 回退）',
         );
@@ -92,12 +93,19 @@ void main() {
         'Future<void> _pickVideo()',
       );
       expect(body, isNotEmpty, reason: '找不到 video _pickVideo');
+      // BUG-4243 起走带出处的同一入口 pickRealFilePathDetailed（pickRealFilePath 只是
+      // 丢出处的薄封装），出处为临时副本时落库前挪进持久目录。
       expect(
-        body.contains('pickRealFilePath('),
+        body.contains('pickRealFilePathDetailed('),
         isTrue,
         reason:
             '视频本体以绝对路径引用不复制，SAF cache 路径会悬空——必须保留真实路径'
             '浏览器（board 1112/TODO-949），不能连同字幕一起回退成系统选择器',
+      );
+      expect(
+        body.contains('pickSystemFilePath('),
+        isFalse,
+        reason: '视频本体不得回退成系统文件选择器（board 1112/TODO-949）',
       );
     });
 

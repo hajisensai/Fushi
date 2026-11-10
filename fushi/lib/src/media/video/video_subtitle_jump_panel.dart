@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 
@@ -394,6 +395,12 @@ const double _kM3eStarGap = 6;
 /// 行高亮色块（当前句 / 悬停）的圆角。行平铺在面板上、闲置不画底，不再是首尾
 /// 大圆角的分段卡。
 const double _kM3eRowRadius = 12;
+
+/// M3E 页头「全部 / 收藏」分段行：分段与右侧收藏计数之间的缝。
+const double _kFilterRowGap = 8;
+
+/// M3E 页头分段行右端导出按钮的固定边长（不可压缩，分段取宽时要先留给它）。
+const double _kFilterRowExportExtent = 36;
 
 /// 字幕列表行高的排版环境签名：这几项任一变化，同一句的行高就可能变。
 ///
@@ -2490,6 +2497,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       ),
     );
 
+    // 收藏档且宿主接了导出时，分段行右端有一枚固定宽的导出按钮。
+    final bool showExport =
+        _filter == VideoSubtitleListFilter.favorites &&
+        widget.onExportFavorites != null;
+
     // 「全部 / 收藏」贴合内容宽的分段控件，标签不换行。
     final Widget filter = FushiSegmentedButton<VideoSubtitleListFilter>(
       showSelectedIcon: false,
@@ -2648,60 +2660,82 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           const SizedBox(height: 8),
           SizedBox(
             height: 40,
-            child: Row(
-              children: <Widget>[
-                // 窄面板里分段可压缩（标签省略号），按钮高度 / 命中区不变，不右溢。
-                Flexible(child: filter),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _filter == VideoSubtitleListFilter.favorites
-                      ? Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: <Widget>[
-                            Flexible(
-                              child: Text(
-                                t.video_favorite_count(
-                                  count: _favoriteCueCount(cues),
+            // BUG-4249（反馈 RMq4uXplRf）：分段先按自身内容取宽，右侧收藏计数只拿剩下的。
+            // 旧写法 `Flexible(filter)` + `Expanded(计数)` 同为 flex 1，Row 把剩余宽度
+            // 对半分——分段最多只能拿半行，右侧空着（「全部」档）也让不出来。最窄 240
+            // 面板里每段只剩 ~51px，扣掉 24px 内边距放不下「全部」两个字，标签被省略成空胶囊。
+            // 分段的上限是整行减去缝与导出按钮（导出按钮固定宽、不可压，必须留给它），
+            // 真放不下时仍由分段自己按 [fushiSegmentWidths] 收窄，不右溢。
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) => Row(
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: math.max(
+                        0,
+                        box.maxWidth -
+                            _kFilterRowGap -
+                            (showExport ? _kFilterRowExportExtent : 0),
+                      ),
+                    ),
+                    child: filter,
+                  ),
+                  const SizedBox(width: _kFilterRowGap),
+                  Expanded(
+                    child: _filter == VideoSubtitleListFilter.favorites
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: <Widget>[
+                              Flexible(
+                                child: Text(
+                                  t.video_favorite_count(
+                                    count: _favoriteCueCount(cues),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelLarge
+                                      ?.copyWith(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
                               ),
-                            ),
-                            if (widget.onExportFavorites != null)
-                              FushiTooltip(
-                                message: t.video_subtitle_list_export_favorites,
-                                child: FushiIconButtonControl(
-                                  onPressed: _favoriteCueCount(cues) == 0
-                                      ? null
-                                      : () => widget.onExportFavorites!(
-                                          _favoriteCuesForExport(
-                                            widget.controller.cues,
+                              if (showExport)
+                                FushiTooltip(
+                                  message:
+                                      t.video_subtitle_list_export_favorites,
+                                  child: FushiIconButtonControl(
+                                    onPressed: _favoriteCueCount(cues) == 0
+                                        ? null
+                                        : () => widget.onExportFavorites!(
+                                            _favoriteCuesForExport(
+                                              widget.controller.cues,
+                                            ),
                                           ),
-                                        ),
-                                  style: IconButton.styleFrom(
-                                    fixedSize: const Size.square(36),
-                                    minimumSize: const Size.square(36),
-                                    padding: EdgeInsets.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  color: cs.onSurfaceVariant,
-                                  icon: const FushiIcon(
-                                    FushiIcons.share,
-                                    size: 20,
+                                    style: IconButton.styleFrom(
+                                      fixedSize: const Size.square(
+                                        _kFilterRowExportExtent,
+                                      ),
+                                      minimumSize: const Size.square(
+                                        _kFilterRowExportExtent,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    color: cs.onSurfaceVariant,
+                                    icon: const FushiIcon(
+                                      FushiIcons.share,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
+                            ],
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
             ),
           ),
           // 搜索：展开成 M3E 搜索栏（收起时不占高度）。
