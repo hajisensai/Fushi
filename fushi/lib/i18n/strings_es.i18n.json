@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Quitado de la videoteca",
   "video_online_mining_mode": "Creación de tarjetas con vídeo en línea",
   "video_online_mining_mode_background": "En segundo plano",
-  "video_online_mining_mode_background_hint": "La ventana marca la tarjeta como añadida de inmediato y el vídeo sigue; el clip se prepara y se envía a Anki en segundo plano.",
+  "video_online_mining_mode_background_hint": "Al pulsar Añadir, la ventana se cierra y el vídeo sigue; el clip se prepara y se envía a Anki en segundo plano.",
   "video_online_mining_mode_deferred": "Después de ver",
   "video_online_mining_mode_deferred_hint": "Las tarjetas se preparan en segundo plano y se guardan en una lista; van a Anki cuando sales del reproductor o tocas Añadir todas. Quita antes las que no quieras.",
   "video_online_services_setup_description": "Las cuentas y claves API opcionales mejoran la identificación de videos y la búsqueda de subtítulos. Puedes reproducir sin ellas.",

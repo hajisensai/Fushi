@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Aus der Videobibliothek entfernt",
   "video_online_mining_mode": "Mining von Online-Videos",
   "video_online_mining_mode_background": "Im Hintergrund",
-  "video_online_mining_mode_background_hint": "Das Popup markiert die Karte sofort als hinzugefügt und lässt das Video weiterlaufen; der Clip wird im Hintergrund vorbereitet und an Anki gesendet.",
+  "video_online_mining_mode_background_hint": "Nach dem Tippen auf Hinzufügen schließt sich das Popup und das Video läuft weiter; der Clip wird im Hintergrund vorbereitet und an Anki gesendet.",
   "video_online_mining_mode_deferred": "Nach dem Schauen",
   "video_online_mining_mode_deferred_hint": "Karten werden im Hintergrund vorbereitet und in einer Liste gehalten; sie gehen an Anki, wenn du den Player verlässt oder auf „Alle hinzufügen“ tippst. Entferne vorher alle, die du nicht möchtest.",
   "video_online_services_setup_description": "Optionale Konten und API-Schlüssel verbessern Videoerkennung und Untertitelsuche. Die Wiedergabe funktioniert auch ohne sie.",

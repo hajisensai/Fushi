@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Убрано из видеотеки",
   "video_online_mining_mode": "Создание карточек из онлайн-видео",
   "video_online_mining_mode_background": "В фоне",
-  "video_online_mining_mode_background_hint": "Окно сразу помечает карточку как добавленную, и видео продолжает идти; клип готовится и отправляется в Anki в фоне.",
+  "video_online_mining_mode_background_hint": "После нажатия «Добавить» окно сразу закрывается, а видео продолжает идти; клип готовится и отправляется в Anki в фоне.",
   "video_online_mining_mode_deferred": "После просмотра",
   "video_online_mining_mode_deferred_hint": "Карточки готовятся в фоне и хранятся в списке; они попадают в Anki, когда вы выходите из плеера или нажимаете «Добавить все». Сначала удалите ненужные.",
   "video_online_services_setup_description": "Необязательные аккаунты и ключи API улучшают распознавание видео и поиск субтитров. Воспроизведение работает и без них.",

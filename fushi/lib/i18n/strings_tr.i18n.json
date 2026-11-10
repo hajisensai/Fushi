@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Video kitaplığından kaldırıldı",
   "video_online_mining_mode": "Çevrimiçi video kart oluşturma",
   "video_online_mining_mode_background": "Arka planda",
-  "video_online_mining_mode_background_hint": "Açılır pencere kartı hemen eklenmiş olarak işaretler ve videoyu sürdürür; klip arka planda hazırlanıp Anki'ye gönderilir.",
+  "video_online_mining_mode_background_hint": "Ekle'ye dokunduktan sonra açılır pencere kapanır ve video devam eder; klip arka planda hazırlanıp Anki'ye gönderilir.",
   "video_online_mining_mode_deferred": "İzledikten sonra",
   "video_online_mining_mode_deferred_hint": "Kartlar arka planda hazırlanır ve bir listede tutulur; oynatıcıdan çıktığınızda veya Tümünü ekle'ye dokunduğunuzda Anki'ye gider. İstemediklerinizi önce kaldırın.",
   "video_online_services_setup_description": "İsteğe bağlı hesaplar ve API anahtarları video tanımlamayı ve altyazı aramayı iyileştirebilir. Temel oynatma bunlar olmadan da çalışır.",

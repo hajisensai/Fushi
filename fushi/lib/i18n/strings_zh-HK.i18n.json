@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "已移出媒體庫",
   "video_online_mining_mode": "線上影片製卡",
   "video_online_mining_mode_background": "背景製卡",
-  "video_online_mining_mode_background_hint": "彈窗立即顯示已加入、影片照常播放，媒體在背景準備並寫入 Anki。",
+  "video_online_mining_mode_background_hint": "點制卡後彈窗立即關閉、影片照常播放，媒體在背景準備並寫入 Anki。",
   "video_online_mining_mode_deferred": "看完再製卡",
   "video_online_mining_mode_deferred_hint": "背景準備好媒體後先放進待製卡清單，離開播放頁或按「全部寫入」時統一寫入 Anki，寫入前可刪掉點錯的。",
   "video_online_services_setup_description": "按需設定帳戶或 API 金鑰，可增強檔案識別和字幕搜尋。基本播放不受影響。",

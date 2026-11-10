@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "비디오 라이브러리에서 제거했습니다",
   "video_online_mining_mode": "온라인 비디오 마이닝",
   "video_online_mining_mode_background": "백그라운드에서",
-  "video_online_mining_mode_background_hint": "팝업이 카드를 즉시 추가됨으로 표시하고 비디오를 계속 재생하며, 클립은 백그라운드에서 준비되어 Anki로 전송됩니다.",
+  "video_online_mining_mode_background_hint": "추가를 누르면 팝업이 바로 닫히고 비디오가 계속 재생되며, 클립은 백그라운드에서 준비되어 Anki로 전송됩니다.",
   "video_online_mining_mode_deferred": "시청 후",
   "video_online_mining_mode_deferred_hint": "카드는 백그라운드에서 준비되어 목록에 보관되며, 플레이어를 나가거나 모두 추가를 누르면 Anki로 전송됩니다. 그 전에 원하지 않는 카드는 제거하세요.",
   "video_online_services_setup_description": "선택적으로 계정이나 API 키를 설정하면 영상 식별과 자막 검색을 개선할 수 있습니다. 기본 재생에는 필요하지 않습니다.",

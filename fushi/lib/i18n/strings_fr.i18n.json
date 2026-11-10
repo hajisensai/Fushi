@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Retiré de la vidéothèque",
   "video_online_mining_mode": "Création de cartes depuis une vidéo en ligne",
   "video_online_mining_mode_background": "En arrière-plan",
-  "video_online_mining_mode_background_hint": "La fenêtre marque aussitôt la carte comme ajoutée et la vidéo continue ; l'extrait est préparé et envoyé à Anki en arrière-plan.",
+  "video_online_mining_mode_background_hint": "Après avoir appuyé sur Ajouter, la fenêtre se ferme et la vidéo continue ; l'extrait est préparé et envoyé à Anki en arrière-plan.",
   "video_online_mining_mode_deferred": "Après le visionnage",
   "video_online_mining_mode_deferred_hint": "Les cartes sont préparées en arrière-plan et conservées dans une liste ; elles partent dans Anki quand vous quittez le lecteur ou touchez Tout ajouter. Retirez d'abord celles dont vous ne voulez pas.",
   "video_online_services_setup_description": "Des comptes et clés API facultatifs améliorent l’identification des vidéos et la recherche de sous-titres. La lecture fonctionne sans eux.",

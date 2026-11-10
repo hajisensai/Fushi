@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "تمت الإزالة من مكتبة الفيديو",
   "video_online_mining_mode": "استخراج الفيديو عبر الإنترنت",
   "video_online_mining_mode_background": "في الخلفية",
-  "video_online_mining_mode_background_hint": "تعلّم النافذة البطاقة كمضافة فورًا وتواصل الفيديو؛ ويُجهَّز المقطع ويُرسل إلى Anki في الخلفية.",
+  "video_online_mining_mode_background_hint": "بعد النقر على «إضافة» تُغلق النافذة ويستمر الفيديو؛ ويُجهَّز المقطع ويُرسل إلى Anki في الخلفية.",
   "video_online_mining_mode_deferred": "بعد المشاهدة",
   "video_online_mining_mode_deferred_hint": "تُجهَّز البطاقات في الخلفية وتُحفظ في قائمة؛ وتُرسل إلى Anki عند مغادرة المشغّل أو الضغط على «إضافة الكل». أزل ما لا تريده أولًا.",
   "video_online_services_setup_description": "يمكن للحسابات ومفاتيح API الاختيارية تحسين التعرّف على الفيديو والبحث عن الترجمات. يعمل التشغيل الأساسي بدونها.",

@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "นำออกจากคลังวิดีโอแล้ว",
   "video_online_mining_mode": "การสร้างการ์ดจากวิดีโอออนไลน์",
   "video_online_mining_mode_background": "ในเบื้องหลัง",
-  "video_online_mining_mode_background_hint": "ป๊อปอัปทำเครื่องหมายว่าเพิ่มการ์ดแล้วทันทีและวิดีโอเล่นต่อ คลิปจะถูกเตรียมและส่งไป Anki ในเบื้องหลัง",
+  "video_online_mining_mode_background_hint": "หลังแตะเพิ่ม ป๊อปอัปจะปิดทันทีและวิดีโอเล่นต่อ คลิปจะถูกเตรียมและส่งไป Anki ในเบื้องหลัง",
   "video_online_mining_mode_deferred": "หลังดูจบ",
   "video_online_mining_mode_deferred_hint": "การ์ดจะถูกเตรียมในเบื้องหลังและเก็บไว้ในรายการ จะส่งไป Anki เมื่อคุณออกจากเครื่องเล่นหรือแตะ เพิ่มทั้งหมด ลบอันที่ไม่ต้องการก่อน",
   "video_online_services_setup_description": "บัญชีและคีย์ API เสริมช่วยปรับปรุงการระบุวิดีโอและค้นหาคำบรรยาย การเล่นพื้นฐานใช้งานได้โดยไม่ต้องตั้งค่า",

@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Đã xóa khỏi thư viện video",
   "video_online_mining_mode": "Tạo thẻ từ video trực tuyến",
   "video_online_mining_mode_background": "Trong nền",
-  "video_online_mining_mode_background_hint": "Cửa sổ tra từ đánh dấu thẻ đã thêm ngay và để video tiếp tục; clip được chuẩn bị và gửi tới Anki trong nền.",
+  "video_online_mining_mode_background_hint": "Sau khi nhấn Thêm, cửa sổ tra từ đóng ngay và video tiếp tục; clip được chuẩn bị và gửi tới Anki trong nền.",
   "video_online_mining_mode_deferred": "Sau khi xem",
   "video_online_mining_mode_deferred_hint": "Thẻ được chuẩn bị trong nền và giữ trong một danh sách; chúng được gửi tới Anki khi bạn rời trình phát hoặc nhấn Thêm tất cả. Hãy xóa những thẻ không muốn trước.",
   "video_online_services_setup_description": "Tài khoản và khóa API tùy chọn giúp cải thiện nhận diện video và tìm phụ đề. Phát video cơ bản không cần chúng.",

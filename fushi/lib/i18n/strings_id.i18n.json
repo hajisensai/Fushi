@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Dihapus dari pustaka video",
   "video_online_mining_mode": "Mining video online",
   "video_online_mining_mode_background": "Di latar belakang",
-  "video_online_mining_mode_background_hint": "Popup langsung menandai kartu sebagai ditambahkan dan video terus berjalan; klip disiapkan dan dikirim ke Anki di latar belakang.",
+  "video_online_mining_mode_background_hint": "Setelah Anda mengetuk Tambah, popup langsung tertutup dan video terus berjalan; klip disiapkan dan dikirim ke Anki di latar belakang.",
   "video_online_mining_mode_deferred": "Setelah menonton",
   "video_online_mining_mode_deferred_hint": "Kartu disiapkan di latar belakang dan disimpan dalam daftar; dikirim ke Anki saat Anda meninggalkan pemutar atau mengetuk Tambah semua. Hapus yang tidak diinginkan terlebih dahulu.",
   "video_online_services_setup_description": "Akun dan kunci API opsional dapat meningkatkan identifikasi video dan pencarian takarir. Pemutaran dasar tetap berjalan tanpanya.",

@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Rimosso dalla videoteca",
   "video_online_mining_mode": "Mining da video online",
   "video_online_mining_mode_background": "In background",
-  "video_online_mining_mode_background_hint": "Il popup segna subito la carta come aggiunta e il video continua; la clip viene preparata e inviata ad Anki in background.",
+  "video_online_mining_mode_background_hint": "Dopo aver toccato Aggiungi, il popup si chiude e il video continua; la clip viene preparata e inviata ad Anki in background.",
   "video_online_mining_mode_deferred": "Dopo la visione",
   "video_online_mining_mode_deferred_hint": "Le carte vengono preparate in background e tenute in un elenco; vanno ad Anki quando esci dal lettore o tocchi Aggiungi tutte. Rimuovi prima quelle che non vuoi.",
   "video_online_services_setup_description": "Account e chiavi API facoltativi migliorano l’identificazione dei video e la ricerca di sottotitoli. La riproduzione funziona anche senza.",
