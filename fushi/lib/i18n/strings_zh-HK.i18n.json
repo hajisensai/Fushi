@@ -6145,6 +6145,7 @@
   "music_queue_up_next": "Up next",
   "music_queue_up_next_empty": "Nothing queued after this track",
   "music_recent_plays_title": "Recently played",
+  "music_remote_server_missing": "Server not set up on this device",
   "music_replaygain_hint": "Album gain when playing an album in order, track gain otherwise",
   "music_replaygain_preamp_title": "ReplayGain pre-amp",
   "music_replaygain_title": "ReplayGain",
