@@ -39,6 +39,7 @@ import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame;
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -878,28 +879,46 @@ class MangaChromeStatusChip extends StatelessWidget {
   }
 }
 
-/// 整卷 OCR 状态胶囊（`OCR 19/182 · DirectML`），挂在页面右上角、顶栏下沿。
+/// 贴边浮标藏到屏幕外的那段宽度：胶囊右侧圆角整段推出屏幕，露在屏内的只剩
+/// 左侧圆角 + 平直右缘，看上去是从屏幕边上长出来的小标签。
+const double kMangaOcrDockedTuck = 14;
+
+/// 整卷 OCR 进度胶囊（`OCR 19/182 · DirectML`），挂在页面右上角、顶栏下沿。
 ///
 /// 不放进顶栏：悬浮顶栏默认收起、用户也会隐藏界面，进度却要一直看得见（对齐
 /// Mangatan / Chimahon）。MD3 = secondaryContainer tonal 胶囊 + Expressive 加载
 /// 指示（形变多边形）+ 有总数时底部一条波浪进度；Apple = 深色档玻璃胶囊。
-/// [warning] 用告警色（加速降级 / 没有可用引擎，BUG-1163：降级必须看得见）。
-/// 浮标只是读数，不吃指针事件。
+/// [warning] 用告警色（加速降级，BUG-1163：降级必须看得见）。
+///
+/// [docked] = 贴边形态（反馈 IpdWk54b_G）：只画加载指示 + [shortText] + 细进度条，
+/// 贴屏幕右缘，尽量少挡画面；完整读数 [text] 仍作语义标签。
+///
+/// 浮标只承载**进度**；OCR 报错走 [MangaOcrErrorNotice]，进度浮标被用户隐藏
+/// 时报错照常可见。浮标只是读数，不吃指针事件。
 class MangaOcrProgressBadge extends StatelessWidget {
   const MangaOcrProgressBadge({
     super.key,
     required this.text,
+    this.shortText,
     this.busy = true,
     this.warning = false,
     this.progress,
+    this.docked = false,
   });
 
+  /// 完整读数（完整形态显示它；贴边形态只作语义标签）。
   final String text;
+
+  /// 贴边形态显示的短读数（如 `12/40`）；null = 贴边时只画加载指示。
+  final String? shortText;
   final bool busy;
   final bool warning;
 
   /// 0..1 的整卷进度；null = 不画进度条（排队中 / 不知道总数）。
   final double? progress;
+
+  /// 贴屏幕右缘的紧凑形态。
+  final bool docked;
 
   @override
   Widget build(BuildContext context) {
@@ -911,85 +930,216 @@ class MangaOcrProgressBadge extends StatelessWidget {
             final Color fg = warning
                 ? colors.warning
                 : (colors.apple ? colors.foreground : colors.onTonal);
-            final double? value = progress;
-            final Widget content = Padding(
-              padding: EdgeInsets.fromLTRB(
-                busy ? 6 : 14,
-                6,
-                14,
-                value == null ? 6 : 8,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      if (busy) ...<Widget>[
-                        FushiExpressiveLoadingIndicator(size: 24, color: fg),
-                        const SizedBox(width: 4),
-                      ],
-                      // 警告（没有可用引擎）要把原因和解决办法说全，窄屏上折成
-                      // 两行；进度读数恒一行。Flexible 让 maxLines / 省略号在
-                      // 有界宽度里真正生效。
-                      Flexible(
-                        child: Text(
-                          text,
-                          maxLines: warning ? 2 : 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: fg,
-                                fontWeight: FontWeight.w600,
-                                fontFeatures: const <FontFeature>[
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                        ),
-                      ),
+            return docked
+                ? _buildDocked(context, colors, fg)
+                : _buildFull(context, colors, fg);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _surface(MangaChromePalette colors, double radius, Widget content) {
+    if (colors.apple) {
+      return MangaChromeSurface(radius: radius, child: content);
+    }
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: warning
+            ? Color.alphaBlend(
+                colors.warning.withValues(alpha: 0.14),
+                colors.container,
+              )
+            : colors.badgeFill,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(radius)),
+          side: colors.eink || warning
+              ? BorderSide(color: warning ? colors.warning : colors.outline)
+              : BorderSide.none,
+        ),
+        shadows: colors.eink ? const <BoxShadow>[] : kElevationToShadow[2],
+      ),
+      child: content,
+    );
+  }
+
+  Widget _buildFull(BuildContext context, MangaChromePalette colors, Color fg) {
+    final double? value = progress;
+    final Widget content = Padding(
+      padding: EdgeInsets.fromLTRB(busy ? 6 : 14, 6, 14, value == null ? 6 : 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (busy) ...<Widget>[
+                FushiExpressiveLoadingIndicator(size: 24, color: fg),
+                const SizedBox(width: 4),
+              ],
+              // Flexible 让 maxLines / 省略号在有界宽度里真正生效。
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
                     ],
                   ),
-                  if (value != null) ...<Widget>[
-                    const SizedBox(height: 6),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 120),
-                      child: FushiLinearProgressIndicator(
-                        value: value.clamp(0.0, 1.0),
+                ),
+              ),
+            ],
+          ),
+          if (value != null) ...<Widget>[
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 120),
+              child: FushiLinearProgressIndicator(
+                value: value.clamp(0.0, 1.0),
+                color: fg,
+                backgroundColor: fg.withValues(alpha: 0.22),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    // IntrinsicWidth：胶囊宽随读数走，进度条（stretch）跟读数一样宽，
+    // 而不是在 Align 的宽松约束里撑满 360。
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
+      child: IntrinsicWidth(child: _surface(colors, 20, content)),
+    );
+  }
+
+  Widget _buildDocked(
+    BuildContext context,
+    MangaChromePalette colors,
+    Color fg,
+  ) {
+    final double? value = progress;
+    final String? label = shortText;
+    final Widget content = Padding(
+      // 右侧多留 [kMangaOcrDockedTuck]：那段连同右侧圆角一起推出屏幕。
+      padding: EdgeInsets.fromLTRB(
+        busy ? 4 : 10,
+        4,
+        8 + kMangaOcrDockedTuck,
+        value == null ? 4 : 6,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (busy) FushiExpressiveLoadingIndicator(size: 18, color: fg),
+              if (busy && label != null) const SizedBox(width: 2),
+              if (label != null)
+                Text(
+                  label,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (value != null) ...<Widget>[
+            const SizedBox(height: 4),
+            // 贴边标签只有短读数那么宽：用平直细条（wavy: false 高度恰为线宽），
+            // 波浪的上下振幅余量在这么窄的标签里只会把它撑高。
+            FushiLinearProgressIndicator(
+              value: value.clamp(0.0, 1.0),
+              color: fg,
+              backgroundColor: fg.withValues(alpha: 0.22),
+              wavy: false,
+            ),
+          ],
+        ],
+      ),
+    );
+    // 胶囊整体右移 tuck：右侧圆角落在本框外被 ClipRect 剪掉，框本身贴屏幕右缘。
+    return Semantics(
+      label: text,
+      excludeSemantics: true,
+      child: ClipRect(
+        child: Transform.translate(
+          offset: const Offset(kMangaOcrDockedTuck, 0),
+          child: IntrinsicWidth(child: _surface(colors, 14, content)),
+        ),
+      ),
+    );
+  }
+}
+
+/// 漫画阅读器的 OCR 报错提示（没有可用引擎等），挂在右上角、进度浮标旁。
+///
+/// 与 [MangaOcrProgressBadge] 是两个独立部件：报错不是进度的一种状态，用户把进度
+/// 浮标隐藏 / 贴边后报错照样完整显示（反馈 IpdWk54b_G，「报错是报错，和进度条
+/// 没关系」）。告警色 + 警告图标，文案折两行把原因和解决办法说全；只是读数，
+/// 不吃指针事件。
+class MangaOcrErrorNotice extends StatelessWidget {
+  const MangaOcrErrorNotice({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: FushiAppleDarkTier(
+        child: Builder(
+          builder: (BuildContext context) {
+            final MangaChromePalette colors = MangaChromePalette.of(context);
+            final Color fg = colors.warning;
+            final Widget content = Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 14, 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  FushiIcon(FushiIcons.warning, size: 18, color: fg),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: fg,
-                        backgroundColor: fg.withValues(alpha: 0.22),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
+                  ),
                 ],
               ),
             );
-            // IntrinsicWidth：胶囊宽随读数走，进度条（stretch）跟读数一样宽，
-            // 而不是在 Align 的宽松约束里撑满 360。
-            return ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
-              child: IntrinsicWidth(
+            return Semantics(
+              liveRegion: true,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
                 child: colors.apple
                     ? MangaChromeSurface(radius: 20, child: content)
                     : DecoratedBox(
                         decoration: ShapeDecoration(
-                          color: warning
-                              ? Color.alphaBlend(
-                                  colors.warning.withValues(alpha: 0.14),
-                                  colors.container,
-                                )
-                              : colors.badgeFill,
+                          color: Color.alphaBlend(
+                            colors.warning.withValues(alpha: 0.14),
+                            colors.container,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: const BorderRadius.all(
                               Radius.circular(20),
                             ),
-                            side: colors.eink || warning
-                                ? BorderSide(
-                                    color: warning
-                                        ? colors.warning
-                                        : colors.outline,
-                                  )
-                                : BorderSide.none,
+                            side: BorderSide(color: colors.warning),
                           ),
                           shadows: colors.eink
                               ? const <BoxShadow>[]

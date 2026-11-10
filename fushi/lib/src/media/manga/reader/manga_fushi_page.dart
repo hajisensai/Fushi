@@ -183,6 +183,7 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -6937,17 +6938,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                         ),
                       ),
                     ),
-                  // OCR 进度浮标：顶栏下沿的右上角，不随顶栏收起（查词弹窗盖在
-                  // 它上面）。
-                  if (_buildOcrProgressBadge() case final Widget badge)
-                    Positioned(
-                      top:
-                          MediaQuery.paddingOf(context).top +
-                          kMangaChromeBarHeight,
-                      left: kMangaChromeEdgeInset + 4,
-                      right: kMangaChromeEdgeInset + 4,
-                      child: Align(alignment: Alignment.topRight, child: badge),
-                    ),
+                  // OCR 进度浮标 + 报错提示：顶栏下沿的右上角，不随顶栏收起
+                  // （查词弹窗盖在它们上面）。
+                  _buildOcrStatusCorner(),
                   // 顶栏 = 返回键 + 标题/页码 + 动作组。
                   //
                   // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
@@ -7334,10 +7327,87 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         : '${page + 1} / $pageCount';
   }
 
-  /// 右上角 OCR 进度浮标：整卷任务进度 `OCR 12/40 · DirectML`（BUG-1163：当前
-  /// 真正生效的推理后端常驻显示，降级时琥珀色）/ 排队中 / 没有可用引擎。
-  /// 与顶栏可见性无关——隐藏界面时进度也要看得见。
-  Widget? _buildOcrProgressBadge() {
+  /// 右上角 OCR 角落：进度浮标与报错提示是两个**独立**的部件，各自进出场。
+  ///
+  /// 进度浮标按偏好 `ocrProgressBadge` 完整 / 贴边 / 隐藏（反馈 IpdWk54b_G）；报错
+  /// 提示（没有可用引擎）不看这项——隐藏的是进度，报错照样要看得见。整卷 / 边看边
+  /// 识别的失败另走 [FushiToast]，同样不经过进度浮标。
+  Widget _buildOcrStatusCorner() {
+    final MangaOcrProgressBadgeStyle style =
+        _readerPreferences.ocrProgressBadge;
+    final Widget? badge = _buildOcrProgressBadge(
+      docked: style == MangaOcrProgressBadgeStyle.edge,
+    );
+    final Widget? error = _buildOcrErrorNotice();
+    final double inset = kMangaChromeEdgeInset + 4;
+    final EdgeInsets badgePadding = style == MangaOcrProgressBadgeStyle.edge
+        ? EdgeInsets.only(right: MediaQuery.paddingOf(context).right)
+        : EdgeInsets.only(left: inset, right: inset);
+    return Positioned(
+      top: MediaQuery.paddingOf(context).top + kMangaChromeBarHeight,
+      left: 0,
+      right: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          _ocrCornerSwitcher(
+            style == MangaOcrProgressBadgeStyle.hidden ? null : badge,
+            badgePadding,
+          ),
+          _ocrCornerSwitcher(
+            error,
+            EdgeInsets.only(
+              left: inset,
+              right: inset,
+              top: badge != null && style != MangaOcrProgressBadgeStyle.hidden
+                  ? 6
+                  : 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 角落部件的进出场：淡入淡出 + 纵向展开（另一颗随之平滑让位），时长走动效
+  /// token（减弱动态效果 / 墨水屏归零）。
+  Widget _ocrCornerSwitcher(Widget? child, EdgeInsets padding) {
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      reverseDuration: fushiMotionDuration(context, FushiMotion.short),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+        alignment: Alignment.topRight,
+        children: <Widget>[...previous, if (current != null) current],
+      ),
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          FadeTransition(
+            opacity: animation,
+            child: SizeTransition(
+              sizeFactor: animation,
+              axisAlignment: -1,
+              child: child,
+            ),
+          ),
+      child: child == null
+          ? const SizedBox.shrink(
+              key: ValueKey<String>('manga_ocr_corner_empty'),
+            )
+          : Padding(
+              key: ValueKey<Key?>(child.key),
+              padding: padding,
+              child: child,
+            ),
+    );
+  }
+
+  /// OCR 进度浮标：整卷任务进度 `OCR 12/40 · DirectML`（BUG-1163：当前真正生效的
+  /// 推理后端常驻显示，降级时琥珀色）/ 边看边识别中 / 排队中。只管进度；报错见
+  /// [_buildOcrErrorNotice]。[docked] = 贴边形态。与顶栏可见性无关——隐藏界面时
+  /// 进度也要看得见。
+  Widget? _buildOcrProgressBadge({required bool docked}) {
     if (!_chromeContentReady) return null;
     if (_wholeVolumeOcrRunning) {
       final MangaOcrAcceleration? accel = _wholeVolumeOcrAcceleration;
@@ -7351,33 +7421,45 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_ocr_acceleration_label'),
         text: accel == null ? progress : '$progress · ${accel.label}',
+        shortText: _wholeVolumeOcrTotal > 0
+            ? '$_wholeVolumeOcrDone/$_wholeVolumeOcrTotal'
+            : null,
         warning: accel?.degraded ?? false,
         progress: _wholeVolumeOcrTotal > 0
             ? _wholeVolumeOcrDone / _wholeVolumeOcrTotal
             : null,
+        docked: docked,
       );
     }
     if (_streamOcrBusy) {
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_stream_ocr_badge'),
         text: 'OCR · ${t.manga_ocr_wizard_running}',
+        docked: docked,
       );
     }
     if (_volumeOcrQueued) {
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_ocr_queued_badge'),
         text: 'OCR · ${t.manga_reader_ocr_queued}',
+        shortText: 'OCR',
         busy: false,
+        docked: docked,
       );
     }
+    return null;
+  }
+
+  /// OCR 报错提示：自动识别找不到可用引擎时常驻（直到改了引擎 / 排上任务）。与
+  /// 进度浮标互不依附，进度浮标隐藏 / 贴边时它照样完整显示。
+  Widget? _buildOcrErrorNotice() {
+    if (!_chromeContentReady) return null;
     if (_volumeOcrNoEngine &&
         !_volumeOcrSettled &&
         _readerPreferences.ocrTrigger != 'manual') {
-      return MangaOcrProgressBadge(
-        key: const ValueKey<String>('manga_ocr_no_engine_badge'),
+      return MangaOcrErrorNotice(
+        key: const ValueKey<String>('manga_ocr_no_engine_notice'),
         text: t.manga_reader_ocr_unavailable_short,
-        busy: false,
-        warning: true,
       );
     }
     return null;
