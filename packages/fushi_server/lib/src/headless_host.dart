@@ -82,6 +82,7 @@ import 'package:fushi_server/src/server_subtitle_backfill.dart';
 import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 当前待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。
 class PendingPairing {
@@ -373,8 +374,12 @@ class HeadlessHost {
     if (!await dictionaries.start()) {
       engineLog.logDiagnostic(
         'HeadlessHost',
-        '${dictionaries.unavailableReason}；互联查词不可用（放 libfushidicts_ffi 到 bin/../lib/ 或设 '
-            '$kFushiDictsLibEnv）',
+        tr(
+          '${dictionaries.unavailableReason}；互联查词不可用（放 libfushidicts_ffi 到 bin/../lib/ 或设 '
+              '$kFushiDictsLibEnv）',
+          '${dictionaries.unavailableReason}; interconnect lookups unavailable (put libfushidicts_ffi in bin/../lib/ or set '
+              '$kFushiDictsLibEnv)',
+        ),
       );
     }
 
@@ -413,7 +418,7 @@ class HeadlessHost {
             port: config.port,
             token: identity.hostToken,
             allowLan: !_loopbackOnly,
-            libraryService: buildLibraryService(),
+            libraryService: libraryService,
             mangaOcrJobs: ocrJobs,
             // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
             screenOcr: ScreenOcrHost(
@@ -618,7 +623,10 @@ class HeadlessHost {
     if (!_p2pAvailable()) {
       engineLog.logDiagnostic(
         'HeadlessHost',
-        'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+        tr(
+          'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+          'p2p: true but libfushi_p2p was not found (put it in bin/../lib/ or set FUSHI_P2P_LIB); P2P tunnel not enabled',
+        ),
       );
       return;
     }
@@ -633,7 +641,10 @@ class HeadlessHost {
     );
     final InterconnectP2pNode? node = await runtime.ensure();
     if (node == null) {
-      _p2pLastError = 'P2P 端点启动失败（详见日志）';
+      _p2pLastError = tr(
+        'P2P 端点启动失败（详见日志）',
+        'Failed to start the P2P endpoint (see the log)',
+      );
       return;
     }
     final int port = await server.startP2pListener();
@@ -894,6 +905,13 @@ class HeadlessHost {
     prefs: prefs,
     databaseDirectory: paths.support,
   );
+
+  /// 互联推送与 WebUI 共用的那一个库服务实例：删词典等改动都经它的库锁与引擎重载。
+  late final LocalLibraryHostService libraryService = buildLibraryService();
+
+  /// 在库互斥锁里跑 [body]，与互联推送的导入 / 删除串行（WebUI 改词典用）。
+  Future<void> runLibraryExclusive(Future<void> Function() body) =>
+      _mutex.run(body);
 
   /// 互联 host 的库服务装配（[start] 用；测试也直接拿它挂到自建的 TLS
   /// [FushiSyncServer] 上驱动端点，免得起整套下载 / ASR / 局域网广播）。

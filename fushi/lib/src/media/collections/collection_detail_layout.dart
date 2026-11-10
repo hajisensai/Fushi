@@ -1193,8 +1193,9 @@ class CollectionEpisodeCard extends StatelessWidget {
   /// 定尺的缩略图（用 [collectionEpisodeThumb] 造）。
   final Widget thumb;
 
-  /// 显示序号（`3` / `S01E03`），画在缩略图左上角的集号胶囊里。
-  final String number;
+  /// 显示序号（`3` / `S01E03`），画在缩略图左上角的集号胶囊里。null = 来源没给
+  /// 集号：不画胶囊，只靠集名区分——不拿列表位置冒充集号（VF5D4O_Tyx）。
+  final String? number;
   final String title;
   final String? summary;
   final bool completed;
@@ -1318,14 +1319,15 @@ class CollectionEpisodeCard extends StatelessWidget {
                   Stack(
                     children: <Widget>[
                       thumb,
-                      PositionedDirectional(
-                        start: 6,
-                        top: 6,
-                        child: CollectionEpisodeNumberPill(
-                          number: number,
-                          current: isContinue,
+                      if (number case final String number)
+                        PositionedDirectional(
+                          start: 6,
+                          top: 6,
+                          child: CollectionEpisodeNumberPill(
+                            number: number,
+                            current: isContinue,
+                          ),
                         ),
-                      ),
                       // 进行中 → 铺满缩略图的压暗 + 进度环；失败 → 右下角标。
                       if (downloadBadge case final Widget badge)
                         positionRemoteDownloadBadge(
