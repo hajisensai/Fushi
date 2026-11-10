@@ -24,10 +24,10 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 ///   在曲库里留下孤儿曲目，之后重扫也清不掉（BUG-3785）。仍被另一个本地音乐来源覆盖
 ///   的曲目改挂过去，其余软删（[FushiDatabase.releaseMusicTracksOfSource]）。
 /// - 视频来源自动登记的音乐来源（v145，反馈 QAondMh4M5）随它一起移除（[retireMusicSources]，
-///   用户手动添加的音乐来源不动）。
-/// - 游戏来源（反馈 9Rm_8JEkGM）：游戏留在库里（与书 / 视频来源移除后条目保留同口径），
-///   只清掉它的来源扫描索引（[clearGameSourceIndex]）。用户直接移除一个自动来源时（[recordAutoSourceDismissal]）
+///   用户手动添加的音乐来源不动）。用户直接移除一个自动来源时（[recordAutoSourceDismissal]）
 ///   记进「不再登记」清单，之后再扫 owner 视频来源不会把它加回来。
+/// - 游戏来源（反馈 9Rm_8JEkGM）：游戏留在库里（与书 / 视频来源移除后条目保留同口径），
+///   只清掉它的来源扫描索引（[clearGameSourceIndex]）。
 Future<void> removeSourceLibrary({
   required FushiDatabase database,
   required PreferencesRepository prefs,
