@@ -17,6 +17,7 @@ pub mod digest;
 pub mod media;
 pub(crate) mod mvr;
 pub mod relay;
+pub(crate) mod sched_local;
 pub mod schema;
 pub(crate) mod sealed;
 pub(crate) mod semantics;
@@ -2113,7 +2114,7 @@ impl SrsCore {
     }
 
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
-    /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>}`。返回
+    /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>, "intent"?: "answer"}`。返回
     /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
     pub fn sync2_apply_local(
         &self,
@@ -2146,6 +2147,16 @@ impl SrsCore {
                     stamped,
                     it["server"].as_i64(),
                 )?;
+                // 本机作答显式声明意图（Dart `answerAndStudy`），不从日志形状反推；不带的（导入、恢复、并入的旧形态
+                // 日志）照旧按 [infer_intent]。手动排程操作走 `sched`（sched_local.rs）。
+                let body = match (body, it["intent"].as_str()) {
+                    (Body::Log(mut l), Some("answer")) => {
+                        l.intent = Intent::Answer;
+                        Body::Log(l)
+                    }
+                    (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
+                    (b, None) => b,
+                };
                 let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
                 let before = t.marks.landed;
                 let bodies = expand_tags(c, profile, body)?;
@@ -2533,10 +2544,12 @@ mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
 #[cfg(test)]
+mod tests_sched_local;
+#[cfg(test)]
 mod tests_synthetic_ctx;
 
 impl SrsCore {
-    /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
+    /// 评分预览（原 Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
     /// 确定性 FSRS 算四个按钮的结果。[note] = 卡所属笔记（新卡没有日志时据它找牌组）。日界用调用方此刻的口径
     /// （与写进日志的 utcOff / rollover 相同）。
     ///

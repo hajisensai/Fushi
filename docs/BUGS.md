@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4292](bugs/BUG-4292-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |
+| [BUG-4292](bugs/BUG-4292-srs-profile-purge-three-impls.md) | ✅ | ✅ | 删 / 换 profile uid 的三份实现不一致，并入与采用后旧 uid 在 srs.db 留残留 |
 | [BUG-4291](bugs/BUG-4291-electron-game-launch-crash-noaccess-section.md) | ✅ | ✅ | Electron/Chromium 打包游戏经 Fushi 启动即崩（不可读 PE 节被扫描） |
 | [BUG-4290](bugs/BUG-4290-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
 | [BUG-4289](bugs/BUG-4289-mine-target-reset-stale-main-process.md) | ✅ | ✅ | Save to reset written by the lookup popup process is invisible to the main process |

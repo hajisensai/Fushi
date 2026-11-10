@@ -1234,6 +1234,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
 #[cfg_attr(not(test), allow(dead_code))]
 const CHANNEL_SETTLES: &[&str] = &[
     "apply",
+    "sched",
     "retire",
     "dedup",
     "migrate",
@@ -1262,6 +1263,7 @@ const CHANNEL_SETTLES: &[&str] = &[
 
 const PROJECTING_OPS: &[&str] = &[
     "apply",
+    "sched",
     "retire",
     "ingest",
     "ingest_batch",
@@ -1314,6 +1316,8 @@ fn sync2_command(
                 .map_err(|e| e.to_string())?;
             parse(c.sync2_apply_local(profile, i("now")?, input)?)?
         }
+        // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
+        "sched" => c.sync2_sched_local(profile, i("now")?, req)?,
         "migrate" => {
             c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?
         }
