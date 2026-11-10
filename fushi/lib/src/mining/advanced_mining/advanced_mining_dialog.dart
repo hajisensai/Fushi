@@ -325,15 +325,19 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
   void _setLayout(AdvancedMiningLayout next) {
     if (next == _layout) return;
     setState(() => _layout = next);
+    unawaited(_persistLayout(next));
+  }
+
+  Future<void> _persistLayout(AdvancedMiningLayout next) async {
     final Future<void> Function(AdvancedMiningLayout)? persist =
         widget.capabilities.setLayout;
     if (persist == null) return;
-    unawaited(
-      persist(next).catchError((Object e, StackTrace stack) {
-        // 记不住只影响下次打开；这次的布局已经生效。
-        fushiDebugPrint('AdvancedMiningDialog.setLayout: $e\n$stack');
-      }),
-    );
+    try {
+      await persist(next);
+    } catch (e, stack) {
+      // 记不住只影响下次打开；这次的布局已经生效（与「显示哪些字段」同一处理）。
+      fushiDebugPrint('AdvancedMiningDialog.setLayout: $e\n$stack');
+    }
   }
 
   /// 栏位选择看「这块屏能不能排双栏」而不是「此刻排没排双栏」：把分区全摆到一栏
