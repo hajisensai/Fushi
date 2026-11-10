@@ -474,7 +474,7 @@ class DesktopScreenOcrCapture {
   /// GDI）；普通 SDR 截屏为 null。只进诊断日志，不影响流程。
   final String? diagnostic;
 
-  /// 取证字段（BUG-4359，Windows 报，其它平台为 null）：被截显示器的 DPI（96 =
+  /// 取证字段（BUG-4361，Windows 报，其它平台为 null）：被截显示器的 DPI（96 =
   /// 100%）、是否开着 HDR、这帧走的取帧路径（`gdi` / `dxgi`）。只进诊断日志。
   final int? dpi;
   final bool? hdrMonitor;

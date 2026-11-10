@@ -59,7 +59,7 @@ inline bool NeedsSpaceBetween(const std::wstring& previous,
 }
 
 // 同时记下每个词在拼好的行文本里的起点（UTF-16 码元下标，与 Dart String 下标同口径）；
-// 空词记 -1。点字查词按词框定位被点的字（BUG-4359）：没有这张表就只能按字数等分
+// 空词记 -1。点字查词按词框定位被点的字（BUG-4361）：没有这张表就只能按字数等分
 // 行框，日英混排 / 行内有空隙时点哪个字查的都是别的字。
 inline std::wstring JoinOcrWordsWithOffsets(
     const std::vector<std::wstring>& words, std::vector<int>* offsets) {
