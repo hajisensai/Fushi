@@ -1038,6 +1038,84 @@ void main() {
     },
   );
 
+  // 反馈 II3jOBIhT5：用户选「不截取音频」时根本不去取（无配音游戏只会取到 BGM），
+  // 卡照做、不带句子音频，也不算「缺音频」——不弹缺音频警告，resourceOnly 也不拒卡。
+  test(
+    'audio mode off skips capture and mines without a missing-audio flag',
+    () async {
+      activeState = activeState.copyWith(
+        audioFallbackPolicy: GalAudioFallbackPolicy.resourceOnly,
+      );
+      final TexthookerLineEntry entry = service.appendLine('BGMしか流れない地の文')!;
+      final _RecordingRepo repo = _RecordingRepo();
+      int captureCalls = 0;
+
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                  required GalMiningAudioLimit limit,
+                }) async {
+                  captureCalls++;
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '地の文'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            audioLimit: const GalMiningAudioLimit(mode: GalMiningAudioMode.off),
+          );
+
+      expect(captureCalls, 0, reason: 'off 不得启动任何音频采集');
+      expect(result.aborted, isFalse);
+      expect(result.audioFallbackDisabled, isFalse);
+      expect(result.sentenceAudioMissing, isFalse);
+      expect(repo.contexts, hasLength(1));
+      expect(repo.contexts.single.sentenceAudioPath, isNull);
+    },
+  );
+
+  test(
+    'the effective audio length limit is forwarded to the capture',
+    () async {
+      final TexthookerLineEntry entry = service.appendLine('長さ制限付き')!;
+      final List<GalMiningAudioLimit> seen = <GalMiningAudioLimit>[];
+      const GalMiningAudioLimit limit = GalMiningAudioLimit(
+        mode: GalMiningAudioMode.maxLength,
+        seconds: 6,
+      );
+
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                  required GalMiningAudioLimit limit,
+                }) async {
+                  seen.add(limit);
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '制限'},
+            compression: MiningMediaCompression.compressed,
+            repo: _RecordingRepo(),
+            audioLimit: limit,
+          );
+
+      expect(result.success, isTrue);
+      expect(seen, <GalMiningAudioLimit>[limit]);
+    },
+  );
+
   test(
     'concurrent jobs serialize and use isolated temporary directories',
     () async {

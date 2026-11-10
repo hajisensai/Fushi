@@ -1,9 +1,13 @@
+/// gal 制卡设置模型（反馈 II3jOBIhT5 / 3dRZdakRdJ）。
+///
+/// 本文件在 `preferences_repository.dart` 的 import 闭包里，只许依赖纯值类型
+/// （见 `test/build/import_cycle_guard_test.dart`）；对 PCM 切片的裁剪在
+/// `galgame_line_voice_window.dart` 的 `applyGalMiningAudioLimit`。
+library;
+
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show immutable;
-import 'package:fushi/src/mining/galgame_audio_encode.dart' show PcmFormat;
-import 'package:fushi/src/mining/galgame_audio_source.dart' show GalAudioSlice;
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 
 /// galgame 制卡句子音频的长度策略（反馈 II3jOBIhT5）。
@@ -92,38 +96,6 @@ class GalMiningAudioLimit {
   String toString() => 'GalMiningAudioLimit(${mode.wireName}, ${seconds}s)';
 }
 
-/// 把 [limit] 应用到一段截取的 PCM 上（纯函数，帧对齐）。
-///
-/// - maxLength：超过 N 秒的截到前 N 秒（前面是这句的开头——窗口从台词到达开始）。
-/// - fixedLength：同上截断；不足 N 秒的在尾部补零（PCM 零值即静音，int16 / float32
-///   都成立），让每张卡的音频时长一致。
-/// - auto / off：原样返回（off 由调用方在取音之前就短路，不会走到这里）。
-GalAudioSlice applyGalMiningAudioLimit(
-  GalAudioSlice slice,
-  GalMiningAudioLimit limit,
-) {
-  final int? limitMs = limit.limitMs;
-  if (limitMs == null || slice.isEmpty) return slice;
-  final PcmFormat format = slice.format;
-  final int block = format.blockAlign;
-  if (block <= 0 || format.byteRate <= 0) return slice;
-  final int targetBytes = (limitMs * format.byteRate ~/ 1000) ~/ block * block;
-  if (targetBytes <= 0) return slice;
-  final int length = slice.pcm.length ~/ block * block;
-  if (length > targetBytes) {
-    return GalAudioSlice(
-      pcm: Uint8List.sublistView(slice.pcm, 0, targetBytes),
-      format: format,
-    );
-  }
-  if (limit.mode == GalMiningAudioMode.fixedLength && length < targetBytes) {
-    final Uint8List padded = Uint8List(targetBytes)
-      ..setRange(0, length, slice.pcm);
-    return GalAudioSlice(pcm: padded, format: format);
-  }
-  return slice;
-}
-
 /// 单个游戏对 galgame 制卡设置的覆盖层（反馈 3dRZdakRdJ）。
 ///
 /// 每项 null = 跟随全局设置。持久化在偏好表 `gal_mining_overrides::<galgames.id>`
@@ -143,7 +115,11 @@ class GalGameMiningOverrides {
 
   /// 脏值 / 未知 wireName 一律当「没覆盖」（跟随全局），不崩。
   factory GalGameMiningOverrides.fromJson(Map<Object?, Object?> json) {
-    T? pick<T extends Enum>(List<T> values, Object? raw, String Function(T) wire) {
+    T? pick<T extends Enum>(
+      List<T> values,
+      Object? raw,
+      String Function(T) wire,
+    ) {
       if (raw is! String) return null;
       for (final T value in values) {
         if (wire(value) == raw) return value;
@@ -173,7 +149,9 @@ class GalGameMiningOverrides {
         json['clipFormat'],
         (MiningClipFormat v) => v.wireName,
       ),
-      audioMode: GalMiningAudioMode.tryParse(json['audioMode'] as String?),
+      audioMode: GalMiningAudioMode.tryParse(
+        json['audioMode'] is String ? json['audioMode'] as String : null,
+      ),
       audioSeconds: seconds is int ? clampGalMiningAudioSeconds(seconds) : null,
     );
   }
@@ -184,7 +162,9 @@ class GalGameMiningOverrides {
     try {
       final Object? decoded = jsonDecode(stored);
       if (decoded is Map) {
-        return GalGameMiningOverrides.fromJson(decoded.cast<Object?, Object?>());
+        return GalGameMiningOverrides.fromJson(
+          decoded.cast<Object?, Object?>(),
+        );
       }
     } on FormatException {
       return none;
@@ -335,8 +315,13 @@ class GalMiningSettings {
       other.audioLimit == audioLimit;
 
   @override
-  int get hashCode =>
-      Object.hash(imageMode, animatedFormat, stillFormat, clipFormat, audioLimit);
+  int get hashCode => Object.hash(
+    imageMode,
+    animatedFormat,
+    stillFormat,
+    clipFormat,
+    audioLimit,
+  );
 }
 
 /// 单游戏覆盖层的偏好键前缀（登记在 `kKnownPreferenceKeyPrefixes`）。

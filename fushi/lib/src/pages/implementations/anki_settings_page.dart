@@ -134,16 +134,6 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
-/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
-/// 用户自带的外部 ffmpeg 兜底。
-@visibleForTesting
-String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
-  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
-  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
-  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
-};
-
 class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
   ThemeData get theme => Theme.of(context);

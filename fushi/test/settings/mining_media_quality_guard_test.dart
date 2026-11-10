@@ -414,7 +414,8 @@ void main() {
             '\\b$axis:\\s*([\\w.]+)',
           ).allMatches(src).map((RegExpMatch m) => m.group(1)!);
           expect(
-            actual.isNotEmpty && actual.every((String v) => v == 'mining.$axis'),
+            actual.isNotEmpty &&
+                actual.every((String v) => v == 'mining.$axis'),
             isTrue,
             reason: '$path 的 `$axis:` 必须是 mining.$axis，实际 ${actual.toSet()}',
           );

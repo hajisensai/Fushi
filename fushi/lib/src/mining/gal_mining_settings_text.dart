@@ -14,8 +14,7 @@ String galMiningAudioModeLabel(GalMiningAudioMode mode) => switch (mode) {
 };
 
 /// galgame 封面模式三档（[galMiningImageModeChoices]）的文案；与全局设置页同一组 key。
-String galMiningImageModeLabel(VideoMiningImageMode mode) =>
-    mode.isVideoClip
+String galMiningImageModeLabel(VideoMiningImageMode mode) => mode.isVideoClip
     ? t.gal_mining_image_mode_video_clip
     : mode.isStill
     ? t.gal_mining_image_mode_screenshot
