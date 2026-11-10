@@ -1131,7 +1131,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
-    _showSubtitleLoadingOverlay();
+    // 副字幕只在播放器侧（设置面板 / 遥控 / CLI）选，第二屏面板没有副字幕入口。
+    _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
     final SubtitleCueLoadResult result;
     try {
       result = await loadSubtitleCueResult(source, videoPath, bookUid);
@@ -1698,10 +1699,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String? selectedSource,
     String? label,
     Future<bool> Function()? onEmptyCues,
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
   }) async {
     final int loadSeq = _episodeLoadSeq;
     final String displayLabel = label ?? p.basename(path);
-    _showSubtitleLoadingOverlay();
+    _showSubtitleLoadingOverlay(origin: origin);
     final List<AudioCue> cues;
     try {
       cues = await _loadExternalSubtitleCues(path, _activeBookUid);
@@ -1774,8 +1776,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   Future<void> _applyRemoteEmbeddedSubtitle(
     VideoPlayerController controller,
-    RemoteVideoEmbeddedSubtitleTrack track,
-  ) async {
+    RemoteVideoEmbeddedSubtitleTrack track, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
     if (!track.isText) {
       // 图形轨没有文字可下：直接交给 libmpv 渲染（流里就有这条轨）。
       final bool shown = await _showRemoteGraphicTrackViaPlayer(
@@ -1845,6 +1848,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       subtitle.path,
       selectedSource: source,
       label: label,
+      origin: origin,
       // 外挂文件轨下载到了却解析不出 cue：先别报失败，交给 libmpv 原格式再读一次。
       // 读的是刚下好的本地文件（BUG-3260）：下载可能是 DeliveryUrl 失效后回落到手拼
       // 端点才成功的，轨的 url 仍是那条失效的 DeliveryUrl。
@@ -1997,7 +2001,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String? label,
   }) async {
     final String displayLabel = label ?? p.basename(path);
-    _showSubtitleLoadingOverlay();
+    // 副字幕只在播放器侧选（见 [_selectSecondarySubtitleSource]）。
+    _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
     final List<AudioCue> cues;
     try {
       cues = await _loadExternalSubtitleCues(path, _activeBookUid);
@@ -3080,7 +3085,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (audio.audioStreamCount != null) {
       final int durationMs = controller.durationMs ?? 0;
       if (durationMs <= 0) return null;
-      _showSubtitleLoadingOverlay();
+      _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
       try {
         final String key = 'asr|${audio.path}|${audio.audioStreamIndex}';
         final Future<String?> fetch = _remoteTimingAudioFetches.putIfAbsent(
@@ -3561,10 +3566,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 在字幕源视图里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
   /// TODO-1351：字幕源已收进设置面板「字幕」分类，加载态确保设置面板开在该分类可见。
-  void _showSubtitleLoadingOverlay() {
+  /// [origin] 是这次选择从哪来：第二屏面板选的进度显示在面板上（快照
+  /// `subtitleLoading` 读同一个 [_subtitleLoadingShown]），播放器不弹设置面板。
+  void _showSubtitleLoadingOverlay({required VideoSubtitlePickOrigin origin}) {
     if (_subtitleLoadingShown || !mounted) return;
     _rebuild(() => _subtitleLoadingShown = true);
-    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.subtitle) {
+    if (origin.opensPlayerSettings(
+      subtitlePanelOpen:
+          _videoSidePanel.value?.kind == _VideoSidePanelKind.subtitle,
+    )) {
       _showPlayerSettings(initialCategory: 'subtitle');
     }
   }
@@ -3584,8 +3594,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 失败（已弹失败提示、未切换、未持久化、未覆盖当前可用字幕）。
   Future<bool> _selectSubtitleSource(
     VideoPlayerController controller,
-    SubtitleSource source,
-  ) async {
+    SubtitleSource source, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
     if (_discLearningBlocked ||
         (source.isEmbedded &&
             !source.isGraphicEmbedded &&
@@ -3643,7 +3654,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // BUG-104: 内嵌字幕要从容器里 demux 抽取，大文件（如 27GB REMUX）首次可达
     // ~20s。期间给一个不可关的加载遮罩，否则底栏菜单一关、画面字幕没变，用户会以为
     // 「点了没反应、没切换过去」。抽取走单趟全轨缓存，同一视频后续切换瞬时命中。
-    _showSubtitleLoadingOverlay();
+    _showSubtitleLoadingOverlay(origin: origin);
     final SubtitleCueLoadResult result;
     try {
       result = await loadSubtitleCueResult(source, videoPath, bookUid);
