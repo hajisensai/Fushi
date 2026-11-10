@@ -163,6 +163,13 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   /// 添乱（审查 M2）。
   String? _busyEntryId;
 
+  /// 一键清缓存进行中（反馈 jg3XoDVISk）。与 [_busyEntryId] 互斥：清缓存期间单条
+  /// 删除入口全部禁用，反之亦然——两条删除路径可能落到同一批临时文件上。
+  bool _clearingCache = false;
+
+  /// 任何删除正在进行（单条删除或一键清缓存）。
+  bool get _deleteBusy => _busyEntryId != null || _clearingCache;
+
   List<BundledComponentUsage> _bundled = const <BundledComponentUsage>[];
 
   int _anime4kBytes = 0;
@@ -266,7 +273,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   String _entryTitle(StorageEntryUsage entry) => storageEntryTitle(entry);
 
   Future<void> _deleteEntry(StorageEntryUsage entry) async {
-    if (_busyEntryId != null) return;
+    if (_deleteBusy) return;
     final String body = switch (entry.kind) {
       StorageEntryKind.book ||
       StorageEntryKind.srtBook => t.storage_entry_delete_book_confirm_body,
@@ -324,6 +331,76 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     anime4kBytesProvider: widget.anime4kBytesProvider,
     anime4kDelete: widget.anime4kDelete,
   );
+
+  // ── 一键清除全部缓存（反馈 jg3XoDVISk）─────────────────────────────────
+
+  /// 当前扫描结果里一键清缓存要删的明细（类目口径见 [kClearAllCacheCategories]）。
+  StorageCacheClearPlan get _cacheClearPlan =>
+      buildStorageCacheClearPlan(_usage.values);
+
+  /// 扫描完成前不给清：计划要基于完整的缓存类目明细，扫一半就清会让确认框里
+  /// 列出的大小与实际删除的东西对不上。
+  bool get _canClearCache =>
+      !_scanning && !_deleteBusy && !_cacheClearPlan.isEmpty;
+
+  Future<void> _clearAllCache() async {
+    if (!_canClearCache) return;
+    final StorageCacheClearPlan plan = _cacheClearPlan;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.storage_clear_cache_confirm_title,
+      content: _CacheClearPlanList(plan: plan),
+      icon: FushiIcons.deleteSweep,
+      confirmLabel: t.storage_clear_cache_confirm,
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _clearingCache = true);
+    StorageCacheClearOutcome outcome;
+    try {
+      outcome = await clearStorageCache(_actions, plan);
+    } finally {
+      if (mounted) setState(() => _clearingCache = false);
+    }
+    if (!mounted) return;
+    final String freed = formatStorageBytes(outcome.freedBytes);
+    final String? failure = storageCacheClearFailureReason(outcome);
+    FushiToast.show(
+      msg: failure == null
+          ? t.storage_clear_cache_done(size: freed)
+          : t.storage_clear_cache_partial(size: freed, reason: failure),
+      severity: failure == null ? ToastSeverity.success : ToastSeverity.error,
+    );
+    if (outcome.changed) await _rescan();
+  }
+
+  Widget _buildClearCacheRow() {
+    final StorageCacheClearPlan plan = _cacheClearPlan;
+    final String subtitle = _scanning
+        ? t.storage_overview_scanning
+        : plan.isEmpty
+        ? t.storage_clear_cache_empty
+        : t.storage_clear_cache_subtitle(size: formatStorageBytes(plan.bytes));
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('storage_clear_cache'),
+      title: t.storage_clear_cache_action,
+      subtitle: subtitle,
+      icon: FushiIcons.deleteSweep,
+      showIcon: true,
+      trailing: AnimatedSwitcher(
+        duration: context.fushiMotion.effectsFast.duration,
+        child: _clearingCache
+            ? const SizedBox(
+                key: ValueKey<String>('busy'),
+                width: 16,
+                height: 16,
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
+              )
+            : const SizedBox.shrink(key: ValueKey<String>('idle')),
+      ),
+      onTap: _canClearCache ? _clearAllCache : null,
+    );
+  }
 
   // ── Anime4K 预设删除 ────────────────────────────────────────────────
 
@@ -640,6 +717,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     return AdaptiveSettingsSection(
       title: t.storage_overview_section,
       children: <Widget>[
+        _buildClearCacheRow(),
         for (final StorageCategoryId id in StorageCategoryId.values)
           ..._buildCategoryRows(id, colors[id], total),
       ],
@@ -815,9 +893,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                 : FushiIconButtonControl(
                     tooltip: t.dialog_delete,
                     icon: const FushiIcon(FushiIcons.delete, size: 18),
-                    onPressed: _busyEntryId != null
-                        ? null
-                        : () => _deleteEntry(entry),
+                    onPressed: _deleteBusy ? null : () => _deleteEntry(entry),
                   )),
     );
   }
@@ -849,6 +925,114 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 }
 
 /// 各类目占比的逐元素插值（长度恒为类目数，顺序固定）。
+/// 一键清缓存确认框正文：说明 + 逐类目列出名称与大小，类目下逐条列出明细
+/// （超过 [_kMaxEntriesPerCategory] 条折成「另 N 项」）。内容可能很长（iOS 的
+/// `Library/Caches` 下几十个子目录），限高滚动，不把对话框撑出屏幕。
+class _CacheClearPlanList extends StatelessWidget {
+  const _CacheClearPlanList({required this.plan});
+
+  static const int _kMaxEntriesPerCategory = 8;
+
+  final StorageCacheClearPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiTypography type = context.fushiType;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 320),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              t.storage_clear_cache_confirm_body(
+                size: formatStorageBytes(plan.bytes),
+              ),
+            ),
+            for (final StorageCategoryUsage category
+                in plan.categories) ...<Widget>[
+              const SizedBox(height: 12),
+              _PlanLine(
+                label: storageCategoryTitle(category.id),
+                bytes: category.entries.fold<int>(
+                  0,
+                  (int sum, StorageEntryUsage e) => sum + e.bytes,
+                ),
+                style: type.titleSmall,
+              ),
+              for (final StorageEntryUsage entry in category.entries.take(
+                _kMaxEntriesPerCategory,
+              ))
+                _PlanLine(
+                  label: storageEntryTitle(entry),
+                  bytes: entry.bytes,
+                  style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+                  indent: 12,
+                ),
+              if (category.entries.length > _kMaxEntriesPerCategory)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 12, top: 2),
+                  child: Text(
+                    t.storage_entry_more_rest(
+                      n: category.entries.length - _kMaxEntriesPerCategory,
+                      size: formatStorageBytes(
+                        category.entries
+                            .skip(_kMaxEntriesPerCategory)
+                            .fold<int>(
+                              0,
+                              (int sum, StorageEntryUsage e) => sum + e.bytes,
+                            ),
+                      ),
+                    ),
+                    style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 确认框里的一行「名称 …… 大小」。
+class _PlanLine extends StatelessWidget {
+  const _PlanLine({
+    required this.label,
+    required this.bytes,
+    required this.style,
+    this.indent = 0,
+  });
+
+  final String label;
+  final int bytes;
+  final TextStyle style;
+  final double indent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: indent, top: 2),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(formatStorageBytes(bytes), style: style.tabular),
+        ],
+      ),
+    );
+  }
+}
+
 class _FractionsTween extends Tween<List<double>> {
   _FractionsTween({required super.begin, required super.end});
 

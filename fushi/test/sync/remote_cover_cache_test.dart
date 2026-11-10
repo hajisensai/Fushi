@@ -99,4 +99,22 @@ void main() {
       reason: '最新条目保留',
     );
   });
+
+  test('BUG-4367：运行中缓存目录被整个删掉（清缓存 / 系统回收）后，下一次写入照常落盘', () async {
+    final Uint8List first = Uint8List.fromList(<int>[1, 2, 3]);
+    await RemoteCoverCache.write('before', first);
+    expect(await RemoteCoverCache.read('before'), first);
+
+    // 存储页「清除全部缓存」走 deleteStorageDerivedFiles：整目录递归删除。
+    await Directory('${tmp.path}/cache').delete(recursive: true);
+    expect(await RemoteCoverCache.read('before'), isNull);
+
+    final Uint8List second = Uint8List.fromList(<int>[4, 5, 6]);
+    await RemoteCoverCache.write('after', second);
+    expect(
+      await RemoteCoverCache.read('after'),
+      second,
+      reason: '目录存在性不能 memoize：删掉后写入必须重建目录，而不是吞异常静默失效到重启',
+    );
+  });
 }

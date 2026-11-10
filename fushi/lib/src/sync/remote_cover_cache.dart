@@ -28,20 +28,21 @@ class RemoteCoverCache {
     return Directory(p.join(base.path, 'remote_cover_cache'));
   }
 
-  /// 目录只解析并 `create(recursive:true)` 一次（memoized）。
-  static Future<Directory>? _ensured;
+  /// 目录**路径**只解析一次（memoized）；目录本身存不存在不缓存。
+  ///
+  /// BUG-4367：以前把 `create(recursive:true)` 也一起 memoize 了——目录在进程存活期间
+  /// 被删掉（存储页「清除全部缓存」/ 单删「缓存与临时文件」里的这一项、iOS 系统回收
+  /// `Library/Caches`）之后，后续每次 [write] 都撞 `PathNotFoundException` 被吞掉，
+  /// 磁盘缓存一直失效到重启。目录是可丢弃的，存在性只能在写入点现场保证（见 [write]）。
+  static Future<Directory>? _resolved;
 
-  static Future<Directory> _dir() =>
-      _ensured ??= _dirResolver().then((Directory d) async {
-        await d.create(recursive: true);
-        return d;
-      });
+  static Future<Directory> _dir() => _resolved ??= _dirResolver();
 
   /// 测试注入：覆盖缓存目录解析器（传 null 还原默认）。清空 memoized 目录。
   @visibleForTesting
   static void debugSetDirResolver(Future<Directory> Function()? resolver) {
     _dirResolver = resolver ?? _defaultDir;
-    _ensured = null;
+    _resolved = null;
   }
 
   /// 稳定 id → 文件安全名：base64url（无 padding）编码，可逆且无碰撞，规避 id 里的
@@ -103,6 +104,8 @@ class RemoteCoverCache {
     if (bytes.isEmpty) return;
     try {
       final Directory dir = await _dir();
+      // 每次写都现场建（已存在时只是一次 stat）：目录随时可能被清缓存删掉（BUG-4367）。
+      await dir.create(recursive: true);
       final File f = File(p.join(dir.path, fileNameFor(key)));
       await f.writeAsBytes(bytes, flush: false);
       // 每 16 次写抽查一次容量（避免每写都列目录）；测试可用 debugTrimNow 直调。

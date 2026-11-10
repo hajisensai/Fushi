@@ -467,10 +467,7 @@ class StorageCacheClearPlan {
     0,
     (int sum, StorageCategoryUsage u) =>
         sum +
-        u.entries.fold<int>(
-          0,
-          (int s, StorageEntryUsage e) => s + e.bytes,
-        ),
+        u.entries.fold<int>(0, (int s, StorageEntryUsage e) => s + e.bytes),
   );
 
   List<StorageEntryUsage> get entries => <StorageEntryUsage>[
@@ -525,7 +522,7 @@ class StorageCacheClearOutcome {
 }
 
 /// 按 [plan] 逐条删除（确认由调用方负责）。每条明细独立：一条删不掉不影响其余，
-/// 失败原因逐条汇总进 [StorageCacheClearOutcome.failures]。
+/// 失败原因逐条汇总进 [StorageCacheClearOutcome.failures]，本函数自身不抛。
 Future<StorageCacheClearOutcome> clearStorageCache(
   StorageUsageActions actions,
   StorageCacheClearPlan plan,
@@ -537,7 +534,9 @@ Future<StorageCacheClearOutcome> clearStorageCache(
     String? failure;
     try {
       failure = await actions.deleteFiles(entry.paths);
-    } on FileSystemException catch (e) {
+    } catch (e) {
+      // 不吞：记成这一条的失败原因逐条报给用户；不中断其余明细（与页面单删
+      // `_deleteEntry` 同口径，任何异常都转成失败原因）。
       failure = '$e';
     }
     if (failure == null) {
