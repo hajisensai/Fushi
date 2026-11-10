@@ -706,11 +706,12 @@ extension _VideoLayout on _VideoFushiPageState {
                               // 大屏平板 / 桌面上物理观感一致（自动缩放恒开、叠加在基准之上）。
                               // MediaQuery.sizeOf 建立尺寸依赖：横竖屏切换 / 窗口缩放会重建本
                               // builder 重算因子。
-                              fontSize:
-                                  _subtitleStyle.fontSize *
-                                  subtitleScreenScaleFactor(
-                                    MediaQuery.sizeOf(context),
-                                  ),
+                              // CcT_7VQIQr：实际字号再夹到随视口变化的上限
+                              // （videoSubtitleEffectiveFontSize），与设置滑条上限同源。
+                              fontSize: videoSubtitleEffectiveFontSize(
+                                _subtitleStyle.fontSize,
+                                MediaQuery.sizeOf(context),
+                              ),
                               textColor: _subtitleStyle.resolveTextColor(),
                               fontWeight: _subtitleStyle.resolveFontWeight(
                                 _videoUiScale,
