@@ -257,6 +257,19 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
+                    case "listFirstFields":
+                        // 反馈 JAEwvc6Lmr：离线已制卡缓存整份刷新——该笔记类型下全部笔记的
+                        // 第一字段原文。
+                        if (model == null) {
+                            result.error("MISSING_ARG", "model is required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(listFirstFields(model));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e), e.getMessage(), null);
+                            }
+                        }
+                        break;
                     case "openNote":
                         // BUG-891：用 anki://x-callback-url/browser 深链在 AnkiDroid 中打开该 note。
                         if (noteIdArg == null) {
@@ -275,7 +288,11 @@ public class AnkiChannelHandler {
                             result.error("MISSING_ARG",
                                 "models and key are required", null);
                         } else if (ankiDroid.shouldRequestPermission()) {
-                            result.success(false);
+                            // 反馈 JAEwvc6Lmr：没授权 = 没问到，不能回 false 冒充「查过了、
+                            // 没有」——Dart 侧离线已制卡缓存靠这个区别决定是否退回本地词表。
+                            // 这里只报错、不弹授权框（查重在渲染路径上逐词条发起）。
+                            result.error("PERMISSION_DENIED",
+                                "AnkiDroid permission not granted.", null);
                         } else {
                             // HBK-AUDIT-020: the dupe-check queries the AnkiDroid
                             // ContentProvider, which can throw (provider disabled
@@ -981,6 +998,44 @@ public class AnkiChannelHandler {
             }
         }
         return ids;
+    }
+
+    /**
+     * Feedback JAEwvc6Lmr: the raw first field of every note of note type
+     * {@code model}, for the offline "already mined" cache. The duplicate check
+     * ({@link #checkForDuplicates}) compares the first field within one note type
+     * across the whole collection, so the snapshot has exactly that scope.
+     *
+     * <p>The notes URI accepts Anki browser syntax ({@code mid:<id>} selects one
+     * note type). Only {@link FlashCardsContract.Note#FLDS} is projected; the first
+     * field is cut at the U+001F separator here so the Dart side does not receive
+     * every glossary body. A null cursor is a failed lookup, never an empty
+     * collection: the caller would otherwise wipe its cache.
+     */
+    private List<String> listFirstFields(String model) {
+        final AnkiDroidTarget target = AnkiDroidTarget.resolve(context);
+        if (target == null) {
+            throw new IllegalStateException("AnkiDroid is unavailable");
+        }
+        final Long mid = ankiDroid.findModelIdByName(model, 1);
+        final List<String> out = new ArrayList<>();
+        if (mid == null) return out;
+        try (Cursor cursor = context.getContentResolver().query(
+                target.rebase(FlashCardsContract.Note.CONTENT_URI),
+                new String[] {FlashCardsContract.Note.FLDS},
+                "mid:" + mid, null, null)) {
+            if (cursor == null) {
+                throw new IllegalStateException("AnkiDroid note query returned no cursor");
+            }
+            final int fldsIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.FLDS);
+            while (cursor.moveToNext()) {
+                final String flds = cursor.getString(fldsIndex);
+                if (flds == null) continue;
+                final int sep = flds.indexOf('\u001f');
+                out.add(sep < 0 ? flds : flds.substring(0, sep));
+            }
+        }
+        return out;
     }
 
     /**

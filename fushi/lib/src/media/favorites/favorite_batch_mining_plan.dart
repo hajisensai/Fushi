@@ -203,9 +203,10 @@ FavoriteMiningMediaPlan planAudioFavoriteMedia({
   );
 }
 
-/// 卡片分类标签（`book` / `video` / `game` / `music`）。有声书 / 有声书歌词模式都是
-/// 「读书」语境，归书籍——与阅读器 / 有声书页手动制卡打的标签一致；音乐模块歌词句
-/// 单独归 `music`（所有者 2026-10-24），与歌词页手动制卡一致。
+/// 卡片分类标签（`book` / `video` / `game` / `music` / `manga`）。有声书 / 有声书歌词
+/// 模式都是「读书」语境，归书籍——与阅读器 / 有声书页手动制卡打的标签一致；音乐模块
+/// 歌词句单独归 `music`（所有者 2026-10-24），与歌词页手动制卡一致；漫画句归 `manga`
+/// （反馈 uOanUXUIDt），与漫画阅读器手动制卡一致。
 ///
 /// 按原始 [FavoriteMiningItem.source] 字符串判（与 [statSourceOf] 同形）。
 AnkiMiningSource ankiMiningSourceOf(FavoriteMiningItem item) =>
@@ -215,6 +216,7 @@ AnkiMiningSource ankiMiningSourceOf(FavoriteMiningItem item) =>
       kFavoriteSentenceSourceWeb => AnkiMiningSource.video,
       kFavoriteSentenceSourceGame => AnkiMiningSource.game,
       kFavoriteSentenceSourceMusic => AnkiMiningSource.music,
+      kFavoriteSentenceSourceManga => AnkiMiningSource.manga,
       _ => AnkiMiningSource.book,
     };
 

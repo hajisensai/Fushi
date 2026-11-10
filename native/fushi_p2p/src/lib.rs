@@ -283,6 +283,13 @@ impl P2p {
         self.shared.host_peers.lock().unwrap().get(&port).copied()
     }
 
+    /// 通知 iroh 网络变了。投到本端点 runtime 上执行、立即返回：调用方是 Dart UI
+    /// isolate，不能在它的线程上 block_on。
+    fn network_change(&self) {
+        let ep = self.shared.endpoint.clone();
+        self.rt.spawn(async move { ep.network_change().await });
+    }
+
     fn close(self) {
         for (_, f) in self.forwards.lock().unwrap().drain() {
             f.task.abort();
@@ -759,6 +766,19 @@ pub unsafe extern "C" fn fp2p_host_peer(h: *mut P2p, port: u16) -> *mut c_char {
     })
 }
 
+/// OS 报告默认网络变化（Android 切 Wi-Fi / 蜂窝、iOS 唤醒）：让 iroh 重新探测本机地址与
+/// 到各对端的路径。Android 上 netwatch 不做路由监视、移动端睡眠检测一小时才轮询一次，
+/// 连接没断而路径已失效时只有这条通知能让隧道及时换路。投到端点自己的 runtime 上异步
+/// 执行，FFI 立即返回（不在调用方线程上 block_on）。返回 `{"ok":true}`。
+#[no_mangle]
+pub unsafe extern "C" fn fp2p_network_change(h: *mut P2p) -> *mut c_char {
+    guard_json(|| {
+        let p = handle(h)?;
+        p.network_change();
+        Ok(json!({"ok": true}))
+    })
+}
+
 /// 关闭并释放端点。之后句柄失效。NULL 为 no-op。
 #[no_mangle]
 pub unsafe extern "C" fn fp2p_endpoint_close(h: *mut P2p) {
@@ -766,4 +786,36 @@ pub unsafe extern "C" fn fp2p_endpoint_close(h: *mut P2p) {
         return;
     }
     let _ = catch_unwind(AssertUnwindSafe(|| Box::from_raw(h).close()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe fn take_json(raw: *mut c_char) -> Value {
+        assert!(!raw.is_null());
+        let text = CStr::from_ptr(raw).to_str().unwrap().to_owned();
+        fp2p_string_free(raw);
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// 网络变化通知只投到端点 runtime、立即返回 ok；句柄为空落成 `ok:false` 而不是崩。
+    #[test]
+    fn network_change_returns_ok_and_rejects_null_handle() {
+        unsafe {
+            let h = fp2p_endpoint_create(std::ptr::null(), std::ptr::null());
+            assert!(!h.is_null(), "endpoint create failed");
+            let v = take_json(fp2p_network_change(h));
+            assert_eq!(v["ok"], json!(true));
+            // 连发两次也不阻塞、不报错（iroh 文档：网络没变时调用也无害）。
+            let v = take_json(fp2p_network_change(h));
+            assert_eq!(v["ok"], json!(true));
+            let info = take_json(fp2p_endpoint_info(h));
+            assert_eq!(info["ok"], json!(true));
+            fp2p_endpoint_close(h);
+
+            let v = take_json(fp2p_network_change(std::ptr::null_mut()));
+            assert_eq!(v["ok"], json!(false));
+        }
+    }
 }

@@ -23,6 +23,8 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         importMangaPackageFile,
         isMangaPackage,
         repackageMangaBook;
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show hasExportablePdfContent, pdfBookFilePath;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';

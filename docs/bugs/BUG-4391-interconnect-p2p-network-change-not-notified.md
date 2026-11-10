@@ -1,0 +1,19 @@
+## BUG-4391 · P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通
+- **报告**：2026-11-10（用户：互联审查 C7）
+- **真实性**：✅ 真 bug（代码路径核实，未在真机复现）。
+  - `native/fushi_p2p/src/lib.rs:626-769`（基准 94317ab6295）：C ABI 没有任何入口调用 iroh 的 `Endpoint::network_change`（iroh 1.2.0 `endpoint.rs:1657`，`pub async fn`）。
+  - iroh 依赖的 netwatch 0.19.3 在 Android 上不做路由监视；iOS / Android 的睡眠检测一小时才轮询一次（`netmon/actor.rs:30-36`），所以切 Wi-Fi / 蜂窝或唤醒后 iroh 自己感知不到。
+  - `lib.rs:516-528` 只在 `open_bi` 报错时换连接，覆盖不到「连接没断、路径已失效」的情况。
+  - app 侧（`fushi/lib/src/sync/interconnect_p2p_app.dart`）与平台层（Android `MainActivity` / iOS `AppDelegate`）也没有任何「默认网络变了」的信号来源。
+- **[x] ① 已修复** — `b16b2f6d571`：
+  - 原生 `lib.rs`：新增导出 `fp2p_network_change`，把 `endpoint.network_change()` `spawn` 到端点自己的 tokio runtime 上、立即返回 `{"ok":true}`（不在 Dart 调用线程上 `block_on`）。
+  - `fushi_p2p` 绑定用 `providesSymbol` 可选查找该符号（新 Dart 配旧原生库只是收不到通知）；`FushiP2pEndpoint.networkChange()` 缺符号返回 false、送达返回 true。`verify_abi.sh` / iOS 伞形库的期望集从绑定 grep，自动纳入新符号，不用改脚本。
+  - engine `interconnect_p2p.dart`：`InterconnectP2pEndpointPort.networkChange()`；`InterconnectP2pNode.networkChange()`（已关闭不调原生）；`InterconnectP2pRuntime.notifyNetworkChange()` 端点未启动时什么都不做（不为此建端点），原生异常经 `engineLog` 留痕；纯函数 `bindInterconnectP2pNetworkSignals(runtime, signals)`，信号流报错留痕、订阅不断。
+  - 平台：Android `NetworkChangeChannel.java`（EventChannel `app.fushi.reader/network_change`，`registerDefaultNetworkCallback`，注册时的当前网络作基线；换网络 / 默认网络丢失 / 同网络接口名或地址集变化才发，DNS、路由刷新不发；回调 post 到主线程；`onCancel` 注销）、`AndroidManifest.xml` 补 `ACCESS_NETWORK_STATE`、`MainActivity.configureFlutterEngine` 注册；iOS `FushiNetworkChange.swift`（`NWPathMonitor`，比较 status + 可用接口名与类型，首个回调作基线）、`AppDelegate.installChannels` 注册、加进 Runner 工程。
+  - app `interconnect_p2p_app.dart`：`installInterconnectP2pNetworkWatch(runtime, {changes, lifecycle})`，默认只在 Android / iOS 订阅平台事件流与 `AppLifecycleListener`（`resumed` 也算一次信号，补 iOS 睡眠检测缺口），重复装配先撤旧订阅；由 `installInterconnectP2pClient`（原生库可用时）调用。桌面与无头服务端由 iroh 自己检测，不接线。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_engine/test/sync/interconnect_p2p_node_test.dart`：端点未启动不建端点、计数 0；装节点后 1 次；节点关闭后不调原生；原生抛异常留痕不外抛且下一次照常；信号流 2 个事件计数 2、取消后不再挂着。
+  - `fushi/test/sync/interconnect_p2p_network_watch_test.dart`：平台信号 + 生命周期流（inactive / paused / resumed）只转 2 次；重复装配只留最后一份订阅；平台流报错不断订阅。
+  - `packages/fushi_p2p/test/tunnel_e2e_test.dart`（需 `FUSHI_P2P_LIB`）：真 iroh 隧道 echo 通 → `networkChange()` 返回 true 且 < 50 ms → 之后 echo 仍通。
+  - `native/fushi_p2p/src/lib.rs` 的 `cargo test`：`fp2p_network_change` 连调两次 ok、空句柄 `ok:false`。
+- **备注**：真机切网（Android Wi-Fi → 蜂窝 → Wi-Fi、iOS 锁屏 10 分钟后解锁）未验证，隧道恢复时延与「DNS 刷新不触发」需真机 logcat / 控制台复测。Android 侧只做了 javac 单文件编译检查（本机无 gradlew、dist 机器未接构建），完整 `assembleRelease` 交给 PR CI。纯内存状态，无持久数据迁移。

@@ -143,6 +143,9 @@
         { id: 'offset-plus', label: '＋0.1', title: tr('opt_videoShortcutOffsetPlus_title') },
       ],
     });
+    // 自动对轴（反馈 0wkJImhZUp，执行端 subtitle-align.js）：听正在播的声音，与当前轨做互相关，
+    // 算出整体偏移写进上面同一个 trackOffsets。没有 Fushi 字幕轨时置灰（没东西可对）。
+    items.push({ id: 'autoAlign', kind: 'action', label: tr('align_auto_label'), icon: 'auto_awesome', disabled: !s.hasTrack });
     items.push({ id: 'style', kind: 'submenu', label: tr('pc_style_title'), icon: 'style' });
     items.push({ id: 'settings', kind: 'action', label: tr('sp_settings_title'), icon: 'settings' });
     return items;
@@ -640,6 +643,7 @@
       else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
       else if (item.id === 'maskEdit') editMask();
+      else if (item.id === 'autoAlign') autoAlign();
       else if (item.id === 'settings') openOptions();
     }
     a.addEventListener('click', go);
@@ -647,6 +651,15 @@
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
     });
     return a;
+  }
+
+  // 自动对轴：执行端 subtitle-align.js（声音够了立刻算、不够先听，结果与进度都由它 toast）。
+  // 关掉菜单让用户继续看片——不够时要接着播放才能攒到声音。
+  function autoAlign() {
+    var A = window.fushiSubtitleAlign;
+    if (!A || typeof A.autoAlign !== 'function') return;
+    closeMenu();
+    A.autoAlign();
   }
 
   // 当前视频的 Fushi 字幕轨（subtitle-panel.js 契约；缺席时当没有轨）。

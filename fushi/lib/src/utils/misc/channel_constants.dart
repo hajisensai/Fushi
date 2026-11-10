@@ -78,6 +78,13 @@ abstract final class FushiChannels {
   static const MethodChannel processExit = MethodChannel(
     '$_prefix/process_exit',
   );
+
+  /// 系统默认网络变了（EventChannel，Android / iOS）：互联 P2P 隧道据此通知 iroh
+  /// 重新探测路径。原生侧 `NetworkChangeChannel.java` / `FushiNetworkChange.swift`，
+  /// Dart 侧 `interconnect_p2p_app.dart`。
+  static const EventChannel networkChange = EventChannel(
+    '$_prefix/network_change',
+  );
   static const MethodChannel screenBrightness = MethodChannel(
     '$_prefix/screen_brightness',
   );

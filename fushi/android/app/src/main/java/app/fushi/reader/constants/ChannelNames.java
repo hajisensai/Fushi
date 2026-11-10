@@ -50,6 +50,9 @@ public final class ChannelNames {
     // 上次进程退出原因 + onTrimMemory 记录：实现见 ProcessExitChannel，Dart 门面
     // previous_exit_log.dart。
     public static final String PROCESS_EXIT = PREFIX + "/process_exit";
+    // 系统默认网络变了（EventChannel）：互联 P2P 隧道据此通知 iroh 重新探测路径。
+    // 实现见 NetworkChangeChannel，Dart 侧 interconnect_p2p_app.dart。
+    public static final String NETWORK_CHANGE = PREFIX + "/network_change";
     // 第二块屏宿主（副屏伴侣 / 串流查词面板）：主进程 SecondScreenDisplay 与面板进程
     // SecondScreenActivity 各自在自己的引擎上注册同名通道，中间由
     // SecondScreenRelayService 转发。

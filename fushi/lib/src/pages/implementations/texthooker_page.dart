@@ -31,6 +31,7 @@ import 'package:fushi/src/mining/magpie_upscaling_text.dart';
 import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
@@ -836,7 +837,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           }
           return png;
         });
-    final VideoMiningImageMode mode = mixinAppModel.galMiningImageMode;
+    // 与制卡同一个解析入口（全局 + 本游戏覆盖，反馈 3dRZdakRdJ）：本游戏覆盖成静态截图
+    // 时，这里若读全局值会误报「打码会强制改成静态图」。
+    final VideoMiningImageMode mode = mixinAppModel
+        .galMiningSettingsForGame(_session.activityGameKey)
+        .imageMode;
     // 与协调器 staleScene 同一判据：不是最新一行，截到的就不是那句台词当时的画面。
     final List<TexthookerLineEntry> live = TexthookerService.instance.entries;
     final bool historical = live.isEmpty || live.last.id != lineId;
@@ -921,6 +926,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       status: MineToastStatus.pending,
     );
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    // 全局 gal 制卡设置 + 当前游戏的覆盖层（反馈 3dRZdakRdJ），与浮窗同一个解析入口。
+    final GalMiningSettings mining = mixinAppModel.galMiningSettingsForGame(
+      _session.activityGameKey,
+    );
     final GalHookMiningResult result = await GalHookMiningCoordinator.instance
         .mineLine(
           lineId: entry.id,
@@ -933,15 +942,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             // gal 窗口动图当前不吃清晰度档（`captureWindowGifBytes` 用自己的
             // fps/maxWidth），所以这里传不传都一样——传是为了让两个 gal 入口与视频侧
             // 逐字同形，免得哪天 gal 接上档位时又漏一处。
-            format: mixinAppModel.galMiningAnimatedFormat,
+            format: mining.animatedFormat,
           ),
           repo: repo,
           updateNoteId: updateNoteId,
           addTitleTag: mixinAppModel.autoAddBookNameToTags,
-          imageMode: mixinAppModel.galMiningImageMode,
-          animatedFormat: mixinAppModel.galMiningAnimatedFormat,
-          stillFormat: mixinAppModel.galMiningStillFormat,
-          clipFormat: mixinAppModel.galMiningClipFormat,
+          imageMode: mining.imageMode,
+          animatedFormat: mining.animatedFormat,
+          stillFormat: mining.stillFormat,
+          clipFormat: mining.clipFormat,
+          audioLimit: mining.audioLimit,
           mosaic: mosaic,
           previewStill: previewStill,
         );

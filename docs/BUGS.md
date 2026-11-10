@@ -47,7 +47,38 @@
 | [BUG-4372](bugs/BUG-4372-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
 | [BUG-4371](bugs/BUG-4371-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
 | [BUG-4370](bugs/BUG-4370-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
+> 共 3939 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4395](bugs/BUG-4395-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
+| [BUG-4394](bugs/BUG-4394-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
+| [BUG-4393](bugs/BUG-4393-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |
+| [BUG-4392](bugs/BUG-4392-interconnect-client-no-shared-host-channel.md) | ✅ | ✅ | 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移 |
+| [BUG-4391](bugs/BUG-4391-interconnect-p2p-network-change-not-notified.md) | ✅ | ✅ | P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通 |
+| [BUG-4390](bugs/BUG-4390-interconnect-p2p-badge-invalid-node-crash.md) | ✅ | ✅ | p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常 |
+| [BUG-4389](bugs/BUG-4389-interconnect-p2p-forward-origin-lifecycle.md) | ✅ | ✅ | P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址 |
+| [BUG-4388](bugs/BUG-4388-interconnect-plaintext-address-unverified-host.md) | ✅ | ✅ | 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时） |
+| [BUG-4387](bugs/BUG-4387-interconnect-address-owner-unchecked.md) | ✅ | ✅ | 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编 |
+| [BUG-4386](bugs/BUG-4386-lan-discovery-self-reported-id-key.md) | ✅ | ✅ | 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收 |
+| [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
+| [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
+| [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
+| [BUG-4382](bugs/BUG-4382-srs-sync-now-trailing-rounds.md) | ✅ | ✅ | 复习「立即同步」报完已同步后同步状态行仍空跑几轮（推送残留 + host 长轮询叫醒写者自己） |
+| [BUG-4381](bugs/BUG-4381-interconnect-pdf-books.md) | ✅ | ✅ | 互联看不到对端导入的 PDF 书（PDF 没有互联内容通道） |
+| [BUG-4380](bugs/BUG-4380-windows-a11y-engine-tree-never-half-applied.md) | ✅ | ✅ | Windows 无障碍树：引擎在语义更新被 AXTree 拒收后不自愈（半应用、委托悬空），且框架违约更新直接交给 AXTree |
+| [BUG-4379](bugs/BUG-4379-manga-mine-source-tag-book.md) | ✅ | ✅ | 漫画制卡的来源分类标签写成 book 而非 manga |
+| [BUG-4378](bugs/BUG-4378-srs-card-remote-tts-audio.md) | ✅ | ✅ | eggrolls 卡组例句在线 TTS 键点了没声音（WebKit 播不了不支持 Range 的远程音频） |
+| [BUG-4377](bugs/BUG-4377-remote-cover-cache-dir-deleted-at-runtime.md) | ✅ | ✅ | 远端封面磁盘缓存：运行中缓存目录被删（存储页清缓存 / iOS 系统清理）后写入静默失败到重启 |
+| [BUG-4376](bugs/BUG-4376-ai-agent-landscape-sheet-too-short.md) | ✅ | ✅ | 横屏打开 AI 助手只剩标题和输入框 |
+| [BUG-4375](bugs/BUG-4375-manga-image-epub-folder-import.md) | ✅ | ✅ | 漫画导入框选纯图 EPUB 文件夹识别不到；批量导入不归合集 |
+| [BUG-4374](bugs/BUG-4374-srs-conflicts-bulk-dropped.md) | 🚧 | 🚧 | 同步冲突页批量处理被删成只剩逐条 |
+| [BUG-4373](bugs/BUG-4373-manga-command-keys-dead-under-webview-focus.md) | ✅ | ✅ | 漫画：WebView2 持键盘焦点时切换界面 / 统计 / 计时（及新书签）快捷键收不到，改键也不生效 |
+| [BUG-4372](bugs/BUG-4372-android-asr-memory-gate.md) | ✅ | ✅ | Android 低内存机跑 ASR 被系统杀（无内存门槛） |
+| [BUG-4371](bugs/BUG-4371-video-mine-popup-blocks-playback.md) | ✅ | ✅ | 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成 |
+| [BUG-4370](bugs/BUG-4370-coloros-ostop-exit-misreport.md) | ✅ | ✅ | ColorOS / OnePlus 的 o-stop 停应用被误报为闪退 |
 | [BUG-4369](bugs/BUG-4369-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
+| [BUG-4368](bugs/BUG-4368-reader-tap-lookup-off-swallows-taps.md) | ✅ | ✅ | 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查） |
 | [BUG-4367](bugs/BUG-4367-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
 | [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
 | [BUG-4365](bugs/BUG-4365-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |
@@ -290,7 +321,7 @@
 | [BUG-4072](bugs/BUG-4072-android-audioservice-headless-main-false-startup-crash.md) | ✅ | ✅ | 无界面拉起的进程跑 main()，被判「启动即闪退」（Android audio_service / iOS 后台拉起） |
 | [BUG-4071](bugs/BUG-4071-android-exit-importance-overrides-marker.md) | ✅ | ✅ | Android 后台被厂商杀进程仍被判「停在前台时没了」弹闪退报告 |
 | [BUG-4070](bugs/BUG-4070-interconnect-ipv6-href-brackets.md) | ✅ | ✅ | 互联 / WebDAV 走 IPv6 地址时子路径丢方括号，SRS 同步每轮 Invalid port |
-| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | 🚧 | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
+| [BUG-4069](bugs/BUG-4069-macos-screen-ocr-slow-and-wrong-lookup.md) | ✅ | ✅ | macOS 应用外截屏识字 4K 屏要一分钟以上才出行框，点字查词总是「ー」 |
 | [BUG-4068](bugs/BUG-4068-ai-agent-restored-turn-cannot-continue.md) | ✅ | ✅ | AI 助手一轮中途存档后进程没了：读回的会话显示空白失败 / 假拒绝，且再也续不上 |
 | [BUG-4067](bugs/BUG-4067-ai-agent-remote-session-history.md) | ✅ | ✅ | 远端执行的 AI 助手会话没有历史记录，host 端也看不到 |
 | [BUG-4066](bugs/BUG-4066-feedback-overlap-no-material.md) | 🚧 | 🚧 | 不应该重叠（反馈无截图，未定位） |
