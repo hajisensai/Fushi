@@ -53,6 +53,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -164,6 +165,9 @@ class SrsHistoryPage extends ConsumerStatefulWidget {
 
 class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   bool _loading = true;
+
+  /// 复习库打开失败（[readSrsStore] 原样抛出的错误）：页面显示错误态 + 重试，不停在转圈。
+  Object? _loadError;
   bool _busy = false;
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
@@ -203,7 +207,19 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   }
 
   Future<void> _reload() async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    final SrsDbStore? store;
+    try {
+      store = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsHistoryPage.openStore', e, stack);
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+      return;
+    }
     Map<String, Object?> status = const <String, Object?>{};
     List<SrsCheckpointView> checkpoints = const <SrsCheckpointView>[];
     if (store != null) {
@@ -243,8 +259,19 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       _status = status;
       _checkpoints = checkpoints;
       _deferredMerge = deferredMerge;
+      _loadError = null;
       _loading = false;
     });
+  }
+
+  /// 错误态的「重试」：作废缓存着失败的复习库 provider 再重读。
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    unawaited(_reload());
   }
 
   /// 跑一个会改动复习库的操作：期间禁用按钮，失败统一提示。
@@ -1041,6 +1068,14 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-history-load-retry'),
+        onRetry: _retryLoad,
+      );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[

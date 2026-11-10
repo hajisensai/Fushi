@@ -932,10 +932,18 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     if (column == SrsBrowseTableColumn.tags) return row.tags.join(' ');
     final SrsFieldDef? field = _cellField(row, column);
     if (field == null) return null;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return null;
-    final SrsNoteView? note = await store.note(row.noteId);
-    return note?.field(field.id);
+    // 表格从 unawaited 的进入编辑 / 存完跳格读它：读失败提示并返回 null（这一格不进编辑态），不变成未处理异常、
+    // 不让格子停在编辑态。
+    try {
+      final SrsDbStore? store = await readSrsStore(ref);
+      if (store == null) return null;
+      final SrsNoteView? note = await store.note(row.noteId);
+      return note?.field(field.id);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.loadCell', e, stack);
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      return null;
+    }
   }
 
   /// 表格原地改一格：字段走 [_saveField]、标签走 [_saveTags]（都是条件写 + 进撤销栈）。
@@ -1321,8 +1329,17 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     List<String>? ids,
   }) async {
     if ((ids == null && !_hasTargets) || _busy) return;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null || !mounted) return;
+    // 批量动作多从快捷键 / 菜单 unawaited 起：库打开失败要落到失败提示，不变成未处理异常。
+    final SrsDbStore? opened;
+    try {
+      opened = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.batch.openStore', e, stack);
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      return;
+    }
+    if (opened == null || !mounted) return;
+    final SrsDbStore store = opened;
     final SrsBrowseTargets? targets = await _loadTargets(ids: ids);
     if (targets == null || targets.isEmpty || !mounted) return;
     final List<String> cardIds = targets.cardIds;

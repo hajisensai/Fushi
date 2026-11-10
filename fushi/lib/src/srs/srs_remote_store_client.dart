@@ -340,6 +340,14 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   @override
   FsrsEngine? get engine => null;
 
+  /// 远程库没有本机的缓存行变更日志：[cacheChangesSince] 一律答 null（调用方按「答不了」整份重读 / 逐项比对，
+  /// 见 srs_review_freshness.dart）。
+  @override
+  int get cacheGeneration => 0;
+  @override
+  ({Set<String> notes, Set<String> cards})? cacheChangesSince(int generation) =>
+      null;
+
   /// 主机在同步集合里的设备 ID（修改历史据此标出「本机」= 主机写的）。
   @override
   String? get sync2Device => _device;
