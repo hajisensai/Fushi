@@ -1439,6 +1439,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           expression: expression.isEmpty ? null : expression,
           deck: deck,
           fields: fields,
+          layout: appModel.advancedMiningLayout,
+          setLayout: appModel.setAdvancedMiningLayout,
           // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
           wordAudio: expression.isEmpty
               ? null

@@ -54,6 +54,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
@@ -4531,6 +4532,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAdvancedMiningVisibleFields(List<String> names) async {
     await setPref('advanced_mining_visible_fields', jsonEncode(names));
+  }
+
+  /// 「高级制卡」对话框的分区布局（反馈 aZ99bm9R6K）。缺键 / 坏值 = 默认布局。
+  AdvancedMiningLayout get advancedMiningLayout {
+    final Object? raw = getPref('advanced_mining_layout');
+    return AdvancedMiningLayout.tryParse(raw is String ? raw : null) ??
+        AdvancedMiningLayout.defaults;
+  }
+
+  Future<void> setAdvancedMiningLayout(AdvancedMiningLayout layout) async {
+    await setPref('advanced_mining_layout', layout.toJson());
   }
 
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。默认 false = 无限循环（存量行为）。
