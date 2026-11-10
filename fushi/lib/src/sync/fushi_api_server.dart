@@ -452,8 +452,9 @@ class FushiApiServer {
             maxBytes: kApiKeyBodyProbeMaxBytes,
           );
         } on BodyTooLargeException {
-          if (provided != null)
+          if (provided != null) {
             return shelf.Response(401, body: 'Unauthorized');
+          }
           rethrow;
         }
         final String? bodyKey = _apiKeyFromJsonBody(rawBody);
