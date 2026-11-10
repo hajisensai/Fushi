@@ -1293,6 +1293,23 @@ bool ankiConnectHostIsLoopback(String host) {
 /// 于是整棵 Lapis 树都在范围内。
 ///
 /// 纯函数（不碰网络/设置），供单测直接钉查询语义。
+/// 离线已制卡缓存整份刷新时单次 `notesInfo` 的笔记数上限：`notesInfo` 回的是全部
+/// 字段正文（释义 HTML 动辄几 KB），不能把整库塞进一次响应。
+const int kAnkiMinedFirstFieldsBatchSize = 100;
+
+/// 反馈 JAEwvc6Lmr：列出「查重作用域」内全部笔记的搜索式——与 `isDuplicateForAdd`
+/// 同一组参数：笔记类型（Anki 判重本就只在同一笔记类型内比第一字段）+
+/// [ankiDuplicateDeckFilter] 给出的卡组过滤。
+String ankiMinedFirstFieldsQuery({
+  required String modelName,
+  required String deckName,
+  required AnkiDuplicateScope scope,
+}) {
+  final String modelTerm = 'note:"${_escapeAnkiQuery(modelName)}"';
+  final String deckFilter = ankiDuplicateDeckFilter(deckName, scope);
+  return deckFilter.isEmpty ? modelTerm : '$deckFilter $modelTerm';
+}
+
 String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
   switch (scope) {
     case AnkiDuplicateScope.collection:

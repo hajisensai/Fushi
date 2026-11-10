@@ -760,7 +760,15 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 等价于 [AnkiDuplicateScope.collection]。设置项的说明里已写明「仅 AnkiConnect
   /// 生效」——这里不是漏接线。
   @override
-  Future<bool> isDuplicate(String expression, String reading) async {
+  Future<bool> isDuplicate(String expression, String reading) async =>
+      (await probeDuplicate(expression, reading)) ?? false;
+
+  /// 反馈 JAEwvc6Lmr：provider 出错（AnkiDroid 后台进程被杀后 collection 打不开、
+  /// API 被关、未授权）回 `null`「没问到」，不再折成 `false`——离线缓存据此退回本地
+  /// 已制卡词表，而不是把 ✓ 全部擦掉。native 的 `checkForDuplicates` 在未授权时同样
+  /// 报错（`PERMISSION_DENIED`），不再回 `false` 冒充「查过了、没有」。
+  @override
+  Future<bool?> probeDuplicate(String expression, String reading) async {
     final settings = await loadSettings();
     final noteType = settings.selectedNoteType;
     if (noteType == null) return false;
@@ -774,9 +782,36 @@ class AnkiRepository extends BaseAnkiRepository {
       });
       return result == true;
     } catch (e, stack) {
-      debugPrint('AnkiRepository.isDuplicate: $e\n$stack');
-      return false;
+      debugPrint('AnkiRepository.probeDuplicate: $e\n$stack');
+      return null;
     }
+  }
+
+  /// AnkiDroid 的 `findDuplicateNotes` 按笔记类型在**整库**查（没有卡组维度，见
+  /// [isDuplicate] 上方说明），所以作用域只有笔记类型。
+  @override
+  Future<String?> minedCacheScope() async {
+    final AnkiNoteType? noteType = (await loadSettings()).selectedNoteType;
+    if (noteType == null) return null;
+    return 'ankidroid|model:${noteType.name}';
+  }
+
+  /// native `listFirstFields`：该笔记类型下全部笔记的第一字段原文。
+  @override
+  Future<List<String>?> listMinedFirstFields() async {
+    final AnkiNoteType? noteType = (await loadSettings()).selectedNoteType;
+    if (noteType == null) return null;
+    final List<Object?>? raw = await _channel.invokeListMethod<Object?>(
+      'listFirstFields',
+      <String, dynamic>{'model': noteType.name},
+    );
+    if (raw == null) {
+      throw StateError('AnkiDroid listFirstFields returned no result');
+    }
+    return <String>[
+      for (final Object? value in raw)
+        if (value is String) value,
+    ];
   }
 
   /// BUG-2380：存在性判断**只在 native 一处**（`AnkiChannelHandler.createNoteType`
