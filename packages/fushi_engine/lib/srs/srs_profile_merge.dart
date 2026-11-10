@@ -65,6 +65,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show SrsBackupSource;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_data.dart'
+    show srsPurgeProfileRows;
 
 /// srs.db `srs_meta` 里「这个旧 uid 的并入进行中」标记的键前缀（值 = `{"profileId":..,"newUid":..}`）。
 const String kSrsProfileMergeMarkerPrefix = 'profile_merge/';
@@ -337,7 +339,10 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
         );
       }
       await debugFault?.call(SrsProfileMergeStage.beforeDelete);
-      await _deleteProfile(srs, oldUid);
+      // 删旧 uid 的一切（每张带 profile_uid 的表、按 profile 记的 srs_meta 键含并入标记、没人引用的 sync2_deps）：
+      // 唯一实现在 Rust（native/fushi_fsrs/src/store/profile_data.rs）。它跑在写连接上、这笔 Drift 事务里
+      // （嵌一个 savepoint），这笔事务回滚它就一起回滚。
+      await srsPurgeProfileRows(core, oldUid);
       return true;
     });
     if (done) break;
@@ -1206,32 +1211,6 @@ Future<Map<String, int>> _serverTimes(
           .get())
     r.read<String>('event_id'): r.read<int>('server_time'),
 };
-
-/// 删掉 [uid] 在 srs.db 里的一切：所有带 `profile_uid` 列的表（数据、投影、缓存、本机状态、同步 v2 的操作日志
-/// 与身份）、迁移进行中标记、并入标记。调用方在事务里。
-Future<void> _deleteProfile(SrsDatabase db, String uid) async {
-  final List<String> tables = <String>[
-    for (final QueryRow r
-        in await db
-            .customSelect(
-              "SELECT m.name AS n FROM sqlite_master m WHERE m.type = 'table' "
-              'AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) p '
-              "WHERE p.name = 'profile_uid')",
-            )
-            .get())
-      r.read<String>('n'),
-  ];
-  for (final String t in tables) {
-    await db.customStatement(
-      'DELETE FROM "$t" WHERE profile_uid = srs_id(?)',
-      <Object>[uid],
-    );
-  }
-  await db.customStatement('DELETE FROM srs_meta WHERE key IN (?, ?)', <Object>[
-    'sync2_migrating/$uid',
-    '$kSrsProfileMergeMarkerPrefix$uid',
-  ]);
-}
 
 // ---------------------------------------------------------------- 媒体
 

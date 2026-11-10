@@ -1309,11 +1309,13 @@ class SrsDbStore implements SrsSync2Host {
   /// 本机产生事件：落库、进发件箱、刷新缓存（内核在 `apply` 的同一次调用里刷新）。调用方在独占区（[runExclusive]）里、紧接着分配
   /// 序号之后调它：分配与落库之间不插进别的写入。
   ///
-  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里
-  /// 排队（store/study.rs），结果交给 [onStudy]。
+  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[answers]：本机作答写的日志 ID（显式声明
+  /// 评分意图，内核不从日志形状反推）；[study]：落库、刷新缓存后在同一次命令里排队（store/study.rs），结果交给
+  /// [onStudy]。
   Future<void> _emit(
     List<SrsEvent> events, {
     Map<String, String> logNotes = const <String, String>{},
+    Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
   }) async {
@@ -1326,6 +1328,7 @@ class SrsDbStore implements SrsSync2Host {
       await _storeLocalBatch(
         events,
         logNotes: logNotes,
+        answers: answers,
         study: study,
         onStudy: onStudy,
       );
@@ -1349,6 +1352,7 @@ class SrsDbStore implements SrsSync2Host {
     int? serverTimeMs,
     Map<String, int>? serverTimes,
     Map<String, String> logNotes = const <String, String>{},
+    Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
   }) async {
@@ -1384,6 +1388,8 @@ class SrsDbStore implements SrsSync2Host {
       input.add(<String, Object?>{
         'e': stored.toJson(),
         'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+        if (stored is SrsLogEvent && answers.contains(stored.log.id))
+          'intent': 'answer',
         // 外来、已盖戳的事件（备份合并 / 按时间点恢复并入备份）：保留原 dot / 因果上下文 / HLC，支配关系照旧。
         if (stamped) 'stamped': true,
         if (stamped && (serverTimes?[stored.id] ?? serverTimeMs) != null)
@@ -1998,11 +2004,12 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
-  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
+  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；本机手动排程（`sched`：复习页撤销、浏览页重置 / 改期、
+  /// 立即重排）是从 `apply` 拆出来的同一类本机写入，同走交互道；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
   /// `kSrsSync2Concurrency` 并发，以前一来就占满整个池）；其余走默认道。
   @visibleForTesting
   static SrsCoreLane srsCoreLaneOf(Object? op) => switch (op) {
-    'apply' || 'study' || 'preview' => SrsCoreLane.interactive,
+    'apply' || 'sched' || 'study' || 'preview' => SrsCoreLane.interactive,
     'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
     _ => SrsCoreLane.bulk,
   };
@@ -2015,6 +2022,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
   static const Set<String> _kSync2CacheOps = <String>{
     'apply',
+    'sched',
     'ingest',
     'ingest_batch',
     'ingest_commit',
@@ -3700,74 +3708,73 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
-  /// 批量重置为新卡：每张一条 manual 日志，一个批次落库。已经是新卡的跳过。
-  /// 返回写出的日志（撤销用）。各卡历史分块一次预读（以前每张卡各查四五次）。
+  /// 批量重置为新卡：每张一条 manual 日志，一次内核命令落库。已经是新卡的跳过。返回写出的日志（撤销用），
+  /// 按传入顺序（去重后）排列。
   Future<List<SrsReviewLog>> resetCards(Iterable<String> cardIds) =>
       runExclusive(() async {
-        final SrsDayContext day = await dayContext();
-        final List<SrsCardCacheRow> rows = <SrsCardCacheRow>[
-          for (final SrsCardCacheRow c in await cardRows(cardIds))
-            if (c.queue != SrsQueue.newCard.wire) c,
-        ];
-        final Map<String, SrsCardHistory> hist = await histories(
-          rows.map((SrsCardCacheRow c) => c.id),
-        );
-        final List<SrsReviewLog> logs = <SrsReviewLog>[
-          for (final SrsCardCacheRow c in rows)
-            _ops.reset(
-              cardId: c.id,
-              history: hist[c.id]!,
-              ctx: _logContext(day),
-            ),
-        ];
-        await _emitLogs(logs);
-        return logs;
+        final _SchedOutcome r = await _schedLocal(<Map<String, Object?>>[
+          for (final String id in cardIds.toSet())
+            <String, Object?>{'a': 'reset', 'card': id, 'skipNew': true},
+        ]);
+        return r.logs;
       });
 
-  /// 批量设置到期日（cardId → 排程日序号），一个批次落库。返回写出的日志（撤销用）。
+  /// 批量设置到期日（cardId → 排程日序号），一次内核命令落库。返回写出的日志（撤销用）。
   Future<List<SrsReviewLog>> setDueDays(Map<String, int> dueDays) =>
       runExclusive(() async {
-        final SrsDayContext day = await dayContext();
-        final Map<String, SrsCardHistory> hist = await histories(dueDays.keys);
-        final List<SrsReviewLog> logs = <SrsReviewLog>[
+        final _SchedOutcome r = await _schedLocal(<Map<String, Object?>>[
           for (final MapEntry<String, int> e in dueDays.entries)
-            _ops.setDue(
-              cardId: e.key,
-              history: hist[e.key]!,
-              dueDay: e.value,
-              ctx: _logContext(day),
-            ),
-        ];
-        await _emitLogs(logs);
-        return logs;
+            <String, Object?>{'a': 'setDue', 'card': e.key, 'due': e.value},
+        ]);
+        return r.logs;
       });
 
-  /// 批量撤销日志（cardId, logId）：一个批次落库。返回撤不了的条数（那条已不是该卡最后一条
+  /// 批量撤销日志（cardId, logId）：一次内核命令落库。返回撤不了的条数（那条已不是该卡最后一条
   /// 有效日志——别的设备同步来了更新的复习，铁律 B 的协议限制）。
   Future<int> undoLogs(List<(String, String)> targets) =>
       runExclusive(() async {
-        final SrsDayContext day = await dayContext();
-        final Map<String, SrsCardHistory> hist = await histories(<String>[
-          for (final (String cardId, String _) in targets) cardId,
+        final _SchedOutcome r = await _schedLocal(<Map<String, Object?>>[
+          for (final (String cardId, String logId) in targets)
+            <String, Object?>{'a': 'undo', 'card': cardId, 'log': logId},
         ]);
-        final List<SrsReviewLog> undos = <SrsReviewLog>[];
-        int blocked = 0;
-        for (final (String cardId, String logId) in targets) {
-          final SrsReviewLog? u = _ops.undo(
-            cardId: cardId,
-            history: hist[cardId]!,
-            targetLogId: logId,
-            ctx: _logContext(day),
-          );
-          if (u == null) {
-            blocked++;
-          } else {
-            undos.add(u);
-          }
-        }
-        await _emitLogs(undos);
-        return blocked;
+        return r.blocked;
       });
+
+  /// 本机手动排程操作（重置 / 改到期 / 撤销 / 立即重排）：把显式意图交给内核（`sched`，
+  /// native/fushi_fsrs/src/store/sync2/sched_local.rs），内核在一次事务里逐卡重放到此刻、判能不能做、算结果、
+  /// 落操作与投影并刷新缓存；交回落库后的日志行（结果是内核算出的值）与撤不了的条数。Dart 不读历史、不算排程。
+  ///
+  /// HLC 按本机时钟的规则由内核接着 [_clock] 推进（写了几条推进几次），交回的最后一个就是时钟的新状态；
+  /// 日志 ID、时刻、时间来源、日界口径与 Dart 组日志时同一套。调用方在独占区里。
+  Future<_SchedOutcome> _schedLocal(List<Map<String, Object?>> items) async {
+    assert(
+      identical(Zone.current[_writeZoneKey], this),
+      '_schedLocal outside runExclusive',
+    );
+    if (items.isEmpty) return const _SchedOutcome(<SrsReviewLog>[], 0);
+    final SrsDayContext day = await dayContext();
+    final (int nowMs, SrsTimeSource source) = now();
+    late Map<String, Object?> r;
+    await _transactionOrReload(() async {
+      r = await _sync2(<String, Object?>{
+        'op': 'sched',
+        'now': nowMs,
+        'at': nowMs,
+        'ts': source.wire,
+        'utcOff': day.utcOffsetMin,
+        'rollover': day.rolloverHour,
+        'hlc': _clock.last.encode(),
+        'items': items,
+      });
+      _absorbProjection(r);
+      if (r['hlc'] case final String h) _clock.adoptLocalTicks(Hlc.decode(h));
+      await _saveLocal();
+    });
+    return _SchedOutcome(<SrsReviewLog>[
+      for (final Object? l in (r['logs'] as List?) ?? const <Object?>[])
+        SrsReviewLog.fromJson((l! as Map).cast<String, Object?>()),
+    ], (r['blocked'] as int?) ?? 0);
+  }
 
   /// 一批本机日志落库（空则什么也不做）。调用方已在独占区里。
   Future<void> _emitLogs(List<SrsReviewLog> logs) async {
@@ -3779,14 +3786,6 @@ class SrsDbStore implements SrsSync2Host {
 
   SrsLogContext _logContext(SrsDayContext day) =>
       SrsLogContext(profileUid: profileUid, clock: _clock, now: now, day: day);
-
-  SrsCardOps get _ops {
-    final FsrsEngine? e = engine;
-    if (e == null) {
-      throw StateError('FSRS native library unavailable');
-    }
-    return SrsCardOps(engine: e);
-  }
 
   Future<SrsCardCacheRow?> cardRow(String cardId) => (db.select(
     db.srsCardsCache,
@@ -3908,6 +3907,7 @@ class SrsDbStore implements SrsSync2Host {
       await _emit(
         <SrsEvent>[SrsLogEvent(log)],
         logNotes: <String, String>{cardId: raw.note},
+        answers: <String>{log.id},
         study: merge
             ? await _studyRequest(tree, studyDeckId, pick: true, custom: custom)
             : null,
@@ -3925,73 +3925,34 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 撤销一条评分；它已不是该卡最后一条有效日志（别的设备同步来了更新的复习）时返回 false。
-  Future<bool> undo(String cardId, String logId) => runExclusive(() async {
-    final SrsDayContext day = await dayContext();
-    final SrsReviewLog? u = _ops.undo(
-      cardId: cardId,
-      history: await history(cardId),
-      targetLogId: logId,
-      ctx: _logContext(day),
-    );
-    if (u == null) return false;
-    await _emit(<SrsEvent>[SrsLogEvent(u)]);
-    return true;
-  });
+  Future<bool> undo(String cardId, String logId) => runExclusive(
+    () async =>
+        (await _schedLocal(<Map<String, Object?>>[
+          <String, Object?>{'a': 'undo', 'card': cardId, 'log': logId},
+        ])).blocked ==
+        0,
+  );
 
+  /// 设为新卡（单卡入口：已经是新卡也照写一条）。
   Future<void> resetCard(String cardId) => runExclusive(() async {
-    final SrsDayContext day = await dayContext();
-    await _emit(<SrsEvent>[
-      SrsLogEvent(
-        _ops.reset(
-          cardId: cardId,
-          history: await history(cardId),
-          ctx: _logContext(day),
-        ),
-      ),
+    await _schedLocal(<Map<String, Object?>>[
+      <String, Object?>{'a': 'reset', 'card': cardId},
     ]);
   });
 
   Future<void> setDueDay(String cardId, int dueDay) => runExclusive(() async {
-    final SrsDayContext day = await dayContext();
-    await _emit(<SrsEvent>[
-      SrsLogEvent(
-        _ops.setDue(
-          cardId: cardId,
-          history: await history(cardId),
-          dueDay: dueDay,
-          ctx: _logContext(day),
-        ),
-      ),
+    await _schedLocal(<Map<String, Object?>>[
+      <String, Object?>{'a': 'setDue', 'card': cardId, 'due': dueDay},
     ]);
   });
 
-  /// 「立即重排整组」：给子树里每张复习卡写一条 reschedule 日志。牌组树只读一次、各卡历史分块
-  /// 一次预读（以前每张卡各读一遍历史、各读一遍整棵牌组树，BUG-3543）。
-  Future<int> rescheduleDeck(String deckId) => runExclusive(() async {
-    final SrsDeckTree tree = await deckTree();
-    final List<String> sub = tree.subtree(deckId);
-    final SrsDayContext day = await dayContext();
-    final List<SrsCardCacheRow> cards =
-        await (db.select(db.srsCardsCache)..where(
-              (c) => c.deckId.isIn(sub) & c.queue.equals(SrsQueue.review.wire),
-            ))
-            .get();
-    final Map<String, SrsCardHistory> hist = await histories(
-      cards.map((SrsCardCacheRow c) => c.id),
-    );
-    final List<SrsReviewLog> logs = <SrsReviewLog>[];
-    for (final SrsCardCacheRow c in cards) {
-      final SrsReviewLog? l = _ops.reschedule(
-        cardId: c.id,
-        history: hist[c.id]!,
-        config: _schedulingConfigIn(tree, c.deckId),
-        ctx: _logContext(day),
-      );
-      if (l != null) logs.add(l);
-    }
-    await _emitLogs(logs);
-    return logs.length;
-  });
+  /// 「立即重排整组」：子树里每张复习卡写一条 reschedule 日志（候选、记忆状态、到期都由内核在一次命令里算）。
+  /// 返回写出的条数。
+  Future<int> rescheduleDeck(String deckId) => runExclusive(
+    () async => (await _schedLocal(<Map<String, Object?>>[
+      <String, Object?>{'a': 'rescheduleDeck', 'deck': deckId},
+    ])).logs.length,
+  );
 
   // ------------------------------------------------------------------ 查询
 
@@ -5824,6 +5785,14 @@ class SrsCardChangedError implements Exception {
 
   @override
   String toString() => 'SrsCardChangedError($cardId)';
+}
+
+/// 一次本机手动排程命令（[SrsDbStore._schedLocal]）的结果：落库后的日志行与撤不了的条数。
+final class _SchedOutcome {
+  const _SchedOutcome(this.logs, this.blocked);
+
+  final List<SrsReviewLog> logs;
+  final int blocked;
 }
 
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
