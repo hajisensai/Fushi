@@ -1,4 +1,4 @@
-## BUG-4362 · 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加）
+## BUG-4363 · 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加）
 - **报告**：2026-11-08（用户反馈 R7k887yaJI 重开，Android 3.3.0-debug.24790：「无缝衔接有 bug，在章节之间长按缓慢滑动屏幕，会飞速跳到下下章；下滑阻尼低和中都发生」）。关联 BUG-4239（f6fbacf0e9 提交信息里写的 BUG-4222，后被 settle 改号；三档切章阻尼）与无缝衔接功能 #3049（设计 `docs/specs/2026-11-07-continuous-seamless-chapters-design.md`）。
 - **真实性**：✅ 真 bug，真 Chromium + CDP 真触摸复现（见②探针）。根因是无缝模式下**有两个换章所有者**：
   1. 无缝模块：用户滚动使视口中心越过邻章边界 `HYSTERESIS` 就在文档内晋升邻章并回调 `onSeamlessChapterActivated`，Dart 同步把 `_currentChapter` 换成新章（develop `fushi/lib/src/reader/reader_seamless_chapters_script.dart:620`、`:666-675`；`fushi/lib/src/pages/implementations/reader_fushi/seamless.part.dart` `_onSeamlessChapterActivated`）。

@@ -9,7 +9,7 @@
 //
 //   flutter test test/reader/reader_headless_shell_dump_test.dart --no-pub   # 写引擎到 systemTemp
 //   node tool/reader_pitch_headless/continuous_seamless_chapters_probe.mjs
-// 退出码 0 = 横排 / 竖排、真触摸、慢拖跨章只换一章（BUG-4362）、短邻章边界认领、开关关闭各组断言全部成立。
+// 退出码 0 = 横排 / 竖排、真触摸、慢拖跨章只换一章（BUG-4363）、短邻章边界认领、开关关闭各组断言全部成立。
 // 验证未落盘的改动时可用 FUSHI_ENGINE_JS=<引擎产物路径> 覆盖默认的 systemTemp 产物。
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import puppeteer from 'puppeteer-core';
 

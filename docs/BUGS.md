@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3907 条。点号进各自文件。
+> 共 3908 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4362](bugs/BUG-4362-seamless-slow-drag-double-chapter-skip.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加） |
+| [BUG-4363](bugs/BUG-4363-seamless-slow-drag-double-chapter-skip.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加） |
 | [BUG-4362](bugs/BUG-4362-video-grouping-mode-switch-scatter.md) | ✅ | ✅ | 视频来源从「按文件夹」改「按作品」后，系列页整部剧散成每集一张卡、刮削逐集当作品 |
 | [BUG-4361](bugs/BUG-4361-manga-ocr-latin-word-start-cross-glyph.md) | ✅ | ✅ | 英文漫画 OCR 点词中字母只查后半截：词首回退不跨字格文本节点（WELL 点 E 得 ELL） |
 | [BUG-4360](bugs/BUG-4360-manga-paged-double-tap-ios-touch-delay.md) | ✅ | ✅ | iOS 漫画分页模式双击缩放几乎总是先弹控制层：WebView 触摸经 Flutter 手势竞技场延后投递 |
