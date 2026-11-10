@@ -11822,6 +11822,7 @@
   "video_subtitle_waveform_open": "Alinhamento de forma de onda",
   "video_subtitle_waveform_open_hint": "Toque para ampliar e alinhar",
   "video_subtitle_waveform_scroll_hint": "Arraste para navegar na timeline; use os controles abaixo para alinhar",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Forma de onda indisponível neste dispositivo",
   "video_subtitle_waveform_zoom_in": "Ampliar",
   "video_subtitle_waveform_zoom_out": "Reduzir",

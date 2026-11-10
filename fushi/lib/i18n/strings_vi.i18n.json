@@ -11822,6 +11822,7 @@
   "video_subtitle_waveform_open": "Căn chỉnh sóng âm",
   "video_subtitle_waveform_open_hint": "Chạm để phóng to và căn chỉnh",
   "video_subtitle_waveform_scroll_hint": "Kéo để quét dòng thời gian; dùng các nút bên dưới để căn chỉnh",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Sóng âm không khả dụng trên thiết bị này",
   "video_subtitle_waveform_zoom_in": "Phóng to",
   "video_subtitle_waveform_zoom_out": "Thu nhỏ",

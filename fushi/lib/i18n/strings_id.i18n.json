@@ -11822,6 +11822,7 @@
   "video_subtitle_waveform_open": "Penyelarasan waveform",
   "video_subtitle_waveform_open_hint": "Ketuk untuk memperbesar dan menyelaraskan",
   "video_subtitle_waveform_scroll_hint": "Seret untuk memindai timeline; gunakan kontrol di bawah untuk menyelaraskan",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Waveform tidak tersedia di perangkat ini",
   "video_subtitle_waveform_zoom_in": "Perbesar",
   "video_subtitle_waveform_zoom_out": "Perkecil",

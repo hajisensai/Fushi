@@ -11822,6 +11822,7 @@
   "video_subtitle_waveform_open": "Golfvormuitlijning",
   "video_subtitle_waveform_open_hint": "Tik om in te zoomen en uit te lijnen",
   "video_subtitle_waveform_scroll_hint": "Sleep om de tijdlijn te scannen; gebruik de bedieningselementen hieronder om uit te lijnen",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Golfvorm niet beschikbaar op dit apparaat",
   "video_subtitle_waveform_zoom_in": "Inzoomen",
   "video_subtitle_waveform_zoom_out": "Uitzoomen",
