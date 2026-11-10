@@ -1,4 +1,4 @@
-## BUG-4330 · Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源）
+## BUG-4333 · Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源）
 - **报告**：2026-11-10（崩溃报告分诊：`6w4NCIxzoR`、`T--XrKRrZ8`、`lGXdQ_RHiN`，三台不同 Windows 机器，都是 3.3.0+24434——已含 [BUG-4073](BUG-4073-windows-uia-hittest-av.md) 的 0002 / 0003 框架补丁）。
 - **真实性**：✅ 真原生崩溃；**框架侧来源未定位**，本条只交付取证。
   - 崩点与 BUG-4073 / [BUG-3796](BUG-3796-windows-nav-switch-freeze-a11y-reparent.md) 同族：`6w4NCIxzoR` 是 `flutter_windows.dll+0x13b23` 同址递归（UIA `HitTestSync` 解引用空 delegate，`flutter_platform_node_delegate_windows.cc:66-75`）；`T--XrKRrZ8` 符号化为 `memmove ← vector::erase ← AccessibilityBridge::CreateRemoveReparentedNodesUpdate`（`accessibility_bridge.cc:249`，`child_ids.erase(end())`）；`lGXdQ_RHiN` 两次 AV 都在 OLEACC / UIAutomationCore 回调里。
