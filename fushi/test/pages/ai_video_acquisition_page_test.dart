@@ -219,7 +219,7 @@ class _Ports {
     setSeriesSubtitleLanguage: (_, _) async {},
     submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
       submitted = effect.plan.picks.length;
-      return submitted;
+      return (queued: submitted, alreadyQueued: 0);
     },
     submitSubscription: (_) async {},
   );

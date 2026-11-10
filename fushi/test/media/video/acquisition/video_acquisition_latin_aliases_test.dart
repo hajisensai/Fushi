@@ -232,7 +232,7 @@ void main() {
         decideIdentity: (_) async => null,
         persistPreference: (_, _) async {},
         setSeriesSubtitleLanguage: (_, _) async {},
-        submitDownload: (_) async => 0,
+        submitDownload: (_) async => (queued: 0, alreadyQueued: 0),
         submitSubscription: (_) async {},
       ),
     );

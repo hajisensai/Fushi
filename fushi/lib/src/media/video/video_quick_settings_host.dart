@@ -59,6 +59,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
     this.onEnterSubtitleDragAdjust,
+    this.onEnterSubtitleMaskEdit,
     this.onEnterSubtitleDelayBar,
     this.onSubtitleObscureRevealChanged,
     this.onSecondarySubtitleObscureRevealChanged,
@@ -173,6 +174,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 实时效果）：页面关掉设置面板，在画面顶部挂一条只含调轴控件的紧凑浮条，字幕
   /// 区域整片让出来。null = 面板不显示该入口（全局设置页 / 无播放器场景）。
   final VoidCallback? onEnterSubtitleDelayBar;
+
+  /// 进入「调整字幕遮布」模式：页面关设置侧栏，在画面上挂可拖动 / 缩放的遮布框。
+  /// null = 面板不显示该入口（全局设置页 / 无播放器场景）。
+  final VoidCallback? onEnterSubtitleMaskEdit;
 
   /// 遮蔽态「悬停 / 点击临时显形」总闸的页面通道：写偏好 + 立刻重建 overlay。null =
   /// 无播放器场景（全局设置页），由 schema 直接写 [AppModel]。
