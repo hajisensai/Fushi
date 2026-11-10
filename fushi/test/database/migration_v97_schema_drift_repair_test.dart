@@ -132,7 +132,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 148);
+      expect(probe.select('PRAGMA user_version').first.values.first, 149);
       for (final (String table, String column) in <(String, String)>[
         ('epub_books', 'language'),
         ('dictionary_metadata', 'language_override'),
@@ -184,7 +184,7 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 148);
+      expect(probe.select('PRAGMA user_version').first.values.first, 149);
     } finally {
       probe.dispose();
     }

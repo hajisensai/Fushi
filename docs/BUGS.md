@@ -33,10 +33,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3883 条。点号进各自文件。
+> 共 3906 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4361](bugs/BUG-4361-manga-ocr-latin-word-start-cross-glyph.md) | ✅ | ✅ | 英文漫画 OCR 点词中字母只查后半截：词首回退不跨字格文本节点（WELL 点 E 得 ELL） |
+| [BUG-4360](bugs/BUG-4360-manga-paged-double-tap-ios-touch-delay.md) | ✅ | ✅ | iOS 漫画分页模式双击缩放几乎总是先弹控制层：WebView 触摸经 Flutter 手势竞技场延后投递 |
+| [BUG-4359](bugs/BUG-4359-android-startup-webview-prewarm-anr.md) | ✅ | ✅ | Android 低端机冷启动 8s ANR：WebView 预热在首帧前于主线程初始化 chromium |
+| [BUG-4358](bugs/BUG-4358-interconnect-remote-video-sidecar-subtitle-list.md) | ✅ | ✅ | 互联远端视频只暴露一条 sidecar 字幕：host 多条外挂字幕菜单只列默认那条 |
+| [BUG-4357](bugs/BUG-4357-subtitle-waveform-truncated-at-probe-limit.md) | ✅ | ✅ | 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去 |
+| [BUG-4356](bugs/BUG-4356-online-manga-completion-per-book.md) | ✅ | ✅ | online-manga-completion-per-book |
+| [BUG-4355](bugs/BUG-4355-gal-direct-nested-flip-up-layer-reset.md) | ✅ | ✅ | 游戏内卡嵌套子卡向上翻出后两张卡下方出现透明区 |
+| [BUG-4354](bugs/BUG-4354-alist-download-gateway-pow-required.md) | ✅ | ✅ | 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手 |
+| [BUG-4353](bugs/BUG-4353-cloud-legacy-manga-sniff-webdav-sftp.md) | ✅ | ✅ | WebDAV / SFTP 同步后端没有区间读，云端旧名漫画包无法判型 |
+| [BUG-4352](bugs/BUG-4352-video-explicit-pos-cues-stacked-karaoke.md) | ✅ | ✅ | ASS 卡拉 OK 歌词（同一 \pos 多条事件）被竖排成多行、光晕残影；渲染活动集只按 125ms 刷新 |
+| [BUG-4351](bugs/BUG-4351-shortcut-bindings-work-session-scope.md) | ✅ | ✅ | 作品会话期间改的快捷键重启后失效（GitHub #3089） |
+| [BUG-4350](bugs/BUG-4350-game-library-add-source.md) | ✅ | ✅ | 游戏库缺少「添加来源」扫描目录（SourceLibraryKind 没有 game） |
+| [BUG-4349](bugs/BUG-4349-audiobook-stale-play-resumes-after-lookup-pause.md) | ✅ | ✅ | 弹窗顶栏按过播放后，查词暂停有声书被排队的旧 play 立刻顶回去 |
+| [BUG-4348](bugs/BUG-4348-subtitle-version-filename-truncated.md) | ✅ | ✅ | 字幕版本视图文件名被截断，看不出版本差异 |
+| [BUG-4347](bugs/BUG-4347-embedded-torrent-runtime-misreported.md) | ✅ | ✅ | 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」 |
+| [BUG-4346](bugs/BUG-4346-srs-card-synthetic-bold.md) | ✅ | ✅ | 复习卡词头 / 加粗段在单字重用户字体上被合成假粗体糊字 |
+| [BUG-4345](bugs/BUG-4345-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
+| [BUG-4339](bugs/BUG-4339-windows-video-output-teardown-order.md) | ✅ | ✅ | Windows 视频输出拆除顺序错：mpv 渲染上下文在 GL 上下文/共享显示销毁之后、且晚于 Dispose 回复才释放，卡面视频反复开关内存上涨后 libmpv abort / ANGLE AV |
+| [BUG-4339](bugs/BUG-4339-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
+| [BUG-4338](bugs/BUG-4338-discovery-search-irrelevant-results.md) | ✅ | ✅ | 游戏发现页搜索结果混入大量无关条目（真红小站模糊搜索透传） |
+| [BUG-4337](bugs/BUG-4337-online-manga-sync-chapters-json-crash.md) | ✅ | ✅ | 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见 |
+| [BUG-4336](bugs/BUG-4336-md3-floating-bar-stranded-on-lookup.md) | ✅ | ✅ | MD3 悬浮底栏在查词页收起后回不来，用户离不开查词页 |
+| [BUG-4335](bugs/BUG-4335-media-name-4digit-episode.md) | ✅ | ✅ | 文件名 S01E0005 这类 4 位集号识别不出，每集成独立系列 |
 | [BUG-4334](bugs/BUG-4334-game-session-card-floating-toolbar.md) | ✅ | ✅ | 游戏工作台会话卡的工具组用浮动胶囊样式、悬在卡片中段，与主操作不在同一行 |
 | [BUG-4333](bugs/BUG-4333-windows-axtree-desync-pending-children-recur.md) | 🚧 | 🚧 | Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源） |
 | [BUG-4332](bugs/BUG-4332-video-cue-nav-same-start.md) | ✅ | ✅ | 视频 ASS 同起止多条 Dialogue：上/下一句要按两次 |
@@ -176,7 +199,7 @@
 | [BUG-4185](bugs/BUG-4185-web-video-study-chars-zero.md) | ✅ | ✅ | 内置浏览器 / 扩展里看网页视频（YouTube）只计时长，字幕字数恒为 0 |
 | [BUG-4184](bugs/BUG-4184-web-page-flip-comic-not-detected.md) | ✅ | ✅ | 内置浏览器把 canvas / 跨页翻页式漫画试读页认不成漫画 |
 | [BUG-4183](bugs/BUG-4183-interconnect-host-update-lan-only.md) | ✅ | ✅ | 互联主机版本卡写「只能在局域网内让主机更新」，异地已配对设备被信任区门拒 |
-| [BUG-4182](bugs/BUG-4182-audiobook-clip-unaligned-utterance.md) | 🚧 | 🚧 | 有声书导出片段视频：第二句只有声音没字幕（对齐数据把漏听台词并入下一句，导出窗口本身正确） |
+| [BUG-4182](bugs/BUG-4182-audiobook-clip-unaligned-utterance.md) | ✅ | ✅ | 有声书导出片段视频：第二句只有声音没字幕（对齐数据把漏听台词并入下一句，导出窗口本身正确） |
 | [BUG-4181](bugs/BUG-4181-vertical-arrow-symbol-lookup-column-start.md) | 🚧 | 🚧 | 竖排点「↓」符号查出列首「顔」（未复现，缺原书 DOM） |
 | [BUG-4180](bugs/BUG-4180-webview-floating-menu-no-close-on-selection-end.md) | ✅ | ✅ | Android 查词弹窗 search/copy 浮动菜单选区结束后不关，盖住制卡按钮 |
 | [BUG-4179](bugs/BUG-4179-manga-latin-ocr-words-glued.md) | ✅ | ✅ | 英文漫画 OCR 点词查不到：叠加层丢掉词间空格与换行，取词把整行粘成一个词 |

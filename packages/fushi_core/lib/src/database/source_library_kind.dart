@@ -14,7 +14,12 @@ enum SourceLibraryKind {
   manga('manga'),
 
   /// 音乐（v130，音乐模块）：扫音频文件 + `.cue`，落 `music_tracks`。
-  music('music');
+  music('music'),
+
+  /// 游戏（反馈 9Rm_8JEkGM，Windows 游戏库）：扫来源根下的游戏目录（含 `.exe` 的
+  /// 目录一条），落 `galgames`。只收本地来源（exe 要本机拉起）。来源 ↔ 游戏的归属
+  /// 记在来源扫描索引里（`game_source_scanner.dart`），不升 schema。
+  game('game');
 
   const SourceLibraryKind(this.dbValue);
 
