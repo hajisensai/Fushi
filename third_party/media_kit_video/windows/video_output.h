@@ -119,7 +119,7 @@ class VideoOutput {
   ThreadPool* thread_pool_ref_ = nullptr;
   // For preventing any asynchronous operations (primarily texture objects
   // deletion after unregister in |Resize|) access this object after
-  // destruction. FUSHI FORK (BUG-4338): written by the disposing thread and
+  // destruction. FUSHI FORK (BUG-4339): written by the disposing thread and
   // read by libmpv's update callback / the render thread, hence atomic.
   std::atomic<bool> destroyed_{false};
 
