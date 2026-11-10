@@ -408,6 +408,8 @@ mixin DictionaryPageMixin {
           expression: expression.isEmpty ? null : expression,
           deck: deck,
           fields: fields,
+          layout: ref.read(appProvider).advancedMiningLayout,
+          setLayout: ref.read(appProvider).setAdvancedMiningLayout,
           // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
           wordAudio: expression.isEmpty
               ? null

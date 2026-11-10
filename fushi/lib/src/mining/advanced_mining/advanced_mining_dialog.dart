@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout_editor.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
@@ -118,6 +120,10 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
   bool _finished = false;
 
   final Set<_Fold> _expanded = <_Fold>{};
+
+  /// 分区布局（反馈 aZ99bm9R6K）：打开时取宿主记住的，在「自定义布局」里改了即时生效。
+  late AdvancedMiningLayout _layout =
+      widget.capabilities.layout ?? AdvancedMiningLayout.defaults;
 
   @override
   void initState() {
@@ -301,21 +307,70 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     ),
   );
 
+  // ───────────────────────────── 布局 ─────────────────────────────
+
+  /// 这个页面实际有的可摆放分区（布局编辑器只列这些）。
+  Set<AdvancedMiningPanelId> get _present => <AdvancedMiningPanelId>{
+    if (_c.deckSection != null) AdvancedMiningPanelId.deck,
+    if (_c.fieldsSection != null) AdvancedMiningPanelId.fields,
+    if (_c.wordAudioSection != null) AdvancedMiningPanelId.wordAudio,
+    if (_c.audioSection != null) AdvancedMiningPanelId.sentenceAudio,
+    if (_c.videoSection != null ||
+        _c.stillSection != null ||
+        _c.mangaSection != null)
+      AdvancedMiningPanelId.image,
+  };
+
+  /// 用户改了布局：对话框即时重排，并经宿主记住（下次打开沿用）。
+  void _setLayout(AdvancedMiningLayout next) {
+    if (next == _layout) return;
+    setState(() => _layout = next);
+    final Future<void> Function(AdvancedMiningLayout)? persist =
+        widget.capabilities.setLayout;
+    if (persist == null) return;
+    unawaited(
+      persist(next).catchError((Object e, StackTrace stack) {
+        // 记不住只影响下次打开；这次的布局已经生效。
+        fushiDebugPrint('AdvancedMiningDialog.setLayout: $e\n$stack');
+      }),
+    );
+  }
+
+  /// 栏位选择看「这块屏能不能排双栏」而不是「此刻排没排双栏」：把分区全摆到一栏
+  /// 后对话框会退回单栏，这时仍要能把它们摆回去。漫画宽屏左栏整高是裁切工作区，
+  /// 分区一律在右栏；手机底部面板只有一栏。
+  Future<void> _editLayout(BuildContext context) =>
+      showAdvancedMiningLayoutEditor(
+        context: context,
+        initial: _layout,
+        present: _present,
+        onChanged: _setLayout,
+        showColumns:
+            !_sheet &&
+            _c.mangaSection == null &&
+            MediaQuery.sizeOf(context).width - 80 >=
+                kAdvancedMiningWideMinWidth,
+      );
+
+  /// 宽屏双栏的判据：左栏有东西（句子 / 裁切工作区 / 被摆到左栏的分区）且右栏
+  /// 也有东西。全摆到一栏时退回单栏（窄对话框），不留一整栏空白。
+  bool _wideFits(Size screen) {
+    if (screen.width - 80 < kAdvancedMiningWideMinWidth) return false;
+    if (_c.mangaSection != null) return true;
+    final Set<AdvancedMiningPanelId> present = _present;
+    final bool hasLeft =
+        _c.sentenceSection != null ||
+        _layout.visible(present, column: AdvancedMiningColumn.left).isNotEmpty;
+    final bool hasRight = _layout
+        .visible(present, column: AdvancedMiningColumn.right)
+        .isNotEmpty;
+    return hasLeft && hasRight;
+  }
+
   Widget _buildFrame(BuildContext context) {
     final Size screen = MediaQuery.sizeOf(context);
     if (_sheet) return _narrowBody(context);
-    final bool hasLeft = _c.sentenceSection != null || _c.mangaSection != null;
-    final bool hasRight =
-        _c.deckSection != null ||
-        _c.fieldsSection != null ||
-        _c.wordAudioSection != null ||
-        _c.audioSection != null ||
-        _c.videoSection != null ||
-        _c.stillSection != null ||
-        _c.mangaSection != null;
-    final bool wide =
-        screen.width - 80 >= kAdvancedMiningWideMinWidth && hasLeft && hasRight;
-    if (!wide) {
+    if (!_wideFits(screen)) {
       return FushiDialogFrame(
         maxWidth: 560,
         maxHeightFactor: 0.92,
@@ -367,6 +422,15 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
               ],
             ),
           ),
+          if (_present.isNotEmpty)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('advanced-mining-layout-button'),
+              tooltip: t.popup_advanced_mining_layout_title,
+              onPressed: _c.locked
+                  ? null
+                  : () => unawaited(_editLayout(context)),
+              icon: const FushiIcon(FushiIcons.dashboardCustomize, size: 22),
+            ),
           FushiIconButtonControl(
             tooltip: t.popup_ctx_cancel,
             onPressed: _c.locked ? null : () => unawaited(_cancel()),
@@ -415,50 +479,108 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     child: Text(t.popup_advanced_mining_reset),
   );
 
-  /// 宽屏双栏（交互稿 ① / ②）：左栏句子或裁切工作区，右栏卡组 / 音频 / 图片 / 预览。
-  Widget _wideBody(BuildContext context) {
-    final bool manga = _c.mangaSection != null;
-    final Widget left = manga
-        ? AdvancedMiningSectionShell(
-            title: t.popup_advanced_mining_image_section,
-            expandChild: true,
-            child: MangaCropWorkspace(
-              header: MangaCropChoiceChips(controller: _c),
-              controller: _c,
-              onSubmit: () => unawaited(_confirm()),
-            ),
-          )
-        : SingleChildScrollView(
-            child: AdvancedMiningSentencePanel(
-              controller: _c,
-              matched: widget.capabilities.matched,
-              showShortcutHint: true,
-            ),
-          );
-    final List<Widget> right = <Widget>[
+  /// 一个可摆放分区的完整卡片（宽屏两栏 / 窄屏整块展开时用）。图片分区按页面给出
+  /// 视频 / 静态截图 / 漫画取景预览。
+  List<Widget> _panelCards(
+    AdvancedMiningPanelId id, {
+    bool mangaPreview = true,
+  }) => switch (id) {
+    AdvancedMiningPanelId.deck => <Widget>[
       if (_c.deckSection != null) AdvancedMiningDeckPanel(controller: _c),
+    ],
+    AdvancedMiningPanelId.fields => <Widget>[
       if (_c.fieldsSection != null) AdvancedMiningFieldsPanel(controller: _c),
+    ],
+    AdvancedMiningPanelId.wordAudio => <Widget>[
       if (_c.wordAudioSection != null)
         AdvancedMiningWordAudioPanel(
           controller: _c,
           onPreview: (int i) => unawaited(_previewWordAudio(i)),
         ),
-      if (manga && _c.sentenceSection != null)
-        AdvancedMiningSentencePanel(
-          controller: _c,
-          matched: widget.capabilities.matched,
-        ),
+    ],
+    AdvancedMiningPanelId.sentenceAudio => <Widget>[
       if (_c.audioSection != null)
         AdvancedMiningAudioPanel(
           controller: _c,
           onTogglePreview: () => unawaited(_togglePreview()),
         ),
+    ],
+    AdvancedMiningPanelId.image => <Widget>[
       if (_c.videoSection != null)
         AdvancedMiningVideoImagePanel(controller: _c),
       if (_c.stillSection != null)
         AdvancedMiningStillImagePanel(controller: _c),
-      if (manga) MangaCropPreviewPanel(controller: _c),
-    ];
+      if (mangaPreview && _c.mangaSection != null)
+        MangaCropPreviewPanel(controller: _c),
+    ],
+  };
+
+  Widget _sentencePanel() => AdvancedMiningSentencePanel(
+    controller: _c,
+    matched: widget.capabilities.matched,
+    showShortcutHint: true,
+  );
+
+  /// 一栏分区卡：间距 12、按 [firstIndex] 起错峰进场。
+  Widget _columnOf(List<Widget> cards, {required int firstIndex}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      for (int i = 0; i < cards.length; i++) ...<Widget>[
+        if (i > 0) const SizedBox(height: 12),
+        FushiStaggeredEntrance(index: firstIndex + i, child: cards[i]),
+      ],
+    ],
+  );
+
+  /// 宽屏双栏（交互稿 ① / ②）：左栏句子（或漫画裁切工作区），其余分区按用户布局
+  /// 分到左右两栏（反馈 aZ99bm9R6K：默认句子音频在左栏、紧跟句子）。
+  Widget _wideBody(BuildContext context) {
+    final bool manga = _c.mangaSection != null;
+    final Set<AdvancedMiningPanelId> present = _present;
+    final Widget left;
+    final List<Widget> right;
+    if (manga) {
+      // 漫画：左栏整高是裁切工作区，分区一律在右栏（只按布局排序 / 显隐）；句子卡
+      // 跟它的音频走——排在句子音频的槽位上（音频隐藏时位置照旧）。
+      left = AdvancedMiningSectionShell(
+        title: t.popup_advanced_mining_image_section,
+        expandChild: true,
+        child: MangaCropWorkspace(
+          header: MangaCropChoiceChips(controller: _c),
+          controller: _c,
+          onSubmit: () => unawaited(_confirm()),
+        ),
+      );
+      right = <Widget>[
+        for (final AdvancedMiningPanelSlot slot in _layout.slots) ...<Widget>[
+          if (slot.id == AdvancedMiningPanelId.sentenceAudio &&
+              _c.sentenceSection != null)
+            AdvancedMiningSentencePanel(
+              controller: _c,
+              matched: widget.capabilities.matched,
+            ),
+          if (!slot.hidden && present.contains(slot.id))
+            ..._panelCards(slot.id),
+        ],
+      ];
+    } else {
+      final List<Widget> leftCards = <Widget>[
+        if (_c.sentenceSection != null) _sentencePanel(),
+        for (final AdvancedMiningPanelId id in _layout.visible(
+          present,
+          column: AdvancedMiningColumn.left,
+        ))
+          ..._panelCards(id),
+      ];
+      left = SingleChildScrollView(child: _columnOf(leftCards, firstIndex: 0));
+      right = <Widget>[
+        for (final AdvancedMiningPanelId id in _layout.visible(
+          present,
+          column: AdvancedMiningColumn.right,
+        ))
+          ..._panelCards(id),
+      ];
+    }
     return FushiEntranceScope(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -471,24 +593,15 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Expanded(
-                    child: FushiStaggeredEntrance(index: 0, child: left),
+                    child: manga
+                        ? FushiStaggeredEntrance(index: 0, child: left)
+                        : left,
                   ),
                   const SizedBox(width: 16),
                   SizedBox(
                     width: manga ? 340 : 400,
                     child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          for (int i = 0; i < right.length; i++) ...<Widget>[
-                            if (i > 0) const SizedBox(height: 12),
-                            FushiStaggeredEntrance(
-                              index: i + 1,
-                              child: right[i],
-                            ),
-                          ],
-                        ],
-                      ),
+                      child: _columnOf(right, firstIndex: 1),
                     ),
                   ),
                 ],
@@ -513,7 +626,8 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
   }
 
   /// 窄屏（手机底部面板 / 窄对话框，交互稿 ③）：句子区常驻展开，卡组 / 音频 / 图片
-  /// 折叠成摘要行、点开就地展开；主按钮通栏在底部。
+  /// 折叠成摘要行、点开就地展开；主按钮通栏在底部。分区顺序与显隐跟用户布局走
+  /// （栏位在单栏里没有意义）。
   ///
   /// BUG-922：中间整块是**一个**滚动区（句子卡、摘要行、恢复默认都在里面），头尾
   /// 固定。矮窗里只是滚动变长，句子卡始终保有真实高度，不会被固定区挤塌成 0。
@@ -522,31 +636,18 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     // 区（纯查词页只有卡组、或只有音频）时没什么可让位的，分区直接整块展开——把
     // 唯一的分区折起来只会多一次点击。漫画框选始终走全屏页。
     final bool fold = _c.sentenceSection != null;
-    final List<Widget> rows = _foldRows(context, foldInline: fold);
+    final List<AdvancedMiningPanelId> order = _layout.visible(_present);
+    final List<Widget> rows = _foldRows(context, order, foldInline: fold);
     final List<Widget> sections = <Widget>[
       if (_c.sentenceSection != null)
         AdvancedMiningSentencePanel(
           controller: _c,
           matched: widget.capabilities.matched,
         ),
-      if (!fold) ...<Widget>[
-        if (_c.deckSection != null) AdvancedMiningDeckPanel(controller: _c),
-        if (_c.fieldsSection != null) AdvancedMiningFieldsPanel(controller: _c),
-        if (_c.wordAudioSection != null)
-          AdvancedMiningWordAudioPanel(
-            controller: _c,
-            onPreview: (int i) => unawaited(_previewWordAudio(i)),
-          ),
-        if (_c.audioSection != null)
-          AdvancedMiningAudioPanel(
-            controller: _c,
-            onTogglePreview: () => unawaited(_togglePreview()),
-          ),
-        if (_c.videoSection != null)
-          AdvancedMiningVideoImagePanel(controller: _c),
-        if (_c.stillSection != null)
-          AdvancedMiningStillImagePanel(controller: _c),
-      ],
+      if (!fold)
+        for (final AdvancedMiningPanelId id in order)
+          // 漫画取景预览在窄屏不展开（框选走全屏页，见摘要行）。
+          ..._panelCards(id, mangaPreview: false),
       if (rows.isNotEmpty)
         ClipRRect(
           borderRadius: const BorderRadius.all(Radius.circular(20)),
@@ -597,87 +698,109 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     );
   }
 
-  /// 摘要行。[foldInline] 为 false 时卡组 / 音频 / 视频图片已整块展开，只剩漫画
-  /// 那一行（它点开的是全屏框选页）。
+  /// 摘要行（按 [order] 的布局顺序）。[foldInline] 为 false 时卡组 / 音频 / 视频图片
+  /// 已整块展开，只剩漫画那一行（它点开的是全屏框选页）。
   List<Widget> _foldRows(
-    BuildContext context, {
+    BuildContext context,
+    List<AdvancedMiningPanelId> order, {
     required bool foldInline,
   }) => <Widget>[
-    if (foldInline && _c.deckSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_deck_section,
-        value: _c.deckName ?? '—',
-        expanded: _expanded.contains(_Fold.deck),
-        onTap: () => _toggleFold(_Fold.deck),
-        child: AdvancedMiningDeckPanel(controller: _c, embedded: true),
-      ),
-    if (foldInline && _c.fieldsSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_fields_section,
-        value: _fieldsSummary(),
-        expanded: _expanded.contains(_Fold.fields),
-        onTap: () => _toggleFold(_Fold.fields),
-        child: AdvancedMiningFieldsPanel(controller: _c, embedded: true),
-      ),
-    if (foldInline && _c.wordAudioSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_word_audio_section,
-        value: advancedMiningWordAudioSummary(_c),
-        expanded: _expanded.contains(_Fold.wordAudio),
-        onTap: () => _toggleFold(_Fold.wordAudio),
-        child: AdvancedMiningWordAudioPanel(
-          controller: _c,
-          embedded: true,
-          onPreview: (int i) => unawaited(_previewWordAudio(i)),
-        ),
-      ),
-    if (foldInline && _c.audioSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_audio_section,
-        value: _audioSummary(),
-        expanded: _expanded.contains(_Fold.audio),
-        onTap: () => _toggleFold(_Fold.audio),
-        trailing: _c.audioWindow != null && !_c.omitAudio
-            ? AdvancedMiningPreviewButton(
-                previewing: _c.previewing,
-                size: 36,
-                onPressed: _c.locked ? null : () => unawaited(_togglePreview()),
-              )
-            : null,
-        child: AdvancedMiningAudioPanel(
-          controller: _c,
-          embedded: true,
-          onTogglePreview: () => unawaited(_togglePreview()),
-        ),
-      ),
-    if (foldInline && _c.videoSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_image_section,
-        value: _videoSummary(),
-        expanded: _expanded.contains(_Fold.image),
-        onTap: () => _toggleFold(_Fold.image),
-        child: AdvancedMiningVideoImagePanel(controller: _c, embedded: true),
-      ),
-    if (foldInline && _c.stillSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_image_section,
-        value: advancedMiningStillSummary(_c),
-        expanded: _expanded.contains(_Fold.image),
-        onTap: () => _toggleFold(_Fold.image),
-        child: AdvancedMiningStillImagePanel(controller: _c, embedded: true),
-      ),
-    // 漫画的框选需要整屏：摘要行点开进入全屏框选页，而不是在面板里挤一张小图。
-    if (_c.mangaSection != null)
-      _FoldRow(
-        label: t.popup_advanced_mining_image_section,
-        value: _c.mangaLoading ? '…' : mangaCropSummary(_c),
-        expanded: false,
-        opensPage: true,
-        onTap: _c.locked || _c.mangaLoading
-            ? null
-            : () => unawaited(MangaCropFullscreenPage.open(context, _c)),
-      ),
+    for (final AdvancedMiningPanelId id in order)
+      ..._foldRowsOf(context, id, foldInline: foldInline),
   ];
+
+  List<Widget> _foldRowsOf(
+    BuildContext context,
+    AdvancedMiningPanelId id, {
+    required bool foldInline,
+  }) => switch (id) {
+    AdvancedMiningPanelId.deck => <Widget>[
+      if (foldInline && _c.deckSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_deck_section,
+          value: _c.deckName ?? '—',
+          expanded: _expanded.contains(_Fold.deck),
+          onTap: () => _toggleFold(_Fold.deck),
+          child: AdvancedMiningDeckPanel(controller: _c, embedded: true),
+        ),
+    ],
+    AdvancedMiningPanelId.fields => <Widget>[
+      if (foldInline && _c.fieldsSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_fields_section,
+          value: _fieldsSummary(),
+          expanded: _expanded.contains(_Fold.fields),
+          onTap: () => _toggleFold(_Fold.fields),
+          child: AdvancedMiningFieldsPanel(controller: _c, embedded: true),
+        ),
+    ],
+    AdvancedMiningPanelId.wordAudio => <Widget>[
+      if (foldInline && _c.wordAudioSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_word_audio_section,
+          value: advancedMiningWordAudioSummary(_c),
+          expanded: _expanded.contains(_Fold.wordAudio),
+          onTap: () => _toggleFold(_Fold.wordAudio),
+          child: AdvancedMiningWordAudioPanel(
+            controller: _c,
+            embedded: true,
+            onPreview: (int i) => unawaited(_previewWordAudio(i)),
+          ),
+        ),
+    ],
+    AdvancedMiningPanelId.sentenceAudio => <Widget>[
+      if (foldInline && _c.audioSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_audio_section,
+          value: _audioSummary(),
+          expanded: _expanded.contains(_Fold.audio),
+          onTap: () => _toggleFold(_Fold.audio),
+          trailing: _c.audioWindow != null && !_c.omitAudio
+              ? AdvancedMiningPreviewButton(
+                  previewing: _c.previewing,
+                  size: 36,
+                  onPressed: _c.locked
+                      ? null
+                      : () => unawaited(_togglePreview()),
+                )
+              : null,
+          child: AdvancedMiningAudioPanel(
+            controller: _c,
+            embedded: true,
+            onTogglePreview: () => unawaited(_togglePreview()),
+          ),
+        ),
+    ],
+    AdvancedMiningPanelId.image => <Widget>[
+      if (foldInline && _c.videoSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_image_section,
+          value: _videoSummary(),
+          expanded: _expanded.contains(_Fold.image),
+          onTap: () => _toggleFold(_Fold.image),
+          child: AdvancedMiningVideoImagePanel(controller: _c, embedded: true),
+        ),
+      if (foldInline && _c.stillSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_image_section,
+          value: advancedMiningStillSummary(_c),
+          expanded: _expanded.contains(_Fold.image),
+          onTap: () => _toggleFold(_Fold.image),
+          child: AdvancedMiningStillImagePanel(controller: _c, embedded: true),
+        ),
+      // 漫画的框选需要整屏：摘要行点开进入全屏框选页，而不是在面板里挤一张小图。
+      if (_c.mangaSection != null)
+        _FoldRow(
+          label: t.popup_advanced_mining_image_section,
+          value: _c.mangaLoading ? '…' : mangaCropSummary(_c),
+          expanded: false,
+          opensPage: true,
+          onTap: _c.locked || _c.mangaLoading
+              ? null
+              : () => unawaited(MangaCropFullscreenPage.open(context, _c)),
+        ),
+    ],
+  };
 
   /// 显示中的字段名（「Sentence · MainDefinition」）；一个都没选时是「—」。
   String _fieldsSummary() {

@@ -506,6 +506,7 @@ import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart'
     show adoptSourceScannedGames;
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
@@ -11306,6 +11307,12 @@ class AppModel
       prefsRepo.advancedMiningVisibleFields;
   Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
       prefsRepo.setAdvancedMiningVisibleFields(names);
+
+  /// 「高级制卡」对话框的分区布局（反馈 aZ99bm9R6K）。
+  AdvancedMiningLayout get advancedMiningLayout =>
+      prefsRepo.advancedMiningLayout;
+  Future<void> setAdvancedMiningLayout(AdvancedMiningLayout layout) =>
+      prefsRepo.setAdvancedMiningLayout(layout);
 
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
