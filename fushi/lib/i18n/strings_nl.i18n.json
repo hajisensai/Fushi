@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "Boekenplank",
   "stat_center_day_reset_hour": "Dag begint om",
   "stat_center_day_reset_hour_hint": "Lezen, kijken en gamen vóór dit uur telt mee voor de vorige dag. Beïnvloedt vandaag en de laatste N dagen in de statistieken; alleen records die na de wijziging zijn geschreven gebruiken de nieuwe grens.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Alleen statistieken van profiel \"$name\" worden getoond",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Overzicht",

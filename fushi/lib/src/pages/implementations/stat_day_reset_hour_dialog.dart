@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -22,6 +23,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 ///    量 + 当前配置复习的翻日时刻，后者随同步到别的设备），即改即生效；只影响之后写入的段，
 ///    历史段不重分桶。行本体复用设置页同款
 ///    [AdaptiveSettingsStepperRow]（键盘 / 手柄左右键调值）；
+///  * 复习模块开着时在日界下面加一行：这个时刻也是复习的「今天」、随复习数据同步到其它设备；
 ///  * 清空统计：清当前 tab 那一域（总览 = 三域），先关本弹窗再走调用方的确认流程；
 ///  * 副标题点明当前 Profile（v105 统计按 Profile 隔离，原在页头标题下）。
 @visibleForTesting
@@ -61,6 +63,10 @@ class _StatSettingsDialogState extends State<StatSettingsDialog> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final StatTabSettings? settings = widget.settings;
     final String? profile = widget.profileName;
+    // 复习开着时这个时刻也是复习的「今天」，并随复习数据同步（AppModel.setStatDayResetHourByUser）。
+    final bool srsEnabled = widget.appModel.moduleVisibility.isEnabled(
+      ModuleId.srs,
+    );
     return FushiAlertDialog(
       icon: const FushiIcon(FushiIcons.settings),
       title: Text(t.stat_center_settings),
@@ -105,9 +111,28 @@ class _StatSettingsDialogState extends State<StatSettingsDialog> {
                   onChanged: _onHourChanged,
                 ),
               ),
-              if (settings != null)
+              if (srsEnabled)
                 FushiStaggeredEntrance(
                   index: 2,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.card,
+                      0,
+                      tokens.spacing.card,
+                      tokens.spacing.gap,
+                    ),
+                    child: Text(
+                      t.stat_center_day_reset_hour_srs_note,
+                      key: const ValueKey<String>('stat-settings-srs-note'),
+                      style: tokens.type.metadata.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              if (settings != null)
+                FushiStaggeredEntrance(
+                  index: 3,
                   child: FushiListItem(
                     key: const ValueKey<String>('stat-settings-clear-all'),
                     leading: FushiIcon(

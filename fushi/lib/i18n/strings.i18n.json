@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "Bookshelf",
   "stat_center_day_reset_hour": "Day starts at",
   "stat_center_day_reset_hour_hint": "Reading, watching and gaming before this hour count toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Showing statistics for profile \"$name\" only",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Overview",

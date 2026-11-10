@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "Tủ sách",
   "stat_center_day_reset_hour": "Ngày bắt đầu từ",
   "stat_center_day_reset_hour_hint": "Đọc, xem và chơi game trước giờ này được tính vào ngày hôm trước. Ảnh hưởng đến hôm nay và N ngày gần nhất trong thống kê; chỉ các bản ghi được ghi sau khi thay đổi mới dùng mốc mới.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Chỉ hiển thị thống kê của hồ sơ \"$name\"",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Tổng quan",

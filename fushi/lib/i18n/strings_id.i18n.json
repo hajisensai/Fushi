@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "Rak buku",
   "stat_center_day_reset_hour": "Hari dimulai pukul",
   "stat_center_day_reset_hour_hint": "Membaca, menonton, dan bermain game sebelum jam ini dihitung ke hari sebelumnya. Memengaruhi hari ini dan N hari terakhir dalam statistik; hanya catatan yang ditulis setelah perubahan yang memakai batas baru.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Menampilkan statistik hanya untuk profil \"$name\"",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Ringkasan",

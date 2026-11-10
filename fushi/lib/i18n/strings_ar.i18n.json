@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "رف الكتب",
   "stat_center_day_reset_hour": "بداية اليوم عند",
   "stat_center_day_reset_hour_hint": "القراءة والمشاهدة واللعب قبل هذه الساعة تُحتسب لليوم السابق. يؤثر على اليوم والأيام الـ N الأخيرة في الإحصاءات؛ والسجلات المكتوبة بعد التغيير فقط تستخدم الحد الجديد.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "عرض إحصاءات الملف الشخصي \"$name\" فقط",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "نظرة عامة",

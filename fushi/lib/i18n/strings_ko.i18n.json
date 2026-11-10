@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "책장",
   "stat_center_day_reset_hour": "하루 시작 시각",
   "stat_center_day_reset_hour_hint": "이 시각 이전의 읽기, 시청, 게임 기록은 전날로 계산됩니다. 통계의 오늘과 최근 N일에 영향을 주며, 변경 후에 기록된 항목에만 새 기준이 적용됩니다.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "프로필 \"$name\"의 통계만 표시 중",
   "stat_center_settings": "통계 설정",
   "stat_center_tab_overview": "개요",

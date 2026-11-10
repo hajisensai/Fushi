@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "书架对比",
   "stat_center_day_reset_hour": "「今日」从几点开始",
   "stat_center_day_reset_hour_hint": "这个整点之前的阅读、观看与游戏时长都算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。",
+  "stat_center_day_reset_hour_srs_note": "复习的「今天」也从这个时刻开始，并会随复习数据同步到其它设备。",
   "stat_center_profile_scope": "仅显示配置「$name」的统计",
   "stat_center_settings": "统计设置",
   "stat_center_tab_overview": "总览",

@@ -22,6 +22,8 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAnkiSettingsPrefKey,
         kLibraryManualOrderPrefKeyPrefix,
         kSectionTabOrderPrefKeyPrefix,
+        kSrsDayRolloverPendingPrefKeyPrefix,
+        kSrsDayRolloverSeenPrefKeyPrefix,
         kSrsLapisMigrationReminderPrefKey,
         kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -200,6 +202,10 @@ class ProfileKeys {
     // 的话切 Profile 会把刚排好的顺序剪掉或换回旧值。
     kSectionTabOrderPrefKeyPrefix,
     kLibraryManualOrderPrefKeyPrefix,
+    // 复习翻日时刻的待写标记 / 已见修改记录：键里带 profile uid、本来就按配置分开；进快照的话切 Profile
+    // 会把别的配置的标记剪掉。
+    kSrsDayRolloverPendingPrefKeyPrefix,
+    kSrsDayRolloverSeenPrefKeyPrefix,
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a

@@ -191,13 +191,17 @@ class SrsAppRuntime {
   /// 本机写入（自动优化应用了新参数）：界面重读 + 推给别的设备。
   final void Function() _bumpRevision;
 
-  /// 同步拉入之后：profile 里有显式的翻日时刻（别的设备的用户改过日界）就让本机统计日界跟上
-  /// （[AppModel.adoptSyncedDayRolloverHour]）。复习自己的「今天」不靠这一步，`SrsDbStore.dayContext` 直接读字段。
+  /// 同步拉入之后：生效的翻日时刻是本机没见过的修改（别的设备的用户改了日界）就让本机统计日界跟上；还是本机
+  /// 写下 / 采纳过的那条就不动（[AppModel.adoptSyncedDayRollover]）。复习自己的「今天」不靠这一步，
+  /// `SrsDbStore.dayContext` 直接读字段。
   Future<void> adoptSyncedDayRollover() async {
     try {
       final SrsDbStore? store = await _readStore();
-      final int? hour = await store?.syncedDayRolloverHour();
-      if (hour != null) await app.adoptSyncedDayRolloverHour(hour);
+      if (store == null) return;
+      await app.adoptSyncedDayRollover(
+        store.profileUid,
+        await store.syncedDayRollover(),
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log(
         'SrsAppRuntime.adoptSyncedDayRollover',

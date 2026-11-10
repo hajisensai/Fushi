@@ -353,6 +353,9 @@ class SrsStoreRetiredError extends StateError {
   final SrsDbStore store;
 }
 
+/// profile 里显式写过的翻日时刻与生效的那条修改记录 ID（[SrsDbStore.syncedDayRollover]）。
+typedef SrsDayRollover = ({int hour, String editId});
+
 class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
     required this.db,
@@ -985,26 +988,31 @@ class SrsDbStore implements SrsSync2Host {
   ///   `utcOffsetMin` 从没有写入方，现在也不再读。
   Future<SrsDayContext> dayContext() async {
     final int rollover =
-        await syncedDayRolloverHour() ?? _fallbackRollover().clamp(0, 23);
+        (await syncedDayRollover())?.hour ?? _fallbackRollover().clamp(0, 23);
     return SrsDayContext(utcOffsetMin: _localOffset(), rolloverHour: rollover);
   }
 
-  /// profile 里显式写过的翻日时刻（0–23）；从没写过为 null（[dayContext] 用宿主的回落值）。
-  Future<int?> syncedDayRolloverHour() async {
-    final Object? v = (await _profileEdits()).value(
-      SrsFieldKeys.dayRolloverHour,
-    );
-    return v is int ? v.clamp(0, 23) : null;
+  /// profile 里显式写过的翻日时刻（0–23）与生效的那条修改记录 ID；从没写过为 null（[dayContext] 用宿主的回落值）。
+  /// 修改记录 ID 让宿主分辨「同步带来了新的修改」与「还是本机见过的那条」。
+  Future<SrsDayRollover?> syncedDayRollover() async {
+    final SrsFieldEdit? winner =
+        (await _profileEdits())[SrsFieldKeys.dayRolloverHour]?.winner;
+    final Object? v = winner?.value;
+    return winner != null && v is int
+        ? (hour: v.clamp(0, 23), editId: winner.id)
+        : null;
   }
 
-  /// 用户改了日界：写成 profile 的一条普通字段修改（同步 v2 传到别的设备；与现值相同不产生记录）。
-  Future<void> setDayRolloverHour(int hour) async {
+  /// 用户改了日界：写成 profile 的一条普通字段修改（同步 v2 传到别的设备；与现值相同不产生记录）。返回写完后
+  /// 生效的值（[syncedDayRollover]）。
+  Future<SrsDayRollover?> setDayRolloverHour(int hour) async {
     await editField(
       SrsEntityKind.profile,
       profileUid,
       SrsFieldKeys.dayRolloverHour,
       hour.clamp(0, 23),
     );
+    return syncedDayRollover();
   }
 
   // ------------------------------------------------------------------ 事件落库

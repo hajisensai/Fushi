@@ -52,7 +52,7 @@ void main() {
       fallbackRollover: 7,
       localOffset: 540,
     );
-    expect(await s.syncedDayRolloverHour(), isNull);
+    expect((await s.syncedDayRollover())?.hour, isNull);
     final SrsDayContext day = await s.dayContext();
     expect(day.rolloverHour, 7);
     expect(day.utcOffsetMin, 540);
@@ -61,8 +61,9 @@ void main() {
   test('写入后本机 dayContext 立刻取到新值；同值再写不产生记录', () async {
     final SrsDbStore s = await device('a', fallbackRollover: 4);
     expect((await s.dayContext()).rolloverHour, 4, reason: '先把缓存填上');
-    await s.setDayRolloverHour(6);
-    expect(await s.syncedDayRolloverHour(), 6);
+    final SrsDayRollover? written = await s.setDayRolloverHour(6);
+    expect(written?.hour, 6);
+    expect((await s.syncedDayRollover())?.editId, written?.editId);
     expect((await s.dayContext()).rolloverHour, 6, reason: '写入推进修订号，缓存失效');
     final int ops = (await s.sync2Status())['ops']! as int;
     await s.setDayRolloverHour(6);
@@ -78,7 +79,12 @@ void main() {
     );
     await a.setDayRolloverHour(6);
     await srsSyncPeers(<SrsDbStore>[a, b], SrsMemoryLocationStore(), rounds: 3);
-    expect(await b.syncedDayRolloverHour(), 6);
+    expect((await b.syncedDayRollover())?.hour, 6);
+    expect(
+      (await b.syncedDayRollover())?.editId,
+      (await a.syncedDayRollover())!.editId,
+      reason: '两边生效的是同一条修改记录：宿主据此分辨「新来的修改」',
+    );
     final SrsDayContext day = await b.dayContext();
     expect(day.rolloverHour, 6);
     expect(day.utcOffsetMin, -300, reason: '时区不随同步，仍是 b 的本机偏移');

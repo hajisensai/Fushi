@@ -9260,6 +9260,7 @@
   "stat_bookshelf_compare": "ชั้นหนังสือ",
   "stat_center_day_reset_hour": "วันเริ่มต้นเวลา",
   "stat_center_day_reset_hour_hint": "การอ่าน การดู และการเล่นเกมก่อนเวลานี้จะนับเป็นของวันก่อนหน้า มีผลกับวันนี้และ N วันล่าสุดในสถิติ เฉพาะบันทึกที่เขียนหลังการเปลี่ยนแปลงเท่านั้นที่ใช้ขอบเขตใหม่",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "แสดงสถิติของโปรไฟล์ \"$name\" เท่านั้น",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "ภาพรวม",
