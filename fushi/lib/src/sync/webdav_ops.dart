@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi/src/media/video/youtube_range_relay.dart'
+    show parseContentRange;
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
@@ -652,6 +655,88 @@ class WebDavOps {
     }());
     return jsonDecode(utf8.decode(builder.takeBytes()));
   }
+
+  /// 按 `Range` 读 [url] 的 `[start, end]` 闭区间（[end] 为 null = 到文件尾）。
+  ///
+  /// - 206：按 `Content-Range` 交出这一段（解析不了就抛错，不猜字节落在哪）。
+  /// - 200：服务器无视了 `Range`、回的是整文件。所求正是 `[0, 文件尾]` 时它就是答案；
+  ///   否则**立刻取消响应体**并抛 [SyncAssetRangeUnsupported]——不为一段几十 KB 的
+  ///   区间把整个文件拉下来再截（云端旧漫画包判型 / 云盘视频流播都据此明确放弃）。
+  /// - 416：抛 [SyncAssetRangeNotSatisfiable]（带 `Content-Range: bytes */<total>`
+  ///   里的总长）。其余状态走 [checkStatus]。
+  ///
+  /// 要 `Accept-Encoding: identity`：压缩编码下 `Content-Range` / `Content-Length`
+  /// 描述的是压缩后的字节，与文件偏移对不上。返回的字节流只能订阅一次，调用方不再
+  /// 需要时取消订阅即断开传输。
+  Future<SyncAssetRange> openRange(
+    String url, {
+    required int start,
+    int? end,
+  }) async {
+    if (start < 0 || (end != null && end < start)) {
+      throw ArgumentError('invalid range [$start, $end]');
+    }
+    final HttpClientRequest request = await buildRequest('GET', url);
+    request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-${end ?? ''}');
+    request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+    final HttpClientResponse response = await closeRequest(request);
+    final int status = response.statusCode;
+    final String? type = response.headers.value(HttpHeaders.contentTypeHeader);
+    if (status == HttpStatus.partialContent) {
+      final ({int start, int end, int? total})? range = parseContentRange(
+        response.headers.value(HttpHeaders.contentRangeHeader),
+      );
+      if (range == null) {
+        await _cancelBody(response);
+        throw SyncBackendError(
+          'GET $url failed: HTTP 206 without a parsable Content-Range',
+        );
+      }
+      return SyncAssetRange(
+        start: range.start,
+        end: range.end,
+        totalBytes: range.total ?? range.end + 1,
+        contentType: type,
+        bytes: response,
+      );
+    }
+    if (status == HttpStatus.ok) {
+      final int total = response.contentLength;
+      if (start == 0 && end == null && total > 0) {
+        return SyncAssetRange(
+          start: 0,
+          end: total - 1,
+          totalBytes: total,
+          contentType: type,
+          bytes: response,
+        );
+      }
+      await _cancelBody(response);
+      if (total == 0) throw const SyncAssetRangeNotSatisfiable(0);
+      if (start == 0 && end == null) {
+        // 整文件请求、但没报长度（chunked）：交不出总长。
+        throw SyncBackendError('GET $url failed: unknown length');
+      }
+      throw SyncAssetRangeUnsupported(
+        'GET $url: server ignored Range (HTTP 200)',
+      );
+    }
+    if (status == HttpStatus.requestedRangeNotSatisfiable) {
+      await _drain(response);
+      throw SyncAssetRangeNotSatisfiable(
+        unsatisfiedRangeTotal(
+          response.headers.value(HttpHeaders.contentRangeHeader),
+        ),
+      );
+    }
+    await _drain(response);
+    checkStatus(status, 'GET $url');
+    throw SyncBackendError('GET $url failed: unexpected HTTP $status');
+  }
+
+  /// 不读完就丢掉响应体：取消订阅让 [HttpClient] 断开这条连接，不把剩下的字节下完。
+  static Future<void> _cancelBody(HttpClientResponse response) =>
+      response.listen(null).cancel();
 
   Future<void> uploadJson(
     String folderId,

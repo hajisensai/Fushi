@@ -1415,7 +1415,8 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
 
 void GlobalLookupWindow::Reveal(int width, int height,
                                 bool clamp_to_work_area,
-                                HWND consume_outside_owner) {
+                                HWND consume_outside_owner,
+                                RevealLayerOrigin layer_origin) {
   if (hwnd_ == nullptr || capture_suppressed_) {
     return;
   }
@@ -1511,7 +1512,15 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // 这里是唯一合适的复位点——Dart 侧那两个调用点（450ms READY-SAFETY 兜底 /
   // reveal(scalar)）都不知道自己最终会走哪条 C++ 路径，而本函数正是「窗口按光标 +
   // 单卡尺寸摆好了」这个事实的发生地。RevealStack 走 commitLayerShift，不经过这里。
-  if (webview_ != nullptr) {
+  //
+  // BUG-4355 — 直连游戏内卡（RevealOverProcessClient）也借这个函数上屏，但它把窗口放在
+  // **已提交几何的 union bbox 原点 + union 尺寸**，图层平移由同一几何的
+  // commitLayerShift(bbox) 写好。嵌套 resize 后 Dart 每次都会重投 present，这里若照样
+  // 复位，子卡向上 / 向左翻出（bbox 原点为负）时整叠卡被画回 window-local 原点：子卡
+  // 顶部越出窗口被裁、根卡上移盖到子卡底下，而 HRGN / 投影仍按 shellRects 留在原位
+  // ——两张卡下方各露出一截透明区（反馈 SDbJAx1Db6）。所以只有 legacy 单卡语义才复位。
+  if (webview_ != nullptr &&
+      layer_origin == RevealLayerOrigin::kCursorSingleCard) {
     webview_->ExecuteScript(
         L"(function(){var h=window.__globalLookupHost;"
         L"if(h&&typeof h.resetLayerOffsetForLegacyReveal==='function'){"
@@ -2745,7 +2754,12 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // consumed. Pass the bound game HWND into the same reveal transaction that
   // makes the popup visible, so there is no first-frame window where the hook
   // is armed with desktop click-through semantics.
-  Reveal(screen_width, screen_height, false, game);
+  // BUG-4355 — the HWND lands on the committed union bbox origin (not the legacy
+  // cursor + single-card spot), so the host layer must keep the
+  // commitLayerShift(bbox) translation that ResizeStackForGal / the off-screen
+  // RevealStack already applied for this exact geometry.
+  Reveal(screen_width, screen_height, false, game,
+         RevealLayerOrigin::kCommittedBBox);
   const bool shown = revealed_ && visible_ && IsWindowVisible(hwnd_);
   if (shown) {
     direct_process_client_active_ = true;
