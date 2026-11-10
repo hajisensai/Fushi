@@ -10,8 +10,12 @@
 ///
 /// The user dismissing the desktop's dialog is not retried automatically (that
 /// would be a dialog loop); the settings page offers [rebind]. A session the
-/// desktop closes is likewise reported and re-created only on [rebind] or the
-/// next set change.
+/// desktop closes — or that dies with a restarted portal service — is likewise
+/// reported and re-created only on [rebind] or the next set change.
+///
+/// [dispose] first aborts a Request still waiting for the user (a shortcut
+/// dialog left open): otherwise the serial chain would hold the exit step
+/// until its timeout and the session would never be closed.
 library;
 
 import 'dart:async';
@@ -60,6 +64,9 @@ class PortalGlobalHotKeyBackend implements GlobalHotKeyBackend {
   /// Signature of the set whose dialog the user dismissed (not re-prompted
   /// until the set changes or the user asks via [rebind]).
   String? _declinedSignature;
+
+  /// Set when [dispose] starts: a bind it aborts is not a failure to report.
+  bool _disposing = false;
   bool _disposed = false;
 
   @override
@@ -136,8 +143,23 @@ class PortalGlobalHotKeyBackend implements GlobalHotKeyBackend {
   /// already says so).
   Future<bool> _ensureOpen() async {
     if (_opened) return (_version ?? 0) > 0;
+    final int? version;
+    try {
+      version = await _portal.open(appId: _appId);
+    } catch (e) {
+      // Not a "no portal" answer but a broken connection attempt: say so and
+      // let [rebind] / the next set change try again on a fresh connection.
+      _setStatus(
+        GlobalHotKeyStatus(
+          kind: GlobalHotKeyBackendKind.portal,
+          problem: GlobalHotKeyProblem.portalFailed,
+          detail: '$e',
+        ),
+      );
+      await _portal.close();
+      rethrow;
+    }
     _opened = true;
-    final int? version = await _portal.open(appId: _appId);
     _version = version ?? 0;
     if (version == null) {
       _setStatus(
@@ -186,6 +208,7 @@ class PortalGlobalHotKeyBackend implements GlobalHotKeyBackend {
         ),
       );
     } on GlobalShortcutsPortalException catch (e, st) {
+      if (_disposing) return;
       switch (e.failure) {
         case PortalFailure.cancelled:
           _declinedSignature = signature;
@@ -207,6 +230,7 @@ class PortalGlobalHotKeyBackend implements GlobalHotKeyBackend {
             ),
           );
         case PortalFailure.failed:
+        case PortalFailure.aborted:
           _onError('PortalGlobalHotKeyBackend.bind', e, st);
           _setStatus(
             GlobalHotKeyStatus(
@@ -270,6 +294,10 @@ class PortalGlobalHotKeyBackend implements GlobalHotKeyBackend {
 
   @override
   Future<void> dispose() async {
+    _disposing = true;
+    // A bind waiting on the user's dialog would hold the chain (and so this
+    // dispose) indefinitely; end it so the session below can be closed.
+    _portal.abortPendingRequests();
     await _serial(() async {
       final String? session = _session;
       _session = null;

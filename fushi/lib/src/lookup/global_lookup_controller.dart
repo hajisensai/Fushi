@@ -143,6 +143,10 @@ class GlobalLookupController {
   GlobalHotKeyBackend? _hotKeyBackend;
   StreamSubscription<GlobalHotKeyStatus>? _hotKeyStatusSub;
 
+  /// Set by [releaseHotKeys] (exit chain): a registry change after it must not
+  /// create a fresh backend (a new portal session) on the way out.
+  bool _hotKeysReleased = false;
+
   /// What the hotkey backend reports, for the shortcut settings page (null
   /// until the controller started). On the portal it carries the triggers the
   /// desktop actually bound and why hotkeys may be unavailable.
@@ -633,7 +637,8 @@ class GlobalLookupController {
   /// keyboard binding stays off until a key is assigned. Portal backend: the
   /// binding is only the preferred-trigger hint; the desktop owns the key.
   /// Non-fatal on failure (the backends log every failure visibly).
-  Future<void> _registerHotKeysFromRegistry() {
+  Future<void> _registerHotKeysFromRegistry() async {
+    if (_hotKeysReleased) return;
     final GlobalHotKeyBackend backend = _hotKeyBackend ??=
         _createHotKeyBackend();
     return backend.apply(_hotKeyRequests());
@@ -718,6 +723,7 @@ class GlobalLookupController {
 
   /// Exit chain: unregister the hotkeys / close the portal session.
   Future<void> releaseHotKeys() async {
+    _hotKeysReleased = true;
     final GlobalHotKeyBackend? backend = _hotKeyBackend;
     _hotKeyBackend = null;
     await _hotKeyStatusSub?.cancel();

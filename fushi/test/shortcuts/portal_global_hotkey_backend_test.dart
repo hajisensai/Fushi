@@ -319,6 +319,58 @@ void main() {
       await old.dispose();
     });
 
+    test('dispose aborts a bind still waiting for the dialog, then closes '
+        'the connection without reporting an error', () async {
+      portal.holdBind = true;
+      final Future<void> applying = backend.apply(<GlobalHotKeyRequest>[
+        _request('lookup', 'Look up'),
+      ]);
+      await pumpEventQueue();
+      expect(portal.binds, hasLength(1), reason: 'dialog is up');
+
+      // Without the abort this would wait for the user forever.
+      await backend.dispose();
+      await applying;
+      expect(portal.aborts, 1);
+      expect(portal.closedSessions, <String>[portal.lastSession!]);
+      expect(portal.closed, isTrue);
+      expect(errors, isEmpty, reason: 'a shutdown is not a portal failure');
+    });
+
+    test('a portal that went away mid-bind → portalFailed (rebind offered), '
+        'not a wedged chain', () async {
+      portal.holdBind = true;
+      final Future<void> applying = backend.apply(<GlobalHotKeyRequest>[
+        _request('lookup', 'Look up'),
+      ]);
+      await pumpEventQueue();
+      portal.serviceGone();
+      await applying;
+      expect(backend.status.problem, isNotNull);
+      expect(backend.status.bound, isFalse);
+
+      // The chain is free: a rebind runs on a new session.
+      portal.holdBind = false;
+      await backend.rebind();
+      expect(portal.sessionsCreated, 2);
+      expect(backend.status.problem, isNull);
+      expect(backend.status.bound, isTrue);
+    });
+
+    test('open throwing (broken bus) → portalFailed, and the next round '
+        'opens again', () async {
+      portal.openError = StateError('bus broke');
+      await backend.apply(<GlobalHotKeyRequest>[_request('lookup', 'Look up')]);
+      expect(backend.status.problem, GlobalHotKeyProblem.portalFailed);
+      expect(errors, hasLength(1));
+      expect(portal.closed, isTrue, reason: 'half-open connection dropped');
+
+      portal.openError = null;
+      await backend.rebind();
+      expect(portal.openCount, 2);
+      expect(backend.status.bound, isTrue);
+    });
+
     test('dispose closes the session and the connection', () async {
       await backend.apply(<GlobalHotKeyRequest>[_request('lookup', 'Look up')]);
       final String session = portal.lastSession!;
@@ -368,6 +420,34 @@ class _FakePortal implements GlobalShortcutsPortal {
   final List<String?> configured = <String?>[];
   final List<String> closedSessions = <String>[];
   bool closed = false;
+  Object? openError;
+
+  /// BindShortcuts waits (like a dialog the user has not answered) until
+  /// [abortPendingRequests] or [serviceGone].
+  bool holdBind = false;
+  int aborts = 0;
+  final Set<Completer<void>> _held = <Completer<void>>{};
+
+  void _failHeld(PortalFailure failure, String why) {
+    final List<Completer<void>> held = _held.toList();
+    _held.clear();
+    for (final Completer<void> c in held) {
+      c.completeError(GlobalShortcutsPortalException(failure, why));
+    }
+  }
+
+  /// The portal service exited: pending requests fail, sessions end.
+  void serviceGone() {
+    _failHeld(PortalFailure.aborted, 'portal service went away');
+    final String? session = lastSession;
+    if (session != null) _closed.add(session);
+  }
+
+  @override
+  void abortPendingRequests() {
+    aborts++;
+    _failHeld(PortalFailure.aborted, 'aborted by the client');
+  }
 
   final StreamController<PortalActivation> _activated =
       StreamController<PortalActivation>.broadcast(sync: true);
@@ -415,6 +495,8 @@ class _FakePortal implements GlobalShortcutsPortal {
   Future<int?> open({required String appId}) async {
     openCount++;
     openedWith = appId;
+    final Object? error = openError;
+    if (error != null) throw error;
     return version;
   }
 
@@ -435,6 +517,11 @@ class _FakePortal implements GlobalShortcutsPortal {
     List<PortalShortcut> shortcuts,
   ) async {
     binds.add(shortcuts);
+    if (holdBind) {
+      final Completer<void> dialog = Completer<void>();
+      _held.add(dialog);
+      await dialog.future;
+    }
     final PortalFailure? failure = bindResponse;
     if (failure != null) {
       throw GlobalShortcutsPortalException(failure, 'BindShortcuts response');

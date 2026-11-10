@@ -195,6 +195,79 @@ void main() {
     expect(closed, <String>[session]);
   });
 
+  test(
+    'portal service restarts mid-BindShortcuts: the request fails '
+    '(aborted), the session is reported gone, and the new owner is served',
+    () async {
+      await startPortal();
+      await portal.open(appId: 'app.fushi.reader');
+      final String session = await portal.createSession();
+      final List<String> closed = <String>[];
+      final StreamSubscription<String> sub = portal.sessionClosed.listen(
+        closed.add,
+      );
+      addTearDown(sub.cancel);
+
+      // The dialog is up and never answered; then the service dies.
+      fake.holdBind = true;
+      final Future<List<PortalBoundShortcut>> binding = portal.bindShortcuts(
+        session,
+        const <PortalShortcut>[PortalShortcut(id: 'lookup', description: 'L')],
+      );
+      await _settle(portalSide);
+      expect(fake.calls, contains('BindShortcuts'));
+      await portalSide.close();
+      await expectLater(
+        binding,
+        throwsA(
+          isA<GlobalShortcutsPortalException>().having(
+            (GlobalShortcutsPortalException e) => e.failure,
+            'failure',
+            PortalFailure.aborted,
+          ),
+        ),
+      );
+      expect(closed, <String>[session]);
+
+      // A new portal process (new unique name) takes over; its Responses must
+      // be accepted, not dropped as coming from a stranger.
+      portalSide = DBusClient(address);
+      fake = _FakeDesktopPortal(hasGlobalShortcuts: true);
+      await portalSide.requestName(kPortalBusName);
+      await portalSide.registerObject(fake);
+      final String next = await portal.createSession().timeout(
+        const Duration(seconds: 5),
+      );
+      expect(next, isNot(session));
+    },
+  );
+
+  test(
+    'abortPendingRequests fails a request still waiting for the user',
+    () async {
+      await startPortal();
+      await portal.open(appId: 'app.fushi.reader');
+      final String session = await portal.createSession();
+      fake.holdBind = true;
+      final Future<List<PortalBoundShortcut>> binding = portal.bindShortcuts(
+        session,
+        const <PortalShortcut>[PortalShortcut(id: 'lookup', description: 'L')],
+      );
+      await _settle(portalSide);
+      portal.abortPendingRequests();
+      await expectLater(
+        binding,
+        throwsA(
+          isA<GlobalShortcutsPortalException>().having(
+            (GlobalShortcutsPortalException e) => e.failure,
+            'failure',
+            PortalFailure.aborted,
+          ),
+        ),
+      );
+    },
+  );
+
   test('closeSession calls Session.Close; ConfigureShortcuts passes the '
       'activation token', () async {
     await startPortal();
@@ -256,6 +329,9 @@ class _FakeDesktopPortal extends DBusObject {
   int bindResponseCode = 0;
   String? createSessionError;
 
+  /// Never answer BindShortcuts (a dialog the user leaves open).
+  bool holdBind = false;
+
   @override
   Future<DBusMethodResponse> getProperty(String interface, String name) async {
     if (hasGlobalShortcuts &&
@@ -316,6 +392,11 @@ class _FakeDesktopPortal extends DBusObject {
             },
         };
         calls.add('BindShortcuts');
+        if (holdBind) {
+          return DBusMethodSuccessResponse(<DBusValue>[
+            DBusObjectPath(requestPath),
+          ]);
+        }
         // After the reply, like a portal waiting for the user's dialog.
         unawaited(
           Future<void>(() async {

@@ -14,6 +14,10 @@
 > - 热键不再依附查词卡覆盖窗：Wayland 会话没有覆盖窗时照样注册；选中文本查词改落到主窗查词页
 >   （`queueExternalLookup`），没取到选区就打开查词页；截屏识字需要覆盖窗，没有时不向 portal 声明。
 >   Flatpak（XWayland 下 GTK 走 X11）有覆盖窗，所以三个动作都向 portal 声明、查词仍出卡片。
+> - portal 会话生命周期：客户端按 `NameOwnerChanged` 跟踪 `org.freedesktop.portal.Desktop` 的属主——portal 进程
+>   崩溃 / 重启时，未应答的 Request 以 `PortalFailure.aborted` 结束、该进程的会话按「已关闭」上报（旧进程不会发
+>   `Closed`），之后只认新属主的信号；退出时 `dispose` 先 `abortPendingRequests()` 结束挂着的绑定对话框请求，再关会话
+>   与连接，不让退出步骤卡到超时。
 > - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
 >   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
 

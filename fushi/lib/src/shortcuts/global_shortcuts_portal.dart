@@ -104,6 +104,11 @@ enum PortalFailure {
   /// `org.freedesktop.portal.Error.NotAllowed` — for GlobalShortcuts this is
   /// "An app id is required".
   notAllowed,
+
+  /// The Request never got its `Response`: the portal service went away
+  /// (crashed / restarted) mid-request, or the client aborted it on shutdown
+  /// ([GlobalShortcutsPortal.abortPendingRequests]).
+  aborted,
 }
 
 class GlobalShortcutsPortalException implements Exception {
@@ -147,9 +152,17 @@ abstract interface class GlobalShortcutsPortal {
 
   Stream<PortalShortcutsChanged> get shortcutsChanged;
 
-  /// Session handles the desktop closed.
+  /// Session handles that ended without [closeSession]: the desktop closed
+  /// them (`Closed`), or the portal service exited / was replaced — its
+  /// sessions die with it and no `Closed` is ever sent for them.
   Stream<String> get sessionClosed;
 
+  /// Fails every Request still waiting for its `Response` (e.g. a
+  /// BindShortcuts whose dialog the user left open) with
+  /// [PortalFailure.aborted], so a shutdown is not held up by it.
+  void abortPendingRequests();
+
+  /// Aborts pending Requests and drops the connection.
   Future<void> close();
 }
 
@@ -213,9 +226,18 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
 
   DBusClient? _client;
   DBusRemoteObject? _portal;
+
+  /// Unique bus name currently owning [kPortalBusName]; null while nobody
+  /// does (then no signal is taken as the portal's). Kept current by
+  /// `NameOwnerChanged`, so a restarted portal's signals are accepted.
   String? _portalOwner;
-  final List<StreamSubscription<DBusSignal>> _subscriptions =
-      <StreamSubscription<DBusSignal>>[];
+  final List<StreamSubscription<Object>> _subscriptions =
+      <StreamSubscription<Object>>[];
+
+  /// Requests waiting for their `Response`, failed on a portal owner change
+  /// or [abortPendingRequests].
+  final Set<Completer<DBusSignal>> _pendingResponses =
+      <Completer<DBusSignal>>{};
   final Map<String, StreamSubscription<DBusSignal>> _sessionClosedSubs =
       <String, StreamSubscription<DBusSignal>>{};
   final StreamController<PortalActivation> _activated =
@@ -260,6 +282,12 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
         kGlobalShortcutsInterface,
         'version',
         signature: DBusSignature('u'),
+      );
+      // Watch ownership before reading it: no change can slip in between.
+      _subscriptions.add(
+        client.nameOwnerChanged
+            .where((DBusNameOwnerChangedEvent e) => e.name == kPortalBusName)
+            .listen(_onPortalOwnerChanged),
       );
       _portalOwner = await client.getNameOwner(kPortalBusName);
       _listenToPortalSignals(client);
@@ -344,8 +372,42 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
   /// could emit one with the same shape, so only the portal's own are taken.
   bool _fromPortal(DBusSignal signal) {
     final String? owner = _portalOwner;
-    return owner == null || signal.sender == owner;
+    return owner != null && signal.sender == owner;
   }
+
+  /// The portal service exited or was replaced (crash, package upgrade,
+  /// `systemctl --user restart xdg-desktop-portal`). Its Requests will never
+  /// answer and its sessions are gone without a `Closed` signal, so both are
+  /// ended here; the next bind talks to the new owner (the bus starts it on
+  /// demand, and announces the owner before routing our call to it).
+  void _onPortalOwnerChanged(DBusNameOwnerChangedEvent event) {
+    _portalOwner = event.newOwner;
+    if (event.oldOwner == null) return;
+    _log(
+      'portal: service owner changed (${event.oldOwner} → ${event.newOwner})',
+    );
+    _failPending('portal service went away (${event.oldOwner})');
+    final List<String> sessions = _sessionClosedSubs.keys.toList();
+    for (final String session in sessions) {
+      unawaited(_sessionClosedSubs.remove(session)?.cancel());
+      _closed.add(session);
+    }
+  }
+
+  void _failPending(String reason) {
+    final List<Completer<DBusSignal>> pending = _pendingResponses.toList();
+    _pendingResponses.clear();
+    for (final Completer<DBusSignal> c in pending) {
+      if (!c.isCompleted) {
+        c.completeError(
+          GlobalShortcutsPortalException(PortalFailure.aborted, reason),
+        );
+      }
+    }
+  }
+
+  @override
+  void abortPendingRequests() => _failPending('aborted by the client');
 
   String _nextToken() => '${_tokenPrefix}_${++_tokenSerial}';
 
@@ -359,6 +421,11 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
     final String token = _nextToken();
     final String expected = portalRequestPath(client.uniqueName, token);
     final Completer<DBusSignal> response = Completer<DBusSignal>();
+    // It may be failed (owner change / abort) while the method call below is
+    // still in flight, before anything awaits it; the await further down
+    // still sees the error.
+    response.future.ignore();
+    _pendingResponses.add(response);
     StreamSubscription<DBusSignal> watch(String path) =>
         DBusSignalStream(
           client,
@@ -411,6 +478,7 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
         '$method response $code',
       );
     } finally {
+      _pendingResponses.remove(response);
       for (final StreamSubscription<DBusSignal> s in watches) {
         unawaited(s.cancel());
       }
@@ -538,7 +606,8 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
 
   @override
   Future<void> close() async {
-    for (final StreamSubscription<DBusSignal> s in _subscriptions) {
+    _failPending('connection closed');
+    for (final StreamSubscription<Object> s in _subscriptions) {
       await s.cancel();
     }
     _subscriptions.clear();
@@ -549,5 +618,6 @@ class DBusGlobalShortcutsPortal implements GlobalShortcutsPortal {
     await _client?.close();
     _client = null;
     _portal = null;
+    _portalOwner = null;
   }
 }

@@ -150,6 +150,27 @@ void main() {
 
     await controller.releaseHotKeys();
     expect(backend.disposed, isTrue);
+
+    // After release (exit chain) a registry change must not create a fresh
+    // backend — on the portal that would open a new session on the way out.
+    int created = 0;
+    GlobalLookupController.hotKeyBackendOverride = () {
+      created++;
+      return _RecordingBackend();
+    };
+    registry.updateBinding(
+      ShortcutAction.globalExternalOpenLookupPage,
+      const ShortcutBindingSet(
+        keyboardBindings: <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.keyJ,
+            modifiers: <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
+          ),
+        ],
+      ),
+    );
+    await pumpEventQueue();
+    expect(created, 0);
   });
 }
 
