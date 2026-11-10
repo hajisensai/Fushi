@@ -148,6 +148,28 @@ void main() {
       },
     );
 
+    test(
+      'BUG-4280: episode switch / auto-advance resolves against the live host',
+      () {
+        // 换集 / 连播走 _loadRemoteEpisode 不带 override：必须与首开同一条判定
+        // （本机库断点 vs 清单 vs 互联 host 此刻断点），不能只读本机断点——否则合集
+        // 下一成员 / 播放列表下一集从本机旧断点起播，实时上报再把旧位置写回 host。
+        final String loadEpisode = region(
+          'Future<void> _loadRemoteEpisode(',
+          'if (seq != _episodeLoadSeq || !mounted) return;',
+        );
+        expect(
+          _flat(loadEpisode),
+          contains(
+            _flat(
+              'initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs(info, index);',
+            ),
+          ),
+          reason: 'episode switch must resolve via the shared resume helper',
+        );
+      },
+    );
+
     test('onPositionWrite is wired for remote (not null)', () {
       final String region2 = region(
         'controller.setSecondaryDelayMs(',
