@@ -1030,6 +1030,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   int? _seekTargetMs;
   DateTime? _seekTargetAt;
 
+  /// seek 回执写日志的判据与限流状态（与播放器后端同一份，BUG-4186 诊断）。
+  final WebVideoSeekDoneLog _seekDoneLog = WebVideoSeekDoneLog();
+
   /// bridge 单次 seek 最长 4 s 超时，再留一次排队补发的余量。
   static const Duration _kSeekTargetLifetime = Duration(seconds: 9);
 
@@ -1052,12 +1055,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   void _onSeekDone(WebVideoSeekDone? done) {
     if (done == null) return;
-    if (!done.ok && done.err != 'superseded') {
-      ErrorLogService.instance.log(
-        'web_video',
-        'seek failed (id=${done.id}): ${done.err}',
-      );
-    }
+    final String? line = _seekDoneLog.lineFor(done);
+    if (line != null) ErrorLogService.instance.log('web_video', line);
     if (done.id == null || done.id == _seekSeq) _dropSeekTarget();
   }
 

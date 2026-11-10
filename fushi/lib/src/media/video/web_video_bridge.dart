@@ -486,16 +486,26 @@ WebVideoPlaybackState? parseWebVideoStatePayload(
   );
 }
 
-/// glue 的 seek 回执 `{type:'seekDone', ok, err, id}`。
+/// glue 的 seek 回执 `{type:'seekDone', ok, err, id, diag}`。
 @immutable
 class WebVideoSeekDone {
-  const WebVideoSeekDone({required this.ok, required this.err, this.id});
+  const WebVideoSeekDone({
+    required this.ok,
+    required this.err,
+    this.id,
+    this.diag = '',
+  });
 
   final bool ok;
   final String err;
 
   /// 发起这次 seek 时带的序号（[WebVideoPlatformPlayer] 只认最后一次的回执）；旧 glue 为 null。
   final int? id;
+
+  /// netflix-bridge 回执时的页面侧诊断快照（一行 key=value：bridge 实例 / 重复注入次数、
+  /// `<video>` 数与状态、丢帧、未关的 EME 会话、JS 堆、页面侧时间；BUG-4186）。直改 `<video>`
+  /// 的站点为空。页面数据，只当证据写日志。
+  final String diag;
 }
 
 WebVideoSeekDone? parseWebVideoSeekDonePayload(Object? raw) {
@@ -504,7 +514,44 @@ WebVideoSeekDone? parseWebVideoSeekDonePayload(Object? raw) {
     ok: raw['ok'] == true,
     err: (raw['err'] ?? '').toString(),
     id: _asInt(raw['id']),
+    diag: _clipDiag((raw['diag'] ?? '').toString()),
   );
+}
+
+/// 页面给的诊断串进日志前截断（页面数据，长度不由我们定）。
+String _clipDiag(String s) => s.length <= kWebVideoSeekDiagMaxChars
+    ? s
+    : s.substring(0, kWebVideoSeekDiagMaxChars);
+
+/// [WebVideoSeekDone.diag] 进日志的长度上限（正常一行约 150 字符）。
+const int kWebVideoSeekDiagMaxChars = 400;
+
+/// 成功的 seek 回执最多多久记一次诊断（失败的每次都记）：持续跳转时日志里留下基线随时间的
+/// 变化（`<video>` 数 / 丢帧 / EME 会话 / 堆有没有在涨），又不至于按住方向键时刷屏。
+const Duration kWebVideoSeekDiagOkInterval = Duration(seconds: 30);
+
+/// seek 回执的日志判据（播放器后端与制卡页共用，BUG-4186）：superseded（被合并掉）不记；
+/// 失败每次都记，带诊断；成功只在带诊断且距上一次成功诊断满 [kWebVideoSeekDiagOkInterval]
+/// 时记一条。返回要写的日志行，不写返回 null。[now] 可注入以便测试。
+class WebVideoSeekDoneLog {
+  WebVideoSeekDoneLog({DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+  DateTime? _lastOkDiagAt;
+
+  String? lineFor(WebVideoSeekDone done) {
+    if (!done.ok && done.err == 'superseded') return null;
+    final String suffix = done.diag.isEmpty ? '' : ' | ${done.diag}';
+    if (!done.ok) return 'seek failed (id=${done.id}): ${done.err}$suffix';
+    if (done.diag.isEmpty) return null;
+    final DateTime now = _now();
+    final DateTime? last = _lastOkDiagAt;
+    if (last != null && now.difference(last) < kWebVideoSeekDiagOkInterval) {
+      return null;
+    }
+    _lastOkDiagAt = now;
+    return 'seek ok (id=${done.id})$suffix';
+  }
 }
 
 /// glue 的整轨抓取失败回执 `{type:'trackFailed', key, err}`：返回失败轨的 store key。
