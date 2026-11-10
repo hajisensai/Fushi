@@ -35,7 +35,7 @@ void main() {
       expect(await runFushiServerCli(<String>['--no-such-flag']), 64);
     });
 
-    // BUG-4279：backup 子命令自己定义过可取反的 `config` flag，盖住了顶层的 `--config <路径>`，
+    // BUG-4285：backup 子命令自己定义过可取反的 `config` flag，盖住了顶层的 `--config <路径>`，
     // 放在子命令后面的 `--config my.yaml` 被当成「还原配置」开关，路径成了多余的位置参数 → 64。
     // 备份文件不存在时应走到「找不到备份文件」（66），说明参数已经被正确解析。
     test(

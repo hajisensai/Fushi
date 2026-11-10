@@ -44,7 +44,7 @@ Future<VideoMineCommitSummary?> showVideoMineQueueDialog({
 }
 
 /// 一批写入结束后的汇总提示：张数，加上写入的卡带回的提示（如「保存到」被主机退回默认，
-/// BUG-4281）——批量写入没有逐张的结果提示，汇总这一条不带它，用户就永远不知道落点变了。
+/// BUG-4287）——批量写入没有逐张的结果提示，汇总这一条不带它，用户就永远不知道落点变了。
 String videoMineCommitMessage(VideoMineCommitSummary summary) => <String>[
   t.video_mine_queue_committed(ok: summary.succeeded, failed: summary.failed),
   ?summary.notice,

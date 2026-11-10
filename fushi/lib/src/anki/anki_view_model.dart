@@ -763,7 +763,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
     // 「保存到」被主机退回默认时的提示跟着制卡结果走（RemoteMiningAnkiRepository 填
-    // MineOutcome.notice）：单独弹一条会被紧随其后的结果提示顶掉（BUG-4281）。
+    // MineOutcome.notice）：单独弹一条会被紧随其后的结果提示顶掉（BUG-4287）。
     client: appModel.createRemoteMiningClient(),
     targetResetNotice: () => t.anki_mine_to_server_target_reset,
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，

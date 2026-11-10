@@ -100,7 +100,7 @@ List<MineToServerTargetOption> mineToServerTargetOptions(
           subtitle: t.anki_mine_to_server_target_deck_default,
         ),
       );
-      // 「默认牌组」那项已经代表主机不点名时落进的牌组，下面不再把它按名字列一遍（BUG-4282）。
+      // 「默认牌组」那项已经代表主机不点名时落进的牌组，下面不再把它按名字列一遍（BUG-4288）。
       // 老主机不报 defaultDeck：认不出是哪个，照旧全列。
       final String? defaultDeck = text(entry['defaultDeck']);
       final Object? decks = entry['decks'];

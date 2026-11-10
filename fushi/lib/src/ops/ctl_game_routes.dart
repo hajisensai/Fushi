@@ -1187,7 +1187,7 @@ class _GameCtl {
       if (outcome?.deckName != null) 'deckName': outcome!.deckName,
       if (outcome?.errorDetail != null) 'errorDetail': outcome!.errorDetail,
       if (outcome?.audioWarning != null) 'audioWarning': outcome!.audioWarning,
-      // BUG-4281：落地结果带回的提示（如「保存到」被主机退回默认），同 ctl dictionary / video 路由。
+      // BUG-4287：落地结果带回的提示（如「保存到」被主机退回默认），同 ctl dictionary / video 路由。
       if (outcome?.notice != null) 'notice': outcome!.notice,
       if (result.failureReason != null) 'failureReason': result.failureReason,
       'duplicate': result.duplicate,

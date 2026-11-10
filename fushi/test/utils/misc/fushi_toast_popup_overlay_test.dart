@@ -1,4 +1,4 @@
-// BUG-4281：查词弹窗进程从没给 FushiToast 装 navigator key，弹窗里的提示全落到系统原生 toast，
+// BUG-4287：查词弹窗进程从没给 FushiToast 装 navigator key，弹窗里的提示全落到系统原生 toast，
 // Android 12+ 把文字 toast 截成两行——「保存到」退回主机默认那句只剩「Cards now go to …」。
 // 钉两件事：自绘通知胶囊把长句完整画出来（不限行、不省略）；弹窗入口真的把 key 装上并挂到词卡页。
 import 'dart:io';

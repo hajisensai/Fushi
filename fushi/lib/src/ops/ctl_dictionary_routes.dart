@@ -417,7 +417,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
         if (outcome.deckName != null) 'deckName': outcome.deckName,
         if (view.message != null) 'message': view.message,
         if (view.detail != null) 'detail': view.detail,
-        // 随结果带回的提示（如「保存到」被主机退回默认，BUG-4281）。
+        // 随结果带回的提示（如「保存到」被主机退回默认，BUG-4287）。
         'notice': ?outcome.notice,
         'expression': fields['expression'],
         'reading': fields['reading'],

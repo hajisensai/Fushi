@@ -327,7 +327,7 @@ class VideoMineCommitSummary {
   final String? firstError;
 
   /// 写入的卡随结果带回的第一条提示（[MineOutcome.notice]，如「保存到」被主机退回默认）。
-  /// 批量写入没有逐张的结果提示，汇总提示必须带上它（BUG-4281）。
+  /// 批量写入没有逐张的结果提示，汇总提示必须带上它（BUG-4287）。
   final String? notice;
 }
 

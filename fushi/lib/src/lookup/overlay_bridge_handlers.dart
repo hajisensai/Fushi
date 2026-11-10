@@ -496,7 +496,7 @@ Future<Map<String, Object?>> _mineEntry(
 /// - 失败：`described.message` 是 [describeMineOutcome] 算出的原因。BUG-1908：app 外的裸浮窗连
 ///   Flutter toast 都没有（FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
 /// - 成功但结果带了提示（[MineOutcome.notice]，如「保存到」被主机退回默认）：只回这句提示，
-///   浮窗的 ➕→✓ 已经表达了成功。这条路径宿主不弹结果 toast，提示不回浮窗就无处可见（BUG-4281）。
+///   浮窗的 ➕→✓ 已经表达了成功。这条路径宿主不弹结果 toast，提示不回浮窗就无处可见（BUG-4287）。
 Map<String, Object?> overlayMineReply(
   MineOutcome outcome,
   ({String message, bool success, bool record, MineToastStatus status})

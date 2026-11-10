@@ -30,7 +30,7 @@ GlobalKey<NavigatorState>? _toastNavigatorKey;
 
 /// 全局短时通知。有 navigator overlay 时（主 app 桌面与移动、Android 查词弹窗进程）自绘
 /// [_FushiToastView]；没装 [navigatorKey] 的入口降级为原生 Fluttertoast——Android 12+
-/// 的系统文字 toast 最多两行，长句会被截断（BUG-4281），所以有界面的入口都该装 key。
+/// 的系统文字 toast 最多两行，长句会被截断（BUG-4287），所以有界面的入口都该装 key。
 abstract final class FushiToast {
   /// Assign the app's navigator key so toasts can find the overlay.
   static set navigatorKey(GlobalKey<NavigatorState> key) =>

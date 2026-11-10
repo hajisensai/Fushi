@@ -65,7 +65,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   final RemoteMiningAuthReporter? _onAuthRejected;
 
   /// 主机回 `targetUnavailable`（手机点名的落点它没有、卡落进了它的默认，客户端同时把「保存到」退回
-  /// 主机默认）时附在成功结果上的那句话（BUG-4281）。注入本地化文案，本类保持无 Flutter 依赖。
+  /// 主机默认）时附在成功结果上的那句话（BUG-4287）。注入本地化文案，本类保持无 Flutter 依赖。
   final String Function()? _targetResetNotice;
 
   /// 同一个 repository 实例只报一次「token 被拒」——查重是每次查词都跑的高频路径，

@@ -395,7 +395,7 @@ void main() {
       expect(o.deckName, 'HostDeck');
     });
 
-    test('BUG-4281: a reset save location rides on the success outcome, '
+    test('BUG-4287: a reset save location rides on the success outcome, '
         'and on the local deck-name fallback', () async {
       Future<MineOutcome> mine(Map<String, dynamic> response) =>
           RemoteMiningAnkiRepository(

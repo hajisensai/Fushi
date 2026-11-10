@@ -264,7 +264,7 @@ void main() {
     );
   });
 
-  test('BUG-4281：补发送达的卡带回的提示（「保存到」被退回主机默认）进补发报告', () async {
+  test('BUG-4287：补发送达的卡带回的提示（「保存到」被退回主机默认）进补发报告', () async {
     final PendingMiningAnkiRepository offlineRepo = repoOver(
       _FakeBackend(outcomes: <MineOutcome>[_refused(), _refused(), _refused()]),
     );

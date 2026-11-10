@@ -180,7 +180,7 @@ void main() {
   });
 
   test('the review default deck is listed once when the host reports it '
-      '(BUG-4282)', () {
+      '(BUG-4288)', () {
     final List<MineToServerTargetOption> options = mineToServerTargetOptions(
       <String, dynamic>{
         'review': <Object?>[
