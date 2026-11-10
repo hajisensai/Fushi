@@ -54,7 +54,8 @@ void main() {
         as bool;
   }
 
-  /// 经 [port] 开一个 PIN 会话并用错 PIN confirm，返回 confirm 的状态码。
+  /// 经 [port] 开一个 PIN 会话并用错 PIN confirm，返回 confirm 的状态码；来源已被锁定
+  /// 时 pair/v2 直接 429（BUG-4280），返回它的状态码。
   Future<int> wrongPinVia(int port, String nonce, {String? deviceId}) async {
     final http.Response start = await http.post(
       Uri.parse('http://127.0.0.1:$port/api/pair/v2'),
@@ -64,6 +65,7 @@ void main() {
         if (deviceId != null) 'clientDeviceId': deviceId,
       }),
     );
+    if (start.statusCode == 429) return 429;
     expect(start.statusCode, 200);
     final Map<String, dynamic> body =
         jsonDecode(start.body) as Map<String, dynamic>;

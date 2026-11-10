@@ -108,6 +108,12 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} ({1}) 请求配对，请在该设备输入：':
       '{0} ({1}) wants to pair. Enter this on that device:',
   '未知设备': 'Unknown device',
+  '局域网': 'LAN',
+  '公网或反向代理': 'internet or reverse proxy',
+  '来自{0}的配对因多次 PIN 错误暂停至 {1}':
+      'Pairing from {0} is paused until {1} after repeated wrong PINs',
+  '解除': 'Unlock',
+  '已解除': 'Unlocked',
   '已配对设备': 'Paired devices',
   '我的设备': 'My device',
   '标为我的设备': 'Mark as my device',

@@ -412,6 +412,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 </section>
 
 <section id="s-pairing">
+<div id="pairing-lockout"></div>
 <div id="pairing-pending"><div class="list"><div class="skel"></div></div></div>
 <h3 class="sh">已配对设备</h3>
 <div class="list" id="peers"><div class="skel"></div><div class="skel"></div></div>
@@ -715,6 +716,12 @@ function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
 async function loadPairing(){
   const p = await api('pairing');
   setPairBadge(p.pending);
+  const lockClass = {lan:T('局域网'), p2p:T('P2P 隧道'), public:T('公网或反向代理')};
+  const locks = Object.entries(p.lockout||{}).filter(([,v])=>v);
+  $('#pairing-lockout').innerHTML = locks.length
+    ? `<div class="card"><div class="card-head"><div>${locks.map(([k,v])=>`<p class="sup" style="margin:0">${tag('warn', T('来自{0}的配对因多次 PIN 错误暂停至 {1}', lockClass[k]||k, fmtTime(v)))}</p>`).join('')}</div><button class="b" id="btn-pair-unlock">${esc(T('解除'))}</button></div></div>`
+    : '';
+  if (locks.length) $('#btn-pair-unlock').onclick = guard(async()=>{ await post('pairing/unlock'); toast(T('已解除')); loadPairing(); });
   $('#pairing-pending').innerHTML = p.pending
     ? `<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', p.pending.deviceName||T('未知设备'), p.pending.remoteAddress||'?'))}</b><p class="sup">${fmtTime(p.pending.createdAt)}</p></div><div class="pin">${esc(p.pending.pin)}</div></div>`
     : `<div class="list">${empty(T('没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。'), 'pairing')}</div>`;

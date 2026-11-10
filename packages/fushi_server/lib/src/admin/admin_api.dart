@@ -34,6 +34,7 @@ import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
@@ -157,6 +158,10 @@ class AdminApi {
         );
       case ('GET', '/api/admin/pairing'):
         return _pairing();
+      case ('POST', '/api/admin/pairing/unlock'):
+        // BUG-4280：解除因 PIN 失败过多的配对暂停（全部来源类别）。
+        ctx.host.resetPairingLockout();
+        return shelf.Response(204);
       case ('PUT', _)
           when path.startsWith('/api/admin/pairing/peers/') &&
               path.endsWith('/owner'):
@@ -557,6 +562,8 @@ class AdminApi {
 
   Future<shelf.Response> _pairing() async {
     final PendingPairing? pending = ctx.host.pendingPairing;
+    final Map<FushiPairOriginClass, DateTime> lockouts =
+        ctx.host.pairingLockouts;
     final List<FushiPairedPeerRow> peers = await ctx.db.getPairedPeers();
     final Set<String> owners = await _ownerDevices.ownerDevicePeerIds();
     final Map<String, String> deviceKeys = await _ownerDevices
@@ -568,6 +575,11 @@ class AdminApi {
         'enabled': ctx.config.leaderboardLink,
         'tls': ctx.config.tls,
         'reachable': ctx.config.leaderboardLink && ctx.config.tls,
+      },
+      // BUG-4280：各来源类别因 PIN 失败过多暂停配对到何时；null = 没暂停。
+      'lockout': <String, Object?>{
+        for (final FushiPairOriginClass c in FushiPairOriginClass.values)
+          c.name: lockouts[c]?.toUtc().toIso8601String(),
       },
       'pending': pending == null
           ? null

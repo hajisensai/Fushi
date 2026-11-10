@@ -108,18 +108,30 @@ void main() {
     );
   });
 
-  test('within lockout window confirm is 429 even with correct PIN', () async {
-    await startServer();
-    for (int i = 1; i <= 5; i++) {
-      await confirmWrongPin(i);
-    }
-    final http.Response r = await confirmCorrectPin('during-lockout');
-    expect(r.statusCode, 429);
-    expect(
-      (jsonDecode(r.body) as Map<String, dynamic>)['reason'],
-      'rate_limited',
-    );
-  });
+  test(
+    'within lockout window pair/v2 itself is 429 (no session, no PIN shown)',
+    () async {
+      // BUG-4280：锁定中的来源连会话都开不出来——不生成 PIN、不弹审批，自然也没有
+      // 「拿正确 PIN 来 confirm」的机会。
+      await startServer();
+      for (int i = 1; i <= 5; i++) {
+        await confirmWrongPin(i);
+      }
+      final http.Response r = await http.post(
+        v2Uri(),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, String>{
+          'name': 'Attacker',
+          'clientNonce': 'cn-during-lockout',
+        }),
+      );
+      expect(r.statusCode, 429);
+      expect(
+        (jsonDecode(r.body) as Map<String, dynamic>)['reason'],
+        'rate_limited',
+      );
+    },
+  );
 
   test('after backoff window correct PIN pairs again', () async {
     await startServer();

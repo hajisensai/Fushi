@@ -517,13 +517,39 @@ class FushiSyncServer {
   final Map<String, FushiPairSession> _pairSessions =
       <String, FushiPairSession>{};
 
-  /// TODO-961 M3：PIN 爆破限速器。按来源（client 自报 deviceId，回退来源 IP）聚合
-  /// PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
+  /// TODO-961 M3：PIN 爆破限速器。按来源（IP，IPv6 按 /64；隧道按 NodeId。不认自报
+  /// deviceId，BUG-4280）聚合 PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
   /// 直接被拒（不再触碰 PIN 比对）。粒度选「来源」而非「会话」的理由见
   /// [FushiPinRateLimiter] 文档：[FushiPairSession.consumed] 已让单会话只能撞一次，
   /// 真正的爆破面是不断开新会话逐个撞——只有按来源聚合才挡得住。纯内存态，随
   /// [_prunePairSessions] 一并 prune 防泄漏；server 重启即清空。
   final FushiPinRateLimiter _pinRateLimiter = FushiPinRateLimiter();
+
+  /// BUG-4280：按来源类别的 PIN 失败总预算。换来源（IPv6 前缀、多台机器）绕得过
+  /// [_pinRateLimiter]，绕不过这里；分类别是为了公网被刷锁时局域网 / 隧道照常配对。
+  final Map<FushiPairOriginClass, FushiPinFailureBudget> _pinBudgets =
+      <FushiPairOriginClass, FushiPinFailureBudget>{
+        for (final FushiPairOriginClass c in FushiPairOriginClass.values)
+          c: FushiPinFailureBudget(),
+      };
+
+  /// 当前因 PIN 失败过多而锁定的来源类别及各自的解锁时刻（BUG-4280）；只含锁定中的。
+  Map<FushiPairOriginClass, DateTime> get pairingLockouts {
+    final DateTime now = _now();
+    return <FushiPairOriginClass, DateTime>{
+      for (final MapEntry<FushiPairOriginClass, FushiPinFailureBudget> e
+          in _pinBudgets.entries)
+        if (e.value.isLockedOut(now)) e.key: e.value.lockedUntil!,
+    };
+  }
+
+  /// 管理员解除配对锁定（BUG-4280）：清掉全部类别预算与按来源的限速记录。
+  void resetPairingLockout() {
+    for (final FushiPinFailureBudget b in _pinBudgets.values) {
+      b.reset();
+    }
+    _pinRateLimiter.reset();
+  }
 
   HttpServer? _server;
 
@@ -548,6 +574,11 @@ class FushiSyncServer {
   /// 多实例 / 本机联调）；无头端设 false——经回环进来的几乎都是本机反代 / 穿透
   /// （frp TCP 模式不加转发头），把它当 LAN 会让公网请求免 PIN。
   bool loopbackPeerIsLan = true;
+
+  /// BUG-4280：pinRequired 会话的 [onPairRequest] 批准是不是人点的。app 是（弹审批框），
+  /// 无头端不是（自动放行、PIN 本身就是人因）。人工批准过的会话不会被会话上限淘汰——
+  /// 攻击者没法不经主人点头就占住它们；自动批准的会话则谁都能刷出来，必须可淘汰。
+  bool pinApprovalIsManual = true;
 
   /// BUG-4279：可信反代地址（IP / CIDR）供给器，每请求现读；null = 没有。TCP 对端
   /// 命中时才读转发头里的真实来源，**只**用于限速键与展示 IP，不让任何请求变回局域网

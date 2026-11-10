@@ -140,6 +140,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         clientDeviceId: clientDeviceId,
         tunnelPeer: tunnelPeer,
         devicePubkey: devicePubkey,
+        origin: origin,
       );
     }
 
@@ -150,6 +151,22 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       isLanPeer: isLanPeer,
       lanRequiresPin: lanRequiresPin,
     );
+
+    // BUG-4280：本来源或本来源类别因 PIN 失败过多锁定中 → 不建会话、不生成 PIN、
+    // 不弹审批 / 不刷无头日志。免 PIN 会话不猜 PIN，不受锁定影响。
+    if (pinRequired && _pinLockedOut(origin.originClass, origin.sourceKey)) {
+      return _pairRateLimited();
+    }
+    // 人工批准过的 PIN 会话受淘汰保护（攻击者不经主人点头占不住它们）。
+    final bool protectedFromEviction = pinRequired && pinApprovalIsManual;
+
+    // 先 prune 过期会话 + 守本类别上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
+    // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。类别里全是受保护会话
+    // 时腾不出位置 → 429。
+    _prunePairSessions();
+    if (!_enforcePairSessionCap(origin)) return _pairRateLimited();
+    // 同步回收已冷却的 PIN 失败记录，防限速器内存随开会话数无界增长。
+    _pinRateLimiter.prune(_now());
 
     final String sessionId = FushiPairingProtocol.generateNonce();
     final String hostNonce = FushiPairingProtocol.generateNonce();
@@ -172,13 +189,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       tunnelPeer: tunnelPeer,
       devicePubkey: devicePubkey,
       ownerDeviceGrant: ownerDeviceGrant,
+      sourceKey: origin.sourceKey,
+      sourceKeyTrusted: origin.sourceKeyTrusted,
+      originClass: origin.originClass,
+      protectedFromEviction: protectedFromEviction,
     );
-    // 先 prune 过期会话 + 守上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
-    // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。
-    _prunePairSessions();
-    _enforcePairSessionCap();
-    // 同步回收已冷却的 PIN 失败记录，防限速器内存随开会话数无界增长。
-    _pinRateLimiter.prune(_now());
 
     // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
     // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
@@ -224,6 +239,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       tunnelPeer: tunnelPeer,
       devicePubkey: devicePubkey,
       ownerDeviceGrant: ownerDeviceGrant,
+      sourceKey: origin.sourceKey,
+      sourceKeyTrusted: origin.sourceKeyTrusted,
+      originClass: origin.originClass,
+      protectedFromEviction: protectedFromEviction,
     );
     _pairSessions[sessionId] = stored;
 
@@ -249,6 +268,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     required String? clientDeviceId,
     required String? tunnelPeer,
     required String? devicePubkey,
+    required _RequestOrigin origin,
   }) {
     final FushiPairTicket? ticket = _pairTicket;
     if (ticket == null ||
@@ -262,9 +282,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 一票一会话：建会话即消耗票据。否则拍到二维码的人（直播 / 屏幕共享）能在
     // 5 分钟内预开任意多个会话，合法设备配完、二维码关掉之后照样逐个 confirm
     // 拿 token（审查问题 3）。输错 secret 的合法设备重新打开二维码即可。
-    _pairTicket = null;
+    // 腾不出会话位置（本类别全是受保护会话）时不消耗票据，稍后重试仍可用。
     _prunePairSessions();
-    _enforcePairSessionCap();
+    if (!_enforcePairSessionCap(origin)) return _pairRateLimited();
+    _pairTicket = null;
     _pinRateLimiter.prune(_now());
     final String sessionId = FushiPairingProtocol.generateNonce();
     final String hostNonce = FushiPairingProtocol.generateNonce();
@@ -281,6 +302,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       ticketId: ticket.id,
       tunnelPeer: tunnelPeer,
       devicePubkey: devicePubkey,
+      sourceKey: origin.sourceKey,
+      sourceKeyTrusted: origin.sourceKeyTrusted,
+      originClass: origin.originClass,
+      // 票据会话凭 192-bit secret，host 屏上打开二维码即视为批准：不被灌满的会话挤掉。
+      protectedFromEviction: true,
     );
     return jsonResponse(<String, dynamic>{
       'sessionId': sessionId,
@@ -342,39 +368,42 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       onPairSessionResolved?.call();
     }
 
-    // TODO-961 M3：本会话来源标识，供爆破限速按来源聚合失败计数。优先 client 自报的
-    // 稳定 deviceId，回退来源 IP；二者都缺时为 null → 无稳定身份可锁，退化为不限速的
-    // 单会话路径（该路径已被 session.consumed 单次消费保护，一个会话只能撞一次）。
-    final String? sourceKey = _pinRateLimitSourceKey(session);
+    // TODO-961 M3 / BUG-4280：来源标识在建会话时由 [_requestOrigin] 算好存进会话
+    // （IP，IPv6 按 /64；隧道按 NodeId；**不**认自报 deviceId）。为 null 时不按来源
+    // 限速，只受来源类别预算约束（单会话本就被 session.consumed 限成只撞一次）。
+    final String? sourceKey = session.sourceKey;
+    final bool isTicket = session.ticketId != null;
     if (session.pinRequired) {
       // 先查锁定态（再触碰 PIN 比对）：锁定则直接拒，杜绝继续撞。锁定判定只看来源与
-      // 时钟，与 PIN 内容完全无关，故不引入「前缀正确就更慢」的计时侧信道。
-      if (sourceKey != null && _pinRateLimiter.isLockedOut(sourceKey, _now())) {
+      // 时钟，与 PIN 内容完全无关，故不引入「前缀正确就更慢」的计时侧信道。票据会话
+      // 凭 192-bit secret，不进类别预算（否则公网被刷锁时扫码配对也一起瘫掉）。
+      if (isTicket
+          ? (sourceKey != null &&
+                _pinRateLimiter.isLockedOut(sourceKey, _now()))
+          : _pinLockedOut(session.originClass, sourceKey)) {
         return _pairRateLimited();
       }
       final String? pinProof = body?['pinProof']?.toString();
-      if (pinProof == null || pinProof.trim().isEmpty) {
-        // 缺 proof 同样计一次失败：否则攻击者可用「开会话→空 proof」零成本探测锁定态
-        // 之外的东西。记后若已锁定，返回 429 让 client 知道被限速。
-        if (sourceKey != null &&
-            _pinRateLimiter.recordFailure(sourceKey, _now())) {
-          return _pairRateLimited();
-        }
-        // 401：PIN 校验未通过（缺 proof）——不再问 host（不弹窗）。
-        return _pairUnauthorized();
-      }
-      final bool ok = FushiPairingProtocol.verifyPinProof(
-        pin: session.pin,
-        clientNonce: session.clientNonce,
-        hostNonce: session.hostNonce,
-        submittedProof: pinProof,
-      );
+      // 缺 proof 同样计一次失败：否则攻击者可用「开会话→空 proof」零成本探测锁定态
+      // 之外的东西。
+      final bool ok =
+          pinProof != null &&
+          pinProof.trim().isNotEmpty &&
+          FushiPairingProtocol.verifyPinProof(
+            pin: session.pin,
+            clientNonce: session.clientNonce,
+            hostNonce: session.hostNonce,
+            submittedProof: pinProof,
+          );
       if (!ok) {
-        // 记一次来源级失败；若因此达阈值进入锁定，返回 429（限速），否则 401（PIN 错）。
-        if (sourceKey != null &&
-            _pinRateLimiter.recordFailure(sourceKey, _now())) {
-          return _pairRateLimited();
-        }
+        // 记一次来源级失败 + 类别级失败；任一因此进入锁定 → 429（限速），否则 401
+        // （PIN 错 / 缺 proof，不再问 host、不弹窗）。
+        final DateTime now = _now();
+        final bool sourceLocked =
+            sourceKey != null && _pinRateLimiter.recordFailure(sourceKey, now);
+        final bool classLocked =
+            !isTicket && _pinBudgets[session.originClass]!.recordFailure(now);
+        if (sourceLocked || classLocked) return _pairRateLimited();
         return _pairUnauthorized();
       }
     }
@@ -411,6 +440,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
     // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
     if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);
+    // BUG-4280：本类别有 PIN 会话配对成功 → 类别预算的级数与计数清零。
+    if (session.pinRequired && !isTicket) {
+      _pinBudgets[session.originClass]!.recordSuccess();
+    }
     // 一次性票据：配成一台就作废（二维码被别人再扫一次也没用）。
     if (session.ticketId != null && _pairTicket?.id == session.ticketId) {
       _pairTicket = null;
@@ -656,24 +689,95 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     );
   }
 
-  /// TODO-961 M1：守住会话上限。prune 之后仍超过 [_maxPairSessions] 时，按 createdAt
-  /// 淘汰最旧的会话直到回到上限内（攻击者用全新 nonce 高频发起 pair/v2、每个都还在
-  /// TTL 内时的兜底）。正常一次一会话（_pairDialogOpen 串行审批），此路径几乎不触发。
-  void _enforcePairSessionCap() {
-    while (_pairSessions.length >= _maxPairSessions) {
-      String? oldestKey;
-      DateTime? oldestAt;
-      for (final MapEntry<String, FushiPairSession> e
-          in _pairSessions.entries) {
-        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
-          oldestAt = e.value.createdAt;
-          oldestKey = e.key;
-        }
+  /// BUG-4280：PIN 会话是否因失败过多被拒——本来源类别的总预算锁定，或（来源可识别时）
+  /// 本来源被 [_pinRateLimiter] 锁定。
+  bool _pinLockedOut(FushiPairOriginClass originClass, String? sourceKey) {
+    final DateTime now = _now();
+    if (_pinBudgets[originClass]!.isLockedOut(now)) return true;
+    return sourceKey != null && _pinRateLimiter.isLockedOut(sourceKey, now);
+  }
+
+  /// TODO-961 M1 / BUG-4280：为 [origin] 即将新建的会话腾位置；腾不出返回 false。
+  ///
+  /// 上限按来源类别分区（[_maxPairSessionsPerClass]），公网刷会话挤不掉局域网 / 隧道
+  /// 的会话；可信来源键再限每来源 [_maxPairSessionsPerSource] 个，超了只淘汰它自己的。
+  /// 类别满时淘汰该类别里会话最多的来源（null 键各自算一个来源）的最旧会话，所以单一
+  /// 来源只能挤掉自己的。受保护会话（票据、人工批准过的 PIN 会话）永不淘汰；类别里
+  /// 全是受保护会话仍满 → false（调用方回 429）。
+  bool _enforcePairSessionCap(_RequestOrigin origin) {
+    final FushiPairOriginClass cls = origin.originClass;
+    final String? sourceKey = origin.sourceKey;
+    bool evictable(FushiPairSession s) =>
+        s.originClass == cls && !s.protectedFromEviction;
+
+    // 1. 每来源限额：只对能区分真实来源的键做（回环未经可信代理、`p2p:?` 跳过——
+    //    否则经本机反代进来的所有人共用一个名额）。
+    if (origin.sourceKeyTrusted && sourceKey != null) {
+      while (true) {
+        final List<MapEntry<String, FushiPairSession>>
+        mine = <MapEntry<String, FushiPairSession>>[
+          for (final MapEntry<String, FushiPairSession> e
+              in _pairSessions.entries)
+            if (e.value.originClass == cls && e.value.sourceKey == sourceKey) e,
+        ];
+        if (mine.length < _maxPairSessionsPerSource) break;
+        final MapEntry<String, FushiPairSession>? oldest = _oldestOf(
+          mine.where(
+            (MapEntry<String, FushiPairSession> e) => evictable(e.value),
+          ),
+        );
+        if (oldest == null) break;
+        _pairSessions.remove(oldest.key);
       }
-      if (oldestKey == null) break;
-      _pairSessions.remove(oldestKey);
+    }
+
+    // 2. 类别上限：淘汰会话最多的来源的最旧可淘汰会话，直到低于上限。
+    while (true) {
+      final List<MapEntry<String, FushiPairSession>> inClass =
+          <MapEntry<String, FushiPairSession>>[
+            for (final MapEntry<String, FushiPairSession> e
+                in _pairSessions.entries)
+              if (e.value.originClass == cls) e,
+          ];
+      if (inClass.length < _maxPairSessionsPerClass) return true;
+      final List<MapEntry<String, FushiPairSession>> candidates =
+          <MapEntry<String, FushiPairSession>>[
+            for (final MapEntry<String, FushiPairSession> e in inClass)
+              if (!e.value.protectedFromEviction) e,
+          ];
+      if (candidates.isEmpty) return false;
+      // 每来源会话数（含受保护的：占得多就是占得多）；null 键不合并。
+      final Map<String, int> perSource = <String, int>{};
+      for (final MapEntry<String, FushiPairSession> e in inClass) {
+        final String? k = e.value.sourceKey;
+        if (k != null) perSource[k] = (perSource[k] ?? 0) + 1;
+      }
+      int weight(FushiPairSession s) =>
+          s.sourceKey == null ? 1 : perSource[s.sourceKey]!;
+      final int heaviest = candidates
+          .map((MapEntry<String, FushiPairSession> e) => weight(e.value))
+          .reduce((int a, int b) => a > b ? a : b);
+      final MapEntry<String, FushiPairSession> victim = _oldestOf(
+        candidates.where(
+          (MapEntry<String, FushiPairSession> e) => weight(e.value) == heaviest,
+        ),
+      )!;
+      _pairSessions.remove(victim.key);
     }
   }
+}
+
+/// [entries] 里 createdAt 最早的一项；为空时 null。
+MapEntry<String, FushiPairSession>? _oldestOf(
+  Iterable<MapEntry<String, FushiPairSession>> entries,
+) {
+  MapEntry<String, FushiPairSession>? oldest;
+  for (final MapEntry<String, FushiPairSession> e in entries) {
+    if (oldest == null || e.value.createdAt.isBefore(oldest.value.createdAt)) {
+      oldest = e;
+    }
+  }
+  return oldest;
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到
@@ -681,30 +785,17 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
 /// TODO-961 M1（会话 TTL/上限，对照 audio/video token 的 prune 模式）：只发
 /// pair/v2 却不 confirm 的攻击者会留下永久驻留会话（慢速 DoS）。每个会话
-/// [_pairSessionTtl] 后过期，超过 [_maxPairSessions] 时先 prune 再淘汰最旧者。
+/// [_pairSessionTtl] 后过期；超过分区上限时先 prune 再按 [_enforcePairSessionCap]
+/// 的规则淘汰（BUG-4280）。
 /// TTL 与现有 host 60s 自动 deny（[FushiSyncServerController]）对齐：会话生命周期
 /// 不应长于一次审批窗口（留 90s 余量覆盖审批弹窗 + 用户输 PIN）。
 const Duration _pairSessionTtl = Duration(seconds: 90);
 
-const int _maxPairSessions = 64;
+/// 每个来源类别（局域网 / 隧道 / 公网）最多同时挂起的配对会话数（BUG-4280）。
+const int _maxPairSessionsPerClass = 32;
 
-/// TODO-961 M3：本会话在 PIN 爆破限速里的来源标识。优先 client 自报的稳定
-/// deviceId（同一物理设备换 IP 也锁得住），回退请求来源 IP。二者都缺（无稳定身份）
-/// 时返回 null → 调用方退化为不限速的单会话路径（已由 consumed 单次消费保护）。
-///
-/// 隧道会话例外：一律按对端 NodeId 分桶，**不认**自报 deviceId。deviceId 谁都能
-/// 冒报（报成受害者的就能把受害者锁在外面），NodeId 是隧道握手证明过的密钥；而
-/// 来源 IP 恒为 127.0.0.1 毫无区分度。查不到 NodeId（解析器未接线）时所有这类
-/// 会话共用一个桶——宁可误伤也不放开。
-String? _pinRateLimitSourceKey(FushiPairSession session) {
-  if (session.tunnelPeer != null) return 'p2p:${session.tunnelPeer}';
-  if (session.remoteAddress == kFushiP2pRemoteAddress) return 'p2p:?';
-  final String? deviceId = session.clientDeviceId?.trim();
-  if (deviceId != null && deviceId.isNotEmpty) return 'dev:$deviceId';
-  final String? remote = session.remoteAddress?.trim();
-  if (remote != null && remote.isNotEmpty) return 'ip:$remote';
-  return null;
-}
+/// 每个可信来源键最多同时挂起的配对会话数（BUG-4280）。
+const int _maxPairSessionsPerSource = 4;
 
 /// 转发层会附带的来源头（BUG-4279）。带任一个就说明请求经过了反代 / 穿透 / CDN，
 /// TCP 对端只是转发者，不能据它判局域网。

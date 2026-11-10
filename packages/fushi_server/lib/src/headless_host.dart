@@ -252,6 +252,13 @@ class HeadlessHost {
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
 
+  /// 因 PIN 失败过多而暂停配对的来源类别及解锁时刻（BUG-4280）；host 没跑时为空。
+  Map<FushiPairOriginClass, DateTime> get pairingLockouts =>
+      _server?.pairingLockouts ?? const <FushiPairOriginClass, DateTime>{};
+
+  /// 管理员解除配对锁定（BUG-4280）。
+  void resetPairingLockout() => _server?.resetPairingLockout();
+
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
   final StreamController<PendingPairing?> pairingEvents =
       StreamController<PendingPairing?>.broadcast();
@@ -494,6 +501,9 @@ class HeadlessHost {
           // 可信代理只影响限速键与展示 IP。
           ..loopbackPeerIsLan = false
           ..trustedProxiesProvider = (() => config.trustedProxies)
+          // BUG-4280：要 PIN 的会话由 [_approvePairing] 自动放行、没人点过，不受会话
+          // 上限淘汰保护（否则谁都能刷出一堆占住位置）。
+          ..pinApprovalIsManual = false
           ..onPeerPaired = _persistPairedPeer
           ..pairedPeerTokensProvider = _loadPairedPeerTokens
           // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。

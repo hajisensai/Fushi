@@ -83,12 +83,13 @@ void main() {
 
   test('会话数受上限约束：高频发起 pair/v2 不会无界堆积', () async {
     await startServer();
-    // 连发远超上限（64）的会话，全在 TTL 内（时钟不动）。
+    // 连发远超上限的会话，全在 TTL 内（时钟不动）。来源都是 127.0.0.1（局域网类别、
+    // 回环来源键不可信，不做每来源限额），只受类别上限 32 约束（BUG-4280）。
     for (int i = 0; i < 200; i++) {
       await startSession('cn-flood-$i');
     }
-    // 不应无界增长：被上限 + 淘汰最旧者控制住（<= 64）。
-    expect(server.pendingPairSessionCount, lessThanOrEqualTo(64));
+    // 不应无界增长：被类别上限 + 淘汰控制住。
+    expect(server.pendingPairSessionCount, lessThanOrEqualTo(32));
   });
 
   test('TTL 内未过期会话仍可正常 confirm（不误杀活跃会话）', () async {
