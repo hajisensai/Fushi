@@ -384,7 +384,9 @@ CompanionSettingRow companionSettingRow(
     options: options,
     min: (json['min'] as num?)?.toDouble(),
     max: (json['max'] as num?)?.toDouble(),
-    divisions: item is SettingsSliderItem ? item.divisions : null,
+    divisions: item is SettingsSliderItem
+        ? item.resolveBounds(context).divisions
+        : null,
     step: switch (item) {
       SettingsSliderItem(:final double? step) => step,
       SettingsStepperItem(:final double step) => step,

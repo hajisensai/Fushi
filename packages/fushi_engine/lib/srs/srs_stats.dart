@@ -988,14 +988,18 @@ class SrsStatsData {
     return all.take(limit).toList();
   }
 
-  /// 制卡来源（按笔记计）：同种类同标题归一组，按笔记数倒序。
+  /// 制卡来源（按笔记计）：同种类同标题归一组，按笔记数倒序。带系列的出处按系列名计（「系列 → 集」的上一级，
+  /// 反馈 MCJLSBR5Wg；从缓存表读来的出处 title 已是系列名，见 caches.rs `NoteInfo::of`）。
   List<SrsSourceShare> sourceShares() {
     final Map<(String, String), int> counts = <(String, String), int>{};
     final Set<String> seen = <String>{};
     for (final SrsStatCard c in cards) {
       if (!seen.add(c.noteId)) continue;
       final SrsSourceRef? s = sources[c.noteId];
-      final (String, String) key = (s?.kind ?? '', s?.title?.trim() ?? '');
+      final (String, String) key = (
+        s?.kind ?? '',
+        (s?.seriesTitle ?? s?.title)?.trim() ?? '',
+      );
       counts[key] = (counts[key] ?? 0) + 1;
     }
     final List<SrsSourceShare> out =

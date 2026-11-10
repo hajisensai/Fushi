@@ -6,7 +6,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
-import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
@@ -58,8 +57,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show importMangaPackageFile, isMangaPackage;
+import 'package:fushi/src/sync/synced_book_import.dart';
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -415,12 +413,13 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final bool remoteHasContent = local == null
         ? (remote != null
               ? await _remoteFolderHasContent(backend, remote.id)
-              // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
-              // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
-              // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
+              // 互联 live 条目：host 对漫画 / PDF 恒 hasContent=false（那是 EPUB
+              // 内容树判据），漫画内容走 hasMangaContent、PDF 走 hasPdfContent ——
+              // 只看 hasContent 会让它们在对比弹窗里连下载入口都不出现。与
+              // _syncBooksContentLive 同判据取并。
               : (live == null
                     ? true
-                    : (live.hasContent || live.hasMangaContent)))
+                    : (live.hasBookShelfContent || live.hasMangaContent)))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
@@ -1278,21 +1277,16 @@ Future<bool> downloadSyncCompareRemoteOnly({
     );
     try {
       await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-      // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
-      // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
-      // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
-      // raw title（bookKey 由它派生），不用本地临时文件名。
-      final String localBookKey = (await isMangaPackage(tmp))
-          ? await importMangaPackageFile(
-              db: db,
-              file: tmp,
-              title: entry.remoteLiveTitle,
-            )
-          : await EpubImporter.importFromPath(
-              db: db,
-              filePath: tmp.path,
-              fileName: '${entry.title}.epub',
-            );
+      // 互联 host 的书内容端点对 EPUB、漫画包与 PDF 原件共用 `.epub` 名（内容即
+      // 真相），故按内容嗅探分流——与书架页下载同一个入口（[importSyncedBookFile]），
+      // 此前两处各写一份，这里曾漏过漫画。标题用远端 raw title（bookKey 由它派生），
+      // 不用本地临时文件名。
+      final String localBookKey = await importSyncedBookFile(
+        db: db,
+        file: tmp,
+        title: entry.remoteLiveTitle,
+        epubFileName: '${entry.title}.epub',
+      );
       // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
       // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
       await _downloadLiveAudiobookFor(

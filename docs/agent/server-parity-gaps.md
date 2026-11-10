@@ -118,6 +118,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   (`video_scrape_host.dart`).
 - **Manga PDF**: not imported. Rasterizing needs the app's pdfium/pdfrx. Downloads with a
   PDF are blocked with `unsupportedOnThisHost`, and manga roots skip `.pdf`.
+- **PDF books over interconnect (receiving)**: the server does not wire
+  `importPdfBookFromFile` (PDF import needs pdfrx for the page count and cover), so it
+  advertises `liveLibrary.pdfBooks=false` and clients keep their PDF books local instead of
+  pushing them. The server still lists and serves any PDF already in its library
+  (`hasPdfContent`, BUG-4381).
 - **Subtitles (what is still app-only)**: downloads source subtitles and
   `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider
   assembly in `packages/fushi_server/lib/src/server_subtitle_providers.dart`; the backfill
@@ -153,6 +158,14 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 
   Until that exists, run `fushi_server transcribe`, then either use
   `audiobook align --srt …` or drop the `.srt` next to the audio and rescan.
+- **Book roots don't pair audiobooks beyond same-name sidecars**: the app's shelf folder
+  import (feedback z398R0ndAw) pairs a book with audio in a same-name subfolder (disc
+  folders `CD1` / `Disc 2` merged in), by volume number, with the only book in a folder,
+  or by EPUB `dc:title` (`book_audiobook_pairing.dart` in the engine, R2–R5). The server's
+  `kind=book` roots don't call it yet. Only the disc-folder rule
+  (`isAudiobookDiscFolderName`) is shared, by the server's `planAudiobookFolders`. The
+  server also never queues transcription for a book whose audio has no subtitle (same
+  reason as the next item).
 - **Audiobook roots (limits of the first version)**: audio is imported by reference
   (`copyAudio: false`). It stays in the root and is never copied into the data dir. A book
   is tracked by its folder (or by a loose audio file in the root). When a book title

@@ -31,6 +31,8 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart'
         isGameCollectionMemberVisible;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
+import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/pages/implementations/galgame_mining_overrides_section.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatSessionRange, formatStatTime;
@@ -1572,6 +1574,10 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
           t.game_edit_launch_args,
           helperText: t.game_edit_launch_args_hint,
         ),
+        // 本游戏制卡设置（反馈 3dRZdakRdJ）：gal 制卡只在 Windows 上有，其它端不显示。
+        // 即时生效，不走上面的「保存」（覆盖层不在游戏条目上）。
+        if (Platform.isWindows)
+          _GalgameMiningOverridesHost(gameId: widget.game.id),
       ],
     );
   }
@@ -1598,6 +1604,38 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
           isDense: true,
         ),
       ),
+    );
+  }
+}
+
+/// 「本游戏制卡设置」的宿主：从 AppModel 读全局值与本游戏覆盖层、写回后重建。
+/// 展示本体 [GalgameMiningOverridesSection] 不碰 AppModel。
+class _GalgameMiningOverridesHost extends ConsumerStatefulWidget {
+  const _GalgameMiningOverridesHost({required this.gameId});
+
+  /// `galgames.id`。
+  final String gameId;
+
+  @override
+  ConsumerState<_GalgameMiningOverridesHost> createState() =>
+      _GalgameMiningOverridesHostState();
+}
+
+class _GalgameMiningOverridesHostState
+    extends ConsumerState<_GalgameMiningOverridesHost> {
+  Future<void> _save(GalGameMiningOverrides next) async {
+    await ref.read(appProvider).setGalMiningOverrides(widget.gameId, next);
+    // 覆盖层落在偏好表，AppModel 不一定为它发通知：写完自己重建一次。
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppModel app = ref.watch(appProvider);
+    return GalgameMiningOverridesSection(
+      overrides: app.galMiningOverrides(widget.gameId),
+      global: app.galMiningGlobalSettings,
+      onChanged: (GalGameMiningOverrides next) => unawaited(_save(next)),
     );
   }
 }

@@ -81,7 +81,8 @@ void main() {
       'Future<int> _setSentenceContextToDraft(int prevCount, int nextCount) async {',
       'Future<int> _clearSentenceDraft(',
     );
-    expect(set, contains('cueContextNeighbors('));
+    // 视频按「同时显示的多行合一句」切，元素类型是 List<AudioCue>，调用带泛型实参。
+    expect(set, matches(RegExp(r'cueContextNeighbors(<[\w<>, ]*>)?\(')));
     // 不再各自手写 clamp 切片。
     expect(set, isNot(contains('.clamp(0, idx)')));
   });
