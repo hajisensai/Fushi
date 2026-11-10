@@ -4791,7 +4791,39 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
           }
           return;
         }
+        if (call.method_name() == "setHostMuted") {
+          // 静音主机：压低已绑定游戏进程树的音频会话；关掉时还原，并顺手清掉上次
+          // 进程被杀留下的压低残留（会话音量按可执行文件持久化）。
+          const bool* muted = nullptr;
+          if (args != nullptr) {
+            const auto it = args->find(flutter::EncodableValue("muted"));
+            if (it != args->end()) muted = std::get_if<bool>(&it->second);
+          }
+          if (muted == nullptr) {
+            result->Error("bad_args", "Missing muted flag");
+            return;
+          }
+          const fushi::GameStreamWindowInfo bound =
+              game_stream_input_->InspectBound();
+          if (!bound.alive || !bound.process_matches || bound.pid == 0) {
+            result->Error("not_bound", "No bound game window");
+            return;
+          }
+          if (*muted) {
+            if (!game_stream_host_mute_.Start(static_cast<DWORD>(bound.pid))) {
+              result->Error("mute_failed", "No audio render endpoint");
+              return;
+            }
+          } else {
+            game_stream_host_mute_.Stop();
+            game_stream_host_mute_.RestoreResidual(
+                static_cast<DWORD>(bound.pid));
+          }
+          result->Success();
+          return;
+        }
         if (call.method_name() == "unbind") {
+          game_stream_host_mute_.Stop();
           game_stream_input_->Unbind();
           result->Success();
           return;
@@ -4974,6 +5006,7 @@ void FlutterWindow::OnDestroy() {
   // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
   // 必须在这里主动摘掉而不是等进程退出兜底。
   fushi::SetGlobalMouseTrigger(nullptr, fushi::kGlobalMouseTriggerNone);
+  game_stream_host_mute_.Stop();
   if (game_stream_input_) {
     game_stream_input_->Unbind();
   }
