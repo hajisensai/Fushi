@@ -1,6 +1,6 @@
 /// 下载任务的**按作品**字幕语言：注入点契约 + 合集名 / 系列键的唯一算法。
 ///
-/// 管线的 `preferredSubtitleLanguages` 是构造期的全局值（设置里的默认字幕语言），
+/// 管线的全局字幕语言（[VideoDownloadSubtitleLanguages]，设置里的默认字幕语言）
 /// 表达不了「这部番要中文字幕、那部番要日文字幕」。app 侧早有「每系列字幕语言
 /// 记忆」（偏好 `jimaku_pref_langs`，键 = 合集名小写 trim，字幕工作台在读写），
 /// 但管线从来不读它。这里给管线开一个 [VideoDownloadSubtitleLanguageResolver]
@@ -11,7 +11,7 @@
 /// 管线读的键错位，一个字都对不上。所以合集名的拼法从管线里抽到
 /// [videoDownloadCollectionName]，所有读写方只许经 [videoDownloadSeriesKey]。
 ///
-/// 纯 Dart：app 与无头服务端共用；服务端当前没接字幕 registry，注入点留空即可。
+/// 纯 Dart：app 与无头服务端共用。
 library;
 
 import 'dart:async';
@@ -61,3 +61,22 @@ String videoDownloadCollectionName({
 /// 每系列字幕语言记忆的键：合集名小写 trim（与字幕工作台的 `seriesKey` 同构）。
 String videoDownloadSeriesKey({required String title, int? year}) =>
     videoDownloadCollectionName(title: title, year: year).trim().toLowerCase();
+
+/// 字幕阶段用的全局语言设置（每轮字幕阶段开头读一次，整轮共用）。
+class VideoDownloadSubtitleLanguages {
+  VideoDownloadSubtitleLanguages({
+    Iterable<String> preferred = const <String>[],
+    this.defaultContentLanguage,
+  }) : preferred = List<String>.unmodifiable(preferred);
+
+  /// 用户**显式**选的字幕语言；非空即硬过滤（进搜索请求的 `languages`）。
+  final List<String> preferred;
+
+  /// 默认内容语言：没有显式字幕语言、视频也没有可读语言时的最后一档；
+  /// 空 / null = 不表态（不猜）。
+  final String? defaultContentLanguage;
+}
+
+/// 字幕阶段每轮开头调一次，取当前的全局语言设置（宿主运行期改了设置，下一轮即生效）。
+typedef VideoDownloadSubtitleLanguagesReader =
+    VideoDownloadSubtitleLanguages Function();
