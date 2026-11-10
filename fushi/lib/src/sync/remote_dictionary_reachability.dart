@@ -13,6 +13,10 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 轻量探一次，探通了立刻恢复查词。
 const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
 
+/// 已配对 host 上托管的词典清单端点（`fushi_library_host_service` 的 `listDictionaries`）。
+/// 目录服务拉清单、后台再探测（两个进程）都打它。
+const String kRemoteDictionaryCatalogPath = '/api/library/dictionaries';
+
 /// 一台词典服务器（[remoteDictionaryHostIdOf] 口径）在本进程里的传输层可达性。
 ///
 /// 只记本次运行看到的：重启后为空，界面退回目录行的 `lastSeenAt`（「最近在线」）。
@@ -68,10 +72,12 @@ typedef RemoteDictionaryHostProbe = Future<void> Function(String hostId);
 /// * 查词：被判不可达的 host 直接跳过（[shouldSkip]），全部查词 host 都不可达时连远端
 ///   请求都不发，本机结果不等远端；
 /// * 任何一次成功往返（目录刷新、查词、后台探测）立刻把 host 标回可达；
-/// * 不可达期间按 [kRemoteDictionaryFailureCooldown] 节奏在后台探测（[probe]，由目录
-///   服务挂上），不在查词的关键路径上；回前台 / 配对列表变化时立刻探（[probeUnreachableNow]）。
+/// * 不可达期间按 [kRemoteDictionaryFailureCooldown] 节奏在后台探测（[probe]），不在查词
+///   的关键路径上。主进程由目录服务挂上（`RemoteDictionaryCatalogService.probeHost`，
+///   回前台 / 配对列表变化时它经 [probeUnreachableNow] 立刻探）；弹窗进程没有目录服务，
+///   由查词客户端挂上（`FushiRemoteLookupClient.probeDictionaryHost`）。
 ///
-/// 没挂探测函数的进程（弹窗进程没有目录服务）退回旧口径：不可达的 host 在间隔内跳过，
+/// 没挂探测函数时（只剩单元测试与初始化之前）退回旧口径：不可达的 host 在间隔内跳过，
 /// 过了间隔由下一次查词顺带重试。
 class RemoteDictionaryReachability {
   RemoteDictionaryReachability({
@@ -89,7 +95,9 @@ class RemoteDictionaryReachability {
   final Map<String, RemoteDictionaryHostReachability> _hosts =
       <String, RemoteDictionaryHostReachability>{};
   final Map<String, Timer> _reprobeTimers = <String, Timer>{};
-  final Set<String> _probing = <String>{};
+
+  /// 正在跑的探测（同一台 host 同时只探一次：定时器与回前台撞在一起时共用这一次）。
+  final Map<String, Future<void>> _probing = <String, Future<void>>{};
   RemoteDictionaryHostProbe? _probe;
 
   /// 每台 host 本次运行里最近一次往返的结局。
@@ -121,28 +129,45 @@ class RemoteDictionaryReachability {
   }
 
   /// 记下一次请求的按 host 结局（[RemoteHostOutcomes.reachableByHost]）。
+  ///
+  /// [revision] 只在某台 host 的可见状态变了时 +1（新出现、可达 ↔ 不可达）：每次查词
+  /// 都会记一次，状态没变还 bump 的话词典管理页每查一次词就重建一遍来源卡片。
   void record(Map<String, bool> reachableByHost) {
     if (reachableByHost.isEmpty) return;
     final int now = _now().millisecondsSinceEpoch;
+    bool changed = false;
     for (final MapEntry<String, bool> e in reachableByHost.entries) {
       final RemoteDictionaryHostReachability? previous = _hosts[e.key];
+      final RemoteDictionaryHostReachability next;
       if (e.value) {
-        _hosts[e.key] = RemoteDictionaryHostReachability(
+        next = RemoteDictionaryHostReachability(
           lastOkAt: now,
           lastAttemptAt: now,
         );
         _reprobeTimers.remove(e.key)?.cancel();
       } else {
-        _hosts[e.key] = RemoteDictionaryHostReachability(
+        next = RemoteDictionaryHostReachability(
           lastOkAt: previous?.lastOkAt,
           failingSince: previous?.failingSince ?? now,
           lastAttemptAt: now,
         );
-        _scheduleReprobe(e.key);
       }
+      _hosts[e.key] = next;
+      if (!e.value) _scheduleReprobe(e.key);
+      changed = changed || !_sameVisibleState(previous, next);
     }
-    revision.value++;
+    if (changed) revision.value++;
   }
+
+  /// 界面能看出差别的部分（在线 / 连不上自何时 / 从没连上过）是否相同。
+  /// [RemoteDictionaryHostReachability.lastAttemptAt] 与成功时刻的刷新不算。
+  static bool _sameVisibleState(
+    RemoteDictionaryHostReachability? a,
+    RemoteDictionaryHostReachability b,
+  ) =>
+      a != null &&
+      a.failingSince == b.failingSince &&
+      (a.lastOkAt == null) == (b.lastOkAt == null);
 
   /// 单台 host 版 [record]。
   void note(String hostId, {required bool reachable}) =>
@@ -163,12 +188,13 @@ class RemoteDictionaryReachability {
 
   RemoteDictionaryHostProbe? get probe => _probe;
 
-  /// 立刻探一遍全部已知不可达的 host（回前台、配对列表变化）。没挂探测函数时无事。
-  void probeUnreachableNow() {
-    for (final String hostId in _hosts.keys.toList()) {
-      if (isUnreachable(hostId)) _runProbe(hostId);
-    }
-  }
+  /// 立刻探一遍全部已知不可达的 host（目录服务回前台 / 配对列表变化时调）。没挂探测
+  /// 函数时无事。返回的 Future 在这批探测（含已在跑、被共用的那次）都结束后完成，
+  /// 从不报错（探测异常已记进错误日志）。
+  Future<void> probeUnreachableNow() => Future.wait<void>(<Future<void>>[
+    for (final String hostId in _hosts.keys.toList())
+      if (isUnreachable(hostId)) ?_runProbe(hostId),
+  ]);
 
   /// 只留 [hostIds] 的状态（解除配对 / 关掉查词的 host 不再探测、不再占卡片）。
   void retainHosts(Set<String> hostIds) {
@@ -192,15 +218,18 @@ class RemoteDictionaryReachability {
     _reprobeTimers.remove(hostId)?.cancel();
     _reprobeTimers[hostId] = Timer(_reprobeInterval, () {
       _reprobeTimers.remove(hostId);
-      _runProbe(hostId);
+      unawaited(_runProbe(hostId));
     });
   }
 
-  void _runProbe(String hostId) {
+  /// 发起（或共用正在跑的）一次探测；没挂探测函数时返回 null。
+  Future<void>? _runProbe(String hostId) {
+    final Future<void>? running = _probing[hostId];
+    if (running != null) return running;
     final RemoteDictionaryHostProbe? probe = _probe;
-    if (probe == null || !_probing.add(hostId)) return;
+    if (probe == null) return null;
     _reprobeTimers.remove(hostId)?.cancel();
-    unawaited(() async {
+    return _probing[hostId] = () async {
       try {
         await probe(hostId);
       } catch (e, stack) {
@@ -215,6 +244,6 @@ class RemoteDictionaryReachability {
           _scheduleReprobe(hostId);
         }
       }
-    }());
+    }();
   }
 }

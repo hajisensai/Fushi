@@ -1183,9 +1183,6 @@ SettingsDestination buildInterconnectDestination() {
   );
 }
 
-/// 「配对与设备」子页（C2）：client 连接配置（URL/token/配对）+ LAN 自动发现，
-/// 两个 widget 原样搬入。item id 沿用 'sync.' 前缀（历史命名，非持久化 key，
-/// 保持稳定便于排查）。
 /// 从别的分类（查词 › 词典服务器）直达「互联 › 配对与设备」：互联开着就推与互联
 /// 主页那行同一个子页（`.subPage`，见 [SettingsNavigationItem.child]）；互联还没开时
 /// 子页里的配对控件没有意义，落到互联主页（总开关就在顶上）。
@@ -1202,6 +1199,9 @@ Future<void> openInterconnectPairingPage(SettingsContext ctx) async {
   );
 }
 
+/// 「配对与设备」子页（C2）：client 连接配置（URL/token/配对）+ LAN 自动发现，
+/// 两个 widget 原样搬入。item id 沿用 'sync.' 前缀（历史命名，非持久化 key，
+/// 保持稳定便于排查）。
 SettingsDestination _buildInterconnectDevicesPage() {
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,

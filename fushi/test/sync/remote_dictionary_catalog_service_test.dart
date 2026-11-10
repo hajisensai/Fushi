@@ -503,7 +503,7 @@ void main() {
       expect((await rows()).keys, <String>['host-1/Daijirin']);
     });
 
-    test('回前台：判死的 host 不受 10 分钟节流，立刻再探', () async {
+    test('回前台：判死的 host 不受 10 分钟节流，立刻经追踪器再探', () async {
       final RemoteDictionaryReachability reach = RemoteDictionaryReachability(
         reprobeInterval: const Duration(hours: 1),
       );
@@ -511,6 +511,9 @@ void main() {
         oneHost,
         reachability: reach,
       );
+      // 生产路径：start 把 probeHost 挂到追踪器，回前台走 probeUnreachableNow。
+      catalog.start();
+      addTearDown(catalog.dispose);
       responses['h1'] = () => http.Response('[]', 200);
       await catalog.refresh(); // 成功：记下 lastFetched
       responses.remove('h1');

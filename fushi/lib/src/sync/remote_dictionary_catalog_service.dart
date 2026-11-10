@@ -15,10 +15,10 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteDictionaryInfo;
 
 export 'package:fushi/src/sync/remote_dictionary_reachability.dart'
-    show RemoteDictionaryHostReachability, RemoteDictionaryReachability;
-
-/// 已配对 host 上托管的词典清单端点（`fushi_library_host_service` 的 `listDictionaries`）。
-const String kRemoteDictionaryCatalogPath = '/api/library/dictionaries';
+    show
+        RemoteDictionaryHostReachability,
+        RemoteDictionaryReachability,
+        kRemoteDictionaryCatalogPath;
 
 /// 一次对账（[RemoteDictionaryCatalogService.reconcileHost]）改了什么。
 @immutable
@@ -163,7 +163,8 @@ class RemoteDictionaryCatalogService {
 
   /// 配对列表变了：先让词典仓库按新的查词 host 集合重算（关掉 / 解除配对的 host
   /// 立刻退出查词过滤），再给新出现的 host 拉一次目录；已知判死的 host 立刻再探一次
-  /// （地址可能刚学到 / 刚改过），不等后台间隔。
+  /// （地址可能刚学到 / 刚改过），不等后台间隔——走追踪器的
+  /// [RemoteDictionaryReachability.probeUnreachableNow]，与定时再探共用同一次探测。
   Future<void> _syncLookupHosts() async {
     final Set<String> hosts = await _lookupHostIds();
     final Set<String>? known = _knownLookupHosts;
@@ -171,12 +172,11 @@ class RemoteDictionaryCatalogService {
     _reachability.retainHosts(hosts);
     await _dictionaries?.reloadRemoteDictionaries();
     if (known == null) return;
+    // 本方法跑在串行链上，探测（[probeHost]）也排在链上：只发起、不等，不然自等死锁。
+    // 先于新 host 的首拉发起：首拉失败的新 host 不会被立刻再探一遍。
+    unawaited(_reachability.probeUnreachableNow());
     for (final String hostId in hosts) {
-      if (!known.contains(hostId)) {
-        await _refreshHostNow(hostId);
-      } else if (_reachability.isUnreachable(hostId)) {
-        await _refreshHostNow(hostId, timeout: _probeTimeout);
-      }
+      if (!known.contains(hostId)) await _refreshHostNow(hostId);
     }
   }
 
@@ -186,9 +186,17 @@ class RemoteDictionaryCatalogService {
       _serial(() => _refreshAll(force: true));
 
   /// App 回到前台：刷新距上次成功拉取超过节流间隔的 host；判死的 host 不受节流，
-  /// 回前台立刻再探（BUG-4275）。
-  Future<Map<String, RemoteDictionaryCatalogDiff>> refreshOnResume() =>
-      _serial(() => _refreshAll(force: false));
+  /// 回前台立刻再探（BUG-4275，[RemoteDictionaryReachability.probeUnreachableNow]，
+  /// 与定时再探共用同一次探测）。返回的差异不含经探测拉到的 host。
+  Future<Map<String, RemoteDictionaryCatalogDiff>> refreshOnResume() async {
+    // 先发起探测（排在串行链上），再排节流刷新：等到刷新跑完时探测也已跑完。
+    final Future<void> probes = _reachability.probeUnreachableNow();
+    final Map<String, RemoteDictionaryCatalogDiff> diffs = await _serial(
+      () => _refreshAll(force: false),
+    );
+    await probes;
+    return diffs;
+  }
 
   /// 只刷新一台 host（[hostId] 按 [remoteDictionaryHostIdOf] 口径）。
   Future<RemoteDictionaryCatalogDiff?> refreshHost(String hostId) =>
@@ -201,18 +209,15 @@ class RemoteDictionaryCatalogService {
         <String, RemoteDictionaryCatalogDiff>{};
     final DateTime now = _now();
     for (final String hostId in await _lookupHostIds()) {
-      final DateTime? last = _lastFetched[hostId];
-      final bool unreachable = _reachability.isUnreachable(hostId);
-      if (!force &&
-          !unreachable &&
-          last != null &&
-          now.difference(last) < _resumeRefreshInterval) {
-        continue;
+      if (!force) {
+        // 判死的 host 由 [refreshOnResume] 交给探测（[start] 挂上的 [probeHost]）。
+        if (_reachability.isUnreachable(hostId)) continue;
+        final DateTime? last = _lastFetched[hostId];
+        if (last != null && now.difference(last) < _resumeRefreshInterval) {
+          continue;
+        }
       }
-      final RemoteDictionaryCatalogDiff? diff = await _refreshHostNow(
-        hostId,
-        timeout: !force && unreachable ? _probeTimeout : null,
-      );
+      final RemoteDictionaryCatalogDiff? diff = await _refreshHostNow(hostId);
       if (diff != null) out[hostId] = diff;
     }
     return out;

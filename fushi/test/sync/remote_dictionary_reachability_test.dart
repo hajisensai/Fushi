@@ -12,7 +12,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 /// BUG-4275：查词路径与目录服务共用一份词典服务器可达性。这里验追踪器本身
-/// （跳过判据、后台再探测节奏、回前台立即探测）与查词客户端的两个挂钩。
+/// （跳过判据、后台再探测节奏、立即探测、revision 只在状态变化时 bump）与查词客户端
+/// 的挂钩（含弹窗进程用的后台探测 [FushiRemoteLookupClient.probeDictionaryHost]）。
+/// 目录服务回前台 / 配对列表变化调 [RemoteDictionaryReachability.probeUnreachableNow]
+/// 的真实路径见 `remote_dictionary_catalog_service_test.dart`。
 void main() {
   group('RemoteDictionaryReachability', () {
     test('没挂探测函数：判死后只在再探测间隔内跳过，过了间隔放行一次查词', () {
@@ -71,7 +74,7 @@ void main() {
       });
     });
 
-    test('成功往返立刻取消待探测；回前台 probeUnreachableNow 立即探；解除配对不再探', () {
+    test('成功往返立刻取消待探测；probeUnreachableNow 立即探且与在跑的探测共用；解除配对不再探', () {
       fakeAsync((FakeAsync async) {
         final RemoteDictionaryReachability r = RemoteDictionaryReachability(
           reprobeInterval: const Duration(seconds: 45),
@@ -81,9 +84,12 @@ void main() {
 
         r.record(<String, bool>{'a': false, 'b': false});
         r.note('a', reachable: true); // 例如目录刷新成功
-        r.probeUnreachableNow();
+        bool done = false;
+        r.probeUnreachableNow().then((_) => done = true);
+        r.probeUnreachableNow(); // 撞上在跑的那次：共用，不重复探
         async.flushMicrotasks();
         expect(probed, <String>['b'], reason: '只探仍判死的 host，且立刻探');
+        expect(done, isTrue, reason: '返回的 Future 等这批探测结束');
 
         // 探测没留下结局（例如候选为空）：照常排下一次，不让探测断掉。
         async.elapse(const Duration(seconds: 45));
@@ -99,6 +105,33 @@ void main() {
         async.elapse(const Duration(minutes: 5));
         expect(probed, hasLength(2), reason: 'dispose 后不再有后台探测');
       });
+    });
+  });
+
+  group('RemoteDictionaryReachability.revision', () {
+    test('只在可见状态变化时 bump：重复的成功 / 失败不重建来源卡片', () {
+      final RemoteDictionaryReachability r = RemoteDictionaryReachability();
+      int bumps = 0;
+      void listener() => bumps++;
+      RemoteDictionaryReachability.revision.addListener(listener);
+      addTearDown(
+        () => RemoteDictionaryReachability.revision.removeListener(listener),
+      );
+
+      r.note('h', reachable: true);
+      expect(bumps, 1, reason: '新出现的 host');
+      r.note('h', reachable: true);
+      r.record(<String, bool>{'h': true});
+      expect(bumps, 1, reason: '一直在线：每次查词都记，但不 bump');
+      r.note('h', reachable: false);
+      expect(bumps, 2, reason: '在线 → 连不上');
+      r.note('h', reachable: false);
+      expect(bumps, 2, reason: '仍连不上（failingSince 不变）');
+      r.note('h', reachable: true);
+      expect(bumps, 3, reason: '连不上 → 在线');
+      r.record(<String, bool>{'h': true, 'other': false});
+      expect(bumps, 4, reason: '一批里有一台变了就 bump 一次');
+      r.dispose();
     });
   });
 
@@ -157,6 +190,74 @@ void main() {
         maximumTerms: 10,
       );
       expect(requested, <String>['up'], reason: '判死的 host 被跳过，不再付它的连接超时');
+    });
+
+    test('弹窗进程：查词客户端的后台探测挂上追踪器，判死后查词零请求，探通即恢复', () {
+      fakeAsync((FakeAsync async) {
+        final List<String> requested = <String>[];
+        bool downIsBack = false;
+        final RemoteDictionaryReachability reach = RemoteDictionaryReachability(
+          now: () =>
+              DateTime.fromMillisecondsSinceEpoch(1000000).add(async.elapsed),
+          reprobeInterval: const Duration(seconds: 45),
+        );
+        final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+          repo: repo,
+          httpClient: MockClient((http.Request request) async {
+            requested.add(
+              '${request.method} ${request.url.host}${request.url.path}',
+            );
+            if (request.url.host == 'down' && !downIsBack) {
+              throw http.ClientException('connection refused', request.url);
+            }
+            return http.Response(
+              request.url.path == kRemoteDictionaryCatalogPath
+                  ? '[]'
+                  : jsonEncode(<String, dynamic>{'type': 'dictionaryResult'}),
+              200,
+            );
+          }),
+          skipDictionaryHost: reach.shouldSkip,
+          onDictionaryHostOutcomes: reach.record,
+        );
+        reach.probe = client.probeDictionaryHost;
+
+        void lookup() {
+          client.searchDictionary(
+            term: '猫',
+            wildcards: false,
+            maximumTerms: 10,
+          );
+          async.flushMicrotasks();
+        }
+
+        lookup();
+        expect(reach.isUnreachable('host-down'), isTrue);
+
+        // 过了再探测间隔：没有目录服务也不放行查词去碰死 host，改由后台探测去问。
+        requested.clear();
+        async.elapse(const Duration(seconds: 46));
+        expect(requested, <String>[
+          'GET down$kRemoteDictionaryCatalogPath',
+        ], reason: '后台探测只打 down 的目录端点');
+        requested.clear();
+        lookup();
+        expect(requested, <String>[
+          'POST up/api/lookup/dictionary',
+        ], reason: '查词仍跳过判死的 host');
+
+        downIsBack = true;
+        requested.clear();
+        async.elapse(const Duration(seconds: 45));
+        expect(requested, <String>['GET down$kRemoteDictionaryCatalogPath']);
+        expect(reach.hosts['host-down']!.reachable, isTrue);
+        requested.clear();
+        lookup();
+        expect(requested, <String>[
+          'POST down/api/lookup/dictionary',
+        ], reason: '恢复后首个候选 down 直接回答');
+        reach.dispose();
+      });
     });
 
     test('全部 host 判死：零请求、返回 null、不抛 RemoteLookupUnreachableError', () async {

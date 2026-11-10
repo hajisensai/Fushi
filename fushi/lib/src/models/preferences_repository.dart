@@ -631,42 +631,53 @@ class PreferencesRepository extends ChangeNotifier
   /// 已删除的全局「远程查词」开关的存量键（bool，默认 false）。键名冻结、留在
   /// `preference_keys.dart` 只为兼容：用户拍板（2026-11-09）由每台 host 的「用这台
   /// 服务器查词典」（`FushiClientUrl.lookupEnabled`）独掌，总闸改成派生值
-  /// （`AppModel.remoteLookupEnabled`）。没有任何 UI 再写这个键，只有
-  /// [settleRemoteLookupHostSwitches] 读它一次。
+  /// （`AppModel.remoteLookupEnabled`）。没有任何 UI 再读写这个键；只有
+  /// [settleRemoteLookupHostSwitches] 读它，并在迁移跑过后把它写成 true——此后它的含义是
+  /// 「host 开关就是真相源」，不再是一个开关。
   static const String legacyRemoteLookupEnabledKey = 'remote_lookup_enabled';
 
   /// [settleRemoteLookupHostSwitches] 的已跑标记（bool）。本键不随 Profile 走
   /// （`ProfileKeys` 排除）：描述本安装是否迁过；进快照的话切到老 Profile 会把它删掉，
-  /// 迁移重跑、把用户此后打开的 host 开关又关掉。
+  /// 迁移重跑、把用户此后打开的 host 开关又关掉。它是安装级键，导入设置的恢复会清掉
+  /// 它（`_clearInstallScopedPrefs`），所以真正挡住重跑的是 [legacyRemoteLookupEnabledKey]
+  /// 已为 true（随设置走，见 [settleRemoteLookupHostSwitches]）。
   static const String remoteLookupHostSwitchesMigratedKey =
       'remote_lookup_host_switches_migrated';
 
-  /// 启动时（`AppModel.initialise()`，目录服务启动之前）跑一次：全局「远程查词」并入
-  /// 每台 host 的开关。存量全局开关关着（或从没设过 = 默认关）时，把已配对 host 的
-  /// 「用这台服务器查词典」全部关掉——否则更新后 host 开关（默认开）立刻生效，没让
-  /// 查过服务器的用户突然开始向服务器查词；全局开着就原样保留 host 开关。
+  /// 启动时（`AppModel.initialise()` 目录服务启动之前；`:popup` 进程的
+  /// `initialiseForDictionaryPopup()` 也跑）调用：全局「远程查词」并入每台 host 的开关。
+  /// 存量全局开关关着（或从没设过 = 默认关）时，把已配对 host 的「用这台服务器查词典」
+  /// 全部关掉——否则更新后 host 开关（默认开）立刻生效，没让查过服务器的用户突然开始
+  /// 向服务器查词；全局开着就原样保留 host 开关。
   ///
-  /// 配对列表先写、标记后写：中途中断下次重跑也只是把同一批开关再关一遍（全局值
-  /// 没有人再写，判据不变）。返回是否改了配对列表。
+  /// 跑完把存量全局键写成 true（= host 开关是真相源）。导入设置的恢复会清掉安装级的
+  /// 标记、配对列表却留着：之后的重跑读到 true 就是 no-op，不会把用户此后打开的 host
+  /// 开关全部关掉。（恢复的是迁移前的老备份时，全局键随它回到老值，重跑照老值判——
+  /// 与恢复那份设置的语义一致。）
+  ///
+  /// 顺序：配对列表 → 全局键 → 标记。中途中断下次重跑也只是把同一批开关再关一遍。
+  /// 幂等，两个进程都跑无妨。返回是否改了配对列表。
   Future<bool> settleRemoteLookupHostSwitches(SyncRepository sync) async {
     _ensureWritable('settleRemoteLookupHostSwitches');
     if (getPref(remoteLookupHostSwitchesMigratedKey, defaultValue: false) ==
         true) {
       return false;
     }
-    final bool globalOn =
-        getPref(legacyRemoteLookupEnabledKey, defaultValue: false) == true;
-    bool changed = false;
-    if (!globalOn) {
-      await sync.updateFushiClientUrls((List<FushiClientUrl> current) {
-        if (!current.any((FushiClientUrl u) => u.lookupEnabled)) return current;
-        changed = true;
-        return <FushiClientUrl>[
-          for (final FushiClientUrl u in current)
-            u.lookupEnabled ? u.copyWith(lookupEnabled: false) : u,
-        ];
-      });
+    if (getPref(legacyRemoteLookupEnabledKey, defaultValue: false) == true) {
+      // 迁移跑过（或全局本来就开着）：host 开关原样，只补上标记。
+      await setPref(remoteLookupHostSwitchesMigratedKey, true);
+      return false;
     }
+    bool changed = false;
+    await sync.updateFushiClientUrls((List<FushiClientUrl> current) {
+      if (!current.any((FushiClientUrl u) => u.lookupEnabled)) return current;
+      changed = true;
+      return <FushiClientUrl>[
+        for (final FushiClientUrl u in current)
+          u.lookupEnabled ? u.copyWith(lookupEnabled: false) : u,
+      ];
+    });
+    await setPref(legacyRemoteLookupEnabledKey, true);
     await setPref(remoteLookupHostSwitchesMigratedKey, true);
     return changed;
   }

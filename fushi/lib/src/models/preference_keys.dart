@@ -692,7 +692,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'reading_goal_weekly_chars',
   // bool：已删除的全局「远程查词」开关（2026-11-09 用户拍板并入每台 host 的「用这台
   // 服务器查词典」，总闸改为派生值 AppModel.remoteLookupEnabled）。键名冻结：UI 不再
-  // 写它，只有 PreferencesRepository.settleRemoteLookupHostSwitches 读一次。
+  // 读写它；PreferencesRepository.settleRemoteLookupHostSwitches 读它，跑过后写成 true
+  // （= host 开关是真相源，恢复设置后迁移重跑即 no-op）。
   'remote_lookup_enabled',
   // bool：上面那次一次性迁移的已跑标记。设备本地（SyncRepository.installScopedPrefKeys）：
   // 不进 Profile 快照 / 分享、不随备份出境；导入设置的恢复会清掉它，下次启动重判。

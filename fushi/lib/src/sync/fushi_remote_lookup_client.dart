@@ -440,6 +440,31 @@ class FushiRemoteLookupClient {
     return RemoteDictionaryMedia(bytes: bytes, contentType: contentType);
   }
 
+  /// 后台再探测一台判死的词典 host（[remoteDictionaryHostIdOf] 口径）：用 [_timeout]
+  /// 的预算 GET 一次目录清单（[kRemoteDictionaryCatalogPath]，与主进程目录服务的探测
+  /// 同一个端点），只看传输层结局并经 [_onDictionaryHostOutcomes] 记回可达性追踪；
+  /// 回包内容不用。给没有目录服务的进程（`:popup` / 悬浮词典 engine）挂到
+  /// [RemoteDictionaryReachability.probe]，查词路径本身因此从不在已知死掉的 host 上等。
+  /// 凭据被拒（401）照样记成可达（对端活着），异常交给追踪器记日志。
+  Future<void> probeDictionaryHost(String hostId) async {
+    final RemoteHostOutcomes outcomes = RemoteHostOutcomes();
+    try {
+      await _transport.getJson(
+        path: kRemoteDictionaryCatalogPath,
+        timeout: _timeout,
+        authErrorMessage: 'Fushi server rejected dictionary catalog token',
+        candidateFilter: (FushiClientUrl candidate) =>
+            candidate.isDictionaryLookupCandidate &&
+            remoteDictionaryHostIdOf(candidate) == hostId,
+        onCandidateOutcome: outcomes.add,
+      );
+    } finally {
+      if (!outcomes.isEmpty) {
+        _onDictionaryHostOutcomes?.call(outcomes.reachableByHost);
+      }
+    }
+  }
+
   /// [dictionaryLookup]：词典端点（查词 / 词典样式 / 词典媒体）只发给开着
   /// [FushiClientUrl.lookupEnabled] 的地址——关掉「用这台服务器查词典」的 host 既不该
   /// 回答查词，样式与外字也不该从它那儿取。音频端点不受这个开关影响。

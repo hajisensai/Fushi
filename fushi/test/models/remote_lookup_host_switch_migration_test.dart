@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -100,12 +102,87 @@ void main() {
     reopened.dispose();
   });
 
+  test('legacy key is written true once the migration has run', () async {
+    await sync.setFushiClientUrls(paired);
+    await prefs.settleRemoteLookupHostSwitches(sync);
+    expect(
+      prefs.getPref(
+        PreferencesRepository.legacyRemoteLookupEnabledKey,
+        defaultValue: false,
+      ),
+      isTrue,
+      reason: '跑过之后它的含义是「host 开关是真相源」',
+    );
+  });
+
+  test('settings restore clears the install-scoped marker but keeps the '
+      'paired hosts ⇒ the rerun is a no-op', () async {
+    await sync.setFushiClientUrls(paired);
+    await prefs.settleRemoteLookupHostSwitches(sync);
+    // 用户此后打开了两台 host 的开关。
+    await sync.updateFushiClientUrls(
+      (List<FushiClientUrl> urls) => <FushiClientUrl>[
+        for (final FushiClientUrl u in urls) u.copyWith(lookupEnabled: true),
+      ],
+    );
+    // 导入设置的恢复（`_clearInstallScopedPrefs`）：删掉全部安装级键，随设置走的
+    // 存量全局键与配对列表留着；之后是新进程。
+    await (db.delete(
+      db.preferences,
+    )..where((t) => t.key.isIn(SyncRepository.installScopedPrefKeys))).go();
+    final PreferencesRepository restored = PreferencesRepository(db);
+    await restored.loadFromDb();
+    expect(
+      restored.getPref(
+        PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
+        defaultValue: false,
+      ),
+      isFalse,
+      reason: '前提：标记确实被恢复清掉了',
+    );
+
+    expect(await restored.settleRemoteLookupHostSwitches(sync), isFalse);
+    expect(await lookupHosts(), <String>{'h1', 'h2'}, reason: '重跑不碰 host 开关');
+    expect(
+      restored.getPref(
+        PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
+        defaultValue: false,
+      ),
+      isTrue,
+    );
+    restored.dispose();
+  });
+
   test('nothing paired ⇒ nothing to change; marker still set, so a host '
       'paired later keeps its default (on)', () async {
     expect(await prefs.settleRemoteLookupHostSwitches(sync), isFalse);
     await sync.setFushiClientUrls(paired.take(1).toList());
     expect(await prefs.settleRemoteLookupHostSwitches(sync), isFalse);
     expect(await lookupHosts(), <String>{'h1'});
+  });
+
+  test('the :popup process runs the migration too and hooks the lookup '
+      'client background probe', () {
+    // 弹窗进程的初始化在单测里起不来（PackageInfo / 平台通道），这里钉住源码里的接线：
+    // 更新后第一次查词可能先拉起 :popup 进程，迁移不能只在主进程跑。
+    final String appModel = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    final int popupInit = appModel.indexOf(
+      'Future<void> initialiseForDictionaryPopup() async',
+    );
+    expect(popupInit, greaterThan(0));
+    final String popupInitBody = appModel.substring(
+      popupInit,
+      appModel.indexOf('Future<void> refreshPrefCache()', popupInit),
+    );
+    expect(popupInitBody, contains('settleRemoteLookupHostSwitches('));
+    expect(
+      popupInitBody,
+      contains(
+        '_remoteDictionaryReachability.probe = _probeRemoteDictionaryHost',
+      ),
+    );
   });
 
   test('marker is install-scoped (not synced, not in profile snapshots)', () {
