@@ -245,7 +245,7 @@ void main() {
   test('人读输出', () async {
     expect(await stats(<String>['show']), 0, reason: err.toString());
     expect(out.toString(), contains('吾輩は猫である'));
-    expect(out.toString(), contains('合计: 1h00m'));
+    expect(out.toString(), contains('Total: 1h00m'));
   });
 
   test('用法错误 = 64', () async {

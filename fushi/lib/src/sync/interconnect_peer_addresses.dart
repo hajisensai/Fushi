@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/pairing/fushi_ping_client.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -715,3 +716,37 @@ class InterconnectAddressLearner {
       jsonEncode(a.map((FushiClientUrl u) => u.toJson()).toList()) ==
       jsonEncode(b.map((FushiClientUrl u) => u.toJson()).toList());
 }
+
+/// 设置页地址行的标题用名：本行的 [FushiClientUrl.deviceName]（去品牌前缀）；本行没有（学到的
+/// 备用地址、老条目）就取同 hostId 组里第一个非空的名字。都没有 → null，由调用方
+/// 回落显示 URL。同一台 host 的多条地址因此都显示同一个设备名，URL 退到副标题区分。
+String? interconnectPeerRowName(
+  Iterable<FushiClientUrl> urls,
+  FushiClientUrl row,
+) {
+  String? clean(String? name) {
+    if (name == null) return null;
+    // 对端自报名带品牌前缀（`Fushi · Desk PC`），行上只显示人读部分。
+    final String readable = interconnectPeerDisplayName(name);
+    return readable.isEmpty ? null : readable;
+  }
+
+  final String? own = clean(row.deviceName);
+  if (own != null) return own;
+  final String? hostId = row.hostId;
+  if (hostId == null || hostId.isEmpty) return null;
+  for (final FushiClientUrl u in urls) {
+    if (u.hostId != hostId) continue;
+    final String? name = clean(u.deviceName);
+    if (name != null) return name;
+  }
+  return null;
+}
+
+/// 「测试连接」要探测的地址：只测已启用的行。停用的行不参与任何真实同步 / 请求
+/// （全部消费点都 `where((u) => u.enabled)`），给它亮 ✓ 会让人以为它在用。
+List<FushiClientUrl> interconnectUrlsToTest(Iterable<FushiClientUrl> urls) =>
+    <FushiClientUrl>[
+      for (final FushiClientUrl u in urls)
+        if (u.enabled) u,
+    ];
