@@ -103,7 +103,7 @@ class PendingPairing {
   final DateTime createdAt;
 }
 
-/// 管理员签发配对链接的结果（BUG-4280）：签出 [PairLinkIssued]，或签不出的原因
+/// 管理员签发配对链接的结果（BUG-4390）：签出 [PairLinkIssued]，或签不出的原因
 /// [PairLinkUnavailable]。
 sealed class PairLinkOutcome {
   const PairLinkOutcome();
@@ -301,14 +301,14 @@ class HeadlessHost {
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
 
-  /// 因 PIN 失败过多而暂停配对的来源类别及解锁时刻（BUG-4280）；host 没跑时为空。
+  /// 因 PIN 失败过多而暂停配对的来源类别及解锁时刻（BUG-4390）；host 没跑时为空。
   Map<FushiPairOriginClass, DateTime> get pairingLockouts =>
       _server?.pairingLockouts ?? const <FushiPairOriginClass, DateTime>{};
 
-  /// 管理员解除配对锁定（BUG-4280）。
+  /// 管理员解除配对锁定（BUG-4390）。
   void resetPairingLockout() => _server?.resetPairingLockout();
 
-  /// 管理员签发一次性配对链接（BUG-4280）：票据配对凭 192-bit secret，不走 PIN、
+  /// 管理员签发一次性配对链接（BUG-4390）：票据配对凭 192-bit secret，不走 PIN、
   /// 不进 PIN 失败预算，公网类别被爆破锁住时只能从公网接入的用户仍有路可走。
   /// 票据 TTL 用引擎默认；再签一张即作废上一张（引擎语义）。链接没有可公布地址时
   /// 立刻作废票据并报 [PairLinkUnavailable.noReachableAddress]，不发 app 解析不了
@@ -571,11 +571,11 @@ class HeadlessHost {
           ..onPairSessionResolved = _clearPendingPairing
           // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
           ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
-          // BUG-4279：无头端经回环进来的几乎都是本机反代 / 穿透，不算局域网；
+          // BUG-4389：无头端经回环进来的几乎都是本机反代 / 穿透，不算局域网；
           // 可信代理只影响限速键与展示 IP。
           ..loopbackPeerIsLan = false
           ..trustedProxiesProvider = (() => config.trustedProxies)
-          // BUG-4280：要 PIN 的会话由 [_approvePairing] 自动放行、没人点过，不受会话
+          // BUG-4390：要 PIN 的会话由 [_approvePairing] 自动放行、没人点过，不受会话
           // 上限淘汰保护（否则谁都能刷出一堆占住位置）。
           ..pinApprovalIsManual = false
           ..onPeerPaired = _persistPairedPeer
@@ -929,7 +929,7 @@ class HeadlessHost {
   }
 
   /// 全部未吊销的已配对设备凭据（peerId → token）；server 按 `legacy-` 前缀区分
-  /// 旧 client 的行（BUG-4282）。
+  /// 旧 client 的行（BUG-4392）。
   Future<Map<String, String>> _loadPairedPeerCredentials() async {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     return <String, String>{

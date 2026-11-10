@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 ///     token）并经回调落库；
 /// (2) auth：per-peer token（经 pairedPeerCredentialsProvider 供给）与共享 token 都受理；
 /// (3) 吊销（从 fake 表删行 + invalidatePeerTokenCache）后该 token 立即被 401 拒绝；
-/// (4) BUG-4282：confirm 不带 clientDeviceId（旧 client）/ v1 配对 -> 派发 `legacy-` 行
+/// (4) BUG-4392：confirm 不带 clientDeviceId（旧 client）/ v1 配对 -> 派发 `legacy-` 行
 ///     token（能单独吊销，权限同共享 token：不过敏感服务门）。
 class _FakeUpdater implements HostSelfUpdater {
   @override
@@ -187,7 +187,7 @@ void main() {
   });
 
   test(
-    'BUG-4282: confirm without clientDeviceId mints a revocable legacy- token',
+    'BUG-4392: confirm without clientDeviceId mints a revocable legacy- token',
     () async {
       await startServer();
       final String sid = await startSession('cn-4'); // 无 clientDeviceId
@@ -207,7 +207,7 @@ void main() {
     },
   );
 
-  test('BUG-4282: v1 /api/pair mints a revocable legacy- token', () async {
+  test('BUG-4392: v1 /api/pair mints a revocable legacy- token', () async {
     await startServer();
     final http.Response resp = await http.post(
       Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
@@ -230,7 +230,7 @@ void main() {
   });
 
   test(
-    'BUG-4282: legacy token passes ordinary auth but not the peer-token gate',
+    'BUG-4392: legacy token passes ordinary auth but not the peer-token gate',
     () async {
       await startServer();
       server.hostSelfUpdater = _FakeUpdater();

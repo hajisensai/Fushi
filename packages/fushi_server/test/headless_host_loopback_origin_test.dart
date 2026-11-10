@@ -11,7 +11,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// BUG-4279：无头端经本机回环进来的配对请求（本机反代 / frp / cloudflared 的典型形态）
+/// BUG-4389：无头端经本机回环进来的配对请求（本机反代 / frp / cloudflared 的典型形态）
 /// 不算局域网。升级场景：存量配置 `lan_requires_pin: false` + 已写 `public_urls`，
 /// 不加任何新键，起来后从 127.0.0.1 发 `pair/v2` 必须要 PIN。
 void main() {

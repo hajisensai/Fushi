@@ -18,7 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
-/// BUG-4280（步骤 6）：无头端公网类别被 PIN 爆破锁住时，管理员在 WebUI / admin API
+/// BUG-4390（步骤 6）：无头端公网类别被 PIN 爆破锁住时，管理员在 WebUI / admin API
 /// 签发一次性配对链接，票据配对不走 PIN 预算，只能从公网接入的用户仍能配上。
 ///
 /// 部署形态照 VPS：`bind: 127.0.0.1` 只听本机，前面是本机反代（可信代理，带

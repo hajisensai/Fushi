@@ -1,4 +1,4 @@
-// 词典媒体作用域 key（BUG-4283）。
+// 词典媒体作用域 key（BUG-4393）。
 //
 // 扩展把词典图片（外字 / 音调 SVG）改写成 GET /api/media/dictionary?...&token=<凭据>：<img>
 // 请求带不了 Authorization 头，凭据只能进 URL（进而进页面 DOM、浏览器历史）。host 在

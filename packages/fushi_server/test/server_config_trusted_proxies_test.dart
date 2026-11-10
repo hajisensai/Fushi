@@ -1,7 +1,7 @@
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:test/test.dart';
 
-/// BUG-4279：`trusted_proxies` 配置键。
+/// BUG-4389：`trusted_proxies` 配置键。
 void main() {
   test('缺省为空列表', () {
     final ServerConfig c = ServerConfig.parse(

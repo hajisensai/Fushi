@@ -155,7 +155,7 @@ extension _FushiSyncServerLookup on FushiSyncServer {
   /// 词典媒体端点的 query 凭据（?token= 等）能否免 Basic 放行（网页 `<img>` GET 带不了
   /// Authorization 头）。常量时间比较。
   ///
-  /// BUG-4283：以 `fmk1.` 开头的值是从某个有效凭据派生的作用域 key
+  /// BUG-4393：以 `fmk1.` 开头的值是从某个有效凭据派生的作用域 key
   /// （[dictionaryMediaKeyFor]），对照当前凭据快照——签发凭据被吊销即失效；其余值只与
   /// 共享 [_token] 原值比（旧扩展兼容，取舍 T6）。peer token 原值不进 query，仍须 Basic。
   Future<bool> _dictionaryMediaTokenValid(shelf.Request request) async {

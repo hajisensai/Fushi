@@ -274,7 +274,7 @@ class ServerConfig {
 
   /// 可信反代地址（IP / CIDR，YAML `trusted_proxies`，缺省空）。TCP 对端命中时才读
   /// 转发头里的真实来源，**只**用于配对限速键与展示 IP；不让任何请求变回局域网——
-  /// 带转发头的配对请求恒按公网要 PIN（BUG-4279）。
+  /// 带转发头的配对请求恒按公网要 PIN（BUG-4389）。
   final List<String> trustedProxies;
 
   /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。

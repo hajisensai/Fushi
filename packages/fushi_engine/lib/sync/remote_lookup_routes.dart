@@ -25,7 +25,7 @@ class RemoteAudioToken {
   final Uint8List bytes;
   final String contentType;
 
-  /// 签发请求所用凭据的指纹（BUG-4282）；null = 签发方不记。
+  /// 签发请求所用凭据的指纹（BUG-4392）；null = 签发方不记。
   final String? issuer;
   DateTime createdAt;
 }
@@ -66,7 +66,7 @@ class RemoteAudioTokenStore {
     return id;
   }
 
-  /// 作废 [id]（签发凭据已被吊销，BUG-4282）。
+  /// 作废 [id]（签发凭据已被吊销，BUG-4392）。
   void revoke(String id) => _tokens.remove(id);
 
   /// 取 [id] 对应的 token；命中即续期。未命中 / [id] 为空返回 null。
@@ -207,7 +207,7 @@ class RemoteLookupRoutes {
 
   final RemoteAudioTokenStore audioTokens;
 
-  /// 签发音频 id 时取本请求凭据的指纹（BUG-4282）。null = 不记签发者
+  /// 签发音频 id 时取本请求凭据的指纹（BUG-4392）。null = 不记签发者
   /// （[FushiApiServer] 的 key 模型独立，不接）。
   final String? Function(shelf.Request request)? issuerOf;
 

@@ -1,4 +1,4 @@
-// BUG-4283：扩展端 `dict-media-key.js` 派生的词典媒体作用域 key 必须与 host 端
+// BUG-4393：扩展端 `dict-media-key.js` 派生的词典媒体作用域 key 必须与 host 端
 // [dictionaryMediaKeyFor] 逐字节一致，否则扩展换用派生 key 后图片一律 401。
 //
 // 在 node 里真加载生产文件（随包镜像 assets/browser_extension/），对几组固定 token

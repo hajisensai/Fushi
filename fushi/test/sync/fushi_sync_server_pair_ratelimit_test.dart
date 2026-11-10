@@ -131,7 +131,7 @@ void main() {
   test(
     'within lockout window pair/v2 itself is 429 (no session, no PIN shown)',
     () async {
-      // BUG-4280：锁定中的来源连会话都开不出来——不生成 PIN、不弹审批，自然也没有
+      // BUG-4390：锁定中的来源连会话都开不出来——不生成 PIN、不弹审批，自然也没有
       // 「拿正确 PIN 来 confirm」的机会。
       await startServer();
       for (int i = 1; i <= 5; i++) {

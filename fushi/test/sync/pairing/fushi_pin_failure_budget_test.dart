@@ -1,7 +1,7 @@
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:test/test.dart';
 
-/// BUG-4280：按来源类别的 PIN 失败总预算——窗口内累计到阈值即锁定，锁定时长按级数
+/// BUG-4390：按来源类别的 PIN 失败总预算——窗口内累计到阈值即锁定，锁定时长按级数
 /// 翻倍、封顶；配对成功 / 管理员解除清零；长时间无失败级数归零。
 void main() {
   final DateTime t0 = DateTime.utc(2026, 11, 10, 12);

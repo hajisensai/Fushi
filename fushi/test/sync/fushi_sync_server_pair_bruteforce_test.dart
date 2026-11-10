@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
-/// BUG-4280：PIN 防爆破。来源键不认自报 deviceId（IP，IPv6 按 /64 聚合）；按来源类别
+/// BUG-4390：PIN 防爆破。来源键不认自报 deviceId（IP，IPv6 按 /64 聚合）；按来源类别
 /// 有总失败预算；会话上限按类别分区、单一来源只能挤掉自己的会话，票据会话不被挤掉。
 /// 装配仿无头端：免 PIN 审批自动放行、pinRequired 会话无人工环节。
 class _FakeConnectionInfo implements HttpConnectionInfo {

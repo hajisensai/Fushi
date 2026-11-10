@@ -33,24 +33,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3847 条。点号进各自文件。
+> 共 3939 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4285](bugs/BUG-4285-app-p2p-host-listen-survives-stop.md) | ✅ | ✅ | 互联主机停止或启动失败回滚时绕过 P2P 串行队列，隧道转发残留 |
-| [BUG-4284](bugs/BUG-4284-headless-bind-ignored-listens-all.md) | ✅ | ✅ | 无头服务端 bind 配成具体地址或 ::1 仍监听全部网卡 |
-| [BUG-4283](bugs/BUG-4283-dictionary-media-url-carries-master-token.md) | ✅ | ✅ | 扩展词典图片 URL 只能携带主机主凭据原值，且不认可吊销的设备凭据 |
-| [BUG-4282](bugs/BUG-4282-interconnect-derived-tokens-survive-revoke.md) | ✅ | ✅ | 吊销已配对设备后，它签出的视频流 / 原盘 / 音频链接仍可用，老客户端拿到的共享 token 也无法单独吊销 |
-| [BUG-4281](bugs/BUG-4281-pairing-pin-shared-slot-overwritten.md) | ✅ | ✅ | 配对 PIN 存在全局单槽，另一个配对请求会把审批框上的 PIN 换成别人的 |
-| [BUG-4280](bugs/BUG-4280-pairing-pin-bruteforce-spoofable-source.md) | ✅ | ✅ | PIN 防爆破按可伪造的自报设备 id 分桶且无总量预算，无头端可被无人值守穷举 |
-| [BUG-4279](bugs/BUG-4279-pairing-proxied-request-treated-as-lan.md) | ✅ | ✅ | 经反向代理 / 内网穿透进来的公网配对请求被当成局域网免 PIN |
-| [BUG-4278](bugs/BUG-4278-interconnect-auth-exemption-path-method.md) | ✅ | ✅ | 互联鉴权豁免按编码路径且不看方法，与路由分发的路径形态不一致 |
-| [BUG-4277](bugs/BUG-4277-interconnect-unbounded-request-body.md) | ✅ | ✅ | 互联 host 与扩展 API 读请求体没有上限，免鉴权配对端点可被巨体耗尽内存 |
-| [BUG-4276](bugs/BUG-4276-interconnect-peer-token-cache-revoke-race.md) | ✅ | ✅ | 吊销已配对设备时若恰逢 token 集合加载，旧 token 被写回缓存继续有效 |
-> 共 3929 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4395](bugs/BUG-4395-app-p2p-host-listen-survives-stop.md) | ✅ | ✅ | 互联主机停止或启动失败回滚时绕过 P2P 串行队列，隧道转发残留 |
+| [BUG-4394](bugs/BUG-4394-headless-bind-ignored-listens-all.md) | ✅ | ✅ | 无头服务端 bind 配成具体地址或 ::1 仍监听全部网卡 |
+| [BUG-4393](bugs/BUG-4393-dictionary-media-url-carries-master-token.md) | ✅ | ✅ | 扩展词典图片 URL 只能携带主机主凭据原值，且不认可吊销的设备凭据 |
+| [BUG-4392](bugs/BUG-4392-interconnect-derived-tokens-survive-revoke.md) | ✅ | ✅ | 吊销已配对设备后，它签出的视频流 / 原盘 / 音频链接仍可用，老客户端拿到的共享 token 也无法单独吊销 |
+| [BUG-4391](bugs/BUG-4391-pairing-pin-shared-slot-overwritten.md) | ✅ | ✅ | 配对 PIN 存在全局单槽，另一个配对请求会把审批框上的 PIN 换成别人的 |
+| [BUG-4390](bugs/BUG-4390-pairing-pin-bruteforce-spoofable-source.md) | ✅ | ✅ | PIN 防爆破按可伪造的自报设备 id 分桶且无总量预算，无头端可被无人值守穷举 |
+| [BUG-4389](bugs/BUG-4389-pairing-proxied-request-treated-as-lan.md) | ✅ | ✅ | 经反向代理 / 内网穿透进来的公网配对请求被当成局域网免 PIN |
+| [BUG-4388](bugs/BUG-4388-interconnect-auth-exemption-path-method.md) | ✅ | ✅ | 互联鉴权豁免按编码路径且不看方法，与路由分发的路径形态不一致 |
+| [BUG-4387](bugs/BUG-4387-interconnect-unbounded-request-body.md) | ✅ | ✅ | 互联 host 与扩展 API 读请求体没有上限，免鉴权配对端点可被巨体耗尽内存 |
+| [BUG-4386](bugs/BUG-4386-interconnect-peer-token-cache-revoke-race.md) | ✅ | ✅ | 吊销已配对设备时若恰逢 token 集合加载，旧 token 被写回缓存继续有效 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |

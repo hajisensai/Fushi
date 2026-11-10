@@ -8,7 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 /// - 常驻显示 PIN 的框只被**同源**请求取代；不同来源的新请求被拒，框里仍是原 PIN。
 /// - server 的收起回调带会话 id，只收起本会话的框。
 /// - 同源（同 sourceKey，IPv6 同一 /64 换了地址）重新配对仍能取代常驻框（BUG-708 / 987）。
-/// - BUG-4279：回环来源的审批框加一行提醒（原 interconnect_pair_loopback_hint_test）。
+/// - BUG-4389：回环来源的审批框加一行提醒（原 interconnect_pair_loopback_hint_test）。
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -170,13 +170,13 @@ void main() {
     expect(await approval, isFalse);
   }
 
-  testWidgets('回环来源显示提醒（BUG-4279）', (WidgetTester tester) async {
+  testWidgets('回环来源显示提醒（BUG-4389）', (WidgetTester tester) async {
     await expectLoopbackHint(tester, '127.0.0.1', shown: true);
     await expectLoopbackHint(tester, '::1', shown: true);
     await expectLoopbackHint(tester, '127.0.0.1 (proxied)', shown: true);
   });
 
-  testWidgets('局域网与 P2P 隧道来源不显示提醒（BUG-4279）', (WidgetTester tester) async {
+  testWidgets('局域网与 P2P 隧道来源不显示提醒（BUG-4389）', (WidgetTester tester) async {
     await expectLoopbackHint(tester, '192.168.1.20', shown: false);
     await expectLoopbackHint(tester, kFushiP2pRemoteAddress, shown: false);
   });

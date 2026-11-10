@@ -133,7 +133,7 @@ const String kFushiP2pPeer = 'fushi.p2p.peer';
 
 /// 没有稳定 deviceId 的配对（v1 `/api/pair`、不带 `clientDeviceId` 的 v2 confirm）
 /// 落库时 peerId 的前缀。这类 token 能单独吊销，但权限与共享 token 相同：只过普通
-/// 鉴权，不过只认已配对设备 token 的敏感服务门（BUG-4282）。
+/// 鉴权，不过只认已配对设备 token 的敏感服务门（BUG-4392）。
 const String kFushiLegacyPeerIdPrefix = 'legacy-';
 
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
@@ -329,7 +329,7 @@ String _credentialFingerprint(String token) =>
     sha256.convert(utf8.encode(token)).toString();
 
 /// 词典媒体作用域 key 的方案名：`/api/extension/status` 以 `dictionaryMediaKey` 字段
-/// 公布，扩展见到它才改发 [dictionaryMediaKeyFor] 派生的 key（BUG-4283）。
+/// 公布，扩展见到它才改发 [dictionaryMediaKeyFor] 派生的 key（BUG-4393）。
 const String kDictionaryMediaKeyScheme = 'fmk1';
 
 const String _kDictionaryMediaKeyLabel = 'fushi-dictionary-media-v1';
@@ -639,7 +639,7 @@ class FushiSyncServer {
     audioTokens: _audioTokens,
     lookup: _remoteLookupService,
     mining: _miningService,
-    // BUG-4282：音频 id 记签发凭据，取字节时对照当前快照（吊销即连带作废）。
+    // BUG-4392：音频 id 记签发凭据，取字节时对照当前快照（吊销即连带作废）。
     issuerOf: _requestCredentialFingerprint,
     issuerValid: _issuerStillValid,
   );
@@ -669,14 +669,14 @@ class FushiSyncServer {
       <String, FushiPairSession>{};
 
   /// TODO-961 M3：PIN 爆破限速器。按来源（IP，IPv6 按 /64；隧道按 NodeId。不认自报
-  /// deviceId，BUG-4280）聚合 PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
+  /// deviceId，BUG-4390）聚合 PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
   /// 直接被拒（不再触碰 PIN 比对）。粒度选「来源」而非「会话」的理由见
   /// [FushiPinRateLimiter] 文档：[FushiPairSession.consumed] 已让单会话只能撞一次，
   /// 真正的爆破面是不断开新会话逐个撞——只有按来源聚合才挡得住。纯内存态，随
   /// [_prunePairSessions] 一并 prune 防泄漏；server 重启即清空。
   final FushiPinRateLimiter _pinRateLimiter = FushiPinRateLimiter();
 
-  /// BUG-4280：按来源类别的 PIN 失败总预算。换来源（IPv6 前缀、多台机器）绕得过
+  /// BUG-4390：按来源类别的 PIN 失败总预算。换来源（IPv6 前缀、多台机器）绕得过
   /// [_pinRateLimiter]，绕不过这里；分类别是为了公网被刷锁时局域网 / 隧道照常配对。
   final Map<FushiPairOriginClass, FushiPinFailureBudget> _pinBudgets =
       <FushiPairOriginClass, FushiPinFailureBudget>{
@@ -684,7 +684,7 @@ class FushiSyncServer {
           c: FushiPinFailureBudget(),
       };
 
-  /// 当前因 PIN 失败过多而锁定的来源类别及各自的解锁时刻（BUG-4280）；只含锁定中的。
+  /// 当前因 PIN 失败过多而锁定的来源类别及各自的解锁时刻（BUG-4390）；只含锁定中的。
   Map<FushiPairOriginClass, DateTime> get pairingLockouts {
     final DateTime now = _now();
     return <FushiPairOriginClass, DateTime>{
@@ -694,7 +694,7 @@ class FushiSyncServer {
     };
   }
 
-  /// 管理员解除配对锁定（BUG-4280）：清掉全部类别预算与按来源的限速记录。
+  /// 管理员解除配对锁定（BUG-4390）：清掉全部类别预算与按来源的限速记录。
   void resetPairingLockout() {
     for (final FushiPinFailureBudget b in _pinBudgets.values) {
       b.reset();
@@ -724,17 +724,17 @@ class FushiSyncServer {
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
   Future<bool> Function()? lanRequiresPinProvider;
 
-  /// BUG-4279：回环 TCP 对端（127/8、::1）是否算局域网来源。app 保持 true（同机
+  /// BUG-4389：回环 TCP 对端（127/8、::1）是否算局域网来源。app 保持 true（同机
   /// 多实例 / 本机联调）；无头端设 false——经回环进来的几乎都是本机反代 / 穿透
   /// （frp TCP 模式不加转发头），把它当 LAN 会让公网请求免 PIN。
   bool loopbackPeerIsLan = true;
 
-  /// BUG-4280：pinRequired 会话的 [onPairRequest] 批准是不是人点的。app 是（弹审批框），
+  /// BUG-4390：pinRequired 会话的 [onPairRequest] 批准是不是人点的。app 是（弹审批框），
   /// 无头端不是（自动放行、PIN 本身就是人因）。人工批准过的会话不会被会话上限淘汰——
   /// 攻击者没法不经主人点头就占住它们；自动批准的会话则谁都能刷出来，必须可淘汰。
   bool pinApprovalIsManual = true;
 
-  /// BUG-4279：可信反代地址（IP / CIDR）供给器，每请求现读；null = 没有。TCP 对端
+  /// BUG-4389：可信反代地址（IP / CIDR）供给器，每请求现读；null = 没有。TCP 对端
   /// 命中时才读转发头里的真实来源，**只**用于限速键与展示 IP，不让任何请求变回局域网
   /// （带转发头的请求恒按公网）。条目非法时按空集处理——校验在配置加载处做。
   List<String> Function()? trustedProxiesProvider;
@@ -780,7 +780,7 @@ class FushiSyncServer {
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
 
-  /// BUG-4282：供给全部未吊销的已配对设备凭据（peerId → token）。优先于
+  /// BUG-4392：供给全部未吊销的已配对设备凭据（peerId → token）。优先于
   /// [pairedPeerTokensProvider]：peerId 以 [kFushiLegacyPeerIdPrefix] 开头的 token
   /// 只过普通鉴权（与共享 token 同权），其余还过只认已配对设备的敏感服务门。
   /// 缓存 / 失效语义同 [pairedPeerTokensProvider]。
@@ -899,7 +899,7 @@ class FushiSyncServer {
 
   /// 本 host 当前可公布的地址集。仅本机监听时不枚举网卡——公布网卡地址等于告诉
   /// client 一堆连不上的地址；但 `publicUrls`（本机反代 / 穿透的对外地址）与
-  /// `extra`（P2P）不经网卡监听口，照样可达，照常公布（BUG-4280：VPS 上
+  /// `extra`（P2P）不经网卡监听口，照样可达，照常公布（BUG-4390：VPS 上
   /// `bind: 127.0.0.1` + 反代的无头端签发的配对链接否则一个地址都没有）。
   Future<List<InterconnectHostAddress>> _hostAddresses() async {
     if (_server == null) return const <InterconnectHostAddress>[];
@@ -1279,7 +1279,7 @@ class FushiSyncServer {
         'app': 'fushi',
         'ready': true,
         'port': port,
-        // BUG-4283：能力位——扩展见到它才把词典图片 URL 的 token 换成派生 key。
+        // BUG-4393：能力位——扩展见到它才把词典图片 URL 的 token 换成派生 key。
         'dictionaryMediaKey': kDictionaryMediaKeyScheme,
       });
     }
@@ -2150,7 +2150,7 @@ class _VideoStreamToken {
   final String videoId;
 
   /// 签发请求所用凭据的指纹（`_credentialFingerprint`）。每次取流都对照当前凭据
-  /// 快照，签发凭据被吊销即作废（BUG-4282）。
+  /// 快照，签发凭据被吊销即作废（BUG-4392）。
   final String issuer;
   final DateTime createdAt;
 

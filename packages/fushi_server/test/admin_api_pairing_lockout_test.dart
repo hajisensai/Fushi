@@ -16,7 +16,7 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
-/// BUG-4280：无头端没有人工审批，「开会话 → 猜一次」换来源也挡得住——公网类别累计
+/// BUG-4390：无头端没有人工审批，「开会话 → 猜一次」换来源也挡得住——公网类别累计
 /// PIN 失败到阈值即暂停；admin API 报出暂停到何时，管理员可一键解除。
 ///
 /// 来源经本机可信代理（`trusted_proxies: [127.0.0.1]`）带 `X-Forwarded-For` 进来，

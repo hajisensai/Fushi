@@ -8,7 +8,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-4282：派生凭据（视频流 token / 原盘会话 / 查词音频 id）挂在签发它的凭据上。
+/// BUG-4392：派生凭据（视频流 token / 原盘会话 / 查词音频 id）挂在签发它的凭据上。
 ///
 /// 此前这三张表不记签发者，`invalidatePeerTokenCache` 碰不到它们：吊销一台已配对
 /// 设备后，它签出的流 URL 6 h、原盘会话 12 h、音频 URL 5 min 内照样可用。修复后

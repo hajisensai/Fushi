@@ -50,7 +50,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (manifest == null) {
         return shelf.Response.notFound('Disc structure unreadable');
       }
-      // BUG-4282：会话记签发凭据，吊销即连带作废。签发路由要 Basic，取不到就是没鉴权。
+      // BUG-4392：会话记签发凭据，吊销即连带作废。签发路由要 Basic，取不到就是没鉴权。
       final String? issuer = _requestCredentialFingerprint(request);
       if (issuer == null) return shelf.Response(401);
       final String token = _discShares.issue(
@@ -79,7 +79,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         episodeIndex: episodeIndex,
       );
       if (file == null) return shelf.Response.notFound('Video not found');
-      // BUG-4282：流 token 记签发凭据，取流时对照当前快照（吊销即连带作废）。
+      // BUG-4392：流 token 记签发凭据，取流时对照当前快照（吊销即连带作废）。
       final String? issuer = _requestCredentialFingerprint(request);
       if (issuer == null) return shelf.Response(401);
       // 弱网转码：client 报画质档（`?maxWidth=1280&maxBitrate=3000000`），host 决定
@@ -1121,7 +1121,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     return base64UrlEncode(bytes);
   }
 
-  /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4282）。正在发送的单个直传
+  /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4392）。正在发送的单个直传
   /// 响应不被切断，下一次 Range / 下一个 HLS 分段即 403。
   shelf.Response _revokedVideoToken(String tokenValue) {
     _videoStreamTokens.remove(tokenValue);

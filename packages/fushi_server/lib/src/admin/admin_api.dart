@@ -160,7 +160,7 @@ class AdminApi {
       case ('GET', '/api/admin/pairing'):
         return _pairing();
       case ('POST', '/api/admin/pairing/unlock'):
-        // BUG-4280：解除因 PIN 失败过多的配对暂停（全部来源类别）。
+        // BUG-4390：解除因 PIN 失败过多的配对暂停（全部来源类别）。
         ctx.host.resetPairingLockout();
         return shelf.Response(204);
       case ('POST', '/api/admin/pairing/link'):
@@ -563,7 +563,7 @@ class AdminApi {
   InterconnectOwnerDeviceStore get _ownerDevices =>
       InterconnectOwnerDeviceStore(ctx.db);
 
-  /// BUG-4280：签发一次性配对链接（票据配对不走 PIN 预算）。签不出时 409 + reason。
+  /// BUG-4390：签发一次性配对链接（票据配对不走 PIN 预算）。签不出时 409 + reason。
   Future<shelf.Response> _createPairLink() async {
     final PairLinkOutcome outcome = await ctx.host.createPairLink();
     return switch (outcome) {
@@ -601,7 +601,7 @@ class AdminApi {
         'tls': ctx.config.tls,
         'reachable': ctx.config.leaderboardLink && ctx.config.tls,
       },
-      // BUG-4280：各来源类别因 PIN 失败过多暂停配对到何时；null = 没暂停。
+      // BUG-4390：各来源类别因 PIN 失败过多暂停配对到何时；null = 没暂停。
       'lockout': <String, Object?>{
         for (final FushiPairOriginClass c in FushiPairOriginClass.values)
           c.name: lockouts[c]?.toUtc().toIso8601String(),

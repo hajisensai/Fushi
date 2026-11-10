@@ -166,7 +166,7 @@ void main() {
     c.close();
   });
 
-  // BUG-4283：`<img>` 入口的 query 凭据可以是从任一有效凭据派生的作用域 key
+  // BUG-4393：`<img>` 入口的 query 凭据可以是从任一有效凭据派生的作用域 key
   // `fmk1.`，吊销签发凭据即失效；peer token 原值不进 query（仍须 Basic）。
   group('scoped dictionary media key (fmk1)', () {
     const String peerToken = 'peer-token-media';
