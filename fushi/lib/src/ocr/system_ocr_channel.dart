@@ -69,7 +69,7 @@ class SystemOcrTextLine {
   final int? tile;
 
   /// 平台给的词框（按行内顺序、互不重叠地覆盖 [text] 的一部分）。空 = 平台只给
-  /// 行框（点字时按字数等分行框估计）。Windows OCR 给（BUG-4323）。
+  /// 行框（点字时按字数等分行框估计）。Windows OCR 给（BUG-4359）。
   final List<SystemOcrTextSegment> segments;
 
   @override
@@ -95,7 +95,7 @@ class SystemOcrPageResult {
   final int imageHeight;
 
   /// 实际送进识别器的位图尺寸（Windows：超过 [maxImageDimension] 时被等比缩小）。
-  /// 平台不报时为 null。只用于诊断日志（BUG-4323）。
+  /// 平台不报时为 null。只用于诊断日志（BUG-4359）。
   final int? recognizedWidth;
   final int? recognizedHeight;
 
@@ -505,7 +505,7 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
   );
 }
 
-/// 行的词框（BUG-4323）。越出行文本、没面积、与前一段重叠或倒序的段丢掉——
+/// 行的词框（BUG-4359）。越出行文本、没面积、与前一段重叠或倒序的段丢掉——
 /// 剩下的保证按行内顺序、互不重叠，点字定位可以直接按顺序找。
 List<SystemOcrTextSegment> _parseSegments(Object? raw, int textLength) {
   if (raw is! List || raw.isEmpty) return const <SystemOcrTextSegment>[];
