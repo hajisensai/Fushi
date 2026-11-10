@@ -131,7 +131,7 @@ class _NativeHost {
       case 'unbind':
         return null;
       case 'setHostMuted':
-        final Object? error = hostMuteError;
+        final PlatformException? error = hostMuteError;
         if (error != null && (call.arguments as Map)['muted'] == true) {
           throw error;
         }
@@ -549,20 +549,23 @@ void main() {
       Future<T> settle<T>(Future<T> future) async {
         bool done = false;
         Object? failure;
+        StackTrace? failureStack;
         late T value;
         final Future<void> waiting = future.then<void>(
           (T result) {
             value = result;
             done = true;
           },
-          onError: (Object error) {
+          onError: (Object error, StackTrace stack) {
             failure = error;
+            failureStack = stack;
             done = true;
           },
         );
         await _flushUntil(tester, () => done);
         await waiting;
-        if (failure != null) throw failure!;
+        final Object? error = failure;
+        if (error != null) Error.throwWithStackTrace(error, failureStack!);
         return value;
       }
 
