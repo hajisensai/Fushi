@@ -47,6 +47,7 @@ import 'package:fushi/src/anki/card_source_origin.dart'
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/font_face_weight.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_defs_scroll_window.dart';
@@ -1676,11 +1677,12 @@ class _SrsCardStyle {
   double indentOf(TextStyle style, int chars) =>
       chars <= 0 ? 0 : chars * (style.fontSize ?? 16);
 
-  TextStyle term(TextStyle role, {double scale = 1}) => text(
-    role,
-    scale: scale,
-    height: 1.25,
-  ).copyWith(fontWeight: FontWeight.w600);
+  /// 词头：w600，但单字重的用户字体不请求（会被合成假粗体糊字，见
+  /// [withFaceSafeWeight]），保持其原字重、靠字号区分。
+  TextStyle term(TextStyle role, {double scale = 1}) => withFaceSafeWeight(
+    text(role, scale: scale, height: 1.25),
+    FontWeight.w600,
+  );
 }
 
 // ---------------------------------------------------------------- 组件
@@ -1715,7 +1717,10 @@ class SrsRubyText extends StatelessWidget {
   final Color? emphasis;
 
   TextStyle _styleOf(SrsInline s) => style.copyWith(
-    fontWeight: s.bold ? FontWeight.w700 : null,
+    // 单字重用户字体不请求 w700（会合成假粗体），只靠强调色区分。
+    fontWeight: s.bold
+        ? faceSafeFontWeight(style.fontFamily, FontWeight.w700)
+        : null,
     fontStyle: s.italic ? FontStyle.italic : null,
     decoration: s.underline ? TextDecoration.underline : null,
     color: s.bold && emphasis != null ? emphasis : null,
@@ -1988,11 +1993,13 @@ class SrsPitchGraph extends StatelessWidget {
       ),
       child: Text(
         '$p',
-        style: style.copyWith(
-          fontSize: math.max(9, base * 0.42),
-          height: 1,
-          color: color,
-          fontWeight: FontWeight.w600,
+        style: withFaceSafeWeight(
+          style.copyWith(
+            fontSize: math.max(9, base * 0.42),
+            height: 1,
+            color: color,
+          ),
+          FontWeight.w600,
         ),
       ),
     );
@@ -2127,9 +2134,10 @@ class _MetaRow extends StatelessWidget {
       children: <Widget>[
         Text(
           label,
-          style: style
-              .text(style.tokens.label, color: style.muted, ui: true)
-              .copyWith(fontWeight: FontWeight.w600),
+          style: withFaceSafeWeight(
+            style.text(style.tokens.label, color: style.muted, ui: true),
+            FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 6),
         child,

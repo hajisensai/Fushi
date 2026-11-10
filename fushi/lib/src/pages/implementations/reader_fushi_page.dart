@@ -63,6 +63,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_image_index_cache.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show kLyricsModeHintShownPrefShortKey;
 import 'package:fushi/src/epub/epub_spread_analyzer.dart';
 import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
