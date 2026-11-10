@@ -2091,6 +2091,7 @@ class SrsDbStore implements SrsSync2Host {
     'replay_pending',
     'import',
     'resolve',
+    'trust',
     'purge',
     'checkpoint',
     'restore',
