@@ -30,7 +30,7 @@ List<ChapterCharInfo> syncChapterCharTable(EpubBookRow book) =>
 /// 本地页式书的总页数（`chapterCount`）。
 ///
 /// 在线漫画返回 null：它的 `chapterCount` 写的是**章数**、`sectionIndex` 是**章内**
-/// 页码，两者量纲不同（同 `ReaderFushiSource._onlineMangaProgress` 的说明），
+/// 页码，两者量纲不同（书架进度因此按章算，见 `onlineMangaShelfProgress`），
 /// 只能显示页码、折算不出全书分数。
 int? pagedSyncPageCount(EpubBookRow book) {
   if (!isPagedSyncBook(book)) return null;
