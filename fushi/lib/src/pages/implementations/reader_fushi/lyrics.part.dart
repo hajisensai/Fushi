@@ -977,6 +977,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           onPressed: _openReadingStatistics,
         );
       case LyricsControlItem.bookMode:
+        // 窄屏顶栏 × 前固定摆着「书籍模式」，菜单里不再重复。
+        if (!wide) return null;
         return ReaderHeaderAction(
           icon: icon,
           label: label,
