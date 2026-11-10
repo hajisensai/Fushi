@@ -22,6 +22,8 @@ import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/remote_ai_agent_session.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
@@ -268,23 +270,48 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
   required String locale,
 }) async {
   final RemoteAiAgentSession? existing = RemoteAiAgentSession.active;
-  if (existing != null && existing.isUsable && existing.target.baseUrl == url) {
+  // 认的是「那台 host」：偏好存的那条地址与会话当初经的地址可以不同。
+  if (existing != null &&
+      existing.isUsable &&
+      existing.target.hostRef ==
+          interconnectHostRefForUrl(await repo.getFushiClientUrls(), url)) {
     return existing;
   }
   existing?.dispose();
   final InterconnectAssistantClient client = InterconnectAssistantClient(
     repo: repo,
   );
-  final HostAssistantTarget? target = await client.probeUrl(url);
-  if (!context.mounted) return null;
-  if (target == null) {
-    _showAiAgentMessage(
-      context,
-      t.ai_agent_remote_unreachable(device: deviceLabel),
-    );
+  final InterconnectCapabilityOutcome<HostAssistantTarget> outcome =
+      await client.probeUrlOutcome(url);
+  if (!context.mounted) {
+    client.dispose();
     return null;
   }
+  final HostAssistantTarget target;
+  switch (outcome) {
+    case InterconnectCapabilityAvailable<HostAssistantTarget>(
+      target: final HostAssistantTarget available,
+    ):
+      target = available;
+    case InterconnectCapabilityUnavailable<HostAssistantTarget>(
+      :final InterconnectHostFailure failure,
+      :final int? statusCode,
+    ):
+      client.dispose();
+      _showAiAgentMessage(
+        context,
+        failure == InterconnectHostFailure.unreachable
+            ? t.ai_agent_remote_unreachable(device: deviceLabel)
+            : interconnectHostFailureLine(
+                failure,
+                device: deviceLabel,
+                statusCode: statusCode,
+              ),
+      );
+      return null;
+  }
   if (!target.supports(kHostAssistantFeatureAgent)) {
+    client.dispose();
     _showAiAgentMessage(
       context,
       _remoteBlockedText(
@@ -307,6 +334,8 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
     RemoteAiAgentSession.active = session;
     return session;
   } on HostAssistantException catch (error) {
+    // 会话没开成：client 仍归这里。
+    client.dispose();
     if (context.mounted) {
       _showAiAgentMessage(
         context,
@@ -320,6 +349,7 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
     }
     return null;
   } on Object {
+    client.dispose();
     if (context.mounted) {
       _showAiAgentMessage(
         context,

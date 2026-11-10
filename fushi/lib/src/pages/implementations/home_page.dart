@@ -3176,16 +3176,39 @@ class _HomePageState extends BasePageState<HomePage>
     final InterconnectAssistantClient client = InterconnectAssistantClient(
       repo: SyncRepository(appModelNoUpdate.database),
     );
-    final HostAssistantTarget? target = await client.probeUrl(hostUrl);
-    if (!context.mounted) return;
-    if (target == null) {
-      _showVideoDiscoveryMessage(
-        context,
-        t.download_execution_host_unreachable,
-      );
+    final InterconnectCapabilityOutcome<HostAssistantTarget> outcome =
+        await client.probeUrlOutcome(hostUrl);
+    if (!context.mounted) {
+      client.dispose();
       return;
     }
+    final HostAssistantTarget target;
+    switch (outcome) {
+      case InterconnectCapabilityAvailable<HostAssistantTarget>(
+        target: final HostAssistantTarget available,
+      ):
+        target = available;
+      case InterconnectCapabilityUnavailable<HostAssistantTarget>(
+        :final InterconnectHostFailure failure,
+        :final String label,
+        :final int? statusCode,
+      ):
+        client.dispose();
+        // 凭据 / 证书 / 配对 / 版本这类用户能动手解决的，说出具体原因。
+        _showVideoDiscoveryMessage(
+          context,
+          failure == InterconnectHostFailure.unreachable
+              ? t.download_execution_host_unreachable
+              : interconnectHostFailureLine(
+                  failure,
+                  device: label,
+                  statusCode: statusCode,
+                ),
+        );
+        return;
+    }
     if (!target.supports(kHostAssistantFeatureVideoAcquire)) {
+      client.dispose();
       _showRemoteAiAcquisitionBlocked(
         context,
         target,
@@ -3201,6 +3224,8 @@ class _HomePageState extends BasePageState<HomePage>
         locale: appModelNoUpdate.appLocale.toLanguageTag(),
       );
     } on HostAssistantException catch (error) {
+      // 会话没开成：client 仍归这里。
+      client.dispose();
       if (!context.mounted) return;
       if (error.code == 'http_409') {
         _showRemoteAiAcquisitionBlocked(
@@ -3216,6 +3241,7 @@ class _HomePageState extends BasePageState<HomePage>
       }
       return;
     } on Object {
+      client.dispose();
       if (context.mounted) {
         _showVideoDiscoveryMessage(
           context,

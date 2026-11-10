@@ -18,6 +18,8 @@ import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.d
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show resetInterconnectRaceCache;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -27,6 +29,7 @@ import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -38,6 +41,7 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('fushi-app-assistant-host-');
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = SyncRepository(db);
+    resetInterconnectRaceCache();
   });
 
   tearDown(() async {
@@ -66,6 +70,36 @@ void main() {
 
   InterconnectAssistantClient client() =>
       InterconnectAssistantClient(repo: repo);
+
+  /// 带 hostId 的 host（同一台机器的多条地址归一组）；本机用 per-peer 口令
+  /// [_peerToken]，[peerTokens] 是 host 当前认的 per-peer 口令集合（删掉 = 吊销）。
+  Future<(FushiSyncServer, Set<String>)> startGroupedHost(
+    VideoAcquisitionAssistantHost host,
+  ) async {
+    final Set<String> peerTokens = <String>{_peerToken};
+    final FushiSyncServer server =
+        FushiSyncServer(
+            syncDataDir: p.join(tmp.path, 'sync-grouped'),
+            port: 0,
+            token: 'shared-other',
+            assistant: host,
+            deviceName: 'PC',
+          )
+          ..hostId = _groupedHostId
+          ..pairedPeerTokensProvider = () async => Set<String>.of(peerTokens);
+    await server.start();
+    addTearDown(server.stop);
+    return (server, peerTokens);
+  }
+
+  FushiClientUrl groupedRow(String url, {bool enabled = true}) =>
+      FushiClientUrl(
+        url: url,
+        enabled: enabled,
+        deviceName: 'PC',
+        token: _peerToken,
+        hostId: _groupedHostId,
+      );
 
   /// 等远端会话的视图满足条件（长轮询是真实网络往返）。
   Future<VideoAcquisitionView> viewWhere(
@@ -250,6 +284,123 @@ void main() {
     );
   });
 
+  test('V-B3：偏好存的那条地址死了，同组另一条地址活着 → 照样探到这台 host 并能开会话', () async {
+    final _HostPorts ports = _HostPorts();
+    final (FushiSyncServer server, _) = await startGroupedHost(ports.host());
+    final String live = 'http://127.0.0.1:${server.port}';
+    final String dead = 'http://127.0.0.1:${await _closedPort()}';
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      groupedRow(dead),
+      groupedRow(live),
+    ]);
+    final InterconnectAssistantClient c = client();
+    final HostAssistantTarget? target = await c.probeUrl(dead);
+    expect(target, isNotNull, reason: '认的是那台 host，不是那一条地址');
+    expect(target!.supports(kHostAssistantFeatureVideoAcquire), isTrue);
+    final RemoteVideoAcquisitionSession session =
+        await RemoteVideoAcquisitionSession.open(
+          client: c,
+          target: target,
+          locale: 'zh-CN',
+        );
+    addTearDown(session.dispose);
+    expect(ports.opened, <String>['zh-CN']);
+  });
+
+  test('R5b：会话中途凭据被吊销 → 401 后停止轮询，记录里说清「凭据被拒」', () async {
+    final _HostPorts ports = _HostPorts();
+    final (FushiSyncServer server, Set<String> peerTokens) =
+        await startGroupedHost(ports.host());
+    final String url = 'http://127.0.0.1:${server.port}';
+    await repo.setFushiClientUrls(<FushiClientUrl>[groupedRow(url)]);
+    final _CountingClient counting = _CountingClient();
+    addTearDown(counting.inner.close);
+    final InterconnectAssistantClient c = InterconnectAssistantClient(
+      repo: repo,
+      httpClient: counting,
+    );
+    final HostAssistantTarget target = (await c.probeUrl(url))!;
+    const Duration retryDelay = Duration(milliseconds: 50);
+    final RemoteVideoAcquisitionSession session =
+        await RemoteVideoAcquisitionSession.open(
+          client: c,
+          target: target,
+          locale: 'zh-CN',
+          retryDelay: retryDelay,
+          longPollWait: const Duration(seconds: 1),
+        );
+    addTearDown(session.dispose);
+
+    peerTokens.remove(_peerToken);
+    server.invalidatePeerTokenCache();
+
+    bool lastIsAuthRejected(VideoAcquisitionView v) {
+      final Iterable<VideoAcquisitionAssistantMessage> failures = v.transcript
+          .whereType<VideoAcquisitionAssistantMessage>()
+          .where(
+            (VideoAcquisitionAssistantMessage m) =>
+                m.say.kind == VideoAcquisitionSayKind.failed,
+          );
+      return failures.isNotEmpty &&
+          failures.last.say.args['message'] ==
+              kRemoteVideoAcquisitionAuthRejected;
+    }
+
+    final VideoAcquisitionView halted = await viewWhere(
+      session,
+      lastIsAuthRejected,
+    );
+    expect(halted.busy, isFalse);
+    expect(counting.sessionReads401, greaterThanOrEqualTo(1));
+    final int reads = counting.sessionReads;
+    await Future<void>.delayed(retryDelay * 5);
+    expect(counting.sessionReads, reads, reason: '凭据被拒再试也不会好，不得每隔几秒重试');
+
+    // 之后的动作就地报失败，不再发请求。
+    final int requests = counting.total;
+    await session.submitText('Show');
+    expect(counting.total, requests);
+  });
+
+  test('会话中途原地址断开并停用 → 下一次读写改走同一台 host 的另一条地址', () async {
+    final _HostPorts ports = _HostPorts();
+    final (FushiSyncServer server, _) = await startGroupedHost(ports.host());
+    final String live = 'http://127.0.0.1:${server.port}';
+    final _Forwarder lan = await _Forwarder.start(server.port);
+    addTearDown(lan.close);
+    final String lanUrl = 'http://127.0.0.1:${lan.port}';
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      groupedRow(lanUrl),
+      groupedRow(live),
+    ]);
+    final InterconnectAssistantClient c = client();
+    final HostAssistantTarget target = (await c.probeUrl(lanUrl))!;
+    final RemoteVideoAcquisitionSession session =
+        await RemoteVideoAcquisitionSession.open(
+          client: c,
+          target: target,
+          locale: 'zh-CN',
+          retryDelay: const Duration(milliseconds: 50),
+          longPollWait: const Duration(seconds: 1),
+        );
+    addTearDown(session.dispose);
+
+    await lan.close();
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      groupedRow(lanUrl, enabled: false),
+      groupedRow(live),
+    ]);
+
+    await session.submitText('下 Show');
+    final VideoAcquisitionView asked = await viewWhere(
+      session,
+      (VideoAcquisitionView v) =>
+          v.stage == VideoAcquisitionStage.awaitingResourceConfirm,
+    );
+    expect(asked.question?.slot, VideoAcquisitionSlot.resource);
+    expect(ports.parsed, <String>['下 Show']);
+  });
+
   test('会话表：非法动作 400、长轮询无变化等满超时回原 revision、关后 404', () async {
     final _HostPorts ports = _HostPorts();
     final HostAssistantSessions sessions = HostAssistantSessions(
@@ -334,6 +485,92 @@ void main() {
     now = now.add(const Duration(minutes: 31));
     expect(await sessions.read(b), isNull, reason: '闲置超过 30 分钟回收');
   });
+}
+
+const String _groupedHostId = 'host-assistant-1';
+const String _peerToken = 'peer-tok';
+
+/// 一个刚关掉的本地端口（连上去必然被拒）。
+Future<int> _closedPort() async {
+  final ServerSocket s = await ServerSocket.bind(
+    InternetAddress.loopbackIPv4,
+    0,
+  );
+  final int port = s.port;
+  await s.close();
+  return port;
+}
+
+/// 统计发往会话快照路由的 GET（长轮询）次数与其中的 401。
+class _CountingClient extends http.BaseClient {
+  final http.Client inner = http.Client();
+  int total = 0;
+  int sessionReads = 0;
+  int sessionReads401 = 0;
+
+  static final RegExp _sessionRead = RegExp(r'^/api/assistant/sessions/[^/]+$');
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    total++;
+    final bool isRead =
+        request.method == 'GET' && _sessionRead.hasMatch(request.url.path);
+    if (isRead) sessionReads++;
+    final http.StreamedResponse response = await inner.send(request);
+    if (isRead && response.statusCode == 401) sessionReads401++;
+    return response;
+  }
+}
+
+/// 一条可以拔掉的「局域网地址」：本地端口原样转发到 host。
+class _Forwarder {
+  _Forwarder._(this._server);
+
+  static Future<_Forwarder> start(int targetPort) async {
+    final ServerSocket server = await ServerSocket.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final _Forwarder f = _Forwarder._(server);
+    server.listen((Socket inbound) async {
+      f._sockets.add(inbound);
+      final Socket upstream;
+      try {
+        upstream = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          targetPort,
+        );
+      } on SocketException {
+        inbound.destroy();
+        return;
+      }
+      f._sockets.add(upstream);
+      inbound.listen(
+        upstream.add,
+        onDone: upstream.destroy,
+        onError: (Object _) => upstream.destroy(),
+      );
+      upstream.listen(
+        inbound.add,
+        onDone: inbound.destroy,
+        onError: (Object _) => inbound.destroy(),
+      );
+    });
+    return f;
+  }
+
+  final ServerSocket _server;
+  final List<Socket> _sockets = <Socket>[];
+
+  int get port => _server.port;
+
+  Future<void> close() async {
+    await _server.close();
+    for (final Socket s in _sockets) {
+      s.destroy();
+    }
+    _sockets.clear();
+  }
 }
 
 Future<void> _eventually(bool Function() condition) async {
