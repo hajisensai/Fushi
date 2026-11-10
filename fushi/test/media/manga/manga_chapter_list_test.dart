@@ -352,19 +352,22 @@ void main() {
     expect(contentOpacity('Chapter 3'), kMediaDetailCompletedOpacity);
     expect(contentOpacity('Chapter 2'), 1.0);
 
-    expect(find.byTooltip(t.manga_chapter_status_read), findsOneWidget);
-    expect(find.byTooltip(t.media_detail_status_downloaded), findsOneWidget);
-    expect(find.byTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
-    // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。
-    expect(find.bySemanticsLabel(t.manga_chapter_status_read), findsOneWidget);
-    expect(
-      find.bySemanticsLabel(t.media_detail_status_downloaded),
-      findsOneWidget,
-    );
-    expect(
-      find.bySemanticsLabel(t.manga_chapter_status_ocr_done),
-      findsOneWidget,
-    );
+    expect(_statusTooltip(t.manga_chapter_status_read), findsOneWidget);
+    expect(_statusTooltip(t.media_detail_status_downloaded), findsOneWidget);
+    expect(_statusTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+    // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。可点的行会把子节点
+    // 语义并进行节点，所以按「行节点的标签里含这一句」找。
+    for (final String label in <String>[
+      t.manga_chapter_status_read,
+      t.media_detail_status_downloaded,
+      t.manga_chapter_status_ocr_done,
+    ]) {
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(label))),
+        findsOneWidget,
+        reason: label,
+      );
+    }
 
     final BuildContext ctx = tester.element(find.byType(MangaChapterList));
     final ColorScheme cs = Theme.of(ctx).colorScheme;
@@ -479,3 +482,9 @@ MangaChapterStateRow _state({
   readAt: readAt,
   updatedAt: updatedAt,
 );
+
+/// 行尾状态图标的 tooltip 关了自身语义（读屏名由外层 Semantics 显式给），这时
+/// `find.byTooltip` 只认 package:flutter 的 Tooltip 类、认不出 material_ui 的
+/// Tooltip，所以按 material_ui Tooltip 的 message 直接找。
+Finder _statusTooltip(String message) =>
+    find.byWidgetPredicate((Widget w) => w is Tooltip && w.message == message);

@@ -21,6 +21,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 
 /// 游戏库页工具条守卫（契约 §4.1）：搜索命中、排序切换、状态筛选三条真实用户路径。
 ///
@@ -104,13 +106,39 @@ void main() {
   }) async {
     navKey = GlobalKey<NavigatorState>();
     FushiToast.navigatorKey = navKey;
+    final FushiShellActionsSlot shellSlot = FushiShellActionsSlot();
+    addTearDown(shellSlot.dispose);
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[appProvider.overrideWith((_) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            home: FushiFocusRoot(child: GamesLibraryPage(embedded: embedded)),
+            // 嵌入版照生产装配：游戏 tab（home_game_page）给 Material，外壳给页头动作的
+            // 悬浮动作组（FushiShellTitleScope.actionsSlot）——页头动作登记进外壳，
+            // 页头本行只剩搜索；没有外壳时展开搜索就看不到「管理合集」等动作。
+            home: FushiFocusRoot(
+              child: embedded
+                  ? Material(
+                      child: FushiShellTitleScope(
+                        title: 'Games',
+                        actionsSlot: shellSlot,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: FushiFloatingActionsPill(slot: shellSlot),
+                            ),
+                            const Expanded(
+                              child: GamesLibraryPage(embedded: true),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : const GamesLibraryPage(),
+            ),
           ),
         ),
       ),
