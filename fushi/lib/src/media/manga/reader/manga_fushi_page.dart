@@ -5780,7 +5780,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       page,
       pageCount,
     );
-    if (atLastPage) {
+    // 「末页」是**当前载荷**的末页：本地卷一个载荷就是整本，书架在线条目一个载荷
+    // 只是一章。整本「读完」只在读到阅读顺序上的最后一话时才成立
+    // （[mangaChapterCompletesSeries]，BUG-4323）；其余章的末页只写下面的章级 readAt。
+    final OnlineMangaLibraryEntry? shelfEntry = _shelfEntry;
+    final bool completesBook =
+        atLastPage &&
+        (shelfEntry == null ||
+            mangaChapterCompletesSeries(
+              chapters: shelfEntry.chapters,
+              chapterIndex: _shelfChapterIndex,
+            ));
+    if (completesBook) {
       try {
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
       } catch (e, stack) {

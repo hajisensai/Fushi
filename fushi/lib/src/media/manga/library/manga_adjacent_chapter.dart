@@ -61,6 +61,31 @@ int? resolveAdjacentMangaChapter({
   return null;
 }
 
+/// 读完第 [chapterIndex] 章是否等于读完**整部**在线漫画（书架「读完」= 写
+/// `EpubBooks.completedAt`）。
+///
+/// 判据只有一个：阅读顺序上它之后**没有下一话**可去——与阅读器翻过章节边界 /
+/// 底栏「下一章」走同一个 [resolveAdjacentMangaChapter]（不跳已读：已读的后续章
+/// 依然是「还有下一话」）。章节顺序因此只从 [chapters]（源顺序，新→旧）一处来，
+/// 不另推「最新章 = 下标几」；同一话的多个汉化版本照阅读器 skipDuplicate 的口径
+/// 算同一话，读完最新一话的任一版本即算读完整部。
+///
+/// BUG-4323：此前阅读器拿**当前章**的页数判末页、却对整本写 completedAt，读完
+/// 任意一章的末页整部就被标「读完」。
+bool mangaChapterCompletesSeries({
+  required List<OnlineMangaChapter> chapters,
+  required int chapterIndex,
+}) {
+  if (chapterIndex < 0 || chapterIndex >= chapters.length) return false;
+  return resolveAdjacentMangaChapter(
+        chapters: chapters,
+        currentIndex: chapterIndex,
+        forward: true,
+        skipDuplicate: true,
+      ) ==
+      null;
+}
+
 /// 预下载下一话的时机：读过当前章约 2/3 之后，或者当前章很短（一进来就下）。
 ///
 /// [currentPage] 从 0 数；[pageCount] 是本章总页数。
