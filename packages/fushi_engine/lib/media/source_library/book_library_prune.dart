@@ -547,6 +547,12 @@ Future<Set<String>> enumerateBookSourceRelPaths(
         'kind',
         'music roots soft-delete via the music scanner',
       );
+    case SourceLibraryKind.game:
+      throw ArgumentError.value(
+        kind,
+        'kind',
+        'game roots are reconciled by the game source scanner',
+      );
   }
   return <String>{
     for (final String path in paths) bookSourceRelPath(root.path, path),

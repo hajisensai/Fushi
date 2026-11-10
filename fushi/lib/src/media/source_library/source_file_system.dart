@@ -35,6 +35,8 @@ import 'package:fushi_engine/media/video/external_video.dart'
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
+import 'package:fushi/src/sync/sftp_range_read.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 来源文件系统列目录返回的单个条目（文件或子目录）。
@@ -401,32 +403,18 @@ class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
       throw UnsupportedError('Range reads are only implemented for SFTP');
     }
     final SftpClient sftp = await _ensureSftp();
-    final int? size = (await sftp.stat(filePath)).size;
-    if (size == null) {
-      throw StateError('SFTP server did not report a size for $filePath');
+    final SyncAssetRange range;
+    try {
+      range = await openSftpFileRange(sftp, filePath, start: start, end: end);
+    } on SyncAssetRangeNotSatisfiable catch (e) {
+      throw RangeError.range(start, 0, (e.totalBytes ?? 0) - 1, 'start');
     }
-    if (start < 0 || start >= size) {
-      throw RangeError.range(start, 0, size - 1, 'start');
-    }
-    final int last = (end == null || end >= size) ? size - 1 : end;
-    if (last < start) {
-      throw RangeError.range(last, start, size - 1, 'end');
-    }
-    // 句柄在流真正开始读时才打开：中继对 HEAD 是「订阅后立刻取消」，生成器体可能
-    // 根本没跑起来，那时在外面先开的句柄就再也没人关。
-    Stream<List<int>> bytes() async* {
-      final SftpFile handle = await sftp.open(
-        filePath,
-        mode: SftpFileOpenMode.read,
-      );
-      try {
-        yield* handle.read(offset: start, length: last - start + 1);
-      } finally {
-        await handle.close();
-      }
-    }
-
-    return (totalBytes: size, start: start, end: last, bytes: bytes());
+    return (
+      totalBytes: range.totalBytes,
+      start: range.start,
+      end: range.end,
+      bytes: range.bytes,
+    );
   }
 
   Future<List<SourceFileEntry>> _listSftp(
