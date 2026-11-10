@@ -11821,6 +11821,7 @@
   "video_subtitle_waveform_open": "Выравнивание по волновой форме",
   "video_subtitle_waveform_open_hint": "Нажмите, чтобы приблизить и выровнять",
   "video_subtitle_waveform_scroll_hint": "Проведите для перемещения по таймлайну; используйте элементы управления ниже для выравнивания",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Волновая форма недоступна на этом устройстве",
   "video_subtitle_waveform_zoom_in": "Приблизить",
   "video_subtitle_waveform_zoom_out": "Отдалить",

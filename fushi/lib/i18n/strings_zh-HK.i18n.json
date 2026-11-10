@@ -11821,6 +11821,7 @@
   "video_subtitle_waveform_open": "波形對軸",
   "video_subtitle_waveform_open_hint": "點擊放大查看並對軸",
   "video_subtitle_waveform_scroll_hint": "橫向拖動查看時間軸，用下方控件對齊字幕",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "本設備無法生成波形",
   "video_subtitle_waveform_zoom_in": "放大",
   "video_subtitle_waveform_zoom_out": "縮小",
