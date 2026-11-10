@@ -769,7 +769,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     }
     if (targetBuckets == _cachedBucketCount) return _cachedBuckets;
     _cachedBucketCount = targetBuckets;
-    _cachedBuckets = envelope.downsample(targetBuckets);
+    // 未抽段是静音填充：上限分位按已抽比例换算，保证上限恒取已抽段内的第 99 分位
+    // （否则只抽一两段时响段大面积削顶、每抽完一段增益跳变）。拼接包络只在段抽完时
+    // 换引用，已抽比例随之变化，上面的引用判据已作废桶缓存。
+    _cachedBuckets = envelope.downsample(
+      targetBuckets,
+      percentile: waveformCeilingPercentile(widget.segments.loadedFraction),
+    );
     return _cachedBuckets;
   }
 
@@ -1105,6 +1111,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                         // tap≠drag 不冲突）。x/contentWidth 映射回 [0, windowEndMs]。
                         child: widget.onSeek == null
                             ? _withSegmentLoadingOverlays(
+                                context,
                                 painted,
                                 contentWidth: contentWidth,
                                 viewportWidth: viewWidth,
@@ -1112,18 +1119,17 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                             : GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTapUp: (TapUpDetails details) {
-                                  if (contentWidth <= 0 ||
-                                      _windowEndMs <= 0) {
+                                  if (contentWidth <= 0 || _windowEndMs <= 0) {
                                     return;
                                   }
                                   final double x = details.localPosition.dx
                                       .clamp(0.0, contentWidth);
                                   final int ms =
-                                      (x / contentWidth * _windowEndMs)
-                                          .round();
+                                      (x / contentWidth * _windowEndMs).round();
                                   widget.onSeek!.call(ms < 0 ? 0 : ms);
                                 },
                                 child: _withSegmentLoadingOverlays(
+                                  context,
                                   painted,
                                   contentWidth: contentWidth,
                                   viewportWidth: viewWidth,
@@ -1145,8 +1151,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 在波形上给「正在抽 / 排队中」的段盖一层骨架闪光 + 「正在加载波形」字样（新 UI 状态
   /// 带动效：闪光是 [FushiSkeletonShimmer] 的有界扫光，抽完经 [AnimatedSwitcher] 淡出）。
   /// 遮罩只画在该段与「视口 ± [_cullMarginPx]」的交集上——一段在高缩放下可宽达十万像素，
-  /// 字样要落在用户看得到的那截里。不拦截点击（点击 seek 照常）。
+  /// 字样要落在用户看得到的那截里。不拦截点击（点击 seek 照常）。[themed] 取面板中性主题
+  /// 之内的 context（State.context 在主题之外）。
   Widget _withSegmentLoadingOverlays(
+    BuildContext themed,
     Widget painted, {
     required double contentWidth,
     required double viewportWidth,
@@ -1159,8 +1167,12 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         : 0.0;
     final double visibleLeft = viewLeft - _cullMarginPx;
     final double visibleRight = viewLeft + viewportWidth + _cullMarginPx;
-    final Duration fade = fushiMotionDuration(context, FushiMotion.short);
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Duration fade = fushiMotionDuration(themed, FushiMotion.short);
+    final ColorScheme cs = Theme.of(themed).colorScheme;
+    final Color veil = fushiSkeletonColor(themed).withValues(alpha: 0.6);
+    final TextStyle labelStyle = themed.fushiType.bodySmall.copyWith(
+      color: cs.onSurfaceVariant,
+    );
     final List<Widget> overlays = <Widget>[];
     for (int i = 0; i < segments.segmentCount; i++) {
       final WaveformSegmentRange range = segments.rangeOf(i);
@@ -1187,15 +1199,11 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                         'subtitle-waveform-segment-loading-$i',
                       ),
                       child: ColoredBox(
-                        color: fushiSkeletonColor(
-                          context,
-                        ).withValues(alpha: 0.6),
+                        color: veil,
                         child: Center(
                           child: Text(
                             t.video_subtitle_waveform_segment_loading,
-                            style: context.fushiType.bodySmall.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
+                            style: labelStyle,
                           ),
                         ),
                       ),

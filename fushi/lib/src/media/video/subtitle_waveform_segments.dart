@@ -202,6 +202,27 @@ List<double> stitchWaveformSegments({
   return out;
 }
 
+/// 波形归一化上限分位（与 [downsampleEnergyEnvelope] 的默认值同）：以第 99 分位桶峰值为满幅，
+/// 单个响亮瞬态不把整段语音压扁。
+const double kSubtitleWaveformCeilingPercentile = 0.99;
+
+/// **纯函数**：只抽到一部分段时，传给降采样的归一化上限分位。
+///
+/// 拼接包络里未抽到的段是静音填充，它们的桶峰值全落在最底部；若仍取第 99 分位，上限会
+/// 落进已抽段的前 `1% / 已抽比例`（只抽了 1/12 时是前 12%），已抽段的响段被大面积削顶，
+/// 且每抽完一段整条波形的增益都跳一下。按已抽比例 [loadedFraction] 把「顶部 1%」换算回
+/// 全体桶：`1 - (1 - base) * loadedFraction`，上限恒为已抽段内的第 99 分位。全抽完时
+/// 等于 [base]；一段没抽到（0）时为 1（取最大值，全静音时归一化退化为全 0）。
+double waveformCeilingPercentile(
+  double loadedFraction, {
+  double base = kSubtitleWaveformCeilingPercentile,
+}) {
+  final double f = loadedFraction.isNaN
+      ? 0
+      : loadedFraction.clamp(0.0, 1.0).toDouble();
+  return 1 - (1 - base) * f;
+}
+
 /// 一段的加载状态。
 enum WaveformSegmentState {
   /// 还没请求。
@@ -266,6 +287,17 @@ class SubtitleWaveformSegments extends ChangeNotifier {
     if (_pending.containsKey(index)) return WaveformSegmentState.loading;
     if (_empty.contains(index)) return WaveformSegmentState.empty;
     return WaveformSegmentState.idle;
+  }
+
+  /// 已抽到（非空）的段占时间窗的比例（0..1），用于归一化上限换算
+  /// （[waveformCeilingPercentile]）。
+  double get loadedFraction {
+    if (durationMs <= 0) return 0;
+    int loadedMs = 0;
+    for (final int index in _frames.keys) {
+      loadedMs += rangeOf(index).spanMs;
+    }
+    return loadedMs / durationMs;
   }
 
   /// 是否至少有一段抽到了非空包络。
@@ -377,7 +409,8 @@ class SubtitleWaveformSegments extends ChangeNotifier {
     _explicit.remove(index);
     final Completer<bool>? completer = _pending.remove(index);
     if (_disposed) {
-      if (completer != null && !completer.isCompleted) completer.complete(false);
+      if (completer != null && !completer.isCompleted)
+        completer.complete(false);
       return;
     }
     if (frames.isEmpty) {

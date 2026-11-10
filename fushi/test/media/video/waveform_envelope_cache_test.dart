@@ -13,7 +13,12 @@ void main() {
         return <double>[-30, -10, -20];
       }
 
-      final List<double> first = await cache.resolve('videoA|0', 0, 120000, load);
+      final List<double> first = await cache.resolve(
+        'videoA|0',
+        0,
+        120000,
+        load,
+      );
       final List<double> second = await cache.resolve(
         'videoA|0',
         0,
@@ -72,7 +77,12 @@ void main() {
       ];
       Future<List<double>> load() async => outputs[calls++];
 
-      final List<double> first = await cache.resolve('videoA|0', 0, 120000, load);
+      final List<double> first = await cache.resolve(
+        'videoA|0',
+        0,
+        120000,
+        load,
+      );
       expect(first, isEmpty);
       expect(cache.hasCached('videoA|0', 0, 120000), isFalse); // 空不缓存
 
