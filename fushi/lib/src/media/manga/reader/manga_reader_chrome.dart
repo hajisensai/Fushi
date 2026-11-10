@@ -691,33 +691,39 @@ class MangaReaderTopBar extends StatelessWidget {
                 constraints: const BoxConstraints(
                   maxWidth: kMangaChromeTopMaxWidth,
                 ),
-                child: FushiFloatingTopBar(
-                  leading: <FushiToolbarItem>[
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('manga_reader_back_button'),
-                      icon: FushiIcons.back,
-                      label: backTooltip,
-                      onPressed: onBack,
-                    ),
-                  ],
-                  title: title,
-                  subtitle: subtitle ?? '',
-                  titleTrailing: status,
-                  onTitleTap: onTitleTap,
-                  titleTooltip: titleTooltip,
-                  titleBacking: true,
-                  pinnedActions: jumpItems,
-                  actions: <List<FushiToolbarItem>>[
-                    <FushiToolbarItem>[
-                      for (final MangaChromeAction a in actions)
+                // 栏高固定（固定态正文按同一常量让位）：两行标题在极大字号
+                // （2.0）下会竖向撑破，所以顶栏字号封顶 1.3 倍（工具栏标签同款
+                // 口径），更大的字号只放大正文。
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.3,
+                  child: FushiFloatingTopBar(
+                    leading: <FushiToolbarItem>[
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('manga_reader_back_button'),
+                        icon: FushiIcons.back,
+                        label: backTooltip,
+                        onPressed: onBack,
+                      ),
+                    ],
+                    title: title,
+                    subtitle: subtitle ?? '',
+                    titleTrailing: status,
+                    onTitleTap: onTitleTap,
+                    titleTooltip: titleTooltip,
+                    titleBacking: true,
+                    pinnedActions: jumpItems,
+                    actions: <List<FushiToolbarItem>>[
+                      <FushiToolbarItem>[
+                        for (final MangaChromeAction a in actions)
+                          a.toToolbarItem(),
+                      ],
+                    ],
+                    menu: <FushiToolbarItem>[
+                      for (final MangaChromeAction a in overflowActions)
                         a.toToolbarItem(),
                     ],
-                  ],
-                  menu: <FushiToolbarItem>[
-                    for (final MangaChromeAction a in overflowActions)
-                      a.toToolbarItem(),
-                  ],
-                  overflowKey: kMangaChromeOverflowKey,
+                    overflowKey: kMangaChromeOverflowKey,
+                  ),
                 ),
               ),
             ),
