@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3795 条。点号进各自文件。
+> 共 3843 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4236](bugs/BUG-4236-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
-| [BUG-4235](bugs/BUG-4235-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
-| [BUG-4231](bugs/BUG-4231-interconnect-video-resume-stale-pref-cache.md) | ✅ | ✅ | 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库） |
-> 共 3840 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4282](bugs/BUG-4282-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
+| [BUG-4281](bugs/BUG-4281-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
+| [BUG-4280](bugs/BUG-4280-interconnect-video-resume-stale-pref-cache.md) | ✅ | ✅ | 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库） |
 | [BUG-4278](bugs/BUG-4278-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
 | [BUG-4277](bugs/BUG-4277-collection-manage-count-mismatch.md) | ✅ | ✅ | collection-manage-count-mismatch |
 | [BUG-4276](bugs/BUG-4276-lan-devices-duplicate-host.md) | ✅ | ✅ | 互联「局域网设备」列表把同一台 host 列两遍，配对后红屏 `_dependents.isEmpty` |

@@ -2396,7 +2396,7 @@ class RemoteVideoInfo {
   /// 只换断点（[positionMs] / [positionUpdatedAtMs]）的副本，其余字段原样。
   ///
   /// 客户端展示远端条目时把清单快照里的 host 断点与本机库断点取较新者
-  /// （BUG-4236，见 app 侧 `withLocalRemoteVideoPositions`）用。
+  /// （BUG-4282，见 app 侧 `withLocalRemoteVideoPositions`）用。
   RemoteVideoInfo withPosition({
     required int positionMs,
     required int positionUpdatedAtMs,

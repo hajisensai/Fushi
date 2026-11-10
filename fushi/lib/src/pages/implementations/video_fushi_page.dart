@@ -5213,7 +5213,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [episodeIndex]>0 用按集 key（`#ep<index>` 后缀），0 回退整书 key（向后兼容单视频 /
   /// 旧 TODO-559 prefs）。
   ///
-  /// BUG-4231：从库里读（[readLocalRemoteVideoPosition]），不读 prefsRepo 的内存缓存——
+  /// BUG-4280：从库里读（[readLocalRemoteVideoPosition]），不读 prefsRepo 的内存缓存——
   /// 互联 sweep / 冲突弹窗只写库，缓存里留着的是本机上次自己写的旧断点。
   Future<int> _readPersistedRemotePositionForEpisode(int episodeIndex) async {
     final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
@@ -5366,7 +5366,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集 prefs 之间「取较新时间
   /// 戳」（[resolvePositionLww]）。host 进度新于本地时跨设备恢复；本地新于 host 时
   /// 不被旧 host 回退。非起播集只用本地按集 prefs（host 清单只带整书/当前集进度）。
-  /// BUG-4231：本机断点读库、互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。
+  /// BUG-4280：本机断点读库、互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。
   Future<int> _resolveRemoteInitialPositionMs(
     RemoteVideoInfo info,
     int episodeIndex,

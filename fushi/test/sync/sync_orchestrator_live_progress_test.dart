@@ -2024,10 +2024,10 @@ void main() {
     });
   });
 
-  // BUG-4235：手动同步摘要只数内容 / 文件传输，一轮只挪了进度的同步显示「无变化」
+  // BUG-4281：手动同步摘要只数内容 / 文件传输，一轮只挪了进度的同步显示「无变化」
   // （Linux Phase 4：拉到 host 的视频断点后提示「已同步 · 无变化」）。进度类改动
   // 要进报告的计数（按种类、按方向），只对齐时间戳的不算。
-  group('BUG-4235: progress / position changes are counted in the report', () {
+  group('BUG-4281: progress / position changes are counted in the report', () {
     Future<(SyncOrchestrator, InterconnectSyncBackend)> orchFor(
       FushiDatabase localDb,
       String dir,
