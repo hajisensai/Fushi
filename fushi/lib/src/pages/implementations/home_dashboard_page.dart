@@ -96,6 +96,7 @@ import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -3321,15 +3322,24 @@ class _HomeDashboardPageState
   // ── 学习头部行 / 目标 ────────────────────────────────────────────────────
 
   /// 学习头部行（[HomeStudyHeader]）：学习域（书 + 视频字幕 + 游戏 hook 文本）
-  /// 今日字数 vs 每日字数目标（与阅读统计页目标卡同一持久化
-  /// [AppModel.readingGoalDailyChars]、同一分子函数 [studyGoalCharsForDay]，
-  /// BUG-1993），右侧今日学习时长（同一份日面行的 ms 合计）。目标为 0 → 旗子环 +
-  /// 今日字数 + 「设定目标」按钮；否则进度环 +「X / Y 字」，点整行弹编辑对话框。
+  /// 字数 vs 字数目标（与阅读统计页「今天」环同一持久化目标
+  /// [AppModel.readingGoalActiveChars]、同一分子函数，BUG-1993），右侧今日学习时长
+  /// （同一份日面行的 ms 合计）。目标周期（反馈 CjIr9RGSCe）：按日 → 今日字数
+  /// [studyGoalCharsForDay]；按周 → 本自然周字数 [studyGoalCharsForWeek]，进度文案带
+  /// 「本周」。目标为 0 → 旗子环 + 今日字数 + 「设定目标」按钮；否则进度环 +
+  /// 「X / Y 字」，点整行弹编辑对话框。
   Widget _buildStudyHeader(FushiDesignTokens tokens) {
-    final int goal = ref.read(appProvider).readingGoalDailyChars;
+    final AppModel appModel = ref.read(appProvider);
+    final StudyGoalPeriod period = appModel.readingGoalPeriod;
+    final int goal = appModel.readingGoalActiveChars;
     // BUG-2219：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
-    final String todayKey = _statWindow.todayKey;
+    final StatWindow w = _statWindow;
+    final String todayKey = w.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
+    final int goalChars = switch (period) {
+      StudyGoalPeriod.daily => todayChars,
+      StudyGoalPeriod.weekly => studyGoalCharsForWeek(_dailyRows, w),
+    };
     int todayMs = 0;
     for (final StatFact f in _dailyRows) {
       if (f.dateKey == todayKey) todayMs += f.ms;
@@ -3337,30 +3347,37 @@ class _HomeDashboardPageState
     final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
     return HomeStudyHeader(
-      fraction: hasGoal ? (todayChars / goal).clamp(0.0, 1.0) : null,
-      value: hasGoal
-          ? t.stat_goal_progress(read: todayChars, goal: goal)
-          : formatStatChars(todayChars),
+      fraction: hasGoal ? (goalChars / goal).clamp(0.0, 1.0) : null,
+      value: !hasGoal
+          ? formatStatChars(todayChars)
+          : switch (period) {
+              StudyGoalPeriod.daily => t.stat_goal_progress(
+                read: goalChars,
+                goal: goal,
+              ),
+              StudyGoalPeriod.weekly => t.stat_goal_progress_weekly(
+                read: goalChars,
+                goal: goal,
+              ),
+            },
       todayTime: todayTime,
       todayTimeSemanticLabel: '${t.stat_today} · $todayTime',
-      onEditGoal: () => unawaited(_editDailyGoal()),
+      onEditGoal: () => unawaited(_editGoal()),
       setGoalLabel: hasGoal ? null : t.stat_goal_set,
     );
   }
 
   /// 弹目标编辑对话框（2026-10 体验优化：与统计页合并为同一份
-  /// [showStatGoalEditDialog]——每日 + 每周 + 预设 + 近 7 日参考）。写回偏好后
+  /// [showStatGoalEditDialog]——日 / 周二选一 + 预设 + 近 7 日参考）。写回偏好后
   /// setState 刷新目标行（与统计页读同一偏好，多处天然同步）。取消不写。
-  Future<void> _editDailyGoal() async {
-    // 近 7 日日均吃本页窗口（跨午夜重拉，BUG-2219）。
-    final StatWindow w = _statWindow;
+  Future<void> _editGoal() async {
+    // 近 7 日参考吃本页窗口（跨午夜重拉，BUG-2219）。
+    final List<String> recentKeys = _statWindow.lastDayKeys(7);
     final bool saved = await showStatGoalEditDialog(
       context,
       ref.read(appProvider),
-      recentDailyAverage: statRecentDailyAverageChars(
-        _dailyRows,
-        w.lastDayKeys(7),
-      ),
+      recentDailyAverage: statRecentDailyAverageChars(_dailyRows, recentKeys),
+      recentWeeklyTotal: statRecentTotalChars(_dailyRows, recentKeys),
     );
     if (saved && mounted) setState(() {});
   }
