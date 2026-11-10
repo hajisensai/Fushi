@@ -4119,20 +4119,22 @@ class AppModel
     return out;
   }
 
-  /// 「用这台服务器查词典」（词典管理页来源卡片的开关）：与配对设置页同一个写入口，
-  /// 打开时全局远程查词关着就一并打开（[applyInterconnectHostLookupIntent]）。
+  /// 「用这台服务器查词典」（词典管理页来源卡片的开关）：与配对设置页同一个写入口
+  /// （[applyInterconnectHostLookupIntent]）。写完立刻让词典仓库按新的 host 集合重读，
+  /// [remoteLookupEnabled] 随之更新——不等目录服务对配对列表广播的异步跟随。
   Future<void> setRemoteDictionaryHostLookupEnabled(
     String hostId,
     bool enabled,
-  ) => applyInterconnectHostLookupIntent(
-    hostId: hostId,
-    enabled: enabled,
-    mutateUrls:
-        (List<FushiClientUrl> Function(List<FushiClientUrl>) transform) =>
-            SyncRepository(_database).updateFushiClientUrls(transform),
-    remoteLookupEnabled: remoteLookupEnabled,
-    setRemoteLookupEnabled: setRemoteLookupEnabled,
-  );
+  ) async {
+    await applyInterconnectHostLookupIntent(
+      hostId: hostId,
+      enabled: enabled,
+      mutateUrls:
+          (List<FushiClientUrl> Function(List<FushiClientUrl>) transform) =>
+              SyncRepository(_database).updateFushiClientUrls(transform),
+    );
+    if (_dictionaryRepoReady) await dictRepo.reloadRemoteDictionaries();
+  }
 
   /// 每台 host 本次运行里最近一次拉目录的结果（来源卡片的在线 / 连不上）。
   Map<String, RemoteDictionaryHostReachability>
@@ -4648,6 +4650,15 @@ class AppModel
         dictRepo.loadFromDb(),
         mediaHistoryRepo.loadFromDb(),
       ]);
+      // 全局「远程查词」开关并入每台 host 的「用这台服务器查词典」：原先关着的，把
+      // 已配对 host 的开关一次性关掉，更新后不会突然开始向服务器查词 / 拉目录。必须
+      // 先于目录服务启动（它一启动就给查词 host 拉目录）；改了配对列表就让词典仓库
+      // 按新的 host 集合重读。
+      if (await prefsRepo.settleRemoteLookupHostSwitches(
+        SyncRepository(_database),
+      )) {
+        await dictRepo.reloadRemoteDictionaries();
+      }
       // v149：服务器托管词典目录（词典仓库已装载，目录对账后让它重读）。
       _startRemoteDictionaryCatalog();
       prefsRepo.addListener(notifyListeners);
@@ -9723,6 +9734,11 @@ class AppModel
   /// 刷新，启动时先补一次。
   void _startRemoteDictionaryCatalog() {
     _remoteDictionaryCatalog?.dispose();
+    // 「词典服务器」行的副本跟同一条配对列表广播（先摘再挂，重建时不重复订阅）。
+    SyncRepository.fushiClientUrlsRevision
+      ..removeListener(_onPairedFushiClientUrlsChanged)
+      ..addListener(_onPairedFushiClientUrlsChanged);
+    unawaited(refreshPairedFushiClientUrls());
     final SyncRepository syncRepository = SyncRepository(_database);
     final RemoteDictionaryCatalogService catalog =
         RemoteDictionaryCatalogService(
@@ -9753,6 +9769,9 @@ class AppModel
   );
 
   void _stopRemoteDictionaryCatalog() {
+    SyncRepository.fushiClientUrlsRevision.removeListener(
+      _onPairedFushiClientUrlsChanged,
+    );
     _remoteDictionaryCatalog?.dispose();
     _remoteDictionaryCatalog = null;
   }
@@ -11586,9 +11605,34 @@ class AppModel
     FushiDatabase.statDayResetHour = statDayResetHour;
   }
 
-  bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
-  Future<void> setRemoteLookupEnabled(bool value) =>
-      prefsRepo.setRemoteLookupEnabled(value);
+  /// 远端词典查词的总闸：**派生值**，至少一台已配对 host 开着「用这台服务器查词典」
+  /// （[DictionaryRepository.remoteLookupHostIds]，即 [remoteDictionaryLookupHostIdsOf]
+  /// 口径）才为 true。用户拍板（2026-11-09）删掉了与每台 host 开关重复的全局开关；
+  /// 存量偏好 `remote_lookup_enabled` 只剩一次性迁移读它
+  /// （[PreferencesRepository.settleRemoteLookupHostSwitches]），没有任何 UI 再写它。
+  bool get remoteLookupEnabled =>
+      _dictionaryRepoReady && dictRepo.remoteLookupHostIds.isNotEmpty;
+
+  /// 配对列表的内存副本（主进程跟随 [SyncRepository.fushiClientUrlsRevision]），只给
+  /// 设置页「查词 › 词典服务器」那行的同步副标题用（[remoteDictionaryServersSummary]）。
+  /// 查词闸门不读它（弹窗进程没有这条广播），读 [remoteLookupEnabled]。
+  List<FushiClientUrl> get pairedFushiClientUrls => _pairedFushiClientUrls;
+  List<FushiClientUrl> _pairedFushiClientUrls = const <FushiClientUrl>[];
+
+  /// 重读 [pairedFushiClientUrls]。读失败只记日志、保留旧副本（只是一行副标题）。
+  Future<void> refreshPairedFushiClientUrls() async {
+    if (!_databaseOpened) return;
+    try {
+      _pairedFushiClientUrls = List<FushiClientUrl>.unmodifiable(
+        await SyncRepository(_database).getFushiClientUrls(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.pairedFushiClientUrls', e, stack);
+    }
+  }
+
+  void _onPairedFushiClientUrlsChanged() =>
+      unawaited(refreshPairedFushiClientUrls());
 
   bool get fushiApiServerEnabled => prefsRepo.fushiApiServerEnabled;
   Future<void> setFushiApiServerEnabled(bool value) =>

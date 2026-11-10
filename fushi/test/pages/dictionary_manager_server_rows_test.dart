@@ -43,7 +43,6 @@ class _FakeAppModel extends AppModel {
   final List<(String, String)> forgotten = <(String, String)>[];
   final List<(List<Dictionary>, List<RemoteDictionary>)> mixedOrderWrites =
       <(List<Dictionary>, List<RemoteDictionary>)>[];
-  bool lookupOn = true;
 
   List<Dictionary> _sorted() =>
       List<Dictionary>.of(store)
@@ -101,7 +100,6 @@ class _FakeAppModel extends AppModel {
   ) async {
     hostLookupWrites.add((hostId, enabled));
     hostLookup[hostId] = enabled;
-    if (enabled && !lookupOn) lookupOn = true;
   }
 
   @override
@@ -149,12 +147,6 @@ class _FakeAppModel extends AppModel {
   @override
   Map<String, bool> get remoteDictionaryConfigAppliedByHost =>
       const <String, bool>{'h1': false};
-
-  @override
-  bool get remoteLookupEnabled => lookupOn;
-
-  @override
-  Future<void> setRemoteLookupEnabled(bool value) async => lookupOn = value;
 
   @override
   Future<void> setRemoteDictionaryHidden(
@@ -586,39 +578,6 @@ void main() {
     ]);
   });
 
-  testWidgets('remote lookup off: notice offers to turn it on', (
-    WidgetTester tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    final _FakeAppModel model = await _pumpPage(tester);
-    model.lookupOn = false;
-    // 触发一次重建（切到「服务器 · Box」：来源条在能列出服务器行的筛选下才出现）。
-    await _focusInside(
-      tester,
-      find.byKey(const ValueKey<String>('dict-source-filter-server-h1')),
-    );
-    await _pressEnter(tester);
-    expect(
-      find.byKey(const ValueKey<String>('dict-remote-lookup-off')),
-      findsOneWidget,
-    );
-    // 这台 host 开着「用于查词」：卡片上没有「不参与查词」的说明。
-    expect(
-      find.byKey(const ValueKey<String>('dict-server-source-lookup-off-h1')),
-      findsNothing,
-    );
-    await _focusInside(
-      tester,
-      find.byKey(const ValueKey<String>('dict-remote-lookup-turn-on')),
-    );
-    await _pressEnter(tester);
-    expect(model.lookupOn, isTrue);
-    expect(
-      find.byKey(const ValueKey<String>('dict-remote-lookup-off')),
-      findsNothing,
-    );
-  });
-
   testWidgets('app bar names the active profile; Enter opens profiles', (
     WidgetTester tester,
   ) async {
@@ -911,15 +870,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // 用户拍板（2026-11-09）：全局「远程查词」并入每台 host 的开关，「远程查词已关闭：
+  // 显示但不参与查词」那条条底提示随之删除；卡片上的「开启」就是拨这台 host 的开关。
   testWidgets('host lookup off: card says its dictionaries are not listed; '
-      'no "shown but not used" notice', (WidgetTester tester) async {
+      '"Turn on" flips only the host switch', (WidgetTester tester) async {
     final _FakeAppModel model = await _pumpPage(
       tester,
       remote: const <RemoteDictionary>[],
       catalog: _remote(),
     );
     model.hostLookup['h1'] = false;
-    model.lookupOn = false;
     // 广播一次服务器词典变化：页面整份重读来源条数据。
     DictionaryRepository.remoteDictionariesRevision.value++;
     await _settle(tester);
@@ -933,11 +893,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(t.dictionary_source_lookup_off_hint), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('dict-remote-lookup-off')),
-      findsNothing,
-      reason: '服务器行根本没列出，不能说「显示但不参与查词」',
-    );
     await _focusInside(
       tester,
       find.byKey(
@@ -946,7 +901,6 @@ void main() {
     );
     await _pressEnter(tester);
     expect(model.hostLookupWrites, <(String, bool)>[('h1', true)]);
-    expect(model.lookupOn, isTrue);
     expect(tester.takeException(), isNull);
   });
 

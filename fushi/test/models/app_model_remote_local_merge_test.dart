@@ -89,7 +89,6 @@ void main() {
 
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    await prefsRepo.setRemoteLookupEnabled(true);
     await SyncRepository(db).setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(
         url: 'http://127.0.0.1:${host.port}',
@@ -197,6 +196,28 @@ void main() {
       allowRemoteLookup: false,
     );
     expect(identical(localOnly, local), isTrue);
+  });
+
+  // 用户拍板（2026-11-09）：没有全局「远程查词」开关了，总闸由配对 host 的「用这台
+  // 服务器查词典」派生；拨 host 开关（词典管理页卡片的写入口）立刻反映到总闸。
+  test('remoteLookupEnabled 由 host 开关派生：关掉唯一一台 ⇒ 关，再打开 ⇒ 开', () async {
+    expect(app.remoteLookupEnabled, isTrue, reason: '配对了一台默认开着查词的 host');
+    await app.setRemoteDictionaryHostLookupEnabled('srv', false);
+    expect(app.remoteLookupEnabled, isFalse);
+    expect(
+      (await SyncRepository(db).getFushiClientUrls()).single.lookupEnabled,
+      isFalse,
+    );
+    await app.setRemoteDictionaryHostLookupEnabled('srv', true);
+    expect(app.remoteLookupEnabled, isTrue);
+    // 停用这条地址同样让它退出查词（isDictionaryLookupCandidate = enabled && lookupEnabled）。
+    await SyncRepository(db).updateFushiClientUrls(
+      (List<FushiClientUrl> urls) => <FushiClientUrl>[
+        for (final FushiClientUrl u in urls) u.copyWith(enabled: false),
+      ],
+    );
+    await dictRepo.reloadRemoteDictionaries();
+    expect(app.remoteLookupEnabled, isFalse);
   });
 
   test('服务器没有结果 ⇒ 原样返回本机那份', () async {

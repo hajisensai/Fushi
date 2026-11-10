@@ -1913,8 +1913,12 @@ class SyncRepository {
   /// - `srs_mining_target_install_default`：挖词目标出厂默认（'anki' / 'srs'），兼
   ///   一次性判定标记。维护者用装了新版的机器打推荐包，包里会是 'anki'；新用户一导入
   ///   就会被当成老 Anki 用户（复习模块关、挖词发 Anki）。
+  /// - `remote_lookup_host_switches_migrated`：全局「远程查词」并入每台 host 开关的
+  ///   一次性迁移已跑标记。配对列表是设备本地的，别的机器的标记随过来会让本机跳过
+  ///   迁移，原先关着远程查词的已配对 host 更新后直接开始查服务器。
   static const List<String> installScopedPrefKeys = <String>[
     PreferencesRepository.srsMiningTargetInstallDefaultKey,
+    PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
   ];
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。

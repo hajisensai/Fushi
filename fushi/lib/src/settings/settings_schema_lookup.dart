@@ -23,6 +23,8 @@ import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart'
+    show isSettingsDestinationVisible;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/audio_sources_cli.dart'
@@ -35,6 +37,10 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
+    show remoteDictionaryServersSummary;
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show openInterconnectPairingPage;
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1208,8 +1214,7 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
-          // 远端词典查询抽成共享 builder：查词分类与 Fushi 互联分类都引用（它直连
-          // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
+          // 词典服务器：在用的服务器摘要 + 指路到互联配对页（每台服务器自己的开关）。
           buildRemoteDictionaryLookupItem(),
           SettingsSwitchItem(
             id: 'lookup.texthooker',
@@ -1394,20 +1399,33 @@ Future<void> showAudioSourcesManagerDialog({
   );
 }
 
-/// 远端词典查询开关。查词分类与 Fushi 互联分类共享同一份定义：本地查不到时向已配置
-/// 的 Fushi 互联对端查询，逻辑上属互联。id 沿用 `lookup.` 前缀（非持久化 key）。
+/// 「词典服务器」：远端词典查词由每台已配对服务器自己的「用这台服务器查词典」开关
+/// 决定（用户拍板 2026-11-09 删掉了重复的全局「远程查词」开关，总闸是派生值
+/// `AppModel.remoteLookupEnabled`）。这里只剩一行指路：副标题报在用的服务器，点进
+/// 「互联 › 配对与设备」去拨开关（[openInterconnectPairingPage]）。
+///
+/// id 沿用 `lookup.remote_lookup`（非持久化 key）：互联分类「相关设置」那行靠它定位
+/// 到本行。导航行不进控制通道的设置索引（`ctl_settings_routes` 只收值 / 动作 /
+/// 状态行），本行本来也没有值可读写。互联模块被关掉时互联分类整条不渲染，本行随之
+/// 隐藏（点进去的页会立刻退回）。
 SettingsItem buildRemoteDictionaryLookupItem() {
-  return SettingsSwitchItem(
+  return SettingsNavigationItem(
     id: 'lookup.remote_lookup',
-    title: t.remote_dict_lookup,
-    subtitle: t.remote_dict_lookup_hint,
+    title: t.lookup_dictionary_servers,
+    subtitleBuilder: (SettingsContext settingsContext) =>
+        remoteDictionaryServersSummary(
+          settingsContext.appModel.pairedFushiClientUrls,
+        ),
     icon: Icons.hub_outlined,
-    value: (SettingsContext settingsContext) =>
-        settingsContext.appModel.remoteLookupEnabled,
-    onChanged: (SettingsContext settingsContext, bool value) async {
-      await settingsContext.appModel.setRemoteLookupEnabled(value);
+    showIcon: true,
+    visible: (SettingsContext settingsContext) => isSettingsDestinationVisible(
+      SettingsDestinationId.interconnect,
+      settingsContext.appModel.moduleVisibility,
+    ),
+    onTap: (SettingsContext settingsContext) async {
+      await openInterconnectPairingPage(settingsContext);
+      await settingsContext.appModel.refreshPairedFushiClientUrls();
       settingsContext.refresh();
     },
-    defaultValue: false,
   );
 }

@@ -690,7 +690,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int：每周字数目标（2026-10-10 用户拍板删除——#2029 删了统计中心目标卡后它
   // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'reading_goal_weekly_chars',
+  // bool：已删除的全局「远程查词」开关（2026-11-09 用户拍板并入每台 host 的「用这台
+  // 服务器查词典」，总闸改为派生值 AppModel.remoteLookupEnabled）。键名冻结：UI 不再
+  // 写它，只有 PreferencesRepository.settleRemoteLookupHostSwitches 读一次。
   'remote_lookup_enabled',
+  // bool：上面那次一次性迁移的已跑标记。设备本地（SyncRepository.installScopedPrefKeys）：
+  // 不进 Profile 快照 / 分享、不随备份出境；导入设置的恢复会清掉它，下次启动重判。
+  'remote_lookup_host_switches_migrated',
   // 用户自己添加的 BT 站清单（JSON 数组：id/name/url/enabled/domains/format/
   // nyaaCategories/allowInsecureHttp，编码在引擎 bt_site_config.dart）。String，
   // 读写见 PreferencesRepository.btSites。地址可能带站点 passkey → 与

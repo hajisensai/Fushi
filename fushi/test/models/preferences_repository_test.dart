@@ -36,10 +36,6 @@ void main() {
       expect(repo.autoSearchEnabled, true);
     });
 
-    test('remoteLookupEnabled defaults to false', () {
-      expect(repo.remoteLookupEnabled, false);
-    });
-
     test('isFirstTimeSetup defaults to true', () {
       expect(repo.isFirstTimeSetup, true);
     });
@@ -363,15 +359,6 @@ void main() {
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.autoSearchEnabled, false);
-      repo2.dispose();
-    });
-
-    test('setRemoteLookupEnabled round-trips through DB', () async {
-      await repo.setRemoteLookupEnabled(true);
-
-      final repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      expect(repo2.remoteLookupEnabled, true);
       repo2.dispose();
     });
 

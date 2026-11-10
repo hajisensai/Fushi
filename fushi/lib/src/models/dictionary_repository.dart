@@ -371,6 +371,14 @@ class DictionaryRepository {
   /// 上一次装载服务器词典时的输入（全部目录行 + 参与查词的 host），同上用于判变。
   _RemoteSnapshot? _loadedRemoteSnapshot;
 
+  /// 此刻参与远端词典查词的 host（[remoteDictionaryLookupHostIdsOf] 口径：配对列表里
+  /// 已启用且开着「用这台服务器查词典」）。随服务器词典一起装载 / 重读——主进程跟随
+  /// 配对列表广播（RemoteDictionaryCatalogService），弹窗进程在
+  /// [reloadMetadataIfChangedInDb] 里对账。远端查词的总闸
+  /// （`AppModel.remoteLookupEnabled`）就从这里派生，没有单独的全局开关。
+  Set<String> get remoteLookupHostIds =>
+      _loadedRemoteSnapshot?.hosts ?? const <String>{};
+
   /// 读服务器词典目录行与此刻参与查词的 host（配对列表是同一个库里的偏好，见
   /// [remoteDictionaryLookupHostIdsOf]）。
   Future<_RemoteSnapshot> _readRemoteSnapshot() async {

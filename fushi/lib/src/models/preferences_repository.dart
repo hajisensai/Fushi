@@ -54,6 +54,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
+import 'package:fushi/src/sync/sync_repository.dart'
+    show FushiClientUrl, SyncRepository;
 import 'package:fushi/src/sync/hidden_remote_book.dart'
     show HiddenRemoteBook, decodeHiddenRemoteBooks, encodeHiddenRemoteBooks;
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -626,12 +628,47 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  bool get remoteLookupEnabled =>
-      getPref('remote_lookup_enabled', defaultValue: false) as bool;
+  /// 已删除的全局「远程查词」开关的存量键（bool，默认 false）。键名冻结、留在
+  /// `preference_keys.dart` 只为兼容：用户拍板（2026-11-09）由每台 host 的「用这台
+  /// 服务器查词典」（`FushiClientUrl.lookupEnabled`）独掌，总闸改成派生值
+  /// （`AppModel.remoteLookupEnabled`）。没有任何 UI 再写这个键，只有
+  /// [settleRemoteLookupHostSwitches] 读它一次。
+  static const String legacyRemoteLookupEnabledKey = 'remote_lookup_enabled';
 
-  Future<void> setRemoteLookupEnabled(bool value) async {
-    await setPref('remote_lookup_enabled', value);
-    notifyListeners();
+  /// [settleRemoteLookupHostSwitches] 的已跑标记（bool）。本键不随 Profile 走
+  /// （`ProfileKeys` 排除）：描述本安装是否迁过；进快照的话切到老 Profile 会把它删掉，
+  /// 迁移重跑、把用户此后打开的 host 开关又关掉。
+  static const String remoteLookupHostSwitchesMigratedKey =
+      'remote_lookup_host_switches_migrated';
+
+  /// 启动时（`AppModel.initialise()`，目录服务启动之前）跑一次：全局「远程查词」并入
+  /// 每台 host 的开关。存量全局开关关着（或从没设过 = 默认关）时，把已配对 host 的
+  /// 「用这台服务器查词典」全部关掉——否则更新后 host 开关（默认开）立刻生效，没让
+  /// 查过服务器的用户突然开始向服务器查词；全局开着就原样保留 host 开关。
+  ///
+  /// 配对列表先写、标记后写：中途中断下次重跑也只是把同一批开关再关一遍（全局值
+  /// 没有人再写，判据不变）。返回是否改了配对列表。
+  Future<bool> settleRemoteLookupHostSwitches(SyncRepository sync) async {
+    _ensureWritable('settleRemoteLookupHostSwitches');
+    if (getPref(remoteLookupHostSwitchesMigratedKey, defaultValue: false) ==
+        true) {
+      return false;
+    }
+    final bool globalOn =
+        getPref(legacyRemoteLookupEnabledKey, defaultValue: false) == true;
+    bool changed = false;
+    if (!globalOn) {
+      await sync.updateFushiClientUrls((List<FushiClientUrl> current) {
+        if (!current.any((FushiClientUrl u) => u.lookupEnabled)) return current;
+        changed = true;
+        return <FushiClientUrl>[
+          for (final FushiClientUrl u in current)
+            u.lookupEnabled ? u.copyWith(lookupEnabled: false) : u,
+        ];
+      });
+    }
+    await setPref(remoteLookupHostSwitchesMigratedKey, true);
+    return changed;
   }
 
   // TODO-861②（移植 Hoshi `07b5c09`）：是否扫描非日文文本进选区/查词。默认 true =

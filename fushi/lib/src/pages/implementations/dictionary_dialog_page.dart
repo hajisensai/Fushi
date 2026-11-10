@@ -795,7 +795,6 @@ class _DictionaryDialogPageState extends BasePageState {
             refreshing: _refreshingHosts.contains(host.hostId),
           ),
       ],
-      remoteLookupOff: !appModel.remoteLookupEnabled,
       onLookupChanged: (String hostId, bool enabled) => unawaited(
         _saveDictionaryChange(
           () => appModel.setRemoteDictionaryHostLookupEnabled(hostId, enabled),
@@ -804,9 +803,6 @@ class _DictionaryDialogPageState extends BasePageState {
       onRefresh: appModel.canRefreshRemoteDictionaries
           ? (String hostId) => unawaited(_refreshServerHost(hostId))
           : null,
-      onTurnOnRemoteLookup: () => unawaited(
-        _saveDictionaryChange(() => appModel.setRemoteLookupEnabled(true)),
-      ),
     );
   }
 

@@ -239,61 +239,103 @@ void main() {
     },
   );
 
-  group('one intent, one switch (applyInterconnectHostLookupIntent)', () {
-    Future<({List<FushiClientUrl> urls, List<bool> globalWrites})> run({
-      required List<FushiClientUrl> start,
-      required String hostId,
-      required bool enabled,
-      required bool global,
-    }) async {
-      List<FushiClientUrl> urls = start;
-      final List<bool> globalWrites = <bool>[];
-      await applyInterconnectHostLookupIntent(
-        hostId: hostId,
-        enabled: enabled,
-        mutateUrls:
-            (List<FushiClientUrl> Function(List<FushiClientUrl>) transform) async {
-              urls = transform(urls);
-            },
-        remoteLookupEnabled: global,
-        setRemoteLookupEnabled: (bool value) async => globalWrites.add(value),
-      );
-      return (urls: urls, globalWrites: globalWrites);
-    }
+  // 用户拍板（2026-11-09）：每台 host 的开关是远端词典查词唯一的开关，写入口只写
+  // 配对列表——不再顺手打开已删除的全局「远程查词」。
+  group(
+    'the host switch is the only control (applyInterconnectHostLookupIntent)',
+    () {
+      Future<List<FushiClientUrl>> run({
+        required List<FushiClientUrl> start,
+        required String hostId,
+        required bool enabled,
+      }) async {
+        List<FushiClientUrl> urls = start;
+        await applyInterconnectHostLookupIntent(
+          hostId: hostId,
+          enabled: enabled,
+          mutateUrls:
+              (
+                List<FushiClientUrl> Function(List<FushiClientUrl>) transform,
+              ) async {
+                urls = transform(urls);
+              },
+        );
+        return urls;
+      }
 
-    test('turning a host on also turns on remote lookup when it is off', () async {
-      final List<FushiClientUrl> off = withInterconnectHostLookupEnabled(
-        _urls,
-        'h1',
-        false,
+      test('turning a host on writes only that host', () async {
+        final List<FushiClientUrl> off = withInterconnectHostLookupEnabled(
+          withInterconnectHostLookupEnabled(_urls, 'h1', false),
+          'h2',
+          false,
+        );
+        final List<FushiClientUrl> urls = await run(
+          start: off,
+          hostId: 'h1',
+          enabled: true,
+        );
+        expect(interconnectHostLookupEnabled(urls, 'h1'), isTrue);
+        expect(interconnectHostLookupEnabled(urls, 'h2'), isFalse);
+        expect(remoteDictionaryLookupHostIdsOf(urls), <String>{'h1'});
+      });
+
+      test('switching the last host off leaves no lookup host', () async {
+        final List<FushiClientUrl> start = withInterconnectHostLookupEnabled(
+          _urls,
+          'h2',
+          false,
+        );
+        final List<FushiClientUrl> urls = await run(
+          start: start,
+          hostId: 'h1',
+          enabled: false,
+        );
+        expect(remoteDictionaryLookupHostIdsOf(urls), isEmpty);
+      });
+    },
+  );
+
+  group('remoteDictionaryServersSummary (Lookup › Dictionary servers)', () {
+    test('one host in use: its device name', () {
+      expect(
+        remoteDictionaryServersSummary(
+          withInterconnectHostLookupEnabled(_urls, 'h2', false),
+        ),
+        'Box in use',
       );
-      final r = await run(start: off, hostId: 'h1', enabled: true, global: false);
-      expect(interconnectHostLookupEnabled(r.urls, 'h1'), isTrue);
-      expect(r.globalWrites, <bool>[true]);
     });
 
-    test('global setting already on: only the pairing is written', () async {
-      final List<FushiClientUrl> off = withInterconnectHostLookupEnabled(
-        _urls,
-        'h1',
-        false,
-      );
-      final r = await run(start: off, hostId: 'h1', enabled: true, global: true);
-      expect(interconnectHostLookupEnabled(r.urls, 'h1'), isTrue);
-      expect(r.globalWrites, isEmpty);
+    test('several hosts in use: a count, addresses of one host count once', () {
+      expect(remoteDictionaryServersSummary(_urls), '2 servers in use');
     });
 
-    test('switching the last host off leaves the global setting alone', () async {
-      List<FushiClientUrl> urls = withInterconnectHostLookupEnabled(
-        _urls,
+    test('paired but none in use', () {
+      final List<FushiClientUrl> off = withInterconnectHostLookupEnabled(
+        withInterconnectHostLookupEnabled(_urls, 'h1', false),
         'h2',
         false,
       );
-      final r = await run(start: urls, hostId: 'h1', enabled: false, global: true);
-      urls = r.urls;
-      expect(interconnectHostLookupEnabled(urls, 'h1'), isFalse);
-      expect(interconnectHostLookupEnabled(urls, 'h2'), isFalse);
-      expect(r.globalWrites, isEmpty);
+      expect(remoteDictionaryServersSummary(off), 'None in use');
+    });
+
+    test('a disabled address does not count as in use', () {
+      expect(
+        remoteDictionaryServersSummary(const <FushiClientUrl>[
+          FushiClientUrl(
+            url: 'http://10.0.0.5:38765',
+            hostId: 'h2',
+            enabled: false,
+          ),
+        ]),
+        'None in use',
+      );
+    });
+
+    test('nothing paired: points at pairing', () {
+      expect(
+        remoteDictionaryServersSummary(const <FushiClientUrl>[]),
+        'None in use · pair a Fushi server',
+      );
     });
   });
 
@@ -310,43 +352,32 @@ void main() {
     );
   });
 
-  testWidgets('switch subtitle says it also turns on remote lookup when off', (
+  testWidgets('switch subtitle no longer mentions a global remote lookup', (
     WidgetTester tester,
   ) async {
-    Future<void> pump({required bool remoteLookupEnabled}) =>
-        tester.pumpWidget(
-          TranslationProvider(
-            child: MaterialApp(
-              theme: buildFushiFallbackTheme(
-                Brightness.light,
-              ).copyWith(platform: TargetPlatform.windows),
-              home: Scaffold(
-                body: SingleChildScrollView(
-                  child: InterconnectDictionaryLookupSection(
-                    urls: _urls.take(1).toList(),
-                    summaries: const <String, InterconnectHostDictionarySummary>{},
-                    refreshingHosts: const <String>{},
-                    remoteLookupEnabled: remoteLookupEnabled,
-                    onLookupChanged: (String hostId, bool enabled) {},
-                    onRefresh: null,
-                  ),
-                ),
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          theme: buildFushiFallbackTheme(
+            Brightness.light,
+          ).copyWith(platform: TargetPlatform.windows),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: InterconnectDictionaryLookupSection(
+                urls: _urls.take(1).toList(),
+                summaries: const <String, InterconnectHostDictionarySummary>{},
+                refreshingHosts: const <String>{},
+                onLookupChanged: (String hostId, bool enabled) {},
+                onRefresh: null,
               ),
             ),
           ),
-        );
-    await pump(remoteLookupEnabled: false);
-    await tester.pump();
-    expect(
-      find.textContaining('Also turns on remote dictionary lookup'),
-      findsOneWidget,
+        ),
+      ),
     );
-    await pump(remoteLookupEnabled: true);
     await tester.pump();
-    expect(
-      find.textContaining('Also turns on remote dictionary lookup'),
-      findsNothing,
-    );
+    expect(find.text(t.interconnect_lookup_use_server_desc), findsOneWidget);
+    expect(find.textContaining('remote dictionary lookup'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

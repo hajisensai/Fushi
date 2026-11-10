@@ -35,14 +35,11 @@ List<FushiClientUrl> withInterconnectHostLookupEnabled(
   ];
 }
 
-/// 「用这台服务器查词典」的唯一写入口（配对设置页与词典管理页的来源卡片共用）：
-/// 一个意图、一个开关。打开某台 host 时，全局「远程查词」（`remote_lookup_enabled`）
-/// 若关着就在**同一个动作**里一起打开——否则用户开了 host 开关、查词却仍不走服务器，
-/// 只能靠词典管理页底下那条「远程查词已关闭」提示才发现。关掉最后一台 host 时全局
-/// 设置原样不动（它还管别的远端查词入口，不能替用户关）。
+/// 「用这台服务器查词典」的唯一写入口（配对设置页与词典管理页的来源卡片共用）。
+/// 这是远端词典查词**唯一**的开关：用户拍板（2026-11-09）删掉了重复的全局「远程
+/// 查词」，总闸改成派生值（至少一台 host 开着即为开，见 `AppModel.remoteLookupEnabled`）。
 ///
-/// [mutateUrls] 是调用方串行写配对列表的通道（设置页要同步自己的列表状态）；
-/// 配对列表先落库，再开全局开关。
+/// [mutateUrls] 是调用方串行写配对列表的通道（设置页要同步自己的列表状态）。
 Future<void> applyInterconnectHostLookupIntent({
   required String hostId,
   required bool enabled,
@@ -50,14 +47,32 @@ Future<void> applyInterconnectHostLookupIntent({
     List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
   )
   mutateUrls,
-  required bool remoteLookupEnabled,
-  required Future<void> Function(bool value) setRemoteLookupEnabled,
-}) async {
-  await mutateUrls(
-    (List<FushiClientUrl> current) =>
-        withInterconnectHostLookupEnabled(current, hostId, enabled),
-  );
-  if (enabled && !remoteLookupEnabled) await setRemoteLookupEnabled(true);
+}) => mutateUrls(
+  (List<FushiClientUrl> current) =>
+      withInterconnectHostLookupEnabled(current, hostId, enabled),
+);
+
+/// 设置页「查词 › 词典服务器」那行的副标题：在用的服务器（一台写名字、多台写台数）；
+/// 一台都没在用时，有配对就只说没在用，没配对就提示去配对一台 Fushi 服务器。
+/// 「在用」与查词闸门同一口径（[remoteDictionaryLookupHostIdsOf]），名字与配对页
+/// 「已添加的设备」同一口径（[interconnectPeerRowLabels]）。
+String remoteDictionaryServersSummary(List<FushiClientUrl> urls) {
+  final List<FushiClientUrl> hosts = interconnectPeerRepresentatives(urls);
+  final Set<String> inUse = remoteDictionaryLookupHostIdsOf(urls);
+  final List<String> names = <String>[
+    for (final FushiClientUrl host in hosts)
+      if (inUse.contains(remoteDictionaryHostIdOf(host)))
+        interconnectPeerRowLabels(host).title,
+  ];
+  if (names.length == 1) {
+    return t.lookup_dictionary_servers_one_in_use(name: names.single);
+  }
+  if (names.length > 1) {
+    return t.lookup_dictionary_servers_many_in_use(n: names.length);
+  }
+  return hosts.isEmpty
+      ? t.lookup_dictionary_servers_none_paired
+      : t.lookup_dictionary_servers_none_in_use;
 }
 
 /// 「已添加的设备」一行的标题与地址行：配对记下了设备名时标题是设备名、地址退到
@@ -127,13 +142,8 @@ class InterconnectDictionaryLookupSection extends StatelessWidget {
     required this.refreshingHosts,
     required this.onLookupChanged,
     required this.onRefresh,
-    this.remoteLookupEnabled = true,
     super.key,
   });
-
-  /// 全局「远程查词」此刻是否开着。关着时开关副标题补一句「也会打开远程查词」
-  /// （见 [applyInterconnectHostLookupIntent]）。
-  final bool remoteLookupEnabled;
 
   /// 配对列表（全部地址）。按 host 归组后每台一组。
   final List<FushiClientUrl> urls;
@@ -183,10 +193,7 @@ class InterconnectDictionaryLookupSection extends StatelessWidget {
         AdaptiveSettingsSwitchRow(
           key: ValueKey<String>('interconnect-lookup-switch-$hostId'),
           title: t.interconnect_lookup_use_server,
-          subtitle: remoteLookupEnabled
-              ? t.interconnect_lookup_use_server_desc
-              : '${t.interconnect_lookup_use_server_desc}\n'
-                    '${t.interconnect_lookup_also_turns_on_remote}',
+          subtitle: t.interconnect_lookup_use_server_desc,
           icon: FushiIcons.dictionary,
           showIcon: true,
           value: interconnectHostLookupEnabled(urls, hostId),

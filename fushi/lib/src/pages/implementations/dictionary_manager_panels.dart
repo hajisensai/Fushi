@@ -1448,36 +1448,26 @@ class DictionaryServerSourceCard {
 
 /// 列表上方的「来源」条（设计稿 6，取代以前列表底部按 host 的提示）：每台有目录的
 /// host 一行紧凑卡片——设备名、状态、当前分区的启用 / 全部本数、「用于查词」开关
-/// （与配对设置页同一个写入口，打开时一并打开全局远程查词）、刷新；老版本 host、
+/// （与配对设置页同一个写入口，也是远端词典查词唯一的开关）、刷新；老版本 host、
 /// 关掉「用于查词」的 host 各多一行说明。
 ///
-/// 提示只说当下属实的话：关掉「用于查词」的 host 的词典根本不在列表里，它那张卡片
-/// 自己说「不参与查词、不列出」并给「开启」；全局远程查词关着、而至少有一台 host
-/// 开着「用于查词」（它的词典照常列出却不参与查词）时，条底才挂「远程查词已关闭」。
+/// 关掉「用于查词」的 host 的词典根本不在列表里，它那张卡片自己说「不参与查词、
+/// 不列出」并给「开启」（就是拨这台 host 的开关）。
 ///
 /// 卡片竖排、首次出现错峰淡入。
 class DictionaryServerSourcesStrip extends StatelessWidget {
   const DictionaryServerSourcesStrip({
     required this.cards,
-    required this.remoteLookupOff,
     required this.onLookupChanged,
     required this.onRefresh,
-    required this.onTurnOnRemoteLookup,
     super.key,
   });
 
   final List<DictionaryServerSourceCard> cards;
-  final bool remoteLookupOff;
   final void Function(String hostId, bool enabled) onLookupChanged;
 
   /// 刷新一台 host 的目录；null = 没有目录服务（弹窗进程），不给刷新钮。
   final void Function(String hostId)? onRefresh;
-  final VoidCallback onTurnOnRemoteLookup;
-
-  /// 全局远程查词关着、且有 host 的词典此刻列在表里（开着「用于查词」）。
-  bool get _showRemoteLookupOff =>
-      remoteLookupOff &&
-      cards.any((DictionaryServerSourceCard c) => c.lookupEnabled);
 
   @override
   Widget build(BuildContext context) {
@@ -1505,8 +1495,6 @@ class DictionaryServerSourcesStrip extends StatelessWidget {
                   ),
                 ),
               ),
-            if (_showRemoteLookupOff)
-              DictionaryRemoteLookupOffNotice(onTurnOn: onTurnOnRemoteLookup),
           ],
         ),
       ),
@@ -1725,35 +1713,6 @@ class _SourceCardNote extends StatelessWidget {
             ),
           ),
           if (trailing != null) ...<Widget>[SizedBox(width: gap), trailing],
-        ],
-      ),
-    );
-  }
-}
-
-/// 全局远程查词关着、而开着「用于查词」的 host 的词典照常列出时的提示：这些词典
-/// 看得见但查词不会用到；带一个直接开启的动作。（关掉「用于查词」的 host 的词典
-/// 不在列表里，那种情况由它的来源卡片自己说明，不走这条。）
-class DictionaryRemoteLookupOffNotice extends StatelessWidget {
-  const DictionaryRemoteLookupOffNotice({required this.onTurnOn, super.key});
-
-  final VoidCallback onTurnOn;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
-      child: FushiInlineNotice(
-        key: const ValueKey<String>('dict-remote-lookup-off'),
-        icon: FushiIcons.cloudOff,
-        severity: FushiNoticeSeverity.warning,
-        message: t.dictionary_remote_lookup_off_notice,
-        actions: <Widget>[
-          FushiTextButton(
-            key: const ValueKey<String>('dict-remote-lookup-turn-on'),
-            onPressed: onTurnOn,
-            child: Text(t.dictionary_remote_lookup_turn_on),
-          ),
         ],
       ),
     );

@@ -268,7 +268,6 @@ void main() {
         final FocusDriver driver = FocusDriver(tester);
         await _shot(tester, 'server-dict-01-home');
 
-        final bool originalRemoteLookup = appModel.remoteLookupEnabled;
         RemoteDictionary? toggled;
         try {
           // ── 2. 配对 + 打开远端查词 + 等目录对账 ─────────────────────────
@@ -298,7 +297,11 @@ void main() {
             '$_kTag paired baseUrl=${pairing.baseUrl} deviceName=$pairedName',
           );
 
-          await appModel.setRemoteLookupEnabled(true);
+          // 新配对的 host 默认开着「用这台服务器查词典」：远端查词总闸（派生值）
+          // 随词典仓库跟上配对列表变为开，不需要（也没有）全局开关。
+          for (int i = 0; i < 40 && !appModel.remoteLookupEnabled; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
           expect(appModel.remoteLookupEnabled, isTrue);
 
           bool reconciled() => appModel.dictRepo.remoteDictionaries.length >= 5;
@@ -889,13 +892,12 @@ void main() {
           );
           await _shot(tester, 'server-dict-06d-filtered-header');
 
-          // 4e. 来源条「Use for lookups」：先经偏好把 host 与全局远端查词都关掉，
-          // 再焦点 + Enter 打开卡片开关，读回全局 remoteLookupEnabled 也被打开。
+          // 4e. 来源条「Use for lookups」：先把唯一一台 host 的查词关掉（总闸随之派生
+          // 为关），再焦点 + Enter 打开卡片开关，读回总闸 remoteLookupEnabled 变为开。
           expect(await driver.focusWidget(allFilter, maxSteps: 120), isTrue);
           await driver.activate();
           await _pumpFor(tester, const Duration(seconds: 1));
           await appModel.setRemoteDictionaryHostLookupEnabled(hostId, false);
-          await appModel.setRemoteLookupEnabled(false);
           await _pumpFor(tester, const Duration(seconds: 2));
           final Finder lookupCardSwitch = find.byKey(
             ValueKey<String>('dict-server-source-lookup-$hostId'),
@@ -937,7 +939,7 @@ void main() {
           expect(
             offNotice,
             isFalse,
-            reason: '全局关 + 没有 host 开着：不应出现「Remote lookup is off」提示',
+            reason: '全局「Remote lookup is off」提示已删除，不应出现',
           );
           expect(offLine, findsOneWidget, reason: 'host 关查词时卡片应有说明行');
           expect(
@@ -968,7 +970,7 @@ void main() {
           expect(
             appModel.remoteLookupEnabled,
             isTrue,
-            reason: '打开 host 查词应一并打开全局远端查词',
+            reason: '打开唯一一台 host 的查词后总闸（派生值）应为开',
           );
           _printTexts('04f-sources-on', _textsIn(tester, strip));
           final int offLineAfter = find
@@ -1181,7 +1183,6 @@ void main() {
               await appModel.setRemoteDictionaryHidden(now.first, t0.hidden);
             }
           }
-          await appModel.setRemoteLookupEnabled(originalRemoteLookup);
           await appModel.setExperimentalFocusNavigationEnabled(false);
           debugPrint(
             '$_kTag restored: remoteLookup=${appModel.remoteLookupEnabled} '

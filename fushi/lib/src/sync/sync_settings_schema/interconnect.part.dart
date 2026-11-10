@@ -306,17 +306,14 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     setState(() => _dictionarySummaries = summaries);
   }
 
-  /// 「用这台服务器查词典」：同一台 host 的全部地址一起改（经 [_mutateUrls] 串行写），
-  /// 打开时全局远程查词关着就一并打开（[applyInterconnectHostLookupIntent]）。
-  /// 词典仓库与目录服务跟随配对列表广播，各自重算参与查词的 host。
+  /// 「用这台服务器查词典」：同一台 host 的全部地址一起改（经 [_mutateUrls] 串行写，
+  /// [applyInterconnectHostLookupIntent]）。这是远端词典查词唯一的开关；词典仓库与
+  /// 目录服务跟随配对列表广播，各自重算参与查词的 host（总闸随之派生）。
   Future<void> _setHostLookupEnabled(String hostId, bool enabled) async {
-    final AppModel appModel = widget.settingsContext.appModel;
     await applyInterconnectHostLookupIntent(
       hostId: hostId,
       enabled: enabled,
       mutateUrls: _mutateUrls,
-      remoteLookupEnabled: appModel.remoteLookupEnabled,
-      setRemoteLookupEnabled: appModel.setRemoteLookupEnabled,
     );
     if (mounted) setState(() {});
   }
@@ -1022,8 +1019,6 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               urls: _urls,
               summaries: _dictionarySummaries,
               refreshingHosts: _refreshingDictionaryHosts,
-              remoteLookupEnabled:
-                  widget.settingsContext.appModel.remoteLookupEnabled,
               onLookupChanged: (String hostId, bool enabled) =>
                   unawaited(_setHostLookupEnabled(hostId, enabled)),
               onRefresh:
