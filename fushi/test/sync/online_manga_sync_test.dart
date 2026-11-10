@@ -1,4 +1,4 @@
-// BUG-4335（反馈 tHFnpAFrX9）：经 Mihon 扩展源（Keiyoushi / Rawkuma）收进书架的在线
+// BUG-4337（反馈 tHFnpAFrX9）：经 Mihon 扩展源（Keiyoushi / Rawkuma）收进书架的在线
 // 漫画在云通道「立即同步」恒失败，且用户看不到任何原因。
 //
 // 根因：在线漫画的 `chaptersJson` 存的是**章节清单**（`OnlineMangaChapter.toJson`，

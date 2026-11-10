@@ -70,7 +70,7 @@ const String kSyncBookCssAssetName = 'book_css.json';
 const String kSyncMangaReaderAssetName = 'manga_reader.json';
 
 /// [SyncManager.syncBook] 一本书走到的阶段：失败时随错误进 app 日志，定位挂在哪一步
-/// （BUG-4335：以前失败只回一个 error 字符串，用户日志里什么都看不到）。
+/// （BUG-4337：以前失败只回一个 error 字符串，用户日志里什么都看不到）。
 enum SyncBookStage {
   /// 解析根目录 / 本书远端文件夹。
   folder,
@@ -236,7 +236,7 @@ class SyncManager {
     // 进度已判定后才失败 = 失败的是补传书文件 / 元数据：保留已落地的进度结果（导入 /
     // 导出 / 冲突都照实上报），失败原因记进 contentError；进度判定前就失败才是整本失败。
     // 两种失败都进 app 日志（书 key / 来源类型 / 阶段），不能只留在返回值里——单本路径
-    // （对比弹窗 / 退出书）的调用方以前只 developer.log，用户日志里查无此事（BUG-4335）。
+    // （对比弹窗 / 退出书）的调用方以前只 developer.log，用户日志里查无此事（BUG-4337）。
     SyncBookResult failure(String error, StackTrace stack) {
       ErrorLogService.instance.log(
         'SyncManager.syncBook',
@@ -642,7 +642,7 @@ class SyncManager {
             0,
           )
         : 0;
-    // BUG-4335：页式书（含在线扩展源漫画）不解析 chaptersJson，见 [syncChapterCharTable]。
+    // BUG-4337：页式书（含在线扩展源漫画）不解析 chaptersJson，见 [syncChapterCharTable]。
     final chapters = syncChapterCharTable(book);
 
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
