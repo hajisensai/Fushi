@@ -1095,8 +1095,8 @@ mixin _FushiDbContentMisc
     final Map<String, Map<String, MangaChapterStateRow>> byBook =
         <String, Map<String, MangaChapterStateRow>>{};
     for (final MangaChapterStateRow row in rows) {
-      (byBook[row.bookUid] ??= <String, MangaChapterStateRow>{})[row
-              .chapterKey] =
+      (byBook[row.bookUid] ??=
+              <String, MangaChapterStateRow>{})[row.chapterKey] =
           row;
     }
     return byBook;
@@ -1110,7 +1110,8 @@ mixin _FushiDbContentMisc
   /// 只取已读行：翻页写 lastPage 也会让表级 watch 重跑，结果集不变由消费端
   /// `.distinct` 吞掉。
   Stream<List<String>> watchMangaChapterReadKeys() {
-    final Expression<String> key = mangaChapterStates.bookUid +
+    final Expression<String> key =
+        mangaChapterStates.bookUid +
         const Constant<String>('\u0000') +
         mangaChapterStates.chapterKey;
     return (selectOnly(mangaChapterStates)

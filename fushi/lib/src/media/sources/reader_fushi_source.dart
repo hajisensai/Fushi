@@ -633,8 +633,8 @@ class ReaderFushiSource extends ReaderMediaSource {
         await ReaderPositionRepository(db).findAllByBookUid();
     // 在线漫画的章状态同样一次整表取完（书 uid → 章 key → 行），进度按章
     // readAt 算（BUG-4323，[onlineMangaShelfProgress]）。
-    final Map<String, Map<String, MangaChapterStateRow>> chapterStates = await db
-        .getAllMangaChapterStatesByBook();
+    final Map<String, Map<String, MangaChapterStateRow>> chapterStates =
+        await db.getAllMangaChapterStatesByBook();
 
     // HBK-AUDIT-128: previously this was a serial for-loop where every book
     // awaited up to four File.exists() cover probes one after another, so
