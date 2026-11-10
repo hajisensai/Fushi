@@ -1332,6 +1332,267 @@
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
   });
 
+  // ── 自动对轴 / 波形对轴（反馈 0wkJImhZUp）──────────────────────────────────
+  // 听声音、算偏移都在页面里的 subtitle-align.js（只有它拿得到 <video>）；这里只画与发命令。
+  // 偏移仍走既有 fushiSubtitleSidePanelOffset（与 ±0.1 按钮、手填秒数同一份 trackOffsets）。
+  var alignAutoButton = document.getElementById('align-auto');
+  var alignWaveButton = document.getElementById('align-wave');
+  var alignPaneEl = document.getElementById('align-pane');
+  var alignCanvas = document.getElementById('align-canvas');
+  var alignStatusEl = document.getElementById('align-status');
+  var ALIGN_ERROR_KEYS = {
+    unsupported: 'align_err_unsupported',
+    'cross-origin': 'align_err_cross_origin',
+    silent: 'align_err_silent',
+    'needs-gesture': 'align_err_needs_gesture',
+  };
+  // span：画布横跨的媒体时长（滚轮缩放 4–40 秒）；state：最近一次 fushiSubtitleAlignState 回应，
+  // at：收到它的 performance.now()（播放中按倍速外推播放头，画面不跟着 300ms 轮询一跳一跳）。
+  var wave = { open: false, span: 12000, state: null, at: 0, drag: null, raf: 0, polling: false };
+  var ALIGN_SPAN_RANGE = [4000, 40000];
+
+  function waveNowMs() {
+    var s = wave.state;
+    if (!s) return currentState ? Number(currentState.currentTimeMs) || 0 : 0;
+    var t = Number(s.currentTimeMs) || 0;
+    if (!s.paused) t += (performance.now() - wave.at) * (Number(s.rate) || 1);
+    return t;
+  }
+
+  // 状态 → 波形下方那行字：错误态如实说读不到声音的原因；在听 / 待算时报还差几秒。
+  function alignStatusText(s) {
+    if (!s) return { text: '', error: false };
+    var errKey = ALIGN_ERROR_KEYS[s.status];
+    if (errKey) return { text: tr(errKey), error: true };
+    var heardMs = Number(s.heardMs) || 0;
+    if (s.pending || s.inflight) {
+      var left = Math.max(0, Math.ceil(((Number(s.needMs) || 0) - heardMs) / 1000));
+      return { text: tr('align_toast_listening', { seconds: String(left) }), error: false };
+    }
+    if (!(heardMs > 0)) return { text: tr('align_status_idle'), error: false };
+    return { text: tr('align_status_heard', { seconds: String(Math.floor(heardMs / 1000)) }), error: false };
+  }
+
+  function cssVar(name, fallback) {
+    try {
+      var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return v || fallback;
+    } catch (_) { return fallback; }
+  }
+
+  function drawWave() {
+    var c = alignCanvas;
+    if (!c || !wave.open || typeof c.getContext !== 'function') return;
+    var w = c.clientWidth, h = c.clientHeight;
+    if (!w || !h) return;
+    var dpr = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    }
+    var g2 = c.getContext('2d');
+    if (!g2) return;
+    g2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g2.clearRect(0, 0, w, h);
+    var accent = cssVar('--fushi-primary', '#386a20');
+    var muted = cssVar('--fushi-muted', '#6f7a6b');
+    var ink = cssVar('--fushi-text', '#1a1c18');
+    var now = waveNowMs();
+    var from = now - wave.span / 2;
+    var pxPerMs = w / wave.span;
+    var waveH = Math.round(h * 0.6);
+    var laneTop = waveH + 4;
+    var laneH = h - laneTop - 6;
+    var deltaMs = wave.drag ? wave.drag.deltaMs : 0;
+
+    // 音量柱：可见范围内按 [min, max] dB 归一（与 app 波形视图一样抹平整体响度差；下限夹在 -70dB，
+    // 静音段不会被拉成满格噪声）。没听过的格不画，只留一条虚线基线。
+    var s = wave.state;
+    g2.strokeStyle = muted;
+    g2.globalAlpha = 0.35;
+    g2.setLineDash([2, 4]);
+    g2.beginPath(); g2.moveTo(0, waveH / 2); g2.lineTo(w, waveH / 2); g2.stroke();
+    g2.setLineDash([]);
+    g2.globalAlpha = 1;
+    if (s && Array.isArray(s.peaks) && s.peaks.length) {
+      var lo = Infinity, hi = -Infinity, i, v, t;
+      for (i = 0; i < s.peaks.length; i++) {
+        v = s.peaks[i];
+        if (v === null || v === undefined) continue;
+        t = s.fromMs + i * s.binMs;
+        if (t + s.binMs < from || t > from + wave.span) continue;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      if (lo < -70) lo = -70;
+      if (hi - lo < 6) hi = lo + 6;
+      var barW = Math.max(1, s.binMs * pxPerMs - 0.6);
+      g2.fillStyle = muted;
+      for (i = 0; i < s.peaks.length; i++) {
+        v = s.peaks[i];
+        if (v === null || v === undefined) continue;
+        t = s.fromMs + i * s.binMs;
+        var x = (t - from) * pxPerMs;
+        if (x + barW < 0 || x > w) continue;
+        var norm = Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+        var bh = Math.max(1, norm * (waveH - 8));
+        g2.fillRect(x, waveH / 2 - bh / 2, barW, bh);
+      }
+    }
+
+    // 字幕条（已套当前偏移；拖动中再加拖动量）：下方轨道画实条 + 文字，上方波形区画淡色投影，
+    // 一眼看出「说话处」和「字幕出现处」差多少。
+    g2.font = '11px system-ui, sans-serif';
+    g2.textBaseline = 'middle';
+    for (var k = 0; k < cues.length; k++) {
+      var cue = cues[k];
+      var cs = cue.startMs + deltaMs, ce = cue.endMs + deltaMs;
+      if (ce < from || cs > from + wave.span) continue;
+      var x0 = (cs - from) * pxPerMs, x1 = (ce - from) * pxPerMs;
+      g2.fillStyle = accent;
+      g2.globalAlpha = 0.12;
+      g2.fillRect(x0, 2, Math.max(1, x1 - x0), waveH - 4);
+      g2.globalAlpha = wave.drag ? 0.5 : 0.32;
+      g2.fillRect(x0, laneTop, Math.max(2, x1 - x0), laneH);
+      g2.globalAlpha = 1;
+      g2.strokeStyle = accent;
+      g2.strokeRect(x0 + 0.5, laneTop + 0.5, Math.max(1, x1 - x0 - 1), laneH - 1);
+      if (x1 - x0 > 24) {
+        g2.save();
+        g2.beginPath(); g2.rect(x0 + 3, laneTop, x1 - x0 - 6, laneH); g2.clip();
+        g2.fillStyle = ink;
+        g2.fillText(String(cue.text || '').replace(/\s+/g, ' '), x0 + 4, laneTop + laneH / 2);
+        g2.restore();
+      }
+    }
+
+    // 播放头（画布正中）。
+    g2.strokeStyle = ink;
+    g2.lineWidth = 1.5;
+    g2.beginPath(); g2.moveTo(w / 2, 0); g2.lineTo(w / 2, h); g2.stroke();
+    g2.lineWidth = 1;
+  }
+
+  function waveLoop() {
+    wave.raf = 0;
+    if (!wave.open) return;
+    drawWave();
+    wave.raf = requestAnimationFrame(waveLoop);
+  }
+
+  async function pollWave() {
+    if (!wave.open || wave.polling) return;
+    wave.polling = true;
+    try {
+      var now = waveNowMs();
+      // 两侧各多要两秒：外推播放头的那几百毫秒里画面边缘不会空一截。
+      var s = await sendToTab({
+        type: 'fushiSubtitleAlignState',
+        listen: true,
+        fromMs: Math.max(0, now - wave.span / 2 - 2000),
+        toMs: now + wave.span / 2 + 2000,
+      });
+      if (!wave.open) return;
+      if (s && s.ok) {
+        wave.state = s;
+        wave.at = performance.now();
+      }
+      var line = alignStatusText(s && s.ok ? s : null);
+      alignStatusEl.textContent = line.text;
+      alignStatusEl.classList.toggle('is-error', line.error);
+      alignAutoButton.classList.toggle('is-busy', !!(s && (s.pending || s.inflight)));
+      var off = currentState ? Number(currentState.offsetMs) || 0 : 0;
+      alignCanvas.setAttribute('aria-valuenow', String(Math.round(off / 100) / 10));
+      alignCanvas.setAttribute('aria-valuetext', formatOffsetSeconds(off) + 's');
+    } finally {
+      wave.polling = false;
+    }
+  }
+
+  function setWaveOpen(open) {
+    wave.open = !!open;
+    alignPaneEl.hidden = !wave.open;
+    alignWaveButton.classList.toggle('is-on', wave.open);
+    alignWaveButton.setAttribute('aria-pressed', wave.open ? 'true' : 'false');
+    if (wave.open) {
+      pollWave();
+      if (!wave.raf) wave.raf = requestAnimationFrame(waveLoop);
+    } else {
+      if (wave.raf) { cancelAnimationFrame(wave.raf); wave.raf = 0; }
+      wave.drag = null;
+      // 关掉波形：告诉页面不必为它继续听（有待算的自动对轴时页面会听完再停）。
+      sendToTab({ type: 'fushiSubtitleAlignStop' });
+    }
+  }
+
+  alignWaveButton.addEventListener('click', function () { setWaveOpen(!wave.open); });
+
+  alignAutoButton.addEventListener('click', async function () {
+    alignAutoButton.classList.add('is-busy');
+    var r = await sendToTab({ type: 'fushiSubtitleAlignAuto' });
+    if (!r) { alignAutoButton.classList.remove('is-busy'); toast(tr('sp_status_not_connected')); return; }
+    if (!r.pending) alignAutoButton.classList.remove('is-busy');
+    // 结果（含「再听 N 秒」）由页面 toast；这里立刻刷一次，偏移读数与字幕条跟上。
+    refresh(false);
+  });
+
+  async function commitWaveOffset(absoluteMs) {
+    var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', absoluteMs: absoluteMs });
+    if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
+  }
+
+  // 拖字幕条：横向位移按当前缩放折成毫秒（10ms 取整），松手按「拖之前的偏移 + 拖动量」写绝对值。
+  alignCanvas.addEventListener('pointerdown', function (event) {
+    if (event.button !== 0 || !currentState || !cues.length) return;
+    var w = alignCanvas.clientWidth || 1;
+    wave.drag = {
+      id: event.pointerId,
+      x0: event.clientX,
+      msPerPx: wave.span / w,
+      base: Number(currentState.offsetMs) || 0,
+      deltaMs: 0,
+    };
+    alignCanvas.classList.add('is-dragging');
+    try { alignCanvas.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault();
+  });
+  alignCanvas.addEventListener('pointermove', function (event) {
+    if (!wave.drag || event.pointerId !== wave.drag.id) return;
+    wave.drag.deltaMs = Math.round((event.clientX - wave.drag.x0) * wave.drag.msPerPx / 10) * 10;
+  });
+  function endWaveDrag(event, commit) {
+    if (!wave.drag || event.pointerId !== wave.drag.id) return;
+    var d = wave.drag;
+    wave.drag = null;
+    alignCanvas.classList.remove('is-dragging');
+    try { alignCanvas.releasePointerCapture(event.pointerId); } catch (_) {}
+    if (commit && d.deltaMs !== 0) {
+      // 先把本地字幕条挪过去，免得等回应的那一帧弹回原位再跳过来。
+      cues = cues.map(function (c) {
+        return { startMs: c.startMs + d.deltaMs, endMs: c.endMs + d.deltaMs, text: c.text };
+      });
+      commitWaveOffset(d.base + d.deltaMs);
+    }
+  }
+  alignCanvas.addEventListener('pointerup', function (event) { endWaveDrag(event, true); });
+  alignCanvas.addEventListener('pointercancel', function (event) { endWaveDrag(event, false); });
+  // 方向键：每次 0.1 秒（Shift 0.5 秒），与偏移行按钮同一条消息。
+  alignCanvas.addEventListener('keydown', async function (event) {
+    var step = event.shiftKey ? 500 : 100;
+    var delta = event.key === 'ArrowLeft' ? -step : (event.key === 'ArrowRight' ? step : 0);
+    if (!delta) return;
+    event.preventDefault();
+    var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', deltaMs: delta });
+    if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
+  });
+  // 滚轮缩放时间窗（向上放大看细节、向下缩小看全局）。
+  alignCanvas.addEventListener('wheel', function (event) {
+    if (!event.deltaY) return;
+    event.preventDefault();
+    var next = wave.span * (event.deltaY > 0 ? 1.25 : 0.8);
+    wave.span = Math.max(ALIGN_SPAN_RANGE[0], Math.min(ALIGN_SPAN_RANGE[1], next));
+  }, { passive: false });
+
   document.getElementById('load').addEventListener('click', function () { fileEl.click(); });
   fileEl.addEventListener('change', async function () {
     var files = Array.from(fileEl.files || []);
@@ -1748,5 +2009,6 @@
   setInterval(function () {
     if (requestEmbedAttestation) requestEmbedAttestation(); // 背书没到手就一直补请求
     refresh(false);
+    if (wave.open) pollWave();
   }, 300);
 })();
