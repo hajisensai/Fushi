@@ -7,9 +7,9 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
+import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_test_storage.dart';
 
 const String kUid = '01928c3e-0000-7000-8000-00000000d71f';
