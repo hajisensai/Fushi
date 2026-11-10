@@ -125,6 +125,15 @@ void main() {
       );
       expect(fill, contains('_lookupCue = _cueForSelectionData(data);'));
 
+      final String tapLookup = read(
+        'lib/src/pages/implementations/reader_fushi/lookup.part.dart',
+      );
+      expect(
+        tapLookup,
+        contains('_lookupCue = _cueForSelectionData(data);'),
+        reason: 'tap 查词也必须走同一份 cue 解析，不得再各写一份三级回退',
+      );
+
       final String resolve = slice(
         chrome,
         'AudioCue? _cueForSelectionData(ReaderSelectionData data) {',
