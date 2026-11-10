@@ -8,6 +8,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoSidecarSubtitle;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 
@@ -47,6 +49,99 @@ void main() {
       expect(rows, hasLength(1));
       expect(rows.single.kind, RemoteSubtitleFileKind.localFile);
       expect(rows.single.local, isNotNull);
+    });
+
+    // 反馈 -CaVsioFhG：host 上一集有多条外挂字幕，菜单此前只出默认那一条。
+    group('互联 host 的全部外挂字幕', () {
+      const List<RemoteVideoSidecarSubtitle> sidecars =
+          <RemoteVideoSidecarSubtitle>[
+            RemoteVideoSidecarSubtitle(
+              fileName: 'ep01.ja.srt',
+              format: 'srt',
+              language: 'ja',
+              isDefault: true,
+            ),
+            RemoteVideoSidecarSubtitle(
+              fileName: 'ep01.zh.ass',
+              format: 'ass',
+              language: 'zh',
+            ),
+            RemoteVideoSidecarSubtitle(fileName: 'ep01.en.vtt', format: 'vtt'),
+          ];
+
+      test('默认那条已下到本地：默认行 + 其余每条一行，全部标后端来源、不可删', () {
+        final List<RemoteSubtitleFileEntry> rows = remoteSubtitleFileEntries(
+          backendDefaultPath: '/tmp/fushi_remote_ep01.ja.srt',
+          localFiles: <SubtitleSource>[_local('/docs/video_subtitles/a.srt')],
+          hostSidecars: sidecars,
+        );
+        expect(
+          rows.map((RemoteSubtitleFileEntry e) => e.kind),
+          <RemoteSubtitleFileKind>[
+            RemoteSubtitleFileKind.backendDefault,
+            RemoteSubtitleFileKind.hostSidecar,
+            RemoteSubtitleFileKind.hostSidecar,
+            RemoteSubtitleFileKind.localFile,
+          ],
+        );
+        final List<RemoteSubtitleFileEntry> host = rows
+            .where((RemoteSubtitleFileEntry e) => e.fromBackend)
+            .toList();
+        expect(host, hasLength(3));
+        expect(host.every((RemoteSubtitleFileEntry e) => !e.deletable), isTrue);
+        expect(
+          rows
+              .where(
+                (RemoteSubtitleFileEntry e) =>
+                    e.kind == RemoteSubtitleFileKind.hostSidecar,
+              )
+              .map((RemoteSubtitleFileEntry e) => e.label),
+          <String>['ep01.zh.ass', 'ep01.en.vtt'],
+        );
+      });
+
+      test('默认那条还没下到本地：每条（含默认）都成行，选择编码按文件名', () {
+        final List<RemoteSubtitleFileEntry> rows = remoteSubtitleFileEntries(
+          backendDefaultPath: null,
+          localFiles: const <SubtitleSource>[],
+          hostSidecars: sidecars,
+        );
+        expect(rows, hasLength(3));
+        expect(
+          rows.every(
+            (RemoteSubtitleFileEntry e) =>
+                e.kind == RemoteSubtitleFileKind.hostSidecar && e.fromBackend,
+          ),
+          isTrue,
+        );
+        expect(rows.map((RemoteSubtitleFileEntry e) => e.path), <String>[
+          'hostsidecar:ep01.ja.srt',
+          'hostsidecar:ep01.zh.ass',
+          'hostsidecar:ep01.en.vtt',
+        ]);
+        expect(rows.first.hostSidecar, same(sidecars.first));
+      });
+
+      test('选择编码往返：找回同一条；host 已没有 / 不是该编码 → null', () {
+        final String key = remoteHostSidecarSubtitleSource('ep01.zh.ass');
+        expect(SubtitleSource.isHostSidecarPersisted(key), isTrue);
+        expect(remoteHostSidecarForSource(key, sidecars), same(sidecars[1]));
+        expect(
+          remoteHostSidecarForSource(
+            remoteHostSidecarSubtitleSource('gone.srt'),
+            sidecars,
+          ),
+          isNull,
+        );
+        expect(remoteHostSidecarForSource('embedded:2', sidecars), isNull);
+        expect(remoteHostSidecarForSource(null, sidecars), isNull);
+      });
+
+      test('选择编码不是本机文件路径：不会被当成导入档去按路径重放', () {
+        final String key = remoteHostSidecarSubtitleSource('ep01.ja.srt');
+        expect(isExternalSubtitleFilePathForMenu(key), isFalse);
+        expect(isImportedExternalSubtitlePath(key), isFalse);
+      });
     });
 
     test('无后端默认字幕时不出「服务端字幕」行', () {

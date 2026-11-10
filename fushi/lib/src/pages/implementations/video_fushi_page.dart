@@ -4867,10 +4867,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 上次选的是互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按文件名
           // 重新下载。host 这一集已没有它 / 下载或解析失败 → 落回下方后端默认分支。
           final RemoteVideoSidecarSubtitle? sidecar =
-              remoteHostSidecarForSource(
-                persistedSub,
-                _remoteSidecarSubtitles,
-              );
+              remoteHostSidecarForSource(persistedSub, _remoteSidecarSubtitles);
           if (sidecar != null) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
             try {
@@ -6860,7 +6857,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final File subtitle = File(
       p.join(
         temp.path,
-        _remoteSubtitleTempFileName('${info.id}_ep${index}_sc', sidecar.fileName),
+        _remoteSubtitleTempFileName(
+          '${info.id}_ep${index}_sc',
+          sidecar.fileName,
+        ),
       ),
     );
     await (client as RemoteVideoSidecarSubtitleFetch)

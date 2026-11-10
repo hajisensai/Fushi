@@ -314,7 +314,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
             selectedColor: selectedFg,
             onTap: _subtitleLoadingShown
                 ? null
-                : () => unawaited(_applyRemoteSubtitleFileEntry(controller, entry)),
+                : () => unawaited(
+                    _applyRemoteSubtitleFileEntry(controller, entry),
+                  ),
           ),
       if (_isRemote)
         for (final RemoteVideoEmbeddedSubtitleTrack track
@@ -1049,7 +1051,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) async {
     final RemoteVideoSidecarSubtitle? sidecar = entry.hostSidecar;
     if (sidecar != null) {
-      await _applyRemoteHostSidecarSubtitle(controller, sidecar, origin: origin);
+      await _applyRemoteHostSidecarSubtitle(
+        controller,
+        sidecar,
+        origin: origin,
+      );
       return;
     }
     await _applyRemoteSubtitle(

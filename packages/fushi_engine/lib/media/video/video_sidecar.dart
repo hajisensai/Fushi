@@ -92,10 +92,7 @@ bool isSidecarSubtitleSuffix(String suffix) => RegExp(
 /// `<tag>`，原样大小写）。不是 [videoBaseNameNoExt] 的 sidecar、或没有标记
 /// （`<stem>.srt`）时返回 null。互联 host 列全部外挂字幕时给每条报语言（反馈
 /// -CaVsioFhG）。
-String? sidecarSubtitleLanguageTag(
-  String videoBaseNameNoExt,
-  String fileName,
-) {
+String? sidecarSubtitleLanguageTag(String videoBaseNameNoExt, String fileName) {
   final int stemLength = videoBaseNameNoExt.length;
   if (fileName.length <= stemLength ||
       !fileName.toLowerCase().startsWith(videoBaseNameNoExt.toLowerCase())) {

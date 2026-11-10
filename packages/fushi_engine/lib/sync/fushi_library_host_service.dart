@@ -2266,9 +2266,7 @@ class RemoteVideoSidecarSubtitle {
   static RemoteVideoSidecarSubtitle? fromJson(Object? value) {
     if (value is! Map) return null;
     final String fileName = value['fileName']?.toString().trim() ?? '';
-    if (fileName.isEmpty ||
-        fileName.contains('/') ||
-        fileName.contains(r'\')) {
+    if (fileName.isEmpty || fileName.contains('/') || fileName.contains(r'\')) {
       return null;
     }
     final String format = (value['format']?.toString() ?? '')
