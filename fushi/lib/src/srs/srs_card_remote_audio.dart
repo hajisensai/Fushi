@@ -1,5 +1,5 @@
 /// 卡面页面里的**远程音频**（`<audio>` 的 http(s) 源）由宿主取回、以 `blob:` 交给页面播放
-/// （反馈 ffWC0TPq1I，BUG-4370）。
+/// （反馈 ffWC0TPq1I，BUG-4377）。
 ///
 /// 为什么：导入的模板会在卡面上自己造在线 TTS 键——eggrolls 的 `setEdgeTTS()` 在例句没带
 /// 音频时插一个 `<audio preload="none">`，`<source>` 指向在线 TTS 服务（Vercel 上的 API
