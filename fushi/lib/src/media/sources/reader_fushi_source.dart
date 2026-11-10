@@ -1955,7 +1955,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 读数胶囊「本次字数」段是否显示（分层同 [showTopProgressBar]）。
   bool get showSessionChars =>
       readerSettings?.showSessionChars ??
-      getPreference<bool>(key: 'show_session_chars', defaultValue: true);
+      getPreference<bool>(key: 'show_session_chars', defaultValue: false);
 
   void toggleShowSessionChars() async {
     await (readerSettings?.toggleShowSessionChars() ??
@@ -1968,7 +1968,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 读数胶囊「本次字每时」段是否显示（分层同 [showTopProgressBar]）。
   bool get showCharsPerHour =>
       readerSettings?.showCharsPerHour ??
-      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: true);
+      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: false);
 
   void toggleShowCharsPerHour() async {
     await (readerSettings?.toggleShowCharsPerHour() ??
