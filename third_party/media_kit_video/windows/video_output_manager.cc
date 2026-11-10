@@ -54,12 +54,17 @@ void VideoOutputManager::SetHdrOutput(int64_t handle,
   }).detach();
 }
 
-void VideoOutputManager::Dispose(int64_t handle) {
+void VideoOutputManager::Dispose(int64_t handle,
+                                 std::function<void()> on_done) {
   std::thread([=]() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (video_outputs_.find(handle) != video_outputs_.end()) {
-      video_outputs_.erase(handle);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (video_outputs_.find(handle) != video_outputs_.end()) {
+        // |~VideoOutput| returns only once the render context is freed.
+        video_outputs_.erase(handle);
+      }
     }
+    on_done();
   }).detach();
 }
 
