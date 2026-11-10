@@ -336,11 +336,15 @@ const Map<String, String> _fieldNameSynonyms = <String, String>{
   '截图': '{card-image}',
   '图像': '{card-image}',
   '画像': '{card-image}',
-  // 来源
-  'source': '{source-link}',
-  '来源': '{source-link}',
-  '出典': '{source-link}',
-  '出处': '{source-link}',
+  // 来源（MiscInfo 等价字段）：与 Anki 侧预设 / 通用默认映射共用同一个值——作品标题
+  // 回跳链接 + 片段时间窗（反馈 GNiu1BuCKw：视频卡要带文件名和时间点）。`source` /
+  // `miscinfo` 已经由上面的 Fushi 卡片 / Lapis 默认表命中，这里只补非英文写法。
+  '来源': FushiCardFields.sourceDefaultMapping,
+  '來源': FushiCardFields.sourceDefaultMapping,
+  '出典': FushiCardFields.sourceDefaultMapping,
+  '出处': FushiCardFields.sourceDefaultMapping,
+  '出處': FushiCardFields.sourceDefaultMapping,
+  '출처': FushiCardFields.sourceDefaultMapping,
 };
 
 /// 按字段名猜一个制卡内容槽：Lapis 同名字段（大小写 / 分隔符不敏感）→ Lapis 默认；
