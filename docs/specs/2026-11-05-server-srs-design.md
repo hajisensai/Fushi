@@ -125,7 +125,7 @@ This is an engine change (`SrsRemoteStoreService` takes a `uid → store` resolv
   It's a separate plain-HTTP listener because AnkiConnect clients expect `http://host:8765/` at the root path, while the interconnect port is TLS with pairing auth. The endpoint (`SrsAnkiConnectEndpoint`) already does origin checks, loopback-vs-key rules and body limits.
   Owner decision 2026-11-06: off by default, loopback-only unless a key is set.
 - **Validation.** If `bind` is not loopback and no key is set, refuse to start the listener with a clear log line and admin status. Never start it open on the LAN.
-- **Several profiles.** AnkiConnect has no profile field, so the **key picks the profile**: `ankiconnect.profile_keys: {<uid>: <key>}`. Yomitan for the Chinese profile is set up with the Chinese key, the Japanese one with the Japanese key. A request with `api_key` (the shared key) or from loopback without a key goes to `srs.default_profile`. Keys are generated in the WebUI and must be distinct. AnkiConnect's `getProfiles` / `loadProfile` return the served profiles' names, but `loadProfile` is not used for routing in v1, because it would switch the profile for every other tool talking to the same port.
+- **Several profiles.** AnkiConnect has no profile field, so the **key picks the profile**: `ankiconnect.profile_keys: {<uid>: <key>}`. Yomitan for the Chinese profile is set up with the Chinese key, the Japanese one with the Japanese key. A request with `api_key` (the shared key) goes to `srs.default_profile`. A request without a key is accepted only while no key is set at all (then only from loopback) and also goes to the default profile. Once any key is set, every caller, loopback included, must send a valid key, like real AnkiConnect (owner decision 2026-11-08). Keys are generated in the WebUI and must be distinct. AnkiConnect's `getProfiles` / `loadProfile` return the served profiles' names, but `loadProfile` is not used for routing in v1, because it would switch the profile for every other tool talking to the same port.
 - **Handler.** `SrsAnkiConnectHandler(store:, instanceId:, apiKey:, profileName:, onSync: syncNow, mediaSink: SrsMediaStore.store)`. No GUI callbacks. URL media fetch (`fetchUrl`) uses the engine's default app HTTP client, which goes through the proxy setup.
 - **Hot apply.** Toggling `ankiconnect.*` in settings starts or stops the listener without a restart.
 - **Not in the AI tool set.** AnkiConnect is a client-facing API, not an ops route.
@@ -242,7 +242,7 @@ The app keeps the scheduler itself: cloud channels, notices, first-sync confirma
   - a non-loopback bind without a key refuses to start;
   - `version` / `deckNames` / `addNote` with media → note in the store and media in the media dir;
   - hot toggle;
-  - a profile key routes `addNote` to its profile; the shared key / loopback goes to the default profile; duplicate keys are rejected.
+  - a profile key routes `addNote` to its profile; the shared key goes to the default profile; with no key configured, loopback without a key goes there too; once a key is set, a missing or wrong key is refused, loopback included; duplicate keys are rejected.
 - Mining (§4.8): with `srs.mining_target: review`:
   - `/api/duplicate` is false, then `/api/mine/forward` → the note is in the server store and media is in the media dir, then `/api/duplicate` is true;
   - with `anki`, the Anki-landing path is unchanged (existing tests);
