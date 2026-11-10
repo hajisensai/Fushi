@@ -1,5 +1,5 @@
 diff --git a/engine/src/flutter/shell/platform/common/accessibility_bridge.cc b/engine/src/flutter/shell/platform/common/accessibility_bridge.cc
-index d2524d3..8a55c23 100644
+index d2524d3..260b9ae 100644
 --- a/engine/src/flutter/shell/platform/common/accessibility_bridge.cc
 +++ b/engine/src/flutter/shell/platform/common/accessibility_bridge.cc
 @@ -4,6 +4,7 @@
@@ -141,7 +141,7 @@ index d2524d3..8a55c23 100644
    // Handles accessibility events as the result of the semantics update.
    for (const auto& targeted_event : event_generator_) {
      auto event_target =
-@@ -127,6 +115,279 @@ void AccessibilityBridge::CommitUpdates() {
+@@ -127,6 +115,286 @@ void AccessibilityBridge::CommitUpdates() {
    event_generator_.ClearEvents();
  }
  
@@ -299,6 +299,11 @@ index d2524d3..8a55c23 100644
 +    }
 +  }
 +
++  // Old parents that update 1 edits from the AXTree's own data. Their role
++  // and attributes still describe the children they lost, so update 2 must
++  // re-serialize them from the semantics data even when the framework did not
++  // resend them.
++  std::unordered_set<int32_t> stripped_parents;
 +  if (!moved.empty()) {
 +    std::unordered_set<int32_t> destroyed;
 +    for (int32_t id : moved) {
@@ -322,6 +327,7 @@ index d2524d3..8a55c23 100644
 +      if (!old_parent || destroyed.find(old_parent->id()) != destroyed.end()) {
 +        continue;
 +      }
++      stripped_parents.insert(old_parent->id());
 +      auto entry = old_parents.find(old_parent->id());
 +      if (entry == old_parents.end()) {
 +        entry = old_parents.emplace(old_parent->id(), old_parent->data()).first;
@@ -351,6 +357,7 @@ index d2524d3..8a55c23 100644
 +    const std::vector<int32_t>& children = plan.children.at(id);
 +    ui::AXNode* node = tree_is_empty ? nullptr : tree_->GetFromId(id);
 +    if (node && updated_ids.find(id) == updated_ids.end() &&
++        stripped_parents.find(id) == stripped_parents.end() &&
 +        node->data().child_ids == children) {
 +      // Unchanged, and already in the tree under the same parent.
 +      continue;
@@ -421,7 +428,7 @@ index d2524d3..8a55c23 100644
  std::weak_ptr<FlutterPlatformNodeDelegate>
  AccessibilityBridge::GetFlutterPlatformNodeDelegateFromID(
      AccessibilityNodeId id) const {
-@@ -156,6 +417,10 @@ void AccessibilityBridge::OnSubtreeWillBeDeleted(ui::AXTree* tree,
+@@ -156,6 +424,10 @@ void AccessibilityBridge::OnSubtreeWillBeDeleted(ui::AXTree* tree,
                                                   ui::AXNode* node) {}
  
  void AccessibilityBridge::OnNodeReparented(ui::AXTree* tree, ui::AXNode* node) {
@@ -432,7 +439,7 @@ index d2524d3..8a55c23 100644
  }
  
  void AccessibilityBridge::OnRoleChanged(ui::AXTree* tree,
-@@ -210,78 +475,19 @@ void AccessibilityBridge::OnAtomicUpdateFinished(
+@@ -210,78 +482,19 @@ void AccessibilityBridge::OnAtomicUpdateFinished(
    }
  }
  
@@ -523,7 +530,7 @@ index d2524d3..8a55c23 100644
    ui::AXNodeData node_data;
    node_data.id = node.id;
    SetRoleFromFlutterUpdate(node_data, node);
-@@ -312,7 +518,7 @@ void AccessibilityBridge::ConvertFlutterUpdate(const SemanticsNode& node,
+@@ -312,7 +525,7 @@ void AccessibilityBridge::ConvertFlutterUpdate(const SemanticsNode& node,
  
  void AccessibilityBridge::SetRoleFromFlutterUpdate(ui::AXNodeData& node_data,
                                                     const SemanticsNode& node) {
@@ -532,7 +539,7 @@ index d2524d3..8a55c23 100644
    FML_DCHECK(flags) << "SemanticsNode::flags must not be null";
    if (flags->is_button) {
      node_data.role = ax::mojom::Role::kButton;
-@@ -363,7 +569,7 @@ void AccessibilityBridge::SetRoleFromFlutterUpdate(ui::AXNodeData& node_data,
+@@ -363,7 +576,7 @@ void AccessibilityBridge::SetRoleFromFlutterUpdate(ui::AXNodeData& node_data,
  
  void AccessibilityBridge::SetStateFromFlutterUpdate(ui::AXNodeData& node_data,
                                                      const SemanticsNode& node) {
@@ -541,7 +548,7 @@ index d2524d3..8a55c23 100644
    FlutterSemanticsAction actions = node.actions;
    if (flags->is_expanded == FlutterTristate::kFlutterTristateTrue) {
      node_data.AddState(ax::mojom::State::kExpanded);
-@@ -433,7 +639,7 @@ void AccessibilityBridge::SetBooleanAttributesFromFlutterUpdate(
+@@ -433,7 +646,7 @@ void AccessibilityBridge::SetBooleanAttributesFromFlutterUpdate(
      ui::AXNodeData& node_data,
      const SemanticsNode& node) {
    FlutterSemanticsAction actions = node.actions;
@@ -550,7 +557,7 @@ index d2524d3..8a55c23 100644
    node_data.AddBoolAttribute(ax::mojom::BoolAttribute::kScrollable,
                               actions & kHasScrollingAction);
    node_data.AddBoolAttribute(
-@@ -458,7 +664,7 @@ void AccessibilityBridge::SetBooleanAttributesFromFlutterUpdate(
+@@ -458,7 +671,7 @@ void AccessibilityBridge::SetBooleanAttributesFromFlutterUpdate(
  void AccessibilityBridge::SetIntAttributesFromFlutterUpdate(
      ui::AXNodeData& node_data,
      const SemanticsNode& node) {
@@ -559,7 +566,7 @@ index d2524d3..8a55c23 100644
    node_data.AddIntAttribute(ax::mojom::IntAttribute::kTextDirection,
                              node.text_direction);
  
-@@ -514,10 +720,11 @@ void AccessibilityBridge::SetStringListAttributesFromFlutterUpdate(
+@@ -514,10 +727,11 @@ void AccessibilityBridge::SetStringListAttributesFromFlutterUpdate(
    if (actions & FlutterSemanticsAction::kFlutterSemanticsActionCustomAction) {
      std::vector<std::string> custom_action_description;
      for (size_t i = 0; i < node.custom_accessibility_actions.size(); i++) {
@@ -575,7 +582,7 @@ index d2524d3..8a55c23 100644
      }
      node_data.AddStringListAttribute(
          ax::mojom::StringListAttribute::kCustomActionDescriptions,
-@@ -550,7 +757,7 @@ void AccessibilityBridge::SetTooltipFromFlutterUpdate(
+@@ -550,7 +764,7 @@ void AccessibilityBridge::SetTooltipFromFlutterUpdate(
  
  void AccessibilityBridge::SetTreeData(const SemanticsNode& node,
                                        ui::AXTreeUpdate& tree_update) {
@@ -584,7 +591,7 @@ index d2524d3..8a55c23 100644
    // Set selection of the focused node if:
    // 1. this text field has a valid selection
    // 2. this text field doesn't have a valid selection but had selection stored
-@@ -591,7 +798,8 @@ AccessibilityBridge::FromFlutterSemanticsNode(
+@@ -591,7 +805,8 @@ AccessibilityBridge::FromFlutterSemanticsNode(
    FML_DCHECK(flutter_node.flags2)
        << "FlutterSemanticsNode2::flags2 must not be null";
  
@@ -704,10 +711,10 @@ index 334eb26..fc5f0a2 100644
    void SetRoleFromFlutterUpdate(ui::AXNodeData& node_data,
                                  const SemanticsNode& node);
 diff --git a/engine/src/flutter/shell/platform/common/accessibility_bridge_unittests.cc b/engine/src/flutter/shell/platform/common/accessibility_bridge_unittests.cc
-index 4a1e114..a23f609 100644
+index 4a1e114..62ab0de 100644
 --- a/engine/src/flutter/shell/platform/common/accessibility_bridge_unittests.cc
 +++ b/engine/src/flutter/shell/platform/common/accessibility_bridge_unittests.cc
-@@ -635,5 +635,249 @@ TEST(AccessibilityBridgeTest, IsSelectedAttribute) {
+@@ -635,5 +635,256 @@ TEST(AccessibilityBridgeTest, IsSelectedAttribute) {
        ax::mojom::BoolAttribute::kSelected));
  }
  
@@ -840,7 +847,14 @@ index 4a1e114..a23f609 100644
 +  ASSERT_TRUE(child3_node);
 +  ASSERT_TRUE(child4_node);
 +  EXPECT_EQ(child1_node->GetChildCount(), 0);
++  // The old parent was not resent either; it is re-serialized from its last
++  // data with the children it keeps, so it no longer describes itself as a
++  // parent.
++  EXPECT_EQ(child1_node->GetData().role, ax::mojom::Role::kStaticText);
++  EXPECT_FALSE(child1_node->GetData().GetBoolAttribute(
++      ax::mojom::BoolAttribute::kClipsChildren));
 +  EXPECT_EQ(child2_node->GetData().child_ids, std::vector<int32_t>{3});
++  EXPECT_EQ(child2_node->GetData().role, ax::mojom::Role::kGroup);
 +  EXPECT_EQ(child3_node->GetData().child_ids, std::vector<int32_t>{4});
 +  EXPECT_EQ(child3_node->GetName(), "child 3");
 +  EXPECT_EQ(child4_node->GetName(), "child 4");

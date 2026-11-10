@@ -109,6 +109,13 @@ void main() {
       ),
     );
     expect(text, contains('          !placed.insert(child).second) {'));
+    // 第一步摘过子节点的旧父节点，第二步必须按保留数据重新序列化（role 等随子节点变化）。
+    expect(
+      text,
+      contains(
+        '        stripped_parents.find(id) == stripped_parents.end() &&',
+      ),
+    );
   });
 
   test('release 下无效的 assert 与越界 erase 一并删除', () {
