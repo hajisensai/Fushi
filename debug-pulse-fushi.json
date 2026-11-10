@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T21:45:53Z",
+ "generatedAt": "2026-11-10T22:36:19Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4396e7338435b6f5b49176b776516c24b20d3443",
-  "seq": 26434
+  "sha": "3ada4d9dfb9bac5e8bd77001b7599b5bedf08e0a",
+  "seq": 26440
  },
  "builds": [
+  {
+   "seq": 26434,
+   "version": "3.3.0",
+   "sha": "4396e7338435b6f5b49176b776516c24b20d3443",
+   "unknown": false,
+   "publishedAt": "2026-11-10T22:36:07Z",
+   "testflight": false,
+   "baseSeq": 26407,
+   "prs": [
+    3281,
+    3293
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+    },
+    "macos": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+    }
+   }
+  },
   {
    "seq": 26407,
    "version": "3.3.0",
@@ -281,7 +313,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "none"
     },
     "windows": {
      "state": "ok"
@@ -296,30 +328,29 @@
   }
  ],
  "pending": {
-  "headSha": "4396e7338435b6f5b49176b776516c24b20d3443",
-  "headSeq": 26434,
+  "headSha": "3ada4d9dfb9bac5e8bd77001b7599b5bedf08e0a",
+  "headSeq": 26440,
   "prs": [
-   3281,
-   3293
+   3298
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895013954"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42913092632"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42913093085"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42913093085"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42895014022"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42913093085"
    }
   }
  },
@@ -1847,6 +1878,15 @@
    "mergedAt": "2026-11-10T19:45:57Z",
    "additions": 75,
    "deletions": 41,
+   "labels": []
+  },
+  "3298": {
+   "number": 3298,
+   "title": "fix: develop 4396e73 最终验证的真红（icons 棘轮 / format / OCR cancelAll / ffmpeg NO_PROXY / Chrome harness 就绪信号）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T22:16:56Z",
+   "additions": 163,
+   "deletions": 19,
    "labels": []
   }
  }
