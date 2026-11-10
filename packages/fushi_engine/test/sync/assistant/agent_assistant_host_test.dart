@@ -466,6 +466,173 @@ void main() {
     });
   });
 
+  // BUG-4282：作答带 entryId 时只答那一张卡片；晚到的旧卡作答不落到下一张卡上。
+  group('answers bind to the card', () {
+    Map<String, Object?> entryOf(HostAssistantSession s, Object? id) =>
+        _entries(s).firstWhere((Map<String, Object?> e) => e['id'] == id);
+
+    test('确认：晚到的旧卡作答被忽略，新卡仍待答、第二个工具不执行', () async {
+      final _StubLlm llm = _StubLlm(<AiChatTurn>[
+        _call('library.file.delete', <String, Object?>{'path': '/a'}),
+        _call('library.file.delete', <String, Object?>{'path': '/b'}, id: 'c2'),
+        _reply('done'),
+      ]);
+      final ({AgentAssistantHost host, _Toolbox toolbox, List<int> released})
+      parts = _host(llm);
+      final HostAssistantSession session = await parts.host.open(
+        kHostAssistantFeatureAgent,
+        locale: 'zh',
+      );
+      await session.act(<String, Object?>{'type': 'text', 'text': 'delete'});
+      await _until(() => session.snapshot().containsKey('pending'));
+      final Object? a = _pending(session)['entryId'];
+      await session.act(<String, Object?>{
+        'type': 'answerConfirm',
+        'approve': true,
+        'entryId': a,
+      });
+      await _until(
+        () =>
+            session.snapshot().containsKey('pending') &&
+            _pending(session)['entryId'] != a,
+      );
+      final Object? b = _pending(session)['entryId'];
+      expect(parts.toolbox.executed, <String>['library.file.delete']);
+
+      // 手机上对卡片 A 的重复点击晚到：不得把卡片 B 同意掉。
+      await session.act(<String, Object?>{
+        'type': 'answerConfirm',
+        'approve': true,
+        'entryId': a,
+      });
+      for (int i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(_pending(session)['entryId'], b);
+      expect(entryOf(session, b)['status'], 'pending');
+      expect(parts.toolbox.executed, <String>['library.file.delete']);
+
+      await session.act(<String, Object?>{
+        'type': 'answerConfirm',
+        'approve': false,
+        'entryId': b,
+      });
+      await _until(() => session.snapshot()['running'] == false);
+      expect(entryOf(session, b)['status'], 'declined');
+      expect(parts.toolbox.executed, <String>['library.file.delete']);
+      await session.close();
+    });
+
+    test('候选：两张卡选项 id 重叠，晚到的旧卡作答不落到新卡上', () async {
+      AiChatTurn ask(String id) => _call('ui.ask_choice', <String, Object?>{
+        'prompt': 'Which?',
+        'options': <Object?>[
+          <String, Object?>{'id': '1', 'label': 'One'},
+          <String, Object?>{'id': '2', 'label': 'Two'},
+        ],
+      }, id: id);
+      final _StubLlm llm = _StubLlm(<AiChatTurn>[
+        ask('c1'),
+        ask('c2'),
+        _reply('picked'),
+      ]);
+      final HostAssistantSession session = await _host(
+        llm,
+      ).host.open(kHostAssistantFeatureAgent, locale: 'zh');
+      await session.act(<String, Object?>{'type': 'text', 'text': 'pick'});
+      await _until(() => session.snapshot().containsKey('pending'));
+      final Object? a = _pending(session)['entryId'];
+      await session.act(<String, Object?>{
+        'type': 'answerChoice',
+        'choice': '1',
+        'entryId': a,
+      });
+      await _until(
+        () =>
+            session.snapshot().containsKey('pending') &&
+            _pending(session)['entryId'] != a,
+      );
+      final Object? b = _pending(session)['entryId'];
+
+      await session.act(<String, Object?>{
+        'type': 'answerChoice',
+        'choice': '1',
+        'entryId': a,
+      });
+      // 晚到的「都不是」也不得把新卡取消掉。
+      await session.act(<String, Object?>{
+        'type': 'answerChoice',
+        'choice': null,
+        'entryId': a,
+      });
+      for (int i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(_pending(session)['entryId'], b);
+      expect(entryOf(session, b)['status'], 'pending');
+
+      await session.act(<String, Object?>{
+        'type': 'answerChoice',
+        'choice': '2',
+        'entryId': b,
+      });
+      await _until(() => session.snapshot()['running'] == false);
+      expect(entryOf(session, a)['selected'], '1');
+      expect(entryOf(session, b)['selected'], '2');
+      expect(llm.requests, 3);
+      await session.close();
+    });
+
+    test('兼容旧客户端：不带 entryId 的作答仍答当前那张', () async {
+      final _StubLlm llm = _StubLlm(<AiChatTurn>[
+        _call('library.file.delete', <String, Object?>{'path': '/a'}),
+        _reply('deleted'),
+      ]);
+      final ({AgentAssistantHost host, _Toolbox toolbox, List<int> released})
+      parts = _host(llm);
+      final HostAssistantSession session = await parts.host.open(
+        kHostAssistantFeatureAgent,
+        locale: 'zh',
+      );
+      await session.act(<String, Object?>{'type': 'text', 'text': 'delete'});
+      await _until(() => session.snapshot().containsKey('pending'));
+      await session.act(<String, Object?>{
+        'type': 'answerConfirm',
+        'approve': true,
+      });
+      await _until(() => session.snapshot()['running'] == false);
+      expect(parts.toolbox.executed, <String>['library.file.delete']);
+      await session.close();
+    });
+
+    test('entryId 形状不对一律 ArgumentError（路由 400）', () async {
+      final HostAssistantSession session = await _host(
+        _StubLlm(<AiChatTurn>[]),
+      ).host.open(kHostAssistantFeatureAgent, locale: 'zh');
+      for (final Map<String, Object?> bad in <Map<String, Object?>>[
+        <String, Object?>{
+          'type': 'answerConfirm',
+          'approve': true,
+          'entryId': 3,
+        },
+        <String, Object?>{
+          'type': 'answerConfirm',
+          'approve': true,
+          'entryId': '',
+        },
+        <String, Object?>{'type': 'answerChoice', 'choice': '1', 'entryId': 3},
+        <String, Object?>{'type': 'answerChoice', 'entryId': ''},
+      ]) {
+        await expectLater(
+          session.act(bad),
+          throwsA(isA<ArgumentError>()),
+          reason: '$bad',
+        );
+      }
+      await session.close();
+    });
+  });
+
   group('CompositeHostAssistantProvider', () {
     test('features 取并集；开不了的按 feature 报 reasons；额外字段并入', () async {
       final CompositeHostAssistantProvider composite =

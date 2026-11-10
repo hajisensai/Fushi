@@ -250,20 +250,39 @@ class RemoteAiAgentSession extends ChangeNotifier
     return pending is Map ? '${pending['kind']}' : null;
   }
 
+  /// 快照里待答卡片的条目 id；离线 / 没有待答卡片时为 null。
+  String? get _pendingEntryId {
+    if (_offline) return null;
+    final Object? pending = _view['pending'];
+    final Object? entryId = pending is Map ? pending['entryId'] : null;
+    return entryId is String && entryId.isNotEmpty ? entryId : null;
+  }
+
   @override
   bool get awaitingConfirm => _pendingKind == kAgentPendingConfirm;
 
   @override
   bool get awaitingChoice => _pendingKind == kAgentPendingChoice;
 
+  /// 作答带上卡片 id（BUG-4282）：host 只答那一张，晚到的旧卡作答不落到下一张上。
+  /// 调用方没给时取发送这一刻快照里的待答卡片；旧 host 不认这个键，照旧答当前那张。
   @override
-  void answerConfirm(bool approved) => unawaited(
-    _act(<String, Object?>{'type': 'answerConfirm', 'approve': approved}),
+  void answerConfirm(bool approved, {String? entryId}) => unawaited(
+    _act(<String, Object?>{
+      'type': 'answerConfirm',
+      'approve': approved,
+      'entryId': ?(entryId ?? _pendingEntryId),
+    }),
   );
 
   @override
-  void answerChoice(String? id) =>
-      unawaited(_act(<String, Object?>{'type': 'answerChoice', 'choice': id}));
+  void answerChoice(String? id, {String? entryId}) => unawaited(
+    _act(<String, Object?>{
+      'type': 'answerChoice',
+      'choice': id,
+      'entryId': ?(entryId ?? _pendingEntryId),
+    }),
+  );
 
   /// 截图不过线：远端用的是那台设备配的模型，本机不知道它能不能收图。
   @override

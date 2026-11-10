@@ -87,6 +87,26 @@ class _StubLlm implements AgentLlm {
   }
 }
 
+/// 记下手机发出的每个动作；[lastAct] 等最后一个动作的往返结束，让测试按序投递。
+class _RecordingAssistantClient extends InterconnectAssistantClient {
+  _RecordingAssistantClient(SyncRepository repo) : super(repo: repo);
+
+  final List<Map<String, Object?>> actions = <Map<String, Object?>>[];
+  Future<void> lastAct = Future<void>.value();
+
+  @override
+  Future<HostAssistantEnvelope> act(
+    HostAssistantTarget target,
+    String id,
+    Map<String, Object?> action,
+  ) {
+    actions.add(Map<String, Object?>.of(action));
+    final Future<HostAssistantEnvelope> result = super.act(target, id, action);
+    lastAct = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+}
+
 AiChatTurn _call(String id, Map<String, Object?> args) => AiChatTurn(
   text: '',
   toolCalls: <AiChatToolCall>[
@@ -407,6 +427,69 @@ void main() {
       () => !session.running && !session.awaitingConfirm && deleted.isNotEmpty,
     );
     expect(deleted, <String>['a.mkv']);
+  });
+
+  test('BUG-4282：确认作答带卡片 id，晚到的旧卡作答不落到下一张卡上', () async {
+    final (_, String url) = await startHost(
+      agentHost(
+        turns: <AiChatTurn>[
+          _call('files.delete', <String, Object?>{'name': 'a.mkv'}),
+          _call('files.delete', <String, Object?>{'name': 'b.mkv'}),
+        ],
+      ),
+    );
+    final _RecordingAssistantClient c = _RecordingAssistantClient(repo);
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: (await c.probeUrl(url))!,
+      locale: 'zh-CN',
+      longPollWait: const Duration(seconds: 2),
+    );
+    addTearDown(session.dispose);
+    // 页面只经接口拿控制器。
+    final AiAgentConversationController controller = session;
+    await session.send('删掉 a.mkv 和 b.mkv');
+    await until(session, () => session.awaitingConfirm);
+    final AgentEntry cardA = session.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+
+    // 不给卡片 id 时取发送那一刻快照里的待答卡片。
+    controller.answerConfirm(true);
+    await c.lastAct;
+    expect(c.actions.last, <String, Object?>{
+      'type': 'answerConfirm',
+      'approve': true,
+      'entryId': cardA.id,
+    });
+    await until(
+      session,
+      () =>
+          session.awaitingConfirm &&
+          session.entries
+                  .lastWhere((AgentEntry e) => e.kind == AgentEntryKind.confirm)
+                  .id !=
+              cardA.id,
+    );
+    final AgentEntry cardB = session.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+    expect(deleted, <String>['a.mkv']);
+
+    // 卡片 A 的重复点击晚到：host 按卡片 id 忽略，不把卡片 B 同意掉。
+    controller.answerConfirm(true, entryId: cardA.id);
+    await c.lastAct;
+    expect(c.actions.last['entryId'], cardA.id);
+    expect(session.awaitingConfirm, isTrue);
+
+    controller.answerConfirm(false, entryId: cardB.id);
+    await c.lastAct;
+    await until(session, () => !session.running && !session.awaitingConfirm);
+    expect(deleted, <String>['a.mkv']);
+    expect(
+      session.entries.firstWhere((AgentEntry e) => e.id == cardB.id).status,
+      AgentEntryStatus.declined,
+    );
   });
 
   test('电脑停机：断线提示只插一次、放开输入与待答卡片', () async {

@@ -1337,12 +1337,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                   children: <Widget>[
                     FushiFilledButton(
                       key: const ValueKey<String>('ai-agent-confirm-approve'),
-                      onPressed: () => _controller.answerConfirm(true),
+                      onPressed: () =>
+                          _controller.answerConfirm(true, entryId: entry.id),
                       child: Text(t.ai_agent_confirm_approve),
                     ),
                     FushiTextButton(
                       key: const ValueKey<String>('ai-agent-confirm-decline'),
-                      onPressed: () => _controller.answerConfirm(false),
+                      onPressed: () =>
+                          _controller.answerConfirm(false, entryId: entry.id),
                       child: Text(t.ai_agent_confirm_decline),
                     ),
                   ],
@@ -1398,13 +1400,17 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                     _AgentChoiceOptionTile(
                       key: ValueKey<String>('ai-agent-choice-${option.id}'),
                       option: option,
-                      onPressed: () => _controller.answerChoice(option.id),
+                      onPressed: () => _controller.answerChoice(
+                        option.id,
+                        entryId: entry.id,
+                      ),
                     ),
                   FushiActionChipControl(
                     key: const ValueKey<String>('ai-agent-choice-cancel'),
                     avatar: const FushiIcon(FushiIcons.close, size: 16),
                     label: Text(t.ai_agent_choice_cancel),
-                    onPressed: () => _controller.answerChoice(null),
+                    onPressed: () =>
+                        _controller.answerChoice(null, entryId: entry.id),
                   ),
                 ],
               )

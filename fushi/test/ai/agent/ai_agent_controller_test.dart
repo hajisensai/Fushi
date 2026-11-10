@@ -278,6 +278,34 @@ void main() {
     expect(row.undoPayloadJson, isNull);
   });
 
+  test('BUG-4282：页面带卡片 id 作答；旧卡的晚到作答不落到下一张卡上', () async {
+    final AiAgentController c = controller(<AiChatTurn>[
+      _call('files.delete', <String, Object?>{'name': 'a.epub'}),
+      _call('files.delete', <String, Object?>{'name': 'b.epub'}),
+    ]);
+    final Future<void> turn = c.send('删掉 a 和 b');
+    await pumpEventQueue();
+    final AgentEntry cardA = c.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+    c.answerConfirm(true, entryId: cardA.id);
+    await pumpEventQueue();
+    final AgentEntry cardB = c.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+    expect(cardB.id, isNot(cardA.id));
+    expect(deleted, <String>['a.epub']);
+
+    c.answerConfirm(true, entryId: cardA.id);
+    await pumpEventQueue();
+    expect(c.awaitingConfirm, isTrue);
+    expect(deleted, <String>['a.epub']);
+
+    c.answerConfirm(false, entryId: cardB.id);
+    await turn;
+    expect(deleted, <String>['a.epub']);
+  });
+
   test('取消会话：待答的确认卡片按拒绝收尾，不替用户同意', () async {
     final AiAgentController c = controller(<AiChatTurn>[
       _call('files.delete', <String, Object?>{'name': 'b.epub'}),
