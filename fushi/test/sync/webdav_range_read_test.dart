@@ -40,8 +40,9 @@ class _FakeDavServer {
   _Mode mode = _Mode.honor;
   final List<HttpHeaders> requests = <HttpHeaders>[];
 
-  /// 200 整文件响应实际写进 socket 的字节数（客户端中途断开时写不完）。
-  int fullBodyBytesWritten = 0;
+  /// 200 整文件响应的结局：true = 整个响应体成功交付；false = 客户端中途断开。
+  /// 在服务端处理结束时完成，测试据此等待，不靠定时器。
+  final Completer<bool> fullBodyDelivered = Completer<bool>();
 
   String get base => 'http://127.0.0.1:${_server.port}/dav';
 
@@ -66,11 +67,12 @@ class _FakeDavServer {
               : i + chunk;
           response.add(Uint8List.sublistView(file, i, endExclusive));
           await response.flush();
-          fullBodyBytesWritten = endExclusive;
         }
         await response.close();
+        fullBodyDelivered.complete(true);
       } on Object {
         // 客户端断开。
+        fullBodyDelivered.complete(false);
       }
       return;
     }
@@ -168,9 +170,13 @@ void main() {
       ops.openRange(url, start: file.length - 16 * 1024),
       throwsA(isA<SyncAssetRangeUnsupported>()),
     );
-    // 客户端已断开：服务端后续写入失败，整文件写不完。
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-    expect(server.fullBodyBytesWritten, lessThan(file.length));
+    // 客户端已断开：服务端后续写入失败，整文件交付不完。
+    expect(
+      await server.fullBodyDelivered.future.timeout(
+        const Duration(seconds: 10),
+      ),
+      isFalse,
+    );
   });
 
   test('200 to a [0, EOF] request is the requested range itself', () async {

@@ -1,7 +1,7 @@
 // 反馈 toPvLQcpex：SFTP 同步后端按偏移读资产区间（云端旧名漫画包判型、云盘视频
 // 流播共用），与来源库 SFTP 流播同一份实现 openSftpFileRange。用假 SftpClient：
 //  (1) 区间 / 截到文件尾 / 起点越界（SyncAssetRangeNotSatisfiable 带总长）；
-//  (2) 远端句柄只在真正读时打开、读完或取消即关；只要总长不开句柄；
+//  (2) 远端句柄只在订阅后打开、读完或取消即关；只要总长（订阅即取消）也不泄漏句柄；
 //  (3) SftpSyncBackend.openAssetRange 经 op 锁取连接，越界结论原样穿过错误翻译层
 //      （不被包成 SyncBackendError、不断开连接）。
 
@@ -155,7 +155,10 @@ void main() {
         end: 0,
       );
       await headOnly.bytes.listen(null).cancel();
-      expect(sftp.opens, 0, reason: '只要总长（HEAD）不开远端句柄');
+      // async* 体在订阅后总会跑起来（取消只在 yield 处生效），所以这里可能开过一次
+      // 句柄；要守的是它随取消关掉、不泄漏。
+      expect(sftp.openHandles, 0, reason: '只要总长（HEAD）不泄漏远端句柄');
+      final int opensAfterHead = sftp.opens;
 
       final SyncAssetRange whole = await openSftpFileRange(
         sftp,
@@ -168,7 +171,7 @@ void main() {
       });
       await first.future;
       await sub.cancel();
-      expect(sftp.opens, 1);
+      expect(sftp.opens, opensAfterHead + 1);
       expect(sftp.openHandles, 0, reason: '取消订阅即关句柄');
       expect(sftp.bytesRead, lessThan(file.length));
     },
