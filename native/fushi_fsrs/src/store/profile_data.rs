@@ -108,7 +108,8 @@ impl SrsCore {
             // 不会误伤别的键。
             let meta = c
                 .execute(
-                    "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1                      OR instr(key, '/' || ?1 || '/') > 0",
+                    "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1 \
+                     OR instr(key, '/' || ?1 || '/') > 0",
                     [profile],
                 )
                 .map_err(sql)? as i64;
