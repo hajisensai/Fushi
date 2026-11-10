@@ -5,13 +5,13 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import '../helpers/source_guard.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
-/// BUG-4242：互联「已添加的对端」行标题只显示 URL，不显示已存的对端设备名。
-/// BUG-4243：「测试连接」连已停用的行也测，停用行亮 ✓ 让人以为它在用。
+/// BUG-4273：互联「已添加的对端」行标题只显示 URL，不显示已存的对端设备名。
+/// BUG-4274：「测试连接」连已停用的行也测，停用行亮 ✓ 让人以为它在用。
 ///
 /// 选什么显示 / 测哪些行是纯函数（单测）；面板是私有 State，接线用源码守卫
 /// （同目录 `interconnect_settings_bug1693_guard_test.dart` 范式）。
 void main() {
-  group('BUG-4242 interconnectPeerRowName', () {
+  group('BUG-4273 interconnectPeerRowName', () {
     test('uses the row own device name without the brand prefix', () {
       const FushiClientUrl row = FushiClientUrl(
         url: 'https://192.168.1.5:8765',
@@ -66,7 +66,7 @@ void main() {
     });
   });
 
-  test('BUG-4243 interconnectUrlsToTest keeps only enabled rows, in order', () {
+  test('BUG-4274 interconnectUrlsToTest keeps only enabled rows, in order', () {
     const List<FushiClientUrl> urls = <FushiClientUrl>[
       FushiClientUrl(url: 'a'),
       FushiClientUrl(url: 'b', enabled: false),
@@ -87,7 +87,7 @@ void main() {
   group('settings panel wiring (source guard)', () {
     final String corpus = readSyncSettingsSchemaSource();
 
-    test('BUG-4242 row title prefers the peer name over the URL', () {
+    test('BUG-4273 row title prefers the peer name over the URL', () {
       final String masked = maskComments(corpus);
       expect(
         masked.contains('interconnectPeerRowName(_urls, u)'),
@@ -106,7 +106,7 @@ void main() {
       );
     });
 
-    test('BUG-4243 test-all probes only enabled rows', () {
+    test('BUG-4274 test-all probes only enabled rows', () {
       final String body = maskComments(
         methodBody(corpus, '  Future<void> _testAll() async'),
       );
@@ -119,7 +119,7 @@ void main() {
       expect(body.contains('t.interconnect_peer_test_none_enabled'), isTrue);
     });
 
-    test('BUG-4243 disabled rows show no stale test result', () {
+    test('BUG-4274 disabled rows show no stale test result', () {
       final String masked = maskComments(corpus);
       expect(
         masked.contains('u.enabled ? _reachable[u.url] : null'),
