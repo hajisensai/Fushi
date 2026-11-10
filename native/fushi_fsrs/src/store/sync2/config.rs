@@ -11,6 +11,7 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::registers::{card_lineage_flags, deck_view_of, register_value};
+use crate::store::study::{NewMix, ReviewOrder};
 use crate::sync2::id::Id;
 use crate::sync2::sched::{Config, MemAlg};
 
@@ -213,6 +214,24 @@ impl DeckTree {
     pub fn uses_rwkv(&self, deck: &str) -> bool {
         let id = self.effective(deck);
         self.params_owner(&id).is_some_and(Self::owner_uses_rwkv)
+    }
+
+    /// 从 [root] 出卡时的复习顺序（牌组寄存器 `reviewOrder`，视图键 `ro`）：随参数继承取 own 祖先的值；own 祖先
+    /// 按 RWKV 排程时整棵子树固定按可提取度（RWKV 一路的分数只有 R，别的键没有意义），寄存器里存的值照存不改。
+    pub(crate) fn review_order(&self, root: &str) -> ReviewOrder {
+        match self.params_owner(root) {
+            Some(owner) if Self::owner_uses_rwkv(owner) => ReviewOrder::Retrievability,
+            Some(owner) => ReviewOrder::from_wire(owner.view["ro"].as_str()),
+            None => ReviewOrder::default(),
+        }
+    }
+
+    /// 从 [root] 出卡时新卡与复习怎么排（牌组寄存器 `newMix`，视图键 `mx`），随参数继承取 own 祖先的值。
+    pub(crate) fn new_mix(&self, root: &str) -> NewMix {
+        NewMix::from_wire(
+            self.params_owner(root)
+                .and_then(|owner| owner.view["mx"].as_str()),
+        )
     }
 
     /// 某牌组复习时实际用的排程配置（`SrsDeckTree.schedulingConfig`）。

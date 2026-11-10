@@ -1877,6 +1877,10 @@ class SyncRepository {
     kWorkProfileSessionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
+    // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
+    // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
+    // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
+    PreferencesRepository.audiobookFolderImportTranscribeKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,

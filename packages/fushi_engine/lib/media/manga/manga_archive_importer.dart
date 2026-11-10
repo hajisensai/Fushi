@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_series.dart'
+    show encodeEpubSeriesMetadata;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_archive_extractor.dart';
@@ -428,6 +430,9 @@ abstract final class MangaArchiveImporter {
       'fushi_manga_archive_',
     );
     Directory? epubExtraction;
+    // 纯图 EPUB 的 OPF 系列声明（见 [MangaImporter.importFromImageFolder] 的
+    // `sourceMetadata`）；其它载体没有 OPF，保持 null。
+    String? epubSeriesMetadata;
     try {
       if (_kSevenZipMangaArchiveExtensions.contains(extension)) {
         await (sevenZipExtractor ?? MangaSevenZipExtractor()).extractImages(
@@ -513,6 +518,7 @@ abstract final class MangaArchiveImporter {
             );
           }
           await _copyEpubPages(book, staging);
+          epubSeriesMetadata = encodeEpubSeriesMetadata(book.series);
         } else {
           await _extractArchiveImages(archive, staging, entries);
         }
@@ -527,6 +533,7 @@ abstract final class MangaArchiveImporter {
         policy: policy,
         onProgress: onProgress,
         sourceId: sourceId,
+        sourceMetadata: epubSeriesMetadata,
       );
     } finally {
       // 先关源包句柄（中途抛出时正在写的页文件句柄已在
