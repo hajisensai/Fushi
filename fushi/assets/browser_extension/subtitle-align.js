@@ -303,7 +303,9 @@
   function stopListening() {
     teardownGraph();
     if (cap.leaseTimer) { clearInterval(cap.leaseTimer); cap.leaseTimer = null; }
-    if (cap.status === 'listening' || cap.status === 'needs-gesture') cap.status = 'idle';
+    // 不再听：「在听 / 待激活 / 听到的全是静音」都只描述监听中的状态，停了就回 idle；
+    // 跨源 / 不支持是这个视频本身的事实，保留给侧边栏如实显示。
+    if (cap.status === 'listening' || cap.status === 'needs-gesture' || cap.status === 'silent') cap.status = 'idle';
   }
 
   function onBlock(e) {
