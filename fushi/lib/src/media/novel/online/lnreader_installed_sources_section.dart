@@ -320,9 +320,7 @@ class _LnReaderInstalledSourcesSectionState
               InstalledSourcesGroup<LnReaderInstalledPlugin>(
                 key: const ValueKey<String>('novel_sources_all_group'),
                 // 无置顶时整段只有一组，不必再挂小标题。
-                header: pinned.isNotEmpty
-                    ? t.online_sources_all_header
-                    : null,
+                header: pinned.isNotEmpty ? t.online_sources_all_header : null,
                 items: rest,
                 keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
                 reorderable: reorderable,

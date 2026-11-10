@@ -454,7 +454,10 @@ List<String> describeLayerHotspots(
 
 /// 扇出点的直接子 layer 按归属聚合（前两名）。没人持有的子 layer 记类型名，图层（PictureLayer，
 /// 从来不归 render object 持有）不计。
-String _describeChildOwners(ContainerLayer hotspot, Map<Layer, Element> owners) {
+String _describeChildOwners(
+  ContainerLayer hotspot,
+  Map<Layer, Element> owners,
+) {
   final Map<String, int> tally = <String, int>{};
   for (Layer? c = hotspot.firstChild; c != null; c = c.nextSibling) {
     if (c is PictureLayer) continue;

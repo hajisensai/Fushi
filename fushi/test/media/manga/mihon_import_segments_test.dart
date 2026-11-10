@@ -340,9 +340,7 @@ void main() {
       expect(tester.takeException(), null);
     });
 
-    testWidgets('鼠标拖拽重排真写穿排序（懒建 sliver 里照样能拖）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('鼠标拖拽重排真写穿排序（懒建 sliver 里照样能拖）', (WidgetTester tester) async {
       await pumpSlivers(tester, <Widget>[
         MihonInstalledSourcesSection(manager: manager),
       ]);
