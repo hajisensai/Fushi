@@ -6,6 +6,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show interconnectTunnelOriginUrl;
 import 'package:fushi_engine/sync/pairing/fushi_ping_client.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
@@ -388,13 +390,23 @@ Future<FushiClientUrl?> _raceP2p(
 
 bool _isP2pUrl(String url) => url.startsWith('p2p://');
 
-/// 本地转发口 URL → 它代表的 `p2p://` 持久地址（选路结果回写缓存 / 组内去重用）。
-final Map<String, String> _p2pOrigins = <String, String>{};
-
-/// [url] 若是本进程的 P2P 本地转发口，换回它代表的持久 `p2p://` 地址；其余原样。
-/// 凡是「拿选路结果的 baseUrl 回候选列表里找那一行」（取凭据等）都必须先过它：
-/// 转发口只活在内存里，列表里存的是 `p2p://`（审查问题 6）。
-String interconnectPersistedUrl(String url) => _p2pOrigins[url] ?? url;
+/// [url] 若是本进程**仍存活**的 P2P 本地转发口，换回它代表的持久 `p2p://` 地址；
+/// 其余原样。凡是「拿选路结果的 baseUrl 回候选列表里找那一行」（取凭据等）都必须
+/// 先过它：转发口只活在内存里，列表里存的是 `p2p://`（审查问题 6）。
+///
+/// 映射由 engine 随转发口一起持有（[interconnectTunnelOriginUrl]）：换提示撤口、
+/// 关端点时一并回收，已撤销的旧口按普通回环明文地址看待，不再冒充隧道。
+String interconnectPersistedUrl(String url) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null ||
+      (uri.scheme != 'http' && uri.scheme != 'https') ||
+      !uri.hasPort ||
+      (uri.path.isNotEmpty && uri.path != '/') ||
+      uri.hasQuery) {
+    return url;
+  }
+  return interconnectTunnelOriginUrl(uri.host, uri.port) ?? url;
+}
 
 /// `p2p://` 地址 → 本地转发口候选（隧道层没装 / 起不来 → null）；其余原样。
 Future<FushiClientUrl?> _resolveTransport(FushiClientUrl candidate) async {
@@ -403,9 +415,7 @@ Future<FushiClientUrl?> _resolveTransport(FushiClientUrl candidate) async {
       _p2pResolver;
   if (resolver == null) return null;
   try {
-    final FushiClientUrl? local = await resolver(candidate);
-    if (local != null) _p2pOrigins[local.url] = candidate.url;
-    return local;
+    return await resolver(candidate);
   } on Object catch (e, st) {
     engineLog.log('InterconnectP2p.resolve', e, st);
     return null;
@@ -821,11 +831,25 @@ class InterconnectAddressLearner {
 
   /// 立即学习一次。返回候选列表是否因此改变。
   ///
-  /// 只从经 TLS 认证的锚点学：明文锚点背后可能是冒名者，它公布的地址集（哪怕全是
-  /// https）会被带着本机 token 落库。
+  /// 只从经认证的锚点学：明文锚点背后可能是冒名者，它公布的地址集（哪怕全是
+  /// https）会被带着本机 token 落库。认证有两种：https 钉扎，或 [anchor] 是本进程
+  /// 仍存活的 P2P 转发口——隧道按对端 NodeId 公钥认证，与 TLS 钉扎等价，所以明文
+  /// 隧道也可以学；而 `p2p://` 行只会经已认证的锚点学到（[mergeLearnedHostAddresses]
+  /// 只学 https / p2p 地址），NodeId 本身是可信来源。
+  ///
+  /// [anchor] 是传输 URL（选路结果，可能是本地转发口）：`/api/host/addresses` 走它，
+  /// 指纹按它的 scheme 取（tls=1 隧道是 https + 钉扎，明文隧道不钉扎）；合并时用
+  /// 持久 URL 在列表里认锚点——转发口只活在内存里，列表里存的是 `p2p://`。
   Future<bool> refresh(FushiClientUrl anchor) async {
-    _lastRefresh[anchor.url] = _now();
-    if (!anchor.url.toLowerCase().startsWith('https://')) return false;
+    final String persisted = interconnectPersistedUrl(anchor.url);
+    final bool viaTunnel = persisted != anchor.url && _isP2pUrl(persisted);
+    _lastRefresh[persisted] = _now();
+    if (!viaTunnel && !anchor.url.toLowerCase().startsWith('https://')) {
+      return false;
+    }
+    if (viaTunnel && (anchor.hostId == null || anchor.hostId!.isEmpty)) {
+      return false;
+    }
     final String? token = interconnectTokenFor(
       anchor,
       await _repo.getFushiClientToken(),
@@ -839,7 +863,7 @@ class InterconnectAddressLearner {
     await _repo.updateFushiClientUrls((List<FushiClientUrl> before) {
       final List<FushiClientUrl> after = mergeLearnedHostAddresses(
         before,
-        anchorUrl: anchor.url,
+        anchorUrl: persisted,
         hostId: published.hostId,
         addresses: published.addresses,
       );
@@ -850,9 +874,10 @@ class InterconnectAddressLearner {
     return changed;
   }
 
-  /// 后台学习（同一锚点 [_throttle] 内只跑一次）；失败只留痕。
+  /// 后台学习（同一锚点 [_throttle] 内只跑一次，按持久 URL 计：同一条隧道换了
+  /// 转发口仍是同一个锚点）；失败只留痕。
   void refreshInBackground(FushiClientUrl anchor) {
-    final DateTime? last = _lastRefresh[anchor.url];
+    final DateTime? last = _lastRefresh[interconnectPersistedUrl(anchor.url)];
     if (last != null && _now().difference(last) < _throttle) return;
     unawaited(
       refresh(anchor).then<void>(

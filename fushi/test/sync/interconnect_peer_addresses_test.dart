@@ -4,11 +4,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:http/http.dart' as http;
 
@@ -231,13 +233,21 @@ void main() {
     });
 
     test('死明文 LAN + P2P 隧道：转发口在竞速与缓存命中时都保留', () async {
-      setInterconnectP2pResolver(
-        (FushiClientUrl c) async => FushiClientUrl(
-          url: 'http://127.0.0.1:5001',
-          hostId: c.hostId,
-          token: c.token,
-        ),
+      // 真实装配路径：转发口由（假）端点开出，反查映射随口登记在 engine。
+      final InterconnectP2pNode node = InterconnectP2pNode.forTesting(
+        _FakeP2pPort(),
+        'self',
       );
+      final InterconnectP2pRuntime runtime = InterconnectP2pRuntime(
+        loadSecret: () async => null,
+        saveSecret: (String _) async {},
+        loadRelayUrls: () async => const <String>[],
+      )..debugInstall(node);
+      bindInterconnectP2pClient(runtime);
+      addTearDown(() async {
+        await node.close();
+        debugResetAppInterconnectP2p();
+      });
       Future<bool> probe(FushiClientUrl c, String? hostId) async =>
           c.url == 'http://127.0.0.1:5001';
       final List<FushiClientUrl> list = <FushiClientUrl>[
@@ -900,4 +910,37 @@ class _FakeInterfaceAddress implements InterfaceAddress {
 
   @override
   Future<InternetAddress> reverse() => _address.reverse();
+}
+
+/// 假 iroh 端点：转发口从 5001 起依次分配。
+final class _FakeP2pPort implements InterconnectP2pEndpointPort {
+  int _next = 5001;
+
+  @override
+  int clientForward(
+    String nodeId, {
+    List<String> directAddrs = const <String>[],
+    String? relayUrl,
+  }) => _next++;
+
+  @override
+  bool stopForward(int port) => true;
+
+  @override
+  FushiP2pConnStatus status(String nodeId) => throw UnimplementedError();
+
+  @override
+  FushiP2pInfo info() => throw UnimplementedError();
+
+  @override
+  void hostListen(int port) {}
+
+  @override
+  void hostStop() {}
+
+  @override
+  String? hostPeer(int port) => null;
+
+  @override
+  Future<void> closeAsync() async {}
 }
