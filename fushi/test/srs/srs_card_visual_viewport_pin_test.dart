@@ -52,7 +52,7 @@ void main() {
   );
 
   test('换卡在 scrollTo(0, 0) 之后复位视觉视口', () {
-    final String shell = kSrsCardShellScript;
+    const String shell = kSrsCardShellScript;
     final int setCard = shell.indexOf('window.__fushiSrsSetCard = function(');
     expect(setCard, greaterThan(0));
     final int inner = shell.indexOf('q.innerHTML = html;', setCard);

@@ -19,6 +19,9 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/ocr/google_lens_screen_ocr.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -1948,8 +1951,59 @@ void main() {
           expect(
             tap.error,
             'point=(350,220) line=[100,200,500,250] vertical=false '
-            'charIndex=2 text="吾輩は猫"',
+            'charIndex=2 segments=0 char=[300,200,400,250] '
+            'anchor=[2220,200,2320,250] text="吾輩は猫"',
           );
+        });
+
+        testWidgets('反馈 Eemf0HOZhj：引擎跟随全局（出厂本机模型）而模型没下载 → 设备自带、按屏幕截图识别', (
+          WidgetTester tester,
+        ) async {
+          target.modelReady = false;
+          await startOcr(tester);
+          final SystemOcrPlatform? engine = target.recognizeEngines.single;
+          expect(engine, isA<MethodChannelSystemOcr>());
+          expect(
+            (engine! as MethodChannelSystemOcr).screenText,
+            isTrue,
+            reason: 'Apple 据此走行识别 + 逐字框，不对整屏做文档版面分析',
+          );
+          expect(
+            ErrorLogService.instance.diagnosticEntries
+                .lastWhere(
+                  (ErrorLogEntry e) =>
+                      e.source == 'floating_ball.screen_ocr_timing',
+                )
+                .error,
+            startsWith('engine=systemOcr '),
+          );
+        }, skip: !screenOcrHasSystemEngine);
+
+        testWidgets('反馈 Eemf0HOZhj：截屏识字单独选了 Google Lens → 交给 Lens 识别器', (
+          WidgetTester tester,
+        ) async {
+          await prefs.setScreenOcrEngine(ScreenOcrEngineSetting.googleLens);
+          await startOcr(tester);
+          expect(target.recognizeEngines.single, isA<GoogleLensScreenOcr>());
+        });
+
+        testWidgets('反馈 Eemf0HOZhj：全局 OCR 引擎选了 Google Lens、截屏识字跟随全局 → Lens', (
+          WidgetTester tester,
+        ) async {
+          await prefs.setMangaOcrEnginePreference(
+            MangaOcrEnginePreference.googleLens.key,
+          );
+          await startOcr(tester);
+          expect(target.recognizeEngines.single, isA<GoogleLensScreenOcr>());
+        });
+
+        testWidgets('Lens 还没同意上传：先在主窗里问，这次不截屏', (WidgetTester tester) async {
+          await prefs.setScreenOcrEngine(ScreenOcrEngineSetting.googleLens);
+          target.lensConsent = false;
+          await startOcr(tester);
+          expect(target.log, <String>['front', 'askLensConsent']);
+          expect(called('startScreenOcrCapture'), isFalse);
+          expect(target.recognizeEngines, isEmpty);
         });
 
         testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {
@@ -2245,6 +2299,29 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   /// 每次截屏识字交给系统 OCR 的语言（按调用顺序）。
   final List<String> recognizeLanguages = <String>[];
 
+  /// 每次截屏识字宿主交来的识别器（按调用顺序）。
+  final List<SystemOcrPlatform?> recognizeEngines = <SystemOcrPlatform?>[];
+
+  /// 本机 OCR 模型是否就绪（截屏识字引擎「跟随全局」解析用）。默认没下载：不碰
+  /// 真实模型目录。
+  bool modelReady = false;
+
+  @override
+  Future<bool> localModelReady(SystemOcrPlatform Function() localModel) async =>
+      modelReady;
+
+  /// 本设备是否已同意把截屏发给 Google Lens。
+  bool lensConsent = true;
+
+  @override
+  Future<bool> hasLensConsent() async => lensConsent;
+
+  @override
+  Future<bool> askLensConsent(BuildContext context) async {
+    log.add('askLensConsent');
+    return false;
+  }
+
   @override
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
@@ -2253,6 +2330,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   }) async {
     log.add('recognize');
     recognizeLanguages.add(language);
+    recognizeEngines.add(engine);
     return onRecognize(png);
   }
 

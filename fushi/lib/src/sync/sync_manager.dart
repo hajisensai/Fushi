@@ -1167,7 +1167,8 @@ class SyncManager {
     // guard silently skipped every upload — BUG-088). Re-package the extracted
     // directory into a temp .epub and upload that.
     final BookFormat format = BookFormat.parseOrEpub(book.format);
-    // PDF 无内容同步通道（与互联侧 _syncBooksContentLive 同判据）：不打包、不上传。
+    // PDF 无云盘内容同步通道：不打包、不上传（互联侧已有 PDF 原件通道，见
+    // pdf_sync_package.dart / BUG-4381；云盘通道刻意未扩，见该 BUG 记录）。
     // 在线小说占位书（LNReader）不上传：对端拿到的会是一本补不全的书。
     // 漫画先判本地有没有可导出的页（在线漫画占位书没有）再问远端，否则这类书每轮
     // 白发一次探针（与互联 books.part 同顺序）。

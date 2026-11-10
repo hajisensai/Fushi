@@ -117,10 +117,14 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
   ///
   /// [enabled] 为 false 时按钮同样禁用（对话框还有别的异步步骤在跑，如正在取文件，
   /// 这时开始导入会读到半途被改写的输入）。
+  ///
+  /// [label] 覆盖空闲态文案（默认 [t.dialog_import]）：导入后立即打开的流程
+  /// （如粘贴文本阅读）用「阅读」更贴切；进行中文案不变。
   Widget buildImportAction(
     BuildContext context, {
     required VoidCallback onImport,
     bool enabled = true,
+    String? label,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return adaptiveDialogAction(
@@ -144,7 +148,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
                 Text(t.dialog_importing),
               ],
             )
-          : Text(t.dialog_import),
+          : Text(label ?? t.dialog_import),
     );
   }
 

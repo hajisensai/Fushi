@@ -109,7 +109,9 @@ void main() {
     // Audiobook studio export: EBU R128 loudness normalisation (loudnorm two
     // pass, ebur128 measure, volume trim, alimiter true-peak guard, apad /
     // anullsrc silence) and an .m4b (ipod muxer) with chapters/metadata from an
-    // ;FFMETADATA1 side input (ffmetadata demuxer) plus a jpg/png cover.
+    // ;FFMETADATA1 side input (ffmetadata demuxer) plus a jpg/png cover, and
+    // the single-timeline subtitles muxed in as a mov_text track from an SRT
+    // side input (srt demuxer + mov_text encoder; feedback iUtGmIlZiD).
     expect(
       floor('filters'),
       containsAll(<String>[
@@ -123,9 +125,12 @@ void main() {
       ]),
     );
     expect(floor('muxers'), containsAll(<String>['ipod', 'mp4']));
-    expect(floor('demuxers'), containsAll(<String>['ffmetadata', 'image2']));
-    expect(floor('decoders'), containsAll(<String>['mjpeg', 'png']));
-    expect(floor('encoders'), contains('aac'));
+    expect(
+      floor('demuxers'),
+      containsAll(<String>['ffmetadata', 'image2', 'srt']),
+    );
+    expect(floor('decoders'), containsAll(<String>['mjpeg', 'png', 'subrip']));
+    expect(floor('encoders'), containsAll(<String>['aac', 'mov_text']));
   });
 
   test('immersion engine + capture channel derive the audio container from the '

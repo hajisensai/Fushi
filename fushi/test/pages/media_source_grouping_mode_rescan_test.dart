@@ -155,7 +155,7 @@ void main() {
     );
     final SourceLibraryRow folderRow = (await db.getMediaSourceById(sourceId))!;
     final SourceScanSummary first = (await tester.runAsync(
-      () => SourceLibraryScanner(db).scan(folderRow),
+      () => SourceLibraryScanner(db, transcribeAudiobook: null).scan(folderRow),
     ))!;
     expect(first.error, isNull);
     final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
