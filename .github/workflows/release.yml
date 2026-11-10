@@ -41,7 +41,9 @@ on:
       - 'tool/check_release_policy.ps1'
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
+      - 'tool/publish_debug_pulse.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
@@ -157,6 +159,20 @@ jobs:
       uses: ./.github/actions/fetch-vendored-binaries
       with:
         groups: android
+    # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
+    # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
+    # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
+    # latest-*.json；continue-on-error + 3 分钟超时，失败绝不让发布变红。脚本见 tool/publish_debug_pulse.sh。
+    # 排在 vendored 二进制拉取之后：那一步必须紧跟 checkout（vendored_binaries_manifest_guard_test）。
+    - name: Debug pulse (run start)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      continue-on-error: true
+      timeout-minutes: 3
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: bash tool/publish_debug_pulse.sh
 
     - name: Validate unified release policy
       shell: pwsh
@@ -1465,6 +1481,18 @@ jobs:
         # 盖住整个审批窗口，否则过了 14 天再批就发不出去。
         retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
+    # 构建本身失败时 publish-android 整个被跳过，收尾刷新到不了：在这里补一次，让 Android
+    # 显示「失败」。成功路径由 publish-android 里的收尾刷新负责，这里不重复。
+    - name: Debug pulse (build failed)
+      if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      continue-on-error: true
+      timeout-minutes: 3
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: bash tool/publish_debug_pulse.sh
+
   # 对外发布全部收在这个 job（2026-10-17 用户要求：正式版必须云端预构建好，说「发版」
   # 时秒发、不重新构建）。build job 只构建 + 签名 + 上传 run artifact；这里下载 artifact
   # 后才做 GitHub Release 创建 / 上传、滚动 debug 清理、更新清单、反馈回填、main 同步。
@@ -1767,6 +1795,18 @@ jobs:
         ASSET_GLOB: fushi-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
+
+    # 调试版流水线收尾刷新（出包结果）：紧跟清单发布，always()——前面任何一步失败也刷新，
+    # 让 debug 用户看到「失败」而不是一直「构建中」。同上只对 develop push、continue-on-error。
+    - name: Debug pulse (publish result)
+      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      continue-on-error: true
+      timeout-minutes: 3
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: bash tool/publish_debug_pulse.sh
 
     # 反馈发布回填：清单落地 = 这一版 Android 包已对用户可见，把「本构建包含其修复」的
     # 反馈记上 <channel>.android = 本版本（按 git 祖先关系判定，见脚本头注释）。

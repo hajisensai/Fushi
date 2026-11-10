@@ -40,12 +40,22 @@ import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 /// 而「打开合集 / 打开漫画作品页 / 打开扩展页 / 打开发布页」四条链路各自拖着一
 /// 整棵依赖树。
 class UpdatesCenterPage extends StatefulWidget {
-  const UpdatesCenterPage({super.key, required this.service, this.onOpenEntry});
+  const UpdatesCenterPage({
+    super.key,
+    required this.service,
+    this.onOpenEntry,
+    this.appReleaseHeader,
+  });
 
   final UpdateFeedService service;
 
   /// 打开一条更新。null = 只标已读不跳转。
   final Future<void> Function(UpdateFeedEntryRow entry)? onOpenEntry;
+
+  /// 「应用新版」域列表顶部的附加内容（debug 通道的调试版流水线面板）。与
+  /// [onOpenEntry] 同理由由外部注入：页面不认识流水线数据从哪来。有它时这个域
+  /// 没有条目也不显示空态。
+  final Widget? appReleaseHeader;
 
   @override
   State<UpdatesCenterPage> createState() => _UpdatesCenterPageState();
@@ -306,10 +316,17 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     );
   }
 
+  /// 当前域列表顶部的附加内容。
+  Widget? get _header =>
+      _filter == UpdateFeedKind.appRelease ? widget.appReleaseHeader : null;
+
   Widget _buildList(BuildContext context) {
     // 切域时「加载 → 列表 / 空态」交叉淡入，列表本身再按首屏错峰进场；时长走
-    // fushiMotionDuration（减弱动态效果 / 墨水屏下归零）。
-    final String phase = _loading
+    // fushiMotionDuration（减弱动态效果 / 墨水屏下归零）。有顶部附加内容时
+    // 恒为同一相位：刷新条目不该把面板整个重挂（重挂 = 重拉、重播进场）。
+    final String phase = _header != null
+        ? 'header'
+        : _loading
         ? 'loading'
         : _entries.isEmpty
         ? 'empty'
@@ -327,8 +344,14 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
 
   Widget _buildListBody(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (_loading) return SafeArea(bottom: false, child: buildLoading());
-    if (_entries.isEmpty) {
+    final Widget? header = _header;
+    final List<UpdateFeedEntryRow> entries = header != null && _loading
+        ? const <UpdateFeedEntryRow>[]
+        : _entries;
+    if (header == null && _loading) {
+      return SafeArea(bottom: false, child: buildLoading());
+    }
+    if (header == null && _entries.isEmpty) {
       return SafeArea(bottom: false, child: _UpdatesEmptyState(tokens: tokens));
     }
     // M3E 分段卡片列表（首尾大圆角、行间 2px），首屏错峰进场；切筛选重开窗口。
@@ -345,25 +368,30 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
             tokens.spacing.section,
           ),
         ),
-        itemCount: _entries.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
-          final UpdateFeedEntryRow entry = _entries[index];
-          return FushiGroupedListItem(
-            index: index,
-            count: _entries.length,
-            onTap: () => _open(entry),
-            child: _UpdateEntryTile(
-              entry: entry,
-              fresh: _fresh.contains(entry.entryId),
-            ),
-          );
-        }),
+        itemCount: entries.length + (header == null ? 0 : 1),
+        itemBuilder: (BuildContext context, int index) {
+          // 附加内容自带错峰进场，不再套一层。
+          if (header != null && index == 0) return header;
+          return _entryItem(context, header == null ? index : index - 1);
+        },
       ),
     );
   }
+
+  late final NullableIndexedWidgetBuilder _entryItem =
+      fushiStaggeredItemBuilder((BuildContext context, int index) {
+        final List<UpdateFeedEntryRow> entries = _entries;
+        final UpdateFeedEntryRow entry = entries[index];
+        return FushiGroupedListItem(
+          index: index,
+          count: entries.length,
+          onTap: () => _open(entry),
+          child: _UpdateEntryTile(
+            entry: entry,
+            fresh: _fresh.contains(entry.entryId),
+          ),
+        );
+      });
 }
 
 /// 进更新中心默认落在哪个域。
