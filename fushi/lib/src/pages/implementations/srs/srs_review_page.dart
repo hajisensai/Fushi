@@ -335,6 +335,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   void _pushUndo(SrsReviewUndoStep step) => _undoStack?.push(step);
 
+  /// 一次可撤销写入压一步（没改动 = 凭据为空，不压）。
+  void _pushEdits(String cardId, SrsEditUndo undo) {
+    if (undo.isNotEmpty) {
+      _pushUndo(SrsReviewUndoStep(cardId: cardId, edits: undo));
+    }
+  }
+
   /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
   ///
   /// 在 [initState] 里建好：以前是惰性初始化，首张卡还没出来就离开本页时它第一次被读是在
@@ -1228,7 +1235,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           }
           if (_reviewedThisSession > 0) _reviewedThisSession--;
         } else {
-          await step.revert!(store);
+          final SrsEditUndoResult r = await store.revertEdits(step.edits!);
+          if (!r.complete) {
+            // 之后被别人（同步拉进来的别的设备 / AI / 别处）改过的字段保留了现值。
+            FushiToast.show(
+              msg: t.srs_undo_kept_changed(n: r.kept.length),
+              severity: ToastSeverity.warning,
+            );
+          }
         }
         await _loadNext(cardId: step.cardId);
       }),
@@ -1247,12 +1261,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _editNote(detail);
       case _CardAction.suspend:
         await _guarded('suspend', () async {
-          await store.setSuspended(card.id, true);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.setSuspended(card.id, false),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.suspended,
+                true,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1260,13 +1278,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _guarded('bury', () async {
           final SrsDayContext day = await store.dayContext();
           final int today = day.dayIndexOf(store.now().$1);
-          final int? before = card.buriedUntilDay;
-          await store.buryUntil(card.id, today + 1);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.buryUntil(card.id, before),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.buriedUntilDay,
+                today + 1,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1285,13 +1306,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         );
         if (flag == null || flag == card.flag || !mounted) return;
         await _guarded('flag', () async {
-          final int before = card.flag;
-          await store.setFlag(card.id, flag);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.setFlag(card.id, before),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.flag,
+                flag,
+              ),
+            ]),
           );
           await _reloadCurrent();
         });
@@ -1308,13 +1332,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         );
         if (target == null || target == card.deckId || !mounted) return;
         await _guarded('move', () async {
-          final String before = card.deckId;
-          await store.moveCard(card.id, target);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.moveCard(card.id, before),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.cardDeck,
+                target,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1354,12 +1381,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         );
         if (!ok || !mounted) return;
         await _guarded('deleteNote', () async {
-          await store.deleteNote(detail.note.id);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.restoreNote(detail.note.id),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.note,
+                detail.note.id,
+                SrsFieldKeys.deleted,
+                store.now().$1,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1445,18 +1476,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   ) async {
     final SrsDbStore? store = _store;
     if (store == null || before == after) return;
-    await store.updateNote(
-      detail.note.id,
-      fieldsById: <String, String>{fieldId: after},
-    );
-    _pushUndo(
-      SrsReviewUndoStep(
-        cardId: detail.card.id,
-        revert: (SrsDbStore s) => s.updateNote(
+    _pushEdits(
+      detail.card.id,
+      await store.editFieldsUndoable(<SrsFieldChange>[
+        SrsFieldChange(
+          SrsEntityKind.note,
           detail.note.id,
-          fieldsById: <String, String>{fieldId: before},
+          SrsFieldKeys.noteField(fieldId),
+          after,
         ),
-      ),
+      ]),
     );
     if (mounted) setState(() => _editSelection = null);
     bumpSrsRevision(ref);
@@ -1570,35 +1599,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
-  /// 编辑笔记；有改动时压一步「改回原值」进撤销栈。
+  /// 编辑笔记；保存了改动时压一步进撤销栈（编辑页交回这次保存的撤销凭据）。
   Future<void> _editNote(SrsCardDetail detail) async {
-    final Map<String, String> before = <String, String>{
-      for (final SrsFieldDef f in detail.noteType.fields)
-        f.id: detail.note.field(f.id),
-    };
-    final List<String> tagsBefore = List<String>.of(detail.note.tags);
-    await _pushOver((_) => SrsNoteEditorPage(noteId: detail.note.id));
+    SrsEditUndo saved = SrsEditUndo.empty;
+    await _pushOver(
+      (_) => SrsNoteEditorPage(
+        noteId: detail.note.id,
+        onSaved: (SrsEditUndo undo) => saved = saved.merge(undo),
+      ),
+    );
     if (!mounted) return;
-    final SrsDbStore store = _store!;
-    final SrsNoteView? after = await store.note(detail.note.id);
-    if (after == null) return;
-    final bool changed =
-        before.entries.any(
-          (MapEntry<String, String> e) => after.field(e.key) != e.value,
-        ) ||
-        after.tags.join('\u0000') != tagsBefore.join('\u0000');
-    if (changed) {
-      _pushUndo(
-        SrsReviewUndoStep(
-          cardId: detail.card.id,
-          revert: (SrsDbStore s) => s.updateNote(
-            detail.note.id,
-            fieldsById: before,
-            tags: tagsBefore,
-          ),
-        ),
-      );
-    }
+    _pushEdits(detail.card.id, saved);
     bumpSrsRevision(ref);
   }
 

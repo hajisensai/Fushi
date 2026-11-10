@@ -9,8 +9,8 @@
 /// Fushi 卡片和导入的 Anki 类型；某条笔记的类型没有这个字段就记进 [SrsNoteFieldPlan.skipped]，
 /// 不报错也不乱写。
 ///
-/// 撤销：把改过的字段写回原值；写回前核对字段当前值仍是这批写下的值，之后又被改过的字段
-/// 不动、计入「撤不掉」的条数（与 [SrsBatchRevert] 同一约定）。
+/// 撤销：落库时记下撤销凭据（[SrsDbStore.editFieldsUndoable]），撤销按凭据还原（[SrsDbStore.revertEdits]）：
+/// 只还原之后没被别人动过的字段，被动过的保留现值并列出来（srs_edit_undo.dart）。
 library;
 
 import 'package:fushi_srs/fushi_srs.dart';
@@ -314,31 +314,34 @@ String _expand(String replace, Match m) {
 
 /// 一次落库的结果（[srsApplyNoteFieldPlan]）。
 class SrsNoteFieldApplied {
-  const SrsNoteFieldApplied({required this.changes, required this.conflicts});
+  const SrsNoteFieldApplied({
+    required this.changes,
+    required this.conflicts,
+    this.undo = SrsEditUndo.empty,
+  });
 
-  /// 实际写下的修改（计划里、落库时当前值仍是 `before` 的那些）。撤销就按它写回。
+  /// 实际写下的修改（计划里、落库时当前值仍是 `before` 的那些）。
   final List<SrsNoteFieldChange> changes;
 
   /// 计划算好之后、落库之前字段又被改过（同步拉下 / 别处并发改）因而**没写**的笔记数。
   final int conflicts;
+
+  /// 这次写入的撤销凭据（[SrsDbStore.revertEdits]）。
+  final SrsEditUndo undo;
 
   /// 实际改到的笔记数。
   int get noteCount =>
       <String>{for (final SrsNoteFieldChange c in changes) c.noteId}.length;
 
   /// 交给浏览页撤销栈的形状。
-  SrsBatchOutcome get outcome => SrsBatchOutcome(
-    changed: noteCount,
-    revert: changes.isEmpty
-        ? null
-        : (SrsDbStore s) => srsRevertNoteFieldChanges(s, changes),
-  );
+  SrsBatchOutcome get outcome =>
+      SrsBatchOutcome(changed: noteCount, revert: srsEditRevert(undo));
 }
 
 /// 一个批次写下 [plan]，条件写（compare-and-set）：在写锁里重读这批笔记，只写当前值仍是
 /// 计划时的 `before` 的字段；计划之后又被改过（同步拉下、AI / 控制通道并发改）的字段不覆盖，
 /// 整条笔记计入 [SrsNoteFieldApplied.conflicts]（同一笔记的几个字段要么一起写、要么都不写，
-/// 不把卡型开关写成半套）。与撤销的「当前值 == after 才写回」对称。
+/// 不把卡型开关写成半套）。
 Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
   SrsDbStore store,
   SrsNoteFieldPlan plan,
@@ -365,51 +368,34 @@ Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
       for (final SrsNoteFieldChange c in plan.changes)
         if (!conflicted.contains(c.noteId)) c,
     ];
-    if (changes.isNotEmpty) {
-      await store.editFieldsBatch(<SrsFieldChange>[
-        for (final SrsNoteFieldChange c in changes)
-          SrsFieldChange(
-            SrsEntityKind.note,
-            c.noteId,
-            SrsFieldKeys.noteField(c.fieldId),
-            c.after,
-          ),
-      ]);
-    }
-    return SrsNoteFieldApplied(changes: changes, conflicts: conflicted.length);
+    final SrsEditUndo undo = changes.isEmpty
+        ? SrsEditUndo.empty
+        : await store.editFieldsUndoable(<SrsFieldChange>[
+            for (final SrsNoteFieldChange c in changes)
+              SrsFieldChange(
+                SrsEntityKind.note,
+                c.noteId,
+                SrsFieldKeys.noteField(c.fieldId),
+                c.after,
+              ),
+          ]);
+    return SrsNoteFieldApplied(
+      changes: changes,
+      conflicts: conflicted.length,
+      undo: undo,
+    );
   });
 }
 
-/// 把 [changes] 写回原值。字段当前值已不是 `after`（之后又被改过 / 笔记被删）的不动；
-/// 返回撤不掉的笔记数。
-Future<int> srsRevertNoteFieldChanges(
-  SrsDbStore store,
-  List<SrsNoteFieldChange> changes,
-) async {
-  final Map<String, SrsNoteView?> notes = await store.notes(<String>{
-    for (final SrsNoteFieldChange c in changes) c.noteId,
-  });
-  final Set<String> blocked = <String>{};
-  final List<SrsFieldChange> writes = <SrsFieldChange>[];
-  for (final SrsNoteFieldChange c in changes) {
-    final SrsNoteView? note = notes[c.noteId];
-    if (note == null || note.deletedAt != null) {
-      blocked.add(c.noteId);
-      continue;
-    }
-    if (note.field(c.fieldId) != c.after) {
-      blocked.add(c.noteId);
-      continue;
-    }
-    writes.add(
-      SrsFieldChange(
-        SrsEntityKind.note,
-        c.noteId,
-        SrsFieldKeys.noteField(c.fieldId),
-        c.before,
-      ),
-    );
-  }
-  if (writes.isNotEmpty) await store.editFieldsBatch(writes);
-  return blocked.length;
-}
+/// 这一版之前记下的撤销载荷（只有改动清单、没有 dot）换成撤销凭据：内核只能按值核对（字段唯一的现值仍是这批写下的值）。
+SrsEditUndo srsLegacyNoteFieldUndo(List<SrsNoteFieldChange> changes) =>
+    SrsEditUndo(<SrsEditUndoItem>[
+      for (final SrsNoteFieldChange c in changes)
+        SrsEditUndoItem(
+          kind: SrsEntityKind.note,
+          entityId: c.noteId,
+          key: SrsFieldKeys.noteField(c.fieldId),
+          before: c.before,
+          after: c.after,
+        ),
+    ]);

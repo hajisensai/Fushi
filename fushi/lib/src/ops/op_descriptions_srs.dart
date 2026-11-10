@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:fushi_cli/fushi_cli.dart';
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
@@ -15,15 +14,16 @@ import 'package:fushi/src/ops/op_descriptions_library.dart'
 
 /// 复习（SRS）：牌组 / 笔记查询、统计、sync v2 冲突、重复笔记合并的操作描述（spec §4）。
 ///
-/// 撤销（spec §5.2「SRS 冲突里选『删除』：墓碑带快照，撤销即复活」）：
-/// - 被扣住的删除选「删除」：内核追加的是 `deleted = <时刻>` 修改记录，笔记 / 卡 / 牌组只是墓碑，
-///   内容与复习日志都还在日志里。撤销 = 追加一条 `deleted = null`（与「保留」写的是同一种记录），
-///   实体复活；撤销前当前删除记录已不是这次写的（之后又被恢复 / 再删）就报 superseded。
-/// - 标志 / 设置类冲突：撤销 = 把当时生效的值写回（被覆盖的候选不会重新出现在冲突中心，
-///   低价值标量按设计本来就自动决胜，历史里可查）。
-/// - 重复笔记合并：撤销 = 保留笔记被补上的字段 / 标签写回原值、保留卡上新挂的前身链接
-///   （`historyFrom/<被吸收卡>`）改成 false（血统只认 true）、被吸收的笔记恢复。
+/// 撤销统一按撤销凭据走（`package:fushi_engine/srs/srs_edit_undo.dart`，[_editUndo]）：路由在
+/// [SrsDbStore.undoable] 里写入、记下每个被改字段键的改前 / 改后值与修改记录的 dot；撤销时内核按库里的修改记录
+/// 裁决，只还原之后没被别人动过的键（同步拉进来的别的设备的修改、AI / 别处又改过的保留现值），撤销结果按
+/// 全部 / 部分 / 一处都没撤成报 done / partial / superseded，没撤成的键列在 message 里（[srsUndoOutcome]）：
+/// - 被扣住的删除选「删除」：内核追加 `deleted = <时刻>`，笔记 / 卡 / 牌组只是墓碑；撤销 = 写回 `deleted = null`。
+/// - 标志 / 设置类冲突：撤销 = 写回裁决前生效的值（被覆盖的候选不会重新出现在冲突中心）。
+/// - 重复笔记合并：撤销 = 保留笔记被补上的字段 / 标签、保留卡上新挂的前身链接（`historyFrom/<被吸收卡>`）、
+///   被吸收笔记的删除各自写回原值。
 /// - 「不是重复」：撤销 = 把写上的 `notDup/<对方>` 改回原值。
+/// - 批量改笔记：撤销 = 实际写下的字段写回原值。
 ///
 /// 撤销不了、标 irreversible：被扣住的删除选「保留」——另一台设备的删除作废、冲突项消失，
 /// 内核没有「重新扣住」的操作，回不到「待定」状态。
@@ -351,47 +351,55 @@ const List<OpParam> _noteBatchTargetParams = <OpParam>[
   ),
 ];
 
-/// 批量改笔记 → 撤销 = 实际写下的字段写回原值（之后又被改过的不动，计 superseded）。
-///
-/// 载荷取路由实际写下的改动清单（[srsCtlAppliedNoteChanges]，按这次调用挂），不在执行前另算
-/// 一遍计划：只算一次，撤销载荷与落库的改动一一对应。完整清单只进撤销记录、不回给调用方
-/// （回给调用方的只有样例）。预演 / 空计划不写入，载荷为空。
-OpUndo _noteBatchUndo(SrsCtlDeps deps, SrsCtlNoteBatch op) => opCustomUndo(
-  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
-    final List<SrsNoteFieldChange> applied =
-        srsCtlAppliedNoteChanges[call] ?? const <SrsNoteFieldChange>[];
-    return <String, Object?>{
-      'notes': <String>{
-        for (final SrsNoteFieldChange c in applied) c.noteId,
-      }.length,
-      'changes': <Map<String, Object?>>[
-        for (final SrsNoteFieldChange c in applied) c.toJson(),
-      ],
-    };
-  },
-  describe: (Map<String, Object?> p) => '${op.wire}：${p['notes'] ?? 0} 条笔记',
-  revert: (Map<String, Object?> payload) async {
-    final List<SrsNoteFieldChange> changes = <SrsNoteFieldChange>[
-      if (payload['changes'] case final List<Object?> raw)
-        for (final Object? c in raw) ?SrsNoteFieldChange.fromJson(c),
-    ];
-    if (changes.isEmpty) return const OpUndoOutcome.done();
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final int blocked = await srsRevertNoteFieldChanges(store, changes);
-    deps.changed();
-    final int total = <String>{
-      for (final SrsNoteFieldChange c in changes) c.noteId,
-    }.length;
-    if (blocked >= total) {
-      return const OpUndoOutcome.superseded('这些笔记之后都又被改过');
-    }
-    return const OpUndoOutcome.done();
-  },
-);
-
 // ─────────────────────────────────────────────────────────────────────────
 // 撤销
 // ─────────────────────────────────────────────────────────────────────────
+
+/// 撤销结果 → 操作目录的撤销结果：全部撤回 = done；一处都没撤成 = superseded；撤回了一部分 = partial。
+/// 没撤成的字段键（之后被别处改过、保留了现值）列进 message，AI / 操作记录 / `fushi_cli ai undo` 都看得到。
+OpUndoOutcome srsUndoOutcome(SrsEditUndoResult r) {
+  if (r.complete) return const OpUndoOutcome.done();
+  const int shown = 20;
+  final String kept = <String>[
+    for (final SrsEditUndoKept k in r.kept.take(shown))
+      '${k.kind.wire}/${k.entityId} ${k.key} = ${jsonEncode(k.current)}',
+    if (r.kept.length > shown) '……另 ${r.kept.length - shown} 处',
+  ].join('；');
+  final String message = '${r.kept.length} 处之后被别处改过，保留了现值：$kept';
+  return r.reverted == 0
+      ? OpUndoOutcome.superseded(message)
+      : OpUndoOutcome.partial(message);
+}
+
+/// SRS 写操作的统一撤销（语义见 `package:fushi_engine/srs/srs_edit_undo.dart`）：路由在
+/// [SrsDbStore.undoable] 里写入、把撤销凭据挂在 [srsCtlUndo]；载荷 = `undo`（凭据，含每个键的改前 / 改后与
+/// dot）+ [show] 给人看的字段；撤销 = [SrsDbStore.revertEdits]，只还原之后没被别人动过的键。
+///
+/// [legacy]：这一版之前记下的载荷（没有 `undo` 键）换成没有 dot 的凭据，内核只能按值核对。
+OpUndo _editUndo(
+  SrsCtlDeps deps, {
+  required Map<String, Object?> Function(CtlCall call, Object? result) show,
+  required String Function(Map<String, Object?> payload) describe,
+  Future<SrsEditUndo> Function(SrsDbStore store, Map<String, Object?> payload)?
+  legacy,
+}) => opCustomUndo(
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
+      <String, Object?>{
+        ...show(call, result),
+        'undo': (srsCtlUndo[call] ?? SrsEditUndo.empty).toJson(),
+      },
+  describe: describe,
+  revert: (Map<String, Object?> payload) async {
+    final SrsDbStore store = await requireSrsCtlStore(deps);
+    final SrsEditUndo undo = payload.containsKey('undo')
+        ? SrsEditUndo.fromJson(payload['undo'])
+        : await legacy?.call(store, payload) ?? SrsEditUndo.empty;
+    if (undo.isEmpty) return const OpUndoOutcome.done();
+    final SrsEditUndoResult r = await store.revertEdits(undo);
+    deps.changed();
+    return srsUndoOutcome(r);
+  },
+);
 
 Map<String, Object?> _map(Object? raw) => raw is Map
     ? <String, Object?>{
@@ -400,242 +408,164 @@ Map<String, Object?> _map(Object? raw) => raw is Map
       }
     : <String, Object?>{};
 
-/// 键顺序无关的 JSON 相等（载荷经过 JSON 往返）。
-bool _same(Object? a, Object? b) =>
-    jsonEncode(_canon(a)) == jsonEncode(_canon(b));
-
-Object? _canon(Object? v) {
-  if (v is Map) {
-    final List<String> keys = <String>[for (final Object? k in v.keys) '$k']
-      ..sort();
-    return <String, Object?>{for (final String k in keys) k: _canon(v[k])};
-  }
-  if (v is List) return <Object?>[for (final Object? x in v) _canon(x)];
-  return v;
-}
-
 SrsEntityKind _kindOf(Map<String, Object?> payload, String key) =>
     srsCtlEntityKind('${payload[key]}');
 
-/// 被扣住的删除选「删除」→ 撤销 = 追加 `deleted = null`（复活）。
-OpUndo _heldDeleteUndo(SrsCtlDeps deps) => opCustomUndo(
-  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
-      <String, Object?>{
-        'entityKind': _map(result)['entityKind'],
-        'entity': _map(result)['entity'],
-        'deletedAt': _map(result)['deletedAt'],
-      },
-  describe: (Map<String, Object?> p) => '已删除 ${p['entityKind']}/${p['entity']}',
-  revert: (Map<String, Object?> payload) async {
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final SrsEntityKind kind = _kindOf(payload, 'entityKind');
-    final String entity = '${payload['entity']}';
-    final Object? current = (await store.entityEdits(
-      kind,
-      entity,
-    )).value(SrsFieldKeys.deleted);
-    if (current == null || !_same(current, payload['deletedAt'])) {
-      return const OpUndoOutcome.superseded('之后已被恢复或重新删除');
-    }
-    await store.editField(kind, entity, SrsFieldKeys.deleted, null);
-    deps.changed();
-    return const OpUndoOutcome.done();
+/// 批量改笔记：撤销 = 实际写下的字段写回原值（之后又被改过的保留现值）。
+OpUndo _noteBatchUndo(SrsCtlDeps deps, SrsCtlNoteBatch op) => _editUndo(
+  deps,
+  show: (CtlCall call, Object? result) => <String, Object?>{
+    'notes': (srsCtlUndo[call] ?? SrsEditUndo.empty).entityCount,
   },
+  describe: (Map<String, Object?> p) => '${op.wire}：${p['notes'] ?? 0} 条笔记',
+  legacy: (SrsDbStore store, Map<String, Object?> p) async =>
+      srsLegacyNoteFieldUndo(<SrsNoteFieldChange>[
+        if (p['changes'] case final List<Object?> raw)
+          for (final Object? c in raw) ?SrsNoteFieldChange.fromJson(c),
+      ]),
 );
 
-/// 标志 / 设置类冲突 → 撤销 = 写回当时生效的值。
-OpUndo _fieldResolveUndo(SrsCtlDeps deps) => opCustomUndo(
-  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
-      _map(result),
+/// 被扣住的删除选「删除」→ 撤销 = 写回 `deleted = null`（复活）；之后已被恢复 / 重新删除的不动。
+OpUndo _heldDeleteUndo(SrsCtlDeps deps) => _editUndo(
+  deps,
+  show: (CtlCall call, Object? result) => <String, Object?>{
+    'entityKind': _map(result)['entityKind'],
+    'entity': _map(result)['entity'],
+  },
+  describe: (Map<String, Object?> p) => '已删除 ${p['entityKind']}/${p['entity']}',
+  legacy: (SrsDbStore store, Map<String, Object?> p) async =>
+      SrsEditUndo(<SrsEditUndoItem>[
+        SrsEditUndoItem(
+          kind: _kindOf(p, 'entityKind'),
+          entityId: '${p['entity']}',
+          key: SrsFieldKeys.deleted,
+          before: null,
+          after: p['deletedAt'],
+        ),
+      ]),
+);
+
+/// 标志 / 设置类冲突 → 撤销 = 写回裁决前生效的值。
+OpUndo _fieldResolveUndo(SrsCtlDeps deps) => _editUndo(
+  deps,
+  show: (CtlCall call, Object? result) => _map(result),
   describe: (Map<String, Object?> p) =>
       '${p['kind']}/${p['entity']} ${p['key']}：${jsonEncode(p['previous'])} → ${jsonEncode(p['value'])}',
-  revert: (Map<String, Object?> payload) async {
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final SrsEntityKind kind = _kindOf(payload, 'kind');
-    final String entity = '${payload['entity']}';
-    final String key = '${payload['key']}';
-    final Object? current = (await store.entityEdits(kind, entity)).value(key);
-    if (!_same(current, payload['value'])) {
-      return const OpUndoOutcome.superseded('之后又被改过');
-    }
-    if (!_same(payload['value'], payload['previous'])) {
-      await store.resolveConflict(kind, entity, key, payload['previous']);
-      deps.changed();
-    }
-    return const OpUndoOutcome.done();
-  },
+  legacy: (SrsDbStore store, Map<String, Object?> p) async =>
+      SrsEditUndo(<SrsEditUndoItem>[
+        SrsEditUndoItem(
+          kind: _kindOf(p, 'kind'),
+          entityId: '${p['entity']}',
+          key: '${p['key']}',
+          before: p['previous'],
+          after: p['value'],
+        ),
+      ]),
 );
 
-/// 合并前的快照：保留笔记的字段 / 标签、两边的卡、保留卡上已有的前身链接、被吸收笔记的删除状态。
-Future<Map<String, Object?>> _captureMerge(
-  SrsCtlDeps deps,
-  CtlCall call,
+/// 重复笔记合并 → 撤销 = 拆开：保留笔记被补上的字段写回原值、标签按差量撤、保留卡上新挂的前身链接
+/// （`historyFrom/<被吸收卡>`）写回原值（血统只认 true）、被吸收的笔记恢复；之后被别处改过的键保留现值。
+OpUndo _mergeUndo(SrsCtlDeps deps) => _editUndo(
+  deps,
+  show: (CtlCall call, Object? result) => <String, Object?>{
+    'keep': _map(result)['keep'],
+    'absorb': _map(result)['absorbed'],
+  },
+  describe: (Map<String, Object?> p) =>
+      '${opUndoStrings(p['absorb']).join(', ')} → ${p['keep']}',
+  legacy: _legacyMergeUndo,
+);
+
+/// 这一版之前记下的合并载荷（合并前快照 + 合并后的字段 / 标签，没有 dot）换成凭据。被吸收笔记的删除时刻与
+/// 新挂的链接当时没记：按「现在仍是合并留下的状态」补上 after（仍删着 / 链接仍为 true），否则记成撤不成。
+Future<SrsEditUndo> _legacyMergeUndo(
+  SrsDbStore store,
+  Map<String, Object?> p,
 ) async {
-  final SrsDbStore store = await requireSrsCtlStore(deps);
-  final String keep = call.optString('keep') ?? '';
-  final List<String> absorb = <String>[
-    for (final String id in call.stringList('absorb'))
-      if (id != keep) id,
+  final String keep = '${p['keep']}';
+  final List<String> absorb = opUndoStrings(p['absorb']);
+  final Map<String, Object?> oldFields = _map(p['keepFields']);
+  final Map<String, Object?> newFields = _map(p['newFields']);
+  final Map<String, Object?> prior = _map(p['priorLinks']);
+  final Set<String> alreadyDeleted = opUndoStrings(p['alreadyDeleted']).toSet();
+  final List<SrsEditUndoItem> items = <SrsEditUndoItem>[
+    for (final String k in <String>{...oldFields.keys, ...newFields.keys})
+      if ('${oldFields[k] ?? ''}' != '${newFields[k] ?? ''}')
+        SrsEditUndoItem(
+          kind: SrsEntityKind.note,
+          entityId: keep,
+          key: SrsFieldKeys.noteField(k),
+          before: '${oldFields[k] ?? ''}',
+          after: '${newFields[k] ?? ''}',
+        ),
+    SrsEditUndoItem(
+      kind: SrsEntityKind.note,
+      entityId: keep,
+      key: SrsFieldKeys.noteTags,
+      before: opUndoStrings(p['keepTags']),
+      after: opUndoStrings(p['newTags']),
+    ),
   ];
-  final SrsNoteView? kept = await store.note(keep);
-  if (kept == null) return const <String, Object?>{};
-  final List<String> keepCards = <String>[
-    for (final SrsCardCacheRow c in await store.cardsOfNote(keep)) c.id,
-  ];
-  final List<String> absorbCards = <String>[
-    for (final String id in absorb)
-      for (final SrsCardCacheRow c in await store.cardsOfNote(id)) c.id,
-  ];
-  final Map<String, Object?> priorLinks = <String, Object?>{};
-  for (final String kc in keepCards) {
+  for (final String kc in opUndoStrings(p['keepCards'])) {
     final SrsEntityEdits edits = await store.entityEdits(
       SrsEntityKind.card,
       kc,
     );
-    for (final String ac in absorbCards) {
+    for (final String ac in opUndoStrings(p['absorbCards'])) {
       final String key = SrsFieldKeys.cardHistoryFrom(ac);
-      if (edits[key] != null) priorLinks['$kc/$ac'] = edits.value(key);
+      final Object? before = prior['$kc/$ac'];
+      if (edits.value(key) == true && before != true) {
+        items.add(
+          SrsEditUndoItem(
+            kind: SrsEntityKind.card,
+            entityId: kc,
+            key: key,
+            before: before ?? false,
+            after: true,
+          ),
+        );
+      }
     }
   }
   final Map<String, SrsNoteView?> views = await store.notes(absorb);
-  return <String, Object?>{
-    'keep': keep,
-    'absorb': absorb,
-    'keepFields': kept.fields,
-    'keepTags': kept.tags,
-    'keepCards': keepCards,
-    'absorbCards': absorbCards,
-    'priorLinks': priorLinks,
-    'alreadyDeleted': <String>[
-      for (final String id in absorb)
-        if (views[id]?.deletedAt != null) id,
-    ],
-  };
+  for (final String id in absorb) {
+    if (alreadyDeleted.contains(id)) continue;
+    items.add(
+      SrsEditUndoItem(
+        kind: SrsEntityKind.note,
+        entityId: id,
+        key: SrsFieldKeys.deleted,
+        before: null,
+        // 仍删着 = 仍是合并留下的状态；已恢复 / 不在了 = 被别处动过（按值核对必不成，记成撤不成）。
+        after: views[id]?.deletedAt ?? true,
+      ),
+    );
+  }
+  return SrsEditUndo(items);
 }
 
-/// 重复笔记合并 → 撤销 = 拆开（见库注释）。
-OpUndo _mergeUndo(SrsCtlDeps deps) => opCustomUndo(
-  capture: (CtlCall call) => _captureMerge(deps, call),
-  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
-      <String, Object?>{
-        ...before,
-        'newFields': _map(result)['fields'],
-        'newTags': _map(result)['tags'],
-      },
-  describe: (Map<String, Object?> p) =>
-      '${opUndoStrings(p['absorb']).join(', ')} → ${p['keep']}',
-  revert: (Map<String, Object?> payload) async {
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final String keep = '${payload['keep']}';
-    final List<String> absorb = opUndoStrings(payload['absorb']);
-    final SrsNoteView? kept = await store.note(keep);
-    if (kept == null || kept.deletedAt != null) {
-      return const OpUndoOutcome.superseded('保留的笔记已不在');
-    }
-    if (!_same(kept.fields, payload['newFields']) ||
-        !_same(kept.tags, payload['newTags'])) {
-      return const OpUndoOutcome.superseded('保留的笔记合并后又被改过');
-    }
-    final Set<String> alreadyDeleted = opUndoStrings(
-      payload['alreadyDeleted'],
-    ).toSet();
-    final Map<String, SrsNoteView?> views = await store.notes(absorb);
-    for (final String id in absorb) {
-      if (alreadyDeleted.contains(id)) continue;
-      if (views[id]?.deletedAt == null) {
-        return const OpUndoOutcome.superseded('被并进去的笔记已被恢复或不存在');
-      }
-    }
-    // ① 保留笔记：被补上的字段写回原值、标签写回原集合。
-    final Map<String, Object?> oldFields = _map(payload['keepFields']);
-    final Map<String, Object?> newFields = _map(payload['newFields']);
-    final Map<String, String> revertFields = <String, String>{
-      for (final String k in <String>{...oldFields.keys, ...newFields.keys})
-        if ('${oldFields[k] ?? ''}' != '${newFields[k] ?? ''}')
-          k: '${oldFields[k] ?? ''}',
-    };
-    final List<String> oldTags = opUndoStrings(payload['keepTags']);
-    final bool tagsChanged = !_same(oldTags, payload['newTags']);
-    if (revertFields.isNotEmpty || tagsChanged) {
-      await store.updateNote(
-        keep,
-        fieldsById: revertFields.isEmpty ? null : revertFields,
-        tags: tagsChanged ? oldTags : null,
-      );
-    }
-    // ② 合并新挂的前身链接改成 false（内核的血统只认 true）。
-    final Map<String, Object?> prior = _map(payload['priorLinks']);
-    final List<SrsEditSpec> unlink = <SrsEditSpec>[];
-    for (final String kc in opUndoStrings(payload['keepCards'])) {
-      final SrsEntityEdits edits = await store.entityEdits(
-        SrsEntityKind.card,
-        kc,
-      );
-      for (final String ac in opUndoStrings(payload['absorbCards'])) {
-        final String key = SrsFieldKeys.cardHistoryFrom(ac);
-        final Object? before = prior['$kc/$ac'];
-        if (edits.value(key) == true && before != true) {
-          unlink.add(SrsEditSpec(SrsEntityKind.card, kc, key, before ?? false));
-        }
-      }
-    }
-    if (unlink.isNotEmpty) await store.writeEdits(unlink);
-    // ③ 被吸收的笔记恢复（合并前就已删除的不动）。
-    for (final String id in absorb) {
-      if (!alreadyDeleted.contains(id)) await store.restoreNote(id);
-    }
-    deps.changed();
-    return const OpUndoOutcome.done();
+/// 「不是重复」→ 撤销 = notDup 记录写回原值（之后被改过的保留现值）。
+OpUndo _dismissUndo(SrsCtlDeps deps) => _editUndo(
+  deps,
+  show: (CtlCall call, Object? result) => <String, Object?>{
+    'notes': _map(result)['dismissed'],
   },
-);
-
-/// 「不是重复」→ 撤销 = notDup 记录写回原值。
-OpUndo _dismissUndo(SrsCtlDeps deps) => opCustomUndo(
-  capture: (CtlCall call) async {
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final List<String> notes = call.stringList('notes').toSet().toList();
-    final Map<String, SrsEntityEdits> edits = await store.entityEditsMany(
-      SrsEntityKind.note,
-      notes,
-    );
-    return <String, Object?>{
-      'notes': notes,
-      'prior': <String, Object?>{
-        for (final String a in notes)
-          for (final String b in notes)
-            if (a != b)
-              '$a/$b': edits[a]?.value(SrsDuplicateNotes.notDuplicateKey(b)),
-      },
-    };
-  },
-  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
-      before,
   describe: (Map<String, Object?> p) =>
       '不是重复：${opUndoStrings(p['notes']).join(', ')}',
-  revert: (Map<String, Object?> payload) async {
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final List<String> notes = opUndoStrings(payload['notes']);
-    final Map<String, Object?> prior = _map(payload['prior']);
-    final Map<String, SrsEntityEdits> edits = await store.entityEditsMany(
-      SrsEntityKind.note,
-      notes,
-    );
-    final List<SrsEditSpec> specs = <SrsEditSpec>[];
-    for (final String a in notes) {
-      for (final String b in notes) {
-        if (a == b) continue;
-        final String key = SrsDuplicateNotes.notDuplicateKey(b);
-        if (edits[a]?.value(key) != true) {
-          return const OpUndoOutcome.superseded('之后又被改过');
-        }
-        final Object? before = prior['$a/$b'];
-        if (before != true) {
-          specs.add(SrsEditSpec(SrsEntityKind.note, a, key, before ?? false));
-        }
-      }
-    }
-    if (specs.isNotEmpty) await store.writeEdits(specs);
-    deps.changed();
-    return const OpUndoOutcome.done();
+  legacy: (SrsDbStore store, Map<String, Object?> p) async {
+    final List<String> notes = opUndoStrings(p['notes']);
+    final Map<String, Object?> prior = _map(p['prior']);
+    return SrsEditUndo(<SrsEditUndoItem>[
+      for (final String a in notes)
+        for (final String b in notes)
+          if (a != b && prior['$a/$b'] != true)
+            SrsEditUndoItem(
+              kind: SrsEntityKind.note,
+              entityId: a,
+              key: SrsDuplicateNotes.notDuplicateKey(b),
+              before: prior['$a/$b'] ?? false,
+              after: true,
+            ),
+    ]);
   },
 );

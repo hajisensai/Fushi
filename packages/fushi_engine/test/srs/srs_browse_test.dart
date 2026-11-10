@@ -714,7 +714,7 @@ void main() {
       }
 
       t += 1000;
-      expect(await out.revert!(a), 0);
+      expect((await out.revert!(a)).complete, isTrue);
       final Map<String, bool> after = <String, bool>{
         for (final SrsCardCacheRow r in await a.cardRows(cards))
           r.id: r.suspended,
@@ -823,7 +823,7 @@ void main() {
       // c2 重置后又复习了一次：那条重置日志已不是最后一条有效日志，撤不掉。
       t += 1000;
       await s.answer(c2, 4);
-      expect(await reset.revert!(s), 1);
+      expect((await reset.revert!(s)).blockedLogs, 1);
       expect((await s.cardRow(c1))!.queue, SrsQueue.review.wire);
 
       expect(srsParseDueDays('3'), (3, 3));
@@ -843,7 +843,7 @@ void main() {
         expect(r.queue, SrsQueue.review.wire);
         expect(r.dueDay, inInclusiveRange(today + 5, today + 10));
       }
-      expect(await due.revert!(s), 0);
+      expect((await due.revert!(s)).blockedLogs, 0);
       expect((await s.cardRow(c3))!.queue, SrsQueue.newCard.wire);
     });
   });
