@@ -7,7 +7,8 @@
 ///
 /// 每一边都显示是哪台设备（「<名称>（Fushi X.Y）」，srs/srs_device_view.dart）、什么时候改的；文本值画出差异；
 /// 每条给默认推荐并写明理由（设置类：修改时间更晚的一边；扣住的删除：保留——另一边还有复习 / 修改，保留不丢数据），
-/// 同类冲突（同一种实体的同一项 / 同一种删除冲突）可以一次都按这个选。
+/// 同类冲突（同一种实体的同一项 / 同一种删除冲突）可以一次都按这个选；顶栏「批量处理」再把被替换的设置、
+/// 扣住的删除、可能重复的笔记各自一次处理完（待确认的设备与等你决定的笔记仍逐条处理）。
 library;
 
 import 'dart:async';
@@ -34,12 +35,14 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -70,6 +73,31 @@ class _HeldDelete {
   final int others;
   final int at;
   final String label;
+}
+
+/// 「批量处理」的选项：每一节一次按同一个选择处理全部条目。
+enum _BulkAction {
+  /// 被替换的设置：每条按它自己的推荐（修改时间更晚的一边）。
+  settingsRecommended,
+
+  /// 被替换的设置：都保留当前生效的值（原「全部确认」）。
+  settingsCurrent,
+
+  /// 扣住的删除：全部保留（推荐，不丢另一边的修改 / 复习）。
+  heldKeep,
+
+  /// 扣住的删除：全部以删除为准。
+  heldDelete,
+
+  /// 可能重复的笔记：每组保留复习最多的那条、其余并进来。
+  duplicatesMerge,
+
+  /// 可能重复的笔记：都标为不是重复。
+  duplicatesDismiss;
+
+  /// 删除 / 合并不好撤回：执行前再确认一次。
+  bool get irreversible =>
+      this == _BulkAction.heldDelete || this == _BulkAction.duplicatesMerge;
 }
 
 /// 冲突页的一条（标志 / 设置类）。
@@ -119,6 +147,9 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   List<_HeldDelete> _held = const <_HeldDelete>[];
   List<SrsDuplicateGroup> _duplicates = const <SrsDuplicateGroup>[];
   SrsDeviceDirectory _devices = SrsDeviceDirectory.empty;
+
+  /// 本机还没信任的设备（待确认在前，再是已拒绝的）：它们的删除与彻底清除在本机扣着（内核 trust.rs）。
+  List<SrsDeviceView> _untrusted = const <SrsDeviceView>[];
 
   /// 勾了「同类都按这个选」的组（[_Conflict.group] / 扣住删除的 `held/<kind>`）。
   final Set<String> _applySame = <String>{};
@@ -247,9 +278,18 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     final List<SrsDuplicateGroup> duplicates = await store
         .duplicateNoteGroups();
     final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
+    final List<SrsDeviceView> untrusted =
+        devices.all
+            .where((SrsDeviceView d) => d.trust != SrsDeviceTrust.trusted)
+            .toList()
+          ..sort(
+            (SrsDeviceView a, SrsDeviceView b) =>
+                a.trust.index.compareTo(b.trust.index),
+          );
     if (!mounted) return;
     setState(() {
       _devices = devices;
+      _untrusted = untrusted;
       _conflicts = conflicts;
       _pending = pending;
       _held = held;
@@ -321,6 +361,34 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
   }
 
+  /// 信任（确认框说明扣着的会立即生效）/ 拒绝一台待确认的设备。
+  Future<void> _trustDevice(SrsDeviceView d, {required bool trust}) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final String name = _who(d.id);
+    if (trust) {
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_trust_confirm_title(device: name),
+        message: t.srs_trust_confirm_body(n: d.heldDeletes + d.heldPurges),
+        confirmLabel: t.srs_trust_action_trust,
+        icon: FushiIcons.verified,
+        destructive: d.heldPurges > 0,
+      );
+      if (!ok) return;
+    }
+    await store.sync2Trust(d.id, trust: trust);
+    FushiToast.show(
+      msg: trust
+          ? t.srs_trust_trusted_toast(device: name)
+          : t.srs_trust_rejected_toast(device: name),
+      severity: ToastSeverity.success,
+    );
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
+  }
+
   Future<void> _resolveHeld(_HeldDelete c, {required bool delete}) async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
@@ -387,53 +455,175 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     await _reload();
   }
 
-  Future<void> _confirmAll() async {
+  /// 批量处理：每一节一次按同一个选择处理全部条目（#IBjxAjty39）。只覆盖有明确选项、
+  /// 不需要看内容的三节——被替换的设置、扣住的删除、可能重复的笔记；待确认的设备
+  /// （信任是安全决定）和等你决定的笔记（要在编辑页看字段内容）仍逐条处理。
+  Future<void> _bulkResolve(_BulkAction action) async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
-    for (final _Conflict c in _conflicts) {
-      await store.resolveConflict(
-        c.kind,
-        c.entityId,
-        c.register.key,
-        c.winner.value,
-      );
+    final List<_Conflict> conflicts = _conflicts;
+    final List<_HeldDelete> held = _held;
+    final List<SrsDuplicateGroup> duplicates = _duplicates;
+    int done = 0;
+    switch (action) {
+      case _BulkAction.settingsRecommended:
+      case _BulkAction.settingsCurrent:
+        for (final _Conflict c in conflicts) {
+          final bool revert =
+              action == _BulkAction.settingsRecommended && c.recommendRevert;
+          await store.resolveConflict(
+            c.kind,
+            c.entityId,
+            c.register.key,
+            revert ? c.loser.value : c.winner.value,
+          );
+          done++;
+        }
+        _applySame.removeWhere((String g) => !g.startsWith('held/'));
+      case _BulkAction.heldKeep:
+      case _BulkAction.heldDelete:
+        for (final _HeldDelete h in held) {
+          await store.sync2Resolve(
+            h.id,
+            delete: action == _BulkAction.heldDelete,
+          );
+          done++;
+        }
+        _applySame.removeWhere((String g) => g.startsWith('held/'));
+      case _BulkAction.duplicatesMerge:
+        // 每组保留排在最前的那条（复习最多的，平手取先创建的；srs_duplicate_notes.dart）。
+        for (final SrsDuplicateGroup g in duplicates) {
+          await store.mergeNotes(
+            keepId: g.noteIds.first,
+            absorbIds: g.noteIds.skip(1).toList(),
+          );
+          done++;
+        }
+      case _BulkAction.duplicatesDismiss:
+        for (final SrsDuplicateGroup g in duplicates) {
+          await store.dismissDuplicates(g.noteIds);
+          done++;
+        }
     }
+    FushiToast.show(
+      msg: t.srs_conflict_resolved_many(n: done),
+      severity: ToastSeverity.success,
+    );
     if (!mounted) return;
     bumpSrsRevision(ref);
     await _reload();
   }
+
+  /// 「批量处理」：列出当前有条目的几节各自的批量选项；删除 / 合并这两种不好撤回的再确认一次。
+  Future<void> _openBulk() async {
+    final List<FushiChoiceOption<_BulkAction>>
+    options = <FushiChoiceOption<_BulkAction>>[
+      if (_conflicts.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
+        FushiChoiceOption<_BulkAction>(
+          value: _BulkAction.settingsRecommended,
+          label: t.srs_conflicts_bulk_settings_recommended(
+            n: _conflicts.length,
+          ),
+          icon: FushiIcons.lightbulb,
+        ),
+        FushiChoiceOption<_BulkAction>(
+          value: _BulkAction.settingsCurrent,
+          label: t.srs_conflicts_bulk_settings_current(n: _conflicts.length),
+          icon: FushiIcons.check,
+        ),
+      ],
+      if (_held.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
+        FushiChoiceOption<_BulkAction>(
+          value: _BulkAction.heldKeep,
+          label: t.srs_conflicts_bulk_held_keep(n: _held.length),
+          icon: FushiIcons.restoreBackup,
+        ),
+        FushiChoiceOption<_BulkAction>(
+          value: _BulkAction.heldDelete,
+          label: t.srs_conflicts_bulk_held_delete(n: _held.length),
+          icon: FushiIcons.delete,
+        ),
+      ],
+      if (_duplicates.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
+        FushiChoiceOption<_BulkAction>(
+          value: _BulkAction.duplicatesMerge,
+          label: t.srs_conflicts_bulk_duplicates_merge(n: _duplicates.length),
+          icon: FushiIcons.check,
+        ),
+        FushiChoiceOption<_BulkAction>(
+          value: _BulkAction.duplicatesDismiss,
+          label: t.srs_conflicts_bulk_duplicates_dismiss(n: _duplicates.length),
+          icon: FushiIcons.close,
+        ),
+      ],
+    ];
+    if (options.isEmpty) return;
+    final _BulkAction? action = await showFushiChoiceDialog<_BulkAction>(
+      context: context,
+      title: t.srs_conflicts_bulk,
+      message: t.srs_conflicts_bulk_hint,
+      icon: FushiIcons.checklist,
+      options: options,
+    );
+    if (action == null || !mounted) return;
+    if (action.irreversible) {
+      final String label = options
+          .firstWhere((FushiChoiceOption<_BulkAction> o) => o.value == action)
+          .label;
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_conflicts_bulk_confirm_title(n: _bulkCount(action)),
+        message: label,
+        icon: action == _BulkAction.heldDelete
+            ? FushiIcons.delete
+            : FushiIcons.checklist,
+        destructive: action == _BulkAction.heldDelete,
+      );
+      if (!ok || !mounted) return;
+    }
+    await _bulkResolve(action);
+  }
+
+  int _bulkCount(_BulkAction action) => switch (action) {
+    _BulkAction.settingsRecommended ||
+    _BulkAction.settingsCurrent => _conflicts.length,
+    _BulkAction.heldKeep || _BulkAction.heldDelete => _held.length,
+    _BulkAction.duplicatesMerge ||
+    _BulkAction.duplicatesDismiss => _duplicates.length,
+  };
 
   Future<void> _openNote(SrsNoteCacheRow row) async {
     await srsPushPage<void>(context, (_) => SrsNoteEditorPage(noteId: row.id));
     if (mounted) await _reload();
   }
 
-  /// 「全部确认」只作用于字段冲突（[_conflicts]）。没有字段冲突时整颗不画，而不是
-  /// 留一颗灰掉的按钮：页上只剩重复笔记 / 待删除 / 待确认时，它看起来像坏了点不动
-  /// （#IBjxAjty39）。那几节各有自己的逐条按钮。
-  FushiToolbarItem? get _confirmAllItem => _conflicts.isEmpty
+  /// 「批量处理」：被替换的设置 / 扣住的删除 / 可能重复的笔记任一节有条目就画（#IBjxAjty39：
+  /// 早先它只会「全部确认」字段冲突，页上只剩重复笔记时是一颗灰掉的按钮；正确做法是让批量
+  /// 覆盖这几节，而不是把按钮删掉）。三节都空时页上只剩逐条处理的项，不画。
+  FushiToolbarItem? get _bulkItem =>
+      _conflicts.isEmpty && _held.isEmpty && _duplicates.isEmpty
       ? null
       : FushiToolbarItem(
-          key: const ValueKey<String>('srs_conflicts_confirm_all'),
+          key: const ValueKey<String>('srs_conflicts_bulk'),
           icon: FushiIcons.checklist,
-          label: t.srs_conflict_confirm_all,
-          onPressed: () => srsRunLogged('SrsConflicts.confirmAll', _confirmAll),
+          label: t.srs_conflicts_bulk,
+          onPressed: () => srsRunLogged('SrsConflicts.bulk', _openBulk),
         );
 
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
-    final FushiToolbarItem? confirmAll = _confirmAllItem;
+    final FushiToolbarItem? bulk = _bulkItem;
     return FushiPageScaffold(
       title: t.srs_conflicts_title,
-      header: apple ? null : _buildTopBar(context, confirmAll),
-      actions: apple && confirmAll != null
+      header: apple ? null : _buildTopBar(context, bulk),
+      actions: apple && bulk != null
           ? <Widget>[
               FushiIconButton(
-                key: confirmAll.key,
-                icon: confirmAll.icon,
-                tooltip: confirmAll.label,
-                onTap: confirmAll.onPressed,
+                key: bulk.key,
+                icon: bulk.icon,
+                tooltip: bulk.label,
+                onTap: bulk.onPressed,
               ),
             ]
           : const <Widget>[],
@@ -441,7 +631,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     );
   }
 
-  Widget _buildTopBar(BuildContext context, FushiToolbarItem? confirmAll) {
+  Widget _buildTopBar(BuildContext context, FushiToolbarItem? bulk) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final NavigatorState? navigator = Navigator.maybeOf(context);
     return Padding(
@@ -462,7 +652,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[
-          if (confirmAll != null) <FushiToolbarItem>[confirmAll],
+          if (bulk != null) <FushiToolbarItem>[bulk],
         ],
       ),
     );
@@ -481,6 +671,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       );
     }
     if (_conflicts.isEmpty &&
+        _untrusted.isEmpty &&
         _pending.isEmpty &&
         _held.isEmpty &&
         _duplicates.isEmpty) {
@@ -497,6 +688,25 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
+      if (_untrusted.isNotEmpty) ...<Widget>[
+        FushiSectionTitle(t.srs_trust_section),
+        for (final SrsDeviceView d in _untrusted)
+          _TrustCard(
+            key: ValueKey<String>('srs-trust-${d.id}'),
+            device: d,
+            who: _who,
+            onTrust: () => srsRunLogged(
+              'SrsConflicts.trustDevice',
+              () => _trustDevice(d, trust: true),
+            ),
+            onReject: d.needsTrust
+                ? () => srsRunLogged(
+                    'SrsConflicts.rejectDevice',
+                    () => _trustDevice(d, trust: false),
+                  )
+                : null,
+          ),
+      ],
       if (_held.isNotEmpty) ...<Widget>[
         FushiSectionTitle(t.srs_conflicts_deletions),
         for (final _HeldDelete c in _held)
@@ -805,6 +1015,102 @@ class _ConflictSide extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(from, style: context.fushiType.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+/// 一台还没信任的设备：名称 / ID / 首次出现、扣着多少条删除与彻底清除，「信任」与「拒绝」（已拒绝的只剩「信任」）。
+class _TrustCard extends StatelessWidget {
+  const _TrustCard({
+    super.key,
+    required this.device,
+    required this.who,
+    required this.onTrust,
+    required this.onReject,
+  });
+
+  final SrsDeviceView device;
+  final String Function(String writerId) who;
+  final VoidCallback onTrust;
+
+  /// 已拒绝的设备为 null（只能改为信任）。
+  final VoidCallback? onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int? since = device.trustSince;
+    final String body = device.needsTrust
+        ? t.srs_trust_pending_body(
+            deletes: device.heldDeletes,
+            purges: device.heldPurges,
+          )
+        : t.srs_trust_rejected_body(
+            deletes: device.heldDeletes,
+            purges: device.heldPurges,
+          );
+    final VoidCallback? reject = onReject;
+    return FushiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiIcon(device.icon),
+              Expanded(
+                child: Text(
+                  who(device.id),
+                  style: context.fushiType.titleSmallEmphasized,
+                ),
+              ),
+              FushiTag(
+                text: device.needsTrust
+                    ? t.srs_device_trust_pending
+                    : t.srs_device_trust_rejected,
+                tone: device.needsTrust
+                    ? FushiTagTone.warning
+                    : FushiTagTone.neutral,
+                dense: true,
+              ),
+            ],
+          ),
+          Text(body, style: context.fushiType.bodyMedium),
+          Text(
+            SrsMetaLine.join(<String>[
+              t.srs_trust_device_id(id: device.id),
+              if (since != null)
+                t.srs_trust_first_seen(time: srsFormatMoment(since)),
+            ]),
+            style: context.fushiType.bodySmall,
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              if (reject != null)
+                FushiPressScale(
+                  child: FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('srs-trust-reject'),
+                    onPressed: reject,
+                    icon: const FushiIcon(FushiIcons.block),
+                    label: Text(t.srs_trust_action_reject),
+                  ),
+                ),
+              FushiPressScale(
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('srs-trust-accept'),
+                  onPressed: onTrust,
+                  icon: const FushiIcon(FushiIcons.verified),
+                  label: Text(t.srs_trust_action_trust),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

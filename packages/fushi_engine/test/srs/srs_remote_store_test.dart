@@ -10,6 +10,8 @@ import 'dart:typed_data';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -93,6 +95,72 @@ Future<Object?> _call(
 }
 
 void main() {
+  // 反馈 O5YDP27Xko：远程复习卡退回整面 WebView 时，客户端要拿到主机侧的原因（`nfb`）记诊断，
+  // 不再一律 remoteUnknown。
+  group('整面 WebView 原因 nfb 线格式', () {
+    SrsRenderedCard card(SrsCardNativeFallback? f) => SrsRenderedCard(
+      question: 'q',
+      answer: 'a',
+      css: '',
+      isEmpty: false,
+      nativeFallback: f,
+    );
+
+    test('往返保留类别与说明', () {
+      const SrsCardNativeFallback f = SrsCardNativeFallback(
+        SrsCardNativeFallbackCode.backTemplate,
+        '<div class="fc-x">',
+      );
+      final Map<String, Object?> json = SrsRemoteWire.rendered(card(f));
+      final SrsRenderedCard back = SrsRemoteWire.renderedFrom(
+        jsonDecode(jsonEncode(json)),
+      )!;
+      expect(back.nativeFallback, f);
+    });
+
+    test('能原生画时不发 nfb，解码为 null', () {
+      final Map<String, Object?> json = SrsRemoteWire.rendered(card(null));
+      expect(json.containsKey('nfb'), isFalse);
+      expect(SrsRemoteWire.renderedFrom(json)!.nativeFallback, isNull);
+    });
+
+    test('更新的主机发来不认识的类别：按 remoteUnknown，原类别并进说明', () {
+      final SrsRenderedCard back = SrsRemoteWire.renderedFrom(<String, Object?>{
+        'q': '',
+        'a': '',
+        'css': '',
+        'fields': <String, Object?>{},
+        'nfb': <String, Object?>{'code': 'futureCode', 'detail': 'x'},
+      })!;
+      expect(
+        back.nativeFallback,
+        const SrsCardNativeFallback(
+          SrsCardNativeFallbackCode.remoteUnknown,
+          'futureCode: x',
+        ),
+      );
+    });
+
+    test('nfb 不合契约抛带路径的 SrsRemoteWireError', () {
+      expect(
+        () => SrsRemoteWire.renderedFrom(<String, Object?>{
+          'q': '',
+          'a': '',
+          'css': '',
+          'fields': <String, Object?>{},
+          'nfb': <String, Object?>{'code': 3},
+        }),
+        throwsA(
+          isA<SrsRemoteWireError>().having(
+            (SrsRemoteWireError e) => e.path,
+            'path',
+            'result.nfb.code',
+          ),
+        ),
+      );
+    });
+  });
+
   test('牌组行线格式往返保留 RWKV 状态（rp / rs）', () async {
     final SrsDbStore store = await openTestStore(
       profileUid: _uid,

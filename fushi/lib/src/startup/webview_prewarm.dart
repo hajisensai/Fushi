@@ -2,9 +2,9 @@ import 'dart:async';
 
 /// 是否应在启动后预热 WebView 引擎，把冷启动成本提前到用户翻书架时。
 ///
-/// 移动端与桌面端都预热（桌面端调用时机另由调用方保证在首帧后），
-/// 低内存模式一律跳过。纯逻辑，便于单测；真正的 HeadlessInAppWebView
-/// 调用留在 main.dart（依赖平台无法单测）。
+/// 移动端与桌面端都预热，低内存模式一律跳过；**何时**预热不在这里判，一律走
+/// [runWebViewPrewarmWhenIdle]（所有平台同一条时机门）。纯逻辑，便于单测；真正的
+/// HeadlessInAppWebView 调用留在 main.dart（依赖平台无法单测）。
 bool shouldPrewarmWebView({
   required bool isMobile,
   required bool isDesktop,
@@ -12,6 +12,34 @@ bool shouldPrewarmWebView({
 }) {
   if (lowMemory) return false;
   return isMobile || isDesktop;
+}
+
+/// 预热 WebView 的**唯一时机门**（所有平台共用）：首帧光栅化之后、且主线程进入
+/// 空闲（调度器没有动画 / 帧回调在跑）时，才执行 [prewarm]。
+///
+/// 为什么（反馈 LQhvpnzzkz，BUG 见 docs/bugs）：旧实现只有桌面端在构造
+/// HeadlessInAppWebView 前 `await endOfFrame`，移动端在首帧之前就 `run()`。Android
+/// 插件在**主线程同步**初始化 chromium（`AwBrowserProcess` →
+/// `BrowserStartupControllerImpl`），而 Flutter 3.29+ 起 Android / iOS 的 UI 线程与
+/// 平台主线程合一——低端机上这一步把首帧一起堵死，窗口始终没有焦点，8 秒后
+/// `Input dispatching timed out (Application does not have a focused window)` ANR。
+/// 这与预热的本意「用户在看主页 / 书架时把冷启动成本吃掉」正相反。
+///
+/// 注意 `endOfFrame` 不够：启动时 `deferFirstFrame()` 生效期间帧照样 build / layout，
+/// `endOfFrame` 会在**首帧还没上屏**时就完成。所以这里等的是
+/// [firstFrameRasterized]（生产传 `binding.waitUntilFirstFrameRasterized`），再等
+/// [whenIdle]（生产传 `SchedulerBinding.scheduleTask(..., Priority.idle)`：默认调度
+/// 策略下有动画在跑时 idle 优先级任务不执行，正好避开首屏入场动效）。
+///
+/// [prewarm] 抛错原样外抛，由调用方（main.dart 已有 try/catch + session 收口）处理。
+Future<void> runWebViewPrewarmWhenIdle({
+  required Future<void> firstFrameRasterized,
+  required Future<void> Function() whenIdle,
+  required Future<void> Function() prewarm,
+}) async {
+  await firstFrameRasterized;
+  await whenIdle();
+  await prewarm();
 }
 
 /// 预热 WebView 的**生命周期看门人**：保证那个 headless WebView 一定会被销毁。

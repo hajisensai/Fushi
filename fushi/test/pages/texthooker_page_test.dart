@@ -16,6 +16,7 @@ import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -545,6 +546,85 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.more_vert), findsNothing);
+    },
+  );
+
+  // BUG（反馈 J4GKVdgo2s）：会话卡里的工具组曾是 FushiToolbar(floating: true)——
+  // 浮动顶栏 / 底栏用的带投影胶囊，硬塞进卡内的动作行，又被固定 3:2 比例切出的
+  // Flexible 动作区收窄，整组悬在卡片中段、和主操作不在同一视觉层。修复后工具组与
+  // 主操作同一行内联平铺（无浮动胶囊），动作行贴卡片右缘，放不下才收进「⋯」。
+  testWidgets(
+    'session card tools sit inline with the primary action (J4GKVdgo2s)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1600, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      final Finder card = find.byKey(
+        const ValueKey<String>('game-session-overview'),
+      );
+      final Finder actionRow = find.byKey(
+        const ValueKey<String>('game-session-actions'),
+      );
+      final Finder tools = find.byKey(
+        const ValueKey<String>('game-session-tools'),
+      );
+      expect(find.descendant(of: card, matching: actionRow), findsOneWidget);
+      expect(find.descendant(of: actionRow, matching: tools), findsOneWidget);
+
+      // 卡内不得再有浮动样式的工具栏。
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is FushiToolbar && w.floating,
+          ),
+        ),
+        findsNothing,
+      );
+
+      // 主操作与工具组同一行：都在同一个动作行里，垂直中线对齐。
+      final Finder launch = find.byKey(
+        const ValueKey<String>('game-action-launch'),
+      );
+      final Finder health = find.byKey(
+        const ValueKey<String>('game-toolbar-health'),
+      );
+      expect(find.descendant(of: actionRow, matching: launch), findsOneWidget);
+      expect(find.descendant(of: tools, matching: health), findsOneWidget);
+      expect(
+        tester.getCenter(health).dy,
+        moreOrLessEquals(tester.getCenter(launch).dy, epsilon: 0.5),
+        reason: '工具组必须与主操作在同一行，不能换行或浮在卡片上',
+      );
+      expect(
+        tester.getCenter(health).dx,
+        greaterThan(tester.getCenter(launch).dx),
+      );
+
+      // 1600 宽放得下：全部平铺，没有「⋯」。
+      expect(
+        find.byKey(const ValueKey<String>('game-session-tools-more')),
+        findsNothing,
+      );
+
+      // 动作行贴卡片右缘（卡片右内边距 14），不再悬在卡片中段。
+      expect(
+        find.descendant(of: tools, matching: find.byIcon(Icons.delete_outline)),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopRight(card).dx - tester.getTopRight(tools).dx,
+        lessThan(20),
+        reason: '动作行应贴卡片右缘',
+      );
     },
   );
 

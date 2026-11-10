@@ -120,6 +120,10 @@ void main() {
       // 路径（正斜杠、相对本测试的扫描根）→ 允许出现的**次数**。数量也钉住：同一文件
       // 里多冒出一处同样要表态，这正是「漏改一个」的形状。
       const Map<String, int> allowed = <String, int>{
+        // 截屏识字诊断日志：每个识别框的字素数（`…/12c`），是排障摘要不是学习计数。
+        'lib/src/floating_ball/app_floating_ball_host.dart': 1,
+        // 发现页搜索相关度：查询词按码点数加权算命中覆盖率，是排序判据不是学习计数。
+        'lib/src/media/discovery/discovery_search_relevance.dart': 1,
         // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
         // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
         'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,

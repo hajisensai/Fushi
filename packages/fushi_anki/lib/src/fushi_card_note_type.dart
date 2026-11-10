@@ -76,7 +76,7 @@ class FushiCardNoteType {
     'PitchCategories': '{pitch-accent-categories}',
     'Frequency': '{frequencies}',
     'FrequencyRank': '{frequency-harmonic-rank}',
-    'Source': '{source-link} {clip-timestamp}',
+    'Source': FushiCardFields.sourceDefaultMapping,
     'IsWordAndSentenceCard': 'x',
   };
 

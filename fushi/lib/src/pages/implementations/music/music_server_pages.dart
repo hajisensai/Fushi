@@ -28,6 +28,7 @@ import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_track_column.dart'
     show MusicPlaylistTrackColumn, MusicPlaylistTrackRowData;
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart';
@@ -575,6 +576,10 @@ class MusicServerAlbumCard extends StatelessWidget {
                   album.artist ?? t.music_artist_unknown,
                   if (album.year != null) '${album.year}',
                 ].join(' · '),
+                // 试听来源的专辑：与原盘规格角标同位（副行尾部），封面上不压角标。
+                trailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
               ),
             ),
           ],
@@ -1142,6 +1147,11 @@ class MusicServerTrackTile extends StatelessWidget {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                if (musicServerPreviewOnly(browser))
+                  const Padding(
+                    padding: EdgeInsetsDirectional.only(end: 8),
+                    child: MusicPreviewBadge(),
+                  ),
                 Text(
                   formatMusicDuration(track.durationMs),
                   style: context.fushiType.bodySmall,
@@ -1213,6 +1223,9 @@ class MusicServerPlaylistCard extends StatelessWidget {
                   if (playlist.trackCount != null)
                     t.music_tracks_count(count: playlist.trackCount!),
                 ].join(' · '),
+                trailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
               ),
             ),
           ],
@@ -1375,23 +1388,42 @@ class _MusicServerPlaylistsViewState extends State<MusicServerPlaylistsView> {
   }
 }
 
-/// 能改歌单的服务器（Jellyfin / Emby）曲目的菜单：加入歌单（含新建）。Apple Music 走自己的
-/// 菜单（[appleMusicTrackMenu]），其它来源回 null（行尾不留空位）。
+/// 能改歌单的服务器（Jellyfin / Emby）曲目的菜单：加入服务器歌单（含新建），以及加入 /
+/// 移出本机音乐库、加入本地歌单（v149，[musicServerTrackLibraryActions]）。Apple Music 走
+/// 自己的菜单（[appleMusicTrackMenu]），不能改歌单的来源回 null（由
+/// [musicServerTrackLibraryMenu] 出入库菜单）。
 MusicItemMenu? musicServerTrackMenu(
   BuildContext context,
   MusicServerBrowser browser,
-  MusicServerTrack track,
-) {
+  MusicServerTrack track, {
+  String? albumTitle,
+}) {
   final MusicServerPlaylistEditor? editor = MusicServerPlaylistEditor.of(
     browser,
   );
   if (editor == null) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
   return MusicItemMenu(
     buttonKey: ValueKey<String>('music-server-track-menu-${track.id}'),
-    open: (MusicMenuAnchor? anchor) => unawaited(
-      showMusicActionMenu(
+    open: (MusicMenuAnchor? anchor) => unawaited(() async {
+      // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
+      final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
+      final List<MusicMenuAction> library = app.isDatabaseReady
+          ? await musicServerTrackLibraryActions(
+              app.database,
+              browser,
+              track,
+              albumTitle: albumTitle,
+              playlistLabel: t.music_action_add_to_local_playlist,
+            )
+          : const <MusicMenuAction>[];
+      if (!context.mounted) return;
+      await showMusicActionMenu(
         context,
-        anchor: anchor,
+        anchor: at,
         errorText: musicPlaylistErrorText,
         actions: <MusicMenuAction>[
           MusicMenuAction(
@@ -1401,9 +1433,10 @@ MusicItemMenu? musicServerTrackMenu(
             run: (BuildContext c) =>
                 musicAddToPlaylist(c, editor, <String>[track.id]),
           ),
+          ...library,
         ],
-      ),
-    ),
+      );
+    }()),
   );
 }
 

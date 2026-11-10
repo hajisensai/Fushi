@@ -283,14 +283,19 @@ SyncChannelPostRunHook? syncChannelPostRunHook;
 /// 同步、牌组列表「立即同步」）。返回跑成功的通道数与失败通道的异常：调用方要能
 /// 区分「一条都没配置」与「配置了但这次失败」，否则失败会被说成没配置。两者都为空 =
 /// 没有任何已配置 / 已认证的通道。
+///
+/// [where] 只挑出其中一部分通道（在认证之前筛，不为用不到的通道刷新令牌）：复习本机写入后的推送按互联 / 云盘分成
+/// 两条、各自退避（反馈 O4MSorhpie，见 `srs_app_runtime.dart`）。null = 全部。
 Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
   required FushiDatabase db,
   required Future<void> Function(SyncBackend backend) body,
+  bool Function(SyncChannel channel)? where,
 }) => runExclusiveWithSync(() async {
   final SyncRepository repo = SyncRepository(db);
   int ran = 0;
   final List<Object> errors = <Object>[];
   for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
+    if (where != null && !where(channel)) continue;
     try {
       final SyncBackend backend = channel.backend;
       await backend.restoreAuth(repo);

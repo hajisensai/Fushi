@@ -243,4 +243,36 @@ void main() {
     final List<UpdateFeedEntryRow> left = await service.entries();
     expect(left.map((UpdateFeedEntryRow e) => e.title), <String>['孤独摇滚']);
   });
+
+  testWidgets('应用新版域顶部挂附加内容：没有条目也不出空态；切到别的域就没了', (WidgetTester tester) async {
+    await makeService();
+    await publish(UpdateFeedKind.videoEpisode, '1|ep1', '孤独摇滚');
+    await service.markAllSeen();
+    const Key headerKey = ValueKey<String>('pulse_header');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        initialRoute: '/updates',
+        routes: <String, WidgetBuilder>{
+          '/': (_) => const SizedBox(),
+          '/updates': (_) => UpdatesCenterPage(
+            service: service,
+            appReleaseHeader: const SizedBox(key: headerKey, height: 40),
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('孤独摇滚'), findsOneWidget, reason: '前置：落在番剧域');
+    expect(find.byKey(headerKey), findsNothing);
+
+    await tester.tap(filter(UpdateFeedKind.appRelease));
+    await tester.pumpAndSettle();
+    expect(find.byKey(headerKey), findsOneWidget);
+    expect(
+      find.text(t.updates_center_empty),
+      findsNothing,
+      reason: '有附加内容时应用新版域没有条目也不该显示「暂无更新」',
+    );
+  });
 }

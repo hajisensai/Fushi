@@ -39,8 +39,11 @@ abstract final class FeedbackLimits {
   /// 提交后还能补传附件的时长（服务端 attachWindowMs）。
   static const Duration attachWindow = Duration(hours: 24);
 
-  /// 视频附件（槽位 [videoSlot]，每条反馈最多一个）的上限：服务端 videoMaxBytes。
-  static const int videoMaxBytes = 50 * 1024 * 1024;
+  /// 视频附件（槽位 [videoSlot]，每条反馈最多一个）的上限：100 MB（十进制 1e8 字节）。
+  /// 必须与服务端 `FEEDBACK_LIMITS.videoMaxBytes`（services/leaderboard/src/feedback.js）同值，
+  /// 服务端测试 feedback_video.test.js 按字面量核对本行；取十进制的原因见服务端注释
+  /// （Cloudflare Free / Pro 的请求体上限是 100 MB，没写进制）。原件 ≤ 它就原样上传，超了才压缩。
+  static const int videoMaxBytes = 100 * 1000 * 1000;
 
   /// 视频附件的槽位名。
   static const String videoSlot = 'v0';

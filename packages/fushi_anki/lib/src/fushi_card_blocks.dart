@@ -6,7 +6,12 @@
 /// 的首次出现顺序与这里一致，两条渲染路径不会显示不同的字段集合 / 顺序。
 library;
 
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import 'fushi_card_template_data.dart';
+import 'fushi_card_template_history.dart';
 
 /// 背面的一个区块。
 enum FushiCardBlock {
@@ -702,12 +707,44 @@ FushiCardItem _itemOf(_Span s, String raw, FushiCardSide side, Set<Enum> seen) {
   return FushiCardHtmlItem(raw, wrapped: false);
 }
 
-/// 从 [side] 面的模板 [template]（名字形式）读出区块布局：自上而下的布局项，删掉的区块不在
-/// 里面。骨架（区块以外的标记与脚本）被改过、或区块结构坏了时返回 null（原生卡面画不了，
-/// 整面 WebView）。
-List<FushiCardItem>? fushiCardLayoutOf(String template, FushiCardSide side) {
+/// 一面模板读区块布局的结果：[items] 非 null = 认得出；认不出时 [mismatch] 是骨架与当前内置
+/// 骨架第一处不一致附近的原文（规范形，前后约 40 字），区块结构坏了时说明结构坏了。
+typedef FushiCardLayoutProbe = ({List<FushiCardItem>? items, String? mismatch});
+
+/// 模板末尾的自证骨架标记：`<!--fushi-card-skeleton:<规范形骨架的 sha256>-->`。
+///
+/// 内置模板常量末尾就带着它（生成脚本按源文件算好写入）；[fushiCardTemplateFor] 只换区块、
+/// 骨架原样照抄，生成的模板因此同样带着。读模板的一端（可能是更旧的代码）不认识这版骨架
+/// 时，只要标记值与模板实际骨架的哈希一致，就说明骨架是代码生成、没被人手改过，照样按区块
+/// 切分读布局（认不出的区块落成 [FushiCardHtmlItem]，交给原生 HTML 子集判）。手改过骨架
+/// 哈希就对不上，照常回退。规范形本来就去掉 HTML 注释，标记不进哈希；Anki 里只是一段注释。
+const String kFushiCardSkeletonMarker = 'fushi-card-skeleton';
+
+final RegExp _skeletonMarker = RegExp(
+  '<!--\\s*$kFushiCardSkeletonMarker:([0-9a-f]{64})\\s*-->',
+);
+
+/// 规范形文本的 sha256（十六进制）。
+String _sha(String normalized) =>
+    sha256.convert(utf8.encode(normalized)).toString();
+
+/// 比较 / 登记用的模板规范形（去掉 HTML 注释、空白折叠，见历史登记
+/// fushi_card_template_history.dart）。
+String fushiCardNormalizeTemplate(String template) => _norm(template);
+
+/// 样式表的规范形（空白折成一个空格）。
+String fushiCardNormalizeCss(String css) => css.replaceAll(_space, ' ').trim();
+
+/// 规范形文本的 sha256（历史登记与自证标记用）。
+String fushiCardSha256(String normalized) => _sha(normalized);
+
+/// 带 `data-fc-block` 标记的模板去掉全部区块后的规范形骨架；区块结构坏了为 null。
+String? fushiCardMarkedSkeletonOf(String template) {
   final List<_Span>? spans = _spansOf(template);
-  if (spans == null) return null;
+  return spans == null ? null : _restOf(template, spans);
+}
+
+String _restOf(String template, List<_Span> spans) {
   final StringBuffer rest = StringBuffer();
   int cursor = 0;
   for (final _Span s in spans) {
@@ -715,13 +752,170 @@ List<FushiCardItem>? fushiCardLayoutOf(String template, FushiCardSide side) {
     cursor = s.end;
   }
   rest.write(template.substring(cursor));
-  if (_norm(rest.toString()) != _defaults(side).normSkeleton) return null;
-  final Set<Enum> seen = <Enum>{};
-  return List<FushiCardItem>.unmodifiable(<FushiCardItem>[
-    for (final _Span s in spans)
-      _itemOf(s, template.substring(s.start, s.end), side, seen),
-  ]);
+  return _norm(rest.toString());
 }
+
+/// 按「去掉若干原文片段后的骨架」切分（[FushiCardSideSpecKind.snippets]，区块加标记之前
+/// 那一版的切法）：在规范形 [u] 里找各片段，每段至多一次、互不重叠。返回骨架与按出现顺序的
+/// 区块名；片段重复或重叠返回 null。
+({String rest, List<String> order})? fushiCardSnippetSkeletonOf(
+  String u,
+  List<(String, String)> snippets,
+) {
+  final List<({String block, int start, int end})> found =
+      <({String block, int start, int end})>[];
+  for (final (String block, String snip) in snippets) {
+    final int i = u.indexOf(snip);
+    if (i < 0) continue;
+    if (u.indexOf(snip, i + 1) >= 0) return null;
+    found.add((block: block, start: i, end: i + snip.length));
+  }
+  found.sort(
+    (
+      ({String block, int start, int end}) a,
+      ({String block, int start, int end}) b,
+    ) => a.start.compareTo(b.start),
+  );
+  final StringBuffer rest = StringBuffer();
+  int cursor = 0;
+  for (final ({String block, int start, int end}) f in found) {
+    if (f.start < cursor) return null;
+    rest.write(u.substring(cursor, f.start));
+    cursor = f.end;
+  }
+  rest.write(u.substring(cursor));
+  return (
+    rest: rest.toString(),
+    order: <String>[
+      for (final ({String block, int start, int end}) f in found) f.block,
+    ],
+  );
+}
+
+/// 历史登记里 [side] 面带区块标记那几版的骨架哈希。
+final Map<FushiCardSide, Set<String>> _markedSkeletons =
+    <FushiCardSide, Set<String>>{
+      for (final FushiCardSide side in FushiCardSide.values)
+        side: <String>{
+          for (final FushiCardTemplateVersion v in kFushiCardTemplateHistory)
+            if (v.side(side).kind == FushiCardSideSpecKind.markers)
+              v.side(side).sha256,
+        },
+    };
+
+/// 区块名 → [side] 面的内置区块。
+Enum? _blockNamed(FushiCardSide side, String name) =>
+    side == FushiCardSide.front
+    ? FushiCardFrontBlock.values.asNameMap()[name]
+    : FushiCardBlock.values.asNameMap()[name];
+
+/// 按历史版本（新的在前）认加标记之前的旧模板：整面固定的（[FushiCardSideSpecKind.fixed]）
+/// 读成默认布局，片段切分的（[FushiCardSideSpecKind.snippets]）读成片段出现的顺序。都不中为
+/// null。
+List<FushiCardItem>? _historicLayout(String template, FushiCardSide side) {
+  final String u = _norm(template);
+  String? whole;
+  for (final FushiCardTemplateVersion v in kFushiCardTemplateHistory.reversed) {
+    final FushiCardSideSpec spec = v.side(side);
+    switch (spec.kind) {
+      case FushiCardSideSpecKind.markers:
+        continue;
+      case FushiCardSideSpecKind.fixed:
+        if ((whole ??= _sha(u)) == spec.sha256) {
+          return fushiCardDefaultItems(side);
+        }
+      case FushiCardSideSpecKind.snippets:
+        final ({String rest, List<String> order})? s =
+            fushiCardSnippetSkeletonOf(u, spec.snippets);
+        if (s == null || _sha(s.rest) != spec.sha256) continue;
+        final List<Enum?> blocks = <Enum?>[
+          for (final String name in s.order) _blockNamed(side, name),
+        ];
+        if (blocks.contains(null)) continue;
+        return List<FushiCardItem>.unmodifiable(<FushiCardItem>[
+          for (final Enum? b in blocks) FushiCardBlockItem(b!),
+        ]);
+    }
+  }
+  return null;
+}
+
+/// [actual] 与 [expected] 第一处不一致附近的 [actual] 原文（前后约 40 字），带位置。
+String _firstDifference(String actual, String expected) {
+  int i = 0;
+  final int n = actual.length < expected.length
+      ? actual.length
+      : expected.length;
+  while (i < n && actual.codeUnitAt(i) == expected.codeUnitAt(i)) {
+    i++;
+  }
+  final int from = i < 40 ? 0 : i - 40;
+  final int to = i + 40 > actual.length ? actual.length : i + 40;
+  return '@$i: ${actual.substring(from, to)}';
+}
+
+final Map<String, FushiCardLayoutProbe> _layoutMemo =
+    <String, FushiCardLayoutProbe>{};
+
+/// 从 [side] 面的模板 [template]（名字形式）读出区块布局，认不出时带原因（见
+/// [FushiCardLayoutProbe]）。按内容记忆最近 32 份。
+///
+/// 依次认：
+/// 1. 当前内置骨架（区块可调序 / 增删 / 改选项 / 加字段与 HTML 区块）；
+/// 2. 历史登记里带区块标记的旧骨架，或骨架未知但自证标记与实际骨架一致
+///    （[kFushiCardSkeletonMarker]）：按区块切分，认不出的区块落成 HTML 区块；
+/// 3. 历史登记里加标记之前的版本（[kFushiCardTemplateHistory]）：内置模板有修改记录后就
+///    冻成记录里的全文，那一版的模板没被人改过，原生照样画。
+FushiCardLayoutProbe fushiCardLayoutProbe(String template, FushiCardSide side) {
+  final String key = '${side.name}\u0000$template';
+  final FushiCardLayoutProbe? hit = _layoutMemo.remove(key);
+  if (hit != null) return _layoutMemo[key] = hit;
+  final FushiCardLayoutProbe result = _layoutProbe(template, side);
+  _layoutMemo[key] = result;
+  if (_layoutMemo.length > 32) _layoutMemo.remove(_layoutMemo.keys.first);
+  return result;
+}
+
+FushiCardLayoutProbe _layoutProbe(String template, FushiCardSide side) {
+  final String current = _defaults(side).normSkeleton;
+  final List<_Span>? spans = _spansOf(template);
+  String? rest;
+  if (spans != null) {
+    final String r = rest = _restOf(template, spans);
+    bool known = r == current;
+    if (!known) {
+      final String sha = _sha(r);
+      known =
+          _markedSkeletons[side]!.contains(sha) ||
+          _skeletonMarker
+              .allMatches(template)
+              .any((RegExpMatch m) => m.group(1) == sha);
+    }
+    if (known) {
+      final Set<Enum> seen = <Enum>{};
+      return (
+        items: List<FushiCardItem>.unmodifiable(<FushiCardItem>[
+          for (final _Span s in spans)
+            _itemOf(s, template.substring(s.start, s.end), side, seen),
+        ]),
+        mismatch: null,
+      );
+    }
+  }
+  final List<FushiCardItem>? old = _historicLayout(template, side);
+  if (old != null) return (items: old, mismatch: null);
+  if (spans == null) return (items: null, mismatch: 'block markup is broken');
+  return (
+    items: null,
+    mismatch: _firstDifference(rest ?? _norm(template), current),
+  );
+}
+
+/// 从 [side] 面的模板 [template]（名字形式）读出区块布局：自上而下的布局项，删掉的区块不在
+/// 里面。骨架（区块以外的标记与脚本）被改过、或区块结构坏了时返回 null（原生卡面画不了，
+/// 整面 WebView）。认得哪些骨架见 [fushiCardLayoutProbe]。
+List<FushiCardItem>? fushiCardLayoutOf(String template, FushiCardSide side) =>
+    fushiCardLayoutProbe(template, side).items;
 
 /// 背面的区块布局（[fushiCardLayoutOf] 的背面简写）。
 List<FushiCardItem>? fushiCardBackLayoutOf(String back) =>
@@ -731,13 +925,81 @@ List<FushiCardItem>? fushiCardBackLayoutOf(String back) =>
 List<FushiCardItem>? fushiCardFrontLayoutOf(String front) =>
     fushiCardLayoutOf(front, FushiCardSide.front);
 
-/// 样式表是否与默认一致（空白差异不算改）。
+/// 样式表是否与**当前**内置样式一致（空白差异不算改）。
 bool fushiCardCssIsDefault(String css) =>
-    css.replaceAll(_space, ' ').trim() == _normDefaultCss;
+    fushiCardNormalizeCss(css) == _normDefaultCss;
 
-final String _normDefaultCss = kFushiCardStylingCss
-    .replaceAll(_space, ' ')
-    .trim();
+/// 样式表是否是某一版内置样式（当前或历史登记里的任一版，空白差异不算改）：内置模板有
+/// 修改记录后就冻成记录里的全文，旧版本的样式没被人改过。
+bool fushiCardCssIsBuiltin(String css) {
+  final String n = fushiCardNormalizeCss(css);
+  return n == _normDefaultCss || _historicCss.contains(_sha(n));
+}
+
+final Set<String> _historicCss = <String>{
+  for (final FushiCardTemplateVersion v in kFushiCardTemplateHistory)
+    v.cssSha256,
+};
+
+final String _normDefaultCss = fushiCardNormalizeCss(kFushiCardStylingCss);
+
+/// 历史版本里一面模板的切分规格。
+enum FushiCardSideSpecKind {
+  /// 那一版这一面不能调布局：整面规范形的哈希一致即为默认布局。
+  fixed,
+
+  /// 区块布局按原文片段切（加 `data-fc-block` 标记之前）：去掉片段后的骨架哈希一致即可，
+  /// 布局是片段出现的顺序。
+  snippets,
+
+  /// 区块带 `data-fc-block` 标记：去掉区块后的骨架哈希一致即可。
+  markers,
+}
+
+/// 历史版本里一面模板的切分规格（见 [FushiCardSideSpecKind]）。
+class FushiCardSideSpec {
+  const FushiCardSideSpec.fixed(this.sha256)
+    : kind = FushiCardSideSpecKind.fixed,
+      snippets = const <(String, String)>[];
+
+  const FushiCardSideSpec.snippets(this.sha256, this.snippets)
+    : kind = FushiCardSideSpecKind.snippets;
+
+  const FushiCardSideSpec.markers(this.sha256)
+    : kind = FushiCardSideSpecKind.markers,
+      snippets = const <(String, String)>[];
+
+  final FushiCardSideSpecKind kind;
+
+  /// [FushiCardSideSpecKind.fixed]：整面规范形的 sha256；其余：规范形骨架的 sha256。
+  final String sha256;
+
+  /// [FushiCardSideSpecKind.snippets] 的（区块名, 规范形片段），按默认显示顺序。
+  final List<(String, String)> snippets;
+}
+
+/// 内置 Fushi 卡片模板的一个历史版本（[kFushiCardTemplateHistory]）。
+class FushiCardTemplateVersion {
+  const FushiCardTemplateVersion({
+    required this.commit,
+    required this.cssSha256,
+    required this.front,
+    required this.back,
+  });
+
+  /// 引入这一版的提交（短哈希，只作说明）。
+  final String commit;
+
+  /// 规范形样式表（[fushiCardNormalizeCss]）的 sha256。
+  final String cssSha256;
+
+  final FushiCardSideSpec front;
+  final FushiCardSideSpec back;
+
+  /// [side] 面的切分规格。
+  FushiCardSideSpec side(FushiCardSide side) =>
+      side == FushiCardSide.front ? front : back;
+}
 
 /// 按区块布局 [items] 生成 [side] 面的模板：骨架、脚本不变，区块依次放进默认模板里区块
 /// 原本的位置（槽）——背面释义区之前的放进左栏（多出的都落在左栏最后一个槽）、释义区放回
