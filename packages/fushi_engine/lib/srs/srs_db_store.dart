@@ -1973,6 +1973,13 @@ class SrsDbStore implements SrsSync2Host {
         'retire': retire,
       });
 
+  /// 信任 / 拒绝一台待确认的设备（native/fushi_fsrs/src/store/sync2/trust.rs）：本机库非空之后才第一次同步过来的
+  /// 设备，它的删除与彻底清除扣到这里确认。信任 = 扣着的同一次调用里放行进投影并接进缓存；拒绝 = 继续扣着（它的
+  /// 普通修改照常同步，之后仍可改为信任）。
+  Future<void> sync2Trust(String device, {required bool trust}) => _sync2Write(
+    <String, Object?>{'op': 'trust', 'device': device, 'trust': trust},
+  );
+
   /// 算并记下状态摘要（写 head 时带上；两台设备在同一版本向量下摘要不同 = 确定性 bug）。
   Future<Map<String, Object?>> sync2Digest() async =>
       (await sync2Command(<String, Object?>{'op': 'digest'})).map;
@@ -2067,6 +2074,7 @@ class SrsDbStore implements SrsSync2Host {
     'import',
     'retire',
     'resolve',
+    'trust',
     'purge',
     'checkpoint',
     'restore',
