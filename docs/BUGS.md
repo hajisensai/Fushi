@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4277](bugs/BUG-4277-host-video-manifest-position-stamp-diverges.md) | 🚧 | 🚧 | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
+| [BUG-4277](bugs/BUG-4277-host-video-manifest-position-stamp-diverges.md) | ✅ | ✅ | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
 | [BUG-4276](bugs/BUG-4276-interconnect-book-progress-future-stamp-unguarded.md) | ✅ | ✅ | 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端 |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
 | [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
