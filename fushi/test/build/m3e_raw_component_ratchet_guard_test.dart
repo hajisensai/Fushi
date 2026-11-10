@@ -29,7 +29,6 @@ void main() {
     'Tooltip': <String, int>{
       'lib/src/media/audiobook/lyrics_player/lyrics_player_md3.dart': 1,
       'lib/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart': 1,
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': 1,
       'lib/src/media/video/video_m3e_chrome.dart': 1,
       'lib/src/pages/implementations/discovery/discovery_hero_carousel.dart': 1,
       'lib/src/pages/implementations/media_server/media_server_widgets.dart': 2,
