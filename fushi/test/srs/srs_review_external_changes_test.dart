@@ -362,7 +362,8 @@ void main() {
     await _settle(tester);
 
     expect(find.byKey(finishedKey), findsOneWidget, reason: '不自动把卡塞到用户眼前');
-    expect(faces, isEmpty);
+    // 加载态会先用空卡面把外壳建起来（cardId 为空），不算出卡。
+    expect(faces.where((SrsCardFace f) => f.cardId.isNotEmpty), isEmpty);
     expect(find.byKey(moreDueKey), findsOneWidget, reason: '库里又有能出的卡：给入口');
 
     await tester.tap(find.byKey(moreDueKey));
@@ -401,7 +402,8 @@ void main() {
     await _settle(tester);
     expect(find.byKey(finishedKey), findsOneWidget);
     expect(find.byKey(moreDueKey), findsNothing, reason: '入口跟着库走，没有能出的卡就不留');
-    expect(faces, isEmpty);
+    // 加载态会先用空卡面把外壳建起来（cardId 为空），不算出卡。
+    expect(faces.where((SrsCardFace f) => f.cardId.isNotEmpty), isEmpty);
     await _unmount(tester);
   });
 
