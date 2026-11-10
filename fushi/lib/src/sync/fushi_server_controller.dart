@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:bonsoir/bonsoir.dart' show BonsoirBroadcast, BonsoirService;
 import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
@@ -33,6 +34,7 @@ import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
@@ -118,6 +120,9 @@ class FushiSyncServerController extends ChangeNotifier {
     PrefStore Function()? prefsStore,
     AiSettingsSource Function()? aiRelaySettings,
     PlatformDeviceInfoService? deviceInfo,
+    @visibleForTesting InterconnectP2pHostPort Function()? p2pHostPort,
+    @visibleForTesting
+    BonsoirBroadcast Function(BonsoirService service)? broadcastFactory,
   }) : _navigatorKey = navigatorKey,
        _database = database,
        _syncDataDir = syncDataDir,
@@ -146,7 +151,9 @@ class FushiSyncServerController extends ChangeNotifier {
        // the desktop (machine-hostname) source; production wires the real
        // per-platform service so mobile hosts advertise their model, not
        // Android's "localhost" (TODO-1356).
-       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
+       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService(),
+       _p2pHostPortFactory = p2pHostPort,
+       _broadcastFactory = broadcastFactory;
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final FushiDatabase Function() _database;
@@ -206,6 +213,15 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 开关由引擎按请求现读 [_prefsStore]。null（单测 / 老调用方）= 端点 404。
   final AiSettingsSource Function()? _aiRelaySettings;
   final PlatformDeviceInfoService _deviceInfo;
+
+  /// P2P 隧道的 host 侧操作口（测试缝）。null = 本进程的真实运行时
+  /// （[_AppInterconnectP2pHostPort]）。
+  final InterconnectP2pHostPort Function()? _p2pHostPortFactory;
+  late final InterconnectP2pHostPort _p2p =
+      _p2pHostPortFactory?.call() ?? _AppInterconnectP2pHostPort(() => _repo);
+
+  /// LAN 广播的 Bonsoir 工厂（测试缝），原样转给 [LanBroadcastService]。
+  final BonsoirBroadcast Function(BonsoirService service)? _broadcastFactory;
 
   FushiSyncServer? _server;
   LanBroadcastService? _broadcast;
@@ -754,6 +770,9 @@ class FushiSyncServerController extends ChangeNotifier {
   Future<void> _rollbackFailedStart(FushiSyncServer? server) async {
     if (server != null && identical(_server, server)) {
       _server = null;
+      // 广播失败时 P2P 隧道可能已挂上：经串行队列卸下（排在在飞的 attach 之后），
+      // 再关 server，否则隧道转发残留到下一次启动（BUG-4285）。
+      await _detachP2p(server);
       await server.stop();
     }
     final LanBroadcastService? broadcast = _broadcast;
@@ -984,8 +1003,10 @@ class FushiSyncServerController extends ChangeNotifier {
     _broadcast = null;
     final FushiSyncServer? server = _server;
     _server = null;
-    // 端点留着（client 选路也用它），只停入站；信任区监听口随 server.stop 关。
-    currentAppInterconnectP2pRuntime?.current?.hostStop();
+    // 端点留着（client 选路也用它），只停入站。卸载与挂载同走 [_serializeP2p]：
+    // 直连 hostStop 会被落在 attach 某次 await 里的那次 hostListen 反超，隧道对公网
+    // 开着却已没有 host（BUG-4285）。这里排在所有在飞 attach 之后。
+    if (server != null) await _detachP2p(server);
     await broadcast?.stop();
     await server?.stop();
     if (server != null) await _videoRemoteStopped?.call();
@@ -1021,27 +1042,34 @@ class FushiSyncServerController extends ChangeNotifier {
 
   Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) =>
       _serializeP2p(() async {
-        if (!InterconnectP2pRuntime.isAvailable) return;
+        final InterconnectP2pHostPort p2p = _p2p;
+        if (!p2p.available) return;
+        // 每次 await 之后的检查都把 stillWanted() 放在**最后**求值：先求它再 await
+        // 偏好，stop 落在这次 await 里就会漏判（BUG-4285）。最后一道检查之后到
+        // hostListen 之间不再有 await。
         bool stillWanted() => identical(_server, server);
-        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) return;
-        final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(_repo);
-        final InterconnectP2pNode? node = await runtime.ensure();
-        if (node == null || !stillWanted()) return;
-        if (!await _repo.isInterconnectP2pEnabled()) return;
+        if (!stillWanted()) return;
+        final bool enabled = await _repo.isInterconnectP2pEnabled();
+        if (!enabled || !stillWanted()) return;
+        final bool ready = await p2p.ensure();
+        if (!ready || !stillWanted()) return;
+        final bool enabledAfterEnsure = await _repo.isInterconnectP2pEnabled();
+        if (!enabledAfterEnsure || !stillWanted()) return;
         final int port = await server.startP2pListener();
-        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) {
+        final bool enabledAfterListen = await _repo.isInterconnectP2pEnabled();
+        if (!enabledAfterListen || !stillWanted()) {
           await server.stopP2pListener();
           return;
         }
         // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
         // 而不是捕获这一个——换中继会重建端点。
-        server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
-        node.hostListen(port);
-        server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
+        server.p2pPeerResolver = p2p.hostPeer;
+        p2p.hostListen(port);
+        server.extraAddressesProvider = () => p2p.hostAddresses(tls: tls);
       });
 
   Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
-    currentAppInterconnectP2pRuntime?.current?.hostStop();
+    _p2p.hostStop();
     server.extraAddressesProvider = null;
     server.p2pPeerResolver = null;
     await server.stopP2pListener();
@@ -1066,9 +1094,7 @@ class FushiSyncServerController extends ChangeNotifier {
     await _repo.setInterconnectP2pRelayUrls(urls);
     final FushiSyncServer? server = _server;
     if (server != null) await _detachP2p(server);
-    await _serializeP2p(
-      () async => currentAppInterconnectP2pRuntime?.restart(),
-    );
+    await _serializeP2p(_p2p.restart);
     if (server != null) await _attachP2p(server, tls: _serverUsesTls(server));
     notifyListeners();
   }
@@ -1104,6 +1130,9 @@ class FushiSyncServerController extends ChangeNotifier {
       deviceId: deviceId,
       port: boundPort,
       tlsEnabled: tlsEnabled,
+      // 本控制器自己的测试缝原样透传；生产构造时恒为 null（走默认 Bonsoir）。
+      // ignore: invalid_use_of_visible_for_testing_member
+      broadcastFactory: _broadcastFactory,
     );
     await _broadcast!.start();
   }
@@ -1517,4 +1546,64 @@ class FushiSyncServerController extends ChangeNotifier {
     if (ip.isNotEmpty) return ip;
     return t.sync_pair_unknown_device;
   }
+}
+
+/// host 侧 P2P 隧道的操作口：控制器只经它挂载 / 卸载 / 换中继，且一律在
+/// `_serializeP2p` 里调用（BUG：stop / 启动回滚曾绕过串行队列直连运行时）。
+/// [InterconnectP2pNode] 只有私有构造，测试造不出假 node，所以 [hostListen]
+/// 收进接口、接口不暴露 node。
+abstract interface class InterconnectP2pHostPort {
+  /// 原生库是否可用。
+  bool get available;
+
+  /// 确保端点已启动；不可用 / 启动失败 → false。
+  Future<bool> ensure();
+
+  /// 把隧道入站流量转到本机信任区监听口。
+  void hostListen(int port);
+
+  /// 停止接受入站隧道（端点留着，client 选路也用它）。
+  void hostStop();
+
+  /// 信任区监听口上某条连接的隧道对端 NodeId。
+  String? hostPeer(int remotePort);
+
+  /// 地址集里本机的 P2P 地址。
+  List<InterconnectHostAddress> hostAddresses({required bool tls});
+
+  /// 中继配置变了：关掉旧端点，下次 [ensure] 按新配置重建。
+  Future<void> restart();
+}
+
+/// 本进程真实的 P2P 运行时（[appInterconnectP2pRuntime]）。
+class _AppInterconnectP2pHostPort implements InterconnectP2pHostPort {
+  _AppInterconnectP2pHostPort(this._repo);
+
+  final SyncRepository Function() _repo;
+
+  @override
+  bool get available => InterconnectP2pRuntime.isAvailable;
+
+  @override
+  Future<bool> ensure() async =>
+      (await appInterconnectP2pRuntime(_repo()).ensure()) != null;
+
+  @override
+  void hostListen(int port) =>
+      currentAppInterconnectP2pRuntime?.current?.hostListen(port);
+
+  @override
+  void hostStop() => currentAppInterconnectP2pRuntime?.current?.hostStop();
+
+  @override
+  String? hostPeer(int remotePort) =>
+      currentAppInterconnectP2pRuntime?.current?.hostPeer(remotePort);
+
+  @override
+  List<InterconnectHostAddress> hostAddresses({required bool tls}) =>
+      currentAppInterconnectP2pRuntime?.hostAddresses(tls: tls) ??
+      const <InterconnectHostAddress>[];
+
+  @override
+  Future<void> restart() async => currentAppInterconnectP2pRuntime?.restart();
 }
