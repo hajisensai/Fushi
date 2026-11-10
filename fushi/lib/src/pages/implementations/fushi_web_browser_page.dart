@@ -2330,21 +2330,131 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     onOpenPage: _openDataPage,
   );
 
-  Widget _buildWide(
+  /// 浏览页的壳：窄（竖屏底栏）与宽（顶栏 / 侧边栏）两种形态共用**同一棵树**，
+  /// 只有网页区周边的 chrome 随形态增删、换位。
+  ///
+  /// 树形必须恒定：手机旋转会在两种形态之间切换，曾经窄 / 宽是两棵结构不同的树
+  /// （窄：`Column > Expanded > 标签页`；宽：`Column > Expanded > Row > Expanded >
+  /// Stack > 标签页`），标签页的父链一变，[WebBrowserTabView] 的 State 连同里面的
+  /// InAppWebView 被销毁重建——网页重载、YouTube 播放中断（iOS 真机报告）。所以网页
+  /// 区固定是带 key 的 `Expanded > Row > Expanded > Stack > 标签页`：
+  /// - 带 key：列首尾的 chrome（窄是状态栏垫块 + 底栏，宽是标题栏垫块 + 顶栏；网页
+  ///   全屏时还同时增删）不论怎么增删，网页区都能在 [Element.updateChildren] 里按
+  ///   key 配回原元素，不被卸载重挂；
+  /// - 窄形态下 Row 左边的推挤侧边栏宽度恒为 0、不建侧边栏内容，Stack 上层的抽屉
+  ///   只在宽侧边栏形态出现，都排在标签页之后，增删不影响标签页的位置。
+  Widget _buildShell(
     BuildContext context,
     WebBrowserShellLayout layout,
     Size size,
   ) {
-    final WebBrowserTab? tab = _tabs.activeTab;
-    final bool fullscreen = tab?.fullscreen ?? false;
+    final bool narrow = layout == WebBrowserShellLayout.bottomBar;
+    final bool fullscreen = _tabs.activeTab?.fullscreen ?? false;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (narrow)
+          ..._narrowTopChrome(context, fullscreen: fullscreen)
+        else
+          ..._wideTopChrome(context, layout, size, fullscreen: fullscreen),
+        Expanded(
+          key: const ValueKey<String>('web-browser-content'),
+          child: _buildContent(context, layout, size, fullscreen: fullscreen),
+        ),
+        if (narrow && !fullscreen) ..._narrowBottomChrome(context, size),
+      ],
+    );
+  }
+
+  /// 网页区：左侧推挤侧边栏 + 标签页 + 盖在网页上的侧边栏抽屉。窄 / 宽形态同构，
+  /// 见 [_buildShell]。
+  Widget _buildContent(
+    BuildContext context,
+    WebBrowserShellLayout layout,
+    Size size, {
+    required bool fullscreen,
+  }) {
+    final bool narrow = layout == WebBrowserShellLayout.bottomBar;
+    final bool overlaySidebar = webBrowserSidebarOverlays(size: size);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    final bool sidebar = layout == WebBrowserShellLayout.sidebar;
+    final bool pushOpen = sidebar && !overlaySidebar && _sidebarOpen;
+    final bool drawerOpen = sidebar && overlaySidebar && _drawerOpen;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AnimatedContainer(
+          duration: duration,
+          curve: FushiMotion.standard,
+          width: pushOpen && !fullscreen ? kWebBrowserSidebarWidth : 0,
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.centerRight,
+              minWidth: kWebBrowserSidebarWidth,
+              maxWidth: kWebBrowserSidebarWidth,
+              child: narrow || overlaySidebar
+                  ? const SizedBox.shrink()
+                  : _hiddenUnless(
+                      pushOpen && !fullscreen,
+                      _buildSidebar(context),
+                    ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              KeyedSubtree(
+                key: const ValueKey<String>('web-browser-tabs'),
+                child: _buildTabs(context),
+              ),
+              if (sidebar && overlaySidebar && !fullscreen) ...<Widget>[
+                IgnorePointer(
+                  ignoring: !drawerOpen,
+                  child: AnimatedOpacity(
+                    opacity: drawerOpen ? 1 : 0,
+                    duration: duration,
+                    child: GestureDetector(
+                      key: const ValueKey<String>('web-browser-sidebar-scrim'),
+                      onTap: () => setState(() => _drawerOpen = false),
+                      child: const ColoredBox(color: Color(0x47000000)),
+                    ),
+                  ),
+                ),
+                AnimatedPositioned(
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  left: drawerOpen ? 0 : -kWebBrowserSidebarWidth - 16,
+                  top: 0,
+                  bottom: 0,
+                  width: kWebBrowserSidebarWidth,
+                  child: Material(
+                    elevation: drawerOpen ? 4 : 0,
+                    child: _buildSidebar(context),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 宽形态网页区上方的 chrome：标题栏让位垫块、顶部标签栏 + 顶栏（或收起后的
+  /// 小地址条）、加载进度线。
+  List<Widget> _wideTopChrome(
+    BuildContext context,
+    WebBrowserShellLayout layout,
+    Size size, {
+    required bool fullscreen,
+  }) {
     final bool overlaySidebar = webBrowserSidebarOverlays(size: size);
     final bool compactHeight = size.height < kWebBrowserCompactHeight;
     final bool collapsed =
         _collapseAllowed(layout, size) && _collapse.collapsed;
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    final bool sidebar = layout == WebBrowserShellLayout.sidebar;
-    final bool pushOpen = sidebar && !overlaySidebar && _sidebarOpen;
-    final bool drawerOpen = sidebar && overlaySidebar && _drawerOpen;
     final bool inCaption = _tabStripInCaption(context, layout, size);
     final double captionTop = MediaQuery.paddingOf(context).top;
     // 标签栏进了标题行：这一行要盖住标题栏让位高度（32），标签栏本身 36。
@@ -2402,91 +2512,26 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
             ],
           );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        // 标题栏让位垫块。标签栏进了标题行时高度归零（那一行由标签栏自己占），
-        // 节点本身恒在：增删它会让下面带 WebView 的子树错配重挂。
-        if (!fullscreen)
-          ColoredBox(
-            color: _barColor(context),
-            child: SizedBox(
-              width: double.infinity,
-              height: inCaption ? 0 : captionTop,
-            ),
-          ),
-        ClipRect(
-          child: FushiAnimatedSize(
-            duration: duration,
-            curve: FushiMotion.standard,
-            alignment: Alignment.topCenter,
-            child: chrome,
+    return <Widget>[
+      // 标题栏让位垫块。标签栏进了标题行时高度归零（那一行由标签栏自己占）。
+      if (!fullscreen)
+        ColoredBox(
+          color: _barColor(context),
+          child: SizedBox(
+            width: double.infinity,
+            height: inCaption ? 0 : captionTop,
           ),
         ),
-        if (!fullscreen) _progressLine(context),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AnimatedContainer(
-                duration: duration,
-                curve: FushiMotion.standard,
-                width: pushOpen && !fullscreen ? kWebBrowserSidebarWidth : 0,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.centerRight,
-                    minWidth: kWebBrowserSidebarWidth,
-                    maxWidth: kWebBrowserSidebarWidth,
-                    child: overlaySidebar
-                        ? const SizedBox.shrink()
-                        : _hiddenUnless(
-                            pushOpen && !fullscreen,
-                            _buildSidebar(context),
-                          ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    _buildTabs(context),
-                    if (sidebar && overlaySidebar && !fullscreen) ...<Widget>[
-                      IgnorePointer(
-                        ignoring: !drawerOpen,
-                        child: AnimatedOpacity(
-                          opacity: drawerOpen ? 1 : 0,
-                          duration: duration,
-                          child: GestureDetector(
-                            key: const ValueKey<String>(
-                              'web-browser-sidebar-scrim',
-                            ),
-                            onTap: () => setState(() => _drawerOpen = false),
-                            child: const ColoredBox(color: Color(0x47000000)),
-                          ),
-                        ),
-                      ),
-                      AnimatedPositioned(
-                        duration: duration,
-                        curve: FushiMotion.standard,
-                        left: drawerOpen ? 0 : -kWebBrowserSidebarWidth - 16,
-                        top: 0,
-                        bottom: 0,
-                        width: kWebBrowserSidebarWidth,
-                        child: Material(
-                          elevation: drawerOpen ? 4 : 0,
-                          child: _buildSidebar(context),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
+      ClipRect(
+        child: FushiAnimatedSize(
+          duration: duration,
+          curve: FushiMotion.standard,
+          alignment: Alignment.topCenter,
+          child: chrome,
         ),
-      ],
-    );
+      ),
+      if (!fullscreen) _progressLine(context),
+    ];
   }
 
   /// 收起中的侧边栏 / 标签栏仍挂在树上（宽高过渡时内容跟着滑出），但收起后不能
@@ -2530,50 +2575,42 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 
-  Widget _buildNarrow(BuildContext context, Size size) {
-    final WebBrowserTab? tab = _tabs.activeTab;
-    final bool fullscreen = tab?.fullscreen ?? false;
+  /// 窄形态网页区上方的 chrome：状态栏让位垫块（网页全屏时收起）。
+  List<Widget> _narrowTopChrome(
+    BuildContext context, {
+    required bool fullscreen,
+  }) => <Widget>[
+    if (!fullscreen)
+      ColoredBox(
+        color: Theme.of(context).colorScheme.surface,
+        child: const SafeArea(bottom: false, child: SizedBox.shrink()),
+      ),
+  ];
+
+  /// 窄形态网页区下方的 chrome：加载进度线 + 底栏（或滚动收起后的小地址条）。
+  List<Widget> _narrowBottomChrome(BuildContext context, Size size) {
     final bool collapsed =
         _collapseAllowed(WebBrowserShellLayout.bottomBar, size) &&
         _collapse.collapsed;
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        if (!fullscreen)
-          ColoredBox(
-            color: Theme.of(context).colorScheme.surface,
-            child: const SafeArea(bottom: false, child: SizedBox.shrink()),
-          ),
-        // 必须带 key：网页全屏时这一列首尾的状态栏垫块与底栏同时增删，不带 key 的
-        // 中间子节点在 Element.updateChildren 里配不上旧元素，整个网页区会被卸载
-        // 重挂——WebView 销毁重建（页面重载），全屏中的网页被拆掉后原生全屏视图
-        // 停在 app 上方冻结 / 白屏、退不出来（手机竖屏必现；宽屏布局只增删排在
-        // 前面的子节点，自底向上能配上，不受影响）。
-        Expanded(
-          key: const ValueKey<String>('web-browser-narrow-tabs'),
-          child: _buildTabs(context),
+    return <Widget>[
+      if (!collapsed) _progressLine(context),
+      ClipRect(
+        child: FushiAnimatedSize(
+          duration: duration,
+          curve: FushiMotion.standard,
+          alignment: Alignment.bottomCenter,
+          child: collapsed
+              ? Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.paddingOf(context).bottom,
+                  ),
+                  child: _buildMiniBar(context),
+                )
+              : _buildBottomBar(context),
         ),
-        if (!fullscreen) ...<Widget>[
-          if (!collapsed) _progressLine(context),
-          ClipRect(
-            child: FushiAnimatedSize(
-              duration: duration,
-              curve: FushiMotion.standard,
-              alignment: Alignment.bottomCenter,
-              child: collapsed
-                  ? Padding(
-                      padding: EdgeInsets.only(
-                        bottom: MediaQuery.paddingOf(context).bottom,
-                      ),
-                      child: _buildMiniBar(context),
-                    )
-                  : _buildBottomBar(context),
-            ),
-          ),
-        ],
-      ],
-    );
+      ),
+    ];
   }
 
   @override
@@ -2589,9 +2626,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         : Theme.of(context).colorScheme.surface;
     final Widget body = _avoidKeyboard(
       context,
-      layout == WebBrowserShellLayout.bottomBar
-          ? _buildNarrow(context, size)
-          : _buildWide(context, layout, size),
+      _buildShell(context, layout, size),
     );
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
     // 标签栏画进了标题行：让标题栏把那一段命中让给标签栏。标签网格盖满整页时

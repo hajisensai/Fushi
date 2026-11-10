@@ -23,6 +23,7 @@ import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_playable_end.dart';
 import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
@@ -796,6 +797,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
   StreamSubscription<Duration>? _durationReadySub;
 
+  /// 最近一次显式 seek 的目标（毫秒，只进 EOF 诊断日志，见 [_logEndOfFile]）。
+  int? _lastSeekTargetForDiag;
+
+  /// 本次 load 的「可达末尾」时长修正（容器时长比音视频轨长时生效，见
+  /// [VideoPlayableEndCorrection]）。换集 / 销毁时 dispose，不能盖到下一集的时长上。
+  VideoPlayableEndCorrection? _playableEndCorrection;
+
   /// BUG-739：当前音频输出设备变化订阅。libmpv `audio-device=auto` 在 OS 输出设备
   /// 切换时重建 ao，其软件 `volume` 属性可能被重置/衰减，media_kit 被动把降低值镜像
   /// 进 `state.volume`（[volume] getter 的真值来源）——反复切换设备使视频音量逐步变小
@@ -1265,6 +1273,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
+    _lastSeekTargetForDiag = targetMs;
     // 显式 seek 撤掉「循环当前句」与 A-B 循环的武装（见 [_loopArmedCueIndex] /
     // [_abLoopArmed]）。
     _loopArmedCueIndex = null;
@@ -3479,6 +3488,9 @@ class VideoPlayerController extends ChangeNotifier
     bufferingIndicatorVisible.value = false;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
+    _playableEndCorrection?.dispose();
+    _playableEndCorrection = null;
+    _lastSeekTargetForDiag = null;
     _setSubtitleCuesLoading(false);
 
     // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
@@ -4277,6 +4289,7 @@ class VideoPlayerController extends ChangeNotifier
     if (currentDuration > Duration.zero) {
       notifyListeners();
       unawaited(_refreshChaptersForLoad(player, loadToken));
+      unawaited(_refreshPlayableEndForLoad(player, loadToken));
       return;
     }
     _durationReadySub = player.stream.duration.listen((Duration duration) {
@@ -4287,11 +4300,13 @@ class VideoPlayerController extends ChangeNotifier
       _durationReadySub = null;
       unawaited(sub?.cancel());
       unawaited(_refreshChaptersForLoad(player, loadToken));
+      unawaited(_refreshPlayableEndForLoad(player, loadToken));
     });
   }
 
   void _handleCompletedChanged(bool completed) {
     if (!completed) return;
+    _logEndOfFile();
     // 终点落在片尾之后（或贴着片尾、位置回调没来得及越过）时，媒体播完就是这段播完。
     _endPlayRange(RangePlaybackEnd.reachedEnd);
     if (isBlurayNavigationSession) return;
@@ -5846,6 +5861,55 @@ class VideoPlayerController extends ChangeNotifier
     await _refreshChaptersForLoad(player, _loadToken);
   }
 
+  /// 容器时长比音视频轨实际结束得晚时，把播放器总时长改成音视频的真末尾（见
+  /// [VideoPlayableEndCorrection]：字幕轨比画面长的 mkv 进度条显示 23:39 / 24:02，
+  /// 往 23:39 之后拖会直接 EOF 弹回最后一帧）。依据是容器逐轨统计标签，缺标签不修正。
+  /// 蓝光导航会话的时长由盘上播放列表决定、网页后端没有 libmpv，都不参与。
+  Future<void> _refreshPlayableEndForLoad(Player player, int loadToken) async {
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (_webBackend || isBlurayNavigationSession) return;
+    final PlatformPlayer? platform = player.platform;
+    if (platform == null) return;
+    final String trackList = await _getMpvProperty('track-list');
+    if (!_isCurrentLoad(player, loadToken)) return;
+    final int? endMicros = playableEndMicrosFromTrackList(trackList);
+    if (endMicros == null) return;
+    _playableEndCorrection?.dispose();
+    final Duration reported = platform.state.duration;
+    _playableEndCorrection = VideoPlayableEndCorrection.attach(
+      platform: platform,
+      playableEnd: Duration(microseconds: endMicros),
+    );
+    if (_playableEndCorrection == null) return;
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      'duration corrected to playable end: container='
+      '${reported.inMilliseconds}ms playable=${endMicros ~/ 1000}ms '
+      '(audio/video track DURATION tags)',
+    );
+    notifyListeners();
+  }
+
+  /// 播到 / seek 到 EOF 时记一行落点与时长（片尾 seek 落点诊断）：EOF 位置明显早于
+  /// 时长就是「容器时长长于可解码末尾」，修正没生效（缺统计标签）时据此排查。
+  void _logEndOfFile() {
+    final Player? player = _player;
+    if (player == null || _webBackend) return;
+    final VideoPlayableEndCorrection? correction = _playableEndCorrection;
+    final String container = correction != null && correction.active
+        ? '${correction.reportedDuration.inMilliseconds}ms'
+        : 'same';
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      'eof: position=${player.state.position.inMilliseconds}ms '
+      'duration=${player.state.duration.inMilliseconds}ms '
+      'containerDuration=$container '
+      'lastSeekTarget=${_lastSeekTargetForDiag ?? 'none'}',
+    );
+  }
+
   Future<void> _refreshChaptersForLoad(Player player, int loadToken) async {
     if (!_isCurrentLoad(player, loadToken)) return;
     // The disc VM can change titles inside this load. Only the currently bound
@@ -6834,6 +6898,8 @@ class VideoPlayerController extends ChangeNotifier
     _positionSub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
+    _playableEndCorrection?.dispose();
+    _playableEndCorrection = null;
     unawaited(_audioDeviceSub?.cancel());
     _audioDeviceSub = null;
     unawaited(_audioDevicesSub?.cancel());
