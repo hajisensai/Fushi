@@ -829,4 +829,86 @@ void main() {
       expect(find.byKey(const ValueKey<String>('bar')), findsNothing);
     });
   });
+
+  // 反馈 IpdWk54b_G：进度浮标可贴边 / 隐藏；报错是独立部件，不依附进度浮标。
+  group('OCR 进度浮标 / 报错提示', () {
+    Widget host(Widget child) => MaterialApp(
+      home: Scaffold(
+        body: Align(alignment: Alignment.topRight, child: child),
+      ),
+    );
+
+    testWidgets('完整形态：显示完整读数', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(
+          const MangaOcrProgressBadge(
+            text: 'OCR 12/40 · DirectML',
+            shortText: '12/40',
+            progress: 0.3,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('OCR 12/40 · DirectML'), findsOneWidget);
+      expect(find.text('12/40'), findsNothing);
+    });
+
+    testWidgets('贴边形态：只画短读数，完整读数进语义；右侧圆角推出框外剪掉', (WidgetTester tester) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        host(
+          const MangaOcrProgressBadge(
+            text: 'OCR 12/40 · DirectML',
+            shortText: '12/40',
+            progress: 0.3,
+            docked: true,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('12/40'), findsOneWidget);
+      expect(find.text('OCR 12/40 · DirectML'), findsNothing);
+      expect(find.bySemanticsLabel('OCR 12/40 · DirectML'), findsOneWidget);
+      final Finder clip = find.descendant(
+        of: find.byType(MangaOcrProgressBadge),
+        matching: find.byType(ClipRect),
+      );
+      expect(clip, findsOneWidget);
+      final Rect clipRect = tester.getRect(clip);
+      expect(clipRect.right, 800, reason: '贴屏幕右缘');
+      final Rect textRect = tester.getRect(find.text('12/40'));
+      expect(textRect.right, lessThanOrEqualTo(clipRect.right));
+      final Rect pill = tester.getRect(
+        find.descendant(of: clip, matching: find.byType(DecoratedBox)).first,
+      );
+      expect(
+        pill.right,
+        moreOrLessEquals(clipRect.right + kMangaOcrDockedTuck),
+        reason: '胶囊右侧圆角整段落在屏幕外',
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('贴边形态没有短读数：只画加载指示，不画完整读数', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(const MangaOcrProgressBadge(text: 'OCR · Running', docked: true)),
+      );
+      await tester.pump();
+      expect(find.text('OCR · Running'), findsNothing);
+      expect(find.byType(MangaOcrProgressBadge), findsOneWidget);
+    });
+
+    testWidgets('报错提示是独立部件：两行文案，不是进度浮标', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(const MangaOcrErrorNotice(text: 'No OCR engine available')),
+      );
+      await tester.pump();
+      expect(find.text('No OCR engine available'), findsOneWidget);
+      expect(find.byType(MangaOcrProgressBadge), findsNothing);
+      expect(
+        tester.widget<Text>(find.text('No OCR engine available')).maxLines,
+        2,
+      );
+    });
+  });
 }

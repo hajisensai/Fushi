@@ -52,6 +52,15 @@ void main() {
     expect(keys, isNot(contains('alwaysShowChapterTransition')));
   });
 
+  test('OCR 进度浮标三选一（完整 / 贴边 / 隐藏）出现在设置面板（IpdWk54b_G）', () {
+    final MangaReaderPreferenceDescriptor badge =
+        mangaReaderPreferenceDescriptors(<String>{}).firstWhere(
+          (MangaReaderPreferenceDescriptor d) => d.key == 'ocrProgressBadge',
+        );
+    expect(badge.kind, MangaReaderPreferenceKind.choice);
+    expect(badge.choices, <String>['full', 'edge', 'hidden']);
+  });
+
   Widget host(MangaReaderSettingsSheet sheet, {double? width = 400}) =>
       MaterialApp(
         home: Scaffold(
