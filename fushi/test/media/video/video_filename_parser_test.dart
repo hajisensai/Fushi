@@ -313,7 +313,7 @@ void main() {
       expect(groups[1].isPlaylist, isFalse);
     });
 
-    test('4 位补零集号 S01E0005 归同一系列（BUG-4334 / H0K31TjWub）', () {
+    test('4 位补零集号 S01E0005 归同一系列（BUG-4335 / H0K31TjWub）', () {
       final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
         '/v/Show.S01E0006.mkv',
         '/v/Show.S01E0005.mkv',

@@ -1,4 +1,4 @@
-## BUG-4334 · 文件名 S01E0005 这类 4 位集号识别不出，每集成独立系列
+## BUG-4335 · 文件名 S01E0005 这类 4 位集号识别不出，每集成独立系列
 - **报告**：2026-11-08（应用内反馈 H0K31TjWub，iPad / iOS 27.0.1，3.3.0-debug.24438）
 - **真实性**：✅ 真 bug，已沿代码路径确认。文件名解析（Rust 胖核心 `FilenameParser.parse` → `ffc_parse_filename_parse_batch`）里两条 SxxEyy / Exx 正则把集号写死成 1–3 位：
   - 根因：`native/fushi_compute/src/parse/media_name.rs:146` `season_episode` 的集号组 `(\d{1,3})`，`S01E0005` 吃到 `000` 后第 4 位 `5` 不是分隔符，前瞻 `(?=$|[\s._-])` 失败、整条不匹配；`:150` `ep_token`（`E\.?(\d{1,3})`）同样限制。集号解析失败后整个 stem 当标题，`groupVideosIntoPlaylists` 按标题分组 → 每个文件各成一个系列。兄弟差分定号（`video_filename_parser.dart` `_pureEpisodeDigits` 1–3 位、为挡年份目录刻意不收 4 位）也救不回来。同文件 `cn_episode` / `cn_episode_suffix` / `dash_episode` 早已收 1–4 位，口径不一致。
