@@ -7428,7 +7428,11 @@ class AppModel
       try {
         await startAnimeDownloadService();
       } catch (e, s) {
-        ErrorLogService.instance.log('AppModel.startAnimeDownloadService', e, s);
+        ErrorLogService.instance.log(
+          'AppModel.startAnimeDownloadService',
+          e,
+          s,
+        );
       } finally {
         _animeDownloadServiceStarting = null;
       }

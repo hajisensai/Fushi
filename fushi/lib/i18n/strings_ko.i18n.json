@@ -2539,6 +2539,8 @@
   "download_airing_calendar_week_next": "다음 주",
   "download_airing_calendar_week_prev": "이전 주",
   "download_backend_embedded_hint": "권장. 다운로드가 Fushi 안에서 처리되어 따로 설치할 것이 없어요.",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "이번 설치본에는 내장 엔진 런타임이 없어요. 전체 패키지를 다시 설치하거나 외부 qBittorrent을 사용하세요.",
   "download_backend_not_configured": "다운로드 백엔드가 아직 구성되지 않았습니다.",
   "download_backend_qb_hint": "이미 실행 중인 qBittorrent WebUI에 Fushi를 연결해요.",

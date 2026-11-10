@@ -1,0 +1,11 @@
+## BUG-4323 · 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」
+- **报告**：2026-11-08（应用内反馈 cliIUL82nf，Windows 3.3.0 正式版：番剧详情「配置下载后端」选内置引擎提示缺运行库；日志里没有任何引擎 DLL 加载失败记录）
+- **真实性**：✅ 真 bug，已沿代码路径确认（origin/develop `704f8c6bd9`）。
+  - 判据混合：`fushi/lib/src/models/app_model.dart` `isEmbeddedTorrentReady`（修复前 :8756-8760）= `_supportsEmbeddedTorrent() && _embeddedTorrentSaveRoots != null && EmbeddedTorrentHost.probeAvailable()`，把「DLL 能否加载」和「下载服务已备好落盘路径」合成一位；服务没起时 `&&` 短路、根本不探测 DLL。`fushi/lib/src/pages/implementations/download_backend_setup_dialog.dart:263-267` 拿这一位显示「本次安装缺少内置引擎运行库」。
+  - 生命周期缺口：`_embeddedTorrentSaveRoots` 只由 `startAnimeDownloadService` 设置，它只在 init 且「浏览」模块开着时调一次（修复前 app_model.dart:4994）；`setModuleEnabled`（修复前 :10605）打开「浏览」不补跑，于是会话中途开模块后服务永远不起，内置引擎永远判未就绪。
+- **[x] ① 已修复** —
+  - 拆判据：`isEmbeddedTorrentRuntimeAvailable`（本平台支持 + DLL 能加载，只看运行库）、`isEmbeddedTorrentHostPrepared`（下载根 + resume 目录已备好、未为数据根迁移释放；与懒建入口 `_embeddedTorrentHostCapabilities` 共用）、`isEmbeddedTorrentReady` = session 已开 ||（prepared && runtime）。`_currentVideoDownloadBackendIdentity` / `readyVideoDownloadBackend` / 上传同意弹窗问的都是「能不能接任务」，继续读 `isEmbeddedTorrentReady`。
+  - 统一启动入口：`ensureAnimeDownloadServiceRunning()`（模块门 + 并发去重 + 失败记日志不抛 + 落地后 notifyListeners），init 与 `setModuleEnabled(browse, true)` 都走它。关闭模块沿用既有规则（会话中途不停服务，下次启动不再拉起）。
+  - 引导对话框：缺运行库只看 `isEmbeddedTorrentRuntimeAvailable`；运行库在而服务没备好时当场走统一入口补起服务，显示「正在启动下载服务…」，落地后按真实状态重画（就绪 → 下载根；仍没起 → 「下载服务没有运行，请确认已开启『浏览』模块」）。
+- **[x] ② 已加自动化测试** — `fushi/test/models/embedded_torrent_runtime_split_test.dart`（save roots 未设时运行库判可用、就绪判否；DLL 加载不了时运行库判否；会话中途打开「浏览」补起服务；关模块不起；并发去重；失败可重试）；`fushi/test/pages/download_backend_setup_dialog_test.dart`（服务没起不报缺运行库、启动中 → 就绪后可「完成」；补起失败时显示服务没运行；已就绪不再起服务；缺运行库用例改为显式 runtime=false）；`fushi/test/media/torrent/embedded_torrent_lazy_session_test.dart` 守卫改为钉住运行库判据只走 DLL 探测、不掺服务状态。测试未在本分支运行，统一在合并后验证。
+- **备注**：Feedback: cliIUL82nf。
