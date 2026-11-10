@@ -179,7 +179,7 @@ void main() {
               'char': charIndexOf(english, visible, 10),
               'expect': 'LONG',
             },
-            // BUG-4358：点词中 / 词尾的字母，词首回退跨字格退回 B，不再查 EEN / EN。
+            // BUG-4359：点词中 / 词尾的字母，词首回退跨字格退回 B，不再查 EEN / EN。
             <String, Object>{
               'char': charIndexOf(english, visible, 6),
               'expect': 'BEEN',
@@ -207,7 +207,7 @@ void main() {
             <String, Object>{'char': 7, 'expect': 'BEEN'},
             // 阅读器 scanDelimiters 不含 ASCII '?'；引擎 scan_candidates 会在 L 与 ? 之间再切出 WELL。
             <String, Object>{'char': 11, 'expect': 'WELL?'},
-            // BUG-4358（反馈原例）：WELL 点 E → WELL，修复前是 ELL?。
+            // BUG-4359（反馈原例）：WELL 点 E → WELL，修复前是 ELL?。
             <String, Object>{'char': 12, 'expect': 'WELL?'},
             <String, Object>{'char': 14, 'expect': 'WELL?'},
             <String, Object>{'char': 5, 'expect': 'YOU'},
@@ -218,13 +218,13 @@ void main() {
           'items': japanese,
           'cases': <Map<String, Object>>[
             <String, Object>{'char': 0, 'expect': '日本語の勉強です'},
-            // 日文命中不做词首回退（BUG-4358 只动非日文分支）。
+            // 日文命中不做词首回退（BUG-4359 只动非日文分支）。
             <String, Object>{'char': 1, 'expect': '本語の勉強です'},
           ],
         },
       ];
 
-      // BUG-4358：词首界（连字符）照样截住跨字格回退。
+      // BUG-4359：词首界（连字符）照样截住跨字格回退。
       cases.add(<String, Object>{
         'name': 'hyphen stops cross-glyph back-off',
         'items': itemsOf(htmlOf(blockOf(<String>['A LET-', 'TER']))),
@@ -233,7 +233,7 @@ void main() {
           <String, Object>{'char': 2, 'expect': 'LET-TER'},
         ],
       });
-      // BUG-4358：相邻两个 OCR 块（两个 <p class="ocr-box">）之间不回退。
+      // BUG-4359：相邻两个 OCR 块（两个 <p class="ocr-box">）之间不回退。
       cases.add(<String, Object>{
         'name': 'block boundary',
         'items': <Map<String, Object>>[

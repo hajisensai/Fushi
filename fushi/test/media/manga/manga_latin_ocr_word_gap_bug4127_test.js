@@ -7,7 +7,7 @@
 // 空格、各行直接拼接——DOM 正文成了 "BEENSOLONGSINCE…"。阅读器取词从被点的词一路扫过词界，
 // 引擎（word_scan.cpp）不在两个拉丁字母之间切，整串一个候选，查不到。
 //
-// BUG-4358（同一反馈的后续）：点词中的字母（WELL 点 E）只查到 ELL——词首回退只在命中的
+// BUG-4359（同一反馈的后续）：点词中的字母（WELL 点 E）只查到 ELL——词首回退只在命中的
 // 字格文本节点内做，退到偏移 0 就停，跨不到前一个字格。修复后回退跨相邻文本节点，
 // 停在词首界 / 补的空白缝 / 块界（<p class="ocr-box">）。
 //
@@ -101,7 +101,7 @@ function fakeDocument(body) {
 
 /// 按生成器给的子节点序列搭 <body><p class="ocr-box">…</p></body>，返回字格文本节点。
 ///
-/// BUG-4358：`{box: true}` 另起一个 <p class="ocr-box">（相邻两个 OCR 块），验证跨字格的
+/// BUG-4359：`{box: true}` 另起一个 <p class="ocr-box">（相邻两个 OCR 块），验证跨字格的
 /// 词首回退不越过块界。
 function mountOcrBox(items) {
   const body = new FakeElement('body', null);

@@ -3380,7 +3380,7 @@ window.fushiSelection = {
     }
     return { node: startNode, offset: startOffset };
   },
-  // BUG-4358（反馈 vXYKPudf7U，承 BUG-4179）：词首回退跨相邻文本节点。词首回退原先只在
+  // BUG-4359（反馈 vXYKPudf7U，承 BUG-4179）：词首回退跨相邻文本节点。词首回退原先只在
   // 命中的文本节点内做，退到偏移 0 就停——漫画 OCR 叠加层每个字格是独立的
   // <span class="ocr-char">（manga_overlay_html.dart），点 WELL 的 E 起点停在 E，查的是
   // ELL。前向扫描本来就跨节点（walker.nextNode），回退与它对称：在同一个
