@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -12,6 +13,19 @@ import 'package:fushi/src/utils/window_caption_channel.dart';
 /// 从应用图标设置页（`MiscellaneousSettingsBody`）搬出来，页面与控制通道
 /// （`fushi_cli config set/run appearance.app_icon.cli.*`）共用同一份实现。
 /// 只负责业务，不弹框、不管 SnackBar。
+
+/// 原生侧拒绝换图标（系统 / 启动器抛错）。[message] 是给用户看的失败原因，
+/// [cause] 留原始异常供诊断。调用方必须接住并给出可见提示（BUG-4326：此前
+/// `PlatformException` 直接漏到 UncaughtZone，用户只看到没反应）。
+class AppIconApplyException implements Exception {
+  AppIconApplyException(this.message, {this.cause});
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => 'AppIconApplyException: $message';
+}
 
 /// 本平台支不支持换应用图标（Android launcher alias / Windows 窗口图标）。
 bool get appIconSwitchSupported => Platform.isAndroid || Platform.isWindows;
@@ -62,7 +76,8 @@ Future<bool> applyPresetAppIcon(String key) async {
 
 /// 用 [imagePath]（已裁好的图片）当应用图标：Android 建自定义图标的桌面快捷
 /// 方式，Windows 拷进 app support 并设为窗口图标、落盘选择。返回是否成功。
-/// 文件不存在抛 [ArgumentError]，本平台不支持抛 [UnsupportedError]。
+/// 文件不存在抛 [ArgumentError]，本平台不支持抛 [UnsupportedError]，原生侧
+/// 报错抛 [AppIconApplyException]。
 Future<bool> applyCustomAppIcon(String imagePath) async {
   if (!appIconSwitchSupported) {
     throw UnsupportedError('本平台不支持更换应用图标（仅 Android / Windows）');
@@ -71,12 +86,9 @@ Future<bool> applyCustomAppIcon(String imagePath) async {
     throw ArgumentError('图片不存在：$imagePath');
   }
   if (Platform.isAndroid) {
-    final Uint8List bytes = await File(imagePath).readAsBytes();
-    return (await FushiChannels.iconSwitch.invokeMethod<bool>(
-          'createCustomShortcut',
-          <String, Object?>{'imageBytes': bytes},
-        )) ==
-        true;
+    return requestAndroidCustomIconShortcut(
+      await File(imagePath).readAsBytes(),
+    );
   }
   final String persisted = await persistCustomIconFile(imagePath);
   final bool ok = await WindowCaptionChannel.setWindowIcon(persisted);
@@ -88,4 +100,20 @@ Future<bool> applyCustomAppIcon(String imagePath) async {
     await syncWindowsShortcutIcons(await File(persisted).readAsBytes());
   }
   return ok;
+}
+
+/// Android：把 [bytes] 交给原生侧建 / 更新自定义图标的桌面快捷方式。返回启动器
+/// 是否接受（`false` = 设备不支持或系统拒绝）；原生侧抛错时转成
+/// [AppIconApplyException] 抛给调用方，不吞掉。
+Future<bool> requestAndroidCustomIconShortcut(Uint8List bytes) async {
+  try {
+    return (await FushiChannels.iconSwitch.invokeMethod<bool>(
+          'createCustomShortcut',
+          <String, Object?>{'imageBytes': bytes},
+        )) ==
+        true;
+  } on PlatformException catch (e) {
+    debugPrint('[Fushi] createCustomShortcut failed: ${e.code} ${e.message}');
+    throw AppIconApplyException(e.message ?? e.code, cause: e);
+  }
 }

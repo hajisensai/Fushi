@@ -1274,6 +1274,37 @@ body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading
   height: auto;
 }
 
+/* 外字：词典标了 data-sc-class="gaiji" 的行内图标（明鏡的［参考］菱形、［対義語］等）排成一个字大。
+   卡面能认出外字的只剩这个 data-sc 属性——导出（Yomitan 与现行 Fushi 都一样）把 gloss-* class
+   剥掉、几何全写成内联样式，而那份几何是制卡端算的：Yomitan 给没有固有尺寸的 SVG（明鏡的外字
+   只有 viewBox）填媒体加载器的默认 150×150，导出成 `font-size:1px;width:150em` 的 150px 方块，
+   复习卡上一个外字占半个卡面（BUG-4331）。旧版 Fushi 导出还带 class，词典 CSS 的
+   `span[data-sc-img][data-sc-class="gaiji"] .gloss-image-container{width:15em!important}`
+   （特异度 0,5,1）会在卡面上命中。这里只压图片盒（图片链接下的第一个 span；现行导出是 <a>，
+   旧版是 .gloss-image-link 的 <span>）：sizer / img 在各种导出形态里都是内联的绝对定位、铺满
+   这个盒子，跟着变小。特异度 ≥ 0,5,3，压过词典规则。没嵌媒体时外字退化成 alt 文字
+   （不是链接），不受影响。宽用 min-width 兜：Fushi 导出的外字盒内联了 `width:auto!important`
+   （内联 !important 压不动），只能靠 min-width 撑出 1em。
+   取值与 fushi_anki anki_models.dart 的 _ankiGaijiImageStyle（Anki 端旧格式兜底）一致。 */
+.fc .fc-gloss li[data-dictionary] [data-sc-class="gaiji"] a,
+.fc .fc-gloss li[data-dictionary] [data-sc-class="gaiji"] .gloss-image-link {
+  display: inline-block !important;
+  max-width: 1.2em !important;
+  vertical-align: text-bottom !important;
+}
+
+.fc .fc-gloss li[data-dictionary] [data-sc-class="gaiji"] a > span:first-child,
+.fc .fc-gloss li[data-dictionary] [data-sc-class="gaiji"] .gloss-image-link > .gloss-image-container {
+  display: inline-block !important;
+  font-size: 1em !important;
+  width: 1em !important;
+  min-width: 1em !important;
+  height: 1em !important;
+  max-width: 1em !important;
+  max-height: 1em !important;
+  vertical-align: text-bottom !important;
+}
+
 .nightMode .fc-gloss .gloss-image-link[data-appearance="monochrome"] img.gloss-image {
   filter: brightness(0) invert(1);
 }

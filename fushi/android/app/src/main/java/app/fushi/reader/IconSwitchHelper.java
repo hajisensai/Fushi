@@ -7,17 +7,25 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
+import android.util.Log;
 
 import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class IconSwitchHelper {
 
+    private static final String TAG = "IconSwitch";
     private static final String PACKAGE_NAME = "app.fushi.reader";
+
+    /// 自定义图标固定快捷方式的 id，是改名前的历史值：已固定到桌面的快捷方式按 id 认领，
+    /// 改 id 会让旧快捷方式无法再被本 app 更新 / 恢复，故冻结不改。它不归长按图标菜单
+    /// （[AppShortcutsHelper]）所有，那边按 [AppShortcutOwnership] 判定不会碰它。
+    static final String CUSTOM_ICON_SHORTCUT_ID = "hibiki_custom_icon";
 
     // 唯一对外预设：default（兔子图标，薰衣草底 squircle）。「立绘」与「透明 wordmark」
     // 两档已下线，图标资源随之删除。
@@ -169,16 +177,51 @@ public class IconSwitchHelper {
             .setClass(context, MainActivity.class)
             .addCategory(Intent.CATEGORY_LAUNCHER);
 
-        // 快捷方式 id 是改名前的历史值：已固定到桌面的快捷方式按 id 认领，改 id 会让旧快捷方式
-        // 无法再被本 app 更新 / 停用，故冻结不改。
-        ShortcutInfoCompat shortcut = new ShortcutInfoCompat.Builder(context, "hibiki_custom_icon")
+        ShortcutInfoCompat shortcut = new ShortcutInfoCompat.Builder(context, CUSTOM_ICON_SHORTCUT_ID)
             .setShortLabel("Fushi")
             .setIcon(icon)
             .setIntent(launchIntent)
             .build();
 
-        boolean result = ShortcutManagerCompat.requestPinShortcut(context, shortcut, null);
-        scaled.recycle();
-        return result;
+        try {
+            if (findPinnedCustomShortcut(context) != null) {
+                // 同 id 已固定在桌面（含被旧版 AppShortcutsHelper 误置灰的，BUG-4326）：
+                // 对它 requestPinShortcut 会抛「already exists but disabled」，启动器也不会
+                // 再放第二个。就地恢复并换上新图标。updateShortcuts 不改 enabled 状态，
+                // 所以先 enable 再 update。
+                List<ShortcutInfoCompat> one = Collections.singletonList(shortcut);
+                ShortcutManagerCompat.enableShortcuts(context, one);
+                return ShortcutManagerCompat.updateShortcuts(context, one);
+            }
+            return ShortcutManagerCompat.requestPinShortcut(context, shortcut, null);
+        } finally {
+            scaled.recycle();
+        }
+    }
+
+    /// 桌面上已固定的自定义图标快捷方式（不论是否被禁用），没有返回 null。
+    private static ShortcutInfoCompat findPinnedCustomShortcut(Context context) {
+        for (ShortcutInfoCompat pinned :
+            ShortcutManagerCompat.getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)) {
+            if (CUSTOM_ICON_SHORTCUT_ID.equals(pinned.getId())) return pinned;
+        }
+        return null;
+    }
+
+    /// 恢复被旧版 AppShortcutsHelper 误置灰的自定义图标快捷方式（BUG-4326）。
+    ///
+    /// 本 app 里只有那段旧逻辑会禁用这个 id（IconSwitchHelper 自己从不禁用它），所以已
+    /// 固定在桌面的一律重新启用；对已启用的再 enable 是 no-op。启动时调一次。
+    public static void restoreCustomShortcut(Context context) {
+        if (!isCustomShortcutSupported(context)) return;
+        try {
+            ShortcutInfoCompat pinned = findPinnedCustomShortcut(context);
+            if (pinned == null) return;
+            ShortcutManagerCompat.enableShortcuts(context, Collections.singletonList(pinned));
+        } catch (RuntimeException e) {
+            // 用户未解锁（direct boot）时 ShortcutManager 拒绝访问：本次不修，下次启动再修；
+            // 不影响启动。用户主动再设图标时 createCustomShortcut 走同一条恢复路径并上报结果。
+            Log.w(TAG, "restoreCustomShortcut failed", e);
+        }
     }
 }
