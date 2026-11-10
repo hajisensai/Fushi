@@ -7,6 +7,6 @@
   - **启动**：对 Tyrano 游戏追加 `--remote-debugging-port`。判定只看目录结构（`app.asar` 顶层有 `tyrano/`），不看 exe 名。
   - **文本**：逐字的 `span.char` 拼成台词，作为 `tyrano_dom` 行进入 texthooker。DOM 源在线时，LunaHook 的行不再作为正文。
   - **几何**：attached surface 新增「实测排版」模式，直接接收 DOM 实测的逐字客户区物理像素矩形，免校准，吞点击与弹卡沿用现有链路。
-  - **语音**：用引擎自己的判据 `stat.map_vo.vobuf[buf]`，挂在 `playbgm.start` 上，按句序号精确归属；宿主按 asar 偏移读出原件写进 dump。三条语音原件的 SHA-256 与 asar 成员一致。原生侧 `IsVoiceAudioPath` 里写死的 `data/sound/v_` 文件名猜测没有改，DOM 源在线时由仲裁绕开。
+  - **语音**：用引擎自己的判据 `stat.map_vo.vobuf[buf]`，挂在 `playbgm.start` 上，按句序号精确归属；宿主按 asar 偏移读出原件写进 dump。三条语音原件的 SHA-256 与 asar 成员一致。原生侧 `IsVoiceAudioPath`（`native/galgame_hook/hook/asar_runtime.h`）的 `data/sound/v_` 目录惯例**定为保留、作兜底**：它是 engine-support.yaml 里已 `verified` 的 `tyrano_asar_voice_resource` 路径（真实样本 SHA-256 与 asar 成员一致），删掉会让没开调试端口（附着已运行的游戏、拿不到页面）的 Tyrano 游戏丢失已验证的语音。页面声明了语音缓冲区时，DOM 行只接受 DOM 语音、不按时间戳去配 native 截获，已经是「DOM 优先、native 兜底」，不需要改代码。
 
   未做真机四条验收（游戏内弹卡、点击查词不推进的鼠标与触摸、自然推进下的语音配对），属于 `implemented_unverified`，所以 `engine-support.yaml` 不升级。
