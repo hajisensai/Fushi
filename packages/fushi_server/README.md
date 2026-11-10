@@ -94,6 +94,7 @@ port: 38765                   # 互联协议端口（客户端连这个）
 bind: "0.0.0.0"
 tls: true                     # 自签证书 + 指纹 TOFU；关掉只在可信内网
 device_name: "nas"
+language: "en"                # 界面语言（WebUI 与命令行输出）：en / zh；init 写 en，旧配置没有这一行时按 zh；WebUI「设置」可改，保存即生效；环境变量 FUSHI_LANGUAGE 优先
 lan_requires_pin: true        # 无头进程没有审批弹窗，PIN 是唯一人因；别关
 admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
@@ -175,8 +176,10 @@ WebUI「设置」页改的就是这个文件；端口 / TLS / 绑定 / torrent /
 
 ## CLI
 
+命令行的帮助、提示与报错按配置里的 `language` 出（新装英文，旧配置没写按中文）；一次性改用 `FUSHI_LANGUAGE=zh fushi_server …`。
+
 ```
-fushi_server init                      生成配置
+fushi_server init [--language en|zh]  生成配置（--language 写进配置，缺省 en）
 fushi_server serve [--scan] [--[no-]prune]   起服务（Ctrl-C / SIGTERM 优雅停）；--no-prune 对本进程所有扫描生效
 fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，随后同步补刮（不起服务）
 fushi_server status                    打印库/配对概况
@@ -336,8 +339,9 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
-| `GET|PUT srs` / `GET srs/profiles` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET|PUT srs` / `GET srs/profiles` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
 | `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
+| `GET|PUT dictionaries` / `PUT dictionaries/order {names}` / `PATCH dictionaries/<名> {hidden}` / `DELETE dictionaries/<名>` / `GET dictionaries/lookup?q=` | 词典（WebUI「词典」页）：引擎状态（`engine.available` / `reason` / `transformsLoaded`）+ 清单 / 正文为 Yomitan zip 的导入（同名视为更新；引擎没加载回 409，导入失败 422）/ 整份新顺序（必须恰好列全）/ 日语隐藏标记 / 删除 / 试查。改动与互联推送共用库锁，即时进引擎 |
 
 ### 远程访问三项
 
@@ -555,7 +559,7 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
   -G "Visual Studio 17 2022" -A x64` 后 `cmake --build <短路径> --config Release --target fushidicts_ffi`）。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
-- 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
+- 词典来源：客户端「词典 · 传输」推送或 WebUI「词典」页导入（都即时生效；WebUI 页还能排序 / 隐藏 / 删除 / 试查，并显示引擎与变形表是否加载），或离线命令：
 
 ```
 fushi_server dict ls [--json]

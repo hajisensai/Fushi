@@ -130,7 +130,7 @@ void main() {
       final (String manga, String book) = await seed();
       expect(await h.run(module, <String>['ocr', 'manga', 'no-such-book']), 66);
       expect(await h.run(module, <String>['ocr', 'manga', book]), 1);
-      expect(h.err.toString(), contains('不是漫画'));
+      expect(h.err.toString(), contains('is not a manga'));
       expect(
         await h.run(module, <String>['ocr', 'manga', manga, '--pages', '2']),
         64,

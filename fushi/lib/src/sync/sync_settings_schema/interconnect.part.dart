@@ -339,7 +339,24 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   /// 地址行副标题：连通性测试结果；`p2p://` 地址另挂隧道路径（直连 / 中继）。
-  Widget? _urlRowSubtitle(ThemeData theme, String url, bool? ok) {
+  /// [address] 非 null 时（标题已是设备名）把 URL 放在副标题首行，同一台 host 的
+  /// 多条地址靠它区分。
+  Widget? _urlRowSubtitle(
+    ThemeData theme,
+    String url,
+    bool? ok, {
+    String? address,
+  }) {
+    final Widget? addressLine = address == null
+        ? null
+        : Text(
+            address,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
     // M3E tonal 状态色块：成功 tertiary（Apple 落系统绿淡染）、失败 error。
     final Widget? reach = ok == null
         ? null
@@ -364,11 +381,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             ),
           );
     final bool p2p = parseInterconnectP2pUrl(url) != null;
-    if (!p2p && why == null) return reach;
+    if (!p2p && why == null && addressLine == null) return reach;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        ?addressLine,
         ?reach,
         ?why,
         if (p2p) InterconnectP2pPathBadge(url: url),
@@ -605,6 +623,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
   Future<void> _toggleUrl(int index) async {
     final String url = _urls[index].url;
+    // 启停一翻，上一轮测试结果就不再代表当前状态，清掉等下次测试。
+    setState(() {
+      _reachable.remove(url);
+      _failureReason.remove(url);
+    });
     await _mutateUrls(
       (List<FushiClientUrl> current) => <FushiClientUrl>[
         for (final FushiClientUrl u in current)
@@ -674,9 +697,17 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       if (mounted) _showSnackBar(context, t.sync_connection_failed);
       return;
     }
+    // 只测启用的行：停用的行不参与任何真实同步 / 请求，测它亮 ✓ 只会误导。
+    final List<FushiClientUrl> targets = interconnectUrlsToTest(_urls);
+    if (targets.isEmpty) {
+      if (mounted) {
+        _showSnackBar(context, t.interconnect_peer_test_none_enabled);
+      }
+      return;
+    }
     final String globalToken = _tokenController.text.trim();
     setState(() => _isTesting = true);
-    for (final FushiClientUrl u in _urls) {
+    for (final FushiClientUrl u in targets) {
       // BUG-1693：凭据逐地址取（行上 per-peer token 优先、回落全局键），与全部
       // 真实同步消费点的 BUG-1550 规则一致。旧实现拿全局键测每一台：配对第二台
       // 后全局键被覆写，第一台恒被误报失败；全局键为空时更是整体早退，哪怕各
@@ -766,7 +797,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               spacing: fushiGroupedListGap(context),
               itemBuilder: (BuildContext context, int index) {
                 final FushiClientUrl u = _urls[index];
-                final bool? ok = _reachable[u.url];
+                // 停用的行不显示上一轮测试结果：它不参与任何真实请求，留着 ✓
+                // 会让人以为它在用（测试本身也只测启用行，见 _testAll）。
+                final bool? ok = u.enabled ? _reachable[u.url] : null;
+                // 标题优先显示对端设备名（同 host 的备用地址借组内的名字），URL
+                // 退到副标题；没有名字的老条目 / 手输地址照旧以 URL 为标题。
+                final String? peerName = interconnectPeerRowName(_urls, u);
                 // 53NT7G_tSO：窄屏（手机竖屏 ~360dp）上一排五个控件把标题挤到 0 宽，
                 // 地址整行看不见、认不出是哪台。放不下时把次要动作挪到地址下方一行，
                 // 只有开关留在行尾；宽屏照旧平铺在行尾。
@@ -824,6 +860,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                           theme,
                           u.url,
                           ok,
+                          address: peerName == null ? null : u.url,
                         );
                         return FushiListItem(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -839,7 +876,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                           // 在窄屏上只显示得到 `http…`，等于认不出是哪台设备。放宽两行。
                           titleMaxLines: 2,
                           title: Text(
-                            u.url,
+                            peerName ?? u.url,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
