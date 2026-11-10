@@ -13,6 +13,7 @@
 #include "clipboard_image_channel.h"
 #include "external_open_handoff.h"
 #include "floating_ball_channel.h"
+#include "gamescope_overlay.h"
 #include "global_lookup_channel.h"
 
 struct _MyApplication {
@@ -247,6 +248,12 @@ static void my_application_activate(GApplication* application) {
                                             nullptr);
   self->floating_ball = fushi_floating_ball_new(messenger, window);
   self->global_lookup = fushi_global_lookup_new(messenger);
+
+  // Steam Deck Game Mode, started from Fushi's Steam library entry: Steam can
+  // switch to this window like to a game, and it fills the screen there.
+  if (fushi::gamescope::TagSteamApp(GTK_WIDGET(window))) {
+    gtk_window_fullscreen(window);
+  }
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

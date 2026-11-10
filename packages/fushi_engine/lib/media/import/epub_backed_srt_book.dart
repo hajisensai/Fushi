@@ -33,12 +33,13 @@ Future<void> writeEpubBackedSrtBook({
   // host 的 hasAudiobook 判据要求 audiobooks + srt_books 两表齐备且带音频，
   // 清掉就等于这本书从同步里消失（exportAudiobook 抛 StateError）。
   // 手抄一遍「把旧值搬过来」也能修，但那是纪律不是结构：新增列照样会漏抄。
+  // `importedAt` 是原始入库时刻（跨设备保留、导入时间排序用），只在建行时写：换字幕 /
+  // 换音频重新对齐不是新导入，不能让这本书在本机和对端书架上跳到「刚导入」。
   final bool patched = await repo.patchByUid(
     uid,
     title: title,
     srtPath: srtPath,
     bookKey: bookKey,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
     author: author,
     audioPaths: audioPaths.isNotEmpty ? List<String>.of(audioPaths) : null,
   );
