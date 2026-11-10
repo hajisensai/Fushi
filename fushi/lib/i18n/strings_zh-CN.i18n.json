@@ -6160,6 +6160,7 @@
   "music_queue_up_next": "接下来",
   "music_queue_up_next_empty": "当前曲目之后没有排队的曲目",
   "music_recent_plays_title": "最近播放",
+  "music_remote_server_missing": "这台设备上没有配置这个服务器",
   "music_replaygain_hint": "整张专辑顺序播放用专辑增益，其它情况用单曲增益",
   "music_replaygain_preamp_title": "ReplayGain 预放大",
   "music_replaygain_title": "ReplayGain 响度均衡",
