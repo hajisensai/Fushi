@@ -208,6 +208,7 @@ List<MusicMenuAction> _pluginTrackActions(
       .where((MusicPluginArtistRef a) => a.id != null)
       .firstOrNull;
   return <MusicMenuAction>[
+    if (track.playable) ...musicQueueMenuActions(session.engine, () => item),
     if (likeable)
       MusicMenuAction(
         id: liked ? 'unlove' : 'love',

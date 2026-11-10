@@ -217,7 +217,8 @@ Map<String, String> buildCtlMineFields({
   // 词头级的振假名 / 频率 / 音调：同一个词头的各词典条目共享这份数据（引擎把它写进
   // 每条的 extra），取第一条即可。值由创作器字段的同名生成函数算出，与弹窗制卡
   // 填进同名字段（furiganaPlain / freqHarmonicRank / frequenciesHtml /
-  // pitchPositions / pitchCategories）的语义一致。
+  // singleFrequencyNumbers / singleFrequenciesHtml / pitchPositions /
+  // pitchCategories）的语义一致。
   final DictionaryEntry? headword = glossEntries.isNotEmpty
       ? glossEntries.first
       : (sameWord.isEmpty ? null : sameWord.first);

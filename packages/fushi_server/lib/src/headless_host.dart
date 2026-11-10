@@ -418,7 +418,7 @@ class HeadlessHost {
             port: config.port,
             token: identity.hostToken,
             allowLan: !_loopbackOnly,
-            libraryService: buildLibraryService(),
+            libraryService: libraryService,
             mangaOcrJobs: ocrJobs,
             // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
             screenOcr: ScreenOcrHost(
@@ -905,6 +905,13 @@ class HeadlessHost {
     prefs: prefs,
     databaseDirectory: paths.support,
   );
+
+  /// 互联推送与 WebUI 共用的那一个库服务实例：删词典等改动都经它的库锁与引擎重载。
+  late final LocalLibraryHostService libraryService = buildLibraryService();
+
+  /// 在库互斥锁里跑 [body]，与互联推送的导入 / 删除串行（WebUI 改词典用）。
+  Future<void> runLibraryExclusive(Future<void> Function() body) =>
+      _mutex.run(body);
 
   /// 互联 host 的库服务装配（[start] 用；测试也直接拿它挂到自建的 TLS
   /// [FushiSyncServer] 上驱动端点，免得起整套下载 / ASR / 局域网广播）。

@@ -2749,7 +2749,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     lyricsMode: false,
     showTimer: ReaderFushiSource.instance.showReadingTimer,
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    showChars: ReaderFushiSource.instance.showSessionChars,
+    showSpeed: ReaderFushiSource.instance.showCharsPerHour,
   );
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（「收起控制栏时保留读数」）。
+  bool get _statusFooterPersistent =>
+      ReaderFushiSource.instance.statusFooterPersistent;
 
   /// 状态行的底部预留高（挤压式：视觉高度 == 预留高度，正文永不压到它下面）。
   /// 预留从初始 HTML 起就含它；只有**绘制**才等首次冷加载完成（[_buildStatusFooter]）。
@@ -2760,10 +2766,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 会重下 chrome insets，不引入额外 reflow。
   double get _statusFooterReserve => readerStatusFooterReserve(
     enabled: _statusFooterEnabled,
-    footerHeight: kReaderStatusFooterHeight,
+    // 挤压态照旧 28；悬浮态只在读数常驻时才占，按胶囊**画出来**的带高（含离窗底
+    // 的外边距）预留，视觉 == 预留。
+    footerHeight: _bottomBarFloating
+        ? readerStatusFooterPaintedHeight(floating: _floatingToolbars)
+        : kReaderStatusFooterHeight,
     absorbedByBar: _statusFooterAbsorbedByBar,
-    // 悬浮态状态行随控制栏显隐、不占预留（2026-09-13）。
+    // 悬浮态状态行随控制栏显隐、不占预留（2026-09-13）；读数常驻时照占。
     floating: _bottomBarFloating,
+    persistent: _statusFooterPersistent,
   );
 
   /// 状态行是否被底栏吸收（既不画也不占预留），单一真相源
@@ -2785,6 +2796,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     absorbedByBar: _statusFooterAbsorbedByBar,
     floating: _bottomBarFloating,
     transientVisible: _chromeTransientVisible,
+    persistent: _statusFooterPersistent,
   );
 
   /// 状态行**画出来**占的底部带高（悬浮态唤出时 28px，收起时 0），是底栏在窄屏
@@ -5003,6 +5015,10 @@ $liveConfigJs
       _recordAudioJumpDeparture(fromGlobalMs, source);
 
   AudioCue? _lookupCue;
+
+  /// 查词暂停期间最近一次在正文 / 歌词里点中的句，关弹窗「从句首重播」用。
+  /// 与 [_lookupCue] 分开存：弹窗收尾的 [clearDictionaryResult] 会先清掉 [_lookupCue]。
+  AudioCue? _lookupRestartCue;
   final LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>
   _audioPositionIndices =
       LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>();

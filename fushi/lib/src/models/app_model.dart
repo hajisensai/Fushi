@@ -14,6 +14,8 @@ import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -344,6 +346,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -428,9 +431,12 @@ import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dar
     show appleMusicBackendRoute;
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_routing_backend.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
+import 'package:fushi/src/media/music/music_audio_effects_host.dart';
+import 'package:fushi/src/media/music/music_audio_effects_prefs.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_plugin_quality_host.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
@@ -443,7 +449,7 @@ import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
-    show InstalledMusicPlugin, MusicPluginManager;
+    show InstalledMusicPlugin, MusicPluginManager, MusicPluginQuality;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
@@ -478,7 +484,13 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart'
-    show RemoteMiningTarget;
+    show
+        FushiRemoteMiningTargetService,
+        RemoteMineLanding,
+        RemoteMiningTarget,
+        kRemoteMiningKindAnki,
+        kRemoteMiningKindReview;
+import 'package:fushi/src/sync/host_remote_mining_targets.dart';
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
@@ -827,7 +839,9 @@ class HomeDictionaryTabRequest {
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
-class AppModel with ChangeNotifier {
+class AppModel
+    with ChangeNotifier
+    implements MusicAudioEffectsHost, MusicPluginQualityHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -1997,9 +2011,9 @@ class AppModel with ChangeNotifier {
     if (isMusicPluginSourcesAvailable) {
       musicPluginPlaybackHost = MusicPluginPlaybackHost(
         manager: () => musicPluginManager,
-        quality: () => musicPluginQualityForBitrate(
-          isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 320,
-        ),
+        quality: (String path) => isPreferencesReady
+            ? musicPluginQualityFor(path)
+            : MusicPluginQuality.high,
       );
     }
     // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
@@ -2358,10 +2372,87 @@ class AppModel with ChangeNotifier {
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
       crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
-      equalizer: MusicEqualizerSettings(
-        enabled: prefsRepo.musicEqEnabled,
-        gainsDb: MusicEqualizerSettings.parseGains(prefsRepo.musicEqGains),
-      ),
+      effects: musicAudioEffects,
+    );
+  }
+
+  @override
+  Listenable get musicAudioEffectsChanges => prefsRepo;
+
+  @override
+  bool get musicAudioEffectsSupported =>
+      musicSession.engine.capabilities.signalPath;
+
+  /// 音效设置（偏好 → 值对象；库没开时为默认 = 关）。
+  @override
+  MusicAudioEffects get musicAudioEffects => isPreferencesReady
+      ? readMusicAudioEffectsPrefs(prefsRepo)
+      : const MusicAudioEffects();
+
+  /// 当前显示的均衡预设（存的预设 + 当前增益，见 [MusicEqPreset.resolve]）。
+  @override
+  MusicEqPreset get musicEqPreset => isPreferencesReady
+      ? readMusicEqPresetPref(prefsRepo)
+      : MusicEqPreset.flat;
+
+  /// 写音效设置（只写变了的偏好），然后重新下发到引擎。[preset] 给了就一并记下（选预设 /
+  /// 手动拖推子落到自定义 / 复位回平直）。
+  @override
+  Future<void> setMusicAudioEffects(
+    MusicAudioEffects next, {
+    MusicEqPreset? preset,
+  }) async {
+    await writeMusicAudioEffectsPrefs(prefsRepo, next, preset: preset);
+    await musicSession.engine.reapplySettings();
+  }
+
+  @override
+  MusicPlayerEngine get musicPlayerEngine => musicSession.engine;
+
+  /// 在线插件默认取流音质。没单独设过时沿用旧行为：由服务器码率上限反推。
+  @override
+  MusicPluginQuality get musicPluginQuality {
+    final String? wire = prefsRepo.musicPluginQualityWire;
+    return wire == null
+        ? musicPluginQualityForBitrate(prefsRepo.musicServerMaxBitrate)
+        : MusicPluginQuality.fromWire(wire);
+  }
+
+  /// 播放器里「只对这首」选的音质（插件占位路径 → 档位）。只活在本次进程里：它是一次性的
+  /// 试听选择，不是设置；改默认档时一并清掉（默认档说了算）。
+  final Map<String, MusicPluginQuality> _musicPluginQualityOverrides =
+      <String, MusicPluginQuality>{};
+
+  /// 这首插件曲目实际按哪一档取流。
+  @override
+  MusicPluginQuality musicPluginQualityFor(String path) =>
+      _musicPluginQualityOverrides[path] ?? musicPluginQuality;
+
+  /// 改默认音质；正在放的插件曲目按新档原位重取（进度、暂停态不变），当前曲不是插件曲目
+  /// 而预排的下一首是时只重排下一首。非插件的远程曲目不受影响。
+  @override
+  Future<void> setMusicPluginQuality(MusicPluginQuality quality) async {
+    _musicPluginQualityOverrides.clear();
+    await prefsRepo.setMusicPluginQualityWire(quality.wire);
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => isMusicPluginPath(item.path),
+    );
+  }
+
+  /// 只对 [path] 这首换档（不改默认）；它正在放就原位重取，是预排的下一首就重排下一首。
+  @override
+  Future<void> setMusicPluginQualityOverride(
+    String path,
+    MusicPluginQuality quality,
+  ) async {
+    if (quality == musicPluginQuality) {
+      _musicPluginQualityOverrides.remove(path);
+    } else {
+      _musicPluginQualityOverrides[path] = quality;
+    }
+    notifyListeners();
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => item.path == path,
     );
   }
 
@@ -5855,6 +5946,16 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleObscureReveal(bool value) =>
       prefsRepo.setVideoSubtitleObscureReveal(value);
 
+  /// 字幕遮布。见 [PreferencesRepository.videoSubtitleMask]。
+  VideoSubtitleMaskConfig get videoSubtitleMask => prefsRepo.videoSubtitleMask;
+
+  /// 字幕遮布配置的精确订阅。见 [PreferencesRepository.videoSubtitleMaskListenable]。
+  ValueListenable<VideoSubtitleMaskConfig> get videoSubtitleMaskListenable =>
+      prefsRepo.videoSubtitleMaskListenable;
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) =>
+      prefsRepo.setVideoSubtitleMask(value);
+
   /// 副字幕的「临时显形」开关。见
   /// [PreferencesRepository.videoSecondarySubtitleObscureReveal]。
   bool get videoSecondarySubtitleObscureReveal =>
@@ -7673,6 +7774,13 @@ class AppModel with ChangeNotifier {
       updateFeed: updateFeedService,
       // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
       defaultTargetSourceId: _defaultVideoDownloadSourceId,
+      // 下载的原盘入库后补盘面图，与扫描导入同一份（BUG-4245）。
+      onDiscCollectionImported: (int collectionId, String discRootPath) =>
+          applyBlurayDiscCollectionArtwork(
+            database,
+            collectionId,
+            discRootPath,
+          ),
     )..start();
     _videoDownloadPipelineService = pipeline;
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
@@ -11848,6 +11956,8 @@ class AppModel with ChangeNotifier {
   BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
       _browserVideoStudyBridge ??= BrowserVideoStudyBridge(
         database: () => database,
+        // 暂停且在场时的空闲门：与阅读面 / app 内视频同一设置。
+        studyIdleTimeout: () => readingIdleTimeout,
       );
 
   /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`
@@ -12065,19 +12175,116 @@ class AppModel with ChangeNotifier {
   /// 同形地包一层 [SrsMiningAnkiRepository]：制卡 / 查重 / 同词反查 / 在复习里打开都走**那份
   /// 配置**的复习副本（[extensionSrsMinerForView]），不碰 App 激活配置的复习、也不改发 Anki。
   BaseAnkiRepository hostMiningRepositoryForView(ProfileSettingsView view) {
-    final BaseAnkiRepository inner = platformServices.createAnkiRepository(
-      settingsStore: view.ankiSettingsStore,
-    );
     if (!moduleVisibility.isEnabled(ModuleId.srs) ||
         SrsMiningTarget.fromWire(view.prefs.srsMiningTarget) !=
             SrsMiningTarget.srs) {
-      return inner;
+      return platformServices.createAnkiRepository(
+        settingsStore: view.ankiSettingsStore,
+      );
     }
-    return SrsMiningAnkiRepository(
-      inner: inner,
-      miner: () => extensionSrsMinerForView(view),
-      openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
-    );
+    return _reviewMiningRepositoryForView(view);
+  }
+
+  /// 不论 [view] 自己的挖词目标，落进它那份配置复习副本的仓库（Anki 设置同样读 [view]）。
+  BaseAnkiRepository _reviewMiningRepositoryForView(ProfileSettingsView view) =>
+      SrsMiningAnkiRepository(
+        inner: platformServices.createAnkiRepository(
+          settingsStore: view.ankiSettingsStore,
+        ),
+        miner: () => extensionSrsMinerForView(view),
+        openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
+      );
+
+  /// 制卡写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
+  /// AppModel 不在 Riverpod 图里，由 main.dart 注入；未注入时不通知。
+  void Function()? srsCardsAddedNotifier;
+
+  /// 互联主机的「保存到」（§4.8）：手机挑本机的 Anki 牌组 / 各配置的复习与牌组。见
+  /// [HostRemoteMiningTargets]。
+  late final HostRemoteMiningTargets hostRemoteMiningTargets =
+      HostRemoteMiningTargets(
+        defaultKind: () =>
+            moduleVisibility.isEnabled(ModuleId.srs) &&
+                hostSrsMiningTarget == SrsMiningTarget.srs
+            ? kRemoteMiningKindReview
+            : kRemoteMiningKindAnki,
+        defaultRepository: () => hostMiningAnkiRepository,
+        ankiRepository: () => platformServices.createAnkiRepository(),
+        reviewCatalog: _hostReviewMiningCatalog,
+        reviewRepository: _hostReviewMiningRepository,
+        reviewMiner: _hostReviewMiningMiner,
+        toResult: remoteMineResultFromOutcome,
+      );
+
+  /// 本机复习此刻能落到的配置：激活配置 + srs.db 里已有复习数据的其它配置。复习模块关着 / 未装配时 null。
+  Future<HostReviewMiningCatalog?> _hostReviewMiningCatalog() async {
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null || !moduleVisibility.isEnabled(ModuleId.srs)) {
+      return null;
+    }
+    final SrsProfileStores stores = reader();
+    final String active = await database.resolveActiveProfileUid();
+    if (active.isEmpty) return null;
+    final List<HostReviewMiningProfile> profiles = <HostReviewMiningProfile>[];
+    for (final ProfileRow row in await database.getAllProfiles()) {
+      final String uid = await database.profileUidOf(row.id);
+      if (uid == active || await stores.hasReviewData(uid)) {
+        profiles.add(HostReviewMiningProfile(uid: uid, name: row.name));
+      }
+    }
+    return HostReviewMiningCatalog(activeProfile: active, profiles: profiles);
+  }
+
+  /// uid 为 [profileUid] 的非激活配置的设置视图；是激活配置 / 不存在时 null。
+  Future<ProfileSettingsView?> _hostProfileViewForUid(String profileUid) async {
+    final int activeId = await database.resolveActiveProfileId();
+    for (final ProfileRow row in await database.getAllProfiles()) {
+      if (row.id == activeId) continue;
+      if (await database.profileUidOf(row.id) != profileUid) continue;
+      return interconnectProfileRepository().loadSettingsView(row.id);
+    }
+    return null;
+  }
+
+  /// 落进 [profileUid] 那份复习的仓库：激活配置用激活副本 + 激活配置的复习落点（不叠本机作品会话，与
+  /// `hostMiningAnkiRepositoryProvider` 同口径）；别的配置读它的设置视图。
+  Future<BaseAnkiRepository?> _hostReviewMiningRepository(
+    String profileUid,
+  ) async {
+    if (srsProfileStoresReader == null) return null;
+    if (profileUid == await database.resolveActiveProfileUid()) {
+      return SrsMiningAnkiRepository(
+        inner: platformServices.createAnkiRepository(),
+        miner: () => _hostReviewMiningMiner(profileUid),
+        onCardsAdded: srsCardsAddedNotifier,
+        openNote: (String noteId) async =>
+            await SrsAppHost.current?.openNote(noteId) ?? false,
+      );
+    }
+    final ProfileSettingsView? view = await _hostProfileViewForUid(profileUid);
+    return view == null ? null : _reviewMiningRepositoryForView(view);
+  }
+
+  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null。
+  Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null) return null;
+    try {
+      if (profileUid == await database.resolveActiveProfileUid()) {
+        return await reader().minerFor(
+          profileUid: profileUid,
+          destination: hostSrsMiningDestination,
+          fallbackRolloverHour: () => statDayResetHour,
+        );
+      }
+      final ProfileSettingsView? view = await _hostProfileViewForUid(
+        profileUid,
+      );
+      return view == null ? null : await extensionSrsMinerForView(view);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('hostReviewMiningMiner', e, stack);
+      return null;
+    }
   }
 
   /// 读 `srsProfileStoresProvider` 的委托（各配置的复习副本登记处）。AppModel 不在 Riverpod
@@ -13017,6 +13224,7 @@ class _AppModelRemoteLookupService
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService,
         FushiRemoteMiningService,
+        FushiRemoteMiningTargetService,
         FushiRemoteDuplicatePolicyService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
@@ -13093,6 +13301,77 @@ class _AppModelRemoteLookupService
         stackTrace: st,
       );
     }
+  }
+
+  // ── §4.8「保存到」：手机挑本机的落点（[HostRemoteMiningTargets]）。只对互联对端生效：按浏览器扩展所选
+  // 配置处理的请求（[_view] 非 null）不认 `target`，照旧落那份配置的挖词目标。
+
+  @override
+  Future<Map<String, Object?>> miningTargets() =>
+      _appModel.hostRemoteMiningTargets.targets();
+
+  @override
+  Future<RemoteMineLanding> mineEntryTo({
+    required Map<String, String> fields,
+    required String sentence,
+    RemoteMiningTarget? target,
+  }) async {
+    if (_view != null) {
+      return RemoteMineLanding(
+        await mineEntry(fields: fields, sentence: sentence),
+      );
+    }
+    // BUG-2190：外字字节先落缓存（同 [mineEntry]）。
+    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+    return _appModel.hostRemoteMiningTargets.mine(
+      target,
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(sentence: sentence),
+    );
+  }
+
+  @override
+  Future<RemoteMineLanding> mineForwardedTo(
+    ForwardedMinePayload payload, {
+    RemoteMiningTarget? target,
+  }) async {
+    if (_view != null) return RemoteMineLanding(await mineForwarded(payload));
+    try {
+      return await withMaterializedMiningContext<RemoteMineLanding>(
+        payload,
+        (String raw, AnkiMiningContext context) => _appModel
+            .hostRemoteMiningTargets
+            .mine(target, rawPayloadJson: raw, context: context),
+        // 同 [_withForwardedMiningContext]：客户端搬不来字节的插图由本机词典补齐。
+        writeHostDictionaryMedia: writeDictionaryMediaCache,
+      );
+    } catch (e, st) {
+      return RemoteMineLanding(
+        remoteMineError(
+          'Anki.mineForwarded',
+          '服务端制卡失败',
+          detail: '$e',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<bool> isDuplicateIn({
+    required String expression,
+    required String reading,
+    RemoteMiningTarget? target,
+  }) {
+    if (_view != null) {
+      return isDuplicate(expression: expression, reading: reading);
+    }
+    return _appModel.hostRemoteMiningTargets.isDuplicate(
+      target,
+      expression: expression,
+      reading: reading,
+    );
   }
 
   @override
