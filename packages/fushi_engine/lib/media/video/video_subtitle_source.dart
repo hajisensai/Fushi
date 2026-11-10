@@ -209,6 +209,7 @@ SubtitleFormat? subtitleFormatForPath(String path) {
 bool isImportedExternalSubtitlePath(String persisted) {
   if (persisted.isEmpty) return false;
   if (persisted.startsWith(SubtitleSource.embeddedPrefix)) return false;
+  if (SubtitleSource.isHostSidecarPersisted(persisted)) return false;
   return subtitleFormatForPath(persisted) != null;
 }
 
@@ -420,6 +421,15 @@ class SubtitleSource {
 
   /// 内嵌源约定前缀（持久化时拼 streamIndex）。
   static const String embeddedPrefix = 'embedded:';
+
+  /// 远端播放选中「互联 host 上某一条外挂字幕」的持久化编码前缀：
+  /// `hostsidecar:<host 上的文件名>`（反馈 -CaVsioFhG）。它不是本机文件路径——
+  /// 重进时按文件名向 host 重新下载（`GET .../subtitle?sidecar=`），不能当路径读。
+  static const String hostSidecarPrefix = 'hostsidecar:';
+
+  /// 持久化值 [persisted] 是否是 [hostSidecarPrefix] 编码。
+  static bool isHostSidecarPersisted(String? persisted) =>
+      persisted != null && persisted.startsWith(hostSidecarPrefix);
 
   /// 「用户显式关闭字幕」哨兵（持久化到 `VideoBooks.subtitleSource`）。
   ///
@@ -993,6 +1003,7 @@ bool sameSubtitleFilePath(String a, String b) =>
 bool isExternalSubtitleFilePathForMenu(String path) {
   if (path.trim().isEmpty) return false;
   if (path.startsWith(SubtitleSource.embeddedPrefix)) return false;
+  if (SubtitleSource.isHostSidecarPersisted(path)) return false;
   if (SubtitleSource.isOff(path)) return false;
   return true;
 }
