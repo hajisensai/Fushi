@@ -8630,7 +8630,7 @@ class AppModel
       },
       importer: (DiscoveryDownloadTask task, File file) =>
           discoveryImportExecutor.importDownload(task, file),
-      // BUG-4336：下载网关回人机验证挑战时弹 WebView 解题（UI 装好解题器前为 null）。
+      // BUG-4339：下载网关回人机验证挑战时弹 WebView 解题（UI 装好解题器前为 null）。
       challengeSolver: DownloadGatewayChallengeGate.solve,
     );
     // BUG-2714：队列有未结束任务时挂下载保活。
