@@ -151,6 +151,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 关 = 没有正文的任务停在「缺字幕」。
   'audiobook_auto_transcribe_without_text',
   'audiobook_background_play',
+  // bool：子开关。书架「导入文件夹」/ 本地来源扫描时，书配上了有声书音频但没有
+  // 字幕就排转录、转完对齐到这本书。默认关；只在总开关开时生效。设备本地（不进
+  // 备份 / 同步 / Profile 快照）。见 media/audiobook/audiobook_auto_transcribe.dart。
+  'audiobook_folder_import_transcribe',
   // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
   // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
   'audiobook_import_reference_original',
@@ -322,6 +326,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 含本机声音预设 id → 设备本地，见 sync_repository 的本机键表。
   'gal_line_tts_settings',
   'gal_mining_animated_format',
+  // String（GalMiningAudioMode.wireName，默认 auto）：gal 制卡句子音频长度策略
+  // （auto / max_length / fixed_length / off，反馈 II3jOBIhT5）。
+  'gal_mining_audio_mode',
+  // int（秒，默认 8，1..60）：最长 / 固定时长两档共用的秒数。
+  'gal_mining_audio_seconds',
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
@@ -708,8 +717,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
   'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
-  // int：每周字数目标（2026-10-10 用户拍板删除——#2029 删了统计中心目标卡后它
-  // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
+  // String 'daily' | 'weekly'：字数目标周期（StudyGoalPeriod.wire，反馈 CjIr9RGSCe：
+  // 日目标与周目标二选一）。缺省 = daily。
+  'reading_goal_period',
+  // int：每周字数目标（2026-10-10 曾删除，2026-11 反馈 CjIr9RGSCe 复活：作为
+  // `reading_goal_period = weekly` 时生效的目标值，首页 / 统计页 / 小组件按周显示进度）。
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
   // 用户自己添加的 BT 站清单（JSON 数组：id/name/url/enabled/domains/format/
@@ -1057,6 +1069,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_save_beside_video',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
+  // JSON map `{系列键: {dir, template?}}`：按系列记住的字幕文件夹（反馈 0PZAhFd1RO），
+  // 之后各集在里面按集号匹配字幕。dir 是用户外部目录、系列键含本库合集 id：设备本地。
+  'video_subtitle_series_dirs',
   'video_subtitle_style',
   // string：SubDL（subdl.com）API key（用户在站点 panel 免费生成）。搜索必须带 key。
   'video_subtitle_subdl_api_key',
@@ -1138,6 +1153,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'current_source/',
   'gal_capture_memory::',
   'gal_lookup_surface_v1::',
+  // JSON：单游戏 gal 制卡设置覆盖层（后缀 = galgames.id，GalGameMiningOverrides，
+  // 反馈 3dRZdakRdJ）。没覆盖的项跟随全局 gal_mining_* 键。
+  'gal_mining_overrides::',
   'media_source_secret_',
   // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid，
   // 外加「不是本类媒体」的负向表 源相对路径 → 内容指纹）。无头服务端书 / 漫画根扫描

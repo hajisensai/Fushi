@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart'
+    show kMediaDetailCompletedOpacity;
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -355,6 +357,16 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
         ? fushiM3eCardShadow(context, lifted ? 1 : 0)
         : null;
     final String label = '$_displayNumber. ${widget.entry.title}';
+    // 已看完的集：画面与集号 / 标题整体降透明度（与详情页集卡、漫画章节已读
+    // 行同一口径，PR #3142 拍板已读变淡同样作用到视频分集）。右上「看完」徽标
+    // 不降；正在播放的那一集不降。
+    final double contentOpacity = widget.entry.completed && !selected
+        ? kMediaDetailCompletedOpacity
+        : 1;
+    final Duration dimDuration = fushiMotionDuration(
+      context,
+      FushiMotion.short,
+    );
     return Semantics(
       button: true,
       selected: selected,
@@ -388,7 +400,15 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: <Widget>[
-                    _EpisodeCover(entry: widget.entry, colorScheme: cs),
+                    AnimatedOpacity(
+                      key: const ValueKey<String>('video-episode-rail-cover'),
+                      opacity: contentOpacity,
+                      duration: dimDuration,
+                      child: _EpisodeCover(
+                        entry: widget.entry,
+                        colorScheme: cs,
+                      ),
+                    ),
                     const _EpisodeScrim(),
                     if (widget.entry.completed ||
                         (widget.entry.started && widget.entry.progress == null))
@@ -400,7 +420,14 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
                           colorScheme: cs,
                         ),
                       ),
-                    Positioned.fill(child: _buildOverlayText(context, cs)),
+                    Positioned.fill(
+                      child: AnimatedOpacity(
+                        key: const ValueKey<String>('video-episode-rail-text'),
+                        opacity: contentOpacity,
+                        duration: dimDuration,
+                        child: _buildOverlayText(context, cs),
+                      ),
+                    ),
                     if (_showProgress)
                       PositionedDirectional(
                         start: 10,

@@ -183,6 +183,7 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -297,6 +298,10 @@ enum MangaReaderInputAction {
   /// 停 / 续学习计时（快捷键 [ShortcutAction.mangaToggleStudyClock]，与控制条计时键、
   /// 统计侧栏暂停键同一执行体）。
   toggleStudyClock,
+
+  /// 当前页书签加 / 删（快捷键 [ShortcutAction.mangaToggleBookmark]，反馈
+  /// FhspOXxPl_）。与书签面板「当前页」那一行同一执行体 `_toggleBookmarkHere`。
+  toggleBookmark,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -324,6 +329,24 @@ enum _MangaReaderInputSource {
   /// 桌面控制通道（`fushi_cli reader next/prev`）。
   remote,
 }
+
+/// 翻页桥（`onMangaNavigationKey`）的固定键表。抽成常量是为了让命令键桥
+/// （[MangaFushiPage.commandKeyBridgeTokens]）能剔除与之重叠的 token。
+const List<String> _kNavigationBridgeKeys = <String>[
+  'ArrowLeft',
+  'ArrowRight',
+  'Escape',
+  'Esc',
+  'F11',
+];
+
+/// 平移桥（`onMangaPanKey`）的固定键表，用途同 [_kNavigationBridgeKeys]。
+const List<String> _kPanBridgeKeys = <String>[
+  'Ctrl+ArrowUp',
+  'Ctrl+ArrowDown',
+  'Ctrl+ArrowLeft',
+  'Ctrl+ArrowRight',
+];
 
 /// 漫画页 **Flutter 侧**鼠标通道的解析阶梯：只有 manga 自己的 scope。
 ///
@@ -694,6 +717,11 @@ class MangaFushiPage extends BaseSourcePage {
     if (action == ShortcutAction.mangaToggleStudyClock) {
       return MangaReaderInputAction.toggleStudyClock;
     }
+    // 书签同理：不翻页、不动视野，查词弹窗开着 / webtoon 模式下照样能给当前页
+    // 加书签。
+    if (action == ShortcutAction.mangaToggleBookmark) {
+      return MangaReaderInputAction.toggleBookmark;
+    }
     // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
     // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
     // 就是滚文档，弹窗开着时也该能挪画面去看被挡住的部分。
@@ -749,7 +777,7 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static final String navigationKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaNavigationKey',
-    keys: const <String>['ArrowLeft', 'ArrowRight', 'Escape', 'Esc', 'F11'],
+    keys: _kNavigationBridgeKeys,
     forwardRepeats: false,
     stopPropagation: true,
   );
@@ -769,12 +797,7 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static final String panKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaPanKey',
-    keys: const <String>[
-      'Ctrl+ArrowUp',
-      'Ctrl+ArrowDown',
-      'Ctrl+ArrowLeft',
-      'Ctrl+ArrowRight',
-    ],
+    keys: _kPanBridgeKeys,
     forwardRepeats: true,
     stopPropagation: true,
   );
@@ -797,6 +820,60 @@ class MangaFushiPage extends BaseSourcePage {
     installMouseListeners: true,
     stopPropagation: true,
   );
+
+  /// 第四座桥：**命令键**（不翻页、不动视野的单发动作）。
+  ///
+  /// 前两座键盘桥的键表是硬编码的默认 token，只覆盖翻页 / 平移；切换界面（M）、
+  /// 统计（I）、计时（P）、书签（B，反馈 FhspOXxPl_）这类动作在 WebView2 持有
+  /// 键盘焦点时按下去只存在于 DOM 里、到不了 Dart——Windows 上点过一下页面后快捷键
+  /// 就「按了没反应」，改键更是无从生效。这些动作在 [inputActionForShortcut] 里都
+  /// 排在两道翻页门控**之前**、任何模式下都执行，所以截获它们的键不会抢走 webtoon
+  /// 原生滚动或词典弹窗的按键——这正是它们能安全地按**当前绑定**实时生成键表、
+  /// 而翻页桥不能的理由（翻页桥若按绑定生成，会把 webtoon 让给原生滚动的
+  /// ↑/↓/Space 也截走）。
+  ///
+  /// 与 [mouseBridgeScript] 同一范式：键表随每次换窗注入时按注册表重算，生成器把
+  /// 表存在 window 槽里、listener 只装一次，改键后下一次注入即生效。
+  @visibleForTesting
+  static const List<ShortcutAction> commandKeyActions = <ShortcutAction>[
+    ShortcutAction.mangaToggleChrome,
+    ShortcutAction.mangaOpenStatistics,
+    ShortcutAction.mangaToggleStudyClock,
+    ShortcutAction.mangaToggleBookmark,
+  ];
+
+  /// [commandKeyActions] 当前键盘绑定的桥 token（[InputBinding.bridgeToken]）。
+  ///
+  /// 已在翻页桥 / 平移桥键表里的 token 剔除：同一次按键被两座桥各回传一次就会
+  /// 执行两遍（切换类动作连按两次 = 没按）。
+  @visibleForTesting
+  static List<String> commandKeyBridgeTokens(FushiShortcutRegistry registry) {
+    final List<String> tokens = <String>[];
+    for (final ShortcutAction action in commandKeyActions) {
+      for (final InputBinding binding
+          in registry.bindingsFor(action).keyboardBindings) {
+        final String token = binding.bridgeToken;
+        if (_kNavigationBridgeKeys.contains(token) ||
+            _kPanBridgeKeys.contains(token) ||
+            tokens.contains(token)) {
+          continue;
+        }
+        tokens.add(token);
+      }
+    }
+    return tokens;
+  }
+
+  /// 命令键桥脚本。`forwardRepeats: false`：按住 B 不该来回加删书签；
+  /// `stopPropagation: true`：与翻页桥同样独占给 Dart。
+  @visibleForTesting
+  static String commandKeyBridgeScript(List<String> tokens) =>
+      webViewKeyBridgeScript(
+        handlerName: 'onMangaCommandKey',
+        keys: tokens,
+        forwardRepeats: false,
+        stopPropagation: true,
+      );
 
   /// 本页鼠标桥要拦截的按钮号：manga / universal / global 三段阶梯上**所有**已绑
   /// 按钮的并集（与 [_kMangaMouseLadder] 同源）。
@@ -4126,6 +4203,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (!_sourceReviewActive) _toggleStudyClockManualPause();
       return;
     }
+    // 书签与书签面板「当前页」一行同一入口：屏上已有书签就删、没有就加。没有书架身份
+    // （`_bookmarkBookUid == null`）时顶栏书签键本就不渲染，`_toggleBookmarkHere`
+    // 同样直接返回。
+    if (action == MangaReaderInputAction.toggleBookmark) {
+      unawaited(_toggleBookmarkHere(_bookmarkOnScreen()));
+      return;
+    }
     final DateTime now = DateTime.now();
     if (_lastReaderInputAction == action &&
         _lastReaderInputSource != source &&
@@ -4411,10 +4495,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // （`ArrowLeft`），弹窗桥发注册表 token（可能是任意键名、可能带修饰键前缀），
     // 两者都能被同一个 deserialize 吃下——旧的三分支 switch 只认硬编码的方向键与
     // Escape，用户把翻页/关词典改绑到别的键后，WebView 持焦的这条路径就整个失效。
+    // 用 [InputBinding.fromBridgeToken]（deserialize 的超集）：命令键桥按
+    // [InputBinding.bridgeToken] 生成键表，小键盘键回传的是 DOM code（`Numpad1`）
+    // 而不是持久化 token `#<keyId>`。
     // `Esc` 是旧浏览器对 Escape 的别名，不在注册表键名表里，单独归一。
     final InputBinding? binding = key == 'Esc'
         ? const InputBinding(key: LogicalKeyboardKey.escape)
-        : InputBinding.deserialize(key);
+        : InputBinding.fromBridgeToken(key);
     if (binding == null) return false;
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       binding.key,
@@ -6130,10 +6217,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         },
         // 面板切到「全局」时的写入：稀疏补丁合进**偏好里的**全局默认（不是上面
         // 那份叠了窗口全屏 / 常亮运行态的副本），再按本书覆盖重应用。
+        // 「保持屏幕常亮」的全局值就是阅读器全局偏好 keep_screen_awake（上面
+        // 副本里填的也是它），分流写过去（反馈 lIoB_rGP7l）。
         onGlobalChanged: (Map<String, Object?> patch) async {
-          await appModel.setMangaReaderPreferences(
-            appModel.mangaReaderPreferences.copyWithJson(patch),
-          );
+          final ({Map<String, Object?> mangaPatch, bool? keepScreenAwake})
+          split = splitMangaGlobalPatch(patch);
+          final bool? keepScreenAwake = split.keepScreenAwake;
+          if (keepScreenAwake != null) {
+            await ReaderFushiSource.instance.setKeepScreenAwake(
+              keepScreenAwake,
+            );
+          }
+          if (split.mangaPatch.isNotEmpty) {
+            await appModel.setMangaReaderPreferences(
+              appModel.mangaReaderPreferences.copyWithJson(split.mangaPatch),
+            );
+          }
           try {
             await _reapplyReaderPreferences();
           } on Object catch (error, stack) {
@@ -6839,17 +6938,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                         ),
                       ),
                     ),
-                  // OCR 进度浮标：顶栏下沿的右上角，不随顶栏收起（查词弹窗盖在
-                  // 它上面）。
-                  if (_buildOcrProgressBadge() case final Widget badge)
-                    Positioned(
-                      top:
-                          MediaQuery.paddingOf(context).top +
-                          kMangaChromeBarHeight,
-                      left: kMangaChromeEdgeInset + 4,
-                      right: kMangaChromeEdgeInset + 4,
-                      child: Align(alignment: Alignment.topRight, child: badge),
-                    ),
+                  // OCR 进度浮标 + 报错提示：顶栏下沿的右上角，不随顶栏收起
+                  // （查词弹窗盖在它们上面）。
+                  _buildOcrStatusCorner(),
                   // 顶栏 = 返回键 + 标题/页码 + 动作组。
                   //
                   // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
@@ -7236,10 +7327,87 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         : '${page + 1} / $pageCount';
   }
 
-  /// 右上角 OCR 进度浮标：整卷任务进度 `OCR 12/40 · DirectML`（BUG-1163：当前
-  /// 真正生效的推理后端常驻显示，降级时琥珀色）/ 排队中 / 没有可用引擎。
-  /// 与顶栏可见性无关——隐藏界面时进度也要看得见。
-  Widget? _buildOcrProgressBadge() {
+  /// 右上角 OCR 角落：进度浮标与报错提示是两个**独立**的部件，各自进出场。
+  ///
+  /// 进度浮标按偏好 `ocrProgressBadge` 完整 / 贴边 / 隐藏（反馈 IpdWk54b_G）；报错
+  /// 提示（没有可用引擎）不看这项——隐藏的是进度，报错照样要看得见。整卷 / 边看边
+  /// 识别的失败另走 [FushiToast]，同样不经过进度浮标。
+  Widget _buildOcrStatusCorner() {
+    final MangaOcrProgressBadgeStyle style =
+        _readerPreferences.ocrProgressBadge;
+    final Widget? badge = _buildOcrProgressBadge(
+      docked: style == MangaOcrProgressBadgeStyle.edge,
+    );
+    final Widget? error = _buildOcrErrorNotice();
+    final double inset = kMangaChromeEdgeInset + 4;
+    final EdgeInsets badgePadding = style == MangaOcrProgressBadgeStyle.edge
+        ? EdgeInsets.only(right: MediaQuery.paddingOf(context).right)
+        : EdgeInsets.only(left: inset, right: inset);
+    return Positioned(
+      top: MediaQuery.paddingOf(context).top + kMangaChromeBarHeight,
+      left: 0,
+      right: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          _ocrCornerSwitcher(
+            style == MangaOcrProgressBadgeStyle.hidden ? null : badge,
+            badgePadding,
+          ),
+          _ocrCornerSwitcher(
+            error,
+            EdgeInsets.only(
+              left: inset,
+              right: inset,
+              top: badge != null && style != MangaOcrProgressBadgeStyle.hidden
+                  ? 6
+                  : 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 角落部件的进出场：淡入淡出 + 纵向展开（另一颗随之平滑让位），时长走动效
+  /// token（减弱动态效果 / 墨水屏归零）。
+  Widget _ocrCornerSwitcher(Widget? child, EdgeInsets padding) {
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      reverseDuration: fushiMotionDuration(context, FushiMotion.short),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+        alignment: Alignment.topRight,
+        children: <Widget>[...previous, if (current != null) current],
+      ),
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          FadeTransition(
+            opacity: animation,
+            child: SizeTransition(
+              sizeFactor: animation,
+              axisAlignment: -1,
+              child: child,
+            ),
+          ),
+      child: child == null
+          ? const SizedBox.shrink(
+              key: ValueKey<String>('manga_ocr_corner_empty'),
+            )
+          : Padding(
+              key: ValueKey<Key?>(child.key),
+              padding: padding,
+              child: child,
+            ),
+    );
+  }
+
+  /// OCR 进度浮标：整卷任务进度 `OCR 12/40 · DirectML`（BUG-1163：当前真正生效的
+  /// 推理后端常驻显示，降级时琥珀色）/ 边看边识别中 / 排队中。只管进度；报错见
+  /// [_buildOcrErrorNotice]。[docked] = 贴边形态。与顶栏可见性无关——隐藏界面时
+  /// 进度也要看得见。
+  Widget? _buildOcrProgressBadge({required bool docked}) {
     if (!_chromeContentReady) return null;
     if (_wholeVolumeOcrRunning) {
       final MangaOcrAcceleration? accel = _wholeVolumeOcrAcceleration;
@@ -7253,33 +7421,45 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_ocr_acceleration_label'),
         text: accel == null ? progress : '$progress · ${accel.label}',
+        shortText: _wholeVolumeOcrTotal > 0
+            ? '$_wholeVolumeOcrDone/$_wholeVolumeOcrTotal'
+            : null,
         warning: accel?.degraded ?? false,
         progress: _wholeVolumeOcrTotal > 0
             ? _wholeVolumeOcrDone / _wholeVolumeOcrTotal
             : null,
+        docked: docked,
       );
     }
     if (_streamOcrBusy) {
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_stream_ocr_badge'),
         text: 'OCR · ${t.manga_ocr_wizard_running}',
+        docked: docked,
       );
     }
     if (_volumeOcrQueued) {
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_ocr_queued_badge'),
         text: 'OCR · ${t.manga_reader_ocr_queued}',
+        shortText: 'OCR',
         busy: false,
+        docked: docked,
       );
     }
+    return null;
+  }
+
+  /// OCR 报错提示：自动识别找不到可用引擎时常驻（直到改了引擎 / 排上任务）。与
+  /// 进度浮标互不依附，进度浮标隐藏 / 贴边时它照样完整显示。
+  Widget? _buildOcrErrorNotice() {
+    if (!_chromeContentReady) return null;
     if (_volumeOcrNoEngine &&
         !_volumeOcrSettled &&
         _readerPreferences.ocrTrigger != 'manual') {
-      return MangaOcrProgressBadge(
-        key: const ValueKey<String>('manga_ocr_no_engine_badge'),
+      return MangaOcrErrorNotice(
+        key: const ValueKey<String>('manga_ocr_no_engine_notice'),
         text: t.manga_reader_ocr_unavailable_short,
-        busy: false,
-        warning: true,
       );
     }
     return null;
@@ -8313,6 +8493,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _handleNativeNavigationKey(args[0] as String);
           },
         );
+        // 命令键桥（第四座，键表按当前绑定生成）。回调同样汇进
+        // [_handleNativeNavigationKey]，动作由绑定决定。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaCommandKey',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || args[0] is! String) return;
+            _handleNativeNavigationKey(args[0] as String);
+          },
+        );
         // 鼠标桥（第三座，只在指针归 WebView 的平台安装）。回调同样汇进
         // [_handleNativeNavigationKey]——它按 token 先试 MouseBinding 再试
         // InputBinding，动作由绑定决定而不是由桥决定。
@@ -8465,6 +8654,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     await controller.evaluateJavascript(
       source: MangaFushiPage.panKeyBridgeScript,
+    );
+    if (!mounted || !_windowGate.owns(ticket)) {
+      return;
+    }
+    // 命令键桥：键表按当前绑定实时生成，改键后换窗即生效（与鼠标桥同理）。
+    await controller.evaluateJavascript(
+      source: MangaFushiPage.commandKeyBridgeScript(
+        MangaFushiPage.commandKeyBridgeTokens(appModel.shortcutRegistry),
+      ),
     );
     if (!mounted || !_windowGate.owns(ticket)) {
       return;

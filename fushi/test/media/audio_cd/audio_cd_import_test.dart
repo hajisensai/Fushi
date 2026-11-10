@@ -486,6 +486,7 @@ void main() {
       int? scanningId;
       final SourceScanSummary? summary = await importLocalFolderOnceAt(
         db: db,
+        transcribeAudiobook: null,
         mediaKind: 'video',
         path: dirWith('ripped', <String>[]).path,
         videoGroupingMode: 'folder',

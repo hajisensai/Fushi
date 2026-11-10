@@ -20,6 +20,8 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribeResult;
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart'
@@ -292,7 +294,7 @@ void main() {
 
     // No credentials configured / no server contacted: the video guard throws
     // BEFORE any network I/O, so this is deterministic and offline.
-    await SourceLibraryScanner(db).scan(source);
+    await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
     final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
     expect(
@@ -359,7 +361,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       // The remote EPUB was downloaded (copyToLocal invoked) before import.
@@ -430,7 +435,10 @@ void main() {
           final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
           await tester.runAsync(() async {
-            await SourceLibraryScanner(db).scan(source, fs: fs);
+            await SourceLibraryScanner(
+              db,
+              transcribeAudiobook: null,
+            ).scan(source, fs: fs);
           });
 
           final List<VideoBookRow> videos = await VideoBookRepository(
@@ -558,7 +566,10 @@ void main() {
           final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
           await tester.runAsync(() async {
-            await SourceLibraryScanner(db).scan(source, fs: fs);
+            await SourceLibraryScanner(
+              db,
+              transcribeAudiobook: null,
+            ).scan(source, fs: fs);
           });
 
           final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -665,7 +676,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -685,7 +699,10 @@ void main() {
 
       // 重扫：标题预检命中已入库卷，零页图重下载、不重复导入、不算错误。
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(after, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(after, fs: fs);
       });
       expect(await db.getAllEpubBooks(), hasLength(1));
       expect(
@@ -727,6 +744,7 @@ void main() {
       Future<void> scan() => tester.runAsync(() async {
         await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan((await db.getMediaSourceById(sid))!, fs: fs);
       });
 
@@ -804,7 +822,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -873,7 +894,10 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -963,7 +987,10 @@ void main() {
         SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         source = (await db.getMediaSourceById(sid))!;
@@ -996,7 +1023,10 @@ void main() {
         expect(manifest['pages'] as List<Object?>, hasLength(2));
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
         expect(await db.getAllEpubBooks(), hasLength(2));
         expect(fs.copyToLocalCalls, 3, reason: '重扫命中标题预检，零页图重下载');
@@ -1027,7 +1057,10 @@ void main() {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -1103,7 +1136,10 @@ void main() {
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       source = (await db.getMediaSourceById(sid))!;
@@ -1131,7 +1167,10 @@ void main() {
       expect(fs.copyToLocalCalls, 3, reason: 'epub + srt + mp3 各下一次');
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
       expect(await db.getAllEpubBooks(), hasLength(1));
       expect(
@@ -1140,6 +1179,109 @@ void main() {
         reason: '重扫只为同名去重再下一次 epub；已挂有声书的书不再下 sidecar',
       );
       expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);
+    });
+
+    // 反馈 z398R0ndAw：分碟布局 `X/CD1/01.mp3` + `X/CD2/01.mp3` 同名。sidecar 此前
+    // 平铺下进同一个临时目录，`copyToLocal` 按 basename 落盘，CD2 覆盖 CD1，两条
+    // 音频路径指向同一个文件——落库后两轨内容一样，第一碟丢了。
+    testWidgets('★ 分碟同名音轨各下到独立子目录，落库两轨内容不同', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final String epub = p.join(tmp.path, 'X.epub');
+      _writeEpub(epub, 'DiscNovel');
+      final String srt = p.join(tmp.path, 'X.srt');
+      File(
+        srt,
+      ).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nHello world.\n');
+      final String cd1 = p.join(tmp.path, 'cd1.mp3');
+      File(cd1).writeAsStringSync('disc-one');
+      final String cd2 = p.join(tmp.path, 'cd2.mp3');
+      File(cd2).writeAsStringSync('disc-two');
+
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '/remote/books/X.epub': epub,
+        '/remote/books/X/X.srt': srt,
+        '/remote/books/X/CD1/01.mp3': cd1,
+        '/remote/books/X/CD2/01.mp3': cd2,
+      });
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Remote Books',
+          mediaKind: 'book',
+          rootPath: '/remote/books',
+          transport: const Value('sftp'),
+          createdAt: 1000,
+        ),
+      );
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      late SourceScanSummary summary;
+      await tester.runAsync(() async {
+        summary = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
+      });
+      expect(summary.error, isNull);
+      expect(summary.attachedAudiobookCount, 1);
+      final String bookKey = (await db.getAllEpubBooks()).single.bookKey;
+      final AudiobookRow ab = (await db.getAudiobookByBookKey(bookKey))!;
+      final List<String> audio = <String>[
+        for (final Object? path
+            in jsonDecode(ab.audioPathsJson!) as List<Object?>)
+          path! as String,
+      ];
+      expect(audio, hasLength(2));
+      expect(audio.toSet(), hasLength(2), reason: '两条音频路径必须不同');
+      expect(
+        <String>[
+          for (final String path in audio) File(path).readAsStringSync(),
+        ],
+        <String>['disc-one', 'disc-two'],
+        reason: '按碟序落库，CD1 没被 CD2 覆盖',
+      );
+    });
+
+    testWidgets('网络来源有音频没字幕：端口永不调用，计入缺字幕', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String epub = p.join(tmp.path, 'Y.epub');
+      _writeEpub(epub, 'NoSubNovel');
+      final String mp3 = p.join(tmp.path, 'y.mp3');
+      File(mp3).writeAsStringSync('audio');
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '/remote/books/Y.epub': epub,
+        '/remote/books/Y/01.mp3': mp3,
+      });
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Remote Books',
+          mediaKind: 'book',
+          rootPath: '/remote/books',
+          transport: const Value('sftp'),
+          createdAt: 1000,
+        ),
+      );
+      int portCalls = 0;
+      late SourceScanSummary summary;
+      await tester.runAsync(() async {
+        summary = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook:
+              ({
+                required String bookKey,
+                required List<String> audioPaths,
+                required String title,
+              }) async {
+                portCalls++;
+                return BookAudiobookTranscribeResult.queued;
+              },
+        ).scan((await db.getMediaSourceById(sid))!, fs: fs);
+      });
+      expect(portCalls, 0);
+      expect(summary.audiobookMissingSubtitleCount, 1);
+      expect(fs.copyToLocalCalls, 1, reason: '只下 epub，音频不下载');
     });
   });
 
@@ -1186,7 +1328,10 @@ void main() {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -1261,11 +1406,17 @@ void main() {
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
       source = (await db.getMediaSourceById(sid))!;
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
       });
 
       final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
@@ -1305,7 +1456,10 @@ void main() {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source, fs: fs);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source, fs: fs);
         });
 
         expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);

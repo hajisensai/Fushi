@@ -498,6 +498,8 @@ class SrsAnkiPreset {
     required this.rwkvEnabled,
     this.autoplay = true,
     this.replayQuestion = true,
+    this.newMix,
+    this.reviewOrder,
   });
 
   final int id;
@@ -525,6 +527,12 @@ class SrsAnkiPreset {
   /// 答案面重播时包含问题音频（旧 JSON `replayq`；新 schema
   /// `skip_question_when_replaying_answer` = 26 取反）。
   final bool replayQuestion;
+
+  /// 新卡与复习怎么排（ReviewMix：旧 JSON `newMix`；新 schema `new_mix` = 30）。旧 JSON 缺键 = null。
+  final int? newMix;
+
+  /// 复习顺序（ReviewCardOrder：旧 JSON `reviewOrder`；新 schema `review_order` = 33）。旧 JSON 缺键 = null。
+  final int? reviewOrder;
 }
 
 /// 来源集合的元信息（笔记 / 卡片 / revlog 由导入流程按需流式读）。
@@ -774,6 +782,8 @@ class SrsAnkiCollection {
         rwkvEnabled: c['rwkvReviewEnabled'] == true,
         autoplay: c['autoplay'] != false,
         replayQuestion: c['replayq'] != false,
+        newMix: _int(c['newMix']),
+        reviewOrder: _int(c['reviewOrder']),
       );
     }
   }
@@ -897,6 +907,9 @@ class SrsAnkiCollection {
         rwkvEnabled: c.boolOf(67),
         autoplay: !c.boolOf(23),
         replayQuestion: !c.boolOf(26),
+        // new_mix = 30 / review_order = 33 是 proto3 枚举：缺字段就是 0（与复习穿插 / 按到期日），同样是合法值。
+        newMix: c.intOf(30),
+        reviewOrder: c.intOf(33),
       );
     }
   }
