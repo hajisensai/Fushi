@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3872 条。点号进各自文件。
+> 共 3895 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4323](bugs/BUG-4323-cloud-legacy-manga-sniff-webdav-sftp.md) | ✅ | ✅ | WebDAV / SFTP 同步后端没有区间读，云端旧名漫画包无法判型 |
-> 共 3894 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4351](bugs/BUG-4351-cloud-legacy-manga-sniff-webdav-sftp.md) | ✅ | ✅ | WebDAV / SFTP 同步后端没有区间读，云端旧名漫画包无法判型 |
 | [BUG-4349](bugs/BUG-4349-audiobook-stale-play-resumes-after-lookup-pause.md) | ✅ | ✅ | 弹窗顶栏按过播放后，查词暂停有声书被排队的旧 play 立刻顶回去 |
 | [BUG-4348](bugs/BUG-4348-subtitle-version-filename-truncated.md) | ✅ | ✅ | 字幕版本视图文件名被截断，看不出版本差异 |
 | [BUG-4347](bugs/BUG-4347-embedded-torrent-runtime-misreported.md) | ✅ | ✅ | 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」 |
