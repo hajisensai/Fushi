@@ -337,11 +337,17 @@ void main() {
       ]);
     });
 
-    test('手输的同一地址被 host 公布 → 归入该组（不重复添加）', () {
+    test('手输的同一地址被 host 公布且证书指纹相同 → 归入该组（不重复添加）', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
         <FushiClientUrl>[
-          url('https://192.168.1.5:38765'),
-          url('https://home.example'),
+          const FushiClientUrl(
+            url: 'https://192.168.1.5:38765',
+            fingerprintSha256: 'AA:BB',
+          ),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            fingerprintSha256: 'aa:bb',
+          ),
         ],
         anchorUrl: 'https://home.example',
         hostId: 'A',
@@ -350,6 +356,61 @@ void main() {
       expect(merged, hasLength(2));
       expect(merged[0].hostId, 'A');
       expect(merged[0].learned, isFalse);
+    });
+
+    // C6：手输行只因 URL 恰好出现在公布集里就被收编，会把 A 的 token 写给那个
+    // URL 上实际应答的另一台机器。收编只认证书指纹（与锚点并组同一判据）。
+    test('C6：明文手输行被公布 → 不收编，hostId / token 保持原样', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          const FushiClientUrl(url: 'http://192.168.1.5:38765', token: 'b'),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            fingerprintSha256: 'aa:bb',
+            hostId: 'A',
+            token: 'a',
+          ),
+        ],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[
+          InterconnectHostAddress(
+            url: 'http://192.168.1.5:38765',
+            kind: InterconnectAddressKind.lan,
+          ),
+        ],
+      );
+      final FushiClientUrl manual = merged.firstWhere(
+        (FushiClientUrl u) => u.url == 'http://192.168.1.5:38765',
+      );
+      expect(manual.hostId, isNull);
+      expect(manual.token, 'b');
+    });
+
+    test('C6：https 手输行指纹与锚点不同 / 未钉扎 → 不收编', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          const FushiClientUrl(
+            url: 'https://192.168.1.5:38765',
+            fingerprintSha256: 'cc:dd',
+            token: 'b',
+          ),
+          const FushiClientUrl(url: 'https://[2408::5]:38765', token: 'c'),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            fingerprintSha256: 'aa:bb',
+            token: 'a',
+          ),
+        ],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: published.take(2).toList(),
+      );
+      expect(merged, hasLength(3));
+      expect(merged[0].hostId, isNull);
+      expect(merged[0].token, 'b');
+      expect(merged[1].hostId, isNull);
+      expect(merged[1].token, 'c');
     });
 
     test('已配对的别台 host 自报真 host 的 hostId：不并组、不删真 host 的地址（审查 B1）', () {

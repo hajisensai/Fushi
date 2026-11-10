@@ -12,6 +12,7 @@ library;
 
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 
@@ -75,4 +76,22 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
     return DownloadExecutionRemote(target: target, client: resolved);
   }
   return DownloadExecutionUnreachable(url: url, deviceName: deviceName);
+}
+
+/// [url] 刚从 [previousHostId] 改归别的 host（地址归属闸里用户确认了「作为新设备
+/// 配对」）：偏好正指向它时改写为旧 host 剩余的代表地址；旧 host 一条地址都不剩
+/// → 清空（回本机，与 [resolveDownloadExecution]「解绑后回本机」同一语义）。偏好
+/// 按 URL 存，不改写就会把下载静默投给新 host。[rowsAfter] 是改归属后的地址列表。
+Future<void> reconcileDownloadExecutionHostAfterReassign(
+  PreferencesRepository prefs,
+  List<FushiClientUrl> rowsAfter, {
+  required String url,
+  required String previousHostId,
+}) async {
+  if (prefs.downloadExecutionHostUrl != url) return;
+  final List<FushiClientUrl> previous = rowsAfter
+      .where((FushiClientUrl u) => u.hostId == previousHostId)
+      .toList(growable: false);
+  final List<FushiClientUrl> reps = interconnectPeerRepresentatives(previous);
+  await prefs.setDownloadExecutionHostUrl(reps.isEmpty ? '' : reps.first.url);
 }

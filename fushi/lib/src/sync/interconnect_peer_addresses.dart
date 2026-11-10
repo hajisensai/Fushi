@@ -17,6 +17,14 @@ import 'package:meta/meta.dart';
 /// 地址列表 `sync_hibiki_client_urls` 仍是扁平的有序列表（持久化格式不变），这里
 /// 只提供按 host 视角读它的三件事：分组、组内并发选路、学习合并。没有 hostId 的
 /// 老条目各自单独成组、从不探测，行为与升级前逐字一致。
+///
+/// 不变式（BUG 地址归属闸）：**列表里 URL 唯一，是行主键；hostId 是行的归属标签。**
+/// 设置页、偏好 `downloadExecutionHostUrl`、ctl 选择器、各 client 的凭据查找都按
+/// URL 定位行；所有写路径（`addFushiClientUrl`、学习合并、设置页编辑）都按 URL
+/// 去重，不得新增能产生重复 URL 的路径。往某一行写凭据前必须核对它的归属：行已归
+/// 另一台 host 时不得静默写入（见 [interconnectAddressOwnerConflict] /
+/// [applyIssuedInterconnectToken]），只有用户确认「作为新设备配对」才让这一行脱离
+/// 旧组。TOFU 指纹比对与 MITM 守卫仍按 URL 判，不看对端自报的 hostId。
 
 /// 按 host 分组，保持每组首次出现的顺序；组内保持原相对顺序。
 List<List<FushiClientUrl>> groupInterconnectPeers(
@@ -458,6 +466,49 @@ String? _ipv6PrefixKey(String url) {
   return '${uri.scheme}|$prefix|${uri.port}';
 }
 
+/// [url] 那一行此刻属于另一台 host：行带非空 hostId，且签发方 [incomingHostId]
+/// 为空（v1 / 老 host 证明不了自己是那台）或与之不同。返回那一行；不冲突 / 不在
+/// 列表 → null。
+FushiClientUrl? interconnectAddressOwnerConflict(
+  Iterable<FushiClientUrl> list,
+  String url, {
+  String? incomingHostId,
+}) {
+  for (final FushiClientUrl u in list) {
+    if (u.url != url) continue;
+    final String? owner = u.hostId;
+    if (owner == null || owner.isEmpty) return null;
+    if (incomingHostId != null &&
+        incomingHostId.isNotEmpty &&
+        incomingHostId == owner) {
+      return null;
+    }
+    return u;
+  }
+  return null;
+}
+
+/// 往一条已归另一台 host 的地址写凭据，而调用方没有拿到用户「作为新设备配对」的
+/// 确认（见 [applyIssuedInterconnectToken] 的 `reassignOwner`）。
+final class InterconnectAddressOwnerConflict implements Exception {
+  const InterconnectAddressOwnerConflict({
+    required this.url,
+    required this.ownerHostId,
+    this.ownerDeviceName,
+    this.incomingHostId,
+  });
+
+  final String url;
+  final String ownerHostId;
+  final String? ownerDeviceName;
+  final String? incomingHostId;
+
+  @override
+  String toString() =>
+      'InterconnectAddressOwnerConflict($url: owner=$ownerHostId '
+      'incoming=$incomingHostId)';
+}
+
 /// 53NT7G_tSO：把 host 刚签发给本机的 per-peer token 落到 [url] 那一行，**并同步到
 /// 同一台 host 的全部地址**（纯函数）。
 ///
@@ -470,30 +521,60 @@ String? _ipv6PrefixKey(String url) {
 /// 与地址学习同一判据（[_anchorMayClaimHostId]：同组已钉扎的证书指纹必须相同）
 /// 给它补标，再按组同步。不满足判据（对不上指纹 / 明文地址想并入已有组）就只改
 /// 这一行，绝不把 token 发去另一台机器。[url] 不在列表里 → 原样返回。
+///
+/// 地址归属闸：这一行已归另一台 host（[interconnectAddressOwnerConflict]）时，
+/// [reassignOwner] 为 false 抛 [InterconnectAddressOwnerConflict]、列表不动——以前
+/// 这里不改标签却把 token 写进了旧 host 的整组；为 true（用户已确认「作为新设备
+/// 配对」）则这一行脱离旧组（清 hostId / token / 展示名 / learned），再按「行还没有
+/// hostId」处理，旧组其余各行一律不动。
 List<FushiClientUrl> applyIssuedInterconnectToken(
   List<FushiClientUrl> list, {
   required String url,
   required String token,
   String? hostId,
+  bool reassignOwner = false,
 }) {
   final int index = list.indexWhere((FushiClientUrl u) => u.url == url);
   if (index < 0) return list;
-  FushiClientUrl row = list[index];
+  List<FushiClientUrl> rows = list;
+  final FushiClientUrl? owner = interconnectAddressOwnerConflict(
+    list,
+    url,
+    incomingHostId: hostId,
+  );
+  if (owner != null) {
+    if (!reassignOwner) {
+      throw InterconnectAddressOwnerConflict(
+        url: url,
+        ownerHostId: owner.hostId!,
+        ownerDeviceName: owner.deviceName,
+        incomingHostId: hostId,
+      );
+    }
+    rows = <FushiClientUrl>[...list]
+      ..[index] = FushiClientUrl(
+        url: owner.url,
+        enabled: owner.enabled,
+        fingerprintSha256: owner.fingerprintSha256,
+        addressKind: owner.addressKind,
+      );
+  }
+  FushiClientUrl row = rows[index];
   if (hostId != null &&
       hostId.isNotEmpty &&
       (row.hostId == null || row.hostId!.isEmpty) &&
-      _anchorMayClaimHostId(list, index, hostId)) {
+      _anchorMayClaimHostId(rows, index, hostId)) {
     row = row.copyWith(hostId: hostId);
   }
   final String? group = row.hostId;
   return <FushiClientUrl>[
-    for (int i = 0; i < list.length; i++)
+    for (int i = 0; i < rows.length; i++)
       if (i == index)
         row.copyWith(token: token)
-      else if (group != null && group.isNotEmpty && list[i].hostId == group)
-        list[i].copyWith(token: token)
+      else if (group != null && group.isNotEmpty && rows[i].hostId == group)
+        rows[i].copyWith(token: token)
       else
-        list[i],
+        rows[i],
   ];
 }
 
@@ -502,7 +583,7 @@ List<FushiClientUrl> applyIssuedInterconnectToken(
 /// - [anchorUrl] 是本次拿到地址集时用的那条地址；它被标上 [hostId]。列表里找不
 ///   到它（用户刚删了）→ 原样返回。
 /// - 同 hostId 的 learned 条目按新集合增删；手输条目永不删改，只在 URL 恰好被
-///   host 公布时补标 hostId（同一台机器，归入同组）。
+///   host 公布、且与锚点钉扎同一张证书时补标 hostId（同一台机器，归入同组）。
 /// - 新条目继承锚点的 token / 指纹 / 展示名：per-peer token 对这台 host 的所有
 ///   地址都有效，证书也是同一张。指纹只给 https 地址。
 /// - 插入位置：同组内第一个优先级更低的条目之前；手输条目的相对顺序不变。
@@ -544,8 +625,13 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     if (u.hostId == hostId && u.learned && !published.contains(u.url)) {
       continue; // host 不再公布的学到地址：删。
     }
-    if (u.hostId == null && !u.learned && published.contains(u.url)) {
-      // 手输的同一台机器：归组。
+    if (u.hostId == null &&
+        !u.learned &&
+        published.contains(u.url) &&
+        _sameCertificate(u, anchor)) {
+      // 手输的同一台机器：归组。只认证书指纹（与锚点并组同一判据）——URL 恰好被
+      // 公布不代表这条地址上应答的就是这台 host；明文手输行永不被收编，否则锚点的
+      // token 会写给那个 URL 上实际应答的另一台机器（C6）。
       out.add(withAnchorToken(u.copyWith(hostId: hostId)));
       continue;
     }
@@ -587,6 +673,17 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     out.insert(insertAt >= 0 ? insertAt : lastInGroup + 1, learned);
   }
   return out;
+}
+
+/// [u] 与 [anchor] 钉扎的是同一张证书：u 是 https，两边指纹都非空且相等。
+bool _sameCertificate(FushiClientUrl u, FushiClientUrl anchor) {
+  if (!u.url.toLowerCase().startsWith('https://')) return false;
+  final String? fp = u.fingerprintSha256;
+  final String? anchorFp = anchor.fingerprintSha256;
+  if (fp == null || fp.isEmpty || anchorFp == null || anchorFp.isEmpty) {
+    return false;
+  }
+  return fingerprintEquals(fp, anchorFp);
 }
 
 /// 本 client 是否接收 `p2p://` 地址（隧道能力装配后置 true）。

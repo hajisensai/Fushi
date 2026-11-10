@@ -26,6 +26,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
@@ -1098,7 +1099,18 @@ List<CtlRoute> _peerRoutes(OpContext context) => <CtlRoute>[
         case InterconnectLinkPaired(
           :final String baseUrl,
           :final String? deviceName,
+          :final String? reassignedFromHostId,
         ):
+          // 终端不给确认回调：归属冲突时拿到 address_owner_conflict，走不到这里；
+          // 保留对称的收尾，免得以后接了确认后漏改偏好。
+          if (reassignedFromHostId != null) {
+            await reconcileDownloadExecutionHostAfterReassign(
+              appModel.prefsRepo,
+              await repo.getFushiClientUrls(),
+              url: baseUrl,
+              previousHostId: reassignedFromHostId,
+            );
+          }
           return <String, Object?>{
             'ok': true,
             'paired': true,

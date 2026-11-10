@@ -1074,6 +1074,14 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // 一个冒充已知 host 的对端已经拿到了我的设备标识。铉扎的意义就是「握手前先判」。
     if (!await _ensurePinnedFingerprintTrusted(baseUrl, fingerprint)) return;
 
+    // 地址归属闸：这条 URL 已归另一台已配对 host 时先问用户是否作为新设备配对，
+    // 取消就中止（同样在握手之前，不把本机标识送给对端）。
+    final _AddressOwnerDecision? owner = await _ensureAddressOwnerConfirmed(
+      baseUrl,
+      hostId,
+    );
+    if (!mounted || owner == null) return;
+
     // 第一重确认：核对要连接的设备身份（展示名 + 证书指纹）。
     final bool confirmed = await _confirmPairIdentity(
       deviceName: deviceName,
@@ -1113,6 +1121,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
             token,
             fingerprint,
             hostId: hostId,
+            owner: owner,
           );
         case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
@@ -1136,6 +1145,45 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// - 存过但不等 → **当场中止**，并给用户一个显式的「清除已存指纹重新信任」出口：
   ///   host 真的重装 / 重置了证书时，没这个入口那条地址就永远修不好（只能删了重加）；
   ///   同意后只清指纹、**不**惄悉新指纹，下一步仍走完整双确认（展示新指纹供核对）。
+  /// 地址归属闸（配对前）：[baseUrl] 那一行已归另一台 host（签发方 [hostId] 为空
+  /// 或不同）时弹「作为新设备配对」确认框。返回 null = 用户取消，中止配对（不提示）；
+  /// 否则 [_AddressOwnerDecision.reassign] 表示写 token 时是否改归属。
+  Future<_AddressOwnerDecision?> _ensureAddressOwnerConfirmed(
+    String baseUrl,
+    String? hostId,
+  ) async {
+    final List<FushiClientUrl> rows = await _pairRepo.getFushiClientUrls();
+    final FushiClientUrl? owner = interconnectAddressOwnerConflict(
+      rows,
+      baseUrl,
+      incomingHostId: hostId,
+    );
+    if (owner == null) return const _AddressOwnerDecision.keep();
+    if (!mounted) return null;
+    final bool ok = await confirmInterconnectAddressReassign(
+      context,
+      address: baseUrl,
+      ownerLabel: interconnectAddressOwnerLabel(rows, owner),
+    );
+    if (!ok) return null;
+    return _AddressOwnerDecision.reassignFrom(owner.hostId!);
+  }
+
+  /// 归属改动落库后修正指向这条地址的「下载执行设备」偏好。
+  Future<void> _reconcileAfterAddressReassign(
+    String baseUrl,
+    _AddressOwnerDecision owner,
+  ) async {
+    final String? previous = owner.previousHostId;
+    if (previous == null) return;
+    await reconcileDownloadExecutionHostAfterReassign(
+      _pairSettingsContext.appModel.prefsRepo,
+      await _pairRepo.getFushiClientUrls(),
+      url: baseUrl,
+      previousHostId: previous,
+    );
+  }
+
   Future<bool> _ensurePinnedFingerprintTrusted(
     String baseUrl,
     String? fingerprint,
@@ -1248,6 +1296,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     String token,
     String? fingerprint, {
     String? hostId,
+    _AddressOwnerDecision owner = const _AddressOwnerDecision.keep(),
   }) async {
     try {
       await _pairRepo.addFushiClientUrl(
@@ -1264,7 +1313,19 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
     // 53NT7G_tSO：重新配对会作废本机在这台 host 上的旧 token，新 token 要落到这台
     // host 的全部地址（内网 / 外网 / IPv6 …），否则其余地址一律 401。
-    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token, hostId: hostId);
+    try {
+      await _pairRepo.setFushiClientTokenForUrl(
+        baseUrl,
+        token,
+        hostId: hostId,
+        reassignOwner: owner.reassign,
+      );
+    } on InterconnectAddressOwnerConflict catch (e, stack) {
+      // 只会在确认框与写入之间这条地址被并发改归了别的 host 时出现。
+      ErrorLogService.instance.log('PairV2.addressOwnerConflict', e, stack);
+      return t.sync_pair_address_owner_conflict;
+    }
+    await _reconcileAfterAddressReassign(baseUrl, owner);
     // 配对成功立即学一次 host 的地址集（IPv6 / 组网 / 公网 / P2P）：出了这个
     // 局域网也连得回来。失败只留痕，不影响配对结果。
     for (final FushiClientUrl u in await _pairRepo.getFushiClientUrls()) {
@@ -2054,6 +2115,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         device,
         repo,
         state,
+        hostId: probe?.ping.hostId,
       );
     } finally {
       if (mounted) setState(() => _pairingUrl = null);
@@ -2069,13 +2131,21 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     String baseUrl,
     FushiDevice device,
     SyncRepository repo,
-    _SyncSettingsState state,
-  ) async {
+    _SyncSettingsState state, {
+    String? hostId,
+  }) async {
     // Always record the address (deduped) so the user keeps the URL even if
     // the host declines and they fall back to pasting the token.
     await repo.addFushiClientUrl(baseUrl);
     // A client connection now exists → lock this device out of server mode.
     state.setHasClientConnection(true);
+    // 地址归属闸：v1 签发方报不出（或报了不同的）hostId，证明不了自己是这条地址
+    // 原来那台 host——已归组的地址必须用户确认才改归属，否则 token 会写进旧组。
+    final _AddressOwnerDecision? owner = await _ensureAddressOwnerConfirmed(
+      baseUrl,
+      hostId,
+    );
+    if (!mounted || owner == null) return;
 
     String message;
     try {
@@ -2097,7 +2167,13 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
             : null;
         if (token != null && token.isNotEmpty) {
           // BUG-1550：v1 老路径同样把凭据落在这条地址上（理由见 _onPairSuccess）。
-          await repo.setFushiClientTokenForUrl(baseUrl, token);
+          await repo.setFushiClientTokenForUrl(
+            baseUrl,
+            token,
+            hostId: hostId,
+            reassignOwner: owner.reassign,
+          );
+          await _reconcileAfterAddressReassign(baseUrl, owner);
           // BUG-1693：与 v2 路径一致——拿到 token（配对成功）才落「互联已启用」。
           await state.setInterconnectEnabled(true);
           message = t.sync_pair_success;
@@ -2109,6 +2185,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       } else {
         message = t.sync_pair_failed;
       }
+    } on InterconnectAddressOwnerConflict catch (e, stack) {
+      ErrorLogService.instance.log('LanDiscovery.pair:$baseUrl', e, stack);
+      message = t.sync_pair_address_owner_conflict;
     } catch (e, stack) {
       // Pairing probe failed (no server/timeout/declined). Keep the URL; record
       // why instead of swallowing.
@@ -2500,6 +2579,16 @@ class _InterconnectBackupBackendWidgetState
 
 // ── 配对弹窗（手动 IP / LAN 发现 / 扫码 / 深链共用）────────────────────
 
+/// 地址归属闸的结论：[reassign] = 写 token 时让这一行脱离 [previousHostId] 的组。
+final class _AddressOwnerDecision {
+  const _AddressOwnerDecision.keep() : reassign = false, previousHostId = null;
+  const _AddressOwnerDecision.reassignFrom(String this.previousHostId)
+    : reassign = true;
+
+  final bool reassign;
+  final String? previousHostId;
+}
+
 /// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
 /// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
 /// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
@@ -2526,6 +2615,8 @@ String interconnectPairFailureMessage(String reason) {
       return t.sync_pair_link_unreachable;
     case 'fingerprint_changed':
       return t.sync_pair_fingerprint_changed;
+    case 'address_owner_conflict':
+      return t.sync_pair_address_owner_conflict;
     default:
       return t.sync_pair_failed;
   }
