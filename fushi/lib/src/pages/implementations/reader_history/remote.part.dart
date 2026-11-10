@@ -1498,9 +1498,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       label: updateAvailable
           ? t.remote_book_audiobook_update_download
           : t.remote_book_audiobook_redownload,
-      icon: updateAvailable
-          ? Icons.cloud_download_outlined
-          : FushiIcons.cloudSync,
+      icon: updateAvailable ? FushiIcons.cloudDownload : FushiIcons.cloudSync,
       group: DialogActionGroup.content,
       onPressed: redownload,
     );

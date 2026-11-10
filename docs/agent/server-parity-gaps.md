@@ -154,7 +154,7 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   but does not convert a book to another form: an EPUB added later to a subtitle-only
   folder is ignored; re-import the book for that. Multi-file books with one
   single-timeline subtitle get their cues split across the files by measured durations
-  (ffprobe on the server, BUG-4273); if ffprobe can't read a file the cues stay on file 0
+  (ffprobe on the server, BUG-4278); if ffprobe can't read a file the cues stay on file 0
   and a diagnostic is logged. Root folders are
   recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
   it is not in the shared `SourceLibraryKind` enum, because adding it would touch every

@@ -45,7 +45,7 @@ void installServerHostBindings({
   ffmpegPathOverride = config.ffmpegPath;
   ffprobePathOverride = config.ffprobePath;
   // 有声书音频时长探测（app 装的是 just_audio）：多个音频文件 + 一份单时间轴字幕时，
-  // 导入 / 重扫靠它把 cue 分到各文件（BUG-4273）。走同一个 ffprobe；探不出返回 0，
+  // 导入 / 重扫靠它把 cue 分到各文件（BUG-4278）。走同一个 ffprobe；探不出返回 0，
   // 引擎据此不切、cue 留在第 0 个文件并记诊断。
   AudiobookStorage.audioDurationProbeMs = (String path) async =>
       await probeVideoDurationMs(path) ?? 0;

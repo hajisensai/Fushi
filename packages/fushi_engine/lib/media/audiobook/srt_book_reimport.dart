@@ -180,7 +180,7 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
         for (final RemoteAudioTrack t in binding.tracks) t.span,
       ]);
     } else {
-      // 本机音频：单时间轴字幕按各文件实测时长切（BUG-4273）。这次一并换音频就按
+      // 本机音频：单时间轴字幕按各文件实测时长切（BUG-4278）。这次一并换音频就按
       // 新音频切，否则按书现有的音频。
       cues = await splitSingleTimelineCuesAcrossAudioFiles(
         cues: cues,
@@ -261,7 +261,7 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
       copy: copyAudio,
       onProgress: (int copied, int total) => report(0.85, messages.persisting),
     );
-    // 只换音频：单时间轴字幕的 cue 归哪个文件取决于各文件时长（BUG-4273），换前或
+    // 只换音频：单时间轴字幕的 cue 归哪个文件取决于各文件时长（BUG-4278），换前或
     // 换后有多个文件就用库里那份字幕按新音频重新切。cue 文本不变，正文不用重建。
     if (!wantSubtitle &&
         (previousAudioCount > 1 || audioPaths.length > 1) &&
