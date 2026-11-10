@@ -44,6 +44,8 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
+    show srsNativeUnsupportedNotice;
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
     show
@@ -53,9 +55,13 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show srsForcedNativeHtmlCard, srsTemplateIsNative, srsWithTemplateNative;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -298,7 +304,21 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   }) {
     final SrsVisualCompileContext? ctx = _visualCtx;
     if (ctx == null) return;
-    (back ? _back : _front).text = srsCompileVisualSide(blocks, ctx);
+    final String compiled = srsCompileVisualSide(blocks, ctx);
+    // 重编正面保住模板级原生渲染标记（[srsWithTemplateNative]）。
+    if (back) {
+      _back.text = compiled;
+    } else {
+      _front.text = srsWithTemplateNative(
+        compiled,
+        srsTemplateIsNative(_front.text),
+      );
+    }
+  }
+
+  /// 模板级「原生渲染」开关：标记写进正面源码草稿（保存时随模板落库）。
+  void _setNative(bool native) {
+    _front.text = srsWithTemplateNative(_front.text, native);
   }
 
   /// 按字段自动生成两面布局；当前模板有内容时先确认（会替换源码，保存前仍可放弃）。
@@ -822,6 +842,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
               ),
             ),
           );
+    final Widget? nativeToggle = _buildNativeToggle(context, type);
     final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -840,6 +861,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
               ?duplicate,
               tabs,
               SizedBox(height: tokens.spacing.gap * 1.5),
+              ?nativeToggle,
               editor(wide: false),
               SizedBox(height: tokens.spacing.section),
               _buildPreview(context, type),
@@ -872,8 +894,10 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                         ?duplicate,
                         FushiStaggeredEntrance(index: 0, child: tabs),
                         SizedBox(height: tokens.spacing.gap * 1.5),
+                        if (nativeToggle != null)
+                          FushiStaggeredEntrance(index: 1, child: nativeToggle),
                         FushiStaggeredEntrance(
-                          index: 1,
+                          index: 2,
                           child: editor(wide: true),
                         ),
                       ],
@@ -891,7 +915,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                         bottom.bottom,
                       ),
                       child: FushiStaggeredEntrance(
-                        index: 2,
+                        index: 3,
                         child: _buildPreview(context, type, fill: true),
                       ),
                     ),
@@ -902,6 +926,60 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 模板级「原生渲染」开关（srs_native_template.dart）：打开后这个模板一律走原生卡面，原生
+  /// 画不了的部分在卡面上就地提示；开着时按预览的示例笔记当场判一次，列出会被提示的写法。
+  /// 内置 Fushi 卡片有自己的原生卡面（区块布局），不出这个开关。
+  Widget? _buildNativeToggle(BuildContext context, SrsNoteTypeView type) {
+    if (type.builtinKey == kSrsBuiltinFushiCardKey) return null;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool native = srsTemplateIsNative(_front.text);
+    final AnkiRenderedCard? shown = _shown;
+    final String language = ref.read(appProvider).defaultContentLanguage;
+    final List<String>? reasons = !native || shown == null
+        ? null
+        : srsForcedNativeHtmlCard(
+            question: shown.question,
+            answer: shown.answer,
+            css: _css.text,
+            languageCode: language.isEmpty ? null : language,
+            notice: srsNativeUnsupportedNotice,
+          ).reasons;
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiSwitchListTile(
+            key: const ValueKey<String>('srs-template-native'),
+            title: Text(t.srs_template_native_title),
+            subtitle: Text(t.srs_template_native_subtitle),
+            value: native,
+            onChanged: _setNative,
+          ),
+          FushiAnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.enter,
+            alignment: Alignment.topCenter,
+            child: reasons == null
+                ? const SizedBox(width: double.infinity)
+                : FushiInlineNotice(
+                    key: const ValueKey<String>('srs-template-native-check'),
+                    severity: reasons.isEmpty
+                        ? FushiNoticeSeverity.success
+                        : FushiNoticeSeverity.warning,
+                    message: reasons.isEmpty
+                        ? t.srs_template_native_all_ok
+                        : t.srs_template_native_issues(
+                            reasons: reasons.join('; '),
+                          ),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
