@@ -2161,6 +2161,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     this.fileName,
     this.containerTrackOrdinal,
     this.isExternalFile = false,
+    this.isDefault = false,
   });
 
   /// 服务端定位该轨用的流号：Fushi host 是 ffmpeg `-map 0:s:N` 的字幕相对序号，
@@ -2186,6 +2187,11 @@ class RemoteVideoEmbeddedSubtitleTrack {
   /// 按 [streamIndex] 去选只会选中另一条不相干的内嵌轨。
   final bool isExternalFile;
 
+  /// 服务端把这条轨标成**默认**（Jellyfin / Emby `MediaStreams[].IsDefault`，即容器
+  /// disposition default 或服务器上设的默认）。起播时 app 的字幕语言偏好没命中任何轨
+  /// 才按它自动挂（反馈 wCQIR4Pvz9，见 `pickRemoteStartupSubtitleTrack`）。
+  final bool isDefault;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'streamIndex': streamIndex,
     'codec': codec,
@@ -2197,6 +2203,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     if (containerTrackOrdinal != null)
       'containerTrackOrdinal': containerTrackOrdinal,
     if (isExternalFile) 'isExternalFile': true,
+    if (isDefault) 'isDefault': true,
   };
 
   RemoteVideoEmbeddedSubtitleTrack copyWith({String? url, String? fileName}) =>
@@ -2210,6 +2217,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         fileName: fileName ?? this.fileName,
         containerTrackOrdinal: containerTrackOrdinal,
         isExternalFile: isExternalFile,
+        isDefault: isDefault,
       );
 
   static RemoteVideoEmbeddedSubtitleTrack fromJson(Map<String, Object?> json) =>
@@ -2223,6 +2231,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         fileName: _jsonString(json['fileName']),
         containerTrackOrdinal: _jsonInt(json['containerTrackOrdinal']),
         isExternalFile: json['isExternalFile'] == true,
+        isDefault: json['isDefault'] == true,
       );
 }
 
