@@ -5,8 +5,11 @@
 /// `FUSHI_OPENSUBTITLES_API_KEY` / `FUSHI_OPENSUBTITLES_USERNAME` /
 /// `FUSHI_OPENSUBTITLES_PASSWORD`、`FUSHI_SUBDL_API_KEY`、`FUSHI_JIMAKU_API_KEY`；
 /// 其次是与 app 同名的偏好键（`video_subtitle_opensubtitles_config` /
-/// `video_subtitle_subdl_api_key` / `jimaku_api_key` 及其 `*_enabled`），它们在
-/// 互联的「服务账号」共享清单里（`InterconnectServiceConfigSnapshot`）。
+/// `video_subtitle_subdl_api_key` / `jimaku_api_key` 及其 `*_enabled`）。服务端上写这些
+/// 偏好的入口是 WebUI「设置 → 在线字幕来源」/ `PUT /api/admin/settings` 的
+/// `subtitleProviders` / `ctl settings subtitle-key|subtitle-source`（见
+/// admin/subtitle_provider_settings.dart）；作为互联 host 时它们也在下发给已配对设备的
+/// 「服务账号」共享清单里（`InterconnectServiceConfigSnapshot`）。
 ///
 /// 两种用法的门控**有意不同**：
 /// - 命令行（[SubsCredentials.unavailableReason]）：人在场、点名要用，设了环境变量
@@ -29,6 +32,7 @@ import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subdl_client.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 支持的字幕来源 id（与引擎 provider 的 `id` 一致）。
 const List<String> kSubsProviderIds = <String>[
@@ -100,26 +104,48 @@ class SubsCredentials {
     switch (providerId) {
       case 'opensubtitles':
         if (!openSubtitles.enabled) {
-          return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
+          return tr(
+            'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）',
+            'OpenSubtitles is disabled in preferences (set $kOpenSubtitlesApiKeyEnv to enable it temporarily)',
+          );
         }
         if (openSubtitles.effectiveApiKey.isEmpty) {
-          return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或从已配好的 Fushi 经互联同步';
+          return tr(
+            'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或在 WebUI「设置 → 在线字幕来源」/ `fushi_server ctl settings subtitle-key` 里存',
+            'OpenSubtitles has no API key: set the $kOpenSubtitlesApiKeyEnv environment variable, or save it in WebUI "Settings → Online subtitle sources" / `fushi_server ctl settings subtitle-key`',
+          );
         }
         return null;
       case kSubdlSubtitleProviderId:
         if (subdlApiKey.isEmpty) {
-          return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
+          return tr(
+            'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或在 WebUI「设置 → 在线字幕来源」/ `fushi_server ctl settings subtitle-key` 里存',
+            'SubDL has no API key: set the $kSubdlApiKeyEnv environment variable, or save it in WebUI "Settings → Online subtitle sources" / `fushi_server ctl settings subtitle-key`',
+          );
         }
-        if (!subdlEnabled) return 'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）';
+        if (!subdlEnabled) {
+          return tr(
+            'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）',
+            'SubDL is disabled in preferences (set $kSubdlApiKeyEnv to enable it temporarily)',
+          );
+        }
         return null;
       case 'jimaku':
         if (jimakuApiKey.isEmpty) {
-          return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
+          return tr(
+            'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或在 WebUI「设置 → 在线字幕来源」/ `fushi_server ctl settings subtitle-key` 里存',
+            'Jimaku has no API key: set the $kJimakuApiKeyEnv environment variable, or save it in WebUI "Settings → Online subtitle sources" / `fushi_server ctl settings subtitle-key`',
+          );
         }
-        if (!jimakuEnabled) return 'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）';
+        if (!jimakuEnabled) {
+          return tr(
+            'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）',
+            'Jimaku is disabled in preferences (set $kJimakuApiKeyEnv to enable it temporarily)',
+          );
+        }
         return null;
     }
-    return '未知字幕来源 $providerId';
+    return tr('未知字幕来源 $providerId', 'Unknown subtitle source $providerId');
   }
 
   /// 无人值守路径（下载管线 / 补字幕）能不能用 [providerId]：偏好开关开着**且**有 key。
@@ -147,7 +173,7 @@ SubsCredentials resolveSubsCredentials(
   PrefStore prefs,
   Map<String, String> env,
 ) {
-  final OpenSubtitlesConfig fromPrefs = _openSubtitlesFromPrefs(prefs);
+  final OpenSubtitlesConfig fromPrefs = readStoredOpenSubtitlesConfig(prefs);
   OpenSubtitlesConfig openSubtitles = fromPrefs;
   final String osKey = _env(env, kOpenSubtitlesApiKeyEnv);
   final String osUser = _env(env, kOpenSubtitlesUsernameEnv);
@@ -199,9 +225,10 @@ bool prefBool(PrefStore prefs, String key, {required bool defaultValue}) {
   return value is bool ? value : defaultValue;
 }
 
-/// 与 app `PreferencesRepository.videoSubtitleOpenSubtitlesConfig` 同一解码口径：
+/// 偏好里存的 OpenSubtitles 配置（不叠环境变量）。与 app
+/// `PreferencesRepository.videoSubtitleOpenSubtitlesConfig` 同一解码口径：
 /// 没配置过 / 解不开 = [OpenSubtitlesConfig.unconfigured]。
-OpenSubtitlesConfig _openSubtitlesFromPrefs(PrefStore prefs) {
+OpenSubtitlesConfig readStoredOpenSubtitlesConfig(PrefStore prefs) {
   final String raw = prefString(prefs, kOpenSubtitlesConfigPref);
   if (raw.isEmpty) return OpenSubtitlesConfig.unconfigured();
   try {
@@ -213,7 +240,10 @@ OpenSubtitlesConfig _openSubtitlesFromPrefs(PrefStore prefs) {
     });
   } on Object catch (e, st) {
     engineLog.log(
-      'ServerSubtitleProviders.openSubtitlesConfig ($kOpenSubtitlesConfigPref 解不开，按未配置处理)',
+      tr(
+        'ServerSubtitleProviders.openSubtitlesConfig ($kOpenSubtitlesConfigPref 解不开，按未配置处理)',
+        'ServerSubtitleProviders.openSubtitlesConfig ($kOpenSubtitlesConfigPref cannot be decoded, treating as unconfigured)',
+      ),
       e,
       st,
     );
@@ -242,7 +272,11 @@ VideoSubtitleProvider createSubsProvider(
         closesClient: true,
       );
   }
-  throw ArgumentError.value(providerId, 'providerId', '未知字幕来源');
+  throw ArgumentError.value(
+    providerId,
+    'providerId',
+    tr('未知字幕来源', 'Unknown subtitle source'),
+  );
 }
 
 /// 无人值守路径用的字幕 registry：只装 [SubsCredentials.usableAutomatically] 的来源。

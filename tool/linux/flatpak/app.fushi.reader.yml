@@ -23,8 +23,12 @@ finish-args:
   # app's selection into X11 while an X11 window has focus.
   - --socket=wayland
   - --socket=pulseaudio
-  # GPU + gamepads (/dev/input).
+  # GPU + gamepads (/dev/input), and the Steam Deck controller's hidraw node
+  # (the Game Mode back button, linux/runner/deck_buttons.h).
   - --device=all
+  # Steam Deck Game Mode screen OCR reads Gamescope's PipeWire stream
+  # (linux/runner/screen_capture.h).
+  - --filesystem=xdg-run/pipewire-0
   # Books, dictionaries and media live anywhere in the user's home, or on an SD
   # card / USB drive (SteamOS mounts them under /run/media).
   - --filesystem=home

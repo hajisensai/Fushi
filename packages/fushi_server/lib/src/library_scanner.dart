@@ -66,6 +66,7 @@ import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 有声书根登记在 `media_sources.mediaKind` 里的串。共享枚举 `SourceLibraryKind` 没有
 /// 有声书（加一个值要改 app 里所有穷举 switch），而这一行只有服务端自己读，所以按原样
@@ -180,7 +181,12 @@ class LibraryScanner {
       if (!root.enabled) continue;
       final Directory dir = Directory(root.path);
       if (!await dir.exists()) {
-        summary.errors.add('${root.id}: 目录不存在 ${root.path}');
+        summary.errors.add(
+          tr(
+            '${root.id}: 目录不存在 ${root.path}',
+            '${root.id}: directory does not exist ${root.path}',
+          ),
+        );
         continue;
       }
       switch (root.kind) {
@@ -255,10 +261,20 @@ class LibraryScanner {
           onlyEntryKeys: e.value,
         );
         if (r.status == LibraryOrganizeStatus.failed) {
-          summary.errors.add('AI 整理（${e.key.name}）中止: ${r.error}');
+          summary.errors.add(
+            tr(
+              'AI 整理（${e.key.name}）中止: ${r.error}',
+              'AI organizing (${e.key.name}) aborted: ${r.error}',
+            ),
+          );
         }
       } catch (err, stack) {
-        summary.errors.add('AI 整理（${e.key.name}）失败: $err');
+        summary.errors.add(
+          tr(
+            'AI 整理（${e.key.name}）失败: $err',
+            'AI organizing (${e.key.name}) failed: $err',
+          ),
+        );
         engineLog.log('LibraryScanner.organize', err, stack);
       }
     }
@@ -445,7 +461,12 @@ class LibraryScanner {
       }
     } catch (e, stack) {
       error = '$e';
-      summary.errors.add('${source.label}: 归组 / NFO 索引失败: $e');
+      summary.errors.add(
+        tr(
+          '${source.label}: 归组 / NFO 索引失败: $e',
+          '${source.label}: grouping / NFO indexing failed: $e',
+        ),
+      );
       engineLog.log('LibraryScanner.organize', e, stack);
     }
     await db.updateMediaSourceScanResult(
@@ -462,7 +483,9 @@ class LibraryScanner {
     try {
       await BookSeriesGrouper(db).groupAll();
     } catch (e, stack) {
-      summary.errors.add('分卷系列归组失败: $e');
+      summary.errors.add(
+        tr('分卷系列归组失败: $e', 'Volume series grouping failed: $e'),
+      );
       engineLog.log('LibraryScanner.groupBookSeries', e, stack);
     }
   }

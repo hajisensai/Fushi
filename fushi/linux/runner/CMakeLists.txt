@@ -15,6 +15,7 @@ add_executable(${BINARY_NAME}
   "floating_ball_window.cc"
   "screen_capture.cc"
   "screen_ocr_overlay.cc"
+  "deck_buttons.cc"
   "global_lookup_channel.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
@@ -22,6 +23,9 @@ add_executable(${BINARY_NAME}
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+# Fushi's own runner code is C++20 (std::jthread, std::format). Plugins keep
+# the standard settings' C++14.
+target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
 target_compile_options(${BINARY_NAME} PRIVATE -Werror)
 
 # Add preprocessor definitions for the application ID.
@@ -32,6 +36,19 @@ target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# Screen capture in Steam Deck Game Mode (screen_capture.h): Gamescope's
+# PipeWire stream through GStreamer. Optional: without it, Game Mode screen OCR
+# fails with "capture_failed" (the X root there is Steam's display).
+pkg_check_modules(GSTREAMER QUIET IMPORTED_TARGET
+  gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
+if(GSTREAMER_FOUND)
+  target_compile_definitions(${BINARY_NAME} PRIVATE FUSHI_GAMESCOPE_CAPTURE)
+  target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GSTREAMER)
+else()
+  message(WARNING "Game Mode screen capture not built: needs gstreamer-1.0, "
+    "gstreamer-app-1.0 and gstreamer-video-1.0")
+endif()
 
 # Primary selection from Wayland apps (wayland_selection.h): ext-data-control-v1
 # client code generated from wayland-protocols. Optional: without it the

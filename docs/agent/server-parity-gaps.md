@@ -20,12 +20,12 @@ checking parity. Hooks the server leaves null today:
 | Hook | Effect on the server | Status |
 |---|---|---|
 | `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | Remote review, host-side SRS sync, AnkiConnect and mining into review | Wired (`server_srs.dart`, spec `docs/specs/2026-11-05-server-srs-design.md`). Off until the admin picks which synced profiles to serve. See "SRS follow-ups" below. |
-| `leaderboardLinkHost` | Paired devices can't sign in to the Fushi account through the server | Gap. The server already stores per-profile accounts in the app's file format (`leaderboard_store.dart`); this needs an `InterconnectLeaderboardLinkHost` adapter on top. Size S/M. |
 | `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
 | `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
 
 The other hooks are wired on both sides: pairing, peer tokens, `hostId`, public URLs, P2P,
-graphic-subtitle export, `videoSubtitleBackfill`, `hostSelfUpdater` (`ServerSelfUpdater`:
+graphic-subtitle export, `videoSubtitleBackfill`, `leaderboardLinkHost` (owner devices
+marked by an admin), `hostSelfUpdater` (`ServerSelfUpdater`:
 release bundles with `release.json` on Linux / Windows x64; dev builds answer `platform_unsupported`), OCR, jobs, downloads, subscriptions,
 assistant, lookup, history, mining, dictionary media/styles and prefs.
 
@@ -72,14 +72,16 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 - **SRS follow-ups**:
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
-  - The desktop host doesn't answer `POST /api/mine/targets` yet and ignores `target`, so the
-    phone's "Save to" only offers "<host> default" against it.
   - AnkiConnect `getProfiles` reports one profile per key.
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
-  - The server op catalog (`admin_ops.dart`) has no SRS entries. The AnkiConnect keys are
-    credentials, the same reason the AnkiWeb settings are left out.
+  - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
+    `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
+    `.rollover-hour.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
+    credentials, bind / port are listen settings; the status the AI sees is cut down to
+    enabled / listening / last error), and choosing which profiles are served or the default
+    one (spec §9: an owner decision, not something a paired device's AI session changes).
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
   live in `fushi/lib/src/sync/`, not in the engine. The server only has read-only Plex
   browsing (`media-server plex`). It cannot register a media server as a library source.
@@ -97,11 +99,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   downloads that finished without a subtitle (`download_subtitle_retry.dart`, now in the
   engine), AI reordering of candidates (the `ai:` provider is also assigned to
   `AiFeature.videoSearch`), and the app's Jimaku provider (search by AniList / TMDB id,
-  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Still missing:
-  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only;
-  - the download pipeline reads subtitle providers when the pipeline is (re)built (start,
-    or after resource indexers are saved). A key pushed later over interconnect needs one
-    of those, or a restart. Backfill reads them per request.
+  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Provider keys
+  and switches are set in the WebUI / `PUT /api/admin/settings` (`subtitleProviders`) /
+  `ctl settings subtitle-key|subtitle-source`, and the download pipeline and backfill read
+  them (and the subtitle languages) on each use, so no restart is needed. Still missing:
+  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only.
 - **Audiobooks with audio only (no subtitle)**: these are not imported, either from an
   `audiobook` library root (counted as `audiobooksNeedSubtitle` in the scan summary) or
   from a download (`buildServerDiscoveryImporters` in `discovery_import_host.dart` blocks
