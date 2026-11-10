@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiListItem, FushiListDensity;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -199,7 +200,7 @@ class _AnkiOverwriteFieldsSelectorState
           ),
           onTap: () => setState(() => _expanded = !_expanded),
         ),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.medium),
           curve: FushiMotion.standard,
           alignment: Alignment.topCenter,

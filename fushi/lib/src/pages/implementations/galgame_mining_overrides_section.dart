@@ -3,6 +3,7 @@ import 'package:fushi/src/anki/mining_media_quality_labels.dart'
     show miningClipFormatLabel;
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_mining_settings_text.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -136,7 +137,7 @@ class GalgameMiningOverridesSection extends StatelessWidget {
         ),
       ),
       // 秒数只在生效模式需要它时出现（展开 / 收起带尺寸过渡）。
-      AnimatedSize(
+      FushiAnimatedSize(
         duration: motion,
         curve: Easing.standard,
         alignment: Alignment.topCenter,
@@ -268,7 +269,7 @@ class GalgameMiningOverridesSection extends StatelessWidget {
             child: AdaptiveSettingsSection(children: rows),
           ),
           // 有覆盖时才出现「全部恢复」（淡入淡出 + 尺寸过渡）。
-          AnimatedSize(
+          FushiAnimatedSize(
             duration: motion,
             curve: Easing.standard,
             alignment: Alignment.topCenter,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
 import 'package:fushi/src/second_screen/companion/modules/music_companion_schema.dart';
@@ -306,7 +307,7 @@ class _LyricsListState extends State<_LyricsList> {
       final BuildContext? line = _currentKey.currentContext;
       if (!mounted || line == null) return;
       unawaited(
-        Scrollable.ensureVisible(
+        FushiFocusScroll.ensureVisible(
           line,
           alignment: 0.3,
           duration: animate
