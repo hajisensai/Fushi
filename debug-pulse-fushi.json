@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T15:06:06Z",
+ "generatedAt": "2026-11-10T16:00:20Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2f45522b4eb23472396cceff93f626bd323b38de",
-  "seq": 25744
+  "sha": "b765ac68f103d7c8907d07c130ace2741c237490",
+  "seq": 26013
  },
  "builds": [
   {
@@ -140,9 +140,33 @@
   }
  ],
  "pending": {
-  "headSha": "2f45522b4eb23472396cceff93f626bd323b38de",
-  "headSeq": 25744,
+  "headSha": "b765ac68f103d7c8907d07c130ace2741c237490",
+  "headSeq": 26013,
   "prs": [
+   3199,
+   3193,
+   3183,
+   3182,
+   3196,
+   3195,
+   3180,
+   3188,
+   3197,
+   3192,
+   3190,
+   3191,
+   3194,
+   3185,
+   3170,
+   3178,
+   3189,
+   3187,
+   3186,
+   3184,
+   3168,
+   3181,
+   3179,
+   3174,
    3172,
    3177,
    3175,
@@ -204,6 +228,10 @@
   ],
   "direct": [
    {
+    "sha": "b765ac68f103d7c8907d07c130ace2741c237490",
+    "subject": "chore(bugs): settle BUG number collisions on 17d2964e1"
+   },
+   {
     "sha": "86232cd1e4aa91186c96e97afb9844aefcdc88e3",
     "subject": "chore(bugs): settle BUG number collisions on f5aaf74fe"
    }
@@ -212,19 +240,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665521"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844908100"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665014"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844907675"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665014"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844907675"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665014"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42844907675"
    }
   }
  },
@@ -920,6 +948,15 @@
    "deletions": 44,
    "labels": []
   },
+  "3168": {
+   "number": 3168,
+   "title": "fix(discovery): 下载网关 pow_required 人机验证握手（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:09:26Z",
+   "additions": 1180,
+   "deletions": 7,
+   "labels": []
+  },
   "3169": {
    "number": 3169,
    "title": "fix(srs): 单字重用户字体上卡面强调不再合成假粗体",
@@ -927,6 +964,15 @@
    "mergedAt": "2026-11-10T14:59:56Z",
    "additions": 250,
    "deletions": 16,
+   "labels": []
+  },
+  "3170": {
+   "number": 3170,
+   "title": "fix(video): 波形对轴视图改为片长全程，包络按段懒抽（不再截在自动对轴 20 分钟上界）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:13:28Z",
+   "additions": 1531,
+   "deletions": 263,
    "labels": []
   },
   "3171": {
@@ -956,6 +1002,15 @@
    "deletions": 21,
    "labels": []
   },
+  "3174": {
+   "number": 3174,
+   "title": "fix(profile): 作品会话期间改的快捷键重启后失效 (BUG-4323, #3089)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:06:18Z",
+   "additions": 278,
+   "deletions": 9,
+   "labels": []
+  },
   "3175": {
    "number": 3175,
    "title": "fix(subtitle): 字幕文件名完整换行，版本视图与文件视图共用同一组件 (BUG-4323)",
@@ -972,6 +1027,195 @@
    "mergedAt": "2026-11-10T15:03:46Z",
    "additions": 369,
    "deletions": 4,
+   "labels": []
+  },
+  "3178": {
+   "number": 3178,
+   "title": "fix(manga): 在线漫画读完任一章不再标整本读完、书架进度按章已读计算 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:12:43Z",
+   "additions": 512,
+   "deletions": 23,
+   "labels": []
+  },
+  "3179": {
+   "number": 3179,
+   "title": "fix(video): 显式定位字幕同位叠画、渲染活动集跟时钟刷新（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:07:18Z",
+   "additions": 362,
+   "deletions": 10,
+   "labels": []
+  },
+  "3180": {
+   "number": 3180,
+   "title": "fix(video): 改分组方式立即重扫归组，系列页不再散成每集 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:20:09Z",
+   "additions": 516,
+   "deletions": 24,
+   "labels": []
+  },
+  "3181": {
+   "number": 3181,
+   "title": "fix(sync): WebDAV / SFTP 同步后端实现区间读，云端旧名漫画包可判型",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:08:49Z",
+   "additions": 809,
+   "deletions": 54,
+   "labels": []
+  },
+  "3182": {
+   "number": 3182,
+   "title": "fix(srs): 答卡后的推送纳入云盘通道，经同步模块门（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:24:31Z",
+   "additions": 498,
+   "deletions": 66,
+   "labels": []
+  },
+  "3183": {
+   "number": 3183,
+   "title": "fix(srs): 冻住的旧版内置 Fushi 卡片模板仍走原生卡面，卡面路线统一判定并记回退原因（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:25:11Z",
+   "additions": 4020,
+   "deletions": 295,
+   "labels": []
+  },
+  "3184": {
+   "number": 3184,
+   "title": "feat(srs): 自定义卡片模板可标记「原生渲染」，画不了的部分就地提示而不回退网页卡面",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:10:17Z",
+   "additions": 696,
+   "deletions": 12,
+   "labels": []
+  },
+  "3185": {
+   "number": 3185,
+   "title": "feat(interconnect): 互联 host 列出一集全部外挂字幕，客户端逐条列出并标互联来源",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:14:52Z",
+   "additions": 1223,
+   "deletions": 46,
+   "labels": []
+  },
+  "3186": {
+   "number": 3186,
+   "title": "fix(galhook): 直连游戏内卡上屏不再复位图层平移（子卡翻上后两卡下方透明区）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:11:01Z",
+   "additions": 155,
+   "deletions": 8,
+   "labels": []
+  },
+  "3187": {
+   "number": 3187,
+   "title": "fix(android): 反馈回复后台检查改为纯原生 Worker，不再拉起 Flutter 主引擎",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:11:26Z",
+   "additions": 1138,
+   "deletions": 10,
+   "labels": []
+  },
+  "3188": {
+   "number": 3188,
+   "title": "fix(reader): 拉丁词首回退跨相邻文本节点，漫画 OCR 点 WELL 的 E 不再只查 ELL（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:18:24Z",
+   "additions": 134,
+   "deletions": 9,
+   "labels": []
+  },
+  "3189": {
+   "number": 3189,
+   "title": "fix(web-video): Netflix bridge 同文档幂等 + seek 回执页面诊断（BUG-4186 追加）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:12:26Z",
+   "additions": 418,
+   "deletions": 20,
+   "labels": []
+  },
+  "3190": {
+   "number": 3190,
+   "title": "fix(startup): WebView 预热等首帧光栅化+主线程空闲，修 Android 低端机启动 8s ANR（BUG-4359）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:16:17Z",
+   "additions": 191,
+   "deletions": 50,
+   "labels": []
+  },
+  "3191": {
+   "number": 3191,
+   "title": "feat(music): Jellyfin / Subsonic 曲目加入音乐库与本地歌单（凭据不落库，schema v149）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:16:02Z",
+   "additions": 1482,
+   "deletions": 293,
+   "labels": []
+  },
+  "3192": {
+   "number": 3192,
+   "title": "fix(manga): iOS 漫画 WebView 触摸不再经 Flutter 手势竞技场延后投递，双击缩放不再先弹控制层 (BUG-4360)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:17:23Z",
+   "additions": 655,
+   "deletions": 1,
+   "labels": []
+  },
+  "3193": {
+   "number": 3193,
+   "title": "fix(screen-ocr): Windows 截屏识字点字按 OCR 词框定位 + 几何取证（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:28:04Z",
+   "additions": 677,
+   "deletions": 20,
+   "labels": []
+  },
+  "3194": {
+   "number": 3194,
+   "title": "feat(feedback): 反馈视频上限 100 MB，默认原件上传，超限/格式不收才自动压缩",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:15:40Z",
+   "additions": 513,
+   "deletions": 115,
+   "labels": []
+  },
+  "3195": {
+   "number": 3195,
+   "title": "fix(reader): 无缝衔接慢拖跨章只换一章（BUG-4325）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:22:00Z",
+   "additions": 324,
+   "deletions": 14,
+   "labels": []
+  },
+  "3196": {
+   "number": 3196,
+   "title": "fix(online-sources): 已装在线源列表改懒建 sliver，探针加合成树扇出点归属（BUG-4330）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:23:45Z",
+   "additions": 887,
+   "deletions": 106,
+   "labels": []
+  },
+  "3197": {
+   "number": 3197,
+   "title": "fix(audiobook): 合缝按没出字时长把漏听的整句台词归前一条 cue（BUG-4182）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:17:41Z",
+   "additions": 162,
+   "deletions": 17,
+   "labels": []
+  },
+  "3199": {
+   "number": 3199,
+   "title": "fix: develop 尖端两处编译错（SrsDbStore? 闭包内未提升、FushiListItem 缺 import）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T15:29:43Z",
+   "additions": 3,
+   "deletions": 1,
    "labels": []
   }
  }
