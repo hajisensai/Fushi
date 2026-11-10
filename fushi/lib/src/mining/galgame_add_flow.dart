@@ -81,6 +81,22 @@ Future<void> addGamesFromPaths(
   onImported?.call();
 }
 
+/// 游戏来源扫描（`game_source_scanner.dart`）落库之后的收尾：重载游戏库缓存，
+/// 再给本轮新建的 [createdIds] 后台补封面（与拖放添加同一条有界并行路径）。
+///
+/// 扫描器只拿得到数据库，直接写 `galgames` 表；仓储缓存不重载的话游戏库页看不到新
+/// 游戏。由 AppModel 接到 `onGameSourceScanned` 上。
+Future<void> adoptSourceScannedGames(
+  GalgameRepository repo,
+  List<String> createdIds,
+) async {
+  await repo.load();
+  final List<GalgameEntry> added = <GalgameEntry>[
+    for (final String id in createdIds) ?repo.byId(id),
+  ];
+  await _autoCoverAllSilently(repo, added);
+}
+
 /// 批量补封面的并行度。每个 exe 图标抽取都是一个后台 isolate 把整个 exe 读进
 /// 内存（上限 128 MB）；拖 30 个游戏进来就是 30 个 isolate 同时各抱一个 exe。
 const int kGameCoverResolveConcurrency = 3;

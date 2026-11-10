@@ -492,11 +492,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   void _showLyricsModeHintIfNeeded() {
     final ReaderFushiSource src = ReaderFushiSource.instance;
     final bool shown = src.getPreference<bool>(
-      key: 'lyrics_mode_hint_shown',
+      key: kLyricsModeHintShownPrefShortKey,
       defaultValue: false,
     );
     if (shown || !mounted) return;
-    src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
+    src.setPreference<bool>(key: kLyricsModeHintShownPrefShortKey, value: true);
     unawaited(
       _withStudyClockPaused(
         () => showAppDialog<void>(
