@@ -1,4 +1,4 @@
-## BUG-4323 · 游戏工作台会话卡的工具组用浮动胶囊样式、悬在卡片中段，与主操作不在同一行
+## BUG-4332 · 游戏工作台会话卡的工具组用浮动胶囊样式、悬在卡片中段，与主操作不在同一行
 - **报告**：2026-11-10（用户：应用内反馈 J4GKVdgo2s，开发者自提，Windows：「这里的按钮位置不对，怎么又是硬编码，类似的全给我删了」；截图为游戏→工作台「正在监听 yurialice.exe」卡）
 - **真实性**：✅ 真 bug，两处叠加。① 嵌入模式 `_buildToolbarActions` 把次要工具做成 `FushiToolbar(dense: true, floating: true)`（`fushi/lib/src/pages/implementations/texthooker_page.dart` 原 1920-1924 行）——`floating` 是浮动顶栏 / 底栏压在内容上用的带投影胶囊（MD3 surfaceContainer + elevation 3、高 56；Apple 实色胶囊 + 投影），塞进卡内动作行就成了一块浮层，高度与投影都和旁边的「停止监听」不在同一视觉层。② `_SessionOverviewCard` 宽屏布局按固定比例切 `Expanded(flex: 3, info)` / `Flexible(flex: 2, actionWrap)`（原 3266-3276 行）：动作 Wrap 比 2/5 的槽窄时收缩到内容宽，`Flexible` 不把剩余空间还回去，整组动作就停在信息列右边、卡片中段，右侧空一截（截图里药丸右边距卡缘约 130 px）。
 - **[x] ① 已修复** — 工具描述收成 `_SessionTool`（同一份 key / 焦点 id / 选中态，AppBar 画成图标钮、会话卡转成 `FushiAdaptiveAction`）；会话卡的主操作（启动 / 附着按钮组或停止监听）与工具组放进同一个 `Wrap`（`game-session-actions`），工具组改用设计系统的 `FushiAdaptiveActionStrip`：无底无投影内联平铺、单独一行都放不下才按优先级收进「⋯」（组界在菜单里画分隔线）。宽屏不再按 3:2 切：信息列 `Expanded`，动作行按内容取宽、贴卡片右缘，宽度上限由 `LayoutBuilder` 算出（卡内宽 − 徽章 − 间距 − 信息列保底 `_infoMinWidth`）。徽章尺寸只算一次（`badgeSize`），布局与预算共用。提交见 PR。
