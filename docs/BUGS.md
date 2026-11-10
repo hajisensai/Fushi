@@ -38,6 +38,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4363](bugs/BUG-4363-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |
+> 共 3909 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4364](bugs/BUG-4364-browse-installed-sources-not-lazy.md) | ✅ | ✅ | 浏览页已装在线源整组非懒建：上千行全绘进合成树 |
+| [BUG-4363](bugs/BUG-4363-seamless-slow-drag-double-chapter-skip.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加） |
 | [BUG-4362](bugs/BUG-4362-video-grouping-mode-switch-scatter.md) | ✅ | ✅ | 视频来源从「按文件夹」改「按作品」后，系列页整部剧散成每集一张卡、刮削逐集当作品 |
 | [BUG-4361](bugs/BUG-4361-manga-ocr-latin-word-start-cross-glyph.md) | ✅ | ✅ | 英文漫画 OCR 点词中字母只查后半截：词首回退不跨字格文本节点（WELL 点 E 得 ELL） |
 | [BUG-4360](bugs/BUG-4360-manga-paged-double-tap-ios-touch-delay.md) | ✅ | ✅ | iOS 漫画分页模式双击缩放几乎总是先弹控制层：WebView 触摸经 Flutter 手势竞技场延后投递 |
