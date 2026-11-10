@@ -1,4 +1,4 @@
-## BUG-4286 · 远程复习推动本机 runtime 的活跃复习会话计数
+## BUG-4293 · 远程复习推动本机 runtime 的活跃复习会话计数
 - **报告**：2026-11-10（用户：内部审查）
 - **真实性**：✅ 真 bug，已用 widget 测试复现。
   - 远程复习页就是本机的 `SrsReviewPage` 跑在 `SrsRemoteCollectionScope` 里。它在 `initState` 照样执行全局的 `srsActiveReviewSessions.value++`（旧 `fushi/lib/src/pages/implementations/srs/srs_review_page.dart:415`）。
