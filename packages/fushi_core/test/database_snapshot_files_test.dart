@@ -41,6 +41,8 @@ void main() {
         // backup_service 的导入前快照（sidecar 不在时是孤儿，见层 b）。
         'fushi.db.pre-restore.bak',
         'fushi.db.pre-merge.bak',
+        // 「检查数据库」动手前的备份（反馈 s2fdTTmLyh）。
+        'fushi.db.check-bak-1780735422000.db',
         // 已删除的降级救援分支留下的副本（活库 + 两个侧车各一份）。
         'hibiki.db.bak.v16.1780592923530',
         'hibiki.db-wal.bak.v20.1780723449590',

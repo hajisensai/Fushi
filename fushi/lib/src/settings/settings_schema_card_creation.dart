@@ -454,6 +454,20 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           hasRevealTarget: true,
           visible: (_) => Platform.isWindows,
         ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.gal_mining_audio_mode',
+          title: t.gal_mining_audio_mode,
+          subtitle: t.gal_mining_audio_mode_hint,
+          hasRevealTarget: true,
+          visible: (_) => Platform.isWindows,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.gal_mining_audio_seconds',
+          title: t.gal_mining_audio_seconds,
+          subtitle: t.gal_mining_audio_seconds_hint,
+          hasRevealTarget: true,
+          visible: (_) => Platform.isWindows,
+        ),
       ],
       if (panel == AnkiSettingsPanel.connection) ...[
         SettingsBodySearchEntry(

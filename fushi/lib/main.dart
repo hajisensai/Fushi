@@ -2182,6 +2182,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           appModel.moduleVisibility.isEnabled(kind.module),
       keepDuplicates: false,
       askOnDuplicate: _askExternalBookDuplicate,
+      folderTranscribeAudiobook: appModel.folderImportTranscribePort,
     ).importAll(<String>[bookPath])).single;
     final String? bookKey = _externalBookKeyOf(result);
     if (bookKey == null) {

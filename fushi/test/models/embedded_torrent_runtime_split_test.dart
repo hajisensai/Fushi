@@ -57,7 +57,8 @@ class _RuntimeAppModel extends AppModel {
     final Object? error = nextStartError;
     if (error != null) {
       nextStartError = null;
-      Error.throwWithStackTrace(error, StackTrace.current);
+      // ignore: only_throw_errors
+      throw error;
     }
     _started = true;
   }

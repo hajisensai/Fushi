@@ -112,11 +112,36 @@ SettingsDestination buildReadingDestination() {
               notifyReaderLayoutChanged(c);
             },
           ),
+          // 反馈 sYPkmtitOM「跟随原书」：开着时打开的书自带的排版 / 翻页方向
+          // （EPUB page-progression-direction / primary-writing-mode）优先于下面两项；
+          // 书没声明的项照旧用下面的设置。
+          SettingsSwitchItem(
+            id: 'reading_display.follow_book_layout',
+            title: t.reader_book_layout_follow,
+            subtitle: t.reader_book_layout_follow_subtitle,
+            icon: FushiIcons.link,
+            defaultValue: ReaderSettings.defaultFollowBookLayout,
+            // order 只要求 layout 组连续不撞号；侧板里的实际位置由
+            // reader_settings_ia.dart 的 itemIds 决定（紧挨排版方向之前）。
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 29),
+            value: (SettingsContext c) => c.readerSource.readerFollowBookLayout,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setReaderFollowBookLayout(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
           SettingsSegmentedItem<String>(
             id: 'reading_display.writing_mode',
             title: t.reader_writing_direction,
             icon: FushiIcons.textVertical,
             controlBelow: true,
+            // 当前书正按「跟随原书」决定排版方向时，这一项此刻不生效：置灰并说明。
+            enabled: (SettingsContext c) =>
+                !c.readerSource.readerWritingModeFromBook,
+            subtitleBuilder: (SettingsContext c) =>
+                c.readerSource.readerWritingModeFromBook
+                ? t.reader_book_layout_from_book
+                : null,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 5),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -172,6 +197,12 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             visible: (SettingsContext c) =>
                 c.readerSource.readerSpreadMode != 'off',
+            enabled: (SettingsContext c) =>
+                !c.readerSource.readerSpreadDirectionFromBook,
+            subtitleBuilder: (SettingsContext c) =>
+                c.readerSource.readerSpreadDirectionFromBook
+                ? t.reader_book_layout_from_book
+                : null,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 7),
             // label 用本地化全称（从右到左/从左到右），不再用只有排版从业者
             // 认识的 RTL/LTR 缩写；分段条过宽时 _SegmentedStripHost 自带横向
@@ -679,8 +710,12 @@ SettingsDestination buildReadingDestination() {
         collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
+            // GitHub #3088：这个开关管的是「单击正文查词」（关掉后单击正文与点空白
+            // 同语义，查词只剩长按选词 / Shift），旧标题「点击时高亮文本」让人找不到它。
+            // 持久化 key `highlight_on_tap` 与条目 id 冻结不改。
             id: 'reading_controls.highlight_on_tap',
-            title: t.highlight_on_tap,
+            title: t.reader_tap_lookup_enabled,
+            subtitle: t.reader_tap_lookup_description,
             icon: FushiIcons.touch,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,

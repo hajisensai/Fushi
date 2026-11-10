@@ -391,6 +391,7 @@ void main() {
       Future<String?> Function(String path)? ingestVideoFile,
     }) => LibraryCtlImporter(
       db: db,
+      folderTranscribeAudiobook: null,
       galgameRepo: games,
       isKindEnabled: (LibraryCtlKind kind) => !disabled.contains(kind),
       keepDuplicates: keepDuplicates,
@@ -581,6 +582,7 @@ void main() {
       final List<Map<String, Object?>> enqueued = <Map<String, Object?>>[];
       final LibraryCtlImporter withQueue = LibraryCtlImporter(
         db: db,
+        folderTranscribeAudiobook: null,
         galgameRepo: games,
         isKindEnabled: (LibraryCtlKind kind) => true,
         keepDuplicates: false,

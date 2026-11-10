@@ -29,6 +29,7 @@ import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_track_column.dart'
     show MusicPlaylistTrackColumn, MusicPlaylistTrackRowData;
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart';
@@ -576,6 +577,10 @@ class MusicServerAlbumCard extends StatelessWidget {
                   album.artist ?? t.music_artist_unknown,
                   if (album.year != null) '${album.year}',
                 ].join(' · '),
+                // 试听来源的专辑：与原盘规格角标同位（副行尾部），封面上不压角标。
+                trailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
               ),
             ),
           ],
@@ -1143,6 +1148,11 @@ class MusicServerTrackTile extends StatelessWidget {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                if (musicServerPreviewOnly(browser))
+                  const Padding(
+                    padding: EdgeInsetsDirectional.only(end: 8),
+                    child: MusicPreviewBadge(),
+                  ),
                 Text(
                   formatMusicDuration(track.durationMs),
                   style: context.fushiType.bodySmall,
@@ -1214,6 +1224,9 @@ class MusicServerPlaylistCard extends StatelessWidget {
                   if (playlist.trackCount != null)
                     t.music_tracks_count(count: playlist.trackCount!),
                 ].join(' · '),
+                trailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
               ),
             ),
           ],
