@@ -1,6 +1,4 @@
 // 反馈 Eemf0HOZhj（BUG-4069）：截屏识字有自己的 OCR 引擎设置，默认跟随全局 OCR 引擎。
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';

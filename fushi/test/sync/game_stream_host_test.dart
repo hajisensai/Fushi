@@ -133,7 +133,7 @@ class _NativeHost {
       case 'setHostMuted':
         final Object? error = hostMuteError;
         if (error != null && (call.arguments as Map)['muted'] == true) {
-          throw error;
+          Error.throwWithStackTrace(error, StackTrace.current);
         }
         return null;
       case 'inspect':
@@ -562,7 +562,9 @@ void main() {
         );
         await _flushUntil(tester, () => done);
         await waiting;
-        if (failure != null) throw failure!;
+        if (failure != null) {
+          Error.throwWithStackTrace(failure!, StackTrace.current);
+        }
         return value;
       }
 
