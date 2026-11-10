@@ -1,0 +1,6 @@
+## BUG-4349 · 弹窗顶栏按过播放后，查词暂停有声书被排队的旧 play 立刻顶回去
+- **报告**：2026-11-08（开发者自提，Android OnePlus CPH2747，反馈 4FX5H_19ei：「点击查词弹窗顶部的播放按钮，会导致后面的查词暂停失效」）
+- **真实性**：✅ 真 bug（静态沿代码路径定位，未上真机）。查词弹窗顶栏（`reader_fushi_page.dart:5878` 播放 / 暂停、`:5890` 从此句播放）起一次主播放器激活；关弹窗时 `_releaseLookupPause`（`reader_fushi/lookup.part.dart:137`）因 `_pausedForLookup` 仍为 true 再调一次 `ctrl.play()`。根因在 `audiobook_controller.dart` 的 `_activateMainPlayer`（修复前 1563-1579）：每次 play 请求都无条件排到 `_playActivationTail` 后面，而 Android（ExoPlayer）/ Darwin 后端上 `_player.play()` 的 Future 挂到**下一次暂停**才完成（`playActivationSettled`），于是「已经在播时」的第二次请求要等下一次暂停后才执行。下一次查词 `_pauseForLookup` 一暂停，第一次激活收尾，排着的那次立刻 `_player.play()`，有声书被顶回播放——看起来就是「查词不再暂停」。media_kit（Windows / Linux）的 play 即刻完成，所以只在移动端 / Apple 端出现。同一机制也会让「播放中点单句重播（playCueOnce）」在句末停下后又接着播。
+- **[x] ① 已修复**（6ac4cdfad1）— `_activateMainPlayer` 把 play 当成状态请求：记住在途激活（`_outstandingActivation`）及它是否已发出 `play()`；在途激活尚未发出 play、或播放器正在播时，新请求直接并入它（返回同一 Future），不再排队；已发出且播放器已停（收尾在途）时才另起一次，暂停后立刻再播照常生效。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/audiobook_play_request_coalesce_test.dart`（Darwin/Android「play 挂到 pause」语义假播放器）：在播时再 play 后暂停必须停住且平台只收到 1 次 play；查词暂停 → 顶栏播放 → 关弹窗续播 → 再查词暂停必须停住；暂停后立刻再播仍另起激活。
+- **备注**：测试未在本分支运行，统一在合并后验证；未做真机复测（Android 原始失败路径待补）。阅读器侧 `_pausedForLookup` 在用户于弹窗内自行恢复播放后仍保留（关弹窗会对已在播的播放器再发一次 play，现被并入、无副作用），是否改成「用户自己恢复后查词不再负责续播」（对齐 `MusicLookupPause`）属行为取舍，另列决策。
