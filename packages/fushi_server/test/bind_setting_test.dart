@@ -20,6 +20,21 @@ void main() {
     }
   });
 
+  test('通配地址的其他写法（::0、全零展开）同样 → lan()，不落进 exact(anyIPv6)', () {
+    // 评审 compat-2：exact(anyIPv6) 会以 v6Only=false 双栈绑全网卡，明文上公网。
+    for (final String bind in <String>[
+      '::0',
+      '0:0:0:0:0:0:0:0',
+      '0000:0000:0000:0000:0000:0000:0000:0000',
+    ]) {
+      final ({FushiListenScope scope, String? warning}) r = parseBindSetting(
+        bind,
+      );
+      expect(r.scope, isA<FushiListenLan>(), reason: bind);
+      expect(r.warning, isNull, reason: bind);
+    }
+  });
+
   test('localhost / 127.0.0.1 → loopbackV4()（localhost 不交给系统解析）', () {
     expect(scopeOf('localhost'), isA<FushiListenLoopbackV4>());
     expect(scopeOf('LOCALHOST'), isA<FushiListenLoopbackV4>());

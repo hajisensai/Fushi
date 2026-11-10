@@ -34,8 +34,8 @@ String unsupportedLibraryKindMessage(String kind) => kind == 'music'
 
 /// `bind` 配置值 → 互联监听范围（互联 host 与 AnkiConnect 监听的「是否只听本机」判据
 /// 都从这里出，只此一份）：
-/// - 空、`0.0.0.0`、`::` → [FushiListenScope.lan]（与升级前逐字相同；`::` 不映射成
-///   双栈，免得明文部署在全局 IPv6 上暴露）；
+/// - 空、`0.0.0.0`、`::` 及通配地址的其他全零写法（`::0` 等）→ [FushiListenScope.lan]
+///   （与升级前逐字相同；`::` 不映射成双栈，免得明文部署在全局 IPv6 上暴露）；
 /// - `localhost`、`127.0.0.1` → [FushiListenScope.loopbackV4]（`localhost` 不交给系统
 ///   解析——部分系统先解析成 `::1`，127.0.0.1 上的反代会断）；
 /// - 其他 IP 字面量（`::1`、`127.0.0.2`、具体网卡地址）→ [FushiListenScope.exact]；
@@ -51,6 +51,12 @@ String unsupportedLibraryKindMessage(String kind) => kind == 'music'
   }
   final InternetAddress? address = InternetAddress.tryParse(value);
   if (address != null) {
+    // 通配地址的其他写法（`::0`、`0:0:0:0:0:0:0:0`、`0000::`…）与 `0.0.0.0` / `::`
+    // 同义：按 lan() 处理。交给 exact() 会直接 bind 到 anyIPv6（v6Only=false 即双栈
+    // 全网卡），明文暴露在全局 IPv6 上，地址集也匹配不到任何网卡（评审 compat-2）。
+    if (address.rawAddress.every((int b) => b == 0)) {
+      return (scope: const FushiListenScope.lan(), warning: null);
+    }
     return (scope: FushiListenScope.exact(address), warning: null);
   }
   return (
