@@ -33,19 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3850 条。点号进各自文件。
+> 共 3852 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4290](bugs/BUG-4290-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
 | [BUG-4289](bugs/BUG-4289-mine-target-reset-stale-main-process.md) | ✅ | ✅ | Save to reset written by the lookup popup process is invisible to the main process |
 | [BUG-4288](bugs/BUG-4288-save-to-default-deck-listed-twice.md) | ✅ | ✅ | 保存到列表里默认牌组出现两次 |
 | [BUG-4287](bugs/BUG-4287-popup-toast-truncated-two-lines.md) | ✅ | ✅ | 「保存到」退回主机默认的提示被截断 / 被结果提示顶掉 |
 | [BUG-4286](bugs/BUG-4286-server-srs-note-count-stale.md) | ✅ | ✅ | 服务端复习状态的笔记数不随写入刷新 |
-| [BUG-4285](bugs/BUG-4285-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
-> 共 3847 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4285](bugs/BUG-4285-srs-conflict-dialog-marquee-intrinsic.md) | ✅ | ✅ | SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic） |
 | [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 | [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |

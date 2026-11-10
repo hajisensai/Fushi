@@ -1,4 +1,4 @@
-## BUG-4285 · fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag
+## BUG-4290 · fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag
 - **报告**：2026-11-08（服务端 Fushi 复习端到端测试，还原备份时）
 - **真实性**：✅ 真 bug。`fushi_server backup restore <file> --yes --config my.yaml` 打印用法、退出 64；`--config` 写在 `backup` 前面才行。README 说「所有子命令接受 `--config <path>`」。
   - 根因：`packages/fushi_server/lib/src/commands/backup_commands.dart:44`（修复前）`addFlag('config', defaultsTo: true)` 给 `--no-config` 用。package:args 在子命令没定义某个选项时才退回顶层的同名选项；子命令自己的可取反 flag `config` 盖住了顶层的 `--config <路径>`，于是 `--config` 被当成「还原配置」开关，路径变成多余的位置参数，`command.rest.length != 2` → 用法错误。失败是安全的（不会用错配置），只是用不了。
