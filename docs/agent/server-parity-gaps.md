@@ -67,6 +67,28 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
    lyrics), `Remote*` DTOs, a capability bit, wiring in `LocalLibraryHostService`, an
    app-side remote client and UI, and op-catalog descriptions for any new ctl routes.
 
+## Interconnect audiobook updates
+
+- The audiobook list carries an optional `contentRevision` (`audiobookContentState` in
+  `packages/fushi_engine/lib/sync/audiobook_content_revision.dart`): a hash of the audio
+  list, the alignment / subtitle paths and those files' size + mtime. It changes on any
+  audio or subtitle change (rescan, app re-import, peer push) and not on a no-op rescan.
+  No DB column; old clients ignore it, old hosts don't send it.
+- The package endpoint's export cache is keyed on the same revision
+  (`ExportPackageCache.obtain(version:)`): a normal download after a change gets the new
+  package, without `?fresh=1` and without waiting for the 15-minute TTL. A download that
+  is streaming the old package finishes it; its resume (old ETag) gets a clean `200` of
+  the new package.
+- The package manifest carries the same `contentRevision` (computed just before packing).
+  After a full package download the app records that value, read from the package rather
+  than from the cached list, in the device-local pref `interconnect_audiobook_revisions`.
+  One shared entry point, `recordRemoteAudiobookPackageDownload` in
+  `fushi/lib/src/sync/remote_audiobook_revision_store.dart`, is used by shelf downloads,
+  the sync sweep's automatic audio pull and the sync compare page. When the list's value
+  differs, the shelf card shows "Update on peer" and the dialog offers "Download update
+  from peer". A subtitles-only refetch does not touch the record, so the flag stays until
+  the user downloads the full package.
+
 ## Other known gaps
 
 - **SRS follow-ups**:
@@ -126,10 +148,14 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   `audiobook align --srt …` or drop the `.srt` next to the audio and rescan.
 - **Audiobook roots (limits of the first version)**: audio is imported by reference
   (`copyAudio: false`). It stays in the root and is never copied into the data dir. A book
-  is tracked by its folder (or by a loose audio file in the root). Files added to an
-  already-imported folder are not picked up again. Remove the book, or purge the root, to
-  re-import it. When a book title already exists in the library, the folder is skipped
-  and not adopted. Root folders are recorded in `media_sources` with
-  `mediaKind = 'audiobook'`. This value is server-only: it is not in the shared
-  `SourceLibraryKind` enum, because adding it would touch every exhaustive switch in the
-  app.
+  is tracked by its folder (or by a loose audio file in the root). When a book title
+  already exists in the library, the folder is skipped and not adopted. A rescan updates
+  an already-imported folder in place (parts added / removed, subtitle added / replaced)
+  but does not convert a book to another form: an EPUB added later to a subtitle-only
+  folder is ignored; re-import the book for that. Multi-file books with one
+  single-timeline subtitle get their cues split across the files by measured durations
+  (ffprobe on the server, BUG-4279); if ffprobe can't read a file the cues stay on file 0
+  and a diagnostic is logged. Root folders are
+  recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
+  it is not in the shared `SourceLibraryKind` enum, because adding it would touch every
+  exhaustive switch in the app.

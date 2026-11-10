@@ -120,9 +120,9 @@ fn tracks(batches: &[(bool, Vec<Record>)]) -> Vec<TrackRecord> {
 }
 
 #[test]
-fn abi_version_is_two() {
-    // 2：批次格式加了远程曲目的内嵌封面记录（kind 3）与远程扫描游标。
-    assert_eq!(ffm_abi_version(), 2);
+fn abi_version_is_three() {
+    // 3：批次格式加了播放列表记录（kind 4）与 ffm_playlist_parse（2：远程封面记录与远程扫描游标）。
+    assert_eq!(ffm_abi_version(), 3);
 }
 
 #[test]
@@ -369,4 +369,57 @@ fn embedded_cover_absent_returns_empty() {
     );
     assert_eq!(len, 0);
     assert!(ptr.is_null());
+}
+
+/// 目录里的 `.m3u8` 出一条播放列表记录：条目按列表所在目录拼成与曲目记录同一拼法的绝对
+/// 路径（Dart 据此对曲库），曲目记录不受影响。
+#[test]
+fn playlist_files_come_out_as_playlist_records_with_resolved_entries() {
+    let dir = std::env::temp_dir().join(format!("fushi_music_playlist_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let album = dir.join("Album A");
+    std::fs::create_dir_all(&album).unwrap();
+    for name in ["01 First Song.flac", "02 Second Song.mp3"] {
+        std::fs::copy(Path::new(ROOT).join("Album A").join(name), album.join(name)).unwrap();
+    }
+    std::fs::create_dir_all(dir.join("Lists")).unwrap();
+    std::fs::write(
+        dir.join("Lists").join("mix.m3u8"),
+        "#EXTM3U\n#PLAYLIST:Mix\n../Album A/02 Second Song.mp3\n../Album A/01 First Song.flac\n",
+    )
+    .unwrap();
+
+    let root = dir.to_string_lossy().into_owned();
+    let records: Vec<Record> = scan_root(&root, 256, None)
+        .into_iter()
+        .flat_map(|(_, r)| r)
+        .collect();
+    let track_paths: HashSet<String> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Track(t) => Some(t.path.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(track_paths.len(), 2);
+    let playlists: Vec<_> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Playlist { path, playlist, .. } => Some((path.clone(), playlist.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(playlists.len(), 1);
+    let (path, list) = &playlists[0];
+    assert!(path.ends_with("mix.m3u8"));
+    assert_eq!(list.name.as_deref(), Some("Mix"));
+    assert_eq!(list.entries.len(), 2);
+    assert!(list.entries[0].ends_with("02 Second Song.mp3"));
+    for e in &list.entries {
+        assert!(
+            track_paths.contains(e),
+            "{e} should match a scanned track path"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -26,6 +26,8 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show kInterconnectAudiobookRevisionsPrefKey;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
     show applyIssuedInterconnectToken;
@@ -1861,6 +1863,13 @@ class SyncRepository {
     ...kWebBrowserDeviceLocalPrefKeys,
     // 页面背景的自定义图片文件路径与取色缓存：文件只在这台设备的数据目录里。
     ...kPageBackdropDeviceLocalPrefKeys,
+    // 第二块屏启动策略、已同意的副屏与查词显示屏（SecondScreenController 的键）：
+    // 描述的是本机硬件，不跟去别的设备。
+    'second_screen_mode',
+    'second_screen_approved_displays',
+    'second_screen_lookup_screen',
+    // 手柄查词模式的开启方式（ControllerLookupStyle）：跟这台设备的手柄走。
+    'controller_lookup_style',
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
@@ -2084,6 +2093,9 @@ class SyncRepository {
     // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
     // 带到另一台设备上没有意义。
     PreferencesRepository.mineToServerTargetsKey,
+    // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
+    // 设备上会让它误报 / 漏报「对端有更新」。
+    kInterconnectAudiobookRevisionsPrefKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

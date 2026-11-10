@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show FushiRubySpan, shiftRubySpans;
+    show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
@@ -56,6 +56,10 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.closeInApp,
     this.autoSearchOnOpen = true,
     this.showSearchBar = true,
+    this.embedded = false,
+    this.onMined,
+    this.onLookupStarted,
+    this.onHeadword,
     super.key,
   });
 
@@ -105,6 +109,26 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 「4.1」轻形态：点字直接出词卡、无搜索输入框；关闭按钮仍恒可用（独立渲染，不随
   /// 搜索栏隐藏）。源文本面板（[SourceLookupTextPanel]）不受此参数影响，保留点选重查。
   final bool showSearchBar;
+
+  /// Dual-screen companion: the card fills its host (the companion's Lookup
+  /// tab) instead of floating at the top of a transparent full-screen window;
+  /// there is no tap-outside-to-close layer (nothing is behind it).
+  final bool embedded;
+
+  /// Called with the outcome of every mining attempt made from this page
+  /// (the companion tells the main screen a card was mined).
+  final void Function(MinePopupResult result)? onMined;
+
+  /// Replaces this page's own lookup counter (TODO-1204): called for every
+  /// lookup the page starts (top / nested / repeated). The second-screen
+  /// companion passes one that has the main engine count the lookup for the
+  /// media on top; null = count here as usual.
+  final VoidCallback? onLookupStarted;
+
+  /// Called with the dictionary headword the host's lookup (the
+  /// [searchTerm] / [sourceCharIndex] scan, not a nested or re-scanned one)
+  /// matched, once its result is in. The companion labels its history with it.
+  final ValueChanged<String>? onHeadword;
 
   @override
   ConsumerState<PopupDictionaryPage> createState() =>
@@ -173,7 +197,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     _searchController = TextEditingController(text: widget.searchTerm);
     _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
-    attachLookupCounter(_popup);
+    final VoidCallback? onLookupStarted = widget.onLookupStarted;
+    if (onLookupStarted == null) {
+      attachLookupCounter(_popup);
+    } else {
+      _popup.onLookupStarted = onLookupStarted;
+    }
     _sourceLookupText = widget.searchTerm.trim();
     _sourceSentence = _sentenceOf(widget);
     _sourceLineQuery = '';
@@ -218,6 +247,19 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
   /// 把整行放上源文本条，从被点字起扫描查词——与在条上点那个字同一条路径。
+  /// The query of the host's lookup whose headword [PopupDictionaryPage.onHeadword]
+  /// still waits for; null once reported (or for any other search).
+  String? _headwordQuery;
+
+  @override
+  void onPopupSearchResult(String query, DictionarySearchResult result) {
+    final ValueChanged<String>? onHeadword = widget.onHeadword;
+    if (onHeadword == null || query != _headwordQuery) return;
+    _headwordQuery = null;
+    final String word = result.entries.first.word;
+    if (word.isNotEmpty) onHeadword(word);
+  }
+
   void _lookupWidgetSource() {
     final String text = widget.searchTerm;
     final int unitIndex = widget.sourceCharIndex;
@@ -229,10 +271,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           );
     if (scan == null) {
       _sourceLineQuery = '';
+      _headwordQuery = text.trim();
       _pushSearch(text, Rect.zero, reuseWarmSlot: true);
       return;
     }
     _sourceLineQuery = scan.suffix.trim();
+    _headwordQuery = scan.suffix.trim();
     final String line = text.trim();
     _searchController.text = line;
     _searchController.selection = TextSelection.collapsed(offset: line.length);
@@ -486,7 +530,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       );
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
-      onMineEntry(_withSourceSentence(fields));
+      _reportMined(onMineEntry(_withSourceSentence(fields)));
+
+  Future<MinePopupResult> _reportMined(Future<MinePopupResult> pending) async {
+    final MinePopupResult result = await pending;
+    widget.onMined?.call(result);
+    return result;
+  }
 
   Future<MinePopupResult> _updateBaseEntry(
     int noteId,
@@ -506,6 +556,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         }
       },
       child: FushiOverlayScaffold(
+        // Embedded (companion Lookup tab): the host already lays the page out
+        // inside its insets and reserves the bottom bar's height itself, so a
+        // second SafeArea here would apply that bottom padding twice (the card
+        // filled only ~55 % of the tab). The floating window keeps its own.
+        safeArea: !widget.embedded,
         // 根因修复（BUG-054）：弹窗词典窗口经 popup_main 同样套了 FushiAppUiScale，
         // 其 DictionaryPopupLayer→DictionaryPopupWebView 会被 FittedBox 拉糊。整页在
         // 中和器下渲染（净缩放=1），WebView 走原生密度、其上的关闭遮罩/嵌套层共用
@@ -518,6 +573,21 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Widget _buildOuterContainer() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
+    if (widget.embedded) {
+      // 副屏「查词」页：卡片填满整页、不按内容收缩——外壳就是上界高度，WebView
+      // 按它布局、没有被裁掉的一截（按内容收缩只用于浮卡，见 [_buildPositionedCard]）。
+      return Padding(
+        padding: EdgeInsets.all(gap),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              _buildCard(
+                tokens,
+                fullCardHeight: constraints.maxHeight,
+                webViewOverflowHeight: 0,
+              ),
+        ),
+      );
+    }
     return Stack(
       children: <Widget>[
         // 透明背景：点击卡片外部关闭弹窗（背后是触发查词的其它 app 画面）。
@@ -1018,8 +1088,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 嵌套层的词从释义正文点出来：例句是被点处那一句（反馈 TnKWBi4C-9）。
       onMineEntry: isBase
           ? _mineBaseEntry
-          : (Map<String, String> fields) => onMineEntry(
-              withFallbackMiningSentence(fields, entry.contextSentence),
+          : (Map<String, String> fields) => _reportMined(
+              onMineEntry(
+                withFallbackMiningSentence(fields, entry.contextSentence),
+              ),
             ),
       onUpdateEntry: isBase
           ? _updateBaseEntry
