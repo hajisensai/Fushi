@@ -669,28 +669,20 @@ class SrsSyncScheduler {
   final Map<String, SrsLocationCryptoState> locationCrypto =
       <String, SrsLocationCryptoState>{};
 
-  /// 已经上报过摘要不一致的设备（每次启动每台只报一次）。
-  final Set<String> _digestReported = <String>{};
-
-  /// 设计 §4.5：两台设备在同一版本向量下派生状态摘要不同 = 确定性 bug，自动上报日志（不让用户处理）。
-  Future<void> _reportDigestMismatch(SrsDbStore store) async {
-    try {
-      final Map<String, Object?> status = await store.sync2Status();
-      for (final Object? d
-          in (status['devices'] as List?) ?? const <Object?>[]) {
-        if (d is! Map || d['digestMismatch'] != true) continue;
-        final String id = d['device'] as String? ?? '';
-        if (!_digestReported.add(id)) continue;
-        ErrorLogService.instance.log(
-          'SrsSync2.digestMismatch',
-          StateError(
-            'SRS state digest differs from device $id at the same version vector',
-          ),
-          StackTrace.current,
-        );
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsSyncScheduler.digest', e, stack);
+  /// 设计 §4.5：两台设备在同一进度下派生状态摘要不同 = 有一边的派生行是旧的或确定性 bug。内核先自动重建（按组指纹
+  /// 定位、重放本机落在不同组里的卡，store/sync2/heal.rs），只把修不好的交出来（[SrsSync2Report.healFailed]，每个对端
+  /// 每组集合只给一次），这里只记这些（不让用户处理）。
+  void _reportHealFailed(SrsSync2Report report) {
+    for (final Map<String, Object?> f in report.healFailed) {
+      ErrorLogService.instance.log(
+        'SrsSync2.healFailed',
+        StateError(
+          'SRS state digest differs from device ${f['device']} at the same version vector '
+          'and replaying did not converge: reason=${f['reason']} groups=${f['groups']} '
+          'rows=${f['rows']} peerApp=${f['app']}',
+        ),
+        StackTrace.current,
+      );
     }
   }
 
@@ -1105,7 +1097,7 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
-    if (report.error == null && !_halted) await _reportDigestMismatch(store);
+    _reportHealFailed(report);
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
     // 媒体对账要逐个过一遍全部引用的媒体、扫三遍笔记引用：只在媒体引用可能变了（本机或别的设备改了笔记 / 笔记类型

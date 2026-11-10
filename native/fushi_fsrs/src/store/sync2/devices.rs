@@ -156,6 +156,15 @@ pub(crate) fn record_ext(c: &Connection, profile: &str, h: &Head) -> Result<(), 
     Ok(())
 }
 
+/// 别的设备最近一份 head 自报的 App 版本（没报 = 空串）：自动重建上报用（heal.rs）。
+pub(crate) fn peer_app(c: &Connection, profile: &str, device: &Id) -> Result<String, String> {
+    let ext = parse_obj(meta_get(
+        c,
+        &format!("{}{}", ext_prefix(profile), device.text()),
+    )?);
+    Ok(str_of(&ext, "app").to_owned())
+}
+
 /// 停用了的设备。
 pub(crate) fn retired_set(c: &Connection, profile: &str) -> Result<BTreeSet<Id>, String> {
     let prefix = retired_prefix(profile);

@@ -364,6 +364,8 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
     if n > 0 {
         // 型号 / 版本 / 协议（设备可识别，devices.rs）。
         super::devices::record_ext(conn, profile, h)?;
+        // 摘要的组指纹（自动重建比对用，heal.rs）。
+        super::heal::record_peer_dg(conn, profile, h)?;
     }
     Ok(())
 }
@@ -2487,10 +2489,15 @@ impl SrsCore {
                 chain,
                 segments: cuts,
                 ack,
-                digest: digest.unwrap_or_default(),
+                digest: digest.clone().unwrap_or_default(),
                 at_ms: now,
                 name: local.name.clone(),
-                ext: super::devices::self_ext(c, profile)?,
+                ext: super::heal::with_dg(
+                    super::devices::self_ext(c, profile)?,
+                    c,
+                    profile,
+                    digest.as_deref().unwrap_or_default(),
+                )?,
             };
             let sig = head.content_sig();
             // 不算 ack / 摘要的内容签名：只有它们变了（收到别人的操作、摘要重算）不急着写（审查 S-8）。
@@ -2498,6 +2505,13 @@ impl SrsCore {
                 let mut h = head.clone();
                 h.ack = Vv::default();
                 h.digest = String::new();
+                // 组指纹随摘要一起变（heal.rs）：同样不急着写。
+                if let Some(Value::Object(m)) = h.ext.as_mut() {
+                    m.remove("dg");
+                }
+                h.ext = h
+                    .ext
+                    .filter(|e| e.as_object().is_some_and(|m| !m.is_empty()));
                 h.content_sig()
             };
             let sig_key = format!("sync2_head_sig/{profile}/{location}");
@@ -3198,30 +3212,30 @@ impl SrsCore {
             if same_vv || now - last_at < interval {
                 return Ok(json!({"skipped": true}));
             }
+            // 还有待重放的卡、等因果的缓冲或待刷新的缓存：投影还没收齐，这时的根与别的设备比只会比出假的不一致
+            // （再触发一次无用的自动重建，heal.rs）。等收齐了再算。
+            if super::heal::unsettled(&r, profile)? {
+                return Ok(json!({"skipped": true, "unsettled": true}));
+            }
         }
         // 桶表由触发器随每次写入维护（digest.rs，审查 S-7）：根只读 4096 行，不再全库扫描。读连接上一个读事务里取，
         // 根与版本向量出自同一快照。
-        let (d, vv, tag) = {
+        // 各组指纹（head `ext.dg`，heal.rs）与根出自同一次桶表读取，和版本向量在同一个读事务里。
+        let (d, groups, vv, tag) = {
             let r = self.reader()?;
             r.execute_batch("BEGIN").map_err(sql)?;
             let out = (|| {
                 let vv = applied_vv(&r, profile)?;
                 let tag = super::trust::digest_vv_tag(&r, profile, &vv)?;
-                Ok::<_, String>((super::digest::root(&r, profile)?, vv, tag))
+                let (d, groups) = super::digest::root_and_groups(&r, profile)?;
+                Ok::<_, String>((d, groups, vv, tag))
             })();
             r.execute_batch("COMMIT").map_err(sql)?;
             out?
         };
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let value = format!("{d}@{tag}");
-            for (k, v) in [(&key, value), (&at_key, now.to_string())] {
-                c.execute(
-                    "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    params![k, v],
-                )
-                .map_err(sql)?;
-            }
+            super::heal::store_digest(c, profile, now, &d, &groups, &tag)?;
             Ok(json!({"digest": d, "vv": vv.hash_hex()}))
         })
     }

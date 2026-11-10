@@ -14,6 +14,7 @@ pub mod config;
 pub(crate) mod dedup;
 pub(crate) mod devices;
 pub mod digest;
+pub(crate) mod heal;
 pub mod media;
 pub(crate) mod min_reader;
 pub(crate) mod mvr;
@@ -2590,6 +2591,8 @@ mod tests_digest;
 mod tests_footprint;
 #[cfg(test)]
 mod tests_head_gap;
+#[cfg(test)]
+mod tests_heal;
 #[cfg(test)]
 mod tests_migrate_dedup;
 #[cfg(test)]

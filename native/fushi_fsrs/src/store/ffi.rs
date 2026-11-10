@@ -1245,6 +1245,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "import",
     "digest",
     "digest_buckets",
+    "digest_heal",
     "media_record",
     "media_hash",
     "media_scan",
@@ -1278,6 +1279,7 @@ const PROJECTING_OPS: &[&str] = &[
     "checkpoint",
     "restore",
     "dedup",
+    "digest_heal",
 ];
 
 fn sync2_command(
@@ -1617,6 +1619,8 @@ fn sync2_command(
             Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
             None => c.sync2_digest(profile)?,
         },
+        // 摘要不一致的自动重建（store/sync2/heal.rs）：重放改写的卡在分发器里刷新缓存（[PROJECTING_OPS]）。
+        "digest_heal" => c.sync2_digest_heal(profile, i("now")?)?,
         "status" => c.sync2_status(profile)?,
         // 设备可识别（store/sync2/devices.rs）：本机型号 / 版本 / 平台 / 昵称（给了哪个改哪个，没变不进写锁）；没有自报名字
         // 的设备的补充名（互联 host 认出上传者）。
