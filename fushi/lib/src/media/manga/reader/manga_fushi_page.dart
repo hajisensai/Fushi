@@ -6366,8 +6366,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   // ── 2026-10 重设计的 chrome 入口（页面一览 / 快捷设置 / 章节按钮 / 章末卡片）──
 
   /// 第 [pageIndex] 页的本地缩略图（拖动气泡 / 页面一览）。只认已经在盘上的页图
-  /// （本地卷 / 已下载章 / 在线直读会话已缓存的页）：在线直读的页不为了缩略图去
-  /// 发请求，取不到就返回 null，调用方画页码占位。
+  /// （本地卷 / 已下载章 / 在线直读会话已缓存的页）：本函数同步、不发请求，取不到
+  /// 就返回 null，调用方画页码占位；页面一览要预览没取到的页另经
+  /// [OnlineMangaThumbnailPrefetcher] 走页会话预取，落盘后这里就能取到。
   ImageProvider? _pageThumbnail(int pageIndex) {
     final MokuroPayload? payload = _payload;
     final String? imagesDir = _imagesDir;
