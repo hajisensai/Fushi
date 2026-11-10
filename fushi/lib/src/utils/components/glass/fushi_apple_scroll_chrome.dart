@@ -147,6 +147,10 @@ class FushiAppleScrollChrome extends ChangeNotifier {
   bool _underBottom = false;
   Object? _scope;
 
+  /// 把底栏收起的那条 [ScrollUpdateNotification] 的 viewport 深度，供
+  /// [_expandIfStranded] 区分主滚动视图与内容里嵌套的子滚动视图。
+  int? _minimizedAtDepth;
+
   /// 内容的开头已滚到顶部导航层下面（extentBefore > 0）。
   bool get contentUnderTop => _underTop;
 
@@ -184,10 +188,15 @@ class FushiAppleScrollChrome extends ChangeNotifier {
     if (notification is ScrollNotification) {
       metrics = notification.metrics;
       if (metrics.axis != Axis.vertical) return false;
+      final bool wasMinimized = minimize.minimized;
       minimize.handleNotification(notification);
+      if (!wasMinimized && minimize.minimized) {
+        _minimizedAtDepth = notification.depth;
+      }
     } else if (notification is ScrollMetricsNotification) {
       metrics = notification.metrics;
       if (metrics.axis != Axis.vertical) return false;
+      _expandIfStranded(notification);
     } else {
       return false;
     }
@@ -203,6 +212,34 @@ class FushiAppleScrollChrome extends ChangeNotifier {
       _notifySafely();
     }
     return false;
+  }
+
+  /// 反馈 TyMqz158nj：收起状态必须跟着「还有没有能滚回去的内容」走。
+  ///
+  /// [GlassTabBarMinimizeController] 自己的两条展开规则（内容不可滚 / 停在
+  /// 起始边）只在 [ScrollUpdateNotification] 上判——可内容被**换掉或缩短**
+  /// （查词清空结果、换成历史页，列表变短）时 Flutter 只发
+  /// [ScrollMetricsNotification]，不发 update，状态机看不到，底栏就停在收起态，
+  /// 而新内容没东西可回滚。这里把同两条规则补到尺寸通知上：新内容滚不动
+  /// （可滚范围不足库的 [GlassTabBarMinimizeController.kMinScrollableExtent]）
+  /// 或停在起始边时展开。只会展开、不会收起，不改变「只有用户滚动才收起」。
+  ///
+  /// 只认「收起它的那条滚动视图」所在深度及更浅的尺寸通知：内容里嵌套的竖向
+  /// 子滚动视图（shrinkWrap 的嵌套列表、多行输入框内部的 Scrollable）在外层
+  /// 列表下滑把它们建出来时会发首次布局的尺寸通知，它们自己恒在顶部、滚不动，
+  /// 不按深度过滤的话用户一边下滑底栏一边被它们弹开。被换掉的主列表与原主
+  /// 列表同深度，照常展开。
+  void _expandIfStranded(ScrollMetricsNotification notification) {
+    if (!minimize.minimized) return;
+    final int? owner = _minimizedAtDepth;
+    if (owner != null && notification.depth > owner) return;
+    final ScrollMetrics metrics = notification.metrics;
+    if (!metrics.hasContentDimensions || !metrics.hasPixels) return;
+    final bool cannotScroll =
+        metrics.maxScrollExtent - metrics.minScrollExtent <
+        GlassTabBarMinimizeController.kMinScrollableExtent;
+    final bool atRestingEdge = metrics.pixels <= metrics.minScrollExtent;
+    if (cannotScroll || atRestingEdge) minimize.expand();
   }
 
   bool _notifyScheduled = false;
