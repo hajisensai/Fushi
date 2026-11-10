@@ -2543,6 +2543,8 @@
   "download_airing_calendar_week_next": "Minggu berikutnya",
   "download_airing_calendar_week_prev": "Minggu sebelumnya",
   "download_backend_embedded_hint": "Disarankan. Unduhan berjalan di dalam Fushi — tidak perlu memasang apa pun lagi.",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "Pemasangan ini tidak memiliki runtime mesin bawaan. Pasang ulang paket lengkap, atau gunakan qBittorrent eksternal.",
   "download_backend_not_configured": "Backend unduhan belum dikonfigurasi.",
   "download_backend_qb_hint": "Hubungkan Fushi ke qBittorrent WebUI yang sudah Anda jalankan.",

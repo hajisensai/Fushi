@@ -2543,6 +2543,8 @@
   "download_airing_calendar_week_next": "Sonraki hafta",
   "download_airing_calendar_week_prev": "Önceki hafta",
   "download_backend_embedded_hint": "Önerilen. İndirmeler Fushi içinde çalışır — ayrıca bir şey kurmanız gerekmez.",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "Bu kurulumda yerleşik motorun çalışma zamanı eksik. Tam paketi yeniden kurun ya da bunun yerine harici qBittorrent kullanın.",
   "download_backend_not_configured": "İndirme arka ucu henüz yapılandırılmadı.",
   "download_backend_qb_hint": "Fushi'yi hâlihazırda çalıştırdığınız bir qBittorrent WebUI'ye bağlayın.",

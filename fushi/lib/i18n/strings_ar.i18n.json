@@ -2543,6 +2543,8 @@
   "download_airing_calendar_week_next": "الأسبوع التالي",
   "download_airing_calendar_week_prev": "الأسبوع السابق",
   "download_backend_embedded_hint": "موصى به. تجري التحميلات داخل Fushi — لا حاجة لتثبيت أي شيء آخر.",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "بيئة تشغيل المحرك المدمج غير موجودة في هذا التثبيت. أعد تثبيت الحزمة الكاملة، أو استخدم qBittorrent خارجيًا بدلًا منها.",
   "download_backend_not_configured": "لم يتم تكوين خلفية التحميل بعد.",
   "download_backend_qb_hint": "اربط Fushi بواجهة qBittorrent WebUI التي تشغّلها بالفعل.",
