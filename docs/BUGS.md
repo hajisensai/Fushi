@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3843 条。点号进各自文件。
+> 共 3844 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4282](bugs/BUG-4282-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
 | [BUG-4281](bugs/BUG-4281-host-update-tracking-null-loops.md) | ✅ | ✅ | 主机更新跟踪中 host 回 404 时无限每 2 秒轮询、界面卡在进行中 |
 | [BUG-4280](bugs/BUG-4280-manga-ocr-client-error-orphan.md) | 🚧 | 🚧 | 漫画 OCR client 出错时只报错不清理、host 任务成孤儿（未复现） |
 | [BUG-4279](bugs/BUG-4279-remote-job-client-lifecycle.md) | ✅ | ✅ | 远端任务客户端不区分观测失败与任务失败：瞬时断网即删除 host 任务、清理失败当任务失败、观测可被卡住的响应体永久挂起 |
