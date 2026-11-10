@@ -148,4 +148,22 @@ void main() {
       );
     },
   );
+
+  // 反馈 f2k9m1oU0j：剪贴板文本不落临时文件，直接走内存入口；与读文件入口
+  // 同一套解析（txt = 段落 / <br/>，XML 转义）。
+  test('convertText converts in-memory plain text like a .txt file', () {
+    final EpubZipReader reader = EpubZipReader(
+      TextToEpub.convertText(
+        content: '﻿一行目\r\n二行目\r\n\r\n<タグ> & 次',
+        title: '貼り付け',
+      ),
+    );
+    final String chapter = reader['OEBPS/chapter-1.xhtml']!;
+    expect(chapter, contains('<p>一行目<br/>二行目</p>'));
+    expect(chapter, contains('<p>&lt;タグ&gt; &amp; 次</p>'));
+    expect(
+      reader['OEBPS/content.opf'],
+      contains('<dc:title>貼り付け</dc:title>'),
+    );
+  });
 }
