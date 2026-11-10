@@ -249,7 +249,7 @@ class SrsSyncNowResult {
   final int ran;
   final List<Object> errors;
 
-  /// 跑成了、但那头的设备（互联 host）报告还没加入复习同步的位置数（BUG-4232，[SrsSync2Report.peerNotJoined]）：
+  /// 跑成了、但那头的设备（互联 host）报告还没加入复习同步的位置数（BUG-4274，[SrsSync2Report.peerNotJoined]）：
   /// 本机的改动发出去了，对端既没并入也没发布它的数据，不能说「已同步」。
   final int peersNotJoined;
 
@@ -421,12 +421,13 @@ class SrsSyncScheduler {
   /// 每个文件夹位置最近一次的错误（同步与历史页显示；成功一轮即清掉）。
   final Map<String, Object> folderErrors = <String, Object>{};
 
-  /// 位置那头自己也跑复习同步的设备（互联 host）此刻加入了没有（BUG-4232；见 srs_directory_key.dart
+  /// 位置那头自己也跑复习同步的设备（互联 host）此刻加入了没有（BUG-4274；见 srs_directory_key.dart
   /// `srsChannelPeerJoined`）；null = 不问（测试 / 没有这类后端）。
   final Future<bool?> Function(SyncAssetStore backend)? _peerJoined;
 
-  final ValueNotifier<Set<String>> _peersNotJoined =
-      ValueNotifier<Set<String>>(const <String>{});
+  final ValueNotifier<Set<String>> _peersNotJoined = ValueNotifier<Set<String>>(
+    const <String>{},
+  );
 
   /// 最近一轮里那头的设备报告「还没加入复习同步」的位置（directoryKey）。同步与历史页的摘要据此说「已配对设备还没
   /// 开启复习同步」，而不是按本机未上传条数说「所有改动都已同步」。那台设备报告已加入后即移除。
@@ -1161,7 +1162,7 @@ class SrsSyncScheduler {
     return report;
   }
 
-  /// 一轮成功后问 [backend] 那头的设备加入复习同步了没有（BUG-4232），记进 [peersNotJoined]；返回「没加入」。
+  /// 一轮成功后问 [backend] 那头的设备加入复习同步了没有（BUG-4274），记进 [peersNotJoined]；返回「没加入」。
   /// 问不到（网络抖动）时沿用上一次的结论并记日志：这一轮本身已经成功，不因状态探测失败改判。
   Future<bool> _notePeerJoined(SyncAssetStore backend, String key) async {
     final Future<bool?> Function(SyncAssetStore backend)? ask = _peerJoined;

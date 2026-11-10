@@ -221,7 +221,7 @@ class SrsAppRuntime {
     autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
     // 同步与历史页「存储位置」上逐个关掉的通道位置（只停复习同步，通道本身照常）。
     locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
-    // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4232）：没加入时摘要 / 立即同步不说「已同步」。
+    // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4274）：没加入时摘要 / 立即同步不说「已同步」。
     peerJoined: srsChannelPeerJoined,
   );
 

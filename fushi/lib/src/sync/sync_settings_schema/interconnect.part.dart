@@ -1208,7 +1208,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// [FushiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
   /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
   ///
-  /// [deviceName] 是配对前 `/api/ping` 回报的 host 展示名（BUG-4234：以前这里写死 null，
+  /// [deviceName] 是配对前 `/api/ping` 回报的 host 展示名（BUG-4276：以前这里写死 null，
   /// 手动地址配对的 host 只剩 URL）。
   Future<String> _onPairSuccess(
     String baseUrl,
