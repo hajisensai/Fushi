@@ -443,7 +443,12 @@ buildMediaServerLaunch({
         .getCollectionItems(playlistCollectionId);
     items.sort(
       (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
-          a.sortIndex.compareTo(b.sortIndex),
+          a.sortIndex != b.sortIndex
+          ? a.sortIndex.compareTo(b.sortIndex)
+          // 缺集号的几集同槽（[mediaServerEpisodeSortIndex]）：按条目身份平局，
+          // 与 getCollectionItems / 库页 / 继续观看同口径。List.sort 不稳定，
+          // 没有这一段时同槽的集超过 32 条就会被打乱。
+          : a.entryKey.compareTo(b.entryKey),
     );
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;

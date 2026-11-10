@@ -151,6 +151,29 @@ String mediaServerDisplayTitle(MediaServerItem item) {
   return '$series${code.isEmpty ? '' : ' $code'} ${item.name}';
 }
 
+/// 合集槽位里一季占的宽度：`季号 × 本值 + 集号`。
+const int kMediaServerSeasonSlotWidth = 10000;
+
+/// 缺号槽：缺集号（`IndexNumber` / Plex `index` 为空）的集落在本季的最后一格，
+/// 缺季号的集落在最后一季之后（VF5D4O_Tyx）。与客户端集清单比较器
+/// （`_bySeasonThenEpisode`，缺号排在有号之后）同一口径。
+const int kMediaServerUnnumberedSlot = kMediaServerSeasonSlotWidth - 1;
+
+/// 单集在剧合集里的槽位（`MediaCollectionItems.sortIndex`）。
+///
+/// 缺号**不能**当 0：0 会把没编号的集排到全季最前（BUG-4243 遗留）。缺号的集一律
+/// 排在同季有号的集之后；同槽位的几集之间由各消费方按条目身份（bookUid / entryKey）
+/// 做确定性平局，跨入口、跨设备结果一致。服务器给的原序只在会话内的集清单
+/// （详情页、播放页剧集面板）里保留——本函数是单条目纯函数，拿不到列表位置，
+/// 也不该拿：入库、互联枚举、播放三条入口算出的槽位必须相同。
+int mediaServerEpisodeSortIndex({int? seasonNumber, int? episodeNumber}) {
+  final int season = seasonNumber ?? kMediaServerUnnumberedSlot;
+  final int episode = episodeNumber == null
+      ? kMediaServerUnnumberedSlot
+      : episodeNumber.clamp(0, kMediaServerUnnumberedSlot - 1);
+  return season * kMediaServerSeasonSlotWidth + episode;
+}
+
 /// 单集 → 按剧名归入 playlist 合集（库页折叠成一张剧卡）；电影独立。各实现
 /// 共用，保证不同服务器类型的剧在播放页 / 库页的折叠口径一致。
 RemoteCollectionMembership? mediaServerCollectionOf(MediaServerItem item) {
@@ -163,7 +186,10 @@ RemoteCollectionMembership? mediaServerCollectionOf(MediaServerItem item) {
   return RemoteCollectionMembership(
     collectionName: series,
     collectionType: 'playlist',
-    sortIndex: (item.seasonNumber ?? 0) * 10000 + (item.episodeNumber ?? 0),
+    sortIndex: mediaServerEpisodeSortIndex(
+      seasonNumber: item.seasonNumber,
+      episodeNumber: item.episodeNumber,
+    ),
   );
 }
 
@@ -309,7 +335,8 @@ class MediaServerItem {
   /// 季号（对 Season 是自身序号，对 Episode 是 `ParentIndexNumber`）。
   final int? seasonNumber;
 
-  /// 集号（`IndexNumber`）。
+  /// 集号（`IndexNumber` / Plex `index`）。服务器没给就是 null——**不要**拿列表
+  /// 位置补：位置不是集号，显示成集号会误导（VF5D4O_Tyx）。
   final int? episodeNumber;
   final int? productionYear;
   final int? durationMs;
