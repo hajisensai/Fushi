@@ -158,7 +158,7 @@ void main() {
     expect(pendingOf(), 2, reason: '写不进复习：记下待写标记');
 
     // 模块还关着时来了一次「拉入」，profile 里仍是旧的 6：不能改回去。
-    await app.adoptSyncedDayRollover(_uid, old);
+    await app.adoptSyncedDayRollover(_uid, () async => old);
     expect(app.statDayResetHour, 2);
 
     await turnSrsOn();
@@ -166,7 +166,7 @@ void main() {
     expect(pendingOf(), -1, reason: '补写后清掉标记');
 
     // 开启后的同步拉入：生效的就是刚补写的那条，本机不动。
-    await app.adoptSyncedDayRollover(_uid, await store.syncedDayRollover());
+    await app.adoptSyncedDayRollover(_uid, store.syncedDayRollover);
     expect(app.statDayResetHour, 2);
     expect((await store.dayContext()).rolloverHour, 2);
   });
@@ -180,9 +180,8 @@ void main() {
       SrsFieldKeys.dayRolloverHour,
       3,
     );
-    final SrsDayRollover? incoming = await store.syncedDayRollover();
     final int ops = (await store.sync2Status())['ops']! as int;
-    await app.adoptSyncedDayRollover(_uid, incoming);
+    await app.adoptSyncedDayRollover(_uid, store.syncedDayRollover);
     expect(app.statDayResetHour, 3);
     expect(FushiDatabase.statDayResetHour, 3);
     expect(
@@ -193,8 +192,36 @@ void main() {
 
     // 本机之后只动了本机偏好（比如首次开复习补默认值），下一轮拉入里还是那条修改：不覆盖。
     await app.setStatDayResetHour(5);
-    await app.adoptSyncedDayRollover(_uid, await store.syncedDayRollover());
+    await app.adoptSyncedDayRollover(_uid, store.syncedDayRollover);
     expect(app.statDayResetHour, 5);
+  });
+
+  test('用户改日界与同步拉入后的采纳同时发生：采纳排在用户写完之后、现读生效值，本机与复习不分叉', () async {
+    await app.setStatDayResetHourByUser(4);
+    // 别的设备改成 3，刚拉进来、本机还没采纳（这里直接写一条修改记录代替同步落库）。
+    await store.editField(
+      SrsEntityKind.profile,
+      _uid,
+      SrsFieldKeys.dayRolloverHour,
+      3,
+    );
+
+    // 用户此刻在统计设置里改成 6，同一时刻这次拉入的采纳也开始了（都不先 await）。
+    final Future<void> user = app.setStatDayResetHourByUser(6);
+    final Future<void> pulled = app.adoptSyncedDayRollover(
+      _uid,
+      store.syncedDayRollover,
+    );
+    await Future.wait(<Future<void>>[user, pulled]);
+
+    expect((await store.syncedDayRollover())?.hour, 6, reason: '复习字段是用户的新值');
+    expect(app.statDayResetHour, 6, reason: '采纳没有拿用户改之前的那条修改把本机改回 3');
+    expect(FushiDatabase.statDayResetHour, 6);
+    expect((await store.dayContext()).rolloverHour, app.statDayResetHour);
+
+    // 之后的拉入里生效的仍是用户那条（本机写下、已见）：不再变。
+    await app.adoptSyncedDayRollover(_uid, store.syncedDayRollover);
+    expect(app.statDayResetHour, 6);
   });
 
   test('远程复习库显式不支持日界读写（不落到 noSuchMethod）', () {

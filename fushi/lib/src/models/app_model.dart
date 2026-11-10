@@ -11382,7 +11382,12 @@ class AppModel
   /// 只有用户的显式修改走这里；首次开复习时补的默认 4 点（[setStatDayResetHour]）只改本机偏好、不写复习，
   /// 免得每台设备各自写一条默认值、互相覆盖。此刻写不进复习（模块关着 / 未注入 / 打开失败）时给这份配置记一条
   /// 待写标记，下次它的复习库激活时补写（[flushPendingDayRollover]）——否则之后同步拉入的旧值会把这次修改改回去。
-  Future<void> setStatDayResetHourByUser(int value) async {
+  ///
+  /// 与 [flushPendingDayRollover] / [adoptSyncedDayRollover] 串行（[_serialDayRollover]）。
+  Future<void> setStatDayResetHourByUser(int value) =>
+      _serialDayRollover(() => _setStatDayResetHourByUser(value));
+
+  Future<void> _setStatDayResetHourByUser(int value) async {
     await setStatDayResetHour(value);
     final int hour = statDayResetHour;
     final String uid = await database.resolveActiveProfileUid();
@@ -11406,7 +11411,10 @@ class AppModel
 
   /// 复习库 [store] 激活时补写它那份配置的待写日界（[setStatDayResetHourByUser] 当时没写进去的显式修改）。
   /// 只补用户改过的值，没有标记什么都不做（默认值从不写进复习）。由 main.dart 挂到 `SrsProfileStores.onActivated`。
-  Future<void> flushPendingDayRollover(SrsDbStore store) async {
+  Future<void> flushPendingDayRollover(SrsDbStore store) =>
+      _serialDayRollover(() => _flushPendingDayRollover(store));
+
+  Future<void> _flushPendingDayRollover(SrsDbStore store) async {
     final String key = _srsDayRolloverPendingKey(store.profileUid);
     final Object? pending = prefsRepo.getPref(key);
     if (pending is! int || pending < 0) return;
@@ -11424,16 +11432,27 @@ class AppModel
   /// 只认「新来的修改」：生效的修改记录与本机上次写下 / 采纳的是同一条（[_srsDayRolloverSeenKey]）就不动——
   /// 不拿 profile 里的旧值覆盖本机。这份配置还有待写的显式修改时也不动（它激活时补写、比旧值新）。单向：只改本机
   /// 偏好、不写回复习，不会来回同步。
+  ///
+  /// 生效值由 [readSynced] 在串行区里现读（通常是 `store.syncedDayRollover`），不接受区外先读好的值：用户正在改
+  /// 日界时排在它后面，读到的就是用户刚写下的那条（已见）；区外先读会拿到用户改之前的修改记录、把本机统计日界
+  /// 改回旧值，而复习字段是用户的新值，两边从此分叉。
   Future<void> adoptSyncedDayRollover(
     String profileUid,
-    SrsDayRollover? synced,
+    Future<SrsDayRollover?> Function() readSynced,
+  ) =>
+      _serialDayRollover(() => _adoptSyncedDayRollover(profileUid, readSynced));
+
+  Future<void> _adoptSyncedDayRollover(
+    String profileUid,
+    Future<SrsDayRollover?> Function() readSynced,
   ) async {
-    if (synced == null) return;
     if (profileUid != await database.resolveActiveProfileUid()) return;
     final Object? pending = prefsRepo.getPref(
       _srsDayRolloverPendingKey(profileUid),
     );
     if (pending is int && pending >= 0) return;
+    final SrsDayRollover? synced = await readSynced();
+    if (synced == null) return;
     final String seenKey = _srsDayRolloverSeenKey(profileUid);
     if (prefsRepo.getPref(seenKey) == synced.editId) return;
     await prefsRepo.setPref(seenKey, synced.editId);
@@ -11452,6 +11471,17 @@ class AppModel
       );
     }
     await prefsRepo.setPref(_srsDayRolloverPendingKey(store.profileUid), -1);
+  }
+
+  /// 日界的三个写入口（用户改值 / 激活时补写 / 拉入后采纳）都是「读本机状态 → 写复习或本机偏好 → 记已见 /
+  /// 待写」的多步序列，交错会让本机统计日界与复习字段分叉（例如采纳读到旧修改后、在用户写完之后把偏好改回旧值）。
+  /// 按调用顺序逐个跑；一个失败不挡后面的（错误照常交给它自己的调用方）。
+  Future<void> _dayRolloverTail = Future<void>.value();
+
+  Future<void> _serialDayRollover(Future<void> Function() body) {
+    final Future<void> run = _dayRolloverTail.then((_) => body());
+    _dayRolloverTail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
   }
 
   static String _srsDayRolloverPendingKey(String profileUid) =>

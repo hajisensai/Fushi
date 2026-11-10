@@ -200,7 +200,7 @@ class SrsAppRuntime {
       if (store == null) return;
       await app.adoptSyncedDayRollover(
         store.profileUid,
-        await store.syncedDayRollover(),
+        store.syncedDayRollover,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log(
