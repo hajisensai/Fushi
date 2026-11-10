@@ -1886,6 +1886,8 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 预览恢复到 [atMs]：会改回多少字段 / 复活 / 删除多少实体 / 改多少标签 / 撤回多少次复习。给了
   /// [checkpoint]（还原点的 `{device, seq}`）就按那个还原点的因果截断，不按墙钟（同一毫秒的删除不会被算进去）。
+  ///
+  /// 不进写锁（只读；通道没做完时内核会先收通道，见 [kSrsSync2ProjectingOps] 的说明）。
   Future<Map<String, Object?>> sync2PlanRestore(
     int atMs, {
     required bool retractReviews,
@@ -2018,6 +2020,10 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
   }) {
+    assert(
+      !kSrsSync2ProjectingOps.contains(request['op']) || holdsExclusive,
+      'sync2 `${request['op']}` changes the projection outside runExclusive',
+    );
     debugCoreCommands++;
     return SrsOpLedger.track(
       'core:${request['op']}',
@@ -2049,6 +2055,53 @@ class SrsDbStore implements SrsSync2Host {
     'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
     _ => SrsCoreLane.bulk,
   };
+
+  /// 改投影的 v2 命令（与内核 native/fushi_fsrs/src/store/ffi.rs `PROJECTING_OPS` 同一组）：只能在本副本的独占区里发
+  /// （[_sync2Raw] 断言）。它们与 Drift 事务的关系由内核的守卫计数（store/drift_guard.rs，[debugDriftTxGuardHits]）。
+  ///
+  /// 不在这里、也不排写锁却可能顺带写库的：`digest`（记一行摘要缓存）、`media_hash`、`plan_restore`（只读，但通道没做完时
+  /// 内核先收通道）——见 [kSrsSync2LockFreeOps] 与 [sync2PlanRestore]。它们恰好撞上别人开着的 Drift 事务时，内核守卫按
+  /// ReadVisible 计：顺带的写入只是可重做的进度 / 缓存，随那笔事务回滚无害。
+  @visibleForTesting
+  static const Set<String> kSrsSync2ProjectingOps = <String>{
+    'apply',
+    'sched',
+    'retire',
+    'ingest',
+    'ingest_batch',
+    'ingest_commit',
+    'ingest_finish',
+    'replay_pending',
+    'import',
+    'resolve',
+    'purge',
+    'checkpoint',
+    'restore',
+    'dedup',
+  };
+
+  /// 内核 Drift 事务守卫的命中计数（native/fushi_fsrs/src/store/drift_guard.rs）：Drift 在写连接上开着事务时来的
+  /// sync2 命令，按策略 `join` / `readVisible` / `reject` 分别记 `{命令: 次数}`。计数按库（[core]）记，不分 profile；
+  /// [reset] 读完清零。首版只计数，不拦命令。
+  @visibleForTesting
+  Future<Map<String, Map<String, int>>> debugDriftTxGuardHits({
+    bool reset = false,
+  }) async {
+    final SrsSync2Result r = await _coreSync2(
+      core.address,
+      core.libraryPath,
+      <String, Object?>{'op': 'drift_tx_guard', 'reset': reset},
+      const <Uint8List>[],
+    );
+    return <String, Map<String, int>>{
+      for (final MapEntry<String, Object?> e in r.map.entries)
+        e.key: <String, int>{
+          for (final MapEntry<Object?, Object?> h
+              in ((e.value as Map?) ?? const <Object?, Object?>{}).entries)
+            h.key! as String: (h.value! as num).toInt(),
+        },
+    };
+  }
 
   /// 发出过的内核命令数（`ffsrs_store_sync2` 一次算一条）：复习路径的 FFI 次数守卫 / 基准用。
   @visibleForTesting

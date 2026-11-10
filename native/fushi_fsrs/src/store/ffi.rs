@@ -971,6 +971,8 @@ pub(crate) fn sync2_dispatch(
             .and_then(Value::as_i64)
             .ok_or_else(|| format!("sync2: missing {k}"))
     };
+    // Drift 事务守卫（store/drift_guard.rs）：开着时按命令的策略计数，首版不拦、不改行为。
+    c.note_drift_tx(s("op")?, req);
     // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
@@ -986,6 +988,10 @@ pub(crate) fn sync2_dispatch(
         "ingest_yield" => {
             c.sync2_ingest_yield();
             return Ok(json!({}));
+        }
+        // Drift 事务守卫的命中计数（`reset: true` 读完清零）：测试验收「Join 集合缩小了」用。
+        "drift_tx_guard" => {
+            return Ok(c.drift_tx_guard(req.get("reset") == Some(&Value::Bool(true))));
         }
         _ => {}
     }
@@ -2256,6 +2262,64 @@ mod tests {
     /// 恰好一张）。按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂的命令名逐条核对：新增命令没登记就红。
     #[test]
     fn every_command_declares_its_channel_policy() {
+        let mut ops = dispatched_ops();
+        // 不针对单个 profile 的命令在分发器开头就返回，不碰通道。
+        for global in [
+            "profile_uids",
+            "orphan_sweep_done",
+            "wal_checkpoint",
+            "bulk_cache",
+            "ingest_yield",
+            "drift_tx_guard",
+        ] {
+            assert!(
+                ops.remove(global),
+                "{global} is no longer a profile-less command"
+            );
+        }
+        assert!(ops.len() > 50, "parsed too few commands: {ops:?}");
+        for op in &ops {
+            let (t, s) = (
+                CHANNEL_TRANSPARENT.contains(&op.as_str()),
+                CHANNEL_SETTLES.contains(&op.as_str()),
+            );
+            assert!(
+                t ^ s,
+                "sync2 command `{op}` must be listed in exactly one of CHANNEL_TRANSPARENT / CHANNEL_SETTLES (transparent {t}, settles {s})"
+            );
+        }
+        for listed in CHANNEL_TRANSPARENT.iter().chain(CHANNEL_SETTLES.iter()) {
+            assert!(
+                ops.contains(*listed),
+                "`{listed}` is listed but no longer a command"
+            );
+        }
+    }
+
+    /// Drift 事务守卫（store/drift_guard.rs）：每条 v2 命令（含不针对 profile 的前置命令）都在
+    /// [crate::store::drift_guard::DRIFT_TX_POLICY] 里恰好登记一次，表里也没有已不存在的命令。
+    #[test]
+    fn every_command_declares_its_drift_tx_policy() {
+        use crate::store::drift_guard::DRIFT_TX_POLICY;
+        let ops = dispatched_ops();
+        assert!(ops.len() > 50, "parsed too few commands: {ops:?}");
+        for op in &ops {
+            let n = DRIFT_TX_POLICY.iter().filter(|(o, _)| o == op).count();
+            assert_eq!(
+                n, 1,
+                "sync2 command `{op}` must be listed exactly once in DRIFT_TX_POLICY (found {n})"
+            );
+        }
+        for (listed, _) in DRIFT_TX_POLICY {
+            assert!(
+                ops.contains(*listed),
+                "`{listed}` is listed in DRIFT_TX_POLICY but no longer a command"
+            );
+        }
+    }
+
+    /// 按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂（及分发器里的命令名比较）列出全部命令名。
+    fn dispatched_ops() -> std::collections::BTreeSet<String> {
         // 检出可能是 CRLF（Windows 工作区）：统一成 LF 再按行解析。
         let src = include_str!("ffi.rs").replace("\r\n", "\n");
         let src = src.as_str();
@@ -2317,35 +2381,6 @@ mod tests {
                 }
             }
         }
-        // 不针对单个 profile 的命令在分发器开头就返回，不碰通道。
-        for global in [
-            "profile_uids",
-            "orphan_sweep_done",
-            "wal_checkpoint",
-            "bulk_cache",
-            "ingest_yield",
-        ] {
-            assert!(
-                ops.remove(global),
-                "{global} is no longer a profile-less command"
-            );
-        }
-        assert!(ops.len() > 50, "parsed too few commands: {ops:?}");
-        for op in &ops {
-            let (t, s) = (
-                CHANNEL_TRANSPARENT.contains(&op.as_str()),
-                CHANNEL_SETTLES.contains(&op.as_str()),
-            );
-            assert!(
-                t ^ s,
-                "sync2 command `{op}` must be listed in exactly one of CHANNEL_TRANSPARENT / CHANNEL_SETTLES (transparent {t}, settles {s})"
-            );
-        }
-        for listed in CHANNEL_TRANSPARENT.iter().chain(CHANNEL_SETTLES.iter()) {
-            assert!(
-                ops.contains(*listed),
-                "`{listed}` is listed but no longer a command"
-            );
-        }
+        ops
     }
 }

@@ -22,6 +22,7 @@ pub(crate) mod browse;
 pub mod bulk;
 pub(crate) mod caches;
 pub(crate) mod compact;
+pub(crate) mod drift_guard;
 pub mod ffi;
 pub(crate) mod ids;
 #[cfg(test)]
@@ -87,6 +88,8 @@ pub struct SrsCore {
     /// COMMIT）与 Rust 写命令一律报 [DRIFT_TX_ABORTED]，直到 Drift 发来 ROLLBACK（它在出错时本来就发）。只在持写锁时
     /// 改。
     drift_aborted: AtomicBool,
+    /// Drift 事务开着时来的 sync2 命令按策略计数（store/drift_guard.rs，只计数不拦）。
+    drift_tx_hits: drift_guard::DriftTxHits,
     /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
     path: PathBuf,
     /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在借着一条内核读连接时登记，close
@@ -543,6 +546,7 @@ impl SrsCore {
             drift_tx: AtomicBool::new(false),
             legacy_open: AtomicBool::new(false),
             drift_aborted: AtomicBool::new(false),
+            drift_tx_hits: drift_guard::DriftTxHits::default(),
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
