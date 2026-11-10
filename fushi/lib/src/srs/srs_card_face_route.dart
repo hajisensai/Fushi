@@ -12,16 +12,24 @@
 ///    [SrsRenderedCard.nativeFallback]（远程老主机没带原因时为
 ///    [SrsCardNativeFallbackCode.remoteUnknown]）。Fushi 卡片模板带脚本、媒体查询与定位，
 ///    原生 HTML 子集画不了，不再试。
-/// 3. 其余卡片：两面都在原生 HTML 子集里就 [SrsCardFaceHtmlNative]，否则 [SrsCardFaceWeb]
-///    （[SrsCardNativeFallbackCode.html]）。
+/// 3. 其余卡片：两面都在原生 HTML 子集里就 [SrsCardFaceHtmlNative]；正面模板标了「原生渲染」
+///    （[srsTemplateIsNative]）时画不了的块就地换成提示、仍是 [SrsCardFaceHtmlNative]
+///    （[srsForcedNativeHtmlCard]）；否则 [SrsCardFaceWeb]（[SrsCardNativeFallbackCode.html]）。
 library;
 
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
     show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_html_card.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show srsForcedNativeHtmlCard, srsTemplateIsNative;
+
+/// 原生渲染标记的卡面上，画不了的部分换成的提示文字。
+String srsNativeUnsupportedNotice(String reason) =>
+    t.srs_template_native_unsupported(reason: reason);
 
 /// 卡面路线（见文件头）。
 sealed class SrsCardFaceRoute {
@@ -86,12 +94,20 @@ SrsCardFaceRoute srsCardFaceRoute(
     languageCode: lang,
   );
   final SrsHtmlCard? card = html.card;
-  return card != null
-      ? SrsCardFaceHtmlNative(card)
-      : SrsCardFaceWeb(
-          SrsCardNativeFallback(
-            SrsCardNativeFallbackCode.html,
-            html.reason ?? '',
-          ),
-        );
+  if (card != null) return SrsCardFaceHtmlNative(card);
+  // 模板标了「原生渲染」（srs_native_template.dart）：画不了的部分就地提示，不回退 WebView。
+  if (srsTemplateIsNative(rendered.question)) {
+    return SrsCardFaceHtmlNative(
+      srsForcedNativeHtmlCard(
+        question: rendered.question,
+        answer: rendered.answer,
+        css: rendered.css,
+        languageCode: lang,
+        notice: srsNativeUnsupportedNotice,
+      ).card,
+    );
+  }
+  return SrsCardFaceWeb(
+    SrsCardNativeFallback(SrsCardNativeFallbackCode.html, html.reason ?? ''),
+  );
 }

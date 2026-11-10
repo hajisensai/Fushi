@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show kSrsNativeTemplateMarker;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
@@ -105,6 +107,35 @@ void main() {
         SrsCardNativeFallbackCode.html,
       );
     });
+
+    // develop 的模板级「原生渲染」标记（srs_native_template.dart）并进统一判据：标了标记的
+    // 非 Fushi 卡片画不了的块就地提示，仍走原生 HTML 卡面，不回退整面 WebView。
+    test('非 Fushi 卡片标了原生渲染：子集外也走原生 HTML（强制原生）', () {
+      const String table = '<table><tr><td>表格内容</td></tr></table>';
+      const SrsRenderedCard marked = SrsRenderedCard(
+        question: '$kSrsNativeTemplateMarker\n<div>猫</div>\n$table',
+        answer: '$kSrsNativeTemplateMarker\n<div>猫</div>\n$table<div>cat</div>',
+        css: '',
+        isEmpty: false,
+      );
+      expect(
+        srsCardFaceRoute(marked, fushiCard: false),
+        isA<SrsCardFaceHtmlNative>(),
+      );
+      // 同样的内容不带标记：照旧整面 WebView。
+      const SrsRenderedCard unmarked = SrsRenderedCard(
+        question: '<div>猫</div>\n$table',
+        answer: '<div>cat</div>',
+        css: '',
+        isEmpty: false,
+      );
+      expect(
+        srsCardFaceRoute(unmarked, fushiCard: false),
+        isA<SrsCardFaceWeb>(),
+      );
+      // 内置 Fushi 卡片不受标记影响（Fushi 卡片模板原生 HTML 子集画不了）。
+      expect(srsCardFaceRoute(marked, fushiCard: true), isA<SrsCardFaceWeb>());
+    });
   });
 
   // 反馈 O5YDP27Xko：同一张卡 Android 整面 WebView、桌面原生。判据只按卡片数据判，不随平台
@@ -172,6 +203,7 @@ void main() {
         'lib/src/srs/srs_card_face_route.dart',
         'lib/src/srs/srs_fushi_card_items.dart',
         'lib/src/srs/srs_html_card.dart',
+        'lib/src/srs/srs_native_template.dart',
         '../packages/fushi_engine/lib/srs/srs_fushi_card_native_media.dart',
         '../packages/fushi_anki/lib/src/fushi_card_blocks.dart',
         '../packages/fushi_anki/lib/src/fushi_card_template_history.dart',
