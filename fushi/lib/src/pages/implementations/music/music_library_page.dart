@@ -17,6 +17,10 @@ import 'package:fushi_music/fushi_music.dart'
 
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart'
+    show CompanionLibraryKind;
+import 'package:fushi/src/second_screen/companion/modules/library_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart'
     show playMusicOriginClip;
 import 'package:fushi/src/media/music/music_output_backend.dart'
@@ -86,6 +90,8 @@ import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+part 'music_library_companion.part.dart';
 
 /// 曲库分区（浏览维度）。格式 / 来源 / 有无逐字歌词是筛选条件，不做成分区（§11.2）。
 ///
@@ -332,6 +338,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   AppModel get _app => ref.read(appProvider);
 
+  /// Dual-screen companion (Library tab, Main mode): see
+  /// `music_library_companion.part.dart`.
+  late final LibraryCompanionHook _companion = _createMusicCompanion();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Album cards are plain focusable controls (not managed focus targets):
+    // follow the primary focus itself.
+    _companion.attach(context, focusChanges: FocusManager.instance);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -360,6 +378,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   @override
   void dispose() {
+    _companion.dispose();
     unawaited(_dbSub?.cancel());
     _searchInputs.dispose();
     _actionsSlot.dispose();
