@@ -5,9 +5,10 @@
   - `fushi/lib/src/sync/interconnect_playback_position_sync.dart`：新增 `InterconnectPlaybackPositionSync.syncOne(key, remote:)`（重读本端 → `decide` → 推送 / 落地 / 对齐，返回 `PlaybackPositionSyncStep`），sweep 的 `_syncOnePositionLive` 改为调用它（行为不变，消除两份写法）；新增 `InterconnectRemotePlaybackSession`：`startPositionFor(key, fallbackMs:)` 在该条位置锁内用带 pin 的 GET 现读 host 跑 `syncOne`——`applyRemote` 落地 → host 位置（CAS 未落地 → 重读本端），`pushLocal` / `synced` → 本端位置，`conflict` → 本端位置并让上报器对该条 held 在当时基线上（本次播放不上报，裁决改了基线后自动恢复）；网络失败 / 会话换 host → `fallbackMs`。开播与上报共用 `LivePositionReporter` 绑定的同一个同步实例（同一 host 作用域）。
   - `video_fushi_page.dart`：`_liveReporter` 换成 `_remoteSession`（`_remoteSessionFor(client)` 按客户端建 / 换）；`_loadRemoteEpisode` 对互联 host、键的集号 ≤ 0（单视频 / 当前集 / 合集成员，正是 sweep 同步的键）、非 `explicitCue`、非卡片回看时经 `startPositionFor` 定开播位置，原来的本地 / LWW 值只作离线回退；`_persistRemotePosition` 互联分支经同一会话上报。首开、合集切成员、单视频重载都走这一个入口。`_resolveRemoteInitialPositionMs` 不改（仍是回退值来源）。
 - **[x] ② 加自动化测试** — `fushi/test/sync/interconnect_remote_playback_session_test.dart`（真 `FushiSyncServer` + 真 `InterconnectSyncBackend`，按页面调用形态驱动会话：真分叉从本机起播且上报不发 PUT、host 不被覆盖；裁决后恢复上报；单边 host 前进（戳因时钟差更旧，LWW 对照会选本机）→ 从 host 起播、本机落地、基线推进；合集第二成员首播回退值起播、之后上报到达 host；离线返回回退值不抛）；`fushi/test/pages/video_remote_playback_session_wiring_guard_test.dart`（源码守卫：页面不自建同步实例 / 上报器、`_loadRemoteEpisode` 经 `startPositionFor`、`_persistRemotePosition` 经会话上报；页面接线前三条全红）。
-- **修复提交**：（见下一行补记）
+- **修复提交**：09f4e584201（测试已写好随同提交，本轮按协调者要求未运行，见备注）
 - **备注**：
   - 与计划的偏差：开播三方判定排除 `EpisodeStartIntent.explicitCue`（换画质 / 换线路 / 媒体服务器换档带 `initialPositionMsOverride: posMs` 回到当前位置，跑三方判定会把正在播的位置换成库里上一秒的值甚至 host 值）与卡片回看（BUG-3490，回看不碰服务器进度）；计划只写了 `sourceReview == null`。`dispose` 仍不关会话（沿用 BUG-4279 实现时的理由：退出最后一次落库可能晚于 `dispose`）。
   - 残留：`startPositionFor` 落地 host 值写的是数据库（与 sweep 同一写口），播放页 `PreferencesRepository` 的内存缓存在本集首次落库前仍是旧值；内存缓存过期属外部 PR #3074（BUG-4231）的范围。
   - 每一集载入多一次 GET + 可能一次 PUT；旧 host 走 BUG-4278 兼容层。
+  - 未运行：两份测试文件本轮未跑（重活队列让给别的会话），修复前红只由源码检视确认（守卫的三条断言对原页面不成立），合入前须跑一次。
   - 需真机复测：两台设备互联、一台播到中途另一台开同一视频 / 合集切成员，看开播位置与冲突弹窗。
