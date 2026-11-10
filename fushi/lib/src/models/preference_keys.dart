@@ -322,6 +322,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 含本机声音预设 id → 设备本地，见 sync_repository 的本机键表。
   'gal_line_tts_settings',
   'gal_mining_animated_format',
+  // String（GalMiningAudioMode.wireName，默认 auto）：gal 制卡句子音频长度策略
+  // （auto / max_length / fixed_length / off，反馈 II3jOBIhT5）。
+  'gal_mining_audio_mode',
+  // int（秒，默认 8，1..60）：最长 / 固定时长两档共用的秒数。
+  'gal_mining_audio_seconds',
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
@@ -1138,6 +1143,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'current_source/',
   'gal_capture_memory::',
   'gal_lookup_surface_v1::',
+  // JSON：单游戏 gal 制卡设置覆盖层（后缀 = galgames.id，GalGameMiningOverrides，
+  // 反馈 3dRZdakRdJ）。没覆盖的项跟随全局 gal_mining_* 键。
+  'gal_mining_overrides::',
   'media_source_secret_',
   // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid，
   // 外加「不是本类媒体」的负向表 源相对路径 → 内容指纹）。无头服务端书 / 漫画根扫描
