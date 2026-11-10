@@ -38,15 +38,47 @@ void main() {
     final String rows = source
         .split('Widget _buildSubtitleTrackRows(')[1]
         .split('const FushiDividerControl(height: 1)')[0];
-    expect(RegExp('video-subtitle-generate').allMatches(rows), hasLength(1));
+    // 反馈 E1pq561P2q：入口改成「字幕工作台」，生成字幕是工作台里的一项工具；
+    // 重定时与按内嵌字幕对齐也收进工作台，菜单里不再各占一行。
+    expect(RegExp('video-subtitle-studio').allMatches(rows), hasLength(1));
+    expect(rows, isNot(contains('video-subtitle-generate')));
     expect(rows, isNot(contains('video-subtitle-ai-generate')));
-    expect(
-      rows,
-      contains('_canTranscribeVideoSpeech || _canRunSubtitlePipeline'),
-    );
-    expect(rows, contains('_openSubtitleGeneration(controller)'));
+    expect(rows, contains('_subtitleStudioAvailable(controller)'));
+    expect(rows, contains('_openSubtitleStudio(controller)'));
+    expect(rows, isNot(contains('_openSubtitleGeneration(')));
+    expect(rows, isNot(contains('_retimeSubtitleWithSpeechModel(')));
+    expect(rows, isNot(contains('_alignSubtitleToEmbeddedTracks(')));
     expect(rows, isNot(contains('_openJapaneseSubtitlePipeline(')));
     expect(rows, isNot(contains('_generateSubtitleWithSpeechModel(')));
+
+    final String studio = source
+        .split('Future<void> _openSubtitleStudio(')[1]
+        .split('Future<void> _extractJapaneseFromBilingualSubtitle(')[0];
+    expect(
+      studio,
+      contains('_canTranscribeVideoSpeech || _canRunSubtitlePipeline'),
+    );
+    expect(studio, contains('_openSubtitleGeneration(controller)'));
+    expect(studio, contains('_retimeSubtitleWithSpeechModel(controller)'));
+    expect(studio, contains('_alignSubtitleToEmbeddedTracks(controller)'));
+    expect(
+      studio,
+      contains('_extractJapaneseFromBilingualSubtitle(controller)'),
+    );
+    expect(studio, contains('controller.secondaryCues'));
+    expect(studio, contains('controller.effectiveSecondaryDelayMs'));
+    expect(studio, contains('controller.screenshot'));
+
+    // 拆分产物另存新档、走既有外挂字幕链路，换集 / 换播放器后不落到新视频上。
+    final String split = source
+        .split('Future<void> _extractJapaneseFromBilingualSubtitle(')[1]
+        .split('Future<void> _openSubtitleGeneration(')[0];
+    expect(split, contains('extractJapaneseFromBilingual(input)'));
+    expect(split, contains('_importExternalSubtitle(controller, target)'));
+    expect(split, contains('_applyRemoteSubtitle(controller, target)'));
+    expect(split, contains('identical(_controller, controller)'));
+    expect(split, contains('_episodeLoadSeq == loadSeq'));
+    expect(split, contains("'video.subtitleBilingualSplit'"));
 
     final String router = source
         .split('Future<void> _openSubtitleGeneration(')[1]
