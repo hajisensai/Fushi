@@ -72,4 +72,42 @@ void main() {
     expect(after['mediaGc'], unorderedEquals(<Object?>['a.png', 'b.png']));
     expect(s.pendingMediaGc, <String>{'a.png', 'b.png'});
   });
+
+  test('本机写命令回包缺 localRevision 是契约错误：抛错、不动内存里的修订号', () async {
+    final SrsStorage storage = await openTestSrsStorage();
+    final SrsDbStore s = await SrsDbStore.open(
+      db: storage.db,
+      core: storage.core,
+      profileUid: kUid,
+      deviceId: 'dev',
+      engine: const FakeFsrsEngine(),
+      fallbackRolloverHour: () => 4,
+    );
+    final int before = s.revision;
+    final Map<String, Object?> projected = <String, Object?>{
+      'marks': <String, Object?>{'landed': 3},
+      'changed': <Object?>[],
+    };
+    expect(() => s.debugAbsorbLocalWrite(projected), throwsStateError);
+    expect(s.revision, before, reason: 'memory untouched on a contract error');
+    expect(
+      s.debugAbsorbLocalWrite(<String, Object?>{
+        ...projected,
+        'localRevision': before + 3,
+      }),
+      3,
+    );
+    expect(s.revision, before + 3);
+    // 真命令（带 localState）的回包都带它：还原点照常落下，修订号与库里的本机状态行一致。
+    await s.sync2Checkpoint('m', 'manual');
+    final Map<String, Object?> row =
+        jsonDecode(
+              (await storage.db
+                      .customSelect('SELECT json FROM srs_local_state')
+                      .getSingle())
+                  .read<String>('json'),
+            )
+            as Map<String, Object?>;
+    expect(row['revision'], s.revision);
+  });
 }

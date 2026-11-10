@@ -226,3 +226,41 @@ fn local_write_joins_an_open_drift_transaction() {
         "the outer Drift transaction's rollback takes the command, caches and local state with it"
     );
 }
+
+#[test]
+fn trust_persists_local_state_in_its_savepoint_and_rolls_back_with_it() {
+    let d = Device::new("lw-trust");
+    let deck = super::config::default_deck_id(P);
+    dispatch(
+        &d,
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck)}),
+        Some(note_events(&deck)),
+    )
+    .unwrap();
+    // 从没见过的设备本来就可信：信任一次什么也不放行，但本机状态行照样随命令写下。
+    let other = "0193a1b2-0000-7000-8000-00000000dee1";
+    let r = dispatch(
+        &d,
+        json!({"op": "trust", "profile": P, "now": T0 + 1, "caches": caches(&deck),
+               "device": other, "trust": true, "localState": json!({"revision": 7}).to_string()}),
+        None,
+    )
+    .unwrap();
+    assert_eq!(r["released"], json!(0), "{r}");
+    assert_eq!(r["localRevision"], json!(7), "{r}");
+    assert_eq!(local_state(&d).unwrap()["revision"], json!(7));
+    // 命令本体出错（信任本机自己）：本机状态行不动。
+    let me = d.core.sync2_identity(P, T0).unwrap()["device"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let err = dispatch(
+        &d,
+        json!({"op": "trust", "profile": P, "now": T0 + 2, "caches": caches(&deck),
+               "device": me, "trust": true, "localState": json!({"revision": 99}).to_string()}),
+        None,
+    )
+    .unwrap_err();
+    assert!(err.contains("always trusted"), "{err}");
+    assert_eq!(local_state(&d).unwrap()["revision"], json!(7));
+}

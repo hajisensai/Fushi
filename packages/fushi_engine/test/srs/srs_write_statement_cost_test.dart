@@ -1,11 +1,15 @@
 // 本机写路径的往返验收（SRS 收掉 Dart 写路径第 2 步，M3）：每种写操作经 Drift 执行器送进内核的语句数
 // （`SrsRustDelegate.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
 //
-// 写命令（apply / sched / import / resolve / purge / checkpoint / restore / retire / dedup）由内核在同一个
+// 写命令（apply / sched / import / resolve / purge / checkpoint / restore / retire / dedup / trust）由内核在同一个
 // savepoint 里完成命令本体、缓存刷新、排队与本机状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`）：Dart 不再
 // 为它们开 Drift 事务（BEGIN / COMMIT），也不再单独 upsert 本机状态行。改动前（每条命令套一笔 Drift 事务、事务里再
 // upsert 一次本机状态行）各多 3 条语句：createNote 4、answer 3、checkpoint 3、purge 3、import 3、sched 3、
 // applyRemote 4；内核命令数不变。
+//
+// 第 3 步：`bulkWrites` 的深度、原值与 WAL 自动 checkpoint 阈值归内核（`bulk_cache`，store/mod.rs `bulk_begin` /
+// `bulk_end`）。改动前一次（空的）批量写入经执行器 3 条 PRAGMA（读原值、调高、恢复）+ 内核 3 条（`bulk_cache` 开 /
+// `wal_checkpoint` / `bulk_cache` 关），改动后 0 + 2（并回 WAL 在 `bulk_cache` 关里做）。
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_database_executor.dart';
@@ -72,6 +76,7 @@ void main() {
     final Uint8List exported = await s.sync2ExportOps();
     await measure('import', () => s.sync2ImportOps(exported));
     await measure('sched', () => s.resetCard(cards.last));
+    await measure('bulkWrites', () => s.bulkWrites(() async {}));
     costs['applyRemote'] = await _cost(
       dst.store,
       () => dst.store.applyRemote(remote, serverTimeMs: 1),
@@ -94,6 +99,33 @@ void main() {
       'import': (statements: 0, core: 2),
       'sched': (statements: 0, core: 1),
       'applyRemote': (statements: 1, core: 1),
+      'bulkWrites': (statements: 0, core: 2),
     });
+  });
+
+  test('bulkWrites 可嵌套：内核按深度只在最外层调高并恢复原来的阈值', () async {
+    final BulkFixture f = await BulkFixture.open(notes: 1);
+    final SrsDbStore s = f.store;
+    Future<int> threshold() async =>
+        (await s.db.customSelect('PRAGMA wal_autocheckpoint').getSingle())
+                .data
+                .values
+                .first!
+            as int;
+    await s.db.customStatement('PRAGMA wal_autocheckpoint = 777');
+    await s.bulkWrites(() async {
+      expect(await threshold(), 16384);
+      await s.bulkWrites(() async {
+        expect(await threshold(), 16384);
+      });
+      expect(await threshold(), 16384, reason: 'inner end keeps it');
+    });
+    expect(await threshold(), 777, reason: 'outermost end restores');
+    // 批量写入体抛错：照样收尾恢复。
+    await expectLater(
+      s.bulkWrites<void>(() async => throw StateError('boom')),
+      throwsStateError,
+    );
+    expect(await threshold(), 777);
   });
 }

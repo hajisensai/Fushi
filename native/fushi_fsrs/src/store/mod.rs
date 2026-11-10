@@ -107,8 +107,12 @@ pub struct SrsCore {
     /// `ingest_end`、删 profile）页缓存就随之放掉，不靠下一轮碰巧收尾。
     ingest_holds_cache: AtomicBool,
     /// Dart 的批量写入（`bulkWrites`：导入包、大批改写）进行中：写连接放回时不还页缓存，批与批之间不从盘上重读同一批
-    /// 索引页（`bulk_cache` 命令置位 / 清除，[SrsCore::set_bulk_holds_cache]）。结束后下一次放回照常收回。
+    /// 索引页。它是 [SrsCore] `bulk` 深度的无锁镜像（写连接守卫析构时不能去拿那把锁），只由 [SrsCore::bulk_begin] /
+    /// [SrsCore::bulk_end] 与深度一起写。结束后下一次放回照常收回。
     bulk_holds_cache: AtomicBool,
+    /// 批量写入的嵌套深度与要恢复的写连接 `wal_autocheckpoint`（`bulk_cache` 命令，[SrsCore::bulk_begin]）。按库计数：
+    /// 几个 profile 的副本共用这一个写连接，只有最外层改 / 恢复阈值。
+    bulk: Mutex<BulkDepth>,
     /// 写连接页缓存上限的自适应状态（store/mem_budget.rs）：取写连接时按可用内存重算。
     writer_cache: Mutex<mem_budget::WriterCache>,
     /// 库里可能有进行中的新设备收段通道（store/sync2/channel.rs，`sync2_boot` 有行）：打开时按已提交的表置、开通道
@@ -191,6 +195,17 @@ impl<'a> Conn<'a> {
         }
         Ok(Self(guard, hub, None, None))
     }
+}
+
+/// 大批量写入期间写连接的 WAL 自动 checkpoint 阈值（页，缺省页大小 4 KB 下约 64 MB）：远大于一个导入批次的写入量
+/// （同一批热页不每批并回一次），又把 WAL 限在 4 个 wal-index 哈希段以内（[SrsCore::bulk_begin]）。
+pub(crate) const BULK_WAL_AUTOCHECKPOINT_PAGES: i64 = 16384;
+
+/// [SrsCore] `bulk`：批量写入的嵌套深度与最外层开始时写连接的 `wal_autocheckpoint`。
+#[derive(Default)]
+struct BulkDepth {
+    depth: u32,
+    restore: i64,
 }
 
 /// 命令之间一条连接留着的页缓存上限。一条命令里照样能用满 `cache_size`（64 MB：收段后的缓存刷新这类大写事务
@@ -556,6 +571,7 @@ impl SrsCore {
             ingest_yield: AtomicBool::new(false),
             ingest_holds_cache: AtomicBool::new(false),
             bulk_holds_cache: AtomicBool::new(false),
+            bulk: Mutex::new(BulkDepth::default()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
             study_hub,
@@ -607,9 +623,61 @@ impl SrsCore {
         }
     }
 
-    /// 批量写入开始 / 结束（Dart `bulkWrites` 的最外层）：期间写连接放回时留着页缓存。
-    pub fn set_bulk_holds_cache(&self, on: bool) {
+    /// 批量写入期间写连接放回时留着页缓存（[SrsCore] `bulk_holds_cache`）。只由 [SrsCore::bulk_begin] /
+    /// [SrsCore::bulk_end] 随深度调（测试也直接调）。
+    pub(crate) fn set_bulk_holds_cache(&self, on: bool) {
         self.bulk_holds_cache.store(on, Ordering::Relaxed);
+    }
+
+    /// 批量写入开始（Dart `bulkWrites`，`bulk_cache {on: true}`）：深度 +1，返回新深度。最外层（0 → 1）读下写连接现在的
+    /// `wal_autocheckpoint` 记作要恢复的原值，改成 [BULK_WAL_AUTOCHECKPOINT_PAGES]，并让写连接批与批之间留着页缓存。
+    ///
+    /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次事务都远超阈值，于是每次提交都
+    /// 把同一批热页（索引、缓存表）拷回主库一遍——实测迁移 1.5 万笔记时 COMMIT 合计 37 秒，调大后 6 秒。中途崩溃也
+    /// 无妨：下次打开时 SQLite 照常回放 WAL。不能整个关掉（以前设 0）：WAL 不并回就一直长，每读一页都要从新到旧逐段
+    /// 查 wal-index 的哈希段，整体随规模平方增长；封顶后 WAL 最多几个哈希段。
+    pub fn bulk_begin(&self) -> Result<u32, String> {
+        let mut b = lock_recovering(&self.bulk, |_| Ok(()))?;
+        if b.depth == 0 {
+            let w = self.writer()?;
+            let restore: i64 = w
+                .query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            w.execute_batch(&format!(
+                "PRAGMA wal_autocheckpoint = {BULK_WAL_AUTOCHECKPOINT_PAGES}"
+            ))
+            .map_err(|e| e.to_string())?;
+            b.restore = restore;
+            self.set_bulk_holds_cache(true);
+        }
+        b.depth += 1;
+        Ok(b.depth)
+    }
+
+    /// 批量写入结束（`bulk_cache {on: false}`）：深度 -1，返回新深度。回到 0 时：先在另开的连接上把 WAL 并回
+    /// （[SrsCore::wal_checkpoint]：在写连接上并回几十 MB 的 WAL 要几百毫秒，那期间本机作答全排在它后面），再收回页缓存、
+    /// 把写连接的 `wal_autocheckpoint` 恢复成最外层开始时的原值——并完才恢复，免得恢复后的第一笔写入在写连接上抢先把
+    /// 整份 WAL 并一遍。并回失败（库正被关 / 开不了 checkpoint 连接）也照样恢复（否则这条连接之后一直不并回，WAL 无上限
+    /// 地涨到下次开库），报的是并回的错。没有配对的开始就结束是调用方的错，报错、深度不动。
+    pub fn bulk_end(&self) -> Result<u32, String> {
+        let mut b = lock_recovering(&self.bulk, |_| Ok(()))?;
+        if b.depth == 0 {
+            return Err("bulk_cache: off without a matching on".into());
+        }
+        b.depth -= 1;
+        if b.depth > 0 {
+            return Ok(b.depth);
+        }
+        let merged = self.wal_checkpoint();
+        // 先清标志：恢复阈值这一次放回写连接就把留着的页缓存收回。
+        self.set_bulk_holds_cache(false);
+        let restored = self.writer().and_then(|w| {
+            w.execute_batch(&format!("PRAGMA wal_autocheckpoint = {}", b.restore))
+                .map_err(|e| e.to_string())
+        });
+        merged?;
+        restored?;
+        Ok(0)
     }
 
     /// 写连接此刻的页缓存上限（KiB），测试 / 诊断用。
@@ -1353,6 +1421,57 @@ mod tests {
             .unwrap()
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .unwrap()
+    }
+
+    /// `bulk_cache`（Dart `bulkWrites`）：内核按库计嵌套深度，只有最外层改写连接的 `wal_autocheckpoint`、并记下原值，
+    /// 最内层结束时不动、最外层结束时恢复原值（不是缓省 1000）；没有配对的结束报错、深度不动。
+    #[test]
+    fn bulk_writes_nest_by_depth_and_restore_the_original_autocheckpoint() {
+        let p = temp("bulk_depth");
+        let core = SrsCore::open(&p).unwrap();
+        let auto = |core: &SrsCore| -> i64 {
+            core.writer()
+                .unwrap()
+                .query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))
+                .unwrap()
+        };
+        let bulk = |on: bool| {
+            let mut blobs = Vec::new();
+            let mut files = Vec::new();
+            ffi::sync2_dispatch(
+                &core,
+                &serde_json::json!({"op": "bulk_cache", "on": on}),
+                &mut blobs,
+                &mut files,
+            )
+            .map(|v| v["depth"].as_u64().unwrap())
+        };
+        core.writer()
+            .unwrap()
+            .execute_batch("PRAGMA wal_autocheckpoint = 777")
+            .unwrap();
+        assert_eq!(bulk(true), Ok(1));
+        assert_eq!(auto(&core), BULK_WAL_AUTOCHECKPOINT_PAGES);
+        assert!(core.bulk_holds_cache.load(Ordering::Relaxed));
+        assert_eq!(bulk(true), Ok(2));
+        assert_eq!(bulk(false), Ok(1));
+        assert_eq!(
+            auto(&core),
+            BULK_WAL_AUTOCHECKPOINT_PAGES,
+            "the inner end leaves the bulk threshold"
+        );
+        assert!(core.bulk_holds_cache.load(Ordering::Relaxed));
+        assert_eq!(bulk(false), Ok(0));
+        assert_eq!(
+            auto(&core),
+            777,
+            "the outermost end restores the saved value"
+        );
+        assert!(!core.bulk_holds_cache.load(Ordering::Relaxed));
+        let err = bulk(false).unwrap_err();
+        assert!(err.contains("without a matching on"), "{err}");
+        assert_eq!(bulk(true), Ok(1), "an unmatched end leaves the depth at 0");
+        assert_eq!(bulk(false), Ok(0));
     }
 
     /// 关闭与在途调用互斥：另一线程正拿着读连接时 close 等它跑完；之后的命令报已关闭，文件可删。

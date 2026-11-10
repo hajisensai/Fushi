@@ -787,73 +787,29 @@ class SrsDbStore implements SrsSync2Host {
   /// 在跑的长任务（同步一轮、样式去重、媒体回收）该在下一个检查点收手：副本已作废，或作废已发起。
   bool get isWindingDown => _retireRequested || _unusable != null;
 
-  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间把这条连接的 WAL 自动 checkpoint 阈值调到
-  /// [_bulkWalAutocheckpointPages]，结束后 checkpoint 一次再恢复原值。
+  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间调高写连接的 WAL 自动 checkpoint 阈值、批与批之间留着页缓存，
+  /// 结束后在另开的连接上把 WAL 并回一次再恢复原值。可嵌套。
   ///
-  /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次
-  /// 事务都远超阈值，于是每次提交都把同一批热页（索引、缓存表）拷回主库一遍——实测迁移
-  /// 1.5 万笔记时 COMMIT 合计 37 秒，调大后 6 秒。中途崩溃也无妨：下次打开时 SQLite 照常回放
-  /// WAL。可嵌套；按数据库连接计数（几个 profile 的副本共用一条连接），只有最外层恢复。
-  ///
-  /// 不能整个关掉（以前设 0）：WAL 里每读一页都要从新到旧逐段查 wal-index 的哈希段（每段 4096 帧），
-  /// WAL 不并回就一直长，每次读页越来越慢——5 万笔记的包每批写约 12 MB，导入后段 WAL 到几 GB，
-  /// 纯插入一批从 8 ms 涨到 99 ms，整体随规模平方增长。封顶后 WAL 最多几个哈希段，各阶段每批耗时持平。
-  ///
-  /// 收尾的 checkpoint 在内核另开的连接上做（`wal_checkpoint`，native/fushi_fsrs/src/store/mod.rs），不在写
-  /// 连接上：并回一份几十 MB 的 WAL 要几百毫秒，在写连接上做那期间本机作答全排在它后面。并完才恢复自动
-  /// checkpoint，免得恢复后的第一笔写入在写连接上抢先把整份 WAL 并一遍。
+  /// 深度、原值与阈值都由内核持有（`bulk_cache`，native/fushi_fsrs/src/store/mod.rs `bulk_begin` / `bulk_end`）：按库计数
+  /// （几个 profile 的副本共用一个写连接），只有最外层改 / 恢复阈值并在恢复前并回 WAL。开始与结束各一条内核命令，
+  /// Dart 不再经执行器发 PRAGMA。
   Future<T> bulkWrites<T>(Future<T> Function() body) async {
-    final _BulkWriteState state = _bulkWrites[db] ??= _BulkWriteState();
-    if (state.depth++ == 0) {
-      final List<QueryRow> rows = await db
-          .customSelect('PRAGMA wal_autocheckpoint')
-          .get();
-      state.restore = rows.isEmpty
-          ? 1000
-          : (rows.first.data.values.first as int?) ?? 1000;
-      await db.customStatement(
-        'PRAGMA wal_autocheckpoint = $_bulkWalAutocheckpointPages',
-      );
-      // 批与批之间写连接留着页缓存（上限按可用内存自适应，native/fushi_fsrs/src/store/mem_budget.rs）：大库上每批都要
-      // 往同一批散列键索引页里插，以前每批结束收回到 8 MB、下一批从盘上重读。
-      await _bulkCache(true);
-    }
+    await _bulkCache(true);
     try {
       return await body();
     } finally {
-      if (--state.depth == 0) {
-        // 并回失败（库正被关 / 开不了 checkpoint 连接）也必须恢复自动 checkpoint：否则这条连接之后一直不并回，
-        // WAL 无上限地涨到下次开库。
-        try {
-          await _walCheckpoint();
-        } finally {
-          try {
-            await _bulkCache(false);
-          } finally {
-            await db.customStatement(
-              'PRAGMA wal_autocheckpoint = ${state.restore}',
-            );
-          }
-        }
-      }
+      await _bulkCache(false);
     }
   }
 
-  /// 批量写入开始 / 结束：内核据此在写连接放回时留着 / 收回页缓存（`bulk_cache`，只置标志、不拿写锁）。收回发生在
-  /// 下一次写连接放回时（紧接着的 `PRAGMA wal_autocheckpoint` 就是一次）。
+  /// 批量写入开始 / 结束（`bulk_cache`）：不针对 profile、不进 Dart 写锁。
   Future<void> _bulkCache(bool on) async {
+    debugCoreCommands++;
     await _coreSync2(core.address, core.libraryPath, <String, Object?>{
       'op': 'bulk_cache',
       'on': on,
     }, const <Uint8List>[]);
   }
-
-  /// 大批量写入期间的 WAL 自动 checkpoint 阈值（页，缺省页大小 4 KB 下约 64 MB）：远大于一个导入批次的
-  /// 写入量（同一批热页不每批并回一次），又把 WAL 限在 4 个 wal-index 哈希段以内（见 [bulkWrites]）。
-  static const int _bulkWalAutocheckpointPages = 16384;
-
-  static final Expando<_BulkWriteState> _bulkWrites =
-      Expando<_BulkWriteState>();
 
   /// 排在最后的写入完成时完成（只会正常完成）。
   Future<void>? _writeTail;
@@ -1467,8 +1423,7 @@ class SrsDbStore implements SrsSync2Host {
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
     );
-    final int landed = _absorbProjection(r);
-    _adoptLocalRevision(r);
+    final int landed = _absorbLocalWrite(r);
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
     }
@@ -1752,6 +1707,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 在内核另开的连接上把 WAL 并回主库（PASSIVE，不占写连接，期间作答照常写入）。返回并回时 WAL 里的帧数。
   Future<int> _walCheckpoint() async {
+    debugCoreCommands++;
     final SrsSync2Result r = await _coreSync2(
       core.address,
       core.libraryPath,
@@ -1856,8 +1812,7 @@ class SrsDbStore implements SrsSync2Host {
       'now': now().$1,
       'localState': _localStateArg(),
     }, blobs: segments);
-    final int landed = _absorbProjection(r);
-    _adoptLocalRevision(r);
+    final int landed = _absorbLocalWrite(r);
     if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
       _bumpRwkvScores();
     }
@@ -1865,7 +1820,7 @@ class SrsDbStore implements SrsSync2Host {
     return r;
   });
 
-  /// 跑一个不改投影之外东西的 v2 写命令（冲突解决、清除、还原点、按时间点恢复、停用设备、重复流收敛），投影变化接进
+  /// 跑一个不改投影之外东西的 v2 写命令（冲突解决、清除、还原点、按时间点恢复、停用设备、信任设备、重复流收敛），投影变化接进
   /// 缓存。本机状态行随命令交给内核、在同一笔事务里写下（[_localStateArg]）。
   Future<Map<String, Object?>> _sync2Write(Map<String, Object?> request) =>
       runExclusive(() async {
@@ -1876,8 +1831,7 @@ class SrsDbStore implements SrsSync2Host {
             'now': now().$1,
             'localState': _localStateArg(),
           });
-          _absorbProjection(r);
-          _adoptLocalRevision(r);
+          _absorbLocalWrite(r);
         });
         await _notifyPurged();
         return r;
@@ -1968,8 +1922,7 @@ class SrsDbStore implements SrsSync2Host {
         },
         blobs: <Uint8List>[bytes],
       );
-      _absorbProjection(r);
-      _adoptLocalRevision(r);
+      _absorbLocalWrite(r);
       _bumpRwkvScores();
     });
     final Map<String, Object?> id = await _sync2(<String, Object?>{
@@ -3925,8 +3878,7 @@ class SrsDbStore implements SrsSync2Host {
         'items': items,
         'localState': _localStateArg(),
       });
-      _absorbProjection(r);
-      _adoptLocalRevision(r);
+      _absorbLocalWrite(r);
       if (r['hlc'] case final String h) _clock.adoptLocalTicks(Hlc.decode(h));
     });
     return _SchedOutcome(<SrsReviewLog>[
@@ -5425,12 +5377,30 @@ class SrsDbStore implements SrsSync2Host {
   StateError? _unusable;
 
   /// 随本机写命令交给内核的本机状态行（`localState`）：此刻内存里的 [_localStateJson]。内核按命令的投影结果推进其中的
-  /// 修订号、在命令的同一笔事务里写下，回包带 `localRevision`（[_adoptLocalRevision]）。
+  /// 修订号、在命令的同一笔事务里写下，回包带 `localRevision`（[_absorbLocalWrite]）。
   String _localStateArg() => jsonEncode(_localStateJson());
 
-  /// 内核写下的修订号（`localRevision`）为准：与 [_absorbProjection] 同一口径，内存与库里一致。
-  void _adoptLocalRevision(Map<String, Object?> r) {
-    if (r['localRevision'] case final int persisted) _revision = persisted;
+  /// 带 `localState` 的本机写命令的回包：先核对内核写下的修订号（`localRevision`）在，再把投影变化接进内存
+  /// （[_absorbProjection]），修订号以内核写下的为准（同一口径，内存与库里一致）。返回落进投影的事件数。
+  ///
+  /// 交了 `localState` 的命令，回包必带 `localRevision`（native/fushi_fsrs/src/store/local_state.rs
+  /// `persist_projected`）；没有就是契约错误（原生库与 Dart 不配套、或某条命令漏接了本机状态行）：在动内存之前抛出，
+  /// 不静默沿用内存里的值——那样库里的本机状态行没写、内存却照常前进，下次开库修订号回退。
+  /// 测试：[_absorbLocalWrite]（回包缺 `localRevision` 时报契约错误、不动内存）。
+  @visibleForTesting
+  int debugAbsorbLocalWrite(Map<String, Object?> r) => _absorbLocalWrite(r);
+
+  int _absorbLocalWrite(Map<String, Object?> r) {
+    final Object? persisted = r['localRevision'];
+    if (persisted is! int) {
+      throw StateError(
+        'srs: a local write reply lacks `localRevision` (the native core did '
+        'not persist the local state row it was given)',
+      );
+    }
+    final int landed = _absorbProjection(r);
+    _revision = persisted;
+    return landed;
   }
 
   /// 内核里可能有没做完的新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：打开时由 `identity`、
@@ -6014,12 +5984,6 @@ class _RefreshPrefetch {
 
   final Map<String, int> serverTimes = <String, int>{};
   final Set<String> serverTimesKnown = <String>{};
-}
-
-/// [SrsDbStore.bulkWrites] 在一条数据库连接上的嵌套深度与要恢复的阈值。
-class _BulkWriteState {
-  int depth = 0;
-  int restore = 1000;
 }
 
 // ------------------------------------------------------------------ 内核命令的后台 isolate 入口

@@ -979,10 +979,16 @@ pub(crate) fn sync2_dispatch(
         "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
         // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
         "wal_checkpoint" => return c.wal_checkpoint(),
-        // 批量写入开始 / 结束（Dart `bulkWrites`）：期间写连接放回时留着页缓存（store/mem_budget.rs）。只置标志，不拿写锁。
+        // 批量写入开始 / 结束（Dart `bulkWrites`）：内核按库计嵌套深度，最外层调高 / 恢复写连接的 WAL 自动 checkpoint 阈值
+        // （保存原值）、结束时另开连接并回 WAL，期间写连接放回时留着页缓存（store/mod.rs `bulk_begin`，store/mem_budget.rs）。
+        // 回包 `{depth}`：这条命令之后的深度。
         "bulk_cache" => {
-            c.set_bulk_holds_cache(req.get("on") == Some(&Value::Bool(true)));
-            return Ok(json!({}));
+            let depth = if req.get("on") == Some(&Value::Bool(true)) {
+                c.bulk_begin()?
+            } else {
+                c.bulk_end()?
+            };
+            return Ok(json!({"depth": depth}));
         }
         // 有写入在等写锁：正在投的收段那一片尽快收（只置一个标志，等锁的一侧直接同步调）。
         "ingest_yield" => {
@@ -1163,6 +1169,7 @@ const LOCAL_WRITE_OPS: &[&str] = &[
     "restore",
     "retire",
     "dedup",
+    "trust",
 ];
 
 /// [LOCAL_WRITE_OPS] 写锁外的预处理：只读已提交数据（冲突表）、不持锁的解析与收段预处理。
@@ -1309,6 +1316,14 @@ fn local_write_body(
             profile,
             &restore_target(req)?,
             req["retract"] == Value::Bool(true),
+            now,
+        )?,
+        // 信任 / 拒绝一台待确认的设备（store/sync2/trust.rs）：信任时扣着的删除 / 彻底清除放行进投影。
+        "trust" => s2::trust::trust_on(
+            conn,
+            profile,
+            &crate::sync2::id::Id::parse(s("device")?).ok_or("trust: bad device")?,
+            req["trust"] != Value::Bool(false),
             now,
         )?,
         // 停用 / 取消停用一台设备，紧接着在同一个 SAVEPOINT 里投一遍缓冲（因它卡住的操作不再等它）。
@@ -1966,13 +1981,6 @@ fn sync2_command(
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,
-        // 信任 / 拒绝一台待确认的设备（store/sync2/trust.rs）：信任时扣着的删除 / 彻底清除放行进投影。
-        "trust" => c.sync2_trust(
-            profile,
-            s("device")?,
-            req["trust"] != Value::Bool(false),
-            i("now")?,
-        )?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
         // 预览恢复到还原点 / 某个时刻（只读；恢复本身是本机写命令，见 [local_write_body]）。
