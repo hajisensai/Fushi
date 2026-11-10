@@ -22,7 +22,8 @@ class DatabaseCheckAlreadyRunningException implements Exception {
   const DatabaseCheckAlreadyRunningException();
 
   @override
-  String toString() => 'DatabaseCheckAlreadyRunningException: '
+  String toString() =>
+      'DatabaseCheckAlreadyRunningException: '
       'a database check is already running';
 }
 
@@ -82,8 +83,7 @@ List<String> databaseCheckReportLines(final DatabaseCheckReport report) {
     else
       t.storage_db_check_integrity_ok,
     // 问题原文只列前几条：够看出病情，又不把对话框撑爆。
-    for (final String problem in report.problemsRemaining.take(5))
-      '· $problem',
+    for (final String problem in report.problemsRemaining.take(5)) '· $problem',
     if (report.repairedRows > 0)
       t.storage_db_check_repaired_rows(n: report.repairedRows)
     else if (report.failure == null && remaining == 0)
@@ -181,7 +181,9 @@ class DatabaseCheckResultDialog extends StatelessWidget {
     return FushiAlertDialog(
       icon: FushiDialogHeroIcon(
         icon: report.healthy ? FushiIcons.verified : FushiIcons.warning,
-        tone: report.healthy ? FushiHeroTone.primary : FushiHeroTone.destructive,
+        tone: report.healthy
+            ? FushiHeroTone.primary
+            : FushiHeroTone.destructive,
       ),
       title: Text(
         report.healthy
@@ -210,9 +212,8 @@ class DatabaseCheckResultDialog extends StatelessWidget {
           FushiDialogAction(
             label: t.storage_db_check_delete_backup,
             kind: FushiDialogActionKind.destructive,
-            onPressed: () => unawaited(
-              _deleteBackupAndClose(context, backupPath),
-            ),
+            onPressed: () =>
+                unawaited(_deleteBackupAndClose(context, backupPath)),
           ),
         FushiDialogAction(
           label: backupPath != null
@@ -236,7 +237,9 @@ class DatabaseCheckResultDialog extends StatelessWidget {
     } on FileSystemException catch (e) {
       // 删不掉（被占用 / 无权限）原样告诉用户；备份仍在存储页「数据库备份快照」里。
       FushiToast.show(
-        msg: t.storage_entry_delete_failed(reason: e.osError?.message ?? e.message),
+        msg: t.storage_entry_delete_failed(
+          reason: e.osError?.message ?? e.message,
+        ),
         severity: ToastSeverity.error,
       );
     }

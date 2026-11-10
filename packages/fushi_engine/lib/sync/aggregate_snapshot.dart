@@ -202,10 +202,7 @@ class AggregateSnapshot {
       videoHourly: _decodeList(json['videoHourly'], HourlyRecord.fromJson),
       miningStats: _decodeList(json['miningStats'], MiningRecord.fromJson),
       lookupMiningCounters: _foldLookupMining(
-        _decodeList(
-          json['lookupMiningCounters'],
-          LookupMiningRecord.fromJson,
-        ),
+        _decodeList(json['lookupMiningCounters'], LookupMiningRecord.fromJson),
       ),
       favoriteWords: _decodeList(
         json['favoriteWords'],

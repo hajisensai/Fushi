@@ -108,7 +108,8 @@ class DatabaseCheckReport {
 /// integrity_check 最多收集的问题条数（SQLite 默认 100；报告只需要看得出病情）。
 const int kDatabaseCheckMaxProblems = 100;
 
-/// 从备份文件把 [dbPath] 整库换回去（[runDatabaseCheck] 回滚用）。可注入以便测试。
+/// 从备份文件把 [dbPath] 整库换回去（[runDatabaseCheck] 回滚用）。可注入以便测试；
+/// `integrityCheck` 同理（默认 [databaseIntegrityProblems]）。
 typedef DatabaseRestoreFromBackup =
     Future<void> Function({required String backupPath, required String dbPath});
 
@@ -128,8 +129,9 @@ Future<DatabaseCheckReport> runDatabaseCheck(
   required final String dbPath,
   required final String backupPath,
   final void Function(DatabaseCheckPhase phase)? onPhase,
-  final DatabaseRestoreFromBackup restoreFromBackup =
-      restoreDatabaseFromBackup,
+  final DatabaseRestoreFromBackup restoreFromBackup = restoreDatabaseFromBackup,
+  final Future<List<String>> Function(FushiDatabase db) integrityCheck =
+      databaseIntegrityProblems,
 }) async {
   final int sizeBefore = await _databaseBytes(dbPath);
   DatabaseCheckPhase phase = DatabaseCheckPhase.integrity;
@@ -179,7 +181,7 @@ Future<DatabaseCheckReport> runDatabaseCheck(
   try {
     // ── 1. 完整性检查（只读）。
     onPhase?.call(phase);
-    problemsFound = await databaseIntegrityProblems(db);
+    problemsFound = await integrityCheck(db);
     problemsRemaining = problemsFound;
 
     // ── 2. 备份。
@@ -199,7 +201,7 @@ Future<DatabaseCheckReport> runDatabaseCheck(
       await db.customStatement('REINDEX');
       reindexed = true;
       changed = true;
-      problemsRemaining = await databaseIntegrityProblems(db);
+      problemsRemaining = await integrityCheck(db);
       if (problemsRemaining.isNotEmpty) {
         // 就地修不好：不在坏库上继续改写 / VACUUM，留着备份交给用户。
         return await finish();
@@ -228,12 +230,12 @@ Future<DatabaseCheckReport> runDatabaseCheck(
     //    在上面就返回了），做完反而坏了 → 整库回滚到检查前。
     phase = DatabaseCheckPhase.verify;
     onPhase?.call(phase);
-    problemsRemaining = await databaseIntegrityProblems(db);
+    problemsRemaining = await integrityCheck(db);
     if (problemsRemaining.isNotEmpty) {
       await restoreFromBackup(backupPath: backupPath, dbPath: dbPath);
       rolledBack = true;
       db.markTablesUpdated(db.allTables);
-      problemsRemaining = await databaseIntegrityProblems(db);
+      problemsRemaining = await integrityCheck(db);
       return await finish(
         error: StateError(
           'integrity_check failed after maintenance; restored the backup',
@@ -328,10 +330,9 @@ Future<void> restoreDatabaseFromBackup({
   required final String dbPath,
 }) {
   return Isolate.run(() async {
-    final sqlite3.Database source = sqlite3.sqlite3.open(
-      backupPath,
-      mode: sqlite3.OpenMode.readOnly,
-    );
+    // 不用 readOnly 打开：备份若带 WAL 头，只读连接在没有 -shm 时可能打不开。
+    // 这条连接只读不写。
+    final sqlite3.Database source = sqlite3.sqlite3.open(backupPath);
     try {
       final sqlite3.Database target = sqlite3.sqlite3.open(dbPath);
       try {
@@ -352,9 +353,7 @@ Future<void> _pruneOlderCheckBackups(final String keepPath) async {
   final String keepName = p.basename(keepPath);
   await for (final FileSystemEntity e in dir.list(followLinks: false)) {
     final String name = p.basename(e.path);
-    if (e is File &&
-        name != keepName &&
-        isDatabaseCheckBackupFileName(name)) {
+    if (e is File && name != keepName && isDatabaseCheckBackupFileName(name)) {
       await _deleteQuietly(e.path);
     }
   }
