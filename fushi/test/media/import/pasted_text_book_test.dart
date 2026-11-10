@@ -138,7 +138,8 @@ void main() {
       await tester.enterText(body, '自分で入力');
       clipboard.complete('剪贴板内容');
       await tester.pumpAndSettle();
-      expect(find.text('自分で入力'), findsOneWidget);
+      // 标题框的提示取正文第一行，所以「自分で入力」也会出现在提示里；断言正文框本身。
+      expect(tester.widget<EditableText>(body).controller.text, '自分で入力');
       expect(find.text('剪贴板内容'), findsNothing);
     });
 
