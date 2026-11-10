@@ -52,7 +52,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
@@ -480,11 +480,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await _setIfChanged(e.key, e.value);
     }
     await _applyGain(_audible);
-    // 均衡器（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 平直 = 空，bit-perfect 不动）；
+    // 音效（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 全部中性 = 空，bit-perfect 不动）；
     // 装了交叉淡入时由 on_load 钩子与淡入淡出拼进同一条逐文件链（逐文件 `af` 整体替换全局
-    // 的，单挂全局会在淡入淡出的那几首上丢掉均衡）。
+    // 的，单挂全局会在淡入淡出的那几首上丢掉音效）。
     if (!_crossfadeFilters) {
-      await _setIfChanged('af', musicEqualizerAf(settings.equalizer) ?? '');
+      await _setIfChanged('af', musicAudioEffectsAf(settings.effects) ?? '');
     }
     if (_platform == MusicOutputPlatform.android) {
       if (exclusiveTurnedOff) {
@@ -530,7 +530,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await native.setProperty(
         'file-local-options/af',
         musicComposeAf(<String?>[
-          musicEqualizerAf(_settings.equalizer),
+          musicAudioEffectsAf(_settings.effects),
           musicCrossfadeAf(
             fadeIn: fadeIn ?? Duration.zero,
             originSeconds: _originSeconds(item),
@@ -1466,10 +1466,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       muted: await read('mute') == 'yes',
       speed: readDouble(await read('speed'), 1),
       pitchCorrection: await read('audio-pitch-correction') == 'yes',
-      userFilters: musicStripEqualizerFilters(
+      userFilters: musicStripAudioEffectsFilters(
         musicStripCrossfadeFilters(rawAf),
       ),
-      equalizer: musicAfHasEqualizer(rawAf),
+      effects: musicAfHasAudioEffects(rawAf),
       crossfade: item != null && _filteredUids.contains(item.trackUid),
       crossfadeAvailability: musicCrossfadeAvailability(
         _settings,

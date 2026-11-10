@@ -40,6 +40,7 @@ IconData mangaControlItemIcon(MangaControlItem item) => switch (item) {
   MangaControlItem.spreadPreference => FushiIcons.viewColumn,
   MangaControlItem.direction => FushiIcons.swap,
   MangaControlItem.quickSettings => FushiIcons.filter,
+  MangaControlItem.readAloud => FushiIcons.voice,
   MangaControlItem.ocrBoxes => FushiIcons.visibility,
   MangaControlItem.ocrCancel => FushiIcons.stop,
   MangaControlItem.fullscreen => FushiIcons.fullscreen,
@@ -49,6 +50,8 @@ IconData mangaControlItemIcon(MangaControlItem item) => switch (item) {
   MangaControlItem.backToStart => FushiIcons.firstPage,
   MangaControlItem.ocrRerun => FushiIcons.refresh,
   MangaControlItem.hideChrome => FushiIcons.visibilityOff,
+  MangaControlItem.statistics => FushiIcons.statistics,
+  MangaControlItem.studyTimer => FushiIcons.timer,
 };
 
 /// 漫画按钮的名称（编辑器 chip / 菜单 / 无障碍语义）。
@@ -59,6 +62,7 @@ String mangaControlItemLabel(MangaControlItem item) => switch (item) {
   MangaControlItem.spreadPreference => t.manga_reader_control_item_spread,
   MangaControlItem.direction => t.manga_reading_direction,
   MangaControlItem.quickSettings => t.manga_reader_quick_settings,
+  MangaControlItem.readAloud => t.manga_read_aloud_start,
   MangaControlItem.ocrBoxes => t.manga_ocr_boxes_toggle,
   MangaControlItem.ocrCancel => t.manga_reader_control_item_ocr_cancel,
   MangaControlItem.fullscreen => t.shortcut_action_global_toggle_fullscreen,
@@ -68,6 +72,8 @@ String mangaControlItemLabel(MangaControlItem item) => switch (item) {
   MangaControlItem.backToStart => t.manga_reader_back_to_start,
   MangaControlItem.ocrRerun => t.manga_reader_ocr_rerun,
   MangaControlItem.hideChrome => t.manga_interface_hide,
+  MangaControlItem.statistics => t.reading_statistics,
+  MangaControlItem.studyTimer => t.shortcut_action_reader_toggle_study_clock,
 };
 
 String _zoneLabel(MangaControlSlot slot) => switch (slot) {

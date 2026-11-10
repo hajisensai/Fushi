@@ -130,6 +130,7 @@ import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_filename_organize_dialog.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -1198,19 +1199,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
   ///
   /// 同步排在重读列表**之前**：同步会往本地库里落新视频和观看进度，先刷列表就会漏掉
-  /// 本次同步的产物。没配同步后端时 [runManualSyncWithFeedback] 直接返回 notConfigured
+  /// 本次同步的产物。没配同步后端或同步模块关掉时 [runPullToRefreshSync] 直接返回 notConfigured
   /// 且不弹提示，退化成纯列表刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起
   /// （客户端 [listRemoteVideos] 已用 listTimeout 封顶，host 卡响应也不会无限转圈）。
   /// 显式刷新失败时给一个可见 SnackBar（带原因），避免「看不到远端视频却不知为何」。
   Future<void> _pullToRefresh() async {
-    await runManualSyncWithFeedback(
+    // 同步模块门在 [runPullToRefreshSync] 里：模块关掉时只剩重拉列表。
+    await runPullToRefreshSync(
       context: context,
       appModel: ref.read(appProvider),
-      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-      announceNotConfigured: false,
-      announceBusy: false,
     );
     if (!mounted) return;
     // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1180）。
@@ -4537,6 +4535,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_rescrapeVideo(book));
+            },
+          ),
+        // 「整理文件名」（ZDYNkAP3Ln）：按刮削资料改磁盘文件名。门只挡「本机根本
+        // 没有文件」的条目；未刮削 / 已是规范名由计划判出、给明确提示。
+        if (videoBookHasLocalFiles(book))
+          DialogListAction(
+            label: t.video_filename_organize_action,
+            icon: Icons.drive_file_rename_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_organizeVideoFilenames(<String>[book.bookUid]));
             },
           ),
         // 从媒体服务器加入的作品：移出整部作品（电影 = 自身，剧 = 全部集），与
@@ -9874,6 +9883,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () => _rescrapeCollection(collection),
           ),
         DialogListAction(
+          label: t.video_filename_organize_action,
+          icon: Icons.drive_file_rename_outline,
+          onPressed: () => _organizeCollectionFilenames(collection),
+        ),
+        DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           group: DialogActionGroup.content,
@@ -9966,6 +9980,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collection.id,
     );
     _refresh();
+  }
+
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名（及同名字幕 /
+  /// 元数据），做种的文件走下载引擎改名；预览、做种联动查不清时的提示、撤销都在
+  /// [runVideoFilenameOrganize]。
+  Future<void> _organizeVideoFilenames(List<String> bookUids) async {
+    if (bookUids.isEmpty || !mounted) return;
+    await runVideoFilenameOrganize(
+      context,
+      service: ref.read(appProvider).videoFilenameOrganizeService,
+      bookUids: bookUids,
+      onLibraryChanged: () async {
+        if (mounted) _refresh();
+      },
+    );
+  }
+
+  /// 合集整体「整理文件名」：成员里的视频一次预览、一次确认。
+  Future<void> _organizeCollectionFilenames(
+    MediaCollectionRow collection,
+  ) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final List<String> uids = <String>[
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(
+        collection.id,
+      ))
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+    ];
+    await _organizeVideoFilenames(uids);
   }
 
   /// 合集右键「重新刮削资料与封面」：手动指定作品身份 → 走 canonical 来源刮削
@@ -10731,6 +10774,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           onPickOnlineCover: _onlineCoverController == null
               ? null
               : _pickOnlineCollectionCoverFile,
+          // 单集菜单「整理文件名」（ZDYNkAP3Ln）：与库页同一条实现。
+          onOrganizeFilenames: _organizeVideoFilenames,
         ),
       ),
     );

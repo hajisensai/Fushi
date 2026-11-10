@@ -28,6 +28,83 @@ void main() {
     );
   });
 
+  test('判据：手动暂停 / 页内遮挡一票否决', () {
+    expect(
+      studyClockGateMayRun(
+        lifecycleStopped: false,
+        covered: false,
+        manualPause: true,
+      ),
+      isFalse,
+    );
+    expect(
+      studyClockGateMayRun(
+        lifecycleStopped: false,
+        covered: false,
+        locallyCovered: true,
+      ),
+      isFalse,
+    );
+  });
+
+  test('判据：失焦时只有仍在播放才可跑（视频面「切走仍在播照常计时」）', () {
+    expect(
+      studyClockGateMayRun(
+        lifecycleStopped: false,
+        covered: false,
+        unfocused: true,
+      ),
+      isFalse,
+    );
+    expect(
+      studyClockGateMayRun(
+        lifecycleStopped: false,
+        covered: false,
+        unfocused: true,
+        playing: true,
+      ),
+      isTrue,
+    );
+    expect(
+      studyClockGateMayRun(
+        lifecycleStopped: true,
+        covered: false,
+        playing: true,
+      ),
+      isFalse,
+      reason: '真后台 / 最小化不因在播放而豁免',
+    );
+  });
+
+  test('门：手动暂停、页内遮挡、失焦 + 播放态各自驱动起停', () {
+    final List<bool> log = <bool>[];
+    final StudyClockRunGate g = StudyClockRunGate(
+      tracker: StudyCoverTracker(),
+      apply: log.add,
+    );
+    addTearDown(g.dispose);
+    g.toggleManualPause();
+    expect(g.manualPause, isTrue);
+    expect(log.last, isFalse);
+    g.toggleManualPause();
+    expect(log.last, isTrue);
+    g.setLocallyCovered(true);
+    expect(log.last, isFalse);
+    g.setLocallyCovered(false);
+    expect(log.last, isTrue);
+    g.setUnfocused(true);
+    expect(log.last, isFalse, reason: '失焦且没在播：停表');
+    g.setPlaying(true);
+    expect(log.last, isTrue, reason: '失焦期间开始播放：续表');
+    g.setPlaying(false);
+    expect(log.last, isFalse);
+    log.clear();
+    g.setUnfocused(false);
+    expect(log, <bool>[true]);
+    g.setPlaying(true);
+    expect(log, <bool>[true], reason: '聚焦时播放态翻转不触发 sync');
+  });
+
   late StudyCoverTracker tracker;
   late GlobalKey<NavigatorState> navKey;
   late List<bool> applied;
