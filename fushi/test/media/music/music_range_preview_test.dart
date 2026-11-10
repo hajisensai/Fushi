@@ -13,6 +13,9 @@ class _Backend implements MusicOutputBackend {
       StreamController<MusicBackendEvent>.broadcast(sync: true);
   final List<String> log = <String>[];
 
+  /// 每次 [replaceNext] 交给后端的「下一首」（null = 不预排，播到头即停）。
+  final List<String?> nexts = <String?>[];
+
   @override
   Stream<MusicBackendEvent> get events => controller.stream;
 
@@ -32,7 +35,7 @@ class _Backend implements MusicOutputBackend {
   Future<void> replaceNext(
     MusicPlayItem? next, {
     bool crossfadeNext = false,
-  }) async {}
+  }) async => nexts.add(next?.trackUid);
 
   @override
   Future<void> play() async => log.add('play');
@@ -80,6 +83,7 @@ void main() {
     await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
     await engine.pause();
     backend.log.clear();
+    backend.nexts.clear();
     preview = MusicRangePreview(engine);
   });
 
@@ -161,5 +165,77 @@ void main() {
     );
     expect(playback.isEnded, isTrue);
     expect(backend.log, isEmpty);
+  });
+
+  test('试听期间按住当前曲：后端不预排下一首，播完即放开、补回下一首', () async {
+    final RangePlayback playback = await preview.play(
+      const Duration(seconds: 10),
+      const Duration(seconds: 12),
+    );
+    expect(engine.holdAtTrackEnd, isTrue);
+    expect(backend.nexts, <String?>[null], reason: '起播前就撤掉预排的下一首');
+
+    position(12000);
+    expect(await playback.ended, RangePlaybackEnd.reachedEnd);
+    await pumpEventQueue();
+    expect(engine.holdAtTrackEnd, isFalse);
+    expect(backend.nexts.last, 'b', reason: '试听结束把下一首补回去');
+  });
+
+  test('终点在曲末、后端最后报的位置够不到终点：播到文件末尾按「播完」结束，队列不推进', () async {
+    final RangePlayback playback = await preview.play(
+      const Duration(seconds: 55),
+      const Duration(seconds: 60),
+    );
+    // mpv 文件末尾前最后一次位置事件常小于曲长（LRC 行尾 = 曲长）。
+    position(59950);
+    expect(playback.isEnded, isFalse);
+    backend.controller.add(const MusicBackendCompleted());
+
+    expect(await playback.ended, RangePlaybackEnd.reachedEnd);
+    expect(engine.current?.trackUid, 'a', reason: '没有推进到队列下一首');
+    expect(engine.ended, isTrue);
+    expect(backend.log.where((String e) => e.startsWith('open:')), isEmpty);
+    await pumpEventQueue();
+    expect(engine.holdAtTrackEnd, isFalse);
+  });
+
+  test('连播下一段沿用按住，不在中间补发下一首；停止 / 销毁都放开', () async {
+    await preview.play(const Duration(seconds: 1), const Duration(seconds: 4));
+    await preview.play(
+      const Duration(seconds: 10),
+      const Duration(seconds: 12),
+    );
+    await pumpEventQueue();
+    expect(backend.nexts, <String?>[null]);
+    expect(engine.holdAtTrackEnd, isTrue);
+
+    await preview.stop();
+    await pumpEventQueue();
+    expect(engine.holdAtTrackEnd, isFalse);
+    expect(backend.nexts.last, 'b');
+
+    await preview.play(const Duration(seconds: 1), const Duration(seconds: 4));
+    expect(engine.holdAtTrackEnd, isTrue);
+    preview.dispose();
+    await pumpEventQueue();
+    expect(engine.holdAtTrackEnd, isFalse);
+  });
+
+  test('按住期间当前曲取流失败：不自动跳到下一首', () async {
+    final RangePlayback playback = await preview.play(
+      const Duration(seconds: 1),
+      const Duration(seconds: 4),
+    );
+    backend.controller.add(
+      const MusicBackendFailed(
+        'gone',
+        reason: MusicPlaybackFailure.trackUnavailable,
+        trackUid: 'a',
+      ),
+    );
+    expect(await playback.ended, RangePlaybackEnd.interrupted);
+    expect(engine.current?.trackUid, 'a');
+    expect(backend.log.where((String e) => e.startsWith('open:')), isEmpty);
   });
 }
