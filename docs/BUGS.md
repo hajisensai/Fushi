@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3872 条。点号进各自文件。
+> 共 3883 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4323](bugs/BUG-4323-online-manga-sync-chapters-json-crash.md) | ✅ | ✅ | 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见 |
-> 共 3882 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4334](bugs/BUG-4334-online-manga-sync-chapters-json-crash.md) | ✅ | ✅ | 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见 |
 | [BUG-4333](bugs/BUG-4333-windows-axtree-desync-pending-children-recur.md) | 🚧 | 🚧 | Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源） |
 | [BUG-4332](bugs/BUG-4332-video-cue-nav-same-start.md) | ✅ | ✅ | 视频 ASS 同起止多条 Dialogue：上/下一句要按两次 |
 | [BUG-4331](bugs/BUG-4331-srs-card-gaiji-image-huge.md) | ✅ | ✅ | 复习卡上明鏡的外字 SVG（［参考］菱形）画成 150px 方块 |

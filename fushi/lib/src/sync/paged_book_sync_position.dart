@@ -20,7 +20,7 @@ bool isPagedSyncBook(EpubBookRow book) =>
 /// 页式书（漫画 / PDF）一律返回空表、**不解析** `chaptersJson`：本地漫画 / PDF 存的
 /// 是 `'[]'`，而在线（扩展源）漫画存的是**章节清单**（`OnlineMangaChapter.toJson`，
 /// 只有 key / name 等，没有 `characters`）。按字符表解析后者会在
-/// `m['characters'] as int` 上抛 TypeError，整本同步恒失败（BUG-4323）。页式书的位置
+/// `m['characters'] as int` 上抛 TypeError，整本同步恒失败（BUG-4334）。页式书的位置
 /// 换算本就只走页码（见本文件其余函数），用不到字符表。
 List<ChapterCharInfo> syncChapterCharTable(EpubBookRow book) =>
     isPagedSyncBook(book)
