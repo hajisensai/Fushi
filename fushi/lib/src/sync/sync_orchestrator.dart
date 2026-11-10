@@ -2102,7 +2102,7 @@ class SyncOrchestrator {
           // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。跳过判据**不能**用
           // 远端资产的物理尺寸——`resolveSyncBackend` 无条件包 ObfuscatingSyncBackend，
           // 上传体 = 8 字节 magic + XOR 正文（远端尺寸 = 明文 + 8，永不等于本地明文
-          // size），且 Dropbox/WebDAV/FTP 的 listChildren 根本不报 sizeBytes（null）。
+          // size），且 Dropbox/FTP 的 listChildren 根本不报 sizeBytes（null）。
           // 改用清单记录的**明文尺寸**（跨后端可靠）：远端按名存在 && 合并清单里该 uid
           // 条目 videoAsset 同名 && 记录的明文尺寸 == 本地明文尺寸 ⇒ 跳过。
           final RemoteVideoManifestEntry? priorEntry = byUid[v.bookUid];

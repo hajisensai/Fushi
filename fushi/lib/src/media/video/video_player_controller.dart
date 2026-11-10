@@ -23,6 +23,7 @@ import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_playable_end.dart';
 import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
@@ -796,6 +797,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
   StreamSubscription<Duration>? _durationReadySub;
 
+  /// 最近一次显式 seek 的目标（毫秒，只进 EOF 诊断日志，见 [_logEndOfFile]）。
+  int? _lastSeekTargetForDiag;
+
+  /// 本次 load 的「可达末尾」时长修正（容器时长比音视频轨长时生效，见
+  /// [VideoPlayableEndCorrection]）。换集 / 销毁时 dispose，不能盖到下一集的时长上。
+  VideoPlayableEndCorrection? _playableEndCorrection;
+
   /// BUG-739：当前音频输出设备变化订阅。libmpv `audio-device=auto` 在 OS 输出设备
   /// 切换时重建 ao，其软件 `volume` 属性可能被重置/衰减，media_kit 被动把降低值镜像
   /// 进 `state.volume`（[volume] getter 的真值来源）——反复切换设备使视频音量逐步变小
@@ -1265,6 +1273,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
+    _lastSeekTargetForDiag = targetMs;
     // 显式 seek 撤掉「循环当前句」与 A-B 循环的武装（见 [_loopArmedCueIndex] /
     // [_abLoopArmed]）。
     _loopArmedCueIndex = null;
@@ -3479,6 +3488,9 @@ class VideoPlayerController extends ChangeNotifier
     bufferingIndicatorVisible.value = false;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
+    _playableEndCorrection?.dispose();
+    _playableEndCorrection = null;
+    _lastSeekTargetForDiag = null;
     _setSubtitleCuesLoading(false);
 
     // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
@@ -4002,7 +4014,10 @@ class VideoPlayerController extends ChangeNotifier
     _syncBufferingIndicator(player);
     // 位置推送源（positionMsListenable）：跟 libmpv time-pos 事件，不另起定时器。
     _positionSub = player.stream.position.listen((_) {
-      if (_isCurrentLoad(player, loadToken)) _publishPosition();
+      if (!_isCurrentLoad(player, loadToken)) return;
+      _publishPosition();
+      // 渲染活动集跟着时钟走，不等 125ms tick（BUG-4352）。
+      _syncRenderActivityToClock();
     });
     _publishPosition();
 
@@ -4277,6 +4292,7 @@ class VideoPlayerController extends ChangeNotifier
     if (currentDuration > Duration.zero) {
       notifyListeners();
       unawaited(_refreshChaptersForLoad(player, loadToken));
+      unawaited(_refreshPlayableEndForLoad(player, loadToken));
       return;
     }
     _durationReadySub = player.stream.duration.listen((Duration duration) {
@@ -4287,11 +4303,13 @@ class VideoPlayerController extends ChangeNotifier
       _durationReadySub = null;
       unawaited(sub?.cancel());
       unawaited(_refreshChaptersForLoad(player, loadToken));
+      unawaited(_refreshPlayableEndForLoad(player, loadToken));
     });
   }
 
   void _handleCompletedChanged(bool completed) {
     if (!completed) return;
+    _logEndOfFile();
     // 终点落在片尾之后（或贴着片尾、位置回调没来得及越过）时，媒体播完就是这段播完。
     _endPlayRange(RangePlaybackEnd.reachedEnd);
     if (isBlurayNavigationSession) return;
@@ -4502,13 +4520,10 @@ class VideoPlayerController extends ChangeNotifier
     playback?.finish(reason);
   }
 
-  void _syncCueForPosition(int posMs, {required bool persistPosition}) {
-    if (isBlurayNavigationSession && !discTitleReady) return;
-    if (persistPosition) {
-      _maybeSavePosition(posMs);
-    }
-    final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
-
+  /// 副字幕对白 / 主副 `\p` 绘图三条**纯渲染**流的活动集按 [posMs]（原始轴）重算；
+  /// [effectiveMs] 是主轨调轴后的位置。有变化返回 true（调用方负责通知）。只改活动集、
+  /// 无副作用（不存进度、不动 seek 在途状态），125ms tick 与逐次位置更新共用。
+  bool _syncAuxRenderActivity(int posMs, int effectiveMs) {
     // TODO-1312：副字幕活动集（与主字幕独立求；空副字幕恒空集）。TODO-2837：副字幕
     // 用**自己的生效调轴**（[effectiveSecondaryDelayMs]，未单独设置时 == _delayMs，
     // 等价旧「同一 effective 位置」行为）求活动集——主副字幕轴不同源时各调各的。
@@ -4554,6 +4569,48 @@ class VideoPlayerController extends ChangeNotifier
       _activeSecondaryDrawingIndices = nextSecondaryDrawing;
       changed = true;
     }
+    return changed;
+  }
+
+  /// 渲染活动集跟**播放时钟的每次位置更新**走（BUG-4352「字幕刷新率」）。
+  ///
+  /// 活动集原先只由 125ms tick 重算，而 overlay 的 `\fad` / `\move` / `\t` / `\k`
+  /// 动画逐帧读时钟：卡拉 OK 特效常把一句拆成几十毫秒一条的逐音节 / 逐帧事件，按 8 Hz
+  /// 取样时新事件最多晚 125ms 才上屏、已结束的事件最多多留 125ms（按超出时长的进度
+  /// 定格画着）——就是用户看到的「刷新率低」与光晕残影。这里在 libmpv 每次推位置时按
+  /// [subtitleClockMs]（seek 在途时已调和成跳转目标，与动画同一个时钟、无副作用）重算
+  /// 渲染活动集；代表 cue、句尾暂停、循环、进度保存、seek 落地宽限仍归 tick 管
+  /// （它们按拍计数，不能被位置事件加速）。
+  void _syncRenderActivityToClock() {
+    if (isBlurayNavigationSession) return;
+    final int? clock = subtitleClockMs;
+    if (clock == null) return;
+    final int effectiveMs = effectiveSubtitlePositionMs(clock, _delayMs);
+    bool changed = _syncAuxRenderActivity(clock, effectiveMs);
+    if (_cues.isNotEmpty) {
+      final List<int> nextActive = _activeRenderIndices(
+        _currentCueIndex,
+        effectiveMs,
+      );
+      if (!_intListEquals(nextActive, _activeCueIndices)) {
+        _activeCueIndices = nextActive;
+        changed = true;
+      }
+    } else if (_activeCueIndices.isNotEmpty) {
+      _activeCueIndices = const <int>[];
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  void _syncCueForPosition(int posMs, {required bool persistPosition}) {
+    if (isBlurayNavigationSession && !discTitleReady) return;
+    if (persistPosition) {
+      _maybeSavePosition(posMs);
+    }
+    final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
+
+    bool changed = _syncAuxRenderActivity(posMs, effectiveMs);
 
     if (_cues.isEmpty) {
       // 无主 cue：清主字幕代表 cue + 活动集残留，据 changed（含副字幕变化）决定是否通知。
@@ -4973,6 +5030,11 @@ class VideoPlayerController extends ChangeNotifier
 
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
+
+  /// 测试入口：模拟 libmpv 推来一次位置更新（[_syncRenderActivityToClock]，BUG-4352），
+  /// 位置取 [positionMs]（测试里用 [debugSetPositionForTesting] 注入）。
+  @visibleForTesting
+  void debugSyncRenderActivityToClock() => _syncRenderActivityToClock();
 
   @visibleForTesting
   void debugSyncInitialCueForPosition(int posMs) =>
@@ -5846,6 +5908,55 @@ class VideoPlayerController extends ChangeNotifier
     await _refreshChaptersForLoad(player, _loadToken);
   }
 
+  /// 容器时长比音视频轨实际结束得晚时，把播放器总时长改成音视频的真末尾（见
+  /// [VideoPlayableEndCorrection]：字幕轨比画面长的 mkv 进度条显示 23:39 / 24:02，
+  /// 往 23:39 之后拖会直接 EOF 弹回最后一帧）。依据是容器逐轨统计标签，缺标签不修正。
+  /// 蓝光导航会话的时长由盘上播放列表决定、网页后端没有 libmpv，都不参与。
+  Future<void> _refreshPlayableEndForLoad(Player player, int loadToken) async {
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (_webBackend || isBlurayNavigationSession) return;
+    final PlatformPlayer? platform = player.platform;
+    if (platform == null) return;
+    final String trackList = await _getMpvProperty('track-list');
+    if (!_isCurrentLoad(player, loadToken)) return;
+    final int? endMicros = playableEndMicrosFromTrackList(trackList);
+    if (endMicros == null) return;
+    _playableEndCorrection?.dispose();
+    final Duration reported = platform.state.duration;
+    _playableEndCorrection = VideoPlayableEndCorrection.attach(
+      platform: platform,
+      playableEnd: Duration(microseconds: endMicros),
+    );
+    if (_playableEndCorrection == null) return;
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      'duration corrected to playable end: container='
+      '${reported.inMilliseconds}ms playable=${endMicros ~/ 1000}ms '
+      '(audio/video track DURATION tags)',
+    );
+    notifyListeners();
+  }
+
+  /// 播到 / seek 到 EOF 时记一行落点与时长（片尾 seek 落点诊断）：EOF 位置明显早于
+  /// 时长就是「容器时长长于可解码末尾」，修正没生效（缺统计标签）时据此排查。
+  void _logEndOfFile() {
+    final Player? player = _player;
+    if (player == null || _webBackend) return;
+    final VideoPlayableEndCorrection? correction = _playableEndCorrection;
+    final String container = correction != null && correction.active
+        ? '${correction.reportedDuration.inMilliseconds}ms'
+        : 'same';
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      'eof: position=${player.state.position.inMilliseconds}ms '
+      'duration=${player.state.duration.inMilliseconds}ms '
+      'containerDuration=$container '
+      'lastSeekTarget=${_lastSeekTargetForDiag ?? 'none'}',
+    );
+  }
+
   Future<void> _refreshChaptersForLoad(Player player, int loadToken) async {
     if (!_isCurrentLoad(player, loadToken)) return;
     // The disc VM can change titles inside this load. Only the currently bound
@@ -6668,7 +6779,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 句」时，第二次读到的 `positionMs` 正是这个偏前落点，[_floorCueIndexByPosition]
   /// 据 `startMs <= pos` 把当前句反推成**目标句的上一句**，`+1` 又指回刚跳到的目标句
   /// → 表现为「下一句按了不动 / 原地」（与「上一句跳过头」对称）。锚定权威的「刚跳到
-  /// 哪句」消除这层偏移。`anchor + 1` 越界（已是末句）返回 null，保持末句 no-op 边界。
+  /// 哪句」消除这层偏移。下一句越界（已是末句）返回 null，保持末句 no-op 边界。
+  ///
+  /// **「一句」= 同一起点的一组 cue**（反馈 rLCxUJ-2i4）：ASS 常把一句台词拆成两条
+  /// 起止相同、`\pos` 不同的 Dialogue（解析后是两条起点严格相等的 cue）。旧实现按
+  /// 下标 ±1 前进，第一次只落到同组另一条（同一时刻，看着像「回到本句开头」），要按
+  /// 两次才跳走。现在下一句 = 起点**严格大于**当前锚点起点的第一条 cue（下一组的组
+  /// 首），返回值恒为组首下标。按严格相等分组，不设容差：起点差 1ms 也是不同的句。
   static int? nextCueIndexFor({
     required List<AudioCue> cues,
     required int? positionMs,
@@ -6676,14 +6793,15 @@ class VideoPlayerController extends ChangeNotifier
   }) {
     if (cues.isEmpty) return null;
     if (anchorIndex != null && anchorIndex >= 0 && anchorIndex < cues.length) {
-      // 锚定「上次主动跳到的目标句」：下一句严格 = anchor+1，不被 preRoll 偏前落点干扰。
-      final int next = anchorIndex + 1;
-      return next >= cues.length ? null : next;
+      // 锚定「上次主动跳到的目标句」：下一句 = 起点严格晚于锚点句起点的第一条（跳过
+      // 同起点组内其余行），不被 preRoll 偏前落点干扰。
+      return _nextCueGroupStartIndex(cues, cues[anchorIndex].startMs);
     }
     final int floor = _floorCueIndexByPosition(cues, positionMs ?? 0);
-    if (floor < 0) return 0; // 早于首句：下一句 = 首句。
-    if (floor + 1 >= cues.length) return null; // floor 已是末句：无下一句。
-    return floor + 1; // 排除当前句（floor），取下一条。
+    if (floor < 0) return 0; // 早于首句：下一句 = 首句（下标 0 即首组组首）。
+    // floor 是「起点 <= 位置」的最后一条，同起点组必然整组落在 floor 及之前，故按
+    // floor 起点取下一组即排除当前句整组。
+    return _nextCueGroupStartIndex(cues, cues[floor].startMs);
   }
 
   /// 纯函数：「上一句」目标索引（[skipToPrevCue] 决策，与 [nextCueIndexFor] 对称）。
@@ -6706,7 +6824,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 「上一句」时，第二次读到的 `positionMs` 是这个偏前落点，[JsonAlignmentParser.findCueIndex]
   /// 反推命中**目标句的上一句**（落点已退进上一句时间窗），`hit - 1` 于是跳到上上句
   /// → **跳过头**（跳到 N-2 而非相邻 N-1，正是用户报「感觉跳过头了」）。锚定权威的
-  /// 「刚跳到哪句」消除偏移。`anchor - 1 < 0`（已在首句）返回 null，保持首句 no-op 边界。
+  /// 「刚跳到哪句」消除偏移。已在首句（首组）返回 null，保持首句 no-op 边界。
+  ///
+  /// 与 [nextCueIndexFor] 同样按「同一起点的一组 cue = 一句」后退（反馈 rLCxUJ-2i4）：
+  /// 上一句 = 起点**严格小于**当前句起点的最后一组，返回该组组首下标。句中命中时
+  /// [JsonAlignmentParser.findCueIndex] 在同起点组内回的是组尾（重叠区回起点更大 / 下标
+  /// 更大那条），旧实现 `hit - 1` 只退到同组另一行，要按两次才真正后退。
   static int? prevCueIndexFor({
     required List<AudioCue> cues,
     required int? positionMs,
@@ -6714,24 +6837,43 @@ class VideoPlayerController extends ChangeNotifier
   }) {
     if (cues.isEmpty) return null;
     if (anchorIndex != null && anchorIndex >= 0 && anchorIndex < cues.length) {
-      // 锚定「上次主动跳到的目标句」：上一句严格 = anchor-1，不被 preRoll 偏前落点干扰。
-      final int prev = anchorIndex - 1;
-      return prev < 0 ? null : prev;
+      // 锚定「上次主动跳到的目标句」：上一句 = 起点严格早于锚点句起点的最后一组，
+      // 不被 preRoll 偏前落点干扰。
+      return _prevCueGroupStartIndex(cues, cues[anchorIndex].startMs);
     }
     final int pos = positionMs ?? 0;
-    // 句中（命中某句时间窗，含句首）：当前句 = hit，上一句 = hit-1，排除当前句。
+    // 句中（命中某句时间窗，含句首）：当前句 = hit 所在同起点组，上一句 = 更早的
+    // 一组，排除当前句整组；已在首组时无上一句（null）。
     final int hit = JsonAlignmentParser.findCueIndex(
       cues: cues,
       positionMs: pos,
     );
     if (hit >= 0) {
-      return hit == 0 ? null : hit - 1; // 已在首句无上一句。
+      return _prevCueGroupStartIndex(cues, cues[hit].startMs);
     }
     // gap / 早于首句：找起点 < 位置的最后一条（gap 之前刚播完那句）；位置正好压在
     // 某句起点上时由上面 hit 分支处理，这里恒落在 gap，故二分用严格 `<`（lower
-    // bound，inclusive: false）；早于全部 cue 时落首句（索引 0）。
+    // bound，inclusive: false）；早于全部 cue 时落首句（索引 0）。落点取该句所在
+    // 同起点组的组首。
     final int lo = _cueStartMsBinaryBound(cues, pos, inclusive: false);
-    return lo == 0 ? 0 : lo - 1;
+    if (lo == 0) return 0;
+    return _cueStartMsBinaryBound(cues, cues[lo - 1].startMs, inclusive: false);
+  }
+
+  /// 「下一组」组首：起点严格大于 [startMs] 的第一条 cue 下标（upper bound）；无更晚
+  /// 的 cue 时返回 null。同起点的多条 cue（ASS 一句拆多行）视为同一句，被整组跳过。
+  static int? _nextCueGroupStartIndex(List<AudioCue> cues, int startMs) {
+    final int next = _cueStartMsBinaryBound(cues, startMs, inclusive: true);
+    return next >= cues.length ? null : next;
+  }
+
+  /// 「上一组」组首：起点严格小于 [startMs] 的最后一组 cue 的第一条下标；无更早的
+  /// cue 时返回 null。先取 lower bound 左侧最后一条（起点 < startMs），再取其起点的
+  /// lower bound 回到该组组首。
+  static int? _prevCueGroupStartIndex(List<AudioCue> cues, int startMs) {
+    final int lo = _cueStartMsBinaryBound(cues, startMs, inclusive: false);
+    if (lo == 0) return null;
+    return _cueStartMsBinaryBound(cues, cues[lo - 1].startMs, inclusive: false);
   }
 
   /// 纯函数：asbplayer 式「字幕偏移对齐」——把**上一句 / 下一句**字幕的起点整体平移到
@@ -6834,6 +6976,8 @@ class VideoPlayerController extends ChangeNotifier
     _positionSub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
+    _playableEndCorrection?.dispose();
+    _playableEndCorrection = null;
     unawaited(_audioDeviceSub?.cancel());
     _audioDeviceSub = null;
     unawaited(_audioDevicesSub?.cancel());
