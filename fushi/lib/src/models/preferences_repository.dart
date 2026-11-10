@@ -4285,7 +4285,7 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // 在线视频点制卡后弹窗等不等（见 [VideoOnlineMiningMode]）。默认 background。
+  // 在线视频点制卡后卡往哪去（见 [VideoOnlineMiningMode]）。默认 background。
   VideoOnlineMiningMode get videoOnlineMiningMode =>
       VideoOnlineMiningMode.fromWireName(
         getPref('video_online_mining_mode', defaultValue: null) as String?,
