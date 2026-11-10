@@ -27,6 +27,7 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
@@ -2899,6 +2900,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final String? cardSentence = entry == null
         ? sentenceOverride
         : _cardSentenceForGame(entry, sentenceOverride ?? entry.text);
+    // 全局 gal 制卡设置 + 当前游戏的覆盖层（反馈 3dRZdakRdJ）。
+    final GalMiningSettings mining = model.galMiningSettingsForGame(
+      _session.activityGameKey,
+    );
     final GalHookMiningResult result = await _miningCoordinator.mineLine(
       lineId: lineId,
       fields: fields,
@@ -2911,7 +2916,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       compression: MiningMediaCompression.resolve(
         imageTier: model.miningImageQuality,
         audioTier: model.miningAudioQuality,
-        format: model.galMiningAnimatedFormat,
+        format: mining.animatedFormat,
       ),
       repo: repo,
       updateNoteId: updateNoteId,
@@ -2919,10 +2924,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // gal 制卡有两个入口：本浮窗与 texthooker 页。两处必须逐字同形地透传同一组
       // 偏好，否则同一个设置在一个入口生效、另一个入口静默用默认值（协调器的
       // `imageMode`/`animatedFormat` 默认 gif 会把漏传吞成「看着正常的旧行为」）。
-      imageMode: model.galMiningImageMode,
-      animatedFormat: model.galMiningAnimatedFormat,
-      stillFormat: model.galMiningStillFormat,
-      clipFormat: model.galMiningClipFormat,
+      imageMode: mining.imageMode,
+      animatedFormat: mining.animatedFormat,
+      stillFormat: mining.stillFormat,
+      clipFormat: mining.clipFormat,
+      audioLimit: mining.audioLimit,
       captureLeaseFactory: captureLeaseFactory,
     );
     if (result.aborted) {
