@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3838 条。点号进各自文件。
+> 共 3839 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4277](bugs/BUG-4277-interconnect-address-owner-unchecked.md) | ✅ | ✅ | 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编 |
 | [BUG-4276](bugs/BUG-4276-lan-discovery-self-reported-id-key.md) | ✅ | ✅ | 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收 |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
 | [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
