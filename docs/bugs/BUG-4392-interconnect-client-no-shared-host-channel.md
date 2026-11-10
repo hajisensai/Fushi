@@ -23,6 +23,7 @@
 - **备注**：`remote_download_tasks_section.dart` 自建 client 的关闭已在步骤 9（`4cedee11b21`，BUG-4394）落地（dispose 里 `_client.close()`），此处不再遗留。
 - **[x] ① 评审修正（2026-11-11）** — `1373a20f353`：
   - compat-1 / tests-1：步骤 11 把 `postJson` 迁到通道后，`interconnect_host_channel.dart` 的 send 对非幂等请求「任何传输失败直接抛 unreachable(mayHaveDelivered: true)」，连建连被拒这种一个字节都没发出的失败也不换地址；叠加选路缓存 30 秒内沿用死掉的胜者（`interconnect_peer_addresses.dart` `_rankGroup`），离开 Wi-Fi 后的 POST 全部失败。修法：请求统一成 `_ChannelRequest`，client 真正开始读请求体时记 `bodyStarted`（IOClient 在 openUrl 建连成功后才读请求体）；没开始写出的失败任何请求都换同组下一条，写出后非幂等 / 流式不重发；撞传输失败调用新增的 `forgetInterconnectRaceWinner(hostId)` 作废选路缓存；通道自建的明文 client 改 `IOClient(HttpClient()..connectionTimeout = kInterconnectConnectTimeout)`，死地址不吃满整段 deadline。
+  - 合入 develop 后备注：`forgetInterconnectRaceWinner` 已删除，并入 develop BUG-4278 的 `reportInterconnectCandidateUnreachable(c)` / `reportInterconnectCandidateReached(c)`（`interconnect_peer_addresses.dart`，通道 `interconnect_host_channel.dart` 上报）：传输失败只在该地址正是缓存胜者时作废（不再按 hostId 无条件作废）；拿到应答且无有效缓存时只记 https 钉扎或 `p2p://` 地址（守 V-B4）。
   - correctness-3：本地钉扎闸拒绝（`localPinRefusal`）曾与证书回调拒绝一起算 certificateMismatch 且优先于 unreachable；改为只要有地址是传输失败（或 deadline 用完）结局就是 unreachable，certificateMismatch 只在试过的地址全被证书 / 钉扎拒绝时报。
   - correctness-4：幂等的流式上传在传输失败 / 读响应体失败后会换地址再 `open()` 一次；改为流一旦打开幂等与否都不换地址，且放弃了的尝试之后 client 再来读请求体也不会打开流（`_Attempt.isAbandoned`）。
   - tests-2：`interconnectRequestUri` 无查询参数时传了空 `queryParameters`，线上 URL 结尾多一个 `?`；改为按 scheme / userInfo / host / port + path 重建，无查询时不带 `?`；非 http(s) 基址（`normalizeUrl` 抛 `SyncBackendError`）也返回 null。P2P 转发口用例恢复比对完整 URL。
