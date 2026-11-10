@@ -247,6 +247,8 @@ String _ffmpegSeconds(Duration d) =>
 int transcodeSegmentCount(
   int durationMs, {
   int segmentSeconds = kTranscodeSegmentSeconds,
+  String? workKey,
+  bool Function()? isAlive,
 }) {
   if (durationMs <= 0) return 0;
   final int segmentMs = segmentSeconds * 1000;
@@ -258,6 +260,8 @@ int transcodeSegmentCount(
   int index,
   int durationMs, {
   int segmentSeconds = kTranscodeSegmentSeconds,
+  String? workKey,
+  bool Function()? isAlive,
 }) {
   final int segmentMs = segmentSeconds * 1000;
   final int startMs = index * segmentMs;
@@ -279,6 +283,8 @@ String buildTranscodeHlsPlaylist({
   required int durationMs,
   required String Function(int index) segmentUri,
   int segmentSeconds = kTranscodeSegmentSeconds,
+  String? workKey,
+  bool Function()? isAlive,
 }) {
   final int count = transcodeSegmentCount(
     durationMs,
@@ -362,29 +368,161 @@ bool transcodeAvailable() {
 }
 
 /// 在并发闸门内跑一段任意工作（**仅测试用**）：`_runSegment` 的 runner override 在
-/// 取名额**之前**就返回，所以闸门本身（队列交棒、排空回零）在产品路径外没有别的
-/// 入口可验。
+/// 取名额**之前**就返回，所以闸门本身（队列交棒、排空回零、按 key 取消）在产品路径
+/// 外没有别的入口可验。[workKey] / [isAlive] 与 [transcodeSegment] 同义，走同一套
+/// 登记与取消逻辑；取消时 [body] 的结果被丢弃、以 [TranscodeCancelled] 结束。
 @visibleForTesting
-Future<T> runGuardedTranscodeForTesting<T>(Future<T> Function() body) async {
-  await _acquireTranscodeSlot();
-  try {
-    return await body();
-  } finally {
-    _releaseTranscodeSlot();
+Future<T> runGuardedTranscodeForTesting<T>(
+  Future<T> Function() body, {
+  String? workKey,
+  bool Function()? isAlive,
+}) {
+  return _runTranscodeWork<T>(
+    workKey: workKey,
+    isAlive: isAlive,
+    body: (_TranscodeWork work) async {
+      await _acquireTranscodeSlot(work);
+      try {
+        work.throwIfAbandoned();
+        return await work.raceCancel(body());
+      } finally {
+        _releaseTranscodeSlot();
+      }
+    },
+  );
+}
+
+/// 转码工作因所属的流已作废而放弃（host 据此回 410）。
+///
+/// 与 [TranscodeFailure] 区分开：这不是 ffmpeg 或源文件的问题，而是请求它的那条流
+/// 已经不需要这段了（播放会话结束 / 换集 / 换档，或流票过期）。
+class TranscodeCancelled implements Exception {
+  const TranscodeCancelled();
+
+  @override
+  String toString() => 'TranscodeCancelled';
+}
+
+/// 同一个 key（host 侧是签发分段的流 token）名下全部在途的转码工作。最后一个工作
+/// 结束时整组移出 [_workGroups]，所以登记表的大小就是「当前有工作的 key 数」，不会
+/// 随签发过的 token 无界增长。
+class _TranscodeWorkGroup {
+  bool cancelled = false;
+
+  /// 正在 [_transcodeQueue] 里排队的等待者：取消时直接离队。
+  final Set<Completer<void>> waiters = <Completer<void>>{};
+
+  /// 已经起来的 ffmpeg 进程：取消时 SIGKILL。
+  final Set<Process> processes = <Process>{};
+
+  /// 取消信号：测试 runner / 测试 body 这类没有进程可杀的工作靠它提前结束等待。
+  final Completer<void> cancelSignal = Completer<void>();
+
+  /// 组内尚未结束的工作数（含排队、在跑、准备中）。
+  int active = 0;
+}
+
+final Map<String, _TranscodeWorkGroup> _workGroups =
+    <String, _TranscodeWorkGroup>{};
+
+/// 一次转码工作的取消上下文。不带 key 的工作 [group] 为 null，只受 [isAlive] 约束。
+class _TranscodeWork {
+  _TranscodeWork(this.group, this.isAlive);
+
+  final _TranscodeWorkGroup? group;
+  final bool Function()? isAlive;
+
+  /// 所属的流已作废：被按 key 取消，或调用方的存活判定说它已不在。
+  bool get abandoned =>
+      (group?.cancelled ?? false) || (isAlive?.call() == false);
+
+  void throwIfAbandoned() {
+    if (abandoned) throw const TranscodeCancelled();
+  }
+
+  /// [future] 与取消信号赛跑：先被取消就以 [TranscodeCancelled] 结束（[future] 之后
+  /// 的结果 / 错误由 [Future.any] 吞掉，不会成为未处理错误）。
+  Future<T> raceCancel<T>(Future<T> future) {
+    final _TranscodeWorkGroup? g = group;
+    if (g == null) return future;
+    return Future.any<T>(<Future<T>>[
+      future,
+      g.cancelSignal.future.then<T>(
+        (void _) => throw const TranscodeCancelled(),
+      ),
+    ]);
   }
 }
+
+/// 登记 → 判存活 → 跑 [body] → 注销。登记与第一次判存活之间**没有 await**：调用方的
+/// 「作废 token → [cancelTranscodeWork]」也是同步的，于是作废发生在登记之前的必被
+/// [isAlive] 拦下，发生在登记之后的必被组取消拦下，不存在两边都漏掉的窗口。
+Future<T> _runTranscodeWork<T>({
+  required String? workKey,
+  required bool Function()? isAlive,
+  required Future<T> Function(_TranscodeWork work) body,
+}) async {
+  final _TranscodeWorkGroup? group = workKey == null
+      ? null
+      : _workGroups.putIfAbsent(workKey, _TranscodeWorkGroup.new);
+  group?.active++;
+  final _TranscodeWork work = _TranscodeWork(group, isAlive);
+  try {
+    work.throwIfAbandoned();
+    return await body(work);
+  } finally {
+    if (group != null && --group.active == 0) {
+      // 只移除自己这一组：取消后同 key 又来的新工作会建新组，旧组不能把它挤掉。
+      if (identical(_workGroups[workKey], group)) _workGroups.remove(workKey);
+    }
+  }
+}
+
+/// 取消 [key] 名下全部转码工作：排队者立即离队（以 [TranscodeCancelled] 完成，不占
+/// 名额、不交棒），在跑的 ffmpeg 进程 SIGKILL，测试 runner 路径立即抛
+/// [TranscodeCancelled]。对当前没有工作的 key 是空操作（不留记录）。
+///
+/// 取消只作用于此刻在途的这一组；之后同 key 再来的工作另起一组，不受影响——调用方
+/// 要拦住它们，靠的是 [transcodeSegment] 的 `isAlive`（host 侧即「token 还在不在」）。
+void cancelTranscodeWork(String key) {
+  final _TranscodeWorkGroup? group = _workGroups.remove(key);
+  if (group == null || group.cancelled) return;
+  group.cancelled = true;
+  for (final Completer<void> waiter in group.waiters) {
+    // 已被交棒（complete 过）的等待者不在队里了：它醒来后会自己判出作废并交还名额。
+    if (_transcodeQueue.remove(waiter)) {
+      waiter.completeError(const TranscodeCancelled());
+    }
+  }
+  group.waiters.clear();
+  for (final Process process in group.processes) {
+    process.kill(ProcessSignal.sigkill);
+  }
+  group.cancelSignal.complete();
+}
+
+/// 当前有在途转码工作的 key 数（登记表大小）。
+@visibleForTesting
+int get pendingTranscodeWorkKeys => _workGroups.length;
 
 int _liveTranscodes = 0;
 final List<Completer<void>> _transcodeQueue = <Completer<void>>[];
 
-Future<void> _acquireTranscodeSlot() async {
+/// 取一个并发名额。排队中被取消时以 [TranscodeCancelled] 结束，此时**没有**占名额，
+/// 调用方不得 [_releaseTranscodeSlot]。
+Future<void> _acquireTranscodeSlot(_TranscodeWork work) async {
   if (_liveTranscodes < kMaxConcurrentTranscodes) {
     _liveTranscodes++;
     return;
   }
   final Completer<void> waiter = Completer<void>();
   _transcodeQueue.add(waiter);
-  await waiter.future;
+  work.group?.waiters.add(waiter);
+  try {
+    await waiter.future;
+  } finally {
+    work.group?.waiters.remove(waiter);
+  }
 }
 
 void _releaseTranscodeSlot() {
@@ -409,7 +547,12 @@ Future<Uint8List> transcodeSegment({
   required int durationMs,
   int? audioStreamIndex,
   int segmentSeconds = kTranscodeSegmentSeconds,
+  String? workKey,
+  bool Function()? isAlive,
 }) {
+  // [workKey]：这段工作归属的流（host 侧传签发它的 token），[cancelTranscodeWork]
+  // 按它取消；[isAlive]：这条流此刻是否还有效，排队前、拿到名额后、回退重跑前各判
+  // 一次。两者都不传时行为与之前完全相同。
   final ({Duration start, Duration end}) range = transcodeSegmentRange(
     index,
     durationMs,
@@ -423,6 +566,8 @@ Future<Uint8List> transcodeSegment({
       end: range.end,
       audioStreamIndex: audioStreamIndex,
     ),
+    workKey: workKey,
+    isAlive: isAlive,
   );
 }
 
@@ -434,14 +579,25 @@ const Duration kTranscodeSegmentTimeout = Duration(seconds: 90);
 
 /// 跑一次分段转码进程，返回 (退出码, stdout 字节, stderr 摘要)。超时 SIGKILL 并抛
 /// [TranscodeFailure]（与既有 [runFfmpegProcess] 的处置同口径）。
+///
+/// 进程登记进 [work] 的组：按 key 取消时被 SIGKILL，这里以 [TranscodeCancelled]
+/// 结束（被杀的进程非 0 退出、无产出，不能当成 [TranscodeFailure] 或触发回退）。
 Future<({int code, Uint8List bytes, String stderr})> _spawnSegment(
   String executable,
   List<String> args,
+  _TranscodeWork work,
 ) async {
+  work.throwIfAbandoned();
   final Process process = await HelperProcessRegistry.instance.start(
     executable,
     args,
   );
+  final _TranscodeWorkGroup? group = work.group;
+  group?.processes.add(process);
+  if (work.abandoned) {
+    // 在等进程起来的那段 await 里被取消：cancelTranscodeWork 没见到这个进程。
+    process.kill(ProcessSignal.sigkill);
+  }
   // stdout / stderr 必须同时 drain：任一管道写满 64 KB 都会把 ffmpeg 堵死，表现为
   // 「转码莫名其妙停住」。与既有 runFfmpegProcess 的防死锁处理同因。
   // 按块攒进 BytesBuilder：`expand<int>().toList()` 会把每段几 MB 的输出逐字节装箱成
@@ -467,6 +623,7 @@ Future<({int code, Uint8List bytes, String stderr})> _spawnSegment(
     );
     await stderrFuture.timeout(kTranscodeSegmentTimeout);
     final int code = await process.exitCode.timeout(kTranscodeSegmentTimeout);
+    if (group?.cancelled ?? false) throw const TranscodeCancelled();
     return (
       code: code,
       bytes: collected,
@@ -474,11 +631,14 @@ Future<({int code, Uint8List bytes, String stderr})> _spawnSegment(
     );
   } on TimeoutException {
     process.kill(ProcessSignal.sigkill);
+    if (group?.cancelled ?? false) throw const TranscodeCancelled();
     fushiDebugPrint(
       'transcode segment timed out after ${kTranscodeSegmentTimeout.inSeconds}s: '
       '$executable',
     );
     throw TranscodeFailure(-1, 'segment timed out');
+  } finally {
+    group?.processes.remove(process);
   }
 }
 
@@ -496,46 +656,71 @@ bool _bundledSegmentUnusable(int code, List<int> bytes) =>
 /// 先取并发名额再开改写：加密盘的改写要为每段起一个解密 isolate，排队中的分段不该
 /// 提前占着它们。DVD 标题输入同理改写成 `dvdvideo` demuxer（[prepareDvdFfmpegArgs]，
 /// 与 [DvdFfmpegBackend] 同一条），不直接读 VOB。
-Future<Uint8List> _runSegment(List<String> input) async {
+///
+/// 取消语义见 [cancelTranscodeWork]：登记后同步判一次存活，排队中可被取消离队，拿到
+/// 名额后再判一次（排队期间流可能已作废），不通过即交还名额。
+Future<Uint8List> _runSegment(
+  List<String> input, {
+  String? workKey,
+  bool Function()? isAlive,
+}) {
   final List<String> args = prepareDvdFfmpegArgs(input);
-  final TranscodeSegmentRunner? override = _runnerOverride;
-  if (override != null) {
-    return runWithBlurayFfmpegInput(
-      args,
-      (List<String> resolved, AacsMediaSession _) => override(resolved),
-    );
-  }
+  return _runTranscodeWork<Uint8List>(
+    workKey: workKey,
+    isAlive: isAlive,
+    body: (_TranscodeWork work) async {
+      final TranscodeSegmentRunner? override = _runnerOverride;
+      if (override != null) {
+        return work.raceCancel(
+          runWithBlurayFfmpegInput(
+            args,
+            (List<String> resolved, AacsMediaSession _) => override(resolved),
+          ),
+        );
+      }
 
-  await _acquireTranscodeSlot();
-  try {
-    return await runWithBlurayFfmpegInput(args, _spawnResolvedSegment);
-  } finally {
-    _releaseTranscodeSlot();
-  }
+      await _acquireTranscodeSlot(work);
+      try {
+        work.throwIfAbandoned();
+        return await runWithBlurayFfmpegInput(
+          args,
+          (List<String> resolved, AacsMediaSession session) =>
+              _spawnResolvedSegment(resolved, session, work),
+        );
+      } finally {
+        _releaseTranscodeSlot();
+      }
+    },
+  );
 }
 
 Future<Uint8List> _spawnResolvedSegment(
   List<String> args,
   AacsMediaSession session,
+  _TranscodeWork work,
 ) async {
   final String executable = resolveFfmpegExecutable();
   ({int code, Uint8List bytes, String stderr}) r;
   try {
-    r = await _spawnSegment(executable, args);
+    r = await _spawnSegment(executable, args, work);
   } on ProcessException {
     // 随包路径存在于磁盘却起不来（损坏 / 架构不匹配 / 无执行权限）。
     if (executable == 'ffmpeg' || ffmpegExplicitOverride() != null) rethrow;
+    // 回退前判一次：流已作废就不再起第二个进程。
+    work.throwIfAbandoned();
     fushiDebugPrint('bundled ffmpeg failed to start, retrying PATH ffmpeg');
-    r = await _spawnSegment('ffmpeg', args);
+    r = await _spawnSegment('ffmpeg', args, work);
   }
   if (_bundledSegmentUnusable(r.code, r.bytes) &&
       executable != 'ffmpeg' &&
       ffmpegExplicitOverride() == null) {
+    // 被 kill 的进程同样「非 0 + 无产出」，不能误判成随包 ffmpeg 不可用而回退重跑。
+    work.throwIfAbandoned();
     fushiDebugPrint(
       'bundled ffmpeg produced no output (code=${r.code}); '
       'retrying PATH ffmpeg',
     );
-    r = await _spawnSegment('ffmpeg', args);
+    r = await _spawnSegment('ffmpeg', args, work);
   }
   if (r.code != 0) {
     // stderr 可能带着解密回环 URL（持有即可读明文的 bearer 能力），进日志前脱敏。
