@@ -478,15 +478,33 @@ String? distJobBlocker(
           '${have.isEmpty ? '' : ' (has: $have)'}';
     }
   }
-  if (hello['paused'] == 'yes') return 'paused by the owner';
+  if (hello['paused'] == 'yes') return kDistPausedByOwner;
   return null;
 }
+
+/// [SshDistWorker.jobBlocker]'s answer for a machine that did not answer.
+const String kDistUnreachable = 'unreachable';
+
+/// [distJobBlocker]'s answer for a paused machine.
+const String kDistPausedByOwner = 'paused by the owner';
+
+/// A job blocker that may be gone later (paused, unreachable), unlike a
+/// missing toolchain or an old shim.
+bool distJobBlockerIsTransient(String blocker) =>
+    blocker == kDistPausedByOwner || blocker.startsWith(kDistUnreachable);
 
 class DistWorkerError implements Exception {
   DistWorkerError(this.message);
   final String message;
   @override
   String toString() => message;
+}
+
+/// A prepare step the worker turned down for now (shim / `init` exit
+/// [kDistShimBusy]: its checkout locked by another run, paused, short of
+/// disk). Nothing was taken there; asking again later may succeed.
+class DistWorkerBusy extends DistWorkerError {
+  DistWorkerBusy(super.message);
 }
 
 /// Test processes per batch on a worker configured for [configured] (null:
@@ -528,6 +546,22 @@ abstract class DistWorker {
   /// Gets the worker onto [snapshot] with dependencies and native libraries
   /// ready. Throws [DistWorkerError]; [log] receives the step output.
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log);
+
+  /// Asked by [prepare] once this worker holds its remote checkout, before
+  /// anything is pushed: false makes it back out (the run was meanwhile
+  /// admitted on the calling machine, `dist_test.dart --offload-claim`).
+  bool Function(DistWorker worker)? onLocked;
+
+  /// Throws when [onLocked] says this run is no longer this worker's; the
+  /// checkout lock is then released by [finish] as after any failed prepare.
+  void claimAfterLock() {
+    final bool Function(DistWorker)? hook = onLocked;
+    if (hook != null && !hook(this)) {
+      throw DistWorkerError(
+        '$name: the run was admitted on the calling machine meanwhile',
+      );
+    }
+  }
 
   /// One batch of [package]'s suites ([kDistAppPackage] or `packages/<name>`;
   /// a pure Dart package runs under `dart test`). With `--coverage` among
@@ -1166,10 +1200,17 @@ class SshDistWorker extends DistWorker {
       ..write(r.stderr);
     if (r.exitCode != 0) {
       final String tail = '${r.stderr}'.trim().split('\n').last;
-      throw DistWorkerError(
-        '$step failed on $name (exit ${r.exitCode}): '
-        '$tail',
-      );
+      final String message =
+          '$step failed on $name (exit ${r.exitCode}): $tail';
+      if (distRemoteExitCode(
+            r.exitCode,
+            printedNothing: '${r.stdout}'.trim().isEmpty,
+            stderr: '${r.stderr}',
+          ) ==
+          kDistShimBusy) {
+        throw DistWorkerBusy(message);
+      }
+      throw DistWorkerError(message);
     }
   }
 
@@ -1214,6 +1255,7 @@ class SshDistWorker extends DistWorker {
       log,
     );
     _locked = true;
+    claimAfterLock();
 
     await _push(snapshot, runId, config.workdir, log);
 
@@ -1295,6 +1337,7 @@ class SshDistWorker extends DistWorker {
       log,
     );
     _locked = true;
+    claimAfterLock();
     await _push(snapshot, runId, shimCheckoutName(slot), log);
     await _sshChecked(
       'prepare',
@@ -1518,7 +1561,7 @@ class SshDistWorker extends DistWorker {
     if (!_shim && job.build == null) return null;
     final ProcessResult r = await _hello();
     if (r.exitCode != 0) {
-      return 'unreachable (exit ${r.exitCode})';
+      return '$kDistUnreachable (exit ${r.exitCode})';
     }
     return distJobBlocker(parseDistHello('${r.stdout}'), job, shim: _shim);
   }
