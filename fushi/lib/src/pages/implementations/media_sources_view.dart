@@ -1437,11 +1437,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           ),
         );
     if (draft == null) return;
-    await (_db.update(
-      _db.mediaSources,
-    )..where((tbl) => tbl.id.equals(row.id))).write(
-      MediaSourcesCompanion(videoGroupingMode: Value(draft.groupingMode)),
-    );
+    // 刮削设置先落库：分组方式变了会立即重扫，重扫收尾的「扫描后自动刮削」读的
+    // 必须是这次保存的设置。
     await _db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
@@ -1459,8 +1456,38 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+    await applyVideoGroupingMode(row, draft.groupingMode);
     await _load();
     widget.onLibraryChanged?.call();
+  }
+
+  /// 改视频来源的分组方式（按作品 / 按文件夹），变了就**立即按新方式重扫**该来源。
+  ///
+  /// 分组方式是扫描的输入：作品合集（playlist）只由按作品模式的扫描
+  /// （`VideoFolderGroupCoordinator.groupPaths`）建出来，目录合集只由目录模式的扫描
+  /// 建出来。而它的两个读者是**即时**按来源当前模式取舍的：
+  /// - 视频库折叠（`applyVideoFolderCollectionPolicy`）在按作品模式下不再把成员折进
+  ///   目录合集；
+  /// - 刮削计划（`VideoSourceWorkPlanner.plan`）不拿目录合集当作品单元。
+  ///
+  /// 只写模式、等「下次扫描」再归组，中间这段时间目录合集里的整部剧在「系列」页
+  /// 散成每集一张卡，期间刮削还会把每一集当成一部独立作品去识别（反馈 YUH015QaF2，
+  /// BUG-4323）。所以模式与归组必须一起变：写完模式就走同一条扫描管线重扫。
+  Future<void> applyVideoGroupingMode(
+    SourceLibraryRow row,
+    String groupingMode,
+  ) async {
+    if (row.mediaKind != 'video' || row.videoGroupingMode == groupingMode) {
+      return;
+    }
+    await (_db.update(
+      _db.mediaSources,
+    )..where((tbl) => tbl.id.equals(row.id))).write(
+      MediaSourcesCompanion(videoGroupingMode: Value(groupingMode)),
+    );
+    final SourceLibraryRow? fresh = await _db.getMediaSourceById(row.id);
+    if (fresh == null) return;
+    await _rescan(fresh);
   }
 
   Future<String?> _pickVideoGroupingMode() async {
@@ -1954,7 +1981,7 @@ class _VideoSourceScrapeSettingsDialogState
                   ? t.video_source_grouping_folder_hint
                   : t.video_source_grouping_series_hint,
             ),
-            Text(t.video_source_grouping_change_hint),
+            Text(t.video_source_grouping_change_rescan_hint),
             if (_groupingMode != 'folder') ...<Widget>[
               AdaptiveSettingsPickerRow<String>(
                 title: t.video_metadata_primary_provider,

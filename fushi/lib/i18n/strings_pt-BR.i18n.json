@@ -11384,7 +11384,7 @@
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) mais um passe extra de restauração suave, ambos na resolução da fonte. O nível mais forte para celulares; ainda sem ampliação. Reduza um nível se perder quadros.",
   "video_shader_url_hint": "Cole um link de shader .glsl (ex.: GitHub)",
   "video_shaders_empty": "Nenhum shader importado ainda",
-  "video_source_grouping_change_hint": "A próxima verificação usará esta configuração. As coleções e os metadados existentes serão mantidos.",
+  "video_source_grouping_change_rescan_hint": "Changing this rescans the source right away. Existing collections and metadata are kept.",
   "video_source_grouping_folder": "Por pasta",
   "video_source_grouping_folder_hint": "Cria uma coleção para cada subpasta de primeiro nível. Os arquivos diretamente na pasta selecionada compartilham uma coleção. A busca de metadados não está disponível neste modo; mude para Por obra para usá-la.",
   "video_source_grouping_mode": "Organização de vídeos",

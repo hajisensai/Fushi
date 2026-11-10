@@ -11384,7 +11384,7 @@
   "video_shader_tier_ultra_hint_mobile": "Anime4K 去模糊（M）加一道柔化修復，均在片源原分辨率上跑。手機端最強檔，仍不含放大 pass。掉幀就往下退一檔。",
   "video_shader_url_hint": "貼上着色器 .glsl 連結（如 GitHub）",
   "video_shaders_empty": "尚未匯入任何着色器",
-  "video_source_grouping_change_hint": "下次掃描會使用此設定。現有合集及中繼資料會保留。",
+  "video_source_grouping_change_rescan_hint": "Changing this rescans the source right away. Existing collections and metadata are kept.",
   "video_source_grouping_folder": "按資料夾",
   "video_source_grouping_folder_hint": "為每個第一層子資料夾建立一個合集。直接放在所選資料夾內的檔案會歸入同一合集。此模式不支援刮削中繼資料；如需刮削，請切換至「按作品」。",
   "video_source_grouping_mode": "影片整理方式",
