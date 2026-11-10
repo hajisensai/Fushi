@@ -69,7 +69,7 @@ final ValueListenable<Set<String>> _noPeersNotJoined =
     ValueNotifier<Set<String>>(const <String>{});
 
 /// 「同步状态」摘要行标题：同步在跑时说进行中（不能说「所有改动都已同步」——数字是开跑前的
-/// 快照）；已配对设备（互联 host）报告还没加入复习同步时如实说（BUG-4274：本机未上传条数为 0 只说明
+/// 快照）；已配对设备（互联 host）报告还没加入复习同步时如实说（BUG-4279：本机未上传条数为 0 只说明
 /// 发出去了，对端没并入、也没发它的数据）；否则按未上传条数说。
 String srsTimelineSummaryTitle({
   required SrsSyncProgress? syncing,
@@ -913,7 +913,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
     final SrsDeferredProfileMerge? deferred = _deferredMerge;
-    // 已配对设备（互联 host）报告还没加入复习同步的位置（BUG-4274）：调度器一轮跑完问到的。
+    // 已配对设备（互联 host）报告还没加入复习同步的位置（BUG-4279）：调度器一轮跑完问到的。
     final ValueListenable<Set<String>> peersNotJoined =
         ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
         _noPeersNotJoined;

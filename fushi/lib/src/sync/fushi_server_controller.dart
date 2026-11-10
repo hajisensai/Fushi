@@ -200,7 +200,7 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 远程复习库：按请求现取（复习模块关着时 null → 端点 404、不声明能力）。
   final SrsRemoteStoreService? Function()? _srsRemoteStore;
 
-  /// 本机此刻是否已加入复习同步 v2（首次 v2 同步已确认，BUG-4274）：已配对设备一轮跑完经
+  /// 本机此刻是否已加入复习同步 v2（首次 v2 同步已确认，BUG-4279）：已配对设备一轮跑完经
   /// `/api/srs/sync-status` 问，没加入时它们提示「对端还没开复习同步」。null（headless/单测）= 不报告。
   final bool Function()? _srsSync2Joined;
 
@@ -872,7 +872,7 @@ class FushiSyncServerController extends ChangeNotifier {
           ..leaderboardLinkHost = _leaderboardLinkHost?.call()
           // 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）。
           ..srsRemoteStoreProvider = _srsRemoteStore
-          // 复习同步 v2 的参与状态（BUG-4274）：没确认首次同步前本机不跑本机目录那一轮。
+          // 复习同步 v2 的参与状态（BUG-4279）：没确认首次同步前本机不跑本机目录那一轮。
           ..srsSync2Joined = _srsSync2Joined
           // 「互联主机」AI 提供商（反馈 M8KvhMTHVS）：每个请求现取本机 AI 设置。
           ..aiRelaySettings = _aiRelaySettings;
