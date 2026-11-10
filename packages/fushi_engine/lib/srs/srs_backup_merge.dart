@@ -25,6 +25,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_data.dart'
+    show srsPurgeProfileRows;
 import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 只读地读一份备份里的 SRS 数据。
@@ -235,27 +237,16 @@ String srsBackupProfileName(String original, Set<String> taken) {
   }
 }
 
-/// 本机 SRS 中按 profile_uid 归属的全部表（数据 + 本机状态 + 缓存）。
-const List<String> _kSrsProfileTables = <String>[
-  'srs_entities',
-  'srs_field_edits',
-  'srs_review_logs',
-  'srs_unknown_events',
-  'srs_event_local',
-  'srs_local_state',
-  'srs_notes_cache',
-  'srs_cards_cache',
-  // srs.db schema v3：有效复习投影（可重建缓存）。
-  'srs_stat_reviews',
-  // v121：本机已冻结批次留存。
-  'srs_sent_batches',
-];
-
 /// 把 [source] 里每个有 SRS 数据的 profile 合并进本机（铁律 E，见库注释）：profile 行在主库
 /// [local]，SRS 事件在 [localSrs]。
 ///
 /// 幂等：同一份备份合并两次，第二次全部走「同 uid」且不新增事件。两个文件不能一起原子提交：
 /// 改 uid 时先删 [localSrs] 里旧 uid 的行、再写主库的 `profiles.uid`，两步都幂等，中途失败重跑即收敛。
+///
+/// 前提：[localSrs] 的写连接只归这次合并用（调用方自己开的存储：合并导入与覆盖恢复都在 app 的 SRS 存储关掉
+/// 之后另开一份，backup_service/restore.part.dart）。删旧 uid 是内核命令、直接在写连接上跑，不经任何副本的
+/// 独占区；这里一路顺序 await，连接上没有别的写入者开着事务，它就不会夹进别人的事务里随之回滚。别的 [SrsCore]
+/// 是另一条连接，不会共用事务。
 Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
   required SrsBackupSource source,
   required FushiDatabase local,
@@ -283,7 +274,7 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
       if (sameName != null && await _canAdoptUid(localSrs, sameName.uid)) {
         final String? oldUid = sameName.uid;
         if (oldUid != null && oldUid.isNotEmpty) {
-          await _deleteProfileRows(localSrs.db, oldUid);
+          await srsPurgeProfileRows(localSrs.core, oldUid);
         }
         await local.adoptProfileUid(sameName.id, bp.uid);
         localId = sameName.id;
@@ -381,30 +372,22 @@ Future<bool> srsCanAdoptProfileUid(SrsStorage db, String currentUid) =>
 
 /// 本机 profile [profileId] 改用 [newUid]：先删掉旧 uid 下的全部 SRS 行（只可能是内置行 / 本机状态 /
 /// 缓存，内置行的 ID 由 uid 派生，换 uid 后随新 uid 重新生成）。调用方先用 [srsCanAdoptProfileUid] 检查。
+/// 不是改写 uid：旧 uid 的行没有要带过去的（新 uid 的内置行与同步身份按新 uid 重建），所以是整体删除，经 Rust
+/// `profile_purge`（删本机一个 uid 的唯一实现：同步 v2 的操作 / 设备 / 身份、按 profile 记的 srs_meta 键、
+/// 没人引用的 sync2_deps 一并删）。
 ///
-/// 两个文件分别提交：先删 [srs] 里旧 uid 的行，再写主库 [db] 的 `profiles.uid`。中途失败时
+/// 两个文件分别提交：先删 [srs] 里旧 uid 的行（一个 savepoint），再写主库 [db] 的 `profiles.uid`。中途失败时
 /// 旧 uid 下只剩空（内置行随下次打开重建），重跑即收敛。
 Future<void> srsAdoptProfileUid(
   FushiDatabase db,
-  SrsDatabase srs, {
+  SrsCore srs, {
   required int profileId,
   required String oldUid,
   required String newUid,
 }) async {
-  await _deleteProfileRows(srs, oldUid);
+  await srsPurgeProfileRows(srs, oldUid);
   await db.adoptProfileUid(profileId, newUid);
 }
-
-/// 删掉 [uid] 名下全部 SRS 行（一个事务）。
-Future<void> _deleteProfileRows(SrsDatabase srs, String uid) =>
-    srs.transaction(() async {
-      for (final String table in _kSrsProfileTables) {
-        await srs.customStatement(
-          'DELETE FROM $table WHERE profile_uid = srs_id(?)',
-          <Object>[uid],
-        );
-      }
-    });
 
 /// 本机 SRS 四张事件表里已存在的事件 ID。
 Future<Set<String>> _existingEventIds(SrsDatabase db, List<String> ids) async {

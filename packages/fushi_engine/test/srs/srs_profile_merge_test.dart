@@ -1242,6 +1242,7 @@ void main() {
       db: b.db,
       activeProfileId: () async => b.profileId,
       reopenStore: () async => b.reopen(),
+      writeLock: SrsCurrentStoreWriteLock(() => b.store),
       onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
     );
     for (int i = 1; i <= 2; i++) {
@@ -1296,6 +1297,7 @@ void main() {
       db: b.db,
       activeProfileId: () async => b.profileId,
       reopenStore: () async => b.reopen(),
+      writeLock: SrsCurrentStoreWriteLock(() => b.store),
       onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
     );
     final SrsProfileLinkOutcome asked = await linker.link(dir, b.store);
@@ -1497,6 +1499,7 @@ void main() {
       db: b.db,
       activeProfileId: () async => b.profileId,
       reopenStore: () async => b.reopen(),
+      writeLock: SrsCurrentStoreWriteLock(() => b.store),
       onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
     );
     for (int i = 1; i <= 2; i++) {

@@ -5,7 +5,8 @@
 //!
 //! - [SrsCore::profile_footprint]：确认框要显示的笔记 / 卡 / 复习记录数（读连接上一次读完）；
 //! - [SrsCore::profile_purge]：一个事务里删掉该 uid 在**每一张**带 `profile_uid` 列的 `srs_*` / `sync2_*` 表里的
-//!   行、`srs_meta` 里以 `/<uid>` 结尾的按 profile 记的键，再回收没人引用的 `sync2_deps`；
+//!   行、`srs_meta` 里按 profile 记的键（`…/<uid>` 与 `…/<uid>/…`），再回收没人引用的 `sync2_deps`。删本机一个
+//!   uid 的唯一实现：删 profile、并入（srs_profile_merge.dart）、采用别的 uid（srs_backup_merge.dart）都经它；
 //! - [SrsCore::profile_uids]：库里出现过的全部 uid（Dart 与主库现存 profile 比对得出无主 uid）+ 一次性存量扫描的
 //!   完成标记（[SrsCore::orphan_sweep_done] 写）。
 //!
@@ -23,7 +24,9 @@ use std::sync::atomic::Ordering;
 /// `srs_meta` 里一次性存量无主数据扫描的完成标记（值 = 完成时刻毫秒）。
 pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v1";
 
-/// 带 `profile_uid` 列的 `srs_*` / `sync2_*` 表（按名字排序）。
+/// 带 `profile_uid` 列的 `srs_*` / `sync2_*` 表（按名字排序）。删除按这个顺序：投影表（`srs_entities` /
+/// `srs_field_edits` / `srs_review_logs`）的删除触发器往 `sync2_digest_buckets` 记负项（sync2/digest.rs），按名字它排在
+/// 三张投影表之后，删到它时触发器写下的行一并删掉。
 fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
     let mut stmt = c
         .prepare(
@@ -101,10 +104,13 @@ impl SrsCore {
                 }
                 deleted += n;
             }
-            // 按 profile 记的元数据键一律是 `<前缀>/<uid>`（迁移进度、状态摘要…）；uid 是 UUID，不会误伤别的键。
+            // 按 profile 记的元数据键是 `<前缀>/<uid>`（迁移进度、状态摘要、并入标记…）或 `<前缀>/<uid>/<下级>`
+            // （别的设备的扩展 / 停用标记、各位置的 head 签名，sync2/devices.rs、transport.rs）；uid 是 UUID，
+            // 不会误伤别的键。
             let meta = c
                 .execute(
-                    "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1",
+                    "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1 \
+                     OR instr(key, '/' || ?1 || '/') > 0",
                     [profile],
                 )
                 .map_err(sql)? as i64;
@@ -256,6 +262,25 @@ mod tests {
             [profile],
         )
         .unwrap();
+        // uid 在中间的按 profile 记的键（sync2/devices.rs 的设备扩展 / 停用标记，transport.rs 的 head 签名）。
+        for prefix in ["sync2_device_ext", "sync2_retired", "sync2_head_sig"] {
+            w.execute(
+                "INSERT INTO srs_meta (key, value) VALUES (?1 || '/' || ?2 || '/x', '{}')",
+                params![prefix, profile],
+            )
+            .unwrap();
+        }
+    }
+
+    /// [profile] 名下按 profile 记的 `srs_meta` 键数（`…/<uid>` 或 `…/<uid>/…`）。
+    fn meta_of(core: &SrsCore, profile: &str) -> i64 {
+        let w = core.writer().unwrap();
+        w.query_row(
+            "SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/' || ?1 OR key LIKE '%/' || ?1 || '/%'",
+            [profile],
+            |r| r.get(0),
+        )
+        .unwrap()
     }
 
     fn rows_of(core: &SrsCore, profile: &str) -> i64 {
@@ -291,6 +316,8 @@ mod tests {
                 &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")
             ) >= 2
         );
+        assert!(meta_of(&core, P) >= 5);
+        let q_meta = meta_of(&core, Q);
 
         let out = core.profile_purge(P).unwrap();
         // 删之前的规模：一条笔记已删 → 2 条笔记、2 张卡；4 条复习。
@@ -322,14 +349,6 @@ mod tests {
                 .unwrap();
             assert_eq!(n, 0, "{t} still has rows of the purged profile");
         }
-        let meta: i64 = w
-            .query_row(
-                "SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/' || ?1",
-                [P],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(meta, 0);
         let schema: i64 = w
             .query_row(
                 "SELECT COUNT(*) FROM srs_meta WHERE key = 'schema'",
@@ -348,6 +367,8 @@ mod tests {
             .unwrap();
         assert_eq!(dangling, 0);
         drop(w);
+        assert_eq!(meta_of(&core, P), 0);
+        assert_eq!(meta_of(&core, Q), q_meta, "the other profile's keys stay");
         assert!(count(&core, "SELECT COUNT(*) FROM sync2_deps") <= deps_before);
         assert_eq!(core.profile_footprint(Q).unwrap(), q_before);
         assert_eq!(rows_of(&core, P), 0);
