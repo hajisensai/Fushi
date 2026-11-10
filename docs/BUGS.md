@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3913 条。点号进各自文件。
+> 共 3922 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4370](bugs/BUG-4370-manga-mine-source-tag-book.md) | ✅ | ✅ | 漫画制卡的来源分类标签写成 book 而非 manga |
-> 共 3921 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4378](bugs/BUG-4378-manga-mine-source-tag-book.md) | ✅ | ✅ | 漫画制卡的来源分类标签写成 book 而非 manga |
 | [BUG-4377](bugs/BUG-4377-remote-cover-cache-dir-deleted-at-runtime.md) | ✅ | ✅ | 远端封面磁盘缓存：运行中缓存目录被删（存储页清缓存 / iOS 系统清理）后写入静默失败到重启 |
 | [BUG-4376](bugs/BUG-4376-ai-agent-landscape-sheet-too-short.md) | ✅ | ✅ | 横屏打开 AI 助手只剩标题和输入框 |
 | [BUG-4375](bugs/BUG-4375-manga-image-epub-folder-import.md) | ✅ | ✅ | 漫画导入框选纯图 EPUB 文件夹识别不到；批量导入不归合集 |
