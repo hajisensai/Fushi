@@ -283,7 +283,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       onTap: _busy || widget.onPickCandidate == null
           ? null
           : () => widget.onPickCandidate!(candidate),
-      // 文件名完整换行（BUG-4347）：区分版本的段在末尾，与文件视图同一规则。
+      // 文件名完整换行（BUG-4348）：区分版本的段在末尾，与文件视图同一规则。
       title: SubtitleFileNameText(candidate.fileName),
       titleMaxLines: null,
       subtitle: meta.isEmpty ? null : Text(meta.join(' · ')),

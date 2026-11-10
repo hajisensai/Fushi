@@ -101,7 +101,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-4347 版本视图文件行完整显示文件名，末尾的版本差异可见', (WidgetTester tester) async {
+  testWidgets('BUG-4348 版本视图文件行完整显示文件名，末尾的版本差异可见', (WidgetTester tester) async {
     // 反馈 UMW99yDWTE：横屏手机上同集两个文件都截在「...HEVC-10bit AAC」，区分
     // 版本的末尾段被 maxLines: 2 吃掉。文件名前缀刻意做得很长且相同，只有末尾不同。
     const String prefix =
