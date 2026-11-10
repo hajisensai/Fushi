@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "Libreria",
   "stat_center_day_reset_hour": "Il giorno inizia alle",
   "stat_center_day_reset_hour_hint": "Lettura, visione e gioco prima di quest'ora contano per il giorno precedente. Influisce su oggi e sugli ultimi N giorni nelle statistiche; solo i record scritti dopo la modifica usano il nuovo limite.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Statistiche del solo profilo \"$name\"",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Panoramica",

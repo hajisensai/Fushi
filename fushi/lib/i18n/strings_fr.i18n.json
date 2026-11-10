@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "Bibliothèque",
   "stat_center_day_reset_hour": "La journée commence à",
   "stat_center_day_reset_hour_hint": "La lecture, le visionnage et le jeu avant cette heure comptent pour la veille. Affecte « aujourd'hui » et les N derniers jours dans les statistiques ; seuls les enregistrements écrits après le changement utilisent la nouvelle limite.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Statistiques du profil « $name » uniquement",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Vue d'ensemble",

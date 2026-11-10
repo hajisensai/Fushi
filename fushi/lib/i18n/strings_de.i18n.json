@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "Bücherregal",
   "stat_center_day_reset_hour": "Tag beginnt um",
   "stat_center_day_reset_hour_hint": "Lesen, Schauen und Spielen vor dieser Uhrzeit zählt zum Vortag. Betrifft „Heute“ und die letzten N Tage in den Statistiken; nur nach der Änderung geschriebene Einträge verwenden die neue Grenze.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Es werden nur Statistiken für das Profil „$name“ angezeigt",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Übersicht",

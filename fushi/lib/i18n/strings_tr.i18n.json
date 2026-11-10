@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "Kitaplık",
   "stat_center_day_reset_hour": "Gün şu saatte başlar",
   "stat_center_day_reset_hour_hint": "Bu saatten önceki okuma, izleme ve oyun süreleri bir önceki güne sayılır. İstatistiklerde bugünü ve son N günü etkiler; yalnızca değişiklikten sonra yazılan kayıtlar yeni sınırı kullanır.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Yalnızca \"$name\" profilinin istatistikleri gösteriliyor",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Genel bakış",

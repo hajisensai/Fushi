@@ -46,13 +46,8 @@ void main() {
         bootId: 'b',
       ),
       fallbackRolloverHour: () => 4,
-    );
-    // 日志的 UTC 偏移取 profile 设置（没有时是本机偏移，随跑测试的机器变）：钉成 JST，期望日期可以写死。
-    await store.editField(
-      SrsEntityKind.profile,
-      store.profileUid,
-      SrsFieldKeys.utcOffsetMin,
-      540,
+      // 日志的 UTC 偏移恒取本机偏移（随跑测试的机器变）：钉成 JST，期望日期可以写死。
+      localOffsetMin: () => 540,
     );
   });
 

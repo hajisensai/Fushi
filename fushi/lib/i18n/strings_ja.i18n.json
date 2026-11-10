@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "本棚",
   "stat_center_day_reset_hour": "1日の開始時刻",
   "stat_center_day_reset_hour_hint": "この時刻より前の読書・視聴・ゲームの時間は前日として数えます。統計の「今日」と直近 N 日に影響します。変更後に書き込まれた記録だけが新しい境界を使います。",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "プロファイル「$name」の統計のみ表示しています",
   "stat_center_settings": "統計の設定",
   "stat_center_tab_overview": "概要",

@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "Книжная полка",
   "stat_center_day_reset_hour": "День начинается в",
   "stat_center_day_reset_hour_hint": "Чтение, просмотр и игры до этого часа засчитываются в предыдущий день. Влияет на «сегодня» и «последние N дней» в статистике; новая граница применяется только к записям, сделанным после изменения.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Показана статистика только для профиля «$name»",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Обзор",
