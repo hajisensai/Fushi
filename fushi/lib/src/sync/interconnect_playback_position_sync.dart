@@ -152,9 +152,12 @@ class InterconnectPlaybackPositionSync {
 
     switch (kind) {
       case PlaybackPositionKind.video:
+        // 与 [localPosition] / 播放页开播同一份键对解码（BUG-4280）。
+        final PlaybackPosition prefsPosition =
+            localRemoteVideoPositionFromPrefs(prefs, key);
         return (
-          positionMs: rowPositionMs ?? readInt(videoRemotePositionPrefKey(key)),
-          updatedAtMs: readInt(videoRemotePositionAtPrefKey(key)),
+          positionMs: rowPositionMs ?? prefsPosition.positionMs,
+          updatedAtMs: prefsPosition.updatedAtMs,
         );
       case PlaybackPositionKind.audiobook:
         return (

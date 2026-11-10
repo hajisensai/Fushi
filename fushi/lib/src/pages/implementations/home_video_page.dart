@@ -988,8 +988,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     });
   }
 
-  /// BUG-4282：本机远端断点变了。前台 → 防抖后重算远端卡（清单走缓存，只重读本机
-  /// 断点，见 [_loadRemoteVideos]）；不在前台 → 记一笔，露出来时再算。
+  /// BUG-4282：本机远端断点变了。前台 → 防抖后把本机断点重新叠到远端卡上
+  /// （[_overlayLocalRemotePositions]）；不在前台 → 记一笔，露出来时再叠。
   void _onRemotePositionsChanged(void _) {
     if (!mounted) return;
     _remotePositionsReloadDebounce?.cancel();
@@ -1001,21 +1001,45 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           _remotePositionsStale = true;
           return;
         }
-        setState(() {
-          _remoteFuture = _loadRemoteVideos();
-        });
+        _overlayLocalRemotePositions();
       },
+    );
+  }
+
+  /// BUG-4282：只把此刻的本机库断点重新叠到当前远端清单上。变的只有断点，所以
+  /// 不走 [_loadRemoteVideos] 整轮重载——那会在清单 TTL 过期后重新向 host 要清单、
+  /// 重跑合集收养与中断下载扫描（host 侧对端每次上报断点都会触发到这里）。
+  ///
+  /// 接在当前 [_remoteFuture] 之后叠：在途的整轮重载照常完成、不被丢弃，完成后再叠
+  /// 一次。叠加是「取较新时间戳」（[withLocalRemoteVideoPositions]），对已叠过的清单
+  /// 重复叠结果不变。
+  void _overlayLocalRemotePositions() {
+    _remotePositionsStale = false;
+    final Future<_RemoteVideoState?>? current = _remoteFuture;
+    if (current == null) return;
+    setState(() {
+      _remoteFuture = current.then(_withLocalRemotePositions);
+    });
+  }
+
+  Future<_RemoteVideoState?> _withLocalRemotePositions(
+    _RemoteVideoState? state,
+  ) async {
+    if (state == null || state.failed || state.videos.isEmpty) return state;
+    return _RemoteVideoState(
+      videos: await withLocalRemoteVideoPositions(
+        appModelNoUpdate.database,
+        state.videos,
+      ),
+      localCopies: state.localCopies,
+      source: state.source,
     );
   }
 
   /// 露出来时补做被推迟的进度重读（没有推迟的就什么都不做）。
   void _reloadStaleWatchProgress() {
     if (!mounted) return;
-    if (_remotePositionsStale) {
-      setState(() {
-        _remoteFuture = _loadRemoteVideos();
-      });
-    }
+    if (_remotePositionsStale) _overlayLocalRemotePositions();
     if (!_watchProgressStale) return;
     _watchProgressStale = false;
     _refreshAfterPlayback();
