@@ -244,17 +244,23 @@ class AdminDictionaryImport {
     if (decoded is! Map || decoded['kind'] != 'dictionary') return null;
     final Object? dict = decoded['dictionary'];
     final Object? name = dict is Map ? dict['name'] : null;
-    if (name is! String ||
-        name.trim().isEmpty ||
-        name.contains('/') ||
-        name.contains('\\') ||
-        name.contains('..')) {
+    if (name is! String || !_isSafeDictionaryName(name)) {
       throw UploadRejected(
         400,
         tr('词典包里的词典名无效：$name', 'invalid dictionary name in the package: $name'),
       );
     }
     return name;
+  }
+
+  /// 词典名要当目录名用：只拒空 / `.` / `..`、含路径分隔符或 NUL 的名字；
+  /// `Dict..v2` 这类合法名放行。
+  static bool _isSafeDictionaryName(String name) {
+    if (name.trim().isEmpty || name == '.' || name == '..') return false;
+    if (name.contains('/') || name.contains(r'\') || name.contains('\x00')) {
+      return false;
+    }
+    return p.posix.basename(name) == name && p.windows.basename(name) == name;
   }
 
   Future<DictionaryMetaRow?> _row(String name) async {

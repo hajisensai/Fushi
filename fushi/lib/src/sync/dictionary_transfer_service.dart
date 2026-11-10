@@ -186,6 +186,9 @@ DictionaryTransferFailureKind classifyDictionaryTransferError(Object error) {
         ? DictionaryTransferFailureKind.notPaired
         : DictionaryTransferFailureKind.unauthorized;
   }
+  if (error is SyncNotFoundError) {
+    return DictionaryTransferFailureKind.notFound;
+  }
   if (error is SyncPeerUnreachableError ||
       error is SocketException ||
       error is TimeoutException ||

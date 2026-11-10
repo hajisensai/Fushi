@@ -720,7 +720,7 @@ class WebDavOps {
       );
     }
     if (statusCode == 404) {
-      throw SyncBackendError('Not found: $context', isRetryable: true);
+      throw SyncNotFoundError('Not found: $context', isRetryable: true);
     }
     if (statusCode >= 400) {
       throw SyncBackendError('$context failed: HTTP $statusCode');

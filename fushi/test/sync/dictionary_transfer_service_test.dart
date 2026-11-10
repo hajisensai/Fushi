@@ -84,6 +84,49 @@ class _Host {
   }
 }
 
+/// 转发到真 host 的薄代理，但把词典包 GET（`/api/library/dictionaries/<名>/…`）
+/// 一律回 404：模拟 host 在「列表确认有」和「取包」之间删掉了这本词典。
+Future<HttpServer> _startPackage404Proxy(String upstream) async {
+  final HttpServer proxy = await HttpServer.bind(
+    InternetAddress.loopbackIPv4,
+    0,
+  );
+  final HttpClient client = HttpClient()..autoUncompress = false;
+  proxy.listen((HttpRequest req) async {
+    final String path = req.uri.path;
+    if (req.method == 'GET' &&
+        path.startsWith('/api/library/dictionaries/') &&
+        path.length > '/api/library/dictionaries/'.length) {
+      await req.drain<void>();
+      req.response.statusCode = HttpStatus.notFound;
+      await req.response.close();
+      return;
+    }
+    final HttpClientRequest out = await client.openUrl(
+      req.method,
+      Uri.parse('$upstream${req.uri}'),
+    );
+    req.headers.forEach((String name, List<String> values) {
+      if (name == 'host' || name == 'content-length') return;
+      for (final String v in values) {
+        out.headers.add(name, v);
+      }
+    });
+    await out.addStream(req);
+    final HttpClientResponse res = await out.close();
+    req.response.statusCode = res.statusCode;
+    res.headers.forEach((String name, List<String> values) {
+      if (name == 'transfer-encoding' || name == 'content-length') return;
+      for (final String v in values) {
+        req.response.headers.add(name, v);
+      }
+    });
+    await req.response.addStream(res);
+    await req.response.close();
+  });
+  return proxy;
+}
+
 void main() {
   late Directory work;
   late _Host hostA;
@@ -274,6 +317,38 @@ void main() {
       expect(probed, isEmpty, reason: 'no network for an installed dictionary');
       expect(postRuns, isEmpty);
     });
+
+    test(
+      'host deleting it between list and fetch (package 404) is notFound',
+      () async {
+        await _seedDictionary(hostA.db, hostA.dictRoot, 'Gone');
+        final HttpServer proxy = await _startPackage404Proxy(hostA.url);
+        addTearDown(() => proxy.close(force: true));
+        // 后台 isolate 下载路径也要把 404 的类型原样带回（不匹配文案）。
+        InterconnectSyncBackend.debugIsolateUnpinnedDownloads = true;
+        addTearDown(
+          () => InterconnectSyncBackend.debugIsolateUnpinnedDownloads = false,
+        );
+        await SyncRepository(local).setFushiClientUrls(<FushiClientUrl>[
+          FushiClientUrl(
+            url: 'http://127.0.0.1:${proxy.port}',
+            hostId: 'host-a',
+            token: 'token-a',
+            deviceName: 'A',
+          ),
+        ]);
+
+        final DictionaryTransferResult result = await service()
+            .downloadFromHost('host-a', 'Gone');
+
+        expect(result, isA<DictionaryTransferFailed>());
+        expect(
+          (result as DictionaryTransferFailed).kind,
+          DictionaryTransferFailureKind.notFound,
+        );
+        expect(await _names(local), isEmpty);
+      },
+    );
 
     test('dictionary missing on the host reports notFound', () async {
       final DictionaryTransferResult result = await service().downloadFromHost(

@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:path/path.dart' as p;
 
 class UploadRejected implements Exception {
@@ -64,7 +65,7 @@ class UploadStore {
   }) async {
     final int baseline = await used();
     if (declaredLength > 0 && baseline + declaredLength > quotaBytes) {
-      throw const UploadRejected(413, 'upload quota exceeded');
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
     }
     await target.parent.create(recursive: true);
     final IOSink sink = target.openWrite();
@@ -84,7 +85,7 @@ class UploadStore {
     }
     if (overQuota) {
       if (await target.exists()) await target.delete();
-      throw const UploadRejected(413, 'upload quota exceeded');
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
     }
     return written;
   }
@@ -132,7 +133,7 @@ class UploadStore {
     // 所以下面在写入循环里按真实字节数再判一次。
     final int baseline = await used();
     if (declaredLength > 0 && baseline + declaredLength > quotaBytes) {
-      throw const UploadRejected(413, 'upload quota exceeded');
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
     }
     final File part = File('$target.part');
     await part.parent.create(recursive: true);
@@ -166,7 +167,7 @@ class UploadStore {
           await raf.close();
         }
       }
-      throw const UploadRejected(413, 'upload quota exceeded');
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
     }
     await _record(written);
     final int now = have + written;

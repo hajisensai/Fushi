@@ -15,6 +15,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
@@ -777,6 +778,17 @@ void main() {
               }),
               status: 400,
             ),
+            for (final String bad in <String>['../x', 'a/b', r'a', '..', '.'])
+              (
+                name: 'bad.fushidict',
+                bytes: zipOf(<String, Object>{
+                  'manifest.json': <String, Object>{
+                    'kind': 'dictionary',
+                    'dictionary': <String, Object>{'name': bad},
+                  },
+                }),
+                status: 400,
+              ),
           ];
       for (final c in cases) {
         final ({int status, Map<String, dynamic> json}) r = await upload(
@@ -793,6 +805,18 @@ void main() {
     },
   );
 
+  test('.fushidict 词典名含 `..` 但不是路径段（Dict..v2）照收', () async {
+    final (:AdminApi api, :ServerPaths paths) = await build();
+    final ({int status, Map<String, dynamic> json}) r = await upload(
+      api,
+      await fushidictPackage('Dict..v2'),
+      filename: 'Dict..v2.fushidict',
+    );
+    expect(r.status, 200, reason: '${r.json}');
+    expect(r.json['name'], 'Dict..v2');
+    expectStagingClean(paths);
+  });
+
   test('超上传配额 → 413（按实际字节判），暂存清掉、账本不动', () async {
     final (:AdminApi api, :ServerPaths paths) = await build(
       uploadQuotaBytes: 64,
@@ -806,6 +830,7 @@ void main() {
       filename: 'big.zip',
     );
     expect(declared.status, 413, reason: '${declared.json}');
+    expect(declared.json['error'], tr('上传配额已用完', 'upload quota exceeded'));
     expectStagingClean(paths);
 
     // 不报 Content-Length（分块传输）也拦得住：边收边判。
