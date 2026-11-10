@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3872 条。点号进各自文件。
+> 共 3879 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4323](bugs/BUG-4323-windows-axtree-desync-pending-children-recur.md) | 🚧 | 🚧 | Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源） |
-> 共 3878 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4330](bugs/BUG-4330-windows-axtree-desync-pending-children-recur.md) | 🚧 | 🚧 | Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源） |
 | [BUG-4329](bugs/BUG-4329-web-browser-rotate-reloads-webview.md) | ✅ | ✅ | 内置浏览器旋转屏幕网页重载、YouTube 播放中断（iOS） |
 | [BUG-4328](bugs/BUG-4328-video-seek-tail-unreachable.md) | ✅ | ✅ | 视频进度条显示还有时间（23:39/24:02）但拖不到后面：mkv 容器时长被字幕轨拉长 |
 | [BUG-4327](bugs/BUG-4327-android-java-uncaught-crash-no-stack.md) | ✅ | ✅ | Android Java 层崩溃退出报告没有异常栈 |
