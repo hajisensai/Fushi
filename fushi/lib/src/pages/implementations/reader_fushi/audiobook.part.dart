@@ -333,9 +333,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     final AudiobookPlayerController? old = _audiobookController;
     if (old == null) return;
     session.detachReader(this);
-    // 歌词层在场时本页给旧控制器挂的强制跟随随解绑一起撤（会话可能比本页活得
-    // 久）；新控制器接上后由 [_reapplyLyricsFollowOverride] 补挂。
-    if (_lyricsMode) old.setReaderFollowOverride(false);
+    // 歌词模式在场时本页给旧控制器挂的「正文面脱开」随解绑一起撤（会话可能比本页
+    // 活得久）；新控制器接上后由 [_reapplyLyricsReaderDetached] 补挂。
+    if (_lyricsMode) old.setReaderDetached(false);
     old.setReaderVisible(true);
     _audiobookController = null;
     _syncChromePlaybackListener();
@@ -352,11 +352,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     _cueOffsetIndex = null;
   }
 
-  /// 歌词层在场时换接了控制器（重导入强制重载等）：把覆盖层期间的正文强制跟随
-  /// 挂到新控制器上，与 [_toggleLyricsMode] 进入分支同一不变式——歌词层在场 ⇔
-  /// 当前控制器带强制跟随。
-  void _reapplyLyricsFollowOverride() {
-    if (_lyricsMode) _audiobookController?.setReaderFollowOverride(true);
+  /// 歌词模式在场时换接了控制器（重导入强制重载等）：把「正文面脱开」挂到新控制器
+  /// 上，与 [_toggleLyricsMode] 进入分支同一不变式——歌词模式在场 ⇔ 当前控制器的
+  /// 正文面脱开。
+  void _reapplyLyricsReaderDetached() {
+    if (_lyricsMode) _audiobookController?.setReaderDetached(true);
   }
 
   /// 复用 session 已持有的控制器：装 reader WebView 侧回调 + 监听 cue（经 session 转发）。
@@ -378,7 +378,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
-    _reapplyLyricsFollowOverride();
+    _reapplyLyricsReaderDetached();
     // 同步一次当前 cue 到 WebView（暂停态也即时高亮）。
     _onCueChanged();
   }
@@ -479,7 +479,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
-    _reapplyLyricsFollowOverride();
+    _reapplyLyricsReaderDetached();
   }
 
   /// 独立 SRT 书的正文语言：`SrtBooks.language`（用户在卡菜单里指定）> 全局默认。
@@ -559,6 +559,12 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       return;
     }
 
+    // 歌词模式：正文停着不换章，控制器的当前句在整书 cue 上解析（见
+    // [_useWholeBookCuesForLyrics]）；按章装是正文跟随的事。
+    if (_lyricsMode) {
+      controller.setChapterCues(allCues);
+      return;
+    }
     final String chapterHref = _book!.chapters[_currentChapter].href;
     final List<AudioCue> chapterCues = await repo.cuesForChapter(
       bookKey: bookKey,
@@ -765,14 +771,17 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // cue 会再来叫醒这里。
     _noteAudiobookPlayingForStudyClock(controller.isPlaying);
 
-    // 歌词覆盖层（2026-10-04）：歌词层只跟着换高亮 / 滚动，**不 return**——正文在
-    // 下面照常走完下面的跟随路径（翻页 / 高亮 / 跨章 / 进度采样），阅读统计由正文
-    // 承担，歌词层不写任何统计（旧的 `_arriveLyricsCueUnit` 歌词单元入账已删）。
-    // BUG-757 的 force-reveal 一次性旗只消费一次，歌词层与正文共用这一次的值。
-    bool lyricsForceReveal = false;
+    // 歌词模式是独立模式（2026-11-10 所有者拍板，取代 10-04 的「覆盖层 + 正文在
+    // 下面跟随」）：正文面脱开、停在进歌词那一刻的位置；这里只同步歌词层，并把当前
+    // 句落定成歌词模式自己的阅读位置 / 阅读单元（[_settleLyricsCue]），随即返回——
+    // 下面整段是正文跟随（翻页 / 高亮 / 跨章），歌词模式不走。两枚一次性 reveal 旗
+    // 照常消费掉，不留到退出歌词之后迟到生效。
     if (_lyricsMode) {
-      lyricsForceReveal = controller.consumeForceReveal();
+      final bool lyricsForceReveal = controller.consumeForceReveal();
+      controller.consumeExplicitNavigationReveal();
       _syncLyricsOverlayCue(controller, forceReveal: lyricsForceReveal);
+      _settleLyricsCue(controller);
+      return;
     }
 
     // 反馈 yk2XDOGh-H：显式跳句（上一句 / 下一句 / 快捷键 / 音量键）落定的那一次通知，
@@ -836,14 +845,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // highlight 收尾（保位只高亮、不归零）。
       }
     }
-    final bool forceReveal =
-        lyricsForceReveal || controller.consumeForceReveal();
+    final bool forceReveal = controller.consumeForceReveal();
     final bool reveal =
         forceReveal || navigationReveal || controller.shouldRevealCurrentCue;
     // TODO-724：仅当图片暂停开启（imagePauseSec>0）时，cue 推进跨过插图才把视口
     // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
     // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
-    // 歌词模式一律不放开：插图停留归歌词插图状态机（见 [audiobookTextImagePauseEnabled]）。
+    // 歌词模式到不了这里（上面的歌词分支已返回；插图停留归歌词插图状态机）。
     final bool pauseEnabled = audiobookTextImagePauseEnabled(
       imagePauseSec: controller.imagePauseSec.value,
       lyricsMode: _lyricsMode,
@@ -881,8 +889,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   }
 
   Future<void> _handleCueCrossChapter(int newSection) async {
-    // 覆盖层架构：歌词模式下正文照常跨章跟随（统计靠正文翻页入账），不再取消。
-    if (_restoreInFlight ||
+    // 歌词模式下正文面脱开，控制器不会发跨章；这里兜住进歌词那一刻在途的那一次
+    // （回调已排队）——正文不换章，放掉守卫。
+    if (_lyricsMode ||
+        _restoreInFlight ||
         _book == null ||
         newSection < 0 ||
         newSection >= _book!.chapters.length) {
@@ -1045,7 +1055,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   Future<void> _handleBoundarySkip(int delta) async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
-    final int targetSec = _currentChapter + delta;
+    // 「当前章」取阅读位置所在章：歌词模式下正文停在进歌词那一刻的章
+    // （`_currentChapter` 不再跟随音频），越界目标要从当前句所在章算，否则在全书
+    // 首 / 末句按上一句 / 下一句会把音频甩到正文停着的那一章旁边。
+    final int targetSec = _readingChapter + delta;
     if (_book == null || targetSec < 0 || targetSec >= _book!.chapters.length) {
       return;
     }
@@ -1053,6 +1066,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       targetSec,
     );
     if (targetCues.isEmpty) {
+      // 歌词模式下正文面脱开：没有句子的章在歌词里不存在，不去挪停着的正文。
+      if (_lyricsMode) return;
       await _navigateToChapter(targetSec);
       return;
     }
@@ -2239,6 +2254,68 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         );
       }
     }
+  }
+
+  // ── 文字领读（media/audiobook/text_leads_page_stop.dart）────────────────────
+
+  /// 把 reader 侧条件（偏好选了「文字领读」+ 当前渲染的是 VN 模式）同步给控制器，
+  /// 并挂上「刚生效 → 补报当前屏」回调。控制器绑定、设置热更新、布局重载后各调
+  /// 一次；跟随开关 / 歌词覆盖层由控制器自己算。
+  void _syncAudiobookTextLeads() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return;
+    ctrl.onTextLeadsActivated = _adoptTextLeadsScreen;
+    ctrl.setTextLeadsRequested(
+      textLeadsRequestedFor(
+        linkDirection: ReaderFushiSource.instance.audiobookLinkDirection,
+        vnMode: _settings?.isVnMode ?? false,
+      ),
+    );
+  }
+
+  /// 本页与控制器解绑（控制器是会话对象，比页面活得久）：撤掉回调并关掉文字领读。
+  void _detachAudiobookTextLeads(AudiobookPlayerController ctrl) {
+    ctrl.onTextLeadsActivated = null;
+    ctrl.setTextLeadsRequested(false);
+  }
+
+  /// 文字领读刚生效：补报当前屏，只登记范围（屏幕不是用户翻到的，不挪音频）。
+  void _adoptTextLeadsScreen() => _requestTextLeadsScreenReport(adopt: true);
+
+  /// 让 VN 引擎强制补报一次当前屏。[adopt] = 只登记范围（见
+  /// [AudiobookPlayerController.onReaderPageBounds] 的 `adoptOnly`）；恢复 / 跨章落定
+  /// 的补报不是 adopt——那一屏是用户翻章 / 跳章落到的，音频要跟过去。
+  void _requestTextLeadsScreenReport({required bool adopt}) {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    unawaited(
+      controller
+          .evaluateJavascript(
+            source:
+                'if(window.fushiReader&&typeof window.fushiReader'
+                '.reportTextLeadsScreenCues==="function")'
+                'window.fushiReader.reportTextLeadsScreenCues(true,$adopt);',
+          )
+          .catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log('ReaderFushi.textLeadsReport', e, s);
+            return null;
+          }),
+    );
+  }
+
+  /// VN 引擎 `onTextLeadsScreenCues` 回调：当前屏句子首尾 → 控制器。
+  void _onTextLeadsScreenCues(List<dynamic> args) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null || !ctrl.textLeads || args.isEmpty) return;
+    // 进章 / 恢复位置期间 VN 可能先渲一屏过渡屏再落到目标屏：只认落定后的那一屏
+    // （_onRestoreComplete 会强制补报），否则音频会先跳到过渡屏再跳回来。
+    if (_restoreInFlight) return;
+    final TextLeadsPageBounds? bounds = textLeadsBoundsFromPayload(
+      args[0]?.toString() ?? '',
+      _cachedAllCues ?? const <AudioCue>[],
+    );
+    final bool adoptOnly = args.length > 1 && args[1] == 'adopt';
+    unawaited(ctrl.onReaderPageBounds(bounds, adoptOnly: adoptOnly));
   }
 }
 

@@ -5,7 +5,7 @@ import 'dart:io';
 const String kFushiMusicLibEnv = 'FUSHI_MUSIC_LIB';
 
 /// Dart 绑定期望的 C ABI 版本，与 native/fushi_music/src/lib.rs 的 `ABI_VERSION` 一致。
-const int kFushiMusicAbiVersion = 2;
+const int kFushiMusicAbiVersion = 3;
 
 /// FFI 状态码，与 lib.rs 的 `status` 模块一致。
 abstract final class FfmStatus {

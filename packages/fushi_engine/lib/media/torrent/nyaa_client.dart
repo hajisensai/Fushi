@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
@@ -707,6 +708,23 @@ class NyaaClient {
       );
     }
     return NyaaSiteProbe(resultCount: torrents.length, categories: categories);
+  }
+
+  /// 下载一条发布的 `.torrent`（[NyaaTorrent.torrentUrl]），给下载规划取文件
+  /// 列表用。与 [search] 共用同 host 节流；只允许本站 host 的地址，非 200 抛。
+  Future<Uint8List> fetchTorrentFile(String torrentUrl) async {
+    final Uri base = Uri.parse(baseUrl);
+    final Uri uri = base.resolve(torrentUrl);
+    if (uri.host != base.host ||
+        (uri.scheme != 'https' && uri.scheme != 'http')) {
+      throw ArgumentError.value(torrentUrl, 'torrentUrl', 'not on this site');
+    }
+    await _reserveRequestSlot();
+    final http.Response res = await _client.get(uri).timeout(requestTimeout);
+    if (res.statusCode != 200) {
+      throw http.ClientException('HTTP ${res.statusCode}', uri);
+    }
+    return res.bodyBytes;
   }
 
   /// 取一页搜索 HTML。[pastEndIsEmpty] 时 404 视作「翻过末页」返回 null。

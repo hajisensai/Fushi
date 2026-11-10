@@ -1930,13 +1930,15 @@ class BackupMergeEngine {
     if (await _srcTableExists('music_remote_tracks')) {
       // 远程曲目（v148）：歌单条目可能引用它们，与歌单同一类别。按 track_uid LWW：元数据
       // 与入库状态（library_added_at，移出曲库时置 NULL）一起取较新的一方；created_at 留
-      // 先到的那份。
+      // 先到的那份。v149 的 cover_ref / album_id / artist_refs 随元数据一起走（备份库合并前
+      // 已迁到当前版本，列一定在）；服务器曲目的行本身不含凭据，跨设备合并安全。
       await _db.customStatement(
         'INSERT INTO music_remote_tracks (track_uid, kind, source_key, '
-        'item_id, title, artist, album, duration_ms, cover_url, '
-        'library_added_at, created_at, updated_at) '
+        'item_id, title, artist, album, duration_ms, cover_url, cover_ref, '
+        'album_id, artist_refs, library_added_at, created_at, updated_at) '
         'SELECT s.track_uid, s.kind, s.source_key, s.item_id, s.title, '
-        's.artist, s.album, s.duration_ms, s.cover_url, s.library_added_at, '
+        's.artist, s.album, s.duration_ms, s.cover_url, s.cover_ref, '
+        's.album_id, s.artist_refs, s.library_added_at, '
         's.created_at, s.updated_at '
         'FROM $_srcAlias.music_remote_tracks AS s WHERE true '
         'ON CONFLICT (track_uid) DO UPDATE SET '
@@ -1944,6 +1946,8 @@ class BackupMergeEngine {
         'item_id = excluded.item_id, title = excluded.title, '
         'artist = excluded.artist, album = excluded.album, '
         'duration_ms = excluded.duration_ms, cover_url = excluded.cover_url, '
+        'cover_ref = excluded.cover_ref, album_id = excluded.album_id, '
+        'artist_refs = excluded.artist_refs, '
         'library_added_at = excluded.library_added_at, '
         'updated_at = excluded.updated_at '
         'WHERE excluded.updated_at > music_remote_tracks.updated_at',

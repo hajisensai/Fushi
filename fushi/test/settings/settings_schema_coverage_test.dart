@@ -755,6 +755,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
+  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（副屏在用 = 按住 L1、否则关）
+  // 和按键行为由 ControllerLookupMode 的专项测试钉死（生效点在手柄分派层）。
+  'appearance/Controller lookup mode':
+      'test/second_screen/controller_lookup_mode_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
@@ -770,6 +774,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
   // 由专项纯函数测试咬住。
   'reading/Page crease': 'test/reader/reader_page_crease_css_test.dart',
+  // 反馈 sYPkmtitOM「跟随原书排版」（reading_display.follow_book_layout）：只在有打开
+  // 的书登记了书本排版时才改生效值，harness 设置页里没有打开的书，渲染输入不变属
+  // 预期。OPF 元数据解析、覆盖 / 回落 / 多阅读器叠放与设置项置灰由专项测试咬住。
+  "reading/Follow the book's layout":
+      'test/reader/reader_follow_book_layout_test.dart + '
+      'test/epub/epub_original_layout_test.dart',
   // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
   // notifyReaderLayoutChanged 需活 reader/WebView 重排），无适用 T4 探针；合并语义/
@@ -832,6 +842,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Add screenshot to cards':
       'test/floating_ball/screen_ocr_card_image_test.dart + '
       'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
+  // 截屏识字引擎（反馈 Eemf0HOZhj / BUG-4069，仅桌面）：生效点是宿主截屏识字那一刻按
+  // 设置解析识别器，设置页里没有截屏面。解析表与宿主选识别器由专项测试钉住。
+  'floatingBall/Screen OCR engine':
+      'test/ocr/screen_ocr_engine_test.dart + '
+      'test/floating_ball/app_floating_ball_host_test.dart: 反馈 Eemf0HOZhj 截屏识字引擎三条',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
@@ -929,8 +944,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // 句子音频头/尾 padding：效果在裁剪区间（padSentenceRange），纯函数 + 偏好写穿 +
   // 两条制卡链调用点源码守卫都在专项测试里。
-  // 在线视频制卡方式（后台 / 看完再制卡 / 等待完成）：写 prefsRepo，生效点是视频页
-  // 点制卡时的模式判定（纯函数 resolveVideoOnlineMiningMode）与暂存队列，harness 里
+  // 在线视频制卡方式（后台 / 看完再制卡）：写 prefsRepo，生效点是视频页
+  // 点制卡时的模式判定（纯函数 resolveVideoMineDispatch）与暂存队列，harness 里
   // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
   'cardCreation/Online video mining':
       'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
@@ -1368,6 +1383,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_production_js_behavior_test.dart',
   'reading/Keep spoken sentence on one screen':
       'test/settings/vn_settings_m1_test.dart',
+  // 「屏末音频」（文字领读，PR #3078）：同属 VN-only，生效点是有声书控制器的屏末
+  // 停播 / 翻屏续播，reader CSS 探针看不到。偏好写穿、选「暂停」时顺带打开合并
+  // 跨屏朗读句并重载布局由专项 widget 测试咬住，控制器行为由 text_leads 测试咬住。
+  'reading/Audio at end of page':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/media/audiobook/text_leads_controller_test.dart + '
+      'test/media/audiobook/text_leads_page_stop_test.dart',
   'reading/Blank tap advances':
       'test/settings/vn_settings_m1_test.dart + '
       'test/reader/vn_blank_tap_chrome_reveal_bug1195_test.dart',
@@ -2116,7 +2138,7 @@ void main() {
       // 两条会在窄行渲染成菜单的分段项必须真的被驱动；只数总行数无法发现
       // 菜单按键串错行后遍历缩水（此前57行仍能越过>40门）。
       for (final String id in <String>[
-        'reading/Page / scroll',
+        'reading/Reading mode',
         'reading/Hide furigana',
       ]) {
         final List<ItemVerdict> rows = verdicts

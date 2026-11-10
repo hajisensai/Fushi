@@ -1337,6 +1337,13 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     '用户本机 mpv 着色器目录，外部路径，不随数据根走。',
   ),
   PathRebasePref(
+    'video_subtitle_series_dirs',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    '0PZAhFd1RO：按系列记住的字幕文件夹（`{系列键: {dir, template?}}`），dir 是用户'
+        '自己放整季字幕的外部目录，不在 Fushi 数据根下，跟着数据根改写只会把它改坏。',
+  ),
+  PathRebasePref(
     'audiobook_material_dirs',
     PathRebaseKind.externalUserPath,
     PathValueShape.none,

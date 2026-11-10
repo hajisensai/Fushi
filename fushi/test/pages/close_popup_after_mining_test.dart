@@ -90,4 +90,112 @@ void main() {
       );
     }
   });
+
+  // 反馈 OeS0m8tLHc：视频页点「制卡」弹窗立刻关、视频立刻续播，卡在后台落地。
+  group('视频车道：制卡不陪等（OeS0m8tLHc）', () {
+    final String mixin = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
+    final String page = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final String mining = File(
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    ).readAsStringSync();
+    final String tracker = File(
+      'lib/src/pages/implementations/video_fushi/mine_queue.part.dart',
+    ).readAsStringSync();
+    final String remote = File(
+      'lib/src/pages/implementations/video_fushi/playback_remote.part.dart',
+    ).readAsStringSync();
+
+    test('mixin 经可覆写的 closePopupAfterMining 判是否关栈，视频页恒 true', () {
+      expect(
+        RegExp(
+          r'closePopupAfterAcceptedMine\([\s\S]{0,240}?'
+          r'enabled:\s*\(\)\s*=>\s*closePopupAfterMining,',
+        ).hasMatch(mixin),
+        isTrue,
+        reason: 'mixin 的关栈判据必须走可覆写的 getter，视频页才能不看阅读器偏好',
+      );
+      expect(
+        RegExp(
+          r'@override\s+bool get closePopupAfterMining => true;',
+        ).hasMatch(page),
+        isTrue,
+        reason: '视频页制卡后必须恒关弹窗（并经 _popNestedPopupAt 续播）',
+      );
+    });
+
+    test('查词弹窗的新制卡不等落地：本地视频也走后台，只有遥控等结局', () {
+      expect(
+        mining.contains('bool awaitLocalLanding = false,'),
+        isTrue,
+        reason: '_onMineEntryImpl 默认（查词弹窗）不能等本地卡落地',
+      );
+      expect(
+        mining.contains('awaitLocalLanding: awaitLocalLanding,'),
+        isTrue,
+        reason: '_onMineEntryImpl 必须把等不等交给 resolveVideoMineDispatch',
+      );
+      expect(
+        remote.contains('_onMineEntryImpl(payload, awaitLocalLanding: true)'),
+        isTrue,
+        reason: '手机遥控制卡要把真实结局报回手机，仍等落地',
+      );
+      expect(
+        mining.contains(
+          'if (dispatch == VideoMineDispatch.awaitLanding) return land(await job);',
+        ),
+        isTrue,
+      );
+    });
+
+    test('后台制卡失败：结果卡带「重试」（落地失败 / 抽取中止 / 抛错三条路）', () {
+      expect(
+        RegExp(
+          r'expression: fields\[.expression.\],\s*retry: retry,',
+        ).hasMatch(mining),
+        isTrue,
+        reason: '落地收尾 _landVideoMine 必须拿到 retry',
+      );
+      expect(
+        RegExp(
+          r'\}\),\s*retry: retry,\s*\);\s*return const MinePopupResult\.queued\(\);',
+        ).hasMatch(mining),
+        isTrue,
+        reason: '后台任务抛错时 _trackBackgroundMine 也要能重试',
+      );
+      expect(
+        mining.contains(
+          'described.status == MineToastStatus.failed ? retry : null',
+        ),
+        isTrue,
+        reason: '只有真失败挂重试，重复卡片不挂',
+      );
+      expect(
+        mining.contains(
+          '_showMineOsd(message, MineToastStatus.failed, null, retry);',
+        ),
+        isTrue,
+        reason: '句子音频抽取中止也要能重试',
+      );
+      expect(
+        tracker.contains(
+          '_showMineOsd(message, MineToastStatus.failed, null, retry);',
+        ),
+        isTrue,
+      );
+      // 重试用点击当下冻结的那一帧，不借后来那次查词的对话框锁帧。
+      expect(
+        mining.contains('frozenCurrentFrame: currentFrameSnapshot,'),
+        isTrue,
+      );
+      expect(
+        mining.contains('t.video_mine_retry_cancelled_episode'),
+        isTrue,
+        reason: '换集后重试不能裁到新一集',
+      );
+    });
+  });
 }

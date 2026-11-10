@@ -29,6 +29,7 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -230,6 +231,7 @@ class _SongCard extends StatelessWidget {
             title: track.title,
             leadingIcon: FushiIcons.music,
             subtitle: track.artist ?? t.music_artist_unknown,
+            trailing: catalog.previewOnly ? const MusicPreviewBadge() : null,
           ),
         ],
       ),

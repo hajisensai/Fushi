@@ -273,9 +273,9 @@ class _VideoPlayerCtl {
     DictionarySearchResult? found;
     if ((call.optBool('lookup') ?? true) &&
         (reading == null || glossary == null)) {
-      found = await appModel.createRemoteLookupService().searchDictionary(
-        term: word,
-        wildcards: false,
+      // 与查词页同一条查词链（远端优先，BUG-4321）：瘦客户端靠电脑的词典补释义。
+      found = await appModel.searchDictionaryForUser(
+        searchTerm: word,
         maximumTerms: 10,
       );
     }
@@ -414,6 +414,8 @@ class _VideoPlayerCtl {
       'succeeded': summary.succeeded,
       'failed': summary.failed,
       if (summary.firstError != null) 'firstError': summary.firstError,
+      // 写入的卡带回的提示（如「保存到」被主机退回默认，BUG-4287）。
+      'notice': ?summary.notice,
     };
   }
 

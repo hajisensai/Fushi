@@ -101,6 +101,8 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier));
       // BUG-4075 取证：修订号「同步拉入」的一跳（本机写入的一跳在下面 listenSrsLocalWrites 里记）。
       SrsOpLedger.mark('rev:pulled');
+      // 别的设备可能改了复习翻日时刻：本机统计日界跟上（单向，不写回复习）。
+      unawaited(runtime.adoptSyncedDayRollover());
     },
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
@@ -113,6 +115,7 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
         ref.invalidate(srsStoreProvider);
         return ref.read(srsStoreProvider.future);
       },
+      writeLock: ref.read(srsProfileStoresProvider).writeLock,
       mediaRoot: () async =>
           SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
       onError: ErrorLogService.instance.log,
@@ -131,19 +134,19 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
   );
   // 旧库迁移推迟到首次同步确认之后（BUG-4011）：store 打开时不迁移（srs_providers.dart `deferMigration`），
   // 由调度器在确认后的第一轮上传之前先收一轮再迁移（[SrsSyncScheduler.ensureMigrated]）。
-  // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
+  // 本机写了复习数据：去抖后经互联与云盘通道各推一轮（设计 §6.3，反馈 O4MSorhpie）。同步拉进来的变更不触发
   // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
   // BUG-4075 取证：修订号每跳一次按来源记一笔（`rev:local` 本机写入 / `rev:pulled` 同步拉入，后者在
   // bumpPulledRevision 里记）：停在复习页不动时它跳不跳、跳多少次、是谁在跳，直接看内存采样里的 marks。
   // 不另挂直接 listen 修订号的监听：那样分不出来源（srs_revision_origin_test 接线守卫）。
   listenSrsLocalWrites(ref, revisionOrigin, () {
     SrsOpLedger.mark('rev:local');
-    runtime.localPush.trigger();
+    runtime.notifyLocalWrite();
   });
   // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
   ref.listen<int>(
     srsLocalWriteProvider,
-    (int? previous, int next) => runtime.localPush.trigger(),
+    (int? previous, int next) => runtime.notifyLocalWrite(),
   );
   // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
   ref.listen<AsyncValue<Object?>>(
@@ -189,6 +192,26 @@ class SrsAppRuntime {
   /// 本机写入（自动优化应用了新参数）：界面重读 + 推给别的设备。
   final void Function() _bumpRevision;
 
+  /// 同步拉入之后：生效的翻日时刻是本机没见过的修改（别的设备的用户改了日界）就让本机统计日界跟上；还是本机
+  /// 写下 / 采纳过的那条就不动（[AppModel.adoptSyncedDayRollover]）。复习自己的「今天」不靠这一步，
+  /// `SrsDbStore.dayContext` 直接读字段。
+  Future<void> adoptSyncedDayRollover() async {
+    try {
+      final SrsDbStore? store = await _readStore();
+      if (store == null) return;
+      await app.adoptSyncedDayRollover(
+        store.profileUid,
+        store.syncedDayRollover,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'SrsAppRuntime.adoptSyncedDayRollover',
+        e,
+        stack,
+      );
+    }
+  }
+
   /// 同步拉进了别的设备的变更：界面重读，不再推送（[SrsRevisionOrigin]）。
   final void Function() _bumpPulledRevision;
   final SrsProfileLinker? _profileLinker;
@@ -221,6 +244,8 @@ class SrsAppRuntime {
     autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
     // 同步与历史页「存储位置」上逐个关掉的通道位置（只停复习同步，通道本身照常）。
     locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
+    // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4320）：没加入时摘要 / 立即同步不说「已同步」。
+    peerJoined: srsChannelPeerJoined,
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
@@ -242,25 +267,50 @@ class SrsAppRuntime {
     onReachable: () => localPush.resetBackoff(),
   );
 
-  /// 本机变动后去抖推送：连着互联 host 就同步那条通道；本机自己是 host 就跑本机目录（唤醒连它的设备）。
-  /// 推送失败按指数退避（[SrsLocalPush]），不再每答一张卡就探测一轮死地址。
+  /// 本机变动后去抖推送（设计 §6.3），按通道分两条、各自一个 [SrsLocalPush]（反馈 O4MSorhpie：以前只推互联，云盘
+  /// 通道要等进复习 tab / 常规同步 / 「立即同步」才带上答卡记录）：
+  /// - [localPush]：互联通道 + 本机目录（本机自己是 host 时唤醒连它的设备）；
+  /// - [cloudPush]：云盘通道（OneDrive / WebDAV / Google Drive 等，`enabledSyncChannelBackends` 里非互联的那条）。
+  /// 两条各自失败退避（[SrsLocalPush]）：host 不可达时互联那条退避，不拖住云盘那条；反之亦然。
   /// 复习页开着时按最长等待批量推（[kSrsLocalPushMaxWait]，审查 S-8），离开复习页 / 进后台立即推。
   late final SrsLocalPush localPush = SrsLocalPush(
-    push: _pushInterconnect,
-    batching: () => srsActiveReviewSessions.value > 0,
+    push: () => _push(interconnect: true),
+    batching: _reviewing,
   );
 
-  /// 下一次推送是 app 正要进后台时的那一次（[_onLifecycle]）：放过前台检查，只这一次。
-  bool _pushOnLeave = false;
+  /// 云盘通道那条推送（见 [localPush]）。
+  late final SrsLocalPush cloudPush = SrsLocalPush(
+    push: () => _push(interconnect: false),
+    batching: _reviewing,
+  );
 
-  Future<bool> _interconnectReady({bool allowBackground = false}) async {
+  static bool _reviewing() => srsActiveReviewSessions.value > 0;
+
+  /// 两条推送的名字（限流日志 / [SrsSyncScheduler.autoPushSkipReason]）。
+  static const String kInterconnectPushLane = 'interconnect';
+  static const String kCloudPushLane = 'cloud';
+
+  /// 本机写了复习数据：两条推送都排上。
+  void notifyLocalWrite() {
+    localPush.trigger();
+    cloudPush.trigger();
+  }
+
+  /// 下一次推送是 app 正要进后台时的那一次（[_onLifecycle]）：放过前台检查，每条推送只这一次。
+  bool _interconnectPushOnLeave = false;
+  bool _cloudPushOnLeave = false;
+
+  /// 此刻能不能为复习同步联网：库开着、首次同步已确认、app 在前台（或 [allowBackground]：进后台时的那一次推送）。
+  bool _syncAllowedNow({bool allowBackground = false}) {
     if (!app.isInitialised || !app.srsSync2MergeConfirmed) return false;
     final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
-    if (!allowBackground &&
-        state != null &&
-        state != AppLifecycleState.resumed) {
-      return false;
-    }
+    return allowBackground ||
+        state == null ||
+        state == AppLifecycleState.resumed;
+  }
+
+  Future<bool> _interconnectReady() async {
+    if (!_syncAllowedNow()) return false;
     final SyncRepository repo = SyncRepository(app.database);
     if (!await repo.isInterconnectEnabled()) return false;
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
@@ -268,19 +318,36 @@ class SrsAppRuntime {
     return backend.isAuthenticated;
   }
 
-  /// 返回互联这一步是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
-  Future<bool> _pushInterconnect() async {
-    final bool leaving = _pushOnLeave;
-    _pushOnLeave = false;
+  /// 一条推送：[interconnect] 选互联那组通道（+ 本机目录）还是云盘那组。通道的启用 / 认证由
+  /// `runOnAuthenticatedSyncChannels` 逐条判（与「立即同步」同一套），它也拿常规同步的互斥（反馈 XDV7Mzc2gw）。
+  /// 返回这条推送是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
+  Future<bool> _push({required bool interconnect}) async {
+    final bool leaving = interconnect
+        ? _interconnectPushOnLeave
+        : _cloudPushOnLeave;
+    if (interconnect) {
+      _interconnectPushOnLeave = false;
+    } else {
+      _cloudPushOnLeave = false;
+    }
     try {
       return await sync.autoPush(
-        () async => await _interconnectReady(allowBackground: leaving)
-            ? InterconnectSyncBackend.instance
-            : null,
-        exclusive: runExclusiveWithSync,
+        (Future<void> Function(SyncAssetStore backend) body) =>
+            runOnAuthenticatedSyncChannels(
+              db: app.database,
+              where: (SyncChannel c) => c.isInterconnect == interconnect,
+              body: (SyncBackend backend) => body(backend),
+            ),
+        lane: interconnect ? kInterconnectPushLane : kCloudPushLane,
+        ready: () async => _syncAllowedNow(allowBackground: leaving),
+        localDirectories: interconnect,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('SrsAppRuntime.pushInterconnect', e, stack);
+      ErrorLogService.instance.log(
+        'SrsAppRuntime.push(${interconnect ? kInterconnectPushLane : kCloudPushLane})',
+        e,
+        stack,
+      );
       return false;
     }
   }
@@ -310,9 +377,10 @@ class SrsAppRuntime {
 
   Future<void> _postRun(SyncBackend backend) async {
     final SrsSync2Report? r = await sync.autoSyncWithBackend(backend);
-    // 常规同步经互联跑通了一轮：host 可达，推送不必再等退避期满。
-    if (backend is InterconnectSyncBackend && r != null && r.error == null) {
-      localPush.resetBackoff();
+    // 常规同步经这条通道跑通了一轮：它可达，这条通道的推送不必再等退避期满。
+    if (r != null && r.error == null) {
+      (backend is InterconnectSyncBackend ? localPush : cloudPush)
+          .resetBackoff();
     }
   }
 
@@ -419,6 +487,7 @@ class SrsAppRuntime {
     _hostUploads = null;
     interconnectWatch.stop();
     localPush.dispose();
+    cloudPush.dispose();
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;
@@ -478,10 +547,15 @@ class SrsAppRuntime {
 
   /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
   /// 用户手动同步也清掉推送的失败退避（用户明说「现在就同步」）。
-  Future<SrsSyncNowResult> syncNow() {
-    localPush.resetBackoff();
-    return sync.syncNow();
-  }
+  ///
+  /// 这一轮跑遍全部通道与本机目录，是两条推送的超集：此刻排着的推送由它带上、撤掉（[SrsLocalPush.takePending]，
+  /// BUG-4382）。以前排着的推送在「已同步」提示之后去抖到期又各跑一轮空同步，同步状态行在提示后继续走。这一轮
+  /// 没同步成功（有错 / 抛错）就把撤掉的推送排回去，本机改动照常等推送补上。
+  Future<SrsSyncNowResult> syncNow() => srsSyncSupersedingPushes(
+    <SrsLocalPush>[localPush, cloudPush],
+    sync.syncNow,
+    synced: (SrsSyncNowResult r) => r.errors.isEmpty,
+  );
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
@@ -498,17 +572,25 @@ class SrsAppRuntime {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
     // 离开复习页：复习中攒着的变动立即推（审查 S-8）。
-    if (now == 0) localPush.flush();
+    if (now == 0) {
+      localPush.flush();
+      cloudPush.flush();
+    }
   }
 
   void _onLifecycle(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) optimizer.cancel();
     // 正在进后台：待推的立即推（之后前台检查会挡住推送，后台也可能很快被挂起）。
-    if ((state == AppLifecycleState.inactive ||
-            state == AppLifecycleState.hidden) &&
-        localPush.pending) {
-      _pushOnLeave = true;
-      localPush.flush();
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      if (localPush.pending) {
+        _interconnectPushOnLeave = true;
+        localPush.flush();
+      }
+      if (cloudPush.pending) {
+        _cloudPushOnLeave = true;
+        cloudPush.flush();
+      }
     }
     // 回到前台：快速通道马上重新挂上（不等空闲重查的间隔）。
     if (state == AppLifecycleState.resumed) interconnectWatch.nudge();
@@ -575,21 +657,37 @@ class SrsAppRuntime {
 
   /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。[tabEntry] = 用户刚进复习页：
   /// 「稍后」过的冲突只在这时再问，同步后台重判出来时不当场再弹。
+  ///
+  /// [_pendingConflict] 是检出那一刻的快照：之后另一台设备可能已经解决了它（采用了本机的 profile），笔记数也会变。
+  /// 弹窗之前按同步位置的现状重判（[SrsSyncScheduler.recheckProfileConflict]），只问此刻仍成立的冲突、报现在的数。
   void _maybeShowProfileConflict({bool tabEntry = false}) {
-    final SrsProfileConflict? conflict = _pendingConflict;
-    if (conflict == null || _conflictDialogOpen) return;
-    if (_ignoredConflicts().contains(conflict.ignoreKey)) {
+    final SrsProfileConflict? pending = _pendingConflict;
+    if (pending == null || _conflictDialogOpen) return;
+    if (_ignoredConflicts().contains(pending.ignoreKey)) {
       _pendingConflict = null;
       return;
     }
     if (homeShellTabNotifier.value != HomeTab.srs) return;
-    if (!tabEntry && conflict.ignoreKey == _deferredConflictKey) return;
-    final BuildContext? context = app.navigatorKey.currentContext;
-    if (context == null) return;
+    if (!tabEntry && pending.ignoreKey == _deferredConflictKey) return;
+    if (app.navigatorKey.currentContext == null) return;
     _pendingConflict = null;
     _conflictDialogOpen = true;
+    bool askAgain = false;
     unawaited(() async {
       try {
+        final SrsProfileConflict? conflict = await sync.recheckProfileConflict(
+          pending,
+        );
+        // 已经不成立（另一边解决了）、本机切了 profile 或位置此刻连不上：不问；之后判出来会重新通知。
+        if (conflict == null) return;
+        if (_ignoredConflicts().contains(conflict.ignoreKey)) return;
+        final BuildContext? context = app.navigatorKey.currentContext;
+        if (homeShellTabNotifier.value != HomeTab.srs ||
+            context == null ||
+            !context.mounted) {
+          _pendingConflict ??= conflict;
+          return;
+        }
         final SrsProfileConflictChoice? choice =
             await showSrsProfileConflictDialog(context, conflict);
         switch (choice) {
@@ -611,6 +709,15 @@ class SrsAppRuntime {
                 uid,
                 onAdopted: _showProfileAdoptResult,
               );
+            } on SrsProfileConflictStale catch (e) {
+              // 弹窗开着的时候冲突变了：什么都没动。已经解决就告诉用户；换了候选就按新的再问一次。
+              final SrsProfileConflict? current = e.current;
+              if (current == null) {
+                FushiToast.show(msg: t.srs_sync_profile_conflict_resolved);
+              } else {
+                _pendingConflict = current;
+                askAgain = true;
+              }
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'SrsAppRuntime.adoptProfile',
@@ -627,6 +734,7 @@ class SrsAppRuntime {
         ErrorLogService.instance.log('SrsAppRuntime.profileConflict', e, stack);
       } finally {
         _conflictDialogOpen = false;
+        if (askAgain) _maybeShowProfileConflict(tabEntry: true);
       }
     }());
   }

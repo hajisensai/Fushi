@@ -23,14 +23,15 @@ mixin _LocalLibraryHostAudiobooks
       String uid,
       String? title, {
       required int importedAt,
-      required bool hasAudio,
+      required AudiobookContentState content,
     }) {
       final String identity = bookKey.isNotEmpty ? bookKey : uid;
       return RemoteAudiobookInfo(
         bookKey: bookKey,
         uid: uid,
         title: title,
-        hasAudio: hasAudio,
+        hasAudio: content.hasAudio,
+        contentRevision: content.revision,
         positionMs: PrefCodec.decode<int>(
           allPrefs[audiobookPositionPrefKey(identity)] ?? '',
           0,
@@ -53,9 +54,10 @@ mixin _LocalLibraryHostAudiobooks
       );
     }
 
-    // `hasAudio` 是清单里**唯一**问磁盘的字段（BUG-2551）：其余全是 DB 行的投影，
-    // 而「有行」不等于「有音频」。判据与导出打包同源（[audiobookAudioIsIntact]），
-    // 否则 client 会收到「清单说有、包里是空」的自相矛盾清单。
+    // `hasAudio` 与 `contentRevision` 是清单里问磁盘的两个字段（BUG-2551）：其余全是
+    // DB 行的投影，而「有行」不等于「有音频」。hasAudio 判据与导出打包同源（音频解析
+    // 同一份），否则 client 会收到「清单说有、包里是空」的自相矛盾清单；内容版本与包
+    // 端点的导出缓存同源（[audiobookContentState]），一次遍历同时得出。
     for (final AudiobookRow r in rows) {
       final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
       if (srt == null) continue;
@@ -65,10 +67,7 @@ mixin _LocalLibraryHostAudiobooks
           srt.uid,
           srt.title,
           importedAt: srt.importedAt,
-          hasAudio: await audiobookAudioIsIntact(
-            audioPathsJson: r.audioPathsJson,
-            audioRoot: r.audioRoot,
-          ),
+          content: await audiobookContentState(audiobook: r, srtBook: srt),
         ),
       );
       emittedUids.add(srt.uid);
@@ -96,14 +95,25 @@ mixin _LocalLibraryHostAudiobooks
           srt.uid,
           srt.title,
           importedAt: srt.importedAt,
-          hasAudio: await audiobookAudioIsIntact(
-            audioPathsJson: srt.audioPathsJson,
-            audioRoot: srt.audioRoot,
-          ),
+          content: await audiobookContentState(audiobook: null, srtBook: srt),
         ),
       );
     }
     return result;
+  }
+
+  /// 身份键为 [identity] 的有声书此刻的内容版本（[AudiobookContentRevisionHost]）：
+  /// 身份解析与 [exportAudiobook] 同一套（先 Audiobooks.bookKey，再 SrtBooks.uid），
+  /// 值与 [listAudiobooks] 的 `contentRevision` 同源。查无此书返回 null。
+  @override
+  Future<String?> audiobookContentRevision(String identity) async {
+    _assertSafeName(identity);
+    final AudiobookRow? ab = await _db.getAudiobookByBookKey(identity);
+    final SrtBookRow? srt = ab != null
+        ? await _db.getSrtBookByBookKey(identity)
+        : await _db.getSrtBookByUid(identity);
+    if (srt == null) return null;
+    return (await audiobookContentState(audiobook: ab, srtBook: srt)).revision;
   }
 
   /// 读 host 端有声书 [identity] 的调轴（[AudiobookDelayHost]）。值键是既有

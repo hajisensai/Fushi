@@ -21,6 +21,9 @@ thread_local! {
     /// 测试开关：为真时同步助手里的「删位置上的文件」一律失败（模拟 `location.delete` 抛错 / head 上传失败后
     /// 没走到删除）——不删也不发 `obsolete_ack`，与生产 Dart 只确认删成功的那些同一语义。
     pub(crate) static FAIL_DELETES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// 测试开关（默认开）：同步助手在 plan 之后把待确认的设备全部信任（模拟用户每次都点了「信任」）。同步语义的测试
+    /// 照旧按全部互信写；设备信任本身的测试（tests_trust.rs）关掉它。
+    pub(crate) static AUTO_TRUST: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
 /// 按生产（srs_sync2_round.dart）的两段式删除：删成功的才 `obsolete_ack`。[FAIL_DELETES] 打开时一个都不删。
@@ -116,6 +119,9 @@ impl Device {
             heads.extend(hs.into_iter().filter(|x| x.0 == top).map(|x| x.1));
         }
         let plan = self.core.sync2_plan_at(P, &heads, Some(location)).unwrap();
+        if AUTO_TRUST.with(|f| f.get()) {
+            super::trust::trust_all_pending(&self.core, P, now);
+        }
         let mut fetched = Vec::new();
         for f in plan["fetch"].as_array().unwrap() {
             for name in f["files"].as_array().unwrap() {
@@ -663,7 +669,7 @@ mod convergence {
             devs[0].apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
             let mut clock = vec![T0; n];
             let mut k = 0u32;
-            // 每台设备每张卡最后一条自己写的评分（撤销只撤它，Dart 侧的 canUndo 同一约束由界面保证）。
+            // 每台设备每张卡最后一条自己写的评分（撤销只撤它，本机撤销命令 `sched` 判同一约束）。
             let mut last_review: std::collections::HashMap<(usize, u8), String> = std::collections::HashMap::new();
             // 同上，整条日志（副本照抄它、只换 ID）。
             let mut last_log: std::collections::HashMap<(usize, u8), Value> = std::collections::HashMap::new();

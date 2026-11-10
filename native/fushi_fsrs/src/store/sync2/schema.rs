@@ -409,6 +409,28 @@ CREATE TABLE IF NOT EXISTS sync2_dedup_regs (
 ) WITHOUT ROWID;
 "#;
 
+/// V29：设备信任（sync2/trust.rs）。`sync2_trust` 只记**还没信任**的设备（`state`：1 待确认 / 2 已拒绝；`since` = 它第一份
+/// head 的写出时刻）；没有行 = 可信，所以升级那一刻已经认识的设备不用回填就是可信的。`sync2_trust_held` 是扣着没投影的
+/// 删除 / 彻底清除（`what` = `delete` / `purge`，`kind` / `entity` = 目标实体）。只建表，可重放。
+pub const V29_TRUST: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_trust (
+  profile_uid TEXT NOT NULL,
+  device BLOB NOT NULL,
+  state INTEGER NOT NULL,
+  since INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_trust_held (
+  profile_uid TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  what TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, device, seq)
+) WITHOUT ROWID;
+"#;
+
 /// 登记「位置上缺这个段」的重传（挡 head，[migrate_v23]）：已有的同名改写登记一并升成缺段。
 pub const REWRITE_GAP_SQL: &str = "INSERT INTO sync2_rewrites (profile_uid, location, first, restamp) VALUES (srs_id(?1), ?2, ?3, 0) \
      ON CONFLICT(profile_uid, location, first) DO UPDATE SET restamp = 0";

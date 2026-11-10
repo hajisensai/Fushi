@@ -12,7 +12,9 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
@@ -62,10 +64,29 @@ void main() {
       expect(_classifyWithRealPredicates(root.path), ImportCarrier.mangaFolder);
     });
 
-    test('页图与整卷文件同时在场 → 页图这条解释优先', () {
-      File(p.join(root.path, '001.png')).writeAsBytesSync(_pngBytes());
+    // iycDWb7ys6：直接子层的散图只是整卷文件的封面 / 目录图，与来源库扫描
+    // （planMangaFolders）同一让位判据——此前这里钉的是「页图优先」，同一个文件夹
+    // 在「导入文件夹」里逐卷导入、在导入框里却成了一卷只有封面的页图目录。
+    test('散图与整卷文件同层 → 散图让位，这是一批卷（与来源库扫描同判）', () {
+      File(p.join(root.path, 'cover.jpg')).writeAsBytesSync(_jpgBytes());
       _writeCbz(root, 'vol1.cbz');
 
+      expect(MangaModule.directoryHasPageImages(root.path), isFalse);
+      expect(
+        _classifyWithRealPredicates(root.path),
+        ImportCarrier.mangaBatchFolder,
+      );
+      final MangaFolderPlan plan = planMangaFoldersInDirectory(root);
+      expect(plan.imageFolders, isEmpty, reason: '扫描侧对同一目录的解释');
+      expect(plan.carrierPaths, <String>[p.join(root.path, 'vol1.cbz')]);
+    });
+
+    test('子目录里的真页图旁边多一个包 → 仍是一卷页图目录（不被包吞掉）', () {
+      final Directory ch01 = Directory(p.join(root.path, 'ch01'))..createSync();
+      File(p.join(ch01.path, '001.png')).writeAsBytesSync(_pngBytes());
+      _writeCbz(root, 'extra.cbz');
+
+      expect(MangaModule.directoryHasPageImages(root.path), isTrue);
       expect(_classifyWithRealPredicates(root.path), ImportCarrier.mangaFolder);
     });
 
@@ -331,6 +352,139 @@ void main() {
     });
   });
 
+  // iycDWb7ys6：TMW 下载的一卷一个纯图 `.epub`、旁边带一张封面图的文件夹。导入框选
+  // 这个文件夹 / 拖进来，都要逐卷识别出来，并归进同一个系列合集。
+  group('纯图 EPUB 文件夹（iycDWb7ys6）', () {
+    test('导入框判成一批卷，逐卷导入后自动归进同一个合集', () async {
+      File(p.join(root.path, 'cover.jpg')).writeAsBytesSync(_jpgBytes());
+      _writeImageEpub(root, 'テスト漫画 1.epub');
+      _writeImageEpub(root, 'テスト漫画 2.epub');
+
+      expect(
+        _classifyWithRealPredicates(root.path),
+        ImportCarrier.mangaBatchFolder,
+      );
+      expect(MangaModule.directoryCarrierFileCount(root.path), 2);
+
+      final MangaBatchImportReport report = await MangaModule.importBatchFolder(
+        db: db,
+        path: root.path,
+      );
+
+      expect(report.importedCount, 2, reason: '${report.volumes}');
+      final List<MediaCollectionRow> collections = await db
+          .getAllMediaCollections();
+      expect(collections, hasLength(1), reason: '两卷应归进同一个系列合集');
+      expect(collections.single.name, 'テスト漫画');
+      expect(await db.getCollectionItems(collections.single.id), hasLength(2));
+    });
+
+    test('拖入同一个文件夹（importMangaBatchPaths）得到同样的结果', () async {
+      File(p.join(root.path, 'cover.jpg')).writeAsBytesSync(_jpgBytes());
+      _writeImageEpub(root, 'テスト漫画 1.epub');
+      _writeImageEpub(root, 'テスト漫画 2.epub');
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[root.path],
+      );
+
+      expect(report.importedCount, 2, reason: '${report.volumes}');
+      expect(
+        (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
+          ..sort(),
+        <String>['テスト漫画 1', 'テスト漫画 2'],
+        reason: '封面图不得被当成第三卷',
+      );
+      expect(await db.getAllMediaCollections(), hasLength(1));
+    });
+
+    test('文件名没有系列线索时按 OPF 声明的系列归组', () async {
+      _writeImageEpub(
+        root,
+        '始まりの日.epub',
+        series: const EpubSeries(name: '声明系列', index: 1),
+      );
+      _writeImageEpub(
+        root,
+        '終わりの夜.epub',
+        series: const EpubSeries(name: '声明系列', index: 2),
+      );
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[root.path],
+      );
+
+      expect(report.importedCount, 2, reason: '${report.volumes}');
+      for (final EpubBookRow book in await db.getAllEpubBooks()) {
+        expect(
+          decodeEpubSeriesMetadata(book.sourceMetadata)?.name,
+          '声明系列',
+          reason: '纯图 EPUB 落成漫画后原包不在书目录里，系列声明只能在导入时留下',
+        );
+      }
+      final List<MediaCollectionRow> collections = await db
+          .getAllMediaCollections();
+      expect(collections, hasLength(1));
+      expect(collections.single.name, '声明系列');
+    });
+
+    test('一卷都没导进来时不归组、不建合集', () async {
+      _writeYomitanDictZip(root, 'dict.zip');
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[p.join(root.path, 'dict.zip')],
+      );
+
+      expect(report.isEmpty, isTrue);
+      expect(await db.getAllMediaCollections(), isEmpty);
+    });
+  });
+
+  group('散图让位判据（mangaImageDirsClaimedByCarriers）', () {
+    final p.Context ctx = p.posix;
+    test('每个页图目录自己或其子树都有包 → 让位', () {
+      expect(
+        mangaImageDirsClaimedByCarriers(
+          imageDirs: <String>['/s'],
+          carrierPaths: <String>['/s/v1.epub'],
+          context: ctx,
+        ),
+        isTrue,
+      );
+      expect(
+        mangaImageDirsClaimedByCarriers(
+          imageDirs: <String>['/s'],
+          carrierPaths: <String>['/s/sub/v1.cbz'],
+          context: ctx,
+        ),
+        isTrue,
+      );
+    });
+
+    test('有一个页图目录的子树里没有包 → 不让位；没有页图 → 不让位', () {
+      expect(
+        mangaImageDirsClaimedByCarriers(
+          imageDirs: <String>['/s', '/s/ch01'],
+          carrierPaths: <String>['/s/extra.cbz'],
+          context: ctx,
+        ),
+        isFalse,
+        reason: '包在 /s，认领不了更深的 /s/ch01',
+      );
+      expect(
+        mangaImageDirsClaimedByCarriers(
+          imageDirs: const <String>[],
+          carrierPaths: <String>['/s/v1.cbz'],
+          context: ctx,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('逐卷失败必须落进错误日志', () {
     // 批量路径把每卷异常收进报告、只给调用方一句「成功 N / 失败 M」的汇总，于是
     // ImportFlowMixin.runImport 那道 ErrorLogService 永远拿不到真正的原因，用户
@@ -412,6 +566,65 @@ ImportCarrier _classifyWithRealPredicates(String path) => classifyImportCarrier(
 
 Uint8List _pngBytes() =>
     Uint8List.fromList(img.encodePng(img.Image(width: 20, height: 40)));
+
+Uint8List _jpgBytes() =>
+    Uint8List.fromList(img.encodeJpg(img.Image(width: 20, height: 40)));
+
+/// 一卷纯图 EPUB（每章一张页图、没有正文），可选 OPF 系列声明（Calibre 写法）。
+void _writeImageEpub(Directory dir, String name, {EpubSeries? series}) {
+  final Archive archive = Archive();
+  void addText(String entry, String content) {
+    final List<int> bytes = utf8.encode(content);
+    archive.addFile(ArchiveFile(entry, bytes.length, bytes));
+  }
+
+  final String title = p.basenameWithoutExtension(name);
+  addText('mimetype', 'application/epub+zip');
+  addText('META-INF/container.xml', '''<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+''');
+  final String seriesMeta = series == null
+      ? ''
+      : '<meta name="calibre:series" content="${series.name}"/>'
+            '<meta name="calibre:series_index" content="${series.index}"/>';
+  addText('OEBPS/content.opf', '''<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="book-id">iycDWb7ys6-$title</dc:identifier>
+    <dc:title>$title</dc:title>
+    <dc:language>ja</dc:language>
+    $seriesMeta
+  </metadata>
+  <manifest>
+    <item id="p1" href="p1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="p2" href="p2.xhtml" media-type="application/xhtml+xml"/>
+    <item id="i1" href="i1.png" media-type="image/png"/>
+    <item id="i2" href="i2.png" media-type="image/png"/>
+  </manifest>
+  <spine>
+    <itemref idref="p1"/>
+    <itemref idref="p2"/>
+  </spine>
+</package>
+''');
+  for (final int page in <int>[1, 2]) {
+    addText('OEBPS/p$page.xhtml', '''<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>p$page</title></head>
+  <body><img src="i$page.png" alt=""/></body>
+</html>
+''');
+    final Uint8List png = _pngBytes();
+    archive.addFile(ArchiveFile('OEBPS/i$page.png', png.length, png));
+  }
+  File(
+    p.join(dir.path, name),
+  ).writeAsBytesSync(ZipEncoder().encode(archive) ?? <int>[]);
+}
 
 void _writeCbz(Directory dir, String name) {
   final Uint8List png = _pngBytes();

@@ -1768,6 +1768,8 @@ flutter::EncodableMap AttachedSnapshotMap(
        flutter::EncodableValue(snapshot.reason)},
       {flutter::EncodableValue("surfaceVisible"),
        flutter::EncodableValue(snapshot.surface_visible)},
+      {flutter::EncodableValue("layoutSource"),
+       flutter::EncodableValue(snapshot.layout_source)},
       {flutter::EncodableValue("riskAccepted"),
        flutter::EncodableValue(snapshot.risk_accepted)},
       {flutter::EncodableValue("textGeneration"),
@@ -1794,6 +1796,10 @@ flutter::EncodableMap AttachedSnapshotMap(
       {flutter::EncodableValue("shield"),
        flutter::EncodableValue(std::move(shield))},
   };
+  if (!snapshot.measured_source.empty()) {
+    result[flutter::EncodableValue("measuredSource")] =
+        flutter::EncodableValue(snapshot.measured_source);
+  }
   if (snapshot.probe_start_observed_index >= 0) {
     result[flutter::EncodableValue("probeStartObservedIndex")] =
         flutter::EncodableValue(snapshot.probe_start_observed_index);
@@ -2464,9 +2470,14 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   // 下面藏球 / 关旧层那次合成就是要取的那帧（hdr_desktop_capture.h）。
   ScreenOcrOverlay::Capture capture;
   fushi::HdrMonitorDuplication hdr;
+  // 取证（BUG-4367）：被截显示器是不是开着 HDR。kNotHdr 也包括「判不了」（note 非空）。
+  bool hdr_monitor = false;
   {
     std::string note;
-    switch (hdr.Open(monitor, &note)) {
+    const fushi::HdrMonitorDuplication::OpenResult opened =
+        hdr.Open(monitor, &note);
+    hdr_monitor = opened != fushi::HdrMonitorDuplication::OpenResult::kNotHdr;
+    switch (opened) {
       case fushi::HdrMonitorDuplication::OpenResult::kOpened:
         // 成功取帧后由 Capture 的参数摘要覆盖；失败时 CaptureMonitor 写回落原因。
         break;
@@ -2504,6 +2515,9 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   const int width = capture.width;
   const int height = capture.height;
   std::string diagnostic = capture.diagnostic;
+  const bool via_dxgi = capture.via_dxgi;
+  // 被截显示器的 DPI（截图本身是物理像素；记它是为了核对缩放下坐标有没有混用逻辑像素）。
+  const UINT monitor_dpi = FlutterDesktopGetDpiForMonitor(monitor);
   // 先盖冻结层（画面立刻「定格」并显示「识别中」），再编 PNG。
   if (!screen_ocr_overlay_->Show(std::move(capture), style)) {
     floating_ball_window_->RestoreAfterCapture();
@@ -2527,6 +2541,13 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
       {flutter::EncodableValue("png"), flutter::EncodableValue(std::move(png))},
       {flutter::EncodableValue("screen"),
        flutter::EncodableValue(std::move(screen_rect))},
+      // 取证字段（BUG-4367）：只进诊断日志，不影响流程。
+      {flutter::EncodableValue("dpi"),
+       flutter::EncodableValue(static_cast<int32_t>(monitor_dpi))},
+      {flutter::EncodableValue("hdrMonitor"),
+       flutter::EncodableValue(hdr_monitor)},
+      {flutter::EncodableValue("capturePath"),
+       flutter::EncodableValue(std::string(via_dxgi ? "dxgi" : "gdi"))},
   };
   // HDR 显示器的取帧路径 / 回落原因：Dart 记进诊断日志（不影响结果）。
   if (!diagnostic.empty()) {
@@ -3047,7 +3068,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
             method == "attachedCalibrationCommit" ||
             method == "attachedCalibrationCancel" ||
             method == "attachedConfigure" ||
+            method == "attachedConfigureMeasured" ||
             method == "attachedUpdateText" ||
+            method == "attachedUpdateMeasuredText" ||
             method == "attachedUpdateStyle" ||
             method == "attachedSuspendForCapture" ||
             method == "attachedRestoreAfterCapture" ||
@@ -3135,6 +3158,33 @@ void FlutterWindow::RegisterGalHookTextChannel() {
                    BoolFromValue(args, "riskAccepted", false),
                    StringFromValue(args, "inputMode", ""),
                    StringFromValue(args, "mode", "attachedOnly"), &error);
+            }
+          } else if (method == "attachedConfigureMeasured") {
+            request = attached_text_surface_window_->ConfigureMeasured(
+                epoch, target_pid, target_hwnd,
+                StringFromValue(args, "measuredSource", std::string()),
+                StringFromValue(args, "inputMode", ""), &error);
+          } else if (method == "attachedUpdateMeasuredText") {
+            // glyphs: Int32List [start, length, left, top, right, bottom] * n
+            // in source-client physical pixels (see attached_measured_layout.h).
+            const flutter::EncodableValue* glyphs_value = nullptr;
+            if (args != nullptr) {
+              const auto it = args->find(flutter::EncodableValue("glyphs"));
+              if (it != args->end()) glyphs_value = &it->second;
+            }
+            const auto* glyph_words =
+                glyphs_value != nullptr
+                    ? std::get_if<std::vector<int32_t>>(glyphs_value)
+                    : nullptr;
+            if (glyph_words == nullptr) {
+              error = "measured_glyphs_malformed";
+            } else {
+              request = attached_text_surface_window_->UpdateMeasuredText(
+                  epoch, target_pid, target_hwnd,
+                  WideFromValue(args, "sourceText", L""),
+                  Int64FromValue(args, "textGeneration", 0), *glyph_words,
+                  IntFromValue(args, "clientWidth", 0),
+                  IntFromValue(args, "clientHeight", 0), &error);
             }
           } else if (method == "attachedUpdateText") {
             request = attached_text_surface_window_->UpdateText(
@@ -4741,7 +4791,42 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
           }
           return;
         }
+        if (call.method_name() == "setHostMuted") {
+          // 静音主机：压低已绑定游戏进程树的音频会话；关掉时还原，并顺手清掉上次
+          // 进程被杀留下的压低残留（会话音量按可执行文件持久化）。
+          const bool* muted = nullptr;
+          if (args != nullptr) {
+            const auto it = args->find(flutter::EncodableValue("muted"));
+            if (it != args->end()) muted = std::get_if<bool>(&it->second);
+          }
+          if (muted == nullptr) {
+            result->Error("bad_args", "Missing muted flag");
+            return;
+          }
+          if (!*muted) {
+            // 先还原，再看绑定：解除静音不能因为窗口已没了而留着压低。
+            game_stream_host_mute_.Stop();
+          }
+          const fushi::GameStreamWindowInfo bound =
+              game_stream_input_->InspectBound();
+          if (!bound.alive || !bound.process_matches || bound.pid == 0) {
+            result->Error("not_bound", "No bound game window");
+            return;
+          }
+          if (*muted) {
+            if (!game_stream_host_mute_.Start(static_cast<DWORD>(bound.pid))) {
+              result->Error("mute_failed", "No audio render endpoint");
+              return;
+            }
+          } else {
+            game_stream_host_mute_.RestoreResidual(
+                static_cast<DWORD>(bound.pid));
+          }
+          result->Success();
+          return;
+        }
         if (call.method_name() == "unbind") {
+          game_stream_host_mute_.Stop();
           game_stream_input_->Unbind();
           result->Success();
           return;
@@ -4924,6 +5009,7 @@ void FlutterWindow::OnDestroy() {
   // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
   // 必须在这里主动摘掉而不是等进程退出兜底。
   fushi::SetGlobalMouseTrigger(nullptr, fushi::kGlobalMouseTriggerNone);
+  game_stream_host_mute_.Stop();
   if (game_stream_input_) {
     game_stream_input_->Unbind();
   }

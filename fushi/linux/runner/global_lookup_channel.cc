@@ -3,10 +3,14 @@
 #include <gio/gio.h>
 #include <gtk/gtk.h>
 #include <signal.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "../lookup_card/line_pipe.h"
 #ifdef FUSHI_WAYLAND_SELECTION
@@ -143,11 +147,108 @@ void OnPrimaryText(GtkClipboard*, const gchar* text, gpointer data) {
   RespondSelection(call, text, "primary");
 }
 
-// X11 PRIMARY: text selected in an X11 app (or a Wayland app's selection that
-// KWin copied over while an X11 window had focus).
-void CaptureX11Primary(FlMethodCall* call) {
+void ReadGtkPrimary(FlMethodCall* call) {
   gtk_clipboard_request_text(gtk_clipboard_get(GDK_SELECTION_PRIMARY),
                              OnPrimaryText, g_object_ref(call));
+}
+
+#ifdef GDK_WINDOWING_WAYLAND
+// Upper bound for the main window to take keyboard focus. The Dart caller
+// raises the window first (with the portal's activation token); a compositor
+// that refuses the raise must not leave the lookup hanging.
+constexpr guint kFocusWaitMs = 1500;
+
+// A primary selection read that waits for one of Fushi's windows to become
+// active. Owns a ref on the call and on every window it watches; the
+// destructor drops the signal handlers, the timeout and those refs. While the
+// wait runs, the GLib callbacks own it (see CaptureGtkPrimary).
+struct FocusWait {
+  FlMethodCall* call = nullptr;
+  std::vector<std::pair<GtkWindow*, gulong>> watched;
+  guint timeout_id = 0;
+
+  FocusWait() = default;
+  FocusWait(const FocusWait&) = delete;
+  FocusWait& operator=(const FocusWait&) = delete;
+  ~FocusWait() {
+    for (auto& [window, handler] : watched) {
+      g_signal_handler_disconnect(window, handler);
+      g_object_unref(window);
+    }
+    if (timeout_id != 0) g_source_remove(timeout_id);
+    if (call != nullptr) g_object_unref(call);
+  }
+};
+
+bool AnyToplevelActive() {
+  GList* windows = gtk_window_list_toplevels();
+  bool active = false;
+  for (GList* l = windows; l != nullptr && !active; l = l->next) {
+    active = gtk_window_is_active(GTK_WINDOW(l->data));
+  }
+  g_list_free(windows);
+  return active;
+}
+
+// Takes back the ownership CaptureGtkPrimary handed to the callbacks.
+void FinishFocusWait(FocusWait* raw) {
+  std::unique_ptr<FocusWait> wait(raw);
+  // The compositor sends the selection offer with keyboard focus, but in no
+  // fixed order relative to the "activated" state GDK reports as is-active.
+  // One round trip makes sure GDK has processed that offer before the read.
+  gdk_display_sync(gdk_display_get_default());
+  ReadGtkPrimary(wait->call);
+}
+
+void OnWindowActive(GObject* window, GParamSpec*, gpointer data) {
+  if (gtk_window_is_active(GTK_WINDOW(window))) {
+    FinishFocusWait(static_cast<FocusWait*>(data));
+  }
+}
+
+gboolean OnFocusWaitTimeout(gpointer data) {
+  auto* wait = static_cast<FocusWait*>(data);
+  wait->timeout_id = 0;  // This source is removed by returning FALSE.
+  g_warning("selection: no Fushi window became active within %u ms",
+            kFocusWaitMs);
+  FinishFocusWait(wait);
+  return G_SOURCE_REMOVE;
+}
+#endif
+
+// The primary selection as GTK sees it.
+// - X11 display (Flatpak on XWayland, X11 sessions): X11 PRIMARY, readable at
+//   any time: text selected in an X11 app, or a Wayland app's selection that
+//   KWin copied over while an X11 window had focus.
+// - Native Wayland display: the compositor offers the primary selection only to
+//   the client with keyboard focus. This is the path on a compositor without
+//   data control (GNOME), so wait until one of Fushi's windows is active; the
+//   other app's selection stays primary after it loses focus.
+void CaptureGtkPrimary(FlMethodCall* call) {
+#ifdef GDK_WINDOWING_WAYLAND
+  if (GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default()) &&
+      !AnyToplevelActive()) {
+    auto wait = std::make_unique<FocusWait>();
+    wait->call = FL_METHOD_CALL(g_object_ref(call));
+    GList* windows = gtk_window_list_toplevels();
+    for (GList* l = windows; l != nullptr; l = l->next) {
+      auto* window = GTK_WINDOW(l->data);
+      if (gtk_window_get_window_type(window) != GTK_WINDOW_TOPLEVEL) continue;
+      g_object_ref(window);
+      wait->watched.emplace_back(
+          window, g_signal_connect(window, "notify::is-active",
+                                   G_CALLBACK(OnWindowActive), wait.get()));
+    }
+    g_list_free(windows);
+    wait->timeout_id =
+        g_timeout_add(kFocusWaitMs, OnFocusWaitTimeout, wait.get());
+    // From here the handlers and the timeout own it; whichever fires first
+    // calls FinishFocusWait, which frees it and disconnects the others.
+    wait.release();
+    return;
+  }
+#endif
+  ReadGtkPrimary(call);
 }
 
 #ifdef FUSHI_WAYLAND_SELECTION
@@ -176,7 +277,7 @@ void OnWaylandSelection(GObject*, GAsyncResult* result, gpointer data) {
     RespondSelection(call, text, "wayland-primary");
     return;
   }
-  CaptureX11Primary(call);
+  CaptureGtkPrimary(call);
 }
 #endif
 
@@ -184,12 +285,13 @@ void OnSelectionMethodCall(FlMethodChannel*, FlMethodCall* call, gpointer) {
   if (g_strcmp0(fl_method_call_get_name(call), "captureSelection") == 0) {
 #ifdef FUSHI_WAYLAND_SELECTION
     // The compositor's primary selection first: it covers Wayland and X11 apps
-    // alike; X11 PRIMARY when there is no Wayland display or it is empty.
+    // alike. GTK's primary selection when there is no Wayland display, no data
+    // control (GNOME) or it is empty.
     g_autoptr(GTask) task =
         g_task_new(nullptr, nullptr, OnWaylandSelection, g_object_ref(call));
     g_task_run_in_thread(task, ReadWaylandSelectionInThread);
 #else
-    CaptureX11Primary(call);
+    CaptureGtkPrimary(call);
 #endif
     return;
   }

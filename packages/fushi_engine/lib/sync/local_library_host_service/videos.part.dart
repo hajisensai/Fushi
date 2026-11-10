@@ -506,6 +506,37 @@ mixin _LocalLibraryHostVideos
     return existing == null ? null : File(existing);
   }
 
+  /// 这一集视频旁的全部 sidecar 字幕（[VideoSidecarSubtitleListHost]，反馈
+  /// -CaVsioFhG）：与 [resolveVideoSubtitle] 同一份「这一集是哪个文件」，判据是
+  /// [listSidecarSubtitles]，只留真实存在的普通文件，按文件名（不区分大小写）排序。
+  @override
+  Future<List<File>> listVideoSidecarSubtitles(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
+    if (videoPath == null ||
+        videoPath.isEmpty ||
+        isNetworkOnlyVideoPath(videoPath)) {
+      return const <File>[];
+    }
+    final String dir = p.dirname(videoPath);
+    final List<String>? dirFiles = await _listDirFileNamesAsync(dir);
+    if (dirFiles == null) return const <File>[];
+    final List<String> names = listSidecarSubtitles(
+      p.basenameWithoutExtension(videoPath),
+      dirFiles,
+    )..sort((String a, String b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final List<File> files = <File>[];
+    for (final String name in names) {
+      final String? existing = await _existingFilePathAsync(
+        p.normalize(p.join(dir, name)),
+      );
+      if (existing != null) files.add(File(existing));
+    }
+    return files;
+  }
+
   /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
   /// 本地文件后调 [extractAudioSegmentViaFfmpeg]（本地路径、不经网络/TLS——绕开 client
   /// ffmpeg 抓 host 自签 https/token 流的整类失败）。裁到独立临时目录，产物返回给调用方，

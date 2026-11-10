@@ -44,9 +44,11 @@ final List<String> _keys = <String>[
   SrsFieldKeys.deckReplayQuestion,
   SrsFieldKeys.deckRwkvQueue,
   SrsFieldKeys.deckNewOrder,
+  SrsFieldKeys.deckReviewOrder,
+  SrsFieldKeys.deckNewMix,
   SrsFieldKeys.deckNewPlan,
   SrsFieldKeys.dayRolloverHour,
-  SrsFieldKeys.utcOffsetMin,
+  'utcOffsetMin', // 旧版声明过的 profile 键（存量库里可能有记录）
   'neverSeenKey',
   "it's",
 ];

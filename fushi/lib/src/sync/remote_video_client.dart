@@ -153,6 +153,24 @@ abstract interface class RemoteVideoGraphicSubtitleTrackFetch {
   });
 }
 
+/// 「能按文件名下载 host 上某一条外挂字幕」的可选能力（互联 host，反馈 -CaVsioFhG）。
+///
+/// [RemoteVideoStreamUrls.sidecarSubtitles] 列出这一集 host 上的全部外挂字幕，
+/// 本能力按其中一条的 [RemoteVideoSidecarSubtitle.fileName] 把它下到本地。只有
+/// 互联 host 会下发那份列表，媒体服务器 / URL 流不实现（它们的外挂字幕走
+/// [RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）。
+abstract interface class RemoteVideoSidecarSubtitleFetch {
+  /// 把视频 [id] 第 [episodeIndex] 集名为 [fileName] 的外挂字幕下载到 [dest]。
+  /// host 上已没有这一条（404）或网络失败时抛错。
+  Future<void> getRemoteVideoSidecarSubtitle(
+    String id,
+    File dest, {
+    required String fileName,
+    int episodeIndex = 0,
+    void Function(double progress)? onProgress,
+  });
+}
+
 /// 「知道某一集的集号」的可选能力（BUG-2626）。
 ///
 /// [RemoteVideoInfo] 只有 `title` 与合集内的 `sortIndex`：前者是分集标题（在线视频源

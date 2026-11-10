@@ -50,10 +50,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       for (final EpubBookRow b in localBooks) sanitizeTtuFilename(b.title),
     };
     final Map<String, bool> remoteKeyHasContent = <String, bool>{
-      // 「远端已有内容」= EPUB 内容树 ∨ 漫画包内容（互联完整支持批次）——否则
-      // host 上已有的漫画会被本端当「远端无」反复推送。
+      // 「远端已有内容」= EPUB 内容树 ∨ 漫画包内容（互联完整支持批次）∨ PDF 原件
+      // （反馈 Jq1_ujHa4t）——否则 host 上已有的漫画 / PDF 会被本端当「远端无」反复推送。
       for (final RemoteBookInfo r in remoteBooks)
-        sanitizeTtuFilename(r.title): r.hasContent || r.hasMangaContent,
+        sanitizeTtuFilename(r.title):
+            r.hasContent || r.hasMangaContent || r.hasPdfContent,
     };
 
     // 按 sanitizeTtuFilename(title) union 计算 diff。
@@ -75,10 +76,15 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
 
     final int total = diff.toPush.length;
     int index = 0;
+    // host 能否收 PDF（`liveLibrary.pdfBooks`）：轮到第一本 PDF 时才问一次，没有
+    // PDF 要推的轮次零额外请求。
+    bool? hostAcceptsPdf;
 
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
       final String title = localKeyToTitle[key] ?? key;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
       File? tmp;
       try {
@@ -98,11 +104,23 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           continue;
         }
         final BookFormat format = BookFormat.parseOrEpub(row.format);
+        // PDF（反馈 Jq1_ujHa4t）：包 = 书目录里的 PDF 原件，直接上传，不重打包。
+        // 只推给显式宣称能收 PDF 的 host——老 host 会把它当 EPUB 导入失败，无头
+        // 服务端没有 PDF 引擎；这两种对端上 PDF 留在本机（能力边界，不是错误）。
+        File? upload;
         if (format == BookFormat.pdf) {
-          // PDF 无互联内容通道（互联全域盘点已记录）。此前无 format 过滤时每本
-          // 漫画/PDF 每轮同步都稳定产出一条 repackage 失败噪音错误——静默跳过。
-          index++;
-          continue;
+          final bool acceptsPdf = hostAcceptsPdf ??= await backend
+              .hostAcceptsPdfBooks();
+          if (!acceptsPdf) {
+            index++;
+            continue;
+          }
+          if (!hasExportablePdfContent(row)) {
+            report.errors.add('live push book "$title": pdf file missing');
+            index++;
+            continue;
+          }
+          upload = File(pdfBookFilePath(row));
         }
         // 在线合集只有元数据占位，没有可上传的漫画页图。
         if (format == BookFormat.manga &&
@@ -115,25 +133,28 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           index++;
           continue;
         }
-        tmp = _tmpFile('.epub');
-        // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
-        // EPUB → 既有 repackage。
-        final bool built = format == BookFormat.manga
-            ? await repackageMangaBook(row.extractDir, tmp.path)
-            : await repackageExtractedEpub(row.extractDir, tmp.path);
-        if (!built) {
-          report.errors.add(
-            'live push book "$title": repackage produced no output',
-          );
-          index++;
-          continue;
+        if (upload == null) {
+          tmp = _tmpFile('.epub');
+          // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
+          // EPUB → 既有 repackage。
+          final bool built = format == BookFormat.manga
+              ? await repackageMangaBook(row.extractDir, tmp.path)
+              : await repackageExtractedEpub(row.extractDir, tmp.path);
+          if (!built) {
+            report.errors.add(
+              'live push book "$title": repackage produced no output',
+            );
+            index++;
+            continue;
+          }
+          upload = tmp;
         }
         // 显示名跟着书走，**身份不跟着走**（BUG-1488 定的红线）：端点寻址、
         // host 端 bookKey 派生仍恒用 raw [title]。
         final OverrideTitleEntry? override = overrideTitles[row.bookKey];
         await backend.putRemoteBook(
           title,
-          tmp,
+          upload,
           displayTitle: override?.title,
           displayTitleAt: override?.updatedAt ?? 0,
           presentSinceAt: row.localAddedAt,
@@ -218,6 +239,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     }
     try {
       for (int i = 0; i < localBooks.length; i++) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
         await _syncOneBookProgressLive(
           report,
           sync: sync,
@@ -278,6 +301,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           snapshot: touched ? null : snapshot,
         );
         if (step.localChanged) report.localBookProgressPulled++;
+        // 摘要计数（BUG-4302）只数位置真的挪动了的：落地了 host 的进度 / host 确认
+        // 采纳了本机的进度（BUG-4278）。只对齐时间戳（synced）不算变化。
+        if (step.action == BookProgressSyncAction.applyRemote &&
+            step.localChanged) {
+          report.bookProgressReceived++;
+        } else if (step.pushed) {
+          report.bookProgressSent++;
+        }
         if (step.action == BookProgressSyncAction.conflict) {
           report.conflicts.add(
             SyncConflict(
@@ -353,6 +384,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     };
     try {
       for (int i = 0; i < keys.length; i++) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
         await _syncOnePositionLive(
           report,
           sync: sync,
@@ -413,6 +446,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           key,
           remote: await sync.remotePosition(key),
         );
+        // 摘要计数（BUG-4302）：落地了 host 的位置（判定后本端被改写则未落地，
+        // BUG-3537）/ host 确认采纳了本机的位置（BUG-4278）。
+        if (step.action == BookProgressSyncAction.applyRemote &&
+            step.localChanged) {
+          report.notePlaybackPositionMoved(sync.kind, received: true);
+        } else if (step.push == LivePushStatus.confirmed) {
+          report.notePlaybackPositionMoved(sync.kind, received: false);
+        }
         if (step.action == BookProgressSyncAction.conflict) {
           report.conflicts.add(
             SyncConflict(

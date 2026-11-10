@@ -21,6 +21,7 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/scheduler.dart' show Priority, SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -39,12 +40,15 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
-import 'package:fushi/game_stream_companion_main.dart'
-    as game_stream_companion_entrypoint;
+import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/src/second_screen/companion/companion_context.dart'
+    show companionContextRouteObserver;
+import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
@@ -92,6 +96,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
+    show GlobalHotKeyBackendKind;
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
@@ -210,6 +216,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
+import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -287,12 +294,12 @@ void popupMain() {
   popup_entrypoint.popupMain();
 }
 
-/// The game stream's lookup panel on a second display (Android
-/// `GameStreamCompanionActivity`). Engines resolve entry points in the root
-/// library, so it is forwarded from here like [popupMain].
+/// The panel on a second display (Android `SecondScreenActivity`): the
+/// companion or the game stream's lookup panel. Engines resolve entry points
+/// in the root library, so it is forwarded from here like [popupMain].
 @pragma('vm:entry-point')
-void gameStreamCompanionMain() {
-  game_stream_companion_entrypoint.gameStreamCompanionMain();
+void secondScreenMain() {
+  second_screen_entrypoint.secondScreenMain();
 }
 
 /// Application execution starts here.
@@ -483,7 +490,12 @@ void main([List<String> args = const <String>[]]) {
         await windowManager.setPreventClose(true);
         // Windows runner keeps the main window hidden until the first usable
         // home or error frame has reached the raster thread.
-        await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
+        // 热重载清理残留全局热键（hotkey_manager 的初始化约定）。Linux Wayland
+        // 桌面的热键走 GlobalShortcuts portal，不碰 X11 keybinder。
+        if (GlobalLookupController.platformHotKeyBackendKind ==
+            GlobalHotKeyBackendKind.native) {
+          await hotKeyManager.unregisterAll();
+        }
         // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
         // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
         if (Platform.isWindows) {
@@ -779,6 +791,9 @@ void main([List<String> args = const <String>[]]) {
       // uid 取副本（srs_profile_stores.dart），「在复习里打开」的编辑页套那份副本。
       appModel.srsProfileStoresReader = () =>
           container.read(srsProfileStoresProvider);
+      // 复习模块关着时用户改的日界：这份配置的复习库下次激活时补写（AppModel.flushPendingDayRollover）。
+      container.read(srsProfileStoresProvider).onActivated = (SrsDbStore s) =>
+          unawaited(appModel.flushPendingDayRollover(s));
       appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
           srsPushProfileNoteEditor(
             appModel.navigatorKey.currentState,
@@ -825,8 +840,10 @@ void main([List<String> args = const <String>[]]) {
 
       // ── 预热 WebView 引擎 ──────────────────────────────────────────────
       // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
-      // 移动端可直接预热；桌面端（WebView2）必须等首帧渲染、Flutter view
-      // 已挂载后再构造 HeadlessInAppWebView，否则会崩 WebView2。
+      // 所有平台都等首帧光栅化 + 主线程空闲后再构造 HeadlessInAppWebView
+      // （runWebViewPrewarmWhenIdle）：桌面 WebView2 需要 Flutter view 已挂载；
+      // Android 插件在主线程同步初始化 chromium，首帧前跑会把首帧堵死、低端机
+      // 8s「no focused window」ANR（反馈 LQhvpnzzkz）。
 
       // Windows/iOS 弹窗内联资产（popup.html/js/css ~300KB）异步预读：把 4 次
       // 同步读盘从「第一次查词」路径挪到启动空闲期（内部平台门控，其它平台 no-op）。
@@ -841,51 +858,56 @@ void main([List<String> args = const <String>[]]) {
         lowMemory: appModel.lowMemoryMode,
       )) {
         unawaited(
-          Future(() async {
-            // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
-            // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
-            // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
-            // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
-            // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
-            // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
-            // 超时兜底，先到者胜、只 dispose 一次。
-            late final HeadlessInAppWebView warmup;
-            final WebViewPrewarmSession session = WebViewPrewarmSession(
-              disposeWebView: () => warmup.dispose(),
-              onFinished: (String reason) =>
-                  debugPrint('[Fushi] WebView engine pre-warm ended: $reason'),
-            );
-            try {
-              // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
-              if (isDesktopPlatform) {
-                await WidgetsBinding.instance.endOfFrame;
-              }
-              warmup = HeadlessInAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri('about:blank')),
-                onLoadStop: (controller, url) async {
-                  // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
-                  // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
-                  // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
-                  await Future.delayed(const Duration(milliseconds: 100));
-                  await session.finish('loaded');
-                },
-                onReceivedError: (controller, request, error) =>
-                    session.finish('load error: ${error.type}'),
-                // 接管 renderer 死亡：Android 侧只要注册了这个回调，
-                // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
-                onWebContentProcessDidTerminate: (controller) =>
-                    session.finish('webkit content process terminated'),
-                onRenderProcessGone: (controller, detail) => session.finish(
-                  'renderer gone (didCrash=${detail.didCrash})',
+          runWebViewPrewarmWhenIdle(
+            firstFrameRasterized:
+                WidgetsBinding.instance.waitUntilFirstFrameRasterized,
+            whenIdle: () => SchedulerBinding.instance.scheduleTask<void>(
+              () {},
+              Priority.idle,
+            ),
+            prewarm: () async {
+              // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
+              // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
+              // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
+              // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
+              // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
+              // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
+              // 超时兜底，先到者胜、只 dispose 一次。
+              late final HeadlessInAppWebView warmup;
+              final WebViewPrewarmSession session = WebViewPrewarmSession(
+                disposeWebView: () => warmup.dispose(),
+                onFinished: (String reason) => debugPrint(
+                  '[Fushi] WebView engine pre-warm ended: $reason',
                 ),
               );
-              await warmup.run();
-              session.armTimeout();
-            } catch (e) {
-              debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
-              await session.finish('run failed: $e');
-            }
-          }),
+              try {
+                warmup = HeadlessInAppWebView(
+                  initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+                  onLoadStop: (controller, url) async {
+                    // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
+                    // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
+                    // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
+                    await Future.delayed(const Duration(milliseconds: 100));
+                    await session.finish('loaded');
+                  },
+                  onReceivedError: (controller, request, error) =>
+                      session.finish('load error: ${error.type}'),
+                  // 接管 renderer 死亡：Android 侧只要注册了这个回调，
+                  // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+                  onWebContentProcessDidTerminate: (controller) =>
+                      session.finish('webkit content process terminated'),
+                  onRenderProcessGone: (controller, detail) => session.finish(
+                    'renderer gone (didCrash=${detail.didCrash})',
+                  ),
+                );
+                await warmup.run();
+                session.armTimeout();
+              } catch (e) {
+                debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
+                await session.finish('run failed: $e');
+              }
+            },
+          ),
         );
       }
 
@@ -1257,6 +1279,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
       installMihonCloudflareResolver(ref.read(appProvider).navigatorKey);
     }
+    // 发现页直链下载撞上下载网关的人机验证（BUG-4354）时，由宿主弹 WebView 解题。
+    installDownloadGatewayChallengeSolver(ref.read(appProvider).navigatorKey);
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -1393,7 +1417,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     if (repo is! PendingMiningAnkiRepository) return;
     // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
-    unawaited(repo.flush().then((_) {}, onError: (Object _) {}));
+    // 自动补发不报张数，但送达的卡带回的提示（如「保存到」被主机退回默认）必须让用户看到：
+    // 这条路径上没有别的结果提示能挂它（BUG-4287）。
+    unawaited(
+      repo.flush().then((PendingFlushReport report) {
+        final String? notice = report.notice;
+        if (notice != null) {
+          FushiToast.show(msg: notice, severity: ToastSeverity.warning);
+        }
+      }, onError: (Object _) {}),
+    );
   }
 
   @override
@@ -1406,6 +1439,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      // BUG-4289：查词弹窗是另一个进程，它写进库的偏好（「保存到」被主机退回默认）主进程缓存看不见。
+      if (Platform.isAndroid) {
+        unawaited(
+          ref
+              .read(appProvider)
+              .reloadPopupWrittenPrefs()
+              .catchError(
+                (Object e, StackTrace s) => ErrorLogService.instance.log(
+                  'main.reloadPopupWrittenPrefs',
+                  e,
+                  s,
+                ),
+              ),
+        );
+      }
       _flushPendingMines();
       if (ref.read(appProvider).isInitialised) {
         unawaited(_checkFeedbackReplies());
@@ -1552,6 +1600,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // （CLI 能认出残留，但少一次连不上的探测）。
       _guardedExitStep('ctl channel stop', () async {
         await _ctlServer?.stop().timeout(_exitCtlStopTimeout);
+      }),
+      // app 外热键：注销 OS 热键 / 关掉 GlobalShortcuts portal 会话（连接断开时
+      // portal 也会收，这里是显式收口）。
+      _guardedExitStep('global hotkeys release', () async {
+        await GlobalLookupController.instance.releaseHotKeys().timeout(
+          _exitCtlStopTimeout,
+        );
       }),
       // 本机 GPT-SoVITS：Windows 不连坐子进程，exit(0) 后服务会继续占着显存和端口，
       // 解压中的 tar 也会继续往安装目录写。shutdown 同时停服务、取消安装（杀 tar）。
@@ -1745,6 +1800,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     return false;
+  }
+
+  /// The companion on the second screen asked to open a `fushi://widget/...`
+  /// link on this screen (continue an item, start reviews...).
+  Future<void> _openCompanionLink(String link) async {
+    await handleIncomingUrl(data: link, isInitial: false);
   }
 
   void _queueAppShortcut(AppShortcut shortcut) {
@@ -2117,6 +2178,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           appModel.moduleVisibility.isEnabled(kind.module),
       keepDuplicates: false,
       askOnDuplicate: _askExternalBookDuplicate,
+      folderTranscribeAudiobook: appModel.folderImportTranscribePort,
     ).importAll(<String>[bookPath])).single;
     final String? bookKey = _externalBookKeyOf(result);
     if (bookKey == null) {
@@ -3091,6 +3153,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,
+            // 第二块屏：顶屏当前是哪个页面（companion 的上下文）。
+            companionContextRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -3384,7 +3448,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               ),
             );
             // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
-            return SmoothWheelScrollScope(child: gated);
+            // 第二块屏：新副屏出现时在主屏问一次「要用这块屏幕吗」（auto 策略）。
+            return SecondScreenApprovalHost(
+              openLink: _openCompanionLink,
+              child: SmoothWheelScrollScope(child: gated),
+            );
           },
         ),
       ),

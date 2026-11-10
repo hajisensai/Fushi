@@ -38,6 +38,20 @@ enum SrsDeviceState {
   };
 }
 
+/// 本机对一台设备的信任（内核 `trust`，native/fushi_fsrs/src/store/sync2/trust.rs）：没有 = 可信；待确认 / 已拒绝的
+/// 设备的删除与彻底清除在本机扣着。
+enum SrsDeviceTrust {
+  trusted,
+  pending,
+  rejected;
+
+  static SrsDeviceTrust parse(Object? v) => switch (v) {
+    'pending' => SrsDeviceTrust.pending,
+    'rejected' => SrsDeviceTrust.rejected,
+    _ => SrsDeviceTrust.trusted,
+  };
+}
+
 /// 设备 ID 的比较形（内核给带连字符的 UUID 文本，修改记录的写入者 ID 可能带 `#化身号`）。
 String srsDeviceKey(String id) {
   final int hash = id.lastIndexOf('#');
@@ -63,6 +77,10 @@ class SrsDeviceView {
     this.state = SrsDeviceState.ok,
     this.digestMismatch = false,
     this.warning,
+    this.trust = SrsDeviceTrust.trusted,
+    this.trustSince,
+    this.heldDeletes = 0,
+    this.heldPurges = 0,
   });
 
   factory SrsDeviceView.fromStatus(Map<String, Object?> d) {
@@ -84,6 +102,10 @@ class SrsDeviceView {
       state: SrsDeviceState.parse(d['state']),
       digestMismatch: d['digestMismatch'] == true,
       warning: s('warning').isEmpty ? null : s('warning'),
+      trust: SrsDeviceTrust.parse(d['trust']),
+      trustSince: (d['trustSince'] as num?)?.toInt(),
+      heldDeletes: n('heldDeletes'),
+      heldPurges: n('heldPurges'),
     );
   }
 
@@ -110,6 +132,16 @@ class SrsDeviceView {
   final SrsDeviceState state;
   final bool digestMismatch;
   final String? warning;
+
+  /// 本机对它的信任；不是 [SrsDeviceTrust.trusted] 时它的删除（[heldDeletes]）与彻底清除（[heldPurges]）在本机
+  /// 扣着，冲突中心「待确认的设备」里确认。[trustSince] = 它第一份 head 的时刻。
+  final SrsDeviceTrust trust;
+  final int? trustSince;
+  final int heldDeletes;
+  final int heldPurges;
+
+  /// 待本机确认（冲突中心的确认卡片与角标）。
+  bool get needsTrust => trust == SrsDeviceTrust.pending;
 
   /// 名称部分（不带版本）；没有名字返回空串。
   String get baseName => name.isNotEmpty ? name : hint;
@@ -153,6 +185,9 @@ class SrsDeviceDirectory {
   final Map<String, SrsDeviceView> _byKey;
 
   SrsDeviceView? of(String writerId) => _byKey[srsDeviceKey(writerId)];
+
+  /// 目录里的全部设备（冲突中心从同一份状态里挑出还没信任的，不再另读一次 `sync2_status`）。
+  Iterable<SrsDeviceView> get all => _byKey.values;
 
   /// 写入者的显示名：本机 → [selfLabel]；认识的设备 → [SrsDeviceView.displayName]；不认识 → [fallback]。
   String label(

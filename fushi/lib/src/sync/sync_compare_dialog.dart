@@ -6,13 +6,16 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
-import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show remoteAudiobookRevisionKeyForBook;
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
+    show recordRemoteAudiobookPackageDownload;
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
@@ -28,6 +31,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_baseline_scope.dart'
     show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
@@ -55,8 +59,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show importMangaPackageFile, isMangaPackage;
+import 'package:fushi/src/sync/synced_book_import.dart';
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -476,12 +479,13 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final bool remoteHasContent = local == null
         ? (remote != null
               ? await _remoteFolderHasContent(backend, remote.id)
-              // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
-              // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
-              // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
+              // 互联 live 条目：host 对漫画 / PDF 恒 hasContent=false（那是 EPUB
+              // 内容树判据），漫画内容走 hasMangaContent、PDF 走 hasPdfContent ——
+              // 只看 hasContent 会让它们在对比弹窗里连下载入口都不出现。与
+              // _syncBooksContentLive 同判据取并。
               : (live == null
                     ? true
-                    : (live.hasContent || live.hasMangaContent)))
+                    : (live.hasBookShelfContent || live.hasMangaContent)))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
@@ -997,13 +1001,29 @@ seedSyncCompareChoices(
 
 /// [applySyncCompareChoices] 的结果。
 class SyncCompareApplyResult {
-  const SyncCompareApplyResult({required this.applied, required this.errors});
+  const SyncCompareApplyResult({
+    required this.applied,
+    required this.errors,
+    this.failureReasons = const <String, String>{},
+  });
 
   /// 真正写了东西的书数。
   final int applied;
 
   /// 失败的书名。
   final List<String> errors;
+
+  /// 失败书名 → 失败原因（拿得到原因的才有）。对比弹窗把它原样显示给用户，不能
+  /// 只报书名（BUG-4337：扩展源漫画「立即同步」失败时用户看不到任何原因）。
+  final Map<String, String> failureReasons;
+
+  /// 给用户看的失败明细：每本一行「书名: 原因」，没有原因的只列书名。
+  String describeFailures() => errors
+      .map((String title) {
+        final String? reason = failureReasons[title];
+        return reason == null ? title : '$title: $reason';
+      })
+      .join('\n');
 }
 
 /// 按 [choices]（书名 → 选择）应用 [actionable] 里的书：选本地 = 推本机这份过去，
@@ -1056,6 +1076,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
 
     int applied = 0;
     final errors = <String>[];
+    final Map<String, String> failureReasons = <String, String>{};
     for (final entry in actionable) {
       final choice = choices[entry.title]!;
 
@@ -1072,12 +1093,13 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           if (imported) applied++;
         } on DuplicateImportCancelledException {
           // 良性：本机已有同名书，跳过。
-        } catch (e) {
+        } catch (e, stack) {
           errors.add(entry.title);
-          developer.log(
-            'Failed to download "${entry.title}"',
-            error: e,
-            name: 'SyncCompare',
+          failureReasons[entry.title] = friendlySyncErrorDetail(e);
+          ErrorLogService.instance.log(
+            'SyncCompare.download',
+            'title="${entry.title}": $e',
+            stack,
           );
         }
         done++;
@@ -1102,6 +1124,9 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
       decisions?[entry.bookKey!] = choice;
 
       SyncApplyOutcome outcome;
+      // 失败原因：syncBook 把异常收进 [SyncBookResult.error]（它自己已记进 app 日志），
+      // 这里抛出来的（锁 / 互联 live）在下面 catch 里记。
+      String? failureReason;
       try {
         outcome = await syncResourceLocks.withResources(
           <String>{syncBookResource(book.bookKey)},
@@ -1116,25 +1141,27 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
                 syncAudioBook: syncAudioBook,
               );
             }
-            return classifySyncApply(
-              await manager.syncBook(
-                book: book,
-                direction: direction,
-                syncStats: syncStats,
-                statsSyncMode: StatisticsSyncMode.merge,
-                syncAudioBook: syncAudioBook,
-                syncContent: syncContent,
-                syncMangaContent: syncMangaContent,
-              ),
+            final SyncBookResult bookResult = await manager.syncBook(
+              book: book,
+              direction: direction,
+              syncStats: syncStats,
+              statsSyncMode: StatisticsSyncMode.merge,
+              syncAudioBook: syncAudioBook,
+              syncContent: syncContent,
+              syncMangaContent: syncMangaContent,
             );
+            failureReason = bookResult.error;
+            return classifySyncApply(bookResult);
           },
         );
-      } catch (e) {
+      } catch (e, stack) {
         outcome = SyncApplyOutcome.failed;
-        developer.log(
-          'Failed to sync "${entry.title}"',
-          error: e,
-          name: 'SyncCompare',
+        failureReason = friendlySyncErrorDetail(e);
+        ErrorLogService.instance.log(
+          'SyncCompare.apply',
+          'book=${book.bookKey} source=${syncBookSourceKind(book)} '
+              'title="${entry.title}": $e',
+          stack,
         );
       }
       if (backend is InterconnectSyncBackend) liveBooksTouched = true;
@@ -1143,6 +1170,8 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           applied++;
         case SyncApplyOutcome.failed:
           errors.add(entry.title);
+          final String? reason = failureReason;
+          if (reason != null) failureReasons[entry.title] = reason;
         case SyncApplyOutcome.noop:
           // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
           break;
@@ -1165,16 +1194,17 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           shareFavorites: false,
           shareWebHistory: false,
         );
-      } catch (e) {
+      } catch (e, stack) {
         errors.add(t.sync_statistics);
-        developer.log(
-          'Failed to merge statistics with host',
-          error: e,
-          name: 'SyncCompare',
-        );
+        failureReasons[t.sync_statistics] = friendlySyncErrorDetail(e);
+        ErrorLogService.instance.log('SyncCompare.mergeStatistics', e, stack);
       }
     }
-    return SyncCompareApplyResult(applied: applied, errors: errors);
+    return SyncCompareApplyResult(
+      applied: applied,
+      errors: errors,
+      failureReasons: failureReasons,
+    );
   });
 }
 
@@ -1401,6 +1431,12 @@ Future<void> _downloadLiveAudiobookFor(
       audioDatabaseRoot: audioRoot,
       bookKeyOverride: localBookKey,
     );
+    await recordRemoteAudiobookPackageDownload(
+      db: db,
+      client: backend,
+      key: remoteAudiobookRevisionKeyForBook(localBookKey),
+      package: audioTmp,
+    );
   } finally {
     try {
       if (audioTmp.existsSync()) audioTmp.deleteSync();
@@ -1432,21 +1468,16 @@ Future<bool> downloadSyncCompareRemoteOnly({
     );
     try {
       await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-      // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
-      // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
-      // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
-      // raw title（bookKey 由它派生），不用本地临时文件名。
-      final String localBookKey = (await isMangaPackage(tmp))
-          ? await importMangaPackageFile(
-              db: db,
-              file: tmp,
-              title: entry.remoteLiveTitle,
-            )
-          : await EpubImporter.importFromPath(
-              db: db,
-              filePath: tmp.path,
-              fileName: '${entry.title}.epub',
-            );
+      // 互联 host 的书内容端点对 EPUB、漫画包与 PDF 原件共用 `.epub` 名（内容即
+      // 真相），故按内容嗅探分流——与书架页下载同一个入口（[importSyncedBookFile]），
+      // 此前两处各写一份，这里曾漏过漫画。标题用远端 raw title（bookKey 由它派生），
+      // 不用本地临时文件名。
+      final String localBookKey = await importSyncedBookFile(
+        db: db,
+        file: tmp,
+        title: entry.remoteLiveTitle,
+        epubFileName: '${entry.title}.epub',
+      );
       // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
       // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
       await _downloadLiveAudiobookFor(
@@ -1582,6 +1613,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   double? _progress;
   String? _progressLabel;
 
+  /// 上一次应用里真正写了东西的书数。应用有失败时弹窗不关（失败原因留在框里给用户
+  /// 看），用户再点关闭时把它带回去——[SyncConflictPrompter] 按它判「解决了没有」。
+  int? _appliedCount;
+
   /// 「只看冲突」筛选（C3）：默认模式下用户可开关；冲突解决弹窗
   /// （[SyncCompareDialog.conflictsOnly]）恒为只看冲突。参与渲染 / 计数 / Apply 的
   /// 集合都跟着它走——渲染集 = 应用集，不给「看到的和应用的不一样」留口子。
@@ -1696,10 +1731,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       if (mounted) {
         if (result.errors.isNotEmpty) {
-          showSyncMessage(
-            context,
-            t.sync_error(message: result.errors.join(', ')),
-          );
+          // BUG-4337：失败不再「提示一下就关框」——SnackBar 只有书名、没有原因，
+          // 关框后用户看到的就是「点了没反应」。弹窗留着，把每本的失败原因显示在框里。
+          setState(() {
+            _applying = false;
+            _progress = null;
+            _progressLabel = null;
+            _appliedCount = result.applied;
+            _error = t.sync_error(message: result.describeFailures());
+          });
+          return;
         }
         Navigator.pop(context, result.applied);
       }
@@ -2088,7 +2129,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 // 由 [SyncConflictPrompter] 自动弹出的那条更严重：用户根本没主动
                 // 进来。关闭只解绑 UI，传输继续在后台跑完（下面每处 setState /
                 // Navigator.pop 都有 mounted 守卫）。
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(context, _appliedCount),
                 child: Text(
                   _applying ? t.dialog_background_close : t.sync_compare_close,
                 ),

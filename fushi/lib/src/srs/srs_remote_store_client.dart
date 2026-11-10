@@ -74,14 +74,21 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   }
 }
 
-/// 远程复习库的能力探测。
+/// 远程复习库的能力探测（一次性 client，探完关掉它的连接）。
 Future<bool?> _probeSrsRemoteStore(
   SyncRepository repository,
   FushiClientUrl peer,
-) => SrsRemoteHostClient(
-  repository: repository,
-  peer: peer,
-).supportsRemoteStore();
+) async {
+  final SrsRemoteHostClient client = SrsRemoteHostClient(
+    repository: repository,
+    peer: peer,
+  );
+  try {
+    return await client.supportsRemoteStore();
+  } finally {
+    client.cancelPending();
+  }
+}
 
 /// [candidates]（[configuredInterconnectHostTargets] 列出的）里此刻提供远程复习库的那些。
 Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(
@@ -333,6 +340,14 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   @override
   FsrsEngine? get engine => null;
 
+  /// 远程库没有本机的缓存行变更日志：[cacheChangesSince] 一律答 null（调用方按「答不了」整份重读 / 逐项比对，
+  /// 见 srs_review_freshness.dart）。
+  @override
+  int get cacheGeneration => 0;
+  @override
+  ({Set<String> notes, Set<String> cards})? cacheChangesSince(int generation) =>
+      null;
+
   /// 主机在同步集合里的设备 ID（修改历史据此标出「本机」= 主机写的）。
   @override
   String? get sync2Device => _device;
@@ -361,6 +376,22 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     'SrsRemoteStore: ${invocation.memberName} is not available on a remote '
     'collection',
   );
+
+  /// 复习的翻日时刻是本机设置的同步那一份：只由本机激活副本读写（`AppModel.setStatDayResetHourByUser` /
+  /// `adoptSyncedDayRollover`，都走 `SrsProfileStores` 的本地副本）。远程复习库是主机的数据，本机日界设置不读
+  /// 也不改它；远程会话里的「今天」照旧取主机的 [dayContext]。
+  @override
+  Future<SrsDayRollover?> syncedDayRollover() => throw UnsupportedError(
+    'SrsRemoteStore: the day rollover setting is local-only; read it from '
+    'the local active store, not a remote collection',
+  );
+
+  @override
+  Future<SrsDayRollover?> setDayRolloverHour(int hour) =>
+      throw UnsupportedError(
+        'SrsRemoteStore: the day rollover setting is local-only; it is never '
+        'written to a remote collection',
+      );
 
   // ---------------------------------------------------------------- 牌组 / 笔记类型缓存
 

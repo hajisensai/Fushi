@@ -19,6 +19,16 @@ String _srtDisplayTitle(SrtBook book) => displayTitleForBook(
   rawTitle: book.title,
 );
 
+/// SRT 卡（[SrtBook]）该用哪个阅读器打开：配对书的 [BookFormat] 经唯一派生点
+/// [ReaderFushiSource.mediaSourceKeyFor] 现算（反馈 Ndnxy3mNdG）。[formatOf] 查不到
+/// （standalone 字幕书、正文还没生成）按 EPUB——生成的正文就是 EPUB。
+String srtBookMediaSourceKey(
+  SrtBook book, {
+  required BookFormat? Function(String bookKey) formatOf,
+}) => ReaderFushiSource.mediaSourceKeyFor(
+  (book.bookKey.isEmpty ? null : formatOf(book.bookKey)) ?? BookFormat.epub,
+);
+
 bool isEpubBackedAudiobookSrt(SrtBook book) {
   if (book.bookKey.isEmpty) return false;
   final List<String>? audioPaths = book.audioPaths;
@@ -76,8 +86,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
       dragLabel: displayTitle,
       onTap: () => _openSrtBook(book),
-      onLongPress: () =>
-          _showSrtBookDialog(book, removeFromCollection: removeFromCollection),
+      onLongPress: () => _companionPressed(
+        FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
+        () => _showSrtBookDialog(
+          book,
+          removeFromCollection: removeFromCollection,
+        ),
+      ),
       child: _bookCardLayout(
         title: displayTitle,
         cover: _buildSrtCover(book, epubCoverUri: epubCoverUri),
@@ -99,6 +114,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     MediaItem srtItem, {
     required bool audioMissing,
   }) {
+    // 本机从互联对端下载的这本，host 上之后换过音频 / 字幕：副行提示「对端有更新」。
+    final bool updateAvailable = isEpubBackedAudiobookSrt(book)
+        ? _remoteAudiobookHasUpdate(
+            remoteAudiobookRevisionKeyForBook(book.bookKey),
+          )
+        : _remoteAudiobookHasUpdate(remoteAudiobookRevisionKeyForSrt(book.uid));
     final bool hasProgress = _srtBookHasProgress(book);
     final bool completed =
         book.bookKey.isNotEmpty && _completedBookKeys.contains(book.bookKey);
@@ -118,12 +139,27 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         completed: completed,
         audiobook: true,
         health: _getAudiobookInfo(book.bookKey).healthKind,
+        updateAvailable: updateAvailable,
       );
       if (hasProgress) return meta;
       return _ShelfMetaSpec(
         status: meta.status,
         icon: meta.icon,
         tone: meta.tone,
+        key: meta.key,
+        tooltip: meta.tooltip,
+      );
+    }
+    if (updateAvailable) {
+      return _ShelfMetaSpec(
+        status:
+            '${t.profile_media_srtbook} · '
+            '${t.remote_book_audiobook_update_available}',
+        icon: FushiIcons.cloudSync,
+        progress: hasProgress ? fraction : null,
+        completed: completed || fraction >= 1,
+        key: _kAudiobookUpdateMetaKey,
+        tooltip: t.remote_book_audiobook_update_download,
       );
     }
     return _ShelfMetaSpec(
@@ -198,7 +234,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // 保存按 bookKey 写穿），此处不冒充。
       author: book.bookKey.isEmpty ? book.author : null,
       mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      // 反馈 Ndnxy3mNdG：阅读器只能由配对书**当前**的 format 经唯一派生点
+      // [ReaderFushiSource.mediaSourceKeyFor] 现算。以前写死 EPUB 阅读器，旧版
+      // 给 PDF 挂上的有声书一打开就是 EPUB 阅读器 + 白屏正文。书架上还没有配对书
+      // 行（standalone 字幕书正文未生成）时按 EPUB——生成的正文本就是 EPUB。
+      mediaSourceIdentifier: srtBookMediaSourceKey(
+        book,
+        formatOf: (String key) => _bookFormatByBookKey[key],
+      ),
       position: prog?.position ?? 0,
       duration: prog?.duration ?? 1,
       canDelete: false,
@@ -220,11 +263,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       return;
     }
     // BUG-456: SRT books must use the normal media entry so AppModel registers
-    // ReaderFushiSource; direct page pushes leave currentMediaSource null.
+    // the reader source; direct page pushes leave currentMediaSource null.
+    // 反馈 Ndnxy3mNdG：源按卡上派生好的 mediaSourceIdentifier 取（与 EPUB 卡
+    // `item.getMediaSource` 同一条路），不写死 [ReaderFushiSource]。
+    final MediaItem item = _srtBookMediaItem(book);
     await appModel.openMedia(
       ref: ref,
-      mediaSource: ReaderFushiSource.instance,
-      item: _srtBookMediaItem(book),
+      mediaSource: item.getMediaSource(appModel: appModel),
+      item: item,
     );
   }
 
@@ -269,29 +315,25 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // 按 uid 列着这本独立字幕书」（[_remoteSrtRefetchFor]）——BUG-4197：收下来的
       // 字幕书 bookKey 指向收端再生成的正文，不再为空，旧的 bookKey 为空判据会把
       // 入口藏掉。EPUB 有声书的配对行对端不按 uid 列，命不中，入口仍在 EPUB 书卡上。
+      // host 上这本在本机下载之后换过音频 / 字幕（内容版本不同）时，「重新下载」改叫
+      // 「下载更新」并排到第一项（书卡副行同时提示「对端有更新」）。
       if (modules.isEnabled(ModuleId.listening) &&
-          _remoteSrtRefetchFor(book.uid) != null) ...<DialogAction>[
-        DialogListAction(
-          label: t.remote_book_subtitles_refresh,
-          icon: FushiIcons.subtitles,
-          group: DialogActionGroup.content,
-          onPressed: () async {
+          _remoteSrtRefetchFor(book.uid) != null)
+        ..._remoteRefetchActions(
+          updateAvailable: _remoteAudiobookHasUpdate(
+            remoteAudiobookRevisionKeyForSrt(book.uid),
+          ),
+          refreshSubtitles: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
             await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: true);
           },
-        ),
-        DialogListAction(
-          label: t.remote_book_audiobook_redownload,
-          icon: FushiIcons.cloudSync,
-          group: DialogActionGroup.content,
-          onPressed: () async {
+          redownload: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
             await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: false);
           },
         ),
-      ],
       // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
       // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
       DialogListAction(

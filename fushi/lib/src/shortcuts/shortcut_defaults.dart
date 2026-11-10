@@ -403,6 +403,19 @@ class ShortcutDefaults {
     ShortcutAction.videoLookupPrevWord: const ShortcutBindingSet(),
     // 循环当前句开关（Ix4j5SKUth）：默认空绑定，用户自配（见 shortcut_action）。
     ShortcutAction.videoToggleLoopCurrentSubtitle: const ShortcutBindingSet(),
+    // 逐句学习工具（副屏 S6）：键盘 Ctrl+Shift+R / P / B（video 组内空闲：裸 R /
+    // Shift+R 是重播当前 / 上一句，Ctrl+Shift 只占了 ← / →）；macOS 表自动换成
+    // ⌘⇧R / P / B。手柄**留空**——video scope 的手柄键位已占满，手柄用户走副屏视频
+    // 面板的逐句学习按钮，或在快捷键设置里自配。
+    ShortcutAction.videoReplayCueThenPause: _kb([
+      _key(LogicalKeyboardKey.keyR, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleAutoPauseAtCueEnd: _kb([
+      _key(LogicalKeyboardKey.keyP, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleAbLoop: _kb([
+      _key(LogicalKeyboardKey.keyB, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
     // 复制当前台词主 / 副（_Eb0txdN4H）：默认空绑定，用户自配（见 shortcut_action）。
     ShortcutAction.videoCopyCurrentSubtitle: const ShortcutBindingSet(),
     ShortcutAction.videoCopyCurrentSecondarySubtitle:
@@ -467,6 +480,11 @@ class ShortcutDefaults {
     // 同键（manga scope 内未被占用；与 reader 组分属不同 co-active 组）。手柄留空。
     ShortcutAction.mangaOpenStatistics: _kb([_key(LogicalKeyboardKey.keyI)]),
     ShortcutAction.mangaToggleStudyClock: _kb([_key(LogicalKeyboardKey.keyP)]),
+    // 当前页书签（反馈 FhspOXxPl_）：键盘 B——manga 组内空闲（小说的 B 是
+    // readerOpenAudiobook、视频的 B 是 videoToggleSubtitleBlur，都属别的 co-active
+    // 组）。手柄**不绑**：手柄 B 是 universal 的 globalBack，再在 manga scope 绑会
+    // 遮蔽返回阶梯（见上方翻页注释与 `universal_back_test`）。
+    ShortcutAction.mangaToggleBookmark: _kb([_key(LogicalKeyboardKey.keyB)]),
     ShortcutAction.videoReplayCurrentSubtitle: _kb(
       [_key(LogicalKeyboardKey.keyR)],
       [_gLT],
@@ -731,6 +749,18 @@ class ShortcutDefaults {
     ShortcutAction.globalExternalScreenOcr: _kb([
       _key(LogicalKeyboardKey.keyO, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
+    // 反馈 uvIcQB5gPG：有声书悬浮字幕的全局热键，默认**不绑键**（native 后端无绑定
+    // 即不注册，零常驻代价；portal 后端只声明快捷键、由桌面让用户分配）。OS 级热键
+    // 全系统吞键，不听书的用户不该被偷走任何组合键，理由见 ShortcutAction 声明处。
+    ShortcutAction.globalExternalFloatingLyricToggle:
+        const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookPlayPause: const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookPrevSentence:
+        const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookNextSentence:
+        const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookReplaySentence:
+        const ShortcutBindingSet(),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立

@@ -42,6 +42,7 @@ import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
+import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
@@ -769,6 +770,7 @@ class AdminApi {
           force: true,
         );
       case SourceLibraryKind.music:
+      case SourceLibraryKind.game:
       case null:
         throw FormatException(
           'library "${library.id}": ${unsupportedLibraryKindMessage(library.kind)}',
@@ -1392,6 +1394,12 @@ class AdminApi {
     'lookupChineseScriptVariants': ctx.config.lookupChineseScriptVariants,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
+    // 在线字幕来源（偏好表，与 app 同键）：key / 密码只报「设过没有」；保存即生效
+    // （下载管线每轮字幕阶段、补字幕每次请求现读）。
+    kSubtitleProvidersSettingsKey: subtitleProviderSettingsToJson(
+      ctx.host.prefs,
+      ctx.environment,
+    ),
     'ffmpeg': ctx.config.ffmpegPath,
     'ffprobe': ctx.config.ffprobePath,
     'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -1485,6 +1493,14 @@ class AdminApi {
       body['ai'],
       ctx.config.ai,
     );
+    // 字幕来源先整体校验（非法 → 400，什么都不写），配置文件落盘之后再写偏好。
+    final SubtitleProviderSettingsUpdate? subtitleProviders =
+        body[kSubtitleProvidersSettingsKey] == null
+        ? null
+        : parseSubtitleProviderSettings(
+            body[kSubtitleProvidersSettingsKey],
+            ctx.host.prefs,
+          );
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -1532,6 +1548,7 @@ class AdminApi {
       clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
+    await subtitleProviders?.apply(ctx.host.prefs);
     return _settings();
   }
 

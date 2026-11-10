@@ -16,6 +16,7 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
@@ -752,9 +753,9 @@ class _AppGameCtlHost implements GameCtlHost {
   }) async {
     DictionarySearchResult? found;
     if (lookup && (reading == null || glossary == null)) {
-      found = await _app.createRemoteLookupService().searchDictionary(
-        term: word,
-        wildcards: false,
+      // 与查词页同一条查词链（远端优先，BUG-4321）：瘦客户端靠电脑的词典补释义。
+      found = await _app.searchDictionaryForUser(
+        searchTerm: word,
         maximumTerms: 10,
       );
     }
@@ -777,6 +778,10 @@ class _AppGameCtlHost implements GameCtlHost {
     int? updateNoteId,
   }) {
     final AppModel model = _app;
+    // 全局 + 当前游戏覆盖（反馈 3dRZdakRdJ），与浮窗 / texthooker 页同一个解析入口。
+    final GalMiningSettings mining = model.galMiningSettingsForGame(
+      GalHookSessionController.instance.activityGameKey,
+    );
     return GalHookMiningCoordinator.instance.mineLine(
       lineId: lineId,
       fields: fields,
@@ -784,15 +789,16 @@ class _AppGameCtlHost implements GameCtlHost {
       compression: MiningMediaCompression.resolve(
         imageTier: model.miningImageQuality,
         audioTier: model.miningAudioQuality,
-        format: model.galMiningAnimatedFormat,
+        format: mining.animatedFormat,
       ),
       repo: model.miningAnkiRepository,
       updateNoteId: updateNoteId,
       addTitleTag: model.autoAddBookNameToTags,
-      imageMode: model.galMiningImageMode,
-      animatedFormat: model.galMiningAnimatedFormat,
-      stillFormat: model.galMiningStillFormat,
-      clipFormat: model.galMiningClipFormat,
+      imageMode: mining.imageMode,
+      animatedFormat: mining.animatedFormat,
+      stillFormat: mining.stillFormat,
+      clipFormat: mining.clipFormat,
+      audioLimit: mining.audioLimit,
     );
   }
 }
@@ -1187,6 +1193,8 @@ class _GameCtl {
       if (outcome?.deckName != null) 'deckName': outcome!.deckName,
       if (outcome?.errorDetail != null) 'errorDetail': outcome!.errorDetail,
       if (outcome?.audioWarning != null) 'audioWarning': outcome!.audioWarning,
+      // BUG-4287：落地结果带回的提示（如「保存到」被主机退回默认），同 ctl dictionary / video 路由。
+      if (outcome?.notice != null) 'notice': outcome!.notice,
       if (result.failureReason != null) 'failureReason': result.failureReason,
       'duplicate': result.duplicate,
       'queued': result.queued,

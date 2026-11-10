@@ -319,8 +319,9 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// 校验一份 head 的设备公钥：认识的设备必须是同一把钥匙（防注入，设计 §9）；第一次见到的设备记下
-/// （信任首次使用；界面的设备管理可以把它标为不可信 = 冻结）。返回 false = 拒绝这份 head。
+/// 校验一份 head 的设备公钥：认识的设备必须是同一把钥匙（防注入，设计 §9）；第一次见到的设备记下公钥。
+/// 本机库非空时第一次见到的设备记成待确认（trust.rs）：它的普通操作照收，删除与彻底清除扣到本机确认之后。
+/// 返回 false = 拒绝这份 head。
 fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
     let known: Option<(Option<Vec<u8>>, i64)> = conn
         .prepare_cached("SELECT public, frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
@@ -345,6 +346,7 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
                 params![profile, h.device.0.to_vec(), h.public.to_vec()],
             )
             .map_err(sql)?;
+            super::trust::note_new_device(conn, profile, &h.device, h.at_ms)?;
             Ok(true)
         }
     }
@@ -3136,15 +3138,16 @@ impl SrsCore {
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(sql)?;
         let out = (|| {
+            let vv = applied_vv(&r, profile)?;
             Ok::<_, String>((
                 super::digest::buckets(&r, profile)?,
-                applied_vv(&r, profile)?,
+                super::trust::digest_vv_tag(&r, profile, &vv)?,
             ))
         })();
         r.execute_batch("COMMIT").map_err(sql)?;
-        let (b, vv) = out?;
+        let (b, tag) = out?;
         Ok(json!({
-            "vv": format!("{}{}", super::digest::VV_PREFIX, vv.hash_hex()),
+            "vv": tag,
             "buckets": b.into_iter().map(|(k, v, n)| json!([k, v, n])).collect::<Vec<_>>(),
         }))
     }
@@ -3184,7 +3187,7 @@ impl SrsCore {
                 .map_err(sql)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0);
-            let tag = format!("{}{}", super::digest::VV_PREFIX, vv.hash_hex());
+            let tag = super::trust::digest_vv_tag(&r, profile, &vv)?;
             let same_vv = prev
                 .as_deref()
                 .and_then(|p| p.split_once('@'))
@@ -3195,18 +3198,20 @@ impl SrsCore {
         }
         // 桶表由触发器随每次写入维护（digest.rs，审查 S-7）：根只读 4096 行，不再全库扫描。读连接上一个读事务里取，
         // 根与版本向量出自同一快照。
-        let (d, vv) = {
+        let (d, vv, tag) = {
             let r = self.reader()?;
             r.execute_batch("BEGIN").map_err(sql)?;
             let out = (|| {
-                Ok::<_, String>((super::digest::root(&r, profile)?, applied_vv(&r, profile)?))
+                let vv = applied_vv(&r, profile)?;
+                let tag = super::trust::digest_vv_tag(&r, profile, &vv)?;
+                Ok::<_, String>((super::digest::root(&r, profile)?, vv, tag))
             })();
             r.execute_batch("COMMIT").map_err(sql)?;
             out?
         };
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let value = format!("{d}@{}{}", super::digest::VV_PREFIX, vv.hash_hex());
+            let value = format!("{d}@{tag}");
             for (k, v) in [(&key, value), (&at_key, now.to_string())] {
                 c.execute(
                     "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

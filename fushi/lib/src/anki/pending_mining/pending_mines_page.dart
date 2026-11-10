@@ -44,20 +44,22 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 @visibleForTesting
 String pendingFlushMessage(PendingFlushReport report) {
   final MineOutcome? stop = report.stopOutcome;
-  if (report.unreachable) {
-    return stop == null
-        ? t.anki_pending_mines_unreachable
-        : t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop));
-  }
-  final String summary = t.anki_pending_mines_flush_result(
-    delivered: report.delivered,
-    failed: report.failed,
-    remaining: report.remaining,
-  );
   final MineOutcome? failure = report.failureOutcome;
-  return failure == null
-      ? summary
-      : '$summary\n${_pendingFailureReason(failure)}';
+  return <String>[
+    if (!report.unreachable)
+      t.anki_pending_mines_flush_result(
+        delivered: report.delivered,
+        failed: report.failed,
+        remaining: report.remaining,
+      )
+    else if (stop == null)
+      t.anki_pending_mines_unreachable
+    else
+      t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop)),
+    if (!report.unreachable && failure != null) _pendingFailureReason(failure),
+    // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4287）跟着同一条走。
+    ?report.notice,
+  ].join('\n');
 }
 
 String _pendingFailureReason(MineOutcome outcome) {
@@ -181,7 +183,7 @@ class _PendingMineLandingSwitchRowState
   }
 }
 
-/// 待发卡片列表：全部发送 / 单条重试 / 删除。
+/// 待发卡片列表：全部发送 / 单条重试 / 删除 / 批量删除（全部、仅失败的）。
 class PendingMinesPage extends ConsumerStatefulWidget {
   const PendingMinesPage({super.key});
 
@@ -251,7 +253,8 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
       if (!mounted || repo.switchesAppPerNote) return;
       FushiToast.show(
         msg: pendingFlushMessage(report),
-        severity: report.unreachable || report.failed > 0
+        severity:
+            report.unreachable || report.failed > 0 || report.notice != null
             ? ToastSeverity.warning
             : ToastSeverity.success,
       );
@@ -272,6 +275,60 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
     );
     if (confirmed) await store.discard(row);
   }
+
+  /// 发送失败、停在 `failed` 等用户处理的卡。
+  List<PendingMineRow> get _failedRows => _rows
+      .where((PendingMineRow r) => r.status == PendingMineStatus.failed)
+      .toList(growable: false);
+
+  /// 「删除失败的卡片」只在它和「全部删除」不是同一批时才单独露出：全是失败卡时
+  /// 两个按钮删的是同一批，只留「全部删除」。
+  bool get _offersDeleteFailed {
+    final int failed = _failedRows.length;
+    return failed > 0 && failed < _rows.length;
+  }
+
+  /// 批量删除（反馈 ML86fiSYBk：几百张失败卡只能逐张删）。删的是用户确认时看到的
+  /// 这一批，确认后才入队的新卡不受影响；整批一个事务（[PendingMineStore.discardAll]）。
+  Future<void> _deleteMany({required bool failedOnly}) async {
+    if (_sending) return;
+    final List<PendingMineRow> targets = failedOnly ? _failedRows : _rows;
+    if (targets.isEmpty) return;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: failedOnly
+          ? t.anki_pending_mines_delete_failed
+          : t.anki_pending_mines_delete_all,
+      message: failedOnly
+          ? t.anki_pending_mines_delete_failed_confirm(n: targets.length)
+          : t.anki_pending_mines_delete_all_confirm(n: targets.length),
+      confirmLabel: t.anki_pending_mines_delete,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.deleteSweep,
+      destructive: true,
+    );
+    if (!confirmed) return;
+    await store.discardAll(targets.map((PendingMineRow r) => r.id));
+  }
+
+  /// 页头的批量删除动作（MD3 与 Apple 同位：都在页头右侧，平铺）。
+  List<Widget> _bulkDeleteActions() => <Widget>[
+    if (_offersDeleteFailed)
+      FushiIconButton(
+        key: const ValueKey<String>('pending-mines-delete-failed'),
+        icon: FushiIcons.removeCircle,
+        tooltip: t.anki_pending_mines_delete_failed,
+        enabled: !_sending,
+        onTap: () => _deleteMany(failedOnly: true),
+      ),
+    FushiIconButton(
+      key: const ValueKey<String>('pending-mines-delete-all'),
+      icon: FushiIcons.deleteSweep,
+      tooltip: t.anki_pending_mines_delete_all,
+      enabled: !_sending,
+      onTap: () => _deleteMany(failedOnly: false),
+    ),
+  ];
 
   String _statusText(PendingMineRow row) => switch (row.status) {
     PendingMineStatus.sending => t.anki_pending_mines_status_sending,
@@ -467,6 +524,7 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
       // 「全部发送」按设计系统各取原生位置：Apple = 导航栏右上角按钮（FAB 在
       // Apple 下不存在），MD3 = 右下扩展 FAB。
       actions: <Widget>[
+        if (_rows.isNotEmpty) ..._bulkDeleteActions(),
         if (apple && _rows.isNotEmpty)
           FushiIconButton(
             key: const ValueKey<String>('pending-mines-send-all'),
