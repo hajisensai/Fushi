@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/sync/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
 import 'package:fushi/src/sync/sync_activity.dart';
@@ -194,6 +193,8 @@ String syncOutcomeLine(SyncRunOutcome o) {
       return t.sync_last_cooled_down;
     case SyncOutcomeReason.failed:
       return t.sync_last_failed;
+    case SyncOutcomeReason.cancelled:
+      return t.sync_last_cancelled;
   }
 }
 
@@ -245,31 +246,24 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
 
 /// 媒体页「下拉刷新 = 手动同步」的**唯一入口**（书架、视频、词典三页共用）。
 ///
-/// 下拉刷新是同步的隐式入口，必须跟随「同步与备份 + 互联」模块门：模块关掉后同步
-/// 设置页、立即同步、开机 / 定时自动同步都不再有，若下拉仍照跑 [runManualFullSync]，
-/// 用户关了模块却在每次刷新列表时触发一轮同步（反馈 SJeJd5EEZO）。此前门只在书架页
-/// 写了一份，视频 / 词典页直接调 [runManualSyncWithFeedback] 漏了——所以门放在这里
-/// 一处，三页只调本函数。
+/// 下拉刷新是同步的隐式入口，必须跟随「同步与备份 + 互联」模块门（反馈 SJeJd5EEZO）。
+/// 门本身在同步层（[syncModuleGate]，经 [_runWithSyncFeedback] 与 [runManualFullSync]
+/// 兑现），悬浮球「同步」、桌面控制通道 `sync run`、设置页「立即同步」走的是同一道门，
+/// 这里不另写一份。
 ///
-/// 模块关时返回 [ManualSyncOutcome.notConfigured]、不跑同步、不出任何提示（与「没配
-/// 同步后端」同一口径：调用方照常刷新本地列表）。模块开时等价于关掉 notConfigured /
-/// busy 两种提示的 [runManualSyncWithFeedback]：绝大多数用户没配云同步，每次下拉都弹
-/// 「同步不可用」纯属噪音；已有同步在飞时用户下拉，数据照样会更新，不必打断。冲突 /
-/// 错误提示照给。
+/// 模块关时返回 [ManualSyncOutcome.moduleDisabled]、不跑同步、不出任何提示（调用方
+/// 照常刷新本地列表）。模块开时等价于关掉 notConfigured / busy 两种提示的
+/// [runManualSyncWithFeedback]：绝大多数用户没配云同步，每次下拉都弹「同步不可用」
+/// 纯属噪音；已有同步在飞时用户下拉，数据照样会更新，不必打断。冲突 / 错误提示照给。
 Future<ManualSyncOutcome> runPullToRefreshSync({
   required BuildContext context,
   required AppModel appModel,
-}) async {
-  if (!appModel.moduleVisibility.isEnabled(ModuleId.sync)) {
-    return ManualSyncOutcome.notConfigured;
-  }
-  return runManualSyncWithFeedback(
-    context: context,
-    appModel: appModel,
-    announceNotConfigured: false,
-    announceBusy: false,
-  );
-}
+}) => runManualSyncWithFeedback(
+  context: context,
+  appModel: appModel,
+  announceNotConfigured: false,
+  announceBusy: false,
+);
 
 /// 设置页「词典 / 本地音频数据库」两行的显式上传 / 下载动作在 UI 层的入口。
 ///
@@ -344,6 +338,15 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   required bool announceCompleted,
   SyncConflictDecider? conflictDecider,
 }) async {
+  // 模块门（[syncModuleGate]，同步层唯一真值）先于在飞 guard：模块关掉后正在收尾
+  // 的那一轮也可能还挂着 [syncInProgress]，此时该说的是「模块已关」而不是「忙」。
+  // [run] 自己也会再判一次（非 UI 调用方不经这里）。
+  if (!syncModuleGate.isOpen) {
+    if (announceNotConfigured) {
+      showSyncMessage(context, t.sync_now_module_disabled);
+    }
+    return ManualSyncOutcome.moduleDisabled;
+  }
   // 重入 / 已在飞 guard：设置页整行是焦点目标（Activate 也会触发），且后台/开机
   // 自动同步可能已经持有 sweep 锁。两种情况下第二次触发都是 no-op —— 全局
   // [syncInProgress] 已经在驱动进度条（BUG-101），这里没别的事可做。
@@ -367,6 +370,13 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
         }
       case ManualSyncOutcome.busy:
         if (announceBusy) showSyncMessage(context, t.sync_now_busy);
+      case ManualSyncOutcome.moduleDisabled:
+        if (announceNotConfigured) {
+          showSyncMessage(context, t.sync_now_module_disabled);
+        }
+      case ManualSyncOutcome.cancelled:
+        // 用户途中关掉了同步模块：说一声停了，已跑完通道的冲突不再弹（同步已关）。
+        if (announceCompleted) showSyncMessage(context, t.sync_now_cancelled);
       case ManualSyncOutcome.completed:
         final SyncRunReport report = result.report!;
         if (announceCompleted) {

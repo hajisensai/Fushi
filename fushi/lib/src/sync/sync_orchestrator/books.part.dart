@@ -79,6 +79,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
       final String title = localKeyToTitle[key] ?? key;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
       File? tmp;
       try {
@@ -210,6 +212,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     }
     for (int i = 0; i < localBooks.length; i++) {
       final EpubBookRow book = localBooks[i];
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.readingData,
         itemIndex: i,
@@ -301,6 +305,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     for (int i = 0; i < keys.length; i++) {
       final String key = keys[i];
       // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.readingData,
         itemIndex: i,
