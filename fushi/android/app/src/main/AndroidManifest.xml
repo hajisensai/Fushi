@@ -33,7 +33,7 @@
     <uses-feature android:name="android.hardware.nfc" android:required="false"/>
     <application
         android:label="Fushi"
-        android:name="${applicationName}"
+        android:name=".FushiApplication"
         android:icon="@mipmap/launcher_icon_squircle"
         android:networkSecurityConfig="@xml/network_security_config"
         android:fullBackupContent="@xml/backup_rules"
