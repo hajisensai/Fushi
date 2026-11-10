@@ -800,14 +800,21 @@ SettingsDestination buildVideoDestination() {
               order: 70,
               section: t.video_setting_subtitle_appearance,
             ),
-            min: 12,
-            max: 48,
-            divisions: 36,
+            min: kVideoSubtitleMinFontSize,
+            max: kVideoSubtitleBaseMaxFontSize,
+            divisions:
+                (kVideoSubtitleBaseMaxFontSize - kVideoSubtitleMinFontSize)
+                    .round(),
+            // CcT_7VQIQr：上限随视口（逻辑像素，已折算 DPI）放大，高 DPI / 大屏全屏不再
+            // 卡在写死的 48；1 逻辑像素一档。视口取设置宿主所在窗口，与播放页 overlay、
+            // 设置页字幕预览量的是同一个 MediaQuery 尺寸。
+            boundsOf: _videoSubtitleFontSizeBounds,
             label: (double v) => v.round().toString(),
             value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(
-                  settingsContext,
-                ).fontSize.clamp(12, 48),
+                currentVideoSubtitleStyle(settingsContext).fontSize.clamp(
+                  kVideoSubtitleMinFontSize,
+                  _videoSubtitleFontSizeBounds(settingsContext).max,
+                ),
             onChanged: (SettingsContext settingsContext, double v) {
               previewVideoSubtitleStyle(
                 settingsContext,
@@ -2808,6 +2815,22 @@ SettingsSwitchItem _videoMpvSwitchItem({
       );
     },
     defaultValue: read(VideoMpvConfig.defaults),
+  );
+}
+
+/// 视频字幕字号滑条的运行期范围（反馈 CcT_7VQIQr）：上限 =
+/// [videoSubtitleMaxBaseFontSize]（随视口短边），视口未知（无 MediaQuery 的无头
+/// 入口）时退回历史上限 [kVideoSubtitleBaseMaxFontSize]。
+SettingsSliderBounds _videoSubtitleFontSizeBounds(
+  SettingsContext settingsContext,
+) {
+  final Size viewport =
+      MediaQuery.maybeSizeOf(settingsContext.context) ?? Size.zero;
+  final double max = videoSubtitleMaxBaseFontSize(viewport);
+  return (
+    min: kVideoSubtitleMinFontSize,
+    max: max,
+    divisions: (max - kVideoSubtitleMinFontSize).round(),
   );
 }
 

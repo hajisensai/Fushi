@@ -679,8 +679,12 @@ SettingsDestination buildReadingDestination() {
         collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
+            // GitHub #3088：这个开关管的是「单击正文查词」（关掉后单击正文与点空白
+            // 同语义，查词只剩长按选词 / Shift），旧标题「点击时高亮文本」让人找不到它。
+            // 持久化 key `highlight_on_tap` 与条目 id 冻结不改。
             id: 'reading_controls.highlight_on_tap',
-            title: t.highlight_on_tap,
+            title: t.reader_tap_lookup_enabled,
+            subtitle: t.reader_tap_lookup_description,
             icon: FushiIcons.touch,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
