@@ -2427,6 +2427,7 @@
   "dictionary_source_both_named": "Both · $name",
   "dictionary_source_both_tooltip": "Installed here and hosted by $name. The copy on this device is used.",
   "dictionary_source_counts": "$m of $n enabled",
+  "dictionary_source_lookup_off_hint": "Not used for lookups, so its dictionaries are not listed. Turn on Use for lookups to list them.",
   "dictionary_source_missing": "Not on server",
   "dictionary_source_missing_named": "Not on server · $name",
   "dictionary_source_older_server": "Older server",

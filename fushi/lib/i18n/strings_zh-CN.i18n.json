@@ -2427,6 +2427,7 @@
   "dictionary_source_both_named": "本机与服务器 · $name",
   "dictionary_source_both_tooltip": "本机已安装，$name 上也有。查词用本机这一份。",
   "dictionary_source_counts": "已启用 $m / $n 本",
+  "dictionary_source_lookup_off_hint": "不参与查词，所以它的词典不在列表里；打开「用于查词」即可列出",
   "dictionary_source_missing": "服务器上已没有",
   "dictionary_source_missing_named": "服务器上已没有 · $name",
   "dictionary_source_older_server": "旧版服务器",

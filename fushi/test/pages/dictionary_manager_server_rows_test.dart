@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
-    show RemoteDictionary, RemoteDictionaryHostSource;
+    show DictionaryRepository, RemoteDictionary, RemoteDictionaryHostSource;
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryHostReachability;
 import 'package:fushi/src/utils/components/content_language_picker.dart'
@@ -592,15 +592,20 @@ void main() {
     tester.view.devicePixelRatio = 1;
     final _FakeAppModel model = await _pumpPage(tester);
     model.lookupOn = false;
-    // 触发一次重建（筛选切回「全部」）。
+    // 触发一次重建（切到「服务器 · Box」：来源条在能列出服务器行的筛选下才出现）。
     await _focusInside(
       tester,
-      find.byKey(const ValueKey<String>('dict-source-filter-thisDevice')),
+      find.byKey(const ValueKey<String>('dict-source-filter-server-h1')),
     );
     await _pressEnter(tester);
     expect(
       find.byKey(const ValueKey<String>('dict-remote-lookup-off')),
       findsOneWidget,
+    );
+    // 这台 host 开着「用于查词」：卡片上没有「不参与查词」的说明。
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-source-lookup-off-h1')),
+      findsNothing,
     );
     await _focusInside(
       tester,
@@ -650,7 +655,7 @@ void main() {
     };
     await _focusInside(
       tester,
-      find.byKey(const ValueKey<String>('dict-source-filter-thisDevice')),
+      find.byKey(const ValueKey<String>('dict-source-filter-server-h1')),
     );
     await _pressEnter(tester);
     expect(
@@ -853,5 +858,144 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sources strip follows the filter: hidden under This device, '
+      'under Hidden only with a hidden server row', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    final Finder strip = find.byKey(
+      const ValueKey<String>('dict-server-sources'),
+    );
+    expect(strip, findsOneWidget, reason: '「全部」下列出服务器行，来源条在');
+
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-thisDevice')),
+    );
+    await _pressEnter(tester);
+    expect(strip, findsNothing, reason: '「本机」下不列服务器行，来源条不该出现');
+
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-server-h1')),
+    );
+    await _pressEnter(tester);
+    expect(strip, findsOneWidget);
+
+    // 「已隐藏」：此刻没有隐藏的服务器行 → 不出现。
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-hidden')),
+    );
+    await _pressEnter(tester);
+    expect(strip, findsNothing, reason: '没有隐藏的服务器行时「已隐藏」下不出现');
+
+    // 把一本服务器词典隐藏后再看「已隐藏」：出现。
+    model.remote = <RemoteDictionary>[
+      for (final RemoteDictionary r in model.remote)
+        r.name == 'Server Dict' ? r.copyWith(hidden: true) : r,
+    ];
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-all')),
+    );
+    await _pressEnter(tester);
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-source-filter-hidden')),
+    );
+    await _pressEnter(tester);
+    expect(strip, findsOneWidget, reason: '有隐藏的服务器行时「已隐藏」下出现');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('host lookup off: card says its dictionaries are not listed; '
+      'no "shown but not used" notice', (WidgetTester tester) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      remote: const <RemoteDictionary>[],
+      catalog: _remote(),
+    );
+    model.hostLookup['h1'] = false;
+    model.lookupOn = false;
+    // 广播一次服务器词典变化：页面整份重读来源条数据。
+    DictionaryRepository.remoteDictionariesRevision.value++;
+    await _settle(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-sources')),
+      findsOneWidget,
+      reason: '没有服务器行时筛选回落「全部」，来源条照常出现',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-source-lookup-off-h1')),
+      findsOneWidget,
+    );
+    expect(find.text(t.dictionary_source_lookup_off_hint), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('dict-remote-lookup-off')),
+      findsNothing,
+      reason: '服务器行根本没列出，不能说「显示但不参与查词」',
+    );
+    await _focusInside(
+      tester,
+      find.byKey(
+        const ValueKey<String>('dict-server-source-lookup-turn-on-h1'),
+      ),
+    );
+    await _pressEnter(tester);
+    expect(model.hostLookupWrites, <(String, bool)>[('h1', true)]);
+    expect(model.lookupOn, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('one server: no filter-bar refresh (the card has it)', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPage(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-refresh')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-source-refresh-h1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('filter bar: refresh-all only when given a callback', (
+    WidgetTester tester,
+  ) async {
+    int refreshed = 0;
+    Widget bar({VoidCallback? onRefresh}) => TranslationProvider(
+      child: MaterialApp(
+        theme: buildFushiFallbackTheme(
+          Brightness.light,
+        ).copyWith(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: DictionarySourceFilterBar(
+            hosts: const <String, String>{'h1': 'Box', 'h2': 'Laptop'},
+            selected: DictionarySourceFilter.all,
+            onSelected: (DictionarySourceFilter _) {},
+            onRefresh: onRefresh,
+            refreshing: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(bar());
+    expect(
+      find.byKey(const ValueKey<String>('dict-server-refresh')),
+      findsNothing,
+    );
+    await tester.pumpWidget(bar(onRefresh: () => refreshed++));
+    await tester.pump();
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-server-refresh')),
+    );
+    await _pressEnter(tester);
+    expect(refreshed, 1);
   });
 }

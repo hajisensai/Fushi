@@ -709,7 +709,7 @@ class _DictionaryDialogPageState extends BasePageState {
     }
   }
 
-  /// 来源筛选条：全部 / 本机 / 每台服务器 / 已隐藏 + 刷新。
+  /// 来源筛选条：全部 / 本机 / 每台服务器 / 已隐藏（两台及以上服务器时 + 刷新全部）。
   Widget _buildSourceFilterBar() {
     return DictionarySourceFilterBar(
       key: const ValueKey<String>('dict-source-filter-bar'),
@@ -722,7 +722,9 @@ class _DictionaryDialogPageState extends BasePageState {
         _sourceFilter = filter;
         _detailName = null;
       }),
-      onRefresh: appModel.remoteDictionaryCatalog == null
+      // 单台服务器的刷新住在它的来源卡片上；两台及以上才在筛选条给「刷新全部」。
+      onRefresh:
+          appModel.remoteDictionaryCatalog == null || _hostSources.length < 2
           ? null
           : _refreshServerDictionaries,
       refreshing: _refreshingServer,
@@ -750,7 +752,23 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 列表上方的「来源」条（有任何一台 host 的目录时才出现）。
+  /// 「来源」条此刻该不该出现：有任何一台 host 的目录，且当前筛选能列出服务器行——
+  /// 「全部」/「服务器 · 某台」照常出现；「本机」不出现；「已隐藏」只在当前分区里
+  /// 确有隐藏的服务器行时出现。还没有服务器行时筛选回落「全部」，条照常出现，
+  /// 用户才能在卡片上打开「用于查词」。
+  bool get _showServerSourcesStrip {
+    if (_hostSources.isEmpty) return false;
+    return switch (_effectiveSourceFilter.kind) {
+      DictionarySourceFilterKind.all ||
+      DictionarySourceFilterKind.server => true,
+      DictionarySourceFilterKind.thisDevice => false,
+      DictionarySourceFilterKind.hidden => _visibleRows().any(
+        (DictionaryManagerRow row) => row.isRemote,
+      ),
+    };
+  }
+
+  /// 列表上方的「来源」条（见 [_showServerSourcesStrip]）。
   Widget _buildServerSourcesStrip() {
     return DictionaryServerSourcesStrip(
       key: const ValueKey<String>('dict-server-sources'),
@@ -857,7 +875,7 @@ class _DictionaryDialogPageState extends BasePageState {
       if (_hasAnyRows) _buildCategorySelector(),
       // 「来源」条：每台有目录的服务器一张卡片（状态 / 本数 / 用于查词 / 刷新），
       // 取代以前列表底部的按 host 提示。
-      if (_hostSources.isNotEmpty) _buildServerSourcesStrip(),
+      if (_showServerSourcesStrip) _buildServerSourcesStrip(),
       // 服务器词典的来源筛选：与类型分段同属「筛列表」，紧跟其后。
       if (_hasServerRows) _buildSourceFilterBar(),
       buildContent(),
@@ -2516,9 +2534,8 @@ class _DictionaryDialogPageState extends BasePageState {
         index: index,
         count: count,
         selected: checked || showingDetail,
-        onTap: () => _selecting
-            ? _toggleSelected(dictionary)
-            : _openRowDetail(row),
+        onTap: () =>
+            _selecting ? _toggleSelected(dictionary) : _openRowDetail(row),
         child: FushiListItem(
           minHeight: 64,
           padding: EdgeInsets.symmetric(
@@ -2603,7 +2620,9 @@ class _DictionaryDialogPageState extends BasePageState {
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     final bool showingDetail = split && _detailName == row.key;
     final String revision = remote.revision?.trim() ?? '';
-    final String base = revision.isNotEmpty ? revision : _typeLabel(remote.type);
+    final String base = revision.isNotEmpty
+        ? revision
+        : _typeLabel(remote.type);
     final Widget? trailing = _selecting
         ? null
         : Row(
@@ -3317,9 +3336,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // 筛掉时侧板回到概览，不停在一本看不见的词典上。
     final String? detailKey =
         _detailName != null &&
-            _visibleRows().any(
-              (DictionaryManagerRow r) => r.key == _detailName,
-            )
+            _visibleRows().any((DictionaryManagerRow r) => r.key == _detailName)
         ? _detailName
         : null;
     final RemoteDictionary? remote = detailKey == null

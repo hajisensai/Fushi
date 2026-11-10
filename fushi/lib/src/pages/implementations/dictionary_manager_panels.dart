@@ -1237,9 +1237,8 @@ class DictionarySourceFilter {
       };
 
   /// 筛选键（ValueKey 后缀）。
-  String get id => kind == DictionarySourceFilterKind.server
-      ? 'server-$hostId'
-      : kind.name;
+  String get id =>
+      kind == DictionarySourceFilterKind.server ? 'server-$hostId' : kind.name;
 
   @override
   bool operator ==(Object other) =>
@@ -1331,8 +1330,9 @@ class DictionarySourceChip extends StatelessWidget {
   }
 }
 
-/// 列表上方的来源筛选条：全部 / 本机 / 每台服务器一枚 / 已隐藏，行尾是「刷新服务器
-/// 词典」。单选 chip（按下下沉），放不下时横向滚动。
+/// 列表上方的来源筛选条：全部 / 本机 / 每台服务器一枚 / 已隐藏；有两台及以上服务器
+/// 时行尾多一个「刷新全部服务器词典」（单台的刷新住在它的来源卡片上，不重复给）。
+/// 单选 chip（按下下沉），放不下时横向滚动。
 class DictionarySourceFilterBar extends StatelessWidget {
   const DictionarySourceFilterBar({
     required this.hosts,
@@ -1348,7 +1348,8 @@ class DictionarySourceFilterBar extends StatelessWidget {
   final DictionarySourceFilter selected;
   final ValueChanged<DictionarySourceFilter> onSelected;
 
-  /// 「刷新服务器词典」；null = 没有可刷新的（弹窗进程没有目录服务）。
+  /// 「刷新全部服务器词典」；null = 不给这个钮（弹窗进程没有目录服务，或只有一台
+  /// 服务器——它的来源卡片上已有刷新）。
   final VoidCallback? onRefresh;
   final bool refreshing;
 
@@ -1399,13 +1400,14 @@ class DictionarySourceFilterBar extends StatelessWidget {
               ),
             ),
           ),
-          FushiIconButton(
-            key: const ValueKey<String>('dict-server-refresh'),
-            icon: FushiIcons.refresh,
-            tooltip: t.dictionary_server_refresh,
-            enabled: refresh != null && !refreshing,
-            onTap: () => refresh?.call(),
-          ),
+          if (refresh != null)
+            FushiIconButton(
+              key: const ValueKey<String>('dict-server-refresh'),
+              icon: FushiIcons.refresh,
+              tooltip: t.dictionary_server_refresh,
+              enabled: !refreshing,
+              onTap: refresh,
+            ),
         ],
       ),
     );
@@ -1445,11 +1447,15 @@ class DictionaryServerSourceCard {
 }
 
 /// 列表上方的「来源」条（设计稿 6，取代以前列表底部按 host 的提示）：每台有目录的
-/// host 一张紧凑卡片——设备名、状态、当前分区的启用 / 全部本数、「用于查词」开关
-/// （与配对设置页同一个写入口，打开时一并打开全局远程查词）、刷新；老版本 host 多
-/// 一行警告。全局远程查词关着时，「远程查词已关闭」提示也住在这条里。
+/// host 一行紧凑卡片——设备名、状态、当前分区的启用 / 全部本数、「用于查词」开关
+/// （与配对设置页同一个写入口，打开时一并打开全局远程查词）、刷新；老版本 host、
+/// 关掉「用于查词」的 host 各多一行说明。
 ///
-/// 卡片横向排开、放不下时横向滚动；首次出现错峰淡入。
+/// 提示只说当下属实的话：关掉「用于查词」的 host 的词典根本不在列表里，它那张卡片
+/// 自己说「不参与查词、不列出」并给「开启」；全局远程查词关着、而至少有一台 host
+/// 开着「用于查词」（它的词典照常列出却不参与查词）时，条底才挂「远程查词已关闭」。
+///
+/// 卡片竖排、首次出现错峰淡入。
 class DictionaryServerSourcesStrip extends StatelessWidget {
   const DictionaryServerSourcesStrip({
     required this.cards,
@@ -1468,6 +1474,11 @@ class DictionaryServerSourcesStrip extends StatelessWidget {
   final void Function(String hostId)? onRefresh;
   final VoidCallback onTurnOnRemoteLookup;
 
+  /// 全局远程查词关着、且有 host 的词典此刻列在表里（开着「用于查词」）。
+  bool get _showRemoteLookupOff =>
+      remoteLookupOff &&
+      cards.any((DictionaryServerSourceCard c) => c.lookupEnabled);
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1480,29 +1491,21 @@ class DictionaryServerSourcesStrip extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  for (int i = 0; i < cards.length; i++)
-                    Padding(
-                      padding: EdgeInsetsDirectional.only(
-                        end: i == cards.length - 1 ? 0 : gap,
-                      ),
-                      child: FushiStaggeredEntrance(
-                        index: i,
-                        child: _DictionaryServerSourceCardView(
-                          card: cards[i],
-                          onLookupChanged: onLookupChanged,
-                          onRefresh: onRefresh,
-                        ),
-                      ),
-                    ),
-                ],
+            for (int i = 0; i < cards.length; i++)
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: i == cards.length - 1 ? 0 : gap / 2,
+                ),
+                child: FushiStaggeredEntrance(
+                  index: i,
+                  child: _DictionaryServerSourceCardView(
+                    card: cards[i],
+                    onLookupChanged: onLookupChanged,
+                    onRefresh: onRefresh,
+                  ),
+                ),
               ),
-            ),
-            if (remoteLookupOff)
+            if (_showRemoteLookupOff)
               DictionaryRemoteLookupOffNotice(onTurnOn: onTurnOnRemoteLookup),
           ],
         ),
@@ -1510,6 +1513,9 @@ class DictionaryServerSourcesStrip extends StatelessWidget {
     );
   }
 }
+
+/// 宽于这个值时来源卡片排成一行；更窄时折成两行（名字 + 刷新 / 状态 + 开关）。
+const double _kSourceCardSingleLineMinWidth = 560;
 
 class _DictionaryServerSourceCardView extends StatelessWidget {
   const _DictionaryServerSourceCardView({
@@ -1533,121 +1539,201 @@ class _DictionaryServerSourceCardView extends StatelessWidget {
       color: scheme.onSurfaceVariant,
     );
     final Color warning = fushiStatusColor(context, FushiStatusTone.warning);
-    return FushiHoverLift(
-      scale: 1.01,
-      builder: (BuildContext context, bool hovering) => ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
-        child: FushiCard(
-          key: ValueKey<String>('dict-server-source-${card.hostId}'),
-          padding: EdgeInsets.fromLTRB(gap * 1.5, gap, gap / 2, gap),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  FushiIcon(FushiIcons.server, size: 18, color: scheme.primary),
-                  SizedBox(width: gap / 2),
-                  Flexible(
-                    child: Text(
-                      card.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (refresh != null)
-                    FushiIconButton(
-                      key: ValueKey<String>(
-                        'dict-server-source-refresh-${card.hostId}',
-                      ),
-                      icon: FushiIcons.refresh,
-                      size: 20,
-                      tooltip: t.interconnect_dictionaries_refresh,
-                      enabled: !card.refreshing,
-                      onTap: () => refresh(card.hostId),
-                    ),
-                ],
-              ),
-              Text(
-                card.status,
-                key: ValueKey<String>(
-                  'dict-server-source-status-${card.hostId}',
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: meta,
-              ),
-              Text(
-                t.dictionary_source_counts(m: card.enabled, n: card.total),
-                key: ValueKey<String>(
-                  'dict-server-source-counts-${card.hostId}',
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: meta,
-              ),
-              if (card.olderHost) ...<Widget>[
-                SizedBox(height: gap / 2),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 260),
-                  child: Row(
-                    key: ValueKey<String>(
-                      'dict-server-source-older-${card.hostId}',
-                    ),
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      FushiIcon(FushiIcons.warning, size: 16, color: warning),
-                      SizedBox(width: gap / 2),
-                      Flexible(
-                        child: Text(
-                          t.dictionary_server_older_host(name: card.name),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: textTheme.bodySmall?.copyWith(color: warning),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              SizedBox(height: gap / 2),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    t.dictionary_source_use_for_lookups,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodyMedium,
-                  ),
-                  SizedBox(width: gap),
-                  Semantics(
-                    toggled: card.lookupEnabled,
-                    label: t.dictionary_source_use_for_lookups,
-                    child: FushiSwitch(
-                      key: ValueKey<String>(
-                        'dict-server-source-lookup-${card.hostId}',
-                      ),
-                      value: card.lookupEnabled,
-                      onChanged: (bool value) =>
-                          onLookupChanged(card.hostId, value),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+
+    final Widget glyph = FushiIcon(
+      FushiIcons.server,
+      size: 18,
+      color: scheme.primary,
+    );
+    final Widget name = Text(
+      card.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+    );
+    final Widget metaLine = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            card.status,
+            key: ValueKey<String>('dict-server-source-status-${card.hostId}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: meta,
           ),
+        ),
+        Text(' · ', style: meta),
+        Flexible(
+          child: Text(
+            t.dictionary_source_counts(m: card.enabled, n: card.total),
+            key: ValueKey<String>('dict-server-source-counts-${card.hostId}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: meta,
+          ),
+        ),
+      ],
+    );
+    final Widget lookupSwitch = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.dictionary_source_use_for_lookups,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.bodyMedium,
+        ),
+        SizedBox(width: gap),
+        Semantics(
+          toggled: card.lookupEnabled,
+          label: t.dictionary_source_use_for_lookups,
+          child: FushiSwitch(
+            key: ValueKey<String>('dict-server-source-lookup-${card.hostId}'),
+            value: card.lookupEnabled,
+            onChanged: (bool value) => onLookupChanged(card.hostId, value),
+          ),
+        ),
+      ],
+    );
+    final List<Widget> refreshButton = <Widget>[
+      if (refresh != null)
+        FushiIconButton(
+          key: ValueKey<String>('dict-server-source-refresh-${card.hostId}'),
+          icon: FushiIcons.refresh,
+          size: 20,
+          tooltip: t.interconnect_dictionaries_refresh,
+          enabled: !card.refreshing,
+          onTap: () => refresh(card.hostId),
+        ),
+    ];
+
+    return FushiHoverLift(
+      scale: 1.005,
+      builder: (BuildContext context, bool hovering) => FushiCard(
+        key: ValueKey<String>('dict-server-source-${card.hostId}'),
+        padding: EdgeInsets.fromLTRB(gap * 1.5, gap / 2, gap / 2, gap / 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                if (constraints.maxWidth >= _kSourceCardSingleLineMinWidth) {
+                  return Row(
+                    children: <Widget>[
+                      glyph,
+                      SizedBox(width: gap / 2),
+                      Flexible(child: name),
+                      SizedBox(width: gap),
+                      Expanded(child: metaLine),
+                      SizedBox(width: gap),
+                      lookupSwitch,
+                      ...refreshButton,
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        glyph,
+                        SizedBox(width: gap / 2),
+                        Expanded(child: name),
+                        ...refreshButton,
+                      ],
+                    ),
+                    Row(
+                      children: <Widget>[
+                        Expanded(child: metaLine),
+                        SizedBox(width: gap),
+                        lookupSwitch,
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+            if (card.olderHost)
+              _SourceCardNote(
+                key: ValueKey<String>(
+                  'dict-server-source-older-${card.hostId}',
+                ),
+                icon: FushiIcons.warning,
+                color: warning,
+                message: t.dictionary_server_older_host(name: card.name),
+              ),
+            if (!card.lookupEnabled)
+              _SourceCardNote(
+                key: ValueKey<String>(
+                  'dict-server-source-lookup-off-${card.hostId}',
+                ),
+                icon: FushiIcons.info,
+                color: scheme.onSurfaceVariant,
+                message: t.dictionary_source_lookup_off_hint,
+                action: FushiTextButton(
+                  key: ValueKey<String>(
+                    'dict-server-source-lookup-turn-on-${card.hostId}',
+                  ),
+                  onPressed: () => onLookupChanged(card.hostId, true),
+                  child: Text(t.dictionary_remote_lookup_turn_on),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// 远程查词关着时的提示：服务器词典照常列出，但查词不会用到；带一个直接开启的动作。
+/// 来源卡片主行下面的一行说明（老版本警告 / 不参与查词），可带一个动作。
+class _SourceCardNote extends StatelessWidget {
+  const _SourceCardNote({
+    required this.icon,
+    required this.color,
+    required this.message,
+    this.action,
+    super.key,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    final TextStyle? style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: color);
+    final Widget? trailing = action;
+    return Padding(
+      padding: EdgeInsets.only(top: gap / 2, right: gap),
+      child: Row(
+        children: <Widget>[
+          FushiIcon(icon, size: 16, color: color),
+          SizedBox(width: gap / 2),
+          Expanded(
+            child: Text(
+              message,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+          if (trailing != null) ...<Widget>[SizedBox(width: gap), trailing],
+        ],
+      ),
+    );
+  }
+}
+
+/// 全局远程查词关着、而开着「用于查词」的 host 的词典照常列出时的提示：这些词典
+/// 看得见但查词不会用到；带一个直接开启的动作。（关掉「用于查词」的 host 的词典
+/// 不在列表里，那种情况由它的来源卡片自己说明，不走这条。）
 class DictionaryRemoteLookupOffNotice extends StatelessWidget {
   const DictionaryRemoteLookupOffNotice({required this.onTurnOn, super.key});
 
