@@ -1020,6 +1020,13 @@ pub(crate) fn sync2_dispatch(
         })?;
         return Ok(json!({"filled": n}));
     }
+    // 本机写命令：命令本体、缓存刷新、排队与本机状态行在同一次持写锁、同一个 SAVEPOINT 里（[local_write]）。
+    if LOCAL_WRITE_OPS.contains(&op) {
+        let cfg = crate::store::caches::CacheConfig::parse(
+            req.get("caches").ok_or("sync2: missing caches")?,
+        )?;
+        return local_write(c, op, profile, req, blobs, &cfg);
+    }
     if PROJECTING_OPS.contains(&op)
         || op == "refresh_caches"
         || op == "rebuild_caches"
@@ -1139,6 +1146,206 @@ pub(crate) fn sync2_dispatch(
         return Ok(v);
     }
     sync2_command(c, op, profile, req, blobs, files)
+}
+
+/// 本机写命令（收掉 Dart 写路径第 2 步）：Dart 不再为它们开 Drift 事务。分发器取**一次**写锁，在**一个** SAVEPOINT 里
+/// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
+/// 这笔还没提交的写入），以及请求带 `localState` 时的本机状态行（store/local_state.rs `persist_projected`：修订号按投影
+/// 结果推进，回包带 `localRevision`）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。外面开着 Drift
+/// 事务时（Lapis 迁移、档案 / 备份并入）SAVEPOINT 照旧嵌进那笔事务，随它提交或回滚。
+const LOCAL_WRITE_OPS: &[&str] = &[
+    "apply",
+    "sched",
+    "import",
+    "resolve",
+    "purge",
+    "checkpoint",
+    "restore",
+    "retire",
+    "dedup",
+];
+
+/// [LOCAL_WRITE_OPS] 写锁外的预处理：只读已提交数据（冲突表）、不持锁的解析与收段预处理。
+#[derive(Default)]
+struct LocalPre {
+    /// `apply` 的输入。
+    items: Vec<serde_json::Value>,
+    /// `resolve` 的冲突实体（读连接上预读：命令本身还没写过东西，读已提交数据即可）。
+    conflict: Option<(crate::sync2::op::EntKind, String)>,
+    /// `retire` 之后紧接着投一遍缓冲用的空批（收段的锁外一半，不持锁）。
+    drain: Option<crate::store::sync2::transport::PreparedIngest<'static>>,
+}
+
+/// [LOCAL_WRITE_OPS] 的执行（见那张表）。
+fn local_write(
+    c: &SrsCore,
+    op: &str,
+    profile: &str,
+    req: &serde_json::Value,
+    blobs: &[Vec<u8>],
+    cfg: &crate::store::caches::CacheConfig,
+) -> Result<serde_json::Value, String> {
+    use serde_json::Value;
+    let mut pre = LocalPre::default();
+    if op == "apply" {
+        let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
+            .map_err(|e| e.to_string())?;
+        pre.items = crate::store::sync2::parse_apply_input(input)?;
+    } else if op == "resolve" {
+        let conflict = req
+            .get("conflict")
+            .and_then(Value::as_str)
+            .ok_or("sync2: missing conflict")?;
+        pre.conflict = Some(c.sync2_conflict_target(profile, conflict)?);
+    } else if op == "retire" {
+        pre.drain = Some(c.prepare_unlocked(profile, std::borrow::Cow::Owned(Vec::new()), None)?);
+    }
+    let local_state = req.get("localState").and_then(Value::as_str);
+    let w = c.writer()?;
+    // 会话外投递（导入、停用后的那一遍投递）：新设备收段通道没做完就先按片做完（各片自己提交，不进下面的 SAVEPOINT；
+    // 分发器已在取写锁前收过，这里通常没有通道）。
+    if op == "import" || op == "retire" {
+        c.settle_channel_on(&w, profile)?;
+    }
+    crate::store::sync2::in_savepoint(&w, |conn| {
+        let mut v = local_write_body(conn, op, profile, req, blobs, &mut pre)?;
+        let written = crate::store::caches::refresh(
+            conn,
+            profile,
+            cfg,
+            crate::store::caches::Dirty::of_projection(&v),
+        )?;
+        let study = match req.get("study").filter(|s| s.is_object()) {
+            Some(s) => Some(crate::store::study::study(
+                conn,
+                &c.study_hub,
+                true,
+                profile,
+                s,
+            )?),
+            None => None,
+        };
+        if let Some(local) = local_state {
+            // `sched` 接着 Dart 交来的 HLC 推进过时钟：本机状态行里的 `hlc` 用推进后的值（Dart 命令成功后
+            // `adoptLocalTicks` 采用的同一个）。
+            let hlc = match op {
+                "sched" => v["hlc"].as_str().map(str::to_owned),
+                _ => None,
+            };
+            crate::store::local_state::persist_projected(
+                conn,
+                profile,
+                local,
+                &mut v,
+                hlc.as_deref(),
+            )?;
+        }
+        if let Some(m) = v.as_object_mut() {
+            m.insert("cache".to_owned(), written.to_json());
+            if let Some(s) = study {
+                m.insert("study".to_owned(), s);
+            }
+        }
+        Ok(v)
+    })
+}
+
+/// [LOCAL_WRITE_OPS] 的命令本体：在 [local_write] 持着的写连接、开好的 SAVEPOINT 里做（各 `*_on` 都不自己取锁）。
+fn local_write_body(
+    conn: &rusqlite::Connection,
+    op: &str,
+    profile: &str,
+    req: &serde_json::Value,
+    blobs: &[Vec<u8>],
+    pre: &mut LocalPre,
+) -> Result<serde_json::Value, String> {
+    use crate::store::sync2 as s2;
+    use serde_json::Value;
+    let s = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    let now = req
+        .get("now")
+        .and_then(Value::as_i64)
+        .ok_or("sync2: missing now")?;
+    Ok(match op {
+        "apply" => s2::apply_local_on(conn, profile, now, &pre.items)?,
+        // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
+        "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
+        // 存量重复流收敛作业推进一步（store/sync2/dedup.rs）；`done` 为假就再发。
+        "dedup" => s2::dedup::dedup_on(conn, profile, now)?,
+        "import" => s2::transport::import_on(
+            conn,
+            profile,
+            blobs.first().ok_or("import: missing file")?,
+            now,
+        )?,
+        "resolve" => {
+            let (kind, entity) = pre.conflict.take().ok_or("resolve: conflict not read")?;
+            let delete = req["delete"] == Value::Bool(true);
+            s2::append_on(
+                conn,
+                profile,
+                now,
+                &s2::resolve_bodies(kind, &entity, delete, now),
+            )?
+        }
+        "purge" => s2::append_on(
+            conn,
+            profile,
+            now,
+            &s2::purge_bodies(s("kind")?, s("entity")?, now)?,
+        )?,
+        "checkpoint" => s2::append_on(
+            conn,
+            profile,
+            now,
+            &s2::checkpoint_bodies(s("name")?, s("reason")?),
+        )?,
+        "restore" => s2::timeline::restore_on(
+            conn,
+            profile,
+            &restore_target(req)?,
+            req["retract"] == Value::Bool(true),
+            now,
+        )?,
+        // 停用 / 取消停用一台设备，紧接着在同一个 SAVEPOINT 里投一遍缓冲（因它卡住的操作不再等它）。
+        "retire" => {
+            let id = crate::sync2::id::Id::parse(s("device")?).ok_or("retire: bad device")?;
+            let retire = req["retire"] != Value::Bool(false);
+            let mut v = s2::devices::retire_on(conn, profile, &id, retire, now)?;
+            let prepared = pre.drain.as_mut().ok_or("retire: drain not prepared")?;
+            let drained: Value =
+                serde_json::from_str(&s2::transport::ingest_on(conn, profile, prepared, now)?)
+                    .map_err(|e| e.to_string())?;
+            if let (Some(m), Value::Object(d)) = (v.as_object_mut(), drained) {
+                m.extend(d);
+            }
+            v
+        }
+        _ => return Err(format!("sync2: `{op}` is not a local write")),
+    })
+}
+
+/// 恢复的目标（`restore` / `plan_restore`）：还原点 `checkpoint: {device, seq}`（按它的因果截断）或某个时刻 `at`。
+fn restore_target(
+    req: &serde_json::Value,
+) -> Result<crate::store::sync2::timeline::RestoreTarget, String> {
+    use crate::store::sync2::timeline::RestoreTarget;
+    Ok(match req.get("checkpoint") {
+        Some(cp) if cp.is_object() => RestoreTarget::Checkpoint(crate::sync2::vv::OpId {
+            device: crate::sync2::id::Id::parse(cp["device"].as_str().ok_or("checkpoint.device")?)
+                .ok_or("bad checkpoint device")?,
+            seq: cp["seq"].as_u64().ok_or("checkpoint.seq")?,
+        }),
+        _ => RestoreTarget::At(
+            req.get("at")
+                .and_then(serde_json::Value::as_i64)
+                .ok_or("sync2: missing at")?,
+        ),
+    })
 }
 
 /// 收段 / 重放的一片：默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限。
@@ -1317,18 +1524,9 @@ fn sync2_command(
             c.sync2_channel_settle(profile)?;
             json!({})
         }
-        "apply" => {
-            let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
-                .map_err(|e| e.to_string())?;
-            parse(c.sync2_apply_local(profile, i("now")?, input)?)?
-        }
-        // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
-        "sched" => c.sync2_sched_local(profile, i("now")?, req)?,
         "migrate" => {
             c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?
         }
-        // 存量重复流收敛作业推进一步（store/sync2/dedup.rs，一个事务）；`done` 为假就再发。
-        "dedup" => c.sync2_dedup(profile, i("now")?)?,
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
         "study" => c.study(profile, req)?,
@@ -1547,11 +1745,6 @@ fn sync2_command(
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
             json!({})
         }
-        "import" => parse(c.sync2_import(
-            profile,
-            blobs.first().ok_or("import: missing file")?,
-            i("now")?,
-        )?)?,
         // 加密位置上的媒体（设计 §9：网盘只见密文和文件大小）：XChaCha20-Poly1305，AAD 绑定文件名，
         // 换名 / 换内容即解密失败。段的加解密在 outbox / ingest 里，这里只给媒体用。
         "seal" | "open" => {
@@ -1636,18 +1829,6 @@ fn sync2_command(
             blobs,
             i("now")?,
         )?,
-        // 停用 / 取消停用一台设备，紧接着投一遍缓冲（因它卡住的操作不再等它），同一次调用里刷新缓存（[PROJECTING_OPS]）。
-        "retire" => {
-            let retire = req["retire"] != Value::Bool(false);
-            let mut v = c.sync2_retire(profile, s("device")?, retire, i("now")?)?;
-            let drained: Value =
-                serde_json::from_str(&c.sync2_ingest(profile, &[], None, i("now")?)?)
-                    .map_err(|e| e.to_string())?;
-            if let (Some(m), Value::Object(d)) = (v.as_object_mut(), drained) {
-                m.extend(d);
-            }
-            v
-        }
         // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4011）。
         "legacy_dots" => c.sync2_legacy_dots(profile)?,
         // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。
@@ -1783,39 +1964,15 @@ fn sync2_command(
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,
-        "resolve" => c.sync2_resolve(
-            profile,
-            s("conflict")?,
-            req["delete"] == Value::Bool(true),
-            i("now")?,
-        )?,
-        "purge" => c.sync2_purge(profile, s("kind")?, s("entity")?, i("now")?)?,
-        "checkpoint" => c.sync2_checkpoint(profile, s("name")?, s("reason")?, i("now")?)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
-        "plan_restore" | "restore" => {
-            // 恢复到还原点（`checkpoint: {device, seq}`，按它的因果截断）或某个时刻（`at`）。
-            let to = match req.get("checkpoint") {
-                Some(cp) if cp.is_object() => {
-                    crate::store::sync2::timeline::RestoreTarget::Checkpoint(
-                        crate::sync2::vv::OpId {
-                            device: crate::sync2::id::Id::parse(
-                                cp["device"].as_str().ok_or("checkpoint.device")?,
-                            )
-                            .ok_or("bad checkpoint device")?,
-                            seq: cp["seq"].as_u64().ok_or("checkpoint.seq")?,
-                        },
-                    )
-                }
-                _ => crate::store::sync2::timeline::RestoreTarget::At(i("at")?),
-            };
-            let retract = req["retract"] == Value::Bool(true);
-            if op == "plan_restore" {
-                c.sync2_plan_restore(profile, &to, retract, i("now")?)?
-            } else {
-                c.sync2_restore(profile, &to, retract, i("now")?)?
-            }
-        }
+        // 预览恢复到还原点 / 某个时刻（只读；恢复本身是本机写命令，见 [local_write_body]）。
+        "plan_restore" => c.sync2_plan_restore(
+            profile,
+            &restore_target(req)?,
+            req["retract"] == Value::Bool(true),
+            i("now")?,
+        )?,
         "derive_key" => {
             let salt_hex = s("salt")?;
             let salt: Vec<u8> = (0..salt_hex.len() / 2)
@@ -2329,7 +2486,11 @@ mod tests {
             &rest[..rest.find("\n}\n").expect("function end")]
         };
         let mut ops = std::collections::BTreeSet::new();
-        for start in ["pub(crate) fn sync2_dispatch(", "fn sync2_command("] {
+        for start in [
+            "pub(crate) fn sync2_dispatch(",
+            "fn sync2_command(",
+            "fn local_write_body(",
+        ] {
             let lines: Vec<&str> = body(start).lines().collect();
             let mut next = 0;
             while next < lines.len() {

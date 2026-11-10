@@ -446,7 +446,7 @@ class SrsDbStore implements SrsSync2Host {
       'now': nowMs,
     });
     _sync2Device = id['device'] as String?;
-    // 上次在新设备收段途中退出、通道没做完：开 Drift 事务前先按片做完（[_transactionOrReload]）。
+    // 上次在新设备收段途中退出、通道没做完：下一条本机写命令前先按片做完（[_commandOrReload]）。
     _channelLive = id['channel'] == true;
     _sync2Migrated = id['migrated'] == true;
     if (_sync2Migrated || deferMigration) return;
@@ -944,14 +944,15 @@ class SrsDbStore implements SrsSync2Host {
       'ON CONFLICT(profile_uid) DO UPDATE SET '
       'json = srs_local_state_merge(json, excluded.json)';
 
-  /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）。收段的一步把它交给内核、在投递的同一笔事务里写
-  /// （[_sync2IngestStep]）。
-  Map<String, Object?> _localStateJson() => <String, Object?>{
+  /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）。本机写命令与收段的一步把它作为 `localState` 交给内核、在
+  /// 命令的同一笔事务里写（[_localStateArg]）。[clock] 给出时用它的 HLC 代替 [_clock]（[applyRemote]：命令成功后才换上
+  /// 的时钟副本）。
+  Map<String, Object?> _localStateJson({HlcClock? clock}) => <String, Object?>{
     'incarnation': _incarnation,
     'writerId': _writer.writerId,
     'lastSeq': _writer.lastSeq,
     'applied': _writer.applied.toJson(),
-    'hlc': _clock.last.encode(),
+    'hlc': (clock ?? _clock).last.encode(),
     'outboxSeq': _outboxSeq,
     'styleCursor': _styleCursor,
     if (_pendingMediaGc.isNotEmpty)
@@ -1370,16 +1371,17 @@ class SrsDbStore implements SrsSync2Host {
       identical(Zone.current[_writeZoneKey], this),
       '_emit outside runExclusive',
     );
-    await _transactionOrReload(() async {
+    await _commandOrReload(() async {
       // 同步 v2：操作落进 ops 就是「已备份、待发布」，没有单独的发件箱（发件按段，见 store/sync2/transport.rs）。
+      // 本机状态行随 `apply` 交给内核、在同一笔事务里写下（[_localStateArg]）。
       await _storeLocalBatch(
         events,
         logNotes: logNotes,
         answers: answers,
         study: study,
         onStudy: onStudy,
+        localState: _localStateArg,
       );
-      await _saveLocal();
     });
   }
 
@@ -1402,6 +1404,7 @@ class SrsDbStore implements SrsSync2Host {
     Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
+    required String Function() localState,
   }) async {
     // 同步 v2：本机事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表（ops）、落投影、
     // 重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的 dot / ID
@@ -1443,11 +1446,19 @@ class SrsDbStore implements SrsSync2Host {
           'server': serverTimes?[stored.id] ?? serverTimeMs,
       });
     }
+    // [localState] 在上面推进完内存（[_writer] 等）之后才取：交给内核的是命令落库后应有的本机状态（修订号由内核按投影
+    // 结果推进）。
     final Map<String, Object?> r = await _sync2(
-      <String, Object?>{'op': 'apply', 'now': now().$1, 'study': ?study},
+      <String, Object?>{
+        'op': 'apply',
+        'now': now().$1,
+        'study': ?study,
+        'localState': localState(),
+      },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
     );
     final int landed = _absorbProjection(r);
+    _adoptLocalRevision(r);
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
     }
@@ -1621,8 +1632,8 @@ class SrsDbStore implements SrsSync2Host {
           'op': 'ingest_begin',
         });
         _ingestOpen = true;
-        // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写入在开 Drift
-        // 事务前要先把它按片做完（[_transactionOrReload]）。
+        // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写命令前要先把它
+        // 按片做完（[_commandOrReload]）。
         if (r['channel'] == true) _channelLive = true;
       });
     } catch (_) {
@@ -1819,7 +1830,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 收段会话的一步（投递一片 / 收尾换身份 / 接着重放）：写锁里跑，投影变化接进本机缓存。
   ///
-  /// **不套 Drift 事务**（集成审查【中高】）：以前包在 [_transactionOrReload] 里，Drift 的 BEGIN 让内核把写连接标成
+  /// **不套 Drift 事务**（集成审查【中高】）：以前包在 Drift 事务里，Drift 的 BEGIN 让内核把写连接标成
   /// 「挂着跨命令事务」（store/mod.rs `drift_tx`），整片期间所有只读命令与 Drift 查询都改走写连接——排在整片后面、
   /// 还读得到没提交的行；而内核的收段会话（`prepared` / `delivery`）在内层 SAVEPOINT 释放时就推进了，外层事务若因
   /// [_saveLocal] 失败回滚，库回到这一片之前、会话却停在之后。现在这一片由内核自己在一笔事务里提交（提交成功才推进
@@ -1833,11 +1844,10 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> r = await _sync2(<String, Object?>{
       ...request,
       'now': now().$1,
-      'localState': jsonEncode(_localStateJson()),
+      'localState': _localStateArg(),
     }, blobs: segments);
     final int landed = _absorbProjection(r);
-    final Object? persisted = r['localRevision'];
-    if (persisted is int) _revision = persisted;
+    _adoptLocalRevision(r);
     if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
       _bumpRwkvScores();
     }
@@ -1845,14 +1855,19 @@ class SrsDbStore implements SrsSync2Host {
     return r;
   });
 
-  /// 跑一个不改投影之外东西的 v2 写命令（冲突解决、清除、还原点、按时间点恢复），投影变化接进缓存。
+  /// 跑一个不改投影之外东西的 v2 写命令（冲突解决、清除、还原点、按时间点恢复、停用设备、重复流收敛），投影变化接进
+  /// 缓存。本机状态行随命令交给内核、在同一笔事务里写下（[_localStateArg]）。
   Future<Map<String, Object?>> _sync2Write(Map<String, Object?> request) =>
       runExclusive(() async {
         late Map<String, Object?> r;
-        await _transactionOrReload(() async {
-          r = await _sync2(<String, Object?>{...request, 'now': now().$1});
+        await _commandOrReload(() async {
+          r = await _sync2(<String, Object?>{
+            ...request,
+            'now': now().$1,
+            'localState': _localStateArg(),
+          });
           _absorbProjection(r);
-          await _saveLocal();
+          _adoptLocalRevision(r);
         });
         await _notifyPurged();
         return r;
@@ -1934,14 +1949,18 @@ class SrsDbStore implements SrsSync2Host {
   /// 并入 `.fushisrs` 的操作部分（不覆盖；包里有本机身份的操作时先换身份）。返回并入条数。
   Future<int> sync2ImportOps(Uint8List bytes) => runExclusive(() async {
     late Map<String, Object?> r;
-    await _transactionOrReload(() async {
+    await _commandOrReload(() async {
       r = await _sync2(
-        <String, Object?>{'op': 'import', 'now': now().$1},
+        <String, Object?>{
+          'op': 'import',
+          'now': now().$1,
+          'localState': _localStateArg(),
+        },
         blobs: <Uint8List>[bytes],
       );
       _absorbProjection(r);
+      _adoptLocalRevision(r);
       _bumpRwkvScores();
-      await _saveLocal();
     });
     final Map<String, Object?> id = await _sync2(<String, Object?>{
       'op': 'identity',
@@ -2610,7 +2629,7 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 内核交回的缓存写入清单（`cache`：写了整行的笔记 / 卡、删掉的卡）记进变更日志与数字索引（同一个
-  /// 独占区 / 事务里；事务回滚时 [_transactionOrReload] 会把两者一起作废）。
+  /// 独占区里；命令失败时 [_commandOrReload] 会把两者一起作废）。
   void _absorbCache(Map<String, Object?> r) {
     final Map<Object?, Object?>? w = r['cache'] as Map<Object?, Object?>?;
     if (w == null) return;
@@ -3855,7 +3874,8 @@ class SrsDbStore implements SrsSync2Host {
     final SrsDayContext day = await dayContext();
     final (int nowMs, SrsTimeSource source) = now();
     late Map<String, Object?> r;
-    await _transactionOrReload(() async {
+    await _commandOrReload(() async {
+      // 本机状态行随命令写下：内核把其中的 `hlc` 换成推进后的值（与下面 [HlcClock.adoptLocalTicks] 采用的同一个）。
       r = await _sync2(<String, Object?>{
         'op': 'sched',
         'now': nowMs,
@@ -3865,10 +3885,11 @@ class SrsDbStore implements SrsSync2Host {
         'rollover': day.rolloverHour,
         'hlc': _clock.last.encode(),
         'items': items,
+        'localState': _localStateArg(),
       });
       _absorbProjection(r);
+      _adoptLocalRevision(r);
       if (r['hlc'] case final String h) _clock.adoptLocalTicks(Hlc.decode(h));
-      await _saveLocal();
     });
     return _SchedOutcome(<SrsReviewLog>[
       for (final Object? l in (r['logs'] as List?) ?? const <Object?>[])
@@ -5295,46 +5316,55 @@ class SrsDbStore implements SrsSync2Host {
       for (final SrsEvent e in events)
         if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
     ];
-    await _transactionOrReload(() async {
+    // 时钟先在副本上推进（收到对端事件的规则，先钳位）：随命令写下的本机状态行要带推进后的 HLC；命令成功后才换上，
+    // 失败时内存里的时钟不变。
+    final HlcClock clock = HlcClock(_clock.writerId, last: _clock.last);
+    for (final SrsEvent e in mine) {
+      final Hlc? h = switch (e) {
+        SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
+        SrsLogEvent(:final SrsReviewLog log) => log.hlc,
+        _ => null,
+      };
+      if (h != null) {
+        clock.receive(
+          h,
+          serverTimeMs: serverTimes?[e.id] ?? serverTimeMs,
+          trustedNowMs: nowMs,
+        );
+      }
+    }
+    await _commandOrReload(() async {
       final int landed = await _storeLocalBatch(
         mine,
         stamped: true,
         serverTimeMs: serverTimeMs,
         serverTimes: serverTimes,
+        localState: () => jsonEncode(_localStateJson(clock: clock)),
       );
+      _clock = clock;
       // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
       if (landed > 0) _bumpRwkvScores();
-      for (final SrsEvent e in mine) {
-        final Hlc? h = switch (e) {
-          SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
-          SrsLogEvent(:final SrsReviewLog log) => log.hlc,
-          _ => null,
-        };
-        if (h != null) {
-          _clock.receive(
-            h,
-            serverTimeMs: serverTimes?[e.id] ?? serverTimeMs,
-            trustedNowMs: nowMs,
-          );
-        }
-      }
-      await _saveLocal();
     });
   });
 
-  /// 一个写事务；失败（回滚）时从库里重读本机状态再抛出。事务回滚不回滚内存：落库前已分配的
-  /// 序号 / 已并进因果上下文的 dot、推进过的时钟与发件箱序号、攒下的影响面都要丢掉，否则
-  /// applied 里留着不存在的 dot，之后真正同步来的同 dot 记录会被误判「已看见」而丢弃（与
+  /// 一条本机写命令（[body] 发命令、把结果接进内存）；失败时从库里重读本机状态再抛出。
+  ///
+  /// 不开 Drift 事务（收掉 Dart 写路径第 2 步）：内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机
+  /// 状态行（随命令交的 `localState`，native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。外面
+  /// 已开着 Drift 事务时（Lapis 迁移、档案 / 备份并入）那个 SAVEPOINT 嵌进外层事务，随它提交或回滚。
+  ///
+  /// 命令失败不回滚内存：发命令前已分配的序号 / 已并进因果上下文的 dot（[_storeLocalBatch] 里的 `_writer.apply`）、
+  /// 攒下的影响面都要丢掉，否则 applied 里留着不存在的 dot，之后真正同步来的同 dot 记录会被误判「已看见」而丢弃（与
   /// [reloadLocal] 同一理由）。调用方已在独占区里。
   ///
-  /// 抛出的永远是事务本身的错误。重读也失败（典型是连接已经关了：app 退出时同步还在跑）时，
+  /// 抛出的永远是命令本身的错误。重读也失败（典型是连接已经关了：app 退出时同步还在跑）时，
   /// 内存状态已无从与库对齐：副本标为作废（[_unusable]），之后的写入一律明确失败，不在过期的
   /// 因果上下文 / 序号上继续写；也不拿重读的错误顶替原错误——以前日志里只剩 `_loadLocal` 上的
   /// 「connection was closed」，看不出是哪一步写失败。
-  Future<void> _transactionOrReload(Future<void> Function() body) async {
+  Future<void> _commandOrReload(Future<void> Function() body) async {
     await _settleChannel();
     try {
-      await db.transaction(body);
+      await body();
     } catch (error, stack) {
       _resetCacheJournal();
       try {
@@ -5349,8 +5379,17 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 写失败后重读本机状态也失败时置上（见 [_transactionOrReload]）；之后进独占区的写入都抛它。
+  /// 写失败后重读本机状态也失败时置上（见 [_commandOrReload]）；之后进独占区的写入都抛它。
   StateError? _unusable;
+
+  /// 随本机写命令交给内核的本机状态行（`localState`）：此刻内存里的 [_localStateJson]。内核按命令的投影结果推进其中的
+  /// 修订号、在命令的同一笔事务里写下，回包带 `localRevision`（[_adoptLocalRevision]）。
+  String _localStateArg() => jsonEncode(_localStateJson());
+
+  /// 内核写下的修订号（`localRevision`）为准：与 [_absorbProjection] 同一口径，内存与库里一致。
+  void _adoptLocalRevision(Map<String, Object?> r) {
+    if (r['localRevision'] case final int persisted) _revision = persisted;
+  }
 
   /// 内核里可能有没做完的新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：打开时由 `identity`、
   /// 开收段会话时由 `ingest_begin` 回报。
@@ -5360,9 +5399,9 @@ class SrsDbStore implements SrsSync2Host {
   @visibleForTesting
   bool get debugChannelLive => _channelLive;
 
-  /// 开 Drift 事务之前把没做完的收段通道按片做完（`channel_settle`，内核每片一个事务）。事务里的写命令要先做完
-  /// 通道时，内核只能把整段（真实数据约 1.1 GB 的投影）塞进这笔事务：WAL 要装下全部页，失败整段回滚、下一次写
-  /// 又从头重做。没有通道时不发命令（复习路径的 FFI 次数不变）。调用方已在独占区里。
+  /// 本机写命令之前把没做完的收段通道按片做完（`channel_settle`，内核每片一个事务）。写命令嵌在外层 Drift 事务里
+  /// （Lapis 迁移、档案并入）又要先做完通道时，内核只能把整段（真实数据约 1.1 GB 的投影）塞进那笔事务：WAL 要装下全部
+  /// 页，失败整段回滚、下一次写又从头重做。没有通道时不发命令（复习路径的 FFI 次数不变）。调用方已在独占区里。
   Future<void> _settleChannel() async {
     if (!_channelLive) return;
     await _sync2(const <String, Object?>{'op': 'channel_settle'});

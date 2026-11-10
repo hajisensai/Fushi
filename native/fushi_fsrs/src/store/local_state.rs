@@ -112,6 +112,51 @@ pub(crate) fn upsert(c: &Connection, profile: &str, json: &str) -> Result<(), St
     Ok(())
 }
 
+/// 一次改投影的命令在**同一笔事务**里写下 Dart 交来的本机状态行（收掉 Dart 写路径第 2 步：本机写命令与收段共用）。
+///
+/// [local_state] 是 Dart 发命令那一刻内存里的本机状态（`_localStateJson`）。命令只会改变其中的修订号 `revision`：Dart
+/// `_absorbProjection` 每条落进投影的事件（`marks.landed`）、每个可见性变了的实体（`changed` 里每个 `[kind, id]`，kind
+/// 是认得的实体类别）各 +1——这里按 [result] 用**同一口径**推进后写下，并把写下的值放进结果的 `localRevision`（Dart 以它
+/// 为准，内存与库里一致）。[hlc] 给出时（`sched`：内核接着 Dart 的时钟推进过 HLC）同时换掉 `hlc` 键，与 Dart 命令成功后
+/// `adoptLocalTicks` 采用的值一致。写入走 [upsert]（内核持有的键保留库里的值）。
+pub(crate) fn persist_projected(
+    c: &Connection,
+    profile: &str,
+    local_state: &str,
+    result: &mut Value,
+    hlc: Option<&str>,
+) -> Result<(), String> {
+    let mut state: Value = serde_json::from_str(local_state)
+        .map_err(|e| format!("srs local state: bad localState: {e}"))?;
+    let landed = result["marks"]["landed"].as_i64().unwrap_or(0);
+    let changed = result["changed"].as_array().map_or(0, |a| {
+        a.iter()
+            .filter(|x| {
+                x.as_array().is_some_and(|p| {
+                    p.len() == 2
+                        && p[0]
+                            .as_str()
+                            .and_then(crate::sync2::op::EntKind::parse)
+                            .is_some()
+                })
+            })
+            .count() as i64
+    });
+    let revision = state.get("revision").and_then(Value::as_i64).unwrap_or(0) + landed + changed;
+    let obj = state
+        .as_object_mut()
+        .ok_or("srs local state: localState must be a JSON object")?;
+    obj.insert("revision".to_owned(), Value::from(revision));
+    if let Some(h) = hlc {
+        obj.insert("hlc".to_owned(), Value::from(h));
+    }
+    upsert(c, profile, &state.to_string())?;
+    if let Some(m) = result.as_object_mut() {
+        m.insert("localRevision".to_owned(), Value::from(revision));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

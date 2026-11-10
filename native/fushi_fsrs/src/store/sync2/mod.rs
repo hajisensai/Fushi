@@ -2159,72 +2159,9 @@ impl SrsCore {
         now: i64,
         input: &str,
     ) -> Result<String, String> {
-        let items: Vec<Value> =
-            serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))?;
+        let items = parse_apply_input(input)?;
         let w = self.writer()?;
-        in_savepoint(&w, |c| {
-            let mut local = match Local::load(c, profile)? {
-                Some(l) => l,
-                None => Local::create(c, profile, now)?,
-            };
-            let mut applied = applied_vv(c, profile)?;
-            let mut t = Touched {
-                log_no_delete: Some(Default::default()),
-                ..Touched::default()
-            };
-            let mut deps_row: Option<(Vec<u8>, i64)> = None;
-            let mut landed = Vec::with_capacity(items.len());
-            // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
-            let mut tree: Option<config::DeckTree> = None;
-            for it in &items {
-                let stamped = it["stamped"] == Value::Bool(true);
-                let body = body_of_event(
-                    &it["e"],
-                    it["note"].as_str(),
-                    stamped,
-                    it["server"].as_i64(),
-                )?;
-                // 本机作答显式声明意图（Dart `answerAndStudy`），不从日志形状反推；不带的（导入、恢复、并入的旧形态
-                // 日志）照旧按 [infer_intent]。手动排程操作走 `sched`（sched_local.rs）。
-                let body = match (body, it["intent"].as_str()) {
-                    (Body::Log(mut l), Some("answer")) => {
-                        l.intent = Intent::Answer;
-                        Body::Log(l)
-                    }
-                    (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
-                    (b, None) => b,
-                };
-                let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
-                let before = t.marks.landed;
-                let bodies = expand_tags(c, profile, body)?;
-                for b in &bodies {
-                    let op =
-                        append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
-                    if !matches!(b, Body::Log(_)) {
-                        // 非日志操作可能写下删除：批内「没有删除」的记忆作废（[Touched::log_no_delete]）。
-                        if let Some(k) = t.log_no_delete.as_mut() {
-                            k.clear();
-                        }
-                    }
-                    // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
-                    debug_assert_eq!(op.body().ok().as_ref(), Some(b));
-                    project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
-                }
-                landed.push(t.marks.landed > before);
-            }
-            local.save(c)?;
-            let replayed = replay_touched(c, &t)?;
-            Ok(json!({
-                "marks": t.marks.to_json(),
-                "landed": landed,
-                "replayed": replayed,
-                "diagnostics": t.diagnostics,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "nextSeq": local.next_seq,
-            })
-            .to_string())
-        })
+        in_savepoint(&w, |c| apply_local_on(c, profile, now, &items)).map(|v| v.to_string())
     }
 
     /// 旧库并入（计划 P3.2；拍板 5）：把本 profile 现有的身份记录、修改记录、日志、不认识的事件逐条包成
@@ -2382,26 +2319,7 @@ impl SrsCore {
         bodies: Vec<Body>,
     ) -> Result<Value, String> {
         let w = self.writer()?;
-        in_savepoint(&w, |c| {
-            let mut local = match Local::load(c, profile)? {
-                Some(l) => l,
-                None => Local::create(c, profile, now)?,
-            };
-            let mut applied = applied_vv(c, profile)?;
-            let mut t = Touched::default();
-            for b in &bodies {
-                let op = append_local(c, &mut local, &mut applied, b, now)?;
-                project(c, profile, &op, now, true, &mut t)?;
-            }
-            local.save(c)?;
-            let replayed = replay_touched(c, &t)?;
-            Ok(json!({
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-            }))
-        })
+        in_savepoint(&w, |c| append_on(c, profile, now, &bodies))
     }
 
     /// 冲突中心（设计 §5.3）：待用户定的破坏性并发。每项
@@ -2441,6 +2359,17 @@ impl SrsCore {
         delete: bool,
         now: i64,
     ) -> Result<Value, String> {
+        let (kind, entity) = self.sync2_conflict_target(profile, conflict)?;
+        self.sync2_append(profile, now, resolve_bodies(kind, &entity, delete, now))
+    }
+
+    /// 冲突 [conflict] 的实体（[SrsCore::sync2_resolve] 的预读）：在读连接上读已提交的冲突表，写锁外做。命令本身还没写过
+    /// 任何东西，读不到「本命令内未提交」的行是对的；冲突行只由投影写入、只在写锁里改，读到的就是写锁里会看到的。
+    pub(crate) fn sync2_conflict_target(
+        &self,
+        profile: &str,
+        conflict: &str,
+    ) -> Result<(EntKind, String), String> {
         let (kind, entity): (String, String) = {
             let r = self.reader()?;
             r.query_row(
@@ -2450,21 +2379,10 @@ impl SrsCore {
             )
             .map_err(|e| format!("no such conflict {conflict}: {e}"))?
         };
-        let kind = EntKind::parse(&kind).ok_or("bad conflict entity kind")?;
-        let value = if delete { json!(now) } else { Value::Null };
-        self.sync2_append(
-            profile,
-            now,
-            vec![Body::Edit(EditBody {
-                kind,
-                entity: Key::of(&entity),
-                key: "deleted".into(),
-                value: canonical(&value),
-                machine: false,
-                ts: 0,
-                legacy: None,
-            })],
-        )
+        Ok((
+            EntKind::parse(&kind).ok_or("bad conflict entity kind")?,
+            entity,
+        ))
     }
 
     /// 彻底清除（设计 §10.5）：二次确认由界面做。先删除（保证实体不可见），再追加清除操作。
@@ -2475,26 +2393,7 @@ impl SrsCore {
         entity: &str,
         now: i64,
     ) -> Result<Value, String> {
-        let k = EntKind::parse(kind).ok_or("bad entity kind")?;
-        self.sync2_append(
-            profile,
-            now,
-            vec![
-                Body::Edit(EditBody {
-                    kind: k,
-                    entity: Key::of(entity),
-                    key: "deleted".into(),
-                    value: canonical(&json!(now)),
-                    machine: false,
-                    ts: 0,
-                    legacy: None,
-                }),
-                Body::Purge {
-                    kind: k,
-                    entity: Key::of(entity),
-                },
-            ],
-        )
+        self.sync2_append(profile, now, purge_bodies(kind, entity, now)?)
     }
 
     /// 自动 / 手动还原点（设计 §10.2）。
@@ -2505,14 +2404,7 @@ impl SrsCore {
         reason: &str,
         now: i64,
     ) -> Result<Value, String> {
-        self.sync2_append(
-            profile,
-            now,
-            vec![Body::Checkpoint {
-                name: name.to_owned(),
-                reason: reason.to_owned(),
-            }],
-        )
+        self.sync2_append(profile, now, checkpoint_bodies(name, reason))
     }
 
     /// 全量重放一个 profile 的全部卡（参数整体变更、自检用；设计 §3.4 `rebuild_all` 的调度部分）。
@@ -2574,6 +2466,8 @@ mod tests_digest;
 mod tests_footprint;
 #[cfg(test)]
 mod tests_head_gap;
+#[cfg(test)]
+mod tests_local_write;
 #[cfg(test)]
 mod tests_migrate_dedup;
 #[cfg(test)]
@@ -2719,4 +2613,147 @@ fn expand_tags(c: &Connection, profile: &str, body: Body) -> Result<Vec<Body>, S
         });
     }
     Ok(out)
+}
+
+/// `apply` 的输入（[SrsCore::sync2_apply_local]）：JSON 数组。在写锁外解析。
+pub(crate) fn parse_apply_input(input: &str) -> Result<Vec<Value>, String> {
+    serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))
+}
+
+/// [SrsCore::sync2_apply_local] 的本体：在调用方持着的写连接、调用方开的 SAVEPOINT 里做（不自己取锁），分发器把它与
+/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。
+pub(crate) fn apply_local_on(
+    c: &Connection,
+    profile: &str,
+    now: i64,
+    items: &[Value],
+) -> Result<Value, String> {
+    let mut local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut applied = applied_vv(c, profile)?;
+    let mut t = Touched {
+        log_no_delete: Some(Default::default()),
+        ..Touched::default()
+    };
+    let mut deps_row: Option<(Vec<u8>, i64)> = None;
+    let mut landed = Vec::with_capacity(items.len());
+    // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
+    let mut tree: Option<config::DeckTree> = None;
+    for it in items {
+        let stamped = it["stamped"] == Value::Bool(true);
+        let body = body_of_event(
+            &it["e"],
+            it["note"].as_str(),
+            stamped,
+            it["server"].as_i64(),
+        )?;
+        // 本机作答显式声明意图（Dart `answerAndStudy`），不从日志形状反推；不带的（导入、恢复、并入的旧形态
+        // 日志）照旧按 [infer_intent]。手动排程操作走 `sched`（sched_local.rs）。
+        let body = match (body, it["intent"].as_str()) {
+            (Body::Log(mut l), Some("answer")) => {
+                l.intent = Intent::Answer;
+                Body::Log(l)
+            }
+            (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
+            (b, None) => b,
+        };
+        let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
+        let before = t.marks.landed;
+        let bodies = expand_tags(c, profile, body)?;
+        for b in &bodies {
+            let op = append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
+            if !matches!(b, Body::Log(_)) {
+                // 非日志操作可能写下删除：批内「没有删除」的记忆作废（[Touched::log_no_delete]）。
+                if let Some(k) = t.log_no_delete.as_mut() {
+                    k.clear();
+                }
+            }
+            // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
+            debug_assert_eq!(op.body().ok().as_ref(), Some(b));
+            project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
+        }
+        landed.push(t.marks.landed > before);
+    }
+    local.save(c)?;
+    let replayed = replay_touched(c, &t)?;
+    Ok(json!({
+        "marks": t.marks.to_json(),
+        "landed": landed,
+        "replayed": replayed,
+        "diagnostics": t.diagnostics,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "nextSeq": local.next_seq,
+    }))
+}
+
+/// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
+pub(crate) fn append_on(
+    c: &Connection,
+    profile: &str,
+    now: i64,
+    bodies: &[Body],
+) -> Result<Value, String> {
+    let mut local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut applied = applied_vv(c, profile)?;
+    let mut t = Touched::default();
+    for b in bodies {
+        let op = append_local(c, &mut local, &mut applied, b, now)?;
+        project(c, profile, &op, now, true, &mut t)?;
+    }
+    local.save(c)?;
+    let replayed = replay_touched(c, &t)?;
+    Ok(json!({
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+    }))
+}
+
+/// 解决冲突的结论（[SrsCore::sync2_resolve]）：`delete` = 一条因果覆盖并发方的新删除；否则一条覆盖删除的恢复。
+pub(crate) fn resolve_bodies(kind: EntKind, entity: &str, delete: bool, now: i64) -> Vec<Body> {
+    let value = if delete { json!(now) } else { Value::Null };
+    vec![Body::Edit(EditBody {
+        kind,
+        entity: Key::of(entity),
+        key: "deleted".into(),
+        value: canonical(&value),
+        machine: false,
+        ts: 0,
+        legacy: None,
+    })]
+}
+
+/// 彻底清除（[SrsCore::sync2_purge]）：先删除（保证实体不可见），再追加清除操作。
+pub(crate) fn purge_bodies(kind: &str, entity: &str, now: i64) -> Result<Vec<Body>, String> {
+    let k = EntKind::parse(kind).ok_or("bad entity kind")?;
+    Ok(vec![
+        Body::Edit(EditBody {
+            kind: k,
+            entity: Key::of(entity),
+            key: "deleted".into(),
+            value: canonical(&json!(now)),
+            machine: false,
+            ts: 0,
+            legacy: None,
+        }),
+        Body::Purge {
+            kind: k,
+            entity: Key::of(entity),
+        },
+    ])
+}
+
+/// 还原点（[SrsCore::sync2_checkpoint]）。
+pub(crate) fn checkpoint_bodies(name: &str, reason: &str) -> Vec<Body> {
+    vec![Body::Checkpoint {
+        name: name.to_owned(),
+        reason: reason.to_owned(),
+    }]
 }

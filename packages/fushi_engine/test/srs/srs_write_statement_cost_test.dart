@@ -1,7 +1,11 @@
 // 本机写路径的往返验收（SRS 收掉 Dart 写路径第 2 步，M3）：每种写操作经 Drift 执行器送进内核的语句数
 // （`SrsRustDelegate.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
 //
-// 改动前的基线：每条写命令外面套一笔 Drift 事务（BEGIN / COMMIT 各 1 条语句），事务里再单独 upsert 一次本机状态行。
+// 写命令（apply / sched / import / resolve / purge / checkpoint / restore / retire / dedup）由内核在同一个
+// savepoint 里完成命令本体、缓存刷新、排队与本机状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`）：Dart 不再
+// 为它们开 Drift 事务（BEGIN / COMMIT），也不再单独 upsert 本机状态行。改动前（每条命令套一笔 Drift 事务、事务里再
+// upsert 一次本机状态行）各多 3 条语句：createNote 4、answer 3、checkpoint 3、purge 3、import 3、sched 3、
+// applyRemote 4；内核命令数不变。
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_database_executor.dart';
