@@ -28,6 +28,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart'
+    show CompanionLibraryKind;
+import 'package:fushi/src/second_screen/companion/modules/library_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
@@ -220,6 +224,8 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
 import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
+
+part 'home_video/companion.part.dart';
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -612,12 +618,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
   Set<int> get _selectedCollectionIds => _selection.collectionIds;
 
+  /// Dual-screen companion (Library tab, Main mode): see
+  /// `home_video/companion.part.dart`.
+  late final LibraryCompanionHook _companion = _createVideoCompanion();
+
+  /// The video whose menu is open (companion highlight).
+  FushiFocusId? _companionPressedId;
+
+  /// [setState] for the companion part (an extension cannot call it).
+  void _rebuild(VoidCallback fn) => setState(fn);
+
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
   /// 当前渲染成横排行的合集 id 列表（[_buildLocalVideoSlivers] 每帧写入），供
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
+
+  /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
+  final CollectionDisplayCounts _collectionDisplayCounts =
+      CollectionDisplayCounts();
 
   /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
   /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
@@ -939,6 +959,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _companion.attach(
+      context,
+      focusChanges: FushiFocusRoot.maybeControllerOf(context),
+    );
     // BUG-3610：本页路由被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做
     // 被盖住期间推迟的进度重读。isCurrentOf 只依赖路由的 isCurrent 一项。
     final bool current = ModalRoute.isCurrentOf(context) ?? true;
@@ -1000,6 +1024,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    _companion.dispose();
+    _collectionDisplayCounts.dispose();
     _coverExists.dispose();
     _remoteCoverExists.dispose();
     _coverExistsRevision.dispose();
@@ -4307,7 +4333,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     required ImageProvider? Function() cover,
     required String title,
   }) {
-    showMediaItemActions<void>(
+    final Future<void> menu = showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => ValueListenableBuilder<int>(
         valueListenable: _coverExistsRevision,
@@ -4319,6 +4345,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       ),
     );
+    _companionTrackMenu(book, menu);
   }
 
   /// [_showVideoMenu] 的面板本体；[cover] 是当前这一轮取到的图源（可能仍是
@@ -5581,6 +5608,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   ))
                     if (!mirroredRemote.contains(v.id)) v,
                 ];
+                // 「管理合集」页的成员数（BUG-4277）：管理页列的是本域全部合集、
+                // 不随搜索 / 筛选 / 分区变，成员数也只取未筛选全量（同首页口径）的
+                // 折叠结果。放在分区分支之前：「全部视频」分区不建系列墙，挂在系列
+                // 墙里就永远发布不到。骨架期归属映射还没到，不发布（不是 0）。
+                if (!firstPaintPending) {
+                  _collectionDisplayCounts.publish<_VideoSlot>(
+                    _foldVideoUnits(
+                      homeLocal,
+                      homeRemote,
+                      _primaryCollectionByEntry,
+                      _memberSortIndex,
+                    ),
+                  );
+                }
                 // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
                 // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
                 // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
@@ -7614,9 +7655,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
   List<RemoteVideoInfo>? _adoptedRemoteVideos;
 
-  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。远端占位
-  /// 用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目之后、组内保持目录序）。
+  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。
   List<CollectionGroup<_VideoSlot>> _groupVideos(
+    List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
+    Map<String, int> primaryByEntry,
+    Map<String, int> memberSortIndex,
+  ) {
+    final List<CollectionGroup<_VideoSlot>> groups = _foldVideoUnits(
+      books,
+      remoteVideos,
+      primaryByEntry,
+      memberSortIndex,
+    );
+    groups.sort(
+      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
+          compareShelfSortKeys(
+            _groupSortKey(a),
+            _groupSortKey(b),
+            _sortMode,
+            manualRanks: _manualRanks,
+          ),
+    );
+    return groups;
+  }
+
+  /// 视频显示单元折叠：本地视频 + 远端占位 → [groupByCollections] 的合集组与散卡组
+  /// （未排序）。系列墙吃筛选后的输入，「管理合集」页的成员数
+  /// （[_collectionDisplayCounts]）吃未筛选的全量输入，两处同一份折叠规则
+  /// （BUG-4277）。远端占位用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目
+  /// 之后、组内保持目录序）。
+  List<CollectionGroup<_VideoSlot>> _foldVideoUnits(
     List<VideoBookRow> books,
     List<RemoteVideoInfo> remoteVideos,
     Map<String, int> primaryByEntry,
@@ -7645,23 +7714,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       );
     }
-    final List<CollectionGroup<_VideoSlot>> groups =
-        groupByCollections<_VideoSlot>(
-          items: items,
-          primaryCollectionIdByEntry: primaryByEntry,
-          collectionsById: _collectionsById,
-          memberSortIndex: memberSortIndex,
-        );
-    groups.sort(
-      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
-          compareShelfSortKeys(
-            _groupSortKey(a),
-            _groupSortKey(b),
-            _sortMode,
-            manualRanks: _manualRanks,
-          ),
+    return groupByCollections<_VideoSlot>(
+      items: items,
+      primaryCollectionIdByEntry: primaryByEntry,
+      collectionsById: _collectionsById,
+      memberSortIndex: memberSortIndex,
     );
-    return groups;
   }
 
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
@@ -10710,6 +10768,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           domain: CollectionShelfDomain.video,
           onOpenCollection: _openCollectionDetail,
           onShowCollectionMenu: _showCollectionContextMenu,
+          displayCounts: _collectionDisplayCounts,
         ),
       ),
     );

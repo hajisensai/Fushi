@@ -176,6 +176,11 @@ import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_subtitle_pick_origin.dart';
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/companion/modules/video_companion_hook.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -327,6 +332,7 @@ import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/waveform_envelope_cache.dart';
 import 'package:fushi/src/media/video/subtitle_auto_align.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
@@ -504,6 +510,8 @@ part 'video_fushi/web_source.part.dart';
 part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';
 part 'video_fushi/subtitle_text_edit.part.dart';
+part 'video_fushi/companion.part.dart';
+part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
@@ -971,11 +979,16 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 光标会话接管，退出光标时按同一 [pausedForLookup] 标记恢复（单一恢复真相源）。
   /// 纯函数：与 [_VideoFushiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
   @visibleForTesting
+  ///
+  /// [companionHoldsPause]：双屏副屏的查词页上为本页打开的查词还开着——暂停归它，
+  /// 关它时再恢复（副屏与页内浮层共用同一个 [pausedForLookup] 标记）。
   static bool shouldResumeAfterLookupDismiss({
     required bool stackEmpty,
     required bool pausedForLookup,
     bool caretHoldsPause = false,
-  }) => stackEmpty && pausedForLookup && !caretHoldsPause;
+    bool companionHoldsPause = false,
+  }) =>
+      stackEmpty && pausedForLookup && !caretHoldsPause && !companionHoldsPause;
 
   /// BUG-2544：真进后台（`paused`）时是否由本页把播放暂停下来。
   ///
@@ -2013,8 +2026,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoPlayerController? _controller;
 
   /// 桌面控制通道遥控面（见 `video_fushi/playback_remote.part.dart`）。
+  /// Controller lookup mode adapter (hold L1 / Select; see
+  /// `video_fushi/controller_lookup.part.dart`).
+  _VideoControllerLookupTarget? _controllerLookupTarget;
+
   late final _VideoPagePlaybackRemote _playbackRemote =
       _VideoPagePlaybackRemote(this);
+
+  /// Second-screen companion (video panel on a dual-screen handheld's bottom
+  /// screen): claim, snapshots and panel commands, see companion.part.dart.
+  late final VideoCompanionHook _companionHook = VideoCompanionHook(
+    _VideoCompanionPageAdapter(this),
+  );
 
   /// BUG-772：首开时新建但尚未赋给 [_controller] 的「在途」controller。持有它，才能在
   /// 用户于 `await controller.load()` 完成前退出页时，于 [dispose] 主动 dispose 取消它
@@ -2880,6 +2903,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     super.didChangeDependencies();
     _providerContainer = ProviderScope.containerOf(context, listen: false);
     _playbackRouteMark.attach(ModalRoute.of(context));
+    _companionHook.attach(ModalRoute.of(context));
     _studyClockGate.attach(ModalRoute.of(context));
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
@@ -3745,6 +3769,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
+    _attachControllerLookup();
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
@@ -6930,6 +6955,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
     videoPlaybackRemotes.unregister(_playbackRemote);
+    _detachControllerLookup();
+    _companionHook.dispose();
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
@@ -8005,6 +8032,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pausedForLookup: _pausedForLookup,
       // 光标仍激活 = 用户还在选词，暂停由光标会话接管（退出光标时恢复）。
       caretHoldsPause: _videoCaretActive,
+      companionHoldsPause: _companionHook.lookupOpen,
     )) {
       _pausedForLookup = false;
       unawaited(_controller?.resumePlayback());
@@ -8725,6 +8753,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 循环当前句开关（Ix4j5SKUth，默认空绑定）：状态在画面右上角常驻标记上可见。
       toggleLoopCurrentSubtitle: () =>
           _runWhenImmersiveAllowsShortcuts(_toggleLoopCurrentCue),
+      // 逐句学习工具（副屏 S6，默认 Ctrl+Shift+R / P / B）：状态归控制器，副屏视频面板
+      // 走同一组方法；开关类动作以 OSD 反馈当前状态。
+      replayCueThenPause: () =>
+          _runWhenImmersiveAllowsShortcuts(_replayCurrentCueThenPause),
+      toggleAutoPauseAtCueEnd: () =>
+          _runWhenImmersiveAllowsShortcuts(_toggleAutoPauseAtCueEnd),
+      toggleAbLoop: () => _runWhenImmersiveAllowsShortcuts(_toggleAbLoop),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
@@ -11937,6 +11972,46 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     controller.setLoopCurrentCue(next);
+  }
+
+  /// 重播当前句并在句尾暂停（副屏 S6）。没有字幕时给出与循环当前句相同的提示。
+  void _replayCurrentCueThenPause() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (controller.cues.isEmpty) {
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
+      return;
+    }
+    _keepControlsAliveIfVisible();
+    unawaited(controller.replayCurrentCueThenPause());
+  }
+
+  /// 开 / 关「每句播完自动暂停」（副屏 S6），OSD 报新状态。
+  void _toggleAutoPauseAtCueEnd() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool next = !controller.autoPauseAtCueEnd;
+    controller.setAutoPauseAtCueEnd(next);
+    _showOsd(
+      next
+          ? t.video_line_study_auto_pause_on
+          : t.video_line_study_auto_pause_off,
+      icon: FushiIcons.pauseCircle,
+    );
+  }
+
+  /// A-B 循环三态切换（副屏 S6），OSD 报切换后的状态。B 不晚于 A 时控制器忽略，
+  /// 不报。
+  void _toggleAbLoop() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (!controller.toggleAbLoop()) return;
+    final String message = controller.abLoopActive
+        ? t.video_line_study_ab_on
+        : controller.abLoopA != null
+        ? t.video_line_study_ab_a_set
+        : t.video_line_study_ab_cleared;
+    _showOsd(message, icon: FushiIcons.repeatOne);
   }
 
   /// 重播当前句：回到本句开头**并起播**（Dbd86l4kA-：暂停态按重播也开始播放；
