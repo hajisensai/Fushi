@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3887 条。点号进各自文件。
+> 共 3888 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4338](bugs/BUG-4338-srs-card-synthetic-bold.md) | ✅ | ✅ | 复习卡词头 / 加粗段在单字重用户字体上被合成假粗体糊字 |
+| [BUG-4339](bugs/BUG-4339-srs-card-synthetic-bold.md) | ✅ | ✅ | 复习卡词头 / 加粗段在单字重用户字体上被合成假粗体糊字 |
 | [BUG-4338](bugs/BUG-4338-discovery-search-irrelevant-results.md) | ✅ | ✅ | 游戏发现页搜索结果混入大量无关条目（真红小站模糊搜索透传） |
 | [BUG-4337](bugs/BUG-4337-online-manga-sync-chapters-json-crash.md) | ✅ | ✅ | 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见 |
 | [BUG-4336](bugs/BUG-4336-md3-floating-bar-stranded-on-lookup.md) | ✅ | ✅ | MD3 悬浮底栏在查词页收起后回不来，用户离不开查词页 |
