@@ -81,9 +81,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_card_surface.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
@@ -615,8 +614,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               ?rendered.fushiCardDefinitions,
             ],
           );
-          // 原生 HTML 卡面的解析与判据（按内容记忆）同样提前算好。
-          _htmlCardOf(rendered, detail);
+          // 卡面渲染器判据（原生 HTML 解析 / 区块探测，按内容记忆）同样提前算好。
+          _surfaceOf(rendered, detail);
           SrsReviewPage.debugPhase?.call('prefetch:warm');
         }
         final _CardContext ctx = await _cardContextOf(store, detail, mark);
@@ -926,7 +925,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     SrsRenderedCard rendered, {
     bool layout = false,
   }) {
-    if (_fushiNative(rendered)) {
+    final SrsCardSurface surface = _surfaceOf(rendered);
+    if (surface is SrsFushiHybridSurface) {
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
         ref.read(srsCardAppearanceProvider),
@@ -935,8 +935,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ).media;
       return (question: media.front, answer: media.back);
     }
-    final SrsHtmlCard? html = _htmlCardOf(rendered);
-    if (html != null) {
+    if (surface is SrsHtmlNativeSurface) {
+      final SrsHtmlCard html = surface.card;
       // 原生 HTML 卡面：盒子树里看得见的发音键（与卡面画出来的同一份，两面都现成）。
       final bool dark = Theme.of(context).brightness == Brightness.dark;
       List<String> sounds(SrsHtmlCardFace f) => srsHtmlVisibleSounds(
@@ -970,7 +970,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   /// 这一面的可见发音页面报上来没有（原生卡面不靠上报，总是现成的）。
   bool _faceSoundsKnown(SrsRenderedCard rendered, {required bool answerSide}) {
-    if (_nativeFace(rendered)) return true;
+    if (_surfaceOf(rendered).flutterDrawn) return true;
     if (_pageSoundsCard == null || _pageSoundsCard != _detail?.card.id) {
       return false;
     }
@@ -2413,35 +2413,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       !_finished &&
       (_store?.canSchedule ?? false) &&
       _detail != null &&
-      _nativeFace(_rendered);
+      _surfaceOf(_rendered).flutterDrawn;
 
-  /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsNativeHtmlCardFor]，按内容记忆）；null =
-  /// 不是这类卡或画不全（整面 WebView）。[detail] 缺省为当前卡（预取时传那张卡的）。
-  SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered, [SrsCardDetail? detail]) {
-    if (rendered == null || _fushiNative(rendered)) return null;
-    return srsNativeHtmlCardFor(
-      fushiCard:
-          (detail ?? _detail)?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
-      question: rendered.question,
-      answer: rendered.answer,
-      css: rendered.css,
-      languageCode: ref.read(appProvider).defaultContentLanguage,
-    );
-  }
-
-  /// 内置 Fushi 卡片走原生混合卡面：引擎认得出区块布局、自定义区块（字段 / HTML 区块）原生
-  /// 画得全（[srsFushiCardRenderedNative]，按内容记忆）。否则整面 WebView。
-  bool _fushiNative(SrsRenderedCard? rendered) =>
-      rendered != null &&
-      srsFushiCardRenderedNative(
-        rendered,
-        languageCode: ref.read(appProvider).defaultContentLanguage,
-      );
-
-  /// 卡面由 Flutter 原生画（Fushi 卡片混合渲染或原生 HTML 卡面）。
-  bool _nativeFace(SrsRenderedCard? rendered) =>
-      rendered != null &&
-      (_fushiNative(rendered) || _htmlCardOf(rendered) != null);
+  /// 这张卡用哪套渲染器（[srsCardSurfaceOfRendered]，唯一判据；底下的探测按内容记忆）。
+  /// [detail] 缺省为当前卡（预取时传那张卡的）。卡面视图、可见发音、自动播放、卡面铺到页头 /
+  /// 底栏底下都读这一个结果，不另判。
+  SrsCardSurface _surfaceOf(
+    SrsRenderedCard? rendered, [
+    SrsCardDetail? detail,
+  ]) => srsCardSurfaceOfRendered(
+    rendered,
+    fushiCardType: srsIsFushiCardType((detail ?? _detail)?.noteType.builtinKey),
+    languageCode: ref.read(appProvider).defaultContentLanguage,
+  );
 
   Widget _buildBody(BuildContext context) {
     // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
@@ -2619,36 +2603,35 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       gestureArming: gestureArming,
       onEditSelection: inlineEdit ? _onEditSelection : null,
     );
-    // 内置 Fushi 卡片（模板未改或只调了区块布局）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
-    // 认得的 HTML / CSS 子集里就整面原生（[srsHtmlCardOf]），否则整面 WebView。
-    final SrsHtmlCard? html = _htmlCardOf(rendered);
-    final Widget built = html != null
-        ? SrsHtmlCardView(
-            key: const ValueKey<String>('srs-html-card-view'),
-            face: face,
-            source: html.face(answerSide: _showingAnswer),
-            topInset: media.padding.top,
-            bottomInset: _bottomBarInset,
-            zoom: zoom,
-          )
-        : _fushiNative(rendered)
-        ? MediaQuery(
-            // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
-            data: media.copyWith(
-              textScaler: TextScaler.linear(media.textScaler.scale(1) * zoom),
-            ),
-            child: SrsFushiCardView(
-              key: const ValueKey<String>('srs-fushi-card-view'),
-              face: face,
-              fields: rendered!.fields,
-              definitionsHtml: rendered.fushiCardDefinitions!,
-              front: rendered.fushiCardFront,
-              back: rendered.fushiCardBack,
-              topInset: media.padding.top,
-              bottomInset: _bottomBarInset,
-            ),
-          )
-        : faceBuilder(context, face);
+    // 渲染器只按唯一判据选（[srsCardSurfaceOf]）：内置 Fushi 卡片（模板未改或只调了区块布局）走原生 +
+    // 释义 WebView 的混合渲染；其余卡片两面都在原生认得的 HTML / CSS 子集里就整面原生，否则整面 WebView。
+    final Widget built = switch (_surfaceOf(rendered, detail)) {
+      SrsHtmlNativeSurface(:final SrsHtmlCard card) => SrsHtmlCardView(
+        key: const ValueKey<String>('srs-html-card-view'),
+        face: face,
+        source: card.face(answerSide: _showingAnswer),
+        topInset: media.padding.top,
+        bottomInset: _bottomBarInset,
+        zoom: zoom,
+      ),
+      SrsFushiHybridSurface(:final SrsFushiCardLayout layout) => MediaQuery(
+        // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
+        data: media.copyWith(
+          textScaler: TextScaler.linear(media.textScaler.scale(1) * zoom),
+        ),
+        child: SrsFushiCardView(
+          key: const ValueKey<String>('srs-fushi-card-view'),
+          face: face,
+          fields: layout.fields,
+          definitionsHtml: layout.definitionsHtml,
+          front: layout.front,
+          back: layout.back,
+          topInset: media.padding.top,
+          bottomInset: _bottomBarInset,
+        ),
+      ),
+      SrsWebViewSurface() => faceBuilder(context, face),
+    };
     _faceCache = (inputs: inputs, face: built);
     return built;
   }
@@ -2673,7 +2656,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // 原生卡面（Fushi 卡片 / 原生 HTML 卡面）铺到底栏背后、把底栏高度当滚动内边距；整面
     // WebView 卡面滚不到底栏下面，停在底栏上沿（与顶端让位浮动页头同一口径，见
     // [_cardScrollsUnderHeader]）。
-    final bool underBar = _nativeFace(rendered);
+    final bool underBar = _surfaceOf(rendered, detail).flutterDrawn;
     final Widget cardFace = _cardFace(
       context,
       detail: detail,

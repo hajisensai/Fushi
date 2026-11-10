@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_card_surface.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -124,6 +125,27 @@ Future<void> _unmount(WidgetTester tester) async {
 Finder _inPreview(Finder f) =>
     find.descendant(of: _key('srs-note-preview'), matching: f);
 
+/// 编辑预览走不走原生混合渲染：候选（[srsFushiCardLayoutOfTemplate]）交唯一判据
+/// （[srsCardSurfaceOf]，与 `SrsStablePreviewFace` 同一调用），选中混合才非 null。
+SrsFushiCardLayout? _previewNative({
+  required SrsNoteTypeView type,
+  required SrsTemplateDef template,
+  required Map<String, String> valuesById,
+}) {
+  final SrsFushiCardLayout? candidate = srsFushiCardLayoutOfTemplate(
+    type: type,
+    template: template,
+    valuesById: valuesById,
+  );
+  return srsCardSurfaceOf(
+            fushiCardType: srsIsFushiCardType(type.builtinKey),
+            fushiLayout: candidate,
+          )
+          is SrsFushiHybridSurface
+      ? candidate
+      : null;
+}
+
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
@@ -147,11 +169,7 @@ void main() {
     };
     final SrsTemplateDef tpl = type.templates.first;
     expect(
-      srsNotePreviewNativeFushiCard(
-        type: type,
-        template: tpl,
-        valuesById: values,
-      ),
+      _previewNative(type: type, template: tpl, valuesById: values),
       isNotNull,
       reason: '内置模板 + 原生画得全的片段 → 原生混合渲染',
     );
@@ -163,16 +181,12 @@ void main() {
       back: tpl.back,
     );
     expect(
-      srsNotePreviewNativeFushiCard(
-        type: type,
-        template: edited,
-        valuesById: values,
-      ),
+      _previewNative(type: type, template: edited, valuesById: values),
       isNull,
       reason: '模板改过 → 整面 WebView（复习页同样如此）',
     );
     expect(
-      srsNotePreviewNativeFushiCard(
+      _previewNative(
         type: type,
         template: tpl,
         valuesById: <String, String>{

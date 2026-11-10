@@ -46,10 +46,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
-    show
-        SrsPreviewNativeFushiCard,
-        SrsStablePreviewFace,
-        srsNotePreviewNativeFushiCard;
+    show SrsStablePreviewFace;
+import 'package:fushi/src/srs/srs_card_surface.dart'
+    show SrsFushiCardLayout, srsFushiCardLayoutOfTemplate;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart';
@@ -176,7 +175,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   /// 卡面上正显示的那张（最近一次能渲染的结果）：打字途中模板出错 / 为空时卡面不拆，
   /// 只盖一层提示，见 [SrsStablePreviewFace]。
   AnkiRenderedCard? _shown;
-  SrsPreviewNativeFushiCard? _shownNative;
+  SrsFushiCardLayout? _shownNative;
 
   /// AI 顺带写的字段说明（fieldId → 说明），保存模板时一起写入；放弃修改即丢弃。
   Map<String, String> _pendingDescriptions = const <String, String>{};
@@ -436,12 +435,12 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       if (card != null && !card.isEmpty) {
         _shown = card;
         // 样式与内置一致、正背面认得出区块布局的 Fushi 卡片与复习页一样走原生混合渲染
-        // （不建整面 WebView，判据在 srsNotePreviewNativeFushiCard 里）；改到原生画不了就是
+        // （不建整面 WebView，候选见 srsFushiCardLayoutOfTemplate、判据见 srsCardSurfaceOf）；改到原生画不了就是
         // 复习时的模板渲染，预览跟着换。
         // 共享样式按载入时的类型比对，样式框改过就按模板渲染。
         final Map<String, String> nameToId = _nameToId;
         _shownNative = _css.text == type.css
-            ? srsNotePreviewNativeFushiCard(
+            ? srsFushiCardLayoutOfTemplate(
                 type: type,
                 template: tpl.copyWith(
                   front: templateNamesToIds(_front.text, nameToId),

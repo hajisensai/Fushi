@@ -2,11 +2,12 @@
 //   FUSHI_SRS_AUDIT_DB=<srs.db 副本> FUSHI_SRS_AUDIT_SUPPORT=<应用支持目录> \
 //   FUSHI_SRS_AUDIT_PROFILE=<profile uid> [FUSHI_SRS_AUDIT_OUT=<报告文件>] \
 //   flutter test test/srs/srs_real_deck_native_audit_test.dart
-// 逐张卡走复习页同一判据（Fushi 卡片 → srsFushiCardRenderedNative，其余 → srsHtmlCardProbe），
+// 逐张卡走复习页同一判据（Fushi 卡片 → srsCardSurfaceOfRendered，其余 → srsHtmlCardProbe 取原因），
 // 按笔记类型 × 模板统计原生 / 回退、回退原因与渲染异常。只读：库请先复制一份。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:fushi/src/srs/srs_card_surface.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
@@ -125,7 +126,12 @@ void main() {
                   'front=${fushiCardFrontLayoutOf(front) != null} '
                   'back=${fushiCardBackLayoutOf(back) != null} '
                   'media=${srsFushiCardMediaIsNative(r.fields)}';
-            } else if (!srsFushiCardRenderedNative(r, languageCode: 'ja')) {
+            } else if (srsCardSurfaceOfRendered(
+                  r,
+                  fushiCardType: true,
+                  languageCode: 'ja',
+                )
+                is! SrsFushiHybridSurface) {
               for (final FushiCardItem x in <FushiCardItem>[
                 ...r.fushiCardFront,
                 ...r.fushiCardBack,

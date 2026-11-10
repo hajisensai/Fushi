@@ -1,13 +1,11 @@
 // 卡面渲染器选择表：同一批输入在每个站点（复习页 / 浏览预览 / 外观页「我的卡」/ 笔记与模板编辑
 // 预览宿主）选中哪套渲染器——Fushi 原生混合（fushi）、原生 HTML 卡面（html）、整面 WebView（web）。
 //
-// 这张表先在收口前的旧判据上钉死（各站点各写一份时的逻辑原样复刻在下面的 `_site*`），收口成
-// 单一判据后同一张期望表必须仍然全绿：证明收口不改任何一张卡最终选中的渲染器。
+// 这张表先在收口前的旧判据上钉死（各站点各写一份时的逻辑原样复刻在 `_site*`，提交 367d74c87ef），
+// 收口成单一判据后 `_site*` 换成现在的调用、行与期望表不动，仍须全绿：证明收口不改任何一张卡最终
+// 选中的渲染器。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
-    show srsNativeHtmlCardFor;
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardItemsNative, srsFushiCardRenderedNative;
+import 'package:fushi/src/srs/srs_card_surface.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
 
@@ -208,86 +206,65 @@ const Map<String, List<String>> _expected = <String, List<String>>{
   '非 Fushi 类型带释义区、区块画不了、两面简单 HTML': <String>['html', 'html', '-', 'html'],
 };
 
-// ---- 收口前各站点的判据（原样复刻） ----
+// ---- 各站点经唯一判据（srsCardSurfaceOf）选渲染器，输入与生产代码同形 ----
+//
+// 收口前这里是四个站点各自的旧判据原样复刻（提交 367d74c87ef，在旧代码上 21/21 绿）；收口后换成
+// 各站点现在的调用方式，上面的行与期望表一字未改。
 
-/// 复习页 `_cardFace`：先 `_htmlCardOf`（Fushi 原生时为 null）再 `_fushiNative`，否则 WebView。
-String _siteReview(_Row r) {
-  final SrsRenderedCard? rendered = r.rendered;
-  if (rendered == null) return 'web';
-  final bool fushiNative = srsFushiCardRenderedNative(
-    rendered,
+String _label(SrsCardSurface s) => switch (s.kind) {
+  SrsCardSurfaceKind.fushiHybrid => 'fushi',
+  SrsCardSurfaceKind.htmlNative => 'html',
+  SrsCardSurfaceKind.webView => 'web',
+};
+
+/// 复习页 `_surfaceOf`：默认内容语言原样交进去（'' 由判据视同 null）。
+String _siteReview(_Row r) => _label(
+  srsCardSurfaceOfRendered(
+    r.rendered,
+    fushiCardType: r.fushiType,
     languageCode: r.lang,
-  );
-  final Object? html = fushiNative
-      ? null
-      : srsNativeHtmlCardFor(
-          fushiCard: r.fushiType,
-          question: rendered.question,
-          answer: rendered.answer,
-          css: rendered.css,
-          languageCode: r.lang,
-        );
-  if (html != null) return 'html';
-  return fushiNative ? 'fushi' : 'web';
-}
+  ),
+);
 
-/// 浏览预览 `SrsBrowsePreview.build`（卡面语言 '' → null）。
-String _siteBrowse(_Row r) {
-  final SrsRenderedCard? rendered = r.rendered;
-  if (rendered == null) return 'web';
-  final String? language = r.lang.isEmpty ? null : r.lang;
-  final String? definitions =
-      srsFushiCardRenderedNative(rendered, languageCode: language)
-      ? rendered.fushiCardDefinitions
-      : null;
-  final Object? html = definitions != null
-      ? null
-      : srsNativeHtmlCardFor(
-          fushiCard: r.fushiType,
-          question: rendered.question,
-          answer: rendered.answer,
-          css: rendered.css,
-          languageCode: language,
-        );
-  return definitions != null
-      ? 'fushi'
-      : html != null
-      ? 'html'
-      : 'web';
-}
+/// 浏览预览：卡面语言（'' → null）。
+String _siteBrowse(_Row r) => _label(
+  srsCardSurfaceOfRendered(
+    r.rendered,
+    fushiCardType: r.fushiType,
+    languageCode: r.lang.isEmpty ? null : r.lang,
+  ),
+);
 
-/// 外观页 `_faceView`（「我的卡」）：只有 Fushi 混合与整面 WebView 两档。
+/// 外观页 `_faceView`（「我的卡」）：卡面 `fushiCard: true`，原生 HTML 也落 WebView。
 String _siteAppearanceMine(_Row r) {
   final SrsRenderedCard? rendered = r.rendered;
   if (rendered == null || !r.fushiType) return '-';
-  final String? language = r.lang.isEmpty ? null : r.lang;
-  return srsFushiCardRenderedNative(rendered, languageCode: language)
-      ? 'fushi'
-      : 'web';
+  final SrsCardSurface s = srsCardSurfaceOfRendered(
+    rendered,
+    fushiCardType: true,
+    languageCode: r.lang.isEmpty ? null : r.lang,
+  );
+  return s is SrsFushiHybridSurface ? 'fushi' : 'web';
 }
 
-/// 笔记 / 模板编辑预览：`srsNotePreviewNativeFushiCard` 在引擎给出区块布局后按**不带语言**
-/// 判区块，`SrsStablePreviewFace` 拿到 native 就走混合，否则按卡面语言判原生 HTML。
+/// 笔记 / 模板编辑预览：候选（`srsFushiCardLayoutOfTemplate`，区块探测不带语言）交给
+/// `SrsStablePreviewFace`，它按卡面语言判原生 HTML。
 String _siteStablePreview(_Row r) {
   final SrsRenderedCard? rendered = r.rendered;
   if (rendered == null) return 'web';
-  final bool native =
-      rendered.fushiCardDefinitions != null &&
-      srsFushiCardItemsNative(
-        front: rendered.fushiCardFront,
-        back: rendered.fushiCardBack,
-        fields: rendered.fields,
-      );
-  if (native) return 'fushi';
-  final String? language = r.lang.isEmpty ? null : r.lang;
-  final Object? html = srsNativeHtmlCardFor(
-    fushiCard: r.fushiType,
-    question: rendered.question,
-    answer: rendered.answer,
-    css: rendered.css,
-    languageCode: language,
+  final SrsFushiCardLayout? candidate = SrsFushiCardLayout.ofRendered(rendered);
+  return _label(
+    srsCardSurfaceOf(
+      fushiCardType: r.fushiType,
+      fushiLayout: candidate,
+      sides: (
+        question: rendered.question,
+        answer: rendered.answer,
+        css: rendered.css,
+      ),
+      languageCode: r.lang.isEmpty ? null : r.lang,
+    ),
   );
-  return html != null ? 'html' : 'web';
 }
 
 void main() {

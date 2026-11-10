@@ -2,8 +2,8 @@
 /// （srs_html_card.dart）画：这里给出每一块的 HTML、解析结果，以及整张卡画不画得全的判据。
 ///
 /// 引擎只判模板认不认得出区块布局（`srsFushiCardNative`）；HTML 区块里写了原生 HTML 子集
-/// 画不了的东西（脚本、表格、定位……）由这里再判一次，画不了就整张卡回退 WebView。复习页、
-/// 浏览预览、笔记 / 模板编辑预览、外观页预览共用这一处判据。
+/// 画不了的东西（脚本、表格、定位……）由这里再判一次，画不了就整张卡回退 WebView。这里只给探测，
+/// 选哪套渲染器的判据只在 srs_card_surface.dart（srsCardSurfaceOf）。
 library;
 
 import 'package:fushi_anki/fushi_anki_core.dart'
@@ -12,7 +12,6 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         FushiCardFieldStyle,
         FushiCardHtmlItem,
         FushiCardItem;
-import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
 
 import 'package:fushi/src/srs/srs_html_card.dart';
 
@@ -92,16 +91,3 @@ bool srsFushiCardItemsNative({
   }
   return true;
 }
-
-/// 引擎渲染好的卡 [r] 走不走原生 Fushi 卡面（混合渲染）：引擎认得出区块布局
-/// （[SrsRenderedCard.fushiCardDefinitions] 非 null），且自定义区块原生画得全。
-bool srsFushiCardRenderedNative(SrsRenderedCard r, {String? languageCode}) =>
-    r.fushiCardDefinitions != null &&
-    srsFushiCardItemsNative(
-      front: r.fushiCardFront,
-      back: r.fushiCardBack,
-      fields: r.fields,
-      languageCode: languageCode == null || languageCode.isEmpty
-          ? null
-          : languageCode,
-    );

@@ -1,8 +1,8 @@
 /// 非 Fushi 卡片（Anki 导入牌组、用户自建类型）的**原生**卡面：把 [SrsHtmlBlock] 盒子树
 /// （srs_html_card.dart 按卡片 HTML / CSS 层叠出来的）用 Flutter 画出来，取代整面 WebView。
 ///
-/// 只有 [srsHtmlCardOf] 判定两面都画得全的卡才走这里，其余照旧整面 WebView。与 WebView 卡面
-/// 共用同一套宿主行为：
+/// 只有唯一判据（srs_card_surface.dart 的 `srsCardSurfaceOf`）选中原生 HTML 卡面的卡才走这里，
+/// 其余照旧整面 WebView。与 WebView 卡面共用同一套宿主行为：
 /// - 手势（点空白 / 双击 / 长按 / 滑动）经 [SrsCardGestureRegion]，取词经 [SrsNativeLookupRegion]
 ///   （注音段按 `<rt>` 读音取词，不推断读音），文字可拖选（复习时编辑上报选区）；
 /// - `[sound:]` 按钮交给复习页的播放序列（与底栏重播 / 自动播放同一路）；
@@ -53,31 +53,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-
-/// 一张卡能否走原生 HTML 卡面的统一判据（复习页、浏览预览、笔记 / 模板编辑预览共用，
-/// 保证预览与复习时长得一样）。null = 走整面 WebView。
-///
-/// 内置 Fushi 卡片类型（[fushiCard]）一律不走这里：模板未改或只调了区块布局的走原生混合
-/// 卡面（[SrsFushiCardView]，见 `srsFushiCardNative`）；改到原生混合卡面画不了的（改了正面 /
-/// 样式 / 区块内部），模板本身带脚本、媒体查询与定位，原生 HTML 子集也画不了，仍走 WebView
-/// 外壳（它还要注入外观设置：`--fushi-srs-*` 变量、类名、字体）。
-SrsHtmlCard? srsNativeHtmlCardFor({
-  required bool fushiCard,
-  required String question,
-  required String answer,
-  required String css,
-  required String? languageCode,
-}) {
-  if (fushiCard) return null;
-  return srsHtmlCardOf(
-    question: question,
-    answer: answer,
-    css: css,
-    languageCode: languageCode == null || languageCode.isEmpty
-        ? null
-        : languageCode,
-  );
-}
 
 /// 卡面上的链接：`fushi://` 来源链接跳回原处（[onSourceLink]），http(s) 外链系统浏览器打开，
 /// 其余不处理。

@@ -25,8 +25,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardRenderedNative;
+import 'package:fushi/src/srs/srs_card_surface.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -499,21 +498,38 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     SrsCardFaceBuilder faceBuilder, {
     required bool mine,
   }) {
-    // 我的卡：与复习页同一判据（区块布局认得出、自定义区块原生画得全）。
-    final String? defs = mine
-        ? (srsFushiCardRenderedNative(_mine!, languageCode: face.languageCode)
-              ? _mine!.fushiCardDefinitions
-              : null)
-        : (_sampleNative ? _sampleDefinitions : null);
-    if (defs == null) return faceBuilder(context, face);
-    return SrsFushiCardView(
-      key: const ValueKey<String>('srs-card-preview-native'),
-      face: face,
-      front: mine ? _mine!.fushiCardFront : null,
-      back: mine ? _mine!.fushiCardBack : null,
-      fields: mine ? _mine!.fields : srsSampleCardFields(),
-      definitionsHtml: defs,
-    );
+    // 与复习页同一判据（[srsCardSurfaceOf]）。外观页只预览 Fushi 卡片（「我的卡」取自 Fushi 卡片
+    // 笔记类型），所以只会落到混合或整面 WebView。样例卡：用户的 Fushi 卡片模板未改过时用内置默认
+    // 布局（区块为 null，不探测）。
+    final SrsCardSurface surface = mine
+        ? srsCardSurfaceOfRendered(
+            _mine,
+            fushiCardType: face.fushiCard,
+            languageCode: face.languageCode,
+          )
+        : srsCardSurfaceOf(
+            fushiCardType: face.fushiCard,
+            fushiLayout: _sampleNative
+                ? SrsFushiCardLayout(
+                    definitionsHtml: _sampleDefinitions,
+                    fields: srsSampleCardFields(),
+                  )
+                : null,
+            languageCode: face.languageCode,
+          );
+    return switch (surface) {
+      SrsFushiHybridSurface(:final SrsFushiCardLayout layout) =>
+        SrsFushiCardView(
+          key: const ValueKey<String>('srs-card-preview-native'),
+          face: face,
+          front: layout.front,
+          back: layout.back,
+          fields: layout.fields,
+          definitionsHtml: layout.definitionsHtml,
+        ),
+      SrsHtmlNativeSurface() ||
+      SrsWebViewSurface() => faceBuilder(context, face),
+    };
   }
 
   /// 预览工具条：正反面、深浅色、手机 / 桌面、样例 / 我的卡；[collapsible] 时末尾带

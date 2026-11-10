@@ -2,6 +2,7 @@
 // 按区块选项取媒体（新加模板的起点见 srs_template_presets_test.dart）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_surface.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -86,7 +87,10 @@ void main() {
         isEmpty: false,
         fields: _fields(),
       );
-      expect(srsFushiCardRenderedNative(r), isFalse);
+      expect(
+        srsCardSurfaceOfRendered(r, fushiCardType: true),
+        isNot(isA<SrsFushiHybridSurface>()),
+      );
       final SrsRenderedCard ok = SrsRenderedCard(
         question: '',
         answer: '',
@@ -97,7 +101,10 @@ void main() {
         fushiCardFront: kFushiCardDefaultFrontItems,
         fushiCardBack: kFushiCardDefaultBackItems,
       );
-      expect(srsFushiCardRenderedNative(ok), isTrue);
+      expect(
+        srsCardSurfaceOfRendered(ok, fushiCardType: true),
+        isA<SrsFushiHybridSurface>(),
+      );
     });
   });
 
