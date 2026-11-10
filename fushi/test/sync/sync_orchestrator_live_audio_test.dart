@@ -802,6 +802,17 @@ void main() {
         ),
       );
 
+      // 这台设备以前从 host 下载过这本（记过 host 当时的内容版本），之后 host 那份
+      // 没了、本机把自己的推回去：推完 host 的版本就是本机这份，旧记录必须作废，
+      // 否则书架会把本机自己的推送报成「对端有更新」。
+      await RemoteAudiobookRevisionStore(localDb).put(
+        remoteAudiobookRevisionKeyForBook('LocalAudioBook'),
+        const RemoteAudiobookRevisionRecord(
+          sourceId: 'interconnect|stale-host',
+          revision: 'r1-stale',
+        ),
+      );
+
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_push'))
         ..createSync();
       final InterconnectSyncBackend backend = await _buildClientBackend(
@@ -827,6 +838,13 @@ void main() {
         report.audiobooksExported,
         1,
         reason: 'LocalAudioBook 有声书应被推送到 host',
+      );
+      expect(
+        (await RemoteAudiobookRevisionStore(
+          localDb,
+        ).load())[remoteAudiobookRevisionKeyForBook('LocalAudioBook')],
+        isNull,
+        reason: '推送后 host 就是本机这份，下载时记的旧内容版本必须作废',
       );
     });
 
