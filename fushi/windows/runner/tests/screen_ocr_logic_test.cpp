@@ -38,7 +38,7 @@ int main() {
     assert(JoinOcrWords({L"\U00020BB7", L"野家"}) == L"\U00020BB7野家");
     // 全角标点也是非 ASCII：「。」与下一句直接相连。
     assert(JoinOcrWords({L"です。", L"次"}) == L"です。次");
-    // 词起点（BUG-4361）：插进去的空格不算进下一个词；空词记 -1。
+    // 词起点（BUG-4362）：插进去的空格不算进下一个词；空词记 -1。
     {
       std::vector<int> offsets;
       const std::wstring joined = JoinOcrWordsWithOffsets(

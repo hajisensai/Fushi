@@ -2470,7 +2470,7 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   // 下面藏球 / 关旧层那次合成就是要取的那帧（hdr_desktop_capture.h）。
   ScreenOcrOverlay::Capture capture;
   fushi::HdrMonitorDuplication hdr;
-  // 取证（BUG-4361）：被截显示器是不是开着 HDR。kNotHdr 也包括「判不了」（note 非空）。
+  // 取证（BUG-4362）：被截显示器是不是开着 HDR。kNotHdr 也包括「判不了」（note 非空）。
   bool hdr_monitor = false;
   {
     std::string note;
@@ -2541,7 +2541,7 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
       {flutter::EncodableValue("png"), flutter::EncodableValue(std::move(png))},
       {flutter::EncodableValue("screen"),
        flutter::EncodableValue(std::move(screen_rect))},
-      // 取证字段（BUG-4361）：只进诊断日志，不影响流程。
+      // 取证字段（BUG-4362）：只进诊断日志，不影响流程。
       {flutter::EncodableValue("dpi"),
        flutter::EncodableValue(static_cast<int32_t>(monitor_dpi))},
       {flutter::EncodableValue("hdrMonitor"),
