@@ -138,6 +138,53 @@ BookSeriesKey? _seriesFromTrailingLabel(String title, String folded, int end) {
   );
 }
 
+/// 网址 slug：只由 ASCII 字母数字词经 `-` / `_` 连成、至少两个词、不含空白
+/// （`Karakai-Jouzu-Takagi-san`、`one_piece`）。
+final RegExp _slugToken = RegExp(r'^[A-Za-z0-9]+(?:[\-_][A-Za-z0-9]+)+$');
+
+/// slug / 书名里的拉丁词（小写，按非字母数字切）。
+List<String> _latinWords(String s) => s
+    .toLowerCase()
+    .split(RegExp(r'[^a-z0-9]+'))
+    .where((String w) => w.isNotEmpty)
+    .toList(growable: false);
+
+/// 自动合集名：把系列名 [seriesTitle]（[BookSeriesKey.seriesTitle]）里的网址
+/// slug 规整成可读名；不像 slug 的原样返回（去首尾空白）。只改**显示用的合集名**，
+/// 归组用的 [BookSeriesKey.key] 不变。
+///
+/// 两种 slug（vECncM6f8Y 后续拍板：合集名里的网址 slug 自动美化）：
+/// - 系列名后面挂着它自己的 slug：`Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san`
+///   （mokuro.moe 旧口径卷名，书 key 冻结不改）→ `Karakai Jouzu no Takagi-san`。
+///   判据同 mokuro 下载器的卷名规整：slug 的每个词都在前面的正文里出现过（slug
+///   常省掉 `no` 之类虚词，按「子集」比）；前缀切不出拉丁词（日文书名）不动。
+/// - 整个系列名就是一个 slug：含 `_`（`one_piece`），或至少两个 `-`
+///   （`karakai-jouzu-takagi-san`）→ 分隔换空格；全小写时每词首字母大写。只有
+///   一个 `-` 的（`Spider-Man`、`Takagi-san`）是正常拼写，不动。
+String readableSeriesTitle(String seriesTitle) {
+  final String t = seriesTitle.trim();
+  final int lastSpace = t.lastIndexOf(RegExp(r'\s'));
+  if (lastSpace < 0) return _readableWholeSlug(t) ?? t;
+  final String tail = t.substring(lastSpace + 1);
+  if (!_slugToken.hasMatch(tail)) return t;
+  final String prefix = t.substring(0, lastSpace).trim();
+  final Set<String> prefixWords = _latinWords(prefix).toSet();
+  final List<String> slugWords = _latinWords(tail);
+  if (prefixWords.isEmpty || !slugWords.every(prefixWords.contains)) return t;
+  return prefix;
+}
+
+/// 整串 slug → 可读名；不算 slug 时 null。
+String? _readableWholeSlug(String t) {
+  if (!_slugToken.hasMatch(t) || !t.contains(RegExp(r'[A-Za-z]'))) return null;
+  if (!t.contains('_') && '-'.allMatches(t).length < 2) return null;
+  final bool lower = t == t.toLowerCase();
+  return t
+      .split(RegExp(r'[\-_]'))
+      .map((String w) => lower ? w[0].toUpperCase() + w.substring(1) : w)
+      .join(' ');
+}
+
 /// 「系列目录/卷目录/页图」布局里，目录名 [name] 作为系列目录 [seriesFolderName]
 /// 之下的**卷目录**时的卷号；不像卷目录返回 null。
 ///
