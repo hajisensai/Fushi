@@ -44,11 +44,12 @@ const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 
 /// 复习翻日时刻的待写标记（int 0–23，-1 = 没有）：后缀 = profile uid。用户在统计设置里显式改了日界、当时没能写进
 /// 这份配置的复习（模块关着 / 打开失败）时记下，复习库下次激活时补写并清掉（`AppModel.flushPendingDayRollover`）。
-/// 默认值从不记。按 uid 分开记，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
+/// 默认值从不记。按 uid 分开记；设备本地（`PrefRedactionPolicy.deviceLocalKeyPrefixes`）：不进 Profile 快照 / 分享、
+/// 不随备份导出、恢复时保留本机值，也不经设置同步离开本机。
 const String kSrsDayRolloverPendingPrefKeyPrefix = 'srs_day_rollover_pending::';
 
 /// 本机最后写下 / 采纳的复习翻日时刻修改记录 ID（String）：后缀 = profile uid。同步拉入后生效记录还是它就不改本机
-/// 统计日界（`AppModel.adoptSyncedDayRollover`）。不进 Profile 快照。
+/// 统计日界（`AppModel.adoptSyncedDayRollover`）。设备本地，同上。
 const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
 
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
