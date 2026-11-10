@@ -346,7 +346,7 @@ class HeadlessHost {
       prefs: prefs,
       identity: identity,
       scrape: videoScrape,
-      // 字幕语言现读配置（WebUI 改完，下一次重建管线生效）。
+      // 字幕语言现读配置（WebUI 改完经 applyConfig 进来，下一个任务的字幕阶段生效）。
       subtitleLanguage: () => config.subtitleLanguage,
       subtitleRegistryFactory: _subtitleRegistryFactory,
     );
