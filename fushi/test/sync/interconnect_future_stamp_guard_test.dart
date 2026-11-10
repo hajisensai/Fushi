@@ -6,6 +6,7 @@ import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// 互联书籍进度没接未来时间戳防护：host 上一条超限毒戳（时钟走快的设备写下的）
 /// 在 client 抬戳（`毒戳 + 1`）与对齐（直接按戳取胜者）里永远胜出，被写进本端
@@ -20,7 +21,8 @@ const String _bookKey = 'book-future';
 const String _videoKey = 'video-future';
 
 /// 记录每次 PUT 的假互联后端；GET 返回测试预置的 host 值。
-class _RecordingBackend extends InterconnectSyncBackend {
+class _RecordingBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _RecordingBackend()
     : super.withProbe((String url, String token) async => true);
 

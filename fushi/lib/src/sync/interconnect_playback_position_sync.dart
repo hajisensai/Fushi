@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart';
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -64,8 +65,13 @@ PlaybackPositionKind? playbackPositionKindOfDimension(String dimension) =>
 /// 在本端时间戳不新于 host 时把它抬到 `host + 1`，并只把这个戳写回本端的时间戳
 /// pref——**不**写 `VideoBooks.lastPlayedAt`：那一列是「这一集是什么时候看的」，
 /// 抬戳不是一次观看，写进去会污染合集续播锚点（BUG-1542）。
+///
+/// 基线按 host 分槽（BUG-4281）：一个实例一生只绑一台 host（[bind]），基线读写都落
+/// 那台 host 的存储维度，host 读写都钉住它（[InterconnectHostPin]）；会话中途换了
+/// host 时 live 读写抛 [InterconnectHostChangedException]，不拿这台 host 的基线去判
+/// 另一台 host 的值。sweep 每轮、弹窗每次加载各建新实例。
 class InterconnectPlaybackPositionSync {
-  const InterconnectPlaybackPositionSync({
+  InterconnectPlaybackPositionSync({
     required FushiDatabase db,
     required InterconnectSyncBackend backend,
     required this.kind,
@@ -76,11 +82,54 @@ class InterconnectPlaybackPositionSync {
   final InterconnectSyncBackend _backend;
   final PlaybackPositionKind kind;
 
-  /// 本种类基线在 `sync_baselines` 里的 dimension。
+  /// 本种类基线的**逻辑** dimension（冲突上报 / 裁决簿用；落库用 [bind] 后的存储
+  /// 维度）。
   String get dimension => switch (kind) {
     PlaybackPositionKind.video => kInterconnectVideoPositionDimension,
     PlaybackPositionKind.audiobook => kInterconnectAudiobookPositionDimension,
   };
+
+  Future<void>? _binding;
+  InterconnectHostPin? _pin;
+  String? _storageDimension;
+  String? _storagePendingDimension;
+
+  /// 绑定的 host（[bind] 之前为 null）。
+  InterconnectHostPin? get pin => _pin;
+
+  /// 绑到会话此刻所连的 host（BUG-4281）：取作用域、领养升级前的无后缀旧行、记下
+  /// 存储维度。同一实例只绑一次（并发调用 await 同一个）；失败下次重试。不发请求。
+  Future<void> bind() => _binding ??= _bind().then(
+    (_) {},
+    onError: (Object e, StackTrace st) {
+      _binding = null;
+      Error.throwWithStackTrace(e, st);
+    },
+  );
+
+  Future<void> _bind() async {
+    final InterconnectHostScope scope = await _backend.liveHostScope();
+    final String? tag = scope.pin.tag;
+    await ensureBaselinesAdopted(
+      _db,
+      logicalDimensions: <String>[dimension, pendingDimension],
+      tag: tag,
+      adoption: scope.adoption,
+    );
+    _storageDimension = baselineStorageDimension(dimension, tag);
+    _storagePendingDimension = baselineStorageDimension(pendingDimension, tag);
+    _pin = scope.pin;
+  }
+
+  /// 测试入口：绑定后的基线存储维度。
+  @visibleForTesting
+  Future<String> storageDimensionForTest() async {
+    await bind();
+    return _storageDimension!;
+  }
+
+  String get _baseDim => _storageDimension!;
+  String get _pendingDim => _storagePendingDimension!;
 
   /// 本端位置。视频：书架视频的位置在 `VideoBooks.lastPositionMs`，流式视频的位置
   /// 在 `video_remote_position_<uid>` pref，时间戳统一取 `_at_` pref（与此前 sweep
@@ -143,10 +192,13 @@ class InterconnectPlaybackPositionSync {
 
   /// 一次读齐本种类全部条目的基线与「待确认」基线（两条查询），供 sweep 在内存里
   /// 判定 [isSettled]，免逐条 `getSyncBaseline`。
-  Future<PlaybackBaselineSnapshot> loadBaselineSnapshot() async => (
-    baselines: await _db.getSyncBaselinesForDimension(dimension),
-    pending: await _db.getSyncBaselinesForDimension(pendingDimension),
-  );
+  Future<PlaybackBaselineSnapshot> loadBaselineSnapshot() async {
+    await bind();
+    return (
+      baselines: await _db.getSyncBaselinesForDimension(_baseDim),
+      pending: await _db.getSyncBaselinesForDimension(_pendingDim),
+    );
+  }
 
   /// 两端已完全收敛、这一轮无事可做：位置与时间戳都相同、基线已等于该位置、
   /// 没有「待确认」推送。
@@ -170,17 +222,30 @@ class InterconnectPlaybackPositionSync {
     return snapshot.baselines[key] == recorded;
   }
 
-  /// host 端位置（host 无记录 → 0@0）。
-  Future<PlaybackPosition> remotePosition(String key) => switch (kind) {
-    PlaybackPositionKind.video => _backend.remoteVideoPosition(key),
-    PlaybackPositionKind.audiobook => _backend.remoteAudiobookPosition(key),
-  };
+  /// 绑定的 host 端位置（host 无记录 → 0@0）；会话已换 host 时抛
+  /// [InterconnectHostChangedException]。
+  Future<PlaybackPosition> remotePosition(String key) async {
+    await bind();
+    return switch (kind) {
+      PlaybackPositionKind.video => _backend.getLiveVideoPosition(
+        key,
+        pin: _pin,
+      ),
+      PlaybackPositionKind.audiobook => _backend.getLiveAudiobookPosition(
+        key,
+        pin: _pin,
+      ),
+    };
+  }
 
-  /// 「已发出、尚未确认」推送位置的 dimension（BUG-3528）。
+  /// 「已发出、尚未确认」推送位置的逻辑 dimension（BUG-3528）。
   String get pendingDimension => '${dimension}_pending';
 
-  /// 上次两端达成一致的位置（毫秒）；没有基线返回 null。
-  Future<int?> baseline(String key) => _db.getSyncBaseline(key, dimension);
+  /// 与绑定的 host 上次达成一致的位置（毫秒）；没有基线返回 null。
+  Future<int?> baseline(String key) async {
+    await bind();
+    return _db.getSyncBaseline(key, _baseDim);
+  }
 
   /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
   ///
@@ -193,7 +258,7 @@ class InterconnectPlaybackPositionSync {
     required PlaybackPosition remote,
   }) async {
     int? base = await baseline(key);
-    final int? pending = await _db.getSyncBaseline(key, pendingDimension);
+    final int? pending = await _db.getSyncBaseline(key, _pendingDim);
     if (pending != null &&
         remote.updatedAtMs > 0 &&
         pending == remote.positionMs &&
@@ -210,13 +275,21 @@ class InterconnectPlaybackPositionSync {
 
   /// 记下两端此刻达成一致的位置；同时作废「待确认」推送。
   Future<void> recordBaseline(String key, int positionMs) async {
-    await _db.setSyncBaseline(key, dimension, positionMs < 0 ? 0 : positionMs);
-    await _db.deleteSyncBaseline(key, pendingDimension);
+    await bind();
+    await _db.setSyncBaseline(key, _baseDim, positionMs < 0 ? 0 : positionMs);
+    await _db.deleteSyncBaseline(key, _pendingDim);
   }
 
-  /// 推送前记下「待确认」位置（见 [decide]）。
-  Future<void> _recordPending(String key, int positionMs) => _db
-      .setSyncBaseline(key, pendingDimension, positionMs < 0 ? 0 : positionMs);
+  /// 推送前记下「待确认」位置（见 [decide]）。先核对会话仍连着绑定的 host：换了
+  /// host 就不在这台 host 的作用域里留一条注定不会发出的「待确认」行。
+  Future<void> _recordPending(String key, int positionMs) {
+    _backend.checkHostPin(_pin!);
+    return _db.setSyncBaseline(
+      key,
+      _pendingDim,
+      positionMs < 0 ? 0 : positionMs,
+    );
+  }
 
   /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），**host 确认**
   /// 停在推送位置后本端只对齐时间戳 pref、记基线（BUG-4278）。返回推送结局与推送
@@ -247,6 +320,7 @@ class InterconnectPlaybackPositionSync {
     List<int>? expectedRemotePositions,
     int? nowMs,
   }) async {
+    await bind();
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final int remoteTs = trustedStoredSyncStamp(remote.updatedAtMs, nowMs: now);
     int ts = local.updatedAtMs;
@@ -328,7 +402,7 @@ class InterconnectPlaybackPositionSync {
     PlaybackPosition live,
   ) async {
     final int? base = await baseline(key);
-    final int? pending = await _db.getSyncBaseline(key, pendingDimension);
+    final int? pending = await _db.getSyncBaseline(key, _pendingDim);
     final List<int> expected = <int>[
       if (base != null) base,
       if (pending != null && pending != base) pending,
@@ -378,6 +452,7 @@ class InterconnectPlaybackPositionSync {
     PlaybackPosition remote, {
     required PlaybackPosition local,
   }) async {
+    await bind();
     final int now = DateTime.now().millisecondsSinceEpoch;
     final bool landed = await _writeLocalIfUnchanged(key, (
       positionMs: remote.positionMs,
@@ -401,6 +476,7 @@ class InterconnectPlaybackPositionSync {
     required PlaybackPosition remote,
     List<int>? expectedRemotePositions,
   }) async {
+    await bind();
     final int remoteTs = trustedStoredSyncStamp(
       remote.updatedAtMs,
       nowMs: DateTime.now().millisecondsSinceEpoch,
@@ -429,7 +505,7 @@ class InterconnectPlaybackPositionSync {
 
   /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4278），它不再携带信息。
   Future<void> _dropPending(String key) =>
-      _db.deleteSyncBaseline(key, pendingDimension);
+      _db.deleteSyncBaseline(key, _pendingDim);
 
   /// 带前置条件的 live 写入（[InterconnectSyncBackend.putLiveVideoPosition]）。
   Future<LivePositionPush> _putLive(
@@ -442,12 +518,14 @@ class InterconnectPlaybackPositionSync {
       p.positionMs,
       p.updatedAtMs,
       expectedPositionsMs: expectedPositionsMs,
+      pin: _pin,
     ),
     PlaybackPositionKind.audiobook => _backend.putLiveAudiobookPosition(
       key,
       p.positionMs,
       p.updatedAtMs,
       expectedPositionsMs: expectedPositionsMs,
+      pin: _pin,
     ),
   };
 
@@ -517,7 +595,9 @@ class LivePositionReporter {
     required FushiDatabase db,
     required this.backend,
     required PlaybackPositionKind kind,
-  }) : _sync = InterconnectPlaybackPositionSync(
+  }) : _db = db,
+       _kind = kind,
+       _sync = InterconnectPlaybackPositionSync(
          db: db,
          backend: backend,
          kind: kind,
@@ -525,7 +605,11 @@ class LivePositionReporter {
 
   /// 上报目标；播放页换了远端客户端就换一个上报器。
   final InterconnectSyncBackend backend;
-  final InterconnectPlaybackPositionSync _sync;
+  final FushiDatabase _db;
+  final PlaybackPositionKind _kind;
+
+  /// 绑在某一台 host 上的同步实例（BUG-4281）；会话换了 host 时换新实例。
+  InterconnectPlaybackPositionSync _sync;
 
   /// 有上报在途的条目。
   final Set<String> _inFlight = <String>{};
@@ -578,18 +662,44 @@ class LivePositionReporter {
   }
 
   Future<void> _send(String key, PlaybackPosition live) async {
+    final InterconnectPlaybackPositionSync bound = _sync;
     try {
-      if (_held.containsKey(key)) {
-        if (await _sync.baseline(key) == _held[key]) return;
-        _held.remove(key);
+      await _sendWith(bound, key, live);
+    } on InterconnectHostChangedException {
+      // 会话换了 host（BUG-4281）：抛出点在发请求之前，这个值没到任何 host。换一个
+      // 绑到新 host 的实例（held 记的是旧 host 的基线，一并作废），按新 host 的基线
+      // 把这个值重新判定一次。
+      if (identical(_sync, bound)) {
+        _sync = InterconnectPlaybackPositionSync(
+          db: _db,
+          backend: backend,
+          kind: _kind,
+        );
+        _held.clear();
       }
-      final ({LiveReportResult result, int? baseline}) r = await _sync
-          ._reportLiveLocked(key, live);
-      if (r.result == LiveReportResult.held) {
-        _held[key] = r.baseline;
+      try {
+        await _sendWith(_sync, key, live);
+      } catch (e) {
+        debugPrint('[sync] live position report "$key" failed: $e');
       }
     } catch (e) {
       debugPrint('[sync] live position report "$key" failed: $e');
+    }
+  }
+
+  Future<void> _sendWith(
+    InterconnectPlaybackPositionSync sync,
+    String key,
+    PlaybackPosition live,
+  ) async {
+    if (_held.containsKey(key)) {
+      if (await sync.baseline(key) == _held[key]) return;
+      _held.remove(key);
+    }
+    final ({LiveReportResult result, int? baseline}) r = await sync
+        ._reportLiveLocked(key, live);
+    if (r.result == LiveReportResult.held) {
+      _held[key] = r.baseline;
     }
   }
 }

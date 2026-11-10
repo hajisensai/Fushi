@@ -16,6 +16,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-3367：互联视频 / 有声书播放位置此前是纯「取较新时间戳」LWW——两台设备在
 /// 两次同步之间各自看过同一条目，后同步的一端被静默盖掉，用户毫无察觉。现在按
@@ -28,7 +29,8 @@ PlaybackPosition _pos(int positionMs, int updatedAtMs) =>
 
 /// 只实现播放位置 live 端点的假互联后端；PUT 与真 host 同语义（截断未来戳后
 /// 严格较新者胜）。
-class _FakePositionBackend extends InterconnectSyncBackend {
+class _FakePositionBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _FakePositionBackend()
     : super.withProbe((String url, String token) async => true);
 

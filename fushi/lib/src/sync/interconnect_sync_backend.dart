@@ -20,6 +20,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi_engine/sync/sync_channel_scope.dart' show syncRemoteTag;
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi/src/sync/interconnect_package_download.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
@@ -408,6 +409,111 @@ class InterconnectSyncBackend extends SyncBackend
     return _activeHostIdentity!;
   }
 
+  // ── 基线作用域（BUG-4281）──────────────────────────────────────────────────
+
+  /// 会话所连 host 的基线作用域 id：选中候选的 hostId；老条目（无 hostId）为 null，
+  /// 全部共用无后缀的旧维度（URL 不是 host 身份，见取舍 T6）。
+  String? _scopeHostId;
+
+  /// [_scopeHostId] 每变一次（含首次解析）自增。[InterconnectHostPin] 记下取 pin 时
+  /// 的值：同一 hostId 来回切换（a → b → a）也认得出中途换过 host。
+  int _hostScopeSerial = 0;
+
+  static String? _scopeHostIdOf(FushiClientUrl candidate) {
+    final String? id = candidate.hostId;
+    return (id == null || id.isEmpty) ? null : id;
+  }
+
+  /// 先 [_ensureResolved]，再给出当前会话的基线作用域与旧无后缀基线的领养决定。
+  /// 不发额外请求（只读内存里的候选与已解析会话）。测试替身可覆写。
+  Future<InterconnectHostScope> liveHostScope() async {
+    await _ensureResolved();
+    final Set<String> hostIds = <String>{};
+    bool anyLegacy = false;
+    for (final FushiClientUrl c in _candidates) {
+      final String? id = _scopeHostIdOf(c);
+      if (id == null) {
+        anyLegacy = true;
+      } else {
+        hostIds.add(id);
+      }
+    }
+    final LegacyBaselineAdoption adoption = anyLegacy
+        ? LegacyBaselineAdoption.keep
+        : hostIds.length == 1
+        ? LegacyBaselineAdoption.move
+        : LegacyBaselineAdoption.discard;
+    return InterconnectHostScope(
+      pin: InterconnectHostPin(hostId: _scopeHostId, serial: _hostScopeSerial),
+      adoption: adoption,
+    );
+  }
+
+  /// 同步核对 [pin] 仍是当前会话的作用域（hostId 相同且期间没换过 host），否则抛
+  /// [InterconnectHostChangedException]。live 读写在 `_ensureResolved` 之后、发请求
+  /// 之前调它，两步之间没有 `await`，核对与发出用的是同一个连接句柄。测试替身可覆写。
+  void checkHostPin(InterconnectHostPin pin) {
+    if (pin.serial != _hostScopeSerial || pin.hostId != _scopeHostId) {
+      throw InterconnectHostChangedException(
+        expected: pin,
+        actualHostId: _scopeHostId,
+      );
+    }
+  }
+
+  /// 测试入口：模拟会话故障切换到 [hostId] 所在的 host（null = 老条目作用域）。
+  /// hostId 不变时与真实选路一致，不算换 host。
+  @visibleForTesting
+  void debugSwitchHostScope(String? hostId) {
+    if (_hostScopeSerial != 0 && hostId == _scopeHostId) return;
+    _scopeHostId = hostId;
+    _hostScopeSerial++;
+  }
+
+  /// 本次 live 调用钉住的 host（经 [_pinned] 放进 zone）。[_resolvedForLive] 在
+  /// `_ensureResolved` 之后核对它；不在 [_pinned] 里的调用（既有 `remote*` /
+  /// `putRemote*` 的其它调用方）不核对，行为不变。
+  static final Object _pinZoneKey = Object();
+
+  /// 在钉住 [pin] 的 zone 里跑 [body]：其中经过的每一次 host 读写（含兼容层的
+  /// GET / PUT）都各自核对 pin。pin 为 null = 不钉。
+  Future<T> _pinned<T>(InterconnectHostPin? pin, Future<T> Function() body) =>
+      pin == null
+      ? body()
+      : runZoned(body, zoneValues: <Object?, Object?>{_pinZoneKey: pin});
+
+  /// `_ensureResolved` + 本 zone 钉住的 host 的核对（见 [_pinned]）。核对与随后的
+  /// `_ops!.buildRequest` 之间不得有 `await`。
+  Future<void> _resolvedForLive() async {
+    await _ensureResolved();
+    final Object? pin = Zone.current[_pinZoneKey];
+    if (pin is InterconnectHostPin) checkHostPin(pin);
+  }
+
+  /// 钉住 [pin] 读 host 书进度（内容同 [remoteBookProgress]）。
+  Future<RemoteBookProgress> getLiveBookProgress(
+    String bookKey, {
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => remoteBookProgress(bookKey));
+
+  /// 钉住 [pin] 一次取齐 host 书进度（内容同 [remoteBookProgressSnapshot]）。
+  Future<Map<String, RemoteBookProgress>?> getLiveBookProgressSnapshot({
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, remoteBookProgressSnapshot);
+
+  /// 钉住 [pin] 读 host 视频播放位置（内容同 [remoteVideoPosition]）。
+  Future<LivePosition> getLiveVideoPosition(
+    String id, {
+    int episodeIndex = 0,
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => remoteVideoPosition(id, episodeIndex: episodeIndex));
+
+  /// 钉住 [pin] 读 host 有声书播放位置（内容同 [remoteAudiobookPosition]）。
+  Future<LivePosition> getLiveAudiobookPosition(
+    String identity, {
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => remoteAudiobookPosition(identity));
+
   // ── Auth ──────────────────────────────────────────────────────────
 
   @override
@@ -570,6 +676,13 @@ class InterconnectSyncBackend extends SyncBackend
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _activeHostIdentity = chosen.hostId ?? normalized;
     _activeCandidate = chosen;
+    // 基线作用域（BUG-4281）：选中候选的 hostId 变了（含首次）才算换 host；老条目
+    // （无 hostId）之间换地址都是 null，不算。
+    final String? scopeId = _scopeHostIdOf(chosen);
+    if (_hostScopeSerial == 0 || scopeId != _scopeHostId) {
+      _scopeHostId = scopeId;
+      _hostScopeSerial++;
+    }
     _sessionResolved = true;
     final SyncRepository? repo = _learnRepo;
     if (repo != null) {
@@ -1655,7 +1768,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// （离线 / 旧 host 无端点不致崩溃）。
   @override
   Future<RemoteBookProgress> remoteBookProgress(String bookKey) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
@@ -1682,7 +1795,7 @@ class InterconnectSyncBackend extends SyncBackend
     String bookKey,
     RemoteBookProgress progress,
   ) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
@@ -1705,7 +1818,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// 回落逐本 GET。其它失败（网络、鉴权、5xx）照常抛，不降级成「全都没进度」——那会
   /// 让本轮把每本书都当成 host 无记录来判。
   Future<Map<String, RemoteBookProgress>?> remoteBookProgressSnapshot() async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase$kBookProgressBatchPath',
@@ -2262,7 +2375,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<({int positionMs, int updatedAtMs})> remoteAudiobookPosition(
     String bookKey,
   ) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
@@ -2292,7 +2405,7 @@ class InterconnectSyncBackend extends SyncBackend
     int positionMs,
     int updatedAtMs,
   ) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
@@ -3448,7 +3561,7 @@ class InterconnectSyncBackend extends SyncBackend
     String id, {
     int episodeIndex = 0,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
@@ -3477,7 +3590,7 @@ class InterconnectSyncBackend extends SyncBackend
     int updatedAtMs, {
     int episodeIndex = 0,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
@@ -3526,27 +3639,31 @@ class InterconnectSyncBackend extends SyncBackend
     int updatedAtMs, {
     int episodeIndex = 0,
     required List<int> expectedPositionsMs,
+    InterconnectHostPin? pin,
   }) {
     final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
-    return _putLive<LivePosition>(
-      read: () => remoteVideoPosition(id, episodeIndex: episodeIndex),
-      expectedHit: (LivePosition now) =>
-          expectedPositionsMs.contains(now.positionMs),
-      landed: (LivePosition now) => now.positionMs == positionMs,
-      legacyPut: () => putRemoteVideoPosition(
-        id,
-        positionMs,
-        updatedAtMs,
-        episodeIndex: episodeIndex,
+    return _pinned(
+      pin,
+      () => _putLive<LivePosition>(
+        read: () => remoteVideoPosition(id, episodeIndex: episodeIndex),
+        expectedHit: (LivePosition now) =>
+            expectedPositionsMs.contains(now.positionMs),
+        landed: (LivePosition now) => now.positionMs == positionMs,
+        legacyPut: () => putRemoteVideoPosition(
+          id,
+          positionMs,
+          updatedAtMs,
+          episodeIndex: episodeIndex,
+        ),
+        path: () => '/api/library/videos/${_encodeVideoId(id)}/position$query',
+        body: <String, Object?>{
+          'positionMs': positionMs,
+          'positionUpdatedAtMs': updatedAtMs,
+          kLiveExpectedPositionsKey: expectedPositionsMs,
+        },
+        label: 'PUT /api/library/videos/$id/position',
+        parseReceipt: _parsePositionReceipt,
       ),
-      path: () => '/api/library/videos/${_encodeVideoId(id)}/position$query',
-      body: <String, Object?>{
-        'positionMs': positionMs,
-        'positionUpdatedAtMs': updatedAtMs,
-        kLiveExpectedPositionsKey: expectedPositionsMs,
-      },
-      label: 'PUT /api/library/videos/$id/position',
-      parseReceipt: _parsePositionReceipt,
     );
   }
 
@@ -3556,22 +3673,26 @@ class InterconnectSyncBackend extends SyncBackend
     int positionMs,
     int updatedAtMs, {
     required List<int> expectedPositionsMs,
-  }) => _putLive<LivePosition>(
-    read: () => remoteAudiobookPosition(identity),
-    expectedHit: (LivePosition now) =>
-        expectedPositionsMs.contains(now.positionMs),
-    landed: (LivePosition now) => now.positionMs == positionMs,
-    legacyPut: () =>
-        putRemoteAudiobookPosition(identity, positionMs, updatedAtMs),
-    path: () =>
-        '/api/library/audiobooks/${Uri.encodeComponent(identity)}/position',
-    body: <String, Object?>{
-      'positionMs': positionMs,
-      'positionUpdatedAtMs': updatedAtMs,
-      kLiveExpectedPositionsKey: expectedPositionsMs,
-    },
-    label: 'PUT /api/library/audiobooks/$identity/position',
-    parseReceipt: _parsePositionReceipt,
+    InterconnectHostPin? pin,
+  }) => _pinned(
+    pin,
+    () => _putLive<LivePosition>(
+      read: () => remoteAudiobookPosition(identity),
+      expectedHit: (LivePosition now) =>
+          expectedPositionsMs.contains(now.positionMs),
+      landed: (LivePosition now) => now.positionMs == positionMs,
+      legacyPut: () =>
+          putRemoteAudiobookPosition(identity, positionMs, updatedAtMs),
+      path: () =>
+          '/api/library/audiobooks/${Uri.encodeComponent(identity)}/position',
+      body: <String, Object?>{
+        'positionMs': positionMs,
+        'positionUpdatedAtMs': updatedAtMs,
+        kLiveExpectedPositionsKey: expectedPositionsMs,
+      },
+      label: 'PUT /api/library/audiobooks/$identity/position',
+      parseReceipt: _parsePositionReceipt,
+    ),
   );
 
   /// 书进度版 [putLiveVideoPosition]：前置条件是 host 进度落在 [expected] 某个
@@ -3580,29 +3701,33 @@ class InterconnectSyncBackend extends SyncBackend
     String bookKey,
     RemoteBookProgress progress, {
     required List<BookProgressBaseline> expected,
-  }) => _putLive<RemoteBookProgress>(
-    read: () => remoteBookProgress(bookKey),
-    expectedHit: (RemoteBookProgress now) =>
-        expected.any((BookProgressBaseline b) => b.matches(now)),
-    landed: (RemoteBookProgress now) => sameBookPosition(now, progress),
-    legacyPut: () => putRemoteBookProgress(bookKey, progress),
-    path: () => '/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
-    body: <String, Object?>{
-      ...progress.toJson(),
-      kLiveExpectedBookProgressKey: <Map<String, Object?>>[
-        for (final BookProgressBaseline b in expected)
-          <String, Object?>{
-            'sectionIndex': b.sectionIndex,
-            'normCharOffset': b.normCharOffset,
-          },
-      ],
-    },
-    label: 'PUT /api/library/books/$bookKey/progress',
-    parseReceipt: (Object? json) {
-      final LiveBookProgressWriteOutcome? o =
-          LiveBookProgressWriteOutcome.tryParse(json);
-      return o == null ? null : (result: o.result, now: o.current);
-    },
+    InterconnectHostPin? pin,
+  }) => _pinned(
+    pin,
+    () => _putLive<RemoteBookProgress>(
+      read: () => remoteBookProgress(bookKey),
+      expectedHit: (RemoteBookProgress now) =>
+          expected.any((BookProgressBaseline b) => b.matches(now)),
+      landed: (RemoteBookProgress now) => sameBookPosition(now, progress),
+      legacyPut: () => putRemoteBookProgress(bookKey, progress),
+      path: () => '/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
+      body: <String, Object?>{
+        ...progress.toJson(),
+        kLiveExpectedBookProgressKey: <Map<String, Object?>>[
+          for (final BookProgressBaseline b in expected)
+            <String, Object?>{
+              'sectionIndex': b.sectionIndex,
+              'normCharOffset': b.normCharOffset,
+            },
+        ],
+      },
+      label: 'PUT /api/library/books/$bookKey/progress',
+      parseReceipt: (Object? json) {
+        final LiveBookProgressWriteOutcome? o =
+            LiveBookProgressWriteOutcome.tryParse(json);
+        return o == null ? null : (result: o.result, now: o.current);
+      },
+    ),
   );
 
   static ({LiveWriteResult result, LivePosition now})? _parsePositionReceipt(
@@ -3663,7 +3788,7 @@ class InterconnectSyncBackend extends SyncBackend
         return confirmByRead();
       }
     }
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase${path()}',
@@ -3823,6 +3948,70 @@ class InterconnectSyncBackend extends SyncBackend
       ops.close(force: true);
     }
   }
+}
+
+/// 一个互联会话所连 host 的基线作用域（BUG-4281）。
+///
+/// [hostId] == null 表示老条目（配对时没记 hostId）：全部老条目共用无后缀维度，地址
+/// 之间切换不算换 host（URL 不是 host 身份）。[serial] 是取 pin 时会话的作用域计数，
+/// 同一 hostId 中途换走又换回也认得出来。
+class InterconnectHostPin {
+  const InterconnectHostPin({required this.hostId, required this.serial});
+
+  final String? hostId;
+  final int serial;
+
+  /// 基线维度的远端标签（[syncRemoteTag]）；老条目作用域为 null（用无后缀维度）。
+  String? get tag =>
+      hostId == null ? null : syncRemoteTag('fushiServer\n$hostId');
+
+  @override
+  bool operator ==(Object other) =>
+      other is InterconnectHostPin &&
+      other.hostId == hostId &&
+      other.serial == serial;
+
+  @override
+  int get hashCode => Object.hash(hostId, serial);
+
+  @override
+  String toString() => 'InterconnectHostPin($hostId#$serial)';
+}
+
+/// 旧无后缀基线行的领养决定（BUG-4281，由当前已启用候选算出）。
+enum LegacyBaselineAdoption {
+  /// 候选只有一台带 hostId 的 host：旧行全部归它（覆盖目标行后删源行）。
+  move,
+
+  /// 候选有多台带 hostId 的 host：旧行属于哪台不可考，删掉，不领养。
+  discard,
+
+  /// 候选里有无 hostId 的老条目：旧行是老条目作用域正在用的基线，不动。
+  keep,
+}
+
+/// [InterconnectSyncBackend.liveHostScope] 的结果。
+class InterconnectHostScope {
+  const InterconnectHostScope({required this.pin, required this.adoption});
+
+  final InterconnectHostPin pin;
+  final LegacyBaselineAdoption adoption;
+}
+
+/// 会话在钉住之后换了 host（BUG-4281）：用旧 host 的基线对新 host 判定会把另一台
+/// host 的值当成「对端单边改动」静默落到本机。抛出点在发请求之前，host 没收到请求。
+class InterconnectHostChangedException implements Exception {
+  const InterconnectHostChangedException({
+    required this.expected,
+    required this.actualHostId,
+  });
+
+  final InterconnectHostPin expected;
+  final String? actualHostId;
+
+  @override
+  String toString() =>
+      'InterconnectHostChangedException: session moved off $expected';
 }
 
 /// 三方同步一次 live 写入的结局（BUG-4278）。

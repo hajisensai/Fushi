@@ -1,0 +1,21 @@
+## BUG-4281 · 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值
+- **报告**：2026-11-10（用户：审计 sync-live 修复包 V-A1 / D12 / D11 作用域部分）
+- **真实性**：✅ 真 bug（行号以 7f00ae0a6c0 为准）：
+  - live 基线键 `(assetKey, dimension)` 不带 host：`fushi/lib/src/sync/interconnect_book_progress_sync.dart:272-278,292-298,315-328`、`fushi/lib/src/sync/interconnect_playback_position_sync.dart:146-149,183,196,212-215` 只按通道类型的固定维度（`progress_live` / `video_position_live` / `audiobook_position_live` 及 `_pending`）读写；`fushi/lib/src/sync/sync_backend.dart:383` `syncChannelScopeOf` 把互联一律映射成 `fushiServer`。
+  - 会话可在中途换 host：`fushi/lib/src/sync/interconnect_sync_backend.dart:521` 掉线即 `_sessionResolved = false`，`:534-579` `_ensureResolved` 下次请求重新选路，可能落到另一台 hostId 的 host，基线照用上一台的。
+  - 结果：client 配了 A、B 两台 host，与 A 达成一致（基线 = X）后会话切到 B（B 在 Y）——本端仍是 X = 基线、B ≠ 基线 → `applyRemote`，B 的进度静默覆盖本机（新测试修复前实测本端 sectionIndex 被改成 7，期望 2）。
+  - sweep 的播放位置阶段拿 host 清单值直接判定（`fushi/lib/src/sync/sync_orchestrator/books.part.dart:328-333`），清单可能取自另一台 host 的缓存。
+- **[x] ① 修复** — （见下「修复提交」）：
+  - `packages/fushi_engine/lib/sync/sync_channel_scope.dart`：`syncRemoteTag`（sha256 前 16 位十六进制，不把 hostId 明文写库）、`remoteScopedKey`（`<维度>@<tag>`）。
+  - `interconnect_sync_backend.dart`：`_scopeHostId` / `_hostScopeSerial`（`_ensureResolved` 选定候选后按其 hostId 维护，老条目无 hostId 都是 null、换地址不算换 host）；`InterconnectHostPin` / `InterconnectHostScope` / `LegacyBaselineAdoption` / `InterconnectHostChangedException`；`liveHostScope()`、`checkHostPin()`、`debugSwitchHostScope()`；带 pin 的 `getLiveBookProgress` / `getLiveBookProgressSnapshot` / `getLiveVideoPosition` / `getLiveAudiobookPosition`，`putLive*` 加 `pin`。pin 经 zone 下传，live 端点在 `_ensureResolved` 之后、`buildRequest` 之前同步核对（兼容层的每次 GET / PUT 各自核对），换了 host 在发请求前抛。
+  - 新文件 `fushi/lib/src/sync/sync_baseline_scope.dart`：`baselineStorageDimension`、`ensureBaselinesAdopted`（单 host → 旧无后缀行覆盖后搬走；多 host → 删除；有老条目 → 不动；一个事务、进程内按 (db, 存储维度) 只做一次）。
+  - `InterconnectBookProgressSync` / `InterconnectPlaybackPositionSync`：去掉 `const`，`bind()` 绑一台 host（领养 + 存储维度 + pin），所有基线读写走存储维度、host 读写带 pin；公开 `dimension` 仍是逻辑名。推送前记「待确认」行前先核对 pin。`LivePositionReporter` 遇 host 变更换一个绑新 host 的实例，把该值按新 host 重新判定一次。
+  - sweep（`books.part.dart`）：阶段开头 `bind()`；播放位置未收敛条目一律在锁里经带 pin 的读取重读 host 再判定（清单只用来跳过）；逐条遇 `InterconnectHostChangedException` 原样抛，阶段报一条 `live progress: host changed mid-round` 后结束。`videos.part.dart` / `audiobooks.part.dart` 随之去掉不再使用的锁代数参数。
+  - 弹窗：`loadPlaybackPositionConflicts` 同一次加载每种条目共用一个实例（应用用同一实例）；对比弹窗 `SyncCompareEntry.liveHostPin` 记加载时的 host，应用时新绑的 host 不是它就抛、不落地。
+- **[x] ② 加自动化测试** — `fushi/test/sync/interconnect_live_baseline_host_scope_test.dart`（两台真 server + 真 client backend）：V-A1 主场景（修复前红：本端 sectionIndex 7 ≠ 2）、绑定后换 host 读写在发请求前抛且不写 host / 不留待确认行、sweep 第二条起换 host 只报一条且 B 作用域无行、老条目多地址不算换 host、领养五种（单 host 搬走 / 多 host 删除且首轮判冲突 / 混配保留 / 降级再升级覆盖 / 并发绑定不倒退）；`fushi/test/sync/sync_channel_scope_test.dart` 加 `syncRemoteTag` / `remoteScopedKey` 形态。假互联后端经 `fushi/test/helpers/interconnect_legacy_host_scope.dart` 落老条目作用域，既有断言不变。
+- **修复提交**：（待补）
+- **备注**：
+  - 不动 Drift schema；新增的只是带 `@<tag>` 后缀的 `dimension` 取值。
+  - 影响范围（升级 / 降级）：单 host 且带 hostId 的用户旧行整体搬到该 host 名下，判定不变；全是老条目（无 hostId）的用户继续用无后缀行，判定不变；多 host 用户旧行被删，各 host 首轮两端有戳且不同的书判一次冲突（播放位置在 BUG 步骤 9「缺基线不再比墙钟」之后同理）。装回旧版后旧代码读无后缀维度：单 host 用户书籍判一次冲突、播放位置走旧 LWW 一次；再升级时按「覆盖后删除」吸收。不丢进度，只多问一次。
+  - 残留：无 hostId 的多 host 用户仍共用一份基线（URL 不是 host 身份，取舍 T6），学到 hostId 或重新配对后分槽；单地址组不核对 hostId（V-B4）时同一 URL 上换了 host 会套用旧基线（归 client-routing）。
+  - 云通道 / 互联文件箱的 `progress` 基线分槽是计划步骤 8，不在本条。

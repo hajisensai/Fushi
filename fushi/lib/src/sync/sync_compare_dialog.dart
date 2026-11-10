@@ -81,6 +81,7 @@ class SyncCompareEntry {
     this.liveRemoteProgress,
     this.liveLocalAudio,
     this.liveRemoteAudio,
+    this.liveHostPin,
     this.localPage,
     this.remotePage,
     this.pageCount,
@@ -154,6 +155,10 @@ class SyncCompareEntry {
   /// 的有声书或从没记过断点时为 null。
   final PlaybackPosition? liveLocalAudio;
   final PlaybackPosition? liveRemoteAudio;
+
+  /// 加载这一行的 live 值时会话所连的 host（BUG-4281，只在互联通道填）。「应用」时
+  /// 会话已换了 host，这一行看到的 host 值就不属于现在这台 host：不落地。
+  final InterconnectHostPin? liveHostPin;
 
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
@@ -341,14 +346,30 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   // 的冲突和 sweep 报出来的冲突才是同一批。
   final Map<String, _LiveProgressRow> liveProgressByTitle =
       <String, _LiveProgressRow>{};
+  InterconnectHostPin? liveHostPin;
   if (backend is InterconnectSyncBackend) {
     final InterconnectBookProgressSync liveSync = InterconnectBookProgressSync(
       db: db,
       backend: backend,
     );
+    // 这次加载绑在此刻所连的 host 上（BUG-4281）；绑不上（连不到 host）时 live 行
+    // 都退回文件箱口径，与逐本 GET 失败同纪律。
+    bool bound = true;
+    try {
+      await liveSync.bind();
+      liveHostPin = liveSync.pin;
+    } catch (e) {
+      bound = false;
+      developer.log(
+        'Failed to bind live progress to the connected host',
+        error: e,
+        name: 'SyncCompare',
+      );
+    }
     final List<EpubBookRow> liveJobs = <EpubBookRow>[
-      for (final EpubBookRow b in localBooks)
-        if (liveByTitle.containsKey(b.title)) b,
+      if (bound)
+        for (final EpubBookRow b in localBooks)
+          if (liveByTitle.containsKey(b.title)) b,
     ];
     for (var i = 0; i < liveJobs.length; i += batchSize) {
       final List<EpubBookRow> batch = liveJobs.skip(i).take(batchSize).toList();
@@ -520,6 +541,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
         liveRemoteAudio: local == null
             ? null
             : liveExtras?.audioPositionByBookKey[local.bookKey],
+        liveHostPin: liveHostPin,
         localPage: localPage,
         remotePage: remotePage,
         pageCount: pageCount,
@@ -1172,6 +1194,8 @@ Future<SyncApplyOutcome> _applyLiveChoice({
           backend: backend,
           kind: PlaybackPositionKind.audiobook,
         );
+    await audio.bind();
+    _requireSeenHost(audio.pin, entry.liveHostPin);
     // 已持有书锁，再拿这条有声书断点的位置锁（书 → 位置，合法顺序，BUG-4279）。
     final bool audioWrote = await syncResourceLocks.withResources(
       <String>{
@@ -1273,6 +1297,8 @@ Future<bool> _applyLiveProgressChoice({
     db: db,
     backend: backend,
   );
+  await sync.bind();
+  _requireSeenHost(sync.pin, entry.liveHostPin);
   final RemoteBookProgress local = await sync.localProgress(book);
   final RemoteBookProgress remote = await sync.remoteProgress(book);
   final RemoteBookProgress? seen = entry.liveRemoteProgress;
@@ -1296,6 +1322,17 @@ Future<bool> _applyLiveProgressChoice({
   }
   if (remote.updatedAtMs <= 0) return false;
   return sync.applyRemote(book, remote, local: local);
+}
+
+/// 应用时绑定的 host [bound] 必须是加载这一行时的 host [seen]（BUG-4281）：否则这一行
+/// 展示的 host 值来自另一台 host，抛 [InterconnectHostChangedException]、不落地。
+/// [seen] 为 null（加载时没绑上）时不核对，退回应用时重读的 host 值（取舍 T7）。
+void _requireSeenHost(InterconnectHostPin? bound, InterconnectHostPin? seen) {
+  if (seen == null || bound == seen) return;
+  throw InterconnectHostChangedException(
+    expected: seen,
+    actualHostId: bound?.hostId,
+  );
 }
 
 /// 750a：互联下载远端独有书时补下其有声书包（若有）。
@@ -1796,6 +1833,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         liveRemoteProgress: e.liveRemoteProgress,
         liveLocalAudio: e.liveLocalAudio,
         liveRemoteAudio: e.liveRemoteAudio,
+        liveHostPin: e.liveHostPin,
         localPage: e.localPage,
         remotePage: e.remotePage,
         pageCount: e.pageCount,

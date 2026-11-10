@@ -21,6 +21,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-2506：互联通道的冲突对比弹窗此前只看 host 上的 WebDAV 文件箱
 /// （`progress_*.json`，client 自己写、host 从不读回），永远看不到「host DB 与本机
@@ -32,7 +33,8 @@ FushiDatabase _memDb() =>
 /// 一章 1000 字：normCharOffset 0..10000 线性对应阅读分数。
 const String _chaptersJson = '[{"characters":1000}]';
 
-class _FakeInterconnectBackend extends InterconnectSyncBackend {
+class _FakeInterconnectBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _FakeInterconnectBackend({required this.hostProgress})
     : super.withProbe((String url, String token) async => true);
 

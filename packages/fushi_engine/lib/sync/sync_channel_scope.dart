@@ -2,7 +2,21 @@
 /// 聚合同步都按它分账）。
 library;
 
+import 'dart:convert' show utf8;
+
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/sync/sync_backend_type.dart';
+
+/// 远端身份字符串 → 短标签：sha256 的前 16 位十六进制（BUG-4281）。
+///
+/// 「按远端记账」的基线维度要带上远端身份，但身份本身（hostId、地址、账号）不能
+/// 明文写进库——`sync_baselines` 会进诊断导出。同输入恒得同输出。
+String syncRemoteTag(String remoteIdentity) =>
+    sha256.convert(utf8.encode(remoteIdentity)).toString().substring(0, 16);
+
+/// 把基线维度 [base] 挂到远端 [remoteTag]（[syncRemoteTag]）名下：`<base>@<tag>`。
+/// 逻辑维度本身不含 `@`，带后缀的行与无后缀的旧行永不同名。
+String remoteScopedKey(String base, String remoteTag) => '$base@$remoteTag';
 
 /// 一条同步通道在**持久化偏好键**里的身份（BUG-1576 / BUG-1578 / BUG-1579 / BUG-1580）。
 ///

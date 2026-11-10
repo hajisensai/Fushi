@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3842 条。点号进各自文件。
+> 共 3843 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4281](bugs/BUG-4281-sync-baseline-not-scoped-by-remote.md) | ✅ | ✅ | 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值 |
 | [BUG-4280](bugs/BUG-4280-compare-dialog-audiobook-follows-book-choice.md) | ✅ | ✅ | 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定 |
 | [BUG-4279](bugs/BUG-4279-interconnect-live-put-blind-overwrite.md) | ✅ | ✅ | 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗） |
 | [BUG-4278](bugs/BUG-4278-interconnect-live-put-unconfirmed-baseline.md) | ✅ | ✅ | 互联 live 进度 PUT 不回结果，client 无条件记基线 |

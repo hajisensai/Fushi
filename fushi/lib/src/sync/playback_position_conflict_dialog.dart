@@ -53,12 +53,17 @@ Future<List<PlaybackPositionConflictView>> loadPlaybackPositionConflicts({
   }
   final List<PlaybackPositionConflictView> views =
       <PlaybackPositionConflictView>[];
+  // 同一次加载每种条目共用一个实例：都绑在加载时的那台 host 上（BUG-4281）。应用
+  // 用的也是这个实例，会话期间换了 host 时那一条抛 InterconnectHostChangedException、
+  // 不落地。
+  final Map<PlaybackPositionKind, InterconnectPlaybackPositionSync> syncs =
+      <PlaybackPositionKind, InterconnectPlaybackPositionSync>{};
   for (final SyncConflict c in conflicts) {
     final PlaybackPositionKind? kind = playbackPositionKindOfDimension(
       c.dimension,
     );
     if (kind == null) continue;
-    final InterconnectPlaybackPositionSync sync =
+    final InterconnectPlaybackPositionSync sync = syncs[kind] ??=
         InterconnectPlaybackPositionSync(db: db, backend: backend, kind: kind);
     try {
       final PlaybackPosition local = await sync.localPosition(c.assetKey);
