@@ -10,10 +10,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.d
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
     show ImportDropZoneCard, ImportMatchOptionsCard, ImportProgressCard;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
-    show
-        attachAsrCueTokenTiming,
-        finalizeAlignedCues,
-        parseCuesForFormat;
+    show attachAsrCueTokenTiming, finalizeAlignedCues, parseCuesForFormat;
 import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
     show loadBookTextSections;
 import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
