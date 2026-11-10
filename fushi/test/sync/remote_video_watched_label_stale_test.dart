@@ -141,6 +141,14 @@ void main() {
         .singleWhere((RemoteVideoInfo v) => v.id == _uid);
     expect(cached.positionMs, 40000);
 
+    // 客户端开播：与播放页同一入口先按三方判定收敛——全新客户端无本机断点，取
+    // host 的 40 s 并记基线（缺这一步无基线、两端不同，实时上报按 BUG-4392 判
+    // 冲突 held，不再按墙钟 LWW 写 host）。
+    final InterconnectRemotePlaybackSession session =
+        InterconnectRemotePlaybackSession(db: db, backend: backend);
+    addTearDown(session.close);
+    expect(await session.startPositionFor(_uid, fallback: () => 0), 40000);
+
     // 客户端看到 20 s 并上报；host 接着看到 50 s；客户端跑一轮 sweep。
     final InterconnectPlaybackPositionSync sync =
         InterconnectPlaybackPositionSync(
@@ -150,7 +158,10 @@ void main() {
         );
     await prefs.setPref(videoRemotePositionEpisodePrefKey(_uid, 0), 20000);
     await prefs.setPref(videoRemotePositionEpisodeAtPrefKey(_uid, 0), _t1);
-    await sync.reportLive(_uid, (positionMs: 20000, updatedAtMs: _t1));
+    expect(
+      await sync.reportLive(_uid, (positionMs: 20000, updatedAtMs: _t1)),
+      LiveReportResult.confirmed,
+    );
     await _hostWatches(hostDb, 50000, _t2);
     final SyncOrchestrator orch = SyncOrchestrator(
       db: db,

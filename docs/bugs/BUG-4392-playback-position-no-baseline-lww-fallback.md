@@ -8,3 +8,4 @@
   - 影响范围：只有「从未记过基线、两端都有戳且位置不同」的条目改为判冲突、弹窗问一次（多 host 用户、从备份恢复的新设备、新配对的 host；`sync_baselines` 不随备份走）。冲突不丢数据，选完即有基线。单 host 带 hostId 的老用户与全是老条目的用户，存量基线经领养 / 无后缀行继续生效，升级首轮判定不变。
   - 降级回旧版后旧代码对这类条目仍走 LWW（旧行为），不受影响。
   - 播放页实时上报对这类条目返回 held，本次播放不向 host 上报，等弹窗裁决；开播判定与 sweep 同源化归计划步骤 10（BUG `remote-video-open-bypasses-three-way`）。
+- **合入 develop 后的测试调整（2026-11-11，评审 sem-1 / dev-1 / dev-2）**：develop 的 PR #3074 带进两份测试（`fushi/test/sync/interconnect_video_resume_stale_cache_test.dart`、`fushi/test/sync/remote_video_watched_label_stale_test.dart`，BUG-4304 / BUG-4303）在全新客户端（无基线）上直接 `reportLive(20000@t1)`，host 停在 `40000@t0`，依赖本 bug 删掉的「无基线按墙钟 LWW」才写进 host；合并后判 `conflict`、上报 held，夹具断言 host=20000 红，后续 sweep 也判冲突不落 50000。产品语义不回退；夹具补上真实流程里先发生的开播一步——经 `InterconnectRemotePlaybackSession.startPositionFor` 三方判定（全新客户端无本机断点 → applyRemote 落 40000 并记基线），之后上报按前置条件推进 host，BUG-4304 / 4303 原断言不变（标签测试另钉上报 `confirmed`）。未运行（重活队列让给别的会话）。
