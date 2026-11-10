@@ -2707,7 +2707,7 @@ fn search_error(e: search::SearchError) -> Value {
 
 impl SrsCore {
     /// 浏览会话表的锁。建 / 增量更新到一半 panic（锁被毒化）时会话停在半截：丢掉全部会话（持有者登记留着），下次查询
-    /// 整份重建——同建 / 更新出错时丢会话（BUG-4293）。
+    /// 整份重建——同建 / 更新出错时丢会话（BUG-4297）。
     fn browse_sessions(&self) -> MutexGuard<'_, Sessions> {
         self.browse.lock().unwrap_or_else(|poisoned| {
             let mut b = poisoned.into_inner();

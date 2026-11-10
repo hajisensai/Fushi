@@ -1,5 +1,5 @@
 //! 只读连接池：Drift 执行器事务外查询（[super::SrsCore::snapshot_select]）与内核只读命令（[super::SrsCore::reader]，
-//! BUG-4294）各一个。
+//! BUG-4298）各一个。
 //!
 //! 以前 Drift 的事务外查询只有一条读连接、外加 Dart 侧整条 Drift 连接是一个顺序队列：同步里一条几秒的长读
 //! （全量冲突扫描、媒体对账）跑着时，打开卡片 / 牌组设置的毫秒级短读排在它后面等满全程。WAL 下只读连接互不
@@ -16,7 +16,7 @@
 //! - 关闭（[ReadPool::close]）：标记已关闭、丢掉空闲的连接，再等在途的查询把手上那条放回（放回时直接关掉）。
 //!   返回时池子开过的连接一条不剩；之后取连接一律报「已关闭」。
 //! - 放回时连接还停在读事务里（借用方 panic 在 `BEGIN` 与 `ROLLBACK` 之间）就先结束它，结束不了就关掉不放回：池里
-//!   的空闲连接一律不在事务里（BUG-4293）。
+//!   的空闲连接一律不在事务里（BUG-4297）。
 //! - 两个池用同一套机制（store/mod.rs）：内核读命令一个（[super::SrsCore::reader]）、Drift 事务外查询一个，上限都是
 //!   [read_concurrency]，互不占用。
 //! - Drift 那个池的每条连接每条语句自成一个读事务（语句跑完 rusqlite 即复位，不留跨调用的读事务）：开读事务时取最新的
@@ -238,7 +238,7 @@ impl Drop for Pooled<'_> {
     fn drop(&mut self) {
         let Some(conn) = self.conn.take() else { return };
         // 借用方 panic 在 `BEGIN` 与 `ROLLBACK` 之间（内核读命令在读快照里读，SrsCore::read_visible_tx）：连接还停在读
-        // 事务里，放回去下一个借用方就读那份旧快照（BUG-4293）。先结束它；结束不了就不放回，关掉。
+        // 事务里，放回去下一个借用方就读那份旧快照（BUG-4297）。先结束它；结束不了就不放回，关掉。
         let reusable = super::end_read_tx(&conn).is_ok();
         super::trim_idle_cache(&conn);
         let mut st = self.pool.state();
