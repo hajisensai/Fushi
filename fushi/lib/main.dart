@@ -1271,7 +1271,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
       installMihonCloudflareResolver(ref.read(appProvider).navigatorKey);
     }
-    // 发现页直链下载撞上下载网关的人机验证（BUG-4347）时，由宿主弹 WebView 解题。
+    // 发现页直链下载撞上下载网关的人机验证（BUG-4349）时，由宿主弹 WebView 解题。
     installDownloadGatewayChallengeSolver(ref.read(appProvider).navigatorKey);
 
     if (Platform.isAndroid) {
