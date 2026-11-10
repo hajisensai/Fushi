@@ -288,6 +288,12 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
             fileBytes: b,
           ),
         );
+        // 推完 host 那份就是本机这份：以前从 host 下载时记的版本作废，否则书架会把
+        // 本机自己的推送报成「对端有更新」。
+        await forgetRemoteAudiobookRevisionAfterPush(
+          db: _db,
+          key: remoteAudiobookRevisionKeyForBook(key),
+        );
         report.audiobooksExported++;
       } catch (e) {
         report.noteError('live push audiobook "$key"', e);
@@ -326,6 +332,14 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
           packageFile: tmp,
           audioDatabaseRoot: _audioDatabaseRoot,
           bookKeyOverride: key,
+        );
+        // 与书架手动下载同一个记录入口：记下这份包是 host 哪一版，之后 host 换了
+        // 音频 / 字幕书架才会提示「对端有更新」。
+        await recordRemoteAudiobookPackageDownload(
+          db: _db,
+          client: backend,
+          key: remoteAudiobookRevisionKeyForBook(key),
+          package: tmp,
         );
         report.audiobooksImported++;
       } catch (e) {

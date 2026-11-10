@@ -233,6 +233,70 @@ typedef _MaterializeDart =
       ffi.Pointer<ffi.Size>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
+typedef _PredictTssC =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Int32>,
+      ffi.Pointer<ffi.Int64>,
+    );
+typedef _PredictTssDart =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Pointer<ffi.Float>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Int32>,
+      ffi.Pointer<ffi.Int64>,
+    );
+typedef _CalibrationReportC =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      ffi.Size,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Size,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Size,
+      ffi.Pointer<ffi.Int64>,
+    );
+typedef _CalibrationReportDart =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      int,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Float>,
+      int,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Pointer<ffi.Float>,
+      int,
+      ffi.Pointer<ffi.Int64>,
+    );
 typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
 typedef _BootTimeC = ffi.Int64 Function();
@@ -247,6 +311,13 @@ class FushiFsrsBindings {
       ffsrs_retrievability_batch = lib.lookupFunction<_BatchC, _BatchDart>(
         'ffsrs_retrievability_batch',
       ),
+      ffsrs_predict_tss = lib.lookupFunction<_PredictTssC, _PredictTssDart>(
+        'ffsrs_predict_tss',
+      ),
+      ffsrs_calibration_report = lib
+          .lookupFunction<_CalibrationReportC, _CalibrationReportDart>(
+            'ffsrs_calibration_report',
+          ),
       ffsrs_free_string = lib.lookupFunction<_FreeStringC, _FreeStringDart>(
         'ffsrs_free_string',
       ),
@@ -330,6 +401,43 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Float> out,
   )
   ffsrs_retrievability_batch;
+
+  /// 时间序列切分的留出预测（校准图）：训练集同 [ffsrs_fit]，[out] 长 itemCount（没预测的写 NaN）。
+  /// 返回 `{"ok":{"folds","predicted"}}` / `{"error":"…"}`，由 [ffsrs_free_string] 释放。
+  final ffi.Pointer<ffi.Char> Function(
+    ffi.Pointer<ffi.Char> request,
+    ffi.Pointer<ffi.Uint8> ratings,
+    ffi.Pointer<ffi.Float> deltaDays,
+    int reviewCount,
+    ffi.Pointer<ffi.Uint32> cardOffsets,
+    ffi.Pointer<ffi.Int64> cardIds,
+    int cardCount,
+    ffi.Pointer<ffi.Uint32> itemCards,
+    ffi.Pointer<ffi.Uint32> itemLengths,
+    int itemCount,
+    ffi.Pointer<ffi.Float> out,
+    ffi.Pointer<ffi.Int32> cancel,
+    ffi.Pointer<ffi.Int64> progress,
+  )
+  ffsrs_predict_tss;
+
+  /// 校准图与 UM+ 的一整份结果（见 lib.rs `ffsrs_calibration_report`），由 [ffsrs_free_string] 释放。
+  final ffi.Pointer<ffi.Char> Function(
+    ffi.Pointer<ffi.Char> request,
+    int n,
+    ffi.Pointer<ffi.Int64> cards,
+    ffi.Pointer<ffi.Int64> tags,
+    ffi.Pointer<ffi.Int64> ats,
+    ffi.Pointer<ffi.Int64> elapsed,
+    ffi.Pointer<ffi.Int64> actual,
+    ffi.Pointer<ffi.Float> fsrs,
+    int rwkvCount,
+    ffi.Pointer<ffi.Int64> rwkvTags,
+    ffi.Pointer<ffi.Float> rwkvPreds,
+    int scopeCount,
+    ffi.Pointer<ffi.Int64> scopeCards,
+  )
+  ffsrs_calibration_report;
 
   final void Function(ffi.Pointer<ffi.Char> ptr) ffsrs_free_string;
 

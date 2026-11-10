@@ -99,6 +99,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     MediaItem srtItem, {
     required bool audioMissing,
   }) {
+    // 本机从互联对端下载的这本，host 上之后换过音频 / 字幕：副行提示「对端有更新」。
+    final bool updateAvailable = isEpubBackedAudiobookSrt(book)
+        ? _remoteAudiobookHasUpdate(
+            remoteAudiobookRevisionKeyForBook(book.bookKey),
+          )
+        : _remoteAudiobookHasUpdate(remoteAudiobookRevisionKeyForSrt(book.uid));
     final bool hasProgress = _srtBookHasProgress(book);
     final bool completed =
         book.bookKey.isNotEmpty && _completedBookKeys.contains(book.bookKey);
@@ -118,12 +124,27 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         completed: completed,
         audiobook: true,
         health: _getAudiobookInfo(book.bookKey).healthKind,
+        updateAvailable: updateAvailable,
       );
       if (hasProgress) return meta;
       return _ShelfMetaSpec(
         status: meta.status,
         icon: meta.icon,
         tone: meta.tone,
+        key: meta.key,
+        tooltip: meta.tooltip,
+      );
+    }
+    if (updateAvailable) {
+      return _ShelfMetaSpec(
+        status:
+            '${t.profile_media_srtbook} · '
+            '${t.remote_book_audiobook_update_available}',
+        icon: FushiIcons.cloudSync,
+        progress: hasProgress ? fraction : null,
+        completed: completed || fraction >= 1,
+        key: _kAudiobookUpdateMetaKey,
+        tooltip: t.remote_book_audiobook_update_download,
       );
     }
     return _ShelfMetaSpec(
@@ -269,29 +290,25 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // 按 uid 列着这本独立字幕书」（[_remoteSrtRefetchFor]）——BUG-4197：收下来的
       // 字幕书 bookKey 指向收端再生成的正文，不再为空，旧的 bookKey 为空判据会把
       // 入口藏掉。EPUB 有声书的配对行对端不按 uid 列，命不中，入口仍在 EPUB 书卡上。
+      // host 上这本在本机下载之后换过音频 / 字幕（内容版本不同）时，「重新下载」改叫
+      // 「下载更新」并排到第一项（书卡副行同时提示「对端有更新」）。
       if (modules.isEnabled(ModuleId.listening) &&
-          _remoteSrtRefetchFor(book.uid) != null) ...<DialogAction>[
-        DialogListAction(
-          label: t.remote_book_subtitles_refresh,
-          icon: FushiIcons.subtitles,
-          group: DialogActionGroup.content,
-          onPressed: () async {
+          _remoteSrtRefetchFor(book.uid) != null)
+        ..._remoteRefetchActions(
+          updateAvailable: _remoteAudiobookHasUpdate(
+            remoteAudiobookRevisionKeyForSrt(book.uid),
+          ),
+          refreshSubtitles: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
             await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: true);
           },
-        ),
-        DialogListAction(
-          label: t.remote_book_audiobook_redownload,
-          icon: FushiIcons.cloudSync,
-          group: DialogActionGroup.content,
-          onPressed: () async {
+          redownload: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
             await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: false);
           },
         ),
-      ],
       // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
       // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
       DialogListAction(

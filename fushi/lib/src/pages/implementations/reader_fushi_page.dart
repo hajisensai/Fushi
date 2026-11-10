@@ -100,7 +100,7 @@ import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -5015,6 +5015,10 @@ $liveConfigJs
       _recordAudioJumpDeparture(fromGlobalMs, source);
 
   AudioCue? _lookupCue;
+
+  /// 查词暂停期间最近一次在正文 / 歌词里点中的句，关弹窗「从句首重播」用。
+  /// 与 [_lookupCue] 分开存：弹窗收尾的 [clearDictionaryResult] 会先清掉 [_lookupCue]。
+  AudioCue? _lookupRestartCue;
   final LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>
   _audioPositionIndices =
       LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>();

@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -24,7 +25,9 @@ class AdminContext {
     required this.host,
     required this.startedAt,
     this.pruneOverride,
-  }) : _config = config;
+    Map<String, String>? environment,
+  }) : _config = config,
+       _environment = environment;
 
   ServerConfig _config;
   final File configFile;
@@ -39,6 +42,10 @@ class AdminContext {
   /// （启动扫描与 WebUI 触发的）都按它，优先于配置里的 `scan_prune`。
   final bool? pruneOverride;
 
+  /// 进程环境变量（`FUSHI_*` 凭据的先后判断用；测试注入）。
+  final Map<String, String>? _environment;
+  Map<String, String> get environment => _environment ?? Platform.environment;
+
   ServerConfig get config => _config;
 
   /// 改配置 = 改内存 + 写回文件 + 推给正在跑的 host。端口/TLS/绑定这类要重启才
@@ -46,6 +53,8 @@ class AdminContext {
   /// 生效（返回时 P2P 起停已落地）。
   Future<void> updateConfig(ServerConfig next) async {
     _config = next;
+    // 界面语言即时生效：之后的日志 / admin API 错误文案按新语言出。
+    serverLanguage = next.language;
     await next.save(configFile);
     await host.applyConfig(next);
   }
