@@ -44,6 +44,7 @@ import 'package:fushi/src/web_browser/tab_view/web_browser_load_errors.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_scripts.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_settings.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_permissions.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_pull_to_refresh.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_tab_actions.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_visit_recorder.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -129,10 +130,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   /// 本标签页发起查词时，弹窗打开期间给它开静态硬件层（见 [PopupBodyStaticLayerGate]）。
   @override
   Object? get popupBodyWebViewId => _controller?.getViewId();
-  PullToRefreshController? _pullToRefresh;
 
-  /// 当前已应用到 [_pullToRefresh] 的「下拉刷新」偏好（[webBrowserPullToRefresh]）。
-  bool _appliedPullToRefresh = kWebBrowserPullToRefreshDefault;
+  /// 手机端「下拉刷新」控制器与偏好的绑定；桌面 / 测试桩为 null。
+  WebBrowserPullToRefreshBinding? _pullToRefresh;
   late final WebBrowserDownloader _downloader;
   WebBrowserVisitRecorder? _recorder;
   late final InAppWebViewSettings _settings;
@@ -204,17 +204,18 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     if (WebBrowserTabView.debugWebViewBuilder == null) {
       _settings = _buildSettings();
       if (_mobile) {
-        // 控制器无论开关都建：偏好关着时以 `enabled: false` 挂上，设置里重新打开能
-        // 即时生效（[_syncPullToRefresh]），不必重开标签页。
-        _appliedPullToRefresh = webBrowserPullToRefresh(_prefs);
-        _pullToRefresh = PullToRefreshController(
-          settings: PullToRefreshSettings(enabled: _appliedPullToRefresh),
-          onRefresh: () {
-            final InAppWebViewController? controller = _controller;
-            if (controller == null) return;
-            _recorder?.onReload();
-            unawaited(controller.reload());
-          },
+        _pullToRefresh = WebBrowserPullToRefreshBinding(
+          prefs: _prefs,
+          createController: (PullToRefreshSettings settings) =>
+              PullToRefreshController(
+                settings: settings,
+                onRefresh: () {
+                  final InAppWebViewController? controller = _controller;
+                  if (controller == null) return;
+                  _recorder?.onReload();
+                  unawaited(controller.reload());
+                },
+              ),
         );
       }
       if (_tab.windowId != null && _sharedReady) {
@@ -404,25 +405,11 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   }
 
   void _onPrefsChanged() {
-    _syncPullToRefresh();
+    _pullToRefresh?.sync();
     final bool forceDark = _readForceDark();
     if (forceDark == _appliedForceDark) return;
     _appliedForceDark = forceDark;
     unawaited(_applySettings(reload: false));
-  }
-
-  /// 「下拉刷新」开关（反馈 wegu0vewts：太容易误触）。两处都要写：`settings.enabled`
-  /// 供 WebView 还没建出 / 死亡守卫重建时读初始设置；`setEnabled` 改已挂上的原生
-  /// 控件（通道未建时是 no-op，靠前者兜住）。
-  void _syncPullToRefresh() {
-    final PullToRefreshController? controller = _pullToRefresh;
-    if (controller == null) return;
-    final bool enabled = webBrowserPullToRefresh(_prefs);
-    if (enabled == _appliedPullToRefresh) return;
-    _appliedPullToRefresh = enabled;
-    controller.settings.enabled = enabled;
-    if (!enabled) unawaited(controller.endRefreshing());
-    unawaited(controller.setEnabled(enabled));
   }
 
   void _onTabChanged() {
@@ -589,7 +576,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     InAppWebViewController controller,
     WebUri? url,
   ) async {
-    unawaited(_pullToRefresh?.endRefreshing());
+    unawaited(_pullToRefresh?.controller.endRefreshing());
     _tab.update(loading: false);
     await _syncNavigation(controller, url);
     if (!mounted) return;
@@ -669,7 +656,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     if (classified == null || _navigations.isSuperseded(classified.url)) {
       return;
     }
-    unawaited(_pullToRefresh?.endRefreshing());
+    unawaited(_pullToRefresh?.controller.endRefreshing());
     _tab.update(loading: false);
     _tab.setError(classified);
   }
@@ -1318,7 +1305,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         initialUserScripts: UnmodifiableListView<UserScript>(
           _initialUserScripts(adblock),
         ),
-        pullToRefreshController: _pullToRefresh,
+        pullToRefreshController: _pullToRefresh?.controller,
         shouldInterceptRequest: adblock.shouldInterceptRequest,
         onWebViewCreated: _onWebViewCreated,
         onLoadStart: (InAppWebViewController _, WebUri? url) =>
