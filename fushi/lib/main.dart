@@ -46,7 +46,8 @@ import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
-import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsProfileStoresProvider, srsRevisionProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -57,6 +58,7 @@ import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
@@ -99,6 +101,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
 import 'package:fushi/src/diagnostics/native_attribution_probe.dart';
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
@@ -704,6 +707,9 @@ void main([List<String> args = const <String>[]]) {
           processRssBreakdownProbe,
           nativeHeapProbe,
           processThreadCountProbe,
+          // Windows 没有 anon/file/malloc 分项：私有提交 + 系统内存 / 提交余量；解码图缓存各平台都记。
+          windowsMemoryProbe,
+          imageCacheProbe,
           srsMemoryProbe,
           srsOpLedgerProbe,
           UiActivityProbe.probe,
@@ -779,6 +785,10 @@ void main([List<String> args = const <String>[]]) {
             miner,
             noteId,
           );
+      // 互联对端「保存到」激活配置的复习时（主机挖词目标不是复习、不经 hostMiningAnkiRepositoryProvider），
+      // 写入后同样刷新牌组列表 / 首页复习条的计数。
+      appModel.srsCardsAddedNotifier = () =>
+          container.read(srsRevisionProvider.notifier).state++;
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -801,6 +811,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
+      // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
+      // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
+      // 系统临时目录根下的 obf_*。失败由 sweepStaleTemps 自己记错误日志。
+      unawaited(
+        ObfuscatingSyncBackend.sweepStaleTemps().then((int removed) {
+          if (removed > 0) {
+            debugPrint('[startup] removed $removed stale sync obf temp dirs');
+          }
+        }),
+      );
 
       // ── 预热 WebView 引擎 ──────────────────────────────────────────────
       // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
@@ -1216,6 +1237,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         focusMainWindow: _isDesktop ? _focusMainWindowForCtl : null,
         ingestExternalVideo: _ingestExternalVideo,
       ),
+      buildInProcessInvoker: buildInProcessOpInvoker,
     );
     if (_isDesktop) {
       unawaited(_startCtlServer());

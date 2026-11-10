@@ -188,6 +188,8 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.highlight_on_tap',
           'reading_controls.wheel_page_turn_interval',
           'reading_controls.swipe_page_turn_sensitivity',
+          'reading_controls.continuous_chapter_turn_resistance',
+          'reading_controls.continuous_seamless_chapters',
           'reading_controls.page_turn_animation',
           'reading_controls.page_turn_animation_speed',
           'reading_controls.page_turn_follow_drag',
@@ -271,6 +273,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'lookup.auto_read_on_lookup',
           'lookup.audio_volume',
           'lookup.pause_on_lookup',
+          'lookup.restart_sentence_after_lookup',
         ],
       ),
       ReaderSettingsSectionSpec(

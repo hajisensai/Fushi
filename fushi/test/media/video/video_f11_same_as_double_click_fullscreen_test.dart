@@ -183,6 +183,8 @@ VideoPlayerShortcutActions _actions(List<String> log) {
     alignSubtitleToPrev: () => record('alignSubtitleToPrev'),
     alignSubtitleToNext: () => record('alignSubtitleToNext'),
     enterCaret: () => record('enterCaret'),
+    openStudyStatistics: () => record('openStudyStatistics'),
+    toggleStudyClock: () => record('toggleStudyClock'),
     escape: () => record('escape'),
   );
 }

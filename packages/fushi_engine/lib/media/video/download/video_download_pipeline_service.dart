@@ -31,7 +31,12 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discMemberBackingFilePath, discRootForMemberPath;
+import 'package:fushi_engine/media/video/disc/disc_library_import.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_disc_payload.dart'
+    show expandDownloadSelectionToWholeDiscs;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_organizer.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
@@ -39,6 +44,7 @@ import 'package:fushi_engine/media/video/download/video_download_path_mapping.da
 import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry_source.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -73,6 +79,24 @@ enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
 const int kSubtitleVerifyMaxCandidates = 4;
 
 /// 已通过校验的候选 + 它那一次下载的字节（避免落盘前再下一遍）。
+/// 任务原盘入库的结果（BUG-4245）。
+class _DiscImportOutcome {
+  const _DiscImportOutcome({
+    this.anyImported = false,
+    this.failed = const <String>[],
+    this.unreadable = const <String>[],
+  });
+
+  /// 至少一张盘进了库（新建或对齐既有盘合集）。
+  final bool anyImported;
+
+  /// IFO 损坏读不出的 DVD。
+  final List<String> failed;
+
+  /// 不入库的盘根（BD 镜像、数据镜像、选不出标题的半张盘）。
+  final List<String> unreadable;
+}
+
 class _VerifiedSubtitleBytes {
   const _VerifiedSubtitleBytes({
     required this.candidate,
@@ -589,9 +613,14 @@ Future<void> deletePersistedVideoDownloadJob({
         .map(normalizeVideoPath)
         .toSet();
     final VideoBookRepository repository = VideoBookRepository(database);
+    // 原盘标题（BUG-4245）按它背后的真实文件判：蓝光就是 `.mpls` 本身，DVD 是盘的
+    // `VIDEO_TS.IFO`（镜像是 `.iso`）——DVD title 路径是虚拟的，从不在删除清单里。
     final List<String> deletedBookUids = <String>[
       for (final VideoBookRow book in await repository.listAll())
-        if (removedNormalized.contains(normalizeVideoPath(book.videoPath)))
+        if (removedNormalized.contains(normalizeVideoPath(book.videoPath)) ||
+            removedNormalized.contains(
+              normalizeVideoPath(discMemberBackingFilePath(book.videoPath)),
+            ))
           book.bookUid,
     ];
     // 整个任务的入库行一次批量删（BUG-2949）：逐行调单条入口时，每集都要
@@ -694,7 +723,8 @@ Future<void> prepareVideoDownloadJobsForLocalDelete({
 /// 的反方向。
 ///
 /// 命中的任务分两档，判据是**归属**而不是存在性检查：
-/// - **这个任务记录过的 kind=video 文件被本次删除全部覆盖**（且任务已终态）→ 任务
+/// - **这个任务记录过的视频产物（kind=video 文件 + 已落位原盘）被本次删除全部覆盖**
+///   （且任务已终态）→ 任务
 ///   已经没有任何视频产物，删任务行 + 删本任务显式记录过的其余文件（字幕/附件），
 ///   并**只摘种子、不让下载引擎删数据**（`deleteBackendPayload: false`）：引擎删的
 ///   是它自己记账的整个 save_path，范围远超本任务记录过的文件。
@@ -735,17 +765,24 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
         job.lifecycle == VideoDownloadJobLifecycle.failed ||
         job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
     final Set<int> hitIds = <int>{for (final f in hit) f.id};
-    final List<VideoDownloadJobFileRow> videoRows = <VideoDownloadJobFileRow>[
+    // 任务的视频产物 = 每条 kind=video 行各算一件，加上每张已落位的原盘各算一件
+    // （盘内文件行是 kind=other，靠 [videoDownloadJobDiscs] 从路径认回盘，
+    // BUG-4245）。只数 video 行的话，纯原盘任务的产物清单永远是空的，库里把它的
+    // 内容全删了任务也不会整删（gfaUPNp-EI）。
+    final List<Set<int>> products = <Set<int>>[
       for (final VideoDownloadJobFileRow file in files)
-        if (file.kind == 'video') file,
+        if (file.kind == 'video') <int>{file.id},
+      for (final VideoDownloadJobDisc disc in videoDownloadJobDiscs(files))
+        disc.fileIds,
     ];
-    // 「这个任务的视频产物全没了」= 它记过的每一条 video 行都在本次删除里。没记
-    // 路径的 video 行不算被覆盖——判不出它指向哪，就不能拿它当整删的依据。
-    final bool allVideoRowsDeleted =
-        videoRows.isNotEmpty &&
-        videoRows.every((VideoDownloadJobFileRow f) => hitIds.contains(f.id));
+    // 「这个任务的视频产物全没了」= 至少有一件产物，且每件都被本次删除覆盖：
+    // video 行要在命中里，原盘要整张盘的文件行都在命中里。没记路径的 video 行
+    // 不算被覆盖——判不出它指向哪，就不能拿它当整删的依据。
+    final bool allVideoProductsDeleted =
+        products.isNotEmpty &&
+        products.every((Set<int> ids) => hitIds.containsAll(ids));
     try {
-      if (terminal && allVideoRowsDeleted) {
+      if (terminal && allVideoProductsDeleted) {
         if (pipeline != null) {
           await pipeline.deleteJob(
             job.jobId,
@@ -877,10 +914,20 @@ class VideoDownloadScrapeProviderUnavailable implements Exception {
   String toString() => message;
 }
 
-/// 要下载的文件已经被同一颗 torrent 的另一个未完成任务选中（例如同一卷点了
-/// 两次）。与别的「需要处理」区分开，调用方据此提示「已在队列」而不是「失败」。
+/// 要下载的内容已经有任务管着：同一后端 fingerprint 下同一颗 torrent 已有任务
+/// （[VideoDownloadPipelineService.enqueue]），或同一卷的文件已被另一个未完成
+/// 手动任务选中。与别的「需要处理」区分开，调用方据此提示「已在队列」、按已入队
+/// 计数，而不是当成失败（BUG-4270）。[existingJobId] / [existingLifecycle] 指向
+/// 管着它的那条任务，调用方可据此挂接（订阅）或提示去下载页处理。
 class VideoDownloadAlreadyQueued extends VideoDownloadPipelineActionRequired {
-  const VideoDownloadAlreadyQueued(super.message);
+  const VideoDownloadAlreadyQueued(
+    super.message, {
+    this.existingJobId,
+    this.existingLifecycle,
+  });
+
+  final String? existingJobId;
+  final String? existingLifecycle;
 }
 
 class VideoDownloadLeaseLost implements Exception {
@@ -983,14 +1030,16 @@ class VideoDownloadPipelineService {
     required this.backendResolver,
     required this.scrapeCoordinator,
     this.onBackendTaskAdded,
-    this.subtitleRegistry,
+    VideoSubtitleRegistry? subtitleRegistry,
+    VideoSubtitleRegistrySource? subtitleRegistrySource,
     this.subtitleAligner,
-    this.defaultContentLanguage,
+    String? defaultContentLanguage,
+    VideoDownloadSubtitleLanguagesReader? subtitleLanguages,
     this.subtitleLanguageResolver,
     this.discoveryImporter,
     this.onDownloadOnlyCompleted,
     this.manualTorrentDirectory,
-    Iterable<String> preferredSubtitleLanguages = const <String>[],
+    Iterable<String>? preferredSubtitleLanguages,
     String? workerId,
     this.pollInterval = const Duration(seconds: 5),
     this.leaseDuration = const Duration(minutes: 2),
@@ -999,10 +1048,31 @@ class VideoDownloadPipelineService {
     this.videoCoversDirectory,
     this.skipDownloadExtras,
     this.defaultTargetSourceId,
+    this.onDiscCollectionImported,
     DateTime Function()? now,
-  }) : preferredSubtitleLanguages = List<String>.unmodifiable(
-         preferredSubtitleLanguages,
+  }) : assert(
+         subtitleRegistry == null || subtitleRegistrySource == null,
+         'pass either subtitleRegistry or subtitleRegistrySource, not both',
        ),
+       subtitleRegistrySource =
+           subtitleRegistrySource ??
+           (subtitleRegistry == null
+               ? null
+               : FixedVideoSubtitleRegistrySource(subtitleRegistry)),
+       assert(
+         subtitleLanguages == null ||
+             (preferredSubtitleLanguages == null &&
+                 defaultContentLanguage == null),
+         'pass either fixed subtitle languages or a subtitleLanguages reader',
+       ),
+       _subtitleLanguages =
+           subtitleLanguages ??
+           _fixedSubtitleLanguages(
+             VideoDownloadSubtitleLanguages(
+               preferred: preferredSubtitleLanguages ?? const <String>[],
+               defaultContentLanguage: defaultContentLanguage,
+             ),
+           ),
        workerId = workerId ?? 'video-${generateVideoDownloadInstallationId()}',
        _coverExtractor = coverExtractor ?? extractVideoCover,
        _videoRepository = VideoBookRepository(database),
@@ -1010,23 +1080,30 @@ class VideoDownloadPipelineService {
 
   final FushiDatabase database;
   final VideoResourceRegistry resourceRegistry;
-  final VideoSubtitleRegistry? subtitleRegistry;
+
+  /// 字幕阶段的来源入口：每进一次字幕阶段借一份、阶段结束归还（见
+  /// video_subtitle_registry_source.dart）。构造时传 `subtitleRegistry` 等于固定一份
+  /// （[FixedVideoSubtitleRegistrySource]）；null = 本机没配字幕。
+  final VideoSubtitleRegistrySource? subtitleRegistrySource;
 
   /// 装 sidecar 前按视频内嵌字幕轨对时间轴（见 embedded_reference_subtitle_sync.dart）；
   /// null = 不对齐。算法是确定性的，所以续跑时按内容认领已落盘文件照样成立。
   final AutomaticSubtitleAligner? subtitleAligner;
 
-  /// 用户在设置里**显式**选的字幕语言（`jimakuDefaultLanguage`）。非空即硬过滤
-  /// （进 `VideoSubtitleSearchRequest.languages`）——他自己说的。
-  final List<String> preferredSubtitleLanguages;
+  /// 全局字幕语言设置（显式字幕语言 `jimakuDefaultLanguage` + 默认内容语言），每轮
+  /// 字幕阶段开头读一次、整轮共用：构造时传固定值（app：设置改了整套重建管线），
+  /// 或传 `subtitleLanguages` 读取器（服务端：WebUI 改了下一轮即生效，在飞的那一轮
+  /// 不受影响）。见 [VideoDownloadSubtitleLanguages]。
+  final VideoDownloadSubtitleLanguagesReader _subtitleLanguages;
 
-  /// 设置·外观·排版里的默认内容语言。没有显式字幕语言、视频也没有可读语言时的
-  /// 最后一档；空/null = 不表态（**不猜**，见 subtitle_language_preference.dart）。
-  final String? defaultContentLanguage;
+  static VideoDownloadSubtitleLanguagesReader _fixedSubtitleLanguages(
+    VideoDownloadSubtitleLanguages value,
+  ) =>
+      () => value;
 
   /// 按作品的字幕语言（见 video_download_subtitle_language.dart）。字幕阶段先问它：
   /// 拿到语言码就当作用户对**这部作品**的显式选择（硬过滤 + 排序首选），压过
-  /// [preferredSubtitleLanguages]；null = 不表态，走原来的全局链。解析器抛异常
+  /// 全局的显式字幕语言；null = 不表态，走原来的全局链。解析器抛异常
   /// 与本阶段其它异常同等处理（任务按可重试 / needsAttention 落库），**不吞**：
   /// 它读的是本进程内的偏好，抛了就是偏好层坏了，不能伪装成「没记过语言」。
   final VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver;
@@ -1050,6 +1127,11 @@ class VideoDownloadPipelineService {
   /// 手动任务 .torrent 元数据的落盘目录（`<jobId>.torrent`）。null 时手动
   /// 任务只接受磁力链接。
   final Directory? manualTorrentDirectory;
+
+  /// 下载的原盘入库后、盘合集就绪时调用（BUG-4245）：app 在这里补盘面图（封面
+  /// 写入走 app 层服务，与扫描器同一份）。null（服务端 / 测试）= 不补，合集照常
+  /// 回落刮削图。
+  final DiscCollectionReadyHook? onDiscCollectionImported;
 
   /// 订阅新集提醒的配图抽取（默认 [extractVideoCover]，ffmpeg 抽帧）；测试注入。
   final VideoCoverExtractor _coverExtractor;
@@ -1112,81 +1194,97 @@ class VideoDownloadPipelineService {
     if (request.maxAttempts <= 0) {
       throw ArgumentError.value(request.maxAttempts, 'maxAttempts');
     }
-    final String? revivedJobId = await _reviveOrphanedJobForRequest(request);
-    if (revivedJobId != null) return revivedJobId;
-    final int now = _now().millisecondsSinceEpoch;
-    final String jobId = generateVideoDownloadInstallationId();
-    await database.upsertVideoDownloadJob(
-      VideoDownloadJobsCompanion(
-        jobId: Value<String>(jobId),
-        resourceProvider: Value<String>(
-          persistedVideoResourceProviderId(request.resource),
-        ),
-        selectedResourceId: Value<String>(request.resource.remoteId),
-        resourceTitle: Value<String?>(request.resource.title),
-        torrentHash: Value<String?>(request.resource.infoHash?.toLowerCase()),
-        // 候选自带的持久磁链随任务落库（BUG-1784）：重启/重试直接用它物化
-        // payload，不再依赖回索引器重搜发布名——搜不回条目会把还活着的资源
-        // 误报成 notFound。
-        magnetUri: Value<String?>(_persistableMagnetOf(request.resource)),
-        metadataProvider: Value<String?>(request.media.providerId),
-        externalId: Value<String?>(request.media.mediaId),
-        mediaKind: Value<String>(request.media.mediaKind.name),
-        discoveryCategory: Value<String?>(request.media.discoveryCategory.name),
-        // v94（BUG-2003）：发现页完整身份随任务落库。原名/别名/全部外部 id 是
-        // subtitle 阶段与 scrape 阶段的输入，不能在入队这一刻降维成显示名。
-        identityJson: Value<String?>(encodeVideoMediaReference(request.media)),
-        title: Value<String>(request.media.title),
-        year: Value<int?>(request.media.year),
-        season: Value<int?>(request.media.season),
-        coverUrl: Value<String?>(request.coverUrl),
-        backendKind: Value<String>(request.backendTarget.kind),
-        backendProfileId: Value<String?>(request.backendTarget.profileId),
-        fingerprint: Value<String>(request.backendTarget.fingerprint),
-        category: Value<String?>(request.backendTarget.category),
-        targetSourceId: Value<int?>(request.targetSourceId),
-        organizationPolicy: const Value<String>('library'),
-        subtitlePolicy: Value<String>(request.subtitlePolicy.name),
-        lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
-        stage: const Value<String>(VideoDownloadJobStage.enqueue),
-        priority: Value<int>(request.priority),
-        maxAttempts: Value<int>(request.maxAttempts),
-        createdAt: Value<int>(now),
-        updatedAt: Value<int>(now),
-      ),
-    );
-    wake();
-    return jobId;
-  }
-
-  /// 同一 torrent 的旧任务停在 failed / needsAttention、目标来源又已失效时，
-  /// 把它改绑到本次请求的来源并按用户重试恢复，返回它的 jobId（BUG-2755）。
-  ///
-  /// `(fingerprint, torrent_hash)` 唯一：不这样做，新任务行一插就撞唯一索引，
-  /// 这一集改了来源也永远下不回来。旧任务的来源还可用、还在跑或文件已落进来源
-  /// 时返回 null，照常新建（撞索引的老行为不变）。
-  Future<String?> _reviveOrphanedJobForRequest(
-    VideoDownloadEnqueueRequest request,
-  ) async {
-    final String? hash = request.resource.infoHash?.trim().toLowerCase();
-    if (hash == null || hash.isEmpty) return null;
-    final VideoDownloadJobRow? existing = await database
-        .findVideoDownloadJobByFingerprintAndTorrentHash(
-          request.backendTarget.fingerprint,
-          hash,
+    final String? rawHash = request.resource.infoHash?.trim().toLowerCase();
+    final String? hash = rawHash == null || rawHash.isEmpty ? null : rawHash;
+    final String fingerprint = request.backendTarget.fingerprint;
+    // 查重与插入同一事务：`(fingerprint, torrent_hash)` 部分唯一索引只当最后一道
+    // 一致性护栏，重复入队在这里变成领域结果（BUG-4270），并发提交也不会在查完
+    // 与插入之间撞索引冒出原始 SqliteException / DriftRemoteException。
+    final ({String jobId, bool revived}) claim = await database.transaction(
+      () async {
+        if (hash != null) {
+          final VideoDownloadJobRow? existing = await database
+              .findVideoDownloadJobByFingerprintAndTorrentHash(
+                fingerprint,
+                hash,
+              );
+          if (existing != null) {
+            if (await _isOrphanedFromSource(existing)) {
+              // BUG-2755：旧任务停在 failed / needsAttention、目标来源又已失效
+              // —— 改绑到本次请求的来源，事务提交后按用户重试恢复。
+              await database.updateVideoDownloadJob(
+                existing.jobId,
+                VideoDownloadJobsCompanion(
+                  targetSourceId: Value<int?>(request.targetSourceId),
+                  updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+                ),
+              );
+              return (jobId: existing.jobId, revived: true);
+            }
+            // 还在跑 / 已完成 / 失败但来源可用：已有任务管着这颗种子。不偷偷
+            // 复活失败任务（用户应在下载页知情地重试），交给调用方按「已在队列」处理。
+            throw VideoDownloadAlreadyQueued(
+              'This torrent is already queued by job ${existing.jobId} '
+              '(${existing.lifecycle})',
+              existingJobId: existing.jobId,
+              existingLifecycle: existing.lifecycle,
+            );
+          }
+        }
+        final int now = _now().millisecondsSinceEpoch;
+        final String jobId = generateVideoDownloadInstallationId();
+        await database.upsertVideoDownloadJob(
+          VideoDownloadJobsCompanion(
+            jobId: Value<String>(jobId),
+            resourceProvider: Value<String>(
+              persistedVideoResourceProviderId(request.resource),
+            ),
+            selectedResourceId: Value<String>(request.resource.remoteId),
+            resourceTitle: Value<String?>(request.resource.title),
+            torrentHash: Value<String?>(hash),
+            // 候选自带的持久磁链随任务落库（BUG-1784）：重启/重试直接用它物化
+            // payload，不再依赖回索引器重搜发布名——搜不回条目会把还活着的资源
+            // 误报成 notFound。
+            magnetUri: Value<String?>(_persistableMagnetOf(request.resource)),
+            metadataProvider: Value<String?>(request.media.providerId),
+            externalId: Value<String?>(request.media.mediaId),
+            mediaKind: Value<String>(request.media.mediaKind.name),
+            discoveryCategory: Value<String?>(
+              request.media.discoveryCategory.name,
+            ),
+            // v94（BUG-2003）：发现页完整身份随任务落库。原名/别名/全部外部 id 是
+            // subtitle 阶段与 scrape 阶段的输入，不能在入队这一刻降维成显示名。
+            identityJson: Value<String?>(
+              encodeVideoMediaReference(request.media),
+            ),
+            title: Value<String>(request.media.title),
+            year: Value<int?>(request.media.year),
+            season: Value<int?>(request.media.season),
+            coverUrl: Value<String?>(request.coverUrl),
+            backendKind: Value<String>(request.backendTarget.kind),
+            backendProfileId: Value<String?>(request.backendTarget.profileId),
+            fingerprint: Value<String>(request.backendTarget.fingerprint),
+            category: Value<String?>(request.backendTarget.category),
+            targetSourceId: Value<int?>(request.targetSourceId),
+            organizationPolicy: const Value<String>('library'),
+            subtitlePolicy: Value<String>(request.subtitlePolicy.name),
+            lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+            stage: const Value<String>(VideoDownloadJobStage.enqueue),
+            priority: Value<int>(request.priority),
+            maxAttempts: Value<int>(request.maxAttempts),
+            createdAt: Value<int>(now),
+            updatedAt: Value<int>(now),
+          ),
         );
-    if (existing == null || !await _isOrphanedFromSource(existing)) {
-      return null;
-    }
-    await database.updateVideoDownloadJob(
-      existing.jobId,
-      VideoDownloadJobsCompanion(
-        targetSourceId: Value<int?>(request.targetSourceId),
-        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
-      ),
+        return (jobId: jobId, revived: false);
+      },
     );
-    await retryJob(existing.jobId);
-    return existing.jobId;
+    if (claim.revived) {
+      await retryJob(claim.jobId);
+    } else {
+      wake();
+    }
+    return claim.jobId;
   }
 
   /// 任务停在 failed / needsAttention、文件还没落进来源、而目标来源已失效。
@@ -1241,6 +1339,15 @@ class VideoDownloadPipelineService {
           'selection contains an index absent from metainfo',
         );
       }
+      // 原盘只能整张下（BUG-4245）：选了盘里任何一个文件就补齐整张盘，半张盘既
+      // 播不了也入不了库。
+      selectedFileIndexes = expandDownloadSelectionToWholeDiscs(
+        selectedFileIndexes,
+        <int, String>{
+          for (final InspectedTorrentFile file in metainfo.files)
+            file.index: file.path,
+        },
+      );
       // 选中了全部文件 = 整颗 torrent：按普通任务建。否则落库的「选择」没有
       // 一个跳过项，add 阶段 [_applyPersistedFileSelection] 会判它不完整而卡死。
       if (selectedFileIndexes.containsAll(available)) {
@@ -1277,9 +1384,11 @@ class VideoDownloadPipelineService {
         !request.importAfterDownload &&
         _releasesPackSlot(duplicate);
     if (duplicate != null && !waitsForPackHolder) {
-      throw VideoDownloadPipelineActionRequired(
+      throw VideoDownloadAlreadyQueued(
         'This torrent is already managed by job ${duplicate.jobId}; '
         'remove that task before selecting another volume from the same pack',
+        existingJobId: duplicate.jobId,
+        existingLifecycle: duplicate.lifecycle,
       );
     }
     await _rejectOverlappingPackSelection(
@@ -1427,6 +1536,8 @@ class VideoDownloadPipelineService {
       if (overlaps) {
         throw VideoDownloadAlreadyQueued(
           'The selected files are already queued by job ${sibling.jobId}',
+          existingJobId: sibling.jobId,
+          existingLifecycle: sibling.lifecycle,
         );
       }
     }
@@ -2882,17 +2993,10 @@ class VideoDownloadPipelineService {
     final List<TorrentFileEntry> files = await backend.listFiles(hash);
     _ensureLeaseHeld();
     if (files.isEmpty) return;
-    final String? sharedRoot = videoDownloadSharedRoot(files);
-    final Set<int> extras = <int>{
-      for (final TorrentFileEntry file in files)
-        if (isVideoDownloadExtraFile(file.name, sharedRoot: sharedRoot))
-          file.index,
-    };
-    final bool keepsMainVideo = files.any(
-      (TorrentFileEntry file) =>
-          !extras.contains(file.index) && isVideoDownloadVideoFile(file.name),
-    );
-    if (extras.isEmpty || !keepsMainVideo) {
+    // 原盘按整盘判、永远留一份正片（BUG-4245，见
+    // [videoDownloadSkippableExtraIndexes]）。
+    final Set<int> extras = videoDownloadSkippableExtraIndexes(files);
+    if (extras.isEmpty) {
       // 文件列表非空 = 元数据已知，这个结论不会再变。
       _extrasDecidedJobIds.add(job.jobId);
       return;
@@ -3095,6 +3199,11 @@ class VideoDownloadPipelineService {
       defaultSeasonNumber: job.season ?? 1,
       sourceRoot: source.rootPath,
       pathMapping: mapping,
+      legacyUnderscoreNames: await _keepsLegacyOrganizationNames(
+        job,
+        rows,
+        source.rootPath,
+      ),
     );
     // 选择性任务（手动选文件 / 跳过特典）里没选的文件没下完或根本没下：
     // 不排布、不改名、不入库，否则半截文件会被当成已整理的正片或特典。
@@ -3460,6 +3569,38 @@ class VideoDownloadPipelineService {
     return await database.getVideoDownloadJob(job.jobId) ?? job;
   }
 
+  /// 这条任务的整理是否沿用旧的 `_` 替身（判据见
+  /// [videoOrganizationKeepsLegacyNames]）：已落过的整理意图（崩溃重放）优先，
+  /// 其次看来源库根下哪种规则的作品目录已经存在。
+  Future<bool> _keepsLegacyOrganizationNames(
+    VideoDownloadJobRow job,
+    List<VideoDownloadJobFileRow> rows,
+    String sourceRoot,
+  ) async {
+    Future<bool> rootExists({required bool legacy}) async {
+      try {
+        return await Directory(
+          p.join(
+            sourceRoot,
+            videoOrganizationDisplayRoot(job.title, job.year, legacy: legacy),
+          ),
+        ).exists();
+      } on FormatException {
+        return false;
+      }
+    }
+
+    return videoOrganizationKeepsLegacyNames(
+      title: job.title,
+      year: job.year,
+      persistedTargets: <String?>[
+        for (final VideoDownloadJobFileRow row in rows) row.targetRelativePath,
+      ],
+      legacyRootExists: await rootExists(legacy: true),
+      currentRootExists: await rootExists(legacy: false),
+    );
+  }
+
   Future<void> _persistOrganizationIntent(
     VideoDownloadJobRow job,
     VideoOrganizationPlan plan,
@@ -3484,8 +3625,13 @@ class VideoDownloadPipelineService {
           finalAbsolutePath: Value<String?>(file.finalLocalPath),
           // 同包并列作品也是 `video`，靠「无集号」区分（见
           // [isVideoDownloadSiblingWorkRow]）。
+          // 原盘里的文件（BUG-4245）不是散装视频：`other`，入库按整盘走
+          // （[videoDownloadJobDiscs] 从路径认回盘）。
           kind: Value<String>(
-            file.targetRelativePath.contains('/Extras/') && !file.siblingWork
+            file.disc != null
+                ? 'other'
+                : file.targetRelativePath.contains('/Extras/') &&
+                      !file.siblingWork
                 ? 'extra'
                 : 'video',
           ),
@@ -3563,12 +3709,50 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
-    if (subtitleRegistry == null) {
+    // 来源集合按「这一轮」借：宿主运行期间改了 key / 开关，下一轮字幕阶段就用新的；
+    // 这一轮借到的用到本阶段结束，期间配置再变也不会被拔掉。
+    final VideoSubtitleRegistryLease? lease = subtitleRegistrySource?.acquire();
+    if (lease == null) {
       if (policy == VideoDownloadSubtitlePolicy.required) {
         throw const VideoDownloadPipelineActionRequired(
           'Required subtitles are not configured on this device',
         );
       }
+      await _advance(job, VideoDownloadJobStage.import);
+      return;
+    }
+    engineLog.logDiagnostic(
+      'VideoDownloadPipeline',
+      'subtitle stage ${job.jobId}: sources '
+          '${lease.registry.providers.map((VideoSubtitleProvider p) => p.id).join('+')}',
+    );
+    try {
+      await _installSubtitlesWith(
+        job,
+        policy,
+        lease.registry,
+        _subtitleLanguages(),
+      );
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<void> _installSubtitlesWith(
+    VideoDownloadJobRow job,
+    VideoDownloadSubtitlePolicy policy,
+    VideoSubtitleRegistry subtitleRegistry,
+    VideoDownloadSubtitleLanguages languages,
+  ) async {
+    final List<String> preferredSubtitleLanguages = languages.preferred;
+    // 只有原盘、没有散装视频（BUG-4245）：外挂字幕没有挂靠对象——盘的字幕是盘上
+    // 自带的 PGS 轨，库里的成员是 `.mpls` / DVD title。不搜、不按 required 判失败。
+    // 判据是显式的「有原盘且没有 video 行」：没有原盘、video 行又恰好没落盘路径
+    // 的任务不在此列，仍走下面的 required 语义，不静默推进。
+    final List<VideoDownloadJobFileRow> stageRows = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    if (!stageRows.any((VideoDownloadJobFileRow row) => row.kind == 'video') &&
+        videoDownloadJobDiscs(stageRows).isNotEmpty) {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
@@ -3659,7 +3843,7 @@ class VideoDownloadPipelineService {
       try {
         final File video = File(file.finalAbsolutePath!);
         final ProviderBatchResult<VideoSubtitleCandidate> result =
-            await subtitleRegistry!.search(
+            await subtitleRegistry.search(
               VideoSubtitleSearchRequest(
                 media: _mediaReference(
                   job,
@@ -3678,7 +3862,7 @@ class VideoDownloadPipelineService {
             );
         _ensureLeaseHeld();
         if (result.items.isEmpty) {
-          final String message = subtitleRegistry!.describeEmptySearch(result);
+          final String message = subtitleRegistry.describeEmptySearch(result);
           await _recordUnavailableSubtitle(job, file, subtitleId, message);
           if (policy == VideoDownloadSubtitlePolicy.required) {
             throw VideoDownloadPipelineActionRequired(message);
@@ -3717,6 +3901,8 @@ class VideoDownloadPipelineService {
         if (candidate == null) {
           final ({_VerifiedSubtitleBytes? picked, String? reason}) selection =
               await _selectVerifiedSubtitle(
+                subtitleRegistry: subtitleRegistry,
+                languages: languages,
                 candidates: result.items,
                 videoPath: video.path,
                 explicitLanguage: perWorkLanguage,
@@ -3771,7 +3957,7 @@ class VideoDownloadPipelineService {
         // 自动路径已经在校验时下过一次字节，直接复用——校验不该让每条字幕多下
         // 一遍。手动/续跑路径没验过，这里才真去下。
         final VideoSubtitleDownload download =
-            verified?.download ?? await subtitleRegistry!.download(candidate);
+            verified?.download ?? await subtitleRegistry.download(candidate);
         _ensureLeaseHeld();
         // 打包源（SubDL 的 zip）的候选名只是下载前的猜测 `<release>.srt`，真实扩展名
         // 要解包后才知道：sidecar 扩展名以 `download.fileName` 为准（空才回退候选名），
@@ -3887,6 +4073,8 @@ class VideoDownloadPipelineService {
   /// 探测失败就拒收**。
   Future<({_VerifiedSubtitleBytes? picked, String? reason})>
   _selectVerifiedSubtitle({
+    required VideoSubtitleRegistry subtitleRegistry,
+    required VideoDownloadSubtitleLanguages languages,
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
     String? explicitLanguage,
@@ -3905,9 +4093,9 @@ class VideoDownloadPipelineService {
     // 只是排在后面。
     final String? preferredLanguage = resolveSubtitleDownloadLanguage(
       explicitSubtitlePreference:
-          explicitLanguage ?? preferredSubtitleLanguages.firstOrNull,
+          explicitLanguage ?? languages.preferred.firstOrNull,
       contentMetadataLanguage: facts.primaryAudioLanguage,
-      globalDefaultContentLanguage: defaultContentLanguage,
+      globalDefaultContentLanguage: languages.defaultContentLanguage,
     );
     final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
       candidates,
@@ -3923,7 +4111,7 @@ class VideoDownloadPipelineService {
       final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
       try {
-        download = await subtitleRegistry!.download(candidate);
+        download = await subtitleRegistry.download(candidate);
       } on Object catch (error) {
         // 单条下载失败不该中断整轮筛选——下一条可能好好的。
         lastDownloadError = _safeError(error.toString());
@@ -4318,22 +4506,30 @@ class VideoDownloadPipelineService {
     }
     final bool legacy = job.organizationPolicy == 'legacy';
     final MediaSourceRow? source = legacy ? null : await _managedSource(job);
+    final List<VideoDownloadJobFileRow> allRows = await database
+        .getVideoDownloadJobFiles(job.jobId);
     final List<VideoDownloadJobFileRow> files =
-        (await database.getVideoDownloadJobFiles(job.jobId))
+        allRows
             .where(
               (VideoDownloadJobFileRow row) =>
                   row.kind == 'video' && row.finalAbsolutePath != null,
             )
             .toList()
           ..sort(_compareJobFiles);
-    if (files.isEmpty) {
+    // 整盘落位的原盘（BUG-4245）：按盘入库，不当散装视频逐文件建条目。
+    final List<VideoDownloadJobDisc> discs = legacy
+        ? const <VideoDownloadJobDisc>[]
+        : videoDownloadJobDiscs(allRows);
+    if (files.isEmpty && discs.isEmpty) {
       throw const VideoDownloadPipelineActionRequired(
         'No organized video files are available for import',
       );
     }
     final Map<int, String> bookUidByFileId = <int, String>{};
     int? collectionId;
-    if (job.mediaKind == VideoMetadataMediaKind.tv.name) {
+    if (files.isEmpty) {
+      // 只有原盘：没有散装视频要建条目、也没有任务合集。
+    } else if (job.mediaKind == VideoMetadataMediaKind.tv.name) {
       // 同包并列作品（kg41f2PGdC）不进任务合集，见 [_importSiblingWorks]。
       final List<VideoDownloadJobFileRow> episodes = <VideoDownloadJobFileRow>[
         for (final VideoDownloadJobFileRow file in files)
@@ -4458,14 +4654,26 @@ class VideoDownloadPipelineService {
         await _videoRepository.updateSubtitleSource(uid, subtitle.finalPath);
       }
     }
+    final _DiscImportOutcome discOutcome = await _importDiscs(discs, source);
+    _ensureLeaseHeld();
     final int now = _now().millisecondsSinceEpoch;
-    for (final VideoDownloadJobFileRow file in files) {
+    for (final int fileId in <int>{
+      for (final VideoDownloadJobFileRow file in files) file.id,
+      for (final VideoDownloadJobDisc disc in discs) ...disc.fileIds,
+    }) {
       await database.updateVideoDownloadJobFile(
-        file.id,
+        fileId,
         VideoDownloadJobFilesCompanion(
           status: const Value<String>(VideoDownloadJobFileStatus.imported),
           updatedAt: Value<int>(now),
         ),
+      );
+    }
+    if (discOutcome.failed.isNotEmpty) {
+      // IFO 两份都坏的 DVD：盘已原样落位，但读不出标题、进不了库。显式报出来，
+      // 不当成完成（其余盘与散装视频已入库，重放时幂等）。
+      throw VideoDownloadPipelineActionRequired(
+        'Downloaded DVD could not be read: ${discOutcome.failed.join('; ')}',
       );
     }
     if (collectionId != null) {
@@ -4479,7 +4687,18 @@ class VideoDownloadPipelineService {
     }
     database.notifyVideoLibraryChanged();
     // 已确认的 MAL/TMDB 身份直接刮削；无身份作品留给媒体库自动识别或人工确认。
-    if (legacy || _confirmedMetadataLookup(job) == null) {
+    // 什么都没进库（只有 BD 镜像 / 读不出标题的半张盘：文件原样落位、不入库，
+    // BUG-4245）时也没有可刮的作品，任务按「已落位、未入库」完成。
+    if (legacy ||
+        _confirmedMetadataLookup(job) == null ||
+        (files.isEmpty && !discOutcome.anyImported)) {
+      if (files.isEmpty && !discOutcome.anyImported) {
+        engineLog.log(
+          'VideoDownloadPipeline',
+          'Job ${job.jobId}: disc payload placed but not imported '
+              '(${discOutcome.unreadable.join(', ')})',
+        );
+      }
       await _releaseLeaseWith(
         () => database.completeVideoDownloadJob(
           jobId: job.jobId,
@@ -4490,6 +4709,42 @@ class VideoDownloadPipelineService {
       return;
     }
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
+  }
+
+  /// 任务落位的原盘入库（BUG-4245）：与来源扫描器同一个 [DiscLibraryImporter]，
+  /// 一张盘一个盘合集、一条入选标题一行（蓝光成员是 `.mpls`，DVD 是虚拟 title）。
+  /// 下载就是入库的明确意图，用户删过同名合集也重建（`restoreDissolvedGroups`）。
+  /// BD 镜像 / 读不出标题的盘不入库，记进 [_DiscImportOutcome.unreadable]。
+  Future<_DiscImportOutcome> _importDiscs(
+    List<VideoDownloadJobDisc> discs,
+    MediaSourceRow? source,
+  ) async {
+    if (discs.isEmpty) return const _DiscImportOutcome();
+    final DiscLibraryImporter importer = DiscLibraryImporter(database);
+    final DiscLibraryImportReport bluray = await importer.importBlurayDiscs(
+      <String>[
+        for (final VideoDownloadJobDisc disc in discs)
+          if (disc.isFolderBluray) disc.rootPath,
+      ],
+      sourceId: source?.id,
+      restoreDissolvedGroups: true,
+      onCollectionReady: onDiscCollectionImported,
+    );
+    _ensureLeaseHeld();
+    final DiscLibraryImportReport dvd = await importer.importDvdDiscs(
+      <String>[
+        for (final VideoDownloadJobDisc disc in discs)
+          if (!disc.isFolderBluray) disc.rootPath,
+      ],
+      sourceId: source?.id,
+      restoreDissolvedGroups: true,
+    );
+    _ensureLeaseHeld();
+    return _DiscImportOutcome(
+      anyImported: bluray.discs.isNotEmpty || dvd.discs.isNotEmpty,
+      failed: <String>[...bluray.failed, ...dvd.failed],
+      unreadable: <String>[...bluray.unreadable, ...dvd.unreadable],
+    );
   }
 
   /// 合集包里的并列作品（[isVideoDownloadSiblingWorkRow]，kg41f2PGdC）入库：
@@ -4687,6 +4942,24 @@ class VideoDownloadPipelineService {
         await database.assignVideoBookSource(book.bookUid, source.id);
       }
     }
+    // 原盘（BUG-4245）的库行是盘上的标题（`.mpls` / DVD title），按盘根认回，
+    // 同样必须归托管来源。
+    final List<VideoDownloadJobDisc> discs = videoDownloadJobDiscs(rows);
+    if (discs.isNotEmpty) {
+      final Set<String> discRoots = <String>{
+        for (final VideoDownloadJobDisc disc in discs)
+          normalizeVideoPath(disc.rootPath),
+      };
+      for (final VideoBookRow book in await database.allVideoBooks()) {
+        final String? root = discRootForMemberPath(book.videoPath);
+        if (root == null || !discRoots.contains(normalizeVideoPath(root))) {
+          continue;
+        }
+        if (book.sourceId != source.id) {
+          await database.assignVideoBookSource(book.bookUid, source.id);
+        }
+      }
+    }
     _ensureLeaseHeld();
     if (unindexed.isNotEmpty) {
       throw VideoDownloadPipelineActionRequired(
@@ -4702,9 +4975,16 @@ class VideoDownloadPipelineService {
       rows,
       works,
     );
-    // 与库内补刮 / 整源刮削同一个「任务 → 作品」判据（download_confirmed_identity）。
-    final VideoSourceScrapeWork? work = downloadJobWork(job, rows, works);
-    if (work == null) {
+    // 与库内补刮 / 整源刮削同一个「任务 → 作品」判据（download_confirmed_identity）：
+    // 散装视频的那一部 + 每张非特典原盘的盘作品（BUG-4245，多卷盘每卷一部）。
+    final List<VideoSourceScrapeWork> targets = downloadJobWorks(
+      job,
+      rows,
+      works,
+    );
+    final bool looseUnmapped =
+        importedPaths.isNotEmpty && downloadJobWork(job, rows, works) == null;
+    if (targets.isEmpty || looseUnmapped) {
       // 把「为什么」说出来：是计划器压根没看到这些文件（附件分类 / 归属），还是
       // 看到了却分在多个作品里且没有一个是本任务的合集。
       final String detail = pathMatches.isEmpty
@@ -4717,30 +4997,34 @@ class VideoDownloadPipelineService {
                 'none is collection ${job.collectionId}';
       throw VideoDownloadPipelineActionRequired(
         'Imported media could not be mapped exactly back to its managed '
-        'source: $detail',
+        'source: ${discs.isNotEmpty && importedPaths.isEmpty ? 'none of ${discs.length} downloaded disc(s) became a scrapable work of source ${source.id} (${works.length} work(s) planned)' : detail}',
       );
     }
-    final report = await scrapeCoordinator.scrapeImportedWork(
-      work,
-      lookup: lookup,
-    );
-    _ensureLeaseHeld();
-    database.notifyVideoLibraryChanged();
-    if (report.failedOnlyBecauseProviderUnavailable) {
-      // 资料源临时连不上（Jikan 504 之类）：文件已在库，身份已确认，过一会儿原样
-      // 再刮就行——走任务的退避重试，不停在「需要处理」。
-      throw VideoDownloadScrapeProviderUnavailable(report.errors.first.message);
-    }
-    if (report.cancelled ||
-        report.failedWorks > 0 ||
-        report.pendingConfirmations > 0 ||
-        report.succeededWorks == 0) {
-      final String message = report.errors.isNotEmpty
-          ? report.errors.first.message
-          : report.warnings.isNotEmpty
-          ? report.warnings.first.message
-          : 'Exact metadata scrape did not complete';
-      throw VideoDownloadPipelineActionRequired(message);
+    for (final VideoSourceScrapeWork work in targets) {
+      final report = await scrapeCoordinator.scrapeImportedWork(
+        work,
+        lookup: lookup,
+      );
+      _ensureLeaseHeld();
+      database.notifyVideoLibraryChanged();
+      if (report.failedOnlyBecauseProviderUnavailable) {
+        // 资料源临时连不上（Jikan 504 之类）：文件已在库，身份已确认，过一会儿原样
+        // 再刮就行——走任务的退避重试，不停在「需要处理」。
+        throw VideoDownloadScrapeProviderUnavailable(
+          report.errors.first.message,
+        );
+      }
+      if (report.cancelled ||
+          report.failedWorks > 0 ||
+          report.pendingConfirmations > 0 ||
+          report.succeededWorks == 0) {
+        final String message = report.errors.isNotEmpty
+            ? report.errors.first.message
+            : report.warnings.isNotEmpty
+            ? report.warnings.first.message
+            : 'Exact metadata scrape did not complete';
+        throw VideoDownloadPipelineActionRequired(message);
+      }
     }
     await _releaseLeaseWith(
       () => database.completeVideoDownloadJob(

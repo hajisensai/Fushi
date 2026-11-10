@@ -336,7 +336,7 @@ void main() {
       );
     });
 
-    test('kVideoPressEdgeOnlyActions 的成员就是这 10 个（直测，不经 resolver）', () {
+    test('kVideoPressEdgeOnlyActions 的成员就是这 12 个（直测，不经 resolver）', () {
       // 只经 resolver 间接覆盖时，「集合里少一个动作」会退化成「那个动作的重复沿
       // 照常连发」——而连发本身是别的动作的正确行为，间接用例分不出来。
       expect(
@@ -356,11 +356,15 @@ void main() {
           // 暂停句整句扫词：一按换一个词重查，按住连发 = 游标甩过整句。
           ShortcutAction.videoLookupNextWord,
           ShortcutAction.videoLookupPrevWord,
+          // 统计侧栏开关 / 学习计时停续：翻转型，按住连发 = 侧栏闪烁、计时来回翻。
+          ShortcutAction.videoOpenStatistics,
+          ShortcutAction.videoToggleStudyClock,
         },
         reason:
             '按一下翻一次的动作（模糊 / 遮蔽循环 / 隐藏 / 进选词光标 / 制卡 / F11 全屏 / '
-            '小窗 / 小窗控件 / 扫词上下词）——长按不该连发查词、更不该连发制卡、也不该来回翻全屏 / '
-            '来回进出小窗 / 让小窗控件闪烁',
+            '小窗 / 小窗控件 / 扫词上下词 / 统计侧栏 / 学习计时停续）——长按不该连发查词、'
+            '更不该连发制卡、也不该来回翻全屏 / 来回进出小窗 / 让小窗控件闪烁 / 让侧栏开关闪烁 / '
+            '让计时来回翻',
       );
       // 连续型动作绝不能混进来：混进去 = 长按方向键不能连续快进 / 长按不能持续调音量。
       for (final ShortcutAction continuous in <ShortcutAction>[

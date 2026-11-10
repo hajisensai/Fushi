@@ -164,3 +164,37 @@ Known limit: a selection inside an opaque-origin (sandboxed) iframe is not
 visible to the top frame, so the top document's own selection ending can still
 close that frame's menu, as upstream's texture-mode poll already did.
 Guard: `fushi/test/build/inappwebview_android_context_menu_close_guard_test.dart`.
+
+## No cookie flush in onPageFinished (BUG-4261)
+
+Upstream's `onPageFinished` (both `InAppWebViewClient` and
+`InAppWebViewClientCompat`) called `CookieManager.getInstance().flush()`
+(`CookieSyncManager.getInstance().sync()` before API 21) after every page load,
+on the UI thread. `flush()` blocks until Chromium's cookie-store IO thread has
+written the store; under memory / IO pressure or while the process sits in the
+background cgroup that took 5-10 s and produced input-dispatch ANRs (main
+thread parked in `CookieManagerAdapter.flush` <- `onPageFinished`; feedback
+TxKJb9CbRy, JNfbCRiL4C).
+
+The synchronous call is removed. `onPageFinished` now only calls
+`BackgroundCookieFlusher.markDirty()` (an atomic flag set). The
+`BackgroundCookieFlusher` (new file, owned by `InAppWebViewFlutterPlugin`,
+registered as `ComponentCallbacks2` on the application context in
+`onAttachedToEngine`, unregistered in `onDetachedFromEngine`) runs one
+`CookieManager.getInstance().flush()` on a dedicated single-thread daemon
+executor when the process UI is hidden (`onTrimMemory` level >=
+`TRIM_MEMORY_UI_HIDDEN`, or `onLowMemory`). Requests are coalesced: no flush
+when no page finished since the last one, at most one queued task, and a page
+finishing during a running flush schedules exactly one more. The UI thread
+never waits on Chromium's cookie IO thread. This keeps page-set cookies (e.g.
+a Cloudflare clearance cookie) from being lost when the process is killed in
+the background before Chromium's own periodic write. The explicit cookie-write
+paths in `MyCookieManager` (`setCookie`, `deleteCookie`, `deleteCookies`,
+`deleteAllCookies`, `removeSessionCookies`) keep their flush.
+
+Known limit: a process killed while still in the foreground (crash, swipe-kill
+without the UI being hidden first) can still lose cookies a page set since
+Chromium's last periodic write; they are re-obtained on the next visit.
+Incognito (named-profile) cookie stores are not flushed: they are wiped on
+session end anyway.
+Guard: `fushi/test/build/inappwebview_android_page_finished_no_cookie_flush_guard_test.dart`.

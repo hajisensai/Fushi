@@ -11,6 +11,10 @@
 library;
 
 import 'package:fushi_server/src/cli.dart';
+import 'package:fushi_server/src/commands/command_io.dart' as io;
+import 'package:fushi_server/src/commands/leaderboard_commands.dart' as lb;
+import 'package:fushi_server/src/commands/video_cli_support.dart' as video;
+import 'package:fushi_server/src/self_update/server_self_updater.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -31,6 +35,44 @@ void main() {
     test('--help 与子命令同时给出时仍只打帮助并成功返回', () async {
       // help 优先于子命令：不得因为「有 command」就去执行 serve。
       expect(await runFushiServerCli(<String>['--help', 'serve']), 0);
+    });
+  });
+
+  group('远程更新的重启码', () {
+    // 服务单元按退出码区分「冲突 → 停」与「装好新版 → 重启」（README：systemd
+    // RestartPreventExitStatus=75、NSSM AppExit 75 Exit）。重启码一旦与别的码重合，
+    // 数据目录被占的服务端就会被服务管理器无限重启。
+    test('与 CLI 其它任何退出码都不同', () {
+      final List<int> others = <int>[
+        io.kExitOk,
+        io.kExitFailure,
+        io.kExitUsage,
+        io.kExitDataError,
+        io.kExitNoInput,
+        io.kExitUnavailable,
+        io.kExitConflict,
+        lb.kExitDataError,
+        lb.kExitTempFail,
+        lb.kExitNoPerm,
+        video.kExitOk,
+        video.kExitFailure,
+        video.kExitUsage,
+        video.kExitNoInput,
+        video.kExitUnavailable,
+        // ctl 的 HTTP 状态映射（ctl_commands.dart `_exitCodeFor`）。
+        64, 69, 75, 77,
+      ];
+      expect(others, isNot(contains(kExitSelfUpdated)));
+      expect(io.kExitConflict, 75);
+    });
+
+    test('非零，且不落在有既定含义的区间', () {
+      // 非零：systemd Restart=on-failure / NSSM 默认 / WinSW onfailure 才会拉起。
+      expect(kExitSelfUpdated, isNot(0));
+      // LSB 1–7、sysexits 64–78、shell 126+、systemd 自用 200+。
+      expect(kExitSelfUpdated, greaterThan(7));
+      expect(kExitSelfUpdated, isNot(inInclusiveRange(64, 78)));
+      expect(kExitSelfUpdated, lessThan(126));
     });
   });
 }

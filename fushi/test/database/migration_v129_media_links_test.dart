@@ -42,7 +42,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 147);
+    expect(migrated.schemaVersion, 148);
     await migrated.upsertManualMediaLink(
       relation: MediaLinkRelation.adaptation,
       from: book,
@@ -52,7 +52,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 147);
+    expect(probe.select('PRAGMA user_version').first.values.first, 148);
     expect(tableExists(probe, 'media_links'), isTrue);
     final Set<String> columns = <String>{
       for (final sqlite.Row r in probe.select(

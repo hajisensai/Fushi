@@ -26,7 +26,7 @@ void main() {
     expect(await validateFfmpeg(base.copyWith(ffmpegPath: fake.path)), isNull);
     expect(
       await validateFfmpeg(base.copyWith(ffmpegPath: p.join(tmp.path, 'nope'))),
-      startsWith('ffmpeg 路径不存在'),
+      startsWith('ffmpeg path does not exist'),
     );
     expect(
       await validateFfmpeg(
@@ -35,7 +35,7 @@ void main() {
           ffprobePath: p.join(tmp.path, 'nope2'),
         ),
       ),
-      startsWith('ffprobe 路径不存在'),
+      startsWith('ffprobe path does not exist'),
     );
   });
 

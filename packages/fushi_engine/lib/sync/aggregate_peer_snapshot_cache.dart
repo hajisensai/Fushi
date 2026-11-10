@@ -37,6 +37,13 @@ class DirectoryAggregatePeerSnapshotCache
 
   static const String _logSource = 'AggregatePeerSnapshotCache';
 
+  /// 副本格式代号；不一致的旧副本一律当未命中（重新下载一次）。
+  ///
+  /// 2：OneDrive / Dropbox 曾把下载到的快照按 latin1 解码（反馈 hbIHtWi2Q7），那时写下
+  /// 的副本内容就是错码的——远端 revision 没变时它会一直命中、把错码继续折进本地库。
+  /// 解码修好后这些副本必须作废；无代号的副本即修复前写的。
+  static const int kFormat = 2;
+
   /// 文件名只留安全字符；不同名字撞成同一个文件时，内容里的 id 校验会让它未命中。
   static String _safe(String raw) =>
       raw.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
@@ -57,7 +64,9 @@ class DirectoryAggregatePeerSnapshotCache
       if (!await file.exists()) return null;
       final Object? decoded = jsonDecode(await file.readAsString());
       if (decoded is! Map<String, Object?>) return null;
-      if (decoded['id'] != entry.id || decoded['revision'] != revision) {
+      if (decoded['format'] != kFormat ||
+          decoded['id'] != entry.id ||
+          decoded['revision'] != revision) {
         return null;
       }
       return decoded['snapshot'];
@@ -81,6 +90,7 @@ class DirectoryAggregatePeerSnapshotCache
       final File tmp = File('${file.path}.tmp');
       await tmp.writeAsString(
         jsonEncode(<String, Object?>{
+          'format': kFormat,
           'id': entry.id,
           'revision': revision,
           'snapshot': json,

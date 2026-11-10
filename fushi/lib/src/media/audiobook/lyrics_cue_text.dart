@@ -13,8 +13,10 @@ class LyricsCueText {
   final List<EpubRubyAnnotation> rubies;
 }
 
-/// 两条 cue 之间的未认领正文至少这么多个有读音的字才在歌词页灰显
-/// （[LyricsCueTextResolver.skippedTextBetween]）。
+/// 两条 cue 之间的未认领正文至少这么多个有读音的字才整段在歌词页灰显
+/// （[LyricsCueTextResolver.skippedTextBetween]）。门槛只滤有读音的字（模糊命中
+/// 漏掉的词尾）：缝里夹着的整段只有符号的段落（「…………」「――」「◇」）两侧
+/// 歌词行都不认领，不论缝里有没有漏掉的字都照样灰显。
 const int kLyricsSkippedTextMinChars = 2;
 
 /// Resolves display text without changing transcript cues or their token timing.
@@ -87,10 +89,14 @@ class LyricsCueTextResolver {
   /// 的 ASR 漏转），按歌词行同一取法带回 ruby；没有这样的正文返回 null。
   ///
   /// 只在同章、区间都合法、[prev] 止于 [next] 起点之前时产生——跨章、开头结尾、
-  /// 区间重叠或乱序一律不算。缝的归一化字数（有读音的字）不足
-  /// [kLyricsSkippedTextMinChars] 不算（只剩标点 / 空白，或模糊命中漏掉的一个
-  /// 词尾字）。文本区间与两侧歌词行首尾相接：从 [prev] 补完收尾标点之后起，到
-  /// [next] 往回补的开括号之前止，再去掉两端空白。
+  /// 区间重叠或乱序一律不算。文本区间与两侧歌词行首尾相接：从 [prev] 补完收尾
+  /// 标点之后起，到 [next] 往回补的开括号之前止，再去掉两端空白。段内的标点缝
+  /// 被 [_gapSplit] 分给两侧歌词行、取出来是空串；夹在段落之间、两侧都不认领的
+  /// 整段符号（「…………」）留下来（用户反馈 Mvgfc0Ervz：单独成段的省略号 / 引号
+  /// 此前因「标点算 0 字」整段被丢）。缝里有读音的字为 1 ~
+  /// [kLyricsSkippedTextMinChars] - 1 个（模糊命中漏掉的词尾字）时只滤掉这几个
+  /// 字所在的段落，区间里不含有读音字的整段符号仍照常返回
+  /// （[_symbolOnlyParagraphs]）——门槛按要显示的文本算，不按整条缝。
   ///
   /// 纯显示：不改 cue、不改匹配区间，统计 / 制卡 / 高亮仍只认 cue 区间，所以
   /// 已落库的书不用重新对齐就能看到。
@@ -108,10 +114,11 @@ class LyricsCueTextResolver {
         a.sectionIndex >= book.chapters.length ||
         a.normCharStart < 0 ||
         a.normCharEnd <= a.normCharStart ||
-        b.normCharEnd <= b.normCharStart ||
-        b.normCharStart - a.normCharEnd < kLyricsSkippedTextMinChars) {
+        b.normCharEnd <= b.normCharStart) {
       return null;
     }
+    final int readingChars = b.normCharStart - a.normCharEnd;
+    if (readingChars < 0) return null;
     final _Chapter chapter = _chapter(a.sectionIndex);
     final String normalized = chapter.norm.text;
     final int gapStart = a.normCharEnd;
@@ -124,6 +131,9 @@ class LyricsCueTextResolver {
     final String text = chapter.text;
     int from = _tailEnd(chapter, gapStart);
     int to = _headStart(chapter, gapEnd);
+    if (readingChars > 0 && readingChars < kLyricsSkippedTextMinChars) {
+      return _symbolOnlyParagraphs(chapter, from, to, gapStart, gapEnd);
+    }
     while (from < to && _isBlank(text.codeUnitAt(from))) {
       from++;
     }
@@ -134,6 +144,52 @@ class LyricsCueTextResolver {
     final List<EpubRubyAnnotation> rubies = <EpubRubyAnnotation>[];
     _collectRubies(rubies, chapter, from, to, 0);
     return LyricsCueText(text.substring(from, to), rubies);
+  }
+
+  /// `[from, to)` 里所有不含有读音字（归一化下标 `[gapStart, gapEnd)`）的整段
+  /// 段落（两端都落在段落边界上），各自去掉两端空白后按原顺序拼起来；没有返回
+  /// null。用于缝里只有模糊命中漏掉的零星字时：滤掉那几个字所在的段落，两侧都
+  /// 不认领的整段符号照样灰显。
+  static LyricsCueText? _symbolOnlyParagraphs(
+    _Chapter chapter,
+    int from,
+    int to,
+    int gapStart,
+    int gapEnd,
+  ) {
+    final String text = chapter.text;
+    final List<int> starts = chapter.norm.starts;
+    final StringBuffer result = StringBuffer();
+    final List<EpubRubyAnnotation> rubies = <EpubRubyAnnotation>[];
+    int? previous;
+    for (final int e in chapter.blockEnds) {
+      if (e < from) continue;
+      if (e > to) break;
+      final int? begin = previous;
+      previous = e;
+      if (begin == null || begin >= e) continue;
+      bool hasReading = false;
+      for (int i = gapStart; i < gapEnd; i++) {
+        if (starts[i] >= begin && starts[i] < e) {
+          hasReading = true;
+          break;
+        }
+      }
+      if (hasReading) continue;
+      int s = begin;
+      int t = e;
+      while (s < t && _isBlank(text.codeUnitAt(s))) {
+        s++;
+      }
+      while (t > s && _isBlank(text.codeUnitAt(t - 1))) {
+        t--;
+      }
+      if (s >= t) continue;
+      _collectRubies(rubies, chapter, s, t, result.length);
+      result.write(text.substring(s, t));
+    }
+    if (result.isEmpty) return null;
+    return LyricsCueText(result.toString(), rubies);
   }
 
   static bool _isBlank(int c) =>

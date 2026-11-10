@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 成功。
 const int kExitOk = 0;
@@ -68,8 +69,12 @@ class CliIo {
 }
 
 /// 给子命令参数表加上公共的 `--json`。
-ArgParser addJsonFlag(ArgParser parser) =>
-    parser..addFlag('json', negatable: false, help: '机器可读的 JSON 输出');
+ArgParser addJsonFlag(ArgParser parser) => parser
+  ..addFlag(
+    'json',
+    negatable: false,
+    help: tr('机器可读的 JSON 输出', 'Machine-readable JSON output'),
+  );
 
 /// 读子命令上的 `--json`（未登记时按 false）。
 bool jsonFlag(ArgResults results) =>

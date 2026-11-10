@@ -1353,7 +1353,10 @@ void main() {
           !selectedOne.embeddedCache.existsSync() &&
           !selectedTwo.cover.existsSync() &&
           !selectedTwo.subtitle.existsSync() &&
-          !selectedTwo.embeddedCache.existsSync(),
+          !selectedTwo.embeddedCache.existsSync() &&
+          // compact 是删除尾活的最后一步，排在资产回收与选择器副本目录解析（真 IO）
+          // 之后：只等资产消失会在 compact 之前就退出轮询。
+          repo.compactCalls > 0,
     );
 
     expect(repo.deleteCalls, 2);

@@ -23,6 +23,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 词典引擎原生库路径的环境变量覆盖（与 `FUSHI_P2P_LIB` 同一约定）。
 const String kFushiDictsLibEnv = 'FUSHI_DICTS_LIB';
@@ -137,6 +138,7 @@ class ServerDictionaryHost {
     hidden: <String>{},
   );
   int _loadedCount = 0;
+  bool _transformsLoaded = false;
 
   /// 引擎是否可用（原生库加载成功）。不可用时互联的查词 / 词典媒体路由不接线。
   bool get available => _available;
@@ -150,6 +152,12 @@ class ServerDictionaryHost {
   /// 实际使用的原生库路径（null = 按平台默认裸名加载）。
   String? get libraryPath => _libraryPath;
 
+  /// 去屈折变形表目录（null = 没找到，查词只匹配原形）。
+  String? get transformsPath => _transformsDir?.path;
+
+  /// 变形表是否已预载进引擎（给 WebUI 状态行：没装时「食べた」查不到「食べる」）。
+  bool get transformsLoaded => _transformsLoaded;
+
   /// 加载原生库、预载变形表、按 DB 装载词典。原生库加载不了返回 false 并记下原因，
   /// 服务端照常起（词典只是存储中转，查词不可用）。
   Future<bool> start() async {
@@ -159,9 +167,12 @@ class ServerDictionaryHost {
       FushiDicts.initializeTyped();
     } catch (e, st) {
       _available = false;
-      _unavailableReason =
-          'fushidicts 原生库加载失败'
-          '（${_libraryPath ?? 'libfushidicts_ffi 裸名'}）：$e';
+      _unavailableReason = tr(
+        'fushidicts 原生库加载失败'
+            '（${_libraryPath ?? 'libfushidicts_ffi 裸名'}）：$e',
+        'Failed to load the fushidicts native library '
+            '(${_libraryPath ?? 'libfushidicts_ffi bare name'}): $e',
+      );
       engineLog.log('ServerDictionaryHost.start', e, st);
       return false;
     }
@@ -179,8 +190,12 @@ class ServerDictionaryHost {
     if (dir == null) {
       engineLog.logDiagnostic(
         'ServerDictionaryHost',
-        '没找到变形表目录（设 $kFushiTransformsDirEnv 或随包放 share/fushi/transforms），'
-            '查词不做去屈折',
+        tr(
+          '没找到变形表目录（设 $kFushiTransformsDirEnv 或随包放 share/fushi/transforms），'
+              '查词不做去屈折',
+          'Transforms directory not found (set $kFushiTransformsDirEnv or ship share/fushi/transforms); '
+              'lookups will not deinflect',
+        ),
       );
       return;
     }
@@ -188,6 +203,7 @@ class ServerDictionaryHost {
       // 资源键形如 `assets/transforms/<file>`，只取文件名，落到目录内。
       return File(p.join(dir.path, p.basename(assetKey))).readAsString();
     });
+    _transformsLoaded = true;
   }
 
   /// 按 DB 当前的词典元数据重载引擎（导入 / 删除词典后由库服务回调）。
@@ -380,7 +396,7 @@ class ServerDictionaryHost {
     } on FormatException catch (e) {
       engineLog.logDiagnostic(
         'ServerDictionaryHost.media',
-        'payload JSON 解析失败: $e',
+        tr('payload JSON 解析失败: $e', 'Failed to parse payload JSON: $e'),
       );
       return;
     }
@@ -400,7 +416,10 @@ class ServerDictionaryHost {
       if (bytes == null || bytes.isEmpty) {
         engineLog.logDiagnostic(
           'ServerDictionaryHost.media',
-          '词典「$dict」取不到媒体字节: $path',
+          tr(
+            '词典「$dict」取不到媒体字节: $path',
+            'Cannot read media bytes from dictionary "$dict": $path',
+          ),
         );
         continue;
       }

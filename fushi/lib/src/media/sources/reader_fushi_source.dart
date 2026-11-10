@@ -30,6 +30,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
@@ -1568,6 +1569,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
   }
 
+  /// 查词暂停后关弹窗时，从被查词所在那句的句首重播，而不是原地续播。
+  /// 只在 [pauseOnLookup] 开着时有意义（没暂停就没有「恢复」）。默认关。
+  bool get restartSentenceAfterLookup => getPreference<bool>(
+    key: 'restart_sentence_after_lookup',
+    defaultValue: false,
+  );
+
+  Future<void> setRestartSentenceAfterLookup({required bool value}) async {
+    await setPreference<bool>(
+      key: 'restart_sentence_after_lookup',
+      value: value,
+    );
+  }
+
   /// 悬停查词时，鼠标离开字幕与查词浮层后是否自动关掉浮层并恢复播放（免去「再点一下
   /// 空白」那一步）。只作用于**悬停发起**的查词会话——点击查词是显式的「停在这儿看」，
   /// 鼠标移开不关（判据见 `VideoFushiPage.shouldAutoResumeOnHoverLeave`）。
@@ -1746,6 +1761,44 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 连续模式切章阻尼（落盘 key 与 [ReaderSettings.continuousChapterTurnResistance]
+  /// 同一个），`readerSettings` 为 null 的旁路 entry point 走偏好表兜底。
+  ContinuousChapterTurnResistance get continuousChapterTurnResistance =>
+      readerSettings?.continuousChapterTurnResistance ??
+      ContinuousChapterTurnResistance.fromKey(
+        getPreference<String?>(
+          key: ReaderSettings.continuousChapterTurnResistanceKey,
+          defaultValue: null,
+        ),
+      );
+
+  Future<void> setContinuousChapterTurnResistance(
+    ContinuousChapterTurnResistance value,
+  ) async {
+    await (readerSettings?.setContinuousChapterTurnResistance(value) ??
+        setPreference<String>(
+          key: ReaderSettings.continuousChapterTurnResistanceKey,
+          value: value.key,
+        ));
+  }
+
+  /// 连续模式章节无缝衔接（落盘 key 与 [ReaderSettings.continuousSeamlessChapters]
+  /// 同一个，默认关）。
+  bool get continuousSeamlessChapters =>
+      readerSettings?.continuousSeamlessChapters ??
+      getPreference<bool>(
+        key: ReaderSettings.continuousSeamlessChaptersKey,
+        defaultValue: false,
+      );
+
+  Future<void> setContinuousSeamlessChapters(bool value) async {
+    await (readerSettings?.setContinuousSeamlessChapters(value) ??
+        setPreference<bool>(
+          key: ReaderSettings.continuousSeamlessChaptersKey,
+          value: value,
+        ));
+  }
+
   /// 点击翻页区域模板（落盘 key 与 [ReaderSettings.tapZoneLayout] 同一个）。
   ReaderTapZoneLayout get tapZoneLayout =>
       readerSettings?.tapZoneLayout ??
@@ -1832,6 +1885,45 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(
           key: 'show_reading_timer',
           value: !showReadingTimer,
+        ));
+  }
+
+  /// 读数胶囊「本次字数」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showSessionChars =>
+      readerSettings?.showSessionChars ??
+      getPreference<bool>(key: 'show_session_chars', defaultValue: true);
+
+  void toggleShowSessionChars() async {
+    await (readerSettings?.toggleShowSessionChars() ??
+        setPreference<bool>(
+          key: 'show_session_chars',
+          value: !showSessionChars,
+        ));
+  }
+
+  /// 读数胶囊「本次字每时」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showCharsPerHour =>
+      readerSettings?.showCharsPerHour ??
+      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: true);
+
+  void toggleShowCharsPerHour() async {
+    await (readerSettings?.toggleShowCharsPerHour() ??
+        setPreference<bool>(
+          key: 'show_chars_per_hour',
+          value: !showCharsPerHour,
+        ));
+  }
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（分层同 [showTopProgressBar]）。
+  bool get statusFooterPersistent =>
+      readerSettings?.statusFooterPersistent ??
+      getPreference<bool>(key: 'status_footer_persistent', defaultValue: true);
+
+  void toggleStatusFooterPersistent() async {
+    await (readerSettings?.toggleStatusFooterPersistent() ??
+        setPreference<bool>(
+          key: 'status_footer_persistent',
+          value: !statusFooterPersistent,
         ));
   }
 
