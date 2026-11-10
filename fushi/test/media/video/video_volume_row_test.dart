@@ -431,8 +431,8 @@ void main() {
       );
       expect(
         m.group(1),
-        contains('_controlPopoverHideTimer?.cancel()'),
-        reason: 'dispose 须取消浮层延迟关闭 timer',
+        contains('_controlPopoverHoverDismiss.dispose()'),
+        reason: 'dispose 须取消浮层延迟关闭 timer（收起判据持有）',
       );
       expect(
         m.group(1),

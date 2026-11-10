@@ -626,11 +626,14 @@ class FushiContinueSpotlight extends StatelessWidget {
     );
     final double vertical =
         (height - rows * (coverHeight + metaHeight) - gap * (rows - 1)) / 2;
+    // 横向悬停余量按卡的实际宽留：方向待探测的条目（首页视频声明竖海报、
+    // 解出横图后按 16:9 画）要按 [FushiContinueEntry.layoutAspectRatio] 算，
+    // 按声明的竖图比例留会比实际卡窄一大截，首张卡放大后左缘被视口裁掉。
     final double widest =
         coverHeight *
         side.fold<double>(
           0,
-          (double m, FushiContinueEntry e) => math.max(m, e.coverAspectRatio),
+          (double m, FushiContinueEntry e) => math.max(m, e.layoutAspectRatio),
         );
     final EdgeInsets padding = EdgeInsets.symmetric(
       horizontal: widest * (scale - 1) / 2,

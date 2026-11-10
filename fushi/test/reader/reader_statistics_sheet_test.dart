@@ -4,6 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
     show kMinCphSampleMs;
+import 'package:fushi/src/pages/implementations/stat_shared.dart'
+    show formatStatTime;
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart'
+    show ReaderStatNumber;
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -15,6 +19,7 @@ StatFact _fact({
   required String dateKey,
   required int chars,
   required int ms,
+  int pages = 0,
   String mediaKey = 'book-1',
   String title = 'Book',
 }) {
@@ -27,7 +32,7 @@ StatFact _fact({
     hour: -1,
     ms: ms,
     chars: chars,
-    pages: 0,
+    pages: pages,
     lastActiveMs: 0,
   );
 }
@@ -159,6 +164,8 @@ void main() {
         todayCards: 0,
         allChars: 6000,
         allMs: 3600000,
+        todayPages: 0,
+        allPages: 0,
         last7Days: <ReaderBookDayStat>[],
       );
       expect(
@@ -212,6 +219,80 @@ void main() {
     expect(formatGroupedInt(1234567), '1,234,567');
   });
 
+  group('漫画 / 视频预计口径', () {
+    test('每页毫秒：会话样本够用会话，否则退本书累计，都没有为 null', () {
+      const ReaderBookStatTotals book = (
+        todayChars: 0,
+        todayMs: 0,
+        todayLookups: 0,
+        todayCards: 0,
+        allChars: 0,
+        allMs: 3600000,
+        todayPages: 0,
+        allPages: 120,
+        last7Days: <ReaderBookDayStat>[],
+      );
+      expect(
+        mangaMsPerPage(
+          session: (durationMs: 120000, chars: 0, active: true),
+          sessionPages: 4,
+          book: book,
+        ),
+        30000,
+      );
+      expect(
+        mangaMsPerPage(
+          session: (durationMs: 30000, chars: 0, active: true),
+          sessionPages: 4,
+          book: book,
+        ),
+        30000,
+        reason: '会话不足 1 分钟退到累计 3600000 / 120',
+      );
+      expect(
+        mangaMsPerPage(
+          session: (durationMs: 0, chars: 0, active: false),
+          sessionPages: 0,
+          book: kEmptyReaderBookStatTotals,
+        ),
+        isNull,
+      );
+    });
+
+    test('页时：不足 1 分钟为 0', () {
+      expect(readingPagesPerHour(pages: 10, durationMs: 30000), 0);
+      expect(readingPagesPerHour(pages: 10, durationMs: 600000), 60);
+    });
+
+    test('视频剩余 = 剩余片长 ÷ 倍速，未知为 null', () {
+      expect(videoRemainingMs(positionMs: 0, durationMs: 60000), 60000);
+      expect(
+        videoRemainingMs(positionMs: 30000, durationMs: 60000, speed: 1.5),
+        20000,
+      );
+      expect(videoRemainingMs(positionMs: 90000, durationMs: 60000), 0);
+      expect(videoRemainingMs(positionMs: null, durationMs: 60000), isNull);
+      expect(videoRemainingMs(positionMs: 0, durationMs: 0), isNull);
+    });
+
+    test('summarizeReaderBookStats 同时累加页数', () {
+      final DateTime now = DateTime(2026, 11, 7, 12);
+      final String today = FushiDatabase.statDateKeyOf(now);
+      final ReaderBookStatTotals totals = summarizeReaderBookStats(
+        <StatFact>[
+          _fact(dateKey: today, chars: 0, ms: 60000, pages: 7),
+          _fact(dateKey: '2026-10-01', chars: 0, ms: 60000, pages: 5),
+          _fact(dateKey: today, chars: 0, ms: 60000, pages: 9, mediaKey: 'x'),
+        ],
+        bookKey: 'book-1',
+        title: null,
+        now: now,
+      );
+      expect(totals.todayPages, 7);
+      expect(totals.allPages, 12);
+    });
+  });
+
   group('ReaderStatisticsSheet', () {
     const StudySessionTotals session = (
       durationMs: 1458000, // 0:24:18
@@ -225,6 +306,8 @@ void main() {
       todayCards: 12,
       allChars: 62140,
       allMs: 29640000,
+      todayPages: 46,
+      allPages: 318,
       last7Days: <ReaderBookDayStat>[
         (dateKey: '2026-09-30', chars: 0, ms: 0),
         (dateKey: '2026-10-01', chars: 4200, ms: 900000),
@@ -242,6 +325,11 @@ void main() {
       VoidCallback? onTogglePause,
       VoidCallback? onOpenFullRecords,
       StudySessionTotals Function()? sessionTotals,
+      ReaderStatsMedia media = ReaderStatsMedia.book,
+      ReaderPositionSnapshot? position,
+      int sessionPages = 0,
+      double speed = 1,
+      bool showHeader = true,
     }) async {
       tester.view.physicalSize = Size(width, 1200);
       tester.view.devicePixelRatio = 1.0;
@@ -253,14 +341,20 @@ void main() {
               bookTitle: '春の手紙',
               sessionTotals: sessionTotals ?? () => session,
               loadBookTotals: () async => book,
-              progress: () => (
-                chapterCurrent: 1842,
-                chapterTotal: 4930,
-                bookCurrent: 24680,
-                bookTotal: 86420,
-              ),
+              progress: () =>
+                  position ??
+                  (
+                    chapterCurrent: 1842,
+                    chapterTotal: 4930,
+                    bookCurrent: 24680,
+                    bookTotal: 86420,
+                  ),
               onTogglePause: onTogglePause ?? () {},
               onOpenFullRecords: onOpenFullRecords ?? () {},
+              media: media,
+              sessionPages: () => sessionPages,
+              playbackSpeed: () => speed,
+              showHeader: showHeader,
               tick: const Duration(days: 1),
             ),
           ),
@@ -275,6 +369,115 @@ void main() {
     // 计时 ticker 是 Timer.periodic：不卸载会留 pending timer 把测试判红。
     Future<void> disposeSheet(WidgetTester tester) =>
         tester.pumpWidget(const SizedBox.shrink());
+
+    testWidgets('漫画口径：会话页数 + 页时、本章页位置 + 章序、今日 / 累计按页数', (
+      WidgetTester tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        media: ReaderStatsMedia.manga,
+        sessionPages: 30,
+        position: (
+          chapterCurrent: 12,
+          chapterTotal: 40,
+          bookCurrent: 3,
+          bookTotal: 12,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      // 1458s 翻 30 页 → 74 页/时。
+      expect(
+        tester
+            .widget<ReaderStatNumber>(
+              find.byKey(
+                const ValueKey<String>('fushi_reader_stats_session_pph'),
+              ),
+            )
+            .value,
+        '74',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_session_cph')),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          t.reader_stats_position_progress_pages(current: '12', total: '40'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          t.reader_stats_position_progress_chapters(current: '3', total: '12'),
+        ),
+        findsOneWidget,
+      );
+      final Text today = tester.widget<Text>(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_today_chars')),
+      );
+      expect(today.data, '46');
+      expect(find.text(t.stat_metric_pages), findsNWidgets(2));
+      // 只有「本章还需」一格（漫画没有「全书还需」）。
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_finish_book')),
+        findsNothing,
+      );
+      await disposeSheet(tester);
+    });
+
+    testWidgets('视频口径：本集时间位置 + 集序、本集剩余按倍速、字幕字数、无自带页头', (
+      WidgetTester tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        media: ReaderStatsMedia.video,
+        speed: 2,
+        showHeader: false,
+        position: (
+          chapterCurrent: 600000,
+          chapterTotal: 1440000,
+          bookCurrent: 3,
+          bookTotal: 12,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text(t.video_stats_title), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_close')),
+        findsNothing,
+      );
+      expect(find.text(t.video_stats_session_title), findsOneWidget);
+      expect(find.text('0:10:00 / 0:24:00'), findsOneWidget);
+      expect(
+        find.text(t.video_stats_position_episodes(current: '3', total: '12')),
+        findsOneWidget,
+      );
+      expect(find.text(t.stat_metric_subtitle_chars), findsNWidgets(2));
+      // 剩 14 分钟片长、2× 播放 → 真实 7 分钟。
+      final Text finish = tester.widget<Text>(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_finish_chapter')),
+      );
+      expect(finish.data, formatStatTime(420000));
+      await disposeSheet(tester);
+    });
+
+    testWidgets('视频单集：不画集序行', (WidgetTester tester) async {
+      await pumpSheet(
+        tester,
+        media: ReaderStatsMedia.video,
+        position: (
+          chapterCurrent: 0,
+          chapterTotal: 1440000,
+          bookCurrent: 1,
+          bookTotal: 1,
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_book_bar')),
+        findsNothing,
+      );
+      await disposeSheet(tester);
+    });
 
     testWidgets('样稿六块齐全：秒表 / 位置进度条 / 今天 / 累计 / 预计读完 / 完整记录', (
       WidgetTester tester,

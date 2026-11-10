@@ -229,24 +229,15 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   ///
   /// 同步必须排在重读列表**之前**：同步会往本地库里落新书和新进度，先刷列表就会漏掉
   /// 本次同步的产物，用户得再下拉一次才看得见。没配同步后端时
-  /// [runManualSyncWithFeedback] 直接返回 notConfigured（且不弹提示），退化成纯列表
+  /// [runPullToRefreshSync] 直接返回 notConfigured（且不弹提示），退化成纯列表
   /// 刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteBooks] 内部吞异常返回 failed 态，await 不会抛，指示器必定收起；
   /// 失败态在 await 后消费成一条可见 SnackBar（BUG-1693 批审计 P1——此前
   /// `failed:true` 置了没人读，显式下拉失败与成功在 UI 上一模一样）。
   Future<void> _pullToRefreshBooks() async {
-    // 同步模块关掉时只摘掉「同步」这一段，下拉手势本身保留（后半段重读本地列表照跑）
-    // ——下拉刷新本地书架与同步无关，一起关掉是误伤。
-    if (_moduleVisibility.isEnabled(ModuleId.sync)) {
-      await runManualSyncWithFeedback(
-        context: context,
-        appModel: appModel,
-        // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-        // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-        announceNotConfigured: false,
-        announceBusy: false,
-      );
-    }
+    // 同步模块关掉时只摘掉「同步」这一段（门在 [runPullToRefreshSync] 里），下拉手势
+    // 本身保留（后半段重读本地列表照跑）——下拉刷新本地书架与同步无关，一起关掉是误伤。
+    await runPullToRefreshSync(context: context, appModel: appModel);
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider);
     ref.invalidate(srtBooksProvider);
