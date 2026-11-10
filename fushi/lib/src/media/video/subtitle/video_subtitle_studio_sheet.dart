@@ -403,7 +403,7 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(tokens.radii.control),
               child: ColoredBox(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: tokens.surfaces.overlay,
                 child: frame != null
                     ? Image.memory(
                         frame,

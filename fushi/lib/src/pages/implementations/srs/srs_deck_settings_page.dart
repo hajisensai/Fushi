@@ -1142,8 +1142,13 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
               key: const ValueKey<String>('srs-settings-review-order-rwkv'),
               title: t.srs_settings_review_order,
               subtitle: t.srs_settings_review_order_rwkv_hint,
+              // 只读值是一段文字（「Lowest retrievability first」），不是自定宽的控件：
+              // 非 flex 的 trailing 会按固有宽度量，窄屏上把标题挤成一字一行、整行横向溢出。
+              // 给有界宽度让它自己换行。
+              trailingFlexible: true,
               trailing: Text(
                 t.srs_settings_review_order_retrievability,
+                textAlign: TextAlign.end,
                 style: context.fushiType.bodyMedium.copyWith(
                   color: Theme.of(context).disabledColor,
                 ),

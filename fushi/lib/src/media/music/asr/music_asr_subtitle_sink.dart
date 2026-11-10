@@ -17,6 +17,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
@@ -116,8 +117,10 @@ class MusicAsrSubtitleSink implements AppSubtitleOutputSink {
       parse: _parse,
     );
     if (stagedAudio.contains(episode.videoPath)) {
-      final File staged = File(episode.videoPath);
-      if (await staged.exists()) await staged.delete();
+      // 暂存的整文件音频是真实磁盘文件（非 DVD 虚拟路径），按「路径本身是不是文件」判。
+      if (await videoPathFileExists(episode.videoPath)) {
+        await File(episode.videoPath).delete();
+      }
     }
     return wrote;
   }
