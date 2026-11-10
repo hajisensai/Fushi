@@ -355,7 +355,10 @@ void main() {
     expect(recognizer.calls, <String>['$uid.wav']);
     expect(job.registeredBookUids, <String>[uid]);
     expect(staged.existsSync(), isFalse, reason: '副本只是转写输入，登记完删掉');
-    expect(p.isWithin(out.path, svc.subtitlePathFor(target, staged.path)), isTrue);
+    expect(
+      p.isWithin(out.path, svc.subtitlePathFor(target, staged.path)),
+      isTrue,
+    );
 
     final MusicLyricsResolution? r = await lyrics.resolve(
       MusicLyricsTrackRef(trackUid: uid, path: pluginPath, title: 'トラック1'),

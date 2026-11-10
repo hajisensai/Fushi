@@ -63,7 +63,13 @@ void main() {
   test('副本目录与文件名：asr_jobs/music_subtitles/plugin_audio/<trackUid>.wav', () {
     expect(
       root.path,
-      p.join(tmp.path, 'support', 'asr_jobs', 'music_subtitles', 'plugin_audio'),
+      p.join(
+        tmp.path,
+        'support',
+        'asr_jobs',
+        'music_subtitles',
+        'plugin_audio',
+      ),
     );
     expect(
       musicPluginAsrAudioFileIn(root, item.trackUid).path,
@@ -86,7 +92,10 @@ void main() {
     expect(headers, lessThan(input));
     expect(args[headers + 1], 'X-Token: abc\r\n');
     expect(args, containsAllInOrder(<String>['-ac', '1', '-ar', '16000']));
-    expect(args, containsAllInOrder(<String>['-c:a', 'pcm_s16le', '-f', 'wav']));
+    expect(
+      args,
+      containsAllInOrder(<String>['-c:a', 'pcm_s16le', '-f', 'wav']),
+    );
     expect(args.last, '/out/x.wav.part');
   });
 
@@ -133,11 +142,7 @@ void main() {
       backend: () => _Backend(),
     );
     await expectLater(
-      stager.stage(
-        item,
-        onProgress: (_) {},
-        cancel: Completer<void>().future,
-      ),
+      stager.stage(item, onProgress: (_) {}, cancel: Completer<void>().future),
       throwsA(
         isA<MusicPluginAsrAudioUnavailable>().having(
           (MusicPluginAsrAudioUnavailable e) => e.message,
@@ -156,11 +161,7 @@ void main() {
           _Backend(returnCode: 1, bytes: 10, output: 'x\nHTTP error 403'),
     );
     await expectLater(
-      stager.stage(
-        item,
-        onProgress: (_) {},
-        cancel: Completer<void>().future,
-      ),
+      stager.stage(item, onProgress: (_) {}, cancel: Completer<void>().future),
       throwsA(
         isA<MusicPluginAsrAudioUnavailable>().having(
           (MusicPluginAsrAudioUnavailable e) => e.message,
