@@ -12,6 +12,22 @@
 //   7. 第二台设备并发查词，各按各的词典选择。
 // 产品检查一律记成 CHECK OK / CHECK FAIL（不中途抛），最后统一断言；一个场景抛异常
 // 只记 SCENARIO ERROR，后面的场景照跑。一律焦点驱动（Tab + Enter），不用 tester.tap。
+//
+// 环境相关的值一律由 dart-define 给，没有本机缺省值；缺任何一个测试立即失败并点名：
+//   FUSHI_PROBE_PAIR_LINK   测试服务器的配对链接（fushi://pair?...）
+//   FUSHI_PROBE_SCRATCH     工作目录，需含 dicts/（测试词典 zip）、srv/fushi_server.yaml
+//                           （读 admin_token）、gen/stop_server.ps1、gen/restart_server.cmd
+//   FUSHI_PROBE_SERVER_HOST 测试服务器的主机（用于探测端口是否开）
+//   FUSHI_PROBE_SERVER_PORT 测试服务器的互联端口
+//   FUSHI_PROBE_ADMIN_BASE  admin API 根地址（如 https://127.0.0.1:<admin-port>）
+// 示例（fushi/ 下）：
+//   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 `
+//     -Target integration_test\server_dictionaries_scenario_test.dart `
+//     -DartDefine 'FUSHI_PROBE_PAIR_LINK=<pair-link>',`
+//                 'FUSHI_PROBE_SCRATCH=<scratch-dir>',`
+//                 'FUSHI_PROBE_SERVER_HOST=<server-host>',`
+//                 'FUSHI_PROBE_SERVER_PORT=<port>',`
+//                 'FUSHI_PROBE_ADMIN_BASE=https://127.0.0.1:<admin-port>'
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -61,27 +77,31 @@ import 'test_helpers.dart';
 
 const String _kTag = '[scenario]';
 
-const String _kPairLink = String.fromEnvironment(
-  'FUSHI_PROBE_PAIR_LINK',
-  defaultValue:
-      'fushi://pair?v=1&h=wwy-YRTzQ8BNlmMbZ2FpUqPBrsVQZSNB-6zps4Xrbb0%3D'
-      '&n=TestServer&fp=45%3A92%3A75%3Acc%3Ae5%3A1e%3Afe%3A15%3Ad7%3A03%3A7a'
-      '%3A5c%3Aac%3A34%3A79%3A28%3A68%3A98%3Aca%3Ae6%3A0f%3A1f%3A23%3Af9%3A38'
-      '%3A10%3A44%3Ace%3Acc%3A96%3A27%3A5e&a=lan~https%3A%2F%2F192.0.2.10'
-      '%3A38865',
+const String _kPairLink = String.fromEnvironment('FUSHI_PROBE_PAIR_LINK');
+
+/// 本机测试素材与服务器配置所在的目录（布局见文件头）。
+const String _kScratch = String.fromEnvironment('FUSHI_PROBE_SCRATCH');
+
+const String _kAdminBase = String.fromEnvironment('FUSHI_PROBE_ADMIN_BASE');
+const String _kServerHost = String.fromEnvironment('FUSHI_PROBE_SERVER_HOST');
+const int _kServerPort = int.fromEnvironment(
+  'FUSHI_PROBE_SERVER_PORT',
+  defaultValue: -1,
 );
 
-/// 本机测试素材与服务器配置所在的 scratchpad。
-const String _kScratch = String.fromEnvironment(
-  'FUSHI_PROBE_SCRATCH',
-  defaultValue:
-      r'C:\path\to\scratchpad'
-      r'\4e8f59fc-55e1-4bdc-b213-29367b0a75e3\scratchpad',
-);
-
-const String _kAdminBase = 'https://127.0.0.1:38880';
-const String _kServerHost = '192.0.2.10';
-const int _kServerPort = 38865;
+/// 缺必需的 dart-define 就在启动 app 前失败，消息点名缺哪个。
+void _requireProbeDefines() {
+  final List<String> missing = <String>[
+    if (_kPairLink.isEmpty) 'FUSHI_PROBE_PAIR_LINK',
+    if (_kScratch.isEmpty) 'FUSHI_PROBE_SCRATCH',
+    if (_kAdminBase.isEmpty) 'FUSHI_PROBE_ADMIN_BASE',
+    if (_kServerHost.isEmpty) 'FUSHI_PROBE_SERVER_HOST',
+    if (_kServerPort < 0) 'FUSHI_PROBE_SERVER_PORT',
+  ];
+  if (missing.isNotEmpty) {
+    fail('缺少必需的 --dart-define（探针没有本机缺省值）：${missing.join(', ')}');
+  }
+}
 
 const String _kGeneral = 'Test General JA';
 const String _kGames = 'Test Games JA';
@@ -818,6 +838,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('服务器托管词典：多设备 / 多配置 / 多词典端到端场景', (WidgetTester tester) async {
+    _requireProbeDefines();
     await runFushiItest(
       label: 'scenario',
       body: () async {

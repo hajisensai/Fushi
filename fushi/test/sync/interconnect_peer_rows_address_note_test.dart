@@ -29,8 +29,8 @@ import '../helpers/test_platform_services.dart';
 /// 测试结果 / 重新配对都按地址）。配对一台服务器后 host 公布的第二条地址被学进来，
 /// 两行标题都是同一个设备名「TestServer」，看起来像重复配对。每行加注记：第几条、
 /// 什么网络、是否自动学到；只有一条地址的设备不加。
-const String _paired = 'https://192.0.2.10:38865';
-const String _learned = 'https://192.0.2.11:38865';
+const String _paired = 'https://192.168.0.20:38865';
+const String _learned = 'https://10.0.0.20:38865';
 const String _other = 'http://192.168.1.50:38765';
 
 const List<FushiClientUrl> _seed = <FushiClientUrl>[

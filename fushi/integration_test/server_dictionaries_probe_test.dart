@@ -1,7 +1,6 @@
 // 服务器托管词典 UI 的真像素验收（Windows 离屏 runner）。
 //
-// 配对一台正在运行的测试 fushi_server（配对链接从 dart-define
-// FUSHI_PROBE_PAIR_LINK 读，缺省用本机测试服务器的链接），等服务器词典目录对账进
+// 配对一台正在运行的测试 fushi_server，等服务器词典目录对账进
 // `remote_dictionary_metadata`，然后依次留证：
 //   1. 词典管理页列表里的服务器行与来源标签；
 //   2. 来源筛选条选中「Server · <名字>」；
@@ -10,6 +9,15 @@
 //   5. 互联设置里该 host 的「用这台服务器查词典」与「可用词典」行；
 //   6. 查词「猫舌」走远端优先，结果里的词典名来自服务器。
 // 一律焦点驱动（Tab 遍历 + Enter），不用 tester.tap / 坐标。
+//
+// 环境相关的值一律由 dart-define 给，没有本机缺省值；缺任何一个测试立即失败并点名：
+//   FUSHI_PROBE_PAIR_LINK      测试服务器的配对链接（fushi://pair?...）
+//   FUSHI_PROBE_LOCAL_DICT_DIR 放测试词典 zip 的文件夹
+// 示例（fushi/ 下）：
+//   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 `
+//     -Target integration_test\server_dictionaries_probe_test.dart `
+//     -DartDefine 'FUSHI_PROBE_PAIR_LINK=<pair-link>',`
+//                 'FUSHI_PROBE_LOCAL_DICT_DIR=<dir-with-test-zips>'
 import 'dart:async';
 import 'dart:io';
 
@@ -50,15 +58,7 @@ import 'test_helpers.dart';
 
 const String _kTag = '[server-dict-probe]';
 
-const String _kPairLink = String.fromEnvironment(
-  'FUSHI_PROBE_PAIR_LINK',
-  defaultValue:
-      'fushi://pair?v=1&h=wwy-YRTzQ8BNlmMbZ2FpUqPBrsVQZSNB-6zps4Xrbb0%3D'
-      '&n=TestServer&fp=45%3A92%3A75%3Acc%3Ae5%3A1e%3Afe%3A15%3Ad7%3A03%3A7a'
-      '%3A5c%3Aac%3A34%3A79%3A28%3A68%3A98%3Aca%3Ae6%3A0f%3A1f%3A23%3Af9%3A38'
-      '%3A10%3A44%3Ace%3Acc%3A96%3A27%3A5e&a=lan~https%3A%2F%2F192.0.2.10'
-      '%3A38865',
-);
+const String _kPairLink = String.fromEnvironment('FUSHI_PROBE_PAIR_LINK');
 
 /// [scope] 子树里所有 Text / RichText 的文字（去重、保序），作可 diff 的证据。
 List<String> _textsIn(WidgetTester tester, Finder scope) {
@@ -140,10 +140,18 @@ String _remoteSummary(List<RemoteDictionary> rows) => rows
 
 const String _kLocalDictDir = String.fromEnvironment(
   'FUSHI_PROBE_LOCAL_DICT_DIR',
-  defaultValue:
-      r'C:\path\to\scratchpad'
-      r'\4e8f59fc-55e1-4bdc-b213-29367b0a75e3\scratchpad\dicts',
 );
+
+/// 缺必需的 dart-define 就在启动 app 前失败，消息点名缺哪个。
+void _requireProbeDefines() {
+  final List<String> missing = <String>[
+    if (_kPairLink.isEmpty) 'FUSHI_PROBE_PAIR_LINK',
+    if (_kLocalDictDir.isEmpty) 'FUSHI_PROBE_LOCAL_DICT_DIR',
+  ];
+  if (missing.isNotEmpty) {
+    fail('缺少必需的 --dart-define（探针没有本机缺省值）：${missing.join(', ')}');
+  }
+}
 
 List<String> _keyedTexts(WidgetTester tester, Finder scope, String prefix) {
   final List<String> out = <String>[];
@@ -373,6 +381,7 @@ void main() {
   testWidgets('服务器托管词典：管理页来源标签 / 筛选 / 详情 / 开关 / 互联设置 / 远端查词', (
     WidgetTester tester,
   ) async {
+    _requireProbeDefines();
     await runFushiItest(
       label: 'server-dict-probe',
       body: () async {
