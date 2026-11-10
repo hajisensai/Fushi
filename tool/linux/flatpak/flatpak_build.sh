@@ -82,13 +82,18 @@ cmd_app() {
   work="$(mktemp -d)"
   mkdir -p "$out"
   ensure_flathub
-  cp "$HERE/app.fushi.reader.yml" "$HERE/app.fushi.reader.desktop" "$work/"
+  cp "$HERE/app.fushi.reader.yml" "$HERE/app.fushi.reader.desktop" \
+    "$HERE/fushi_launcher.sh" "$work/"
   cp "$tarball" "$work/fushi-linux-x64.tar.gz"
   # flatpak-builder keys its module cache on the manifest, not on a local file's
-  # contents: pin the tarball's hash so a rebuilt bundle is never silently reused.
+  # contents: pin the tarball's and the launcher's hashes so a changed file is
+  # never silently reused.
   sha="$(sha256sum "$tarball" | cut -d' ' -f1)"
   sed -i -E "s|^( *)path: fushi-linux-x64\.tar\.gz$|&\n\1sha256: $sha|" "$work/app.fushi.reader.yml"
   grep -q "sha256: $sha" "$work/app.fushi.reader.yml" || die "could not pin the bundle hash"
+  sha="$(sha256sum "$work/fushi_launcher.sh" | cut -d' ' -f1)"
+  sed -i -E "s|^( *)path: fushi_launcher\.sh$|&\n\1sha256: $sha|" "$work/app.fushi.reader.yml"
+  grep -q "sha256: $sha" "$work/app.fushi.reader.yml" || die "could not pin the launcher hash"
 
   local -a sign=()
   mapfile -t sign < <(gpg_args)
