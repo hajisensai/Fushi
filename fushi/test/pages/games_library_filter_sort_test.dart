@@ -228,4 +228,40 @@ void main() {
       greaterThan(tester.getTopLeft(cardTitle('贝塔物语')).dx),
     );
   });
+
+  // BUG-4273：「管理合集」页列的是本域全部合集，成员数取库页**未筛选**全量的
+  // 折叠结果。旧实现在网格 sliver 里发布筛选后的折叠：库页一搜索，合集卡只剩
+  // 命中的那一张，管理页就跟着变成「共 1 项」（其它合集 0 项、旁边挂着删除）；
+  // 筛选空态不建网格，又会留着上一次的旧数。
+  testWidgets('管理合集页成员数不随库页搜索变', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final AppModel appModel = await buildModel();
+    final FushiDatabase db = appModel.database;
+    final int series = await db.createMediaCollection('series');
+    await db.addToCollection(series, MediaKind.game, 'g1');
+    await db.addToCollection(series, MediaKind.game, 'g2');
+    await pumpPage(tester, appModel);
+
+    // 只有 alpha 命中：库页合集卡此刻只折进 1 个成员。
+    await tester.enterText(find.byType(TextField), 'alpha');
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_collection_manage')),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder row = find.byKey(
+      ValueKey<String>('collection-manage-row-$series'),
+    );
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.text(t.collection_detail_member_count(n: 2)),
+      ),
+      findsOneWidget,
+    );
+  });
 }
