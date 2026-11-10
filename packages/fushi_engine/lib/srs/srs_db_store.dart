@@ -23,6 +23,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
+import 'package:fushi_engine/srs/srs_edit_undo.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
@@ -30,6 +31,8 @@ import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/sync2/srs_wal_checkpoint_pacer.dart';
+
+export 'package:fushi_engine/srs/srs_edit_undo.dart';
 
 /// 旧库迁移成同步 v2 操作时每批包多少条旧行（[SrsDbStore] 打开时）。每批是内核里一个独立提交的 savepoint：
 /// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
@@ -1369,6 +1372,21 @@ class SrsDbStore implements SrsSync2Host {
       identical(Zone.current[_writeZoneKey], this),
       '_emit outside runExclusive',
     );
+    // 在 [undoable] 里：落库前读下这批要改的键的改前值，落库后记下内核分配的 dot（srs_edit_undo.dart）。
+    final _SrsUndoRecorder? recorder = _undoRecorder;
+    final List<SrsFieldEdit> recorded = recorder == null
+        ? const <SrsFieldEdit>[]
+        : <SrsFieldEdit>[
+            for (final SrsEvent e in events)
+              if (e case SrsEditEvent(:final SrsFieldEdit edit)) edit,
+          ];
+    if (recorded.isNotEmpty) {
+      await recorder!.noteBefore(<(SrsEntityKind, String, String)>[
+        for (final SrsFieldEdit e in recorded)
+          (e.entityKind, e.entityId, e.fieldKey),
+      ]);
+    }
+    List<Object?> written = const <Object?>[];
     await _transactionOrReload(() async {
       // 同步 v2：操作落进 ops 就是「已备份、待发布」，没有单独的发件箱（发件按段，见 store/sync2/transport.rs）。
       await _storeLocalBatch(
@@ -1377,9 +1395,20 @@ class SrsDbStore implements SrsSync2Host {
         answers: answers,
         study: study,
         onStudy: onStudy,
+        onEdits: recorded.isEmpty ? null : (List<Object?> w) => written = w,
       );
       await _saveLocal();
     });
+    if (recorded.isNotEmpty) {
+      recorder!.noteWritten(written);
+      // 整列表标签展开成了 OR-Set 的标签操作（内核不报 dot）：按差量撤，只记改后的列表。
+      for (final SrsFieldEdit e in recorded) {
+        if (e.entityKind == SrsEntityKind.note &&
+            e.fieldKey == SrsFieldKeys.noteTags) {
+          recorder.noteTags(e.entityId, e.value);
+        }
+      }
+    }
   }
 
   /// 落一批事件（幂等；本机产生、导入、对端来的都走这里）：已有的身份记录、日志、相关实体的
@@ -1401,6 +1430,7 @@ class SrsDbStore implements SrsSync2Host {
     Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
+    void Function(List<Object?> edits)? onEdits,
   }) async {
     // 同步 v2：本机事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表（ops）、落投影、
     // 重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的 dot / ID
@@ -1450,6 +1480,7 @@ class SrsDbStore implements SrsSync2Host {
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
     }
+    onEdits?.call((r['edits'] as List<Object?>?) ?? const <Object?>[]);
     return landed;
   }
 
@@ -1866,12 +1897,30 @@ class SrsDbStore implements SrsSync2Host {
           (c! as Map).cast<String, Object?>(),
       ];
 
-  /// 解决一项冲突：[delete] = 以删除为准，否则保留。
+  /// 解决一项冲突：[delete] = 以删除为准，否则保留。在 [undoable] 里时把写下的删除 / 恢复记进撤销凭据。
   Future<void> sync2Resolve(String conflictId, {required bool delete}) =>
-      _sync2Write(<String, Object?>{
-        'op': 'resolve',
-        'conflict': conflictId,
-        'delete': delete,
+      runExclusive(() async {
+        final _SrsUndoRecorder? recorder = _undoRecorder;
+        if (recorder != null) {
+          for (final Map<String, Object?> c in await sync2Conflicts()) {
+            final SrsEntityKind? kind = SrsEntityKind.tryParse(
+              c['entityKind'] as String?,
+            );
+            if (c['id'] == conflictId && kind != null) {
+              await recorder.noteBefore(<(SrsEntityKind, String, String)>[
+                (kind, c['entity']! as String, SrsFieldKeys.deleted),
+              ]);
+            }
+          }
+        }
+        final Map<String, Object?> r = await _sync2Write(<String, Object?>{
+          'op': 'resolve',
+          'conflict': conflictId,
+          'delete': delete,
+        });
+        recorder?.noteWritten(
+          (r['edits'] as List<Object?>?) ?? const <Object?>[],
+        );
       });
 
   /// 彻底清除一个实体（设计 §10.5；界面已二次确认）。
@@ -2058,11 +2107,16 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
   /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；本机手动排程（`sched`：复习页撤销、浏览页重置 / 改期、
-  /// 立即重排）是从 `apply` 拆出来的同一类本机写入，同走交互道；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
+  /// 立即重排）是从 `apply` 拆出来的同一类本机写入，同走交互道；编辑类撤销的裁决（`undo_check`，只读，紧接着写回）
+  /// 同走交互道；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
   /// `kSrsSync2Concurrency` 并发，以前一来就占满整个池）；其余走默认道。
   @visibleForTesting
   static SrsCoreLane srsCoreLaneOf(Object? op) => switch (op) {
-    'apply' || 'sched' || 'study' || 'preview' => SrsCoreLane.interactive,
+    'apply' ||
+    'sched' ||
+    'study' ||
+    'preview' ||
+    'undo_check' => SrsCoreLane.interactive,
     'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
     _ => SrsCoreLane.bulk,
   };
@@ -3766,6 +3820,181 @@ class SrsDbStore implements SrsSync2Host {
         }
         return out;
       });
+
+  // ------------------------------------------------------------------ 编辑类撤销（srs_edit_undo.dart）
+
+  /// [undoable] 的 Zone 键：值是本副本正在记的 [_SrsUndoRecorder]。
+  final Object _undoZoneKey = Object();
+
+  _SrsUndoRecorder? get _undoRecorder {
+    final Object? r = Zone.current[_undoZoneKey];
+    return r is _SrsUndoRecorder && identical(r.store, this) ? r : null;
+  }
+
+  /// 在写锁里跑 [body]，把其间本机写下的字段修改记成一份撤销凭据（语义见 srs_edit_undo.dart）：每个被改的键记
+  /// 写锁里从库读的改前值、改后值与内核分配的 dot。嵌套时内层记下的也并进外层。
+  Future<(T, SrsEditUndo)> undoable<T>(Future<T> Function() body) =>
+      runExclusive(() async {
+        final _SrsUndoRecorder? outer = _undoRecorder;
+        final _SrsUndoRecorder recorder = _SrsUndoRecorder(this);
+        final T out = await runZoned(
+          body,
+          zoneValues: <Object?, Object?>{_undoZoneKey: recorder},
+        );
+        final SrsEditUndo undo = recorder.result();
+        outer?.absorb(undo);
+        return (out, undo);
+      });
+
+  /// [editFieldsBatch]，并交回撤销凭据（复习页 / 浏览页的暂停、搁置、旗标、移牌组、改字段、标签、删除）。
+  Future<SrsEditUndo> editFieldsUndoable(List<SrsFieldChange> changes) async =>
+      (await undoable(() => editFieldsBatch(changes))).$2;
+
+  /// 按凭据撤销（语义见 srs_edit_undo.dart）：内核按修改记录裁决每个键（`undo_check`，只读），裁决可撤的写回改前
+  /// 值（普通本机写入），被别人动过的保留现值、列进 [SrsEditUndoResult.kept]。裁决与写回在同一个写锁独占区里，
+  /// 中间插不进别的写入（本机写、收段投递）。
+  Future<SrsEditUndoResult> revertEdits(SrsEditUndo undo) => runExclusive(
+    () async {
+      if (undo.isEmpty) return SrsEditUndoResult.none;
+      final List<SrsEditUndoItem> checked = <SrsEditUndoItem>[
+        for (final SrsEditUndoItem i in undo.items)
+          if (!i.isTags) i,
+      ];
+      final List<SrsEditUndoItem> tags = <SrsEditUndoItem>[
+        for (final SrsEditUndoItem i in undo.items)
+          if (i.isTags) i,
+      ];
+      final List<SrsFieldChange> writes = <SrsFieldChange>[];
+      final List<SrsEditUndoKept> kept = <SrsEditUndoKept>[];
+      int reverted = 0;
+      if (checked.isNotEmpty) {
+        final Map<String, Object?> r = await _sync2(<String, Object?>{
+          'op': 'undo_check',
+          'items': <Map<String, Object?>>[
+            for (final SrsEditUndoItem i in checked)
+              <String, Object?>{
+                'k': i.kind.wire,
+                'e': i.entityId,
+                'f': i.key,
+                'w': ?i.writer,
+                's': ?i.seq,
+                'v': i.after,
+              },
+          ],
+        });
+        final List<Object?> verdicts = r['r']! as List<Object?>;
+        for (int n = 0; n < checked.length; n++) {
+          final SrsEditUndoItem i = checked[n];
+          final Map<Object?, Object?> v = verdicts[n]! as Map<Object?, Object?>;
+          if (v['ok'] == true) {
+            writes.add(SrsFieldChange(i.kind, i.entityId, i.key, i.before));
+            reverted++;
+          } else {
+            kept.add(
+              SrsEditUndoKept(
+                kind: i.kind,
+                entityId: i.entityId,
+                key: i.key,
+                current: v['cur'],
+              ),
+            );
+          }
+        }
+      }
+      if (tags.isNotEmpty) {
+        final Map<String, SrsNoteView?> views = await notes(<String>{
+          for (final SrsEditUndoItem i in tags) i.entityId,
+        });
+        for (final SrsEditUndoItem i in tags) {
+          final SrsNoteView? n = views[i.entityId];
+          if (n == null) {
+            kept.add(
+              SrsEditUndoKept(
+                kind: i.kind,
+                entityId: i.entityId,
+                key: i.key,
+                current: null,
+              ),
+            );
+            continue;
+          }
+          final List<String> next = srsRevertTagDelta(
+            current: n.tags,
+            before: _stringList(i.before),
+            after: _stringList(i.after),
+          );
+          if (next.join('\u0001') != n.tags.join('\u0001')) {
+            writes.add(
+              SrsFieldChange(
+                SrsEntityKind.note,
+                i.entityId,
+                SrsFieldKeys.noteTags,
+                next,
+              ),
+            );
+          }
+          reverted++;
+        }
+      }
+      if (writes.isNotEmpty) await editFieldsBatch(writes);
+      return SrsEditUndoResult(reverted: reverted, kept: kept);
+    },
+  );
+
+  static List<String> _stringList(Object? raw) => <String>[
+    if (raw is List)
+      for (final Object? x in raw)
+        if (x is String) x,
+  ];
+
+  /// 一组字段键此刻的生效值（[undoable] 记改前值用；调用方在独占区里）。卡片的四个标志 / 牌组按缓存行（含血统
+  /// 继承，与界面看到的一致），笔记的字段 / 标签 / 删除按物化视图，其余按修改记录寄存器。键为 `<kind>/<id>/<key>`。
+  Future<Map<String, Object?>> _currentValues(
+    List<(SrsEntityKind, String, String)> keys,
+  ) async {
+    final Map<String, SrsCardCacheRow> cards = <String, SrsCardCacheRow>{
+      for (final SrsCardCacheRow r in await cardRows(<String>{
+        for (final (SrsEntityKind k, String id, String _) in keys)
+          if (k == SrsEntityKind.card) id,
+      }))
+        r.id: r,
+    };
+    final Set<String> noteIds = <String>{
+      for (final (SrsEntityKind k, String id, String _) in keys)
+        if (k == SrsEntityKind.note) id,
+    };
+    final Map<String, SrsNoteView?> noteViews = noteIds.isEmpty
+        ? const <String, SrsNoteView?>{}
+        : await notes(noteIds);
+    final Map<String, SrsEntityEdits> registers = await _currentEditsOf(
+      <(SrsEntityKind, String)>{
+        for (final (SrsEntityKind k, String id, String _) in keys) (k, id),
+      },
+    );
+    final String fieldPrefix = SrsFieldKeys.noteField('');
+    final Map<String, Object?> out = <String, Object?>{};
+    for (final (SrsEntityKind kind, String id, String key) in keys) {
+      final SrsCardCacheRow? card = kind == SrsEntityKind.card
+          ? cards[id]
+          : null;
+      final SrsNoteView? note = kind == SrsEntityKind.note
+          ? noteViews[id]
+          : null;
+      out['${kind.wire}/$id/$key'] = switch (key) {
+        SrsFieldKeys.suspended when card != null => card.suspended,
+        SrsFieldKeys.buriedUntilDay when card != null => card.buriedUntilDay,
+        SrsFieldKeys.flag when card != null => card.flag,
+        SrsFieldKeys.cardDeck when card != null => card.deckId,
+        SrsFieldKeys.noteTags when note != null => note.tags,
+        SrsFieldKeys.deleted when note != null => note.deletedAt,
+        _ when note != null && key.startsWith(fieldPrefix) => note.field(
+          key.substring(fieldPrefix.length),
+        ),
+        _ => registers['${kind.wire}/$id']?.value(key),
+      };
+    }
+    return out;
+  }
 
   /// 一组卡片的缓存行（不存在的 ID 跳过）。
   Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) async {
@@ -6122,4 +6351,117 @@ class SrsAnkiNoteInfo {
 
   /// 同 [SrsNoteView.field]：没有 = 空串。
   String field(String fieldId) => fields[fieldId] ?? '';
+}
+
+/// 标签撤销的差量（OR-Set，见 srs_edit_undo.dart）：这次加上的（[after] 有、[before] 没有）现在还在就去掉，
+/// 这次去掉的（[before] 有、[after] 没有）现在还没有就加回；别的标签（含别人之后加 / 删的）原样。比较不分大小写，
+/// 与浏览页加 / 删标签一致。顺序：[before] 里有的按 [before] 的顺序，其余（别人之后加的）按现在的顺序排在后面。
+List<String> srsRevertTagDelta({
+  required List<String> current,
+  required List<String> before,
+  required List<String> after,
+}) {
+  String low(String t) => t.toLowerCase();
+  final Set<String> beforeLow = <String>{for (final String t in before) low(t)};
+  final Set<String> afterLow = <String>{for (final String t in after) low(t)};
+  final Set<String> added = afterLow.difference(beforeLow);
+  final Map<String, String> kept = <String, String>{
+    for (final String t in current)
+      if (!added.contains(low(t))) low(t): t,
+  };
+  for (final String t in before) {
+    if (!afterLow.contains(low(t))) kept.putIfAbsent(low(t), () => t);
+  }
+  final List<String> next = <String>[];
+  for (final String t in before) {
+    final String? k = kept.remove(low(t));
+    if (k != null) next.add(k);
+  }
+  next.addAll(kept.values);
+  return next;
+}
+
+/// [SrsDbStore.undoable] 的录制器：按字段键记改前值（第一次写之前从库读）、改后值与内核分配的 dot（最后一次写）。
+class _SrsUndoRecorder {
+  _SrsUndoRecorder(this.store);
+
+  final SrsDbStore store;
+
+  /// 改前值，键 `<kind>/<id>/<key>`（只读一次：同一键在一次操作里写几次，撤销回到第一次之前）。
+  final Map<String, Object?> _before = <String, Object?>{};
+
+  /// 已写下的键（插入顺序 = 第一次写的顺序）。
+  final Map<String, SrsEditUndoItem> _items = <String, SrsEditUndoItem>{};
+
+  static String _key(SrsEntityKind kind, String id, String key) =>
+      '${kind.wire}/$id/$key';
+
+  /// 落库之前：读下还没记过改前值的键此刻的生效值。
+  Future<void> noteBefore(List<(SrsEntityKind, String, String)> keys) async {
+    final List<(SrsEntityKind, String, String)> missing =
+        <(SrsEntityKind, String, String)>[
+          for (final (SrsEntityKind k, String id, String f) in keys)
+            if (!_before.containsKey(_key(k, id, f))) (k, id, f),
+        ];
+    if (missing.isEmpty) return;
+    _before.addAll(await store._currentValues(missing));
+  }
+
+  /// 落库之后：内核报告的 `edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，store/sync2/mod.rs `note_written_edit`）。
+  void noteWritten(List<Object?> edits) {
+    for (final Object? raw in edits) {
+      if (raw is! List || raw.length < 6) continue;
+      final SrsEntityKind? kind = SrsEntityKind.tryParse(raw[0] as String?);
+      final Object? id = raw[1], key = raw[2], w = raw[3], s = raw[4];
+      if (kind == null || id is! String || key is! String) continue;
+      final String k = _key(kind, id, key);
+      if (!_before.containsKey(k)) continue;
+      _put(
+        k,
+        SrsEditUndoItem(
+          kind: kind,
+          entityId: id,
+          key: key,
+          before: _before[k],
+          after: raw[5],
+          writer: w is String ? w : null,
+          seq: s is int ? s : null,
+        ),
+      );
+    }
+  }
+
+  /// 整列表标签（内核展开成 OR-Set 操作、不报 dot）：按差量撤，只记改后的列表。
+  void noteTags(String noteId, Object? after) {
+    final String k = _key(SrsEntityKind.note, noteId, SrsFieldKeys.noteTags);
+    if (!_before.containsKey(k)) return;
+    _put(
+      k,
+      SrsEditUndoItem(
+        kind: SrsEntityKind.note,
+        entityId: noteId,
+        key: SrsFieldKeys.noteTags,
+        before: _before[k],
+        after: after,
+      ),
+    );
+  }
+
+  void _put(String k, SrsEditUndoItem item) {
+    final SrsEditUndoItem? first = _items[k];
+    _items[k] = first == null
+        ? item
+        : first.withAfter(item.after, writer: item.writer, seq: item.seq);
+  }
+
+  /// 内层 [SrsDbStore.undoable] 记下的并进来。
+  void absorb(SrsEditUndo inner) {
+    for (final SrsEditUndoItem i in inner.items) {
+      final String k = _key(i.kind, i.entityId, i.key);
+      _before.putIfAbsent(k, () => i.before);
+      _put(k, i);
+    }
+  }
+
+  SrsEditUndo result() => SrsEditUndo(_items.values.toList());
 }

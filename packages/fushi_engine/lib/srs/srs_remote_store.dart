@@ -1506,6 +1506,23 @@ class SrsRemoteStoreService {
           e.toJson(),
       ],
     ),
+    // 编辑类撤销（srs_edit_undo.dart）：写入交回撤销凭据、撤销在主机的写锁里按修改记录裁决。
+    'editFieldsUndoable': _Op(
+      write: true,
+      (SrsDbStore s, _Args a) async =>
+          (await s.editFieldsUndoable(<SrsFieldChange>[
+            for (final SrsEditSpec x in SrsRemoteWire.editSpecsFrom(
+              a.raw('changes'),
+              'changes',
+            ))
+              SrsFieldChange(x.kind, x.entityId, x.key, x.value),
+          ])).toJson(),
+    ),
+    'revertEdits': _Op(
+      write: true,
+      (SrsDbStore s, _Args a) async =>
+          (await s.revertEdits(SrsEditUndo.fromJson(a.raw('undo')))).toJson(),
+    ),
     'writeEdits': _Op(
       write: true,
       (SrsDbStore s, _Args a) async => <Object?>[

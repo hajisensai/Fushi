@@ -280,14 +280,16 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
       ],
     };
   }),
-  // 冲突中心「删除被扣住」的「删除」：以删除为准（墓碑，内容仍在日志里；撤销 = 追加一条
+  // 冲突中心「删除被扣住」的「删除」：以删除为准（墓碑，内容仍在日志里；撤销 = 按撤销凭据追加一条
   // deleted = null 的恢复，见 op_descriptions_srs.dart）。
   CtlRoute.post('$kSrsCtlRoot/conflicts/held/:id/delete', (CtlCall call) async {
     final SrsDbStore store = await requireSrsCtlStore(deps);
     final Map<String, Object?> held = await _requireHeld(store, call);
     final SrsEntityKind kind = _heldKind(held);
     final String entity = held['entity'] as String? ?? '';
-    await store.sync2Resolve(held['id']! as String, delete: true);
+    srsCtlUndo[call] = (await store.undoable(
+      () => store.sync2Resolve(held['id']! as String, delete: true),
+    )).$2;
     deps.changed();
     return <String, Object?>{
       'conflict': held['id'],
@@ -342,7 +344,9 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
     final Object? value = keep == 'current'
         ? previous
         : reg.visibleLosers.first.value;
-    await store.resolveConflict(kind, entity, key, value);
+    srsCtlUndo[call] = (await store.undoable(
+      () => store.resolveConflict(kind, entity, key, value),
+    )).$2;
     deps.changed();
     return <String, Object?>{
       'kind': kind.wire,
@@ -366,7 +370,11 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
     }
     final SrsMergeReport report;
     try {
-      report = await store.mergeNotes(keepId: keep, absorbIds: absorb);
+      final (SrsMergeReport r, SrsEditUndo undo) = await store.undoable(
+        () => store.mergeNotes(keepId: keep, absorbIds: absorb),
+      );
+      report = r;
+      srsCtlUndo[call] = undo;
     } on StateError catch (e) {
       final String message = e.message;
       throw message.contains('not found')
@@ -395,7 +403,9 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
     for (final String id in notes) {
       if (views[id] == null) throw CtlFailure.notFound('没有这条笔记：$id');
     }
-    await store.dismissDuplicates(notes);
+    srsCtlUndo[call] = (await store.undoable(
+      () => store.dismissDuplicates(notes),
+    )).$2;
     deps.changed();
     return <String, Object?>{'dismissed': notes};
   }),
@@ -413,17 +423,16 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
         store,
         plan,
       );
-      srsCtlAppliedNoteChanges[call] = applied.changes;
+      srsCtlUndo[call] = applied.undo;
       if (applied.changes.isNotEmpty) deps.changed();
       return srsCtlNotePlanJson(plan, echo, dryRun: false, applied: applied);
     }),
 ];
 
-/// 这次调用实际写下的完整改动清单（按 [CtlCall] 实例挂，随调用对象回收）。撤销快照
-/// （`op_descriptions_srs.dart` 的 `_noteBatchUndo`）从这里取：撤销载荷 = 实际写下的改动，
-/// 不再在执行前另算一遍计划；完整清单也不进回给调用方 / 模型的结果。
-final Expando<List<SrsNoteFieldChange>> srsCtlAppliedNoteChanges =
-    Expando<List<SrsNoteFieldChange>>('srsCtlAppliedNoteChanges');
+/// 这次调用写入的撤销凭据（按 [CtlCall] 实例挂，随调用对象回收；语义见
+/// `package:fushi_engine/srs/srs_edit_undo.dart`）。撤销载荷（`op_descriptions_srs.dart`）从这里取：
+/// 载荷 = 实际写下的改动与它们的 dot，不在执行前另算一遍；凭据也不进回给调用方 / 模型的结果。
+final Expando<SrsEditUndo> srsCtlUndo = Expando<SrsEditUndo>('srsCtlUndo');
 
 /// 三种批量改笔记（路由段名 = [wire]）。
 enum SrsCtlNoteBatch {

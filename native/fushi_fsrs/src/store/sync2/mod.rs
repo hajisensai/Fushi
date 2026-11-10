@@ -25,6 +25,7 @@ pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
 pub(crate) mod trust;
+pub(crate) mod undo_check;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -2127,6 +2128,23 @@ pub(crate) fn append_local_cached(
     Ok(op)
 }
 
+/// 本机刚写下的一条字段修改（不含整列表 `tags`：它已展开成 OR-Set 的标签操作）记进命令结果的 `edits`：
+/// `[种类, 实体, 字段键, 设备, 序号, 落库的值]`。编辑类撤销据这个 dot 判断之后有没有被别人动过（undo_check.rs）。
+fn note_written_edit(out: &mut Vec<Value>, op: &Op, b: &Body) {
+    if let Body::Edit(e) = b {
+        if e.legacy.is_none() {
+            out.push(json!([
+                e.kind.wire(),
+                e.entity.text(),
+                e.key,
+                op.id.device.text(),
+                op.id.seq,
+                serde_json::from_str::<Value>(&e.value).unwrap_or(Value::Null),
+            ]));
+        }
+    }
+}
+
 /// [SrsCore::sync2_identity] 的结果。
 fn identity_json(l: &Local) -> Value {
     json!({
@@ -2183,6 +2201,7 @@ impl SrsCore {
             };
             let mut deps_row: Option<(Vec<u8>, i64)> = None;
             let mut landed = Vec::with_capacity(items.len());
+            let mut edits: Vec<Value> = Vec::new();
             // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
             let mut tree: Option<config::DeckTree> = None;
             for it in &items {
@@ -2217,6 +2236,7 @@ impl SrsCore {
                     }
                     // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
                     debug_assert_eq!(op.body().ok().as_ref(), Some(b));
+                    note_written_edit(&mut edits, &op, b);
                     project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
                 }
                 landed.push(t.marks.landed > before);
@@ -2231,6 +2251,7 @@ impl SrsCore {
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
                 "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
                 "nextSeq": local.next_seq,
+                "edits": edits,
             })
             .to_string())
         })
@@ -2398,8 +2419,10 @@ impl SrsCore {
             };
             let mut applied = applied_vv(c, profile)?;
             let mut t = Touched::default();
+            let mut edits: Vec<Value> = Vec::new();
             for b in &bodies {
                 let op = append_local(c, &mut local, &mut applied, b, now)?;
+                note_written_edit(&mut edits, &op, b);
                 project(c, profile, &op, now, true, &mut t)?;
             }
             local.save(c)?;
@@ -2407,6 +2430,7 @@ impl SrsCore {
             Ok(json!({
                 "marks": t.marks.to_json(),
                 "replayed": replayed,
+                "edits": edits,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
                 "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
             }))
@@ -2595,6 +2619,8 @@ mod tests_sched_local;
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_trust;
+#[cfg(test)]
+mod tests_undo_check;
 
 impl SrsCore {
     /// 评分预览（原 Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

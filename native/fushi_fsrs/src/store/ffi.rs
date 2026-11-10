@@ -1235,6 +1235,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
 const CHANNEL_SETTLES: &[&str] = &[
     "apply",
     "sched",
+    "undo_check",
     "retire",
     "dedup",
     "migrate",
@@ -1796,6 +1797,8 @@ fn sync2_command(
         "checkpoint" => c.sync2_checkpoint(profile, s("name")?, s("reason")?, i("now")?)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
+        // 编辑类撤销的校验（store/sync2/undo_check.rs）：只读，按修改记录判每个字段键能不能撤。
+        "undo_check" => c.sync2_undo_check(profile, req)?,
         "plan_restore" | "restore" => {
             // 恢复到还原点（`checkpoint: {device, seq}`，按它的因果截断）或某个时刻（`at`）。
             let to = match req.get("checkpoint") {
