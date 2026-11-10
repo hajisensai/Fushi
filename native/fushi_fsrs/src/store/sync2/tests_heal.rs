@@ -371,3 +371,102 @@ fn head_carries_group_fingerprints_outside_the_main_signature() {
         head
     );
 }
+
+fn heal_record(d: &Device, peer: &str) -> Option<Value> {
+    meta(d, &format!("sync2_heal/{peer}/{P}")).map(|s| serde_json::from_str(&s).unwrap())
+}
+
+/// 不一致 → 核实（重放 0 行、报一次）→ 两边恢复一致（去重记录作废）→ 本机同一组集合又出现旧行：这次照样重放修好，
+/// 不因为早先核实过而静默。
+#[test]
+fn a_verified_group_set_is_forgotten_once_the_peer_agrees_again() {
+    let (a, b, mut bucket, mut now) = converged();
+    let db = device_id(&b);
+    let want = log_json(&b, "r2");
+    stale(&b, "r2");
+    b.digest();
+    b.sync(&mut bucket, "loc", now);
+    a.sync(&mut bucket, "loc", now + 1);
+    now += DAY;
+    let out = a.core.sync2_digest_heal(P, now).unwrap();
+    assert_eq!(replays(&out), 1, "{out}");
+    assert_eq!(
+        out["healFailed"][0]["reason"],
+        json!("replayChangedNothing")
+    );
+    assert_eq!(heal_record(&a, &db).unwrap()["verified"], json!(true));
+
+    // 对端修好了（比如升级后跑了迁移）：同一进度下两边的根相同。
+    let w = b.core.writer().unwrap();
+    w.execute(
+        "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+        rusqlite::params!["r2", want.to_string()],
+    )
+    .unwrap();
+    drop(w);
+    b.digest();
+    b.sync(&mut bucket, "loc", now);
+    a.sync(&mut bucket, "loc", now + 1);
+    now += DAY;
+    assert_eq!(peer_digest(&a, &db), own_digest(&a), "agreed again");
+    let out = a.core.sync2_digest_heal(P, now).unwrap();
+    assert_eq!(out, json!({"replayed": [], "healed": [], "healFailed": []}));
+    assert_eq!(heal_record(&a, &db), None, "the verified record is dropped");
+
+    // 本机同一组集合里又出现旧行：重放并修好。
+    stale(&a, "r2");
+    a.digest();
+    let out = a.core.sync2_digest_heal(P, now + 1).unwrap();
+    assert_eq!(out["replayed"], json!(["C"]), "{out}");
+    assert_eq!(out["healFailed"], json!([]), "{out}");
+    assert_eq!(log_json(&a, "r2"), want);
+    assert_eq!(own_digest(&a), peer_digest(&a, &db));
+}
+
+/// 摘要串 `@` 之后不同（版本向量 / 规则 / 扣留集合不同）不算「一致」：即便根碰巧相同也不删去重记录。
+#[test]
+fn a_different_tag_never_counts_as_agreement() {
+    let (a, b, mut bucket, mut now) = converged();
+    let db = device_id(&b);
+    stale(&b, "r2");
+    b.digest();
+    b.sync(&mut bucket, "loc", now);
+    a.sync(&mut bucket, "loc", now + 1);
+    now += DAY;
+    a.core.sync2_digest_heal(P, now).unwrap();
+    let rec = heal_record(&a, &db).unwrap();
+    let (root, tag) = split(&own_digest(&a));
+    let other_vv = format!("{root}@{}{}", digest::VV_PREFIX, "0".repeat(tag.len() - 2));
+    assert_ne!(split(&other_vv).1, tag);
+    set_peer_digest(&a, &db, &other_vv);
+    assert_eq!(
+        a.core.sync2_digest_heal(P, now + 1).unwrap(),
+        json!({"replayed": [], "healed": [], "healFailed": []})
+    );
+    assert_eq!(heal_record(&a, &db), Some(rec), "kept");
+}
+
+/// 停用一台设备：它的组指纹与去重记录删掉，之后不再与它比。
+#[test]
+fn retiring_a_device_forgets_its_heal_state() {
+    let (a, b, mut bucket, mut now) = converged();
+    let db = device_id(&b);
+    stale(&b, "r2");
+    b.digest();
+    b.sync(&mut bucket, "loc", now);
+    a.sync(&mut bucket, "loc", now + 1);
+    now += DAY;
+    a.core.sync2_digest_heal(P, now).unwrap();
+    assert!(heal_record(&a, &db).is_some());
+    assert!(meta(&a, &format!("sync2_dg_peer/{db}/{P}")).is_some());
+    a.core.sync2_retire(P, &db, true, now).unwrap();
+    assert_eq!(heal_record(&a, &db), None);
+    assert_eq!(meta(&a, &format!("sync2_dg_peer/{db}/{P}")), None);
+    stale(&a, "r2");
+    a.digest();
+    assert_eq!(
+        a.core.sync2_digest_heal(P, now + 1).unwrap(),
+        json!({"replayed": [], "healed": [], "healFailed": []}),
+        "a retired device is not compared"
+    );
+}

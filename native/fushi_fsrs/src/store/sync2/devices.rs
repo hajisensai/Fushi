@@ -443,6 +443,8 @@ impl SrsCore {
                     &key,
                     &json!({"at": now, "applied": applied, "headSeq": head_seq}).to_string(),
                 )?;
+                // 停用的设备不再参与摘要比对（heal.rs）：它的组指纹与去重记录一并删掉。
+                super::heal::forget_peer(c, profile, &id)?;
             } else {
                 meta_del(c, &key)?;
             }

@@ -25,6 +25,14 @@
 //! 重放：键里没有版本向量。
 //!
 //! 对端是没有组指纹的旧版本：定位不了，不重放，按 (规则, 无组) 只报一次。
+//!
+//! 去重记录的生命周期：同一 tag 下与对端的根重新相同（确认一致）就删掉它，之后再出现不一致重新走一遍重放 / 上报；
+//! 对端永远修不好时从不出现「一致」，上面的重放上界不变。tag 不同（版本向量、规则、扣留集合不同）不算一致、不删。
+//! 停用一台设备（devices.rs [SrsCore::sync2_retire]）时删掉它的去重记录与组指纹，停用的设备不比。删 profile 时
+//! 这些键随 `…/<uid>` 一起删（profile_data.rs）。
+//!
+//! 已知局限：与某对端在组集合 G 上长期修不好（已核实）时，本机这些组之后新出现的错投影不会因该对端而重放（仍可能
+//! 经其他对端的比对、或 G 变化时被修）；上报每个 (对端, G) 只一次。
 
 use std::collections::BTreeSet;
 
@@ -142,6 +150,17 @@ pub(crate) fn record_peer_dg(c: &Connection, profile: &str, h: &Head) -> Result<
             Ok(())
         }
     }
+}
+
+/// 忘掉 [device] 的组指纹与去重记录（停用设备时）。
+pub(crate) fn forget_peer(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
+    let mut stmt = c
+        .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+        .map_err(sql)?;
+    for key in [peer_dg_key(profile, device), heal_key(profile, device)] {
+        stmt.execute([key]).map_err(sql)?;
+    }
+    Ok(())
 }
 
 /// 本机这些组的指纹（去重键的一部分）。
@@ -272,6 +291,7 @@ impl SrsCore {
                 return out(replayed, healed, failed);
             };
             let rules = digest::derive_rules_of(&format!("@{tag}"));
+            let retired = super::devices::retired_set(c, profile)?;
             let peers: Vec<(Vec<u8>, String)> = c
                 .prepare_cached(
                     "SELECT device, digest FROM sync2_devices WHERE profile_uid = srs_id(?1) AND digest IS NOT NULL AND digest != ''",
@@ -286,14 +306,22 @@ impl SrsCore {
                     continue;
                 };
                 let device = Id(arr);
-                if device == local.device {
+                if device == local.device || retired.contains(&device) {
                     continue;
                 }
                 let Some((peer_root, peer_tag)) = peer_digest.split_once('@') else {
                     continue;
                 };
                 // 只比派生规则、版本向量（与扣留指纹）逐字相同的。
-                if peer_tag != tag || peer_root == root {
+                if peer_tag != tag {
+                    continue;
+                }
+                if peer_root == root {
+                    // 同一进度下确认一致：去重记录作废，之后再不一致重新走一遍（文件头）。
+                    c.prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+                        .map_err(sql)?
+                        .execute([heal_key(profile, &device)])
+                        .map_err(sql)?;
                     continue;
                 }
                 let peer_dg = meta_get(c, &peer_dg_key(profile, &device))?
