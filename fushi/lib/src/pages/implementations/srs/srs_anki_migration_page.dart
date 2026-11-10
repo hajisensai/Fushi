@@ -311,7 +311,14 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
     required SrsAnkiMigrationSettings settings,
     Future<void> Function()? cleanup,
   }) async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    // 库打开失败原样抛给调用方记日志；快照的临时目录已经交给本函数，抛之前清掉。
+    final SrsDbStore? store = await readSrsStore(ref).onError((
+      Object e,
+      StackTrace stack,
+    ) async {
+      await cleanup?.call();
+      Error.throwWithStackTrace(e, stack);
+    });
     SrsMediaStore? media;
     try {
       media = await ref.read(srsMediaStoreProvider.future);

@@ -409,6 +409,12 @@ final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =
 /// 进入复习页时取消在跑的优化（见 srs_optimization_scheduler.dart）。
 final ValueNotifier<int> srsActiveReviewSessions = ValueNotifier<int>(0);
 
+/// 复习页登记「正在复习」用的计数：根容器里就是本机 runtime 监听的 [srsActiveReviewSessions]（批量推送、
+/// 自动优化让路，见 srs_app_runtime.dart）。远程复习的作用域（`SrsRemoteCollectionScope`）覆盖成自己的
+/// 计数——在主机的库上复习不该让本机库的推送改成批量、也不该取消本机的参数优化。
+final Provider<ValueNotifier<int>> srsActiveReviewSessionsProvider =
+    Provider<ValueNotifier<int>>((Ref ref) => srsActiveReviewSessions);
+
 /// 本机写操作后的刷新信号（单调递增）。
 final StateProvider<int> srsRevisionProvider = StateProvider<int>(
   (Ref ref) => 0,
@@ -782,15 +788,14 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   });
 });
 
-/// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。
-Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {
-  try {
-    return await ref.read(srsStoreProvider.future);
-  } catch (e, stack) {
-    ErrorLogService.instance.log('readSrsStore', e, stack);
-    return null;
-  }
-}
+/// 等 store 就绪（页面动作里用）。
+///
+/// null 只表示「这里没有复习库」：模块关着，或存储此刻不可用（非主进程在主进程完成首次搬迁之前，见
+/// [srsStorageProvider]）。**打开失败原样抛出**——以前在这里吞掉记日志、返回 null，复习页于是报「排程内核
+/// 不可用」、操作目录报「复习库还没就绪」，真正的错误（库损坏、升级空间不够……）只在日志里。调用方各自
+/// 把它交给错误态 / 失败结果。
+Future<SrsDbStore?> readSrsStore(WidgetRef ref) =>
+    ref.read(srsStoreProvider.future);
 
 /// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。
 ///

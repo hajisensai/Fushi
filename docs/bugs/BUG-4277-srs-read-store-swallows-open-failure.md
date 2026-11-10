@@ -1,0 +1,20 @@
+## BUG-4277 · readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」
+- **报告**：2026-11-10（用户：内部审查）
+- **真实性**：✅ 真 bug，widget 测试已复现。
+  - 根因在 `fushi/lib/src/srs/srs_providers.dart` 旧 `:786-793`：`readSrsStore` 捕获 `srsStoreProvider` 的打开异常后只记日志、返回 null。
+  - 复习页因此把真实错误（库损坏、升级空间不够……）显示成 `t.srs_engine_unavailable`（旧 `srs_review_page.dart:449`）。实际上排程内核缺失根本不会让 store 变成 null，库照常打开，只是 `canSchedule == false`。
+  - 操作目录（`fushi/lib/src/ops/ctl_srs_routes.dart:79-82`）因此报「复习库还没就绪」。
+  - 复习页里本来就有能显示真实错误、带重试的 `SrsLoadErrorView`，但这条路径没用上。
+- **[x] ① 已修复**
+  - `readSrsStore`（`srs_providers.dart:797`）不再 catch，打开失败原样抛出；null 只表示这里没有复习库（模块关着，或存储此刻不可用）。
+  - 复习页 `_start`（`srs_review_page.dart:476`）把异常交给 `_error`，由 `SrsLoadErrorView` 显示可读说明并提供重试。null 时显示 `module_disabled_hint`，不再显示「排程内核不可用」。
+  - 操作目录不改代码：异常原样冒到 ctl 服务器（500，message 是真实错误）或 AI 工具箱的 `on Object` 失败结果。
+  - 全仓 54 个调用点逐个核对过新语义。唯一会因此新增泄漏的是 `srs_anki_migration_page.dart` `_run`：快照临时目录的清理原本只在 null 分支执行，现在改为打开失败时也清理再原样抛出（`:315`）。
+  - 其余调用点抛出后的去向：
+    - 由 `srsRunLogged`、页面自己的 try/catch 或 toast 接住；
+    - 少数 `initState` 里 `unawaited` 的加载（冲突页、笔记类型页、历史页、浏览检查器）会成为未处理异常，交给全局错误处理记日志。这几处原来的 null 分支同样停在加载中，界面表现与以前相同。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_review_external_changes_test.dart` 的 `readSrsStore：打开失败原样抛出` 组，覆盖：
+  - 复习页显示真实错误和重试按钮，不显示「排程内核不可用」；
+  - `readSrsStore` 与 `requireSrsCtlStore` 抛的是原异常，不是 `CtlFailure`；
+  - provider 给 null 时 `readSrsStore` 返回 null。
+- **备注**：只做了 widget / 单元测试，没在真 app 里用损坏的库验证。

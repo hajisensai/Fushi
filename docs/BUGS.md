@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3837 条。点号进各自文件。
+> 共 3840 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4278](bugs/BUG-4278-srs-remote-review-bumps-local-sessions.md) | ✅ | ✅ | 远程复习推动本机 runtime 的活跃复习会话计数 |
+| [BUG-4277](bugs/BUG-4277-srs-read-store-swallows-open-failure.md) | ✅ | ✅ | readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」 |
+| [BUG-4276](bugs/BUG-4276-srs-review-ignores-external-changes.md) | ✅ | ✅ | 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化 |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
 | [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
 | [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |
