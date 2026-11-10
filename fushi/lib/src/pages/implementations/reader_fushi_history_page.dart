@@ -369,6 +369,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
 
+  /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
+  final CollectionDisplayCounts _collectionDisplayCounts =
+      CollectionDisplayCounts();
+
   /// 合集格子里折进去的远端占位成员（合集 id → 成员槽，组内序），与
   /// [_visibleCollectionIds] 同帧、同一份 shelfGroups 推出（BUG-3337）：多选里勾了
   /// 合集再点「下载」，下的就是这个合集格子里画着的那些云端成员——此前批量下载只认
@@ -884,6 +888,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   void dispose() {
+    _collectionDisplayCounts.dispose();
     _memberInfoRevision.dispose();
     _headerSearch.dispose();
     _searchController.dispose();
@@ -1948,6 +1953,107 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// 书架显示单元折叠：本地 SRT / EPUB 卡 + 远端占位卡 → [groupByCollections]
+  /// 的合集组与散卡组（未排序）。主网格吃筛选后的输入，「管理合集」页的成员数
+  /// （[_collectionDisplayCounts]）吃未筛选的全量输入——两处同一份折叠规则，
+  /// 卡片「N 卷」与管理页「共 N 项」在无筛选时逐个相等（BUG-4277）。
+  List<CollectionGroup<_ShelfBookSlot>> _foldShelfUnits({
+    required List<SrtBook> srtBooks,
+    required List<MediaItem> epubBooks,
+    required List<RemoteBookInfo> remoteBooks,
+    required List<RemoteAudiobookInfo> remoteSrtBooks,
+  }) {
+    // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
+    // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
+    // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
+    // （[_lastReadAtByBookKey]，BUG-777），不再依赖列表下标假名次。
+    final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
+        <CollectionOrderingItem<_ShelfBookSlot>>[
+          for (final SrtBook srt in srtBooks)
+            CollectionOrderingItem<_ShelfBookSlot>(
+              mediaType: MediaKind.srt,
+              entryKey: srt.uid,
+              importedAt: srt.importedAt,
+              payload: _ShelfBookSlot(srt: srt),
+            ),
+          // v83：本地 epub 折叠身份 = uid（成员表/归属映射同键）；uid 缺失的异常行
+          // 沿用 bookKey（与透传成员行同键，仍可折进合集）。
+          for (final MediaItem epub in epubBooks)
+            if ((_parseBookKey(epub.mediaIdentifier) ?? '') case final String k)
+              CollectionOrderingItem<_ShelfBookSlot>(
+                mediaType: MediaKind.epub,
+                entryKey: _epubUidByKey[k] ?? k,
+                importedAt: _epubImportedAtByKey[k] ?? 0,
+                payload: _ShelfBookSlot(epub: epub),
+              ),
+        ];
+    // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
+    // **真实 mediaType='epub' + entryKey=bookKey**（downloadId）。v83 后本地成员键
+    // 是 uid，但远端-only 书的成员行是照抄 wire bookKey 的透传行——占位卡与透传行
+    // 天然同键；host 路径的归属注入（下方 membership 分支）也按同键写映射。
+    // importedAt：host 下发了真入库戳（[RemoteBookInfo.importedAt] /
+    // [RemoteAudiobookInfo.importedAt]）就按它排，与本地条目同一把尺子——「导入
+    // 时间」排序才跨端一致（视频页 [_VideoHomeState._groupVideos] 同范式）。旧
+    // host 不带 → 回落 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
+    // 组内保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
+    // 纯 SRT 远端有声书占位混入：mediaType='srt' + entryKey=uid，与本地 SRT 成员及
+    // 已同步的合集成员（entryKey=uid）**同键**，故经现有 _primaryCollectionByEntry 就能
+    // 折进合集（无需 epub 那样的 downloadId≠bookKey 回填）。importedAt 负值排本地之后。
+    for (int i = 0; i < remoteSrtBooks.length; i++) {
+      shelfItems.add(
+        CollectionOrderingItem<_ShelfBookSlot>(
+          mediaType: MediaKind.srt,
+          entryKey: remoteSrtBooks[i].identity,
+          importedAt:
+              remoteSrtBooks[i].importedAt ?? (-1 - remoteBooks.length - i),
+          payload: _ShelfBookSlot(remoteSrt: remoteSrtBooks[i]),
+        ),
+      );
+    }
+    for (int i = 0; i < remoteBooks.length; i++) {
+      shelfItems.add(
+        CollectionOrderingItem<_ShelfBookSlot>(
+          mediaType: MediaKind.epub,
+          entryKey: remoteBooks[i].downloadId,
+          importedAt: remoteBooks[i].importedAt ?? (-1 - i),
+          payload: _ShelfBookSlot(remote: remoteBooks[i]),
+        ),
+      );
+    }
+    // 归属和顺序以 DAO 裁决后的持久关系为准，DTO 不得绕过墓碑或本地排序。
+    final Map<String, int> primaryByEntry = Map<String, int>.of(
+      _primaryCollectionByEntry,
+    );
+    final Map<String, int> memberSortIndex = Map<String, int>.of(
+      _memberSortIndex,
+    );
+    for (final RemoteBookInfo book in remoteBooks) {
+      final String key = MediaKind.epub.compositeKey(book.downloadId);
+      if (book.collection != null || primaryByEntry.containsKey(key)) continue;
+      // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
+      // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。
+      // 远端占位卡的 title 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠
+      // 归属注入——云盘远端书也能折进对应合集行（否则云盘合集永远不成组，BUG：
+      // 云盘书架合集不渲染）。v83：本地有同名书行的成员键 = uid（bookKey 经换算
+      // 表转一跳）；本地无行的透传成员键仍是对端 bookKey，换算不上原样查。
+      final String sanitizedKey = sanitizeTtuFilename(book.title);
+      final String localKey = MediaKind.epub.compositeKey(
+        _epubUidByKey[sanitizedKey] ?? sanitizedKey,
+      );
+      final int? cid = _primaryCollectionByEntry[localKey];
+      if (cid == null) continue; // 本地无已同步的合集归属 → 散卡降级
+      primaryByEntry[key] = cid;
+      final int? sidx = _memberSortIndex[localKey];
+      if (sidx != null) memberSortIndex[key] = sidx;
+    }
+    return groupByCollections<_ShelfBookSlot>(
+      items: shelfItems,
+      primaryCollectionIdByEntry: primaryByEntry,
+      collectionsById: _collectionsById,
+      memberSortIndex: memberSortIndex,
+    );
+  }
+
   Widget _buildBodyWithSrtBooks(
     List<MediaItem> books,
     List<SrtBook> allSrtBooks,
@@ -2090,96 +2196,38 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
           if (_matchesShelfSearch(<String>[b.title ?? b.identity])) b,
     ];
-    // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
-    // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
-    // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
-    // （[_lastReadAtByBookKey]，BUG-777），不再依赖列表下标假名次。
-    final List<CollectionOrderingItem<_ShelfBookSlot>> shelfItems =
-        <CollectionOrderingItem<_ShelfBookSlot>>[
-          for (final SrtBook srt in srtBooks)
-            CollectionOrderingItem<_ShelfBookSlot>(
-              mediaType: MediaKind.srt,
-              entryKey: srt.uid,
-              importedAt: srt.importedAt,
-              payload: _ShelfBookSlot(srt: srt),
-            ),
-          // v83：本地 epub 折叠身份 = uid（成员表/归属映射同键）；uid 缺失的异常行
-          // 沿用 bookKey（与透传成员行同键，仍可折进合集）。
-          for (final MediaItem epub in epubBooks)
-            if ((_parseBookKey(epub.mediaIdentifier) ?? '') case final String k)
-              CollectionOrderingItem<_ShelfBookSlot>(
-                mediaType: MediaKind.epub,
-                entryKey: _epubUidByKey[k] ?? k,
-                importedAt: _epubImportedAtByKey[k] ?? 0,
-                payload: _ShelfBookSlot(epub: epub),
-              ),
-        ];
-    // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
-    // **真实 mediaType='epub' + entryKey=bookKey**（downloadId）。v83 后本地成员键
-    // 是 uid，但远端-only 书的成员行是照抄 wire bookKey 的透传行——占位卡与透传行
-    // 天然同键；host 路径的归属注入（下方 membership 分支）也按同键写映射。
-    // importedAt：host 下发了真入库戳（[RemoteBookInfo.importedAt] /
-    // [RemoteAudiobookInfo.importedAt]）就按它排，与本地条目同一把尺子——「导入
-    // 时间」排序才跨端一致（视频页 [_VideoHomeState._groupVideos] 同范式）。旧
-    // host 不带 → 回落 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
-    // 组内保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
-    // 纯 SRT 远端有声书占位混入：mediaType='srt' + entryKey=uid，与本地 SRT 成员及
-    // 已同步的合集成员（entryKey=uid）**同键**，故经现有 _primaryCollectionByEntry 就能
-    // 折进合集（无需 epub 那样的 downloadId≠bookKey 回填）。importedAt 负值排本地之后。
-    for (int i = 0; i < remoteSrtBooks.length; i++) {
-      shelfItems.add(
-        CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: MediaKind.srt,
-          entryKey: remoteSrtBooks[i].identity,
-          importedAt:
-              remoteSrtBooks[i].importedAt ?? (-1 - remoteBooks.length - i),
-          payload: _ShelfBookSlot(remoteSrt: remoteSrtBooks[i]),
-        ),
-      );
-    }
-    for (int i = 0; i < remoteBooks.length; i++) {
-      shelfItems.add(
-        CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: MediaKind.epub,
-          entryKey: remoteBooks[i].downloadId,
-          importedAt: remoteBooks[i].importedAt ?? (-1 - i),
-          payload: _ShelfBookSlot(remote: remoteBooks[i]),
-        ),
-      );
-    }
-    // 归属和顺序以 DAO 裁决后的持久关系为准，DTO 不得绕过墓碑或本地排序。
-    final Map<String, int> primaryByEntry = Map<String, int>.of(
-      _primaryCollectionByEntry,
+    final List<CollectionGroup<_ShelfBookSlot>> shelfGroups = _foldShelfUnits(
+      srtBooks: srtBooks,
+      epubBooks: epubBooks,
+      remoteBooks: remoteBooks,
+      remoteSrtBooks: remoteSrtBooks,
     );
-    final Map<String, int> memberSortIndex = Map<String, int>.of(
-      _memberSortIndex,
+    // 「管理合集」页的成员数（BUG-4277）：管理页列的是本域全部合集、不随书架
+    // 搜索 / 标签 / 阅读状态筛选变，成员数也就只能取**未筛选**全量的折叠结果——
+    // 吃上面筛选后的 shelfGroups，搜索一下其它合集在管理页就全成「0 项」，旁边
+    // 还挂着删除。全量输入 = 本书架全部 EPUB（去掉以 SRT 卡出现的有声书）+ 全部
+    // SRT + 未落地的远端占位（只过「显示远端条目」门，不过搜索）。
+    _collectionDisplayCounts.publish<_ShelfBookSlot>(
+      _foldShelfUnits(
+        srtBooks: allSrtBooks,
+        epubBooks: <MediaItem>[
+          for (final MediaItem item in filterShelfEntriesByMangaSplit(
+            allEpubBooksForBorrow,
+            mangaOnly: _mangaOnly,
+          ))
+            if (!srtBookKeys.contains(_parseBookKey(item.mediaIdentifier)))
+              item,
+        ],
+        remoteBooks: <RemoteBookInfo>[
+          if (showRemote)
+            for (final RemoteBookInfo b in remoteState.books)
+              if (!_landedRemoteDownloadIds.contains(b.downloadId)) b,
+        ],
+        remoteSrtBooks: <RemoteAudiobookInfo>[
+          if (showRemote) ...remoteState.srtAudiobooks,
+        ],
+      ),
     );
-    for (final RemoteBookInfo book in remoteBooks) {
-      final String key = MediaKind.epub.compositeKey(book.downloadId);
-      if (book.collection != null || primaryByEntry.containsKey(key)) continue;
-      // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
-      // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。
-      // 远端占位卡的 title 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠
-      // 归属注入——云盘远端书也能折进对应合集行（否则云盘合集永远不成组，BUG：
-      // 云盘书架合集不渲染）。v83：本地有同名书行的成员键 = uid（bookKey 经换算
-      // 表转一跳）；本地无行的透传成员键仍是对端 bookKey，换算不上原样查。
-      final String sanitizedKey = sanitizeTtuFilename(book.title);
-      final String localKey = MediaKind.epub.compositeKey(
-        _epubUidByKey[sanitizedKey] ?? sanitizedKey,
-      );
-      final int? cid = _primaryCollectionByEntry[localKey];
-      if (cid == null) continue; // 本地无已同步的合集归属 → 散卡降级
-      primaryByEntry[key] = cid;
-      final int? sidx = _memberSortIndex[localKey];
-      if (sidx != null) memberSortIndex[key] = sidx;
-    }
-    final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
-        groupByCollections<_ShelfBookSlot>(
-          items: shelfItems,
-          primaryCollectionIdByEntry: primaryByEntry,
-          collectionsById: _collectionsById,
-          memberSortIndex: memberSortIndex,
-        );
     // 每组的键只算一次：键要聚合成员并解析显示名，放进比较器会被重算 O(n log n) 次。
     final Map<CollectionGroup<_ShelfBookSlot>, ShelfSortKey> sortKeys =
         <CollectionGroup<_ShelfBookSlot>, ShelfSortKey>{
@@ -2815,6 +2863,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               : CollectionShelfDomain.books,
           onOpenCollection: _openCollectionDetail,
           onShowCollectionMenu: _showCollectionContextMenu,
+          displayCounts: _collectionDisplayCounts,
         ),
       ),
     );
