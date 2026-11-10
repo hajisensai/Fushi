@@ -329,11 +329,16 @@ void main() {
       reason: 'composition popup 的 Z 序必须跟随目标游戏，而不是 Fushi 主窗',
     );
     expect(
-      reveal,
-      contains('Reveal(screen_width, screen_height, false, game)'),
+      compactReveal,
+      contains(
+        'Reveal(screen_width,screen_height,false,game,'
+        'RevealLayerOrigin::kCommittedBBox);',
+      ),
       reason:
           'game viewport geometry must not be clamped again to desktop rcWork; '
-          'the direct reveal transaction also binds its game HWND for click swallowing',
+          'the direct reveal transaction also binds its game HWND for click swallowing; '
+          'BUG-4323: the HWND sits on the committed union bbox, so the host layer '
+          'shift must survive the reveal',
     );
 
     final String present = functionBody(
@@ -349,6 +354,61 @@ void main() {
     );
     expect(flutterWindow, contains('SetLookupDirectPresenter('));
     expect(flutterWindow, contains('RevealOverProcessClient('));
+  });
+
+  // BUG-4323（反馈 SDbJAx1Db6）— 游戏内卡里再点词、子卡向上翻出后，Dart 每次嵌套
+  // resize 都重投 present → RevealOverProcessClient → legacy Reveal。旧 Reveal 无条件
+  // resetLayerOffsetForLegacyReveal，把 commitLayerShift(bbox) 写好的负向平移清零：
+  // HWND 与 HRGN 仍按 union bbox 放，整叠卡却画回 window-local 原点——子卡被窗口顶边
+  // 裁短、根卡上移，两张卡下方各露出一截透明区。
+  test('直连 present 保留 union bbox 图层平移，只有 legacy 单卡 Reveal 才复位', () {
+    final String revealFn = functionBody(
+      cpp,
+      'void GlobalLookupWindow::Reveal(int width, int height,',
+    );
+    final String compactRevealFn = compactCode(revealFn);
+    expect(
+      compactRevealFn,
+      contains(
+        'if(webview_!=nullptr&&'
+        'layer_origin==RevealLayerOrigin::kCursorSingleCard){'
+        'webview_->ExecuteScript(',
+      ),
+      reason: '图层复位只属于「光标处 + 单卡尺寸」的 legacy 上屏语义',
+    );
+    expect(
+      compactRevealFn.indexOf('resetLayerOffsetForLegacyReveal'),
+      greaterThan(
+        compactRevealFn.indexOf(
+          'layer_origin==RevealLayerOrigin::kCursorSingleCard',
+        ),
+      ),
+      reason: '复位脚本必须处在 kCursorSingleCard 门之内',
+    );
+    expect(
+      compactCode(hdr),
+      contains('enumclassRevealLayerOrigin{kCursorSingleCard,kCommittedBBox};'),
+    );
+    expect(
+      compactCode(hdr),
+      contains(
+        'RevealLayerOriginlayer_origin=RevealLayerOrigin::kCursorSingleCard);',
+      ),
+      reason: '桌面 legacy 调用方（flutter_window 的 reveal / READY-SAFETY）保持默认复位',
+    );
+    final String direct = compactCode(
+      functionBody(cpp, 'bool GlobalLookupWindow::RevealOverProcessClient('),
+    );
+    expect(
+      RegExp(r'(?<![A-Za-z_])Reveal\(').allMatches(direct).length,
+      1,
+      reason: '直连 present 只有一处上屏调用',
+    );
+    expect(
+      direct,
+      contains('RevealLayerOrigin::kCommittedBBox'),
+      reason: '直连 present 的窗口落在已提交 union bbox，图层平移不得被复位',
+    );
   });
 
   test('galCard nested resize keeps a live direct WebView on-screen', () {

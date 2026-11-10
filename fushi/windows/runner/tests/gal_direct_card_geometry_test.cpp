@@ -6,6 +6,7 @@
 
 #include "../gal_direct_card_geometry.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 
@@ -221,6 +222,59 @@ int main() {
         root_w, 1200, client_w, client_h);
     assert(edge_nested.root_x == 0 && edge_nested.union_x == 0);
     assert(edge_nested.union_y + 300 == edge_first.root_y);
+  }
+
+  // ── BUG-4323：子卡因下方放不下而向上翻出（与根卡重叠）时，union 恰为两卡外接矩形 ──
+  //
+  // 反馈 SDbJAx1Db6 的录屏形态（CLANNAD）：根卡贴在台词字形正上方，在根卡里点一个
+  // 靠下的词，下方空间不够，子卡翻到被点词上方、顶到客户区顶边并与根卡上半部重叠。
+  // 这里钉住 HWND 几何本身是对的（union = 两卡外接矩形、根卡原地不动），透明区的根因
+  // 在直连 present 把 host 图层平移复位（见 global_lookup_window.cpp Reveal 的
+  // RevealLayerOrigin），由 global_lookup_shell_region_guard_test 守住。
+  {
+    using fushi::gal_direct_card_geometry::PlaceDirectUnionAroundRoot;
+    const int client_w = 1560;
+    const int client_h = 1170;
+    const double glyph_left = 980.0;
+    const double glyph_top = 1020.0;
+    const double glyph_w = 40.0;
+    const double glyph_h = 40.0;
+    const int root_w = 832;
+    const int root_h = 700;
+
+    const auto first = PlaceDirectUnionAroundRoot(
+        glyph_left, glyph_top, glyph_w, glyph_h, root_w, root_h, 0, 0, 0, 0,
+        root_w, root_h, client_w, client_h);
+    assert(first.root_x == 584);  // 1000 - 416
+    assert(first.root_y == 320);  // 1020 - 700，底边贴字形
+
+    // 子卡（window-local，以根卡左上为原点）：左 +100、上 -306、700x578。
+    // 底边 272 < 根卡高 700 —— 翻到上方并与根卡重叠。
+    const int child_dx = 100;
+    const int child_dy = -306;
+    const int child_w = 700;
+    const int child_h = 578;
+    const int bbox_dx = std::min(0, child_dx);
+    const int bbox_dy = std::min(0, child_dy);
+    const int union_w = std::max(root_w, child_dx + child_w) - bbox_dx;
+    const int union_h = std::max(root_h, child_dy + child_h) - bbox_dy;
+    const auto flipped = PlaceDirectUnionAroundRoot(
+        glyph_left, glyph_top, glyph_w, glyph_h, root_w, root_h, 0, 0, bbox_dx,
+        bbox_dy, union_w, union_h, client_w, client_h);
+    // 根卡逐像素不动。
+    assert(flipped.root_x == first.root_x && flipped.root_y == first.root_y);
+    // union = 根卡客户区矩形 ∪ 子卡客户区矩形。
+    const int child_x = first.root_x + child_dx;
+    const int child_y = first.root_y + child_dy;
+    assert(child_y == 14);  // 子卡整块留在客户区内
+    assert(flipped.union_x == std::min(first.root_x, child_x));
+    assert(flipped.union_y == std::min(first.root_y, child_y));
+    assert(flipped.union_x + union_w ==
+           std::max(first.root_x + root_w, child_x + child_w));
+    assert(flipped.union_y + union_h ==
+           std::max(first.root_y + root_h, child_y + child_h));
+    // union 底边就是根卡底边：HWND 不比两张卡多出任何高度。
+    assert(union_h == root_h + 306);
   }
 
   return 0;
