@@ -859,6 +859,77 @@ void main() {
       );
       expect(wire.requestHosts, isNot(contains(Uri.parse(dead).host)));
     });
+
+    test('任务进行中在用的地址断了：观测按 host 重新选路，换到同一台 host 的另一条地址取回', () async {
+      const String lan = 'http://host-a-lan.invalid:8080';
+      final String lanHost = Uri.parse(lan).host;
+      final String otherHost = Uri.parse(_host).host;
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: lan, hostId: 'host-job-route', deviceName: 'PC'),
+        FushiClientUrl(url: _host, hostId: 'host-job-route'),
+      ]);
+      // 开跑时只有 LAN 地址核对得通：提交与前几次观测都走它。
+      String reachable = lan;
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => c.url == reachable;
+
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      runner.duringFirstRun = () => release.future;
+      final RegExp statusPath = RegExp(r'^/api/jobs/[^/]+$');
+      wire.fault = (String method, String path, int nth) async {
+        if (method != 'GET' || !statusPath.hasMatch(path)) return null;
+        if (nth == 2) {
+          // 这次照常应答；此后 LAN 地址断开，只有另一条地址核对得通。
+          wire.deadHosts.add(lanHost);
+          reachable = _host;
+        } else if (nth == 3) {
+          // 第 3 次状态 GET 已经走另一条地址到了 host：放任务跑完。
+          release.complete();
+        }
+        return null;
+      };
+
+      final InterconnectJobClient client = InterconnectJobClient(
+        repo: repo,
+        plainClientFactory: wire.client,
+        pollDelay: (int _) => const Duration(milliseconds: 5),
+        hashCache: FileContentHashCache(),
+      );
+      final List<HostJobEvent> events = await client
+          .run(
+            target: await target(baseUrl: lan),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .toList()
+          .timeout(const Duration(seconds: 10));
+
+      expect(events.last, isA<HostJobDone>());
+      final HostJobDone done = events.last as HostJobDone;
+      expect(
+        done.outputs['out.txt']!.readAsStringSync(),
+        '$cd1Content$cd2Content',
+      );
+      // 换路前确实拨过 LAN 地址（含断开后撞上的那一次），之后改走另一条且不再回头。
+      final int firstOther = wire.requestHosts.indexOf(otherHost);
+      expect(firstOther, greaterThan(0));
+      expect(wire.requestHosts.sublist(0, firstOther), everyElement(lanHost));
+      expect(wire.requestHosts.sublist(firstOther), isNot(contains(lanHost)));
+      // 断开那一下是传输失败：进断连子状态，不删任务、不报错。
+      expect(
+        events.whereType<HostJobRunning>().where(
+          (HostJobRunning e) => e.reconnecting,
+        ),
+        hasLength(1),
+      );
+      await wire.seen('DELETE', (String _) => true);
+      expect(wire.count('DELETE', (String _) => true), 1);
+    });
   });
 
   group('FileContentHashCache', () {

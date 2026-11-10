@@ -116,6 +116,14 @@ class _CountingHttpClient extends http.BaseClient {
   int sessionReads401 = 0;
   int sessionCloses = 0;
 
+  /// 关会话 DELETE 关的会话 id（按发出顺序）。
+  final List<String> closedIds = <String>[];
+
+  /// 非 null 时，开会话 POST 送达 host 之后把应答扣到它完成为止（host 已建好
+  /// 会话、应答还在路上）；[openHeld] 在应答被扣下时完成。
+  Completer<void>? holdOpen;
+  final Completer<void> openHeld = Completer<void>();
+
   static final RegExp _session = RegExp(r'^/api/assistant/sessions/[^/]+$');
 
   @override
@@ -123,9 +131,20 @@ class _CountingHttpClient extends http.BaseClient {
     final bool onSession = _session.hasMatch(request.url.path);
     final bool isRead = onSession && request.method == 'GET';
     if (isRead) sessionReads++;
-    if (onSession && request.method == 'DELETE') sessionCloses++;
+    if (onSession && request.method == 'DELETE') {
+      sessionCloses++;
+      closedIds.add(request.url.pathSegments.last);
+    }
+    final bool isOpen =
+        request.method == 'POST' &&
+        request.url.path == '/api/assistant/sessions';
     final http.StreamedResponse response = await inner.send(request);
     if (isRead && response.statusCode == 401) sessionReads401++;
+    final Completer<void>? hold = holdOpen;
+    if (isOpen && hold != null) {
+      if (!openHeld.isCompleted) openHeld.complete();
+      await hold.future;
+    }
     return response;
   }
 }
@@ -645,6 +664,46 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('BUG-4395：开会话在途（host 已建好、应答未回）时 dispose：等它落地补关，'
+      '再释放 client', () async {
+    final (_, String url) = await startHost(agentHost());
+    final _CountingHttpClient counting = _CountingHttpClient();
+    addTearDown(counting.inner.close);
+    final _DisposeRecordingClient c = _DisposeRecordingClient(repo, counting);
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: (await c.probeUrl(url))!,
+      locale: 'zh-CN',
+      longPollWait: const Duration(seconds: 1),
+    );
+    addTearDown(session.dispose);
+    final String first = session.currentSessionId!;
+
+    final Completer<void> release = Completer<void>();
+    addTearDown(() {
+      if (!release.isCompleted) release.complete();
+    });
+    counting.holdOpen = release;
+    // 新对话：关掉旧的一场，再开一场——开会话的应答被扣在路上。
+    unawaited(session.newSession());
+    await counting.openHeld.future.timeout(const Duration(seconds: 10));
+
+    session.dispose();
+    // 应答还没回：client 不得先释放（释放会把这次开会话掐成 cancelled）。
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(c.disposed.isCompleted, isFalse);
+    release.complete();
+
+    expect(
+      await c.disposed.future.timeout(const Duration(seconds: 10)),
+      2,
+      reason: '旧的一场与在途开出的那场都关完才释放 client',
+    );
+    expect(counting.closedIds, hasLength(2));
+    expect(counting.closedIds.first, first);
+    expect(counting.closedIds.last, isNot(first));
   });
 
   group('BUG-4067：远端会话历史（按发起设备）', () {
