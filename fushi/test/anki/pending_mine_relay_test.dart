@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -527,5 +528,124 @@ void main() {
 
     expect(await eink.store.rows(), isEmpty);
     expect(assets.names(ns), <String>{'landing.phone.json'});
+  });
+
+  group('批量删除 discardAll（反馈 ML86fiSYBk）', () {
+    Future<List<String>> payloadFiles(_Device d) async {
+      final Directory dir = Directory(
+        '${tmp.path}/${d.id}/${PendingMineStore.dirName}',
+      );
+      if (!dir.existsSync()) return <String>[];
+      return dir
+          .listSync()
+          .whereType<File>()
+          .map((File f) => f.uri.pathSegments.last)
+          .where((String n) => n.endsWith('.json'))
+          .toList();
+    }
+
+    test('本机从没上传过的卡：整批出队，行与载荷文件都删掉，返回张数', () async {
+      await eink.mineOffline('猫');
+      await eink.mineOffline('犬');
+      await eink.mineOffline('鳥');
+      expect(await payloadFiles(eink), hasLength(3));
+
+      final int n = await eink.store.discardAll(
+        (await eink.store.all()).map((PendingMineRow r) => r.id),
+      );
+
+      expect(n, 3);
+      expect(await eink.store.rows(), isEmpty);
+      expect(await payloadFiles(eink), isEmpty, reason: '先删行再删载荷');
+    });
+
+    test('只删给定的那批（如仅失败的），其余卡原样留着', () async {
+      await eink.mineOffline('猫');
+      await eink.mineOffline('犬');
+      final List<PendingMineRow> rows = await eink.store.all();
+      await eink.store.markFailed(rows.first.id, 'Unknown URL');
+
+      final List<String> failed = (await eink.store.all())
+          .where((PendingMineRow r) => r.status == PendingMineStatus.failed)
+          .map((PendingMineRow r) => r.id)
+          .toList();
+      expect(await eink.store.discardAll(failed), 1);
+
+      final List<PendingMineRow> left = await eink.store.all();
+      expect(left.single.id, rows.last.id);
+      expect(left.single.status, PendingMineStatus.pending);
+      expect(await payloadFiles(eink), <String>['${rows.last.id}.json']);
+    });
+
+    test('已不在的 id 与重复 id 跳过，不计数', () async {
+      await eink.mineOffline('猫');
+      final String id = (await eink.store.all()).single.id;
+      final int n = await eink.store.discardAll(<String>[
+        id,
+        id,
+        PendingMineStore.newId(),
+      ]);
+      expect(n, 1);
+      expect(await eink.store.rows(), isEmpty);
+      expect(await eink.store.discardAll(const <String>[]), 0);
+    });
+
+    test('整批只发一次表变更：列表页只重读一次', () async {
+      for (final String w in <String>['一', '二', '三', '四', '五']) {
+        await eink.mineOffline(w);
+      }
+      final List<String> ids = (await eink.store.all())
+          .map((PendingMineRow r) => r.id)
+          .toList();
+      await pumpEventQueue(); // 入队时的变更事件先走完，别算进来
+      int events = 0;
+      final StreamSubscription<void> sub = eink.store.changes().listen(
+        (_) => events++,
+      );
+      addTearDown(sub.cancel);
+
+      await eink.store.discardAll(ids);
+      await pumpEventQueue();
+
+      expect(await eink.store.rows(), isEmpty);
+      expect(events, 1, reason: '一个事务提交一次，不是每张卡一次');
+    });
+
+    test('已上传到中转的卡：与单张删除同判据，标 landed 并由下一轮中转撤掉远端', () async {
+      await phone.relay(landing: 100).run(assets);
+      await eink.mineOffline('虫');
+      await eink.relay().run(assets);
+      await eink.mineOffline('魚'); // 上传之后才制的：本机直接出队
+      expect(records(), hasLength(1));
+
+      final int n = await eink.store.discardAll(
+        (await eink.store.all()).map((PendingMineRow r) => r.id),
+      );
+
+      expect(n, 2);
+      expect(await eink.store.count(), 0, reason: '用户眼里都删了');
+      expect(
+        (await eink.store.rows()).single.status,
+        PendingMineStatus.landed,
+        reason: '远端还有一份，行要留着去撤',
+      );
+      await eink.relay().run(assets);
+      expect(await eink.store.rows(), isEmpty);
+      expect(records(), isEmpty);
+      expect((await phone.relay(landing: 100).run(assets)).received, 0);
+    });
+
+    test('落地设备批量删掉其他设备送来的卡：留墓碑，别的通道再送来也不收', () async {
+      await phone.relay(landing: 100).run(assets);
+      await eink.mineOffline('蛙');
+      await eink.relay().run(assets);
+      await phone.relay(landing: 100).run(assets);
+      final PendingMineRow received = (await phone.store.all()).single;
+
+      expect(await phone.store.discardAll(<String>[received.id]), 1);
+
+      expect(await phone.store.hasLanded(received.id), isTrue);
+      expect(await phone.store.count(), 0);
+    });
   });
 }
