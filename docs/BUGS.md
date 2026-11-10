@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3872 条。点号进各自文件。
+> 共 3884 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4323](bugs/BUG-4323-alist-download-gateway-pow-required.md) | ✅ | ✅ | 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手 |
-> 共 3883 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4336](bugs/BUG-4336-alist-download-gateway-pow-required.md) | ✅ | ✅ | 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手 |
 | [BUG-4334](bugs/BUG-4334-game-session-card-floating-toolbar.md) | ✅ | ✅ | 游戏工作台会话卡的工具组用浮动胶囊样式、悬在卡片中段，与主操作不在同一行 |
 | [BUG-4333](bugs/BUG-4333-windows-axtree-desync-pending-children-recur.md) | 🚧 | 🚧 | Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源） |
 | [BUG-4332](bugs/BUG-4332-video-cue-nav-same-start.md) | ✅ | ✅ | 视频 ASS 同起止多条 Dialogue：上/下一句要按两次 |

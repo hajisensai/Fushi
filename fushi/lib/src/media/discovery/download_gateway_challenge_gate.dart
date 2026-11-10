@@ -1,6 +1,6 @@
 import 'package:fushi_engine/media/discovery/download_gateway_challenge.dart';
 
-/// 下载队列（引擎层，没有 `BuildContext`）与下载网关验证页的接线点（BUG-4323）。
+/// 下载队列（引擎层，没有 `BuildContext`）与下载网关验证页的接线点（BUG-4336）。
 ///
 /// app 根 navigator 就绪后 `installDownloadGatewayChallengeSolver` 装一次；没装
 /// （测试 / 无 UI）时 [solve] 返回 null，挑战按「需要人机验证」失败上浮，而不是

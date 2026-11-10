@@ -1,4 +1,4 @@
-/// 下载网关人机验证（BUG-4323）：在 WebView 里让站点自己的 JS 解题，截下它
+/// 下载网关人机验证（BUG-4336）：在 WebView 里让站点自己的 JS 解题，截下它
 /// 「解完 → 回跳原资源 URL」那一跳，把那一刻的 URL 与 cookie 交回下载队列。
 ///
 /// 实测协议（frontgate 网关，`snippet-pow-equihash` 脚本）：浏览器请求网关 URL
